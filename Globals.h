@@ -232,7 +232,7 @@ struct global_settings {
     int iMultiplayer{ 0 }; // blokada działania niektórych eventów na rzecz kominikacji
 	bool bIsolatedTrainName{ false }; //wysyłanie zajęcia odcinka izolowanego z nazwą pociągu
     // other
-    std::string AppName{ "Wls50" };
+    std::string AppName{ "MaSzyna" };
     std::string asVersion; // z opisem
 	motiontelemetry::conf_t motiontelemetry_conf;
 	std::string screenshot_dir;
