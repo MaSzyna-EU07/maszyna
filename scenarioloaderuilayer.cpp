@@ -55,7 +55,7 @@ std::vector<std::string> scenarioloader_ui::get_random_trivia()
 	std::string background = triviaData[lang][i]["background"];
 
 	// divide trivia into multiple lines
-	const int max_line_length = 40;
+	const int max_line_length = 100;
 	while (triviaStr.length() > max_line_length)
 	{
 		int split_pos = triviaStr.rfind(' ', max_line_length);
