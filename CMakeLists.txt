@@ -476,6 +476,12 @@ target_link_libraries(${PROJECT_NAME} Threads::Threads)
 find_package(GLM REQUIRED)
 target_include_directories(${PROJECT_NAME} PRIVATE ${GLM_INCLUDE_DIR})
 
+# JSON lib
+add_subdirectory(ref/json)
+target_link_libraries(${PROJECT_NAME} nlohmann_json::nlohmann_json)
+target_include_directories(${PROJECT_NAME} PRIVATE ${NLOHMANN_JSON_INCLUDE_INSTALL_DIR})
+
+
 
 if (WITH_DISCORD_RPC)
 	add_subdirectory(ref/discord-rpc)

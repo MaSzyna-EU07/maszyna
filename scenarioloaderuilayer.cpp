@@ -11,6 +11,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include "Globals.h"
 #include "translation.h"
+#include <nlohmann/json.hpp>
+#include "Logs.h"
+
+using json = nlohmann::json;
 
 scenarioloader_ui::scenarioloader_ui()
 {
@@ -19,12 +23,60 @@ scenarioloader_ui::scenarioloader_ui()
 	generate_gradient_tex();
 	load_wheel_frames();
 
-	// Temorary trivia contents
-	m_trivia.push_back("W trakcie przeprowadzonej rewizji technicznej wagonów kolejowych");
-	m_trivia.push_back("sprawdza się również daty ostatnich napraw okresowych. Wagony, dla");
-	m_trivia.push_back("których upływa termin dokonania następnej naprawy okresowej pracownik");
-	m_trivia.push_back("zespołu rewizji technicznej prowadzący oględziny winien jest przekierować");
-	m_trivia.push_back("do odpowiednich Zakładów Naprawczych Taboru Kolejowego lub wagonowni.");
+	m_trivia = get_random_trivia();
+}
+
+
+std::vector<std::string> scenarioloader_ui::get_random_trivia()
+{
+	WriteLog("Loading random trivia...");
+	std::vector<std::string> trivia = std::vector<std::string>();
+
+	if (!FileExists("lang/trivia.json"))
+	{
+		ErrorLog("File lang/trivia.json not found!");
+		return trivia;
+	}
+	std::string lang = Global.asLang;
+
+	std::ifstream f("lang/trivia.json");
+	json triviaData = json::parse(f);
+
+	// check if lang set exists
+	if (triviaData.find(lang) == triviaData.end())
+	{
+		ErrorLog("No trivia found for language \"" + lang + "\", falling back to English.");
+		lang = "en";
+	}
+
+	// select random trivia
+	int i = Random(0, triviaData[lang].size() - 1);
+	std::string triviaStr = triviaData[lang][i]["text"];
+	std::string background = triviaData[lang][i]["background"];
+
+	// divide trivia into multiple lines
+	const int max_line_length = 40;
+	while (triviaStr.length() > max_line_length)
+	{
+		int split_pos = triviaStr.rfind(' ', max_line_length);
+		if (split_pos == std::string::npos)
+			split_pos = max_line_length; // no space found, force split
+		trivia.push_back(triviaStr.substr(0, split_pos));
+		triviaStr = triviaStr.substr(split_pos + 1); // +1 to skip the space
+	}
+
+	// if triviaStr is not empty add this as last line
+	if (!triviaStr.empty())
+		trivia.push_back(triviaStr);
+
+	// now override background if trivia is set
+	if (!trivia.empty())
+	{
+		set_background("textures/ui/backgrounds/" + background);
+	}
+
+
+	return trivia;
 }
 
 void scenarioloader_ui::render_()
@@ -39,27 +91,38 @@ void scenarioloader_ui::render_()
 	ImGui::PushFont(font_loading);
 	ImGui::SetWindowFontScale(1);
 	const float font_scale_mult = 48 / ImGui::GetFontSize();
+	
 	// Gradient at the lower half of the screen
 	const auto tex = reinterpret_cast<ImTextureID>(m_gradient_overlay_tex);
 	draw_list->AddImage(tex, ImVec2(0, Global.window_size.y / 2), ImVec2(Global.window_size.x, Global.window_size.y), ImVec2(0, 0), ImVec2(1, 1));
+	
 	// Loading label
 	ImGui::SetWindowFontScale(font_scale_mult * 0.8);
 	draw_list->AddText(ImVec2(200, 885), IM_COL32_WHITE, m_progresstext.c_str());
+	
 	// Loading wheel icon
 	const deferred_image* img = &m_loading_wheel_frames[38];
 	const auto loading_tex = img->get();
 	const auto loading_size = img->size();
 	draw_list->AddImage(reinterpret_cast<ImTextureID>(loading_tex), ImVec2(35, 850), ImVec2(35 + loading_size.x, 850 + loading_size.y), ImVec2(0, 0), ImVec2(1, 1));
-	// Trivia header
-	ImGui::SetWindowFontScale(font_scale_mult * 1);
-	draw_list->AddText(ImVec2(1280 - ImGui::CalcTextSize(STR_C("Did you know")).x / 2, 770), IM_COL32_WHITE, STR_C("Did you know"));
-	// Trivia content
-	ImGui::SetWindowFontScale(font_scale_mult * 0.6);
-	for (int i = 0; i < m_trivia.size(); i++)
+	
+	// Trivia 
+	// draw only if we have any trivia loaded
+	if (m_trivia.size() > 0)
 	{
-		std::string line = m_trivia[i];
-		draw_list->AddText(ImVec2(1280 - ImGui::CalcTextSize(line.c_str()).x / 2, 825 + i * 25), IM_COL32_WHITE, line.c_str());
+		// Header
+		ImGui::SetWindowFontScale(font_scale_mult * 1);
+		draw_list->AddText(ImVec2(1280 - ImGui::CalcTextSize(STR_C("Did you know")).x / 2, 770), IM_COL32_WHITE, STR_C("Did you know"));
+
+		// Content
+		ImGui::SetWindowFontScale(font_scale_mult * 0.6);
+		for (int i = 0; i < m_trivia.size(); i++)
+		{
+			std::string line = m_trivia[i];
+			draw_list->AddText(ImVec2(1280 - ImGui::CalcTextSize(line.c_str()).x / 2, 825 + i * 25), IM_COL32_WHITE, line.c_str());
+		}
 	}
+	
 	// Progress bar at the bottom of the screen
 	const auto p1 = ImVec2(0, Global.window_size.y - 2);
 	const auto p2 = ImVec2(Global.window_size.x * m_progress, Global.window_size.y);

@@ -22,6 +22,12 @@ public:
 	scenarioloader_ui();
 	void render_() override;
 private:
+
+	/// <summary>
+	/// Loads random trivia from lang/trivia.json
+	/// and returns it as a vector of strings. Also performs background selection.
+	/// </summary>
+	std::vector<std::string> get_random_trivia();
 	void generate_gradient_tex();
 	void load_wheel_frames();
 };
