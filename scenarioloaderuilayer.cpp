@@ -75,7 +75,6 @@ std::vector<std::string> scenarioloader_ui::get_random_trivia()
 		set_background("textures/ui/backgrounds/" + background);
 	}
 
-
 	return trivia;
 }
 
@@ -84,6 +83,7 @@ void scenarioloader_ui::render_()
 	// For some reason, ImGui windows have some padding. Offset it.
 	// TODO: Find out a way to exactly adjust the position.
 	constexpr int padding = 12;
+	ImVec2 screen_size(Global.window_size.x, Global.window_size.y);
 	ImGui::SetNextWindowPos(ImVec2(-padding, -padding));
 	ImGui::SetNextWindowSize(ImVec2(Global.window_size.x + padding * 2, Global.window_size.y + padding * 2));
 	ImGui::Begin("Neo Loading Screen", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground);
@@ -96,30 +96,75 @@ void scenarioloader_ui::render_()
 	const auto tex = reinterpret_cast<ImTextureID>(m_gradient_overlay_tex);
 	draw_list->AddImage(tex, ImVec2(0, Global.window_size.y / 2), ImVec2(Global.window_size.x, Global.window_size.y), ImVec2(0, 0), ImVec2(1, 1));
 	
-	// Loading label
-	ImGui::SetWindowFontScale(font_scale_mult * 0.8);
-	draw_list->AddText(ImVec2(200, 885), IM_COL32_WHITE, m_progresstext.c_str());
-	
-	// Loading wheel icon
-	const deferred_image* img = &m_loading_wheel_frames[38];
+	// [O] Loading...
+	const float margin_left_icon = 35.0f;
+	const float margin_bottom_loading = 80.0f;
+	const float spacing = 10.0f; // odstęp między ikoną a tekstem
+
+	// Loading icon
+	const deferred_image *img = &m_loading_wheel_frames[38];
 	const auto loading_tex = img->get();
 	const auto loading_size = img->size();
-	draw_list->AddImage(reinterpret_cast<ImTextureID>(loading_tex), ImVec2(35, 850), ImVec2(35 + loading_size.x, 850 + loading_size.y), ImVec2(0, 0), ImVec2(1, 1));
-	
+
+	ImVec2 icon_pos(margin_left_icon, screen_size.y - margin_bottom_loading - loading_size.y);
+
+	// Loading text
+	ImGui::SetWindowFontScale(font_scale_mult * 0.8f);
+	ImVec2 text_size = ImGui::CalcTextSize(m_progresstext.c_str());
+
+	// Vertical centering of text relative to icon
+	float icon_center_y = icon_pos.y + loading_size.y * 0.5f;
+	ImVec2 text_pos(icon_pos.x + loading_size.x + spacing, // tuż obok ikony
+	                icon_center_y - text_size.y * 0.5f);
+
+	// Draw
+	draw_list->AddImage(reinterpret_cast<ImTextureID>(loading_tex), icon_pos, ImVec2(icon_pos.x + loading_size.x, icon_pos.y + loading_size.y), ImVec2(0, 0), ImVec2(1, 1));
+	draw_list->AddText(text_pos, IM_COL32_WHITE, m_progresstext.c_str());
+
 	// Trivia 
 	// draw only if we have any trivia loaded
 	if (m_trivia.size() > 0)
 	{
-		// Header
-		ImGui::SetWindowFontScale(font_scale_mult * 1);
-		draw_list->AddText(ImVec2(1280 - ImGui::CalcTextSize(STR_C("Did you know")).x / 2, 770), IM_COL32_WHITE, STR_C("Did you know"));
+		const float margin_right = 80.0f;
+		const float margin_bottom = 80.0f;
+		const float line_spacing = 25.0f;
+		const float header_gap = 10.0f;
 
-		// Content
-		ImGui::SetWindowFontScale(font_scale_mult * 0.6);
+		// Measure width of trivia lines
+		ImGui::SetWindowFontScale(font_scale_mult * 0.6f);
+		float max_width = 0.0f;
+		for (const std::string &line : m_trivia)
+		{
+			ImVec2 size = ImGui::CalcTextSize(line.c_str());
+			if (size.x > max_width)
+				max_width = size.x;
+		}
+
+		// Measure header width
+		ImGui::SetWindowFontScale(font_scale_mult * 1.0f);
+		ImVec2 header_size = ImGui::CalcTextSize(STR_C("Did you know..."));
+		if (header_size.x > max_width)
+			max_width = header_size.x; // blok musi też pomieścić nagłówek
+
+		// Calculate block position
+		float content_height = (float)m_trivia.size() * line_spacing;
+		float total_height = header_size.y + header_gap + content_height;
+
+		float block_left = screen_size.x - margin_right - max_width;
+		float block_top = screen_size.y - margin_bottom - total_height;
+
+		// Draw header
+		ImVec2 header_pos(block_left + (max_width - header_size.x) * 0.5f, block_top);
+		draw_list->AddText(header_pos, IM_COL32_WHITE, STR_C("Did you know..."));
+
+		// Draw trivia lines
+		ImGui::SetWindowFontScale(font_scale_mult * 0.6f);
 		for (int i = 0; i < m_trivia.size(); i++)
 		{
-			std::string line = m_trivia[i];
-			draw_list->AddText(ImVec2(1280 - ImGui::CalcTextSize(line.c_str()).x / 2, 825 + i * 25), IM_COL32_WHITE, line.c_str());
+			const std::string &line = m_trivia[i];
+			ImVec2 text_size = ImGui::CalcTextSize(line.c_str());
+			ImVec2 text_pos(block_left + (max_width - text_size.x) * 0.5f, block_top + header_size.y + header_gap + i * line_spacing);
+			draw_list->AddText(text_pos, IM_COL32_WHITE, line.c_str());
 		}
 	}
 	
