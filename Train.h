@@ -929,6 +929,7 @@ private:
 class train_table : public basic_table<TTrain> {
 public:
     void update( double dt );
+    void updateAsync( double dt );
     TTrain *find_id( std::uint16_t const Id ) const;
 };
 

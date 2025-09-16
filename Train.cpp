@@ -31,6 +31,7 @@ http://mozilla.org/MPL/2.0/.
 #include "Console.h"
 #include "application.h"
 #include "renderer.h"
+#include <future>
 /*
 namespace input {
 
@@ -11098,6 +11099,46 @@ uint16_t TTrain::id() {
 		WriteLog("net: assigning id " + std::to_string(vid) + " to vehicle " + Dynamic()->name(), logtype::net);
 	}
 	return vid;
+}
+
+void train_table::updateAsync(double dt)
+{
+	// init random engine
+	std::vector<std::pair<TTrain *, std::future<void>>> futures;
+	futures.reserve(m_items.size());
+
+    // update all trains in paallel
+	for (TTrain *train : m_items)
+	{
+		if (!train)
+			continue;
+
+		futures.emplace_back(train, std::async(std::launch::async, [train, dt]() { train->Update(dt); }));
+	}
+
+	// wait for every train to finish processing
+	for (auto &pair : futures)
+	{
+		pair.second.get();
+	}
+
+	// perform deletions
+	for (TTrain *train : m_items)
+	{
+		if (!train)
+			continue;
+
+		if (train->pending_delete)
+		{
+			purge(train->Dynamic()->name());
+			if (simulation::Train == train)
+				simulation::Train = nullptr;
+		}
+		else if (simulation::Train != train && Global.network_servers.empty() && !Global.network_client)
+		{
+			purge(train->Dynamic()->name());
+		}
+	}
 }
 
 void train_table::update(double dt)

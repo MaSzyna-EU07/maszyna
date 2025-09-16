@@ -497,7 +497,7 @@ eu07_application::run() {
 				// send commands to command queue
 				simulation::Commands.push_commands(commands_to_exec);
 
-				// do actual frame processing
+				// do actual frame processing (depending on mode)
 				if (!m_modes[ m_modestack.top() ]->update())
 					return 0;
 
