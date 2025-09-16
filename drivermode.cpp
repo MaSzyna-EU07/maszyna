@@ -275,15 +275,7 @@ driver_mode::update() {
 			TSubModel::iInstance = 0;
 
 
-        if (Global.trainAsyncProcessing)
-        {
-			simulation::Trains.updateAsync(deltatime);
-		}
-		else
-		{
-			simulation::Trains.update(deltatime);
-		}
-
+		simulation::Trains.updateAsync(deltatime);
 		simulation::Events.update();
 		simulation::Region->update_events();
 		simulation::Lights.update();

@@ -11101,28 +11101,43 @@ uint16_t TTrain::id() {
 	return vid;
 }
 
+#include <future>
+#include <algorithm>
+
 void train_table::updateAsync(double dt)
 {
-	// init random engine
-	std::vector<std::pair<TTrain *, std::future<void>>> futures;
-	futures.reserve(m_items.size());
+	const int threads = std::max(1, Global.trainThreads);
+	const size_t total = m_items.size();
+	const size_t chunkSize = (total + threads - 1) / threads;
 
-    // update all trains in paallel
-	for (TTrain *train : m_items)
+	std::vector<std::future<void>> futures;
+	futures.reserve(threads);
+
+	for (int i = 0; i < threads; ++i)
 	{
-		if (!train)
-			continue;
+		const size_t start = i * chunkSize;
+		const size_t end = std::min(start + chunkSize, total);
 
-		futures.emplace_back(train, std::async(std::launch::async, [train, dt]() { train->Update(dt); }));
+		if (start >= end)
+			break; // brak więcej danych
+
+		futures.emplace_back(std::async(std::launch::async,
+		                                [this, start, end, dt]()
+		                                {
+			                                for (size_t j = start; j < end; ++j)
+			                                {
+				                                TTrain *train = m_items[j];
+				                                if (train)
+					                                train->Update(dt);
+			                                }
+		                                }));
 	}
 
-	// wait for every train to finish processing
-	for (auto &pair : futures)
-	{
-		pair.second.get();
-	}
+	// Poczekaj aż wszystkie wątki skończą
+	for (auto &f : futures)
+		f.get();
 
-	// perform deletions
+	// Teraz kasowanie (tylko w głównym wątku)
 	for (TTrain *train : m_items)
 	{
 		if (!train)
@@ -11140,6 +11155,7 @@ void train_table::updateAsync(double dt)
 		}
 	}
 }
+
 
 void train_table::update(double dt)
 {

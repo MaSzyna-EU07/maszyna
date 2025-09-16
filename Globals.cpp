@@ -59,10 +59,10 @@ global_settings::ConfigParse(cParser &Parser) {
             Parser.getTokens();
             Parser >> local_start_vehicle;
         }
-        else if (token == "async.trains")
+        else if (token == "async.trainThreads")
         {
 			Parser.getTokens();
-			Parser >> trainAsyncProcessing;
+			Parser >> trainThreads;
         }
         else if (token == "fieldofview")
         {
