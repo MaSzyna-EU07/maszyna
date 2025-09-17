@@ -49,8 +49,15 @@ std::vector<std::string> scenarioloader_ui::get_random_trivia()
 		lang = "en";
 	}
 
+	if (triviaData[lang].empty())
+	{
+		ErrorLog("No trivia entries found for language \"" + lang + "\".");
+		return trivia;
+	}
+
+
 	// select random trivia
-	int i = Random(0, triviaData[lang].size() - 1);
+	int i = RandomInt(0, triviaData[lang].size() - 1);
 	std::string triviaStr = triviaData[lang][i]["text"];
 	std::string background = triviaData[lang][i]["background"];
 

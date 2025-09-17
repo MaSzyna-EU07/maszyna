@@ -112,6 +112,13 @@ double Random(double a, double b)
 	return interpolate(a, b, (double)val / Global.random_engine.max());
 }
 
+int RandomInt(int min, int max)
+{
+	std::uniform_int_distribution<int> dist(min, max);
+	return dist(Global.random_engine);
+}
+
+
 double LocalRandom(double a, double b)
 {
 	uint32_t val = Global.local_random_engine();

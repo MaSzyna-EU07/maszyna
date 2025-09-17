@@ -60,7 +60,8 @@ inline long Round(double const f)
 }
 
 double Random(double a, double b);
-double LocalRandom( double a, double b );
+int RandomInt(int min, int max);
+double LocalRandom(double a, double b);
 
 inline double Random()
 {
