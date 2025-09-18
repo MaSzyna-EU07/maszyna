@@ -4938,7 +4938,9 @@ void TTrain::OnCommand_modernlightdimmerincrease(TTrain* Train, command_data con
 		else
 			return; // już na minimum i nie można cyklicznie
         // update lightning
-        Train->Dynamic()->SetLights();
+        //Train->Dynamic()->SetLights();		
+        Train->Dynamic()->SetLightDimmings();
+
 
         // visual feedback
 		if (Train->ggModernLightDimSw.SubModel != nullptr)
@@ -4965,7 +4967,8 @@ void TTrain::OnCommand_modernlightdimmerdecrease(TTrain *Train, command_data con
 		else
 			return; // już na minimum i nie można cyklicznie
 
-		Train->Dynamic()->SetLights();
+		//Train->Dynamic()->SetLights();
+		Train->Dynamic()->SetLightDimmings();
 
 		if (Train->ggModernLightDimSw.SubModel != nullptr)
 			Train->ggModernLightDimSw.UpdateValue(dimPos, Train->dsbSwitch);

@@ -69,16 +69,23 @@ light_array::update() {
                 + ( ( lights & light::highbeamlight_left ) ? 1: 0)
                 + ( ( lights & light::highbeamlight_right ) ? 1 : 0);
 
+            // set intensity
             if( light.count > 0 ) {
+				bool isEnabled = light.index == end::front ? !light.owner->HeadlightsAoff : !light.owner->HeadlightsBoff;
+
 				light.intensity = std::max(0.0f, std::log((float)light.count + 1.0f));
-				if (light.owner->DimHeadlights && !light.owner->HighBeamLights) // tylko przyciemnione
+				if (light.owner->DimHeadlights && !light.owner->HighBeamLights && isEnabled) // tylko przyciemnione
 					light.intensity *= light.owner->MoverParameters->dimMultiplier;
-				else if (!light.owner->DimHeadlights && !light.owner->HighBeamLights) // normalne
+				else if (!light.owner->DimHeadlights && !light.owner->HighBeamLights && isEnabled) // normalne
 					light.intensity *= light.owner->MoverParameters->normMultiplier;
-				else if (light.owner->DimHeadlights && light.owner->HighBeamLights) // przyciemnione dlugie
+				else if (light.owner->DimHeadlights && light.owner->HighBeamLights && isEnabled) // przyciemnione dlugie
 					light.intensity *= light.owner->MoverParameters->highDimMultiplier;
-				else if (!light.owner->DimHeadlights && light.owner->HighBeamLights) // dlugie zwykle
+				else if (!light.owner->DimHeadlights && light.owner->HighBeamLights && isEnabled) // dlugie zwykle
 					light.intensity *= light.owner->MoverParameters->highMultiplier;
+				else if (!isEnabled)
+                {
+					light.intensity = 0.0f;
+                }
 
                 // TBD, TODO: intensity can be affected further by other factors
                 light.state = {
@@ -94,13 +101,16 @@ light_array::update() {
 
 				if (light.owner->DimHeadlights && !light.owner->HighBeamLights) // tylko przyciemnione
 					light.state *= light.owner->MoverParameters->dimMultiplier;
-				else if (!light.owner->DimHeadlights && !light.owner->HighBeamLights)
+				else if (!light.owner->DimHeadlights && !light.owner->HighBeamLights) // normalne
 					light.state *= light.owner->MoverParameters->normMultiplier;
 				else if (light.owner->DimHeadlights && light.owner->HighBeamLights) // przyciemnione dlugie
 					light.state *= light.owner->MoverParameters->highDimMultiplier;
 				else if (!light.owner->DimHeadlights && light.owner->HighBeamLights) // dlugie zwykle
 					light.state *= light.owner->MoverParameters->highMultiplier;
-                
+				else if (!isEnabled)
+				{
+					light.state = glm::vec3{0.f};
+				}
             }
             else {
                 light.intensity = 0.0f;

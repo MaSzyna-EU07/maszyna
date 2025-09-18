@@ -608,6 +608,8 @@ private:
   public:
     bool DimHeadlights{ false }; // status of the headlight dimming toggle. NOTE: single toggle for all lights is a simplification. TODO: separate per-light switches
 	bool HighBeamLights { false }; // status of the highbeam toggle
+	bool HeadlightsAoff{false}; // wygaszone swiatelki A
+	bool HeadlightsBoff{false}; // wygaszone swiatelki B
     // checks whether there's unbroken connection of specified type to specified vehicle
     bool is_connected( TDynamicObject const *Vehicle, coupling const Coupling = coupling::coupler ) const;
 	TDynamicObject * PrevAny() const;
@@ -768,6 +770,7 @@ private:
 	void Damage(char flag);
 	void pants_up();
     void SetLights();
+    void SetLightDimmings();
     void RaLightsSet(int head, int rear);
     int LightList( end const Side ) const { return iInventory[ Side ]; }
     bool has_signal_pc1_on() const;

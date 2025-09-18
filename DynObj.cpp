@@ -1206,7 +1206,9 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
     { // sygnały czoła pociagu //Ra: wyświetlamy bez
         // ograniczeń odległości, by były widoczne z
         // daleka
-        if (TestFlag(MoverParameters->iLights[end::front], light::headlight_left))
+
+        if (TestFlag(MoverParameters->iLights[end::front], light::headlight_left) 
+            && !HeadlightsAoff && !HighBeamLights)
         {
             if( DimHeadlights ) {
                 m_headlamp13.TurnxOnWithOnAsFallback();
@@ -1216,7 +1218,8 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
             }
             btnOn = true;
         }
-        if (TestFlag(MoverParameters->iLights[end::front], light::headlight_upper))
+		if (TestFlag(MoverParameters->iLights[end::front], light::headlight_upper) 
+            && !HeadlightsAoff)
         {
             if( DimHeadlights ) {
                 m_headlamp11.TurnxOnWithOnAsFallback();
@@ -1226,7 +1229,8 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
             }
             btnOn = true;
         }
-        if (TestFlag(MoverParameters->iLights[end::front], light::headlight_right))
+		if (TestFlag(MoverParameters->iLights[end::front], light::headlight_right) 
+            && !HeadlightsAoff && !HighBeamLights)
         {
             if( DimHeadlights ) {
                 m_headlamp12.TurnxOnWithOnAsFallback();
@@ -1237,7 +1241,8 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
             btnOn = true;
         }
         // else btHeadSignals13.TurnOff();
-        if (TestFlag(MoverParameters->iLights[end::rear], light::headlight_left))
+		if (TestFlag(MoverParameters->iLights[end::rear], light::headlight_left) 
+            && !HeadlightsBoff && !HighBeamLights)
         {
             if( DimHeadlights ) {
                 m_headlamp23.TurnxOnWithOnAsFallback();
@@ -1247,7 +1252,8 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
             }
             btnOn = true;
         }
-        if (TestFlag(MoverParameters->iLights[end::rear], light::headlight_upper))
+		if (TestFlag(MoverParameters->iLights[end::rear], light::headlight_upper) 
+            && !HeadlightsBoff)
         {
             if( DimHeadlights ) {
                 m_headlamp21.TurnxOnWithOnAsFallback();
@@ -1257,7 +1263,8 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
             }
             btnOn = true;
         }
-        if (TestFlag(MoverParameters->iLights[end::rear], light::headlight_right))
+		if (TestFlag(MoverParameters->iLights[end::rear], light::headlight_right) 
+            && !HeadlightsBoff && !HighBeamLights)
         {
             if( DimHeadlights ) {
                 m_headlamp22.TurnxOnWithOnAsFallback();
@@ -1268,7 +1275,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
             btnOn = true;
         }
         // auxiliary lights
-        if (TestFlag(MoverParameters->iLights[end::front], light::auxiliary_left))
+		if (TestFlag(MoverParameters->iLights[end::front], light::auxiliary_left) && !HeadlightsAoff)
         {
             if( DimHeadlights ) {
                 m_headsignal13.TurnxOnWithOnAsFallback();
@@ -1278,7 +1285,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
             }
             btnOn = true;
         }
-        if (TestFlag(MoverParameters->iLights[end::front], light::auxiliary_right))
+		if (TestFlag(MoverParameters->iLights[end::front], light::auxiliary_right) && !HeadlightsAoff)
         {
             if( DimHeadlights ) {
                 m_headsignal12.TurnxOnWithOnAsFallback();
@@ -1288,7 +1295,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
             }
             btnOn = true;
         }
-        if (TestFlag(MoverParameters->iLights[end::rear], light::auxiliary_left))
+		if (TestFlag(MoverParameters->iLights[end::rear], light::auxiliary_left) && !HeadlightsBoff)
         {
             if( DimHeadlights ) {
                 m_headsignal23.TurnxOnWithOnAsFallback();
@@ -1298,7 +1305,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
             }
             btnOn = true;
         }
-        if (TestFlag(MoverParameters->iLights[end::rear], light::auxiliary_right))
+		if (TestFlag(MoverParameters->iLights[end::rear], light::auxiliary_right) && !HeadlightsBoff)
         {
             if( DimHeadlights ) {
                 m_headsignal22.TurnxOnWithOnAsFallback();
@@ -1310,23 +1317,27 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
         }
 
         // logika dlugich
-		if (TestFlag(MoverParameters->iLights[end::front], light::highbeamlight_left))
+		if (TestFlag(MoverParameters->iLights[end::front], light::headlight_left) 
+            && !HeadlightsAoff && HighBeamLights)
 			m_highbeam13.TurnxOnWithOnAsFallback();
 		else
 			m_highbeam13.TurnOff();
 
-        if (TestFlag(MoverParameters->iLights[end::front], light::highbeamlight_right))
+        if (TestFlag(MoverParameters->iLights[end::front], light::headlight_right) 
+            && !HeadlightsAoff && HighBeamLights)
 			m_highbeam12.TurnxOnWithOnAsFallback();
 		else
 			m_highbeam12.TurnOff();
 
         // i to samo od dupy strony
-        if (TestFlag(MoverParameters->iLights[end::rear], light::highbeamlight_left))
+		if (TestFlag(MoverParameters->iLights[end::rear], light::headlight_left) 
+            && !HeadlightsBoff && HighBeamLights)
 			m_highbeam23.TurnxOnWithOnAsFallback();
 		else
 			m_highbeam23.TurnOff();
 
-        if (TestFlag(MoverParameters->iLights[end::rear], light::highbeamlight_right))
+        if (TestFlag(MoverParameters->iLights[end::rear], light::headlight_right) 
+            && !HeadlightsBoff && HighBeamLights)
 			m_highbeam22.TurnxOnWithOnAsFallback();
 		else
 			m_highbeam22.TurnOff();
@@ -7378,10 +7389,35 @@ void TDynamicObject::RaLightsSet(int head, int rear)
             // obsługa OFF
 			if (dps.isOff)
 			{
-				MoverParameters->iLights[vehicleend] &= 0 | light::rearendsignals; // zostawiamy tylko tabliczki jesli sa
+				//MoverParameters->iLights[vehicleend] &= 0 | light::rearendsignals; // zostawiamy tylko tabliczki jesli sa
 				HighBeamLights = false;
 				DimHeadlights = false;
+                switch (vehicleend)
+                {
+                    case end::front:
+					    HeadlightsAoff = true;
+                        break;
+				    case end::rear:
+					    HeadlightsAoff = true;
+					    break;
+                    default:
+					    break;
+                }
 			}
+            else
+            {
+				switch (vehicleend)
+				{
+				case end::front:
+					HeadlightsAoff = false;
+					break;
+				case end::rear:
+					HeadlightsAoff = false;
+					break;
+				default:
+					break;
+				}
+            }
 
 			// obsługa przyciemnionych
 			DimHeadlights = dps.isDimmed;
@@ -7390,11 +7426,6 @@ void TDynamicObject::RaLightsSet(int head, int rear)
 			if (dps.isHighBeam)
 			{
 				HighBeamLights = true;
-
-                MoverParameters->iLights[vehicleend] &=
-				    light::headlight_upper | light::rearendsignals | light::redmarker_left | light::redmarker_right | light::rearendsignals; // nie ruszamy gornych i koncowek
-				MoverParameters->iLights[vehicleend] |= tLeft ? light::highbeamlight_left : 0; // jesli swiatlo z lewej zapalone to odpal dlugie
-				MoverParameters->iLights[vehicleend] |= tRight ? light::highbeamlight_right : 0; // a tu z prawej			
             }
         }
 
@@ -7404,6 +7435,68 @@ void TDynamicObject::RaLightsSet(int head, int rear)
         MoverParameters->iLights[ vehicleend ] = ( rear & iInventory[ vehicleend ] );
     }
 };
+
+void TDynamicObject::SetLightDimmings()
+{
+	auto const vehicleend{iDirection > 0 ? end::front : end::rear};
+	if (Controller == Humandriver)
+	{
+
+		int &currentDimPos = MoverParameters->modernDimmerPosition;
+		auto &dimmerPositions = MoverParameters->dimPositions;
+		TMoverParameters::dimPosition dps = dimmerPositions[currentDimPos];
+
+		// domyślnie
+		HighBeamLights = false;
+		DimHeadlights = false;
+
+		// obsługa OFF
+		if (dps.isOff)
+		{
+			// MoverParameters->iLights[vehicleend] &= 0 | light::rearendsignals; // zostawiamy tylko tabliczki jesli sa
+			HighBeamLights = false;
+			DimHeadlights = false;
+			switch (vehicleend)
+			{
+			case end::front:
+				HeadlightsAoff = true;
+				break;
+			case end::rear:
+				HeadlightsAoff = true;
+				break;
+			default:
+				break;
+			}
+		}
+		else
+		{
+			switch (vehicleend)
+			{
+			case end::front:
+				HeadlightsAoff = false;
+				break;
+			case end::rear:
+				HeadlightsAoff = false;
+				break;
+			default:
+				break;
+			}
+		}
+
+		// obsługa przyciemnionych
+		DimHeadlights = dps.isDimmed;
+
+		// obsługa długich
+		if (dps.isHighBeam)
+		{
+			// obsługa długich
+			if (dps.isHighBeam)
+			{
+				HighBeamLights = true;
+			}
+		}
+	}
+}
 
 bool TDynamicObject::has_signal_pc1_on() const {
 
