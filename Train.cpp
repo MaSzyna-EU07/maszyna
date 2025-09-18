@@ -4354,7 +4354,7 @@ void TTrain::OnCommand_lightspresetactivatenext( TTrain *Train, command_data con
     if( ( Train->mvOccupied->LightsPos < Train->mvOccupied->LightsPosNo )
      || ( true == Train->mvOccupied->LightsWrap ) ) {
         // active light preset is stored as value in range 1-LigthPosNo
-        auto const restartcycle { Train->mvOccupied->LightsPos == Train->mvOccupied->LightsPosNo };
+        auto const restartcycle { Train->mvOccupied->LightsPos >= Train->mvOccupied->LightsPosNo };
         Train->mvOccupied->LightsPos = (
             false == restartcycle ?
                 Train->mvOccupied->LightsPos + 1 :
@@ -4388,7 +4388,7 @@ void TTrain::OnCommand_lightspresetactivateprevious( TTrain *Train, command_data
     if( ( Train->mvOccupied->LightsPos > 1 )
      || ( true == Train->mvOccupied->LightsWrap ) ) {
         // active light preset is stored as value in range 1-LigthPosNo
-        auto const restartcycle { Train->mvOccupied->LightsPos == 1 };
+        auto const restartcycle { Train->mvOccupied->LightsPos <= 1 };
         Train->mvOccupied->LightsPos = (
             false == restartcycle ?
                 Train->mvOccupied->LightsPos - 1 :
@@ -4429,6 +4429,12 @@ void TTrain::OnCommand_lightsset(TTrain *Train, command_data const &Command)
 {
 	Train->mvOccupied->iLights[end::front] = Command.param1;
 	Train->mvOccupied->iLights[end::rear] = Command.param2;
+
+    // set custom item in Lights inventory
+	Train->mvOccupied->Lights[end::front][17] = Command.param1;
+	Train->mvOccupied->Lights[end::rear][17] = Command.param2;
+	Train->mvOccupied->LightsPos = 18; // nasza custom pozycja
+
 }
 
 void TTrain::OnCommand_headlightenableleft( TTrain *Train, command_data const &Command ) {
@@ -5191,9 +5197,7 @@ void TTrain::OnCommand_headlightsdimenable( TTrain *Train, command_data const &C
         Train->DynamicObject->DimHeadlights = true;
         */
         Train->DynamicObject->MoverParameters->modernDimmerPosition = 1;   // ustawiamy modern dimmer na flage przyciemnienia
-		Train->DynamicObject->RaLightsSet(Train->DynamicObject->MoverParameters->iLights[0],
-		    Train->DynamicObject->MoverParameters->iLights[1]
-            ); // aktualizacja swiatelek
+		Train->DynamicObject->SetLightDimmings();
     }
 }
 
@@ -5217,10 +5221,7 @@ void TTrain::OnCommand_headlightsdimdisable( TTrain *Train, command_data const &
 
         */
 		Train->DynamicObject->MoverParameters->modernDimmerPosition = 0; // ustawiamy modern dimmer na flage rozjasnienia
-		Train->DynamicObject->RaLightsSet(
-            Train->DynamicObject->MoverParameters->iLights[0],
-            Train->DynamicObject->MoverParameters->iLights[1]
-            ); // aktualizacja swiatelek
+		Train->DynamicObject->SetLightDimmings();
     }
 }
 
