@@ -4435,13 +4435,11 @@ void TTrain::OnCommand_headlighttoggleleft( TTrain *Train, command_data const &C
 
 void TTrain::OnCommand_lightsset(TTrain *Train, command_data const &Command)
 {
-	Train->mvOccupied->iLights[end::front] = Command.param1;
-	Train->mvOccupied->iLights[end::rear] = Command.param2;
-
     // set custom item in Lights inventory
 	Train->mvOccupied->Lights[end::front][17] = Command.param1;
 	Train->mvOccupied->Lights[end::rear][17] = Command.param2;
 	Train->mvOccupied->LightsPos = 18; // nasza custom pozycja
+	Train->Dynamic()->SetLights();
 
 }
 
