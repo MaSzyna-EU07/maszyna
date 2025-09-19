@@ -694,6 +694,7 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState( dictionary_source cons
     dict->insert( "pant_compressor", mvPantographUnit->PantCompFlag );
     dict->insert( "lights_front", mvOccupied->iLights[ end::front ] );
     dict->insert( "lights_rear", mvOccupied->iLights[ end::rear ] );
+	dict->insert("off_from_dimmer", mvOccupied->dimPositions[mvOccupied->modernDimmerPosition].isOff);
     dict->insert( "lights_compartments", mvOccupied->CompartmentLights.is_active || mvOccupied->CompartmentLights.is_disabled );
     if( Dynamic()->Mechanik ) {
         auto const *controller { Dynamic()->Mechanik };
@@ -717,6 +718,7 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState( dictionary_source cons
     dict->insert( "direction", mvOccupied->DirActive );
     // throttle
     dict->insert( "mainctrl_pos", mvControlled->MainCtrlPos );
+    dict->insert( "mainctrl_pos_count", mvControlled->MainCtrlPosNo );
     dict->insert( "main_ctrl_actual_pos", mvControlled->MainCtrlActualPos );
     dict->insert( "scndctrl_pos", mvControlled->ScndCtrlPos );
     dict->insert( "scnd_ctrl_actual_pos", mvControlled->ScndCtrlActualPos );
