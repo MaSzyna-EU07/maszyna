@@ -1126,11 +1126,13 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
                 }
             }
             else {
-                if (TestFlag(MoverParameters->iLights[end::front], light::redmarker_left)) {
+                if (TestFlag(MoverParameters->iLights[end::front], light::redmarker_left) && !HeadlightsAoff) 
+                {
                     m_endsignal13.Turn( true );
                     btnOn = true;
                 }
-                if (TestFlag(MoverParameters->iLights[end::front], light::redmarker_right)) {
+				if (TestFlag(MoverParameters->iLights[end::front], light::redmarker_right) && !HeadlightsAoff)
+				{
                     m_endsignal12.Turn( true );
                     btnOn = true;
                 }
@@ -1142,11 +1144,13 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
                 }
             }
             else {
-                if (TestFlag(MoverParameters->iLights[end::rear], light::redmarker_left)) {
+				if (TestFlag(MoverParameters->iLights[end::rear], light::redmarker_left) && !HeadlightsBoff)
+				{
                     m_endsignal23.Turn( true );
                     btnOn = true;
                 }
-                if (TestFlag(MoverParameters->iLights[end::rear], light::redmarker_right)) {
+				if (TestFlag(MoverParameters->iLights[end::rear], light::redmarker_right) && !HeadlightsBoff)
+				{
                     m_endsignal22.Turn( true );
                     btnOn = true;
                 }
@@ -7398,7 +7402,7 @@ void TDynamicObject::RaLightsSet(int head, int rear)
 					    HeadlightsAoff = true;
                         break;
 				    case end::rear:
-					    HeadlightsAoff = true;
+					    HeadlightsBoff = true;
 					    break;
                     default:
 					    break;
@@ -7412,7 +7416,7 @@ void TDynamicObject::RaLightsSet(int head, int rear)
 					HeadlightsAoff = false;
 					break;
 				case end::rear:
-					HeadlightsAoff = false;
+					HeadlightsBoff = false;
 					break;
 				default:
 					break;
@@ -7462,7 +7466,7 @@ void TDynamicObject::SetLightDimmings()
 				HeadlightsAoff = true;
 				break;
 			case end::rear:
-				HeadlightsAoff = true;
+				HeadlightsBoff = true;
 				break;
 			default:
 				break;
@@ -7476,7 +7480,7 @@ void TDynamicObject::SetLightDimmings()
 				HeadlightsAoff = false;
 				break;
 			case end::rear:
-				HeadlightsAoff = false;
+				HeadlightsBoff = false;
 				break;
 			default:
 				break;
