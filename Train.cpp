@@ -1083,6 +1083,7 @@ void TTrain::OnCommand_aidriverdisable( TTrain *Train, command_data const &Comma
 
     if( Command.action == GLFW_PRESS ) {
         // on press
+
         if( Train->DynamicObject->Mechanik )
             Train->DynamicObject->Mechanik->TakeControl( false );
     }
@@ -2924,6 +2925,11 @@ void TTrain::OnCommand_pantographtoggleselected( TTrain *Train, command_data con
     if( Command.action == GLFW_REPEAT ) { return; }
 
     if( Command.action == GLFW_PRESS ) {
+        // recalculate pantograph state (hujhujhuj)
+		Train->change_pantograph_selection(1);
+		Train->change_pantograph_selection(-1);
+
+
         // only reacting to press, so the switch doesn't flip back and forth if key is held down
         auto const state {
             Train->mvPantographUnit->PantsValve.is_enabled
@@ -9374,7 +9380,7 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
                 parser.getTokens();
                 parser >> ScreenUpdateRate;
             }
-            // btLampkaUnknown.Init("unknown",mdKabina,false);
+            // btLampkaUnknown`"unknown",mdKabina,false);
         } while ( ( token != "" )
 // TODO: enable full per-cab deserialization when/if .mmd files get proper per-cab switch configuration
 //               && ( token != "cab1definition:" )
@@ -9458,7 +9464,11 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
             DynamicObject->mdKabina->Init(); // obrócenie modelu oraz optymalizacja, również zapisanie binarnego
 
         set_cab_controls( NewCabNo < 0 ? 2 : NewCabNo );
-/*
+
+	    // set pantograpths (hujhujhuj)
+	    change_pantograph_selection(0);
+
+	    /*
         return true;
     }
     return (token == "none");
@@ -10063,6 +10073,7 @@ void TTrain::set_cab_controls( int const Cab ) {
                 1.f :
                 0.f ) );
     }
+
     ggPantValvesButton.PutValue( 0.5f );
 
     // auxiliary compressor
