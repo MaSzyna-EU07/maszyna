@@ -7334,7 +7334,9 @@ void TDynamicObject::SetLights() {
     auto const frontlights { automaticmarkers > 0 ? automaticmarkers : MoverParameters->Lights[ front ][ lightpos ] };
     auto const rearlights { automaticmarkers > 0 ? automaticmarkers : MoverParameters->Lights[ rear ][ lightpos ] };
     auto *vehicle { GetFirstDynamic( MoverParameters->CabOccupied >= 0 ? end::front : end::rear, coupling::control ) };
-    while( vehicle != nullptr ) {
+	while (vehicle != nullptr)
+	{
+        if (lightpos == 17) return; // pozycja pythonowa
         // set lights on given side if there's no coupling with another vehicle, turn them off otherwise
         auto const *frontvehicle { ( isfrontcaboccupied ? vehicle->Prev( coupling::coupler ) : vehicle->Next( coupling::coupler ) ) };
         auto const *rearvehicle { ( isfrontcaboccupied ? vehicle->Next( coupling::coupler ) : vehicle->Prev( coupling::coupler ) ) };
