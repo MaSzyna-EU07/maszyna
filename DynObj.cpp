@@ -7396,7 +7396,7 @@ void TDynamicObject::RaLightsSet(int head, int rear)
 				//MoverParameters->iLights[vehicleend] &= 0 | light::rearendsignals; // zostawiamy tylko tabliczki jesli sa
 				HighBeamLights = false;
 				DimHeadlights = false;
-                switch (vehicleend)
+                switch (MoverParameters->CabActive)
                 {
                     case end::front:
 					    HeadlightsAoff = true;
@@ -7410,7 +7410,7 @@ void TDynamicObject::RaLightsSet(int head, int rear)
 			}
             else
             {
-				switch (vehicleend)
+				switch (MoverParameters->CabActive)
 				{
 				case end::front:
 					HeadlightsAoff = false;
