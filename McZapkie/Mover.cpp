@@ -11400,11 +11400,12 @@ void TMoverParameters::LoadFIZ_WiperList(std::string const &Input)
 {
 	extract_value(WiperListSize, "Size", Input, "");
 	extract_value(WiperAngle, "Angle", Input, "");
+	extract_value(WiperDefaultPos, "Default", Input, "");
 }
 
 void TMoverParameters::LoadFIZ_DimmerList(std::string const &Input)
 {
-	extract_value(modernWpierListSize, "Size", Input, "");
+	//extract_value(modernWpierListSize, "Size", Input, "");
 	extract_value(modernDimmerCanCycle, "Cycle", Input, "");
 	extract_value(modernDimmerDefaultPosition, "DefaultPos", Input, "");
 }
@@ -11806,6 +11807,10 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int Dir)
 
     if( LightsPosNo > 0 )
         LightsPos = LightsDefPos;
+
+    // set default wiper switch position
+	wiperSwitchPos = WiperDefaultPos;
+
 	if (CompressorListPosNo > 0)
 		CompressorListPos = CompressorListDefPos;
 
