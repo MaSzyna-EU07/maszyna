@@ -149,7 +149,7 @@ void scenarioloader_ui::render_()
 
 		// Measure header width
 		ImGui::SetWindowFontScale(font_scale_mult * 1.0f);
-		ImVec2 header_size = ImGui::CalcTextSize(STR_C("Did you know..."));
+		ImVec2 header_size = ImGui::CalcTextSize(STR_C("Did you know?"));
 		if (header_size.x > max_width)
 			max_width = header_size.x; // blok musi też pomieścić nagłówek
 
