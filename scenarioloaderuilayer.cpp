@@ -38,7 +38,7 @@ std::vector<std::string> scenarioloader_ui::get_random_trivia()
 		return trivia;
 	}
 	std::string lang = Global.asLang;
-
+	WriteLog("Selected language: " + lang);
 	std::ifstream f("lang/trivia.json");
 	json triviaData = json::parse(f);
 
@@ -56,8 +56,8 @@ std::vector<std::string> scenarioloader_ui::get_random_trivia()
 	}
 
 
-	// select random trivia
-	int i = RandomInt(0, triviaData[lang].size() - 1);
+	// select random 
+	int i = RandomInt(0, static_cast<int>(triviaData[lang].size()) - 1);
 	std::string triviaStr = triviaData[lang][i]["text"];
 	std::string background = triviaData[lang][i]["background"];
 
