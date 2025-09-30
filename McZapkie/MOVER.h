@@ -1387,7 +1387,7 @@ class TMoverParameters
 	int FFEDListSize = 0;
 	TWiperSchemeTable WiperList;
 	int WiperListSize;
-	int WiperDefaultPos;
+	int WiperDefaultPos{0};
 	int modernWpierListSize;
 
 	double Vadd = 1.0;
