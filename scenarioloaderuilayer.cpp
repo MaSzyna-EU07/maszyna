@@ -162,7 +162,7 @@ void scenarioloader_ui::render_()
 
 		// Draw header
 		ImVec2 header_pos(block_left + (max_width - header_size.x) * 0.5f, block_top);
-		draw_list->AddText(header_pos, IM_COL32_WHITE, STR_C("Did you know..."));
+		draw_list->AddText(header_pos, IM_COL32_WHITE, STR_C("Did you know?"));
 
 		// Draw trivia lines
 		ImGui::SetWindowFontScale(font_scale_mult * 0.6f);
