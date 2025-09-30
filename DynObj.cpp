@@ -4178,21 +4178,35 @@ bool TDynamicObject::Update(double dt, double dt1)
 					if (dWiperPos[i] < 1.0 && !wiperDirection[i] && wiperParkTimer[i] > currentWiperParams.interval)
 					// go out
 					{
+                        if (!sWiperFromParkPlayed)
+                        {
+							sWiperFromPark.play(sound_flags::exclusive);
+							sWiperFromParkPlayed = true;
+                        }
 						dWiperPos[i] = std::min(1.0, dWiperPos[i] + (1.f / currentWiperParams.WiperSpeed) * dt1);
 					}
 					if (dWiperPos[i] > 0.0 && wiperDirection[i] && wiperOutTimer[i] > currentWiperParams.outBackDelay)
 					// return back
 					{
+                        if (!sWiperToParkPlayed)
+                        {
+							sWiperToPark.play(sound_flags::exclusive);
+							sWiperToParkPlayed = true;
+                        }
 						dWiperPos[i] = std::max(0.0, dWiperPos[i] - (1.f / currentWiperParams.WiperSpeed) * dt1);
 					}
 					if (dWiperPos[i] == 1.0) // we reached end
 					{
+						sWiperFromPark.stop();
+						sWiperFromParkPlayed = false;
 						wiperParkTimer[i] = 0.0;
 						wiperDirection[i] = true; // switch direction
 					}
 					if (dWiperPos[i] == 0.0)
 					{
 						// when in park position
+                        sWiperToPark.stop();
+						sWiperToParkPlayed = false;
 						wiperOutTimer[i] = 0.0;
 						wiperDirection[i] = false;
 						workingSwitchPos[i] = MoverParameters->wiperSwitchPos; // update configuration
@@ -6738,12 +6752,12 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                 }
 
                 // dzwieki wycieraczkuf
-                else if (token == "wiperFromPark:")
+                else if (token == "wiperfrompark:")
                 {
 					sWiperFromPark.deserialize(parser, sound_type::single);
 					sWiperFromPark.owner(this);  
                 }
-				else if (token == "wiperToPark:")
+				else if (token == "wipertopark:")
 				{
 					sWiperToPark.deserialize(parser, sound_type::single);
 					sWiperToPark.owner(this);  

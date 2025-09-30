@@ -547,7 +547,10 @@ private:
     sound_source rsSlippery { sound_placement::external, EU07_SOUND_BRAKINGCUTOFFRANGE }; // moved from cab
     sound_source sSand { sound_placement::external };
     sound_source sWiperToPark { sound_placement::internal };
+	bool sWiperToParkPlayed{false};
     sound_source sWiperFromPark { sound_placement::internal };
+	bool sWiperFromParkPlayed{false};
+
     // moving part and other external sounds
     sound_source m_startjolt { sound_placement::general }; // movement start jolt, played once on initial acceleration at slow enough speed
     bool m_startjoltplayed { false };
