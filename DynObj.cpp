@@ -7350,8 +7350,15 @@ void TDynamicObject::SetLights() {
     auto *vehicle { GetFirstDynamic( MoverParameters->CabOccupied >= 0 ? end::front : end::rear, coupling::control ) };
     while( vehicle != nullptr ) {
         // set lights on given side if there's no coupling with another vehicle, turn them off otherwise
-        auto const *frontvehicle { ( isfrontcaboccupied ? vehicle->Prev( coupling::coupler ) : vehicle->Next( coupling::coupler ) ) };
-        auto const *rearvehicle { ( isfrontcaboccupied ? vehicle->Next( coupling::coupler ) : vehicle->Prev( coupling::coupler ) ) };
+		auto const *frontvehicle{(isfrontcaboccupied ? vehicle->Prev(coupling::coupler) : vehicle->Next(coupling::coupler))};
+		auto const *rearvehicle{(isfrontcaboccupied ? vehicle->Next(coupling::coupler) : vehicle->Prev(coupling::coupler))};
+
+        if (MoverParameters->LightsPos == 18)
+		{
+			frontvehicle = nullptr;
+			rearvehicle = nullptr;
+		}
+
         vehicle->RaLightsSet(
             ( frontvehicle == nullptr ? frontlights : 0 ),
             ( rearvehicle == nullptr ? rearlights : 0 ) );
