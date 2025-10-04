@@ -37,6 +37,7 @@ struct scratch_data {
     struct binary_data {
 
         bool terrain{ false };
+		bool terrain_included{false};
     } binary;
 
     struct location_data {
@@ -59,6 +60,8 @@ struct scratch_data {
     } trainset;
 
     std::string name;
+    std::string terrain_name;
+
     bool initialized { false };
 	bool time_initialized { false };
 };
