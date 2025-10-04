@@ -58,12 +58,12 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 	if (false != state->scratchpad.binary.terrain)
 	{
 		Global.file_binary_terrain_state = true;
-		WriteLog("SBT present");
+		WriteLog("Default SBT present");
     }
 	else
 	{
 		Global.file_binary_terrain_state = false;
-		WriteLog("SBT absent");
+		WriteLog("Default SBT absent");
     }
     scene::Groups.create();
 
@@ -366,10 +366,6 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
 		{
 			Region->deserialize(Scratchpad.name);
 		}
-		else
-		{
-			Region->deserialize(Scratchpad.terrain_name);
-        }
 			
     }
 
@@ -751,12 +747,13 @@ state_serializer::deserialize_terrain(cParser &Input, scene::scratch_data &Scrat
 	Input >> line;
 	if ((true == Global.file_binary_terrain) && (true == ends_with(line, ".sbt")))
 	{  
-
-		WriteLog("SBT included");
+        Scratchpad.binary.terrain = Region->is_scene(line);
 		Global.file_binary_terrain_state = true;
 		Scratchpad.binary.terrain_included = true;
 		Scratchpad.terrain_name = line;
-		WriteLog("SBT present");
+		WriteLog("Included SBT file: " + line);
+		Region->deserialize(Scratchpad.terrain_name);
+
     }
 
     skip_until(Input, "endterrain");
