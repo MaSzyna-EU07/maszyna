@@ -79,6 +79,18 @@ std::mutex logMutex;
 
 void LogService()
 {
+	// prevent crash if mutex is not initialized
+	while (true)
+	{
+		try
+		{
+			logMutex.lock();
+			break;
+		}
+		catch (...) {}
+	}
+	logMutex.unlock();
+
 	while (!Global.applicationQuitOrder)
 	{
 		{
