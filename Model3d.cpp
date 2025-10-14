@@ -2246,13 +2246,20 @@ void TModel3d::LoadFromBinFile(std::string const &FileName, bool dynamic)
 	uint32_t type = sn_utils::ld_uint32(file);
 	uint32_t size = sn_utils::ld_uint32(file) - 8;
 
-	if (type != MAKE_ID4('E', '3', 'D', '0'))
-		throw std::runtime_error("e3d: unknown main chunk");
+    if (type == MAKE_ID4('E', '3', 'D', '0'))
+    {
+		deserialize(file, size, dynamic);
+		file.close();
 
-	deserialize(file, size, dynamic);
-	file.close();
+		WriteLog("Finished loading 3d model data from \"" + FileName + "\"", logtype::model);
+    }
+    else
+    {
+		//throw std::runtime_error("e3d: unknown main chunk");
+		ErrorLog("Bad model: unknown main chunk in file \"" + FileName + "\"", logtype::model);
+		file.close();
+    }
 
-    WriteLog( "Finished loading 3d model data from \"" + FileName + "\"", logtype::model );
 };
 
 TSubModel* TModel3d::AppendChildFromGeometry(const std::string &name, const std::string &parent, const gfx::vertex_array &vertices, const gfx::index_array &indices)
