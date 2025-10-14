@@ -505,9 +505,13 @@ void ui_layer::render_background()
     tex.create();
 
     // Get the scaling factor based on the image aspect ratio vs. the display aspect ratio.
-    float scale_factor = (tex.get_width() / tex.get_height()) > (display_size.x / display_size.y)
+    //float scale_factor = (tex.get_width() / tex.get_height()) > (display_size.x / display_size.y)
+    //    ? display_size.y / tex.get_height()
+    //    : display_size.x / tex.get_width();
+	float scale_factor = (tex.get_width() / tex.get_height()) < (display_size.x / display_size.y) 
         ? display_size.y / tex.get_height()
         : display_size.x / tex.get_width();
+
     
     // Resize the image to fill the display. This will zoom in on the image on ultrawide monitors.
     image_size = ImVec2((int)(tex.get_width() * scale_factor), (int)(tex.get_height() * scale_factor));
