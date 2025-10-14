@@ -253,17 +253,18 @@ std::string cParser::readToken( bool ToLower, const char *Break ) {
 		{
 			if (false == contains(includefile, "_ter.scm"))
 			{
-			if (Global.ParserLogIncludes)
-            //WriteLog("including: " + includefile);
-            mIncludeParser = std::make_shared<cParser>( includefile, buffer_FILE, mPath, LoadTraction, readParameters( *this ) );
-			mIncludeParser->allowRandomIncludes = allowRandomIncludes;
-            mIncludeParser->autoclear( m_autoclear );
-            if( mIncludeParser->mSize <= 0 ) {
-                ErrorLog( "Bad include: can't open file \"" + includefile + "\"" );
-            }
+				if (Global.ParserLogIncludes) {
+					// WriteLog("including: " + includefile);
+				}
+				mIncludeParser = std::make_shared<cParser>(includefile, buffer_FILE, mPath, LoadTraction, readParameters(*this));
+				mIncludeParser->allowRandomIncludes = allowRandomIncludes;
+				mIncludeParser->autoclear(m_autoclear);
+				if (mIncludeParser->mSize <= 0) {
+					ErrorLog("Bad include: can't open file \"" + includefile + "\"");
+				}
 			}
 			else
-			{				
+			{
 				if(true == Global.file_binary_terrain_state)
 				{
 					WriteLog("SBT found, ignoring: " + includefile);
@@ -271,8 +272,9 @@ std::string cParser::readToken( bool ToLower, const char *Break ) {
 				}
 				else
 				{
-					if (Global.ParserLogIncludes)
+					if (Global.ParserLogIncludes) {
 						WriteLog("including terrain: " + includefile);
+					}
 					mIncludeParser = std::make_shared<cParser>(includefile, buffer_FILE, mPath,
 					                                           LoadTraction, readParameters(*this));
 					mIncludeParser->allowRandomIncludes = allowRandomIncludes;
@@ -301,8 +303,9 @@ std::string cParser::readToken( bool ToLower, const char *Break ) {
 		{
 			if (false == contains(includefile, "_ter.scm"))
 			{
-				if (Global.ParserLogIncludes)
-					//WriteLog("including: " + includefile);
+				if (Global.ParserLogIncludes) {
+					// WriteLog("including: " + includefile);
+				}
 				mIncludeParser = std::make_shared<cParser>(
 				    includefile, buffer_FILE, mPath, LoadTraction, readParameters(includeparser));
 				mIncludeParser->allowRandomIncludes = allowRandomIncludes;
@@ -321,8 +324,9 @@ std::string cParser::readToken( bool ToLower, const char *Break ) {
 				}
 				else
 				{
-					 if (Global.ParserLogIncludes)
-					WriteLog("including terrain: " + includefile);
+					if (Global.ParserLogIncludes) {
+						WriteLog("including terrain: " + includefile);
+					}
 					mIncludeParser =
 					    std::make_shared<cParser>(includefile, buffer_FILE, mPath, LoadTraction,
 					                              readParameters(includeparser));
