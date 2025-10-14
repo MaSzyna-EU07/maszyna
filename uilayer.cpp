@@ -493,31 +493,25 @@ void ui_layer::render_menu()
 
 void ui_layer::render_background()
 {
-    if (m_background == 0)
-        return;
+	if (m_background == 0)
+		return;
 
-    ImVec2 display_size = ImGui::GetIO().DisplaySize;
-    ImVec2 image_size;
-    ImVec2 start_position;
-    ImVec2 end_position;
+	ImVec2 display_size = ImGui::GetIO().DisplaySize;
+	ITexture &tex = GfxRenderer->Texture(m_background);
+	tex.create();
 
-    ITexture &tex = GfxRenderer->Texture(m_background);
-    tex.create();
+	float tex_w = (float)tex.get_width();
+	float tex_h = (float)tex.get_height();
 
-    // Get the scaling factor based on the image aspect ratio vs. the display aspect ratio.
-    //float scale_factor = (tex.get_width() / tex.get_height()) > (display_size.x / display_size.y)
-    //    ? display_size.y / tex.get_height()
-    //    : display_size.x / tex.get_width();
-	float scale_factor = (tex.get_width() / tex.get_height()) < (display_size.x / display_size.y) 
-        ? display_size.y / tex.get_height()
-        : display_size.x / tex.get_width();
+	// skalowanie "cover" – wypełnia cały ekran, zachowując proporcje
+	float scale_factor = (display_size.x / display_size.y) > (tex_w / tex_h) ? display_size.x / tex_w : display_size.y / tex_h;
 
-    
-    // Resize the image to fill the display. This will zoom in on the image on ultrawide monitors.
-    image_size = ImVec2((int)(tex.get_width() * scale_factor), (int)(tex.get_height() * scale_factor));
-    // Center the image on the display.
-    start_position = ImVec2((display_size.x - image_size.x) / 2, (display_size.y - image_size.y) / 2);
-    end_position = ImVec2(image_size.x + start_position.x, image_size.y + start_position.y);
-    // The image is flipped upside-down, we'll use the UV parameters to draw it from bottom up to un-flip it.
-    ImGui::GetBackgroundDrawList()->AddImage(reinterpret_cast<ImTextureID>(tex.get_id()), start_position, end_position, ImVec2(0, 1), ImVec2(1, 0));
+	ImVec2 image_size(tex_w * scale_factor, tex_h * scale_factor);
+
+	// wyśrodkowanie obrazka
+	ImVec2 start_position((display_size.x - image_size.x) * 0.5f, (display_size.y - image_size.y) * 0.5f);
+	ImVec2 end_position(start_position.x + image_size.x, start_position.y + image_size.y);
+
+	// obrazek jest odwrócony w pionie – odwracamy UV
+	ImGui::GetBackgroundDrawList()->AddImage(reinterpret_cast<ImTextureID>(tex.get_id()), start_position, end_position, ImVec2(0, 1), ImVec2(1, 0));
 }
