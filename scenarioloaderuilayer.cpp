@@ -115,7 +115,7 @@ void scenarioloader_ui::render_()
 	                icon_center_y - text_size.y * 0.5f);
 
 	// Draw
-	draw_list->AddImage(reinterpret_cast<ImTextureID>(loading_tex), icon_pos, ImVec2(icon_pos.x + loading_size.x, icon_pos.y + loading_size.y), ImVec2(0, 0), ImVec2(1, 1));
+	//draw_list->AddImage(reinterpret_cast<ImTextureID>(loading_tex), icon_pos, ImVec2(icon_pos.x + loading_size.x, icon_pos.y + loading_size.y), ImVec2(0, 0), ImVec2(1, 1));
 	draw_list->AddText(text_pos, IM_COL32_WHITE, m_progresstext.c_str());
 
 	// Trivia 
