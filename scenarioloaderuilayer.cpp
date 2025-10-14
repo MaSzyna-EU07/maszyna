@@ -32,34 +32,24 @@ std::vector<std::string> scenarioloader_ui::get_random_trivia()
 	WriteLog("Loading random trivia...");
 	std::vector<std::string> trivia = std::vector<std::string>();
 
-	if (!FileExists("lang/trivia.json"))
+	if (!FileExists("lang/trivia_" + Global.asLang + ".json") 
+		&& !FileExists("lang/trivia_en.json"))
 	{
-		ErrorLog("File lang/trivia.json not found!");
+		ErrorLog("Trivia file not found!");
 		return trivia;
 	}
-	std::string lang = Global.asLang;
-	WriteLog("Selected language: " + lang);
-	std::ifstream f("lang/trivia.json");
+
+	std::string triviaFile = FileExists("lang/trivia_" + Global.asLang + ".json") ? "lang/trivia_" + Global.asLang + ".json" : "lang/trivia_en.json";
+
+	//std::string lang = Global.asLang;
+	WriteLog("Selected language: " + Global.asLang);
+	std::ifstream f(triviaFile);
 	json triviaData = json::parse(f);
 
-	// check if lang set exists
-	if (triviaData.find(lang) == triviaData.end())
-	{
-		ErrorLog("No trivia found for language \"" + lang + "\", falling back to English.");
-		lang = "en";
-	}
-
-	if (triviaData[lang].empty())
-	{
-		ErrorLog("No trivia entries found for language \"" + lang + "\".");
-		return trivia;
-	}
-
-
 	// select random 
-	int i = RandomInt(0, static_cast<int>(triviaData[lang].size()) - 1);
-	std::string triviaStr = triviaData[lang][i]["text"];
-	std::string background = triviaData[lang][i]["background"];
+	int i = RandomInt(0, static_cast<int>(triviaData.size()) - 1);
+	std::string triviaStr = triviaData[i]["text"];
+	std::string background = triviaData[i]["background"];
 
 	// divide trivia into multiple lines
 	const int max_line_length = 100;
