@@ -516,6 +516,9 @@ private:
     std::vector<axle_sounds> m_axlesounds;
     // engine sounds
     powertrain_sounds m_powertrainsounds;
+    sound_source sDirectionRelayD { sound_placement::engine }; // przekaznik kierunkowy do przodu
+    sound_source sDirectionRelayN { sound_placement::engine }; // przekaznik kierunkowy neutral
+    sound_source sDirectionRelayR { sound_placement::engine }; // przekaznik kierunkowy wstecz
     sound_source sConverter { sound_placement::engine };
 	sound_source sBRVent {sound_placement::engine};
     sound_source sCompressor { sound_placement::engine }; // NBMX wrzesien 2003

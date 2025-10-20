@@ -164,6 +164,10 @@ class TTrain {
         return m_controlmapper.find( Control ); }
     void UpdateCab();
     bool Update( double const Deltatime );
+	void UpdateDirectionRelays();
+	void SetupDirectionRelays();
+	bool prevBatState = false;
+	int prevDirection = 0;
     void add_distance( double const Distance );
     // McZapkie-310302: ladowanie parametrow z pliku
     bool LoadMMediaFile(std::string const &asFileName);

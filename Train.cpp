@@ -8476,11 +8476,44 @@ bool TTrain::Update( double const Deltatime )
     if (!FreeFlyModeFlag && simulation::Train == this) // don't bother if we're outside
         update_screens(Deltatime);
 
+    // update direction relay
+	if (prevBatState != mvOccupied->Power24vIsAvailable)
+        SetupDirectionRelays();
+	if (prevDirection != mvOccupied->DirActive)
+		UpdateDirectionRelays();
+
+    prevBatState = mvOccupied->Power24vIsAvailable;
+	prevDirection = mvOccupied->DirActive;
+
+
+
+
     // sounds
     update_sounds( Deltatime );
 
     return true; //(DynamicObject->Update(dt));
 } // koniec update
+
+void TTrain::UpdateDirectionRelays() {
+	if (mvOccupied->DirActive < 0 && mvOccupied->Power24vIsAvailable) // wstecz
+		Dynamic()->sDirectionRelayR.play();
+	if (mvOccupied->DirActive == 0 && mvOccupied->Power24vIsAvailable) // neutral
+		Dynamic()->sDirectionRelayN.play();
+	if (mvOccupied->DirActive > 0 && mvOccupied->Power24vIsAvailable) // przod
+		Dynamic()->sDirectionRelayD.play();
+}
+
+void TTrain::SetupDirectionRelays() {
+    if (mvOccupied->Power24vIsAvailable)
+    {
+		if (mvOccupied->DirActive < 0 && mvOccupied->Power24vIsAvailable) // wstecz
+			Dynamic()->sDirectionRelayR.play();
+		if (mvOccupied->DirActive > 0 && mvOccupied->Power24vIsAvailable) // przod
+			Dynamic()->sDirectionRelayD.play();
+    }
+	else if (mvOccupied->DirActive != 0)  // neutral
+		Dynamic()->sDirectionRelayN.play();
+}
 
 void
 TTrain::update_sounds( double const Deltatime ) {
