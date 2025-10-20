@@ -58,12 +58,12 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 	if (false != state->scratchpad.binary.terrain)
 	{
 		Global.file_binary_terrain_state = true;
-		WriteLog("SBT present");
+		WriteLog("Default SBT present");
     }
 	else
 	{
 		Global.file_binary_terrain_state = false;
-		WriteLog("SBT absent");
+		WriteLog("Default SBT absent");
     }
     scene::Groups.create();
 
@@ -98,6 +98,7 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 	            { "test",        &state_serializer::deserialize_test },
 	            { "time",        &state_serializer::deserialize_time },
 	            { "trainset",    &state_serializer::deserialize_trainset },
+	            { "terrain",     &state_serializer::deserialize_terrain },
 	            { "endtrainset", &state_serializer::deserialize_endtrainset } };
 
 	for( auto &function : functionlist ) {
@@ -361,7 +362,11 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
     if( true == Scratchpad.binary.terrain ) {
         // at this stage it should be safe to import terrain from the binary scene file
         // TBD: postpone loading furter and only load required blocks during the simulation?
-        Region->deserialize( Scratchpad.name );
+		if (false == Scratchpad.binary.terrain_included)
+		{
+			Region->deserialize(Scratchpad.name);
+		}
+			
     }
 
     simulation::Paths.InitTracks();
@@ -732,6 +737,27 @@ state_serializer::deserialize_trainset( cParser &Input, scene::scratch_data &Scr
         >> Scratchpad.trainset.track
         >> Scratchpad.trainset.offset
         >> Scratchpad.trainset.velocity;
+}
+
+void 
+state_serializer::deserialize_terrain(cParser &Input, scene::scratch_data &Scratchpad)
+{
+	std::string line;
+	Input.getTokens(1);
+	Input >> line;
+	if ((true == Global.file_binary_terrain) && (true == ends_with(line, ".sbt")))
+	{  
+        Scratchpad.binary.terrain = Region->is_scene(line);
+		Global.file_binary_terrain_state = true;
+		Scratchpad.binary.terrain_included = true;
+		Scratchpad.terrain_name = line;
+		WriteLog("Included SBT file: " + line);
+		Region->deserialize(Scratchpad.terrain_name);
+
+    }
+
+    skip_until(Input, "endterrain");
+	
 }
 
 void
