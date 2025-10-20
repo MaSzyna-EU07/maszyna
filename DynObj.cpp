@@ -6790,6 +6790,23 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                     m_powertrainsounds.dsbWejscie_na_bezoporow.deserialize( parser, sound_type::single );
                     m_powertrainsounds.dsbWejscie_na_bezoporow.owner( this );
                 }
+                // przekazniki od kierunku jazdy
+                else if (token == "directionrelay_d:") {
+                    // przekaznik od kierunku jazdy do przodu
+					sDirectionRelayD.deserialize(parser, sound_type::single);
+                    sDirectionRelayD.owner(this);
+                }
+                else if (token == "directionrelay_r:") {
+					// przekaznik od kierunku jazdy do tylu
+					sDirectionRelayR.deserialize(parser, sound_type::single);
+					sDirectionRelayR.owner(this);
+                }
+				else if (token == "directionrelay_n:")
+				{
+					// przekaznik od kierunku jazdy do tylu
+					sDirectionRelayN.deserialize(parser, sound_type::single);
+					sDirectionRelayN.owner(this);
+				}
                 else if( token == "wejscie_na_drugi_uklad:" ) {
                     m_powertrainsounds.motor_parallel.deserialize( parser, sound_type::single );
                     m_powertrainsounds.motor_parallel.owner( this );
