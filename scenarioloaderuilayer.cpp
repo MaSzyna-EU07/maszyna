@@ -90,8 +90,11 @@ void scenarioloader_ui::render_()
 	const float font_scale_mult = 48 / ImGui::GetFontSize();
 	
 	// Gradient at the lower half of the screen
-	const auto tex = reinterpret_cast<ImTextureID>(m_gradient_overlay_tex);
-	draw_list->AddImage(tex, ImVec2(0, Global.window_size.y / 2), ImVec2(Global.window_size.x, Global.window_size.y), ImVec2(0, 0), ImVec2(1, 1));
+	if (!Global.NvRenderer)
+	{
+		const auto tex = reinterpret_cast<ImTextureID>(m_gradient_overlay_tex);
+		draw_list->AddImage(tex, ImVec2(0, Global.window_size.y / 2), ImVec2(Global.window_size.x, Global.window_size.y), ImVec2(0, 0), ImVec2(1, 1));
+	}
 	
 	// [O] Loading...
 	const float margin_left_icon = 35.0f;
@@ -175,6 +178,8 @@ void scenarioloader_ui::render_()
 
 void scenarioloader_ui::generate_gradient_tex()
 {
+	if (Global.NvRenderer)
+		return;
 	constexpr int image_width = 1;
 	constexpr int image_height = 256;
 	const auto image_data = new char[image_width * image_height * 4];
