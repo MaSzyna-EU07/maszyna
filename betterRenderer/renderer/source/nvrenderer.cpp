@@ -92,8 +92,12 @@ bool NvRenderer::Init(GLFWwindow *Window) {
   m_fsr = std::make_shared<NvFSR>(this);
   m_bloom = std::make_shared<Bloom>(GetBackend());
 
-  m_gbuffer->Init(Global.gfx_framebuffer_width, Global.gfx_framebuffer_height,
-                  false, false, false);
+  // protect from undefined framebuffer size in ini (default -1)
+  int w = Global.gfx_framebuffer_width, h = Global.gfx_framebuffer_height;
+  if (w < 0) w = Global.window_size.x;
+  if (h < 0) h = Global.window_size.y;
+
+  m_gbuffer->Init(w, h, false, false, false);
   m_contact_shadows->Init();
   m_shadow_map->Init();
   m_gbuffer_cube->Init(512, 512, true, false, false);
