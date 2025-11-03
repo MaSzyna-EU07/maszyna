@@ -186,13 +186,32 @@ uart_input::~uart_input()
     sp_free_port(port);
 }
 
+namespace fs = std::filesystem;
+
 bool
 uart_input::recall_bindings() {
 
     m_inputbindings.clear();
+	std::string filePath = "eu07_input-uart.ini";
 
-    cParser bindingparser( "eu07_input-uart.ini", cParser::buffer_FILE );
-    if( false == bindingparser.ok() ) {
+#ifdef _WIN32
+	if (const char *appdata = std::getenv("APPDATA"))
+	{
+		fs::path appPath = fs::path(appdata) / "MaSzyna" / "Config" / "eu07_input-uart.ini";
+		if (fs::exists(appPath))
+			filePath = appPath.string();
+	}
+#else
+	if (const char *home = std::getenv("HOME"))
+	{
+		fs::path appPath = fs::path(home) / ".config" / "MaSzyna" / "eu07_input-uart.ini";
+		if (fs::exists(appPath))
+			filePath = appPath.string();
+	}
+#endif
+	cParser bindingparser(filePath.c_str(), cParser::buffer_FILE);
+	if (false == bindingparser.ok())
+	{
         return false;
     }
 

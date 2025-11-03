@@ -117,12 +117,38 @@ std::unordered_map<int, std::string> keyboard_input::keytonamemap =
     { GLFW_KEY_PAGE_UP, "page_up" },
     { GLFW_KEY_PAGE_DOWN, "page_down" },
 };
+namespace fs = std::filesystem;
 
 bool
 keyboard_input::recall_bindings() {
 
-    cParser bindingparser( "eu07_input-keyboard.ini", cParser::buffer_FILE );
-    bindingparser.skipComments = false;
+    fs::path iniPath;
+	std::string path = "";
+#ifdef _WIN32
+	if (const char *appdata = std::getenv("APPDATA"))
+	{
+		iniPath = fs::path(appdata) / "MaSzyna" / "Config" / "eu07_input-keyboard.ini";
+	}
+#else
+	if (const char *home = std::getenv("HOME"))
+	{
+		iniPath = fs::path(home) / ".config" / "MaSzyna" / "eu07_input-keyboard.ini";
+	}
+#endif
+
+	if (!iniPath.empty() && fs::exists(iniPath))
+	{
+		// Plik istnieje w AppData / ~/.config
+		path = iniPath.string().c_str();
+	}
+	else
+	{
+		// Fallback – plik w folderze symulatora
+		path = "eu07_input-keyboard.ini";
+	}
+	cParser bindingparser(path.c_str(), cParser::buffer_FILE);
+
+	bindingparser.skipComments = false;
     if( false == bindingparser.ok() ) {
         return false;
     }

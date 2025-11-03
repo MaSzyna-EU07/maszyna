@@ -150,10 +150,31 @@ gamepad_input::bind( std::vector< std::reference_wrapper<user_command> > &Target
     }
 }
 
+namespace fs = std::filesystem;
+
 bool
 gamepad_input::recall_bindings() {
+	std::string filePath = "eu07_input-gamepad.ini";
 
-    cParser bindingparser( "eu07_input-gamepad.ini", cParser::buffer_FILE );
+#ifdef _WIN32
+	if (const char *appdata = std::getenv("APPDATA"))
+	{
+		fs::path appPath = fs::path(appdata) / "MaSzyna" / "Config" / "eu07_input-gamepad.ini";
+		if (fs::exists(appPath))
+			filePath = appPath.string();
+	}
+#else
+	if (const char *home = std::getenv("HOME"))
+	{
+		fs::path appPath = fs::path(home) / ".config" / "MaSzyna" / "eu07_input-gamepad.ini";
+		if (fs::exists(appPath))
+			filePath = appPath.string();
+	}
+#endif
+
+	// bindingparser tworzony zawsze, z wybran¹ œcie¿k¹
+	cParser bindingparser(filePath.c_str(), cParser::buffer_FILE);
+
     if( false == bindingparser.ok() ) {
         return false;
     }
