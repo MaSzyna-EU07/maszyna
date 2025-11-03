@@ -23,21 +23,29 @@ float calc_shadow()
 	for (cascade = 0U; cascade < MAX_CASCADES; cascade++)
 		if (distance <= cascade_end[cascade])
 			break;
-
+	float dist_casc = distance / cascade_end[cascade];
 	vec3 coords = f_light_pos[cascade].xyz / f_light_pos[cascade].w;
-	if (coords.z < 0.0f)
+	if (coords.z < 0.0)
 		return 0.0f;
+		
+		
 
 	float shadow = 0.0;
-	//basic
-//	shadow = texture(shadowmap, coords.xyz + vec3(0.0, 0.0, bias));
-	//PCF
 	float bias = 0.00005f * float(cascade + 1U);
 	vec2 texel = vec2(1.0) / vec2(textureSize(shadowmap, 0));
+	//float radius = 1.0; f_light_pos[cascade].w; //0.5 + 2.0 * max(abs(2.0 * coords.x - 1.0), abs(2.0 * coords.y - 1.0));
 	float radius = 1.0;
+	float minradius = 0.0;
+	if (cascade == 0U)
+		minradius = 1.0;
+	if (cascade < MAX_CASCADES - 1U)
+		radius = mix(minradius, f_light_pos[cascade+1U].w/f_light_pos[cascade].w, dist_casc);
+	else
+		radius = 0.5;
+	
 	for (float y = -1.5; y <= 1.5; y += 1.0)
 		for (float x = -1.5; x <= 1.5; x += 1.0)
-			shadow += texture( shadowmap, vec4(coords.xy + vec2(x, y) * radius * texel, cascade, coords.z + bias) );
+			shadow += texture(shadowmap, vec4(coords.xy + vec2(x, y) * radius * texel, cascade, coords.z + bias) );
 	shadow /= 16.0;
 
 	return shadow;
@@ -65,7 +73,8 @@ vec2 calc_point_light(light_s light, vec3 fragnormal)
 	val *= light.intensity;
 	
 	float distance = length(light.pos - f_pos.xyz);
-	float atten = 1.0f / (1.0f + light.linear * distance + light.quadratic * (distance * distance));
+	float atten = 1.0f / (distance * distance);
+	//float atten = 1.0f / (1.0f + light.linear * distance + light.quadratic * (distance * distance));
 	
 	return val * atten;
 }
@@ -135,10 +144,15 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
 //	fragcolor *= lights[0].intensity;
 	vec2 sunlight = calc_dir_light(lights[0], fragnormal);
 
-	float diffuseamount = (sunlight.x * param[1].x) * lights[0].intensity;
+	float diffuseamount = (sunlight.x * param[1].x) * lights[0].intensity; 
 //	fragcolor += mix(lights[0].color * diffuseamount, envcolor, reflectivity);
-	fragcolor += lights[0].color * diffuseamount;
-	fragcolor = mix(fragcolor, envcolor, reflectivity);
+	float shadow1 = 0.0;
+	if (shadowtone < 1.0)
+	{
+		shadow1 = (1 - shadowtone) * clamp(calc_shadow(), 0.0, 1.00);
+	}
+	fragcolor += lights[0].color * 5.0 * (1.0 - shadow1) * diffuseamount;
+	fragcolor = mix(fragcolor * 0.35, envcolor, reflectivity);
 
 	for (uint i = 1U; i < lights_count; i++)
 	{
@@ -160,9 +174,9 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
 	float specularamount = (sunlight.y * param[1].y * specularity) * lights[0].intensity * clamp(1.0 - shadowtone, 0.0, 1.0);
 	if (shadowtone < 1.0)
 	{
-		float shadow = calc_shadow();
-		specularamount *= clamp(1.0 - shadow, 0.0, 1.0);
-		fragcolor = mix(fragcolor,  fragcolor * shadowtone,  clamp(diffuseamount * shadow + specularamount, 0.0, 1.0));
+		//float shadow = calc_shadow();
+		specularamount *= clamp(1.0 - shadow1, 0.0, 1.00);
+		//fragcolor = mix(fragcolor,  fragcolor * shadowtone,  clamp((diffuseamount) * shadow1 , 0.0, 1.0));
 	}
 	fragcolor += emissioncolor;
 	vec3 specularcolor = specularamount * lights[0].color;
