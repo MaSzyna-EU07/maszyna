@@ -896,12 +896,34 @@ eu07_application::init_files() {
 	mkdir("logs", 0755);
 #endif
 }
+namespace fs = std::filesystem;
 
 int
 eu07_application::init_settings( int Argc, char *Argv[] ) {
     Global.asVersion = VERSION_INFO;
 
-    Global.LoadIniFile( "eu07.ini" );
+        fs::path iniPath;
+
+#ifdef _WIN32
+	if (const char *appdata = std::getenv("APPDATA"))
+	{
+		iniPath = fs::path(appdata) / "MaSzyna" / "Config" / "eu07.ini";
+	}
+#else
+	if (const char *home = std::getenv("HOME"))
+	{
+		iniPath = fs::path(home) / ".config" / "MaSzyna" / "eu07.ini";
+	}
+#endif
+
+	if (!iniPath.empty() && fs::exists(iniPath))
+	{
+		Global.LoadIniFile(iniPath.string().c_str());
+	}
+	else
+	{
+		Global.LoadIniFile("eu07.ini");
+	}
 
     // process command line arguments
     for( int i = 1; i < Argc; ++i ) {
