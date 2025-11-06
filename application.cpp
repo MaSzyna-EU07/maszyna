@@ -907,7 +907,7 @@ eu07_application::init_settings( int Argc, char *Argv[] ) {
 #ifdef _WIN32
 	if (const char *appdata = std::getenv("APPDATA"))
 	{
-		iniPath = fs::path(appdata) / "MaSzyna" / "Config" / "eu07.ini";
+		iniPath = fs::path(appdata) / "MaSzyna" / "eu07.ini";
 	}
 #else
 	if (const char *home = std::getenv("HOME"))
