@@ -55,7 +55,6 @@ http://mozilla.org/MPL/2.0/.
 
 eu07_application Application;
 screenshot_manager screenshot_man;
-
 ui_layer uilayerstaticinitializer;
 
 #ifdef _WIN32
@@ -581,6 +580,9 @@ eu07_application::run() {
             std::this_thread::sleep_for( Global.minframetime - frametime );
         }
     }
+	Global.applicationQuitOrder = true;
+	Global.threads["DiscordRPC"].join(); // wait for DiscordRPC thread to finish
+    Global.threads["LogService"].join(); // wait for logging thread to finish
 	return 0;
 }
 
