@@ -239,7 +239,7 @@ void CS_CullLights(in ComputeShaderInput input) {
     bool is_opaque = false;
     
     if(light.m_cos_outer < -1.5) {
-      while(dist < maxDist) {
+      for(int i = 0; i < 100 && dist < maxDist; ++i) {
         float3 ro = dist * rd;
         float distance = sdSphere(ro - lightPosVS, light.m_radius);
         if(distance <= dist * tan_angle) {
@@ -252,7 +252,7 @@ void CS_CullLights(in ComputeShaderInput input) {
 
       if(!is_opaque) {
         dist = minDistOpaque - 1.e-2;
-        while(dist < maxDist) {
+        for(int i = 0; i < 100 && dist < maxDist; ++i) {
           float3 ro = dist * rd;
           float distance = sdSphere(ro - lightPosVS, light.m_radius);
           if(distance <= dist * tan_angle) {
@@ -271,7 +271,7 @@ void CS_CullLights(in ComputeShaderInput input) {
       float3x3 transform = {tang, lightDirVS, bitang};
 
       float2 angle = {sqrt(1. - light.m_cos_outer * light.m_cos_outer), light.m_cos_outer};
-      while(dist < maxDist) {
+      for(int i = 0; i < 100 && dist < maxDist; ++i) {
         float3 ro = dist * rd;
         float distance = sdSolidAngle(mul(transform, ro - lightPosVS), angle, light.m_radius);
         if(distance <= dist * tan_angle) {
@@ -284,7 +284,7 @@ void CS_CullLights(in ComputeShaderInput input) {
 
       if(!is_opaque) {
         dist = minDistOpaque - 1.e-2;
-        while(dist < maxDist) {
+        for(int i = 0; i < 100 && dist < maxDist; ++i) {
           float3 ro = dist * rd;
           float distance = sdSolidAngle(mul(transform, ro - lightPosVS), angle, light.m_radius);
           if(distance <= dist * tan_angle) {

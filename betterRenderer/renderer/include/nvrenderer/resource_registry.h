@@ -14,18 +14,16 @@ struct MaResourceMapping {
   entt::hashed_string m_key;
   nvrhi::ResourceType m_type;
 
-#define MA_RESOURCE_MAPPING_INITIALIZER(type)                   \
-  template <typename KeyType>                                   \
-  static MaResourceMapping type(int slot, const KeyType& key) { \
-    MaResourceMapping mapping{};                                \
-    mapping.m_slot = slot;                                      \
-    mapping.m_key = static_cast<entt::hashed_string>(key);      \
-    mapping.m_type = nvrhi::ResourceType::type;                 \
-    return mapping;                                             \
+#define MA_RESOURCE_MAPPING_INITIALIZER(type)                \
+  static MaResourceMapping type(int slot, const char* key) { \
+    MaResourceMapping mapping{};                             \
+    mapping.m_slot = slot;                                   \
+    mapping.m_key = static_cast<entt::hashed_string>(key);   \
+    mapping.m_type = nvrhi::ResourceType::type;              \
+    return mapping;                                          \
   }
 
-  template <typename KeyType>
-  static MaResourceMapping Texture_SRV(int slot, const KeyType& key) {
+  static MaResourceMapping Texture_SRV(int slot, const char* key) {
     MaResourceMapping mapping{};
     mapping.m_slot = slot;
     mapping.m_key = static_cast<entt::hashed_string>(key);

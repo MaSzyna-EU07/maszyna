@@ -25,12 +25,15 @@
 #include <Classes.h>
 #include <scene.h>
 
+#include "nvrenderer_enums.h"
 #include "quadtree.h"
 #include "renderer.h"
-#include "nvrenderer_enums.h"
 #include "resource_registry.h"
 #include "sky.h"
 
+namespace Rt {
+struct IRtModel;
+}
 template <typename Renderer>
 struct MaRendererConstants {
   static constexpr size_t NumMaterialPasses() noexcept {
@@ -188,6 +191,9 @@ class NvRenderer : public gfx_renderer, public MaResourceRegistry {
   std::shared_ptr<struct Sky> m_sky;
   std::shared_ptr<struct MaAutoExposure> m_auto_exposure;
 
+  std::unordered_map<TModel3d const *, std::shared_ptr<Rt::IRtModel>> rt_models;
+  std::shared_ptr<Rt::IRtModel> GetRtModel(TModel3d const *);
+
   std::shared_ptr<struct MaConfig> m_config;
   struct MaConfig *GetConfig() const { return m_config.get(); }
   static struct MaConfig *Config();
@@ -212,6 +218,10 @@ class NvRenderer : public gfx_renderer, public MaResourceRegistry {
   std::mutex m_mtx_context_lock;
   glm::dvec3 m_previous_env_position;
   uint64_t m_previous_env_frame;
+
+  glm::dvec3 m_mouse_ro;
+  glm::dvec3 m_mouse_rd;
+  TSubModel const *m_picked_submodel = nullptr;
 
   using section_sequence = std::vector<scene::basic_section *>;
   using distancecell_pair = std::pair<double, scene::basic_cell *>;

@@ -22,6 +22,9 @@ add_subdirectory("thirdparty/fmt")
 add_subdirectory("thirdparty/entt")
 add_subdirectory("thirdparty/fsr2")
 
+set(CMAKE_CXX_STANDARD 20)
+add_subdirectory("thirdparty/bvh")
+
 add_subdirectory("mashadercompiler")
 add_subdirectory("shaders")
 
@@ -105,5 +108,5 @@ endif ()
 
 target_sources(${LIBMANUL_NAME} INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/eu07_source/register.cpp")
 set_target_properties(nvrhi yaml-cpp fmt EnTT glfw yaml-cpp-parse yaml-cpp-read yaml-cpp-sandbox PROPERTIES FOLDER "libraries")
-target_link_libraries(${LIBMANUL_NAME} ${LIBMANUL_NAME}_fsr2 nvrhi yaml-cpp fmt EnTT glfw)
+target_link_libraries(${LIBMANUL_NAME} ${LIBMANUL_NAME}_fsr2 nvrhi yaml-cpp fmt EnTT glfw bvh)
 add_dependencies(${LIBMANUL_NAME} ${LIBMANUL_NAME}_shaders)
