@@ -117,6 +117,9 @@ const TSubModel* Rt::RtModel::Intersect(
   bvh::v2::Ray<float, 3> ray{};
   ray.tmax = std::numeric_limits<float>::max();
   for (auto const& item : renderable.m_items) {
+    if (item.m_sqr_distance_min > 0. || item.m_render_in_forward) {
+      continue;
+    }
     if (auto const it = submodel_mapping.find(item.m_geometry);
         it != submodel_mapping.end()) {
       auto const& submodel = submodels[it->second];
