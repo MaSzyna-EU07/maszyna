@@ -29,3 +29,6 @@
 [submodule "ref/json"]
 	path = ref/json
 	url = https://github.com/nlohmann/json
+[submodule "betterRenderer/thirdparty/bvh"]
+	path = betterRenderer/thirdparty/bvh
+	url = https://github.com/madmann91/bvh.git

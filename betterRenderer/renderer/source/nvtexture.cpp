@@ -386,12 +386,12 @@ bool NvTexture::CreateRhiTexture() {
           .setHeight(m_height)
           .setMipLevels(m_data.size())
           .setFormat(m_format)
-          .setInitialState(nvrhi::ResourceStates::CopyDest)
+          .setInitialState(nvrhi::ResourceStates::ShaderResource)
           .setKeepInitialState(true));
   nvrhi::CommandListHandle command_list =
       backend->GetDevice()->createCommandList(
           nvrhi::CommandListParameters()
-              .setQueueType(nvrhi::CommandQueue::Copy)
+              .setQueueType(nvrhi::CommandQueue::Graphics)
               .setEnableImmediateExecution(false));
   command_list->open();
   for (int mip = 0; mip < m_data.size(); ++mip) {
@@ -400,7 +400,7 @@ bool NvTexture::CreateRhiTexture() {
   }
   command_list->close();
   backend->GetDevice()->executeCommandList(command_list,
-                                           nvrhi::CommandQueue::Copy);
+                                           nvrhi::CommandQueue::Graphics);
   if (m_sz_texture->get_type() == "make:") {
     auto const components{Split(std::string(m_sz_texture->get_name()), '?')};
 
