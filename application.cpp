@@ -55,7 +55,6 @@ http://mozilla.org/MPL/2.0/.
 
 eu07_application Application;
 screenshot_manager screenshot_man;
-
 ui_layer uilayerstaticinitializer;
 
 #ifdef _WIN32
@@ -581,6 +580,9 @@ eu07_application::run() {
             std::this_thread::sleep_for( Global.minframetime - frametime );
         }
     }
+	Global.applicationQuitOrder = true;
+	Global.threads["DiscordRPC"].join(); // wait for DiscordRPC thread to finish
+    Global.threads["LogService"].join(); // wait for logging thread to finish
 	return 0;
 }
 
@@ -613,8 +615,19 @@ eu07_application::release_python_lock() {
 void
 eu07_application::exit() {
 	Global.applicationQuitOrder = true;
-	Global.threads["LogService"].join(); // kill log service
-	Global.threads["DiscordRPC"].join(); // kill DiscordRPC service
+	auto it = Global.threads.find("LogService");
+	if (it != Global.threads.end())
+	{
+		if (it->second.joinable())
+			it->second.join();
+	}
+
+	it = Global.threads.find("DiscordRPC");
+	if (it != Global.threads.end())
+	{
+		if (it->second.joinable())
+			it->second.join();
+	}
 
 
 	for (auto &mode : m_modes)
@@ -907,7 +920,7 @@ eu07_application::init_settings( int Argc, char *Argv[] ) {
 #ifdef _WIN32
 	if (const char *appdata = std::getenv("APPDATA"))
 	{
-		iniPath = fs::path(appdata) / "MaSzyna" / "Config" / "eu07.ini";
+		iniPath = fs::path(appdata) / "MaSzyna" / "eu07.ini";
 	}
 #else
 	if (const char *home = std::getenv("HOME"))

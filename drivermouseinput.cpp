@@ -185,7 +185,7 @@ drivermouse_input::recall_bindings() {
 #ifdef _WIN32
 	if (const char *appdata = std::getenv("APPDATA"))
 	{
-		fs::path appPath = fs::path(appdata) / "MaSzyna" / "Config" / "eu07_input-mouse.ini";
+		fs::path appPath = fs::path(appdata) / "MaSzyna" / "eu07_input-mouse.ini";
 		if (fs::exists(appPath))
 			filePath = appPath.string();
 	}

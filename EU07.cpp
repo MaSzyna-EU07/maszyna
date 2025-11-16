@@ -29,7 +29,7 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 #endif
 
 #ifdef _MSC_VER
-#pragma comment(linker, "/subsystem:console /ENTRY:mainCRTStartup")
+#pragma comment(linker, "/subsystem:windows /ENTRY:mainCRTStartup")
 #endif
 
 void export_e3d_standalone(std::string in, std::string out, int flags, bool dynamic);

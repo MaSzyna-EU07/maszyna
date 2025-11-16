@@ -488,7 +488,7 @@ global_settings::ConfigParse(cParser &Parser) {
             // tryb antyaliasingu: 0=brak,1=2px,2=4px
             Parser.getTokens(1, false);
             Parser >> iMultisampling;
-            iMultisampling = clamp(iMultisampling, 0, 3);
+            iMultisampling = clamp(iMultisampling, 0, 4); // liczone 2 ^ n
         }
         else if (token == "latitude")
         {

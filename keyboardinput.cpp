@@ -127,7 +127,7 @@ keyboard_input::recall_bindings() {
 #ifdef _WIN32
 	if (const char *appdata = std::getenv("APPDATA"))
 	{
-		iniPath = fs::path(appdata) / "MaSzyna" / "Config" / "eu07_input-keyboard.ini";
+		iniPath = fs::path(appdata) / "MaSzyna" / "eu07_input-keyboard.ini";
 	}
 #else
 	if (const char *home = std::getenv("HOME"))
