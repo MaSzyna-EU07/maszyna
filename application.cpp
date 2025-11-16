@@ -615,8 +615,19 @@ eu07_application::release_python_lock() {
 void
 eu07_application::exit() {
 	Global.applicationQuitOrder = true;
-	Global.threads["LogService"].join(); // kill log service
-	Global.threads["DiscordRPC"].join(); // kill DiscordRPC service
+	auto it = Global.threads.find("LogService");
+	if (it != Global.threads.end())
+	{
+		if (it->second.joinable())
+			it->second.join();
+	}
+
+	it = Global.threads.find("DiscordRPC");
+	if (it != Global.threads.end())
+	{
+		if (it->second.joinable())
+			it->second.join();
+	}
 
 
 	for (auto &mode : m_modes)
