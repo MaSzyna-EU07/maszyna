@@ -581,8 +581,19 @@ eu07_application::run() {
         }
     }
 	Global.applicationQuitOrder = true;
-	Global.threads["DiscordRPC"].join(); // wait for DiscordRPC thread to finish
-    Global.threads["LogService"].join(); // wait for logging thread to finish
+	auto it = Global.threads.find("LogService");
+	if (it != Global.threads.end())
+	{
+		if (it->second.joinable())
+			it->second.join();
+	}
+
+	it = Global.threads.find("DiscordRPC");
+	if (it != Global.threads.end())
+	{
+		if (it->second.joinable())
+			it->second.join();
+	}
 	return 0;
 }
 
