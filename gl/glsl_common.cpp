@@ -72,6 +72,10 @@ void gl::glsl_common_setup()
         mat4 lightview[MAX_CASCADES];
         vec3 cascade_end;
         float time;
+		vec4 rain_params;
+		vec4 wiper_pos;
+		vec4 wiper_timer_out;
+		vec4 wiper_timer_return;
     };
 
     )STRING";

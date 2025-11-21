@@ -694,6 +694,46 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
         m_colorpass = m_renderpass; // cache pass data
 
 		scene_ubs.time = Timer::GetTime();
+		{
+			float percipitation_intensity = glm::saturate(Global.Overcast - 1.);
+			scene_ubs.rain_params.x = percipitation_intensity; // % amount of droplets
+			scene_ubs.rain_params.y = glm::mix(15., 1., percipitation_intensity); // Regeneration time
+			if (TDynamicObject const *owner = Global.pCamera.m_owner; owner && !!owner->MoverParameters->CabActive)
+			{
+				for (int i = 0; i < 4; ++i)
+				{
+					if (i < owner->dWiperPos.size())
+					{
+						int index = owner->MoverParameters->CabActive > 0 ? i : static_cast<int>(owner->dWiperPos.size() - 1) - i;
+						scene_ubs.wiper_pos[i] = owner->dWiperPos[index];
+						if (owner->dWiperPos[index] > 0. && owner->wiperDirection[index])
+						{
+							scene_ubs.wiper_pos[i] += 1.;
+						}
+						if (owner->dWiperPos[index] < .025)
+						{
+							scene_ubs.wiper_timer_out[i] = scene_ubs.time;
+						}
+						if (owner->dWiperPos[index] > .975)
+						{
+							scene_ubs.wiper_timer_return[i] = scene_ubs.time;
+						}
+					}
+					else
+					{
+						scene_ubs.wiper_pos[i] = 0.;
+						scene_ubs.wiper_timer_out[i] = -1000.;
+						scene_ubs.wiper_timer_return[i] = -1000.;
+					}
+				}
+			}
+			else
+			{
+				scene_ubs.wiper_pos = glm::vec4{0.};
+				scene_ubs.wiper_timer_out = glm::vec4{-1000.};
+				scene_ubs.wiper_timer_return = glm::vec4{-1000.};
+			}
+		}
 		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
         scene_ubs.inv_view = glm::inverse( glm::mat4{ glm::mat3{ m_colorpass.pass_camera.modelview() } } );
         scene_ubo->update(scene_ubs);
