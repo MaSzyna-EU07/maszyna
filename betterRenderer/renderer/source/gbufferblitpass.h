@@ -29,6 +29,10 @@ struct GbufferBlitPass : public FullScreenPass, public MaResourceRegistry {
     float m_altitude;
     glm::vec3 m_light_color;
     float m_time;
+    glm::vec4 m_rain_params;
+    glm::vec4 m_wiper_pos;
+    glm::vec4 m_wiper_timer_out;
+    glm::vec4 m_wiper_timer_return;
   };
 
   nvrhi::BindingLayoutHandle m_binding_layout;

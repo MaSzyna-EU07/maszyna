@@ -47,18 +47,6 @@ shaders:
           binding: 2
           hint: normalmap
           default: normalmap
-        # paramx: # Metalness.Roughness.[UNUSED].Normal[X]
-        #   binding: 1
-        #   hint: linear
-        #   default: legacy_params
-        # paramy: # Specular.Occlusion.[UNUSED].Normal[Y]
-        #   binding: 2
-        #   hint: linear
-        #   default: legacy_params
-        # selfillum:
-        #   binding: 3
-        #   hint: color
-        #   default: black
       masked_shadow_texture: albedo
       source: ps_default_lit
     legacy:
@@ -137,6 +125,22 @@ shaders:
           default: normalmap
       masked_shadow_texture: diffuse
       source: ps_legacy_water
+    windshield_rain:
+      textures:
+        diffuse:
+          binding: 0
+          hint: color # so that texture will be marked as sRGB
+          default: white
+        raindropsatlas:
+          binding: 1
+          hint: color
+          default: white
+        wipermask:
+          binding: 2
+          hint: color
+          default: white
+      masked_shadow_texture: diffuse
+      source: ps_windshield_rain
   utility:
 # Everything that does not belong to scene graph rendering
 # ImGui shaders

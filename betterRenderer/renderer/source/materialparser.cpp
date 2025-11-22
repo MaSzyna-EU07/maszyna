@@ -133,6 +133,9 @@ std::string_view MaterialAdapterLegacyMatFile::GetShader() const {
   if (m_shader == "water") {
     return "legacy_water";
   }
+  if (m_shader == "rain_windscreen") {
+    return "windshield_rain";
+  }
   if (IsSpecGlossShader() && HasSpecGlossMap()) {
     if (IsNormalMapShader() && HasNormalMap()) {
       return "legacy_normalmap_specgloss";
