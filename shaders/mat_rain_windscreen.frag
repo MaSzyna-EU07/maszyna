@@ -160,10 +160,11 @@ void main() {
       float specularity = (tex_color.r + tex_color.g + tex_color.b) * 0.5;
       glossiness = abs(param[1].w);
       
-      fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, reflectivity, specularity, shadow_tone);
       vec4 color = vec4(fragcolor, tex_color.a * alpha_mult);
       
-      out_color.xyz = apply_fog(mix(out_color.xyz, color.xyz, color.a));
+      color.xyz = mix(out_color.xyz, color.xyz, color.a);
+      
+      out_color.xyz = apply_fog(apply_lights(color.xyz, fragnormal, color.xyz, reflectivity, specularity, shadow_tone));
       out_color.a = mix(out_color.a, 1., color.a);
     }
 
