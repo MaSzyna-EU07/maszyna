@@ -413,6 +413,18 @@ bool NvRenderer::Render() {
       pass.m_history_transform =
           std::exchange(m_previous_view, pass.m_transform);
 
+      command_list->beginMarker("Depth only");
+      pass.m_type = RenderPassType::DepthOnly;
+      RenderKabina(pass);
+      RenderShapes(pass);
+      RenderBatches(pass);
+      RenderTracks(pass);
+      RenderAnimateds(pass);
+      RenderLines(pass);
+      command_list->endMarker();
+
+      command_list->beginMarker("Gbuffer fill");
+      pass.m_type = RenderPassType::Deferred;
       Timer::subsystem.gfx_color.start();
       RenderKabina(pass);
       RenderShapes(pass);
@@ -420,6 +432,7 @@ bool NvRenderer::Render() {
       RenderTracks(pass);
       RenderAnimateds(pass);
       RenderLines(pass);
+      command_list->endMarker();
 
       GatherSpotLights(pass);
 
@@ -1495,6 +1508,7 @@ void NvRenderer::UpdateDrawData(const RenderPass &pass,
       pass.m_command_list_draw->setPushConstants(&data, sizeof(data));
       break;
     }
+    case RenderPassType::DepthOnly:
     case RenderPassType::Deferred:
     case RenderPassType::Forward: {
       PushConstantsDraw data{};
@@ -1966,6 +1980,8 @@ void NvRenderer::Animate(Renderable &renderable, TSubModel *Submodel,
             reinterpret_cast<const void *>(TSubModel::iInstance), Submodel)) ==
             m_batched_instances.end()) {
       auto &item = renderable.m_items.emplace_back();
+
+      item.m_name = Submodel->pName.c_str();
 
       auto &motion_cache = m_motion_cache->Get(Submodel);
 

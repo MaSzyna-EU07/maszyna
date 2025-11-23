@@ -94,6 +94,10 @@ nvrhi::IGraphicsPipeline *NvRenderer::MaterialTemplate::GetPipeline(
     return m_renderer->m_pso_shadow[Constants::GetDefaultShadowPipelineIndex(
         draw_type, alpha_masked)];
   }
+  if (pass_type == RenderPassType::DepthOnly) {
+    return m_renderer->m_pso_prepass[Constants::GetDefaultShadowPipelineIndex(
+        draw_type, alpha_masked)];
+  }
   return nullptr;
 }
 
@@ -169,6 +173,14 @@ void NvRenderer::MaterialTemplate::Init(const YAML::Node &conf) {
               .Add(texture_mapping_shadow)
               .Add(sampler_mapping_shadow);
         }
+        if (pass == RenderPassType::DepthOnly) {
+          mappings
+              .Add(MaResourceMapping::ConstantBuffer(
+                  0, "cb_draw_constants_static"))
+              .Add(MaResourceMapping::PushConstants<PushConstantsDraw>(1))
+              .Add(texture_mapping_shadow)
+              .Add(sampler_mapping_shadow);
+        }
         continue;
       }
       pipeline_desc.setPixelShader(pixel_shader)
@@ -181,6 +193,7 @@ void NvRenderer::MaterialTemplate::Init(const YAML::Node &conf) {
       pipeline_desc.setInputLayout(
           m_renderer->m_input_layout[static_cast<size_t>(draw)]);
       switch (pass) {
+        case RenderPassType::DepthOnly:
         case RenderPassType::Deferred:
         case RenderPassType::Forward:
           pipeline_desc.setVertexShader(
@@ -193,6 +206,7 @@ void NvRenderer::MaterialTemplate::Init(const YAML::Node &conf) {
         default:;
       }
       switch (pass) {
+        case RenderPassType::DepthOnly:
         case RenderPassType::Deferred:
         case RenderPassType::Forward:
           mappings.Add(MaResourceMapping::PushConstants<PushConstantsDraw>(1))
@@ -220,12 +234,16 @@ void NvRenderer::MaterialTemplate::Init(const YAML::Node &conf) {
               .Add(MaResourceMapping::Texture_SRV(11, "shadow_depths"))
               .Add(MaResourceMapping::Texture_SRV(12, "gbuffer_depth"))
               .Add(MaResourceMapping::Texture_SRV(14, "sky_aerial_lut"))
-              .Add(MaResourceMapping::Texture_SRV(16, "forwardplus_index_grid_transparent"))
-              .Add(MaResourceMapping::StructuredBuffer_SRV(17, "forwardplus_index_buffer_transparent"))
-              .Add(MaResourceMapping::StructuredBuffer_SRV(18, "forwardplus_light_buffer"))
+              .Add(MaResourceMapping::Texture_SRV(
+                  16, "forwardplus_index_grid_transparent"))
+              .Add(MaResourceMapping::StructuredBuffer_SRV(
+                  17, "forwardplus_index_buffer_transparent"))
+              .Add(MaResourceMapping::StructuredBuffer_SRV(
+                  18, "forwardplus_light_buffer"))
               .Add(MaResourceMapping::Sampler(8, "sampler_linear_wrap"))
               .Add(MaResourceMapping::Sampler(11, "shadow_sampler_comp"))
-              .Add(MaResourceMapping::Sampler(13, "sampler_linear_clamp_v_repeat_h"));
+              .Add(MaResourceMapping::Sampler(
+                  13, "sampler_linear_clamp_v_repeat_h"));
           break;
         default:;
       }
@@ -243,7 +261,22 @@ void NvRenderer::MaterialTemplate::Init(const YAML::Node &conf) {
       }
       switch (pass) {
         case RenderPassType::Deferred:
-          case RenderPassType::CubeMap:
+          pipeline_desc.setRenderState(
+              nvrhi::RenderState()
+                  .setDepthStencilState(
+                      nvrhi::DepthStencilState()
+                          .enableDepthTest()
+                          .disableStencil()
+                          .setDepthFunc(nvrhi::ComparisonFunc::Equal))
+                  .setRasterState(nvrhi::RasterState()
+                                      .setFillSolid()
+                                      .enableDepthClip()
+                                      .disableScissor()
+                                      .setCullFront())
+                  .setBlendState(nvrhi::BlendState().setRenderTarget(
+                      0, nvrhi::BlendState::RenderTarget().disableBlend())));
+          break;
+        case RenderPassType::CubeMap:
           pipeline_desc.setRenderState(
               nvrhi::RenderState()
                   .setDepthStencilState(
@@ -419,8 +452,14 @@ bool NvRenderer::InitMaterials() {
 
   m_vertex_shader[static_cast<size_t>(DrawType::Model)] =
       m_backend->CreateShader("default_vertex", nvrhi::ShaderType::Vertex);
+  m_vertex_shader_prepass[static_cast<size_t>(DrawType::Model)] =
+      m_backend->CreateShader("default_prepass_vertex",
+                              nvrhi::ShaderType::Vertex);
   m_vertex_shader[static_cast<size_t>(DrawType::InstancedModel)] =
       m_backend->CreateShader("instanced_vertex", nvrhi::ShaderType::Vertex);
+  m_vertex_shader_prepass[static_cast<size_t>(DrawType::InstancedModel)] =
+      m_backend->CreateShader("instanced_prepass_vertex",
+                              nvrhi::ShaderType::Vertex);
   m_vertex_shader_shadow[static_cast<size_t>(DrawType::Model)] =
       m_backend->CreateShader("shadow_vertex", nvrhi::ShaderType::Vertex);
   m_vertex_shader_shadow[static_cast<size_t>(DrawType::InstancedModel)] =
@@ -433,6 +472,8 @@ bool NvRenderer::InitMaterials() {
                               nvrhi::ShaderType::Vertex);
   m_pixel_shader_shadow_masked =
       m_backend->CreateShader("shadow_masked", nvrhi::ShaderType::Pixel);
+  m_pixel_shader_prepass_masked =
+      m_backend->CreateShader("prepass_masked", nvrhi::ShaderType::Pixel);
 
   nvrhi::VertexAttributeDesc desc[]{
       nvrhi::VertexAttributeDesc()
@@ -481,55 +522,82 @@ bool NvRenderer::InitMaterials() {
           m_vertex_shader[static_cast<size_t>(DrawType::InstancedModel)]);
 
   {
-    m_binding_layout_shadow_masked =
-        m_backend->GetDevice()->createBindingLayout(
-            nvrhi::BindingLayoutDesc()
-                .setVisibility(nvrhi::ShaderType::Pixel)
-                .addItem(nvrhi::BindingLayoutItem::Texture_SRV(0))
-                .addItem(nvrhi::BindingLayoutItem::Sampler(0)));
+    auto constexpr render_state_shadow =
+        nvrhi::RenderState()
+            .setDepthStencilState(
+                nvrhi::DepthStencilState()
+                    .enableDepthTest()
+                    .enableDepthWrite()
+                    .disableStencil()
+                    .setDepthFunc(nvrhi::ComparisonFunc::Greater))
+            .setRasterState(nvrhi::RasterState()
+                                .setFillSolid()
+                                .disableDepthClip()
+                                .disableScissor()
+                                .setCullBack()
+                                .setDepthBias(1)
+                                .setSlopeScaleDepthBias(-4.f))
+            .setBlendState(nvrhi::BlendState().setRenderTarget(
+                0, nvrhi::BlendState::RenderTarget().disableBlend()));
+    auto constexpr render_state_depthonly =
+        nvrhi::RenderState()
+            .setDepthStencilState(
+                nvrhi::DepthStencilState()
+                    .enableDepthTest()
+                    .enableDepthWrite()
+                    .disableStencil()
+                    .setDepthFunc(nvrhi::ComparisonFunc::Greater))
+            .setRasterState(nvrhi::RasterState()
+                                .setFillSolid()
+                                .enableDepthClip()
+                                .disableScissor()
+                                .setCullFront())
+            .setBlendState(nvrhi::BlendState().setRenderTarget(
+                0, nvrhi::BlendState::RenderTarget().disableBlend()));
     for (int i = 0; i < Constants::NumDrawTypes(); ++i) {
       for (int j = 0; j < 2; ++j) {
         DrawType draw = static_cast<DrawType>(i);
         bool masked = j;
-        nvrhi::BindingLayoutDesc desc =
+        nvrhi::BindingLayoutDesc desc_shadow =
             *m_binding_layout_shadowdrawconstants->getDesc();
-        desc.visibility = nvrhi::ShaderType::All;
-        if (masked)
-          desc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(0))
-              .addItem(nvrhi::BindingLayoutItem::Sampler(0));
-        auto binding_layout =
-            GetBackend()->GetDevice()->createBindingLayout(desc);
-        auto pipeline_desc =
-            nvrhi::GraphicsPipelineDesc()
-                .setRenderState(
-                    nvrhi::RenderState()
-                        .setDepthStencilState(
-                            nvrhi::DepthStencilState()
-                                .enableDepthTest()
-                                .enableDepthWrite()
-                                .disableStencil()
-                                .setDepthFunc(nvrhi::ComparisonFunc::Greater))
-                        .setRasterState(nvrhi::RasterState()
-                                            .setFillSolid()
-                                            .disableDepthClip()
-                                            .disableScissor()
-                                            .setCullBack()
-                                            .setDepthBias(1)
-                                            .setSlopeScaleDepthBias(-4.f))
-                        .setBlendState(nvrhi::BlendState().setRenderTarget(
-                            0,
-                            nvrhi::BlendState::RenderTarget().disableBlend())))
-                .setVertexShader(
-                    m_vertex_shader_shadow[static_cast<size_t>(draw)])
-                .setInputLayout(m_input_layout[static_cast<size_t>(draw)]);
+        nvrhi::BindingLayoutDesc desc_prepass =
+            *m_binding_layout_drawconstants->getDesc();
+        desc_shadow.visibility = nvrhi::ShaderType::All;
+        desc_prepass.visibility = nvrhi::ShaderType::All;
         if (masked) {
-          pipeline_desc.setPixelShader(m_pixel_shader_shadow_masked);
+          desc_shadow.addItem(nvrhi::BindingLayoutItem::Texture_SRV(0))
+              .addItem(nvrhi::BindingLayoutItem::Sampler(0));
+          desc_prepass.addItem(nvrhi::BindingLayoutItem::Texture_SRV(0))
+              .addItem(nvrhi::BindingLayoutItem::Sampler(0));
         }
-        pipeline_desc.addBindingLayout(binding_layout);
+        auto binding_layout_shadow =
+            GetBackend()->GetDevice()->createBindingLayout(desc_shadow);
+        auto binding_layout_prepass =
+            GetBackend()->GetDevice()->createBindingLayout(desc_prepass);
+        auto pipeline_desc = nvrhi::GraphicsPipelineDesc().setInputLayout(
+            m_input_layout[static_cast<size_t>(draw)]);
 
         m_pso_shadow[Constants::GetDefaultShadowPipelineIndex(draw, masked)] =
             GetBackend()->GetDevice()->createGraphicsPipeline(
-                pipeline_desc, m_gbuffer_shadow->m_framebuffer);
+                nvrhi::GraphicsPipelineDesc(pipeline_desc)
+                    .setRenderState(render_state_shadow)
+                    .setVertexShader(
+                        m_vertex_shader_shadow[static_cast<size_t>(draw)])
+                    .setPixelShader(masked ? m_pixel_shader_shadow_masked
+                                           : nullptr)
+                    .addBindingLayout(binding_layout_shadow),
+                m_gbuffer_shadow->m_framebuffer);
+
+        m_pso_prepass[Constants::GetDefaultShadowPipelineIndex(draw, masked)] =
+            GetBackend()->GetDevice()->createGraphicsPipeline(
+                nvrhi::GraphicsPipelineDesc(pipeline_desc)
+                    .setVertexShader(
+                        m_vertex_shader_prepass[static_cast<size_t>(draw)])
+                    .setPixelShader(masked ? m_pixel_shader_prepass_masked
+                                           : nullptr)
+                    .setRenderState(render_state_depthonly)
+                    .addBindingLayout(binding_layout_prepass),
+                m_gbuffer->m_framebuffer);
       }
     }
   }

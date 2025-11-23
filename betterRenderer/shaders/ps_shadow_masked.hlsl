@@ -3,8 +3,13 @@
 sampler diffuse_sampler : register(s0);
 Texture2D diffuse : register(t0);
 
+#ifdef PREPASS
+#include "manul/draw_constants.hlsli"
+#else
 #include "manul/draw_constants_shadow.hlsli"
+#endif
 
+#define SHADOW
 #include "manul/alpha_mask.hlsli"
 
 struct VertexOutput {

@@ -157,6 +157,12 @@ shaders:
       source: ps_shadow_masked
       target: pixel
       entrypoint: main
+    prepass_masked:
+      source: ps_shadow_masked
+      target: pixel
+      entrypoint: main
+      definitions:
+        PREPASS: 1
 # Contact shadows
 # TODO Depth conversion is broken since converting to reversed depth buffer
     contact_shadows:
@@ -173,6 +179,12 @@ shaders:
       source: default_vertex
       target: vertex
       entrypoint: main
+    default_prepass_vertex:
+      source: default_vertex
+      target: vertex
+      entrypoint: main
+      definitions:
+        PREPASS: 1
     shadow_vertex:
       source: shadow_vertex
       target: vertex
@@ -185,6 +197,12 @@ shaders:
       source: instanced_vertex
       target: vertex
       entrypoint: main
+    instanced_prepass_vertex:
+      source: instanced_vertex
+      target: vertex
+      entrypoint: main
+      definitions:
+        PREPASS: 1
     instanced_shadow_vertex:
       source: instanced_shadow_vertex
       target: vertex

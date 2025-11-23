@@ -3,6 +3,7 @@
 namespace RendererEnums {
 
 enum class RenderPassType {
+  DepthOnly,
   Deferred,
   Forward,
   CubeMap,

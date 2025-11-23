@@ -959,13 +959,19 @@ void NvRenderer::RenderAnimateds(const RenderPass& pass) {
     switch (command.m_type) {
       case RenderCommand::ObjectType_Animated:
         m_drawcall_counter = &m_drawcalls_tanimobj;
+        pass.m_command_list_draw->beginMarker(
+            m_animateds[command.m_index].m_model->name().c_str());
         Render(m_animateds[command.m_index].m_renderable, pass, history_origin,
                m_animateds[command.m_index].m_distance);
+        pass.m_command_list_draw->endMarker();
         break;
       case RenderCommand::ObjectType_Dynamic:
         m_drawcall_counter = &m_drawcalls_dynamic;
+        pass.m_command_list_draw->beginMarker(
+            m_dynamics[command.m_index].m_dynamic->name().c_str());
         Render(m_dynamics[command.m_index].m_renderable, pass, history_origin,
                m_dynamics[command.m_index].m_distance);
+        pass.m_command_list_draw->endMarker();
         break;
     }
   }
@@ -989,7 +995,9 @@ void NvRenderer::RenderKabina(const RenderPass& pass) {
     default:
       if (!dynamic.m_renderable_kabina.m_render_in_deferred) return;
   }
+  pass.m_command_list_draw->beginMarker("Render cab");
   Render(dynamic.m_renderable_kabina, pass, history_origin, dynamic.m_distance);
+  pass.m_command_list_draw->endMarker();
 }
 
 void NvRenderer::Render(const Renderable& renderable, const RenderPass& pass,
@@ -1009,12 +1017,14 @@ void NvRenderer::Render(const Renderable& renderable, const RenderPass& pass,
     float alpha_threshold;
     if (!BindGeometry(item.m_geometry, pass, gfx_state, draw_arguments,
                       indexed))
-      return;
+      continue;
     if (!BindMaterial(item.m_material, DrawType::Model, pass, gfx_state,
                       alpha_threshold))
-      return;
+      continue;
 
     BindConstants(pass, gfx_state);
+
+    pass.m_command_list_draw->beginMarker(item.m_name.data());
 
     pass.m_command_list_draw->setGraphicsState(gfx_state);
 
@@ -1034,6 +1044,8 @@ void NvRenderer::Render(const Renderable& renderable, const RenderPass& pass,
     else
       pass.m_command_list_draw->draw(draw_arguments);
     m_drawcall_counter->Draw(draw_arguments);
+
+    pass.m_command_list_draw->endMarker();
   }
 }
 

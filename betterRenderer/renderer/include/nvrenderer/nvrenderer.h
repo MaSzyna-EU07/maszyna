@@ -424,6 +424,7 @@ class NvRenderer : public gfx_renderer, public MaResourceRegistry {
       float m_opacity;
       float m_selfillum;
       glm::vec3 m_diffuse;
+      std::string_view m_name = "";
     };
     struct SpotLight {
       glm::vec3 m_color;
@@ -610,16 +611,21 @@ class NvRenderer : public gfx_renderer, public MaResourceRegistry {
   nvrhi::BufferHandle m_cubedrawconstant_buffer;
   nvrhi::BufferHandle m_drawconstant_buffer;
   std::array<nvrhi::ShaderHandle, Constants::NumDrawTypes()> m_vertex_shader;
+  std::array<nvrhi::ShaderHandle, Constants::NumDrawTypes()> m_vertex_shader_prepass;
   std::array<nvrhi::ShaderHandle, Constants::NumDrawTypes()>
       m_vertex_shader_cubemap;
   std::array<nvrhi::ShaderHandle, Constants::NumDrawTypes()>
       m_vertex_shader_shadow;
   nvrhi::BindingLayoutHandle m_binding_layout_shadow_masked;
+  nvrhi::BindingLayoutHandle m_binding_layout_prepass;
   nvrhi::ShaderHandle m_pixel_shader_shadow_masked;
+  nvrhi::ShaderHandle m_pixel_shader_prepass_masked;
   std::array<nvrhi::InputLayoutHandle, Constants::NumDrawTypes()>
-      m_input_layout;
+  m_input_layout;
   std::array<nvrhi::GraphicsPipelineHandle, Constants::NumShadowPipelines()>
       m_pso_shadow;
+  std::array<nvrhi::GraphicsPipelineHandle, Constants::NumShadowPipelines()>
+      m_pso_prepass;
   nvrhi::GraphicsPipelineHandle m_pso_line;
 
   std::condition_variable m_cv_next_frame;
