@@ -1004,19 +1004,23 @@ material_handle NvRenderer::Fetch_Material(std::string const &Filename,
     auto texture_manager = GetTextureManager();
 
     for (int i = 0; i < material_template->m_texture_bindings.size(); ++i) {
-      const auto &[key, sampler_key, hint, m_default_texture] =
-          material_template->m_texture_bindings[i];
+      const auto &binding = material_template->m_texture_bindings[i];
       auto handle = texture_manager->FetchTexture(
-          static_cast<std::string>(adapter.GetTexturePathForEntry(key)), hint,
-          adapter.GetTextureSizeBiasForEntry(key), true);
+          static_cast<std::string>(
+              adapter.GetTexturePathForEntry(binding.m_name)),
+          binding.m_hint, adapter.GetTextureSizeBiasForEntry(binding.m_name),
+          true);
       cache.m_texture_handles[i] = handle;
-      cache.RegisterTexture(key.c_str(), handle);
-      cache.RegisterResource(false, sampler_key.c_str(),
+      auto traits = texture_manager->GetTraits(handle);
+      traits[MaTextureTraits_NoFilter] = binding.disable_filter;
+      traits[MaTextureTraits_NoAnisotropy] = binding.disable_anisotropy;
+      traits[MaTextureTraits_NoMipBias] = binding.disable_mip_bias;
+      cache.RegisterTexture(binding.m_name.c_str(), handle);
+      cache.RegisterResource(false, binding.m_sampler_name.c_str(),
                              texture_manager->GetSamplerForTraits(
-                                 texture_manager->GetTraits(handle),
-                                 NvRenderer::RenderPassType::Deferred),
+                                 traits, RenderPassType::Deferred),
                              nvrhi::ResourceType::Sampler);
-      if (key == cache.m_template->m_masked_shadow_texture &&
+      if (binding.m_name == cache.m_template->m_masked_shadow_texture &&
           texture_manager->IsValidHandle(handle)) {
         cache.m_masked_shadow =
             texture_manager->GetTexture(handle)->m_has_alpha;

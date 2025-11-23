@@ -493,10 +493,10 @@ nvrhi::SamplerHandle NvTextureManager::GetSamplerForTraits(
             .setAddressV(traits[MaTextureTraits_ClampT]
                              ? nvrhi::SamplerAddressMode::Clamp
                              : nvrhi::SamplerAddressMode::Wrap)
-            .setAllFilters(true)
+            .setAllFilters(!traits[MaTextureTraits_NoFilter])
             .setMipFilter(false)
-            .setMaxAnisotropy(traits[MaTextureTraits_NoAnisotropy] ? 0.f : 16.f)
-            .setMipBias(traits[MaTextureTraits_NoMipBias] ? 0.f : -1.76f);
+            .setMaxAnisotropy(traits[MaTextureTraits_NoAnisotropy] || traits[MaTextureTraits_NoFilter] ? 0.f : 16.f)
+            .setMipBias(traits[MaTextureTraits_NoMipBias] || traits[MaTextureTraits_NoFilter] ? 0.f : -1.76f);
     sampler = m_backend->GetDevice()->createSampler(desc);
   }
   return sampler;

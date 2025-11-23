@@ -113,18 +113,21 @@ void NvRenderer::MaterialTemplate::Init(const YAML::Node &conf) {
     auto index = it.second["binding"].as<int>();
     m_texture_bindings.resize(
         glm::max(m_texture_bindings.size(), static_cast<size_t>(index) + 1));
-    auto &[name, sampler_name, hint, default_texture] =
-        m_texture_bindings[index];
+    auto &binding = m_texture_bindings[index];
 
-    name = it.first.as<std::string>();
-    sampler_name = fmt::format("{:s}_sampler", name.c_str());
+    binding.m_name = it.first.as<std::string>();
+    binding.m_sampler_name = fmt::format("{:s}_sampler", binding.m_name.c_str());
+
+    binding.disable_anisotropy = it.second["no_anisotropy"].as<bool>(false);
+    binding.disable_filter = it.second["no_filter"].as<bool>(false);
+    binding.disable_mip_bias = it.second["no_mip_bias"].as<bool>(false);
 
     texture_mappings.emplace_back(
-        MaResourceMapping::Texture_SRV(index, name.c_str()));
+        MaResourceMapping::Texture_SRV(index, binding.m_name.c_str()));
     sampler_mappings.emplace_back(
-        MaResourceMapping::Sampler(index, sampler_name.c_str()));
+        MaResourceMapping::Sampler(index, binding.m_sampler_name.c_str()));
 
-    RegisterTexture(name.c_str(), 1);
+    RegisterTexture(binding.m_name.c_str(), 1);
     RegisterResource(
         false, "masked_shadow_sampler",
         GetTextureManager()->GetSamplerForTraits(0, RenderPassType::ShadowMap),
@@ -132,10 +135,10 @@ void NvRenderer::MaterialTemplate::Init(const YAML::Node &conf) {
 
     const static std::unordered_map<std::string_view, int> hints{
         {"color", GL_SRGB_ALPHA}, {"linear", GL_RGBA}, {"normalmap", GL_RG}};
-    hint = hints.at(it.second["hint"].as<std::string_view>());
+    binding.m_hint = hints.at(it.second["hint"].as<std::string_view>());
 
     if (it.first.Scalar() == conf["masked_shadow_texture"].Scalar()) {
-      texture_mapping_shadow = MaResourceMapping::Texture_SRV(0, name.c_str());
+      texture_mapping_shadow = MaResourceMapping::Texture_SRV(0, binding.m_name.c_str());
       sampler_mapping_shadow =
           MaResourceMapping::Sampler(0, "masked_shadow_sampler");
     }

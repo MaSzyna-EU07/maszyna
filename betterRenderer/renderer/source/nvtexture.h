@@ -16,6 +16,7 @@ enum MaTextureTraits {
 
   MaTextureTraits_NoMipBias,
   MaTextureTraits_NoAnisotropy,
+  MaTextureTraits_NoFilter,
 
   MaTextureTraits_Num
 };

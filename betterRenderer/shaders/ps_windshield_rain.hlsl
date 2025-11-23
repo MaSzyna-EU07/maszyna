@@ -4,6 +4,8 @@
 #include "manul/random.hlsli"
 
 sampler diffuse_sampler : register(s0);
+sampler raindrop_sampler : register(s1);
+sampler wipermask_sampler : register(s2);
 Texture2D<float4> diffuse : register(t0);
 Texture2D<float4> raindropsatlas : register(t1);
 Texture2D<float4> wipermask : register(t2);
@@ -14,7 +16,7 @@ float4 getDropTex(float choice, float2 uv) {
     else if (choice < .5)  offset = float2(0.5, 0.0);
     else if (choice < .75) offset = float2(0.0, 0.5);
     else                    offset = float2(0.5, 0.5);
-    return raindropsatlas.Sample(diffuse_sampler, offset + uv * 0.5);
+    return raindropsatlas.Sample(raindrop_sampler, offset + uv * 0.5);
 }
 
 float GetMixFactor(in float2 co, out float side);
@@ -43,8 +45,11 @@ void MaterialPass(inout MaterialData material) {
     float dropMaskSum = 0.;
 
     // Grid of 9 droplets in immediate neighbourhood
-    for (int oy = -1; oy <= 1; oy++) {
-        for (int ox = -1; ox <= 1; ox++) {
+    [unroll]
+    for (int oy = -1; oy <= 1; ++oy) {
+
+        [unroll]
+        for (int ox = -1; ox <= 1; ++ox) {
 
             float2 neighborCell = cell + float2(ox, oy);
             float2 neighborCenter = (neighborCell + .5) / gridSize;
@@ -131,7 +136,7 @@ float GetMixFactor(in float2 co, out float side) {
     bool4 is_out = movePhase <= 1.;
     movePhase = select(is_out, movePhase, 2. - movePhase);
 
-    float4 mask = wipermask.Sample(diffuse_sampler, co);
+    float4 mask = wipermask.Sample(wipermask_sampler, co);
 
     float4 areaMask = step(.001, mask);
 
@@ -153,6 +158,7 @@ float GetMixFactor(in float2 co, out float side) {
     float out_factor = 1.;
 
     // Find out the wiper blade that influences given grid cell the most
+    [unroll]
     for(int i = 0; i < 4; ++i)
     {
       bool is_candidate = factor_v[i] < out_factor;

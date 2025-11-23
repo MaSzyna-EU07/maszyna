@@ -498,6 +498,9 @@ class NvRenderer : public gfx_renderer, public MaResourceRegistry {
       std::string m_name;
       std::string m_sampler_name;
       int m_hint;
+      bool disable_anisotropy = false;
+      bool disable_filter = false;
+      bool disable_mip_bias = false;
       texture_handle m_default_texture;
     };
     nvrhi::static_vector<TextureBinding, 8> m_texture_bindings;
