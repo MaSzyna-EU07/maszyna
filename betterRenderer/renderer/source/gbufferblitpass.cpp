@@ -85,6 +85,15 @@ void GbufferBlitPass::Init() {
           .setKeepInitialState(true));
   RegisterResource(true, "scene_lit_texture", m_output,
                    nvrhi::ResourceType::Texture_SRV);
+  m_output_copy = m_backend->GetDevice()->createTexture(
+      nvrhi::TextureDesc()
+          .setWidth(m_gbuffer->m_framebuffer->getFramebufferInfo().width)
+          .setHeight(m_gbuffer->m_framebuffer->getFramebufferInfo().height)
+          .setFormat(nvrhi::Format::RGBA16_FLOAT)
+          .setInitialState(nvrhi::ResourceStates::ShaderResource)
+          .setKeepInitialState(true));
+  RegisterResource(true, "scene_lit_texture_copy", m_output_copy,
+                   nvrhi::ResourceType::Texture_SRV);
   m_binding_layout = m_backend->GetDevice()->createBindingLayout(
       nvrhi::BindingLayoutDesc()
           .addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(2))
@@ -187,6 +196,8 @@ void GbufferBlitPass::UpdateConstants(nvrhi::ICommandList* command_list,
                       constants.m_light_color);
   constants.m_altitude = Global.pCamera.Pos.y;
   constants.m_time = Timer::GetTime();
+  constants.m_vertical_fov =
+      glm::radians(Global.FieldOfView / Global.ZoomFactor);
 
   {
     float percipitation_intensity = glm::saturate(Global.Overcast - 1.);
@@ -238,6 +249,10 @@ void GbufferBlitPass::Render(nvrhi::ICommandList* command_list,
       m_scene_depth, nvrhi::TextureSlice().resolve(m_scene_depth->getDesc()),
       m_gbuffer->m_gbuffer_depth,
       nvrhi::TextureSlice().resolve(m_scene_depth->getDesc()));
+  command_list->copyTexture(
+      m_output_copy, nvrhi::TextureSlice().resolve(m_output_copy->getDesc()),
+      m_output,
+      nvrhi::TextureSlice().resolve(m_output->getDesc()));
 }
 
 void GbufferBlitPass::Render(nvrhi::ICommandList* command_list) {

@@ -190,6 +190,7 @@ class NvRenderer : public gfx_renderer, public MaResourceRegistry {
   std::shared_ptr<struct Bloom> m_bloom;
   std::shared_ptr<struct Sky> m_sky;
   std::shared_ptr<struct MaAutoExposure> m_auto_exposure;
+  std::shared_ptr<struct WindshieldRain> m_windshield_rain;
 
   std::unordered_map<TModel3d const *, std::shared_ptr<Rt::IRtModel>> rt_models;
   std::shared_ptr<Rt::IRtModel> GetRtModel(TModel3d const *);

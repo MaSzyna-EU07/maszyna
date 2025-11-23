@@ -121,13 +121,18 @@ void NvRenderer::MaterialTemplate::Init(const YAML::Node &conf) {
     binding.disable_anisotropy = it.second["no_anisotropy"].as<bool>(false);
     binding.disable_filter = it.second["no_filter"].as<bool>(false);
     binding.disable_mip_bias = it.second["no_mip_bias"].as<bool>(false);
+    size_t default_texture = m_renderer->GetTextureManager()->FetchTexture(
+        it.second["default"].as<std::string>(""), binding.m_hint, 0, false);
+    if (!default_texture) {
+      default_texture = 1;
+    }
 
     texture_mappings.emplace_back(
         MaResourceMapping::Texture_SRV(index, binding.m_name.c_str()));
     sampler_mappings.emplace_back(
         MaResourceMapping::Sampler(index, binding.m_sampler_name.c_str()));
 
-    RegisterTexture(binding.m_name.c_str(), 1);
+    RegisterTexture(binding.m_name.c_str(), default_texture);
     RegisterResource(
         false, "masked_shadow_sampler",
         GetTextureManager()->GetSamplerForTraits(0, RenderPassType::ShadowMap),
@@ -236,6 +241,7 @@ void NvRenderer::MaterialTemplate::Init(const YAML::Node &conf) {
               .Add(MaResourceMapping::Texture_SRV(10, "env_brdf_lut"))
               .Add(MaResourceMapping::Texture_SRV(11, "shadow_depths"))
               .Add(MaResourceMapping::Texture_SRV(12, "gbuffer_depth"))
+              .Add(MaResourceMapping::Texture_SRV(13, "scene_lit_texture_copy"))
               .Add(MaResourceMapping::Texture_SRV(14, "sky_aerial_lut"))
               .Add(MaResourceMapping::Texture_SRV(
                   16, "forwardplus_index_grid_transparent"))

@@ -12,6 +12,7 @@ cbuffer DrawConstants : register(b2) {
   float4 g_WiperPos;
   float4 g_WiperTimerOut;
   float4 g_WiperTimerReturn;
+  float g_VerticalFov;
 }
 
 float2 PixelToCS(in float2 pixel, in float2 size) {

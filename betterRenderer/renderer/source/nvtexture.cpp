@@ -373,6 +373,19 @@ size_t NvTextureManager::FetchTexture(std::string path, int format_hint,
   return index;
 }
 
+size_t NvTextureManager::RegisterExternalTexture(std::string const& path,
+                                                 nvrhi::ITexture *texture) {
+  auto [it, added] = m_texture_map.emplace(path, -1);
+  if (added) {
+    m_texture_cache.emplace_back(std::make_shared<NvTexture>());
+    it->second = m_texture_cache.size();
+  }
+  auto cache = m_texture_cache[it->second - 1];
+  cache->m_rhi_texture = texture;
+  cache->m_last_change = ++NvTexture::s_change_counter;
+  return it->second;
+}
+
 bool NvTexture::CreateRhiTexture() {
   if (m_rhi_texture) return true;
   m_last_change = ++s_change_counter;
@@ -495,8 +508,14 @@ nvrhi::SamplerHandle NvTextureManager::GetSamplerForTraits(
                              : nvrhi::SamplerAddressMode::Wrap)
             .setAllFilters(!traits[MaTextureTraits_NoFilter])
             .setMipFilter(false)
-            .setMaxAnisotropy(traits[MaTextureTraits_NoAnisotropy] || traits[MaTextureTraits_NoFilter] ? 0.f : 16.f)
-            .setMipBias(traits[MaTextureTraits_NoMipBias] || traits[MaTextureTraits_NoFilter] ? 0.f : -1.76f);
+            .setMaxAnisotropy(traits[MaTextureTraits_NoAnisotropy] ||
+                                      traits[MaTextureTraits_NoFilter]
+                                  ? 0.f
+                                  : 16.f)
+            .setMipBias(traits[MaTextureTraits_NoMipBias] ||
+                                traits[MaTextureTraits_NoFilter]
+                            ? 0.f
+                            : -1.76f);
     sampler = m_backend->GetDevice()->createSampler(desc);
   }
   return sampler;

@@ -141,6 +141,10 @@ shaders:
           hint: color
           default: white
           no_filter: true
+        rain:
+          binding: 3
+          hint: linear
+          default: system/raindrops_buffer
       masked_shadow_texture: diffuse
       source: ps_windshield_rain
   utility:
@@ -165,6 +169,14 @@ shaders:
       entrypoint: main
       definitions:
         PREPASS: 1
+    windshield_rain_anim:
+      source: ps_windshield_rain_anim
+      target: pixel
+      entrypoint: main
+    max_depth_4x4:
+      source: cs_downsample_depth
+      target: compute
+      entrypoint: main
 # Contact shadows
 # TODO Depth conversion is broken since converting to reversed depth buffer
     contact_shadows:
@@ -181,6 +193,12 @@ shaders:
       source: default_vertex
       target: vertex
       entrypoint: main
+    default_vertex_no_jitter:
+      source: default_vertex
+      target: vertex
+      entrypoint: main
+      definitions:
+        NO_JITTER: 1
     default_prepass_vertex:
       source: default_vertex
       target: vertex

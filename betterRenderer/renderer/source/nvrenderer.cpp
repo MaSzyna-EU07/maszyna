@@ -39,6 +39,7 @@
 
 #include "rt_model.h"
 #include "tinyexr.h"
+#include "windshield_rain.h"
 
 bool NvRenderer::Init(GLFWwindow *Window) {
   m_message_callback = std::make_shared<NvRendererMessageCallback>();
@@ -92,6 +93,7 @@ bool NvRenderer::Init(GLFWwindow *Window) {
   m_auto_exposure = std::make_shared<MaAutoExposure>(this);
   m_fsr = std::make_shared<NvFSR>(this);
   m_bloom = std::make_shared<Bloom>(GetBackend());
+  m_windshield_rain = std::make_shared<WindshieldRain>();
 
   // protect from undefined framebuffer size in ini (default -1)
   int w = Global.gfx_framebuffer_width, h = Global.gfx_framebuffer_height;
@@ -136,7 +138,10 @@ bool NvRenderer::Init(GLFWwindow *Window) {
   // RegisterResource(true, "gbuffer_depth", m_gbuffer->m_gbuffer_depth,
   //                  nvrhi::ResourceType::Texture_SRV);
 
+  m_windshield_rain->Init(this);
+
   if (!InitMaterials()) return false;
+
   return true;
 }
 
@@ -631,6 +636,7 @@ bool NvRenderer::Render() {
       command_list->endMarker();
 
       if (true) {
+        m_windshield_rain->Render(pass);
         command_list->beginMarker("Forward pass");
         pass.m_framebuffer = m_framebuffer_forward;
         pass.m_type = RenderPassType::Forward;

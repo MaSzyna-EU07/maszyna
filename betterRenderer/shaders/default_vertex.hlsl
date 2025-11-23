@@ -32,13 +32,19 @@ cbuffer VertexConstants : register(b0) {
 
 #include "manul/draw_constants.hlsli"
 
+#ifdef NO_JITTER
+  #define PROJECTION g_Projection
+#else
+  #define PROJECTION g_JitteredProjection
+#endif
+
 VertexOutput main(in VertexInput vs_in) {
   VertexOutput result;
   float4x3 model_view = GetModelView();
   float4x3 model_view_history = GetModelViewHistory();
   float3 view_space_position = mul(float4(vs_in.m_Position, 1.), model_view).xyz;
   result.m_TexCoord = vs_in.m_TexCoord;
-  result.m_PositionSV = mul(g_JitteredProjection, float4(view_space_position, 1.));
+  result.m_PositionSV = mul(PROJECTION, float4(view_space_position, 1.));
 #ifndef PREPASS
   result.m_Normal = mul(float4(vs_in.m_Normal, 0.), model_view).xyz;
   result.m_Position = view_space_position;
