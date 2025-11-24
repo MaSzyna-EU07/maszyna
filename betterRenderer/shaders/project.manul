@@ -1,8 +1,6 @@
 templates:
 # Partially pre-filled containers to avoid excessive copypasta
   XeGTAO:
-    # TODO Depth conversion is broken since converting to reversed depth buffer
-    # after attempting to fix it, it is still broken but with hardcoded values
     source: XeGTAO/GTAO
     target: compute
     definitions: # TODO (mostly) move to shader file I guess
@@ -14,6 +12,7 @@ templates:
       XE_GTAO_USE_HALF_FLOAT_PRECISION: 0
       VA_COMPILED_AS_SHADER_CODE: 1
       VA_SATURATE: saturate
+      XE_GTAO_GENERATE_NORMALS_INPLACE: 1
   envmap:
     source: envmap
     target: compute

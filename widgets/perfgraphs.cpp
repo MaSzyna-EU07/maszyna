@@ -33,6 +33,8 @@ void perfgraph_panel::render_contents() {
 		stopwatch = &Timer::subsystem.gfx_swap;
 	else if (current_timer == gfx_gui)
 		stopwatch = &Timer::subsystem.gfx_gui;
+	else if (current_timer == gfx_animate)
+		stopwatch = &Timer::subsystem.gfx_animate;
 	else if (current_timer == sim_total)
 		stopwatch = &Timer::subsystem.sim_total;
 	else if (current_timer == sim_dynamics)

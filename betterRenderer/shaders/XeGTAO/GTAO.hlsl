@@ -54,6 +54,7 @@ SamplerState                g_samplerPointClamp     : register( s0 );
 // Engine-specific normal map loader
 lpfloat3 LoadNormal( int2 pos )
 {
+    return (float3)0.;
 #if 0
     // special decoding for external normals stored in 11_11_10 unorm - modify appropriately to support your own encoding 
     uint packedInput = g_srcNormalmap.Load( int3(pos, 0) ).x;

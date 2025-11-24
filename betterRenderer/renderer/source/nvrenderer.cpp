@@ -1321,6 +1321,8 @@ void NvRenderer::DebugUi() {
     ImGui::SameLine();
     if (ImGui::Button("Bloom Config")) m_bloom->ShowGui();
     ImGui::SameLine();
+    m_ssao->OnGui(ImGui::Button("GTAO Config"));
+    ImGui::SameLine();
     if (ImGui::Button("Take Screenshot")) MakeScreenshot();
   }
   ImGui::End();

@@ -130,6 +130,27 @@ void NvSsao::Init() {
   }
 
   {
+    BindingLayoutHandle blPrefilterDepths;
+    BindingSetDesc bsDescPrefilter =
+        BindingSetDesc()
+            .addItem(BindingSetItem::ConstantBuffer(0, m_constantBuffer))
+            .addItem(BindingSetItem::Texture_SRV(0, m_gbuffer->m_gbuffer_depth))
+            .addItem(BindingSetItem::Sampler(0, sampler_point));
+    for (int i = 0; i < XE_GTAO_DEPTH_MIP_LEVELS; ++i) {
+      bsDescPrefilter.addItem(
+          BindingSetItem::Texture_UAV(i, m_workingDepths, Format::UNKNOWN,
+                                      TextureSubresourceSet(i, 1, 0, 1)));
+    }
+    utils::CreateBindingSetAndLayout(m_backend->GetDevice(),
+                                     ShaderType::Compute, 0, bsDescPrefilter,
+                                     blPrefilterDepths, m_BSPrefilterDepths);
+    m_PSOPrefilterDepths = m_backend->GetDevice()->createComputePipeline(
+        ComputePipelineDesc()
+            .setComputeShader(m_CSPrefilterDepths16x16)
+            .addBindingLayout(blPrefilterDepths));
+  }
+
+  {
     BindingLayoutHandle blGTAO;
     utils::CreateBindingSetAndLayout(
         m_backend->GetDevice(), ShaderType::Compute, 0,
@@ -187,12 +208,8 @@ void NvSsao::Render(nvrhi::ICommandList* command_list,
   command_list->beginMarker("XeGTAO");
 
   XeGTAO::GTAOConstants constants{};
-  XeGTAO::GTAOSettings settings{};
-  settings.QualityLevel = 2;
-  settings.Radius = 10.f;
-  settings.ThinOccluderCompensation = .7f;
   XeGTAO::GTAOUpdateConstants(constants, m_width, m_height, settings,
-                              glm::value_ptr(projection), false, frame_index);
+                              projection, false, frame_index);
   command_list->writeBuffer(m_constantBuffer, &constants, sizeof(constants));
 
   {
@@ -222,7 +239,7 @@ void NvSsao::Render(nvrhi::ICommandList* command_list,
 
   {
     command_list->beginMarker("Denoise Pass");
-    int num_passes = 4;
+    int num_passes = settings.DenoisePasses;
     nvrhi::ITexture* ping = m_workingAOTerm;
     nvrhi::ITexture* pong = m_workingAOTermPong;
     for (int i = 0; i < num_passes; ++i) {
@@ -259,4 +276,23 @@ void NvSsao::Render(nvrhi::ICommandList* command_list,
                                   nvrhi::ResourceStates::ShaderResource);
   }
   command_list->endMarker();
+}
+
+void NvSsao::OnGui(bool const open_now) {
+  static bool open = false;
+  open |= open_now;
+  if(open && ImGui::Begin("GTAO Settings", &open)) {
+    ImGui::InputInt("Quality level", &settings.QualityLevel);
+    ImGui::InputInt("Denoise passes", &settings.DenoisePasses);
+    ImGui::InputFloat("Radius", &settings.Radius);
+    if(ImGui::CollapsingHeader("Advanced")) {
+      ImGui::InputFloat("Radius multiplier", &settings.RadiusMultiplier);
+      ImGui::InputFloat("Falloff range", &settings.FalloffRange);
+      ImGui::InputFloat("Sample distribution power", &settings.SampleDistributionPower);
+      ImGui::InputFloat("Thin occluder compensation", &settings.ThinOccluderCompensation);
+      ImGui::InputFloat("Final value power", &settings.FinalValuePower);
+      ImGui::InputFloat("Depth MIP sampling offset", &settings.DepthMIPSamplingOffset);
+    }
+    ImGui::End();
+  }
 }

@@ -4,6 +4,7 @@
 #include "nvrenderer/nvrenderer.h"
 #include "nvrendererbackend.h"
 
+#include <Timer.h>
 #include <AnimModel.h>
 #include <simulation.h>
 
@@ -1057,6 +1058,7 @@ void NvRenderer::Render(const Renderable& renderable, const RenderPass& pass,
 
 void NvRenderer::Animate(const glm::dvec3& origin, double radius,
                          uint64_t frame) {
+  Timer::subsystem.gfx_animate.start();
   {
     auto motion_scope = m_motion_cache->SetInstance(nullptr);
     auto& motion_cache = m_motion_cache->Get(nullptr);
@@ -1095,6 +1097,7 @@ void NvRenderer::Animate(const glm::dvec3& origin, double radius,
     if (!instance.m_animatable && instance.m_was_once_animated) return;
     Animate(instance, origin, frame);
   });
+  Timer::subsystem.gfx_animate.stop();
 }
 
 void NvRenderer::GatherSpotLights(const RenderPass& pass) {

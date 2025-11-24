@@ -111,11 +111,10 @@ float3 XeGTAO_ComputeViewspacePosition( const float2 screenPos, const float view
 
 float XeGTAO_ScreenSpaceToViewSpaceDepth( const float screenDepth, const GTAOConstants consts )
 {
-    float depthLinearizeMul = consts.DepthUnpackConsts.x;
-    float depthLinearizeAdd = consts.DepthUnpackConsts.y;
-    // Optimised version of "-cameraClipNear / (cameraClipFar - projDepth * (cameraClipFar - cameraClipNear)) * cameraClipFar"
-    //return 2500. / (.1 - screenDepth * (.1 - 2500.)) * .1;
-    return depthLinearizeMul / (depthLinearizeAdd - screenDepth);
+  float depthLinearizeMul = consts.DepthUnpackConsts.x;
+  float depthLinearizeAdd = consts.DepthUnpackConsts.y;
+  // Optimised version of "-cameraClipNear / (cameraClipFar - projDepth * (cameraClipFar - cameraClipNear)) * cameraClipFar"
+  return depthLinearizeMul / (depthLinearizeAdd - screenDepth);
 }
 
 lpfloat4 XeGTAO_CalculateEdges( const lpfloat centerZ, const lpfloat leftZ, const lpfloat rightZ, const lpfloat topZ, const lpfloat bottomZ )

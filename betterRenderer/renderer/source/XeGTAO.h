@@ -161,21 +161,21 @@ namespace XeGTAO
     template<class T> inline T clamp( T const & v, T const & min, T const & max ) { assert( max >= min ); if( v < min ) return min; if( v > max ) return max;  return v; }
 
     // If using TAA then set noiseIndex to frameIndex % 64 - otherwise use 0
-    inline void GTAOUpdateConstants( XeGTAO::GTAOConstants& consts, int viewportWidth, int viewportHeight, const XeGTAO::GTAOSettings & settings, const float projMatrix[16], bool rowMajor, unsigned int frameCounter )
+    inline void GTAOUpdateConstants( XeGTAO::GTAOConstants& consts, int viewportWidth, int viewportHeight, const XeGTAO::GTAOSettings & settings, const glm::mat4& projMatrix, bool rowMajor, unsigned int frameCounter )
     {
         consts.ViewportSize                 = { viewportWidth, viewportHeight };
         consts.ViewportPixelSize            = { 1.0f / (float)viewportWidth, 1.0f / (float)viewportHeight };
 
-        float depthLinearizeMul = (rowMajor)?(-projMatrix[3 * 4 + 2]):(-projMatrix[3 + 2 * 4]);     // float depthLinearizeMul = ( clipFar * clipNear ) / ( clipFar - clipNear );
-        float depthLinearizeAdd = (rowMajor)?( projMatrix[2 * 4 + 2]):( projMatrix[2 + 2 * 4]);     // float depthLinearizeAdd = clipFar / ( clipFar - clipNear );
+        float depthLinearizeMul = -projMatrix[3][2];     // float depthLinearizeMul = ( clipFar * clipNear ) / ( clipFar - clipNear );
+        float depthLinearizeAdd = -projMatrix[2][2];     // float depthLinearizeAdd = clipFar / ( clipFar - clipNear );
 
         // correct the handedness issue. need to make sure this below is correct, but I think it is.
         if( depthLinearizeMul * depthLinearizeAdd < 0 )
             depthLinearizeAdd = -depthLinearizeAdd;
-        consts.DepthUnpackConsts            = { -depthLinearizeMul, depthLinearizeAdd };
+        consts.DepthUnpackConsts            = { depthLinearizeMul, depthLinearizeAdd };
 
-        float tanHalfFOVY = 1.0f / ((rowMajor)?(projMatrix[1 * 4 + 1]):(projMatrix[1 + 1 * 4]));    // = tanf( drawContext.Camera.GetYFOV( ) * 0.5f );
-        float tanHalfFOVX = 1.0F / ((rowMajor)?(projMatrix[0 * 4 + 0]):(projMatrix[0 + 0 * 4]));    // = tanHalfFOVY * drawContext.Camera.GetAspect( );
+        float tanHalfFOVY = 1.0f / projMatrix[1][1];    // = tanf( drawContext.Camera.GetYFOV( ) * 0.5f );
+        float tanHalfFOVX = 1.0F / projMatrix[0][0];    // = tanHalfFOVY * drawContext.Camera.GetAspect( );
         consts.CameraTanHalfFOV             = { tanHalfFOVX, tanHalfFOVY };
 
         consts.NDCToViewMul                 = { consts.CameraTanHalfFOV.x * 2.0f, consts.CameraTanHalfFOV.y * -2.0f };
