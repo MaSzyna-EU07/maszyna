@@ -303,8 +303,8 @@ void NvRenderer::MaterialTemplate::Init(const YAML::Node &conf) {
                   .setBlendState(nvrhi::BlendState().setRenderTarget(
                       0, nvrhi::BlendState::RenderTarget().disableBlend())));
           break;
-        case RenderPassType::Forward:
-          pipeline_desc.setRenderState(
+        case RenderPassType::Forward: {
+          auto render_state =
               nvrhi::RenderState()
                   .setDepthStencilState(
                       nvrhi::DepthStencilState()
@@ -316,19 +316,25 @@ void NvRenderer::MaterialTemplate::Init(const YAML::Node &conf) {
                                       .setFillSolid()
                                       .enableDepthClip()
                                       .disableScissor()
-                                      .setCullFront())
-                  .setBlendState(
-                      nvrhi::BlendState()
-                          .setRenderTarget(
-                              0, nvrhi::BlendState::RenderTarget()
-                                     .enableBlend()
-                                     .setBlendOp(nvrhi::BlendOp::Add)
-                                     .setSrcBlend(nvrhi::BlendFactor::One)
-                                     .setDestBlend(
-                                         nvrhi::BlendFactor::OneMinusSrcAlpha))
-                          .setRenderTarget(1, nvrhi::BlendState::RenderTarget()
-                                                  .disableBlend())));
-          break;
+                                      .setCullFront());
+          if (m_enable_refraction) {
+            render_state.setBlendState(nvrhi::BlendState().setRenderTarget(
+                0, nvrhi::BlendState::RenderTarget().disableBlend()));
+          } else {
+            render_state.setBlendState(
+                nvrhi::BlendState()
+                    .setRenderTarget(
+                        0,
+                        nvrhi::BlendState::RenderTarget()
+                            .enableBlend()
+                            .setBlendOp(nvrhi::BlendOp::Add)
+                            .setSrcBlend(nvrhi::BlendFactor::One)
+                            .setDestBlend(nvrhi::BlendFactor::OneMinusSrcAlpha))
+                    .setRenderTarget(
+                        1, nvrhi::BlendState::RenderTarget().disableBlend()));
+          }
+          pipeline_desc.setRenderState(render_state);
+        } break;
         default:;
       }
 
