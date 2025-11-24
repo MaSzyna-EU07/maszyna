@@ -109,6 +109,7 @@ void NvRenderer::MaterialTemplate::Init(const YAML::Node &conf) {
   MaResourceMapping sampler_mapping_shadow{};
   m_pipelines.fill(nullptr);
   m_masked_shadow_texture = conf["masked_shadow_texture"].as<std::string>();
+  m_enable_refraction = conf["refraction"].as<bool>(false);
   for (const auto it : conf["textures"]) {
     auto index = it.second["binding"].as<int>();
     m_texture_bindings.resize(

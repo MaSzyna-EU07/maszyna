@@ -1,4 +1,5 @@
 ﻿#include "config.h"
+#include "gbufferblitpass.h"
 #include "motioncache.h"
 #include "nvrenderer/nvrenderer.h"
 #include "nvrendererbackend.h"
@@ -1014,17 +1015,22 @@ void NvRenderer::Render(const Renderable& renderable, const RenderPass& pass,
     nvrhi::GraphicsState gfx_state;
     nvrhi::DrawArguments draw_arguments{};
     bool indexed;
+    bool refractive;
     float alpha_threshold;
     if (!BindGeometry(item.m_geometry, pass, gfx_state, draw_arguments,
                       indexed))
       continue;
     if (!BindMaterial(item.m_material, DrawType::Model, pass, gfx_state,
-                      alpha_threshold))
+                      alpha_threshold, &refractive))
       continue;
 
     BindConstants(pass, gfx_state);
 
     pass.m_command_list_draw->beginMarker(item.m_name.data());
+
+    if(refractive && pass.m_type == RenderPassType::Forward) {
+      m_gbuffer_blit->UpdateSceneColorForRefraction(pass.m_command_list_draw);
+    }
 
     pass.m_command_list_draw->setGraphicsState(gfx_state);
 

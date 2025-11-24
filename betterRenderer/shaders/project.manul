@@ -147,6 +147,7 @@ shaders:
           default: system/raindrops_buffer
       masked_shadow_texture: diffuse
       source: ps_windshield_rain
+      refraction: true
   utility:
 # Everything that does not belong to scene graph rendering
 # ImGui shaders

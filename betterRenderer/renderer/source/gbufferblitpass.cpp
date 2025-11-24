@@ -192,8 +192,7 @@ void GbufferBlitPass::UpdateConstants(nvrhi::ICommandList* command_list,
 
   const auto& daylight = Global.DayLight;
 
-  m_sky->CalcLighting(constants.m_light_dir,
-                      constants.m_light_color);
+  m_sky->CalcLighting(constants.m_light_dir, constants.m_light_color);
   constants.m_altitude = Global.pCamera.Pos.y;
   constants.m_time = Timer::GetTime();
   constants.m_vertical_fov =
@@ -201,7 +200,8 @@ void GbufferBlitPass::UpdateConstants(nvrhi::ICommandList* command_list,
 
   {
     float percipitation_intensity = glm::saturate(Global.Overcast - 1.);
-    constants.m_rain_params.x = percipitation_intensity;  // % amount of droplets
+    constants.m_rain_params.x =
+        percipitation_intensity;  // % amount of droplets
     constants.m_rain_params.y =
         glm::mix(15., 1., percipitation_intensity);  // Regeneration time
     static glm::vec4 wiper_timer_out;
@@ -241,6 +241,13 @@ void GbufferBlitPass::UpdateConstants(nvrhi::ICommandList* command_list,
   command_list->writeBuffer(m_draw_constants, &constants, sizeof(constants));
 }
 
+void GbufferBlitPass::UpdateSceneColorForRefraction(
+    nvrhi::ICommandList* command_list) const {
+  command_list->copyTexture(
+      m_output_copy, nvrhi::TextureSlice().resolve(m_output_copy->getDesc()),
+      m_output, nvrhi::TextureSlice().resolve(m_output->getDesc()));
+}
+
 void GbufferBlitPass::Render(nvrhi::ICommandList* command_list,
                              glm::dmat4& view, const glm::dmat4& projection) {
   UpdateConstants(command_list, view, projection);
@@ -249,10 +256,6 @@ void GbufferBlitPass::Render(nvrhi::ICommandList* command_list,
       m_scene_depth, nvrhi::TextureSlice().resolve(m_scene_depth->getDesc()),
       m_gbuffer->m_gbuffer_depth,
       nvrhi::TextureSlice().resolve(m_scene_depth->getDesc()));
-  command_list->copyTexture(
-      m_output_copy, nvrhi::TextureSlice().resolve(m_output_copy->getDesc()),
-      m_output,
-      nvrhi::TextureSlice().resolve(m_output->getDesc()));
 }
 
 void GbufferBlitPass::Render(nvrhi::ICommandList* command_list) {

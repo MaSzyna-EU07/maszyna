@@ -1,5 +1,3 @@
-#define REFRACTION 1
-
 #include "manul/math.hlsli"
 #include "manul/material.hlsli"
 #include "manul/color_transform.hlsli"
@@ -53,7 +51,7 @@ void MaterialPass(inout MaterialData material) {
     material_glass.m_MaterialAlbedoAlpha.xyz = 0.;
     material_glass.m_MaterialNormal = material.m_Normal;
     material_glass.m_MaterialParams.g = .2;
-    float3 normal = CalculateSurfaceNormal(material_glass.m_Position, material_glass.m_Normal, gradient * -.005);
+    float3 normal = CalculateSurfaceNormal(material_glass.m_Position, material_glass.m_Normal, gradient * -.0075);
     material_glass.m_MaterialNormal = normal;
     float cosTheta = saturate(dot(-normalize(material_glass.m_Position), normal));
     material.m_MaterialAlbedoAlpha.a = lerp(.1, FresnelSchlickRoughness(cosTheta, .04, 0.), smoothstep(0., .15, droplet_distance));
@@ -63,7 +61,7 @@ void MaterialPass(inout MaterialData material) {
     float4 glass_lit;
     ApplyMaterialLighting(glass_lit, material_glass, material_glass.m_PixelCoord);
 
-    material.m_MaterialEmission = glass_lit * smoothstep(0., .15, droplet_distance) * saturate(normal_world.y * .5 + .5);
+    material.m_MaterialEmission = glass_lit * smoothstep(0., .15, droplet_distance) * smoothstep(-1., 0., normal_world.y);
 
     material.m_MaterialAlbedoAlpha.xyz = 0.;
     material.m_RefractionOffset = normal.xy * (.005 / (length(material.m_Position) * tan(.5 * g_VerticalFov))) * smoothstep(0., .15, droplet_distance);

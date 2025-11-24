@@ -504,6 +504,7 @@ class NvRenderer : public gfx_renderer, public MaResourceRegistry {
       bool disable_mip_bias = false;
       texture_handle m_default_texture;
     };
+    bool m_enable_refraction = false;
     nvrhi::static_vector<TextureBinding, 8> m_texture_bindings;
     std::array<nvrhi::GraphicsPipelineHandle, Constants::NumMaterialPipelines()>
         m_pipelines;
@@ -699,7 +700,7 @@ class NvRenderer : public gfx_renderer, public MaResourceRegistry {
 
   bool BindMaterial(material_handle handle, DrawType draw_type,
                     const RenderPass &pass, nvrhi::GraphicsState &gfx_state,
-                    float &alpha_threshold);
+                    float &alpha_threshold, bool *out_is_refractive = nullptr);
 
   bool BindLineMaterial(DrawType draw_type, const RenderPass &pass,
                         nvrhi::GraphicsState &gfx_state);

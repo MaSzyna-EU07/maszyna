@@ -18,6 +18,8 @@ struct GbufferBlitPass : public FullScreenPass, public MaResourceRegistry {
   void UpdateConstants(nvrhi::ICommandList* command_list, glm::dmat4& view,
                        const glm::dmat4& projection);
 
+  void UpdateSceneColorForRefraction(nvrhi::ICommandList *command_list) const;
+
   void Render(nvrhi::ICommandList* command_list, glm::dmat4& view,
               const glm::dmat4& projection);
   virtual void Render(nvrhi::ICommandList* command_list) override;

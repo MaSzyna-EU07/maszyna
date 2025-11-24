@@ -1584,12 +1584,16 @@ void NvRenderer::BindConstants(const RenderPass &pass,
 bool NvRenderer::BindMaterial(material_handle handle, DrawType draw_type,
                               const RenderPass &pass,
                               nvrhi::GraphicsState &gfx_state,
-                              float &alpha_threshold) {
+                              float &alpha_threshold, bool *out_is_refractive) {
   if (pass.m_type == RenderPassType::RendererWarmUp) return true;
   if (!handle || handle > m_material_cache.size()) {
     return false;
   }
   MaterialCache &cache = m_material_cache[handle - 1];
+
+  if(out_is_refractive) {
+    *out_is_refractive = cache.m_template->m_enable_refraction;
+  }
 
   if (!cache.ShouldRenderInPass(pass)) return false;
 
