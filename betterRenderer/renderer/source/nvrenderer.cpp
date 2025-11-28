@@ -386,12 +386,21 @@ bool NvRenderer::Render() {
             (static_cast<glm::dvec2>(Global.cursor_pos) /
                  static_cast<glm::dvec2>(Global.window_size) -
              .5);
-        m_mouse_ro = pass.m_origin;
-        glm::dvec4 mouse_rd_norm =
-            inverse(projection) * glm::dvec4(mousepos, 1., 1.);
-        mouse_rd_norm /= mouse_rd_norm.w;
-        m_mouse_rd =
-            normalize(inverse(transform) * glm::dvec4(mouse_rd_norm.xyz, 0.));
+        {
+          glm::dvec4 mouse_ro_norm =
+              inverse(projection) * glm::dvec4(mousepos, 1., 1.);
+          mouse_ro_norm /= mouse_ro_norm.w;
+          m_mouse_ro = pass.m_origin + static_cast<glm::dvec3>(
+                                           inverse(transform) *
+                                           glm::dvec4(mouse_ro_norm.xyz, 1.));
+        }
+        {
+          glm::dvec4 mouse_rd_norm =
+             inverse(projection) * glm::dvec4(mousepos, 0., 1.);
+          mouse_rd_norm /= mouse_rd_norm.w;
+          m_mouse_rd =
+              normalize(inverse(transform) * glm::dvec4(mouse_rd_norm.xyz, 0.));
+        }
       }
 
       m_picked_submodel = nullptr;
