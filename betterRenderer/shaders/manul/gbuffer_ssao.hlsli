@@ -1,6 +1,6 @@
 #ifndef GBUFFER_SSAO_HLSLI
 #define GBUFFER_SSAO_HLSLI
-Texture2D<float> g_SSAO : register(t5);
+Texture2D<float4> g_SSAO : register(t5);
 
 float4 R8G8B8A8_UNORM_to_FLOAT4( uint packedInput )
 {
@@ -19,8 +19,11 @@ void DecodeVisibilityBentNormal( const uint packedValue, out float visibility, o
     visibility = decoded.w;
 }
 
-float GetSSAO(in uint2 pixel_position) {
-  return g_SSAO[pixel_position];
+float4 GetBentNormal(in uint2 pixel_position) {
+  float4 bent_normal = g_SSAO[pixel_position];
+  bent_normal.xyz = 2. * bent_normal.xyz - 1.;
+  bent_normal.z *= -1.;
+  return bent_normal;
 }
 
 #endif

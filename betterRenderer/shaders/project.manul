@@ -13,6 +13,7 @@ templates:
       VA_COMPILED_AS_SHADER_CODE: 1
       VA_SATURATE: saturate
       XE_GTAO_GENERATE_NORMALS_INPLACE: 1
+      XE_GTAO_COMPUTE_BENT_NORMALS: 1
   envmap:
     source: envmap
     target: compute
@@ -21,9 +22,6 @@ templates:
     target: compute
   bloom:
     source: manul/bloom
-    target: compute
-  gbuffer_lights:
-    source: manul/gbuffer_lights
     target: compute
 shaders:
   materials:
@@ -327,13 +325,6 @@ shaders:
       source: manul/line
       target: pixel
       entrypoint: pix_main
-# Deferred light primitives
-    gbuffer_light_clear:
-      use_template: gbuffer_lights
-      entrypoint: CS_Clear
-    gbuffer_light_spot:
-      use_template: gbuffer_lights
-      entrypoint: CS_Spotlight
 # Forward+ light culling
     forwardplus_compute_frustums:
       source: manul/forward_plus/forward_plus

@@ -78,7 +78,7 @@ void NvSsao::Init() {
           .setWidth(m_width)
           .setHeight(m_height)
           .setIsUAV(true)
-          .setFormat(Format::R8_UINT)
+          .setFormat(Format::R32_UINT)
           .setInitialState(ResourceStates::ShaderResource)
           .setKeepInitialState(true));
 
@@ -88,7 +88,7 @@ void NvSsao::Init() {
           .setWidth(m_width)
           .setHeight(m_height)
           .setIsUAV(true)
-          .setFormat(Format::R8_UINT)
+          .setFormat(Format::R32_UINT)
           .setInitialState(ResourceStates::ShaderResource)
           .setKeepInitialState(true));
 
@@ -98,7 +98,7 @@ void NvSsao::Init() {
           .setWidth(m_width)
           .setHeight(m_height)
           .setIsUAV(true)
-          .setFormat(Format::R8_UNORM)
+          .setFormat(Format::RGBA8_UNORM)
           .setIsTypeless(true)
           .setInitialState(ResourceStates::ShaderResource)
           .setKeepInitialState(true));
@@ -130,35 +130,12 @@ void NvSsao::Init() {
   }
 
   {
-    BindingLayoutHandle blPrefilterDepths;
-    BindingSetDesc bsDescPrefilter =
-        BindingSetDesc()
-            .addItem(BindingSetItem::ConstantBuffer(0, m_constantBuffer))
-            .addItem(BindingSetItem::Texture_SRV(0, m_gbuffer->m_gbuffer_depth))
-            .addItem(BindingSetItem::Sampler(0, sampler_point));
-    for (int i = 0; i < XE_GTAO_DEPTH_MIP_LEVELS; ++i) {
-      bsDescPrefilter.addItem(
-          BindingSetItem::Texture_UAV(i, m_workingDepths, Format::UNKNOWN,
-                                      TextureSubresourceSet(i, 1, 0, 1)));
-    }
-    utils::CreateBindingSetAndLayout(m_backend->GetDevice(),
-                                     ShaderType::Compute, 0, bsDescPrefilter,
-                                     blPrefilterDepths, m_BSPrefilterDepths);
-    m_PSOPrefilterDepths = m_backend->GetDevice()->createComputePipeline(
-        ComputePipelineDesc()
-            .setComputeShader(m_CSPrefilterDepths16x16)
-            .addBindingLayout(blPrefilterDepths));
-  }
-
-  {
     BindingLayoutHandle blGTAO;
     utils::CreateBindingSetAndLayout(
         m_backend->GetDevice(), ShaderType::Compute, 0,
         BindingSetDesc()
             .addItem(BindingSetItem::ConstantBuffer(0, m_constantBuffer))
             .addItem(BindingSetItem ::Texture_SRV(0, m_workingDepths))
-            .addItem(
-                BindingSetItem::Texture_SRV(1, m_gbuffer->m_gbuffer_normal))
             .addItem(BindingSetItem::Texture_UAV(0, m_workingAOTerm))
             .addItem(BindingSetItem::Texture_UAV(1, m_workingEdges))
             .addItem(BindingSetItem::Texture_UAV(2, m_debugImage))
@@ -251,10 +228,10 @@ void NvSsao::Render(nvrhi::ICommandList* command_list,
                   nvrhi::BindingSetItem::ConstantBuffer(0, m_constantBuffer))
               .addItem(nvrhi::BindingSetItem::Texture_SRV(0, ping))
               .addItem(nvrhi::BindingSetItem::Texture_SRV(
-                  1, m_gbuffer->m_gbuffer_normal))
+                  1, m_workingEdges))
               .addItem(nvrhi::BindingSetItem::Texture_UAV(
                   0, last_pass ? m_outputAO.Get() : pong,
-                  nvrhi::Format::R8_UINT))
+                  nvrhi::Format::R32_UINT))
               .addItem(nvrhi::BindingSetItem::Texture_UAV(1, m_workingEdges))
               .addItem(nvrhi::BindingSetItem::Texture_UAV(2, m_debugImage))
               .addItem(nvrhi::BindingSetItem::Sampler(0, m_SamplerPoint)),
