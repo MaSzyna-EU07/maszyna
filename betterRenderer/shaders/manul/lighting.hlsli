@@ -48,7 +48,7 @@ void ApplyMaterialLighting(out float4 lit, in MaterialData material)
   
   // Convert material to surface data
   SurfaceData surface_data;
-  surface_data.m_Albedo = clamp(material.m_MaterialAlbedoAlpha.rgb, .02, .9);
+  surface_data.m_Albedo = saturate(material.m_MaterialAlbedoAlpha.rgb);
   surface_data.m_Alpha = material.m_MaterialAlbedoAlpha.a;
   surface_data.m_Metalness = material.m_MaterialParams.r;
   surface_data.m_Roughness = material.m_MaterialParams.g;
