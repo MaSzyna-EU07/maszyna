@@ -26,7 +26,7 @@ struct NvSsao {
   nvrhi::ShaderHandle m_CSGTAOMedium;
   nvrhi::ShaderHandle m_CSGTAOHigh;
   nvrhi::ShaderHandle m_CSGTAOUltra;
-  nvrhi::ComputePipelineHandle m_PSOGTAO;
+  std::array<nvrhi::ComputePipelineHandle, 4> m_PSOGTAO;
   nvrhi::BindingSetHandle m_BSGTAO;
 
   nvrhi::ShaderHandle m_CSDenoisePass;
