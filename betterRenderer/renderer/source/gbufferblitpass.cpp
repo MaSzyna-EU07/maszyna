@@ -246,6 +246,9 @@ void GbufferBlitPass::UpdateSceneColorForRefraction(
   command_list->copyTexture(
       m_output_copy, nvrhi::TextureSlice().resolve(m_output_copy->getDesc()),
       m_output, nvrhi::TextureSlice().resolve(m_output->getDesc()));
+  command_list->setTextureState(m_output, nvrhi::AllSubresources,
+                                nvrhi::ResourceStates::RenderTarget);
+  command_list->commitBarriers();
 }
 
 void GbufferBlitPass::Render(nvrhi::ICommandList* command_list,
