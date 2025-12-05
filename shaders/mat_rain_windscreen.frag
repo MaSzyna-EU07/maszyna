@@ -25,7 +25,6 @@ layout(location = 1) out vec4 out_motion;
 #include <light_common.glsl>
 #include <apply_fog.glsl>
 #include <tonemapping.glsl>
-#include <random.glsl>
 
 uniform sampler2D diffuse;
 uniform sampler2D raindropsatlas;
@@ -34,6 +33,10 @@ uniform sampler2D wipermask;
 uniform float specular_intensity = 1.0;
 uniform float wobble_strength    = 0.002;
 uniform float wobble_speed       = 30.0;
+
+float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+}
 
 vec4 getDropTex(float choice, vec2 uv) {
     vec2 offset;
@@ -51,14 +54,13 @@ void main() {
     if (tex_color.a < 0.01) discard;
 
     vec2 rainCoord = f_coord;
-    float gridSize = ceil(param[2].x);
 
     const float numDrops      = 20000.0;
     const float cycleDuration = 4.0;
-    
-    float squareMin     = 0.5 / gridSize;
-    float squareMax     = 1.2 / gridSize;
+    const float squareMin     = 0.0035;
+    const float squareMax     = 0.008;
 
+    float gridSize = ceil(param[2].x);
     vec2  cell     = floor(rainCoord * gridSize);
 
     vec3 dropLayer = vec3(0.0);
@@ -74,37 +76,37 @@ void main() {
             float side;
             float mixFactor = GetMixFactor(neighborCenter, side);
             
-            uint seed = Hash(uvec3(neighborCell, side));
-            
-            if(mixFactor < RandF(seed)) {
+            if(mixFactor < hash(neighborCell + vec2(mix(0., .2137, side), 0.))) {
               continue;
             }
+            
+            float i = neighborCell.x + neighborCell.y * gridSize;
 
             // Show a percentage of droplets given by rain intensity param
-            float activationSeed = RandF(seed);
+            float activationSeed = hash(vec2(i, 0.333 + side));
             if (activationSeed > rain_params.x)
                 continue; // kropla nieaktywna
 
             // Randomly modulate droplet center & size
-            vec2 dropCenter = (neighborCell + vec2(RandF(seed), RandF(seed))) / gridSize;
-            float squareSize = mix(squareMin, squareMax, RandF(seed));
+            vec2 dropCenter = (neighborCell + vec2(hash(vec2(i, 0.12 + side)), hash(vec2(i, 0.34 + side)))) / gridSize;
+            float squareSize = mix(squareMin, squareMax, hash(vec2(i, 0.56 + side)));
 
-            float lifeTime = time + RandF(seed) * cycleDuration;
+            float lifeTime = time + hash(vec2(i, 0.78 + side)) * cycleDuration;
             float phase    = fract(lifeTime / cycleDuration);
             float active   = clamp(1.0 - phase, 0.0, 1.0);
 
             // Gravity influence (TODO add vehicle speed & wind here!)
             float gravityStart = 0.5;
             float gravityPhase = smoothstep(gravityStart, 1.0, phase);
-            float dropMass     = mix(0.3, 1.2, RandF(seed));
+            float dropMass     = mix(0.3, 1.2, hash(vec2(i, 0.21 + side)));
             float gravitySpeed = 0.15 * dropMass;
             vec2  gravityOffset = vec2(0.0, gravityPhase * gravitySpeed * phase);
 
             // Random wobble
-            bool hasWobble = (RandF(seed) < 0.10);
+            bool hasWobble = (hash(vec2(i, 0.91 + side)) < 0.10);
             vec2 wobbleOffset = vec2(0.0);
             if (hasWobble && gravityPhase > 0.0) {
-                float intensity = sin(time * wobble_speed + RandF(seed) * 100.) * wobble_strength * gravityPhase;
+                float intensity = sin(time * wobble_speed + i) * wobble_strength * gravityPhase;
                 wobbleOffset = vec2(intensity, 0.0);
             }
 
@@ -123,7 +125,7 @@ void main() {
 
             if (mask > 0.001) {
                 vec2 localUV = (diff + squareSize * 0.5) / squareSize;
-                float choice = RandF(seed);
+                float choice = hash(vec2(i, 0.99 + side));
                 vec4 dropTex = getDropTex(choice, localUV);
                 float sharpAlpha = smoothstep(0.3, 0.9, dropTex.a);
 
@@ -137,7 +139,7 @@ void main() {
 
                 float sparkle = 0.0;
                 if (hasWobble) {
-                    sparkle = pow(abs(sin(f_coord.x * 8.0 + time * 2.0 + RandF(seed) * 6.2831)), 40.0)
+                    sparkle = pow(abs(sin(f_coord.x * 8.0 + time * 2.0 + hash(vec2(i, 0.9 + side)) * 6.2831)), 40.0)
                               * mix(0.2, 1.0, sunFactor);
                 }
 
@@ -160,11 +162,10 @@ void main() {
       float specularity = (tex_color.r + tex_color.g + tex_color.b) * 0.5;
       glossiness = abs(param[1].w);
       
+      fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, reflectivity, specularity, shadow_tone);
       vec4 color = vec4(fragcolor, tex_color.a * alpha_mult);
       
-      color.xyz = mix(out_color.xyz, color.xyz, color.a);
-      
-      out_color.xyz = apply_fog(apply_lights(color.xyz, fragnormal, color.xyz, reflectivity, specularity, shadow_tone));
+      out_color.xyz = apply_fog(mix(out_color.xyz, color.xyz, color.a));
       out_color.a = mix(out_color.a, 1., color.a);
     }
 
