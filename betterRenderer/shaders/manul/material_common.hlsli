@@ -9,12 +9,14 @@ struct MaterialData {
   float3 m_Bitangent;
   float3 m_Normal;
   float2 m_TexCoord;
+  float2 m_ScreenCoord;
   uint2 m_PixelCoord;
   float4 m_PositionNDC;
   float4 m_MaterialAlbedoAlpha;
   float3 m_MaterialEmission;
   float4 m_MaterialParams; // Metalness.Roughness.Occlusion.Specular
   float3 m_MaterialNormal;
+  float2 m_RefractionOffset;
 };
 
 #endif

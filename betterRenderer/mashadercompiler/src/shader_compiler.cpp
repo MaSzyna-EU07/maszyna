@@ -274,6 +274,11 @@ bool MaShaderCompiler::CompileMaterial(YAML::Node &dest, const YAML::Node &src,
     local_definitions.insert(local_definitions.end(), definitions.begin(),
                              definitions.end());
 
+    if (pass == MaterialRenderPass::Forward &&
+        TemplateOverride("refraction", src, templates).as<bool>(false)) {
+      local_definitions.emplace_back(L"REFRACTION", L"1");
+    }
+
     auto blob = CompileShaderToBlob(file_name, ToWide(entry_name),
                                     local_definitions, target, platform);
 

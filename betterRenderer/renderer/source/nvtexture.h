@@ -16,6 +16,7 @@ enum MaTextureTraits {
 
   MaTextureTraits_NoMipBias,
   MaTextureTraits_NoAnisotropy,
+  MaTextureTraits_NoFilter,
 
   MaTextureTraits_Num
 };
@@ -82,6 +83,7 @@ class NvTextureManager {
   NvTextureManager(class NvRenderer* renderer);
   size_t FetchTexture(std::string path, int format_hint, int size_bias,
                       bool unload_on_location);
+  size_t RegisterExternalTexture(std::string const& path, nvrhi::ITexture *texture);
   void UpdateLastUse(size_t handle, const glm::dvec3& location);
   bool IsValidHandle(size_t handle);
   NvTexture* GetTexture(size_t handle);

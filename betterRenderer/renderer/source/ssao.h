@@ -1,14 +1,17 @@
 #pragma once
 
-#include <memory>
+#include <nvrhi/nvrhi.h>
 
 #include <glm/glm.hpp>
+#include <memory>
 
-#include <nvrhi/nvrhi.h>
+#include "XeGTAO.h"
 
 struct NvSsao {
   NvSsao(class NvRenderer* renderer);
   void Init();
+
+  XeGTAO::GTAOSettings settings{};
 
   class NvRendererBackend* m_backend;
   struct NvGbuffer* m_gbuffer;
@@ -23,7 +26,7 @@ struct NvSsao {
   nvrhi::ShaderHandle m_CSGTAOMedium;
   nvrhi::ShaderHandle m_CSGTAOHigh;
   nvrhi::ShaderHandle m_CSGTAOUltra;
-  nvrhi::ComputePipelineHandle m_PSOGTAO;
+  std::array<nvrhi::ComputePipelineHandle, 4> m_PSOGTAO;
   nvrhi::BindingSetHandle m_BSGTAO;
 
   nvrhi::ShaderHandle m_CSDenoisePass;
@@ -52,4 +55,6 @@ struct NvSsao {
 
   void Render(nvrhi::ICommandList* command_list, const glm::mat4& projection,
               size_t frame_index);
+
+  void OnGui(bool open_now);
 };

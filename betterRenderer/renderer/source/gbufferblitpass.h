@@ -18,17 +18,24 @@ struct GbufferBlitPass : public FullScreenPass, public MaResourceRegistry {
   void UpdateConstants(nvrhi::ICommandList* command_list, glm::dmat4& view,
                        const glm::dmat4& projection);
 
+  void UpdateSceneColorForRefraction(nvrhi::ICommandList *command_list) const;
+
   void Render(nvrhi::ICommandList* command_list, glm::dmat4& view,
               const glm::dmat4& projection);
   virtual void Render(nvrhi::ICommandList* command_list) override;
 
-  struct DrawConstants {
+  struct alignas(16) DrawConstants {
     glm::mat4 m_inverse_model_view;
     glm::mat4 m_inverse_projection;
     glm::vec3 m_light_dir;
     float m_altitude;
     glm::vec3 m_light_color;
     float m_time;
+    glm::vec4 m_rain_params;
+    glm::vec4 m_wiper_pos;
+    glm::vec4 m_wiper_timer_out;
+    glm::vec4 m_wiper_timer_return;
+    float m_vertical_fov;
   };
 
   nvrhi::BindingLayoutHandle m_binding_layout;
@@ -49,5 +56,6 @@ struct GbufferBlitPass : public FullScreenPass, public MaResourceRegistry {
   nvrhi::ComputePipelineHandle m_pso;
 
   nvrhi::TextureHandle m_output;
+  nvrhi::TextureHandle m_output_copy;
   virtual nvrhi::IFramebuffer* GetFramebuffer() override;
 };

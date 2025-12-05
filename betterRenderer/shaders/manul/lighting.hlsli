@@ -39,15 +39,21 @@ void ApplyMaterialLighting(out float4 lit, in MaterialData material)
 {
   // Camera-centric world position
   float3 view = mul((float3x3)g_InverseModelView, material.m_Position);
+
+#ifdef GBUFFER_SSAO_HLSLI
+  float4 bent_normal = GetBentNormal(pixel_position);
+  bent_normal.a = min(material.m_MaterialParams.b, bent_normal.a);
+  bent_normal.xyz = mul((float3x3)g_InverseModelView, bent_normal.xyz);
+#endif
   
   // Convert material to surface data
   SurfaceData surface_data;
-  surface_data.m_Albedo = clamp(material.m_MaterialAlbedoAlpha.rgb, .02, .9);
+  surface_data.m_Albedo = saturate(material.m_MaterialAlbedoAlpha.rgb);
   surface_data.m_Alpha = material.m_MaterialAlbedoAlpha.a;
   surface_data.m_Metalness = material.m_MaterialParams.r;
   surface_data.m_Roughness = material.m_MaterialParams.g;
 #ifdef GBUFFER_SSAO_HLSLI
-  surface_data.m_DiffuseOcclusion = min(material.m_MaterialParams.b, GetSSAO(pixel_position));
+  surface_data.m_DiffuseOcclusion = bent_normal.a;
 #else
   surface_data.m_DiffuseOcclusion = material.m_MaterialParams.b;
 #endif
@@ -59,7 +65,12 @@ void ApplyMaterialLighting(out float4 lit, in MaterialData material)
   surface_data.m_SpecularF0 = lerp(surface_data.m_SpecularF0, surface_data.m_Albedo, surface_data.m_Metalness);
   surface_data.m_SpecularF = FresnelSchlickRoughness(surface_data.m_NdotV, surface_data.m_SpecularF0, surface_data.m_Roughness);
   surface_data.m_HorizonFading = 1.6;
+#ifdef GBUFFER_SSAO_HLSLI
+  float BNdotR = max(0., dot(surface_data.m_Reflect, bent_normal.xyz));
+  surface_data.m_SpecularOcclusion = ComputeSpecOcclusion(BNdotR, surface_data.m_DiffuseOcclusion, surface_data.m_Roughness);
+#else
   surface_data.m_SpecularOcclusion = ComputeSpecOcclusion(surface_data.m_NdotV, surface_data.m_DiffuseOcclusion, surface_data.m_Roughness);
+#endif
 
   lit.rgb = material.m_MaterialEmission * surface_data.m_Alpha;
   lit.a = 1. - (saturate((1. - surface_data.m_Alpha) * lerp(1. - dot(surface_data.m_SpecularF, 1./3.), 0., surface_data.m_Metalness)));

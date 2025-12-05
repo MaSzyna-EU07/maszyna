@@ -1,8 +1,6 @@
 templates:
 # Partially pre-filled containers to avoid excessive copypasta
   XeGTAO:
-    # TODO Depth conversion is broken since converting to reversed depth buffer
-    # after attempting to fix it, it is still broken but with hardcoded values
     source: XeGTAO/GTAO
     target: compute
     definitions: # TODO (mostly) move to shader file I guess
@@ -14,6 +12,8 @@ templates:
       XE_GTAO_USE_HALF_FLOAT_PRECISION: 0
       VA_COMPILED_AS_SHADER_CODE: 1
       VA_SATURATE: saturate
+      XE_GTAO_GENERATE_NORMALS_INPLACE: 1
+      XE_GTAO_COMPUTE_BENT_NORMALS: 1
   envmap:
     source: envmap
     target: compute
@@ -22,9 +22,6 @@ templates:
     target: compute
   bloom:
     source: manul/bloom
-    target: compute
-  gbuffer_lights:
-    source: manul/gbuffer_lights
     target: compute
 shaders:
   materials:
@@ -47,18 +44,6 @@ shaders:
           binding: 2
           hint: normalmap
           default: normalmap
-        # paramx: # Metalness.Roughness.[UNUSED].Normal[X]
-        #   binding: 1
-        #   hint: linear
-        #   default: legacy_params
-        # paramy: # Specular.Occlusion.[UNUSED].Normal[Y]
-        #   binding: 2
-        #   hint: linear
-        #   default: legacy_params
-        # selfillum:
-        #   binding: 3
-        #   hint: color
-        #   default: black
       masked_shadow_texture: albedo
       source: ps_default_lit
     legacy:
@@ -137,6 +122,29 @@ shaders:
           default: normalmap
       masked_shadow_texture: diffuse
       source: ps_legacy_water
+    windshield_rain:
+      textures:
+        diffuse:
+          binding: 0
+          hint: color # so that texture will be marked as sRGB
+          default: white
+        raindropsatlas:
+          binding: 1
+          hint: color
+          default: white
+          no_anisotropy: true
+        wipermask:
+          binding: 2
+          hint: color
+          default: white
+          no_filter: true
+        rain:
+          binding: 3
+          hint: linear
+          default: system/raindrops_buffer
+      masked_shadow_texture: diffuse
+      source: ps_windshield_rain
+      refraction: true
   utility:
 # Everything that does not belong to scene graph rendering
 # ImGui shaders
@@ -152,6 +160,20 @@ shaders:
     shadow_masked:
       source: ps_shadow_masked
       target: pixel
+      entrypoint: main
+    prepass_masked:
+      source: ps_shadow_masked
+      target: pixel
+      entrypoint: main
+      definitions:
+        PREPASS: 1
+    windshield_rain_anim:
+      source: ps_windshield_rain_anim
+      target: pixel
+      entrypoint: main
+    max_depth_4x4:
+      source: cs_downsample_depth
+      target: compute
       entrypoint: main
 # Contact shadows
 # TODO Depth conversion is broken since converting to reversed depth buffer
@@ -169,6 +191,18 @@ shaders:
       source: default_vertex
       target: vertex
       entrypoint: main
+    default_vertex_no_jitter:
+      source: default_vertex
+      target: vertex
+      entrypoint: main
+      definitions:
+        NO_JITTER: 1
+    default_prepass_vertex:
+      source: default_vertex
+      target: vertex
+      entrypoint: main
+      definitions:
+        PREPASS: 1
     shadow_vertex:
       source: shadow_vertex
       target: vertex
@@ -181,6 +215,12 @@ shaders:
       source: instanced_vertex
       target: vertex
       entrypoint: main
+    instanced_prepass_vertex:
+      source: instanced_vertex
+      target: vertex
+      entrypoint: main
+      definitions:
+        PREPASS: 1
     instanced_shadow_vertex:
       source: instanced_shadow_vertex
       target: vertex
@@ -285,13 +325,6 @@ shaders:
       source: manul/line
       target: pixel
       entrypoint: pix_main
-# Deferred light primitives
-    gbuffer_light_clear:
-      use_template: gbuffer_lights
-      entrypoint: CS_Clear
-    gbuffer_light_spot:
-      use_template: gbuffer_lights
-      entrypoint: CS_Spotlight
 # Forward+ light culling
     forwardplus_compute_frustums:
       source: manul/forward_plus/forward_plus

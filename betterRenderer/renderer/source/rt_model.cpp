@@ -137,7 +137,9 @@ const TSubModel* Rt::RtModel::Intersect(
           [&](size_t const begin, size_t const end) {
             for (size_t i = begin; i < end; ++i) {
               size_t const j = submodel.bvh.prim_ids[i];
-              if (auto hit = submodel.tris[j].intersect(ray)) {
+              if (auto hit = submodel.tris[j].intersect(ray);
+                  !!hit && dot(rd_local, glm::make_vec3(
+                                             submodel.tris[j].n.values)) > 0.) {
                 prim_id = i;
                 std::tie(ray.tmax, u, v) = *hit;
                 result = submodel.submodel;

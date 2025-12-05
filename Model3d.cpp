@@ -1866,7 +1866,8 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 	{
 		uint32_t type = sn_utils::ld_uint32(s);
 		uint32_t size = sn_utils::ld_uint32(s) - 8;
-		std::streampos end = s.tellg() + (std::streampos)size;
+		size_t pos = s.tellg();
+		std::streampos end = pos + (std::streampos)size;
 
 		if ((type & 0x00FFFFFF) == MAKE_ID4('S', 'U', 'B', 0)) // submodels
 		{
@@ -1877,7 +1878,6 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 			size_t sm_cnt = size / sm_size;
 			iSubModelsCount = (int)sm_cnt;
 			Root = new TSubModel[sm_cnt];
-			size_t pos = s.tellg();
 			for (size_t i = 0; i < sm_cnt; ++i)
 			{
 				s.seekg(pos + sm_size * i);
@@ -1906,7 +1906,31 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
             size_t const vertextype { ( ( ( type & 0xFF000000 ) >> 24 ) - '0' ) };
             hastangents = ( (vertextype & 3) > 0 );
 			hasuserdata = (vertextype & 4);
+			size_t vertex_size = 0;
+			switch (vertextype & 3)
+			{
+			case 0:
+			case 2:
+			{
+				vertex_size = 8;
+				if(hastangents)
+					vertex_size += 4;
+				if(hasuserdata)
+					vertex_size += 4;
+				break;
+			}
+			case 1:
+			{
+				vertex_size = 4;
+				if(hastangents)
+					vertex_size += 1;
+				if (hasuserdata)
+					vertex_size += 2;
+				break;
+			}
+			}
             for( auto const &submodeloffset : submodeloffsets ) {
+				s.seekg(pos + submodeloffset.first * vertex_size * sizeof(float)); // Ensure that we start reading from the correct offset even if geometry is not encoded contiguously
                 auto &submodel { Root[ submodeloffset.second ] };
                 auto const &submodelgeometry { submodel.m_geometry };
                 submodel.Vertices.resize( submodelgeometry.vertex_count );
@@ -1978,6 +2002,7 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
             // once sorted we can grab indices in a continuous read, and assign them to the chunks they belong to
             size_t const indexsize { ( ( ( type & 0xFF000000 ) >> 24 ) - '0' ) };
             for( auto const &submodeloffset : submodeloffsets ) {
+            	s.seekg(pos + submodeloffset.first * indexsize);
                 auto &submodel { Root[ submodeloffset.second ] };
                 auto const &submodelgeometry { submodel.m_geometry };
                 submodel.Indices.resize( submodelgeometry.index_count );

@@ -85,6 +85,15 @@ void GbufferBlitPass::Init() {
           .setKeepInitialState(true));
   RegisterResource(true, "scene_lit_texture", m_output,
                    nvrhi::ResourceType::Texture_SRV);
+  m_output_copy = m_backend->GetDevice()->createTexture(
+      nvrhi::TextureDesc()
+          .setWidth(m_gbuffer->m_framebuffer->getFramebufferInfo().width)
+          .setHeight(m_gbuffer->m_framebuffer->getFramebufferInfo().height)
+          .setFormat(nvrhi::Format::RGBA16_FLOAT)
+          .setInitialState(nvrhi::ResourceStates::ShaderResource)
+          .setKeepInitialState(true));
+  RegisterResource(true, "scene_lit_texture_copy", m_output_copy,
+                   nvrhi::ResourceType::Texture_SRV);
   m_binding_layout = m_backend->GetDevice()->createBindingLayout(
       nvrhi::BindingLayoutDesc()
           .addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(2))
@@ -183,12 +192,63 @@ void GbufferBlitPass::UpdateConstants(nvrhi::ICommandList* command_list,
 
   const auto& daylight = Global.DayLight;
 
-  m_sky->CalcLighting(constants.m_light_dir,
-                      constants.m_light_color);
+  m_sky->CalcLighting(constants.m_light_dir, constants.m_light_color);
   constants.m_altitude = Global.pCamera.Pos.y;
   constants.m_time = Timer::GetTime();
+  constants.m_vertical_fov =
+      glm::radians(Global.FieldOfView / Global.ZoomFactor);
+
+  {
+    float percipitation_intensity = glm::saturate(Global.Overcast - 1.);
+    constants.m_rain_params.x =
+        percipitation_intensity;  // % amount of droplets
+    constants.m_rain_params.y =
+        glm::mix(15., 1., percipitation_intensity);  // Regeneration time
+    static glm::vec4 wiper_timer_out;
+    static glm::vec4 wiper_timer_return;
+    if (TDynamicObject const* owner = Global.pCamera.m_owner;
+        owner && !!owner->MoverParameters->CabActive) {
+      for (int i = 0; i < 4; ++i) {
+        if (i < owner->dWiperPos.size()) {
+          int index = owner->MoverParameters->CabActive > 0
+                          ? i
+                          : static_cast<int>(owner->dWiperPos.size() - 1) - i;
+          constants.m_wiper_pos[i] = owner->dWiperPos[index];
+          if (owner->dWiperPos[index] > 0. && owner->wiperDirection[index]) {
+            constants.m_wiper_pos[i] += 1.;
+          }
+          if (owner->dWiperPos[index] < .025) {
+            wiper_timer_out[i] = constants.m_time;
+          }
+          if (owner->dWiperPos[index] > .975) {
+            wiper_timer_return[i] = constants.m_time;
+          }
+          constants.m_wiper_timer_out[i] = wiper_timer_out[i];
+          constants.m_wiper_timer_return[i] = wiper_timer_return[i];
+        } else {
+          constants.m_wiper_pos[i] = 0.;
+          wiper_timer_out[i] = constants.m_wiper_timer_out[i] = -1000.;
+          wiper_timer_return[i] = constants.m_wiper_timer_return[i] = -1000.;
+        }
+      }
+    } else {
+      constants.m_wiper_pos = glm::vec4{0.};
+      wiper_timer_out = constants.m_wiper_timer_out = glm::vec4{-1000.};
+      wiper_timer_return = constants.m_wiper_timer_return = glm::vec4{-1000.};
+    }
+  }
 
   command_list->writeBuffer(m_draw_constants, &constants, sizeof(constants));
+}
+
+void GbufferBlitPass::UpdateSceneColorForRefraction(
+    nvrhi::ICommandList* command_list) const {
+  command_list->copyTexture(
+      m_output_copy, nvrhi::TextureSlice().resolve(m_output_copy->getDesc()),
+      m_output, nvrhi::TextureSlice().resolve(m_output->getDesc()));
+  command_list->setTextureState(m_output, nvrhi::AllSubresources,
+                                nvrhi::ResourceStates::RenderTarget);
+  command_list->commitBarriers();
 }
 
 void GbufferBlitPass::Render(nvrhi::ICommandList* command_list,

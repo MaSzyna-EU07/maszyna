@@ -48,6 +48,7 @@ struct PixelInput {
 #include "sky.hlsli"
 
 Texture2D<float> g_GbufferDepth : register(t12);
+Texture2D<float3> g_LitScene : register(t13);
 #endif
 
 void MaterialPass(inout MaterialData material);
@@ -61,12 +62,14 @@ PixelOutput main(in PixelInput ps_in) {
   material.m_Tangent = ps_in.m_Tangent.xyz;
   material.m_Bitangent = ps_in.m_Tangent.w * cross(ps_in.m_Normal, ps_in.m_Tangent.xyz);
   material.m_TexCoord = ps_in.m_TexCoord;
+  material.m_ScreenCoord = uv;
   material.m_PixelCoord = ps_in.m_PositionSV.xy;
   material.m_PositionNDC = ps_in.m_PositionCS / ps_in.m_PositionCS.w;
   material.m_MaterialAlbedoAlpha = float4(1., 1., 1., 1.);
   material.m_MaterialEmission = float3(0., 0., 0.);
   material.m_MaterialParams = float4(0., .5, 1., .5); // Metalness.Roughness.Occlusion.Specular
   material.m_MaterialNormal = float3(0., 0., 1.);
+  material.m_RefractionOffset = float2(0., 0.);
   MaterialPass(material);
   material.m_MaterialAlbedoAlpha.rgb = saturate(material.m_MaterialAlbedoAlpha.rgb);
   material.m_MaterialEmission = max(material.m_MaterialEmission, 0.);
@@ -94,6 +97,12 @@ PixelOutput main(in PixelInput ps_in) {
 #if PASS & MOTION_VECTORS
   ps_out.m_Motion = (ps_in.m_HistoryPositionCS.xy / ps_in.m_HistoryPositionCS.w) - (ps_in.m_PositionCS.xy / ps_in.m_PositionCS.w);
   ps_out.m_Motion = ps_out.m_Motion * float2(.5, -.5);
+#endif
+
+#if (PASS & FORWARD_LIGHTING) && defined(REFRACTION)
+  float3 scene_color = g_LitScene.Sample(g_SkySampler, material.m_ScreenCoord + material.m_RefractionOffset * float2(1., -1.));
+  ps_out.m_Color.rgb += (1. - ps_out.m_Color.a) * scene_color;
+  ps_out.m_Color.a = 1.;
 #endif
   
   return ps_out;

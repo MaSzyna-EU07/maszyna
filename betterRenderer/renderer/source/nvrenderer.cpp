@@ -39,6 +39,7 @@
 
 #include "rt_model.h"
 #include "tinyexr.h"
+#include "windshield_rain.h"
 
 bool NvRenderer::Init(GLFWwindow *Window) {
   m_message_callback = std::make_shared<NvRendererMessageCallback>();
@@ -92,6 +93,7 @@ bool NvRenderer::Init(GLFWwindow *Window) {
   m_auto_exposure = std::make_shared<MaAutoExposure>(this);
   m_fsr = std::make_shared<NvFSR>(this);
   m_bloom = std::make_shared<Bloom>(GetBackend());
+  m_windshield_rain = std::make_shared<WindshieldRain>();
 
   // protect from undefined framebuffer size in ini (default -1)
   int w = Global.gfx_framebuffer_width, h = Global.gfx_framebuffer_height;
@@ -136,7 +138,10 @@ bool NvRenderer::Init(GLFWwindow *Window) {
   // RegisterResource(true, "gbuffer_depth", m_gbuffer->m_gbuffer_depth,
   //                  nvrhi::ResourceType::Texture_SRV);
 
+  m_windshield_rain->Init(this);
+
   if (!InitMaterials()) return false;
+
   return true;
 }
 
@@ -381,12 +386,21 @@ bool NvRenderer::Render() {
             (static_cast<glm::dvec2>(Global.cursor_pos) /
                  static_cast<glm::dvec2>(Global.window_size) -
              .5);
-        m_mouse_ro = pass.m_origin;
-        glm::dvec4 mouse_rd_norm =
-            inverse(projection) * glm::dvec4(mousepos, 1., 1.);
-        mouse_rd_norm /= mouse_rd_norm.w;
-        m_mouse_rd =
-            normalize(inverse(transform) * glm::dvec4(mouse_rd_norm.xyz, 0.));
+        {
+          glm::dvec4 mouse_ro_norm =
+              inverse(projection) * glm::dvec4(mousepos, 1., 1.);
+          mouse_ro_norm /= mouse_ro_norm.w;
+          m_mouse_ro = pass.m_origin + static_cast<glm::dvec3>(
+                                           inverse(transform) *
+                                           glm::dvec4(mouse_ro_norm.xyz, 1.));
+        }
+        {
+          glm::dvec4 mouse_rd_norm =
+             inverse(projection) * glm::dvec4(mousepos, 0., 1.);
+          mouse_rd_norm /= mouse_rd_norm.w;
+          m_mouse_rd =
+              normalize(inverse(transform) * glm::dvec4(mouse_rd_norm.xyz, 0.));
+        }
       }
 
       m_picked_submodel = nullptr;
@@ -413,6 +427,18 @@ bool NvRenderer::Render() {
       pass.m_history_transform =
           std::exchange(m_previous_view, pass.m_transform);
 
+      command_list->beginMarker("Depth only");
+      pass.m_type = RenderPassType::DepthOnly;
+      RenderKabina(pass);
+      RenderShapes(pass);
+      RenderBatches(pass);
+      RenderTracks(pass);
+      RenderAnimateds(pass);
+      RenderLines(pass);
+      command_list->endMarker();
+
+      command_list->beginMarker("Gbuffer fill");
+      pass.m_type = RenderPassType::Deferred;
       Timer::subsystem.gfx_color.start();
       RenderKabina(pass);
       RenderShapes(pass);
@@ -420,6 +446,7 @@ bool NvRenderer::Render() {
       RenderTracks(pass);
       RenderAnimateds(pass);
       RenderLines(pass);
+      command_list->endMarker();
 
       GatherSpotLights(pass);
 
@@ -618,6 +645,7 @@ bool NvRenderer::Render() {
       command_list->endMarker();
 
       if (true) {
+        m_windshield_rain->Render(pass);
         command_list->beginMarker("Forward pass");
         pass.m_framebuffer = m_framebuffer_forward;
         pass.m_type = RenderPassType::Forward;
@@ -991,19 +1019,23 @@ material_handle NvRenderer::Fetch_Material(std::string const &Filename,
     auto texture_manager = GetTextureManager();
 
     for (int i = 0; i < material_template->m_texture_bindings.size(); ++i) {
-      const auto &[key, sampler_key, hint, m_default_texture] =
-          material_template->m_texture_bindings[i];
+      const auto &binding = material_template->m_texture_bindings[i];
       auto handle = texture_manager->FetchTexture(
-          static_cast<std::string>(adapter.GetTexturePathForEntry(key)), hint,
-          adapter.GetTextureSizeBiasForEntry(key), true);
+          static_cast<std::string>(
+              adapter.GetTexturePathForEntry(binding.m_name)),
+          binding.m_hint, adapter.GetTextureSizeBiasForEntry(binding.m_name),
+          true);
       cache.m_texture_handles[i] = handle;
-      cache.RegisterTexture(key.c_str(), handle);
-      cache.RegisterResource(false, sampler_key.c_str(),
+      auto traits = texture_manager->GetTraits(handle);
+      traits[MaTextureTraits_NoFilter] = binding.disable_filter;
+      traits[MaTextureTraits_NoAnisotropy] = binding.disable_anisotropy;
+      traits[MaTextureTraits_NoMipBias] = binding.disable_mip_bias;
+      cache.RegisterTexture(binding.m_name.c_str(), handle);
+      cache.RegisterResource(false, binding.m_sampler_name.c_str(),
                              texture_manager->GetSamplerForTraits(
-                                 texture_manager->GetTraits(handle),
-                                 NvRenderer::RenderPassType::Deferred),
+                                 traits, RenderPassType::Deferred),
                              nvrhi::ResourceType::Sampler);
-      if (key == cache.m_template->m_masked_shadow_texture &&
+      if (binding.m_name == cache.m_template->m_masked_shadow_texture &&
           texture_manager->IsValidHandle(handle)) {
         cache.m_masked_shadow =
             texture_manager->GetTexture(handle)->m_has_alpha;
@@ -1298,6 +1330,8 @@ void NvRenderer::DebugUi() {
     ImGui::SameLine();
     if (ImGui::Button("Bloom Config")) m_bloom->ShowGui();
     ImGui::SameLine();
+    m_ssao->OnGui(ImGui::Button("GTAO Config"));
+    ImGui::SameLine();
     if (ImGui::Button("Take Screenshot")) MakeScreenshot();
   }
   ImGui::End();
@@ -1495,6 +1529,7 @@ void NvRenderer::UpdateDrawData(const RenderPass &pass,
       pass.m_command_list_draw->setPushConstants(&data, sizeof(data));
       break;
     }
+    case RenderPassType::DepthOnly:
     case RenderPassType::Deferred:
     case RenderPassType::Forward: {
       PushConstantsDraw data{};
@@ -1560,12 +1595,16 @@ void NvRenderer::BindConstants(const RenderPass &pass,
 bool NvRenderer::BindMaterial(material_handle handle, DrawType draw_type,
                               const RenderPass &pass,
                               nvrhi::GraphicsState &gfx_state,
-                              float &alpha_threshold) {
+                              float &alpha_threshold, bool *out_is_refractive) {
   if (pass.m_type == RenderPassType::RendererWarmUp) return true;
   if (!handle || handle > m_material_cache.size()) {
     return false;
   }
   MaterialCache &cache = m_material_cache[handle - 1];
+
+  if(out_is_refractive) {
+    *out_is_refractive = cache.m_template->m_enable_refraction;
+  }
 
   if (!cache.ShouldRenderInPass(pass)) return false;
 
@@ -1966,6 +2005,8 @@ void NvRenderer::Animate(Renderable &renderable, TSubModel *Submodel,
             reinterpret_cast<const void *>(TSubModel::iInstance), Submodel)) ==
             m_batched_instances.end()) {
       auto &item = renderable.m_items.emplace_back();
+
+      item.m_name = Submodel->pName.c_str();
 
       auto &motion_cache = m_motion_cache->Get(Submodel);
 

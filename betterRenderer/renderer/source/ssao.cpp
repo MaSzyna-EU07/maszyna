@@ -78,7 +78,7 @@ void NvSsao::Init() {
           .setWidth(m_width)
           .setHeight(m_height)
           .setIsUAV(true)
-          .setFormat(Format::R8_UINT)
+          .setFormat(Format::R32_UINT)
           .setInitialState(ResourceStates::ShaderResource)
           .setKeepInitialState(true));
 
@@ -88,7 +88,7 @@ void NvSsao::Init() {
           .setWidth(m_width)
           .setHeight(m_height)
           .setIsUAV(true)
-          .setFormat(Format::R8_UINT)
+          .setFormat(Format::R32_UINT)
           .setInitialState(ResourceStates::ShaderResource)
           .setKeepInitialState(true));
 
@@ -98,15 +98,16 @@ void NvSsao::Init() {
           .setWidth(m_width)
           .setHeight(m_height)
           .setIsUAV(true)
-          .setFormat(Format::R8_UNORM)
+          .setFormat(Format::RGBA8_UNORM)
           .setIsTypeless(true)
           .setInitialState(ResourceStates::ShaderResource)
           .setKeepInitialState(true));
 
-  SamplerHandle sampler_point = m_SamplerPoint = m_backend->GetDevice()->createSampler(
-      nvrhi::SamplerDesc()
-          .setAllAddressModes(SamplerAddressMode::Clamp)
-          .setAllFilters(false));
+  SamplerHandle sampler_point = m_SamplerPoint =
+      m_backend->GetDevice()->createSampler(
+          nvrhi::SamplerDesc()
+              .setAllAddressModes(SamplerAddressMode::Clamp)
+              .setAllFilters(false));
 
   {
     BindingLayoutHandle blPrefilterDepths;
@@ -136,17 +137,19 @@ void NvSsao::Init() {
         BindingSetDesc()
             .addItem(BindingSetItem::ConstantBuffer(0, m_constantBuffer))
             .addItem(BindingSetItem ::Texture_SRV(0, m_workingDepths))
-            .addItem(
-                BindingSetItem::Texture_SRV(1, m_gbuffer->m_gbuffer_normal))
             .addItem(BindingSetItem::Texture_UAV(0, m_workingAOTerm))
             .addItem(BindingSetItem::Texture_UAV(1, m_workingEdges))
             .addItem(BindingSetItem::Texture_UAV(2, m_debugImage))
             .addItem(BindingSetItem::Sampler(0, sampler_point)),
         blGTAO, m_BSGTAO);
-    m_PSOGTAO = m_backend->GetDevice()->createComputePipeline(
-        ComputePipelineDesc()
-            .setComputeShader(m_CSGTAOHigh)
-            .addBindingLayout(blGTAO));
+    std::array<IShader*, 4> const shaders{m_CSGTAOLow, m_CSGTAOMedium,
+                                          m_CSGTAOHigh, m_CSGTAOUltra};
+    for (int i = 0; i < 4; ++i) {
+      m_PSOGTAO[i] = m_backend->GetDevice()->createComputePipeline(
+          ComputePipelineDesc()
+              .setComputeShader(shaders[i])
+              .addBindingLayout(blGTAO));
+    }
   }
 
   {
@@ -187,12 +190,8 @@ void NvSsao::Render(nvrhi::ICommandList* command_list,
   command_list->beginMarker("XeGTAO");
 
   XeGTAO::GTAOConstants constants{};
-  XeGTAO::GTAOSettings settings{};
-  settings.QualityLevel = 2;
-  settings.Radius = 10.f;
-  settings.ThinOccluderCompensation = .7f;
   XeGTAO::GTAOUpdateConstants(constants, m_width, m_height, settings,
-                              glm::value_ptr(projection), false, frame_index);
+                              projection, false, frame_index);
   command_list->writeBuffer(m_constantBuffer, &constants, sizeof(constants));
 
   {
@@ -210,7 +209,7 @@ void NvSsao::Render(nvrhi::ICommandList* command_list,
   {
     command_list->beginMarker("Main Pass");
     nvrhi::ComputeState state;
-    state.setPipeline(m_PSOGTAO);
+    state.setPipeline(m_PSOGTAO[glm::clamp(settings.QualityLevel, 0, 3)]);
     state.addBindingSet(m_BSGTAO);
 
     command_list->setComputeState(state);
@@ -222,7 +221,7 @@ void NvSsao::Render(nvrhi::ICommandList* command_list,
 
   {
     command_list->beginMarker("Denoise Pass");
-    int num_passes = 4;
+    int num_passes = settings.DenoisePasses;
     nvrhi::ITexture* ping = m_workingAOTerm;
     nvrhi::ITexture* pong = m_workingAOTermPong;
     for (int i = 0; i < num_passes; ++i) {
@@ -233,11 +232,10 @@ void NvSsao::Render(nvrhi::ICommandList* command_list,
               .addItem(
                   nvrhi::BindingSetItem::ConstantBuffer(0, m_constantBuffer))
               .addItem(nvrhi::BindingSetItem::Texture_SRV(0, ping))
-              .addItem(nvrhi::BindingSetItem::Texture_SRV(
-                  1, m_gbuffer->m_gbuffer_normal))
+              .addItem(nvrhi::BindingSetItem::Texture_SRV(1, m_workingEdges))
               .addItem(nvrhi::BindingSetItem::Texture_UAV(
                   0, last_pass ? m_outputAO.Get() : pong,
-                  nvrhi::Format::R8_UINT))
+                  nvrhi::Format::R32_UINT))
               .addItem(nvrhi::BindingSetItem::Texture_UAV(1, m_workingEdges))
               .addItem(nvrhi::BindingSetItem::Texture_UAV(2, m_debugImage))
               .addItem(nvrhi::BindingSetItem::Sampler(0, m_SamplerPoint)),
@@ -259,4 +257,26 @@ void NvSsao::Render(nvrhi::ICommandList* command_list,
                                   nvrhi::ResourceStates::ShaderResource);
   }
   command_list->endMarker();
+}
+
+void NvSsao::OnGui(bool const open_now) {
+  static bool open = false;
+  open |= open_now;
+  if (open && ImGui::Begin("GTAO Settings", &open)) {
+    ImGui::InputInt("Quality level", &settings.QualityLevel);
+    ImGui::InputInt("Denoise passes", &settings.DenoisePasses);
+    ImGui::InputFloat("Radius", &settings.Radius);
+    if (ImGui::CollapsingHeader("Advanced")) {
+      ImGui::InputFloat("Radius multiplier", &settings.RadiusMultiplier);
+      ImGui::InputFloat("Falloff range", &settings.FalloffRange);
+      ImGui::InputFloat("Sample distribution power",
+                        &settings.SampleDistributionPower);
+      ImGui::InputFloat("Thin occluder compensation",
+                        &settings.ThinOccluderCompensation);
+      ImGui::InputFloat("Final value power", &settings.FinalValuePower);
+      ImGui::InputFloat("Depth MIP sampling offset",
+                        &settings.DepthMIPSamplingOffset);
+    }
+    ImGui::End();
+  }
 }
