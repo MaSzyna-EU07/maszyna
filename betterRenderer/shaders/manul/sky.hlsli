@@ -22,7 +22,7 @@ void CalcSun(inout float3 color, in float3 viewDir, in float3 sunDir, in float a
     {
         if (dot(viewDir, sunDir) > 0.99998869014)
         {
-            color = linear_srgb_from_spectral_samples(sun_spectral_irradiance);
+            color = linear_srgb_from_spectral_samples(sun_spectral_irradiance) * exp(-2.);
         }
     }
 }
@@ -37,7 +37,7 @@ void CalcMoon(inout float3 color, in float3 viewDir, in float3 moonDir, in float
         float3 normal = CalcSphereNormal(viewDir, moonDir, 0.99998869014);
         if (dot(normal, normal) > 0.)
         {
-            color = .07 * max(dot(normal, sunDir), 0.) * linear_srgb_from_spectral_samples(sun_spectral_irradiance);
+            color = .07 * max(dot(normal, sunDir), 0.) * linear_srgb_from_spectral_samples(sun_spectral_irradiance) * exp(-2.);
         }
     }
 }

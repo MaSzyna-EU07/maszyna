@@ -38,6 +38,8 @@ struct MaConfig {
     float m_min_luminance_ev;
     float m_max_luminance_ev;
   } m_lighting;
+  std::string m_cloud_texture;
+  std::string m_high_cloud_texture;
   int m_envmap_resolution;
   float m_weight_lines;
   float m_weight_tractions;

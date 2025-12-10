@@ -2,6 +2,7 @@
 
 #include <nvrhi/utils.h>
 
+#include "environment.h"
 #include "nvrendererbackend.h"
 #include "simulationenvironment.h"
 #include "simulationtime.h"
@@ -46,8 +47,8 @@ static const glm::mat4x3 M = {
     8.572844237945445,  -11.103384660054624, 117.47585277566478};
 }  // namespace
 
-Sky::Sky(NvRenderer* renderer)
-    : m_backend(renderer->GetBackend()), MaResourceRegistry(renderer) {
+Sky::Sky(NvRenderer* renderer, MaEnvironment *environment)
+    : m_backend(renderer->GetBackend()), MaResourceRegistry(renderer), m_environment(environment) {
   m_transmittance_pass = std::make_shared<SkyTransmittancePass>(this);
   m_aerial_lut = std::make_shared<SkyAerialLut>(this);
 }
@@ -375,6 +376,7 @@ void SkyAerialLut::Init() {
   m_lut_width = 128;
   m_lut_height = 256;
   m_lut_slices = 16;
+  m_cloud_texture = m_sky->m_environment->m_clouds_texture;
   m_constant_buffer = m_sky->m_backend->GetDevice()->createBuffer(
       nvrhi::utils::CreateVolatileConstantBufferDesc(
           sizeof(DispatchConstants), "Sky Aerial LUT Dispatch Constants", 16));
@@ -398,51 +400,56 @@ void SkyAerialLut::Init() {
           .setInitialState(nvrhi::ResourceStates::Common)
           .setKeepInitialState(true)
           .setDebugName("Sky Texture"));
-  auto shader_lut = m_sky->m_backend->CreateShader("sky_aerial_lut",
-                                                   nvrhi::ShaderType::Compute);
-  auto shader_sky =
-      m_sky->m_backend->CreateShader("sky", nvrhi::ShaderType::Compute);
-  auto sampler = m_sky->m_backend->GetDevice()->createSampler(
-      nvrhi::SamplerDesc()
-          .setAllAddressModes(nvrhi::SamplerAddressMode::ClampToEdge)
-          .setAllFilters(true));
-  nvrhi::BindingLayoutHandle binding_layout_lut;
-  nvrhi::BindingLayoutHandle binding_layout_sky;
-  nvrhi::utils::CreateBindingSetAndLayout(
-      m_sky->m_backend->GetDevice(), nvrhi::ShaderType::Compute, 0,
-      nvrhi::BindingSetDesc()
-          .addItem(nvrhi::BindingSetItem::ConstantBuffer(0, m_constant_buffer))
-          .addItem(
-              nvrhi::BindingSetItem::ConstantBuffer(13, m_sky->m_sky_constants))
-          .addItem(nvrhi::BindingSetItem::Texture_UAV(0, m_lut))
-          .addItem(nvrhi::BindingSetItem::Texture_SRV(
-              13, m_sky->m_transmittance_pass->m_output))
-          .addItem(nvrhi::BindingSetItem::Sampler(13, sampler)),
-      binding_layout_lut, m_bindings_lut);
-  nvrhi::utils::CreateBindingSetAndLayout(
-      m_sky->m_backend->GetDevice(), nvrhi::ShaderType::Compute, 0,
-      nvrhi::BindingSetDesc()
-          .addItem(nvrhi::BindingSetItem::ConstantBuffer(0, m_constant_buffer))
-          .addItem(
-              nvrhi::BindingSetItem::ConstantBuffer(13, m_sky->m_sky_constants))
-          .addItem(nvrhi::BindingSetItem::Texture_UAV(1, m_sky_texture))
-          .addItem(nvrhi::BindingSetItem::Texture_SRV(
-              13, m_sky->m_transmittance_pass->m_output))
-          .addItem(nvrhi::BindingSetItem::Sampler(13, sampler)),
-      binding_layout_sky, m_bindings_sky);
-  m_pso_lut = m_sky->m_backend->GetDevice()->createComputePipeline(
-      nvrhi::ComputePipelineDesc()
-          .addBindingLayout(binding_layout_lut)
-          .setComputeShader(shader_lut));
-  m_pso_sky = m_sky->m_backend->GetDevice()->createComputePipeline(
-      nvrhi::ComputePipelineDesc()
-          .addBindingLayout(binding_layout_sky)
-          .setComputeShader(shader_sky));
 }
 
 void SkyAerialLut::Render(nvrhi::ICommandList* command_list,
                           const glm::dmat4& projection,
                           const glm::dmat4& view) {
+  if (!m_pso_sky) {
+    auto shader_lut = m_sky->m_backend->CreateShader(
+        "sky_aerial_lut", nvrhi::ShaderType::Compute);
+    auto shader_sky =
+        m_sky->m_backend->CreateShader("sky", nvrhi::ShaderType::Compute);
+    auto sampler = m_sky->m_backend->GetDevice()->createSampler(
+        nvrhi::SamplerDesc()
+            .setAllAddressModes(nvrhi::SamplerAddressMode::ClampToEdge)
+            .setAllFilters(true));
+    nvrhi::BindingLayoutHandle binding_layout_lut;
+    nvrhi::BindingLayoutHandle binding_layout_sky;
+    nvrhi::utils::CreateBindingSetAndLayout(
+        m_sky->m_backend->GetDevice(), nvrhi::ShaderType::Compute, 0,
+        nvrhi::BindingSetDesc()
+            .addItem(
+                nvrhi::BindingSetItem::ConstantBuffer(0, m_constant_buffer))
+            .addItem(nvrhi::BindingSetItem::ConstantBuffer(
+                13, m_sky->m_sky_constants))
+            .addItem(nvrhi::BindingSetItem::Texture_UAV(0, m_lut))
+            .addItem(nvrhi::BindingSetItem::Texture_SRV(
+                13, m_sky->m_transmittance_pass->m_output))
+            .addItem(nvrhi::BindingSetItem::Texture_SRV(15, m_sky->m_environment->m_clouds_texture))
+            .addItem(nvrhi::BindingSetItem::Sampler(13, sampler)),
+        binding_layout_lut, m_bindings_lut);
+    nvrhi::utils::CreateBindingSetAndLayout(
+        m_sky->m_backend->GetDevice(), nvrhi::ShaderType::Compute, 0,
+        nvrhi::BindingSetDesc()
+            .addItem(
+                nvrhi::BindingSetItem::ConstantBuffer(0, m_constant_buffer))
+            .addItem(nvrhi::BindingSetItem::ConstantBuffer(
+                13, m_sky->m_sky_constants))
+            .addItem(nvrhi::BindingSetItem::Texture_UAV(1, m_sky_texture))
+            .addItem(nvrhi::BindingSetItem::Texture_SRV(
+                13, m_sky->m_transmittance_pass->m_output))
+            .addItem(nvrhi::BindingSetItem::Sampler(13, sampler)),
+        binding_layout_sky, m_bindings_sky);
+    m_pso_lut = m_sky->m_backend->GetDevice()->createComputePipeline(
+        nvrhi::ComputePipelineDesc()
+            .addBindingLayout(binding_layout_lut)
+            .setComputeShader(shader_lut));
+    m_pso_sky = m_sky->m_backend->GetDevice()->createComputePipeline(
+        nvrhi::ComputePipelineDesc()
+            .addBindingLayout(binding_layout_sky)
+            .setComputeShader(shader_sky));
+  }
   {
     DispatchConstants constants{};
     constants.g_InverseView = static_cast<glm::mat3>(glm::inverse(view));

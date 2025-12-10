@@ -14,6 +14,8 @@ void MaConfig::Init(const YAML::Node& node) {
   m_weight_lines = node["wire_diameter_lines"].as<float>(.01f);
   m_weight_tractions = node["wire_diameter_tractions"].as<float>(.005f);
   m_envmap_resolution = node["envmap_resolution"].as<int>(256);
+  m_cloud_texture = node["cloud_texture"].as<std::string>("textures/clouds/clear");
+  m_high_cloud_texture = node["high_cloud_texture"].as<std::string>("textures/clouds/clear");
 }
 
 void MaConfig::MaConfigDisplay::Init(const YAML::Node& node) {

@@ -82,8 +82,8 @@ bool NvRenderer::Init(GLFWwindow *Window) {
   m_gbuffer_shadow = std::make_shared<NvGbuffer>(this);
   m_contact_shadows = std::make_shared<MaContactShadows>(this, m_gbuffer.get());
   m_shadow_map = std::make_shared<MaShadowMap>(this);
-  m_sky = std::make_shared<Sky>(this);
   m_environment = std::make_shared<MaEnvironment>(this);
+  m_sky = std::make_shared<Sky>(this, m_environment.get());
   m_ssao = std::make_shared<NvSsao>(this);
   m_gbuffer_lighting = std::make_shared<GbufferLighting>(this);
   m_gbuffer_blit = std::make_shared<GbufferBlitPass>(

@@ -244,6 +244,7 @@ void NvRenderer::MaterialTemplate::Init(const YAML::Node &conf) {
               .Add(MaResourceMapping::Texture_SRV(12, "gbuffer_depth"))
               .Add(MaResourceMapping::Texture_SRV(13, "scene_lit_texture_copy"))
               .Add(MaResourceMapping::Texture_SRV(14, "sky_aerial_lut"))
+              .Add(MaResourceMapping::Texture_SRV(15, "sky_clouds"))
               .Add(MaResourceMapping::Texture_SRV(
                   16, "forwardplus_index_grid_transparent"))
               .Add(MaResourceMapping::StructuredBuffer_SRV(
@@ -423,6 +424,7 @@ bool NvRenderer::InitMaterials() {
           .addItem(nvrhi::BindingLayoutItem::Texture_SRV(11))
           .addItem(nvrhi::BindingLayoutItem::Texture_SRV(12))
           .addItem(nvrhi::BindingLayoutItem::Texture_SRV(14))
+          .addItem(nvrhi::BindingLayoutItem::Texture_SRV(15))
           .addItem(nvrhi::BindingLayoutItem::Sampler(8))
           .addItem(nvrhi::BindingLayoutItem::Sampler(11))
           .addItem(nvrhi::BindingLayoutItem::Sampler(13)));
@@ -445,6 +447,8 @@ bool NvRenderer::InitMaterials() {
                 12, m_gbuffer->m_gbuffer_depth))
             .addItem(nvrhi::BindingSetItem::Texture_SRV(
                 14, m_sky->m_aerial_lut->m_lut))
+            .addItem(nvrhi::BindingSetItem::Texture_SRV(
+                15, m_environment->m_clouds_texture))
             .addItem(nvrhi::BindingSetItem::Sampler(
                 8, m_backend->GetDevice()->createSampler(
                        nvrhi::SamplerDesc().setAllFilters(true))))
