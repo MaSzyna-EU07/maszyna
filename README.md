@@ -1,12 +1,11 @@
-
-
-[![Build status](https://ci.appveyor.com/api/projects/status/ouns27vystoasiwx?svg=true)](https://ci.appveyor.com/project/Milek7/maszyna-8kwj6/branch/master)
-
+![AppVeyor Build](https://img.shields.io/appveyor/build/Hirek193/maszyna?style=flat-square) 
 # MaSzyna Train Simulator
 
 _A free, **Polish** train simulator._
 
-[Website](https://eu07.pl/?setlang=en) · [Report an issue](https://github.com/eu07/maszyna/issues) · [Dev chat](https://milek7.pl:8065/eu07/channels/dev)
+[Website](https://eu07.pl/?setlang=en) · [Report an issue](https://github.com/eu07/maszyna/issues)
+
+![Discord](https://img.shields.io/discord/1019306167803056158?style=flat-square&logo=discord&label=Discord&labelColor=white)
 
 MaSzyna executable source code is licensed under the [MPL 2.0](https://www.mozilla.org/en-US/MPL/2.0/) and comes with a large pack of free assets under a [custom license](https://eu07.pl/theme/Maszyna/dokumentacja/inne/readme_pliki/en-licence.html).
 
@@ -222,10 +221,11 @@ If detection still fails, padding the file (with comments) up to ~1 MB may hel
     
 ## Minimum requirements
 
--   Processor:  **Intel Core i5-7600 or AMD Ryzen 5 1600**
--   RAM:  **16 GB**
--   Graphics Card:  **NVIDIA GeForce GTX 970 or AMD Radeon RX 580**
--   **75 GB of free disk space**
+-   OS: **Windows 10 64-bit**
+-   Processor:  **2 core at least 2 GHz (e.g. Intel Core i3-2100 / AMD Athlon II X2)**
+-   RAM:  **6 GB RAM**
+-   Graphics Card:  **supporting OpenGL 3.3 with at least 1GB VRAM**
+-   **150 GB of free disk space**
 -   Sound card supporting OpenAL with stereo
 -   Optional COM ports for custom control panel setups.
 
