@@ -75,13 +75,14 @@ public:
 // destructor
     virtual ~ui_layer();
 
-// methods
+	// methods
     static bool init( GLFWwindow *Window );
 	static void imgui_style();
 
     // assign texturing hardware unit
     static void set_unit( GLint const Textureunit ) { m_textureunit = GL_TEXTURE0 + Textureunit; }
     static void shutdown();
+	virtual void showDebugUI() {};
     // potentially processes provided input key. returns: true if the input was processed, false otherwise
     virtual bool on_key( int Key, int Action );
     // potentially processes provided mouse movement. returns: true if the input was processed, false otherwise
