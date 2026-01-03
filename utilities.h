@@ -36,7 +36,7 @@ template <typename T> T sign(T x)
 #define szSoundPath "sounds/"
 #define szDataPath "data/"
 
-#define MAKE_ID4(a,b,c,d) (((std::uint32_t)(d)<<24)|((std::uint32_t)(c)<<16)|((std::uint32_t)(b)<<8)|(std::uint32_t)(a))
+#define MAKE_ID4(a, b, c, d) (((std::uint32_t)(d) << 24) | ((std::uint32_t)(c) << 16) | ((std::uint32_t)(b) << 8) | (std::uint32_t)(a))
 
 extern bool DebugModeFlag;
 extern bool FreeFlyModeFlag;
@@ -50,22 +50,23 @@ double Min0R(double x1, double x2);
 
 inline double Sign(double x)
 {
-    return x >= 0 ? 1.0 : -1.0;
+	return x >= 0 ? 1.0 : -1.0;
 }
 
 inline long Round(double const f)
 {
 	return (long)(f + 0.5);
-	//return lround(f);
+	// return lround(f);
 }
 
 double Random(double a, double b);
 int RandomInt(int min, int max);
+std::string generate_uuid_v4();
 double LocalRandom(double a, double b);
 
 inline double Random()
 {
-	return Random(0.0,1.0);
+	return Random(0.0, 1.0);
 }
 
 inline double Random(double b)
@@ -75,39 +76,39 @@ inline double Random(double b)
 
 inline double LocalRandom()
 {
-    return LocalRandom( 0.0, 1.0 );
+	return LocalRandom(0.0, 1.0);
 }
 
-inline double LocalRandom( double b )
+inline double LocalRandom(double b)
 {
-    return LocalRandom( 0.0, b );
+	return LocalRandom(0.0, b);
 }
 
 inline double BorlandTime()
 {
-    auto timesinceepoch = std::time( nullptr );
-    return timesinceepoch / (24.0 * 60 * 60);
-/*
-    // std alternative
-    auto timesinceepoch = std::chrono::system_clock::now().time_since_epoch();
-    return std::chrono::duration_cast<std::chrono::seconds>( timesinceepoch ).count() / (24.0 * 60 * 60);
-*/
+	auto timesinceepoch = std::time(nullptr);
+	return timesinceepoch / (24.0 * 60 * 60);
+	/*
+	    // std alternative
+	    auto timesinceepoch = std::chrono::system_clock::now().time_since_epoch();
+	    return std::chrono::duration_cast<std::chrono::seconds>( timesinceepoch ).count() / (24.0 * 60 * 60);
+	*/
 }
 
 std::string Now();
 
-double CompareTime( double t1h, double t1m, double t2h, double t2m );
+double CompareTime(double t1h, double t1m, double t2h, double t2m);
 
 /*funkcje logiczne*/
-inline
-bool TestFlag( int const Flag, int const Value ) {
-    return ( ( Flag & Value ) == Value );
+inline bool TestFlag(int const Flag, int const Value)
+{
+	return ((Flag & Value) == Value);
 }
-inline
-bool TestFlagAny( int const Flag, int const Value ) {
-    return ( ( Flag & Value ) != 0 );
+inline bool TestFlagAny(int const Flag, int const Value)
+{
+	return ((Flag & Value) != 0);
 }
-bool SetFlag( int &Flag,  int const Value);
+bool SetFlag(int &Flag, int const Value);
 bool ClearFlag(int &Flag, int const Value);
 
 bool FuzzyLogic(double Test, double Threshold, double Probability);
@@ -116,13 +117,13 @@ bool FuzzyLogicAI(double Test, double Threshold, double Probability);
 /*to samo ale zawsze niezaleznie od DebugFlag*/
 
 /*operacje na stringach*/
-std::string DUE(std::string s);  /*Delete Until Equal sign*/
-std::string DWE(std::string s);  /*Delete While Equal sign*/
-std::string ExchangeCharInString( std::string const &Source, char const From, char const To ); // zamienia jeden znak na drugi
+std::string DUE(std::string s); /*Delete Until Equal sign*/
+std::string DWE(std::string s); /*Delete While Equal sign*/
+std::string ExchangeCharInString(std::string const &Source, char const From, char const To); // zamienia jeden znak na drugi
 std::vector<std::string> &Split(const std::string &s, char delim, std::vector<std::string> &elems);
 std::vector<std::string> Split(const std::string &s, char delim);
-//std::vector<std::string> Split(const std::string &s);
-std::pair<std::string, int> split_string_and_number( std::string const &Key );
+// std::vector<std::string> Split(const std::string &s);
+std::pair<std::string, int> split_string_and_number(std::string const &Key);
 
 std::string to_string(int Value);
 std::string to_string(unsigned int Value);
@@ -130,210 +131,207 @@ std::string to_string(int Value, int width);
 std::string to_string(double Value);
 std::string to_string(double Value, int precision);
 std::string to_string(double Value, int precision, int width);
-std::string to_hex_str( int const Value, int const width = 4 );
-std::string to_minutes_str( float const Minutes, bool const Leadingzero, int const Width );
+std::string to_hex_str(int const Value, int const width = 4);
+std::string to_minutes_str(float const Minutes, bool const Leadingzero, int const Width);
 
-inline
-std::string to_string(bool Value) {
-	return ( Value == true ? "true" : "false" );
+inline std::string to_string(bool Value)
+{
+	return (Value == true ? "true" : "false");
 }
 
-template <typename Type_, glm::precision Precision_ = glm::defaultp>
-std::string to_string( glm::tvec3<Type_, Precision_> const &Value ) {
-    return to_string( Value.x, 2 ) + ", " + to_string( Value.y, 2 ) + ", " + to_string( Value.z, 2 );
+template <typename Type_, glm::precision Precision_ = glm::defaultp> std::string to_string(glm::tvec3<Type_, Precision_> const &Value)
+{
+	return to_string(Value.x, 2) + ", " + to_string(Value.y, 2) + ", " + to_string(Value.z, 2);
 }
 
-template <typename Type_, glm::precision Precision_ = glm::defaultp>
-std::string to_string( glm::tvec4<Type_, Precision_> const &Value, int const Width = 2 ) {
-    return to_string( Value.x, Width ) + ", " + to_string( Value.y, Width ) + ", " + to_string( Value.z, Width ) + ", " + to_string( Value.w, Width );
+template <typename Type_, glm::precision Precision_ = glm::defaultp> std::string to_string(glm::tvec4<Type_, Precision_> const &Value, int const Width = 2)
+{
+	return to_string(Value.x, Width) + ", " + to_string(Value.y, Width) + ", " + to_string(Value.z, Width) + ", " + to_string(Value.w, Width);
 }
 
 bool string_ends_with(std::string const &string, std::string const &ending);
 bool string_starts_with(std::string const &string, std::string const &begin);
 
-int stol_def(const std::string & str, const int & DefaultValue);
+int stol_def(const std::string &str, const int &DefaultValue);
 
 std::string ToLower(std::string const &text);
 std::string ToUpper(std::string const &text);
 
 // replaces polish letters with basic ascii
-void win1250_to_ascii( std::string &Input );
+void win1250_to_ascii(std::string &Input);
 // TODO: unify with win1250_to_ascii()
-std::string Bezogonkow( std::string Input, bool const Underscorestospaces = false );
+std::string Bezogonkow(std::string Input, bool const Underscorestospaces = false);
 
 std::string win1250_to_utf8(const std::string &input);
 
-inline
-std::string
-extract_value( std::string const &Key, std::string const &Input ) {
-    // NOTE, HACK: the leading space allows to uniformly look for " variable=" substring
-    std::string const input { " " + Input };
-    std::string value;
-    auto lookup = input.find( " " + Key + "=" );
-    if( lookup != std::string::npos ) {
-        value = input.substr( input.find_first_not_of( ' ', lookup + Key.size() + 2 ) );
-        lookup = value.find( ' ' );
-        if( lookup != std::string::npos ) {
-            // trim everything past the value
-            value.erase( lookup );
-        }
-    }
-    return value;
+inline std::string extract_value(std::string const &Key, std::string const &Input)
+{
+	// NOTE, HACK: the leading space allows to uniformly look for " variable=" substring
+	std::string const input{" " + Input};
+	std::string value;
+	auto lookup = input.find(" " + Key + "=");
+	if (lookup != std::string::npos)
+	{
+		value = input.substr(input.find_first_not_of(' ', lookup + Key.size() + 2));
+		lookup = value.find(' ');
+		if (lookup != std::string::npos)
+		{
+			// trim everything past the value
+			value.erase(lookup);
+		}
+	}
+	return value;
 }
 
-template <typename Type_>
-bool
-extract_value( Type_ &Variable, std::string const &Key, std::string const &Input, std::string const &Default ) {
+template <typename Type_> bool extract_value(Type_ &Variable, std::string const &Key, std::string const &Input, std::string const &Default)
+{
 
-    auto value = extract_value( Key, Input );
-    if( false == value.empty() ) {
-        // set the specified variable to retrieved value
-        std::stringstream converter;
-        converter << value;
-        converter >> Variable;
-        return true; // located the variable
-    }
-    else {
-        // set the variable to provided default value
-        if( false == Default.empty() ) {
-            std::stringstream converter;
-            converter << Default;
-            converter >> Variable;
-        }
-        return false; // couldn't locate the variable in provided input
-    }
+	auto value = extract_value(Key, Input);
+	if (false == value.empty())
+	{
+		// set the specified variable to retrieved value
+		std::stringstream converter;
+		converter << value;
+		converter >> Variable;
+		return true; // located the variable
+	}
+	else
+	{
+		// set the variable to provided default value
+		if (false == Default.empty())
+		{
+			std::stringstream converter;
+			converter << Default;
+			converter >> Variable;
+		}
+		return false; // couldn't locate the variable in provided input
+	}
 }
 
-template <>
-bool
-extract_value( bool &Variable, std::string const &Key, std::string const &Input, std::string const &Default );
+template <> bool extract_value(bool &Variable, std::string const &Key, std::string const &Input, std::string const &Default);
 
-bool FileExists( std::string const &Filename );
+bool FileExists(std::string const &Filename);
 
-std::pair<std::string, std::string> FileExists( std::vector<std::string> const &Names, std::vector<std::string> const &Extensions );
+std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions);
 
 // returns time of last modification for specified file
-std::time_t last_modified( std::string const &Filename );
+std::time_t last_modified(std::string const &Filename);
 
 // potentially erases file extension from provided file name. returns: true if extension was removed, false otherwise
-bool
-erase_extension( std::string &Filename );
+bool erase_extension(std::string &Filename);
 
 // potentially erase leading slashes from provided file path
-void
-erase_leading_slashes( std::string &Filename );
+void erase_leading_slashes(std::string &Filename);
 
 // potentially replaces backward slashes in provided file path with unix-compatible forward slashes
-void
-replace_slashes( std::string &Filename );
+void replace_slashes(std::string &Filename);
 
 // returns potential path part from provided file name
-std::string substr_path( std::string const &Filename );
+std::string substr_path(std::string const &Filename);
 
 // returns common prefix of two provided strings
-std::ptrdiff_t len_common_prefix( std::string const &Left, std::string const &Right );
+std::ptrdiff_t len_common_prefix(std::string const &Left, std::string const &Right);
 
 // returns true if provided string ends with another provided string
-bool ends_with( std::string_view String, std::string_view Suffix );
+bool ends_with(std::string_view String, std::string_view Suffix);
 // returns true if provided string begins with another provided string
-bool starts_with( std::string_view String, std::string_view Prefix );
+bool starts_with(std::string_view String, std::string_view Prefix);
 // returns true if provided string contains another provided string
-bool contains( std::string_view const String, std::string_view Substring );
-bool contains( std::string_view const String, char Character );
+bool contains(std::string_view const String, std::string_view Substring);
+bool contains(std::string_view const String, char Character);
 
-template <typename Type_>
-void SafeDelete( Type_ &Pointer ) {
-    delete Pointer;
-    Pointer = nullptr;
+template <typename Type_> void SafeDelete(Type_ &Pointer)
+{
+	delete Pointer;
+	Pointer = nullptr;
 }
 
-template <typename Type_>
-void SafeDeleteArray( Type_ &Pointer ) {
-    delete[] Pointer;
-    Pointer = nullptr;
+template <typename Type_> void SafeDeleteArray(Type_ &Pointer)
+{
+	delete[] Pointer;
+	Pointer = nullptr;
 }
 
-template <typename Type_>
-Type_
-is_equal( Type_ const &Left, Type_ const &Right, Type_ const Epsilon = 1e-5 ) {
+template <typename Type_> Type_ is_equal(Type_ const &Left, Type_ const &Right, Type_ const Epsilon = 1e-5)
+{
 
-    if( Epsilon != 0 ) {
-        return glm::epsilonEqual( Left, Right, Epsilon );
-    }
-    else {
-        return ( Left == Right );
-    }
+	if (Epsilon != 0)
+	{
+		return glm::epsilonEqual(Left, Right, Epsilon);
+	}
+	else
+	{
+		return (Left == Right);
+	}
 }
 
-template <typename Type_>
-Type_
-clamp( Type_ const Value, Type_ const Min, Type_ const Max ) {
+template <typename Type_> Type_ clamp(Type_ const Value, Type_ const Min, Type_ const Max)
+{
 
-    Type_ value = Value;
-    if( value < Min ) { value = Min; }
-    if( value > Max ) { value = Max; }
-    return value;
+	Type_ value = Value;
+	if (value < Min)
+	{
+		value = Min;
+	}
+	if (value > Max)
+	{
+		value = Max;
+	}
+	return value;
 }
 
 // keeps the provided value in specified range 0-Range, as if the range was circular buffer
-template <typename Type_>
-Type_
-clamp_circular( Type_ Value, Type_ const Range = static_cast<Type_>(360) ) {
+template <typename Type_> Type_ clamp_circular(Type_ Value, Type_ const Range = static_cast<Type_>(360))
+{
 
-    Value -= Range * (int)( Value / Range ); // clamp the range to 0-360
-    if( Value < Type_(0) ) Value += Range;
+	Value -= Range * (int)(Value / Range); // clamp the range to 0-360
+	if (Value < Type_(0))
+		Value += Range;
 
-    return Value;
+	return Value;
 }
 
 // rounds down provided value to nearest power of two
-template <typename Type_>
-Type_
-clamp_power_of_two( Type_ Value, Type_ const Min = static_cast<Type_>(1), Type_ const Max = static_cast<Type_>(16384) ) {
+template <typename Type_> Type_ clamp_power_of_two(Type_ Value, Type_ const Min = static_cast<Type_>(1), Type_ const Max = static_cast<Type_>(16384))
+{
 
-    Type_ p2size{ Min };
-    Type_ size;
-    while( ( p2size <= Max ) && ( p2size <= Value ) ) {
-        size = p2size;
-        p2size = p2size << 1;
-    }
-    return size;
+	Type_ p2size{Min};
+	Type_ size;
+	while ((p2size <= Max) && (p2size <= Value))
+	{
+		size = p2size;
+		p2size = p2size << 1;
+	}
+	return size;
 }
 
-template <typename Type_>
-Type_
-quantize( Type_ const Value, Type_ const Step ) {
+template <typename Type_> Type_ quantize(Type_ const Value, Type_ const Step)
+{
 
-    return ( Step * std::round( Value / Step ) );
+	return (Step * std::round(Value / Step));
 }
 
-template <typename Type_>
-Type_
-min_speed( Type_ const Left, Type_ const Right ) {
+template <typename Type_> Type_ min_speed(Type_ const Left, Type_ const Right)
+{
 
-    if( Left == Right ) { return Left; }
+	if (Left == Right)
+	{
+		return Left;
+	}
 
-    return std::min(
-        ( Left != -1 ?
-            Left :
-            std::numeric_limits<Type_>::max() ),
-        ( Right != -1 ?
-            Right :
-            std::numeric_limits<Type_>::max() ) );
+	return std::min((Left != -1 ? Left : std::numeric_limits<Type_>::max()), (Right != -1 ? Right : std::numeric_limits<Type_>::max()));
 }
 
-template <typename Type_>
-Type_
-interpolate( Type_ const &First, Type_ const &Second, float const Factor ) {
+template <typename Type_> Type_ interpolate(Type_ const &First, Type_ const &Second, float const Factor)
+{
 
-    return static_cast<Type_>( ( First * ( 1.0f - Factor ) ) + ( Second * Factor ) );
+	return static_cast<Type_>((First * (1.0f - Factor)) + (Second * Factor));
 }
 
-template <typename Type_>
-Type_
-interpolate( Type_ const &First, Type_ const &Second, double const Factor ) {
+template <typename Type_> Type_ interpolate(Type_ const &First, Type_ const &Second, double const Factor)
+{
 
-    return static_cast<Type_>( ( First * ( 1.0 - Factor ) ) + ( Second * Factor ) );
+	return static_cast<Type_>((First * (1.0 - Factor)) + (Second * Factor));
 }
 
 template <typename Type_> Type_ smoothInterpolate(Type_ const &First, Type_ const &Second, double Factor)
@@ -345,124 +343,120 @@ template <typename Type_> Type_ smoothInterpolate(Type_ const &First, Type_ cons
 }
 
 // tests whether provided points form a degenerate triangle
-template <typename VecType_>
-bool
-degenerate( VecType_ const &Vertex1, VecType_ const &Vertex2, VecType_ const &Vertex3 ) {
+template <typename VecType_> bool degenerate(VecType_ const &Vertex1, VecType_ const &Vertex2, VecType_ const &Vertex3)
+{
 
-    //  degenerate( A, B, C, minarea ) = ( ( B - A ).cross( C - A ) ).lengthSquared() < ( 4.0f * minarea * minarea );
-    return ( glm::length2( glm::cross( Vertex2 - Vertex1, Vertex3 - Vertex1 ) ) == 0.0 );
+	//  degenerate( A, B, C, minarea ) = ( ( B - A ).cross( C - A ) ).lengthSquared() < ( 4.0f * minarea * minarea );
+	return (glm::length2(glm::cross(Vertex2 - Vertex1, Vertex3 - Vertex1)) == 0.0);
 }
 
 // calculates bounding box for provided set of points
-template <class Iterator_, class VecType_>
-void
-bounding_box( VecType_ &Mincorner, VecType_ &Maxcorner, Iterator_ First, Iterator_ Last ) {
+template <class Iterator_, class VecType_> void bounding_box(VecType_ &Mincorner, VecType_ &Maxcorner, Iterator_ First, Iterator_ Last)
+{
 
-    Mincorner = VecType_( std::numeric_limits<typename VecType_::value_type>::max() );
-    Maxcorner = VecType_( std::numeric_limits<typename VecType_::value_type>::lowest() );
+	Mincorner = VecType_(std::numeric_limits<typename VecType_::value_type>::max());
+	Maxcorner = VecType_(std::numeric_limits<typename VecType_::value_type>::lowest());
 
-    std::for_each(
-        First, Last,
-        [&]( typename Iterator_::value_type &point ) {
-            Mincorner = glm::min( Mincorner, VecType_{ point } );
-            Maxcorner = glm::max( Maxcorner, VecType_{ point } ); } );
+	std::for_each(First, Last,
+	              [&](typename Iterator_::value_type &point)
+	              {
+		              Mincorner = glm::min(Mincorner, VecType_{point});
+		              Maxcorner = glm::max(Maxcorner, VecType_{point});
+	              });
 }
 
 // finds point on specified segment closest to specified point in 3d space. returns: point on segment as value in range 0-1 where 0 = start and 1 = end of the segment
-template <typename VecType_>
-typename VecType_::value_type
-nearest_segment_point( VecType_ const &Segmentstart, VecType_ const &Segmentend, VecType_ const &Point ) {
+template <typename VecType_> typename VecType_::value_type nearest_segment_point(VecType_ const &Segmentstart, VecType_ const &Segmentend, VecType_ const &Point)
+{
 
-    auto const v = Segmentend - Segmentstart;
-    auto const w = Point - Segmentstart;
+	auto const v = Segmentend - Segmentstart;
+	auto const w = Point - Segmentstart;
 
-    auto const c1 = glm::dot( w, v );
-    if( c1 <= 0.0 ) {
-        return 0.0;
-    }
-    auto const c2 = glm::dot( v, v );
-    if( c2 <= c1 ) {
-        return 1.0;
-    }
-    return c1 / c2;
+	auto const c1 = glm::dot(w, v);
+	if (c1 <= 0.0)
+	{
+		return 0.0;
+	}
+	auto const c2 = glm::dot(v, v);
+	if (c2 <= c1)
+	{
+		return 1.0;
+	}
+	return c1 / c2;
 }
 
-glm::dvec3 LoadPoint( class cParser &Input );
+glm::dvec3 LoadPoint(class cParser &Input);
 
 // extracts a group of tokens from provided data stream
-std::string
-deserialize_random_set( cParser &Input, char const *Break = "\n\r\t ;" );
+std::string deserialize_random_set(cParser &Input, char const *Break = "\n\r\t ;");
 
-int count_trailing_zeros( uint32_t val );
+int count_trailing_zeros(uint32_t val);
 
 // extracts a group of <key, value> pairs from provided data stream
 // NOTE: expects no more than single pair per line
-template <typename MapType_>
-void
-deserialize_map( MapType_ &Map, cParser &Input ) {
+template <typename MapType_> void deserialize_map(MapType_ &Map, cParser &Input)
+{
 
-    while( Input.ok() && !Input.eof() ) {
-        auto const key { Input.getToken<typename MapType_::key_type>( false ) };
-        auto const value { Input.getToken<typename MapType_::mapped_type>( false, "\n" ) };
-        Map.emplace( key, value );
-    }
+	while (Input.ok() && !Input.eof())
+	{
+		auto const key{Input.getToken<typename MapType_::key_type>(false)};
+		auto const value{Input.getToken<typename MapType_::mapped_type>(false, "\n")};
+		Map.emplace(key, value);
+	}
 }
 
-namespace threading {
+namespace threading
+{
 
 // simple POD pairing of a data item and a mutex
 // NOTE: doesn't do any locking itself, it's merely for cleaner argument arrangement and passing
-template <typename Type_>
-struct lockable {
+template <typename Type_> struct lockable
+{
 
-    Type_ data;
-    std::mutex mutex;
+	Type_ data;
+	std::mutex mutex;
 };
 
 // basic wrapper simplifying use of std::condition_variable for most typical cases.
 // has its own mutex and secondary variable to ignore spurious wakeups
-class condition_variable {
+class condition_variable
+{
 
-public:
-// methods
-    void
-        wait() {
-            std::unique_lock<std::mutex> lock( m_mutex );
-            m_condition.wait(
-                lock,
-                [ this ]() {
-                    return m_spurious == false; } ); }
-    template< class Rep_, class Period_ >
-    void
-        wait_for( const std::chrono::duration<Rep_, Period_> &Time ) {
-            std::unique_lock<std::mutex> lock( m_mutex );
-            m_condition.wait_for(
-                lock,
-                Time,
-                [ this ]() {
-                    return m_spurious == false; } ); }
-    void
-        notify_one() {
-            spurious( false );
-            m_condition.notify_one();
-    }
-    void
-        notify_all() {
-            spurious( false );
-            m_condition.notify_all();
-    }
-    void
-        spurious( bool const Spurious ) {
-            std::lock_guard<std::mutex> lock( m_mutex );
-            m_spurious = Spurious; }
+  public:
+	// methods
+	void wait()
+	{
+		std::unique_lock<std::mutex> lock(m_mutex);
+		m_condition.wait(lock, [this]() { return m_spurious == false; });
+	}
+	template <class Rep_, class Period_> void wait_for(const std::chrono::duration<Rep_, Period_> &Time)
+	{
+		std::unique_lock<std::mutex> lock(m_mutex);
+		m_condition.wait_for(lock, Time, [this]() { return m_spurious == false; });
+	}
+	void notify_one()
+	{
+		spurious(false);
+		m_condition.notify_one();
+	}
+	void notify_all()
+	{
+		spurious(false);
+		m_condition.notify_all();
+	}
+	void spurious(bool const Spurious)
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_spurious = Spurious;
+	}
 
-private:
-// members
-    mutable std::mutex m_mutex;
-    std::condition_variable m_condition;
-    bool m_spurious { true };
+  private:
+	// members
+	mutable std::mutex m_mutex;
+	std::condition_variable m_condition;
+	bool m_spurious{true};
 };
 
-} // threading
+} // namespace threading
 
 //---------------------------------------------------------------------------

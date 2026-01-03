@@ -26,52 +26,55 @@ struct item_properties {
     changeable<glm::vec3> rotation {};
 };
 */
-class itemproperties_panel : public ui_panel {
+class itemproperties_panel : public ui_panel
+{
 
-public:
-    itemproperties_panel( std::string const &Name, bool const Isopen )
-        : ui_panel( Name, Isopen )
-    {}
+  public:
+	itemproperties_panel(std::string const &Name, bool const Isopen) : ui_panel(Name, Isopen) {}
 
-    void update( scene::basic_node const *Node );
+	void update(scene::basic_node const *Node);
 	void render() override;
 
-private:
-// methods
-    void update_group();
+  private:
+	// methods
+	void update_group();
 	bool render_group();
 
-// members
-    scene::basic_node const *m_node { nullptr }; // scene node bound to the panel
-    scene::group_handle m_grouphandle { null_handle }; // scene group bound to the panel
-    std::string m_groupprefix;
-    std::vector<text_line> m_grouplines;
+	// members
+	scene::basic_node const *m_node{nullptr}; // scene node bound to the panel
+	scene::group_handle m_grouphandle{null_handle}; // scene group bound to the panel
+	std::string m_groupprefix;
+	std::vector<text_line> m_grouplines;
 };
 
-class nodebank_panel : public ui_panel {
+class nodebank_panel : public ui_panel
+{
 
-public:
-	enum edit_mode {
+  public:
+	enum edit_mode
+	{
 		MODIFY,
 		COPY,
 		ADD,
-        BRUSH
+		BRUSH
 	};
 	edit_mode mode = MODIFY;
 
-	nodebank_panel( std::string const &Name, bool const Isopen );
+	float spacing{1.0f};
+
+	nodebank_panel(std::string const &Name, bool const Isopen);
 	void nodebank_reload();
 	void render() override;
 	void add_template(const std::string &desc);
-	const std::string* get_active_template();
+	const std::string *get_active_template();
 
-private:
-// methods:
-    std::string generate_node_label( std::string Input ) const;
-// members:
-    std::vector<std::pair<std::string, std::shared_ptr<std::string>>> m_nodebank;
-    char m_nodesearch[ 128 ];
-    std::shared_ptr<std::string> m_selectedtemplate;
+  private:
+	// methods:
+	std::string generate_node_label(std::string Input) const;
+	// members:
+	std::vector<std::pair<std::string, std::shared_ptr<std::string>>> m_nodebank;
+	char m_nodesearch[128];
+	std::shared_ptr<std::string> m_selectedtemplate;
 };
 
 class functions_panel : public ui_panel
@@ -87,17 +90,15 @@ class functions_panel : public ui_panel
 	rotation_mode rot_mode = DEFAULT;
 
 	float rot_value = 0.0f;
-	bool rot_from_last = false; 
+	bool rot_from_last = false;
 
 	functions_panel(std::string const &Name, bool const Isopen) : ui_panel(Name, Isopen) {}
 
 	void update(scene::basic_node const *Node);
 	void render() override;
 
-
   private:
 	// methods
-
 
 	// members
 	scene::basic_node const *m_node{nullptr}; // scene node bound to the panel

@@ -27,6 +27,7 @@ public:
 // constructors
     driver_ui();
 // methods
+	void showDebugUI() override;
     // potentially processes provided input key. returns: true if the input was processed, false otherwise
     bool
         on_key( int const Key, int const Action ) override;
@@ -42,6 +43,7 @@ public:
 
 protected:
     void render_menu_contents() override;
+
 
 private:
 // methods

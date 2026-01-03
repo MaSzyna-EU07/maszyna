@@ -87,6 +87,11 @@ void driver_ui::render_menu_contents() {
     }
 }
 
+void driver_ui::showDebugUI()
+{
+	m_debugpanel.is_open = !m_debugpanel.is_open;
+}
+
 // potentially processes provided input key. returns: true if key was processed, false otherwise
 bool
 driver_ui::on_key( int const Key, int const Action ) {
@@ -101,8 +106,7 @@ driver_ui::on_key( int const Key, int const Action ) {
         case GLFW_KEY_F10:
         case GLFW_KEY_F12: { // ui mode selectors
 
-            if( ( true == Global.ctrlState )
-             || ( true == Global.shiftState ) ) {
+            if( ( true == Global.ctrlState )) {
                 // only react to keys without modifiers
                 return false;
             }
@@ -157,10 +161,13 @@ driver_ui::on_key( int const Key, int const Action ) {
             return true;
         }
 
-        case GLFW_KEY_F12: {
+        case GLFW_KEY_F12 : {
             // debug panel
-            m_debugpanel.is_open = !m_debugpanel.is_open;
-            return true;
+	    	if (Global.shiftState)
+	    	{
+	    		m_debugpanel.is_open = !m_debugpanel.is_open;
+	    		return true;
+	    	}
         }
 
         default: {

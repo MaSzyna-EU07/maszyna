@@ -12,40 +12,35 @@ http://mozilla.org/MPL/2.0/.
 #include "uilayer.h"
 #include "editoruipanels.h"
 
-namespace scene {
+namespace scene
+{
 
 class basic_node;
 
 }
 
-class editor_ui : public ui_layer {
+class editor_ui : public ui_layer
+{
 
-public:
-// constructors
-    editor_ui();
-// methods
-    // updates state of UI elements
-    void
-        update() override;
-    void
-        set_node( scene::basic_node * Node );
-	void
-	    add_node_template(const std::string &desc);
-    float
-        rot_val();
-	bool 
-        rot_from_last();
-	functions_panel::rotation_mode
-        rot_mode();
-	const std::string *
-	    get_active_node_template();
-	nodebank_panel::edit_mode
-	    mode();
+  public:
+	// constructors
+	editor_ui();
+	// methods
+	// updates state of UI elements
+	void update() override;
+	void set_node(scene::basic_node *Node);
+	void add_node_template(const std::string &desc);
+	float rot_val();
+	bool rot_from_last();
+	functions_panel::rotation_mode rot_mode();
+	const std::string *get_active_node_template();
+	nodebank_panel::edit_mode mode();
+	float getSpacing();
 
-private:
-// members
-    itemproperties_panel m_itempropertiespanel { "Node Properties", true };
-    functions_panel m_functionspanel { "Functions", true };
-	nodebank_panel m_nodebankpanel{ "Node Bank", true };
-    scene::basic_node * m_node { nullptr }; // currently bound scene node, if any
+  private:
+	// members
+	itemproperties_panel m_itempropertiespanel{"Node Properties", true};
+	functions_panel m_functionspanel{"Functions", true};
+	nodebank_panel m_nodebankpanel{"Node Bank", true};
+	scene::basic_node *m_node{nullptr}; // currently bound scene node, if any
 };

@@ -444,6 +444,11 @@ driver_mode::on_key( int const Key, int const Scancode, int const Action, int co
 
     // give the ui first shot at the input processing...
     if( !anyModifier && true == m_userinterface->on_key( Key, Action ) ) { return; }
+	if (Key == (GLFW_MOD_SHIFT | GLFW_KEY_F12) && Action == GLFW_PRESS)
+	{
+		m_userinterface->showDebugUI();
+		return;
+	}
     // ...if the input is left untouched, pass it on
     if( true == m_input.keyboard.key( Key, Action ) ) { return; }
 
