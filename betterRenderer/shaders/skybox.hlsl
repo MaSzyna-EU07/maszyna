@@ -24,6 +24,7 @@ sampler g_SkyboxSampler : register(s0);
 TextureCube g_Skybox : register(t0);
 
 #include "manul/sky.hlsli"
+#include "manul/clouds.hlsli"
 
 PixelOutput main(VertexOutput ps_in) {
   PixelOutput result;
@@ -38,6 +39,7 @@ PixelOutput main(VertexOutput ps_in) {
   CalcSun(result.m_Emission, viewDir, g_SunDirection, g_Altitude);
   CalcMoon(result.m_Emission, viewDir, g_MoonDirection, g_SunDirection, g_Altitude);
   CalcAtmosphere(result.m_Emission, viewDir, g_SunDirection);
+  CalcClouds(result.m_Emission, viewDir, g_SunDirection);
   //result.m_Emission = g_Skybox.Sample(g_SkyboxSampler, normalize(mul(g_InverseViewProjection, positionNdc).xyz)).rgb;
   //result.m_Emission = 0.; //Sky(normalize(mul(g_InverseViewProjection, positionNdc).xyz), g_SunDirection, g_Altitude);
   float4 positionReproject = mul(g_HistoryReproject, positionNdc);

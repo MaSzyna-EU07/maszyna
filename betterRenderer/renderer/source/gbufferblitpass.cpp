@@ -110,6 +110,7 @@ void GbufferBlitPass::Init() {
           .addItem(nvrhi::BindingLayoutItem::Texture_SRV(11))
           .addItem(nvrhi::BindingLayoutItem::Texture_SRV(12))
           .addItem(nvrhi::BindingLayoutItem::Texture_SRV(14))
+          .addItem(nvrhi::BindingLayoutItem::Texture_SRV(15))
           .addItem(nvrhi::BindingLayoutItem::Texture_SRV(16))
           .addItem(nvrhi::BindingLayoutItem::StructuredBuffer_SRV(17))
           .addItem(nvrhi::BindingLayoutItem::StructuredBuffer_SRV(18))
@@ -147,6 +148,8 @@ void GbufferBlitPass::Init() {
                 12, m_contact_shadows->m_output_texture))
             .addItem(nvrhi::BindingSetItem::Texture_SRV(
                 14, m_sky->m_aerial_lut->m_lut))
+            .addItem(nvrhi::BindingSetItem::Texture_SRV(
+                15, m_environment->m_clouds_texture))
             .addItem(nvrhi::BindingSetItem::Texture_SRV(
                 16, static_cast<nvrhi::ITexture*>(
                        GetResource("forwardplus_index_grid_opaque", nvrhi::ResourceType::Texture_SRV)

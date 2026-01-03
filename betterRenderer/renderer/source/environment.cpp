@@ -7,6 +7,7 @@
 #include "gbuffer.h"
 #include "nvrenderer/nvrenderer.h"
 #include "nvrendererbackend.h"
+#include "nvtexture.h"
 #include "simulationenvironment.h"
 #include "sky.h"
 
@@ -50,6 +51,8 @@ nvrhi::BindingSetHandle MaEnvironment::GetBindingSet(int pass, int mip, int set,
                       Format::UNKNOWN, AllSubresources))
                   .addItem(BindingSetItem::Texture_SRV(13, m_sky_texture))
                   .addItem(BindingSetItem::Texture_SRV(14, m_aerial_lut))
+                  .addItem(BindingSetItem::Texture_SRV(15, m_clouds_texture))
+                  .addItem(BindingSetItem::Texture_SRV(16, m_high_clouds_texture))
                   .addItem(BindingSetItem::Texture_UAV(
                       0, m_dynamic_skybox[set], Format::UNKNOWN,
                       TextureSubresourceSet(
@@ -58,6 +61,7 @@ nvrhi::BindingSetHandle MaEnvironment::GetBindingSet(int pass, int mip, int set,
                   .addItem(BindingSetItem::Sampler(0, m_sampler_linear_clamp))
                   .addItem(BindingSetItem::Sampler(1, m_sampler_point_clamp))
                   .addItem(BindingSetItem::Sampler(13, m_sampler_linear_clamp))
+                  .addItem(BindingSetItem::Sampler(15, m_sampler_linear_clamp))
                   .addItem(BindingSetItem::ConstantBuffer(
                       13, m_sky->m_sky_constants))
                   .addItem(BindingSetItem::ConstantBuffer(
@@ -125,11 +129,13 @@ nvrhi::BindingSetHandle MaEnvironment::GetBindingSet(int pass, int mip, int set,
 
 MaEnvironment::MaEnvironment(NvRenderer* renderer)
     : MaResourceRegistry(renderer),
+      m_renderer(renderer),
       m_backend(renderer->m_backend.get()),
       m_gbuffer(renderer->m_gbuffer.get()),
-      m_sky(renderer->m_sky.get()) {}
+      m_sky() {}
 
 void MaEnvironment::Init(const std::string& texture, float pre_exposure) {
+  m_sky = m_renderer->m_sky.get();
   InitResourceRegistry();
   using namespace nvrhi;
   m_cs_sample_equirectangular = m_backend->CreateShader(
@@ -174,10 +180,13 @@ void MaEnvironment::Init(const std::string& texture, float pre_exposure) {
           .addItem(BindingLayoutItem::Texture_SRV(5))
           .addItem(BindingLayoutItem::Texture_SRV(13))
           .addItem(BindingLayoutItem::Texture_SRV(14))
+          .addItem(BindingLayoutItem::Texture_SRV(15))
+          .addItem(BindingLayoutItem::Texture_SRV(16))
           .addItem(BindingLayoutItem::Texture_UAV(0))
           .addItem(BindingLayoutItem::Sampler(0))
           .addItem(BindingLayoutItem::Sampler(1))
           .addItem(BindingLayoutItem::Sampler(13))
+          .addItem(BindingLayoutItem::Sampler(15))
           .addItem(BindingLayoutItem::VolatileConstantBuffer(13))
           .addItem(BindingLayoutItem::ConstantBuffer(1))
           .addItem(BindingLayoutItem::PushConstants(
@@ -306,6 +315,25 @@ void MaEnvironment::Init(const std::string& texture, float pre_exposure) {
                    m_sampler_linear_clamp_v_repeat_h, ResourceType::Sampler);
 
   {
+    size_t texture_handle_clouds =
+        m_renderer->GetTextureManager()->FetchTexture(
+            NvRenderer::Config()->m_cloud_texture, GL_RGBA, 0, false);
+    size_t texture_handle_high_clouds =
+        m_renderer->GetTextureManager()->FetchTexture(
+            NvRenderer::Config()->m_high_cloud_texture, GL_R, 0, false);
+    nvrhi::CommandListHandle command_list =
+        m_backend->GetDevice()->createCommandList();
+    command_list->open();
+    m_clouds_texture = m_renderer->GetTextureManager()->GetRhiTexture(
+        texture_handle_clouds, command_list);
+    m_high_clouds_texture = m_renderer->GetTextureManager()->GetRhiTexture(
+        texture_handle_high_clouds, command_list);
+
+    command_list->close();
+    m_backend->GetDevice()->executeCommandList(command_list);
+  }
+
+  {
     m_brdf_lut = m_backend->GetDevice()->createTexture(
         TextureDesc()
             .setFormat(Format::RG16_FLOAT)
@@ -411,6 +439,9 @@ void MaEnvironment::Init(const std::string& texture, float pre_exposure) {
     RegisterResource(true, "env_dynamic_specular", m_dynamic_envmap_specular[0],
                      ResourceType::Texture_SRV);
   }
+
+  RegisterResource(true, "sky_clouds", m_clouds_texture,
+                   nvrhi::ResourceType::Texture_SRV);
 
   m_sky_texture = m_backend->GetDevice()->createTexture(
       TextureDesc(m_sky->m_aerial_lut->m_sky_texture->getDesc())
@@ -870,13 +901,17 @@ void EnvironmentRenderPass::Init() {
           .setVisibility(nvrhi::ShaderType::Pixel)
           .addItem(nvrhi::BindingLayoutItem::Texture_SRV(0))
           .addItem(nvrhi::BindingLayoutItem::Texture_SRV(13))
+          .addItem(nvrhi::BindingLayoutItem::Texture_SRV(15))
+          .addItem(nvrhi::BindingLayoutItem::Texture_SRV(16))
           .addItem(nvrhi::BindingLayoutItem::Sampler(0))
           .addItem(nvrhi::BindingLayoutItem::Sampler(13))
+          .addItem(nvrhi::BindingLayoutItem::Sampler(15))
           .addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(0)));
   auto sampler = m_backend->GetDevice()->createSampler(
       nvrhi::SamplerDesc()
           .setAllAddressModes(nvrhi::SamplerAddressMode::Clamp)
           .setAllFilters(true));
+
   for (int i = 0; i < 2; ++i) {
     m_binding_set[i] = m_backend->GetDevice()->createBindingSet(
         nvrhi::BindingSetDesc()
@@ -884,10 +919,14 @@ void EnvironmentRenderPass::Init() {
                 nvrhi::BindingSetItem::Texture_SRV(0, m_environment->m_skybox))
             .addItem(nvrhi::BindingSetItem::Texture_SRV(
                 13, m_environment->m_sky->m_aerial_lut->m_sky_texture))
+            .addItem(nvrhi::BindingSetItem::Texture_SRV(15, m_environment->m_clouds_texture))
+            .addItem(nvrhi::BindingSetItem::Texture_SRV(16, m_environment->m_high_clouds_texture))
             .addItem(nvrhi::BindingSetItem::Sampler(
                 0, m_environment->m_sampler_linear_clamp))
             .addItem(nvrhi::BindingSetItem::Sampler(
                 13, m_environment->m_sampler_linear_clamp_v_repeat_h))
+            .addItem(nvrhi::BindingSetItem::Sampler(
+                15, m_environment->m_sampler_linear_clamp))
             .addItem(nvrhi::BindingSetItem::ConstantBuffer(
                 0, m_environment_constants)),
         m_binding_layout);

@@ -4,7 +4,7 @@
 #include "nvrenderer/resource_registry.h"
 
 struct Sky : public MaResourceRegistry {
-  Sky(class NvRenderer* renderer);
+  Sky(class NvRenderer* renderer, struct MaEnvironment *environment);
 
   void Init();
   void Render(nvrhi::ICommandList* command_list, const glm::dmat4& projection,
@@ -27,7 +27,7 @@ struct Sky : public MaResourceRegistry {
     Rural,
     Urban,
     Num
-  } m_aerosol_preset = AerosolPreset::Rural;
+  } m_aerosol_preset = AerosolPreset::Urban;
   float m_visibility = 1e4f;
   float m_fog_height_offset = 0.f;
   float m_fog_height_scale = .1f;
@@ -39,6 +39,7 @@ struct Sky : public MaResourceRegistry {
   void ShowGui();
   static const char* GetAerosolTypeDesc(AerosolPreset preset);
   class NvRendererBackend* m_backend;
+  MaEnvironment* m_environment;
   std::shared_ptr<struct SkyTransmittancePass> m_transmittance_pass;
   std::shared_ptr<struct SkyAerialLut> m_aerial_lut;
   float GetOzoneMean() const;
@@ -104,6 +105,7 @@ struct SkyAerialLut {
               const glm::dmat4& view);
   nvrhi::TextureHandle m_lut;
   nvrhi::TextureHandle m_sky_texture;
+  nvrhi::TextureHandle m_cloud_texture;
   nvrhi::BufferHandle m_constant_buffer;
   nvrhi::ComputePipelineHandle m_pso_lut;
   nvrhi::ComputePipelineHandle m_pso_sky;

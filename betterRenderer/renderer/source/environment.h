@@ -15,6 +15,8 @@ struct MaEnvironment : public MaResourceRegistry {
   nvrhi::TextureHandle m_brdf_lut;
   nvrhi::TextureHandle m_sky_texture;
   nvrhi::TextureHandle m_aerial_lut;
+  nvrhi::TextureHandle m_clouds_texture;
+  nvrhi::TextureHandle m_high_clouds_texture;
 
   nvrhi::SamplerHandle m_sampler_linear_clamp_v_repeat_h;
   nvrhi::SamplerHandle m_sampler_linear_clamp;
@@ -45,6 +47,7 @@ struct MaEnvironment : public MaResourceRegistry {
 
   nvrhi::BufferHandle m_face_inverse_projection_buffer;
 
+  class NvRenderer* m_renderer;
   class NvRendererBackend* m_backend;
   struct NvGbuffer* m_gbuffer;
   struct Sky* m_sky;
@@ -106,6 +109,8 @@ struct MaEnvironment : public MaResourceRegistry {
 
 struct EnvironmentRenderPass : public FullScreenPass {
   EnvironmentRenderPass(MaEnvironment* environment);
+
+  size_t m_texture_handle_clouds;
 
   struct EnvironmentConstants {
     glm::mat4 m_inverse_view_projection;

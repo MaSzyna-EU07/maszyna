@@ -5,6 +5,8 @@
 
 #include "material_common.hlsli"
 
+#include "sky_common.hlsli" // ray_sphere_intersection
+
 #include "view_data.hlsli"
 
 #include "lighting_functions.hlsli"
@@ -16,6 +18,7 @@ TextureCube<float3> g_DiffuseEnvmap : register(t8);
 TextureCube<float3> g_SpecularEnvmap : register(t9);
 Texture2D<float2> g_BrdfLUT : register(t10);
 
+Texture2D<float4> g_CloudShadowMap : register(t15);
 Texture2D<uint2> g_LightGrid : register(t16);
 StructuredBuffer<uint> g_LightIndexBuffer : register(t17);
 StructuredBuffer<PackedLight> g_LightBuffer : register(t18);
@@ -83,6 +86,15 @@ void ApplyMaterialLighting(out float4 lit, in MaterialData material)
 #ifdef GBUFFER_CONTACT_SHADOWS_HLSLI
   shadow = min(shadow, GetContactShadows(pixel_position));
 #endif
+
+  float t = ray_sphere_intersection(view, g_LightDir.xyz, 10000.);
+  if(t >= 0.) {
+    float3 cloud_dir = normalize(view + g_LightDir.xyz * t);
+    cloud_dir.y = 4. * abs(cloud_dir.y);
+    cloud_dir = normalize(cloud_dir);
+    float4 cloud_mask = g_CloudShadowMap.SampleLevel(g_SamplerLinearClamp, cloud_dir.xz * .5 + .5, 0.);
+    shadow = min(shadow, 1. - cloud_mask.a * .6);
+  }
   
 // Apply IBL cubemap
   ApplyIBL(lit.rgb, surface_data);

@@ -14,6 +14,7 @@ cbuffer DispatchConstants : register(b0)
 
 RWTexture2DArray<float4> g_AerialLut : register(u0);
 RWTexture2D<float4> g_Sky : register(u1);
+Texture2D<float4> g_Clouds : register(t15);
 Texture2D<float4> g_TransmittanceLut : register(t13);
 SamplerState g_TransmittanceLutSampler : register(s13);
 
@@ -77,8 +78,8 @@ SamplerState g_TransmittanceLutSampler : register(s13);
     {
         float t = (i + 1.) / (float)texture_size.z;
         float end_depth = min(t_d, t * t * g_MaxDepth);
-        compute_inscattering(g_TransmittanceLut, g_TransmittanceLutSampler, molecular_phase, aerosol_phase, 5, ray_origin, ray_dir, start_depth, end_depth, g_SunDir, L, transmittance);
-        compute_inscattering(g_TransmittanceLut, g_TransmittanceLutSampler, molecular_phase_moon, aerosol_phase_moon, 5, ray_origin, ray_dir, start_depth, end_depth, g_MoonDir, M, transmittance_m);
+        compute_inscattering_with_cloud_shadow(g_TransmittanceLut, g_Clouds, g_TransmittanceLutSampler, molecular_phase, aerosol_phase, 5, ray_origin, ray_dir, start_depth, end_depth, g_SunDir, L, transmittance);
+        compute_inscattering_with_cloud_shadow(g_TransmittanceLut, g_Clouds, g_TransmittanceLutSampler, molecular_phase_moon, aerosol_phase_moon, 5, ray_origin, ray_dir, start_depth, end_depth, g_MoonDir, M, transmittance_m);
         g_AerialLut[uint3(pix_coord, i)] = float4(linear_srgb_from_spectral_samples(L + .07 * moon_phase * M) * exp2(EXPOSURE), dot(transmittance, .25));
         start_depth = end_depth;
     }

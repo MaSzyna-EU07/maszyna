@@ -66,6 +66,64 @@ void compute_inscattering(Texture2D transmittance_lut, SamplerState lut_sampler,
     }
 }
 
+void compute_inscattering_with_cloud_shadow(Texture2D transmittance_lut, Texture2D clouds, SamplerState lut_sampler, in float molecular_phase, in float aerosol_phase, int steps, float3 ray_origin, float3 ray_dir, float t_min, float t_max, float3 sun_dir, inout float4 L_inscattering, inout float4 transmittance)
+{
+    float dt = (t_max - t_min) / float(steps);
+
+    for (int i = 0; i < steps; ++i) {
+        float t = t_min + (float(i) + 0.5) * dt;
+        float3 x_t = ray_origin + ray_dir * t;
+
+        float distance_to_earth_center = length(x_t);
+        float3 zenith_dir = x_t / distance_to_earth_center;
+        float altitude = distance_to_earth_center - EARTH_RADIUS;
+        float normalized_altitude = altitude / ATMOSPHERE_THICKNESS;
+
+        float sample_cos_theta = dot(zenith_dir, sun_dir);
+
+        float shadow = 1.;
+        float c_t = ray_sphere_intersection(ray_dir * t, sun_dir, 10000.);
+        if(c_t >= 0.) {
+          float3 cloud_dir = normalize(ray_dir * t + sun_dir * c_t);
+          cloud_dir.y = 4. * cloud_dir.y;
+          cloud_dir = normalize(cloud_dir);
+          float4 cloud_mask = clouds.SampleLevel(lut_sampler, cloud_dir.xz * .5 + .5, 0.);
+          shadow = min(shadow, 1. - cloud_mask.a * smoothstep(-.01, .01, cloud_dir.y));
+        }
+
+        float4 aerosol_absorption, aerosol_scattering;
+        float4 molecular_absorption, molecular_scattering;
+        float4 fog_scattering;
+        float4 extinction;
+        get_atmosphere_collision_coefficients(
+            altitude,
+            aerosol_absorption, aerosol_scattering,
+            molecular_absorption, molecular_scattering,
+            fog_scattering,
+            extinction);
+
+        float4 transmittance_to_sun = transmittance_from_lut(
+            transmittance_lut, lut_sampler, sample_cos_theta, normalized_altitude) * shadow;
+
+        float4 ms = get_multiple_scattering(
+            transmittance_lut, lut_sampler, sample_cos_theta, normalized_altitude,
+            distance_to_earth_center);
+
+        float4 S = sun_spectral_irradiance *
+            (molecular_scattering * (molecular_phase * transmittance_to_sun + ms) +
+             (aerosol_scattering + fog_scattering)   * (aerosol_phase   * transmittance_to_sun + ms));
+
+        float4 step_transmittance = exp(-dt * extinction);
+
+        // Energy-conserving analytical integration
+        // "Physically Based Sky, Atmosphere and Cloud Rendering in Frostbite"
+        // by Sébastien Hillaire
+        float4 S_int = (S - S * step_transmittance) / max(extinction, 1e-7);
+        L_inscattering += transmittance * S_int;
+        transmittance *= step_transmittance;
+    }
+}
+
 float4 get_inscattering(Texture2D transmittance_lut, SamplerState lut_sampler, int steps, float altitude, float3 ray_dir, float t_min, float t_max, float3 sun_dir) {
     float cos_theta = dot(-ray_dir, sun_dir);
     float molecular_phase = molecular_phase_function(cos_theta);

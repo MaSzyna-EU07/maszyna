@@ -18,6 +18,7 @@ SamplerState g_SamplerPointClamp : register(s1);
 
 #include "cubemap_utils.hlsli"
 #include "manul/sky.hlsli"
+#include "manul/clouds.hlsli"
 
 struct FilterParameters {
   uint3 m_Offset;
@@ -50,6 +51,7 @@ void main(uint3 PixCoord : SV_DispatchThreadID) {
   //g_OutCubemap[PixCoord + g_Offset] = g_Skybox.SampleLevel(g_SamplerLinearClamp, normal, 0.);
   float3 color = 1.e-7;
   CalcAtmosphere(color, normal, g_FilterParams.m_LightVector);
+  CalcClouds(color, normal, g_FilterParams.m_LightVector);
   //CalcAtmosphere(g_OutCubemap[PixCoord + g_Offset], 1., normal, g_LightVector, g_Altitude, SKY_INF, g_LightColor.rgb, 10);
   float3 normal_flipped = normal * float3(-1., 1., 1.);
   float depth = g_Depth.SampleLevel(g_SamplerPointClamp, normal_flipped, 0.);
