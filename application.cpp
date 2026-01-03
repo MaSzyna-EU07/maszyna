@@ -41,11 +41,11 @@ http://mozilla.org/MPL/2.0/.
 #include "translation.h"
 
 #ifdef _WIN32
-#pragma comment (lib, "dsound.lib")
-#pragma comment (lib, "winmm.lib")
-#pragma comment (lib, "setupapi.lib")
-#pragma comment (lib, "dbghelp.lib")
-#pragma comment (lib, "version.lib")
+#pragma comment(lib, "dsound.lib")
+#pragma comment(lib, "winmm.lib")
+#pragma comment(lib, "setupapi.lib")
+#pragma comment(lib, "dbghelp.lib")
+#pragma comment(lib, "version.lib")
 #endif
 
 #ifdef __unix__
@@ -60,129 +60,142 @@ ui_layer uilayerstaticinitializer;
 #ifdef _WIN32
 extern "C"
 {
-    GLFWAPI HWND glfwGetWin32Window( GLFWwindow* window );
+	GLFWAPI HWND glfwGetWin32Window(GLFWwindow *window);
 }
 
-LRESULT APIENTRY WndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam );
+LRESULT APIENTRY WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 extern HWND Hwnd;
 extern WNDPROC BaseWindowProc;
 #endif
 
 // user input callbacks
 
-void focus_callback( GLFWwindow *window, int focus ) {
+void focus_callback(GLFWwindow *window, int focus)
+{
 	Application.on_focus_change(focus != 0);
 }
 
-void framebuffer_resize_callback( GLFWwindow *, int w, int h ) {
-    Global.fb_size = glm::ivec2(w, h);
+void framebuffer_resize_callback(GLFWwindow *, int w, int h)
+{
+	Global.fb_size = glm::ivec2(w, h);
 }
 
-void window_resize_callback( GLFWwindow *, int w, int h ) {
-    Global.window_size = glm::ivec2(w, h);
+void window_resize_callback(GLFWwindow *, int w, int h)
+{
+	Global.window_size = glm::ivec2(w, h);
 	Application.on_window_resize(w, h);
 }
 
-void cursor_pos_callback( GLFWwindow *window, double x, double y ) {
-    Global.cursor_pos = glm::ivec2(x, y);
-    Application.on_cursor_pos( x, y );
-}
-
-void mouse_button_callback( GLFWwindow* window, int button, int action, int mods )
+void cursor_pos_callback(GLFWwindow *window, double x, double y)
 {
-    Application.on_mouse_button( button, action, mods );
+	Global.cursor_pos = glm::ivec2(x, y);
+	Application.on_cursor_pos(x, y);
 }
 
-void scroll_callback( GLFWwindow* window, double xoffset, double yoffset ) {
-    Application.on_scroll( xoffset, yoffset );
+void mouse_button_callback(GLFWwindow *window, int button, int action, int mods)
+{
+	Application.on_mouse_button(button, action, mods);
 }
 
-void key_callback( GLFWwindow *window, int key, int scancode, int action, int mods ) {
+void scroll_callback(GLFWwindow *window, double xoffset, double yoffset)
+{
+	Application.on_scroll(xoffset, yoffset);
+}
 
-    Application.on_key( key, scancode, action, mods );
+void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
+{
+
+	Application.on_key(key, scancode, action, mods);
 }
 
 void char_callback(GLFWwindow *window, unsigned int c)
 {
-    Application.on_char(c);
+	Application.on_char(c);
 }
 
 // public:
 
 void eu07_application::queue_screenshot()
 {
-    m_screenshot_queued = true;
+	m_screenshot_queued = true;
 }
 
 int eu07_application::run_crashgui()
 {
-    bool autoup = false;
+	bool autoup = false;
 
-    while (!glfwWindowShouldClose(m_windows.front()))
-    {
-        glfwPollEvents();
+	while (!glfwWindowShouldClose(m_windows.front()))
+	{
+		glfwPollEvents();
 
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        ui_layer::begin_ui_frame_internal();
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		ui_layer::begin_ui_frame_internal();
 
-        bool y, n;
+		bool y, n;
 
-        if (Global.asLang == "pl") {
-            ImGui::Begin(u8"Raportowanie błędów", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize);
-            ImGui::TextUnformatted(u8"Podczas ostatniego uruchomienia symulatora wystąpił błąd.\nWysłać raport o błędzie do deweloperów?\n");
-            ImGui::TextUnformatted((u8"Usługa udostępniana przez " + crashreport_get_provider() + "\n").c_str());
-            y = ImGui::Button(u8"Tak", ImVec2S(60, 0)); ImGui::SameLine();
-            ImGui::Checkbox(u8"W przyszłości przesyłaj raporty o błędach automatycznie", &autoup);
+		if (Global.asLang == "pl")
+		{
+			ImGui::Begin(u8"Raportowanie błędów", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize);
+			ImGui::TextUnformatted(u8"Podczas ostatniego uruchomienia symulatora wystąpił błąd.\nWysłać raport o błędzie do deweloperów?\n");
+			ImGui::TextUnformatted((u8"Usługa udostępniana przez " + crashreport_get_provider() + "\n").c_str());
+			y = ImGui::Button(u8"Tak", ImVec2S(60, 0));
+			ImGui::SameLine();
+			ImGui::Checkbox(u8"W przyszłości przesyłaj raporty o błędach automatycznie", &autoup);
 
-            ImGui::SameLine();
-            ImGui::TextDisabled("(?)");
-            if (ImGui::IsItemHovered())
-            {
-                ImGui::BeginTooltip();
-                ImGui::TextUnformatted(u8"W celu wyłączenia tej funkcji będzie trzeba skasować plik crashdumps/autoupload_enabled.conf");
-                ImGui::EndTooltip();
-            }
+			ImGui::SameLine();
+			ImGui::TextDisabled("(?)");
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::BeginTooltip();
+				ImGui::TextUnformatted(u8"W celu wyłączenia tej funkcji będzie trzeba skasować plik crashdumps/autoupload_enabled.conf");
+				ImGui::EndTooltip();
+			}
 
-            ImGui::NewLine();
-            n = ImGui::Button(u8"Nie", ImVec2S(60, 0));
-            ImGui::End();
-        } else {
-            ImGui::Begin("Crash reporting", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize);
-            ImGui::TextUnformatted("Crash occurred during last launch of the simulator.\nSend crash report to developers?\n");
-            ImGui::TextUnformatted(("Service provided by " + crashreport_get_provider() + "\n").c_str());
-            y = ImGui::Button("Yes", ImVec2S(60, 0)); ImGui::SameLine();
-            ImGui::Checkbox("In future send crash reports automatically", &autoup);
+			ImGui::NewLine();
+			n = ImGui::Button(u8"Nie", ImVec2S(60, 0));
+			ImGui::End();
+		}
+		else
+		{
+			ImGui::Begin("Crash reporting", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize);
+			ImGui::TextUnformatted("Crash occurred during last launch of the simulator.\nSend crash report to developers?\n");
+			ImGui::TextUnformatted(("Service provided by " + crashreport_get_provider() + "\n").c_str());
+			y = ImGui::Button("Yes", ImVec2S(60, 0));
+			ImGui::SameLine();
+			ImGui::Checkbox("In future send crash reports automatically", &autoup);
 
-            ImGui::SameLine();
-            ImGui::TextDisabled("(?)");
-            if (ImGui::IsItemHovered())
-            {
-                ImGui::BeginTooltip();
-                ImGui::TextUnformatted("To disable this feature remove file crashdumps/autoupload_enabled.conf");
-                ImGui::EndTooltip();
-            }
+			ImGui::SameLine();
+			ImGui::TextDisabled("(?)");
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::BeginTooltip();
+				ImGui::TextUnformatted("To disable this feature remove file crashdumps/autoupload_enabled.conf");
+				ImGui::EndTooltip();
+			}
 
-            ImGui::NewLine();
-            n = ImGui::Button("No", ImVec2S(60, 0));
-            ImGui::End();
-        }
+			ImGui::NewLine();
+			n = ImGui::Button("No", ImVec2S(60, 0));
+			ImGui::End();
+		}
 
-        ui_layer::render_internal();
-        glfwSwapBuffers(m_windows.front());
+		ui_layer::render_internal();
+		glfwSwapBuffers(m_windows.front());
 
-        if (y) {
-            crashreport_upload_accept();
-            if (autoup)
-                crashreport_set_autoupload();
-            return 0;
-        }
+		if (y)
+		{
+			crashreport_upload_accept();
+			if (autoup)
+				crashreport_set_autoupload();
+			return 0;
+		}
 
-        if (n) {
-            crashreport_upload_reject();
-            return 0;
-        }
-    }
-    return -1;
+		if (n)
+		{
+			crashreport_upload_reject();
+			return 0;
+		}
+	}
+	return -1;
 }
 void eu07_application::DiscordRPCService()
 {
@@ -204,15 +217,15 @@ void eu07_application::DiscordRPCService()
 	discord_rpc.startTimestamp = static_cast<int64_t>(now_c);
 	discord_rpc.largeImageText = "MaSzyna";
 
-    // run loop
-    while (!glfwWindowShouldClose(m_windows.front()) && !m_modestack.empty())
+	// run loop
+	while (!glfwWindowShouldClose(m_windows.front()) && !m_modestack.empty())
 	{
 		auto currentMode = m_modestack.top();
-        if (currentMode == mode::launcher)
-        {
+		if (currentMode == mode::launcher)
+		{
 			// in launcher mode
-            
-            discord_rpc.state = Translations.lookup_c("In main menu");
+
+			discord_rpc.state = Translations.lookup_c("In main menu");
 			discord_rpc.details = Translations.lookup_c("Browsing scenarios...");
 			discord_rpc.largeImageKey = "";
 			discord_rpc.largeImageText = "MaSzyna";
@@ -221,7 +234,7 @@ void eu07_application::DiscordRPCService()
 
 			std::this_thread::sleep_for(std::chrono::milliseconds(5000)); // update RPC every 5 secs
 			continue;
-        }
+		}
 		else if (currentMode == mode::scenarioloader)
 		{
 			std::string rpcScnName = Global.SceneryFile;
@@ -233,7 +246,7 @@ void eu07_application::DiscordRPCService()
 				std::replace(rpcScnName.begin(), rpcScnName.end(), '_', ' ');
 			}
 
-            // realworld timestamp from datetime
+			// realworld timestamp from datetime
 			static std::string state = Translations.lookup_s("Scenery: ") + rpcScnName;
 			discord_rpc.state = state.c_str();
 			discord_rpc.details = Translations.lookup_c("Loading scenery...");
@@ -247,7 +260,7 @@ void eu07_application::DiscordRPCService()
 			continue;
 		}
 
-        if (currentMode != mode::driver)
+		if (currentMode != mode::driver)
 			continue;
 
 		if (Global.applicationQuitOrder)
@@ -256,8 +269,8 @@ void eu07_application::DiscordRPCService()
 		if (simulation::is_ready)
 		{
 			std::string PlayerVehicle;
-            if (simulation::Train != nullptr)
-            {
+			if (simulation::Train != nullptr)
+			{
 				PlayerVehicle = simulation::Train->name();
 				// make to upper
 				for (auto &c : PlayerVehicle)
@@ -280,160 +293,169 @@ void eu07_application::DiscordRPCService()
 					discord_rpc.smallImageKey = "halt";
 					discord_rpc.smallImageText = Translations.lookup_c("Stopped");
 				}
-            }
-
-
-
+			}
 
 			Discord_UpdatePresence(&discord_rpc);
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(5000)); // update RPC every 5 secs
-    }
+	}
 #endif
 }
 
-int
-eu07_application::init( int Argc, char *Argv[] ) {
+int eu07_application::init(int Argc, char *Argv[])
+{
 
-    int result { 0 };
+	int result{0};
 	// start logging service
 	std::thread sLoggingService(LogService);
 	Global.threads.emplace("LogService", std::move(sLoggingService));
 
-    init_debug();
-    init_files();
-    if( ( result = init_settings( Argc, Argv ) ) != 0 ) {
+	init_debug();
+	init_files();
+	if ((result = init_settings(Argc, Argv)) != 0)
+	{
 		ErrorLog("Failed to initialize settings! Maybe you're missing eu07.ini file?");
-        return result;
-    }
+		return result;
+	}
 
+	WriteLog("Starting MaSzyna rail vehicle simulator (release: " + Global.asVersion + ")");
+	WriteLog("For online documentation and additional files refer to: http://eu07.pl");
+	WriteLog("Authors: Marcin_EU, McZapkie, ABu, Winger, Tolaris, nbmx, OLO_EU, Bart, Quark-t, "
+	         "ShaXbee, Oli_EU, youBy, KURS90, Ra, hunter, szociu, Stele, Q, firleju and others");
 
-	WriteLog( "Starting MaSzyna rail vehicle simulator (release: " + Global.asVersion + ")" );
-	WriteLog( "For online documentation and additional files refer to: http://eu07.pl" );
-	WriteLog( "Authors: Marcin_EU, McZapkie, ABu, Winger, Tolaris, nbmx, OLO_EU, Bart, Quark-t, "
-        "ShaXbee, Oli_EU, youBy, KURS90, Ra, hunter, szociu, Stele, Q, firleju and others" );
+	if (!crashreport_get_provider().empty())
+		WriteLog("Crashdump analysis provided by " + crashreport_get_provider() + "\n");
 
-    if (!crashreport_get_provider().empty())
-        WriteLog("Crashdump analysis provided by " + crashreport_get_provider() + "\n");
+	{
+		WriteLog("// settings");
+		std::stringstream settingspipe;
+		Global.export_as_text(settingspipe);
+		WriteLog(settingspipe.str());
+	}
 
-    {
-        WriteLog( "// settings" );
-        std::stringstream settingspipe;
-        Global.export_as_text( settingspipe );
-        WriteLog( settingspipe.str() );
-    }
-
-    // cruel way to prevent crashes because of threaded upload from python
+	// cruel way to prevent crashes because of threaded upload from python
 	if (Global.NvRenderer)
 		Global.python_threadedupload = false;
 
-    WriteLog( "// startup" );
+	WriteLog("// startup");
 
-    if( ( result = init_glfw() ) != 0 ) {
+	if ((result = init_glfw()) != 0)
+	{
 		ErrorLog("Failed to initialize glfw!");
-        return result;
-    }
-    if( needs_ogl() && ( result = init_ogl() ) != 0 ) {
+		return result;
+	}
+	if (needs_ogl() && (result = init_ogl()) != 0)
+	{
 		ErrorLog("Failed to initialize ogl!");
-        return result;
-    }
+		return result;
+	}
 
-    if (crashreport_is_pending()) { // run crashgui as early as possible
+	if (crashreport_is_pending())
+	{ // run crashgui as early as possible
 		if ((result = run_crashgui()) != 0)
 		{
 			ErrorLog("Failed to run crash gui!");
 			return result;
 		}
-    }
+	}
 
-    if( ( result = init_locale() ) != 0 ) {
+	if ((result = init_locale()) != 0)
+	{
 		ErrorLog("Failed to initialize locales! Maybe you're missing lang directory?");
-        return result;
-    }
+		return result;
+	}
 
-    if( ( result = init_gfx() ) != 0 ) {
+	if ((result = init_gfx()) != 0)
+	{
 		ErrorLog("Failed to initialize GFX!");
-        return result;
-    }
+		return result;
+	}
 
-    if( ( result = init_ui() ) != 0 ) { // ui now depends on activated renderer
+	if ((result = init_ui()) != 0)
+	{ // ui now depends on activated renderer
 		ErrorLog("Failed to init UI!");
 		return result;
-    }
-    if( ( result = init_audio() ) != 0 ) {
+	}
+	if ((result = init_audio()) != 0)
+	{
 		ErrorLog("Failed to initialize OpenAL");
 		return result;
-    }
-    if( ( result = init_data() ) != 0 ) {
+	}
+	if ((result = init_data()) != 0)
+	{
 		ErrorLog("Failed to load data/ contents! Maybe your installation is broken?");
 		return result;
-    }
-    crashreport_add_info("python_enabled", Global.python_enabled ? "yes" : "no");
-    if( Global.python_enabled ) {
-        m_taskqueue.init();
-    }
-    if( ( result = init_modes() ) != 0 ) {
+	}
+	crashreport_add_info("python_enabled", Global.python_enabled ? "yes" : "no");
+	if (Global.python_enabled)
+	{
+		m_taskqueue.init();
+	}
+	if ((result = init_modes()) != 0)
+	{
 		ErrorLog("Failed to initialize game modes");
 		return result;
-    }
+	}
 
-    // Run DiscordRPC service
+	// Run DiscordRPC service
 	std::thread sDiscordRPC(&eu07_application::DiscordRPCService, this);
 	Global.threads.emplace("DiscordRPC", std::move(sDiscordRPC));
 
 	if (!init_network())
 		return -1;
 
-    return result;
+	return result;
 }
 
-
-
-double eu07_application::generate_sync() {
+double eu07_application::generate_sync()
+{
 	if (Timer::GetDeltaTime() == 0.0)
 		return 0.0;
 	double sync = 0.0;
-	for (const TDynamicObject* vehicle : simulation::Vehicles.sequence()) {
-        auto const pos { vehicle->GetPosition() };
-		 sync += pos.x + pos.y + pos.z;
+	for (const TDynamicObject *vehicle : simulation::Vehicles.sequence())
+	{
+		auto const pos{vehicle->GetPosition()};
+		sync += pos.x + pos.y + pos.z;
 	}
 	sync += Random(1.0, 100.0);
 	return sync;
 }
 
-void eu07_application::queue_quit(bool direct) {
-    if (direct || !m_modes[m_modestack.top()]->is_command_processor()) {
-        glfwSetWindowShouldClose(m_windows[0], GLFW_TRUE);
-        return;
-    }
+void eu07_application::queue_quit(bool direct)
+{
+	if (direct || !m_modes[m_modestack.top()]->is_command_processor())
+	{
+		glfwSetWindowShouldClose(m_windows[0], GLFW_TRUE);
+		return;
+	}
 
-    command_relay relay;
-    relay.post(user_command::quitsimulation, 0.0, 0.0, GLFW_PRESS, 0);
+	command_relay relay;
+	relay.post(user_command::quitsimulation, 0.0, 0.0, GLFW_PRESS, 0);
 }
 
-bool
-eu07_application::is_server() const {
+bool eu07_application::is_server() const
+{
 
-    return ( m_network && m_network->servers );
+	return (m_network && m_network->servers);
 }
 
-bool
-eu07_application::is_client() const {
+bool eu07_application::is_client() const
+{
 
-    return ( m_network && m_network->client );
+	return (m_network && m_network->client);
 }
 
-int
-eu07_application::run() {
-    auto frame{ 0 };
-    // main application loop
-    while (!glfwWindowShouldClose( m_windows.front() ) && !m_modestack.empty())
-    {
-        Timer::subsystem.mainloop_total.start();
-        glfwPollEvents();
+int eu07_application::run()
+{
+	auto frame{0};
+	// main application loop
+	while (!glfwWindowShouldClose(m_windows.front()) && !m_modestack.empty())
+	{
+		Timer::subsystem.mainloop_total.start();
+		glfwPollEvents();
 
-        if (m_headtrack)
-            m_headtrack->update();
+		if (m_headtrack)
+			m_headtrack->update();
 
 		begin_ui_frame();
 
@@ -448,7 +470,8 @@ eu07_application::run() {
 
 		double frameStartTime = Timer::GetTime();
 
-		if (m_modes[m_modestack.top()]->is_command_processor()) {
+		if (m_modes[m_modestack.top()]->is_command_processor())
+		{
 			// active mode is doing real calculations (e.g. drivermode)
 			int loop_remaining = MAX_NETWORK_PER_FRAME;
 			while (--loop_remaining > 0)
@@ -486,7 +509,8 @@ eu07_application::run() {
 						loop_remaining = -1;
 				}
 				// if we're master
-				else {
+				else
+				{
 					// just push local commands to execution
 					add_to_dequemap(commands_to_exec, local_commands);
 
@@ -497,7 +521,7 @@ eu07_application::run() {
 				simulation::Commands.push_commands(commands_to_exec);
 
 				// do actual frame processing (depending on mode)
-				if (!m_modes[ m_modestack.top() ]->update())
+				if (!m_modes[m_modestack.top()]->update())
 					return 0;
 
 				// update continuous commands
@@ -518,9 +542,9 @@ eu07_application::run() {
 				if (m_network && m_network->client)
 				{
 					// verify sync
-					if (sync != slave_sync) {						
-						WriteLog("net: desync! calculated: " + std::to_string(sync)
-						         + ", received: " + std::to_string(slave_sync), logtype::net);
+					if (sync != slave_sync)
+					{
+						WriteLog("net: desync! calculated: " + std::to_string(sync) + ", received: " + std::to_string(slave_sync), logtype::net);
 
 						Global.desync = slave_sync - sync;
 					}
@@ -531,25 +555,30 @@ eu07_application::run() {
 				}
 			}
 
-			if (!loop_remaining) {
+			if (!loop_remaining)
+			{
 				// loop break forced by counter
 				float received = m_network->client->get_frame_counter();
 				float awaiting = m_network->client->get_awaiting_frames();
 
 				// TODO: don't meddle with mode progresbar
 				m_modes[m_modestack.top()]->set_progress(100.0f * (received - awaiting) / received);
-			} else {
+			}
+			else
+			{
 				m_modes[m_modestack.top()]->set_progress(0.0f, 0.0f);
 			}
-		} else {
+		}
+		else
+		{
 			// active mode is loader
 
 			// clear local command queue
 			simulation::Commands.pop_intercept_queue();
 
 			// do actual frame processing
-            if (!m_modes[ m_modestack.top() ]->update())
-                return 0;
+			if (!m_modes[m_modestack.top()]->update())
+				return 0;
 		}
 
 		// -------------------------------------------------------------------
@@ -557,29 +586,31 @@ eu07_application::run() {
 		m_taskqueue.update();
 		opengl_texture::reset_unit_cache();
 
-        if (!GfxRenderer->Render())
-            break;
+		if (!GfxRenderer->Render())
+			break;
 
-        GfxRenderer->SwapBuffers();
+		GfxRenderer->SwapBuffers();
 
-        if (m_modestack.empty())
-            return 0;
+		if (m_modestack.empty())
+			return 0;
 
-        m_modes[ m_modestack.top() ]->on_event_poll();
+		m_modes[m_modestack.top()]->on_event_poll();
 
-        if (m_screenshot_queued) {
-            m_screenshot_queued = false;
-			      GfxRenderer->MakeScreenshot();
-        }
+		if (m_screenshot_queued)
+		{
+			m_screenshot_queued = false;
+			GfxRenderer->MakeScreenshot();
+		}
 
 		if (m_network)
 			m_network->update();
 
-        auto const frametime{ Timer::subsystem.mainloop_total.stop() };
-        if( Global.minframetime.count() != 0.0f && ( Global.minframetime - frametime ).count() > 0.0f ) {
-            std::this_thread::sleep_for( Global.minframetime - frametime );
-        }
-    }
+		auto const frametime{Timer::subsystem.mainloop_total.stop()};
+		if (Global.minframetime.count() != 0.0f && (Global.minframetime - frametime).count() > 0.0f)
+		{
+			std::this_thread::sleep_for(Global.minframetime - frametime);
+		}
+	}
 	Global.applicationQuitOrder = true;
 	auto it = Global.threads.find("LogService");
 	if (it != Global.threads.end())
@@ -598,33 +629,33 @@ eu07_application::run() {
 }
 
 // issues request for a worker thread to perform specified task. returns: true if task was scheduled
-bool
-eu07_application::request( python_taskqueue::task_request const &Task ) {
+bool eu07_application::request(python_taskqueue::task_request const &Task)
+{
 
-    auto const result { m_taskqueue.insert( Task ) };
-    if( ( false == result )
-     && ( Task.input != nullptr ) ) {
-        // clean up allocated resources since the worker won't
-    }
-    return result;
+	auto const result{m_taskqueue.insert(Task)};
+	if ((false == result) && (Task.input != nullptr))
+	{
+		// clean up allocated resources since the worker won't
+	}
+	return result;
 }
 
 // ensures the main thread holds the python gil and can safely execute python calls
-void
-eu07_application::acquire_python_lock() {
+void eu07_application::acquire_python_lock()
+{
 
-    m_taskqueue.acquire_lock();
+	m_taskqueue.acquire_lock();
 }
 
 // frees the python gil and swaps out the main thread
-void
-eu07_application::release_python_lock() {
+void eu07_application::release_python_lock()
+{
 
-    m_taskqueue.release_lock();
+	m_taskqueue.release_lock();
 }
 
-void
-eu07_application::exit() {
+void eu07_application::exit()
+{
 	Global.applicationQuitOrder = true;
 	auto it = Global.threads.find("LogService");
 	if (it != Global.threads.end())
@@ -640,59 +671,70 @@ eu07_application::exit() {
 			it->second.join();
 	}
 
-
 	for (auto &mode : m_modes)
 		mode.reset();
 
-    GfxRenderer->Shutdown();
+	GfxRenderer->Shutdown();
 	m_network.reset();
 
-//    SafeDelete( simulation::Train );
-    SafeDelete( simulation::Region );
+	//    SafeDelete( simulation::Train );
+	SafeDelete(simulation::Region);
 
-    ui_layer::shutdown();
+	ui_layer::shutdown();
 
-    for( auto *window : m_windows ) {
-        glfwDestroyWindow( window );
-    }
-    m_taskqueue.exit();
-    glfwTerminate();
+	for (auto *window : m_windows)
+	{
+		glfwDestroyWindow(window);
+	}
+	m_taskqueue.exit();
+	glfwTerminate();
 
 	if (!Global.exec_on_exit.empty())
 		system(Global.exec_on_exit.c_str());
 }
 
-void
-eu07_application::render_ui() {
+void eu07_application::render_ui()
+{
 
-    if( m_modestack.empty() ) { return; }
+	if (m_modestack.empty())
+	{
+		return;
+	}
 
-    m_modes[ m_modestack.top() ]->render_ui();
+	m_modes[m_modestack.top()]->render_ui();
 }
 
-void eu07_application::begin_ui_frame() {
+void eu07_application::begin_ui_frame()
+{
 
-	if( m_modestack.empty() ) { return; }
+	if (m_modestack.empty())
+	{
+		return;
+	}
 
-	m_modes[ m_modestack.top() ]->begin_ui_frame();
+	m_modes[m_modestack.top()]->begin_ui_frame();
 }
 
-bool
-eu07_application::pop_mode() {
-    if( m_modestack.empty() ) { return false; }
+bool eu07_application::pop_mode()
+{
+	if (m_modestack.empty())
+	{
+		return false;
+	}
 
-    m_modes[ m_modestack.top() ]->exit();
-    m_modestack.pop();
-    return true;
+	m_modes[m_modestack.top()]->exit();
+	m_modestack.pop();
+	return true;
 }
 
-bool
-eu07_application::push_mode( mode const Mode ) {
+bool eu07_application::push_mode(mode const Mode)
+{
 
-	if( Mode >= count_ )
+	if (Mode >= count_)
 		return false;
 
-	if (!m_modes[Mode]) {
+	if (!m_modes[Mode])
+	{
 		if (Mode == launcher)
 			m_modes[Mode] = std::make_shared<launcher_mode>();
 		if (Mode == scenarioloader)
@@ -706,44 +748,50 @@ eu07_application::push_mode( mode const Mode ) {
 			return false;
 	}
 
-    m_modes[ Mode ]->enter();
-    m_modestack.push( Mode );
+	m_modes[Mode]->enter();
+	m_modestack.push(Mode);
 
-    return true;
+	return true;
 }
 
-void
-eu07_application::set_title( std::string const &Title ) {
+void eu07_application::set_title(std::string const &Title)
+{
 
-    glfwSetWindowTitle( m_windows.front(), Title.c_str() );
+	glfwSetWindowTitle(m_windows.front(), Title.c_str());
 }
 
-void
-eu07_application::set_progress( float const Progress, float const Subtaskprogress ) {
+void eu07_application::set_progress(float const Progress, float const Subtaskprogress)
+{
 
-    if( m_modestack.empty() ) { return; }
+	if (m_modestack.empty())
+	{
+		return;
+	}
 
-    m_modes[ m_modestack.top() ]->set_progress( Progress, Subtaskprogress );
+	m_modes[m_modestack.top()]->set_progress(Progress, Subtaskprogress);
 }
 
-void
-eu07_application::set_tooltip( std::string const &Tooltip ) {
+void eu07_application::set_tooltip(std::string const &Tooltip)
+{
 
-    if( m_modestack.empty() ) { return; }
+	if (m_modestack.empty())
+	{
+		return;
+	}
 
-    m_modes[ m_modestack.top() ]->set_tooltip( Tooltip );
+	m_modes[m_modestack.top()]->set_tooltip(Tooltip);
 }
 
-void
-eu07_application::set_cursor( int const Mode ) {
+void eu07_application::set_cursor(int const Mode)
+{
 
-    ui_layer::set_cursor( Mode );
+	ui_layer::set_cursor(Mode);
 }
 
-void
-eu07_application::set_cursor_pos( double const Horizontal, double const Vertical ) {
+void eu07_application::set_cursor_pos(double const Horizontal, double const Vertical)
+{
 
-    glfwSetCursorPos( m_windows.front(), Horizontal, Vertical );
+	glfwSetCursorPos(m_windows.front(), Horizontal, Vertical);
 }
 
 /*
@@ -757,63 +805,78 @@ eu07_application::get_input_hint( user_command const Command ) const {
 }
 */
 
-void
-eu07_application::on_key( int const Key, int const Scancode, int const Action, int const Mods ) {
+void eu07_application::on_key(int const Key, int const Scancode, int const Action, int const Mods)
+{
 
-    if (ui_layer::key_callback(Key, Scancode, Action, Mods))
-        return;
+	if (ui_layer::key_callback(Key, Scancode, Action, Mods))
+		return;
 
-    if( m_modestack.empty() ) { return; }
+	if (m_modestack.empty())
+	{
+		return;
+	}
 
-    #ifdef __unix__
+#ifdef __unix__
 	if (Key == GLFW_KEY_LEFT_SHIFT || Key == GLFW_KEY_RIGHT_SHIFT)
 		Global.shiftState = Action == GLFW_PRESS;
 	if (Key == GLFW_KEY_LEFT_CONTROL || Key == GLFW_KEY_RIGHT_CONTROL)
 		Global.ctrlState = Action == GLFW_PRESS;
 	if (Key == GLFW_KEY_LEFT_ALT || Key == GLFW_KEY_RIGHT_ALT)
 		Global.altState = Action == GLFW_PRESS;
-    #endif
+#endif
 
-    m_modes[ m_modestack.top() ]->on_key( Key, Scancode, Action, Mods );
+	m_modes[m_modestack.top()]->on_key(Key, Scancode, Action, Mods);
 }
 
-void
-eu07_application::on_cursor_pos( double const Horizontal, double const Vertical ) {
+void eu07_application::on_cursor_pos(double const Horizontal, double const Vertical)
+{
 
-    if( m_modestack.empty() ) { return; }
+	if (m_modestack.empty())
+	{
+		return;
+	}
 
-    m_modes[ m_modestack.top() ]->on_cursor_pos( Horizontal, Vertical );
+	m_modes[m_modestack.top()]->on_cursor_pos(Horizontal, Vertical);
 }
 
-void
-eu07_application::on_mouse_button( int const Button, int const Action, int const Mods ) {
+void eu07_application::on_mouse_button(int const Button, int const Action, int const Mods)
+{
 
-    if (ui_layer::mouse_button_callback(Button, Action, Mods))
-        return;
+	if (ui_layer::mouse_button_callback(Button, Action, Mods))
+		return;
 
-    if( m_modestack.empty() ) { return; }
+	if (m_modestack.empty())
+	{
+		return;
+	}
 
-    m_modes[ m_modestack.top() ]->on_mouse_button( Button, Action, Mods );
+	m_modes[m_modestack.top()]->on_mouse_button(Button, Action, Mods);
 }
 
-void
-eu07_application::on_scroll( double const Xoffset, double const Yoffset ) {
+void eu07_application::on_scroll(double const Xoffset, double const Yoffset)
+{
 
-    if (ui_layer::scroll_callback(Xoffset, Yoffset))
-        return;
+	if (ui_layer::scroll_callback(Xoffset, Yoffset))
+		return;
 
-    if( m_modestack.empty() ) { return; }
+	if (m_modestack.empty())
+	{
+		return;
+	}
 
-    m_modes[ m_modestack.top() ]->on_scroll( Xoffset, Yoffset );
+	m_modes[m_modestack.top()]->on_scroll(Xoffset, Yoffset);
 }
 
-void eu07_application::on_char(unsigned int c) {
-    if (ui_layer::char_callback(c))
-        return;
+void eu07_application::on_char(unsigned int c)
+{
+	if (ui_layer::char_callback(c))
+		return;
 }
 
-void eu07_application::on_focus_change(bool focus) {
-	if( Global.bInactivePause && m_network.has_value() && !m_network->client) {// jeśli ma być pauzowanie okna w tle
+void eu07_application::on_focus_change(bool focus)
+{
+	if (Global.bInactivePause && m_network.has_value() && !m_network->client)
+	{ // jeśli ma być pauzowanie okna w tle
 		command_relay relay;
 		relay.post(user_command::focuspauseset, focus ? 1.0 : 0.0, 0.0, GLFW_PRESS, 0);
 	}
@@ -821,53 +884,51 @@ void eu07_application::on_focus_change(bool focus) {
 
 void eu07_application::on_window_resize(int w, int h)
 {
-    if (m_modestack.empty())
-    	return;
-    m_modes[m_modestack.top()]->on_window_resize(w, h);
+	if (m_modestack.empty())
+		return;
+	m_modes[m_modestack.top()]->on_window_resize(w, h);
 }
 
+GLFWwindow *eu07_application::window(int const Windowindex, bool visible, int width, int height, GLFWmonitor *monitor, bool keep_ownership, bool share_ctx)
+{
 
-GLFWwindow *
-eu07_application::window(int const Windowindex, bool visible, int width, int height, GLFWmonitor *monitor, bool keep_ownership , bool share_ctx) {
+	if (Windowindex >= 0)
+	{
+		return (Windowindex < m_windows.size() ? m_windows[Windowindex] : nullptr);
+	}
+	// for index -1 create a new child window
 
-    if( Windowindex >= 0 ) {
-        return (
-            Windowindex < m_windows.size() ?
-                m_windows[ Windowindex ] :
-                nullptr );
-    }
-    // for index -1 create a new child window
+	auto const *vmode{glfwGetVideoMode(monitor ? monitor : glfwGetPrimaryMonitor())};
 
-	auto const *vmode { glfwGetVideoMode( monitor ? monitor : glfwGetPrimaryMonitor() ) };
+	// match requested video mode to current to allow for
+	// fullwindow creation when resolution is the same
+	glfwWindowHint(GLFW_RED_BITS, vmode->redBits);
+	glfwWindowHint(GLFW_GREEN_BITS, vmode->greenBits);
+	glfwWindowHint(GLFW_BLUE_BITS, vmode->blueBits);
+	glfwWindowHint(GLFW_REFRESH_RATE, vmode->refreshRate);
 
-    // match requested video mode to current to allow for
-    // fullwindow creation when resolution is the same
-	glfwWindowHint( GLFW_RED_BITS, vmode->redBits );
-	glfwWindowHint( GLFW_GREEN_BITS, vmode->greenBits );
-	glfwWindowHint( GLFW_BLUE_BITS, vmode->blueBits );
-	glfwWindowHint( GLFW_REFRESH_RATE, vmode->refreshRate );
+	glfwWindowHint(GLFW_VISIBLE, visible);
 
-	glfwWindowHint( GLFW_VISIBLE, visible );
-
-	auto *childwindow = glfwCreateWindow( width, height, "eu07window", monitor,
-	                                      share_ctx ? m_windows.front() : nullptr);
+	auto *childwindow = glfwCreateWindow(width, height, "eu07window", monitor, share_ctx ? m_windows.front() : nullptr);
 	if (!childwindow)
 		return nullptr;
 
 	if (keep_ownership)
-		m_windows.emplace_back( childwindow );
+		m_windows.emplace_back(childwindow);
 
 	glfwFocusWindow(m_windows.front()); // restore focus to main window
 
-    return childwindow;
+	return childwindow;
 }
 
 // private:
-GLFWmonitor* eu07_application::find_monitor(const std::string &str) const {
-    int monitor_count;
+GLFWmonitor *eu07_application::find_monitor(const std::string &str) const
+{
+	int monitor_count;
 	GLFWmonitor **monitors = glfwGetMonitors(&monitor_count);
 
-	for (size_t i = 0; i < monitor_count; i++) {
+	for (size_t i = 0; i < monitor_count; i++)
+	{
 		if (describe_monitor(monitors[i]) == str)
 			return monitors[i];
 	}
@@ -875,7 +936,8 @@ GLFWmonitor* eu07_application::find_monitor(const std::string &str) const {
 	return nullptr;
 }
 
-std::string eu07_application::describe_monitor(GLFWmonitor *monitor) const {
+std::string eu07_application::describe_monitor(GLFWmonitor *monitor) const
+{
 	std::string name(glfwGetMonitorName(monitor));
 	std::replace(std::begin(name), std::end(name), ' ', '_');
 
@@ -892,28 +954,29 @@ bool eu07_application::needs_ogl() const
 	return !Global.NvRenderer;
 }
 
-void eu07_application::init_debug() {
+void eu07_application::init_debug()
+{
 
-#if defined(_MSC_VER) && defined (_DEBUG)
-    // memory leaks
-    _CrtSetDbgFlag( _CrtSetDbgFlag( _CRTDBG_REPORT_FLAG ) | _CRTDBG_LEAK_CHECK_DF );
-    /*
-    // floating point operation errors
-    auto state { _clearfp() };
-    state = _control87( 0, 0 );
-    // this will turn on FPE for #IND and zerodiv
-    state = _control87( state & ~( _EM_ZERODIVIDE | _EM_INVALID ), _MCW_EM );
-    */
+#if defined(_MSC_VER) && defined(_DEBUG)
+	// memory leaks
+	_CrtSetDbgFlag(_CrtSetDbgFlag(_CRTDBG_REPORT_FLAG) | _CRTDBG_LEAK_CHECK_DF);
+	/*
+	// floating point operation errors
+	auto state { _clearfp() };
+	state = _control87( 0, 0 );
+	// this will turn on FPE for #IND and zerodiv
+	state = _control87( state & ~( _EM_ZERODIVIDE | _EM_INVALID ), _MCW_EM );
+	*/
 #endif
 }
 
-void
-eu07_application::init_files() {
+void eu07_application::init_files()
+{
 
 #ifdef _WIN32
-    DeleteFile( "log.txt" );
-    DeleteFile( "errors.txt" );
-    CreateDirectory( "logs", NULL );
+	DeleteFile("log.txt");
+	DeleteFile("errors.txt");
+	CreateDirectory("logs", NULL);
 #elif __unix__
 	unlink("log.txt");
 	unlink("errors.txt");
@@ -922,11 +985,11 @@ eu07_application::init_files() {
 }
 namespace fs = std::filesystem;
 
-int
-eu07_application::init_settings( int Argc, char *Argv[] ) {
-    Global.asVersion = VERSION_INFO;
+int eu07_application::init_settings(int Argc, char *Argv[])
+{
+	Global.asVersion = VERSION_INFO;
 
-        fs::path iniPath;
+	fs::path iniPath;
 
 #ifdef _WIN32
 	if (const char *appdata = std::getenv("APPDATA"))
@@ -949,318 +1012,345 @@ eu07_application::init_settings( int Argc, char *Argv[] ) {
 		Global.LoadIniFile("eu07.ini");
 	}
 
-    // process command line arguments
-    for( int i = 1; i < Argc; ++i ) {
+	// process command line arguments
+	for (int i = 1; i < Argc; ++i)
+	{
 
-        std::string token { Argv[ i ] };
+		std::string token{Argv[i]};
 
-        if( token == "-s" ) {
-            if( i + 1 < Argc ) {
-                Global.SceneryFile = ToLower( Argv[ ++i ] );
-            }
-        }
-        else if( token == "-v" ) {
-            if( i + 1 < Argc ) {
-				Global.local_start_vehicle = ToLower( Argv[ ++i ] );
-            }
-        }
-        else {
-            std::cout
-                << "usage: " << std::string( Argv[ 0 ] )
-                << " [-s sceneryfilepath]"
-                << " [-v vehiclename]"
-                << std::endl;
-            return -1;
-        }
-    }
+		if (token == "-s")
+		{
+			if (i + 1 < Argc)
+			{
+				Global.SceneryFile = ToLower(Argv[++i]);
+			}
+		}
+		else if (token == "-v")
+		{
+			if (i + 1 < Argc)
+			{
+				Global.local_start_vehicle = ToLower(Argv[++i]);
+			}
+		}
+		else
+		{
+			std::cout << "usage: " << std::string(Argv[0]) << " [-s sceneryfilepath]"
+			          << " [-v vehiclename]" << std::endl;
+			return -1;
+		}
+	}
 
-    return 0;
+	return 0;
 }
 
-int
-eu07_application::init_locale() {
+int eu07_application::init_locale()
+{
 
 	Translations.init();
 
-    return 0;
+	return 0;
 }
 
-int
-eu07_application::init_glfw() {
-    {
-        int glfw_major, glfw_minor, glfw_rev;
-        glfwGetVersion(&glfw_major, &glfw_minor, &glfw_rev);
-        m_glfwversion = glfw_major * 10000 + glfw_minor * 100 + glfw_minor;
-    }
+int eu07_application::init_glfw()
+{
+	{
+		int glfw_major, glfw_minor, glfw_rev;
+		glfwGetVersion(&glfw_major, &glfw_minor, &glfw_rev);
+		m_glfwversion = glfw_major * 10000 + glfw_minor * 100 + glfw_minor;
+	}
 
 #ifdef GLFW_ANGLE_PLATFORM_TYPE
-    if (m_glfwversion >= 30400) {
-        int platform = GLFW_ANGLE_PLATFORM_TYPE_NONE;
-        if (Global.gfx_angleplatform == "opengl")
-            platform = GLFW_ANGLE_PLATFORM_TYPE_OPENGL;
-        else if (Global.gfx_angleplatform == "opengles")
-            platform = GLFW_ANGLE_PLATFORM_TYPE_OPENGLES;
-        else if (Global.gfx_angleplatform == "d3d9")
-            platform = GLFW_ANGLE_PLATFORM_TYPE_D3D9;
-        else if (Global.gfx_angleplatform == "d3d11")
-            platform = GLFW_ANGLE_PLATFORM_TYPE_D3D11;
-        else if (Global.gfx_angleplatform == "vulkan")
-            platform = GLFW_ANGLE_PLATFORM_TYPE_VULKAN;
-        else if (Global.gfx_angleplatform == "metal")
-            platform = GLFW_ANGLE_PLATFORM_TYPE_METAL;
+	if (m_glfwversion >= 30400)
+	{
+		int platform = GLFW_ANGLE_PLATFORM_TYPE_NONE;
+		if (Global.gfx_angleplatform == "opengl")
+			platform = GLFW_ANGLE_PLATFORM_TYPE_OPENGL;
+		else if (Global.gfx_angleplatform == "opengles")
+			platform = GLFW_ANGLE_PLATFORM_TYPE_OPENGLES;
+		else if (Global.gfx_angleplatform == "d3d9")
+			platform = GLFW_ANGLE_PLATFORM_TYPE_D3D9;
+		else if (Global.gfx_angleplatform == "d3d11")
+			platform = GLFW_ANGLE_PLATFORM_TYPE_D3D11;
+		else if (Global.gfx_angleplatform == "vulkan")
+			platform = GLFW_ANGLE_PLATFORM_TYPE_VULKAN;
+		else if (Global.gfx_angleplatform == "metal")
+			platform = GLFW_ANGLE_PLATFORM_TYPE_METAL;
 
-        glfwInitHint(GLFW_ANGLE_PLATFORM_TYPE, platform);
-    }
+		glfwInitHint(GLFW_ANGLE_PLATFORM_TYPE, platform);
+	}
 #endif
 
-    if( glfwInit() == GLFW_FALSE ) {
-        ErrorLog( "Bad init: failed to initialize glfw" );
-        return -1;
-    }
+	if (glfwInit() == GLFW_FALSE)
+	{
+		ErrorLog("Bad init: failed to initialize glfw");
+		return -1;
+	}
 
 	{
 		int monitor_count;
 		GLFWmonitor **monitors = glfwGetMonitors(&monitor_count);
 
 		WriteLog("available monitors:");
-		for (size_t i = 0; i < monitor_count; i++) {
+		for (size_t i = 0; i < monitor_count; i++)
+		{
 			WriteLog(describe_monitor(monitors[i]));
 		}
 	}
 
-	auto *monitor { find_monitor(Global.fullscreen_monitor) };
+	auto *monitor{find_monitor(Global.fullscreen_monitor)};
 	if (!monitor)
 		monitor = glfwGetPrimaryMonitor();
 
-    glfwWindowHint( GLFW_AUTO_ICONIFY, GLFW_FALSE );
-    if ((Global.gfx_skippipeline || Global.LegacyRenderer) && Global.iMultisampling > 0) {
-        glfwWindowHint( GLFW_SAMPLES, 1 << Global.iMultisampling );
-    }
+	glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
+	if ((Global.gfx_skippipeline || Global.LegacyRenderer) && Global.iMultisampling > 0)
+	{
+		glfwWindowHint(GLFW_SAMPLES, 1 << Global.iMultisampling);
+	}
 
-    crashreport_add_info("gfxrenderer", Global.GfxRenderer);
+	crashreport_add_info("gfxrenderer", Global.GfxRenderer);
 
-    if (!needs_ogl())
-	  {
-		  glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	  }
-    else {
-    if( !Global.LegacyRenderer ) {
-        Global.bUseVBO = true;
-        // activate core profile for opengl 3.3 renderer
-        if( !Global.gfx_usegles ) {
-            glfwWindowHint( GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE );
-            glfwWindowHint( GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE );
-            glfwWindowHint( GLFW_CONTEXT_VERSION_MAJOR, 3 );
-            glfwWindowHint( GLFW_CONTEXT_VERSION_MINOR, 3 );
-        }
-        else {
+	if (!needs_ogl())
+	{
+		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+	}
+	else
+	{
+		if (!Global.LegacyRenderer)
+		{
+			Global.bUseVBO = true;
+			// activate core profile for opengl 3.3 renderer
+			if (!Global.gfx_usegles)
+			{
+				glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+				glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+				glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+				glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+			}
+			else
+			{
 #ifdef GLFW_CONTEXT_CREATION_API
-            if (m_glfwversion >= 30200)
-                glfwWindowHint( GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API );
+				if (m_glfwversion >= 30200)
+					glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
 #endif
-            glfwWindowHint( GLFW_CLIENT_API, GLFW_OPENGL_ES_API );
-            glfwWindowHint( GLFW_CONTEXT_VERSION_MAJOR, 3 );
-            glfwWindowHint( GLFW_CONTEXT_VERSION_MINOR, 0 );
-        }
-    } else {
-        if (Global.gfx_usegles) {
-            ErrorLog("legacy renderer not supported in gles mode");
-            return -1;
-        }
-        Global.gfx_shadergamma = false;
-        glfwWindowHint( GLFW_OPENGL_PROFILE, GLFW_OPENGL_ANY_PROFILE );
-        glfwWindowHint( GLFW_CONTEXT_VERSION_MAJOR, 2 );
-        glfwWindowHint( GLFW_CONTEXT_VERSION_MINOR, 1 );
-    }
+				glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
+				glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+				glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+			}
+		}
+		else
+		{
+			if (Global.gfx_usegles)
+			{
+				ErrorLog("legacy renderer not supported in gles mode");
+				return -1;
+			}
+			Global.gfx_shadergamma = false;
+			glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_ANY_PROFILE);
+			glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+			glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+		}
 
-    if (Global.gfx_gldebug)
-        glfwWindowHint( GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE );
-    }
+		if (Global.gfx_gldebug)
+			glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
+	}
 
-    glfwWindowHint(GLFW_SRGB_CAPABLE, !Global.gfx_shadergamma);
+	glfwWindowHint(GLFW_SRGB_CAPABLE, !Global.gfx_shadergamma);
 
-    if( Global.fullscreen_windowed ) {
-        auto const mode = glfwGetVideoMode( monitor );
-        Global.window_size.x = mode->width;
-        Global.window_size.y = mode->height;
-        Global.bFullScreen = true;
-    }
+	if (Global.fullscreen_windowed)
+	{
+		auto const mode = glfwGetVideoMode(monitor);
+		Global.window_size.x = mode->width;
+		Global.window_size.y = mode->height;
+		Global.bFullScreen = true;
+	}
 
-    auto *mainwindow = window(
-        -1, true, Global.window_size.x, Global.window_size.y, ( Global.bFullScreen ? monitor : nullptr ), true, false );
+	auto *mainwindow = window(-1, true, Global.window_size.x, Global.window_size.y, (Global.bFullScreen ? monitor : nullptr), true, false);
 
-    if( mainwindow == nullptr ) {
-        ErrorLog( "Bad init: failed to create glfw window" );
-        return -1;
-    }
+	if (mainwindow == nullptr)
+	{
+		ErrorLog("Bad init: failed to create glfw window");
+		return -1;
+	}
 
-    glfwMakeContextCurrent( mainwindow );
-    glfwSwapInterval( Global.VSync ? 1 : 0 ); //vsync
+	glfwMakeContextCurrent(mainwindow);
+	glfwSwapInterval(Global.VSync ? 1 : 0); // vsync
 
-    {
-        int width, height;
+	{
+		int width, height;
 
-        glfwGetFramebufferSize( mainwindow, &width, &height );
-        framebuffer_resize_callback( mainwindow, width, height );
+		glfwGetFramebufferSize(mainwindow, &width, &height);
+		framebuffer_resize_callback(mainwindow, width, height);
 
-        glfwGetWindowSize( mainwindow, &width, &height );
-        window_resize_callback( mainwindow, width, height );
-    }
+		glfwGetWindowSize(mainwindow, &width, &height);
+		window_resize_callback(mainwindow, width, height);
+	}
 
 #ifdef _WIN32
-// setup wrapper for base glfw window proc, to handle copydata messages
-    Hwnd = glfwGetWin32Window( mainwindow );
-    BaseWindowProc = ( WNDPROC )::SetWindowLongPtr( Hwnd, GWLP_WNDPROC, (LONG_PTR)WndProc );
-    // switch off the topmost flag
-    ::SetWindowPos( Hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE );
+	// setup wrapper for base glfw window proc, to handle copydata messages
+	Hwnd = glfwGetWin32Window(mainwindow);
+	BaseWindowProc = (WNDPROC)::SetWindowLongPtr(Hwnd, GWLP_WNDPROC, (LONG_PTR)WndProc);
+	// switch off the topmost flag
+	::SetWindowPos(Hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 #endif
 
-    return 0;
+	return 0;
 }
 
-void
-eu07_application::init_callbacks() {
+void eu07_application::init_callbacks()
+{
 
-    auto *window { m_windows.front() };
-    glfwSetWindowSizeCallback( window, window_resize_callback );
-    glfwSetFramebufferSizeCallback( window, framebuffer_resize_callback );
-    glfwSetCursorPosCallback( window, cursor_pos_callback );
-    glfwSetMouseButtonCallback( window, mouse_button_callback );
-    glfwSetKeyCallback( window, key_callback );
-    glfwSetScrollCallback( window, scroll_callback );
-    glfwSetCharCallback(window, char_callback);
-    glfwSetWindowFocusCallback( window, focus_callback );
+	auto *window{m_windows.front()};
+	glfwSetWindowSizeCallback(window, window_resize_callback);
+	glfwSetFramebufferSizeCallback(window, framebuffer_resize_callback);
+	glfwSetCursorPosCallback(window, cursor_pos_callback);
+	glfwSetMouseButtonCallback(window, mouse_button_callback);
+	glfwSetKeyCallback(window, key_callback);
+	glfwSetScrollCallback(window, scroll_callback);
+	glfwSetCharCallback(window, char_callback);
+	glfwSetWindowFocusCallback(window, focus_callback);
 }
 
-int
-eu07_application::init_ogl() {
-    if (!Global.gfx_usegles)
-    {
-        if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
-        {
-            ErrorLog( "Bad init: failed to initialize glad" );
-            return -1;
-        }
-    }
-    else
-    {
-        if (!gladLoadGLES2Loader((GLADloadproc)glfwGetProcAddress))
-        {
-            ErrorLog( "Bad init: failed to initialize glad" );
-            return -1;
-        }
-    }
+int eu07_application::init_ogl()
+{
+	if (!Global.gfx_usegles)
+	{
+		if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+		{
+			ErrorLog("Bad init: failed to initialize glad");
+			return -1;
+		}
+	}
+	else
+	{
+		if (!gladLoadGLES2Loader((GLADloadproc)glfwGetProcAddress))
+		{
+			ErrorLog("Bad init: failed to initialize glad");
+			return -1;
+		}
+	}
 
-    return 0;
+	return 0;
 }
 
-int
-eu07_application::init_ui() {
-    if( false == ui_layer::init( m_windows.front() ) ) {
-        return -1;
-    }
-    init_callbacks();
-    return 0;
+int eu07_application::init_ui()
+{
+	if (false == ui_layer::init(m_windows.front()))
+	{
+		return -1;
+	}
+	init_callbacks();
+	return 0;
 }
 
-int
-eu07_application::init_gfx() {
+int eu07_application::init_gfx()
+{
 
-    if( Global.GfxRenderer == "default" ) {
-        // default render path
-        GfxRenderer = gfx_renderer_factory::get_instance()->create("modern");
-    }
+	if (Global.GfxRenderer == "default")
+	{
+		// default render path
+		GfxRenderer = gfx_renderer_factory::get_instance()->create("modern");
+	}
 	else if (Global.GfxRenderer == "experimental")
 	{
 		GfxRenderer = gfx_renderer_factory::get_instance()->create(Global.GfxRenderer);
 	}
-    else {
-        // legacy render path
-        GfxRenderer = gfx_renderer_factory::get_instance()->create("legacy");
-        Global.DisabledLogTypes |= static_cast<unsigned int>( logtype::material );
-    }
+	else
+	{
+		// legacy render path
+		GfxRenderer = gfx_renderer_factory::get_instance()->create("legacy");
+		Global.DisabledLogTypes |= static_cast<unsigned int>(logtype::material);
+	}
 
-    if (!GfxRenderer) {
-        ErrorLog("no renderer found!");
-        return -1;
-    }
+	if (!GfxRenderer)
+	{
+		ErrorLog("no renderer found!");
+		return -1;
+	}
 
-    if( false == GfxRenderer->Init( m_windows.front() ) ) {
-        return -1;
-    }
+	if (false == GfxRenderer->Init(m_windows.front()))
+	{
+		return -1;
+	}
 
 	for (const global_settings::extraviewport_config &conf : Global.extra_viewports)
-        if (!GfxRenderer->AddViewport(conf))
+		if (!GfxRenderer->AddViewport(conf))
 			return -1;
 
-    if (!Global.headtrack_conf.joy.empty())
-        m_headtrack.emplace();
+	if (!Global.headtrack_conf.joy.empty())
+		m_headtrack.emplace();
 
-    return 0;
+	return 0;
 }
 
-int
-eu07_application::init_audio() {
+int eu07_application::init_audio()
+{
 
-    if( Global.bSoundEnabled ) {
-        Global.bSoundEnabled &= audio::renderer.init();
-    }
-    // NOTE: lack of audio isn't deemed a failure serious enough to throw in the towel
-    return 0;
+	if (Global.bSoundEnabled)
+	{
+		Global.bSoundEnabled &= audio::renderer.init();
+	}
+	// NOTE: lack of audio isn't deemed a failure serious enough to throw in the towel
+	return 0;
 }
 
-int
-eu07_application::init_data() {
+int eu07_application::init_data()
+{
 
-    // HACK: grab content of the first {} block in load_unit_weights using temporary parser, then parse it normally. on any error our weight list will be empty string
-    auto loadweights { cParser( cParser( "data/load_weights.txt", cParser::buffer_FILE ).getToken<std::string>( true, "{}" ), cParser::buffer_TEXT ) };
-    while( true == loadweights.getTokens( 2 ) ) {
-        std::pair<std::string, float> weightpair;
-        loadweights
-            >> weightpair.first
-            >> weightpair.second;
-        weightpair.first.erase( weightpair.first.end() - 1 ); // trim trailing ':' from the key
-        simulation::Weights.emplace( weightpair.first, weightpair.second );
-    }
-    cParser override_parser( "data/sound_overrides.txt", cParser::buffer_FILE );
-    deserialize_map( simulation::Sound_overrides,  override_parser);
+	// HACK: grab content of the first {} block in load_unit_weights using temporary parser, then parse it normally. on any error our weight list will be empty string
+	auto loadweights{cParser(cParser("data/load_weights.txt", cParser::buffer_FILE).getToken<std::string>(true, "{}"), cParser::buffer_TEXT)};
+	while (true == loadweights.getTokens(2))
+	{
+		std::pair<std::string, float> weightpair;
+		loadweights >> weightpair.first >> weightpair.second;
+		weightpair.first.erase(weightpair.first.end() - 1); // trim trailing ':' from the key
+		simulation::Weights.emplace(weightpair.first, weightpair.second);
+	}
+	cParser override_parser("data/sound_overrides.txt", cParser::buffer_FILE);
+	deserialize_map(simulation::Sound_overrides, override_parser);
 
-    return 0;
+	return 0;
 }
 
-int
-eu07_application::init_modes() {
+int eu07_application::init_modes()
+{
 	Global.local_random_engine.seed(std::random_device{}());
 
-	if ((!Global.network_servers.empty() || Global.network_client) && Global.SceneryFile.empty()) {
+	if ((!Global.network_servers.empty() || Global.network_client) && Global.SceneryFile.empty())
+	{
 		ErrorLog("launcher mode is currently not supported in network mode");
 		return -1;
-    }
+	}
 
-    // activate the default mode
+	// activate the default mode
 	if (Global.SceneryFile.empty())
-		push_mode( mode::launcher );
+		push_mode(mode::launcher);
 	else
-		push_mode( mode::scenarioloader );
+		push_mode(mode::scenarioloader);
 
-    return 0;
+	return 0;
 }
 
-bool eu07_application::init_network() {
-	if (!Global.network_servers.empty() || Global.network_client) {
+bool eu07_application::init_network()
+{
+	if (!Global.network_servers.empty() || Global.network_client)
+	{
 		// create network manager
 		m_network.emplace();
 	}
 
-	for (auto const &pair : Global.network_servers) {
+	for (auto const &pair : Global.network_servers)
+	{
 		// create all servers
 		m_network->create_server(pair.first, pair.second);
 	}
 
-	if (Global.network_client) {
+	if (Global.network_client)
+	{
 		// create client
 		m_network->connect(Global.network_client->first, Global.network_client->second);
-	} else {
+	}
+	else
+	{
 		// we're simulation master
 		if (!Global.random_seed)
 			Global.random_seed = std::random_device{}();
@@ -1275,8 +1365,7 @@ bool eu07_application::init_network() {
 		tmp = std::gmtime(&utc_now);
 		memcpy(&tm_utc, tmp, sizeof(tm));
 
-		int64_t offset = (tm_local.tm_hour * 3600 + tm_local.tm_min * 60 + tm_local.tm_sec)
-		        - (tm_utc.tm_hour * 3600 + tm_utc.tm_min * 60 + tm_utc.tm_sec);
+		int64_t offset = (tm_local.tm_hour * 3600 + tm_local.tm_min * 60 + tm_local.tm_sec) - (tm_utc.tm_hour * 3600 + tm_utc.tm_min * 60 + tm_utc.tm_sec);
 
 		Global.starting_timestamp = utc_now + offset;
 		Global.ready_to_load = true;

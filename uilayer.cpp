@@ -23,7 +23,7 @@ http://mozilla.org/MPL/2.0/.
 
 GLFWwindow *ui_layer::m_window{nullptr};
 ImGuiIO *ui_layer::m_imguiio{nullptr};
-GLint ui_layer::m_textureunit { GL_TEXTURE0 };
+GLint ui_layer::m_textureunit{GL_TEXTURE0};
 bool ui_layer::m_cursorvisible;
 ImFont *ui_layer::font_default{nullptr};
 ImFont *ui_layer::font_mono{nullptr};
@@ -33,8 +33,8 @@ ui_panel::ui_panel(std::string Identifier, bool const Isopen) : is_open(Isopen),
 
 void ui_panel::render()
 {
-    if (false == is_open)
-        return;
+	if (false == is_open)
+		return;
 
 	int flags = window_flags;
 	if (flags == -1)
@@ -47,32 +47,30 @@ void ui_panel::render()
 	if (pos.x != -1 && pos.y != -1)
 		ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
 	if (size.x > 0)
-        ImGui::SetNextWindowSize(ImVec2S(size.x, size.y), ImGuiCond_Always);
+		ImGui::SetNextWindowSize(ImVec2S(size.x, size.y), ImGuiCond_Always);
 	else if (size_min.x == -1)
-        ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);
 
-    if (size_min.x > 0)
-        ImGui::SetNextWindowSizeConstraints(ImVec2S(size_min.x, size_min.y), ImVec2S(size_max.x, size_max.y));
+	if (size_min.x > 0)
+		ImGui::SetNextWindowSizeConstraints(ImVec2S(size_min.x, size_min.y), ImVec2S(size_max.x, size_max.y));
 
 	auto const panelname{(title.empty() ? m_name : title) + "###" + m_name};
-	if (ImGui::Begin(panelname.c_str(), &is_open, flags)) {
-        render_contents();
+	if (ImGui::Begin(panelname.c_str(), &is_open, flags))
+	{
+		render_contents();
 
-		popups.remove_if([](const std::unique_ptr<ui::popup> &popup)
-		{
-			return popup->render();
-		});
+		popups.remove_if([](const std::unique_ptr<ui::popup> &popup) { return popup->render(); });
 	}
 
-    ImGui::End();
+	ImGui::End();
 }
 
 void ui_panel::render_contents()
 {
-    for (auto const &line : text_lines)
-    {
-        ImGui::TextColored(ImVec4(line.color.r, line.color.g, line.color.b, line.color.a), line.data.c_str());
-    }
+	for (auto const &line : text_lines)
+	{
+		ImGui::TextColored(ImVec4(line.color.r, line.color.g, line.color.b, line.color.a), line.data.c_str());
+	}
 }
 
 void ui_panel::register_popup(std::unique_ptr<ui::popup> &&popup)
@@ -82,17 +80,17 @@ void ui_panel::register_popup(std::unique_ptr<ui::popup> &&popup)
 
 void ui_expandable_panel::render_contents()
 {
-    ImGui::Checkbox(STR_C("expand"), &is_expanded);
-    ui_panel::render_contents();
+	ImGui::Checkbox(STR_C("expand"), &is_expanded);
+	ui_panel::render_contents();
 }
 
 void ui_log_panel::render_contents()
 {
 	ImGui::PushFont(ui_layer::font_mono);
 
-    for (const std::string &s : log_scrollback)
-        ImGui::TextUnformatted(s.c_str());
-    if (ImGui::GetScrollY() == ImGui::GetScrollMaxY())
+	for (const std::string &s : log_scrollback)
+		ImGui::TextUnformatted(s.c_str());
+	if (ImGui::GetScrollY() == ImGui::GetScrollMaxY())
 		ImGui::SetScrollHereY(1.0f);
 
 	ImGui::PopFont();
@@ -102,33 +100,33 @@ ui_layer::ui_layer()
 {
 	if (Global.loading_log)
 		add_external_panel(&m_logpanel);
-	m_logpanel.size = { 700, 400 };
+	m_logpanel.size = {700, 400};
 }
 
 ui_layer::~ui_layer() {}
 
 bool ui_layer::key_callback(int key, int scancode, int action, int mods)
 {
-    ImGui_ImplGlfw_KeyCallback(m_window, key, scancode, action, mods);
-    return m_imguiio->WantCaptureKeyboard;
+	ImGui_ImplGlfw_KeyCallback(m_window, key, scancode, action, mods);
+	return m_imguiio->WantCaptureKeyboard;
 }
 
 bool ui_layer::char_callback(unsigned int c)
 {
-    ImGui_ImplGlfw_CharCallback(m_window, c);
-    return m_imguiio->WantCaptureKeyboard;
+	ImGui_ImplGlfw_CharCallback(m_window, c);
+	return m_imguiio->WantCaptureKeyboard;
 }
 
 bool ui_layer::scroll_callback(double xoffset, double yoffset)
 {
-    ImGui_ImplGlfw_ScrollCallback(m_window, xoffset, yoffset);
-    return m_imguiio->WantCaptureMouse;
+	ImGui_ImplGlfw_ScrollCallback(m_window, xoffset, yoffset);
+	return m_imguiio->WantCaptureMouse;
 }
 
 bool ui_layer::mouse_button_callback(int button, int action, int mods)
 {
-    ImGui_ImplGlfw_MouseButtonCallback(m_window, button, action, mods);
-    return m_imguiio->WantCaptureMouse;
+	ImGui_ImplGlfw_MouseButtonCallback(m_window, button, action, mods);
+	return m_imguiio->WantCaptureMouse;
 }
 
 void ui_layer::load_random_background()
@@ -138,20 +136,21 @@ void ui_layer::load_random_background()
 		if (f.is_regular_file())
 			images.emplace_back(std::filesystem::relative(f.path(), "textures/").string());
 
-	if (!images.empty()) {
+	if (!images.empty())
+	{
 		std::string &selected = images[std::lround(LocalRandom(images.size() - 1))];
 		set_background(selected);
 	}
 }
 
-static ImVec4 imvec_lerp(const ImVec4& a, const ImVec4& b, float t)
+static ImVec4 imvec_lerp(const ImVec4 &a, const ImVec4 &b, float t)
 {
 	return ImVec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t);
 }
 
 void ui_layer::imgui_style()
 {
-	ImVec4* colors = ImGui::GetStyle().Colors;
+	ImVec4 *colors = ImGui::GetStyle().Colors;
 
 	colors[ImGuiCol_Text] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
 	colors[ImGuiCol_TextDisabled] = ImVec4(0.35f, 0.35f, 0.35f, 1.00f);
@@ -204,29 +203,28 @@ void ui_layer::imgui_style()
 	colors[ImGuiCol_TabUnfocused] = imvec_lerp(colors[ImGuiCol_Tab], colors[ImGuiCol_TitleBg], 0.80f);
 	colors[ImGuiCol_TabUnfocusedActive] = imvec_lerp(colors[ImGuiCol_TabActive], colors[ImGuiCol_TitleBg], 0.40f);
 
-    ImGui::GetStyle().ScaleAllSizes(Global.ui_scale);
+	ImGui::GetStyle().ScaleAllSizes(Global.ui_scale);
 }
 
 bool ui_layer::init(GLFWwindow *Window)
 {
-    m_window = Window;
+	m_window = Window;
 
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    m_imguiio = &ImGui::GetIO();
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	m_imguiio = &ImGui::GetIO();
 
 	m_imguiio->ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
-    // m_imguiio->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    // m_imguiio->ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+	// m_imguiio->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+	// m_imguiio->ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 
-    static const ImWchar ranges[] =
-    {
-        0x0020, 0x00FF, // Basic Latin + Latin Supplement
-        0x0100, 0x017F, // Latin Extended-A
-        0x2070, 0x2079, // superscript
-        0x2500, 0x256C, // box drawings
-        0,
-    };
+	static const ImWchar ranges[] = {
+	    0x0020, 0x00FF, // Basic Latin + Latin Supplement
+	    0x0100, 0x017F, // Latin Extended-A
+	    0x2070, 0x2079, // superscript
+	    0x2500, 0x256C, // box drawings
+	    0,
+	};
 
 	if (FileExists("fonts/dejavusans.ttf"))
 		font_default = m_imguiio->Fonts->AddFontFromFileTTF("fonts/dejavusans.ttf", Global.ui_fontsize, nullptr, &ranges[0]);
@@ -246,67 +244,73 @@ bool ui_layer::init(GLFWwindow *Window)
 
 	imgui_style();
 
-    ImGui_ImplGlfw_InitForOpenGL(m_window, false);
+	ImGui_ImplGlfw_InitForOpenGL(m_window, false);
 
-    if (!GfxRenderer->GetImguiRenderer() || !GfxRenderer->GetImguiRenderer()->Init())
-	  {
-		  return false;
-	  }
+	if (!GfxRenderer->GetImguiRenderer() || !GfxRenderer->GetImguiRenderer()->Init())
+	{
+		return false;
+	}
 
-    return true;
+	return true;
 }
 
 void ui_layer::shutdown()
 {
-    ImGui::EndFrame();
+	ImGui::EndFrame();
 
-    GfxRenderer->GetImguiRenderer()->Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
+	GfxRenderer->GetImguiRenderer()->Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
 }
 
 bool ui_layer::on_key(int const Key, int const Action)
 {
-    if (Action == GLFW_PRESS)
-    {
-        if (Key == GLFW_KEY_PRINT_SCREEN) {
-            Application.queue_screenshot();
-            return true;
-        }
+	if (Action == GLFW_PRESS)
+	{
+		if (Key == GLFW_KEY_PRINT_SCREEN)
+		{
+			Application.queue_screenshot();
+			return true;
+		}
 
-        if (Key == GLFW_KEY_F9) {
-            m_logpanel.is_open = !m_logpanel.is_open;
-            return true;
-        }
+		if (Key == GLFW_KEY_F9)
+		{
+			m_logpanel.is_open = !m_logpanel.is_open;
+			return true;
+		}
 
-        if (Key == GLFW_KEY_F10) {
-            m_quit_active = !m_quit_active;
-            return true;
-        }
+		if (Key == GLFW_KEY_F10)
+		{
+			m_quit_active = !m_quit_active;
+			return true;
+		}
 
-        if (m_quit_active)
-        {
-            if (Key == GLFW_KEY_Y) {
-                Application.queue_quit(false);
-                return true;
-            } else if (Key == GLFW_KEY_N) {
-                m_quit_active = false;
-                return true;
-            }
-        }
-    }
+		if (m_quit_active)
+		{
+			if (Key == GLFW_KEY_Y)
+			{
+				Application.queue_quit(false);
+				return true;
+			}
+			else if (Key == GLFW_KEY_N)
+			{
+				m_quit_active = false;
+				return true;
+			}
+		}
+	}
 
-    return false;
+	return false;
 }
 
 bool ui_layer::on_cursor_pos(double const Horizontal, double const Vertical)
 {
-    return false;
+	return false;
 }
 
 bool ui_layer::on_mouse_button(int const Button, int const Action)
 {
-    return false;
+	return false;
 }
 
 void ui_layer::on_window_resize(int w, int h)
@@ -315,13 +319,13 @@ void ui_layer::on_window_resize(int w, int h)
 		panel->on_window_resize(w, h);
 }
 
-
 void ui_layer::update()
 {
-    for (auto *panel : m_panels)
-        panel->update();
+	for (auto *panel : m_panels)
+		panel->update();
 
-	for (auto it = m_ownedpanels.rbegin(); it != m_ownedpanels.rend(); it++) {
+	for (auto it = m_ownedpanels.rbegin(); it != m_ownedpanels.rend(); it++)
+	{
 		(*it)->update();
 		if (!(*it)->is_open)
 			m_ownedpanels.erase(std::next(it).base());
@@ -330,27 +334,27 @@ void ui_layer::update()
 
 void ui_layer::render()
 {
-    render_background();
-    render_panels();
-    render_tooltip();
-    render_menu();
-    render_quit_widget();
+	render_background();
+	render_panels();
+	render_tooltip();
+	render_menu();
+	render_quit_widget();
 
-    // template method implementation
-    render_();
+	// template method implementation
+	render_();
 
-    render_internal();
+	render_internal();
 }
 
 void ui_layer::render_internal()
 {
-    ImGui::Render();
-	  GfxRenderer->GetImguiRenderer()->Render();
+	ImGui::Render();
+	GfxRenderer->GetImguiRenderer()->Render();
 }
 
 void ui_layer::begin_ui_frame()
 {
-    begin_ui_frame_internal();
+	begin_ui_frame_internal();
 }
 
 void ui_layer::begin_ui_frame_internal()
@@ -362,25 +366,25 @@ void ui_layer::begin_ui_frame_internal()
 
 void ui_layer::render_quit_widget()
 {
-    if (!m_quit_active)
-        return;
+	if (!m_quit_active)
+		return;
 
-    ImGui::SetNextWindowSize(ImVec2(0, 0));
-    ImGui::Begin(STR_C("Quit"), &m_quit_active, ImGuiWindowFlags_NoResize);
-    ImGui::TextUnformatted(STR_C("Quit simulation?"));
-    if (ImGui::Button(STR_C("Yes")))
-        Application.queue_quit(false);
+	ImGui::SetNextWindowSize(ImVec2(0, 0));
+	ImGui::Begin(STR_C("Quit"), &m_quit_active, ImGuiWindowFlags_NoResize);
+	ImGui::TextUnformatted(STR_C("Quit simulation?"));
+	if (ImGui::Button(STR_C("Yes")))
+		Application.queue_quit(false);
 
-    ImGui::SameLine();
-    if (ImGui::Button(STR_C("No")))
-        m_quit_active = false;
-    ImGui::End();
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("No")))
+		m_quit_active = false;
+	ImGui::End();
 }
 
 void ui_layer::set_cursor(int const Mode)
 {
-    glfwSetInputMode(m_window, GLFW_CURSOR, Mode);
-    m_cursorvisible = (Mode != GLFW_CURSOR_DISABLED);
+	glfwSetInputMode(m_window, GLFW_CURSOR, Mode);
+	m_cursorvisible = (Mode != GLFW_CURSOR_DISABLED);
 }
 
 void ui_layer::set_progress(std::string const &Text)
@@ -401,25 +405,26 @@ void ui_layer::set_background(std::string const &Filename)
 
 void ui_layer::clear_panels()
 {
-    m_panels.clear();
+	m_panels.clear();
 	m_ownedpanels.clear();
 }
 
 void ui_layer::add_owned_panel(ui_panel *Panel)
 {
 	for (auto &panel : m_ownedpanels)
-		if (panel->name() == Panel->name()) {
+		if (panel->name() == Panel->name())
+		{
 			delete Panel;
 			return;
 		}
 
 	Panel->is_open = true;
-	m_ownedpanels.emplace_back( Panel );
+	m_ownedpanels.emplace_back(Panel);
 }
 
 void ui_layer::render_panels()
 {
-    for (auto *panel : m_panels)
+	for (auto *panel : m_panels)
 		panel->render();
 	for (auto &panel : m_ownedpanels)
 		panel->render();
@@ -431,64 +436,66 @@ void ui_layer::render_panels()
 void ui_layer::render_tooltip()
 {
 	if (!m_cursorvisible || m_imguiio->WantCaptureMouse || m_tooltip.empty())
-        return;
+		return;
 
-    ImGui::BeginTooltip();
-    ImGui::TextUnformatted(m_tooltip.c_str());
-    ImGui::EndTooltip();
+	ImGui::BeginTooltip();
+	ImGui::TextUnformatted(m_tooltip.c_str());
+	ImGui::EndTooltip();
 }
 
 void ui_layer::render_menu_contents()
 {
 	if (ImGui::BeginMenu(STR_C("General")))
-    {
-        bool flag = DebugModeFlag;
-        if (ImGui::MenuItem(STR_C("Debug mode"), nullptr, &flag)) {
-            command_relay relay;
-            relay.post(user_command::debugtoggle, 0.0, 0.0, GLFW_RELEASE, 0);
-        }
-        ImGui::MenuItem(STR_C("Quit"), "F10", &m_quit_active);
-        ImGui::EndMenu();
-    }
-    if (ImGui::BeginMenu(STR_C("Tools")))
-    {
-        static bool log = Global.iWriteLogEnabled & 1;
-
-        ImGui::MenuItem(STR_C("Logging to log.txt"), nullptr, &log);
-        if (log)
-            Global.iWriteLogEnabled |= 1;
-        else
-            Global.iWriteLogEnabled &= ~1;
-
-        if (ImGui::MenuItem(STR_C("Screenshot"), "PrtScr"))
-            Application.queue_screenshot();
-        ImGui::EndMenu();
-    }
-    if (ImGui::BeginMenu(STR_C("Windows")))
-    {
-        ImGui::MenuItem(STR_C("Log"), "F9", &m_logpanel.is_open);
-		if (DebugModeFlag) {
-			ImGui::MenuItem(STR_C("ImGui Demo"), nullptr, &m_imgui_demo);
-            bool ret = ImGui::MenuItem(STR_C("Headlight config"), nullptr, GfxRenderer->Debug_Ui_State(std::nullopt));
-
-            GfxRenderer->Debug_Ui_State(ret);
+	{
+		bool flag = DebugModeFlag;
+		if (ImGui::MenuItem(STR_C("Debug mode"), nullptr, &flag))
+		{
+			command_relay relay;
+			relay.post(user_command::debugtoggle, 0.0, 0.0, GLFW_RELEASE, 0);
 		}
-        ImGui::EndMenu();
-    }
+		ImGui::MenuItem(STR_C("Quit"), "F10", &m_quit_active);
+		ImGui::EndMenu();
+	}
+	if (ImGui::BeginMenu(STR_C("Tools")))
+	{
+		static bool log = Global.iWriteLogEnabled & 1;
+
+		ImGui::MenuItem(STR_C("Logging to log.txt"), nullptr, &log);
+		if (log)
+			Global.iWriteLogEnabled |= 1;
+		else
+			Global.iWriteLogEnabled &= ~1;
+
+		if (ImGui::MenuItem(STR_C("Screenshot"), "PrtScr"))
+			Application.queue_screenshot();
+		ImGui::EndMenu();
+	}
+	if (ImGui::BeginMenu(STR_C("Windows")))
+	{
+		ImGui::MenuItem(STR_C("Log"), "F9", &m_logpanel.is_open);
+		if (DebugModeFlag)
+		{
+			ImGui::MenuItem(STR_C("ImGui Demo"), nullptr, &m_imgui_demo);
+			bool ret = ImGui::MenuItem(STR_C("Headlight config"), nullptr, GfxRenderer->Debug_Ui_State(std::nullopt));
+
+			GfxRenderer->Debug_Ui_State(ret);
+		}
+		ImGui::EndMenu();
+	}
 }
 
 void ui_layer::render_menu()
 {
-    glm::dvec2 mousepos = Global.cursor_pos;
+	glm::dvec2 mousepos = Global.cursor_pos;
 
-    if (!((Global.ControlPicking && mousepos.y < 50.0f) || m_imguiio->WantCaptureMouse) || m_suppress_menu)
-        return;
+	if (!((Global.ControlPicking && mousepos.y < 50.0f) || m_imguiio->WantCaptureMouse) || m_suppress_menu)
+		return;
 
-    if (ImGui::BeginMainMenuBar())
-    {
-        render_menu_contents();
-        ImGui::EndMainMenuBar();
-    }
+	if (ImGui::BeginMainMenuBar())
+	{
+		render_menu_contents();
+		ImGui::EndMainMenuBar();
+	}
 }
 
 void ui_layer::render_background()
