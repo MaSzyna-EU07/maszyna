@@ -24,321 +24,259 @@ http://mozilla.org/MPL/2.0/.
 // cParser -- generic class for parsing text data.
 
 // constructors
-cParser::cParser(std::string const &Stream, buffertype const Type, std::string Path, bool const Loadtraction, std::vector<std::string> Parameters, bool allowRandom)
-    : mPath(Path), LoadTraction(Loadtraction), allowRandomIncludes(allowRandom)
-{
-	// store to calculate sub-sequent includes from relative path
-	if (Type == buffertype::buffer_FILE)
-	{
-		mFile = Stream;
-	}
-	// reset pointers and attach proper type of buffer
-	switch (Type)
-	{
-	case buffer_FILE:
-	{
-		Path.append(Stream);
-		mStream = std::make_shared<std::ifstream>(Path, std::ios_base::binary);
-		// content of *.inc files is potentially grouped together
-		if ((Stream.size() >= 4) && (ToLower(Stream.substr(Stream.size() - 4)) == ".inc"))
-		{
-			mIncFile = true;
-			scene::Groups.create();
-		}
-		break;
-	}
-	case buffer_TEXT:
-	{
-		mStream = std::make_shared<std::istringstream>(Stream);
-		break;
-	}
-	default:
-	{
-		break;
-	}
-	}
-	// calculate stream size
-	if (mStream)
-	{
-		if (true == mStream->fail())
-		{
-			ErrorLog("Failed to open file \"" + Path + "\"");
-		}
-		else
-		{
-			mSize = mStream->rdbuf()->pubseekoff(0, std::ios_base::end);
-			mStream->rdbuf()->pubseekoff(0, std::ios_base::beg);
-			mLine = 1;
-		}
-	}
-	// set parameter set if one was provided
-	if (false == Parameters.empty())
-	{
-		parameters.swap(Parameters);
-	}
+cParser::cParser( std::string const &Stream, buffertype const Type, std::string Path, bool const Loadtraction, std::vector<std::string> Parameters, bool allowRandom ) :
+    mPath(Path),
+    LoadTraction( Loadtraction ),
+    allowRandomIncludes(allowRandom) {
+    // store to calculate sub-sequent includes from relative path
+    if( Type == buffertype::buffer_FILE ) {
+        mFile = Stream;
+    }
+    // reset pointers and attach proper type of buffer
+    switch (Type) {
+        case buffer_FILE: {
+            Path.append( Stream );
+			mStream = std::make_shared<std::ifstream>( Path, std::ios_base::binary );
+            // content of *.inc files is potentially grouped together
+            if( ( Stream.size() >= 4 )
+             && ( ToLower( Stream.substr( Stream.size() - 4 ) ) == ".inc" ) ) {
+                mIncFile = true;
+                scene::Groups.create();
+            }
+            break;
+        }
+        case buffer_TEXT: {
+            mStream = std::make_shared<std::istringstream>( Stream );
+            break;
+        }
+        default: {
+            break;
+        }
+    }
+    // calculate stream size
+    if (mStream)
+    {
+        if( true == mStream->fail() ) {
+            ErrorLog( "Failed to open file \"" + Path + "\"" );
+        }
+        else {
+            mSize = mStream->rdbuf()->pubseekoff( 0, std::ios_base::end );
+            mStream->rdbuf()->pubseekoff( 0, std::ios_base::beg );
+            mLine = 1;
+        }
+    }
+    // set parameter set if one was provided
+    if( false == Parameters.empty() ) {
+        parameters.swap( Parameters );
+    }
 }
 
 // destructor
-cParser::~cParser()
-{
+cParser::~cParser() {
 
-	if (true == mIncFile)
-	{
-		// wrap up the node group holding content of processed file
-		scene::Groups.close();
-	}
+    if( true == mIncFile ) {
+        // wrap up the node group holding content of processed file
+        scene::Groups.close();
+    }
 }
 
-template <> glm::vec3 cParser::getToken(bool const ToLower, char const *Break)
-{
-	// NOTE: this specialization ignores default arguments
-	getTokens(3, false, "\n\r\t  ,;[]");
-	glm::vec3 output;
-	*this >> output.x >> output.y >> output.z;
-	return output;
+template <>
+glm::vec3
+cParser::getToken( bool const ToLower, char const *Break ) {
+    // NOTE: this specialization ignores default arguments
+    getTokens( 3, false, "\n\r\t  ,;[]" );
+    glm::vec3 output;
+    *this
+        >> output.x
+        >> output.y
+        >> output.z;
+    return output;
 };
 
-template <> cParser &cParser::operator>>(std::string &Right)
-{
+template<>
+cParser&
+cParser::operator>>( std::string &Right ) {
 
-	if (true == this->tokens.empty())
-	{
-		return *this;
-	}
+    if( true == this->tokens.empty() ) { return *this; }
 
-	Right = this->tokens.front();
-	this->tokens.pop_front();
+    Right = this->tokens.front();
+    this->tokens.pop_front();
 
-	return *this;
+    return *this;
 }
 
-template <> cParser &cParser::operator>>(bool &Right)
-{
+template<>
+cParser&
+cParser::operator>>( bool &Right ) {
 
-	if (true == this->tokens.empty())
-	{
-		return *this;
-	}
+    if( true == this->tokens.empty() ) { return *this; }
 
-	Right = ((this->tokens.front() == "true") || (this->tokens.front() == "yes") || (this->tokens.front() == "1"));
-	this->tokens.pop_front();
+    Right = ( ( this->tokens.front() == "true" )
+           || ( this->tokens.front() == "yes" )
+           || ( this->tokens.front() == "1" ) );
+    this->tokens.pop_front();
 
-	return *this;
+    return *this;
 }
 
-template <> bool cParser::getToken<bool>(bool const ToLower, const char *Break)
-{
+template <>
+bool
+cParser::getToken<bool>( bool const ToLower, const char *Break ) {
 
-	auto const token = getToken<std::string>(true, Break);
-	return ((token == "true") || (token == "yes") || (token == "1"));
+    auto const token = getToken<std::string>( true, Break );
+    return ( ( token == "true" )
+          || ( token == "yes" )
+          || ( token == "1" ) );
 }
 
 // methods
-cParser &cParser::autoclear(bool const Autoclear)
-{
+cParser &
+cParser::autoclear( bool const Autoclear ) {
 
-	m_autoclear = Autoclear;
-	if (mIncludeParser)
-	{
-		mIncludeParser->autoclear(Autoclear);
-	}
+    m_autoclear = Autoclear;
+    if( mIncludeParser ) { mIncludeParser->autoclear( Autoclear ); }
 
-	return *this;
+    return *this;
 }
 
 bool cParser::getTokens(unsigned int Count, bool ToLower, const char *Break)
 {
-	if (true == m_autoclear)
-	{
-		// legacy parser behaviour
-		tokens.clear();
-	}
-	/*
-	 if (LoadTraction==true)
-	  trtest="niemaproblema"; //wczytywać
-	 else
-	  trtest="x"; //nie wczytywać
-	*/
-	/*
-	    int i;
-	    this->str("");
-	    this->clear();
-	*/
-	for (unsigned int i = tokens.size(); i < Count; ++i)
-	{
-		std::string token = readToken(ToLower, Break);
-		if (true == token.empty())
-		{
-			// no more tokens
-			break;
-		}
-		// collect parameters
-		tokens.emplace_back(token);
-		/*
-		        if (i == 0)
-		            this->str(token);
-		        else
-		        {
-		            std::string temp = this->str();
-		            temp.append("\n");
-		            temp.append(token);
-		            this->str(temp);
-		        }
-		*/
-	}
-	if (tokens.size() < Count)
-		return false;
-	else
-		return true;
+    if( true == m_autoclear ) {
+        // legacy parser behaviour
+        tokens.clear();
+    }
+    /*
+     if (LoadTraction==true)
+      trtest="niemaproblema"; //wczytywać
+     else
+      trtest="x"; //nie wczytywać
+    */
+/*
+    int i;
+    this->str("");
+    this->clear();
+*/
+    for (unsigned int i = tokens.size(); i < Count; ++i)
+    {
+        std::string token = readToken(ToLower, Break);
+        if( true == token.empty() ) {
+            // no more tokens
+            break;
+        }
+        // collect parameters
+        tokens.emplace_back( token );
+/*
+        if (i == 0)
+            this->str(token);
+        else
+        {
+            std::string temp = this->str();
+            temp.append("\n");
+            temp.append(token);
+            this->str(temp);
+        }
+*/
+    }
+    if (tokens.size() < Count)
+        return false;
+    else
+        return true;
 }
 
-std::string cParser::readToken(bool ToLower, const char *Break)
-{
+std::string cParser::readToken( bool ToLower, const char *Break ) {
 
-	std::string token;
-	token.reserve(128);
+    std::string token;
+    if( mIncludeParser ) {
+        // see if there's include parsing going on. clean up when it's done.
+        token = mIncludeParser->readToken( ToLower, Break );
+        if( true == token.empty() ) {
+            mIncludeParser = nullptr;
+        }
+    }
+    if( true == token.empty() ) {
+        // get the token yourself if the delegation attempt failed
+        char c { 0 };
+        do {
+            while( mStream->peek() != EOF && strchr( Break, c = mStream->get() ) == NULL ) {
+                if( ToLower )
+                    c = tolower( c );
+                token += c;
+                if( findQuotes( token ) ) // do glue together words enclosed in quotes
+                    continue;
+                if( skipComments && trimComments( token ) ) // don't glue together words separated with comment
+                    break;
+            }
+            if( c == '\n' ) {
+                // update line counter
+                ++mLine;
+            }
+        } while( token == "" && mStream->peek() != EOF ); // double check in case of consecutive separators
+    }
+    // check the first token for potential presence of utf bom
+    if( mFirstToken ) {
+        mFirstToken = false;
+        if( token.rfind( "\xef\xbb\xbf", 0 ) == 0 ) {
+            token.erase( 0, 3 );
+        }
+        if( true == token.empty() ) {
+            // potentially possible if our first token was standalone utf bom
+            token = readToken( ToLower, Break );
+        }
+    }
 
-	auto &breakTable = breakTables[Break];
-	if (breakTable[0] == false)
-	{ // inicjalizacja tylko raz
-		for (char c : std::string(Break))
-			breakTable[(unsigned char)c] = true;
-	}
+    if( false == parameters.empty() ) {
+        // if there's parameter list, check the token for potential parameters to replace
+        size_t pos; // początek podmienianego ciągu
+        while( ( pos = token.find( "(p" ) ) != std::string::npos ) {
+            // check if the token is a parameter which should be replaced with stored true value
+            auto const parameter{ token.substr( pos + 2, token.find( ")", pos ) - ( pos + 2 ) ) }; // numer parametru
+            token.erase( pos, token.find( ")", pos ) - pos + 1 ); // najpierw usunięcie "(pN)"
+            size_t nr = atoi( parameter.c_str() ) - 1;
+            if( nr < parameters.size() ) {
+                token.insert( pos, parameters.at( nr ) ); // wklejenie wartości parametru
+                if( ToLower )
+                    for( ; pos < parameters.at( nr ).size(); ++pos )
+                        token[ pos ] = tolower( token[ pos ] );
+            }
+            else
+                token.insert( pos, "none" ); // zabezpieczenie przed brakiem parametru
+        }
+    }
 
-	if (mIncludeParser)
-	{
-		// see if there's include parsing going on. clean up when it's done.
-		token = mIncludeParser->readToken(ToLower, Break);
-		if (true == token.empty())
-		{
-			mIncludeParser = nullptr;
-		}
-	}
-	if (true == token.empty())
-	{
-		// get the token yourself if the delegation attempt failed
-		char c{0};
-		do
-		{
-			while (mStream->peek() != EOF)
-			{
-				c = mStream->peek();
-				if (breakTable[(unsigned char)c])
-					break;
-
-				mStream->get(); // dopiero TERAZ konsumujemy
-				if (ToLower)
-					c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-
-				token += c;
-
-				if (c == '"' && findQuotes(token))
-					continue;
-
-				if (skipComments && trimComments(token))
-					break;
-			}
-
-			c = mStream->get();
-
-			if (c == '\n')
-			{
-				++mLine;
-				// PRZERWIJ, ale NIE ZJADAJ \n jako separatora tokenów
-				break;
-			}
-		} while (token == "" && mStream->peek() != EOF); // double check in case of consecutive separators
-	}
-	// check the first token for potential presence of utf bom
-	if (mFirstToken)
-	{
-		mFirstToken = false;
-		if (token.rfind("\xef\xbb\xbf", 0) == 0)
-		{
-			token.erase(0, 3);
-		}
-		if (true == token.empty())
-		{
-			// potentially possible if our first token was standalone utf bom
-			token = readToken(ToLower, Break);
-		}
-	}
-
-	if (!parameters.empty())
-	{
-		size_t pos = 0;
-		while ((pos = token.find("(p", pos)) != std::string::npos)
-		{
-			size_t end = token.find(')', pos + 2);
-			if (end == std::string::npos)
-				break; // uszkodzony zapis, przerywamy
-
-			// parsowanie numeru parametru
-			int idx = 0;
-			bool ok = true;
-			for (size_t i = pos + 2; i < end; ++i)
-			{
-				if (token[i] < '0' || token[i] > '9')
-				{
-					ok = false;
-					break;
-				}
-				idx = idx * 10 + (token[i] - '0');
-			}
-
-			std::string replacement;
-			if (ok && idx > 0 && static_cast<size_t>(idx - 1) < parameters.size())
-				replacement = parameters[idx - 1];
-			else
-				replacement = "none";
-
-			if (ToLower)
-			{
-				for (char &c : replacement)
-					c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-			}
-
-			token.replace(pos, end - pos + 1, replacement);
-			pos += replacement.size(); // przesuwamy się dalej
-		}
-	}
-
-	// launch child parser if include directive found.
-	// NOTE: parameter collecting uses default set of token separators.
-	if (expandIncludes && token == "include")
-	{
+    // launch child parser if include directive found.
+    // NOTE: parameter collecting uses default set of token separators.
+	if( expandIncludes && token == "include" ) {
 		std::string includefile = allowRandomIncludes ? deserialize_random_set(*this) : readToken(ToLower); // nazwa pliku
 		replace_slashes(includefile);
-		if ((true == LoadTraction) || ((false == contains(includefile, "tr/")) && (false == contains(includefile, "tra/"))))
+		if ((true == LoadTraction) ||
+		    ((false == contains(includefile, "tr/")) && (false == contains(includefile, "tra/"))))
 		{
 			if (false == contains(includefile, "_ter.scm"))
 			{
-				if (Global.ParserLogIncludes)
-				{
+				if (Global.ParserLogIncludes) {
 					// WriteLog("including: " + includefile);
 				}
-				mIncludeParser = std::make_unique<cParser>(includefile, buffer_FILE, mPath, LoadTraction, readParameters(*this));
+				mIncludeParser = std::make_shared<cParser>(includefile, buffer_FILE, mPath, LoadTraction, readParameters(*this));
 				mIncludeParser->allowRandomIncludes = allowRandomIncludes;
 				mIncludeParser->autoclear(m_autoclear);
-				if (mIncludeParser->mSize <= 0)
-				{
+				if (mIncludeParser->mSize <= 0) {
 					ErrorLog("Bad include: can't open file \"" + includefile + "\"");
 				}
 			}
 			else
 			{
-				if (true == Global.file_binary_terrain_state)
+				if(true == Global.file_binary_terrain_state)
 				{
 					WriteLog("SBT found, ignoring: " + includefile);
 					readParameters(*this);
 				}
 				else
 				{
-					if (Global.ParserLogIncludes)
-					{
+					if (Global.ParserLogIncludes) {
 						WriteLog("including terrain: " + includefile);
 					}
-					mIncludeParser = std::make_unique<cParser>(includefile, buffer_FILE, mPath, LoadTraction, readParameters(*this));
+					mIncludeParser = std::make_shared<cParser>(includefile, buffer_FILE, mPath,
+					                                           LoadTraction, readParameters(*this));
 					mIncludeParser->allowRandomIncludes = allowRandomIncludes;
 					mIncludeParser->autoclear(m_autoclear);
 					if (mIncludeParser->mSize <= 0)
@@ -347,31 +285,29 @@ std::string cParser::readToken(bool ToLower, const char *Break)
 					}
 				}
 			}
-		}
-		else
-		{
-			while (token != "end")
-			{
-				token = readToken(true); // minimize risk of case mismatch on comparison
-			}
-		}
-		token = readToken(ToLower, Break);
-	}
-	else if ((std::strcmp(Break, "\n\r") == 0) && (token.compare(0, 7, "include") == 0))
-	{
-		// HACK: if the parser reads full lines we expect this line to contain entire include directive, to make parsing easier
-		cParser includeparser(token.substr(7));
-		std::string includefile = allowRandomIncludes ? deserialize_random_set(includeparser) : includeparser.readToken(ToLower); // nazwa pliku
-		replace_slashes(includefile);
-		if ((true == LoadTraction) || ((false == contains(includefile, "tr/")) && (false == contains(includefile, "tra/"))))
+        }
+        else {
+            while( token != "end" ) {
+                token = readToken( true ); // minimize risk of case mismatch on comparison
+            }
+        }
+        token = readToken(ToLower, Break);
+    }
+    else if( ( std::strcmp( Break, "\n\r" ) == 0 ) && ( token.compare( 0, 7, "include" ) == 0 ) ) {
+        // HACK: if the parser reads full lines we expect this line to contain entire include directive, to make parsing easier
+        cParser includeparser( token.substr( 7 ) );
+		std::string includefile = allowRandomIncludes ? deserialize_random_set( includeparser ) : includeparser.readToken( ToLower ); // nazwa pliku
+        replace_slashes(includefile);
+		if ((true == LoadTraction) ||
+		    ((false == contains(includefile, "tr/")) && (false == contains(includefile, "tra/"))))
 		{
 			if (false == contains(includefile, "_ter.scm"))
 			{
-				if (Global.ParserLogIncludes)
-				{
+				if (Global.ParserLogIncludes) {
 					// WriteLog("including: " + includefile);
 				}
-				mIncludeParser = std::make_unique<cParser>(includefile, buffer_FILE, mPath, LoadTraction, readParameters(includeparser));
+				mIncludeParser = std::make_shared<cParser>(
+				    includefile, buffer_FILE, mPath, LoadTraction, readParameters(includeparser));
 				mIncludeParser->allowRandomIncludes = allowRandomIncludes;
 				mIncludeParser->autoclear(m_autoclear);
 				if (mIncludeParser->mSize <= 0)
@@ -388,58 +324,52 @@ std::string cParser::readToken(bool ToLower, const char *Break)
 				}
 				else
 				{
-					if (Global.ParserLogIncludes)
-					{
+					if (Global.ParserLogIncludes) {
 						WriteLog("including terrain: " + includefile);
 					}
-					mIncludeParser = std::make_unique<cParser>(includefile, buffer_FILE, mPath, LoadTraction, readParameters(includeparser));
+					mIncludeParser =
+					    std::make_shared<cParser>(includefile, buffer_FILE, mPath, LoadTraction,
+					                              readParameters(includeparser));
 					mIncludeParser->allowRandomIncludes = allowRandomIncludes;
 					mIncludeParser->autoclear(m_autoclear);
 					if (mIncludeParser->mSize <= 0)
 					{
 						ErrorLog("Bad include: can't open file \"" + includefile + "\"");
 					}
-				}
+                
+                }
 			}
 		}
-		token = readToken(ToLower, Break);
-	}
-	// all done
-	return token;
+        token = readToken( ToLower, Break );
+    }
+    // all done
+    return token;
 }
 
-std::vector<std::string> cParser::readParameters(cParser &Input)
-{
+std::vector<std::string> cParser::readParameters( cParser &Input ) {
 
-	std::vector<std::string> includeparameters;
-	std::string parameter = Input.readToken(false); // w parametrach nie zmniejszamy
-	while ((parameter.empty() == false) && (parameter != "end"))
-	{
-		includeparameters.emplace_back(parameter);
-		parameter = Input.readToken(false);
-	}
-	return includeparameters;
+    std::vector<std::string> includeparameters;
+    std::string parameter = Input.readToken( false ); // w parametrach nie zmniejszamy
+    while( ( parameter.empty() == false )
+        && ( parameter != "end" ) ) {
+        includeparameters.emplace_back( parameter );
+        parameter = Input.readToken( false );
+    }
+    return includeparameters;
 }
 
-std::string cParser::readQuotes(char const Quote)
-{ // read the stream until specified char or stream end
-	std::string token;
-	token.reserve(128);
-	char c{0};
+std::string cParser::readQuotes(char const Quote) { // read the stream until specified char or stream end
+    std::string token = "";
+    char c { 0 };
 	bool escaped = false;
-	while (mStream->peek() != EOF)
-	{ // get all chars until the quote mark
+	while( mStream->peek() != EOF ) { // get all chars until the quote mark
 		c = mStream->get();
-		++mReadBytes;
 
-		if (escaped)
-		{
+		if (escaped) {
 			escaped = false;
 		}
-		else
-		{
-			if (c == '\\')
-			{
+		else {
+			if (c == '\\') {
 				escaped = true;
 				continue;
 			}
@@ -450,153 +380,122 @@ std::string cParser::readQuotes(char const Quote)
 		if (c == '\n')
 			++mLine; // update line counter
 		token += c;
-	}
+    }
 
 	return token;
 }
 
-void cParser::skipComment(std::string const &Endmark)
-{ // pobieranie znaków aż do znalezienia znacznika końca
-	std::string input;
-	input.reserve(Endmark.size());
-	char c{0};
-	auto const endmarksize = Endmark.size();
-	while (mStream->peek() != EOF)
-	{
-		// o ile nie koniec pliku
-		c = mStream->get(); // pobranie znaku
-		++mReadBytes;
-
-		if (c == '\n')
-		{
-			// update line counter
-			++mLine;
-		}
-		input += c;
-		if (input == Endmark) // szukanie znacznika końca
-			break;
-		if (input.size() > endmarksize)
-			input.erase(0, input.size() - endmarksize);
-	}
-	return;
+void cParser::skipComment( std::string const &Endmark ) { // pobieranie znaków aż do znalezienia znacznika końca
+    std::string input = "";
+    char c { 0 };
+    auto const endmarksize = Endmark.size();
+    while( mStream->peek() != EOF ) {
+        // o ile nie koniec pliku
+        c = mStream->get(); // pobranie znaku
+        if( c == '\n' ) {
+            // update line counter
+            ++mLine;
+        }
+        input += c;
+        if( input == Endmark ) // szukanie znacznika końca
+            break;
+        if( input.size() >= endmarksize ) {
+            // keep the read text short, to avoid pointless string re-allocations on longer comments
+            input = input.substr( 1 );
+        }
+    }
+    return;
 }
 
-bool cParser::findQuotes(std::string &String)
-{
+bool cParser::findQuotes( std::string &String ) {
 
-	if (String.back() == '\"')
-	{
+    if( String.back() == '\"' ) {
 
-		String.pop_back();
-		String += readQuotes();
-		return true;
-	}
-	return false;
+        String.pop_back();
+        String += readQuotes();
+        return true;
+    }
+    return false;
 }
 
 bool cParser::trimComments(std::string &String)
 {
-	for (auto const &comment : mComments)
-	{
-		if (String.size() < comment.first.size())
-		{
-			continue;
-		}
+    for (auto const &comment : mComments)
+    {
+        if( String.size() < comment.first.size() ) { continue; }
 
-		if (String.compare(String.size() - comment.first.size(), comment.first.size(), comment.first) == 0)
-		{
-			skipComment(comment.second);
-			String.resize(String.rfind(comment.first));
-			return true;
-		}
-	}
-	return false;
+        if (String.compare( String.size() - comment.first.size(), comment.first.size(), comment.first ) == 0)
+        {
+            skipComment(comment.second);
+            String.resize(String.rfind(comment.first));
+            return true;
+        }
+    }
+    return false;
 }
 
 void cParser::injectString(const std::string &str)
 {
-	if (mIncludeParser)
-	{
+	if (mIncludeParser) {
 		mIncludeParser->injectString(str);
 	}
-	else
-	{
-		mIncludeParser = std::make_unique<cParser>(str, buffer_TEXT, "", LoadTraction, std::vector<std::string>(), allowRandomIncludes);
-		mIncludeParser->autoclear(m_autoclear);
+	else {
+		mIncludeParser = std::make_shared<cParser>( str, buffer_TEXT, "", LoadTraction, std::vector<std::string>(), allowRandomIncludes );
+		mIncludeParser->autoclear( m_autoclear );
 	}
 }
 
 int cParser::getProgress() const
 {
-	return mSize ? int(mReadBytes * 100 / mSize) : 0;
+    return static_cast<int>( mStream->rdbuf()->pubseekoff(0, std::ios_base::cur) * 100 / mSize );
 }
 
-int cParser::getFullProgress() const
-{
+int cParser::getFullProgress() const {
 
-	int progress = getProgress();
-	if (mIncludeParser)
-		return progress + ((100 - progress) * (mIncludeParser->getProgress()) / 100);
-	else
-		return progress;
+    int progress = getProgress();
+    if( mIncludeParser )	return progress + ( ( 100 - progress )*( mIncludeParser->getProgress() ) / 100 );
+    else					return progress;
 }
 
-std::size_t cParser::countTokens(std::string const &Stream, std::string Path)
-{
+std::size_t cParser::countTokens( std::string const &Stream, std::string Path ) {
 
-	return cParser(Stream, buffer_FILE, Path).count();
+    return cParser( Stream, buffer_FILE, Path ).count();
 }
 
-std::size_t cParser::count()
-{
+std::size_t cParser::count() {
 
-	std::string token;
-	size_t count{0};
-	do
-	{
-		token = "";
-		token = readToken(false);
-		++count;
-	} while (false == token.empty());
+    std::string token;
+    size_t count { 0 };
+    do {
+        token = "";
+        token = readToken( false );
+        ++count;
+    } while( false == token.empty() );
 
-	return count - 1;
+    return count - 1;
 }
 
-void cParser::addCommentStyle(std::string const &Commentstart, std::string const &Commentend)
-{
+void cParser::addCommentStyle( std::string const &Commentstart, std::string const &Commentend ) {
 
-	mComments.emplace_back(commentmap::value_type(Commentstart, Commentend));
+    mComments.insert( commentmap::value_type(Commentstart, Commentend) );
 }
 
 // returns name of currently open file, or empty string for text type stream
-std::string cParser::Name() const
-{
+std::string
+cParser::Name() const {
 
-	if (mIncludeParser)
-	{
-		return mIncludeParser->Name();
-	}
-	else
-	{
-		return mPath + mFile;
-	}
+    if( mIncludeParser ) { return mIncludeParser->Name(); }
+    else                 { return mPath + mFile; }
 }
 
 // returns number of currently processed line
-std::size_t cParser::Line() const
-{
+std::size_t
+cParser::Line() const {
 
-	if (mIncludeParser)
-	{
-		return mIncludeParser->Line();
-	}
-	else
-	{
-		return mLine;
-	}
+    if( mIncludeParser ) { return mIncludeParser->Line(); }
+    else                 { return mLine; }
 }
 
-int cParser::LineMain() const
-{
+int cParser::LineMain() const {
 	return mIncludeParser ? -1 : mLine;
 }
