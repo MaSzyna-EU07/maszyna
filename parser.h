@@ -104,20 +104,22 @@ class cParser //: public std::stringstream
     bool trimComments( std::string &String );
     std::size_t count();
     // members:
+	std::unordered_map<const char*, std::array<bool,256>> breakTables;
     bool m_autoclear { true }; // unretrieved tokens are discarded when another read command is issued (legacy behaviour)
     bool LoadTraction { true }; // load traction?
     std::shared_ptr<std::istream> mStream; // relevant kind of buffer is attached on creation.
     std::string mFile; // name of the open file, if any
     std::string mPath; // path to open stream, for relative path lookups.
+	std::size_t mReadBytes = 0;
     std::streamoff mSize { 0 }; // size of open stream, for progress report.
     std::size_t mLine { 0 }; // currently processed line
     bool mIncFile { false }; // the parser is processing an *.inc file
     bool mFirstToken { true }; // processing first token in the current file; helper used when checking for utf bom
-    typedef std::map<std::string, std::string> commentmap;
+	using commentmap = std::vector<std::pair<std::string,std::string>>;
     commentmap mComments {
         commentmap::value_type( "/*", "*/" ),
         commentmap::value_type( "//", "\n" ) };
-    std::shared_ptr<cParser> mIncludeParser; // child class to handle include directives.
+    std::unique_ptr<cParser> mIncludeParser; // child class to handle include directives.
     std::vector<std::string> parameters; // parameter list for included file.
     std::deque<std::string> tokens;
 };
