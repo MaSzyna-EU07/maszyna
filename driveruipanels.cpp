@@ -1533,6 +1533,7 @@ bool debug_panel::render_section_developer()
 	{
 		m_input.vehicle->MoverParameters->reload_FIZ(); // reload fiz
 	}
+	ImGui::PopStyleColor();
 }
 
 bool
