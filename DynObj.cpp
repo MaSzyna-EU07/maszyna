@@ -4195,14 +4195,14 @@ bool TDynamicObject::Update(double dt, double dt1)
                         }
 						dWiperPos[i] = std::max(0.0, dWiperPos[i] - (1.f / currentWiperParams.WiperSpeed) * dt1);
 					}
-					if (dWiperPos[i] == 1.0) // we reached end
+					if (dWiperPos[i] >= 1.0) // we reached end
 					{
 						sWiperFromPark.stop();
 						sWiperFromParkPlayed = false;
 						wiperParkTimer[i] = 0.0;
 						wiperDirection[i] = true; // switch direction
 					}
-					if (dWiperPos[i] == 0.0)
+					if (dWiperPos[i] <= 0.0)
 					{
 						// when in park position
                         sWiperToPark.stop();
