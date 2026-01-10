@@ -211,92 +211,34 @@ std::string cParser::readToken(bool ToLower, const char *Break)
 	}
 	if (true == token.empty())
 	{
-		// get the token yourself if the delegation attempt failed
-		char c{0};
-		do
-		{
-			prepareBreakTable(Break);
-
-			int ic = 0;
-			while ((ic = mStream->get()) != EOF)
-			{
-				unsigned char uc = static_cast<unsigned char>(ic);
-				char c = static_cast<char>(uc);
-
-				if (isBreak(uc))
-				{
-					if (c == '\n')
-						++mLine;
-					break;
-				}
-
-				if (ToLower)
-					c = static_cast<char>(std::tolower(uc));
-				token.push_back(c);
-
-				// Quotes: nie odpalaj findQuotes() na każdym znaku – tylko jak faktycznie trafiłeś "
-				if (c == '"')
-				{
-					token.pop_back(); // usuwamy "
-					token += readQuotes(); // doklejamy środek
-					continue;
-				}
-
-				// Comments: trimComments() jest drogie -> odpalaj tylko jak może się zaczynać komentarz
-				if (skipComments && (c == '/' || c == '*') && trimComments(token))
-				{
-					break;
-				}
-			}
-
-			if (c == '\n')
-			{
-				// update line counter
-				++mLine;
-			}
-		} while (token == "" && mStream->peek() != EOF); // double check in case of consecutive separators
+		cleanComments(Break, ToLower, token);
 	}
 	// check the first token for potential presence of utf bom
 	if (mFirstToken)
 	{
 		mFirstToken = false;
-		if (token.rfind("\xef\xbb\xbf", 0) == 0)
+		if (token.size() >= 3 
+			&& static_cast<unsigned char>(token[0]) == 0xEF 
+			&& static_cast<unsigned char>(token[1]) == 0xBB 
+			&& static_cast<unsigned char>(token[2]) == 0xBF)
 		{
-			token.erase(0, 3);
-		}
-		if (true == token.empty())
-		{
-			// potentially possible if our first token was standalone utf bom
-			token = readToken(ToLower, Break);
+			if (token.size() == 3)
+			{
+				// Entire token was just BOM - read next token
+				return readToken(ToLower, Break);
+			}
+			else
+			{
+				// Remove BOM from beginning
+				token.erase(0, 3);
+			}
 		}
 	}
 
 	if (false == parameters.empty())
 	{
 		// if there's parameter list, check the token for potential parameters to replace
-		size_t pos; // początek podmienianego ciągu
-		while ((pos = token.find("(p")) != std::string::npos)
-		{
-			// check if the token is a parameter which should be replaced with stored true value
-			auto const parameter{token.substr(pos + 2, token.find(")", pos) - (pos + 2))}; // numer parametru
-			token.erase(pos, token.find(")", pos) - pos + 1); // najpierw usunięcie "(pN)"
-			size_t nr = atoi(parameter.c_str()) - 1;
-			if (nr < parameters.size())
-			{
-				token.insert(pos, parameters.at(nr)); // wklejenie wartości parametru
-				if (ToLower)
-				{
-					const auto &rep = parameters.at(nr);
-					for (size_t j = 0; j < rep.size(); ++j)
-					{
-						unsigned char uc = static_cast<unsigned char>(token[pos + j]);
-						token[pos + j] = static_cast<char>(std::tolower(uc));
-					}
-				}
-			}
-			else
-				token.insert(pos, "none"); // zabezpieczenie przed brakiem parametru
-		}
+		replaceParameters(token, ToLower);
 	}
 
 	// launch child parser if include directive found.
@@ -359,9 +301,11 @@ std::string cParser::readToken(bool ToLower, const char *Break)
 		cParser includeparser(token.substr(7));
 		std::string includefile = allowRandomIncludes ? deserialize_random_set(includeparser) : includeparser.readToken(ToLower); // nazwa pliku
 		replace_slashes(includefile);
-		if ((true == LoadTraction) || ((false == contains(includefile, "tr/")) && (false == contains(includefile, "tra/"))))
+		bool has_tr = contains(includefile, "tr/") || contains(includefile, "tra/");
+		bool has_ter = contains(includefile, "_ter.scm");
+		if (LoadTraction || !has_tr)
 		{
-			if (false == contains(includefile, "_ter.scm"))
+			if (!has_ter)
 			{
 				if (Global.ParserLogIncludes)
 				{
@@ -404,6 +348,103 @@ std::string cParser::readToken(bool ToLower, const char *Break)
 	return token;
 }
 
+void cParser::cleanComments(const char *Break, bool ToLower, std::string &token)
+{
+	do
+	{
+		prepareBreakTable(Break);
+
+		int ic = 0;
+		while ((ic = mStream->get()) != EOF)
+		{
+			unsigned char uc = static_cast<unsigned char>(ic);
+
+			// Break check first
+			if (isBreak(uc))
+			{
+				if (static_cast<char>(uc) == '\n')
+					++mLine;
+				break;
+			}
+
+			char c = ToLower ? static_cast<char>(std::tolower(uc)) : static_cast<char>(uc);
+			token.push_back(c);
+
+			// Handle quotes
+			if (c == '"')
+			{
+				token.pop_back();
+				token += readQuotes();
+				continue;
+			}
+
+			// Comments: clean and fast check
+			if (skipComments && token.size() >= 2)
+			{
+				// Pointer to last two characters
+				const char *end = &token[token.size() - 2];
+
+				// Check for "//" or "/*" in one clear line
+				if (end[0] == '/' && (end[1] == '/' || end[1] == '*'))
+				{
+					if (trimComments(token))
+						break;
+				}
+			}
+		}
+	} while (token.empty() && mStream->peek() != EOF);
+}
+void cParser::replaceParameters(std::string &token, bool ToLower)
+{
+	size_t pos = 0;
+	while ((pos = token.find("(p")) != std::string::npos)
+	{
+		size_t end = token.find(')', pos);
+		if (end == std::string::npos)
+		{
+			break; // big no no
+		}
+		size_t nr = 0;
+		bool valid = true;
+		for (size_t i = pos + 2; i < end; ++i)
+		{
+			unsigned char c = static_cast<unsigned char>(token[i]);
+			if (!std::isdigit(c))
+			{
+				valid = false; //someone has shitty parameter or smth
+				return;
+			}
+			nr = nr * 10 + (token[i] - '0');
+		}
+
+		if (!valid || nr == 0)
+		{
+			continue;
+		}
+		size_t nr_index = nr - 1;
+		if (nr_index < parameters.size())
+		{
+			const std::string &rep = parameters[nr_index];
+			// ONE replace instead of erase+insert
+			token.replace(pos, end - pos + 1, rep);
+
+			if (ToLower)
+			{
+				for (size_t i = pos; i < pos + rep.size(); ++i)
+				{
+					token[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(token[i])));
+				}
+			}
+			pos += rep.size();
+		}
+		else
+		{
+			token.replace(pos, end - pos + 1, "none");
+			pos += 4; // "none".length()
+		}
+	}
+}
+
 std::vector<std::string> cParser::readParameters(cParser &Input)
 {
 
@@ -418,33 +459,38 @@ std::vector<std::string> cParser::readParameters(cParser &Input)
 }
 
 std::string cParser::readQuotes(char const Quote)
-{ // read the stream until specified char or stream end
+{
 	std::string token;
 	token.reserve(64);
-	char c{0};
-	bool escaped = false;
-	while (mStream->peek() != EOF)
-	{ // get all chars until the quote mark
-		c = mStream->get();
 
-		if (escaped)
+	while (true)
+	{
+		int ic = mStream->get();
+		if (ic == EOF)
+			break;
+
+		char c = static_cast<char>(ic);
+
+		// Handle escape sequences
+		if (c == '\\')
 		{
-			escaped = false;
-		}
-		else
-		{
-			if (c == '\\')
+			int next = mStream->get();
+			if (next != EOF)
 			{
-				escaped = true;
-				continue;
+				token.push_back(static_cast<char>(next));
 			}
-			else if (c == Quote)
-				break;
+			continue;
 		}
 
+		// End of quoted string
+		if (c == Quote)
+			break;
+
+		// Count lines
 		if (c == '\n')
-			++mLine; // update line counter
-		token += c;
+			++mLine;
+
+		token.push_back(c);
 	}
 
 	return token;
@@ -459,26 +505,49 @@ void cParser::skipComment(std::string const &Endmark)
 		return;
 	}
 
-	// dla "*/" itp. – rolling window, bez substr() co znak
-	std::string window;
-	window.reserve(Endmark.size());
+	const size_t endlen = Endmark.size();
+	if (endlen == 0)
+		return;
 
-	int ic = 0;
-	while ((ic = mStream->get()) != EOF)
+	// Circular buffer on stack for small patterns
+	char buffer[8]; // Max comment end size ("*/" = 2)
+	size_t pos = 0;
+	size_t filled = 0;
+
+	while (true)
 	{
+		int ic = mStream->get();
+		if (ic == EOF)
+			break;
+
 		char c = static_cast<char>(ic);
 		if (c == '\n')
 			++mLine;
 
-		window.push_back(c);
-		if (window.size() > Endmark.size())
-			window.erase(0, window.size() - Endmark.size());
+		// Store in circular buffer
+		buffer[pos] = c;
+		pos = (pos + 1) % endlen;
+		if (filled < endlen)
+			++filled;
 
-		if (window.size() == Endmark.size() && window == Endmark)
-			break;
+		// Check for match
+		if (filled == endlen)
+		{
+			bool match = true;
+			for (size_t i = 0; i < endlen; ++i)
+			{
+				if (buffer[(pos + i) % endlen] != Endmark[i])
+				{
+					match = false;
+					break;
+				}
+			}
+
+			if (match)
+				break;
+		}
 	}
 }
-
 bool cParser::findQuotes(std::string &String)
 {
 
@@ -492,22 +561,32 @@ bool cParser::findQuotes(std::string &String)
 	return false;
 }
 
-bool cParser::trimComments(std::string &String)
+bool cParser::trimComments(std::string &token)
 {
-	for (auto const &comment : mComments)
-	{
-		if (String.size() < comment.first.size())
-		{
-			continue;
-		}
+	// Must have at least 2 characters for a comment
+	const size_t len = token.size();
+	if (len < 2)
+		return false;
 
-		if (String.compare(String.size() - comment.first.size(), comment.first.size(), comment.first) == 0)
-		{
-			skipComment(comment.second);
-			String.resize(String.rfind(comment.first));
-			return true;
-		}
+	// Get the last two characters
+	const char last_two[2] = {token[len - 2], token[len - 1]};
+
+	// Handle "//" - line comment
+	if (last_two[0] == '/' && last_two[1] == '/')
+	{
+		skipComment("\n");
+		token.resize(len - 2);
+		return true;
 	}
+
+	// Handle "/*" - block comment
+	if (last_two[0] == '/' && last_two[1] == '*')
+	{
+		skipComment("*/");
+		token.resize(len - 2);
+		return true;
+	}
+
 	return false;
 }
 
