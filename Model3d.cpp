@@ -370,11 +370,11 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 			parser >> discard >> multiplier;
 			WriteLog("Found hotspot power!");
 			// recaluclate multiplier
-			multiplier = multiplier / 100.f;
+			diffuseMultiplier = multiplier / 100.f;
 
 			// apply color only on nvrenderer
 			if (Global.NvRenderer)
-				f4Diffuse *= multiplier;
+				f4Diffuse *= diffuseMultiplier;
 		}
 		else
 			parser.autoclear(false);

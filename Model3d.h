@@ -117,6 +117,7 @@ public:
         f4Emision { 1.0f,1.0f,1.0f,1.0f };
     glm::vec3 DiffuseOverride { -1.f };
     normalization m_normalizenormals { normalization::none }; // indicates vectors need to be normalized due to scaling etc
+	float diffuseMultiplier {1.0};
     float fWireSize { 0.0f }; // nie używane, ale wczytywane
     float fSquareMaxDist { 10000.0f * 10000.0f };
     float fSquareMinDist { 0.0f };
