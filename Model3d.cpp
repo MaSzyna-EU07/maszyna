@@ -1720,6 +1720,7 @@ void TSubModel::serialize(std::ostream &s, std::vector<TSubModel *> &models, std
 
 	sn_utils::s_vec4(s, f4Ambient);
 	sn_utils::s_vec4(s, f4Diffuse);
+	sn_utils::ls_float32(s, diffuseMultiplier);
 	sn_utils::s_vec4(s, f4Specular);
 	sn_utils::s_vec4(s, f4Emision);
 
@@ -1889,6 +1890,10 @@ void TSubModel::deserialize(std::istream &s)
 
 	f4Ambient = sn_utils::d_vec4(s);
 	f4Diffuse = sn_utils::d_vec4(s);
+	diffuseMultiplier = sn_utils::ld_float32(s);
+	// only multiply diffuse on experimental renderer
+	if (Global.NvRenderer)
+		f4Diffuse *= diffuseMultiplier;
 	f4Specular = sn_utils::d_vec4(s);
 	f4Emision = sn_utils::d_vec4(s);
 
