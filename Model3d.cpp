@@ -362,13 +362,13 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 		parser >> fNearAttenStart >> discard >> fNearAttenEnd >> discard >> bUseNearAtten >> discard >> iFarAttenDecay >> discard >> fFarDecayRadius >> discard >>
 		    fCosFalloffAngle // kąt liczony dla średnicy, a nie promienia
 		    >> discard >> fCosHotspotAngle; // kąt liczony dla średnicy, a nie promienia
-
+		// trzeba pobrac do kolejki 2 tokeny
+		parser.getTokens(2);
 		if (parser.peek() == "hotspotpower:")
 		{
-			parser.getTokens(2);
 			float multiplier;
 			parser >> discard >> multiplier;
-
+			WriteLog("Found hotspot power!");
 			// recaluclate multiplier
 			multiplier = multiplier / 100.f;
 
@@ -376,6 +376,8 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 			if (Global.NvRenderer)
 				f4Diffuse *= multiplier;
 		}
+		else
+			parser.autoclear(false);
 
 		// convert conve parameters if specified in degrees
 		if (fCosFalloffAngle > 1.0)
@@ -486,6 +488,7 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 	// visibility range
 	std::string discard;
 	parser.getTokens(5, false);
+	parser.autoclear(true);
 	parser >> discard >> fSquareMaxDist >> discard >> fSquareMinDist >> discard;
 
 	if (fSquareMaxDist <= 0.0)
