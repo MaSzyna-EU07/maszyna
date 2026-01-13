@@ -1892,8 +1892,8 @@ void TSubModel::deserialize(std::istream &s)
 	f4Diffuse = sn_utils::d_vec4(s);
 	diffuseMultiplier = sn_utils::ld_float32(s);
 	// only multiply diffuse on experimental renderer
-	if (Global.NvRenderer)
-		f4Diffuse *= diffuseMultiplier;
+	if (!Global.NvRenderer)
+		f4Diffuse /= diffuseMultiplier;
 	f4Specular = sn_utils::d_vec4(s);
 	f4Emision = sn_utils::d_vec4(s);
 
