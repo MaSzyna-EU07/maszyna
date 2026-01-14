@@ -1740,6 +1740,10 @@ void TSubModel::serialize(std::ostream &s, std::vector<TSubModel *> &models, std
 	sn_utils::ls_int32(s, m_geometry.index_count);
 	sn_utils::ls_int32(s, m_geometry.index_offset);
 
+	// external data
+	sn_utils::ls_float32(s, diffuseMultiplier);
+
+	// fill empty space
 	size_t fill = end - s.tellp();
 	for (size_t i = 0; i < fill; i++)
 		s.put(0);
@@ -1907,6 +1911,13 @@ void TSubModel::deserialize(std::istream &s)
 	// HACK: the values will be 0 also when reading legacy chunk
 	m_geometry.index_count = sn_utils::ld_int32(s);
 	m_geometry.index_offset = sn_utils::ld_int32(s);
+
+	// extra data block
+	diffuseMultiplier = sn_utils::ld_float32(s);
+	// only multiply diffuse on experimental renderer
+	if (!Global.NvRenderer)
+		f4Diffuse /= diffuseMultiplier;
+
 	// necessary rotations were already done during t3d->e3d conversion
 	m_rotation_init_done = true;
 }
