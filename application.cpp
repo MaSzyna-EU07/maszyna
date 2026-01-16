@@ -218,7 +218,7 @@ void eu07_application::DiscordRPCService()
 	discord_rpc.largeImageText = "MaSzyna";
 
 	// run loop
-	while (!glfwWindowShouldClose(m_windows.front()) && !m_modestack.empty())
+	while (!glfwWindowShouldClose(m_windows.front()) && !m_modestack.empty() && !Global.applicationQuitOrder)
 	{
 		auto currentMode = m_modestack.top();
 		if (currentMode == mode::launcher)
@@ -263,8 +263,6 @@ void eu07_application::DiscordRPCService()
 		if (currentMode != mode::driver)
 			continue;
 
-		if (Global.applicationQuitOrder)
-			break;
 		// Discord RPC updater
 		if (simulation::is_ready)
 		{
@@ -299,6 +297,8 @@ void eu07_application::DiscordRPCService()
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(5000)); // update RPC every 5 secs
 	}
+
+	Discord_Shutdown();
 #endif
 }
 
