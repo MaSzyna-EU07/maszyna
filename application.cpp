@@ -592,7 +592,7 @@ int eu07_application::run()
 		GfxRenderer->SwapBuffers();
 
 		if (m_modestack.empty())
-			return 0;
+			break;
 
 		m_modes[m_modestack.top()]->on_event_poll();
 
@@ -611,20 +611,21 @@ int eu07_application::run()
 			std::this_thread::sleep_for(Global.minframetime - frametime);
 		}
 	}
-	Global.applicationQuitOrder = true;
-	auto it = Global.threads.find("LogService");
-	if (it != Global.threads.end())
-	{
-		if (it->second.joinable())
-			it->second.join();
-	}
-
-	it = Global.threads.find("DiscordRPC");
-	if (it != Global.threads.end())
-	{
-		if (it->second.joinable())
-			it->second.join();
-	}
+	// Handled by application.exit
+	// Global.applicationQuitOrder = true;
+	// auto it = Global.threads.find("LogService");
+	// if (it != Global.threads.end())
+	// {
+	// 	if (it->second.joinable())
+	// 		it->second.join();
+	// }
+	//
+	// it = Global.threads.find("DiscordRPC");
+	// if (it != Global.threads.end())
+	// {
+	// 	if (it->second.joinable())
+	// 		it->second.join();
+	// }
 	return 0;
 }
 
@@ -657,20 +658,6 @@ void eu07_application::release_python_lock()
 void eu07_application::exit()
 {
 	Global.applicationQuitOrder = true;
-	auto it = Global.threads.find("LogService");
-	if (it != Global.threads.end())
-	{
-		if (it->second.joinable())
-			it->second.join();
-	}
-
-	it = Global.threads.find("DiscordRPC");
-	if (it != Global.threads.end())
-	{
-		if (it->second.joinable())
-			it->second.join();
-	}
-
 	for (auto &mode : m_modes)
 		mode.reset();
 
@@ -691,6 +678,20 @@ void eu07_application::exit()
 
 	if (!Global.exec_on_exit.empty())
 		system(Global.exec_on_exit.c_str());
+
+	auto it = Global.threads.find("LogService");
+	if (it != Global.threads.end())
+	{
+		if (it->second.joinable())
+			it->second.join();
+	}
+
+	it = Global.threads.find("DiscordRPC");
+	if (it != Global.threads.end())
+	{
+		if (it->second.joinable())
+			it->second.join();
+	}
 }
 
 void eu07_application::render_ui()
