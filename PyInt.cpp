@@ -20,6 +20,69 @@ http://mozilla.org/MPL/2.0/.
 #endif
 #include <simulation.h>
 
+namespace {
+
+const char *PyObject_AsUtf8(PyObject *obj) {
+    if (obj == nullptr) {
+        return nullptr;
+    }
+    if (PyUnicode_Check(obj)) {
+        return PyUnicode_AsUTF8(obj);
+    }
+    if (PyBytes_Check(obj)) {
+        return PyBytes_AsString(obj);
+    }
+    if (PyByteArray_Check(obj)) {
+        return PyByteArray_AsString(obj);
+    }
+    return nullptr;
+}
+
+bool PyObject_GetBytesView(PyObject *obj, Py_buffer *view) {
+    if (obj == nullptr) {
+        return false;
+    }
+    if (PyObject_GetBuffer(obj, view, PyBUF_CONTIG_RO) == 0) {
+        return true;
+    }
+    PyErr_Clear();
+    return false;
+}
+
+void ErrorLogPyObjectText(PyObject *obj) {
+    const char *text = PyObject_AsUtf8(obj);
+    if (text != nullptr) {
+        ErrorLog(text);
+    }
+}
+
+void ErrorLogPyObjectStr(PyObject *obj) {
+    if (obj == nullptr) {
+        return;
+    }
+    PyObject *text = PyObject_Str(obj);
+    ErrorLogPyObjectText(text);
+    Py_XDECREF(text);
+}
+
+// Keep Python home storage alive for the lifetime of the interpreter.
+std::wstring g_python_home;
+
+void SetPythonHomeFromUtf8(const char *home) {
+    if (home == nullptr || *home == '\0') {
+        return;
+    }
+    wchar_t *wide = Py_DecodeLocale(home, nullptr);
+    if (wide == nullptr) {
+        return;
+    }
+    g_python_home.assign(wide);
+    PyMem_RawFree(wide);
+    Py_SetPythonHome(g_python_home.c_str());
+}
+
+} // namespace
+
 void render_task::run() {
 
     // convert provided input to a python dictionary
@@ -30,7 +93,7 @@ void render_task::run() {
 	}
     for( auto const &datapair : m_input->floats )   { auto *value{ PyGetFloat( datapair.second ) }; PyDict_SetItemString( input, datapair.first.c_str(), value ); Py_DECREF( value ); }
     for( auto const &datapair : m_input->integers ) { auto *value{ PyGetInt( datapair.second ) }; PyDict_SetItemString( input, datapair.first.c_str(), value ); Py_DECREF( value ); }
-    for( auto const &datapair : m_input->bools )    { auto *value{ PyGetBool( datapair.second ) }; PyDict_SetItemString( input, datapair.first.c_str(), value ); }
+    for( auto const &datapair : m_input->bools )    { auto *value{ PyGetBool( datapair.second ) }; PyDict_SetItemString( input, datapair.first.c_str(), value ); Py_DECREF( value ); }
     for( auto const &datapair : m_input->strings )  { auto *value{ PyGetString( datapair.second.c_str() ) }; PyDict_SetItemString( input, datapair.first.c_str(), value ); Py_DECREF( value ); }
     for (auto const &datapair : m_input->vec2_lists) {
         PyObject *list = PyList_New(datapair.second.size());
@@ -59,48 +122,64 @@ void render_task::run() {
         auto *outputwidth { PyObject_CallMethod( m_renderer, "get_width", nullptr ) };
         auto *outputheight { PyObject_CallMethod( m_renderer, "get_height", nullptr ) };
         // upload texture data
-        if( ( outputwidth != nullptr )
+		if( ( outputwidth != nullptr )
          && ( outputheight != nullptr )
 		 && m_target) {
-			int width = PyInt_AsLong( outputwidth );
-			int height = PyInt_AsLong( outputheight );
+			int width = static_cast<int>( PyLong_AsLong( outputwidth ) );
+			int height = static_cast<int>( PyLong_AsLong( outputheight ) );
 			int components, format;
 
-            const unsigned char *image = reinterpret_cast<const unsigned char *>( PyString_AsString( output ) );
+            Py_buffer imagebuffer;
+            bool have_buffer = PyObject_GetBytesView( output, &imagebuffer );
+            const unsigned char *image = nullptr;
+            if( have_buffer ) {
+                image = static_cast<const unsigned char *>( imagebuffer.buf );
+            }
+            else if( PyUnicode_Check( output ) ) {
+                Py_ssize_t image_size = 0;
+                const char *text = PyUnicode_AsUTF8AndSize( output, &image_size );
+                image = reinterpret_cast<const unsigned char *>( text );
+            }
 
-			std::lock_guard<std::mutex> guard(m_target->mutex);
+            if( image != nullptr ) {
+			    std::lock_guard<std::mutex> guard(m_target->mutex);
 
-			if (false && !Global.gfx_usegles)
-			{
-				int size = width * height * 3;
-				format = GL_SRGB8;
-				components = GL_RGB;
-				m_target->image.resize(size);
-				memcpy(m_target->image.data(), image, size);
-			}
-			else
-			{
-				format = GL_SRGB8_ALPHA8;
-				components = GL_RGBA;
-				m_target->image.resize(width * height * 4);
+			    if (false && !Global.gfx_usegles)
+			    {
+				    int size = width * height * 3;
+				    format = GL_SRGB8;
+				    components = GL_RGB;
+				    m_target->image.resize(size);
+				    memcpy(m_target->image.data(), image, size);
+			    }
+			    else
+			    {
+				    format = GL_SRGB8_ALPHA8;
+				    components = GL_RGBA;
+				    m_target->image.resize(width * height * 4);
 
-				int w = width;
-				int h = height;
-				for (int y = 0; y < h; y++)
-					for (int x = 0; x < w; x++)
-					{
-						m_target->image[(y * w + x) * 4 + 0] = image[(y * w + x) * 4 + 0];
-						m_target->image[(y * w + x) * 4 + 1] = image[(y * w + x) * 4 + 1];
-						m_target->image[(y * w + x) * 4 + 2] = image[(y * w + x) * 4 + 2];
-						m_target->image[(y * w + x) * 4 + 3] = image[(y * w + x) * 4 + 3];
-					}
-			}
+				    int w = width;
+				    int h = height;
+				    for (int y = 0; y < h; y++)
+					    for (int x = 0; x < w; x++)
+					    {
+						    m_target->image[(y * w + x) * 4 + 0] = image[(y * w + x) * 4 + 0];
+						    m_target->image[(y * w + x) * 4 + 1] = image[(y * w + x) * 4 + 1];
+						    m_target->image[(y * w + x) * 4 + 2] = image[(y * w + x) * 4 + 2];
+						    m_target->image[(y * w + x) * 4 + 3] = image[(y * w + x) * 4 + 3];
+					    }
+			    }
 
-			m_target->width = width;
-			m_target->height = height;
-			m_target->components = components;
-			m_target->format = format;
-			m_target->timestamp = std::chrono::high_resolution_clock::now();
+			    m_target->width = width;
+			    m_target->height = height;
+			    m_target->components = components;
+			    m_target->format = format;
+			    m_target->timestamp = std::chrono::high_resolution_clock::now();
+            }
+
+            if( have_buffer ) {
+                PyBuffer_Release( &imagebuffer );
+            }
         }
         if( outputheight != nullptr ) { Py_DECREF( outputheight ); }
         if( outputwidth  != nullptr ) { Py_DECREF( outputwidth ); }
@@ -210,19 +289,19 @@ auto python_taskqueue::init() -> bool {
 
 #ifdef _WIN32
 	if (sizeof(void*) == 8)
-		Py_SetPythonHome("python64");
+		SetPythonHomeFromUtf8("python64");
 	else
-		Py_SetPythonHome("python");
+		SetPythonHomeFromUtf8("python");
 #elif __linux__
 	if (sizeof(void*) == 8)
-		Py_SetPythonHome("linuxpython64");
+		SetPythonHomeFromUtf8("linuxpython64");
 	else
-		Py_SetPythonHome("linuxpython");
+		SetPythonHomeFromUtf8("linuxpython");
 #elif __APPLE__
 	if (sizeof(void*) == 8)
-		Py_SetPythonHome("macpython64");
+		SetPythonHomeFromUtf8("macpython64");
 	else
-		Py_SetPythonHome("macpython");
+		SetPythonHomeFromUtf8("macpython");
 #endif
     Py_InitializeEx(0);
 
@@ -239,7 +318,7 @@ auto python_taskqueue::init() -> bool {
         goto release_and_exit;
     }
 
-    stringiomodule = PyImport_ImportModule( "cStringIO" );
+    stringiomodule = PyImport_ImportModule( "io" );
     stringioclassname = (
         stringiomodule != nullptr ?
             PyObject_GetAttrString( stringiomodule, "StringIO" ) :
@@ -278,7 +357,7 @@ auto python_taskqueue::init() -> bool {
     return true;
 
 release_and_exit:
-    PyEval_ReleaseLock();
+    PyEval_SaveThread();
     return false;
 }
 
@@ -431,9 +510,9 @@ void python_taskqueue::run( GLFWwindow *Context, rendertask_sequence &Tasks, upl
 		glfwMakeContextCurrent( Context );
 
     // create a state object for this thread
-    PyEval_AcquireLock();
+    PyGILState_STATE gstate = PyGILState_Ensure();
     auto *threadstate { PyThreadState_New( m_mainthread->interp ) };
-    PyEval_ReleaseLock();
+    PyGILState_Release( gstate );
 
     std::shared_ptr<render_task> task { nullptr };
 
@@ -478,11 +557,12 @@ void python_taskqueue::run( GLFWwindow *Context, rendertask_sequence &Tasks, upl
         Condition.wait_for( std::chrono::seconds( 5 ) );
     }
     // clean up thread state data
-    PyEval_AcquireLock();
-    PyThreadState_Swap( nullptr );
+    PyGILState_STATE cleanup_state = PyGILState_Ensure();
+    PyThreadState *prev_state = PyThreadState_Swap( threadstate );
     PyThreadState_Clear( threadstate );
+    PyThreadState_Swap( prev_state );
     PyThreadState_Delete( threadstate );
-    PyEval_ReleaseLock();
+    PyGILState_Release( cleanup_state );
 }
 
 void python_taskqueue::update()
@@ -502,7 +582,8 @@ python_taskqueue::error() {
         // std err pythona jest buforowane
         PyErr_Print();
         auto *errortext { PyObject_CallMethod( m_stderr, "getvalue", nullptr ) };
-        ErrorLog( PyString_AsString( errortext ) );
+        ErrorLogPyObjectText( errortext );
+        Py_XDECREF( errortext );
         // czyscimy bufor na kolejne bledy
         PyObject_CallMethod( m_stderr, "truncate", "i", 0 );
     }
@@ -517,20 +598,17 @@ python_taskqueue::error() {
         if( type == nullptr ) {
             ErrorLog( "Python Interpreter: don't know how to handle null exception" );
         }
-        auto *typetext { PyObject_Str( type ) };
-        if( typetext != nullptr ) {
-            ErrorLog( PyString_AsString( typetext ) );
-        }
-        if( value != nullptr ) {
-            ErrorLog( PyString_AsString( value ) );
-        }
-        auto *tracebacktext { PyObject_Str( traceback ) };
-        if( tracebacktext != nullptr ) {
-            ErrorLog( PyString_AsString( tracebacktext ) );
+        ErrorLogPyObjectStr( type );
+        ErrorLogPyObjectStr( value );
+        if( traceback != nullptr ) {
+            ErrorLogPyObjectStr( traceback );
         }
         else {
             WriteLog( "Python Interpreter: failed to retrieve the stack traceback" );
         }
+        Py_XDECREF( type );
+        Py_XDECREF( value );
+        Py_XDECREF( traceback );
     }
 }
 
@@ -555,7 +633,7 @@ std::vector<std::string> python_external_utils::PyObjectToStringArray(PyObject *
 			return emptyIfError;
 		}
 
-		const char *str = PyString_AsString(item);
+		const char *str = PyObject_AsUtf8(item);
 		if (str == nullptr)
 		{
 			Py_DECREF(item);
