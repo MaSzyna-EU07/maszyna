@@ -135,7 +135,7 @@ shaders:
           no_anisotropy: true
         wipermask:
           binding: 2
-          hint: color
+          hint: linear
           default: white
           no_filter: true
         rain:
