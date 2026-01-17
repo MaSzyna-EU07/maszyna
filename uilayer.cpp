@@ -208,30 +208,81 @@ void ui_layer::imgui_style()
 
 bool ui_layer::init(GLFWwindow *Window)
 {
-	m_window = Window;
+    m_window = Window;
 
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	m_imguiio = &ImGui::GetIO();
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    m_imguiio = &ImGui::GetIO();
 
 	m_imguiio->ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
-	// m_imguiio->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-	// m_imguiio->ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    // m_imguiio->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    // m_imguiio->ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 
-	static const ImWchar ranges[] = {
-	    0x0020, 0x00FF, // Basic Latin + Latin Supplement
-	    0x0100, 0x017F, // Latin Extended-A
-	    0x2070, 0x2079, // superscript
-	    0x2500, 0x256C, // box drawings
-	    0,
-	};
+    static const ImWchar ranges[] =
+    {
+        0x0020, 0x00FF, // Basic Latin + Latin Supplement
+        0x0100, 0x017F, // Latin Extended-A
+        0x2070, 0x2079, // superscript
+        0x2500, 0x256C, // box drawings
+        0,
+    };
 
-	if (FileExists("fonts/dejavusans.ttf"))
-		font_default = m_imguiio->Fonts->AddFontFromFileTTF("fonts/dejavusans.ttf", Global.ui_fontsize, nullptr, &ranges[0]);
-	if (FileExists("fonts/dejavusansmono.ttf"))
-		font_mono = m_imguiio->Fonts->AddFontFromFileTTF("fonts/dejavusansmono.ttf", Global.ui_fontsize, nullptr, &ranges[0]);
-	if (FileExists("fonts/bahnschrift.ttf"))
-		font_loading = m_imguiio->Fonts->AddFontFromFileTTF("fonts/bahnschrift.ttf", 48, nullptr, &ranges[0]);
+    ImFontConfig config;
+	// config.FontDataOwnedByAtlas = false;  // Avoid duplicate release of font data
+
+	if (FileExists("fonts/dejavusans.ttf")) {
+		// Load basic font first
+		font_default = m_imguiio->Fonts->AddFontFromFileTTF("fonts/dejavusans.ttf", Global.ui_fontsize, &config, &ranges[0]);
+		
+		// Add support for Chinese character ranges
+		if (font_default) {
+			ImFontConfig chinese_config;
+			chinese_config.MergeMode = true;
+			chinese_config.PixelSnapH = true;
+			
+			// Use NotoSansSC-Regular.ttf font file
+			if (FileExists("fonts/NotoSansSC-Regular.ttf")) {
+				const ImWchar* chinese_ranges = m_imguiio->Fonts->GetGlyphRangesChineseFull();
+				m_imguiio->Fonts->AddFontFromFileTTF("fonts/NotoSansSC-Regular.ttf", Global.ui_fontsize, &chinese_config, chinese_ranges);
+			}
+		}
+	}
+	
+	if (FileExists("fonts/dejavusansmono.ttf")) {
+		ImFontConfig mono_config;
+		mono_config.GlyphRanges = &ranges[0]; // Basic Latin characters
+		font_mono = m_imguiio->Fonts->AddFontFromFileTTF("fonts/dejavusansmono.ttf", Global.ui_fontsize, &mono_config, &ranges[0]);
+		
+		// Add Chinese character support for monospace font as well
+		if (font_mono) {
+			ImFontConfig chinese_mono_config;
+			chinese_mono_config.MergeMode = true;
+			chinese_mono_config.PixelSnapH = true;
+			
+			// Use NotoSansSC-Regular.ttf for monospace font as well
+			if (FileExists("fonts/NotoSansSC-Regular.ttf")) {
+				const ImWchar* chinese_ranges = m_imguiio->Fonts->GetGlyphRangesChineseFull();
+				m_imguiio->Fonts->AddFontFromFileTTF("fonts/NotoSansSC-Regular.ttf", Global.ui_fontsize, &chinese_mono_config, chinese_ranges);
+			}
+		}
+	}
+	if (FileExists("fonts/bahnschrift.ttf")) {
+		ImFontConfig loading_config;
+		font_loading = m_imguiio->Fonts->AddFontFromFileTTF("fonts/bahnschrift.ttf", 48, &loading_config, &ranges[0]);
+		
+		// Add Chinese character support for loading font as well
+		if (font_loading) {
+			ImFontConfig chinese_loading_config;
+			chinese_loading_config.MergeMode = true;
+			chinese_loading_config.PixelSnapH = true;
+			
+			// Use NotoSansMonoCJKsc-Regular.ttf for loading font
+			if (FileExists("fonts/NotoSansMonoCJKsc-Regular.ttf")) {
+				const ImWchar* chinese_ranges = m_imguiio->Fonts->GetGlyphRangesChineseFull();
+				m_imguiio->Fonts->AddFontFromFileTTF("fonts/NotoSansMonoCJKsc-Regular.ttf", 48, &chinese_loading_config, chinese_ranges);
+			}
+		}
+	}
 
 	if (!font_default && !font_mono)
 		font_default = font_mono = m_imguiio->Fonts->AddFontDefault();
@@ -244,14 +295,14 @@ bool ui_layer::init(GLFWwindow *Window)
 
 	imgui_style();
 
-	ImGui_ImplGlfw_InitForOpenGL(m_window, false);
+    ImGui_ImplGlfw_InitForOpenGL(m_window, false);
 
-	if (!GfxRenderer->GetImguiRenderer() || !GfxRenderer->GetImguiRenderer()->Init())
-	{
-		return false;
-	}
+    if (!GfxRenderer->GetImguiRenderer() || !GfxRenderer->GetImguiRenderer()->Init())
+	  {
+		  return false;
+	  }
 
-	return true;
+    return true;
 }
 
 void ui_layer::shutdown()
