@@ -676,7 +676,7 @@ debug_panel::render_section_scenario() {
 		{
 			command_relay relay;
             relay.post(
-                user_command::settemperature, 
+                user_command::settemperature,
                 clamp(Airtemperature, -35.0f, 40.0f),
 			           Global.Overcast,
                 GLFW_PRESS, 0 );
@@ -1534,6 +1534,8 @@ bool debug_panel::render_section_developer()
 		m_input.vehicle->MoverParameters->reload_FIZ(); // reload fiz
 	}
 	ImGui::PopStyleColor();
+
+	return true;
 }
 
 bool
