@@ -239,7 +239,8 @@ bool ui_layer::init(GLFWwindow *Window)
 			ImFontConfig chinese_config;
 			chinese_config.MergeMode = true;
 			chinese_config.PixelSnapH = true;
-			
+			chinese_config.OversampleH = 1;
+			chinese_config.OversampleV = 1;
 			// Use NotoSansSC-Regular.ttf font file
 			if (FileExists("fonts/NotoSansSC-Regular.ttf")) {
 				const ImWchar* chinese_ranges = m_imguiio->Fonts->GetGlyphRangesChineseFull();
@@ -256,6 +257,8 @@ bool ui_layer::init(GLFWwindow *Window)
 		// Add Chinese character support for monospace font as well
 		if (font_mono) {
 			ImFontConfig chinese_mono_config;
+			chinese_mono_config.OversampleH = 1;
+			chinese_mono_config.OversampleV = 1;
 			chinese_mono_config.MergeMode = true;
 			chinese_mono_config.PixelSnapH = true;
 			
@@ -273,6 +276,8 @@ bool ui_layer::init(GLFWwindow *Window)
 		// Add Chinese character support for loading font as well
 		if (font_loading) {
 			ImFontConfig chinese_loading_config;
+			chinese_loading_config.OversampleH = 1;
+			chinese_loading_config.OversampleV = 1;
 			chinese_loading_config.MergeMode = true;
 			chinese_loading_config.PixelSnapH = true;
 			
