@@ -9,6 +9,10 @@ if(POLICY CMP0069)
 	cmake_policy(SET CMP0069 NEW)
 endif()
 
+if(POLICY CMP0148)
+	cmake_policy(SET CMP0148 NEW)
+endif()
+
 include(CheckCXXSymbolExists)
 
 set(CMAKE_FIND_PACKAGE_PREFER_CONFIG TRUE)
@@ -457,9 +461,8 @@ endif()
 target_link_libraries(${PROJECT_NAME} glfw)
 
 if (WITH_PYTHON)
-	find_package(PythonLibs 2 REQUIRED)
-	target_include_directories(${PROJECT_NAME} PRIVATE ${PYTHON_INCLUDE_DIRS})
-	target_link_libraries(${PROJECT_NAME} ${PYTHON_LIBRARIES})
+	find_package(Python3 REQUIRED COMPONENTS Development)
+	target_link_libraries(${PROJECT_NAME} Python3::Python)
 endif()
 
 if (NOT WIN32)
