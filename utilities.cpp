@@ -322,7 +322,7 @@ bool string_starts_with(const std::string &string, const std::string &begin)
 	return string.compare(0, begin.length(), begin) == 0;
 }
 
-std::string const fractionlabels[] = {" ", u8"¹", u8"²", u8"³", u8"⁴", u8"⁵", u8"⁶", u8"⁷", u8"⁸", u8"⁹"};
+std::string const fractionlabels[] = {" ", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"};
 
 std::string to_minutes_str(float const Minutes, bool const Leadingzero, int const Width)
 {
@@ -376,8 +376,8 @@ void win1250_to_ascii(std::string &Input)
 
 std::string win1250_to_utf8(const std::string &Input)
 {
-	std::unordered_map<char, std::string> const charmap{{165, u8"Ą"}, {198, u8"Ć"}, {202, u8"Ę"}, {163, u8"Ł"}, {209, u8"Ń"}, {211, u8"Ó"}, {140, u8"Ś"}, {143, u8"Ź"}, {175, u8"Ż"},
-	                                                    {185, u8"ą"}, {230, u8"ć"}, {234, u8"ę"}, {179, u8"ł"}, {241, u8"ń"}, {243, u8"ó"}, {156, u8"ś"}, {159, u8"ź"}, {191, u8"ż"}};
+	std::unordered_map<char, std::string> const charmap{{165, "Ą"}, {198, "Ć"}, {202, "Ę"}, {163, "Ł"}, {209, "Ń"}, {211, "Ó"}, {140, "Ś"}, {143, "Ź"}, {175, "Ż"},
+	                                                    {185, "ą"}, {230, "ć"}, {234, "ę"}, {179, "ł"}, {241, "ń"}, {243, "ó"}, {156, "ś"}, {159, "ź"}, {191, "ż"}};
 	std::string output;
 	std::unordered_map<char, std::string>::const_iterator lookup;
 	for (auto &input : Input)

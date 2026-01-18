@@ -77,41 +77,54 @@ LONG WINAPI CrashHandler(EXCEPTION_POINTERS *ExceptionInfo)
 	return EXCEPTION_EXECUTE_HANDLER;
 }
 
-
 #endif
-
 
 int main(int argc, char *argv[])
 {
 #ifdef WITHDUMPGEN
 #ifdef _WIN32
 	SetUnhandledExceptionFilter(CrashHandler);
-	#endif
+#endif
 #endif
 	// init start timestamp
 	Global.startTimestamp = std::chrono::steady_clock::now();
 
-    // quick short-circuit for standalone e3d export
-    if (argc == 6 && std::string(argv[1]) == "-e3d") {
-        std::string in(argv[2]);
-        std::string out(argv[3]);
-        int flags = std::stoi(std::string(argv[4]));
-        int dynamic = std::stoi(std::string(argv[5]));
-        export_e3d_standalone(in, out, flags, dynamic);
-    } else {
-        try {
-            auto result { Application.init( argc, argv ) };
-            if( result == 0 ) {
-                result = Application.run();
-                Application.exit();
-            }
-        } catch( std::bad_alloc const &Error ) {
-            ErrorLog( "Critical error, memory allocation failure: " + std::string( Error.what() ) );
-        }
-    }
+	// quick short-circuit for standalone e3d export
+	if (argc == 6 && std::string(argv[1]) == "-e3d")
+	{
+		std::string in(argv[2]);
+		std::string out(argv[3]);
+		int flags = std::stoi(std::string(argv[4]));
+		int dynamic = std::stoi(std::string(argv[5]));
+		export_e3d_standalone(in, out, flags, dynamic);
+	}
+	else
+	{
+		try
+		{
+			auto result{Application.init(argc, argv)};
+			if (result == 0)
+			{
+				result = Application.run();
+				Application.exit();
+			}
+		}
+		catch (std::bad_alloc const &Error)
+		{
+			ErrorLog("Critical error, memory allocation failure: " + std::string(Error.what()));
+		}
+#ifdef _WIN32
+		catch (std::runtime_error const &Error)
+		{
+			std::string msg = "Simulator crash occured :(\n";
+			msg += Error.what();
+			MessageBoxA(nullptr, msg.c_str(), "Simulator crashed :(", MB_ICONERROR);
+		}
+#endif
+	}
 #ifndef _WIN32
-    fflush(stdout);
-    fflush(stderr);
+	fflush(stdout);
+	fflush(stderr);
 #endif
 	std::_Exit(0); // skip destructors, there are ordering errors which causes segfaults
 }

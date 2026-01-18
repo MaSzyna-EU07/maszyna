@@ -391,7 +391,7 @@ timetable_panel::update() {
         }
         else {
 			// header
-            m_tablelines.emplace_back( u8"┌─────┬────────────────────────────────────┬─────────┬─────┐", Global.UITextColor );
+            m_tablelines.emplace_back( "┌─────┬────────────────────────────────────┬─────────┬─────┐", Global.UITextColor );
 
             TMTableLine const *tableline;
             for( int i = table.StationStart; i <= table.StationCount; ++i ) {
@@ -423,11 +423,11 @@ timetable_panel::update() {
                 auto const arrival { (
                     tableline->Ah >= 0 ?
                         to_string( int( 100 + tableline->Ah ) ).substr( 1, 2 ) + ":" + to_minutes_str( tableline->Am, true, 3 ) :
-                        u8"  │   " ) };
+                        "  │   " ) };
                 auto const departure { (
                     tableline->Dh >= 0 ?
                         to_string( int( 100 + tableline->Dh ) ).substr( 1, 2 ) + ":" + to_minutes_str( tableline->Dm, true, 3 ) :
-                        u8"  │   " ) };
+                        "  │   " ) };
                 auto const candepart { (
                        ( table.StationStart < table.StationIndex )
                     && ( i < table.StationIndex )
@@ -446,25 +446,25 @@ timetable_panel::update() {
                     candepart ? colors::uitextgreen : // czas minął i odjazd był, to nazwa stacji będzie na zielono
                     isatpassengerstop ? colors::uitextorange :
                     Global.UITextColor ) };
-                auto const trackcount{ ( tableline->TrackNo == 1 ? u8" ┃  " : u8" ║  " ) };
+                auto const trackcount{ ( tableline->TrackNo == 1 ? " ┃  " : " ║  " ) };
                 m_tablelines.emplace_back(
-                    ( u8"│ " + vmax + u8" │ " + station + trackcount + arrival + u8" │ " + traveltime + u8" │" ),
+                    ( "│ " + vmax + " │ " + station + trackcount + arrival + " │ " + traveltime + " │" ),
                     linecolor );
                 m_tablelines.emplace_back(
-                    ( u8"│     │ " + location + tableline->StationWare + trackcount + departure + u8" │     │" ),
+                    ( "│     │ " + location + tableline->StationWare + trackcount + departure + " │     │" ),
                     linecolor );
                 // divider/footer
                 if( i < table.StationCount ) {
                     auto const *nexttableline { tableline + 1 };
-                    std::string const vmaxnext{ ( tableline->vmax == nexttableline->vmax ? u8"│     ├" : u8"├─────┼" ) };
-                    auto const trackcountnext{ ( nexttableline->TrackNo == 1 ? u8"╂" : u8"╫" ) };
+                    std::string const vmaxnext{ ( tableline->vmax == nexttableline->vmax ? "│     ├" : "├─────┼" ) };
+                    auto const trackcountnext{ ( nexttableline->TrackNo == 1 ? "╂" : "╫" ) };
                     m_tablelines.emplace_back(
-                        vmaxnext + u8"────────────────────────────────────" + trackcountnext + u8"─────────┼─────┤",
+                        vmaxnext + "────────────────────────────────────" + trackcountnext + "─────────┼─────┤",
                         Global.UITextColor );
                 }
                 else {
                     m_tablelines.emplace_back(
-                        u8"└─────┴────────────────────────────────────┴─────────┴─────┘",
+                        "└─────┴────────────────────────────────────┴─────────┴─────┘",
                         Global.UITextColor );
                 }
             }

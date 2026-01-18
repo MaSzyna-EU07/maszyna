@@ -135,24 +135,24 @@ int eu07_application::run_crashgui()
 
 		if (Global.asLang == "pl")
 		{
-			ImGui::Begin(u8"Raportowanie błędów", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize);
-			ImGui::TextUnformatted(u8"Podczas ostatniego uruchomienia symulatora wystąpił błąd.\nWysłać raport o błędzie do deweloperów?\n");
-			ImGui::TextUnformatted((u8"Usługa udostępniana przez " + crashreport_get_provider() + "\n").c_str());
-			y = ImGui::Button(u8"Tak", ImVec2S(60, 0));
+			ImGui::Begin("Raportowanie błędów", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize);
+			ImGui::TextUnformatted("Podczas ostatniego uruchomienia symulatora wystąpił błąd.\nWysłać raport o błędzie do deweloperów?\n");
+			ImGui::TextUnformatted(("Usługa udostępniana przez " + crashreport_get_provider() + "\n").c_str());
+			y = ImGui::Button("Tak", ImVec2S(60, 0));
 			ImGui::SameLine();
-			ImGui::Checkbox(u8"W przyszłości przesyłaj raporty o błędach automatycznie", &autoup);
+			ImGui::Checkbox("W przyszłości przesyłaj raporty o błędach automatycznie", &autoup);
 
 			ImGui::SameLine();
 			ImGui::TextDisabled("(?)");
 			if (ImGui::IsItemHovered())
 			{
 				ImGui::BeginTooltip();
-				ImGui::TextUnformatted(u8"W celu wyłączenia tej funkcji będzie trzeba skasować plik crashdumps/autoupload_enabled.conf");
+				ImGui::TextUnformatted("W celu wyłączenia tej funkcji będzie trzeba skasować plik crashdumps/autoupload_enabled.conf");
 				ImGui::EndTooltip();
 			}
 
 			ImGui::NewLine();
-			n = ImGui::Button(u8"Nie", ImVec2S(60, 0));
+			n = ImGui::Button("Nie", ImVec2S(60, 0));
 			ImGui::End();
 		}
 		else
