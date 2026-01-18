@@ -1916,7 +1916,7 @@ void TSubModel::deserialize(std::istream &s)
 	diffuseMultiplier = sn_utils::ld_float32(s);
 	// only multiply diffuse on experimental renderer
 	if (!Global.NvRenderer)
-		f4Diffuse /= diffuseMultiplier;
+		f4Diffuse /= diffuseMultiplier <= 0.0 ? 1.0 : diffuseMultiplier;
 
 	// necessary rotations were already done during t3d->e3d conversion
 	m_rotation_init_done = true;
