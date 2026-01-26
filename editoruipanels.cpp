@@ -322,6 +322,75 @@ bool itemproperties_panel::render_group()
 	return true;
 }
 
+brush_object_list::brush_object_list(std::string const &Name, bool const Isopen) : ui_panel(Name, Isopen)
+{
+	size_min = {50, 100};
+	size_max = {1000, 500};
+}
+
+bool brush_object_list::VectorGetter(void *data, int idx, const char **out_text)
+{
+	auto *vec = static_cast<std::vector<std::string> *>(data);
+
+	if (idx < 0 || idx >= vec->size())
+		return false;
+
+	*out_text = (*vec)[idx].c_str();
+	return true;
+}
+
+void brush_object_list::update(std::string nodeTemplate)
+{
+	Template = nodeTemplate;
+}
+std::string *brush_object_list::GetRandomObject()
+{
+	static std::string empty; // fallback
+
+	if (Objects.empty())
+		return &empty;
+
+	static std::mt19937 rng{std::random_device{}()};
+	std::uniform_int_distribution<size_t> dist(0, Objects.size() - 1);
+
+	return &Objects[dist(rng)];
+}
+
+void brush_object_list::render()
+{
+	if (false == is_open)
+	{
+		return;
+	}
+
+	auto flags = ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse | (size.x > 0 ? ImGuiWindowFlags_NoResize : 0);
+	if (ImGui::Begin("Brush random set", nullptr, flags))
+	{
+		ImGui::SliderFloat("Spacing", &spacing, 0.1f, 20.0f, "%.1f m");
+		ImGui::Checkbox("Enable brush random from set", &useRandom);
+		if (useRandom)
+		{
+			ImGui::Text("Set of objects to choose from:");
+			ImGui::ListBox("", &idx, VectorGetter, (void *)&Objects, Objects.size(), 6);
+			if (ImGui::Button("Add"))
+			{
+				if (!Template.empty())
+					Objects.push_back(Template);
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Remove") && idx >= 0 && idx < Objects.size())
+			{
+				Objects.erase(Objects.begin() + idx);
+			}
+			if (ImGui::Button("Remove all") && idx >= 0 && idx < Objects.size())
+			{
+				Objects.clear();
+			}
+		}
+		ImGui::End();
+	}
+}
+
 nodebank_panel::nodebank_panel(std::string const &Name, bool const Isopen) : ui_panel(Name, Isopen)
 {
 	size_min = {100, 50};
@@ -386,7 +455,6 @@ void nodebank_panel::nodebank_reload()
 
 void nodebank_panel::render()
 {
-
 	if (false == is_open)
 	{
 		return;
@@ -422,7 +490,7 @@ void nodebank_panel::render()
 
 		if (mode == BRUSH)
 		{
-			ImGui::SliderFloat("Spacing", &spacing, 0.1f, 20.0f, "%.1f m");
+			// ImGui::SliderFloat("Spacing", &spacing, 0.1f, 20.0f, "%.1f m");
 		}
 
 		ImGui::PushItemWidth(-1);

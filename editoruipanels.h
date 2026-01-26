@@ -47,6 +47,25 @@ class itemproperties_panel : public ui_panel
 	std::vector<text_line> m_grouplines;
 };
 
+class brush_object_list : public ui_panel
+{
+  private:
+	int idx;
+	static bool VectorGetter(void *data, int idx, const char **out_text);
+	std::string Template;
+
+  public:
+	brush_object_list(std::string const &Name, bool const Isopen);
+	void render() override;
+	void update(std::string nodeTemplate);
+
+	// class use
+	std::vector<std::string> Objects;
+	std::string *GetRandomObject();
+	bool useRandom = {false};
+	float spacing{1.0f};
+};
+
 class nodebank_panel : public ui_panel
 {
 
@@ -59,8 +78,6 @@ class nodebank_panel : public ui_panel
 		BRUSH
 	};
 	edit_mode mode = MODIFY;
-
-	float spacing{1.0f};
 
 	nodebank_panel(std::string const &Name, bool const Isopen);
 	void nodebank_reload();

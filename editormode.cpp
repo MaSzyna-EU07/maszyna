@@ -68,6 +68,12 @@ bool editor_mode::update()
 		Console::Update(); // to i tak trzeba wywoływać
 #endif
 		m_userinterface->update();
+
+		// brush settings window
+		editor_ui *ui = static_cast<editor_ui *>(m_userinterface.get());
+		auto const mode = static_cast<editor_ui *>(m_userinterface.get())->mode();
+		ui->toggleBrushSettings(mode == nodebank_panel::BRUSH);
+
 		if (mouseHold)
 		{
 			auto const mode = static_cast<editor_ui *>(m_userinterface.get())->mode();
@@ -83,7 +89,9 @@ bool editor_mode::update()
 
 					    if (mode == nodebank_panel::BRUSH)
 					    {
+
 						    const std::string *src = ui->get_active_node_template();
+
 						    // std::string name =  "editor_" + std::to_string(LocalRandom(0.0, 100000.0));
 						    std::string name = "editor_" + generate_uuid_v4();
 

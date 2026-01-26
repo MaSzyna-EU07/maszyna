@@ -23,6 +23,7 @@ editor_ui::editor_ui()
 	add_external_panel(&m_itempropertiespanel);
 	add_external_panel(&m_nodebankpanel);
 	add_external_panel(&m_functionspanel);
+	add_external_panel(&m_brushobjects);
 }
 
 // updates state of UI elements
@@ -41,6 +42,16 @@ void editor_ui::update()
 	ui_layer::update();
 	m_itempropertiespanel.update(m_node);
 	m_functionspanel.update(m_node);
+
+	auto ptr = get_active_node_template(true);
+	if (ptr)
+		m_brushobjects.update(*ptr);
+}
+
+void editor_ui::toggleBrushSettings(bool isVisible)
+{
+	if (m_brushobjects.is_open != isVisible)
+		m_brushobjects.is_open = isVisible;
 }
 
 void editor_ui::set_node(scene::basic_node *Node)
@@ -53,8 +64,12 @@ void editor_ui::add_node_template(const std::string &desc)
 	m_nodebankpanel.add_template(desc);
 }
 
-std::string const *editor_ui::get_active_node_template()
+std::string const *editor_ui::get_active_node_template(bool bypassRandom)
 {
+	if (!bypassRandom && m_brushobjects.is_open && m_brushobjects.useRandom && m_brushobjects.Objects.size() > 0)
+	{
+		return m_brushobjects.GetRandomObject();
+	}
 	return m_nodebankpanel.get_active_template();
 }
 
@@ -64,7 +79,7 @@ nodebank_panel::edit_mode editor_ui::mode()
 }
 float editor_ui::getSpacing()
 {
-	return m_nodebankpanel.spacing;
+	return m_brushobjects.spacing;
 }
 
 functions_panel::rotation_mode editor_ui::rot_mode()
