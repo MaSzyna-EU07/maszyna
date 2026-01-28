@@ -37,7 +37,7 @@ MaSzyna executable source code is licensed under the [MPL 2.0](https://www.mozil
 MaSzyna compiles and runs natively on **Linux** and **Windows**. Other platforms are not tested.
 
 > **Heads-up**  
-> Our dev team is small; we keep improving the build process, but issues may still occur. If you get stuck, please ask on the [dev chat](https://milek7.pl:8065/eu07/channels/dev).
+> Our dev team is small; we keep improving the build process, but issues may still occur. If you get stuck, please ask on the [official Discord server](https://discord.gg/qAh9ctWPQv).
 
 ### Prerequisites
 
@@ -108,7 +108,7 @@ MaSzyna compiles and runs natively on **Linux** and **Windows**. Other platforms
 
 ```powershell
 # Clone repository with submodules
-git clone --recursive https://github.com/eu07/maszyna.git
+git clone --recursive https://github.com/MaSzyna-EU07/maszyna.git
 
 cd maszyna
 
@@ -152,7 +152,7 @@ sudo dnf install -y \
   libxkbcommon-devel
 
 # Clone repository with submodules
-git clone --recursive https://github.com/eu07/maszyna.git
+git clone --recursive https://github.com/MaSzyna-EU07/maszyna.git
 
 cd maszyna
 
@@ -213,9 +213,9 @@ If detection still fails, padding the file (with comments) up to ~1 MB may hel
 
 ## Support
 
--   **Issues:** [https://github.com/eu07/maszyna/issues](https://github.com/eu07/maszyna/issues)
+-   **Issues:** [https://github.com/MaSzyna-EU07/maszyna/issues](https://github.com/MaSzyna-EU07/maszyna/issues)
     
--   **Developer chat:** [https://milek7.pl:8065/eu07/channels/dev](https://milek7.pl:8065/eu07/channels/dev)
+-   **Official Discord Server:** [https://discord.gg/qAh9ctWPQv](https://discord.gg/qAh9ctWPQv)
     
 -   **Project page:** [https://eu07.pl/](https://eu07.pl/)
     
