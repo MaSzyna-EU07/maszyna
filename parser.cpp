@@ -233,7 +233,7 @@ std::string cParser::readTokenFromDelegate(bool ToLower, const char *Break)
 std::string cParser::readTokenFromStream(bool ToLower, const char *Break)
 {
 	std::string token;
-	// get the token yourself if the delegation attempt failed
+	token.reserve(64);
 
 	const auto breakTable = makeBreakTable(Break);
 	char c = 0;
