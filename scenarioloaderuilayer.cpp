@@ -19,7 +19,6 @@ using json = nlohmann::json;
 scenarioloader_ui::scenarioloader_ui()
 {
 	m_suppress_menu = true;
-	load_random_background();
 	generate_gradient_tex();
 	load_wheel_frames();
 

@@ -129,7 +129,6 @@ protected:
     static ImGuiIO *m_imguiio;
     static bool m_cursorvisible;
 
-	void load_random_background();
    virtual void render_menu_contents();
    ui_log_panel m_logpanel { "Log", true };
 	bool m_suppress_menu = false; // if `true`, the menu at the top of the window will not be present
