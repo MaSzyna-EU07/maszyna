@@ -15,7 +15,6 @@ launcher_ui::launcher_ui() : m_scenery_scanner(m_vehicles_bank), m_scenerylist_p
 	open_panel(&m_vehiclepicker_panel);
 	m_suppress_menu = true;
 
-	load_random_background();
 }
 
 bool launcher_ui::on_key(const int Key, const int Action)
