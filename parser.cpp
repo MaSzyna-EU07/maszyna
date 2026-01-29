@@ -404,12 +404,9 @@ std::string cParser::readToken(bool ToLower, const char *Break)
 
 	stripFirstTokenBOM(token, ToLower, Break);
 
-	// 4) parameter substitution
 	substituteParameters(token, ToLower);
 
-	// 5) include directive handling (may mutate token to next token)
 	handleIncludeIfPresent(token, ToLower, Break);
-
 
 	return token;
 }
