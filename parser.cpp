@@ -23,9 +23,35 @@ http://mozilla.org/MPL/2.0/.
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 // cParser -- generic class for parsing text data.
 
+namespace
+{
+inline std::array<bool, 256> makeBreakTable(const char *brk)
+{
+	std::array<bool, 256> arr{};
+	for (unsigned char c : std::string_view(brk ? brk : ""))
+	{
+		arr[c] = true;
+	}
+	return arr;
+}
+
+inline char toLowerChar(char c)
+{
+	return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+}
+
+inline bool startsWithBOM(const std::string &s)
+{
+	return s.size() >= 3
+		&& static_cast<unsigned char>(s[0]) == 0xEF
+		&& static_cast<unsigned char>(s[1]) == 0xBB
+		&& static_cast<unsigned char>(s[2]) == 0xBF;
+}
+} // namespace
+
 // constructors
 cParser::cParser(std::string const &Stream, buffertype const Type, std::string Path, bool const Loadtraction, std::vector<std::string> Parameters, bool allowRandom)
-    : mPath(Path), LoadTraction(Loadtraction), allowRandomIncludes(allowRandom)
+    : allowRandomIncludes(allowRandom), LoadTraction(Loadtraction), mPath(Path)
 {
 	// store to calculate sub-sequent includes from relative path
 	if (Type == buffertype::buffer_FILE)
@@ -192,181 +218,199 @@ bool cParser::getTokens(unsigned int Count, bool ToLower, const char *Break)
 		return true;
 }
 
-std::string cParser::readToken(bool ToLower, const char *Break)
+std::string cParser::readTokenFromDelegate(bool ToLower, const char *Break)
 {
-
-	std::string token;
-	if (mIncludeParser)
+	if (!mIncludeParser)
+		return {};
+	std::string token = mIncludeParser->readToken(ToLower, Break);
+	if (token.empty())
 	{
-		// see if there's include parsing going on. clean up when it's done.
-		token = mIncludeParser->readToken(ToLower, Break);
-		if (true == token.empty())
-		{
-			mIncludeParser = nullptr;
-		}
+		mIncludeParser = nullptr;
 	}
-	if (true == token.empty())
-	{
-		// get the token yourself if the delegation attempt failed
-		char c{0};
-		do
-		{
-			while (mStream->peek() != EOF && strchr(Break, c = mStream->get()) == NULL)
-			{
-				if (ToLower)
-					c = tolower(c);
-				token += c;
-				if (findQuotes(token)) // do glue together words enclosed in quotes
-					continue;
-				if (skipComments && trimComments(token)) // don't glue together words separated with comment
-					break;
-			}
-			if (c == '\n')
-			{
-				// update line counter
+	return token;
+}
+
+std::string cParser::readTokenFromStream(bool ToLower, const char *Break)
+{
+	std::string token;
+	// get the token yourself if the delegation attempt failed
+
+	const auto breakTable = makeBreakTable(Break);
+	char c = 0;
+
+
+	while (token.empty() && mStream->peek() != EOF) {
+		while (mStream->peek() != EOF) {
+			c = static_cast<char>(mStream->get());
+
+			if (c == '\n') {
 				++mLine;
 			}
-		} while (token == "" && mStream->peek() != EOF); // double check in case of consecutive separators
-	}
-	// check the first token for potential presence of utf bom
-	if (mFirstToken)
-	{
-		mFirstToken = false;
-		if (token.rfind("\xef\xbb\xbf", 0) == 0)
-		{
-			token.erase(0, 3);
-		}
-		if (true == token.empty())
-		{
-			// potentially possible if our first token was standalone utf bom
-			token = readToken(ToLower, Break);
+
+			const unsigned char uc = static_cast<unsigned char>(c);
+			if (breakTable[uc]) {
+				// separator ends token (or continues skipping if token empty)
+				if (!token.empty())
+					break;
+				continue;
+			}
+
+			if (ToLower) c = toLowerChar(c);
+			token.push_back(c);
+
+			if (findQuotes(token)) {
+				continue; // glue quoted content
+			}
+			if (skipComments && trimComments(token)) {
+				break; // don't glue tokens separated by comment
+			}
 		}
 	}
 
-	if (false == parameters.empty())
-	{
-		// if there's parameter list, check the token for potential parameters to replace
-		size_t pos; // początek podmienianego ciągu
-		while ((pos = token.find("(p")) != std::string::npos)
-		{
-			// check if the token is a parameter which should be replaced with stored true value
-			auto const parameter{token.substr(pos + 2, token.find(")", pos) - (pos + 2))}; // numer parametru
-			token.erase(pos, token.find(")", pos) - pos + 1); // najpierw usunięcie "(pN)"
-			size_t nr = atoi(parameter.c_str()) - 1;
-			if (nr < parameters.size())
-			{
-				token.insert(pos, parameters.at(nr)); // wklejenie wartości parametru
-				if (ToLower)
-					for (; pos < parameters.at(nr).size(); ++pos)
-						token[pos] = tolower(token[pos]);
-			}
-			else
-				token.insert(pos, "none"); // zabezpieczenie przed brakiem parametru
-		}
+	return token;
+}
+
+void cParser::stripFirstTokenBOM(std::string& token, bool ToLower, const char* Break) {
+	if (!mFirstToken) return;
+	mFirstToken = false;
+
+	if (startsWithBOM(token)) {
+		token.erase(0, 3);
 	}
 
-	// launch child parser if include directive found.
-	// NOTE: parameter collecting uses default set of token separators.
-	if (expandIncludes && token == "include")
-	{
-		std::string includefile = allowRandomIncludes ? deserialize_random_set(*this) : readToken(ToLower); // nazwa pliku
-		replace_slashes(includefile);
-		if ((true == LoadTraction) || ((false == contains(includefile, "tr/")) && (false == contains(includefile, "tra/"))))
-		{
-			if (false == contains(includefile, "_ter.scm"))
-			{
-				if (Global.ParserLogIncludes)
-				{
-					// WriteLog("including: " + includefile);
-				}
-				mIncludeParser = std::make_shared<cParser>(includefile, buffer_FILE, mPath, LoadTraction, readParameters(*this));
-				mIncludeParser->allowRandomIncludes = allowRandomIncludes;
-				mIncludeParser->autoclear(m_autoclear);
-				if (mIncludeParser->mSize <= 0)
-				{
-					ErrorLog("Bad include: can't open file \"" + includefile + "\"");
-				}
-			}
-			else
-			{
-				if (true == Global.file_binary_terrain_state)
-				{
-					WriteLog("SBT found, ignoring: " + includefile);
-					readParameters(*this);
-				}
-				else
-				{
-					if (Global.ParserLogIncludes)
-					{
-						WriteLog("including terrain: " + includefile);
-					}
-					mIncludeParser = std::make_shared<cParser>(includefile, buffer_FILE, mPath, LoadTraction, readParameters(*this));
-					mIncludeParser->allowRandomIncludes = allowRandomIncludes;
-					mIncludeParser->autoclear(m_autoclear);
-					if (mIncludeParser->mSize <= 0)
-					{
-						ErrorLog("Bad include: can't open file \"" + includefile + "\"");
-					}
-				}
-			}
-		}
-		else
-		{
-			while (token != "end")
-			{
-				token = readToken(true); // minimize risk of case mismatch on comparison
-			}
-		}
+	// if first "token" was standalone BOM, read the next real token (avoid recursion)
+	while (token.empty() && mStream->peek() != EOF) {
 		token = readToken(ToLower, Break);
+		// readToken will not re-enter BOM stripping because mFirstToken is now false
+		break;
 	}
-	else if ((std::strcmp(Break, "\n\r") == 0) && (token.compare(0, 7, "include") == 0))
-	{
-		// HACK: if the parser reads full lines we expect this line to contain entire include directive, to make parsing easier
+}
+
+void cParser::substituteParameters(std::string& token, bool ToLower) {
+	if (parameters.empty()) return;
+
+	// Replace occurrences of "(pN)" anywhere in token.
+	// Keep behavior: if missing parameter -> "none".
+	size_t pos = 0;
+	while ((pos = token.find("(p", pos)) != std::string::npos) {
+		const size_t close = token.find(')', pos);
+		if (close == std::string::npos) break; // malformed -> stop like old behavior (it would substr weirdly)
+
+		const std::string idxStr = token.substr(pos + 2, close - (pos + 2));
+		token.erase(pos, (close - pos) + 1);
+
+		const size_t nr = static_cast<size_t>(std::atoi(idxStr.c_str()));
+		const std::string repl = (nr >= 1 && (nr - 1) < parameters.size())
+			? parameters[nr - 1]
+			: std::string("none");
+
+		const size_t insertPos = pos;
+		token.insert(insertPos, repl);
+
+		if (ToLower) {
+			// Lowercase only what we inserted (same intent as original)
+			for (size_t i = insertPos; i < insertPos + repl.size(); ++i) {
+				token[i] = toLowerChar(token[i]);
+			}
+		}
+
+		pos = insertPos + repl.size(); // continue after inserted text
+	}
+}
+
+void cParser::skipIncludeBlock() {
+	// mimic original: while token != "end" readToken(true)
+	std::string t;
+	do {
+		t = readToken(true);
+	} while (t != "end" && !t.empty());
+}
+
+void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::string includefile) {
+	replace_slashes(includefile);
+
+	const bool allowTraction =
+		(true == LoadTraction) ||
+		((false == contains(includefile, "tr/")) && (false == contains(includefile, "tra/")));
+
+	if (!allowTraction) {
+		// skip include block until "end" (original behavior in token-mode include)
+		skipIncludeBlock();
+		return;
+	}
+
+	const bool isTerrain = contains(includefile, "_ter.scm");
+	if (isTerrain && true == Global.file_binary_terrain_state) {
+		WriteLog("SBT found, ignoring: " + includefile);
+		readParameters(srcParser); // preserve original side-effect: still consume parameters
+		return;
+	}
+
+	if (Global.ParserLogIncludes) {
+		if (isTerrain) WriteLog("including terrain: " + includefile);
+		else {
+			// WriteLog("including: " + includefile);
+		}
+	}
+
+	mIncludeParser = std::make_shared<cParser>(
+		includefile, /*buffer_FILE*/ static_cast<buffertype>(/*buffer_FILE*/ 0), mPath, LoadTraction, readParameters(srcParser)
+	);
+	mIncludeParser->allowRandomIncludes = allowRandomIncludes;
+	mIncludeParser->autoclear(m_autoclear);
+
+	if (mIncludeParser->mSize <= 0) {
+		ErrorLog("Bad include: can't open file \"" + includefile + "\"");
+	}
+}
+
+bool cParser::handleIncludeIfPresent(std::string& token, bool ToLower, const char* Break) {
+	// token-mode include: token == "include"
+	if (expandIncludes && token == "include") {
+		std::string includefile =
+			allowRandomIncludes ? deserialize_random_set(*this) : readToken(ToLower);
+
+		startIncludeFromParser(*this, ToLower, std::move(includefile));
+
+		// after processing include, return next token from current parser
+		token = readToken(ToLower, Break);
+		return true;
+	}
+
+	// line-mode HACK: Break == "\n\r" and line begins with "include"
+	if ((std::strcmp(Break, "\n\r") == 0) && token.compare(0, 7, "include") == 0) {
 		cParser includeparser(token.substr(7));
-		std::string includefile = allowRandomIncludes ? deserialize_random_set(includeparser) : includeparser.readToken(ToLower); // nazwa pliku
-		replace_slashes(includefile);
-		if ((true == LoadTraction) || ((false == contains(includefile, "tr/")) && (false == contains(includefile, "tra/"))))
-		{
-			if (false == contains(includefile, "_ter.scm"))
-			{
-				if (Global.ParserLogIncludes)
-				{
-					// WriteLog("including: " + includefile);
-				}
-				mIncludeParser = std::make_shared<cParser>(includefile, buffer_FILE, mPath, LoadTraction, readParameters(includeparser));
-				mIncludeParser->allowRandomIncludes = allowRandomIncludes;
-				mIncludeParser->autoclear(m_autoclear);
-				if (mIncludeParser->mSize <= 0)
-				{
-					ErrorLog("Bad include: can't open file \"" + includefile + "\"");
-				}
-			}
-			else
-			{
-				if (true == Global.file_binary_terrain_state)
-				{
-					WriteLog("SBT found, ignoring: " + includefile);
-					readParameters(includeparser);
-				}
-				else
-				{
-					if (Global.ParserLogIncludes)
-					{
-						WriteLog("including terrain: " + includefile);
-					}
-					mIncludeParser = std::make_shared<cParser>(includefile, buffer_FILE, mPath, LoadTraction, readParameters(includeparser));
-					mIncludeParser->allowRandomIncludes = allowRandomIncludes;
-					mIncludeParser->autoclear(m_autoclear);
-					if (mIncludeParser->mSize <= 0)
-					{
-						ErrorLog("Bad include: can't open file \"" + includefile + "\"");
-					}
-				}
-			}
-		}
+		std::string includefile =
+			allowRandomIncludes ? deserialize_random_set(includeparser) : includeparser.readToken(ToLower);
+
+		startIncludeFromParser(includeparser, ToLower, std::move(includefile));
+
 		token = readToken(ToLower, Break);
+		return true;
 	}
-	// all done
+
+	return false;
+}
+
+std::string cParser::readToken(bool ToLower, const char *Break)
+{
+	std::string token;
+
+	token = readTokenFromDelegate(ToLower, Break);
+	if (token.empty())
+	{
+		token = readTokenFromStream(ToLower, Break);
+	}
+
+	stripFirstTokenBOM(token, ToLower, Break);
+
+	// 4) parameter substitution
+	substituteParameters(token, ToLower);
+
+	// 5) include directive handling (may mutate token to next token)
+	handleIncludeIfPresent(token, ToLower, Break);
+
+
 	return token;
 }
 

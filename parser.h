@@ -66,7 +66,12 @@ class cParser //: public std::stringstream
             return m_autoclear; }
     bool
         getTokens( unsigned int Count = 1, bool ToLower = true, char const *Break = "\n\r\t ;" );
-    // returns next incoming token, if any, without removing it from the set
+	std::string readTokenFromDelegate(bool ToLower, const char *Break);
+	std::string readTokenFromStream(bool ToLower, const char *Break);
+	void stripFirstTokenBOM(std::string &token, bool ToLower, const char *Break);
+	void substituteParameters(std::string &token, bool ToLower);
+	void skipIncludeBlock();
+	// returns next incoming token, if any, without removing it from the set
     inline
     std::string
         peek() const {
@@ -95,9 +100,11 @@ class cParser //: public std::stringstream
     bool skipComments = true;
 
   private:
-    // methods:
+	void startIncludeFromParser(cParser &srcParser, bool ToLower, std::string includefile);
+	bool handleIncludeIfPresent(std::string &token, bool ToLower, const char *Break);
+	// methods:
     std::string readToken(bool ToLower = true, const char *Break = "\n\r\t ;");
-    std::vector<std::string> readParameters( cParser &Input );
+	static std::vector<std::string> readParameters( cParser &Input );
     std::string readQuotes( char const Quote = '\"' );
     void skipComment( std::string const &Endmark );
     bool findQuotes( std::string &String );
