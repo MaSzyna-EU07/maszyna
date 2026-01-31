@@ -13,8 +13,46 @@ http://mozilla.org/MPL/2.0/.
 #include "translation.h"
 #include <nlohmann/json.hpp>
 #include "Logs.h"
+#include <sstream>
 
 using json = nlohmann::json;
+
+// Helper function to count UTF-8 characters (not bytes)
+size_t utf8_char_count(const std::string& str)
+{
+	size_t count = 0;
+	for (size_t i = 0; i < str.length(); )
+	{
+		unsigned char c = static_cast<unsigned char>(str[i]);
+		if ((c & 0x80) == 0x00)
+		{
+			// 1-byte character (ASCII)
+			i += 1;
+		}
+		else if ((c & 0xE0) == 0xC0)
+		{
+			// 2-byte character
+			i += 2;
+		}
+		else if ((c & 0xF0) == 0xE0)
+		{
+			// 3-byte character (most Chinese characters)
+			i += 3;
+		}
+		else if ((c & 0xF8) == 0xF0)
+		{
+			// 4-byte character
+			i += 4;
+		}
+		else
+		{
+			// Invalid UTF-8, skip
+			i += 1;
+		}
+		count++;
+	}
+	return count;
+}
 
 scenarioloader_ui::scenarioloader_ui()
 {
@@ -42,23 +80,94 @@ std::vector<std::string> scenarioloader_ui::get_random_trivia()
 
 	//std::string lang = Global.asLang;
 	WriteLog("Selected language: " + Global.asLang);
-	std::ifstream f(triviaFile);
-	json triviaData = json::parse(f);
+	// Read file in binary mode to preserve UTF-8 encoding
+	std::ifstream f(triviaFile, std::ios::binary);
+	std::stringstream buffer;
+	buffer << f.rdbuf();
+	std::string fileContent = buffer.str();
+	json triviaData = json::parse(fileContent);
 
-	// select random 
+	// select random
 	int i = RandomInt(0, static_cast<int>(triviaData.size()) - 1);
 	std::string triviaStr = triviaData[i]["text"];
 	std::string background = triviaData[i]["background"];
 
-	// divide trivia into multiple lines
-	const int max_line_length = 100;
-	while (triviaStr.length() > max_line_length)
+	// divide trivia into multiple lines - UTF-8 safe implementation
+	// Different languages need different character limits due to character width differences
+	int max_line_length = 100;  // Default for Latin languages
+	if (Global.asLang == "zh")
 	{
-		int split_pos = triviaStr.rfind(' ', max_line_length);
+		max_line_length = 60;  // Reduced for Chinese
+	}
+
+	// Find byte position corresponding to character count
+	auto get_byte_pos_for_char_count = [&](const std::string& str, size_t char_count) -> size_t {
+		size_t byte_pos = 0;
+		size_t current_chars = 0;
+		for (size_t i = 0; i < str.length() && current_chars < char_count; )
+		{
+			unsigned char c = static_cast<unsigned char>(str[i]);
+			if ((c & 0x80) == 0x00)
+			{
+				i += 1;
+			}
+			else if ((c & 0xE0) == 0xC0)
+			{
+				i += 2;
+			}
+			else if ((c & 0xF0) == 0xE0)
+			{
+				i += 3;
+			}
+			else if ((c & 0xF8) == 0xF0)
+			{
+				i += 4;
+			}
+			else
+			{
+				i += 1;
+			}
+			current_chars++;
+			byte_pos = i;
+		}
+		return byte_pos;
+	};
+
+	// UTF-8 safe find space within character limit
+	auto find_space_before_char_count = [&](const std::string& str, size_t max_chars) -> size_t {
+		size_t byte_limit = get_byte_pos_for_char_count(str, max_chars);
+		size_t search_limit = std::min(str.length(), byte_limit);
+
+		// Search backwards for a space that's not in the middle of a UTF-8 sequence
+		for (int idx = static_cast<int>(search_limit); idx >= 0; idx--) {
+			// Check if this position is a valid place to split (not in middle of UTF-8 char)
+			// A UTF-8 continuation byte has the form 10xxxxxx (0x80-0xBF)
+			if (idx == 0 || (static_cast<unsigned char>(str[idx - 1]) & 0xC0) != 0x80) {
+				// This is the start of a character (or beginning of string), check if it's a space
+				if (idx > 0 && str[idx - 1] == ' ') {
+					return idx - 1;  // Position of the space
+				}
+			}
+		}
+		return std::string::npos;  // No suitable space found
+	};
+
+	// Use character count for proper UTF-8 text wrapping
+	while (utf8_char_count(triviaStr) > static_cast<size_t>(max_line_length))
+	{
+		size_t split_pos = find_space_before_char_count(triviaStr, static_cast<size_t>(max_line_length));
 		if (split_pos == std::string::npos)
-			split_pos = max_line_length; // no space found, force split
+		{
+			// No space found, split at max character count
+			split_pos = get_byte_pos_for_char_count(triviaStr, static_cast<size_t>(max_line_length));
+		}
 		trivia.push_back(triviaStr.substr(0, split_pos));
-		triviaStr = triviaStr.substr(split_pos + 1); // +1 to skip the space
+		triviaStr = triviaStr.substr(split_pos);
+		// Skip leading whitespace in the next line
+		while (!triviaStr.empty() && triviaStr[0] == ' ')
+		{
+			triviaStr = triviaStr.substr(1);
+		}
 	}
 
 	// if triviaStr is not empty add this as last line
