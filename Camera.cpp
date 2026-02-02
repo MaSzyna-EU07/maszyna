@@ -109,15 +109,7 @@ TCamera::OnCommand( command_data const &Command ) {
                     10.0 :
                     1.0 );
             // up-down
-            auto const moveyparam { Command.param1 };
-            // 2/3rd of the stick range lerps walk speed, past that we lerp between max walk and run speed
-            auto const movey { walkspeed * std::min(std::abs(moveyparam) * (1.0 / stickthreshold), 1.0)
-                + ( std::max( 0.0, std::abs( moveyparam ) - stickthreshold ) / (1.0 - stickthreshold) ) * std::max( 0.0, movespeed - walkspeed ) };
-
-            m_moverate.y = (
-                moveyparam > 0.0 ?  movey * speedmultiplier :
-                moveyparam < 0.0 ? -movey * speedmultiplier :
-                0.0 );
+            m_moverate.y = ComputeAxisSpeed(Command.param1, walkspeed, movespeed, stickthreshold) * speedmultiplier;
 
             break;
         }
