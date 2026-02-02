@@ -152,12 +152,7 @@ void TCamera::Update()
 
     Angle.y -= m_rotationoffsets.y * rotationfactor;
     m_rotationoffsets.y *= ( 1.0 - rotationfactor );
-    while( Angle.y > M_PI ) {
-        Angle.y -= 2 * M_PI;
-    }
-    while( Angle.y < -M_PI ) {
-        Angle.y += 2 * M_PI;
-    }
+    Angle.y = std::remainder(Angle.y, 2.0 * M_PI);
 
     // Limit the camera pitch to +/- 90°.
     Angle.x = clamp(Angle.x - (m_rotationoffsets.x * rotationfactor), -M_PI_2, M_PI_2);
