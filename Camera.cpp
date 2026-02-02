@@ -38,8 +38,8 @@ void TCamera::Reset() {
 
 
 void TCamera::OnCursorMove(double x, double y) {
-
-    m_rotationoffsets += glm::dvec3 { y, x, 0.0 };
+    m_rotationoffsets.x += y;
+    m_rotationoffsets.y += x;
 }
 
 static double ComputeAxisSpeed(double param, double walkspeed, double maxspeed, double threshold) {
