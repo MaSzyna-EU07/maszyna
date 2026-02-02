@@ -42,6 +42,15 @@ void TCamera::OnCursorMove(double x, double y) {
     m_rotationoffsets += glm::dvec3 { y, x, 0.0 };
 }
 
+static double ComputeAxisSpeed(double param, double walkspeed, double maxspeed, double threshold) {
+    double absval = std::abs(param);
+    // 2/3rd of the stick range lerps walk speed, past that we lerp between max walk and run speed
+    double walk = walkspeed * std::min(absval / threshold, 1.0);
+    double run  = (std::max(0.0, absval - threshold) / (1.0 - threshold)) * std::max(0.0, maxspeed - walkspeed);
+    return (param >= 0.0 ? 1.0 : -1.0) * (walk + run);
+}
+
+
 bool
 TCamera::OnCommand( command_data const &Command ) {
 
@@ -78,26 +87,9 @@ TCamera::OnCommand( command_data const &Command ) {
                     1.0 );
 
             // left-right
-            auto const movexparam { Command.param1 };
-            // 2/3rd of the stick range lerps walk speed, past that we lerp between max walk and run speed
-            auto const movex { walkspeed * std::min(std::abs(movexparam) * (1.0 / stickthreshold), 1.0)
-                + ( std::max( 0.0, std::abs( movexparam ) - stickthreshold ) / (1.0 - stickthreshold) ) * std::max( 0.0, movespeed - walkspeed ) };
-
-            m_moverate.x = (
-                movexparam > 0.0 ?  movex * speedmultiplier :
-                movexparam < 0.0 ? -movex * speedmultiplier :
-                0.0 );
-
+            m_moverate.x = ComputeAxisSpeed(Command.param1, walkspeed, movespeed, stickthreshold) * speedmultiplier;
             // forward-back
-            double const movezparam { Command.param2 };
-            auto const movez { walkspeed * std::min(std::abs(movezparam) * (1.0 / stickthreshold), 1.0)
-                + ( std::max( 0.0, std::abs( movezparam ) - stickthreshold ) / (1.0 - stickthreshold) ) * std::max( 0.0, movespeed - walkspeed ) };
-
-            // NOTE: z-axis is flipped given world coordinate system
-            m_moverate.z = (
-                movezparam > 0.0 ? -movez * speedmultiplier :
-                movezparam < 0.0 ?  movez * speedmultiplier :
-                0.0 );
+            m_moverate.z = -ComputeAxisSpeed(Command.param2, walkspeed, movespeed, stickthreshold) * speedmultiplier;
 
             break;
         }
