@@ -132,6 +132,12 @@ TCamera::OnCommand( command_data const &Command ) {
     return iscameracommand;
 }
 
+static void UpdateVelocityAxis(double& velocity, double moverate, double deltatime)
+{
+    velocity = clamp(velocity + moverate * 10.0 * deltatime, -std::abs(moverate), std::abs(moverate));
+}
+
+
 void TCamera::Update()
 {
     // check for sent user commands
@@ -164,9 +170,9 @@ void TCamera::Update()
      || ( true == DebugCameraFlag ) ) {
         // ctrl is used for mirror view, so we ignore the controls when in vehicle if ctrl is pressed
         // McZapkie-170402: poruszanie i rozgladanie we free takie samo jak w follow
-        Velocity.x = clamp( Velocity.x + m_moverate.x * 10.0 * deltatime, -std::abs( m_moverate.x ), std::abs( m_moverate.x ) );
-        Velocity.z = clamp( Velocity.z + m_moverate.z * 10.0 * deltatime, -std::abs( m_moverate.z ), std::abs( m_moverate.z ) );
-        Velocity.y = clamp( Velocity.y + m_moverate.y * 10.0 * deltatime, -std::abs( m_moverate.y ), std::abs( m_moverate.y ) );
+        UpdateVelocityAxis(Velocity.x, m_moverate.x, deltatime);
+        UpdateVelocityAxis(Velocity.y, m_moverate.y, deltatime);
+        UpdateVelocityAxis(Velocity.z, m_moverate.z, deltatime);
     }
     if( ( m_owner == nullptr )
      || ( true == DebugCameraFlag ) ) {
