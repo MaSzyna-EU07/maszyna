@@ -38,9 +38,18 @@ void TCamera::Reset() {
 
 
 void TCamera::OnCursorMove(double x, double y) {
-
-    m_rotationoffsets += glm::dvec3 { y, x, 0.0 };
+    m_rotationoffsets.x += y;
+    m_rotationoffsets.y += x;
 }
+
+static double ComputeAxisSpeed(double param, double walkspeed, double maxspeed, double threshold) {
+    double absval = std::abs(param);
+    // 2/3rd of the stick range lerps walk speed, past that we lerp between max walk and run speed
+    double walk = walkspeed * std::min(absval / threshold, 1.0);
+    double run  = (std::max(0.0, absval - threshold) / (1.0 - threshold)) * std::max(0.0, maxspeed - walkspeed);
+    return (param >= 0.0 ? 1.0 : -1.0) * (walk + run);
+}
+
 
 bool
 TCamera::OnCommand( command_data const &Command ) {
@@ -78,26 +87,9 @@ TCamera::OnCommand( command_data const &Command ) {
                     1.0 );
 
             // left-right
-            auto const movexparam { Command.param1 };
-            // 2/3rd of the stick range lerps walk speed, past that we lerp between max walk and run speed
-            auto const movex { walkspeed * std::min(std::abs(movexparam) * (1.0 / stickthreshold), 1.0)
-                + ( std::max( 0.0, std::abs( movexparam ) - stickthreshold ) / (1.0 - stickthreshold) ) * std::max( 0.0, movespeed - walkspeed ) };
-
-            m_moverate.x = (
-                movexparam > 0.0 ?  movex * speedmultiplier :
-                movexparam < 0.0 ? -movex * speedmultiplier :
-                0.0 );
-
+            m_moverate.x = ComputeAxisSpeed(Command.param1, walkspeed, movespeed, stickthreshold) * speedmultiplier;
             // forward-back
-            double const movezparam { Command.param2 };
-            auto const movez { walkspeed * std::min(std::abs(movezparam) * (1.0 / stickthreshold), 1.0)
-                + ( std::max( 0.0, std::abs( movezparam ) - stickthreshold ) / (1.0 - stickthreshold) ) * std::max( 0.0, movespeed - walkspeed ) };
-
-            // NOTE: z-axis is flipped given world coordinate system
-            m_moverate.z = (
-                movezparam > 0.0 ? -movez * speedmultiplier :
-                movezparam < 0.0 ?  movez * speedmultiplier :
-                0.0 );
+            m_moverate.z = -ComputeAxisSpeed(Command.param2, walkspeed, movespeed, stickthreshold) * speedmultiplier;
 
             break;
         }
@@ -117,15 +109,7 @@ TCamera::OnCommand( command_data const &Command ) {
                     10.0 :
                     1.0 );
             // up-down
-            auto const moveyparam { Command.param1 };
-            // 2/3rd of the stick range lerps walk speed, past that we lerp between max walk and run speed
-            auto const movey { walkspeed * std::min(std::abs(moveyparam) * (1.0 / stickthreshold), 1.0)
-                + ( std::max( 0.0, std::abs( moveyparam ) - stickthreshold ) / (1.0 - stickthreshold) ) * std::max( 0.0, movespeed - walkspeed ) };
-
-            m_moverate.y = (
-                moveyparam > 0.0 ?  movey * speedmultiplier :
-                moveyparam < 0.0 ? -movey * speedmultiplier :
-                0.0 );
+            m_moverate.y = ComputeAxisSpeed(Command.param1, walkspeed, movespeed, stickthreshold) * speedmultiplier;
 
             break;
         }
@@ -139,6 +123,12 @@ TCamera::OnCommand( command_data const &Command ) {
 
     return iscameracommand;
 }
+
+static void UpdateVelocityAxis(double& velocity, double moverate, double deltatime)
+{
+    velocity = clamp(velocity + moverate * 10.0 * deltatime, -std::abs(moverate), std::abs(moverate));
+}
+
 
 void TCamera::Update()
 {
@@ -160,12 +150,7 @@ void TCamera::Update()
 
     Angle.y -= m_rotationoffsets.y * rotationfactor;
     m_rotationoffsets.y *= ( 1.0 - rotationfactor );
-    while( Angle.y > M_PI ) {
-        Angle.y -= 2 * M_PI;
-    }
-    while( Angle.y < -M_PI ) {
-        Angle.y += 2 * M_PI;
-    }
+    Angle.y = std::remainder(Angle.y, 2.0 * M_PI);
 
     // Limit the camera pitch to +/- 90°.
     Angle.x = clamp(Angle.x - (m_rotationoffsets.x * rotationfactor), -M_PI_2, M_PI_2);
@@ -177,9 +162,9 @@ void TCamera::Update()
      || ( true == DebugCameraFlag ) ) {
         // ctrl is used for mirror view, so we ignore the controls when in vehicle if ctrl is pressed
         // McZapkie-170402: poruszanie i rozgladanie we free takie samo jak w follow
-        Velocity.x = clamp( Velocity.x + m_moverate.x * 10.0 * deltatime, -std::abs( m_moverate.x ), std::abs( m_moverate.x ) );
-        Velocity.z = clamp( Velocity.z + m_moverate.z * 10.0 * deltatime, -std::abs( m_moverate.z ), std::abs( m_moverate.z ) );
-        Velocity.y = clamp( Velocity.y + m_moverate.y * 10.0 * deltatime, -std::abs( m_moverate.y ), std::abs( m_moverate.y ) );
+        UpdateVelocityAxis(Velocity.x, m_moverate.x, deltatime);
+        UpdateVelocityAxis(Velocity.y, m_moverate.y, deltatime);
+        UpdateVelocityAxis(Velocity.z, m_moverate.z, deltatime);
     }
     if( ( m_owner == nullptr )
      || ( true == DebugCameraFlag ) ) {
