@@ -11,7 +11,7 @@ scenery_scanner::scenery_scanner(ui::vehicles_bank &bank)
 void scenery_scanner::scan()
 {
 	for (auto &f : std::filesystem::directory_iterator("scenery")) {
-		std::filesystem::path path(std::filesystem::relative(f.path(), "scenery/"));
+		std::filesystem::path path(std::filesystem::relative(f.path(), paths::scenery));
 
 		if (*(path.filename().string().begin()) == '$')
 			continue;
@@ -32,7 +32,7 @@ void scenery_scanner::scan_scn(std::filesystem::path path)
 	scenery_desc &desc = scenarios.back();
 	desc.path = path;
 
-	std::string file_path = "scenery/" + path.string();
+	std::string file_path = paths::scenery + path.string();
 
 	cParser parser(file_path, cParser::buffer_FILE);
 	parser.expandIncludes = false;

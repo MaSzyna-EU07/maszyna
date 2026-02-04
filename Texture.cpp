@@ -1467,7 +1467,7 @@ texture_manager::find_in_databank( std::string const &Texturename ) const {
     std::vector<std::string> const filenames {
         Global.asCurrentTexturePath + Texturename,
         Texturename,
-        szTexturePath + Texturename };
+        paths::textures + Texturename };
 
     for( auto const &filename : filenames ) {
         auto const lookup { m_texturemappings.find( filename ) };
@@ -1486,7 +1486,7 @@ texture_manager::find_on_disk( std::string const &Texturename ) {
     std::vector<std::string> const filenames {
         Global.asCurrentTexturePath + Texturename,
         Texturename,
-        szTexturePath + Texturename };
+        paths::textures + Texturename };
 
     auto lookup =
         FileExists(

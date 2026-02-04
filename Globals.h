@@ -65,7 +65,7 @@ struct global_settings {
     int iPause{ 0 }; // globalna pauza ruchu: b0=start,b1=klawisz,b2=tło,b3=lagi,b4=wczytywanie
     float AirTemperature{ 15.f };
     std::string asCurrentSceneryPath{ "scenery/" };
-    std::string asCurrentTexturePath{ szTexturePath };
+    std::string asCurrentTexturePath{ paths::textures };
     std::string asCurrentDynamicPath;
     int CurrentMaxTextureSize{ 4096 };
     bool UpdateMaterials{ true };

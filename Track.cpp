@@ -2266,9 +2266,9 @@ TTrack::export_as_text_( std::ostream &Output ) const {
             m_material1 != null_handle ?
                 GfxRenderer->Material( m_material1 )->GetName() :
                 "none" ) };
-        if( texturefile.find( szTexturePath ) == 0 ) {
+        if( texturefile.find( paths::textures ) == 0 ) {
             // don't include 'textures/' in the path
-            texturefile.erase( 0, std::string{ szTexturePath }.size() );
+            texturefile.erase( 0, std::string{ paths::textures }.size() );
         }
         Output
             << texturefile << ' '
@@ -2278,9 +2278,9 @@ TTrack::export_as_text_( std::ostream &Output ) const {
             m_material2 != null_handle ?
                 GfxRenderer->Material( m_material2 )->GetName() :
                 "none" );
-        if( texturefile.find( szTexturePath ) == 0 ) {
+        if( texturefile.find( paths::textures ) == 0 ) {
             // don't include 'textures/' in the path
-            texturefile.erase( 0, std::string{ szTexturePath }.size() );
+            texturefile.erase( 0, std::string{ paths::textures }.size() );
         }
         Output << texturefile << ' ';
 
@@ -2351,9 +2351,9 @@ TTrack::export_as_text_( std::ostream &Output ) const {
     if( ( eType == tt_Switch )
      && ( SwitchExtension->m_material3 != null_handle ) ) {
         auto texturefile { GfxRenderer->Material( m_material2 )->GetName() };
-        if( texturefile.find( szTexturePath ) == 0 ) {
+        if( texturefile.find( paths::textures ) == 0 ) {
             // don't include 'textures/' in the path
-            texturefile.erase( 0, std::string{ szTexturePath }.size() );
+            texturefile.erase( 0, std::string{ paths::textures }.size() );
         }
         Output << "trackbed " << texturefile << ' ';
     }
@@ -2384,7 +2384,7 @@ std::string TTrack::tooltip() const
 std::pair<std::string, int>
 TTrack::fetch_track_rail_profile( std::string const &Profile ) {
 
-    auto const railprofilepath { std::string( szModelPath ) + "tory/railprofile_" };
+    auto const railprofilepath { std::string( paths::models ) + "tory/railprofile_" };
     auto const railkeyprefix { std::string( "rail_" ) };
 
     if( m_profiles.empty() ) {
@@ -2414,7 +2414,7 @@ TTrack::fetch_default_profiles() {
 
     if( false == m_profiles.empty() ) { return; }
 
-    auto const railprofilepath { std::string( szModelPath ) + "tory/railprofile_" };
+    auto const railprofilepath { std::string( paths::models ) + "tory/railprofile_" };
     auto const railkeyprefix { std::string( "rail_" ) };
 
     m_profiles.emplace_back( deserialize_profile( railprofilepath + "default" ) );

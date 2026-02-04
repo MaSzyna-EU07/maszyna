@@ -211,7 +211,7 @@ std::string cParser::readToken(bool ToLower, const char *Break)
 		char c{0};
 		do
 		{
-			while (mStream->peek() != EOF && strchr(Break, c = mStream->get()) == NULL)
+			while (mStream->peek() != EOF && strchr(Break, c = mStream->get()) == nullptr)
 			{
 				if (ToLower)
 					c = tolower(c);

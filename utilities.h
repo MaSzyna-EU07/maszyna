@@ -12,8 +12,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 
 #include <string>
-#include <fstream>
 #include <ctime>
+#include <chrono>
 #include <vector>
 #include <sstream>
 #include "parser.h"
@@ -23,18 +23,21 @@ http://mozilla.org/MPL/2.0/.
 
 template <typename T> T sign(T x)
 {
-	return x < static_cast<T>(0) ? static_cast<T>(-1) : (x > static_cast<T>(0) ? static_cast<T>(1) : static_cast<T>(0));
+	return x < static_cast<T>(0) ? static_cast<T>(-1) : x > static_cast<T>(0) ? static_cast<T>(1) : static_cast<T>(0);
 }
 
 #define DegToRad(a) ((M_PI / 180.0) * (a)) //(a) w nawiasie, bo może być dodawaniem
 #define RadToDeg(r) ((180.0 / M_PI) * (r))
 
-#define szSceneryPath "scenery/"
-#define szTexturePath "textures/"
-#define szModelPath "models/"
-#define szDynamicPath "dynamic/"
-#define szSoundPath "sounds/"
-#define szDataPath "data/"
+
+namespace paths {
+inline constexpr const char* scenery  = "scenery/";
+inline constexpr const char* textures = "textures/";
+inline constexpr const char* models   = "models/";
+inline constexpr const char* dynamic  = "dynamic/";
+inline constexpr const char* sounds   = "sounds/";
+inline constexpr const char* data     = "data/";
+}
 
 #define MAKE_ID4(a, b, c, d) (((std::uint32_t)(d) << 24) | ((std::uint32_t)(c) << 16) | ((std::uint32_t)(b) << 8) | (std::uint32_t)(a))
 
@@ -56,7 +59,6 @@ inline double Sign(double x)
 inline long Round(double const f)
 {
 	return (long)(f + 0.5);
-	// return lround(f);
 }
 
 double Random(double a, double b);
@@ -86,13 +88,14 @@ inline double LocalRandom(double b)
 
 inline double BorlandTime()
 {
-	auto timesinceepoch = std::time(nullptr);
-	return timesinceepoch / (24.0 * 60 * 60);
-	/*
-	    // std alternative
-	    auto timesinceepoch = std::chrono::system_clock::now().time_since_epoch();
-	    return std::chrono::duration_cast<std::chrono::seconds>( timesinceepoch ).count() / (24.0 * 60 * 60);
-	*/
+	using namespace std::chrono;
+
+	constexpr double secondsPerDay = 86400.0;
+
+	const auto now = system_clock::now();
+	const auto seconds = duration_cast<seconds>(now.time_since_epoch()).count();
+
+	return seconds / secondsPerDay;
 }
 
 std::string Now();
@@ -122,7 +125,6 @@ std::string DWE(std::string s); /*Delete While Equal sign*/
 std::string ExchangeCharInString(std::string const &Source, char const From, char const To); // zamienia jeden znak na drugi
 std::vector<std::string> &Split(const std::string &s, char delim, std::vector<std::string> &elems);
 std::vector<std::string> Split(const std::string &s, char delim);
-// std::vector<std::string> Split(const std::string &s);
 std::pair<std::string, int> split_string_and_number(std::string const &Key);
 
 std::string to_string(int Value);
@@ -159,7 +161,6 @@ std::string ToUpper(std::string const &text);
 
 // replaces polish letters with basic ascii
 void win1250_to_ascii(std::string &Input);
-// TODO: unify with win1250_to_ascii()
 std::string Bezogonkow(std::string Input, bool const Underscorestospaces = false);
 
 std::string win1250_to_utf8(const std::string &input);

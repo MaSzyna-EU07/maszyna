@@ -314,7 +314,7 @@ size_t NvTextureManager::FetchTexture(std::string path, int format_hint,
 
   {
     const std::array<std::string, 3> filenames{
-        Global.asCurrentTexturePath + path, path, szTexturePath + path};
+        Global.asCurrentTexturePath + path, path, paths::textures + path};
     for (const auto &filename : filenames) {
       if (auto found = m_texture_map.find(filename);
           found != m_texture_map.end())

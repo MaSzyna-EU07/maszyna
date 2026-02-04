@@ -35,6 +35,8 @@ bool EditorModeFlag = false;
 bool DebugCameraFlag = false;
 bool DebugTractionFlag = false;
 
+
+
 double Max0R(double x1, double x2)
 {
 	if (x1 > x2)
@@ -51,16 +53,14 @@ double Min0R(double x1, double x2)
 		return x2;
 }
 
-// shitty replacement for Borland timestamp function
-// TODO: replace with something sensible
 std::string Now()
 {
+	using namespace std::chrono;
 
-	std::time_t timenow = std::time(nullptr);
-	std::tm tm = *std::localtime(&timenow);
-	std::stringstream converter;
-	converter << std::put_time(&tm, "%c");
-	return converter.str();
+	auto now = system_clock::now();
+	auto ms  = duration_cast<milliseconds>(now.time_since_epoch()) % 1000;
+
+	return std::format("{:%Y-%m-%d %H:%M:%S}.{:03}", now, ms.count());
 }
 
 // zwraca różnicę czasu
@@ -69,14 +69,14 @@ std::string Now()
 double CompareTime(double t1h, double t1m, double t2h, double t2m)
 {
 
-	if ((t2h < 0))
+	if (t2h < 0)
 		return 0;
 	else
 	{
 		auto t = (t2h - t1h) * 60 + t2m - t1m; // jeśli t2=00:05, a t1=23:50, to różnica wyjdzie ujemna
-		if ((t < -720)) // jeśli różnica przekracza 12h na minus
+		if (t < -720) // jeśli różnica przekracza 12h na minus
 			t = t + 1440; // to dodanie doby minut;else
-		if ((t > 720)) // jeśli przekracza 12h na plus
+		if (t > 720) // jeśli przekracza 12h na plus
 			t = t - 1440; // to odjęcie doby minut
 		return t;
 	}
@@ -103,16 +103,12 @@ bool SetFlag(int &Flag, int const Value)
 
 bool ClearFlag(int &Flag, int const Value)
 {
-
 	if (true == TestFlag(Flag, Value))
 	{
 		Flag &= ~Value;
 		return true;
 	}
-	else
-	{
-		return false;
-	}
+	return false;
 }
 
 double Random(double a, double b)
@@ -130,34 +126,35 @@ int RandomInt(int min, int max)
 
 std::string generate_uuid_v4()
 {
-	std::random_device rd;
-	std::mt19937 gen(rd());
-	std::uniform_int_distribution<int> dist(0, 255);
-
 	std::array<uint8_t, 16> bytes;
-	for (auto &b : bytes)
-		b = static_cast<uint8_t>(dist(gen));
 
-	// UUID v4 (RFC 4122)
+	std::uniform_int_distribution<uint16_t> dist(0, 255);
+
+	for (auto& b : bytes)
+		b = static_cast<uint8_t>(dist(Global.random_engine));
+
+	// RFC 4122 compliance
 	bytes[6] = (bytes[6] & 0x0F) | 0x40;
 	bytes[8] = (bytes[8] & 0x3F) | 0x80;
 
-	char buf[37]; // 36 znaków + \0
-	std::snprintf(buf, sizeof(buf),
-	              "%02x%02x%02x%02x-"
-	              "%02x%02x-"
-	              "%02x%02x-"
-	              "%02x%02x-"
-	              "%02x%02x%02x%02x%02x%02x",
-	              bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]);
-
-	return std::string(buf);
+	return std::format(
+		"{:02x}{:02x}{:02x}{:02x}-"
+		"{:02x}{:02x}-"
+		"{:02x}{:02x}-"
+		"{:02x}{:02x}-"
+		"{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+		bytes[0], bytes[1], bytes[2], bytes[3],
+		bytes[4], bytes[5],
+		bytes[6], bytes[7],
+		bytes[8], bytes[9],
+		bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+	);
 }
 
 double LocalRandom(double a, double b)
 {
 	uint32_t val = Global.local_random_engine();
-	return interpolate(a, b, (double)val / Global.random_engine.max());
+	return interpolate(a, b, (double)val / Global.local_random_engine.max());
 }
 
 bool FuzzyLogic(double Test, double Threshold, double Probability)
@@ -170,26 +167,28 @@ bool FuzzyLogic(double Test, double Threshold, double Probability)
 
 bool FuzzyLogicAI(double Test, double Threshold, double Probability)
 {
-	if ((Test > Threshold))
+	if (Test > Threshold)
 		return (Random() < Probability * Threshold * 1.0 / Test) /*im wiekszy Test tym wieksza szansa*/;
 	else
 		return false;
 }
 
-std::string DUE(std::string s) /*Delete Before Equal sign*/
+std::string DUE(std::string_view s)
 {
-	// DUE = Copy(s, Pos("=", s) + 1, length(s));
-	return s.substr(s.find("=") + 1, s.length());
+	const auto pos = s.find('=');
+	if (pos == std::string_view::npos)
+		return {};
+
+	return std::string{s.substr(pos + 1)};
 }
+
 
 std::string DWE(std::string s) /*Delete After Equal sign*/
 {
 	size_t ep = s.find("=");
 	if (ep != std::string::npos)
-		// DWE = Copy(s, 1, ep - 1);
 		return s.substr(0, ep);
-	else
-		return s;
+	return s;
 }
 
 std::string ExchangeCharInString(std::string const &Source, char const From, char const To)
@@ -306,7 +305,7 @@ std::string to_hex_str(int const Value, int const Width)
 	return converter.str();
 };
 
-bool string_ends_with(const std::string &string, const std::string &ending)
+bool string_ends_with(const std::basic_string<char> &string, const std::basic_string<char> &ending)
 {
 	if (string.length() < ending.length())
 		return false;
@@ -314,7 +313,7 @@ bool string_ends_with(const std::string &string, const std::string &ending)
 	return string.compare(string.length() - ending.length(), ending.length(), ending) == 0;
 }
 
-bool string_starts_with(const std::string &string, const std::string &begin)
+bool string_starts_with(const std::basic_string<char> &string, const std::basic_string<char> &begin)
 {
 	if (string.length() < begin.length())
 		return false;

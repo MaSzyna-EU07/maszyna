@@ -675,9 +675,9 @@ TAnimModel::export_as_text_( std::ostream &Output ) const {
         pModel ?
             pModel->NameGet() + ".t3d" : // rainsted requires model file names to include an extension
             "none" ) };
-    if( modelfile.find( szModelPath ) == 0 ) {
+    if( modelfile.find( paths::models ) == 0 ) {
         // don't include 'models/' in the path
-        modelfile.erase( 0, std::string{ szModelPath }.size() );
+        modelfile.erase( 0, std::string{ paths::models }.size() );
     }
     Output << modelfile << ' ';
     // texture
@@ -685,9 +685,9 @@ TAnimModel::export_as_text_( std::ostream &Output ) const {
         m_materialdata.replacable_skins[ 1 ] != null_handle ?
             GfxRenderer->Material( m_materialdata.replacable_skins[ 1 ] )->GetName() :
             "none" ) };
-    if( texturefile.find( szTexturePath ) == 0 ) {
+    if( texturefile.find( paths::textures ) == 0 ) {
         // don't include 'textures/' in the path
-        texturefile.erase( 0, std::string{ szTexturePath }.size() );
+        texturefile.erase( 0, std::string{ paths::textures }.size() );
     }
     if( contains( texturefile, ' ' ) ) {
         Output << "\"" << texturefile << "\"" << ' ';

@@ -4541,7 +4541,7 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
 //                NewCommand = Global.asCurrentSceneryPath + NewCommand;
                 auto lookup =
                     FileExists(
-                        { Global.asCurrentSceneryPath + NewCommand, szSoundPath + NewCommand },
+                        { Global.asCurrentSceneryPath + NewCommand, paths::sounds + NewCommand },
                         { ".ogg", ".flac", ".wav" } );
                 if( false == lookup.first.empty() ) {
                     //  wczytanie dźwięku odjazdu podawanego bezpośrenido
@@ -4552,7 +4552,7 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
                     NewCommand += "radio";
                     lookup =
                         FileExists(
-                            { Global.asCurrentSceneryPath + NewCommand, szSoundPath + NewCommand },
+                            { Global.asCurrentSceneryPath + NewCommand, paths::sounds + NewCommand },
                             { ".ogg", ".flac", ".wav" } );
                     if( false == lookup.first.empty() ) {
                         //  wczytanie dźwięku odjazdu w wersji radiowej (słychać tylko w kabinie)

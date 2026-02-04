@@ -9311,7 +9311,7 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 					TModel3d *kabina = TModelsManager::GetModel(DynamicObject->asBaseDir + token, true, true,
 					    (Global.network_servers.empty() && !Global.network_client) ? 0 : id());
                     // z powrotem defaultowa sciezka do tekstur
-                    Global.asCurrentTexturePath = szTexturePath;
+                    Global.asCurrentTexturePath = paths::textures;
                     // if (DynamicObject->mdKabina!=k)
                     if (kabina != nullptr)
                     {

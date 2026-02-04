@@ -125,7 +125,7 @@ TModelsManager::find_in_databank( std::string const &Name ) {
 
     std::vector<std::string> filenames {
         Name,
-        szModelPath + Name };
+        paths::models + Name };
 
     for( auto const &filename : filenames ) {
         auto const lookup { m_modelsmap.find( filename ) };
@@ -146,7 +146,7 @@ TModelsManager::find_on_disk( std::string const &Name ) {
 
         auto lookup = (
             FileExists( Name + extension ) ? Name :
-            FileExists( szModelPath + Name + extension ) ? szModelPath + Name :
+            FileExists( paths::models + Name + extension ) ? paths::models + Name :
             "" );
         if( false == lookup.empty() ) {
             return lookup;
