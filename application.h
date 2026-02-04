@@ -38,7 +38,9 @@ public:
         run();
     // issues request for a worker thread to perform specified task. returns: true if task was scheduled
 
+    #ifdef WITH_DISCORD_RPC
     void DiscordRPCService(); // discord rich presence service function (runs as separate thread)
+    #endif
     bool
         request( python_taskqueue::task_request const &Task );
     // ensures the main thread holds the python gil and can safely execute python calls

@@ -197,9 +197,9 @@ int eu07_application::run_crashgui()
 	}
 	return -1;
 }
+#ifdef WITH_DISCORD_RPC
 void eu07_application::DiscordRPCService()
 {
-#if WITH_DISCORD_RPC
 	// initialize discord-rpc
 	WriteLog("Initializing Discord Rich Presence...");
 	static const char *discord_app_id = "1343662664504840222";
@@ -299,8 +299,9 @@ void eu07_application::DiscordRPCService()
 	}
 
 	Discord_Shutdown();
-#endif
+
 }
+#endif
 
 int eu07_application::init(int Argc, char *Argv[])
 {
@@ -397,9 +398,12 @@ int eu07_application::init(int Argc, char *Argv[])
 		return result;
 	}
 
+
+	#ifdef WITH_DISCORD_RPC
 	// Run DiscordRPC service
 	std::thread sDiscordRPC(&eu07_application::DiscordRPCService, this);
 	Global.threads.emplace("DiscordRPC", std::move(sDiscordRPC));
+	#endif
 
 	if (!init_network())
 		return -1;
@@ -686,12 +690,14 @@ void eu07_application::exit()
 			it->second.join();
 	}
 
+	#ifdef WITH_DISCORD_RPC
 	it = Global.threads.find("DiscordRPC");
 	if (it != Global.threads.end())
 	{
 		if (it->second.joinable())
 			it->second.join();
 	}
+	#endif
 }
 
 void eu07_application::render_ui()
