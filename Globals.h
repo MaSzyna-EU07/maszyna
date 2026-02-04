@@ -52,7 +52,7 @@ struct global_settings {
     int iSlowMotion{ 0 }; // info o malym FPS: 0-OK, 1-wyłączyć multisampling, 3-promień 1.5km, 7-1km
     basic_light DayLight;
     float SunAngle{ 0.f }; // angle of the sun relative to horizon
-	int trainThreads{1};
+	int trainThreads{0};
     double fLuminance{ 1.0 }; // jasność światła do automatycznego zapalania
     double fTimeAngleDeg{ 0.0 }; // godzina w postaci kąta
     float fClockAngleDeg[ 6 ]; // kąty obrotu cylindrów dla zegara cyfrowego
