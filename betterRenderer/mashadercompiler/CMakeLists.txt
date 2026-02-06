@@ -20,6 +20,14 @@ if (WIN32)
 endif ()
 
 # We later pass the DXIL.dll parent directory as first argument to MaSzynaShaderCompiler so that it can sign DX12 shaders
-get_target_property(dxil_dll_path Microsoft::DXIL IMPORTED_LOCATION)
+get_target_property(dxil_dll_path Microsoft::DXIL IMPORTED_LOCATION_RELEASE)
+if(NOT dxil_dll_path)
+    get_target_property(dxil_dll_path Microsoft::DXIL IMPORTED_LOCATION_DEBUG)
+endif()
+
+if(NOT dxil_dll_path)
+    message(FATAL_ERROR "DXIL.dll not found")
+endif()
+
 get_filename_component(dxil_dll_path ${dxil_dll_path} DIRECTORY)
 set_target_properties(MaSzynaShaderCompiler PROPERTIES dxil_path "${dxil_dll_path}")
