@@ -208,10 +208,6 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 		return false;
 	glfwMakeContextCurrent(m_window);
 
-    // after potential context switch, reset vao and buffer because we can have invalid bindings cache
-    gl::vao::unbind();
-	gl::buffer::unbind();
-
 	if (Global.gfx_shadowmap_enabled)
 	{
 		m_shadow_fb = std::make_unique<gl::framebuffer>();
@@ -362,10 +358,6 @@ bool opengl33_renderer::AddViewport(const global_settings::extraviewport_config 
 
     bool ret = init_viewport(*vp);
 	glfwMakeContextCurrent(m_window);
-
-    // after potential context switch, reset vao and buffer because we can have invalid bindings cache
-    gl::vao::unbind();
-	gl::buffer::unbind();
 
 	return ret;
 }
@@ -542,9 +534,6 @@ bool opengl33_renderer::Render()
 
 	glfwMakeContextCurrent(m_window);
 
-    // after potential context switch, reset vao and buffer because we can have invalid bindings cache
-    gl::vao::unbind();
-	gl::buffer::unbind();
 	gl::framebuffer::unbind();
 
 	m_current_viewport = &(*m_viewports.front());
@@ -670,10 +659,6 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		glDebug("context switch");
 		glfwMakeContextCurrent(vp.window);
 
-        // after potential context switch, reset vao and buffer because we can have invalid bindings cache
-        gl::vao::unbind();
-		gl::buffer::unbind();
-
 		m_current_viewport = &vp;
 
 		if ((!simulation::is_ready) || (Global.gfx_skiprendering))
@@ -683,8 +668,6 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             if (vp.main) {
                 // clear state for ui
-                gl::vao::unbind();
-                gl::buffer::unbind();
                 gl::program::unbind();
 				Application.render_ui();
             }
@@ -999,8 +982,6 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 
         if (vp.main) {
             // clear state for ui
-            gl::vao::unbind();
-            gl::buffer::unbind();
             gl::program::unbind();
 			draw_debug_ui();
 			Application.render_ui();
@@ -4483,11 +4464,6 @@ glm::dvec3 opengl33_renderer::Update_Mouse_Position()
 
 void opengl33_renderer::Update(double const Deltatime)
 {
-    // workaround: we might be after context switch
-    // reset vao and buffer because we can have invalid bindings cache
-    gl::vao::unbind();
-    gl::buffer::unbind();
-
 	Update_Pick_Control();
 	Update_Pick_Node();
 
