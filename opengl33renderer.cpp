@@ -657,9 +657,13 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		glDebug("rendermode::color");
 
 		glDebug("context switch");
-		glfwMakeContextCurrent(vp.window);
+		static bool was_made = false;
 
-		m_current_viewport = &vp;
+		if (m_current_viewport != &vp)
+		{
+			glfwMakeContextCurrent(vp.window);
+			m_current_viewport = &vp;
+		}
 
 		if ((!simulation::is_ready) || (Global.gfx_skiprendering))
 		{
