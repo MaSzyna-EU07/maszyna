@@ -13,8 +13,8 @@ gl::fence::~fence()
 
 bool gl::fence::is_signalled()
 {
-    GLsizei len = 0;
-    GLint val;
-    glGetSynciv(sync, GL_SYNC_STATUS, 1, &len, &val);
-    return len == 1 && val == GL_SIGNALED;
+	// glClientWaitSync is faster than glGetSynciv. glGetSynciv probably tries to synchronize cpu and gpu
+	// https://stackoverflow.com/questions/34601376/which-to-use-for-opengl-client-side-waiting-glgetsynciv-vs-glclientwaitsync
+	GLenum r = glClientWaitSync(sync, GL_SYNC_FLUSH_COMMANDS_BIT, 1);
+	return r == GL_ALREADY_SIGNALED || r == GL_CONDITION_SATISFIED;
 }
