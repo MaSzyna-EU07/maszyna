@@ -80,59 +80,58 @@ void render_task::run()
 
 	if (output != nullptr)
 	{
-		auto *outputwidth{PyObject_CallMethod(m_renderer, const_cast<char *>("get_width"), nullptr)};
-		auto *outputheight{PyObject_CallMethod(m_renderer, const_cast<char *>("get_height"), nullptr)};
-		// upload texture data
-		if ((outputwidth != nullptr) && (outputheight != nullptr) && m_target)
+		auto *outputWidth = PyObject_CallMethod(m_renderer, const_cast<char *>("get_width"), nullptr);
+		auto *outputHeight = PyObject_CallMethod(m_renderer, const_cast<char *>("get_height"), nullptr);
+
+		if (outputWidth != nullptr && outputHeight != nullptr && m_target != nullptr)
 		{
-			int width = PyInt_AsLong(outputwidth);
-			int height = PyInt_AsLong(outputheight);
-			int components, format;
+			const int screenWidth = static_cast<int>(PyInt_AsLong(outputWidth));
+			const int screenHeight = static_cast<int>(PyInt_AsLong(outputHeight));
 
-			const unsigned char *image = reinterpret_cast<const unsigned char *>(PyString_AsString(output));
+			const bool useRgb = (false && !Global.gfx_usegles);
 
-			std::lock_guard<std::mutex> guard(m_target->mutex);
+			const int glFormat = useRgb ? GL_SRGB8 : GL_SRGB8_ALPHA8;
+			const int glComponents = useRgb ? GL_RGB : GL_RGBA;
+			const size_t bytesPerPixel = useRgb ? 3u : 4u;
+			const size_t expectedBytes = static_cast<size_t>(screenWidth) * static_cast<size_t>(screenHeight) * bytesPerPixel;
 
-			if (false && !Global.gfx_usegles)
+			Py_ssize_t pythonBufferBytes = 0;
+			char *pythonBufferPtr = nullptr;
+
+			const bool bufferExtracted =
+				(PyString_AsStringAndSize(output, &pythonBufferPtr, &pythonBufferBytes) == 0)
+				&& (pythonBufferPtr != nullptr);
+
+			if (!bufferExtracted)
 			{
-				int size = width * height * 3;
-				format = GL_SRGB8;
-				components = GL_RGB;
-				m_target->image.resize(size);
-				memcpy(m_target->image.data(), image, size);
+				ErrorLog("Python screen renderer: output is not a valid byte buffer");
+			}
+			else if (pythonBufferBytes < static_cast<Py_ssize_t>(expectedBytes))
+			{
+				ErrorLog(std::format("Python screen renderer: output buffer too small ({} bytes, expected {})", pythonBufferBytes, expectedBytes));
 			}
 			else
 			{
-				format = GL_SRGB8_ALPHA8;
-				components = GL_RGBA;
-				m_target->image.resize(width * height * 4);
+				std::lock_guard guard(m_target->mutex);
 
-				int w = width;
-				int h = height;
-				for (int y = 0; y < h; y++)
-					for (int x = 0; x < w; x++)
-					{
-						m_target->image[(y * w + x) * 4 + 0] = image[(y * w + x) * 4 + 0];
-						m_target->image[(y * w + x) * 4 + 1] = image[(y * w + x) * 4 + 1];
-						m_target->image[(y * w + x) * 4 + 2] = image[(y * w + x) * 4 + 2];
-						m_target->image[(y * w + x) * 4 + 3] = image[(y * w + x) * 4 + 3];
-					}
+				if (m_target->image.size() != expectedBytes)
+					m_target->image.resize(expectedBytes);
+
+				std::memcpy(m_target->image.data(), pythonBufferPtr, expectedBytes);
+
+				m_target->width = screenWidth;
+				m_target->height = screenHeight;
+				m_target->components = glComponents;
+				m_target->format = glFormat;
+				m_target->timestamp = std::chrono::high_resolution_clock::now();
 			}
+		}
 
-			m_target->width = width;
-			m_target->height = height;
-			m_target->components = components;
-			m_target->format = format;
-			m_target->timestamp = std::chrono::high_resolution_clock::now();
-		}
-		if (outputheight != nullptr)
-		{
-			Py_DECREF(outputheight);
-		}
-		if (outputwidth != nullptr)
-		{
-			Py_DECREF(outputwidth);
-		}
+		if (outputHeight != nullptr)
+			Py_DECREF(outputHeight);
+		if (outputWidth != nullptr)
+			Py_DECREF(outputWidth);
+
 		Py_DECREF(output);
 	}
 
