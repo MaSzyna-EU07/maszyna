@@ -7328,7 +7328,20 @@ void TMoverParameters::CheckEIMIC(double dt)
 		{
 			eimic = (LocalBrakeRatio() > 0.01 ? -LocalBrakeRatio() : eimic);
 		}
+	case 4: // vectron
+		// TARGET
+		eimtcp = (LocalBrakeRatio() > 0.01 ? -LocalBrakeRatio() : (eimic_analog > 0.01 ? eimic_analog : (double)MainCtrlPos / (double)MainCtrlPosNo));
 
+		if ((eimtcp > 0.001) && SpeedCtrlUnit.IsActive)
+			eimtcp = std::max(eimtcp, SpeedCtrlUnit.MinPower);
+
+		// smoothing
+		double alpha = std::clamp(dt / eimtcptau, 0.0, 1.0);
+		double newValue = eimic_last + (eimtcp - eimic_last) * alpha;
+		if (std::abs(newValue) < 0.05 && eimtcp == 0.0)
+			newValue = 0.0;
+		eimic = newValue;
+		eimic_last = newValue;
 	}
    	if (LocHandleTimeTraxx)
 	{
@@ -10719,7 +10732,9 @@ void TMoverParameters::LoadFIZ_Cntrl( std::string const &line ) {
     EIMCtrlType = clamp( EIMCtrlType, 0, 3 );
 	extract_value( LocHandleTimeTraxx, "LocalBrakeTraxx", line, "" );
 	extract_value( EIMCtrlAdditionalZeros, "EIMCtrlAddZeros", line, "" );
-    extract_value( EIMCtrlEmergency, "EIMCtrlEmergency", line, "");
+	extract_value( EIMCtrlEmergency, "EIMCtrlEmergency", line, "");
+	extract_value( eimtcptau, "EIMTau", line, "");
+
 
     extract_value( ScndS, "ScndS", line, "" ); // brak pozycji rownoleglej przy niskiej nastawie PSR
 
