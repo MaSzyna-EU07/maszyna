@@ -147,6 +147,7 @@ protected:
 	void render_panels();
 	void render_menu();
 	void render_quit_widget();
+    void render_hierarchy();
     // draws a quad between coordinates x,y and z,w with uv-coordinates spanning 0-1
     void quad( glm::vec4 const &Coordinates, glm::vec4 const &Color );
 // members
@@ -158,4 +159,6 @@ protected:
     std::string m_tooltip;
     bool m_quit_active = false;
 	bool m_imgui_demo = false;
+    bool m_editor_hierarchy = false;
+    bool m_editor_change_history = false;
 };

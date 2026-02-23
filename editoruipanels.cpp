@@ -61,9 +61,9 @@ void itemproperties_panel::update(scene::basic_node const *Node)
 	        }
 	    }
 	*/
-	textline = "name: " + (node->name().empty() ? "(none)" : Bezogonkow(node->name())) + "\nlocation: [" + to_string(node->location().x, 2) + ", " + to_string(node->location().y, 2) + ", " +
+	textline = "name: " + (node->name().empty() ? "(none)" : Bezogonkow(node->name())) + "\ntype: " + node->node_type + "\nlocation: [" + to_string(node->location().x, 2) + ", " + to_string(node->location().y, 2) + ", " +
 	           to_string(node->location().z, 2) + "]" +
-	           " (distance: " + to_string(glm::length(glm::dvec3{node->location().x, 0.0, node->location().z} - glm::dvec3{camera.Pos.x, 0.0, camera.Pos.z}), 1) + " m)";
+	           " (distance: " + to_string(glm::length(glm::dvec3{node->location().x, 0.0, node->location().z} - glm::dvec3{camera.Pos.x, 0.0, camera.Pos.z}), 1) + " m)" + "\nUUID: " + node->uuid.to_string();
 	text_lines.emplace_back(textline, Global.UITextColor);
 
 	// subclass-specific data

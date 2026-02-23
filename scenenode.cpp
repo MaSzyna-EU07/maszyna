@@ -725,6 +725,8 @@ memory_node::deserialize( cParser &Input, node_data const &Nodedata ) {
 basic_node::basic_node( scene::node_data const &Nodedata ) :
     m_name( Nodedata.name )
 {
+    uuid = UID::random();
+    node_type = Nodedata.type;
     m_rangesquaredmin = Nodedata.range_min * Nodedata.range_min;
     m_rangesquaredmax = (
         Nodedata.range_max >= 0.0 ?

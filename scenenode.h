@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "material.h"
 #include "vertex.h"
 #include "geometrybank.h"
+#include "utils/uuid.hpp"
 
 struct lighting_data {
 
@@ -352,6 +353,8 @@ public:
 	bool
 	    dirty() const { return m_dirty; }
 
+    std::string node_type;
+
 public:
 // members
     scene::group_handle m_group { null_handle }; // group this node belongs to, if any
@@ -361,6 +364,7 @@ public:
     bool m_visible { true }; // visibility flag
     std::string m_name;
 	bool m_dirty { false };
+    UID uuid;
 
 private:
 // methods
@@ -386,7 +390,6 @@ std::string basic_node::tooltip() const
 {
 	return m_name;
 }
-
 inline
 void
 basic_node::location( glm::dvec3 const Location ) {
