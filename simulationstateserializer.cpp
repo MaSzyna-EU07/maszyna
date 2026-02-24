@@ -550,6 +550,10 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
             }
             scene::Groups.insert( scene::Groups.handle(), instance );
             simulation::Region->insert( instance );
+            scene::basic_node *hierarchy_node = instance;
+            if (hierarchy_node)
+            {   scene::Hierarchy[hierarchy_node->uuid.to_string()] = hierarchy_node;
+            }
         }
     }
     else if( ( nodedata.type == "triangles" )

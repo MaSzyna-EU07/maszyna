@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include <array>
 #include <stack>
 #include <unordered_set>
+#include <map>
 
 #include "parser.h"
 #include "geometrybank.h"
@@ -455,6 +456,8 @@ public:
 
 };
 
+// global hierarchy map for scene nodes
+extern std::map<std::string, basic_node *> Hierarchy;
 } // scene
 
 //---------------------------------------------------------------------------

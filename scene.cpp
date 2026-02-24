@@ -27,7 +27,8 @@ namespace scene {
 std::string const EU07_FILEEXTENSION_REGION { ".sbt" };
 std::uint32_t const EU07_FILEHEADER { MAKE_ID4( 'E','U','0','7' ) };
 std::uint32_t const EU07_FILEVERSION_REGION { MAKE_ID4( 'S', 'B', 'T', '2' ) };
-
+std::map<std::string, basic_node *> Hierarchy;
+ 
 // potentially activates event handler with the same name as provided node, and within handler activation range
 void
 basic_cell::on_click( TAnimModel const *Instance ) {
@@ -678,9 +679,6 @@ basic_cell::enclose_area( scene::basic_node *Node ) {
         m_area.radius,
         static_cast<float>( glm::length( m_area.center - Node->location() ) + Node->radius() ) );
 }
-
-
-
 // potentially activates event handler with the same name as provided node, and within handler activation range
 void
 basic_section::on_click( TAnimModel const *Instance ) {
