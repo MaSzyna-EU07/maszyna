@@ -371,6 +371,9 @@ endif()
 set(cppzmq_INCLUDE_DIR ${cppzmq_INCLUDE_DIR} "${DEPS_DIR}/cppzmq/include")
 set(GLM_INCLUDE_DIR ${GLM_INCLUDE_DIR} "${DEPS_DIR}/glm/")
 
+set(ENTT_INCLUDE_DIR ${ENTT_INCLUDE_DIR} "${DEPS_DIR}/entt/src")
+set(ENTT_INCLUDE_DIRS ${ENTT_INCLUDE_DIRS} "${DEPS_DIR}/entt/src")
+
 # Process version.rc.in into version.rc
 configure_file(${CMAKE_SOURCE_DIR}/eu07.rc.in
                ${CMAKE_BINARY_DIR}/eu07.rc @ONLY)
@@ -475,6 +478,20 @@ target_link_libraries(${PROJECT_NAME} Threads::Threads)
 
 find_package(GLM REQUIRED)
 target_include_directories(${PROJECT_NAME} PRIVATE ${GLM_INCLUDE_DIR})
+
+find_package(EnTT CONFIG QUIET)
+if (TARGET EnTT::EnTT)
+	message(STATUS "Using EnTT package target EnTT::EnTT")
+elseif (EXISTS "${DEPS_DIR}/entt/src/entt/entt.hpp")
+	add_library(EnTT::EnTT INTERFACE IMPORTED)
+	set_target_properties(EnTT::EnTT PROPERTIES
+		INTERFACE_INCLUDE_DIRECTORIES "${DEPS_DIR}/entt/src")
+	message(STATUS "Using bundled EnTT from ${DEPS_DIR}/entt/src")
+else()
+	message(FATAL_ERROR
+		"EnTT not found. Install EnTT package (EnTTConfig.cmake) or provide ${DEPS_DIR}/entt/src.")
+endif()
+target_link_libraries(${PROJECT_NAME} EnTT::EnTT)
 
 # JSON lib
 add_subdirectory(ref/json)

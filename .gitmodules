@@ -32,3 +32,6 @@
 [submodule "betterRenderer/thirdparty/bvh"]
 	path = betterRenderer/thirdparty/bvh
 	url = https://github.com/madmann91/bvh.git
+[submodule "ref/entt"]
+	path = ref/entt
+	url = https://github.com/skypjack/entt.git
