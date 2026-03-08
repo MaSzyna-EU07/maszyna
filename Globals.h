@@ -16,6 +16,8 @@ http://mozilla.org/MPL/2.0/.
 #include "light.h"
 #include "utilities.h"
 #include "motiontelemetry.h"
+#include "entt/entity/registry.hpp"
+
 #include <map>
 
 #ifdef WITH_UART
@@ -31,6 +33,9 @@ struct global_settings {
     // TODO: take these out of the settings
 
     std::chrono::steady_clock::time_point startTimestamp;
+
+	/// EnTT variables
+	entt::registry world;
 
 	/// <summary>
 	/// Mapa z watkami w formacie <std::string nazwa, std::thread watek>

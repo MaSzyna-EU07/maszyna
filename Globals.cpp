@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "PyInt.h"
 #include "Timer.h"
 #include "vao.h"
+#include <entt/entt.hpp>
 
 void
 global_settings::LoadIniFile(std::string asFileName) {
