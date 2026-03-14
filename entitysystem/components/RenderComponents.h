@@ -21,5 +21,14 @@ struct MeshRenderer
 /// </remarks>
 struct SpotLight{};
 
+/// <summary>
+/// Component containing data for LOD controller
+/// </summary>
+struct LODController
+{
+	double RangeMin;
+	double RangeMax;
+};
+
 } // namespace ECSComponent
 #endif // EU07_RENDERCOMPONENTS_H
