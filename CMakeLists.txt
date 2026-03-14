@@ -11,6 +11,8 @@ endif()
 
 include(CheckCXXSymbolExists)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 set(CMAKE_FIND_PACKAGE_PREFER_CONFIG TRUE)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/CMake_modules/")
 
@@ -233,6 +235,10 @@ set(SOURCES
 "launcher/scenery_scanner.cpp"
 
 "vr/vr_interface.cpp"
+		entitysystem/components/BasicComponents.h
+		entitysystem/ecs.cpp
+		entitysystem/ecs.h
+		entitysystem/components/RenderComponents.h
 )
 
 set(DEFINITIONS)
