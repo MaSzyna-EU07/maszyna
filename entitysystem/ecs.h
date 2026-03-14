@@ -78,7 +78,7 @@ class ECS final
 	/// <param name="entity">Entity to which component will be added</param>
 	/// <param name="args">Arguments forwarded to component constructor</param>
 	/// <returns>Reference to added component</returns>
-	template <class T, class... Args> T &Add(entt::entity entity, Args &&...args)
+	template <class T, class... Args> T &AddComponent(entt::entity entity, Args &&...args)
 	{
 		return world_.emplace<T>(entity, std::forward<Args>(args)...);
 	}
@@ -89,7 +89,7 @@ class ECS final
 	/// <typeparam name="T"> type</typeparam>
 	/// <param name="entity">Entity to which component will be added</param>
 	/// <returns>Reference to added component</returns>
-	template <class T> T &Get(entt::entity entity)
+	template <class T> T &GetComponent(entt::entity entity)
 	{
 		return world_.get<T>(entity);
 	}
@@ -100,7 +100,7 @@ class ECS final
 	/// <typeparam name="T"> type</typeparam>
 	/// <param name="entity">Entity to which component will be added</param>
 	/// <returns>Reference to added component</returns>
-	template <class T> const T &Get(entt::entity entity) const
+	template <class T> const T &GetComponent(entt::entity entity) const
 	{
 		return world_.get<T>(entity);
 	}
@@ -111,7 +111,7 @@ class ECS final
 	/// <typeparam name="T">Component type</typeparam>
 	/// <param name="entity">Entity from which component will be retrieved</param>
 	/// <returns>Pointer to component if exists, nullptr otherwise</returns>
-	template <class T> T *TryGet(entt::entity entity)
+	template <class T> T *TryGetComponent(entt::entity entity)
 	{
 		return world_.try_get<T>(entity);
 	}
@@ -122,7 +122,7 @@ class ECS final
 	/// <typeparam name="T">Component type</typeparam>
 	/// <param name="entity">Entity from which component will be retrieved</param>
 	/// <returns>Pointer to component if exists, nullptr otherwise</returns>
-	template <class T> const T *TryGet(entt::entity entity) const
+	template <class T> const T *TryGetComponent(entt::entity entity) const
 	{
 		return world_.try_get<T>(entity);
 	}
@@ -133,7 +133,7 @@ class ECS final
 	/// <typeparam name="T">Component type</typeparam>
 	/// <param name="entity">Entity to check</param>
 	/// <returns>true if entity has component, false otherwise</returns>
-	template <class... T> bool Has(entt::entity entity) const
+	template <class... T> bool HasComponent(entt::entity entity) const
 	{
 		return world_.all_of<T...>(entity);
 	}
@@ -142,7 +142,7 @@ class ECS final
 	/// Removes component of type T from entity. Does nothing if component does not exist.
 	/// </summary> <typeparam name="T">Component type</typeparam>
 	/// <param name="entity">Entity from which component will be removed</param>
-	template <class... T> void Remove(entt::entity entity)
+	template <class... T> void RemoveComponent(entt::entity entity)
 	{
 		world_.remove<T...>(entity);
 	}
