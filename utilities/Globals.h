@@ -33,10 +33,7 @@ struct global_settings {
     // TODO: take these out of the settings
 
     std::chrono::steady_clock::time_point startTimestamp;
-
-	/// EnTT variables
-	entt::registry world;
-
+	
 	/// <summary>
 	/// Mapa z watkami w formacie <std::string nazwa, std::thread watek>
 	/// </summary>

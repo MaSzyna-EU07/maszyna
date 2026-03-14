@@ -59,3 +59,9 @@ std::vector<entt::entity> ECS::FindByName(std::string_view name)
 
 	return result;
 }
+
+ECS &GetComponentSystem()
+{
+	static ECS _ecs;
+	return _ecs;
+}

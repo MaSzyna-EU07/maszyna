@@ -145,4 +145,7 @@ class ECS final
 		world_.remove<T...>(entity);
 	}
 };
+
+extern ECS& GetComponentSystem();
+#define CS GetComponentSystem();
 #endif // EU07_ECS_H
