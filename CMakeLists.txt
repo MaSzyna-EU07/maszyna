@@ -45,7 +45,19 @@ file(GLOB HEADERS "*.h"
 "widgets/*.h"
 "launcher/*.h"
 "extras/*.h"
-"global_include/*.h")
+"global_include/*.h"
+"simulation/*.h"
+"scene/*.h"
+"rendering/*.h"
+"audio/*.h"
+"environment/*.h"
+"application/*.h"
+"input/*.h"
+"scripting/*.h"
+"model/*.h"
+"utilities/*.h"
+"world/*.h"
+"vehicle/*.h")
 
 set(GLOBAL_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(GLOBAL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/global_include")
@@ -79,101 +91,100 @@ list(APPEND CMAKE_PREFIX_PATH "${VCPKG_INSTALLED_PATH}")
 list(APPEND CMAKE_MODULE_PATH "${VCPKG_INSTALLED_PATH}/share")
 
 set(SOURCES
-"Texture.cpp"
-"Timer.cpp"
-"Track.cpp"
-"Traction.cpp"
-"TractionPower.cpp"
-"Train.cpp"
-"TrkFoll.cpp"
-"AirCoupler.cpp"
-"AnimModel.cpp"
-"Button.cpp"
-"Camera.cpp"
-"Driver.cpp"
-"driverhints.cpp"
-"dumb3d.cpp"
-"DynObj.cpp"
+"model/Texture.cpp"
+"utilities/Timer.cpp"
+"world/Track.cpp"
+"world/Traction.cpp"
+"world/TractionPower.cpp"
+"vehicle/Train.cpp"
+"world/TrkFoll.cpp"
+"vehicle/AirCoupler.cpp"
+"model/AnimModel.cpp"
+"vehicle/Button.cpp"
+"vehicle/Camera.cpp"
+"vehicle/Driver.cpp"
+"application/driverhints.cpp"
+"utilities/dumb3d.cpp"
+"vehicle/DynObj.cpp"
 "EU07.cpp"
 "export_e3d_standalone.cpp"
-"Event.cpp"
-"EvLaunch.cpp"
-"Float3d.cpp"
-"Gauge.cpp"
-"Globals.cpp"
-"Logs.cpp"
+"world/Event.cpp"
+"world/EvLaunch.cpp"
+"utilities/Float3d.cpp"
+"vehicle/Gauge.cpp"
+"utilities/Globals.cpp"
+"utilities/Logs.cpp"
 "McZapkie/friction.cpp"
 "McZapkie/hamulce.cpp"
 "McZapkie/Mover.cpp"
 "McZapkie/Oerlikon_ESt.cpp"
-"MdlMngr.cpp"
-"MemCell.cpp"
-"Model3d.cpp"
-"mtable.cpp"
-"parser.cpp"
-"nullrenderer.cpp"
-"renderer.cpp"
-"ResourceManager.cpp"
-"sn_utils.cpp"
-"Segment.cpp"
-"sky.cpp"
-"sun.cpp"
-"stars.cpp"
-"lightarray.cpp"
-"skydome.cpp"
-"sound.cpp"
-"Spring.cpp"
-"frustum.cpp"
-"uilayer.cpp"
-"openglmatrixstack.cpp"
-"moon.cpp"
-"command.cpp"
-"keyboardinput.cpp"
-"gamepadinput.cpp"
-"drivermouseinput.cpp"
-"translation.cpp"
-"material.cpp"
+"model/MdlMngr.cpp"
+"world/MemCell.cpp"
+"model/Model3d.cpp"
+"world/mtable.cpp"
+"utilities/parser.cpp"
+"rendering/nullrenderer.cpp"
+"rendering/renderer.cpp"
+"model/ResourceManager.cpp"
+"scene/sn_utils.cpp"
+"world/Segment.cpp"
+"environment/sky.cpp"
+"environment/sun.cpp"
+"environment/stars.cpp"
+"rendering/lightarray.cpp"
+"environment/skydome.cpp"
+"audio/sound.cpp"
+"world/Spring.cpp"
+"rendering/frustum.cpp"
+"application/uilayer.cpp"
+"rendering/openglmatrixstack.cpp"
+"environment/moon.cpp"
+"input/command.cpp"
+"input/keyboardinput.cpp"
+"input/gamepadinput.cpp"
+"input/drivermouseinput.cpp"
+"utilities/translation.cpp"
+"model/material.cpp"
 "stdafx.cpp"
-"messaging.cpp"
-"scene.cpp"
-"scenenode.cpp"
-"simulation.cpp"
-"vertex.cpp"
-"audio.cpp"
-"audiorenderer.cpp"
-"motiontelemetry.cpp"
-"utilities.cpp"
-"uitranscripts.cpp"
-"station.cpp"
-"application.cpp"
-"simulationtime.cpp"
-"sceneeditor.cpp"
-"screenshot.cpp"
-"driverkeyboardinput.cpp"
-"drivermode.cpp"
-"driveruilayer.cpp"
-"driveruipanels.cpp"
-"editorkeyboardinput.cpp"
-"editormode.cpp"
-"editormouseinput.cpp"
-"editoruilayer.cpp"
-"editoruipanels.cpp"
-"scenarioloadermode.cpp"
-"scenarioloaderuilayer.cpp"
-"scenenodegroups.cpp"
-"simulationenvironment.cpp"
-"simulationstateserializer.cpp"
-"precipitation.cpp"
-"pythonscreenviewer.cpp"
-"dictionary.cpp"
-"particles.cpp"
-"headtrack.cpp"
-"headtrack.h"
-"ladderlogic.cpp"
-"geometrybank.cpp"
-"openglcolor.cpp"
-"simulationsounds.cpp"
-"openglcamera.cpp"
+"input/messaging.cpp"
+"scene/scene.cpp"
+"scene/scenenode.cpp"
+"simulation/simulation.cpp"
+"model/vertex.cpp"
+"audio/audio.cpp"
+"audio/audiorenderer.cpp"
+"utilities/motiontelemetry.cpp"
+"utilities/utilities.cpp"
+"application/uitranscripts.cpp"
+"world/station.cpp"
+"application/application.cpp"
+"simulation/simulationtime.cpp"
+"scene/sceneeditor.cpp"
+"rendering/screenshot.cpp"
+"input/driverkeyboardinput.cpp"
+"application/drivermode.cpp"
+"application/driveruilayer.cpp"
+"application/driveruipanels.cpp"
+"input/editorkeyboardinput.cpp"
+"application/editormode.cpp"
+"input/editormouseinput.cpp"
+"application/editoruilayer.cpp"
+"application/editoruipanels.cpp"
+"application/scenarioloadermode.cpp"
+"application/scenarioloaderuilayer.cpp"
+"scene/scenenodegroups.cpp"
+"simulation/simulationenvironment.cpp"
+"simulation/simulationstateserializer.cpp"
+"rendering/precipitation.cpp"
+"scripting/pythonscreenviewer.cpp"
+"utilities/dictionary.cpp"
+"rendering/particles.cpp"
+"utilities/headtrack.cpp"
+"scripting/ladderlogic.cpp"
+"rendering/geometrybank.cpp"
+"rendering/openglcolor.cpp"
+"simulation/simulationsounds.cpp"
+"rendering/openglcamera.cpp"
 
 "network/network.cpp"
 "network/message.cpp"
@@ -232,7 +243,7 @@ set_source_files_properties("imgui/imgui_impl_opengl2.cpp" PROPERTIES SKIP_PRECO
 
 if (WITH_CRASHPAD)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_CRASHPAD")
-	set(SOURCES ${SOURCES} "crashreporter.cpp")
+	set(SOURCES ${SOURCES} "utilities/crashreporter.cpp")
 	if (WIN32)
 		include_directories("${DEPS_DIR}/crashpad/include" "${DEPS_DIR}/crashpad/include/mini_chromium")
 	else()
@@ -242,19 +253,19 @@ endif()
 
 if (WITH_PYTHON)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_PYTHON")
-	set(SOURCES ${SOURCES} "PyInt.cpp")
+	set(SOURCES ${SOURCES} "scripting/PyInt.cpp")
 else()
-	set(SOURCES ${SOURCES} "PyIntStub.cpp")
+	set(SOURCES ${SOURCES} "scripting/PyIntStub.cpp")
 endif()
 
 if (WITH_UART)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_UART")
-	set(SOURCES ${SOURCES} "uart.cpp")
+	set(SOURCES ${SOURCES} "utilities/uart.cpp")
 endif()
 
 if (WITH_ZMQ)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_ZMQ")
-	set(SOURCES ${SOURCES} "zmq_input.cpp")
+	set(SOURCES ${SOURCES} "input/zmq_input.cpp")
 endif()
 
 if (WITH_OPENVR)
@@ -264,7 +275,7 @@ endif()
 
 if (WITH_LUA)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_LUA")
-	set(SOURCES ${SOURCES} "lua.cpp")
+	set(SOURCES ${SOURCES} "scripting/lua.cpp")
 endif()
 
 if (WITHDUMPGEN)
@@ -273,23 +284,23 @@ endif()
 
 if (WITH_OPENGL_MODERN)
         set(SOURCES ${SOURCES}
-            "opengl33geometrybank.cpp"
-            "opengl33light.cpp"
-            "opengl33skydome.cpp"
-            "opengl33precipitation.cpp"
-            "opengl33particles.cpp"
-            "opengl33renderer.cpp")
+            "rendering/opengl33geometrybank.cpp"
+            "rendering/opengl33light.cpp"
+            "rendering/opengl33skydome.cpp"
+            "rendering/opengl33precipitation.cpp"
+            "rendering/opengl33particles.cpp"
+            "rendering/opengl33renderer.cpp")
 		set(DEFINITIONS ${DEFINITIONS} "WITH_OPENGL_MODERN")
 endif()
 
 if (WITH_OPENGL_LEGACY)
         set(SOURCES ${SOURCES}
-            "openglgeometrybank.cpp"
-            "opengllight.cpp"
-            "openglskydome.cpp"
-            "openglprecipitation.cpp"
-            "openglparticles.cpp"
-            "openglrenderer.cpp")
+            "rendering/openglgeometrybank.cpp"
+            "rendering/opengllight.cpp"
+            "rendering/openglskydome.cpp"
+            "rendering/openglprecipitation.cpp"
+            "rendering/openglparticles.cpp"
+            "rendering/openglrenderer.cpp")
 		set(DEFINITIONS ${DEFINITIONS} "WITH_OPENGL_LEGACY")
 endif()
 

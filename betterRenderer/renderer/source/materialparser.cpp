@@ -2,12 +2,12 @@
 
 #include "nvrenderer/nvrenderer.h"
 
-#include <Globals.h>
-#include <Logs.h>
+#include <utilities/Globals.h>
+#include <utilities/Logs.h>
 #include <fmt/format.h>
-#include <material.h>
+#include <model/material.h>
 #include <parser.h>
-#include <utilities.h>
+#include <utilities/utilities.h>
 #include <yaml-cpp/yaml.h>
 #include <string>
 

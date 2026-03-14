@@ -9,12 +9,12 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "Console.h"
-#include "Globals.h"
-#include "application.h"
+#include "utilities/Globals.h"
+#include "application/application.h"
 #include "LPT.h"
-#include "Logs.h"
+#include "utilities/Logs.h"
 #include "PoKeys55.h"
-#include "utilities.h"
+#include "utilities/utilities.h"
 
 //---------------------------------------------------------------------------
 // Ra: klasa statyczna gromadząca sygnały sterujące oraz informacje zwrotne

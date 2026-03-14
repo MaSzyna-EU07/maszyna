@@ -1,9 +1,9 @@
 #include "stdafx.h"
 #include "launcher/launchermode.h"
 #include "launcher/launcheruilayer.h"
-#include "application.h"
-#include "simulation.h"
-#include "Globals.h"
+#include "application/application.h"
+#include "simulation/simulation.h"
+#include "utilities/Globals.h"
 
 launcher_mode::launcher_mode()
 {

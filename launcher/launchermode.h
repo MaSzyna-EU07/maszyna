@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "applicationmode.h"
+#include "application/applicationmode.h"
 
 class launcher_mode : public application_mode {
 

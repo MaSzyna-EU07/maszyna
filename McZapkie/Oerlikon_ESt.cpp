@@ -14,7 +14,7 @@ Copyright (C) 2007-2014 Maciej Cierniak
 
 #include "stdafx.h"
 #include "Oerlikon_ESt.h"
-#include "utilities.h"
+#include "utilities/utilities.h"
 
 double d2A( double const d )
 {

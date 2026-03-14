@@ -1,7 +1,7 @@
 #pragma once
 
-#include "driverkeyboardinput.h"
-#include "uilayer.h"
+#include "input/driverkeyboardinput.h"
+#include "application/uilayer.h"
 #include "scenery_scanner.h"
 #include "widgets/popup.h"
 

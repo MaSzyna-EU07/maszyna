@@ -1,9 +1,9 @@
 #include "stdafx.h"
 #include "widgets/vehicleparams.h"
-#include "simulation.h"
-#include "driveruipanels.h"
-#include "Driver.h"
-#include "Train.h"
+#include "simulation/simulation.h"
+#include "application/driveruipanels.h"
+#include "vehicle/Driver.h"
+#include "vehicle/Train.h"
 
 ui::vehicleparams_panel::vehicleparams_panel(const std::string &vehicle) : ui_panel(std::string(STR("Vehicle parameters")) + ": " + vehicle, false), m_vehicle_name(vehicle)
 {

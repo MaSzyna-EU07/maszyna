@@ -1,9 +1,9 @@
 #pragma once
 
-#include "simulation.h"
-#include "Event.h"
-#include "scene.h"
-#include "MemCell.h"
+#include "simulation/simulation.h"
+#include "world/Event.h"
+#include "scene/scene.h"
+#include "world/MemCell.h"
 
 namespace map
 {

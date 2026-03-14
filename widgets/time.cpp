@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "widgets/time.h"
-#include "simulationtime.h"
-#include "Globals.h"
+#include "simulation/simulationtime.h"
+#include "utilities/Globals.h"
 
 ui::time_panel::time_panel() : ui_panel(STR_C("Time and environment"), false)
 {

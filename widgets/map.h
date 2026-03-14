@@ -1,14 +1,14 @@
 #pragma once
 
 #include "gl/shader.h"
-#include "Texture.h"
-#include "uilayer.h"
+#include "model/Texture.h"
+#include "application/uilayer.h"
 #include "widgets/map_objects.h"
 #include "widgets/popup.h"
 #include "gl/framebuffer.h"
-#include "frustum.h"
+#include "rendering/frustum.h"
 #ifdef WITH_OPENGL_MODERN
-#include "opengl33renderer.h"
+#include "rendering/opengl33renderer.h"
 #endif
 
 namespace ui

@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "scenery_scanner.h"
-#include "Logs.h"
+#include "utilities/Logs.h"
 
 scenery_scanner::scenery_scanner(ui::vehicles_bank &bank)
     : bank(bank)

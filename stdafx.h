@@ -107,7 +107,7 @@
 
 
 
-#include "openglmatrixstack.h"
+#include "rendering/openglmatrixstack.h"
 #define STRINGIZE_DETAIL(x) #x
 #define STRINGIZE(x) STRINGIZE_DETAIL(x)
 #define glDebug(x) if (GLAD_GL_GREMEDY_string_marker) glStringMarkerGREMEDY(0, __FILE__ ":" STRINGIZE(__LINE__) ": " x);
@@ -115,6 +115,6 @@
 #include "imgui/imgui.h"
 #define ImVec2S(a, b) ImVec2(a * Global.ui_scale, b * Global.ui_scale)
 
-#include "crashreporter.h"
+#include "utilities/crashreporter.h"
 
 #endif

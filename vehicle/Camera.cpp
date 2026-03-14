@@ -1,0 +1,234 @@
+/*
+This Source Code Form is subject to the
+terms of the Mozilla Public License, v.
+2.0. If a copy of the MPL was not
+distributed with this file, You can
+obtain one at
+http://mozilla.org/MPL/2.0/.
+*/
+
+#include "stdafx.h"
+#include "vehicle/Camera.h"
+
+#include "utilities/Globals.h"
+#include "utilities/utilities.h"
+#include "Console.h"
+#include "utilities/Timer.h"
+#include "vehicle/Driver.h"
+#include "vehicle/DynObj.h"
+#include "MOVER.h"
+
+//---------------------------------------------------------------------------
+
+void TCamera::Init( Math3D::vector3 const &NPos, Math3D::vector3 const &NAngle/*, TCameraType const NType*/, TDynamicObject *Owner ) {
+
+    vUp = { 0, 1, 0 };
+    Velocity = { 0, 0, 0 };
+    Angle = NAngle;
+    Pos = NPos;
+
+    m_owner = Owner;
+};
+
+void TCamera::Reset() {
+
+    Angle = {};
+    m_rotationoffsets = {};
+};
+
+
+void TCamera::OnCursorMove(double x, double y) {
+    m_rotationoffsets.x += y;
+    m_rotationoffsets.y += x;
+}
+
+static double ComputeAxisSpeed(double param, double walkspeed, double maxspeed, double threshold) {
+    double absval = std::abs(param);
+    // 2/3rd of the stick range lerps walk speed, past that we lerp between max walk and run speed
+    double walk = walkspeed * std::min(absval / threshold, 1.0);
+    double run  = (std::max(0.0, absval - threshold) / (1.0 - threshold)) * std::max(0.0, maxspeed - walkspeed);
+    return (param >= 0.0 ? 1.0 : -1.0) * (walk + run);
+}
+
+
+bool
+TCamera::OnCommand( command_data const &Command ) {
+
+    auto const walkspeed { 1.0 };
+    auto const runspeed { 10.0 };
+
+	// threshold position on stick between walk lerp and walk/run lerp
+	auto const stickthreshold = 2.0 / 3.0;
+
+    bool iscameracommand { true };
+    switch( Command.command ) {
+
+        case user_command::viewturn: {
+
+            OnCursorMove(
+                Command.param1 *  0.005 * Global.fMouseXScale / Global.ZoomFactor,
+                Command.param2 *  0.01  * Global.fMouseYScale / Global.ZoomFactor );
+            break;
+        }
+
+        case user_command::movehorizontal:
+        case user_command::movehorizontalfast: {
+
+            auto const movespeed = (
+                m_owner == nullptr ?       runspeed : // free roam
+                false == FreeFlyModeFlag ? walkspeed : // vehicle cab
+                0.0 ); // vehicle external
+
+//            if( movespeed == 0.0 ) { break; } // enable to fix external cameras in place
+
+            auto const speedmultiplier = (
+                ( ( m_owner == nullptr ) && ( Command.command == user_command::movehorizontalfast ) ) ?
+                    30.0 :
+                    1.0 );
+
+            // left-right
+            m_moverate.x = ComputeAxisSpeed(Command.param1, walkspeed, movespeed, stickthreshold) * speedmultiplier;
+            // forward-back
+            m_moverate.z = -ComputeAxisSpeed(Command.param2, walkspeed, movespeed, stickthreshold) * speedmultiplier;
+
+            break;
+        }
+
+        case user_command::movevertical:
+        case user_command::moveverticalfast: {
+
+            auto const movespeed = (
+                m_owner == nullptr ?       runspeed * 0.5 : // free roam
+                false == FreeFlyModeFlag ? walkspeed : // vehicle cab
+                0.0 ); // vehicle external
+
+//            if( movespeed == 0.0 ) { break; } // enable to fix external cameras in place
+
+            auto const speedmultiplier = (
+                ( ( m_owner == nullptr ) && ( Command.command == user_command::moveverticalfast ) ) ?
+                    10.0 :
+                    1.0 );
+            // up-down
+            m_moverate.y = ComputeAxisSpeed(Command.param1, walkspeed, movespeed, stickthreshold) * speedmultiplier;
+
+            break;
+        }
+
+        default: {
+
+            iscameracommand = false;
+            break;
+        }
+    } // switch
+
+    return iscameracommand;
+}
+
+static void UpdateVelocityAxis(double& velocity, double moverate, double deltatime)
+{
+    velocity = clamp(velocity + moverate * 10.0 * deltatime, -std::abs(moverate), std::abs(moverate));
+}
+
+
+void TCamera::Update()
+{
+    // check for sent user commands
+    // NOTE: this is a temporary arrangement, for the transition period from old command setup to the new one
+    // ultimately we'll need to track position of camera/driver for all human entities present in the scenario
+    command_data command;
+    // NOTE: currently we're only storing commands for local entity and there's no id system in place,
+    // so we're supplying 'default' entity id of 0
+	while( simulation::Commands.pop( command, static_cast<std::size_t>( command_target::entity ) | 0 ) ) {
+
+        OnCommand( command );
+    }
+
+    auto const deltatime { Timer::GetDeltaRenderTime() }; // czas bez pauzy
+
+    // update rotation
+    auto const rotationfactor { std::min( 1.0, 20 * deltatime ) };
+
+    Angle.y -= m_rotationoffsets.y * rotationfactor;
+    m_rotationoffsets.y *= ( 1.0 - rotationfactor );
+    Angle.y = std::remainder(Angle.y, 2.0 * M_PI);
+
+    // Limit the camera pitch to +/- 90°.
+    Angle.x = clamp(Angle.x - (m_rotationoffsets.x * rotationfactor), -M_PI_2, M_PI_2);
+    m_rotationoffsets.x *= ( 1.0 - rotationfactor );
+
+    // update position
+    if( ( m_owner == nullptr )
+     || ( false == Global.ctrlState )
+     || ( true == DebugCameraFlag ) ) {
+        // ctrl is used for mirror view, so we ignore the controls when in vehicle if ctrl is pressed
+        // McZapkie-170402: poruszanie i rozgladanie we free takie samo jak w follow
+        UpdateVelocityAxis(Velocity.x, m_moverate.x, deltatime);
+        UpdateVelocityAxis(Velocity.y, m_moverate.y, deltatime);
+        UpdateVelocityAxis(Velocity.z, m_moverate.z, deltatime);
+    }
+    if( ( m_owner == nullptr )
+     || ( true == DebugCameraFlag ) ) {
+        // free movement position update
+        auto movement { Velocity };
+        movement.RotateY( Angle.y );
+        Pos += movement * 5.0 * deltatime;
+    }
+    else {
+        // attached movement position update
+        auto movement { Velocity * -2.0 };
+        movement.y = -movement.y;
+        auto const *owner { (
+            m_owner->Mechanik ?
+                m_owner->Mechanik :
+                m_owner->ctOwner ) };
+        if( ( owner && owner->Occupied() )
+         && ( owner->Occupied()->CabOccupied < 0 ) ) { 
+            movement *= -1.f;
+            movement.y = -movement.y;
+        }
+/*
+        if( ( m_owner->ctOwner )
+         && ( m_owner->ctOwner->Vehicle()->DirectionGet() != m_owner->DirectionGet() ) ) {
+            movement *= -1.f;
+            movement.y = -movement.y;
+        }
+*/
+        movement.RotateY( Angle.y );
+
+        m_owneroffset += movement * deltatime;
+    }
+}
+
+bool TCamera::SetMatrix( glm::dmat4 &Matrix ) {
+
+    Matrix = glm::rotate( Matrix, -Angle.z, glm::dvec3( 0.0, 0.0, 1.0 ) ); // po wyłączeniu tego kręci się pojazd, a sceneria nie
+    Matrix = glm::rotate( Matrix, -Angle.x, glm::dvec3( 1.0, 0.0, 0.0 ) );
+    Matrix = glm::rotate( Matrix, -Angle.y, glm::dvec3( 0.0, 1.0, 0.0 ) ); // w zewnętrznym widoku: kierunek patrzenia
+
+    if( ( m_owner != nullptr ) && ( false == DebugCameraFlag ) ) {
+
+        Matrix *= glm::lookAt(
+            glm::dvec3{ Pos },
+            glm::dvec3{ LookAt },
+            glm::dvec3{ vUp } );
+    }
+    else {
+        Matrix = glm::translate( Matrix, glm::dvec3{ -Pos } ); // nie zmienia kierunku patrzenia
+    }
+
+    return true;
+}
+
+void TCamera::RaLook()
+{ // zmiana kierunku patrzenia - przelicza Yaw
+    Math3D::vector3 where = LookAt - Pos /*+ Math3D::vector3(0, 3, 0)*/; // trochę w górę od szyn
+    if( ( where.x != 0.0 ) || ( where.z != 0.0 ) ) {
+        Angle.y = atan2( -where.x, -where.z ); // kąt horyzontalny
+        m_rotationoffsets.y = 0.0;
+    }
+    double l = Math3D::Length3(where);
+    if( l > 0.0 ) {
+        Angle.x = asin( where.y / l ); // kąt w pionie
+        m_rotationoffsets.x = 0.0;
+    }
+};

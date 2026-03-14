@@ -10,13 +10,13 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "MOVER.h"
 
-#include "utilities.h"
-#include "DynObj.h"
+#include "utilities/utilities.h"
+#include "vehicle/DynObj.h"
 #include "Oerlikon_ESt.h"
-#include "Globals.h"
-#include "Logs.h"
-#include "parser.h"
-#include "simulation.h"
+#include "utilities/Globals.h"
+#include "utilities/Logs.h"
+#include "utilities/parser.h"
+#include "simulation/simulation.h"
 //---------------------------------------------------------------------------
 
 // Ra: tu należy przenosić funcje z mover.pas, które nie są z niego wywoływane.

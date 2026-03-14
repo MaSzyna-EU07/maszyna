@@ -3,8 +3,8 @@
 #include <GLFW/glfw3.h>
 #include <fmt/format.h>
 
-#include "Globals.h"
-#include "Logs.h"
+#include "utilities/Globals.h"
+#include "utilities/Logs.h"
 #include "config.h"
 #include "nvrenderer/nvrenderer.h"
 

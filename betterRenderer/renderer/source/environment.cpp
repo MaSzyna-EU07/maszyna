@@ -8,7 +8,7 @@
 #include "nvrenderer/nvrenderer.h"
 #include "nvrendererbackend.h"
 #include "nvtexture.h"
-#include "simulationenvironment.h"
+#include "simulation/simulationenvironment.h"
 #include "sky.h"
 
 int MaEnvironment::GetCurrentSetIndex() {

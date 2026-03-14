@@ -1,12 +1,12 @@
 ﻿#include "nvrenderer/nvrenderer.h"
 
-#include <AnimModel.h>
-#include <Logs.h>
-#include <Model3d.h>
-#include <Timer.h>
-#include <application.h>
+#include <model/AnimModel.h>
+#include <utilities/Logs.h>
+#include <model/Model3d.h>
+#include <utilities/Timer.h>
+#include <application/application.h>
 #include <nvrhi/utils.h>
-#include <simulation.h>
+#include <simulation/simulation.h>
 
 #include <future>
 #include <glm/gtx/transform.hpp>

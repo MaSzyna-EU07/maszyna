@@ -4,7 +4,7 @@
 
 #include "stdafx.h"
 #include "piped_proc.h"
-#include "Logs.h"
+#include "utilities/Logs.h"
 
 #ifdef __unix__
 piped_proc::piped_proc(std::string cmd, bool write)

@@ -1,8 +1,8 @@
 #include "stdafx.h"
 #include "framebuffer.h"
 
-#include "Logs.h"
-#include "utilities.h"
+#include "utilities/Logs.h"
+#include "utilities/utilities.h"
 
 gl::framebuffer::framebuffer()
 {

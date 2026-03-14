@@ -1,6 +1,6 @@
 #pragma once
 #include "network/message.h"
-#include "command.h"
+#include "input/command.h"
 #include <queue>
 
 namespace network

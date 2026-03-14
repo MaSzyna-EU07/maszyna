@@ -4,7 +4,7 @@
 #include <sstream>
 #include "shader.h"
 #include "glsl_common.h"
-#include "Logs.h"
+#include "utilities/Logs.h"
 
 inline bool strcend(std::string const &value, std::string const &ending)
 {
