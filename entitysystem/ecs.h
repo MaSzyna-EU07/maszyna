@@ -82,9 +82,9 @@ class ECS final
 	}
 
 	/// <summary>
-	/// Adds component of type T to entity, forwarding provided arguments to component constructor. If component already exists, it will be replaced.
+	/// Returns entity's component
 	/// </summary>
-	/// <typeparam name="T">Component type</typeparam>
+	/// <typeparam name="T"> type</typeparam>
 	/// <param name="entity">Entity to which component will be added</param>
 	/// <returns>Reference to added component</returns>
 	template <class T> T &Get(entt::entity entity)
@@ -93,9 +93,9 @@ class ECS final
 	}
 
 	/// <summary>
-	/// Adds component of type T to entity, forwarding provided arguments to component constructor. If component already exists, it will be replaced.
+	/// Returns entity's component
 	/// </summary>
-	/// <typeparam name="T">Component type</typeparam>
+	/// <typeparam name="T"> type</typeparam>
 	/// <param name="entity">Entity to which component will be added</param>
 	/// <returns>Reference to added component</returns>
 	template <class T> const T &Get(entt::entity entity) const
