@@ -9,7 +9,7 @@
 
 #include <vector>
 
-#include "Model3d.h"
+#include "model/Model3d.h"
 
 namespace Rt {
 

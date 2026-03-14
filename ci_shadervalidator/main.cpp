@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "../gl/shader.h"
 #include "../gl/glsl_common.h"
-#include "utilities/Globals.h"
+#include "Globals.h"
 #include <iostream>
 #include <fstream>
 #include <cstdlib>

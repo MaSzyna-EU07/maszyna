@@ -8,7 +8,7 @@
 #include <fmt/format.h>
 #include <utilities.h>
 
-#include "Logs.h"
+#include "utilities/Logs.h"
 // #include "Texture.h"
 #include "nvrendererbackend.h"
 #include "stbi/stb_image.h"

@@ -27,7 +27,7 @@
 
 #include "nvrenderer_enums.h"
 #include "quadtree.h"
-#include "renderer.h"
+#include "rendering/renderer.h"
 #include "resource_registry.h"
 #include "sky.h"
 

@@ -1,6 +1,6 @@
 #include "nvrenderer/resource_registry.h"
 
-#include "Logs.h"
+#include "utilities/Logs.h"
 #include "fmt/compile.h"
 #include "nvtexture.h"
 #include "nvrenderer/nvrenderer.h"
