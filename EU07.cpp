@@ -38,7 +38,7 @@ void export_e3d_standalone(std::string in, std::string out, int flags, bool dyna
 #include <string>
 #include <sstream>
 #include <iomanip>
-#include <Globals.h>
+#include <utilities/Globals.h>
 
 #ifdef _WIN32
 #pragma comment(lib, "Dbghelp.lib")

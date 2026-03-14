@@ -1,12 +1,12 @@
 ﻿#include "nvtexture.h"
 #include "nvrenderer/nvrenderer.h"
 
-#include <Globals.h>
-#include <PyInt.h>
-#include <application.h>
-#include <dictionary.h>
+#include <utilities/Globals.h>
+#include <scripting/PyInt.h>
+#include <application/application.h>
+#include <utilities/dictionary.h>
 #include <fmt/format.h>
-#include <utilities.h>
+#include <utilities/utilities.h>
 
 #include "utilities/Logs.h"
 // #include "Texture.h"

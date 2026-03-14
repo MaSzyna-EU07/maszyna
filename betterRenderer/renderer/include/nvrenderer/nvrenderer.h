@@ -22,14 +22,14 @@
 #include <mutex>
 
 // EU07 includes
-#include <Classes.h>
-#include <scene.h>
+#include <utilities/Classes.h>
+#include <scene/scene.h>
 
 #include "nvrenderer_enums.h"
 #include "quadtree.h"
 #include "rendering/renderer.h"
 #include "resource_registry.h"
-#include "sky.h"
+#include "environment/sky.h"
 
 namespace Rt {
 struct IRtModel;

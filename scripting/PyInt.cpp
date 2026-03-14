@@ -7,18 +7,18 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
 #include "scripting/PyInt.h"
+#include "stdafx.h"
 
-#include "utilities/dictionary.h"
 #include "application/application.h"
-#include "utilities/Logs.h"
 #include "utilities/Globals.h"
+#include "utilities/Logs.h"
+#include "utilities/dictionary.h"
 
 #ifdef __GNUC__
 #pragma GCC diagnostic ignored "-Wwrite-strings"
 #endif
-#include <simulation.h>
+#include <simulation/simulation.h>
 
 void render_task::run()
 {
