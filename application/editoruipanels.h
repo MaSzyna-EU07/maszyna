@@ -9,8 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "uilayer.h"
-#include "Classes.h"
+#include "application/uilayer.h"
+#include "utilities/Classes.h"
 /*
 // helper, associated bool is set when the primary value was changed and expects processing at the observer's leisure
 template<typename Type_>

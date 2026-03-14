@@ -13,14 +13,14 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "Traction.h"
+#include "world/Traction.h"
 
-#include "simulation.h"
-#include "Globals.h"
-#include "TractionPower.h"
-#include "Logs.h"
-#include "renderer.h"
-#include "utilities.h"
+#include "simulation/simulation.h"
+#include "utilities/Globals.h"
+#include "world/TractionPower.h"
+#include "utilities/Logs.h"
+#include "rendering/renderer.h"
+#include "utilities/utilities.h"
 
 //---------------------------------------------------------------------------
 /*

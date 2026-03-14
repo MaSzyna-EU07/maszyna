@@ -1,10 +1,10 @@
 
 #include "stdafx.h"
-#include "skydome.h"
-#include "color.h"
-#include "utilities.h"
-#include "simulationenvironment.h"
-#include "Globals.h"
+#include "environment/skydome.h"
+#include "utilities/color.h"
+#include "utilities/utilities.h"
+#include "simulation/simulationenvironment.h"
+#include "utilities/Globals.h"
 
 // sky gradient based on "A practical analytic model for daylight" 
 // by A. J. Preetham Peter Shirley Brian Smits (University of Utah)

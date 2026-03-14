@@ -14,12 +14,12 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "Classes.h"
-#include "dumb3d.h"
-#include "Float3d.h"
-#include "Model3d.h"
-#include "DynObj.h"
-#include "scenenode.h"
+#include "utilities/Classes.h"
+#include "utilities/dumb3d.h"
+#include "utilities/Float3d.h"
+#include "model/Model3d.h"
+#include "vehicle/DynObj.h"
+#include "scene/scenenode.h"
 
 const int iMaxNumLights = 8;
 float const DefaultDarkThresholdLevel { 0.325f };

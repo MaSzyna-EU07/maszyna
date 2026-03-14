@@ -14,16 +14,16 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "Texture.h"
+#include "model/Texture.h"
 
-#include "application.h"
-#include "dictionary.h"
-#include "Globals.h"
-#include "Logs.h"
-#include "utilities.h"
-#include "sn_utils.h"
-#include "utilities.h"
-#include "flip-s3tc.h"
+#include "application/application.h"
+#include "utilities/dictionary.h"
+#include "utilities/Globals.h"
+#include "utilities/Logs.h"
+#include "utilities/utilities.h"
+#include "scene/sn_utils.h"
+#include "utilities/utilities.h"
+#include "rendering/flip-s3tc.h"
 #include "stb/stb_image.h"
 //#include <png.h>
 #include "dds-ktx/dds-ktx.h"

@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "ResourceManager.h"
+#include "model/ResourceManager.h"
 
 struct world_vertex;
 

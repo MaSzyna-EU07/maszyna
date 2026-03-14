@@ -12,15 +12,15 @@ http://mozilla.org/MPL/2.0/.
 #include <string>
 #include <functional>
 
-#include "Classes.h"
+#include "utilities/Classes.h"
 #include "interfaces/IMaterial.h"
 #include "MOVER.h"
-#include "TrkFoll.h"
-#include "Button.h"
-#include "AirCoupler.h"
+#include "world/TrkFoll.h"
+#include "vehicle/Button.h"
+#include "vehicle/AirCoupler.h"
 #include "interfaces/ITexture.h"
-#include "sound.h"
-#include "Spring.h"
+#include "audio/sound.h"
+#include "world/Spring.h"
 
 #include <vector>
 

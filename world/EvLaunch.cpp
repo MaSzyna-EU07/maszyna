@@ -14,17 +14,17 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "EvLaunch.h"
+#include "world/EvLaunch.h"
 
-#include "Globals.h"
-#include "Logs.h"
-#include "Event.h"
-#include "MemCell.h"
-#include "Timer.h"
-#include "parser.h"
+#include "utilities/Globals.h"
+#include "utilities/Logs.h"
+#include "world/Event.h"
+#include "world/MemCell.h"
+#include "utilities/Timer.h"
+#include "utilities/parser.h"
 #include "Console.h"
-#include "simulationtime.h"
-#include "utilities.h"
+#include "simulation/simulationtime.h"
+#include "utilities/utilities.h"
 
 //---------------------------------------------------------------------------
 

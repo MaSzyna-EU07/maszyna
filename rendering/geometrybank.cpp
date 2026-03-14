@@ -8,12 +8,12 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "geometrybank.h"
-#include "vertex.h"
+#include "rendering/geometrybank.h"
+#include "model/vertex.h"
 
-#include "sn_utils.h"
-#include "Logs.h"
-#include "Globals.h"
+#include "scene/sn_utils.h"
+#include "utilities/Logs.h"
+#include "utilities/Globals.h"
 
 namespace gfx {
 

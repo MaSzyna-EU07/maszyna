@@ -8,8 +8,8 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "vertex.h"
-#include "sn_utils.h"
+#include "model/vertex.h"
+#include "scene/sn_utils.h"
 
 void
 world_vertex::serialize( std::ostream &s ) const {

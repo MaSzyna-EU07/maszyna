@@ -47,9 +47,9 @@ http://mozilla.org/MPL/2.0/.
 #pragma warning(pop)
 #endif
 
-#include "Classes.h"
-#include "utilities.h"
-#include "Texture.h"
+#include "utilities/Classes.h"
+#include "utilities/utilities.h"
+#include "model/Texture.h"
 #include <thread>
 
 #define PyGetFloat(param) PyFloat_FromDouble(param)

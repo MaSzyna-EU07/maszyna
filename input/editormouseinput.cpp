@@ -8,7 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "editormouseinput.h"
+#include "input/editormouseinput.h"
 
 bool
 editormouse_input::init() {

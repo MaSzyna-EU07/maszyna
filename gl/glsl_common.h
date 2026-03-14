@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ubo.h"
-#include "Globals.h"
+#include "utilities/Globals.h"
 
 namespace gl
 {

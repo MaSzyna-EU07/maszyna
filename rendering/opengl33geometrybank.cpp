@@ -8,9 +8,9 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "opengl33geometrybank.h"
+#include "rendering/opengl33geometrybank.h"
 
-#include "Logs.h"
+#include "utilities/Logs.h"
 
 namespace gfx {
 

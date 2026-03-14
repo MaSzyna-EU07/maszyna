@@ -13,21 +13,21 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "Driver.h"
+#include "vehicle/Driver.h"
 
-#include "Globals.h"
-#include "translation.h"
-#include "Logs.h"
-#include "Train.h"
-#include "mtable.h"
-#include "DynObj.h"
-#include "Event.h"
-#include "MemCell.h"
-#include "simulation.h"
-#include "simulationtime.h"
-#include "Track.h"
-#include "station.h"
-#include "keyboardinput.h"
+#include "utilities/Globals.h"
+#include "utilities/translation.h"
+#include "utilities/Logs.h"
+#include "vehicle/Train.h"
+#include "world/mtable.h"
+#include "vehicle/DynObj.h"
+#include "world/Event.h"
+#include "world/MemCell.h"
+#include "simulation/simulation.h"
+#include "simulation/simulationtime.h"
+#include "world/Track.h"
+#include "world/station.h"
+#include "input/keyboardinput.h"
 
 #define LOGVELOCITY 0
 #define LOGORDERS 1

@@ -8,17 +8,17 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "messaging.h"
+#include "input/messaging.h"
 
-#include "Globals.h"
-#include "application.h"
-#include "simulation.h"
-#include "simulationtime.h"
-#include "Event.h"
-#include "DynObj.h"
-#include "Driver.h"
-#include "mtable.h"
-#include "Logs.h"
+#include "utilities/Globals.h"
+#include "application/application.h"
+#include "simulation/simulation.h"
+#include "simulation/simulationtime.h"
+#include "world/Event.h"
+#include "vehicle/DynObj.h"
+#include "vehicle/Driver.h"
+#include "world/mtable.h"
+#include "utilities/Logs.h"
 
 #ifdef _WIN32
 extern "C"

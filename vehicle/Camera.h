@@ -9,9 +9,9 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "dumb3d.h"
-#include "command.h"
-#include "DynObj.h"
+#include "utilities/dumb3d.h"
+#include "input/command.h"
+#include "vehicle/DynObj.h"
 
 //---------------------------------------------------------------------------
 

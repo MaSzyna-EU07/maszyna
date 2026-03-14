@@ -8,9 +8,9 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "openglcamera.h"
+#include "rendering/openglcamera.h"
 
-#include "DynObj.h"
+#include "vehicle/DynObj.h"
 
 void
 opengl_camera::update_frustum( glm::mat4 const &Projection, glm::mat4 const &Modelview ) {

@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "vr_interface.h"
-#include "Logs.h"
+#include "utilities/Logs.h"
 
 vr_interface::~vr_interface() {}
 

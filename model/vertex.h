@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "utilities.h"
+#include "utilities/utilities.h"
 
 // geometry vertex with double precision position
 struct world_vertex {

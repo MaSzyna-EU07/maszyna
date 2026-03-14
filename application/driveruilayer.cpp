@@ -8,15 +8,15 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "driveruilayer.h"
+#include "application/driveruilayer.h"
 
-#include "Globals.h"
-#include "application.h"
-#include "translation.h"
-#include "simulation.h"
-#include "Train.h"
-#include "AnimModel.h"
-#include "renderer.h"
+#include "utilities/Globals.h"
+#include "application/application.h"
+#include "utilities/translation.h"
+#include "simulation/simulation.h"
+#include "vehicle/Train.h"
+#include "model/AnimModel.h"
+#include "rendering/renderer.h"
 
 driver_ui::driver_ui()
 {

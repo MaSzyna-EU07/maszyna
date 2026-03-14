@@ -23,11 +23,11 @@ Copyright (C) 2007-2014 Maciej Cierniak
 #define stat _stat
 #endif
 
-#include "utilities.h"
-#include "Globals.h"
-#include "parser.h"
+#include "utilities/utilities.h"
+#include "utilities/Globals.h"
+#include "utilities/parser.h"
 
-#include "Logs.h"
+#include "utilities/Logs.h"
 
 bool DebugModeFlag = false;
 bool FreeFlyModeFlag = false;

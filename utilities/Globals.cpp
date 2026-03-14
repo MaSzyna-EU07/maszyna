@@ -12,15 +12,15 @@ http://mozilla.org/MPL/2.0/.
 
 */
 #include "stdafx.h"
-#include "Globals.h"
+#include "utilities/Globals.h"
 
-#include "simulation.h"
-#include "simulationenvironment.h"
-#include "Driver.h"
-#include "Logs.h"
+#include "simulation/simulation.h"
+#include "simulation/simulationenvironment.h"
+#include "vehicle/Driver.h"
+#include "utilities/Logs.h"
 #include "Console.h"
-#include "PyInt.h"
-#include "Timer.h"
+#include "scripting/PyInt.h"
+#include "utilities/Timer.h"
 #include "vao.h"
 
 void

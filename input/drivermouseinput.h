@@ -10,7 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <unordered_map>
-#include "command.h"
+#include "input/command.h"
 
 // virtual slider; value determined by position of the mouse
 class mouse_slider {

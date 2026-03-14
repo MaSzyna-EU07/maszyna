@@ -9,19 +9,19 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "applicationmode.h"
+#include "application/applicationmode.h"
 
-#include "driverkeyboardinput.h"
-#include "drivermouseinput.h"
-#include "gamepadinput.h"
+#include "input/driverkeyboardinput.h"
+#include "input/drivermouseinput.h"
+#include "input/gamepadinput.h"
 #include "Console.h"
-#include "Camera.h"
-#include "Classes.h"
+#include "vehicle/Camera.h"
+#include "utilities/Classes.h"
 #ifdef WITH_UART
-#include "uart.h"
+#include "utilities/uart.h"
 #endif
 #ifdef WITH_ZMQ
-#include "zmq_input.h"
+#include "input/zmq_input.h"
 #endif
 
 class driver_mode : public application_mode {

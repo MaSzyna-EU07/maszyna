@@ -11,8 +11,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include <string>
 
-#include "Classes.h"
-#include "scenenode.h"
+#include "utilities/Classes.h"
+#include "scene/scenenode.h"
 
 // radio-transmitted event launch messages
 enum radio_message {

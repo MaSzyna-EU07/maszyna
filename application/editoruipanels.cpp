@@ -8,18 +8,18 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "editoruipanels.h"
-#include "scenenodegroups.h"
+#include "application/editoruipanels.h"
+#include "scene/scenenodegroups.h"
 
-#include "Globals.h"
-#include "Camera.h"
-#include "AnimModel.h"
-#include "Track.h"
-#include "Event.h"
-#include "MemCell.h"
-#include "editoruilayer.h"
-#include "renderer.h"
-#include "utilities.h"
+#include "utilities/Globals.h"
+#include "vehicle/Camera.h"
+#include "model/AnimModel.h"
+#include "world/Track.h"
+#include "world/Event.h"
+#include "world/MemCell.h"
+#include "application/editoruilayer.h"
+#include "rendering/renderer.h"
+#include "utilities/utilities.h"
 
 void itemproperties_panel::update(scene::basic_node const *Node)
 {

@@ -14,10 +14,10 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "TractionPower.h"
+#include "world/TractionPower.h"
 
-#include "parser.h"
-#include "Logs.h"
+#include "utilities/parser.h"
+#include "utilities/Logs.h"
 
 //---------------------------------------------------------------------------
 

@@ -8,7 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "PyInt.h"
+#include "scripting/PyInt.h"
 
 bool python_taskqueue::init()
 {

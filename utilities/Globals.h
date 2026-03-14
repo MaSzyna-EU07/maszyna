@@ -9,20 +9,20 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "Classes.h"
-#include "Camera.h"
-#include "dumb3d.h"
-#include "Float3d.h"
-#include "light.h"
-#include "utilities.h"
-#include "motiontelemetry.h"
+#include "utilities/Classes.h"
+#include "vehicle/Camera.h"
+#include "utilities/dumb3d.h"
+#include "utilities/Float3d.h"
+#include "rendering/light.h"
+#include "utilities/utilities.h"
+#include "utilities/motiontelemetry.h"
 #include <map>
 
 #ifdef WITH_UART
-#include "uart.h"
+#include "utilities/uart.h"
 #endif
 #ifdef WITH_ZMQ
-#include "zmq_input.h"
+#include "input/zmq_input.h"
 #endif
 
 struct global_settings {

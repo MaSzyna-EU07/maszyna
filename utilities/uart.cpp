@@ -1,13 +1,13 @@
 #include "stdafx.h"
-#include "uart.h"
+#include "utilities/uart.h"
 
-#include "Globals.h"
-#include "simulation.h"
-#include "Train.h"
-#include "parser.h"
-#include "Logs.h"
-#include "simulationtime.h"
-#include "application.h"
+#include "utilities/Globals.h"
+#include "simulation/simulation.h"
+#include "vehicle/Train.h"
+#include "utilities/parser.h"
+#include "utilities/Logs.h"
+#include "simulation/simulationtime.h"
+#include "application/application.h"
 
 const char* uart_baudrates_list[] = {
     "300",

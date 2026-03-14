@@ -8,23 +8,23 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "editormode.h"
-#include "editoruilayer.h"
+#include "application/editormode.h"
+#include "application/editoruilayer.h"
 
-#include "application.h"
-#include "Globals.h"
-#include "simulation.h"
-#include "simulationtime.h"
-#include "simulationenvironment.h"
-#include "Timer.h"
+#include "application/application.h"
+#include "utilities/Globals.h"
+#include "simulation/simulation.h"
+#include "simulation/simulationtime.h"
+#include "simulation/simulationenvironment.h"
+#include "utilities/Timer.h"
 #include "Console.h"
-#include "renderer.h"
-#include "AnimModel.h"
-#include "scene.h"
+#include "rendering/renderer.h"
+#include "model/AnimModel.h"
+#include "scene/scene.h"
 
 
 #include "imgui/imgui.h"
-#include "Logs.h"
+#include "utilities/Logs.h"
 #include <cmath>
 #include <functional>
 #include <vector>

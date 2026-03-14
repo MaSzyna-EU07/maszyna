@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "geometrybank.h"
+#include "rendering/geometrybank.h"
 #include "gl/buffer.h"
 #include "gl/vao.h"
 

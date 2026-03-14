@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "widgets/trainingcard.h"
-#include "simulation.h"
+#include "simulation/simulation.h"
 
 #ifdef __linux__
 #include <unistd.h>

@@ -9,16 +9,16 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "Classes.h"
-#include "scene.h"
-#include "Names.h"
-#include "EvLaunch.h"
-#include "Logs.h"
-#include "command.h"
-#include "comparison.h"
+#include "utilities/Classes.h"
+#include "scene/scene.h"
+#include "utilities/Names.h"
+#include "world/EvLaunch.h"
+#include "utilities/Logs.h"
+#include "input/command.h"
+#include "utilities/comparison.h"
 
 #ifdef WITH_LUA
-#include "lua.h"
+#include "scripting/lua.h"
 #endif
 
 // common event interface

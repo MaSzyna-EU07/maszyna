@@ -9,12 +9,12 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "applicationmode.h"
-#include "editormouseinput.h"
-#include "editorkeyboardinput.h"
-#include "Camera.h"
-#include "sceneeditor.h"
-#include "scenenode.h"
+#include "application/applicationmode.h"
+#include "input/editormouseinput.h"
+#include "input/editorkeyboardinput.h"
+#include "vehicle/Camera.h"
+#include "scene/sceneeditor.h"
+#include "scene/scenenode.h"
 
 class editor_mode : public application_mode
 {

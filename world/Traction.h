@@ -11,10 +11,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include <string>
 
-#include "scenenode.h"
-#include "Segment.h"
-#include "material.h"
-#include "Names.h"
+#include "scene/scenenode.h"
+#include "world/Segment.h"
+#include "model/material.h"
+#include "utilities/Names.h"
 
 class TTractionPowerSource;
 

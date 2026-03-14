@@ -9,8 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "applicationmode.h"
-#include "simulation.h"
+#include "application/applicationmode.h"
+#include "simulation/simulation.h"
 
 class scenarioloader_mode : public application_mode {
 	std::shared_ptr<simulation::deserializer_state> state;

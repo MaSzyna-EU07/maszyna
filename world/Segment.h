@@ -9,10 +9,10 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "Classes.h"
-#include "dumb3d.h"
-#include "geometrybank.h"
-#include "utilities.h"
+#include "utilities/Classes.h"
+#include "utilities/dumb3d.h"
+#include "rendering/geometrybank.h"
+#include "utilities/utilities.h"
 
 struct map_colored_paths {
 	std::vector<gfx::geometrybank_handle> switches;

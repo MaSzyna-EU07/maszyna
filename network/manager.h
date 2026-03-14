@@ -1,7 +1,7 @@
 #pragma once
 #include <memory>
 #include "network/network.h"
-#include "command.h"
+#include "input/command.h"
 
 namespace network
 {

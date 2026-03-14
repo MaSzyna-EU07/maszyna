@@ -9,14 +9,14 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 
-#include "sound.h"
-#include "parser.h"
-#include "Globals.h"
-#include "Camera.h"
-#include "Train.h"
-#include "DynObj.h"
-#include "simulation.h"
-#include "audiorenderer_extra.h"
+#include "audio/sound.h"
+#include "utilities/parser.h"
+#include "utilities/Globals.h"
+#include "vehicle/Camera.h"
+#include "vehicle/Train.h"
+#include "vehicle/DynObj.h"
+#include "simulation/simulation.h"
+#include "audio/audiorenderer_extra.h"
 
 // constructors
 sound_source::sound_source( sound_placement const Placement, float const Range ) :

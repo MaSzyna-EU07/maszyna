@@ -13,17 +13,17 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "AnimModel.h"
+#include "model/AnimModel.h"
 
-#include "renderer.h"
-#include "MdlMngr.h"
-#include "simulation.h"
-#include "simulationtime.h"
-#include "Event.h"
-#include "Globals.h"
-#include "Timer.h"
-#include "Logs.h"
-#include "renderer.h"
+#include "rendering/renderer.h"
+#include "model/MdlMngr.h"
+#include "simulation/simulation.h"
+#include "simulation/simulationtime.h"
+#include "world/Event.h"
+#include "utilities/Globals.h"
+#include "utilities/Timer.h"
+#include "utilities/Logs.h"
+#include "rendering/renderer.h"
 
 std::list<std::weak_ptr<TAnimContainer>> TAnimModel::acAnimList;
 

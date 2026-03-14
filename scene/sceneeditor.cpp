@@ -8,16 +8,16 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "sceneeditor.h"
-#include "scenenodegroups.h"
+#include "scene/sceneeditor.h"
+#include "scene/scenenodegroups.h"
 
-#include "Globals.h"
-#include "application.h"
-#include "simulation.h"
-#include "MemCell.h"
-#include "Camera.h"
-#include "AnimModel.h"
-#include "renderer.h"
+#include "utilities/Globals.h"
+#include "application/application.h"
+#include "simulation/simulation.h"
+#include "world/MemCell.h"
+#include "vehicle/Camera.h"
+#include "model/AnimModel.h"
+#include "rendering/renderer.h"
 
 namespace scene {
 

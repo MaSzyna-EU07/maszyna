@@ -8,11 +8,11 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "simulationenvironment.h"
+#include "simulation/simulationenvironment.h"
 
-#include "simulationsounds.h"
-#include "Globals.h"
-#include "Timer.h"
+#include "simulation/simulationsounds.h"
+#include "utilities/Globals.h"
+#include "utilities/Timer.h"
 
 namespace simulation {
 

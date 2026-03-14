@@ -11,7 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <unordered_map>
 #include <array>
-#include "command.h"
+#include "input/command.h"
 
 namespace input {
 

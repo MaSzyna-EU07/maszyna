@@ -8,13 +8,13 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "scenenode.h"
+#include "scene/scenenode.h"
 
-#include "Model3d.h"
-#include "renderer.h"
-#include "parser.h"
-#include "Logs.h"
-#include "sn_utils.h"
+#include "model/Model3d.h"
+#include "rendering/renderer.h"
+#include "utilities/parser.h"
+#include "utilities/Logs.h"
+#include "scene/sn_utils.h"
 
 // stores content of the struct in provided output stream
 void

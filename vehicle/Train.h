@@ -10,15 +10,15 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <string>
-#include "DynObj.h"
-#include "Driver.h"
-#include "Button.h"
-#include "Gauge.h"
-#include "sound.h"
-#include "PyInt.h"
-#include "command.h"
-#include "pythonscreenviewer.h"
-#include "dictionary.h"
+#include "vehicle/DynObj.h"
+#include "vehicle/Driver.h"
+#include "vehicle/Button.h"
+#include "vehicle/Gauge.h"
+#include "audio/sound.h"
+#include "scripting/PyInt.h"
+#include "input/command.h"
+#include "scripting/pythonscreenviewer.h"
+#include "utilities/dictionary.h"
 
 #undef snprintf // pyint.h->python
 

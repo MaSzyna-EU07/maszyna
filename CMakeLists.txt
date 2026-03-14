@@ -404,19 +404,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 	"${DEPS_DIR}/glad/include"
 	"${DEPS_DIR}/dds-ktx/include"
 	"${CMAKE_BINARY_DIR}/geninc"
-	"${GLOBAL_INCLUDE_DIR}"
-	"simulation"
-	"scene"
-	"rendering"
-	"audio"
-	"environment"
-	"application"
-	"input"
-	"scripting"
-	"model"
-	"utilities"
-	"world"
-	"vehicle")
+	"${GLOBAL_INCLUDE_DIR}")
 
 if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
 	# override cmake defaults

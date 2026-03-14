@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "command.h"
+#include "input/command.h"
 
 class editormouse_input {
 

@@ -18,8 +18,8 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 
 #include "stdafx.h"
 
-#include "application.h"
-#include "Logs.h"
+#include "application/application.h"
+#include "utilities/Logs.h"
 #include <cstdlib>
 #ifdef WITHDUMPGEN
 #ifdef _WIN32

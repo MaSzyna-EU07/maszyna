@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "Classes.h"
+#include "utilities/Classes.h"
 
 // collection of virtual light sources present in the scene
 // used by the renderer to determine most suitable placement for actual light sources during render

@@ -8,7 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "editorkeyboardinput.h"
+#include "input/editorkeyboardinput.h"
 
 bool
 editorkeyboard_input::init() {

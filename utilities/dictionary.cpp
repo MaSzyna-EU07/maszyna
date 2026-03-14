@@ -8,13 +8,13 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "dictionary.h"
+#include "utilities/dictionary.h"
 
-#include "simulation.h"
-#include "utilities.h"
-#include "DynObj.h"
-#include "Driver.h"
-#include "mtable.h"
+#include "simulation/simulation.h"
+#include "utilities/utilities.h"
+#include "vehicle/DynObj.h"
+#include "vehicle/Driver.h"
+#include "world/mtable.h"
 
 dictionary_source::dictionary_source( std::string const &Input ) {
 

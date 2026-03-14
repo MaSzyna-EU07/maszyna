@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "sound.h"
+#include "audio/sound.h"
 
 namespace simulation {
 

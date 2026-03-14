@@ -1,7 +1,7 @@
 #pragma once
 
 #include <libserialport.h>
-#include "command.h"
+#include "input/command.h"
 
 extern const char* uart_baudrates_list[];
 extern const size_t uart_baudrates_list_num;

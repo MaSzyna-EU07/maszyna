@@ -9,13 +9,13 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "sky.h"
-#include "sun.h"
-#include "moon.h"
-#include "stars.h"
-#include "skydome.h"
-#include "precipitation.h"
-#include "sound.h"
+#include "environment/sky.h"
+#include "environment/sun.h"
+#include "environment/moon.h"
+#include "environment/stars.h"
+#include "environment/skydome.h"
+#include "rendering/precipitation.h"
+#include "audio/sound.h"
 
 class opengl_renderer;
 class opengl33_renderer;

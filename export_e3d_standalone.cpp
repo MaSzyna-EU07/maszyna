@@ -1,8 +1,8 @@
 #include "stdafx.h"
 
-#include "Model3d.h"
-#include "Globals.h"
-#include "renderer.h"
+#include "model/Model3d.h"
+#include "utilities/Globals.h"
+#include "rendering/renderer.h"
 
 void export_e3d_standalone(std::string in, std::string out, int flags, bool dynamic)
 {

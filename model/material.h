@@ -10,8 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "interfaces/IMaterial.h"
-#include "Classes.h"
-#include "Texture.h"
+#include "utilities/Classes.h"
+#include "model/Texture.h"
 #include "gl/shader.h"
 #include "gl/ubo.h"
 

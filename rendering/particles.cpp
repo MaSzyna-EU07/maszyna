@@ -8,13 +8,13 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "particles.h"
+#include "rendering/particles.h"
 
-#include "Timer.h"
-#include "Globals.h"
-#include "AnimModel.h"
-#include "simulationenvironment.h"
-#include "Logs.h"
+#include "utilities/Timer.h"
+#include "utilities/Globals.h"
+#include "model/AnimModel.h"
+#include "simulation/simulationenvironment.h"
+#include "utilities/Logs.h"
 
 
 void

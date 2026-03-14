@@ -1,10 +1,10 @@
 #include "stdafx.h"
 #include "openvr_imp.h"
-#include "Logs.h"
-#include "Globals.h"
-#include "renderer.h"
-#include "simulation.h"
-#include "application.h"
+#include "utilities/Logs.h"
+#include "utilities/Globals.h"
+#include "rendering/renderer.h"
+#include "simulation/simulation.h"
+#include "application/application.h"
 
 vr_openvr::vr_openvr()
 {

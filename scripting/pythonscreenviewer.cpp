@@ -1,9 +1,9 @@
 #include "stdafx.h"
-#include "pythonscreenviewer.h"
-#include "application.h"
+#include "scripting/pythonscreenviewer.h"
+#include "application/application.h"
 #include "gl/shader.h"
 #include "gl/vao.h"
-#include "Logs.h"
+#include "utilities/Logs.h"
 
 void texture_window_resize(GLFWwindow *win, int w, int h)
 {

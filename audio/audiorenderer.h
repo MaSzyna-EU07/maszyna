@@ -9,9 +9,9 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "audio.h"
-#include "ResourceManager.h"
-#include "uitranscripts.h"
+#include "audio/audio.h"
+#include "model/ResourceManager.h"
+#include "application/uitranscripts.h"
 
 #define EU07_SOUND_PROOFINGUSESRANGE
 

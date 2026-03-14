@@ -8,14 +8,14 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "Camera.h"
+#include "vehicle/Camera.h"
 
-#include "Globals.h"
-#include "utilities.h"
+#include "utilities/Globals.h"
+#include "utilities/utilities.h"
 #include "Console.h"
-#include "Timer.h"
-#include "Driver.h"
-#include "DynObj.h"
+#include "utilities/Timer.h"
+#include "vehicle/Driver.h"
+#include "vehicle/DynObj.h"
 #include "MOVER.h"
 
 //---------------------------------------------------------------------------

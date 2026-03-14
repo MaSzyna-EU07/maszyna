@@ -8,12 +8,12 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "PyInt.h"
+#include "scripting/PyInt.h"
 
-#include "dictionary.h"
-#include "application.h"
-#include "Logs.h"
-#include "Globals.h"
+#include "utilities/dictionary.h"
+#include "application/application.h"
+#include "utilities/Logs.h"
+#include "utilities/Globals.h"
 
 #ifdef __GNUC__
 #pragma GCC diagnostic ignored "-Wwrite-strings"

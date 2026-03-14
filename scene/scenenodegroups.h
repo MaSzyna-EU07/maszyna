@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "scenenode.h"
+#include "scene/scenenode.h"
 #include "widgets/map_objects.h"
 
 namespace scene {

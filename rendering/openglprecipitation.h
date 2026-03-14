@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma	once
 
-#include "Texture.h"
+#include "model/Texture.h"
 
 class opengl_precipitation {
 

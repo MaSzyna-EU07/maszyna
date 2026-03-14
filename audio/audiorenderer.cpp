@@ -8,15 +8,15 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "audiorenderer.h"
+#include "audio/audiorenderer.h"
 
-#include "sound.h"
-#include "Globals.h"
-#include "Camera.h"
-#include "Logs.h"
-#include "utilities.h"
-#include "simulation.h"
-#include "Train.h"
+#include "audio/sound.h"
+#include "utilities/Globals.h"
+#include "vehicle/Camera.h"
+#include "utilities/Logs.h"
+#include "utilities/utilities.h"
+#include "simulation/simulation.h"
+#include "vehicle/Train.h"
 
 namespace audio {
 

@@ -8,10 +8,10 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "keyboardinput.h"
-#include "Globals.h"
-#include "Logs.h"
-#include "parser.h"
+#include "input/keyboardinput.h"
+#include "utilities/Globals.h"
+#include "utilities/Logs.h"
+#include "utilities/parser.h"
 
 namespace input {
 
@@ -143,7 +143,7 @@ keyboard_input::recall_bindings() {
 	}
 	else
 	{
-		// Fallback – plik w folderze symulatora
+		// Fallback ï¿½ plik w folderze symulatora
 		path = "eu07_input-keyboard.ini";
 	}
 	cParser bindingparser(path.c_str(), cParser::buffer_FILE);

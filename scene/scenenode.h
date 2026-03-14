@@ -11,10 +11,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include <vector>
 
-#include "Classes.h"
-#include "material.h"
-#include "vertex.h"
-#include "geometrybank.h"
+#include "utilities/Classes.h"
+#include "model/material.h"
+#include "model/vertex.h"
+#include "rendering/geometrybank.h"
 #include "utils/uuid.hpp"
 
 struct lighting_data {

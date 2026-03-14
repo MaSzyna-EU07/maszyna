@@ -3,7 +3,7 @@
 * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "stdafx.h"
-#include "sn_utils.h"
+#include "scene/sn_utils.h"
 
 // sanity checks
 static_assert(std::numeric_limits<double>::is_iec559, "IEEE754 required");

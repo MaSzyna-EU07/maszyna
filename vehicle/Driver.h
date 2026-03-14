@@ -10,13 +10,13 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <string>
-#include "Classes.h"
+#include "utilities/Classes.h"
 #include "MOVER.h"
-#include "sound.h"
-#include "DynObj.h"
-#include "mtable.h"
-#include "translation.h"
-#include "driverhints.h"
+#include "audio/sound.h"
+#include "vehicle/DynObj.h"
+#include "world/mtable.h"
+#include "utilities/translation.h"
+#include "application/driverhints.h"
 
 auto const EU07_AI_ACCELERATION = 0.05;
 auto const EU07_AI_NOACCELERATION = -0.05;

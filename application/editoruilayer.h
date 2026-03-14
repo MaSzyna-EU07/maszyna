@@ -9,8 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "uilayer.h"
-#include "editoruipanels.h"
+#include "application/uilayer.h"
+#include "application/editoruipanels.h"
 
 namespace scene
 {

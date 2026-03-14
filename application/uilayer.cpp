@@ -8,17 +8,17 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "uilayer.h"
+#include "application/uilayer.h"
 
 #include <utility>
 
-#include "Globals.h"
-#include "renderer.h"
-#include "Logs.h"
-#include "simulation.h"
-#include "translation.h"
-#include "application.h"
-#include "editormode.h"
+#include "utilities/Globals.h"
+#include "rendering/renderer.h"
+#include "utilities/Logs.h"
+#include "simulation/simulation.h"
+#include "utilities/translation.h"
+#include "application/application.h"
+#include "application/editormode.h"
 
 #include "imgui/imgui_impl_glfw.h"
 

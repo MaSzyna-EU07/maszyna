@@ -8,7 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "driverkeyboardinput.h"
+#include "input/driverkeyboardinput.h"
 
 bool
 driverkeyboard_input::init() {

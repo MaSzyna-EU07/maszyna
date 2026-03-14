@@ -1,9 +1,9 @@
 #include "stdafx.h"
-#include "uitranscripts.h"
+#include "application/uitranscripts.h"
 
-#include "Globals.h"
-#include "parser.h"
-#include "utilities.h"
+#include "utilities/Globals.h"
+#include "utilities/parser.h"
+#include "utilities/utilities.h"
 
 namespace ui {
 

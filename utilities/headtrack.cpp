@@ -1,6 +1,6 @@
 #include "stdafx.h"
-#include "headtrack.h"
-#include "Globals.h"
+#include "utilities/headtrack.h"
+#include "utilities/Globals.h"
 
 headtrack::headtrack()
 {

@@ -10,8 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <vector>
-#include "command.h"
-#include "parser.h"
+#include "input/command.h"
+#include "utilities/parser.h"
 
 class gamepad_input {
 

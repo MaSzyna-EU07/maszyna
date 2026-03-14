@@ -9,14 +9,14 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 
-#include "material.h"
-#include "renderer.h"
-#include "parser.h"
-#include "utilities.h"
-#include "Logs.h"
-#include "sn_utils.h"
-#include "Globals.h"
-#include "Logs.h"
+#include "model/material.h"
+#include "rendering/renderer.h"
+#include "utilities/parser.h"
+#include "utilities/utilities.h"
+#include "utilities/Logs.h"
+#include "scene/sn_utils.h"
+#include "utilities/Globals.h"
+#include "utilities/Logs.h"
 
 opengl_material::path_data opengl_material::paths;
 

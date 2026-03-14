@@ -1,11 +1,11 @@
 #include "stdafx.h"
-#include "lua.h"
-#include "Event.h"
-#include "Logs.h"
-#include "MemCell.h"
-#include "Driver.h"
-#include "lua_ffi.h"
-#include "simulation.h"
+#include "scripting/lua.h"
+#include "world/Event.h"
+#include "utilities/Logs.h"
+#include "world/MemCell.h"
+#include "vehicle/Driver.h"
+#include "scripting/lua_ffi.h"
+#include "simulation/simulation.h"
 
 lua::lua()
 {

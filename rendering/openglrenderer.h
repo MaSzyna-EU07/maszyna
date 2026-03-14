@@ -9,16 +9,16 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "renderer.h"
-#include "opengllight.h"
-#include "openglcamera.h"
-#include "openglparticles.h"
-#include "openglskydome.h"
-#include "openglprecipitation.h"
-#include "lightarray.h"
-#include "scene.h"
-#include "simulationenvironment.h"
-#include "MemCell.h"
+#include "rendering/renderer.h"
+#include "rendering/opengllight.h"
+#include "rendering/openglcamera.h"
+#include "rendering/openglparticles.h"
+#include "rendering/openglskydome.h"
+#include "rendering/openglprecipitation.h"
+#include "rendering/lightarray.h"
+#include "scene/scene.h"
+#include "simulation/simulationenvironment.h"
+#include "world/MemCell.h"
 
 #define EU07_USE_PICKING_FRAMEBUFFER
 //#define EU07_USE_DEBUG_SHADOWMAP

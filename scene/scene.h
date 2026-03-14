@@ -16,13 +16,13 @@ http://mozilla.org/MPL/2.0/.
 #include <unordered_set>
 #include <map>
 
-#include "parser.h"
-#include "geometrybank.h"
-#include "scenenode.h"
-#include "Track.h"
-#include "Traction.h"
-#include "sound.h"
-#include "command.h"
+#include "utilities/parser.h"
+#include "rendering/geometrybank.h"
+#include "scene/scenenode.h"
+#include "world/Track.h"
+#include "world/Traction.h"
+#include "audio/sound.h"
+#include "input/command.h"
 
 class opengl_renderer;
 class opengl33_renderer;

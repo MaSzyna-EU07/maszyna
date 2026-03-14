@@ -9,10 +9,10 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "Classes.h"
-#include "scenenode.h"
-#include "Names.h"
-#include "comparison.h"
+#include "utilities/Classes.h"
+#include "scene/scenenode.h"
+#include "utilities/Names.h"
+#include "utilities/comparison.h"
 
 class TMemCell : public scene::basic_node {
 

@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 
-#include "opengl33light.h"
+#include "rendering/opengl33light.h"
 
 void opengl33_light::apply_intensity(float const Factor) {
 

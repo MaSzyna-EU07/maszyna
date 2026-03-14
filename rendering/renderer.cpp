@@ -8,8 +8,8 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "renderer.h"
-#include "Logs.h"
+#include "rendering/renderer.h"
+#include "utilities/Logs.h"
 
 std::unique_ptr<gfx_renderer> GfxRenderer;
 

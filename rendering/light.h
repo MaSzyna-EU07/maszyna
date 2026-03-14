@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "color.h"
+#include "utilities/color.h"
 
 // a simple light source, either omni- or directional
 struct basic_light {

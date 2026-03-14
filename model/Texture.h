@@ -12,7 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include <istream>
 #include "winheaders.h"
 #include <string>
-#include "ResourceManager.h"
+#include "model/ResourceManager.h"
 #include "gl/ubo.h"
 #include "interfaces/ITexture.h"
 

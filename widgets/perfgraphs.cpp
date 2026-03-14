@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "widgets/perfgraphs.h"
-#include "Timer.h"
-#include "translation.h"
+#include "utilities/Timer.h"
+#include "utilities/translation.h"
 
 perfgraph_panel::perfgraph_panel() : ui_panel(STR("Performance"), false) {}
 

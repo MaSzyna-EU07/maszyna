@@ -9,10 +9,10 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "geometrybank.h"
+#include "rendering/geometrybank.h"
 #include "interfaces/IMaterial.h"
 #include "interfaces/ITexture.h"
-#include "Globals.h"
+#include "utilities/Globals.h"
 
 struct lighting_data;
 

@@ -14,13 +14,13 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "TrkFoll.h"
+#include "world/TrkFoll.h"
 
-#include "simulation.h"
-#include "Globals.h"
-#include "DynObj.h"
-#include "Driver.h"
-#include "Logs.h"
+#include "simulation/simulation.h"
+#include "utilities/Globals.h"
+#include "vehicle/DynObj.h"
+#include "vehicle/Driver.h"
+#include "utilities/Logs.h"
 
 TTrackFollower::~TTrackFollower()
 {

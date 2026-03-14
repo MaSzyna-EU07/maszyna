@@ -1,5 +1,5 @@
 #include "stdafx.h"
-#include "nullrenderer.h"
+#include "rendering/nullrenderer.h"
 
 std::unique_ptr<gfx_renderer> null_renderer::create_func()
 {

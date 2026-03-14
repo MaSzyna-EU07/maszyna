@@ -3,7 +3,7 @@
 #include "object.h"
 #include "bindable.h"
 #include "renderbuffer.h"
-#include "Texture.h"
+#include "model/Texture.h"
 #include "cubemap.h"
 
 namespace gl

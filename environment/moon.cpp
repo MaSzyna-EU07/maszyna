@@ -1,9 +1,9 @@
 #include "stdafx.h"
-#include "moon.h"
-#include "Globals.h"
-#include "mtable.h"
-#include "utilities.h"
-#include "simulationtime.h"
+#include "environment/moon.h"
+#include "utilities/Globals.h"
+#include "world/mtable.h"
+#include "utilities/utilities.h"
+#include "simulation/simulationtime.h"
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // cSun -- class responsible for dynamic calculation of position and intensity of the Sun,

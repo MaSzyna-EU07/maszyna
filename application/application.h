@@ -9,12 +9,12 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "applicationmode.h"
-#include "PyInt.h"
+#include "application/applicationmode.h"
+#include "scripting/PyInt.h"
 #include "network/manager.h"
-#include "headtrack.h"
+#include "utilities/headtrack.h"
 #ifdef WITH_UART
-#include "uart.h"
+#include "utilities/uart.h"
 #endif
 
 class eu07_application {

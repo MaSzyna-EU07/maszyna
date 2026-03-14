@@ -8,14 +8,14 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "Segment.h"
+#include "world/Segment.h"
 
-#include "Globals.h"
-#include "Logs.h"
-#include "parser.h"
-#include "utilities.h"
-#include "Track.h"
-#include "renderer.h"
+#include "utilities/Globals.h"
+#include "utilities/Logs.h"
+#include "utilities/parser.h"
+#include "utilities/utilities.h"
+#include "world/Track.h"
+#include "rendering/renderer.h"
 
 void
 segment_data::deserialize( cParser &Input, glm::dvec3 const &Offset ) {

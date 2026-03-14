@@ -1,11 +1,11 @@
 #include "stdafx.h"
-#include "motiontelemetry.h"
-#include "Globals.h"
-#include "Logs.h"
-#include "Train.h"
-#include "Timer.h"
-#include "Driver.h"
-#include "simulation.h"
+#include "utilities/motiontelemetry.h"
+#include "utilities/Globals.h"
+#include "utilities/Logs.h"
+#include "vehicle/Train.h"
+#include "utilities/Timer.h"
+#include "vehicle/Driver.h"
+#include "simulation/simulation.h"
 
 #ifdef _WIN32
 #include <winsock2.h>

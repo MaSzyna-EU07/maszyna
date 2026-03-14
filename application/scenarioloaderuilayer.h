@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "uilayer.h"
+#include "application/uilayer.h"
 #include "launcher/deferred_image.h"
 
 class scenarioloader_ui : public ui_layer {

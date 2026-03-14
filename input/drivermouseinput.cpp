@@ -8,19 +8,19 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "drivermouseinput.h"
+#include "input/drivermouseinput.h"
 
-#include "Globals.h"
-#include "application.h"
-#include "utilities.h"
-#include "Globals.h"
-#include "Timer.h"
-#include "simulation.h"
-#include "Train.h"
-#include "AnimModel.h"
-#include "renderer.h"
-#include "uilayer.h"
-#include "Logs.h"
+#include "utilities/Globals.h"
+#include "application/application.h"
+#include "utilities/utilities.h"
+#include "utilities/Globals.h"
+#include "utilities/Timer.h"
+#include "simulation/simulation.h"
+#include "vehicle/Train.h"
+#include "model/AnimModel.h"
+#include "rendering/renderer.h"
+#include "application/uilayer.h"
+#include "utilities/Logs.h"
 
 auto const EU07_CONTROLLER_MOUSESLIDERSIZE{ 0.6 };
 

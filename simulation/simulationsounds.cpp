@@ -8,9 +8,9 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "simulationsounds.h"
+#include "simulation/simulationsounds.h"
 
-#include "utilities.h"
+#include "utilities/utilities.h"
 
 namespace simulation {
 

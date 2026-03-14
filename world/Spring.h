@@ -10,7 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #ifndef ParticlesH
 #define ParticlesH
 
-#include "dumb3d.h"
+#include "utilities/dumb3d.h"
 /*
 #define STATIC_THRESHOLD 0.17f
 const double m_Kd = 0.02f; // DAMPING FACTOR

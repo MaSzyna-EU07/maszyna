@@ -8,18 +8,18 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "scene.h"
+#include "scene/scene.h"
 
-#include "simulation.h"
-#include "Globals.h"
-#include "Camera.h"
-#include "AnimModel.h"
-#include "Event.h"
-#include "EvLaunch.h"
-#include "Timer.h"
-#include "Logs.h"
-#include "sn_utils.h"
-#include "renderer.h"
+#include "simulation/simulation.h"
+#include "utilities/Globals.h"
+#include "vehicle/Camera.h"
+#include "model/AnimModel.h"
+#include "world/Event.h"
+#include "world/EvLaunch.h"
+#include "utilities/Timer.h"
+#include "utilities/Logs.h"
+#include "scene/sn_utils.h"
+#include "rendering/renderer.h"
 #include "widgets/map_objects.h"
 
 namespace scene {

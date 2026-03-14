@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "keyboardinput.h"
+#include "input/keyboardinput.h"
 
 class driverkeyboard_input : public keyboard_input {
 

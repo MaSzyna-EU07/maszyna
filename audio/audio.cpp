@@ -11,11 +11,11 @@ http://mozilla.org/MPL/2.0/.
 
 #include <sndfile.h>
 
-#include "audio.h"
-#include "Globals.h"
-#include "Logs.h"
-#include "ResourceManager.h"
-#include "utilities.h"
+#include "audio/audio.h"
+#include "utilities/Globals.h"
+#include "utilities/Logs.h"
+#include "model/ResourceManager.h"
+#include "utilities/utilities.h"
 
 namespace audio {
 

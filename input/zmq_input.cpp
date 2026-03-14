@@ -1,10 +1,10 @@
 #include "stdafx.h"
-#include "zmq_input.h"
-#include "Globals.h"
-#include "Logs.h"
-#include "simulation.h"
-#include "simulationtime.h"
-#include "Train.h"
+#include "input/zmq_input.h"
+#include "utilities/Globals.h"
+#include "utilities/Logs.h"
+#include "simulation/simulation.h"
+#include "simulation/simulationtime.h"
+#include "vehicle/Train.h"
 
 zmq_input::zmq_input()
 {

@@ -14,12 +14,12 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "MdlMngr.h"
+#include "model/MdlMngr.h"
 
-#include "Model3d.h"
-#include "Globals.h"
-#include "Logs.h"
-#include "utilities.h"
+#include "model/Model3d.h"
+#include "utilities/Globals.h"
+#include "utilities/Logs.h"
+#include "utilities/utilities.h"
 
 // wczytanie modelu do kontenerka
 TModel3d *

@@ -8,34 +8,34 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "driveruipanels.h"
+#include "application/driveruipanels.h"
 
-#include "Globals.h"
-#include "application.h"
-#include "translation.h"
-#include "simulation.h"
-#include "simulationtime.h"
-#include "simulationenvironment.h"
-#include "Timer.h"
-#include "Event.h"
-#include "TractionPower.h"
-#include "Camera.h"
-#include "mtable.h"
-#include "Train.h"
-#include "Driver.h"
-#include "AnimModel.h"
-#include "DynObj.h"
-#include "Model3d.h"
-#include "renderer.h"
-#include "utilities.h"
-#include "Logs.h"
+#include "utilities/Globals.h"
+#include "application/application.h"
+#include "utilities/translation.h"
+#include "simulation/simulation.h"
+#include "simulation/simulationtime.h"
+#include "simulation/simulationenvironment.h"
+#include "utilities/Timer.h"
+#include "world/Event.h"
+#include "world/TractionPower.h"
+#include "vehicle/Camera.h"
+#include "world/mtable.h"
+#include "vehicle/Train.h"
+#include "vehicle/Driver.h"
+#include "model/AnimModel.h"
+#include "vehicle/DynObj.h"
+#include "model/Model3d.h"
+#include "rendering/renderer.h"
+#include "utilities/utilities.h"
+#include "utilities/Logs.h"
 #include "widgets/vehicleparams.h"
 
 #define DRIVER_HINT_CONTENT
-#include "driverhints.h"
+#include "application/driverhints.h"
 
 #ifdef WITH_UART
-#include "uart.h"
+#include "utilities/uart.h"
 #endif
 
 void

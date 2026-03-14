@@ -1,7 +1,7 @@
 #pragma once
 
 #include <zmq_addon.hpp>
-#include "command.h"
+#include "input/command.h"
 
 class zmq_input
 {

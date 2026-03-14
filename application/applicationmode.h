@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "uilayer.h"
+#include "application/uilayer.h"
 
 // component implementing specific mode of application behaviour
 // base interface

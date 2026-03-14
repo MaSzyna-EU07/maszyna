@@ -8,7 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "frustum.h"
+#include "rendering/frustum.h"
 
 void
 cFrustum::calculate() {

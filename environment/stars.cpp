@@ -1,7 +1,7 @@
 #include "stdafx.h"
-#include "stars.h"
-#include "Globals.h"
-#include "MdlMngr.h"
+#include "environment/stars.h"
+#include "utilities/Globals.h"
+#include "model/MdlMngr.h"
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // cStars -- simple starfield model, simulating appearance of starry sky

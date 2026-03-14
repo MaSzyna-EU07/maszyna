@@ -8,12 +8,12 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "scenenodegroups.h"
+#include "scene/scenenodegroups.h"
 
-#include "Event.h"
-#include "MemCell.h"
+#include "world/Event.h"
+#include "world/MemCell.h"
 
-#include "AnimModel.h"
+#include "model/AnimModel.h"
 #include "widgets/map_objects.h"
 
 namespace scene {

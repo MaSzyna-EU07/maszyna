@@ -8,11 +8,11 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "mtable.h"
-#include "Globals.h"
-#include "simulationtime.h"
-#include "dictionary.h"
-#include "utilities.h"
+#include "world/mtable.h"
+#include "utilities/Globals.h"
+#include "simulation/simulationtime.h"
+#include "utilities/dictionary.h"
+#include "utilities/utilities.h"
 
 double TTrainParameters::CheckTrainLatency()
 {

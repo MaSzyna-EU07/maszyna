@@ -14,12 +14,12 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "MemCell.h"
+#include "world/MemCell.h"
 
-#include "simulation.h"
-#include "Driver.h"
-#include "Event.h"
-#include "Logs.h"
+#include "simulation/simulation.h"
+#include "vehicle/Driver.h"
+#include "world/Event.h"
+#include "utilities/Logs.h"
 
 //---------------------------------------------------------------------------
 

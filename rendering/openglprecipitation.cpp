@@ -8,11 +8,11 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "openglprecipitation.h"
+#include "rendering/openglprecipitation.h"
 
-#include "Globals.h"
-#include "renderer.h"
-#include "simulationenvironment.h"
+#include "utilities/Globals.h"
+#include "rendering/renderer.h"
+#include "simulation/simulationenvironment.h"
 
 opengl_precipitation::~opengl_precipitation() {
 

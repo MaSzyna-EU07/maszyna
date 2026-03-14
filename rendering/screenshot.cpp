@@ -1,7 +1,7 @@
 #include "stdafx.h"
-#include "screenshot.h"
-#include "Globals.h"
-#include "Logs.h"
+#include "rendering/screenshot.h"
+#include "utilities/Globals.h"
+#include "utilities/Logs.h"
 #include <png.h>
 
 void screenshot_manager::screenshot_save_thread( char *img, int w, int h )

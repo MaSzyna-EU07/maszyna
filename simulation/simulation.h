@@ -9,14 +9,14 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "simulationstateserializer.h"
-#include "Classes.h"
-#include "Event.h"
-#include "Train.h"
-#include "particles.h"
+#include "simulation/simulationstateserializer.h"
+#include "utilities/Classes.h"
+#include "world/Event.h"
+#include "vehicle/Train.h"
+#include "rendering/particles.h"
 
 #ifdef WITH_LUA
-#include "lua.h"
+#include "scripting/lua.h"
 #endif
 
 namespace simulation {

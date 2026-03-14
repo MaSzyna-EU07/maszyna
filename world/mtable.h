@@ -11,8 +11,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include <string>
 
-#include "Classes.h"
-#include "sound.h"
+#include "utilities/Classes.h"
+#include "audio/sound.h"
 
 namespace Mtable
 {

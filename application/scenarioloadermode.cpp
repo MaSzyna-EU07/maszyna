@@ -8,17 +8,17 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "scenarioloadermode.h"
+#include "application/scenarioloadermode.h"
 
-#include "Globals.h"
-#include "simulation.h"
-#include "simulationtime.h"
-#include "simulationenvironment.h"
-#include "application.h"
-#include "scenarioloaderuilayer.h"
-#include "renderer.h"
-#include "Logs.h"
-#include "translation.h"
+#include "utilities/Globals.h"
+#include "simulation/simulation.h"
+#include "simulation/simulationtime.h"
+#include "simulation/simulationenvironment.h"
+#include "application/application.h"
+#include "application/scenarioloaderuilayer.h"
+#include "rendering/renderer.h"
+#include "utilities/Logs.h"
+#include "utilities/translation.h"
 
 scenarioloader_mode::scenarioloader_mode() {
     m_userinterface = std::make_shared<scenarioloader_ui>();

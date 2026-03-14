@@ -8,7 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "dumb3d.h"
+#include "utilities/dumb3d.h"
 #include <cassert>
 
 namespace Math3D

@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "widgets/vehiclelist.h"
-#include "simulation.h"
-#include "Driver.h"
+#include "simulation/simulation.h"
+#include "vehicle/Driver.h"
 #include "widgets/vehicleparams.h"
 
 ui::vehiclelist_panel::vehiclelist_panel(ui_layer &parent)

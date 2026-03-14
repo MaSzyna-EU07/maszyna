@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "launcher/vehicle_picker.h"
-#include "renderer.h"
-#include "translation.h"
+#include "rendering/renderer.h"
+#include "utilities/translation.h"
 
 ui::vehiclepicker_panel::vehiclepicker_panel()
     : ui_panel(STR("Select vehicle"), false), placeholder_mini("textures/mini/other")

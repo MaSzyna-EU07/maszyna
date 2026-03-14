@@ -4,10 +4,10 @@
 
 #pragma once
 
-#include "Texture.h"
-#include "geometrybank.h"
-#include "material.h"
-#include "renderer.h"
+#include "model/Texture.h"
+#include "rendering/geometrybank.h"
+#include "model/material.h"
+#include "rendering/renderer.h"
 #include "stdafx.h"
 #include <glm/fwd.hpp>
 #include <stdexcept>

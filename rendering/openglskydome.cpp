@@ -8,9 +8,9 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "openglskydome.h"
+#include "rendering/openglskydome.h"
 
-#include "simulationenvironment.h"
+#include "simulation/simulationenvironment.h"
 
 opengl_skydome::~opengl_skydome() {
 

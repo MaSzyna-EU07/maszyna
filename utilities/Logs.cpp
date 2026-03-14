@@ -8,12 +8,12 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "Logs.h"
+#include "utilities/Logs.h"
 
-#include "Globals.h"
+#include "utilities/Globals.h"
 #include "winheaders.h"
-#include "utilities.h"
-#include "uilayer.h"
+#include "utilities/utilities.h"
+#include "application/uilayer.h"
 #include <deque>
 
 std::ofstream output; // standardowy "log.txt", można go wyłączyć

@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "query.h"
-#include "Globals.h"
+#include "utilities/Globals.h"
 
 gl::query::query(targets target)
     : target(target)

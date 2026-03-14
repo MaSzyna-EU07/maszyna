@@ -9,8 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "uilayer.h"
-#include "Classes.h"
+#include "application/uilayer.h"
+#include "utilities/Classes.h"
 
 class drivingaid_panel : public ui_expandable_panel {
 

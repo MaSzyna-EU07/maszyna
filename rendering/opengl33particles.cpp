@@ -8,12 +8,12 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "opengl33particles.h"
+#include "rendering/opengl33particles.h"
 
-#include "particles.h"
-#include "openglcamera.h"
-#include "simulation.h"
-#include "simulationenvironment.h"
+#include "rendering/particles.h"
+#include "rendering/openglcamera.h"
+#include "simulation/simulation.h"
+#include "simulation/simulationenvironment.h"
 
 std::vector<std::pair<glm::vec3, glm::vec2>> const billboard_vertices {
 

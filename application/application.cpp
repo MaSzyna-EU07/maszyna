@@ -8,37 +8,37 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "application.h"
-#include "drivermode.h"
-#include "editormode.h"
-#include "scenarioloadermode.h"
+#include "application/application.h"
+#include "application/drivermode.h"
+#include "application/editormode.h"
+#include "application/scenarioloadermode.h"
 #include "launcher/launchermode.h"
 
-#include "Globals.h"
-#include "simulation.h"
-#include "simulationsounds.h"
-#include "Train.h"
-#include "dictionary.h"
-#include "sceneeditor.h"
-#include "renderer.h"
-#include "uilayer.h"
-#include "Logs.h"
-#include "screenshot.h"
-#include "translation.h"
-#include "Train.h"
-#include "Timer.h"
-#include "dictionary.h"
+#include "utilities/Globals.h"
+#include "simulation/simulation.h"
+#include "simulation/simulationsounds.h"
+#include "vehicle/Train.h"
+#include "utilities/dictionary.h"
+#include "scene/sceneeditor.h"
+#include "rendering/renderer.h"
+#include "application/uilayer.h"
+#include "utilities/Logs.h"
+#include "rendering/screenshot.h"
+#include "utilities/translation.h"
+#include "vehicle/Train.h"
+#include "utilities/Timer.h"
+#include "utilities/dictionary.h"
 #include "version_info.h"
 #include "ref/discord-rpc/include/discord_rpc.h"
 #include <chrono>
-#include "translation.h"
+#include "utilities/translation.h"
 
 #if WITH_DISCORD_RPC
 #include <discord_rpc.h>
 #endif
 
 #include <chrono>
-#include "translation.h"
+#include "utilities/translation.h"
 
 #ifdef _WIN32
 #pragma comment(lib, "dsound.lib")

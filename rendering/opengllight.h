@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "light.h"
+#include "rendering/light.h"
 
 struct opengl_light : public basic_light {
 

@@ -9,11 +9,11 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "Classes.h"
-#include "dumb3d.h"
-#include "Float3d.h"
-#include "geometrybank.h"
-#include "material.h"
+#include "utilities/Classes.h"
+#include "utilities/dumb3d.h"
+#include "utilities/Float3d.h"
+#include "rendering/geometrybank.h"
+#include "model/material.h"
 #include "gl/query.h"
 
 #define EU07_USE_GEOMETRYINDEXING

@@ -8,11 +8,11 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "opengl33precipitation.h"
+#include "rendering/opengl33precipitation.h"
 
-#include "Globals.h"
-#include "renderer.h"
-#include "simulationenvironment.h"
+#include "utilities/Globals.h"
+#include "rendering/renderer.h"
+#include "simulation/simulationenvironment.h"
 
 opengl33_precipitation::~opengl33_precipitation() {
     // TODO: release allocated resources

@@ -8,9 +8,9 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "sky.h"
-#include "Globals.h"
-#include "MdlMngr.h"
+#include "environment/sky.h"
+#include "utilities/Globals.h"
+#include "model/MdlMngr.h"
 
 //---------------------------------------------------------------------------
 //GLfloat lightPos[4] = {0.0f, 0.0f, 0.0f, 1.0f};

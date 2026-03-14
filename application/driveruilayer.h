@@ -9,9 +9,9 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "uilayer.h"
-#include "driveruipanels.h"
-#include "command.h"
+#include "application/uilayer.h"
+#include "application/driveruipanels.h"
+#include "input/command.h"
 
 #include "widgets/vehiclelist.h"
 #include "widgets/vehicleparams.h"

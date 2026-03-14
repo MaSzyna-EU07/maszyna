@@ -10,8 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 
 /*
-#include "ResourceManager.h"
-#include "Logs.h"
+#include "model/ResourceManager.h"
+#include "utilities/Logs.h"
 
 ResourceManager::Resources ResourceManager::_resources;
 double ResourceManager::_expiry = 5.0f;

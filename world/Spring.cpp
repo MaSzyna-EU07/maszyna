@@ -8,7 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "Spring.h"
+#include "world/Spring.h"
 
 void TSpring::Init(double nKs, double nKd) {
     Ks = nKs;

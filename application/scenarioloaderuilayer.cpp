@@ -7,12 +7,12 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "scenarioloaderuilayer.h"
+#include "application/scenarioloaderuilayer.h"
 
-#include "Globals.h"
-#include "translation.h"
+#include "utilities/Globals.h"
+#include "utilities/translation.h"
 #include <nlohmann/json.hpp>
-#include "Logs.h"
+#include "utilities/Logs.h"
 #include <sstream>
 
 using json = nlohmann::json;

@@ -8,12 +8,12 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "precipitation.h"
+#include "rendering/precipitation.h"
 
-#include "Globals.h"
-#include "Timer.h"
-#include "simulation.h"
-#include "Train.h"
+#include "utilities/Globals.h"
+#include "utilities/Timer.h"
+#include "simulation/simulation.h"
+#include "vehicle/Train.h"
 
 basic_precipitation::~basic_precipitation() {
     // TODO: release allocated resources

@@ -9,8 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "frustum.h"
-#include "scene.h"
+#include "rendering/frustum.h"
+#include "scene/scene.h"
 
 // simple camera object. paired with 'virtual camera' in the scene
 class opengl_camera {

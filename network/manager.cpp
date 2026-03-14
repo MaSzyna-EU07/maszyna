@@ -9,8 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "network/manager.h"
-#include "simulation.h"
-#include "Logs.h"
+#include "simulation/simulation.h"
+#include "utilities/Logs.h"
 
 network::server_manager::server_manager()
 {

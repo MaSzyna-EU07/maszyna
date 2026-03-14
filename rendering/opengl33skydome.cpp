@@ -8,9 +8,9 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "opengl33skydome.h"
+#include "rendering/opengl33skydome.h"
 
-#include "simulationenvironment.h"
+#include "simulation/simulationenvironment.h"
 
 void opengl33_skydome::update() {
 

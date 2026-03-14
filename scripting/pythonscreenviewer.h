@@ -1,5 +1,5 @@
-#include "renderer.h"
-#include "PyInt.h"
+#include "rendering/renderer.h"
+#include "scripting/PyInt.h"
 #include <GLFW/glfw3.h>
 
 class python_screen_viewer

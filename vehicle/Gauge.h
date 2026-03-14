@@ -9,8 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "Classes.h"
-#include "sound.h"
+#include "utilities/Classes.h"
+#include "audio/sound.h"
 
 enum class TGaugeAnimation {
     // typ ruchu

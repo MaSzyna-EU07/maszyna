@@ -12,9 +12,9 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "translation.h"
-#include "Logs.h"
-#include "Globals.h"
+#include "utilities/translation.h"
+#include "utilities/Logs.h"
+#include "utilities/Globals.h"
 #include "MOVER.h"
 
 void locale::init()

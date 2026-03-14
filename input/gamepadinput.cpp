@@ -8,11 +8,11 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "gamepadinput.h"
-#include "Logs.h"
-#include "Timer.h"
-#include "utilities.h"
-#include "parser.h"
+#include "input/gamepadinput.h"
+#include "utilities/Logs.h"
+#include "utilities/Timer.h"
+#include "utilities/utilities.h"
+#include "utilities/parser.h"
 
 glm::vec2 circle_to_square( glm::vec2 const &Point, int const Roundness = 0 ) {
 
@@ -172,7 +172,7 @@ gamepad_input::recall_bindings() {
 	}
 #endif
 
-	// bindingparser tworzony zawsze, z wybran¹ œcie¿k¹
+	// bindingparser tworzony zawsze, z wybranï¿½ ï¿½cieï¿½kï¿½
 	cParser bindingparser(filePath.c_str(), cParser::buffer_FILE);
 
     if( false == bindingparser.ok() ) {

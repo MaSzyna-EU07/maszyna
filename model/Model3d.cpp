@@ -13,17 +13,17 @@ Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 */
 
 #include "stdafx.h"
-#include "Model3d.h"
+#include "model/Model3d.h"
 
-#include "Globals.h"
-#include "Logs.h"
-#include "utilities.h"
-#include "renderer.h"
-#include "Timer.h"
-#include "simulation.h"
-#include "simulationtime.h"
-#include "mtable.h"
-#include "sn_utils.h"
+#include "utilities/Globals.h"
+#include "utilities/Logs.h"
+#include "utilities/utilities.h"
+#include "rendering/renderer.h"
+#include "utilities/Timer.h"
+#include "simulation/simulation.h"
+#include "simulation/simulationtime.h"
+#include "world/mtable.h"
+#include "scene/sn_utils.h"
 
 //---------------------------------------------------------------------------
 

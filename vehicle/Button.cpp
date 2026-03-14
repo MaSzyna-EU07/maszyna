@@ -8,13 +8,13 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "Button.h"
-#include "parser.h"
-#include "Model3d.h"
-#include "DynObj.h"
+#include "vehicle/Button.h"
+#include "utilities/parser.h"
+#include "model/Model3d.h"
+#include "vehicle/DynObj.h"
 #include "Console.h"
-#include "Logs.h"
-#include "renderer.h"
+#include "utilities/Logs.h"
+#include "rendering/renderer.h"
 
 void TButton::Clear(int i)
 {

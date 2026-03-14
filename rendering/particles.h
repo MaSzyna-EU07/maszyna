@@ -9,8 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "Classes.h"
-#include "scene.h"
+#include "utilities/Classes.h"
+#include "scene/scene.h"
 
 // particle specialized for drawing smoke
 // given smoke features we can take certain shortcuts
