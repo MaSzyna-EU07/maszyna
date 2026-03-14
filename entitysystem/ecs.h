@@ -13,7 +13,9 @@
 class ECS final
 {
   private:
-	entt::registry world_;
+	entt::registry world_;  // scene registry
+	std::uint64_t nextId_ = 1; // 0 is invalid/none
+
 
   public:
 	//
@@ -147,5 +149,5 @@ class ECS final
 };
 
 extern ECS& GetComponentSystem();
-#define CS GetComponentSystem();
+#define CS GetComponentSystem()
 #endif // EU07_ECS_H

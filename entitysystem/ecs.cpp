@@ -13,7 +13,9 @@ entt::entity ECS::CreateObject()
 {
 	const auto e = world_.create();
 	world_.emplace<ECSComponent::Transform>(e);
-	world_.emplace<ECSComponent::Identification>(e);
+	// add UID
+	auto id = world_.emplace<ECSComponent::Identification>(e);
+	id.Id = nextId_++;
 	return e;
 }
 
