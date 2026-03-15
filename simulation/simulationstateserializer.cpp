@@ -437,7 +437,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
 	nodeTransform.Rotation = Scratchpad.location.rotation;
 	//nodeTransform.Scale = Scratchpad.location.scale;
 
-	auto lodController = CS.AddComponent<ECSComponent::LODController>(CSEntity);
+	auto lodController = CS.AddComponent<ECSComponent::NodeLODController>(CSEntity);
 	lodController.RangeMax = nodedata.range_max;
 	lodController.RangeMin = nodedata.range_min;
 
