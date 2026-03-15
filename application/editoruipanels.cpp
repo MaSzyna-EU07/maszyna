@@ -97,17 +97,17 @@ void itemproperties_panel::update(scene::basic_node const *Node)
 
 		// 3d shape
 		auto modelfile{((subnode->pModel != nullptr) ? subnode->pModel->NameGet() : "(none)")};
-		if (modelfile.find(szModelPath) == 0)
+		if (modelfile.find(paths::models) == 0)
 		{
 			// don't include 'models/' in the path
-			modelfile.erase(0, std::string{szModelPath}.size());
+			modelfile.erase(0, std::string{paths::models}.size());
 		}
 		// texture
 		auto texturefile{((subnode->Material()->replacable_skins[1] != null_handle) ? GfxRenderer->Material(subnode->Material()->replacable_skins[1])->GetName() : "(none)")};
-		if (texturefile.find(szTexturePath) == 0)
+		if (texturefile.find(paths::textures) == 0)
 		{
 			// don't include 'textures/' in the path
-			texturefile.erase(0, std::string{szTexturePath}.size());
+			texturefile.erase(0, std::string{paths::textures}.size());
 		}
 		text_lines.emplace_back("mesh: " + modelfile, Global.UITextColor);
 		text_lines.emplace_back("skin: " + texturefile, Global.UITextColor);
@@ -131,14 +131,14 @@ void itemproperties_panel::update(scene::basic_node const *Node)
 		text_lines.emplace_back(textline, Global.UITextColor);
 		// textures
 		auto texturefile{((subnode->m_material1 != null_handle) ? GfxRenderer->Material(subnode->m_material1)->GetName() : "(none)")};
-		if (texturefile.find(szTexturePath) == 0)
+		if (texturefile.find(paths::textures) == 0)
 		{
-			texturefile.erase(0, std::string{szTexturePath}.size());
+			texturefile.erase(0, std::string{paths::textures}.size());
 		}
 		auto texturefile2{((subnode->m_material2 != null_handle) ? GfxRenderer->Material(subnode->m_material2)->GetName() : "(none)")};
-		if (texturefile2.find(szTexturePath) == 0)
+		if (texturefile2.find(paths::textures) == 0)
 		{
-			texturefile2.erase(0, std::string{szTexturePath}.size());
+			texturefile2.erase(0, std::string{paths::textures}.size());
 		}
 		textline = "skins:\n " + texturefile + "\n " + texturefile2;
 		text_lines.emplace_back(textline, Global.UITextColor);

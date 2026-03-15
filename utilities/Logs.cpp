@@ -158,55 +158,57 @@ void LogService()
 }
 
 
-void WriteLog(const char *str, logtype const Type, bool isError)
+bool ShouldSkipLog(std::string_view str, logtype type)
 {
-	if (!str || *str == '\0')
-		return;
-	if (TestFlag(Global.DisabledLogTypes, static_cast<unsigned int>(Type)))
-		return;
-
-	// time calculation
-	auto now = std::chrono::steady_clock::now();
-	auto elapsed = now - Global.startTimestamp;
-	double seconds = std::chrono::duration_cast<std::chrono::duration<double>>(elapsed).count();
-	
-	// time format
-	std::ostringstream oss;
-	oss << "[ " << std::fixed << std::setprecision(3) << seconds << " ] ";
-
-	// wyrownanie do np. 10 znaków długości + dwie tabulacje
-	std::ostringstream final;
-	final << std::setw(10) << oss.str() << "\t\t" << str;
-
-
-	logMutex.lock();
-	InfoStack.emplace_back(final.str(), isError);
-	logMutex.unlock();
+	return str.empty() ||
+		   TestFlag(Global.DisabledLogTypes, static_cast<unsigned int>(type));
 }
 
-void ErrorLog(const char *str, logtype const Type)
+std::string FormatLogMessage(std::string_view str)
 {
-	if (!str || *str == '\0')
+	const auto now = std::chrono::steady_clock::now();
+	const auto elapsed = now - Global.startTimestamp;
+	const double seconds = std::chrono::duration<double>(elapsed).count();
+
+	return std::format("[ {:8.3f} ]\t\t{}", seconds, str);
+}
+
+void WriteLog(std::string_view str, logtype type, bool isError)
+{
+	if (ShouldSkipLog(str, type))
 		return;
-	if (TestFlag(Global.DisabledLogTypes, static_cast<unsigned int>(Type)))
+
+	const auto message = FormatLogMessage(str);
+
+	std::lock_guard<std::mutex> lock(logMutex);
+	InfoStack.push_back({message, isError});
+}
+
+void ErrorLog(std::string_view str, logtype type)
+{
+	if (ShouldSkipLog(str, type))
 		return;
 
-		// time calculation
-	auto now = std::chrono::steady_clock::now();
-	auto elapsed = now - Global.startTimestamp;
-	double seconds = std::chrono::duration_cast<std::chrono::duration<double>>(elapsed).count();
+	const auto message = FormatLogMessage(str);
 
-	// time format
-	std::ostringstream oss;
-	oss << "[ " << std::fixed << std::setprecision(3) << seconds << " ] ";
+	std::lock_guard<std::mutex> lock(logMutex);
+	ErrorStack.push_back(message);
+}
 
-	// wyrownanie do np. 10 znaków długości + dwie tabulacje
-	std::ostringstream final;
-	final << std::setw(10) << oss.str() << "\t\t" << str;
+void WriteLog(const char* str, logtype type, bool isError)
+{
+	if (str == nullptr || *str == '\0')
+		return;
 
-	logMutex.lock();
-	ErrorStack.emplace_back(final.str());
-	logMutex.unlock();
+	WriteLog(std::string_view{str}, type, isError);
+}
+
+void ErrorLog(const char* str, logtype type)
+{
+	if (str == nullptr || *str == '\0')
+		return;
+
+	ErrorLog(std::string_view{str}, type);
 }
 
 

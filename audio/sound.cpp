@@ -319,9 +319,9 @@ sound_source::export_as_text( std::ostream &Output ) const {
         << m_offset.z << ' ';
     // sound data
     auto soundfile { audio::renderer.buffer( sound( sound_id::main ).buffer ).name };
-    if( soundfile.find( szSoundPath ) == 0 ) {
+    if( soundfile.find( paths::sounds ) == 0 ) {
         // don't include 'sounds/' in the path
-        soundfile.erase( 0, std::string{ szSoundPath }.size() );
+        soundfile.erase( 0, std::string{ paths::sounds }.size() );
     }
     Output
         << soundfile << ' ';
