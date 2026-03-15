@@ -343,10 +343,21 @@ struct global_settings {
     float m_skysaturationcorrection{ 1.65f };
     float m_skyhuecorrection{ 0.5f };
 
-// methods
-    void LoadIniFile( std::string asFileName );
-    void ConfigParse( cParser &parser );
-    bool ConfigParse_gfx( cParser &parser, std::string_view const Token );
+	// methods
+	void LoadIniFile( std::string asFileName );
+	void FinalizeConfig();
+	void ConfigParse(cParser &parser);
+	bool ConfigParseGeneral(cParser& Parser, const std::string& token);
+	bool ConfigParseAudio(cParser& Parser, const std::string& token);
+	bool ConfigParseGraphics(cParser& Parser, const std::string& token);
+	bool ConfigParseInput(cParser& Parser, const std::string& token);
+	bool ConfigParseSimulation(cParser& Parser, const std::string& token);
+	bool ConfigParseUI(cParser& Parser, const std::string& token);
+	bool ConfigParsePython(cParser& Parser, const std::string& token);
+	bool ConfigParseNetwork(cParser& Parser, const std::string& token);
+	bool ConfigParseHardware(cParser& Parser, const std::string& token);
+	bool ConfigParseDebug(cParser& Parser, const std::string& token);
+	bool ConfigParse_gfx( cParser &parser, std::string_view const Token );
     // sends basic content of the class in legacy (text) format to provided stream
     void
         export_as_text( std::ostream &Output ) const;

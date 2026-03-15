@@ -43,1024 +43,1254 @@ void global_settings::LoadIniFile(std::string asFileName)
 	ConfigParse(parser);
 }
 
-void
-global_settings::ConfigParse(cParser &Parser) {
+template <typename T>
+static void ParseOne(cParser& parser, T& out, int tokenCount = 1, bool convert = false)
+{
+    parser.getTokens(tokenCount, convert);
+    parser >> out;
+}
 
-    std::string token;
-    do
+template <typename T>
+static void ParseOneClamped(cParser& parser, T& out, T minValue, T maxValue, int tokenCount = 1, bool convert = false)
+{
+    parser.getTokens(tokenCount, convert);
+    parser >> out;
+    out = clamp(out, minValue, maxValue);
+}
+
+void global_settings::FinalizeConfig()
+{
+    if (!bLoadTraction)
     {
-        token = "";
-        Parser.getTokens();
-        Parser >> token;
-
-        if( ConfigParse_gfx( Parser, token ) ) {
-            continue;
-        }
-        else if (token == "sceneryfile")
-        {
-            Parser.getTokens();
-            Parser >> SceneryFile;
-        }
-        else if (token == "humanctrlvehicle")
-        {
-            Parser.getTokens();
-            Parser >> local_start_vehicle;
-        }
-        else if (token == "async.trainThreads")
-        {
-			Parser.getTokens();
-			Parser >> trainThreads;
-        }
-        else if (token == "fieldofview")
-        {
-            Parser.getTokens(1, false);
-            Parser >> FieldOfView;
-            // guard against incorrect values
-            FieldOfView = clamp(FieldOfView, 10.0f, 75.0f);
-        }
-        else if (token == "width")
-        {
-            Parser.getTokens(1, false);
-            Parser >> window_size.x;
-        }
-        else if (token == "height")
-        {
-            Parser.getTokens(1, false);
-            Parser >> window_size.y;
-        }
-        else if (token == "heightbase")
-        {
-            Parser.getTokens(1, false);
-            Parser >> fDistanceFactor;
-        }
-        else if (token == "targetfps")
-        {
-            Parser.getTokens(1, false);
-            Parser >> targetfps;
-        }
-        else if (token == "basedrawrange")
-        {
-            Parser.getTokens(1);
-            Parser >> BaseDrawRange;
-        }
-        else if (token == "fullscreen")
-        {
-            Parser.getTokens();
-            Parser >> bFullScreen;
-        }
-        else if (token == "fullscreenmonitor")
-        {
-            Parser.getTokens(1, false);
-            Parser >> fullscreen_monitor;
-        }
-        else if (token == "fullscreenwindowed")
-        {
-            Parser.getTokens();
-            Parser >> fullscreen_windowed;
-        }
-        else if (token == "vsync")
-        {
-            Parser.getTokens();
-            Parser >> VSync;
-        }
-        else if (token == "freefly")
-        { // Mczapkie-130302
-            Parser.getTokens();
-            Parser >> FreeFlyModeFlag;
-            Parser.getTokens(3, false);
-            Parser >> FreeCameraInit[0].x, FreeCameraInit[0].y, FreeCameraInit[0].z;
-        }
-        else if (token == "wireframe")
-        {
-            Parser.getTokens();
-            Parser >> bWireFrame;
-        }
-        else if (token == "debugmode")
-        { // McZapkie! - DebugModeFlag uzywana w mover.pas,
-            // warto tez blokowac cheaty gdy false
-            Parser.getTokens();
-            Parser >> DebugModeFlag;
-        }
-        else if (token == "soundenabled")
-        { // McZapkie-040302 - blokada dzwieku - przyda
-            // sie do debugowania oraz na komp. bez karty
-            // dzw.
-            Parser.getTokens();
-            Parser >> bSoundEnabled;
-        }
-        else if (token == "sound.openal.renderer")
-        {
-            // selected device for audio renderer
-            AudioRenderer = Parser.getToken<std::string>(false); // case-sensitive
-        }
-        else if (token == "sound.volume")
-        {
-            // selected device for audio renderer
-            Parser.getTokens();
-            Parser >> AudioVolume;
-            AudioVolume = clamp(AudioVolume, 0.f, 2.f);
-        }
-        else if (token == "sound.volume.radio")
-        {
-            // selected device for audio renderer
-            Parser.getTokens();
-            Parser >> DefaultRadioVolume;
-            DefaultRadioVolume = clamp(DefaultRadioVolume, 0.f, 1.f);
-        }
-		else if (token == "sound.maxsources") {
-			Parser.getTokens();
-			Parser >> audio_max_sources;
-		}
-        else if( token == "sound.volume.vehicle" ) {
-            Parser.getTokens();
-            Parser >> VehicleVolume;
-            VehicleVolume = clamp(VehicleVolume, 0.f, 1.f);
-        }
-        else if (token == "sound.volume.positional")
-        {
-            Parser.getTokens();
-            Parser >> EnvironmentPositionalVolume;
-            EnvironmentPositionalVolume = clamp(EnvironmentPositionalVolume, 0.f, 1.f);
-        }
-        else if (token == "sound.volume.ambient")
-        {
-            Parser.getTokens();
-            Parser >> EnvironmentAmbientVolume;
-            EnvironmentAmbientVolume = clamp(EnvironmentAmbientVolume, 0.f, 1.f);
-        }
-        // else if (str==AnsiString("renderalpha")) //McZapkie-1312302 - dwuprzebiegowe renderowanie
-        // bRenderAlpha=(GetNextSymbol().LowerCase()==AnsiString("yes"));
-        else if (token == "physicslog")
-        { // McZapkie-030402 - logowanie parametrow
-            // fizycznych dla kazdego pojazdu z maszynista
-            Parser.getTokens();
-            Parser >> WriteLogFlag;
-        }
-        else if (token == "fullphysics")
-        { // McZapkie-291103 - usypianie fizyki
-            Parser.getTokens();
-            Parser >> FullPhysics;
-        }
-        else if (token == "debuglog")
-        {
-            // McZapkie-300402 - wylaczanie log.txt
-            Parser.getTokens();
-            Parser >> token;
-            if (token == "yes")
-            {
-                iWriteLogEnabled = 3;
-            }
-            else if (token == "no")
-            {
-                iWriteLogEnabled = 0;
-            }
-            else
-            {
-                iWriteLogEnabled = stol_def(token, 3);
-            }
-        }
-        else if (token == "multiplelogs")
-        {
-            Parser.getTokens();
-            Parser >> MultipleLogs;
-        }
-		else if (token == "shakefactor")
-		{
-			Parser.getTokens();
-			Parser >> ShakingMultiplierBF;
-			Parser.getTokens();
-			Parser >> ShakingMultiplierRL;
-			Parser.getTokens();
-			Parser >> ShakingMultiplierUD;
-        }
-        else if (token == "logs.filter")
-        {
-            Parser.getTokens();
-            Parser >> DisabledLogTypes;
-        }
-        else if (token == "mousescale")
-        {
-            // McZapkie-060503 - czulosc ruchu myszy (krecenia glowa)
-            Parser.getTokens(2, false);
-            Parser >> fMouseXScale >> fMouseYScale;
-        }
-        else if (token == "mousecontrol")
-        {
-            // whether control pick mode can be activated
-            Parser.getTokens();
-            Parser >> InputMouse;
-        }
-        else if (token == "enabletraction")
-        {
-            // Winger 040204 - 'zywe' patyki dostosowujace sie do trakcji; Ra 2014-03: teraz łamanie
-            Parser.getTokens();
-            Parser >> bEnableTraction;
-        }
-        else if (token == "loadtraction")
-        {
-            // Winger 140404 - ladowanie sie trakcji
-            Parser.getTokens();
-            Parser >> bLoadTraction;
-        }
-        else if (token == "friction")
-        { // mnożnik tarcia - KURS90
-            Parser.getTokens(1, false);
-            Parser >> fFriction;
-        }
-        else if (token == "livetraction")
-        {
-            // Winger 160404 - zaleznosc napiecia loka od trakcji;
-            // Ra 2014-03: teraz prąd przy braku sieci
-            Parser.getTokens();
-            Parser >> bLiveTraction;
-        }
-        else if (token == "skyenabled")
-        {
-            // youBy - niebo
-            Parser.getTokens();
-            Parser >> token;
-            asSky = (token == "yes" ? "1" : "0");
-        }
-        else if (token == "defaultext")
-        {
-            // ShaXbee - domyslne rozszerzenie tekstur
-            Parser.getTokens();
-            Parser >> token;
-            if (token == "tga")
-            {
-                // domyślnie od TGA
-                szDefaultExt = szTexturesTGA;
-            }
-            else
-            {
-                szDefaultExt = (token[0] == '.' ? token : "." + token);
-            }
-        }
-        else if (token == "newaircouplers")
-        {
-            Parser.getTokens();
-            Parser >> bnewAirCouplers;
-        }
-        else if (token == "anisotropicfiltering")
-        {
-            Parser.getTokens(1, false);
-            Parser >> AnisotropicFiltering;
-            if (AnisotropicFiltering < 1.0f)
-                AnisotropicFiltering = 1.0f;
-        }
-        else if (token == "usevbo")
-        {
-            Parser.getTokens();
-            Parser >> bUseVBO;
-        }
-        else if (token == "feedbackmode")
-        {
-            Parser.getTokens(1, false);
-            Parser >> iFeedbackMode;
-        }
-        else if (token == "feedbackport")
-        {
-            Parser.getTokens(1, false);
-            Parser >> iFeedbackPort;
-        }
-        else if (token == "multiplayer")
-        {
-            Parser.getTokens(1, false);
-            Parser >> iMultiplayer;
-        }
-		else if (token == "isolatedtrainnumber")
-		{
-		Parser.getTokens(1, false);
-		Parser >> bIsolatedTrainName;
-		}
-        else if (token == "maxtexturesize")
-        {
-            // wymuszenie przeskalowania tekstur
-            Parser.getTokens(1, false);
-            int size;
-            Parser >> size;
-            iMaxTextureSize = clamp_power_of_two(size, 64, 8192);
-        }
-        else if (token == "maxcabtexturesize")
-        {
-            // wymuszenie przeskalowania tekstur
-            Parser.getTokens(1, false);
-            int size;
-            Parser >> size;
-            iMaxCabTextureSize = clamp_power_of_two(size, 512, 8192);
-        }
-        else if (token == "movelight")
-        {
-            // numer dnia w roku albo -1
-            Parser.getTokens(1, false);
-            Parser >> fMoveLight;
-            if (fMoveLight == 0.f)
-            { // pobranie daty z systemu
-                std::time_t timenow = std::time(0);
-                std::tm *localtime = std::localtime(&timenow);
-                fMoveLight = localtime->tm_yday + 1; // numer bieżącego dnia w roku
-            }
-            simulation::Environment.compute_season(fMoveLight);
-        }
-        else if (token == "dynamiclights")
-        {
-            // number of dynamic lights in the scene
-            Parser.getTokens(1, false);
-            Parser >> DynamicLightCount;
-            // clamp the light number
-            // max 8 lights per opengl specs, minus one used for sun. at least one light for
-            // controlled vehicle
-            DynamicLightCount = clamp(DynamicLightCount, 0, 7);
-        }
-        else if (token == "scenario.time.override")
-        {
-            // shift (in hours) applied to train timetables
-            Parser.getTokens(1, false);
-            std::string token;
-            Parser >> token;
-            std::istringstream stream(token);
-            if (token.find(':') != -1)
-            {
-                float a, b;
-                char s;
-                stream >> a >> s >> b;
-                ScenarioTimeOverride = a + b / 60.0;
-            }
-            else
-                stream >> ScenarioTimeOverride;
-            ScenarioTimeOverride = clamp(ScenarioTimeOverride, 0.f, 24 * 1439 / 1440.f);
-        }
-        else if (token == "scenario.time.offset")
-        {
-            // shift (in hours) applied to train timetables
-            Parser.getTokens(1, false);
-            Parser >> ScenarioTimeOffset;
-        }
-        else if (token == "scenario.time.current")
-        {
-            // sync simulation time with local clock
-            Parser.getTokens(1, false);
-            Parser >> ScenarioTimeCurrent;
-        }
-        else if (token == "scenario.weather.temperature")
-        {
-            // selected device for audio renderer
-            Parser.getTokens();
-            Parser >> AirTemperature;
-            AirTemperature = clamp(AirTemperature, -15.f, 45.f);
-        }
-        else if (token == "scalespeculars")
-        {
-            // whether strength of specular highlights should be adjusted (generally needed for
-            // legacy 3d models)
-            Parser.getTokens();
-            Parser >> ScaleSpecularValues;
-        }
-        else if (token == "gfxrenderer")
-        {
-            // shadow render toggle
-            Parser.getTokens();
-            Parser >> GfxRenderer;
-            if (GfxRenderer == "full")
-            {
-                GfxRenderer = "default";
-            }
-            if (GfxRenderer == "experimental")
-            {
-				NvRenderer = true;
-				GfxRenderer = "experimental";
-            }
-            BasicRenderer = (GfxRenderer == "simple");
-            LegacyRenderer = !NvRenderer && (GfxRenderer != "default");
-        }
-        else if (token == "shadows")
-        {
-            // shadow render toggle
-            Parser.getTokens();
-            Parser >> RenderShadows;
-        }
-        else if (token == "shadowtune")
-        {
-            Parser.getTokens(4, false);
-            float discard;
-            Parser >> shadowtune.map_size >> discard >> shadowtune.range >> discard;
-            shadowtune.map_size = clamp_power_of_two<unsigned int>(shadowtune.map_size, 512, 8192);
-            // make sure we actually make effective use of all csm stages
-            shadowtune.range =
-                std::max((shadowtune.map_size <= 2048 ? 75.f : 75.f * shadowtune.map_size / 2048),
-                         shadowtune.range);
-        }
-        else if (token == "smoothtraction")
-        {
-            // podwójna jasność ambient
-            Parser.getTokens();
-            Parser >> bSmoothTraction;
-        }
-        else if (token == "splinefidelity")
-        {
-            // segment size during spline->geometry conversion
-            float splinefidelity;
-            Parser.getTokens();
-            Parser >> splinefidelity;
-            SplineFidelity = clamp(splinefidelity, 1.f, 4.f);
-        }
-        else if (token == "rendercab")
-        {
-            Parser.getTokens();
-            Parser >> render_cab;
-        }
-        else if (token == "createswitchtrackbeds")
-        {
-            // podwójna jasność ambient
-            Parser.getTokens();
-            Parser >> CreateSwitchTrackbeds;
-        }
-        else if (token == "timespeed")
-        {
-            // przyspieszenie czasu, zmienna do testów
-            Parser.getTokens(1, false);
-			Parser >> default_timespeed;
-			fTimeSpeed = default_timespeed;
-        }
-		else if (token == "deltaoverride")
-		{
-			// for debug
-			Parser.getTokens(1, false);
-			float deltaoverride;
-			Parser >> deltaoverride;
-			Timer::set_delta_override(1.0f / deltaoverride);
-		}
-        else if (token == "multisampling")
-        {
-            // tryb antyaliasingu: 0=brak,1=2px,2=4px
-            Parser.getTokens(1, false);
-            Parser >> iMultisampling;
-            iMultisampling = clamp(iMultisampling, 0, 4); // liczone 2 ^ n
-        }
-        else if (token == "latitude")
-        {
-            // szerokość geograficzna
-            Parser.getTokens(1, false);
-            Parser >> fLatitudeDeg;
-        }
-        else if (token == "convertmodels")
-        {
-            // tworzenie plików binarnych
-            Parser.getTokens(1, false);
-            Parser >> iConvertModels;
-        }
-        else if (token == "convertindexrange")
-        {
-            Parser.getTokens(1, false);
-            Parser >> iConvertIndexRange;
-        }
-        else if (token == "file.binary.terrain")
-        {
-            // binary terrain (de)serialization
-            Parser.getTokens(1, false);
-            Parser >> file_binary_terrain;
-        }
-        else if (token == "inactivepause")
-        {
-            // automatyczna pauza, gdy okno nieaktywne
-            Parser.getTokens();
-            Parser >> bInactivePause;
-        }
-        else if (token == "slowmotion")
-        {
-            // tworzenie plików binarnych
-            Parser.getTokens(1, false);
-            Parser >> iSlowMotionMask;
-        }
-        else if (token == "hideconsole")
-        {
-            // hunter-271211: ukrywanie konsoli
-            Parser.getTokens();
-            Parser >> bHideConsole;
-        }
-        else if (token == "rollfix")
-        {
-            // Ra: poprawianie przechyłki, aby wewnętrzna szyna była "pozioma"
-            Parser.getTokens();
-            Parser >> bRollFix;
-        }
-        else if (token == "fpsaverage")
-        {
-            // oczekiwana wartość FPS
-            Parser.getTokens(1, false);
-            Parser >> fFpsAverage;
-        }
-        else if (token == "fpsdeviation")
-        {
-            // odchylenie standardowe FPS
-            Parser.getTokens(1, false);
-            Parser >> fFpsDeviation;
-        }
-        else if (token == "calibratein")
-        {
-            // parametry kalibracji wejść
-            Parser.getTokens(1, false);
-            int in;
-            Parser >> in;
-            if ((in < 0) || (in > 5))
-            {
-                in = 5; // na ostatni, bo i tak trzeba pominąć wartości
-            }
-            Parser.getTokens(4, false);
-            Parser >> fCalibrateIn[in][0] // wyraz wolny
-                >> fCalibrateIn[in][1] // mnożnik
-                >> fCalibrateIn[in][2] // mnożnik dla kwadratu
-                >> fCalibrateIn[in][3]; // mnożnik dla sześcianu
-            fCalibrateIn[in][4] = 0.0; // mnożnik 4 potęgi
-            fCalibrateIn[in][5] = 0.0; // mnożnik 5 potęgi
-        }
-        else if (token == "calibrate5din")
-        {
-            // parametry kalibracji wejść
-            Parser.getTokens(1, false);
-            int in;
-            Parser >> in;
-            if ((in < 0) || (in > 5))
-            {
-                in = 5; // na ostatni, bo i tak trzeba pominąć wartości
-            }
-            Parser.getTokens(6, false);
-            Parser >> fCalibrateIn[in][0] // wyraz wolny
-                >> fCalibrateIn[in][1] // mnożnik
-                >> fCalibrateIn[in][2] // mnożnik dla kwadratu
-                >> fCalibrateIn[in][3] // mnożnik dla sześcianu
-                >> fCalibrateIn[in][4] // mnożnik 4 potęgi
-                >> fCalibrateIn[in][5]; // mnożnik 5 potęgi
-        }
-        else if (token == "calibrateout")
-        {
-            // parametry kalibracji wyjść
-            Parser.getTokens(1, false);
-            int out;
-            Parser >> out;
-            if ((out < 0) || (out > 6))
-            {
-                out = 6; // na ostatni, bo i tak trzeba pominąć wartości
-            }
-            Parser.getTokens(4, false);
-            Parser >> fCalibrateOut[out][0] // wyraz wolny
-                >> fCalibrateOut[out][1] // mnożnik liniowy
-                >> fCalibrateOut[out][2] // mnożnik dla kwadratu
-                >> fCalibrateOut[out][3]; // mnożnik dla sześcianu
-            fCalibrateOut[out][4] = 0.0; // mnożnik dla 4 potęgi
-            fCalibrateOut[out][5] = 0.0; // mnożnik dla 5 potęgi
-        }
-        else if (token == "calibrate5dout")
-        {
-            // parametry kalibracji wyjść
-            Parser.getTokens(1, false);
-            int out;
-            Parser >> out;
-            if ((out < 0) || (out > 6))
-            {
-                out = 6; // na ostatni, bo i tak trzeba pominąć wartości
-            }
-            Parser.getTokens(6, false);
-            Parser >> fCalibrateOut[out][0] // wyraz wolny
-                >> fCalibrateOut[out][1] // mnożnik liniowy
-                >> fCalibrateOut[out][2] // mnożnik dla kwadratu
-                >> fCalibrateOut[out][3] // mnożnik dla sześcianu
-                >> fCalibrateOut[out][4] // mnożnik dla 4 potęgi
-                >> fCalibrateOut[out][5]; // mnożnik dla 5 potęgi
-        }
-        else if (token == "calibrateoutmaxvalues")
-        {
-            // maksymalne wartości jakie można wyświetlić na mierniku
-            Parser.getTokens(7, false);
-            Parser >> fCalibrateOutMax[0] >> fCalibrateOutMax[1] >> fCalibrateOutMax[2] >>
-                fCalibrateOutMax[3] >> fCalibrateOutMax[4] >> fCalibrateOutMax[5] >>
-                fCalibrateOutMax[6];
-        }
-        else if (token == "calibrateoutdebuginfo")
-        {
-            // wyjście z info o przebiegu kalibracji
-            Parser.getTokens(1, false);
-            Parser >> iCalibrateOutDebugInfo;
-        }
-        else if (token == "pwm")
-        {
-            // zmiana numerów wyjść PWM
-            Parser.getTokens(2, false);
-            int pwm_out, pwm_no;
-            Parser >> pwm_out >> pwm_no;
-            iPoKeysPWM[pwm_out] = pwm_no;
-        }
-        else if (token == "brakestep")
-        {
-            Parser.getTokens(1, false);
-            Parser >> fBrakeStep;
-        }
-        else if (token == "brakespeed")
-        {
-            Parser.getTokens(1, false);
-            Parser >> brake_speed;
-        }
-        else if (token == "joinduplicatedevents")
-        {
-            // czy grupować eventy o tych samych nazwach
-            Parser.getTokens();
-            Parser >> bJoinEvents;
-        }
-        else if (token == "hiddenevents")
-        {
-            // czy łączyć eventy z torami poprzez nazwę toru
-            Parser.getTokens(1, false);
-            Parser >> iHiddenEvents;
-        }
-        else if (token == "ai.trainman")
-        {
-            // czy łączyć eventy z torami poprzez nazwę toru
-            Parser.getTokens(1, false);
-            Parser >> AITrainman;
-        }
-        else if (token == "pause")
-        {
-            // czy po wczytaniu ma być pauza?
-            Parser.getTokens();
-            Parser >> token;
-            iPause |= (token == "yes" ? 1 : 0);
-        }
-        else if (token == "priorityloadtext3d")
-        {
-			Parser.getTokens(1);
-			Parser >> token;
-			priorityLoadText3D = (token == "yes" ? true : false);
-        }
-        else if (token == "lang")
-        {
-            // domyślny język - http://tools.ietf.org/html/bcp47
-            Parser.getTokens(1, false);
-            Parser >> asLang;
-        }
-		else if( token == "python.updatetime" )
-        {
-            Parser.getTokens();
-            Parser >> PythonScreenUpdateRate;
-        }
-        else if (token == "uitextcolor")
-        {
-            // color of the ui text. NOTE: will be obsolete once the real ui is in place
-            Parser.getTokens(3, false);
-            Parser >> UITextColor.r >> UITextColor.g >> UITextColor.b;
-            glm::clamp(UITextColor, 0.f, 255.f);
-            UITextColor = UITextColor / 255.f;
-            UITextColor.a = 1.f;
-        }
-        else if (token == "ui.bg.opacity")
-        {
-            // czy grupować eventy o tych samych nazwach
-            Parser.getTokens();
-            Parser >> UIBgOpacity;
-            UIBgOpacity = clamp(UIBgOpacity, 0.f, 1.f);
-        }
-        else if (token == "input.gamepad")
-        {
-            // czy grupować eventy o tych samych nazwach
-            Parser.getTokens();
-            Parser >> InputGamepad;
-		}
-		else if (token == "motiontelemetry")
-		{
-			Parser.getTokens(8);
-			Global.motiontelemetry_conf.enable = true;
-			Parser >> Global.motiontelemetry_conf.proto;
-			Parser >> Global.motiontelemetry_conf.address;
-			Parser >> Global.motiontelemetry_conf.port;
-			Parser >> Global.motiontelemetry_conf.updatetime;
-			Parser >> Global.motiontelemetry_conf.includegravity;
-			Parser >> Global.motiontelemetry_conf.fwdposbased;
-			Parser >> Global.motiontelemetry_conf.latposbased;
-			Parser >> Global.motiontelemetry_conf.axlebumpscale;
-		}
-        if (token == "screenshotsdir")
-		{
-			Parser.getTokens(1);
-			Parser >> Global.screenshot_dir;
-		}
-#ifdef WITH_UART
-        else if (token == "uart")
-        {
-            uart_conf.enable = true;
-            Parser.getTokens(3, false);
-            Parser
-                >> uart_conf.port
-                >> uart_conf.baud
-                >> uart_conf.updatetime;
-        }
-        else if (token == "uarttune")
-        {
-            Parser.getTokens(18);
-            Parser
-                >> uart_conf.mainbrakemin >> uart_conf.mainbrakemax
-                >> uart_conf.localbrakemin >> uart_conf.localbrakemax
-                >> uart_conf.tankmax >> uart_conf.tankuart
-                >> uart_conf.pipemax >> uart_conf.pipeuart
-                >> uart_conf.brakemax >> uart_conf.brakeuart
-                >> uart_conf.pantographmax >> uart_conf.pantographuart
-                >> uart_conf.hvmax >> uart_conf.hvuart
-                >> uart_conf.currentmax >> uart_conf.currentuart
-                >> uart_conf.lvmax >> uart_conf.lvuart;
-        }
-        else if (token == "uarttachoscale")
-        {
-            Parser.getTokens(1);
-            Parser >> uart_conf.tachoscale;
-        }
-        else if (token == "uartfeature")
-        {
-            Parser.getTokens(1);
-            std::string firstToken = Parser.peek();
-
-            if(firstToken.find('|') != std::string::npos || firstToken == "none" || uartfeatures_map.count(firstToken)) {
-                // new format (features delimited by pipe)
-
-                // all settings should be disabled initially
-                for(auto const &x : uartfeatures_map) {
-                    *(x.second) = false;
-                }
-
-                // and only defined should be enabled
-                std::string key;
-                std::stringstream firstTokenStream = std::stringstream(firstToken);
-
-                while(!firstTokenStream.eof()) {
-                    std::getline(firstTokenStream, key, '|');
-
-                    if(uartfeatures_map.count(key)) {
-                        *(uartfeatures_map[key]) = true;
-                    }
-                }
-            } else {
-                // legacy format
-
-                // first token is already parsed
-                Parser >> uart_conf.mainenable;
-
-                // the rest tokens must be fetched
-                Parser.getTokens(3);
-                Parser
-                    >> uart_conf.scndenable
-                    >> uart_conf.trainenable
-                    >> uart_conf.localenable;
-            }
-        }
-        else if( token == "uartdebug" ) {
-            Parser.getTokens( 1 );
-            Parser >> uart_conf.debug;
-        }
-        else if (token == "uartmainpercentage")
-        {
-            Parser.getTokens(1);
-            Parser >> uart_conf.mainpercentage;
-        }
-#endif
-#ifdef WITH_ZMQ
-        else if( token == "zmq.address" ) {
-            Parser.getTokens( 1 );
-            Parser >> zmq_address;
-        }
-#endif
-#ifdef USE_EXTCAM_CAMERA
-		else if( token == "extcam.cmd" ) {
-			Parser.getTokens( 1 );
-			Parser >> extcam_cmd;
-		}
-		else if( token == "extcam.rec" ) {
-			Parser.getTokens( 1 );
-			Parser >> extcam_rec;
-		}
-		else if( token == "extcam.res" ) {
-			Parser.getTokens( 2 );
-			Parser >> extcam_res.x >> extcam_res.y;
-		}
-#endif
-		else if (token == "loadinglog") {
-            Parser.getTokens( 1 );
-            Parser >> loading_log;
-		}
-		else if (token == "ddsupperorigin") {
-            Parser.getTokens( 1 );
-            Parser >> dds_upper_origin;
-		}
-        else if (token == "captureonstart") {
-            Parser.getTokens( 1 );
-            Parser >> captureonstart;
-        }
-		else if (token == "gui.defaultwindows") {
-			Parser.getTokens(1);
-			Parser >> gui_defaultwindows;
-		}
-		else if (token == "gui.showtranscripts") {
-			Parser.getTokens(1);
-			Parser >> gui_showtranscripts;
-		}
-        else if (token == "gui.trainingdefault") {
-			Parser.getTokens(1);
-            Parser >> gui_trainingdefault;
-		}
-        else if (token == "gfx.angleplatform")
-        {
-            Parser.getTokens(1);
-            Parser >> gfx_angleplatform;
-        }
-        else if (token == "gfx.gldebug")
-        {
-            Parser.getTokens(1);
-            Parser >> gfx_gldebug;
-        }
-        else if (token == "ui.fontsize")
-        {
-            Parser.getTokens(1);
-            Parser >> ui_fontsize;
-        }
-        else if (token == "ui.scale")
-        {
-            Parser.getTokens(1);
-            Parser >> ui_scale;
-        }
-        else if (token == "python.enabled")
-        {
-            Parser.getTokens(1);
-            Parser >> python_enabled;
-        }
-		else if (token == "python.displaywindows")
-		{
-			Parser.getTokens(1);
-			Parser >> python_displaywindows;
-		}
-		else if (token == "python.threadedupload")
-		{
-			Parser.getTokens(1);
-			Parser >> python_threadedupload;
-		}
-		else if (token == "python.sharectx")
-		{
-			Parser.getTokens(1);
-			Parser >> python_sharectx;
-		}
-		else if (token == "python.uploadmain")
-		{
-			Parser.getTokens(1);
-			Parser >> python_uploadmain;
-		}
-		else if (token == "python.fpslimit")
-		{
-			Parser.getTokens(1);
-			float fpslimit;
-			Parser >> fpslimit;
-			python_minframetime = std::chrono::duration<float>(1.0f / fpslimit);
-		}
-		else if (token == "python.vsync")
-		{
-			Parser.getTokens(1);
-			Parser >> python_vsync;
-		}
-		else if (token == "python.mipmaps")
-		{
-			Parser.getTokens(1);
-			Parser >> python_mipmaps;
-		}
-		else if (token == "python.viewport")
-		{
-			Parser.getTokens(8, false);
-
-			pythonviewport_config conf;
-			Parser >> conf.surface >> conf.monitor;
-			Parser >> conf.size.x >> conf.size.y;
-			Parser >> conf.offset.x >> conf.offset.y;
-			Parser >> conf.scale.x >> conf.scale.y;
-
-			python_viewports.push_back(conf);
-		}
-        else if (token == "extraviewport")
-		{
-            Parser.getTokens(3 + 12, false);
-
-			extraviewport_config conf;
-			Parser >> conf.monitor >> conf.width >> conf.height;
-			Parser >> conf.draw_range;
-
-            Parser >> conf.projection.pa.x >> conf.projection.pa.y >> conf.projection.pa.z;
-            Parser >> conf.projection.pb.x >> conf.projection.pb.y >> conf.projection.pb.z;
-            Parser >> conf.projection.pc.x >> conf.projection.pc.y >> conf.projection.pc.z;
-            Parser >> conf.projection.pe.x >> conf.projection.pe.y >> conf.projection.pe.z;
-
-			extra_viewports.push_back(conf);
-            if (gl::vao::use_vao && conf.monitor != "MAIN") {
-				gl::vao::use_vao = false;
-                WriteLog("using multiple windows, disabling vao!");
-			}
-		}
-		else if (token == "map.highlightdistance") {
-			Parser.getTokens(1);
-			Parser >> map_highlight_distance;
-		}
-        else if (token == "headtrack") {
-            Parser.getTokens(14);
-            Parser >> headtrack_conf.joy;
-            Parser >> headtrack_conf.magic_window;
-            Parser >> headtrack_conf.move_axes[0] >> headtrack_conf.move_axes[1] >> headtrack_conf.move_axes[2];
-            Parser >> headtrack_conf.move_mul[0] >> headtrack_conf.move_mul[1] >> headtrack_conf.move_mul[2];
-            Parser >> headtrack_conf.rot_axes[0] >> headtrack_conf.rot_axes[1] >> headtrack_conf.rot_axes[2];
-            Parser >> headtrack_conf.rot_mul[0] >> headtrack_conf.rot_mul[1] >> headtrack_conf.rot_mul[2];
-        }
-        else if (token == "vr.enabled") {
-            Parser.getTokens(1);
-            Parser >> vr;
-        }
-        else if (token == "vr.backend") {
-            Parser.getTokens(1);
-            Parser >> vr_backend;
-        }
-        else if (token == "compresstex")
-        {
-            Parser.getTokens(1);
-            if (false == gfx_usegles)
-            {
-                // ogl es use requires compression to be disabled
-                Parser >> compress_tex;
-            }
-        }
-        else if (token == "fpslimit")
-        {
-            Parser.getTokens(1);
-            float fpslimit;
-            Parser >> fpslimit;
-            minframetime = std::chrono::duration<float>(1.0f / fpslimit);
-        }
-        else if (token == "randomseed")
-        {
-            Parser.getTokens(1);
-            Parser >> Global.random_seed;
-        }
-		else if (token == "network.server")
-		{
-			Parser.getTokens(2);
-
-			std::string backend;
-			std::string conf;
-			Parser >> backend >> conf;
-
-			network_servers.push_back(std::make_pair(backend, conf));
-		}
-		else if (token == "network.client")
-		{
-			Parser.getTokens(2);
-
-			network_client.emplace();
-			Parser >> network_client->first;
-			Parser >> network_client->second;
-		}
-		else if (token == "execonexit") {
-			Parser.getTokens(1);
-			Parser >> exec_on_exit;
-			std::replace(std::begin(exec_on_exit), std::end(exec_on_exit), '_', ' ');
-		}
-        else if (token == "map.manualswitchcontrol") {
-            Parser.getTokens(1);
-            Parser >> map_manualswitchcontrol;
-        }
-        else if (token == "prepend_scn") {
-            Parser.getTokens(1);
-            Parser >> prepend_scn;
-        }
-		else if (token == "crashdamage") {
-			Parser.getTokens(1);
-			Parser >> crash_damage;
-		}
-
-    } while ((token != "") && (token != "endconfig")); //(!Parser->EndOfFile)
-    // na koniec trochę zależności
-    if (!bLoadTraction) // wczytywanie drutów i słupów
-    { // tutaj wyłączenie, bo mogą nie być zdefiniowane w INI
-        bEnableTraction = false; // false = pantograf się nie połamie
-        bLiveTraction = false; // false = pantografy zawsze zbierają 95% MaxVoltage
+        bEnableTraction = false;
+        bLiveTraction = false;
     }
-    if (vr) {
+
+    if (vr)
+    {
         gfx_skippipeline = false;
         VSync = false;
     }
-    /*
-        fFpsMin = fFpsAverage -
-                  fFpsDeviation; // dolna granica FPS, przy której promień scenerii będzie
-       zmniejszany fFpsMax = fFpsAverage + fFpsDeviation; // górna granica FPS, przy której promień
-       scenerii będzie zwiększany
-    */
+
     if (iPause)
-        iTextMode = GLFW_KEY_F1; // jak pauza, to pokazać zegar
+        iTextMode = GLFW_KEY_F1;
 
 #ifndef WITH_PYTHON
-	python_enabled = false;
+    python_enabled = false;
 #endif
 
 #ifdef _WIN32
-		    Console::ModeSet(iFeedbackMode, iFeedbackPort); // tryb pracy konsoli sterowniczej
+    Console::ModeSet(iFeedbackMode, iFeedbackPort);
 #endif
+}
+
+bool global_settings::ConfigParseGeneral(cParser& Parser, const std::string& token)
+{
+    if (token == "sceneryfile")
+    {
+        ParseOne(Parser, SceneryFile);
+        return true;
+    }
+
+    if (token == "humanctrlvehicle")
+    {
+        ParseOne(Parser, local_start_vehicle);
+        return true;
+    }
+
+    if (token == "width")
+    {
+        ParseOne(Parser, window_size.x, 1, false);
+        return true;
+    }
+
+    if (token == "height")
+    {
+        ParseOne(Parser, window_size.y, 1, false);
+        return true;
+    }
+
+    if (token == "fullscreen")
+    {
+        ParseOne(Parser, bFullScreen);
+        return true;
+    }
+
+    if (token == "fullscreenmonitor")
+    {
+        ParseOne(Parser, fullscreen_monitor, 1, false);
+        return true;
+    }
+
+    if (token == "fullscreenwindowed")
+    {
+        ParseOne(Parser, fullscreen_windowed);
+        return true;
+    }
+
+    if (token == "hideconsole")
+    {
+        ParseOne(Parser, bHideConsole);
+        return true;
+    }
+
+    if (token == "lang")
+    {
+        ParseOne(Parser, asLang, 1, false);
+        return true;
+    }
+
+    if (token == "screenshotsdir")
+    {
+        ParseOne(Parser, Global.screenshot_dir, 1);
+        return true;
+    }
+
+    if (token == "execonexit")
+    {
+        ParseOne(Parser, exec_on_exit, 1);
+        std::replace(std::begin(exec_on_exit), std::end(exec_on_exit), '_', ' ');
+        return true;
+    }
+
+    if (token == "prepend_scn")
+    {
+        ParseOne(Parser, prepend_scn, 1);
+        return true;
+    }
+
+    return false;
+}
+
+bool global_settings::ConfigParseAudio(cParser& Parser, const std::string& token)
+{
+    if (token == "soundenabled")
+    {
+        ParseOne(Parser, bSoundEnabled);
+        return true;
+    }
+
+    if (token == "sound.openal.renderer")
+    {
+        AudioRenderer = Parser.getToken<std::string>(false);
+        return true;
+    }
+
+    if (token == "sound.volume")
+    {
+        ParseOneClamped(Parser, AudioVolume, 0.f, 2.f);
+        return true;
+    }
+
+    if (token == "sound.volume.radio")
+    {
+        ParseOneClamped(Parser, DefaultRadioVolume, 0.f, 1.f);
+        return true;
+    }
+
+    if (token == "sound.maxsources")
+    {
+        ParseOne(Parser, audio_max_sources);
+        return true;
+    }
+
+    if (token == "sound.volume.vehicle")
+    {
+        ParseOneClamped(Parser, VehicleVolume, 0.f, 1.f);
+        return true;
+    }
+
+    if (token == "sound.volume.positional")
+    {
+        ParseOneClamped(Parser, EnvironmentPositionalVolume, 0.f, 1.f);
+        return true;
+    }
+
+    if (token == "sound.volume.ambient")
+    {
+        ParseOneClamped(Parser, EnvironmentAmbientVolume, 0.f, 1.f);
+        return true;
+    }
+
+    return false;
+}
+
+bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& token)
+{
+    if (token == "fieldofview")
+    {
+        ParseOneClamped(Parser, FieldOfView, 10.0f, 75.0f, 1, false);
+        return true;
+    }
+
+    if (token == "heightbase")
+    {
+        ParseOne(Parser, fDistanceFactor, 1, false);
+        return true;
+    }
+
+    if (token == "basedrawrange")
+    {
+        ParseOne(Parser, BaseDrawRange, 1);
+        return true;
+    }
+
+    if (token == "vsync")
+    {
+        ParseOne(Parser, VSync);
+        return true;
+    }
+
+    if (token == "wireframe")
+    {
+        ParseOne(Parser, bWireFrame);
+        return true;
+    }
+
+    if (token == "skyenabled")
+    {
+        std::string value;
+        ParseOne(Parser, value);
+        asSky = (value == "yes" ? "1" : "0");
+        return true;
+    }
+
+    if (token == "defaultext")
+    {
+        std::string value;
+        ParseOne(Parser, value);
+
+        if (value == "tga")
+            szDefaultExt = szTexturesTGA;
+        else
+            szDefaultExt = (value[0] == '.' ? value : "." + value);
+
+        return true;
+    }
+
+    if (token == "anisotropicfiltering")
+    {
+        ParseOne(Parser, AnisotropicFiltering, 1, false);
+        if (AnisotropicFiltering < 1.0f)
+            AnisotropicFiltering = 1.0f;
+        return true;
+    }
+
+    if (token == "usevbo")
+    {
+        ParseOne(Parser, bUseVBO);
+        return true;
+    }
+
+    if (token == "maxtexturesize")
+    {
+        int size = 0;
+        ParseOne(Parser, size, 1, false);
+        iMaxTextureSize = clamp_power_of_two(size, 64, 8192);
+        return true;
+    }
+
+    if (token == "maxcabtexturesize")
+    {
+        int size = 0;
+        ParseOne(Parser, size, 1, false);
+        iMaxCabTextureSize = clamp_power_of_two(size, 512, 8192);
+        return true;
+    }
+
+    if (token == "dynamiclights")
+    {
+        ParseOne(Parser, DynamicLightCount, 1, false);
+        DynamicLightCount = clamp(DynamicLightCount, 0, 7);
+        return true;
+    }
+
+    if (token == "gfxrenderer")
+    {
+        ParseOne(Parser, GfxRenderer);
+
+        if (GfxRenderer == "full")
+            GfxRenderer = "default";
+
+        if (GfxRenderer == "experimental")
+        {
+            NvRenderer = true;
+            GfxRenderer = "experimental";
+        }
+
+        BasicRenderer = (GfxRenderer == "simple");
+        LegacyRenderer = !NvRenderer && (GfxRenderer != "default");
+        return true;
+    }
+
+    if (token == "shadows")
+    {
+        ParseOne(Parser, RenderShadows);
+        return true;
+    }
+
+    if (token == "shadowtune")
+    {
+        Parser.getTokens(4, false);
+
+        float discard = 0.f;
+        Parser >> shadowtune.map_size >> discard >> shadowtune.range >> discard;
+
+        shadowtune.map_size = clamp_power_of_two<unsigned int>(shadowtune.map_size, 512, 8192);
+        shadowtune.range =
+            std::max((shadowtune.map_size <= 2048 ? 75.f : 75.f * shadowtune.map_size / 2048),
+                     shadowtune.range);
+        return true;
+    }
+
+    if (token == "scalespeculars")
+    {
+        ParseOne(Parser, ScaleSpecularValues);
+        return true;
+    }
+
+    if (token == "rendercab")
+    {
+        ParseOne(Parser, render_cab);
+        return true;
+    }
+
+    if (token == "multisampling")
+    {
+        ParseOne(Parser, iMultisampling, 1, false);
+        iMultisampling = clamp(iMultisampling, 0, 4);
+        return true;
+    }
+
+    if (token == "compresstex")
+    {
+        Parser.getTokens(1);
+        if (!gfx_usegles)
+            Parser >> compress_tex;
+        return true;
+    }
+
+    if (token == "gfx.angleplatform")
+    {
+        ParseOne(Parser, gfx_angleplatform, 1);
+        return true;
+    }
+
+    if (token == "gfx.gldebug")
+    {
+        ParseOne(Parser, gfx_gldebug, 1);
+        return true;
+    }
+
+    if (token == "extraviewport")
+    {
+        Parser.getTokens(15, false);
+
+        extraviewport_config conf;
+        Parser >> conf.monitor >> conf.width >> conf.height
+               >> conf.draw_range
+               >> conf.projection.pa.x >> conf.projection.pa.y >> conf.projection.pa.z
+               >> conf.projection.pb.x >> conf.projection.pb.y >> conf.projection.pb.z
+               >> conf.projection.pc.x >> conf.projection.pc.y >> conf.projection.pc.z
+               >> conf.projection.pe.x >> conf.projection.pe.y >> conf.projection.pe.z;
+
+        extra_viewports.push_back(conf);
+
+        if (gl::vao::use_vao && conf.monitor != "MAIN")
+        {
+            gl::vao::use_vao = false;
+            WriteLog("using multiple windows, disabling vao!");
+        }
+        return true;
+    }
+
+    return false;
+}
+
+bool global_settings::ConfigParseInput(cParser& Parser, const std::string& token)
+{
+    if (token == "freefly")
+    {
+        ParseOne(Parser, FreeFlyModeFlag);
+        Parser.getTokens(3, false);
+        Parser >> FreeCameraInit[0].x >> FreeCameraInit[0].y >> FreeCameraInit[0].z;
+        return true;
+    }
+
+    if (token == "mousescale")
+    {
+        Parser.getTokens(2, false);
+        Parser >> fMouseXScale >> fMouseYScale;
+        return true;
+    }
+
+    if (token == "mousecontrol")
+    {
+        ParseOne(Parser, InputMouse);
+        return true;
+    }
+
+    if (token == "input.gamepad")
+    {
+        ParseOne(Parser, InputGamepad);
+        return true;
+    }
+
+    if (token == "headtrack")
+    {
+        Parser.getTokens(14);
+        Parser >> headtrack_conf.joy
+               >> headtrack_conf.magic_window
+               >> headtrack_conf.move_axes[0] >> headtrack_conf.move_axes[1] >> headtrack_conf.move_axes[2]
+               >> headtrack_conf.move_mul[0] >> headtrack_conf.move_mul[1] >> headtrack_conf.move_mul[2]
+               >> headtrack_conf.rot_axes[0] >> headtrack_conf.rot_axes[1] >> headtrack_conf.rot_axes[2]
+               >> headtrack_conf.rot_mul[0] >> headtrack_conf.rot_mul[1] >> headtrack_conf.rot_mul[2];
+        return true;
+    }
+
+    return false;
+}
+
+bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& token)
+{
+    if (token == "async.trainThreads")
+    {
+        ParseOne(Parser, trainThreads);
+        return true;
+    }
+
+    if (token == "physicslog")
+    {
+        ParseOne(Parser, WriteLogFlag);
+        return true;
+    }
+
+    if (token == "fullphysics")
+    {
+        ParseOne(Parser, FullPhysics);
+        return true;
+    }
+
+    if (token == "enabletraction")
+    {
+        ParseOne(Parser, bEnableTraction);
+        return true;
+    }
+
+    if (token == "loadtraction")
+    {
+        ParseOne(Parser, bLoadTraction);
+        return true;
+    }
+
+    if (token == "friction")
+    {
+        ParseOne(Parser, fFriction, 1, false);
+        return true;
+    }
+
+    if (token == "livetraction")
+    {
+        ParseOne(Parser, bLiveTraction);
+        return true;
+    }
+
+    if (token == "newaircouplers")
+    {
+        ParseOne(Parser, bnewAirCouplers);
+        return true;
+    }
+
+    if (token == "movelight")
+    {
+        ParseOne(Parser, fMoveLight, 1, false);
+
+        if (fMoveLight == 0.f)
+        {
+            std::time_t timenow = std::time(nullptr);
+            std::tm tm{};
+
+#ifdef _WIN32
+            localtime_s(&tm, &timenow);
+#else
+            localtime_r(&timenow, &tm);
+#endif
+
+            fMoveLight = tm.tm_yday + 1;
+        }
+
+        simulation::Environment.compute_season(fMoveLight);
+        return true;
+    }
+
+    if (token == "scenario.time.override")
+    {
+        Parser.getTokens(1, false);
+
+        std::string value;
+        Parser >> value;
+
+        std::istringstream stream(value);
+
+        if (value.find(':') != std::string::npos)
+        {
+            float hours = 0.f;
+            float minutes = 0.f;
+            char sep = '\0';
+
+            stream >> hours >> sep >> minutes;
+            ScenarioTimeOverride = hours + minutes / 60.0f;
+        }
+        else
+        {
+            stream >> ScenarioTimeOverride;
+        }
+
+        ScenarioTimeOverride = clamp(ScenarioTimeOverride, 0.f, 24 * 1439 / 1440.f);
+        return true;
+    }
+
+    if (token == "scenario.time.offset")
+    {
+        ParseOne(Parser, ScenarioTimeOffset, 1, false);
+        return true;
+    }
+
+    if (token == "scenario.time.current")
+    {
+        ParseOne(Parser, ScenarioTimeCurrent, 1, false);
+        return true;
+    }
+
+    if (token == "scenario.weather.temperature")
+    {
+        ParseOneClamped(Parser, AirTemperature, -15.f, 45.f);
+        return true;
+    }
+
+    if (token == "smoothtraction")
+    {
+        ParseOne(Parser, bSmoothTraction);
+        return true;
+    }
+
+    if (token == "splinefidelity")
+    {
+        float splinefidelity = 0.f;
+        ParseOne(Parser, splinefidelity);
+        SplineFidelity = clamp(splinefidelity, 1.f, 4.f);
+        return true;
+    }
+
+    if (token == "createswitchtrackbeds")
+    {
+        ParseOne(Parser, CreateSwitchTrackbeds);
+        return true;
+    }
+
+    if (token == "timespeed")
+    {
+        ParseOne(Parser, default_timespeed, 1, false);
+        fTimeSpeed = default_timespeed;
+        return true;
+    }
+
+    if (token == "deltaoverride")
+    {
+        float deltaoverride = 0.f;
+        ParseOne(Parser, deltaoverride, 1, false);
+
+        if (deltaoverride > 0.f)
+            Timer::set_delta_override(1.0f / deltaoverride);
+        return true;
+    }
+
+    if (token == "latitude")
+    {
+        ParseOne(Parser, fLatitudeDeg, 1, false);
+        return true;
+    }
+
+    if (token == "convertmodels")
+    {
+        ParseOne(Parser, iConvertModels, 1, false);
+        return true;
+    }
+
+    if (token == "convertindexrange")
+    {
+        ParseOne(Parser, iConvertIndexRange, 1, false);
+        return true;
+    }
+
+    if (token == "file.binary.terrain")
+    {
+        ParseOne(Parser, file_binary_terrain, 1, false);
+        return true;
+    }
+
+    if (token == "inactivepause")
+    {
+        ParseOne(Parser, bInactivePause);
+        return true;
+    }
+
+    if (token == "slowmotion")
+    {
+        ParseOne(Parser, iSlowMotionMask, 1, false);
+        return true;
+    }
+
+    if (token == "fpsaverage")
+    {
+        ParseOne(Parser, fFpsAverage, 1, false);
+        return true;
+    }
+
+    if (token == "fpsdeviation")
+    {
+        ParseOne(Parser, fFpsDeviation, 1, false);
+        return true;
+    }
+
+    if (token == "brakestep")
+    {
+        ParseOne(Parser, fBrakeStep, 1, false);
+        return true;
+    }
+
+    if (token == "brakespeed")
+    {
+        ParseOne(Parser, brake_speed, 1, false);
+        return true;
+    }
+
+    if (token == "joinduplicatedevents")
+    {
+        ParseOne(Parser, bJoinEvents);
+        return true;
+    }
+
+    if (token == "hiddenevents")
+    {
+        ParseOne(Parser, iHiddenEvents, 1, false);
+        return true;
+    }
+
+    if (token == "ai.trainman")
+    {
+        ParseOne(Parser, AITrainman, 1, false);
+        return true;
+    }
+
+    if (token == "pause")
+    {
+        std::string value;
+        ParseOne(Parser, value);
+        iPause |= (value == "yes" ? 1 : 0);
+        return true;
+    }
+
+    if (token == "priorityloadtext3d")
+    {
+        std::string value;
+        ParseOne(Parser, value, 1);
+        priorityLoadText3D = (value == "yes");
+        return true;
+    }
+
+    if (token == "fpslimit")
+    {
+        float fpslimit = 0.f;
+        ParseOne(Parser, fpslimit, 1);
+
+        if (fpslimit > 0.f)
+            minframetime = std::chrono::duration<float>(1.0f / fpslimit);
+        return true;
+    }
+
+    if (token == "randomseed")
+    {
+        ParseOne(Parser, Global.random_seed, 1);
+        return true;
+    }
+
+    if (token == "map.manualswitchcontrol")
+    {
+        ParseOne(Parser, map_manualswitchcontrol, 1);
+        return true;
+    }
+
+    if (token == "map.highlightdistance")
+    {
+        ParseOne(Parser, map_highlight_distance, 1);
+        return true;
+    }
+
+    if (token == "crashdamage")
+    {
+        ParseOne(Parser, crash_damage, 1);
+        return true;
+    }
+
+    return false;
+}
+
+bool global_settings::ConfigParseUI(cParser& Parser, const std::string& token)
+{
+    if (token == "uitextcolor")
+    {
+        Parser.getTokens(3, false);
+        Parser >> UITextColor.r >> UITextColor.g >> UITextColor.b;
+        UITextColor = glm::clamp(UITextColor, 0.f, 255.f);
+        UITextColor = UITextColor / 255.f;
+        UITextColor.a = 1.f;
+        return true;
+    }
+
+    if (token == "ui.bg.opacity")
+    {
+        ParseOneClamped(Parser, UIBgOpacity, 0.f, 1.f);
+        return true;
+    }
+
+    if (token == "ui.fontsize")
+    {
+        ParseOne(Parser, ui_fontsize, 1);
+        return true;
+    }
+
+    if (token == "ui.scale")
+    {
+        ParseOne(Parser, ui_scale, 1);
+        return true;
+    }
+
+    if (token == "gui.defaultwindows")
+    {
+        ParseOne(Parser, gui_defaultwindows, 1);
+        return true;
+    }
+
+    if (token == "gui.showtranscripts")
+    {
+        ParseOne(Parser, gui_showtranscripts, 1);
+        return true;
+    }
+
+    if (token == "gui.trainingdefault")
+    {
+        ParseOne(Parser, gui_trainingdefault, 1);
+        return true;
+    }
+
+    return false;
+}
+
+bool global_settings::ConfigParsePython(cParser& Parser, const std::string& token)
+{
+    if (token == "python.enabled")
+    {
+        ParseOne(Parser, python_enabled, 1);
+        return true;
+    }
+
+    if (token == "python.updatetime")
+    {
+        ParseOne(Parser, PythonScreenUpdateRate);
+        return true;
+    }
+
+    if (token == "python.displaywindows")
+    {
+        ParseOne(Parser, python_displaywindows, 1);
+        return true;
+    }
+
+    if (token == "python.threadedupload")
+    {
+        ParseOne(Parser, python_threadedupload, 1);
+        return true;
+    }
+
+    if (token == "python.sharectx")
+    {
+        ParseOne(Parser, python_sharectx, 1);
+        return true;
+    }
+
+    if (token == "python.uploadmain")
+    {
+        ParseOne(Parser, python_uploadmain, 1);
+        return true;
+    }
+
+    if (token == "python.fpslimit")
+    {
+        float fpslimit = 0.f;
+        ParseOne(Parser, fpslimit, 1);
+
+        if (fpslimit > 0.f)
+            python_minframetime = std::chrono::duration<float>(1.0f / fpslimit);
+        return true;
+    }
+
+    if (token == "python.vsync")
+    {
+        ParseOne(Parser, python_vsync, 1);
+        return true;
+    }
+
+    if (token == "python.mipmaps")
+    {
+        ParseOne(Parser, python_mipmaps, 1);
+        return true;
+    }
+
+    if (token == "python.viewport")
+    {
+        Parser.getTokens(8, false);
+
+        pythonviewport_config conf;
+        Parser >> conf.surface >> conf.monitor
+               >> conf.size.x >> conf.size.y
+               >> conf.offset.x >> conf.offset.y
+               >> conf.scale.x >> conf.scale.y;
+
+        python_viewports.push_back(conf);
+        return true;
+    }
+
+    return false;
+}
+
+bool global_settings::ConfigParseNetwork(cParser& Parser, const std::string& token)
+{
+    if (token == "network.server")
+    {
+        Parser.getTokens(2);
+
+        std::string backend;
+        std::string conf;
+        Parser >> backend >> conf;
+
+        network_servers.emplace_back(backend, conf);
+        return true;
+    }
+
+    if (token == "network.client")
+    {
+        Parser.getTokens(2);
+
+        network_client.emplace();
+        Parser >> network_client->first >> network_client->second;
+        return true;
+    }
+
+    return false;
+}
+
+bool global_settings::ConfigParseHardware(cParser& Parser, const std::string& token)
+{
+    if (token == "feedbackmode")
+    {
+        ParseOne(Parser, iFeedbackMode, 1, false);
+        return true;
+    }
+
+    if (token == "feedbackport")
+    {
+        ParseOne(Parser, iFeedbackPort, 1, false);
+        return true;
+    }
+
+    if (token == "multiplayer")
+    {
+        ParseOne(Parser, iMultiplayer, 1, false);
+        return true;
+    }
+
+    if (token == "isolatedtrainnumber")
+    {
+        ParseOne(Parser, bIsolatedTrainName, 1, false);
+        return true;
+    }
+
+    if (token == "motiontelemetry")
+    {
+        Parser.getTokens(8);
+        Global.motiontelemetry_conf.enable = true;
+        Parser >> Global.motiontelemetry_conf.proto
+               >> Global.motiontelemetry_conf.address
+               >> Global.motiontelemetry_conf.port
+               >> Global.motiontelemetry_conf.updatetime
+               >> Global.motiontelemetry_conf.includegravity
+               >> Global.motiontelemetry_conf.fwdposbased
+               >> Global.motiontelemetry_conf.latposbased
+               >> Global.motiontelemetry_conf.axlebumpscale;
+        return true;
+    }
+
+    if (token == "vr.enabled")
+    {
+        ParseOne(Parser, vr, 1);
+        return true;
+    }
+
+    if (token == "vr.backend")
+    {
+        ParseOne(Parser, vr_backend, 1);
+        return true;
+    }
+
+#ifdef WITH_UART
+    if (token == "uart")
+    {
+        uart_conf.enable = true;
+        Parser.getTokens(3, false);
+        Parser >> uart_conf.port
+               >> uart_conf.baud
+               >> uart_conf.updatetime;
+        return true;
+    }
+
+    if (token == "uarttune")
+    {
+        Parser.getTokens(18);
+        Parser >> uart_conf.mainbrakemin >> uart_conf.mainbrakemax
+               >> uart_conf.localbrakemin >> uart_conf.localbrakemax
+               >> uart_conf.tankmax >> uart_conf.tankuart
+               >> uart_conf.pipemax >> uart_conf.pipeuart
+               >> uart_conf.brakemax >> uart_conf.brakeuart
+               >> uart_conf.pantographmax >> uart_conf.pantographuart
+               >> uart_conf.hvmax >> uart_conf.hvuart
+               >> uart_conf.currentmax >> uart_conf.currentuart
+               >> uart_conf.lvmax >> uart_conf.lvuart;
+        return true;
+    }
+
+    if (token == "uarttachoscale")
+    {
+        ParseOne(Parser, uart_conf.tachoscale, 1);
+        return true;
+    }
+
+    if (token == "uartfeature")
+    {
+        Parser.getTokens(1);
+        std::string firstToken = Parser.peek();
+
+        if (firstToken.find('|') != std::string::npos || firstToken == "none" || uartfeatures_map.count(firstToken))
+        {
+            for (auto const& x : uartfeatures_map)
+            {
+                *(x.second) = false;
+            }
+
+            std::string key;
+            std::stringstream firstTokenStream(firstToken);
+
+            while (!firstTokenStream.eof())
+            {
+                std::getline(firstTokenStream, key, '|');
+
+                if (uartfeatures_map.count(key))
+                {
+                    *(uartfeatures_map[key]) = true;
+                }
+            }
+        }
+        else
+        {
+            Parser >> uart_conf.mainenable;
+            Parser.getTokens(3);
+            Parser >> uart_conf.scndenable
+                   >> uart_conf.trainenable
+                   >> uart_conf.localenable;
+        }
+
+        return true;
+    }
+
+    if (token == "uartdebug")
+    {
+        ParseOne(Parser, uart_conf.debug, 1);
+        return true;
+    }
+
+    if (token == "uartmainpercentage")
+    {
+        ParseOne(Parser, uart_conf.mainpercentage, 1);
+        return true;
+    }
+#endif
+
+#ifdef WITH_ZMQ
+    if (token == "zmq.address")
+    {
+        ParseOne(Parser, zmq_address, 1);
+        return true;
+    }
+#endif
+
+#ifdef USE_EXTCAM_CAMERA
+    if (token == "extcam.cmd")
+    {
+        ParseOne(Parser, extcam_cmd, 1);
+        return true;
+    }
+
+    if (token == "extcam.rec")
+    {
+        ParseOne(Parser, extcam_rec, 1);
+        return true;
+    }
+
+    if (token == "extcam.res")
+    {
+        Parser.getTokens(2);
+        Parser >> extcam_res.x >> extcam_res.y;
+        return true;
+    }
+#endif
+
+    return false;
+}
+
+bool global_settings::ConfigParseDebug(cParser& Parser, const std::string& token)
+{
+    if (token == "debugmode")
+    {
+        ParseOne(Parser, DebugModeFlag);
+        return true;
+    }
+
+    if (token == "debuglog")
+    {
+        std::string value;
+        ParseOne(Parser, value);
+
+        if (value == "yes")
+            iWriteLogEnabled = 3;
+        else if (value == "no")
+            iWriteLogEnabled = 0;
+        else
+            iWriteLogEnabled = stol_def(value, 3);
+
+        return true;
+    }
+
+    if (token == "multiplelogs")
+    {
+        ParseOne(Parser, MultipleLogs);
+        return true;
+    }
+
+    if (token == "shakefactor")
+    {
+        ParseOne(Parser, ShakingMultiplierBF);
+        ParseOne(Parser, ShakingMultiplierRL);
+        ParseOne(Parser, ShakingMultiplierUD);
+        return true;
+    }
+
+    if (token == "logs.filter")
+    {
+        ParseOne(Parser, DisabledLogTypes);
+        return true;
+    }
+
+    if (token == "rollfix")
+    {
+        ParseOne(Parser, bRollFix);
+        return true;
+    }
+
+    if (token == "loadinglog")
+    {
+        ParseOne(Parser, loading_log, 1);
+        return true;
+    }
+
+    if (token == "captureonstart")
+    {
+        ParseOne(Parser, captureonstart, 1);
+        return true;
+    }
+
+    if (token == "ddsupperorigin")
+    {
+        ParseOne(Parser, dds_upper_origin, 1);
+        return true;
+    }
+
+    if (token == "calibratein")
+    {
+        Parser.getTokens(1, false);
+
+        int in = 0;
+        Parser >> in;
+
+        if ((in < 0) || (in > 5))
+            in = 5;
+
+        Parser.getTokens(4, false);
+        Parser >> fCalibrateIn[in][0]
+               >> fCalibrateIn[in][1]
+               >> fCalibrateIn[in][2]
+               >> fCalibrateIn[in][3];
+
+        fCalibrateIn[in][4] = 0.0;
+        fCalibrateIn[in][5] = 0.0;
+        return true;
+    }
+
+    if (token == "calibrate5din")
+    {
+        Parser.getTokens(1, false);
+
+        int in = 0;
+        Parser >> in;
+
+        if ((in < 0) || (in > 5))
+            in = 5;
+
+        Parser.getTokens(6, false);
+        Parser >> fCalibrateIn[in][0]
+               >> fCalibrateIn[in][1]
+               >> fCalibrateIn[in][2]
+               >> fCalibrateIn[in][3]
+               >> fCalibrateIn[in][4]
+               >> fCalibrateIn[in][5];
+        return true;
+    }
+
+    if (token == "calibrateout")
+    {
+        Parser.getTokens(1, false);
+
+        int out = 0;
+        Parser >> out;
+
+        if ((out < 0) || (out > 6))
+            out = 6;
+
+        Parser.getTokens(4, false);
+        Parser >> fCalibrateOut[out][0]
+               >> fCalibrateOut[out][1]
+               >> fCalibrateOut[out][2]
+               >> fCalibrateOut[out][3];
+
+        fCalibrateOut[out][4] = 0.0;
+        fCalibrateOut[out][5] = 0.0;
+        return true;
+    }
+
+    if (token == "calibrate5dout")
+    {
+        Parser.getTokens(1, false);
+
+        int out = 0;
+        Parser >> out;
+
+        if ((out < 0) || (out > 6))
+            out = 6;
+
+        Parser.getTokens(6, false);
+        Parser >> fCalibrateOut[out][0]
+               >> fCalibrateOut[out][1]
+               >> fCalibrateOut[out][2]
+               >> fCalibrateOut[out][3]
+               >> fCalibrateOut[out][4]
+               >> fCalibrateOut[out][5];
+        return true;
+    }
+
+    if (token == "calibrateoutmaxvalues")
+    {
+        Parser.getTokens(7, false);
+        Parser >> fCalibrateOutMax[0]
+               >> fCalibrateOutMax[1]
+               >> fCalibrateOutMax[2]
+               >> fCalibrateOutMax[3]
+               >> fCalibrateOutMax[4]
+               >> fCalibrateOutMax[5]
+               >> fCalibrateOutMax[6];
+        return true;
+    }
+
+    if (token == "calibrateoutdebuginfo")
+    {
+        ParseOne(Parser, iCalibrateOutDebugInfo, 1, false);
+        return true;
+    }
+
+    if (token == "pwm")
+    {
+        Parser.getTokens(2, false);
+
+        int pwm_out = 0;
+        int pwm_no = 0;
+        Parser >> pwm_out >> pwm_no;
+
+        iPoKeysPWM[pwm_out] = pwm_no;
+        return true;
+    }
+
+    return false;
+}
+
+void global_settings::ConfigParse(cParser& Parser)
+{
+    std::string token;
+
+    do
+    {
+        token.clear();
+        Parser.getTokens();
+        Parser >> token;
+
+        if (token.empty() || token == "endconfig")
+            break;
+
+        if (ConfigParse_gfx(Parser, token))
+            continue;
+
+        if (ConfigParseGeneral(Parser, token))
+            continue;
+
+        if (ConfigParseAudio(Parser, token))
+            continue;
+
+        if (ConfigParseGraphics(Parser, token))
+            continue;
+
+        if (ConfigParseInput(Parser, token))
+            continue;
+
+        if (ConfigParseSimulation(Parser, token))
+            continue;
+
+        if (ConfigParseUI(Parser, token))
+            continue;
+
+        if (ConfigParsePython(Parser, token))
+            continue;
+
+        if (ConfigParseNetwork(Parser, token))
+            continue;
+
+        if (ConfigParseHardware(Parser, token))
+            continue;
+
+        if (ConfigParseDebug(Parser, token))
+            continue;
+
+        // WriteLog(std::format("Unknown config token: {}", token), logtype::warning, false);
+
+    } while (true);
+
+    FinalizeConfig();
 }
 
 bool
