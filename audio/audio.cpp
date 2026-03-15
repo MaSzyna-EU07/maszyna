@@ -135,11 +135,11 @@ buffer_manager::create( std::string const &Filename ) {
         }
     }
     // if dynamic-specific and/or direct lookups find nothing, try the default sound folder
-    lookup = find_buffer( szSoundPath + filename );
+    lookup = find_buffer( paths::sounds + filename );
     if( lookup != null_handle ) {
         return lookup;
     }
-    filelookup = find_file( szSoundPath + filename );
+    filelookup = find_file( paths::sounds + filename );
     if( false == filelookup.empty() ) {
         return emplace( filelookup );
     }

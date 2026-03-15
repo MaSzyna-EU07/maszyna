@@ -617,7 +617,7 @@ TTrainParameters::load_sounds() {
 
         auto const lookup {
             FileExists(
-                { Global.asCurrentSceneryPath + stationname, std::string{ szSoundPath } + "sip/" + stationname },
+                { Global.asCurrentSceneryPath + stationname, std::string{ paths::sounds } + "sip/" + stationname },
                 { ".ogg", ".flac", ".wav" } ) };
         if( lookup.first.empty() ) {
             continue;

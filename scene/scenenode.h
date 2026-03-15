@@ -15,7 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/material.h"
 #include "model/vertex.h"
 #include "rendering/geometrybank.h"
-#include "utils/uuid.hpp"
+#include "../utilities/uuid.hpp"
 
 struct lighting_data {
 

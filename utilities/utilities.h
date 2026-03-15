@@ -29,12 +29,15 @@ template <typename T> T sign(T x)
 #define DegToRad(a) ((M_PI / 180.0) * (a)) //(a) w nawiasie, bo może być dodawaniem
 #define RadToDeg(r) ((180.0 / M_PI) * (r))
 
-#define szSceneryPath "scenery/"
-#define szTexturePath "textures/"
-#define szModelPath "models/"
-#define szDynamicPath "dynamic/"
-#define szSoundPath "sounds/"
-#define szDataPath "data/"
+namespace paths
+{
+inline constexpr const char *scenery = "scenery/";
+inline constexpr const char *textures = "textures/";
+inline constexpr const char *models = "models/";
+inline constexpr const char *dynamic = "dynamic/";
+inline constexpr const char *sounds = "sounds/";
+inline constexpr const char *data = "data/";
+}
 
 #define MAKE_ID4(a, b, c, d) (((std::uint32_t)(d) << 24) | ((std::uint32_t)(c) << 16) | ((std::uint32_t)(b) << 8) | (std::uint32_t)(a))
 

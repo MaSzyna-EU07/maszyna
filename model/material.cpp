@@ -582,7 +582,7 @@ material_manager::find_in_databank( std::string const &Materialname ) const {
     std::vector<std::string> const filenames {
         Global.asCurrentTexturePath + Materialname,
         Materialname,
-        szTexturePath + Materialname };
+        paths::textures + Materialname };
 
     for( auto const &filename : filenames ) {
         auto const lookup { m_materialmappings.find( filename ) };
@@ -602,7 +602,7 @@ material_manager::find_on_disk( std::string const &Materialname ) {
     auto const materialname { ToLower( Materialname ) };
     return (
         FileExists(
-            { Global.asCurrentTexturePath + materialname, materialname, szTexturePath + materialname },
+            { Global.asCurrentTexturePath + materialname, materialname, paths::textures + materialname },
             { ".mat" } ) );
 }
 

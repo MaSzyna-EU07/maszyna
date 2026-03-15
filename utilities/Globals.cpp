@@ -23,18 +23,25 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "vao.h"
 
-void
-global_settings::LoadIniFile(std::string asFileName) {
+void global_settings::LoadIniFile(std::string asFileName)
+{
+	// initialize season data in case the main config file doesn't
+	std::time_t timenow = std::time(nullptr);
 
-    // initialize season data in case the main config file doesn't
-    std::time_t timenow = std::time( 0 );
-    std::tm *localtime = std::localtime( &timenow );
-    fMoveLight = localtime->tm_yday + 1; // numer bieżącego dnia w roku
-    simulation::Environment.compute_season( fMoveLight );
+	std::tm tm{};
 
-    cParser parser(asFileName, cParser::buffer_FILE);
-    ConfigParse(parser);
-};
+#ifdef _WIN32
+	localtime_s(&tm, &timenow);
+#else
+	localtime_r(&timenow, &tm);
+#endif
+
+	fMoveLight = tm.tm_yday + 1; // numer bieżącego dnia w roku
+	simulation::Environment.compute_season(fMoveLight);
+
+	cParser parser(asFileName, cParser::buffer_FILE);
+	ConfigParse(parser);
+}
 
 void
 global_settings::ConfigParse(cParser &Parser) {
