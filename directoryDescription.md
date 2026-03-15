@@ -21,3 +21,4 @@
 | utilities/ | Logging, timing, parsing, math, globals, crash reporter |
 | world/ | Tracks, traction, events, memory cells, stations | 
 | vehicle/ | Train, dynamic objects, driver, gauges, camera |
+| entitysystem/ | EnTT wrapper, components, helpers |
