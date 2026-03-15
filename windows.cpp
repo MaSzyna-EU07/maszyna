@@ -1,6 +1,6 @@
 #include "stdafx.h"
-#include "messaging.h"
-#include "utilities.h"
+#include "input/messaging.h"
+#include "utilities/utilities.h"
 
 #pragma warning (disable: 4091)
 

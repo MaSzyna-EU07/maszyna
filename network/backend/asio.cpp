@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "network/backend/asio.h"
-#include "sn_utils.h"
-#include "Logs.h"
+#include "scene/sn_utils.h"
+#include "utilities/Logs.h"
 
 network::tcp::connection::connection(asio::io_context &io_ctx, bool client, size_t counter)
     : network::connection(client, counter),

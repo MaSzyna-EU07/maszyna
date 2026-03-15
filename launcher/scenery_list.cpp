@@ -1,11 +1,11 @@
 #include "stdafx.h"
 #include "scenery_list.h"
 #include "imgui/imgui.h"
-#include "utilities.h"
-#include "renderer.h"
-#include "application.h"
-#include "Logs.h"
-#include "translation.h"
+#include "utilities/utilities.h"
+#include "rendering/renderer.h"
+#include "application/application.h"
+#include "utilities/Logs.h"
+#include "utilities/translation.h"
 
 #include <filesystem>
 

@@ -16,7 +16,7 @@ Copyright (C) 2007-2014 Maciej Cierniak
 #include "hamulce.h"
 #include <typeinfo>
 #include "MOVER.h"
-#include "utilities.h"
+#include "utilities/utilities.h"
 
 //---FUNKCJE OGOLNE---
 

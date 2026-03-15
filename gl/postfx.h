@@ -3,7 +3,7 @@
 #include "shader.h"
 #include "vao.h"
 #include "framebuffer.h"
-#include "Texture.h"
+#include "model/Texture.h"
 
 namespace gl
 {

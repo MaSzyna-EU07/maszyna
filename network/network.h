@@ -5,7 +5,7 @@
 #include <queue>
 #include <chrono>
 #include "network/message.h"
-#include "command.h"
+#include "input/command.h"
 
 namespace network
 {

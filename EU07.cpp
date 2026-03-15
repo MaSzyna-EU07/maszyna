@@ -18,8 +18,8 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 
 #include "stdafx.h"
 
-#include "application.h"
-#include "Logs.h"
+#include "application/application.h"
+#include "utilities/Logs.h"
 #include <cstdlib>
 #ifdef WITHDUMPGEN
 #ifdef _WIN32
@@ -38,7 +38,7 @@ void export_e3d_standalone(std::string in, std::string out, int flags, bool dyna
 #include <string>
 #include <sstream>
 #include <iomanip>
-#include <Globals.h>
+#include <utilities/Globals.h>
 
 #ifdef _WIN32
 #pragma comment(lib, "Dbghelp.lib")

@@ -1,0 +1,48 @@
+﻿/*
+This Source Code Form is subject to the
+terms of the Mozilla Public License, v.
+2.0. If a copy of the MPL was not
+distributed with this file, You can
+obtain one at
+http://mozilla.org/MPL/2.0/.
+*/
+
+#pragma once
+
+#include "application/uilayer.h"
+#include "application/editoruipanels.h"
+
+namespace scene
+{
+
+class basic_node;
+
+}
+
+class editor_ui : public ui_layer
+{
+
+  public:
+	// constructors
+	editor_ui();
+	// methods
+	// updates state of UI elements
+	void update() override;
+	void set_node(scene::basic_node *Node);
+	void add_node_template(const std::string &desc);
+	float rot_val();
+	bool rot_from_last();
+	functions_panel::rotation_mode rot_mode();
+	const std::string *get_active_node_template(bool bypassRandom = false);
+	nodebank_panel::edit_mode mode();
+	float getSpacing();
+	void toggleBrushSettings(bool isVisible);
+
+  private:
+	// members
+	itemproperties_panel m_itempropertiespanel{"Node Properties", true};
+	functions_panel m_functionspanel{"Functions", true};
+	nodebank_panel m_nodebankpanel{"Node Bank", true};
+	brush_object_list m_brushobjects{"Brush properties", false};
+	scene::basic_node *m_node{nullptr}; // currently bound scene node, if any
+};

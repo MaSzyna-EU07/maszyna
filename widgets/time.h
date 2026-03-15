@@ -1,6 +1,6 @@
-#include "uilayer.h"
-#include "translation.h"
-#include "command.h"
+#include "application/uilayer.h"
+#include "utilities/translation.h"
+#include "input/command.h"
 
 namespace ui
 {

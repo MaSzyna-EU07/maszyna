@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "launcher/launcheruilayer.h"
-#include "application.h"
-#include "translation.h"
+#include "application/application.h"
+#include "utilities/translation.h"
 
 launcher_ui::launcher_ui() : m_scenery_scanner(m_vehicles_bank), m_scenerylist_panel(m_scenery_scanner)
 {

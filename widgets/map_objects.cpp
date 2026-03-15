@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "widgets/map_objects.h"
-#include "simulation.h"
-#include "DynObj.h"
+#include "simulation/simulation.h"
+#include "vehicle/DynObj.h"
 
 map::objects map::Objects;
 

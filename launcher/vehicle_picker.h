@@ -1,8 +1,8 @@
 #pragma once
 
-#include "uilayer.h"
+#include "application/uilayer.h"
 #include "textures_scanner.h"
-#include "translation.h"
+#include "utilities/translation.h"
 
 namespace ui {
 

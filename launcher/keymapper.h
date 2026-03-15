@@ -1,7 +1,7 @@
 #pragma once
 
-#include "uilayer.h"
-#include "driverkeyboardinput.h"
+#include "application/uilayer.h"
+#include "input/driverkeyboardinput.h"
 
 namespace ui
 {

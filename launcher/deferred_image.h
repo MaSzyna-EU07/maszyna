@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Texture.h"
-#include "renderer.h"
+#include "model/Texture.h"
+#include "rendering/renderer.h"
 
 class deferred_image {
 public:

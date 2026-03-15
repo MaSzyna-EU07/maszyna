@@ -1,9 +1,9 @@
 #pragma once
 
-#include "uilayer.h"
-#include "translation.h"
-#include "command.h"
-#include "renderer.h"
+#include "application/uilayer.h"
+#include "utilities/translation.h"
+#include "input/command.h"
+#include "rendering/renderer.h"
 
 namespace ui
 {

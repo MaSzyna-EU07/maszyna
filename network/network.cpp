@@ -1,11 +1,11 @@
 #include "stdafx.h"
 #include "network/network.h"
 #include "network/message.h"
-#include "Logs.h"
-#include "sn_utils.h"
-#include "Timer.h"
-#include "application.h"
-#include "Globals.h"
+#include "utilities/Logs.h"
+#include "scene/sn_utils.h"
+#include "utilities/Timer.h"
+#include "application/application.h"
+#include "utilities/Globals.h"
 
 std::uint32_t const EU07_NETWORK_VERSION = 2;
 

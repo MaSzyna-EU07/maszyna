@@ -13,7 +13,7 @@
 #include "nvrenderer_vulkan.h"
 #endif
 
-#include "Globals.h"
+#include "utilities/Globals.h"
 #include "gbuffer.h"
 #include "gbufferblitpass.h"
 

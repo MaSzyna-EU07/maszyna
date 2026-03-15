@@ -9,8 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #ifndef ConsoleH
 #define ConsoleH
-#include "Globals.h"
-#include "application.h"
+#include "utilities/Globals.h"
+#include "application/application.h"
 //---------------------------------------------------------------------------
 class TConsoleDevice; // urządzenie podłączalne za pomocą DLL
 class TPoKeys55;

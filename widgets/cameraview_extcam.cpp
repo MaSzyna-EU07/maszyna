@@ -5,8 +5,8 @@
 #include "stdafx.h"
 #include "widgets/cameraview_extcam.h"
 #include "stb/stb_image.h"
-#include "Globals.h"
-#include "translation.h"
+#include "utilities/Globals.h"
+#include "utilities/translation.h"
 #include "extras/piped_proc.h"
 
 ui::cameraview_panel::cameraview_panel()

@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "textures_scanner.h"
-#include "utilities.h"
+#include "utilities/utilities.h"
 
 void ui::vehicles_bank::scan_textures()
 {

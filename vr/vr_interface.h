@@ -1,7 +1,7 @@
 #pragma once
-#include "Camera.h"
-#include "Model3d.h"
-#include "Texture.h"
+#include "vehicle/Camera.h"
+#include "model/Model3d.h"
+#include "model/Texture.h"
 
 class vr_interface
 {

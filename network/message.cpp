@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "network/message.h"
-#include "sn_utils.h"
+#include "scene/sn_utils.h"
 
 void network::client_hello::serialize(std::ostream &stream) const
 {
