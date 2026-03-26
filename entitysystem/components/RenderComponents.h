@@ -30,17 +30,5 @@ struct LODController
 	double RangeMax;
 };
 
-/// <summary>
-/// Component for entities that can be rendered with LOD
-/// </summary>
-/// <remarks>
-/// Has higher priority as it's for node objects
-/// </remarks>
-struct NodeLODController
-{
-	double RangeMin;
-	double RangeMax;
-};
-
 } // namespace ECSComponent
 #endif // EU07_RENDERCOMPONENTS_H
