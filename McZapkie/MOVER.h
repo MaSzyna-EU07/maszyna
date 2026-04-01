@@ -1066,6 +1066,9 @@ class TMoverParameters
 		float temperatura1{50.0};
 		float temperatura2{40.0};
 		float powerfactor{1.0}; // coefficient of heat generation for engines other than su45
+		// engine overheat threshold
+		float engine_max_temp{-1}; // maximum acceptable engine temperature, triggers overheat lamp when exceeded
+		bool engine_is_hot{false}; // engine temperature crossed cooling threshold
 	};
 
 	struct spring_brake

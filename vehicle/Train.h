@@ -761,6 +761,11 @@ public: // reszta może by?publiczna
     TButton btLampkaBrakeProfileR; // rapid brake acting speed
 	TButton btLampkaSpringBrakeActive;
 	TButton btLampkaSpringBrakeInactive;
+    // overheat indicator lamps
+    TButton btLampkaOilOverheat;
+    TButton btLampkaWaterOverheat;
+    TButton btLampkaWaterAuxOverheat;
+    TButton btLampkaEngineOverheat;
     // KURS90
     TButton btLampkaBoczniki;
     TButton btLampkaMaxSila;

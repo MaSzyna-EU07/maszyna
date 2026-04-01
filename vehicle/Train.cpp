@@ -7926,6 +7926,11 @@ bool TTrain::Update( double const Deltatime )
         btLampkaRearRightEndLight.Turn( ( mvOccupied->iLights[ end::rear ] & light::redmarker_right ) != 0 );
         // others
         btLampkaMalfunction.Turn( mvControlled->dizel_heat.PA );
+        // overheat indicator lamps
+        btLampkaOilOverheat.Turn( mvControlled->dizel_heat.oil.is_hot );
+        btLampkaWaterOverheat.Turn( mvControlled->dizel_heat.water.is_hot );
+        btLampkaWaterAuxOverheat.Turn( mvControlled->dizel_heat.water_aux.is_hot );
+        btLampkaEngineOverheat.Turn( mvControlled->dizel_heat.engine_is_hot );
         btLampkaMotorBlowers.Turn( ( mvControlled->MotorBlowers[ end::front ].is_active ) && ( mvControlled->MotorBlowers[ end::rear ].is_active ) );
         btLampkaCoolingFans.Turn( mvControlled->RventRot > 1.0 );
         btLampkaTempomat.Turn( mvOccupied->SpeedCtrlUnit.IsActive );
@@ -7966,6 +7971,11 @@ bool TTrain::Update( double const Deltatime )
         btLampkaBrakeProfileR.Turn( false );
 		btLampkaSpringBrakeActive.Turn( false );
 		btLampkaSpringBrakeInactive.Turn( false );
+        // overheat indicator lamps off
+        btLampkaOilOverheat.Turn( false );
+        btLampkaWaterOverheat.Turn( false );
+        btLampkaWaterAuxOverheat.Turn( false );
+        btLampkaEngineOverheat.Turn( false );
         btLampkaMaxSila.Turn( false );
         btLampkaPrzekrMaxSila.Turn( false );
         btLampkaRadio.Turn( false );
@@ -9756,6 +9766,11 @@ void TTrain::clear_cab_controls()
     btLampkaNadmWent.Clear(9);
     btLampkaWysRozr.Clear(((mvControlled->TrainType & dt_ET22) != 0) ? -1 : 10); // ET22 nie ma tej lampki
     btLampkaOgrzewanieSkladu.Clear(11);
+    // overheat indicator lamps
+    btLampkaOilOverheat.Clear(-1);
+    btLampkaWaterOverheat.Clear(-1);
+    btLampkaWaterAuxOverheat.Clear(-1);
+    btLampkaEngineOverheat.Clear(-1);
     btHaslerBrakes.Clear(12); // ciśnienie w cylindrach do odbijania na haslerze
     btHaslerCurrent.Clear(13); // prąd na silnikach do odbijania na haslerze
     // Numer 14 jest używany dla buczka SHP w update_sounds()
@@ -10425,6 +10440,11 @@ bool TTrain::initialize_button(cParser &Parser, std::string const &Label, int co
         { "i-mainbreakerblinking:", btLampkaMainBreakerBlinkingIfReady },
         { "i-vent_ovld:", btLampkaNadmWent },
         { "i-comp_ovld:", btLampkaNadmSpr },
+        // overheat indicator lamps
+        { "i-oil_overheat:", btLampkaOilOverheat },
+        { "i-water_overheat:", btLampkaWaterOverheat },
+        { "i-wateraux_overheat:", btLampkaWaterAuxOverheat },
+        { "i-engine_overheat:", btLampkaEngineOverheat },
         { "i-resistors:", btLampkaOpory },
         { "i-no_resistors:", btLampkaBezoporowa },
         { "i-no_resistors_b:", btLampkaBezoporowaB },
