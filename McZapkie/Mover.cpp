@@ -8174,6 +8174,9 @@ void TMoverParameters::dizel_Heat( double const dt ) {
     dizel_heat.oil.is_hot = (
         ( dizel_heat.oil.config.temp_max > 0 )
      && ( dizel_heat.To > dizel_heat.oil.config.temp_max - ( dizel_heat.oil.is_hot ? 8 : 0 ) ) );
+    dizel_heat.engine.is_hot = (
+        ( dizel_heat.engine.config.temp_max > 0 )
+     && ( dizel_heat.Ts > dizel_heat.engine.config.temp_max - ( dizel_heat.engine.is_hot ? 8 : 0 ) ) );
 
     auto const PT = (
         ( false == dizel_heat.water.is_cold )
@@ -8181,7 +8184,8 @@ void TMoverParameters::dizel_Heat( double const dt ) {
      && ( false == dizel_heat.water_aux.is_cold )
      && ( false == dizel_heat.water_aux.is_hot )
      && ( false == dizel_heat.oil.is_cold )
-     && ( false == dizel_heat.oil.is_hot ) /* && ( false == awaria_termostatow ) */ ) /* || PTp */;
+     && ( false == dizel_heat.oil.is_hot )
+     && ( false == dizel_heat.engine.is_hot ) /* && ( false == awaria_termostatow ) */ ) /* || PTp */;
     auto const PPT = ( false == PT ) /* && ( false == PPTp ) */;
     dizel_heat.PA = ( /* ( ( !zamkniecie or niedomkniecie ) and !WBD ) || */ PPT /* || nurnik || ( woda < 7 ) */ ) /* && ( !PAp ) */;
 
@@ -11254,6 +11258,7 @@ void TMoverParameters::LoadFIZ_Engine( std::string const &Input ) {
         extract_value( dizel_heat.water_aux.config.shutters, "WaterAuxShutters", Input, "" );
         extract_value( dizel_heat.oil.config.temp_min, "OilMinTemperature", Input, "" );
         extract_value( dizel_heat.oil.config.temp_max, "OilMaxTemperature", Input, "" );
+        extract_value( dizel_heat.engine.config.temp_max, "EngineMaxTemperature", Input, "" );
         extract_value( dizel_heat.fan_speed, "WaterCoolingFanSpeed", Input, "" );
         // water heater
         extract_value( WaterHeater.config.temp_min, "HeaterMinTemperature", Input, "" );
