@@ -7,7 +7,7 @@
 
 ![Discord](https://img.shields.io/discord/1019306167803056158?style=flat-square&logo=discord&label=Discord&labelColor=white) ![AppVeyor Build](https://img.shields.io/appveyor/build/Hirek193/maszyna?style=flat-square) 
 
-MaSzyna executable source code is licensed under the [MPL 2.0](https://www.mozilla.org/en-US/MPL/2.0/) and comes with a large pack of free assets under a [custom license](https://eu07.pl/theme/Maszyna/dokumentacja/inne/readme_pliki/en-licence.html).
+MaSzyna executable source code is licensed under the [MPL 2.0](https://www.mozilla.org/en-US/MPL/2.0/) and comes with a large pack of free assets under a [custom license](https://eu07.pl/docs/inne/readme_pliki/en-licence.html).
 
 
 ## Table of Contents
