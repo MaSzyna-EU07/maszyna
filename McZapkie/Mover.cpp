@@ -8174,6 +8174,10 @@ void TMoverParameters::dizel_Heat( double const dt ) {
     dizel_heat.oil.is_hot = (
         ( dizel_heat.oil.config.temp_max > 0 )
      && ( dizel_heat.To > dizel_heat.oil.config.temp_max - ( dizel_heat.oil.is_hot ? 8 : 0 ) ) );
+    // engine overheat check
+    dizel_heat.engine_is_hot = (
+        ( dizel_heat.engine_max_temp > 0 )
+     && ( dizel_heat.Ts > dizel_heat.engine_max_temp - ( dizel_heat.engine_is_hot ? 8 : 0 ) ) );
 
     auto const PT = (
         ( false == dizel_heat.water.is_cold )
@@ -11254,6 +11258,7 @@ void TMoverParameters::LoadFIZ_Engine( std::string const &Input ) {
         extract_value( dizel_heat.water_aux.config.shutters, "WaterAuxShutters", Input, "" );
         extract_value( dizel_heat.oil.config.temp_min, "OilMinTemperature", Input, "" );
         extract_value( dizel_heat.oil.config.temp_max, "OilMaxTemperature", Input, "" );
+        extract_value( dizel_heat.engine_max_temp, "EngineMaxTemperature", Input, "" );
         extract_value( dizel_heat.fan_speed, "WaterCoolingFanSpeed", Input, "" );
         // water heater
         extract_value( WaterHeater.config.temp_min, "HeaterMinTemperature", Input, "" );
