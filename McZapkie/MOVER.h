@@ -1045,7 +1045,7 @@ class TMoverParameters
 			bool is_warm{false}; // fluid is too hot
 			bool is_hot{false}; // fluid temperature crossed cooling threshold
 			bool is_flowing{false}; // fluid is being pushed through the circuit
-		} water, water_aux, oil;
+		} water, water_aux, oil, engine;
 		// output, state of affected devices
 		bool PA{false}; // malfunction flag
 		float rpmw{0.0}; // current main circuit fan revolutions
