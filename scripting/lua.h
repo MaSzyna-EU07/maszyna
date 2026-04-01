@@ -46,6 +46,4 @@ public:
 	static void dispatch_event(lua_State *L, int handler, basic_event *event, const TDynamicObject *activator);
 	static void push_memcell_values(lua_State *L, const TMemCell *mc);
 	static memcell_values get_memcell_values(lua_State *L, int idx);
-
-	struct memcell_values { const char *str; double num1; double num2; };
 };
