@@ -418,69 +418,50 @@ void TAnimModel::RaAnimate( unsigned int const Framestamp ) {
     // case ls_Off: ustalenie czasu migotania, t<1s (f>1Hz), np. 0.1 => t=0.1 (f=10Hz)
     // case ls_On: ustalenie wypełnienia ułamkiem, np. 1.25 => zapalony przez 1/4 okresu
     // case ls_Blink: ustalenie częstotliwości migotania, f<1Hz (t>1s), np. 2.2 => f=0.2Hz (t=5s)
-    float modeintegral, modefractional;
-    for( int idx = 0; idx < iNumLights; ++idx ) {
+    for (int idx = 0; idx < iNumLights; ++idx) {
+		float modeintegral;
+        const float modefractional = std::modf(std::abs(lsLights[idx]), &modeintegral);
+    	const auto mode = static_cast<TLightState>(modeintegral);
+        if (mode == ls_Dark || mode == ls_Home)
+            continue; // light threshold modes don't use timers
 
-        modefractional = std::modf( std::abs( lsLights[ idx ] ), &modeintegral );
-
-        if( modeintegral >= ls_Dark ) {
-            // light threshold modes don't use timers
-            continue;
-        }
-        auto const mode { static_cast<int>( modeintegral ) };
-            
-        auto &opacity { m_lightopacities[ idx ] };
-        auto &timer { m_lighttimers[ idx ] };
-        if( ( modeintegral < ls_Blink ) && ( modefractional < 0.01f ) ) {
-            // simple flip modes
-            auto const transitiontime { ( m_transition ? std::min( 0.65f, std::min( fOnTime, fOffTime ) * 0.45f ) : 0.01f ) };
-
-            switch( mode ) {
-                case ls_Off: {
-                    // reduce to zero
-                    timer = std::max<float>( 0.f, timer - timedelta );
-                    break;
-                }
-                case ls_On: {
-                    // increase to max value
-                    timer = std::min<float>( transitiontime, timer + timedelta );
-                    break;
-                }
-                default: {
-                    break;
-                }
-            }
-            opacity = timer / transitiontime;
-        }
-        else {
-            // blink modes
-            auto const ontime { (
-                ( mode == ls_Blink ) ? ( ( modefractional < 0.01f ) ? fOnTime : ( 1.f / modefractional ) * 0.5f ) :
-                ( mode == ls_Off ) ? modefractional * 0.5f :
-                ( mode == ls_On ) ? modefractional * ( fOnTime + fOffTime ) :
-                fOnTime ) }; // fallback
-            auto const offtime { (
-                ( mode == ls_Blink ) ? ( ( modefractional < 0.01f ) ? fOffTime : ontime ) :
-                ( mode == ls_Off ) ? ontime :
-                ( mode == ls_On ) ? ( fOnTime + fOffTime ) - ontime :
-                fOffTime ) }; // fallback
-            auto const transitiontime { ( m_transition ? std::min(0.65f, std::min( ontime, offtime ) * 0.45f ) : 0.01f ) };
-
-            timer = fmod(timer + timedelta * ( lsLights[ idx ] > 0.f ? 1.f : -1.f ), ontime + offtime);
-            // set opacity depending on blink stage
-            if( timer < ontime ) {
-                // blink on
-                opacity = clamp( timer / transitiontime, 0.f, 1.f );
-            }
-            else {
-                // blink off
-                opacity = 1.f - clamp( ( timer - ontime ) / transitiontime, 0.f, 1.f );
-            }
-        }
+        float &opacity { m_lightopacities[ idx ] };
+        float &timer { m_lighttimers[ idx ] };
+    	// Phase logic
+    	float ontime =
+    		modefractional < 0.01f ? fOnTime :
+    		mode == ls_Off ? modefractional * 0.5f :
+    		mode == ls_On ? modefractional * (fOnTime + fOffTime) :
+    		mode == ls_Blink ? 0.5f / modefractional :
+    		fOnTime; // fallback
+    	float offtime =
+    		modefractional < 0.01f ? fOffTime :
+    		mode == ls_Off ? modefractional * 0.5f :
+    		mode == ls_On ? (1 - modefractional) * (fOnTime + fOffTime) :
+    		mode == ls_Blink ? 0.5f / modefractional :
+    		fOffTime; // fallback
+    	// Determine whether the light is currently on and update the timers
+    	bool on = false;
+    	if ((mode == ls_Off || mode == ls_On) && modefractional < 0.01f)
+    		on = mode == ls_On;
+    	else {
+    		timer = fmod(timer + timedelta, ontime + offtime); // 0..(ontime+offtime)
+			const float time = fmod(timer + ( lsLights[ idx ] > 0.f ? 0.f : 0.5f ), ontime + offtime); // time with correction for phase shift for negative light values
+    		on = time < ontime;
+    	}
+    	// Update the light brightness
+    	const float transitionontime = std::min(0.25f, std::min(ontime, offtime) * 0.95f);
+    	const float transitionofftime = std::min(0.45f, std::min(ontime, offtime) * 0.95f);
+    	if (on)
+    		opacity += m_transition ? timedelta / transitionontime : 1.f; // increase to max value
+    	else
+    		opacity -= m_transition ? timedelta / transitionofftime : 1.f; // reduce to zero
+    	// Clamp the opacity
+    	opacity = clamp(opacity, 0.f, 1.f);
     }
 
     // Ra 2F1I: to by można pomijać dla modeli bez animacji, których jest większość
-	for (auto entry : m_animlist) {
+	for (const auto entry : m_animlist) {
 		if (!entry->evDone) // jeśli jest bez eventu
 			entry->UpdateModel(); // przeliczenie animacji każdego submodelu
 	}
