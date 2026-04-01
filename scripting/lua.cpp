@@ -64,7 +64,7 @@ void lua::interpret(const std::string& file) const
 
 int lua::atpanic(lua_State *s)
 {
-	std::string err = lua_tostring(s, 1);
+	std::string err = lua_tostring(s, -1);
 	ErrorLog("lua: Runtime error: " + err, logtype::lua);
     return 0;
 }
