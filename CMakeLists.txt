@@ -235,6 +235,14 @@ set(SOURCES
 "launcher/textures_scanner.cpp"
 "launcher/scenery_scanner.cpp"
 
+"entitysystem/ECScene.cpp"
+"entitysystem/ECWorld.cpp"
+"entitysystem/scenes/GameScene.cpp"
+"entitysystem/SceneManager.cpp"
+"entitysystem/systems/SystemManager.cpp"
+"entitysystem/systems/BaseSystem.cpp"
+"entitysystem/systems/MovementSystem.cpp"
+
 "vr/vr_interface.cpp"
 		entitysystem/components/BasicComponents.h
 		entitysystem/components/RenderComponents.h
@@ -396,21 +404,7 @@ configure_file(${CMAKE_SOURCE_DIR}/eu07.rc.in
 
 if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
     set(SOURCES ${SOURCES} ${CMAKE_BINARY_DIR}/eu07.rc)
-    set(SOURCES ${SOURCES} eu07.ico
-			entitysystem/ECScene.cpp
-			entitysystem/ECScene.h
-			entitysystem/ECWorld.cpp
-			entitysystem/ECWorld.h
-			entitysystem/scenes/GameScene.cpp
-			entitysystem/scenes/GameScene.h
-			entitysystem/SceneManager.cpp
-			entitysystem/SceneManager.h
-			entitysystem/systems/SystemManager.cpp
-			entitysystem/systems/SystemManager.h
-			entitysystem/systems/BaseSystem.cpp
-			entitysystem/systems/BaseSystem.h
-			entitysystem/systems/MovementSystem.cpp
-			entitysystem/systems/MovementSystem.h)
+    set(SOURCES ${SOURCES} eu07.ico)
     add_compile_options("/utf-8")
 endif()
 
