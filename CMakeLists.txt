@@ -59,7 +59,13 @@ file(GLOB HEADERS "*.h"
 "model/*.h"
 "utilities/*.h"
 "world/*.h"
-"vehicle/*.h")
+"vehicle/*.h"
+"entiisystem/components/*.h"
+"entiisystem/scenes/*.h"
+"entiisystem/systems/*.h"
+"entiisystem/*.h"
+"registry/*.h"
+)
 
 set(GLOBAL_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(GLOBAL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/global_include")
