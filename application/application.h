@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "application/applicationmode.h"
+#include "entitysystem/SceneManager.h"
 #include "scripting/PyInt.h"
 #include "network/manager.h"
 #include "utilities/headtrack.h"
@@ -38,6 +39,7 @@ public:
         run();
     // issues request for a worker thread to perform specified task. returns: true if task was scheduled
 
+	SceneManager sceneManager;
     #ifdef WITH_DISCORD_RPC
     void DiscordRPCService(); // discord rich presence service function (runs as separate thread)
     #endif

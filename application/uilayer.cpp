@@ -19,6 +19,9 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "application/application.h"
 #include "application/editormode.h"
+#include "entitysystem/ECScene.h"
+#include "entitysystem/components/BasicComponents.h"
+#include "entitysystem/components/RenderComponents.h"
 
 #include "imgui/imgui_impl_glfw.h"
 
@@ -383,6 +386,10 @@ void ui_layer::render()
 	render_menu();
 	render_quit_widget();
 	render_hierarchy();
+	if (auto* scene = Application.sceneManager.CurrentScene())
+	{
+		render_entity_hierarchy(scene->World());
+	}
 	// template method implementation
 	render_();
 
@@ -470,7 +477,171 @@ void ui_layer::render_hierarchy(){
     ImGui::End();
 
 }
- 
+
+void ui_layer::render_entity_hierarchy(ECWorld& world)
+{
+    ImGui::SetNextWindowSize(ImVec2(900, 500), ImGuiCond_FirstUseEver);
+
+    if (!ImGui::Begin(STR_C("Entity Hierarchy"), &m_entity_hierarchy))
+    {
+        ImGui::End();
+        return;
+    }
+
+    const float left_panel_width = 280.0f;
+
+    ImGui::BeginChild("entity_list_panel", ImVec2(left_panel_width, 0), true);
+    ImGui::Text("Registered entities: %zu", world.GetEntityCount());
+    ImGui::Separator();
+
+    for (auto entity : world.GetEntities())
+    {
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "Entity %u", static_cast<unsigned>(entity));
+
+        const bool selected = (m_selected_entity == entity);
+
+        if (ImGui::Selectable(buf, selected))
+        {
+            m_selected_entity = entity;
+        }
+
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("Entity ID: %u", static_cast<unsigned>(entity));
+        }
+    }
+
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    ImGui::BeginChild("entity_inspector_panel", ImVec2(0, 0), true);
+
+    if (m_selected_entity == entt::null)
+    {
+        ImGui::TextDisabled("No entity selected");
+        ImGui::EndChild();
+        ImGui::End();
+        return;
+    }
+
+    if (!world.IsAlive(m_selected_entity))
+    {
+        ImGui::TextDisabled("Selected entity is no longer valid");
+        ImGui::EndChild();
+        ImGui::End();
+        return;
+    }
+
+    ImGui::Text("Selected entity: %u", static_cast<unsigned>(m_selected_entity));
+    ImGui::Separator();
+
+    // Identification
+    if (auto* id = world.GetComponent<ECSComponent::Identification>(m_selected_entity))
+    {
+        if (ImGui::CollapsingHeader("Identification", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            char nameBuffer[256];
+            std::snprintf(nameBuffer, sizeof(nameBuffer), "%s", id->Name.ToString().c_str());
+
+            if (ImGui::InputText("Name", nameBuffer, sizeof(nameBuffer)))
+            {
+                id->Name = nameBuffer;
+            }
+        }
+    }
+
+    // Transform
+    if (auto* transform = world.GetComponent<ECSComponent::Transform>(m_selected_entity))
+    {
+        if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+			
+			float pos[3] = { static_cast<float>(transform->Position.x), static_cast<float>(transform->Position.y), static_cast<float>(transform->Position.z) };
+
+			if(ImGui::DragFloat3("Position", pos, 0.1f)){
+
+			}
+
+            ImGui::DragFloat3("Rotation",
+                &transform->Rotation.x, 0.1, -360.0, 360.0);
+
+            ImGui::DragFloat3("Scale",
+                &transform->Scale.x, 0.01, 0.0, 100000.0);
+        }
+    }
+
+    // Velocity
+    if (auto* velocity = world.GetComponent<ECSComponent::Velocity>(m_selected_entity))
+    {
+        if (ImGui::CollapsingHeader("Velocity", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::DragFloat3("Value",
+                &velocity->Value.x, 0.1);
+
+			if (ImGui::Button("Stop"))
+			{
+				velocity->Value = glm::dvec3(0.0);
+			}
+        }
+    }
+
+    // LODController
+    if (auto* lod = world.GetComponent<ECSComponent::LODController>(m_selected_entity))
+    {
+        if (ImGui::CollapsingHeader("LODController", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+			float range_min = lod->RangeMin;
+			float range_max = lod->RangeMax;
+            ImGui::DragFloat("Range Min", &range_min, 0.1, 0.0, 100000.0);
+            ImGui::DragFloat("Range Max", &range_max, 0.1, 0.0, 100000.0);
+        }
+    }
+
+	// Sound
+
+	if(auto* sound = world.GetComponent<ECSComponent::SoundComponent>(m_selected_entity)){
+		if(ImGui::CollapsingHeader("Sound", ImGuiTreeNodeFlags_DefaultOpen)){
+			ImGui::Text("Sound file: %s", sound->sound.name().c_str());
+			ImGui::DragFloat("Volume", &sound->volume, 0.01f, 0.0f, 1.0f);
+			ImGui::DragFloat("Pitch", &sound->pitch, 0.01f, 0.0f, 2.0f);
+			ImGui::Checkbox("Looping", &sound->loop);
+			ImGui::Checkbox("Playing", &sound->isPlaying);
+			ImGui::Checkbox("Play On Start", &sound->playOnStart);
+		}
+	}
+
+	// MeshRenderer
+
+	if(auto* mesh_renderer = world.GetComponent<ECSComponent::MeshRenderer>(m_selected_entity))
+	{
+		if (ImGui::CollapsingHeader("MeshRenderer", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			//ImGui::Text("Mesh: %s", mesh_renderer->meshHandle.ToString().c_str());
+			ImGui::Checkbox("Visible", &mesh_renderer->visible);
+		}
+	}
+
+	// SpotLight
+
+	if (auto* light = world.GetComponent<ECSComponent::SpotLight>(m_selected_entity))
+	{
+		if (ImGui::CollapsingHeader("SpotLight", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			ImGui::Checkbox("Enabled", &light->Enabled);
+			ImGui::ColorEdit3("Color", &light->Color.x);
+			ImGui::DragFloat("Intensity", &light->Intensity, 0.1f, 0.0f, 100.0f);
+			ImGui::DragFloat("Range", &light->Range, 0.5f, 0.0f, 500.0f);
+			ImGui::DragFloat("Inner Angle", &light->InnerAngle, 0.1f, 0.0f, light->OuterAngle);
+			ImGui::DragFloat("Outer Angle", &light->OuterAngle, 0.1f, light->InnerAngle, 90.0f);
+			ImGui::Checkbox("Cast Shadows", &light->CastShadows);
+		}
+	}
+
+    ImGui::EndChild();
+    ImGui::End();
+}
 void ui_layer::set_cursor(int const Mode)
 {
 	glfwSetInputMode(m_window, GLFW_CURSOR, Mode);

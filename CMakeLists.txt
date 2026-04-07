@@ -181,6 +181,7 @@ set(SOURCES
 "scripting/pythonscreenviewer.cpp"
 "utilities/dictionary.cpp"
 "rendering/particles.cpp"
+"registry/NameRegistry.cpp"
 "utilities/headtrack.cpp"
 "scripting/ladderlogic.cpp"
 "rendering/geometrybank.cpp"
@@ -236,8 +237,6 @@ set(SOURCES
 
 "vr/vr_interface.cpp"
 		entitysystem/components/BasicComponents.h
-		entitysystem/ecs.cpp
-		entitysystem/ecs.h
 		entitysystem/components/RenderComponents.h
 )
 
@@ -397,7 +396,21 @@ configure_file(${CMAKE_SOURCE_DIR}/eu07.rc.in
 
 if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
     set(SOURCES ${SOURCES} ${CMAKE_BINARY_DIR}/eu07.rc)
-    set(SOURCES ${SOURCES} eu07.ico)
+    set(SOURCES ${SOURCES} eu07.ico
+			entitysystem/ECScene.cpp
+			entitysystem/ECScene.h
+			entitysystem/ECWorld.cpp
+			entitysystem/ECWorld.h
+			entitysystem/scenes/GameScene.cpp
+			entitysystem/scenes/GameScene.h
+			entitysystem/SceneManager.cpp
+			entitysystem/SceneManager.h
+			entitysystem/systems/SystemManager.cpp
+			entitysystem/systems/SystemManager.h
+			entitysystem/systems/BaseSystem.cpp
+			entitysystem/systems/BaseSystem.h
+			entitysystem/systems/MovementSystem.cpp
+			entitysystem/systems/MovementSystem.h)
     add_compile_options("/utf-8")
 endif()
 

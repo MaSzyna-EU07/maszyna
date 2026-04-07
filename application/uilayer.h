@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include <string>
 #include "model/Texture.h"
 #include "widgets/popup.h"
+#include "entitysystem/ECWorld.h"
 
 // GuiLayer -- basic user interface class. draws requested information on top of openGL screen
 
@@ -148,6 +149,7 @@ protected:
 	void render_menu();
 	void render_quit_widget();
     void render_hierarchy();
+    void render_entity_hierarchy(ECWorld& world);
     // draws a quad between coordinates x,y and z,w with uv-coordinates spanning 0-1
     void quad( glm::vec4 const &Coordinates, glm::vec4 const &Color );
 // members
@@ -161,4 +163,6 @@ protected:
 	bool m_imgui_demo = false;
     bool m_editor_hierarchy = false;
     bool m_editor_change_history = false;
+    entt::entity m_selected_entity = entt::null;
+    bool m_entity_hierarchy = true;
 };

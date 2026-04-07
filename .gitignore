@@ -10,6 +10,7 @@ bin/
 #Visual Studio [Code] folders
 .vscode/
 .vs/
+.cache/
 
 # JetBrains CLion folders
 cmake-build-*/

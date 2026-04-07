@@ -25,7 +25,8 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/lightarray.h"
 #include "world/TractionPower.h"
 #include "application/application.h"
-#include "entitysystem/ecs.h"
+#include "entitysystem/ECScene.h"
+#include "entitysystem/components/BasicComponents.h"
 #include "entitysystem/components/RenderComponents.h"
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
@@ -429,17 +430,18 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         >> nodedata.name
         >> nodedata.type;
 
-	// Add node to ComponentSystem
-	entt::entity CSEntity = CS.CreateObject();
-
-	auto nodeTransform = CS.GetComponent<ECSComponent::Transform>(CSEntity);
-	nodeTransform.Position = Scratchpad.location.offset.empty() ? glm::dvec3(0.0) : Scratchpad.location.offset.top();
-	nodeTransform.Rotation = Scratchpad.location.rotation;
+	ECWorld& world = Application.sceneManager.CurrentScene()->World();
+  
+	entt::entity entity = world.CreateEntity();
+ 
+	auto transformComponent = world.AddComponent<ECSComponent::Transform>(entity);
+	transformComponent.Position = Scratchpad.location.offset.empty() ? glm::dvec3(0.0) : Scratchpad.location.offset.top();
+	transformComponent.Rotation = Scratchpad.location.rotation;
 	//nodeTransform.Scale = Scratchpad.location.scale;
 
-	auto lodController = CS.AddComponent<ECSComponent::LODController>(CSEntity);
-	lodController.RangeMax = nodedata.range_max;
-	lodController.RangeMin = nodedata.range_min;
+	// auto LODComponent = world.AddComponent<ECSComponent::LODController>(entity);
+	// LODComponent.RangeMax = nodedata.range_max;
+	// LODComponent.RangeMin = nodedata.range_min;
 
     if( nodedata.name == "none" )
     {
@@ -447,11 +449,12 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     }
 	else
 	{
-		CS.GetComponent<ECSComponent::Identification>(CSEntity).Name = nodedata.name;
+		world.AddComponent<ECSComponent::Identification>(entity).Name = nodedata.name;
+        
 	}
     // type-based deserialization. not elegant but it'll do
     if( nodedata.type == "dynamic" ) {
-
+ 
         auto *vehicle { deserialize_dynamic( Input, Scratchpad, nodedata ) };
         // vehicle import can potentially fail
         if( vehicle == nullptr ) { return; }
@@ -470,6 +473,9 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
 
             ErrorLog( "Bad scenario: duplicate vehicle name \"" + vehicle->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
         }
+
+        auto velocityComponent = world.AddComponent<ECSComponent::Velocity>(entity);
+        velocityComponent.Value = glm::dvec3(0.0);
 
         if( ( vehicle->MoverParameters->CategoryFlag == 1 ) // trains only
          && ( ( ( vehicle->LightList( end::front ) & ( light::headlight_left | light::headlight_right | light::headlight_upper ) ) != 0 )
@@ -572,7 +578,25 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
             }
             scene::Groups.insert( scene::Groups.handle(), instance );
             simulation::Region->insert( instance );
+ 
+            ECWorld& world = Application.sceneManager.CurrentScene()->World();
+    
+            entt::entity entity = world.FindEntityByName(instance->name());
+ 
+            if(entity != entt::null) {
+ 
+                auto meshComponent = world.AddComponent<ECSComponent::MeshRenderer>(entity);
+                //meshComponent.meshHandle = instance->Model()->MeshHandle();
+                meshComponent.visible = true;
+
+                auto* transformComponent = world.GetComponent<ECSComponent::Transform>(entity);
+                transformComponent->Position = {instance->location().x, instance->location().y, instance->location().z};
+                transformComponent->Rotation = {instance->Angles().x, instance->Angles().y, instance->Angles().z, 1.0f};
+                //transformComponent->Scale = {instance->scale().x, instance->scale().y, instance->scale().z};
+            }
+
             scene::basic_node *hierarchy_node = instance;
+ 
             if (hierarchy_node)
             {   scene::Hierarchy[hierarchy_node->uuid.to_string()] = hierarchy_node;
             }
@@ -650,6 +674,15 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     else if( nodedata.type == "sound" ) {
 
         auto *sound { deserialize_sound( Input, Scratchpad, nodedata ) };
+
+        auto soundComponent = world.AddComponent<ECSComponent::SoundComponent>(entity);
+
+        soundComponent.sound = *sound;
+        soundComponent.volume =  1;
+        soundComponent.pitch = 1;
+        soundComponent.range = sound->range();
+        soundComponent.isPlaying = sound->is_playing();
+
         if( false == simulation::Sounds.insert( sound ) ) {
             ErrorLog( "Bad scenario: duplicate sound node name \"" + sound->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
         }

@@ -37,6 +37,9 @@ http://mozilla.org/MPL/2.0/.
 #include <discord_rpc.h>
 #endif
 
+#include "entitysystem/SceneManager.h"
+#include "entitysystem/scenes/GameScene.h"
+
 #include <chrono>
 #include "utilities/translation.h"
 
@@ -452,6 +455,8 @@ bool eu07_application::is_client() const
 int eu07_application::run()
 {
 	auto frame{0};
+
+	sceneManager.SetScene(std::make_unique<GameScene>());
 	// main application loop
 	while (!glfwWindowShouldClose(m_windows.front()) && !m_modestack.empty())
 	{
@@ -473,6 +478,9 @@ int eu07_application::run()
 		// trivia: being client and server is possible
 
 		double frameStartTime = Timer::GetTime();
+
+		float dt = (float) Timer::GetDeltaTime();
+		sceneManager.Update(dt);
 
 		if (m_modes[m_modestack.top()]->is_command_processor())
 		{

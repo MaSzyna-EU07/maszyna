@@ -3,11 +3,14 @@
  */
 #ifndef EU07_BASICCOMPONENTS_H
 #define EU07_BASICCOMPONENTS_H
+#include "audio/sound.h"
 #include "entt/entity/entity.hpp"
 #include "glm/vec3.hpp"
 #include "glm/gtc/quaternion.hpp"
-#include <string>
+#include "registry/FName.h"
+#include "utils/uuid.hpp"
 #include <cstdint>
+#include <string>
 
 namespace ECSComponent
 {
@@ -16,9 +19,14 @@ namespace ECSComponent
 ///</summary>
 struct Transform
 {
-	glm::vec3 Position{0.f}; // object position
+	glm::dvec3 Position{0.f}; // object position
 	glm::quat Rotation{1.f, 0.f, 0.f, 0.f}; // object rotation
 	glm::vec3 Scale{1.f}; // object scale
+};
+
+struct Velocity
+{
+	glm::vec3 Value{0.f}; // object velocity
 };
 
 ///< summary>
@@ -27,7 +35,7 @@ struct Transform
 ///</summary>
 struct Identification
 {
-	std::string Name; // object name - may contain slashes for editor hierarchy "directories"
+	FName Name; // object name - may contain slashes for editor hierarchy "directories"
 	std::uint64_t Id{0}; // id in scene
 };
 
@@ -39,6 +47,16 @@ struct Parent
 	entt::entity value{entt::null};
 };
 
+struct SoundComponent
+{
+	sound_source sound;   // sound source
+	float volume = 1.0f; // 0–1
+	float pitch  = 1.0f; // speed / pitch
+	float range = 1.0f; // range
+	bool loop = false;
+	bool playOnStart = false;
+	bool isPlaying = false;
+};
 ///< summary>
 /// Empty  component for entities that are disabled and should not be processed by systems
 ///</summary>
