@@ -496,12 +496,16 @@ void ui_layer::render_entity_hierarchy(ECWorld& world)
 
     for (auto entity : world.GetEntities())
     {
-        char buf[64];
-        std::snprintf(buf, sizeof(buf), "Entity %u", static_cast<unsigned>(entity));
+        std::string buf;
+    	buf.reserve(64);
+        if (world.HasComponent<ECSComponent::Identification>(entity))
+	       buf = world.GetComponent<ECSComponent::Identification>(entity) -> Name.ToString();
+        else 
+        	buf = std::to_string(static_cast<unsigned>(entity));
 
         const bool selected = (m_selected_entity == entity);
 
-        if (ImGui::Selectable(buf, selected))
+        if (ImGui::Selectable(buf.c_str(), selected))
         {
             m_selected_entity = entity;
         }
