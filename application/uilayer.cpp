@@ -500,7 +500,7 @@ void ui_layer::render_entity_hierarchy(ECWorld& world)
     	buf.reserve(64);
         if (world.HasComponent<ECSComponent::Identification>(entity))
 	       buf = world.GetComponent<ECSComponent::Identification>(entity) -> Name.ToString();
-        else 
+        else
         	buf = std::to_string(static_cast<unsigned>(entity));
 
         const bool selected = (m_selected_entity == entity);
@@ -538,7 +538,13 @@ void ui_layer::render_entity_hierarchy(ECWorld& world)
         return;
     }
 
-    ImGui::Text("Selected entity: %u", static_cast<unsigned>(m_selected_entity));
+	std::string buf;
+	buf.reserve(64);
+	if (world.HasComponent<ECSComponent::Identification>(m_selected_entity))
+		buf = "Selected entity: " + world.GetComponent<ECSComponent::Identification>(m_selected_entity) -> Name.ToString();
+	else
+		buf = "Selected entity: " + std::to_string(static_cast<unsigned>(m_selected_entity));
+	ImGui::Text(buf.c_str());
     ImGui::Separator();
 
     // Identification
