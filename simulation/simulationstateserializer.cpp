@@ -31,21 +31,8 @@ http://mozilla.org/MPL/2.0/.
 
 namespace simulation {
 
-std::shared_ptr<deserializer_state>
-state_serializer::deserialize_begin( std::string const &Scenariofile ) {
-
-    crashreport_add_info("scenario", Scenariofile);
-
-    // drop any streamed editor terrain from a previously loaded scenery before the old region (and
-    // its sections, which those chunks referenced) is destroyed below
-    EditorTerrain.reset();
-
-    // TODO: move initialization to separate routine so we can reuse it
-    SafeDelete( Region );
-    Region = new scene::basic_region();
-
-    simulation::State.init_scripting_interface();
-
+std::shared_ptr<deserializer_state> state_serializer::make_deserializer_state(std::string const &Scenariofile)
+{
 	// NOTE: for the time being import from text format is a given, since we don't have full binary serialization
 	std::shared_ptr<deserializer_state> state =
 	        std::make_shared<deserializer_state>(Scenariofile, cParser::buffer_FILE, Global.asCurrentSceneryPath, Global.bLoadTraction);
@@ -53,26 +40,18 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
     // TODO: check first for presence of serialized binary files
     // if this fails, fall back on the legacy text format
 	state->scratchpad.name = Scenariofile;
-    if( true == Global.file_binary_terrain
-     && Scenariofile != "$.scn" ) {
+    if (Global.file_binary_terrain && Scenariofile != "$.scn") {
         // compilation to binary file isn't supported for rainsted-created overrides
         // NOTE: we postpone actual loading of the scene until we process time, season and weather data
-		state->scratchpad.binary.terrain = Region->is_scene( Scenariofile ) ;
+		state->scratchpad.binary.terrain = Region->is_scene(Scenariofile);
     }
 
-	if (false != state->scratchpad.binary.terrain)
-	{
-		Global.file_binary_terrain_state = true;
+	if (state->scratchpad.binary.terrain)
 		WriteLog("Default SBT present");
-    }
 	else
-	{
-		Global.file_binary_terrain_state = false;
 		WriteLog("Default SBT absent");
-    }
-    scene::Groups.create();
 
-	if( false == state->input.ok() )
+	if( !state->input.ok() )
 		throw invalid_scenery_exception();
 
 	// prepare deserialization function table
@@ -112,6 +91,30 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 	for( auto &function : functionlist ) {
 		state->functionmap.emplace( function.first, std::bind( function.second, this, std::ref( state->input ), std::ref( state->scratchpad ) ) );
 	}
+
+	return state;
+}
+
+std::shared_ptr<deserializer_state>
+state_serializer::deserialize_begin( std::string const &Scenariofile ) {
+
+    crashreport_add_info("scenario", Scenariofile);
+
+    // drop any streamed editor terrain from a previously loaded scenery before the old region (and
+    // its sections, which those chunks referenced) is destroyed below
+    EditorTerrain.reset();
+
+    // TODO: move initialization to separate routine so we can reuse it
+    SafeDelete( Region );
+    Region = new scene::basic_region();
+
+    State.init_scripting_interface();
+
+	// NOTE: for the time being import from text format is a given, since we don't have full binary serialization
+	std::shared_ptr<deserializer_state> state = make_deserializer_state(Scenariofile);
+
+	Global.file_binary_terrain_state = state->scratchpad.binary.terrain;
+    scene::Groups.create();
 
     if (!Global.prepend_scn.empty()) {
         state->input.injectString(Global.prepend_scn);

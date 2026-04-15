@@ -50,6 +50,7 @@ public:
 
 private:
 // methods
+	std::shared_ptr<deserializer_state> make_deserializer_state(std::string const &Scenariofile);
     // restores class data from provided stream
     void deserialize_area( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_isolated( cParser &Input, scene::scratch_data &Scratchpad );
