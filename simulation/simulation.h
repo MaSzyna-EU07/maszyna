@@ -54,6 +54,8 @@ public:
 	// to them for a few frames; pass them to Instances.purge() afterwards
 	std::pair<int, int>
 	    rebuild_include(scene::instance_handle Instance, std::vector<TAnimModel *> &Retired);
+	// create trainset from trainset string
+	void create_trainset(const std::string &src);
 	// delete TAnimModel instance
 	void
 	    delete_model(TAnimModel *model);

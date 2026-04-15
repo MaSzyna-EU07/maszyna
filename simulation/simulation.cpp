@@ -560,6 +560,10 @@ std::pair<int, int> state_manager::rebuild_include(scene::instance_handle const 
 	return result;
 }
 
+void state_manager::create_trainset(const std::string &src) {
+	return m_serializer.create_trainset(src);
+}
+
 void state_manager::delete_model(TAnimModel *model) {
 	scene::Layers.count(model->layer(), scene::layer_item::model, -1);
 	scene::Layers.forget(model);
