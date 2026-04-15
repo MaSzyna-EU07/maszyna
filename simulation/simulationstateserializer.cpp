@@ -1351,6 +1351,31 @@ TEventLauncher *state_serializer::create_eventlauncher(const std::string &src, c
 	return launcher;
 }
 
+void state_serializer::create_trainset(const std::string &src) {
+	cParser parser(src);
+	parser.getTokens(); // "trainset"
+
+	scene::scratch_data scratch;
+
+	deserialize_trainset(parser, scratch);
+
+	// deserialize content from the provided input
+	auto token = parser.getToken<std::string>();
+	while (!token.empty()) {
+		if (token == "node")
+			deserialize_node(parser, scratch);
+		else if (token == "endtrainset")
+			deserialize_endtrainset(parser, scratch);
+		else {
+			deserialize_endtrainset(parser, scratch);
+			ErrorLog( "Bad scenario: encountered invalid token \"" + token + "\" in file \"" + parser.Name() + "\" (line " + std::to_string( parser.Line() ) + ")" );
+			break;
+		}
+
+		token = parser.getToken<std::string>();
+	}
+}
+
 } // simulation
 
   //---------------------------------------------------------------------------
