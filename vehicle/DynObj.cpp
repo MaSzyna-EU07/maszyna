@@ -2374,6 +2374,10 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     }
     TurnOff(); // resetowanie zmiennych submodeli
 
+	// Trains only: Initialize lights
+	if (MoverParameters->CategoryFlag == 1 && (LightList(front) & (headlight_left | headlight_right | headlight_upper)) != 0
+	                                       || (LightList(rear)  & (headlight_left | headlight_right | headlight_upper)) != 0)
+		simulation::Lights.insert(this);
     if( mdLowPolyInt != nullptr ) {
         // check the low poly interior for potential compartments of interest, ie ones which can be individually lit
         // TODO: definition of relevant compartments in the .mmd file
@@ -2396,13 +2400,11 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
             init_sections( mdLowPolyInt, nameprefix, MoverParameters->CompartmentLights.start_type == start_t::manual );
         }
     }
-    // destination sign
-    if( mdModel ) {
-        init_destination( mdModel );
-    }
-    // 'external_load' is an optional special section in the main model, pointing to submodel of external load
-    if( mdModel ) {
-        init_sections( mdModel, "external_load", false );
+    if (mdModel) {
+        init_destination(mdModel); // Destination sign
+    	init_smoke_sources(mdModel); // Smoke sources
+		// 'external_load' is an optional special section in the main model, pointing to submodel of external load
+        init_sections(mdModel, "external_load", false);
     }
     update_load_sections();
     update_load_visibility();
@@ -2543,6 +2545,11 @@ TDynamicObject::init_destination( TModel3d *Model ) {
     std::tie( DestinationSign.sign, DestinationSign.has_light ) = Model->GetSMRoot()->find_replacable4();
 
     return DestinationSign.sign != nullptr;
+}
+
+void TDynamicObject::init_smoke_sources(const TModel3d *Model) const {
+	for (auto const &smokesource : Model->smoke_sources())
+		simulation::Particles.insert(smokesource.first, this, smokesource.second);
 }
 
 void

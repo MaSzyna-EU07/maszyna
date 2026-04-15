@@ -672,7 +672,8 @@ private:
         float Load, std::string LoadType, bool Reversed, std::string);
     int init_sections( TModel3d const *Model, std::string const &Nameprefix, bool const Overrideselfillum );
     bool init_destination( TModel3d *Model );
-    void create_controller( std::string const Type, bool const Trainset );
+	void init_smoke_sources(const TModel3d *Model) const;
+	void create_controller( std::string const Type, bool const Trainset );
     void AttachNext(TDynamicObject *Object, int iType = 1);
     bool UpdateForce(double dt);
     // initiates load change by specified amounts, with a platform on specified side

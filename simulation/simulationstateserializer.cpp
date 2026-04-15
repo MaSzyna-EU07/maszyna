@@ -437,31 +437,12 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     if( nodedata.name == "none" ) { nodedata.name.clear(); }
     // type-based deserialization. not elegant but it'll do
     if( nodedata.type == "dynamic" ) {
-
         auto *vehicle { deserialize_dynamic( Input, Scratchpad, nodedata ) };
         // vehicle import can potentially fail
-        if( vehicle == nullptr ) { return; }
-
-        //
-        if( vehicle->mdModel != nullptr ) {
-            for( auto const &smokesource : vehicle->mdModel->smoke_sources() ) {
-                Particles.insert(
-                    smokesource.first,
-                    vehicle,
-                    smokesource.second );
-            }
-        }
-
-        if( false == simulation::Vehicles.insert( vehicle ) ) {
-
+        if (!vehicle)
+        	return;
+        if (!Vehicles.insert(vehicle))
             ErrorLog( "Bad scenario: duplicate vehicle name \"" + vehicle->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
-        }
-
-        if( vehicle->MoverParameters->CategoryFlag == 1 // trains only
-         && ( (vehicle->LightList(end::front) & (light::headlight_left | light::headlight_right | light::headlight_upper)) != 0
-           || (vehicle->LightList(end::rear) & (light::headlight_left | light::headlight_right | light::headlight_upper)) != 0 ) ) {
-            simulation::Lights.insert( vehicle );
-        }
     }
     else if( nodedata.type == "track" ) {
 
