@@ -1654,7 +1654,7 @@ animation_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
     { // animacja z pliku VMD
         {
             m_animationfilename = token;
-            std::ifstream file( szModelPath + m_animationfilename, std::ios::binary | std::ios::ate ); file.unsetf( std::ios::skipws );
+            std::ifstream file( paths::models + m_animationfilename, std::ios::binary | std::ios::ate ); file.unsetf( std::ios::skipws );
             auto size = file.tellg();   // ios::ate already positioned us at the end of the file
             file.seekg( 0, std::ios::beg ); // rewind the caret afterwards
             // animation size, previously held in param 7
@@ -2110,44 +2110,44 @@ friction_event::export_as_text_( std::ostream &Output ) const {
 }
 
 #ifdef WITH_LUA
-lua_event::lua_event(lua::eventhandler_t func) {
-    lua_func = func;
+lua_event::lua_event(lua_State *L, const int ref) {
+	lua_state = L;
+	lua_func = ref;
+}
+
+lua_event::~lua_event() {
+	lua::unref(lua_state, lua_func);
 }
 
 // prepares event for use
-void
-lua_event::init() {
-    // nothing to do here
+void lua_event::init() {
+	// nothing to do here
 }
 
 // event type string
-std::string
-lua_event::type() const {
-    return "lua";
+std::string lua_event::type() const {
+	return "lua";
 }
 
 // deserialize() subclass details
-void
-lua_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
-    // preload next token
-    Input.getTokens();
+void lua_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
+	// preload next token
+	Input.getTokens();
 }
 
 // run() subclass details
-void
-lua_event::run_() {
+void lua_event::run_() {
 	try {
-	    if (lua_func)
-	        lua_func(this, m_activator);
+		if (lua_func != LUA_NOREF)
+			lua::dispatch_event(lua_state, lua_func, this, m_activator);
 	} catch (...) {
-		ErrorLog(simulation::Lua.get_error());
+		ErrorLog("lua: Runtime error: " + simulation::Lua.get_error());
 	}
 }
 
 // export_as_text() subclass details
-void
-lua_event::export_as_text_( std::ostream &Output ) const {
-    // nothing to do here
+void lua_event::export_as_text_( std::ostream &Output ) const {
+	// nothing to do here
 }
 
 bool lua_event::is_instant() const {

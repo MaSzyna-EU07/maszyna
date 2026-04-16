@@ -591,17 +591,19 @@ private:
 #ifdef WITH_LUA
 class lua_event : public basic_event {
 public:
-    lua_event(lua::eventhandler_t func);
-    void init() override;
+	lua_event(lua_State *L, int ref);
+	~lua_event() override;
+	void init() override;
 
 private:
-    std::string type() const override;
-    void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
-    void run_() override;
-    void export_as_text_( std::ostream &Output ) const override;
-    bool is_instant() const override;
+	std::string type() const override;
+	void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
+	void run_() override;
+	void export_as_text_( std::ostream &Output ) const override;
+	bool is_instant() const override;
 
-    lua::eventhandler_t lua_func = nullptr;
+	lua_State *lua_state = nullptr;
+	int lua_func = LUA_NOREF;
 };
 #endif
 

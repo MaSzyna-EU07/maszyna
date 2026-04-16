@@ -1252,10 +1252,10 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
                 }
 
                 if( velocitydifference > safevelocitylimit * ( TotalMass / othervehicle->TotalMass ) ) {
-                    derail( 5 );
+                    Derail(COLLISION);
                 }
                 if( velocitydifference > safevelocitylimit * ( othervehicle->TotalMass / TotalMass ) ) {
-                    othervehicle->derail( 5 );
+                    othervehicle->Derail(COLLISION);
                 }
             }
         }
@@ -1318,24 +1318,31 @@ TMoverParameters::damage_coupler( int const End ) {
     WriteLog( "Bad driving: " + Name + " broke a coupler" );
 }
 
-void 
-TMoverParameters::derail( int const Reason ) {
-
+void TMoverParameters::Derail( DerailReason const Reason ) {
     if( SetFlag( DamageFlag, dtrain_out ) ) {
-
-        DerailReason = Reason; // TODO: enum derail causes
         EventFlag = true;
         MainSwitch( false, range_t::local );
 
         AccS *= 0.65;
         V *= 0.65;
+    	RunningShape.R = 0;
         if( Vel < 5.0 ) {
             // HACK: prevent permanent axle spin in static vehicle after a collision
             nrot = 0.0;
             SlippingWheels = false;
         }
 
-        WriteLog( "Bad driving: " + Name + " derailed" );
+    	// Print a message in the log.
+    	if (Reason == END_OF_TRACK)
+    		ErrorLog("Bad driving: " + Name + " derailed due to end of track");
+    	else if (Reason == TOO_HIGH_SPEED)
+    		ErrorLog("Bad driving: " + Name + " derailed due to too high speed");
+    	else if (Reason == GAUGE_MISMATCH)
+    		ErrorLog("Bad dynamic: " + Name + " derailed due to track width"); // błąd w scenerii
+    	else if (Reason == WRONG_TRACK_TYPE)
+    		ErrorLog("Bad dynamic: " + Name + " derailed due to wrong track type"); // błąd w scenerii
+    	else if (Reason == COLLISION)
+			WriteLog("Bad driving: " + Name + " derailed"); // This reason also generates its own message in `TMoverParameters::CollisionDetect()`
     }
 }
 
@@ -1436,42 +1443,17 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
         // wykolejanie na luku oraz z braku szyn
         if (TestFlag(CategoryFlag, 1))
         {
-            if (FuzzyLogic((AccN / g) * (1.0 + 0.1 * (Track.DamageFlag && dtrack_freerail)),
-                           TrackW / Dim.H, 1) ||
-                TestFlag(Track.DamageFlag, dtrack_norail))
-                if (SetFlag(DamageFlag, dtrain_out))
-                {
-                    EventFlag = true;
-                    MainSwitch( false, range_t::local );
-                    RunningShape.R = 0;
-                    if (TestFlag(Track.DamageFlag, dtrack_norail))
-                        DerailReason = 1; // Ra: powód wykolejenia: brak szyn
-                    else
-                        DerailReason = 2; // Ra: powód wykolejenia: przewrócony na łuku
-                }
+        	if (TestFlag(Track.DamageFlag, dtrack_norail))
+        		Derail(END_OF_TRACK);
+            if (FuzzyLogic((AccN / g) * (1.0 + 0.1 * (Track.DamageFlag & dtrack_freerail)), TrackW / Dim.H, 1))
+            	Derail(TOO_HIGH_SPEED);
             // wykolejanie na poszerzeniu toru
             if (FuzzyLogic(abs(Track.Width - TrackW), TrackW / 10.0, 1))
-                if (SetFlag(DamageFlag, dtrain_out))
-                {
-                    EventFlag = true;
-                    MainSwitch( false, range_t::local );
-                    RunningShape.R = 0;
-                    DerailReason = 3; // Ra: powód wykolejenia: za szeroki tor
-                }
+            	Derail(GAUGE_MISMATCH);
         }
         // wykolejanie wkutek niezgodnosci kategorii toru i pojazdu
         if (!TestFlag(RunningTrack.CategoryFlag, CategoryFlag))
-            if (SetFlag(DamageFlag, dtrain_out))
-            {
-                EventFlag = true;
-                MainSwitch( false, range_t::local );
-                DerailReason = 4; // Ra: powód wykolejenia: nieodpowiednia trajektoria
-            }
-        if( ( true == TestFlag( DamageFlag, dtrain_out ) )
-         && ( Vel < 1.0 ) ) {
-            V = 0.0;
-            AccS = 0.0;
-        }
+        	Derail(WRONG_TRACK_TYPE);
 
         // dL:=(V+AccS*dt/2)*dt;                                      
         // przyrost dlugosci czyli przesuniecie
@@ -8174,6 +8156,10 @@ void TMoverParameters::dizel_Heat( double const dt ) {
     dizel_heat.oil.is_hot = (
         ( dizel_heat.oil.config.temp_max > 0 )
      && ( dizel_heat.To > dizel_heat.oil.config.temp_max - ( dizel_heat.oil.is_hot ? 8 : 0 ) ) );
+    // engine overheat check
+    dizel_heat.engine_is_hot = (
+        ( dizel_heat.engine_max_temp > 0 )
+     && ( dizel_heat.Ts > dizel_heat.engine_max_temp - ( dizel_heat.engine_is_hot ? 8 : 0 ) ) );
 
     auto const PT = (
         ( false == dizel_heat.water.is_cold )
@@ -8181,7 +8167,8 @@ void TMoverParameters::dizel_Heat( double const dt ) {
      && ( false == dizel_heat.water_aux.is_cold )
      && ( false == dizel_heat.water_aux.is_hot )
      && ( false == dizel_heat.oil.is_cold )
-     && ( false == dizel_heat.oil.is_hot ) /* && ( false == awaria_termostatow ) */ ) /* || PTp */;
+     && ( false == dizel_heat.oil.is_hot )
+     && ( false == dizel_heat.engine.is_hot ) /* && ( false == awaria_termostatow ) */ ) /* || PTp */;
     auto const PPT = ( false == PT ) /* && ( false == PPTp ) */;
     dizel_heat.PA = ( /* ( ( !zamkniecie or niedomkniecie ) and !WBD ) || */ PPT /* || nurnik || ( woda < 7 ) */ ) /* && ( !PAp ) */;
 
@@ -11254,6 +11241,7 @@ void TMoverParameters::LoadFIZ_Engine( std::string const &Input ) {
         extract_value( dizel_heat.water_aux.config.shutters, "WaterAuxShutters", Input, "" );
         extract_value( dizel_heat.oil.config.temp_min, "OilMinTemperature", Input, "" );
         extract_value( dizel_heat.oil.config.temp_max, "OilMaxTemperature", Input, "" );
+        extract_value( dizel_heat.engine_max_temp, "EngineMaxTemperature", Input, "" );
         extract_value( dizel_heat.fan_speed, "WaterCoolingFanSpeed", Input, "" );
         // water heater
         extract_value( WaterHeater.config.temp_min, "HeaterMinTemperature", Input, "" );

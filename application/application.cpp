@@ -686,6 +686,7 @@ void eu07_application::exit()
 		glfwDestroyWindow(window);
 	}
 	m_taskqueue.exit();
+	glfwPollEvents(); // TODO: This fixes a segfault on Wayland when closing. Remove after updating glfw to 3.5.
 	glfwTerminate();
 
 	if (!Global.exec_on_exit.empty())

@@ -75,7 +75,8 @@ enum TMovementStatus
     movePushPull = 0x40000, // zmiana czoła przez zmianę kabiny - nie odczepiać przy zmianie kierunku
     moveSignalFound = 0x80000, // na drodze skanowania został znaleziony semafor
     moveStopPointFound = 0x100000, // stop point detected ahead
-	moveGuardOpenDoor = 0x200000 // time for opening a door before departure
+	moveGuardOpenDoor = 0x200000, // time for opening a door before departure
+	moveDepartureWarned = 0x400000 // driver has already warned about the doors being closed (only for manual warning - i.e. EN57-ish)
 /*
     moveSemaphorWasElapsed = 0x100000, // minięty został semafor
     moveTrainInsideStation = 0x200000, // pociąg między semaforem a rozjazdami lub następnym semaforem

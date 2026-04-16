@@ -1138,9 +1138,12 @@ debug_panel::update_section_ai( std::vector<text_line> &Output ) {
         "Current order: [" + std::to_string( mechanik.OrderPos ) + "] "
         + mechanik.Order2Str( mechanik.OrderCurrentGet() );
 
-    if( mechanik.fStopTime < 0.0 ) {
-        textline += "\n stop time: " + to_string( std::abs( mechanik.fStopTime ), 1 );
-    }
+	if( mechanik.fStopTime < 0.0 ) {
+		textline += "\n stop time: " + to_string( std::abs( mechanik.fStopTime ), 1 );
+	}
+	if( mechanik.fActionTime < 0.0 ) {
+		textline += "\n action time: " + to_string( std::abs( mechanik.fActionTime ), 1 );
+	}
 
     Output.emplace_back( textline, Global.UITextColor );
 
@@ -1231,7 +1234,8 @@ debug_panel::update_section_ai( std::vector<text_line> &Output ) {
     std::vector<std::string> const drivingflagnames {
         "StopCloser", "StopPoint", "Active", "Press", "Connect", "Primary", "Late", "StopHere",
         "StartHorn", "StartHornNow", "StartHornDone", "Oerlikons", "IncSpeed", "TrackEnd", "SwitchFound", "GuardSignal",
-        "Visibility", "DoorOpened", "PushPull", "SignalFound", "StopPointFound" /*"SemaphorWasElapsed", "TrainInsideStation", "SpeedLimitFound"*/ };
+        "Visibility", "DoorOpened", "PushPull", "SignalFound", "StopPointFound", "GuardOpenDoor", "DepartureWarned"
+    	/*"SemaphorWasElapsed", "TrainInsideStation", "SpeedLimitFound"*/ };
 
 	textline = "Driving flags:";
 	for( int idx = 0, flagbit = 1; idx < drivingflagnames.size(); ++idx, flagbit <<= 1 ) {

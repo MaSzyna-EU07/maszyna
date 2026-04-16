@@ -91,6 +91,8 @@ std::vector<std::string> scenarioloader_ui::get_random_trivia()
 	int i = RandomInt(0, static_cast<int>(triviaData.size()) - 1);
 	std::string triviaStr = triviaData[i]["text"];
 	std::string background = triviaData[i]["background"];
+	if (triviaData[i].contains("scenery"))
+		sceneryName = triviaData[i]["scenery"];
 
 	// divide trivia into multiple lines - UTF-8 safe implementation
 	// Different languages need different character limits due to character width differences
@@ -274,6 +276,15 @@ void scenarioloader_ui::render_()
 			ImVec2 text_pos(block_left + (max_width - text_size.x) * 0.5f, block_top + header_size.y + header_gap + i * line_spacing);
 			draw_list->AddText(text_pos, IM_COL32_WHITE, line.c_str());
 		}
+	}
+
+	// Scenery name
+	// Draw only if defined
+	if (!sceneryName.empty())
+	{
+		ImVec2 text_size = ImGui::CalcTextSize(sceneryName.c_str());
+		ImVec2 text_pos = ImVec2(screen_size.x - 16 - text_size.x, 16);
+		draw_list->AddText(text_pos, IM_COL32_WHITE, sceneryName.c_str());
 	}
 	
 	// Progress bar at the bottom of the screen

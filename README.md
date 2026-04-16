@@ -1,13 +1,13 @@
-![AppVeyor Build](https://img.shields.io/appveyor/build/Hirek193/maszyna?style=flat-square) 
-# MaSzyna Train Simulator
+![enter image description here](https://raw.githubusercontent.com/MaSzyna-EU07/maszyna/refs/heads/master/readme_header.png)
 
-_A free, **Polish** train simulator._
+# MaSzyna - Railway vehicle simulator
 
-[Website](https://eu07.pl/?setlang=en) · [Report an issue](https://github.com/eu07/maszyna/issues)
 
-![Discord](https://img.shields.io/discord/1019306167803056158?style=flat-square&logo=discord&label=Discord&labelColor=white)
+[Website](https://eu07.pl/) · [Report an issue](https://github.com/MaSzyna-EU07/maszyna/issues) · [Community Discord](https://discord.gg/eu07) · [MaSzyna on Steam](https://store.steampowered.com/app/1033030/MaSzyna/) · [MaSzyna on Epic Games Store](https://store.epicgames.com/pl/p/maszyna-79052a)
 
-MaSzyna executable source code is licensed under the [MPL 2.0](https://www.mozilla.org/en-US/MPL/2.0/) and comes with a large pack of free assets under a [custom license](https://eu07.pl/theme/Maszyna/dokumentacja/inne/readme_pliki/en-licence.html).
+![Discord](https://img.shields.io/discord/1019306167803056158?style=flat-square&logo=discord&label=Discord&labelColor=white) ![AppVeyor Build](https://img.shields.io/appveyor/build/Hirek193/maszyna?style=flat-square) 
+
+MaSzyna executable source code is licensed under the [MPL 2.0](https://www.mozilla.org/en-US/MPL/2.0/) and comes with a large pack of free assets under a [custom license](https://eu07.pl/docs/inne/readme_pliki/en-licence.html).
 
 
 ## Table of Contents

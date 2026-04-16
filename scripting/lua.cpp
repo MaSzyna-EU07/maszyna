@@ -4,7 +4,6 @@
 #include "utilities/Logs.h"
 #include "world/MemCell.h"
 #include "vehicle/Driver.h"
-#include "scripting/lua_ffi.h"
 #include "simulation/simulation.h"
 
 lua::lua()
@@ -15,12 +14,33 @@ lua::lua()
     lua_atpanic(state, atpanic);
     luaL_openlibs(state);
 
-    lua_getglobal(state, "package");
-    lua_pushstring(state, "preload");
-    lua_gettable(state, -2);
-    lua_pushcclosure(state, openffi, 0);
-    lua_setfield(state, -2, "eu07.events");
-    lua_settop(state, 0);
+	static constexpr luaL_Reg api[] =
+	{
+		{"event_create", scriptapi_event_create},
+		{"event_find", scriptapi_event_find},
+		{"event_exists", scriptapi_event_exists},
+		{"event_getname", scriptapi_event_getname},
+		{"event_dispatch", scriptapi_event_dispatch},
+		{"event_dispatch_n", scriptapi_event_dispatch_n},
+		{"track_find", scriptapi_track_find},
+		{"track_isoccupied", scriptapi_track_isoccupied},
+		{"track_isoccupied_n", scriptapi_track_isoccupied_n},
+		{"isolated_find", scriptapi_isolated_find},
+		{"isolated_isoccupied", scriptapi_isolated_isoccupied},
+		{"isolated_isoccupied_n", scriptapi_isolated_isoccupied_n},
+		{"train_getname", scriptapi_train_getname},
+		{"dynobj_putvalues", scriptapi_dynobj_putvalues},
+		{"memcell_find", scriptapi_memcell_find},
+		{"memcell_read", scriptapi_memcell_read},
+		{"memcell_read_n", scriptapi_memcell_read_n},
+		{"memcell_update", scriptapi_memcell_update},
+		{"memcell_update_n", scriptapi_memcell_update_n},
+		{"random", scriptapi_random},
+		{"writelog", scriptapi_writelog},
+		{"writeerrorlog", scriptapi_writeerrorlog},
+		{nullptr, nullptr}
+	};
+	luaL_register(state, "eu07.events", api);
 }
 
 lua::~lua()
@@ -29,184 +49,324 @@ lua::~lua()
     state = nullptr;
 }
 
-std::string lua::get_error()
+std::string lua::get_error() const
 {
-	return std::string(lua_tostring(state, -1));
+	return lua_tostring(state, -1);
 }
 
-void lua::interpret(std::string file)
+void lua::interpret(const std::string& file) const
 {
 	if (luaL_dofile(state, file.c_str())) {
-		const char *str = lua_tostring(state, -1);
-		ErrorLog(std::string(str), logtype::lua);
+		std::string str = lua_tostring(state, -1);
+		ErrorLog("lua: Runtime error: " + str, logtype::lua);
 	}
 }
-
-// NOTE: we cannot throw exceptions in callbacks
-// because it is not supported by LuaJIT on x86 windows
 
 int lua::atpanic(lua_State *s)
 {
-	std::string err(lua_tostring(s, -1));
-	ErrorLog(err, logtype::lua);
+	std::string err = lua_tostring(s, -1);
+	ErrorLog("lua: Runtime error: " + err, logtype::lua);
     return 0;
 }
 
-int lua::openffi(lua_State *s)
+/// Dereferences the function handler from the Lua registry.
+void lua::unref(lua_State *L, const int ref)
 {
-    if (luaL_dostring(s, lua_ffi))
-    {
-		ErrorLog(std::string(lua_tostring(s, -1)), logtype::lua);
-        return 0;
-    }
-    return 1;
+	luaL_unref(L, LUA_REGISTRYINDEX, ref);
 }
 
-#if defined _WIN32
-#   if defined __GNUC__
-#      define EXPORT __attribute__ ((dllexport))
-#   else
-#      define EXPORT __declspec(dllexport)
-#   endif
-#elif defined __GNUC__
-#   define EXPORT __attribute__ ((visibility ("default")))
-#else
-#   define EXPORT
-#endif
-
-extern "C"
+/// Executes the callback function of an event created with `scriptapi_event_create`.
+void lua::dispatch_event(lua_State *L, const int handler, basic_event *event, const TDynamicObject *activator)
 {
-    EXPORT basic_event* scriptapi_event_create(const char* name, double delay, double randomdelay, lua::eventhandler_t handler)
-    {
-        basic_event *event = new lua_event(handler);
-        event->m_name = std::string(name);
-        event->m_delay = delay;
-        event->m_delayrandom = randomdelay;
+	lua_rawgeti(L, LUA_REGISTRYINDEX, handler);
+	lua_pushlightuserdata(L, event);
+	lua_pushlightuserdata(L, const_cast<TDynamicObject *>(activator));
+	lua_call(L, 2, 0);
+}
 
-		if (simulation::Events.insert(event))
-			return event;
-		else
-			return nullptr;
-    }
+void lua::push_memcell_values(lua_State *L, const TMemCell *mc)
+{
+	lua_createtable(L, 0, 3);
+	lua_pushstring(L, "str");
+	lua_pushstring(L, mc ? mc->Text().c_str() : nullptr);
+	lua_settable(L, -3);
+	lua_pushstring(L, "num1");
+	lua_pushnumber(L, mc ? mc->Value1() : 0.0);
+	lua_settable(L, -3);
+	lua_pushstring(L, "num2");
+	lua_pushnumber(L, mc ? mc->Value2() : 0.0);
+	lua_settable(L, -3);
+}
 
-    EXPORT basic_event* scriptapi_event_find(const char* name)
-    {
-        std::string str(name);
-        basic_event *e = simulation::Events.FindEvent(str);
-        if (e)
-            return e;
-        else
-            WriteLog("lua: missing event: " + str);
-        return nullptr;
-    }
+memcell_values lua::get_memcell_values(lua_State *L, int idx)
+{
+	// For negative indices, we need to account for the extra item that is the key name/value extracted from the table.
+	if (idx < 0)
+		idx--;
+	memcell_values mc{nullptr, 0.0, 0.0};
+	lua_pushstring(L, "str");
+	lua_gettable(L, idx);
+	if (lua_isstring(L, -1))
+		mc.str = lua_tostring(L, -1);
+	lua_pop(L, 1);
+	lua_pushstring(L, "num1");
+	lua_gettable(L, idx);
+	if (lua_isnumber(L, -1))
+		mc.num1 = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	lua_pushstring(L, "num2");
+	lua_gettable(L, idx);
+	if (lua_isnumber(L, -1))
+		mc.num2 = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	return mc;
+}
 
-    EXPORT TTrack* scriptapi_track_find(const char* name)
-    {
-        std::string str(name);
-		TTrack *track = simulation::Paths.find(str);
-        if (track)
-            return track;
-        else
-            WriteLog("lua: missing track: " + str);
-        return nullptr;
-    }
+int lua::scriptapi_event_create(lua_State *L)
+{
+	std::string name = lua_tostring(L, 1);
+	double delay = lua_tonumber(L, 2);
+	double randomdelay = lua_tonumber(L, 3);
+	lua_pushvalue(L, 4);
+	int funcRef = luaL_ref(L, LUA_REGISTRYINDEX);
 
-    EXPORT bool scriptapi_track_isoccupied(TTrack* track)
-    {
-        if (track)
-            return !track->IsEmpty();
-        return false;
-    }
-
-	EXPORT TIsolated* scriptapi_isolated_find(const char* name)
+	basic_event *event = new lua_event(L, funcRef);
+	event->m_name = name;
+	event->m_delay = delay;
+	event->m_delayrandom = randomdelay;
+	if (simulation::Events.insert(event))
 	{
-		std::string str(name);
-        TIsolated *isolated = TIsolated::Find(name);
-		if (isolated)
-			return isolated;
-		else
-			WriteLog("lua: missing isolated: " + str);
-		return nullptr;
+		lua_pushlightuserdata(L, event);
+		return 1;
 	}
+	return 0;
+}
 
-	EXPORT bool scriptapi_isolated_isoccupied(TIsolated* isolated)
+int lua::scriptapi_event_find(lua_State *L)
+{
+	std::string name = lua_tostring(L, 1);
+	basic_event *event = simulation::Events.FindEvent(name);
+	if (event)
 	{
-		if (isolated)
-			return isolated->Busy();
-		return false;
+		lua_pushlightuserdata(L, event);
+		return 1;
 	}
+	ErrorLog("lua: missing event: " + name);
+	return 0;
+}
 
-    EXPORT const char* scriptapi_event_getname(basic_event *e)
-    {
-        if (e)
-            return e->m_name.c_str();
-        return nullptr;
-    }
+int lua::scriptapi_event_exists(lua_State *L)
+{
+	std::string name = lua_tostring(L, 1);
+	basic_event *event = simulation::Events.FindEvent(name);
+	lua_pushboolean(L, event != nullptr);
+	return 1;
+}
 
-    EXPORT const char* scriptapi_train_getname(TDynamicObject *dyn)
-    {
-        if (dyn && dyn->Mechanik)
-            return dyn->Mechanik->TrainName().c_str();
-        return nullptr;
-    }
+int lua::scriptapi_event_getname(lua_State *L)
+{
+	auto *event = static_cast<basic_event *>(lua_touserdata(L, 1));
+	if (event)
+	{
+		lua_pushstring(L, event->m_name.c_str());
+		return 1;
+	}
+	return 0;
+}
 
-    EXPORT void scriptapi_event_dispatch(basic_event *e, TDynamicObject *activator, double delay)
-    {
-        if (e)
-            simulation::Events.AddToQuery(e, activator, delay);
-    }
+int lua::scriptapi_event_dispatch(lua_State *L)
+{
+	auto *event = static_cast<basic_event *>(lua_touserdata(L, 1));
+	auto *activator = static_cast<TDynamicObject *>(lua_touserdata(L, 2));
+	double delay = lua_tonumber(L, 3);
+	if (event)
+		simulation::Events.AddToQuery(event, activator, delay);
+	return 0;
+}
 
-    EXPORT double scriptapi_random(double a, double b)
-    {
-        return Random(a, b);
-    }
+int lua::scriptapi_event_dispatch_n(lua_State *L)
+{
+	std::string name = lua_tostring(L, 1);
+	auto *activator = static_cast<TDynamicObject *>(lua_touserdata(L, 2));
+	double delay = lua_tonumber(L, 3);
+	basic_event *event = simulation::Events.FindEvent(name);
+	if (event)
+		simulation::Events.AddToQuery(event, activator, delay);
+	else
+		ErrorLog("lua: missing event: " + name);
+	return 0;
+}
 
-    EXPORT void scriptapi_writelog(const char* txt)
-    {
-        WriteLog("lua: log: " + std::string(txt), logtype::lua);
-    }
+int lua::scriptapi_track_find(lua_State *L)
+{
+	std::string name = lua_tostring(L, 1);
+	TTrack *track = simulation::Paths.find(name);
+	if (track)
+	{
+		lua_pushlightuserdata(L, track);
+		return 1;
+	}
+	ErrorLog("lua: missing track: " + name);
+	return 0;
+}
 
-    EXPORT void scriptapi_writeerrorlog(const char* txt)
-    {
-        ErrorLog("lua: log: " + std::string(txt), logtype::lua);
-    }
+int lua::scriptapi_track_isoccupied(lua_State *L)
+{
+	auto *track = static_cast<TTrack *>(lua_touserdata(L, 1));
+	if (track)
+	{
+		lua_pushboolean(L, !track->IsEmpty());
+		return 1;
+	}
+	return 0;
+}
 
-    struct memcell_values { const char *str; double num1; double num2; };
+int lua::scriptapi_track_isoccupied_n(lua_State *L)
+{
+	std::string name = lua_tostring(L, 1);
+	TTrack *track = simulation::Paths.find(name);
+	if (track)
+	{
+		lua_pushboolean(L, !track->IsEmpty());
+		return 1;
+	}
+	ErrorLog("lua: missing track: " + name);
+	return 0;
+}
 
-    EXPORT TMemCell* scriptapi_memcell_find(const char *name)
-    {
-        std::string str(name);
-        TMemCell *mc = simulation::Memory.find(str);
-        if (mc)
-            return mc;
-        else
-            WriteLog("lua: missing memcell: " + str);
-        return nullptr;
-    }
+int lua::scriptapi_isolated_find(lua_State *L)
+{
+	std::string name = lua_tostring(L, 1);
+	TIsolated *isolated = TIsolated::Find(name);
+	if (isolated)
+	{
+		lua_pushlightuserdata(L, isolated);
+		return 1;
+	}
+	ErrorLog("lua: missing isolated: " + name);
+	return 0;
+}
 
-    EXPORT memcell_values scriptapi_memcell_read(TMemCell *mc)
-    {
-        if (!mc)
-            return { nullptr, 0.0, 0.0 };
-        return { mc->Text().c_str(), mc->Value1(), mc->Value2() };
-    }
+int lua::scriptapi_isolated_isoccupied(lua_State *L)
+{
+	auto *isolated = static_cast<TIsolated *>(lua_touserdata(L, 1));
+	if (isolated)
+	{
+		lua_pushboolean(L, isolated->Busy());
+		return 1;
+	}
+	return 0;
+}
 
-    EXPORT void scriptapi_memcell_update(TMemCell *mc, const char *str, double num1, double num2)
-    {
-        if (!mc)
-            return;
-        mc->UpdateValues(std::string(str), num1, num2,
-                         basic_event::flags::text | basic_event::flags::value1 | basic_event::flags::value2);
-    }
+int lua::scriptapi_isolated_isoccupied_n(lua_State *L)
+{
+	std::string name = lua_tostring(L, 1);
+	TIsolated *isolated = TIsolated::Find(name);
+	if (isolated)
+	{
+		lua_pushboolean(L, isolated->Busy());
+		return 1;
+	}
+	ErrorLog("lua: missing isolated: " + name);
+	return 0;
+}
 
-    EXPORT void scriptapi_dynobj_putvalues(TDynamicObject *dyn, const char *str, double num1, double num2)
-    {
-        if (!dyn)
-            return;
-        TLocation loc;
-        if (dyn->Mechanik)
-            dyn->Mechanik->PutCommand(std::string(str), num1, num2, loc);
-        else
-            dyn->MoverParameters->PutCommand(std::string(str), num1, num2, loc);
-    }
+int lua::scriptapi_train_getname(lua_State *L)
+{
+	auto *dyn = static_cast<TDynamicObject *>(lua_touserdata(L, 1));
+	if (dyn && dyn->Mechanik)
+	{
+		lua_pushstring(L, dyn->Mechanik->TrainName().c_str());
+		return 1;
+	}
+	return 0;
+}
+
+int lua::scriptapi_dynobj_putvalues(lua_State *L)
+{
+	auto *dyn = static_cast<TDynamicObject *>(lua_touserdata(L, 1));
+	auto [str, num1, num2] = get_memcell_values(L, 2);
+	if (!dyn)
+		return 0;
+	TLocation loc{};
+	if (dyn->Mechanik)
+		dyn->Mechanik->PutCommand(str, num1, num2, loc);
+	else
+		dyn->MoverParameters->PutCommand(str, num1, num2, loc);
+	return 0;
+}
+
+int lua::scriptapi_memcell_find(lua_State *L)
+{
+	std::string str = lua_tostring(L, 1);
+	TMemCell *mc = simulation::Memory.find(str);
+	if (mc)
+	{
+		lua_pushlightuserdata(L, mc);
+		return 1;
+	}
+	ErrorLog("lua: missing memcell: " + str);
+	return 0;
+}
+
+int lua::scriptapi_memcell_read(lua_State *L)
+{
+	auto *mc = static_cast<TMemCell *>(lua_touserdata(L, 1));
+	push_memcell_values(L, mc);
+	return 1;
+}
+
+int lua::scriptapi_memcell_read_n(lua_State *L)
+{
+	std::string str = lua_tostring(L, 1);
+	TMemCell *mc = simulation::Memory.find(str);
+	push_memcell_values(L, mc);
+	if (!mc)
+		ErrorLog("lua: missing memcell: " + str);
+	return 1;
+}
+
+int lua::scriptapi_memcell_update(lua_State *L)
+{
+	auto *mc = static_cast<TMemCell *>(lua_touserdata(L, 1));
+	auto [str, num1, num2] = get_memcell_values(L, 2);
+	if (mc)
+		mc->UpdateValues(str, num1, num2,
+					 basic_event::flags::text | basic_event::flags::value1 | basic_event::flags::value2);
+	return 0;
+}
+
+int lua::scriptapi_memcell_update_n(lua_State *L)
+{
+	std::string mstr = lua_tostring(L, 1);
+	auto [str, num1, num2] = get_memcell_values(L, 2);
+	TMemCell *mc = simulation::Memory.find(mstr);
+	if (mc)
+		mc->UpdateValues(str, num1, num2,
+					 basic_event::flags::text | basic_event::flags::value1 | basic_event::flags::value2);
+	else
+		ErrorLog("lua: missing memcell: " + mstr);
+	return 0;
+}
+
+int lua::scriptapi_random(lua_State *L)
+{
+	double a = lua_tonumber(L, 1);
+	double b = lua_tonumber(L, 2);
+	lua_pushnumber(L, Random(a, b));
+	return 1;
+}
+
+int lua::scriptapi_writelog(lua_State *L)
+{
+	std::string txt = lua_tostring(L, 1);
+	WriteLog("lua: log: " + txt, logtype::lua);
+	return 0;
+}
+
+int lua::scriptapi_writeerrorlog(lua_State *L)
+{
+	std::string txt = lua_tostring(L, 1);
+	ErrorLog("lua: log: " + txt, logtype::lua);
+	return 0;
 }

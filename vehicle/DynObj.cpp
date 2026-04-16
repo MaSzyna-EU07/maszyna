@@ -63,7 +63,7 @@ TextureTest( std::string const &Name ) {
 
     auto const lookup {
         FileExists(
-            { Global.asCurrentTexturePath + Name, Name, szTexturePath + Name },
+            { Global.asCurrentTexturePath + Name, Name, paths::textures + Name },
             { ".mat", ".dds", ".tga", ".ktx", ".png", ".bmp", ".jpg", ".tex" } ) };
 
     return ( lookup.first + lookup.second );
@@ -1982,7 +1982,7 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
                      )
 { // Ustawienie początkowe pojazdu
     iDirection = (Reversed ? 0 : 1); // Ra: 0, jeśli ma być wstawiony jako obrócony tyłem
-    asBaseDir = szDynamicPath + BaseDir + "/"; // McZapkie-310302
+    asBaseDir = paths::dynamic + BaseDir + "/"; // McZapkie-310302
     asName = Name;
     std::string asAnimName; // zmienna robocza do wyszukiwania osi i wózków
     // Ra: zmieniamy znaczenie obsady na jednoliterowe, żeby dosadzić kierownika
@@ -3011,7 +3011,7 @@ void TDynamicObject::LoadUpdate() {
         // update bindings between lowpoly sections and potential load chunks placed inside them
         update_load_sections();
         // z powrotem defaultowa sciezka do tekstur
-        Global.asCurrentTexturePath = std::string( szTexturePath );
+        Global.asCurrentTexturePath = std::string( paths::textures );
     }
 }
 
@@ -4265,27 +4265,6 @@ bool TDynamicObject::Update(double dt, double dt1)
 		MoverParameters->InactiveCabPantsCheck = false;
 	}
 
-
-    if (MoverParameters->DerailReason > 0)
-    {
-        switch (MoverParameters->DerailReason)
-        {
-        case 1:
-            ErrorLog("Bad driving: " + asName + " derailed due to end of track");
-            break;
-        case 2:
-            ErrorLog("Bad driving: " + asName + " derailed due to too high speed");
-            break;
-        case 3:
-            ErrorLog("Bad dynamic: " + asName + " derailed due to track width");
-            break; // błąd w scenerii
-        case 4:
-            ErrorLog("Bad dynamic: " + asName + " derailed due to wrong track type");
-            break; // błąd w scenerii
-        }
-        MoverParameters->DerailReason = 0; //żeby tylko raz
-    }
-
     if( MoverParameters->LoadStatus ) {
         LoadUpdate(); // zmiana modelu ładunku
     }
@@ -5337,7 +5316,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
             if (ReplacableSkin != "none") {
                 m_materialdata.assign( ReplacableSkin );
             }
-            Global.asCurrentTexturePath = szTexturePath; // z powrotem defaultowa sciezka do tekstur
+            Global.asCurrentTexturePath = paths::textures; // z powrotem defaultowa sciezka do tekstur
             do {
 				token = "";
 				parser.getTokens(); parser >> token;
@@ -6011,7 +5990,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                 mdLoad = LoadMMediaFile_mdload( MoverParameters->LoadType.name );
 
                 // z powrotem defaultowa sciezka do tekstur
-                Global.asCurrentTexturePath = std::string( szTexturePath );
+                Global.asCurrentTexturePath = std::string( paths::textures );
             }
 
         } // models
@@ -7148,7 +7127,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
         attachment->Init();
     }
 
-    Global.asCurrentTexturePath = szTexturePath; // kiedyś uproszczone wnętrze mieszało tekstury nieba
+    Global.asCurrentTexturePath = paths::textures; // kiedyś uproszczone wnętrze mieszało tekstury nieba
     Global.asCurrentDynamicPath = "";
 
     // position sound emitters which weren't defined in the config file

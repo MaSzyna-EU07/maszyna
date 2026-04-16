@@ -4359,62 +4359,61 @@ void TController::Doors( bool const Open, int const Side ) {
         if( ( false == doors_permit_active() )
          && ( false == doors_open() ) ) {
             iDrivigFlags &= ~moveDoorOpened;
+        	iDrivigFlags &= ~moveDepartureWarned;
             return;
         }
 
+    	if (mvOccupied->Doors.has_warning && !TestFlag(iDrivigFlags, moveDepartureWarned))
+    	{
+    		if (!mvOccupied->DepartureSignal)
+    		{
+    			// Not warned yet, not warning yet - start the warning signal.
+    			cue_action( driver_hint::departuresignalon ); // załącenie bzyczka
+    			fActionTime = Random( -0.3, -0.8 ); // 0.3-0.8 second buzzer
+    			return;
+    		}
+    		// Not warned yet, warning now - stop the warning signal and mark it as done.
+    		cue_action( driver_hint::departuresignaloff );
+    		fActionTime = Random( 0.0, -0.2 ); // Wait just a bit more before departing
+    		iDrivigFlags |= moveDepartureWarned;
+    		return;
+    	}
+
         if( true == doors_open() ) {
-            if( ( true == mvOccupied->Doors.has_warning )
-             && ( false == mvOccupied->DepartureSignal )
-             && ( true == TestFlag( iDrivigFlags, moveDoorOpened ) ) ) {
-                cue_action( driver_hint::departuresignalon ); // załącenie bzyczka
-                fActionTime = -1.5 - 0.1 * Random( 10 ); // 1.5-2.5 second wait
+            // consist-wide remote signals to close doors
+            if( ( pVehicle->MoverParameters->Doors.close_control == control_t::conductor )
+             || ( pVehicle->MoverParameters->Doors.close_control == control_t::driver )
+             || ( pVehicle->MoverParameters->Doors.close_control == control_t::mixed ) ) {
+                cue_action( driver_hint::doorrightclose );
+                cue_action( driver_hint::doorleftclose );
             }
         }
+        if( true == doors_permit_active() ) {
+            cue_action( driver_hint::doorrightpermitoff );
+            cue_action( driver_hint::doorleftpermitoff );
+        }
+        // if applicable close manually-operated doors in vehicles which may ignore remote signals
+        {
+			const auto *vehicle = pVehicles[ end::front ]; // pojazd na czole składu
+            while( vehicle != nullptr ) {
+                // zamykanie drzwi w pojazdach - flaga zezwolenia była by lepsza
+                auto const ismanualdoor {
+                    ( vehicle->MoverParameters->Doors.auto_velocity == -1.f )
+                 && ( ( vehicle->MoverParameters->Doors.close_control == control_t::passenger )
+                   || ( vehicle->MoverParameters->Doors.close_control == control_t::mixed ) ) };
 
-        if( ( false == AIControllFlag ) || ( fActionTime > -0.5 ) ) {
-            // ai doesn't close the door until it's free to depart, but human driver has free reign to do stupid things
-            if( true == doors_open() ) {
-                // consist-wide remote signals to close doors
-                if( ( pVehicle->MoverParameters->Doors.close_control == control_t::conductor )
-                 || ( pVehicle->MoverParameters->Doors.close_control == control_t::driver )
-                 || ( pVehicle->MoverParameters->Doors.close_control == control_t::mixed ) ) {
-                    cue_action( driver_hint::doorrightclose );
-                    cue_action( driver_hint::doorleftclose );
+                if( ( true == ismanualdoor )
+                 && ( ( vehicle->LoadExchangeTime() == 0.f )
+                   || ( vehicle->MoverParameters->Vel > EU07_AI_MOVEMENT ) ) ) {
+                    vehicle->MoverParameters->OperateDoors( side::right, false, range_t::local );
+                    vehicle->MoverParameters->OperateDoors( side::left, false, range_t::local );
                 }
-            }
-            if( true == doors_permit_active() ) {
-                cue_action( driver_hint::doorrightpermitoff );
-                cue_action( driver_hint::doorleftpermitoff );
-            }
-            // if applicable close manually-operated doors in vehicles which may ignore remote signals
-            {
-                auto *vehicle = pVehicles[ end::front ]; // pojazd na czole składu
-                while( vehicle != nullptr ) {
-                    // zamykanie drzwi w pojazdach - flaga zezwolenia była by lepsza
-                    auto const ismanualdoor {
-                        ( vehicle->MoverParameters->Doors.auto_velocity == -1.f )
-                     && ( ( vehicle->MoverParameters->Doors.close_control == control_t::passenger )
-                       || ( vehicle->MoverParameters->Doors.close_control == control_t::mixed ) ) };
-
-                    if( ( true == ismanualdoor )
-                     && ( ( vehicle->LoadExchangeTime() == 0.f )
-                       || ( vehicle->MoverParameters->Vel > EU07_AI_MOVEMENT ) ) ) {
-                        vehicle->MoverParameters->OperateDoors( side::right, false, range_t::local );
-                        vehicle->MoverParameters->OperateDoors( side::left, false, range_t::local );
-                    }
-                    vehicle = vehicle->Next(); // pojazd podłączony z tyłu (patrząc od czoła)
-                }
-            }
-            fActionTime = -2.0 - 0.1 * Random( 15 ); // 2.0-3.5 sec wait, +potentially 0.5 remaining
-            iDrivigFlags &= ~moveDoorOpened; // zostały zamknięte - nie wykonywać drugi raz
-
-            if( ( true == mvOccupied->DepartureSignal )
-             && ( Random( 100 ) < Random( 100 ) ) ) {
-                // potentially turn off the warning before actual departure
-                // TBD, TODO: dedicated buzzer duration counter?
-                cue_action( driver_hint::departuresignaloff );
+                vehicle = vehicle->Next(); // pojazd podłączony z tyłu (patrząc od czoła)
             }
         }
+        fActionTime = Random( -1.0, -3.5 ); // 1.0-3.5 sec wait
+        iDrivigFlags &= ~moveDoorOpened; // zostały zamknięte - nie wykonywać drugi raz
+    	iDrivigFlags &= ~moveDepartureWarned;
     }
 }
 
@@ -4541,7 +4540,7 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
 //                NewCommand = Global.asCurrentSceneryPath + NewCommand;
                 auto lookup =
                     FileExists(
-                        { Global.asCurrentSceneryPath + NewCommand, szSoundPath + NewCommand },
+                        { Global.asCurrentSceneryPath + NewCommand, paths::sounds + NewCommand },
                         { ".ogg", ".flac", ".wav" } );
                 if( false == lookup.first.empty() ) {
                     //  wczytanie dźwięku odjazdu podawanego bezpośrenido
@@ -4552,7 +4551,7 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
                     NewCommand += "radio";
                     lookup =
                         FileExists(
-                            { Global.asCurrentSceneryPath + NewCommand, szSoundPath + NewCommand },
+                            { Global.asCurrentSceneryPath + NewCommand, paths::sounds + NewCommand },
                             { ".ogg", ".flac", ".wav" } );
                     if( false == lookup.first.empty() ) {
                         //  wczytanie dźwięku odjazdu w wersji radiowej (słychać tylko w kabinie)

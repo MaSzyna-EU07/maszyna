@@ -30,4 +30,9 @@ private:
 	std::vector<std::string> get_random_trivia();
 	void generate_gradient_tex();
 	void load_wheel_frames();
+
+	/// <summary>
+	/// Scenery name for eligable trivias
+	/// </summary>
+	std::string sceneryName;
 };

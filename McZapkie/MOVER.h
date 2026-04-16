@@ -122,7 +122,18 @@ static int const dtrain_loaddestroyed = 32;/*dla wagonow*/
 static int const dtrain_axle = 64;
 static int const dtrain_out = 128;         /*wykolejenie*/
 static int const dtrain_pantograph = 256;	/*polamanie pantografu*/
-										   /*wagi prawdopodobienstwa dla funkcji FuzzyLogic*/
+
+/*przyczyny wykolejenia*/
+enum DerailReason {
+	NONE = 0,
+	END_OF_TRACK = 1,      // Ra: powód wykolejenia: brak szyn
+	TOO_HIGH_SPEED = 2,    // Ra: powód wykolejenia: przewrócony na łuku
+	GAUGE_MISMATCH = 3,    // Ra: powód wykolejenia: za szeroki tor
+	WRONG_TRACK_TYPE = 4,  // Ra: powód wykolejenia: nieodpowiednia trajektoria
+	COLLISION = 5,         //     powód wykolejenia: zderzenie z innym pojazdem
+};
+
+/*wagi prawdopodobienstwa dla funkcji FuzzyLogic*/
 #define p_elengproblem  (1e-02)
 #define p_elengdamage  (1e-01)
 #define p_coupldmg  (2e-03)
@@ -1045,7 +1056,7 @@ class TMoverParameters
 			bool is_warm{false}; // fluid is too hot
 			bool is_hot{false}; // fluid temperature crossed cooling threshold
 			bool is_flowing{false}; // fluid is being pushed through the circuit
-		} water, water_aux, oil;
+		} water, water_aux, oil, engine;
 		// output, state of affected devices
 		bool PA{false}; // malfunction flag
 		float rpmw{0.0}; // current main circuit fan revolutions
@@ -1066,6 +1077,9 @@ class TMoverParameters
 		float temperatura1{50.0};
 		float temperatura2{40.0};
 		float powerfactor{1.0}; // coefficient of heat generation for engines other than su45
+		// engine overheat threshold
+		float engine_max_temp{-1}; // maximum acceptable engine temperature, triggers overheat lamp when exceeded
+		bool engine_is_hot{false}; // engine temperature crossed cooling threshold
 	};
 
 	struct spring_brake
@@ -1590,7 +1604,6 @@ class TMoverParameters
 
 	int DamageFlag = 0; // kombinacja bitowa stalych dtrain_* }
 	int EngDmgFlag = 0; // kombinacja bitowa stalych usterek}
-	int DerailReason = 0; // przyczyna wykolejenia
 
 	// EndSignalsFlag: byte;  {ABu 060205: zmiany - koncowki: 1/16 - swiatla prz/tyl, 2/31 - blachy prz/tyl}
 	// HeadSignalsFlag: byte; {ABu 060205: zmiany - swiatla: 1/2/4 - przod, 16/32/63 - tyl}
@@ -1832,7 +1845,7 @@ public:
 	int DettachStatus(int ConnectNo);
 	bool Dettach(int ConnectNo);
     void damage_coupler( int const End );
-    void derail( int const Reason );
+    void Derail(DerailReason Reason);
 	bool DirectionForward();
     bool DirectionBackward( void );/*! kierunek ruchu*/
     bool EIMDirectionChangeAllow( void ) const;
