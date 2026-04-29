@@ -13,6 +13,23 @@ http://mozilla.org/MPL/2.0/.
 
 //---------------------------------------------------------------------------
 
+
+void floattt::deserialize_float32(std::istream &s, glm::mat4 &m)
+{
+	float *ptr = glm::value_ptr(m);
+
+	for (int i = 0; i < 16; ++i)
+		ptr[i] = sn_utils::ld_float32(s);
+}
+
+void floattt::deserialize_float64(std::istream &s, glm::mat4 &m)
+{
+	float *ptr = glm::value_ptr(m);
+
+	for (int i = 0; i < 16; ++i)
+		ptr[i] = static_cast<float>(sn_utils::ld_float64(s));
+}
+
 void float4x4::deserialize_float32(std::istream &s)
 {
 	for (size_t i = 0; i < 16; i++)

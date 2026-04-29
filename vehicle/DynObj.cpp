@@ -5510,7 +5510,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
 				else if( token == "animpantrd1prefix:" ) {
                 // prefiks ramion dolnych 1
 					parser.getTokens(); parser >> token;
-                    float4x4 m; // macierz do wyliczenia pozycji i wektora ruchu pantografu
+                    glm::mat4 m; // macierz do wyliczenia pozycji i wektora ruchu pantografu
                     TSubModel *sm;
                     if (pants)
                         for (int i = 0; i < iAnimType[ANIM_PANTS]; i++)
@@ -5527,7 +5527,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                                 pants[i].fParamPants->vPos.y = m[3][1]; // przesunięcie w górę odczytane z modelu
                                 if ((sm = pants[i].smElement[0]->ChildGet()) != NULL)
                                 { // jeśli ma potomny, można policzyć długość (odległość potomnego od osi obrotu)
-                                    m = float4x4(*sm->GetMatrix()); // wystarczyłby wskaźnik, nie trzeba kopiować
+                                    m = *sm->GetMatrix(); // TODO: wystarczyłby wskaźnik, nie trzeba kopiować
                                     // może trzeba: pobrać macierz dolnego ramienia, wyzerować przesunięcie, przemnożyć przez macierz górnego
                                     pants[i].fParamPants->fHoriz = -fabs(m[3][1]);
                                     pants[i].fParamPants->fLenL1 = hypot(m[3][1], m[3][2]); // po osi OX nie potrzeba
@@ -5541,9 +5541,9 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                                     pants[i].fParamPants->fAngleL = pants[i].fParamPants->fAngleL0; // początkowy kąt dolnego ramienia
                                     if ((sm = sm->ChildGet()) != NULL)
                                     { // jeśli dalej jest ślizg, można policzyć długość górnego ramienia
-                                        m = float4x4(*sm->GetMatrix()); // wystarczyłby wskaźnik,
+                                        m = *sm->GetMatrix(); // TODO: wystarczyłby wskaźnik,
                                         // nie trzeba kopiować trzeba by uwzględnić macierz dolnego ramienia, żeby uzyskać kąt do poziomu...
-                                        pants[i].fParamPants->fHoriz += fabs(m(3)[1]); // różnica długości rzutów ramion na
+                                        pants[i].fParamPants->fHoriz += fabs(m[1][3]); // różnica długości rzutów ramion na
                                         // płaszczyznę podstawy (jedna dodatnia, druga ujemna)
                                         pants[i].fParamPants->fLenU1 = hypot( m[3][1], m[3][2] ); // po osi OX nie potrzeba
                                         // pants[i].fParamPants->pantu=acos((1.22*cos(pants[i].fParamPants->fAngleL)+0.535)/1.755); //górne ramię
@@ -5559,7 +5559,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                                         pants[i].fParamPants->fAngleU = pants[i].fParamPants->fAngleU0; // początkowy kąt
                                         // Ra: ze względu na to, że niektóre modele pantografów są zrąbane, ich mierzenie ma obecnie ograniczony sens
                                         sm->ParentMatrix(&m); // pobranie macierzy transformacji pivota ślizgu względem wstawienia pojazdu
-                                        float det = Det(m);
+                                        float det = glm::determinant(m);
                                         if (std::fabs(det - 1.0) < 0.001) // dopuszczamy 1 promil błędu na skalowaniu ślizgu
                                         { // skalowanie jest w normie, można pobrać wymiary z modelu
                                             pants[i].fParamPants->fHeight = sm->MaxY(m); // przeliczenie maksimum wysokości wierzchołków względem macierzy
@@ -5591,7 +5591,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
 				else if( token == "animpantrd2prefix:" ) {
                 // prefiks ramion dolnych 2
 					parser.getTokens(); parser >> token;
-                    float4x4 m; // macierz do wyliczenia pozycji i wektora ruchu pantografu
+                    glm::mat4 m; // macierz do wyliczenia pozycji i wektora ruchu pantografu
                     TSubModel *sm;
 					if( pants ) {
 						for( int i = 0; i < iAnimType[ ANIM_PANTS ]; i++ ) {
@@ -5604,9 +5604,8 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
 								if( pants[ i ].fParamPants->vPos.y == 0.0 ) {
                                     // jeśli pierwsze ramię nie ustawiło tej wartości, próbować drugim
                                     //!!!! docelowo zrobić niezależną animację ramion z każdej strony
-                                    m = float4x4(
-                                        *sm->GetMatrix()); // skopiowanie, bo będziemy mnożyć
-									m( 3 )[ 1 ] =
+                                    m = *sm->GetMatrix(); // skopiowanie, bo będziemy mnożyć
+									m[ 1 ][3] =
 										m[ 3 ][ 1 ] + 0.054; // w górę o wysokość ślizgu (na razie tak)
 									while( sm->Parent ) {
 										if( sm->Parent->GetMatrix() )

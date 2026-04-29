@@ -12,6 +12,46 @@ http://mozilla.org/MPL/2.0/.
 #include <cmath>
 //---------------------------------------------------------------------------
 
+namespace floattt
+{
+inline void InitialRotate(glm::mat4 &m)
+{
+	for (int col = 0; col < 4; ++col)
+	{
+		// negacja X
+		m[col].x = -m[col].x;
+
+		// zamiana Y i Z
+		float tmp = m[col].y;
+		m[col].y = m[col].z;
+		m[col].z = tmp;
+	}
+}
+inline void serialize_float32(std::ostream &s, const glm::mat4 &m) // todo: remove inline
+{
+	for (int col = 0; col < 4; ++col)
+		for (int row = 0; row < 4; ++row)
+		{
+			float t = m[col][row];
+			uint32_t v = reinterpret_cast<uint32_t &>(t);
+
+			uint8_t buf[4];
+			buf[0] = v;
+			buf[1] = v >> 8;
+			buf[2] = v >> 16;
+			buf[3] = v >> 24;
+
+			s.write((char *)buf, 4);
+		}
+}
+
+void deserialize_float32(std::istream &s, glm::mat4 &m);
+
+void deserialize_float64(std::istream &s, glm::mat4 &m);
+
+}
+
+
 class float3
 { // wapółrzędne wierchołka 3D o pojedynczej precyzji
   public:
