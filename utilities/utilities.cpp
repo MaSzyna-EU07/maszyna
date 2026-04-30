@@ -35,16 +35,11 @@ bool EditorModeFlag = false;
 bool DebugCameraFlag = false;
 bool DebugTractionFlag = false;
 
-// shitty replacement for Borland timestamp function
-// TODO: replace with something sensible
 std::string Now()
 {
-
-	std::time_t timenow = std::time(nullptr);
-	std::tm tm = *std::localtime(&timenow);
-	std::stringstream converter;
-	converter << std::put_time(&tm, "%c");
-	return converter.str();
+	auto now = std::chrono::system_clock::now();
+	auto local = std::chrono::current_zone()->to_local(now);
+	return std::format("{:%c}", local);
 }
 
 // zwraca różnicę czasu
