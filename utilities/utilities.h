@@ -53,9 +53,6 @@ extern bool DebugCameraFlag;
 extern bool DebugTractionFlag;
 
 /*funkcje matematyczne*/
-double Max0R(double x1, double x2);
-double Min0R(double x1, double x2);
-
 inline double Sign(double x)
 {
 	return x >= 0 ? 1.0 : -1.0;

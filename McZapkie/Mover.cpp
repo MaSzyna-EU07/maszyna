@@ -356,7 +356,7 @@ double TMoverParameters::Current(double n, double U)
 	if (DynamicBrakeFlag && (!FuseFlag) && (DynamicBrakeType == dbrake_automatic) && Power110vIsAvailable && Mains) // hamowanie EP09   //TUHEX
 	{
 		// TODO: zrobic bardziej uniwersalne nie tylko dla EP09
-		MotorCurrent = -Max0R(MotorParam[0].fi * (Vadd / (Vadd + MotorParam[0].Isat) - MotorParam[0].fi0), 0) * n * 2.0 / DynamicBrakeRes;
+		MotorCurrent = -std::max(MotorParam[0].fi * (Vadd / (Vadd + MotorParam[0].Isat) - MotorParam[0].fi0), 0.) * n * 2.0 / DynamicBrakeRes;
 	}
 	else if ((RList[MainCtrlActualPos].Bn == 0) || (false == StLinFlag))
 	{
@@ -1079,7 +1079,7 @@ double TMoverParameters::LocalBrakeRatio(void)
 			LBR = 0;
 	}
 	// if (TestFlag(BrakeStatus, b_antislip))
-	//   LBR = Max0R(LBR, PipeRatio) + 0.4;
+	//   LBR = std::max(LBR, PipeRatio) + 0.4;
 	return LBR;
 }
 
@@ -1137,17 +1137,17 @@ double TMoverParameters::PipeRatio(void)
 		if (false) // SPKS!! no to jak nie wchodzimy to po co branch?
 		{
 			if ((3.0 * PipePress) > (HighPipePress + LowPipePress + LowPipePress))
-				pr = (HighPipePress - Min0R(HighPipePress, PipePress)) / (DeltaPipePress * 4.0 / 3.0);
+				pr = (HighPipePress - std::min(HighPipePress, PipePress)) / (DeltaPipePress * 4.0 / 3.0);
 			else
-				pr = (HighPipePress - 1.0 / 3.0 * DeltaPipePress - Max0R(LowPipePress, PipePress)) / (DeltaPipePress * 2.0 / 3.0);
+				pr = (HighPipePress - 1.0 / 3.0 * DeltaPipePress - std::max(LowPipePress, PipePress)) / (DeltaPipePress * 2.0 / 3.0);
 			// if (not TestFlag(BrakeStatus, b_Ractive))
 			//     and(BrakeMethod and 1 = 0) and TestFlag(BrakeDelays, bdelay_R) and (Power < 1) and
-			//         (BrakeCtrlPos < 1) then pr : = Min0R(0.5, pr);
+			//         (BrakeCtrlPos < 1) then pr : = std::min(0.5, pr);
 			// if (Compressor > 0.5)
 			//     then pr : = pr * 1.333; // dziwny rapid wywalamy
 		}
 		else
-			pr = (HighPipePress - Max0R(LowPipePress, Min0R(HighPipePress, PipePress))) / DeltaPipePress;
+			pr = (HighPipePress - std::max(LowPipePress, std::min(HighPipePress, PipePress))) / DeltaPipePress;
 	else
 		pr = 0;
 	return pr;
@@ -2979,7 +2979,7 @@ bool TMoverParameters::AddPulseForce(int Multipler)
 		DirActive = CabActive;
 		DirAbsolute = DirActive * CabActive;
 		if (Vel > 0)
-			PulseForce = Min0R(1000.0 * Power / (abs(V) + 0.1), Ftmax);
+			PulseForce = std::min(1000.0 * Power / (abs(V) + 0.1), Ftmax);
 		else
 			PulseForce = Ftmax;
 		if (PulseForceCount > 1000.0)
@@ -5199,7 +5199,7 @@ double TMoverParameters::Adhesive(double staticfriction) const
 	    if (SlippingWheels == false)
 	    {
 	        if (SandDose)
-	            adhesion = (Max0R(staticfriction * (100.0 + Vel) / ((50.0 + Vel) * 11.0), 0.048)) *
+	            adhesion = (std::max(staticfriction * (100.0 + Vel) / ((50.0 + Vel) * 11.0), 0.048)) *
 	                       (11.0 - 2.0 * Random(0.0, 1.0));
 	        else
 	            adhesion = (staticfriction * (100.0 + Vel) / ((50.0 + Vel) * 10.0)) *
@@ -5748,7 +5748,7 @@ double TMoverParameters::TractionForce(double dt)
 				else if ((DynamicBrakeFlag) && ((Vadd + abs(Im)) < TUHEX_Sum - TUHEX_Diff))
 				{
 					Vadd += 70.0 * dt;
-					Vadd = Min0R(Max0R(Vadd, TUHEX_MinIw), TUHEX_MaxIw);
+					Vadd = std::min(std::max(Vadd, TUHEX_MinIw), TUHEX_MaxIw);
 				}
 				if (Vadd > 0)
 					Mm = MomentumF(Im, Vadd, 0);
@@ -6248,7 +6248,7 @@ double TMoverParameters::TractionForce(double dt)
 					// ustalanie współczynnika blendingu do luzowania hamulca PN
 					if (eimv[eimv_Fmax] * Sign(V) * DirAbsolute < -1)
 					{
-						PosRatio = -Sign(V) * DirAbsolute * eimv[eimv_Fr] / (eimc[eimc_p_Fh] * Max0R(edBCP, Max0R(0.01, Hamulec->GetEDBCP())) / MaxBrakePress[0]);
+						PosRatio = -Sign(V) * DirAbsolute * eimv[eimv_Fr] / (eimc[eimc_p_Fh] * std::max(edBCP, std::max(0.01, Hamulec->GetEDBCP())) / MaxBrakePress[0]);
 						PosRatio = clamp(PosRatio, 0.0, 1.0);
 					}
 					else
@@ -6258,7 +6258,7 @@ double TMoverParameters::TractionForce(double dt)
 					PosRatio = Round(20.0 * PosRatio) / 20.0; // stopniowanie PN/ED
 					if (PosRatio < 19.5 / 20.0)
 						PosRatio *= 0.9;
-					Hamulec->SetED(Max0R(0.0, std::min(PosRatio, 1.0))); // ustalenie stopnia zmniejszenia ciśnienia
+					Hamulec->SetED(std::max(0.0, std::min(PosRatio, 1.0))); // ustalenie stopnia zmniejszenia ciśnienia
 					// ustalanie siły hamowania ED
 					if ((Hamulec->GetEDBCP() > 0.25) && (eimc[eimc_p_abed] < 0.001) || (ActiveInverters < InvertersNo)) // jeśli PN wyłącza ED
 					{
@@ -6274,16 +6274,16 @@ double TMoverParameters::TractionForce(double dt)
 				}
 				else
 				{
-					PosRatio = Max0R(eimic_real, 0);
+					PosRatio = std::max(eimic_real, 0.);
 					eimv[eimv_Fzad] = PosRatio;
 					if ((Flat) && (eimc[eimc_p_F0] * eimv[eimv_Fful] > 0))
-						PosRatio = Min0R(PosRatio * eimc[eimc_p_F0] / eimv[eimv_Fful], 1);
+						PosRatio = std::min(PosRatio * eimc[eimc_p_F0] / eimv[eimv_Fful], 1.);
 					/*                    if (ScndCtrlActualPos > 0) //speed control
 					                        if (Vmax < 250)
-					                            PosRatio = Min0R(PosRatio, Max0R(-1, 0.5 * (ScndCtrlActualPos - Vel)));
+					                            PosRatio = std::min(PosRatio, std::max(-1, 0.5 * (ScndCtrlActualPos - Vel)));
 					                        else
 					                            PosRatio =
-					                                Min0R(PosRatio, Max0R(-1, 0.5 * (ScndCtrlActualPos * 2 - Vel))); */
+					                                std::min(PosRatio, std::max(-1, 0.5 * (ScndCtrlActualPos * 2 - Vel))); */
 					// PosRatio = 1.0 * (PosRatio * 0 + 1) * PosRatio; // 1 * 1 * PosRatio = PosRatio
 					Hamulec->SetED(0);
 					//           (Hamulec as TLSt).SetLBP(LocBrakePress);
@@ -6312,7 +6312,7 @@ double TMoverParameters::TractionForce(double dt)
 					eimv_pr = 0;
 				}
 
-				eimv_pr += Max0R(Min0R(PosRatio - eimv_pr, 0.02), -0.02) * 12 * (tmp /*2{+4*byte(PosRatio<eimv_pr)*/) * dt; // wartość zadana/procent czegoś
+				eimv_pr += std::max(std::min(PosRatio - eimv_pr, 0.02), -0.02) * 12 * (tmp /*2{+4*byte(PosRatio<eimv_pr)*/) * dt; // wartość zadana/procent czegoś
 
 				if ((DynamicBrakeFlag))
 					tmp = eimc[eimc_f_Uzh];
@@ -6321,7 +6321,7 @@ double TMoverParameters::TractionForce(double dt)
 
 				auto f_cfu{DynamicBrakeFlag ? eimc[eimc_f_cfuH] : eimc[eimc_f_cfu]};
 
-				eimv[eimv_Uzsmax] = Min0R(EngineVoltage - eimc[eimc_f_DU], tmp);
+				eimv[eimv_Uzsmax] = std::min(EngineVoltage - eimc[eimc_f_DU], tmp);
 				eimv[eimv_fkr] = eimv[eimv_Uzsmax] / f_cfu;
 				if ((eimv_pr < 0))
 				{
@@ -6344,15 +6344,15 @@ double TMoverParameters::TractionForce(double dt)
 					eimv[eimv_Fr] = -Sign(V) * (DirAbsolute)*std::min(eimc[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(-eimc[eimc_p_Fh] * pr, eimv[eimv_FMAXMAX]));
 					if (InvertersRatio < 1.0)
 						eimv[eimv_Fful] = 0;
-					//*Min0R(1,(Vel-eimc[eimc_p_Vh0])/(eimc[eimc_p_Vh1]-eimc[eimc_p_Vh0]))
+					//*std::min(1,(Vel-eimc[eimc_p_Vh0])/(eimc[eimc_p_Vh1]-eimc[eimc_p_Vh0]))
 				}
 				else
 				{
-					eimv[eimv_Fful] = Min0R(Min0R(3.6 * eimv[eimv_Pmax] / Max0R(Vel, 1), eimc[eimc_p_F0] - Vel * eimc[eimc_p_a1]), eimv[eimv_FMAXMAX]);
+					eimv[eimv_Fful] = std::min(std::min(3.6 * eimv[eimv_Pmax] / std::max(Vel, 1.), eimc[eimc_p_F0] - Vel * eimc[eimc_p_a1]), eimv[eimv_FMAXMAX]);
 					//           if(not Flat)then
 					eimv[eimv_Fmax] = eimv[eimv_Fful] * eimv_pr;
 					//           else
-					//             eimv[eimv_Fmax]:=Min0R(eimc[eimc_p_F0]*eimv_pr,eimv[eimv_Fful]);
+					//             eimv[eimv_Fmax]:=std::min(eimc[eimc_p_F0]*eimv_pr,eimv[eimv_Fful]);
 					double pr = eimv_pr;
 					if (EIMCLogForce)
 						pr = log(1 + 4 * pr) / log(5);
@@ -6367,7 +6367,7 @@ double TMoverParameters::TractionForce(double dt)
 				eimv[eimv_ks] = eimv[eimv_Fr] / eimv[eimv_FMAXMAX];
 				eimv[eimv_df] = eimv[eimv_ks] * eimc[eimc_s_dfmax];
 				eimv[eimv_fp] = DirAbsolute * enrot * eimc[eimc_s_p] + eimv[eimv_df]; // do przemyslenia dzialanie pp z tmpV
-				//         eimv[eimv_U]:=Max0R(eimv[eimv_Uzsmax],Min0R(eimc[eimc_f_cfu]*eimv[eimv_fp],eimv[eimv_Uzsmax]));
+				//         eimv[eimv_U]:=std::max(eimv[eimv_Uzsmax],std::min(eimc[eimc_f_cfu]*eimv[eimv_fp],eimv[eimv_Uzsmax]));
 				//         eimv[eimv_pole]:=eimv[eimv_U]/(eimv[eimv_fp]*eimc[eimc_s_cfu]);
 				if ((abs(eimv[eimv_fp]) <= eimv[eimv_fkr]))
 					eimv[eimv_pole] = f_cfu / eimc[eimc_s_cfu];
@@ -6668,7 +6668,7 @@ double TMoverParameters::MomentumF(double I, double Iw, int SCP)
 {
 	// umozliwia dokladne sterowanie wzbudzeniem
 
-	return (MotorParam[SCP].mfi * I * Max0R(abs(Iw) / (abs(Iw) + MotorParam[SCP].mIsat) - MotorParam[SCP].mfi0, 0));
+	return (MotorParam[SCP].mfi * I * std::max(abs(Iw) / (abs(Iw) + MotorParam[SCP].mIsat) - MotorParam[SCP].mfi0, 0.));
 }
 
 // *************************************************************************************************
@@ -8030,7 +8030,7 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 	}
 
 	// sprawdzanie dociskow poszczegolnych sprzegiel
-	if (abs(Moment) > Min0R(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) || (abs(dizel_n_old - enrot) > 0.1)) // slizga sie z powodu roznic predkosci albo przekroczenia momentu
+	if (abs(Moment) > std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) || (abs(dizel_n_old - enrot) > 0.1)) // slizga sie z powodu roznic predkosci albo przekroczenia momentu
 	{
 		dizel_engagedeltaomega = enrot - dizel_n_old;
 
@@ -8068,8 +8068,8 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 		dizel_engagedeltaomega = 0;
 		gearMoment = Moment;
 		enMoment = 0;
-		double enrot_min = enrot - (Min0R(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) - Moment) / dizel_AIM * dt;
-		double enrot_max = enrot + (Min0R(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) + Moment) / dizel_AIM * dt;
+		double enrot_min = enrot - (std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) - Moment) / dizel_AIM * dt;
+		double enrot_max = enrot + (std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) + Moment) / dizel_AIM * dt;
 		enrot = clamp(n, enrot_min, enrot_max);
 	}
 	if ((hydro_R) && (hydro_R_Placement == 1))

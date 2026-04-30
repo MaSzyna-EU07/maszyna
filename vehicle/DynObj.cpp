@@ -3165,7 +3165,7 @@ bool TDynamicObject::Update(double dt, double dt1)
     // ts.R=ComputeRadius(Axle1.pPosition,Axle2.pPosition,Axle3.pPosition,Axle0.pPosition);
     // Ra: składową pochylenia wzdłużnego mamy policzoną w jednostkowym wektorze
     // vFront
-    ts.Len = 1.0; // Max0R(MoverParameters->BDist,MoverParameters->ADist);
+    ts.Len = 1.0; // std::max(MoverParameters->BDist,MoverParameters->ADist);
     ts.dHtrack = -vFront.y; // Axle1.pPosition.y-Axle0.pPosition.y; //wektor
     // między skrajnymi osiami
     // (!!!odwrotny)
@@ -3278,12 +3278,12 @@ bool TDynamicObject::Update(double dt, double dt1)
 			MoverParameters->CheckEIMIC(dt1);
 			MoverParameters->CheckSpeedCtrl(dt1);
 
-			auto eimic = Min0R(MoverParameters->eimic, MoverParameters->eimicSpeedCtrl);
+			auto eimic = std::min(MoverParameters->eimic, MoverParameters->eimicSpeedCtrl);
 			MoverParameters->eimic_real = eimic;
 			if (MoverParameters->EIMCtrlType == 2 && MoverParameters->MainCtrlPos == 0)
 				eimic = -1.0;
-			MoverParameters->SendCtrlToNext("EIMIC", Max0R(0, eimic), MoverParameters->CabActive);
-			auto LBR = Max0R(-eimic, 0);
+			MoverParameters->SendCtrlToNext("EIMIC", std::max(0., eimic), MoverParameters->CabActive);
+			auto LBR = std::max(-eimic, 0.);
 			auto eim_lb = (Mechanik->AIControllFlag || !MoverParameters->LocHandleTimeTraxx ? 0 : MoverParameters->eim_localbrake);
 
 			// 1. ustal wymagana sile hamowania calego pociagu
@@ -3484,17 +3484,17 @@ bool TDynamicObject::Update(double dt, double dt1)
                     if ((FzEP[i] > 0.01) &&
                         (FzEP[i] >
                          p->MoverParameters->TotalMass * p->MoverParameters->eimc[eimc_p_eped] +
-                             Min0R(p->MoverParameters->eimv[eimv_Fmax], 0) * 1000) &&
+                             std::min(p->MoverParameters->eimv[eimv_Fmax], 0.) * 1000) &&
                         (!PrzekrF[i]))
                     {
-                        float przek1 = -Min0R(p->MoverParameters->eimv[eimv_Fmax], 0) * 1000 +
+                        float przek1 = -std::min(p->MoverParameters->eimv[eimv_Fmax], 0.) * 1000 +
                                        FzEP[i] -
                                        p->MoverParameters->TotalMass *
                                            p->MoverParameters->eimc[eimc_p_eped] * 0.999;
                         PrzekrF[i] = true;
                         test = true;
                         nPrzekrF++;
-                        przek1 = Min0R(przek1, FzEP[i]);
+                        przek1 = std::min(przek1, FzEP[i]);
                         FzEP[i] -= przek1;
                         if (FzEP[i] < 0)
                             FzEP[i] = 0;
@@ -4354,7 +4354,7 @@ bool TDynamicObject::FastUpdate(double dt)
         modelRot.z };
     // McZapkie: parametry powinny byc pobierane z toru
     // ts.R=MyTrack->fRadius;
-    // ts.Len= Max0R(MoverParameters->BDist,MoverParameters->ADist);
+    // ts.Len= std::max(MoverParameters->BDist,MoverParameters->ADist);
     // ts.dHtrack=Axle1.pPosition.y-Axle0.pPosition.y;
     // ts.dHrail=((Axle1.GetRoll())+(Axle0.GetRoll()))*0.5f;
     // tp.Width=MyTrack->fTrackWidth;

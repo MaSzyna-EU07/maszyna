@@ -45,7 +45,7 @@ double const TFVE408::pos_table[11] = {0, 10, 0, 0, 10, 7, 8, 9, 0, 1, 5};
 /// <returns>Dimensionless flow driver (positive when P2 &gt; P1).</returns>
 double PR(double P1, double P2)
 {
-	double PH = Max0R(P1, P2) + 0.1;
+	double PH = std::max(P1, P2) + 0.1;
 	double PL = P1 + P2 - PH + 0.2;
 	return (P2 - P1) / (1.13 * PH - PL);
 }
@@ -59,7 +59,7 @@ double PR(double P1, double P2)
 /// <returns>Volumetric flow rate (signed).</returns>
 double PF_old(double P1, double P2, double S)
 {
-	double PH = Max0R(P1, P2) + 1;
+	double PH = std::max(P1, P2) + 1;
 	double PL = P1 + P2 - PH + 2;
 	if (PH - PL < 0.0001)
 		return 0;
@@ -1229,19 +1229,19 @@ double TEStEP2::GetPF(double const PP, double const dt, double const Vel)
 
 	result = dv - dV1;
 
-	temp = Max0R(BCP, LBP);
+	temp = std::max(BCP, LBP);
 
 	if ((ImplsRes->P() > LBP + 0.01))
 		LBP = 0;
 
 	// luzowanie CH
-	if ((BrakeCyl->P() > temp + 0.005) || (Max0R(ImplsRes->P(), 8 * LBP) < 0.05))
+	if ((BrakeCyl->P() > temp + 0.005) || (std::max(ImplsRes->P(), 8 * LBP) < 0.05))
 		dv = PF(0, BrakeCyl->P(), 0.25 * SizeBC * (0.01 + (BrakeCyl->P() - temp))) * dt;
 	else
 		dv = 0;
 	BrakeCyl->Flow(-dv);
 	// przeplyw ZP <-> CH
-	if ((BrakeCyl->P() < temp - 0.005) && (Max0R(ImplsRes->P(), 8 * LBP) > 0.10) && (Max0R(BCP, LBP) < MaxBP * LoadC))
+	if ((BrakeCyl->P() < temp - 0.005) && (std::max(ImplsRes->P(), 8 * LBP) > 0.10) && (std::max(BCP, LBP) < MaxBP * LoadC))
 		dv = PF(BVP, BrakeCyl->P(), 0.35 * SizeBC * (0.01 - (BrakeCyl->P() - temp))) * dt;
 	else
 		dv = 0;
@@ -1313,7 +1313,7 @@ void TEStEP2::EPCalc(double dt)
 void TEStEP1::EPCalc(double dt)
 {
 	double temp = EPS - std::floor(EPS); // część ułamkowa jest hamulcem EP
-	double LBPLim = Min0R(MaxBP * LoadC * temp, BrakeRes->P()); // do czego dążymy
+	double LBPLim = std::min(MaxBP * LoadC * temp, BrakeRes->P()); // do czego dążymy
 	double S = 10 * clamp(LBPLim - LBP, -0.1, 0.1); // przymykanie zaworku
 	double dv = PF((S > 0 ? BrakeRes->P() : 0), LBP, abs(S) * (0.00053 + 0.00060 * int(S < 0))) * dt; // przepływ
 	LBP = LBP - dv;
@@ -1782,7 +1782,7 @@ double TLSt::GetPF(double const PP, double const dt, double const Vel)
 	if (((UniversalFlag & TUniversalBrake::ub_AntiSlipBrake) > 0) || ((BrakeStatus & b_asb_unbrake) == b_asb_unbrake))
 		tempasb = ASBP;
 	// powtarzacz — podwojny zawor zwrotny
-	temp = Max0R(((CVP - BCP) * BVM + tempasb) / temp, LBP);
+	temp = std::max(((CVP - BCP) * BVM + tempasb) / temp, LBP);
 	// luzowanie CH
 	if ((BrakeCyl->P() > temp + 0.005) || (temp < 0.28))
 		//   dV:=PF(0,BrakeCyl->P(),0.0015*3*sizeBC)*dt
@@ -1881,7 +1881,7 @@ double TLSt::GetHPFlow(double const HP, double const dt)
 {
 	double dv;
 
-	dv = Min0R(PF(HP, BrakeRes->P(), 0.01 * dt), 0);
+	dv = std::min(PF(HP, BrakeRes->P(), 0.01 * dt), 0.0);
 	BrakeRes->Flow(-dv);
 	return dv;
 }
@@ -1994,12 +1994,12 @@ double TEStED::GetPF(double const PP, double const dt, double const Vel)
 	Miedzypoj->Flow(dv * dt * 0.15);
 
 	RapidTemp = RapidTemp + (RM * int((Vel > RV) && (BrakeDelayFlag == bdelay_R)) - RapidTemp) * dt / 2;
-	temp = Max0R(1 - RapidTemp, 0.001);
+	temp = std::max(1 - RapidTemp, 0.001);
 	//  if EDFlag then temp:=1000;
 	//  temp:=temp/(1-);
 
 	// powtarzacz — podwojny zawor zwrotny
-	temp = Max0R(LoadC * BCP / temp * Min0R(Max0R(1 - EDFlag, 0), 1), LBP);
+	temp = std::max(LoadC * BCP / temp * std::min(std::max(1 - EDFlag, 0.), 1.), LBP);
 
 	if ((UniversalFlag & TUniversalBrake::ub_AntiSlipBrake) > 0)
 		temp = std::max(temp, ASBP);
@@ -2156,7 +2156,7 @@ void TCV1::CheckState(double const BCP, double &dV1)
 	double CVP;
 
 	BVP = BrakeRes->P();
-	VVP = Min0R(ValveRes->P(), BVP + 0.05);
+	VVP = std::min(ValveRes->P(), BVP + 0.05);
 	CVP = CntrlRes->P();
 
 	// odluzniacz
@@ -2243,7 +2243,7 @@ double TCV1::GetPF(double const PP, double const dt, double const Vel)
 	double CVP;
 
 	BVP = BrakeRes->P();
-	VVP = Min0R(ValveRes->P(), BVP + 0.05);
+	VVP = std::min(ValveRes->P(), BVP + 0.05);
 	BCP = BrakeCyl->P();
 	CVP = CntrlRes->P();
 
@@ -2360,7 +2360,7 @@ double TCV1L_TR::GetHPFlow(double const HP, double const dt)
 	double dv;
 
 	dv = PF(HP, BrakeRes->P(), 0.01) * dt;
-	dv = Min0R(0, dv);
+	dv = std::min(0., dv);
 	BrakeRes->Flow(-dv);
 	return dv;
 }
@@ -2402,7 +2402,7 @@ double TCV1L_TR::GetPF(double const PP, double const dt, double const Vel)
 	double CVP;
 
 	BVP = BrakeRes->P();
-	VVP = Min0R(ValveRes->P(), BVP + 0.05);
+	VVP = std::min(ValveRes->P(), BVP + 0.05);
 	BCP = ImplsRes->P();
 	CVP = CntrlRes->P();
 
@@ -2447,17 +2447,17 @@ double TCV1L_TR::GetPF(double const PP, double const dt, double const Vel)
 	dv = PF(PP, VVP, 0.01) * dt;
 	result = dv - dV1;
 
-	temp = Max0R(BCP, LBP);
+	temp = std::max(BCP, LBP);
 
 	// luzowanie CH
-	if ((BrakeCyl->P() > temp + 0.005) || (Max0R(ImplsRes->P(), 8 * LBP) < 0.25))
+	if ((BrakeCyl->P() > temp + 0.005) || (std::max(ImplsRes->P(), 8 * LBP) < 0.25))
 		dv = PF(0, BrakeCyl->P(), 0.015 * SizeBC) * dt;
 	else
 		dv = 0;
 	BrakeCyl->Flow(-dv);
 
 	// przeplyw ZP <-> CH
-	if ((BrakeCyl->P() < temp - 0.005) && (Max0R(ImplsRes->P(), 8 * LBP) > 0.3) && (Max0R(BCP, LBP) < MaxBP))
+	if ((BrakeCyl->P() < temp - 0.005) && (std::max(ImplsRes->P(), 8 * LBP) > 0.3) && (std::max(BCP, LBP) < MaxBP))
 		dv = PF(BVP, BrakeCyl->P(), 0.020 * SizeBC) * dt;
 	else
 		dv = 0;
@@ -2710,17 +2710,17 @@ double TKE::GetPF(double const PP, double const dt, double const Vel)
 		temp = 1;
 	temp = temp / LoadC;
 	// luzowanie CH
-	//  temp:=Max0R(BCP,LBP);
-	IMP = Max0R(IMP / temp, Max0R(LBP, ASBP * int((BrakeStatus & b_asb) == b_asb)));
+	//  temp:=std::max(BCP,LBP);
+	IMP = std::max(IMP / temp, std::max(LBP, ASBP * int((BrakeStatus & b_asb) == b_asb)));
 	if ((ASBP < 0.1) && ((BrakeStatus & b_asb) == b_asb))
 		IMP = 0;
 	// luzowanie CH
-	if ((BCP > IMP + 0.005) || (Max0R(ImplsRes->P(), 8 * LBP) < 0.25))
+	if ((BCP > IMP + 0.005) || (std::max(ImplsRes->P(), 8 * LBP) < 0.25))
 		dv = PFVd(BCP, 0, 0.05, IMP) * dt;
 	else
 		dv = 0;
 	BrakeCyl->Flow(-dv);
-	if ((BCP < IMP - 0.005) && (Max0R(ImplsRes->P(), 8 * LBP) > 0.3))
+	if ((BCP < IMP - 0.005) && (std::max(ImplsRes->P(), 8 * LBP) > 0.3))
 		dv = PFVa(BVP, BCP, 0.05, IMP) * dt;
 	else
 		dv = 0;
@@ -2797,7 +2797,7 @@ double TKE::GetHPFlow(double const HP, double const dt)
 	double dv;
 
 	dv = PF(HP, BrakeRes->P(), 0.01) * dt;
-	dv = Min0R(0, dv);
+	dv = std::min(0., dv);
 	BrakeRes->Flow(-dv);
 	return dv;
 }
@@ -2975,7 +2975,7 @@ double TFV4a::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 		//            if(cp+0.03<5.4)then
 		if ((RP + 0.03 < 5.4) || (CP + 0.03 < 5.4)) // fala
 			dpMainValve = PF(std::min(HP, 17.1), PP, ActFlowSpeed / LBDelay) * dt;
-		//              dpMainValve:=20*Min0R(abs(ep-7.1),0.05)*PF(HP,pp,ActFlowSpeed/LBDelay)*dt;
+		//              dpMainValve:=20*std::min(abs(ep-7.1),0.05)*PF(HP,pp,ActFlowSpeed/LBDelay)*dt;
 		else
 		{
 			RP = 5.45;
@@ -3286,7 +3286,7 @@ double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep
 
 	DP = 0;
 
-	i_bcp = Max0R(Min0R(i_bcp, 9.999), -0.999); // na wszelki wypadek, zeby nie wyszlo poza zakres
+	i_bcp = std::max(std::min(i_bcp, 9.999), -0.999); // na wszelki wypadek, zeby nie wyszlo poza zakres
 
 	if ((TP > 0) && (CP > 4.9))
 	{
@@ -3300,7 +3300,7 @@ double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep
 		TP = 0;
 	}
 
-	LimPP = Min0R(LPP_RP(i_bcp) + TP * 0.08 + RedAdj, HP); // pozycja + czasowy lub zasilanie
+	LimPP = std::min(LPP_RP(i_bcp) + TP * 0.08 + RedAdj, HP); // pozycja + czasowy lub zasilanie
 	ActFlowSpeed = 4;
 
 	double uop = UnbrakeOverPressure; // unbrake over pressure in actual state
@@ -3309,20 +3309,20 @@ double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep
 		uop = 0;
 
 	if ((EQ(i_bcp, -1)) && (uop > 0))
-		pom = Min0R(HP, 5.4 + RedAdj + uop);
+		pom = std::min(HP, 5.4 + RedAdj + uop);
 	else
-		pom = Min0R(CP, HP);
+		pom = std::min(CP, HP);
 
 	if ((LimPP > CP)) // podwyzszanie szybkie
-		CP = CP + 60 * Min0R(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy;
+		CP = CP + 60 * std::min(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy;
 	else
-		CP = CP + 13 * Min0R(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
+		CP = CP + 13 * std::min(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
 
 	LimPP = pom; // cp
 	// if (EQ(i_bcp, -1))
 	//       dpPipe = HP;
 	//   else
-	dpPipe = Min0R(HP, LimPP);
+	dpPipe = std::min(HP, LimPP);
 
 	if (dpPipe > PP)
 		dpMainValve = -PFVa(HP, PP, ActFlowSpeed / LBDelay, dpPipe, 0.4);
@@ -3355,9 +3355,9 @@ double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep
 	}
 
 	if ((i_bcp < 1.5))
-		RP = Max0R(0, 0.125 * i_bcp);
+		RP = std::max(0., 0.125 * i_bcp);
 	else
-		RP = Min0R(1, 0.125 * i_bcp - 0.125);
+		RP = std::min(1., 0.125 * i_bcp - 0.125);
 
 	return dpMainValve * dt;
 }
@@ -3413,7 +3413,7 @@ double TMHZ_EN57::GetRP()
 double TMHZ_EN57::GetEP(double pos)
 {
 	if (pos < 9.5)
-		return Min0R(Max0R(0, 0.125 * pos), 1);
+		return std::max(std::max(0., 0.125 * pos), 1.);
 	else
 		return 0;
 }
@@ -3493,7 +3493,7 @@ double TMHZ_K5P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 
 	DP = 0;
 
-	i_bcp = Max0R(Min0R(i_bcp, 2.999), -0.999); // na wszelki wypadek, zeby nie wyszlo poza zakres
+	i_bcp = std::max(std::min(i_bcp, 2.999), -0.999); // na wszelki wypadek, zeby nie wyszlo poza zakres
 
 	if ((TP > 0) && (CP > 4.9))
 	{
@@ -3513,20 +3513,20 @@ double TMHZ_K5P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	else // luzowanie
 		LimCP = 5.0;
 	pom = CP;
-	LimCP = Min0R(LimCP, HP); // pozycja + czasowy lub zasilanie
+	LimCP = std::min(LimCP, HP); // pozycja + czasowy lub zasilanie
 	ActFlowSpeed = 4;
 
 	if ((LimCP > CP)) // podwyzszanie szybkie
-		CP = CP + 9 * Min0R(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy;
+		CP = CP + 9 * std::min(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy;
 	else
-		CP = CP + 9 * Min0R(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy
+		CP = CP + 9 * std::min(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy
 
 	double uop = UnbrakeOverPressure; // unbrake over pressure in actual state
 	ManualOvrldActive = (UniversalFlag & TUniversalBrake::ub_HighPressure); // button is pressed
 	if (ManualOvrld && !ManualOvrldActive) // no overpressure for not pressed button if it does not exists
 		uop = 0;
 
-	dpPipe = Min0R(HP, CP + TP + RedAdj);
+	dpPipe = std::min(HP, CP + TP + RedAdj);
 
 	if (EQ(i_bcp, -1))
 	{
@@ -3676,7 +3676,7 @@ double TMHZ_6P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 
 	DP = 0;
 
-	i_bcp = Max0R(Min0R(i_bcp, 3.999), -0.999); // na wszelki wypadek, zeby nie wyszlo poza zakres
+	i_bcp = std::max(std::min(i_bcp, 3.999), -0.999); // na wszelki wypadek, zeby nie wyszlo poza zakres
 
 	if ((TP > 0) && (CP > 4.9))
 	{
@@ -3696,15 +3696,15 @@ double TMHZ_6P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	else // luzowanie
 		LimCP = 5.0;
 	pom = CP;
-	LimCP = Min0R(LimCP, HP); // pozycja + czasowy lub zasilanie
+	LimCP = std::min(LimCP, HP); // pozycja + czasowy lub zasilanie
 	ActFlowSpeed = 4;
 
 	if ((LimCP > CP)) // podwyzszanie szybkie
-		CP = CP + 9 * Min0R(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy;
+		CP = CP + 9 * std::min(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy;
 	else
-		CP = CP + 9 * Min0R(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy
+		CP = CP + 9 * std::min(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy
 
-	dpPipe = Min0R(HP, CP + TP + RedAdj);
+	dpPipe = std::min(HP, CP + TP + RedAdj);
 
 	double uop = UnbrakeOverPressure; // unbrake over pressure in actual state
 	ManualOvrldActive = (UniversalFlag & TUniversalBrake::ub_HighPressure); // button is pressed
@@ -3856,7 +3856,7 @@ double TM394::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	if (BCP < -1)
 		BCP = 1;
 
-	LimPP = Min0R(BPT_394[BCP + 1][1], HP);
+	LimPP = std::min(BPT_394[BCP + 1][1], HP);
 	ActFlowSpeed = BPT_394[BCP + 1][0];
 	if ((BCP == 1) || (BCP == i_bcpno))
 		LimPP = PP;
@@ -3864,16 +3864,16 @@ double TM394::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 		LimPP = LimPP + RedAdj;
 	if ((BCP != 2))
 		if (CP < LimPP)
-			CP = CP + 4 * Min0R(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
-		//      cp:=cp+6*(2+int(bcp<0))*Min0R(abs(Limpp-cp),0.05)*PR(cp,Limpp)*dt //zbiornik
+			CP = CP + 4 * std::min(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
+		//      cp:=cp+6*(2+int(bcp<0))*std::min(abs(Limpp-cp),0.05)*PR(cp,Limpp)*dt //zbiornik
 		//      sterujacy;
 		else if (BCP == 0)
 			CP = CP - 0.2 * dt / 100;
 		else
-			CP = CP + 4 * (1 + int(BCP != 3) + int(BCP > 4)) * Min0R(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
+			CP = CP + 4 * (1 + int(BCP != 3) + int(BCP > 4)) * std::min(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
 
 	LimPP = CP;
-	dpPipe = Min0R(HP, LimPP);
+	dpPipe = std::min(HP, LimPP);
 
 	//  if(dpPipe>pp)then //napelnianie
 	//    dpMainValve:=PF(dpPipe,pp,ActFlowSpeed/LBDelay)*dt
@@ -4060,7 +4060,7 @@ double TSt113::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 		LimPP = CP;
 	ActFlowSpeed = BPT_K[BCP + 1][0];
 
-	CP = CP + 6 * Min0R(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
+	CP = CP + 6 * std::min(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
 
 	dpMainValve = 0;
 
@@ -4140,10 +4140,10 @@ double Ttest::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	if ((i_bcp == -1))
 		LimPP = 7;
 
-	CP = CP + 20 * Min0R(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt / 1;
+	CP = CP + 20 * std::min(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt / 1;
 
 	LimPP = CP;
-	dpPipe = Min0R(HP, LimPP);
+	dpPipe = std::min(HP, LimPP);
 
 	dpMainValve = PF(dpPipe, PP, ActFlowSpeed / LBDelay) * dt;
 
@@ -4181,7 +4181,7 @@ double TFD1::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	double temp;
 
 	//  MaxBP:=4;
-	//  temp:=Min0R(i_bcp*MaxBP,Min0R(5.0,HP));
+	//  temp:=std::min(i_bcp*MaxBP,std::min(5.0,HP));
 	temp = std::min(i_bcp * MaxBP, HP); // 0011
 	DP = 10.0 * std::min(std::abs(temp - BP), 0.1) * PF(temp, BP, 0.0006 * (temp > BP ? 3.0 : 2.0)) * dt * Speed;
 	BP = BP - DP;
@@ -4229,18 +4229,18 @@ double TH1405::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	double temp;
 	double A;
 
-	PP = Min0R(PP, MaxBP);
+	PP = std::min(PP, MaxBP);
 	if (i_bcp > 0.5)
 	{
-		temp = Min0R(MaxBP, HP);
+		temp = std::min(MaxBP, HP);
 		A = 2 * (i_bcp - 0.5) * 0.0011;
-		BP = Max0R(BP, PP);
+		BP = std::max(BP, PP);
 	}
 	else
 	{
 		temp = 0;
 		A = 0.2 * (0.5 - i_bcp) * 0.0033;
-		BP = Min0R(BP, PP);
+		BP = std::min(BP, PP);
 	}
 	DP = PF(temp, BP, A) * dt;
 	BP = BP - DP;
@@ -4285,7 +4285,7 @@ double TFVel6::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 
 	CP = PP;
 
-	LimPP = Min0R(5 * int(i_bcp < 3.5), HP);
+	LimPP = std::min(5. * int(i_bcp < 3.5), HP);
 	if ((i_bcp >= 3.5) && ((i_bcp < 4.3) || (i_bcp > 5.5)))
 		ActFlowSpeed = 0;
 	else if ((i_bcp > 4.3) && (i_bcp < 4.8))
@@ -4382,7 +4382,7 @@ double TFVE408::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 
 	CP = PP;
 
-	LimPP = Min0R(5 * int(i_bcp < 6.5), HP);
+	LimPP = std::min(5. * int(i_bcp < 6.5), HP);
 	if ((i_bcp >= 6.5) && ((i_bcp < 7.5) || (i_bcp > 9.5)))
 		ActFlowSpeed = 0;
 	else if ((i_bcp > 7.5) && (i_bcp < 8.5))

@@ -7408,11 +7408,11 @@ bool TTrain::Update( double const Deltatime )
             if ((in < 8) && (p->MoverParameters->eimc[eimc_p_Pmax] > 1))
             {
                 fEIMParams[1 + in][0] = p->MoverParameters->eimv[eimv_Fmax];
-                fEIMParams[1 + in][1] = Max0R(fEIMParams[1 + in][0], 0);
-                fEIMParams[1 + in][2] = -Min0R(fEIMParams[1 + in][0], 0);
-                fEIMParams[1 + in][3] = p->MoverParameters->eimv[eimv_Fmax] / Max0R(p->MoverParameters->eimv[eimv_Fful], 1);
-                fEIMParams[1 + in][4] = Max0R(fEIMParams[1 + in][3], 0);
-                fEIMParams[1 + in][5] = -Min0R(fEIMParams[1 + in][3], 0);
+                fEIMParams[1 + in][1] = std::max(fEIMParams[1 + in][0], 0.f);
+                fEIMParams[1 + in][2] = -std::min(fEIMParams[1 + in][0], 0.f);
+                fEIMParams[1 + in][3] = p->MoverParameters->eimv[eimv_Fmax] / std::max(p->MoverParameters->eimv[eimv_Fful], 1.);
+                fEIMParams[1 + in][4] = std::max(fEIMParams[1 + in][3], 0.f);
+                fEIMParams[1 + in][5] = -std::min(fEIMParams[1 + in][3], 0.f);
                 fEIMParams[1 + in][6] = p->MoverParameters->eimv[eimv_If];
                 fEIMParams[1 + in][7] = p->MoverParameters->eimv[eimv_U];
 				fEIMParams[1 + in][8] = p->MoverParameters->Itot;//p->MoverParameters->eimv[eimv_Ipoj];
@@ -7488,8 +7488,8 @@ bool TTrain::Update( double const Deltatime )
 //            fEIMParams[0][3] =
 //                mvControlled->eimv[eimv_Fzad] - mvOccupied->LocalBrakeRatio(); // procent zadany
 	fEIMParams[0][3] = mvOccupied->eimic_real;
-    fEIMParams[0][4] = Max0R(fEIMParams[0][3], 0);
-    fEIMParams[0][5] = -Min0R(fEIMParams[0][3], 0);
+    fEIMParams[0][4] = std::max(fEIMParams[0][3], 0.f);
+    fEIMParams[0][5] = -std::min(fEIMParams[0][3], 0.f);
     fEIMParams[0][1] = fEIMParams[0][4] * mvControlled->eimv[eimv_Fful];
     fEIMParams[0][2] = fEIMParams[0][5] * mvControlled->eimv[eimv_Fful];
     fEIMParams[0][0] = fEIMParams[0][1] - fEIMParams[0][2];
@@ -8674,7 +8674,7 @@ TTrain::update_sounds( double const Deltatime ) {
         }
         // napelnianie PG
         if( rsHissU ) {
-            fNPress = ( 4.0f * fNPress + Min0R( 0.0, mvOccupied->dpMainValve ) ) / ( 4.0f + 1.0f );
+            fNPress = ( 4.0f * fNPress + std::min( 0.0, mvOccupied->dpMainValve ) ) / ( 4.0f + 1.0f );
             volume = (
                 fNPress < 0.0f ?
                     -1.0 * rsHissU->m_amplitudefactor * fNPress + rsHissU->m_amplitudeoffset :

@@ -35,22 +35,6 @@ bool EditorModeFlag = false;
 bool DebugCameraFlag = false;
 bool DebugTractionFlag = false;
 
-double Max0R(double x1, double x2)
-{
-	if (x1 > x2)
-		return x1;
-	else
-		return x2;
-}
-
-double Min0R(double x1, double x2)
-{
-	if (x1 < x2)
-		return x1;
-	else
-		return x2;
-}
-
 // shitty replacement for Borland timestamp function
 // TODO: replace with something sensible
 std::string Now()
