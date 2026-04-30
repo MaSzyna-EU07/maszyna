@@ -17,6 +17,7 @@ Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/glmHelpers.h"
 #include "utilities/utilities.h"
 #include "rendering/renderer.h"
 #include "utilities/Timer.h"
@@ -828,7 +829,7 @@ void TSubModel::InitialRotate(bool doit)
 				fMatrix = new glm::mat4(1); //zaczynamy obracanie od jednostkowej
 			}
 			iFlags |= 0x8000; // po obróceniu będzie raczej niejedynkowy matrix
-			floattt::InitialRotate(*fMatrix); // zmiana znaku X oraz zamiana Y i Z
+			glmHelpers::InitialRotate(*fMatrix); // zmiana znaku X oraz zamiana Y i Z
 			if (*fMatrix == glm::mat4(1.f))
 				iFlags &= ~0x8000; // jednak jednostkowa po obróceniu
 		}
@@ -1417,7 +1418,7 @@ void TSubModel::ParentMatrix(glm::mat4 *m) const
 		if ((submodel->Parent == nullptr) && (false == submodel->m_rotation_init_done))
 		{
 			// dla ostatniego może być potrzebny dodatkowy obrót, jeśli wczytano z T3D, a nie obrócono jeszcze
-			floattt::InitialRotate(submodelmatrix);
+			glmHelpers::InitialRotate(submodelmatrix);
 		}
 		// ...combine the transformations...
 		*m = submodelmatrix * (*m);
@@ -1760,7 +1761,7 @@ void TModel3d::SaveToBinFile(std::string const &FileName)
 	sn_utils::ls_uint32(s, MAKE_ID4('T', 'R', 'A', '0'));
 	sn_utils::ls_uint32(s, 8 + (uint32_t)transforms.size() * 64);
 	for (size_t i = 0; i < transforms.size(); i++)
-		floattt::serialize_float32(s, transforms[i]);
+		sn_utils::ls_float32(s, transforms[i]);
 
 	auto const isindexed{m_indexcount > 0};
 	if (isindexed)
@@ -2105,7 +2106,7 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 
 			Matrices.resize(t_cnt);
 			for (size_t i = 0; i < t_cnt; ++i)
-				floattt::deserialize_float32(s, Matrices[i]);
+				sn_utils::ld_float32(s, Matrices[i]);
 		}
 		else if (type == MAKE_ID4('T', 'R', 'A', '1'))
 		{
@@ -2115,7 +2116,7 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 
 			Matrices.resize(t_cnt);
 			for (size_t i = 0; i < t_cnt; ++i)
-				floattt::deserialize_float64(s, Matrices[i]);
+				sn_utils::ld_float64(s, Matrices[i]);
 		}
 		else if (type == MAKE_ID4('T', 'E', 'X', '0'))
 		{
