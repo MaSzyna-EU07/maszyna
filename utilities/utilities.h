@@ -65,7 +65,7 @@ inline long Round(double const f)
 }
 
 double Random(double a, double b);
-int RandomInt(int min, int max);
+int Random(int min, int max);
 std::string generate_uuid_v4();
 double LocalRandom(double a, double b);
 

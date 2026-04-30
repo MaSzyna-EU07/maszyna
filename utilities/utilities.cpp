@@ -100,11 +100,10 @@ double Random(double a, double b)
 	return dist(Global.random_engine);
 }
 
-int RandomInt(int min, int max)
+int Random(int min, int max)
 {
-	static std::mt19937 engine(std::random_device{}());
 	std::uniform_int_distribution<int> dist(min, max);
-	return dist(engine);
+	return dist(Global.random_engine);
 }
 
 std::string generate_uuid_v4()

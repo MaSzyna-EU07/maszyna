@@ -88,7 +88,7 @@ std::vector<std::string> scenarioloader_ui::get_random_trivia()
 	json triviaData = json::parse(fileContent);
 
 	// select random
-	int i = RandomInt(0, static_cast<int>(triviaData.size()) - 1);
+	int i = Random(0, static_cast<int>(triviaData.size()) - 1);
 	std::string triviaStr = triviaData[i]["text"];
 	std::string background = triviaData[i]["background"];
 	if (triviaData[i].contains("scenery"))
