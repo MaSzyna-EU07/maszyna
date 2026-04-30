@@ -154,26 +154,6 @@ bool FuzzyLogicAI(double Test, double Threshold, double Probability)
 		return false;
 }
 
-std::string ExchangeCharInString(std::string const &Source, char const From, char const To)
-{
-	std::string replacement;
-	replacement.reserve(Source.size());
-	std::for_each(std::begin(Source), std::end(Source),
-	              [&](char const idx)
-	              {
-		              if (idx != From)
-		              {
-			              replacement += idx;
-		              }
-		              else
-		              {
-			              replacement += To;
-		              }
-	              });
-
-	return replacement;
-}
-
 std::vector<std::string> &Split(const std::string &s, char delim, std::vector<std::string> &elems)
 { // dzieli tekst na wektor tekstow
 

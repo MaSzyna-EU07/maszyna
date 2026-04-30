@@ -1600,7 +1600,9 @@ transcripts_panel::update() {
 
 	for( auto const &transcript : ui::Transcripts.aLines ) {
 		if( Global.fTimeAngleDeg + ( transcript.fShow - Global.fTimeAngleDeg > 180 ? 360 : 0 ) < transcript.fShow ) { continue; }
-		text_lines.emplace_back( ExchangeCharInString( transcript.asText, '|', ' ' ), colors::white );
+		std::string text = transcript.asText;
+		std::ranges::replace(text, '|', ' ');
+		text_lines.emplace_back( text, colors::white );
 	}
 }
 
