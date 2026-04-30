@@ -96,8 +96,8 @@ bool ClearFlag(int &Flag, int const Value)
 
 double Random(double a, double b)
 {
-	uint32_t val = Global.random_engine();
-	return interpolate(a, b, (double)val / Global.random_engine.max());
+	std::uniform_real_distribution<double> dist(a, b);
+	return dist(Global.random_engine);
 }
 
 int RandomInt(int min, int max)
