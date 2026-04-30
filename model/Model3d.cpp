@@ -1409,11 +1409,7 @@ void TSubModel::ParentMatrix(glm::mat4 *m) const
 	{
 		// for given step in hierarchy there can be custom transformation matrix, or no transformation
 		// retrieve it...
-		submodelmatrix = glm::mat4(1);
-		if (submodel->GetMatrix())
-		{
-			submodelmatrix = glm::mat4(*submodel->GetMatrix());
-		}
+		submodelmatrix = submodel->GetMatrix() ? glm::mat4(*submodel->GetMatrix()) : glm::mat4(1);
 		// ...potentially adjust transformations of the root matrix if the model wasn't yet initialized...
 		if ((submodel->Parent == nullptr) && (false == submodel->m_rotation_init_done))
 		{
