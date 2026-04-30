@@ -415,7 +415,7 @@ bool NvTexture::CreateRhiTexture() {
   backend->GetDevice()->executeCommandList(command_list,
                                            nvrhi::CommandQueue::Graphics);
   if (m_sz_texture->get_type() == "make:") {
-    auto const components{Split(std::string(m_sz_texture->get_name()), '?')};
+    auto const components{Split(m_sz_texture->get_name(), '?')};
 
     auto dictionary = std::make_shared<dictionary_source>(components.back());
 

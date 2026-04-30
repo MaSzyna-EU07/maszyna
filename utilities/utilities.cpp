@@ -15,6 +15,7 @@ Copyright (C) 2007-2014 Maciej Cierniak
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <ranges>
 #ifndef WIN32
 #include <unistd.h>
 #endif
@@ -154,35 +155,12 @@ bool FuzzyLogicAI(double Test, double Threshold, double Probability)
 		return false;
 }
 
-std::vector<std::string> &Split(const std::string &s, char delim, std::vector<std::string> &elems)
+std::vector<std::string> Split(std::string_view s, char delim)
 { // dzieli tekst na wektor tekstow
-
-	std::stringstream ss(s);
-	std::string item;
-	while (std::getline(ss, item, delim))
-	{
-		elems.push_back(item);
-	}
-	return elems;
-}
-
-std::vector<std::string> Split(const std::string &s, char delim)
-{ // dzieli tekst na wektor tekstow
-	std::vector<std::string> elems;
-	Split(s, delim, elems);
-	return elems;
-}
-
-std::vector<std::string> Split(const std::string &s)
-{ // dzieli tekst na wektor tekstow po białych znakach
-	std::vector<std::string> elems;
-	std::stringstream ss(s);
-	std::string item;
-	while (ss >> item)
-	{
-		elems.push_back(item);
-	}
-	return elems;
+	std::vector<std::string> out;
+	for (const auto& part : s | std::ranges::views::split(delim))
+		out.emplace_back(part.begin(), part.end());
+	return out;
 }
 
 std::pair<std::string, int> split_string_and_number(std::string const &Key)

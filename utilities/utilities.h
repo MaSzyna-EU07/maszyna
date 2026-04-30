@@ -122,9 +122,7 @@ bool FuzzyLogicAI(double Test, double Threshold, double Probability);
 /*to samo ale zawsze niezaleznie od DebugFlag*/
 
 /*operacje na stringach*/
-std::vector<std::string> &Split(const std::string &s, char delim, std::vector<std::string> &elems);
-std::vector<std::string> Split(const std::string &s, char delim);
-// std::vector<std::string> Split(const std::string &s);
+std::vector<std::string> Split(std::string_view s, char delim);
 std::pair<std::string, int> split_string_and_number(std::string const &Key);
 
 std::string to_string(int Value);
