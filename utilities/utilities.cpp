@@ -154,22 +154,6 @@ bool FuzzyLogicAI(double Test, double Threshold, double Probability)
 		return false;
 }
 
-std::string DUE(std::string s) /*Delete Before Equal sign*/
-{
-	// DUE = Copy(s, Pos("=", s) + 1, length(s));
-	return s.substr(s.find("=") + 1, s.length());
-}
-
-std::string DWE(std::string s) /*Delete After Equal sign*/
-{
-	size_t ep = s.find("=");
-	if (ep != std::string::npos)
-		// DWE = Copy(s, 1, ep - 1);
-		return s.substr(0, ep);
-	else
-		return s;
-}
-
 std::string ExchangeCharInString(std::string const &Source, char const From, char const To)
 {
 	std::string replacement;

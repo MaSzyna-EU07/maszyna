@@ -122,8 +122,6 @@ bool FuzzyLogicAI(double Test, double Threshold, double Probability);
 /*to samo ale zawsze niezaleznie od DebugFlag*/
 
 /*operacje na stringach*/
-std::string DUE(std::string s); /*Delete Until Equal sign*/
-std::string DWE(std::string s); /*Delete While Equal sign*/
 std::string ExchangeCharInString(std::string const &Source, char const From, char const To); // zamienia jeden znak na drugi
 std::vector<std::string> &Split(const std::string &s, char delim, std::vector<std::string> &elems);
 std::vector<std::string> Split(const std::string &s, char delim);
