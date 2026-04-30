@@ -225,7 +225,7 @@ public:
     // sets activation threshold of self-illumination to specitied value
     void SetSelfIllum( float const Threshold, bool const Includechildren = false, bool const Includesiblings = false );
 	inline glm::vec3 Translation1Get() {
-        return fMatrix ? glm::vec3((*fMatrix)[3]) + v_TransVector:v_TransVector;
+		return fMatrix ? glm::vec3((*fMatrix)[3]) + v_TransVector : v_TransVector;
 	}
 	inline glm::vec3 Translation2Get() {
 		return glm::vec3((*fMatrix)[3]) + Child->Translation1Get(); }
