@@ -16,7 +16,7 @@ void scenery_scanner::scan()
 		if (*(path.filename().string().begin()) == '$')
 			continue;
 
-		if (string_ends_with(path.string(), ".scn"))
+		if (path.string().ends_with(".scn"))
 			scan_scn(path);
 	}
 
@@ -50,7 +50,7 @@ void scenery_scanner::scan_scn(std::filesystem::path path)
 	{
 		line_counter++;
 
-		if (line.size() < 6 || !string_starts_with(line, "//$"))
+		if (line.size() < 6 || !line.starts_with("//$"))
 			continue;
 
 		if (line[3] == 'i')

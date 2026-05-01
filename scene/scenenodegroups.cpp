@@ -111,7 +111,7 @@ node_groups::update_map()
 		for (basic_node *node : group.nodes) {
 			std::string postfix { "_sem_mem" };
 
-			if (typeid(*node) == typeid(TMemCell) && string_ends_with(node->name(), postfix)) {
+			if (typeid(*node) == typeid(TMemCell) && node->name().ends_with(postfix)) {
 				std::string sem_name = node->name().substr(0, node->name().length() - postfix.length());
 
 				auto sem_info = std::make_shared<map::semaphore>();
@@ -122,7 +122,7 @@ node_groups::update_map()
 				sem_info->name = sem_name;
 
 				for (basic_event *event : group.events) {
-					if (string_starts_with(event->name(), sem_name)
+					if (event->name().starts_with(sem_name)
 					        && event->name().substr(sem_name.length()).find("sem") == std::string::npos) {
 						sem_info->events.push_back(event);
 					}
@@ -130,7 +130,7 @@ node_groups::update_map()
 
 				for (basic_node *node : group.nodes)
 					if (auto *model = dynamic_cast<TAnimModel*>(node))
-						if (string_starts_with(model->name(), sem_name))
+						if (model->name().starts_with(sem_name))
 							sem_info->models.push_back(model);
 			}
 

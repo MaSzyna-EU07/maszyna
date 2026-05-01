@@ -215,22 +215,6 @@ std::string to_minutes_str(float const Minutes, bool const Leadingzero, int cons
 	return (minutes.substr(minutes.size() - width, width) + fractionlabels[static_cast<int>(std::floor(minutesfractional * 10 + 0.1))]);
 }
 
-bool string_ends_with(const std::string &string, const std::string &ending)
-{
-	if (string.length() < ending.length())
-		return false;
-
-	return string.compare(string.length() - ending.length(), ending.length(), ending) == 0;
-}
-
-bool string_starts_with(const std::string &string, const std::string &begin)
-{
-	if (string.length() < begin.length())
-		return false;
-
-	return string.compare(0, begin.length(), begin) == 0;
-}
-
 int stol_def(const std::string &str, const int &DefaultValue)
 {
 
