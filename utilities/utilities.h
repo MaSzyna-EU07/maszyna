@@ -243,17 +243,12 @@ template <typename T> inline void SafeDeleteArray(T *&Pointer)
 	Pointer = nullptr;
 }
 
-template <typename Type_> Type_ is_equal(Type_ const &Left, Type_ const &Right, Type_ const Epsilon = 1e-5)
+template <typename T> bool is_equal(T const &Left, T const &Right, T const Epsilon = T(1e-5))
 {
-
-	if (Epsilon != 0)
-	{
+	if (Epsilon != T(0))
 		return glm::epsilonEqual(Left, Right, Epsilon);
-	}
-	else
-	{
-		return (Left == Right);
-	}
+
+	return (Left == Right);
 }
 
 template <typename Type_> Type_ clamp(Type_ const Value, Type_ const Min, Type_ const Max)
