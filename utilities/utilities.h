@@ -224,7 +224,7 @@ void replace_slashes(std::string &Filename);
 std::string_view substr_path(std::string const &Filename);
 
 // returns common prefix of two provided strings
-std::ptrdiff_t len_common_prefix(std::string const &Left, std::string const &Right);
+std::ptrdiff_t len_common_prefix(std::string_view a, std::string_view b);
 
 // returns true if provided string ends with another provided string
 bool ends_with(std::string_view String, std::string_view Suffix);

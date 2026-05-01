@@ -398,13 +398,10 @@ std::string_view substr_path(std::string const &Filename)
 }
 
 // returns length of common prefix between two provided strings
-std::ptrdiff_t len_common_prefix(std::string const &Left, std::string const &Right)
+std::ptrdiff_t len_common_prefix(std::string_view a, std::string_view b)
 {
-
-	auto const *left{Left.data()};
-	auto const *right{Right.data()};
-	// compare up to the length of the shorter string
-	return (Right.size() <= Left.size() ? std::distance(right, std::mismatch(right, right + Right.size(), left).first) : std::distance(left, std::mismatch(left, left + Left.size(), right).first));
+	auto [it1, it2] = std::ranges::mismatch(a, b);
+	return std::distance(a.begin(), it1);
 }
 
 // returns true if provided string ends with another provided string

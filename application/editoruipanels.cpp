@@ -237,7 +237,7 @@ void itemproperties_panel::update_group()
 			for (auto const &name : names)
 			{
 				// NOTE: first calculation runs over two instances of the same name, but, eh
-				auto const prefixlength{len_common_prefix(m_groupprefix, name)};
+				auto const prefixlength{len_common_prefix(m_groupprefix, name.get())};
 				if (prefixlength > 0)
 				{
 					m_groupprefix = m_groupprefix.substr(0, prefixlength);
