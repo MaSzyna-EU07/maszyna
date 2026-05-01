@@ -270,7 +270,7 @@ opengl_texture::load() {
                 WriteLog( "Warning: dimensions of texture \"" + name + "\" aren't powers of 2", logtype::texture );
             }
         }
-        if( ( quantize( data_width, 4 ) != data_width ) || ( quantize( data_height, 4 ) != data_height ) ) {
+        if( ( quantize( data_width, 4u ) != data_width ) || ( quantize( data_height, 4u ) != data_height ) ) {
             WriteLog( "Warning: dimensions of texture \"" + name + "\" aren't multiples of 4", logtype::texture );
         }
 

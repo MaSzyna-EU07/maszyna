@@ -119,7 +119,7 @@ public:
     bool is_texstub = false; // for make_from_memory internal_src: functionality
     std::vector<unsigned char> data; // texture data (stored GL-style, bottom-left origin)
     resource_state data_state{ resource_state::none }; // current state of texture data
-    int data_width{ 0 },
+    unsigned int data_width{ 0 },
         data_height{ 0 },
         data_mapcount{ 0 };
     GLint data_format{ 0 },

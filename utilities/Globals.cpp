@@ -284,17 +284,17 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
 
     if (token == "maxtexturesize")
     {
-        int size = 0;
+		unsigned int size = 0;
         ParseOne(Parser, size, 1, false);
-        iMaxTextureSize = clamp_power_of_two(size, 64, 8192);
+		iMaxTextureSize = static_cast<GLint>(clamp_power_of_two(size, 64u, 8192u));
         return true;
     }
 
     if (token == "maxcabtexturesize")
     {
-        int size = 0;
+		unsigned int size = 0;
         ParseOne(Parser, size, 1, false);
-        iMaxCabTextureSize = clamp_power_of_two(size, 512, 8192);
+		iMaxCabTextureSize = static_cast<GLint>(clamp_power_of_two(size, 512u, 8192u));
         return true;
     }
 

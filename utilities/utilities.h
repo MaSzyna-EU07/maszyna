@@ -269,17 +269,17 @@ template <typename T> T clamp_circular(T Value, T const Range = T(360))
 }
 
 // rounds down provided value to nearest power of two
-template <typename Type_> Type_ clamp_power_of_two(Type_ Value, Type_ const Min = static_cast<Type_>(1), Type_ const Max = static_cast<Type_>(16384))
+template <typename T> T clamp_power_of_two(T Value, T const Min = T(1), T const Max = T(16384))
 {
+	if (Value < Min)
+		return Min;
 
-	Type_ p2size{Min};
-	Type_ size;
-	while ((p2size <= Max) && (p2size <= Value))
-	{
-		size = p2size;
-		p2size = p2size << 1;
-	}
-	return size;
+	T p2 = std::bit_floor(Value);
+
+	if (p2 > Max)
+		return Max;
+
+	return p2;
 }
 
 template <typename Type_> Type_ quantize(Type_ const Value, Type_ const Step)
