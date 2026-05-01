@@ -380,8 +380,6 @@ glm::dvec3 LoadPoint(class cParser &Input);
 // extracts a group of tokens from provided data stream
 std::string deserialize_random_set(cParser &Input, char const *Break = "\n\r\t ;");
 
-int count_trailing_zeros(uint32_t val);
-
 // extracts a group of <key, value> pairs from provided data stream
 // NOTE: expects no more than single pair per line
 template <typename MapType_> void deserialize_map(MapType_ &Map, cParser &Input)

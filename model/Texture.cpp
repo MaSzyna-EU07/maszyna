@@ -982,11 +982,11 @@ opengl_texture::create( bool const Static ) {
             if (Global.gfx_usegles)
             {
                 if( target == GL_TEXTURE_2D )
-                    glTexStorage2D(target, count_trailing_zeros(std::max(data_width, data_height)) + 1, data_format, data_width, data_height);
+					glTexStorage2D(target, std::countr_zero(static_cast<unsigned int>(std::max(data_width, data_height))) + 1, data_format, data_width, data_height);
                 else if( target == GL_TEXTURE_2D_MULTISAMPLE )
                     glTexStorage2DMultisample( target, samples, data_format, data_width, data_height, GL_FALSE );
                 else if( target == GL_TEXTURE_2D_ARRAY )
-                    glTexStorage3D( target, count_trailing_zeros( std::max( data_width, data_height ) ) + 1, data_format, data_width, data_height, layers );
+					glTexStorage3D(target, std::countr_zero(static_cast<unsigned int>(std::max(data_width, data_height))) + 1, data_format, data_width, data_height, layers);
                 else if( target == GL_TEXTURE_2D_MULTISAMPLE_ARRAY )
                     glTexStorage3DMultisample( target, samples, data_format, data_width, data_height, layers, GL_FALSE );
             }
