@@ -319,6 +319,12 @@ int eu07_application::init(int Argc, char *Argv[])
 		return result;
 	}
 
+	// configure the OS console according to Globals.ShowSystemConsole.
+	// must run AFTER init_settings (so the ini-loaded value is honoured) and
+	// BEFORE the first WriteLog below (so colored \033[...] sequences emitted
+	// by utilities/Logs.cpp land in a console with VT processing enabled).
+	init_console();
+
 	WriteLog("Starting MaSzyna rail vehicle simulator (release: " + Global.asVersion + ")");
 	WriteLog("For online documentation and additional files refer to: http://eu07.pl");
 	WriteLog("Authors: Marcin_EU, McZapkie, ABu, Winger, Tolaris, nbmx, OLO_EU, Bart, Quark-t, "
@@ -975,6 +981,102 @@ void eu07_application::init_debug()
 	// this will turn on FPE for #IND and zerodiv
 	state = _control87( state & ~( _EM_ZERODIVIDE | _EM_INVALID ), _MCW_EM );
 	*/
+#endif
+}
+
+// Honours Globals.ShowSystemConsole (default: true).
+//
+// Windows: if the toggle is on, ensure a console is attached (allocate one when
+// the binary was linked as the WINDOWS subsystem and none is inherited), then
+// reopen the C stdio streams onto it and turn on ENABLE_VIRTUAL_TERMINAL_PROCESSING
+// so the ANSI colour escapes used by utilities/Logs.cpp render correctly.
+// If the toggle is off, hide the console window (or free an allocated one) so
+// the GUI launches without a stray cmd window.
+//
+// Other platforms: no-op. stdout is the launching terminal (or already detached);
+// hiding it on Linux/macOS would mean redirecting to /dev/null and is left to the
+// user's shell (e.g. "./eu07 >/dev/null 2>&1").
+void eu07_application::init_console()
+{
+#ifdef _WIN32
+	HWND consoleWnd = ::GetConsoleWindow();
+	const bool hadConsole = (consoleWnd != nullptr);
+
+	if (Global.ShowSystemConsole)
+	{
+		if (!hadConsole)
+		{
+			// no console inherited (e.g. WINDOWS subsystem build, or launched
+			// detached) -- create one and wire stdio to it so printf in
+			// utilities/Logs.cpp actually reaches the user
+			if (::AllocConsole())
+			{
+				FILE *fp = nullptr;
+				freopen_s(&fp, "CONOUT$", "w", stdout);
+				freopen_s(&fp, "CONOUT$", "w", stderr);
+				freopen_s(&fp, "CONIN$",  "r", stdin);
+				// keep C++ streams in sync with the redirected C streams
+				std::ios::sync_with_stdio(true);
+				std::cout.clear();
+				std::cerr.clear();
+				std::clog.clear();
+				std::cin.clear();
+				consoleWnd = ::GetConsoleWindow();
+			}
+		}
+
+		// enable ANSI virtual-terminal processing so the colour escapes in
+		// utilities/Logs.cpp ("\033[1;37;41m...", "\033[32m...") render as
+		// colours instead of literal garbage on the conhost.
+		//
+		// IMPORTANT: do NOT rely on GetStdHandle(STD_OUTPUT_HANDLE). After
+		// AllocConsole + freopen_s the CRT may have rewired things, and on a
+		// console-subsystem build the std handle can also point to a redirected
+		// pipe/file rather than the actual console screen buffer -- in either
+		// case SetConsoleMode silently fails and the escape bytes leak through
+		// as text ("←[32m" etc). Open CONOUT$ directly to get the real screen
+		// buffer handle, then flip VT on it.
+		auto enable_vt = [](const char *devName) {
+			HANDLE h = ::CreateFileA(
+				devName,
+				GENERIC_READ | GENERIC_WRITE,
+				FILE_SHARE_READ | FILE_SHARE_WRITE,
+				nullptr,
+				OPEN_EXISTING,
+				0,
+				nullptr);
+			if (h == INVALID_HANDLE_VALUE)
+				return;
+			DWORD mode = 0;
+			if (::GetConsoleMode(h, &mode))
+			{
+				::SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING | ENABLE_PROCESSED_OUTPUT);
+			}
+			::CloseHandle(h);
+		};
+		// CONOUT$ is the console's active screen buffer; enabling VT on it
+		// affects everything that ends up being written there, regardless of
+		// which FILE* / std handle the writer used
+		enable_vt("CONOUT$");
+
+		if (consoleWnd)
+		{
+			::ShowWindow(consoleWnd, SW_SHOW);
+			// give the console a recognisable title
+			::SetConsoleTitleA("MaSzyna log");
+		}
+	}
+	else
+	{
+		// user wants no console window -- hide whatever we have
+		if (consoleWnd)
+		{
+			::ShowWindow(consoleWnd, SW_HIDE);
+		}
+		// if we'd allocated one ourselves on a previous run path we'd FreeConsole here,
+		// but on first init the console (if any) was inherited from the launcher and
+		// belongs to it -- just hiding the window is the least-surprising behaviour
+	}
 #endif
 }
 

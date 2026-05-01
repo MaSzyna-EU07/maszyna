@@ -1086,6 +1086,12 @@ bool global_settings::ConfigParseDebug(cParser& Parser, const std::string& token
         return true;
     }
 
+    if (token == "showsystemconsole")
+    {
+        ParseOne(Parser, ShowSystemConsole);
+        return true;
+    }
+
     if (token == "shakefactor")
     {
         ParseOne(Parser, ShakingMultiplierBF);
@@ -1516,6 +1522,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "fullphysics", FullPhysics );
     export_as_text( Output, "debuglog", iWriteLogEnabled );
     export_as_text( Output, "multiplelogs", MultipleLogs );
+    export_as_text( Output, "showsystemconsole", ShowSystemConsole );
     export_as_text( Output, "logs.filter", DisabledLogTypes );
     Output
         << "mousescale "
