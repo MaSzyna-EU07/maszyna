@@ -380,18 +380,14 @@ bool erase_extension(std::string &Filename)
 
 void erase_leading_slashes(std::string &Filename)
 {
-
-	while (Filename[0] == '/')
-	{
-		Filename.erase(0, 1);
-	}
+	auto pos = Filename.find_first_not_of('/');
+	Filename.erase(0, pos);
 }
 
 // potentially replaces backward slashes in provided file path with unix-compatible forward slashes
 void replace_slashes(std::string &Filename)
 {
-
-	std::replace(std::begin(Filename), std::end(Filename), '\\', '/');
+	std::ranges::replace(Filename, '\\', '/');
 }
 
 // returns potential path part from provided file name
