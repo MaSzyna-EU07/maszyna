@@ -135,8 +135,8 @@ std::string generate_uuid_v4()
 
 double LocalRandom(double a, double b)
 {
-	uint32_t val = Global.local_random_engine();
-	return interpolate(a, b, (double)val / Global.random_engine.max());
+	std::uniform_real_distribution<double> dist(a, b);
+	return dist(Global.local_random_engine);
 }
 
 bool FuzzyLogic(double Test, double Threshold, double Probability)
