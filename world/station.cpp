@@ -29,9 +29,7 @@ basic_station::update_load( TDynamicObject *First, Mtable::TTrainParameters &Sch
     // HACK: determine whether current station is a (small) stop from the presence of "po" at the name end
     auto const stationname { Schedule.TimeTable[ Schedule.StationIndex ].StationName };
     auto const stationequipment { Schedule.TimeTable[ Schedule.StationIndex ].StationWare };
-    auto const trainstop { (
-        ( ends_with( stationname, "po" ) )
-     || ( contains( stationequipment, "po" ) ) ) };
+    auto const trainstop {stationname.ends_with("po") || contains( stationequipment, "po" ) };
     auto const maintenancestop { ( contains( stationequipment, "pt" ) ) };
     // train stops exchange smaller groups than regular stations
     // NOTE: this is crude and unaccurate, but for now will do

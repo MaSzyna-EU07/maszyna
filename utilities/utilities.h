@@ -226,10 +226,6 @@ std::string_view substr_path(std::string const &Filename);
 // returns common prefix of two provided strings
 std::ptrdiff_t len_common_prefix(std::string_view a, std::string_view b);
 
-// returns true if provided string ends with another provided string
-bool ends_with(std::string_view String, std::string_view Suffix);
-// returns true if provided string begins with another provided string
-bool starts_with(std::string_view String, std::string_view Prefix);
 // returns true if provided string contains another provided string
 bool contains(std::string_view const String, std::string_view Substring);
 bool contains(std::string_view const String, char Character);

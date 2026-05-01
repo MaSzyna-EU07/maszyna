@@ -71,7 +71,7 @@ TCommandType TMemCell::CommandCheck()
         eCommand = TCommandType::cm_OutsideStation;
         bCommand = false; // tego nie powinno być w komórce
     }
-    else if( starts_with( szText, "PassengerStopPoint:" ) ) // porównanie początków
+    else if( szText.starts_with("PassengerStopPoint:") ) // porównanie początków
     {
         eCommand = TCommandType::cm_PassengerStopPoint;
         bCommand = false; // tego nie powinno być w komórce

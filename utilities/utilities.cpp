@@ -404,30 +404,16 @@ std::ptrdiff_t len_common_prefix(std::string_view a, std::string_view b)
 	return std::distance(a.begin(), it1);
 }
 
-// returns true if provided string ends with another provided string
-bool ends_with(std::string_view String, std::string_view Suffix)
-{
-
-	return (String.size() >= Suffix.size()) && (0 == String.compare(String.size() - Suffix.size(), Suffix.size(), Suffix));
-}
-
-// returns true if provided string begins with another provided string
-bool starts_with(std::string_view const String, std::string_view Prefix)
-{
-
-	return (String.size() >= Prefix.size()) && (0 == String.compare(0, Prefix.size(), Prefix));
-}
-
 // returns true if provided string contains another provided string
 bool contains(std::string_view const String, std::string_view Substring)
 {
-
+	// To be replaced with string::contains in C++ 23
 	return (String.find(Substring) != std::string::npos);
 }
 
 bool contains(std::string_view const String, char Character)
 {
-
+	// To be replaced with string::contains in C++ 23
 	return (String.find(Character) != std::string::npos);
 }
 

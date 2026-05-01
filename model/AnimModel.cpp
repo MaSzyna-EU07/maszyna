@@ -288,7 +288,7 @@ bool TAnimModel::Load(cParser *parser, bool ter)
         { // gdy brak modelu
             if (ter) // jeśli teren
             {
-				if( ends_with( name, ".t3d" ) ) {
+				if( name.ends_with(".t3d") ) {
 					name[ name.length() - 3 ] = 'e';
 				}
 #ifdef EU07_USE_OLD_TERRAINCODE

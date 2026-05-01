@@ -298,7 +298,7 @@ basic_event::deserialize( cParser &Input, scene::scratch_data &Scratchpad ) {
     Input >> token;
     deserialize_targets( token );
 
-    if( starts_with( m_name, "none_" ) ) {
+    if( m_name.starts_with("none_") ) {
         m_ignored = true; // Ra: takie są ignorowane
     }
 
@@ -716,7 +716,7 @@ putvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
     Input.getTokens( 1, false ); // komendy 'case sensitive'
     Input >> token;
     // command type, previously held in param 6
-    if( starts_with( token, "PassengerStopPoint:" ) ) {
+    if( token.starts_with("PassengerStopPoint:") ) {
         if( contains( token, '#' ) ) {
             token.erase( token.find( '#' ) ); // obcięcie unikatowości
         }
@@ -835,8 +835,9 @@ putvalues_event::export_as_text_( std::ostream &Output ) const {
 bool
 putvalues_event::is_command_for_owner( input_data const &Input ) const {
 
-    if( starts_with( Input.data_text, "Load=" ) )   { return false; }
-    if( starts_with( Input.data_text, "UnLoad=" ) ) { return false; }
+    if (Input.data_text.starts_with("Load=") || Input.data_text.starts_with("UnLoad=")) {
+		return false;
+	}
     // TBD, TODO: add other exceptions
 
     return true;
@@ -1268,7 +1269,7 @@ multi_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
         }
         else {
             // potentially valid event name
-            if( starts_with( token, "none_" ) ) {
+            if( token.starts_with("none_") ) {
                 // eventy rozpoczynające się od "none_" są ignorowane
                 WriteLog( "Multi-event \"" + m_name + "\" ignored link to event \"" + token + "\"" );
             }
@@ -1650,7 +1651,7 @@ animation_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
             >> m_animationparams[ 2 ]
             >> m_animationparams[ 3 ];
     }
-    else if( ends_with( token, ".vmd" ) ) // na razie tu, może będzie inaczej
+    else if( token.ends_with(".vmd") ) // na razie tu, może będzie inaczej
     { // animacja z pliku VMD
         {
             m_animationfilename = token;
@@ -2305,15 +2306,15 @@ event_manager::insert( basic_event *Event ) {
             return false;
         }
         // tymczasowo wyjątki:
-        else if( ends_with( Event->m_name, "lineinfo:" ) ) {
+        else if( Event->m_name.ends_with("lineinfo:") ) {
             // tymczasowa utylizacja duplikatów W5
             return false;
         }
-        else if( ends_with( Event->m_name, "_warning" ) ) {
+        else if( Event->m_name.ends_with("_warning") ) {
             // tymczasowa utylizacja duplikatu z trąbieniem
             return false;
         }
-        else if( ends_with( Event->m_name, "_shp" ) ) {
+        else if( Event->m_name.ends_with("_shp") ) {
             // nie podlegają logowaniu
             // tymczasowa utylizacja duplikatu SHP
             return false;

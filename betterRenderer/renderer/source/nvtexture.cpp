@@ -305,7 +305,7 @@ size_t NvTextureManager::FetchTexture(std::string path, int format_hint,
     path = ToLower(path);
     // temporary code for legacy assets -- textures with names beginning with #
     // are to be sharpened
-    if ((starts_with(path, "#")) || (contains(path, "/#"))) {
+    if (path.starts_with("#") || contains(path, "/#")) {
       traits += '#';
     }
   }

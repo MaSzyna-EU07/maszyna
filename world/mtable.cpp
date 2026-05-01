@@ -611,7 +611,7 @@ TTrainParameters::load_sounds() {
         }
         // specified arrival time means it's a scheduled stop
         auto const stationname { (
-            ends_with( station.StationName, "_po" ) ?
+            station.StationName.ends_with("_po") ?
                 station.StationName.substr( 0, station.StationName.size() - 3 ) :
                 station.StationName ) };
 

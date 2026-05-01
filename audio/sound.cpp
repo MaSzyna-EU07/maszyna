@@ -190,7 +190,7 @@ sound_source::deserialize_mapping( cParser &Input ) {
         }
         m_soundproofing = soundproofing;
     }
-    else if( starts_with( key, "sound" ) ) {
+    else if( key.starts_with("sound") ) {
         // sound chunks, defined with key soundX where X = activation threshold
         auto const indexstart { key.find_first_of( "-1234567890" ) };
         auto const indexend { key.find_first_not_of( "-1234567890", indexstart ) };
@@ -221,7 +221,7 @@ sound_source::deserialize_mapping( cParser &Input ) {
                 Input.getToken<float>( false, "\n\r\t ,;" ),
                 0.0f, 1.0f );
     }
-    else if( starts_with( key, "pitch" ) ) {
+	else if ( key.starts_with("pitch") ) {
         // sound chunk pitch, defined with key pitchX where X = activation threshold
         auto const indexstart { key.find_first_of( "-1234567890" ) };
         auto const indexend { key.find_first_not_of( "-1234567890", indexstart ) };

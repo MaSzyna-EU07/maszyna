@@ -9546,8 +9546,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 
 		inputline = fizparser.getToken<std::string>(false, "\n\r");
 
-		bool comment = ((contains(inputline, '#')) || (starts_with(inputline, "//")));
-		if (true == comment)
+		if (inputline.starts_with("//") || contains(inputline, '#'))
 		{
 			// skip commented lines
 			continue;
