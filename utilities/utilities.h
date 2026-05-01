@@ -252,13 +252,19 @@ template <typename T> bool is_equal(T const &Left, T const &Right, T const Epsil
 }
 
 // keeps the provided value in specified range 0-Range, as if the range was circular buffer
-template <typename Type_> Type_ clamp_circular(Type_ Value, Type_ const Range = static_cast<Type_>(360))
+template <typename T> T clamp_circular(T Value, T const Range = T(360))
 {
+	if constexpr (std::is_floating_point_v<T>)
+	{
+		Value = std::fmod(Value, Range);
+	}
+	else
+	{
+		Value %= Range;
+	}
 
-	Value -= Range * (int)(Value / Range); // clamp the range to 0-360
-	if (Value < Type_(0))
+	if (Value < T(0))
 		Value += Range;
-
 	return Value;
 }
 
