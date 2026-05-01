@@ -288,15 +288,15 @@ template <typename Type_> Type_ quantize(Type_ const Value, Type_ const Step)
 	return (Step * std::round(Value / Step));
 }
 
-template <typename Type_> Type_ min_speed(Type_ const Left, Type_ const Right)
+template <typename T> T min_speed(T const Left, T const Right)
 {
-
-	if (Left == Right)
-	{
+	constexpr T none = T(-1);
+	if (Left == none)
+		return Right;
+	if (Right == none)
 		return Left;
-	}
 
-	return std::min((Left != -1 ? Left : std::numeric_limits<Type_>::max()), (Right != -1 ? Right : std::numeric_limits<Type_>::max()));
+	return std::min(Left, Right);
 }
 
 template <typename Type_> Type_ interpolate(Type_ const &First, Type_ const &Second, float const Factor)
