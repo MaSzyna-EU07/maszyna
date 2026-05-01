@@ -125,10 +125,7 @@ bool FuzzyLogicAI(double Test, double Threshold, double Probability);
 std::vector<std::string> Split(std::string_view s, char delim);
 std::pair<std::string, int> split_string_and_number(std::string const &Key);
 
-std::string to_string(int Value);
-std::string to_string(unsigned int Value);
 std::string to_string(int Value, int width);
-std::string to_string(double Value);
 std::string to_string(double Value, int precision);
 std::string to_string(double Value, int precision, int width);
 std::string to_hex_str(int const Value, int const width = 4);

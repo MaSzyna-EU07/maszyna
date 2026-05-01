@@ -175,56 +175,45 @@ std::pair<std::string, int> split_string_and_number(std::string const &Key)
 	return {Key, 0};
 }
 
-std::string to_string(int Value)
-{
-	std::ostringstream o;
-	o << Value;
-	return o.str();
-};
-
-std::string to_string(unsigned int Value)
-{
-	std::ostringstream o;
-	o << Value;
-	return o.str();
-};
-
-std::string to_string(double Value)
-{
-	std::ostringstream o;
-	o << Value;
-	return o.str();
-};
-
 std::string to_string(int Value, int width)
 {
 	std::ostringstream o;
-	o.width(width);
-	o << Value;
-	return o.str();
+	o << std::setw(width) << Value;
+	return std::move(o).str();
 };
 
 std::string to_string(double Value, int precision)
 {
 	std::ostringstream o;
-	o << std::fixed << std::setprecision(precision);
-	o << Value;
-	return o.str();
+	o << std::fixed << std::setprecision(precision) << Value;
+	return std::move(o).str();
 };
 
 std::string to_string(double const Value, int const Precision, int const Width)
 {
-	std::ostringstream converter;
-	converter << std::setw(Width) << std::fixed << std::setprecision(Precision) << Value;
-	return converter.str();
+	std::ostringstream o;
+	o << std::setw(Width) << std::fixed << std::setprecision(Precision) << Value;
+	return std::move(o).str();
 };
 
 std::string to_hex_str(int const Value, int const Width)
 {
-	std::ostringstream converter;
-	converter << "0x" << std::uppercase << std::setfill('0') << std::setw(Width) << std::hex << Value;
-	return converter.str();
+	std::ostringstream o;
+	o << "0x" << std::uppercase << std::setfill('0') << std::setw(Width) << std::hex << Value;
+	return o.str();
 };
+
+std::string const fractionlabels[] = {" ", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"};
+
+std::string to_minutes_str(float const Minutes, bool const Leadingzero, int const Width)
+{
+
+	float minutesintegral;
+	auto const minutesfractional{std::modf(Minutes, &minutesintegral)};
+	auto const width{Width - 1};
+	auto minutes = (std::string(width - 1, ' ') + (Leadingzero ? to_string(100 + minutesintegral).substr(1, 2) : to_string(minutesintegral, 0)));
+	return (minutes.substr(minutes.size() - width, width) + fractionlabels[static_cast<int>(std::floor(minutesfractional * 10 + 0.1))]);
+}
 
 bool string_ends_with(const std::string &string, const std::string &ending)
 {
@@ -240,18 +229,6 @@ bool string_starts_with(const std::string &string, const std::string &begin)
 		return false;
 
 	return string.compare(0, begin.length(), begin) == 0;
-}
-
-std::string const fractionlabels[] = {" ", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"};
-
-std::string to_minutes_str(float const Minutes, bool const Leadingzero, int const Width)
-{
-
-	float minutesintegral;
-	auto const minutesfractional{std::modf(Minutes, &minutesintegral)};
-	auto const width{Width - 1};
-	auto minutes = (std::string(width - 1, ' ') + (Leadingzero ? to_string(100 + minutesintegral).substr(1, 2) : to_string(minutesintegral, 0)));
-	return (minutes.substr(minutes.size() - width, width) + fractionlabels[static_cast<int>(std::floor(minutesfractional * 10 + 0.1))]);
 }
 
 int stol_def(const std::string &str, const int &DefaultValue)
