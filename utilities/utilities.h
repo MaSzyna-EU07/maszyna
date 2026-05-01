@@ -230,13 +230,14 @@ std::ptrdiff_t len_common_prefix(std::string_view a, std::string_view b);
 bool contains(std::string_view const String, std::string_view Substring);
 bool contains(std::string_view const String, char Character);
 
-template <typename Type_> void SafeDelete(Type_ &Pointer)
+// TODO: Ideally unique_ptr should be used instead of this (not safe) inline functions
+template <typename T> inline void SafeDelete(T* &Pointer)
 {
 	delete Pointer;
 	Pointer = nullptr;
 }
 
-template <typename Type_> void SafeDeleteArray(Type_ &Pointer)
+template <typename T> inline void SafeDeleteArray(T *&Pointer)
 {
 	delete[] Pointer;
 	Pointer = nullptr;
