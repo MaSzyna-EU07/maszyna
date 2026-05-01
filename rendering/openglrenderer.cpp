@@ -1507,7 +1507,7 @@ bool
 opengl_renderer::Render( world_environment *Environment ) {
 
     // calculate shadow tone, based on positions of celestial bodies
-    m_shadowcolor = interpolate(
+	m_shadowcolor = glm::mix(
         glm::vec4{ colors::shadow },
         glm::vec4{ colors::white },
         std::clamp( -Environment->m_sun.getAngle(), 0.f, 6.f ) / 6.f );
@@ -1570,7 +1570,7 @@ opengl_renderer::Render( world_environment *Environment ) {
 
     auto const fogfactor { std::clamp( Global.fFogEnd / 2000.f, 0.f, 1.f ) }; // closer/denser fog reduces opacity of the celestial bodies
     float const duskfactor = 1.0f - std::clamp( std::abs( Environment->m_sun.getAngle() ), 0.0f, 12.0f ) / 12.0f;
-    glm::vec3 suncolor = interpolate(
+	glm::vec3 suncolor = glm::mix(
         glm::vec3( 255.0f / 255.0f, 242.0f / 255.0f, 231.0f / 255.0f ),
         glm::vec3( 235.0f / 255.0f, 140.0f / 255.0f, 36.0f / 255.0f ),
         duskfactor );
@@ -1586,7 +1586,7 @@ opengl_renderer::Render( world_environment *Environment ) {
         ::glLoadIdentity(); // macierz jedynkowa
         ::glTranslatef( sunposition.x, sunposition.y, sunposition.z ); // początek układu zostaje bez zmian
 
-        float const size = interpolate( // TODO: expose distance/scale factor from the moon object
+        float const size = std::lerp( // TODO: expose distance/scale factor from the moon object
             0.0325f,
             0.0275f,
             std::clamp( Environment->m_sun.getAngle(), 0.f, 90.f ) / 90.f );
@@ -1619,7 +1619,7 @@ opengl_renderer::Render( world_environment *Environment ) {
         ::glLoadIdentity(); // macierz jedynkowa
         ::glTranslatef( moonposition.x, moonposition.y, moonposition.z );
 
-        float const size = interpolate( // TODO: expose distance/scale factor from the moon object
+        float const size = std::lerp( // TODO: expose distance/scale factor from the moon object
             0.0160f,
             0.0135f,
             std::clamp( Environment->m_moon.getAngle(), 0.f, 90.f ) / 90.f );
@@ -1662,8 +1662,8 @@ opengl_renderer::Render( world_environment *Environment ) {
         ::glLightModelfv(
             GL_LIGHT_MODEL_AMBIENT,
             glm::value_ptr(
-                interpolate( Environment->m_skydome.GetAverageColor(), suncolor, duskfactor * 0.25f )
-                * interpolate( 1.f, 0.35f, Global.Overcast / 2.f ) // overcast darkens the clouds
+                glm::mix( Environment->m_skydome.GetAverageColor(), suncolor, duskfactor * 0.25f )
+                * std::lerp( 1.f, 0.35f, Global.Overcast / 2.f ) // overcast darkens the clouds
                 * 0.5f // arbitrary adjustment factor
             ) );
         // render
@@ -2911,7 +2911,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                     auto const &modelview = OpenGLMatrices.data( GL_MODELVIEW );
                     auto const lightcenter =
                         modelview
-                        * interpolate(
+                        * glm::mix(
                             glm::vec4( 0.f, 0.f, -0.05f, 1.f ),
                             glm::vec4( 0.f, 0.f, -0.25f, 1.f ),
                             static_cast<float>( TSubModel::fSquareDist / Submodel->fSquareMaxDist ) ); // pozycja punktu świecącego względem kamery
@@ -2933,8 +2933,8 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                         // additionally reduce light strength for farther sources in rain or snow
                         if( Global.Overcast > 0.75f ) {
                             float const precipitationfactor{
-                                interpolate(
-                                    interpolate( 1.f, 0.25f, std::clamp( Global.Overcast * 0.75f - 0.5f, 0.f, 1.f ) ),
+                                std::lerp(
+                                    std::lerp( 1.f, 0.25f, std::clamp( Global.Overcast * 0.75f - 0.5f, 0.f, 1.f ) ),
                                     1.f,
                                 distancefactor ) };
                             lightlevel *= precipitationfactor;
@@ -2968,7 +2968,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                             if( Global.Overcast > 1.f ) {
                                 // fake fog halo
                                 float const fogfactor {
-                                    interpolate(
+                                    std::lerp(
                                         2.f, 1.f,
                                         std::clamp( Global.fFogEnd / 2000, 0.f, 1.f ) )
                                     * std::max( 1.f, Global.Overcast ) };
@@ -3343,7 +3343,7 @@ opengl_renderer::Render_precipitation() {
 //    ::glColor4fv( glm::value_ptr( glm::vec4( glm::min( glm::vec3( Global.fLuminance ), glm::vec3( 1 ) ), 1 ) ) );
     ::glColor4fv(
         glm::value_ptr(
-            interpolate(
+            glm::mix(
                 0.5f * ( Global.DayLight.diffuse + Global.DayLight.ambient ),
                 colors::white,
                 0.5f * std::clamp( (float)Global.fLuminance, 0.f, 1.f ) ) ) );
@@ -3935,7 +3935,7 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
                 auto const &modelview = OpenGLMatrices.data( GL_MODELVIEW );
                 auto const lightcenter =
                     modelview
-                    * interpolate(
+                    * glm::mix(
                         glm::vec4( 0.f, 0.f, -0.05f, 1.f ),
                         glm::vec4( 0.f, 0.f, -0.10f, 1.f ),
                         static_cast<float>( TSubModel::fSquareDist / Submodel->fSquareMaxDist ) ); // pozycja punktu świecącego względem kamery

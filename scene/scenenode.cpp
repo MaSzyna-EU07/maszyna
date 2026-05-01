@@ -434,7 +434,7 @@ shape_node::merge( shape_node &Shape ) {
     }
     // add geometry from provided node
     m_data.area.center =
-        interpolate(
+        glm::mix(
             m_data.area.center, Shape.m_data.area.center,
             static_cast<double>( Shape.m_data.vertices.size() ) / ( Shape.m_data.vertices.size() + m_data.vertices.size() ) );
     m_data.vertices.insert(
@@ -659,7 +659,7 @@ lines_node::merge( lines_node &Lines ) {
     }
     // add geometry from provided node
     m_data.area.center =
-        interpolate(
+        glm::mix(
             m_data.area.center, Lines.m_data.area.center,
             static_cast<double>( Lines.m_data.vertices.size() ) / ( Lines.m_data.vertices.size() + m_data.vertices.size() ) );
     m_data.vertices.insert(

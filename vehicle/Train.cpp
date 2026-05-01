@@ -1713,7 +1713,7 @@ void TTrain::OnCommand_trainbrakeset( TTrain *Train, command_data const &Command
     if( Command.action != GLFW_RELEASE ) {
         // press or hold
         Train->mvOccupied->BrakeLevelSet(
-            interpolate(
+            std::lerp(
                 Train->mvOccupied->Handle->GetPos( bh_MIN ),
                 Train->mvOccupied->Handle->GetPos( bh_MAX ),
                 std::clamp(
@@ -8552,7 +8552,7 @@ TTrain::update_sounds( double const Deltatime ) {
     if( m_lastlocalbrakepressure != -1.f ) {
         // calculate rate of pressure drop in local brake cylinder, once it's been initialized
         auto const brakepressuredifference { mvOccupied->LocBrakePress - m_lastlocalbrakepressure };
-        m_localbrakepressurechange = interpolate<float>( m_localbrakepressurechange, 10 * ( brakepressuredifference / Deltatime ), 0.1f );
+        m_localbrakepressurechange = std::lerp( m_localbrakepressurechange, 10 * ( brakepressuredifference / Deltatime ), 0.1f );
     }
     m_lastlocalbrakepressure = mvOccupied->LocBrakePress;
     // local brake, release
@@ -8593,7 +8593,7 @@ TTrain::update_sounds( double const Deltatime ) {
      || ( mvOccupied->BrakeHandle == TBrakeHandle::FVel6 ) ) {
         // upuszczanie z PG
         if( rsHiss ) {
-            fPPress = interpolate( fPPress, static_cast<float>( mvOccupied->Handle->GetSound( s_fv4a_b ) ), 0.05f );
+            fPPress = std::lerp( fPPress, static_cast<float>( mvOccupied->Handle->GetSound( s_fv4a_b ) ), 0.05f );
             volume = (
                 fPPress > 0 ?
                     rsHiss->m_amplitudefactor * fPPress * 0.25 + rsHiss->m_amplitudeoffset :
@@ -8608,7 +8608,7 @@ TTrain::update_sounds( double const Deltatime ) {
         }
         // napelnianie PG
         if( rsHissU ) {
-            fNPress = interpolate( fNPress, static_cast<float>( mvOccupied->Handle->GetSound( s_fv4a_u ) ), 0.25f );
+            fNPress = std::lerp( fNPress, static_cast<float>( mvOccupied->Handle->GetSound( s_fv4a_u ) ), 0.25f );
             volume = (
                 fNPress > 0 ?
                     rsHissU->m_amplitudefactor * fNPress + rsHissU->m_amplitudeoffset :
@@ -8703,7 +8703,7 @@ TTrain::update_sounds( double const Deltatime ) {
                 FreeFlyModeFlag ?
                     0.0 :
                     rsBrake->m_amplitudeoffset
-                    + std::sqrt( brakeforceratio * interpolate( 0.4, 1.0, ( mvOccupied->Vel / ( 1 + mvOccupied->Vmax ) ) ) ) * rsBrake->m_amplitudefactor );
+                    + std::sqrt( brakeforceratio * std::lerp( 0.4, 1.0, ( mvOccupied->Vel / ( 1 + mvOccupied->Vmax ) ) ) ) * rsBrake->m_amplitudefactor );
             rsBrake->pitch( rsBrake->m_frequencyoffset + mvOccupied->Vel * rsBrake->m_frequencyfactor );
             rsBrake->gain( volume );
             rsBrake->play( sound_flags::exclusive | sound_flags::looping );
@@ -8776,7 +8776,7 @@ TTrain::update_sounds( double const Deltatime ) {
             update_sounds_runningnoise( *rsHuntingNoise );
             // modify calculated sound volume by hunting amount
             auto const huntingamount =
-                interpolate(
+                std::lerp(
                     0.0, 1.0,
                     std::clamp(
                     ( mvOccupied->Vel - DynamicObject->HuntingShake.fadein_begin ) / ( DynamicObject->HuntingShake.fadein_end - DynamicObject->HuntingShake.fadein_begin ),
@@ -8905,7 +8905,7 @@ void TTrain::update_sounds_resonancenoise(sound_source &Sound)
 	auto const frequency{Sound.m_frequencyoffset + Sound.m_frequencyfactor * mvOccupied->Vel * normalizer};
 
 	// volume calculation
-	auto volume = Sound.m_amplitudeoffset + Sound.m_amplitudefactor * interpolate(mvOccupied->Vel / (1 + mvOccupied->Vmax), 1.0, 0.5); // scale base volume between 0.5-1.0
+	auto volume = Sound.m_amplitudeoffset + Sound.m_amplitudefactor * std::lerp(mvOccupied->Vel / (1 + mvOccupied->Vmax), 1.0, 0.5); // scale base volume between 0.5-1.0
 
 	if (volume > 0.05)
 	{
@@ -8930,7 +8930,7 @@ void TTrain::update_sounds_runningnoise( sound_source &Sound ) {
     // volume calculation
     auto volume =
         Sound.m_amplitudeoffset
-        + Sound.m_amplitudefactor * interpolate(
+        + Sound.m_amplitudefactor * std::lerp(
             mvOccupied->Vel / ( 1 + mvOccupied->Vmax ), 1.0,
             0.5 ); // scale base volume between 0.5-1.0
     if( std::abs( mvOccupied->nrot ) > 0.01 ) {
@@ -8945,7 +8945,7 @@ void TTrain::update_sounds_runningnoise( sound_source &Sound ) {
     // scale volume by track quality
     // TODO: track quality and/or environment factors as separate subroutine
     volume *=
-        interpolate(
+        std::lerp(
             0.8, 1.2,
             std::clamp(
                 DynamicObject->MyTrack->iQualityFlag / 20.0,
@@ -8953,7 +8953,7 @@ void TTrain::update_sounds_runningnoise( sound_source &Sound ) {
     // for single sample sounds muffle the playback at low speeds
     if( false == Sound.is_combined() ) {
         volume *=
-            interpolate(
+            std::lerp(
                 0.0, 1.0,
                 std::clamp(
                     mvOccupied->Vel / 25.0,
@@ -9542,7 +9542,7 @@ glm::dvec3 TTrain::MirrorPosition(bool lewe)
 	       glm::dvec4(
             mvOccupied->Dim.W * ( 0.5 * shiftdirection ) + ( 0.2 * shiftdirection ),
             1.5 + Cabine[iCabn].CabPos1.y,
-            interpolate( Cabine[ iCabn ].CabPos1.z , Cabine[ iCabn ].CabPos2.z, 0.5 ), 1.0);
+            std::lerp( Cabine[ iCabn ].CabPos1.z , Cabine[ iCabn ].CabPos2.z, 0.5 ), 1.0);
 };
 
 void TTrain::DynamicSet(TDynamicObject *d)

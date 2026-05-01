@@ -191,7 +191,7 @@ openal_source::sync_with( sound_properties const &State ) {
             // adjust the volume to a suitable fraction of nominal value
             auto const fadedistance { sound_range * 0.75f };
             auto const rangefactor {
-                interpolate(
+                std::lerp(
                     1.f, 0.f, std::clamp(
                         ( distancesquared - rangesquared ) / ( fadedistance * fadedistance ),
                         0.f, 1.f ) ) };

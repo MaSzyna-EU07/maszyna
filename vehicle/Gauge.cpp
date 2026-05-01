@@ -457,7 +457,7 @@ float TGauge::GetScaledValue() const {
         ( false == m_interpolatescale ) ?
             m_value * m_scale + m_offset :
             m_value
-            * interpolate(
+            * std::lerp(
                 m_scale, m_endscale,
                 std::clamp(
                     m_value / m_endvalue,

@@ -299,18 +299,6 @@ template <typename T> T min_speed(T const Left, T const Right)
 	return std::min(Left, Right);
 }
 
-template <typename Type_> Type_ interpolate(Type_ const &First, Type_ const &Second, float const Factor)
-{
-
-	return static_cast<Type_>((First * (1.0f - Factor)) + (Second * Factor));
-}
-
-template <typename Type_> Type_ interpolate(Type_ const &First, Type_ const &Second, double const Factor)
-{
-
-	return static_cast<Type_>((First * (1.0 - Factor)) + (Second * Factor));
-}
-
 template <typename Type_> Type_ smoothInterpolate(Type_ const &First, Type_ const &Second, double Factor)
 {
 	// Apply smoothing (ease-in-out quadratic)

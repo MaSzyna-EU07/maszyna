@@ -128,7 +128,7 @@ world_environment::update() {
     m_skydome.SetTurbidity(
         2.25f
         + std::clamp( Global.Overcast, 0.f, 1.f )
-        + interpolate( 0.f, 1.f, std::clamp( twilightfactor * 1.5f, 0.f, 1.f ) ) );
+        + std::lerp( 0.f, 1.f, std::clamp( twilightfactor * 1.5f, 0.f, 1.f ) ) );
     m_skydome.SetOvercastFactor( Global.Overcast );
     m_skydome.Update( m_sun.getDirection() );
 
@@ -156,7 +156,7 @@ world_environment::update() {
         m_lightintensity = 1.0f;
         // include 'golden hour' effect in twilight lighting
         float const duskfactor = 1.25f - std::clamp( Global.SunAngle, 0.0f, 18.0f ) / 18.0f;
-        keylightcolor = interpolate(
+		keylightcolor = glm::mix(
             glm::vec3( 255.0f / 255.0f, 242.0f / 255.0f, 231.0f / 255.0f ),
             glm::vec3( 235.0f / 255.0f, 120.0f / 255.0f, 36.0f / 255.0f ),
             duskfactor );
@@ -172,7 +172,7 @@ world_environment::update() {
     // but whether it'd _look_ better is something to be tested
     auto const intensity = std::min( 1.15f * ( 0.05f + keylightintensity + skydomehsv.z ), 1.25f );
     // the impact of sun component is reduced proportionally to overcast level, as overcast increases role of ambient light
-    auto const diffuselevel = interpolate( keylightintensity, intensity * ( 1.0f - twilightfactor ), 1.0f - std::min( 1.f, Global.Overcast ) * 0.75f );
+    auto const diffuselevel = std::lerp( keylightintensity, intensity * ( 1.0f - twilightfactor ), 1.0f - std::min( 1.f, Global.Overcast ) * 0.75f );
     // ...update light colours and intensity.
     keylightcolor = keylightcolor * diffuselevel;
     Global.DayLight.diffuse = glm::vec4( keylightcolor, Global.DayLight.diffuse.a );
@@ -182,9 +182,9 @@ world_environment::update() {
     // (this is pure conjecture, aimed more to 'look right' than be accurate)
     float const ambienttone = std::clamp( 1.0f - ( Global.SunAngle / 90.0f ), 0.0f, 1.0f );
     float const ambientintensitynightfactor = 1.f - 0.75f * std::clamp( -m_sun.getAngle(), 0.0f, 18.0f ) / 18.0f;
-    Global.DayLight.ambient[ 0 ] = interpolate( skydomehsv.z, skydomecolour.r, ambienttone ) * ambientintensitynightfactor;
-    Global.DayLight.ambient[ 1 ] = interpolate( skydomehsv.z, skydomecolour.g, ambienttone ) * ambientintensitynightfactor;
-    Global.DayLight.ambient[ 2 ] = interpolate( skydomehsv.z, skydomecolour.b, ambienttone ) * ambientintensitynightfactor;
+    Global.DayLight.ambient[ 0 ] = std::lerp( skydomehsv.z, skydomecolour.r, ambienttone ) * ambientintensitynightfactor;
+    Global.DayLight.ambient[ 1 ] = std::lerp( skydomehsv.z, skydomecolour.g, ambienttone ) * ambientintensitynightfactor;
+    Global.DayLight.ambient[ 2 ] = std::lerp( skydomehsv.z, skydomecolour.b, ambienttone ) * ambientintensitynightfactor;
 
     Global.fLuminance = intensity;
 

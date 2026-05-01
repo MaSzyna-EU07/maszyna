@@ -105,7 +105,7 @@ public:
     inline
     float
         GetRoll(double const Distance) const {
-            return interpolate( fRoll1, fRoll2, static_cast<float>(Distance / fLength) ); }
+            return std::lerp( fRoll1, fRoll2, static_cast<float>(Distance / fLength) ); }
     inline
     void
         GetRolls(float &r1, float &r2) const {

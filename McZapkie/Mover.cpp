@@ -1393,7 +1393,7 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 	{
 		auto const AccSprev{AccS};
 		// przyspieszenie styczne
-		AccS = interpolate(AccSprev, FTotal / TotalMass, 0.5);
+		AccS = std::lerp(AccSprev, FTotal / TotalMass, 0.5);
 		// std::clamp( dt * 3.0, 0.0, 1.0 ) ); // prawo Newtona ale z wygladzaniem (średnia z poprzednim)
 
 		if (TestFlag(DamageFlag, dtrain_out))
@@ -1416,7 +1416,7 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 		}
 
 		// tangential acceleration, from velocity change
-		AccSVBased = interpolate(AccSVBased, (V - Vprev) / dt, std::clamp(dt * 3.0, 0.0, 1.0));
+		AccSVBased = std::lerp(AccSVBased, (V - Vprev) / dt, std::clamp(dt * 3.0, 0.0, 1.0));
 
 		// vertical acceleration
 		AccVert = (std::abs(AccVert) < 0.01 ? 0.0 : AccVert * 0.5);
@@ -1490,7 +1490,7 @@ double TMoverParameters::FastComputeMovement(double dt, const TTrackShape &Shape
 	{
 		auto const AccSprev{AccS};
 		// przyspieszenie styczne
-		AccS = interpolate(AccSprev, FTotal / TotalMass, 0.5);
+		AccS = std::lerp(AccSprev, FTotal / TotalMass, 0.5);
 		// std::clamp( dt * 3.0, 0.0, 1.0 ) ); // prawo Newtona ale z wygladzaniem (średnia z poprzednim)
 
 		if (TestFlag(DamageFlag, dtrain_out))
@@ -2098,7 +2098,7 @@ void TMoverParameters::HeatingCheck(double const Timestep)
 			                         absrevolutions < generator.revolutions_min ?
 			                                             generator.voltage_min * absrevolutions / generator.revolutions_min :
 			                                             //                    absrevolutions > generator.revolutions_max ? generator.voltage_max * absrevolutions / generator.revolutions_max :
-			                                             interpolate(generator.voltage_min, generator.voltage_max,
+			                                             std::lerp(generator.voltage_min, generator.voltage_max,
 			                                                         std::clamp((absrevolutions - generator.revolutions_min) / (generator.revolutions_max - generator.revolutions_min), 0.0, 1.0))) *
 			                    sign(generator.revolutions);
 		}
@@ -2208,7 +2208,7 @@ void TMoverParameters::OilPumpCheck(double const Timestep)
 	auto const minpressure{OilPump.pressure_minimum > 0.f ? OilPump.pressure_minimum : 0.15f}; // arbitrary fallback value
 
 	OilPump.pressure_target = (
-        enrot > 0.1 ? interpolate( minpressure, OilPump.pressure_maximum, static_cast<float>( EngineRPMRatio() ) ) * OilPump.resource_amount :
+        enrot > 0.1 ? std::lerp( minpressure, OilPump.pressure_maximum, static_cast<float>( EngineRPMRatio() ) ) * OilPump.resource_amount :
         true == OilPump.is_active ? std::min( minpressure + 0.1f, OilPump.pressure_maximum ) : // slight pressure margin to give time to switch off the pump and start the engine
         0.f );
 
@@ -5950,7 +5950,7 @@ double TMoverParameters::TractionForce(double dt)
 				                // power curve drop
 				                // NOTE: disabled for the time being due to side-effects
 				                if( ( tmpV > 1 ) && ( EnginePower < tmp ) ) {
-				                    Ft = interpolate(
+				                    Ft = std::lerp(
 				                        Ft, EnginePower / tmp,
 				                        std::clamp( tmpV - 1.0, 0.0, 1.0 ) );
 				                }
@@ -8166,9 +8166,9 @@ void TMoverParameters::dizel_Heat(double const dt)
 	auto const revolutionsfactor{EngineRPMRatio()};
 	auto const waterpump{WaterPump.is_active ? 1 : 0};
 
-	auto const gw = engineon * interpolate(gwmin, gwmax, revolutionsfactor) + waterpump * 1000 + engineoff * 200;
-	auto const gw2 = engineon * interpolate(gwmin2, gwmax2, revolutionsfactor) + waterpump * 1000 + engineoff * 200;
-	auto const gwO = interpolate(gwmin, gwmax, revolutionsfactor);
+	auto const gw = engineon * std::lerp(gwmin, gwmax, revolutionsfactor) + waterpump * 1000 + engineoff * 200;
+	auto const gw2 = engineon * std::lerp(gwmin2, gwmax2, revolutionsfactor) + waterpump * 1000 + engineoff * 200;
+	auto const gwO = std::lerp(gwmin, gwmax, revolutionsfactor);
 
 	dizel_heat.water.is_cold = ((dizel_heat.water.config.temp_min > 0) && (dizel_heat.temperatura1 < dizel_heat.water.config.temp_min - (Mains ? 5 : 0)));
 	dizel_heat.water.is_hot = ((dizel_heat.water.config.temp_max > 0) && (dizel_heat.temperatura1 > dizel_heat.water.config.temp_max - (dizel_heat.water.is_hot ? 8 : 0)));

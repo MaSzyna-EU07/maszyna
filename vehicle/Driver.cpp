@@ -935,7 +935,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
                                 if( brakingdistance > 0.0 ) {
                                     // maintain desired acc while we have enough room to brake safely, when close enough start paying attention
                                     // try to make a smooth transition instead of sharp change
-                                    a = interpolate( a, AccPreferred, std::clamp( ( d - brakingdistance ) / brakingdistance, 0.0, 1.0 ) );
+                                    a = std::lerp( a, AccPreferred, std::clamp( ( d - brakingdistance ) / brakingdistance, 0.0, 1.0 ) );
                                 }
                             }
                             if( ( d < fMinProximityDist )
@@ -1740,7 +1740,7 @@ TController::braking_distance_multiplier( float const Targetvelocity ) const {
          && ( Targetvelocity == 0.f ) ) {
             auto const multiplier { std::clamp( 1.f + iVehicles * 0.5f, 2.f, 4.f ) };
             return (
-                interpolate(
+                std::lerp(
                     multiplier, 1.f,
                     static_cast<float>( mvOccupied->Vel / 40.0 ) )
                 * frictionmultiplier );
@@ -1750,7 +1750,7 @@ TController::braking_distance_multiplier( float const Targetvelocity ) const {
          && ( ( true == IsCargoTrain )
            || ( fAccGravity > 0.025 ) ) ) {
             return (
-                interpolate(
+                std::lerp(
                     1.f, 2.f,
                     std::clamp(
                         ( fBrake_a0[ 1 ] - 0.2 ) / 0.2,
@@ -1762,7 +1762,7 @@ TController::braking_distance_multiplier( float const Targetvelocity ) const {
     }
     // stretch the braking distance up to 3 times; the lower the speed, the greater the stretch
     return (
-        interpolate(
+        std::lerp(
             3.f, 1.f,
             ( Targetvelocity - 5.f ) / 60.f )
         * frictionmultiplier );
@@ -3180,7 +3180,7 @@ bool TController::IncBrake()
                 auto const initialbrakeposition { mvOccupied->fBrakeCtrlPos };
                 auto const AccMax { std::min( fBrake_a0[ 0 ] + 12 * fBrake_a1[ 0 ], mvOccupied->MED_amax ) };
                 mvOccupied->BrakeLevelSet(
-                    interpolate(
+                    std::lerp(
                         mvOccupied->Handle->GetPos( bh_EPR ),
                         mvOccupied->Handle->GetPos( bh_EPB ),
                         std::clamp( -AccDesired / AccMax * mvOccupied->AIHintLocalBrakeAccFactor, 0.0, 1.0 ) ) );
@@ -3312,7 +3312,7 @@ bool TController::DecBrake() {
                 auto const initialbrakeposition { mvOccupied->fBrakeCtrlPos };
                 auto const AccMax { std::min( fBrake_a0[ 0 ] + 12 * fBrake_a1[ 0 ], mvOccupied->MED_amax ) };
                 mvOccupied->BrakeLevelSet(
-                    interpolate(
+                    std::lerp(
                         mvOccupied->Handle->GetPos( bh_EPR ),
                         mvOccupied->Handle->GetPos( bh_EPB ),
                         std::clamp( -AccDesired / AccMax * mvOccupied->AIHintLocalBrakeAccFactor, 0.0, 1.0 ) ) );
@@ -3454,7 +3454,7 @@ bool TController::IncSpeed()
                     auto const minvoltage { ( mvPantographUnit->EnginePowerSource.SourceType == TPowerSource::CurrentCollector ? mvPantographUnit->EnginePowerSource.CollectorParameters.MinV : 0.0 ) };
                     auto const maxvoltage { ( mvPantographUnit->EnginePowerSource.SourceType == TPowerSource::CurrentCollector ? mvPantographUnit->EnginePowerSource.CollectorParameters.MaxV : 0.0 ) };
                     auto const seriesmodevoltage {
-                        interpolate(
+                        std::lerp(
                             minvoltage,
                             maxvoltage,
                             ( IsHeavyCargoTrain ? 0.35 : 0.40 ) ) };
@@ -6447,7 +6447,7 @@ TController::control_handles() {
         }
         // if the power station is heavily burdened drop down to series mode to reduce the load
         auto const useseriesmodevoltage {
-            interpolate(
+            std::lerp(
                 mvControlling->EnginePowerSource.CollectorParameters.MinV,
                 mvControlling->EnginePowerSource.CollectorParameters.MaxV,
                 ( IsHeavyCargoTrain ? 0.35 : 0.40 ) ) };
@@ -7768,7 +7768,7 @@ TController::adjust_desired_speed_for_current_speed() {
                 // stop accelerating when close enough to target speed
                 AccDesired = std::min(
                     AccDesired, // but don't override decceleration for VelNext
-                    interpolate( // ease off as you close to the target velocity
+                    std::lerp( // ease off as you close to the target velocity
                         EU07_AI_NOACCELERATION, AccPreferred,
                         std::clamp( VelDesired - speedestimate, 0.0, fVelMinus ) / fVelMinus ) );
             }

@@ -186,7 +186,7 @@ float CSkyDome::PerezFunctionO2( float Perezcoeffs[ 5 ], const float Icostheta, 
 void CSkyDome::RebuildColors() {
 
     float twilightfactor = std::clamp( -simulation::Environment.sun().getAngle(), 0.0f, 18.0f ) / 18.0f;
-    auto gammacorrection = interpolate( glm::vec3( 0.45f ), glm::vec3( 1.0f ), twilightfactor );
+    auto gammacorrection = glm::mix( glm::vec3( 0.45f ), glm::vec3( 1.0f ), twilightfactor );
 
 	// get zenith luminance
 	float const chi = ( (4.0f / 9.0f) - (m_turbidity / 120.0f) ) * ( M_PI - (2.0f * m_thetasun) );
@@ -243,7 +243,7 @@ void CSkyDome::RebuildColors() {
 		float const yclear = std::max( 0.01f, PerezFunctionO2( perezluminance, icostheta, gamma, cosgamma2, zenithluminance ) );
 		float const yover = std::max( 0.01f, zenithluminance * ( 1.0f + 2.0f * vertex.y ) / 3.0f );
 		
-		float const Y = interpolate( yclear, yover, m_overcast );
+		float const Y = std::lerp( yclear, yover, m_overcast );
 		float const X = (x / y) * Y;  
 		float const Z = ((1.0f - x - y) / y) * Y;
 		
@@ -276,14 +276,14 @@ void CSkyDome::RebuildColors() {
         // correction is applied in linear manner from the bottom, becomes fully in effect for vertices with y = 0.50
         auto const heightbasedphase = std::clamp( vertex.y * 2.0f, 0.0f, 1.0f );
         // this height-based factor is reduced the farther the sun is up in the sky
-        float const shiftfactor = std::clamp( interpolate(heightbasedphase, sunbasedphase, sunbasedphase), 0.0f, 1.0f );
+        float const shiftfactor = std::clamp( std::lerp(heightbasedphase, sunbasedphase, sunbasedphase), 0.0f, 1.0f );
         // h = 210 makes for 'typical' sky tone
         shiftedcolor = glm::vec3( 210.0f, colorconverter.y, colorconverter.z );
         shiftedcolor = colors::HSVtoRGB( shiftedcolor );
 
 		color = colors::HSVtoRGB(colorconverter);
 
-        color = interpolate( color, shiftedcolor, shiftfactor * Global.m_skyhuecorrection );
+        color = glm::mix( color, shiftedcolor, shiftfactor * Global.m_skyhuecorrection );
 
         // crude correction for the times where the model breaks (late night)
         // TODO: use proper night sky calculation for these times instead

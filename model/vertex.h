@@ -19,6 +19,11 @@ struct world_vertex {
     glm::vec3 normal;
     glm::vec2 texture;
 
+    static world_vertex lerp(world_vertex const &a, world_vertex const &b, double factor)
+	{
+		return static_cast<world_vertex>((a * (1.0f - factor)) + (b * factor));
+	}
+
 // overloads
     // operator+
     template <typename Scalar_>
@@ -55,7 +60,7 @@ struct world_vertex {
     void
         set_half( world_vertex const &Vertex1, world_vertex const &Vertex2 ) {
             *this =
-                interpolate(
+                world_vertex::lerp(
                     Vertex1,
                     Vertex2,
                     0.5 ); }
@@ -63,7 +68,7 @@ struct world_vertex {
     void
         set_from_x( world_vertex const &Vertex1, world_vertex const &Vertex2, double const X ) {
             *this =
-                interpolate(
+                world_vertex::lerp(
                     Vertex1,
                     Vertex2,
                     ( X - Vertex1.position.x ) / ( Vertex2.position.x - Vertex1.position.x ) ); }
@@ -71,7 +76,7 @@ struct world_vertex {
     void
         set_from_z( world_vertex const &Vertex1, world_vertex const &Vertex2, double const Z ) {
             *this =
-                interpolate(
+                world_vertex::lerp(
                     Vertex1,
                     Vertex2,
                     ( Z - Vertex1.position.z ) / ( Vertex2.position.z - Vertex1.position.z ) ); }

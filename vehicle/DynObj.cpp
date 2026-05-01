@@ -724,7 +724,7 @@ void TDynamicObject::UpdatePlatformTranslate( TAnim *pAnim ) {
 
     pAnim->smAnimated->SetTranslate(
         glm::vec3{
-            interpolate( 0.f, MoverParameters->Doors.step_range, door.step_position ),
+            std::lerp( 0.f, MoverParameters->Doors.step_range, door.step_position ),
             0.0,
             0.0 } );
 }
@@ -741,7 +741,7 @@ void TDynamicObject::UpdatePlatformRotate( TAnim *pAnim ) {
 
     pAnim->smAnimated->SetRotate(
         float3( 0, 1, 0 ),
-        interpolate( 0.f, MoverParameters->Doors.step_range, door.step_position ) );
+        std::lerp( 0.f, MoverParameters->Doors.step_range, door.step_position ) );
 }
 
 // mirror animation, rotate
@@ -758,11 +758,11 @@ void TDynamicObject::UpdateMirror( TAnim *pAnim ) {
     if( pAnim->iNumber & 1 )
         pAnim->smAnimated->SetRotate(
             float3( 0, 1, 0 ),
-            interpolate( 0.0, MoverParameters->MirrorMaxShift, dMirrorMoveR * isactive ) );
+            std::lerp( 0.0, MoverParameters->MirrorMaxShift, dMirrorMoveR * isactive ) );
     else
         pAnim->smAnimated->SetRotate(
             float3( 0, 1, 0 ),
-            interpolate( 0.0, MoverParameters->MirrorMaxShift, dMirrorMoveL * isactive ) );
+            std::lerp( 0.0, MoverParameters->MirrorMaxShift, dMirrorMoveL * isactive ) );
 }
 
 // wipers
@@ -2753,7 +2753,7 @@ void TDynamicObject::Move(double fDistance)
                         case e_tunnel: { shadefrom = 0.2f; break; }
                         default: {break; }
                     }
-                    fShade = interpolate( shadefrom, shadeto, static_cast<float>( d ) );
+                    fShade = std::lerp( shadefrom, shadeto, static_cast<float>( d ) );
 /*
                     switch (t0->eEnvironment)
                     { // typ zmiany oświetlenia - zakładam, że
@@ -3076,7 +3076,7 @@ TDynamicObject::update_load_offset() {
             0.0 :
             100.0 * MoverParameters->LoadAmount / MoverParameters->MaxLoad ) };
 
-    LoadOffset = interpolate( MoverParameters->LoadType.offset_min, 0.f, std::clamp( 0.0, 1.0, loadpercentage * 0.01 ) );
+    LoadOffset = std::lerp( MoverParameters->LoadType.offset_min, 0.f, std::clamp( 0.0, 1.0, loadpercentage * 0.01 ) );
 }
 
 void
@@ -3683,7 +3683,7 @@ bool TDynamicObject::Update(double dt, double dt1)
             if( MoverParameters->Vel > 0 ) {
                 // TODO: track quality and/or environment factors as separate subroutine
                 auto volume =
-                    interpolate(
+                    std::lerp(
                         0.8, 1.2,
                         std::clamp(
                             MyTrack->iQualityFlag / 10.0,
@@ -4634,7 +4634,7 @@ void TDynamicObject::RenderSounds() {
         m_emergencybrakeflow = (
             m_emergencybrakeflow == 0.0 ?
                 MoverParameters->EmergencyValveFlow :
-                interpolate( m_emergencybrakeflow, MoverParameters->EmergencyValveFlow, 0.1 ) );
+                std::lerp( m_emergencybrakeflow, MoverParameters->EmergencyValveFlow, 0.1 ) );
         // scale volume based on the flow rate and on the pressure in the main pipe
         auto const flowpressure { std::clamp( m_emergencybrakeflow, 0.0, 1.0 ) + std::clamp( 0.1 * MoverParameters->PipePress, 0.0, 0.5 ) };
          m_emergencybrake
@@ -4651,7 +4651,7 @@ void TDynamicObject::RenderSounds() {
     if( m_lastbrakepressure != -1.f ) {
         // calculate rate of pressure drop in brake cylinder, once it's been initialized
         auto const brakepressuredifference{ m_lastbrakepressure - MoverParameters->BrakePress };
-        m_brakepressurechange = interpolate<float>( m_brakepressurechange, brakepressuredifference / dt, 0.05f );
+        m_brakepressurechange = std::lerp( m_brakepressurechange, brakepressuredifference / dt, 0.05f );
     }
     m_lastbrakepressure = MoverParameters->BrakePress;
     // ensure some basic level of volume and scale it up depending on pressure in the cylinder; scale this by the air release rate
@@ -4719,7 +4719,7 @@ void TDynamicObject::RenderSounds() {
                 0.0, 1.0 );
         rsBrake
             .pitch( rsBrake.m_frequencyoffset + MoverParameters->Vel * rsBrake.m_frequencyfactor )
-            .gain( rsBrake.m_amplitudeoffset + std::sqrt( brakeforceratio * interpolate( 0.4, 1.0, ( MoverParameters->Vel / ( 1 + MoverParameters->Vmax ) ) ) ) * rsBrake.m_amplitudefactor )
+            .gain( rsBrake.m_amplitudeoffset + std::sqrt( brakeforceratio * std::lerp( 0.4, 1.0, ( MoverParameters->Vel / ( 1 + MoverParameters->Vmax ) ) ) ) * rsBrake.m_amplitudefactor )
             .play( sound_flags::exclusive | sound_flags::looping );
     }
     else {
@@ -4736,7 +4736,7 @@ void TDynamicObject::RenderSounds() {
     // McZapkie-280302 - pisk mocno zacisnietych hamulcow
     if( MoverParameters->Vel > 2.5 ) {
 
-        volume = rsPisk.m_amplitudeoffset + interpolate( -1.0, 1.0, brakeforceratio ) * rsPisk.m_amplitudefactor;
+        volume = rsPisk.m_amplitudeoffset + std::lerp( -1.0, 1.0, brakeforceratio ) * rsPisk.m_amplitudefactor;
         if( volume > 0.075 ) {
             rsPisk
                 .pitch(
@@ -4964,7 +4964,7 @@ void TDynamicObject::RenderSounds() {
         // scale volume by track quality
         // TODO: track quality and/or environment factors as separate subroutine
         volume *=
-            interpolate(
+            std::lerp(
                 0.8, 1.2,
                 std::clamp(
                     MyTrack->iQualityFlag / 20.0,
@@ -4972,7 +4972,7 @@ void TDynamicObject::RenderSounds() {
         // for single sample sounds muffle the playback at low speeds
         if( false == bogiesound.is_combined() ) {
             volume *=
-                interpolate(
+                std::lerp(
                     0.0, 1.0,
                     std::clamp(
                         MoverParameters->Vel / 40.0,
@@ -5051,7 +5051,7 @@ void TDynamicObject::RenderSounds() {
         // scale volume with curve radius and vehicle speed
         volume =
             std::abs( MoverParameters->AccN ) // * MoverParameters->AccN
-            * interpolate(
+            * std::lerp(
                 0.5, 1.0,
                 std::clamp(
                     MoverParameters->Vel / 40.0,
@@ -8090,7 +8090,7 @@ TDynamicObject::update_shake( double const Timedelta ) {
                         ( MoverParameters->enrot - EngineShake.fadein_offset ) * EngineShake.fadein_factor,
                         0.0, 1.0 )
                     // fade out with rpm above threshold
-                    * interpolate(
+                    * std::lerp(
                         1.0, 0.0,
                         std::clamp(
                             ( MoverParameters->enrot - EngineShake.fadeout_offset ) * EngineShake.fadeout_factor,
@@ -8103,7 +8103,7 @@ TDynamicObject::update_shake( double const Timedelta ) {
             // hunting oscillation
             HuntingAngle = clamp_circular( HuntingAngle + 4.0 * HuntingShake.frequency * Timedelta * MoverParameters->Vel, 360.0 );
             auto const huntingamount =
-                interpolate(
+                std::lerp(
                     0.0, 1.0,
                     std::clamp(
                         ( MoverParameters->Vel - HuntingShake.fadein_begin ) / ( HuntingShake.fadein_end - HuntingShake.fadein_begin ),
@@ -8376,7 +8376,7 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
 		fake_engine.stop();
 	}
 
-    engine_volume = interpolate( engine_volume, volume, 0.25 );
+    engine_volume = std::lerp( engine_volume, volume, 0.25 );
     if( engine_volume < 0.05 ) {
         engine.stop();
     }
@@ -8519,7 +8519,7 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
                     + std::abs( Vehicle.Mm ) / 60.0 * Deltatime,
                     0.0, 1.25 );
             volume *= std::max( 0.25f, motor_momentum );
-            motor_volume = interpolate( motor_volume, volume, 0.25 );
+            motor_volume = std::lerp( motor_volume, volume, 0.25 );
             if( motor_volume >= 0.05 ) {
                 // apply calculated parameters to all motor instances
                 for( auto &motor : motors ) {

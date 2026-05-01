@@ -781,7 +781,7 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
             // based on how far the current soundpoint is in the range of previous chunk
             auto const &previouschunkdata{ m_soundchunks[ chunkindex - 1 ].second };
             m_properties.pitch =
-                interpolate(
+                std::lerp(
                     previouschunkdata.pitch / chunkdata.pitch,
                     1.f,
                     std::clamp(
@@ -796,7 +796,7 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
             // based on how far the current soundpoint is in the range of this chunk
             auto const &nextchunkdata { m_soundchunks[ chunkindex + 1 ].second };
             m_properties.pitch =
-                interpolate(
+                std::lerp(
                     1.f,
                     nextchunkdata.pitch / chunkdata.pitch,
                     std::clamp(
@@ -816,7 +816,7 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
         auto const fadeinwidth { chunkdata.threshold - chunkdata.fadein };
         if( soundpoint < chunkdata.threshold ) {
             float lineargain =
-                interpolate(
+                std::lerp(
                     0.f, 1.f,
                     std::clamp(
                         ( soundpoint - chunkdata.fadein ) / fadeinwidth,
@@ -836,7 +836,7 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
         auto const fadeoutstart { chunkdata.fadeout - fadeoutwidth };
         if( soundpoint > fadeoutstart ) {
 			float lineargain =
-                interpolate(
+                std::lerp(
                     0.f, 1.f,
                     std::clamp(
                         ( soundpoint - fadeoutstart ) / fadeoutwidth,
