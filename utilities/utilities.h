@@ -299,12 +299,12 @@ template <typename T> T min_speed(T const Left, T const Right)
 	return std::min(Left, Right);
 }
 
-template <typename Type_> Type_ smoothInterpolate(Type_ const &First, Type_ const &Second, double Factor)
+template <typename T> T smoothInterpolate(T const &First, T const &Second, double Factor)
 {
 	// Apply smoothing (ease-in-out quadratic)
 	Factor = Factor * Factor * (3 - 2 * Factor);
 
-	return static_cast<Type_>((First * (1.0 - Factor)) + (Second * Factor));
+	return First + (Second - First) * Factor;
 }
 
 // tests whether provided points form a degenerate triangle
