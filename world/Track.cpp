@@ -569,7 +569,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         if( fRadius != 0 ) {
             // gdy podany promień
             segsize =
-                clamp(
+                std::clamp(
                     std::abs( fRadius ) * ( 0.02 / Global.SplineFidelity ),
                     2.0 / Global.SplineFidelity,
                     10.0 / Global.SplineFidelity );
@@ -583,7 +583,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             else {
                 // HACK: divide roughly in 10 segments. 
                 segsize =
-                    clamp(
+                    std::clamp(
                         glm::length( p1 - p2 ) * 0.1,
                         2.0 / Global.SplineFidelity,
                         10.0 / Global.SplineFidelity );
@@ -667,7 +667,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         if( fRadiusTable[ 0 ] != 0 ) {
             // gdy podany promień
             segsize =
-                clamp(
+                std::clamp(
                     std::abs( fRadiusTable[ 0 ] ) * ( 0.02 / Global.SplineFidelity ),
                     2.0 / Global.SplineFidelity,
                     10.0 / Global.SplineFidelity );
@@ -681,7 +681,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             else {
                 // HACK: divide roughly in 10 segments. 
                 segsize =
-                    clamp(
+                    std::clamp(
                         glm::length( p1 - p2 ) * 0.1,
                         2.0 / Global.SplineFidelity,
                         10.0 / Global.SplineFidelity );
@@ -732,7 +732,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         if( fRadiusTable[ 1 ] != 0 ) {
             // gdy podany promień
             segsize =
-                clamp(
+                std::clamp(
                     std::abs( fRadiusTable[ 1 ] ) * ( 0.02 / Global.SplineFidelity ),
                     2.0 / Global.SplineFidelity,
                     10.0 / Global.SplineFidelity );
@@ -746,7 +746,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             else {
                 // HACK: divide roughly in 10 segments. 
                 segsize =
-                    clamp(
+                    std::clamp(
                         glm::length( p3 - p4 ) * 0.1,
                         2.0 / Global.SplineFidelity,
                         10.0 / Global.SplineFidelity );
@@ -2531,7 +2531,7 @@ float TTrack::Friction() const {
         return fFriction;
     }
     else {
-        return clamp( fFriction * m_friction.second->Value1() + m_friction.second->Value2(), 0.0, 1.0 );
+        return std::clamp( fFriction * m_friction.second->Value1() + m_friction.second->Value2(), 0.0, 1.0 );
     }
 }
 

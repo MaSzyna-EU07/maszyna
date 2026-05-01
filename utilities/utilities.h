@@ -251,21 +251,6 @@ template <typename T> bool is_equal(T const &Left, T const &Right, T const Epsil
 	return (Left == Right);
 }
 
-template <typename Type_> Type_ clamp(Type_ const Value, Type_ const Min, Type_ const Max)
-{
-
-	Type_ value = Value;
-	if (value < Min)
-	{
-		value = Min;
-	}
-	if (value > Max)
-	{
-		value = Max;
-	}
-	return value;
-}
-
 // keeps the provided value in specified range 0-Range, as if the range was circular buffer
 template <typename Type_> Type_ clamp_circular(Type_ Value, Type_ const Range = static_cast<Type_>(360))
 {

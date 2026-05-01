@@ -1508,7 +1508,7 @@ texture_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
         // intercept potential error, index specified using .t3d format convention
         m_skinindex *= -1;
     }
-    m_skinindex = clamp( m_skinindex, 1, 4 ); // TODO: define-based upper bound in case of future extension
+    m_skinindex = std::clamp( m_skinindex, 1, 4 ); // TODO: define-based upper bound in case of future extension
 
     Input.getTokens(); // preload next token
 }

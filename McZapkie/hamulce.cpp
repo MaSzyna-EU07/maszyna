@@ -1314,7 +1314,7 @@ void TEStEP1::EPCalc(double dt)
 {
 	double temp = EPS - std::floor(EPS); // część ułamkowa jest hamulcem EP
 	double LBPLim = std::min(MaxBP * LoadC * temp, BrakeRes->P()); // do czego dążymy
-	double S = 10 * clamp(LBPLim - LBP, -0.1, 0.1); // przymykanie zaworku
+	double S = 10 * std::clamp(LBPLim - LBP, -0.1, 0.1); // przymykanie zaworku
 	double dv = PF((S > 0 ? BrakeRes->P() : 0), LBP, abs(S) * (0.00053 + 0.00060 * int(S < 0))) * dt; // przepływ
 	LBP = LBP - dv;
 }
@@ -3045,7 +3045,7 @@ double TFV4aM::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	}
 
 	// na wszelki wypadek, zeby nie wyszlo poza zakres
-	i_bcp = clamp(i_bcp, -1.999, 5.999);
+	i_bcp = std::clamp(i_bcp, -1.999, 5.999);
 
 	double DP{0.0};
 	if (TP > 0.0)

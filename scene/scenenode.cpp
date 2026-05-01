@@ -255,8 +255,8 @@ shape_node::import( cParser &Input, scene::node_data const &Nodedata ) {
             >> vertex.texture.s
             >> vertex.texture.t;
         // clamp texture coordinates if texture wrapping is off
-        if( true == clamps ) { vertex.texture.s = clamp( vertex.texture.s, 0.001f, 0.999f ); }
-        if( true == clampt ) { vertex.texture.t = clamp( vertex.texture.t, 0.001f, 0.999f ); }
+        if( true == clamps ) { vertex.texture.s = std::clamp( vertex.texture.s, 0.001f, 0.999f ); }
+        if( true == clampt ) { vertex.texture.t = std::clamp( vertex.texture.t, 0.001f, 0.999f ); }
         // convert all data to gl_triangles to allow data merge for matching nodes
         switch( nodetype ) {
             case triangles: {

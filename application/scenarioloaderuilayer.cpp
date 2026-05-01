@@ -308,7 +308,7 @@ void scenarioloader_ui::generate_gradient_tex()
 			image_data[(y * image_width + x) * 4] = 0;
 			image_data[(y * image_width + x) * 4 + 1] = 0;
 			image_data[(y * image_width + x) * 4 + 2] = 0;
-			image_data[(y * image_width + x) * 4 + 3] = clamp(static_cast<int>(pow(y / 255.f, 0.7) * 255), 0, 255);
+			image_data[(y * image_width + x) * 4 + 3] = std::clamp(static_cast<int>(pow(y / 255.f, 0.7) * 255), 0, 255);
 		}
 
 	// Create a OpenGL texture identifier

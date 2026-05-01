@@ -192,8 +192,7 @@ openal_source::sync_with( sound_properties const &State ) {
             auto const fadedistance { sound_range * 0.75f };
             auto const rangefactor {
                 interpolate(
-                    1.f, 0.f,
-                    clamp<float>(
+                    1.f, 0.f, std::clamp(
                         ( distancesquared - rangesquared ) / ( fadedistance * fadedistance ),
                         0.f, 1.f ) ) };
             ::alSourcef( id, AL_GAIN, gain * rangefactor );
@@ -203,7 +202,7 @@ openal_source::sync_with( sound_properties const &State ) {
     // pitch
     if( State.pitch != properties.pitch ) {
         // pitch value has changed
-        ::alSourcef( id, AL_PITCH, clamp( State.pitch * pitch_variation, 0.1f, 10.f ) );
+        ::alSourcef( id, AL_PITCH, std::clamp( State.pitch * pitch_variation, 0.1f, 10.f ) );
     }
     // all synced up
     properties = State;

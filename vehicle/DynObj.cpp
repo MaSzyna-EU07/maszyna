@@ -1077,7 +1077,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
                     continue;
                 }
 
-                auto const dist { clamp( MoverParameters->Couplers[ i ].Dist / 2.0, -MoverParameters->Couplers[ i ].DmaxB, 0.0 ) };
+                auto const dist { std::clamp( MoverParameters->Couplers[ i ].Dist / 2.0, -MoverParameters->Couplers[ i ].DmaxB, 0.0 ) };
 
                 if( dist >= 0.0 ) { continue; }
 
@@ -2496,7 +2496,7 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     initial_track = MyTrack;
     iNumAxles = 2;
     // McZapkie-090402: odleglosc miedzy czopami skretu lub osiami
-    fAxleDist = clamp(
+    fAxleDist = std::clamp(
             std::max( MoverParameters->BDist, MoverParameters->ADist ),
             0.2, //żeby się dało wektory policzyć
             MoverParameters->Dim.L - 0.2 ); // nie mogą być za daleko bo będzie "walenie w mur"
@@ -3076,7 +3076,7 @@ TDynamicObject::update_load_offset() {
             0.0 :
             100.0 * MoverParameters->LoadAmount / MoverParameters->MaxLoad ) };
 
-    LoadOffset = interpolate( MoverParameters->LoadType.offset_min, 0.f, clamp( 0.0, 1.0, loadpercentage * 0.01 ) );
+    LoadOffset = interpolate( MoverParameters->LoadType.offset_min, 0.f, std::clamp( 0.0, 1.0, loadpercentage * 0.01 ) );
 }
 
 void
@@ -3528,7 +3528,7 @@ bool TDynamicObject::Update(double dt, double dt1)
 				else
 					p->MoverParameters->MED_EPVC_CurrentTime += dt1;
 				bool EPVC = ((p->MoverParameters->MED_EPVC) && ((p->MoverParameters->MED_EPVC_Time < 0) || (p->MoverParameters->MED_EPVC_CurrentTime < p->MoverParameters->MED_EPVC_Time)));
-				float VelC = (EPVC ? clamp(p->MoverParameters->Vel, p->MoverParameters->MED_Vmin, p->MoverParameters->MED_Vmax) : p->MoverParameters->MED_Vref);//korekcja EP po prędkości
+				float VelC = (EPVC ? std::clamp(p->MoverParameters->Vel, p->MoverParameters->MED_Vmin, p->MoverParameters->MED_Vmax) : p->MoverParameters->MED_Vref);//korekcja EP po prędkości
                 float FmaxPoj = Nmax *
 					p->MoverParameters->Hamulec->GetFC(
 						Nmax / (p->MoverParameters->NAxles * p->MoverParameters->NBpA), VelC) *
@@ -3685,7 +3685,7 @@ bool TDynamicObject::Update(double dt, double dt1)
                 auto volume =
                     interpolate(
                         0.8, 1.2,
-                        clamp(
+                        std::clamp(
                             MyTrack->iQualityFlag / 10.0,
                             0.0, 1.5 ) );
                 switch( MyTrack->eEnvironment ) {
@@ -3730,8 +3730,8 @@ bool TDynamicObject::Update(double dt, double dt1)
 								if(MyTrack->eType == tt_Normal)
 								{
 									MoverParameters->AccVert +=
-									    clamp(0.0, 4.0,
-									          (clamp(0.0, MoverParameters->Vmax,
+									    std::clamp(0.0, 4.0,
+									          (std::clamp(0.0, MoverParameters->Vmax,
 									                 MoverParameters->Vmax -
 									                     (MoverParameters->Vel +
 									                      MoverParameters->Vmax * 0.32f))) *
@@ -3739,24 +3739,24 @@ bool TDynamicObject::Update(double dt, double dt1)
 								}
 								if (MyTrack->eType == tt_Switch){
 								    MoverParameters->AccS +=
-								        clamp(0.0, 1.0,
-								              (clamp(0.0, MoverParameters->Vmax,
+								        std::clamp(0.0, 1.0,
+								              (std::clamp(0.0, MoverParameters->Vmax,
 								                     MoverParameters->Vmax -
 								                         (MoverParameters->Vel +
 								                          MoverParameters->Vmax * 0.32f))) *
 								                  .05f * (MyTrack->iDamageFlag * 0.25f)) *
 								        ((axleindex % 2) != 0 ? 1 : -1);
 								    MoverParameters->AccN +=
-								        clamp(0.0, 1.0,
-								              (clamp(0.0, MoverParameters->Vmax,
+								        std::clamp(0.0, 1.0,
+								              (std::clamp(0.0, MoverParameters->Vmax,
 								                     MoverParameters->Vmax -
 								                         (MoverParameters->Vel +
 								                          MoverParameters->Vmax * 0.32f))) *
 								                  .05f * (MyTrack->iDamageFlag * 0.25f)) *
 								        ((axleindex % 2) != 0 ? 1 : -1);
 									MoverParameters->AccVert +=
-									    clamp(0.0, 2.0,
-									          (clamp(0.0, MoverParameters->Vmax,
+									    std::clamp(0.0, 2.0,
+									          (std::clamp(0.0, MoverParameters->Vmax,
 									                 MoverParameters->Vmax -
 									                     (MoverParameters->Vel +
 									                      MoverParameters->Vmax * 0.32f))) *
@@ -4455,12 +4455,12 @@ void TDynamicObject::RenderSounds() {
                 // NOTE: we do sound modulation here to avoid sudden jump on voltage loss
                 frequency = ( voltage / ( MoverParameters->NominalVoltage * MoverParameters->RList[ MoverParameters->RlistSize ].Mn ) );
                 frequency *= sConverter.m_frequencyfactor + sConverter.m_frequencyoffset;
-                sConverter.pitch( clamp( frequency, 0.75, 1.25 ) ); // arbitrary limits )
+                sConverter.pitch( std::clamp( frequency, 0.75, 1.25 ) ); // arbitrary limits )
             }
         }
         else {
             frequency = sConverter.m_frequencyoffset + sConverter.m_frequencyfactor * frequency;
-            sConverter.pitch( clamp( frequency, 0.75, 1.25 ) ); // arbitrary limits )
+            sConverter.pitch( std::clamp( frequency, 0.75, 1.25 ) ); // arbitrary limits )
         }
         sConverter.play( sound_flags::exclusive | sound_flags::looping );
     }
@@ -4491,7 +4491,7 @@ void TDynamicObject::RenderSounds() {
                 // presume the compressor sound is recorded for idle revolutions
                 // increase the pitch according to increase of engine revolutions
                 auto const enginefactor {
-                    clamp( // try to keep the sound pitch in semi-reasonable range
+                    std::clamp( // try to keep the sound pitch in semi-reasonable range
                         MoverParameters->EngineMaxRPM() / MoverParameters->EngineIdleRPM() * MoverParameters->EngineRPMRatio(),
                         0.5, 2.5 ) };
                 sCompressor.pitch( enginefactor );
@@ -4636,10 +4636,10 @@ void TDynamicObject::RenderSounds() {
                 MoverParameters->EmergencyValveFlow :
                 interpolate( m_emergencybrakeflow, MoverParameters->EmergencyValveFlow, 0.1 ) );
         // scale volume based on the flow rate and on the pressure in the main pipe
-        auto const flowpressure { clamp( m_emergencybrakeflow, 0.0, 1.0 ) + clamp( 0.1 * MoverParameters->PipePress, 0.0, 0.5 ) };
+        auto const flowpressure { std::clamp( m_emergencybrakeflow, 0.0, 1.0 ) + std::clamp( 0.1 * MoverParameters->PipePress, 0.0, 0.5 ) };
          m_emergencybrake
             .pitch( m_emergencybrake.m_frequencyoffset + 1.0 * m_emergencybrake.m_frequencyfactor )
-            .gain( m_emergencybrake.m_amplitudeoffset + clamp( flowpressure, 0.0, 1.0 ) * m_emergencybrake.m_amplitudefactor )
+            .gain( m_emergencybrake.m_amplitudeoffset + std::clamp( flowpressure, 0.0, 1.0 ) * m_emergencybrake.m_amplitudefactor )
             .play( sound_flags::exclusive | sound_flags::looping );
    }
     else if( MoverParameters->EmergencyValveFlow < 0.015 ) {
@@ -4674,9 +4674,9 @@ void TDynamicObject::RenderSounds() {
     if( MoverParameters->Hamulec->Releaser() ) {
         sReleaser
             .gain(
-                clamp<float>(
-                    MoverParameters->BrakePress * 1.25f, // arbitrary multiplier
-                    0.f, 1.f ) )
+                std::clamp(
+                    MoverParameters->BrakePress * 1.25, // arbitrary multiplier
+                    0., 1. ) )
             .play( sound_flags::exclusive | sound_flags::looping );
     }
     else {
@@ -4714,7 +4714,7 @@ void TDynamicObject::RenderSounds() {
      && ( MoverParameters->Vel > 0.05 ) ) {
 
         brakeforceratio =
-            clamp(
+            std::clamp(
                 MoverParameters->UnitBrakeForce / std::max( 1.0, MoverParameters->BrakeForceR( 1.0, MoverParameters->Vel ) / ( MoverParameters->NAxles * std::max( 1, MoverParameters->NBpA ) ) ),
                 0.0, 1.0 );
         rsBrake
@@ -4966,7 +4966,7 @@ void TDynamicObject::RenderSounds() {
         volume *=
             interpolate(
                 0.8, 1.2,
-                clamp(
+                std::clamp(
                     MyTrack->iQualityFlag / 20.0,
                     0.0, 1.0 ) );
         // for single sample sounds muffle the playback at low speeds
@@ -4974,7 +4974,7 @@ void TDynamicObject::RenderSounds() {
             volume *=
                 interpolate(
                     0.0, 1.0,
-                    clamp(
+                    std::clamp(
                         MoverParameters->Vel / 40.0,
                         0.0, 1.0 ) );
         }
@@ -5036,7 +5036,7 @@ void TDynamicObject::RenderSounds() {
          && ( MoverParameters->WheelFlat > 5.0 ) ) {
             m_wheelflat
                 .pitch( m_wheelflat.m_frequencyoffset + std::abs( MoverParameters->nrot ) * m_wheelflat.m_frequencyfactor )
-                .gain( m_wheelflat.m_amplitudeoffset + m_wheelflat.m_amplitudefactor * ( ( 1.0 + ( MoverParameters->Vel / MoverParameters->Vmax ) + clamp( MoverParameters->WheelFlat / 60.0, 0.0, 1.0 ) ) / 3.0 ) )
+                .gain( m_wheelflat.m_amplitudeoffset + m_wheelflat.m_amplitudefactor * ( ( 1.0 + ( MoverParameters->Vel / MoverParameters->Vmax ) + std::clamp( MoverParameters->WheelFlat / 60.0, 0.0, 1.0 ) ) / 3.0 ) )
                 .play( sound_flags::exclusive | sound_flags::looping );
         }
         else {
@@ -5053,7 +5053,7 @@ void TDynamicObject::RenderSounds() {
             std::abs( MoverParameters->AccN ) // * MoverParameters->AccN
             * interpolate(
                 0.5, 1.0,
-                clamp(
+                std::clamp(
                     MoverParameters->Vel / 40.0,
                     0.0, 1.0 ) )
             * ( ( ( MyTrack->eType == tt_Switch ) && ( std::abs( ts.R ) < 1500.0 ) ) ? 100.0 : 1.0 );
@@ -5310,7 +5310,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                 if( i < asModel.length() ) {
                     m_materialdata.multi_textures = asModel[ i + 1 ] - '0';
                 }
-                m_materialdata.multi_textures = clamp( m_materialdata.multi_textures, 0, 1 ); // na razie ustawiamy na 1
+                m_materialdata.multi_textures = std::clamp( m_materialdata.multi_textures, 0, 1 ); // na razie ustawiamy na 1
             }
             */
             asModel = asBaseDir + asModel; // McZapkie 2002-07-20: dynamics maja swoje modele w dynamics/basedir
@@ -6563,7 +6563,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                                     >> soundproofing[ 5 ];
                                 for( auto & soundproofingelement : soundproofing ) {
                                     if( soundproofingelement != -1.f ) {
-                                        soundproofingelement = std::sqrt( clamp( soundproofingelement, 0.f, 1.f ) );
+                                        soundproofingelement = std::sqrt( std::clamp( soundproofingelement, 0.f, 1.f ) );
                                     }
                                 }
                                 m_pasystem.soundproofing = soundproofing;
@@ -7017,7 +7017,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                         for( auto &soundproofingelement : soundproofingtable ) {
                             auto const value { parser.getToken<float>( false ) };
                             if( value != -1.f ) {
-                                soundproofingelement = std::sqrt( clamp( value, 0.f, 1.f ) );
+                                soundproofingelement = std::sqrt( std::clamp( value, 0.f, 1.f ) );
                             }
                         }
                     }
@@ -8086,13 +8086,13 @@ TDynamicObject::update_shake( double const Timedelta ) {
                 shakevector.x +=
                     ( std::sin( MoverParameters->eAngle * 4.0 ) * Timedelta * EngineShake.scale )
                     // fade in with rpm above threshold
-                    * clamp(
+                    * std::clamp(
                         ( MoverParameters->enrot - EngineShake.fadein_offset ) * EngineShake.fadein_factor,
                         0.0, 1.0 )
                     // fade out with rpm above threshold
                     * interpolate(
                         1.0, 0.0,
-                        clamp(
+                        std::clamp(
                             ( MoverParameters->enrot - EngineShake.fadeout_offset ) * EngineShake.fadeout_factor,
                             0.0, 1.0 ) );
             }
@@ -8105,7 +8105,7 @@ TDynamicObject::update_shake( double const Timedelta ) {
             auto const huntingamount =
                 interpolate(
                     0.0, 1.0,
-                    clamp(
+                    std::clamp(
                         ( MoverParameters->Vel - HuntingShake.fadein_begin ) / ( HuntingShake.fadein_end - HuntingShake.fadein_begin ),
                         0.0, 1.0 ) );
             shakevector.x +=
@@ -8325,7 +8325,7 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
                         engine_revs_change = std::max( 0.0, engine_revs_change - 2.5 * Deltatime );
                         if( ( revolutionsperminute > idlerevolutionsthreshold )
                          && ( revolutionsdifference > 1.0 * Deltatime ) ) {
-                            engine_revs_change = clamp( engine_revs_change + 5.0 * Deltatime, 0.0, 1.25 );
+                            engine_revs_change = std::clamp( engine_revs_change + 5.0 * Deltatime, 0.0, 1.25 );
                         }
                         enginerevvolume = 0.8 * engine_revs_change;
                     }
@@ -8513,7 +8513,7 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
             }
             // scale motor volume based on whether they're active
             motor_momentum =
-                clamp(
+                std::clamp(
                     motor_momentum
                     - 1.0 * Deltatime // smooth out decay
                     + std::abs( Vehicle.Mm ) / 60.0 * Deltatime,

@@ -2321,7 +2321,7 @@ void TSubModel::BinInit(TSubModel *s, float4x4 *m, std::vector<std::string> *t, 
 		fCosHotspotAngle = std::cos(DegToRad(0.5f * fCosHotspotAngle));
 	}
 	// cap specular values for legacy models
-	f4Specular = glm::vec4{clamp(f4Specular.r, 0.0f, 1.0f), clamp(f4Specular.g, 0.0f, 1.0f), clamp(f4Specular.b, 0.0f, 1.0f), clamp(f4Specular.a, 0.0f, 1.0f)};
+	f4Specular = glm::vec4{std::clamp(f4Specular.r, 0.0f, 1.0f), std::clamp(f4Specular.g, 0.0f, 1.0f), std::clamp(f4Specular.b, 0.0f, 1.0f), std::clamp(f4Specular.a, 0.0f, 1.0f)};
 
 	iFlags &= ~0x0200; // wczytano z pliku binarnego (nie jest właścicielem tablic)
 

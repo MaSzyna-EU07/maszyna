@@ -134,18 +134,18 @@ bool CSkyDome::SetSunPosition( glm::vec3 const &Direction ) {
 
 void CSkyDome::SetTurbidity( float const Turbidity ) {
 
-	m_turbidity = clamp( Turbidity, 1.f, 128.f );
+	m_turbidity = std::clamp( Turbidity, 1.f, 128.f );
 }
 
 void CSkyDome::SetExposure( bool const Linearexposure, float const Expfactor ) {
 
 	m_linearexpcontrol = Linearexposure;
-	m_expfactor = 1.0f / clamp( Expfactor, 1.0f, std::numeric_limits<float>::infinity() );
+	m_expfactor = 1.0f / std::clamp( Expfactor, 1.0f, std::numeric_limits<float>::infinity() );
 }
 
 void CSkyDome::SetOvercastFactor( float const Overcast ) {
 
-	m_overcast = clamp( Overcast, 0.0f, 1.0f ) * 0.75f; // going above 0.65 makes the model go pretty bad, appearance-wise
+	m_overcast = std::clamp( Overcast, 0.0f, 1.0f ) * 0.75f; // going above 0.65 makes the model go pretty bad, appearance-wise
 }
 
 void CSkyDome::GetPerez( float *Perez, float Distribution[ 5 ][ 2 ], const float Turbidity ) {
@@ -185,7 +185,7 @@ float CSkyDome::PerezFunctionO2( float Perezcoeffs[ 5 ], const float Icostheta, 
 
 void CSkyDome::RebuildColors() {
 
-    float twilightfactor = clamp( -simulation::Environment.sun().getAngle(), 0.0f, 18.0f ) / 18.0f;
+    float twilightfactor = std::clamp( -simulation::Environment.sun().getAngle(), 0.0f, 18.0f ) / 18.0f;
     auto gammacorrection = interpolate( glm::vec3( 0.45f ), glm::vec3( 1.0f ), twilightfactor );
 
 	// get zenith luminance
@@ -263,7 +263,7 @@ void CSkyDome::RebuildColors() {
             colorconverter.z = 0.85f + ( colorconverter.z - 0.85f ) * 0.35f;
         }
 
-        colorconverter.y = clamp( colorconverter.y * Global.m_skysaturationcorrection, 0.0f, 1.0f );
+        colorconverter.y = std::clamp( colorconverter.y * Global.m_skysaturationcorrection, 0.0f, 1.0f );
         // desaturate sky colour, based on overcast level
         if( colorconverter.y > 0.0f ) {
             colorconverter.y *= ( 1.0f - 0.5f * m_overcast );
@@ -272,11 +272,11 @@ void CSkyDome::RebuildColors() {
         // override the hue, based on sun height above the horizon. crude way to deal with model shortcomings
         // correction begins when the sun is higher than 10 degrees above the horizon, and fully in effect at 10+15 degrees
         float const degreesabovehorizon = 90.0f - m_thetasun * ( 180.0f / M_PI );
-        auto const sunbasedphase = clamp( (1.0f / 15.0f) * ( degreesabovehorizon - 10.0f ), 0.0f, 1.0f );
+        auto const sunbasedphase = std::clamp( (1.0f / 15.0f) * ( degreesabovehorizon - 10.0f ), 0.0f, 1.0f );
         // correction is applied in linear manner from the bottom, becomes fully in effect for vertices with y = 0.50
-        auto const heightbasedphase = clamp( vertex.y * 2.0f, 0.0f, 1.0f );
+        auto const heightbasedphase = std::clamp( vertex.y * 2.0f, 0.0f, 1.0f );
         // this height-based factor is reduced the farther the sun is up in the sky
-        float const shiftfactor = clamp( interpolate(heightbasedphase, sunbasedphase, sunbasedphase), 0.0f, 1.0f );
+        float const shiftfactor = std::clamp( interpolate(heightbasedphase, sunbasedphase, sunbasedphase), 0.0f, 1.0f );
         // h = 210 makes for 'typical' sky tone
         shiftedcolor = glm::vec3( 210.0f, colorconverter.y, colorconverter.z );
         shiftedcolor = colors::HSVtoRGB( shiftedcolor );
@@ -296,7 +296,7 @@ void CSkyDome::RebuildColors() {
             color.y = 0.65f * color.z;
         }
         // simple gradient, darkening towards the top
-        color *= clamp( ( 1.0f - vertex.y ), 0.f, 1.f );
+        color *= std::clamp( ( 1.0f - vertex.y ), 0.f, 1.f );
         //color *= ( 0.25f - vertex.y );
         // gamma correction
         color = glm::pow( color, gammacorrection );

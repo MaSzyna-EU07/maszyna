@@ -663,7 +663,7 @@ debug_panel::render_section_scenario() {
             command_relay relay;
             relay.post(
                 user_command::setweather,
-                clamp( std::exp( fogrange ), 10.0f, 50000.0f ),
+                std::clamp( std::exp( fogrange ), 10.0f, 50000.0f ),
                 Global.Overcast,
                 GLFW_PRESS, 0 );
         }
@@ -677,7 +677,7 @@ debug_panel::render_section_scenario() {
 			command_relay relay;
             relay.post(
                 user_command::settemperature, 
-                clamp(Airtemperature, -35.0f, 40.0f),
+                std::clamp(Airtemperature, -35.0f, 40.0f),
 			           Global.Overcast,
                 GLFW_PRESS, 0 );
 		}
@@ -690,7 +690,7 @@ debug_panel::render_section_scenario() {
             relay.post(
                 user_command::setweather,
                 Global.fFogEnd,
-                clamp( Global.Overcast, 0.0f, 2.0f ),
+                std::clamp( Global.Overcast, 0.0f, 2.0f ),
                 GLFW_PRESS, 0 );
         }
     }
@@ -701,7 +701,7 @@ debug_panel::render_section_scenario() {
             command_relay relay;
             relay.post(
                 user_command::setdatetime,
-                clamp( Global.fMoveLight, 0.0f, 365.0f ),
+                std::clamp( Global.fMoveLight, 0.0f, 365.0f ),
                 simulation::Time.data().wHour * 60 + simulation::Time.data().wMinute,
                 GLFW_PRESS, 0 );
         }
@@ -730,7 +730,7 @@ debug_panel::render_section_scenario() {
                 relay.post(
                     user_command::setdatetime,
                     Global.fMoveLight,
-                    clamp( time, 0, 1439 ),
+                    std::clamp( time, 0, 1439 ),
                     GLFW_PRESS, 0 );
             }
         }
@@ -747,7 +747,7 @@ debug_panel::render_section_scenario() {
 			auto drawrange = std::log(Global.BaseDrawRange);
 			if (ImGui::SliderFloat(
 				(to_string(std::exp(drawrange), 0, 5) + " m###drawrange").c_str(), &drawrange, std::log(100.0f), std::log(50000.0f), "Base drawing range")) {
-				Global.BaseDrawRange = clamp(std::exp(drawrange), 100.0f, 50000.0f);
+				Global.BaseDrawRange = std::clamp(std::exp(drawrange), 100.0f, 50000.0f);
 			}
 		}
     }
@@ -1256,7 +1256,7 @@ debug_panel::update_section_scantable( std::vector<text_line> &Output ) {
 
 	auto const &mechanik{ *m_input.mechanik };
 
-	std::size_t i = 0; std::size_t const speedtablesize = clamp( static_cast<int>( mechanik.TableSize() ) - 1, 0, 30 );
+	std::size_t i = 0; std::size_t const speedtablesize = std::clamp( static_cast<int>( mechanik.TableSize() ) - 1, 0, 30 );
 	do {
 		auto const scanline = mechanik.TableText( i );
 		if( scanline.empty() ) { break; }

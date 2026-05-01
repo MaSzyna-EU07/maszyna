@@ -457,7 +457,7 @@ void TAnimModel::RaAnimate( unsigned int const Framestamp ) {
     	else
     		opacity -= m_transition ? timedelta / transitionofftime : 1.f; // reduce to zero
     	// Clamp the opacity
-    	opacity = clamp(opacity, 0.f, 1.f);
+		opacity = std::clamp(opacity, 0.f, 1.f);
     }
 
     // Ra 2F1I: to by można pomijać dla modeli bez animacji, których jest większość
@@ -600,7 +600,7 @@ std::optional<std::tuple<float, float, std::optional<glm::vec3>> > TAnimModel::L
 
 void TAnimModel::SkinSet( int const Index, material_handle const Material ) {
 
-    m_materialdata.replacable_skins[ clamp( Index, 1, 4 ) ] = Material;
+    m_materialdata.replacable_skins[ std::clamp( Index, 1, 4 ) ] = Material;
 }
 
 void TAnimModel::AnimUpdate(double dt)

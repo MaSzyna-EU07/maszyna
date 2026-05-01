@@ -273,7 +273,7 @@ TSegment::find_nearest_point( glm::dvec3 const &Point ) const {
         for( int segmentidx = 0; segmentidx < iSegCount; ++segmentidx ) {
 
             auto const segmentpoint =
-                clamp(
+                std::clamp(
                     nearest_segment_point(
                         glm::dvec3{ FastGetPoint( fTsBuffer[ segmentidx ] ) },
                         glm::dvec3{ FastGetPoint( fTsBuffer[ segmentidx + 1 ] ) },
@@ -331,7 +331,7 @@ Math3D::vector3 TSegment::GetPoint(double const fDistance) const
         return
             interpolate(
                 Point1, Point2,
-                clamp(
+                std::clamp(
                     fDistance / fLength,
                     0.0, 1.0 ) );
     }

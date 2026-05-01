@@ -147,7 +147,7 @@ mouse_slider::on_move( double const Mousex, double const Mousey ) {
     auto const controledge { Global.window_size.y * 0.5 + controlsize * 0.5 };
     auto const stepsize { controlsize / m_valuerange };
 
-    auto mousey = clamp( Mousey, controledge - controlsize, controledge );
+    auto mousey = std::clamp( Mousey, controledge - controlsize, controledge );
     m_value = (
         m_analogue ?
             ( controledge - mousey ) / controlsize :
@@ -303,7 +303,7 @@ drivermouse_input::scroll( double const Xoffset, double const Yoffset ) {
 
     if( Global.ctrlState ) {
         // ctrl + scroll wheel adjusts fov
-		Global.FieldOfView = clamp( static_cast<float>( Global.FieldOfView - Yoffset * 20.0 / Timer::subsystem.mainloop_total.average() ), 15.0f, 75.0f );
+		Global.FieldOfView = std::clamp( static_cast<float>( Global.FieldOfView - Yoffset * 20.0 / Timer::subsystem.mainloop_total.average() ), 15.0f, 75.0f );
     }
     else {
         // scroll adjusts master controller

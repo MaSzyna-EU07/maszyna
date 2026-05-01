@@ -1293,7 +1293,7 @@ bool opengl33_renderer::Render_lowpoly( TDynamicObject *Dynamic, float const Squ
                     Dynamic->fShade :
                     1.0 ) ) ) ) };
         setup_sunlight_intensity(
-            clamp( (
+            std::clamp( (
                 Dynamic->fShade > 0.f ?
                     Dynamic->fShade :
                     1.f )
@@ -1913,20 +1913,20 @@ bool opengl33_renderer::Render(world_environment *Environment)
 
 	auto const &modelview = OpenGLMatrices.data(GL_MODELVIEW);
 
-    auto const fogfactor{clamp(Global.fFogEnd / 2000.f, 0.f, 1.f)}; // stronger fog reduces opacity of the celestial bodies
-	float const duskfactor = 1.0f - clamp(std::abs(Environment->m_sun.getAngle()), 0.0f, 12.0f) / 12.0f;
+    auto const fogfactor{std::clamp(Global.fFogEnd / 2000.f, 0.f, 1.f)}; // stronger fog reduces opacity of the celestial bodies
+	float const duskfactor = 1.0f - std::clamp(std::abs(Environment->m_sun.getAngle()), 0.0f, 12.0f) / 12.0f;
 	glm::vec3 suncolor = interpolate(glm::vec3(255.0f / 255.0f, 242.0f / 255.0f, 231.0f / 255.0f), glm::vec3(235.0f / 255.0f, 140.0f / 255.0f, 36.0f / 255.0f), duskfactor);
 
 	// sun
 	{
 		Bind_Texture(0, m_suntexture);
-		glm::vec4 color(suncolor.x, suncolor.y, suncolor.z, clamp(1.5f - Global.Overcast, 0.f, 1.f) * fogfactor);
+		glm::vec4 color(suncolor.x, suncolor.y, suncolor.z, std::clamp(1.5f - Global.Overcast, 0.f, 1.f) * fogfactor);
 		auto const sunvector = Environment->m_sun.getDirection();
 
         /*float const size = interpolate( // TODO: expose distance/scale factor from the moon object
             0.0325f,
             0.0275f,
-            clamp( Environment->m_sun.getAngle(), 0.f, 90.f ) / 90.f );*/
+            std::clamp( Environment->m_sun.getAngle(), 0.f, 90.f ) / 90.f );*/
 		model_ubs.param[0] = color;
         model_ubs.param[1] = glm::vec4(glm::vec3(modelview * glm::vec4(sunvector, 1.0f)), 0.00463f /* size */);
 		model_ubs.param[2] = glm::vec4(0.0f, 1.0f, 1.0f, 0.0f);
@@ -2003,7 +2003,7 @@ bool opengl33_renderer::Render(world_environment *Environment)
         float const size = interpolate( // TODO: expose distance/scale factor from the moon object
             0.0160f,
             0.0135f,
-            clamp( Environment->m_moon.getAngle(), 0.f, 90.f ) / 90.f );*/
+            std::clamp( Environment->m_moon.getAngle(), 0.f, 90.f ) / 90.f );*/
 
 		model_ubs.param[0] = color;
         model_ubs.param[1] = glm::vec4(glm::vec3(modelview * glm::vec4(moonvector, 1.0f)), 0.00451f /* size */);
@@ -2044,7 +2044,7 @@ bool opengl33_renderer::Render(world_environment *Environment)
 	m_sunlight.apply_intensity();
 
     // calculate shadow tone, based on positions of celestial bodies
-	m_shadowcolor = interpolate(glm::vec4{colors::shadow}, glm::vec4{colors::white}, clamp(-Environment->m_sun.getAngle(), 0.f, 6.f) / 6.f);
+	m_shadowcolor = interpolate(glm::vec4{colors::shadow}, glm::vec4{colors::white}, std::clamp(-Environment->m_sun.getAngle(), 0.f, 6.f) / 6.f);
 	if ((Environment->m_sun.getAngle() < -18.f) && (Environment->m_moon.getAngle() > 0.f))
 	{
 		// turn on moon shadows after nautical twilight, if the moon is actually up
@@ -3102,7 +3102,7 @@ bool opengl33_renderer::Render_cab(TDynamicObject const *Dynamic, float const Li
             auto const luminance { Global.fLuminance * ( Dynamic->fShade > 0.0f ? Dynamic->fShade : 1.0f ) };
             if( Lightlevel > 0.f ) {
                 // crude way to light the cabin, until we have something more complete in place
-                light_ubs.ambient += ( Dynamic->InteriorLight * Lightlevel ) * static_cast<float>( clamp( 1.25 - luminance, 0.0, 1.0 ) );
+                light_ubs.ambient += ( Dynamic->InteriorLight * Lightlevel ) * std::clamp( 1.25f - (float)luminance, 0.f, 1.f );
                 light_ubo->update( light_ubs );
             }
 
@@ -3715,7 +3715,7 @@ void opengl33_renderer::Render_precipitation()
 	::glRotated(m_precipitationrotation, 0.0, 1.0, 0.0);
 
 	model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
-	model_ubs.param[0] = interpolate(0.5f * (Global.DayLight.diffuse + Global.DayLight.ambient), colors::white, 0.5f * clamp<float>(Global.fLuminance, 0.f, 1.f));
+	model_ubs.param[0] = interpolate(0.5f * (Global.DayLight.diffuse + Global.DayLight.ambient), colors::white, 0.5f * std::clamp((float)Global.fLuminance, 0.f, 1.f));
 	model_ubs.param[1].x = simulation::Environment.m_precipitation.get_textureoffset();
 	model_ubo->update(model_ubs);
 
@@ -3891,7 +3891,7 @@ void opengl33_renderer::Render_Alpha(TTraction *Traction)
 	auto const distance{static_cast<float>(std::sqrt(distancesquared))};
 	auto const linealpha = 20.f * Traction->WireThickness / std::max(0.5f * Traction->radius() + 1.f, distance - (0.5f * Traction->radius()));
 	if (m_widelines_supported)
-		glLineWidth(clamp(0.5f * linealpha + Traction->WireThickness * Traction->radius() / 1000.f, 1.f, 1.75f));
+		glLineWidth(std::clamp(0.5f * linealpha + Traction->WireThickness * Traction->radius() / 1000.f, 1.f, 1.75f));
 
 	// render
 
@@ -3929,7 +3929,7 @@ void opengl33_renderer::Render_Alpha(scene::lines_node const &Lines)
 	auto const linealpha =
 	    (data.line_width > 0.f ? 10.f * data.line_width / std::max(0.5f * data.area.radius + 1.f, distance - (0.5f * data.area.radius)) : 1.f); // negative width means the lines are always opague
 	if (m_widelines_supported)
-		glLineWidth(clamp(0.5f * linealpha + data.line_width * data.area.radius / 1000.f, 1.f, 8.f));
+		glLineWidth(std::clamp(0.5f * linealpha + data.line_width * data.area.radius / 1000.f, 1.f, 8.f));
 
 	model_ubs.param[0] = glm::vec4(glm::vec3(data.lighting.diffuse * m_sunlight.ambient), glm::min(1.0f, linealpha));
 
@@ -4171,11 +4171,11 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 				{
 					// only bother if the viewer is inside the visibility cone
 					// luminosity at night is at level of ~0.1, so the overall resulting transparency in clear conditions is ~0.5 at full 'brightness'
-					auto glarelevel{clamp(std::max<float>(0.6f - Global.fLuminance, // reduce the glare in bright daylight
+					auto glarelevel{std::clamp(std::max<float>(0.6f - Global.fLuminance, // reduce the glare in bright daylight
 						                                  Global.Overcast - 1.f), // ensure some glare in rainy/foggy conditions
 						                  0.f, 1.f)};
 					// view angle attenuation
-					float const anglefactor{clamp((Submodel->fCosViewAngle - Submodel->fCosFalloffAngle) / (Submodel->fCosHotspotAngle - Submodel->fCosFalloffAngle), 0.f, 1.f)};
+					float const anglefactor{std::clamp((Submodel->fCosViewAngle - Submodel->fCosFalloffAngle) / (Submodel->fCosHotspotAngle - Submodel->fCosFalloffAngle), 0.f, 1.f)};
 
 					glarelevel *= anglefactor;
 
@@ -4226,7 +4226,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 				// kąt większy niż maksymalny stożek swiatła
 				float lightlevel = 1.f; // TODO, TBD: parameter to control light strength
 				// view angle attenuation
-				float const anglefactor = clamp((Submodel->fCosViewAngle - Submodel->fCosFalloffAngle) / (Submodel->fCosHotspotAngle - Submodel->fCosFalloffAngle), 0.f, 1.f);
+				float const anglefactor = std::clamp((Submodel->fCosViewAngle - Submodel->fCosFalloffAngle) / (Submodel->fCosHotspotAngle - Submodel->fCosFalloffAngle), 0.f, 1.f);
 				lightlevel *= anglefactor;
 
 				// distance attenuation. NOTE: since it's fixed pipeline with built-in gamma correction we're using linear attenuation
@@ -4236,7 +4236,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 				// additionally reduce light strength for farther sources in rain or snow
 				if (Global.Overcast > 0.75f)
 				{
-					float const precipitationfactor{interpolate(interpolate(1.f, 0.25f, clamp(Global.Overcast * 0.75f - 0.5f, 0.f, 1.f)), 1.f, distancefactor)};
+					float const precipitationfactor{interpolate(interpolate(1.f, 0.25f, std::clamp(Global.Overcast * 0.75f - 0.5f, 0.f, 1.f)), 1.f, distancefactor)};
 					lightlevel *= precipitationfactor;
 				}
 
@@ -4263,7 +4263,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 					if (Global.Overcast > 1.0f)
 					{
 						// fake fog halo
-						float const fogfactor{interpolate(1.5f, 1.f, clamp(Global.fFogEnd / 2000, 0.f, 1.f)) * std::max(1.f, Global.Overcast)};
+						float const fogfactor{interpolate(1.5f, 1.f, std::clamp(Global.fFogEnd / 2000, 0.f, 1.f)) * std::max(1.f, Global.Overcast)};
                         model_ubs.param[1].x = pointsize * fogfactor * 4.0f;
 						model_ubs.param[0] = glm::vec4(glm::vec3(lightcolor), Submodel->fVisible * std::min(1.f, lightlevel) * 0.5f);
 

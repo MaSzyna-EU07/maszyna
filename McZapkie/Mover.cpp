@@ -862,7 +862,7 @@ void TMoverParameters::UpdatePantVolume(double dt)
 			// Ra 2013-12: Niebugocław mówi, że w EZT nie ma potrzeby odcinać kurkiem
 			PantPress = ScndPipePress;
 			// ograniczenie ciśnienia do MaxPress (tylko w pantografach!)
-			PantPress = clamp(ScndPipePress, 0.0, EnginePowerSource.CollectorParameters.MaxPress);
+			PantPress = std::clamp(ScndPipePress, 0.0, EnginePowerSource.CollectorParameters.MaxPress);
 			PantVolume = (PantPress + 1.0) * 0.1; // objętość, na wypadek odcięcia kurkiem
 		}
 		else
@@ -874,7 +874,7 @@ void TMoverParameters::UpdatePantVolume(double dt)
 				              // Ra 2013-12: Niebugocław mówi, że w EZT nabija 1.5 raz wolniej niż jak było 0.005
 				              * (TrainType == dt_EZT ? 0.003 : 0.005) / std::max(1.0, PantPress) * (0.45 - ((0.1 / PantVolume / 10) - 0.1)) / 0.45;
 			}
-			PantPress = clamp((10.0 * PantVolume) - 1.0, 0.0, EnginePowerSource.CollectorParameters.MaxPress); // tu by się przydała objętość zbiornika
+			PantPress = std::clamp((10.0 * PantVolume) - 1.0, 0.0, EnginePowerSource.CollectorParameters.MaxPress); // tu by się przydała objętość zbiornika
 		}
 		if (!PantCompFlag && (PantVolume > 0.1))
 			PantVolume -= dt * 0.0003 * std::max(1.0, PantPress * 0.5); // nieszczelności: 0.0003=0.3l/s
@@ -1156,7 +1156,7 @@ double TMoverParameters::PipeRatio(void)
 double TMoverParameters::EngineRPMRatio() const
 {
 
-	return clamp((EngineType == TEngineType::DieselElectric ? ((60.0 * std::abs(enrot)) / DElist[MainCtrlPosNo].RPM) :
+	return std::clamp((EngineType == TEngineType::DieselElectric ? ((60.0 * std::abs(enrot)) / DElist[MainCtrlPosNo].RPM) :
 	              EngineType == TEngineType::DieselEngine   ? (std::abs(enrot) / nmax) :
 	                                                          1.0), // shouldn't ever get here but, eh
 	             0.0, 1.0);
@@ -1259,7 +1259,7 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 		//       if( accelerationchange / AccS < 1.0 ) {
 		// HACK: prevent excessive vehicle pinball cases
 		AccS += accelerationchange;
-		//           AccS = clamp( AccS, -2.0, 2.0 );
+		//           AccS = std::clamp( AccS, -2.0, 2.0 );
 		V = velocity;
 		//        }
 	}
@@ -1394,7 +1394,7 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 		auto const AccSprev{AccS};
 		// przyspieszenie styczne
 		AccS = interpolate(AccSprev, FTotal / TotalMass, 0.5);
-		// clamp( dt * 3.0, 0.0, 1.0 ) ); // prawo Newtona ale z wygladzaniem (średnia z poprzednim)
+		// std::clamp( dt * 3.0, 0.0, 1.0 ) ); // prawo Newtona ale z wygladzaniem (średnia z poprzednim)
 
 		if (TestFlag(DamageFlag, dtrain_out))
 			AccS = -Sign(V) * g * 1; // random(0.0, 0.1)
@@ -1416,7 +1416,7 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 		}
 
 		// tangential acceleration, from velocity change
-		AccSVBased = interpolate(AccSVBased, (V - Vprev) / dt, clamp(dt * 3.0, 0.0, 1.0));
+		AccSVBased = interpolate(AccSVBased, (V - Vprev) / dt, std::clamp(dt * 3.0, 0.0, 1.0));
 
 		// vertical acceleration
 		AccVert = (std::abs(AccVert) < 0.01 ? 0.0 : AccVert * 0.5);
@@ -1491,7 +1491,7 @@ double TMoverParameters::FastComputeMovement(double dt, const TTrackShape &Shape
 		auto const AccSprev{AccS};
 		// przyspieszenie styczne
 		AccS = interpolate(AccSprev, FTotal / TotalMass, 0.5);
-		// clamp( dt * 3.0, 0.0, 1.0 ) ); // prawo Newtona ale z wygladzaniem (średnia z poprzednim)
+		// std::clamp( dt * 3.0, 0.0, 1.0 ) ); // prawo Newtona ale z wygladzaniem (średnia z poprzednim)
 
 		if (TestFlag(DamageFlag, dtrain_out))
 			AccS = -Sign(V) * g * 1; // * random(0.0, 0.1)
@@ -2099,7 +2099,7 @@ void TMoverParameters::HeatingCheck(double const Timestep)
 			                                             generator.voltage_min * absrevolutions / generator.revolutions_min :
 			                                             //                    absrevolutions > generator.revolutions_max ? generator.voltage_max * absrevolutions / generator.revolutions_max :
 			                                             interpolate(generator.voltage_min, generator.voltage_max,
-			                                                         clamp((absrevolutions - generator.revolutions_min) / (generator.revolutions_max - generator.revolutions_min), 0.0, 1.0))) *
+			                                                         std::clamp((absrevolutions - generator.revolutions_min) / (generator.revolutions_max - generator.revolutions_min), 0.0, 1.0))) *
 			                    sign(generator.revolutions);
 		}
 		break;
@@ -2221,7 +2221,7 @@ void TMoverParameters::OilPumpCheck(double const Timestep)
 	{
 		OilPump.pressure = std::max<float>(OilPump.pressure_target, OilPump.pressure - (enrot > 5.0 ? 0.05 : 0.035) * 0.5 * Timestep);
 	}
-	OilPump.pressure = clamp(OilPump.pressure, 0.f, 1.5f);
+	OilPump.pressure = std::clamp(OilPump.pressure, 0.f, 1.5f);
 }
 
 void TMoverParameters::MotorBlowersCheck(double const Timestep)
@@ -2276,7 +2276,7 @@ void TMoverParameters::MotorBlowersCheck(double const Timestep)
 		if (revolutionstarget > 0.f)
 		{
 			auto const speedincreasecap{std::max(50.f, fan.speed * 0.05f * -1)}; // 5% of fixed revolution speed, or 50
-			fan.revolutions += clamp(revolutionstarget - fan.revolutions, speedincreasecap * -2, speedincreasecap) * Timestep;
+			fan.revolutions += std::clamp(revolutionstarget - fan.revolutions, speedincreasecap * -2, speedincreasecap) * Timestep;
 		}
 		else
 		{
@@ -3751,7 +3751,7 @@ bool TMoverParameters::ChangeCompressorPreset(int const State, range_t const Not
 
 	auto const initialstate{CompressorListPos};
 
-	CompressorListPos = clamp(State, 0, CompressorListPosNo);
+	CompressorListPos = std::clamp(State, 0, CompressorListPosNo);
 
 	if (Notify != range_t::local)
 	{
@@ -5285,7 +5285,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 	if ((coupler.CouplingFlag != coupling::faux) || (initialdistance < 0))
 	{
 
-		coupler.Dist = clamp(newdistance, (coupler.has_adapter() ? 0 : -coupler.DmaxB), coupler.DmaxC);
+		coupler.Dist = std::clamp(newdistance, (coupler.has_adapter() ? 0 : -coupler.DmaxB), coupler.DmaxC);
 
 		double BetaAvg = 0;
 		double Fmax = 0;
@@ -5425,7 +5425,7 @@ double TMoverParameters::TractionForce(double dt)
 				tmp = std::max(tmp, std::min(EngineMaxRPM(), EngineHeatingRPM) / 60.0);
 			}
 			// NOTE: fake dizel_fill calculation for the sake of smoke emitter which uses this parameter to determine smoke opacity
-			dizel_fill = clamp(0.2 + 0.35 * (tmp - enrot) + 0.5 * (std::abs(Im) / DElist[MainCtrlPosNo].Imax), 0.05, 1.0);
+			dizel_fill = std::clamp(0.2 + 0.35 * (tmp - enrot) + 0.5 * (std::abs(Im) / DElist[MainCtrlPosNo].Imax), 0.05, 1.0);
 		}
 		else
 		{
@@ -5435,7 +5435,7 @@ double TMoverParameters::TractionForce(double dt)
 
 		if (enrot != tmp)
 		{
-			enrot = clamp(enrot + (dt / dizel_AIM) * (enrot < tmp ? 1.0 : -1.0 * dizel_RevolutionsDecreaseRate), // NOTE: revolutions typically drop faster than they rise
+			enrot = std::clamp(enrot + (dt / dizel_AIM) * (enrot < tmp ? 1.0 : -1.0 * dizel_RevolutionsDecreaseRate), // NOTE: revolutions typically drop faster than they rise
 			              0.0, std::max(tmp, enrot));
 			if (std::abs(tmp - enrot) < 0.001)
 			{
@@ -5537,9 +5537,9 @@ double TMoverParameters::TractionForce(double dt)
 		if (true == Mains)
 		{
 			// TBD, TODO: currently ignores RVentType, fix this?
-			RventRot += clamp(enrot - RventRot, -100.0, 50.0) * dt;
-			dizel_heat.rpmw += clamp(dizel_heat.rpmwz - dizel_heat.rpmw, -100.f, 50.f) * dt;
-			dizel_heat.rpmw2 += clamp(dizel_heat.rpmwz2 - dizel_heat.rpmw2, -100.f, 50.f) * dt;
+			RventRot += std::clamp(enrot - RventRot, -100.0, 50.0) * dt;
+			dizel_heat.rpmw += std::clamp(dizel_heat.rpmwz - dizel_heat.rpmw, -100.f, 50.f) * dt;
+			dizel_heat.rpmw2 += std::clamp(dizel_heat.rpmwz2 - dizel_heat.rpmw2, -100.f, 50.f) * dt;
 		}
 		else
 		{
@@ -5555,8 +5555,8 @@ double TMoverParameters::TractionForce(double dt)
 		// NOTE: we update only radiator fans, as vehicles with diesel engine don't have other ventilators
 		if (true == Mains)
 		{
-			dizel_heat.rpmw += clamp(dizel_heat.rpmwz - dizel_heat.rpmw, -100.f, 50.f) * dt;
-			dizel_heat.rpmw2 += clamp(dizel_heat.rpmwz2 - dizel_heat.rpmw2, -100.f, 50.f) * dt;
+			dizel_heat.rpmw += std::clamp(dizel_heat.rpmwz - dizel_heat.rpmw, -100.f, 50.f) * dt;
+			dizel_heat.rpmw2 += std::clamp(dizel_heat.rpmwz2 - dizel_heat.rpmw2, -100.f, 50.f) * dt;
 		}
 		else
 		{
@@ -5935,7 +5935,7 @@ double TMoverParameters::TractionForce(double dt)
 						// charakterystyka pradnicy obcowzbudnej (elipsa) - twierdzenie Pitagorasa
 						EngineVoltage = std::sqrt(std::abs(square(tempUmax) - square(tempUmax * Im / tempImax))) * (tempMCP - 1) + (1.0 - Im / tempImax) * tempUmax * (tempMCPN - tempMCP);
 						EngineVoltage /= (tempMCPN - 1);
-						EngineVoltage = clamp(EngineVoltage, Im * 0.05, (1000.0 * tmp / std::abs(Im)));
+						EngineVoltage = std::clamp(EngineVoltage, Im * 0.05, (1000.0 * tmp / std::abs(Im)));
 					}
 				}
 
@@ -5952,7 +5952,7 @@ double TMoverParameters::TractionForce(double dt)
 				                if( ( tmpV > 1 ) && ( EnginePower < tmp ) ) {
 				                    Ft = interpolate(
 				                        Ft, EnginePower / tmp,
-				                        clamp( tmpV - 1.0, 0.0, 1.0 ) );
+				                        std::clamp( tmpV - 1.0, 0.0, 1.0 ) );
 				                }
 				*/
 			}
@@ -6076,7 +6076,7 @@ double TMoverParameters::TractionForce(double dt)
 						/*
 						                            // crude woodward approximation; difference between rpm for consecutive positions is ~5%
 						                            // so we get full throttle until ~half way between desired and previous position, or zero on rpm reduction
-						                            auto const woodward { clamp(
+						                            auto const woodward { std::clamp(
 						                                ( DElist[ MainCtrlPos ].RPM / ( enrot * 60.0 ) - 1.0 ) * 50.0,
 						                                0.0, 1.0 ) };
 						*/
@@ -6249,7 +6249,7 @@ double TMoverParameters::TractionForce(double dt)
 					if (eimv[eimv_Fmax] * Sign(V) * DirAbsolute < -1)
 					{
 						PosRatio = -Sign(V) * DirAbsolute * eimv[eimv_Fr] / (eimc[eimc_p_Fh] * std::max(edBCP, std::max(0.01, Hamulec->GetEDBCP())) / MaxBrakePress[0]);
-						PosRatio = clamp(PosRatio, 0.0, 1.0);
+						PosRatio = std::clamp(PosRatio, 0.0, 1.0);
 					}
 					else
 					{
@@ -7249,25 +7249,25 @@ void TMoverParameters::CheckEIMIC(double dt)
 		switch (MainCtrlPos)
 		{
 		case 0: // B+
-			eimic -= clamp(1.0 + eimic, 0.0, dt * 0.14); // odejmuj do -1
+			eimic -= std::clamp(1.0 + eimic, 0.0, dt * 0.14); // odejmuj do -1
 			break;
 		case 1: // B
-			eimic -= clamp(0.0 + eimic, 0.0, dt * 0.14); // odejmuj do 0
+			eimic -= std::clamp(0.0 + eimic, 0.0, dt * 0.14); // odejmuj do 0
 			break;
 		case 2: // B-
 		case 3: // 0
 		case 4: // T-
-			eimic -= clamp(0.0 + eimic, 0.0, dt * 0.14); // odejmuj do 0
-			eimic += clamp(0.0 - eimic, 0.0, dt * 0.14); // dodawaj do 0
+			eimic -= std::clamp(0.0 + eimic, 0.0, dt * 0.14); // odejmuj do 0
+			eimic += std::clamp(0.0 - eimic, 0.0, dt * 0.14); // dodawaj do 0
 			break;
 		case 5: // T
-			eimic += clamp(0.0 - eimic, 0.0, dt * 0.14); // dodawaj do 0
+			eimic += std::clamp(0.0 - eimic, 0.0, dt * 0.14); // dodawaj do 0
 			break;
 		case 6: // T+
-			eimic += clamp(1.0 - eimic, 0.0, dt * 0.14); // dodawaj do 1
+			eimic += std::clamp(1.0 - eimic, 0.0, dt * 0.14); // dodawaj do 1
 			break;
 		case 7: // TMax
-			eimic += clamp(1.0 - eimic, 0.0, dt * 0.14); // dodawaj do 1, max
+			eimic += std::clamp(1.0 - eimic, 0.0, dt * 0.14); // dodawaj do 1, max
 			break;
 		}
 		if (MainCtrlPos >= 3 && eimic < 0)
@@ -7283,18 +7283,18 @@ void TMoverParameters::CheckEIMIC(double dt)
 			{
 			case 0:
 			case 1:
-				eimic -= clamp(1.0 + eimic, 0.0, delta); // odejmuj do -1
+				eimic -= std::clamp(1.0 + eimic, 0.0, delta); // odejmuj do -1
 				if (eimic > 0)
 					eimic = 0;
 				break;
 			case 2:
-				eimic -= clamp(0.0 + eimic, 0.0, delta); // odejmuj do 0
+				eimic -= std::clamp(0.0 + eimic, 0.0, delta); // odejmuj do 0
 				break;
 			case 3:
-				eimic += clamp(0.0 - eimic, 0.0, delta); // dodawaj do 0
+				eimic += std::clamp(0.0 - eimic, 0.0, delta); // dodawaj do 0
 				break;
 			case 4:
-				eimic += clamp(1.0 - eimic, 0.0, delta); // dodawaj do 1
+				eimic += std::clamp(1.0 - eimic, 0.0, delta); // dodawaj do 1
 				if (eimic < 0)
 					eimic = 0;
 				break;
@@ -7331,11 +7331,11 @@ void TMoverParameters::CheckEIMIC(double dt)
 
 		if ((MainCtrlActualPos != MainCtrlPos) || (LastRelayTime > InitialCtrlDelay))
 		{
-			eimic -= clamp(-UniCtrlList[MainCtrlPos].SetCtrlVal + eimic, 0.0,
+			eimic -= std::clamp(-UniCtrlList[MainCtrlPos].SetCtrlVal + eimic, 0.0,
 			               (MainCtrlActualPos == MainCtrlPos ? dt * UniCtrlList[MainCtrlPos].SpeedDown : sign(UniCtrlList[MainCtrlPos].SpeedDown) * 0.01)); // odejmuj do X
-			eimic += clamp(UniCtrlList[MainCtrlPos].SetCtrlVal - eimic, 0.0,
+			eimic += std::clamp(UniCtrlList[MainCtrlPos].SetCtrlVal - eimic, 0.0,
 			               (MainCtrlActualPos == MainCtrlPos ? dt * UniCtrlList[MainCtrlPos].SpeedUp : sign(UniCtrlList[MainCtrlPos].SpeedUp) * 0.01)); // dodawaj do X
-			eimic = clamp(eimic, UniCtrlList[MainCtrlPos].MinCtrlVal, UniCtrlList[MainCtrlPos].MaxCtrlVal);
+			eimic = std::clamp(eimic, UniCtrlList[MainCtrlPos].MinCtrlVal, UniCtrlList[MainCtrlPos].MaxCtrlVal);
 		}
 		if (MainCtrlActualPos == MainCtrlPos)
 			LastRelayTime += dt;
@@ -7368,7 +7368,7 @@ void TMoverParameters::CheckEIMIC(double dt)
 			if (eim_localbrake < Hamulec->GetEDBCP() / MaxBrakePress[0])
 				eim_localbrake = 0;
 		}
-		eim_localbrake = clamp(eim_localbrake, 0.0, 1.0);
+		eim_localbrake = std::clamp(eim_localbrake, 0.0, 1.0);
 		if (eim_localbrake > 0.04 && eimic > 0)
 			eimic = 0;
 	}
@@ -7394,7 +7394,7 @@ void TMoverParameters::CheckEIMIC(double dt)
 			eimic_max = 0.001;
 		}
 	}
-	eimic = clamp(eimic, -1.0, eimicpowerenabled ? eimic_max : 0.0);
+	eimic = std::clamp(eimic, -1.0, eimicpowerenabled ? eimic_max : 0.0);
 }
 
 void TMoverParameters::CheckSpeedCtrl(double dt)
@@ -7438,7 +7438,7 @@ void TMoverParameters::CheckSpeedCtrl(double dt)
 				}
 				double error = (std::max(SpeedCtrlValue + SpeedCtrlUnit.Offset, 0.0) - Vel);
 				double factorP = error > 0 ? SpeedCtrlUnit.FactorPpos : SpeedCtrlUnit.FactorPneg;
-				double eSCP = clamp(factorP * error, -1.2, 1.0); // P module
+				double eSCP = std::clamp(factorP * error, -1.2, 1.0); // P module
 				bool retarder_not_work = (EngineType != TEngineType::DieselEngine) || (Vel < SpeedCtrlUnit.BrakeInterventionVel);
 				if (eSCP < -1.0)
 				{
@@ -7451,14 +7451,14 @@ void TMoverParameters::CheckSpeedCtrl(double dt)
 					// TODO: check how to disable integral part when braking in smart way
 					// double factorI = eimicSpeedCtrlIntegral >= 0 ? SpeedCtrlUnit.FactorIpos : SpeedCtrlUnit.FactorIneg;
 					double factorI = eimicSpeedCtrlIntegral >= 0 ? SpeedCtrlUnit.FactorIpos : SpeedCtrlUnit.FactorIneg;
-					eimicSpeedCtrlIntegral = clamp(eimicSpeedCtrlIntegral + factorI * eSCP * dt, -1.0 + eSCP, 1.0 - eSCP);
+					eimicSpeedCtrlIntegral = std::clamp(eimicSpeedCtrlIntegral + factorI * eSCP * dt, -1.0 + eSCP, 1.0 - eSCP);
 				}
 				else
 				{
 					eimicSpeedCtrlIntegral = 0;
 				}
-				auto const DesiredeimicSpeedCtrl{clamp(eimicSpeedCtrlIntegral + eSCP, -SpeedCtrlUnit.DesiredPower, accfactor)};
-				eimicSpeedCtrl = clamp(DesiredeimicSpeedCtrl, eimicSpeedCtrl - SpeedCtrlUnit.PowerDownSpeed * dt, eimicSpeedCtrl + SpeedCtrlUnit.PowerUpSpeed * dt);
+				auto const DesiredeimicSpeedCtrl{std::clamp(eimicSpeedCtrlIntegral + eSCP, -SpeedCtrlUnit.DesiredPower, accfactor)};
+				eimicSpeedCtrl = std::clamp(DesiredeimicSpeedCtrl, eimicSpeedCtrl - SpeedCtrlUnit.PowerDownSpeed * dt, eimicSpeedCtrl + SpeedCtrlUnit.PowerUpSpeed * dt);
 				if (Vel < SpeedCtrlUnit.FullPowerVelocity)
 				{
 					eimicSpeedCtrl = std::min(eimicSpeedCtrl, SpeedCtrlUnit.InitialPower);
@@ -7480,9 +7480,9 @@ void TMoverParameters::CheckSpeedCtrl(double dt)
 		else
 		{
 			if (Vmax < 250)
-				eimicSpeedCtrl = clamp(0.5 * (SpeedCtrlValue - Vel), -1.0, 1.0);
+				eimicSpeedCtrl = std::clamp(0.5 * (SpeedCtrlValue - Vel), -1.0, 1.0);
 			else
-				eimicSpeedCtrl = clamp(0.5 * (SpeedCtrlValue * 2 - Vel), -1.0, 1.0);
+				eimicSpeedCtrl = std::clamp(0.5 * (SpeedCtrlValue * 2 - Vel), -1.0, 1.0);
 		}
 		if (((SpeedCtrlAutoTurnOffFlag & 2) == 2) && (Hamulec->GetEDBCP() > 0.25))
 		{
@@ -7906,7 +7906,7 @@ double TMoverParameters::dizel_fillcheck(int mcp, double dt)
 		}
 	}
 
-	return clamp(realfill, 0.0, 1.0);
+	return std::clamp(realfill, 0.0, 1.0);
 }
 
 // *************************************************************************************************
@@ -7965,7 +7965,7 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 		if (((!IsPower) && (Vel < dizel_maxVelANS)) || (!Mains) || (enrot < dizel_nmin * 0.8))
 			hydro_TC_Fill -= hydro_TC_FillRateDec * dt;
 		// obcinanie zakresu
-		hydro_TC_Fill = clamp(hydro_TC_Fill, 0.0, 1.0);
+		hydro_TC_Fill = std::clamp(hydro_TC_Fill, 0.0, 1.0);
 
 		// blokowanie sprzegla blokującego
 		if ((Vel > hydro_TC_LockupSpeed) && (Mains) && (enrot > 0.9 * dizel_nmin) && (IsPower))
@@ -7980,7 +7980,7 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 			hydro_TC_LockupRate -= hydro_TC_FillRateDec * dt;
 		}
 		// obcinanie zakresu
-		hydro_TC_LockupRate = clamp(hydro_TC_LockupRate, 0.0, 1.0);
+		hydro_TC_LockupRate = std::clamp(hydro_TC_LockupRate, 0.0, 1.0);
 	}
 	else
 	{
@@ -8070,7 +8070,7 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 		enMoment = 0;
 		double enrot_min = enrot - (std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) - Moment) / dizel_AIM * dt;
 		double enrot_max = enrot + (std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) + Moment) / dizel_AIM * dt;
-		enrot = clamp(n, enrot_min, enrot_max);
+		enrot = std::clamp(n, enrot_min, enrot_max);
 	}
 	if ((hydro_R) && (hydro_R_Placement == 1))
 		gearMoment -= dizel_MomentumRetarder(hydro_TC_nOut, dt);
@@ -8363,7 +8363,7 @@ bool TMoverParameters::AssignLoad(std::string const &Name, float const Amount)
 		{
 			LoadTypeChange = (LoadType.name != Name);
 			LoadType = loadattributes;
-			LoadAmount = clamp(Amount, 0.f, MaxLoad);
+			LoadAmount = std::clamp(Amount, 0.f, MaxLoad);
 			ComputeMass();
 			return true;
 		}
@@ -8412,7 +8412,7 @@ bool TMoverParameters::LoadingDone(double const LSpeed, std::string const &Loadn
 			{
 				// pusto lub rozładowano żądaną ilość
 				LoadStatus = 4; // skończony rozładunek
-				LoadAmount = clamp(LoadAmount, 0.f, MaxLoad); // ładunek nie może być ujemny
+				LoadAmount = std::clamp(LoadAmount, 0.f, MaxLoad); // ładunek nie może być ujemny
 			}
 			if (LoadAmount == 0.f)
 			{
@@ -8450,7 +8450,7 @@ bool TMoverParameters::ChangeDoorPermitPreset(int const Change, range_t const No
 	if (false == Doors.permit_presets.empty())
 	{
 
-		Doors.permit_preset = clamp<int>(Doors.permit_preset + Change, 0, Doors.permit_presets.size() - 1);
+		Doors.permit_preset = std::clamp(Doors.permit_preset + Change, 0, static_cast<int>(Doors.permit_presets.size() - 1));
 		auto const doors{Doors.permit_presets[Doors.permit_preset]};
 		auto const permitleft{((doors & 1) != 0)};
 		auto const permitright{((doors & 2) != 0)};
@@ -10730,7 +10730,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 	extract_value(CoupledCtrl, "CoupledCtrl", line, "");
 	extract_value(HasCamshaft, "Camshaft", line, "");
 	extract_value(EIMCtrlType, "EIMCtrlType", line, "");
-	EIMCtrlType = clamp(EIMCtrlType, 0, 3);
+	EIMCtrlType = std::clamp(EIMCtrlType, 0, 3);
 	extract_value(LocHandleTimeTraxx, "LocalBrakeTraxx", line, "");
 	extract_value(EIMCtrlAdditionalZeros, "EIMCtrlAddZeros", line, "");
 	extract_value(EIMCtrlEmergency, "EIMCtrlEmergency", line, "");
@@ -11959,7 +11959,7 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int Dir)
 	{
 		SecuritySystem.MagnetLocation = Dim.L / 2 - 0.5;
 	}
-	SecuritySystem.MagnetLocation = clamp(SecuritySystem.MagnetLocation, 0.0, Dim.L);
+	SecuritySystem.MagnetLocation = std::clamp(SecuritySystem.MagnetLocation, 0.0, Dim.L);
 
 	return OK;
 }
@@ -12363,7 +12363,7 @@ bool TMoverParameters::RunCommand(std::string Command, double CValue1, double CV
 	}
 	else if (Command == "CompressorPreset")
 	{
-		CompressorListPos = clamp(static_cast<int>(CValue1), 0, CompressorListPosNo);
+		CompressorListPos = std::clamp(static_cast<int>(CValue1), 0, CompressorListPosNo);
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
 	else if (Command == "DoorPermit")

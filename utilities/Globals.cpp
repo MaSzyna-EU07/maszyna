@@ -55,7 +55,7 @@ static void ParseOneClamped(cParser& parser, T& out, T minValue, T maxValue, int
 {
     parser.getTokens(tokenCount, convert);
     parser >> out;
-    out = clamp(out, minValue, maxValue);
+    out = std::clamp(out, minValue, maxValue);
 }
 
 void global_settings::FinalizeConfig()
@@ -301,7 +301,7 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
     if (token == "dynamiclights")
     {
         ParseOne(Parser, DynamicLightCount, 1, false);
-        DynamicLightCount = clamp(DynamicLightCount, 0, 7);
+        DynamicLightCount = std::clamp(DynamicLightCount, 0, 7);
         return true;
     }
 
@@ -358,7 +358,7 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
     if (token == "multisampling")
     {
         ParseOne(Parser, iMultisampling, 1, false);
-        iMultisampling = clamp(iMultisampling, 0, 4);
+        iMultisampling = std::clamp(iMultisampling, 0, 4);
         return true;
     }
 
@@ -546,7 +546,7 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
             stream >> ScenarioTimeOverride;
         }
 
-        ScenarioTimeOverride = clamp(ScenarioTimeOverride, 0.f, 24 * 1439 / 1440.f);
+        ScenarioTimeOverride = std::clamp(ScenarioTimeOverride, 0.f, 24 * 1439 / 1440.f);
         return true;
     }
 
@@ -578,7 +578,7 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
     {
         float splinefidelity = 0.f;
         ParseOne(Parser, splinefidelity);
-        SplineFidelity = clamp(splinefidelity, 1.f, 4.f);
+        SplineFidelity = std::clamp(splinefidelity, 1.f, 4.f);
         return true;
     }
 
@@ -1317,7 +1317,7 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         float smokefidelity;
         Parser.getTokens();
         Parser >> smokefidelity;
-        SmokeFidelity = clamp(smokefidelity, 1.f, 4.f);
+        SmokeFidelity = std::clamp(smokefidelity, 1.f, 4.f);
     }
     else if (Token == "gfx.resource.sweep")
     {
@@ -1338,7 +1338,7 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
     {
         Parser.getTokens(1, false);
         Parser >> reflectiontune.fidelity;
-        reflectiontune.fidelity = clamp(reflectiontune.fidelity, 0, 2);
+        reflectiontune.fidelity = std::clamp(reflectiontune.fidelity, 0, 2);
     }
     else if (Token == "gfx.reflections.range_instances")
     {
@@ -1462,13 +1462,13 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         if( gfx_shadow_angle_min > 0 ) {
             gfx_shadow_angle_min *= -1;
         }
-        gfx_shadow_angle_min = clamp(gfx_shadow_angle_min, -1.f, -0.2f);
+        gfx_shadow_angle_min = std::clamp(gfx_shadow_angle_min, -1.f, -0.2f);
     }
     else if (Token == "gfx.shadow.rank.cutoff")
     {
         Parser.getTokens(1);
         Parser >> gfx_shadow_rank_cutoff;
-        gfx_shadow_rank_cutoff = clamp(gfx_shadow_rank_cutoff, 1, 3);
+        gfx_shadow_rank_cutoff = std::clamp(gfx_shadow_rank_cutoff, 1, 3);
     }
     else
     {

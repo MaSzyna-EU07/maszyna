@@ -1108,7 +1108,7 @@ void TTrain::OnCommand_jointcontrollerset( TTrain *Train, command_data const &Co
         }
         else {
             Train->mvOccupied->LocalBrakePosA = (
-                clamp(
+                std::clamp(
                     1.0 - ( Command.param1 * 2 ),
                     0.0, 1.0 ) );
             if( Train->mvControlled->MainCtrlPowerPos() > 0 ) {
@@ -1223,7 +1223,7 @@ void TTrain::OnCommand_secondcontrollerincrease( TTrain *Train, command_data con
      && ( true == Train->mvControlled->ShuntModeAllow )
      && ( true == Train->mvControlled->ShuntMode ) ) {
         if( Command.action != GLFW_RELEASE ) {
-            Train->mvControlled->AnPos = clamp(
+            Train->mvControlled->AnPos = std::clamp(
                 Train->mvControlled->AnPos + 0.025,
                 0.0, 1.0 );
         }
@@ -1393,7 +1393,7 @@ void TTrain::OnCommand_secondcontrollerdecrease( TTrain *Train, command_data con
     if( ( Train->mvControlled->EngineType == TEngineType::DieselElectric )
      && ( true == Train->mvControlled->ShuntMode ) ) {
         if( Command.action != GLFW_RELEASE ) {
-            Train->mvControlled->AnPos = clamp(
+            Train->mvControlled->AnPos = std::clamp(
                 Train->mvControlled->AnPos - 0.025,
                 0.0, 1.0 );
         }
@@ -1577,7 +1577,7 @@ void TTrain::OnCommand_independentbrakeset( TTrain *Train, command_data const &C
     if( Command.action != GLFW_RELEASE ) {
 
         Train->mvOccupied->LocalBrakePosA = (
-            clamp(
+            std::clamp(
                 Command.param1,
                 0.0, 1.0 ) );
     }
@@ -1587,7 +1587,7 @@ void TTrain::OnCommand_independentbrakeset( TTrain *Train, command_data const &C
             interpolate<double>(
                 0.0,
                 LocalBrakePosNo,
-                clamp(
+                std::clamp(
                     Command.param1,
                     0.0, 1.0 ) ) ) );
 */
@@ -1716,7 +1716,7 @@ void TTrain::OnCommand_trainbrakeset( TTrain *Train, command_data const &Command
             interpolate(
                 Train->mvOccupied->Handle->GetPos( bh_MIN ),
                 Train->mvOccupied->Handle->GetPos( bh_MAX ),
-                clamp(
+                std::clamp(
                     Command.param1,
                     0.0, 1.0 ) ) );
     } else {
@@ -1801,7 +1801,7 @@ void TTrain::OnCommand_trainbrakebasepressureincrease( TTrain *Train, command_da
 
         switch( Train->mvOccupied->BrakeHandle ) {
             case TBrakeHandle::FV4a: {
-                Train->mvOccupied->BrakeCtrlPos2 = clamp( Train->mvOccupied->BrakeCtrlPos2 - 0.01, -1.5, 2.0 );
+                Train->mvOccupied->BrakeCtrlPos2 = std::clamp( Train->mvOccupied->BrakeCtrlPos2 - 0.01, -1.5, 2.0 );
                 break;
             }
             default: {
@@ -1818,7 +1818,7 @@ void TTrain::OnCommand_trainbrakebasepressuredecrease( TTrain *Train, command_da
 
         switch( Train->mvOccupied->BrakeHandle ) {
             case TBrakeHandle::FV4a: {
-                Train->mvOccupied->BrakeCtrlPos2 = clamp( Train->mvOccupied->BrakeCtrlPos2 + 0.01, -1.5, 2.0 );
+                Train->mvOccupied->BrakeCtrlPos2 = std::clamp( Train->mvOccupied->BrakeCtrlPos2 + 0.01, -1.5, 2.0 );
                 break;
             }
             default: {
@@ -3032,7 +3032,7 @@ void TTrain::change_pantograph_selection( int const Change ) {
     auto const &presets { mvOccupied->PantsPreset.first };
     auto &selection { mvOccupied->PantsPreset.second[ cab_to_end() ] };
     auto const initialstate { selection };
-    selection = clamp<int>( selection + Change, 0, std::max<int>( presets.size() - 1, 0 ) );
+    selection = std::clamp( selection + Change, 0, std::max<int>( presets.size() - 1, 0 ) );
 
     if( selection == initialstate ) { return; } // no change, nothing to do
 
@@ -5125,7 +5125,7 @@ void TTrain::OnCommand_redmarkerstoggle( TTrain *Train, command_data const &Comm
         auto locationHead = vehicle->HeadPosition() - glm::dvec3(Command.location); // TODO: Maybe command_data should be dvec3?
 		auto locationRear = vehicle->RearPosition() - glm::dvec3(Command.location);
         int const CouplNr {
-            clamp(vehicle->DirectionGet() * (glm::dot(locationHead, locationHead) > glm::dot(locationRear, locationRear) ?
+            std::clamp(vehicle->DirectionGet() * (glm::dot(locationHead, locationHead) > glm::dot(locationRear, locationRear) ?
                      1 :
                     -1 ),
                 0, 1 ) }; // z [-1,1] zrobić [0,1]
@@ -5148,7 +5148,7 @@ void TTrain::OnCommand_endsignalstoggle( TTrain *Train, command_data const &Comm
 
         if( vehicle == nullptr ) { return; }
         int const CouplNr {
-            clamp(
+            std::clamp(
                 vehicle->DirectionGet()
                 * ( glm::length2( vehicle->HeadPosition() - glm::dvec3(Command.location) ) > glm::length2( vehicle->RearPosition() - glm::dvec3(Command.location) ) ?
                      1 :
@@ -6859,7 +6859,7 @@ void TTrain::OnCommand_radiochanneldecrease( TTrain *Train, command_data const &
 void TTrain::OnCommand_radiochannelset(TTrain *Train, command_data const &Command) {
     if( Command.action != GLFW_RELEASE ) {
         // on press or hold
-        Train->RadioChannel() = clamp((int) Command.param1, 1, 10);
+        Train->RadioChannel() = std::clamp((int) Command.param1, 1, 10);
         Train->ggRadioChannelSelector.UpdateValue( Train->RadioChannel() - 1 );
     }
 }
@@ -6981,7 +6981,7 @@ void TTrain::OnCommand_radiovolumedecrease(TTrain *Train, command_data const &Co
 void TTrain::OnCommand_radiovolumeset(TTrain *Train, command_data const &Command) {
     if( Command.action != GLFW_RELEASE ) {
         // on press or hold
-        Train->m_radiovolume = clamp(Command.param1, 0.0, 1.0);
+        Train->m_radiovolume = std::clamp(Command.param1, 0.0, 1.0);
         Train->ggRadioVolumeSelector.UpdateValue(Train->m_radiovolume);
         audio::event_volume_change = true;
     }
@@ -8218,7 +8218,7 @@ bool TTrain::Update( double const Deltatime )
             {
                 double b = Console::AnalogCalibrateGet(0);
 				b = b * 8.0 - 2.0;
-                b = clamp<double>( b, -2.0, mvOccupied->BrakeCtrlPosNo ); // przycięcie zmiennej do granic
+                b = std::clamp( b, -2.0, (double)mvOccupied->BrakeCtrlPosNo ); // przycięcie zmiennej do granic
 				ggBrakeCtrl.UpdateValue(b); // przesów bez zaokrąglenia
 				mvOccupied->BrakeLevelSet(b);
 			}
@@ -8226,14 +8226,14 @@ bool TTrain::Update( double const Deltatime )
             {
                 double b = Console::AnalogCalibrateGet(0);
 				b = b * 7.0 - 1.0;
-                b = clamp<double>( b, -1.0, mvOccupied->BrakeCtrlPosNo ); // przycięcie zmiennej do granic
+				b = std::clamp(b, -1.0, (double)mvOccupied->BrakeCtrlPosNo); // przycięcie zmiennej do granic
                 ggBrakeCtrl.UpdateValue(b); // przesów bez zaokrąglenia
                 mvOccupied->BrakeLevelSet(b);
             }
             else {
                 double b = Console::AnalogCalibrateGet( 0 );
                 b = b * ( mvOccupied->Handle->GetPos( bh_MAX ) - mvOccupied->Handle->GetPos( bh_MIN ) ) + mvOccupied->Handle->GetPos( bh_MIN );
-                b = clamp<double>( b, mvOccupied->Handle->GetPos( bh_MIN ), mvOccupied->Handle->GetPos( bh_MAX ) ); // przycięcie zmiennej do granic
+				b = std::clamp(b, mvOccupied->Handle->GetPos(bh_MIN), mvOccupied->Handle->GetPos(bh_MAX)); // przycięcie zmiennej do granic
                 ggBrakeCtrl.UpdateValue( b ); // przesów bez zaokrąglenia
                 mvOccupied->BrakeLevelSet( b );
             }
@@ -8257,8 +8257,8 @@ bool TTrain::Update( double const Deltatime )
 /*         || ( Global.bMWDmasterEnable && Global.bMWDBreakEnable )*/ ) ) {
             // Ra: nie najlepsze miejsce, ale na początek gdzieś to dać trzeba
             // Firleju: dlatego kasujemy i zastepujemy funkcją w Console
-            auto const b = clamp<double>(
-                Console::AnalogCalibrateGet( 1 ),
+			auto const b = std::clamp(
+                (double)Console::AnalogCalibrateGet( 1 ),
                 0.0,
                 1.0 );
             mvOccupied->LocalBrakePosA = b;
@@ -8559,7 +8559,7 @@ TTrain::update_sounds( double const Deltatime ) {
     if( rsSBHiss ) {
         if( ( m_localbrakepressurechange < -0.05f )
          && ( mvOccupied->LocBrakePress > mvOccupied->BrakePress - 0.05 ) ) {
-            rsSBHiss->gain( clamp( rsSBHiss->m_amplitudeoffset + rsSBHiss->m_amplitudefactor * -m_localbrakepressurechange * 0.05, 0.0, 1.5 ) );
+            rsSBHiss->gain( std::clamp( rsSBHiss->m_amplitudeoffset + rsSBHiss->m_amplitudefactor * -m_localbrakepressurechange * 0.05, 0.0, 1.5 ) );
             rsSBHiss->play( sound_flags::exclusive | sound_flags::looping );
         }
         else {
@@ -8574,7 +8574,7 @@ TTrain::update_sounds( double const Deltatime ) {
     // local brake, engage
     if( rsSBHissU ) {
         if( m_localbrakepressurechange > 0.05f ) {
-            rsSBHissU->gain( clamp( rsSBHissU->m_amplitudeoffset + rsSBHissU->m_amplitudefactor * m_localbrakepressurechange * 0.05, 0.0, 1.5 ) );
+            rsSBHissU->gain( std::clamp( rsSBHissU->m_amplitudeoffset + rsSBHissU->m_amplitudefactor * m_localbrakepressurechange * 0.05, 0.0, 1.5 ) );
             rsSBHissU->play( sound_flags::exclusive | sound_flags::looping );
         }
         else {
@@ -8695,7 +8695,7 @@ TTrain::update_sounds( double const Deltatime ) {
          && ( mvOccupied->Vel > 0.05 ) ) {
 
             auto const brakeforceratio{
-                clamp(
+                std::clamp(
                     mvOccupied->UnitBrakeForce / std::max( 1.0, mvOccupied->BrakeForceR( 1.0, mvOccupied->Vel ) / ( mvOccupied->NAxles * std::max( 1, mvOccupied->NBpA ) ) ),
                     0.0, 1.0 ) };
             // HACK: in external view mute the sound rather than stop it, in case there's an opening bookend it'd (re)play on sound restart after returning inside
@@ -8778,7 +8778,7 @@ TTrain::update_sounds( double const Deltatime ) {
             auto const huntingamount =
                 interpolate(
                     0.0, 1.0,
-                    clamp(
+                    std::clamp(
                     ( mvOccupied->Vel - DynamicObject->HuntingShake.fadein_begin ) / ( DynamicObject->HuntingShake.fadein_end - DynamicObject->HuntingShake.fadein_begin ),
                         0.0, 1.0 ) );
 
@@ -8936,7 +8936,7 @@ void TTrain::update_sounds_runningnoise( sound_source &Sound ) {
     if( std::abs( mvOccupied->nrot ) > 0.01 ) {
         // hamulce wzmagaja halas
         auto const brakeforceratio { (
-        clamp(
+        std::clamp(
             mvOccupied->UnitBrakeForce / std::max( 1.0, mvOccupied->BrakeForceR( 1.0, mvOccupied->Vel ) / ( mvOccupied->NAxles * std::max( 1, mvOccupied->NBpA ) ) ),
             0.0, 1.0 ) ) };
 
@@ -8947,7 +8947,7 @@ void TTrain::update_sounds_runningnoise( sound_source &Sound ) {
     volume *=
         interpolate(
             0.8, 1.2,
-            clamp(
+            std::clamp(
                 DynamicObject->MyTrack->iQualityFlag / 20.0,
                 0.0, 1.0 ) );
     // for single sample sounds muffle the playback at low speeds
@@ -8955,7 +8955,7 @@ void TTrain::update_sounds_runningnoise( sound_source &Sound ) {
         volume *=
             interpolate(
                 0.0, 1.0,
-                clamp(
+                std::clamp(
                     mvOccupied->Vel / 25.0,
                     0.0, 1.0 ) );
     }
@@ -9728,9 +9728,9 @@ glm::dvec3 TTrain::clamp_inside(glm::dvec3 const &Point) const
     if( DebugModeFlag ) { return Point; }
 
     return {
-        clamp( Point.x, (double)Cabine[ iCabn ].CabPos1.x, (double)Cabine[ iCabn ].CabPos2.x ),
-        clamp( Point.y, (double)Cabine[ iCabn ].CabPos1.y + 0.5, (double)Cabine[ iCabn ].CabPos2.y + 1.8 ),
-        clamp( Point.z, (double)Cabine[ iCabn ].CabPos1.z, (double)Cabine[ iCabn ].CabPos2.z ) };
+        std::clamp( Point.x, (double)Cabine[ iCabn ].CabPos1.x, (double)Cabine[ iCabn ].CabPos2.x ),
+        std::clamp( Point.y, (double)Cabine[ iCabn ].CabPos1.y + 0.5, (double)Cabine[ iCabn ].CabPos2.y + 1.8 ),
+        std::clamp( Point.z, (double)Cabine[ iCabn ].CabPos1.z, (double)Cabine[ iCabn ].CabPos2.z ) };
 }
 
 const TTrain::screenentry_sequence& TTrain::get_screens() {
@@ -10966,7 +10966,7 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
         Parser >> i >> j;
         auto &gauge = Cabine[Cabindex].Gauge(-1); // pierwsza wolna gałka
         gauge.Load(Parser, DynamicObject, 0.1);
-        gauge.AssignFloat(&fPress[clamp(i, 1, 20) - 1][clamp(j, 0, 3)]);
+        gauge.AssignFloat(&fPress[std::clamp(i, 1, 20) - 1][std::clamp(j, 0, 3)]);
     }
     else if ((Label == "brakepress:") || (Label == "brakepressb:"))
     {

@@ -225,7 +225,7 @@ state_serializer::deserialize_atmo( cParser &Input, scene::scratch_data &Scratch
         }
 
         Global.fFogEnd =
-            clamp(
+            std::clamp(
                 Random( std::min( fograngestart, fograngeend ), std::max( fograngestart, fograngeend ) ),
                 10.0, 25000.0 );
     }
@@ -238,7 +238,7 @@ state_serializer::deserialize_atmo( cParser &Input, scene::scratch_data &Scratch
             // negative overcast means random value in range 0-abs(specified range)
             Global.Overcast =
                 Random(
-                    clamp(
+                    std::clamp(
                         std::abs( Global.Overcast ),
                         0.f, 2.f ) );
         }
