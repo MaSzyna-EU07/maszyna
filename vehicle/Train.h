@@ -754,6 +754,9 @@ public: // reszta może by?publiczna
     TButton btLampkaBocznik2;
     TButton btLampkaBocznik3;
     TButton btLampkaBocznik4;
+	TButton btLampkaGear1;
+	TButton btLampkaGear2;
+	TButton btLampkaHydroLockup;
     TButton btLampkaRadiotelefon; // TODO: implement
     TButton btLampkaHamienie;
     TButton btLampkaBrakingOff;
