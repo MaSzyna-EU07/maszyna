@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "world/station.h"
 
+#include "utilities/utilities.h"
 #include "vehicle/DynObj.h"
 #include "world/mtable.h"
 
