@@ -1999,7 +1999,7 @@ double TEStED::GetPF(double const PP, double const dt, double const Vel)
 	//  temp:=temp/(1-);
 
 	// powtarzacz — podwojny zawor zwrotny
-	temp = std::max(LoadC * BCP / temp * std::min(std::max(1 - EDFlag, 0.), 1.), LBP);
+	temp = std::max(LoadC * BCP / temp * std::clamp(1 - EDFlag, 0., 1.), LBP);
 
 	if ((UniversalFlag & TUniversalBrake::ub_AntiSlipBrake) > 0)
 		temp = std::max(temp, ASBP);
@@ -3286,7 +3286,7 @@ double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep
 
 	DP = 0;
 
-	i_bcp = std::max(std::min(i_bcp, 9.999), -0.999); // na wszelki wypadek, zeby nie wyszlo poza zakres
+	i_bcp = std::clamp(i_bcp, -0.999, 9.999); // na wszelki wypadek, zeby nie wyszlo poza zakres
 
 	if ((TP > 0) && (CP > 4.9))
 	{
@@ -3413,7 +3413,7 @@ double TMHZ_EN57::GetRP()
 double TMHZ_EN57::GetEP(double pos)
 {
 	if (pos < 9.5)
-		return std::max(std::max(0., 0.125 * pos), 1.);
+		return std::clamp(0.125 * pos, 0., 1.);
 	else
 		return 0;
 }
@@ -3493,7 +3493,7 @@ double TMHZ_K5P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 
 	DP = 0;
 
-	i_bcp = std::max(std::min(i_bcp, 2.999), -0.999); // na wszelki wypadek, zeby nie wyszlo poza zakres
+	i_bcp = std::clamp(i_bcp, -0.999, 2.999); // na wszelki wypadek, zeby nie wyszlo poza zakres
 
 	if ((TP > 0) && (CP > 4.9))
 	{
@@ -3676,7 +3676,7 @@ double TMHZ_6P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 
 	DP = 0;
 
-	i_bcp = std::max(std::min(i_bcp, 3.999), -0.999); // na wszelki wypadek, zeby nie wyszlo poza zakres
+	i_bcp = std::clamp(i_bcp, -0.999, 3.999); // na wszelki wypadek, zeby nie wyszlo poza zakres
 
 	if ((TP > 0) && (CP > 4.9))
 	{
