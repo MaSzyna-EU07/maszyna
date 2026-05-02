@@ -20,9 +20,6 @@ template <typename T> T sign(T x)
 	return x < static_cast<T>(0) ? static_cast<T>(-1) : (x > static_cast<T>(0) ? static_cast<T>(1) : static_cast<T>(0));
 }
 
-#define DegToRad(a) ((M_PI / 180.0) * (a)) //(a) w nawiasie, bo może być dodawaniem
-#define RadToDeg(r) ((180.0 / M_PI) * (r))
-
 template <typename T> constexpr T sq(T v)
 {
 	return v * v;

@@ -81,7 +81,7 @@ void TAnimPant::AKP_4E()
     // ramienia
     fHeight = 0.07; // wysokość ślizgu ponad oś obrotu
     fWidth = 0.635; // połowa szerokości ślizgu, 0.635 dla AKP-1 i AKP-4E
-    fAngleL0 = DegToRad(2.8547285515689267247882521833308);
+	fAngleL0 = glm::radians(2.8547285515689267247882521833308);
     fAngleL = fAngleL0; // początkowy kąt dolnego ramienia
     // fAngleU0=acos((1.22*cos(fAngleL)+0.535)/1.755); //górne ramię
     fAngleU0 = acos((fLenL1 * cos(fAngleL) + fHoriz) / fLenU1); // górne ramię
@@ -115,7 +115,7 @@ void TAnimPant::WBL85()
 	                // osi obrotu dolnego ramienia
 	fHeight = 0.09353; // wysokość ślizgu ponad oś obrotu
 	fWidth = 0.4969; // połowa szerokości ślizgu
-	fAngleL0 = DegToRad(2.8547285515689267247882521833308);
+	fAngleL0 = glm::radians(2.8547285515689267247882521833308);
 	fAngleL = fAngleL0; // początkowy kąt dolnego ramienia
 	// fAngleU0=acos((1.22*cos(fAngleL)+0.535)/1.755); //górne ramię
 	fAngleU0 = acos((fLenL1 * cos(fAngleL) + fHoriz) / fLenU1); // górne ramię
@@ -149,7 +149,7 @@ void TAnimPant::EC160_200()
 	                // osi obrotu dolnego ramienia
 	fHeight = 0.09353; // wysokość ślizgu ponad oś obrotu
 	fWidth = 0.4969; // połowa szerokości ślizgu
-	fAngleL0 = DegToRad(2.8547285515689267247882521833308);
+	fAngleL0 = glm::radians(2.8547285515689267247882521833308);
 	fAngleL = fAngleL0; // początkowy kąt dolnego ramienia
 	// fAngleU0=acos((1.22*cos(fAngleL)+0.535)/1.755); //górne ramię
 	fAngleU0 = acos((fLenL1 * cos(fAngleL) + fHoriz) / fLenU1); // górne ramię
@@ -183,7 +183,7 @@ void TAnimPant::DSAx()
 	                // osi obrotu dolnego ramienia
 	fHeight = 0.09353; // wysokość ślizgu ponad oś obrotu
 	fWidth = 0.4969; // połowa szerokości ślizgu
-	fAngleL0 = DegToRad(2.8547285515689267247882521833308);
+	fAngleL0 = glm::radians(2.8547285515689267247882521833308);
 	fAngleL = fAngleL0; // początkowy kąt dolnego ramienia
 	// fAngleU0=acos((1.22*cos(fAngleL)+0.535)/1.755); //górne ramię
 	fAngleU0 = acos((fLenL1 * cos(fAngleL) + fHoriz) / fLenU1); // górne ramię
@@ -697,8 +697,8 @@ void TDynamicObject::UpdateDoorPlug(TAnim *pAnim) {
 void TDynamicObject::UpdatePant(TAnim *pAnim)
 { // animacja pantografu - 4 obracane ramiona, ślizg piąty
 	float a, b, c;
-	a = RadToDeg(pAnim->fParamPants->fAngleL - pAnim->fParamPants->fAngleL0);
-	b = RadToDeg(pAnim->fParamPants->fAngleU - pAnim->fParamPants->fAngleU0);
+	a = glm::degrees(pAnim->fParamPants->fAngleL - pAnim->fParamPants->fAngleL0);
+	b = glm::degrees(pAnim->fParamPants->fAngleU - pAnim->fParamPants->fAngleU0);
 	c = a + b;
 	if (pAnim->smElement[0])
 		pAnim->smElement[0]->SetRotate(float3(-1, 0, 0), a); // dolne ramie 1

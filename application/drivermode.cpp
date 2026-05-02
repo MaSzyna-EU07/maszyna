@@ -928,8 +928,8 @@ void driver_mode::OnKeyDown(int cKey)
 					Global.FreeCameraInitAngle[i] = Camera.Angle;
 					// logowanie, żeby można było do scenerii przepisać
 					WriteLog("camera " + std::to_string(Global.FreeCameraInit[i].x) + " " + std::to_string(Global.FreeCameraInit[i].y) + " " + std::to_string(Global.FreeCameraInit[i].z) + " " +
-					         std::to_string(RadToDeg(Global.FreeCameraInitAngle[i].x)) + " " + std::to_string(RadToDeg(Global.FreeCameraInitAngle[i].y)) + " " +
-					         std::to_string(RadToDeg(Global.FreeCameraInitAngle[i].z)) + " " + std::to_string(i) + " endcamera");
+					         std::to_string(glm::degrees(Global.FreeCameraInitAngle[i].x)) + " " + std::to_string(glm::degrees(Global.FreeCameraInitAngle[i].y)) + " " +
+					         std::to_string(glm::degrees(Global.FreeCameraInitAngle[i].z)) + " " + std::to_string(i) + " endcamera");
 				}
 				else // również przeskakiwanie
 				{ // Ra: to z tą kamerą (Camera.Pos i Global.pCameraPosition) jest trochę bez sensu

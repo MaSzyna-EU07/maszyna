@@ -381,11 +381,11 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 		// convert conve parameters if specified in degrees
 		if (fCosFalloffAngle > 1.0)
 		{
-			fCosFalloffAngle = std::cos(DegToRad(0.5f * fCosFalloffAngle));
+			fCosFalloffAngle = std::cos(glm::radians(0.5f * fCosFalloffAngle));
 		}
 		if (fCosHotspotAngle > 1.0)
 		{
-			fCosHotspotAngle = std::cos(DegToRad(0.5f * fCosHotspotAngle));
+			fCosHotspotAngle = std::cos(glm::radians(0.5f * fCosHotspotAngle));
 		}
 		m_geometry.vertex_count = 1;
 		iFlags |= 0x4030; // drawn both in solid (light point) and transparent (light glare) phases
@@ -2313,11 +2313,11 @@ void TSubModel::BinInit(TSubModel *s, float4x4 *m, std::vector<std::string> *t, 
 	// intercept and fix hotspot values if specified in degrees and not directly
 	if (fCosFalloffAngle > 1.0f)
 	{
-		fCosFalloffAngle = std::cos(DegToRad(0.5f * fCosFalloffAngle));
+		fCosFalloffAngle = std::cos(glm::radians(0.5f * fCosFalloffAngle));
 	}
 	if (fCosHotspotAngle > 1.0f)
 	{
-		fCosHotspotAngle = std::cos(DegToRad(0.5f * fCosHotspotAngle));
+		fCosHotspotAngle = std::cos(glm::radians(0.5f * fCosHotspotAngle));
 	}
 	// cap specular values for legacy models
 	f4Specular = glm::vec4{std::clamp(f4Specular.r, 0.0f, 1.0f), std::clamp(f4Specular.g, 0.0f, 1.0f), std::clamp(f4Specular.b, 0.0f, 1.0f), std::clamp(f4Specular.a, 0.0f, 1.0f)};
