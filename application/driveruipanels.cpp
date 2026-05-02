@@ -27,7 +27,6 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/DynObj.h"
 #include "model/Model3d.h"
 #include "rendering/renderer.h"
-#include "utilities/utilities.h"
 #include "utilities/Logs.h"
 #include "widgets/vehicleparams.h"
 

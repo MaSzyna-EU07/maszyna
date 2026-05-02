@@ -11,25 +11,26 @@ MaSzyna EU07 - SPKS
 Brakes.
 Copyright (C) 2007-2014 Maciej Cierniak
 */
-#include "stdafx.h"
-
-#include <sys/types.h>
-#include <sys/stat.h>
+//#include "stdafx.h"
+//
+//#include <sys/types.h>
+//#include <sys/stat.h>
 #include <ranges>
-#ifndef WIN32
-#include <unistd.h>
-#endif
-
-#ifdef WIN32
-#define stat _stat
-#endif
+//#ifndef WIN32
+//#include <unistd.h>
+//#endif
+//
+//#ifdef WIN32
+//#define stat _stat
+//#endif
 
 #include "utilities/utilities.h"
 #include "utilities/Globals.h"
 #include "utilities/parser.h"
 
-#include "utilities/Logs.h"
+//#include "utilities/Logs.h"
 
+// TODO: This shouldn't be in Globals?
 bool DebugModeFlag = false;
 bool FreeFlyModeFlag = false;
 bool EditorModeFlag = false;

@@ -11,7 +11,6 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Classes.h"
 #include "rendering/geometrybank.h"
-#include "utilities/utilities.h"
 #include <glm/glm.hpp>
 
 struct map_colored_paths {

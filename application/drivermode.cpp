@@ -28,7 +28,6 @@ http://mozilla.org/MPL/2.0/.
 #include "input/messaging.h"
 #include "utilities/Timer.h"
 #include "rendering/renderer.h"
-#include "utilities/utilities.h"
 #include "utilities/Logs.h"
 /*
 namespace input {

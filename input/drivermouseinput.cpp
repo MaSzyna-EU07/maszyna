@@ -12,7 +12,6 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Globals.h"
 #include "application/application.h"
-#include "utilities/utilities.h"
 #include "utilities/Globals.h"
 #include "utilities/Timer.h"
 #include "simulation/simulation.h"

@@ -22,7 +22,6 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Traction.h"
 #include "application/application.h"
 #include "utilities/Logs.h"
-#include "utilities/utilities.h"
 #include "rendering/openglgeometrybank.h"
 #include "rendering/openglcolor.h"
 #include "rendering/screenshot.h"

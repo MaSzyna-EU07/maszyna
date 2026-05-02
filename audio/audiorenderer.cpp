@@ -14,7 +14,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "vehicle/Camera.h"
 #include "utilities/Logs.h"
-#include "utilities/utilities.h"
 #include "simulation/simulation.h"
 #include "vehicle/Train.h"
 

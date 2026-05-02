@@ -24,7 +24,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/parser.h"
 #include "Console.h"
 #include "simulation/simulationtime.h"
-#include "utilities/utilities.h"
 
 //---------------------------------------------------------------------------
 

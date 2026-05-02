@@ -10,7 +10,6 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "MOVER.h"
 
-#include "utilities/utilities.h"
 #include "vehicle/DynObj.h"
 #include "Oerlikon_ESt.h"
 #include "utilities/Globals.h"

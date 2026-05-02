@@ -22,7 +22,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
 #include "scene/sn_utils.h"
-#include "utilities/utilities.h"
 #include "rendering/flip-s3tc.h"
 #include "stb/stb_image.h"
 //#include <png.h>

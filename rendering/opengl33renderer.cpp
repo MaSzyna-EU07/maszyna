@@ -16,7 +16,6 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Camera.h"
 #include "simulation/simulation.h"
 #include "utilities/Logs.h"
-#include "utilities/utilities.h"
 #include "simulation/simulationtime.h"
 #include "application/application.h"
 #include "model/AnimModel.h"

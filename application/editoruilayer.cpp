@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editoruilayer.h"
 
 #include "utilities/Globals.h"
+#include "utilities/utilities.h"
 #include "scene/scenenode.h"
 #include "rendering/renderer.h"
 

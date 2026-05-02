@@ -77,7 +77,6 @@ zwiekszenie nacisku przy duzych predkosciach w hamulcach Oerlikona
 ...
 */
 
-#include "utilities/utilities.h"
 
 /// <summary>Global counter incremented when a string-to-numeric conversion fails during config parsing.</summary>
 extern int ConversionError;

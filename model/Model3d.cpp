@@ -17,7 +17,6 @@ Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
-#include "utilities/utilities.h"
 #include "rendering/renderer.h"
 #include "utilities/Timer.h"
 #include "simulation/simulation.h"

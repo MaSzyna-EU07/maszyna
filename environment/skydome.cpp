@@ -2,7 +2,6 @@
 #include "stdafx.h"
 #include "environment/skydome.h"
 #include "utilities/color.h"
-#include "utilities/utilities.h"
 #include "simulation/simulationenvironment.h"
 #include "utilities/Globals.h"
 

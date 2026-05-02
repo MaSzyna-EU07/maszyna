@@ -11,7 +11,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/dictionary.h"
 
 #include "simulation/simulation.h"
-#include "utilities/utilities.h"
 #include "vehicle/DynObj.h"
 #include "vehicle/Driver.h"
 #include "world/mtable.h"

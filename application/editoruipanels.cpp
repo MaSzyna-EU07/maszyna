@@ -19,7 +19,6 @@ http://mozilla.org/MPL/2.0/.
 #include "world/MemCell.h"
 #include "application/editoruilayer.h"
 #include "rendering/renderer.h"
-#include "utilities/utilities.h"
 
 void itemproperties_panel::update(scene::basic_node const *Node)
 {

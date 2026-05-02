@@ -10,12 +10,6 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "stdafx.h"
-
-#include <string>
-#include <fstream>
-#include <ctime>
-#include <vector>
-#include <sstream>
 #include "utilities/parser.h"
 
 /*rozne takie duperele do operacji na stringach w paszczalu, pewnie w delfi sa lepsze*/
@@ -34,6 +28,7 @@ template <typename T> constexpr T sq(T v)
 	return v * v;
 }
 
+// TODO: Shouldn't this be in globals?
 namespace paths
 {
 inline constexpr const char *scenery = "scenery/";
