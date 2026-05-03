@@ -80,7 +80,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
             {
                 int i = int(pRozkaz->cString[8]); // długość pierwszego łańcucha (z przodu dwa floaty)
                 CommLog(
-                    Now() + " " + to_string(pRozkaz->iComm) + " " +
+                    Now() + " " + std::to_string(pRozkaz->iComm) + " " +
                     std::string(pRozkaz->cString + 11 + i, (unsigned)(pRozkaz->cString[10 + i])) +
                     " rcvd");
                 // nazwa pojazdu jest druga
@@ -98,7 +98,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
             break;
         case 4: // badanie zajętości toru
         {
-            CommLog(Now() + " " + to_string(pRozkaz->iComm) + " " +
+			CommLog(Now() + " " + std::to_string(pRozkaz->iComm) + " " +
                     std::string(pRozkaz->cString + 1, (unsigned)(pRozkaz->cString[0])) + " rcvd");
 
             auto *track = simulation::Paths.find( std::string( pRozkaz->cString + 1, (unsigned)( pRozkaz->cString[ 0 ] ) ) );
@@ -110,7 +110,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
         break;
         case 5: // ustawienie parametrów
         {
-            CommLog(Now() + " " + to_string(pRozkaz->iComm) + " params " + to_string(*pRozkaz->iPar) + " rcvd");
+			CommLog(Now() + " " + std::to_string(pRozkaz->iComm) + " params " + std::to_string(*pRozkaz->iPar) + " rcvd");
             if (*pRozkaz->iPar == 0) // sprawdzenie czasu
                 if (*pRozkaz->iPar & 1) // ustawienie czasu
                 {
@@ -133,7 +133,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
                 // Ra 2014-12: to ma działać również dla pojazdów bez obsady
                 CommLog(
                     Now() + " "
-                  + to_string( pRozkaz->iComm ) + " "
+                  + std::to_string( pRozkaz->iComm ) + " "
                   + std::string{ pRozkaz->cString + 1, (unsigned)( pRozkaz->cString[ 0 ] ) }
                   + " rcvd" );
                 if (pRozkaz->cString[0]) {
@@ -153,15 +153,15 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
             }
             break;
         case 8: // ponowne wysłanie informacji o zajętych odcinkach toru
-			CommLog(Now() + " " + to_string(pRozkaz->iComm) + " all busy track" + " rcvd");
+			CommLog(Now() + " " + std::to_string(pRozkaz->iComm) + " all busy track" + " rcvd");
             simulation::Paths.TrackBusyList();
             break;
         case 9: // ponowne wysłanie informacji o zajętych odcinkach izolowanych
-			CommLog(Now() + " " + to_string(pRozkaz->iComm) + " all busy isolated" + " rcvd");
+			CommLog(Now() + " " + std::to_string(pRozkaz->iComm) + " all busy isolated" + " rcvd");
             simulation::Paths.IsolatedBusyList();
             break;
         case 10: // badanie zajętości jednego odcinka izolowanego
-            CommLog(Now() + " " + to_string(pRozkaz->iComm) + " " +
+			CommLog(Now() + " " + std::to_string(pRozkaz->iComm) + " " +
                     std::string(pRozkaz->cString + 1, (unsigned)(pRozkaz->cString[0])) + " rcvd");
             simulation::Paths.IsolatedBusy( std::string( pRozkaz->cString + 1, (unsigned)( pRozkaz->cString[ 0 ] ) ) );
             break;
@@ -169,12 +169,12 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
             //    Ground.IsolatedBusy(AnsiString(pRozkaz->cString+1,(unsigned)(pRozkaz->cString[0])));
             break;
 		case 12: // skrocona ramka parametrow pojazdow AI (wszystkich!!)
-			CommLog(Now() + " " + to_string(pRozkaz->iComm) + " obsadzone" + " rcvd");
+			CommLog(Now() + " " + std::to_string(pRozkaz->iComm) + " obsadzone" + " rcvd");
             WyslijObsadzone();
 			//    Ground.IsolatedBusy(AnsiString(pRozkaz->cString+1,(unsigned)(pRozkaz->cString[0])));
 			break;
 		case 13: // ramka uszkodzenia i innych stanow pojazdu, np. wylaczenie CA, wlaczenie recznego itd.
-            CommLog(Now() + " " + to_string(pRozkaz->iComm) + " " +
+			CommLog(Now() + " " + std::to_string(pRozkaz->iComm) + " " +
                     std::string(pRozkaz->cString + 1, (unsigned)(pRozkaz->cString[0])) +
                     " rcvd");
             if( pRozkaz->cString[ 1 ] ) // jeśli długość nazwy jest niezerowa

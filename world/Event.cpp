@@ -275,8 +275,8 @@ basic_event::event_conditions::export_as_text( std::ostream &Output ) const {
             Output
                 << "memcompareex "
                 << ( ( flags & flags::text )   == 0 ? "*" :            memcompare_text     + ' ' + to_string( memcompare_text_operator ) ) << ' '
-                << ( ( flags & flags::value1 ) == 0 ? "*" : to_string( memcompare_value1 ) + ' ' + to_string( memcompare_value1_operator ) ) << ' '
-                << ( ( flags & flags::value2 ) == 0 ? "*" : to_string( memcompare_value2 ) + ' ' + to_string( memcompare_value2_operator ) ) << ' ';
+                << ( ( flags & flags::value1 ) == 0 ? "*" : std::to_string( memcompare_value1 ) + ' ' + to_string( memcompare_value1_operator ) ) << ' '
+                << ( ( flags & flags::value2 ) == 0 ? "*" : std::to_string( memcompare_value2 ) + ' ' + to_string( memcompare_value2_operator ) ) << ' ';
         }
     }
 }
@@ -557,8 +557,8 @@ updatevalues_event::export_as_text_( std::ostream &Output ) const {
 
     Output
         << ( ( m_input.flags & flags::text )   == 0 ? "*" : m_input.data_text ) << ' '
-        << ( ( m_input.flags & flags::value1 ) == 0 ? "*" : to_string( m_input.data_value_1 ) ) << ' '
-        << ( ( m_input.flags & flags::value2 ) == 0 ? "*" : to_string( m_input.data_value_2 ) ) << ' ';
+        << ( ( m_input.flags & flags::value1 ) == 0 ? "*" : std::to_string( m_input.data_value_1 ) ) << ' '
+        << ( ( m_input.flags & flags::value2 ) == 0 ? "*" : std::to_string( m_input.data_value_2 ) ) << ' ';
 
     m_conditions.export_as_text( Output );
 }
@@ -1052,7 +1052,7 @@ whois_event::run_() {
                     m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
 
                 WriteLog(
-                    "Type: WhoIs (" + to_string( m_input.flags ) + ") - "
+                    "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
                     + "[next station: " + nextstop + "], "
                     + "[X], "
                     + "[stop at next station: " + ( isstop != 0 ? "yes" : "no" ) + "]" );
@@ -1066,7 +1066,7 @@ whois_event::run_() {
                     m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
 
                 WriteLog(
-                    "Type: WhoIs (" + to_string( m_input.flags ) + ") - "
+                    "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
                     + "[name: " + m_activator->asName + "], "
                     + "[X], "
                     + "[X]" );
@@ -1098,7 +1098,7 @@ whois_event::run_() {
                     m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
 
                 WriteLog(
-                    "Type: WhoIs (" + to_string( m_input.flags ) + ") - "
+                    "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
                     + "[type: " + m_activator->MoverParameters->TypeName + "], "
                     + "[consist brake level: " + to_string( consistbrakelevel, 2 ) + "], "
                     + "[obstacle distance: " + to_string( collisiondistance, 2 ) + " m]" );
@@ -1112,7 +1112,7 @@ whois_event::run_() {
                     m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
 
                 WriteLog(
-                    "Type: WhoIs (" + to_string( m_input.flags ) + ") - "
+                    "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
                     + "[load type: " + m_activator->MoverParameters->LoadType.name + "], "
                     + "[current load: " + to_string( m_activator->MoverParameters->LoadAmount, 2 ) + "], "
                     + "[max load: " + to_string( m_activator->MoverParameters->MaxLoad, 2 ) + "]" );
@@ -1127,9 +1127,9 @@ whois_event::run_() {
                 m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
 
             WriteLog(
-                "Type: WhoIs (" + to_string( m_input.flags ) + ") - "
+                "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
                 + "[destination: " + m_activator->asDestination + "], "
-                + "[direction: " + to_string( m_activator->DirectionGet() ) + "], "
+                + "[direction: " + std::to_string( m_activator->DirectionGet() ) + "], "
                 + "[engine power: " + to_string( m_activator->MoverParameters->Power, 2 ) + "]" );
         }
         // +0
@@ -1143,9 +1143,9 @@ whois_event::run_() {
                         0, // 1, gdy ma tu zatrzymanie
                     m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
                 WriteLog(
-                    "Type: WhoIs (" + to_string( m_input.flags ) + ") - "
+                    "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
                     + "[train: " + m_activator->Mechanik->TrainName() + "], "
-                    + "[stations left: " + to_string( m_activator->Mechanik->StationCount() - m_activator->Mechanik->StationIndex() ) + "], "
+                    + "[stations left: " + std::to_string( m_activator->Mechanik->StationCount() - m_activator->Mechanik->StationIndex() ) + "], "
                     + "[stop at next station: " + ( m_activator->Mechanik->IsStop() ? "yes" : "no") + "]" );
             }
         }
@@ -1395,7 +1395,7 @@ sound_event::run_() {
 
     WriteLog(
         "Type: Sound - [" + std::string( m_soundmode == 1 ? "play" : m_soundmode == -1 ? "loop" : "stop" ) + "]"
-        + ( m_soundradiochannel > 0 ? " [channel " + to_string( m_soundradiochannel ) + "]" : "" ) );
+        + ( m_soundradiochannel > 0 ? " [channel " + std::to_string( m_soundradiochannel ) + "]" : "" ) );
     for( auto &target : m_sounds ) {
         auto *targetsound = std::get<sound_source *>( target );
         if( targetsound == nullptr ) { continue; }
@@ -1771,7 +1771,7 @@ lights_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
             Input >> m_lights[ lightidx++ ];
         }
         else {
-            ErrorLog( "Bad event: \"" + m_name + "\" (type: " + type() + ") with more than " + to_string( lightcountlimit ) + " parameters" );
+            ErrorLog( "Bad event: \"" + m_name + "\" (type: " + type() + ") with more than " + std::to_string( lightcountlimit ) + " parameters" );
         }
     }
     while( lightidx < lightcountlimit ) {

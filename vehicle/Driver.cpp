@@ -353,8 +353,8 @@ std::string TSpeedPos::GetName() const
     else if( iFlags & spEvent ) // jeśli event
         return
             evEvent->m_name
-            + " [" + to_string( static_cast<int>( evEvent->input_value( 1 ) ) )
-            + ", " + to_string( static_cast<int>( evEvent->input_value( 2 ) ) )
+            + " [" + std::to_string( static_cast<int>( evEvent->input_value( 1 ) ) )
+            + ", " + std::to_string( static_cast<int>( evEvent->input_value( 2 ) ) )
             + "]";
     else
         return "";

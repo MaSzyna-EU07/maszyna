@@ -150,7 +150,7 @@ bool TEventLauncher::Load(cParser *parser)
         WriteLog(
             "EventLauncher at "
             + std::to_string( iHour ) + ":"
-            + ( iMinute < 10 ? "0" : "" ) + to_string( iMinute )
+            + ( iMinute < 10 ? "0" : "" ) + std::to_string( iMinute )
             + " (" + asEvent1Name
             + ( asEvent2Name != "none" ? " / " + asEvent2Name : "" )
             + ")" ); // wyświetlenie czasu
@@ -316,8 +316,8 @@ TEventLauncher::export_as_text_( std::ostream &Output ) const {
             << "condition "
             << asMemCellName << ' '
             << szText << ' '
-            << ( ( iCheckMask & basic_event::flags::value1 ) != 0 ? to_string( fVal1 ) : "*" ) << ' '
-            << ( ( iCheckMask & basic_event::flags::value2 ) != 0 ? to_string( fVal2 ) : "*" ) << ' ';
+            << ( ( iCheckMask & basic_event::flags::value1 ) != 0 ? std::to_string( fVal1 ) : "*" ) << ' '
+            << ( ( iCheckMask & basic_event::flags::value2 ) != 0 ? std::to_string( fVal2 ) : "*" ) << ' ';
     }
     // footer
     Output

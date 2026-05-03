@@ -2023,7 +2023,7 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
         if (ConversionError == 666)
             ErrorLog( "Bad vehicle: failed to locate definition file \"" + BaseDir + "/" + Type_Name + ".fiz" + "\"" );
         else {
-            ErrorLog( "Bad vehicle: failed to load definition from file \"" + BaseDir + "/" + Type_Name + ".fiz\" (error " + to_string( ConversionError ) + ")" );
+            ErrorLog( "Bad vehicle: failed to load definition from file \"" + BaseDir + "/" + Type_Name + ".fiz\" (error " + std::to_string( ConversionError ) + ")" );
         }
         return 0.0; // zerowa długość to brak pojazdu
     }
@@ -2466,11 +2466,11 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     if( mdModel ) {
         // jeśli ma w czym szukać
         for( int i = 0; i < 2; i++ ) {
-            asAnimName = std::string( "buffer_left0" ) + to_string( i + 1 );
+            asAnimName = std::string( "buffer_left0" ) + std::to_string( i + 1 );
             smBuforLewy[ i ] = mdModel->GetFromName( asAnimName );
             if( smBuforLewy[ i ] )
                 smBuforLewy[ i ]->WillBeAnimated(); // ustawienie flagi animacji
-            asAnimName = std::string( "buffer_right0" ) + to_string( i + 1 );
+            asAnimName = std::string( "buffer_right0" ) + std::to_string( i + 1 );
             smBuforPrawy[ i ] = mdModel->GetFromName( asAnimName );
             if( smBuforPrawy[ i ] )
                 smBuforPrawy[ i ]->WillBeAnimated();
@@ -3379,7 +3379,7 @@ bool TDynamicObject::Update(double dt, double dt1)
 			if ((Fzad > 1) && (!MEDLogFile.is_open()) && (MoverParameters->Vel > 1))
 			{
                 MEDLogFile.open(
-                    "MEDLOGS/" + MoverParameters->Name + "_" + to_string( ++MEDLogCount ) + ".csv",
+                    "MEDLOGS/" + MoverParameters->Name + "_" + std::to_string( ++MEDLogCount ) + ".csv",
                     std::ios::in | std::ios::out | std::ios::trunc );
 				MEDLogFile << "t\tVel\tMasa\tOsie\tFmaxPN\tFmaxED\tFfulED\tFrED\tFzad\tFzadED\tFzadPN";
 				for(int k=1;k<=np;k++)

@@ -10122,7 +10122,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		modernDimmerPosition = modernDimmerDefaultPosition;
 	}
 
-	WriteLog("CERROR: " + to_string(ConversionError) + ", SUCCES: " + to_string(result));
+	WriteLog("CERROR: " + std::to_string(ConversionError) + ", SUCCES: " + to_string(result));
 	return result;
 }
 
@@ -10860,9 +10860,9 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 void TMoverParameters::LoadFIZ_Blending(std::string const &line)
 {
 
-	extract_value(MED_Vmax, "MED_Vmax", line, to_string(Vmax));
+	extract_value(MED_Vmax, "MED_Vmax", line, std::to_string(Vmax));
 	extract_value(MED_Vmin, "MED_Vmin", line, "0");
-	extract_value(MED_Vref, "MED_Vref", line, to_string(Vmax));
+	extract_value(MED_Vref, "MED_Vref", line, std::to_string(Vmax));
 	extract_value(MED_amax, "MED_amax", line, "9.81");
 	extract_value(MED_EPVC, "MED_EPVC", line, "");
 	extract_value(MED_Ncor, "MED_Ncor", line, "");
@@ -11160,7 +11160,7 @@ void TMoverParameters::LoadFIZ_Engine(std::string const &Input)
 		extract_value(eimc[eimc_f_DU], "DU", Input, "");
 		extract_value(eimc[eimc_f_I0], "I0", Input, "");
 		extract_value(eimc[eimc_f_cfu], "fcfu", Input, "");
-		extract_value(eimc[eimc_f_cfuH], "fcfuH", Input, to_string(eimc[eimc_f_cfu]));
+		extract_value(eimc[eimc_f_cfuH], "fcfuH", Input, std::to_string(eimc[eimc_f_cfu]));
 		extract_value(eimc[eimc_p_F0], "F0", Input, "");
 		extract_value(eimc[eimc_p_a1], "a1", Input, "");
 		extract_value(eimc[eimc_p_Pmax], "Pmax", Input, "");

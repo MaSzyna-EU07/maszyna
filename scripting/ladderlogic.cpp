@@ -378,7 +378,7 @@ basic_controller::log_error( std::string const &Error, int const Line ) const {
         "Bad plc program: \"" + m_programfilename + "\" "
         + Error
         + ( Line > 0 ?
-            " (line " + to_string( Line ) + ")" :
+            " (line " + std::to_string( Line ) + ")" :
             "" ) );
 }
 

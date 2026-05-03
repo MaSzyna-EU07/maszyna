@@ -212,7 +212,7 @@ std::string to_minutes_str(float const Minutes, bool const Leadingzero, int cons
 	float minutesintegral;
 	auto const minutesfractional{std::modf(Minutes, &minutesintegral)};
 	auto const width{Width - 1};
-	auto minutes = (std::string(width - 1, ' ') + (Leadingzero ? to_string(100 + minutesintegral).substr(1, 2) : to_string(minutesintegral, 0)));
+	auto minutes = (std::string(width - 1, ' ') + (Leadingzero ? std::to_string(100 + minutesintegral).substr(1, 2) : to_string(minutesintegral, 0)));
 	return (minutes.substr(minutes.size() - width, width) + fractionlabels[static_cast<int>(std::floor(minutesfractional * 10 + 0.1))]);
 }
 
