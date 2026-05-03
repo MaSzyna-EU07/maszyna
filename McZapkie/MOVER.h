@@ -1755,6 +1755,8 @@ class TMoverParameters
 	bool HasCamshaft{false};
 	int DynamicBrakeType = 0; /*patrz dbrake_**/
 	int DynamicBrakeAmpmeters = 2; /*liczba amperomierzy przy hamowaniu ED*/
+	bool SplitEDPneumaticBrake = false; /*czy hamulec ED i pneumatyczny pomocniczy są rozdzielone na osobne nastawniki*/
+	int DynamicBrakeCtrlPosNo = 10; /*ilosc pozycji nastawnika hamulca ED (DBPN, domyslnie 10)*/
 	double DynamicBrakeRes = 5.8; /*rezystancja oporników przy hamowaniu ED*/
 	double DynamicBrakeRes1 = 5.8; /*rezystancja oporników przy hamowaniu ED - 1 tryb*/
 	double DynamicBrakeRes2 = 5.8; /*rezystancja oporników przy hamowaniu ED - 2 tryb*/
@@ -2031,6 +2033,7 @@ class TMoverParameters
 	int ManualBrakePos = 0; /*nastawa hamulca recznego*/
 	double LocalBrakePosA = 0.0; /*nastawa hamulca pomocniczego*/
 	double LocalBrakePosAEIM = 0.0; /*pozycja hamulca pomocniczego ep dla asynchronicznych ezt*/
+	double DynamicBrakeCtrlPos = 0.0; /*nastawa nastawnika hamulca elektrodynamicznego (0..1) - aktywne tylko gdy SplitEDPneumaticBrake*/
 	bool UniversalBrakeButtonActive[3] = {false, false, false}; /* brake button pressed */
 	/*
 	    int BrakeStatus = b_off; //0 - odham, 1 - ham., 2 - uszk., 4 - odluzniacz, 8 - antyposlizg, 16 - uzyte EP, 32 - pozycja R, 64 - powrot z R
@@ -2381,6 +2384,12 @@ class TMoverParameters
 	/*! ABu 010205: - skrajne polozenia ham. pomocniczego*/
 	bool IncManualBrakeLevel(int CtrlSpeed);
 	bool DecManualBrakeLevel(int CtrlSpeed);
+	/*! oddzielny nastawnik hamulca elektrodynamicznego (gdy SplitEDPneumaticBrake)*/
+	bool IncDynamicBrakeLevel(float const CtrlSpeed);
+	bool DecDynamicBrakeLevel(float const CtrlSpeed);
+	bool DynamicBrakeLevelSet(double Position);
+	double DynamicBrakeRatio(void) const;
+	bool DynamicBrakeAvailable(void) const; /*czy ED dostepny w aktualnym oknie predkosci Vh0..Vh1*/
 	bool DynamicBrakeSwitch(bool Switch);
 	bool RadiostopSwitch(bool Switch);
 	bool AlarmChainSwitch(bool const State);
