@@ -45,14 +45,11 @@ class cParser //: public std::stringstream
     inline
     void
         ignoreToken() {
-		std::string out;
-            readToken(out); };
+            readToken(); };
     inline
     bool
         expectToken( std::string const &Value ) {
-		std::string out;
-		readToken(out);
-            return out == Value; };
+            return readToken() == Value; };
     inline
     bool
         eof() {
@@ -69,6 +66,7 @@ class cParser //: public std::stringstream
             return m_autoclear; }
     bool
         getTokens( unsigned int Count = 1, bool ToLower = true, char const *Break = "\n\r\t ;" );
+	std::string readTokenFromDelegate(bool ToLower, const char *Break);
 	std::string readTokenFromStream(bool ToLower, const char *Break);
 	void stripFirstTokenBOM(std::string &token, bool ToLower, const char *Break);
 	void substituteParameters(std::string &token, bool ToLower);
@@ -105,7 +103,7 @@ class cParser //: public std::stringstream
 	void startIncludeFromParser(cParser &srcParser, bool ToLower, std::string includefile);
 	bool handleIncludeIfPresent(std::string &token, bool ToLower, const char *Break);
 	// methods:
-    void readToken(std::string& out, bool ToLower = true, const char *Break = "\n\r\t ;");
+    std::string readToken(bool ToLower = true, const char *Break = "\n\r\t ;");
 	static std::vector<std::string> readParameters( cParser &Input );
     std::string readQuotes( char const Quote = '\"' );
     void skipComment( std::string const &Endmark );
