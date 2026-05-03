@@ -3727,41 +3727,23 @@ bool TDynamicObject::Update(double dt, double dt1)
 								// crude bump simulation, drop down on even axles, move back up on
 								// the odd ones
 								// MoverParameters->AccVert += (MoverParameters->Vel*0.1f) *
-								if(MyTrack->eType == tt_Normal)
+								static double minV, maxV;
+								std::tie(minV, maxV) = std::minmax(MoverParameters->Vmax, MoverParameters->Vmax - (MoverParameters->Vel + MoverParameters->Vmax * 0.32f));
+								double precalculatedValue = (std::clamp(0.0, minV, maxV)) * .05f * (MyTrack->iDamageFlag * 0.25f);
+								if (MyTrack->eType == tt_Normal)
 								{
-									MoverParameters->AccVert +=
-									    std::clamp(0.0, 4.0,
-									          (std::clamp(0.0, MoverParameters->Vmax,
-									                 MoverParameters->Vmax -
-									                     (MoverParameters->Vel +
-									                      MoverParameters->Vmax * 0.32f))) *
-									              .05f * (MyTrack->iDamageFlag * 0.25f));
+									std::tie(minV, maxV) = std::minmax(4.0, precalculatedValue);
+									MoverParameters->AccVert += std::clamp(0.0, minV, maxV);
 								}
-								if (MyTrack->eType == tt_Switch){
-								    MoverParameters->AccS +=
-								        std::clamp(0.0, 1.0,
-								              (std::clamp(0.0, MoverParameters->Vmax,
-								                     MoverParameters->Vmax -
-								                         (MoverParameters->Vel +
-								                          MoverParameters->Vmax * 0.32f))) *
-								                  .05f * (MyTrack->iDamageFlag * 0.25f)) *
-								        ((axleindex % 2) != 0 ? 1 : -1);
-								    MoverParameters->AccN +=
-								        std::clamp(0.0, 1.0,
-								              (std::clamp(0.0, MoverParameters->Vmax,
-								                     MoverParameters->Vmax -
-								                         (MoverParameters->Vel +
-								                          MoverParameters->Vmax * 0.32f))) *
-								                  .05f * (MyTrack->iDamageFlag * 0.25f)) *
-								        ((axleindex % 2) != 0 ? 1 : -1);
-									MoverParameters->AccVert +=
-									    std::clamp(0.0, 2.0,
-									          (std::clamp(0.0, MoverParameters->Vmax,
-									                 MoverParameters->Vmax -
-									                     (MoverParameters->Vel +
-									                      MoverParameters->Vmax * 0.32f))) *
-									              .05f * (MyTrack->iDamageFlag * 0.25f));
-								    }
+								else if (MyTrack->eType == tt_Switch)
+								{
+									std::tie(minV, maxV) = std::minmax(1.0, precalculatedValue);
+									double accHorizontal = std::clamp(0.0, minV, maxV) * ((axleindex % 2) != 0 ? 1 : -1);
+									MoverParameters->AccS += accHorizontal;
+									MoverParameters->AccN += accHorizontal;
+									std::tie(minV, maxV) = std::minmax(2.0, precalculatedValue);
+									MoverParameters->AccVert += std::clamp(0.0, minV, maxV);
+								}
                             }
                         }
                         ++axleindex;

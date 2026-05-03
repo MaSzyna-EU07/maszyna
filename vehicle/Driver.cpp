@@ -7887,7 +7887,8 @@ TController::adjust_desired_speed_for_braking_test() {
             break;
         }
         case 3: {
-            AccDesired = std::clamp( -AbsAccS, fAccThreshold * 1.01, fAccThreshold * 1.21 );
+		    auto [minV, maxV] = std::minmax(fAccThreshold * 1.01f, fAccThreshold * 1.21f);
+		    AccDesired = std::clamp(-AbsAccS, minV, maxV);
             VelDesired = DBT_VelocityBrake;
             if( vel <= DBT_VelocityRelease ) {
                 DynamicBrakeTest = 4;
