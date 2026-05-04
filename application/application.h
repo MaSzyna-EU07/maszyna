@@ -101,6 +101,7 @@ private:
 // methods
 	  bool needs_ogl() const;
     void init_debug();
+    void init_console();
     void init_files();
     int  init_settings( int Argc, char *Argv[] );
     int  init_locale();

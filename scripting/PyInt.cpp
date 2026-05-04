@@ -312,15 +312,37 @@ void python_taskqueue::exit()
 	m_condition.notify_all();
 	// let them free up their shit before we proceed
 	m_workers = {};
-	// get rid of the leftover tasks
-	// with the workers dead we don't have to worry about concurrent access anymore
-	for (auto task : m_tasks.data)
+	// drop any pending render/upload tasks. the workers are joined at this
+	// point so the locks are strictly defensive, but they cost nothing and
+	// document intent. clearing the deque also actually releases the tasks,
+	// which the previous code did not do (cancel() is a no-op stub).
 	{
-		task->cancel();
+		std::lock_guard<std::mutex> lock(m_tasks.mutex);
+		for (auto &task : m_tasks.data)
+		{
+			task->cancel();
+		}
+		m_tasks.data.clear();
 	}
-	// take a bow
+	{
+		std::lock_guard<std::mutex> lock(m_uploadtasks.mutex);
+		m_uploadtasks.data.clear();
+	}
+	// reclaim cached python objects while the interpreter is still alive,
+	// so no Py_DECREF lands on a finalized interpreter during later teardown
 	acquire_lock();
+	for (auto &entry : m_renderers)
+	{
+		Py_XDECREF(entry.second);
+	}
+	m_renderers.clear();
+	Py_XDECREF(m_stderr);
+	m_stderr = nullptr;
+	Py_XDECREF(m_main);
+	m_main = nullptr;
+	// take a bow
 	Py_Finalize();
+	m_initialized = false;
 }
 
 // adds specified task along with provided collection of data to the work queue. returns true on success
@@ -518,8 +540,10 @@ void python_taskqueue::run(GLFWwindow *Context, rendertask_sequence &Tasks, uplo
 			// TBD, TODO: add some idle time between tasks in case we're on a single thread cpu?
 		} while (task != nullptr);
 		// if there's nothing left to do wait until there is
-		// but check every now and then on your own to minimize potential deadlock situations
-		Condition.wait_for(std::chrono::seconds(5));
+		// short timeout: notify_all() in exit() can race with the worker's
+		// transition into the wait, and the run loop also drives prompt
+		// shutdown checks
+		Condition.wait_for(std::chrono::milliseconds(250));
 	}
 	// clean up thread state data
 	PyEval_AcquireLock();
@@ -527,6 +551,12 @@ void python_taskqueue::run(GLFWwindow *Context, rendertask_sequence &Tasks, uplo
 	PyThreadState_Clear(threadstate);
 	PyThreadState_Delete(threadstate);
 	PyEval_ReleaseLock();
+
+	// detach the GL context before the worker terminates; some drivers
+	// (NVIDIA on X11, certain Mesa/Wayland configs) hang in process teardown
+	// if a context is still current on a dying thread
+	if (Context)
+		glfwMakeContextCurrent(nullptr);
 }
 
 void python_taskqueue::update()

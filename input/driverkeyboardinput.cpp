@@ -32,6 +32,13 @@ driverkeyboard_input::default_bindings() {
         { user_command::mastercontrollerdecrease, {GLFW_KEY_KP_SUBTRACT, ""} },
         { user_command::mastercontrollerdecreasefast, {GLFW_KEY_KP_SUBTRACT | keymodifier::shift, ""} },
         // mastercontrollerset,
+
+		{ user_command::dynamicbrakecontrollerincrease, {GLFW_KEY_KP_3 | keymodifier::control, ""} },
+		{ user_command::dynamicbrakecontrollerdecrease, {GLFW_KEY_KP_9 | keymodifier::control, ""} },
+    	// mastercontrollerset,
+		{ user_command::dynamicbrakecontrollerincreasefast, {GLFW_KEY_KP_3 | keymodifier::control | keymodifier::shift, ""} },
+		{ user_command::dynamicbrakecontrollerdecreasefast, {GLFW_KEY_KP_9 | keymodifier::control | keymodifier::shift, ""} },
+
         { user_command::secondcontrollerincrease, {GLFW_KEY_KP_DIVIDE, ""} },
         { user_command::secondcontrollerincreasefast, {GLFW_KEY_KP_DIVIDE | keymodifier::shift, ""} },
         { user_command::secondcontrollerdecrease, {GLFW_KEY_KP_MULTIPLY, ""} },

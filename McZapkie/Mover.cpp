@@ -3884,6 +3884,79 @@ bool TMoverParameters::DecLocalBrakeLevel(float const CtrlSpeed)
 }
 
 // *************************************************************************************************
+// zwiększenie nastawy nastawnika hamulca elektrodynamicznego (DynamicBrakeCtrl)
+// uzywane gdy SplitEDPneumaticBrake = true
+// *************************************************************************************************
+bool TMoverParameters::IncDynamicBrakeLevel(float const CtrlSpeed)
+{
+	if (false == SplitEDPneumaticBrake)
+		return false;
+	if (DynamicBrakeCtrlPosNo < 1)
+		return false;
+	if (DynamicBrakeCtrlPos < 1.0)
+	{
+		DynamicBrakeCtrlPos = std::min(1.0, DynamicBrakeCtrlPos + (double)CtrlSpeed / (double)DynamicBrakeCtrlPosNo);
+		return true;
+	}
+	return false;
+}
+
+// *************************************************************************************************
+// zmniejszenie nastawy nastawnika hamulca elektrodynamicznego (DynamicBrakeCtrl)
+// *************************************************************************************************
+bool TMoverParameters::DecDynamicBrakeLevel(float const CtrlSpeed)
+{
+	if (false == SplitEDPneumaticBrake)
+		return false;
+	if (DynamicBrakeCtrlPosNo < 1)
+		return false;
+	if (DynamicBrakeCtrlPos > 0.0)
+	{
+		DynamicBrakeCtrlPos = std::max(0.0, DynamicBrakeCtrlPos - (double)CtrlSpeed / (double)DynamicBrakeCtrlPosNo);
+		return true;
+	}
+	return false;
+}
+
+// *************************************************************************************************
+// bezposrednie ustawienie nastawnika hamulca elektrodynamicznego (DynamicBrakeCtrl)
+// *************************************************************************************************
+bool TMoverParameters::DynamicBrakeLevelSet(double Position)
+{
+	if (false == SplitEDPneumaticBrake)
+		return false;
+	DynamicBrakeCtrlPos = clamp(Position, 0.0, 1.0);
+	return true;
+}
+
+// *************************************************************************************************
+// odczyt nastawy nastawnika hamulca elektrodynamicznego (DynamicBrakeCtrl)
+// zwraca 0 jezeli SplitEDPneumaticBrake nie jest aktywne (dla zachowania starej logiki)
+// *************************************************************************************************
+double TMoverParameters::DynamicBrakeRatio(void) const
+{
+	if (false == SplitEDPneumaticBrake)
+		return 0.0;
+	return clamp(DynamicBrakeCtrlPos, 0.0, 1.0);
+}
+
+// *************************************************************************************************
+// czy hamulec ED jest aktualnie dostepny w oknie predkosci Vh0..Vh1
+// *************************************************************************************************
+bool TMoverParameters::DynamicBrakeAvailable(void) const
+{
+	double const vh0{eimc[eimc_p_Vh0]};
+	double const vh1{eimc[eimc_p_Vh1]};
+	if (vh1 <= 0.001)
+	{
+		// brak zdefiniowanej strefy - ED dziala zawsze
+		return true;
+	}
+	// strefa wylaczenia jest definiowana przez Vh0 (minimum); powyzej Vh0 ED dziala
+	return (Vel >= vh0);
+}
+
+// *************************************************************************************************
 // Q: 20160711
 // zwiększenie nastawy hamulca ręcznego
 // *************************************************************************************************
@@ -4439,7 +4512,13 @@ void TMoverParameters::UpdatePipePressure(double dt)
 			dpLocalValve = LocHandle->GetPF(std::max(lbpa, LocalBrakePosAEIM), Hamulec->GetBCP(), ScndPipePress, dt, 0);
 		}
 		else
-			dpLocalValve = LocHandle->GetPF(LocalBrakePosAEIM, Hamulec->GetBCP(), ScndPipePress, dt, 0);
+		{
+			// in EIM stock the pneumatic local brake is normally driven only by the MED algorithm
+			// (LocalBrakePosAEIM). When SplitEDPneumaticBrake is active the dedicated LocalBrake
+			// lever should apply pneumatic pressure on the locomotive directly, bypassing MED.
+			double lbpa = SplitEDPneumaticBrake ? LocalBrakePosA : 0.0;
+			dpLocalValve = LocHandle->GetPF(std::max(lbpa, LocalBrakePosAEIM), Hamulec->GetBCP(), ScndPipePress, dt, 0);
+		}
 
 		LockPipe = PipePress < (LockPipe ? LockPipeOff : LockPipeOn);
 		bool lock_new = (LockPipe && !UnlockPipe && (BrakeCtrlPosR > HandleUnlock)) || ((EmergencyCutsOffHandle) && (EmergencyValveFlow > 0)); // new simple codition based on .fiz
@@ -6233,14 +6312,19 @@ double TMoverParameters::TractionForce(double dt)
 				}
 				double edBCP = Hamulec->GetEDBCP();
 				auto const localbrakeactive{(CabOccupied != 0) && (LocHandle->GetCP() > 0.25)};
+				// gdy SplitEDPneumaticBrake jest aktywne, hamulec pomocniczy (LocalBrake) NIE wymusza
+				// zalaczenia hamulca elektrodynamicznego - ED jest sterowany wlasnym nastawnikiem
+				auto const dynbrakectrlactive{SplitEDPneumaticBrake && (DynamicBrakeRatio() > 0.01) && DynamicBrakeAvailable()};
+				auto const localbrakeforED{SplitEDPneumaticBrake ? false : localbrakeactive};
 				if ((false == Doors.instances[side::left].is_closed) || (false == Doors.instances[side::right].is_closed) ||
 				    (Doors.permit_needed && (Doors.instances[side::left].open_permit || Doors.instances[side::right].open_permit)))
 				{
 					DynamicBrakeFlag = true;
 				}
-				else if (((edBCP < 0.25) && (false == localbrakeactive) && (AnPos < 0.01)) || ((edBCP < 0.25) && (ShuntModeAllow) && (LocalBrakePosA < 0.01)))
+				else if (((edBCP < 0.25) && (false == localbrakeforED) && (false == dynbrakectrlactive) && (AnPos < 0.01)) ||
+				         ((edBCP < 0.25) && (ShuntModeAllow) && (false == dynbrakectrlactive) && (LocalBrakePosA < 0.01)))
 					DynamicBrakeFlag = false;
-				else if ((((BrakePress > 0.25) && (edBCP > 0.25) || localbrakeactive)) || (AnPos > 0.02))
+				else if ((((BrakePress > 0.25) && (edBCP > 0.25) || localbrakeforED)) || (AnPos > 0.02) || dynbrakectrlactive)
 					DynamicBrakeFlag = true;
 				edBCP = Hamulec->GetEDBCP() * eimc[eimc_p_abed]; // stala napedu
 				if ((DynamicBrakeFlag))
@@ -6267,8 +6351,21 @@ double TMoverParameters::TractionForce(double dt)
 					}
 					else
 					{
-						PosRatio = -std::max(std::min(edBCP * 1.0 / MaxBrakePress[0], 1.0), AnPos) * std::max(0.0, std::min(1.0, (Vel - eimc[eimc_p_Vh0]) / (eimc[eimc_p_Vh1] - eimc[eimc_p_Vh0])));
-						eimv[eimv_Fzad] = -std::min(1.0, std::max(LocalBrakeRatio(), edBCP / MaxBrakePress[0]));
+						// strefa wylaczenia ED (Vh0..Vh1) - mnoznik 0..1 zaleznie od predkosci
+						double const vhRamp = std::max(0.0, std::min(1.0, (Vel - eimc[eimc_p_Vh0]) / (eimc[eimc_p_Vh1] - eimc[eimc_p_Vh0])));
+						if (SplitEDPneumaticBrake)
+						{
+							// w trybie split LocalBrake nie zaleca ED; uzywany jest DynamicBrakeCtrl
+							// oraz zwykle zapotrzebowanie z hamulca zespolonego (edBCP)
+							double const edLeverDemand = DynamicBrakeRatio();
+							PosRatio = -std::max(std::max(edLeverDemand, std::min(edBCP / MaxBrakePress[0], 1.0)), AnPos) * vhRamp;
+							eimv[eimv_Fzad] = -std::min(1.0, std::max(edLeverDemand, edBCP / MaxBrakePress[0]));
+						}
+						else
+						{
+							PosRatio = -std::max(std::min(edBCP * 1.0 / MaxBrakePress[0], 1.0), AnPos) * vhRamp;
+							eimv[eimv_Fzad] = -std::min(1.0, std::max(LocalBrakeRatio(), edBCP / MaxBrakePress[0]));
+						}
 					}
 					tmp = 5;
 				}
@@ -7231,10 +7328,26 @@ void TMoverParameters::CheckEIMIC(double dt)
 {
 	double offset = EIMCtrlAdditionalZeros ? 1.0 : 0.0;
 	double multiplier = (EIMCtrlEmergency ? 1.0 : 0.0) + offset;
+	// gdy SplitEDPneumaticBrake jest wlaczone, sterowanie ujemne (hamowanie ED) bierzemy
+	// z osobnego nastawnika DynamicBrakeCtrl, a nie z hamulca pomocniczego (LocalBrake).
+	// Dodatkowo zapotrzebowanie ED jest ograniczone przez strefe Vh0..Vh1: powyzej Vh1 - pelny ED,
+	// pomiedzy Vh1 a Vh0 - liniowe zanikanie, ponizej Vh0 - zerowe (brak hamowania pneumatycznego
+	// jako uzupelnienia, poniewaz LocalBrake jest oddzielny i operuje wylacznie pneumatyka).
+	double brakeDemand = SplitEDPneumaticBrake ? DynamicBrakeRatio() : LocalBrakeRatio();
+	if (SplitEDPneumaticBrake)
+	{
+		double const vh0 = eimc[eimc_p_Vh0];
+		double const vh1 = eimc[eimc_p_Vh1];
+		if (vh1 > vh0 + 0.001)
+		{
+			double const vhRamp = clamp((Vel - vh0) / (vh1 - vh0), 0.0, 1.0);
+			brakeDemand *= vhRamp;
+		}
+	}
 	switch (EIMCtrlType)
 	{
 	case 0:
-		eimic = (LocalBrakeRatio() > 0.01 ? -LocalBrakeRatio() : eimic_analog > 0.01 ? eimic_analog : (double)MainCtrlPos / (double)MainCtrlPosNo);
+		eimic = (brakeDemand > 0.01 ? -brakeDemand : eimic_analog > 0.01 ? eimic_analog : (double)MainCtrlPos / (double)MainCtrlPosNo);
 		if (EIMCtrlAdditionalZeros || EIMCtrlEmergency)
 		{
 			if (eimic > 0.001)
@@ -7348,7 +7461,9 @@ void TMoverParameters::CheckEIMIC(double dt)
 			eimic = 0; // shut off retarder
 		if ((UniCtrlIntegratedBrakeCtrl == false) && (UniCtrlIntegratedLocalBrakeCtrl == false))
 		{
-			eimic = (LocalBrakeRatio() > 0.01 ? -LocalBrakeRatio() : eimic);
+			// w trybie SplitEDPneumaticBrake hamowanie ED przychodzi z osobnego nastawnika,
+			// LocalBrake operuje wylacznie pneumatycznym hamulcem lokomotywy
+			eimic = (brakeDemand > 0.01 ? -brakeDemand : eimic);
 		}
 	}
 	if (LocHandleTimeTraxx)
@@ -10707,6 +10822,18 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 		auto lookup = dynamicbrakes.find(extract_value("DynamicBrake", line));
 		DynamicBrakeType = lookup != dynamicbrakes.end() ? lookup->second : dbrake_none;
 		extract_value(DynamicBrakeAmpmeters, "DBAM", line, "");
+	}
+
+	// split ED/pneumatic brake control: when true the local brake operates only on the
+	// pneumatic locomotive cylinder while electrodynamic braking is commanded by a
+	// separate "dynamicbrakectrl" lever (or the negative range of jointctrl).
+	extract_value(SplitEDPneumaticBrake, "SplitEDPneumaticBrake", line, "");
+	// number of stepped positions for the dedicated ED brake controller (default 10)
+	DynamicBrakeCtrlPosNo = 10;
+	extract_value(DynamicBrakeCtrlPosNo, "DBPN", line, "");
+	if (DynamicBrakeCtrlPosNo < 1)
+	{
+		DynamicBrakeCtrlPosNo = 10;
 	}
 
 	extract_value(MainCtrlPosNo, "MCPN", line, "");

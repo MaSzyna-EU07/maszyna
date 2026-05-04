@@ -236,11 +236,19 @@ class TTrain {
     static void OnCommand_aidriverenable( TTrain *Train, command_data const &Command );
     static void OnCommand_aidriverdisable( TTrain *Train, command_data const &Command );
     static void OnCommand_jointcontrollerset( TTrain *Train, command_data const &Command );
+
     static void OnCommand_mastercontrollerincrease( TTrain *Train, command_data const &Command );
     static void OnCommand_mastercontrollerincreasefast( TTrain *Train, command_data const &Command );
     static void OnCommand_mastercontrollerdecrease( TTrain *Train, command_data const &Command );
     static void OnCommand_mastercontrollerdecreasefast( TTrain *Train, command_data const &Command );
     static void OnCommand_mastercontrollerset( TTrain *Train, command_data const &Command );
+
+	static void OnCommand_DynamicBrakeControllerIncrease( TTrain *Train, command_data const &Command );
+	static void OnCommand_DynamicBrakeControllerIncreaseFast( TTrain *Train, command_data const &Command );
+	static void OnCommand_DynamicBrakeControllerDecrease( TTrain *Train, command_data const &Command );
+	static void OnCommand_DynamicBrakeControllerDecreaseFast( TTrain *Train, command_data const &Command );
+	static void OnCommand_DynamicBrakeControllerSet( TTrain *Train, command_data const &Command );
+
     static void OnCommand_secondcontrollerincrease( TTrain *Train, command_data const &Command );
     static void OnCommand_secondcontrollerincreasefast( TTrain *Train, command_data const &Command );
     static void OnCommand_secondcontrollerdecrease( TTrain *Train, command_data const &Command );

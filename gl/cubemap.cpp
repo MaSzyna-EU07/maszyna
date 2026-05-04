@@ -17,11 +17,16 @@ gl::cubemap::~cubemap()
 
 void gl::cubemap::alloc(GLint format, int width, int height, GLenum components, GLenum type)
 {
-    glBindTexture(GL_TEXTURE_CUBE_MAP, *this);
-    for (GLuint tgt = GL_TEXTURE_CUBE_MAP_POSITIVE_X; tgt <= GL_TEXTURE_CUBE_MAP_NEGATIVE_Z; tgt++)
-        glTexImage2D(tgt, 0, format, width, height, 0, components, type, nullptr);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, *this);
+	for (GLuint tgt = GL_TEXTURE_CUBE_MAP_POSITIVE_X; tgt <= GL_TEXTURE_CUBE_MAP_NEGATIVE_Z; tgt++)
+		glTexImage2D(tgt, 0, format, width, height, 0, components, type, nullptr);
 
-    glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+	// make the cubemap sample-complete with no mipmaps required.
+	// generate_mipmaps() will later override MIN_FILTER once mips actually exist.
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+	glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
 }
 
 void gl::cubemap::bind(int unit)
