@@ -190,16 +190,17 @@ bool cParser::getTokens(unsigned int Count, bool ToLower, const char *Break)
 	    this->str("");
 	    this->clear();
 	*/
+	std::string token; 
 	for (unsigned int i = tokens.size(); i < Count; ++i)
 	{
-		std::string token = readToken(ToLower, Break);
-		if (true == token.empty())
+		readToken(token, ToLower, Break);
+		if (token.empty())
 		{
 			// no more tokens
 			break;
 		}
+		tokens.emplace_back(std::move(token));
 		// collect parameters
-		tokens.emplace_back(token);
 		/*
 		        if (i == 0)
 		            this->str(token);
@@ -218,18 +219,6 @@ bool cParser::getTokens(unsigned int Count, bool ToLower, const char *Break)
 		return true;
 }
 
-std::string cParser::readTokenFromDelegate(bool ToLower, const char *Break)
-{
-	if (!mIncludeParser)
-		return {};
-	std::string token = mIncludeParser->readToken(ToLower, Break);
-	if (token.empty())
-	{
-		mIncludeParser = nullptr;
-	}
-	return token;
-}
-
 std::string cParser::readTokenFromStream(bool ToLower, const char *Break)
 {
 	std::string token;
@@ -240,8 +229,12 @@ std::string cParser::readTokenFromStream(bool ToLower, const char *Break)
 
 
 	while (token.empty() && mStream->peek() != EOF) {
+<<<<<<< HEAD
 		while (mStream->peek() != EOF) { // idk why but with mStream->get(c) not all cars are loaded
 			c = static_cast<char>(mStream->get());
+=======
+		while (mStream->get(c)) {
+>>>>>>> parent of 3a42a8c1 (Revert "Reduce string creations and deletions")
 			if (c == '\n') {
 				++mLine;
 			}
@@ -279,7 +272,7 @@ void cParser::stripFirstTokenBOM(std::string& token, bool ToLower, const char* B
 
 	// if first "token" was standalone BOM, read the next real token (avoid recursion)
 	while (token.empty() && mStream->peek() != EOF) {
-		token = readToken(ToLower, Break);
+		readToken(token, ToLower, Break);
 		// readToken will not re-enter BOM stripping because mFirstToken is now false
 		break;
 	}
@@ -321,7 +314,7 @@ void cParser::skipIncludeBlock() {
 	// mimic original: while token != "end" readToken(true)
 	std::string t;
 	do {
-		t = readToken(true);
+		readToken(t, true);
 	} while (t != "end" && !t.empty());
 }
 
@@ -366,72 +359,81 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
 bool cParser::handleIncludeIfPresent(std::string& token, bool ToLower, const char* Break) {
 	// token-mode include: token == "include"
 	if (expandIncludes && token == "include") {
-		std::string includefile =
-			allowRandomIncludes ? deserialize_random_set(*this) : readToken(ToLower);
+		std::string includefile;
+		if (allowRandomIncludes)
+			includefile = deserialize_random_set(*this);
+		else
+			readToken(includefile, ToLower);
 
 		startIncludeFromParser(*this, ToLower, std::move(includefile));
 
 		// after processing include, return next token from current parser
-		token = readToken(ToLower, Break);
+		readToken(token, ToLower, Break);
 		return true;
 	}
 
 	// line-mode HACK: Break == "\n\r" and line begins with "include"
 	if ((std::strcmp(Break, "\n\r") == 0) && token.compare(0, 7, "include") == 0) {
 		cParser includeparser(token.substr(7));
-		std::string includefile =
-			allowRandomIncludes ? deserialize_random_set(includeparser) : includeparser.readToken(ToLower);
+		std::string includefile;
+		if (allowRandomIncludes)
+			includefile = deserialize_random_set(includeparser);
+		else
+			includeparser.readToken(includefile, ToLower);
 
 		startIncludeFromParser(includeparser, ToLower, std::move(includefile));
 
-		token = readToken(ToLower, Break);
+		readToken(token, ToLower, Break);
 		return true;
 	}
 
 	return false;
 }
 
-std::string cParser::readToken(bool ToLower, const char *Break)
+void cParser::readToken(std::string &out, bool ToLower, const char *Break)
 {
-	std::string token;
-
-	token = readTokenFromDelegate(ToLower, Break);
-	if (token.empty())
+	if (mIncludeParser)
 	{
-		token = readTokenFromStream(ToLower, Break);
+		mIncludeParser->readToken(out, ToLower, Break);
+		if (out.empty())
+		{
+			mIncludeParser = nullptr;
+			out = readTokenFromStream(ToLower, Break);
+		}
+	}
+	else
+	{
+		out = readTokenFromStream(ToLower, Break);
 	}
 
-	stripFirstTokenBOM(token, ToLower, Break);
+	stripFirstTokenBOM(out, ToLower, Break);
 
-	substituteParameters(token, ToLower);
+	substituteParameters(out, ToLower);
 
-	handleIncludeIfPresent(token, ToLower, Break);
-
-	return token;
+	handleIncludeIfPresent(out, ToLower, Break);
 }
 
 std::vector<std::string> cParser::readParameters(cParser &Input)
 {
 
 	std::vector<std::string> includeparameters;
-	std::string parameter = Input.readToken(false); // w parametrach nie zmniejszamy
+	std::string parameter;
+	Input.readToken(parameter, false); // w parametrach nie zmniejszamy
 	while ((parameter.empty() == false) && (parameter != "end"))
 	{
 		includeparameters.emplace_back(parameter);
-		parameter = Input.readToken(false);
+		Input.readToken(parameter, false);
 	}
 	return includeparameters;
 }
 
 std::string cParser::readQuotes(char const Quote)
 { // read the stream until specified char or stream end
-	std::string token = "";
+	std::string token;
 	char c{0};
 	bool escaped = false;
-	while (mStream->peek() != EOF)
+	while (mStream->get(c))
 	{ // get all chars until the quote mark
-		c = mStream->get();
-
 		if (escaped)
 		{
 			escaped = false;
@@ -457,13 +459,11 @@ std::string cParser::readQuotes(char const Quote)
 
 void cParser::skipComment(std::string const &Endmark)
 { // pobieranie znaków aż do znalezienia znacznika końca
-	std::string input = "";
+	std::string input;
 	char c{0};
 	auto const endmarksize = Endmark.size();
-	while (mStream->peek() != EOF)
+	while (mStream->get(c))
 	{
-		// o ile nie koniec pliku
-		c = mStream->get(); // pobranie znaku
 		if (c == '\n')
 		{
 			// update line counter
@@ -554,8 +554,8 @@ std::size_t cParser::count()
 	size_t count{0};
 	do
 	{
-		token = "";
-		token = readToken(false);
+		token.clear();
+		readToken(token, false);
 		++count;
 	} while (false == token.empty());
 
