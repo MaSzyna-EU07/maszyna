@@ -229,12 +229,8 @@ std::string cParser::readTokenFromStream(bool ToLower, const char *Break)
 
 
 	while (token.empty() && mStream->peek() != EOF) {
-<<<<<<< HEAD
 		while (mStream->peek() != EOF) { // idk why but with mStream->get(c) not all cars are loaded
 			c = static_cast<char>(mStream->get());
-=======
-		while (mStream->get(c)) {
->>>>>>> parent of 3a42a8c1 (Revert "Reduce string creations and deletions")
 			if (c == '\n') {
 				++mLine;
 			}
