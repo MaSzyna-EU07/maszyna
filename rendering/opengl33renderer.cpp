@@ -3208,7 +3208,7 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 		{
 			::glPushMatrix();
 			if (Submodel->fMatrix)
-				::glMultMatrixf(Submodel->fMatrix->readArray());
+				::glMultMatrixf(glm::value_ptr(*(Submodel->fMatrix)));
 			if (Submodel->b_aAnim != TAnimType::at_None)
 			{
 				Submodel->RaAnimation(Submodel->b_aAnim);
@@ -4081,7 +4081,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 		{
 			::glPushMatrix();
 			if (Submodel->fMatrix)
-				::glMultMatrixf(Submodel->fMatrix->readArray());
+				::glMultMatrixf(glm::value_ptr(*(Submodel->fMatrix)));
 			if (Submodel->b_aAnim != TAnimType::at_None)
 			{
 				Submodel->RaAnimation(Submodel->b_aAnim);
@@ -4316,7 +4316,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 					{ // na razie tylko jako przezroczyste
 						Render_Alpha(p);
 						if (p->fMatrix)
-							::glMultMatrixf(p->fMatrix->readArray()); // przesuwanie widoku
+							::glMultMatrixf(glm::value_ptr(*(p->fMatrix))); // przesuwanie widoku
 					}
 				}
 			}

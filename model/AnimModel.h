@@ -15,7 +15,6 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "utilities/Classes.h"
-#include "utilities/Float3d.h"
 #include "model/Model3d.h"
 #include "vehicle/DynObj.h"
 #include "scene/scenenode.h"
@@ -39,8 +38,8 @@ class TAnimVocaloidFrame
   public:
     char cBone[15]; // nazwa kości, może być po japońsku
     int iFrame; // numer ramki
-    float3 f3Vector; // przemieszczenie
-    float4 qAngle; // kwaternion obrotu
+    glm::vec3 f3Vector; // przemieszczenie
+    glm::quat qAngle; // kwaternion obrotu
     char cBezier[64]; // krzywe Béziera do interpolacji dla x,y,z i obrotu
 };
 
@@ -57,16 +56,16 @@ class TAnimContainer : std::enable_shared_from_this<TAnimContainer>
 	glm::dvec3 vTranslation;
 	glm::dvec3 vTranslateTo;
     double fTranslateSpeed; // może tu dać wektor?
-    float4 qCurrent; // aktualny interpolowany
-    float4 qStart; // pozycja początkowa (0 dla interpolacji)
-    float4 qDesired; // pozycja końcowa (1 dla interpolacji)
+    glm::quat qCurrent; // aktualny interpolowany
+	glm::quat qStart; // pozycja początkowa (0 dla interpolacji)
+	glm::quat qDesired; // pozycja końcowa (1 dla interpolacji)
     float fAngleCurrent; // parametr interpolacyjny: 0=start, 1=docelowy
     float fAngleSpeed; // zmiana parametru interpolacji w sekundach
   public:
     TSubModel *pSubModel;
 
   private:
-	std::shared_ptr<float4x4> mAnim; // macierz do animacji kwaternionowych
+	std::shared_ptr<glm::mat4> mAnim; // macierz do animacji kwaternionowych
     // dla kinematyki odwróconej używane są kwaterniony
     float fLength; // długość kości dla IK
     int iAnim; // animacja: +1-obrót Eulera, +2-przesuw, +4-obrót kwaternionem, +8-IK

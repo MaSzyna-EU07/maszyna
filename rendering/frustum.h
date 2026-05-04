@@ -9,8 +9,6 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "utilities/Float3d.h"
-
 inline std::vector<glm::vec4> const ndcfrustumshapepoints //
     {
         {-1, -1, -1, 1}, //
@@ -43,9 +41,6 @@ public:
     inline
     bool
         point_inside( glm::vec3 const &Point ) const { return point_inside( Point.x, Point.y, Point.z ); }
-    inline
-    bool
-        point_inside( float3 const &Point ) const { return point_inside( Point.x, Point.y, Point.z ); }
     bool
         point_inside( float const X, float const Y, float const Z ) const;
 	// tests if the sphere is in frustum, returns the distance between origin and sphere centre
@@ -55,18 +50,12 @@ public:
     inline
     float
         sphere_inside( glm::vec3 const &Center, float const Radius ) const { return sphere_inside( Center.x, Center.y, Center.z, Radius ); }
-    inline
-    float
-        sphere_inside( float3 const &Center, float const Radius ) const { return sphere_inside( Center.x, Center.y, Center.z, Radius ); }
     float
         sphere_inside( float const X, float const Y, float const Z, float const Radius ) const;
 	// returns true if specified cube is inside of the frustum. Size = half of the length
     inline
     bool
         cube_inside( glm::vec3 const &Center, float const Size ) const { return cube_inside( Center.x, Center.y, Center.z, Size ); }
-    inline
-    bool
-        cube_inside( float3 const &Center, float const Size ) const { return cube_inside( Center.x, Center.y, Center.z, Size ); }
     bool
         cube_inside( float const X, float const Y, float const Z, float const Size ) const;
 

@@ -172,7 +172,7 @@ void TCamera::Update()
      || ( true == DebugCameraFlag ) ) {
         // free movement position update
         auto movement { Velocity };
-		movement = RotateY(movement, (double)Angle.y);
+		movement = glmHelpers::RotateY(movement, (double)Angle.y);
         Pos += movement * 5.0 * deltatime;
     }
     else {
@@ -195,7 +195,7 @@ void TCamera::Update()
             movement.y = -movement.y;
         }
 */
-		movement = RotateY(movement, (double)Angle.y);
+		movement = glmHelpers::RotateY(movement, (double)Angle.y);
 
         m_owneroffset += movement * deltatime;
     }

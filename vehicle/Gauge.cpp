@@ -472,22 +472,22 @@ TGauge::UpdateAnimation( TSubModel *Submodel ) {
 
     switch (m_animation) {
         case TGaugeAnimation::gt_Rotate: {
-            Submodel->SetRotate( float3( 0, 1, 0 ), GetScaledValue() * 360.0 );
+            Submodel->SetRotate( glm::vec3( 0, 1, 0 ), GetScaledValue() * 360.0 );
             break;
         }
         case TGaugeAnimation::gt_Move: {
-            Submodel->SetTranslate( float3( 0, 0, GetScaledValue() ) );
+            Submodel->SetTranslate( glm::vec3( 0, 0, GetScaledValue() ) );
             break;
         }
         case TGaugeAnimation::gt_Wiper: {
             auto const scaledvalue { GetScaledValue() };
-            Submodel->SetRotate( float3( 0, 1, 0 ), scaledvalue * 360.0 );
+            Submodel->SetRotate( glm::vec3( 0, 1, 0 ), scaledvalue * 360.0 );
             auto *sm = Submodel->ChildGet();
             if( sm ) {
-                sm->SetRotate( float3( 0, 1, 0 ), scaledvalue * 360.0 );
+                sm->SetRotate( glm::vec3( 0, 1, 0 ), scaledvalue * 360.0 );
                 sm = sm->ChildGet();
                 if( sm )
-                    sm->SetRotate( float3( 0, 1, 0 ), scaledvalue * 360.0 );
+                    sm->SetRotate( glm::vec3( 0, 1, 0 ), scaledvalue * 360.0 );
             }
             break;
         }
@@ -501,7 +501,7 @@ TGauge::UpdateAnimation( TSubModel *Submodel ) {
                 if( ( sm->pName.size() )
                  && ( std::isdigit( sm->pName[ 0 ] ) ) ) {
                     sm->SetRotate(
-                        float3( 0, 1, 0 ),
+                        glm::vec3( 0, 1, 0 ),
                         -36.0 * ( n[ '0' + 9 - sm->pName[ 0 ] ] - '0' ) );
                 }
                 sm = sm->NextGet();

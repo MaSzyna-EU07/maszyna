@@ -158,7 +158,7 @@ void NvRenderer::GatherModelsForBatching() {
           }
           if (sm->eType >= TP_ROTATOR) return true;
           m_batched_instances.emplace(CombinePointers(instance, sm));
-          float4x4 matrix;
+          glm::mat4 matrix;
           sm->ParentMatrix(&matrix);
           if (!sm->m_geometry.handle) return true;
           auto material = sm->m_material < 0
@@ -166,8 +166,7 @@ void NvRenderer::GatherModelsForBatching() {
                               : sm->m_material;
           if (!material) return true;
           auto sm_transform =
-              transform *
-              static_cast<glm::dmat4>(glm::make_mat4(matrix.readArray()));
+              transform * static_cast<glm::dmat4>(matrix);
           auto [origin, extent] = GetGeometryBounds(sm->m_geometry.handle);
           bool new_batch;
           auto batch = get_batch_for_geometry(sm->m_geometry.handle, material,

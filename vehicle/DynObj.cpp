@@ -606,7 +606,7 @@ void TDynamicObject::SetPneumatic(bool front, bool red)
 void TDynamicObject::UpdateAxle(TAnim *pAnim)
 { // animacja osi
     size_t wheel_id = pAnim->dWheelAngle;
-    pAnim->smAnimated->SetRotate(float3(1, 0, 0), dWheelAngle[wheel_id]);
+	pAnim->smAnimated->SetRotate(glm::vec3(1, 0, 0), dWheelAngle[wheel_id]);
     pAnim->smAnimated->future_transform = glm::rotate((float)glm::radians(m_future_wheels_angle[wheel_id]), glm::vec3(1.0f, 0.0f, 0.0f));
 };
 
@@ -637,7 +637,7 @@ void TDynamicObject::UpdateDoorRotate(TAnim *pAnim) {
             side::left ) ] };
 
     pAnim->smAnimated->SetRotate(
-        float3(1, 0, 0),
+        glm::vec3(1, 0, 0),
         door.position );
 };
 
@@ -653,7 +653,7 @@ void TDynamicObject::UpdateDoorFold(TAnim *pAnim) {
 
     // skrzydło mniejsze
     pAnim->smAnimated->SetRotate(
-        float3(0, 0, 1),
+        glm::vec3(0, 0, 1),
         door.position);
 
     // skrzydło większe
@@ -661,7 +661,7 @@ void TDynamicObject::UpdateDoorFold(TAnim *pAnim) {
     if( sm == nullptr ) { return; }
 
     sm->SetRotate(
-        float3(0, 0, 1),
+        glm::vec3(0, 0, 1),
         -door.position - door.position);
 
     // podnóżek?
@@ -669,7 +669,7 @@ void TDynamicObject::UpdateDoorFold(TAnim *pAnim) {
     if( sm == nullptr ) { return; }
 
     sm->SetRotate(
-        float3(0, 1, 0),
+        glm::vec3(0, 1, 0),
         door.position);
 };
 
@@ -701,15 +701,15 @@ void TDynamicObject::UpdatePant(TAnim *pAnim)
 	b = RadToDeg(pAnim->fParamPants->fAngleU - pAnim->fParamPants->fAngleU0);
 	c = a + b;
 	if (pAnim->smElement[0])
-		pAnim->smElement[0]->SetRotate(float3(-1, 0, 0), a); // dolne ramie 1
+		pAnim->smElement[0]->SetRotate(glm::vec3(-1, 0, 0), a); // dolne ramie 1
 	if (pAnim->smElement[1])
-		pAnim->smElement[1]->SetRotate(float3(1, 0, 0), a * pAnim->fParamPants->rd2rf); // dolne ramie 2
+		pAnim->smElement[1]->SetRotate(glm::vec3(1, 0, 0), a * pAnim->fParamPants->rd2rf); // dolne ramie 2
 	if (pAnim->smElement[2])
-		pAnim->smElement[2]->SetRotate(float3(1, 0, 0), c); // górne ramie 1
+		pAnim->smElement[2]->SetRotate(glm::vec3(1, 0, 0), c); // górne ramie 1
 	if (pAnim->smElement[3])
-		pAnim->smElement[3]->SetRotate(float3(-1, 0, 0), c * pAnim->fParamPants->rg2rf); // gorne ramie 2
+		pAnim->smElement[3]->SetRotate(glm::vec3(-1, 0, 0), c * pAnim->fParamPants->rg2rf); // gorne ramie 2
 	if (pAnim->smElement[4])
-		pAnim->smElement[4]->SetRotate(float3(-1, 0, 0), b * pAnim->fParamPants->slizgrf); // ślizg
+		pAnim->smElement[4]->SetRotate(glm::vec3(-1, 0, 0), b * pAnim->fParamPants->slizgrf); // ślizg
 }
 
 // doorstep animation, shift
@@ -740,7 +740,7 @@ void TDynamicObject::UpdatePlatformRotate( TAnim *pAnim ) {
             side::left ) ] };
 
     pAnim->smAnimated->SetRotate(
-        float3( 0, 1, 0 ),
+        glm::vec3( 0, 1, 0 ),
         interpolate( 0.f, MoverParameters->Doors.step_range, door.step_position ) );
 }
 
@@ -757,11 +757,11 @@ void TDynamicObject::UpdateMirror( TAnim *pAnim ) {
 
     if( pAnim->iNumber & 1 )
         pAnim->smAnimated->SetRotate(
-            float3( 0, 1, 0 ),
+            glm::vec3( 0, 1, 0 ),
             interpolate( 0.0, MoverParameters->MirrorMaxShift, dMirrorMoveR * isactive ) );
     else
         pAnim->smAnimated->SetRotate(
-            float3( 0, 1, 0 ),
+            glm::vec3( 0, 1, 0 ),
             interpolate( 0.0, MoverParameters->MirrorMaxShift, dMirrorMoveL * isactive ) );
 }
 
@@ -776,32 +776,32 @@ void TDynamicObject::UpdateWiper(TAnim* pAnim)
 	const double rotateAngle = (i + 1) % 2 == 0 ? -MoverParameters->WiperAngle : MoverParameters->WiperAngle;
 
 	if (pAnim->smElement[0]) // ramie 1
-		pAnim->smElement[0]->SetRotate(float3(0, 1, 0), smoothInterpolate(0.0, rotateAngle, dWiperPos[i]));
+		pAnim->smElement[0]->SetRotate(glm::vec3(0, 1, 0), smoothInterpolate(0.0, rotateAngle, dWiperPos[i]));
 	if (pAnim->smElement[1]) // ramie 2
-		pAnim->smElement[1]->SetRotate(float3(0, 1, 0), smoothInterpolate(0.0, rotateAngle, dWiperPos[i]));
+		pAnim->smElement[1]->SetRotate(glm::vec3(0, 1, 0), smoothInterpolate(0.0, rotateAngle, dWiperPos[i]));
 	if (pAnim->smElement[2]) // pioro
-		pAnim->smElement[2]->SetRotate(float3(0, 1, 0), smoothInterpolate(0.0, -rotateAngle, dWiperPos[i]));
+		pAnim->smElement[2]->SetRotate(glm::vec3(0, 1, 0), smoothInterpolate(0.0, -rotateAngle, dWiperPos[i]));
 }
 
 /*
 void TDynamicObject::UpdateLeverDouble(TAnim *pAnim)
 { // animacja gałki zależna od double
-    pAnim->smAnimated->SetRotate(float3(1, 0, 0), pAnim->fSpeed * *pAnim->fDoubleBase);
+    pAnim->smAnimated->SetRotate(glm::vec3(1, 0, 0), pAnim->fSpeed * *pAnim->fDoubleBase);
 };
 void TDynamicObject::UpdateLeverFloat(TAnim *pAnim)
 { // animacja gałki zależna od float
-    pAnim->smAnimated->SetRotate(float3(1, 0, 0), pAnim->fSpeed * *pAnim->fFloatBase);
+    pAnim->smAnimated->SetRotate(glm::vec3(1, 0, 0), pAnim->fSpeed * *pAnim->fFloatBase);
 };
 void TDynamicObject::UpdateLeverInt(TAnim *pAnim)
 { // animacja gałki zależna od int
-    pAnim->smAnimated->SetRotate(float3(1, 0, 0), pAnim->fSpeed * *pAnim->iIntBase);
+    pAnim->smAnimated->SetRotate(glm::vec3(1, 0, 0), pAnim->fSpeed * *pAnim->iIntBase);
 };
 void TDynamicObject::UpdateLeverEnum(TAnim *pAnim)
 { // ustawienie kąta na
     // wartość wskazaną przez
     // int z tablicy fParam
     // pAnim->fParam[0]; - dodać lepkość
-    pAnim->smAnimated->SetRotate(float3(1, 0, 0), pAnim->fParam[*pAnim->iIntBase]);
+    pAnim->smAnimated->SetRotate(glm::vec3(1, 0, 0), pAnim->fParam[*pAnim->iIntBase]);
 };
 */
 // sets light levels for registered interior sections
@@ -1174,7 +1174,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
         if (iAnimType[ANIM_LEVERS])
             for (int i = 0; i < 4; ++i)
                 if (smWahacze[i])
-                    smWahacze[i]->SetRotate(float3(1, 0, 0),
+                    smWahacze[i]->SetRotate(glm::vec3(1, 0, 0),
                                             fWahaczeAmp * cos(MoverParameters->eAngle));
 
         // cooling shutters
@@ -2699,7 +2699,7 @@ void TDynamicObject::Move(double fDistance)
             vLeft = glm::normalize(glm::cross(vUp, vFront)); // wektor w lewo
             // vUp=CrossProduct(vFront,vLeft); //wektor w górę
         }
-		mMatrix = BasisChange(vLeft, vUp, vFront); // to też można by od razu policzyć, ale potrzebne jest do wyświetlania // przesuwanie jest jednak rzadziej niż renderowanie
+		mMatrix = glmHelpers::BasisChange(vLeft, vUp, vFront); // to też można by od razu policzyć, ale potrzebne jest do wyświetlania // przesuwanie jest jednak rzadziej niż renderowanie
         mMatrix = glm::inverse(mMatrix); // wyliczenie macierzy dla pojazdu (potrzebna tylko do wyświetlania?)
         // if (MoverParameters->CategoryFlag&2)
         { // przesunięcia są używane po wyrzuceniu pociągu z toru
@@ -4079,11 +4079,11 @@ bool TDynamicObject::Update(double dt, double dt1)
                 dx=panty*cos_fi+sqrt(panth*panth-panty*panty*sin_fi*sin_fi)-panth;
                //nieoptymalne
                 if (smPatykird1[i]) //na razie zabezpieczenie
-                 smPatykird1[i]->SetTranslate(float3(dx,0,0));
+                 smPatykird1[i]->SetTranslate(glm::vec3(dx,0,0));
                 ka=-asin(panty/panth)*sin_fi;
                 if (smPatykirg1[i]) //na razie zabezpieczenie
                  smPatykirg1[i]->SetRotateXYZ(vector3(RadToDeg(ka),0,0));
-                //smPatykirg1[0]->SetRotate(float3(0,1,0),RadToDeg(fi)); //obracamy
+                //smPatykirg1[0]->SetRotate(glm::vec3(0,1,0),RadToDeg(fi)); //obracamy
                 //ruch drążka mimośrodkowego oraz jarzma
                 //korzystałem z pliku PDF "mm.pdf" (opis czworoboku
                korbowo-wahaczowego):
@@ -5510,7 +5510,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
 				else if( token == "animpantrd1prefix:" ) {
                 // prefiks ramion dolnych 1
 					parser.getTokens(); parser >> token;
-                    float4x4 m; // macierz do wyliczenia pozycji i wektora ruchu pantografu
+                    glm::mat4 m; // macierz do wyliczenia pozycji i wektora ruchu pantografu
                     TSubModel *sm;
                     if (pants)
                         for (int i = 0; i < iAnimType[ANIM_PANTS]; i++)
@@ -5527,7 +5527,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                                 pants[i].fParamPants->vPos.y = m[3][1]; // przesunięcie w górę odczytane z modelu
                                 if ((sm = pants[i].smElement[0]->ChildGet()) != NULL)
                                 { // jeśli ma potomny, można policzyć długość (odległość potomnego od osi obrotu)
-                                    m = float4x4(*sm->GetMatrix()); // wystarczyłby wskaźnik, nie trzeba kopiować
+                                    m = *sm->GetMatrix(); // TODO: wystarczyłby wskaźnik, nie trzeba kopiować
                                     // może trzeba: pobrać macierz dolnego ramienia, wyzerować przesunięcie, przemnożyć przez macierz górnego
                                     pants[i].fParamPants->fHoriz = -fabs(m[3][1]);
                                     pants[i].fParamPants->fLenL1 = hypot(m[3][1], m[3][2]); // po osi OX nie potrzeba
@@ -5541,9 +5541,9 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                                     pants[i].fParamPants->fAngleL = pants[i].fParamPants->fAngleL0; // początkowy kąt dolnego ramienia
                                     if ((sm = sm->ChildGet()) != NULL)
                                     { // jeśli dalej jest ślizg, można policzyć długość górnego ramienia
-                                        m = float4x4(*sm->GetMatrix()); // wystarczyłby wskaźnik,
+                                        m = *sm->GetMatrix(); // TODO: wystarczyłby wskaźnik,
                                         // nie trzeba kopiować trzeba by uwzględnić macierz dolnego ramienia, żeby uzyskać kąt do poziomu...
-                                        pants[i].fParamPants->fHoriz += fabs(m(3)[1]); // różnica długości rzutów ramion na
+                                        pants[i].fParamPants->fHoriz += fabs(m[1][3]); // różnica długości rzutów ramion na
                                         // płaszczyznę podstawy (jedna dodatnia, druga ujemna)
                                         pants[i].fParamPants->fLenU1 = hypot( m[3][1], m[3][2] ); // po osi OX nie potrzeba
                                         // pants[i].fParamPants->pantu=acos((1.22*cos(pants[i].fParamPants->fAngleL)+0.535)/1.755); //górne ramię
@@ -5559,7 +5559,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                                         pants[i].fParamPants->fAngleU = pants[i].fParamPants->fAngleU0; // początkowy kąt
                                         // Ra: ze względu na to, że niektóre modele pantografów są zrąbane, ich mierzenie ma obecnie ograniczony sens
                                         sm->ParentMatrix(&m); // pobranie macierzy transformacji pivota ślizgu względem wstawienia pojazdu
-                                        float det = Det(m);
+                                        float det = glm::determinant(m);
                                         if (std::fabs(det - 1.0) < 0.001) // dopuszczamy 1 promil błędu na skalowaniu ślizgu
                                         { // skalowanie jest w normie, można pobrać wymiary z modelu
                                             pants[i].fParamPants->fHeight = sm->MaxY(m); // przeliczenie maksimum wysokości wierzchołków względem macierzy
@@ -5591,7 +5591,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
 				else if( token == "animpantrd2prefix:" ) {
                 // prefiks ramion dolnych 2
 					parser.getTokens(); parser >> token;
-                    float4x4 m; // macierz do wyliczenia pozycji i wektora ruchu pantografu
+                    glm::mat4 m; // macierz do wyliczenia pozycji i wektora ruchu pantografu
                     TSubModel *sm;
 					if( pants ) {
 						for( int i = 0; i < iAnimType[ ANIM_PANTS ]; i++ ) {
@@ -5604,9 +5604,8 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
 								if( pants[ i ].fParamPants->vPos.y == 0.0 ) {
                                     // jeśli pierwsze ramię nie ustawiło tej wartości, próbować drugim
                                     //!!!! docelowo zrobić niezależną animację ramion z każdej strony
-                                    m = float4x4(
-                                        *sm->GetMatrix()); // skopiowanie, bo będziemy mnożyć
-									m( 3 )[ 1 ] =
+                                    m = *sm->GetMatrix(); // skopiowanie, bo będziemy mnożyć
+									m[ 1 ][3] =
 										m[ 3 ][ 1 ] + 0.054; // w górę o wysokość ślizgu (na razie tak)
 									while( sm->Parent ) {
 										if( sm->Parent->GetMatrix() )

@@ -2,6 +2,8 @@
 * License, v. 2.0. If a copy of the MPL was not distributed with this
 * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#pragma once
+
 #include <string>
 
 class sn_utils
@@ -12,8 +14,10 @@ public:
 	static int32_t ld_int32(std::istream&);
     static uint64_t ld_uint64(std::istream&);
     static int64_t ld_int64(std::istream&);
-	static float ld_float32(std::istream&);
+	static float ld_float32(std::istream &);
+	static void ld_float32(std::istream &, glm::mat4 &);
 	static double ld_float64(std::istream&);
+	static void ld_float64(std::istream &, glm::mat4 &);
     static uint8_t d_uint8(std::istream&);
 	static std::string d_str(std::istream&);
     static bool d_bool(std::istream&);
@@ -26,7 +30,8 @@ public:
 	static void ls_int32(std::ostream&, int32_t);
 	static void ls_uint64(std::ostream&, uint64_t);
 	static void ls_int64(std::ostream&, int64_t);
-	static void ls_float32(std::ostream&, float);
+	static void ls_float32(std::ostream &, float);
+	static void ls_float32(std::ostream &, const glm::mat4 &);
 	static void ls_float64(std::ostream&, double);
     static void s_uint8(std::ostream&, uint8_t);
     static void s_str(std::ostream&, std::string);

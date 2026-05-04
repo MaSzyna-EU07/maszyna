@@ -71,6 +71,14 @@ float sn_utils::ld_float32(std::istream &s)
 	return reinterpret_cast<float&>(v);
 }
 
+void sn_utils::ld_float32(std::istream &s, glm::mat4 &m)
+{
+	float *ptr = glm::value_ptr(m);
+
+	for (int i = 0; i < 16; ++i)
+		ptr[i] = sn_utils::ld_float32(s);
+}
+
 // deserialize little endian ieee754 float64
 double sn_utils::ld_float64(std::istream &s)
 {
@@ -81,6 +89,13 @@ double sn_utils::ld_float64(std::istream &s)
 	             ((uint64_t)buf[3] << 24) | ((uint64_t)buf[2] << 16) |
 		         ((uint64_t)buf[1] << 8) | (uint64_t)buf[0];
 	return reinterpret_cast<double&>(v);
+}
+
+void sn_utils::ld_float64(std::istream &s, glm::mat4 &m) {
+	float *ptr = glm::value_ptr(m);
+
+	for (int i = 0; i < 16; ++i)
+		ptr[i] = static_cast<float>(sn_utils::ld_float64(s));
 }
 
 // deserialize null-terminated string
@@ -202,6 +217,17 @@ void sn_utils::ls_float32(std::ostream &s, float t)
 	buf[2] = v >> 16;
 	buf[3] = v >> 24;
 	s.write((char*)buf, 4);
+}
+
+void sn_utils::ls_float32(std::ostream &s, const glm::mat4 &m) {
+	for (int col = 0; col < 4; ++col)
+	{
+		for (int row = 0; row < 4; ++row)
+		{
+			float t = m[col][row];
+			sn_utils::ls_float32(s, t);
+		}
+	}
 }
 
 void sn_utils::ls_float64(std::ostream &s, double t)

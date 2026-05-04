@@ -109,7 +109,6 @@ set(SOURCES
 "export_e3d_standalone.cpp"
 "world/Event.cpp"
 "world/EvLaunch.cpp"
-"utilities/Float3d.cpp"
 "vehicle/Gauge.cpp"
 "utilities/Globals.cpp"
 "utilities/Logs.cpp"
