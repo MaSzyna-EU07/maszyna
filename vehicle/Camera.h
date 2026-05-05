@@ -17,7 +17,7 @@ http://mozilla.org/MPL/2.0/.
 class TCamera {
 
   public: // McZapkie: potrzebuje do kiwania na boki
-	void Init(glm::vec3 const &Location, glm::vec3 const &Angle, TDynamicObject *Owner);
+	void Init(glm::dvec3 const &Location, glm::dvec3 const &Angle, TDynamicObject *Owner);
     void Reset();
     void OnCursorMove(double const x, double const y);
     bool OnCommand( command_data const &Command );
@@ -27,7 +27,7 @@ class TCamera {
 
     glm::vec3 Angle; // pitch, yaw, roll
 	glm::dvec3 Pos; // współrzędne obserwatora
-	glm::vec3 LookAt; // współrzędne punktu, na który ma patrzeć
+	glm::dvec3 LookAt; // Idealnie gdyby był to znormalizowany kierunek, ale obecnie są to współrzędne punktu, na który ma patrzeć
 	glm::vec3 vUp;
 	glm::dvec3 Velocity;
 
