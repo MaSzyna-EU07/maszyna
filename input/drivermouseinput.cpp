@@ -533,6 +533,9 @@ drivermouse_input::default_bindings() {
         { "mainctrl:", {
             user_command::mastercontrollerset,
             user_command::none } },
+    	{ "dynamicbrakectrl:", {
+    		user_command::dynamicbrakecontrollerset,
+			user_command::none } },
         { "scndctrl:", {
             user_command::secondcontrollerset,
             user_command::none } },

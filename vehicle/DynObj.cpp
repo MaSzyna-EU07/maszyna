@@ -293,7 +293,7 @@ material_data::assign( std::string const &Replacableskin ) {
     // check for the pipe method first
     if( contains( Replacableskin,  '|' ) ) {
         cParser nameparser( Replacableskin );
-        nameparser.getTokens( 4, true, "|" );
+        nameparser.getTokens( 4, false, "|" );
         int skinindex = 0;
         std::string texturename; nameparser >> texturename;
         while( ( texturename != "" ) && ( skinindex < 4 ) ) {
