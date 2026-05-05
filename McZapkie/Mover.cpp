@@ -3924,7 +3924,7 @@ bool TMoverParameters::DynamicBrakeLevelSet(double Position)
 {
 	if (false == SplitEDPneumaticBrake)
 		return false;
-	DynamicBrakeCtrlPos = clamp(Position, 0.0, 1.0);
+	DynamicBrakeCtrlPos = std::clamp(Position, 0.0, 1.0);
 	return true;
 }
 
@@ -3936,7 +3936,7 @@ double TMoverParameters::DynamicBrakeRatio(void) const
 {
 	if (false == SplitEDPneumaticBrake)
 		return 0.0;
-	return clamp(DynamicBrakeCtrlPos, 0.0, 1.0);
+	return std::clamp(DynamicBrakeCtrlPos, 0.0, 1.0);
 }
 
 // *************************************************************************************************
@@ -7339,7 +7339,7 @@ void TMoverParameters::CheckEIMIC(double dt)
 		double const vh1 = eimc[eimc_p_Vh1];
 		if (vh1 > vh0 + 0.001)
 		{
-			double const vhRamp = clamp((Vel - vh0) / (vh1 - vh0), 0.0, 1.0);
+			double const vhRamp = std::clamp((Vel - vh0) / (vh1 - vh0), 0.0, 1.0);
 			brakeDemand *= vhRamp;
 		}
 	}
@@ -10237,7 +10237,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		modernDimmerPosition = modernDimmerDefaultPosition;
 	}
 
-	WriteLog("CERROR: " + std::to_string(ConversionError) + ", SUCCES: " + to_string(result));
+	WriteLog("CERROR: " + std::to_string(ConversionError) + ", SUCCES: " + std::to_string(result));
 	return result;
 }
 
