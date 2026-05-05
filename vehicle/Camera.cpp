@@ -21,7 +21,7 @@ http://mozilla.org/MPL/2.0/.
 
 //---------------------------------------------------------------------------
 
-void TCamera::Init(glm::vec3 const &NPos, glm::vec3 const &NAngle /*, TCameraType const NType*/, TDynamicObject *Owner)
+void TCamera::Init(glm::dvec3 const &NPos, glm::dvec3 const &NAngle /*, TCameraType const NType*/, TDynamicObject *Owner)
 {
 
     vUp = { 0, 1, 0 };
@@ -209,7 +209,7 @@ bool TCamera::SetMatrix( glm::dmat4 &Matrix ) {
 
     if( ( m_owner != nullptr ) && ( false == DebugCameraFlag ) ) {
 
-        Matrix *= glm::lookAt(Pos, glm::dvec3{ LookAt }, glm::dvec3{ vUp } );
+        Matrix *= glm::lookAt(Pos, LookAt, glm::dvec3{ vUp } );
     }
     else {
         Matrix = glm::translate( Matrix, -Pos ); // nie zmienia kierunku patrzenia
@@ -220,7 +220,7 @@ bool TCamera::SetMatrix( glm::dmat4 &Matrix ) {
 
 void TCamera::RaLook()
 { // zmiana kierunku patrzenia - przelicza Yaw
-    auto where = glm::dvec3(LookAt )- Pos /*+ Math3D::vector3(0, 3, 0)*/; // trochę w górę od szyn
+    auto where = LookAt - Pos /*+ Math3D::vector3(0, 3, 0)*/; // trochę w górę od szyn
     if( ( where.x != 0.0 ) || ( where.z != 0.0 ) ) {
         Angle.y = atan2( -where.x, -where.z ); // kąt horyzontalny
         m_rotationoffsets.y = 0.0;
