@@ -275,8 +275,8 @@ basic_event::event_conditions::export_as_text( std::ostream &Output ) const {
             Output
                 << "memcompareex "
                 << ( ( flags & flags::text )   == 0 ? "*" :            memcompare_text     + ' ' + to_string( memcompare_text_operator ) ) << ' '
-                << ( ( flags & flags::value1 ) == 0 ? "*" : to_string( memcompare_value1 ) + ' ' + to_string( memcompare_value1_operator ) ) << ' '
-                << ( ( flags & flags::value2 ) == 0 ? "*" : to_string( memcompare_value2 ) + ' ' + to_string( memcompare_value2_operator ) ) << ' ';
+                << ( ( flags & flags::value1 ) == 0 ? "*" : std::to_string( memcompare_value1 ) + ' ' + to_string( memcompare_value1_operator ) ) << ' '
+                << ( ( flags & flags::value2 ) == 0 ? "*" : std::to_string( memcompare_value2 ) + ' ' + to_string( memcompare_value2_operator ) ) << ' ';
         }
     }
 }
@@ -298,7 +298,7 @@ basic_event::deserialize( cParser &Input, scene::scratch_data &Scratchpad ) {
     Input >> token;
     deserialize_targets( token );
 
-    if( starts_with( m_name, "none_" ) ) {
+    if( m_name.starts_with("none_") ) {
         m_ignored = true; // Ra: takie są ignorowane
     }
 
@@ -557,8 +557,8 @@ updatevalues_event::export_as_text_( std::ostream &Output ) const {
 
     Output
         << ( ( m_input.flags & flags::text )   == 0 ? "*" : m_input.data_text ) << ' '
-        << ( ( m_input.flags & flags::value1 ) == 0 ? "*" : to_string( m_input.data_value_1 ) ) << ' '
-        << ( ( m_input.flags & flags::value2 ) == 0 ? "*" : to_string( m_input.data_value_2 ) ) << ' ';
+        << ( ( m_input.flags & flags::value1 ) == 0 ? "*" : std::to_string( m_input.data_value_1 ) ) << ' '
+        << ( ( m_input.flags & flags::value2 ) == 0 ? "*" : std::to_string( m_input.data_value_2 ) ) << ' ';
 
     m_conditions.export_as_text( Output );
 }
@@ -716,7 +716,7 @@ putvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
     Input.getTokens( 1, false ); // komendy 'case sensitive'
     Input >> token;
     // command type, previously held in param 6
-    if( starts_with( token, "PassengerStopPoint:" ) ) {
+    if( token.starts_with("PassengerStopPoint:") ) {
         if( contains( token, '#' ) ) {
             token.erase( token.find( '#' ) ); // obcięcie unikatowości
         }
@@ -835,8 +835,9 @@ putvalues_event::export_as_text_( std::ostream &Output ) const {
 bool
 putvalues_event::is_command_for_owner( input_data const &Input ) const {
 
-    if( starts_with( Input.data_text, "Load=" ) )   { return false; }
-    if( starts_with( Input.data_text, "UnLoad=" ) ) { return false; }
+    if (Input.data_text.starts_with("Load=") || Input.data_text.starts_with("UnLoad=")) {
+		return false;
+	}
     // TBD, TODO: add other exceptions
 
     return true;
@@ -1051,7 +1052,7 @@ whois_event::run_() {
                     m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
 
                 WriteLog(
-                    "Type: WhoIs (" + to_string( m_input.flags ) + ") - "
+                    "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
                     + "[next station: " + nextstop + "], "
                     + "[X], "
                     + "[stop at next station: " + ( isstop != 0 ? "yes" : "no" ) + "]" );
@@ -1065,7 +1066,7 @@ whois_event::run_() {
                     m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
 
                 WriteLog(
-                    "Type: WhoIs (" + to_string( m_input.flags ) + ") - "
+                    "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
                     + "[name: " + m_activator->asName + "], "
                     + "[X], "
                     + "[X]" );
@@ -1097,7 +1098,7 @@ whois_event::run_() {
                     m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
 
                 WriteLog(
-                    "Type: WhoIs (" + to_string( m_input.flags ) + ") - "
+                    "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
                     + "[type: " + m_activator->MoverParameters->TypeName + "], "
                     + "[consist brake level: " + to_string( consistbrakelevel, 2 ) + "], "
                     + "[obstacle distance: " + to_string( collisiondistance, 2 ) + " m]" );
@@ -1111,7 +1112,7 @@ whois_event::run_() {
                     m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
 
                 WriteLog(
-                    "Type: WhoIs (" + to_string( m_input.flags ) + ") - "
+                    "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
                     + "[load type: " + m_activator->MoverParameters->LoadType.name + "], "
                     + "[current load: " + to_string( m_activator->MoverParameters->LoadAmount, 2 ) + "], "
                     + "[max load: " + to_string( m_activator->MoverParameters->MaxLoad, 2 ) + "]" );
@@ -1126,9 +1127,9 @@ whois_event::run_() {
                 m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
 
             WriteLog(
-                "Type: WhoIs (" + to_string( m_input.flags ) + ") - "
+                "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
                 + "[destination: " + m_activator->asDestination + "], "
-                + "[direction: " + to_string( m_activator->DirectionGet() ) + "], "
+                + "[direction: " + std::to_string( m_activator->DirectionGet() ) + "], "
                 + "[engine power: " + to_string( m_activator->MoverParameters->Power, 2 ) + "]" );
         }
         // +0
@@ -1142,9 +1143,9 @@ whois_event::run_() {
                         0, // 1, gdy ma tu zatrzymanie
                     m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
                 WriteLog(
-                    "Type: WhoIs (" + to_string( m_input.flags ) + ") - "
+                    "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
                     + "[train: " + m_activator->Mechanik->TrainName() + "], "
-                    + "[stations left: " + to_string( m_activator->Mechanik->StationCount() - m_activator->Mechanik->StationIndex() ) + "], "
+                    + "[stations left: " + std::to_string( m_activator->Mechanik->StationCount() - m_activator->Mechanik->StationIndex() ) + "], "
                     + "[stop at next station: " + ( m_activator->Mechanik->IsStop() ? "yes" : "no") + "]" );
             }
         }
@@ -1268,7 +1269,7 @@ multi_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
         }
         else {
             // potentially valid event name
-            if( starts_with( token, "none_" ) ) {
+            if( token.starts_with("none_") ) {
                 // eventy rozpoczynające się od "none_" są ignorowane
                 WriteLog( "Multi-event \"" + m_name + "\" ignored link to event \"" + token + "\"" );
             }
@@ -1394,7 +1395,7 @@ sound_event::run_() {
 
     WriteLog(
         "Type: Sound - [" + std::string( m_soundmode == 1 ? "play" : m_soundmode == -1 ? "loop" : "stop" ) + "]"
-        + ( m_soundradiochannel > 0 ? " [channel " + to_string( m_soundradiochannel ) + "]" : "" ) );
+        + ( m_soundradiochannel > 0 ? " [channel " + std::to_string( m_soundradiochannel ) + "]" : "" ) );
     for( auto &target : m_sounds ) {
         auto *targetsound = std::get<sound_source *>( target );
         if( targetsound == nullptr ) { continue; }
@@ -1507,7 +1508,7 @@ texture_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
         // intercept potential error, index specified using .t3d format convention
         m_skinindex *= -1;
     }
-    m_skinindex = clamp( m_skinindex, 1, 4 ); // TODO: define-based upper bound in case of future extension
+    m_skinindex = std::clamp( m_skinindex, 1, 4 ); // TODO: define-based upper bound in case of future extension
 
     Input.getTokens(); // preload next token
 }
@@ -1650,7 +1651,7 @@ animation_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
             >> m_animationparams[ 2 ]
             >> m_animationparams[ 3 ];
     }
-    else if( ends_with( token, ".vmd" ) ) // na razie tu, może będzie inaczej
+    else if( token.ends_with(".vmd") ) // na razie tu, może będzie inaczej
     { // animacja z pliku VMD
         {
             m_animationfilename = token;
@@ -1770,7 +1771,7 @@ lights_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
             Input >> m_lights[ lightidx++ ];
         }
         else {
-            ErrorLog( "Bad event: \"" + m_name + "\" (type: " + type() + ") with more than " + to_string( lightcountlimit ) + " parameters" );
+            ErrorLog( "Bad event: \"" + m_name + "\" (type: " + type() + ") with more than " + std::to_string( lightcountlimit ) + " parameters" );
         }
     }
     while( lightidx < lightcountlimit ) {
@@ -2305,15 +2306,15 @@ event_manager::insert( basic_event *Event ) {
             return false;
         }
         // tymczasowo wyjątki:
-        else if( ends_with( Event->m_name, "lineinfo:" ) ) {
+        else if( Event->m_name.ends_with("lineinfo:") ) {
             // tymczasowa utylizacja duplikatów W5
             return false;
         }
-        else if( ends_with( Event->m_name, "_warning" ) ) {
+        else if( Event->m_name.ends_with("_warning") ) {
             // tymczasowa utylizacja duplikatu z trąbieniem
             return false;
         }
-        else if( ends_with( Event->m_name, "_shp" ) ) {
+        else if( Event->m_name.ends_with("_shp") ) {
             // nie podlegają logowaniu
             // tymczasowa utylizacja duplikatu SHP
             return false;

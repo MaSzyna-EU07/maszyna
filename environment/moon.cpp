@@ -81,9 +81,9 @@ void cMoon::setLocation( float const Longitude, float const Latitude ) {
 // sets current time, overriding one acquired from the system clock
 void cMoon::setTime( int const Hour, int const Minute, int const Second ) {
 
-    m_observer.hour = clamp( Hour, -1, 23 );
-    m_observer.minute = clamp( Minute, -1, 59 );
-    m_observer.second = clamp( Second, -1, 59 );
+    m_observer.hour = std::clamp( Hour, -1, 23 );
+    m_observer.minute = std::clamp( Minute, -1, 59 );
+    m_observer.second = std::clamp( Second, -1, 59 );
 }
 
 void cMoon::setTemperature( float const Temperature ) {

@@ -19,7 +19,6 @@ http://mozilla.org/MPL/2.0/.
 #include "world/MemCell.h"
 #include "application/editoruilayer.h"
 #include "rendering/renderer.h"
-#include "utilities/utilities.h"
 
 void itemproperties_panel::update(scene::basic_node const *Node)
 {
@@ -81,7 +80,7 @@ void itemproperties_panel::update(scene::basic_node const *Node)
 			textline += '[';
 			for (int lightidx = 0; lightidx < subnode->iNumLights; ++lightidx)
 			{
-				textline += to_string(subnode->lsLights[lightidx]);
+				textline += std::to_string(subnode->lsLights[lightidx]);
 				if (lightidx < subnode->iNumLights - 1)
 				{
 					textline += ", ";
@@ -126,8 +125,8 @@ void itemproperties_panel::update(scene::basic_node const *Node)
 		}
 
 		// basic attributes
-		textline = "isolated: " + (!isolatedlist.empty() ? isolatedlist : "(none)") + "\nvelocity: " + to_string(subnode->SwitchExtension ? subnode->SwitchExtension->fVelocity : subnode->fVelocity) +
-		           "\nwidth: " + to_string(subnode->fTrackWidth) + " m" + "\nfriction: " + to_string(subnode->fFriction, 2) + "\nquality: " + to_string(subnode->iQualityFlag);
+		textline = "isolated: " + (!isolatedlist.empty() ? isolatedlist : "(none)") + "\nvelocity: " + std::to_string(subnode->SwitchExtension ? subnode->SwitchExtension->fVelocity : subnode->fVelocity) +
+		           "\nwidth: " + std::to_string(subnode->fTrackWidth) + " m" + "\nfriction: " + to_string(subnode->fFriction, 2) + "\nquality: " + std::to_string(subnode->iQualityFlag);
 		text_lines.emplace_back(textline, Global.UITextColor);
 		// textures
 		auto texturefile{((subnode->m_material1 != null_handle) ? GfxRenderer->Material(subnode->m_material1)->GetName() : "(none)")};
@@ -237,7 +236,7 @@ void itemproperties_panel::update_group()
 			for (auto const &name : names)
 			{
 				// NOTE: first calculation runs over two instances of the same name, but, eh
-				auto const prefixlength{len_common_prefix(m_groupprefix, name)};
+				auto const prefixlength{len_common_prefix(m_groupprefix, name.get())};
 				if (prefixlength > 0)
 				{
 					m_groupprefix = m_groupprefix.substr(0, prefixlength);
@@ -257,7 +256,7 @@ void itemproperties_panel::update_group()
 		m_grouphandle = grouphandle;
 	}
 
-	m_grouplines.emplace_back("nodes: " + to_string(static_cast<int>(nodegroup.nodes.size())) + "\nevents: " + to_string(static_cast<int>(nodegroup.events.size())), Global.UITextColor);
+	m_grouplines.emplace_back("nodes: " + std::to_string(nodegroup.nodes.size()) + "\nevents: " + std::to_string(nodegroup.events.size()), Global.UITextColor);
 	m_grouplines.emplace_back("names prefix: " + (m_groupprefix.empty() ? "(none)" : m_groupprefix), Global.UITextColor);
 }
 

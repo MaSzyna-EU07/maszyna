@@ -353,8 +353,8 @@ std::string TSpeedPos::GetName() const
     else if( iFlags & spEvent ) // jeśli event
         return
             evEvent->m_name
-            + " [" + to_string( static_cast<int>( evEvent->input_value( 1 ) ) )
-            + ", " + to_string( static_cast<int>( evEvent->input_value( 2 ) ) )
+            + " [" + std::to_string( static_cast<int>( evEvent->input_value( 1 ) ) )
+            + ", " + std::to_string( static_cast<int>( evEvent->input_value( 2 ) ) )
             + "]";
     else
         return "";
@@ -935,7 +935,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
                                 if( brakingdistance > 0.0 ) {
                                     // maintain desired acc while we have enough room to brake safely, when close enough start paying attention
                                     // try to make a smooth transition instead of sharp change
-                                    a = interpolate( a, AccPreferred, clamp( ( d - brakingdistance ) / brakingdistance, 0.0, 1.0 ) );
+                                    a = std::lerp( a, AccPreferred, std::clamp( ( d - brakingdistance ) / brakingdistance, 0.0, 1.0 ) );
                                 }
                             }
                             if( ( d < fMinProximityDist )
@@ -1738,9 +1738,9 @@ TController::braking_distance_multiplier( float const Targetvelocity ) const {
         if( ( is_dmu() )
          && ( mvOccupied->Vel < 40.0 )
          && ( Targetvelocity == 0.f ) ) {
-            auto const multiplier { clamp( 1.f + iVehicles * 0.5f, 2.f, 4.f ) };
+            auto const multiplier { std::clamp( 1.f + iVehicles * 0.5f, 2.f, 4.f ) };
             return (
-                interpolate(
+                std::lerp(
                     multiplier, 1.f,
                     static_cast<float>( mvOccupied->Vel / 40.0 ) )
                 * frictionmultiplier );
@@ -1750,9 +1750,9 @@ TController::braking_distance_multiplier( float const Targetvelocity ) const {
          && ( ( true == IsCargoTrain )
            || ( fAccGravity > 0.025 ) ) ) {
             return (
-                interpolate(
+                std::lerp(
                     1.f, 2.f,
-                    clamp(
+                    std::clamp(
                         ( fBrake_a0[ 1 ] - 0.2 ) / 0.2,
                         0.0, 1.0 ) )
                 * frictionmultiplier );
@@ -1762,7 +1762,7 @@ TController::braking_distance_multiplier( float const Targetvelocity ) const {
     }
     // stretch the braking distance up to 3 times; the lower the speed, the greater the stretch
     return (
-        interpolate(
+        std::lerp(
             3.f, 1.f,
             ( Targetvelocity - 5.f ) / 60.f )
         * frictionmultiplier );
@@ -3180,10 +3180,10 @@ bool TController::IncBrake()
                 auto const initialbrakeposition { mvOccupied->fBrakeCtrlPos };
                 auto const AccMax { std::min( fBrake_a0[ 0 ] + 12 * fBrake_a1[ 0 ], mvOccupied->MED_amax ) };
                 mvOccupied->BrakeLevelSet(
-                    interpolate(
+                    std::lerp(
                         mvOccupied->Handle->GetPos( bh_EPR ),
                         mvOccupied->Handle->GetPos( bh_EPB ),
-                        clamp( -AccDesired / AccMax * mvOccupied->AIHintLocalBrakeAccFactor, 0.0, 1.0 ) ) );
+                        std::clamp( -AccDesired / AccMax * mvOccupied->AIHintLocalBrakeAccFactor, 0.0, 1.0 ) ) );
                 OK = ( mvOccupied->fBrakeCtrlPos != initialbrakeposition );
             }
             else if( mvOccupied->fBrakeCtrlPos != mvOccupied->Handle->GetPos( bh_EPB ) ) {
@@ -3211,7 +3211,7 @@ bool TController::IncBrakeEIM()
                 auto const maxpos{mvOccupied->EIMCtrlEmergency ? 0.9 : 1.0 };
                 auto const brakelimit{ -2.2 * AccDesired / fMedAmax - 1.0}; //additional limit when hinted is too low
 				auto const brakehinted{ -1.0 * mvOccupied->AIHintLocalBrakeAccFactor * AccDesired / fMedAmax }; //preffered by AI
-                auto const brakeposition{ maxpos * clamp(std::max(brakelimit, brakehinted), 0.0, 1.0)};
+                auto const brakeposition{ maxpos * std::clamp(std::max(brakelimit, brakehinted), 0.0, 1.0)};
                 OK = ( brakeposition != mvOccupied->LocalBrakePosA );
                 mvOccupied->LocalBrakePosA = brakeposition;
             }
@@ -3312,10 +3312,10 @@ bool TController::DecBrake() {
                 auto const initialbrakeposition { mvOccupied->fBrakeCtrlPos };
                 auto const AccMax { std::min( fBrake_a0[ 0 ] + 12 * fBrake_a1[ 0 ], mvOccupied->MED_amax ) };
                 mvOccupied->BrakeLevelSet(
-                    interpolate(
+                    std::lerp(
                         mvOccupied->Handle->GetPos( bh_EPR ),
                         mvOccupied->Handle->GetPos( bh_EPB ),
-                        clamp( -AccDesired / AccMax * mvOccupied->AIHintLocalBrakeAccFactor, 0.0, 1.0 ) ) );
+                        std::clamp( -AccDesired / AccMax * mvOccupied->AIHintLocalBrakeAccFactor, 0.0, 1.0 ) ) );
                 OK = ( mvOccupied->fBrakeCtrlPos != initialbrakeposition );
             }
             else {
@@ -3372,7 +3372,7 @@ bool TController::DecBrakeEIM()
         case 0: {
             if( mvOccupied->MED_amax != 9.81 ) {
                 auto const desiredacceleration { ( mvOccupied->Vel > EU07_AI_NOMOVEMENT ? AccDesired : std::max( 0.0, AccDesired ) ) };
-                auto const brakeposition { clamp( -1.0 * mvOccupied->AIHintLocalBrakeAccFactor * desiredacceleration / mvOccupied->MED_amax, 0.0, 1.0 ) };
+                auto const brakeposition { std::clamp( -1.0 * mvOccupied->AIHintLocalBrakeAccFactor * desiredacceleration / mvOccupied->MED_amax, 0.0, 1.0 ) };
                 OK = ( brakeposition != mvOccupied->LocalBrakePosA );
                 mvOccupied->LocalBrakePosA = brakeposition;
             }
@@ -3454,7 +3454,7 @@ bool TController::IncSpeed()
                     auto const minvoltage { ( mvPantographUnit->EnginePowerSource.SourceType == TPowerSource::CurrentCollector ? mvPantographUnit->EnginePowerSource.CollectorParameters.MinV : 0.0 ) };
                     auto const maxvoltage { ( mvPantographUnit->EnginePowerSource.SourceType == TPowerSource::CurrentCollector ? mvPantographUnit->EnginePowerSource.CollectorParameters.MaxV : 0.0 ) };
                     auto const seriesmodevoltage {
-                        interpolate(
+                        std::lerp(
                             minvoltage,
                             maxvoltage,
                             ( IsHeavyCargoTrain ? 0.35 : 0.40 ) ) };
@@ -3774,7 +3774,7 @@ bool TController::IncSpeedEIM() {
             // TBD, TODO: set position based on desired acceleration?
             OK = mvControlling->MainCtrlPos < mvControlling->MainCtrlPosNo;
             if( OK ) {
-                mvControlling->MainCtrlPos = clamp( mvControlling->MainCtrlPos + 1, 6, mvControlling->MainCtrlPosNo );
+                mvControlling->MainCtrlPos = std::clamp( mvControlling->MainCtrlPos + 1, 6, mvControlling->MainCtrlPosNo );
             }
 */
             break;
@@ -3830,7 +3830,7 @@ void TController::BrakeLevelSet(double b)
   // jedyny dopuszczalny sposób przestawienia hamulca zasadniczego
 	if (BrakeCtrlPosition == b)
 		return; // nie przeliczać, jak nie ma zmiany
-	BrakeCtrlPosition = clamp(b, (double)gbh_MIN, (double)gbh_MAX);
+	BrakeCtrlPosition = std::clamp(b, (double)gbh_MIN, (double)gbh_MAX);
 }
 
 bool TController::BrakeLevelAdd(double b)
@@ -4143,7 +4143,7 @@ void TController::SetTimeControllers()
 		else if (VelDesired > MinVel) //more power for faster ride
 		{
 			auto const Factor{ 10 * (mvControlling->Vmax) / (mvControlling->Vmax + 3 * mvControlling->Vel) };
-			auto DesiredPercentage{ clamp(
+			auto DesiredPercentage{ std::clamp(
 				(VelDesired > mvControlling->Vel ?
 					(VelDesired - mvControlling->Vel) / Factor :
 					0),
@@ -6026,7 +6026,7 @@ TController::determine_consist_state() {
 	fBrake_a1[0] = fBrake_a1[index];
 
 	if ((is_emu()) || (is_dmu())) {
-		auto Coeff = clamp( mvOccupied->Vel*0.015 , 0.5 , 1.0);
+		auto Coeff = std::clamp( mvOccupied->Vel*0.015 , 0.5 , 1.0);
 		fAccThreshold = fNominalAccThreshold * Coeff - fBrake_a0[BrakeAccTableSize] * (1.0 - Coeff);
 	}
 
@@ -6447,7 +6447,7 @@ TController::control_handles() {
         }
         // if the power station is heavily burdened drop down to series mode to reduce the load
         auto const useseriesmodevoltage {
-            interpolate(
+            std::lerp(
                 mvControlling->EnginePowerSource.CollectorParameters.MinV,
                 mvControlling->EnginePowerSource.CollectorParameters.MaxV,
                 ( IsHeavyCargoTrain ? 0.35 : 0.40 ) ) };
@@ -6742,8 +6742,8 @@ TController::determine_proximity_ranges() {
         // na jaka odleglosc i z jaka predkoscia ma podjechac do przeszkody
         // jeśli pociąg
         if( is_train() ) {
-            fMinProximityDist = clamp(  5 + iVehicles, 10, 15 );
-            fMaxProximityDist = clamp( 10 + iVehicles, 15, 40 );
+            fMinProximityDist = std::clamp(  5 + iVehicles, 10, 15 );
+            fMaxProximityDist = std::clamp( 10 + iVehicles, 15, 40 );
 
             if( IsCargoTrain ) {
                 // increase distances for cargo trains to take into account slower reaction to brakes
@@ -6778,10 +6778,10 @@ TController::determine_proximity_ranges() {
             else {
                 // gdy nie musi się sprężać
                 // margines prędkości powodujący załączenie napędu; min 1.0 żeby nie ruszał przy 0.1
-                fVelMinus = clamp( std::round( 0.05 * VelDesired ), 1.0, 5.0 );
+                fVelMinus = std::clamp( std::round( 0.05 * VelDesired ), 1.0, 5.0 );
                 // normalnie dopuszczalne przekroczenie to 5% prędkości ale nie więcej niż 5km/h
                 // bottom margin raised to 2 km/h to give the AI more leeway at low speed limits
-                fVelPlus = clamp( std::ceil( 0.05 * VelDesired ), 2.0, 5.0 );
+                fVelPlus = std::clamp( std::ceil( 0.05 * VelDesired ), 2.0, 5.0 );
             }
         }
         // samochod (sokista też)
@@ -7392,7 +7392,7 @@ TController::pick_optimal_speed( double const Range ) {
 
     // last step sanity check, until the whole calculation is straightened out
     AccDesired = std::min( AccDesired, AccPreferred );
-    AccDesired = clamp(
+    AccDesired = std::clamp(
         AccDesired,
             ( is_car() ? -2.0 : -0.9 ),
             ( is_car() ?  2.0 :  0.9 ) );
@@ -7760,7 +7760,7 @@ TController::adjust_desired_speed_for_current_speed() {
                     // HACK: for cargo trains with high braking threshold ensure we cross that threshold
                     if( ( true == IsCargoTrain )
                      && ( fBrake_a0[ 0 ] > 0.2 ) ) {
-                        AccDesired -= clamp( fBrake_a0[ 0 ] - 0.2, 0.0, 0.15 );
+                        AccDesired -= std::clamp( fBrake_a0[ 0 ] - 0.2, 0.0, 0.15 );
                     }
                 }
             }
@@ -7768,24 +7768,24 @@ TController::adjust_desired_speed_for_current_speed() {
                 // stop accelerating when close enough to target speed
                 AccDesired = std::min(
                     AccDesired, // but don't override decceleration for VelNext
-                    interpolate( // ease off as you close to the target velocity
+                    std::lerp( // ease off as you close to the target velocity
                         EU07_AI_NOACCELERATION, AccPreferred,
-                        clamp( VelDesired - speedestimate, 0.0, fVelMinus ) / fVelMinus ) );
+                        std::clamp( VelDesired - speedestimate, 0.0, fVelMinus ) / fVelMinus ) );
             }
             // final tweaks
             if( vel > EU07_AI_NOMOVEMENT ) {
                 // going downhill also take into account impact of gravity
                 AccDesired -= fAccGravity;
                 // HACK: if the max allowed speed was exceeded something went wrong; brake harder
-                AccDesired -= 0.15 * clamp( vel - VelDesired, 0.0, 5.0 );
+                AccDesired -= 0.15 * std::clamp( vel - VelDesired, 0.0, 5.0 );
             }
         }
         // HACK: limit acceleration for cargo trains, to reduce probability of breaking couplers on sudden jolts
 		auto MaxAcc{ 0.5 * mvOccupied->Couplers[(mvOccupied->DirAbsolute >= 0 ? end::rear : end::front)].FmaxC / fMass };
         if( iVehicles - ControlledEnginesCount > 0 ) {
-            MaxAcc *= clamp( vel * 0.025, 0.2, 1.0 );
+            MaxAcc *= std::clamp( vel * 0.025, 0.2, 1.0 );
         }
-		AccDesired = std::min(AccDesired, clamp(MaxAcc, HeavyCargoTrainAcceleration, AccPreferred));
+		AccDesired = std::min(AccDesired, std::clamp(MaxAcc, HeavyCargoTrainAcceleration, AccPreferred));
         // TBD: expand this behaviour to all trains with car(s) exceeding certain weight?
 		/*
         if( ( IsPassengerTrain ) && ( iVehicles - ControlledEnginesCount > 0 ) ) {
@@ -7887,7 +7887,8 @@ TController::adjust_desired_speed_for_braking_test() {
             break;
         }
         case 3: {
-            AccDesired = clamp( -AbsAccS, fAccThreshold * 1.01, fAccThreshold * 1.21 );
+		    auto [minV, maxV] = std::minmax(fAccThreshold * 1.01f, fAccThreshold * 1.21f);
+		    AccDesired = std::clamp(-AbsAccS, minV, maxV);
             VelDesired = DBT_VelocityBrake;
             if( vel <= DBT_VelocityRelease ) {
                 DynamicBrakeTest = 4;
@@ -8285,7 +8286,7 @@ void TController::control_main_pipe() {
 
                     BrakeLevelSet( gbh_FS );
                     // don't charge the brakes too often, or we risk overcharging
-                    BrakeChargingCooldown = -1 * clamp( iVehicles * 3, 30, 90 );
+                    BrakeChargingCooldown = -1 * std::clamp( iVehicles * 3, 30, 90 );
                 }
             }
         }

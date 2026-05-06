@@ -65,7 +65,7 @@ opengl_particles::update( opengl_camera const &Camera ) {
             vertex.color[ 0 ] = static_cast<std::uint_fast8_t>( particlecolor.r );
             vertex.color[ 1 ] = static_cast<std::uint_fast8_t>( particlecolor.g );
             vertex.color[ 2 ] = static_cast<std::uint_fast8_t>( particlecolor.b );
-            vertex.color[ 3 ] = clamp<std::uint8_t>( particle.opacity * 255, 0, 255 );
+            vertex.color[ 3 ] = static_cast<std::uint_fast8_t>( std::clamp( particle.opacity * 255, 0.f, 255.f ) );
 
             auto const offset { glm::vec3{ particle.position - Camera.position() } };
             auto const rotation { glm::angleAxis( particle.rotation, glm::vec3{ 0.f, 0.f, 1.f } ) };

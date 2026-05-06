@@ -11,7 +11,6 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Classes.h"
 #include "rendering/geometrybank.h"
-#include "utilities/utilities.h"
 #include <glm/glm.hpp>
 
 struct map_colored_paths {
@@ -105,7 +104,7 @@ public:
     inline
     float
         GetRoll(double const Distance) const {
-            return interpolate( fRoll1, fRoll2, static_cast<float>(Distance / fLength) ); }
+            return std::lerp( fRoll1, fRoll2, static_cast<float>(Distance / fLength) ); }
     inline
     void
         GetRolls(float &r1, float &r2) const {

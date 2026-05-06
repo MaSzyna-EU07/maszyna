@@ -257,7 +257,7 @@ void Console::ValueSet(int x, double y)
         }
         if (Global.fCalibrateOutMax[x] > 0)
         {
-            y = clamp( y, 0.0, Global.fCalibrateOutMax[x]);
+            y = std::clamp(y, 0.0, Global.fCalibrateOutMax[x]);
             if( Global.iCalibrateOutDebugInfo == x ) {
                 WriteLog( " cutted=" + std::to_string( y ) );
             }

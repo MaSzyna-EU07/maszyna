@@ -12,7 +12,6 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Globals.h"
 #include "application/application.h"
-#include "utilities/utilities.h"
 #include "utilities/Globals.h"
 #include "utilities/Timer.h"
 #include "simulation/simulation.h"
@@ -147,7 +146,7 @@ mouse_slider::on_move( double const Mousex, double const Mousey ) {
     auto const controledge { Global.window_size.y * 0.5 + controlsize * 0.5 };
     auto const stepsize { controlsize / m_valuerange };
 
-    auto mousey = clamp( Mousey, controledge - controlsize, controledge );
+    auto mousey = std::clamp( Mousey, controledge - controlsize, controledge );
     m_value = (
         m_analogue ?
             ( controledge - mousey ) / controlsize :
@@ -164,10 +163,10 @@ drivermouse_input::init() {
 #ifdef _WIN32
     DWORD systemkeyboardspeed;
     ::SystemParametersInfo( SPI_GETKEYBOARDSPEED, 0, &systemkeyboardspeed, 0 );
-    m_updaterate = interpolate( 0.5, 0.04, systemkeyboardspeed / 31.0 );
+    m_updaterate = std::lerp( 0.5, 0.04, systemkeyboardspeed / 31.0 );
     DWORD systemkeyboarddelay;
     ::SystemParametersInfo( SPI_GETKEYBOARDDELAY, 0, &systemkeyboarddelay, 0 );
-    m_updatedelay = interpolate( 0.25, 1.0, systemkeyboarddelay / 3.0 );
+    m_updatedelay = std::lerp( 0.25, 1.0, systemkeyboarddelay / 3.0 );
 #endif
 
     default_bindings();
@@ -303,7 +302,7 @@ drivermouse_input::scroll( double const Xoffset, double const Yoffset ) {
 
     if( Global.ctrlState ) {
         // ctrl + scroll wheel adjusts fov
-		Global.FieldOfView = clamp( static_cast<float>( Global.FieldOfView - Yoffset * 20.0 / Timer::subsystem.mainloop_total.average() ), 15.0f, 75.0f );
+		Global.FieldOfView = std::clamp( static_cast<float>( Global.FieldOfView - Yoffset * 20.0 / Timer::subsystem.mainloop_total.average() ), 15.0f, 75.0f );
     }
     else {
         // scroll adjusts master controller

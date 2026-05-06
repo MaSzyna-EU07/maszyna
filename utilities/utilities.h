@@ -10,12 +10,6 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "stdafx.h"
-
-#include <string>
-#include <fstream>
-#include <ctime>
-#include <vector>
-#include <sstream>
 #include "utilities/parser.h"
 
 /*rozne takie duperele do operacji na stringach w paszczalu, pewnie w delfi sa lepsze*/
@@ -26,14 +20,12 @@ template <typename T> T sign(T x)
 	return x < static_cast<T>(0) ? static_cast<T>(-1) : (x > static_cast<T>(0) ? static_cast<T>(1) : static_cast<T>(0));
 }
 
-#define DegToRad(a) ((M_PI / 180.0) * (a)) //(a) w nawiasie, bo może być dodawaniem
-#define RadToDeg(r) ((180.0 / M_PI) * (r))
-
 template <typename T> constexpr T sq(T v)
 {
 	return v * v;
 }
 
+// TODO: Shouldn't this be in globals?
 namespace paths
 {
 inline constexpr const char *scenery = "scenery/";
@@ -53,9 +45,6 @@ extern bool DebugCameraFlag;
 extern bool DebugTractionFlag;
 
 /*funkcje matematyczne*/
-double Max0R(double x1, double x2);
-double Min0R(double x1, double x2);
-
 inline double Sign(double x)
 {
 	return x >= 0 ? 1.0 : -1.0;
@@ -68,7 +57,7 @@ inline long Round(double const f)
 }
 
 double Random(double a, double b);
-int RandomInt(int min, int max);
+int Random(int min, int max);
 std::string generate_uuid_v4();
 double LocalRandom(double a, double b);
 
@@ -125,24 +114,17 @@ bool FuzzyLogicAI(double Test, double Threshold, double Probability);
 /*to samo ale zawsze niezaleznie od DebugFlag*/
 
 /*operacje na stringach*/
-std::string DUE(std::string s); /*Delete Until Equal sign*/
-std::string DWE(std::string s); /*Delete While Equal sign*/
-std::string ExchangeCharInString(std::string const &Source, char const From, char const To); // zamienia jeden znak na drugi
-std::vector<std::string> &Split(const std::string &s, char delim, std::vector<std::string> &elems);
-std::vector<std::string> Split(const std::string &s, char delim);
-// std::vector<std::string> Split(const std::string &s);
+std::vector<std::string> Split(std::string_view s, char delim);
 std::pair<std::string, int> split_string_and_number(std::string const &Key);
 
-std::string to_string(int Value);
-std::string to_string(unsigned int Value);
 std::string to_string(int Value, int width);
-std::string to_string(double Value);
 std::string to_string(double Value, int precision);
 std::string to_string(double Value, int precision, int width);
 std::string to_hex_str(int const Value, int const width = 4);
 std::string to_minutes_str(float const Minutes, bool const Leadingzero, int const Width);
 
-inline std::string to_string(bool Value)
+template <std::same_as<bool> T> // Without this line this function can be used with other types implicit casted to boolean which may create hard to debug bugs.
+inline std::string to_string(T Value)
 {
 	return (Value == true ? "true" : "false");
 }
@@ -156,9 +138,6 @@ template <typename Type_, glm::precision Precision_ = glm::defaultp> std::string
 {
 	return to_string(Value.x, Width) + ", " + to_string(Value.y, Width) + ", " + to_string(Value.z, Width) + ", " + to_string(Value.w, Width);
 }
-
-bool string_ends_with(std::string const &string, std::string const &ending);
-bool string_starts_with(std::string const &string, std::string const &begin);
 
 int stol_def(const std::string &str, const int &DefaultValue);
 
@@ -235,82 +214,65 @@ void erase_leading_slashes(std::string &Filename);
 void replace_slashes(std::string &Filename);
 
 // returns potential path part from provided file name
-std::string substr_path(std::string const &Filename);
+std::string_view substr_path(std::string const &Filename);
 
 // returns common prefix of two provided strings
-std::ptrdiff_t len_common_prefix(std::string const &Left, std::string const &Right);
+std::ptrdiff_t len_common_prefix(std::string_view a, std::string_view b);
 
-// returns true if provided string ends with another provided string
-bool ends_with(std::string_view String, std::string_view Suffix);
-// returns true if provided string begins with another provided string
-bool starts_with(std::string_view String, std::string_view Prefix);
 // returns true if provided string contains another provided string
 bool contains(std::string_view const String, std::string_view Substring);
 bool contains(std::string_view const String, char Character);
 
-template <typename Type_> void SafeDelete(Type_ &Pointer)
+// TODO: Ideally unique_ptr should be used instead of this (not safe) inline functions
+template <typename T> inline void SafeDelete(T* &Pointer)
 {
 	delete Pointer;
 	Pointer = nullptr;
 }
 
-template <typename Type_> void SafeDeleteArray(Type_ &Pointer)
+template <typename T> inline void SafeDeleteArray(T *&Pointer)
 {
 	delete[] Pointer;
 	Pointer = nullptr;
 }
 
-template <typename Type_> Type_ is_equal(Type_ const &Left, Type_ const &Right, Type_ const Epsilon = 1e-5)
+template <typename T> bool is_equal(T const &Left, T const &Right, T const Epsilon = T(1e-5))
 {
-
-	if (Epsilon != 0)
-	{
+	if (Epsilon != T(0))
 		return glm::epsilonEqual(Left, Right, Epsilon);
-	}
-	else
-	{
-		return (Left == Right);
-	}
-}
 
-template <typename Type_> Type_ clamp(Type_ const Value, Type_ const Min, Type_ const Max)
-{
-
-	Type_ value = Value;
-	if (value < Min)
-	{
-		value = Min;
-	}
-	if (value > Max)
-	{
-		value = Max;
-	}
-	return value;
+	return (Left == Right);
 }
 
 // keeps the provided value in specified range 0-Range, as if the range was circular buffer
-template <typename Type_> Type_ clamp_circular(Type_ Value, Type_ const Range = static_cast<Type_>(360))
+template <typename T> T clamp_circular(T Value, T const Range = T(360))
 {
+	if constexpr (std::is_floating_point_v<T>)
+	{
+		Value = std::fmod(Value, Range);
+	}
+	else
+	{
+		Value %= Range;
+	}
 
-	Value -= Range * (int)(Value / Range); // clamp the range to 0-360
-	if (Value < Type_(0))
+	if (Value < T(0))
 		Value += Range;
-
 	return Value;
 }
 
 // rounds down provided value to nearest power of two
-template <typename Type_> Type_ clamp_power_of_two(Type_ Value, Type_ const Min = static_cast<Type_>(1), Type_ const Max = static_cast<Type_>(16384))
+template <typename T> T clamp_power_of_two(T Value, T const Min = T(1), T const Max = T(16384))
 {
+	if (Value < Min)
+		return Min;
 
-	Type_ p2size{Min};
-	Type_ size;
-	while ((p2size <= Max) && (p2size <= Value))
-	{
-		size = p2size;
-		p2size = p2size << 1;
-	}
-	return size;
+	T p2 = std::bit_floor(Value);
+
+	if (p2 > Max)
+		return Max;
+
+	return p2;
 }
 
 template <typename Type_> Type_ quantize(Type_ const Value, Type_ const Step)
@@ -319,35 +281,23 @@ template <typename Type_> Type_ quantize(Type_ const Value, Type_ const Step)
 	return (Step * std::round(Value / Step));
 }
 
-template <typename Type_> Type_ min_speed(Type_ const Left, Type_ const Right)
+template <typename T> T min_speed(T const Left, T const Right)
 {
-
-	if (Left == Right)
-	{
+	constexpr T none = T(-1);
+	if (Left == none)
+		return Right;
+	if (Right == none)
 		return Left;
-	}
 
-	return std::min((Left != -1 ? Left : std::numeric_limits<Type_>::max()), (Right != -1 ? Right : std::numeric_limits<Type_>::max()));
+	return std::min(Left, Right);
 }
 
-template <typename Type_> Type_ interpolate(Type_ const &First, Type_ const &Second, float const Factor)
-{
-
-	return static_cast<Type_>((First * (1.0f - Factor)) + (Second * Factor));
-}
-
-template <typename Type_> Type_ interpolate(Type_ const &First, Type_ const &Second, double const Factor)
-{
-
-	return static_cast<Type_>((First * (1.0 - Factor)) + (Second * Factor));
-}
-
-template <typename Type_> Type_ smoothInterpolate(Type_ const &First, Type_ const &Second, double Factor)
+template <typename T> T smoothInterpolate(T const &First, T const &Second, double Factor)
 {
 	// Apply smoothing (ease-in-out quadratic)
 	Factor = Factor * Factor * (3 - 2 * Factor);
 
-	return static_cast<Type_>((First * (1.0 - Factor)) + (Second * Factor));
+	return First + (Second - First) * Factor;
 }
 
 // tests whether provided points form a degenerate triangle
@@ -397,8 +347,6 @@ glm::dvec3 LoadPoint(class cParser &Input);
 
 // extracts a group of tokens from provided data stream
 std::string deserialize_random_set(cParser &Input, char const *Break = "\n\r\t ;");
-
-int count_trailing_zeros(uint32_t val);
 
 // extracts a group of <key, value> pairs from provided data stream
 // NOTE: expects no more than single pair per line

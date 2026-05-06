@@ -20,7 +20,8 @@ TTranscripts::AddLine( std::string const &txt, float show, float hide, bool it )
     hide = Global.fTimeAngleDeg + hide / 240.0;
 
     TTranscript transcript;
-    transcript.asText = ExchangeCharInString( txt, '|', ' ' ); // NOTE: legacy transcript lines use | as new line mark
+	transcript.asText = txt;
+	std::ranges::replace(transcript.asText, '|', ' '); // NOTE: legacy transcript lines use | as new line mark
     transcript.fShow = show;
     transcript.fHide = hide;
     transcript.bItalic = it;

@@ -185,12 +185,12 @@ sound_source::deserialize_mapping( cParser &Input ) {
             >> soundproofing[ 5 ];
         for( auto & soundproofingelement : soundproofing ) {
             if( soundproofingelement != -1.f ) {
-                soundproofingelement = std::sqrt( clamp( soundproofingelement, 0.f, 1.f ) );
+                soundproofingelement = std::sqrt( std::clamp( soundproofingelement, 0.f, 1.f ) );
             }
         }
         m_soundproofing = soundproofing;
     }
-    else if( starts_with( key, "sound" ) ) {
+    else if( key.starts_with("sound") ) {
         // sound chunks, defined with key soundX where X = activation threshold
         auto const indexstart { key.find_first_of( "-1234567890" ) };
         auto const indexend { key.find_first_not_of( "-1234567890", indexstart ) };
@@ -206,7 +206,7 @@ sound_source::deserialize_mapping( cParser &Input ) {
     }
     else if( key == "pitchvariation:" ) {
         auto const variation {
-            clamp(
+            std::clamp(
                 Input.getToken<float>( false, "\n\r\t ,;" ),
                 0.0f, 1.0f )
             * 100.0f / 2.0f };
@@ -217,11 +217,11 @@ sound_source::deserialize_mapping( cParser &Input ) {
     }
     else if( key == "startoffset:" ) {
         m_startoffset =
-            clamp(
+            std::clamp(
                 Input.getToken<float>( false, "\n\r\t ,;" ),
                 0.0f, 1.0f );
     }
-    else if( starts_with( key, "pitch" ) ) {
+	else if ( key.starts_with("pitch") ) {
         // sound chunk pitch, defined with key pitchX where X = activation threshold
         auto const indexstart { key.find_first_of( "-1234567890" ) };
         auto const indexend { key.find_first_not_of( "-1234567890", indexstart ) };
@@ -240,7 +240,7 @@ sound_source::deserialize_mapping( cParser &Input ) {
         // for combined sounds, percentage of assigned range allocated to crossfade sections
         Input.getTokens( 1, "\n\r\t ,;" );
         Input >> m_crossfaderange;
-        m_crossfaderange = clamp( m_crossfaderange, 0, 100 );
+        m_crossfaderange = std::clamp( m_crossfaderange, 0, 100 );
     }
     else if( key == "placement:" ) {
         auto const value { Input.getToken<std::string>( true, "\n\r\t ,;" ) };
@@ -480,7 +480,7 @@ sound_source::compute_combined_point() const {
     return (
         m_properties.pitch <= 1.f ?
             // most sounds use 0-1 value range, we clamp these to 0-99 to allow more intuitive sound definition in .mmd files
-            clamp( m_properties.pitch, 0.f, 0.99f ) :
+            std::clamp( m_properties.pitch, 0.f, 0.99f ) :
             std::max( 0.f, m_properties.pitch )
         ) * 100.f;
 }
@@ -781,10 +781,10 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
             // based on how far the current soundpoint is in the range of previous chunk
             auto const &previouschunkdata{ m_soundchunks[ chunkindex - 1 ].second };
             m_properties.pitch =
-                interpolate(
+                std::lerp(
                     previouschunkdata.pitch / chunkdata.pitch,
                     1.f,
-                    clamp(
+                    std::clamp(
                         ( soundpoint - previouschunkdata.threshold ) / ( chunkdata.threshold - previouschunkdata.threshold ),
                         0.f, 1.f ) );
         }
@@ -796,10 +796,10 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
             // based on how far the current soundpoint is in the range of this chunk
             auto const &nextchunkdata { m_soundchunks[ chunkindex + 1 ].second };
             m_properties.pitch =
-                interpolate(
+                std::lerp(
                     1.f,
                     nextchunkdata.pitch / chunkdata.pitch,
-                    clamp(
+                    std::clamp(
                         ( soundpoint - chunkdata.threshold ) / ( nextchunkdata.threshold - chunkdata.threshold ),
                         0.f, 1.f ) );
         }
@@ -816,9 +816,9 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
         auto const fadeinwidth { chunkdata.threshold - chunkdata.fadein };
         if( soundpoint < chunkdata.threshold ) {
             float lineargain =
-                interpolate(
+                std::lerp(
                     0.f, 1.f,
-                    clamp(
+                    std::clamp(
                         ( soundpoint - chunkdata.fadein ) / fadeinwidth,
                         0.f, 1.f ) );
             m_properties.gain *=
@@ -836,9 +836,9 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
         auto const fadeoutstart { chunkdata.fadeout - fadeoutwidth };
         if( soundpoint > fadeoutstart ) {
 			float lineargain =
-                interpolate(
+                std::lerp(
                     0.f, 1.f,
-                    clamp(
+                    std::clamp(
                         ( soundpoint - fadeoutstart ) / fadeoutwidth,
                         0.f, 1.f ) );
             m_properties.gain *= (-lineargain + 1) /
@@ -852,7 +852,7 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
 sound_source &
 sound_source::gain( float const Gain ) {
 
-    m_properties.gain = clamp( Gain, 0.f, 2.f );
+    m_properties.gain = std::clamp( Gain, 0.f, 2.f );
     return *this;
 }
 

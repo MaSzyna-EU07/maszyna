@@ -128,7 +128,7 @@ TCamera::OnCommand( command_data const &Command ) {
 
 static void UpdateVelocityAxis(double& velocity, double moverate, double deltatime)
 {
-    velocity = clamp(velocity + moverate * 10.0 * deltatime, -std::abs(moverate), std::abs(moverate));
+    velocity = std::clamp(velocity + moverate * 10.0 * deltatime, -std::abs(moverate), std::abs(moverate));
 }
 
 
@@ -155,7 +155,7 @@ void TCamera::Update()
     Angle.y = std::remainder(Angle.y, 2.0 * M_PI);
 
     // Limit the camera pitch to +/- 90°.
-    Angle.x = clamp(Angle.x - (m_rotationoffsets.x * rotationfactor), -M_PI_2, M_PI_2);
+    Angle.x = std::clamp(Angle.x - (m_rotationoffsets.x * rotationfactor), -M_PI_2, M_PI_2);
     m_rotationoffsets.x *= ( 1.0 - rotationfactor );
 
     // update position

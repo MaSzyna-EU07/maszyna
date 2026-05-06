@@ -10,8 +10,6 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "simulation/simulationsounds.h"
 
-#include "utilities/utilities.h"
-
 namespace simulation {
 
 sound_overridemap Sound_overrides;

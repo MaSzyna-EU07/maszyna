@@ -11,56 +11,37 @@ MaSzyna EU07 - SPKS
 Brakes.
 Copyright (C) 2007-2014 Maciej Cierniak
 */
-#include "stdafx.h"
-
-#include <sys/types.h>
-#include <sys/stat.h>
-#ifndef WIN32
-#include <unistd.h>
-#endif
-
-#ifdef WIN32
-#define stat _stat
-#endif
+//#include "stdafx.h"
+//
+//#include <sys/types.h>
+//#include <sys/stat.h>
+#include <ranges>
+//#ifndef WIN32
+//#include <unistd.h>
+//#endif
+//
+//#ifdef WIN32
+//#define stat _stat
+//#endif
 
 #include "utilities/utilities.h"
 #include "utilities/Globals.h"
 #include "utilities/parser.h"
 
-#include "utilities/Logs.h"
+//#include "utilities/Logs.h"
 
+// TODO: This shouldn't be in Globals?
 bool DebugModeFlag = false;
 bool FreeFlyModeFlag = false;
 bool EditorModeFlag = false;
 bool DebugCameraFlag = false;
 bool DebugTractionFlag = false;
 
-double Max0R(double x1, double x2)
-{
-	if (x1 > x2)
-		return x1;
-	else
-		return x2;
-}
-
-double Min0R(double x1, double x2)
-{
-	if (x1 < x2)
-		return x1;
-	else
-		return x2;
-}
-
-// shitty replacement for Borland timestamp function
-// TODO: replace with something sensible
 std::string Now()
 {
-
-	std::time_t timenow = std::time(nullptr);
-	std::tm tm = *std::localtime(&timenow);
-	std::stringstream converter;
-	converter << std::put_time(&tm, "%c");
-	return converter.str();
+	auto now = std::chrono::system_clock::now();
+	auto local = std::chrono::current_zone()->to_local(now);
+	return std::format("{:%c}", local);
 }
 
 // zwraca różnicę czasu
@@ -117,15 +98,14 @@ bool ClearFlag(int &Flag, int const Value)
 
 double Random(double a, double b)
 {
-	uint32_t val = Global.random_engine();
-	return interpolate(a, b, (double)val / Global.random_engine.max());
+	std::uniform_real_distribution<double> dist(a, b);
+	return dist(Global.random_engine);
 }
 
-int RandomInt(int min, int max)
+int Random(int min, int max)
 {
-	static std::mt19937 engine(std::random_device{}());
 	std::uniform_int_distribution<int> dist(min, max);
-	return dist(engine);
+	return dist(Global.random_engine);
 }
 
 std::string generate_uuid_v4()
@@ -156,8 +136,8 @@ std::string generate_uuid_v4()
 
 double LocalRandom(double a, double b)
 {
-	uint32_t val = Global.local_random_engine();
-	return interpolate(a, b, (double)val / Global.random_engine.max());
+	std::uniform_real_distribution<double> dist(a, b);
+	return dist(Global.local_random_engine);
 }
 
 bool FuzzyLogic(double Test, double Threshold, double Probability)
@@ -176,71 +156,12 @@ bool FuzzyLogicAI(double Test, double Threshold, double Probability)
 		return false;
 }
 
-std::string DUE(std::string s) /*Delete Before Equal sign*/
-{
-	// DUE = Copy(s, Pos("=", s) + 1, length(s));
-	return s.substr(s.find("=") + 1, s.length());
-}
-
-std::string DWE(std::string s) /*Delete After Equal sign*/
-{
-	size_t ep = s.find("=");
-	if (ep != std::string::npos)
-		// DWE = Copy(s, 1, ep - 1);
-		return s.substr(0, ep);
-	else
-		return s;
-}
-
-std::string ExchangeCharInString(std::string const &Source, char const From, char const To)
-{
-	std::string replacement;
-	replacement.reserve(Source.size());
-	std::for_each(std::begin(Source), std::end(Source),
-	              [&](char const idx)
-	              {
-		              if (idx != From)
-		              {
-			              replacement += idx;
-		              }
-		              else
-		              {
-			              replacement += To;
-		              }
-	              });
-
-	return replacement;
-}
-
-std::vector<std::string> &Split(const std::string &s, char delim, std::vector<std::string> &elems)
+std::vector<std::string> Split(std::string_view s, char delim)
 { // dzieli tekst na wektor tekstow
-
-	std::stringstream ss(s);
-	std::string item;
-	while (std::getline(ss, item, delim))
-	{
-		elems.push_back(item);
-	}
-	return elems;
-}
-
-std::vector<std::string> Split(const std::string &s, char delim)
-{ // dzieli tekst na wektor tekstow
-	std::vector<std::string> elems;
-	Split(s, delim, elems);
-	return elems;
-}
-
-std::vector<std::string> Split(const std::string &s)
-{ // dzieli tekst na wektor tekstow po białych znakach
-	std::vector<std::string> elems;
-	std::stringstream ss(s);
-	std::string item;
-	while (ss >> item)
-	{
-		elems.push_back(item);
-	}
-	return elems;
+	std::vector<std::string> out;
+	for (const auto& part : s | std::ranges::views::split(delim))
+		out.emplace_back(part.begin(), part.end());
+	return out;
 }
 
 std::pair<std::string, int> split_string_and_number(std::string const &Key)
@@ -255,72 +176,33 @@ std::pair<std::string, int> split_string_and_number(std::string const &Key)
 	return {Key, 0};
 }
 
-std::string to_string(int Value)
-{
-	std::ostringstream o;
-	o << Value;
-	return o.str();
-};
-
-std::string to_string(unsigned int Value)
-{
-	std::ostringstream o;
-	o << Value;
-	return o.str();
-};
-
-std::string to_string(double Value)
-{
-	std::ostringstream o;
-	o << Value;
-	return o.str();
-};
-
 std::string to_string(int Value, int width)
 {
 	std::ostringstream o;
-	o.width(width);
-	o << Value;
-	return o.str();
+	o << std::setw(width) << Value;
+	return std::move(o).str();
 };
 
 std::string to_string(double Value, int precision)
 {
 	std::ostringstream o;
-	o << std::fixed << std::setprecision(precision);
-	o << Value;
-	return o.str();
+	o << std::fixed << std::setprecision(precision) << Value;
+	return std::move(o).str();
 };
 
 std::string to_string(double const Value, int const Precision, int const Width)
 {
-	std::ostringstream converter;
-	converter << std::setw(Width) << std::fixed << std::setprecision(Precision) << Value;
-	return converter.str();
+	std::ostringstream o;
+	o << std::setw(Width) << std::fixed << std::setprecision(Precision) << Value;
+	return std::move(o).str();
 };
 
 std::string to_hex_str(int const Value, int const Width)
 {
-	std::ostringstream converter;
-	converter << "0x" << std::uppercase << std::setfill('0') << std::setw(Width) << std::hex << Value;
-	return converter.str();
+	std::ostringstream o;
+	o << "0x" << std::uppercase << std::setfill('0') << std::setw(Width) << std::hex << Value;
+	return o.str();
 };
-
-bool string_ends_with(const std::string &string, const std::string &ending)
-{
-	if (string.length() < ending.length())
-		return false;
-
-	return string.compare(string.length() - ending.length(), ending.length(), ending) == 0;
-}
-
-bool string_starts_with(const std::string &string, const std::string &begin)
-{
-	if (string.length() < begin.length())
-		return false;
-
-	return string.compare(0, begin.length(), begin) == 0;
-}
 
 std::string const fractionlabels[] = {" ", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"};
 
@@ -330,7 +212,7 @@ std::string to_minutes_str(float const Minutes, bool const Leadingzero, int cons
 	float minutesintegral;
 	auto const minutesfractional{std::modf(Minutes, &minutesintegral)};
 	auto const width{Width - 1};
-	auto minutes = (std::string(width - 1, ' ') + (Leadingzero ? to_string(100 + minutesintegral).substr(1, 2) : to_string(minutesintegral, 0)));
+	auto minutes = (std::string(width - 1, ' ') + (Leadingzero ? std::to_string(100 + minutesintegral).substr(1, 2) : to_string(minutesintegral, 0)));
 	return (minutes.substr(minutes.size() - width, width) + fractionlabels[static_cast<int>(std::floor(minutesfractional * 10 + 0.1))]);
 }
 
@@ -499,61 +381,41 @@ bool erase_extension(std::string &Filename)
 
 void erase_leading_slashes(std::string &Filename)
 {
-
-	while (Filename[0] == '/')
-	{
-		Filename.erase(0, 1);
-	}
+	auto pos = Filename.find_first_not_of('/');
+	Filename.erase(0, pos);
 }
 
 // potentially replaces backward slashes in provided file path with unix-compatible forward slashes
 void replace_slashes(std::string &Filename)
 {
-
-	std::replace(std::begin(Filename), std::end(Filename), '\\', '/');
+	std::ranges::replace(Filename, '\\', '/');
 }
 
 // returns potential path part from provided file name
-std::string substr_path(std::string const &Filename)
+std::string_view substr_path(std::string const &Filename)
 {
-
-	return (Filename.rfind('/') != std::string::npos ? Filename.substr(0, Filename.rfind('/') + 1) : "");
+	if (auto pos = Filename.rfind('/'); pos != std::string::npos)
+		return Filename.substr(0, pos + 1);
+	return {};
 }
 
 // returns length of common prefix between two provided strings
-std::ptrdiff_t len_common_prefix(std::string const &Left, std::string const &Right)
+std::ptrdiff_t len_common_prefix(std::string_view a, std::string_view b)
 {
-
-	auto const *left{Left.data()};
-	auto const *right{Right.data()};
-	// compare up to the length of the shorter string
-	return (Right.size() <= Left.size() ? std::distance(right, std::mismatch(right, right + Right.size(), left).first) : std::distance(left, std::mismatch(left, left + Left.size(), right).first));
-}
-
-// returns true if provided string ends with another provided string
-bool ends_with(std::string_view String, std::string_view Suffix)
-{
-
-	return (String.size() >= Suffix.size()) && (0 == String.compare(String.size() - Suffix.size(), Suffix.size(), Suffix));
-}
-
-// returns true if provided string begins with another provided string
-bool starts_with(std::string_view const String, std::string_view Prefix)
-{
-
-	return (String.size() >= Prefix.size()) && (0 == String.compare(0, Prefix.size(), Prefix));
+	auto [it1, it2] = std::ranges::mismatch(a, b);
+	return std::distance(a.begin(), it1);
 }
 
 // returns true if provided string contains another provided string
 bool contains(std::string_view const String, std::string_view Substring)
 {
-
+	// To be replaced with string::contains in C++ 23
 	return (String.find(Substring) != std::string::npos);
 }
 
 bool contains(std::string_view const String, char Character)
 {
-
+	// To be replaced with string::contains in C++ 23
 	return (String.find(Character) != std::string::npos);
 }
 
@@ -597,14 +459,4 @@ std::string deserialize_random_set(cParser &Input, char const *Break)
 		// shouldn't ever get here but, eh
 		return "";
 	}
-}
-
-int count_trailing_zeros(uint32_t val)
-{
-	int r = 0;
-
-	for (uint32_t shift = 1; !(val & shift); shift <<= 1)
-		r++;
-
-	return r;
 }

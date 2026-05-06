@@ -999,8 +999,8 @@ basic_section::cell( glm::dvec3 const &Location, const glm::ivec2 &offset ) {
 
     return
         m_cells[
-              clamp( row,    0, ( EU07_SECTIONSIZE / EU07_CELLSIZE ) - 1 ) * ( EU07_SECTIONSIZE / EU07_CELLSIZE )
-            + clamp( column, 0, ( EU07_SECTIONSIZE / EU07_CELLSIZE ) - 1 ) ] ;
+              std::clamp( row,    0, ( EU07_SECTIONSIZE / EU07_CELLSIZE ) - 1 ) * ( EU07_SECTIONSIZE / EU07_CELLSIZE )
+            + std::clamp( column, 0, ( EU07_SECTIONSIZE / EU07_CELLSIZE ) - 1 ) ] ;
 }
 
 
@@ -1694,8 +1694,8 @@ basic_region::section( glm::dvec3 const &Location ) {
 
     auto &section =
         m_sections[
-              clamp( row,    0, EU07_REGIONSIDESECTIONCOUNT - 1 ) * EU07_REGIONSIDESECTIONCOUNT
-            + clamp( column, 0, EU07_REGIONSIDESECTIONCOUNT - 1 ) ] ;
+              std::clamp( row,    0, EU07_REGIONSIDESECTIONCOUNT - 1 ) * EU07_REGIONSIDESECTIONCOUNT
+            + std::clamp( column, 0, EU07_REGIONSIDESECTIONCOUNT - 1 ) ] ;
 
     if( section == nullptr ) {
         // there's no guarantee the section exists at this point, so check and if needed, create it

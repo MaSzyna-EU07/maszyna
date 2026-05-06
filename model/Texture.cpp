@@ -22,7 +22,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
 #include "scene/sn_utils.h"
-#include "utilities/utilities.h"
 #include "rendering/flip-s3tc.h"
 #include "stb/stb_image.h"
 //#include <png.h>
@@ -270,7 +269,7 @@ opengl_texture::load() {
                 WriteLog( "Warning: dimensions of texture \"" + name + "\" aren't powers of 2", logtype::texture );
             }
         }
-        if( ( quantize( data_width, 4 ) != data_width ) || ( quantize( data_height, 4 ) != data_height ) ) {
+        if( ( quantize( data_width, 4u ) != data_width ) || ( quantize( data_height, 4u ) != data_height ) ) {
             WriteLog( "Warning: dimensions of texture \"" + name + "\" aren't multiples of 4", logtype::texture );
         }
 
@@ -982,11 +981,11 @@ opengl_texture::create( bool const Static ) {
             if (Global.gfx_usegles)
             {
                 if( target == GL_TEXTURE_2D )
-                    glTexStorage2D(target, count_trailing_zeros(std::max(data_width, data_height)) + 1, data_format, data_width, data_height);
+					glTexStorage2D(target, std::countr_zero(static_cast<unsigned int>(std::max(data_width, data_height))) + 1, data_format, data_width, data_height);
                 else if( target == GL_TEXTURE_2D_MULTISAMPLE )
                     glTexStorage2DMultisample( target, samples, data_format, data_width, data_height, GL_FALSE );
                 else if( target == GL_TEXTURE_2D_ARRAY )
-                    glTexStorage3D( target, count_trailing_zeros( std::max( data_width, data_height ) ) + 1, data_format, data_width, data_height, layers );
+					glTexStorage3D(target, std::countr_zero(static_cast<unsigned int>(std::max(data_width, data_height))) + 1, data_format, data_width, data_height, layers);
                 else if( target == GL_TEXTURE_2D_MULTISAMPLE_ARRAY )
                     glTexStorage3DMultisample( target, samples, data_format, data_width, data_height, layers, GL_FALSE );
             }
@@ -1324,8 +1323,7 @@ texture_manager::create( std::string Filename, bool const Loadnow, GLint Formath
         erase_leading_slashes( Filename );
         Filename = ToLower( Filename );
         // temporary code for legacy assets -- textures with names beginning with # are to be sharpened
-        if( ( starts_with( Filename, "#" ) )
-         || ( contains( Filename, "/#" ) ) ) {
+        if( Filename.starts_with("#") || contains( Filename, "/#" ) ) {
             traits += '#';
         }
     }

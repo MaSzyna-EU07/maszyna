@@ -26,7 +26,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
 #include "rendering/renderer.h"
-#include "utilities/utilities.h"
 
 // 101206 Ra: trapezoidalne drogi i tory
 // 110720 Ra: rozprucie zwrotnicy i odcinki izolowane
@@ -248,20 +247,20 @@ TTrack * TTrack::NullCreate(int dir)
             p1 = Segment->FastGetPoint_0();
 			p2 = p1 - 450.0 * glm::normalize(Segment->GetDirection1());
             // bo prosty, kontrolne wyliczane przy zmiennej przechyłce
-            trk->Segment->Init(p1, p2, 5, -RadToDeg(r1), 70.0);
+			trk->Segment->Init(p1, p2, 5, -glm::degrees(r1), 70.0);
             ConnectPrevPrev(trk, 0);
             break;
         case 1:
             p1 = Segment->FastGetPoint_1();
             p2 = p1 - 450.0 * glm::normalize(Segment->GetDirection2());
             // bo prosty, kontrolne wyliczane przy zmiennej przechyłce
-            trk->Segment->Init(p1, p2, 5, RadToDeg(r2), 70.0);
+			trk->Segment->Init(p1, p2, 5, glm::degrees(r2), 70.0);
             ConnectNextPrev(trk, 0);
             break;
         case 3: // na razie nie możliwe
             p1 = SwitchExtension->Segments[1]->FastGetPoint_1(); // koniec toru drugiego zwrotnicy
 			p2 = p1 - 450.0 * glm::normalize(SwitchExtension->Segments[1]->GetDirection2()); // przedłużenie na wprost
-            trk->Segment->Init(p1, p2, 5, RadToDeg(r2), 70.0); // bo prosty, kontrolne wyliczane przy zmiennej przechyłce
+			trk->Segment->Init(p1, p2, 5, glm::degrees(r2), 70.0); // bo prosty, kontrolne wyliczane przy zmiennej przechyłce
             ConnectNextPrev(trk, 0);
             // trk->ConnectPrevNext(trk,dir);
             SetConnections(1); // skopiowanie połączeń
@@ -290,10 +289,10 @@ TTrack * TTrack::NullCreate(int dir)
             cv1 = -20.0 * glm::normalize(Segment->GetDirection1()); // pierwszy wektor kontrolny
             p2 = p1 + cv1 + cv1; // 40m
             // bo prosty, kontrolne wyliczane przy zmiennej przechyłce
-			trk->Segment->Init(p1, p1 + cv1, p2 + glm::dvec3(-cv1.z, cv1.y, cv1.x), p2, 2, -RadToDeg(r1), 0.0);
+			trk->Segment->Init(p1, p1 + cv1, p2 + glm::dvec3(-cv1.z, cv1.y, cv1.x), p2, 2, -glm::degrees(r1), 0.0);
             ConnectPrevPrev(trk, 0);
             // bo prosty, kontrolne wyliczane przy zmiennej przechyłce
-			trk2->Segment->Init(p1, p1 + cv1, p2 + glm::dvec3(cv1.z, cv1.y, -cv1.x), p2, 2, -RadToDeg(r1), 0.0);
+			trk2->Segment->Init(p1, p1 + cv1, p2 + glm::dvec3(cv1.z, cv1.y, -cv1.x), p2, 2, -glm::degrees(r1), 0.0);
             trk2->iPrevDirection = 0; // zwrotnie do tego samego odcinka
             break;
         case 1:
@@ -301,10 +300,10 @@ TTrack * TTrack::NullCreate(int dir)
             cv1 = -20.0 * glm::normalize(Segment->GetDirection2()); // pierwszy wektor kontrolny
             p2 = p1 + cv1 + cv1;
             // bo prosty, kontrolne wyliczane przy zmiennej przechyłce
-			trk->Segment->Init(p1, p1 + cv1, p2 + glm::dvec3(-cv1.z, cv1.y, cv1.x), p2, 2, RadToDeg(r2), 0.0);
+			trk->Segment->Init(p1, p1 + cv1, p2 + glm::dvec3(-cv1.z, cv1.y, cv1.x), p2, 2, glm::degrees(r2), 0.0);
             ConnectNextPrev(trk, 0);
             // bo prosty, kontrolne wyliczane przy zmiennej przechyłce
-			trk2->Segment->Init(p1, p1 + cv1, p2 + glm::dvec3(cv1.z, cv1.y, -cv1.x), p2, 2, RadToDeg(r2), 0.0);
+			trk2->Segment->Init(p1, p1 + cv1, p2 + glm::dvec3(cv1.z, cv1.y, -cv1.x), p2, 2, glm::degrees(r2), 0.0);
             trk2->iPrevDirection = 1; // zwrotnie do tego samego odcinka
             break;
         }
@@ -569,7 +568,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         if( fRadius != 0 ) {
             // gdy podany promień
             segsize =
-                clamp(
+                std::clamp(
                     std::abs( fRadius ) * ( 0.02 / Global.SplineFidelity ),
                     2.0 / Global.SplineFidelity,
                     10.0 / Global.SplineFidelity );
@@ -583,7 +582,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             else {
                 // HACK: divide roughly in 10 segments. 
                 segsize =
-                    clamp(
+                    std::clamp(
                         glm::length( p1 - p2 ) * 0.1,
                         2.0 / Global.SplineFidelity,
                         10.0 / Global.SplineFidelity );
@@ -667,7 +666,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         if( fRadiusTable[ 0 ] != 0 ) {
             // gdy podany promień
             segsize =
-                clamp(
+                std::clamp(
                     std::abs( fRadiusTable[ 0 ] ) * ( 0.02 / Global.SplineFidelity ),
                     2.0 / Global.SplineFidelity,
                     10.0 / Global.SplineFidelity );
@@ -681,7 +680,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             else {
                 // HACK: divide roughly in 10 segments. 
                 segsize =
-                    clamp(
+                    std::clamp(
                         glm::length( p1 - p2 ) * 0.1,
                         2.0 / Global.SplineFidelity,
                         10.0 / Global.SplineFidelity );
@@ -732,7 +731,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         if( fRadiusTable[ 1 ] != 0 ) {
             // gdy podany promień
             segsize =
-                clamp(
+                std::clamp(
                     std::abs( fRadiusTable[ 1 ] ) * ( 0.02 / Global.SplineFidelity ),
                     2.0 / Global.SplineFidelity,
                     10.0 / Global.SplineFidelity );
@@ -746,7 +745,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             else {
                 // HACK: divide roughly in 10 segments. 
                 segsize =
-                    clamp(
+                    std::clamp(
                         glm::length( p3 - p4 ) * 0.1,
                         2.0 / Global.SplineFidelity,
                         10.0 / Global.SplineFidelity );
@@ -2531,7 +2530,7 @@ float TTrack::Friction() const {
         return fFriction;
     }
     else {
-        return clamp( fFriction * m_friction.second->Value1() + m_friction.second->Value2(), 0.0, 1.0 );
+        return std::clamp( fFriction * m_friction.second->Value1() + m_friction.second->Value2(), 0.0, 1.0 );
     }
 }
 

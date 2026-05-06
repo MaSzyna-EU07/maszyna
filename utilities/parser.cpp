@@ -9,7 +9,6 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "utilities/parser.h"
-#include "utilities/utilities.h"
 #include "utilities/Logs.h"
 
 #include "scene/scenenodegroups.h"

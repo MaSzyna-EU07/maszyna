@@ -59,8 +59,8 @@ void opengl_skydome::update() {
             ::glBindBuffer( GL_ARRAY_BUFFER, m_coloursbuffer );
             auto &colors{ skydome.colors() };
             /*
-            float twilightfactor = clamp( -simulation::Environment.sun().getAngle(), 0.0f, 18.0f ) / 18.0f;
-            auto gamma = interpolate( glm::vec3( 0.45f ), glm::vec3( 1.0f ), twilightfactor );
+            float twilightfactor = std::clamp( -simulation::Environment.sun().getAngle(), 0.0f, 18.0f ) / 18.0f;
+            auto gamma = std::lerp( glm::vec3( 0.45f ), glm::vec3( 1.0f ), twilightfactor );
             for( auto & color : colors ) {
                 color = glm::pow( color, gamma );
             }

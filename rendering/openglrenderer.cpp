@@ -22,7 +22,6 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Traction.h"
 #include "application/application.h"
 #include "utilities/Logs.h"
-#include "utilities/utilities.h"
 #include "rendering/openglgeometrybank.h"
 #include "rendering/openglcolor.h"
 #include "rendering/screenshot.h"
@@ -821,7 +820,7 @@ bool opengl_renderer::Render_lowpoly( TDynamicObject *Dynamic, float const Squar
                     Dynamic->fShade :
                     1.0 ) ) ) ) };
         m_sunlight.apply_intensity(
-            clamp( (
+            std::clamp( (
                 Dynamic->fShade > 0.f ?
                     Dynamic->fShade :
                     1.f )
@@ -923,7 +922,7 @@ opengl_renderer::setup_pass( renderpass_config &Config, rendermode const Mode, f
     switch( Mode ) {
         case rendermode::color:        { Config.draw_range = Global.BaseDrawRange * Global.fDistanceFactor; break; }
         case rendermode::shadows:      { Config.draw_range = Global.shadowtune.range; break; }
-        case rendermode::cabshadows:   { Config.draw_range = ( Global.RenderCabShadowsRange > 0 ? clamp( Global.RenderCabShadowsRange, 5, 100 ) : simulation::Train->Occupied()->Dim.L ); break; }
+        case rendermode::cabshadows:   { Config.draw_range = ( Global.RenderCabShadowsRange > 0 ? std::clamp( Global.RenderCabShadowsRange, 5, 100 ) : simulation::Train->Occupied()->Dim.L ); break; }
         case rendermode::reflections:  { Config.draw_range = Global.BaseDrawRange; break; }
         case rendermode::pickcontrols: { Config.draw_range = 50.f; break; }
         case rendermode::pickscenery:  { Config.draw_range = Global.BaseDrawRange * 0.5f; break; }
@@ -1507,10 +1506,10 @@ bool
 opengl_renderer::Render( world_environment *Environment ) {
 
     // calculate shadow tone, based on positions of celestial bodies
-    m_shadowcolor = interpolate(
+	m_shadowcolor = glm::mix(
         glm::vec4{ colors::shadow },
         glm::vec4{ colors::white },
-        clamp( -Environment->m_sun.getAngle(), 0.f, 6.f ) / 6.f );
+        std::clamp( -Environment->m_sun.getAngle(), 0.f, 6.f ) / 6.f );
     if( ( Environment->m_sun.getAngle() < -18.f )
      && ( Environment->m_moon.getAngle() > 0.f ) ) {
         // turn on moon shadows after nautical twilight, if the moon is actually up
@@ -1568,9 +1567,9 @@ opengl_renderer::Render( world_environment *Environment ) {
 
     auto const &modelview = OpenGLMatrices.data( GL_MODELVIEW );
 
-    auto const fogfactor { clamp( Global.fFogEnd / 2000.f, 0.f, 1.f ) }; // closer/denser fog reduces opacity of the celestial bodies
-    float const duskfactor = 1.0f - clamp( std::abs( Environment->m_sun.getAngle() ), 0.0f, 12.0f ) / 12.0f;
-    glm::vec3 suncolor = interpolate(
+    auto const fogfactor { std::clamp( Global.fFogEnd / 2000.f, 0.f, 1.f ) }; // closer/denser fog reduces opacity of the celestial bodies
+    float const duskfactor = 1.0f - std::clamp( std::abs( Environment->m_sun.getAngle() ), 0.0f, 12.0f ) / 12.0f;
+	glm::vec3 suncolor = glm::mix(
         glm::vec3( 255.0f / 255.0f, 242.0f / 255.0f, 231.0f / 255.0f ),
         glm::vec3( 235.0f / 255.0f, 140.0f / 255.0f, 36.0f / 255.0f ),
         duskfactor );
@@ -1578,7 +1577,7 @@ opengl_renderer::Render( world_environment *Environment ) {
     if (!m_isATI)
     {
         Bind_Texture( m_suntexture );
-        ::glColor4f( suncolor.x, suncolor.y, suncolor.z, clamp( 1.5f - Global.Overcast, 0.f, 1.f ) * fogfactor );
+        ::glColor4f( suncolor.x, suncolor.y, suncolor.z, std::clamp( 1.5f - Global.Overcast, 0.f, 1.f ) * fogfactor );
         auto const sunvector = Environment->m_sun.getDirection();
         auto const sunposition = modelview * glm::vec4( sunvector.x, sunvector.y, sunvector.z, 1.0f );
 
@@ -1586,10 +1585,10 @@ opengl_renderer::Render( world_environment *Environment ) {
         ::glLoadIdentity(); // macierz jedynkowa
         ::glTranslatef( sunposition.x, sunposition.y, sunposition.z ); // początek układu zostaje bez zmian
 
-        float const size = interpolate( // TODO: expose distance/scale factor from the moon object
+        float const size = std::lerp( // TODO: expose distance/scale factor from the moon object
             0.0325f,
             0.0275f,
-            clamp( Environment->m_sun.getAngle(), 0.f, 90.f ) / 90.f );
+            std::clamp( Environment->m_sun.getAngle(), 0.f, 90.f ) / 90.f );
         ::glBegin( GL_TRIANGLE_STRIP );
         ::glMultiTexCoord2f( m_diffusetextureunit, 1.f, 1.f ); ::glVertex3f( -size,  size, 0.f );
         ::glMultiTexCoord2f( m_diffusetextureunit, 1.f, 0.f ); ::glVertex3f( -size, -size, 0.f );
@@ -1619,10 +1618,10 @@ opengl_renderer::Render( world_environment *Environment ) {
         ::glLoadIdentity(); // macierz jedynkowa
         ::glTranslatef( moonposition.x, moonposition.y, moonposition.z );
 
-        float const size = interpolate( // TODO: expose distance/scale factor from the moon object
+        float const size = std::lerp( // TODO: expose distance/scale factor from the moon object
             0.0160f,
             0.0135f,
-            clamp( Environment->m_moon.getAngle(), 0.f, 90.f ) / 90.f );
+            std::clamp( Environment->m_moon.getAngle(), 0.f, 90.f ) / 90.f );
         // choose the moon appearance variant, based on current moon phase
         // NOTE: implementation specific, 8 variants are laid out in 3x3 arrangement
         // from new moon onwards, top left to right bottom (last spot is left for future use, if any)
@@ -1662,8 +1661,8 @@ opengl_renderer::Render( world_environment *Environment ) {
         ::glLightModelfv(
             GL_LIGHT_MODEL_AMBIENT,
             glm::value_ptr(
-                interpolate( Environment->m_skydome.GetAverageColor(), suncolor, duskfactor * 0.25f )
-                * interpolate( 1.f, 0.35f, Global.Overcast / 2.f ) // overcast darkens the clouds
+                glm::mix( Environment->m_skydome.GetAverageColor(), suncolor, duskfactor * 0.25f )
+                * std::lerp( 1.f, 0.35f, Global.Overcast / 2.f ) // overcast darkens the clouds
                 * 0.5f // arbitrary adjustment factor
             ) );
         // render
@@ -2609,7 +2608,7 @@ opengl_renderer::Render_cab( TDynamicObject const *Dynamic, float const Lightlev
                         GL_LIGHT_MODEL_AMBIENT,
                         glm::value_ptr(
                             glm::vec3( m_baseambient )
-                            + ( Dynamic->InteriorLight * Lightlevel ) * static_cast<float>( clamp( 1.25 - luminance, 0.0, 1.0 ) ) ) );
+                            + ( Dynamic->InteriorLight * Lightlevel ) * static_cast<float>( std::clamp( 1.25 - luminance, 0.0, 1.0 ) ) ) );
                 }
                 // render
                 if( true == Alpha ) {
@@ -2765,7 +2764,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                         // textures...
                         Bind_Material( material );
                         // ...colors and opacity...
-                        auto const opacity { clamp( Material( material )->get_or_guess_opacity(), 0.f, 1.f ) };
+                        auto const opacity { std::clamp( Material( material )->get_or_guess_opacity(), 0.f, 1.f ) };
                         if( Submodel->fVisible < 1.f ) {
                             // setup
                             ::glAlphaFunc( GL_GREATER, 0.f );
@@ -2911,7 +2910,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                     auto const &modelview = OpenGLMatrices.data( GL_MODELVIEW );
                     auto const lightcenter =
                         modelview
-                        * interpolate(
+                        * glm::mix(
                             glm::vec4( 0.f, 0.f, -0.05f, 1.f ),
                             glm::vec4( 0.f, 0.f, -0.25f, 1.f ),
                             static_cast<float>( TSubModel::fSquareDist / Submodel->fSquareMaxDist ) ); // pozycja punktu świecącego względem kamery
@@ -2921,7 +2920,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                         // kąt większy niż maksymalny stożek swiatła
                         float lightlevel = 1.f; // TODO, TBD: parameter to control light strength
                         // view angle attenuation
-                        float const anglefactor = clamp(
+                        float const anglefactor = std::clamp(
                             ( Submodel->fCosViewAngle - Submodel->fCosFalloffAngle ) / ( Submodel->fCosHotspotAngle - Submodel->fCosFalloffAngle ),
                             0.f, 1.f );
                         lightlevel *= anglefactor;
@@ -2933,8 +2932,8 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                         // additionally reduce light strength for farther sources in rain or snow
                         if( Global.Overcast > 0.75f ) {
                             float const precipitationfactor{
-                                interpolate(
-                                    interpolate( 1.f, 0.25f, clamp( Global.Overcast * 0.75f - 0.5f, 0.f, 1.f ) ),
+                                std::lerp(
+                                    std::lerp( 1.f, 0.25f, std::clamp( Global.Overcast * 0.75f - 0.5f, 0.f, 1.f ) ),
                                     1.f,
                                 distancefactor ) };
                             lightlevel *= precipitationfactor;
@@ -2968,9 +2967,9 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                             if( Global.Overcast > 1.f ) {
                                 // fake fog halo
                                 float const fogfactor {
-                                    interpolate(
+                                    std::lerp(
                                         2.f, 1.f,
-                                        clamp( Global.fFogEnd / 2000, 0.f, 1.f ) )
+                                        std::clamp( Global.fFogEnd / 2000, 0.f, 1.f ) )
                                     * std::max( 1.f, Global.Overcast ) };
 
                                 ::glPointSize( pointsize * fogfactor );
@@ -3343,10 +3342,10 @@ opengl_renderer::Render_precipitation() {
 //    ::glColor4fv( glm::value_ptr( glm::vec4( glm::min( glm::vec3( Global.fLuminance ), glm::vec3( 1 ) ), 1 ) ) );
     ::glColor4fv(
         glm::value_ptr(
-            interpolate(
+            glm::mix(
                 0.5f * ( Global.DayLight.diffuse + Global.DayLight.ambient ),
                 colors::white,
-                0.5f * clamp<float>( Global.fLuminance, 0.f, 1.f ) ) ) );
+                0.5f * std::clamp( (float)Global.fLuminance, 0.f, 1.f ) ) ) );
     ::glPushMatrix();
     // tilt the precipitation cone against the camera movement vector for crude motion blur
     // include current wind vector while at it
@@ -3587,14 +3586,14 @@ opengl_renderer::Render_Alpha( TTraction *Traction ) {
             0.5f * Traction->radius() + 1.f,
             distance - ( 0.5f * Traction->radius() ) ) };
     ::glLineWidth(
-        clamp(
+        std::clamp(
             0.5f * linealpha + Traction->WireThickness * Traction->radius() / 1000.f,
             1.f, 1.75f ) );
     // McZapkie-261102: kolor zalezy od materialu i zasniedzenia
     ::glColor4fv(
         glm::value_ptr(
             glm::vec4{
-                Traction->wire_color() /* * ( DebugModeFlag ? 1.f : clamp( m_sunandviewangle, 0.25f, 1.f ) ) */,
+                Traction->wire_color() /* * ( DebugModeFlag ? 1.f : std::clamp( m_sunandviewangle, 0.25f, 1.f ) ) */,
                 linealpha } ) );
     // render
     m_geometry.draw( Traction->m_geometry );
@@ -3637,7 +3636,7 @@ opengl_renderer::Render_Alpha( scene::lines_node const &Lines ) {
                 distance - ( 0.5f * data.area.radius ) ) :
             1.f ); // negative width means the lines are always opague
     ::glLineWidth(
-        clamp(
+        std::clamp(
             0.5f * linealpha + data.line_width * data.area.radius / 1000.f,
             1.f, 8.f ) );
     ::glColor4fv(
@@ -3839,7 +3838,7 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
                         // textures...
                         Bind_Material( material );
                         // ...colors and opacity...
-                        auto const opacity { clamp( Material( material )->get_or_guess_opacity(), 0.f, 1.f ) };
+                        auto const opacity { std::clamp( Material( material )->get_or_guess_opacity(), 0.f, 1.f ) };
                         if( Submodel->fVisible < 1.f ) {
                             ::glColor4f(
                                 Submodel->f4Diffuse.r,
@@ -3935,7 +3934,7 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
                 auto const &modelview = OpenGLMatrices.data( GL_MODELVIEW );
                 auto const lightcenter =
                     modelview
-                    * interpolate(
+                    * glm::mix(
                         glm::vec4( 0.f, 0.f, -0.05f, 1.f ),
                         glm::vec4( 0.f, 0.f, -0.10f, 1.f ),
                         static_cast<float>( TSubModel::fSquareDist / Submodel->fSquareMaxDist ) ); // pozycja punktu świecącego względem kamery
@@ -3944,13 +3943,13 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
                 if( Submodel->fCosViewAngle > Submodel->fCosFalloffAngle ) {
                     // only bother if the viewer is inside the visibility cone
                     // luminosity at night is at level of ~0.1, so the overall resulting transparency in clear conditions is ~0.5 at full 'brightness'
-                    auto glarelevel { clamp(
+                    auto glarelevel { std::clamp(
                         std::max<float>(
                             0.6f - Global.fLuminance, // reduce the glare in bright daylight
                             Global.Overcast - 1.f ), // ensure some glare in rainy/foggy conditions
                         0.f, 1.f ) };
                     // view angle attenuation
-                    float const anglefactor { clamp(
+                    float const anglefactor { std::clamp(
                         ( Submodel->fCosViewAngle - Submodel->fCosFalloffAngle ) / ( Submodel->fCosHotspotAngle - Submodel->fCosFalloffAngle ),
                         0.f, 1.f ) };
                     glarelevel *= anglefactor;
@@ -4146,8 +4145,8 @@ glm::dvec3
 opengl_renderer::Update_Mouse_Position() {
 
     glm::ivec2 mousepos = Global.cursor_pos * Global.fb_size / Global.window_size;
-    mousepos.x = clamp<int>( mousepos.x, 0, Global.fb_size.x - 1 );
-    mousepos.y = clamp<int>( Global.fb_size.y - mousepos.y, 0, Global.fb_size.y - 1 ) ;
+    mousepos.x = std::clamp( mousepos.x, 0, Global.fb_size.x - 1 );
+	mousepos.y = std::clamp(Global.fb_size.y - mousepos.y, 0, Global.fb_size.y - 1);
     GLfloat pointdepth;
     ::glReadPixels( mousepos.x, mousepos.y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &pointdepth );
 

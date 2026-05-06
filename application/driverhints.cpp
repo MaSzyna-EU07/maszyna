@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/Driver.h"
 #include "utilities/Globals.h"
+#include "utilities/utilities.h"
 
 void
 TController::hint( driver_hint const Value, hintpredicate const Predicate, float const Predicateparameter ) {

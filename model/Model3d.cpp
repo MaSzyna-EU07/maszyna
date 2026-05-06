@@ -17,7 +17,6 @@ Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
-#include "utilities/utilities.h"
 #include "rendering/renderer.h"
 #include "utilities/Timer.h"
 #include "simulation/simulation.h"
@@ -382,11 +381,11 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 		// convert conve parameters if specified in degrees
 		if (fCosFalloffAngle > 1.0)
 		{
-			fCosFalloffAngle = std::cos(DegToRad(0.5f * fCosFalloffAngle));
+			fCosFalloffAngle = std::cos(glm::radians(0.5f * fCosFalloffAngle));
 		}
 		if (fCosHotspotAngle > 1.0)
 		{
-			fCosHotspotAngle = std::cos(DegToRad(0.5f * fCosHotspotAngle));
+			fCosHotspotAngle = std::cos(glm::radians(0.5f * fCosHotspotAngle));
 		}
 		m_geometry.vertex_count = 1;
 		iFlags |= 0x4030; // drawn both in solid (light point) and transparent (light glare) phases
@@ -2215,13 +2214,13 @@ void TSubModel::BinInit(TSubModel *s, float4x4 *m, std::vector<std::string> *t, 
 		if (!pName.empty())
 		{ // jeśli dany submodel jest zgaszonym światłem, to
 		  // domyślnie go ukrywamy
-			if (starts_with(pName, "Light_On"))
+			if (pName.starts_with("Light_On"))
 			{ // jeśli jest światłem numerowanym
 				iVisible = 0; // to domyślnie wyłączyć, żeby się nie nakładało z obiektem "Light_Off"
 			}
 			else if (dynamic)
 			{ // inaczej wyłączało smugę w latarniach
-				if (ends_with(pName, "_on"))
+				if (pName.ends_with("_on"))
 				{
 					// jeśli jest kontrolką w stanie zapalonym to domyślnie wyłączyć,
 					// żeby się nie nakładało z obiektem "_off"
@@ -2314,14 +2313,14 @@ void TSubModel::BinInit(TSubModel *s, float4x4 *m, std::vector<std::string> *t, 
 	// intercept and fix hotspot values if specified in degrees and not directly
 	if (fCosFalloffAngle > 1.0f)
 	{
-		fCosFalloffAngle = std::cos(DegToRad(0.5f * fCosFalloffAngle));
+		fCosFalloffAngle = std::cos(glm::radians(0.5f * fCosFalloffAngle));
 	}
 	if (fCosHotspotAngle > 1.0f)
 	{
-		fCosHotspotAngle = std::cos(DegToRad(0.5f * fCosHotspotAngle));
+		fCosHotspotAngle = std::cos(glm::radians(0.5f * fCosHotspotAngle));
 	}
 	// cap specular values for legacy models
-	f4Specular = glm::vec4{clamp(f4Specular.r, 0.0f, 1.0f), clamp(f4Specular.g, 0.0f, 1.0f), clamp(f4Specular.b, 0.0f, 1.0f), clamp(f4Specular.a, 0.0f, 1.0f)};
+	f4Specular = glm::vec4{std::clamp(f4Specular.r, 0.0f, 1.0f), std::clamp(f4Specular.g, 0.0f, 1.0f), std::clamp(f4Specular.b, 0.0f, 1.0f), std::clamp(f4Specular.a, 0.0f, 1.0f)};
 
 	iFlags &= ~0x0200; // wczytano z pliku binarnego (nie jest właścicielem tablic)
 

@@ -305,7 +305,7 @@ size_t NvTextureManager::FetchTexture(std::string path, int format_hint,
     path = ToLower(path);
     // temporary code for legacy assets -- textures with names beginning with #
     // are to be sharpened
-    if ((starts_with(path, "#")) || (contains(path, "/#"))) {
+    if (path.starts_with("#") || contains(path, "/#")) {
       traits += '#';
     }
   }
@@ -415,7 +415,7 @@ bool NvTexture::CreateRhiTexture() {
   backend->GetDevice()->executeCommandList(command_list,
                                            nvrhi::CommandQueue::Graphics);
   if (m_sz_texture->get_type() == "make:") {
-    auto const components{Split(std::string(m_sz_texture->get_name()), '?')};
+    auto const components{Split(m_sz_texture->get_name(), '?')};
 
     auto dictionary = std::make_shared<dictionary_source>(components.back());
 

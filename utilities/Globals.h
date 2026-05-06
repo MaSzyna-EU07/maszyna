@@ -52,7 +52,7 @@ struct global_settings {
     basic_light DayLight;
     float SunAngle{ 0.f }; // angle of the sun relative to horizon
 	int trainThreads{0};
-    double fLuminance{ 1.0 }; // jasność światła do automatycznego zapalania
+    double fLuminance{ 1.0 }; // jasność światła do automatycznego zapalania // TODO: Why double?
     double fTimeAngleDeg{ 0.0 }; // godzina w postaci kąta
     float fClockAngleDeg[ 6 ]; // kąty obrotu cylindrów dla zegara cyfrowego
     std::string LastGLError;

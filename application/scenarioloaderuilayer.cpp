@@ -88,7 +88,7 @@ std::vector<std::string> scenarioloader_ui::get_random_trivia()
 	json triviaData = json::parse(fileContent);
 
 	// select random
-	int i = RandomInt(0, static_cast<int>(triviaData.size()) - 1);
+	int i = Random(0, static_cast<int>(triviaData.size()) - 1);
 	std::string triviaStr = triviaData[i]["text"];
 	std::string background = triviaData[i]["background"];
 	if (triviaData[i].contains("scenery"))
@@ -308,7 +308,7 @@ void scenarioloader_ui::generate_gradient_tex()
 			image_data[(y * image_width + x) * 4] = 0;
 			image_data[(y * image_width + x) * 4 + 1] = 0;
 			image_data[(y * image_width + x) * 4 + 2] = 0;
-			image_data[(y * image_width + x) * 4 + 3] = clamp(static_cast<int>(pow(y / 255.f, 0.7) * 255), 0, 255);
+			image_data[(y * image_width + x) * 4 + 3] = std::clamp(static_cast<int>(pow(y / 255.f, 0.7) * 255), 0, 255);
 		}
 
 	// Create a OpenGL texture identifier

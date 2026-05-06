@@ -27,7 +27,6 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/DynObj.h"
 #include "model/Model3d.h"
 #include "rendering/renderer.h"
-#include "utilities/utilities.h"
 #include "utilities/Logs.h"
 #include "widgets/vehicleparams.h"
 
@@ -422,11 +421,11 @@ timetable_panel::update() {
                     .substr( 0, 34 - tableline->StationWare.size() ) };
                 auto const arrival { (
                     tableline->Ah >= 0 ?
-                        to_string( int( 100 + tableline->Ah ) ).substr( 1, 2 ) + ":" + to_minutes_str( tableline->Am, true, 3 ) :
+                        std::to_string( int( 100 + tableline->Ah ) ).substr( 1, 2 ) + ":" + to_minutes_str( tableline->Am, true, 3 ) :
                         "  │   " ) };
                 auto const departure { (
                     tableline->Dh >= 0 ?
-                        to_string( int( 100 + tableline->Dh ) ).substr( 1, 2 ) + ":" + to_minutes_str( tableline->Dm, true, 3 ) :
+                        std::to_string( int( 100 + tableline->Dh ) ).substr( 1, 2 ) + ":" + to_minutes_str( tableline->Dm, true, 3 ) :
                         "  │   " ) };
                 auto const candepart { (
                        ( table.StationStart < table.StationIndex )
@@ -663,7 +662,7 @@ debug_panel::render_section_scenario() {
             command_relay relay;
             relay.post(
                 user_command::setweather,
-                clamp( std::exp( fogrange ), 10.0f, 50000.0f ),
+                std::clamp( std::exp( fogrange ), 10.0f, 50000.0f ),
                 Global.Overcast,
                 GLFW_PRESS, 0 );
         }
@@ -677,7 +676,7 @@ debug_panel::render_section_scenario() {
 			command_relay relay;
             relay.post(
                 user_command::settemperature, 
-                clamp(Airtemperature, -35.0f, 40.0f),
+                std::clamp(Airtemperature, -35.0f, 40.0f),
 			           Global.Overcast,
                 GLFW_PRESS, 0 );
 		}
@@ -690,7 +689,7 @@ debug_panel::render_section_scenario() {
             relay.post(
                 user_command::setweather,
                 Global.fFogEnd,
-                clamp( Global.Overcast, 0.0f, 2.0f ),
+                std::clamp( Global.Overcast, 0.0f, 2.0f ),
                 GLFW_PRESS, 0 );
         }
     }
@@ -701,7 +700,7 @@ debug_panel::render_section_scenario() {
             command_relay relay;
             relay.post(
                 user_command::setdatetime,
-                clamp( Global.fMoveLight, 0.0f, 365.0f ),
+                std::clamp( Global.fMoveLight, 0.0f, 365.0f ),
                 simulation::Time.data().wHour * 60 + simulation::Time.data().wMinute,
                 GLFW_PRESS, 0 );
         }
@@ -722,15 +721,15 @@ debug_panel::render_section_scenario() {
             ImGui::PopStyleColor();
             auto time = simulation::Time.data().wHour * 60 + simulation::Time.data().wMinute;
             auto const timestring {
-                std::string( to_string( int( 100 + simulation::Time.data().wHour ) ).substr( 1, 2 )
+                std::string( std::to_string( int( 100 + simulation::Time.data().wHour ) ).substr( 1, 2 )
                     + ":"
-                    + std::string( to_string( int( 100 + simulation::Time.data().wMinute ) ).substr( 1, 2 ) ) ) };
+                    + std::string( std::to_string( int( 100 + simulation::Time.data().wMinute ) ).substr( 1, 2 ) ) ) };
             if( ImGui::SliderInt( ( timestring + " (" + Global.Period + ")###simulationtime" ).c_str(), &time, 0, 1439, "Time of day" ) ) {
                 command_relay relay;
                 relay.post(
                     user_command::setdatetime,
                     Global.fMoveLight,
-                    clamp( time, 0, 1439 ),
+                    std::clamp( time, 0, 1439 ),
                     GLFW_PRESS, 0 );
             }
         }
@@ -747,7 +746,7 @@ debug_panel::render_section_scenario() {
 			auto drawrange = std::log(Global.BaseDrawRange);
 			if (ImGui::SliderFloat(
 				(to_string(std::exp(drawrange), 0, 5) + " m###drawrange").c_str(), &drawrange, std::log(100.0f), std::log(50000.0f), "Base drawing range")) {
-				Global.BaseDrawRange = clamp(std::exp(drawrange), 100.0f, 50000.0f);
+				Global.BaseDrawRange = std::clamp(std::exp(drawrange), 100.0f, 50000.0f);
 			}
 		}
     }
@@ -1211,8 +1210,8 @@ debug_panel::update_section_ai( std::vector<text_line> &Output ) {
         + ", corrected: " + to_string( mechanik.AccDesired * mechanik.BrakeAccFactor(), 2 )
         + "\n current: " + to_string( mechanik.AbsAccS + 0.001f, 2 )
         + ", slope: " + to_string( mechanik.fAccGravity + 0.001f, 2 ) + " (" + ( mechanik.fAccGravity > 0.01 ? "\\" : ( mechanik.fAccGravity < -0.01 ? "/" : "-" ) ) + ")"
-		+ "\n desired diesel percentage: " + to_string(mechanik.DizelPercentage)
-	    + "/" + to_string(mechanik.DizelPercentage_Speed)
+		+ "\n desired diesel percentage: " + std::to_string(mechanik.DizelPercentage)
+	    + "/" + std::to_string(mechanik.DizelPercentage_Speed)
 		+ "/" + to_string(100.4*mechanik.mvControlling->eimic_real, 0);
 
 	Output.emplace_back( textline, Global.UITextColor );
@@ -1223,7 +1222,7 @@ debug_panel::update_section_ai( std::vector<text_line> &Output ) {
         + "\n activation threshold: " + to_string( mechanik.fAccThreshold, 2 )
         + ", delays: " + to_string( mechanik.fBrake_a0[ 0 ], 2 ) + " + " + to_string( mechanik.fBrake_a1[ 0 ], 2 )
         + "\n virtual brake position: " + to_string( mechanik.BrakeCtrlPosition, 2 )
-        + "\n test stage: " + to_string( mechanik.DynamicBrakeTest )
+        + "\n test stage: " + std::to_string( mechanik.DynamicBrakeTest )
         + ", applied at: " + to_string( mechanik.DBT_VelocityBrake, 0 )
         + ", release at: " + to_string( mechanik.DBT_VelocityRelease, 0 )
         + ", done at: " + to_string( mechanik.DBT_VelocityFinish, 0 );
@@ -1256,7 +1255,7 @@ debug_panel::update_section_scantable( std::vector<text_line> &Output ) {
 
 	auto const &mechanik{ *m_input.mechanik };
 
-	std::size_t i = 0; std::size_t const speedtablesize = clamp( static_cast<int>( mechanik.TableSize() ) - 1, 0, 30 );
+	std::size_t i = 0; std::size_t const speedtablesize = std::clamp( static_cast<int>( mechanik.TableSize() ) - 1, 0, 30 );
 	do {
 		auto const scanline = mechanik.TableText( i );
 		if( scanline.empty() ) { break; }
@@ -1394,7 +1393,7 @@ debug_panel::update_section_powergrid( std::vector<text_line> &Output ) {
             + " " + to_string( powerstation->FuseTimer, 1, 8 )
             + ( powerstation->FuseCounter == 0 ?
                 "" :
-                " (x" + to_string( powerstation->FuseCounter ) + ")" );
+                " (x" + std::to_string( powerstation->FuseCounter ) + ")" );
 
 		Output.emplace_back(
 		    textline,
@@ -1446,7 +1445,7 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) {
                 + ", FPS: " + std::to_string( static_cast<int>(std::round(GfxRenderer->Framerate())) )
                 + ( Global.VSync ? " (vsync on)" : "" );
             if( Global.iSlowMotion ) {
-                textline += " (slowmotion " + to_string( Global.iSlowMotion ) + ")";
+                textline += " (slowmotion " + std::to_string( Global.iSlowMotion ) + ")";
             }
 
             Output.emplace_back( textline, Global.UITextColor );
@@ -1549,8 +1548,8 @@ debug_panel::render_section_settings() {
     ImGui::TextUnformatted( "Graphics" );
     ImGui::PopStyleColor();
     // reflection fidelity
-    ImGui::SliderInt( ( to_string( Global.reflectiontune.fidelity ) + "###reflectionfidelity" ).c_str(), &Global.reflectiontune.fidelity, 0, 2, "Reflection fidelity" );
-    ImGui::SliderInt( ( to_string( Global.gfx_shadow_rank_cutoff ) + "###shadowrankcutoff" ).c_str(), &Global.gfx_shadow_rank_cutoff, 1, 3, "Shadow ranks" );
+    ImGui::SliderInt( ( std::to_string( Global.reflectiontune.fidelity ) + "###reflectionfidelity" ).c_str(), &Global.reflectiontune.fidelity, 0, 2, "Reflection fidelity" );
+    ImGui::SliderInt( ( std::to_string( Global.gfx_shadow_rank_cutoff ) + "###shadowrankcutoff" ).c_str(), &Global.gfx_shadow_rank_cutoff, 1, 3, "Shadow ranks" );
     if( ImGui::SliderFloat( ( to_string( std::abs( Global.gfx_shadow_angle_min ), 2 ) + "###shadowanglecutoff" ).c_str(), &Global.gfx_shadow_angle_min, -1.0, -0.2, "Shadow angle cutoff" ) ) {
         Global.gfx_shadow_angle_min = quantize( Global.gfx_shadow_angle_min, 0.05f );
     };
@@ -1570,19 +1569,19 @@ debug_panel::render_section_settings() {
     ImGui::TextUnformatted( "Sound" );
     ImGui::PopStyleColor();
     // audio volume sliders
-    ImGui::SliderFloat( ( to_string( static_cast<int>( Global.AudioVolume * 100 ) ) + "%###volumemain" ).c_str(), &Global.AudioVolume, 0.0f, 2.0f, "Main audio volume" );
-    if( ImGui::SliderFloat( ( to_string( static_cast<int>( Global.VehicleVolume * 100 ) ) + "%###volumevehicle" ).c_str(), &Global.VehicleVolume, 0.0f, 1.0f, "Vehicle sounds" ) ) {
+    ImGui::SliderFloat( ( std::to_string( static_cast<int>( Global.AudioVolume * 100 ) ) + "%###volumemain" ).c_str(), &Global.AudioVolume, 0.0f, 2.0f, "Main audio volume" );
+    if( ImGui::SliderFloat( ( std::to_string( static_cast<int>( Global.VehicleVolume * 100 ) ) + "%###volumevehicle" ).c_str(), &Global.VehicleVolume, 0.0f, 1.0f, "Vehicle sounds" ) ) {
         audio::event_volume_change = true;
     }
-    if( ImGui::SliderFloat( ( to_string( static_cast<int>( Global.EnvironmentPositionalVolume * 100 ) ) + "%###volumepositional" ).c_str(), &Global.EnvironmentPositionalVolume, 0.0f, 1.0f, "Positional sounds" ) ) {
+    if( ImGui::SliderFloat( ( std::to_string( static_cast<int>( Global.EnvironmentPositionalVolume * 100 ) ) + "%###volumepositional" ).c_str(), &Global.EnvironmentPositionalVolume, 0.0f, 1.0f, "Positional sounds" ) ) {
         audio::event_volume_change = true;
     }
-    if( ImGui::SliderFloat( ( to_string( static_cast<int>( Global.EnvironmentAmbientVolume * 100 ) ) + "%###volumeambient" ).c_str(), &Global.EnvironmentAmbientVolume, 0.0f, 1.0f, "Ambient sounds" ) ) {
+    if( ImGui::SliderFloat( ( std::to_string( static_cast<int>( Global.EnvironmentAmbientVolume * 100 ) ) + "%###volumeambient" ).c_str(), &Global.EnvironmentAmbientVolume, 0.0f, 1.0f, "Ambient sounds" ) ) {
         audio::event_volume_change = true;
     }
     if (simulation::Train) {
         float val = simulation::Train->get_radiovolume();
-        if( ImGui::SliderFloat( ( to_string( static_cast<int>( val * 100 ) ) + "%###volumeradio" ).c_str(), &val, 0.0f, 1.0f, "Vehicle radio volume" ) ) {
+        if( ImGui::SliderFloat( ( std::to_string( static_cast<int>( val * 100 ) ) + "%###volumeradio" ).c_str(), &val, 0.0f, 1.0f, "Vehicle radio volume" ) ) {
             command_relay relay;
             relay.post(user_command::radiovolumeset, val, 0.0, GLFW_PRESS, 0);
         }
@@ -1600,7 +1599,9 @@ transcripts_panel::update() {
 
 	for( auto const &transcript : ui::Transcripts.aLines ) {
 		if( Global.fTimeAngleDeg + ( transcript.fShow - Global.fTimeAngleDeg > 180 ? 360 : 0 ) < transcript.fShow ) { continue; }
-		text_lines.emplace_back( ExchangeCharInString( transcript.asText, '|', ' ' ), colors::white );
+		std::string text = transcript.asText;
+		std::ranges::replace(text, '|', ' ');
+		text_lines.emplace_back( text, colors::white );
 	}
 }
 

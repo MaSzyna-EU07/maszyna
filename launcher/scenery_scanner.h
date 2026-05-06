@@ -2,7 +2,6 @@
 
 #include <filesystem>
 #include "model/Texture.h"
-#include "utilities/utilities.h"
 #include "utilities/parser.h"
 #include "textures_scanner.h"
 

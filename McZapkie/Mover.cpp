@@ -10,7 +10,6 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "MOVER.h"
 
-#include "utilities/utilities.h"
 #include "vehicle/DynObj.h"
 #include "Oerlikon_ESt.h"
 #include "utilities/Globals.h"
@@ -356,7 +355,7 @@ double TMoverParameters::Current(double n, double U)
 	if (DynamicBrakeFlag && (!FuseFlag) && (DynamicBrakeType == dbrake_automatic) && Power110vIsAvailable && Mains) // hamowanie EP09   //TUHEX
 	{
 		// TODO: zrobic bardziej uniwersalne nie tylko dla EP09
-		MotorCurrent = -Max0R(MotorParam[0].fi * (Vadd / (Vadd + MotorParam[0].Isat) - MotorParam[0].fi0), 0) * n * 2.0 / DynamicBrakeRes;
+		MotorCurrent = -std::max(MotorParam[0].fi * (Vadd / (Vadd + MotorParam[0].Isat) - MotorParam[0].fi0), 0.) * n * 2.0 / DynamicBrakeRes;
 	}
 	else if ((RList[MainCtrlActualPos].Bn == 0) || (false == StLinFlag))
 	{
@@ -862,7 +861,7 @@ void TMoverParameters::UpdatePantVolume(double dt)
 			// Ra 2013-12: Niebugocław mówi, że w EZT nie ma potrzeby odcinać kurkiem
 			PantPress = ScndPipePress;
 			// ograniczenie ciśnienia do MaxPress (tylko w pantografach!)
-			PantPress = clamp(ScndPipePress, 0.0, EnginePowerSource.CollectorParameters.MaxPress);
+			PantPress = std::clamp(ScndPipePress, 0.0, EnginePowerSource.CollectorParameters.MaxPress);
 			PantVolume = (PantPress + 1.0) * 0.1; // objętość, na wypadek odcięcia kurkiem
 		}
 		else
@@ -874,7 +873,7 @@ void TMoverParameters::UpdatePantVolume(double dt)
 				              // Ra 2013-12: Niebugocław mówi, że w EZT nabija 1.5 raz wolniej niż jak było 0.005
 				              * (TrainType == dt_EZT ? 0.003 : 0.005) / std::max(1.0, PantPress) * (0.45 - ((0.1 / PantVolume / 10) - 0.1)) / 0.45;
 			}
-			PantPress = clamp((10.0 * PantVolume) - 1.0, 0.0, EnginePowerSource.CollectorParameters.MaxPress); // tu by się przydała objętość zbiornika
+			PantPress = std::clamp((10.0 * PantVolume) - 1.0, 0.0, EnginePowerSource.CollectorParameters.MaxPress); // tu by się przydała objętość zbiornika
 		}
 		if (!PantCompFlag && (PantVolume > 0.1))
 			PantVolume -= dt * 0.0003 * std::max(1.0, PantPress * 0.5); // nieszczelności: 0.0003=0.3l/s
@@ -1079,7 +1078,7 @@ double TMoverParameters::LocalBrakeRatio(void)
 			LBR = 0;
 	}
 	// if (TestFlag(BrakeStatus, b_antislip))
-	//   LBR = Max0R(LBR, PipeRatio) + 0.4;
+	//   LBR = std::max(LBR, PipeRatio) + 0.4;
 	return LBR;
 }
 
@@ -1137,17 +1136,17 @@ double TMoverParameters::PipeRatio(void)
 		if (false) // SPKS!! no to jak nie wchodzimy to po co branch?
 		{
 			if ((3.0 * PipePress) > (HighPipePress + LowPipePress + LowPipePress))
-				pr = (HighPipePress - Min0R(HighPipePress, PipePress)) / (DeltaPipePress * 4.0 / 3.0);
+				pr = (HighPipePress - std::min(HighPipePress, PipePress)) / (DeltaPipePress * 4.0 / 3.0);
 			else
-				pr = (HighPipePress - 1.0 / 3.0 * DeltaPipePress - Max0R(LowPipePress, PipePress)) / (DeltaPipePress * 2.0 / 3.0);
+				pr = (HighPipePress - 1.0 / 3.0 * DeltaPipePress - std::max(LowPipePress, PipePress)) / (DeltaPipePress * 2.0 / 3.0);
 			// if (not TestFlag(BrakeStatus, b_Ractive))
 			//     and(BrakeMethod and 1 = 0) and TestFlag(BrakeDelays, bdelay_R) and (Power < 1) and
-			//         (BrakeCtrlPos < 1) then pr : = Min0R(0.5, pr);
+			//         (BrakeCtrlPos < 1) then pr : = std::min(0.5, pr);
 			// if (Compressor > 0.5)
 			//     then pr : = pr * 1.333; // dziwny rapid wywalamy
 		}
 		else
-			pr = (HighPipePress - Max0R(LowPipePress, Min0R(HighPipePress, PipePress))) / DeltaPipePress;
+			pr = (HighPipePress - std::max(LowPipePress, std::min(HighPipePress, PipePress))) / DeltaPipePress;
 	else
 		pr = 0;
 	return pr;
@@ -1156,7 +1155,7 @@ double TMoverParameters::PipeRatio(void)
 double TMoverParameters::EngineRPMRatio() const
 {
 
-	return clamp((EngineType == TEngineType::DieselElectric ? ((60.0 * std::abs(enrot)) / DElist[MainCtrlPosNo].RPM) :
+	return std::clamp((EngineType == TEngineType::DieselElectric ? ((60.0 * std::abs(enrot)) / DElist[MainCtrlPosNo].RPM) :
 	              EngineType == TEngineType::DieselEngine   ? (std::abs(enrot) / nmax) :
 	                                                          1.0), // shouldn't ever get here but, eh
 	             0.0, 1.0);
@@ -1259,7 +1258,7 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 		//       if( accelerationchange / AccS < 1.0 ) {
 		// HACK: prevent excessive vehicle pinball cases
 		AccS += accelerationchange;
-		//           AccS = clamp( AccS, -2.0, 2.0 );
+		//           AccS = std::clamp( AccS, -2.0, 2.0 );
 		V = velocity;
 		//        }
 	}
@@ -1393,8 +1392,8 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 	{
 		auto const AccSprev{AccS};
 		// przyspieszenie styczne
-		AccS = interpolate(AccSprev, FTotal / TotalMass, 0.5);
-		// clamp( dt * 3.0, 0.0, 1.0 ) ); // prawo Newtona ale z wygladzaniem (średnia z poprzednim)
+		AccS = std::lerp(AccSprev, FTotal / TotalMass, 0.5);
+		// std::clamp( dt * 3.0, 0.0, 1.0 ) ); // prawo Newtona ale z wygladzaniem (średnia z poprzednim)
 
 		if (TestFlag(DamageFlag, dtrain_out))
 			AccS = -Sign(V) * g * 1; // random(0.0, 0.1)
@@ -1416,7 +1415,7 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 		}
 
 		// tangential acceleration, from velocity change
-		AccSVBased = interpolate(AccSVBased, (V - Vprev) / dt, clamp(dt * 3.0, 0.0, 1.0));
+		AccSVBased = std::lerp(AccSVBased, (V - Vprev) / dt, std::clamp(dt * 3.0, 0.0, 1.0));
 
 		// vertical acceleration
 		AccVert = (std::abs(AccVert) < 0.01 ? 0.0 : AccVert * 0.5);
@@ -1490,8 +1489,8 @@ double TMoverParameters::FastComputeMovement(double dt, const TTrackShape &Shape
 	{
 		auto const AccSprev{AccS};
 		// przyspieszenie styczne
-		AccS = interpolate(AccSprev, FTotal / TotalMass, 0.5);
-		// clamp( dt * 3.0, 0.0, 1.0 ) ); // prawo Newtona ale z wygladzaniem (średnia z poprzednim)
+		AccS = std::lerp(AccSprev, FTotal / TotalMass, 0.5);
+		// std::clamp( dt * 3.0, 0.0, 1.0 ) ); // prawo Newtona ale z wygladzaniem (średnia z poprzednim)
 
 		if (TestFlag(DamageFlag, dtrain_out))
 			AccS = -Sign(V) * g * 1; // * random(0.0, 0.1)
@@ -2098,8 +2097,8 @@ void TMoverParameters::HeatingCheck(double const Timestep)
 			                         absrevolutions < generator.revolutions_min ?
 			                                             generator.voltage_min * absrevolutions / generator.revolutions_min :
 			                                             //                    absrevolutions > generator.revolutions_max ? generator.voltage_max * absrevolutions / generator.revolutions_max :
-			                                             interpolate(generator.voltage_min, generator.voltage_max,
-			                                                         clamp((absrevolutions - generator.revolutions_min) / (generator.revolutions_max - generator.revolutions_min), 0.0, 1.0))) *
+			                                             std::lerp(generator.voltage_min, generator.voltage_max,
+			                                                         std::clamp((absrevolutions - generator.revolutions_min) / (generator.revolutions_max - generator.revolutions_min), 0.0, 1.0))) *
 			                    sign(generator.revolutions);
 		}
 		break;
@@ -2208,7 +2207,7 @@ void TMoverParameters::OilPumpCheck(double const Timestep)
 	auto const minpressure{OilPump.pressure_minimum > 0.f ? OilPump.pressure_minimum : 0.15f}; // arbitrary fallback value
 
 	OilPump.pressure_target = (
-        enrot > 0.1 ? interpolate( minpressure, OilPump.pressure_maximum, static_cast<float>( EngineRPMRatio() ) ) * OilPump.resource_amount :
+        enrot > 0.1 ? std::lerp( minpressure, OilPump.pressure_maximum, static_cast<float>( EngineRPMRatio() ) ) * OilPump.resource_amount :
         true == OilPump.is_active ? std::min( minpressure + 0.1f, OilPump.pressure_maximum ) : // slight pressure margin to give time to switch off the pump and start the engine
         0.f );
 
@@ -2221,7 +2220,7 @@ void TMoverParameters::OilPumpCheck(double const Timestep)
 	{
 		OilPump.pressure = std::max<float>(OilPump.pressure_target, OilPump.pressure - (enrot > 5.0 ? 0.05 : 0.035) * 0.5 * Timestep);
 	}
-	OilPump.pressure = clamp(OilPump.pressure, 0.f, 1.5f);
+	OilPump.pressure = std::clamp(OilPump.pressure, 0.f, 1.5f);
 }
 
 void TMoverParameters::MotorBlowersCheck(double const Timestep)
@@ -2276,7 +2275,7 @@ void TMoverParameters::MotorBlowersCheck(double const Timestep)
 		if (revolutionstarget > 0.f)
 		{
 			auto const speedincreasecap{std::max(50.f, fan.speed * 0.05f * -1)}; // 5% of fixed revolution speed, or 50
-			fan.revolutions += clamp(revolutionstarget - fan.revolutions, speedincreasecap * -2, speedincreasecap) * Timestep;
+			fan.revolutions += std::clamp(revolutionstarget - fan.revolutions, speedincreasecap * -2, speedincreasecap) * Timestep;
 		}
 		else
 		{
@@ -2979,7 +2978,7 @@ bool TMoverParameters::AddPulseForce(int Multipler)
 		DirActive = CabActive;
 		DirAbsolute = DirActive * CabActive;
 		if (Vel > 0)
-			PulseForce = Min0R(1000.0 * Power / (abs(V) + 0.1), Ftmax);
+			PulseForce = std::min(1000.0 * Power / (abs(V) + 0.1), Ftmax);
 		else
 			PulseForce = Ftmax;
 		if (PulseForceCount > 1000.0)
@@ -3751,7 +3750,7 @@ bool TMoverParameters::ChangeCompressorPreset(int const State, range_t const Not
 
 	auto const initialstate{CompressorListPos};
 
-	CompressorListPos = clamp(State, 0, CompressorListPosNo);
+	CompressorListPos = std::clamp(State, 0, CompressorListPosNo);
 
 	if (Notify != range_t::local)
 	{
@@ -3925,7 +3924,7 @@ bool TMoverParameters::DynamicBrakeLevelSet(double Position)
 {
 	if (false == SplitEDPneumaticBrake)
 		return false;
-	DynamicBrakeCtrlPos = clamp(Position, 0.0, 1.0);
+	DynamicBrakeCtrlPos = std::clamp(Position, 0.0, 1.0);
 	return true;
 }
 
@@ -3937,7 +3936,7 @@ double TMoverParameters::DynamicBrakeRatio(void) const
 {
 	if (false == SplitEDPneumaticBrake)
 		return 0.0;
-	return clamp(DynamicBrakeCtrlPos, 0.0, 1.0);
+	return std::clamp(DynamicBrakeCtrlPos, 0.0, 1.0);
 }
 
 // *************************************************************************************************
@@ -5278,7 +5277,7 @@ double TMoverParameters::Adhesive(double staticfriction) const
 	    if (SlippingWheels == false)
 	    {
 	        if (SandDose)
-	            adhesion = (Max0R(staticfriction * (100.0 + Vel) / ((50.0 + Vel) * 11.0), 0.048)) *
+	            adhesion = (std::max(staticfriction * (100.0 + Vel) / ((50.0 + Vel) * 11.0), 0.048)) *
 	                       (11.0 - 2.0 * Random(0.0, 1.0));
 	        else
 	            adhesion = (staticfriction * (100.0 + Vel) / ((50.0 + Vel) * 10.0)) *
@@ -5364,7 +5363,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 	if ((coupler.CouplingFlag != coupling::faux) || (initialdistance < 0))
 	{
 
-		coupler.Dist = clamp(newdistance, (coupler.has_adapter() ? 0 : -coupler.DmaxB), coupler.DmaxC);
+		coupler.Dist = std::clamp(newdistance, (coupler.has_adapter() ? 0 : -coupler.DmaxB), coupler.DmaxC);
 
 		double BetaAvg = 0;
 		double Fmax = 0;
@@ -5504,7 +5503,7 @@ double TMoverParameters::TractionForce(double dt)
 				tmp = std::max(tmp, std::min(EngineMaxRPM(), EngineHeatingRPM) / 60.0);
 			}
 			// NOTE: fake dizel_fill calculation for the sake of smoke emitter which uses this parameter to determine smoke opacity
-			dizel_fill = clamp(0.2 + 0.35 * (tmp - enrot) + 0.5 * (std::abs(Im) / DElist[MainCtrlPosNo].Imax), 0.05, 1.0);
+			dizel_fill = std::clamp(0.2 + 0.35 * (tmp - enrot) + 0.5 * (std::abs(Im) / DElist[MainCtrlPosNo].Imax), 0.05, 1.0);
 		}
 		else
 		{
@@ -5514,7 +5513,7 @@ double TMoverParameters::TractionForce(double dt)
 
 		if (enrot != tmp)
 		{
-			enrot = clamp(enrot + (dt / dizel_AIM) * (enrot < tmp ? 1.0 : -1.0 * dizel_RevolutionsDecreaseRate), // NOTE: revolutions typically drop faster than they rise
+			enrot = std::clamp(enrot + (dt / dizel_AIM) * (enrot < tmp ? 1.0 : -1.0 * dizel_RevolutionsDecreaseRate), // NOTE: revolutions typically drop faster than they rise
 			              0.0, std::max(tmp, enrot));
 			if (std::abs(tmp - enrot) < 0.001)
 			{
@@ -5616,9 +5615,9 @@ double TMoverParameters::TractionForce(double dt)
 		if (true == Mains)
 		{
 			// TBD, TODO: currently ignores RVentType, fix this?
-			RventRot += clamp(enrot - RventRot, -100.0, 50.0) * dt;
-			dizel_heat.rpmw += clamp(dizel_heat.rpmwz - dizel_heat.rpmw, -100.f, 50.f) * dt;
-			dizel_heat.rpmw2 += clamp(dizel_heat.rpmwz2 - dizel_heat.rpmw2, -100.f, 50.f) * dt;
+			RventRot += std::clamp(enrot - RventRot, -100.0, 50.0) * dt;
+			dizel_heat.rpmw += std::clamp(dizel_heat.rpmwz - dizel_heat.rpmw, -100.f, 50.f) * dt;
+			dizel_heat.rpmw2 += std::clamp(dizel_heat.rpmwz2 - dizel_heat.rpmw2, -100.f, 50.f) * dt;
 		}
 		else
 		{
@@ -5634,8 +5633,8 @@ double TMoverParameters::TractionForce(double dt)
 		// NOTE: we update only radiator fans, as vehicles with diesel engine don't have other ventilators
 		if (true == Mains)
 		{
-			dizel_heat.rpmw += clamp(dizel_heat.rpmwz - dizel_heat.rpmw, -100.f, 50.f) * dt;
-			dizel_heat.rpmw2 += clamp(dizel_heat.rpmwz2 - dizel_heat.rpmw2, -100.f, 50.f) * dt;
+			dizel_heat.rpmw += std::clamp(dizel_heat.rpmwz - dizel_heat.rpmw, -100.f, 50.f) * dt;
+			dizel_heat.rpmw2 += std::clamp(dizel_heat.rpmwz2 - dizel_heat.rpmw2, -100.f, 50.f) * dt;
 		}
 		else
 		{
@@ -5827,7 +5826,7 @@ double TMoverParameters::TractionForce(double dt)
 				else if ((DynamicBrakeFlag) && ((Vadd + abs(Im)) < TUHEX_Sum - TUHEX_Diff))
 				{
 					Vadd += 70.0 * dt;
-					Vadd = Min0R(Max0R(Vadd, TUHEX_MinIw), TUHEX_MaxIw);
+					Vadd = std::min(std::max(Vadd, TUHEX_MinIw), TUHEX_MaxIw);
 				}
 				if (Vadd > 0)
 					Mm = MomentumF(Im, Vadd, 0);
@@ -6014,7 +6013,7 @@ double TMoverParameters::TractionForce(double dt)
 						// charakterystyka pradnicy obcowzbudnej (elipsa) - twierdzenie Pitagorasa
 						EngineVoltage = std::sqrt(std::abs(square(tempUmax) - square(tempUmax * Im / tempImax))) * (tempMCP - 1) + (1.0 - Im / tempImax) * tempUmax * (tempMCPN - tempMCP);
 						EngineVoltage /= (tempMCPN - 1);
-						EngineVoltage = clamp(EngineVoltage, Im * 0.05, (1000.0 * tmp / std::abs(Im)));
+						EngineVoltage = std::clamp(EngineVoltage, Im * 0.05, (1000.0 * tmp / std::abs(Im)));
 					}
 				}
 
@@ -6029,9 +6028,9 @@ double TMoverParameters::TractionForce(double dt)
 				                // power curve drop
 				                // NOTE: disabled for the time being due to side-effects
 				                if( ( tmpV > 1 ) && ( EnginePower < tmp ) ) {
-				                    Ft = interpolate(
+				                    Ft = std::lerp(
 				                        Ft, EnginePower / tmp,
-				                        clamp( tmpV - 1.0, 0.0, 1.0 ) );
+				                        std::clamp( tmpV - 1.0, 0.0, 1.0 ) );
 				                }
 				*/
 			}
@@ -6155,7 +6154,7 @@ double TMoverParameters::TractionForce(double dt)
 						/*
 						                            // crude woodward approximation; difference between rpm for consecutive positions is ~5%
 						                            // so we get full throttle until ~half way between desired and previous position, or zero on rpm reduction
-						                            auto const woodward { clamp(
+						                            auto const woodward { std::clamp(
 						                                ( DElist[ MainCtrlPos ].RPM / ( enrot * 60.0 ) - 1.0 ) * 50.0,
 						                                0.0, 1.0 ) };
 						*/
@@ -6332,8 +6331,8 @@ double TMoverParameters::TractionForce(double dt)
 					// ustalanie współczynnika blendingu do luzowania hamulca PN
 					if (eimv[eimv_Fmax] * Sign(V) * DirAbsolute < -1)
 					{
-						PosRatio = -Sign(V) * DirAbsolute * eimv[eimv_Fr] / (eimc[eimc_p_Fh] * Max0R(edBCP, Max0R(0.01, Hamulec->GetEDBCP())) / MaxBrakePress[0]);
-						PosRatio = clamp(PosRatio, 0.0, 1.0);
+						PosRatio = -Sign(V) * DirAbsolute * eimv[eimv_Fr] / (eimc[eimc_p_Fh] * std::max(edBCP, std::max(0.01, Hamulec->GetEDBCP())) / MaxBrakePress[0]);
+						PosRatio = std::clamp(PosRatio, 0.0, 1.0);
 					}
 					else
 					{
@@ -6342,7 +6341,7 @@ double TMoverParameters::TractionForce(double dt)
 					PosRatio = Round(20.0 * PosRatio) / 20.0; // stopniowanie PN/ED
 					if (PosRatio < 19.5 / 20.0)
 						PosRatio *= 0.9;
-					Hamulec->SetED(Max0R(0.0, std::min(PosRatio, 1.0))); // ustalenie stopnia zmniejszenia ciśnienia
+					Hamulec->SetED(std::max(0.0, std::min(PosRatio, 1.0))); // ustalenie stopnia zmniejszenia ciśnienia
 					// ustalanie siły hamowania ED
 					if ((Hamulec->GetEDBCP() > 0.25) && (eimc[eimc_p_abed] < 0.001) || (ActiveInverters < InvertersNo)) // jeśli PN wyłącza ED
 					{
@@ -6371,16 +6370,16 @@ double TMoverParameters::TractionForce(double dt)
 				}
 				else
 				{
-					PosRatio = Max0R(eimic_real, 0);
+					PosRatio = std::max(eimic_real, 0.);
 					eimv[eimv_Fzad] = PosRatio;
 					if ((Flat) && (eimc[eimc_p_F0] * eimv[eimv_Fful] > 0))
-						PosRatio = Min0R(PosRatio * eimc[eimc_p_F0] / eimv[eimv_Fful], 1);
+						PosRatio = std::min(PosRatio * eimc[eimc_p_F0] / eimv[eimv_Fful], 1.);
 					/*                    if (ScndCtrlActualPos > 0) //speed control
 					                        if (Vmax < 250)
-					                            PosRatio = Min0R(PosRatio, Max0R(-1, 0.5 * (ScndCtrlActualPos - Vel)));
+					                            PosRatio = std::min(PosRatio, std::max(-1, 0.5 * (ScndCtrlActualPos - Vel)));
 					                        else
 					                            PosRatio =
-					                                Min0R(PosRatio, Max0R(-1, 0.5 * (ScndCtrlActualPos * 2 - Vel))); */
+					                                std::min(PosRatio, std::max(-1, 0.5 * (ScndCtrlActualPos * 2 - Vel))); */
 					// PosRatio = 1.0 * (PosRatio * 0 + 1) * PosRatio; // 1 * 1 * PosRatio = PosRatio
 					Hamulec->SetED(0);
 					//           (Hamulec as TLSt).SetLBP(LocBrakePress);
@@ -6409,7 +6408,7 @@ double TMoverParameters::TractionForce(double dt)
 					eimv_pr = 0;
 				}
 
-				eimv_pr += Max0R(Min0R(PosRatio - eimv_pr, 0.02), -0.02) * 12 * (tmp /*2{+4*byte(PosRatio<eimv_pr)*/) * dt; // wartość zadana/procent czegoś
+				eimv_pr += std::max(std::min(PosRatio - eimv_pr, 0.02), -0.02) * 12 * (tmp /*2{+4*byte(PosRatio<eimv_pr)*/) * dt; // wartość zadana/procent czegoś
 
 				if ((DynamicBrakeFlag))
 					tmp = eimc[eimc_f_Uzh];
@@ -6418,7 +6417,7 @@ double TMoverParameters::TractionForce(double dt)
 
 				auto f_cfu{DynamicBrakeFlag ? eimc[eimc_f_cfuH] : eimc[eimc_f_cfu]};
 
-				eimv[eimv_Uzsmax] = Min0R(EngineVoltage - eimc[eimc_f_DU], tmp);
+				eimv[eimv_Uzsmax] = std::min(EngineVoltage - eimc[eimc_f_DU], tmp);
 				eimv[eimv_fkr] = eimv[eimv_Uzsmax] / f_cfu;
 				if ((eimv_pr < 0))
 				{
@@ -6441,15 +6440,15 @@ double TMoverParameters::TractionForce(double dt)
 					eimv[eimv_Fr] = -Sign(V) * (DirAbsolute)*std::min(eimc[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(-eimc[eimc_p_Fh] * pr, eimv[eimv_FMAXMAX]));
 					if (InvertersRatio < 1.0)
 						eimv[eimv_Fful] = 0;
-					//*Min0R(1,(Vel-eimc[eimc_p_Vh0])/(eimc[eimc_p_Vh1]-eimc[eimc_p_Vh0]))
+					//*std::min(1,(Vel-eimc[eimc_p_Vh0])/(eimc[eimc_p_Vh1]-eimc[eimc_p_Vh0]))
 				}
 				else
 				{
-					eimv[eimv_Fful] = Min0R(Min0R(3.6 * eimv[eimv_Pmax] / Max0R(Vel, 1), eimc[eimc_p_F0] - Vel * eimc[eimc_p_a1]), eimv[eimv_FMAXMAX]);
+					eimv[eimv_Fful] = std::min(std::min(3.6 * eimv[eimv_Pmax] / std::max(Vel, 1.), eimc[eimc_p_F0] - Vel * eimc[eimc_p_a1]), eimv[eimv_FMAXMAX]);
 					//           if(not Flat)then
 					eimv[eimv_Fmax] = eimv[eimv_Fful] * eimv_pr;
 					//           else
-					//             eimv[eimv_Fmax]:=Min0R(eimc[eimc_p_F0]*eimv_pr,eimv[eimv_Fful]);
+					//             eimv[eimv_Fmax]:=std::min(eimc[eimc_p_F0]*eimv_pr,eimv[eimv_Fful]);
 					double pr = eimv_pr;
 					if (EIMCLogForce)
 						pr = log(1 + 4 * pr) / log(5);
@@ -6464,7 +6463,7 @@ double TMoverParameters::TractionForce(double dt)
 				eimv[eimv_ks] = eimv[eimv_Fr] / eimv[eimv_FMAXMAX];
 				eimv[eimv_df] = eimv[eimv_ks] * eimc[eimc_s_dfmax];
 				eimv[eimv_fp] = DirAbsolute * enrot * eimc[eimc_s_p] + eimv[eimv_df]; // do przemyslenia dzialanie pp z tmpV
-				//         eimv[eimv_U]:=Max0R(eimv[eimv_Uzsmax],Min0R(eimc[eimc_f_cfu]*eimv[eimv_fp],eimv[eimv_Uzsmax]));
+				//         eimv[eimv_U]:=std::max(eimv[eimv_Uzsmax],std::min(eimc[eimc_f_cfu]*eimv[eimv_fp],eimv[eimv_Uzsmax]));
 				//         eimv[eimv_pole]:=eimv[eimv_U]/(eimv[eimv_fp]*eimc[eimc_s_cfu]);
 				if ((abs(eimv[eimv_fp]) <= eimv[eimv_fkr]))
 					eimv[eimv_pole] = f_cfu / eimc[eimc_s_cfu];
@@ -6765,7 +6764,7 @@ double TMoverParameters::MomentumF(double I, double Iw, int SCP)
 {
 	// umozliwia dokladne sterowanie wzbudzeniem
 
-	return (MotorParam[SCP].mfi * I * Max0R(abs(Iw) / (abs(Iw) + MotorParam[SCP].mIsat) - MotorParam[SCP].mfi0, 0));
+	return (MotorParam[SCP].mfi * I * std::max(abs(Iw) / (abs(Iw) + MotorParam[SCP].mIsat) - MotorParam[SCP].mfi0, 0.));
 }
 
 // *************************************************************************************************
@@ -7340,7 +7339,7 @@ void TMoverParameters::CheckEIMIC(double dt)
 		double const vh1 = eimc[eimc_p_Vh1];
 		if (vh1 > vh0 + 0.001)
 		{
-			double const vhRamp = clamp((Vel - vh0) / (vh1 - vh0), 0.0, 1.0);
+			double const vhRamp = std::clamp((Vel - vh0) / (vh1 - vh0), 0.0, 1.0);
 			brakeDemand *= vhRamp;
 		}
 	}
@@ -7362,25 +7361,25 @@ void TMoverParameters::CheckEIMIC(double dt)
 		switch (MainCtrlPos)
 		{
 		case 0: // B+
-			eimic -= clamp(1.0 + eimic, 0.0, dt * 0.14); // odejmuj do -1
+			eimic -= std::clamp(1.0 + eimic, 0.0, dt * 0.14); // odejmuj do -1
 			break;
 		case 1: // B
-			eimic -= clamp(0.0 + eimic, 0.0, dt * 0.14); // odejmuj do 0
+			eimic -= std::clamp(0.0 + eimic, 0.0, dt * 0.14); // odejmuj do 0
 			break;
 		case 2: // B-
 		case 3: // 0
 		case 4: // T-
-			eimic -= clamp(0.0 + eimic, 0.0, dt * 0.14); // odejmuj do 0
-			eimic += clamp(0.0 - eimic, 0.0, dt * 0.14); // dodawaj do 0
+			eimic -= std::clamp(0.0 + eimic, 0.0, dt * 0.14); // odejmuj do 0
+			eimic += std::clamp(0.0 - eimic, 0.0, dt * 0.14); // dodawaj do 0
 			break;
 		case 5: // T
-			eimic += clamp(0.0 - eimic, 0.0, dt * 0.14); // dodawaj do 0
+			eimic += std::clamp(0.0 - eimic, 0.0, dt * 0.14); // dodawaj do 0
 			break;
 		case 6: // T+
-			eimic += clamp(1.0 - eimic, 0.0, dt * 0.14); // dodawaj do 1
+			eimic += std::clamp(1.0 - eimic, 0.0, dt * 0.14); // dodawaj do 1
 			break;
 		case 7: // TMax
-			eimic += clamp(1.0 - eimic, 0.0, dt * 0.14); // dodawaj do 1, max
+			eimic += std::clamp(1.0 - eimic, 0.0, dt * 0.14); // dodawaj do 1, max
 			break;
 		}
 		if (MainCtrlPos >= 3 && eimic < 0)
@@ -7396,18 +7395,18 @@ void TMoverParameters::CheckEIMIC(double dt)
 			{
 			case 0:
 			case 1:
-				eimic -= clamp(1.0 + eimic, 0.0, delta); // odejmuj do -1
+				eimic -= std::clamp(1.0 + eimic, 0.0, delta); // odejmuj do -1
 				if (eimic > 0)
 					eimic = 0;
 				break;
 			case 2:
-				eimic -= clamp(0.0 + eimic, 0.0, delta); // odejmuj do 0
+				eimic -= std::clamp(0.0 + eimic, 0.0, delta); // odejmuj do 0
 				break;
 			case 3:
-				eimic += clamp(0.0 - eimic, 0.0, delta); // dodawaj do 0
+				eimic += std::clamp(0.0 - eimic, 0.0, delta); // dodawaj do 0
 				break;
 			case 4:
-				eimic += clamp(1.0 - eimic, 0.0, delta); // dodawaj do 1
+				eimic += std::clamp(1.0 - eimic, 0.0, delta); // dodawaj do 1
 				if (eimic < 0)
 					eimic = 0;
 				break;
@@ -7444,11 +7443,11 @@ void TMoverParameters::CheckEIMIC(double dt)
 
 		if ((MainCtrlActualPos != MainCtrlPos) || (LastRelayTime > InitialCtrlDelay))
 		{
-			eimic -= clamp(-UniCtrlList[MainCtrlPos].SetCtrlVal + eimic, 0.0,
+			eimic -= std::clamp(-UniCtrlList[MainCtrlPos].SetCtrlVal + eimic, 0.0,
 			               (MainCtrlActualPos == MainCtrlPos ? dt * UniCtrlList[MainCtrlPos].SpeedDown : sign(UniCtrlList[MainCtrlPos].SpeedDown) * 0.01)); // odejmuj do X
-			eimic += clamp(UniCtrlList[MainCtrlPos].SetCtrlVal - eimic, 0.0,
+			eimic += std::clamp(UniCtrlList[MainCtrlPos].SetCtrlVal - eimic, 0.0,
 			               (MainCtrlActualPos == MainCtrlPos ? dt * UniCtrlList[MainCtrlPos].SpeedUp : sign(UniCtrlList[MainCtrlPos].SpeedUp) * 0.01)); // dodawaj do X
-			eimic = clamp(eimic, UniCtrlList[MainCtrlPos].MinCtrlVal, UniCtrlList[MainCtrlPos].MaxCtrlVal);
+			eimic = std::clamp(eimic, UniCtrlList[MainCtrlPos].MinCtrlVal, UniCtrlList[MainCtrlPos].MaxCtrlVal);
 		}
 		if (MainCtrlActualPos == MainCtrlPos)
 			LastRelayTime += dt;
@@ -7483,7 +7482,7 @@ void TMoverParameters::CheckEIMIC(double dt)
 			if (eim_localbrake < Hamulec->GetEDBCP() / MaxBrakePress[0])
 				eim_localbrake = 0;
 		}
-		eim_localbrake = clamp(eim_localbrake, 0.0, 1.0);
+		eim_localbrake = std::clamp(eim_localbrake, 0.0, 1.0);
 		if (eim_localbrake > 0.04 && eimic > 0)
 			eimic = 0;
 	}
@@ -7509,7 +7508,7 @@ void TMoverParameters::CheckEIMIC(double dt)
 			eimic_max = 0.001;
 		}
 	}
-	eimic = clamp(eimic, -1.0, eimicpowerenabled ? eimic_max : 0.0);
+	eimic = std::clamp(eimic, -1.0, eimicpowerenabled ? eimic_max : 0.0);
 }
 
 void TMoverParameters::CheckSpeedCtrl(double dt)
@@ -7553,7 +7552,7 @@ void TMoverParameters::CheckSpeedCtrl(double dt)
 				}
 				double error = (std::max(SpeedCtrlValue + SpeedCtrlUnit.Offset, 0.0) - Vel);
 				double factorP = error > 0 ? SpeedCtrlUnit.FactorPpos : SpeedCtrlUnit.FactorPneg;
-				double eSCP = clamp(factorP * error, -1.2, 1.0); // P module
+				double eSCP = std::clamp(factorP * error, -1.2, 1.0); // P module
 				bool retarder_not_work = (EngineType != TEngineType::DieselEngine) || (Vel < SpeedCtrlUnit.BrakeInterventionVel);
 				if (eSCP < -1.0)
 				{
@@ -7566,14 +7565,14 @@ void TMoverParameters::CheckSpeedCtrl(double dt)
 					// TODO: check how to disable integral part when braking in smart way
 					// double factorI = eimicSpeedCtrlIntegral >= 0 ? SpeedCtrlUnit.FactorIpos : SpeedCtrlUnit.FactorIneg;
 					double factorI = eimicSpeedCtrlIntegral >= 0 ? SpeedCtrlUnit.FactorIpos : SpeedCtrlUnit.FactorIneg;
-					eimicSpeedCtrlIntegral = clamp(eimicSpeedCtrlIntegral + factorI * eSCP * dt, -1.0 + eSCP, 1.0 - eSCP);
+					eimicSpeedCtrlIntegral = std::clamp(eimicSpeedCtrlIntegral + factorI * eSCP * dt, -1.0 + eSCP, 1.0 - eSCP);
 				}
 				else
 				{
 					eimicSpeedCtrlIntegral = 0;
 				}
-				auto const DesiredeimicSpeedCtrl{clamp(eimicSpeedCtrlIntegral + eSCP, -SpeedCtrlUnit.DesiredPower, accfactor)};
-				eimicSpeedCtrl = clamp(DesiredeimicSpeedCtrl, eimicSpeedCtrl - SpeedCtrlUnit.PowerDownSpeed * dt, eimicSpeedCtrl + SpeedCtrlUnit.PowerUpSpeed * dt);
+				auto const DesiredeimicSpeedCtrl{std::clamp(eimicSpeedCtrlIntegral + eSCP, -SpeedCtrlUnit.DesiredPower, accfactor)};
+				eimicSpeedCtrl = std::clamp(DesiredeimicSpeedCtrl, eimicSpeedCtrl - SpeedCtrlUnit.PowerDownSpeed * dt, eimicSpeedCtrl + SpeedCtrlUnit.PowerUpSpeed * dt);
 				if (Vel < SpeedCtrlUnit.FullPowerVelocity)
 				{
 					eimicSpeedCtrl = std::min(eimicSpeedCtrl, SpeedCtrlUnit.InitialPower);
@@ -7595,9 +7594,9 @@ void TMoverParameters::CheckSpeedCtrl(double dt)
 		else
 		{
 			if (Vmax < 250)
-				eimicSpeedCtrl = clamp(0.5 * (SpeedCtrlValue - Vel), -1.0, 1.0);
+				eimicSpeedCtrl = std::clamp(0.5 * (SpeedCtrlValue - Vel), -1.0, 1.0);
 			else
-				eimicSpeedCtrl = clamp(0.5 * (SpeedCtrlValue * 2 - Vel), -1.0, 1.0);
+				eimicSpeedCtrl = std::clamp(0.5 * (SpeedCtrlValue * 2 - Vel), -1.0, 1.0);
 		}
 		if (((SpeedCtrlAutoTurnOffFlag & 2) == 2) && (Hamulec->GetEDBCP() > 0.25))
 		{
@@ -8021,7 +8020,7 @@ double TMoverParameters::dizel_fillcheck(int mcp, double dt)
 		}
 	}
 
-	return clamp(realfill, 0.0, 1.0);
+	return std::clamp(realfill, 0.0, 1.0);
 }
 
 // *************************************************************************************************
@@ -8080,7 +8079,7 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 		if (((!IsPower) && (Vel < dizel_maxVelANS)) || (!Mains) || (enrot < dizel_nmin * 0.8))
 			hydro_TC_Fill -= hydro_TC_FillRateDec * dt;
 		// obcinanie zakresu
-		hydro_TC_Fill = clamp(hydro_TC_Fill, 0.0, 1.0);
+		hydro_TC_Fill = std::clamp(hydro_TC_Fill, 0.0, 1.0);
 
 		// blokowanie sprzegla blokującego
 		if ((Vel > hydro_TC_LockupSpeed) && (Mains) && (enrot > 0.9 * dizel_nmin) && (IsPower))
@@ -8095,7 +8094,7 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 			hydro_TC_LockupRate -= hydro_TC_FillRateDec * dt;
 		}
 		// obcinanie zakresu
-		hydro_TC_LockupRate = clamp(hydro_TC_LockupRate, 0.0, 1.0);
+		hydro_TC_LockupRate = std::clamp(hydro_TC_LockupRate, 0.0, 1.0);
 	}
 	else
 	{
@@ -8145,7 +8144,7 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 	}
 
 	// sprawdzanie dociskow poszczegolnych sprzegiel
-	if (abs(Moment) > Min0R(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) || (abs(dizel_n_old - enrot) > 0.1)) // slizga sie z powodu roznic predkosci albo przekroczenia momentu
+	if (abs(Moment) > std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) || (abs(dizel_n_old - enrot) > 0.1)) // slizga sie z powodu roznic predkosci albo przekroczenia momentu
 	{
 		dizel_engagedeltaomega = enrot - dizel_n_old;
 
@@ -8183,9 +8182,9 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 		dizel_engagedeltaomega = 0;
 		gearMoment = Moment;
 		enMoment = 0;
-		double enrot_min = enrot - (Min0R(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) - Moment) / dizel_AIM * dt;
-		double enrot_max = enrot + (Min0R(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) + Moment) / dizel_AIM * dt;
-		enrot = clamp(n, enrot_min, enrot_max);
+		double enrot_min = enrot - (std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) - Moment) / dizel_AIM * dt;
+		double enrot_max = enrot + (std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) + Moment) / dizel_AIM * dt;
+		enrot = std::clamp(n, enrot_min, enrot_max);
 	}
 	if ((hydro_R) && (hydro_R_Placement == 1))
 		gearMoment -= dizel_MomentumRetarder(hydro_TC_nOut, dt);
@@ -8281,9 +8280,9 @@ void TMoverParameters::dizel_Heat(double const dt)
 	auto const revolutionsfactor{EngineRPMRatio()};
 	auto const waterpump{WaterPump.is_active ? 1 : 0};
 
-	auto const gw = engineon * interpolate(gwmin, gwmax, revolutionsfactor) + waterpump * 1000 + engineoff * 200;
-	auto const gw2 = engineon * interpolate(gwmin2, gwmax2, revolutionsfactor) + waterpump * 1000 + engineoff * 200;
-	auto const gwO = interpolate(gwmin, gwmax, revolutionsfactor);
+	auto const gw = engineon * std::lerp(gwmin, gwmax, revolutionsfactor) + waterpump * 1000 + engineoff * 200;
+	auto const gw2 = engineon * std::lerp(gwmin2, gwmax2, revolutionsfactor) + waterpump * 1000 + engineoff * 200;
+	auto const gwO = std::lerp(gwmin, gwmax, revolutionsfactor);
 
 	dizel_heat.water.is_cold = ((dizel_heat.water.config.temp_min > 0) && (dizel_heat.temperatura1 < dizel_heat.water.config.temp_min - (Mains ? 5 : 0)));
 	dizel_heat.water.is_hot = ((dizel_heat.water.config.temp_max > 0) && (dizel_heat.temperatura1 > dizel_heat.water.config.temp_max - (dizel_heat.water.is_hot ? 8 : 0)));
@@ -8478,7 +8477,7 @@ bool TMoverParameters::AssignLoad(std::string const &Name, float const Amount)
 		{
 			LoadTypeChange = (LoadType.name != Name);
 			LoadType = loadattributes;
-			LoadAmount = clamp(Amount, 0.f, MaxLoad);
+			LoadAmount = std::clamp(Amount, 0.f, MaxLoad);
 			ComputeMass();
 			return true;
 		}
@@ -8527,7 +8526,7 @@ bool TMoverParameters::LoadingDone(double const LSpeed, std::string const &Loadn
 			{
 				// pusto lub rozładowano żądaną ilość
 				LoadStatus = 4; // skończony rozładunek
-				LoadAmount = clamp(LoadAmount, 0.f, MaxLoad); // ładunek nie może być ujemny
+				LoadAmount = std::clamp(LoadAmount, 0.f, MaxLoad); // ładunek nie może być ujemny
 			}
 			if (LoadAmount == 0.f)
 			{
@@ -8565,7 +8564,7 @@ bool TMoverParameters::ChangeDoorPermitPreset(int const Change, range_t const No
 	if (false == Doors.permit_presets.empty())
 	{
 
-		Doors.permit_preset = clamp<int>(Doors.permit_preset + Change, 0, Doors.permit_presets.size() - 1);
+		Doors.permit_preset = std::clamp(Doors.permit_preset + Change, 0, static_cast<int>(Doors.permit_presets.size() - 1));
 		auto const doors{Doors.permit_presets[Doors.permit_preset]};
 		auto const permitleft{((doors & 1) != 0)};
 		auto const permitright{((doors & 2) != 0)};
@@ -9661,8 +9660,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 
 		inputline = fizparser.getToken<std::string>(false, "\n\r");
 
-		bool comment = ((contains(inputline, '#')) || (starts_with(inputline, "//")));
-		if (true == comment)
+		if (inputline.starts_with("//") || contains(inputline, '#'))
 		{
 			// skip commented lines
 			continue;
@@ -10239,7 +10237,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		modernDimmerPosition = modernDimmerDefaultPosition;
 	}
 
-	WriteLog("CERROR: " + to_string(ConversionError) + ", SUCCES: " + to_string(result));
+	WriteLog("CERROR: " + std::to_string(ConversionError) + ", SUCCES: " + std::to_string(result));
 	return result;
 }
 
@@ -10858,7 +10856,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 	extract_value(CoupledCtrl, "CoupledCtrl", line, "");
 	extract_value(HasCamshaft, "Camshaft", line, "");
 	extract_value(EIMCtrlType, "EIMCtrlType", line, "");
-	EIMCtrlType = clamp(EIMCtrlType, 0, 3);
+	EIMCtrlType = std::clamp(EIMCtrlType, 0, 3);
 	extract_value(LocHandleTimeTraxx, "LocalBrakeTraxx", line, "");
 	extract_value(EIMCtrlAdditionalZeros, "EIMCtrlAddZeros", line, "");
 	extract_value(EIMCtrlEmergency, "EIMCtrlEmergency", line, "");
@@ -10989,9 +10987,9 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 void TMoverParameters::LoadFIZ_Blending(std::string const &line)
 {
 
-	extract_value(MED_Vmax, "MED_Vmax", line, to_string(Vmax));
+	extract_value(MED_Vmax, "MED_Vmax", line, std::to_string(Vmax));
 	extract_value(MED_Vmin, "MED_Vmin", line, "0");
-	extract_value(MED_Vref, "MED_Vref", line, to_string(Vmax));
+	extract_value(MED_Vref, "MED_Vref", line, std::to_string(Vmax));
 	extract_value(MED_amax, "MED_amax", line, "9.81");
 	extract_value(MED_EPVC, "MED_EPVC", line, "");
 	extract_value(MED_Ncor, "MED_Ncor", line, "");
@@ -11289,7 +11287,7 @@ void TMoverParameters::LoadFIZ_Engine(std::string const &Input)
 		extract_value(eimc[eimc_f_DU], "DU", Input, "");
 		extract_value(eimc[eimc_f_I0], "I0", Input, "");
 		extract_value(eimc[eimc_f_cfu], "fcfu", Input, "");
-		extract_value(eimc[eimc_f_cfuH], "fcfuH", Input, to_string(eimc[eimc_f_cfu]));
+		extract_value(eimc[eimc_f_cfuH], "fcfuH", Input, std::to_string(eimc[eimc_f_cfu]));
 		extract_value(eimc[eimc_p_F0], "F0", Input, "");
 		extract_value(eimc[eimc_p_a1], "a1", Input, "");
 		extract_value(eimc[eimc_p_Pmax], "Pmax", Input, "");
@@ -12087,7 +12085,7 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int Dir)
 	{
 		SecuritySystem.MagnetLocation = Dim.L / 2 - 0.5;
 	}
-	SecuritySystem.MagnetLocation = clamp(SecuritySystem.MagnetLocation, 0.0, Dim.L);
+	SecuritySystem.MagnetLocation = std::clamp(SecuritySystem.MagnetLocation, 0.0, Dim.L);
 
 	return OK;
 }
@@ -12491,7 +12489,7 @@ bool TMoverParameters::RunCommand(std::string Command, double CValue1, double CV
 	}
 	else if (Command == "CompressorPreset")
 	{
-		CompressorListPos = clamp(static_cast<int>(CValue1), 0, CompressorListPosNo);
+		CompressorListPos = std::clamp(static_cast<int>(CValue1), 0, CompressorListPosNo);
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
 	else if (Command == "DoorPermit")

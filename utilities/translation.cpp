@@ -86,11 +86,11 @@ bool locale::parse_translation(std::istream &stream)
 		if (line.size() > 0 && line[0] == '#')
 			continue;
 
-		if (string_starts_with(line, "msgid"))
+		if (line.starts_with("msgid"))
 			last = 'i';
-		else if (string_starts_with(line, "msgstr"))
+		else if (line.starts_with("msgstr"))
 			last = 's';
-		else if (string_starts_with(line, "msgctxt"))
+		else if (line.starts_with("msgctxt"))
 			last = 'c';
 
 		if (line.size() > 1 && last != 'x') {

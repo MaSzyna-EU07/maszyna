@@ -434,7 +434,7 @@ auto python_taskqueue::fetch_renderer(std::string const Renderer) -> PyObject *
 		return lookup->second;
 	}
 	// try to load specified renderer class
-	auto const path{substr_path(Renderer)};
+	std::string const path{substr_path(Renderer)};
 	auto const file{Renderer.substr(path.size())};
 	PyObject *renderer{nullptr};
 	PyObject *rendererarguments{nullptr};

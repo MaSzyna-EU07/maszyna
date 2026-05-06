@@ -48,7 +48,7 @@ world_environment::compute_season( int const Yearday ) {
     auto const lookup =
         std::lower_bound(
             std::begin( seasonsequence ), std::end( seasonsequence ),
-            clamp( Yearday, 1, seasonsequence.back().first ),
+            std::clamp( Yearday, 1, seasonsequence.back().first ),
             []( dayseasonpair const &Left, const int Right ) {
                 return Left.first < Right; } );
     
@@ -117,7 +117,7 @@ world_environment::update() {
     m_moon.update();
     // ...determine source of key light and adjust global state accordingly...
     // diffuse (sun) intensity goes down after twilight, and reaches minimum 18 degrees below horizon
-    float twilightfactor = clamp( -m_sun.getAngle(), 0.0f, 18.0f ) / 18.0f;
+    float twilightfactor = std::clamp( -m_sun.getAngle(), 0.0f, 18.0f ) / 18.0f;
     // NOTE: sun light receives extra padding to prevent moon from kicking in too soon
     auto const sunlightlevel = m_sun.getIntensity() + 0.05f * ( 1.f - twilightfactor );
     auto const moonlightlevel = m_moon.getIntensity() * 0.65f; // scaled down by arbitrary factor, it's pretty bright otherwise
@@ -127,8 +127,8 @@ world_environment::update() {
     // turbidity varies from 2-3 during the day based on overcast, 3-4 after sunset to deal with sunlight bleeding too much into the sky from below horizon
     m_skydome.SetTurbidity(
         2.25f
-        + clamp( Global.Overcast, 0.f, 1.f )
-        + interpolate( 0.f, 1.f, clamp( twilightfactor * 1.5f, 0.f, 1.f ) ) );
+        + std::clamp( Global.Overcast, 0.f, 1.f )
+        + std::lerp( 0.f, 1.f, std::clamp( twilightfactor * 1.5f, 0.f, 1.f ) ) );
     m_skydome.SetOvercastFactor( Global.Overcast );
     m_skydome.Update( m_sun.getDirection() );
 
@@ -155,8 +155,8 @@ world_environment::update() {
         keylightintensity = sunlightlevel;
         m_lightintensity = 1.0f;
         // include 'golden hour' effect in twilight lighting
-        float const duskfactor = 1.25f - clamp( Global.SunAngle, 0.0f, 18.0f ) / 18.0f;
-        keylightcolor = interpolate(
+        float const duskfactor = 1.25f - std::clamp( Global.SunAngle, 0.0f, 18.0f ) / 18.0f;
+		keylightcolor = glm::mix(
             glm::vec3( 255.0f / 255.0f, 242.0f / 255.0f, 231.0f / 255.0f ),
             glm::vec3( 235.0f / 255.0f, 120.0f / 255.0f, 36.0f / 255.0f ),
             duskfactor );
@@ -172,7 +172,7 @@ world_environment::update() {
     // but whether it'd _look_ better is something to be tested
     auto const intensity = std::min( 1.15f * ( 0.05f + keylightintensity + skydomehsv.z ), 1.25f );
     // the impact of sun component is reduced proportionally to overcast level, as overcast increases role of ambient light
-    auto const diffuselevel = interpolate( keylightintensity, intensity * ( 1.0f - twilightfactor ), 1.0f - std::min( 1.f, Global.Overcast ) * 0.75f );
+    auto const diffuselevel = std::lerp( keylightintensity, intensity * ( 1.0f - twilightfactor ), 1.0f - std::min( 1.f, Global.Overcast ) * 0.75f );
     // ...update light colours and intensity.
     keylightcolor = keylightcolor * diffuselevel;
     Global.DayLight.diffuse = glm::vec4( keylightcolor, Global.DayLight.diffuse.a );
@@ -180,18 +180,18 @@ world_environment::update() {
 
     // tonal impact of skydome color is inversely proportional to how high the sun is above the horizon
     // (this is pure conjecture, aimed more to 'look right' than be accurate)
-    float const ambienttone = clamp( 1.0f - ( Global.SunAngle / 90.0f ), 0.0f, 1.0f );
-    float const ambientintensitynightfactor = 1.f - 0.75f * clamp( -m_sun.getAngle(), 0.0f, 18.0f ) / 18.0f;
-    Global.DayLight.ambient[ 0 ] = interpolate( skydomehsv.z, skydomecolour.r, ambienttone ) * ambientintensitynightfactor;
-    Global.DayLight.ambient[ 1 ] = interpolate( skydomehsv.z, skydomecolour.g, ambienttone ) * ambientintensitynightfactor;
-    Global.DayLight.ambient[ 2 ] = interpolate( skydomehsv.z, skydomecolour.b, ambienttone ) * ambientintensitynightfactor;
+    float const ambienttone = std::clamp( 1.0f - ( Global.SunAngle / 90.0f ), 0.0f, 1.0f );
+    float const ambientintensitynightfactor = 1.f - 0.75f * std::clamp( -m_sun.getAngle(), 0.0f, 18.0f ) / 18.0f;
+    Global.DayLight.ambient[ 0 ] = std::lerp( skydomehsv.z, skydomecolour.r, ambienttone ) * ambientintensitynightfactor;
+    Global.DayLight.ambient[ 1 ] = std::lerp( skydomehsv.z, skydomecolour.g, ambienttone ) * ambientintensitynightfactor;
+    Global.DayLight.ambient[ 2 ] = std::lerp( skydomehsv.z, skydomecolour.b, ambienttone ) * ambientintensitynightfactor;
 
     Global.fLuminance = intensity;
 
     // update the fog. setting it to match the average colour of the sky dome is cheap
     // but quite effective way to make the distant items blend with background better
     Global.FogColor = ((m_skydome.GetAverageHorizonColor()) * keylightcolor) *
-	                  clamp<float>(Global.fLuminance, 0.0f, 1.f);
+	                  std::clamp((float)Global.fLuminance, 0.f, 1.f);
 	
 
     // weather-related simulation factors
@@ -255,7 +255,7 @@ world_environment::update_wind() {
     // TBD, TODO: wind configuration
     m_wind.azimuth = clamp_circular( m_wind.azimuth + m_wind.azimuth_change * timedelta );
     // HACK: negative part of range allows for some quiet periods, without active wind
-    m_wind.velocity = clamp<float>( m_wind.velocity + m_wind.velocity_change * timedelta, -2, 4 );
+    m_wind.velocity = std::clamp( m_wind.velocity + m_wind.velocity_change * timedelta, -2.f, 4.f );
     // convert to force vector
     auto const polarangle { glm::radians( 90.f ) }; // theta
     auto const azimuthalangle{ glm::radians( m_wind.azimuth ) }; // phi

@@ -10,7 +10,6 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 
 #include "rendering/opengllight.h"
-#include "utilities/utilities.h"
 
 void
 opengl_light::apply_intensity( float const Factor ) {
@@ -22,7 +21,7 @@ opengl_light::apply_intensity( float const Factor ) {
         ::glLightfv( id, GL_SPECULAR, glm::value_ptr( specular ) );
     }
     else {
-        auto const factor{ clamp( Factor, 0.05f, 1.f ) };
+        auto const factor{ std::clamp( Factor, 0.05f, 1.f ) };
         // temporary light scaling mechanics (ultimately this work will be left to the shaders
         glm::vec4 scaledambient( ambient.r * factor, ambient.g * factor, ambient.b * factor, ambient.a );
         glm::vec4 scaleddiffuse( diffuse.r * factor, diffuse.g * factor, diffuse.b * factor, diffuse.a );

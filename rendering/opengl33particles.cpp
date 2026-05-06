@@ -67,7 +67,7 @@ opengl33_particles::update( opengl_camera const &Camera ) {
 			vertex.color[ 0 ] = particlecolor.r;
 			vertex.color[ 1 ] = particlecolor.g;
 			vertex.color[ 2 ] = particlecolor.b;
-			vertex.color.a = clamp(particle.opacity, 0.0f, 1.0f);
+			vertex.color.a = std::clamp(particle.opacity, 0.0f, 1.0f);
 
 			auto const offset { glm::vec3{ particle.position - Camera.position() } };
 			auto const rotation { glm::angleAxis( particle.rotation, glm::vec3{ 0.f, 0.f, 1.f } ) };

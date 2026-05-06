@@ -140,11 +140,11 @@ state_manager::update_scripting_interface() {
     if( simulation::is_ready ) {
         // potentially adjust weather
         if( weather->Value1() != m_scriptinginterface.weather->Value1() ) {
-            Global.Overcast = clamp<float>( weather->Value1(), 0, 2 );
+            Global.Overcast = std::clamp( (float)weather->Value1(), 0.f, 2.f );
             simulation::Environment.compute_weather();
         }
         if( weather->Value2() != m_scriptinginterface.weather->Value2() ) {
-            Global.fFogEnd = clamp<float>( weather->Value2(), 10, 25000 );
+			Global.fFogEnd = std::clamp( (float)weather->Value2(), 10.f, 25000.f );
         }
     }
     else {
@@ -324,7 +324,7 @@ void state_manager::process_commands() {
             simulation::Environment.compute_season(yearday);
             if( weather != Global.Weather ) {
                 // HACK: force re-calculation of precipitation
-                Global.Overcast = clamp( Global.Overcast - 0.0001f, 0.0f, 2.0f );
+                Global.Overcast = std::clamp( Global.Overcast - 0.0001f, 0.0f, 2.0f );
             }
 
             simulation::Environment.update_moon();

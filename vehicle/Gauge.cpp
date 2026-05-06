@@ -273,7 +273,7 @@ TGauge::Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad ) {
             >> soundproofing[ 5 ];
         Scratchpad.soundproofing = soundproofing;
     }
-    else if( starts_with( key, "sound" ) ) {
+    else if( key.starts_with("sound") ) {
         // sounds assigned to specific gauge values, defined by key soundX: where X = value
         auto const indexstart { key.find_first_of( "-1234567890" ) };
         auto const indexend { key.find_first_not_of( "-1234567890", indexstart ) };
@@ -457,9 +457,9 @@ float TGauge::GetScaledValue() const {
         ( false == m_interpolatescale ) ?
             m_value * m_scale + m_offset :
             m_value
-            * interpolate(
+            * std::lerp(
                 m_scale, m_endscale,
-                clamp(
+                std::clamp(
                     m_value / m_endvalue,
                     0.f, 1.f ) )
             + m_offset );

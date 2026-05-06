@@ -198,7 +198,7 @@ double TSegment::GetTFromS(double const s) const
     // initial guess for Newton's method
     double fTolerance = 0.001;
     double fRatio = s / RombergIntegral(0, 1);
-    double fTime = interpolate( 0.0, 1.0, fRatio );
+    double fTime = std::lerp( 0.0, 1.0, fRatio );
 
     int iteration = 0;
     double fDifference {}; // exposed for debug down the road
@@ -243,7 +243,7 @@ double TSegment::ComputeLength() const // McZapkie-150503: dlugosc miedzy punkta
     for (int i = 1; i <= m; i++)
     {
         t = double(i) / double(m); // wyznaczenie parametru na krzywej z przedziału (0,1>
-        // tmp=Interpolate(t,p1,cp1,cp2,p2);
+        // tmp=std::lerp(t,p1,cp1,cp2,p2);
         tmp = RaInterpolate0(t); // obliczenie punktu dla tego parametru
 		t = glm::length(tmp - last); // obliczenie długości wektora
         l += t; // zwiększenie wyliczanej długości
@@ -273,7 +273,7 @@ TSegment::find_nearest_point( glm::dvec3 const &Point ) const {
         for( int segmentidx = 0; segmentidx < iSegCount; ++segmentidx ) {
 
             auto const segmentpoint =
-                clamp(
+                std::clamp(
                     nearest_segment_point(
                         glm::dvec3{ FastGetPoint( fTsBuffer[ segmentidx ] ) },
                         glm::dvec3{ FastGetPoint( fTsBuffer[ segmentidx + 1 ] ) },
@@ -323,15 +323,15 @@ Math3D::vector3 TSegment::GetPoint(double const fDistance) const
     if (bCurve)
     { // można by wprowadzić uproszczony wzór dla okręgów płaskich
         double t = GetTFromS(fDistance); // aproksymacja dystansu na krzywej Beziera
-        // return Interpolate(t,Point1,CPointOut,CPointIn,Point2);
+        // return std::lerp(t,Point1,CPointOut,CPointIn,Point2);
         return RaInterpolate(t);
     }
     else {
         // wyliczenie dla odcinka prostego jest prostsze
         return
-            interpolate(
+            std::lerp(
                 Point1, Point2,
-                clamp(
+                std::clamp(
                     fDistance / fLength,
                     0.0, 1.0 ) );
     }
@@ -344,7 +344,7 @@ void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &p, glm::vec3 &a
         auto const t = GetTFromS(fDistance); // aproksymacja dystansu na krzywej Beziera na parametr (t)
         p = FastGetPoint( t );
         // przechyłka w danym miejscu (zmienia się liniowo)
-        a.x = interpolate<double>( fRoll1, fRoll2, t );
+        a.x = std::lerp( fRoll1, fRoll2, t );
         // pochodna jest 3*A*t^2+2*B*t+C
         auto const tangent = t * ( t * 3.0 * vA + vB + vB ) + vC;
         // pochylenie krzywej (w pionie)
@@ -357,7 +357,7 @@ void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &p, glm::vec3 &a
         auto const t = fDistance / fLength; // zerowych torów nie ma
         p = FastGetPoint( t );
         // przechyłka w danym miejscu (zmienia się liniowo)
-        a.x = interpolate<double>( fRoll1, fRoll2, t );
+        a.x = std::lerp( fRoll1, fRoll2, t );
         a.y = fStoop; // pochylenie toru prostego
         a.z = fDirection; // kierunek toru w planie
     }
@@ -365,11 +365,10 @@ void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &p, glm::vec3 &a
 
 glm::dvec3 TSegment::FastGetPoint(double const t) const
 {
-    // return (bCurve?Interpolate(t,Point1,CPointOut,CPointIn,Point2):((1.0-t)*Point1+(t)*Point2));
+    // return (bCurve?std::lerp(t,Point1,CPointOut,CPointIn,Point2):((1.0-t)*Point1+(t)*Point2));
     return (
         ( ( true == bCurve ) || ( iSegCount != 1 ) ) ?
-            RaInterpolate( t ) :
-            interpolate( Point1, Point2, t ) );
+            RaInterpolate( t ) : glm::mix(Point1, Point2, t));
 }
 
 bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, const gfx::vertex_array &ShapePoints, bool const Transition, double fTextureLength, double Texturescale, int iSkip, int iEnd, std::pair<float, float> fOffsetX, glm::vec3 **p, bool bRender)

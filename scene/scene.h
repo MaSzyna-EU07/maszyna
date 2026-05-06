@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Traction.h"
 #include "audio/sound.h"
 #include "input/command.h"
+#include "utilities/utilities.h"
 
 class opengl_renderer;
 class opengl33_renderer;

@@ -282,7 +282,7 @@ smoke_source::update( double const Timedelta, bool const Onlydespawn ) {
     }
     // determine bounding area from calculated bounding box
     if( false == m_particles.empty() ) {
-        m_area.center = interpolate( boundingbox[ value_limit::min ], boundingbox[ value_limit::max ], 0.5 );
+		m_area.center = glm::mix(boundingbox[value_limit::min], boundingbox[value_limit::max], 0.5);
         m_area.radius = 0.5 * ( glm::length( boundingbox[ value_limit::max ] - boundingbox[ value_limit::min ] ) );
     }
     else {

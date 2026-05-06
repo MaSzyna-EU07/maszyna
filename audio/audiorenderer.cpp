@@ -14,7 +14,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "vehicle/Camera.h"
 #include "utilities/Logs.h"
-#include "utilities/utilities.h"
 #include "simulation/simulation.h"
 #include "vehicle/Train.h"
 
@@ -191,9 +190,8 @@ openal_source::sync_with( sound_properties const &State ) {
             // adjust the volume to a suitable fraction of nominal value
             auto const fadedistance { sound_range * 0.75f };
             auto const rangefactor {
-                interpolate(
-                    1.f, 0.f,
-                    clamp<float>(
+                std::lerp(
+                    1.f, 0.f, std::clamp(
                         ( distancesquared - rangesquared ) / ( fadedistance * fadedistance ),
                         0.f, 1.f ) ) };
             ::alSourcef( id, AL_GAIN, gain * rangefactor );
@@ -203,7 +201,7 @@ openal_source::sync_with( sound_properties const &State ) {
     // pitch
     if( State.pitch != properties.pitch ) {
         // pitch value has changed
-        ::alSourcef( id, AL_PITCH, clamp( State.pitch * pitch_variation, 0.1f, 10.f ) );
+        ::alSourcef( id, AL_PITCH, std::clamp( State.pitch * pitch_variation, 0.1f, 10.f ) );
     }
     // all synced up
     properties = State;

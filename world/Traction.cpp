@@ -156,7 +156,7 @@ TTraction::Load( cParser *parser, glm::dvec3 const &pOrigin ) {
     Init(); // przeliczenie parametrów
 
     // calculate traction location
-    location( interpolate( pPoint2, pPoint1, 0.5 ) );
+    location( glm::mix( pPoint2, pPoint1, 0.5 ) );
 }
 
 // retrieves list of the track's end points

@@ -47,8 +47,8 @@ scenario_time::init(std::time_t timestamp) {
         daymonth( m_time.wDay, m_time.wMonth, m_time.wYear, static_cast<WORD>( Global.fMoveLight ) );
     }
 
-    if( requestedhour != -1 ) { m_time.wHour = static_cast<WORD>( clamp( requestedhour, 0, 23 ) ); }
-    if( requestedminute != -1 ) { m_time.wMinute = static_cast<WORD>( clamp( requestedminute, 0, 59 ) ); }
+    if( requestedhour != -1 ) { m_time.wHour = static_cast<WORD>( std::clamp( requestedhour, 0, 23 ) ); }
+    if( requestedminute != -1 ) { m_time.wMinute = static_cast<WORD>( std::clamp( requestedminute, 0, 59 ) ); }
     // if the time is taken from the local clock leave the seconds intact, otherwise set them to zero
     if( ( requestedhour != -1 )
      || ( requestedminute != 1 ) ) {

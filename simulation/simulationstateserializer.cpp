@@ -225,7 +225,7 @@ state_serializer::deserialize_atmo( cParser &Input, scene::scratch_data &Scratch
         }
 
         Global.fFogEnd =
-            clamp(
+            std::clamp(
                 Random( std::min( fograngestart, fograngeend ), std::max( fograngestart, fograngeend ) ),
                 10.0, 25000.0 );
     }
@@ -238,7 +238,7 @@ state_serializer::deserialize_atmo( cParser &Input, scene::scratch_data &Scratch
             // negative overcast means random value in range 0-abs(specified range)
             Global.Overcast =
                 Random(
-                    clamp(
+                    std::clamp(
                         std::abs( Global.Overcast ),
                         0.f, 2.f ) );
         }
@@ -566,8 +566,8 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
             // crude way to detect fixed switch trackbed geometry
          || ( ( true == Global.CreateSwitchTrackbeds )
            && ( Input.Name().size() >= 15 )
-           && ( starts_with( Input.Name(), "scenery/zwr" ) )
-           && ( ends_with( Input.Name(), ".inc" ) ) ) };
+           && Input.Name().starts_with("scenery/zwr")
+           && Input.Name().ends_with(".inc") ) };
 
         if( false == skip ) {
 
@@ -749,7 +749,7 @@ state_serializer::deserialize_terrain(cParser &Input, scene::scratch_data &Scrat
 	std::string line;
 	Input.getTokens(1);
 	Input >> line;
-	if ((true == Global.file_binary_terrain) && (true == ends_with(line, ".sbt")))
+	if (Global.file_binary_terrain && line.ends_with(".sbt"))
 	{  
         Scratchpad.binary.terrain = Region->is_scene(line);
 		Global.file_binary_terrain_state = true;
