@@ -394,9 +394,7 @@ void replace_slashes(std::string &Filename)
 // returns potential path part from provided file name
 std::string_view substr_path(std::string const &Filename)
 {
-	if (auto pos = Filename.rfind('/'); pos != std::string::npos)
-		return Filename.substr(0, pos + 1);
-	return {};
+	return (Filename.rfind('/') != std::string::npos ? Filename.substr(0, Filename.rfind('/') + 1) : "");
 }
 
 // returns length of common prefix between two provided strings
