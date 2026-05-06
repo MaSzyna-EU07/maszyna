@@ -94,6 +94,7 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #define GLM_FORCE_CTOR_INIT
 #define GLM_FORCE_INLINE
+#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 #define GLM_FORCE_INTRINSICS
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -107,6 +108,12 @@
 #include <glm/gtx/norm.hpp>
 #include <glm/gtx/string_cast.hpp>
 
+#ifndef PACKED_VEC3_DEFINED
+#define PACKED_VEC3_DEFINED
+// 12-byte vec3 that stays packed regardless of GLM_FORCE_DEFAULT_ALIGNED_GENTYPES.
+// Use in structs that must match an exact binary layout (UBOs, vertex data, serialized formats).
+using packed_vec3 = glm::vec<3, float, glm::packed_highp>;
+#endif
 
 
 #include "rendering/openglmatrixstack.h"

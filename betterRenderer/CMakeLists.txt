@@ -67,7 +67,11 @@ target_include_directories(${LIBMANUL_NAME} PRIVATE
 
 target_compile_definitions(${LIBMANUL_NAME} PRIVATE
         GLM_ENABLE_EXPERIMENTAL
-        GLM_FORCE_SWIZZLE)
+        GLM_FORCE_SWIZZLE
+        GLM_FORCE_CTOR_INIT
+        GLM_FORCE_INLINE
+        GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
+        GLM_FORCE_INTRINSICS)
 
 target_compile_definitions(${LIBMANUL_NAME} PRIVATE
         _USE_MATH_DEFINES)
@@ -99,12 +103,13 @@ else ()
     target_compile_definitions(${LIBMANUL_NAME} PUBLIC "LIBMANUL_WITH_VULKAN=0")
 endif ()
 
-## For double-precision vector goodness
-#if (WIN32)
-#    target_compile_options(${LIBMANUL_NAME} PRIVATE "/arch:AVX2")
-#elseif (UNIX)
-#    target_compile_options(${LIBMANUL_NAME} PRIVATE "-mavx2")
-#endif ()
+if(ENABLE_AVX2)
+    if (WIN32)
+        target_compile_options(${LIBMANUL_NAME} PRIVATE "/arch:AVX2")
+    elseif (UNIX)
+        target_compile_options(${LIBMANUL_NAME} PRIVATE "-mavx2")
+    endif ()
+endif()
 
 target_sources(${LIBMANUL_NAME} INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/eu07_source/register.cpp")
 set_target_properties(nvrhi yaml-cpp fmt EnTT glfw yaml-cpp-parse yaml-cpp-read yaml-cpp-sandbox PROPERTIES FOLDER "libraries")

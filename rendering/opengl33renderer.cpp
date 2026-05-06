@@ -3101,7 +3101,7 @@ bool opengl33_renderer::Render_cab(TDynamicObject const *Dynamic, float const Li
             auto const luminance { Global.fLuminance * ( Dynamic->fShade > 0.0f ? Dynamic->fShade : 1.0f ) };
             if( Lightlevel > 0.f ) {
                 // crude way to light the cabin, until we have something more complete in place
-                light_ubs.ambient += ( Dynamic->InteriorLight * Lightlevel ) * std::clamp( 1.25f - (float)luminance, 0.f, 1.f );
+                light_ubs.ambient += packed_vec3( ( Dynamic->InteriorLight * Lightlevel ) * std::clamp( 1.25f - (float)luminance, 0.f, 1.f ) );
                 light_ubo->update( light_ubs );
             }
 
