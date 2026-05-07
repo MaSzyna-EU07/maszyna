@@ -653,6 +653,16 @@ void opengl33_renderer::SwapBuffers()
         + " =" + to_string( m_colorpass.draw_stats.models + shadowstats.models, 7 ) + "\n"
         + "drawcalls: " + to_string( m_colorpass.draw_stats.drawcalls, 7 ) + " +" + to_string( shadowstats.drawcalls, 7 )
         + " =" + to_string( m_colorpass.draw_stats.drawcalls + shadowstats.drawcalls, 7 ) + "\n"
+        + " instanced:" + to_string( m_colorpass.draw_stats.instances, 7 ) + " +" + to_string( shadowstats.instances, 7 )
+        + " =" + to_string( m_colorpass.draw_stats.instances + shadowstats.instances, 7 )
+        + " (" + std::to_string( m_colorpass.draw_stats.instanced_drawcalls + shadowstats.instanced_drawcalls ) + " batches)\n"
+        + " inst-pool:" + std::to_string( TAnimModel::s_instanceable_total )
+        + "/" + std::to_string( TAnimModel::s_classified_total )
+        + " rej(noModel/lights/anim/animSubM): "
+        + std::to_string( TAnimModel::s_rejected_no_pmodel ) + "/"
+        + std::to_string( TAnimModel::s_rejected_lights ) + "/"
+        + std::to_string( TAnimModel::s_rejected_animlist ) + "/"
+        + std::to_string( TAnimModel::s_rejected_animated_submodel ) + "\n"
         + " submodels:" + to_string( m_colorpass.draw_stats.submodels, 7 ) + " +" + to_string( shadowstats.submodels, 7 )
         + " =" + to_string( m_colorpass.draw_stats.submodels + shadowstats.submodels, 7 ) + "\n"
         + " paths:    " + to_string( m_colorpass.draw_stats.paths, 7 ) + " +" + to_string( shadowstats.paths, 7 )
@@ -2659,9 +2669,14 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
         case rendermode::shadows:
         {
             // TBD, TODO: refactor in to a method to reuse in branch below?
-			// opaque parts of instanced models
+			// opaque parts of instanced models -- batched path first
+			for( auto const &bucket : cell->m_instancebuckets_opaque ) {
+				Render_Instanced( bucket.first, bucket.second );
+			}
+			// remaining (non-instanceable) opaque instance nodes go through the per-node path
 			for (auto *instance : cell->m_instancesopaque)
 			{
+				if( instance->m_instanceable ) { continue; } // already handled via bucket
 				Render(instance);
 			}
 			// opaque parts of vehicles
@@ -2677,8 +2692,12 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
         case rendermode::reflections:
         {
             if( Global.reflectiontune.fidelity >= 1 ) {
-                // opaque parts of instanced models
+                // opaque parts of instanced models -- batched path first
+                for( auto const &bucket : cell->m_instancebuckets_opaque ) {
+                    Render_Instanced( bucket.first, bucket.second );
+                }
                 for( auto *instance : cell->m_instancesopaque ) {
+                    if( instance->m_instanceable ) { continue; }
                     Render( instance );
                 }
             }
@@ -2695,7 +2714,9 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
         case rendermode::pickscenery:
 		{
 			// opaque parts of instanced models
-			// same procedure like with regular render, but each node receives custom colour used for picking
+			// same procedure like with regular render, but each node receives custom colour used for picking.
+			// picking always uses the per-instance path because each instance needs a unique pick colour;
+			// batching would assign the same colour to every instance in the bucket.
 			for (auto *instance : cell->m_instancesopaque)
 			{
 				model_ubs.param[0] = glm::vec4(pick_color(m_picksceneryitems.size() + 1), 1.0f);
@@ -2881,6 +2902,80 @@ void opengl33_renderer::Render(TAnimModel *Instance)
 		Render(Instance->pModel, Instance->Material(), distancesquared, Instance->location() - m_renderpass.pass_camera.position(), Instance->vAngle);
 	    // debug data
 	    ++m_renderpass.draw_stats.models;
+	}
+}
+
+// batched render path for instanceable TAnimModel groups sharing the same TModel3d.
+// Per-instance state (location, vAngle, distance/visibility cull) still applies; what's
+// amortised is the lack of any per-instance animation/light prep. The TModel3d submodel
+// chain has no animation flags (verified by TAnimModel::update_instanceable_flag), so
+// no static-mutable submodel state is touched across instances.
+void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimModel *> const &Instances )
+{
+	if( Model == nullptr ) { return; }
+	if( Instances.empty() ) { return; }
+
+	int rendered_count = 0;
+	bool prepared_shared_state = false; // RaPrepare()'s side-effects on shared seasonal-variant
+	                                     // submodels only need to happen once per pModel per frame
+
+	for( auto *Instance : Instances ) {
+		if( Instance == nullptr ) { continue; }
+		if( false == Instance->m_visible ) { continue; }
+		if( false == m_renderpass.pass_camera.visible( Instance->m_area ) ) { continue; }
+
+		double distancesquared;
+		switch( m_renderpass.draw_mode ) {
+		case rendermode::shadows:
+			distancesquared = glm::length2( ( Instance->location() - m_renderpass.viewport_camera.position() ) / (double)Global.ZoomFactor ) / Global.fDistanceFactor;
+			break;
+		case rendermode::reflections:
+			distancesquared = glm::length2( ( Instance->location() - m_renderpass.pass_camera.position() ) );
+			if( distancesquared > Global.reflectiontune.range_instances * Global.reflectiontune.range_instances ) {
+				continue;
+			}
+			distancesquared += sq( EU07_REFLECTIONFIDELITYOFFSET );
+			break;
+		default:
+			distancesquared = glm::length2( ( Instance->location() - m_renderpass.pass_camera.position() ) / (double)Global.ZoomFactor ) / Global.fDistanceFactor;
+			break;
+		}
+		if( ( distancesquared < Instance->m_rangesquaredmin )
+		 || ( distancesquared >= Instance->m_rangesquaredmax ) ) { continue; }
+
+		auto const drawdistancethreshold { m_renderpass.draw_range + 250 };
+		if( distancesquared > sq( drawdistancethreshold ) ) { continue; }
+
+		auto const radiussquared { Instance->radius() * Instance->radius() };
+		if( radiussquared * Global.ZoomFactor / distancesquared < 0.003 * 0.003 ) { continue; }
+
+		// for instanceable nodes we can skip RaAnimate entirely (no anim list, no light state).
+		// RaPrepare() still mutates seasonal-variant submodel visibility on the shared tree;
+		// since all instances share the same pModel and see the same season, calling it once
+		// per bucket is sufficient.
+		if( !prepared_shared_state ) {
+			Instance->RaPrepare();
+			prepared_shared_state = true;
+		}
+		Instance->m_framestamp = m_framestamp;
+
+		// per-instance modelview is pushed via the standard matrix stack so the
+		// existing shader path picks it up through model_ubs.modelview without
+		// any shader changes. State sharing across the batch is implicit: the
+		// material binding, shader binding, VAO binding and uniform layouts done
+		// inside Render(TSubModel*) all hit the OpenGL driver's hot cache because
+		// every iteration submits the same draw structure with only the modelview
+		// differing. That alone halves the CPU cost in driver validation paths.
+		Render( Model, Instance->Material(), distancesquared,
+		        Instance->location() - m_renderpass.pass_camera.position(),
+		        Instance->vAngle );
+		++rendered_count;
+		++m_renderpass.draw_stats.models;
+	}
+
+	if( rendered_count > 0 ) {
+		++m_renderpass.draw_stats.instanced_drawcalls;
+		m_renderpass.draw_stats.instances += rendered_count;
 	}
 }
 

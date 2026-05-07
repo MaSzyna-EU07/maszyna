@@ -376,7 +376,68 @@ bool TAnimModel::Load(cParser *parser, bool ter)
     } while( ( false == token.empty() )
           && ( token != "endmodel" ) );
 
+    update_instanceable_flag();
     return true;
+}
+
+namespace {
+// returns true if this animation type mutates per-instance state on the shared
+// TSubModel tree, which would make batched rendering unsafe. Most animations
+// loaded from .t3d files are global functions of time (clocks, wind, sky) and
+// only transform the local modelview matrix — those are safe to share. Camera-
+// relative billboards also operate purely on the local matrix using whatever
+// modelview the caller pushed, which is exactly per-instance behaviour.
+// The runtime SetRotate/SetTranslate animations (at_Rotate / at_RotateXYZ /
+// at_Translate) are tied to per-instance iAnimOwner and are unsafe to share —
+// in practice they're driven by m_animlist which we filter at the AnimModel
+// level, but we still blacklist them here as a safety net.
+bool anim_type_unsafe_for_instancing( TAnimType a ) {
+    switch( a ) {
+    case TAnimType::at_Rotate:
+    case TAnimType::at_RotateXYZ:
+    case TAnimType::at_Translate:
+    case TAnimType::at_DigiClk: // mutates child submodels via SetRotate
+        return true;
+    default:
+        return false;
+    }
+}
+
+// recursively walks a submodel tree and returns true if any submodel declares
+// an animation type that's unsafe to batch.
+bool submodel_tree_blocks_instancing( TSubModel const *Sub ) {
+    if( Sub == nullptr ) { return false; }
+    if( anim_type_unsafe_for_instancing( Sub->b_Anim ) ) { return true; }
+    if( submodel_tree_blocks_instancing( Sub->Child ) ) { return true; }
+    if( submodel_tree_blocks_instancing( Sub->Next ) ) { return true; }
+    return false;
+}
+} // anonymous namespace
+
+int TAnimModel::s_instanceable_total = 0;
+int TAnimModel::s_classified_total = 0;
+int TAnimModel::s_rejected_no_pmodel = 0;
+int TAnimModel::s_rejected_lights = 0;
+int TAnimModel::s_rejected_animlist = 0;
+int TAnimModel::s_rejected_animated_submodel = 0;
+
+void TAnimModel::update_instanceable_flag() {
+    // The instanceable path skips RaAnimate() entirely and only calls RaPrepare()
+    // once per bucket. The conditions below ensure that's safe:
+    //   - no lights:        per-instance light state machines must not exist
+    //   - no anim list:     per-instance submodel animations must not exist
+    //   - no animated submodels in the shared TModel3d
+    // Replacable skins, seasonal variants, and submodel replacable-skin material
+    // refs are intentionally allowed — they're either passed per-instance via
+    // Material() or share global state (season) across all instances.
+    m_instanceable = false;
+    ++s_classified_total;
+    if( pModel == nullptr ) { ++s_rejected_no_pmodel; return; }
+    if( iNumLights != 0 ) { ++s_rejected_lights; return; }
+    if( !m_animlist.empty() ) { ++s_rejected_animlist; return; }
+    if( submodel_tree_blocks_instancing( pModel->Root ) ) { ++s_rejected_animated_submodel; return; }
+    m_instanceable = true;
+    ++s_instanceable_total;
 }
 
 std::shared_ptr<TAnimContainer> TAnimModel::AddContainer(std::string const &Name)

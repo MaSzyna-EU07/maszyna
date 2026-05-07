@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include <array>
 #include <stack>
 #include <unordered_set>
+#include <unordered_map>
 #include <map>
 
 #include "utilities/parser.h"
@@ -179,6 +180,7 @@ public:
     using linesnode_sequence = std::vector<lines_node>;
     using traction_sequence = std::vector<TTraction *>;
     using instance_sequence = std::vector<TAnimModel *>;
+    using instance_bucket_map = std::unordered_map< TModel3d *, std::vector<TAnimModel *> >;
     using sound_sequence = std::vector<sound_source *>;
     using eventlauncher_sequence = std::vector<TEventLauncher *>;
     using memorycell_sequence = std::vector<TMemCell *>;
@@ -196,6 +198,10 @@ public:
     path_sequence m_paths; // path pieces
     instance_sequence m_instancesopaque;
     instance_sequence m_instancetranslucent;
+    // batched instance buckets keyed by shared TModel3d*; populated alongside
+    // m_instancesopaque for nodes whose TAnimModel::m_instanceable == true.
+    // The renderer uses these to amortise per-model state setup across many instances.
+    instance_bucket_map m_instancebuckets_opaque;
     traction_sequence m_traction;
     sound_sequence m_sounds;
     eventlauncher_sequence m_eventlaunchers;

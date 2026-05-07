@@ -189,6 +189,22 @@ public:
 //    float fTransitionTime { fOnTime * 0.9f }; // time
     bool m_transition { true }; // smooth transition between light states
     unsigned int m_framestamp { 0 }; // id of last rendered gfx frame
+
+    // true if this instance is eligible for the batched/instanced render path:
+    // no lights, no submodel animations, no replacable skins, no seasonal variants.
+    // computed once at end of Load() so the renderer can simply test the flag.
+    bool m_instanceable { false };
+    // helper: evaluates current state and updates m_instanceable accordingly.
+    void update_instanceable_flag();
+
+    // diagnostic counters (process-wide). Updated inside update_instanceable_flag()
+    // so the renderer can surface load-time classification stats in the debug overlay.
+    static int s_instanceable_total;       // count of TAnimModel*'s classified instanceable
+    static int s_classified_total;         // count of TAnimModel*'s that ran through the classifier
+    static int s_rejected_no_pmodel;
+    static int s_rejected_lights;
+    static int s_rejected_animlist;
+    static int s_rejected_animated_submodel;
 };
 
 

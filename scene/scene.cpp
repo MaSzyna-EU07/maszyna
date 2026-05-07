@@ -374,6 +374,13 @@ basic_cell::insert( TAnimModel *Instance ) {
     if( alpha & flags & 0x1F1F001F ) {
         // opaque pieces
         m_instancesopaque.emplace_back( Instance );
+        // additionally route instanceable nodes into a per-pModel bucket so the
+        // renderer can amortise material/state setup across all instances of the
+        // same TModel3d. The flat list is kept too for fallback paths
+        // (picking, reflections at low fidelity, etc.).
+        if( Instance->m_instanceable && Instance->Model() != nullptr ) {
+            m_instancebuckets_opaque[ Instance->Model() ].emplace_back( Instance );
+        }
     }
    // re-calculate cell bounding area, in case model extends outside the cell's boundaries
     enclose_area( Instance );
@@ -438,6 +445,18 @@ basic_cell::erase( TAnimModel *Instance ) {
                 [=]( TAnimModel *instance ) {
                     return instance == Instance; } ),
             std::end( m_instancesopaque ) );
+        // also remove from the per-pModel instance bucket if present
+        if( Instance->m_instanceable && Instance->Model() != nullptr ) {
+            auto bucket = m_instancebuckets_opaque.find( Instance->Model() );
+            if( bucket != m_instancebuckets_opaque.end() ) {
+                bucket->second.erase(
+                    std::remove( std::begin( bucket->second ), std::end( bucket->second ), Instance ),
+                    std::end( bucket->second ) );
+                if( bucket->second.empty() ) {
+                    m_instancebuckets_opaque.erase( bucket );
+                }
+            }
+        }
     }
     // TODO: update cell bounding area
 }

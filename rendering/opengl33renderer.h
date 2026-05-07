@@ -162,6 +162,8 @@ class opengl33_renderer : public gfx_renderer {
 		int lines{0};
     int particles{0};
 		int drawcalls{0};
+    int instanced_drawcalls{0}; // drawcalls issued via instanced render path (one per TModel3d batch)
+    int instances{0}; // total instances drawn via instanced render path
     int triangles{0};
 
     debug_stats& operator+=( const debug_stats& Right ) {
@@ -174,6 +176,8 @@ class opengl33_renderer : public gfx_renderer {
         lines += Right.lines;
         particles += Right.particles;
         drawcalls += Right.drawcalls;
+        instanced_drawcalls += Right.instanced_drawcalls;
+        instances += Right.instances;
         return *this; }
 	};
 
@@ -266,6 +270,12 @@ class opengl33_renderer : public gfx_renderer {
 	void Render(cell_sequence::iterator First, cell_sequence::iterator Last);
     void Render(scene::shape_node const &Shape, bool const Ignorerange);
 	void Render(TAnimModel *Instance);
+	// batched render path for many TAnimModel instances that share the same TModel3d.
+	// Caller guarantees every instance has m_instanceable == true (no per-instance lights,
+	// no submodel animation, no replacable skins). Each call counts as one
+	// instanced_drawcall in draw_stats and contributes Instances.size() to the
+	// instances counter. Instances are still individually frustum/distance culled.
+	void Render_Instanced( TModel3d *Model, std::vector<TAnimModel *> const &Instances );
 	bool Render(TDynamicObject *Dynamic);
     bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
 	bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance);
