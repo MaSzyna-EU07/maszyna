@@ -180,7 +180,30 @@ public:
     using linesnode_sequence = std::vector<lines_node>;
     using traction_sequence = std::vector<TTraction *>;
     using instance_sequence = std::vector<TAnimModel *>;
-    using instance_bucket_map = std::unordered_map< TModel3d *, std::vector<TAnimModel *> >;
+    // Composite key: instances of the same TModel3d sharing the same replacable
+    // skin set can be GPU-batched together, but instances with different skins
+    // must go to different buckets so each batched draw call uses one consistent
+    // material binding. Sub-bucketing here keeps Render_Instanced correct without
+    // forcing per-instance material switching inside a single batch.
+    struct instance_bucket_key {
+        TModel3d *pModel { nullptr };
+        std::array<material_handle, 5> skins {};
+
+        bool operator==( instance_bucket_key const &other ) const {
+            return pModel == other.pModel && skins == other.skins;
+        }
+    };
+    struct instance_bucket_key_hash {
+        std::size_t operator()( instance_bucket_key const &k ) const {
+            std::size_t h = std::hash<TModel3d *>()( k.pModel );
+            for( auto s : k.skins ) {
+                // boost-style hash combine
+                h ^= std::hash<int>()( s ) + 0x9e3779b9 + ( h << 6 ) + ( h >> 2 );
+            }
+            return h;
+        }
+    };
+    using instance_bucket_map = std::unordered_map< instance_bucket_key, std::vector<TAnimModel *>, instance_bucket_key_hash >;
     using sound_sequence = std::vector<sound_source *>;
     using eventlauncher_sequence = std::vector<TEventLauncher *>;
     using memorycell_sequence = std::vector<TMemCell *>;

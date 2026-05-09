@@ -187,6 +187,57 @@ opengl33_vaogeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stre
     }
 }
 
+// draw_instanced() subclass details — single GL instanced draw for InstanceCount instances.
+// The vertex shader reads per-instance modelview from instance_ubo[gl_InstanceID].
+std::size_t
+opengl33_vaogeometrybank::draw_instanced_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams )
+{
+    setup_buffer();
+
+    auto &chunkrecord = m_chunkrecords.at(Geometry.chunk - 1);
+    if( chunkrecord.vertex_count == 0 ) { return 0; }
+
+    auto const &chunk = gfx::geometry_bank::chunk( Geometry );
+    if( !chunkrecord.is_good ) {
+        m_vao->bind();
+        if( chunkrecord.index_count > 0 ) {
+            m_indexbuffer->upload( gl::buffer::ELEMENT_ARRAY_BUFFER, chunk.indices.data(), chunkrecord.index_offset * sizeof( gfx::basic_index ), chunkrecord.index_count * sizeof( gfx::basic_index ) );
+        }
+        m_vertexbuffer->upload( gl::buffer::ARRAY_BUFFER, chunk.vertices.data(), chunkrecord.vertex_offset * sizeof( gfx::basic_vertex ), chunkrecord.vertex_count * sizeof( gfx::basic_vertex ) );
+        if( chunkrecord.has_userdata ) {
+            m_vertexbuffer->upload( gl::buffer::ARRAY_BUFFER, chunk.userdata.data(),
+                static_cast<int>(m_vertex_count * sizeof(gfx::basic_vertex) + chunkrecord.vertex_offset * sizeof(gfx::vertex_userdata)),
+                static_cast<int>(chunkrecord.vertex_count * sizeof(gfx::vertex_userdata)) );
+        }
+        chunkrecord.is_good = true;
+    }
+
+    GLsizei const inst_count = static_cast<GLsizei>(InstanceCount);
+
+    if( chunkrecord.index_count > 0 ) {
+        m_vao->bind();
+        ::glDrawElementsInstancedBaseVertex(
+            chunk.type,
+            chunkrecord.index_count, GL_UNSIGNED_INT,
+            reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
+            inst_count,
+            chunkrecord.vertex_offset );
+    }
+    else {
+        m_vao->bind();
+        ::glDrawArraysInstanced( chunk.type, chunkrecord.vertex_offset, chunkrecord.vertex_count, inst_count );
+    }
+
+    auto const vertexcount { ( chunkrecord.index_count > 0 ? chunkrecord.index_count : chunkrecord.vertex_count ) };
+    std::size_t prims = 0;
+    switch( chunk.type ) {
+        case GL_TRIANGLES:      prims = vertexcount / 3; break;
+        case GL_TRIANGLE_STRIP: prims = ( vertexcount > 2 ? vertexcount - 2 : 0 ); break;
+        default:                prims = 0; break;
+    }
+    return prims * InstanceCount;
+}
+
 // release () subclass details
 void
 opengl33_vaogeometrybank::release_() {

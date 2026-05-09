@@ -374,12 +374,20 @@ basic_cell::insert( TAnimModel *Instance ) {
     if( alpha & flags & 0x1F1F001F ) {
         // opaque pieces
         m_instancesopaque.emplace_back( Instance );
-        // additionally route instanceable nodes into a per-pModel bucket so the
-        // renderer can amortise material/state setup across all instances of the
-        // same TModel3d. The flat list is kept too for fallback paths
-        // (picking, reflections at low fidelity, etc.).
+        // additionally route instanceable nodes into a per-(pModel, skins) bucket so
+        // the renderer can amortise material/state setup across many instances of the
+        // same TModel3d AND issue a single GPU-instanced draw call per submodel.
+        // Sub-bucketing on skin set ensures every batch has consistent textures —
+        // instances of the same pModel with different replacable skins land in
+        // different buckets and render via separate (correct) instanced draws.
         if( Instance->m_instanceable && Instance->Model() != nullptr ) {
-            m_instancebuckets_opaque[ Instance->Model() ].emplace_back( Instance );
+            instance_bucket_key key;
+            key.pModel = Instance->Model();
+            auto const *mat = Instance->Material();
+            if( mat != nullptr ) {
+                for( int i = 0; i < 5; ++i ) { key.skins[i] = mat->replacable_skins[i]; }
+            }
+            m_instancebuckets_opaque[ key ].emplace_back( Instance );
         }
     }
    // re-calculate cell bounding area, in case model extends outside the cell's boundaries
@@ -445,9 +453,15 @@ basic_cell::erase( TAnimModel *Instance ) {
                 [=]( TAnimModel *instance ) {
                     return instance == Instance; } ),
             std::end( m_instancesopaque ) );
-        // also remove from the per-pModel instance bucket if present
+        // also remove from the per-(pModel, skins) instance bucket if present
         if( Instance->m_instanceable && Instance->Model() != nullptr ) {
-            auto bucket = m_instancebuckets_opaque.find( Instance->Model() );
+            instance_bucket_key key;
+            key.pModel = Instance->Model();
+            auto const *mat = Instance->Material();
+            if( mat != nullptr ) {
+                for( int i = 0; i < 5; ++i ) { key.skins[i] = mat->replacable_skins[i]; }
+            }
+            auto bucket = m_instancebuckets_opaque.find( key );
             if( bucket != m_instancebuckets_opaque.end() ) {
                 bucket->second.erase(
                     std::remove( std::begin( bucket->second ), std::end( bucket->second ), Instance ),

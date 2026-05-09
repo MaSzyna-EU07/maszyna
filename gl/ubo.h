@@ -87,6 +87,17 @@ namespace gl
 
     static_assert(sizeof(model_ubs) == 208 + 16 * MAX_PARAMS, "bad size of ubs");
 
+    // maximum number of instances per single GPU-instanced draw call.
+    // 256 mat4 = 16 KiB, the guaranteed minimum UBO size. Bigger batches must split.
+    const size_t MAX_INSTANCES_PER_BATCH = 256;
+
+    struct instance_ubs
+    {
+        glm::mat4 instance_modelview[MAX_INSTANCES_PER_BATCH];
+    };
+
+    static_assert(sizeof(instance_ubs) == 64 * MAX_INSTANCES_PER_BATCH, "bad size of instance_ubs");
+
     struct light_element_ubs
     {
         enum type_e

@@ -53,6 +53,9 @@ private:
     // draw() subclass details
     auto
         draw_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams ) -> std::size_t override;
+    // draw_instanced() subclass details — issues glDrawElementsInstancedBaseVertex
+    auto
+        draw_instanced_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams ) -> std::size_t override;
     // release() subclass details
     void
         release_() override;

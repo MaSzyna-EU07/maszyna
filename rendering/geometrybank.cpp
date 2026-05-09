@@ -325,6 +325,13 @@ geometry_bank::draw( gfx::geometry_handle const &Geometry, gfx::stream_units con
     return draw_( Geometry, Units, Streams );
 }
 
+// draws geometry stored in specified chunk InstanceCount times via instanced draw call
+std::size_t
+geometry_bank::draw_instanced( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams ) {
+    if( InstanceCount == 0 ) { return 0; }
+    return draw_instanced_( Geometry, Units, InstanceCount, Streams );
+}
+
 // frees subclass-specific resources associated with the bank, typically called when the bank wasn't in use for a period of time
 void
 geometry_bank::release() {
@@ -414,6 +421,19 @@ geometrybank_manager::draw( gfx::geometry_handle const &Geometry, unsigned int c
 
     bankrecord.second = m_garbagecollector.timestamp();
     m_primitivecount += bankrecord.first->draw( Geometry, m_units, Streams );
+}
+
+// draws geometry stored in specified chunk InstanceCount times via instanced draw call
+void
+geometrybank_manager::draw_instanced( gfx::geometry_handle const &Geometry, std::size_t const InstanceCount, unsigned int const Streams ) {
+
+    if( Geometry == null_handle ) { return; }
+    if( InstanceCount == 0 ) { return; }
+
+    auto &bankrecord = bank( Geometry );
+
+    bankrecord.second = m_garbagecollector.timestamp();
+    m_primitivecount += bankrecord.first->draw_instanced( Geometry, m_units, InstanceCount, Streams );
 }
 
 // provides direct access to index data of specfied chunk

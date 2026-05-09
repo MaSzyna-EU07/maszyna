@@ -23,24 +23,27 @@ out vec4 UserData;
 
 void main()
 {
-	f_normal = normalize(modelviewnormal * v_normal);
+	mat4 mv = effective_modelview();
+	mat3 mvn = effective_modelviewnormal();
+
+	f_normal = normalize(mvn * v_normal);
 	f_normal_raw = v_normal;
 	f_coord = v_coord;
-	f_pos = modelview * vec4(v_vert, 1.0);
+	f_pos = mv * vec4(v_vert, 1.0);
 	for (uint idx = 0U ; idx < MAX_CASCADES ; ++idx) {
 		f_light_pos[idx] = lightview[idx] * f_pos;
-	}	
-	f_clip_pos = (projection * modelview) * vec4(v_vert, 1.0);
-	f_clip_future_pos = (projection * future * modelview) * vec4(v_vert, 1.0);
-	
+	}
+	f_clip_pos = projection * f_pos;
+	f_clip_future_pos = (projection * future) * f_pos;
+
 	gl_Position = f_clip_pos;
 	gl_PointSize = param[1].x;
 
-	vec3 T = normalize(modelviewnormal * v_tangent.xyz);
+	vec3 T = normalize(mvn * v_tangent.xyz);
 	vec3 N = f_normal;
 	vec3 B = normalize(cross(N, T));
 	f_tbn = mat3(T, B, N);
-	
+
 	mat3 TBN = transpose(f_tbn);
 //	TangentLightPos = TBN * f_light_pos.xyz;
 //	TangentViewPos = TBN * vec3(0.0, 0.0, 0.0);

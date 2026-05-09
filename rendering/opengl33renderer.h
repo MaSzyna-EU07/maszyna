@@ -391,6 +391,18 @@ class opengl33_renderer : public gfx_renderer {
 	std::unique_ptr<gl::ubo> scene_ubo;
 	std::unique_ptr<gl::ubo> model_ubo;
 	std::unique_ptr<gl::ubo> light_ubo;
+	// per-instance modelview UBO for GPU-instanced draws.
+	// Slot 0 is initialized once to identity and never overwritten by non-instanced
+	// rendering, so existing draws (where gl_InstanceID==0) compute identity*modelview
+	// in the vertex shader and behave exactly as before. Render_Instanced uploads
+	// per-instance camera-space root matrices to slots 0..N-1, calls glDrawElementsInstanced*,
+	// then restores slot 0 to identity for subsequent non-instanced draws.
+	std::unique_ptr<gl::ubo> instance_ubo;
+	// when > 0, the renderer is inside a Render_Instanced() call. The draw(handle)
+	// method routes to glDrawElementsInstanced* with this many instances rather
+	// than a single regular draw. The vertex shader reads per-instance modelview
+	// from instance_ubo[gl_InstanceID]. Reset to 0 by Render_Instanced() on exit.
+	std::size_t m_current_instance_count { 0 };
 	gl::scene_ubs scene_ubs;
 	gl::model_ubs model_ubs;
 	gl::light_ubs light_ubs;
