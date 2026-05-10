@@ -326,15 +326,10 @@ void itemproperties_panel::render_transform_editor()
 
 	// Rotation — wrapped into [0,360) for display; slider clamps drags to that range.
 	{
-		auto const wrap360 = [](float v) {
-			v = std::fmod(v, 360.0f);
-			if (v < 0.0f) { v += 360.0f; }
-			return v;
-		};
 		glm::vec3 angles{
-			wrap360(picked->Angles().x),
-			wrap360(picked->Angles().y),
-			wrap360(picked->Angles().z)};
+			clamp_circular(picked->Angles().x),
+			clamp_circular(picked->Angles().y),
+			clamp_circular(picked->Angles().z)};
 		if (ImGui::DragFloat3("rotation (deg)", &angles.x, 0.5f, 0.0f, 360.0f, "%.3f"))
 		{
 			picked->Angles(angles);
