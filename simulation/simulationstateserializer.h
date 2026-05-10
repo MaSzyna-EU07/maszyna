@@ -65,6 +65,8 @@ private:
 	void deserialize_node( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_origin( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_endorigin( cParser &Input, scene::scratch_data &Scratchpad );
+    void deserialize_scale( cParser &Input, scene::scratch_data &Scratchpad );
+    void deserialize_endscale( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_rotate( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_sky( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_test( cParser &Input, scene::scratch_data &Scratchpad );

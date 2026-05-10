@@ -273,6 +273,7 @@ TAnimModel::is_keyword( std::string const &Token ) const {
         || ( Token == "lights" )
         || ( Token == "lightcolors" )
         || ( Token == "angles" )
+        || ( Token == "scale" )
         || ( Token == "notransition" );
 }
 
@@ -367,6 +368,23 @@ bool TAnimModel::Load(cParser *parser, bool ter)
                 >> vAngle[ 0 ]
                 >> vAngle[ 1 ]
                 >> vAngle[ 2 ];
+        }
+
+        if( token == "scale" ) {
+            // Per-node scale: `scale <x> <y> <z>` (always three tokens, mirroring
+            // the `angles` syntax). For uniform scaling, write the same value
+            // three times (e.g. `scale 2 2 2`). Combines multiplicatively with
+            // any active scale block from the scenariostateserializer (which is
+            // applied at deserialize_model time before Load() is called, so
+            // m_scale already reflects the outer block when we arrive here).
+            parser->getTokens( 3 );
+            glm::vec3 factor;
+            *parser >> factor.x >> factor.y >> factor.z;
+            if( factor.x > 0.0f && factor.y > 0.0f && factor.z > 0.0f ) {
+                m_scale.x *= factor.x;
+                m_scale.y *= factor.y;
+                m_scale.z *= factor.z;
+            }
         }
 
         if( token == "notransition" ) {
@@ -677,20 +695,21 @@ void TAnimModel::AnimUpdate(double dt)
 	});
 }
 
-// radius() subclass details, calculates node's bounding radius
+// radius() subclass details, calculates node's bounding radius.
+// For non-uniform scale we use the largest axis factor so the bounding sphere
+// fully contains the scaled model — undersizing would cause incorrect culling.
 float
 TAnimModel::radius_() {
 
-    return (
-        pModel ?
-            pModel->bounding_radius() :
-            0.f );
+    if( pModel == nullptr ) { return 0.f; }
+    float const max_scale = std::max( { m_scale.x, m_scale.y, m_scale.z } );
+    return pModel->bounding_radius() * max_scale;
 }
 
 // serialize() subclass details, sends content of the subclass to provided stream
 void
 TAnimModel::serialize_( std::ostream &Output ) const {
-    
+
     // TODO: implement
 }
 // deserialize() subclass details, restores content of the subclass from provided stream
@@ -700,18 +719,29 @@ TAnimModel::deserialize_( std::istream &Input ) {
     // TODO: implement
 }
 
-// export() subclass details, sends basic content of the class in legacy (text) format to provided stream
+// export() subclass details, sends basic content of the class in legacy (text) format to provided stream.
+// Smart export: omit fields that match defaults so reloaded scenarios stay clean.
+//   - if X and Z rotation are zero, fold Y rotation into the 4th token slot
+//     (the legacy `node ... model X Y Z <rotation.y> ...` format) and skip the
+//     `angles` block entirely
+//   - if any axis of rotation needs all three components, emit `angles X Y Z`
+//   - emit `scale X Y Z` only when m_scale isn't (1,1,1)
 void
 TAnimModel::export_as_text_( std::ostream &Output ) const {
+
     // header
     Output << "model ";
-    // location and rotation
-	Output << std::fixed << std::setprecision(3) // ustawienie dokładnie 3 cyfr po przecinku
-	    << location().x << ' ' 
-        << location().y << ' ' 
-        << location().z << ' ';
-    Output
-       << "0 " ;
+
+    // location and rotation. The 4th token after location is a legacy
+    // shorthand for the Y rotation. We use it (and skip the angles block)
+    // whenever the rotation is purely around Y, which is the common case.
+    bool const xz_rotation_zero = ( vAngle.x == 0.0f && vAngle.z == 0.0f );
+    Output << std::fixed << std::setprecision( 3 )
+        << location().x << ' '
+        << location().y << ' '
+        << location().z << ' '
+        << ( xz_rotation_zero ? vAngle.y : 0.0f ) << ' ';
+
     // 3d shape
     auto modelfile { (
         pModel ?
@@ -748,11 +778,22 @@ TAnimModel::export_as_text_( std::ostream &Output ) const {
     if( false == m_transition ) {
         Output << "notransition" << ' ';
     }
-    // footer
-    Output  << "angles "
-        << vAngle.x << ' ' 
-        << vAngle.y << ' ' 
-        << vAngle.z << ' ';
+    // angles directive only when X or Z are rotated — otherwise the Y angle
+    // already lives in the 4th token slot above.
+    if( false == xz_rotation_zero ) {
+        Output << "angles "
+            << vAngle.x << ' '
+            << vAngle.y << ' '
+            << vAngle.z << ' ';
+    }
+    // scale directive only when actually scaled — keeps default-scale models
+    // from being polluted with redundant `scale 1 1 1` entries on every save.
+    if( m_scale.x != 1.0f || m_scale.y != 1.0f || m_scale.z != 1.0f ) {
+        Output << "scale "
+            << m_scale.x << ' '
+            << m_scale.y << ' '
+            << m_scale.z << ' ';
+    }
     // footer
     Output
         << "endmodel"

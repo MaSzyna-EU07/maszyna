@@ -709,6 +709,7 @@ void opengl33_renderer::draw_debug_ui()
         ImGui::Image(reinterpret_cast<void *>(m_pick_tex->id), ImGui::GetContentRegionAvail(), ImVec2(0, 1.0), ImVec2(1.0, 0));
     }
     ImGui::End();
+
 }
 
 // runs jobs needed to generate graphics for specified render pass
@@ -2914,8 +2915,32 @@ void opengl33_renderer::Render(TAnimModel *Instance)
 	Instance->RaPrepare();
 	if (Instance->pModel)
 	{
-		// renderowanie rekurencyjne submodeli
-		Render(Instance->pModel, Instance->Material(), distancesquared, Instance->location() - m_renderpass.pass_camera.position(), Instance->vAngle);
+		// per-instance uniform scale: applied between the rotation and the
+		// submodel-local transform chain. Pushing it on the matrix stack here
+		// means Render(TModel3d, ..., position, angle) doesn't need a new
+		// signature and the same scale flows naturally into Render_Alpha and
+		// any other recursive callers.
+		auto const &scale = Instance->Scale();
+		bool const scaled = ( scale.x != 1.0f || scale.y != 1.0f || scale.z != 1.0f );
+		if( scaled ) {
+			// Per-axis scale applied between rotation and the submodel-local
+			// chain: build the per-instance transform here so we can inject
+			// glScalef before the submodel walk.
+			::glPushMatrix();
+			auto const Position = Instance->location() - m_renderpass.pass_camera.position();
+			auto const Angle = Instance->vAngle;
+			::glTranslated( Position.x, Position.y, Position.z );
+			if( Angle.y != 0.0 ) ::glRotated( Angle.y, 0.f, 1.f, 0.f );
+			if( Angle.x != 0.0 ) ::glRotated( Angle.x, 1.f, 0.f, 0.f );
+			if( Angle.z != 0.0 ) ::glRotated( Angle.z, 0.f, 0.f, 1.f );
+			::glScalef( scale.x, scale.y, scale.z );
+			Render( Instance->pModel, Instance->Material(), distancesquared );
+			::glPopMatrix();
+		}
+		else {
+			// fast path for unscaled (the common case): existing behaviour
+			Render(Instance->pModel, Instance->Material(), distancesquared, Instance->location() - m_renderpass.pass_camera.position(), Instance->vAngle);
+		}
 	    // debug data
 	    ++m_renderpass.draw_stats.models;
 	}
@@ -2987,7 +3012,11 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 		closest_distancesquared = std::min<float>( closest_distancesquared, static_cast<float>(distancesquared) );
 
 		// Build the camera-relative root modelview for this instance:
-		//   mv = view * translate(instance_pos - camera_pos) * rotate(instance_angles)
+		//   mv = view * translate(instance_pos - camera_pos) * rotate(instance_angles) * scale(m_scale)
+		// The scale is folded in here so the GPU-instanced path produces visually
+		// identical output to the regular per-instance path: each instance gets
+		// its own (translate × rotate × scale) baked into instance_modelview[i],
+		// which the shader applies via effective_modelview = instance_mv * model_local.
 		glm::dvec3 const offset = Instance->location() - m_renderpass.pass_camera.position();
 		glm::mat4 mv = view_matrix;
 		mv = glm::translate( mv, glm::vec3( offset ) );
@@ -2995,6 +3024,10 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 		if( angle.y != 0.0f ) { mv = glm::rotate( mv, glm::radians( angle.y ), glm::vec3( 0.f, 1.f, 0.f ) ); }
 		if( angle.x != 0.0f ) { mv = glm::rotate( mv, glm::radians( angle.x ), glm::vec3( 1.f, 0.f, 0.f ) ); }
 		if( angle.z != 0.0f ) { mv = glm::rotate( mv, glm::radians( angle.z ), glm::vec3( 0.f, 0.f, 1.f ) ); }
+		auto const &scale = Instance->Scale();
+		if( scale.x != 1.0f || scale.y != 1.0f || scale.z != 1.0f ) {
+			mv = glm::scale( mv, scale );
+		}
 		instance_modelviews.emplace_back( mv );
 	}
 
@@ -4028,8 +4061,26 @@ void opengl33_renderer::Render_Alpha(TAnimModel *Instance)
 	Instance->RaPrepare();
 	if (Instance->pModel)
 	{
-		// renderowanie rekurencyjne submodeli
-		Render_Alpha(Instance->pModel, Instance->Material(), distancesquared, Instance->location() - m_renderpass.pass_camera.position(), Instance->vAngle);
+		auto const &scale = Instance->Scale();
+		bool const scaled = ( scale.x != 1.0f || scale.y != 1.0f || scale.z != 1.0f );
+		if( scaled ) {
+			// scaled instance: build the per-instance transform locally and call
+			// the distance-only Render_Alpha so we can inject glScalef before
+			// the submodel walk. Mirror of the opaque path in Render(TAnimModel*).
+			::glPushMatrix();
+			auto const Position = Instance->location() - m_renderpass.pass_camera.position();
+			auto const Angle = Instance->vAngle;
+			::glTranslated( Position.x, Position.y, Position.z );
+			if( Angle.y != 0.0 ) ::glRotated( Angle.y, 0.f, 1.f, 0.f );
+			if( Angle.x != 0.0 ) ::glRotated( Angle.x, 1.f, 0.f, 0.f );
+			if( Angle.z != 0.0 ) ::glRotated( Angle.z, 0.f, 0.f, 1.f );
+			::glScalef( scale.x, scale.y, scale.z );
+			Render_Alpha( Instance->pModel, Instance->Material(), distancesquared );
+			::glPopMatrix();
+		}
+		else {
+			Render_Alpha(Instance->pModel, Instance->Material(), distancesquared, Instance->location() - m_renderpass.pass_camera.position(), Instance->vAngle);
+		}
 	}
 }
 

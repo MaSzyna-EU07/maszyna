@@ -46,6 +46,11 @@ struct scratch_data {
     struct location_data {
 
         std::stack<glm::dvec3> offset;
+        // per-axis scale stack — mirrors `offset` for the `scale`/`endscale`
+        // scenario directives. Effective scale at any nesting depth is the
+        // component-wise product of all stack entries (outer `scale 2 2 2` ×
+        // inner `scale 1.5 1.5 1.5` yields (3,3,3)). Empty stack means (1,1,1).
+        std::stack<glm::vec3> scale;
         glm::vec3 rotation;
     } location;
 

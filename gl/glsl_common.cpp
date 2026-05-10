@@ -99,9 +99,14 @@ void gl::glsl_common_setup()
         return instance_modelview[gl_InstanceID] * modelview;
     }
     mat3 effective_modelviewnormal() {
-        // instance_modelview is rotation+translation only (no scale), so its
-        // upper-3x3 is its own inverse-transpose (rotation matrix).
-        return mat3(instance_modelview[gl_InstanceID]) * modelviewnormal;
+        // instance_modelview can include per-instance scale (uniform or per-axis),
+        // so its upper-3x3 is NOT its own inverse-transpose in the non-uniform
+        // case. Compute the correct normal matrix via transpose(inverse(...)).
+        // For pure rotation+translation this still produces the rotation matrix
+        // (one extra mat3 inverse per vertex — modern GPUs handle it cheaply).
+        mat3 instance_mv3 = mat3(instance_modelview[gl_InstanceID]);
+        mat3 instance_normal = transpose(inverse(instance_mv3));
+        return instance_normal * modelviewnormal;
     }
     #endif
 
