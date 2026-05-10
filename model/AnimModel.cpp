@@ -406,15 +406,19 @@ namespace {
 // relative billboards also operate purely on the local matrix using whatever
 // modelview the caller pushed, which is exactly per-instance behaviour.
 // The runtime SetRotate/SetTranslate animations (at_Rotate / at_RotateXYZ /
-// at_Translate) are tied to per-instance iAnimOwner and are unsafe to share —
-// in practice they're driven by m_animlist which we filter at the AnimModel
-// level, but we still blacklist them here as a safety net.
+// at_Translate) are tied to per-instance iAnimOwner and are unsafe to share.
+// at_Undefined is the type assigned to .t3d submodels declared with `anim: true`
+// (a generic "this submodel is animatable" hint) and to anything else that
+// doesn't match a recognised animation keyword — these are driven by event-
+// triggered SetRotate/SetTranslate at runtime, which would silently break if
+// the model were batched.
 bool anim_type_unsafe_for_instancing( TAnimType a ) {
     switch( a ) {
     case TAnimType::at_Rotate:
     case TAnimType::at_RotateXYZ:
     case TAnimType::at_Translate:
-    case TAnimType::at_DigiClk: // mutates child submodels via SetRotate
+    case TAnimType::at_DigiClk:    // mutates child submodels via SetRotate
+    case TAnimType::at_Undefined:  // `anim: true` / unknown — driven by events
         return true;
     default:
         return false;
@@ -422,10 +426,16 @@ bool anim_type_unsafe_for_instancing( TAnimType a ) {
 }
 
 // recursively walks a submodel tree and returns true if any submodel declares
-// an animation type that's unsafe to batch.
+// an animation type that's unsafe to batch, OR carries the runtime "needs
+// animation matrix" flag (iFlags bit 0x4000), which is set whenever the
+// submodel was tagged as animatable in the .t3d file or had WillBeAnimated()
+// called on it during model load. Either signal means the submodel may receive
+// per-instance event-driven animation commands at runtime, which the GPU-
+// instanced path (one shared submodel tree across all instances) cannot serve.
 bool submodel_tree_blocks_instancing( TSubModel const *Sub ) {
     if( Sub == nullptr ) { return false; }
     if( anim_type_unsafe_for_instancing( Sub->b_Anim ) ) { return true; }
+    if( ( Sub->iFlags & 0x4000 ) != 0 ) { return true; }
     if( submodel_tree_blocks_instancing( Sub->Child ) ) { return true; }
     if( submodel_tree_blocks_instancing( Sub->Next ) ) { return true; }
     return false;
