@@ -98,7 +98,7 @@ MaSzyna compiles and runs natively on **Linux** and **Windows**. Other platforms
 | `-DCMAKE_BUILD_TYPE=Release` | Release build |
 | `-DCMAKE_BUILD_TYPE=RelWithDebInfo` | Release build with debug symbols |
 | `-DWITH_BETTER_RENDERER=ON/OFF` | Enable/disable NVRHI-based renderer |
-| `-DPython3_ROOT_DIR=<path>` | Root directory of the **Python 3.14** install to use (embedding); needed if several versions are present |
+| `-DPython3_ROOT_DIR=<path>` | Root of the **Python 3.14** install on Windows (`python.exe`, `Lib`, `DLLs`) for embed/copy steps; on Linux, optional if CMake picks the wrong interpreter |
 
 > **Linux note:** `WITH_BETTER_RENDERER` uses DirectX 12 through NVRHI and is **not supported on Linux**.
 
@@ -107,9 +107,9 @@ MaSzyna compiles and runs natively on **Linux** and **Windows**. Other platforms
 
 ## Windows
 
-Install **Python 3.14 x64** from [python.org](https://www.python.org/downloads/windows/) and include the optional **Python native development** feature (headers and `.lib` for embedding). If CMake picks another interpreter, pass `-DPython3_ROOT_DIR="C:\Path\To\Python314"` on the `cmake` line.
+Install **Python 3.14 x64** from [python.org](https://www.python.org/downloads/windows/) and include the optional **Python native development** feature (headers and `.lib` for embedding). Pass `-DPython3_ROOT_DIR="C:\Path\To\Python314"` on the `cmake` line when you want the layout under that directory used for embedding and for copying `Lib` / `DLLs` next to the executable.
 
-**AppVeyor CI** builds with the worker image’s preinstalled Python at `C:/Python314-x64` (see [`appveyor.yml`](./appveyor.yml): `-DPython3_ROOT_DIR=...` and `-DWITH_PYTHON_AUTO_INSTALL_WIN=OFF`).
+**AppVeyor CI** builds with the worker image’s preinstalled Python at `C:/Python314-x64` (see [`appveyor.yml`](./appveyor.yml): `-DPython3_ROOT_DIR=...`).
 
 ```powershell
 # Clone repository with submodules

@@ -69,7 +69,7 @@ endif()
 
 option(WITH_OPENGL_MODERN "Compile with OpenGL modern renderer" ON)
 option(WITH_OPENGL_LEGACY "Compile with OpenGL legacy renderer" ON)
-option(WITH_PYTHON "Compile with python3" ON)
+option(WITH_PYTHON "Python 3.14 embedded scripting" ON)
 option(WITH_UART "Compile with libserialport" ON)
 option(WITH_LUA "Compile with lua scripting support" ON)
 option(WITH_OPENVR "Compile with OpenVR" OFF)
@@ -81,10 +81,6 @@ option(WITH_BETTER_RENDERER "Experimental multi-backend renderer based on NVRHI"
 option(GENERATE_PDB "Generate executable with program debugging symbols" ON)
 option(ENABLE_MCC "Enable multicore compilation" ON)
 option(WITHDUMPGEN "Enable generating DMP files on crash" ON)
-if(WIN32)
-	option(WITH_PYTHON_AUTO_INSTALL_WIN "If Python 3.14 Development is missing, install into tools/python314 (network)" ON)
-endif()
-
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
 # vcpkg init
@@ -253,7 +249,7 @@ if (WITH_CRASHPAD)
 	endif()
 endif()
 
-if (WITH_PYTHON)
+if(WITH_PYTHON)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_PYTHON")
 	set(SOURCES ${SOURCES} "scripting/PyInt.cpp")
 else()
@@ -468,37 +464,15 @@ endif()
 target_link_libraries(${PROJECT_NAME} glfw)
 
 if(WITH_PYTHON)
-	set(_py_tools "${CMAKE_SOURCE_DIR}/tools/python314")
-	set(_pyv 3.14.0)
-	if(WIN32)
-		if(EXISTS "${_py_tools}/python.exe" AND NOT Python3_ROOT_DIR)
-			set(Python3_ROOT_DIR "${_py_tools}" CACHE PATH "Python 3.14 (tools/python314)")
-		endif()
-		find_package(Python3 3.14 QUIET COMPONENTS Development)
-	endif()
 	find_package(Python3 3.14 REQUIRED COMPONENTS Development)
 	target_include_directories(${PROJECT_NAME} PRIVATE ${Python3_INCLUDE_DIRS})
 	target_link_libraries(${PROJECT_NAME} ${Python3_LIBRARIES})
+
 	if(WIN32)
-		cmake_path(GET Python3_EXECUTABLE PARENT_PATH _px)
-		set(_rt "")
-		if(Python3_RUNTIME_LIBRARY_DIRS)
-			list(GET Python3_RUNTIME_LIBRARY_DIRS 0 _rt)
-		endif()
-		if(NOT _rt)
-			set(_rt "${_px}")
-		endif()
-		set(EU07_PY_DLL "${_rt}/python${Python3_VERSION_MAJOR}${Python3_VERSION_MINOR}.dll")
-		set(EU07_PY_ZLIB "${_rt}/zlib1.dll")
-		set(EU07_PY_LIBDIR "${_px}/Lib")
-		set(EU07_PY_DLLSDIR "${_px}/DLLs")
-		set(_vpt "${VCPKG_INSTALLED_PATH}/tools/python3")
-		if(NOT EXISTS "${EU07_PY_LIBDIR}")
-			set(EU07_PY_LIBDIR "${_vpt}/Lib")
-		endif()
-		if(NOT EXISTS "${EU07_PY_DLLSDIR}")
-			set(EU07_PY_DLLSDIR "${_vpt}/DLLs")
-		endif()
+		set(EU07_PY_DLL "${Python3_ROOT_DIR}/python314.dll")
+		set(EU07_PY_ZLIB "${Python3_ROOT_DIR}/zlib1.dll")
+		set(EU07_PY_LIBDIR "${Python3_ROOT_DIR}/Lib")
+		set(EU07_PY_DLLSDIR "${Python3_ROOT_DIR}/DLLs")
 	endif()
 endif()
 
@@ -583,18 +557,11 @@ if (WIN32)
 endif ()
 
 if(WIN32 AND WITH_PYTHON)
-	add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+	add_custom_command(
+		TARGET ${PROJECT_NAME} POST_BUILD
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_DLL}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-	)
-	if(EXISTS "${EU07_PY_ZLIB}")
-		add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_ZLIB}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-		)
-	endif()
-	add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_ZLIB}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
 		COMMAND ${CMAKE_COMMAND} -E copy_directory "${EU07_PY_LIBDIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/python64/Lib"
-	)
-	add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 		COMMAND ${CMAKE_COMMAND} -E copy_directory "${EU07_PY_DLLSDIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/python64/DLLs"
 	)
 endif()
