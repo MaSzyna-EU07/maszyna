@@ -597,7 +597,7 @@ void driver_mode::update_camera(double const Deltatime)
 			}
 			else
 			{
-				if (false == FreeFlyModeFlag)
+				if (false == FreeFlyModeFlag && simulation::Train)
 				{
 					// reset cached view angle in the cab
 					simulation::Train->pMechViewAngle = {Camera.Angle.x, Camera.Angle.y};
