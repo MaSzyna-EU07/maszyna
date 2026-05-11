@@ -79,7 +79,7 @@ MaSzyna compiles and runs natively on **Linux** and **Windows**. Other platforms
     
 -   **pthread**
     
--   [Python 2.7](https://www.python.org/)
+-   [Python 3.14](https://www.python.org/) _(64-bit; headers and import library required for embedding)_
     
 -   [Asio](https://think-async.com/Asio) _(1.12)_
     
@@ -98,6 +98,7 @@ MaSzyna compiles and runs natively on **Linux** and **Windows**. Other platforms
 | `-DCMAKE_BUILD_TYPE=Release` | Release build |
 | `-DCMAKE_BUILD_TYPE=RelWithDebInfo` | Release build with debug symbols |
 | `-DWITH_BETTER_RENDERER=ON/OFF` | Enable/disable NVRHI-based renderer |
+| `-DPython3_ROOT_DIR=<path>` | Root directory of the **Python 3.14** install to use (embedding); needed if several versions are present |
 
 > **Linux note:** `WITH_BETTER_RENDERER` uses DirectX 12 through NVRHI and is **not supported on Linux**.
 
@@ -105,6 +106,10 @@ MaSzyna compiles and runs natively on **Linux** and **Windows**. Other platforms
 
 
 ## Windows
+
+Install **Python 3.14 x64** from [python.org](https://www.python.org/downloads/windows/) and include the optional **Python native development** feature (headers and `.lib` for embedding). If CMake picks another interpreter, pass `-DPython3_ROOT_DIR="C:\Path\To\Python314"` on the `cmake` line.
+
+**AppVeyor CI** builds with the worker image’s preinstalled Python at `C:/Python314-x64` (see [`appveyor.yml`](./appveyor.yml): `-DPython3_ROOT_DIR=...` and `-DWITH_PYTHON_AUTO_INSTALL_WIN=OFF`).
 
 ```powershell
 # Clone repository with submodules
@@ -139,7 +144,7 @@ sudo dnf install -y \
   mesa-libGL-devel \
   glew-devel \
   glfw-devel \
-  python2-devel \
+  python3.14-devel \
   libpng-devel \
   openal-soft-devel \
   luajit-devel \
@@ -168,7 +173,7 @@ make -j"$(nproc)"
 
 ```
 
-> **Tip (Ubuntu/Debian)**: Package names differ; install equivalent `build-essential`, `libgl1-mesa-dev`, `libglew-dev`, `libglfw3-dev`, `python2-dev`, `libpng-dev`, `libopenal-dev`, `libluajit-5.1-dev`, `libserialport-dev`, `libsndfile1-dev`, and Wayland/X11 dev packages as needed.
+> **Tip (Ubuntu/Debian)**: Package names differ; install equivalent `build-essential`, `libgl1-mesa-dev`, `libglew-dev`, `libglfw3-dev`, `python3.14-dev`, `libpng-dev`, `libopenal-dev`, `libluajit-5.1-dev`, `libserialport-dev`, `libsndfile1-dev`, and Wayland/X11 dev packages as needed.
 
 
 ## Installing
