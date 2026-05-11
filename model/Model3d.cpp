@@ -604,7 +604,7 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 							parser >> vertex->normal.x >> vertex->normal.y >> vertex->normal.z;
 							if (glm::length2(vertex->normal) > 0.0f)
 							{
-								glm::normalize(vertex->normal);
+								vertex->normal = glm::normalize(vertex->normal);
 							}
 							else
 							{
