@@ -470,7 +470,7 @@ if(WITH_PYTHON)
 
 	if(WIN32)
 		set(EU07_PY_DLL "${Python3_ROOT_DIR}/python314.dll")
-		set(EU07_PY_ZLIB "${Python3_ROOT_DIR}/zlib1.dll")
+		set(EU07_PY_ZLIB "${Python3_ROOT_DIR}/DLLs/zlib1.dll")
 		set(EU07_PY_LIBDIR "${Python3_ROOT_DIR}/Lib")
 		set(EU07_PY_DLLSDIR "${Python3_ROOT_DIR}/DLLs")
 	endif()
