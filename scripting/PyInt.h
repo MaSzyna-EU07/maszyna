@@ -53,9 +53,7 @@ http://mozilla.org/MPL/2.0/.
 #include <thread>
 
 #define PyGetFloat(param) PyFloat_FromDouble(param)
-#define PyGetInt(param) PyInt_FromLong(param)
 #define PyGetBool(param) param ? Py_True : Py_False
-#define PyGetString(param) PyString_FromString(param)
 
 // python rendertarget
 struct python_rt
