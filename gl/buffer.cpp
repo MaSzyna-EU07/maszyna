@@ -61,19 +61,19 @@ gl::buffer::~buffer()
     glDeleteBuffers(1, *this);
 }
 
-void gl::buffer::allocate(targets target, int size, GLenum hint)
+void gl::buffer::allocate(targets target, GLsizeiptr size, GLenum hint)
 {
     bind(target);
     glBufferData(glenum_target(target), size, nullptr, hint);
 }
 
-void gl::buffer::upload(targets target, const void *data, int offset, int size)
+void gl::buffer::upload(targets target, const void *data, int offset, GLsizeiptr size)
 {
     bind(target);
     glBufferSubData(glenum_target(target), offset, size, data);
 }
 
-void gl::buffer::download(targets target, void *data, int offset, int size)
+void gl::buffer::download(targets target, void *data, int offset, GLsizeiptr size)
 {
     bind(target);
     if (GLAD_GL_VERSION_3_3)
