@@ -4410,7 +4410,7 @@ void TController::Doors( bool const Open, int const Side ) {
                 vehicle = vehicle->Next(); // pojazd podłączony z tyłu (patrząc od czoła)
             }
         }
-        fActionTime = Random( -1.0, -3.5 ); // 1.0-3.5 sec wait
+		fActionTime = Random(-3.5, -1.0); // 1.0-3.5 sec wait
         iDrivigFlags &= ~moveDoorOpened; // zostały zamknięte - nie wykonywać drugi raz
     	iDrivigFlags &= ~moveDepartureWarned;
     }
