@@ -537,13 +537,12 @@ updatevalues_event::run_() {
 //        targetcell->LogValues();
         if( targetcell->Track == nullptr ) { continue; }
         // McZapkie-100302 - updatevalues oprocz zmiany wartosci robi putcommand dla wszystkich 'dynamic' na danym torze
-        auto const location { targetcell->location() };
         for( auto vehicle : targetcell->Track->Dynamics ) {
             if( vehicle->Mechanik ) {
                 WriteLog( " Vehicle: [" + vehicle->name() + "]" );
                 targetcell->PutCommand(
                     vehicle->Mechanik,
-                    &location );
+                    &targetcell->location() );
             }
         }
     }

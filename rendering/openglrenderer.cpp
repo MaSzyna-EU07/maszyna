@@ -4313,7 +4313,7 @@ void opengl_renderer::MakeScreenshot()
 void
 opengl_renderer::Update_Lights( light_array &Lights ) {
     // arrange the light array from closest to farthest from current position of the camera
-    auto const camera = m_renderpass.camera.position();
+    auto const &camera = m_renderpass.camera.position();
     std::sort(
         std::begin( Lights.data ),
         std::end( Lights.data ),
