@@ -3076,7 +3076,7 @@ TDynamicObject::update_load_offset() {
             0.0 :
             100.0 * MoverParameters->LoadAmount / MoverParameters->MaxLoad ) };
 
-    LoadOffset = std::lerp( MoverParameters->LoadType.offset_min, 0.f, std::clamp( 0.0, 1.0, loadpercentage * 0.01 ) );
+    LoadOffset = std::lerp( MoverParameters->LoadType.offset_min, 0.f, std::clamp( 0.0, loadpercentage * 0.01, 1.0 ) );
 }
 
 void
