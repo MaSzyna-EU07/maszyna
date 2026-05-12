@@ -4085,7 +4085,7 @@ opengl_renderer::Update_Pick_Control() {
 #endif
     m_pickcontrolitem = control;
 //    return control;
-    for( auto callback : m_control_pick_requests ) {
+    for( auto& callback : m_control_pick_requests ) {
         callback( m_pickcontrolitem, glm::vec2() );
     }
     m_control_pick_requests.clear();
@@ -4134,7 +4134,7 @@ opengl_renderer::Update_Pick_Node() {
 #endif
     m_picksceneryitem = node;
 //    return node;
-    for( auto callback : m_node_pick_requests ) {
+    for( auto& callback : m_node_pick_requests ) {
         callback( m_picksceneryitem );
     }
     m_node_pick_requests.clear();
