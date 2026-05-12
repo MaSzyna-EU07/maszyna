@@ -98,9 +98,9 @@ bool ClearFlag(int &Flag, int const Value)
 	}
 }
 
-double Random(double a, double b)
+double Random(double min, double max)
 {
-	std::uniform_real_distribution<double> dist(a, b);
+	std::uniform_real_distribution<double> dist(min, max);
 	return dist(Global.random_engine);
 }
 
