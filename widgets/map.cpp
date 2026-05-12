@@ -299,7 +299,7 @@ void ui::map_panel::render_contents()
 
 	ImVec2 window_origin = ImGui::GetCursorPos();
 	ImVec2 screen_origin = ImGui::GetCursorScreenPos();
-	ImGui::ImageButton(reinterpret_cast<void *>(m_tex->id), surface_size_im, ImVec2(0, surface_size.y / fb_size), ImVec2(surface_size.x / fb_size, 0), 0);
+	ImGui::ImageButton((ImTextureID)(intptr_t)(m_tex->id), surface_size_im, ImVec2(0, surface_size.y / fb_size), ImVec2(surface_size.x / fb_size, 0), 0);
 
 	if (ImGui::IsItemHovered())
 	{
