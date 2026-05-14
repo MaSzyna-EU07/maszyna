@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include <array>
 #include <stack>
 #include <unordered_set>
+#include <unordered_map>
 #include <map>
 
 #include "utilities/parser.h"
@@ -45,6 +46,11 @@ struct scratch_data {
     struct location_data {
 
         std::stack<glm::dvec3> offset;
+        // per-axis scale stack — mirrors `offset` for the `scale`/`endscale`
+        // scenario directives. Effective scale at any nesting depth is the
+        // component-wise product of all stack entries (outer `scale 2 2 2` ×
+        // inner `scale 1.5 1.5 1.5` yields (3,3,3)). Empty stack means (1,1,1).
+        std::stack<glm::vec3> scale;
         glm::vec3 rotation;
     } location;
 
@@ -179,6 +185,30 @@ public:
     using linesnode_sequence = std::vector<lines_node>;
     using traction_sequence = std::vector<TTraction *>;
     using instance_sequence = std::vector<TAnimModel *>;
+    // Composite key: instances of the same TModel3d sharing the same replacable
+    // skin set can be GPU-batched together, but instances with different skins
+    // must go to different buckets so each batched draw call uses one consistent
+    // material binding. Sub-bucketing here keeps Render_Instanced correct without
+    // forcing per-instance material switching inside a single batch.
+    struct instance_bucket_key {
+        TModel3d *pModel { nullptr };
+        std::array<material_handle, 5> skins {};
+
+        bool operator==( instance_bucket_key const &other ) const {
+            return pModel == other.pModel && skins == other.skins;
+        }
+    };
+    struct instance_bucket_key_hash {
+        std::size_t operator()( instance_bucket_key const &k ) const {
+            std::size_t h = std::hash<TModel3d *>()( k.pModel );
+            for( auto s : k.skins ) {
+                // boost-style hash combine
+                h ^= std::hash<int>()( s ) + 0x9e3779b9 + ( h << 6 ) + ( h >> 2 );
+            }
+            return h;
+        }
+    };
+    using instance_bucket_map = std::unordered_map< instance_bucket_key, std::vector<TAnimModel *>, instance_bucket_key_hash >;
     using sound_sequence = std::vector<sound_source *>;
     using eventlauncher_sequence = std::vector<TEventLauncher *>;
     using memorycell_sequence = std::vector<TMemCell *>;
@@ -196,6 +226,10 @@ public:
     path_sequence m_paths; // path pieces
     instance_sequence m_instancesopaque;
     instance_sequence m_instancetranslucent;
+    // batched instance buckets keyed by shared TModel3d*; populated alongside
+    // m_instancesopaque for nodes whose TAnimModel::m_instanceable == true.
+    // The renderer uses these to amortise per-model state setup across many instances.
+    instance_bucket_map m_instancebuckets_opaque;
     traction_sequence m_traction;
     sound_sequence m_sounds;
     eventlauncher_sequence m_eventlaunchers;

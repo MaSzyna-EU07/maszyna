@@ -32,16 +32,22 @@ class itemproperties_panel : public ui_panel
   public:
 	itemproperties_panel(std::string const &Name, bool const Isopen) : ui_panel(Name, Isopen) {}
 
-	void update(scene::basic_node const *Node);
+	// non-const node pointer so the transform editor in render() can mutate
+	// position/rotation/scale of TAnimModel nodes in place. Other node types
+	// are still treated as read-only.
+	void update(scene::basic_node *Node);
 	void render() override;
 
   private:
 	// methods
 	void update_group();
 	bool render_group();
+	// renders DragFloat3/DragScalarN widgets for position, rotation and scale
+	// of the currently bound TAnimModel; no-op for other node subclasses.
+	void render_transform_editor();
 
 	// members
-	scene::basic_node const *m_node{nullptr}; // scene node bound to the panel
+	scene::basic_node *m_node{nullptr}; // scene node bound to the panel
 	scene::group_handle m_grouphandle{null_handle}; // scene group bound to the panel
 	std::string m_groupprefix;
 	std::vector<text_line> m_grouplines;

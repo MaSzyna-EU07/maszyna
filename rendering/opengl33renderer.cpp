@@ -142,6 +142,7 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 	scene_ubo = std::make_unique<gl::ubo>(sizeof(gl::scene_ubs), 0);
 	model_ubo = std::make_unique<gl::ubo>(sizeof(gl::model_ubs), 1, GL_STREAM_DRAW);
 	light_ubo = std::make_unique<gl::ubo>(sizeof(gl::light_ubs), 2);
+	instance_ubo = std::make_unique<gl::ubo>(sizeof(gl::instance_ubs), 3, GL_STREAM_DRAW);
 
 	// better initialize with 0 to not crash driver/whole system
 	// when we forget
@@ -152,6 +153,14 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 	light_ubo->update(light_ubs);
 	model_ubo->update(model_ubs);
 	scene_ubo->update(scene_ubs);
+
+	// initialize instance_ubo slot 0 to identity. This is the matrix sampled by
+	// gl_InstanceID==0 in non-instanced draws, so existing rendering paths
+	// continue to multiply effective_modelview = identity * modelview = modelview.
+	{
+		glm::mat4 identity( 1.0f );
+		instance_ubo->update( reinterpret_cast<uint8_t const*>(&identity), 0, sizeof(identity) );
+	}
 
 	int samples = 1 << Global.iMultisampling;
 	if (!Global.gfx_usegles && samples > 1)
@@ -653,6 +662,16 @@ void opengl33_renderer::SwapBuffers()
         + " =" + to_string( m_colorpass.draw_stats.models + shadowstats.models, 7 ) + "\n"
         + "drawcalls: " + to_string( m_colorpass.draw_stats.drawcalls, 7 ) + " +" + to_string( shadowstats.drawcalls, 7 )
         + " =" + to_string( m_colorpass.draw_stats.drawcalls + shadowstats.drawcalls, 7 ) + "\n"
+        + " instanced:" + to_string( m_colorpass.draw_stats.instances, 7 ) + " +" + to_string( shadowstats.instances, 7 )
+        + " =" + to_string( m_colorpass.draw_stats.instances + shadowstats.instances, 7 )
+        + " (" + std::to_string( m_colorpass.draw_stats.instanced_drawcalls + shadowstats.instanced_drawcalls ) + " batches)\n"
+        + " inst-pool:" + std::to_string( TAnimModel::s_instanceable_total )
+        + "/" + std::to_string( TAnimModel::s_classified_total )
+        + " rej(noModel/lights/anim/animSubM): "
+        + std::to_string( TAnimModel::s_rejected_no_pmodel ) + "/"
+        + std::to_string( TAnimModel::s_rejected_lights ) + "/"
+        + std::to_string( TAnimModel::s_rejected_animlist ) + "/"
+        + std::to_string( TAnimModel::s_rejected_animated_submodel ) + "\n"
         + " submodels:" + to_string( m_colorpass.draw_stats.submodels, 7 ) + " +" + to_string( shadowstats.submodels, 7 )
         + " =" + to_string( m_colorpass.draw_stats.submodels + shadowstats.submodels, 7 ) + "\n"
         + " paths:    " + to_string( m_colorpass.draw_stats.paths, 7 ) + " +" + to_string( shadowstats.paths, 7 )
@@ -690,6 +709,7 @@ void opengl33_renderer::draw_debug_ui()
         ImGui::Image(reinterpret_cast<void *>(m_pick_tex->id), ImGui::GetContentRegionAvail(), ImVec2(0, 1.0), ImVec2(1.0, 0));
     }
     ImGui::End();
+
 }
 
 // runs jobs needed to generate graphics for specified render pass
@@ -2659,9 +2679,14 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
         case rendermode::shadows:
         {
             // TBD, TODO: refactor in to a method to reuse in branch below?
-			// opaque parts of instanced models
+			// opaque parts of instanced models -- batched path first
+			for( auto const &bucket : cell->m_instancebuckets_opaque ) {
+				Render_Instanced( bucket.first.pModel, bucket.second );
+			}
+			// remaining (non-instanceable) opaque instance nodes go through the per-node path
 			for (auto *instance : cell->m_instancesopaque)
 			{
+				if( instance->m_instanceable ) { continue; } // already handled via bucket
 				Render(instance);
 			}
 			// opaque parts of vehicles
@@ -2677,8 +2702,12 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
         case rendermode::reflections:
         {
             if( Global.reflectiontune.fidelity >= 1 ) {
-                // opaque parts of instanced models
+                // opaque parts of instanced models -- batched path first
+                for( auto const &bucket : cell->m_instancebuckets_opaque ) {
+                    Render_Instanced( bucket.first.pModel, bucket.second );
+                }
                 for( auto *instance : cell->m_instancesopaque ) {
+                    if( instance->m_instanceable ) { continue; }
                     Render( instance );
                 }
             }
@@ -2695,7 +2724,9 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
         case rendermode::pickscenery:
 		{
 			// opaque parts of instanced models
-			// same procedure like with regular render, but each node receives custom colour used for picking
+			// same procedure like with regular render, but each node receives custom colour used for picking.
+			// picking always uses the per-instance path because each instance needs a unique pick colour;
+			// batching would assign the same colour to every instance in the bucket.
 			for (auto *instance : cell->m_instancesopaque)
 			{
 				model_ubs.param[0] = glm::vec4(pick_color(m_picksceneryitems.size() + 1), 1.0f);
@@ -2730,7 +2761,14 @@ void opengl33_renderer::draw(const gfx::geometry_handle &handle)
 	model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
 	model_ubo->update(model_ubs);
 
-	m_geometry.draw(handle);
+	if( m_current_instance_count > 0 ) {
+		// inside Render_Instanced(): one GL instanced draw replaces what would
+		// otherwise be N regular draws (one per instance) at this submodel
+		m_geometry.draw_instanced( handle, m_current_instance_count );
+	}
+	else {
+		m_geometry.draw( handle );
+	}
 }
 
 void opengl33_renderer::draw(std::vector<gfx::geometrybank_handle>::iterator it, std::vector<gfx::geometrybank_handle>::iterator end)
@@ -2877,11 +2915,172 @@ void opengl33_renderer::Render(TAnimModel *Instance)
 	Instance->RaPrepare();
 	if (Instance->pModel)
 	{
-		// renderowanie rekurencyjne submodeli
-		Render(Instance->pModel, Instance->Material(), distancesquared, Instance->location() - m_renderpass.pass_camera.position(), Instance->vAngle);
+		// per-instance uniform scale: applied between the rotation and the
+		// submodel-local transform chain. Pushing it on the matrix stack here
+		// means Render(TModel3d, ..., position, angle) doesn't need a new
+		// signature and the same scale flows naturally into Render_Alpha and
+		// any other recursive callers.
+		auto const &scale = Instance->Scale();
+		bool const scaled = ( scale.x != 1.0f || scale.y != 1.0f || scale.z != 1.0f );
+		if( scaled ) {
+			// Per-axis scale applied between rotation and the submodel-local
+			// chain: build the per-instance transform here so we can inject
+			// glScalef before the submodel walk.
+			::glPushMatrix();
+			auto const Position = Instance->location() - m_renderpass.pass_camera.position();
+			auto const Angle = Instance->vAngle;
+			::glTranslated( Position.x, Position.y, Position.z );
+			if( Angle.y != 0.0 ) ::glRotated( Angle.y, 0.f, 1.f, 0.f );
+			if( Angle.x != 0.0 ) ::glRotated( Angle.x, 1.f, 0.f, 0.f );
+			if( Angle.z != 0.0 ) ::glRotated( Angle.z, 0.f, 0.f, 1.f );
+			::glScalef( scale.x, scale.y, scale.z );
+			Render( Instance->pModel, Instance->Material(), distancesquared );
+			::glPopMatrix();
+		}
+		else {
+			// fast path for unscaled (the common case): existing behaviour
+			Render(Instance->pModel, Instance->Material(), distancesquared, Instance->location() - m_renderpass.pass_camera.position(), Instance->vAngle);
+		}
 	    // debug data
 	    ++m_renderpass.draw_stats.models;
 	}
+}
+
+// True GPU-instanced render path for a group of TAnimModel instances sharing the same
+// TModel3d. The submodel tree is walked ONCE per batch; at every submodel that draws
+// geometry we issue a single glDrawElementsInstancedBaseVertex(N) covering all visible
+// instances. The vertex shader multiplies effective_modelview = instance_modelview[gl_InstanceID]
+// * model_ubs.modelview, where instance_modelview[i] is the camera-space root transform
+// of instance i (precomputed below) and model_ubs.modelview is the submodel-local chain
+// (accumulated by the matrix stack starting from identity, NOT the camera/instance frame).
+//
+// Batch size is capped at MAX_INSTANCES_PER_BATCH (256). Larger groups are split.
+void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimModel *> const &Instances )
+{
+	if( Model == nullptr ) { return; }
+	if( Instances.empty() ) { return; }
+
+	// 1. Visibility / distance cull. Build parallel arrays of surviving
+	// instances and their precomputed camera-space root modelview matrices.
+	std::vector<glm::mat4> instance_modelviews;
+	instance_modelviews.reserve( Instances.size() );
+
+	// Pull the current pass camera/view transform once. We use the current GL
+	// modelview matrix as the view matrix because at the point Render_Instanced
+	// is called, OpenGLMatrices is set to the camera view (scene root) — no
+	// per-instance transform has been pushed yet.
+	glm::mat4 const view_matrix = OpenGLMatrices.data( GL_MODELVIEW );
+
+	bool prepared_shared_state = false; // RaPrepare() runs once per bucket
+	float closest_distancesquared = std::numeric_limits<float>::max();
+	material_data const *batch_material { nullptr };
+
+	for( auto *Instance : Instances ) {
+		if( Instance == nullptr ) { continue; }
+		if( false == Instance->m_visible ) { continue; }
+		if( false == m_renderpass.pass_camera.visible( Instance->m_area ) ) { continue; }
+
+		double distancesquared;
+		switch( m_renderpass.draw_mode ) {
+		case rendermode::shadows:
+			distancesquared = glm::length2( ( Instance->location() - m_renderpass.viewport_camera.position() ) / (double)Global.ZoomFactor ) / Global.fDistanceFactor;
+			break;
+		case rendermode::reflections:
+			distancesquared = glm::length2( ( Instance->location() - m_renderpass.pass_camera.position() ) );
+			if( distancesquared > Global.reflectiontune.range_instances * Global.reflectiontune.range_instances ) { continue; }
+			distancesquared += sq( EU07_REFLECTIONFIDELITYOFFSET );
+			break;
+		default:
+			distancesquared = glm::length2( ( Instance->location() - m_renderpass.pass_camera.position() ) / (double)Global.ZoomFactor ) / Global.fDistanceFactor;
+			break;
+		}
+		if( ( distancesquared < Instance->m_rangesquaredmin )
+		 || ( distancesquared >= Instance->m_rangesquaredmax ) ) { continue; }
+
+		auto const drawdistancethreshold { m_renderpass.draw_range + 250 };
+		if( distancesquared > sq( drawdistancethreshold ) ) { continue; }
+
+		auto const radiussquared { Instance->radius() * Instance->radius() };
+		if( radiussquared * Global.ZoomFactor / distancesquared < 0.003 * 0.003 ) { continue; }
+
+		if( !prepared_shared_state ) {
+			Instance->RaPrepare();
+			prepared_shared_state = true;
+			batch_material = Instance->Material();
+		}
+		Instance->m_framestamp = m_framestamp;
+		closest_distancesquared = std::min<float>( closest_distancesquared, static_cast<float>(distancesquared) );
+
+		// Build the camera-relative root modelview for this instance:
+		//   mv = view * translate(instance_pos - camera_pos) * rotate(instance_angles) * scale(m_scale)
+		// The scale is folded in here so the GPU-instanced path produces visually
+		// identical output to the regular per-instance path: each instance gets
+		// its own (translate × rotate × scale) baked into instance_modelview[i],
+		// which the shader applies via effective_modelview = instance_mv * model_local.
+		glm::dvec3 const offset = Instance->location() - m_renderpass.pass_camera.position();
+		glm::mat4 mv = view_matrix;
+		mv = glm::translate( mv, glm::vec3( offset ) );
+		auto const &angle = Instance->vAngle;
+		if( angle.y != 0.0f ) { mv = glm::rotate( mv, glm::radians( angle.y ), glm::vec3( 0.f, 1.f, 0.f ) ); }
+		if( angle.x != 0.0f ) { mv = glm::rotate( mv, glm::radians( angle.x ), glm::vec3( 1.f, 0.f, 0.f ) ); }
+		if( angle.z != 0.0f ) { mv = glm::rotate( mv, glm::radians( angle.z ), glm::vec3( 0.f, 0.f, 1.f ) ); }
+		auto const &scale = Instance->Scale();
+		if( scale.x != 1.0f || scale.y != 1.0f || scale.z != 1.0f ) {
+			mv = glm::scale( mv, scale );
+		}
+		instance_modelviews.emplace_back( mv );
+	}
+
+	if( instance_modelviews.empty() ) { return; }
+
+	// 2. Walk the submodel tree once per sub-batch. The submodel-local matrix
+	// stack starts at identity; the per-instance camera transform comes from
+	// instance_modelview[gl_InstanceID] in the shader.
+	std::size_t const total = instance_modelviews.size();
+	std::size_t offset_idx = 0;
+	while( offset_idx < total ) {
+		std::size_t const this_batch = std::min<std::size_t>( total - offset_idx, gl::MAX_INSTANCES_PER_BATCH );
+
+		// 2a. Upload N modelviews to instance_ubo[0..N-1].
+		instance_ubo->update(
+			reinterpret_cast<uint8_t const *>( instance_modelviews.data() + offset_idx ),
+			0,
+			static_cast<int>( this_batch * sizeof( glm::mat4 ) ) );
+
+		// 2b. Push identity onto the matrix stack so submodel transforms
+		// accumulate from identity, not from camera/instance space.
+		::glPushMatrix();
+		::glLoadIdentity();
+
+		// 2c. Configure the existing TModel3d/TSubModel render path. Setting
+		// m_current_instance_count routes draw(handle) calls to draw_instanced.
+		m_current_instance_count = this_batch;
+
+		Model->Root->fSquareDist = closest_distancesquared; // shared global, used by submodel LOD
+		auto alpha = ( batch_material != nullptr ? batch_material->textures_alpha : 0x30300030 );
+		alpha ^= 0x0F0F000F;
+		Model->Root->ReplacableSet( ( batch_material != nullptr ? batch_material->replacable_skins : nullptr ), alpha );
+		Model->Root->pRoot = Model;
+
+		Render( Model->Root );
+
+		m_current_instance_count = 0;
+
+		::glPopMatrix();
+
+		// 2d. Restore instance_modelview[0] to identity so subsequent
+		// non-instanced draws continue to compute identity * modelview.
+		{
+			glm::mat4 const identity( 1.0f );
+			instance_ubo->update( reinterpret_cast<uint8_t const *>( &identity ), 0, sizeof( identity ) );
+		}
+
+		offset_idx += this_batch;
+		++m_renderpass.draw_stats.instanced_drawcalls;
+	}
+
+	m_renderpass.draw_stats.instances += static_cast<int>( total );
+	m_renderpass.draw_stats.models += static_cast<int>( total );
 }
 
 bool opengl33_renderer::Render(TDynamicObject *Dynamic)
@@ -3101,7 +3300,7 @@ bool opengl33_renderer::Render_cab(TDynamicObject const *Dynamic, float const Li
             auto const luminance { Global.fLuminance * ( Dynamic->fShade > 0.0f ? Dynamic->fShade : 1.0f ) };
             if( Lightlevel > 0.f ) {
                 // crude way to light the cabin, until we have something more complete in place
-                light_ubs.ambient += ( Dynamic->InteriorLight * Lightlevel ) * std::clamp( 1.25f - (float)luminance, 0.f, 1.f );
+                light_ubs.ambient += packed_vec3( ( Dynamic->InteriorLight * Lightlevel ) * std::clamp( 1.25f - (float)luminance, 0.f, 1.f ) );
                 light_ubo->update( light_ubs );
             }
 
@@ -3862,8 +4061,26 @@ void opengl33_renderer::Render_Alpha(TAnimModel *Instance)
 	Instance->RaPrepare();
 	if (Instance->pModel)
 	{
-		// renderowanie rekurencyjne submodeli
-		Render_Alpha(Instance->pModel, Instance->Material(), distancesquared, Instance->location() - m_renderpass.pass_camera.position(), Instance->vAngle);
+		auto const &scale = Instance->Scale();
+		bool const scaled = ( scale.x != 1.0f || scale.y != 1.0f || scale.z != 1.0f );
+		if( scaled ) {
+			// scaled instance: build the per-instance transform locally and call
+			// the distance-only Render_Alpha so we can inject glScalef before
+			// the submodel walk. Mirror of the opaque path in Render(TAnimModel*).
+			::glPushMatrix();
+			auto const Position = Instance->location() - m_renderpass.pass_camera.position();
+			auto const Angle = Instance->vAngle;
+			::glTranslated( Position.x, Position.y, Position.z );
+			if( Angle.y != 0.0 ) ::glRotated( Angle.y, 0.f, 1.f, 0.f );
+			if( Angle.x != 0.0 ) ::glRotated( Angle.x, 1.f, 0.f, 0.f );
+			if( Angle.z != 0.0 ) ::glRotated( Angle.z, 0.f, 0.f, 1.f );
+			::glScalef( scale.x, scale.y, scale.z );
+			Render_Alpha( Instance->pModel, Instance->Material(), distancesquared );
+			::glPopMatrix();
+		}
+		else {
+			Render_Alpha(Instance->pModel, Instance->Material(), distancesquared, Instance->location() - m_renderpass.pass_camera.position(), Instance->vAngle);
+		}
 	}
 }
 

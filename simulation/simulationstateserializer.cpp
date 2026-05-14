@@ -93,6 +93,8 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 	            { "node",        &state_serializer::deserialize_node },
 	            { "origin",      &state_serializer::deserialize_origin },
 	            { "endorigin",   &state_serializer::deserialize_endorigin },
+	            { "scale",       &state_serializer::deserialize_scale },
+	            { "endscale",    &state_serializer::deserialize_endscale },
 	            { "rotate",      &state_serializer::deserialize_rotate },
 	            { "sky",         &state_serializer::deserialize_sky },
 	            { "test",        &state_serializer::deserialize_test },
@@ -665,6 +667,43 @@ state_serializer::deserialize_endorigin( cParser &Input, scene::scratch_data &Sc
 }
 
 void
+state_serializer::deserialize_scale( cParser &Input, scene::scratch_data &Scratchpad ) {
+    // Syntax: `scale <x> <y> <z>` (three tokens, mirroring `rotate`/`angles`).
+    // For uniform scaling write the same value three times (e.g. `scale 2 2 2`).
+    // Affects both:
+    //   1. positions of nodes inside the block (transform() multiplies offset by scale)
+    //   2. the per-instance m_scale stamped onto each TAnimModel created inside the block
+    // The two together let you scale a multi-node-model group built around a common
+    // origin: positions of the parts spread out by the factor AND each part is itself
+    // scaled by the same factor, preserving the visual shape of the assembly.
+    glm::vec3 factor;
+    Input.getTokens( 3 );
+    Input >> factor.x >> factor.y >> factor.z;
+    if( factor.x <= 0.0f || factor.y <= 0.0f || factor.z <= 0.0f ) {
+        ErrorLog( "Bad scale: non-positive scale factor in file \""
+                + Input.Name() + "\" (line " + std::to_string( Input.Line() - 1 ) + "); scale (1,1,1) used" );
+        factor = glm::vec3( 1.0f );
+    }
+    // scales compose component-wise, mirroring how origin offsets compose additively.
+    glm::vec3 const parent = (
+        Scratchpad.location.scale.empty() ?
+            glm::vec3( 1.0f ) :
+            Scratchpad.location.scale.top() );
+    Scratchpad.location.scale.emplace( factor * parent );
+}
+
+void
+state_serializer::deserialize_endscale( cParser &Input, scene::scratch_data &Scratchpad ) {
+
+    if( false == Scratchpad.location.scale.empty() ) {
+        Scratchpad.location.scale.pop();
+    }
+    else {
+        ErrorLog( "Bad scale: endscale instruction with empty scale stack in file \"" + Input.Name() + "\" (line " + std::to_string( Input.Line() - 1 ) + ")" );
+    }
+}
+
+void
 state_serializer::deserialize_rotate( cParser &Input, scene::scratch_data &Scratchpad ) {
 
     Input.getTokens( 3 );
@@ -915,6 +954,12 @@ state_serializer::deserialize_model( cParser &Input, scene::scratch_data &Scratc
 
     auto *instance = new TAnimModel( Nodedata );
     instance->Angles( Scratchpad.location.rotation + rotation ); // dostosowanie do pochylania linii
+    // pick up the scale active at this point in the scenario stream — outer
+    // `scale`/`endscale` blocks compose multiplicatively in the scratchpad.
+    // Load() may further multiply this by an inline `scale <factor>` token.
+    if( false == Scratchpad.location.scale.empty() ) {
+        instance->Scale( Scratchpad.location.scale.top() );
+    }
 
     if( instance->Load( &Input, false ) ) {
         instance->location( transform( location, Scratchpad ) );
@@ -1091,13 +1136,24 @@ state_serializer::skip_until( cParser &Input, std::string const &Token ) {
     }
 }
 
-// transforms provided location by specifed rotation and offset
+// transforms provided location by specifed rotation, scale and offset
 glm::dvec3
 state_serializer::transform( glm::dvec3 Location, scene::scratch_data const &Scratchpad ) {
 
     if( Scratchpad.location.rotation != glm::vec3( 0, 0, 0 ) ) {
         auto const rotation = glm::radians( Scratchpad.location.rotation );
         Location = glm::rotateY<double>( Location, rotation.y ); // Ra 2014-11: uwzględnienie rotacji
+    }
+    // Scale applies in local origin space — positions inside a `scale 2 2 2` block
+    // are pushed twice as far from the local origin along each axis, so a
+    // multi-node-model group (e.g. a building made of separate node models built
+    // around a shared origin) ends up looking uniformly scaled rather than just
+    // having one piece grow. Per-axis values stretch the assembly anisotropically.
+    if( false == Scratchpad.location.scale.empty() ) {
+        auto const &s = Scratchpad.location.scale.top();
+        Location.x *= static_cast<double>( s.x );
+        Location.y *= static_cast<double>( s.y );
+        Location.z *= static_cast<double>( s.z );
     }
     if( false == Scratchpad.location.offset.empty() ) {
         Location += Scratchpad.location.offset.top();

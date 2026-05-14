@@ -106,6 +106,12 @@ std::pair<GLuint, std::string> gl::shader::process_source(const std::string &fil
         str += "precision highp sampler2DShadow;\n";
         str += "precision highp sampler2DArrayShadow;\n";
     }
+    // expose the shader stage to glsl_common so vertex-only built-ins
+    // (gl_InstanceID, effective_modelview, etc.) can be guarded out of
+    // fragment/geometry compilations.
+    if (type == GL_VERTEX_SHADER)        str += "#define STAGE_VERTEX 1\n";
+    else if (type == GL_FRAGMENT_SHADER) str += "#define STAGE_FRAGMENT 1\n";
+    else if (type == GL_GEOMETRY_SHADER) str += "#define STAGE_GEOMETRY 1\n";
     str += "vec4 FBOUT(vec4 x) { return " + (Global.gfx_shadergamma ? std::string("vec4(pow(x.rgb, vec3(1.0 / 2.2)), x.a)") : std::string("x")) + "; }\n";
 
     str += read_file(basedir + filename);
@@ -293,6 +299,9 @@ void gl::program::init()
 
 	if ((index = glGetUniformBlockIndex(*this, "light_ubo")) != GL_INVALID_INDEX)
 		glUniformBlockBinding(*this, index, 2);
+
+	if ((index = glGetUniformBlockIndex(*this, "instance_ubo")) != GL_INVALID_INDEX)
+		glUniformBlockBinding(*this, index, 3);
 }
 
 gl::program::program()

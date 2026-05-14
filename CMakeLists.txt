@@ -81,6 +81,7 @@ option(WITH_BETTER_RENDERER "Experimental multi-backend renderer based on NVRHI"
 option(GENERATE_PDB "Generate executable with program debugging symbols" ON)
 option(ENABLE_MCC "Enable multicore compilation" ON)
 option(WITHDUMPGEN "Enable generating DMP files on crash" ON)
+option(ENABLE_AVX2 "Enable AVX2 instruction set (requires AVX2-capable CPU, Haswell/2013 or newer)" ON)
 
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
@@ -508,7 +509,6 @@ else()
 	target_compile_definitions(${PROJECT_NAME} PUBLIC WITH_DISCORD_RPC=0)
 endif()
 
-
 find_package(OpenAL REQUIRED)
 if (TARGET OpenAL::OpenAL)
 	target_link_libraries(${PROJECT_NAME} OpenAL::OpenAL)
@@ -582,4 +582,13 @@ endif()
 if(ENABLE_MCC AND MSVC)
     message(STATUS "Enabling multi-processor compilation for MSVC.")
 	add_compile_options(/MP)
+endif()
+
+if(ENABLE_AVX2)
+    message(STATUS "Enabling AVX2 instruction set.")
+    if (MSVC)
+        target_compile_options(${PROJECT_NAME} PRIVATE /arch:AVX2)
+    else()
+        target_compile_options(${PROJECT_NAME} PRIVATE -mavx2)
+    endif()
 endif()

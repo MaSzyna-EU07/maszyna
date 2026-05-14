@@ -3,8 +3,17 @@
 #include "object.h"
 #include "bindable.h"
 #include "buffer.h"
+#include <glm/glm.hpp>
 
 #define UBS_PAD(x) uint8_t PAD[x]
+
+// 12-byte vec3 for structs that must match an exact binary layout (UBOs, vertex data).
+// Stays packed regardless of GLM_FORCE_DEFAULT_ALIGNED_GENTYPES.
+// Guard prevents redefinition when stdafx.h also defines it.
+#ifndef PACKED_VEC3_DEFINED
+#define PACKED_VEC3_DEFINED
+using packed_vec3 = glm::vec<3, float, glm::packed_highp>;
+#endif
 
 namespace gl
 {
@@ -43,7 +52,7 @@ namespace gl
         glm::mat4 projection;
         glm::mat4 inv_view;
         glm::mat4 lightview[MAX_CASCADES];
-        glm::vec3 cascade_end;
+        packed_vec3 cascade_end;
         float time;
     	glm::vec4 rain_params;
     	glm::vec4 wiper_pos;
@@ -78,6 +87,17 @@ namespace gl
 
     static_assert(sizeof(model_ubs) == 208 + 16 * MAX_PARAMS, "bad size of ubs");
 
+    // maximum number of instances per single GPU-instanced draw call.
+    // 256 mat4 = 16 KiB, the guaranteed minimum UBO size. Bigger batches must split.
+    const size_t MAX_INSTANCES_PER_BATCH = 256;
+
+    struct instance_ubs
+    {
+        glm::mat4 instance_modelview[MAX_INSTANCES_PER_BATCH];
+    };
+
+    static_assert(sizeof(instance_ubs) == 64 * MAX_INSTANCES_PER_BATCH, "bad size of instance_ubs");
+
     struct light_element_ubs
     {
         enum type_e
@@ -88,13 +108,13 @@ namespace gl
             HEADLIGHTS
         };
 
-        glm::vec3 pos;
+        packed_vec3 pos;
         type_e type;
 
-        glm::vec3 dir;
+        packed_vec3 dir;
         float in_cutoff;
 
-        glm::vec3 color;
+        packed_vec3 color;
         float out_cutoff;
 
         float linear;
@@ -113,10 +133,10 @@ namespace gl
 
     struct light_ubs
     {
-        glm::vec3 ambient;
+        packed_vec3 ambient;
 		UBS_PAD(4);
 
-        glm::vec3 fog_color;
+        packed_vec3 fog_color;
         uint32_t lights_count;
 
         light_element_ubs lights[MAX_LIGHTS];

@@ -119,6 +119,8 @@ public:
     auto append( gfx::vertex_array &Vertices, gfx::userdata_array& Userdata, gfx::geometry_handle const &Geometry ) -> bool;
     // draws geometry stored in specified chunk
     auto draw( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams = basic_streams ) -> std::size_t;
+    // draws geometry stored in specified chunk N times via glDrawElementsInstanced*
+    auto draw_instanced( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams = basic_streams ) -> std::size_t;
     // draws geometry stored in supplied list of chunks
     template <typename Iterator_>
     auto draw( Iterator_ First, Iterator_ Last, gfx::stream_units const &Units, unsigned int const Streams = basic_streams ) ->std::size_t {
@@ -180,6 +182,11 @@ private:
     virtual void replace_( gfx::geometry_handle const &Geometry ) = 0;
     // draw() subclass details
     virtual auto draw_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams ) -> std::size_t = 0;
+    // draw_instanced() subclass details. Default implementation falls back to N regular draws.
+    virtual auto draw_instanced_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams ) -> std::size_t {
+        std::size_t count { 0 };
+        for( std::size_t i = 0; i < InstanceCount; ++i ) { count += draw_( Geometry, Units, Streams ); }
+        return count; }
     // resource release subclass details
     virtual void release_() = 0;
 };
@@ -208,6 +215,9 @@ public:
     auto append( gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry ) -> bool;
     // draws geometry stored in specified chunk
     void draw( gfx::geometry_handle const &Geometry, unsigned int const Streams = basic_streams );
+    // draws geometry stored in specified chunk InstanceCount times via GPU instancing.
+    // The shader reads per-instance modelview matrices from instance_ubo[gl_InstanceID].
+    void draw_instanced( gfx::geometry_handle const &Geometry, std::size_t const InstanceCount, unsigned int const Streams = basic_streams );
     template <typename Iterator_>
     void draw( Iterator_ First, Iterator_ Last, unsigned int const Streams = basic_streams ) {
             while( First != Last ) { 

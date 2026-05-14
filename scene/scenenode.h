@@ -48,7 +48,7 @@ operator!=( lighting_data const &Left, lighting_data const &Right ) {
 namespace scene {
 
 struct bounding_area {
-    glm::highp_dvec3 center; // mid point of the rectangle
+    glm::dvec3 center; // mid point of the rectangle
     float radius { -1.0f }; // radius of the bounding sphere
 
     bounding_area() = default;
@@ -94,7 +94,7 @@ public:
         material_handle material { null_handle };
         lighting_data lighting;
         // geometry data
-        glm::highp_dvec3 origin; // world position of the relative coordinate system origin
+        glm::dvec3 origin; // world position of the relative coordinate system origin
         gfx::geometry_handle geometry { 0, 0 }; // relative origin-centered chunk of geometry held by gfx renderer
         std::vector<world_vertex> vertices; // world space source data of the geometry
 		gfx::userdata_array userdata;

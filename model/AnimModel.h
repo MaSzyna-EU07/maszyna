@@ -143,6 +143,26 @@ public:
     glm::vec3
         Angles() const {
             return vAngle; }
+    // per-axis scale, applied between rotation and the submodel-local transform chain.
+    // (1,1,1) = unchanged. Set by the `scale`/`endscale` scenario directives or the
+    // optional `scale <factor>` / `scale <x> <y> <z>` token inside a `node model` block.
+    // Per-axis values let you stretch a model along a single dimension; uniform input
+    // (single float) broadcasts to all three axes.
+    inline
+    void
+        Scale( glm::vec3 const &Factor ) {
+            m_scale = glm::vec3(
+                Factor.x > 0.0f ? Factor.x : 1.0f,
+                Factor.y > 0.0f ? Factor.y : 1.0f,
+                Factor.z > 0.0f ? Factor.z : 1.0f ); }
+    inline
+    void
+        Scale( float const Factor ) {
+            Scale( glm::vec3( Factor ) ); }
+    inline
+    glm::vec3 const &
+        Scale() const {
+            return m_scale; }
 // members
 	std::list<std::shared_ptr<TAnimContainer>> m_animlist;
 
@@ -169,6 +189,7 @@ public:
 	std::shared_ptr<TAnimContainer> pRoot; // pojemniki sterujące, tylko dla aniomowanych submodeli
     TModel3d *pModel { nullptr };
     glm::vec3 vAngle; // bazowe obroty egzemplarza względem osi
+    glm::vec3 m_scale { 1.0f, 1.0f, 1.0f }; // per-axis scale (see Scale() accessors above)
     material_data m_materialdata;
 
     std::string asText; // tekst dla wyświetlacza znakowego
@@ -189,6 +210,22 @@ public:
 //    float fTransitionTime { fOnTime * 0.9f }; // time
     bool m_transition { true }; // smooth transition between light states
     unsigned int m_framestamp { 0 }; // id of last rendered gfx frame
+
+    // true if this instance is eligible for the batched/instanced render path:
+    // no lights, no submodel animations, no replacable skins, no seasonal variants.
+    // computed once at end of Load() so the renderer can simply test the flag.
+    bool m_instanceable { false };
+    // helper: evaluates current state and updates m_instanceable accordingly.
+    void update_instanceable_flag();
+
+    // diagnostic counters (process-wide). Updated inside update_instanceable_flag()
+    // so the renderer can surface load-time classification stats in the debug overlay.
+    static int s_instanceable_total;       // count of TAnimModel*'s classified instanceable
+    static int s_classified_total;         // count of TAnimModel*'s that ran through the classifier
+    static int s_rejected_no_pmodel;
+    static int s_rejected_lights;
+    static int s_rejected_animlist;
+    static int s_rejected_animated_submodel;
 };
 
 

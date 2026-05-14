@@ -20,7 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editoruilayer.h"
 #include "rendering/renderer.h"
 
-void itemproperties_panel::update(scene::basic_node const *Node)
+void itemproperties_panel::update(scene::basic_node *Node)
 {
 	m_node = Node;
 
@@ -290,10 +290,64 @@ void itemproperties_panel::render()
 		{
 			ImGui::TextColored(ImVec4(line.color.r, line.color.g, line.color.b, line.color.a), line.data.c_str());
 		}
+		// transform editor (position/rotation/scale) — TAnimModel only
+		render_transform_editor();
 		// group section
 		render_group();
 	}
 	ImGui::End();
+}
+
+// In-place editor for position (double precision), rotation (degrees, 0-360),
+// and uniform scale (per-axis float, 1.000) of a picked TAnimModel.
+// Other node subclasses don't expose these knobs through the same API, so the
+// editor short-circuits when the bound node isn't a TAnimModel.
+void itemproperties_panel::render_transform_editor()
+{
+	if (m_node == nullptr) { return; }
+	if (typeid(*m_node) != typeid(TAnimModel)) { return; }
+	auto *picked = static_cast<TAnimModel *>(m_node);
+
+	if (false == ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		return;
+	}
+
+	// Position — full double precision via DragScalarN. World coordinates can grow
+	// large; %.6f gives sub-millimetre resolution at typical scenario distances.
+	{
+		glm::dvec3 location = picked->location();
+		double pos[3] = { location.x, location.y, location.z };
+		if (ImGui::DragScalarN("position", ImGuiDataType_Double, pos, 3, 0.05f, nullptr, nullptr, "%.6f"))
+		{
+			picked->location(glm::dvec3(pos[0], pos[1], pos[2]));
+		}
+	}
+
+	// Rotation — wrapped into [0,360) for display; slider clamps drags to that range.
+	{
+		glm::vec3 angles{
+			clamp_circular(picked->Angles().x),
+			clamp_circular(picked->Angles().y),
+			clamp_circular(picked->Angles().z)};
+		if (ImGui::DragFloat3("rotation (deg)", &angles.x, 0.5f, 0.0f, 360.0f, "%.3f"))
+		{
+			picked->Angles(angles);
+		}
+	}
+
+	// Scale — per-axis float, 1.000 display. Clamped to a reasonable positive range.
+	{
+		glm::vec3 scale = picked->Scale();
+		if (ImGui::DragFloat3("scale (x,y,z)", &scale.x, 0.01f, 0.001f, 100.0f, "%.3f"))
+		{
+			picked->Scale(scale);
+		}
+	}
+
+	if (ImGui::Button("reset rotation")) { picked->Angles(glm::vec3(0.0f)); }
+	ImGui::SameLine();
+	if (ImGui::Button("reset scale")) { picked->Scale(glm::vec3(1.0f)); }
 }
 
 bool itemproperties_panel::render_group()

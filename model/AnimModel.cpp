@@ -273,6 +273,7 @@ TAnimModel::is_keyword( std::string const &Token ) const {
         || ( Token == "lights" )
         || ( Token == "lightcolors" )
         || ( Token == "angles" )
+        || ( Token == "scale" )
         || ( Token == "notransition" );
 }
 
@@ -369,6 +370,23 @@ bool TAnimModel::Load(cParser *parser, bool ter)
                 >> vAngle[ 2 ];
         }
 
+        if( token == "scale" ) {
+            // Per-node scale: `scale <x> <y> <z>` (always three tokens, mirroring
+            // the `angles` syntax). For uniform scaling, write the same value
+            // three times (e.g. `scale 2 2 2`). Combines multiplicatively with
+            // any active scale block from the scenariostateserializer (which is
+            // applied at deserialize_model time before Load() is called, so
+            // m_scale already reflects the outer block when we arrive here).
+            parser->getTokens( 3 );
+            glm::vec3 factor;
+            *parser >> factor.x >> factor.y >> factor.z;
+            if( factor.x > 0.0f && factor.y > 0.0f && factor.z > 0.0f ) {
+                m_scale.x *= factor.x;
+                m_scale.y *= factor.y;
+                m_scale.z *= factor.z;
+            }
+        }
+
         if( token == "notransition" ) {
             m_transition = false;
         }
@@ -376,7 +394,78 @@ bool TAnimModel::Load(cParser *parser, bool ter)
     } while( ( false == token.empty() )
           && ( token != "endmodel" ) );
 
+    update_instanceable_flag();
     return true;
+}
+
+namespace {
+// returns true if this animation type mutates per-instance state on the shared
+// TSubModel tree, which would make batched rendering unsafe. Most animations
+// loaded from .t3d files are global functions of time (clocks, wind, sky) and
+// only transform the local modelview matrix — those are safe to share. Camera-
+// relative billboards also operate purely on the local matrix using whatever
+// modelview the caller pushed, which is exactly per-instance behaviour.
+// The runtime SetRotate/SetTranslate animations (at_Rotate / at_RotateXYZ /
+// at_Translate) are tied to per-instance iAnimOwner and are unsafe to share.
+// at_Undefined is the type assigned to .t3d submodels declared with `anim: true`
+// (a generic "this submodel is animatable" hint) and to anything else that
+// doesn't match a recognised animation keyword — these are driven by event-
+// triggered SetRotate/SetTranslate at runtime, which would silently break if
+// the model were batched.
+bool anim_type_unsafe_for_instancing( TAnimType a ) {
+    switch( a ) {
+    case TAnimType::at_Rotate:
+    case TAnimType::at_RotateXYZ:
+    case TAnimType::at_Translate:
+    case TAnimType::at_DigiClk:    // mutates child submodels via SetRotate
+    case TAnimType::at_Undefined:  // `anim: true` / unknown — driven by events
+        return true;
+    default:
+        return false;
+    }
+}
+
+// recursively walks a submodel tree and returns true if any submodel declares
+// an animation type that's unsafe to batch, OR carries the runtime "needs
+// animation matrix" flag (iFlags bit 0x4000), which is set whenever the
+// submodel was tagged as animatable in the .t3d file or had WillBeAnimated()
+// called on it during model load. Either signal means the submodel may receive
+// per-instance event-driven animation commands at runtime, which the GPU-
+// instanced path (one shared submodel tree across all instances) cannot serve.
+bool submodel_tree_blocks_instancing( TSubModel const *Sub ) {
+    if( Sub == nullptr ) { return false; }
+    if( anim_type_unsafe_for_instancing( Sub->b_Anim ) ) { return true; }
+    if( ( Sub->iFlags & 0x4000 ) != 0 ) { return true; }
+    if( submodel_tree_blocks_instancing( Sub->Child ) ) { return true; }
+    if( submodel_tree_blocks_instancing( Sub->Next ) ) { return true; }
+    return false;
+}
+} // anonymous namespace
+
+int TAnimModel::s_instanceable_total = 0;
+int TAnimModel::s_classified_total = 0;
+int TAnimModel::s_rejected_no_pmodel = 0;
+int TAnimModel::s_rejected_lights = 0;
+int TAnimModel::s_rejected_animlist = 0;
+int TAnimModel::s_rejected_animated_submodel = 0;
+
+void TAnimModel::update_instanceable_flag() {
+    // The instanceable path skips RaAnimate() entirely and only calls RaPrepare()
+    // once per bucket. The conditions below ensure that's safe:
+    //   - no lights:        per-instance light state machines must not exist
+    //   - no anim list:     per-instance submodel animations must not exist
+    //   - no animated submodels in the shared TModel3d
+    // Replacable skins, seasonal variants, and submodel replacable-skin material
+    // refs are intentionally allowed — they're either passed per-instance via
+    // Material() or share global state (season) across all instances.
+    m_instanceable = false;
+    ++s_classified_total;
+    if( pModel == nullptr ) { ++s_rejected_no_pmodel; return; }
+    if( iNumLights != 0 ) { ++s_rejected_lights; return; }
+    if( !m_animlist.empty() ) { ++s_rejected_animlist; return; }
+    if( submodel_tree_blocks_instancing( pModel->Root ) ) { ++s_rejected_animated_submodel; return; }
+    m_instanceable = true;
+    ++s_instanceable_total;
 }
 
 std::shared_ptr<TAnimContainer> TAnimModel::AddContainer(std::string const &Name)
@@ -616,20 +705,21 @@ void TAnimModel::AnimUpdate(double dt)
 	});
 }
 
-// radius() subclass details, calculates node's bounding radius
+// radius() subclass details, calculates node's bounding radius.
+// For non-uniform scale we use the largest axis factor so the bounding sphere
+// fully contains the scaled model — undersizing would cause incorrect culling.
 float
 TAnimModel::radius_() {
 
-    return (
-        pModel ?
-            pModel->bounding_radius() :
-            0.f );
+    if( pModel == nullptr ) { return 0.f; }
+    float const max_scale = std::max( { m_scale.x, m_scale.y, m_scale.z } );
+    return pModel->bounding_radius() * max_scale;
 }
 
 // serialize() subclass details, sends content of the subclass to provided stream
 void
 TAnimModel::serialize_( std::ostream &Output ) const {
-    
+
     // TODO: implement
 }
 // deserialize() subclass details, restores content of the subclass from provided stream
@@ -639,18 +729,29 @@ TAnimModel::deserialize_( std::istream &Input ) {
     // TODO: implement
 }
 
-// export() subclass details, sends basic content of the class in legacy (text) format to provided stream
+// export() subclass details, sends basic content of the class in legacy (text) format to provided stream.
+// Smart export: omit fields that match defaults so reloaded scenarios stay clean.
+//   - if X and Z rotation are zero, fold Y rotation into the 4th token slot
+//     (the legacy `node ... model X Y Z <rotation.y> ...` format) and skip the
+//     `angles` block entirely
+//   - if any axis of rotation needs all three components, emit `angles X Y Z`
+//   - emit `scale X Y Z` only when m_scale isn't (1,1,1)
 void
 TAnimModel::export_as_text_( std::ostream &Output ) const {
+
     // header
     Output << "model ";
-    // location and rotation
-	Output << std::fixed << std::setprecision(3) // ustawienie dokładnie 3 cyfr po przecinku
-	    << location().x << ' ' 
-        << location().y << ' ' 
-        << location().z << ' ';
-    Output
-       << "0 " ;
+
+    // location and rotation. The 4th token after location is a legacy
+    // shorthand for the Y rotation. We use it (and skip the angles block)
+    // whenever the rotation is purely around Y, which is the common case.
+    bool const xz_rotation_zero = ( vAngle.x == 0.0f && vAngle.z == 0.0f );
+    Output << std::fixed << std::setprecision( 3 )
+        << location().x << ' '
+        << location().y << ' '
+        << location().z << ' '
+        << ( xz_rotation_zero ? vAngle.y : 0.0f ) << ' ';
+
     // 3d shape
     auto modelfile { (
         pModel ?
@@ -687,11 +788,22 @@ TAnimModel::export_as_text_( std::ostream &Output ) const {
     if( false == m_transition ) {
         Output << "notransition" << ' ';
     }
-    // footer
-    Output  << "angles "
-        << vAngle.x << ' ' 
-        << vAngle.y << ' ' 
-        << vAngle.z << ' ';
+    // angles directive only when X or Z are rotated — otherwise the Y angle
+    // already lives in the 4th token slot above.
+    if( false == xz_rotation_zero ) {
+        Output << "angles "
+            << vAngle.x << ' '
+            << vAngle.y << ' '
+            << vAngle.z << ' ';
+    }
+    // scale directive only when actually scaled — keeps default-scale models
+    // from being polluted with redundant `scale 1 1 1` entries on every save.
+    if( m_scale.x != 1.0f || m_scale.y != 1.0f || m_scale.z != 1.0f ) {
+        Output << "scale "
+            << m_scale.x << ' '
+            << m_scale.y << ' '
+            << m_scale.z << ' ';
+    }
     // footer
     Output
         << "endmodel"

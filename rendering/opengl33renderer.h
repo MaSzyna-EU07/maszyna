@@ -162,6 +162,8 @@ class opengl33_renderer : public gfx_renderer {
 		int lines{0};
     int particles{0};
 		int drawcalls{0};
+    int instanced_drawcalls{0}; // drawcalls issued via instanced render path (one per TModel3d batch)
+    int instances{0}; // total instances drawn via instanced render path
     int triangles{0};
 
     debug_stats& operator+=( const debug_stats& Right ) {
@@ -174,6 +176,8 @@ class opengl33_renderer : public gfx_renderer {
         lines += Right.lines;
         particles += Right.particles;
         drawcalls += Right.drawcalls;
+        instanced_drawcalls += Right.instanced_drawcalls;
+        instances += Right.instances;
         return *this; }
 	};
 
@@ -266,6 +270,12 @@ class opengl33_renderer : public gfx_renderer {
 	void Render(cell_sequence::iterator First, cell_sequence::iterator Last);
     void Render(scene::shape_node const &Shape, bool const Ignorerange);
 	void Render(TAnimModel *Instance);
+	// batched render path for many TAnimModel instances that share the same TModel3d.
+	// Caller guarantees every instance has m_instanceable == true (no per-instance lights,
+	// no submodel animation, no replacable skins). Each call counts as one
+	// instanced_drawcall in draw_stats and contributes Instances.size() to the
+	// instances counter. Instances are still individually frustum/distance culled.
+	void Render_Instanced( TModel3d *Model, std::vector<TAnimModel *> const &Instances );
 	bool Render(TDynamicObject *Dynamic);
     bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
 	bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance);
@@ -381,6 +391,18 @@ class opengl33_renderer : public gfx_renderer {
 	std::unique_ptr<gl::ubo> scene_ubo;
 	std::unique_ptr<gl::ubo> model_ubo;
 	std::unique_ptr<gl::ubo> light_ubo;
+	// per-instance modelview UBO for GPU-instanced draws.
+	// Slot 0 is initialized once to identity and never overwritten by non-instanced
+	// rendering, so existing draws (where gl_InstanceID==0) compute identity*modelview
+	// in the vertex shader and behave exactly as before. Render_Instanced uploads
+	// per-instance camera-space root matrices to slots 0..N-1, calls glDrawElementsInstanced*,
+	// then restores slot 0 to identity for subsequent non-instanced draws.
+	std::unique_ptr<gl::ubo> instance_ubo;
+	// when > 0, the renderer is inside a Render_Instanced() call. The draw(handle)
+	// method routes to glDrawElementsInstanced* with this many instances rather
+	// than a single regular draw. The vertex shader reads per-instance modelview
+	// from instance_ubo[gl_InstanceID]. Reset to 0 by Render_Instanced() on exit.
+	std::size_t m_current_instance_count { 0 };
 	gl::scene_ubs scene_ubs;
 	gl::model_ubs model_ubs;
 	gl::light_ubs light_ubs;
