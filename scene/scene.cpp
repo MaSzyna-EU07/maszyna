@@ -1054,7 +1054,7 @@ basic_region::on_click( TAnimModel const *Instance ) {
 
     if( Instance->name().empty() || ( Instance->name() == "none" ) ) { return; }
 
-    auto const location { Instance->location() };
+    auto const& location { Instance->location() };
 
     if( point_inside( location ) ) {
         section( location ).on_click( Instance );
@@ -1329,7 +1329,7 @@ basic_region::insert( shape_node Shape, scratch_data &Scratchpad, bool const Tra
         if( ( false == Scratchpad.location.offset.empty() )
          && ( Scratchpad.location.offset.top() != glm::dvec3( 0, 0, 0 ) ) ) {
             // ...and move
-            auto const offset = Scratchpad.location.offset.top();
+            auto const& offset = Scratchpad.location.offset.top();
             for( auto &vertex : shape.m_data.vertices ) {
                 vertex.position += offset;
             }
@@ -1383,7 +1383,7 @@ basic_region::insert( lines_node Lines, scratch_data &Scratchpad ) {
     if( ( false == Scratchpad.location.offset.empty() )
      && ( Scratchpad.location.offset.top() != glm::dvec3( 0, 0, 0 ) ) ) {
         // ...and move
-        auto const offset = Scratchpad.location.offset.top();
+        auto const &offset = Scratchpad.location.offset.top();
         for( auto &vertex : Lines.m_data.vertices ) {
             vertex.position += offset;
         }
@@ -1759,7 +1759,7 @@ void basic_region::update_poi_geometry()
 {
 	std::vector<gfx::basic_vertex> vertices;
 	gfx::userdata_array userdata;
-	for (const auto sem : map::Objects.entries)
+	for (const auto &sem : map::Objects.entries)
 		vertices.push_back(std::move(sem->vertex()));
 
 	if (!m_map_poipoints) {

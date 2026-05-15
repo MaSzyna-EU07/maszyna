@@ -61,8 +61,7 @@ void
 basic_editor::translate( scene::basic_node *Node, float const Offset ) {
 
     // NOTE: offset scaling is calculated early so the same multiplier can be applied to potential whole group
-    auto location { Node->location() };
-    auto const distance { glm::length( location - glm::dvec3{ Global.pCamera.Pos } ) };
+    auto const distance { glm::length( Node->location() - Global.pCamera.Pos ) };
     auto const offset { static_cast<float>( Offset * std::max( 1.0, distance * 0.01 ) ) };
 
     if( Node->group() <= 1 ) {

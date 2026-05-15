@@ -173,7 +173,7 @@ smoke_source::update( double const Timedelta, bool const Onlydespawn ) {
 
 		if (Global.AirTemperature <= 5.f || m_owner.vehicle->MoverParameters->dizel_heat.Ts < 45.f)
 		{
-			m_emitter.color == glm::vec3{128, 128, 128};
+			m_emitter.color = glm::vec3{128, 128, 128};
 		}
 
 		if (m_owner.vehicle->MoverParameters->dizel_spinup == true)
