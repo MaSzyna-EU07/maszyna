@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#ifdef __APPLE__
+#if defined(__APPLE__) && !__has_include(<AL/al.h>)
 #include <OpenAL/al.h>
 #include <OpenAL/alc.h>
 #else
