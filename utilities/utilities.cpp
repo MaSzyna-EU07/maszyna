@@ -15,7 +15,12 @@ Copyright (C) 2007-2014 Maciej Cierniak
 //
 //#include <sys/types.h>
 //#include <sys/stat.h>
+#include <atomic>
+#include <algorithm>
+#include <cctype>
 #include <ranges>
+#include <mutex>
+#include <unordered_map>
 //#ifndef WIN32
 //#include <unistd.h>
 //#endif
@@ -26,9 +31,8 @@ Copyright (C) 2007-2014 Maciej Cierniak
 
 #include "utilities/utilities.h"
 #include "utilities/Globals.h"
+#include "utilities/Logs.h"
 #include "utilities/parser.h"
-
-//#include "utilities/Logs.h"
 
 // TODO: This shouldn't be in Globals?
 bool DebugModeFlag = false;
@@ -36,6 +40,136 @@ bool FreeFlyModeFlag = false;
 bool EditorModeFlag = false;
 bool DebugCameraFlag = false;
 bool DebugTractionFlag = false;
+
+namespace
+{
+std::atomic<unsigned int> g_fileexists_cache_depth { 0 };
+bool g_fileexists_cache_enabled { false };
+std::mutex g_fileexists_cache_mutex;
+std::unordered_map<std::string, bool> g_fileexists_cache;
+
+struct fileexists_cache_metrics
+{
+	std::uint64_t total_calls { 0 };
+	std::uint64_t cache_hits { 0 };
+	std::uint64_t cache_misses { 0 };
+	std::uint64_t filesystem_exists_calls { 0 };
+	std::uint64_t positive_results { 0 };
+	std::uint64_t negative_results { 0 };
+	std::uint64_t untracked_path_calls { 0 };
+	std::chrono::steady_clock::duration filesystem_exists_time {};
+	std::unordered_map<std::string, std::uint64_t> path_counts;
+
+	void reset()
+	{
+		*this = {};
+	}
+};
+
+fileexists_cache_metrics g_fileexists_cache_metrics;
+
+std::string FileExistsCacheKey(std::string const &Filename)
+{
+	if (Filename.empty())
+	{
+		return Filename;
+	}
+
+	try
+	{
+		auto path = std::filesystem::path(Filename);
+		if (path.is_relative())
+		{
+			path = std::filesystem::absolute(path);
+		}
+
+		auto key = path.lexically_normal().generic_string();
+#ifdef _WIN32
+		for (auto &character : key)
+		{
+			auto const value = static_cast<unsigned char>(character);
+			if (value < 128)
+			{
+				character = static_cast<char>(std::tolower(value));
+			}
+		}
+#endif
+		return key;
+	}
+	catch (std::filesystem::filesystem_error const &)
+	{
+		auto key = Filename;
+		std::replace(key.begin(), key.end(), '\\', '/');
+		return key;
+	}
+}
+
+double FileExistsDurationMilliseconds(std::chrono::steady_clock::duration const Duration)
+{
+	return std::chrono::duration<double, std::milli>(Duration).count();
+}
+
+std::string FileExistsFormatPathCount(std::pair<std::string, std::uint64_t> const &Entry)
+{
+	return "  " + std::to_string(Entry.second) + "x " + Entry.first;
+}
+
+std::vector<std::string> FileExistsCacheReport()
+{
+	std::vector<std::string> report;
+	report.emplace_back(
+	    std::string("FileExists scope: mode=") + (g_fileexists_cache_enabled ? "cached" : "direct")
+	    + ", calls=" + std::to_string(g_fileexists_cache_metrics.total_calls)
+	    + ", hits=" + std::to_string(g_fileexists_cache_metrics.cache_hits)
+	    + ", misses=" + std::to_string(g_fileexists_cache_metrics.cache_misses)
+	    + ", fs_exists=" + std::to_string(g_fileexists_cache_metrics.filesystem_exists_calls)
+	    + ", found=" + std::to_string(g_fileexists_cache_metrics.positive_results)
+	    + ", missing=" + std::to_string(g_fileexists_cache_metrics.negative_results)
+	    + ", fs_time_ms=" + to_string(FileExistsDurationMilliseconds(g_fileexists_cache_metrics.filesystem_exists_time), 3)
+	    + ", untracked_paths=" + std::to_string(g_fileexists_cache_metrics.untracked_path_calls)
+	    + ", cached_paths=" + std::to_string(g_fileexists_cache.size()));
+
+	std::vector<std::pair<std::string, std::uint64_t>> top_paths;
+	top_paths.reserve(g_fileexists_cache_metrics.path_counts.size());
+	for (auto const &entry : g_fileexists_cache_metrics.path_counts)
+	{
+		if (entry.second > 1)
+		{
+			top_paths.emplace_back(entry);
+		}
+	}
+
+	constexpr std::size_t top_path_limit = 5;
+	auto const top_count = std::min(top_path_limit, top_paths.size());
+	std::partial_sort(
+	    top_paths.begin(),
+	    top_paths.begin() + top_count,
+	    top_paths.end(),
+	    [](auto const &Left, auto const &Right)
+	    {
+		    if (Left.second != Right.second)
+		    {
+			    return Left.second > Right.second;
+		    }
+		    return Left.first < Right.first;
+	    });
+
+	for (std::size_t index = 0; index < top_count; ++index)
+	{
+		report.emplace_back(FileExistsFormatPathCount(top_paths[index]));
+	}
+
+	return report;
+}
+
+void FileExistsCacheLogReport(std::vector<std::string> const &Report)
+{
+	for (auto const &line : Report)
+	{
+		WriteLog(line);
+	}
+}
+} // namespace
 
 std::string Now()
 {
@@ -328,7 +462,62 @@ template <> bool extract_value(bool &Variable, std::string const &Key, std::stri
 
 bool FileExists(std::string const &Filename)
 {
-	return std::filesystem::exists(Filename);
+	if (g_fileexists_cache_depth.load(std::memory_order_acquire) == 0)
+	{
+		return std::filesystem::exists(Filename);
+	}
+
+	std::lock_guard<std::mutex> lock(g_fileexists_cache_mutex);
+	if (g_fileexists_cache_depth.load(std::memory_order_relaxed) == 0)
+	{
+		return std::filesystem::exists(Filename);
+	}
+
+	auto const cache_enabled = g_fileexists_cache_enabled;
+	auto const key = cache_enabled ? FileExistsCacheKey(Filename) : Filename;
+	++g_fileexists_cache_metrics.total_calls;
+	if (auto lookup = g_fileexists_cache_metrics.path_counts.find(key); lookup != g_fileexists_cache_metrics.path_counts.end())
+	{
+		++lookup->second;
+	}
+	else if (g_fileexists_cache_metrics.path_counts.size() < 4096)
+	{
+		g_fileexists_cache_metrics.path_counts.emplace(key, 1);
+	}
+	else
+	{
+		++g_fileexists_cache_metrics.untracked_path_calls;
+	}
+
+	if (cache_enabled)
+	{
+		auto const lookup = g_fileexists_cache.find(key);
+		if (lookup != g_fileexists_cache.end())
+		{
+			++g_fileexists_cache_metrics.cache_hits;
+			return lookup->second;
+		}
+
+		++g_fileexists_cache_metrics.cache_misses;
+	}
+
+	++g_fileexists_cache_metrics.filesystem_exists_calls;
+	auto const timestart = std::chrono::steady_clock::now();
+	auto const exists = std::filesystem::exists(Filename);
+	g_fileexists_cache_metrics.filesystem_exists_time += std::chrono::steady_clock::now() - timestart;
+	if (exists)
+	{
+		++g_fileexists_cache_metrics.positive_results;
+	}
+	else
+	{
+		++g_fileexists_cache_metrics.negative_results;
+	}
+	if (cache_enabled)
+	{
+		g_fileexists_cache.emplace(key, exists);
+	}
+	return exists;
 }
 
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions)
@@ -346,6 +535,64 @@ std::pair<std::string, std::string> FileExists(std::vector<std::string> const &N
 	}
 	// nothing found
 	return {{}, {}};
+}
+
+FileExistsCacheScope::FileExistsCacheScope()
+{
+	std::lock_guard<std::mutex> lock(g_fileexists_cache_mutex);
+	if (g_fileexists_cache_depth.load(std::memory_order_relaxed) == 0)
+	{
+		g_fileexists_cache.clear();
+		g_fileexists_cache_enabled = Global.ScenarioFileExistsCache;
+		g_fileexists_cache_metrics.reset();
+	}
+	g_fileexists_cache_depth.fetch_add(1, std::memory_order_release);
+}
+
+FileExistsCacheScope::~FileExistsCacheScope()
+{
+	end();
+}
+
+void FileExistsCacheScope::clear()
+{
+	std::vector<std::string> report;
+	{
+		std::lock_guard<std::mutex> lock(g_fileexists_cache_mutex);
+		report = FileExistsCacheReport();
+		g_fileexists_cache.clear();
+		g_fileexists_cache_metrics.reset();
+	}
+	FileExistsCacheLogReport(report);
+}
+
+void FileExistsCacheScope::end()
+{
+	if (false == m_active)
+	{
+		return;
+	}
+
+	std::vector<std::string> report;
+	{
+		std::lock_guard<std::mutex> lock(g_fileexists_cache_mutex);
+		auto const depth = g_fileexists_cache_depth.load(std::memory_order_relaxed);
+		if (depth <= 1)
+		{
+			report = FileExistsCacheReport();
+			g_fileexists_cache_depth.store(0, std::memory_order_release);
+			g_fileexists_cache.clear();
+			g_fileexists_cache_enabled = false;
+			g_fileexists_cache_metrics.reset();
+		}
+		else
+		{
+			g_fileexists_cache_depth.store(depth - 1, std::memory_order_release);
+		}
+		m_active = false;
+	}
+
+	FileExistsCacheLogReport(report);
 }
 
 // returns time of last modification for specified file

@@ -13,8 +13,160 @@ http://mozilla.org/MPL/2.0/.
 #include "model/Model3d.h"
 #include "rendering/renderer.h"
 #include "utilities/parser.h"
+#include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "scene/sn_utils.h"
+
+namespace
+{
+constexpr char const *geometry_token_break = "\n\r\t ;";
+
+enum class shape_import_subtype
+{
+	triangles,
+	triangle_strip,
+	triangle_fan
+};
+
+bool read_shape_vertex_fast(cParser &Input, world_vertex &vertex)
+{
+	return Input.readTokenDouble(vertex.position.x, false, geometry_token_break)
+	    && Input.readTokenDouble(vertex.position.y, false, geometry_token_break)
+	    && Input.readTokenDouble(vertex.position.z, false, geometry_token_break)
+	    && Input.readTokenFloat(vertex.normal.x, false, geometry_token_break)
+	    && Input.readTokenFloat(vertex.normal.y, false, geometry_token_break)
+	    && Input.readTokenFloat(vertex.normal.z, false, geometry_token_break)
+	    && Input.readTokenFloat(vertex.texture.s, false, geometry_token_break)
+	    && Input.readTokenFloat(vertex.texture.t, false, geometry_token_break);
+}
+
+void process_shape_imported_vertex(scene::shape_node::shapenode_data &data,
+    shape_import_subtype const nodetype,
+    world_vertex &vertex,
+    world_vertex &vertex1,
+    world_vertex &vertex2,
+    std::size_t &vertexcount,
+    bool const clamps,
+    bool const clampt,
+    std::string const &node_name)
+{
+	if (true == clamps)
+	{
+		vertex.texture.s = std::clamp(vertex.texture.s, 0.001f, 0.999f);
+	}
+	if (true == clampt)
+	{
+		vertex.texture.t = std::clamp(vertex.texture.t, 0.001f, 0.999f);
+	}
+
+	switch (nodetype)
+	{
+	case shape_import_subtype::triangles:
+	{
+		if (vertexcount == 0)
+		{
+			vertex1 = vertex;
+		}
+		else if (vertexcount == 1)
+		{
+			vertex2 = vertex;
+		}
+		else if (vertexcount >= 2)
+		{
+			if (false == degenerate(vertex1.position, vertex2.position, vertex.position))
+			{
+				data.vertices.emplace_back(vertex1);
+				data.vertices.emplace_back(vertex2);
+				data.vertices.emplace_back(vertex);
+			}
+			else
+			{
+				ErrorLog(
+				    "Bad geometry: degenerate triangle encountered"
+				    + (node_name != "" ? " in node \"" + node_name + "\"" : "")
+				    + " (vertices: " + to_string(vertex1.position) + " + " + to_string(vertex2.position) + " + " + to_string(vertex.position) + ")");
+			}
+		}
+		++vertexcount;
+		if (vertexcount > 2)
+		{
+			vertexcount = 0;
+		}
+		break;
+	}
+	case shape_import_subtype::triangle_fan:
+	{
+		if (vertexcount == 0)
+		{
+			vertex1 = vertex;
+		}
+		else if (vertexcount == 1)
+		{
+			vertex2 = vertex;
+		}
+		else if (vertexcount >= 2)
+		{
+			if (false == degenerate(vertex1.position, vertex2.position, vertex.position))
+			{
+				data.vertices.emplace_back(vertex1);
+				data.vertices.emplace_back(vertex2);
+				data.vertices.emplace_back(vertex);
+				vertex2 = vertex;
+			}
+			else
+			{
+				ErrorLog(
+				    "Bad geometry: degenerate triangle encountered"
+				    + (node_name != "" ? " in node \"" + node_name + "\"" : "")
+				    + " (vertices: " + to_string(vertex1.position) + " + " + to_string(vertex2.position) + " + " + to_string(vertex.position) + ")");
+			}
+		}
+		++vertexcount;
+		break;
+	}
+	case shape_import_subtype::triangle_strip:
+	{
+		if (vertexcount == 0)
+		{
+			vertex1 = vertex;
+		}
+		else if (vertexcount == 1)
+		{
+			vertex2 = vertex;
+		}
+		else if (vertexcount >= 2)
+		{
+			if (false == degenerate(vertex1.position, vertex2.position, vertex.position))
+			{
+				if (vertexcount % 2 == 0)
+				{
+					data.vertices.emplace_back(vertex1);
+					data.vertices.emplace_back(vertex2);
+				}
+				else
+				{
+					data.vertices.emplace_back(vertex2);
+					data.vertices.emplace_back(vertex1);
+				}
+				data.vertices.emplace_back(vertex);
+
+				vertex1 = vertex2;
+				vertex2 = vertex;
+			}
+			else
+			{
+				ErrorLog(
+				    "Bad geometry: degenerate triangle encountered"
+				    + (node_name != "" ? " in node \"" + node_name + "\"" : "")
+				    + " (vertices: " + to_string(vertex1.position) + " + " + to_string(vertex2.position) + " + " + to_string(vertex.position) + ")");
+			}
+		}
+		++vertexcount;
+		break;
+	}
+	}
+}
+} // namespace
 
 // stores content of the struct in provided output stream
 void
@@ -231,111 +383,35 @@ shape_node::import( cParser &Input, scene::node_data const &Nodedata ) {
     }
 
     // geometry
-    enum subtype {
-        triangles,
-        triangle_strip,
-        triangle_fan
-    };
-
-    subtype const nodetype = (
-        Nodedata.type == "triangles" ?      triangles :
-        Nodedata.type == "triangle_strip" ? triangle_strip :
-                                            triangle_fan );
+    shape_import_subtype const nodetype = (
+        Nodedata.type == "triangles" ? shape_import_subtype::triangles :
+        Nodedata.type == "triangle_strip" ? shape_import_subtype::triangle_strip :
+                                            shape_import_subtype::triangle_fan );
     std::size_t vertexcount{ 0 };
     world_vertex vertex, vertex1, vertex2;
-    do {
-        Input.getTokens( 8, false );
-        Input
-            >> vertex.position.x
-            >> vertex.position.y
-            >> vertex.position.z
-            >> vertex.normal.x
-            >> vertex.normal.y
-            >> vertex.normal.z
-            >> vertex.texture.s
-            >> vertex.texture.t;
-        // clamp texture coordinates if texture wrapping is off
-        if( true == clamps ) { vertex.texture.s = std::clamp( vertex.texture.s, 0.001f, 0.999f ); }
-        if( true == clampt ) { vertex.texture.t = std::clamp( vertex.texture.t, 0.001f, 0.999f ); }
-        // convert all data to gl_triangles to allow data merge for matching nodes
-        switch( nodetype ) {
-            case triangles: {
 
-                     if( vertexcount == 0 ) { vertex1 = vertex; }
-                else if( vertexcount == 1 ) { vertex2 = vertex; }
-                else if( vertexcount >= 2 ) {
-                    if( false == degenerate( vertex1.position, vertex2.position, vertex.position ) ) {
-                        m_data.vertices.emplace_back( vertex1 );
-                        m_data.vertices.emplace_back( vertex2 );
-                        m_data.vertices.emplace_back( vertex );
-                    }
-                    else {
-                        ErrorLog(
-                            "Bad geometry: degenerate triangle encountered"
-                            + ( m_name != "" ? " in node \"" + m_name + "\"" : "" )
-                            + " (vertices: " + to_string( vertex1.position ) + " + " + to_string( vertex2.position ) + " + " + to_string( vertex.position ) + ")" );
-                    }
-                }
-                ++vertexcount;
-                if( vertexcount > 2 ) { vertexcount = 0; } // start new triangle if needed
+    if (Global.ScenarioParserFastGeometry)
+    {
+        do
+        {
+            if (false == read_shape_vertex_fast(Input, vertex))
+            {
                 break;
             }
-            case triangle_fan: {
-
-                     if( vertexcount == 0 ) { vertex1 = vertex; }
-                else if( vertexcount == 1 ) { vertex2 = vertex; }
-                else if( vertexcount >= 2 ) {
-                    if( false == degenerate( vertex1.position, vertex2.position, vertex.position ) ) {
-                        m_data.vertices.emplace_back( vertex1 );
-                        m_data.vertices.emplace_back( vertex2 );
-                        m_data.vertices.emplace_back( vertex );
-                        vertex2 = vertex;
-                    }
-                    else {
-                        ErrorLog(
-                            "Bad geometry: degenerate triangle encountered"
-                            + ( m_name != "" ? " in node \"" + m_name + "\"" : "" )
-                            + " (vertices: " + to_string( vertex1.position ) + " + " + to_string( vertex2.position ) + " + " + to_string( vertex.position ) + ")" );
-                    }
-                }
-                ++vertexcount;
-                break;
-            }
-            case triangle_strip: {
-
-                     if( vertexcount == 0 ) { vertex1 = vertex; }
-                else if( vertexcount == 1 ) { vertex2 = vertex; }
-                else if( vertexcount >= 2 ) {
-                    if( false == degenerate( vertex1.position, vertex2.position, vertex.position ) ) {
-                        // swap order every other triangle, to maintain consistent winding
-                        if( vertexcount % 2 == 0 ) {
-                            m_data.vertices.emplace_back( vertex1 );
-                            m_data.vertices.emplace_back( vertex2 );
-                        }
-                        else {
-                            m_data.vertices.emplace_back( vertex2 );
-                            m_data.vertices.emplace_back( vertex1 );
-                        }
-                        m_data.vertices.emplace_back( vertex );
-
-                        vertex1 = vertex2;
-                        vertex2 = vertex;
-                    }
-                    else {
-                        ErrorLog(
-                            "Bad geometry: degenerate triangle encountered"
-                            + ( m_name != "" ? " in node \"" + m_name + "\"" : "" )
-                            + " (vertices: " + to_string( vertex1.position ) + " + " + to_string( vertex2.position ) + " + " + to_string( vertex.position ) + ")" );
-                    }
-                }
-                ++vertexcount;
-                break;
-            }
-            default: { break; }
-        }
-        token = Input.getToken<std::string>();
-
-    } while( token != "endtri" );
+            process_shape_imported_vertex(m_data, nodetype, vertex, vertex1, vertex2, vertexcount, clamps, clampt, m_name);
+            Input.readNextToken(token, false, geometry_token_break);
+        } while (token != "endtri");
+    }
+    else
+    {
+        do
+        {
+            Input.getTokens(8, false);
+            Input >> vertex.position.x >> vertex.position.y >> vertex.position.z >> vertex.normal.x >> vertex.normal.y >> vertex.normal.z >> vertex.texture.s >> vertex.texture.t;
+            process_shape_imported_vertex(m_data, nodetype, vertex, vertex1, vertex2, vertexcount, clamps, clampt, m_name);
+            token = Input.getToken<std::string>();
+        } while (token != "endtri");
+    }
 
     return *this;
 }
@@ -595,12 +671,9 @@ lines_node::import( cParser &Input, scene::node_data const &Nodedata ) {
     std::size_t vertexcount { 0 };
     world_vertex vertex, vertex0, vertex1;
     std::string token = Input.getToken<std::string>();
-    do {
-        vertex.position.x = std::atof( token.c_str() );
-        Input.getTokens( 2, false );
-        Input
-            >> vertex.position.y
-            >> vertex.position.z;
+
+    auto process_line_vertex = [&]()
+    {
             // convert all data to gl_lines to allow data merge for matching nodes
             switch( nodetype ) {
                 case lines: {
@@ -631,9 +704,34 @@ lines_node::import( cParser &Input, scene::node_data const &Nodedata ) {
                 }
                 default: { break; }
             }
-        token = Input.getToken<std::string>();
+    };
 
-    } while( token != "endline" );
+    if (Global.ScenarioParserFastGeometry)
+    {
+        do
+        {
+            char *end = nullptr;
+            vertex.position.x = std::strtod(token.c_str(), &end);
+            if (false == Input.readTokenDouble(vertex.position.y, false, geometry_token_break)
+                || false == Input.readTokenDouble(vertex.position.z, false, geometry_token_break))
+            {
+                break;
+            }
+            process_line_vertex();
+            Input.readNextToken(token, false, geometry_token_break);
+        } while (token != "endline");
+    }
+    else
+    {
+        do
+        {
+            vertex.position.x = std::atof(token.c_str());
+            Input.getTokens(2, false);
+            Input >> vertex.position.y >> vertex.position.z;
+            process_line_vertex();
+            token = Input.getToken<std::string>();
+        } while (token != "endline");
+    }
     // add closing line for the loop
     if( ( nodetype == line_loop )
      && ( vertexcount > 2 ) ) {

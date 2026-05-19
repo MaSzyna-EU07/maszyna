@@ -10,12 +10,16 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "utilities/parser.h"
+#include "utilities/utilities.h"
 #include "scene/scene.h"
 
 namespace simulation {
 
 struct deserializer_state {
 	std::string scenariofile;
+	FileExistsCacheScope fileexists_cache_scope;
+	ParserFileCacheScope parser_file_cache_scope;
+	ParserMetricsScope parser_metrics_scope;
 	cParser input;
 	scene::scratch_data scratchpad;
 	using deserializefunctionbind = std::function<void()>;

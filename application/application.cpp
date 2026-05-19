@@ -1084,12 +1084,8 @@ void eu07_application::init_files()
 {
 
 #ifdef _WIN32
-	DeleteFile("log.txt");
-	DeleteFile("errors.txt");
 	CreateDirectory("logs", NULL);
 #elif __unix__
-	unlink("log.txt");
-	unlink("errors.txt");
 	mkdir("logs", 0755);
 #endif
 }
@@ -1127,6 +1123,22 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 	{
 
 		std::string token{Argv[i]};
+		auto parse_bool_argument =
+		    [](std::string Value, bool &Output)
+		    {
+			    Value = ToLower(Value);
+			    if ((Value == "on") || (Value == "yes") || (Value == "true") || (Value == "1"))
+			    {
+				    Output = true;
+				    return true;
+			    }
+			    if ((Value == "off") || (Value == "no") || (Value == "false") || (Value == "0"))
+			    {
+				    Output = false;
+				    return true;
+			    }
+			    return false;
+		    };
 
 		if (token == "-s")
 		{
@@ -1142,10 +1154,114 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 				Global.local_start_vehicle = ToLower(Argv[++i]);
 			}
 		}
+		else if (token == "--no-scenario-fileexists-cache")
+		{
+			Global.ScenarioFileExistsCache = false;
+		}
+		else if (token == "--no-scenario-parser-file-cache")
+		{
+			Global.ScenarioParserFileCache = false;
+		}
+		else if (token == "--no-scenario-parser-fast-geometry")
+		{
+			Global.ScenarioParserFastGeometry = false;
+		}
+		else if (token == "--no-scenario-parser-fast-skip")
+		{
+			Global.ScenarioParserFastSkip = false;
+		}
+		else if (token == "--scenario-fileexists-cache")
+		{
+			if ((i + 1 < Argc) && parse_bool_argument(Argv[++i], Global.ScenarioFileExistsCache))
+			{
+				continue;
+			}
+
+			std::cout << "invalid value for --scenario-fileexists-cache" << std::endl;
+			return -1;
+		}
+		else if (token == "--scenario-parser-file-cache")
+		{
+			if ((i + 1 < Argc) && parse_bool_argument(Argv[++i], Global.ScenarioParserFileCache))
+			{
+				continue;
+			}
+
+			std::cout << "invalid value for --scenario-parser-file-cache" << std::endl;
+			return -1;
+		}
+		else if (token == "--scenario-parser-fast-geometry")
+		{
+			if ((i + 1 < Argc) && parse_bool_argument(Argv[++i], Global.ScenarioParserFastGeometry))
+			{
+				continue;
+			}
+
+			std::cout << "invalid value for --scenario-parser-fast-geometry" << std::endl;
+			return -1;
+		}
+		else if (token == "--scenario-parser-fast-skip")
+		{
+			if ((i + 1 < Argc) && parse_bool_argument(Argv[++i], Global.ScenarioParserFastSkip))
+			{
+				continue;
+			}
+
+			std::cout << "invalid value for --scenario-parser-fast-skip" << std::endl;
+			return -1;
+		}
+		else if (token.starts_with("--scenario-fileexists-cache="))
+		{
+			if (parse_bool_argument(token.substr(std::string("--scenario-fileexists-cache=").size()), Global.ScenarioFileExistsCache))
+			{
+				continue;
+			}
+
+			std::cout << "invalid value for --scenario-fileexists-cache" << std::endl;
+			return -1;
+		}
+		else if (token.starts_with("--scenario-parser-file-cache="))
+		{
+			if (parse_bool_argument(token.substr(std::string("--scenario-parser-file-cache=").size()), Global.ScenarioParserFileCache))
+			{
+				continue;
+			}
+
+			std::cout << "invalid value for --scenario-parser-file-cache" << std::endl;
+			return -1;
+		}
+		else if (token.starts_with("--scenario-parser-fast-geometry="))
+		{
+			if (parse_bool_argument(token.substr(std::string("--scenario-parser-fast-geometry=").size()), Global.ScenarioParserFastGeometry))
+			{
+				continue;
+			}
+
+			std::cout << "invalid value for --scenario-parser-fast-geometry" << std::endl;
+			return -1;
+		}
+		else if (token.starts_with("--scenario-parser-fast-skip="))
+		{
+			if (parse_bool_argument(token.substr(std::string("--scenario-parser-fast-skip=").size()), Global.ScenarioParserFastSkip))
+			{
+				continue;
+			}
+
+			std::cout << "invalid value for --scenario-parser-fast-skip" << std::endl;
+			return -1;
+		}
 		else
 		{
 			std::cout << "usage: " << std::string(Argv[0]) << " [-s sceneryfilepath]"
-			          << " [-v vehiclename]" << std::endl;
+			          << " [-v vehiclename]"
+			          << " [--scenario-fileexists-cache on|off]"
+			          << " [--no-scenario-fileexists-cache]"
+			          << " [--scenario-parser-file-cache on|off]"
+			          << " [--no-scenario-parser-file-cache]"
+			          << " [--scenario-parser-fast-geometry on|off]"
+			          << " [--no-scenario-parser-fast-geometry]"
+			          << " [--scenario-parser-fast-skip on|off]"
+			          << " [--no-scenario-parser-fast-skip]" << std::endl;
 			return -1;
 		}
 	}

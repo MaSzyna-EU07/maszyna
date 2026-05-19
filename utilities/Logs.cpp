@@ -25,49 +25,115 @@ char endstring[10] = "\n";
 
 std::deque<std::string> log_scrollback;
 
-std::string filename_date() {
-    ::SYSTEMTIME st;
+namespace
+{
+std::string sanitize_filename_component(std::string value)
+{
+	for (auto &character : value)
+	{
+		switch (character)
+		{
+		case '\\':
+		case '/':
+		case ':':
+		case '*':
+		case '?':
+		case '\"':
+		case '<':
+		case '>':
+		case '|':
+			character = '_';
+			break;
+		default:
+			break;
+		}
+	}
+	return value;
+}
+
+std::string filename_session_timestamp()
+{
+	::SYSTEMTIME st {};
 
 #ifdef __unix__
-    timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    tm *tms = localtime(&ts.tv_sec);
-    st.wYear = tms->tm_year;
-    st.wMonth = tms->tm_mon;
-    st.wDayOfWeek = tms->tm_wday;
-    st.wDay = tms->tm_mday;
-    st.wHour = tms->tm_hour;
-    st.wMinute = tms->tm_min;
-    st.wSecond = tms->tm_sec;
-    st.wMilliseconds = ts.tv_nsec / 1000000;
+	timespec ts {};
+	clock_gettime(CLOCK_REALTIME, &ts);
+	tm *tms = localtime(&ts.tv_sec);
+	if (tms != nullptr)
+	{
+		st.wYear = static_cast<unsigned short>(tms->tm_year + 1900);
+		st.wMonth = static_cast<unsigned short>(tms->tm_mon + 1);
+		st.wDay = static_cast<unsigned short>(tms->tm_mday);
+		st.wHour = static_cast<unsigned short>(tms->tm_hour);
+		st.wMinute = static_cast<unsigned short>(tms->tm_min);
+		st.wSecond = static_cast<unsigned short>(tms->tm_sec);
+		st.wMilliseconds = static_cast<unsigned short>(ts.tv_nsec / 1000000);
+	}
 #elif _WIN32
-    ::GetLocalTime( &st );
+	::GetLocalTime(&st);
 #endif
 
-    std::snprintf(
-        logbuffer,
-        sizeof(logbuffer),
-	    "%d%02d%02d_%02d%02d%03d",
-        st.wYear,
-        st.wMonth,
-        st.wDay,
-        st.wHour,
-	    st.wMinute,
-	    st.wMilliseconds);
+	std::snprintf(
+	    logbuffer,
+	    sizeof(logbuffer),
+	    "%04u%02u%02u_%02u%02u%02u_%03u",
+	    static_cast<unsigned>(st.wYear),
+	    static_cast<unsigned>(st.wMonth),
+	    static_cast<unsigned>(st.wDay),
+	    static_cast<unsigned>(st.wHour),
+	    static_cast<unsigned>(st.wMinute),
+	    static_cast<unsigned>(st.wSecond),
+	    static_cast<unsigned>(st.wMilliseconds));
 
-    return std::string( logbuffer );
+	return std::string(logbuffer);
 }
 
-std::string filename_scenery() {
-
-    auto extension = Global.SceneryFile.rfind( '.' );
-    if( extension != std::string::npos ) {
-        return Global.SceneryFile.substr( 0, extension );
-    }
-    else {
-        return Global.SceneryFile;
-    }
+std::string const &log_session_id()
+{
+	static std::string const session_id = []()
+	{
+		std::string session = filename_session_timestamp();
+#ifdef _WIN32
+		char pid_suffix[32];
+		std::snprintf(pid_suffix, sizeof(pid_suffix), "_%lu", static_cast<unsigned long>(::GetCurrentProcessId()));
+		session += pid_suffix;
+#endif
+		return session;
+	}();
+	return session_id;
 }
+
+std::string filename_scenery()
+{
+	auto extension = Global.SceneryFile.rfind('.');
+	if (extension != std::string::npos)
+	{
+		return sanitize_filename_component(Global.SceneryFile.substr(0, extension));
+	}
+
+	return sanitize_filename_component(Global.SceneryFile);
+}
+
+std::string log_output_filename()
+{
+	if (Global.MultipleLogs && false == Global.SceneryFile.empty())
+	{
+		return "logs/log (" + filename_scenery() + ") " + log_session_id() + ".txt";
+	}
+
+	return "logs/log_" + log_session_id() + ".txt";
+}
+
+std::string log_errors_filename()
+{
+	if (Global.MultipleLogs && false == Global.SceneryFile.empty())
+	{
+		return "logs/errors (" + filename_scenery() + ") " + log_session_id() + ".txt";
+	}
+
+	return "logs/errors_" + log_session_id() + ".txt";
+}
+} // namespace
 
 // log service stacks
 std::deque < std::pair<std::string, bool>> InfoStack;
@@ -108,8 +174,7 @@ void LogService()
 				{
 					if (!output.is_open())
 					{
-						std::string filename = (Global.MultipleLogs ? "logs/log (" + filename_scenery() + ") " + filename_date() + ".txt" : "log.txt");
-						output.open(filename, std::ios::trunc);
+						output.open(log_output_filename(), std::ios::trunc);
 					}
 					output << msg << "\n";
 					output.flush();
@@ -143,8 +208,7 @@ void LogService()
 
 				if (!errors.is_open())
 				{
-					std::string filename = (Global.MultipleLogs ? "logs/errors (" + filename_scenery() + ") " + filename_date() + ".txt" : "errors.txt");
-					errors.open(filename, std::ios::trunc);
+					errors.open(log_errors_filename(), std::ios::trunc);
 					errors << "EU07.EXE " + Global.asVersion << "\n";
 				}
 

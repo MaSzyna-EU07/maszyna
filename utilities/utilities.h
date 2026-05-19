@@ -201,6 +201,22 @@ bool FileExists(std::string const &Filename);
 
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions);
 
+class FileExistsCacheScope
+{
+public:
+	FileExistsCacheScope();
+	~FileExistsCacheScope();
+
+	FileExistsCacheScope(FileExistsCacheScope const &) = delete;
+	FileExistsCacheScope &operator=(FileExistsCacheScope const &) = delete;
+
+	void clear();
+	void end();
+
+private:
+	bool m_active { true };
+};
+
 // returns time of last modification for specified file
 std::time_t last_modified(std::string const &Filename);
 

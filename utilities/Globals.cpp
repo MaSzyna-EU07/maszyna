@@ -625,7 +625,31 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
 
     if (token == "file.binary.terrain")
     {
-        ParseOne(Parser, file_binary_terrain, 1, false);
+       // ParseOne(Parser, file_binary_terrain, 1, false);
+        return true;
+    }
+
+    if (token == "scenario.fileexists.cache")
+    {
+        ParseOne(Parser, ScenarioFileExistsCache, 1, false);
+        return true;
+    }
+
+    if (token == "scenario.parser.filecache")
+    {
+        ParseOne(Parser, ScenarioParserFileCache, 1, false);
+        return true;
+    }
+
+    if (token == "scenario.parser.fastgeometry")
+    {
+        ParseOne(Parser, ScenarioParserFastGeometry, 1, false);
+        return true;
+    }
+
+    if (token == "scenario.parser.fastskip")
+    {
+        ParseOne(Parser, ScenarioParserFastSkip, 1, false);
         return true;
     }
 
@@ -1578,6 +1602,10 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "latitude", fLatitudeDeg );
     export_as_text( Output, "convertmodels", iConvertModels );
     export_as_text( Output, "file.binary.terrain", file_binary_terrain );
+    export_as_text( Output, "scenario.fileexists.cache", ScenarioFileExistsCache );
+    export_as_text( Output, "scenario.parser.filecache", ScenarioParserFileCache );
+    export_as_text( Output, "scenario.parser.fastgeometry", ScenarioParserFastGeometry );
+    export_as_text( Output, "scenario.parser.fastskip", ScenarioParserFastSkip );
     export_as_text( Output, "inactivepause", bInactivePause );
     export_as_text( Output, "slowmotion", iSlowMotionMask );
     export_as_text( Output, "hideconsole", bHideConsole );

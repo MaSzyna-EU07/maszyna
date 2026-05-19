@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <chrono>
 #include <string>
 #include <sstream>
 #include <fstream>
@@ -69,6 +70,11 @@ class cParser //: public std::stringstream
             return m_autoclear; }
     bool
         getTokens( unsigned int Count = 1, bool ToLower = true, char const *Break = "\n\r\t ;" );
+	// read one token and parse as number without using the tokens deque / stringstream
+	bool readTokenFloat( float &Value, bool ToLower = true, char const *Break = "\n\r\t ;" );
+	bool readTokenDouble( double &Value, bool ToLower = true, char const *Break = "\n\r\t ;" );
+	void readNextToken( std::string &Token, bool ToLower = true, char const *Break = "\n\r\t ;" );
+	void skipUntilKeyword( std::string const &Keyword, bool ToLower = true, char const *Break = "\n\r\t ;" );
 	std::string readTokenFromStream(bool ToLower, const char *Break);
 	void stripFirstTokenBOM(std::string &token, bool ToLower, const char *Break);
 	void substituteParameters(std::string &token, bool ToLower);
@@ -106,6 +112,8 @@ class cParser //: public std::stringstream
 	bool handleIncludeIfPresent(std::string &token, bool ToLower, const char *Break);
 	// methods:
     void readToken(std::string& out, bool ToLower = true, const char *Break = "\n\r\t ;");
+	void readTokenForSkip(std::string &out, bool ToLower = true, const char *Break = "\n\r\t ;");
+	std::string readTokenFromStreamFast(bool ToLower, const char *Break);
 	static std::vector<std::string> readParameters( cParser &Input );
     std::string readQuotes( char const Quote = '\"' );
     void skipComment( std::string const &Endmark );
@@ -131,6 +139,50 @@ class cParser //: public std::stringstream
     std::deque<std::string> tokens;
 };
 
+class ParserFileCacheScope
+{
+public:
+	ParserFileCacheScope();
+	~ParserFileCacheScope();
+
+	ParserFileCacheScope(ParserFileCacheScope const &) = delete;
+	ParserFileCacheScope &operator=(ParserFileCacheScope const &) = delete;
+
+	void end();
+
+private:
+	bool m_active { true };
+};
+
+class ParserMetricsScope
+{
+public:
+	ParserMetricsScope();
+	~ParserMetricsScope();
+
+	ParserMetricsScope(ParserMetricsScope const &) = delete;
+	ParserMetricsScope &operator=(ParserMetricsScope const &) = delete;
+
+	void end();
+
+private:
+	bool m_active { true };
+};
+
+namespace parser_metrics
+{
+bool active();
+
+struct convert_timer
+{
+	std::chrono::steady_clock::time_point start {};
+	bool enabled { false };
+
+	convert_timer();
+	~convert_timer();
+};
+} // namespace parser_metrics
+
 
 template <>
 glm::vec3
@@ -143,6 +195,7 @@ cParser::operator>>( Type_ &Right ) {
 
     if( true == this->tokens.empty() ) { return *this; }
 
+    parser_metrics::convert_timer timer;
     std::stringstream converter( this->tokens.front() );
     converter >> Right;
     this->tokens.pop_front();

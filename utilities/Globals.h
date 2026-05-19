@@ -80,8 +80,12 @@ struct global_settings {
     std::string local_start_vehicle{ "EU07-424" };
     int iConvertModels{ 0 }; // tworzenie plików binarnych
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan
-    bool file_binary_terrain{ true }; // enable binary terrain (de)serialization
+    bool file_binary_terrain{ false }; // enable binary terrain (de)serialization
 	bool file_binary_terrain_state{true};
+	bool ScenarioFileExistsCache{ true }; // cache FileExists calls during scenario loading
+	bool ScenarioParserFileCache{ false }; // cache parser input file bytes during scenario loading
+	bool ScenarioParserFastGeometry{ false }; // fast float reads for triangles/lines import
+	bool ScenarioParserFastSkip{ false }; // fast skip_until for endtri/endline blocks
     // logs
 	bool priorityLoadText3D{false}; // ladowanie T3D priorytetowo
     int iWriteLogEnabled{ 3 }; // maska bitowa: 1-zapis do pliku, 2-okienko, 4-nazwy torów

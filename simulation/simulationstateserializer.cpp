@@ -65,6 +65,11 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 		Global.file_binary_terrain_state = false;
 		WriteLog("Default SBT absent");
     }
+
+	WriteLog(
+	    std::string("Scenario parser: fast_geometry=") + (Global.ScenarioParserFastGeometry ? "on" : "off")
+	    + ", fast_skip=" + (Global.ScenarioParserFastSkip ? "on" : "off")
+	    + ", text_triangles=" + (state->scratchpad.binary.terrain ? "skipped_via_sbt" : "parsed"));
     scene::Groups.create();
 
 	if( false == state->input.ok() )
@@ -160,6 +165,9 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 		Region->serialize( state->scenariofile );
 	}
 
+	state->parser_metrics_scope.end();
+	state->parser_file_cache_scope.end();
+	state->fileexists_cache_scope.end();
 	return false;
 }
 
@@ -1127,6 +1135,12 @@ state_serializer::deserialize_sound( cParser &Input, scene::scratch_data &Scratc
 // skips content of stream until specified token
 void
 state_serializer::skip_until( cParser &Input, std::string const &Token ) {
+
+	if (Global.ScenarioParserFastSkip)
+	{
+		Input.skipUntilKeyword(Token);
+		return;
+	}
 
     std::string token { Input.getToken<std::string>() };
     while( ( false == token.empty() )
