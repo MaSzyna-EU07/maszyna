@@ -13,6 +13,9 @@ http://mozilla.org/MPL/2.0/.
 #include <vector>
 #include <deque>
 
+#include <glm/glm.hpp>
+#include <glm/mat4x4.hpp>
+
 #include "utilities/Classes.h"
 #include "world/Segment.h"
 #include "model/material.h"
@@ -183,6 +186,25 @@ public:
     std::vector<segment_data> m_paths; // source data for owned paths
 	int iterate_stamp = 0;
 
+    // sleepermodel optional parameter -------------------------------------------------
+    // Repeats a model along the path at fixed intervals (typically rail sleepers).
+    // Defined in scenery file as:
+    //   sleepermodel <frequency> <model> <skin> <offsetX> <offsetY> <offsetZ> <ballastZ>
+    // The renderer draws the model instances via GPU instancing and skips them entirely
+    // once the camera-to-track distance exceeds Global.SleeperDistance.
+    bool m_sleeper_enabled { false };
+    float m_sleeper_frequency { 0.6f }; // spacing along the path, in meters
+    std::string m_sleeper_model_name; // path to the e3d sleeper model (as written in the .scn)
+    std::string m_sleeper_skin_name;  // replacable skin path, or "none" for default
+    glm::vec3 m_sleeper_offset { 0.f, 0.f, 0.f }; // local offset from track centerline (x: left/right, y: forward/back, z: up/down)
+    float m_sleeper_ballast_z { 0.f }; // vertical offset applied to the trackbed (ballast) profile
+    TModel3d *m_sleeper_model { nullptr }; // resolved on init; nullptr means no model / failed to load
+    material_handle m_sleeper_skin { 0 }; // resolved replacable skin handle, 0 = use model defaults
+    // precomputed local-space transforms (relative to m_origin) for every sleeper instance along the path.
+    // Each matrix is translate(world_pos - m_origin) * rotate(direction, roll) * translate(local_offset).
+    // The renderer composes this with (view * translate(m_origin - camera_pos)) per draw.
+    std::vector<glm::mat4> m_sleeper_local_transforms;
+
 public:
     using dynamics_sequence = std::deque<TDynamicObject *>;
     using event_sequence = std::vector<std::pair<std::string, basic_event *> >;
@@ -346,6 +368,12 @@ private:
     void create_track_bed_profile( gfx::vertex_array &Output, TTrack const *Previous, TTrack const *Next );
     void create_road_profile( gfx::vertex_array &Output, bool const Forcetransition = false );
     void create_road_side_profile( gfx::vertex_array &Right, gfx::vertex_array &Left, gfx::vertex_array const &Road, bool const Forcetransition = false );
+    /// <summary>
+    /// resolves the sleeper model/skin via the model and material managers, and fills
+    /// m_sleeper_local_transforms by walking the active segment(s) at m_sleeper_frequency.
+    /// Safe to call multiple times; clears any previously cached transforms first.
+    /// </summary>
+    void build_sleeper_transforms();
 // members
     static profiles_array m_profiles; // shared database of path element profiles
     static profiles_map m_profilesmap;

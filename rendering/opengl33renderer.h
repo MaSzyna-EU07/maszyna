@@ -282,6 +282,11 @@ class opengl33_renderer : public gfx_renderer {
 	void Render(TSubModel *Submodel);
 	void Render(TTrack *Track);
 	void Render(scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last);
+	// renders the per-track sleeper instances (TTrack::m_sleeper_local_transforms) via GPU instancing.
+	// caller must already have the camera-relative world-space transform set on the matrix stack.
+	// no-op if the track has no sleepermodel, Global.SleeperDistance is 0, or the camera is beyond
+	// Global.SleeperDistance from the track origin.
+	void Render_Sleepers( TTrack *Track );
 	bool Render_cab(TDynamicObject const *Dynamic, float const Lightlevel, bool const Alpha = false);
     bool Render_interior( bool const Alpha = false );
     bool Render_lowpoly( TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha = false );

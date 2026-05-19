@@ -582,6 +582,15 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "sleeperdistance")
+    {
+        float sleeperdistance = 0.f;
+        ParseOne(Parser, sleeperdistance);
+        // negative values disable the cap; we clamp at 0 so 0 means "do not render sleepers"
+        SleeperDistance = std::max(0.f, sleeperdistance);
+        return true;
+    }
+
     if (token == "createswitchtrackbeds")
     {
         ParseOne(Parser, CreateSwitchTrackbeds);
@@ -1567,6 +1576,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.smoke.fidelity", SmokeFidelity );
     export_as_text( Output, "smoothtraction", bSmoothTraction );
     export_as_text( Output, "splinefidelity", SplineFidelity );
+    export_as_text( Output, "sleeperdistance", SleeperDistance );
     export_as_text( Output, "rendercab", render_cab );
     export_as_text( Output, "createswitchtrackbeds", CreateSwitchTrackbeds );
     export_as_text( Output, "gfx.resource.sweep", ResourceSweep );

@@ -3083,6 +3083,109 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 	m_renderpass.draw_stats.models += static_cast<int>( total );
 }
 
+// Renders the per-track sleeper instances (TTrack::m_sleeper_local_transforms) using the
+// existing GPU-instanced submodel pipeline. The track owns a vector of pre-baked
+// local-space matrices; we compose each with `view * translate(track_origin - camera)`
+// to get a camera-space modelview, then issue batched glDrawElementsInstancedBaseVertex
+// calls -- one batch per MAX_INSTANCES_PER_BATCH sleepers.
+//
+// Skipped entirely when:
+//   - Global.SleeperDistance == 0 (sleeper rendering globally disabled)
+//   - the track has no sleepermodel
+//   - the track is farther than Global.SleeperDistance meters from the camera
+void opengl33_renderer::Render_Sleepers( TTrack *Track )
+{
+	if( Track == nullptr ) { return; }
+	if( false == Track->m_sleeper_enabled ) { return; }
+	if( Track->m_sleeper_model == nullptr ) { return; }
+	if( Track->m_sleeper_local_transforms.empty() ) { return; }
+	if( Global.SleeperDistance <= 0.f ) { return; }
+
+	// only the color and reflection passes draw sleepers; shadow/pick skip them on purpose
+	// (sleeper shadows would mostly fall back under the trackbed and pick already operates on
+	// the track itself).
+	switch( m_renderpass.draw_mode ) {
+	case rendermode::color:
+	case rendermode::reflections:
+		break;
+	default:
+		return;
+	}
+
+	// distance gate -- compare against Globals.SleeperDistance squared to avoid the sqrt
+	auto const camerapos = m_renderpass.pass_camera.position();
+	auto const trackpos  = Track->location();
+	auto const distsq    = glm::length2( trackpos - camerapos );
+	auto const cutoffsq  = static_cast<double>( Global.SleeperDistance ) * static_cast<double>( Global.SleeperDistance );
+	if( distsq > cutoffsq ) { return; }
+
+	// build camera-space modelview matrices.
+	// each sleeper's stored matrix is in track-local space (relative to Track->m_origin).
+	// Render_Sleepers is called from inside the per-cell origin push -- the cell's center
+	// already equals Track->m_origin (see basic_cell::insert), so the current GL_MODELVIEW
+	// is already view * translate(m_origin - camera). We just need to compose with each
+	// per-sleeper local transform to get the final modelview.
+	glm::mat4 const origin_mv = OpenGLMatrices.data( GL_MODELVIEW );
+
+	std::vector<glm::mat4> instance_modelviews;
+	instance_modelviews.reserve( Track->m_sleeper_local_transforms.size() );
+	for( auto const &local : Track->m_sleeper_local_transforms ) {
+		instance_modelviews.emplace_back( origin_mv * local );
+	}
+
+	// optional replacable skin: build a transient material_data so we can drive ReplacableSet
+	// the same way Render_Instanced does. when no skin is set we fall back to the model defaults.
+	material_data sleeper_material {};
+	bool const has_skin = ( Track->m_sleeper_skin != null_handle );
+	if( has_skin ) {
+		sleeper_material.replacable_skins[ 1 ] = Track->m_sleeper_skin;
+	}
+
+	float const closest_distancesquared = static_cast<float>( std::max( 0.0, distsq ) );
+
+	auto *Model = Track->m_sleeper_model;
+	std::size_t const total = instance_modelviews.size();
+	std::size_t offset_idx = 0;
+	while( offset_idx < total ) {
+		std::size_t const this_batch = std::min<std::size_t>( total - offset_idx, gl::MAX_INSTANCES_PER_BATCH );
+
+		instance_ubo->update(
+			reinterpret_cast<uint8_t const *>( instance_modelviews.data() + offset_idx ),
+			0,
+			static_cast<int>( this_batch * sizeof( glm::mat4 ) ) );
+
+		::glPushMatrix();
+		::glLoadIdentity();
+
+		m_current_instance_count = this_batch;
+
+		Model->Root->fSquareDist = closest_distancesquared;
+		auto alpha = ( has_skin ? sleeper_material.textures_alpha : 0x30300030 );
+		alpha ^= 0x0F0F000F;
+		Model->Root->ReplacableSet( ( has_skin ? sleeper_material.replacable_skins : nullptr ), alpha );
+		Model->Root->pRoot = Model;
+
+		Render( Model->Root );
+
+		m_current_instance_count = 0;
+
+		::glPopMatrix();
+
+		// restore instance_modelview[0] to identity so subsequent non-instanced draws
+		// continue to compute identity * modelview (mirroring Render_Instanced).
+		{
+			glm::mat4 const identity( 1.0f );
+			instance_ubo->update( reinterpret_cast<uint8_t const *>( &identity ), 0, sizeof( identity ) );
+		}
+
+		offset_idx += this_batch;
+		++m_renderpass.draw_stats.instanced_drawcalls;
+	}
+
+	m_renderpass.draw_stats.instances += static_cast<int>( total );
+	m_renderpass.draw_stats.models    += static_cast<int>( total );
+}
+
 bool opengl33_renderer::Render(TDynamicObject *Dynamic)
 {
 	glDebug("Render TDynamicObject");
@@ -3790,6 +3893,24 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 			break;
 		}
 		}
+	}
+
+	// fourth pass: per-track sleeper models (sleepermodel optional directive).
+	// drawn after rails/trackbeds so depth pre-pass culling is favourable, and only in passes
+	// where Render_Sleepers actually does work (it gates itself on draw mode / distance).
+	switch( m_renderpass.draw_mode ) {
+	case rendermode::color:
+	case rendermode::reflections: {
+		for( auto first { First }; first != Last; ++first ) {
+			auto *track = *first;
+			if( false == track->m_visible )       { continue; }
+			if( false == track->m_sleeper_enabled ) { continue; }
+			Render_Sleepers( track );
+		}
+		break;
+	}
+	default:
+		break;
 	}
 
 	// post-render reset

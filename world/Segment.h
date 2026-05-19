@@ -91,7 +91,14 @@ public:
     Math3D::vector3
         GetPoint(double const fDistance) const;
 */
-	void RaPositionGet(double const fDistance, glm::dvec3 &p, glm::vec3 &a) const;
+
+	/// <summary>
+	/// ustalenie pozycji osi na torze, przechyłki, pochylenia i kierunku jazdy
+	/// </summary>
+	/// <param name="fDistance">Distance from p1</param>
+	/// <param name="position">Calculated position</param>
+	/// <param name="rotation">Calculated rotation</param>
+	void RaPositionGet(double const fDistance, glm::dvec3 &position, glm::vec3 &rotation) const;
 	glm::dvec3 FastGetPoint(double const t) const;
     inline
     glm::dvec3

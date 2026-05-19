@@ -165,6 +165,7 @@ struct global_settings {
     GLint iMaxCabTextureSize{ 4096 }; // largest allowed texture in vehicle cab
     int iMultisampling{ 2 }; // tryb antyaliasingu: 0=brak,1=2px,2=4px,3=8px,4=16px
     float SplineFidelity{ 1.f }; // determines segment size during conversion of splines to geometry
+    float SleeperDistance{ 250.f }; // max distance (in meters) at which per-track sleeper models are still drawn; 0 disables sleeper rendering entirely
     bool Smoke{ true }; // toggles smoke simulation and visualization
     float SmokeFidelity{ 1.f }; // determines amount of generated smoke particles
     bool ResourceSweep{ true }; // gfx resource garbage collection
