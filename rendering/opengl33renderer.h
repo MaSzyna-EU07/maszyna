@@ -366,6 +366,12 @@ class opengl33_renderer : public gfx_renderer {
 	renderpass_config m_renderpass; // parameters for current render pass
 	section_sequence m_sectionqueue; // list of sections in current render pass
 	cell_sequence m_cellqueue;
+	// frame-level accumulation of per-cell opaque instance buckets. Each visited
+	// cell's buckets are merged here keyed by (TModel3d*, skins), so that
+	// Render_Instanced() runs once per unique model across the whole pass instead
+	// of once per cell -- collapsing many tiny instanced draws into a few large
+	// batches. Reused every pass; cleared at the top of Render(scene::basic_region*).
+	scene::basic_cell::instance_bucket_map m_frame_instance_buckets;
   renderpass_config m_colorpass; // parametrs of most recent color pass
 	std::array<renderpass_config, 3> m_shadowpass; // parametrs of most recent shadowmap pass for each of csm stages
 	std::vector<TSubModel const *> m_pickcontrolsitems;

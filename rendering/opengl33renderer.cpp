@@ -2374,6 +2374,8 @@ void opengl33_renderer::Render(scene::basic_region *Region)
 
 	m_sectionqueue.clear();
 	m_cellqueue.clear();
+	// discard last pass's accumulated instance buckets before this pass starts
+	m_frame_instance_buckets.clear();
 	// build a list of region sections to render
 	glm::vec3 const cameraposition{m_renderpass.pass_camera.position()};
 	auto const camerax = static_cast<int>(std::floor(cameraposition.x / scene::EU07_SECTIONSIZE + scene::EU07_REGIONSIDESECTIONCOUNT / 2));
@@ -2679,9 +2681,12 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
         case rendermode::shadows:
         {
             // TBD, TODO: refactor in to a method to reuse in branch below?
-			// opaque parts of instanced models -- batched path first
+			// opaque parts of instanced models -- accumulate this cell's buckets
+			// into the frame-level map; the actual Render_Instanced() calls are
+			// issued once per unique model after the cell loop (see flush below).
 			for( auto const &bucket : cell->m_instancebuckets_opaque ) {
-				Render_Instanced( bucket.first.pModel, bucket.second );
+				auto &dest = m_frame_instance_buckets[ bucket.first ];
+				dest.insert( dest.end(), bucket.second.begin(), bucket.second.end() );
 			}
 			// remaining (non-instanceable) opaque instance nodes go through the per-node path
 			for (auto *instance : cell->m_instancesopaque)
@@ -2702,9 +2707,11 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
         case rendermode::reflections:
         {
             if( Global.reflectiontune.fidelity >= 1 ) {
-                // opaque parts of instanced models -- batched path first
+                // opaque parts of instanced models -- accumulate into the
+                // frame-level map; flushed once per unique model after the loop.
                 for( auto const &bucket : cell->m_instancebuckets_opaque ) {
-                    Render_Instanced( bucket.first.pModel, bucket.second );
+                    auto &dest = m_frame_instance_buckets[ bucket.first ];
+                    dest.insert( dest.end(), bucket.second.begin(), bucket.second.end() );
                 }
                 for( auto *instance : cell->m_instancesopaque ) {
                     if( instance->m_instanceable ) { continue; }
@@ -2744,6 +2751,17 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 
 		++first;
 	}
+
+	// flush accumulated instance buckets: issue one Render_Instanced() per unique
+	// (TModel3d*, skins) key across every cell visited in this pass, instead of
+	// one call per cell. All per-instance frustum/distance/pixel-area culling
+	// still happens inside Render_Instanced(), so correctness is unchanged -- only
+	// the number of calls and glBufferSubData round-trips drops sharply.
+	// (For pickscenery/pickcontrols modes the map stays empty, so this is a no-op.)
+	for( auto const &bucket : m_frame_instance_buckets ) {
+		Render_Instanced( bucket.first.pModel, bucket.second );
+	}
+	m_frame_instance_buckets.clear();
 }
 
 void opengl33_renderer::Draw_Geometry(std::vector<gfx::geometrybank_handle>::iterator begin, std::vector<gfx::geometrybank_handle>::iterator end)
