@@ -2684,9 +2684,39 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 			// opaque parts of instanced models -- accumulate this cell's buckets
 			// into the frame-level map; the actual Render_Instanced() calls are
 			// issued once per unique model after the cell loop (see flush below).
-			for( auto const &bucket : cell->m_instancebuckets_opaque ) {
-				auto &dest = m_frame_instance_buckets[ bucket.first ];
-				dest.insert( dest.end(), bucket.second.begin(), bucket.second.end() );
+			//
+			// Cell-level far-distance pre-cull: when the whole cell lies beyond
+			// the instance draw distance, every instance in it would fail the
+			// per-instance drawdistancethreshold test inside Render_Instanced(),
+			// so there is no point merging its buckets into the frame map. The
+			// test reproduces Render_Instanced()'s distance maths exactly -- same
+			// ZoomFactor / fDistanceFactor scaling, same +250 margin -- applied to
+			// the nearest point of the cell's bounding sphere. basic_cell::enclose_area
+			// guarantees m_area.radius >= |m_area.center - instance.location()| for
+			// every contained instance, so the nearest-point distance is a true
+			// lower bound on every instance's distance: the cull can never drop a
+			// cell that still holds a drawable instance. Shadows measure from the
+			// real (viewport) camera, matching Render_Instanced()'s shadow branch;
+			// every other gated mode measures from the pass camera. Non-instanced
+			// scenery and vehicles below keep their own per-node culling and are
+			// intentionally left untouched.
+			{
+				auto const &distancecamera = (
+					m_renderpass.draw_mode == rendermode::shadows
+						? m_renderpass.viewport_camera
+						: m_renderpass.pass_camera );
+				auto const cellcenterdistance { glm::length( cell->m_area.center - distancecamera.position() ) };
+				auto const cellnearestdistance { std::max( 0.0, cellcenterdistance - cell->m_area.radius ) };
+				auto const cellnearestdistancesquared {
+					( cellnearestdistance * cellnearestdistance )
+					/ ( static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.ZoomFactor ) )
+					/ static_cast<double>( Global.fDistanceFactor ) };
+				if( cellnearestdistancesquared <= sq( static_cast<double>( m_renderpass.draw_range ) + 250.0 ) ) {
+					for( auto const &bucket : cell->m_instancebuckets_opaque ) {
+						auto &dest = m_frame_instance_buckets[ bucket.first ];
+						dest.insert( dest.end(), bucket.second.begin(), bucket.second.end() );
+					}
+				}
 			}
 			// remaining (non-instanceable) opaque instance nodes go through the per-node path
 			for (auto *instance : cell->m_instancesopaque)
@@ -2980,8 +3010,13 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 
 	// 1. Visibility / distance cull. Build parallel arrays of surviving
 	// instances and their precomputed camera-space root modelview matrices.
-	std::vector<glm::mat4> instance_modelviews;
-	instance_modelviews.reserve( Instances.size() );
+	// m_instance_modelviews is a persistent member reused across every
+	// Render_Instanced() call: clear() drops the contents but keeps the
+	// allocated capacity, so after the first few frames this stops calling
+	// malloc/free entirely (the reserve() below becomes a no-op once the
+	// buffer has grown to the largest batch encountered).
+	m_instance_modelviews.clear();
+	m_instance_modelviews.reserve( Instances.size() );
 
 	// Pull the current pass camera/view transform once. We use the current GL
 	// modelview matrix as the view matrix because at the point Render_Instanced
@@ -3046,22 +3081,22 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 		if( scale.x != 1.0f || scale.y != 1.0f || scale.z != 1.0f ) {
 			mv = glm::scale( mv, scale );
 		}
-		instance_modelviews.emplace_back( mv );
+		m_instance_modelviews.emplace_back( mv );
 	}
 
-	if( instance_modelviews.empty() ) { return; }
+	if( m_instance_modelviews.empty() ) { return; }
 
 	// 2. Walk the submodel tree once per sub-batch. The submodel-local matrix
 	// stack starts at identity; the per-instance camera transform comes from
 	// instance_modelview[gl_InstanceID] in the shader.
-	std::size_t const total = instance_modelviews.size();
+	std::size_t const total = m_instance_modelviews.size();
 	std::size_t offset_idx = 0;
 	while( offset_idx < total ) {
 		std::size_t const this_batch = std::min<std::size_t>( total - offset_idx, gl::MAX_INSTANCES_PER_BATCH );
 
 		// 2a. Upload N modelviews to instance_ubo[0..N-1].
 		instance_ubo->update(
-			reinterpret_cast<uint8_t const *>( instance_modelviews.data() + offset_idx ),
+			reinterpret_cast<uint8_t const *>( m_instance_modelviews.data() + offset_idx ),
 			0,
 			static_cast<int>( this_batch * sizeof( glm::mat4 ) ) );
 
@@ -3145,11 +3180,39 @@ void opengl33_renderer::Render_Sleepers( TTrack *Track )
 	// per-sleeper local transform to get the final modelview.
 	glm::mat4 const origin_mv = OpenGLMatrices.data( GL_MODELVIEW );
 
+	// per-sleeper frustum cull. The whole-track SleeperDistance gate above
+	// keeps or drops the track as a unit; here each sleeper is additionally
+	// tested against the camera frustum on its own, so an in-range track that
+	// is only partially on screen (or off to the side / behind the camera)
+	// uploads and draws just the sleepers that can actually be seen. Survivors
+	// are still gathered into one matrix array and submitted through the same
+	// instanced draw path below -- culling only thins the batch, it does not
+	// break batching.
+	//
+	// Each m_sleeper_local_transforms entry is
+	//   translate(world_pos - m_origin) * rotate(...) * translate(local_offset)
+	// so its translation column is the sleeper position relative to m_origin;
+	// adding m_origin back yields the sleeper's world-space position. The
+	// model's bounding radius (floored to a small minimum, in case it was
+	// never measured) is used as the test sphere, so a sleeper whose origin
+	// sits just off screen while its geometry still reaches into view is
+	// kept rather than wrongly culled.
+	auto const sleeperradius = std::max( Track->m_sleeper_model->bounding_radius(), 2.0f );
+
 	std::vector<glm::mat4> instance_modelviews;
 	instance_modelviews.reserve( Track->m_sleeper_local_transforms.size() );
 	for( auto const &local : Track->m_sleeper_local_transforms ) {
+		// world-space position of this sleeper = track origin + local translation
+		glm::dvec3 const sleeperworldpos {
+			Track->m_origin + glm::dvec3( local[ 3 ].x, local[ 3 ].y, local[ 3 ].z ) };
+		if( false == m_renderpass.pass_camera.visible( scene::bounding_area{ sleeperworldpos, sleeperradius } ) ) {
+			continue;
+		}
 		instance_modelviews.emplace_back( origin_mv * local );
 	}
+
+	// every sleeper of this track was frustum-culled -- nothing left to draw
+	if( instance_modelviews.empty() ) { return; }
 
 	// optional replacable skin: build a transient material_data so we can drive ReplacableSet
 	// the same way Render_Instanced does. when no skin is set we fall back to the model defaults.

@@ -414,6 +414,12 @@ class opengl33_renderer : public gfx_renderer {
 	// than a single regular draw. The vertex shader reads per-instance modelview
 	// from instance_ubo[gl_InstanceID]. Reset to 0 by Render_Instanced() on exit.
 	std::size_t m_current_instance_count { 0 };
+	// persistent scratch buffer for Render_Instanced(): holds the per-instance
+	// camera-space root modelview matrices for the batch currently being built.
+	// Kept as a member rather than a function-local so its heap allocation is
+	// reused across calls -- clear() retains capacity, so once it has grown to
+	// the largest batch seen, steady-state frames perform no allocation here.
+	std::vector<glm::mat4> m_instance_modelviews;
 	gl::scene_ubs scene_ubs;
 	gl::model_ubs model_ubs;
 	gl::light_ubs light_ubs;
