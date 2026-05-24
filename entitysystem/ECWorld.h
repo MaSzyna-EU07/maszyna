@@ -66,6 +66,24 @@ public:
 			}, components);
 		}
 	}
+
+	// Same as Each but skips entities that have any of the Excluded components.
+	// Usage: world.Each<A, B>(entt::exclude<Disabled>, lambda)
+	template<typename... Components, typename... Excluded, typename Func>
+	void Each(entt::exclude_t<Excluded...>, Func&& func)
+	{
+		auto view = m_registry.view<Components...>(entt::exclude<Excluded...>);
+
+		for (auto entity : view)
+		{
+			auto components = std::forward_as_tuple(view.get<Components>(entity)...);
+
+			std::apply([&](Components&... comps)
+			{
+				func(entity, comps...);
+			}, components);
+		}
+	}
   
 	std::vector<entt::entity> GetEntities() const 
 	{
@@ -96,11 +114,16 @@ T& ECWorld::AddComponent(entt::entity entity, Args&&... args)
 		"Component must be constructible with provided arguments");
 
 	if (m_registry.all_of<T>(entity))
-	{
-		return m_registry.replace<T>(entity, std::forward<Args>(args)...);
-	}
+		m_registry.replace<T>(entity, std::forward<Args>(args)...);
+	else
+		m_registry.emplace<T>(entity, std::forward<Args>(args)...);
 
-	return m_registry.emplace<T>(entity, std::forward<Args>(args)...);
+	if constexpr (std::is_empty_v<T>) {
+		static T dummy{};
+		return dummy;
+	} else {
+		return m_registry.get<T>(entity);
+	}
 }
 
 template<typename T>

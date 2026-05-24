@@ -130,6 +130,8 @@ class opengl33_renderer : public gfx_renderer {
     // draws supplied geometry handles
     void Draw_Geometry(std::vector<gfx::geometrybank_handle>::iterator begin, std::vector<gfx::geometrybank_handle>::iterator end);
 	void Draw_Geometry(const gfx::geometrybank_handle &handle);
+    // draws a geometry chunk, uploading the current modelview matrix first
+    void draw(gfx::geometry_handle const &handle) override;
 	// material methods
     void Bind_Material_Shadow(material_handle const Material);
 	void Update_AnimModel(TAnimModel *model);
@@ -289,7 +291,6 @@ class opengl33_renderer : public gfx_renderer {
 
 	bool init_viewport(viewport_config &vp);
 
-    void draw(const gfx::geometry_handle &handle);
     void draw(std::vector<gfx::geometrybank_handle>::iterator begin, std::vector<gfx::geometrybank_handle>::iterator end);
 
 	void draw_debug_ui();

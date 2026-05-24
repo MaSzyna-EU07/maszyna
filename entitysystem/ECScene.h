@@ -21,6 +21,7 @@ public:
 	void Load();
 	void Unload();
 	void Update(float dt);
+	void Render();
 
 	ECWorld& World();
 	const ECWorld& World() const;

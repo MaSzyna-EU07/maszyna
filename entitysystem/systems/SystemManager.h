@@ -36,6 +36,7 @@ public:
 	void Destroy(ECWorld& world);
 
 	void Update(ECWorld& world, float dt);
+	void Render(ECWorld& world);
 
 private:
 	std::vector<std::unique_ptr<BaseSystem>> m_systems;

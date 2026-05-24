@@ -19,6 +19,7 @@ public:
 	virtual void OnDestroy(ECWorld& world) {}
 
 	virtual void Update(ECWorld& world, float dt) {}
+	virtual void Render(ECWorld& world) {}
 };
 
 

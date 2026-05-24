@@ -13,6 +13,7 @@ void MovementSystem::Update(ECWorld& world, float dt)
 	constexpr double damping = 0.90; // 0.0 = instant stop, 1.0 = without damping 
 
     world.Each<ECSComponent::Transform, ECSComponent::Velocity>(
+        entt::exclude<ECSComponent::Disabled>,
         [dt](auto entity, auto& transform, auto& velocity)
         {
              
@@ -22,7 +23,7 @@ void MovementSystem::Update(ECWorld& world, float dt)
  
             if (glm::length(velocity.Value) < 0.001)
             {
-                velocity.Value = glm::dvec3(0.0);
+                velocity.Value = glm::vec3(0.0f);
             }
         }
     );

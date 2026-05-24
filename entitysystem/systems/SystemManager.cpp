@@ -27,7 +27,12 @@ void SystemManager::Destroy(ECWorld& world)
 
 void SystemManager::Update(ECWorld& world, float dt)
 {
-	 
 	for (auto& system : m_systems)
 		system->Update(world, dt);
+}
+
+void SystemManager::Render(ECWorld& world)
+{
+	for (auto& system : m_systems)
+		system->Render(world);
 }

@@ -38,6 +38,7 @@ set(VERSION_STRING "${VERSION_YEAR}.${VERSION_MONTH}.${VERSION_DAY}")
 set(CMAKE_CXX_STANDARD 20)
 
 file(GLOB HEADERS "*.h"
+"DevConsole/*.h"
 "Console/*.h"
 "McZapkie/*.h"
 "gl/*.h"
@@ -199,6 +200,8 @@ set(SOURCES
 "network/message.cpp"
 "network/manager.cpp"
 "network/backend/asio.cpp"
+
+"DevConsole/devconsole.cpp"
 
 "widgets/vehiclelist.cpp"
 "widgets/map.cpp"
@@ -410,7 +413,25 @@ configure_file(${CMAKE_SOURCE_DIR}/eu07.rc.in
 
 if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
     set(SOURCES ${SOURCES} ${CMAKE_BINARY_DIR}/eu07.rc)
-    set(SOURCES ${SOURCES} eu07.ico)
+    set(SOURCES ${SOURCES} eu07.ico
+			entitysystem/systems/ParticlesSystem.cpp
+			entitysystem/systems/ParticlesSystem.h
+			entitysystem/systems/MeshRenderSystem.cpp
+			entitysystem/systems/MeshRenderSystem.h
+			entitysystem/systems/LODSystem.cpp
+			entitysystem/systems/LODSystem.h
+			entitysystem/systems/SoundSystem.cpp
+			entitysystem/systems/SoundSystem.h
+			entitysystem/systems/LightSystem.cpp
+			entitysystem/systems/LightSystem.h
+			entitysystem/systems/HierarchySystem.cpp
+			entitysystem/systems/HierarchySystem.h
+			entitysystem/systems/LineSystem.cpp
+			entitysystem/systems/LineSystem.h
+			entitysystem/systems/VehicleSyncSystem.cpp
+			entitysystem/systems/VehicleSyncSystem.h
+			entitysystem/systems/BillboardSystem.cpp
+			entitysystem/systems/BillboardSystem.h)
     add_compile_options("/utf-8")
 endif()
 

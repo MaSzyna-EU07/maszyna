@@ -11,12 +11,17 @@ http://mozilla.org/MPL/2.0/.
 #include "application/driveruilayer.h"
 
 #include "utilities/Globals.h"
+#include "utilities/utilities.h"
 #include "application/application.h"
 #include "utilities/translation.h"
 #include "simulation/simulation.h"
 #include "vehicle/Train.h"
 #include "model/AnimModel.h"
 #include "rendering/renderer.h"
+#include "DevConsole/devconsole.h"
+#include "entitysystem/ECScene.h"
+#include "entitysystem/components/BasicComponents.h"
+#include "entitysystem/components/RenderComponents.h"
 
 driver_ui::driver_ui()
 {
@@ -36,6 +41,7 @@ driver_ui::driver_ui()
 	add_external_panel(&m_mappanel);
 	add_external_panel(&m_logpanel);
 	add_external_panel(&m_perfgraphpanel);
+	add_external_panel(&dev::Console);
 	add_external_panel(&m_cameraviewpanel);
 	m_logpanel.is_open = false;
 
@@ -65,6 +71,302 @@ driver_ui::driver_ui()
 		m_trainingcardpanel.is_open = true;
 		m_vehiclelist.is_open = true;
 	}
+
+	register_driver_commands();
+}
+
+void driver_ui::register_driver_commands()
+{
+	auto &con = dev::Console;
+
+	// --- UI toggles ---
+	con.register_command("debug", "Toggle debug panel",
+		[this](const dev::args_t &) {
+			m_debugpanel.is_open = !m_debugpanel.is_open;
+			dev::Console.print_ok(m_debugpanel.is_open ? "Debug panel opened" : "Debug panel closed");
+		});
+
+	con.register_command("map", "Toggle map panel",
+		[this](const dev::args_t &) {
+			m_mappanel.is_open = !m_mappanel.is_open;
+		});
+
+	con.register_command("aid", "Toggle driving-aid panel",
+		[this](const dev::args_t &) {
+			m_aidpanel.is_open = !m_aidpanel.is_open;
+		});
+
+	con.register_command("timetable", "Toggle timetable panel",
+		[this](const dev::args_t &) {
+			m_timetablepanel.is_open = !m_timetablepanel.is_open;
+		});
+
+	// --- Simulation control ---
+	con.register_command("pause", "Pause or unpause simulation",
+		[](const dev::args_t &) {
+			command_relay relay;
+			relay.post(user_command::pausetoggle, 0.0, 0.0, GLFW_PRESS, 0);
+		});
+
+	con.register_command("debugmode", "Toggle debug mode (enable/disable)",
+		[](const dev::args_t &args) {
+			command_relay relay;
+			relay.post(user_command::debugtoggle, 0.0, 0.0, GLFW_RELEASE, 0);
+			dev::Console.print_ok(std::string("Debug mode: ") + (DebugModeFlag ? "on" : "off"));
+		});
+
+	// --- Weather ---
+	con.register_command("overcast", "Set overcast level: overcast <0.0-1.0>",
+		[](const dev::args_t &args) {
+			if (args.size() < 2) {
+				dev::Console.print_info("Current overcast: " + std::to_string(Global.Overcast));
+				return;
+			}
+			try {
+				float v = std::stof(args[1]);
+				v = std::max(0.0f, std::min(1.0f, v));
+				Global.Overcast = v;
+				dev::Console.print_ok("Overcast set to " + std::to_string(v));
+			} catch (...) {
+				dev::Console.print_error("Expected a float 0.0-1.0");
+			}
+		});
+
+	// --- Screenshot ---
+	con.register_command("screenshot", "Take a screenshot",
+		[](const dev::args_t &) {
+			Application.queue_screenshot();
+			dev::Console.print_ok("Screenshot queued");
+		});
+
+	// --- Log ---
+	con.register_command("log", "Enable or disable file logging: log [on|off]",
+		[](const dev::args_t &args) {
+			if (args.size() < 2) {
+				dev::Console.print_info(std::string("File logging: ") +
+					((Global.iWriteLogEnabled & 1) ? "on" : "off"));
+				return;
+			}
+			if (args[1] == "on") {
+				Global.iWriteLogEnabled |= 1;
+				dev::Console.print_ok("File logging enabled");
+			} else if (args[1] == "off") {
+				Global.iWriteLogEnabled &= ~1;
+				dev::Console.print_ok("File logging disabled");
+			} else {
+				dev::Console.print_error("Usage: log [on|off]");
+			}
+		});
+
+	// --- ECS ---
+	con.register_command("ecs.list", "List all ECS entities (optional filter: ecs.list [name_fragment])",
+		[](const dev::args_t &args) {
+			ECScene *scene = Application.sceneManager.CurrentScene();
+			if (!scene) { dev::Console.print_warn("No active scene"); return; }
+			ECWorld &world = scene->World();
+
+			std::string filter = args.size() >= 2 ? args[1] : "";
+			int count = 0;
+			for (auto entity : world.GetEntities()) {
+				std::string name = std::to_string(static_cast<unsigned>(entity));
+				if (auto *id = world.GetComponent<ECSComponent::Identification>(entity))
+					name = id->Name.ToString();
+				if (!filter.empty() && name.find(filter) == std::string::npos)
+					continue;
+				dev::Console.print("  [" + std::to_string(static_cast<unsigned>(entity)) + "] " + name);
+				++count;
+			}
+			dev::Console.print_info("Total: " + std::to_string(count) + " entities");
+		});
+
+	con.register_command("ecs.info", "Show components of entity by name: ecs.info <name>",
+		[](const dev::args_t &args) {
+			if (args.size() < 2) { dev::Console.print_error("Usage: ecs.info <name>"); return; }
+			ECScene *scene = Application.sceneManager.CurrentScene();
+			if (!scene) { dev::Console.print_warn("No active scene"); return; }
+			ECWorld &world = scene->World();
+
+			entt::entity entity = world.FindEntityByName(args[1]);
+			if (entity == entt::null) { dev::Console.print_error("Entity not found: " + args[1]); return; }
+
+			dev::Console.print_ok("Entity: " + args[1]);
+			if (auto *t = world.GetComponent<ECSComponent::Transform>(entity)) {
+				dev::Console.print("  Transform: pos=("
+					+ std::to_string(t->Position.x) + ", "
+					+ std::to_string(t->Position.y) + ", "
+					+ std::to_string(t->Position.z) + ")");
+			}
+			if (auto *v = world.GetComponent<ECSComponent::Velocity>(entity)) {
+				dev::Console.print("  Velocity: ("
+					+ std::to_string(v->Value.x) + ", "
+					+ std::to_string(v->Value.y) + ", "
+					+ std::to_string(v->Value.z) + ")");
+			}
+			if (world.HasComponent<ECSComponent::MeshRenderer>(entity))
+				dev::Console.print("  MeshRenderer: yes");
+			if (world.HasComponent<ECSComponent::ParticleEmitter>(entity))
+				dev::Console.print("  ParticleEmitter: yes");
+			if (auto *id = world.GetComponent<ECSComponent::Identification>(entity))
+				dev::Console.print("  ID: " + id->Name.ToString() + " #" + std::to_string(id->Id));
+		});
+
+	con.register_command("ecs.setvel", "Set entity velocity: ecs.setvel <name> <x> <y> <z>",
+		[](const dev::args_t &args) {
+			if (args.size() < 5) { dev::Console.print_error("Usage: ecs.setvel <name> <x> <y> <z>"); return; }
+			ECScene *scene = Application.sceneManager.CurrentScene();
+			if (!scene) { dev::Console.print_warn("No active scene"); return; }
+			ECWorld &world = scene->World();
+
+			entt::entity entity = world.FindEntityByName(args[1]);
+			if (entity == entt::null) { dev::Console.print_error("Entity not found: " + args[1]); return; }
+
+			try {
+				glm::vec3 vel{ std::stof(args[2]), std::stof(args[3]), std::stof(args[4]) };
+				if (auto *v = world.GetComponent<ECSComponent::Velocity>(entity)) {
+					v->Value = vel;
+					dev::Console.print_ok("Velocity set");
+				} else {
+					world.AddComponent<ECSComponent::Velocity>(entity).Value = vel;
+					dev::Console.print_ok("Velocity component added and set");
+				}
+			} catch (...) { dev::Console.print_error("Invalid numbers"); }
+		});
+
+	con.register_command("ecs.kill", "Destroy entity by name: ecs.kill <name>",
+		[](const dev::args_t &args) {
+			if (args.size() < 2) { dev::Console.print_error("Usage: ecs.kill <name>"); return; }
+			ECScene *scene = Application.sceneManager.CurrentScene();
+			if (!scene) { dev::Console.print_warn("No active scene"); return; }
+			ECWorld &world = scene->World();
+
+			entt::entity entity = world.FindEntityByName(args[1]);
+			if (entity == entt::null) { dev::Console.print_error("Entity not found: " + args[1]); return; }
+			world.DestroyEntity(entity);
+			dev::Console.print_ok("Entity destroyed: " + args[1]);
+		});
+
+	con.register_command("ecs.count", "Show total entity count in current scene",
+		[](const dev::args_t &) {
+			ECScene *scene = Application.sceneManager.CurrentScene();
+			if (!scene) { dev::Console.print_warn("No active scene"); return; }
+			dev::Console.print_info("Entities: " + std::to_string(scene->World().GetEntityCount()));
+		});
+
+	con.register_command("ecs.setpos", "Teleport entity to position: ecs.setpos <name> <x> <y> <z>",
+		[](const dev::args_t &args) {
+			if (args.size() < 5) { dev::Console.print_error("Usage: ecs.setpos <name> <x> <y> <z>"); return; }
+			ECScene *scene = Application.sceneManager.CurrentScene();
+			if (!scene) { dev::Console.print_warn("No active scene"); return; }
+			ECWorld &world = scene->World();
+
+			entt::entity entity = world.FindEntityByName(args[1]);
+			if (entity == entt::null) { dev::Console.print_error("Entity not found: " + args[1]); return; }
+
+			try {
+				glm::dvec3 pos{ std::stod(args[2]), std::stod(args[3]), std::stod(args[4]) };
+				if (auto *t = world.GetComponent<ECSComponent::Transform>(entity)) {
+					t->Position = pos;
+					dev::Console.print_ok("Position set: ("
+						+ args[2] + ", " + args[3] + ", " + args[4] + ")");
+				} else {
+					dev::Console.print_error("Entity has no Transform component");
+				}
+			} catch (...) { dev::Console.print_error("Invalid numbers"); }
+		});
+
+	con.register_command("ecs.spawn", "Spawn a named entity with Transform at position: ecs.spawn <name> <x> <y> <z>",
+		[](const dev::args_t &args) {
+			if (args.size() < 5) { dev::Console.print_error("Usage: ecs.spawn <name> <x> <y> <z>"); return; }
+			ECScene *scene = Application.sceneManager.CurrentScene();
+			if (!scene) { dev::Console.print_warn("No active scene"); return; }
+			ECWorld &world = scene->World();
+
+			try {
+				glm::dvec3 pos{ std::stod(args[2]), std::stod(args[3]), std::stod(args[4]) };
+				auto entity = world.CreateEntity();
+				auto &id = world.AddComponent<ECSComponent::Identification>(entity);
+				id.Name = args[1];
+				auto &t = world.AddComponent<ECSComponent::Transform>(entity);
+				t.Position = pos;
+				dev::Console.print_ok("Spawned entity '" + args[1] + "' at ("
+					+ args[2] + ", " + args[3] + ", " + args[4] + ")");
+			} catch (...) { dev::Console.print_error("Invalid position arguments"); }
+		});
+
+	con.register_command("ecs.find", "Find entities whose name contains a substring: ecs.find <fragment>",
+		[](const dev::args_t &args) {
+			if (args.size() < 2) { dev::Console.print_error("Usage: ecs.find <fragment>"); return; }
+			ECScene *scene = Application.sceneManager.CurrentScene();
+			if (!scene) { dev::Console.print_warn("No active scene"); return; }
+			ECWorld &world = scene->World();
+
+			const std::string &fragment = args[1];
+			int found = 0;
+			for (auto entity : world.GetEntities()) {
+				auto *id = world.GetComponent<ECSComponent::Identification>(entity);
+				if (!id) continue;
+				std::string name = id->Name.ToString();
+				if (name.find(fragment) != std::string::npos) {
+					dev::Console.print("  [" + std::to_string(static_cast<unsigned>(entity)) + "] " + name);
+					++found;
+				}
+			}
+			if (found == 0)
+				dev::Console.print_warn("No entities found matching: " + fragment);
+			else
+				dev::Console.print_info(std::to_string(found) + " match(es)");
+		});
+
+	con.register_command("ecs.disable", "Disable entity (systems will skip it): ecs.disable <name>",
+		[](const dev::args_t &args) {
+			if (args.size() < 2) { dev::Console.print_error("Usage: ecs.disable <name>"); return; }
+			ECScene *scene = Application.sceneManager.CurrentScene();
+			if (!scene) { dev::Console.print_warn("No active scene"); return; }
+			ECWorld &world = scene->World();
+
+			entt::entity entity = world.FindEntityByName(args[1]);
+			if (entity == entt::null) { dev::Console.print_error("Entity not found: " + args[1]); return; }
+			if (!world.HasComponent<ECSComponent::Disabled>(entity))
+				world.AddComponent<ECSComponent::Disabled>(entity);
+			dev::Console.print_ok("Disabled: " + args[1]);
+		});
+
+	con.register_command("ecs.enable", "Re-enable a disabled entity: ecs.enable <name>",
+		[](const dev::args_t &args) {
+			if (args.size() < 2) { dev::Console.print_error("Usage: ecs.enable <name>"); return; }
+			ECScene *scene = Application.sceneManager.CurrentScene();
+			if (!scene) { dev::Console.print_warn("No active scene"); return; }
+			ECWorld &world = scene->World();
+
+			entt::entity entity = world.FindEntityByName(args[1]);
+			if (entity == entt::null) { dev::Console.print_error("Entity not found: " + args[1]); return; }
+			world.RemoveComponent<ECSComponent::Disabled>(entity);
+			dev::Console.print_ok("Enabled: " + args[1]);
+		});
+
+	con.register_command("ecs.addparticles", "Add a particle emitter to an entity: ecs.addparticles <name>",
+		[](const dev::args_t &args) {
+			if (args.size() < 2) { dev::Console.print_error("Usage: ecs.addparticles <name>"); return; }
+			ECScene *scene = Application.sceneManager.CurrentScene();
+			if (!scene) { dev::Console.print_warn("No active scene"); return; }
+			ECWorld &world = scene->World();
+
+			entt::entity entity = world.FindEntityByName(args[1]);
+			if (entity == entt::null) { dev::Console.print_error("Entity not found: " + args[1]); return; }
+
+			auto& emitter = world.AddComponent<ECSComponent::ParticleEmitter>(entity);
+			emitter.isActive         = true;
+			emitter.spawnRate        = 20.0f;
+			emitter.particleLifetime = 2.5f;
+			emitter.gravity          = glm::vec3(0.0f, 0.4f, 0.0f);
+			emitter.airResistance    = 0.15f;
+			emitter.colorFade        = glm::vec4(0.0f, 0.0f, 0.0f, -0.5f);
+			if (auto *t = world.GetComponent<ECSComponent::Transform>(entity))
+				emitter.emitterLocation = glm::vec3(t->Position);
+			dev::Console.print_ok("ParticleEmitter added to: " + args[1]);
+		});
+
+	con.print_info("Driver console ready. Type 'help' for commands.");
 }
 
 void driver_ui::render_menu_contents()

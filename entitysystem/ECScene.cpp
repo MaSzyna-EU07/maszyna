@@ -36,12 +36,19 @@ void ECScene::Unload()
 
 void ECScene::Update(float dt)
 {
-	if (!m_loaded){
-		 
+	if (!m_loaded)
 		return;
-	}
+
 	m_systems.Update(m_world, dt);
 	OnUpdate(dt);
+}
+
+void ECScene::Render()
+{
+	if (!m_loaded)
+		return;
+
+	m_systems.Render(m_world);
 }
 
  

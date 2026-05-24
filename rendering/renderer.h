@@ -66,6 +66,8 @@ public:
     virtual void Bind_Texture( std::size_t const Unit, texture_handle const Texture ) = 0;
     virtual auto Texture( texture_handle const Texture ) -> ITexture & = 0;
     virtual auto Texture( texture_handle const Texture ) const -> ITexture const & = 0;
+    // draw a geometry chunk with the current transform state (no-op in backends that don't support it)
+    virtual void draw( gfx::geometry_handle const & ) {}
     // utility methods
     virtual void Pick_Control_Callback( std::function<void( TSubModel const *, const glm::vec2 )> Callback ) = 0;
     virtual void Pick_Node_Callback( std::function<void( scene::basic_node * )> Callback ) = 0;

@@ -53,6 +53,9 @@ private:
     // render() subclass details
     void
         render_() override;
+    // registers driver-specific console commands
+    void
+        register_driver_commands();
 
 // members
 	drivingaid_panel m_aidpanel { "Driving Aid", false };

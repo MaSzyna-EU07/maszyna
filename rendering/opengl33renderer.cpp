@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 #include "simulation/simulationtime.h"
 #include "application/application.h"
+#include "entitysystem/ECScene.h"
 #include "model/AnimModel.h"
 #include "rendering/opengl33geometrybank.h"
 #include "rendering/screenshot.h"
@@ -867,7 +868,7 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		setup_drawing(true);
 		Render_Alpha(simulation::Region);
 
-		// particles
+		// particles + ECS effects
 		Render_particles();
 
 		// precipitation; done at end, only before cab render
@@ -3578,6 +3579,10 @@ void opengl33_renderer::Render_particles()
 	Bind_Texture(0, m_smoketexture);
 	m_particlerenderer.update(m_renderpass.pass_camera);
     m_renderpass.draw_stats.particles = m_particlerenderer.render();
+
+    // ECS particle, line and effect rendering — runs here so matrices/UBOs are set up
+    if (auto *scene = Application.sceneManager.CurrentScene())
+        scene->Render();
 }
 
 void opengl33_renderer::Render_vr_models()
@@ -4707,6 +4712,31 @@ void opengl33_renderer::Update_Lights(light_array &Lights)
 		++light_i;
 		++renderlight;
 	}
+
+    // fill free ECS SpotLight data
+    for (auto const &fl : Lights.free_lights)
+    {
+        if (light_i >= gl::MAX_LIGHTS) break;
+        auto const lightoffset = glm::vec3{ fl.position - camera };
+        if (glm::length(lightoffset) > 1000.f) continue;
+
+        gl::light_element_ubs *light = &light_ubs.lights[light_i];
+        light->pos       = mv * glm::vec4(lightoffset, 1.0f);
+        light->dir       = mv * glm::vec4(fl.direction, 0.0f);
+        light->type      = gl::light_element_ubs::SPOT;
+        light->in_cutoff = fl.inner_cutoff;
+        light->out_cutoff = fl.outer_cutoff;
+        light->color     = fl.color * fl.intensity;
+        light->linear    = 4.5f / fl.range;
+        light->quadratic = 75.0f / (fl.range * fl.range);
+        light->ambient   = 0.0f;
+        light->intensity = fl.intensity;
+        light->headlight_projection = glm::mat4(0.f);
+        light->headlight_weights    = glm::vec4(0.f);
+
+        ++light_i;
+    }
+
     light_ubs.lights_count = light_i;
     // fill sunlight data
     light_ubs.ambient = m_sunlight.ambient * m_sunlight.factor;// *simulation::Environment.light_intensity();

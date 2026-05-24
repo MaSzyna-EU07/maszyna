@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include "entitysystem/components/RenderComponents.h"
 
 #include "imgui/imgui_impl_glfw.h"
+#include "DevConsole/devconsole.h"
 
 GLFWwindow *ui_layer::m_window{nullptr};
 ImGuiIO *ui_layer::m_imguiio{nullptr};
@@ -105,6 +106,8 @@ ui_layer::ui_layer()
 	if (Global.loading_log)
 		add_external_panel(&m_logpanel);
 	m_logpanel.size = {700, 400};
+
+	add_external_panel(&dev::Console);
 }
 
 ui_layer::~ui_layer() {}
@@ -316,6 +319,15 @@ bool ui_layer::on_key(int const Key, int const Action)
 		if (Key == GLFW_KEY_PRINT_SCREEN)
 		{
 			Application.queue_screenshot();
+			return true;
+		}
+
+		// Backtick (`) toggles the developer console
+		if (Key == GLFW_KEY_GRAVE_ACCENT)
+		{
+			dev::Console.is_open = !dev::Console.is_open;
+			if (dev::Console.is_open)
+				dev::Console.focus_input();
 			return true;
 		}
 
@@ -744,6 +756,7 @@ void ui_layer::render_menu_contents()
 	if (ImGui::BeginMenu(STR_C("Windows")))
 	{
 		ImGui::MenuItem(STR_C("Log"), "F9", &m_logpanel.is_open);
+		ImGui::MenuItem(STR_C("Developer Console"), "`", &dev::Console.is_open);
 		if (DebugModeFlag)
 		{
 			ImGui::MenuItem(STR_C("ImGui Demo"), nullptr, &m_imgui_demo);

@@ -8,9 +8,11 @@
 #include "glm/vec3.hpp"
 #include "glm/gtc/quaternion.hpp"
 #include "registry/FName.h"
-#include "utils/uuid.hpp"
+#include "utilities/uuid.hpp"
 #include <cstdint>
 #include <string>
+
+class TDynamicObject;
 
 namespace ECSComponent
 {
@@ -45,6 +47,15 @@ struct Identification
 struct Parent
 {
 	entt::entity value{entt::null};
+	glm::dvec3   localOffset{0.0};                     // position offset relative to parent
+	glm::quat    localRotation{1.f, 0.f, 0.f, 0.f};   // rotation relative to parent
+};
+
+// Links an ECS entity to its corresponding simulation vehicle.
+// VehicleSyncSystem reads this to keep Transform in sync with vehicle world position.
+struct VehicleRef
+{
+    TDynamicObject* vehicle = nullptr;
 };
 
 struct SoundComponent

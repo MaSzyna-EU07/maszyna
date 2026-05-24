@@ -52,3 +52,9 @@ const entt::registry& ECWorld::Registry() const
 {
 	return m_registry;
 }
+
+ECWorld& GetComponentSystem()
+{
+	static ECWorld instance;
+	return instance;
+}

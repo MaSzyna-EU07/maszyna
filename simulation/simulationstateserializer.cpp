@@ -430,28 +430,29 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         >> nodedata.name
         >> nodedata.type;
 
-	ECWorld& world = Application.sceneManager.CurrentScene()->World();
-  
+	ECScene* currentScene = Application.sceneManager.CurrentScene();
+	if (currentScene == nullptr)
+		return;
+	ECWorld& world = currentScene->World();
+
 	entt::entity entity = world.CreateEntity();
- 
-	auto transformComponent = world.AddComponent<ECSComponent::Transform>(entity);
+
+	auto& transformComponent = world.AddComponent<ECSComponent::Transform>(entity);
 	transformComponent.Position = Scratchpad.location.offset.empty() ? glm::dvec3(0.0) : Scratchpad.location.offset.top();
 	transformComponent.Rotation = Scratchpad.location.rotation;
-	//nodeTransform.Scale = Scratchpad.location.scale;
 
-	// auto LODComponent = world.AddComponent<ECSComponent::LODController>(entity);
-	// LODComponent.RangeMax = nodedata.range_max;
-	// LODComponent.RangeMin = nodedata.range_min;
-
-    if( nodedata.name == "none" )
-    {
-	    nodedata.name.clear();
-    }
-	else
-	{
-		world.AddComponent<ECSComponent::Identification>(entity).Name = nodedata.name;
-        
+	if (nodedata.range_max > 0.0 || nodedata.range_min >= 0.0) {
+		auto& lodComponent = world.AddComponent<ECSComponent::LODController>(entity);
+		lodComponent.RangeMin = nodedata.range_min;
+		lodComponent.RangeMax = nodedata.range_max;
 	}
+
+    if( nodedata.name == "none" ) {
+	    nodedata.name.clear();
+    } else {
+		auto& id = world.AddComponent<ECSComponent::Identification>(entity);
+		id.Name = nodedata.name;
+    }
     // type-based deserialization. not elegant but it'll do
     if( nodedata.type == "dynamic" ) {
  
@@ -462,25 +463,34 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         //
         if( vehicle->mdModel != nullptr ) {
             for( auto const &smokesource : vehicle->mdModel->smoke_sources() ) {
-                Particles.insert(
-                    smokesource.first,
-                    vehicle,
-                    smokesource.second );
+                auto& particleComponent = world.AddComponent<ECSComponent::ParticleEmitter>(entity);
+                particleComponent.emitterLocation = smokesource.second;
+                particleComponent.isActive = true;
             }
         }
 
-        if( false == simulation::Vehicles.insert( vehicle ) ) {
-
+        if( !Vehicles.insert( vehicle ) ) {
             ErrorLog( "Bad scenario: duplicate vehicle name \"" + vehicle->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
         }
 
-        auto velocityComponent = world.AddComponent<ECSComponent::Velocity>(entity);
-        velocityComponent.Value = glm::dvec3(0.0);
+        world.AddComponent<ECSComponent::Velocity>(entity).Value = glm::dvec3(0.0);
 
-        if( ( vehicle->MoverParameters->CategoryFlag == 1 ) // trains only
-         && ( ( ( vehicle->LightList( end::front ) & ( light::headlight_left | light::headlight_right | light::headlight_upper ) ) != 0 )
-           || ( ( vehicle->LightList( end::rear )  & ( light::headlight_left | light::headlight_right | light::headlight_upper ) ) != 0 ) ) ) {
+        // link ECS entity back to the live vehicle so VehicleSyncSystem can track it
+        world.AddComponent<ECSComponent::VehicleRef>(entity).vehicle = vehicle;
+
+        // headlight spotlights
+        bool const hasFrontLights = ( vehicle->LightList( end::front ) & ( light::headlight_left | light::headlight_right | light::headlight_upper ) ) != 0;
+        bool const hasRearLights  = ( vehicle->LightList( end::rear )  & ( light::headlight_left | light::headlight_right | light::headlight_upper ) ) != 0;
+        if( ( vehicle->MoverParameters->CategoryFlag == 1 ) && ( hasFrontLights || hasRearLights ) ) {
             simulation::Lights.insert( vehicle );
+            auto& spotlight = world.AddComponent<ECSComponent::SpotLight>(entity);
+            spotlight.Color       = glm::vec3(1.0f, 0.95f, 0.85f);
+            spotlight.Intensity   = 1.0f;
+            spotlight.Range       = 150.0f;
+            spotlight.InnerAngle  = 8.0f;
+            spotlight.OuterAngle  = 20.0f;
+            spotlight.CastShadows = false;
+            spotlight.Enabled     = hasFrontLights;
         }
     }
     else if( nodedata.type == "track" ) {
@@ -579,20 +589,27 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
             scene::Groups.insert( scene::Groups.handle(), instance );
             simulation::Region->insert( instance );
  
-            ECWorld& world = Application.sceneManager.CurrentScene()->World();
-    
-            entt::entity entity = world.FindEntityByName(instance->name());
- 
-            if(entity != entt::null) {
- 
-                auto meshComponent = world.AddComponent<ECSComponent::MeshRenderer>(entity);
-                //meshComponent.meshHandle = instance->Model()->MeshHandle();
-                meshComponent.visible = true;
+            {
+                entt::entity modelEntity = world.FindEntityByName(instance->name());
+                if (modelEntity != entt::null) {
+                    auto& meshComponent = world.AddComponent<ECSComponent::MeshRenderer>(modelEntity);
+                    meshComponent.modelInstance = instance;
+                    meshComponent.visible = true;
 
-                auto* transformComponent = world.GetComponent<ECSComponent::Transform>(entity);
-                transformComponent->Position = {instance->location().x, instance->location().y, instance->location().z};
-                transformComponent->Rotation = {instance->Angles().x, instance->Angles().y, instance->Angles().z, 1.0f};
-                //transformComponent->Scale = {instance->scale().x, instance->scale().y, instance->scale().z};
+                    if (auto* t = world.GetComponent<ECSComponent::Transform>(modelEntity)) {
+                        t->Position = { instance->location().x, instance->location().y, instance->location().z };
+                        t->Rotation = { instance->Angles().x, instance->Angles().y, instance->Angles().z, 1.0f };
+                    }
+
+                    // smoke sources on static models
+                    if (instance->Model() != nullptr) {
+                        for (auto const &smokesource : instance->Model()->smoke_sources()) {
+                            auto& emitter = world.AddComponent<ECSComponent::ParticleEmitter>(modelEntity);
+                            emitter.emitterLocation = smokesource.second;
+                            emitter.isActive = true;
+                        }
+                    }
+                }
             }
 
             scene::basic_node *hierarchy_node = instance;
@@ -675,13 +692,14 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
 
         auto *sound { deserialize_sound( Input, Scratchpad, nodedata ) };
 
-        auto soundComponent = world.AddComponent<ECSComponent::SoundComponent>(entity);
-
-        soundComponent.sound = *sound;
-        soundComponent.volume =  1;
-        soundComponent.pitch = 1;
-        soundComponent.range = sound->range();
+        auto& soundComponent = world.AddComponent<ECSComponent::SoundComponent>(entity);
+        soundComponent.sound.copy_sounds(*sound);
+        soundComponent.volume    = sound->gain();
+        soundComponent.pitch     = 1.0f;
+        soundComponent.range     = sound->range();
+        soundComponent.loop      = false;
         soundComponent.isPlaying = sound->is_playing();
+        soundComponent.playOnStart = false;
 
         if( false == simulation::Sounds.insert( sound ) ) {
             ErrorLog( "Bad scenario: duplicate sound node name \"" + sound->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );

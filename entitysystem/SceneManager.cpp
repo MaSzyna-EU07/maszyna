@@ -16,8 +16,6 @@ SceneManager::~SceneManager()
 void SceneManager::SetScene(std::unique_ptr<ECScene> scene)
 {
 	m_pendingScene = std::move(scene);
-	if (m_currentScene)
-        m_currentScene->Load();
 }
 
 void SceneManager::Update(float dt)

@@ -38,6 +38,17 @@ public:
 // types
     typedef std::vector<light_record> lightrecord_array;
 
+    struct free_light_record {
+        glm::dvec3 position;
+        glm::vec3  direction { 0.f, -1.f, 0.f };
+        glm::vec3  color     { 1.f,  1.f,  1.f };
+        float intensity  { 1.0f };
+        float range      { 25.0f };
+        float inner_cutoff { 0.9659f };  // cos(15°)
+        float outer_cutoff { 0.9063f };  // cos(25°)
+    };
+
 // members
     lightrecord_array data;
+    std::vector<free_light_record> free_lights;
 };
