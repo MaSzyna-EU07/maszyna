@@ -220,7 +220,7 @@ inline void readMatrix(cParser &parser, glm::mat4 &matrix)
 	parser.getTokens(16, false);
 	for (int x = 0; x <= 3; ++x) // wiersze
 		for (int y = 0; y <= 3; ++y) // kolumny
-			parser >> matrix[y][x];
+			parser >> matrix[x][y];
 };
 
 template <typename T> void UserdataParse(cParser &parser, gfx::vertex_userdata &vertex)
@@ -852,7 +852,7 @@ void TSubModel::InitialRotate(bool doit)
 						vertex.position = glm::vec3((*mat) * glm::vec4(vertex.position, 1.0f));
 					}
 					// zerujemy przesunięcie przed obracaniem normalnych
-					(*mat)[0][3] = (*mat)[1][3] = (*mat)[2][3] = 0.0;
+					(*mat)[3][0] = (*mat)[3][1] = (*mat)[3][2] = 0.0;
 					if (eType != TP_STARS)
 					{
 						// gwiazdki mają kolory zamiast normalnych, to ich wtedy nie ruszamy

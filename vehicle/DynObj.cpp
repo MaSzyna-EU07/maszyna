@@ -5543,7 +5543,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                                     { // jeśli dalej jest ślizg, można policzyć długość górnego ramienia
                                         m = *sm->GetMatrix(); // TODO: wystarczyłby wskaźnik,
                                         // nie trzeba kopiować trzeba by uwzględnić macierz dolnego ramienia, żeby uzyskać kąt do poziomu...
-                                        pants[i].fParamPants->fHoriz += fabs(m[1][3]); // różnica długości rzutów ramion na
+                                        pants[i].fParamPants->fHoriz += fabs(m[3][1]); // różnica długości rzutów ramion na
                                         // płaszczyznę podstawy (jedna dodatnia, druga ujemna)
                                         pants[i].fParamPants->fLenU1 = hypot( m[3][1], m[3][2] ); // po osi OX nie potrzeba
                                         // pants[i].fParamPants->pantu=acos((1.22*cos(pants[i].fParamPants->fAngleL)+0.535)/1.755); //górne ramię
@@ -5605,7 +5605,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                                     // jeśli pierwsze ramię nie ustawiło tej wartości, próbować drugim
                                     //!!!! docelowo zrobić niezależną animację ramion z każdej strony
                                     m = *sm->GetMatrix(); // skopiowanie, bo będziemy mnożyć
-									m[ 1 ][3] =
+									m[ 3 ][1] =
 										m[ 3 ][ 1 ] + 0.054; // w górę o wysokość ślizgu (na razie tak)
 									while( sm->Parent ) {
 										if( sm->Parent->GetMatrix() )
