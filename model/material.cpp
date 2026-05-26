@@ -540,14 +540,30 @@ material_manager::create( std::string const &Filename, bool const Loadnow ) {
     }
 
 	if( false == material.name.empty() ) {
-		// if we have material name and shader it means resource was processed succesfully
-        materialhandle = m_materials.size();
-        m_materialmappings.emplace( material.name, materialhandle );
+		// if we have material name and shader it means resource was processed succesfully.
+		//
+		// IMPORTANT: capture the handle ONLY after emplace_back succeeds. The
+		// previous version pre-assigned `materialhandle = m_materials.size()`
+		// and then ran `finalize(Loadnow)` (which can throw shader_exception
+		// when a shader fails to compile) and `emplace_back` together inside
+		// the try. If finalize() threw, emplace_back never ran, but the
+		// handle was already set to size() -- pointing one past the actual
+		// last element. Subsequent `m_materials[handle]` lookups would then
+		// read garbage past end-of-vector, producing the classic 0x30-offset
+		// access violation seen in TSubModel::BinInit (vtable read on a
+		// bogus IMaterial pointer). Now we leave materialhandle as
+		// null_handle if anything throws, and the caller treats it as a
+		// failed-to-load material.
         try {
 			material.finalize(Loadnow);
+			materialhandle = m_materials.size();
 			m_materials.emplace_back( std::move(material) );
+			m_materialmappings.emplace( m_materials.back().name, materialhandle );
 		} catch (gl::shader_exception const &e) {
 			ErrorLog("invalid shader: " + std::string(e.what()));
+			// record the failure so subsequent Fetch_Material(filename) calls
+			// short-circuit without re-running the failing compile.
+			m_materialmappings.emplace( material.name, null_handle );
 		}
     }
     else {

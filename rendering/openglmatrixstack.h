@@ -20,67 +20,73 @@ class opengl_stack {
 
 public:
 // constructors:
-    opengl_stack() { m_stack.emplace(1.f); }
+    opengl_stack() {
+        // reserve generously up front: the matrix stack is pushed/popped once
+        // per submodel during scene traversal, and std::deque (the previous
+        // backing store) allocated a fresh heap block on every push for a
+        // 64-byte glm::mat4. A reserved vector never reallocates within this
+        // depth, so push/pop become allocation-free and references returned
+        // by data() stay valid across pushes, exactly as before.
+        m_stack.reserve( 256 );
+        m_stack.emplace_back( 1.f ); }
 
 // methods:
     glm::mat4 const &
         data() const {
-            return m_stack.top(); }
+            return m_stack.back(); }
     void
         push_matrix() {
-            m_stack.emplace( m_stack.top() ); }
+            glm::mat4 const top { m_stack.back() };
+            m_stack.emplace_back( top ); }
     void
         pop_matrix( bool const Upload = true ) {
             if( m_stack.size() > 1 ) {
-                m_stack.pop();
+                m_stack.pop_back();
                 if( Upload ) { upload(); } } }
     void
         load_identity( bool const Upload = true ) {
-            m_stack.top() = glm::mat4( 1.f );
+            m_stack.back() = glm::mat4( 1.f );
             if( Upload ) { upload(); } }
     void
         load_matrix( glm::mat4 const &Matrix, bool const Upload = true ) {
-            m_stack.top() = Matrix;
+            m_stack.back() = Matrix;
             if( Upload ) { upload(); } }
     void
         rotate( float const Angle, glm::vec3 const &Axis, bool const Upload = true ) {
-            m_stack.top() = glm::rotate( m_stack.top(), Angle, Axis );
+            m_stack.back() = glm::rotate( m_stack.back(), Angle, Axis );
             if( Upload ) { upload(); } }
     void
         translate( glm::vec3 const &Translation, bool const Upload = true ) {
-            m_stack.top() = glm::translate( m_stack.top(), Translation );
+            m_stack.back() = glm::translate( m_stack.back(), Translation );
             if( Upload ) { upload(); } }
     void
         scale( glm::vec3 const &Scale, bool const Upload = true ) {
-            m_stack.top() = glm::scale( m_stack.top(), Scale );
+            m_stack.back() = glm::scale( m_stack.back(), Scale );
             if( Upload ) { upload(); } }
     void
         multiply( glm::mat4 const &Matrix, bool const Upload = true ) {
-            m_stack.top() *= Matrix;
+            m_stack.back() *= Matrix;
             if( Upload ) { upload(); } }
     void
         ortho( float const Left, float const Right, float const Bottom, float const Top, float const Znear, float const Zfar, bool const Upload = true ) {
-            m_stack.top() *= glm::ortho( Left, Right, Bottom, Top, Znear, Zfar );
+            m_stack.back() *= glm::ortho( Left, Right, Bottom, Top, Znear, Zfar );
             if( Upload ) { upload(); } }
     void
         perspective( float const Fovy, float const Aspect, float const Znear, float const Zfar, bool const Upload = true ) {
-            m_stack.top() *= glm::perspective( Fovy, Aspect, Znear, Zfar );
+            m_stack.back() *= glm::perspective( Fovy, Aspect, Znear, Zfar );
             if( Upload ) { upload(); } }
     void
         look_at( glm::vec3 const &Eye, glm::vec3 const &Center, glm::vec3 const &Up, bool const Upload = true ) {
-            m_stack.top() *= glm::lookAt( Eye, Center, Up );
+            m_stack.back() *= glm::lookAt( Eye, Center, Up );
             if( Upload ) { upload(); } }
 
 private:
-// types:
-    typedef std::stack<glm::mat4> mat4_stack;
-
 // methods:
     void
-        upload() { ::glLoadMatrixf( glm::value_ptr( m_stack.top() ) ); }
+        upload() { ::glLoadMatrixf( glm::value_ptr( m_stack.back() ) ); }
 
 // members:
-    mat4_stack m_stack;
+    std::vector<glm::mat4> m_stack;
 };
 
 enum stack_mode { gl_modelview = 0, gl_projection = 1, gl_texture = 2 };

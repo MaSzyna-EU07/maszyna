@@ -81,7 +81,12 @@ namespace gl
         void set_modelview(const glm::mat4 &mv)
         {
             modelview = mv;
-            modelviewnormal = glm::mat3x4(glm::mat3(glm::transpose(glm::inverse(mv))));
+            // normal matrix = transpose(inverse(modelview)). The modelview is
+            // always affine, so its 3x3 normal matrix depends only on the
+            // upper-left 3x3 block; inverting that mat3 directly is markedly
+            // cheaper than a full mat4 inverse and yields an identical result
+            // (for affine M, mat3(inverse(M)) == inverse(mat3(M))).
+            modelviewnormal = glm::mat3x4(glm::transpose(glm::inverse(glm::mat3(mv))));
         }
     };
 

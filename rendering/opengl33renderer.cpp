@@ -2424,6 +2424,12 @@ void opengl33_renderer::Render(scene::basic_region *Region)
 			// at this stage the z-buffer is filled with only ground geometry
             Update_Mouse_Position();
 		}
+		// draw opaque cells front-to-back: with the depth test enabled this
+		// lets the GPU reject hidden fragments early, before the (expensive)
+		// lit fragment shader runs on them. Order is irrelevant to the final
+		// image for opaque geometry, so this is purely a fill-rate win.
+		std::sort( std::begin( m_cellqueue ), std::end( m_cellqueue ),
+			[]( distancecell_pair const &Left, distancecell_pair const &Right ) { return Left.first < Right.first; } );
 		Render(std::begin(m_cellqueue), std::end(m_cellqueue));
 		break;
 	}

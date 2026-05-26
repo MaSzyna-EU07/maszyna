@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <sstream>
+#include <cstring>
 #include "shader.h"
 #include "glsl_common.h"
 #include "utilities/Logs.h"
@@ -12,6 +13,44 @@ inline bool strcend(std::string const &value, std::string const &ending)
         return false;
     return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
 }
+
+namespace {
+
+// The project's glad config only generates GLAD_GL_ARB_texture_filter_anisotropic
+// among the ARB/EXT extension flags -- GL_ARB_texture_gather (desktop) and
+// GL_EXT_gpu_shader5 (GLES 3.1) aren't compiled in, so we can't gate the
+// shadow textureGather() optimisation on a GLAD constant. Query the live
+// extension string instead. The first call walks the extension list once
+// (no extension count in the dozens is large enough to matter here) and
+// the result is cached in the static bool inside has_gl_extension(), so
+// every subsequent shader compile is a plain bool read.
+//
+// SHADERVALIDATOR_STANDALONE gates out the GL queries because the offline
+// shader validator tool links glad.c but never calls gladLoadGL(); the
+// function pointers stay null and a real call would crash. Returning
+// false there means the standalone validator simply compiles the original
+// 16-tap PCF fallback path in light_common.glsl, which is what we want.
+bool has_gl_extension(char const *name) {
+#ifdef SHADERVALIDATOR_STANDALONE
+    (void)name;
+    return false;
+#else
+    if (!glGetIntegerv || !glGetStringi) {
+        return false;
+    }
+    GLint count = 0;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &count);
+    for (GLint i = 0; i < count; ++i) {
+        char const *ext = reinterpret_cast<char const *>(glGetStringi(GL_EXTENSIONS, i));
+        if (ext != nullptr && std::strcmp(ext, name) == 0) {
+            return true;
+        }
+    }
+    return false;
+#endif
+}
+
+} // anonymous namespace
 
 std::string gl::shader::read_file(const std::string &filename)
 {
@@ -91,11 +130,33 @@ std::pair<GLuint, std::string> gl::shader::process_source(const std::string &fil
     if (!Global.gfx_usegles)
     {
         str += "#version 330 core\n";
+        // textureGather() on sampler2DArrayShadow is core in GLSL 4.0. On 3.30
+        // desktop it requires GL_ARB_gpu_shader5 -- the older
+        // GL_ARB_texture_gather (2010) only adds the non-shadow and the plain
+        // sampler2DShadow overloads, NOT the sampler2DArrayShadow one we need
+        // for cascaded shadow PCF. Some drivers advertise texture_gather but
+        // reject the shadow-array overload because the spec for it lives in
+        // gpu_shader5; so emit only when gpu_shader5 is advertised. When the
+        // extension is missing, calc_shadow() in light_common.glsl falls back
+        // to the original 16-tap hardware-PCF loop via #ifndef.
+        // (Project's glad config doesn't generate GLAD_GL_ARB_gpu_shader5,
+        //  so we query the live extension list -- see has_gl_extension above.)
+        static bool const have_gpu_shader5 = has_gl_extension("GL_ARB_gpu_shader5");
+        if (have_gpu_shader5)
+            str += "#extension GL_ARB_gpu_shader5 : enable\n";
     }
     else
     {
         if (GLAD_GL_ES_VERSION_3_1) {
             str += "#version 310 es\n";
+            // GLES 3.1 lacks textureGather on shadow samplers in core; the
+            // EXT_gpu_shader5 extension adds it. Only emit the directive when
+            // the driver advertises support (see desktop comment above).
+            // (Glad config doesn't generate GLAD_GL_EXT_gpu_shader5 -- query
+            //  the live extension string the same way.)
+            static bool const have_gpu_shader5 = has_gl_extension("GL_EXT_gpu_shader5");
+            if (have_gpu_shader5)
+                str += "#extension GL_EXT_gpu_shader5 : enable\n";
             if (type == GL_GEOMETRY_SHADER)
                 str += "#extension GL_EXT_geometry_shader : require\n";
         } else {
