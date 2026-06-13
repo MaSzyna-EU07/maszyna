@@ -14,6 +14,9 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <cstdint>
+#include <vector>
+
 #include "utilities/Classes.h"
 #include "utilities/Float3d.h"
 #include "model/Model3d.h"
@@ -118,6 +121,30 @@ public:
     static void AnimUpdate( double dt );
     bool Init(std::string const &asName, std::string const &asReplacableTexture);
     bool Load(cParser *parser, bool ter = false);
+    bool LoadEu7(
+        std::string const &model_file,
+        std::string const &texture_file,
+        std::vector<float> const &light_states,
+        std::vector<std::uint32_t> const &light_colors,
+        bool transition,
+        bool ter = false );
+    // PACK fast path: mesh already warm in TModelsManager; skips light/season lookups.
+    bool LoadEu7Pack(
+        std::string const &model_file,
+        std::string const &texture_file );
+    // PACK stream: mesh pointer already resolved; skips GetModel lookup.
+    bool LoadEu7PackWarm(
+        TModel3d *Mesh,
+        std::string const &texture_file );
+    void
+        reset_pack_for_insert( scene::node_data const &Nodedata );
+    static TAnimModel *
+        acquire_pack_instance( scene::node_data const &Nodedata );
+    static void
+        release_pack_instance( TAnimModel *Instance );
+    // Jednorazowa klasyfikacja instancingu per TModel3d (po GetModel na workerze / preload).
+    static void
+        warm_instanceable_cache( TModel3d *Model );
 	std::shared_ptr<TAnimContainer> AddContainer(std::string const &Name);
 	std::shared_ptr<TAnimContainer> GetContainer(std::string const &Name = "");
 	void LightSet( int const n, float const v );
@@ -215,6 +242,7 @@ public:
     // no lights, no submodel animations, no replacable skins, no seasonal variants.
     // computed once at end of Load() so the renderer can simply test the flag.
     bool m_instanceable { false };
+    bool m_eu7_pack { false };
     // helper: evaluates current state and updates m_instanceable accordingly.
     void update_instanceable_flag();
 

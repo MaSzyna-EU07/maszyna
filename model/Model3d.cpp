@@ -23,6 +23,17 @@ Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 #include "simulation/simulationtime.h"
 #include "world/mtable.h"
 #include "scene/sn_utils.h"
+#include "vehicle/DynObj.h"
+
+namespace {
+
+[[nodiscard]] std::string
+resolve_material_texture( std::string const &material ) {
+    auto const resolved { TextureTest( ToLower( material ) ) };
+    return resolved.empty() ? material : resolved;
+}
+
+} // namespace
 
 //---------------------------------------------------------------------------
 
@@ -449,7 +460,7 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 			                material.insert( 0, Global.asCurrentTexturePath );
 			            }
 			*/
-			m_material = GfxRenderer->Fetch_Material(material);
+			m_material = GfxRenderer->Fetch_Material( resolve_material_texture( material ) );
 			// renderowanie w cyklu przezroczystych tylko jeśli:
 			// 1. Opacity=0 (przejściowo <1, czy tam <100)
 			iFlags |= Opacity < 0.999f ? 0x20 : 0x10; // 0x20-przezroczysta, 0x10-nieprzezroczysta
@@ -1474,7 +1485,7 @@ void TSubModel::ReplaceMatrix(const glm::mat4 &mat)
 
 void TSubModel::ReplaceMaterial(const std::string &name)
 {
-	m_material = GfxRenderer->Fetch_Material(name);
+	m_material = GfxRenderer->Fetch_Material( resolve_material_texture( name ) );
 }
 
 // obliczenie maksymalnej wysokości, na początek ślizgu w pantografie
@@ -2247,7 +2258,7 @@ void TSubModel::BinInit(TSubModel *s, float4x4 *m, std::vector<std::string> *t, 
 			                m_materialname = Global.asCurrentTexturePath + m_materialname;
 			            }
 			*/
-			m_material = GfxRenderer->Fetch_Material(m_materialname);
+			m_material = GfxRenderer->Fetch_Material( resolve_material_texture( m_materialname ) );
 			// if we don't have phase flags set for some reason, try to fix it
 			if (!(iFlags & 0x30) && m_material != null_handle)
 			{

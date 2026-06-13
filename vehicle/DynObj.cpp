@@ -62,12 +62,30 @@ GetSubmodelFromName( TModel3d * const Model, std::string const Name ) {
 std::string
 TextureTest( std::string const &Name ) {
 
-    auto const lookup {
-        FileExists(
-            { Global.asCurrentTexturePath + Name, Name, paths::textures + Name },
-            { ".mat", ".dds", ".tga", ".ktx", ".png", ".bmp", ".jpg", ".tex" } ) };
+    static std::vector<std::string> const extensions {
+        ".mat", ".dds", ".tga", ".ktx", ".png", ".bmp", ".jpg", ".tex" };
 
-    return ( lookup.first + lookup.second );
+    auto const try_paths { [&]( std::vector<std::string> const &names ) {
+        auto const lookup { FileExists( names, extensions ) };
+        return lookup.first.empty() ? std::string {} : ( lookup.first + lookup.second );
+    } };
+
+    auto const resolved {
+        try_paths( { Global.asCurrentTexturePath + Name, Name, paths::textures + Name } ) };
+    if( false == resolved.empty() ) {
+        return resolved;
+    }
+
+    if( Name.starts_with( "skins/" ) ) {
+        auto const slash { Name.find_last_of( '/' ) };
+        auto const basename {
+            slash != std::string::npos ? Name.substr( slash + 1 ) : Name };
+        return try_paths( {
+            "dynamic/pkp/elf_v1/" + basename,
+            paths::textures + Name } );
+    }
+
+    return {};
 }
 
 //---------------------------------------------------------------------------
@@ -297,33 +315,51 @@ material_data::assign( std::string const &Replacableskin ) {
         int skinindex = 0;
         std::string texturename; nameparser >> texturename;
         while( ( texturename != "" ) && ( skinindex < 4 ) ) {
-            replacable_skins[ skinindex + 1 ] = GfxRenderer->Fetch_Material( texturename );
+            auto const resolved { TextureTest( ToLower( texturename ) ) };
+            replacable_skins[ skinindex + 1 ] = GfxRenderer->Fetch_Material(
+                resolved.empty() ? texturename : resolved );
             ++skinindex;
             texturename = ""; nameparser >> texturename;
         }
         multi_textures = skinindex;
     }
     else {
-        // otherwise try the basic approach
-        int skinindex = 0;
-        do {
-            // test quietly for file existence so we don't generate tons of false errors in the log
-            // NOTE: this means actual missing files won't get reported which is hardly ideal, but still somewhat better
-            auto const material { TextureTest( ToLower( Replacableskin + "," + std::to_string( skinindex + 1 ) ) ) };
-            if( true == material.empty() ) { break; }
+        auto const direct { TextureTest( ToLower( Replacableskin ) ) };
+        if( false == direct.empty() ) {
+            replacable_skins[ 1 ] = GfxRenderer->Fetch_Material( direct );
+            multi_textures = 1;
+        }
+        else {
+            int skinindex = 0;
+            do {
+                // test quietly for file existence so we don't generate tons of false errors in the log
+                // NOTE: this means actual missing files won't get reported which is hardly ideal, but still somewhat better
+                auto const material { TextureTest( ToLower( Replacableskin + "," + std::to_string( skinindex + 1 ) ) ) };
+                if( true == material.empty() ) { break; }
 
-            replacable_skins[ skinindex + 1 ] = GfxRenderer->Fetch_Material( material );
-            ++skinindex;
-        } while( skinindex < 4 );
-        multi_textures = skinindex;
-        if( multi_textures == 0 ) {
-            // zestaw nie zadziałał, próbujemy normanie
-            replacable_skins[ 1 ] = GfxRenderer->Fetch_Material( Replacableskin );
+                replacable_skins[ skinindex + 1 ] = GfxRenderer->Fetch_Material( material );
+                ++skinindex;
+            } while( skinindex < 4 );
+            multi_textures = skinindex;
+            if( multi_textures == 0 ) {
+                auto const resolved { TextureTest( ToLower( Replacableskin ) ) };
+                if( false == resolved.empty() ) {
+                    replacable_skins[ 1 ] = GfxRenderer->Fetch_Material( resolved );
+                    multi_textures = 1;
+                }
+            }
         }
     }
     if( replacable_skins[ 1 ] == null_handle ) {
-        // last ditch attempt, check for single replacable skin texture
-        replacable_skins[ 1 ] = GfxRenderer->Fetch_Material( Replacableskin );
+        auto const resolved { TextureTest( ToLower( Replacableskin ) ) };
+        if( false == resolved.empty() ) {
+            replacable_skins[ 1 ] = GfxRenderer->Fetch_Material( resolved );
+        }
+    }
+
+    if( replacable_skins[ 1 ] == null_handle ) {
+        textures_alpha = 0x30300030;
+        return;
     }
 
     // BUGS! it's not entierly designed whether opacity is property of material or submodel,

@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "utilities/Classes.h"
+#include "scene/eu7/eu7_types.h"
 #include "scene/scene.h"
 #include "utilities/Names.h"
 #include "world/EvLaunch.h"
@@ -632,6 +633,9 @@ private:
 
 basic_event *
 make_event( cParser &Input, scene::scratch_data &Scratchpad );
+
+basic_event *
+make_event_from_eu7( scene::eu7::Eu7Event const &Event );
 
 
 

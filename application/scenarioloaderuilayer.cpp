@@ -195,6 +195,10 @@ void scenarioloader_ui::render_()
 	ImGui::SetNextWindowSize(ImVec2(Global.window_size.x + padding * 2, Global.window_size.y + padding * 2));
 	ImGui::Begin("Neo Loading Screen", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground);
 	ImDrawList* draw_list = ImGui::GetWindowDrawList();
+	draw_list->AddRectFilled(
+		ImVec2( 0.f, 0.f ),
+		ImVec2( screen_size.x, screen_size.y ),
+		IM_COL32( 0, 0, 0, 255 ) );
 	ImGui::PushFont(font_loading);
 	ImGui::SetWindowFontScale(1);
 	const float font_scale_mult = 48 / ImGui::GetFontSize();
@@ -228,7 +232,14 @@ void scenarioloader_ui::render_()
 	                icon_center_y - text_size.y * 0.5f);
 
 	// Draw
-	//draw_list->AddImage(reinterpret_cast<ImTextureID>(loading_tex), icon_pos, ImVec2(icon_pos.x + loading_size.x, icon_pos.y + loading_size.y), ImVec2(0, 0), ImVec2(1, 1));
+	if( loading_tex != static_cast<GLuint>( -1 ) ) {
+		draw_list->AddImage(
+			reinterpret_cast<ImTextureID>( loading_tex ),
+			icon_pos,
+			ImVec2( icon_pos.x + loading_size.x, icon_pos.y + loading_size.y ),
+			ImVec2( 0, 0 ),
+			ImVec2( 1, 1 ) );
+	}
 	draw_list->AddText(text_pos, IM_COL32_WHITE, m_progresstext.c_str());
 
 	// Trivia 

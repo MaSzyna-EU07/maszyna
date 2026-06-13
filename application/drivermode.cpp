@@ -29,6 +29,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
+#include "scene/eu7/eu7_section_stream.h"
+#include "scene/eu7/eu7_pack_bench.h"
 /*
 namespace input {
 
@@ -402,6 +404,36 @@ bool driver_mode::update()
 
 	Timer::subsystem.sim_total.stop();
 
+	auto const world_presentable {
+		false == scene::eu7::section_stream_active()
+		|| scene::eu7::loading_screen_dismissed() };
+	auto const gameplay_stream {
+		scene::eu7::section_stream_active() && scene::eu7::loading_screen_dismissed() };
+
+	simulation::State.drain_deferred_eu7_trainsets( gameplay_stream ? 3.0 : 12.0 );
+
+	if( scene::eu7::section_stream_active() ) {
+		auto const stream_active {
+			simulation::is_ready || Application.loading_overlay_active() };
+		if( stream_active && scene::eu7::section_stream_needs_bootstrap() ) {
+			scene::eu7::kick_section_stream_bootstrap();
+		}
+		if( stream_active ) {
+			scene::eu7::update_section_stream( Global.pCamera.Pos );
+			scene::eu7::drain_section_stream();
+		}
+
+		if( scene::eu7::pack_bench_stream_phase_active() ) {
+			static double s_last_stream_bench_log { 0.0 };
+			auto const now { Timer::GetTime() };
+			if( now - s_last_stream_bench_log >= 30.0
+				&& scene::eu7::pack_bench_stream().sections_finalized > 0 ) {
+				scene::eu7::log_pack_stream_bench();
+				s_last_stream_bench_log = now;
+			}
+		}
+	}
+
 	simulation::Region->update_sounds();
 	audio::renderer.update(Global.iPause ? 0.0 : deltarealtime);
 
@@ -410,7 +442,9 @@ bool driver_mode::update()
 
 	GfxRenderer->Update(deltarealtime);
 
-	simulation::is_ready = simulation::is_ready || ((simulation::Train != nullptr) && (simulation::Train->is_cab_initialized)) || (Global.local_start_vehicle == "ghostview");
+	simulation::is_ready = simulation::is_ready
+		|| ( ( simulation::Train != nullptr ) && ( simulation::Train->is_cab_initialized ) )
+		|| ( Global.local_start_vehicle == "ghostview" && world_presentable );
 
 	return true;
 }
@@ -461,7 +495,10 @@ void driver_mode::enter()
 }
 
 // maintenance method, called when the mode is deactivated
-void driver_mode::exit() {}
+void
+driver_mode::exit() {
+	scene::eu7::flush_pack_stream_bench();
+}
 
 void driver_mode::on_key(int const Key, int const Scancode, int const Action, int const Mods)
 {

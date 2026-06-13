@@ -120,6 +120,15 @@ TModelsManager::GetModel(std::string const &Name, bool const Dynamic, bool const
     return model; // NULL jeśli błąd
 };
 
+bool
+TModelsManager::IsModelCached( std::string const &Name ) {
+
+    std::string filename { Name };
+    erase_extension( filename );
+    filename = ToLower( filename );
+    return find_in_databank( filename ).first;
+}
+
 std::pair<bool, TModel3d *>
 TModelsManager::find_in_databank( std::string const &Name ) {
 

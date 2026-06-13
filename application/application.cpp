@@ -12,6 +12,9 @@ http://mozilla.org/MPL/2.0/.
 #include "application/drivermode.h"
 #include "application/editormode.h"
 #include "application/scenarioloadermode.h"
+#include "application/scenarioloaderuilayer.h"
+#include "scene/eu7/eu7_load_stats.h"
+#include "scene/eu7/eu7_section_stream.h"
 #include "launcher/launchermode.h"
 
 #include "utilities/Globals.h"
@@ -707,8 +710,58 @@ void eu07_application::exit()
 	#endif
 }
 
+void
+eu07_application::extend_loading_overlay( std::chrono::milliseconds const duration ) {
+    if( duration.count() <= 0 ) {
+        return;
+    }
+    auto const until { std::chrono::steady_clock::now() + duration };
+    if( until > m_loading_overlay_until ) {
+        m_loading_overlay_until = until;
+    }
+    if( m_loading_overlay == nullptr ) {
+        m_loading_overlay = std::make_shared<scenarioloader_ui>();
+    }
+}
+
+bool
+eu07_application::loading_overlay_active() const {
+    if( m_modestack.empty() || m_modestack.top() != mode::driver ) {
+        return false;
+    }
+
+    if( false == simulation::is_ready ) {
+        return true;
+    }
+
+    return false;
+}
+
+void
+eu07_application::sync_loading_overlay_state() {
+    if( m_loading_overlay == nullptr ) {
+        m_loading_overlay = std::make_shared<scenarioloader_ui>();
+    }
+
+    m_loading_overlay->set_progress( 100.f, 0.f );
+}
+
+void
+eu07_application::render_loading_overlay() {
+    sync_loading_overlay_state();
+    if( m_loading_overlay == nullptr ) {
+        m_loading_overlay = std::make_shared<scenarioloader_ui>();
+    }
+    m_loading_overlay->render();
+}
+
 void eu07_application::render_ui()
 {
+
+	if( loading_overlay_active() ) {
+        render_loading_overlay();
+        return;
+    }
 
 	if (m_modestack.empty())
 	{
@@ -720,6 +773,12 @@ void eu07_application::render_ui()
 
 void eu07_application::begin_ui_frame()
 {
+
+	if( loading_overlay_active() ) {
+        sync_loading_overlay_state();
+        m_loading_overlay->begin_ui_frame();
+        return;
+    }
 
 	if (m_modestack.empty())
 	{

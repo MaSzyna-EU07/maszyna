@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "simulation/simulationstateserializer.h"
 
+#include <unordered_set>
+
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
@@ -22,13 +24,569 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Driver.h"
 #include "vehicle/DynObj.h"
 #include "model/AnimModel.h"
+#include "model/MdlMngr.h"
 #include "rendering/lightarray.h"
 #include "world/TractionPower.h"
 #include "application/application.h"
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
+#include "scene/eu7/eu7_bake.h"
+#include "scene/eu7/eu7_loader.h"
+#include "scene/eu7/eu7_load_stats.h"
+#include "scene/eu7/eu7_pack_bench.h"
+#include "scene/eu7/eu7_transform.h"
+#include "world/Track.h"
+#include "world/Traction.h"
+#include "audio/sound.h"
+
+#include <chrono>
+#include <deque>
 
 namespace simulation {
+
+namespace {
+
+constexpr double kDeferTrainsetHorizDistM { 4000.0 };
+constexpr double kDeferTrainsetHorizDistSq {
+    kDeferTrainsetHorizDistM * kDeferTrainsetHorizDistM };
+
+struct DeferredEu7Trainset {
+    scene::eu7::Eu7Trainset trainset;
+    std::vector<scene::eu7::Eu7Dynamic> vehicles;
+};
+
+std::deque<DeferredEu7Trainset> g_deferred_eu7_trainsets;
+
+struct Eu7TransformState {
+    std::size_t group_depth { 0 };
+};
+
+void
+clear_deferred_eu7_trainsets() {
+    g_deferred_eu7_trainsets.clear();
+}
+
+[[nodiscard]] glm::dvec3
+eu7_trainset_spawn_origin() {
+    auto const &saved_camera { Global.FreeCameraInit[ 0 ] };
+    if( saved_camera.x != 0.0 || saved_camera.y != 0.0 || saved_camera.z != 0.0 ) {
+        return saved_camera;
+    }
+
+    if(
+        false == Global.local_start_vehicle.empty() &&
+        Global.local_start_vehicle != "ghostview" ) {
+        if( auto *vehicle { simulation::Vehicles.find( Global.local_start_vehicle ) };
+            vehicle != nullptr ) {
+            return vehicle->GetPosition();
+        }
+    }
+
+    for( auto *vehicle : simulation::Vehicles.sequence() ) {
+        if( vehicle != nullptr ) {
+            return vehicle->GetPosition();
+        }
+    }
+
+    return {};
+}
+
+[[nodiscard]] bool
+eu7_trainset_is_player(
+    scene::eu7::Eu7Trainset const &trainset,
+    scene::eu7::Eu7Scene const &scene ) {
+    if(
+        Global.local_start_vehicle.empty() ||
+        Global.local_start_vehicle == "ghostview" ) {
+        return false;
+    }
+
+    for( auto const index : trainset.vehicle_indices ) {
+        if(
+            index < scene.dynamics.size() &&
+            scene.dynamics[ index ].node.name == Global.local_start_vehicle ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] double
+eu7_trainset_horiz_dist_sq( scene::eu7::Eu7Trainset const &trainset ) {
+    auto *path { simulation::Paths.find( trainset.track ) };
+    if( path == nullptr ) {
+        return 0.0;
+    }
+
+    auto const spawn { eu7_trainset_spawn_origin() };
+    if( spawn.x == 0.0 && spawn.y == 0.0 && spawn.z == 0.0 ) {
+        return 0.0;
+    }
+
+    auto const track_pos { glm::dvec3 { path->location() } };
+    auto const dx { track_pos.x - spawn.x };
+    auto const dz { track_pos.z - spawn.z };
+    return dx * dx + dz * dz;
+}
+
+[[nodiscard]] bool
+eu7_should_load_trainset_now(
+    scene::eu7::Eu7Trainset const &trainset,
+    scene::eu7::Eu7Scene const &scene ) {
+    if( eu7_trainset_is_player( trainset, scene ) ) {
+        return true;
+    }
+    if( eu7_trainset_horiz_dist_sq( trainset ) <= kDeferTrainsetHorizDistSq ) {
+        return true;
+    }
+    return false;
+}
+
+void
+eu7_queue_deferred_trainset(
+    scene::eu7::Eu7Trainset const &trainset,
+    scene::eu7::Eu7Scene const &scene ) {
+    DeferredEu7Trainset job;
+    job.trainset = trainset;
+    job.vehicles.reserve( trainset.vehicle_indices.size() );
+    for( auto const index : trainset.vehicle_indices ) {
+        if( index < scene.dynamics.size() ) {
+            job.vehicles.push_back( scene.dynamics[ index ] );
+        }
+    }
+    g_deferred_eu7_trainsets.push_back( std::move( job ) );
+}
+
+[[nodiscard]] glm::dvec3
+origin_push_delta( std::vector<glm::dvec3> const &stack, std::size_t const index ) {
+    auto const &cumulative { stack[ index ] };
+    if( index == 0 ) {
+        return cumulative;
+    }
+    auto const &parent { stack[ index - 1 ] };
+    return { cumulative.x - parent.x, cumulative.y - parent.y, cumulative.z - parent.z };
+}
+
+[[nodiscard]] glm::vec3
+scale_push_factor( std::vector<glm::dvec3> const &stack, std::size_t const index ) {
+    auto const &cumulative { stack[ index ] };
+    auto const parent { index == 0 ? glm::dvec3{ 1.0, 1.0, 1.0 } : stack[ index - 1 ] };
+    return {
+        parent.x != 0.0 ? static_cast<float>( cumulative.x / parent.x ) : static_cast<float>( cumulative.x ),
+        parent.y != 0.0 ? static_cast<float>( cumulative.y / parent.y ) : static_cast<float>( cumulative.y ),
+        parent.z != 0.0 ? static_cast<float>( cumulative.z / parent.z ) : static_cast<float>( cumulative.z ) };
+}
+
+void
+sync_scratch_transform(
+    scene::scratch_data &scratchpad,
+    Eu7TransformState &state,
+    scene::eu7::Eu7TransformContext const &target ) {
+    while( state.group_depth > target.group_depth ) {
+        scene::Groups.close();
+        --state.group_depth;
+    }
+    while( scratchpad.location.scale.size() > target.scale_stack.size() ) {
+        scratchpad.location.scale.pop();
+    }
+    while( scratchpad.location.offset.size() > target.origin_stack.size() ) {
+        scratchpad.location.offset.pop();
+    }
+
+    while( scratchpad.location.offset.size() < target.origin_stack.size() ) {
+        auto const index { scratchpad.location.offset.size() };
+        auto const delta { origin_push_delta( target.origin_stack, index ) };
+        scratchpad.location.offset.push(
+            delta + (
+                scratchpad.location.offset.empty() ?
+                    glm::dvec3{} :
+                    scratchpad.location.offset.top() ) );
+    }
+
+    while( scratchpad.location.scale.size() < target.scale_stack.size() ) {
+        auto const index { scratchpad.location.scale.size() };
+        auto const &cumulative { target.scale_stack[ index ] };
+        scratchpad.location.scale.push( glm::vec3(
+            static_cast<float>( cumulative.x ),
+            static_cast<float>( cumulative.y ),
+            static_cast<float>( cumulative.z ) ) );
+    }
+
+    while( state.group_depth < target.group_depth ) {
+        scene::Groups.create();
+        ++state.group_depth;
+    }
+
+    scratchpad.location.rotation = glm::vec3(
+        static_cast<float>( target.rotation.x ),
+        static_cast<float>( target.rotation.y ),
+        static_cast<float>( target.rotation.z ) );
+}
+
+[[nodiscard]] scene::node_data
+node_data_from_eu7( scene::eu7::Eu7BasicNode const &node ) {
+    scene::node_data nodedata;
+    if( node.range_squared_max >= std::numeric_limits<double>::max() * 0.5 ) {
+        nodedata.range_max = -1.0;
+    }
+    else {
+        nodedata.range_max = std::sqrt( node.range_squared_max );
+    }
+    nodedata.range_min = std::sqrt( node.range_squared_min );
+    nodedata.name = node.name;
+    nodedata.type = node.node_type;
+    return nodedata;
+}
+
+void
+preload_unique_pack_meshes(
+    std::vector<scene::eu7::Eu7Model> const &models,
+    std::size_t const offset,
+    std::size_t const end ) {
+    std::unordered_set<std::string> unique_files;
+    unique_files.reserve( end - offset );
+
+    for( std::size_t i { offset }; i < end; ++i ) {
+        auto model_file { models[ i ].model_file };
+        if( model_file.empty() || model_file == "notload" ) {
+            continue;
+        }
+        replace_slashes( model_file );
+        if( unique_files.insert( model_file ).second ) {
+            if( auto *const model { TModelsManager::GetModel( model_file, false, false ) } ) {
+                TAnimModel::warm_instanceable_cache( model );
+            }
+        }
+    }
+}
+
+[[nodiscard]] bool
+pack_model_needs_full_load( scene::eu7::Eu7Model const &model ) {
+    return false == model.light_states.empty()
+        || false == model.light_colors.empty()
+        || false == model.transition;
+}
+
+[[nodiscard]] std::string
+pack_nodedata_cache_key( scene::eu7::Eu7Model const &model ) {
+    return model.model_file + '\x1f' + model.texture_file + '\x1f'
+        + std::to_string( model.node.range_squared_min ) + '\x1f'
+        + std::to_string( model.node.range_squared_max ) + '\x1f'
+        + ( model.is_terrain ? '1' : '0' );
+}
+
+[[nodiscard]] scene::node_data const &
+pack_nodedata_cached(
+    scene::eu7::Eu7Model const &model,
+    std::unordered_map<std::string, scene::node_data> &cache ) {
+    auto const key { pack_nodedata_cache_key( model ) };
+    auto const found { cache.find( key ) };
+    if( found != cache.end() ) {
+        return found->second;
+    }
+    scene::node_data nodedata;
+    if( model.is_terrain ) {
+        nodedata.range_max = -1.0;
+        nodedata.range_min = 0.0;
+        nodedata.name = model.node.name;
+        nodedata.type = "model";
+    }
+    else {
+        nodedata = node_data_from_eu7( model.node );
+    }
+    auto const inserted { cache.emplace( key, std::move( nodedata ) ) };
+    return inserted.first->second;
+}
+
+[[nodiscard]] std::string
+join_event_targets( std::vector<std::string> const &targets ) {
+    std::string joined;
+    for( std::size_t i { 0 }; i < targets.size(); ++i ) {
+        if( i > 0 ) {
+            joined += '|';
+        }
+        joined += targets[ i ];
+    }
+    return joined.empty() ? "none" : joined;
+}
+
+} // namespace
+
+struct state_serializer::eu7_transform_state {
+    Eu7TransformState state;
+};
+
+void
+state_serializer::insert_eu7_models(
+    std::vector<scene::eu7::Eu7Model> const &models,
+    scene::scratch_data &scratchpad,
+    eu7_transform_state &transform_state ) {
+    scene::eu7::ScopedTimer const model_timer { scene::eu7::load_stats().model_ms };
+    scene::eu7::load_stats().models += models.size();
+
+    auto const apply_node_transform { [&]( scene::eu7::Eu7BasicNode const &node ) {
+        sync_scratch_transform( scratchpad, transform_state.state, node.transform );
+    } };
+
+    for( auto const &model : models ) {
+        apply_node_transform( model.node );
+        scene::node_data nodedata;
+        if( model.is_terrain ) {
+            nodedata.range_max = -1.0;
+            nodedata.range_min = 0.0;
+            nodedata.name = model.node.name;
+            nodedata.type = "model";
+        }
+        else {
+            nodedata = node_data_from_eu7( model.node );
+        }
+
+        auto const local_location {
+            scene::eu7::inverse_transform_point( model.location, model.node.transform ) };
+        auto const local_rotation_y { model.angles.y - model.node.transform.rotation.y };
+        auto *instance { new TAnimModel( nodedata ) };
+        instance->Angles( scratchpad.location.rotation + glm::vec3( 0.f, static_cast<float>( local_rotation_y ), 0.f ) );
+        if( false == scratchpad.location.scale.empty() ) {
+            instance->Scale( scratchpad.location.scale.top() );
+        }
+        if( model.scale.x != 1.0 || model.scale.y != 1.0 || model.scale.z != 1.0 ) {
+            instance->Scale( instance->Scale() * glm::vec3(
+                static_cast<float>( model.scale.x ),
+                static_cast<float>( model.scale.y ),
+                static_cast<float>( model.scale.z ) ) );
+        }
+
+        auto model_file { model.model_file };
+        auto texture_file { model.texture_file };
+        replace_slashes( model_file );
+        replace_slashes( texture_file );
+        std::string load_tokens { model_file + " " + texture_file };
+        if( false == model.light_states.empty() ) {
+            load_tokens += " lights";
+            for( auto const state : model.light_states ) {
+                load_tokens += ' ' + std::to_string( state );
+            }
+        }
+        if( false == model.light_colors.empty() ) {
+            load_tokens += " lightcolors";
+            for( auto const color : model.light_colors ) {
+                load_tokens += ' ' + std::to_string( color );
+            }
+        }
+        if( false == model.transition ) {
+            load_tokens += " notransition";
+        }
+        load_tokens += " endmodel";
+
+        cParser model_parser( load_tokens, cParser::buffer_TEXT, "", false );
+        if( false == instance->Load( &model_parser, nodedata.range_min < 0.0 ) ) {
+            SafeDelete( instance );
+            continue;
+        }
+        instance->location( transform( local_location, scratchpad ) );
+
+        if( nodedata.range_min < 0.0 ) {
+            if( false == scratchpad.binary.terrain ) {
+                auto const cellcount { instance->TerrainCount() + 1 };
+                for( auto i = 1; i < cellcount; ++i ) {
+                    auto *submodel { instance->TerrainSquare( i - 1 ) };
+                    simulation::Region->insert(
+                        scene::shape_node().convert( submodel ),
+                        scratchpad,
+                        false );
+                    submodel = submodel->ChildGet();
+                    while( submodel != nullptr ) {
+                        simulation::Region->insert(
+                            scene::shape_node().convert( submodel ),
+                            scratchpad,
+                            false );
+                        submodel = submodel->NextGet();
+                    }
+                }
+            }
+            delete instance;
+            continue;
+        }
+
+        if( instance->Model() != nullptr ) {
+            for( auto const &smokesource : instance->Model()->smoke_sources() ) {
+                Particles.insert( smokesource.first, instance, smokesource.second );
+            }
+        }
+        if( false == simulation::Instances.insert( instance ) ) {
+            ErrorLog( "Bad EU7: duplicate model name \"" + instance->name() + "\"" );
+        }
+        scene::Groups.insert( scene::Groups.handle(), instance );
+        simulation::Region->insert( instance );
+        if( auto *hierarchy_node = static_cast<scene::basic_node *>( instance ) ) {
+            scene::Hierarchy[ hierarchy_node->uuid.to_string() ] = hierarchy_node;
+        }
+    }
+}
+
+void
+state_serializer::insert_eu7_pack_models(
+    scene::eu7::Eu7Model const *models,
+    std::size_t const count,
+    scene::scratch_data &scratchpad,
+    eu7_pack_apply_session const *const session ) {
+    if( models == nullptr || count == 0 ) {
+        return;
+    }
+
+    scene::eu7::ScopedTimer const model_timer { scene::eu7::load_stats().model_ms };
+    scene::eu7::load_stats().models += count;
+
+    std::unordered_map<std::string, scene::node_data> local_nodedata_cache;
+    local_nodedata_cache.reserve( std::min( count, std::size_t { 64 } ) );
+    std::unordered_map<std::string, TModel3d *> local_mesh_cache;
+    local_mesh_cache.reserve( std::min( count, std::size_t { 64 } ) );
+
+    auto &nodedata_cache {
+        session != nullptr && session->nodedata_cache != nullptr ?
+            *session->nodedata_cache :
+            local_nodedata_cache };
+    auto &mesh_cache {
+        session != nullptr && session->mesh_cache != nullptr ?
+            *session->mesh_cache :
+            local_mesh_cache };
+
+    for( std::size_t i { 0 }; i < count; ++i ) {
+        auto const &model { models[ i ] };
+        auto const &nodedata { pack_nodedata_cached( model, nodedata_cache ) };
+
+        auto *instance { TAnimModel::acquire_pack_instance( nodedata ) };
+        instance->Angles( glm::vec3(
+            static_cast<float>( model.angles.x ),
+            static_cast<float>( model.angles.y ),
+            static_cast<float>( model.angles.z ) ) );
+        if( model.scale.x != 1.0 || model.scale.y != 1.0 || model.scale.z != 1.0 ) {
+            instance->Scale( glm::vec3(
+                static_cast<float>( model.scale.x ),
+                static_cast<float>( model.scale.y ),
+                static_cast<float>( model.scale.z ) ) );
+        }
+
+        instance->location( glm::vec3(
+            static_cast<float>( model.location.x ),
+            static_cast<float>( model.location.y ),
+            static_cast<float>( model.location.z ) ) );
+
+        if( nodedata.range_min < 0.0 ) {
+            if( false == instance->LoadEu7(
+                    model.model_file,
+                    model.texture_file,
+                    model.light_states,
+                    model.light_colors,
+                    model.transition,
+                    true ) ) {
+                TAnimModel::release_pack_instance( instance );
+                continue;
+            }
+            if( false == scratchpad.binary.terrain ) {
+                auto const cellcount { instance->TerrainCount() + 1 };
+                for( auto i = 1; i < cellcount; ++i ) {
+                    auto *submodel { instance->TerrainSquare( i - 1 ) };
+                    simulation::Region->insert(
+                        scene::shape_node().convert( submodel ),
+                        scratchpad,
+                        false );
+                    submodel = submodel->ChildGet();
+                    while( submodel != nullptr ) {
+                        simulation::Region->insert(
+                            scene::shape_node().convert( submodel ),
+                            scratchpad,
+                            false );
+                        submodel = submodel->NextGet();
+                    }
+                }
+            }
+            TAnimModel::release_pack_instance( instance );
+            continue;
+        }
+
+        bool const needs_full_load { pack_model_needs_full_load( model ) };
+        bool loaded { false };
+        if( needs_full_load ) {
+            scene::eu7::PackBenchTimer const load_timer {
+                &scene::eu7::Eu7PackBench::main_load_eu7_full_ms };
+            loaded = instance->LoadEu7(
+                model.model_file,
+                model.texture_file,
+                model.light_states,
+                model.light_colors,
+                model.transition,
+                false );
+            if( loaded ) {
+                scene::eu7::pack_bench_inc( &scene::eu7::Eu7PackBench::main_pack_full_loads );
+            }
+        }
+        else {
+            scene::eu7::PackBenchTimer const load_timer {
+                &scene::eu7::Eu7PackBench::main_load_eu7_pack_ms };
+            auto model_file { model.model_file };
+            auto texture_file { model.texture_file };
+            replace_slashes( model_file );
+            replace_slashes( texture_file );
+            TModel3d *mesh { nullptr };
+            if( false == model_file.empty() && model_file != "notload" ) {
+                auto const found { mesh_cache.find( model_file ) };
+                if( found != mesh_cache.end() ) {
+                    mesh = found->second;
+                }
+                else {
+                    mesh = TModelsManager::GetModel( model_file, false, false );
+                    mesh_cache.emplace( model_file, mesh );
+                }
+            }
+            loaded = instance->LoadEu7PackWarm( mesh, texture_file );
+            if( loaded ) {
+                scene::eu7::pack_bench_inc( &scene::eu7::Eu7PackBench::main_pack_fast_loads );
+            }
+        }
+        if( false == loaded ) {
+            TAnimModel::release_pack_instance( instance );
+            continue;
+        }
+
+        if( auto *const mesh { instance->Model() } ) {
+            if( false == mesh->smoke_sources().empty() ) {
+                for( auto const &smokesource : mesh->smoke_sources() ) {
+                    Particles.insert( smokesource.first, instance, smokesource.second );
+                }
+            }
+        }
+        {
+            scene::eu7::PackBenchTimer const region_timer {
+                &scene::eu7::Eu7PackBench::main_region_insert_ms };
+            simulation::Region->insert( instance );
+            scene::eu7::pack_bench_inc( &scene::eu7::Eu7PackBench::main_region_inserts );
+            scene::eu7::pack_bench_inc( &scene::eu7::Eu7PackBench::main_instances_applied );
+        }
+    }
+}
+
+void
+state_serializer::insert_eu7_pack_models(
+    std::vector<scene::eu7::Eu7Model> const &models,
+    scene::scratch_data &scratchpad,
+    std::size_t const offset,
+    std::size_t const count,
+    eu7_pack_apply_session const *const session ) {
+    if( offset >= models.size() || count == 0 ) {
+        return;
+    }
+
+    auto const end { std::min( offset + count, models.size() ) };
+    insert_eu7_pack_models( models.data() + offset, end - offset, scratchpad, session );
+}
+
+void
+state_serializer::insert_eu7_pack_models(
+    std::vector<scene::eu7::Eu7Model> const &models,
+    scene::scratch_data &scratchpad ) {
+    insert_eu7_pack_models( models, scratchpad, 0, models.size(), nullptr );
+}
 
 std::shared_ptr<deserializer_state>
 state_serializer::deserialize_begin( std::string const &Scenariofile ) {
@@ -41,71 +599,95 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 
     simulation::State.init_scripting_interface();
 
-	// NOTE: for the time being import from text format is a given, since we don't have full binary serialization
-	std::shared_ptr<deserializer_state> state =
-	        std::make_shared<deserializer_state>(Scenariofile, cParser::buffer_FILE, Global.asCurrentSceneryPath, Global.bLoadTraction);
+    scene::eu7::begin_load_session();
+    clear_deferred_eu7_trainsets();
 
-    // TODO: check first for presence of serialized binary files
-    // if this fails, fall back on the legacy text format
+    auto const resolved_scenario { scene::eu7::resolve_scenery_path( Scenariofile ) };
+    bool is_pure_eu7_scenario { scene::eu7::probe_file( resolved_scenario ) };
+
+    if( false == is_pure_eu7_scenario ) {
+        auto const bake { scene::eu7::ensure_scenario_eu7( Scenariofile ) };
+        if( false == bake.ok ) {
+            ErrorLog( "EU7: nie udalo sie przygotowac modulu: " + bake.message );
+            throw invalid_scenery_exception();
+        }
+        if( bake.regenerated ) {
+            WriteLog( "EU7: wygenerowano modul scenariusza (" + bake.message + ")" );
+        }
+        is_pure_eu7_scenario = scene::eu7::probe_file( resolved_scenario );
+    }
+
+    bool const has_baked_eu7_root {
+        false == is_pure_eu7_scenario &&
+        scene::eu7::should_use_binary_module( Scenariofile ) };
+    auto const baked_root_path {
+        scene::eu7::resolve_scenery_path( scene::eu7::binary_path( Scenariofile ) ) };
+
+    // Scenariusz EU7B: nie parsujemy binarki jako tekstu SCM.
+    std::shared_ptr<deserializer_state> state;
+    if( is_pure_eu7_scenario ) {
+        state = std::make_shared<deserializer_state>(
+            std::string{}, cParser::buffer_TEXT, Global.asCurrentSceneryPath, Global.bLoadTraction );
+        state->scenariofile = Scenariofile;
+    }
+    else {
+        state = std::make_shared<deserializer_state>(
+            Scenariofile, cParser::buffer_FILE, Global.asCurrentSceneryPath, Global.bLoadTraction );
+    }
+
 	state->scratchpad.name = Scenariofile;
-    if( ( true == Global.file_binary_terrain )
-     && ( Scenariofile != "$.scn" ) ) {
-        // compilation to binary file isn't supported for rainsted-created overrides
-        // NOTE: we postpone actual loading of the scene until we process time, season and weather data
-		state->scratchpad.binary.terrain = Region->is_scene( Scenariofile ) ;
+
+    if( is_pure_eu7_scenario ) {
+        Global.file_binary_terrain_state = true;
+        state->scratchpad.binary.terrain = true;
+        state->scratchpad.binary.terrain_included = true;
+        WriteLog( "EU7 scenario: " + resolved_scenario );
+        if( false == scene::eu7::load_module( resolved_scenario, *this ) ) {
+            throw invalid_scenery_exception();
+        }
+    }
+    else if( has_baked_eu7_root ) {
+        Global.file_binary_terrain_state = true;
+        state->scratchpad.binary.terrain = true;
+        if( scene::eu7::is_scenario_terrain( Scenariofile ) ) {
+            state->scratchpad.binary.terrain_included = true;
+        }
+        WriteLog(
+            "EU7 hybrid: metadata z \"" + Scenariofile + "\", sceneria z \"" +
+            baked_root_path + "\"" );
+        if( false == scene::eu7::load_module( baked_root_path, *this ) ) {
+            throw invalid_scenery_exception();
+        }
+    }
+    else if( ( true == Global.file_binary_terrain )
+          && ( Scenariofile != "$.scn" ) ) {
+        // EU7 ma pierwszenstwo przed SBT przy tym samym stemie.
+        if( scene::eu7::is_scenario_terrain( Scenariofile ) ) {
+            state->scratchpad.binary.terrain = true;
+            Global.file_binary_terrain_state = true;
+            WriteLog( "Default EU7 terrain present" );
+        }
+        else if( Region->is_scene( Scenariofile ) ) {
+            state->scratchpad.binary.terrain = true;
+            Global.file_binary_terrain_state = true;
+            WriteLog( "Default SBT present" );
+        }
+        else {
+            Global.file_binary_terrain_state = false;
+            WriteLog( "Default binary terrain absent" );
+        }
+    }
+    else {
+        Global.file_binary_terrain_state = false;
+        WriteLog( "Default binary terrain absent" );
     }
 
-	if (false != state->scratchpad.binary.terrain)
-	{
-		Global.file_binary_terrain_state = true;
-		WriteLog("Default SBT present");
-    }
-	else
-	{
-		Global.file_binary_terrain_state = false;
-		WriteLog("Default SBT absent");
-    }
     scene::Groups.create();
 
 	if( false == state->input.ok() )
 		throw invalid_scenery_exception();
 
-	// prepare deserialization function table
-	// since all methods use the same objects, we can have simple, hard-coded binds or lambdas for the task
-	using deserializefunction = void( state_serializer::*)(cParser &, scene::scratch_data &);
-	std::vector<
-	    std::pair<
-	        std::string,
-	        deserializefunction> > functionlist = {
-	            { "area",        &state_serializer::deserialize_area },
-	            { "isolated",    &state_serializer::deserialize_isolated },
-	            { "assignment",  &state_serializer::deserialize_assignment },
-	            { "atmo",        &state_serializer::deserialize_atmo },
-	            { "camera",      &state_serializer::deserialize_camera },
-	            { "config",      &state_serializer::deserialize_config },
-	            { "description", &state_serializer::deserialize_description },
-	            { "event",       &state_serializer::deserialize_event },
-	            { "lua",         &state_serializer::deserialize_lua },
-	            { "firstinit",   &state_serializer::deserialize_firstinit },
-	            { "group",       &state_serializer::deserialize_group },
-	            { "endgroup",    &state_serializer::deserialize_endgroup },
-	            { "light",       &state_serializer::deserialize_light },
-	            { "node",        &state_serializer::deserialize_node },
-	            { "origin",      &state_serializer::deserialize_origin },
-	            { "endorigin",   &state_serializer::deserialize_endorigin },
-	            { "scale",       &state_serializer::deserialize_scale },
-	            { "endscale",    &state_serializer::deserialize_endscale },
-	            { "rotate",      &state_serializer::deserialize_rotate },
-	            { "sky",         &state_serializer::deserialize_sky },
-	            { "test",        &state_serializer::deserialize_test },
-	            { "time",        &state_serializer::deserialize_time },
-	            { "trainset",    &state_serializer::deserialize_trainset },
-	            { "terrain",     &state_serializer::deserialize_terrain },
-	            { "endtrainset", &state_serializer::deserialize_endtrainset } };
-
-	for( auto &function : functionlist ) {
-		state->functionmap.emplace( function.first, std::bind( function.second, this, std::ref( state->input ), std::ref( state->scratchpad ) ) );
-	}
+	populate_deserialize_functionmap( state->functionmap, state->input, state->scratchpad );
 
     if (!Global.prepend_scn.empty()) {
         state->input.injectString(Global.prepend_scn);
@@ -152,15 +734,843 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 	scene::Groups.update_map();
 	Region->create_map_geometry();
 
-	if( ( true == Global.file_binary_terrain )
-     && ( false == state->scratchpad.binary.terrain )
-	 && ( state->scenariofile != "$.scn" ) ) {
-		// if we didn't find usable binary version of the scenario files, create them now for future use
-		// as long as the scenario file wasn't rainsted-created base file override
-		Region->serialize( state->scenariofile );
-	}
-
 	return false;
+}
+
+void
+state_serializer::populate_deserialize_functionmap(
+    std::unordered_map<std::string, deserializer_state::deserializefunctionbind> &functionmap,
+    cParser &input,
+    scene::scratch_data &scratchpad ) {
+    using deserializefunction = void( state_serializer::*)( cParser &, scene::scratch_data & );
+    std::vector<std::pair<std::string, deserializefunction>> const functionlist {
+        { "area",        &state_serializer::deserialize_area },
+        { "isolated",    &state_serializer::deserialize_isolated },
+        { "assignment",  &state_serializer::deserialize_assignment },
+        { "atmo",        &state_serializer::deserialize_atmo },
+        { "camera",      &state_serializer::deserialize_camera },
+        { "config",      &state_serializer::deserialize_config },
+        { "description", &state_serializer::deserialize_description },
+        { "event",       &state_serializer::deserialize_event },
+        { "lua",         &state_serializer::deserialize_lua },
+        { "firstinit",   &state_serializer::deserialize_firstinit },
+        { "group",       &state_serializer::deserialize_group },
+        { "endgroup",    &state_serializer::deserialize_endgroup },
+        { "light",       &state_serializer::deserialize_light },
+        { "node",        &state_serializer::deserialize_node },
+        { "origin",      &state_serializer::deserialize_origin },
+        { "endorigin",   &state_serializer::deserialize_endorigin },
+        { "scale",       &state_serializer::deserialize_scale },
+        { "endscale",    &state_serializer::deserialize_endscale },
+        { "rotate",      &state_serializer::deserialize_rotate },
+        { "sky",         &state_serializer::deserialize_sky },
+        { "test",        &state_serializer::deserialize_test },
+        { "time",        &state_serializer::deserialize_time },
+        { "trainset",    &state_serializer::deserialize_trainset },
+        { "terrain",     &state_serializer::deserialize_terrain },
+        { "endtrainset", &state_serializer::deserialize_endtrainset } };
+
+    functionmap.clear();
+    for( auto const &function : functionlist ) {
+        functionmap.emplace(
+            function.first,
+            std::bind( function.second, this, std::ref( input ), std::ref( scratchpad ) ) );
+    }
+}
+
+void
+state_serializer::deserialize_parser_tokens(
+    cParser &input,
+    scene::scratch_data &scratchpad,
+    std::string const &source_name ) {
+    std::unordered_map<std::string, deserializer_state::deserializefunctionbind> functionmap;
+    populate_deserialize_functionmap( functionmap, input, scratchpad );
+
+    std::string token { input.getToken<std::string>() };
+    while( false == token.empty() ) {
+        auto const lookup { functionmap.find( token ) };
+        if( lookup != functionmap.end() ) {
+            lookup->second();
+        }
+        else {
+            ErrorLog(
+                "Bad EU7 module: unexpected token \"" + token + "\" in \"" + source_name +
+                "\" (line " + std::to_string( input.Line() - 1 ) + ")" );
+        }
+        token = input.getToken<std::string>();
+    }
+}
+
+void
+state_serializer::deserialize_module_text(
+    std::string const &text,
+    std::string const &source_name,
+    scene::scratch_data &scratchpad ) {
+    // mPath musi byc katalogiem scenerii (jak przy buffer_FILE), nie pelna sciezka .eu7 —
+    // inaczej include "td/foo.scm" skleja sie w "scenery/td.eu7td/foo.scm".
+    cParser input( text, cParser::buffer_TEXT, Global.asCurrentSceneryPath, Global.bLoadTraction );
+    // Dzieci INCL sa juz zaladowane w load_module_recursive — bez ponownego include→EU7.
+    input.expandIncludes = false;
+
+    deserialize_parser_tokens( input, scratchpad, source_name );
+}
+
+void
+state_serializer::deserialize_include_file(
+    std::string const &include_reference,
+    std::string const &current_relative_file,
+    std::vector<std::string> const &parameters,
+    scene::scratch_data &scratchpad ) {
+    cParser input(
+        include_reference,
+        cParser::buffer_FILE,
+        Global.asCurrentSceneryPath,
+        Global.bLoadTraction,
+        parameters );
+    input.expandIncludes = true;
+
+    deserialize_parser_tokens( input, scratchpad, current_relative_file + " -> " + include_reference );
+}
+
+void
+state_serializer::apply_eu7_models(
+    std::vector<scene::eu7::Eu7Model> const &models,
+    scene::scratch_data &scratchpad ) {
+    eu7_transform_state transform_state;
+    insert_eu7_models( models, scratchpad, transform_state );
+}
+
+void
+state_serializer::apply_eu7_pack_models(
+    std::vector<scene::eu7::Eu7Model> const &models,
+    scene::scratch_data &scratchpad ) {
+    preload_unique_pack_meshes( models, 0, models.size() );
+    insert_eu7_pack_models( models, scratchpad );
+}
+
+void
+state_serializer::apply_eu7_pack_models(
+    std::vector<scene::eu7::Eu7Model> const &models,
+    scene::scratch_data &scratchpad,
+    std::size_t const offset,
+    std::size_t const count,
+    eu7_pack_apply_session const *const session ) {
+    if( session == nullptr && offset < models.size() && count > 0 ) {
+        auto const end { std::min( offset + count, models.size() ) };
+        preload_unique_pack_meshes( models, offset, end );
+    }
+    if( offset >= models.size() || count == 0 ) {
+        return;
+    }
+    auto const end { std::min( offset + count, models.size() ) };
+    insert_eu7_pack_models( models.data() + offset, end - offset, scratchpad, session );
+}
+
+void
+state_serializer::apply_eu7_pack_models(
+    scene::eu7::Eu7Model const *models,
+    std::size_t const count,
+    scene::scratch_data &scratchpad,
+    eu7_pack_apply_session const *const session ) {
+    insert_eu7_pack_models( models, count, scratchpad, session );
+}
+
+void
+state_serializer::apply_eu7_pack_models(
+    scene::eu7::Eu7Model const *models,
+    std::size_t const offset,
+    std::size_t const count,
+    scene::scratch_data &scratchpad,
+    eu7_pack_apply_session const *const session ) {
+    if( models == nullptr || count == 0 ) {
+        return;
+    }
+    insert_eu7_pack_models( models + offset, count, scratchpad, session );
+}
+
+void
+state_serializer::apply_eu7_scene(
+    scene::eu7::Eu7Scene const &scene,
+    scene::scratch_data &scratchpad ) {
+    eu7_transform_state transform_state;
+
+    auto const scratch_offset { [&]() -> glm::dvec3 {
+        return (
+            scratchpad.location.offset.empty() ?
+                glm::dvec3{} :
+                scratchpad.location.offset.top() );
+    } };
+
+    auto const apply_node_transform { [&]( scene::eu7::Eu7BasicNode const &node ) {
+        sync_scratch_transform( scratchpad, transform_state.state, node.transform );
+    } };
+
+    {
+        scene::eu7::ScopedTimer const timer { scene::eu7::load_stats().trak_ms };
+        scene::eu7::load_stats().tracks += scene.tracks.size();
+        for( auto const &track : scene.tracks ) {
+            apply_node_transform( track.node );
+            auto const nodedata { node_data_from_eu7( track.node ) };
+            auto *path { new TTrack( nodedata ) };
+            path->LoadFromEu7( track );
+            if( false == simulation::Paths.insert( path ) ) {
+                ErrorLog( "Bad EU7: duplicate track name \"" + path->name() + "\"" );
+            }
+            scene::Groups.insert( scene::Groups.handle(), path );
+            simulation::Region->insert_and_register( path );
+        }
+    }
+
+    {
+        scene::eu7::ScopedTimer const timer { scene::eu7::load_stats().trac_ms };
+        scene::eu7::load_stats().traction += scene.traction.size();
+        for( auto const &traction : scene.traction ) {
+        if( false == Global.bLoadTraction ) {
+            continue;
+        }
+        apply_node_transform( traction.node );
+        auto const nodedata { node_data_from_eu7( traction.node ) };
+        auto *piece { new TTraction( nodedata ) };
+        auto const origin { scratch_offset() };
+        auto const local_p1 { scene::eu7::subtract_origin_offset( traction.wire_p1, traction.node.transform ) + origin };
+        auto const local_p2 { scene::eu7::subtract_origin_offset( traction.wire_p2, traction.node.transform ) + origin };
+        auto const local_p3 { scene::eu7::subtract_origin_offset( traction.wire_p3, traction.node.transform ) + origin };
+        auto const local_p4 { scene::eu7::subtract_origin_offset( traction.wire_p4, traction.node.transform ) + origin };
+
+        piece->asPowerSupplyName = traction.power_supply_name;
+        piece->NominalVoltage = traction.nominal_voltage;
+        piece->MaxCurrent = traction.max_current;
+        piece->fResistivity = (
+            traction.resistivity_legacy != 0.0 ?
+                static_cast<float>( traction.resistivity_legacy ) :
+                traction.resistivity_ohm_per_m / 0.001f );
+        if( piece->fResistivity == 0.01f ) {
+            piece->fResistivity = 0.075f;
+        }
+        piece->fResistivity *= 0.001f;
+
+        auto const material { (
+            traction.material_raw.empty() ?
+                ( traction.material == scene::eu7::Eu7TractionWireMaterial::Aluminium ? "al" :
+                  traction.material == scene::eu7::Eu7TractionWireMaterial::None ? "none" : "cu" ) :
+                traction.material_raw ) };
+             if( material == "none" ) { piece->Material = 0; }
+        else if( material == "al" )   { piece->Material = 2; }
+        else                          { piece->Material = 1; }
+
+        piece->WireThickness = traction.wire_thickness;
+        piece->DamageFlag = traction.damage_flag;
+        piece->pPoint1 = local_p1;
+        piece->pPoint2 = local_p2;
+        piece->pPoint3 = local_p3;
+        piece->pPoint4 = local_p4;
+        piece->fHeightDifference = ( local_p3.y - local_p1.y + local_p4.y - local_p2.y ) * 0.5 - traction.min_height;
+        piece->iNumSections = (
+            traction.segment_length ?
+                static_cast<int>( glm::length( local_p1 - local_p2 ) / traction.segment_length ) :
+                0 );
+        piece->Wires = traction.wire_count;
+        piece->WireOffset = traction.wire_offset;
+        piece->m_visible = traction.node.visible;
+        if( traction.parallel_name ) {
+            piece->asParallel = *traction.parallel_name;
+        }
+        piece->Init();
+        piece->location( glm::mix( local_p2, local_p1, 0.5 ) );
+
+        if( false == simulation::Traction.insert( piece ) ) {
+            ErrorLog( "Bad EU7: duplicate traction name \"" + piece->name() + "\"" );
+        }
+        scene::Groups.insert( scene::Groups.handle(), piece );
+        simulation::Region->insert_and_register( piece );
+        }
+    }
+
+    {
+        scene::eu7::ScopedTimer const timer { scene::eu7::load_stats().power_ms };
+        scene::eu7::load_stats().power_sources += scene.power_sources.size();
+        for( auto const &source : scene.power_sources ) {
+        if( false == Global.bLoadTraction ) {
+            continue;
+        }
+        apply_node_transform( source.node );
+        auto const nodedata { node_data_from_eu7( source.node ) };
+        auto const local_position {
+            scene::eu7::inverse_transform_point( source.position, source.node.transform ) };
+        auto const internal_res { (
+            source.internal_resistance_legacy != 0.2 ?
+                source.internal_resistance_legacy :
+                static_cast<double>( source.internal_resistance ) ) };
+
+        std::ostringstream power_body;
+        power_body
+            << local_position.x << ' ' << local_position.y << ' ' << local_position.z << ' '
+            << source.nominal_voltage << ' ' << source.voltage_frequency << ' '
+            << internal_res << ' ' << source.max_output_current << ' '
+            << source.fast_fuse_timeout << ' ' << source.fast_fuse_repetition << ' '
+            << source.slow_fuse_timeout << ' ';
+        if( source.modifier == scene::eu7::Eu7PowerSourceModifier::Recuperation ) {
+            power_body << "recuperation ";
+        }
+        else if( source.modifier == scene::eu7::Eu7PowerSourceModifier::Section ) {
+            power_body << "section ";
+        }
+        power_body << "end";
+
+        cParser power_parser( power_body.str(), cParser::buffer_TEXT, "", false );
+        auto *powersource { deserialize_tractionpowersource( power_parser, scratchpad, nodedata ) };
+        if( powersource == nullptr ) {
+            continue;
+        }
+
+        if( false == simulation::Powergrid.insert( powersource ) ) {
+            ErrorLog( "Bad EU7: duplicate power source name \"" + powersource->name() + "\"" );
+        }
+        }
+    }
+
+    if( false == scene.models.empty() ) {
+        if( scene::eu7::pack_scenery_active() ) {
+            scene::eu7::load_stats().pack_skipped_models += scene.models.size();
+        }
+        else {
+            insert_eu7_models( scene.models, scratchpad, transform_state );
+        }
+    }
+
+    {
+        scene::eu7::ScopedTimer const timer { scene::eu7::load_stats().memcell_ms };
+        scene::eu7::load_stats().memcells += scene.memcells.size();
+        for( auto const &cell : scene.memcells ) {
+        apply_node_transform( cell.node );
+        auto const nodedata { node_data_from_eu7( cell.node ) };
+        auto const local_position {
+            scene::eu7::inverse_transform_point( cell.node.area.center, cell.node.transform ) };
+
+        std::ostringstream memcell_body;
+        memcell_body
+            << local_position.x << ' ' << local_position.y << ' ' << local_position.z << ' '
+            << cell.text << ' ' << cell.value1 << ' ' << cell.value2 << ' '
+            << ( cell.track_name ? *cell.track_name : "none" )
+            << " endmemcell";
+
+        cParser memcell_parser( memcell_body.str(), cParser::buffer_TEXT, "", false );
+        auto *memorycell { deserialize_memorycell( memcell_parser, scratchpad, nodedata ) };
+        if( memorycell == nullptr ) {
+            continue;
+        }
+
+        if( false == simulation::Memory.insert( memorycell ) ) {
+            ErrorLog( "Bad EU7: duplicate memcell name \"" + memorycell->name() + "\"" );
+        }
+        scene::Groups.insert( scene::Groups.handle(), memorycell );
+        simulation::Region->insert( memorycell );
+        }
+    }
+
+    {
+        scene::eu7::ScopedTimer const timer { scene::eu7::load_stats().launcher_ms };
+        scene::eu7::load_stats().launchers += scene.event_launchers.size();
+        for( auto const &launcher : scene.event_launchers ) {
+        apply_node_transform( launcher.node );
+        auto const nodedata { node_data_from_eu7( launcher.node ) };
+        auto const local_location {
+            scene::eu7::inverse_transform_point( launcher.location, launcher.node.transform ) };
+
+        std::string const time_token { (
+            launcher.launch_hour != 0 || launcher.launch_minute != 0 ) ?
+                std::to_string( launcher.launch_hour * 100 + launcher.launch_minute ) :
+            ( launcher.delta_time != 0.0 ) ?
+                std::to_string( -launcher.delta_time ) :
+                "0" };
+
+        std::ostringstream launcher_body;
+        launcher_body
+            << std::sqrt( launcher.radius_squared ) << ' '
+            << launcher.activation_key_raw << ' '
+            << time_token << ' '
+            << launcher.event1_name << ' ';
+        if( false == launcher.event2_name.empty() && launcher.event2_name != "none" &&
+            launcher.event2_name != "endeventlauncher" ) {
+            launcher_body << launcher.event2_name << ' ';
+        }
+        if( launcher.condition ) {
+            launcher_body
+                << "condition "
+                << launcher.condition->memcell_name << ' '
+                << launcher.condition->compare_text << ' ';
+            if( launcher.condition->check_mask & 2 ) {
+                launcher_body << launcher.condition->compare_value1 << ' ';
+            }
+            else {
+                launcher_body << "* ";
+            }
+            if( launcher.condition->check_mask & 4 ) {
+                launcher_body << launcher.condition->compare_value2 << ' ';
+            }
+            else {
+                launcher_body << "* ";
+            }
+        }
+        if( launcher.train_triggered ) {
+            launcher_body << "traintriggered ";
+        }
+        launcher_body << "endeventlauncher";
+
+        cParser launcher_parser( launcher_body.str(), cParser::buffer_TEXT, "", false );
+        auto *eventlauncher { new TEventLauncher( nodedata ) };
+        eventlauncher->Load( &launcher_parser );
+        eventlauncher->location( transform( local_location, scratchpad ) );
+
+        if( false == simulation::Events.insert( eventlauncher ) ) {
+            ErrorLog( "Bad EU7: duplicate event launcher name \"" + eventlauncher->name() + "\"" );
+            continue;
+        }
+        if( true == eventlauncher->IsGlobal() ) {
+            simulation::Events.queue( eventlauncher );
+        }
+        else {
+            scene::Groups.insert( scene::Groups.handle(), eventlauncher );
+            if( false == eventlauncher->IsRadioActivated() ) {
+                simulation::Region->insert( eventlauncher );
+            }
+        }
+        }
+    }
+
+    std::vector<bool> used_in_trainset( scene.dynamics.size(), false );
+    for( auto const &trainset : scene.trainsets ) {
+        for( auto const index : trainset.vehicle_indices ) {
+            if( index < used_in_trainset.size() ) {
+                used_in_trainset[ index ] = true;
+            }
+        }
+    }
+
+    auto const apply_dynamic { [&]( scene::eu7::Eu7Dynamic const &vehicle, bool const in_trainset ) {
+        apply_node_transform( vehicle.node );
+        auto const nodedata { node_data_from_eu7( vehicle.node ) };
+        if( false == in_trainset ) {
+            scratchpad.trainset = scene::scratch_data::trainset_data();
+        }
+
+        auto datafolder { vehicle.data_folder };
+        auto skinfile { vehicle.skin_file };
+        auto mmdfile { vehicle.mmd_file };
+        replace_slashes( datafolder );
+        replace_slashes( skinfile );
+        replace_slashes( mmdfile );
+
+        auto const pathname { (
+            in_trainset ?
+                scratchpad.trainset.track :
+                vehicle.track_name ) };
+        auto const offset { vehicle.offset };
+        auto const drivertype { vehicle.driver_type };
+        auto const couplingdata { (
+            in_trainset ?
+                ( vehicle.coupling_raw.empty() ? std::to_string( vehicle.coupling ) : vehicle.coupling_raw ) :
+                "3" ) };
+        auto const velocity { (
+            in_trainset ?
+                scratchpad.trainset.velocity :
+                vehicle.velocity ) };
+
+        auto const couplingdatawithparams { couplingdata.find( '.' ) };
+        auto coupling { (
+            couplingdatawithparams != std::string::npos ?
+                std::atoi( couplingdata.substr( 0, couplingdatawithparams ).c_str() ) :
+                std::atoi( couplingdata.c_str() ) ) };
+        if( coupling < 0 ) {
+            coupling = ( -coupling ) | coupling::permanent;
+        }
+        if( ( offset != -1.0 ) && ( std::abs( offset ) > 0.5 ) ) {
+            coupling = coupling::faux;
+        }
+        auto const params { (
+            couplingdatawithparams != std::string::npos ?
+                couplingdata.substr( couplingdatawithparams + 1 ) :
+                "" ) };
+
+        auto loadcount { vehicle.load_count };
+        auto loadtype { vehicle.load_type };
+
+        auto *path { simulation::Paths.find( pathname ) };
+        if( path == nullptr ) {
+            ErrorLog( "Bad EU7: vehicle \"" + nodedata.name + "\" on missing track \"" + pathname + "\"" );
+            return;
+        }
+
+        if( ( true == scratchpad.trainset.vehicles.empty() )
+         && ( false == path->m_events0.empty() )
+         && ( std::abs( velocity ) <= 1.f )
+         && ( scratchpad.trainset.offset >= 0.0 )
+         && ( scratchpad.trainset.offset < 8.0 ) ) {
+            scratchpad.trainset.offset = 8.0f;
+        }
+
+        auto *dyn { new TDynamicObject() };
+        auto const length { dyn->Init(
+            nodedata.name,
+            datafolder, skinfile, mmdfile,
+            path,
+            ( offset == -1.0 ?
+                scratchpad.trainset.offset :
+                scratchpad.trainset.offset - static_cast<float>( offset ) ),
+            drivertype,
+            velocity,
+            scratchpad.trainset.name,
+            loadcount, loadtype,
+            ( offset == -1.0 ),
+            params ) };
+
+        if( length != 0.0 ) {
+            scratchpad.trainset.offset -= static_cast<float>( length );
+            if( ( coupling != 0 )
+             && ( dyn->MoverParameters->Couplers[ ( offset == -1.0 ? end::front : end::rear ) ].AllowedFlag & coupling::permanent ) ) {
+                coupling |= coupling::permanent;
+            }
+            if( in_trainset ) {
+                scratchpad.trainset.vehicles.emplace_back( dyn );
+                scratchpad.trainset.couplings.emplace_back( coupling );
+            }
+        }
+        else {
+            if( dyn->MyTrack != nullptr ) {
+                dyn->MyTrack->RemoveDynamicObject( dyn );
+            }
+            delete dyn;
+            return;
+        }
+
+        if( vehicle.destination ) {
+            dyn->asDestination = *vehicle.destination;
+        }
+
+        if( dyn->mdModel != nullptr ) {
+            for( auto const &smokesource : dyn->mdModel->smoke_sources() ) {
+                Particles.insert( smokesource.first, dyn, smokesource.second );
+            }
+        }
+
+        if( false == in_trainset ) {
+            if( false == simulation::Vehicles.insert( dyn ) ) {
+                ErrorLog( "Bad EU7: duplicate vehicle name \"" + dyn->name() + "\"" );
+            }
+            if( ( dyn->MoverParameters->CategoryFlag == 1 )
+             && ( ( ( dyn->LightList( end::front ) & ( light::headlight_left | light::headlight_right | light::headlight_upper ) ) != 0 )
+               || ( ( dyn->LightList( end::rear ) & ( light::headlight_left | light::headlight_right | light::headlight_upper ) ) != 0 ) ) ) {
+                simulation::Lights.insert( dyn );
+            }
+        }
+    } };
+
+    {
+        scene::eu7::ScopedTimer const timer { scene::eu7::load_stats().dynamic_ms };
+        scene::eu7::load_stats().dynamics += scene.dynamics.size();
+        for( std::size_t i { 0 }; i < scene.dynamics.size(); ++i ) {
+            if( false == used_in_trainset[ i ] ) {
+                apply_dynamic( scene.dynamics[ i ], false );
+            }
+        }
+    }
+
+    {
+        scene::eu7::ScopedTimer const timer { scene::eu7::load_stats().sound_ms };
+        scene::eu7::load_stats().sounds += scene.sounds.size();
+        for( auto const &sound : scene.sounds ) {
+        apply_node_transform( sound.node );
+        auto const nodedata { node_data_from_eu7( sound.node ) };
+        auto const location { transform(
+            scene::eu7::inverse_transform_point( sound.location, sound.node.transform ),
+            scratchpad ) };
+        auto *snd { new sound_source( sound_placement::external, static_cast<float>( nodedata.range_max ) ) };
+        snd->offset( location );
+        snd->name( nodedata.name );
+        snd->deserialize( sound.wav_file, sound_type::single );
+        if( false == simulation::Sounds.insert( snd ) ) {
+            ErrorLog( "Bad EU7: duplicate sound name \"" + snd->name() + "\"" );
+        }
+        simulation::Region->insert( snd );
+        }
+    }
+
+    {
+        scene::eu7::ScopedTimer const timer { scene::eu7::load_stats().event_ms };
+        scene::eu7::load_stats().events += scene.events.size();
+        for( auto const &event : scene.events ) {
+        auto *ev { make_event_from_eu7( event ) };
+        if( ev == nullptr ) {
+            continue;
+        }
+
+        std::ostringstream body;
+        body << event.delay << ' ' << join_event_targets( event.targets ) << ' ';
+        for( auto const &[key, value] : event.payload ) {
+            if( false == key.empty() ) {
+                body << key << ' ';
+            }
+            if( false == value.empty() ) {
+                body << value << ' ';
+            }
+        }
+        if( event.delay_random != 0.0 ) {
+            body << "randomdelay " << event.delay_random << ' ';
+        }
+        if( event.delay_departure != 0.0 ) {
+            body << "departuredelay " << event.delay_departure << ' ';
+        }
+        if( event.passive ) {
+            body << "passive ";
+        }
+        body << "endevent";
+
+        cParser parser( body.str(), cParser::buffer_TEXT, "", false );
+        ev->deserialize( parser, scratchpad );
+
+        if( true == simulation::Events.insert( ev ) ) {
+            scene::Groups.insert( scene::Groups.handle(), ev );
+        }
+        else {
+            delete ev;
+        }
+        }
+    }
+
+    {
+        scene::eu7::ScopedTimer const timer { scene::eu7::load_stats().first_init_ms };
+        for( std::uint32_t i { 0 }; i < scene.first_init_count; ++i ) {
+        if( true == scratchpad.initialized ) {
+            continue;
+        }
+        if( true == scratchpad.binary.terrain ) {
+            if( false == scratchpad.binary.terrain_included ) {
+                if( false == scene::eu7::try_load_scenario_terrain( *Region, scratchpad.name ) ) {
+                    Region->deserialize( scratchpad.name );
+                }
+            }
+        }
+        simulation::Paths.InitTracks();
+        simulation::Traction.InitTraction();
+        simulation::Events.InitEvents();
+        simulation::Events.InitLaunchers();
+        simulation::Memory.InitCells();
+        if( false == scratchpad.time_initialized ) {
+            init_time();
+        }
+        scratchpad.initialized = true;
+        }
+    }
+
+    cParser dummy_parser( "", cParser::buffer_TEXT, "", false );
+
+    auto const load_eu7_trainset { [&](
+        scene::eu7::Eu7Trainset const &trainset,
+        std::vector<scene::eu7::Eu7Dynamic> const &vehicles ) {
+        if( true == scratchpad.trainset.is_open ) {
+            deserialize_endtrainset( dummy_parser, scratchpad );
+            ErrorLog( "Bad EU7: nested trainset definitions" );
+        }
+
+        scratchpad.trainset = scene::scratch_data::trainset_data();
+        scratchpad.trainset.is_open = true;
+        scratchpad.trainset.name = trainset.name;
+        scratchpad.trainset.track = trainset.track;
+        scratchpad.trainset.offset = trainset.offset;
+        scratchpad.trainset.velocity = trainset.velocity;
+        scratchpad.trainset.assignment = trainset.assignment;
+
+        std::size_t vehicle_slot { 0 };
+        for( auto const &vehicle_source : vehicles ) {
+            auto vehicle { vehicle_source };
+            if( vehicle_slot < trainset.couplings.size() ) {
+                vehicle.coupling_raw = std::to_string( trainset.couplings[ vehicle_slot ] );
+            }
+            apply_dynamic( vehicle, true );
+            ++vehicle_slot;
+        }
+
+        deserialize_endtrainset( dummy_parser, scratchpad );
+    } };
+
+    {
+        scene::eu7::ScopedTimer const timer { scene::eu7::load_stats().trainset_ms };
+        std::size_t loaded_now { 0 };
+        for( auto const &trainset : scene.trainsets ) {
+            if( eu7_should_load_trainset_now( trainset, scene ) ) {
+                std::vector<scene::eu7::Eu7Dynamic> vehicles;
+                vehicles.reserve( trainset.vehicle_indices.size() );
+                for( auto const index : trainset.vehicle_indices ) {
+                    if( index < scene.dynamics.size() ) {
+                        vehicles.push_back( scene.dynamics[ index ] );
+                    }
+                }
+                load_eu7_trainset( trainset, vehicles );
+                ++loaded_now;
+            }
+            else {
+                eu7_queue_deferred_trainset( trainset, scene );
+            }
+        }
+        scene::eu7::load_stats().trainsets += loaded_now;
+        if( false == g_deferred_eu7_trainsets.empty() ) {
+            WriteLog(
+                "EU7: odlozono " + std::to_string( g_deferred_eu7_trainsets.size() ) +
+                " skladow poza " + std::to_string( static_cast<int>( kDeferTrainsetHorizDistM ) ) +
+                "m (ladowanie w tle)" );
+        }
+    }
+}
+
+void
+state_serializer::drain_deferred_eu7_trainsets( double const max_ms ) {
+    if( g_deferred_eu7_trainsets.empty() ) {
+        return;
+    }
+
+    auto const deadline {
+        std::chrono::steady_clock::now() +
+        std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+            std::chrono::duration<double, std::milli>( max_ms ) ) };
+
+    cParser dummy_parser( "", cParser::buffer_TEXT, "", false );
+    scene::scratch_data scratchpad;
+
+    while(
+        false == g_deferred_eu7_trainsets.empty() &&
+        std::chrono::steady_clock::now() < deadline ) {
+        auto job { std::move( g_deferred_eu7_trainsets.front() ) };
+        g_deferred_eu7_trainsets.pop_front();
+
+        scene::eu7::ScopedTimer const timer { scene::eu7::load_stats().trainset_ms };
+        ++scene::eu7::load_stats().trainsets;
+
+        if( true == scratchpad.trainset.is_open ) {
+            deserialize_endtrainset( dummy_parser, scratchpad );
+            scratchpad.trainset.is_open = false;
+        }
+
+        scratchpad.trainset = scene::scratch_data::trainset_data();
+        scratchpad.trainset.is_open = true;
+        scratchpad.trainset.name = job.trainset.name;
+        scratchpad.trainset.track = job.trainset.track;
+        scratchpad.trainset.offset = job.trainset.offset;
+        scratchpad.trainset.velocity = job.trainset.velocity;
+        scratchpad.trainset.assignment = job.trainset.assignment;
+
+        std::size_t vehicle_slot { 0 };
+        for( auto const &vehicle_source : job.vehicles ) {
+            auto vehicle { vehicle_source };
+            if( vehicle_slot < job.trainset.couplings.size() ) {
+                vehicle.coupling_raw = std::to_string( job.trainset.couplings[ vehicle_slot ] );
+            }
+
+            auto datafolder { vehicle.data_folder };
+            auto skinfile { vehicle.skin_file };
+            auto mmdfile { vehicle.mmd_file };
+            replace_slashes( datafolder );
+            replace_slashes( skinfile );
+            replace_slashes( mmdfile );
+
+            auto const pathname { scratchpad.trainset.track };
+            auto const offset { vehicle.offset };
+            auto const drivertype { vehicle.driver_type };
+            auto const couplingdata { (
+                vehicle.coupling_raw.empty() ?
+                    std::to_string( vehicle.coupling ) :
+                    vehicle.coupling_raw ) };
+            auto const velocity { scratchpad.trainset.velocity };
+
+            auto const couplingdatawithparams { couplingdata.find( '.' ) };
+            auto coupling { (
+                couplingdatawithparams != std::string::npos ?
+                    std::atoi( couplingdata.substr( 0, couplingdatawithparams ).c_str() ) :
+                    std::atoi( couplingdata.c_str() ) ) };
+            if( coupling < 0 ) {
+                coupling = ( -coupling ) | coupling::permanent;
+            }
+            if( ( offset != -1.0 ) && ( std::abs( offset ) > 0.5 ) ) {
+                coupling = coupling::faux;
+            }
+            auto const params { (
+                couplingdatawithparams != std::string::npos ?
+                    couplingdata.substr( couplingdatawithparams + 1 ) :
+                    "" ) };
+
+            auto loadcount { vehicle.load_count };
+            auto loadtype { vehicle.load_type };
+
+            auto *path { simulation::Paths.find( pathname ) };
+            if( path == nullptr ) {
+                ++vehicle_slot;
+                continue;
+            }
+
+            if(
+                scratchpad.trainset.vehicles.empty() &&
+                false == path->m_events0.empty() &&
+                std::abs( velocity ) <= 1.f &&
+                scratchpad.trainset.offset >= 0.0 &&
+                scratchpad.trainset.offset < 8.0 ) {
+                scratchpad.trainset.offset = 8.0f;
+            }
+
+            auto const nodedata { node_data_from_eu7( vehicle.node ) };
+            auto *dyn { new TDynamicObject() };
+            auto const length { dyn->Init(
+                nodedata.name,
+                datafolder, skinfile, mmdfile,
+                path,
+                ( offset == -1.0 ?
+                    scratchpad.trainset.offset :
+                    scratchpad.trainset.offset - static_cast<float>( offset ) ),
+                drivertype,
+                velocity,
+                scratchpad.trainset.name,
+                loadcount, loadtype,
+                ( offset == -1.0 ),
+                params ) };
+
+            if( length != 0.0 ) {
+                scratchpad.trainset.offset -= static_cast<float>( length );
+                if(
+                    ( coupling != 0 ) &&
+                    ( dyn->MoverParameters->Couplers[ ( offset == -1.0 ? end::front : end::rear ) ].AllowedFlag &
+                      coupling::permanent ) ) {
+                    coupling |= coupling::permanent;
+                }
+                scratchpad.trainset.vehicles.emplace_back( dyn );
+                scratchpad.trainset.couplings.emplace_back( coupling );
+            }
+            else {
+                if( dyn->MyTrack != nullptr ) {
+                    dyn->MyTrack->RemoveDynamicObject( dyn );
+                }
+                delete dyn;
+            }
+
+            if( vehicle.destination ) {
+                if( false == scratchpad.trainset.vehicles.empty() ) {
+                    scratchpad.trainset.vehicles.back()->asDestination = *vehicle.destination;
+                }
+            }
+
+            if(
+                false == scratchpad.trainset.vehicles.empty() &&
+                scratchpad.trainset.vehicles.back()->mdModel != nullptr ) {
+                for( auto const &smokesource : scratchpad.trainset.vehicles.back()->mdModel->smoke_sources() ) {
+                    Particles.insert(
+                        smokesource.first,
+                        scratchpad.trainset.vehicles.back(),
+                        smokesource.second );
+                }
+            }
+
+            ++vehicle_slot;
+        }
+
+        deserialize_endtrainset( dummy_parser, scratchpad );
+    }
 }
 
 void
@@ -366,7 +1776,9 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
         // TBD: postpone loading furter and only load required blocks during the simulation?
 		if (false == Scratchpad.binary.terrain_included)
 		{
-			Region->deserialize(Scratchpad.name);
+            if( false == scene::eu7::try_load_scenario_terrain( *Region, Scratchpad.name ) ) {
+                Region->deserialize( Scratchpad.name );
+            }
 		}
 			
     }
@@ -788,15 +2200,34 @@ state_serializer::deserialize_terrain(cParser &Input, scene::scratch_data &Scrat
 	std::string line;
 	Input.getTokens(1);
 	Input >> line;
-	if (Global.file_binary_terrain && line.ends_with(".sbt"))
-	{  
-        Scratchpad.binary.terrain = Region->is_scene(line);
-		Global.file_binary_terrain_state = true;
-		Scratchpad.binary.terrain_included = true;
-		Scratchpad.terrain_name = line;
-		WriteLog("Included SBT file: " + line);
-		Region->deserialize(Scratchpad.terrain_name);
-
+	if ( Global.file_binary_terrain
+     && ( line.ends_with( ".sbt" ) || line.ends_with( ".eu7" ) ) )
+	{
+        auto const eu7path { scene::eu7::terrain_binary_path( line ) };
+        if( scene::eu7::probe_terrain_file( eu7path ) ) {
+            Scratchpad.binary.terrain = true;
+            Global.file_binary_terrain_state = true;
+            Scratchpad.binary.terrain_included = true;
+            Scratchpad.terrain_name = line;
+            WriteLog( "Included EU7 terrain: " + eu7path );
+            scene::eu7::load_terrain( *Region, eu7path );
+        }
+        else if( scene::eu7::probe_file( eu7path ) ) {
+            Scratchpad.binary.terrain = true;
+            Global.file_binary_terrain_state = true;
+            Scratchpad.binary.terrain_included = true;
+            Scratchpad.terrain_name = line;
+            WriteLog( "Included EU7 module (SBT skipped): " + eu7path );
+            scene::eu7::load_module( eu7path, *this );
+        }
+        else if( Region->is_scene( line ) ) {
+            Scratchpad.binary.terrain = true;
+            Global.file_binary_terrain_state = true;
+            Scratchpad.binary.terrain_included = true;
+            Scratchpad.terrain_name = line;
+            WriteLog( "Included SBT file: " + line );
+            Region->deserialize( Scratchpad.terrain_name );
+        }
     }
 
     skip_until(Input, "endterrain");
@@ -856,6 +2287,18 @@ state_serializer::deserialize_endtrainset( cParser &Input, scene::scratch_data &
                 light::redmarker_left | light::redmarker_right | light::rearendsignals :
                 light::rearendsignals ) );
     }
+
+    for( auto *vehicle : Scratchpad.trainset.vehicles ) {
+        if( false == simulation::Vehicles.insert( vehicle ) ) {
+            ErrorLog( "Bad trainset: duplicate vehicle name \"" + vehicle->name() + "\"" );
+        }
+        if( ( vehicle->MoverParameters->CategoryFlag == 1 )
+         && ( ( ( vehicle->LightList( end::front ) & ( light::headlight_left | light::headlight_right | light::headlight_upper ) ) != 0 )
+           || ( ( vehicle->LightList( end::rear ) & ( light::headlight_left | light::headlight_right | light::headlight_upper ) ) != 0 ) ) ) {
+            simulation::Lights.insert( vehicle );
+        }
+    }
+
     // all done
     Scratchpad.trainset.is_open = false;
 }

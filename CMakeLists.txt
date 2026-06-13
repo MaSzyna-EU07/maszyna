@@ -48,6 +48,7 @@ file(GLOB HEADERS "*.h"
 "global_include/*.h"
 "simulation/*.h"
 "scene/*.h"
+"scene/eu7/*.h"
 "rendering/*.h"
 "audio/*.h"
 "environment/*.h"
@@ -82,6 +83,7 @@ option(GENERATE_PDB "Generate executable with program debugging symbols" ON)
 option(ENABLE_MCC "Enable multicore compilation" ON)
 option(WITHDUMPGEN "Enable generating DMP files on crash" ON)
 option(ENABLE_AVX2 "Enable AVX2 instruction set (requires AVX2-capable CPU, Haswell/2013 or newer)" ON)
+option(WITH_EU7_PARSER "Embed EU07 SCM→EU7 baker (eu07-parser)" ON)
 
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
@@ -148,6 +150,17 @@ set(SOURCES
 "stdafx.cpp"
 "input/messaging.cpp"
 "scene/scene.cpp"
+"scene/eu7/eu7_loader.cpp"
+"scene/eu7/eu7_load_stats.cpp"
+"scene/eu7/eu7_pack_bench.cpp"
+"scene/eu7/eu7_section.cpp"
+"scene/eu7/eu7_section_stream.cpp"
+"scene/eu7/eu7_model_prefetch.cpp"
+"scene/eu7/eu7_reader.cpp"
+"scene/eu7/eu7_emit.cpp"
+"scene/eu7/eu7_apply.cpp"
+"scene/eu7/eu7_bake.cpp"
+"scene/eu7/eu7_parameters.cpp"
 "scene/scenenode.cpp"
 "simulation/simulation.cpp"
 "model/vertex.cpp"
@@ -392,9 +405,32 @@ if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
     add_compile_options("/utf-8")
 endif()
 
+find_package(Threads REQUIRED)
+
+set(EU07_BAKE_LIBS "")
+if(WITH_EU7_PARSER)
+	set(EU07_PARSER_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/eu07-parser/include")
+	if(NOT EXISTS "${EU07_PARSER_INCLUDE}/eu07/parser.hpp")
+		message(FATAL_ERROR "EU07 parser headers missing at ${EU07_PARSER_INCLUDE}. Sync eu07-parser/include from the parser repo.")
+	endif()
+
+	add_library(eu07_bake STATIC "scene/eu7/eu7_bake_parser.cpp")
+	target_compile_features(eu07_bake PUBLIC cxx_std_23)
+	set_target_properties(eu07_bake PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
+	target_include_directories(eu07_bake PRIVATE "${EU07_PARSER_INCLUDE}")
+	target_link_libraries(eu07_bake PUBLIC Threads::Threads)
+	if(MSVC)
+		target_compile_options(eu07_bake PRIVATE /utf-8 /Zc:__cplusplus /EHsc /wd4834)
+	endif()
+	list(APPEND EU07_BAKE_LIBS eu07_bake)
+endif()
+
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE ${DEFINITIONS})
+if(WITH_EU7_PARSER)
+	target_compile_definitions(${PROJECT_NAME} PRIVATE WITH_EU7_PARSER=1)
+endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
 	"."
@@ -442,6 +478,7 @@ if(NOT ${CMAKE_VERSION} VERSION_LESS "3.16.0")
 		target_precompile_headers(${PROJECT_NAME} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/stdafx.h>")
 		set_source_files_properties("/glad/src/glad.c" "ref/dds-ktx/src/dds-ktx.c" "stb/stb_image.c"
 			"imgui/imgui.cpp" "imgui/imgui_demo.cpp" "imgui/imgui_draw.cpp" "imgui/imgui_widgets.cpp" "imgui/imgui_impl_glfw.cpp"
+			"scene/eu7/eu7_bake_parser.cpp"
 			PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
 	endif()
 endif()
@@ -483,8 +520,7 @@ else()
 	target_link_libraries(${PROJECT_NAME} ${PNG_LIBRARIES})
 endif()
 
-find_package(Threads REQUIRED)
-target_link_libraries(${PROJECT_NAME} Threads::Threads)
+target_link_libraries(${PROJECT_NAME} Threads::Threads ${EU07_BAKE_LIBS})
 
 find_package(GLM REQUIRED)
 target_include_directories(${PROJECT_NAME} PRIVATE ${GLM_INCLUDE_DIR})

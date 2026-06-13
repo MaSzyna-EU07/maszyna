@@ -13,8 +13,21 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 
 class scenarioloader_mode : public application_mode {
+
+    enum class load_phase {
+        deserialize,
+        eu7_load,
+        finished
+    };
+
 	std::shared_ptr<simulation::deserializer_state> state;
 	std::chrono::system_clock::time_point timestart;
+    load_phase m_phase { load_phase::deserialize };
+    std::chrono::steady_clock::time_point m_eu7_load_started {};
+    bool m_eu7_stream_primed { false };
+    float m_bar_progress { 0.f };
+
+    void update_bar_progress( float progress );
 
 public:
 // constructors
@@ -28,6 +41,7 @@ public:
     void enter() override;
     // maintenance method, called when the mode is deactivated
     void exit() override;
+    void set_progress( float Progress = 0.f, float Subtaskprogress = 0.f ) override;
     // input handlers
     void on_key( int const Key, int const Scancode, int const Action, int const Mods ) override { ; }
     void on_cursor_pos( double const Horizontal, double const Vertical ) override { ; }

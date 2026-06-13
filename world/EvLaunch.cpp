@@ -86,7 +86,8 @@ bool TEventLauncher::Load(cParser *parser)
     parser->getTokens();
     *parser >> token;
     asEvent2Name = token; // drugi event
-    if ((asEvent2Name == "end") || (asEvent2Name == "condition") || (asEvent2Name == "traintriggered"))
+    if ((asEvent2Name == "end") || (asEvent2Name == "endeventlauncher") ||
+        (asEvent2Name == "condition") || (asEvent2Name == "traintriggered"))
     { // drugiego eventu może nie być, bo są z tym problemy, ale ciii...
 		token = asEvent2Name; // rozpoznane słowo idzie do dalszego przetwarzania
         asEvent2Name = "none"; // a drugiego eventu nie ma

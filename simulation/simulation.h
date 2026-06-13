@@ -1,4 +1,4 @@
-﻿/*
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -58,6 +58,11 @@ public:
     // stores class data in specified file, in legacy (text) format
     void
         export_as_text( std::string const &Scenariofile ) const;
+    // laduje pelny modul EU7B (wszystkie chunki)
+    bool
+        load_eu7_module( std::string const &Path );
+    void
+        drain_deferred_eu7_trainsets( double MaxMs = 12.0 );
 
 private:
 // members

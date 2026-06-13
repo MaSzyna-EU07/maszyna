@@ -12,6 +12,18 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 
 #include "scene/scenenodegroups.h"
+#include "scene/eu7/eu7_loader.h"
+#include "utilities/Globals.h"
+#include "utilities/utilities.h"
+
+namespace scene {
+class basic_region;
+}
+namespace simulation {
+class state_manager;
+extern scene::basic_region *Region;
+extern state_manager State;
+}
 
 /*
     MaSzyna EU07 locomotive simulator parser
@@ -326,9 +338,39 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
 		return;
 	}
 
-	const bool isTerrain = contains(includefile, "_ter.scm");
+	const bool isTerrain =
+        contains( includefile, "_ter.scm" ) || contains( includefile, "_ter.eu7" ) ||
+        includefile.ends_with( ".eu7" );
+    auto const eu7path {
+        scene::eu7::include_eu7_path( mPath, mFile, includefile ) };
+    auto const resolved_include {
+        scene::eu7::resolve_parser_include_path( mPath, mFile, includefile ) };
+    if ( scene::eu7::is_module_loaded( eu7path ) ) {
+        readParameters( srcParser );
+        return;
+    }
+    if ( scene::eu7::should_use_binary_module( resolved_include ) && simulation::Region != nullptr ) {
+        if ( isTerrain && true == Global.file_binary_terrain ) {
+            if ( scene::eu7::probe_terrain_file( eu7path ) ) {
+                if ( scene::eu7::load_terrain( *simulation::Region, eu7path ) ) {
+                    Global.file_binary_terrain_state = true;
+                    WriteLog( "EU7 terrain loaded, ignoring: " + includefile );
+                    readParameters( srcParser );
+                    return;
+                }
+            }
+        }
+        else if ( simulation::State.load_eu7_module( eu7path ) ) {
+            WriteLog( "EU7 module loaded, ignoring: " + includefile );
+            readParameters( srcParser );
+            return;
+        }
+    }
+    else if ( scene::eu7::probe_file( eu7path ) ) {
+        WriteLog( "EU7: przestarzaly .eu7, fallback SCM: " + includefile );
+    }
 	if (isTerrain && true == Global.file_binary_terrain_state) {
-		WriteLog("SBT found, ignoring: " + includefile);
+		WriteLog("Binary terrain present, ignoring: " + includefile);
 		readParameters(srcParser); // preserve original side-effect: still consume parameters
 		return;
 	}

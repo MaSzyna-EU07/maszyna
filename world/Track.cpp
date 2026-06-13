@@ -15,6 +15,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 
 #include "world/Track.h"
+
+#include "scene/eu7/eu7_types.h"
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
 #include "world/Event.h"
@@ -532,6 +534,29 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         }
     }
 
+    build_segments_from_paths();
+
+    parser->getTokens();
+    *parser >> token;
+    str = token;
+    while( str != "endtrack" ) {
+        parser->getTokens();
+        *parser >> token;
+        apply_tail_keyword( str, token );
+        parser->getTokens();
+        *parser >> token;
+        str = token;
+    }
+    finalize_track_location();
+}
+
+void
+TTrack::build_segments_from_paths() {
+
+    glm::dvec3 pt, vec, p1, p2, cp1, cp2, p3, p4, cp3, cp4;
+    double a1, a2, r1, r2, r3, r4;
+    double segsize = 5.0;
+
     switch (eType) {
         // Ra: łuki segmentowane co 5m albo 314-kątem foremnym
     case tt_Table: {
@@ -807,177 +832,217 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         break;
         }
     }
+}
 
-    // optional attributes
-    parser->getTokens();
-    *parser >> token;
-    str = token;
-    while (str != "endtrack")
-    {
-        if (str == "event0")
-        {
-            parser->getTokens();
-            *parser >> token;
-            m_events0.emplace_back( token, nullptr );
-        }
-        else if (str == "event1")
-        {
-            parser->getTokens();
-            *parser >> token;
-            m_events1.emplace_back( token, nullptr );
-        }
-        else if (str == "event2")
-        {
-            parser->getTokens();
-            *parser >> token;
-            m_events2.emplace_back( token, nullptr );
-        }
-        else if (str == "eventall0")
-        {
-            parser->getTokens();
-            *parser >> token;
-            m_events0all.emplace_back( token, nullptr );
-        }
-        else if (str == "eventall1")
-        {
-            parser->getTokens();
-            *parser >> token;
-            m_events1all.emplace_back( token, nullptr );
-        }
-        else if (str == "eventall2")
-        {
-            parser->getTokens();
-            *parser >> token;
-            m_events2all.emplace_back( token, nullptr );
-        }
-        else if (str == "velocity")
-        {
-            parser->getTokens();
-            *parser >> fVelocity; //*0.28; McZapkie-010602
-            if (SwitchExtension) // jeśli tor ruchomy
-                if (std::abs(fVelocity) >= 1.0) //żeby zero nie ograniczało dożywotnio
-                    // zapamiętanie głównego ograniczenia; a np. -40 ogranicza tylko na bok
-                    SwitchExtension->fVelocity = static_cast<float>(fVelocity);
-        }
-        else if (str == "isolated")
-        { // obwód izolowany, do którego tor należy
-            parser->getTokens();
-            *parser >> token;
-            Isolated.push_back(TIsolated::Find(token));
-        }
-        else if (str == "angle1")
-        { // kąt ścięcia końca od strony 1
-            // NOTE: not used/implemented
-            parser->getTokens();
-            *parser >> a1;
-            //Segment->AngleSet(0, a1);
-        }
-        else if (str == "angle2")
-        { // kąt ścięcia końca od strony 2
-          // NOTE: not used/implemented
-            parser->getTokens();
-            *parser >> a2;
-            //Segment->AngleSet(1, a2);
-        }
-        else if (str == "fouling1")
-        { // wskazanie modelu ukresu w kierunku 1
-          // NOTE: not used/implemented
-            parser->getTokens();
-            *parser >> token;
-            // nFouling[0]=
-        }
-        else if (str == "fouling2")
-        { // wskazanie modelu ukresu w kierunku 2
-          // NOTE: not used/implemented
-            parser->getTokens();
-            *parser >> token;
-            // nFouling[1]=
-        }
-        else if (str == "overhead")
-        { // informacja o stanie sieci: 0-jazda bezprądowa, >0-z opuszczonym i ograniczeniem prędkości
-            parser->getTokens();
-            *parser >> fOverhead;
-            if (fOverhead > 0.0)
-                iAction |= 0x40; // flaga opuszczenia pantografu (tor uwzględniany w skanowaniu jako
-            // ograniczenie dla pantografujących)
-        }
-        else if( str == "vradius" ) {
-            // y-axis track radius
-            // NOTE: not used/implemented
-            parser->getTokens();
-            *parser >> fVerticalRadius;
-        }
-        else if( str == "trackbed" ) {
-            // switch trackbed texture
-            auto const trackbedtexture { parser->getToken<std::string>() };
-            if( eType == tt_Switch ) {
-                SwitchExtension->m_material3 = GfxRenderer->Fetch_Material( trackbedtexture );
-            }
-        }
-        else if( str == "railprofile" ) {
-            // rail profile
-            auto const railprofile { parser->getToken<std::string>() };
-            if( iCategoryFlag == 1 ) {
-                m_profile1 = fetch_track_rail_profile( railprofile );
-            }
-        }
-        else if( str == "friction" ) {
-            // memory cell holding friction value modifiers
-            m_friction.first = parser->getToken<std::string>();
-        }
-        else if( str == "sleepermodel" ) {
-            // sleepermodel <frequency> <model> <skin> <offsetX> <offsetY> <offsetZ> <ballastZ>
-            // - frequency: meters between consecutive sleeper instances (must be > 0)
-            // - model:     path to the .e3d sleeper model
-            // - skin:      replacable skin path, or "none" for the model's defaults
-            // - offset:    local-space offset applied per-instance (x=left/right, y=forward/back, z=up/down)
-            // - ballastZ:  vertical shift applied to the auto-generated trackbed (ballast). negative pushes ballast down.
-            float frequency { 0.f };
-            float offsetx { 0.f }, offsety { 0.f }, offsetz { 0.f };
-            float ballastz { 0.f };
-            parser->getTokens( 1, false ); *parser >> frequency;
-            auto modelpath { parser->getToken<std::string>( false ) };
-            auto skinpath  { parser->getToken<std::string>( false ) };
-            parser->getTokens( 3, false ); *parser >> offsetx >> offsety >> offsetz;
-            parser->getTokens( 1, false ); *parser >> ballastz;
+void
+TTrack::apply_tail_keyword( std::string const &key, std::string const &value ) {
 
-            if( frequency <= 0.01f ) {
-                ErrorLog( "Bad track: invalid sleepermodel frequency (" + std::to_string( frequency ) + ") for track \"" + m_name + "\"" );
-            }
-            else {
-                replace_slashes( modelpath );
-                m_sleeper_enabled = true;
-                m_sleeper_frequency = frequency;
-                m_sleeper_model_name = modelpath;
-                m_sleeper_skin_name = skinpath;
-                m_sleeper_offset = glm::vec3( offsetx, offsety, offsetz );
-                m_sleeper_ballast_z = ballastz;
-                // model and skin are resolved (and instance transforms baked) in build_sleeper_transforms,
-                // called after segment initialisation so the path geometry is final.
-            }
-        }
-        else
-            ErrorLog("Bad track: unknown property: \"" + str + "\" defined for track \"" + m_name + "\"");
-        parser->getTokens();
-        *parser >> token;
-		str = token;
+    if( key == "event0" ) {
+        m_events0.emplace_back( value, nullptr );
     }
-    // alternatywny zapis nazwy odcinka izolowanego - po znaku "@" w nazwie toru
-    if ((i = m_name.find("@")) != std::string::npos && i < m_name.length())
-    {
-        Isolated.push_back(TIsolated::Find(m_name.substr(i + 1, m_name.length())));
-        m_name = m_name.substr(0, i - 1); // usunięcie z nazwy
+    else if( key == "event1" ) {
+        m_events1.emplace_back( value, nullptr );
+    }
+    else if( key == "event2" ) {
+        m_events2.emplace_back( value, nullptr );
+    }
+    else if( key == "eventall0" ) {
+        m_events0all.emplace_back( value, nullptr );
+    }
+    else if( key == "eventall1" ) {
+        m_events1all.emplace_back( value, nullptr );
+    }
+    else if( key == "eventall2" ) {
+        m_events2all.emplace_back( value, nullptr );
+    }
+    else if( key == "velocity" ) {
+        fVelocity = std::atof( value.c_str() );
+        if( SwitchExtension && std::abs( fVelocity ) >= 1.0 ) {
+            SwitchExtension->fVelocity = static_cast<float>( fVelocity );
+        }
+    }
+    else if( key == "isolated" ) {
+        Isolated.push_back( TIsolated::Find( value ) );
+    }
+    else if( key == "overhead" ) {
+        fOverhead = std::atof( value.c_str() );
+        if( fOverhead > 0.0 ) {
+            iAction |= 0x40;
+        }
+    }
+    else if( key == "trackbed" ) {
+        if( eType == tt_Switch ) {
+            SwitchExtension->m_material3 = GfxRenderer->Fetch_Material( value );
+        }
+    }
+    else if( key == "railprofile" ) {
+        if( iCategoryFlag == 1 ) {
+            m_profile1 = fetch_track_rail_profile( value );
+        }
+    }
+    else if( key == "friction" ) {
+        m_friction.first = value;
+    }
+    else if( key == "sleepermodel" ) {
+        cParser sleeperparser( value );
+        float frequency { 0.f };
+        float offsetx { 0.f }, offsety { 0.f }, offsetz { 0.f };
+        float ballastz { 0.f };
+        sleeperparser.getTokens( 1, false );
+        sleeperparser >> frequency;
+        auto const modelpath { sleeperparser.getToken<std::string>( false ) };
+        auto const skinpath { sleeperparser.getToken<std::string>( false ) };
+        sleeperparser.getTokens( 3, false );
+        sleeperparser >> offsetx >> offsety >> offsetz;
+        sleeperparser.getTokens( 1, false );
+        sleeperparser >> ballastz;
+        if( frequency <= 0.01f ) {
+            ErrorLog(
+                "Bad track: invalid sleepermodel frequency (" + std::to_string( frequency ) +
+                ") for track \"" + m_name + "\"" );
+        }
+        else {
+            auto resolved_model { modelpath };
+            replace_slashes( resolved_model );
+            m_sleeper_enabled = true;
+            m_sleeper_frequency = frequency;
+            m_sleeper_model_name = resolved_model;
+            m_sleeper_skin_name = skinpath;
+            m_sleeper_offset = glm::vec3( offsetx, offsety, offsetz );
+            m_sleeper_ballast_z = ballastz;
+        }
+    }
+    else if( key != "angle1" && key != "angle2" && key != "fouling1" && key != "fouling2" && key != "vradius" ) {
+        ErrorLog( "Bad track: unknown property: \"" + key + "\" defined for track \"" + m_name + "\"" );
+    }
+}
+
+void
+TTrack::finalize_track_location() {
+
+    std::size_t const at_sign { m_name.find( '@' ) };
+    if( at_sign != std::string::npos && at_sign < m_name.length() ) {
+        Isolated.push_back( TIsolated::Find( m_name.substr( at_sign + 1, m_name.length() ) ) );
+        m_name = m_name.substr( 0, at_sign - 1 );
     }
 
-    // calculate path location
     location( (
         CurrentSegment()->FastGetPoint_0()
         + CurrentSegment()->FastGetPoint( 0.5 )
         + CurrentSegment()->FastGetPoint_1() )
         / 3.0 );
-    // sleeper transforms are baked later in create_geometry(), once the owning cell has
-    // assigned this track its m_origin (otherwise the local-space matrices would be relative
-    // to a stale origin and the renderer would draw sleepers in the wrong place).
+}
+
+void
+TTrack::LoadFromEu7( scene::eu7::Eu7Track const &track ) {
+
+    switch( track.track_type ) {
+    case scene::eu7::Eu7TrackType::Switch:
+        eType = tt_Switch;
+        iCategoryFlag = 1;
+        break;
+    case scene::eu7::Eu7TrackType::Table:
+        eType = tt_Table;
+        iCategoryFlag = 1;
+        break;
+    case scene::eu7::Eu7TrackType::Cross:
+        eType = tt_Cross;
+        iCategoryFlag = static_cast<int>( scene::eu7::Eu7TrackCategory::Road );
+        break;
+    case scene::eu7::Eu7TrackType::Tributary:
+        eType = tt_Tributary;
+        iCategoryFlag = static_cast<int>( scene::eu7::Eu7TrackCategory::Water );
+        break;
+    default:
+        eType = tt_Normal;
+        iCategoryFlag = static_cast<int>( track.category );
+        break;
+    }
+
+    fTrackWidth = track.track_width;
+    fFriction = track.friction;
+    fSoundDistance = track.sound_distance;
+    if( eType == tt_Switch ) {
+        fSoundDistance = 10.0f;
+    }
+    fTrackWidth2 = fTrackWidth;
+    iQualityFlag = track.quality_flag;
+    iDamageFlag = track.damage_flag;
+    if( iDamageFlag & 128 ) {
+        iAction |= 0x80;
+    }
+
+    switch( track.environment ) {
+    case scene::eu7::Eu7TrackEnvironment::Flat:
+        eEnvironment = e_flat;
+        break;
+    case scene::eu7::Eu7TrackEnvironment::Mountains:
+        eEnvironment = e_mountains;
+        break;
+    case scene::eu7::Eu7TrackEnvironment::Canyon:
+        eEnvironment = e_canyon;
+        break;
+    case scene::eu7::Eu7TrackEnvironment::Tunnel:
+        eEnvironment = e_tunnel;
+        break;
+    case scene::eu7::Eu7TrackEnvironment::Bridge:
+        eEnvironment = e_bridge;
+        break;
+    case scene::eu7::Eu7TrackEnvironment::Bank:
+        eEnvironment = e_bank;
+        break;
+    default:
+        eEnvironment = e_unknown;
+        break;
+    }
+
+    m_visible = track.node.visible;
+    if( track.visibility ) {
+        auto mat1 { track.visibility->material1 };
+        replace_slashes( mat1 );
+        m_material1 = (
+            mat1 == "none" ?
+                null_handle :
+                GfxRenderer->Fetch_Material( mat1 ) );
+        fTexLength = track.visibility->tex_length;
+        if( fTexLength < 0.01f ) {
+            fTexLength = 4.f;
+        }
+        auto mat2 { track.visibility->material2 };
+        replace_slashes( mat2 );
+        m_material2 = (
+            mat2 == "none" ?
+                null_handle :
+                GfxRenderer->Fetch_Material( mat2 ) );
+        fTexHeight1 = track.visibility->tex_height1;
+        fTexWidth = track.visibility->tex_width;
+        fTexSlope = track.visibility->tex_slope;
+        if( iCategoryFlag & 4 ) {
+            fTexHeight1 = -fTexHeight1;
+        }
+    }
+
+    Init();
+    m_paths.clear();
+    m_paths.reserve( track.paths.size() );
+    for( auto const &source : track.paths ) {
+        segment_data seg;
+        seg.points[ segment_data::point::start ] = source.p_start;
+        seg.rolls[ 0 ] = static_cast<float>( source.roll_start );
+        seg.points[ segment_data::point::control1 ] = source.cp_out;
+        seg.points[ segment_data::point::control2 ] = source.cp_in;
+        seg.points[ segment_data::point::end ] = source.p_end;
+        seg.rolls[ 1 ] = static_cast<float>( source.roll_end );
+        seg.radius = source.radius;
+        m_paths.push_back( seg );
+    }
+
+    build_segments_from_paths();
+
+    for( auto const &[key, value] : track.tail_keywords ) {
+        apply_tail_keyword( key, value );
+    }
+    finalize_track_location();
 }
 
 bool TTrack::AssignEvents() {

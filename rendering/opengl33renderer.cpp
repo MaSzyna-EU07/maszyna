@@ -1,4 +1,4 @@
-﻿/*
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "vehicle/Train.h"
 #include "vehicle/Camera.h"
+#include "scene/eu7/eu7_section_stream.h"
 #include "simulation/simulation.h"
 #include "utilities/Logs.h"
 #include "simulation/simulationtime.h"
@@ -450,6 +451,7 @@ bool opengl33_renderer::init_viewport(viewport_config &vp)
 	model_ubo->bind_uniform();
 	scene_ubo->bind_uniform();
 	light_ubo->bind_uniform();
+	// instance_ubo->bind_uniform();
 
 	if (!Global.gfx_skippipeline)
 	{
@@ -732,7 +734,9 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			m_current_viewport = &vp;
 		}
 
-		if ((!simulation::is_ready) || (Global.gfx_skiprendering))
+		if( ( false == simulation::is_ready )
+		 || scene::eu7::loading_screen_blocks_world( scene::eu7::stream_loading_position() )
+		 || Global.gfx_skiprendering )
 		{
 			gl::framebuffer::unbind();
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -2794,6 +2798,10 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 	// still happens inside Render_Instanced(), so correctness is unchanged -- only
 	// the number of calls and glBufferSubData round-trips drops sharply.
 	// (For pickscenery/pickcontrols modes the map stays empty, so this is a no-op.)
+	// Restore the camera view matrix before flushing: earlier draws in this pass
+	// (vehicles, section offsets, etc.) may have left stale transforms on the stack.
+	// OpenGLMatrices.mode( GL_MODELVIEW );
+	// OpenGLMatrices.load_matrix( glm::mat4{ glm::mat3{ m_renderpass.pass_camera.modelview() } } );
 	for( auto const &bucket : m_frame_instance_buckets ) {
 		Render_Instanced( bucket.first.pModel, bucket.second );
 	}
@@ -2818,6 +2826,8 @@ void opengl33_renderer::draw(const gfx::geometry_handle &handle)
 	if( m_current_instance_count > 0 ) {
 		// inside Render_Instanced(): one GL instanced draw replaces what would
 		// otherwise be N regular draws (one per instance) at this submodel
+		// model_ubo->bind_uniform();
+		// instance_ubo->bind_uniform();
 		m_geometry.draw_instanced( handle, m_current_instance_count );
 	}
 	else {
@@ -3014,6 +3024,11 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 	if( Model == nullptr ) { return; }
 	if( Instances.empty() ) { return; }
 
+	// Earlier draws in this pass may have left stale transforms on the matrix
+	// stack; restore the camera view before we start an instanced batch.
+	// OpenGLMatrices.mode( GL_MODELVIEW );
+	// OpenGLMatrices.load_matrix( glm::mat4{ glm::mat3{ m_renderpass.pass_camera.modelview() } } );
+
 	// 1. Visibility / distance cull. Build parallel arrays of surviving
 	// instances and their precomputed camera-space root modelview matrices.
 	// m_instance_modelviews is a persistent member reused across every
@@ -3024,6 +3039,9 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 	m_instance_modelviews.clear();
 	m_instance_modelviews.reserve( Instances.size() );
 
+	// Camera rotation for this pass — same source as setup_matrices(), not the
+	// matrix stack (earlier draws in this pass may have left stale transforms).
+	// glm::mat4 const view_matrix = glm::mat4{ glm::mat3{ m_renderpass.pass_camera.modelview() } };
 	// Pull the current pass camera/view transform once. We use the current GL
 	// modelview matrix as the view matrix because at the point Render_Instanced
 	// is called, OpenGLMatrices is set to the camera view (scene root) — no
@@ -3101,6 +3119,7 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 		std::size_t const this_batch = std::min<std::size_t>( total - offset_idx, gl::MAX_INSTANCES_PER_BATCH );
 
 		// 2a. Upload N modelviews to instance_ubo[0..N-1].
+		// instance_ubo->bind_uniform();
 		instance_ubo->update(
 			reinterpret_cast<uint8_t const *>( m_instance_modelviews.data() + offset_idx ),
 			0,

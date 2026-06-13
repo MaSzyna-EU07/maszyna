@@ -74,11 +74,22 @@ struct node_data {
     std::string type;
 };
 
+class shape_node;
+class lines_node;
+
+namespace eu7 {
+struct Eu7Shape;
+struct Eu7Lines;
+shape_node build_shape_node( Eu7Shape const &Source );
+lines_node build_lines_node( Eu7Lines const &Source );
+} // namespace eu7
+
 // holds unique piece of geometry, covered with single material
 class shape_node
 {
 
     friend class basic_region; // region might want to modify node content when it's being inserted
+    friend shape_node eu7::build_shape_node( eu7::Eu7Shape const & );
 
 public:
 // types
@@ -176,6 +187,7 @@ shape_node::data() const {
 class lines_node
 {
     friend class basic_region; // region might want to modify node content when it's being inserted
+    friend lines_node eu7::build_lines_node( eu7::Eu7Lines const & );
 
 public:
 // types

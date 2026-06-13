@@ -2235,6 +2235,84 @@ make_event( cParser &Input, scene::scratch_data &Scratchpad ) {
     return event;
 }
 
+basic_event *
+make_event_from_eu7( scene::eu7::Eu7Event const &event ) {
+
+    std::string const name { ToLower( (
+        event.ignored ?
+            std::string{ "none_" } + event.name :
+            event.name ) ) };
+    std::string type;
+
+    switch( event.type ) {
+    case scene::eu7::Eu7EventType::AddValues:
+        type = "addvalues";
+        break;
+    case scene::eu7::Eu7EventType::UpdateValues:
+        type = "updatevalues";
+        break;
+    case scene::eu7::Eu7EventType::CopyValues:
+        type = "copyvalues";
+        break;
+    case scene::eu7::Eu7EventType::GetValues:
+        type = "getvalues";
+        break;
+    case scene::eu7::Eu7EventType::PutValues:
+        type = "putvalues";
+        break;
+    case scene::eu7::Eu7EventType::Whois:
+        type = "whois";
+        break;
+    case scene::eu7::Eu7EventType::LogValues:
+        type = "logvalues";
+        break;
+    case scene::eu7::Eu7EventType::Multiple:
+        type = "multiple";
+        break;
+    case scene::eu7::Eu7EventType::Switch:
+        type = "switch";
+        break;
+    case scene::eu7::Eu7EventType::TrackVel:
+        type = "trackvel";
+        break;
+    case scene::eu7::Eu7EventType::Sound:
+        type = "sound";
+        break;
+    case scene::eu7::Eu7EventType::Texture:
+        type = "texture";
+        break;
+    case scene::eu7::Eu7EventType::Animation:
+        type = "animation";
+        break;
+    case scene::eu7::Eu7EventType::Lights:
+        type = "lights";
+        break;
+    case scene::eu7::Eu7EventType::Voltage:
+        type = "voltage";
+        break;
+    case scene::eu7::Eu7EventType::Visible:
+        type = "visible";
+        break;
+    case scene::eu7::Eu7EventType::Friction:
+        type = "friction";
+        break;
+    case scene::eu7::Eu7EventType::Message:
+        type = "message";
+        break;
+    default:
+        ErrorLog( "Bad EU7 event: unrecognized type for event \"" + name + "\"" );
+        return nullptr;
+    }
+
+    cParser parser( name + " " + type, cParser::buffer_TEXT, "", false );
+    scene::scratch_data scratch;
+    auto *result { make_event( parser, scratch ) };
+    if( result != nullptr && event.passive ) {
+        result->m_passive = true;
+    }
+    return result;
+}
+
 //---------------------------------------------------------------------------
 
 event_manager::~event_manager() {

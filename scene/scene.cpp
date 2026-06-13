@@ -359,6 +359,21 @@ basic_cell::insert( TAnimModel *Instance ) {
 
     m_active = true;
 
+    if( Instance->m_eu7_pack && Instance->m_instanceable ) {
+        m_instancesopaque.emplace_back( Instance );
+        if( Instance->Model() != nullptr ) {
+            instance_bucket_key key;
+            key.pModel = Instance->Model();
+            auto const *mat = Instance->Material();
+            if( mat != nullptr ) {
+                for( int i = 0; i < 5; ++i ) { key.skins[ i ] = mat->replacable_skins[ i ]; }
+            }
+            m_instancebuckets_opaque[ key ].emplace_back( Instance );
+        }
+        enclose_area( Instance );
+        return;
+    }
+
     auto const flags = Instance->Flags();
     auto alpha =
         ( Instance->Material() != nullptr ?

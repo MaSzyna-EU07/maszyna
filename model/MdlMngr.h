@@ -23,6 +23,7 @@ class TModelsManager {
 public:
     // McZapkie: dodalem sciezke, notabene Path!=Patch :)
 	static TModel3d *GetModel(std::string const &Name, bool const dynamic = false, bool const Logerrors = true , int uid = 0);
+    [[nodiscard]] static bool IsModelCached( std::string const &Name );
 
 private:
 // types:

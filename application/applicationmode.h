@@ -32,7 +32,7 @@ public:
 	void begin_ui_frame() {
 		    if( m_userinterface != nullptr ) {
 				m_userinterface->begin_ui_frame(); } }
-    inline
+    virtual
     void set_progress( float const Progress = 0.f, float const Subtaskprogress = 0.f ) {
             if( m_userinterface != nullptr ) {
                 m_userinterface->set_progress( Progress, Subtaskprogress ); } }

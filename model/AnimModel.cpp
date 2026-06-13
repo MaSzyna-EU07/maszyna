@@ -15,6 +15,9 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "model/AnimModel.h"
 
+#include <unordered_map>
+
+#include "scene/eu7/eu7_pack_bench.h"
 #include "rendering/renderer.h"
 #include "model/MdlMngr.h"
 #include "simulation/simulation.h"
@@ -277,6 +280,170 @@ TAnimModel::is_keyword( std::string const &Token ) const {
         || ( Token == "notransition" );
 }
 
+bool
+TAnimModel::LoadEu7(
+    std::string const &model_file,
+    std::string const &texture_file,
+    std::vector<float> const &light_states,
+    std::vector<std::uint32_t> const &light_colors,
+    bool const transition,
+    bool const ter ) {
+    auto name { model_file };
+    auto texture { texture_file };
+    replace_slashes( name );
+    replace_slashes( texture );
+    if( false == Init( name, texture ) ) {
+        if( name != "notload" ) {
+            if( ter ) {
+                if( name.ends_with( ".t3d" ) ) {
+                    name[ name.length() - 3 ] = 'e';
+                }
+#ifdef EU07_USE_OLD_TERRAINCODE
+                Global.asTerrainModel = name;
+                WriteLog( "Terrain model \"" + name + "\" will be created." );
+#endif
+            }
+            else {
+                ErrorLog( "Missed file: " + name );
+            }
+        }
+        return true;
+    }
+
+    LightsOn[ 0 ] = pModel->GetFromName( "Light_On00" );
+    LightsOn[ 1 ] = pModel->GetFromName( "Light_On01" );
+    LightsOn[ 2 ] = pModel->GetFromName( "Light_On02" );
+    LightsOn[ 3 ] = pModel->GetFromName( "Light_On03" );
+    LightsOn[ 4 ] = pModel->GetFromName( "Light_On04" );
+    LightsOn[ 5 ] = pModel->GetFromName( "Light_On05" );
+    LightsOn[ 6 ] = pModel->GetFromName( "Light_On06" );
+    LightsOn[ 7 ] = pModel->GetFromName( "Light_On07" );
+    LightsOff[ 0 ] = pModel->GetFromName( "Light_Off00" );
+    LightsOff[ 1 ] = pModel->GetFromName( "Light_Off01" );
+    LightsOff[ 2 ] = pModel->GetFromName( "Light_Off02" );
+    LightsOff[ 3 ] = pModel->GetFromName( "Light_Off03" );
+    LightsOff[ 4 ] = pModel->GetFromName( "Light_Off04" );
+    LightsOff[ 5 ] = pModel->GetFromName( "Light_Off05" );
+    LightsOff[ 6 ] = pModel->GetFromName( "Light_Off06" );
+    LightsOff[ 7 ] = pModel->GetFromName( "Light_Off07" );
+    sm_winter_variant = pModel->GetFromName( "winter_variant" );
+    sm_spring_variant = pModel->GetFromName( "spring_variant" );
+    sm_summer_variant = pModel->GetFromName( "summer_variant" );
+    sm_autumn_variant = pModel->GetFromName( "autumn_variant" );
+
+    for( int i = 0; i < iMaxNumLights; ++i ) {
+        if( LightsOn[ i ] || LightsOff[ i ] ) {
+            iNumLights = i + 1;
+        }
+    }
+
+    for( std::size_t i { 0 }; i < light_states.size() && i < static_cast<std::size_t>( iNumLights ); ++i ) {
+        LightSet( static_cast<int>( i ), light_states[ i ] );
+    }
+
+    for( std::size_t i { 0 }; i < light_colors.size() && i < static_cast<std::size_t>( iNumLights ); ++i ) {
+        auto const lightcolor { light_colors[ i ] };
+        if( lightcolor != 0xFFFFFFFFu ) {
+            m_lightcolors[ i ] = {
+                ( ( lightcolor >> 16 ) & 0xff ) / 255.f,
+                ( ( lightcolor >> 8 ) & 0xff ) / 255.f,
+                ( lightcolor & 0xff ) / 255.f };
+        }
+    }
+
+    m_transition = transition;
+    update_instanceable_flag();
+    return true;
+}
+
+bool
+TAnimModel::LoadEu7Pack(
+    std::string const &model_file,
+    std::string const &texture_file ) {
+    if( false == Init( model_file, texture_file ) ) {
+        if( model_file != "notload" ) {
+            ErrorLog( "Missed file: " + model_file );
+        }
+        return true;
+    }
+
+    m_eu7_pack = true;
+    update_instanceable_flag();
+    return true;
+}
+
+void
+TAnimModel::reset_pack_for_insert( scene::node_data const &nodedata ) {
+    m_name = nodedata.name;
+    node_type = nodedata.type;
+    m_rangesquaredmin = nodedata.range_min * nodedata.range_min;
+    m_rangesquaredmax = (
+        nodedata.range_max >= 0.0 ?
+            nodedata.range_max * nodedata.range_max :
+            std::numeric_limits<double>::max() );
+    m_visible = true;
+    m_dirty = false;
+    m_group = null_handle;
+
+    vAngle = glm::vec3 {};
+    m_scale = glm::vec3 { 1.0f, 1.0f, 1.0f };
+    pModel = nullptr;
+    m_eu7_pack = false;
+    m_instanceable = false;
+    m_materialdata = {};
+    asText.clear();
+}
+
+namespace pack_instance_pool {
+
+constexpr std::size_t kChunkSize { 256 };
+
+scene::node_data const &
+dummy_nodedata() {
+    static scene::node_data const data {
+        .range_min = 0.0,
+        .range_max = -1.0,
+        .name = {},
+        .type = "model" };
+    return data;
+}
+
+std::vector<std::unique_ptr<TAnimModel>> g_owned;
+std::vector<TAnimModel *> g_free;
+
+void
+grow_chunk() {
+    g_owned.reserve( g_owned.size() + kChunkSize );
+    g_free.reserve( g_free.size() + kChunkSize );
+    for( std::size_t i { 0 }; i < kChunkSize; ++i ) {
+        auto instance { std::make_unique<TAnimModel>( dummy_nodedata() ) };
+        g_free.push_back( instance.get() );
+        g_owned.push_back( std::move( instance ) );
+    }
+}
+
+} // namespace pack_instance_pool
+
+TAnimModel *
+TAnimModel::acquire_pack_instance( scene::node_data const &nodedata ) {
+    if( pack_instance_pool::g_free.empty() ) {
+        pack_instance_pool::grow_chunk();
+    }
+
+    auto *const instance { pack_instance_pool::g_free.back() };
+    pack_instance_pool::g_free.pop_back();
+    instance->reset_pack_for_insert( nodedata );
+    return instance;
+}
+
+void
+TAnimModel::release_pack_instance( TAnimModel *const instance ) {
+    if( instance == nullptr ) {
+        return;
+    }
+    pack_instance_pool::g_free.push_back( instance );
+}
+
 bool TAnimModel::Load(cParser *parser, bool ter)
 { // rozpoznanie wpisu modelu i ustawienie świateł
 	std::string name = parser->getToken<std::string>();
@@ -398,7 +565,7 @@ bool TAnimModel::Load(cParser *parser, bool ter)
     return true;
 }
 
-namespace {
+namespace anim_instancing_detail {
 // returns true if this animation type mutates per-instance state on the shared
 // TSubModel tree, which would make batched rendering unsafe. Most animations
 // loaded from .t3d files are global functions of time (clocks, wind, sky) and
@@ -440,7 +607,42 @@ bool submodel_tree_blocks_instancing( TSubModel const *Sub ) {
     if( submodel_tree_blocks_instancing( Sub->Next ) ) { return true; }
     return false;
 }
-} // anonymous namespace
+
+namespace eu7_pack_cache {
+
+enum class slot_t : std::int8_t { unknown = -1, no = 0, yes = 1 };
+
+std::unordered_map<TModel3d const *, slot_t> g_model;
+
+[[nodiscard]] bool
+lookup( TModel3d *const model, bool &instanceable ) {
+    auto const it { g_model.find( model ) };
+    if( it == g_model.end() || it->second == slot_t::unknown ) {
+        return false;
+    }
+    instanceable = ( it->second == slot_t::yes );
+    return true;
+}
+
+void
+store( TModel3d *const model, bool const instanceable ) {
+    g_model[ model ] = instanceable ? slot_t::yes : slot_t::no;
+}
+
+void
+warm( TModel3d *const model ) {
+    if( model == nullptr ) {
+        return;
+    }
+    auto const it { g_model.find( model ) };
+    if( it != g_model.end() && it->second != slot_t::unknown ) {
+        return;
+    }
+    store( model, false == submodel_tree_blocks_instancing( model->Root ) );
+}
+
+} // namespace eu7_pack_cache
+} // namespace anim_instancing_detail
 
 int TAnimModel::s_instanceable_total = 0;
 int TAnimModel::s_classified_total = 0;
@@ -448,6 +650,54 @@ int TAnimModel::s_rejected_no_pmodel = 0;
 int TAnimModel::s_rejected_lights = 0;
 int TAnimModel::s_rejected_animlist = 0;
 int TAnimModel::s_rejected_animated_submodel = 0;
+
+void
+TAnimModel::warm_instanceable_cache( TModel3d *const model ) {
+    anim_instancing_detail::eu7_pack_cache::warm( model );
+}
+
+bool
+TAnimModel::LoadEu7PackWarm(
+    TModel3d *const mesh,
+    std::string const &texture_file ) {
+    pModel = mesh;
+    if( mesh == nullptr ) {
+        return true;
+    }
+
+    if(
+        false == texture_file.empty() &&
+        texture_file != "none" &&
+        texture_file.substr( 0, 1 ) != "*" ) {
+        auto normalized { texture_file };
+        replace_slashes( normalized );
+        if(
+            normalized != "none" &&
+            false == normalized.ends_with( "/none" ) &&
+            normalized.find( "tr/none" ) == std::string::npos ) {
+            m_materialdata.assign( normalized );
+            if( m_materialdata.replacable_skins[ 1 ] == null_handle ) {
+                scene::eu7::pack_bench_inc( &scene::eu7::Eu7PackBench::main_texture_assign_fail );
+                scene::eu7::log_pack_texture_fail( normalized );
+            }
+        }
+    }
+
+    m_eu7_pack = true;
+
+    bool cached_instanceable { false };
+    if( anim_instancing_detail::eu7_pack_cache::lookup( mesh, cached_instanceable ) ) {
+        ++s_classified_total;
+        if( cached_instanceable ) {
+            m_instanceable = true;
+            ++s_instanceable_total;
+        }
+        return true;
+    }
+
+    update_instanceable_flag();
+    return true;
+}
 
 void TAnimModel::update_instanceable_flag() {
     // The instanceable path skips RaAnimate() entirely and only calls RaPrepare()
@@ -463,7 +713,25 @@ void TAnimModel::update_instanceable_flag() {
     if( pModel == nullptr ) { ++s_rejected_no_pmodel; return; }
     if( iNumLights != 0 ) { ++s_rejected_lights; return; }
     if( !m_animlist.empty() ) { ++s_rejected_animlist; return; }
-    if( submodel_tree_blocks_instancing( pModel->Root ) ) { ++s_rejected_animated_submodel; return; }
+
+    bool cached_instanceable { false };
+    if( anim_instancing_detail::eu7_pack_cache::lookup( pModel, cached_instanceable ) ) {
+        if( false == cached_instanceable ) {
+            ++s_rejected_animated_submodel;
+            return;
+        }
+        m_instanceable = true;
+        ++s_instanceable_total;
+        return;
+    }
+
+    if( anim_instancing_detail::submodel_tree_blocks_instancing( pModel->Root ) ) {
+        anim_instancing_detail::eu7_pack_cache::store( pModel, false );
+        ++s_rejected_animated_submodel;
+        return;
+    }
+
+    anim_instancing_detail::eu7_pack_cache::store( pModel, true );
     m_instanceable = true;
     ++s_instanceable_total;
 }

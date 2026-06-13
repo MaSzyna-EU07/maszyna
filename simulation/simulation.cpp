@@ -1,4 +1,4 @@
-﻿/*
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationtime.h"
 #include "simulation/simulationenvironment.h"
 
+#include "scene/eu7/eu7_loader.h"
 #include "utilities/Globals.h"
 #include "world/Event.h"
 #include "world/MemCell.h"
@@ -70,6 +71,16 @@ void
 state_manager::export_as_text( std::string const &Scenariofile ) const {
 
     return m_serializer.export_as_text( Scenariofile );
+}
+
+bool
+state_manager::load_eu7_module( std::string const &path ) {
+    return scene::eu7::load_module( path, m_serializer );
+}
+
+void
+state_manager::drain_deferred_eu7_trainsets( double const max_ms ) {
+    m_serializer.drain_deferred_eu7_trainsets( max_ms );
 }
 
 void

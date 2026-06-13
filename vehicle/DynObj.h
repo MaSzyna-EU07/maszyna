@@ -185,6 +185,10 @@ struct material_data {
     void assign( std::string const &Replacableskin );
 };
 
+// resolves texture/material path (textures/, current path, as-is)
+std::string
+TextureTest( std::string const &Name );
+
 class TDynamicObject { // klasa pojazdu
 
     friend opengl_renderer;

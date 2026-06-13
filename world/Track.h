@@ -24,6 +24,9 @@ http://mozilla.org/MPL/2.0/.
 
 namespace scene {
 class basic_cell;
+namespace eu7 {
+struct Eu7Track;
+}
 }
 
 enum TTrackType {
@@ -284,6 +287,10 @@ public:
                 SwitchExtension->iRoads - 1 :
                 1 ); }
     void Load(cParser *parser, glm::dvec3 const &pOrigin);
+    void LoadFromEu7( scene::eu7::Eu7Track const &track );
+    void build_segments_from_paths();
+    void apply_tail_keyword( std::string const &key, std::string const &value );
+    void finalize_track_location();
     bool AssignEvents();
     bool AssignForcedEvents(basic_event *NewEventPlus, basic_event *NewEventMinus);
     void QueueEvents( event_sequence const &Events, TDynamicObject const *Owner );
