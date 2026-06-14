@@ -34,6 +34,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/eu7/eu7_loader.h"
 #include "scene/eu7/eu7_load_stats.h"
 #include "scene/eu7/eu7_pack_bench.h"
+#include "scene/eu7/eu7_section.h"
 #include "scene/eu7/eu7_transform.h"
 #include "world/Track.h"
 #include "world/Traction.h"
@@ -285,19 +286,11 @@ pack_model_needs_full_load( scene::eu7::Eu7Model const &model ) {
         || false == model.transition;
 }
 
-[[nodiscard]] std::string
-pack_nodedata_cache_key( scene::eu7::Eu7Model const &model ) {
-    return model.model_file + '\x1f' + model.texture_file + '\x1f'
-        + std::to_string( model.node.range_squared_min ) + '\x1f'
-        + std::to_string( model.node.range_squared_max ) + '\x1f'
-        + ( model.is_terrain ? '1' : '0' );
-}
-
 [[nodiscard]] scene::node_data const &
 pack_nodedata_cached(
     scene::eu7::Eu7Model const &model,
     std::unordered_map<std::string, scene::node_data> &cache ) {
-    auto const key { pack_nodedata_cache_key( model ) };
+    auto const key { scene::eu7::pack_nodedata_cache_key( model ) };
     auto const found { cache.find( key ) };
     if( found != cache.end() ) {
         return found->second;
@@ -580,6 +573,11 @@ state_serializer::insert_eu7_pack_models(
             simulation::Region->insert( instance );
             scene::eu7::pack_bench_inc( &scene::eu7::Eu7PackBench::main_region_inserts );
             scene::eu7::pack_bench_inc( &scene::eu7::Eu7PackBench::main_instances_applied );
+        }
+        if(
+            session != nullptr &&
+            session->section_idx != std::numeric_limits<std::size_t>::max() ) {
+            m_pack_section_instances[ session->section_idx ].push_back( instance );
         }
     }
 }
@@ -892,6 +890,37 @@ state_serializer::apply_eu7_pack_models(
         return;
     }
     insert_eu7_pack_models( models + offset, count, scratchpad, session );
+}
+
+std::size_t
+state_serializer::unload_eu7_pack_section( int const row, int const column ) {
+    auto const section_idx { scene::eu7::section_index( row, column ) };
+    auto found { m_pack_section_instances.find( section_idx ) };
+    if( found == m_pack_section_instances.end() || found->second.empty() ) {
+        m_pack_section_instances.erase( section_idx );
+        return 0;
+    }
+
+    std::size_t removed { 0 };
+    for( auto *instance : found->second ) {
+        if( instance == nullptr ) {
+            continue;
+        }
+        Particles.erase_bound_node( instance );
+        if( simulation::Region != nullptr ) {
+            simulation::Region->erase( instance );
+        }
+        TAnimModel::release_pack_instance( instance );
+        ++removed;
+    }
+
+    m_pack_section_instances.erase( found );
+    return removed;
+}
+
+void
+state_serializer::reset_eu7_pack_section_instances() {
+    m_pack_section_instances.clear();
 }
 
 void

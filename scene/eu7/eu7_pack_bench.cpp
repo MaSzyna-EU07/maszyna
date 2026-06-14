@@ -189,6 +189,8 @@ log_pack_bench_impl( Eu7PackBench const &bench, char const *const title ) {
         " stuck_skip=" + std::to_string( bench.stream_apply_stuck_skip ) );
     WriteLog(
         "  diag ready_tex_ms=" + std::to_string( static_cast<int>( bench.stream_prefetch_ready_tex_ms ) ) +
+        " ready_umes_ms=" + std::to_string( static_cast<int>( bench.stream_prefetch_ready_umes_ms ) ) +
+        " umes_loads=" + std::to_string( bench.stream_prefetch_ready_umes_loads ) +
         " peak_pending=" + std::to_string( bench.peak_pending_total ) );
     WriteLog(
         "  peaks: ready_q=" + std::to_string( bench.peak_ready_queue ) +
@@ -324,6 +326,7 @@ pack_bench_note_chunk(
     pack_bench_inc( &Eu7PackBench::main_chunk_cold_loads, cold_meshes );
 
     g_pack_bench.last_chunk_ms = wall_ms;
+    g_pack_bench.last_apply_ms = pointer_apply_ms;
     g_pack_bench.last_chunk_instances = instances;
     g_pack_bench.last_chunk_cold = cold_meshes;
     if( wall_ms > g_pack_bench.peak_chunk_ms ) {
@@ -344,6 +347,7 @@ pack_bench_note_chunk(
 
     auto &stream { g_pack_bench_stream };
     stream.last_chunk_ms = wall_ms;
+    stream.last_apply_ms = pointer_apply_ms;
     stream.last_chunk_instances = instances;
     stream.last_chunk_cold = cold_meshes;
     if( wall_ms > stream.peak_chunk_ms ) {

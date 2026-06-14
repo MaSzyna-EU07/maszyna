@@ -25,6 +25,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace eu07::scene::binary {
@@ -49,10 +50,13 @@ inline constexpr std::array<char, 4> kChunkPlac{'P', 'L', 'A', 'C'};
 inline constexpr std::array<char, 4> kChunkPidx{'P', 'I', 'D', 'X'};
 inline constexpr std::array<char, 4> kChunkPack{'P', 'A', 'C', 'K'};
 
-// PACK section payload: v9 = UMES, v10 = UMES + CHNK (sub-chunk offset table).
+// PACK section payload: v9 = UMES, v10 = UMES + CHNK, v11 = UMES + UTEX + CHNK.
 inline constexpr std::uint8_t kPackSectionFormatV9 = 2;
 inline constexpr std::uint8_t kPackSectionFormatV10 = 3;
+inline constexpr std::uint8_t kPackSectionFormatV11 = 4;
 inline constexpr std::size_t kPackSectionChunkModels = 512;
+inline constexpr std::size_t kPackSectionChunkModelsHeavy = 256;
+inline constexpr std::size_t kPackSectionHeavyModelThreshold = 1024;
 
 struct PackWriteStats {
     std::size_t strings_total = 0;
@@ -408,28 +412,161 @@ struct PackPayloadBuild {
     return !path.empty() && path != "notload";
 }
 
+[[nodiscard]] inline bool isPackTexturePath(const std::string_view path) {
+    if (path.empty() || path == "none" || path.front() == '*') {
+        return false;
+    }
+    if (path.starts_with("make:") || path.starts_with("@") || path.starts_with("none|")) {
+        return false;
+    }
+    if (path.ends_with(".e3d") || path.ends_with(".t3d")) {
+        return false;
+    }
+    if (path == "none" || path.ends_with("/none") || path.ends_with('/')) {
+        return false;
+    }
+    if (path.find("tr/none") != std::string_view::npos || path.find('#') != std::string_view::npos) {
+        return false;
+    }
+    return true;
+}
+
+[[nodiscard]] inline runtime::Vec3 packSectionCenter(
+    const codec::TerrSectionKey section) noexcept {
+    runtime::Vec3 center{};
+    center.x =
+        (static_cast<double>(section.x) -
+         static_cast<double>(codec::kEu07RegionSideSectionCount) / 2.0 + 0.5) *
+        static_cast<double>(codec::kEu07SectionSize);
+    center.z =
+        (static_cast<double>(section.z) -
+         static_cast<double>(codec::kEu07RegionSideSectionCount) / 2.0 + 0.5) *
+        static_cast<double>(codec::kEu07SectionSize);
+    return center;
+}
+
+inline void sortPackSectionModelsForStreaming(
+    std::vector<runtime::RuntimeModelInstance>& models,
+    const codec::TerrSectionKey section) {
+    if (models.size() < 2) {
+        return;
+    }
+
+    std::unordered_map<std::string, std::uint32_t> mesh_frequency;
+    mesh_frequency.reserve(models.size());
+    for (const runtime::RuntimeModelInstance& model : models) {
+        if (isLoadableMeshPath(model.modelFile)) {
+            ++mesh_frequency[model.modelFile];
+        }
+    }
+
+    const runtime::Vec3 section_center = packSectionCenter(section);
+    const auto mesh_rank = [&](const std::string& path) -> std::uint32_t {
+        const auto it = mesh_frequency.find(path);
+        return it == mesh_frequency.end() ? 0u : it->second;
+    };
+    const auto distance_squared = [&](const runtime::RuntimeModelInstance& model) -> double {
+        const double dx = model.location.x - section_center.x;
+        const double dz = model.location.z - section_center.z;
+        return dx * dx + dz * dz;
+    };
+
+    std::stable_sort(
+        models.begin(),
+        models.end(),
+        [&](const runtime::RuntimeModelInstance& lhs, const runtime::RuntimeModelInstance& rhs) {
+            const std::uint32_t lhs_rank = mesh_rank(lhs.modelFile);
+            const std::uint32_t rhs_rank = mesh_rank(rhs.modelFile);
+            if (lhs_rank != rhs_rank) {
+                return lhs_rank > rhs_rank;
+            }
+            return distance_squared(lhs) < distance_squared(rhs);
+        });
+}
+
 [[nodiscard]] inline std::vector<std::uint32_t> collectUniqueMeshIds(
     StringTable& table,
     const std::vector<runtime::RuntimeModelInstance>& models,
     const std::vector<std::string_view>* prototype_mesh_paths = nullptr) {
-    std::vector<std::string> paths;
-    paths.reserve(models.size());
+    std::unordered_map<std::string, std::uint32_t> mesh_frequency;
+    mesh_frequency.reserve(models.size());
 
     for (const runtime::RuntimeModelInstance& model : models) {
         if (isLoadableMeshPath(model.modelFile)) {
-            paths.emplace_back(model.modelFile);
+            ++mesh_frequency[model.modelFile];
+        }
+    }
+
+    std::vector<std::string> paths;
+    paths.reserve(mesh_frequency.size());
+    for (const auto& [path, frequency] : mesh_frequency) {
+        if (frequency > 0) {
+            paths.emplace_back(path);
         }
     }
     if (prototype_mesh_paths != nullptr) {
         for (const std::string_view path : *prototype_mesh_paths) {
             if (isLoadableMeshPath(path)) {
-                paths.emplace_back(path);
+                const std::string text(path);
+                if (false == mesh_frequency.contains(text)) {
+                    paths.emplace_back(text);
+                    mesh_frequency.emplace(text, 0u);
+                }
             }
         }
     }
 
-    std::stable_sort(paths.begin(), paths.end());
-    paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
+    std::stable_sort(
+        paths.begin(),
+        paths.end(),
+        [&](const std::string& lhs, const std::string& rhs) {
+            const std::uint32_t lhs_rank = mesh_frequency[lhs];
+            const std::uint32_t rhs_rank = mesh_frequency[rhs];
+            if (lhs_rank != rhs_rank) {
+                return lhs_rank > rhs_rank;
+            }
+            return lhs < rhs;
+        });
+
+    std::vector<std::uint32_t> ids;
+    ids.reserve(paths.size());
+    for (const std::string& path : paths) {
+        ids.push_back(table.intern(path));
+    }
+    return ids;
+}
+
+[[nodiscard]] inline std::vector<std::uint32_t> collectUniqueTextureIds(
+    StringTable& table,
+    const std::vector<runtime::RuntimeModelInstance>& models) {
+    std::unordered_map<std::string, std::uint32_t> texture_frequency;
+    texture_frequency.reserve(models.size());
+
+    for (const runtime::RuntimeModelInstance& model : models) {
+        if (isPackTexturePath(model.textureFile)) {
+            ++texture_frequency[model.textureFile];
+        }
+    }
+
+    std::vector<std::string> paths;
+    paths.reserve(texture_frequency.size());
+    for (const auto& [path, frequency] : texture_frequency) {
+        if (frequency > 0) {
+            paths.emplace_back(path);
+        }
+    }
+
+    std::stable_sort(
+        paths.begin(),
+        paths.end(),
+        [&](const std::string& lhs, const std::string& rhs) {
+            const std::uint32_t lhs_rank = texture_frequency[lhs];
+            const std::uint32_t rhs_rank = texture_frequency[rhs];
+            if (lhs_rank != rhs_rank) {
+                return lhs_rank > rhs_rank;
+            }
+            return lhs < rhs;
+        });
 
     std::vector<std::uint32_t> ids;
     ids.reserve(paths.size());
@@ -461,12 +598,14 @@ struct PackPayloadBuild {
     const std::vector<std::string_view>* prototype_mesh_paths = nullptr) {
     const auto mesh_ids = collectUniqueMeshIds(table, models, prototype_mesh_paths);
     const std::uint32_t solo_count = static_cast<std::uint32_t>(models.size());
+    const std::size_t chunk_models =
+        models.size() > kPackSectionHeavyModelThreshold ? kPackSectionChunkModelsHeavy
+                                                        : kPackSectionChunkModels;
 
     std::vector<std::vector<char>> chunk_payloads;
-    chunk_payloads.reserve((models.size() + kPackSectionChunkModels - 1) / kPackSectionChunkModels);
-    for (std::size_t offset = 0; offset < models.size(); offset += kPackSectionChunkModels) {
-        const std::size_t end =
-            std::min(offset + kPackSectionChunkModels, models.size());
+    chunk_payloads.reserve((models.size() + chunk_models - 1) / chunk_models);
+    for (std::size_t offset = 0; offset < models.size(); offset += chunk_models) {
+        const std::size_t end = std::min(offset + chunk_models, models.size());
         chunk_payloads.push_back(buildPackModelBlob(table, models, offset, end));
     }
     if (chunk_payloads.empty()) {
@@ -483,10 +622,8 @@ struct PackPayloadBuild {
     std::uint32_t payload_offset = header_size;
     for (std::uint32_t chunk_index = 0; chunk_index < chunk_count; ++chunk_index) {
         chunk_offsets[chunk_index] = payload_offset;
-        const std::size_t model_begin =
-            static_cast<std::size_t>(chunk_index) * kPackSectionChunkModels;
-        const std::size_t model_end =
-            std::min(model_begin + kPackSectionChunkModels, models.size());
+        const std::size_t model_begin = static_cast<std::size_t>(chunk_index) * chunk_models;
+        const std::size_t model_end = std::min(model_begin + chunk_models, models.size());
         chunk_model_counts[chunk_index] =
             static_cast<std::uint32_t>(model_end > model_begin ? model_end - model_begin : 0);
         payload_offset += static_cast<std::uint32_t>(chunk_payloads[chunk_index].size());
@@ -498,6 +635,69 @@ struct PackPayloadBuild {
     io::writeU32(packOut, inst_count);
     io::writeU32(packOut, static_cast<std::uint32_t>(mesh_ids.size()));
     for (const std::uint32_t id : mesh_ids) {
+        io::writeU32(packOut, id);
+    }
+    io::writeU32(packOut, chunk_count);
+    for (std::uint32_t chunk_index = 0; chunk_index < chunk_count; ++chunk_index) {
+        io::writeU32(packOut, chunk_model_counts[chunk_index]);
+        io::writeU32(packOut, chunk_offsets[chunk_index]);
+    }
+    for (const std::vector<char>& payload : chunk_payloads) {
+        packOut.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+    }
+    const std::string blob = packOut.str();
+    return {blob.begin(), blob.end()};
+}
+
+[[nodiscard]] inline std::vector<char> buildPackSectionPayloadV11(
+    StringTable& table,
+    const std::vector<runtime::RuntimeModelInstance>& models,
+    const std::uint32_t inst_count = 0,
+    const std::vector<std::string_view>* prototype_mesh_paths = nullptr) {
+    const auto mesh_ids = collectUniqueMeshIds(table, models, prototype_mesh_paths);
+    const auto texture_ids = collectUniqueTextureIds(table, models);
+    const std::uint32_t solo_count = static_cast<std::uint32_t>(models.size());
+    const std::size_t chunk_models =
+        models.size() > kPackSectionHeavyModelThreshold ? kPackSectionChunkModelsHeavy
+                                                        : kPackSectionChunkModels;
+
+    std::vector<std::vector<char>> chunk_payloads;
+    chunk_payloads.reserve((models.size() + chunk_models - 1) / chunk_models);
+    for (std::size_t offset = 0; offset < models.size(); offset += chunk_models) {
+        const std::size_t end = std::min(offset + chunk_models, models.size());
+        chunk_payloads.push_back(buildPackModelBlob(table, models, offset, end));
+    }
+    if (chunk_payloads.empty()) {
+        chunk_payloads.emplace_back();
+    }
+
+    const std::uint32_t chunk_count = static_cast<std::uint32_t>(chunk_payloads.size());
+    const std::uint32_t header_size =
+        1u + 4u + 4u + 4u + static_cast<std::uint32_t>(mesh_ids.size()) * 4u + 4u +
+        static_cast<std::uint32_t>(texture_ids.size()) * 4u + 4u + chunk_count * 8u;
+
+    std::vector<std::uint32_t> chunk_offsets(chunk_count);
+    std::vector<std::uint32_t> chunk_model_counts(chunk_count);
+    std::uint32_t payload_offset = header_size;
+    for (std::uint32_t chunk_index = 0; chunk_index < chunk_count; ++chunk_index) {
+        chunk_offsets[chunk_index] = payload_offset;
+        const std::size_t model_begin = static_cast<std::size_t>(chunk_index) * chunk_models;
+        const std::size_t model_end = std::min(model_begin + chunk_models, models.size());
+        chunk_model_counts[chunk_index] =
+            static_cast<std::uint32_t>(model_end > model_begin ? model_end - model_begin : 0);
+        payload_offset += static_cast<std::uint32_t>(chunk_payloads[chunk_index].size());
+    }
+
+    std::ostringstream packOut(std::ios::binary);
+    io::writeU8(packOut, kPackSectionFormatV11);
+    io::writeU32(packOut, solo_count);
+    io::writeU32(packOut, inst_count);
+    io::writeU32(packOut, static_cast<std::uint32_t>(mesh_ids.size()));
+    for (const std::uint32_t id : mesh_ids) {
+        io::writeU32(packOut, id);
+    }
+    io::writeU32(packOut, static_cast<std::uint32_t>(texture_ids.size()));
+    for (const std::uint32_t id : texture_ids) {
         io::writeU32(packOut, id);
     }
     io::writeU32(packOut, chunk_count);
@@ -540,7 +740,9 @@ struct PackPayloadBuild {
             entry.row = static_cast<std::uint16_t>(batch.section.z);
             entry.column = static_cast<std::uint16_t>(batch.section.x);
             entry.modelCount = static_cast<std::uint32_t>(batch.models.size());
-            section_payloads[batch_index] = buildPackSectionPayloadV10(table, batch.models);
+            std::vector<runtime::RuntimeModelInstance> section_models = batch.models;
+            sortPackSectionModelsForStreaming(section_models, batch.section);
+            section_payloads[batch_index] = buildPackSectionPayloadV11(table, section_models);
         }
         std::size_t total_size = 0;
         for (const std::vector<char>& payload : section_payloads) {
@@ -574,7 +776,9 @@ struct PackPayloadBuild {
                 entry.column = static_cast<std::uint16_t>(batch.section.x);
                 entry.modelCount = static_cast<std::uint32_t>(batch.models.size());
 
-                section_payloads[batch_index] = buildPackSectionPayloadV10(table, batch.models);
+                std::vector<runtime::RuntimeModelInstance> section_models = batch.models;
+                sortPackSectionModelsForStreaming(section_models, batch.section);
+                section_payloads[batch_index] = buildPackSectionPayloadV11(table, section_models);
             }
         });
     }

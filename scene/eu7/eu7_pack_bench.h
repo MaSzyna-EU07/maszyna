@@ -72,7 +72,14 @@ struct Eu7PackBench {
     std::uint64_t stream_dequeue_wait_near { 0 };
     std::uint64_t stream_jobs_blocked_far { 0 };
     std::uint64_t stream_apply_stuck_skip { 0 };
+    std::uint64_t stream_sections_unloaded { 0 };
+    std::uint64_t stream_unload_instances { 0 };
+    std::uint64_t stream_mesh_cache_evictions { 0 };
+    std::uint64_t stream_nodedata_cache_evictions { 0 };
+    std::uint64_t stream_texture_cache_evictions { 0 };
     double stream_prefetch_ready_tex_ms { 0.0 };
+    double stream_prefetch_ready_umes_ms { 0.0 };
+    std::uint64_t stream_prefetch_ready_umes_loads { 0 };
     std::uint64_t peak_pending_total { 0 };
     std::uint64_t stream_inst_planned { 0 };
     std::uint64_t stream_inst_after_cold { 0 };
@@ -92,6 +99,7 @@ struct Eu7PackBench {
     std::uint64_t peak_chunk_instances { 0 };
     std::uint64_t peak_chunk_cold { 0 };
     double last_chunk_ms { 0.0 };
+    double last_apply_ms { 0.0 };
     std::uint64_t last_chunk_instances { 0 };
     std::uint64_t last_chunk_cold { 0 };
 

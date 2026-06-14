@@ -203,6 +203,14 @@ struct Eu7Model {
     bool is_terrain = false;
 };
 
+[[nodiscard]] inline std::string
+pack_nodedata_cache_key( Eu7Model const &model ) {
+    return model.model_file + '\x1f' + model.texture_file + '\x1f'
+        + std::to_string( model.node.range_squared_min ) + '\x1f'
+        + std::to_string( model.node.range_squared_max ) + '\x1f'
+        + ( model.is_terrain ? '1' : '0' );
+}
+
 // Wspolna definicja modelu (EU7B v8 PROT) — bez transformacji instancji.
 struct Eu7ModelPrototype {
     Eu7BasicNode node;
@@ -369,6 +377,7 @@ struct Eu7PackSectionCursor {
     std::uint8_t section_format { 0 };
     bool header_parsed { false };
     std::vector<std::string> unique_meshes;
+    std::vector<std::string> unique_textures;
     std::uint32_t chunk_count { 0 };
     std::vector<std::uint32_t> chunk_model_counts;
     std::vector<std::uint32_t> chunk_byte_offsets;
@@ -377,11 +386,13 @@ struct Eu7PackSectionCursor {
 struct Eu7PackSectionLoad {
     std::vector<Eu7Model> models;
     std::vector<std::string> unique_meshes;
+    std::vector<std::string> unique_textures;
 };
 
 struct Eu7PackSectionChunkLoad {
     std::vector<Eu7Model> models;
     std::vector<std::string> unique_meshes;
+    std::vector<std::string> unique_textures;
     std::uint32_t chunk_count { 1 };
     std::uint32_t chunk_index { 0 };
 };

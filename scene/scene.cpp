@@ -444,6 +444,33 @@ basic_cell::insert( TMemCell *Memorycell ) {
 void
 basic_cell::erase( TAnimModel *Instance ) {
 
+    if( Instance->m_eu7_pack && Instance->m_instanceable ) {
+        m_instancesopaque.erase(
+            std::remove_if(
+                std::begin( m_instancesopaque ), std::end( m_instancesopaque ),
+                [=]( TAnimModel *instance ) {
+                    return instance == Instance; } ),
+            std::end( m_instancesopaque ) );
+        if( Instance->Model() != nullptr ) {
+            instance_bucket_key key;
+            key.pModel = Instance->Model();
+            auto const *mat { Instance->Material() };
+            if( mat != nullptr ) {
+                for( int i { 0 }; i < 5; ++i ) { key.skins[ i ] = mat->replacable_skins[ i ]; }
+            }
+            auto bucket { m_instancebuckets_opaque.find( key ) };
+            if( bucket != m_instancebuckets_opaque.end() ) {
+                bucket->second.erase(
+                    std::remove( std::begin( bucket->second ), std::end( bucket->second ), Instance ),
+                    std::end( bucket->second ) );
+                if( bucket->second.empty() ) {
+                    m_instancebuckets_opaque.erase( bucket );
+                }
+            }
+        }
+        return;
+    }
+
     auto const flags = Instance->Flags();
     auto alpha =
         ( Instance->Material() != nullptr ?

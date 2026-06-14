@@ -853,6 +853,30 @@ Powtórzone chunk_count razy:
 Runtime: worker czyta `read_pack_section_chunk_load(row, col, chunk_index)` z O(1) seek.
 Sekcje v9 (format=2) i v7 flat pozostają kompatybilne (`chunk_count` implicit = 1).
 
+### Format sekcji — v11 UTEX (`kPackSectionFormatV11 = 4`)
+
+Rozszerzenie v10: po UMES deduplikowana lista ścieżek tekstur (`texture_file`), posortowana po częstotliwości.
+
+```
+uint8    section_format    — musi być = 4
+uint32   solo_count
+uint32   inst_count
+uint32   unique_mesh_count
+uint32[unique_mesh_count] string_id
+
+uint32   unique_texture_count
+uint32[unique_texture_count] string_id   — texture_file (pomija none/make:/@/#/.e3d)
+
+uint32   chunk_count
+Powtórzone chunk_count razy:
+    uint32   chunk_model_count
+    uint32   chunk_byte_offset
+
+[payload chunków]
+```
+
+Runtime używa UTEX do prefetch/warm tekstur bez skanowania wszystkich instancji.
+
 ---
 
 ## 30. PROT — prototypy modeli (v8+)

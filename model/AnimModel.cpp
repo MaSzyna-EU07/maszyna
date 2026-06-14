@@ -668,13 +668,18 @@ TAnimModel::LoadEu7PackWarm(
     if(
         false == texture_file.empty() &&
         texture_file != "none" &&
-        texture_file.substr( 0, 1 ) != "*" ) {
+        texture_file.substr( 0, 1 ) != "*" &&
+        false == texture_file.starts_with( "make:" ) &&
+        false == texture_file.starts_with( "@" ) &&
+        false == texture_file.starts_with( "none|" ) ) {
         auto normalized { texture_file };
         replace_slashes( normalized );
         if(
             normalized != "none" &&
             false == normalized.ends_with( "/none" ) &&
-            normalized.find( "tr/none" ) == std::string::npos ) {
+            false == normalized.ends_with( '/' ) &&
+            normalized.find( "tr/none" ) == std::string::npos &&
+            normalized.find( '#' ) == std::string::npos ) {
             m_materialdata.assign( normalized );
             if( m_materialdata.replacable_skins[ 1 ] == null_handle ) {
                 scene::eu7::pack_bench_inc( &scene::eu7::Eu7PackBench::main_texture_assign_fail );

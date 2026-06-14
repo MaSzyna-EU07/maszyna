@@ -181,6 +181,8 @@ public:
         insert( std::string const &Sourcetemplate, TDynamicObject const *Vehicle, glm::dvec3 const Location );
     bool
         insert( std::string const &Sourcetemplate, TAnimModel const *Node, glm::dvec3 const Location );
+    void
+        erase_bound_node( TAnimModel const *Node );
     // updates state of all owned emitters
     void
         update();

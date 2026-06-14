@@ -505,6 +505,48 @@ parse_pack_section_header(
     const std::uint8_t first_byte {
         peek == EOF ? std::uint8_t { 0 } : static_cast<std::uint8_t>( peek ) };
 
+    bool use_v11_header { false };
+    if( first_byte == kPackSectionFormatV11 ) {
+        cursor.section_format = sn_utils::d_uint8( input );
+        const std::uint32_t solo_total { sn_utils::ld_uint32( input ) };
+        const std::uint32_t inst_total { sn_utils::ld_uint32( input ) };
+        const std::uint32_t unique_mesh_count { sn_utils::ld_uint32( input ) };
+        if( solo_total + inst_total == entry.model_count ) {
+            use_v11_header = true;
+            cursor.model_total = solo_total + inst_total;
+            cursor.solo_remaining = 0;
+            cursor.inst_remaining = 0;
+
+            StringTable const strings { module.strings };
+            cursor.unique_meshes.reserve( unique_mesh_count );
+            for( std::uint32_t mesh_idx { 0 }; mesh_idx < unique_mesh_count; ++mesh_idx ) {
+                cursor.unique_meshes.push_back(
+                    strings.resolve( sn_utils::ld_uint32( input ) ) );
+            }
+
+            const std::uint32_t unique_texture_count { sn_utils::ld_uint32( input ) };
+            cursor.unique_textures.reserve( unique_texture_count );
+            for( std::uint32_t tex_idx { 0 }; tex_idx < unique_texture_count; ++tex_idx ) {
+                cursor.unique_textures.push_back(
+                    strings.resolve( sn_utils::ld_uint32( input ) ) );
+            }
+
+            cursor.chunk_count = sn_utils::ld_uint32( input );
+            cursor.chunk_model_counts.resize( cursor.chunk_count );
+            cursor.chunk_byte_offsets.resize( cursor.chunk_count );
+            for( std::uint32_t chunk_idx { 0 }; chunk_idx < cursor.chunk_count; ++chunk_idx ) {
+                cursor.chunk_model_counts[ chunk_idx ] = sn_utils::ld_uint32( input );
+                cursor.chunk_byte_offsets[ chunk_idx ] = sn_utils::ld_uint32( input );
+            }
+        }
+    }
+
+    if( use_v11_header ) {
+        cursor.models_read = 0;
+        cursor.header_parsed = true;
+        return;
+    }
+
     bool use_v10_header { false };
     if( first_byte == kPackSectionFormatV10 ) {
         cursor.section_format = sn_utils::d_uint8( input );
@@ -1168,11 +1210,13 @@ read_pack_section_chunk_load_impl(
     result.chunk_index = chunk_index;
     if( chunk_index == 0 ) {
         result.unique_meshes = header.unique_meshes;
+        result.unique_textures = header.unique_textures;
     }
 
     Eu7PackSectionCursor chunk_cursor { header };
     if(
-        header.section_format == kPackSectionFormatV10 &&
+        ( header.section_format == kPackSectionFormatV10 ||
+          header.section_format == kPackSectionFormatV11 ) &&
         false == header.chunk_byte_offsets.empty() ) {
         auto const section_start {
             static_cast<std::streamoff>( module.pack_payload_offset + entry->pack_offset ) };
@@ -1218,9 +1262,11 @@ read_pack_section_load_impl( Eu7Module const &module, int const row, int const c
     parse_pack_section_header( module, input, *entry, header );
 
     result.unique_meshes = header.unique_meshes;
+    result.unique_textures = header.unique_textures;
 
     if(
-        header.section_format == kPackSectionFormatV10 &&
+        ( header.section_format == kPackSectionFormatV10 ||
+          header.section_format == kPackSectionFormatV11 ) &&
         header.chunk_count > 0 ) {
         result.models.reserve( entry->model_count );
         for( std::uint32_t chunk_idx { 0 }; chunk_idx < header.chunk_count; ++chunk_idx ) {

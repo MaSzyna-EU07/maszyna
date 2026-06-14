@@ -9,12 +9,15 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <limits>
 #include <unordered_map>
+#include <vector>
 
 #include "utilities/parser.h"
 #include "scene/eu7/eu7_types.h"
 #include "scene/scene.h"
 
+class TAnimModel;
 class TModel3d;
 
 namespace simulation {
@@ -22,6 +25,7 @@ namespace simulation {
 struct eu7_pack_apply_session {
     std::unordered_map<std::string, TModel3d *> *mesh_cache { nullptr };
     std::unordered_map<std::string, scene::node_data> *nodedata_cache { nullptr };
+    std::size_t section_idx { std::numeric_limits<std::size_t>::max() };
 };
 
 struct deserializer_state {
@@ -108,8 +112,14 @@ public:
 	// Odlozone sklady AI — ladowane w tle po wejsciu w gre.
 	void
 	    drain_deferred_eu7_trainsets( double MaxMs = 12.0 );
+	// PACK streaming: usun instancje sekcji z Region i zwolnij pool.
+	[[nodiscard]] std::size_t
+	    unload_eu7_pack_section( int Row, int Column );
+	void
+	    reset_eu7_pack_section_instances();
 
 private:
+	std::unordered_map<std::size_t, std::vector<TAnimModel *>> m_pack_section_instances;
 	struct eu7_transform_state;
 	void
 	    insert_eu7_models(

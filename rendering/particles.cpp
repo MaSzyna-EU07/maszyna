@@ -442,6 +442,23 @@ particle_manager::insert( std::string const &Sourcetemplate, TAnimModel const *N
     return true;
 }
 
+void
+particle_manager::erase_bound_node( TAnimModel const *const node ) {
+    if( node == nullptr ) {
+        return;
+    }
+
+    m_sources.erase(
+        std::remove_if(
+            std::begin( m_sources ),
+            std::end( m_sources ),
+            [node]( smoke_source const &source ) {
+                return source.m_ownertype == smoke_source::owner_type::node
+                    && source.m_owner.node == node;
+            } ),
+        std::end( m_sources ) );
+}
+
 // updates state of all owned emitters
 void
 particle_manager::update() {
