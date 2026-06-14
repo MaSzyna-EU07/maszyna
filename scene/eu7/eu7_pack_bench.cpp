@@ -163,6 +163,33 @@ log_pack_bench_impl( Eu7PackBench const &bench, char const *const title ) {
         " tex_fail=" + std::to_string( bench.main_texture_assign_fail ) +
         " warm_miss=" + std::to_string( bench.main_texture_warm_miss ) );
     WriteLog(
+        "  diag drain: urg=" + std::to_string( bench.stream_drain_catchup_urgent ) +
+        " catchup=" + std::to_string( bench.stream_drain_catchup ) +
+        " gameplay=" + std::to_string( bench.stream_drain_gameplay ) +
+        " loader=" + std::to_string( bench.stream_drain_loader ) +
+        " preempt=" + std::to_string( bench.stream_preempt_pending ) +
+        " budget_stops=" + std::to_string( bench.drain_budget_stops ) );
+    WriteLog(
+        "  diag chunk: urg=" + std::to_string( bench.stream_chunks_urgent ) +
+        " heavy=" + std::to_string( bench.stream_chunks_heavy ) +
+        " light=" + std::to_string( bench.stream_chunks_light ) +
+        " cold_trunc=" + std::to_string( bench.stream_cold_slice_truncated ) +
+        " inst_plan=" + std::to_string( bench.stream_inst_planned ) +
+        " inst_cold=" + std::to_string( bench.stream_inst_after_cold ) );
+    WriteLog(
+        "  diag mesh: sess_hit=" + std::to_string( bench.stream_mesh_session_hit ) +
+        " glob_hit=" + std::to_string( bench.stream_mesh_global_hit ) +
+        " disk=" + std::to_string( bench.stream_mesh_disk_load ) +
+        " dequeue_near=" + std::to_string( bench.stream_dequeue_near ) +
+        " far=" + std::to_string( bench.stream_dequeue_far ) +
+        " cam=" + std::to_string( bench.stream_dequeue_camera ) +
+        " wait_near=" + std::to_string( bench.stream_dequeue_wait_near ) +
+        " block_far=" + std::to_string( bench.stream_jobs_blocked_far ) +
+        " stuck_skip=" + std::to_string( bench.stream_apply_stuck_skip ) );
+    WriteLog(
+        "  diag ready_tex_ms=" + std::to_string( static_cast<int>( bench.stream_prefetch_ready_tex_ms ) ) +
+        " peak_pending=" + std::to_string( bench.peak_pending_total ) );
+    WriteLog(
         "  peaks: ready_q=" + std::to_string( bench.peak_ready_queue ) +
         " in_flight=" + std::to_string( bench.peak_in_flight ) +
         " cold_q=" + std::to_string( bench.peak_pending_cold_meshes ) );
@@ -265,6 +292,11 @@ pack_bench_note_in_flight( std::size_t const size ) {
 void
 pack_bench_note_pending_cold_meshes( std::size_t const size ) {
     note_peak( &Eu7PackBench::peak_pending_cold_meshes, size );
+}
+
+void
+pack_bench_note_pending_total( std::size_t const total ) {
+    note_peak( &Eu7PackBench::peak_pending_total, total );
 }
 
 void
@@ -399,7 +431,10 @@ log_pack_stream_status(
         " warm_ms=" + std::to_string( static_cast<int>( bench.main_chunk_warm_tex_ms ) ) +
         " apply_ms=" + std::to_string( static_cast<int>( bench.main_chunk_pointer_apply_ms ) ) +
         " reenq=" + std::to_string( bench.stream_reenqueue ) +
-        " ahead=" + std::to_string( bench.stream_lookahead_enqueue ) );
+        " ahead=" + std::to_string( bench.stream_lookahead_enqueue ) +
+        " urg_chunks=" + std::to_string( bench.stream_chunks_urgent ) +
+        " cold_trunc=" + std::to_string( bench.stream_cold_slice_truncated ) +
+        " preempt=" + std::to_string( bench.stream_preempt_pending ) );
 }
 
 } // namespace scene::eu7

@@ -52,6 +52,30 @@ struct Eu7PackBench {
     std::uint64_t stream_reenqueue { 0 };
     std::uint64_t stream_lookahead_enqueue { 0 };
 
+    // --- stream diagnostics (gdzie ginie czas / skad przyciecie) ---
+    std::uint64_t stream_drain_catchup_urgent { 0 };
+    std::uint64_t stream_drain_catchup { 0 };
+    std::uint64_t stream_drain_gameplay { 0 };
+    std::uint64_t stream_drain_loader { 0 };
+    std::uint64_t stream_preempt_pending { 0 };
+    std::uint64_t stream_cold_slice_truncated { 0 };
+    std::uint64_t stream_mesh_session_hit { 0 };
+    std::uint64_t stream_mesh_global_hit { 0 };
+    std::uint64_t stream_mesh_disk_load { 0 };
+    std::uint64_t stream_chunks_urgent { 0 };
+    std::uint64_t stream_chunks_heavy { 0 };
+    std::uint64_t stream_chunks_light { 0 };
+    std::uint64_t stream_dequeue_near { 0 };
+    std::uint64_t stream_dequeue_far { 0 };
+    std::uint64_t stream_dequeue_camera { 0 };
+    std::uint64_t stream_dequeue_wait_near { 0 };
+    std::uint64_t stream_jobs_blocked_far { 0 };
+    std::uint64_t stream_apply_stuck_skip { 0 };
+    double stream_prefetch_ready_tex_ms { 0.0 };
+    std::uint64_t peak_pending_total { 0 };
+    std::uint64_t stream_inst_planned { 0 };
+    std::uint64_t stream_inst_after_cold { 0 };
+
     // --- main: pointer chunk apply (diag zwiechy) ---
     double main_chunk_cold_ms { 0.0 };
     double main_chunk_warm_tex_ms { 0.0 };
@@ -116,6 +140,9 @@ pack_bench_note_in_flight( std::size_t Size );
 
 void
 pack_bench_note_pending_cold_meshes( std::size_t Size );
+
+void
+pack_bench_note_pending_total( std::size_t Total );
 
 void
 pack_bench_inc( std::uint64_t Eu7PackBench::*Field, std::uint64_t Amount = 1 );

@@ -78,6 +78,8 @@ constexpr std::size_t kReadyTexturePrefetchSlice { 256 };
 constexpr std::size_t kCatchupMaxInFlightSections { 28 };
 constexpr std::size_t kCatchupMaxReadySections { 14 };
 constexpr int kUrgentSectionDistanceKm { 1 };
+constexpr int kFastFlightApplyMaxDistanceKm { 2 };
+constexpr int kFarApplySlowDistanceKm { 4 };
 constexpr int kPreemptPendingDistanceKm { 2 };
 constexpr double kTeleportReenqueueDistanceM { 2000.0 };
 constexpr float kStationaryCatchupRingThreshold { 0.70f };
@@ -271,9 +273,47 @@ ready_queue_size() {
 }
 
 [[nodiscard]] bool
+camera_section_needs_priority() {
+    if( g_stream.center_row < 0 || g_stream.center_column < 0 ) {
+        return false;
+    }
+    if( camera_stream_speed_mps() <= 200.0 ) {
+        return false;
+    }
+    auto const section_idx { section_index( g_stream.center_row, g_stream.center_column ) };
+    if( g_stream.loaded_sections.contains( section_idx ) ) {
+        return false;
+    }
+    return section_has_pack_models( g_stream.center_row, g_stream.center_column );
+}
+
+[[nodiscard]] bool
+should_throttle_far_stream_jobs( int const row, int const column ) {
+    if( false == camera_section_needs_priority() ) {
+        return false;
+    }
+    if( row == g_stream.center_row && column == g_stream.center_column ) {
+        return false;
+    }
+    return section_manhattan_sections(
+               row,
+               column,
+               g_stream.center_row,
+               g_stream.center_column ) > kFastFlightApplyMaxDistanceKm;
+}
+
+[[nodiscard]] bool
 stream_backpressure() {
     if( g_stream.bootstrap_active ) {
         return false;
+    }
+    if( camera_section_needs_priority() ) {
+        if( g_stream.in_flight_sections.size() >= 6 ) {
+            return true;
+        }
+        if( ready_queue_size() >= 4 ) {
+            return true;
+        }
     }
     return (
         g_stream.in_flight_sections.size() >= g_stream_max_in_flight ||
@@ -336,12 +376,28 @@ pending_section_near_camera( int const max_distance_km = kUrgentSectionDistanceK
                g_stream.center_column ) <= max_distance_km;
 }
 
+[[nodiscard]] int
+pending_section_distance_km() {
+    if( false == g_stream.pending_apply.has_value() ) {
+        return std::numeric_limits<int>::max();
+    }
+    auto const &batch { *g_stream.pending_apply };
+    return section_manhattan_sections(
+        batch.row,
+        batch.column,
+        g_stream.center_row,
+        g_stream.center_column );
+}
+
 [[nodiscard]] bool
 pending_apply_is_urgent() {
-    if( false == pending_section_near_camera() ) {
+    auto const speed { camera_stream_speed_mps() };
+    if( speed <= 80.0 && false == g_stream_catchup ) {
         return false;
     }
-    return g_stream_catchup || camera_stream_speed_mps() > 80.0;
+    auto const max_dist {
+        speed > 600.0 ? kFastFlightApplyMaxDistanceKm : kUrgentSectionDistanceKm };
+    return pending_section_near_camera( max_dist );
 }
 
 [[nodiscard]] std::size_t
@@ -436,9 +492,11 @@ preload_slice_cold_meshes(
         }
         replace_slashes( model_file );
         if( g_stream.mesh_cache.contains( model_file ) ) {
+            pack_bench_inc( &Eu7PackBench::stream_mesh_session_hit );
             continue;
         }
         if( cold_loaded >= max_cold_meshes ) {
+            pack_bench_inc( &Eu7PackBench::stream_cold_slice_truncated );
             slice_count = i;
             break;
         }
@@ -447,15 +505,23 @@ preload_slice_cold_meshes(
                 std::chrono::duration<double, std::milli>(
                     std::chrono::steady_clock::now() - cold_started ).count() };
             if( elapsed_ms >= cold_budget_ms ) {
+                pack_bench_inc( &Eu7PackBench::stream_cold_slice_truncated );
                 slice_count = i;
                 break;
             }
         }
+        auto const was_global_cached { TModelsManager::IsModelCached( model_file ) };
         TModel3d *mesh { nullptr };
         {
             PackBenchTimer const load_timer { &Eu7PackBench::main_cold_getmodel_ms };
             mesh = TModelsManager::GetModel( model_file, false, false );
             pack_bench_inc( &Eu7PackBench::main_cold_getmodel_calls );
+        }
+        if( was_global_cached ) {
+            pack_bench_inc( &Eu7PackBench::stream_mesh_global_hit );
+        }
+        else {
+            pack_bench_inc( &Eu7PackBench::stream_mesh_disk_load );
         }
         if( mesh != nullptr ) {
             TAnimModel::warm_instanceable_cache( mesh );
@@ -472,11 +538,18 @@ preload_slice_cold_meshes(
         }
         replace_slashes( model_file );
         if( false == g_stream.mesh_cache.contains( model_file ) ) {
+            auto const was_global_cached { TModelsManager::IsModelCached( model_file ) };
             TModel3d *mesh { nullptr };
             {
                 PackBenchTimer const load_timer { &Eu7PackBench::main_cold_getmodel_ms };
                 mesh = TModelsManager::GetModel( model_file, false, false );
                 pack_bench_inc( &Eu7PackBench::main_cold_getmodel_calls );
+            }
+            if( was_global_cached ) {
+                pack_bench_inc( &Eu7PackBench::stream_mesh_global_hit );
+            }
+            else {
+                pack_bench_inc( &Eu7PackBench::stream_mesh_disk_load );
             }
             if( mesh != nullptr ) {
                 TAnimModel::warm_instanceable_cache( mesh );
@@ -539,6 +612,7 @@ maybe_skip_stuck_apply_offset() {
     }
     g_stream.pending_apply_offset = offset + 1;
     note_apply_progress();
+    pack_bench_inc( &Eu7PackBench::stream_apply_stuck_skip );
     return true;
 }
 
@@ -570,6 +644,10 @@ maybe_preempt_distant_pending() {
         return;
     }
 
+    auto const speed { camera_stream_speed_mps() };
+    auto const near_apply_km {
+        speed > 600.0 ? kFastFlightApplyMaxDistanceKm : kUrgentSectionDistanceKm };
+
     bool nearer_ready { false };
     {
         std::lock_guard<std::mutex> lock { g_stream.ready.mutex };
@@ -584,8 +662,14 @@ maybe_preempt_distant_pending() {
                     g_stream.center_row,
                     g_stream.center_column ) };
             if(
+                ready.row == g_stream.center_row &&
+                ready.column == g_stream.center_column ) {
+                nearer_ready = true;
+                break;
+            }
+            if(
                 ready_dist < pending_dist &&
-                ready_dist <= kUrgentSectionDistanceKm ) {
+                ready_dist <= near_apply_km ) {
                 nearer_ready = true;
                 break;
             }
@@ -619,6 +703,7 @@ maybe_preempt_distant_pending() {
         std::lock_guard<std::mutex> lock { g_stream.ready.mutex };
         g_stream.ready.data.push_front( std::move( suspended ) );
     }
+    pack_bench_inc( &Eu7PackBench::stream_preempt_pending );
     pack_bench_inc( &Eu7PackBench::stream_reenqueue );
 }
 
@@ -675,9 +760,15 @@ apply_pending_chunk(
         }
 
         auto const remaining { total - offset };
+        auto const pending_dist { pending_section_distance_km() };
+        auto const cam_speed { camera_stream_speed_mps() };
         auto const is_urgent { pending_apply_is_urgent() };
         auto const is_heavy {
             total > kHeavySectionModelThreshold || remaining > kHeavySectionModelThreshold };
+        auto const far_slow_drain {
+            cam_speed > 300.0 &&
+            pending_dist > kFarApplySlowDistanceKm &&
+            false == is_urgent };
 
         std::size_t chunk_count { remaining };
         std::size_t cold_mesh_limit { remaining };
@@ -688,6 +779,11 @@ apply_pending_chunk(
             cold_mesh_limit = adaptive_cold_meshes( is_urgent );
             effective_cold_budget_ms =
                 is_urgent ? kUrgentColdBudgetMs : gameplay_cold_budget_ms();
+            if( far_slow_drain ) {
+                chunk_count = std::min( chunk_count, std::size_t { 32 } );
+                cold_mesh_limit = std::min( cold_mesh_limit, std::size_t { 1 } );
+                effective_cold_budget_ms = std::min( effective_cold_budget_ms, 8.0 );
+            }
             if( max_instances > 0 ) {
                 chunk_count = std::min( chunk_count, max_instances );
             }
@@ -698,6 +794,19 @@ apply_pending_chunk(
                 effective_cold_budget_ms = cold_budget_ms;
             }
         }
+
+        auto const planned_inst { chunk_count };
+        pack_bench_inc( &Eu7PackBench::stream_inst_planned, planned_inst );
+        if( is_urgent ) {
+            pack_bench_inc( &Eu7PackBench::stream_chunks_urgent );
+        }
+        else if( is_heavy ) {
+            pack_bench_inc( &Eu7PackBench::stream_chunks_heavy );
+        }
+        else {
+            pack_bench_inc( &Eu7PackBench::stream_chunks_light );
+        }
+        pack_bench_note_pending_total( total );
 
         auto const chunk_started { std::chrono::steady_clock::now() };
         double cold_ms { 0.0 };
@@ -716,6 +825,10 @@ apply_pending_chunk(
                 chunk_count );
             cold_ms = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - phase_started ).count();
+        }
+        pack_bench_inc( &Eu7PackBench::stream_inst_after_cold, chunk_count );
+        if( chunk_count < planned_inst ) {
+            pack_bench_inc( &Eu7PackBench::stream_cold_slice_truncated );
         }
         if( chunk_count == 0 ) {
             g_stream.pending_apply_offset = offset + 1;
@@ -763,6 +876,11 @@ apply_pending_chunk(
             WriteLog(
                 "EU7 PACK [hitch]: chunk_ms=" + std::to_string( static_cast<int>( chunk_wall_ms ) ) +
                 " inst=" + std::to_string( chunk_count ) +
+                ( planned_inst != chunk_count ?
+                    ( "/" + std::to_string( planned_inst ) ) :
+                    std::string{} ) +
+                " urg=" + std::to_string( is_urgent ? 1 : 0 ) +
+                " heavy=" + std::to_string( is_heavy ? 1 : 0 ) +
                 " cold=" + std::to_string( cold_loads ) + "(" + std::to_string( static_cast<int>( cold_ms ) ) + "ms)" +
                 " warm=" + std::to_string( tex_fetches ) + "(" + std::to_string( static_cast<int>( warm_ms ) ) + "ms)" +
                 " apply=" + std::to_string( static_cast<int>( apply_ms ) ) + "ms" +
@@ -1102,6 +1220,10 @@ enqueue_section_if_needed(
     if( stream_backpressure() ) {
         return false;
     }
+    if( should_throttle_far_stream_jobs( row, column ) ) {
+        pack_bench_inc( &Eu7PackBench::stream_jobs_blocked_far );
+        return false;
+    }
 
     auto const section_idx { section_index( row, column ) };
     if( g_stream.loaded_sections.contains( section_idx ) ) {
@@ -1149,7 +1271,13 @@ enqueue_section_if_needed(
     job.section_idx = section_idx;
     job.priority = priority;
 
-    push_prioritized_job( std::move( job ) );
+    if( row == g_stream.center_row && column == g_stream.center_column && priority == 0 ) {
+        std::lock_guard<std::mutex> lock { g_stream.jobs.mutex };
+        g_stream.jobs.data.push_front( std::move( job ) );
+    }
+    else {
+        push_prioritized_job( std::move( job ) );
+    }
     g_stream.work_cv.notify_all();
     return true;
 }
@@ -1401,21 +1529,46 @@ try_dequeue_ready_batch() {
                     return best_it;
                 } };
 
-            auto best_it {
-                pick_best( kSectionStreamGameplayRadiusKm ) };
+            auto const pick_camera_section {
+                [&]() -> std::deque<PackSectionReady>::iterator {
+                    for( auto it { g_stream.ready.data.begin() }; it != g_stream.ready.data.end(); ++it ) {
+                        if( it->failed || it->models == nullptr || it->models->empty() ) {
+                            continue;
+                        }
+                        if(
+                            it->row == g_stream.center_row &&
+                            it->column == g_stream.center_column ) {
+                            return it;
+                        }
+                    }
+                    return g_stream.ready.data.end();
+                } };
+
+            auto const cam_speed { camera_stream_speed_mps() };
+            auto const max_apply_dist {
+                cam_speed > 600.0 ?
+                    kFastFlightApplyMaxDistanceKm :
+                    ( cam_speed > 80.0 ? 3 : kSectionStreamGameplayRadiusKm ) };
+
+            auto best_it { pick_camera_section() };
+            if( best_it != g_stream.ready.data.end() ) {
+                pack_bench_inc( &Eu7PackBench::stream_dequeue_camera );
+            }
+            else {
+                best_it = pick_best( max_apply_dist );
+            }
             if( best_it == g_stream.ready.data.end() ) {
+                best_it = pick_best( kSectionStreamGameplayRadiusKm );
+            }
+            if( best_it == g_stream.ready.data.end() && false == g_stream.ready.data.empty() ) {
                 best_it = pick_best( -1 );
             }
-            if(
-                best_it == g_stream.ready.data.end()
-                && false == g_stream.ready.data.empty() ) {
-                best_it = g_stream.ready.data.begin();
+            if( best_it == g_stream.ready.data.end() ) {
+                return false;
             }
-            if( best_it != g_stream.ready.data.end() ) {
-                batch = std::move( *best_it );
-                g_stream.ready.data.erase( best_it );
-                has_batch = true;
-            }
+            batch = std::move( *best_it );
+            g_stream.ready.data.erase( best_it );
+            has_batch = true;
         }
     }
 
@@ -1437,6 +1590,19 @@ try_dequeue_ready_batch() {
     g_stream.pending_apply_offset = g_stream.pending_apply->apply_offset;
     g_stream.pending_apply->apply_offset = 0;
 
+    auto const dequeue_dist {
+        section_manhattan_sections(
+            g_stream.pending_apply->row,
+            g_stream.pending_apply->column,
+            g_stream.center_row,
+            g_stream.center_column ) };
+    if( dequeue_dist <= kFastFlightApplyMaxDistanceKm ) {
+        pack_bench_inc( &Eu7PackBench::stream_dequeue_near );
+    }
+    else {
+        pack_bench_inc( &Eu7PackBench::stream_dequeue_far );
+    }
+
     if(
         g_stream.pending_apply->models != nullptr &&
         g_stream.pending_apply->texture_warm_offset < g_stream.pending_apply->models->size() ) {
@@ -1455,6 +1621,7 @@ prefetch_ready_queue_textures( double const budget_ms ) {
         return;
     }
 
+    PackBenchTimer const prefetch_timer { &Eu7PackBench::stream_prefetch_ready_tex_ms };
     auto const started { std::chrono::steady_clock::now() };
     std::vector<std::deque<PackSectionReady>::iterator> candidates;
     candidates.reserve( ready_queue_size() );
@@ -1835,26 +2002,39 @@ update_section_stream( glm::dvec3 const &world_position ) {
         ( g_stream_catchup || cam_speed > 80.0 ) ?
             std::clamp( cam_speed * 0.25, kCatchupReenqueueDistanceM, kReenqueueDistanceM ) :
             kReenqueueDistanceM };
+
+    auto const current_section_unloaded {
+        section_has_pack_models( center_row, center_column )
+        && false == g_stream.loaded_sections.contains( section_index( center_row, center_column ) ) };
+
     auto max_lookahead { 0 };
     if( inner_ring_ready ) {
         max_lookahead = ( g_stream_catchup || cam_speed > 200.0 ) ?
             kMovementLookahead :
             ( cam_speed > 80.0 ? 10 : 7 );
+        if( current_section_unloaded && cam_speed > 200.0 ) {
+            max_lookahead = std::min( max_lookahead, 4 );
+        }
     }
 
     auto const travel_forward { guess_travel_forward() };
 
-    auto const current_section_unloaded {
-        section_has_pack_models( center_row, center_column )
-        && false == g_stream.loaded_sections.contains( section_index( center_row, center_column ) ) };
     auto const inner_ring_incomplete { current_section_unloaded || false == inner_ring_ready };
     auto const should_reenqueue {
         center_moved
         || false == g_stream.has_last_enqueue_position
         || moved_since_enqueue >= reenqueue_distance };
 
+    if( current_section_unloaded ) {
+        enqueue_section_if_needed( center_row, center_column, 0 );
+    }
+
     if( should_reenqueue || inner_ring_incomplete ) {
-        enqueue_sections_around( center_row, center_column, ring_radius, stream_position );
+        auto const enqueue_radius {
+            ( current_section_unloaded && cam_speed > 400.0 ) ?
+                std::min( ring_radius, 3 ) :
+                ring_radius };
+        enqueue_sections_around( center_row, center_column, enqueue_radius, stream_position );
         g_stream.last_enqueue_position = stream_position;
         g_stream.has_last_enqueue_position = true;
         if( should_reenqueue || inner_ring_incomplete ) {
@@ -1862,7 +2042,11 @@ update_section_stream( glm::dvec3 const &world_position ) {
         }
     }
 
-    if( inner_ring_ready && max_lookahead > 0 && cam_speed > 50.0 ) {
+    if(
+        inner_ring_ready &&
+        max_lookahead > 0 &&
+        cam_speed > 50.0 &&
+        false == ( current_section_unloaded && cam_speed > 200.0 ) ) {
         enqueue_movement_lookahead(
             center_row,
             center_column,
@@ -1909,7 +2093,16 @@ drain_section_stream(
                 kReadyTexturePrefetchBudgetMs * 0.5 );
 
         if( g_stream_catchup ) {
-            auto const urgent { pending_apply_is_urgent() };
+            auto const urgent {
+                pending_apply_is_urgent() ||
+                ( pending_section_distance_km() <= kFastFlightApplyMaxDistanceKm &&
+                  camera_stream_speed_mps() > 80.0 ) };
+            if( urgent ) {
+                pack_bench_inc( &Eu7PackBench::stream_drain_catchup_urgent );
+            }
+            else {
+                pack_bench_inc( &Eu7PackBench::stream_drain_catchup );
+            }
             drain_apply_budget(
                 urgent ? kUrgentApplyBudgetMs : gameplay_apply_budget_ms(),
                 adaptive_slice_instances( pending_section_total(), urgent ),
@@ -1918,11 +2111,13 @@ drain_section_stream(
                 urgent ? kUrgentMaxChunksPerDrain : 1 );
         }
         else {
+            pack_bench_inc( &Eu7PackBench::stream_drain_gameplay );
             drain_until_budget( kDrainBudgetMs );
         }
         maybe_log_stream_status( stream_position );
     }
     else if( gameplay_stream_mode() ) {
+        pack_bench_inc( &Eu7PackBench::stream_drain_loader );
         drain_until_budget( kLoaderDrainBudgetMs );
         maybe_log_stream_status( stream_position );
     }
@@ -1937,6 +2132,7 @@ drain_section_stream(
         drain_until_budget( kLoaderDrainBudgetMs );
     }
     else {
+        pack_bench_inc( &Eu7PackBench::stream_drain_gameplay );
         drain_until_budget( kDrainBudgetMs );
     }
 }
