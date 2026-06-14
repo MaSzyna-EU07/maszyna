@@ -49,6 +49,9 @@ namespace {
 constexpr double kDeferTrainsetHorizDistM { 4000.0 };
 constexpr double kDeferTrainsetHorizDistSq {
     kDeferTrainsetHorizDistM * kDeferTrainsetHorizDistM };
+constexpr double kTrainsetDrainMaxDistM { 12000.0 };
+constexpr double kTrainsetDrainMaxDistSq {
+    kTrainsetDrainMaxDistM * kTrainsetDrainMaxDistM };
 
 struct DeferredEu7Trainset {
     scene::eu7::Eu7Trainset trainset;
@@ -111,22 +114,37 @@ eu7_trainset_is_player(
     return false;
 }
 
-[[nodiscard]] double
-eu7_trainset_horiz_dist_sq( scene::eu7::Eu7Trainset const &trainset ) {
-    auto *path { simulation::Paths.find( trainset.track ) };
-    if( path == nullptr ) {
-        return 0.0;
+[[nodiscard]] glm::dvec3
+eu7_observer_position() {
+    if( FreeFlyModeFlag || Global.pCamera.m_owner == nullptr ) {
+        return Global.pCamera.Pos;
     }
 
-    auto const spawn { eu7_trainset_spawn_origin() };
-    if( spawn.x == 0.0 && spawn.y == 0.0 && spawn.z == 0.0 ) {
+    return eu7_trainset_spawn_origin();
+}
+
+[[nodiscard]] double
+eu7_trainset_horiz_dist_sq_to(
+    scene::eu7::Eu7Trainset const &trainset,
+    glm::dvec3 const &observer ) {
+    auto *path { simulation::Paths.find( trainset.track ) };
+    if( path == nullptr ) {
+        return std::numeric_limits<double>::max();
+    }
+
+    if( observer.x == 0.0 && observer.y == 0.0 && observer.z == 0.0 ) {
         return 0.0;
     }
 
     auto const track_pos { glm::dvec3 { path->location() } };
-    auto const dx { track_pos.x - spawn.x };
-    auto const dz { track_pos.z - spawn.z };
+    auto const dx { track_pos.x - observer.x };
+    auto const dz { track_pos.z - observer.z };
     return dx * dx + dz * dz;
+}
+
+[[nodiscard]] double
+eu7_trainset_horiz_dist_sq( scene::eu7::Eu7Trainset const &trainset ) {
+    return eu7_trainset_horiz_dist_sq_to( trainset, eu7_observer_position() );
 }
 
 [[nodiscard]] bool
@@ -136,7 +154,7 @@ eu7_should_load_trainset_now(
     if( eu7_trainset_is_player( trainset, scene ) ) {
         return true;
     }
-    if( eu7_trainset_horiz_dist_sq( trainset ) <= kDeferTrainsetHorizDistSq ) {
+    if( eu7_trainset_horiz_dist_sq_to( trainset, eu7_observer_position() ) <= kDeferTrainsetHorizDistSq ) {
         return true;
     }
     return false;
@@ -1412,43 +1430,52 @@ state_serializer::apply_eu7_scene(
 
 void
 state_serializer::drain_deferred_eu7_trainsets( double const max_ms ) {
-    if( g_deferred_eu7_trainsets.empty() ) {
+    if( g_deferred_eu7_trainsets.empty() || max_ms <= 0.0 ) {
         return;
     }
 
-    auto const deadline {
-        std::chrono::steady_clock::now() +
-        std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-            std::chrono::duration<double, std::milli>( max_ms ) ) };
+    auto const observer { eu7_observer_position() };
+    auto best_it { g_deferred_eu7_trainsets.end() };
+    auto best_dist_sq { std::numeric_limits<double>::max() };
+    for( auto it { g_deferred_eu7_trainsets.begin() }; it != g_deferred_eu7_trainsets.end(); ++it ) {
+        auto const dist_sq { eu7_trainset_horiz_dist_sq_to( it->trainset, observer ) };
+        if( dist_sq < best_dist_sq ) {
+            best_dist_sq = dist_sq;
+            best_it = it;
+        }
+    }
+
+    if(
+        best_it == g_deferred_eu7_trainsets.end() ||
+        best_dist_sq > kTrainsetDrainMaxDistSq ) {
+        return;
+    }
+
+    auto job { std::move( *best_it ) };
+    g_deferred_eu7_trainsets.erase( best_it );
 
     cParser dummy_parser( "", cParser::buffer_TEXT, "", false );
     scene::scratch_data scratchpad;
 
-    while(
-        false == g_deferred_eu7_trainsets.empty() &&
-        std::chrono::steady_clock::now() < deadline ) {
-        auto job { std::move( g_deferred_eu7_trainsets.front() ) };
-        g_deferred_eu7_trainsets.pop_front();
+    scene::eu7::ScopedTimer const timer { scene::eu7::load_stats().trainset_ms };
+    ++scene::eu7::load_stats().trainsets;
 
-        scene::eu7::ScopedTimer const timer { scene::eu7::load_stats().trainset_ms };
-        ++scene::eu7::load_stats().trainsets;
+    if( true == scratchpad.trainset.is_open ) {
+        deserialize_endtrainset( dummy_parser, scratchpad );
+        scratchpad.trainset.is_open = false;
+    }
 
-        if( true == scratchpad.trainset.is_open ) {
-            deserialize_endtrainset( dummy_parser, scratchpad );
-            scratchpad.trainset.is_open = false;
-        }
+    scratchpad.trainset = scene::scratch_data::trainset_data();
+    scratchpad.trainset.is_open = true;
+    scratchpad.trainset.name = job.trainset.name;
+    scratchpad.trainset.track = job.trainset.track;
+    scratchpad.trainset.offset = job.trainset.offset;
+    scratchpad.trainset.velocity = job.trainset.velocity;
+    scratchpad.trainset.assignment = job.trainset.assignment;
 
-        scratchpad.trainset = scene::scratch_data::trainset_data();
-        scratchpad.trainset.is_open = true;
-        scratchpad.trainset.name = job.trainset.name;
-        scratchpad.trainset.track = job.trainset.track;
-        scratchpad.trainset.offset = job.trainset.offset;
-        scratchpad.trainset.velocity = job.trainset.velocity;
-        scratchpad.trainset.assignment = job.trainset.assignment;
-
-        std::size_t vehicle_slot { 0 };
-        for( auto const &vehicle_source : job.vehicles ) {
-            auto vehicle { vehicle_source };
+    std::size_t vehicle_slot { 0 };
+    for( auto const &vehicle_source : job.vehicles ) {
+        auto vehicle { vehicle_source };
             if( vehicle_slot < job.trainset.couplings.size() ) {
                 vehicle.coupling_raw = std::to_string( job.trainset.couplings[ vehicle_slot ] );
             }
@@ -1554,11 +1581,11 @@ state_serializer::drain_deferred_eu7_trainsets( double const max_ms ) {
                 }
             }
 
-            ++vehicle_slot;
-        }
-
-        deserialize_endtrainset( dummy_parser, scratchpad );
+        ++vehicle_slot;
     }
+
+    deserialize_endtrainset( dummy_parser, scratchpad );
+    (void)max_ms;
 }
 
 void

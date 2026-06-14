@@ -106,4 +106,8 @@ section_stream_ring_progress(
 void
 reset_section_stream();
 
+// PACK catchup / pilny apply — ogranicz rownolegle ladowanie skladow.
+[[nodiscard]] bool
+section_stream_frame_budget_pressure();
+
 } // namespace scene::eu7

@@ -404,8 +404,6 @@ bool driver_mode::update()
 
 	Timer::subsystem.sim_total.stop();
 
-	simulation::State.drain_deferred_eu7_trainsets( 12.0 );
-
 	if( scene::eu7::section_stream_active() ) {
 		if( scene::eu7::section_stream_needs_bootstrap() ) {
 			scene::eu7::kick_section_stream_bootstrap();
@@ -423,6 +421,12 @@ bool driver_mode::update()
 			}
 		}
 	}
+
+	simulation::State.drain_deferred_eu7_trainsets(
+		scene::eu7::section_stream_active()
+		&& scene::eu7::section_stream_frame_budget_pressure() ?
+			4.0 :
+			10.0 );
 
 	simulation::Region->update_sounds();
 	audio::renderer.update(Global.iPause ? 0.0 : deltarealtime);

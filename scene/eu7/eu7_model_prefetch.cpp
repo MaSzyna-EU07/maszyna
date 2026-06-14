@@ -63,7 +63,7 @@ warm_one_pack_texture( std::string texture_file, std::unordered_set<std::string>
     if( false == seen.insert( texture_file ).second ) {
         return false;
     }
-    if( false == g_session_warmed_textures.insert( texture_file ).second ) {
+    if( g_session_warmed_textures.contains( texture_file ) ) {
         return false;
     }
 
@@ -73,6 +73,8 @@ warm_one_pack_texture( std::string texture_file, std::unordered_set<std::string>
         log_pack_texture_fail( texture_file );
         return false;
     }
+
+    g_session_warmed_textures.insert( texture_file );
     GfxRenderer->Fetch_Material( resolved );
 
     for( int skinindex { 1 }; skinindex <= 4; ++skinindex ) {
