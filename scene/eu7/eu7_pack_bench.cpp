@@ -87,7 +87,8 @@ log_pack_bench_impl( Eu7PackBench const &bench, char const *const title ) {
 
     std::vector<BenchLine> lines {
         { "worker read_pack", bench.worker_read_pack_ms,
-            "sections=" + std::to_string( bench.worker_sections_done ) +
+            "chunks=" + std::to_string( bench.worker_chunks_decoded ) +
+            " sections=" + std::to_string( bench.worker_sections_done ) +
             " finalized=" + std::to_string( bench.sections_finalized ) +
             " models=" + std::to_string( bench.worker_models_decoded ) +
             " fail=" + std::to_string( bench.worker_failures ) },

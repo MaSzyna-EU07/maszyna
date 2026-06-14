@@ -505,6 +505,41 @@ parse_pack_section_header(
     const std::uint8_t first_byte {
         peek == EOF ? std::uint8_t { 0 } : static_cast<std::uint8_t>( peek ) };
 
+    bool use_v10_header { false };
+    if( first_byte == kPackSectionFormatV10 ) {
+        cursor.section_format = sn_utils::d_uint8( input );
+        const std::uint32_t solo_total { sn_utils::ld_uint32( input ) };
+        const std::uint32_t inst_total { sn_utils::ld_uint32( input ) };
+        const std::uint32_t unique_mesh_count { sn_utils::ld_uint32( input ) };
+        if( solo_total + inst_total == entry.model_count ) {
+            use_v10_header = true;
+            cursor.model_total = solo_total + inst_total;
+            cursor.solo_remaining = 0;
+            cursor.inst_remaining = 0;
+
+            StringTable const strings { module.strings };
+            cursor.unique_meshes.reserve( unique_mesh_count );
+            for( std::uint32_t mesh_idx { 0 }; mesh_idx < unique_mesh_count; ++mesh_idx ) {
+                cursor.unique_meshes.push_back(
+                    strings.resolve( sn_utils::ld_uint32( input ) ) );
+            }
+
+            cursor.chunk_count = sn_utils::ld_uint32( input );
+            cursor.chunk_model_counts.resize( cursor.chunk_count );
+            cursor.chunk_byte_offsets.resize( cursor.chunk_count );
+            for( std::uint32_t chunk_idx { 0 }; chunk_idx < cursor.chunk_count; ++chunk_idx ) {
+                cursor.chunk_model_counts[ chunk_idx ] = sn_utils::ld_uint32( input );
+                cursor.chunk_byte_offsets[ chunk_idx ] = sn_utils::ld_uint32( input );
+            }
+        }
+    }
+
+    if( use_v10_header ) {
+        cursor.models_read = 0;
+        cursor.header_parsed = true;
+        return;
+    }
+
     bool use_v9_header { false };
     if( first_byte == kPackSectionFormatV9 ) {
         cursor.section_format = sn_utils::d_uint8( input );
@@ -1037,6 +1072,129 @@ find_pack_entry_impl( Eu7Module const &module, int const row, int const column )
     return std::nullopt;
 }
 
+struct PackSectionReadSession {
+    std::string source_path;
+    int row { -1 };
+    int column { -1 };
+    Eu7PackIndexEntry entry {};
+    Eu7PackSectionCursor header {};
+    std::ifstream input;
+    bool header_ready { false };
+};
+
+thread_local PackSectionReadSession g_pack_section_read_session;
+
+void
+reset_pack_section_read_session( PackSectionReadSession &session ) {
+    if( session.input.is_open() ) {
+        session.input.close();
+    }
+    session = {};
+}
+
+void
+ensure_pack_file( Eu7Module const &module, PackSectionReadSession &session ) {
+    if( module.source_path == session.source_path && session.input.is_open() ) {
+        return;
+    }
+
+    if( session.input.is_open() ) {
+        session.input.close();
+    }
+    session.source_path = module.source_path;
+    session.header_ready = false;
+    session.row = -1;
+    session.column = -1;
+    if( false == module.source_path.empty() ) {
+        session.input.open( module.source_path, std::ios::binary );
+    }
+}
+
+void
+ensure_section_header(
+    Eu7Module const &module,
+    int const row,
+    int const column,
+    Eu7PackIndexEntry const &entry,
+    PackSectionReadSession &session ) {
+    if(
+        session.header_ready &&
+        session.row == row &&
+        session.column == column &&
+        session.source_path == module.source_path ) {
+        return;
+    }
+
+    session.row = row;
+    session.column = column;
+    session.entry = entry;
+    parse_pack_section_header( module, session.input, entry, session.header );
+    session.header_ready = true;
+}
+
+[[nodiscard]] Eu7PackSectionChunkLoad
+read_pack_section_chunk_load_impl(
+    Eu7Module const &module,
+    int const row,
+    int const column,
+    std::uint32_t const chunk_index ) {
+    Eu7PackSectionChunkLoad result;
+    if( false == module.has_pack_chunk || module.source_path.empty() ) {
+        return result;
+    }
+
+    auto const entry { find_pack_entry_impl( module, row, column ) };
+    if( false == entry.has_value() || entry->model_count == 0 ) {
+        return result;
+    }
+
+    auto &session { g_pack_section_read_session };
+    ensure_pack_file( module, session );
+    if( !session.input ) {
+        throw std::runtime_error(
+            "EU7 PACK: nie mozna otworzyc \"" + module.source_path + "\"" );
+    }
+
+    ensure_section_header( module, row, column, *entry, session );
+
+    StringTable const strings { module.strings };
+    auto const &header { session.header };
+    result.chunk_count = header.chunk_count > 0 ? header.chunk_count : 1u;
+
+    if( chunk_index >= result.chunk_count ) {
+        return result;
+    }
+
+    result.chunk_index = chunk_index;
+    if( chunk_index == 0 ) {
+        result.unique_meshes = header.unique_meshes;
+    }
+
+    Eu7PackSectionCursor chunk_cursor { header };
+    if(
+        header.section_format == kPackSectionFormatV10 &&
+        false == header.chunk_byte_offsets.empty() ) {
+        auto const section_start {
+            static_cast<std::streamoff>( module.pack_payload_offset + entry->pack_offset ) };
+        session.input.seekg(
+            section_start +
+            static_cast<std::streamoff>( header.chunk_byte_offsets[ chunk_index ] ) );
+        chunk_cursor.solo_remaining = header.chunk_model_counts[ chunk_index ];
+        chunk_cursor.inst_remaining = 0;
+    }
+    else if( chunk_index > 0 ) {
+        return result;
+    }
+
+    result.models = read_pack_models_chunk_impl(
+        module,
+        session.input,
+        chunk_cursor,
+        std::numeric_limits<std::size_t>::max(),
+        strings );
+    return result;
+}
+
 [[nodiscard]] Eu7PackSectionLoad
 read_pack_section_load_impl( Eu7Module const &module, int const row, int const column ) {
     Eu7PackSectionLoad result;
@@ -1059,7 +1217,23 @@ read_pack_section_load_impl( Eu7Module const &module, int const row, int const c
     Eu7PackSectionCursor header;
     parse_pack_section_header( module, input, *entry, header );
 
-    result.unique_meshes = std::move( header.unique_meshes );
+    result.unique_meshes = header.unique_meshes;
+
+    if(
+        header.section_format == kPackSectionFormatV10 &&
+        header.chunk_count > 0 ) {
+        result.models.reserve( entry->model_count );
+        for( std::uint32_t chunk_idx { 0 }; chunk_idx < header.chunk_count; ++chunk_idx ) {
+            auto const chunk {
+                read_pack_section_chunk_load_impl( module, row, column, chunk_idx ) };
+            result.models.insert(
+                result.models.end(),
+                std::make_move_iterator( chunk.models.begin() ),
+                std::make_move_iterator( chunk.models.end() ) );
+        }
+        return result;
+    }
+
     result.models = read_pack_models_chunk_impl(
         module, input, header, std::numeric_limits<std::size_t>::max(), strings );
     return result;
@@ -1154,6 +1328,20 @@ read_pack_section( Eu7Module const &module, int const row, int const column ) {
 Eu7PackSectionLoad
 read_pack_section_load( Eu7Module const &module, int const row, int const column ) {
     return read_pack_section_load_impl( module, row, column );
+}
+
+Eu7PackSectionChunkLoad
+read_pack_section_chunk_load(
+    Eu7Module const &module,
+    int const row,
+    int const column,
+    std::uint32_t const chunk_index ) {
+    return read_pack_section_chunk_load_impl( module, row, column, chunk_index );
+}
+
+void
+reset_pack_section_read_cache() {
+    reset_pack_section_read_session( g_pack_section_read_session );
 }
 
 } // namespace scene::eu7

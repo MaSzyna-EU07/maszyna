@@ -20,6 +20,7 @@ namespace scene::eu7 {
 struct Eu7PackBench {
     // --- worker (async read PACK) ---
     double worker_read_pack_ms { 0.0 };
+    std::uint64_t worker_chunks_decoded { 0 };
     std::uint64_t worker_sections_done { 0 };
     std::uint64_t sections_finalized { 0 };
     std::uint64_t worker_models_decoded { 0 };

@@ -101,6 +101,7 @@ struct PackSectionJob {
     int column { 0 };
     std::size_t section_idx { 0 };
     int priority { 0 };
+    std::uint32_t next_chunk { 0 };
 };
 
 struct PackSectionReady {
@@ -110,6 +111,7 @@ struct PackSectionReady {
     std::unique_ptr<std::vector<Eu7Model>> models;
     std::vector<std::string> unique_meshes;
     bool failed { false };
+    bool section_final { true };
     std::size_t apply_offset { 0 };
     std::size_t texture_warm_offset { 0 };
     std::size_t umes_cold_offset { 0 };
@@ -820,7 +822,7 @@ apply_pending_chunk(
             if( batch.failed ) {
                 fail_section( batch.section_idx, batch.row, batch.column );
             }
-            else {
+            else if( batch.section_final ) {
                 finalize_section( batch );
             }
             release_pending_buffer();
@@ -832,7 +834,9 @@ apply_pending_chunk(
         auto const total { batch.models->size() };
         auto const offset { g_stream.pending_apply_offset };
         if( offset >= total ) {
-            finalize_section( batch );
+            if( batch.section_final ) {
+                finalize_section( batch );
+            }
             release_pending_buffer();
             applied_work = true;
             continue;
@@ -983,7 +987,9 @@ apply_pending_chunk(
         ++chunks_done;
 
         if( g_stream.pending_apply_offset >= total ) {
-            finalize_section( batch );
+            if( batch.section_final ) {
+                finalize_section( batch );
+            }
             release_pending_buffer();
             continue;
         }
@@ -1115,12 +1121,17 @@ worker_loop( std::stop_token const stop_token ) {
 
             std::unique_ptr<std::vector<Eu7Model>> models;
             std::vector<std::string> unique_meshes;
+            std::uint32_t chunk_count { 1 };
             {
                 PackBenchTimer const read_timer { &Eu7PackBench::worker_read_pack_ms };
-                auto section { read_pack_section_load( module, job.row, job.column ) };
-                unique_meshes = std::move( section.unique_meshes );
-                if( false == section.models.empty() ) {
-                    models = std::make_unique<std::vector<Eu7Model>>( std::move( section.models ) );
+                auto const chunk {
+                    read_pack_section_chunk_load(
+                        module, job.row, job.column, job.next_chunk ) };
+                chunk_count = chunk.chunk_count;
+                unique_meshes = std::move( chunk.unique_meshes );
+                if( false == chunk.models.empty() ) {
+                    models = std::make_unique<std::vector<Eu7Model>>(
+                        std::move( chunk.models ) );
                 }
             }
 
@@ -1131,11 +1142,13 @@ worker_loop( std::stop_token const stop_token ) {
             result.models = std::move( models );
             result.unique_meshes = std::move( unique_meshes );
             result.failed = result.models == nullptr;
+            result.section_final = job.next_chunk + 1 >= chunk_count;
 
             if( result.failed ) {
                 ErrorLog(
                     "EU7 PACK: pusty odczyt sekcji " + std::to_string( job.row ) + "," +
-                    std::to_string( job.column ) + " (PIDX model_count=" +
+                    std::to_string( job.column ) + " chunk=" +
+                    std::to_string( job.next_chunk ) + " (PIDX model_count=" +
                     std::to_string( entry->model_count ) + ")" );
                 enqueue_failed_section( job );
                 continue;
@@ -1151,7 +1164,20 @@ worker_loop( std::stop_token const stop_token ) {
                 g_stream.ready.data.push_back( std::move( result ) );
             }
 
-            pack_bench_inc( &Eu7PackBench::worker_sections_done );
+            pack_bench_inc( &Eu7PackBench::worker_chunks_decoded );
+            if( result.section_final ) {
+                pack_bench_inc( &Eu7PackBench::worker_sections_done );
+            }
+
+            if( job.next_chunk + 1 < chunk_count ) {
+                PackSectionJob continue_job { job };
+                continue_job.next_chunk = job.next_chunk + 1;
+                {
+                    std::lock_guard<std::mutex> lock { g_stream.jobs.mutex };
+                    g_stream.jobs.data.push_front( continue_job );
+                }
+                g_stream.work_cv.notify_one();
+            }
         }
         catch( std::exception const &ex ) {
             ErrorLog(
@@ -1168,6 +1194,7 @@ stop_workers() {
     g_stream.work_cv.notify_all();
     g_stream.workers.clear();
     g_stream.worker_exit = false;
+    reset_pack_section_read_cache();
 
     {
         std::lock_guard<std::mutex> lock { g_stream.jobs.mutex };
@@ -1581,7 +1608,7 @@ try_dequeue_ready_batch() {
                 if( it->failed ) {
                     fail_section( it->section_idx, it->row, it->column );
                 }
-                else {
+                else if( it->section_final ) {
                     finalize_section( *it );
                 }
                 it = g_stream.ready.data.erase( it );
@@ -1672,7 +1699,7 @@ try_dequeue_ready_batch() {
         if( batch.failed ) {
             fail_section( batch.section_idx, batch.row, batch.column );
         }
-        else {
+        else if( batch.section_final ) {
             finalize_section( batch );
         }
         return false;

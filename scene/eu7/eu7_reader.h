@@ -31,8 +31,20 @@ find_pack_entry( Eu7Module const &Module, int Row, int Column );
 [[nodiscard]] std::vector<Eu7Model>
 read_pack_section( Eu7Module const &Module, int Row, int Column );
 
-// Odczyt sekcji PACK: modele + precomputed UMES (v9).
+// Odczyt sekcji PACK: modele + precomputed UMES (v9/v10).
 [[nodiscard]] Eu7PackSectionLoad
 read_pack_section_load( Eu7Module const &Module, int Row, int Column );
+
+// Odczyt jednego sub-chunka sekcji PACK (v10 CHNK; v9/v7 = cala sekcja przy ChunkIndex 0).
+[[nodiscard]] Eu7PackSectionChunkLoad
+read_pack_section_chunk_load(
+    Eu7Module const &Module,
+    int Row,
+    int Column,
+    std::uint32_t ChunkIndex );
+
+// Czysci thread-local cache odczytu PACK (otwarty plik + sparsowany naglowek sekcji).
+void
+reset_pack_section_read_cache();
 
 } // namespace scene::eu7

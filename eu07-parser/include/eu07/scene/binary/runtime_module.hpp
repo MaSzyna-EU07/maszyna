@@ -49,8 +49,10 @@ inline constexpr std::array<char, 4> kChunkPlac{'P', 'L', 'A', 'C'};
 inline constexpr std::array<char, 4> kChunkPidx{'P', 'I', 'D', 'X'};
 inline constexpr std::array<char, 4> kChunkPack{'P', 'A', 'C', 'K'};
 
-// PACK section payload: v9 = UMES (unique mesh list per 1 km section).
+// PACK section payload: v9 = UMES, v10 = UMES + CHNK (sub-chunk offset table).
 inline constexpr std::uint8_t kPackSectionFormatV9 = 2;
+inline constexpr std::uint8_t kPackSectionFormatV10 = 3;
+inline constexpr std::size_t kPackSectionChunkModels = 512;
 
 struct PackWriteStats {
     std::size_t strings_total = 0;
@@ -437,7 +439,22 @@ struct PackPayloadBuild {
     return ids;
 }
 
-[[nodiscard]] inline std::vector<char> buildPackSectionPayloadV9(
+[[nodiscard]] inline std::vector<char> buildPackModelBlob(
+    StringTable& table,
+    const std::vector<runtime::RuntimeModelInstance>& models,
+    const std::size_t begin,
+    const std::size_t end) {
+    std::ostringstream out(std::ios::binary);
+    for (std::size_t index = begin; index < end; ++index) {
+        runtime::RuntimeModelInstance worldModel = models[index];
+        worldModel.node.transform = {};
+        writeRuntimeModel(out, table, worldModel);
+    }
+    const std::string blob = out.str();
+    return {blob.begin(), blob.end()};
+}
+
+[[nodiscard]] inline std::vector<char> buildPackSectionPayloadV10(
     StringTable& table,
     const std::vector<runtime::RuntimeModelInstance>& models,
     const std::uint32_t inst_count = 0,
@@ -445,18 +462,51 @@ struct PackPayloadBuild {
     const auto mesh_ids = collectUniqueMeshIds(table, models, prototype_mesh_paths);
     const std::uint32_t solo_count = static_cast<std::uint32_t>(models.size());
 
+    std::vector<std::vector<char>> chunk_payloads;
+    chunk_payloads.reserve((models.size() + kPackSectionChunkModels - 1) / kPackSectionChunkModels);
+    for (std::size_t offset = 0; offset < models.size(); offset += kPackSectionChunkModels) {
+        const std::size_t end =
+            std::min(offset + kPackSectionChunkModels, models.size());
+        chunk_payloads.push_back(buildPackModelBlob(table, models, offset, end));
+    }
+    if (chunk_payloads.empty()) {
+        chunk_payloads.emplace_back();
+    }
+
+    const std::uint32_t chunk_count = static_cast<std::uint32_t>(chunk_payloads.size());
+    const std::uint32_t header_size =
+        1u + 4u + 4u + 4u + static_cast<std::uint32_t>(mesh_ids.size()) * 4u + 4u +
+        chunk_count * 8u;
+
+    std::vector<std::uint32_t> chunk_offsets(chunk_count);
+    std::vector<std::uint32_t> chunk_model_counts(chunk_count);
+    std::uint32_t payload_offset = header_size;
+    for (std::uint32_t chunk_index = 0; chunk_index < chunk_count; ++chunk_index) {
+        chunk_offsets[chunk_index] = payload_offset;
+        const std::size_t model_begin =
+            static_cast<std::size_t>(chunk_index) * kPackSectionChunkModels;
+        const std::size_t model_end =
+            std::min(model_begin + kPackSectionChunkModels, models.size());
+        chunk_model_counts[chunk_index] =
+            static_cast<std::uint32_t>(model_end > model_begin ? model_end - model_begin : 0);
+        payload_offset += static_cast<std::uint32_t>(chunk_payloads[chunk_index].size());
+    }
+
     std::ostringstream packOut(std::ios::binary);
-    io::writeU8(packOut, kPackSectionFormatV9);
+    io::writeU8(packOut, kPackSectionFormatV10);
     io::writeU32(packOut, solo_count);
     io::writeU32(packOut, inst_count);
     io::writeU32(packOut, static_cast<std::uint32_t>(mesh_ids.size()));
     for (const std::uint32_t id : mesh_ids) {
         io::writeU32(packOut, id);
     }
-    for (const runtime::RuntimeModelInstance& model : models) {
-        runtime::RuntimeModelInstance worldModel = model;
-        worldModel.node.transform = {};
-        writeRuntimeModel(packOut, table, worldModel);
+    io::writeU32(packOut, chunk_count);
+    for (std::uint32_t chunk_index = 0; chunk_index < chunk_count; ++chunk_index) {
+        io::writeU32(packOut, chunk_model_counts[chunk_index]);
+        io::writeU32(packOut, chunk_offsets[chunk_index]);
+    }
+    for (const std::vector<char>& payload : chunk_payloads) {
+        packOut.write(payload.data(), static_cast<std::streamsize>(payload.size()));
     }
     const std::string blob = packOut.str();
     return {blob.begin(), blob.end()};
@@ -490,7 +540,7 @@ struct PackPayloadBuild {
             entry.row = static_cast<std::uint16_t>(batch.section.z);
             entry.column = static_cast<std::uint16_t>(batch.section.x);
             entry.modelCount = static_cast<std::uint32_t>(batch.models.size());
-            section_payloads[batch_index] = buildPackSectionPayloadV9(table, batch.models);
+            section_payloads[batch_index] = buildPackSectionPayloadV10(table, batch.models);
         }
         std::size_t total_size = 0;
         for (const std::vector<char>& payload : section_payloads) {
@@ -524,7 +574,7 @@ struct PackPayloadBuild {
                 entry.column = static_cast<std::uint16_t>(batch.section.x);
                 entry.modelCount = static_cast<std::uint32_t>(batch.models.size());
 
-                section_payloads[batch_index] = buildPackSectionPayloadV9(table, batch.models);
+                section_payloads[batch_index] = buildPackSectionPayloadV10(table, batch.models);
             }
         });
     }

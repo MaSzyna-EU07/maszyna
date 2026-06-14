@@ -831,6 +831,28 @@ Sekcje v7 bez nagłówka (flat) pozostają czytelne — brak UMES, runtime skanu
 
 Runtime używa UMES do cold preload meshów zamiast liniowego skanowania wszystkich instancji w sekcji.
 
+### Format sekcji — v10 CHNK (`kPackSectionFormatV10 = 3`)
+
+Rozszerzenie v9: po UMES tabela sub-chunków (domyślnie 512 modeli/chunk przy bake).
+
+```
+uint8    section_format    — musi być = 3
+uint32   solo_count
+uint32   inst_count
+uint32   unique_mesh_count
+uint32[unique_mesh_count] string_id
+
+uint32   chunk_count
+Powtórzone chunk_count razy:
+    uint32   chunk_model_count
+    uint32   chunk_byte_offset   — offset od początku sekcji (względem PIDX pack_offset)
+
+[payload chunków — solo modele, chunk_model_count rekordów każdy]
+```
+
+Runtime: worker czyta `read_pack_section_chunk_load(row, col, chunk_index)` z O(1) seek.
+Sekcje v9 (format=2) i v7 flat pozostają kompatybilne (`chunk_count` implicit = 1).
+
 ---
 
 ## 30. PROT — prototypy modeli (v8+)
