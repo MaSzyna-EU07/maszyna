@@ -49,11 +49,13 @@ inline constexpr std::array<char, 4> kChunkFint{'F', 'I', 'N', 'T'};
 inline constexpr std::array<char, 4> kChunkPlac{'P', 'L', 'A', 'C'};
 inline constexpr std::array<char, 4> kChunkPidx{'P', 'I', 'D', 'X'};
 inline constexpr std::array<char, 4> kChunkPack{'P', 'A', 'C', 'K'};
+inline constexpr std::array<char, 4> kChunkProt{'P', 'R', 'O', 'T'};
 
-// PACK section payload: v9 = UMES, v10 = UMES + CHNK, v11 = UMES + UTEX + CHNK.
+// PACK section payload: v9 = UMES, v10 = UMES + CHNK, v11 = UMES + UTEX + CHNK, v12 = v11 + PROT inst.
 inline constexpr std::uint8_t kPackSectionFormatV9 = 2;
 inline constexpr std::uint8_t kPackSectionFormatV10 = 3;
 inline constexpr std::uint8_t kPackSectionFormatV11 = 4;
+inline constexpr std::uint8_t kPackSectionFormatV12 = 5;
 inline constexpr std::size_t kPackSectionChunkModels = 512;
 inline constexpr std::size_t kPackSectionChunkModelsHeavy = 256;
 inline constexpr std::size_t kPackSectionHeavyModelThreshold = 1024;
@@ -405,6 +407,7 @@ struct PackSectionIndexEntry {
 
 struct PackPayloadBuild {
     std::vector<char> packPayload;
+    std::vector<char> protPayload;
     std::vector<PackSectionIndexEntry> entries;
 };
 
@@ -712,7 +715,301 @@ inline void sortPackSectionModelsForStreaming(
     return {blob.begin(), blob.end()};
 }
 
-[[nodiscard]] inline PackPayloadBuild buildPackPayloadV7(
+struct PackPrototypeKey {
+    std::string modelFile;
+    std::string textureFile;
+    double rangeSquaredMin = 0.0;
+    double rangeSquaredMax = 0.0;
+    bool visible = true;
+    bool isTerrain = false;
+    bool transition = true;
+
+    [[nodiscard]] bool operator==(const PackPrototypeKey& other) const noexcept {
+        return modelFile == other.modelFile && textureFile == other.textureFile &&
+               rangeSquaredMin == other.rangeSquaredMin &&
+               rangeSquaredMax == other.rangeSquaredMax && visible == other.visible &&
+               isTerrain == other.isTerrain && transition == other.transition;
+    }
+};
+
+struct PackPrototypeKeyHash {
+    [[nodiscard]] std::size_t operator()(const PackPrototypeKey& key) const noexcept {
+        std::size_t hash = std::hash<std::string>{}(key.modelFile);
+        hash ^= std::hash<std::string>{}(key.textureFile) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+        hash ^= std::hash<double>{}(key.rangeSquaredMin) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+        hash ^= std::hash<double>{}(key.rangeSquaredMax) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+        hash ^= static_cast<std::size_t>(key.visible) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+        hash ^= static_cast<std::size_t>(key.isTerrain) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+        hash ^= static_cast<std::size_t>(key.transition) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+        return hash;
+    }
+};
+
+[[nodiscard]] inline PackPrototypeKey makePackPrototypeKey(
+    const runtime::RuntimeModelInstance& model) noexcept {
+    PackPrototypeKey key;
+    key.modelFile = model.modelFile;
+    key.textureFile = model.textureFile;
+    key.rangeSquaredMin = model.node.rangeSquaredMin;
+    key.rangeSquaredMax = model.node.rangeSquaredMax;
+    key.visible = model.node.visible;
+    key.isTerrain = model.isTerrain;
+    key.transition = model.transition;
+    return key;
+}
+
+[[nodiscard]] inline bool modelMustBePackSolo(const runtime::RuntimeModelInstance& model) noexcept {
+    if (model.isTerrain) {
+        return true;
+    }
+    if (!model.lightStates.empty() || !model.lightColors.empty()) {
+        return true;
+    }
+    if (!isLoadableMeshPath(model.modelFile)) {
+        return true;
+    }
+    return false;
+}
+
+[[nodiscard]] inline bool modelCanBePackInstanced(const runtime::RuntimeModelInstance& model) noexcept {
+    return !modelMustBePackSolo(model);
+}
+
+inline void writeRuntimePrototype(
+    std::ostream& out,
+    StringTable& table,
+    const runtime::RuntimeModelInstance& model) {
+    codec::writeSlimNode(out, table, model.node, "model");
+    io::writeU8(out, model.isTerrain ? 1 : 0);
+    io::writeU8(out, model.transition ? 1 : 0);
+    codec::writeStringId(out, table, model.modelFile);
+    codec::writeStringId(out, table, model.textureFile);
+    io::writeU32(out, static_cast<std::uint32_t>(model.lightStates.size()));
+    for (float light : model.lightStates) {
+        io::writeF32(out, light);
+    }
+    io::writeU32(out, static_cast<std::uint32_t>(model.lightColors.size()));
+    for (std::uint32_t color : model.lightColors) {
+        io::writeU32(out, color);
+    }
+}
+
+[[nodiscard]] inline std::vector<char> buildProtPayload(
+    StringTable& table,
+    const std::vector<runtime::RuntimeModelInstance>& prototypes) {
+    std::ostringstream out(std::ios::binary);
+    io::writeU32(out, static_cast<std::uint32_t>(prototypes.size()));
+    for (const runtime::RuntimeModelInstance& proto : prototypes) {
+        writeRuntimePrototype(out, table, proto);
+    }
+    const std::string blob = out.str();
+    return {blob.begin(), blob.end()};
+}
+
+struct PackPrototypeTable {
+    std::vector<runtime::RuntimeModelInstance> prototypes;
+    std::unordered_map<PackPrototypeKey, std::uint32_t, PackPrototypeKeyHash> key_to_id;
+};
+
+[[nodiscard]] inline PackPrototypeTable collectPackPrototypes(
+    StringTable& table,
+    const std::vector<codec::ModelSectionBatch>& batches) {
+    std::unordered_map<PackPrototypeKey, std::uint32_t, PackPrototypeKeyHash> frequency;
+    frequency.reserve(1024);
+
+    for (const codec::ModelSectionBatch& batch : batches) {
+        for (const runtime::RuntimeModelInstance& model : batch.models) {
+            if (!modelCanBePackInstanced(model)) {
+                continue;
+            }
+            ++frequency[makePackPrototypeKey(model)];
+        }
+    }
+
+    PackPrototypeTable result;
+    for (const codec::ModelSectionBatch& batch : batches) {
+        for (const runtime::RuntimeModelInstance& model : batch.models) {
+            if (!modelCanBePackInstanced(model)) {
+                continue;
+            }
+            const PackPrototypeKey key = makePackPrototypeKey(model);
+            const auto freq_it = frequency.find(key);
+            if (freq_it == frequency.end() || freq_it->second < 2) {
+                continue;
+            }
+            if (result.key_to_id.contains(key)) {
+                continue;
+            }
+            const std::uint32_t proto_id =
+                static_cast<std::uint32_t>(result.prototypes.size());
+            result.key_to_id.emplace(key, proto_id);
+            runtime::RuntimeModelInstance proto = model;
+            proto.location = {};
+            proto.angles = {};
+            proto.scale = {1.0, 1.0, 1.0};
+            proto.node.transform = {};
+            collectModelStrings(table, proto);
+            result.prototypes.push_back(std::move(proto));
+        }
+    }
+    return result;
+}
+
+enum class PackSectionEntryKind : std::uint8_t { Solo, Inst };
+
+struct PackSectionEntry {
+    PackSectionEntryKind kind = PackSectionEntryKind::Solo;
+    std::size_t model_index = 0;
+    std::uint32_t proto_id = 0;
+};
+
+inline void writePackInstRecord(
+    std::ostream& out,
+    StringTable& table,
+    const std::uint32_t proto_id,
+    const runtime::RuntimeModelInstance& model) {
+    io::writeU32(out, proto_id);
+    io::writeVec3(out, model.location);
+    io::writeVec3(out, model.angles);
+    io::writeVec3(out, model.scale);
+    codec::writeStringId(out, table, model.node.name);
+}
+
+[[nodiscard]] inline std::vector<char> buildPackSectionChunkBlobV12(
+    StringTable& table,
+    const std::vector<runtime::RuntimeModelInstance>& models,
+    const std::vector<PackSectionEntry>& entries,
+    const std::size_t begin,
+    const std::size_t end) {
+    // Reader decodes each chunk as a solo block followed by inst records (v8 layout).
+    std::ostringstream out(std::ios::binary);
+    for (std::size_t index = begin; index < end; ++index) {
+        const PackSectionEntry& entry = entries[index];
+        if (entry.kind != PackSectionEntryKind::Solo) {
+            continue;
+        }
+        runtime::RuntimeModelInstance worldModel = models[entry.model_index];
+        worldModel.node.transform = {};
+        writeRuntimeModel(out, table, worldModel);
+    }
+    for (std::size_t index = begin; index < end; ++index) {
+        const PackSectionEntry& entry = entries[index];
+        if (entry.kind != PackSectionEntryKind::Inst) {
+            continue;
+        }
+        writePackInstRecord(out, table, entry.proto_id, models[entry.model_index]);
+    }
+    const std::string blob = out.str();
+    return {blob.begin(), blob.end()};
+}
+
+[[nodiscard]] inline std::vector<char> buildPackSectionPayloadV12(
+    StringTable& table,
+    const std::vector<runtime::RuntimeModelInstance>& models,
+    const PackPrototypeTable& prototypes) {
+    std::vector<PackSectionEntry> entries;
+    entries.reserve(models.size());
+
+    std::uint32_t solo_count = 0;
+    std::uint32_t inst_count = 0;
+    for (std::size_t model_index = 0; model_index < models.size(); ++model_index) {
+        const runtime::RuntimeModelInstance& model = models[model_index];
+        if (modelMustBePackSolo(model)) {
+            entries.push_back({PackSectionEntryKind::Solo, model_index, 0});
+            ++solo_count;
+            continue;
+        }
+        const PackPrototypeKey key = makePackPrototypeKey(model);
+        const auto proto_it = prototypes.key_to_id.find(key);
+        if (proto_it == prototypes.key_to_id.end()) {
+            entries.push_back({PackSectionEntryKind::Solo, model_index, 0});
+            ++solo_count;
+            continue;
+        }
+        entries.push_back({PackSectionEntryKind::Inst, model_index, proto_it->second});
+        ++inst_count;
+    }
+
+    std::vector<std::string_view> prototype_mesh_paths;
+    prototype_mesh_paths.reserve(prototypes.prototypes.size());
+    for (const runtime::RuntimeModelInstance& proto : prototypes.prototypes) {
+        prototype_mesh_paths.emplace_back(proto.modelFile);
+    }
+
+    const auto mesh_ids =
+        collectUniqueMeshIds(table, models, &prototype_mesh_paths);
+    const auto texture_ids = collectUniqueTextureIds(table, models);
+    const std::size_t chunk_models =
+        models.size() > kPackSectionHeavyModelThreshold ? kPackSectionChunkModelsHeavy
+                                                        : kPackSectionChunkModels;
+
+    std::vector<std::vector<char>> chunk_payloads;
+    std::vector<std::uint32_t> chunk_solo_counts;
+    std::vector<std::uint32_t> chunk_inst_counts;
+    chunk_payloads.reserve((entries.size() + chunk_models - 1) / chunk_models);
+    chunk_solo_counts.reserve(chunk_payloads.capacity());
+    chunk_inst_counts.reserve(chunk_payloads.capacity());
+
+    for (std::size_t offset = 0; offset < entries.size(); offset += chunk_models) {
+        const std::size_t end = std::min(offset + chunk_models, entries.size());
+        std::uint32_t chunk_solo = 0;
+        std::uint32_t chunk_inst = 0;
+        for (std::size_t index = offset; index < end; ++index) {
+            if (entries[index].kind == PackSectionEntryKind::Solo) {
+                ++chunk_solo;
+            } else {
+                ++chunk_inst;
+            }
+        }
+        chunk_solo_counts.push_back(chunk_solo);
+        chunk_inst_counts.push_back(chunk_inst);
+        chunk_payloads.push_back(
+            buildPackSectionChunkBlobV12(table, models, entries, offset, end));
+    }
+    if (chunk_payloads.empty()) {
+        chunk_payloads.emplace_back();
+        chunk_solo_counts.push_back(0);
+        chunk_inst_counts.push_back(0);
+    }
+
+    const std::uint32_t chunk_count = static_cast<std::uint32_t>(chunk_payloads.size());
+    const std::uint32_t header_size =
+        1u + 4u + 4u + 4u + static_cast<std::uint32_t>(mesh_ids.size()) * 4u + 4u +
+        static_cast<std::uint32_t>(texture_ids.size()) * 4u + 4u + chunk_count * 12u;
+
+    std::vector<std::uint32_t> chunk_offsets(chunk_count);
+    std::uint32_t payload_offset = header_size;
+    for (std::uint32_t chunk_index = 0; chunk_index < chunk_count; ++chunk_index) {
+        chunk_offsets[chunk_index] = payload_offset;
+        payload_offset += static_cast<std::uint32_t>(chunk_payloads[chunk_index].size());
+    }
+
+    std::ostringstream packOut(std::ios::binary);
+    io::writeU8(packOut, kPackSectionFormatV12);
+    io::writeU32(packOut, solo_count);
+    io::writeU32(packOut, inst_count);
+    io::writeU32(packOut, static_cast<std::uint32_t>(mesh_ids.size()));
+    for (const std::uint32_t id : mesh_ids) {
+        io::writeU32(packOut, id);
+    }
+    io::writeU32(packOut, static_cast<std::uint32_t>(texture_ids.size()));
+    for (const std::uint32_t id : texture_ids) {
+        io::writeU32(packOut, id);
+    }
+    io::writeU32(packOut, chunk_count);
+    for (std::uint32_t chunk_index = 0; chunk_index < chunk_count; ++chunk_index) {
+        io::writeU32(packOut, chunk_solo_counts[chunk_index]);
+        io::writeU32(packOut, chunk_inst_counts[chunk_index]);
+        io::writeU32(packOut, chunk_offsets[chunk_index]);
+    }
+    for (const std::vector<char>& payload : chunk_payloads) {
+        packOut.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+    }
+    const std::string blob = packOut.str();
+    return {blob.begin(), blob.end()};
+}
+
+[[nodiscard]] inline PackPayloadBuild buildPackPayloadV12(
     StringTable& table,
     const std::vector<codec::ModelSectionBatch>& batches) {
     PackPayloadBuild result;
@@ -725,6 +1022,9 @@ inline void sortPackSectionModelsForStreaming(
             collectModelStrings(table, model);
         }
     }
+
+    const PackPrototypeTable prototypes = collectPackPrototypes(table, batches);
+    result.protPayload = buildProtPayload(table, prototypes.prototypes);
 
     result.entries.resize(batches.size());
     std::vector<std::vector<char>> section_payloads(batches.size());
@@ -742,7 +1042,8 @@ inline void sortPackSectionModelsForStreaming(
             entry.modelCount = static_cast<std::uint32_t>(batch.models.size());
             std::vector<runtime::RuntimeModelInstance> section_models = batch.models;
             sortPackSectionModelsForStreaming(section_models, batch.section);
-            section_payloads[batch_index] = buildPackSectionPayloadV11(table, section_models);
+            section_payloads[batch_index] =
+                buildPackSectionPayloadV12(table, section_models, prototypes);
         }
         std::size_t total_size = 0;
         for (const std::vector<char>& payload : section_payloads) {
@@ -778,7 +1079,8 @@ inline void sortPackSectionModelsForStreaming(
 
                 std::vector<runtime::RuntimeModelInstance> section_models = batch.models;
                 sortPackSectionModelsForStreaming(section_models, batch.section);
-                section_payloads[batch_index] = buildPackSectionPayloadV11(table, section_models);
+                section_payloads[batch_index] =
+                    buildPackSectionPayloadV12(table, section_models, prototypes);
             }
         });
     }
@@ -802,6 +1104,12 @@ inline void sortPackSectionModelsForStreaming(
         offset += static_cast<std::uint64_t>(payload.size());
     }
     return result;
+}
+
+[[nodiscard]] inline PackPayloadBuild buildPackPayloadV7(
+    StringTable& table,
+    const std::vector<codec::ModelSectionBatch>& batches) {
+    return buildPackPayloadV12(table, batches);
 }
 
 [[nodiscard]] inline PackPayloadBuild buildPackPayloadV7(
@@ -1083,7 +1391,8 @@ inline void readPidxChunkV7(std::istream& in, std::vector<PackSectionIndexEntry>
 [[nodiscard]] inline bool isKnownRuntimeChunk(const std::array<char, 4>& id) {
     return id == kChunkStrs || id == kChunkIncl || id == kChunkPlac || id == kChunkTrak ||
            id == kChunkTrac || id == kChunkPwrs || id == kChunkTerr || id == kChunkMesh ||
-           id == kChunkLine ||            id == kChunkModl || id == kChunkPidx || id == kChunkPack || id == kChunkMemc ||
+           id == kChunkLine ||            id == kChunkModl || id == kChunkPidx || id == kChunkPack ||
+           id == kChunkProt || id == kChunkMemc ||
            id == kChunkLaun || id == kChunkDynm || id == kChunkSond ||
            id == kChunkTrset || id == kChunkEvnt || id == kChunkFint;
 }
@@ -1160,7 +1469,7 @@ inline void writeRuntimeModule(
     }
 
     out.write(kMagic.data(), 4);
-    io::writeU32(out, usePackModels ? kVersionRuntimeV7 : kVersionRuntime);
+    io::writeU32(out, usePackModels ? kVersionRuntimeV8 : kVersionRuntime);
 
     io::writeChunkHeader(out, kChunkStrs, 8 + static_cast<std::uint32_t>(strsPayload.size()));
     out.write(strsPayload.data(), static_cast<std::streamsize>(strsPayload.size()));
@@ -1193,6 +1502,11 @@ inline void writeRuntimeModule(
     if (usePackModels) {
         io::writeChunkHeader(out, kChunkPidx, 8 + static_cast<std::uint32_t>(pidxPayload.size()));
         out.write(pidxPayload.data(), static_cast<std::streamsize>(pidxPayload.size()));
+        io::writeChunkHeader(
+            out, kChunkProt, 8 + static_cast<std::uint32_t>(packBuild.protPayload.size()));
+        out.write(
+            packBuild.protPayload.data(),
+            static_cast<std::streamsize>(packBuild.protPayload.size()));
         io::writeChunkHeader(
             out, kChunkPack, 8 + static_cast<std::uint32_t>(packBuild.packPayload.size()));
         out.write(

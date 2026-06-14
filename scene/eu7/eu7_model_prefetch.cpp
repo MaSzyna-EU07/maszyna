@@ -106,14 +106,9 @@ pack_texture_usable( std::string texture_file ) {
 }
 
 void
-preload_pack_model_file( std::string const &model_file ) {
-    if( false == TModelsManager::IsModelCached( model_file ) ) {
-        return;
-    }
-
-    if( auto *const mesh { TModelsManager::GetModel( model_file, false, false ) } ) {
-        TAnimModel::warm_instanceable_cache( mesh );
-    }
+preload_pack_model_file( std::string const & ) {
+    // Mesh warm runs on the main thread via ensure_pack_mesh_in_session_cache only.
+    // GetModel mutates Global.asCurrentTexturePath and must not run on PACK workers.
 }
 
 [[nodiscard]] bool
@@ -208,55 +203,17 @@ reset_pack_texture_warm_cache() {
 }
 
 void
-preload_pack_model_paths( std::vector<std::string> const &model_files ) {
-    std::unordered_set<std::string> seen;
-    seen.reserve( model_files.size() );
-
-    for( auto model_file : model_files ) {
-        if( model_file.empty() || model_file == "notload" ) {
-            continue;
-        }
-
-        replace_slashes( model_file );
-        if( false == seen.insert( model_file ).second ) {
-            continue;
-        }
-
-        std::lock_guard<std::mutex> lock { g_pack_mesh_load_mutex };
-        preload_pack_model_file( model_file );
-    }
+preload_pack_model_paths( std::vector<std::string> const & ) {
 }
 
 void
-preload_pack_models( std::vector<Eu7Model> const &models ) {
-    std::unordered_set<std::string> seen;
-    seen.reserve( models.size() );
-
-    for( auto const &model : models ) {
-        auto model_file { model.model_file };
-        if( model_file.empty() || model_file == "notload" ) {
-            continue;
-        }
-
-        replace_slashes( model_file );
-        if( false == seen.insert( model_file ).second ) {
-            continue;
-        }
-
-        std::lock_guard<std::mutex> lock { g_pack_mesh_load_mutex };
-        preload_pack_model_file( model_file );
-    }
+preload_pack_models( std::vector<Eu7Model> const & ) {
 }
 
 void
 preload_pack_models(
-    std::vector<Eu7Model> const &models,
-    std::vector<std::string> const &unique_meshes ) {
-    if( false == unique_meshes.empty() ) {
-        preload_pack_model_paths( unique_meshes );
-        return;
-    }
-    preload_pack_models( models );
+    std::vector<Eu7Model> const &,
+    std::vector<std::string> const & ) {
 }
 
 std::size_t

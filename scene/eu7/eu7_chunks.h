@@ -61,6 +61,7 @@ constexpr std::uint8_t kPackSectionFormatV8 { 1 };
 constexpr std::uint8_t kPackSectionFormatV9 { 2 };
 constexpr std::uint8_t kPackSectionFormatV10 { 3 };
 constexpr std::uint8_t kPackSectionFormatV11 { 4 };
+constexpr std::uint8_t kPackSectionFormatV12 { 5 };
 constexpr std::size_t kPackSectionChunkModels { 512 };
 
 } // namespace scene::eu7

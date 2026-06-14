@@ -33,6 +33,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/eu7/eu7_bake.h"
 #include "scene/eu7/eu7_loader.h"
 #include "scene/eu7/eu7_load_stats.h"
+#include "scene/eu7/eu7_model_prefetch.h"
 #include "scene/eu7/eu7_pack_bench.h"
 #include "scene/eu7/eu7_section.h"
 #include "scene/eu7/eu7_transform.h"
@@ -545,9 +546,9 @@ state_serializer::insert_eu7_pack_models(
                 if( found != mesh_cache.end() ) {
                     mesh = found->second;
                 }
-                else {
-                    mesh = TModelsManager::GetModel( model_file, false, false );
-                    mesh_cache.emplace( model_file, mesh );
+                else if( scene::eu7::ensure_pack_mesh_in_session_cache( model_file, mesh_cache ) ) {
+                    auto const loaded { mesh_cache.find( model_file ) };
+                    mesh = loaded != mesh_cache.end() ? loaded->second : nullptr;
                 }
             }
             loaded = instance->LoadEu7PackWarm( mesh, texture_file );

@@ -21,11 +21,10 @@ class TModel3d;
 
 namespace scene::eu7 {
 
-// Tylko warm_instanceable_cache dla juz zcache'owanych meshy (bez cold GetModel na workerze).
+// Deprecated: mesh warm is main-thread only (ensure_pack_mesh_in_session_cache).
 void
 preload_pack_models( std::vector<Eu7Model> const &Models );
 
-// Jak wyzej, ale iteruje precomputed UMES zamiast skanowac instancje.
 void
 preload_pack_models(
     std::vector<Eu7Model> const &Models,

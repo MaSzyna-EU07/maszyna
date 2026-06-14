@@ -380,6 +380,7 @@ struct Eu7PackSectionCursor {
     std::vector<std::string> unique_textures;
     std::uint32_t chunk_count { 0 };
     std::vector<std::uint32_t> chunk_model_counts;
+    std::vector<std::uint32_t> chunk_inst_counts;
     std::vector<std::uint32_t> chunk_byte_offsets;
 };
 

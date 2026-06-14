@@ -17,17 +17,22 @@ inline constexpr std::array<char, 4> kMagic{'E', 'U', '7', 'B'};
 inline constexpr std::uint32_t kVersionLegacy = 1; // codec.hpp — nieobslugiwane w CLI
 inline constexpr std::uint32_t kVersionRuntime = 6;
 inline constexpr std::uint32_t kVersionRuntimeV7 = 7;
+inline constexpr std::uint32_t kVersionRuntimeV8 = 8;
 inline constexpr std::uint32_t kVersionRuntimeV5 = 5;
 inline constexpr std::uint32_t kVersionRuntimeV4 = 4;
 inline constexpr std::uint32_t kVersionRuntimeF32 = 3;
 inline constexpr std::uint32_t kVersionRuntimeF64 = 2;
 
 [[nodiscard]] inline bool isSupportedEu7bVersion(const std::uint32_t version) noexcept {
-    return version == kVersionRuntimeV7 || version == kVersionRuntime ||
-           version == kVersionRuntimeV5 || version == kVersionRuntimeV4;
+    return version == kVersionRuntimeV8 || version == kVersionRuntimeV7 ||
+           version == kVersionRuntime || version == kVersionRuntimeV5 ||
+           version == kVersionRuntimeV4;
 }
 
 [[nodiscard]] inline std::string formatVersionName(const std::uint32_t version) {
+    if (version == kVersionRuntimeV8) {
+        return "RuntimeV8";
+    }
     if (version == kVersionRuntimeV7) {
         return "RuntimeV7";
     }
@@ -53,6 +58,9 @@ inline constexpr std::uint32_t kVersionRuntimeF64 = 2;
 }
 
 [[nodiscard]] inline std::string formatVersionDescription(const std::uint32_t version) {
+    if (version == kVersionRuntimeV8) {
+        return "bake v7 + PROT + PACK sekcji v12 (solo + compact inst)";
+    }
     if (version == kVersionRuntimeV7) {
         return "bake v6 + MODL w chunkach PIDX/PACK per sekcja 1km (v7)";
     }

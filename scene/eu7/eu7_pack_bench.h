@@ -71,6 +71,9 @@ struct Eu7PackBench {
     std::uint64_t stream_dequeue_camera { 0 };
     std::uint64_t stream_dequeue_wait_near { 0 };
     std::uint64_t stream_jobs_blocked_far { 0 };
+    std::uint64_t stream_jobs_blocked_ring_inner { 0 };
+    std::uint64_t stream_jobs_blocked_ring_outer { 0 };
+    std::uint64_t stream_worker_deferred_distant { 0 };
     std::uint64_t stream_apply_stuck_skip { 0 };
     std::uint64_t stream_sections_unloaded { 0 };
     std::uint64_t stream_unload_instances { 0 };

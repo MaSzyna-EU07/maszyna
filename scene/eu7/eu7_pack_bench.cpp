@@ -186,6 +186,9 @@ log_pack_bench_impl( Eu7PackBench const &bench, char const *const title ) {
         " cam=" + std::to_string( bench.stream_dequeue_camera ) +
         " wait_near=" + std::to_string( bench.stream_dequeue_wait_near ) +
         " block_far=" + std::to_string( bench.stream_jobs_blocked_far ) +
+        " block_ring_in=" + std::to_string( bench.stream_jobs_blocked_ring_inner ) +
+        " block_ring_out=" + std::to_string( bench.stream_jobs_blocked_ring_outer ) +
+        " defer_dist=" + std::to_string( bench.stream_worker_deferred_distant ) +
         " stuck_skip=" + std::to_string( bench.stream_apply_stuck_skip ) );
     WriteLog(
         "  diag ready_tex_ms=" + std::to_string( static_cast<int>( bench.stream_prefetch_ready_tex_ms ) ) +

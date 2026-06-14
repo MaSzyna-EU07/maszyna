@@ -877,6 +877,43 @@ Powtórzone chunk_count razy:
 
 Runtime używa UTEX do prefetch/warm tekstur bez skanowania wszystkich instancji.
 
+### Format sekcji — v12 PROT+INST (`kPackSectionFormatV12 = 5`)
+
+Rozszerzenie v11: sekcja dzieli modele na **solo** (pełny MODL) i **inst** (kompaktowy rekord odwołujący się do globalnego chunku PROT). Chunki zawierają mix solo+inst; w każdym chunku najpierw solo, potem inst.
+
+```
+uint8    section_format    — musi być = 5
+uint32   solo_count
+uint32   inst_count
+uint32   unique_mesh_count
+uint32[unique_mesh_count] string_id
+
+uint32   unique_texture_count
+uint32[unique_texture_count] string_id
+
+uint32   chunk_count
+Powtórzone chunk_count razy:
+    uint32   chunk_solo_count
+    uint32   chunk_inst_count
+    uint32   chunk_byte_offset
+
+[payload chunków — solo_count pełnych MODL + inst_count rekordów inst rozłożonych po chunkach]
+```
+
+Rekord instancji (jak v8):
+
+```
+uint32   proto_id
+Vec3     location
+Vec3     angles
+Vec3     scale
+string_id  name
+```
+
+Bake v12 emituje chunk **PROT** przed **PACK** (wersja pliku 8). Runtime rozwija inst przez `expand_prototype_instance()` i `module.model_prototypes`.
+
+Sekcje v11–v7 pozostają czytelne (fallback v12→v11→v10→flat).
+
 ---
 
 ## 30. PROT — prototypy modeli (v8+)
