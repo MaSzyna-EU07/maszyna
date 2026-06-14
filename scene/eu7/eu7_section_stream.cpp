@@ -69,8 +69,8 @@ constexpr double kReenqueueDistanceM { 500.0 };
 constexpr double kCatchupReenqueueDistanceM { 40.0 };
 constexpr std::size_t kHeavySectionModelThreshold { 800 };
 constexpr double kUrgentApplyBudgetMs { 32.0 };
-constexpr std::size_t kUrgentSliceInstances { 512 };
-constexpr std::size_t kUrgentSliceColdMeshes { 20 };
+constexpr std::size_t kUrgentSliceInstances { 96 };
+constexpr std::size_t kUrgentSliceColdMeshes { 2 };
 constexpr double kUrgentColdBudgetMs { 24.0 };
 constexpr std::size_t kUrgentMaxChunksPerDrain { 8 };
 constexpr double kReadyTexturePrefetchBudgetMs { 14.0 };
@@ -108,9 +108,11 @@ struct PackSectionReady {
     int column { 0 };
     std::size_t section_idx { 0 };
     std::unique_ptr<std::vector<Eu7Model>> models;
+    std::vector<std::string> unique_meshes;
     bool failed { false };
     std::size_t apply_offset { 0 };
     std::size_t texture_warm_offset { 0 };
+    std::size_t umes_cold_offset { 0 };
 };
 
 struct SectionStreamState {
@@ -404,13 +406,27 @@ pending_apply_is_urgent() {
 adaptive_slice_instances( std::size_t const section_total, bool const urgent = false ) {
     if( urgent ) {
         auto limit { kUrgentSliceInstances };
+        auto const speed { camera_stream_speed_mps() };
+        if( speed > 1200.0 ) {
+            limit = std::min( limit, std::size_t { 64 } );
+        }
+        else if( speed > 600.0 ) {
+            limit = std::min( limit, std::size_t { 96 } );
+        }
         if( section_total > 4000 ) {
-            limit = std::min( limit, std::size_t { 384 } );
+            limit = std::min( limit, std::size_t { 64 } );
         }
         else if( section_total > 2000 ) {
-            limit = std::min( limit, std::size_t { 448 } );
+            limit = std::min( limit, std::size_t { 96 } );
         }
-        return limit;
+        auto const last_ms { pack_bench_stream().last_chunk_ms };
+        if( last_ms >= 24.0 ) {
+            limit = std::min( limit, std::size_t { 32 } );
+        }
+        else if( last_ms >= 12.0 ) {
+            limit = std::min( limit, std::size_t { 48 } );
+        }
+        return std::max( limit, std::size_t { 16 } );
     }
 
     auto limit { gameplay_slice_instances() };
@@ -559,6 +575,69 @@ preload_slice_cold_meshes(
         }
         slice_count = 1;
     }
+    return cold_loaded;
+}
+
+[[nodiscard]] std::size_t
+preload_umes_cold_meshes(
+    std::vector<std::string> const &unique_meshes,
+    std::size_t const offset,
+    std::size_t const max_cold_meshes,
+    double const cold_budget_ms,
+    std::size_t &offset_out ) {
+    offset_out = offset;
+    if( unique_meshes.empty() || offset >= unique_meshes.size() ) {
+        return 0;
+    }
+
+    std::size_t cold_loaded { 0 };
+    auto const cold_started { std::chrono::steady_clock::now() };
+    for( std::size_t i { offset }; i < unique_meshes.size(); ++i ) {
+        auto model_file { unique_meshes[ i ] };
+        if( model_file.empty() || model_file == "notload" ) {
+            offset_out = i + 1;
+            continue;
+        }
+        replace_slashes( model_file );
+        if( g_stream.mesh_cache.contains( model_file ) ) {
+            pack_bench_inc( &Eu7PackBench::stream_mesh_session_hit );
+            offset_out = i + 1;
+            continue;
+        }
+        if( cold_loaded >= max_cold_meshes ) {
+            pack_bench_inc( &Eu7PackBench::stream_cold_slice_truncated );
+            break;
+        }
+        if( cold_budget_ms > 0.0 && cold_loaded > 0 ) {
+            auto const elapsed_ms {
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - cold_started ).count() };
+            if( elapsed_ms >= cold_budget_ms ) {
+                pack_bench_inc( &Eu7PackBench::stream_cold_slice_truncated );
+                break;
+            }
+        }
+        auto const was_global_cached { TModelsManager::IsModelCached( model_file ) };
+        TModel3d *mesh { nullptr };
+        {
+            PackBenchTimer const load_timer { &Eu7PackBench::main_cold_getmodel_ms };
+            mesh = TModelsManager::GetModel( model_file, false, false );
+            pack_bench_inc( &Eu7PackBench::main_cold_getmodel_calls );
+        }
+        if( was_global_cached ) {
+            pack_bench_inc( &Eu7PackBench::stream_mesh_global_hit );
+        }
+        else {
+            pack_bench_inc( &Eu7PackBench::stream_mesh_disk_load );
+        }
+        if( mesh != nullptr ) {
+            TAnimModel::warm_instanceable_cache( mesh );
+        }
+        g_stream.mesh_cache.emplace( model_file, mesh );
+        ++cold_loaded;
+        offset_out = i + 1;
+    }
+
     return cold_loaded;
 }
 
@@ -817,17 +896,27 @@ apply_pending_chunk(
 
         {
             auto const phase_started { std::chrono::steady_clock::now() };
-            cold_loads = preload_slice_cold_meshes(
-                models_ptr + offset,
-                chunk_count,
-                cold_mesh_limit,
-                effective_cold_budget_ms,
-                chunk_count );
+            if( false == batch.unique_meshes.empty() ) {
+                cold_loads = preload_umes_cold_meshes(
+                    batch.unique_meshes,
+                    batch.umes_cold_offset,
+                    cold_mesh_limit,
+                    effective_cold_budget_ms,
+                    batch.umes_cold_offset );
+            }
+            else {
+                cold_loads = preload_slice_cold_meshes(
+                    models_ptr + offset,
+                    chunk_count,
+                    cold_mesh_limit,
+                    effective_cold_budget_ms,
+                    chunk_count );
+            }
             cold_ms = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - phase_started ).count();
         }
         pack_bench_inc( &Eu7PackBench::stream_inst_after_cold, chunk_count );
-        if( chunk_count < planned_inst ) {
+        if( batch.unique_meshes.empty() && chunk_count < planned_inst ) {
             pack_bench_inc( &Eu7PackBench::stream_cold_slice_truncated );
         }
         if( chunk_count == 0 ) {
@@ -1025,11 +1114,13 @@ worker_loop( std::stop_token const stop_token ) {
             }
 
             std::unique_ptr<std::vector<Eu7Model>> models;
+            std::vector<std::string> unique_meshes;
             {
                 PackBenchTimer const read_timer { &Eu7PackBench::worker_read_pack_ms };
-                auto section { read_pack_section( module, job.row, job.column ) };
-                if( false == section.empty() ) {
-                    models = std::make_unique<std::vector<Eu7Model>>( std::move( section ) );
+                auto section { read_pack_section_load( module, job.row, job.column ) };
+                unique_meshes = std::move( section.unique_meshes );
+                if( false == section.models.empty() ) {
+                    models = std::make_unique<std::vector<Eu7Model>>( std::move( section.models ) );
                 }
             }
 
@@ -1038,6 +1129,7 @@ worker_loop( std::stop_token const stop_token ) {
             result.column = job.column;
             result.section_idx = job.section_idx;
             result.models = std::move( models );
+            result.unique_meshes = std::move( unique_meshes );
             result.failed = result.models == nullptr;
 
             if( result.failed ) {
@@ -1052,7 +1144,7 @@ worker_loop( std::stop_token const stop_token ) {
             pack_bench_inc(
                 &Eu7PackBench::worker_models_decoded, result.models->size() );
 
-            preload_pack_models( *result.models );
+            preload_pack_models( *result.models, result.unique_meshes );
 
             {
                 std::lock_guard<std::mutex> lock { g_stream.ready.mutex };

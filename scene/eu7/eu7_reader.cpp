@@ -505,10 +505,34 @@ parse_pack_section_header(
     const std::uint8_t first_byte {
         peek == EOF ? std::uint8_t { 0 } : static_cast<std::uint8_t>( peek ) };
 
-    if( first_byte == 2 ) {
-        throw std::runtime_error(
-            "EU7 PACK: format v9 nieobslugiwany — przebake plik .eu7" );
+    bool use_v9_header { false };
+    if( first_byte == kPackSectionFormatV9 ) {
+        cursor.section_format = sn_utils::d_uint8( input );
+        const std::uint32_t solo_total { sn_utils::ld_uint32( input ) };
+        const std::uint32_t inst_total { sn_utils::ld_uint32( input ) };
+        const std::uint32_t unique_mesh_count { sn_utils::ld_uint32( input ) };
+        if( solo_total + inst_total == entry.model_count ) {
+            use_v9_header = true;
+            cursor.model_total = solo_total + inst_total;
+            cursor.solo_remaining = solo_total;
+            cursor.inst_remaining = inst_total;
+
+            StringTable const strings { module.strings };
+            cursor.unique_meshes.reserve( unique_mesh_count );
+            for( std::uint32_t mesh_idx { 0 }; mesh_idx < unique_mesh_count; ++mesh_idx ) {
+                cursor.unique_meshes.push_back(
+                    strings.resolve( sn_utils::ld_uint32( input ) ) );
+            }
+        }
     }
+
+    if( use_v9_header ) {
+        cursor.models_read = 0;
+        cursor.header_parsed = true;
+        return;
+    }
+
+    input.seekg( section_start );
 
     // v8 header starts with byte 1 — same as kNodeFlagHasName on flat v7 models.
     // Accept v8 only when PROT exists and solo+inst counts match PIDX model_count.
@@ -1013,15 +1037,16 @@ find_pack_entry_impl( Eu7Module const &module, int const row, int const column )
     return std::nullopt;
 }
 
-[[nodiscard]] std::vector<Eu7Model>
-read_pack_section_impl( Eu7Module const &module, int const row, int const column ) {
+[[nodiscard]] Eu7PackSectionLoad
+read_pack_section_load_impl( Eu7Module const &module, int const row, int const column ) {
+    Eu7PackSectionLoad result;
     if( false == module.has_pack_chunk || module.source_path.empty() ) {
-        return {};
+        return result;
     }
 
     auto const entry { find_pack_entry_impl( module, row, column ) };
     if( false == entry.has_value() || entry->model_count == 0 ) {
-        return {};
+        return result;
     }
 
     std::ifstream input { module.source_path, std::ios::binary };
@@ -1034,8 +1059,15 @@ read_pack_section_impl( Eu7Module const &module, int const row, int const column
     Eu7PackSectionCursor header;
     parse_pack_section_header( module, input, *entry, header );
 
-    return read_pack_models_chunk_impl(
+    result.unique_meshes = std::move( header.unique_meshes );
+    result.models = read_pack_models_chunk_impl(
         module, input, header, std::numeric_limits<std::size_t>::max(), strings );
+    return result;
+}
+
+[[nodiscard]] std::vector<Eu7Model>
+read_pack_section_impl( Eu7Module const &module, int const row, int const column ) {
+    return read_pack_section_load_impl( module, row, column ).models;
 }
 
 } // namespace
@@ -1117,6 +1149,11 @@ find_pack_entry( Eu7Module const &module, int const row, int const column ) {
 std::vector<Eu7Model>
 read_pack_section( Eu7Module const &module, int const row, int const column ) {
     return read_pack_section_impl( module, row, column );
+}
+
+Eu7PackSectionLoad
+read_pack_section_load( Eu7Module const &module, int const row, int const column ) {
+    return read_pack_section_load_impl( module, row, column );
 }
 
 } // namespace scene::eu7

@@ -96,6 +96,26 @@ reset_pack_texture_warm_cache() {
 }
 
 void
+preload_pack_model_paths( std::vector<std::string> const &model_files ) {
+    std::unordered_set<std::string> seen;
+    seen.reserve( model_files.size() );
+
+    for( auto model_file : model_files ) {
+        if( model_file.empty() || model_file == "notload" ) {
+            continue;
+        }
+
+        replace_slashes( model_file );
+        if( false == seen.insert( model_file ).second ) {
+            continue;
+        }
+
+        std::lock_guard<std::mutex> lock { g_pack_mesh_load_mutex };
+        preload_pack_model_file( model_file );
+    }
+}
+
+void
 preload_pack_models( std::vector<Eu7Model> const &models ) {
     std::unordered_set<std::string> seen;
     seen.reserve( models.size() );
@@ -114,6 +134,17 @@ preload_pack_models( std::vector<Eu7Model> const &models ) {
         std::lock_guard<std::mutex> lock { g_pack_mesh_load_mutex };
         preload_pack_model_file( model_file );
     }
+}
+
+void
+preload_pack_models(
+    std::vector<Eu7Model> const &models,
+    std::vector<std::string> const &unique_meshes ) {
+    if( false == unique_meshes.empty() ) {
+        preload_pack_model_paths( unique_meshes );
+        return;
+    }
+    preload_pack_models( models );
 }
 
 std::size_t

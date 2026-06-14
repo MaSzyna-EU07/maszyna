@@ -11,6 +11,7 @@
 #include <eu07/scene/binary/string_table.hpp>
 #include <eu07/scene/runtime/nodes.hpp>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cctype>
@@ -22,6 +23,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -46,6 +48,9 @@ inline constexpr std::array<char, 4> kChunkFint{'F', 'I', 'N', 'T'};
 inline constexpr std::array<char, 4> kChunkPlac{'P', 'L', 'A', 'C'};
 inline constexpr std::array<char, 4> kChunkPidx{'P', 'I', 'D', 'X'};
 inline constexpr std::array<char, 4> kChunkPack{'P', 'A', 'C', 'K'};
+
+// PACK section payload: v9 = UMES (unique mesh list per 1 km section).
+inline constexpr std::uint8_t kPackSectionFormatV9 = 2;
 
 struct PackWriteStats {
     std::size_t strings_total = 0;
@@ -397,10 +402,57 @@ struct PackPayloadBuild {
     std::vector<PackSectionIndexEntry> entries;
 };
 
-[[nodiscard]] inline std::vector<char> buildPackSectionPayload(
+[[nodiscard]] inline bool isLoadableMeshPath(const std::string_view path) {
+    return !path.empty() && path != "notload";
+}
+
+[[nodiscard]] inline std::vector<std::uint32_t> collectUniqueMeshIds(
     StringTable& table,
-    const std::vector<runtime::RuntimeModelInstance>& models) {
+    const std::vector<runtime::RuntimeModelInstance>& models,
+    const std::vector<std::string_view>* prototype_mesh_paths = nullptr) {
+    std::vector<std::string> paths;
+    paths.reserve(models.size());
+
+    for (const runtime::RuntimeModelInstance& model : models) {
+        if (isLoadableMeshPath(model.modelFile)) {
+            paths.emplace_back(model.modelFile);
+        }
+    }
+    if (prototype_mesh_paths != nullptr) {
+        for (const std::string_view path : *prototype_mesh_paths) {
+            if (isLoadableMeshPath(path)) {
+                paths.emplace_back(path);
+            }
+        }
+    }
+
+    std::stable_sort(paths.begin(), paths.end());
+    paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
+
+    std::vector<std::uint32_t> ids;
+    ids.reserve(paths.size());
+    for (const std::string& path : paths) {
+        ids.push_back(table.intern(path));
+    }
+    return ids;
+}
+
+[[nodiscard]] inline std::vector<char> buildPackSectionPayloadV9(
+    StringTable& table,
+    const std::vector<runtime::RuntimeModelInstance>& models,
+    const std::uint32_t inst_count = 0,
+    const std::vector<std::string_view>* prototype_mesh_paths = nullptr) {
+    const auto mesh_ids = collectUniqueMeshIds(table, models, prototype_mesh_paths);
+    const std::uint32_t solo_count = static_cast<std::uint32_t>(models.size());
+
     std::ostringstream packOut(std::ios::binary);
+    io::writeU8(packOut, kPackSectionFormatV9);
+    io::writeU32(packOut, solo_count);
+    io::writeU32(packOut, inst_count);
+    io::writeU32(packOut, static_cast<std::uint32_t>(mesh_ids.size()));
+    for (const std::uint32_t id : mesh_ids) {
+        io::writeU32(packOut, id);
+    }
     for (const runtime::RuntimeModelInstance& model : models) {
         runtime::RuntimeModelInstance worldModel = model;
         worldModel.node.transform = {};
@@ -438,7 +490,7 @@ struct PackPayloadBuild {
             entry.row = static_cast<std::uint16_t>(batch.section.z);
             entry.column = static_cast<std::uint16_t>(batch.section.x);
             entry.modelCount = static_cast<std::uint32_t>(batch.models.size());
-            section_payloads[batch_index] = buildPackSectionPayload(table, batch.models);
+            section_payloads[batch_index] = buildPackSectionPayloadV9(table, batch.models);
         }
         std::size_t total_size = 0;
         for (const std::vector<char>& payload : section_payloads) {
@@ -472,7 +524,7 @@ struct PackPayloadBuild {
                 entry.column = static_cast<std::uint16_t>(batch.section.x);
                 entry.modelCount = static_cast<std::uint32_t>(batch.models.size());
 
-                section_payloads[batch_index] = buildPackSectionPayload(table, batch.models);
+                section_payloads[batch_index] = buildPackSectionPayloadV9(table, batch.models);
             }
         });
     }

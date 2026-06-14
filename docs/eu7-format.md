@@ -805,6 +805,32 @@ Powtórzone inst_count razy:
 
 Instancje v8 są rozwijane przez `expand_prototype_instance()` łącząc dane z PROT z lokalizacją instancji.
 
+### Format sekcji — v9 UMES (`kPackSectionFormatV9 = 2`)
+
+Rozszerzenie v8/v7: przed payloadem modeli zapisana jest deduplikowana lista ścieżek mesh (`model_file`).
+
+```
+uint8    section_format    — musi być = 2
+uint32   solo_count        — modele pełne (bez prototypu)
+uint32   inst_count        — instancje odwołujące się do PROT (0 w bake v7)
+uint32   unique_mesh_count
+uint32[unique_mesh_count] string_id   — model_file (posortowane, unikalne; pomija puste/"notload")
+
+Powtórzone solo_count razy:
+    (pełny rekord RuntimeModelInstance, transformacja zerowana)
+
+Powtórzone inst_count razy (gdy inst_count > 0):
+    uint32   proto_id
+    Vec3     location
+    Vec3     angles
+    Vec3     scale
+    string_id  name
+```
+
+Sekcje v7 bez nagłówka (flat) pozostają czytelne — brak UMES, runtime skanuje instancje.
+
+Runtime używa UMES do cold preload meshów zamiast liniowego skanowania wszystkich instancji w sekcji.
+
 ---
 
 ## 30. PROT — prototypy modeli (v8+)

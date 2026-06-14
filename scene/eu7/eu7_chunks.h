@@ -58,5 +58,6 @@ constexpr std::uint32_t kChunkPack { detail::make_id4( 'P', 'A', 'C', 'K' ) };
 constexpr std::uint32_t kChunkProt { detail::make_id4( 'P', 'R', 'O', 'T' ) };
 
 constexpr std::uint8_t kPackSectionFormatV8 { 1 };
+constexpr std::uint8_t kPackSectionFormatV9 { 2 };
 
 } // namespace scene::eu7

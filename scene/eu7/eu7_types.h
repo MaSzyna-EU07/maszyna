@@ -368,6 +368,12 @@ struct Eu7PackSectionCursor {
     std::uint32_t model_total { 0 };
     std::uint8_t section_format { 0 };
     bool header_parsed { false };
+    std::vector<std::string> unique_meshes;
+};
+
+struct Eu7PackSectionLoad {
+    std::vector<Eu7Model> models;
+    std::vector<std::string> unique_meshes;
 };
 
 struct Eu7PackCatalog {

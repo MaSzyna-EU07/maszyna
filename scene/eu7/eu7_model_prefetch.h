@@ -22,6 +22,12 @@ namespace scene::eu7 {
 void
 preload_pack_models( std::vector<Eu7Model> const &Models );
 
+// Jak wyzej, ale iteruje precomputed UMES zamiast skanowac instancje.
+void
+preload_pack_models(
+    std::vector<Eu7Model> const &Models,
+    std::vector<std::string> const &UniqueMeshes );
+
 // Main thread: Fetch_Material dla unikalnych texture_file z chunka przed apply.
 // Zwraca liczbe unikalnych Fetch_Material w tym slice.
 std::size_t
