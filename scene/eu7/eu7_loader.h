@@ -75,13 +75,9 @@ namespace eu7 {
 [[nodiscard]] std::string
     text_source_path( std::string const &Reference );
 
-// Tekst istnieje i jest nowszy niz .eu7 (lub brak .eu7).
+// Istniejacy, poprawny plik .eu7 obok referencji tekstowej.
 [[nodiscard]] bool
-    text_module_is_newer_than_binary( std::string const &Reference );
-
-// Istniejacy, poprawny .eu7 nie starszy niz odpowiednik tekstowy.
-[[nodiscard]] bool
-    should_use_binary_module( std::string const &Reference );
+should_use_binary_module( std::string const &Reference );
 
 // Czy plik zawiera chunk TERR.
 [[nodiscard]] bool

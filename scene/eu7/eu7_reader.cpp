@@ -497,26 +497,39 @@ parse_pack_section_header(
     Eu7PackIndexEntry const &entry,
     Eu7PackSectionCursor &cursor ) {
     cursor = {};
-    input.seekg(
-        static_cast<std::streamoff>( module.pack_payload_offset + entry.pack_offset ) );
+    auto const section_start {
+        static_cast<std::streamoff>( module.pack_payload_offset + entry.pack_offset ) };
+    input.seekg( section_start );
 
     const auto peek { input.peek() };
     const std::uint8_t first_byte {
         peek == EOF ? std::uint8_t { 0 } : static_cast<std::uint8_t>( peek ) };
 
-    if( first_byte == kPackSectionFormatV8 ) {
-        cursor.section_format = sn_utils::d_uint8( input );
-        const std::uint32_t solo_total { sn_utils::ld_uint32( input ) };
-        const std::uint32_t inst_total { sn_utils::ld_uint32( input ) };
-        cursor.model_total = solo_total + inst_total;
-        cursor.solo_remaining = solo_total;
-        cursor.inst_remaining = inst_total;
-    }
-    else if( first_byte == 2 ) {
+    if( first_byte == 2 ) {
         throw std::runtime_error(
             "EU7 PACK: format v9 nieobslugiwany — przebake plik .eu7" );
     }
-    else {
+
+    // v8 header starts with byte 1 — same as kNodeFlagHasName on flat v7 models.
+    // Accept v8 only when PROT exists and solo+inst counts match PIDX model_count.
+    bool use_v8_header { false };
+    if(
+        first_byte == kPackSectionFormatV8 &&
+        false == module.model_prototypes.empty() ) {
+        cursor.section_format = sn_utils::d_uint8( input );
+        const std::uint32_t solo_total { sn_utils::ld_uint32( input ) };
+        const std::uint32_t inst_total { sn_utils::ld_uint32( input ) };
+        if( solo_total + inst_total == entry.model_count ) {
+            use_v8_header = true;
+            cursor.model_total = solo_total + inst_total;
+            cursor.solo_remaining = solo_total;
+            cursor.inst_remaining = inst_total;
+        }
+    }
+
+    if( false == use_v8_header ) {
+        input.seekg( section_start );
+        cursor.section_format = 0;
         cursor.model_total = entry.model_count;
         cursor.solo_remaining = entry.model_count;
         cursor.inst_remaining = 0;
@@ -539,8 +552,10 @@ read_pack_models_chunk_impl(
 
     std::vector<Eu7Model> models;
     auto const remaining {
-        static_cast<std::size_t>( cursor.solo_remaining ) +
-        static_cast<std::size_t>( cursor.inst_remaining ) };
+        std::min(
+            static_cast<std::size_t>( cursor.solo_remaining ) +
+                static_cast<std::size_t>( cursor.inst_remaining ),
+            static_cast<std::size_t>( cursor.model_total ) ) };
     models.reserve( std::min( max_count, remaining ) );
 
     while(
@@ -1102,48 +1117,6 @@ find_pack_entry( Eu7Module const &module, int const row, int const column ) {
 std::vector<Eu7Model>
 read_pack_section( Eu7Module const &module, int const row, int const column ) {
     return read_pack_section_impl( module, row, column );
-}
-
-void
-seek_pack_section(
-    Eu7Module const &module,
-    std::istream &input,
-    Eu7PackIndexEntry const &entry,
-    Eu7PackSectionCursor &cursor ) {
-    if( false == module.has_pack_chunk ) {
-        cursor = {};
-        return;
-    }
-    parse_pack_section_header( module, input, entry, cursor );
-}
-
-std::vector<Eu7Model>
-read_pack_models_chunk(
-    Eu7Module const &module,
-    std::istream &input,
-    Eu7PackSectionCursor &cursor,
-    std::size_t const max_count ) {
-    StringTable const strings { module.strings };
-    return read_pack_models_chunk_impl( module, input, cursor, max_count, strings );
-}
-
-void
-resume_pack_section(
-    Eu7Module const &module,
-    std::istream &input,
-    Eu7PackIndexEntry const &entry,
-    std::uint64_t const resume_byte_offset,
-    Eu7PackSectionCursor const resume_cursor,
-    Eu7PackSectionCursor &cursor ) {
-    if( false == module.has_pack_chunk ) {
-        cursor = {};
-        return;
-    }
-
-    input.seekg(
-        static_cast<std::streamoff>(
-            module.pack_payload_offset + entry.pack_offset + resume_byte_offset ) );
-    cursor = resume_cursor;
 }
 
 } // namespace scene::eu7

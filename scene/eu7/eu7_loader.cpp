@@ -257,11 +257,7 @@ load_module_recursive(
         if( child_loaded ) {
             continue;
         }
-        if( !child.empty() && probe_file( child ) && false == should_use_binary_module( ref ) ) {
-            WriteLog(
-                "EU7: przestarzaly .eu7, fallback SCM: " + include_text_path( include ) );
-        }
-        else if( !child.empty() ) {
+        if( !child.empty() ) {
             WriteLog(
                 "EU7 include niedostepny, fallback SCM: " + include_text_path( include ) );
         }
@@ -459,22 +455,8 @@ text_source_path( std::string const &reference ) {
 }
 
 bool
-text_module_is_newer_than_binary( std::string const &reference ) {
-    auto const text { text_source_path( reference ) };
-    if( text.empty() || false == FileExists( text ) ) {
-        return false;
-    }
-    auto const eu7 { binary_path( reference ) };
-    if( false == FileExists( eu7 ) ) {
-        return true;
-    }
-    return last_modified( text ) > last_modified( eu7 );
-}
-
-bool
 should_use_binary_module( std::string const &reference ) {
-    auto const eu7 { binary_path( reference ) };
-    return probe_file( eu7 ) && false == text_module_is_newer_than_binary( reference );
+    return probe_file( binary_path( reference ) );
 }
 
 bool

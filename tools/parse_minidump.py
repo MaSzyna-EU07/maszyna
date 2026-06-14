@@ -43,7 +43,7 @@ def read_cstring(f, rva: int) -> str:
 def parse(path: Path) -> None:
     with path.open("rb") as f:
         sig, ver, num_streams, dir_rva, checksum, ts, flags = struct.unpack(
-            "<IIIIIQ", f.read(32)
+            "<IIIIIIQ", f.read(32)
         )
         print(f"File: {path}")
         print(f"Size: {path.stat().st_size:,} bytes")

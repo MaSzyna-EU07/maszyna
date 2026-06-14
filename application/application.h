@@ -9,8 +9,6 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include <chrono>
-
 #include "application/applicationmode.h"
 #include "scripting/PyInt.h"
 #include "network/manager.h"
@@ -57,12 +55,6 @@ public:
         render_ui();
 	void
 	    begin_ui_frame();
-    void
-        extend_loading_overlay( std::chrono::milliseconds const Duration );
-    [[nodiscard]] bool
-        loading_overlay_active() const;
-    void
-        render_loading_overlay();
     // switches application to specified mode
     bool
         pop_mode();
@@ -123,12 +115,9 @@ private:
     int  init_modes();
 	bool init_network();
     int run_crashgui();
-    void sync_loading_overlay_state();
 // members
 
     bool m_screenshot_queued = false;
-    std::chrono::steady_clock::time_point m_loading_overlay_until {};
-    std::shared_ptr<class scenarioloader_ui> m_loading_overlay;
 
     modeptr_array m_modes { nullptr }; // collection of available application behaviour modes
     mode_stack m_modestack; // current behaviour mode

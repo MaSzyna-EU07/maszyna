@@ -360,7 +360,7 @@ struct Eu7PackIndexEntry {
     std::uint64_t pack_offset = 0;
 };
 
-// Stan inkrementalnego odczytu sekcji PACK z istream (po seek_pack_section).
+// Stan odczytu sekcji PACK z istream (uzywany wewnetrznie przez reader).
 struct Eu7PackSectionCursor {
     std::uint32_t solo_remaining { 0 };
     std::uint32_t inst_remaining { 0 };

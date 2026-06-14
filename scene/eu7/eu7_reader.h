@@ -11,7 +11,6 @@ http://mozilla.org/MPL/2.0/.
 
 #include "scene/eu7/eu7_types.h"
 
-#include <istream>
 #include <optional>
 #include <string>
 #include <vector>
@@ -31,31 +30,5 @@ find_pack_entry( Eu7Module const &Module, int Row, int Column );
 // Odczyt MODL z chunku PACK dla jednej sekcji (world-space, po bake).
 [[nodiscard]] std::vector<Eu7Model>
 read_pack_section( Eu7Module const &Module, int Row, int Column );
-
-// Seek do pack_offset z PIDX i parsuj naglowek sekcji (v7/v8).
-void
-seek_pack_section(
-    Eu7Module const &Module,
-    std::istream &Input,
-    Eu7PackIndexEntry const &Entry,
-    Eu7PackSectionCursor &Cursor );
-
-// Odczyt do max_count modeli z biezacej pozycji strumienia (po seek_pack_section).
-[[nodiscard]] std::vector<Eu7Model>
-read_pack_models_chunk(
-    Eu7Module const &Module,
-    std::istream &Input,
-    Eu7PackSectionCursor &Cursor,
-    std::size_t MaxCount );
-
-// Wznowienie odczytu sub-chunka (offset wzgledem pack_offset sekcji z PIDX).
-void
-resume_pack_section(
-    Eu7Module const &Module,
-    std::istream &Input,
-    Eu7PackIndexEntry const &Entry,
-    std::uint64_t ResumeByteOffset,
-    Eu7PackSectionCursor ResumeCursor,
-    Eu7PackSectionCursor &Cursor );
 
 } // namespace scene::eu7

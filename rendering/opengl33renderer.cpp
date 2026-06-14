@@ -14,7 +14,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "vehicle/Train.h"
 #include "vehicle/Camera.h"
-#include "scene/eu7/eu7_section_stream.h"
 #include "simulation/simulation.h"
 #include "utilities/Logs.h"
 #include "simulation/simulationtime.h"
@@ -734,9 +733,7 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			m_current_viewport = &vp;
 		}
 
-		if( ( false == simulation::is_ready )
-		 || scene::eu7::loading_screen_blocks_world( scene::eu7::stream_loading_position() )
-		 || Global.gfx_skiprendering )
+		if ((!simulation::is_ready) || (Global.gfx_skiprendering))
 		{
 			gl::framebuffer::unbind();
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);

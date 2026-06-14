@@ -366,9 +366,7 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
             return;
         }
     }
-    else if ( scene::eu7::probe_file( eu7path ) ) {
-        WriteLog( "EU7: przestarzaly .eu7, fallback SCM: " + includefile );
-    }
+
 	if (isTerrain && true == Global.file_binary_terrain_state) {
 		WriteLog("Binary terrain present, ignoring: " + includefile);
 		readParameters(srcParser); // preserve original side-effect: still consume parameters

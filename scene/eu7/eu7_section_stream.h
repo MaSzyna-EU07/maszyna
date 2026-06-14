@@ -19,7 +19,7 @@ class state_serializer;
 
 namespace scene::eu7 {
 
-constexpr int kSectionStreamBootstrapRadiusKm { 3 };
+constexpr int kSectionStreamBootstrapRadiusKm { 4 };
 constexpr int kSectionStreamGameplayRadiusKm { 4 };
 
 void
@@ -33,6 +33,10 @@ prime_section_stream( Eu7Module const &RootModule );
 
 [[nodiscard]] glm::dvec3
 resolve_stream_position();
+
+// Kamera / pojazd moga byc w innej przestrzeni wspolrzednych niz PACK — uzyj kotwicy scenerii.
+[[nodiscard]] glm::dvec3
+resolve_section_stream_position( glm::dvec3 const &Hint );
 
 // Opcjonalnie blokuje do zaladowania pierścienia bootstrap wokol pozycji (debug/narzedzia).
 void

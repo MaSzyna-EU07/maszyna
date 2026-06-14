@@ -404,24 +404,14 @@ bool driver_mode::update()
 
 	Timer::subsystem.sim_total.stop();
 
-	auto const world_presentable {
-		false == scene::eu7::section_stream_active()
-		|| scene::eu7::loading_screen_dismissed() };
-	auto const gameplay_stream {
-		scene::eu7::section_stream_active() && scene::eu7::loading_screen_dismissed() };
-
-	simulation::State.drain_deferred_eu7_trainsets( gameplay_stream ? 3.0 : 12.0 );
+	simulation::State.drain_deferred_eu7_trainsets( 12.0 );
 
 	if( scene::eu7::section_stream_active() ) {
-		auto const stream_active {
-			simulation::is_ready || Application.loading_overlay_active() };
-		if( stream_active && scene::eu7::section_stream_needs_bootstrap() ) {
+		if( scene::eu7::section_stream_needs_bootstrap() ) {
 			scene::eu7::kick_section_stream_bootstrap();
 		}
-		if( stream_active ) {
-			scene::eu7::update_section_stream( Global.pCamera.Pos );
-			scene::eu7::drain_section_stream();
-		}
+		scene::eu7::update_section_stream( Global.pCamera.Pos );
+		scene::eu7::drain_section_stream();
 
 		if( scene::eu7::pack_bench_stream_phase_active() ) {
 			static double s_last_stream_bench_log { 0.0 };
@@ -442,9 +432,7 @@ bool driver_mode::update()
 
 	GfxRenderer->Update(deltarealtime);
 
-	simulation::is_ready = simulation::is_ready
-		|| ( ( simulation::Train != nullptr ) && ( simulation::Train->is_cab_initialized ) )
-		|| ( Global.local_start_vehicle == "ghostview" && world_presentable );
+	simulation::is_ready = simulation::is_ready || ((simulation::Train != nullptr) && (simulation::Train->is_cab_initialized)) || (Global.local_start_vehicle == "ghostview");
 
 	return true;
 }
@@ -455,12 +443,36 @@ void driver_mode::enter()
 
 	TDynamicObject *nPlayerTrain{((Global.local_start_vehicle != "ghostview") ? simulation::Vehicles.find(Global.local_start_vehicle) : nullptr)};
 
+	if( scene::eu7::section_stream_active() ) {
+		scene::eu7::dismiss_loading_screen();
+	}
+
 	Camera.Init(Global.FreeCameraInit[0], Global.FreeCameraInitAngle[0], nullptr);
 	Global.pCamera = Camera;
 	Global.pDebugCamera = DebugCamera;
 
 	FreeFlyModeFlag = true;
 	DebugCamera = Camera;
+
+	if( scene::eu7::section_stream_active() ) {
+		if( scene::eu7::section_stream_needs_bootstrap() ) {
+			scene::eu7::kick_section_stream_bootstrap();
+		}
+		auto stream_pos { scene::eu7::resolve_section_stream_position( Global.pCamera.Pos ) };
+		if( stream_pos.x != 0.0 || stream_pos.y != 0.0 || stream_pos.z != 0.0 ) {
+			Global.pCamera.Pos = stream_pos;
+			Camera = Global.pCamera;
+		}
+		scene::eu7::update_section_stream( Global.pCamera.Pos );
+		for( int i { 0 }; i < 64; ++i ) {
+			scene::eu7::drain_section_stream();
+			if( scene::eu7::section_stream_ready_around(
+					stream_pos,
+					scene::eu7::kSectionStreamBootstrapRadiusKm ) ) {
+				break;
+			}
+		}
+	}
 
 	if (nPlayerTrain)
 	{

@@ -164,7 +164,7 @@ scenario_needs_eu7_regen( std::string const &scenario_file ) {
 
     if( probe_file( resolved ) ) {
 
-        return text_module_is_newer_than_binary( scenario_file );
+        return false;
 
     }
 
@@ -176,7 +176,7 @@ scenario_needs_eu7_regen( std::string const &scenario_file ) {
 
     }
 
-    return false == should_use_binary_module( scenario_file );
+    return false == probe_baked_scenario( scenario_file );
 
 #else
 
@@ -204,28 +204,6 @@ ensure_scenario_eu7( std::string const &scenario_file ) {
 
     if( probe_file( resolved ) ) {
 
-#ifdef WITH_EU7_PARSER
-
-        if( Global.eu7_auto_bake && text_module_is_newer_than_binary( scenario_file ) ) {
-
-            auto const text_root { text_source_path( scenario_file ) };
-
-            if( false == text_root.empty() ) {
-
-                WriteLog(
-
-                    "EU7: .eu7 nieaktualny wzgledem " + text_root + ", rebake..." );
-
-                run_scenario_tree_bake( text_root, eu7_path, outcome );
-
-                return outcome;
-
-            }
-
-        }
-
-#endif
-
         outcome.ok = true;
 
         outcome.message = "uzywam .eu7: " + resolved;
@@ -242,7 +220,7 @@ ensure_scenario_eu7( std::string const &scenario_file ) {
 
     if( false == Global.eu7_auto_bake ) {
 
-        if( should_use_binary_module( scenario_file ) ) {
+        if( probe_baked_scenario( scenario_file ) ) {
 
             outcome.ok = true;
 
@@ -282,7 +260,7 @@ ensure_scenario_eu7( std::string const &scenario_file ) {
 
 
 
-    if( should_use_binary_module( scenario_file ) ) {
+    if( probe_baked_scenario( scenario_file ) ) {
 
         outcome.ok = true;
 
@@ -296,23 +274,13 @@ ensure_scenario_eu7( std::string const &scenario_file ) {
 
 
 
-    if( probe_file( eu7_path ) ) {
-
-        WriteLog(
-
-            "EU7: .eu7 nieaktualny wzgledem " + resolved + ", rebake..." );
-
-    }
-
-
-
     run_scenario_tree_bake( resolved, eu7_path, outcome );
 
     return outcome;
 
 #else
 
-    if( should_use_binary_module( scenario_file ) ) {
+    if( probe_baked_scenario( scenario_file ) ) {
 
         outcome.ok = true;
 

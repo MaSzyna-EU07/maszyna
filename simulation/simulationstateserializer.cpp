@@ -617,15 +617,16 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
         is_pure_eu7_scenario = scene::eu7::probe_file( resolved_scenario );
     }
 
-    bool const has_baked_eu7_root {
-        false == is_pure_eu7_scenario &&
-        scene::eu7::should_use_binary_module( Scenariofile ) };
-    auto const baked_root_path {
-        scene::eu7::resolve_scenery_path( scene::eu7::binary_path( Scenariofile ) ) };
+    bool const use_eu7_scenario {
+        is_pure_eu7_scenario || scene::eu7::probe_baked_scenario( Scenariofile ) };
+    auto const eu7_load_path {
+        is_pure_eu7_scenario ?
+            resolved_scenario :
+            scene::eu7::resolve_scenery_path( scene::eu7::binary_path( Scenariofile ) ) };
 
     // Scenariusz EU7B: nie parsujemy binarki jako tekstu SCM.
     std::shared_ptr<deserializer_state> state;
-    if( is_pure_eu7_scenario ) {
+    if( use_eu7_scenario ) {
         state = std::make_shared<deserializer_state>(
             std::string{}, cParser::buffer_TEXT, Global.asCurrentSceneryPath, Global.bLoadTraction );
         state->scenariofile = Scenariofile;
@@ -637,25 +638,12 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 
 	state->scratchpad.name = Scenariofile;
 
-    if( is_pure_eu7_scenario ) {
+    if( use_eu7_scenario ) {
         Global.file_binary_terrain_state = true;
         state->scratchpad.binary.terrain = true;
         state->scratchpad.binary.terrain_included = true;
-        WriteLog( "EU7 scenario: " + resolved_scenario );
-        if( false == scene::eu7::load_module( resolved_scenario, *this ) ) {
-            throw invalid_scenery_exception();
-        }
-    }
-    else if( has_baked_eu7_root ) {
-        Global.file_binary_terrain_state = true;
-        state->scratchpad.binary.terrain = true;
-        if( scene::eu7::is_scenario_terrain( Scenariofile ) ) {
-            state->scratchpad.binary.terrain_included = true;
-        }
-        WriteLog(
-            "EU7 hybrid: metadata z \"" + Scenariofile + "\", sceneria z \"" +
-            baked_root_path + "\"" );
-        if( false == scene::eu7::load_module( baked_root_path, *this ) ) {
+        WriteLog( "EU7 scenario: " + eu7_load_path );
+        if( false == scene::eu7::load_module( eu7_load_path, *this ) ) {
             throw invalid_scenery_exception();
         }
     }

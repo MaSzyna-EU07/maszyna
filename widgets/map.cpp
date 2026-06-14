@@ -75,6 +75,17 @@ ui::map_panel::map_panel() : ui_panel(STR_C("Map"), false)
 
 	scene_ubo = std::make_unique<gl::ubo>(sizeof(gl::scene_ubs), 0);
 
+	if( simulation::Train != nullptr && simulation::Train->Dynamic() != nullptr ) {
+		mode = MODE_VEHICLE;
+	}
+	else {
+		auto const &start { Global.FreeCameraInit[ 0 ] };
+		if( start.x != 0.0 || start.z != 0.0 ) {
+			mode = MODE_CAMERA;
+			translate = glm::vec2( static_cast<float>( start.x ), static_cast<float>( start.z ) ) * -zoom;
+		}
+	}
+
 	init_done = true;
 }
 
@@ -88,9 +99,6 @@ float ui::map_panel::get_vehicle_rotation()
 
 void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_size)
 {
-	cFrustum frustum;
-	frustum.calculate(transform, glm::mat4());
-
 	m_colored_paths.switches.clear();
 	m_colored_paths.occupied.clear();
 	m_colored_paths.future.clear();
@@ -102,14 +110,14 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
 		for (int column = 0; column < scene::EU07_REGIONSIDESECTIONCOUNT; column++)
 		{
 			scene::basic_section *section = simulation::Region->get_section(row * scene::EU07_REGIONSIDESECTIONCOUNT + column);
-			if (section && frustum.sphere_inside(section->area().center, section->area().radius) > 0.f)
+			if( section == nullptr ) {
+				continue;
+			}
+			const gfx::geometrybank_handle handle = section->get_map_geometry();
+			if( handle != null_handle )
 			{
-				const gfx::geometrybank_handle handle = section->get_map_geometry();
-				if (handle != null_handle)
-				{
-					m_section_handles.push_back(handle);
-					section->get_map_active_paths(m_colored_paths);
-				}
+				m_section_handles.push_back(handle);
+				section->get_map_active_paths(m_colored_paths);
 			}
 		}
 	}
@@ -229,6 +237,17 @@ void ui::map_panel::render_contents()
         is_open = false;
         return;
     }
+
+	if( simulation::Train != nullptr && simulation::Train->Dynamic() != nullptr ) {
+		if( mode == MODE_MANUAL ) {
+			mode = MODE_VEHICLE;
+		}
+	}
+	else if(
+		mode == MODE_MANUAL
+		&& ( Global.pCamera.Pos.x != 0.0 || Global.pCamera.Pos.z != 0.0 ) ) {
+		mode = MODE_CAMERA;
+	}
 
 	{
 		float prev_zoom = zoom;
