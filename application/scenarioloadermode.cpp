@@ -60,7 +60,8 @@ bool scenarioloader_mode::update() {
 	WriteLog( "Scenario loading time: " + std::to_string( std::chrono::duration_cast<std::chrono::seconds>( ( std::chrono::system_clock::now() - timestart ) ).count() ) + " seconds" );
 
 	if( scene::eu7::section_stream_active() ) {
-		scene::eu7::preload_section_stream( 3000.0 );
+		// Bounded PACK drain after scenario parse — shortens black overlay in driver mode.
+		scene::eu7::preload_section_stream( 8000.0 );
 	}
 
 	// TODO: implement and use next mode cue

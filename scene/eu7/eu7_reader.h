@@ -11,7 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "scene/eu7/eu7_types.h"
 
-#include <optional>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -46,5 +46,21 @@ read_pack_section_chunk_load(
 // Czysci thread-local cache odczytu PACK (otwarty plik + sparsowany naglowek sekcji).
 void
 reset_pack_section_read_cache();
+
+// UMES z naglowka sekcji — bez kopiowania calego wektora.
+void
+for_each_pack_section_unique_mesh(
+    Eu7Module const &Module,
+    int Row,
+    int Column,
+    std::function<void( std::string const & )> const &Visit );
+
+// UTEX z naglowka sekcji (v11+) — bez skanowania instancji.
+void
+for_each_pack_section_unique_texture(
+    Eu7Module const &Module,
+    int Row,
+    int Column,
+    std::function<void( std::string const & )> const &Visit );
 
 } // namespace scene::eu7

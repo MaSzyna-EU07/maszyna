@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/eu7/eu7_pack_bench.h"
 #include "model/AnimModel.h"
 #include "model/MdlMngr.h"
+#include "scene/eu7/eu7_pack_mesh_loader.h"
 #include "scene/eu7/eu7_model_prefetch.h"
 #include "scene/eu7/eu7_reader.h"
 #include "scene/eu7/eu7_section.h"
@@ -54,22 +55,35 @@ ring_section_in_radius(
 namespace {
 
 constexpr double kDrainBudgetMs { 12.0 };
-constexpr double kLoaderDrainBudgetMs { 96.0 };
+constexpr double kLoaderDrainBudgetMs { 256.0 };
+constexpr double kFrameDrainBudgetMs { 10.0 };
 constexpr std::size_t kLoaderSectionsPerDrain { 8 };
 
 constexpr double kGameplayApplyBudgetMs { 6.0 };
-constexpr double kCatchupApplyBudgetMs { 14.0 };
-constexpr std::size_t kGameplaySliceInstances { 96 };
-constexpr std::size_t kCatchupSliceInstances { 96 };
+constexpr double kCatchupApplyBudgetMs { 8.0 };
+constexpr std::size_t kGameplaySliceInstances { 48 };
+constexpr std::size_t kCatchupSliceInstances { 48 };
+constexpr std::size_t kFrameSliceInstances { 24 };
 constexpr std::size_t kLoaderSliceInstances { 768 };
 constexpr std::size_t kGameplaySliceColdMeshes { 4 };
-constexpr std::size_t kCatchupSliceColdMeshes { 8 };
+constexpr std::size_t kCatchupSliceColdMeshes { 6 };
+constexpr std::size_t kFrameSliceColdMeshes { 2 };
 constexpr std::size_t kLoaderSliceColdMeshes { 32 };
-constexpr double kGameplayColdBudgetMs { 12.0 };
-constexpr double kCatchupColdBudgetMs { 18.0 };
+constexpr double kGameplayColdBudgetMs { 6.0 };
+constexpr double kCatchupColdBudgetMs { 8.0 };
+constexpr double kFrameColdBudgetMs { 4.0 };
 
-constexpr int kInitialBootstrapRadius { 5 };
-constexpr int kStreamRadius { 14 };
+constexpr int kInitialBootstrapEnqueueRadius { 2 };
+constexpr int kInitialBootstrapRadius { 3 };
+constexpr float kEarlyDismissRingProgress { 0.65f };
+constexpr int kStreamRadius { kSectionStreamTargetRadiusKm };
+constexpr int kMaintenanceLookaheadMax { 6 };
+constexpr double kRadiusFillApplyBudgetMs { 8.0 };
+constexpr std::size_t kRadiusFillSliceInstances { 16 };
+constexpr std::size_t kRadiusFillMaxChunksPerDrain { 2 };
+constexpr std::size_t kRadiusFillMaxInFlight { 24 };
+constexpr std::size_t kRadiusFillMaxReady { 14 };
+constexpr float kRadiusFillOuterTarget { 0.98f };
 constexpr int kSectionUnloadMarginKm { 3 };
 constexpr int kSectionUnloadCameraGuardKm { 5 };
 constexpr int kSectionUnloadMaxSpeedExtraKm { 10 };
@@ -78,28 +92,32 @@ constexpr int kSectionUnloadTeleportJumpKm { 4 };
 constexpr std::size_t kMeshCacheLruCap { 2000 };
 constexpr std::size_t kNodedataCacheLruCap { 2000 };
 constexpr int kMovementLookahead { 10 };
-constexpr std::size_t kMaxPackStreamWorkers { 8 };
-constexpr std::size_t kMaxInFlightSections { 12 };
-constexpr std::size_t kMaxReadySections { 6 };
+constexpr std::size_t kMaxPackStreamWorkers { 16 };
+constexpr std::size_t kMaxInFlightSections { 20 };
+constexpr std::size_t kMaxReadySections { 10 };
 constexpr double kStreamStatusLogIntervalSec { 5.0 };
 constexpr double kReenqueueDistanceM { 500.0 };
 constexpr double kCatchupReenqueueDistanceM { 40.0 };
 constexpr std::size_t kHeavySectionModelThreshold { 32 };
 constexpr std::size_t kPackTextureWarmSlice { 8 };
 constexpr double kPackTextureWarmBudgetMs { 4.0 };
-constexpr double kUrgentApplyBudgetMs { 32.0 };
-constexpr std::size_t kUrgentSliceInstances { 96 };
-constexpr std::size_t kUrgentSliceColdMeshes { 6 };
-constexpr double kUrgentColdBudgetMs { 28.0 };
-constexpr std::size_t kUrgentMaxChunksPerDrain { 8 };
-constexpr std::size_t kRingDeficitMaxChunksPerDrain { 4 };
+constexpr double kUrgentApplyBudgetMs { 10.0 };
+constexpr double kRingDeficitDrainBudgetMs { 8.0 };
+constexpr double kSmoothApplyTargetMs { 7.0 };
+constexpr double kSmoothApplyDeficitTargetMs { 8.0 };
+constexpr std::size_t kUrgentSliceInstances { 48 };
+constexpr std::size_t kUrgentSliceColdMeshes { 4 };
+constexpr double kUrgentColdBudgetMs { 6.0 };
+constexpr std::size_t kUrgentMaxChunksPerDrain { 2 };
+constexpr std::size_t kFrameMaxChunksPerDrain { 1 };
+constexpr std::size_t kRingDeficitMaxChunksPerDrain { 2 };
 constexpr double kReadyTexturePrefetchBudgetMs { 14.0 };
 constexpr std::size_t kReadyTexturePrefetchSlice { 256 };
-constexpr int kUmesPrefetchMaxDistanceKm { 2 };
-constexpr double kReadyUmesPrefetchBudgetMs { 8.0 };
-constexpr std::size_t kReadyUmesPrefetchMaxMeshes { 6 };
-constexpr std::size_t kCatchupMaxInFlightSections { 28 };
-constexpr std::size_t kCatchupMaxReadySections { 14 };
+constexpr int kUmesPrefetchMaxDistanceKm { 6 };
+constexpr double kReadyUmesPrefetchBudgetMs { 16.0 };
+constexpr std::size_t kReadyUmesPrefetchMaxMeshes { 64 };
+constexpr std::size_t kCatchupMaxInFlightSections { 32 };
+constexpr std::size_t kCatchupMaxReadySections { 16 };
 constexpr int kUrgentSectionDistanceKm { 1 };
 constexpr int kFastFlightApplyMaxDistanceKm { 3 };
 constexpr int kFarApplySlowDistanceKm { 4 };
@@ -123,7 +141,8 @@ constexpr float kStationaryCatchupRingThreshold { 0.70f };
 constexpr double kStationaryCatchupSpeedMps { 5.0 };
 constexpr std::size_t kBootstrapDrainMs { 32 };
 constexpr std::size_t kBootstrapTimeoutMs { 120000 };
-constexpr std::chrono::milliseconds kPresentableHoldMs { 200 };
+constexpr std::size_t kBootstrapApplyModelThreshold { 400 };
+constexpr std::chrono::milliseconds kPresentableHoldMs { 0 };
 constexpr std::chrono::seconds kLoadingScreenMaxBlockSec { 90 };
 
 std::optional<std::chrono::steady_clock::time_point> g_ring_ready_since;
@@ -146,13 +165,12 @@ struct PackSectionReady {
     int column { 0 };
     std::size_t section_idx { 0 };
     std::unique_ptr<std::vector<Eu7Model>> models;
-    std::vector<std::string> unique_meshes;
     std::vector<std::string> unique_textures;
+    std::shared_ptr<Eu7PackSectionPathTables const> path_tables;
     bool failed { false };
     bool section_final { true };
     std::size_t apply_offset { 0 };
     std::size_t texture_warm_offset { 0 };
-    std::size_t umes_cold_offset { 0 };
     std::size_t umes_prefetch_offset { 0 };
 };
 
@@ -168,6 +186,7 @@ struct SectionStreamState {
     bool active { false };
     bool bootstrap_active { false };
     bool bootstrap_pending { false };
+    bool radius_fill_active { false };
 
     std::optional<PackSectionReady> pending_apply;
     std::size_t pending_apply_offset { 0 };
@@ -259,29 +278,15 @@ release_pending_buffer();
 void
 prefetch_ready_queue_umes_worker( double budget_ms, std::size_t max_meshes );
 
+[[nodiscard]] bool
+gameplay_stream_mode();
+
 [[nodiscard]] std::size_t
 warm_pack_section_textures(
     PackSectionReady &batch,
     std::size_t const model_offset,
     std::size_t const model_count,
-    std::size_t const max_textures = kPackTextureWarmSlice ) {
-    if( false == batch.unique_textures.empty() ) {
-        if( batch.texture_warm_offset >= batch.unique_textures.size() ) {
-            return 0;
-        }
-        auto const remaining { batch.unique_textures.size() - batch.texture_warm_offset };
-        auto const slice { std::min( remaining, max_textures ) };
-        std::size_t processed { 0 };
-        auto const warmed {
-            warm_pack_texture_paths_main(
-                batch.unique_textures.data() + batch.texture_warm_offset,
-                slice,
-                kPackTextureWarmBudgetMs,
-                &processed ) };
-        batch.texture_warm_offset += processed;
-        return warmed;
-    }
-
+    double const budget_ms = 0.0 ) {
     if( batch.models == nullptr || model_count == 0 ) {
         return 0;
     }
@@ -291,8 +296,7 @@ warm_pack_section_textures(
     }
     auto const remaining { std::min( model_count, batch.models->size() - begin ) };
     auto const warmed {
-        warm_pack_textures_main( batch.models->data() + begin, remaining ) };
-    batch.texture_warm_offset = begin + remaining;
+        warm_pack_textures_main( batch.models->data() + begin, remaining, budget_ms ) };
     return warmed;
 }
 
@@ -498,15 +502,42 @@ evict_unreferenced_stream_caches() {
         &Eu7PackBench::stream_nodedata_cache_evictions );
 }
 
+[[nodiscard]] PackMeshLoadWait
+stream_mesh_load_wait_policy() {
+    return gameplay_stream_mode() ?
+        PackMeshLoadWait::NonBlocking :
+        PackMeshLoadWait::BlockUntilReady;
+}
+
 [[nodiscard]] bool
-ensure_stream_pack_mesh( std::string model_file ) {
+pack_mesh_ready_for_slice( std::string const &model_file ) {
+    if( false == try_adopt_pack_mesh_for_slice( model_file, g_stream.mesh_cache ) ) {
+        return false;
+    }
+    auto const found { g_stream.mesh_cache.find( model_file ) };
+    return found != g_stream.mesh_cache.end() &&
+        found->second != nullptr &&
+        TModelsManager::IsModelCached( model_file );
+}
+
+[[nodiscard]] bool
+ensure_stream_pack_mesh(
+    std::string model_file,
+    double const block_budget_ms = 0.0 ) {
     if( model_file.empty() || model_file == "notload" ) {
         return false;
     }
     replace_slashes( model_file );
-    (void)ensure_pack_mesh_in_session_cache( model_file, g_stream.mesh_cache );
-    touch_string_lru( model_file, g_stream.mesh_lru, g_stream.mesh_lru_iters );
-    return true;
+    auto *const mesh {
+        ensure_pack_mesh_in_session_cache(
+            model_file,
+            g_stream.mesh_cache,
+            stream_mesh_load_wait_policy(),
+            block_budget_ms ) };
+    if( mesh != nullptr ) {
+        touch_string_lru( model_file, g_stream.mesh_lru, g_stream.mesh_lru_iters );
+    }
+    return mesh != nullptr;
 }
 
 void
@@ -713,6 +744,7 @@ reset_stream_fields() {
     g_stream.active = false;
     g_stream.bootstrap_active = false;
     g_stream.bootstrap_pending = false;
+    g_stream.radius_fill_active = false;
     g_stream.pending_apply.reset();
     g_stream.pending_apply_offset = 0;
     g_stream.has_last_enqueue_position = false;
@@ -754,7 +786,6 @@ release_pending_buffer() {
 
     if( g_stream.pending_apply->models != nullptr ) {
         g_stream.pending_apply->models->clear();
-        g_stream.pending_apply->models->shrink_to_fit();
         g_stream.pending_apply->models.reset();
     }
     g_stream.pending_apply.reset();
@@ -825,24 +856,66 @@ camera_stream_speed_mps() {
     return glm::length( rotated ) * 5.0;
 }
 
-[[nodiscard]] bool pending_apply_is_urgent();
 [[nodiscard]] bool stream_ring_deficit();
+[[nodiscard]] bool pending_apply_is_urgent();
+[[nodiscard]] bool in_radius_fill_phase();
+
+[[nodiscard]] bool
+in_radius_fill_phase() {
+    return g_stream.radius_fill_active;
+}
+
+[[nodiscard]] double
+frame_drain_budget_ms() {
+    if( in_radius_fill_phase() ) {
+        return kRadiusFillApplyBudgetMs;
+    }
+    if( stream_ring_deficit() ) {
+        return kRingDeficitDrainBudgetMs;
+    }
+    auto const last_chunk { pack_bench_stream().last_chunk_ms };
+    if( last_chunk >= 32.0 ) {
+        return 3.0;
+    }
+    if( last_chunk >= 16.0 ) {
+        return 5.0;
+    }
+    if( last_chunk >= 12.0 ) {
+        return 7.0;
+    }
+    return kFrameDrainBudgetMs;
+}
 [[nodiscard]] double gameplay_apply_budget_ms();
 
 [[nodiscard]] bool
 stream_ring_deficit() {
-    return (
-        g_stream.last_outer_ring < kRingGatedOuterThreshold ||
-        g_stream.last_inner_ring < kRingGatedInnerTarget );
+    if( in_radius_fill_phase() ) {
+        return g_stream.last_outer_ring < kRadiusFillOuterTarget;
+    }
+    return g_stream.last_inner_ring < kRingGatedInnerTarget;
+}
+
+[[nodiscard]] int
+umes_prefetch_max_distance_km() {
+    auto const speed { camera_stream_speed_mps() };
+    if( g_stream_catchup || speed > 80.0 ) {
+        return std::min( g_stream.radius, kWorkerContinueMaxDistanceKm );
+    }
+    return kUmesPrefetchMaxDistanceKm;
 }
 
 [[nodiscard]] double
 ready_texture_prefetch_budget_ms() {
     auto const speed { camera_stream_speed_mps() };
+    auto const ring_deficit { stream_ring_deficit() };
+
+    if( ring_deficit && speed > 200.0 ) {
+        return kPackTextureWarmBudgetMs;
+    }
     if(
         speed > 500.0 &&
         pending_apply_is_urgent() ) {
-        return 0.0;
+        return kPackTextureWarmBudgetMs * 0.5;
     }
 
     double budget { kReadyTexturePrefetchBudgetMs * 0.5 };
@@ -878,18 +951,27 @@ camera_travel_forward() {
 
 [[nodiscard]] double
 gameplay_apply_budget_ms() {
+    if( in_radius_fill_phase() ) {
+        return kRadiusFillApplyBudgetMs;
+    }
+    double budget { kGameplayApplyBudgetMs };
     if( g_stream_catchup ) {
         if( stream_ring_deficit() ) {
-            return pending_apply_is_urgent() ? kUrgentApplyBudgetMs : 16.0;
+            budget = pending_apply_is_urgent() ? kUrgentApplyBudgetMs : 8.0;
         }
-        if(
+        else if(
             g_stream.last_outer_ring < kRingBoostOuterThreshold &&
             camera_stream_speed_mps() > kPreemptDisableSpeedMps ) {
-            return 12.0;
+            budget = 8.0;
         }
-        return kCatchupApplyBudgetMs;
+        else {
+            budget = kCatchupApplyBudgetMs;
+        }
     }
-    return kGameplayApplyBudgetMs;
+    if( g_stream.last_inner_ring < 0.5f ) {
+        budget = std::max( budget, 12.0 );
+    }
+    return budget;
 }
 
 [[nodiscard]] std::size_t
@@ -935,6 +1017,9 @@ pending_section_distance_km() {
 
 [[nodiscard]] bool
 pending_apply_is_urgent() {
+    if( in_radius_fill_phase() ) {
+        return pending_section_near_camera( kSectionStreamGameplayRadiusKm );
+    }
     if( stream_ring_deficit() ) {
         return true;
     }
@@ -945,6 +1030,46 @@ pending_apply_is_urgent() {
     auto const max_dist {
         speed > 600.0 ? kFastFlightApplyMaxDistanceKm : kUrgentSectionDistanceKm };
     return pending_section_near_camera( max_dist );
+}
+
+[[nodiscard]] std::size_t
+apply_time_target_slice( double const target_ms, std::size_t const ceiling ) {
+    auto const &bench { pack_bench_stream() };
+    auto effective_apply_ms { bench.last_apply_ms };
+    if( bench.last_chunk_ms > effective_apply_ms && bench.last_chunk_instances > 0 ) {
+        effective_apply_ms = bench.last_chunk_ms;
+    }
+    if( effective_apply_ms >= 1.0 && bench.last_chunk_instances > 0 ) {
+        auto const scaled { static_cast<std::size_t>(
+            static_cast<double>( bench.last_chunk_instances ) *
+            ( target_ms / effective_apply_ms ) ) };
+        return std::clamp( scaled, std::size_t { 8 }, ceiling );
+    }
+    return std::min( ceiling, std::size_t { 24 } );
+}
+
+[[nodiscard]] std::size_t
+gameplay_max_chunks_per_drain() {
+    if( in_radius_fill_phase() ) {
+        return kRadiusFillMaxChunksPerDrain;
+    }
+    auto const &bench { pack_bench_stream() };
+    if( stream_ring_deficit() ) {
+        if( bench.last_chunk_ms >= 8.0 ) {
+            return 1;
+        }
+        return kRingDeficitMaxChunksPerDrain;
+    }
+    if( pending_apply_is_urgent() ) {
+        if( bench.last_chunk_ms >= 8.0 ) {
+            return 1;
+        }
+        return kUrgentMaxChunksPerDrain;
+    }
+    if( bench.last_chunk_ms >= 12.0 ) {
+        return 1;
+    }
+    return kFrameMaxChunksPerDrain;
 }
 
 [[nodiscard]] std::size_t
@@ -970,6 +1095,8 @@ scene_apply_pressure_slice_cap() {
 
 [[nodiscard]] std::size_t
 adaptive_slice_instances( std::size_t const section_total, bool const urgent = false ) {
+    auto const ring_deficit { stream_ring_deficit() };
+
     if( urgent ) {
         auto limit { kUrgentSliceInstances };
         auto const speed { camera_stream_speed_mps() };
@@ -977,29 +1104,52 @@ adaptive_slice_instances( std::size_t const section_total, bool const urgent = f
             limit = std::min( limit, std::size_t { 64 } );
         }
         else if( speed > 600.0 ) {
-            limit = std::min( limit, std::size_t { 96 } );
-        }
-        if( section_total > 4000 ) {
-            limit = std::min( limit, std::size_t { 64 } );
-        }
-        else if( section_total > 2000 ) {
-            limit = std::min( limit, std::size_t { 96 } );
-        }
-        auto const last_ms { pack_bench_stream().last_chunk_ms };
-        if( last_ms >= 24.0 ) {
-            limit = std::min( limit, std::size_t { 32 } );
-        }
-        else if( last_ms >= 12.0 ) {
             limit = std::min( limit, std::size_t { 48 } );
         }
-        limit = std::min( limit, scene_apply_pressure_slice_cap() );
-        auto const last_apply { pack_bench_stream().last_apply_ms };
-        if( last_apply >= 20.0 ) {
-            limit = std::min( limit, std::size_t { 16 } );
+        if( section_total > 4000 ) {
+            limit = std::min( limit, std::size_t { 48 } );
         }
-        else if( last_apply >= 12.0 ) {
-            limit = std::min( limit, std::size_t { 24 } );
+        else if( section_total > 2000 ) {
+            limit = std::min( limit, std::size_t { 48 } );
         }
+        auto const last_ms { pack_bench_stream().last_chunk_ms };
+        if( false == ring_deficit ) {
+            if( last_ms >= 24.0 ) {
+                limit = std::min( limit, std::size_t { 32 } );
+            }
+            else if( last_ms >= 12.0 ) {
+                limit = std::min( limit, std::size_t { 48 } );
+            }
+            limit = std::min( limit, scene_apply_pressure_slice_cap() );
+            auto const last_apply { pack_bench_stream().last_apply_ms };
+            if( last_apply >= 20.0 ) {
+                limit = std::min( limit, std::size_t { 16 } );
+            }
+            else if( last_apply >= 12.0 ) {
+                limit = std::min( limit, std::size_t { 24 } );
+            }
+        }
+        if( ring_deficit ) {
+            auto const target_ms {
+                g_stream.last_inner_ring < 0.5f ?
+                    kSmoothApplyDeficitTargetMs :
+                    kSmoothApplyTargetMs };
+            auto const ceiling { std::size_t { 28 } };
+            limit = std::min( limit, apply_time_target_slice( target_ms, ceiling ) );
+            auto const last_apply { pack_bench_stream().last_apply_ms };
+            if( last_apply >= 10.0 ) {
+                limit = std::min(
+                    limit,
+                    apply_time_target_slice( kSmoothApplyTargetMs * 0.6, std::size_t { 20 } ) );
+            }
+            if( pack_bench_stream().last_chunk_ms >= 12.0 ) {
+                limit = std::min( limit, std::size_t { 20 } );
+            }
+            return std::max( limit, std::size_t { 8 } );
+        }
+        limit = std::min(
+            limit,
+            apply_time_target_slice( kSmoothApplyTargetMs, std::size_t { 48 } ) );
         return std::max( limit, std::size_t { 16 } );
     }
 
@@ -1015,6 +1165,9 @@ adaptive_slice_instances( std::size_t const section_total, bool const urgent = f
         else {
             limit = std::min( limit, std::size_t { 96 } );
         }
+        if( pack_bench_stream().last_chunk_ms >= 12.0 ) {
+            limit = std::min( limit, std::size_t { 32 } );
+        }
     }
 
     if( section_total > 4000 ) {
@@ -1028,25 +1181,39 @@ adaptive_slice_instances( std::size_t const section_total, bool const urgent = f
     }
 
     auto const last_ms { pack_bench_stream().last_chunk_ms };
-    if( last_ms >= 24.0 ) {
-        limit = std::min( limit, std::size_t { 32 } );
-    }
-    else if( last_ms >= 12.0 ) {
-        limit = std::min( limit, std::size_t { 64 } );
+    if( false == ring_deficit ) {
+        if( last_ms >= 24.0 ) {
+            limit = std::min( limit, std::size_t { 32 } );
+        }
+        else if( last_ms >= 12.0 ) {
+            limit = std::min( limit, std::size_t { 64 } );
+        }
+
+        auto const last_apply { pack_bench_stream().last_apply_ms };
+        if( last_apply >= 24.0 ) {
+            limit = std::min( limit, std::size_t { 16 } );
+        }
+        else if( last_apply >= 16.0 ) {
+            limit = std::min( limit, std::size_t { 24 } );
+        }
+        else if( last_apply >= 10.0 ) {
+            limit = std::min( limit, std::size_t { 32 } );
+        }
+
+        limit = std::min( limit, scene_apply_pressure_slice_cap() );
     }
 
-    auto const last_apply { pack_bench_stream().last_apply_ms };
-    if( last_apply >= 24.0 ) {
-        limit = std::min( limit, std::size_t { 16 } );
+    if( ring_deficit ) {
+        auto const target_ms {
+            g_stream.last_inner_ring < 0.5f ?
+                kSmoothApplyDeficitTargetMs :
+                kSmoothApplyTargetMs };
+        limit = std::min( limit, apply_time_target_slice( target_ms, std::size_t { 28 } ) );
+        if( pack_bench_stream().last_chunk_ms >= 12.0 ) {
+            limit = std::min( limit, std::size_t { 20 } );
+        }
+        return std::max( limit, std::size_t { 8 } );
     }
-    else if( last_apply >= 16.0 ) {
-        limit = std::min( limit, std::size_t { 24 } );
-    }
-    else if( last_apply >= 10.0 ) {
-        limit = std::min( limit, std::size_t { 32 } );
-    }
-
-    limit = std::min( limit, scene_apply_pressure_slice_cap() );
 
     return std::max( limit, std::size_t { 16 } );
 }
@@ -1056,12 +1223,12 @@ adaptive_cold_meshes( bool const urgent = false ) {
     auto limit {
         urgent ? kUrgentSliceColdMeshes : gameplay_slice_cold_meshes() };
     if( stream_ring_deficit() ) {
-        limit = std::max( limit, urgent ? std::size_t { 8 } : std::size_t { 6 } );
+        limit = std::max( limit, urgent ? std::size_t { 12 } : std::size_t { 8 } );
     }
-    if( pack_bench_stream().last_chunk_ms >= 40.0 ) {
+    if( pack_bench_stream().main_chunk_cold_ms >= 12.0 ) {
         limit = std::min( limit, std::size_t { 2 } );
     }
-    else if( pack_bench_stream().last_chunk_ms >= 24.0 ) {
+    else if( pack_bench_stream().main_chunk_cold_ms >= 6.0 ) {
         limit = std::min( limit, std::max( limit / 2, std::size_t { 3 } ) );
     }
     return std::max( limit, std::size_t { 2 } );
@@ -1083,34 +1250,44 @@ preload_slice_cold_meshes(
     std::size_t const count,
     std::size_t const max_cold_meshes,
     double const cold_budget_ms,
-    std::size_t &slice_count ) {
+    std::size_t &slice_count,
+    Eu7PackSectionPathTables const *path_tables = nullptr ) {
     slice_count = 0;
     if( models == nullptr || count == 0 ) {
         return 0;
     }
 
+    (void)drain_pack_mesh_loader_ready( g_stream.mesh_cache );
+
     auto mesh_ready { [&]( std::size_t const index ) -> bool {
-        auto model_file { models[ index ].model_file };
-        if( model_file.empty() || model_file == "notload" ) {
+        if( eu7_pack_model_needs_full_load( models[ index ] ) ) {
             return true;
         }
-        replace_slashes( model_file );
-        if( g_stream.mesh_cache.contains( model_file ) ) {
-            pack_bench_inc( &Eu7PackBench::stream_mesh_session_hit );
-            return true;
-        }
-        return false;
+        return pack_mesh_ready_for_slice(
+            std::string( pack_model_mesh_path( models[ index ], path_tables ) ) );
     } };
 
     std::size_t cold_loaded { 0 };
     auto const cold_started { std::chrono::steady_clock::now() };
     for( std::size_t i { 0 }; i < count; ++i ) {
+        if( eu7_pack_model_needs_full_load( models[ i ] ) ) {
+            auto model_file {
+                std::string( pack_model_mesh_path( models[ i ], path_tables ) ) };
+            if( false == model_file.empty() && model_file != "notload" ) {
+                replace_slashes( model_file );
+                if( false == pack_mesh_ready_for_slice( model_file ) ) {
+                    request_pack_mesh_load( model_file );
+                }
+            }
+            continue;
+        }
         if( mesh_ready( i ) ) {
             continue;
         }
         if( cold_loaded >= max_cold_meshes ) {
             break;
         }
+        auto remaining_budget_ms { cold_budget_ms };
         if( cold_budget_ms > 0.0 && cold_loaded > 0 ) {
             auto const elapsed_ms {
                 std::chrono::duration<double, std::milli>(
@@ -1118,15 +1295,19 @@ preload_slice_cold_meshes(
             if( elapsed_ms >= cold_budget_ms ) {
                 break;
             }
+            remaining_budget_ms = cold_budget_ms - elapsed_ms;
         }
-        auto model_file { models[ i ].model_file };
+        auto model_file { std::string( pack_model_mesh_path( models[ i ], path_tables ) ) };
         replace_slashes( model_file );
-        {
-            PackBenchTimer const load_timer { &Eu7PackBench::main_cold_getmodel_ms };
-            (void)ensure_stream_pack_mesh( model_file );
+        if( ensure_stream_pack_mesh( model_file, remaining_budget_ms ) ) {
+            ++cold_loaded;
             pack_bench_inc( &Eu7PackBench::main_cold_getmodel_calls );
+            continue;
         }
-        ++cold_loaded;
+        request_pack_mesh_load( model_file );
+        if( gameplay_stream_mode() ) {
+            break;
+        }
     }
 
     for( std::size_t i { 0 }; i < count; ++i ) {
@@ -1137,241 +1318,243 @@ preload_slice_cold_meshes(
         slice_count = i + 1;
     }
 
-    if( slice_count == 0 ) {
-        auto model_file { models[ 0 ].model_file };
+    if( slice_count == 0 && count > 0 && pending_apply_is_urgent() ) {
+        auto model_file {
+            std::string( pack_model_mesh_path( models[ 0 ], path_tables ) ) };
         if( model_file.empty() || model_file == "notload" ) {
             slice_count = 1;
-            return cold_loaded;
         }
-        replace_slashes( model_file );
-        if( false == g_stream.mesh_cache.contains( model_file ) && cold_loaded == 0 ) {
-            {
-                PackBenchTimer const load_timer { &Eu7PackBench::main_cold_getmodel_ms };
-                (void)ensure_stream_pack_mesh( model_file );
-                pack_bench_inc( &Eu7PackBench::main_cold_getmodel_calls );
+        else {
+            replace_slashes( model_file );
+            auto const wait_budget { std::min( cold_budget_ms, 8.0 ) };
+            if( ensure_stream_pack_mesh( model_file, wait_budget ) ) {
+                ++cold_loaded;
             }
-            cold_loaded = 1;
+            if( mesh_ready( 0 ) ) {
+                slice_count = 1;
+            }
         }
-        slice_count = 1;
     }
     return cold_loaded;
 }
 
-[[nodiscard]] std::size_t
-preload_umes_cold_meshes(
-    std::vector<std::string> const &unique_meshes,
-    std::size_t const offset,
-    std::size_t const max_cold_meshes,
-    double const cold_budget_ms,
-    std::size_t &offset_out ) {
-    offset_out = offset;
-    if( unique_meshes.empty() || offset >= unique_meshes.size() ) {
-        return 0;
-    }
-
-    std::size_t cold_loaded { 0 };
-    auto const cold_started { std::chrono::steady_clock::now() };
-    for( std::size_t i { offset }; i < unique_meshes.size(); ++i ) {
-        auto model_file { unique_meshes[ i ] };
-        if( model_file.empty() || model_file == "notload" ) {
-            offset_out = i + 1;
-            continue;
-        }
-        replace_slashes( model_file );
-        if( g_stream.mesh_cache.contains( model_file ) ) {
-            pack_bench_inc( &Eu7PackBench::stream_mesh_session_hit );
-            offset_out = i + 1;
-            continue;
-        }
-        if( cold_loaded >= max_cold_meshes ) {
-            pack_bench_inc( &Eu7PackBench::stream_cold_slice_truncated );
-            break;
-        }
-        if( cold_budget_ms > 0.0 && cold_loaded > 0 ) {
-            auto const elapsed_ms {
-                std::chrono::duration<double, std::milli>(
-                    std::chrono::steady_clock::now() - cold_started ).count() };
-            if( elapsed_ms >= cold_budget_ms ) {
-                pack_bench_inc( &Eu7PackBench::stream_cold_slice_truncated );
-                break;
-            }
-        }
-        {
-            PackBenchTimer const load_timer { &Eu7PackBench::main_cold_getmodel_ms };
-            (void)ensure_stream_pack_mesh( model_file );
-            pack_bench_inc( &Eu7PackBench::main_cold_getmodel_calls );
-        }
-        ++cold_loaded;
-        offset_out = i + 1;
-    }
-
-    return cold_loaded;
-}
-
-constexpr int kApplyStuckSkipFrames { 20 };
-
-std::size_t g_apply_stuck_offset { std::numeric_limits<std::size_t>::max() };
-int g_apply_stuck_frames { 0 };
-
+template<typename Fn>
 void
-note_apply_progress() {
-    g_apply_stuck_offset = std::numeric_limits<std::size_t>::max();
-    g_apply_stuck_frames = 0;
+for_each_chunk_mesh_path(
+    PackSectionReady const &batch,
+    Fn const &fn ) {
+    if( batch.models == nullptr ) {
+        return;
+    }
+
+    std::unordered_set<std::string> seen;
+    seen.reserve( batch.models->size() );
+    for( auto const &model : *batch.models ) {
+        if( eu7_pack_model_needs_full_load( model ) ) {
+            continue;
+        }
+        auto const model_file {
+            pack_model_mesh_path( model, batch.path_tables.get() ) };
+        if( model_file.empty() || model_file == "notload" ) {
+            continue;
+        }
+        auto normalized { std::string( model_file ) };
+        replace_slashes( normalized );
+        if( false == seen.insert( normalized ).second ) {
+            continue;
+        }
+        fn( normalized );
+    }
 }
 
 [[nodiscard]] bool
-maybe_skip_stuck_apply_offset() {
-    if( false == g_stream.pending_apply.has_value() ) {
-        return false;
-    }
+file_chunk_meshes_ready(
+    PackSectionReady const &batch,
+    std::size_t const model_offset = 0,
+    std::size_t const model_count = std::numeric_limits<std::size_t>::max() );
 
-    auto const offset { g_stream.pending_apply_offset };
-    if( offset == g_apply_stuck_offset ) {
-        ++g_apply_stuck_frames;
-    }
-    else {
-        g_apply_stuck_offset = offset;
-        g_apply_stuck_frames = 0;
-    }
+void
+request_missing_file_chunk_meshes(
+    PackSectionReady const &batch,
+    std::size_t const model_offset = 0,
+    std::size_t const model_count = std::numeric_limits<std::size_t>::max() );
 
-    if( g_apply_stuck_frames < kApplyStuckSkipFrames ) {
-        return false;
+[[nodiscard]] bool
+has_nearer_mesh_ready_batch( int const pending_dist ) {
+    std::lock_guard<std::mutex> lock { g_stream.ready.mutex };
+    for( auto const &ready : g_stream.ready.data ) {
+        if( ready.failed || ready.models == nullptr || ready.models->empty() ) {
+            continue;
+        }
+        if( false == file_chunk_meshes_ready( ready ) ) {
+            continue;
+        }
+        if( ready.row == g_stream.center_row && ready.column == g_stream.center_column ) {
+            return true;
+        }
+        auto const dist {
+            section_manhattan_sections(
+                ready.row,
+                ready.column,
+                g_stream.center_row,
+                g_stream.center_column ) };
+        if( dist + 1 < pending_dist ) {
+            return true;
+        }
     }
-
-    auto const total {
-        g_stream.pending_apply->models != nullptr ?
-            g_stream.pending_apply->models->size() :
-            0 };
-    if( offset >= total ) {
-        return false;
-    }
-
-    auto model_file { ( *g_stream.pending_apply->models )[ offset ].model_file };
-    WriteLog(
-        "EU7 PACK: skip stuck model offset=" + std::to_string( offset ) + "/" +
-        std::to_string( total ) + " sec=" + std::to_string( g_stream.pending_apply->row ) + "," +
-        std::to_string( g_stream.pending_apply->column ) +
-        ( model_file.empty() ? "" : " file=\"" + model_file + "\"" ) );
-    if( false == model_file.empty() && model_file != "notload" ) {
-        replace_slashes( model_file );
-        touch_string_lru( model_file, g_stream.mesh_lru, g_stream.mesh_lru_iters );
-        g_stream.mesh_cache.emplace( std::move( model_file ), nullptr );
-    }
-    g_stream.pending_apply_offset = offset + 1;
-    note_apply_progress();
-    pack_bench_inc( &Eu7PackBench::stream_apply_stuck_skip );
-    return true;
+    return false;
 }
 
 void
-maybe_preempt_distant_pending() {
-    if(
-        false == g_loading_screen_dismissed ||
-        g_stream.bootstrap_active ||
-        g_stream.bootstrap_pending ||
-        false == g_stream.pending_apply.has_value() ) {
+suspend_pending_apply_to_ready() {
+    if( false == g_stream.pending_apply.has_value() ) {
         return;
     }
 
-    if( ready_queue_size() >= kPreemptReadyQueueThreshold ) {
-        return;
-    }
-    if( camera_stream_speed_mps() > kPreemptDisableSpeedMps ) {
-        return;
-    }
-    if( g_stream.last_outer_ring < kRingBoostOuterThreshold ) {
-        return;
-    }
+    g_stream.pending_apply->apply_offset = g_stream.pending_apply_offset;
+    PackSectionReady suspended { std::move( *g_stream.pending_apply ) };
+    g_stream.pending_apply.reset();
+    g_stream.pending_apply_offset = 0;
+    note_apply_progress();
 
-    auto &batch { *g_stream.pending_apply };
+    {
+        std::lock_guard<std::mutex> lock { g_stream.ready.mutex };
+        g_stream.ready.data.push_back( std::move( suspended ) );
+    }
+    pack_bench_inc( &Eu7PackBench::stream_reenqueue );
+}
+
+[[nodiscard]] bool
+file_chunk_meshes_ready(
+    PackSectionReady const &batch,
+    std::size_t const model_offset,
+    std::size_t const model_count ) {
     if( batch.models == nullptr || batch.models->empty() ) {
-        return;
-    }
-    if( g_stream.pending_apply_offset >= batch.models->size() ) {
-        return;
+        return false;
     }
 
-    auto const pending_dist {
+    auto const end {
+        std::min( batch.models->size(), model_offset + model_count ) };
+    if( model_offset >= end ) {
+        return true;
+    }
+
+    bool needs_mesh { false };
+    bool all_ready { true };
+    std::unordered_set<std::string> seen;
+    seen.reserve( std::min( end - model_offset, std::size_t { 64 } ) );
+    for( std::size_t i { model_offset }; i < end; ++i ) {
+        auto const &model { ( *batch.models )[ i ] };
+        if( eu7_pack_model_needs_full_load( model ) ) {
+            continue;
+        }
+        auto const model_file {
+            pack_model_mesh_path( model, batch.path_tables.get() ) };
+        if( model_file.empty() || model_file == "notload" ) {
+            continue;
+        }
+        auto normalized { std::string( model_file ) };
+        replace_slashes( normalized );
+        if( false == seen.insert( normalized ).second ) {
+            continue;
+        }
+        needs_mesh = true;
+        if( false == pack_mesh_ready_for_slice( normalized ) ) {
+            all_ready = false;
+        }
+    }
+    return needs_mesh ? all_ready : true;
+}
+
+void
+request_missing_file_chunk_meshes(
+    PackSectionReady const &batch,
+    std::size_t const model_offset,
+    std::size_t const model_count ) {
+    auto const dist {
         section_manhattan_sections(
             batch.row,
             batch.column,
             g_stream.center_row,
             g_stream.center_column ) };
-    if( pending_dist <= kUrgentSectionDistanceKm ) {
-        return;
-    }
-    if( pending_dist < 5 ) {
-        return;
-    }
 
-    auto const total { batch.models->size() };
-    if(
-        total > 0 &&
-        g_stream.pending_apply_offset > total / 2 ) {
+    auto const end {
+        std::min( batch.models->size(), model_offset + model_count ) };
+    if( batch.models == nullptr || model_offset >= end ) {
         return;
     }
 
-    auto const speed { camera_stream_speed_mps() };
-    auto const near_apply_km {
-        speed > 600.0 ? kFastFlightApplyMaxDistanceKm : kUrgentSectionDistanceKm };
-
-    bool nearer_ready { false };
-    {
-        std::lock_guard<std::mutex> lock { g_stream.ready.mutex };
-        for( auto const &ready : g_stream.ready.data ) {
-            if( ready.failed || ready.models == nullptr || ready.models->empty() ) {
-                continue;
-            }
-            auto const ready_dist {
-                section_manhattan_sections(
-                    ready.row,
-                    ready.column,
-                    g_stream.center_row,
-                    g_stream.center_column ) };
-            if(
-                ready.row == g_stream.center_row &&
-                ready.column == g_stream.center_column ) {
-                nearer_ready = true;
-                break;
-            }
-            if(
-                ready_dist + 3 < pending_dist &&
-                ready_dist <= near_apply_km ) {
-                nearer_ready = true;
-                break;
-            }
+    std::unordered_set<std::string> seen;
+    seen.reserve( std::min( end - model_offset, std::size_t { 64 } ) );
+    for( std::size_t i { model_offset }; i < end; ++i ) {
+        auto const &model { ( *batch.models )[ i ] };
+        if( eu7_pack_model_needs_full_load( model ) ) {
+            continue;
+        }
+        auto const model_file {
+            pack_model_mesh_path( model, batch.path_tables.get() ) };
+        if( model_file.empty() || model_file == "notload" ) {
+            continue;
+        }
+        auto normalized { std::string( model_file ) };
+        replace_slashes( normalized );
+        if( false == seen.insert( normalized ).second ) {
+            continue;
+        }
+        if( false == pack_mesh_ready_for_slice( normalized ) ) {
+            request_pack_mesh_load( normalized, dist );
         }
     }
+}
 
-    if( false == nearer_ready ) {
-        if(
-            pending_dist <= kPreemptPendingDistanceKm ||
-            camera_stream_speed_mps() <= 80.0 ) {
+void
+block_until_file_chunk_meshes( PackSectionReady const &batch, double const block_budget_ms ) {
+    for_each_chunk_mesh_path( batch, [&]( std::string const &path ) {
+        if( pack_mesh_ready_for_slice( path ) ) {
             return;
         }
+        (void)ensure_stream_pack_mesh( path, block_budget_ms );
+    } );
+}
 
-        auto const [cam_row, cam_col] {
-            section_row_column( resolve_section_stream_position( Global.pCamera.Pos ) ) };
-        if( section_has_pack_models( cam_row, cam_col ) ) {
-            nearer_ready = true;
-        }
-    }
+[[nodiscard]] bool
+batch_apply_meshes_ready(
+    PackSectionReady const &batch,
+    std::size_t const offset ) {
+    (void)offset;
+    return file_chunk_meshes_ready( batch );
+}
 
-    if( false == nearer_ready ) {
-        return;
-    }
+void
+request_missing_batch_meshes(
+    PackSectionReady const &batch,
+    std::size_t const offset ) {
+    (void)offset;
+    request_missing_file_chunk_meshes( batch );
+}
 
-    batch.apply_offset = g_stream.pending_apply_offset;
-    auto suspended { std::move( batch ) };
-    g_stream.pending_apply.reset();
-    g_stream.pending_apply_offset = 0;
+void
+prefetch_pack_section_meshes(
+    Eu7Module const &module,
+    int const row,
+    int const column ) {
+    auto const dist {
+        section_manhattan_sections(
+            row,
+            column,
+            g_stream.center_row,
+            g_stream.center_column ) };
+    for_each_pack_section_unique_mesh(
+        module,
+        row,
+        column,
+        [&]( std::string const &path ) {
+            request_pack_mesh_load( path, dist );
+        } );
+}
 
-    {
-        std::lock_guard<std::mutex> lock { g_stream.ready.mutex };
-        g_stream.ready.data.push_front( std::move( suspended ) );
-    }
-    pack_bench_inc( &Eu7PackBench::stream_preempt_pending );
-    pack_bench_inc( &Eu7PackBench::stream_reenqueue );
+void
+note_apply_progress() {
 }
 
 [[nodiscard]] bool
@@ -1381,13 +1564,11 @@ apply_pending_chunk(
     std::size_t const max_cold_meshes,
     double const cold_budget_ms,
     std::size_t const max_chunks ) {
+    (void)max_cold_meshes;
+    (void)cold_budget_ms;
     if( g_stream.serializer == nullptr ) {
         return false;
     }
-    if( maybe_skip_stuck_apply_offset() ) {
-        return true;
-    }
-    maybe_preempt_distant_pending();
     if( false == g_stream.pending_apply.has_value() && false == try_dequeue_ready_batch() ) {
         return false;
     }
@@ -1427,53 +1608,41 @@ apply_pending_chunk(
             applied_work = true;
             continue;
         }
-
-        auto const remaining { total - offset };
-        auto const pending_dist { pending_section_distance_km() };
-        auto const cam_speed { camera_stream_speed_mps() };
-        auto const is_urgent { pending_apply_is_urgent() };
-        auto const is_heavy {
-            false == batch.unique_meshes.empty() ||
-            false == batch.unique_textures.empty() ||
-            total >= kHeavySectionModelThreshold ||
-            remaining >= kHeavySectionModelThreshold };
-        auto const far_slow_drain {
-            cam_speed > 300.0 &&
-            pending_dist > kFarApplySlowDistanceKm &&
-            false == is_urgent &&
-            false == stream_ring_deficit() };
-
-        std::size_t chunk_count { remaining };
-        std::size_t cold_mesh_limit { remaining };
-        double effective_cold_budget_ms { 0.0 };
-
-        if( is_heavy ) {
-            chunk_count = std::min( remaining, adaptive_slice_instances( total, is_urgent ) );
-            cold_mesh_limit = adaptive_cold_meshes( is_urgent );
-            effective_cold_budget_ms =
-                is_urgent ? kUrgentColdBudgetMs : gameplay_cold_budget_ms();
-            if( far_slow_drain ) {
-                chunk_count = std::min( chunk_count, std::size_t { 32 } );
-                cold_mesh_limit = std::min( cold_mesh_limit, std::size_t { 1 } );
-                effective_cold_budget_ms = std::min( effective_cold_budget_ms, 8.0 );
+        if( offset >= total ) {
+            if( batch.section_final ) {
+                finalize_section( batch );
             }
-            if( max_instances > 0 ) {
-                chunk_count = std::min( chunk_count, max_instances );
-            }
-            if( max_cold_meshes > 0 ) {
-                cold_mesh_limit = std::min( cold_mesh_limit, max_cold_meshes );
-            }
-            if( cold_budget_ms > 0.0 ) {
-                effective_cold_budget_ms = cold_budget_ms;
-            }
+            release_pending_buffer();
+            applied_work = true;
+            continue;
         }
 
+        auto const remaining { total - offset };
+        auto const is_urgent { pending_apply_is_urgent() };
+        auto const loading { false == g_loading_screen_dismissed };
+
+        std::size_t slice_limit { remaining };
+        if( loading ) {
+            slice_limit = std::min(
+                remaining,
+                max_instances > 0 ? max_instances : kLoaderSliceInstances );
+        }
+        else if( max_instances > 0 ) {
+            slice_limit = std::min( remaining, max_instances );
+        }
+        else {
+            slice_limit = std::min(
+                remaining,
+                adaptive_slice_instances( total, is_urgent ) );
+        }
+
+        std::size_t const chunk_count { slice_limit };
         auto const planned_inst { chunk_count };
         pack_bench_inc( &Eu7PackBench::stream_inst_planned, planned_inst );
         if( is_urgent ) {
             pack_bench_inc( &Eu7PackBench::stream_chunks_urgent );
         }
-        else if( is_heavy ) {
+        else if( chunk_count >= kHeavySectionModelThreshold ) {
             pack_bench_inc( &Eu7PackBench::stream_chunks_heavy );
         }
         else {
@@ -1487,42 +1656,65 @@ apply_pending_chunk(
         double apply_ms { 0.0 };
         std::size_t cold_loads { 0 };
         std::size_t tex_fetches { 0 };
+        auto const pending_dist {
+            section_manhattan_sections(
+                batch.row,
+                batch.column,
+                g_stream.center_row,
+                g_stream.center_column ) };
+
+        resolve_pack_model_paths(
+            batch.models->data() + offset,
+            chunk_count,
+            batch.path_tables.get() );
 
         {
             auto const phase_started { std::chrono::steady_clock::now() };
-            if( false == batch.unique_meshes.empty() ) {
-                cold_loads += preload_umes_cold_meshes(
-                    batch.unique_meshes,
-                    batch.umes_cold_offset,
-                    cold_mesh_limit,
-                    effective_cold_budget_ms,
-                    batch.umes_cold_offset );
+            auto const loading_phase { false == g_loading_screen_dismissed };
+            auto const gameplay { gameplay_stream_mode() };
+            (void)drain_pack_mesh_loader_ready( g_stream.mesh_cache );
+
+            if( false == file_chunk_meshes_ready( batch, offset, chunk_count ) ) {
+                pack_bench_inc( &Eu7PackBench::stream_apply_deferred );
+                request_missing_file_chunk_meshes( batch, offset, chunk_count );
+
+                if( gameplay ) {
+                    suspend_pending_apply_to_ready();
+                    return applied_work;
+                }
+
+                if( has_nearer_mesh_ready_batch( pending_dist ) ) {
+                    suspend_pending_apply_to_ready();
+                    return applied_work;
+                }
+
+                block_until_file_chunk_meshes( batch, std::max( budget_ms, 16.0 ) );
+
+                if( false == file_chunk_meshes_ready( batch, offset, chunk_count ) ) {
+                    if( has_nearer_mesh_ready_batch( pending_dist ) ) {
+                        suspend_pending_apply_to_ready();
+                    }
+                    return applied_work;
+                }
             }
-            std::size_t inst_slice_count { chunk_count };
-            cold_loads += preload_slice_cold_meshes(
-                models_ptr + offset,
-                chunk_count,
-                cold_mesh_limit,
-                effective_cold_budget_ms,
-                inst_slice_count );
-            chunk_count = inst_slice_count;
+            else if( loading_phase ) {
+                (void)pump_pack_mesh_loader( 8.0, 4 );
+            }
+
             cold_ms = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - phase_started ).count();
         }
         pack_bench_inc( &Eu7PackBench::stream_inst_after_cold, chunk_count );
-        if( chunk_count < planned_inst ) {
-            pack_bench_inc( &Eu7PackBench::stream_cold_slice_truncated );
-        }
-        if( chunk_count == 0 ) {
-            g_stream.pending_apply_offset = offset + 1;
-            note_apply_progress();
-            applied_work = true;
-            continue;
-        }
 
         {
             auto const phase_started { std::chrono::steady_clock::now() };
-            tex_fetches = warm_pack_section_textures( batch, offset, chunk_count );
+            if( false == gameplay_stream_mode() ) {
+                tex_fetches = warm_pack_section_textures( batch, offset, chunk_count );
+            }
+            else {
+                tex_fetches = warm_pack_section_textures(
+                    batch, offset, chunk_count, kPackTextureWarmBudgetMs );
+            }
             warm_ms = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - phase_started ).count();
         }
@@ -1546,7 +1738,11 @@ apply_pending_chunk(
         }
         retain_section_mesh_keys( batch.section_idx, models_ptr, offset, chunk_count );
         retain_section_nodedata_keys( batch.section_idx, models_ptr, offset, chunk_count );
-        evict_unreferenced_stream_caches();
+        if(
+            g_stream.mesh_lru.size() > kMeshCacheLruCap ||
+            g_stream.nodedata_lru.size() > kNodedataCacheLruCap ) {
+            evict_unreferenced_stream_caches();
+        }
 
         auto const chunk_wall_ms {
             std::chrono::duration<double, std::milli>(
@@ -1567,15 +1763,23 @@ apply_pending_chunk(
                     ( "/" + std::to_string( planned_inst ) ) :
                     std::string{} ) +
                 " urg=" + std::to_string( is_urgent ? 1 : 0 ) +
-                " heavy=" + std::to_string( is_heavy ? 1 : 0 ) +
+                " heavy=" + std::to_string( chunk_count >= kHeavySectionModelThreshold ? 1 : 0 ) +
                 " cold=" + std::to_string( cold_loads ) + "(" + std::to_string( static_cast<int>( cold_ms ) ) + "ms)" +
                 " warm=" + std::to_string( tex_fetches ) + "(" + std::to_string( static_cast<int>( warm_ms ) ) + "ms)" +
                 " apply=" + std::to_string( static_cast<int>( apply_ms ) ) + "ms" +
+                " ring=" + std::to_string( static_cast<int>( g_stream.last_inner_ring * 100.f ) ) + "/" +
+                std::to_string( static_cast<int>( g_stream.last_outer_ring * 100.f ) ) +
                 " pending=" + std::to_string( offset + chunk_count ) + "/" + std::to_string( total ) +
                 " sec=" + std::to_string( batch.row ) + "," + std::to_string( batch.column ) );
         }
         load_stats().pack_models += chunk_count;
+        if( load_stats().pack_models == chunk_count && offset == 0 ) {
+            WriteLog(
+                "EU7 PACK: pierwszy apply CHNK inst=" + std::to_string( chunk_count ) +
+                " sec=" + std::to_string( batch.row ) + "," + std::to_string( batch.column ) );
+        }
         g_stream.pending_apply_offset = offset + chunk_count;
+        batch.apply_offset = g_stream.pending_apply_offset;
         note_apply_progress();
         applied_work = true;
         ++chunks_done;
@@ -1585,7 +1789,6 @@ apply_pending_chunk(
                 finalize_section( batch );
             }
             release_pending_buffer();
-            continue;
         }
 
         if( budget_ms <= 0.0 ) {
@@ -1599,9 +1802,42 @@ apply_pending_chunk(
             pack_bench_inc( &Eu7PackBench::drain_budget_stops );
             return applied_work;
         }
+        continue;
     }
 
     return applied_work;
+}
+
+void
+maybe_log_loading_stream_status() {
+    if( false == g_stream.active || g_loading_screen_dismissed ) {
+        return;
+    }
+
+    static double s_last_log { 0.0 };
+    auto const now { Timer::GetTime() };
+    if( now - s_last_log < kStreamStatusLogIntervalSec ) {
+        return;
+    }
+    s_last_log = now;
+
+    std::size_t pending_total { 0 };
+    if( g_stream.pending_apply.has_value() && g_stream.pending_apply->models != nullptr ) {
+        pending_total = g_stream.pending_apply->models->size();
+    }
+    std::size_t job_count { 0 };
+    {
+        std::lock_guard<std::mutex> lock { g_stream.jobs.mutex };
+        job_count = g_stream.jobs.data.size();
+    }
+
+    WriteLog(
+        "EU7 PACK [loading]: pack_models=" + std::to_string( load_stats().pack_models ) +
+        " ready_q=" + std::to_string( ready_queue_size() ) +
+        " in_flight=" + std::to_string( g_stream.in_flight_sections.size() ) +
+        " pending=" + std::to_string( g_stream.pending_apply_offset ) + "/" +
+        std::to_string( pending_total ) +
+        " jobs=" + std::to_string( job_count ) );
 }
 
 void
@@ -1621,7 +1857,7 @@ maybe_log_stream_status( glm::dvec3 const &world_position ) {
     auto const inner_ring {
         section_stream_ring_progress( world_position, kSectionStreamGameplayRadiusKm ) };
     auto const outer_ring {
-        section_stream_ring_progress( world_position, g_stream.radius ) };
+        section_stream_ring_progress( world_position, kSectionStreamTargetRadiusKm ) };
 
     std::size_t pending_total { 0 };
     std::size_t pending_offset { g_stream.pending_apply_offset };
@@ -1707,6 +1943,11 @@ worker_loop( std::stop_token const stop_token ) {
 
         try {
             auto const &module { stream_module() };
+
+            if( job.next_chunk == 0 ) {
+                prefetch_pack_section_meshes( module, job.row, job.column );
+            }
+
             auto const entry { find_pack_entry( module, job.row, job.column ) };
             if( false == entry.has_value() || entry->model_count == 0 ) {
                 enqueue_failed_section( job );
@@ -1714,17 +1955,17 @@ worker_loop( std::stop_token const stop_token ) {
             }
 
             std::unique_ptr<std::vector<Eu7Model>> models;
-            std::vector<std::string> unique_meshes;
             std::vector<std::string> unique_textures;
+            std::shared_ptr<Eu7PackSectionPathTables const> path_tables;
             std::uint32_t chunk_count { 1 };
             {
                 PackBenchTimer const read_timer { &Eu7PackBench::worker_read_pack_ms };
-                auto const chunk {
+                auto chunk {
                     read_pack_section_chunk_load(
                         module, job.row, job.column, job.next_chunk ) };
                 chunk_count = chunk.chunk_count;
-                unique_meshes = std::move( chunk.unique_meshes );
                 unique_textures = std::move( chunk.unique_textures );
+                path_tables = std::move( chunk.path_tables );
                 if( false == chunk.models.empty() ) {
                     models = std::make_unique<std::vector<Eu7Model>>(
                         std::move( chunk.models ) );
@@ -1736,8 +1977,8 @@ worker_loop( std::stop_token const stop_token ) {
             result.column = job.column;
             result.section_idx = job.section_idx;
             result.models = std::move( models );
-            result.unique_meshes = std::move( unique_meshes );
             result.unique_textures = std::move( unique_textures );
+            result.path_tables = std::move( path_tables );
             result.failed = result.models == nullptr;
             result.section_final = job.next_chunk + 1 >= chunk_count;
 
@@ -1754,13 +1995,14 @@ worker_loop( std::stop_token const stop_token ) {
             pack_bench_inc(
                 &Eu7PackBench::worker_models_decoded, result.models->size() );
 
+            auto const section_final { result.section_final };
             {
                 std::lock_guard<std::mutex> lock { g_stream.ready.mutex };
                 g_stream.ready.data.push_back( std::move( result ) );
             }
 
             pack_bench_inc( &Eu7PackBench::worker_chunks_decoded );
-            if( result.section_final ) {
+            if( section_final ) {
                 pack_bench_inc( &Eu7PackBench::worker_sections_done );
             }
 
@@ -1795,6 +2037,7 @@ worker_loop( std::stop_token const stop_token ) {
 
 void
 stop_workers() {
+    stop_pack_mesh_loader();
     g_stream.worker_exit = true;
     g_stream.work_cv.notify_all();
     g_stream.workers.clear();
@@ -1834,11 +2077,15 @@ start_workers() {
     for( std::size_t worker_idx { 0 }; worker_idx < worker_count; ++worker_idx ) {
         g_stream.workers.emplace_back( worker_loop );
     }
+    start_pack_mesh_loader();
 
     WriteLog(
-        "EU7 PACK: async loader started, workers=" + std::to_string( worker_count ) +
-        ", radius=" + std::to_string( kStreamRadius ) +
-        ", bootstrap=" + std::to_string( kInitialBootstrapRadius ) + "km" +
+        "EU7 PACK: mesh queue loader started (main-thread), stream_workers=" +
+        std::to_string( worker_count ) +
+        ", radius=" + std::to_string( kSectionStreamTargetRadiusKm ) +
+        "km, bootstrap_enqueue=" + std::to_string( kInitialBootstrapEnqueueRadius ) + "km" +
+        ", bootstrap_replenish=" + std::to_string( kInitialBootstrapRadius ) + "km" +
+        ", maintenance_inner=" + std::to_string( kSectionStreamGameplayRadiusKm ) + "km" +
         ", lookahead=" + std::to_string( kMovementLookahead ) );
 }
 
@@ -1940,6 +2187,10 @@ should_block_far_enqueue(
             g_stream.center_row,
             g_stream.center_column ) };
     if( dist <= kSectionStreamGameplayRadiusKm ) {
+        return false;
+    }
+
+    if( in_radius_fill_phase() ) {
         return false;
     }
 
@@ -2058,6 +2309,10 @@ enqueue_section_if_needed(
 
     g_stream.in_flight_sections.insert( section_idx );
 
+    if( g_stream.module != nullptr ) {
+        prefetch_pack_section_meshes( *g_stream.module, row, column );
+    }
+
     PackSectionJob job;
     job.row = row;
     job.column = column;
@@ -2143,7 +2398,81 @@ replenish_bootstrap_ring( glm::dvec3 const &world_position ) {
     auto const [row, column] { section_row_column( world_position ) };
     g_stream.center_row = row;
     g_stream.center_column = column;
-    enqueue_sections_around( row, column, kInitialBootstrapRadius, world_position );
+
+    if( false == g_loading_screen_dismissed ) {
+        enqueue_sections_around( row, column, kInitialBootstrapEnqueueRadius, world_position );
+    }
+    else if( in_radius_fill_phase() ) {
+        enqueue_sections_around(
+            row, column, kSectionStreamTargetRadiusKm, world_position );
+    }
+    else {
+        enqueue_sections_around(
+            row, column, kSectionStreamGameplayRadiusKm, world_position );
+    }
+}
+
+[[nodiscard]] float
+section_ring_apply_fraction( int const row, int const column ) {
+    auto const section_idx { section_index( row, column ) };
+
+    if( g_stream.loaded_sections.contains( section_idx ) ) {
+        return 1.0f;
+    }
+
+    if(
+        g_stream.pending_apply.has_value() &&
+        g_stream.pending_apply->section_idx == section_idx &&
+        g_stream.pending_apply->models != nullptr &&
+        false == g_stream.pending_apply->models->empty() ) {
+        auto const total { g_stream.pending_apply->models->size() };
+        if( g_stream.pending_apply_offset >= total ) {
+            return 1.0f;
+        }
+        return static_cast<float>( g_stream.pending_apply_offset ) /
+            static_cast<float>( total );
+    }
+
+    {
+        std::lock_guard<std::mutex> lock { g_stream.ready.mutex };
+        for( auto const &batch : g_stream.ready.data ) {
+            if( batch.section_idx == section_idx ) {
+                return 0.25f;
+            }
+        }
+    }
+
+    if( g_stream.in_flight_sections.contains( section_idx ) ) {
+        return 0.1f;
+    }
+
+    return 0.f;
+}
+
+[[nodiscard]] bool
+center_section_stream_satisfied( glm::dvec3 const &world_position ) {
+    auto const [center_row, center_column] { section_row_column( world_position ) };
+    if( false == section_has_pack_models( center_row, center_column ) ) {
+        return true;
+    }
+
+    auto const section_idx { section_index( center_row, center_column ) };
+    if( g_stream.loaded_sections.contains( section_idx ) ) {
+        return true;
+    }
+
+    if(
+        g_stream.pending_apply.has_value() &&
+        g_stream.pending_apply->section_idx == section_idx &&
+        g_stream.pending_apply->models != nullptr &&
+        false == g_stream.pending_apply->models->empty() ) {
+        auto const total { g_stream.pending_apply->models->size() };
+        if( g_stream.pending_apply_offset >= total ) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 [[nodiscard]] std::pair<int, int>
@@ -2273,8 +2602,6 @@ try_dequeue_ready_batch() {
         return true;
     }
 
-    PackSectionReady batch;
-    bool has_batch { false };
     {
         std::lock_guard<std::mutex> lock { g_stream.ready.mutex };
         for( auto it { g_stream.ready.data.begin() }; it != g_stream.ready.data.end(); ) {
@@ -2291,97 +2618,119 @@ try_dequeue_ready_batch() {
             ++it;
         }
 
-        if( false == g_stream.ready.data.empty() ) {
-            auto const pick_best {
-                [&]( int const max_distance ) -> std::deque<PackSectionReady>::iterator {
-                    auto best_it { g_stream.ready.data.end() };
-                    auto best_dist { std::numeric_limits<int>::max() };
-                    for( auto it { g_stream.ready.data.begin() }; it != g_stream.ready.data.end(); ++it ) {
-                        if( it->failed || it->models == nullptr || it->models->empty() ) {
-                            continue;
-                        }
-                        auto const dist {
-                            section_manhattan_sections(
-                                it->row,
-                                it->column,
-                                g_stream.center_row,
-                                g_stream.center_column ) };
-                        if( max_distance >= 0 && dist > max_distance ) {
-                            continue;
-                        }
-                        if( dist < best_dist || ( dist == best_dist && best_it == g_stream.ready.data.end() ) ) {
-                            best_dist = dist;
-                            best_it = it;
-                        }
-                        else if(
-                            dist == best_dist && best_it != g_stream.ready.data.end() &&
-                            it->section_idx < best_it->section_idx ) {
-                            best_it = it;
-                        }
+        if( g_stream.ready.data.empty() ) {
+            return false;
+        }
+
+        auto const gameplay { gameplay_stream_mode() };
+
+        auto const pick_best {
+            [&]( int const max_distance, bool const require_mesh_ready )
+                -> std::deque<PackSectionReady>::iterator {
+                auto best_it { g_stream.ready.data.end() };
+                auto best_dist { std::numeric_limits<int>::max() };
+                auto best_mesh_ready { false };
+                for( auto it { g_stream.ready.data.begin() }; it != g_stream.ready.data.end(); ++it ) {
+                    if( it->failed || it->models == nullptr || it->models->empty() ) {
+                        continue;
                     }
-                    return best_it;
-                } };
-
-            auto const pick_camera_section {
-                [&]() -> std::deque<PackSectionReady>::iterator {
-                    for( auto it { g_stream.ready.data.begin() }; it != g_stream.ready.data.end(); ++it ) {
-                        if( it->failed || it->models == nullptr || it->models->empty() ) {
-                            continue;
-                        }
-                        if(
-                            it->row == g_stream.center_row &&
-                            it->column == g_stream.center_column ) {
-                            return it;
-                        }
+                    auto const dist {
+                        section_manhattan_sections(
+                            it->row,
+                            it->column,
+                            g_stream.center_row,
+                            g_stream.center_column ) };
+                    if( max_distance >= 0 && dist > max_distance ) {
+                        continue;
                     }
-                    return g_stream.ready.data.end();
-                } };
+                    auto const mesh_ready { file_chunk_meshes_ready( *it ) };
+                    if( gameplay && require_mesh_ready && false == mesh_ready ) {
+                        continue;
+                    }
+                    if(
+                        dist < best_dist ||
+                        ( dist == best_dist && mesh_ready && false == best_mesh_ready ) ||
+                        ( dist == best_dist && best_it == g_stream.ready.data.end() ) ) {
+                        best_dist = dist;
+                        best_it = it;
+                        best_mesh_ready = mesh_ready;
+                    }
+                    else if(
+                        dist == best_dist && best_it != g_stream.ready.data.end() &&
+                        it->section_idx < best_it->section_idx &&
+                        mesh_ready == best_mesh_ready ) {
+                        best_it = it;
+                    }
+                }
+                return best_it;
+            } };
 
-            auto const cam_speed { camera_stream_speed_mps() };
-            auto const max_apply_dist {
-                cam_speed > 600.0 ?
-                    kFastFlightApplyMaxDistanceKm :
-                    ( cam_speed > 80.0 ? 3 : kSectionStreamGameplayRadiusKm ) };
+        auto const pick_camera_section {
+            [&]() -> std::deque<PackSectionReady>::iterator {
+                for( auto it { g_stream.ready.data.begin() }; it != g_stream.ready.data.end(); ++it ) {
+                    if( it->failed || it->models == nullptr || it->models->empty() ) {
+                        continue;
+                    }
+                    if(
+                        it->row == g_stream.center_row &&
+                        it->column == g_stream.center_column ) {
+                        if( gameplay && false == file_chunk_meshes_ready( *it ) ) {
+                            return g_stream.ready.data.end();
+                        }
+                        return it;
+                    }
+                }
+                return g_stream.ready.data.end();
+            } };
 
-            auto best_it { pick_camera_section() };
-            if( best_it != g_stream.ready.data.end() ) {
-                pack_bench_inc( &Eu7PackBench::stream_dequeue_camera );
-            }
-            else {
-                best_it = pick_best( max_apply_dist );
-            }
-            if( best_it == g_stream.ready.data.end() ) {
-                best_it = pick_best( kSectionStreamGameplayRadiusKm );
-            }
-            if( best_it == g_stream.ready.data.end() && false == g_stream.ready.data.empty() ) {
-                best_it = pick_best( -1 );
-            }
-            if( best_it == g_stream.ready.data.end() ) {
-                return false;
-            }
-            batch = std::move( *best_it );
-            g_stream.ready.data.erase( best_it );
-            has_batch = true;
+        auto const cam_speed { camera_stream_speed_mps() };
+        auto const ring_deficit { stream_ring_deficit() };
+        auto const radius_fill { in_radius_fill_phase() };
+        auto max_apply_dist {
+            cam_speed > 600.0 ?
+                kFastFlightApplyMaxDistanceKm :
+                ( cam_speed > 80.0 ? 3 : kSectionStreamGameplayRadiusKm ) };
+        if( ring_deficit && false == radius_fill ) {
+            max_apply_dist = cam_speed > 200.0 ?
+                kFastFlightApplyMaxDistanceKm :
+                kUrgentSectionDistanceKm;
         }
+
+        auto best_it { pick_camera_section() };
+        if( best_it != g_stream.ready.data.end() ) {
+            pack_bench_inc( &Eu7PackBench::stream_dequeue_camera );
+        }
+        else if( radius_fill ) {
+            best_it = pick_best( -1, true );
+        }
+        else {
+            best_it = pick_best( max_apply_dist, true );
+        }
+        if( best_it == g_stream.ready.data.end() && false == radius_fill ) {
+            auto const wider_dist {
+                ring_deficit ?
+                    std::max( max_apply_dist, kFastFlightApplyMaxDistanceKm ) :
+                    kSectionStreamGameplayRadiusKm };
+            best_it = pick_best( wider_dist, true );
+        }
+        if( best_it == g_stream.ready.data.end() && false == g_stream.ready.data.empty() ) {
+            best_it = pick_best( -1, true );
+        }
+        if(
+            best_it == g_stream.ready.data.end() &&
+            gameplay &&
+            false == g_stream.ready.data.empty() ) {
+            best_it = pick_best( -1, false );
+        }
+        if( best_it == g_stream.ready.data.end() ) {
+            return false;
+        }
+
+        g_stream.pending_apply.emplace( std::move( *best_it ) );
+        g_stream.ready.data.erase( best_it );
     }
 
-    if( false == has_batch ) {
-        return false;
-    }
-
-    if( batch.failed || batch.models == nullptr || batch.models->empty() ) {
-        if( batch.failed ) {
-            fail_section( batch.section_idx, batch.row, batch.column );
-        }
-        else if( batch.section_final ) {
-            finalize_section( batch );
-        }
-        return false;
-    }
-
-    g_stream.pending_apply = std::move( batch );
     g_stream.pending_apply_offset = g_stream.pending_apply->apply_offset;
-    g_stream.pending_apply->apply_offset = 0;
 
     auto const dequeue_dist {
         section_manhattan_sections(
@@ -2413,20 +2762,14 @@ prefetch_ready_queue_textures( double const budget_ms ) {
     {
         std::lock_guard<std::mutex> lock { g_stream.ready.mutex };
         for( auto it { g_stream.ready.data.begin() }; it != g_stream.ready.data.end(); ++it ) {
-            if( it->failed ) {
+            if( it->failed || it->models == nullptr || it->models->empty() ) {
                 continue;
             }
-            if( false == it->unique_textures.empty() ) {
-                if( it->texture_warm_offset >= it->unique_textures.size() ) {
-                    continue;
-                }
-                candidates.push_back( it );
-                continue;
-            }
-            if( it->models == nullptr || it->models->empty() ) {
-                continue;
-            }
-            if( it->texture_warm_offset >= it->models->size() ) {
+            auto const tex_total {
+                false == it->unique_textures.empty() ?
+                    it->unique_textures.size() :
+                    it->models->size() };
+            if( it->texture_warm_offset >= tex_total ) {
                 continue;
             }
             candidates.push_back( it );
@@ -2457,38 +2800,31 @@ prefetch_ready_queue_textures( double const budget_ms ) {
             return lhs_dist < rhs_dist;
         } );
 
+
     for( auto const it : candidates ) {
         auto &batch { *it };
-        if( false == batch.unique_textures.empty() ) {
-            while( batch.texture_warm_offset < batch.unique_textures.size() ) {
-                auto const remaining {
-                    batch.unique_textures.size() - batch.texture_warm_offset };
-            auto const slice { std::min( remaining, kReadyTexturePrefetchSlice ) };
-            auto const tex_slice { std::min( slice, kPackTextureWarmSlice ) };
-            std::size_t processed { 0 };
-            (void)warm_pack_texture_paths_main(
-                batch.unique_textures.data() + batch.texture_warm_offset,
-                tex_slice,
-                kPackTextureWarmBudgetMs,
-                &processed );
-            batch.texture_warm_offset += processed;
+        auto const use_utex { false == batch.unique_textures.empty() };
 
-                auto const elapsed_ms {
-                    std::chrono::duration<double, std::milli>(
-                        std::chrono::steady_clock::now() - started ).count() };
-                if( elapsed_ms >= budget_ms ) {
-                    return;
-                }
+        while( true ) {
+            auto const tex_total {
+                use_utex ? batch.unique_textures.size() : batch.models->size() };
+            if( batch.texture_warm_offset >= tex_total ) {
+                break;
             }
-            continue;
-        }
 
-        while( batch.texture_warm_offset < batch.models->size() ) {
-            auto const remaining { batch.models->size() - batch.texture_warm_offset };
+            auto const remaining { tex_total - batch.texture_warm_offset };
             auto const slice { std::min( remaining, kReadyTexturePrefetchSlice ) };
-            (void)warm_pack_textures_main(
-                batch.models->data() + batch.texture_warm_offset,
-                slice );
+
+            if( use_utex ) {
+                (void)warm_pack_texture_paths_main(
+                    batch.unique_textures.data() + batch.texture_warm_offset,
+                    slice );
+            }
+            else {
+                (void)warm_pack_textures_main(
+                    batch.models->data() + batch.texture_warm_offset,
+                    slice );
+            }
             batch.texture_warm_offset += slice;
 
             auto const elapsed_ms {
@@ -2516,10 +2852,10 @@ prefetch_ready_queue_umes_worker( double const budget_ms, std::size_t const max_
     std::vector<std::deque<PackSectionReady>::iterator> candidates;
     candidates.reserve( g_stream.ready.data.size() );
     for( auto it { g_stream.ready.data.begin() }; it != g_stream.ready.data.end(); ++it ) {
-        if( it->failed || it->unique_meshes.empty() ) {
+        if( it->failed || it->models == nullptr || it->models->empty() ) {
             continue;
         }
-        if( it->umes_prefetch_offset >= it->unique_meshes.size() ) {
+        if( it->umes_prefetch_offset >= it->models->size() ) {
             continue;
         }
         if( g_stream.center_row >= 0 && g_stream.center_column >= 0 ) {
@@ -2529,7 +2865,7 @@ prefetch_ready_queue_umes_worker( double const budget_ms, std::size_t const max_
                     it->column,
                     g_stream.center_row,
                     g_stream.center_column ) };
-            if( dist > kUmesPrefetchMaxDistanceKm ) {
+            if( dist > umes_prefetch_max_distance_km() ) {
                 continue;
             }
         }
@@ -2562,15 +2898,18 @@ prefetch_ready_queue_umes_worker( double const budget_ms, std::size_t const max_
 
     for( auto const it : candidates ) {
         auto &batch { *it };
-        while( batch.umes_prefetch_offset < batch.unique_meshes.size() ) {
-            auto model_file { batch.unique_meshes[ batch.umes_prefetch_offset ] };
-
+        while( batch.umes_prefetch_offset < batch.models->size() ) {
+            auto const &model { ( *batch.models )[ batch.umes_prefetch_offset ] };
+            if( eu7_pack_model_needs_full_load( model ) ) {
+                ++batch.umes_prefetch_offset;
+                continue;
+            }
+            auto const &model_file { model.model_file };
             if( model_file.empty() || model_file == "notload" ) {
                 ++batch.umes_prefetch_offset;
                 continue;
             }
-            replace_slashes( model_file );
-            if( g_stream.mesh_cache.contains( model_file ) ) {
+            if( pack_mesh_ready_for_slice( model_file ) ) {
                 pack_bench_inc( &Eu7PackBench::stream_mesh_session_hit );
                 ++batch.umes_prefetch_offset;
                 continue;
@@ -2587,7 +2926,13 @@ prefetch_ready_queue_umes_worker( double const budget_ms, std::size_t const max_
                 }
             }
 
-            (void)ensure_stream_pack_mesh( model_file );
+            request_pack_mesh_load(
+                model_file,
+                section_manhattan_sections(
+                    batch.row,
+                    batch.column,
+                    g_stream.center_row,
+                    g_stream.center_column ) );
             ++loads;
             pack_bench_inc( &Eu7PackBench::stream_prefetch_ready_umes_loads );
             ++batch.umes_prefetch_offset;
@@ -2669,6 +3014,41 @@ drain_sections( std::size_t const max_sections ) {
 }
 
 void
+drain_frame_budget( double const budget_ms ) {
+    if( budget_ms <= 0.0 ) {
+        return;
+    }
+
+    auto const started { std::chrono::steady_clock::now() };
+    std::size_t chunks_done { 0 };
+    while( chunks_done < kFrameMaxChunksPerDrain ) {
+        auto const elapsed_ms {
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - started ).count() };
+        auto const remaining_ms { budget_ms - elapsed_ms };
+        if( remaining_ms <= 0.0 ) {
+            break;
+        }
+
+        if( false == apply_pending_chunk(
+                remaining_ms,
+                kFrameSliceInstances,
+                kFrameSliceColdMeshes,
+                kFrameColdBudgetMs,
+                1 ) ) {
+            break;
+        }
+        ++chunks_done;
+
+        if(
+            false == g_stream.pending_apply.has_value() &&
+            ready_queue_size() == 0 ) {
+            break;
+        }
+    }
+}
+
+void
 drain_until_budget( double const budget_ms ) {
     if( budget_ms <= 0.0 ) {
         return;
@@ -2705,8 +3085,9 @@ void
 sync_stream_limits( glm::dvec3 const &world_position ) {
     if( false == g_loading_screen_dismissed ) {
         g_stream_catchup = false;
-        g_stream_max_in_flight = 6;
-        g_stream_max_ready = 2;
+        g_stream.radius_fill_active = false;
+        g_stream_max_in_flight = 16;
+        g_stream_max_ready = 8;
         return;
     }
 
@@ -2715,11 +3096,34 @@ sync_stream_limits( glm::dvec3 const &world_position ) {
     g_stream.last_inner_ring =
         section_stream_ring_progress( stream_position, kSectionStreamGameplayRadiusKm );
     g_stream.last_outer_ring =
-        section_stream_ring_progress( stream_position, g_stream.radius );
+        section_stream_ring_progress( stream_position, kSectionStreamTargetRadiusKm );
+
+    auto const was_radius_fill { g_stream.radius_fill_active };
+    g_stream.radius_fill_active = false == section_stream_ready_around(
+        stream_position, kSectionStreamTargetRadiusKm );
+    if( false == was_radius_fill && g_stream.radius_fill_active ) {
+        WriteLog(
+            "EU7 PACK: faza radius_fill — docelowy promien " +
+            std::to_string( kSectionStreamTargetRadiusKm ) + "km, ring=" +
+            std::to_string( static_cast<int>( g_stream.last_outer_ring * 100.f ) ) + "%" );
+    }
+    else if( was_radius_fill && false == g_stream.radius_fill_active ) {
+        WriteLog(
+            "EU7 PACK: faza maintenance — promien " +
+            std::to_string( kSectionStreamTargetRadiusKm ) + "km zapelniony, ring=" +
+            std::to_string( static_cast<int>( g_stream.last_outer_ring * 100.f ) ) + "%" );
+    }
+
+    if( g_stream.radius_fill_active ) {
+        g_stream_catchup = true;
+        g_stream_max_in_flight = kRadiusFillMaxInFlight;
+        g_stream_max_ready = kRadiusFillMaxReady;
+        return;
+    }
 
     g_stream_catchup = (
         cam_speed > 80.0 ||
-        g_stream.last_outer_ring < 0.98f );
+        g_stream.last_inner_ring < 0.98f );
 
     if( g_stream_catchup ) {
         g_stream_max_in_flight = kCatchupMaxInFlightSections;
@@ -2727,7 +3131,7 @@ sync_stream_limits( glm::dvec3 const &world_position ) {
 
         if(
             cam_speed > kRingBoostInFlightSpeedMps &&
-            g_stream.last_outer_ring < kRingBoostOuterThreshold ) {
+            g_stream.last_inner_ring < kRingBoostOuterThreshold ) {
             g_stream_max_in_flight = std::max(
                 g_stream_max_in_flight, kRingStrongBoostMaxInFlight );
             g_stream_max_ready = std::max(
@@ -2735,7 +3139,7 @@ sync_stream_limits( glm::dvec3 const &world_position ) {
         }
         else if(
             cam_speed > kRingBoostInFlightSpeedMps &&
-            g_stream.last_outer_ring < kRingStrongBoostOuterThreshold ) {
+            g_stream.last_inner_ring < kRingStrongBoostOuterThreshold ) {
             g_stream_max_in_flight = std::max(
                 g_stream_max_in_flight, kRingBoostMaxInFlight );
             g_stream_max_ready = std::max(
@@ -2810,9 +3214,33 @@ prime_section_stream( Eu7Module const &root_module ) {
         std::to_string( initial.z ) + ")" );
 
     g_stream.bootstrap_active = true;
-    enqueue_sections_around( row, column, kInitialBootstrapRadius, initial );
+    enqueue_sections_around( row, column, kInitialBootstrapEnqueueRadius, initial );
+    auto const prime_started { std::chrono::steady_clock::now() };
+    while( true ) {
+        drain_until_budget( kBootstrapDrainMs );
+        if( load_stats().pack_models > 0 ) {
+            break;
+        }
+        auto const elapsed_ms {
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - prime_started ).count() };
+        if( elapsed_ms >= 4000 ) {
+            break;
+        }
+        if(
+            false == g_stream.pending_apply.has_value() &&
+            ready_queue_size() == 0 &&
+            g_stream.in_flight_sections.empty() ) {
+            break;
+        }
+    }
+    WriteLog(
+        "EU7 PACK: prime drain modele=" + std::to_string( load_stats().pack_models ) +
+        " ready_q=" + std::to_string( ready_queue_size() ) +
+        " in_flight=" + std::to_string( g_stream.in_flight_sections.size() ) );
     g_stream.bootstrap_active = false;
     g_stream.bootstrap_pending = false;
+    g_stream.radius_fill_active = false;
 }
 
 [[nodiscard]] glm::dvec3
@@ -2884,6 +3312,7 @@ bootstrap_section_stream( glm::dvec3 const &world_position ) {
 
     g_stream.bootstrap_active = false;
     g_stream.bootstrap_pending = false;
+    g_stream.radius_fill_active = false;
 
     auto const elapsed_ms {
         std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -2928,34 +3357,52 @@ update_section_stream( glm::dvec3 const &world_position ) {
 
     sync_stream_limits( stream_position );
 
+    auto const radius_fill { in_radius_fill_phase() };
     auto const inner_ring_ready {
         section_stream_ready_around( stream_position, kSectionStreamGameplayRadiusKm ) };
     auto const ring_radius {
-        inner_ring_ready ? g_stream.radius : kSectionStreamGameplayRadiusKm };
+        radius_fill ?
+            kSectionStreamTargetRadiusKm :
+            kSectionStreamGameplayRadiusKm };
 
     auto const cam_speed { camera_stream_speed_mps() };
     auto const reenqueue_distance {
-        ( g_stream_catchup || cam_speed > 80.0 ) ?
-            std::clamp( cam_speed * 0.25, kCatchupReenqueueDistanceM, kReenqueueDistanceM ) :
-            kReenqueueDistanceM };
+        radius_fill ?
+            kCatchupReenqueueDistanceM :
+            ( ( g_stream_catchup || cam_speed > 80.0 ) ?
+                std::clamp( cam_speed * 0.25, kCatchupReenqueueDistanceM, kReenqueueDistanceM ) :
+                kReenqueueDistanceM ) };
 
     auto const current_section_unloaded {
         section_has_pack_models( center_row, center_column )
         && false == g_stream.loaded_sections.contains( section_index( center_row, center_column ) ) };
 
+    auto const ring_deficit { stream_ring_deficit() };
+    auto const desperate { ring_deficit || current_section_unloaded };
+
     auto max_lookahead { 0 };
-    if( inner_ring_ready ) {
-        max_lookahead = ( g_stream_catchup || cam_speed > 200.0 ) ?
-            kMovementLookahead :
-            ( cam_speed > 80.0 ? 10 : 7 );
-        if( current_section_unloaded && cam_speed > 200.0 ) {
-            max_lookahead = std::min( max_lookahead, 4 );
+    if( radius_fill ) {
+        max_lookahead = 0;
+    }
+    else if( inner_ring_ready || desperate ) {
+        if( desperate && cam_speed > 200.0 ) {
+            max_lookahead = cam_speed > 600.0 ? 10 : 8;
         }
+        else {
+            max_lookahead = ( g_stream_catchup || cam_speed > 200.0 ) ?
+                kMaintenanceLookaheadMax :
+                ( cam_speed > 80.0 ? 6 : 4 );
+        }
+        max_lookahead = std::min( max_lookahead, kMaintenanceLookaheadMax );
     }
 
     auto const travel_forward { guess_travel_forward() };
 
-    auto const inner_ring_incomplete { current_section_unloaded || false == inner_ring_ready };
+    auto const ring_incomplete {
+        radius_fill ?
+            false == section_stream_ready_around(
+                stream_position, kSectionStreamTargetRadiusKm ) :
+            ( current_section_unloaded || false == inner_ring_ready ) };
     auto const should_reenqueue {
         center_moved
         || false == g_stream.has_last_enqueue_position
@@ -2965,24 +3412,20 @@ update_section_stream( glm::dvec3 const &world_position ) {
         enqueue_section_if_needed( center_row, center_column, 0 );
     }
 
-    if( should_reenqueue || inner_ring_incomplete ) {
-        auto const enqueue_radius {
-            ( current_section_unloaded && cam_speed > 400.0 ) ?
-                std::min( ring_radius, 3 ) :
-                ring_radius };
-        enqueue_sections_around( center_row, center_column, enqueue_radius, stream_position );
+    if( should_reenqueue || ring_incomplete ) {
+        enqueue_sections_around( center_row, center_column, ring_radius, stream_position );
         g_stream.last_enqueue_position = stream_position;
         g_stream.has_last_enqueue_position = true;
-        if( should_reenqueue || inner_ring_incomplete ) {
+        if( should_reenqueue || ring_incomplete ) {
             pack_bench_inc( &Eu7PackBench::stream_reenqueue );
         }
     }
 
     if(
-        inner_ring_ready &&
+        false == radius_fill &&
+        ( inner_ring_ready || desperate ) &&
         max_lookahead > 0 &&
-        cam_speed > 50.0 &&
-        false == ( current_section_unloaded && cam_speed > 200.0 ) ) {
+        cam_speed > 50.0 ) {
         enqueue_movement_lookahead(
             center_row,
             center_column,
@@ -3008,70 +3451,67 @@ drain_section_stream(
     if( false == g_stream.active ) {
         return;
     }
+
+    (void)drain_pack_mesh_loader_ready( g_stream.mesh_cache );
+
     auto const stream_position {
         resolve_section_stream_position(
             g_loading_screen_dismissed ?
                 Global.pCamera.Pos :
                 stream_loading_position() ) };
-    if( gameplay_stream_mode() && section_stream_drain_idle( stream_position ) ) {
-        return;
+    auto const loading { false == g_loading_screen_dismissed };
+
+    if( false == loading ) {
+        sync_stream_limits( stream_position );
     }
 
-    auto const inner_ring_ready {
-        section_stream_ready_around(
-            stream_position,
-            kSectionStreamGameplayRadiusKm ) };
-
-    if( gameplay_stream_mode() && inner_ring_ready ) {
-        prefetch_ready_queue_umes_worker(
-            kReadyUmesPrefetchBudgetMs, kReadyUmesPrefetchMaxMeshes );
-        prefetch_ready_queue_textures( ready_texture_prefetch_budget_ms() );
-
-        if( g_stream_catchup ) {
-            auto const urgent {
-                pending_apply_is_urgent() ||
-                ( pending_section_distance_km() <= kFastFlightApplyMaxDistanceKm &&
-                  camera_stream_speed_mps() > 80.0 ) };
-            if( urgent ) {
-                pack_bench_inc( &Eu7PackBench::stream_drain_catchup_urgent );
-            }
-            else {
-                pack_bench_inc( &Eu7PackBench::stream_drain_catchup );
-            }
-            drain_apply_budget(
-                urgent ? kUrgentApplyBudgetMs : gameplay_apply_budget_ms(),
-                adaptive_slice_instances( pending_section_total(), urgent ),
-                adaptive_cold_meshes( urgent ),
-                urgent ? kUrgentColdBudgetMs : gameplay_cold_budget_ms(),
-                urgent ? kUrgentMaxChunksPerDrain :
-                    ( stream_ring_deficit() ? kRingDeficitMaxChunksPerDrain : 1 ) );
-        }
-        else {
-            pack_bench_inc( &Eu7PackBench::stream_drain_gameplay );
-            drain_until_budget( kDrainBudgetMs );
-        }
-        maybe_log_stream_status( stream_position );
-    }
-    else if( gameplay_stream_mode() ) {
-        prefetch_ready_queue_umes_worker(
-            kReadyUmesPrefetchBudgetMs, kReadyUmesPrefetchMaxMeshes );
-        pack_bench_inc( &Eu7PackBench::stream_drain_loader );
-        drain_until_budget( kLoaderDrainBudgetMs );
-        maybe_log_stream_status( stream_position );
-    }
-    else if( false == g_loading_screen_dismissed ) {
-        auto position { stream_loading_position() };
+    if( loading ) {
         if( section_stream_needs_bootstrap() ) {
             kick_section_stream_bootstrap();
         }
-        else if( position.x != 0.0 || position.y != 0.0 || position.z != 0.0 ) {
-            replenish_bootstrap_ring( position );
+        else if(
+            stream_position.x != 0.0 || stream_position.y != 0.0 || stream_position.z != 0.0 ) {
+            replenish_bootstrap_ring( stream_position );
         }
-        drain_until_budget( kLoaderDrainBudgetMs );
+        (void)pump_pack_mesh_loader( 8.0, 4 );
     }
     else {
-        pack_bench_inc( &Eu7PackBench::stream_drain_gameplay );
-        drain_until_budget( kDrainBudgetMs );
+        if(
+            stream_position.x != 0.0 || stream_position.y != 0.0 || stream_position.z != 0.0 ) {
+            replenish_bootstrap_ring( stream_position );
+        }
+
+        auto const radius_fill { in_radius_fill_phase() };
+        auto const gpu_init_budget { radius_fill ? 12.0 : ( g_stream_catchup ? 14.0 : 10.0 ) };
+        auto const gpu_init_loads {
+            radius_fill ?
+                std::size_t { 12 } :
+                ( g_stream_catchup ? std::size_t { 14 } : std::size_t { 10 } ) };
+        (void)pump_pack_mesh_loader( gpu_init_budget, gpu_init_loads );
+        if( false == radius_fill ) {
+            prefetch_ready_queue_umes_worker(
+                kReadyUmesPrefetchBudgetMs,
+                g_stream_catchup ?
+                    kReadyUmesPrefetchMaxMeshes + kReadyUmesPrefetchMaxMeshes / 2 :
+                    kReadyUmesPrefetchMaxMeshes );
+            prefetch_ready_queue_textures( ready_texture_prefetch_budget_ms() );
+        }
+    }
+
+    auto const radius_fill { false == loading && in_radius_fill_phase() };
+    drain_apply_budget(
+        loading ? kLoaderDrainBudgetMs : frame_drain_budget_ms(),
+        loading ? kLoaderSliceInstances :
+            ( radius_fill ? kRadiusFillSliceInstances : 0 ),
+        0,
+        0,
+        loading ? kLoaderSectionsPerDrain : gameplay_max_chunks_per_drain() );
+
+    if( loading ) {
+        maybe_log_loading_stream_status();
+    }
+    else {
+        maybe_log_stream_status( stream_position );
     }
 }
 
@@ -3108,10 +3548,10 @@ kick_section_stream_bootstrap() {
     g_stream.center_column = column;
 
     WriteLog(
-        "EU7 PACK: bootstrap async " + std::to_string( kInitialBootstrapRadius ) + "km, sekcja " +
+        "EU7 PACK: bootstrap async " + std::to_string( kInitialBootstrapEnqueueRadius ) + "km, sekcja " +
         std::to_string( row ) + "," + std::to_string( column ) );
 
-    enqueue_sections_around( row, column, kInitialBootstrapRadius, position );
+    enqueue_sections_around( row, column, kInitialBootstrapEnqueueRadius, position );
     g_stream.bootstrap_pending = false;
 }
 
@@ -3138,7 +3578,7 @@ preload_section_stream( double const max_drain_ms ) {
         return;
     }
 
-    simulation::State.drain_deferred_eu7_trainsets( 16.0 );
+    simulation::State.drain_deferred_eu7_trainsets( max_drain_ms > 0.0 ? 8.0 : 0.0 );
 
     auto position { resolve_stream_position() };
     if( position.x == 0.0 && position.y == 0.0 && position.z == 0.0 ) {
@@ -3148,16 +3588,24 @@ preload_section_stream( double const max_drain_ms ) {
 
     if( section_stream_needs_bootstrap() ) {
         if( position.x != 0.0 || position.y != 0.0 || position.z != 0.0 ) {
-            bootstrap_section_stream( position );
+            kick_section_stream_bootstrap();
         }
     }
     else if( position.x != 0.0 || position.y != 0.0 || position.z != 0.0 ) {
         update_section_stream( position );
     }
 
+    if( max_drain_ms <= 0.0 ) {
+        WriteLog(
+            "EU7 PACK: preload async kick, sekcji=" +
+            std::to_string( load_stats().pack_sections_loaded ) +
+            " modele=" + std::to_string( load_stats().pack_models ) );
+        return;
+    }
+
     auto const started { std::chrono::steady_clock::now() };
     while( true ) {
-        drain_until_budget( kDrainBudgetMs );
+        drain_until_budget( kLoaderDrainBudgetMs );
         if( position.x != 0.0 || position.y != 0.0 || position.z != 0.0 ) {
             update_section_stream( position );
         }
@@ -3168,20 +3616,27 @@ preload_section_stream( double const max_drain_ms ) {
         if( static_cast<double>( elapsed_ms ) >= max_drain_ms ) {
             break;
         }
+        if( position.x != 0.0 || position.y != 0.0 || position.z != 0.0 ) {
+            if( section_stream_ready_around(
+                    position, kSectionStreamLoadingDismissRadiusKm ) ) {
+                break;
+            }
+            if(
+                center_section_stream_satisfied( position ) &&
+                section_stream_ring_progress(
+                    position, kSectionStreamLoadingDismissRadiusKm ) >= kEarlyDismissRingProgress ) {
+                break;
+            }
+        }
         if(
             g_stream.pending_apply.has_value() || ready_queue_size() > 0 ||
             false == g_stream.in_flight_sections.empty() ) {
             continue;
         }
-        if( position.x != 0.0 || position.y != 0.0 || position.z != 0.0 ) {
-            if( section_stream_ready_around( position, kInitialBootstrapRadius ) ) {
-                break;
-            }
-        }
-        if( load_stats().pack_models >= 1500 ) {
+        if( load_stats().pack_models >= 400 ) {
             break;
         }
-        std::this_thread::sleep_for( std::chrono::milliseconds( 8 ) );
+        std::this_thread::sleep_for( std::chrono::milliseconds( 4 ) );
     }
 
     WriteLog(
@@ -3198,40 +3653,6 @@ ring_section_in_radius(
     int const radius_km ) {
     return std::abs( row - center_row ) <= radius_km
         && std::abs( column - center_column ) <= radius_km;
-}
-
-[[nodiscard]] float
-section_ring_apply_fraction( int const row, int const column ) {
-    auto const section_idx { section_index( row, column ) };
-
-    if( g_stream.loaded_sections.contains( section_idx ) ) {
-        return 1.0f;
-    }
-
-    if(
-        g_stream.pending_apply.has_value() &&
-        g_stream.pending_apply->section_idx == section_idx &&
-        g_stream.pending_apply->models != nullptr &&
-        false == g_stream.pending_apply->models->empty() ) {
-        auto const total { g_stream.pending_apply->models->size() };
-        return static_cast<float>( g_stream.pending_apply_offset ) /
-            static_cast<float>( total );
-    }
-
-    {
-        std::lock_guard<std::mutex> lock { g_stream.ready.mutex };
-        for( auto const &batch : g_stream.ready.data ) {
-            if( batch.section_idx == section_idx ) {
-                return 0.85f;
-            }
-        }
-    }
-
-    if( g_stream.in_flight_sections.contains( section_idx ) ) {
-        return 0.15f;
-    }
-
-    return 0.f;
 }
 
 [[nodiscard]] bool
@@ -3342,7 +3763,13 @@ void
 dismiss_loading_screen() {
     pack_bench_begin_stream_phase();
     g_loading_screen_dismissed = true;
+    g_stream.radius_fill_active = true;
     g_ring_ready_since.reset();
+    simulation::is_ready = true;
+
+    WriteLog(
+        "EU7 PACK: loading screen dismissed — faza radius_fill do " +
+        std::to_string( kSectionStreamTargetRadiusKm ) + "km" );
 
     if( g_stream.has_anchor_position ) {
         auto const &saved_camera { Global.FreeCameraInit[ 0 ] };
@@ -3366,39 +3793,41 @@ bool
 loading_screen_blocks_world(
     glm::dvec3 const &world_position,
     int const radius_km ) {
+    (void)radius_km;
     if( false == g_stream.active || g_loading_screen_dismissed ) {
         return false;
+    }
+
+    if( load_stats().pack_models >= kBootstrapApplyModelThreshold ) {
+        WriteLog(
+            "EU7 PACK: loading screen off, pack_models=" +
+            std::to_string( load_stats().pack_models ) );
+        dismiss_loading_screen();
+        return false;
+    }
+
+    auto const [center_row, center_column] { section_row_column( world_position ) };
+    if( section_has_pack_models( center_row, center_column ) ) {
+        auto const section_idx { section_index( center_row, center_column ) };
+        if( g_stream.loaded_sections.contains( section_idx ) ) {
+            WriteLog( "EU7 PACK: loading screen off, centrum zaladowane" );
+            dismiss_loading_screen();
+            return false;
+        }
     }
 
     if( g_loading_block_started.has_value() ) {
         auto const blocked_for {
             std::chrono::steady_clock::now() - *g_loading_block_started };
         if( blocked_for >= kLoadingScreenMaxBlockSec ) {
-            auto const ring {
-                section_stream_ring_progress( world_position, radius_km ) };
             ErrorLog(
-                "EU7 PACK: loading screen timeout — wchodzę w świat (ring=" +
-                std::to_string( static_cast<int>( ring * 100.f ) ) + "%, ready=" +
-                std::to_string( section_stream_ready_around( world_position, radius_km ) ? 1 : 0 ) +
-                ", pending_apply=" +
-                std::to_string( g_stream.pending_apply.has_value() ? 1 : 0 ) +
-                ", ready_q=" + std::to_string( ready_queue_size() ) +
-                ", in_flight=" + std::to_string( g_stream.in_flight_sections.size() ) + ")" );
+                "EU7 PACK: loading screen timeout — wchodzę w świat (pack_models=" +
+                std::to_string( load_stats().pack_models ) + ", ready_q=" +
+                std::to_string( ready_queue_size() ) + ", in_flight=" +
+                std::to_string( g_stream.in_flight_sections.size() ) + ")" );
             dismiss_loading_screen();
             return false;
         }
-    }
-
-    if(
-        section_stream_ring_progress( world_position, radius_km ) >= 1.0f
-        && section_stream_ready_around( world_position, radius_km ) ) {
-        dismiss_loading_screen();
-        return false;
-    }
-
-    if( section_stream_presentable_around( world_position, radius_km ) ) {
-        dismiss_loading_screen();
-        return false;
     }
 
     return true;
@@ -3523,7 +3952,7 @@ reset_section_stream() {
 
 bool
 section_stream_frame_budget_pressure() {
-    return g_stream_catchup || pending_apply_is_urgent();
+    return g_stream_catchup || pending_apply_is_urgent() || in_radius_fill_phase();
 }
 
 } // namespace scene::eu7

@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <fstream>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 
 namespace scene::eu7 {
@@ -68,6 +69,80 @@ public:
 
 private:
     std::vector<std::string> strings_;
+};
+
+class PackByteReader {
+public:
+    PackByteReader( std::uint8_t const *data, std::size_t const size )
+        : cur_ { data }
+        , end_ { data + size } {}
+
+    [[nodiscard]] bool
+    enough( std::size_t const bytes ) const noexcept {
+        return static_cast<std::size_t>( end_ - cur_ ) >= bytes;
+    }
+
+    [[nodiscard]] std::size_t
+    remaining() const noexcept {
+        return static_cast<std::size_t>( end_ - cur_ );
+    }
+
+    [[nodiscard]] std::uint8_t
+    u8() {
+        if( false == enough( 1 ) ) {
+            throw std::runtime_error( "EU7 PACK: przekroczono bufor sekcji" );
+        }
+        return *cur_++;
+    }
+
+    [[nodiscard]] std::uint16_t
+    u16() {
+        if( false == enough( 2 ) ) {
+            throw std::runtime_error( "EU7 PACK: przekroczono bufor sekcji" );
+        }
+        auto const lo { cur_[ 0 ] };
+        auto const hi { cur_[ 1 ] };
+        cur_ += 2;
+        return static_cast<std::uint16_t>( lo | ( static_cast<std::uint16_t>( hi ) << 8u ) );
+    }
+
+    [[nodiscard]] std::uint32_t
+    u32() {
+        if( false == enough( 4 ) ) {
+            throw std::runtime_error( "EU7 PACK: przekroczono bufor sekcji" );
+        }
+        std::uint32_t value { 0 };
+        std::memcpy( &value, cur_, 4 );
+        cur_ += 4;
+        return value;
+    }
+
+    [[nodiscard]] std::int32_t
+    i32() {
+        return static_cast<std::int32_t>( u32() );
+    }
+
+    [[nodiscard]] float
+    f32() {
+        std::uint32_t bits { u32() };
+        float value { 0.f };
+        std::memcpy( &value, &bits, sizeof( value ) );
+        return value;
+    }
+
+    [[nodiscard]] double
+    f64_disk() {
+        return static_cast<double>( f32() );
+    }
+
+    [[nodiscard]] glm::dvec3
+    vec3() {
+        return { f64_disk(), f64_disk(), f64_disk() };
+    }
+
+private:
+    std::uint8_t const *cur_;
+    std::uint8_t const *end_;
 };
 
 [[nodiscard]] std::int16_t
@@ -205,6 +280,97 @@ read_slim_node( std::istream &input, StringTable const &table, std::string_view 
     }
     node.visible = ( flags & kNodeFlagNotVisible ) == 0;
     return node;
+}
+
+[[nodiscard]] Eu7TransformContext
+read_transform_context_bytes( PackByteReader &input ) {
+    Eu7TransformContext transform;
+    const std::uint8_t origin_count { input.u8() };
+    transform.origin_stack.reserve( origin_count );
+    for( std::uint8_t i { 0 }; i < origin_count; ++i ) {
+        transform.origin_stack.push_back( input.vec3() );
+    }
+    const std::uint8_t scale_count { input.u8() };
+    transform.scale_stack.reserve( scale_count );
+    for( std::uint8_t i { 0 }; i < scale_count; ++i ) {
+        transform.scale_stack.push_back( input.vec3() );
+    }
+    transform.rotation = input.vec3();
+    transform.group_depth = input.u8();
+    return transform;
+}
+
+[[nodiscard]] Eu7BasicNode
+read_slim_node_bytes(
+    PackByteReader &input,
+    StringTable const &table,
+    std::string_view const implied_type ) {
+    Eu7BasicNode node;
+    node.node_type = std::string( implied_type );
+    const std::uint8_t flags { input.u8() };
+    if( ( flags & kNodeFlagHasName ) != 0 ) {
+        node.name = table.resolve( input.u32() );
+    }
+    if( ( flags & kNodeFlagHasRangeMin ) != 0 ) {
+        node.range_squared_min = input.f64_disk();
+    }
+    if( ( flags & kNodeFlagHasRangeMax ) != 0 ) {
+        node.range_squared_max = input.f64_disk();
+    }
+    else {
+        node.range_squared_max = std::numeric_limits<double>::max();
+    }
+    if( ( flags & kNodeFlagHasBounds ) != 0 ) {
+        node.area.center = input.vec3();
+        node.area.radius = input.f32();
+    }
+    if( ( flags & kNodeFlagHasGroup ) != 0 ) {
+        node.group_valid = true;
+        node.group_handle = input.u32();
+    }
+    if( ( flags & kNodeFlagHasTransform ) != 0 ) {
+        node.transform = read_transform_context_bytes( input );
+    }
+    node.visible = ( flags & kNodeFlagNotVisible ) == 0;
+    return node;
+}
+
+[[nodiscard]] Eu7Model
+read_runtime_model_bytes(
+    PackByteReader &input,
+    StringTable const &table,
+    Eu7PackSectionCursor const *cursor = nullptr ) {
+    Eu7Model model;
+    model.node = read_slim_node_bytes( input, table, "model" );
+    model.is_terrain = input.u8() != 0;
+    model.transition = input.u8() != 0;
+    model.location = input.vec3();
+    model.angles = input.vec3();
+    model.scale = input.vec3();
+    if(
+        cursor != nullptr &&
+        cursor->section_format == kPackSectionFormatV13 ) {
+        model.pack_mesh_index = input.u16();
+        model.pack_texture_index = input.u16();
+    }
+    else {
+        model.model_file = table.resolve( input.u32() );
+        model.texture_file = table.resolve( input.u32() );
+    }
+    const std::uint32_t light_count { input.u32() };
+    model.light_states.resize( light_count );
+    for( std::uint32_t i { 0 }; i < light_count; ++i ) {
+        model.light_states[ i ] = input.f32();
+    }
+    const std::uint32_t color_count { input.u32() };
+    model.light_colors.resize( color_count );
+    for( std::uint32_t i { 0 }; i < color_count; ++i ) {
+        model.light_colors[ i ] = input.u32();
+    }
+    if( cursor != nullptr && cursor->section_format == kPackSectionFormatV13 ) {
+        model.pack_cell_id = input.u8();
+    }
+    return model;
 }
 
 [[nodiscard]] std::string
@@ -413,7 +579,10 @@ read_runtime_lines( std::istream &input, StringTable const &table ) {
 }
 
 [[nodiscard]] Eu7Model
-read_runtime_model( std::istream &input, StringTable const &table ) {
+read_runtime_model(
+    std::istream &input,
+    StringTable const &table,
+    Eu7PackSectionCursor const *cursor = nullptr ) {
     Eu7Model model;
     model.node = read_slim_node( input, table, "model" );
     model.is_terrain = sn_utils::d_uint8( input ) != 0;
@@ -421,8 +590,16 @@ read_runtime_model( std::istream &input, StringTable const &table ) {
     model.location = read_vec3( input );
     model.angles = read_vec3( input );
     model.scale = read_vec3( input );
-    model.model_file = table.resolve( sn_utils::ld_uint32( input ) );
-    model.texture_file = table.resolve( sn_utils::ld_uint32( input ) );
+    if(
+        cursor != nullptr &&
+        cursor->section_format == kPackSectionFormatV13 ) {
+        model.pack_mesh_index = sn_utils::ld_uint16( input );
+        model.pack_texture_index = sn_utils::ld_uint16( input );
+    }
+    else {
+        model.model_file = table.resolve( sn_utils::ld_uint32( input ) );
+        model.texture_file = table.resolve( sn_utils::ld_uint32( input ) );
+    }
     const std::uint32_t light_count { sn_utils::ld_uint32( input ) };
     model.light_states.resize( light_count );
     for( std::uint32_t i { 0 }; i < light_count; ++i ) {
@@ -433,11 +610,17 @@ read_runtime_model( std::istream &input, StringTable const &table ) {
     for( std::uint32_t i { 0 }; i < color_count; ++i ) {
         model.light_colors[ i ] = sn_utils::ld_uint32( input );
     }
+    if( cursor != nullptr && cursor->section_format == kPackSectionFormatV13 ) {
+        model.pack_cell_id = sn_utils::d_uint8( input );
+    }
     return model;
 }
 
 [[nodiscard]] Eu7ModelPrototype
-read_runtime_prototype( std::istream &input, StringTable const &table ) {
+read_runtime_prototype(
+    std::istream &input,
+    StringTable const &table,
+    std::uint32_t const file_version ) {
     Eu7ModelPrototype proto;
     proto.node = read_slim_node( input, table, "model" );
     proto.is_terrain = sn_utils::d_uint8( input ) != 0;
@@ -454,16 +637,27 @@ read_runtime_prototype( std::istream &input, StringTable const &table ) {
     for( std::uint32_t i { 0 }; i < color_count; ++i ) {
         proto.light_colors[ i ] = sn_utils::ld_uint32( input );
     }
+    if( file_version >= kEu7VersionV9 ) {
+        proto.resolved_texture = table.resolve( sn_utils::ld_uint32( input ) );
+        proto.pack_flags = sn_utils::d_uint8( input );
+        proto.textures_alpha = sn_utils::ld_uint32( input );
+        proto.baked_range_min = sn_utils::ld_float32( input );
+        proto.baked_range_max = sn_utils::ld_float32( input );
+    }
     return proto;
 }
 
 void
-read_prot_chunk( std::istream &input, StringTable const &strings, Eu7Module &module ) {
+read_prot_chunk(
+    std::istream &input,
+    StringTable const &strings,
+    Eu7Module &module ) {
     const std::uint32_t count { sn_utils::ld_uint32( input ) };
     module.model_prototypes.clear();
     module.model_prototypes.reserve( count );
     for( std::uint32_t i { 0 }; i < count; ++i ) {
-        module.model_prototypes.push_back( read_runtime_prototype( input, strings ) );
+        module.model_prototypes.push_back(
+            read_runtime_prototype( input, strings, module.version ) );
     }
 }
 
@@ -483,10 +677,15 @@ expand_prototype_instance(
     model.scale = scale;
     model.model_file = proto.model_file;
     model.texture_file = proto.texture_file;
+    model.resolved_texture = proto.resolved_texture;
     model.light_states = proto.light_states;
     model.light_colors = proto.light_colors;
     model.transition = proto.transition;
     model.is_terrain = proto.is_terrain;
+    model.pack_flags = proto.pack_flags;
+    model.textures_alpha = proto.textures_alpha;
+    model.baked_range_min = proto.baked_range_min;
+    model.baked_range_max = proto.baked_range_max;
     return model;
 }
 
@@ -506,6 +705,55 @@ parse_pack_section_header(
         peek == EOF ? std::uint8_t { 0 } : static_cast<std::uint8_t>( peek ) };
 
     bool use_v12_header { false };
+    if( first_byte == kPackSectionFormatV13 ) {
+        cursor.section_format = sn_utils::d_uint8( input );
+        const std::uint32_t solo_total { sn_utils::ld_uint32( input ) };
+        const std::uint32_t inst_total { sn_utils::ld_uint32( input ) };
+        const std::uint32_t unique_mesh_count { sn_utils::ld_uint32( input ) };
+        if(
+            solo_total + inst_total == entry.model_count &&
+            ( inst_total == 0 || false == module.model_prototypes.empty() ) ) {
+            use_v12_header = true;
+            cursor.model_total = solo_total + inst_total;
+            cursor.solo_remaining = solo_total;
+            cursor.inst_remaining = inst_total;
+
+            StringTable const strings { module.strings };
+            cursor.unique_meshes.reserve( unique_mesh_count );
+            for( std::uint32_t mesh_idx { 0 }; mesh_idx < unique_mesh_count; ++mesh_idx ) {
+                cursor.unique_meshes.push_back(
+                    strings.resolve( sn_utils::ld_uint32( input ) ) );
+            }
+
+            const std::uint32_t unique_texture_count { sn_utils::ld_uint32( input ) };
+            cursor.unique_textures.reserve( unique_texture_count );
+            for( std::uint32_t tex_idx { 0 }; tex_idx < unique_texture_count; ++tex_idx ) {
+                cursor.unique_textures.push_back(
+                    strings.resolve( sn_utils::ld_uint32( input ) ) );
+            }
+
+            cursor.chunk_count = sn_utils::ld_uint32( input );
+            cursor.chunk_model_counts.resize( cursor.chunk_count );
+            cursor.chunk_inst_counts.resize( cursor.chunk_count );
+            cursor.chunk_byte_offsets.resize( cursor.chunk_count );
+            for( std::uint32_t chunk_idx { 0 }; chunk_idx < cursor.chunk_count; ++chunk_idx ) {
+                cursor.chunk_model_counts[ chunk_idx ] = sn_utils::ld_uint32( input );
+                cursor.chunk_inst_counts[ chunk_idx ] = sn_utils::ld_uint32( input );
+                cursor.chunk_byte_offsets[ chunk_idx ] = sn_utils::ld_uint32( input );
+            }
+        }
+        if( false == use_v12_header ) {
+            input.seekg( section_start );
+        }
+    }
+
+    if( use_v12_header ) {
+        cursor.models_read = 0;
+        cursor.header_parsed = true;
+        return;
+    }
+
+    use_v12_header = false;
     if( first_byte == kPackSectionFormatV12 ) {
         cursor.section_format = sn_utils::d_uint8( input );
         const std::uint32_t solo_total { sn_utils::ld_uint32( input ) };
@@ -709,7 +957,7 @@ read_pack_models_chunk_impl(
         models.size() < max_count &&
         ( cursor.solo_remaining > 0 || cursor.inst_remaining > 0 ) ) {
         if( cursor.solo_remaining > 0 ) {
-            auto model { read_runtime_model( input, strings ) };
+            auto model { read_runtime_model( input, strings, &cursor ) };
             model.node.transform = {};
             models.push_back( std::move( model ) );
             --cursor.solo_remaining;
@@ -725,12 +973,75 @@ read_pack_models_chunk_impl(
             auto const angles { read_vec3( input ) };
             auto const scale { read_vec3( input ) };
             auto const name { strings.resolve( sn_utils::ld_uint32( input ) ) };
-            models.push_back( expand_prototype_instance(
+            auto model { expand_prototype_instance(
                 module.model_prototypes[ proto_id ],
                 location,
                 angles,
                 scale,
-                name ) );
+                name ) };
+            if( cursor.section_format == kPackSectionFormatV13 ) {
+                model.pack_cell_id = sn_utils::d_uint8( input );
+            }
+            models.push_back( std::move( model ) );
+            --cursor.inst_remaining;
+        }
+        ++cursor.models_read;
+    }
+
+    return models;
+}
+
+[[nodiscard]] std::vector<Eu7Model>
+read_pack_models_chunk_from_bytes(
+    Eu7Module const &module,
+    std::uint8_t const *data,
+    std::size_t const size,
+    Eu7PackSectionCursor &cursor,
+    std::size_t const max_count,
+    StringTable const &strings ) {
+    if( false == cursor.header_parsed || max_count == 0 || data == nullptr || size == 0 ) {
+        return {};
+    }
+
+    PackByteReader input { data, size };
+    std::vector<Eu7Model> models;
+    auto const remaining {
+        std::min(
+            static_cast<std::size_t>( cursor.solo_remaining ) +
+                static_cast<std::size_t>( cursor.inst_remaining ),
+            static_cast<std::size_t>( cursor.model_total ) ) };
+    models.reserve( std::min( max_count, remaining ) );
+
+    while(
+        models.size() < max_count &&
+        ( cursor.solo_remaining > 0 || cursor.inst_remaining > 0 ) ) {
+        if( cursor.solo_remaining > 0 ) {
+            auto model { read_runtime_model_bytes( input, strings, &cursor ) };
+            model.node.transform = {};
+            models.push_back( std::move( model ) );
+            --cursor.solo_remaining;
+        }
+        else {
+            const std::uint32_t proto_id { input.u32() };
+            if( proto_id >= module.model_prototypes.size() ) {
+                throw std::runtime_error(
+                    "EU7 PACK: proto_id " + std::to_string( proto_id ) + " poza zakresem PROT (" +
+                    std::to_string( module.model_prototypes.size() ) + ")" );
+            }
+            auto const location { input.vec3() };
+            auto const angles { input.vec3() };
+            auto const scale { input.vec3() };
+            auto const name { strings.resolve( input.u32() ) };
+            auto model { expand_prototype_instance(
+                module.model_prototypes[ proto_id ],
+                location,
+                angles,
+                scale,
+                name ) };
+            if( cursor.section_format == kPackSectionFormatV13 ) {
+                model.pack_cell_id = input.u8();
+            }
+            models.push_back( std::move( model ) );
             --cursor.inst_remaining;
         }
         ++cursor.models_read;
@@ -1166,6 +1477,7 @@ struct PackSectionReadSession {
     int column { -1 };
     Eu7PackIndexEntry entry {};
     Eu7PackSectionCursor header {};
+    std::shared_ptr<Eu7PackSectionPathTables const> path_tables;
     std::ifstream input;
     bool header_ready { false };
 };
@@ -1178,6 +1490,55 @@ reset_pack_section_read_session( PackSectionReadSession &session ) {
         session.input.close();
     }
     session = {};
+}
+
+[[nodiscard]] std::uint64_t
+pack_section_byte_size(
+    Eu7Module const &module,
+    Eu7PackIndexEntry const &entry ) {
+    std::uint64_t next_offset { module.pack_catalog.pack_payload_size };
+    for( auto const &candidate : module.pack_catalog.entries ) {
+        if(
+            candidate.pack_offset > entry.pack_offset &&
+            candidate.pack_offset < next_offset ) {
+            next_offset = candidate.pack_offset;
+        }
+    }
+    return next_offset - entry.pack_offset;
+}
+
+[[nodiscard]] std::optional<std::uint32_t>
+pack_chunk_byte_size(
+    Eu7PackSectionCursor const &header,
+    std::uint32_t const chunk_index,
+    std::uint64_t const section_byte_size ) {
+    if( header.chunk_byte_offsets.empty() || chunk_index >= header.chunk_count ) {
+        return std::nullopt;
+    }
+    auto const start { header.chunk_byte_offsets[ chunk_index ] };
+    if( chunk_index + 1 < header.chunk_count ) {
+        return header.chunk_byte_offsets[ chunk_index + 1 ] - start;
+    }
+    if( section_byte_size > start ) {
+        return static_cast<std::uint32_t>( section_byte_size - start );
+    }
+    return std::nullopt;
+}
+
+void
+ensure_section_path_tables(
+    Eu7PackSectionCursor const &header,
+    PackSectionReadSession &session ) {
+    if(
+        header.unique_meshes.empty() &&
+        header.unique_textures.empty() ) {
+        session.path_tables.reset();
+        return;
+    }
+    auto tables { std::make_shared<Eu7PackSectionPathTables>() };
+    tables->unique_meshes = header.unique_meshes;
+    tables->unique_textures = header.unique_textures;
+    session.path_tables = std::move( tables );
 }
 
 void
@@ -1216,7 +1577,9 @@ ensure_section_header(
     session.row = row;
     session.column = column;
     session.entry = entry;
+    session.path_tables.reset();
     parse_pack_section_header( module, session.input, entry, session.header );
+    ensure_section_path_tables( session.header, session );
     session.header_ready = true;
 }
 
@@ -1254,23 +1617,25 @@ read_pack_section_chunk_load_impl(
     }
 
     result.chunk_index = chunk_index;
-    if( chunk_index == 0 ) {
-        result.unique_meshes = header.unique_meshes;
-        result.unique_textures = header.unique_textures;
-    }
 
     Eu7PackSectionCursor chunk_cursor { header };
+    auto const section_byte_size { pack_section_byte_size( module, *entry ) };
+    std::optional<std::uint32_t> chunk_byte_size;
     if(
         ( header.section_format == kPackSectionFormatV10 ||
           header.section_format == kPackSectionFormatV11 ||
-          header.section_format == kPackSectionFormatV12 ) &&
+          header.section_format == kPackSectionFormatV12 ||
+          header.section_format == kPackSectionFormatV13 ) &&
         false == header.chunk_byte_offsets.empty() ) {
         auto const section_start {
             static_cast<std::streamoff>( module.pack_payload_offset + entry->pack_offset ) };
+        chunk_byte_size = pack_chunk_byte_size( header, chunk_index, section_byte_size );
         session.input.seekg(
             section_start +
             static_cast<std::streamoff>( header.chunk_byte_offsets[ chunk_index ] ) );
-        if( header.section_format == kPackSectionFormatV12 ) {
+        if(
+            header.section_format == kPackSectionFormatV12 ||
+            header.section_format == kPackSectionFormatV13 ) {
             chunk_cursor.solo_remaining = header.chunk_model_counts[ chunk_index ];
             chunk_cursor.inst_remaining = header.chunk_inst_counts[ chunk_index ];
         }
@@ -1283,12 +1648,35 @@ read_pack_section_chunk_load_impl(
         return result;
     }
 
-    result.models = read_pack_models_chunk_impl(
-        module,
-        session.input,
-        chunk_cursor,
-        std::numeric_limits<std::size_t>::max(),
-        strings );
+    if( chunk_byte_size.has_value() && *chunk_byte_size > 0 ) {
+        std::vector<std::uint8_t> chunk_bytes( *chunk_byte_size );
+        session.input.read(
+            reinterpret_cast<char *>( chunk_bytes.data() ),
+            static_cast<std::streamsize>( chunk_bytes.size() ) );
+        if(
+            static_cast<std::size_t>( session.input.gcount() ) != chunk_bytes.size() ) {
+            throw std::runtime_error( "EU7 PACK: niepelny odczyt chunka sekcji" );
+        }
+        result.models = read_pack_models_chunk_from_bytes(
+            module,
+            chunk_bytes.data(),
+            chunk_bytes.size(),
+            chunk_cursor,
+            std::numeric_limits<std::size_t>::max(),
+            strings );
+    }
+    else {
+        result.models = read_pack_models_chunk_impl(
+            module,
+            session.input,
+            chunk_cursor,
+            std::numeric_limits<std::size_t>::max(),
+            strings );
+    }
+    result.path_tables = session.path_tables;
+    if( chunk_index == 0 && false == header.unique_textures.empty() ) {
+        result.unique_textures = header.unique_textures;
+    }
     return result;
 }
 
@@ -1320,7 +1708,8 @@ read_pack_section_load_impl( Eu7Module const &module, int const row, int const c
     if(
         ( header.section_format == kPackSectionFormatV10 ||
           header.section_format == kPackSectionFormatV11 ||
-          header.section_format == kPackSectionFormatV12 ) &&
+          header.section_format == kPackSectionFormatV12 ||
+          header.section_format == kPackSectionFormatV13 ) &&
         header.chunk_count > 0 ) {
         result.models.reserve( entry->model_count );
         for( std::uint32_t chunk_idx { 0 }; chunk_idx < header.chunk_count; ++chunk_idx ) {
@@ -1361,7 +1750,7 @@ is_valid_eu7b_file( std::string const &path ) {
     const std::uint32_t version { sn_utils::ld_uint32( input ) };
     return (
         version == kEu7VersionV4 || version == kEu7VersionV5 || version == kEu7VersionV6 ||
-        version == kEu7VersionV7 || version == kEu7VersionV8 );
+        version == kEu7VersionV7 || version == kEu7VersionV8 || version == kEu7VersionV9 );
 }
 
 Eu7Module
@@ -1380,7 +1769,7 @@ read_module( std::string const &path ) {
     if(
         module.version != kEu7VersionV4 && module.version != kEu7VersionV5 &&
         module.version != kEu7VersionV6 && module.version != kEu7VersionV7 &&
-        module.version != kEu7VersionV8 ) {
+        module.version != kEu7VersionV8 && module.version != kEu7VersionV9 ) {
         throw std::runtime_error(
             "EU7B: nieobslugiwana wersja " + std::to_string( module.version ) + " w \"" + path + "\"" );
     }
@@ -1442,6 +1831,60 @@ read_pack_section_chunk_load(
 void
 reset_pack_section_read_cache() {
     reset_pack_section_read_session( g_pack_section_read_session );
+}
+
+void
+for_each_pack_section_unique_mesh(
+    Eu7Module const &module,
+    int const row,
+    int const column,
+    std::function<void( std::string const & )> const &visit ) {
+    if( false == module.has_pack_chunk || module.source_path.empty() ) {
+        return;
+    }
+
+    auto const entry { find_pack_entry_impl( module, row, column ) };
+    if( false == entry.has_value() || entry->model_count == 0 ) {
+        return;
+    }
+
+    auto &session { g_pack_section_read_session };
+    ensure_pack_file( module, session );
+    if( !session.input ) {
+        return;
+    }
+
+    ensure_section_header( module, row, column, *entry, session );
+    for( auto const &path : session.header.unique_meshes ) {
+        visit( path );
+    }
+}
+
+void
+for_each_pack_section_unique_texture(
+    Eu7Module const &module,
+    int const row,
+    int const column,
+    std::function<void( std::string const & )> const &visit ) {
+    if( false == module.has_pack_chunk || module.source_path.empty() ) {
+        return;
+    }
+
+    auto const entry { find_pack_entry_impl( module, row, column ) };
+    if( false == entry.has_value() || entry->model_count == 0 ) {
+        return;
+    }
+
+    auto &session { g_pack_section_read_session };
+    ensure_pack_file( module, session );
+    if( !session.input ) {
+        return;
+    }
+
+    ensure_section_header( module, row, column, *entry, session );
+    for( auto const &path : session.header.unique_textures ) {
+        visit( path );
+    }
 }
 
 } // namespace scene::eu7

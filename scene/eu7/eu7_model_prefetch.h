@@ -9,19 +9,16 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include "scene/eu7/eu7_pack_mesh_loader.h"
 #include "scene/eu7/eu7_types.h"
+#include "vehicle/DynObj.h"
 
 #include <cstddef>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
-
-class TModel3d;
 
 namespace scene::eu7 {
 
-// Deprecated: mesh warm is main-thread only (ensure_pack_mesh_in_session_cache).
 void
 preload_pack_models( std::vector<Eu7Model> const &Models );
 
@@ -30,25 +27,30 @@ preload_pack_models(
     std::vector<Eu7Model> const &Models,
     std::vector<std::string> const &UniqueMeshes );
 
-// Main thread: Fetch_Material dla unikalnych texture_file z chunka przed apply.
-// Zwraca liczbe unikalnych Fetch_Material w tym slice.
 std::size_t
 warm_pack_texture_paths_main(
     std::string const *paths,
     std::size_t count,
     double budget_ms = 0.0,
-    std::size_t *processed_out = nullptr );
+    std::size_t *processed_out = nullptr,
+    Eu7Model const *models = nullptr,
+    std::size_t model_count = 0 );
 
 std::size_t
-warm_pack_textures_main( Eu7Model const *models, std::size_t count );
+warm_pack_textures_main(
+    Eu7Model const *models,
+    std::size_t count,
+    double budget_ms = 0.0 );
 
 void
 reset_pack_texture_warm_cache();
 
-// Thread-safe cold mesh load: session cache, then GetModel under g_pack_mesh_load_mutex.
 [[nodiscard]] bool
-ensure_pack_mesh_in_session_cache(
-    std::string model_file,
-    std::unordered_map<std::string, TModel3d *> &session_cache );
+assign_pack_texture(
+    material_data &material,
+    std::string const &model_file,
+    std::string const &texture_file,
+    std::string const &resolved_texture = {},
+    std::uint32_t textures_alpha = 0 );
 
 } // namespace scene::eu7

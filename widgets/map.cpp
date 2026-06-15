@@ -8,6 +8,7 @@
 #include "vehicle/Driver.h"
 #include "model/AnimModel.h"
 #include "application/application.h"
+#include "scene/scenenodegroups.h"
 
 ui::map_panel::map_panel() : ui_panel(STR_C("Map"), false)
 {
@@ -99,6 +100,9 @@ float ui::map_panel::get_vehicle_rotation()
 
 void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_size)
 {
+	scene::Groups.ensure_map_index();
+	simulation::Region->ensure_map_geometry();
+
 	m_colored_paths.switches.clear();
 	m_colored_paths.occupied.clear();
 	m_colored_paths.future.clear();

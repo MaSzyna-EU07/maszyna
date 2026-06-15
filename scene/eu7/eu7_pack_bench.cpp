@@ -8,6 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
+#include "scene/eu7/eu7_pack_mesh_loader.h"
 #include "scene/eu7/eu7_pack_bench.h"
 
 #include "utilities/Logs.h"
@@ -181,6 +182,9 @@ log_pack_bench_impl( Eu7PackBench const &bench, char const *const title ) {
         "  diag mesh: sess_hit=" + std::to_string( bench.stream_mesh_session_hit ) +
         " glob_hit=" + std::to_string( bench.stream_mesh_global_hit ) +
         " disk=" + std::to_string( bench.stream_mesh_disk_load ) +
+        " async_q=" + std::to_string( bench.stream_mesh_async_queued ) +
+        " async_r=" + std::to_string( bench.stream_mesh_async_ready ) +
+        " loader=" + std::to_string( bench.loader_thread_disk_loads ) +
         " dequeue_near=" + std::to_string( bench.stream_dequeue_near ) +
         " far=" + std::to_string( bench.stream_dequeue_far ) +
         " cam=" + std::to_string( bench.stream_dequeue_camera ) +
@@ -189,7 +193,10 @@ log_pack_bench_impl( Eu7PackBench const &bench, char const *const title ) {
         " block_ring_in=" + std::to_string( bench.stream_jobs_blocked_ring_inner ) +
         " block_ring_out=" + std::to_string( bench.stream_jobs_blocked_ring_outer ) +
         " defer_dist=" + std::to_string( bench.stream_worker_deferred_distant ) +
-        " stuck_skip=" + std::to_string( bench.stream_apply_stuck_skip ) );
+        " stuck_skip=" + std::to_string( bench.stream_apply_stuck_skip ) +
+        " apply_defer=" + std::to_string( bench.stream_apply_deferred ) +
+        " defer_bypass=" + std::to_string( bench.stream_apply_defer_bypass ) +
+        " sparse_skip=" + std::to_string( bench.stream_sparse_apply_skip ) );
     WriteLog(
         "  diag ready_tex_ms=" + std::to_string( static_cast<int>( bench.stream_prefetch_ready_tex_ms ) ) +
         " ready_umes_ms=" + std::to_string( static_cast<int>( bench.stream_prefetch_ready_umes_ms ) ) +
@@ -442,6 +449,9 @@ log_pack_stream_status(
         " ahead=" + std::to_string( bench.stream_lookahead_enqueue ) +
         " urg_chunks=" + std::to_string( bench.stream_chunks_urgent ) +
         " cold_trunc=" + std::to_string( bench.stream_cold_slice_truncated ) +
+        " mesh_q=" + std::to_string( pack_mesh_loader_queue_depth() ) +
+        " mesh_r=" + std::to_string( pack_mesh_loader_ready_count() ) +
+        " mesh_d=" + std::to_string( bench.stream_mesh_async_drained ) +
         " preempt=" + std::to_string( bench.stream_preempt_pending ) );
 }
 

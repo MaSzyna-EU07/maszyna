@@ -63,6 +63,12 @@ struct Eu7PackBench {
     std::uint64_t stream_mesh_session_hit { 0 };
     std::uint64_t stream_mesh_global_hit { 0 };
     std::uint64_t stream_mesh_disk_load { 0 };
+    std::uint64_t stream_mesh_async_queued { 0 };
+    std::uint64_t stream_mesh_async_ready { 0 };
+    std::uint64_t stream_mesh_async_drained { 0 };
+    std::uint64_t stream_mesh_async_wait_timeout { 0 };
+    std::uint64_t loader_thread_disk_loads { 0 };
+    double loader_thread_getmodel_ms { 0.0 };
     std::uint64_t stream_chunks_urgent { 0 };
     std::uint64_t stream_chunks_heavy { 0 };
     std::uint64_t stream_chunks_light { 0 };
@@ -75,6 +81,9 @@ struct Eu7PackBench {
     std::uint64_t stream_jobs_blocked_ring_outer { 0 };
     std::uint64_t stream_worker_deferred_distant { 0 };
     std::uint64_t stream_apply_stuck_skip { 0 };
+    std::uint64_t stream_apply_deferred { 0 };
+    std::uint64_t stream_apply_defer_bypass { 0 };
+    std::uint64_t stream_sparse_apply_skip { 0 };
     std::uint64_t stream_sections_unloaded { 0 };
     std::uint64_t stream_unload_instances { 0 };
     std::uint64_t stream_mesh_cache_evictions { 0 };

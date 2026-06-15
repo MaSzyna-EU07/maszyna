@@ -14,7 +14,9 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "model/AnimModel.h"
+#include "scene/eu7/eu7_model_prefetch.h"
 
+#include <mutex>
 #include <unordered_map>
 
 #include "scene/eu7/eu7_pack_bench.h"
@@ -390,6 +392,7 @@ TAnimModel::reset_pack_for_insert( scene::node_data const &nodedata ) {
     pModel = nullptr;
     m_eu7_pack = false;
     m_instanceable = false;
+    m_pack_cell_id = 255;
     m_materialdata = {};
     asText.clear();
 }
@@ -612,10 +615,12 @@ namespace eu7_pack_cache {
 
 enum class slot_t : std::int8_t { unknown = -1, no = 0, yes = 1 };
 
+std::mutex g_mutex;
 std::unordered_map<TModel3d const *, slot_t> g_model;
 
 [[nodiscard]] bool
 lookup( TModel3d *const model, bool &instanceable ) {
+    std::lock_guard<std::mutex> lock { g_mutex };
     auto const it { g_model.find( model ) };
     if( it == g_model.end() || it->second == slot_t::unknown ) {
         return false;
@@ -626,6 +631,7 @@ lookup( TModel3d *const model, bool &instanceable ) {
 
 void
 store( TModel3d *const model, bool const instanceable ) {
+    std::lock_guard<std::mutex> lock { g_mutex };
     g_model[ model ] = instanceable ? slot_t::yes : slot_t::no;
 }
 
@@ -634,11 +640,13 @@ warm( TModel3d *const model ) {
     if( model == nullptr ) {
         return;
     }
+    std::lock_guard<std::mutex> lock { g_mutex };
     auto const it { g_model.find( model ) };
     if( it != g_model.end() && it->second != slot_t::unknown ) {
         return;
     }
-    store( model, false == submodel_tree_blocks_instancing( model->Root ) );
+    g_model[ model ] =
+        false == submodel_tree_blocks_instancing( model->Root ) ? slot_t::yes : slot_t::no;
 }
 
 } // namespace eu7_pack_cache
@@ -659,7 +667,11 @@ TAnimModel::warm_instanceable_cache( TModel3d *const model ) {
 bool
 TAnimModel::LoadEu7PackWarm(
     TModel3d *const mesh,
-    std::string const &texture_file ) {
+    std::string const &texture_file,
+    std::string const &model_file,
+    std::string const &resolved_texture,
+    std::uint32_t const textures_alpha,
+    bool const instanceable_hint ) {
     pModel = mesh;
     if( mesh == nullptr ) {
         return true;
@@ -680,15 +692,26 @@ TAnimModel::LoadEu7PackWarm(
             false == normalized.ends_with( '/' ) &&
             normalized.find( "tr/none" ) == std::string::npos &&
             normalized.find( '#' ) == std::string::npos ) {
-            m_materialdata.assign( normalized );
-            if( m_materialdata.replacable_skins[ 1 ] == null_handle ) {
-                scene::eu7::pack_bench_inc( &scene::eu7::Eu7PackBench::main_texture_assign_fail );
-                scene::eu7::log_pack_texture_fail( normalized );
-            }
+            (void)scene::eu7::assign_pack_texture(
+                m_materialdata,
+                model_file,
+                normalized,
+                resolved_texture,
+                textures_alpha );
         }
+    }
+    else if( textures_alpha != 0 ) {
+        m_materialdata.textures_alpha = static_cast<int>( textures_alpha );
     }
 
     m_eu7_pack = true;
+
+    if( instanceable_hint ) {
+        ++s_classified_total;
+        m_instanceable = true;
+        ++s_instanceable_total;
+        return true;
+    }
 
     bool cached_instanceable { false };
     if( anim_instancing_detail::eu7_pack_cache::lookup( mesh, cached_instanceable ) ) {

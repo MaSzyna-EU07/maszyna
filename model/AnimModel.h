@@ -135,7 +135,11 @@ public:
     // PACK stream: mesh pointer already resolved; skips GetModel lookup.
     bool LoadEu7PackWarm(
         TModel3d *Mesh,
-        std::string const &texture_file );
+        std::string const &texture_file,
+        std::string const &model_file = {},
+        std::string const &resolved_texture = {},
+        std::uint32_t textures_alpha = 0,
+        bool instanceable_hint = false );
     void
         reset_pack_for_insert( scene::node_data const &Nodedata );
     static TAnimModel *
@@ -243,6 +247,7 @@ public:
     // computed once at end of Load() so the renderer can simply test the flag.
     bool m_instanceable { false };
     bool m_eu7_pack { false };
+    std::uint8_t m_pack_cell_id { 255 };
     // helper: evaluates current state and updates m_instanceable accordingly.
     void update_instanceable_flag();
 

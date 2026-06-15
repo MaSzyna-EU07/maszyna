@@ -21,6 +21,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
 
+#include <memory>
+
 // wczytanie modelu do kontenerka
 TModel3d *
 TMdlContainer::LoadModel(std::string const &Name, bool const Dynamic) { 
@@ -130,6 +132,53 @@ TModelsManager::IsModelCached( std::string const &Name ) {
     erase_extension( filename );
     filename = ToLower( filename );
     return find_in_databank( filename ).first;
+}
+
+[[nodiscard]] std::string
+normalize_pack_model_key( std::string name ) {
+    erase_extension( name );
+    return ToLower( name );
+}
+
+std::pair<bool, TModel3d *>
+TModelsManager::TryGetCachedModel( std::string const &Name ) {
+    return find_in_databank( normalize_pack_model_key( Name ) );
+}
+
+std::string
+TModelsManager::ResolveModelDiskPath( std::string Name ) {
+    return find_on_disk( normalize_pack_model_key( std::move( Name ) ) );
+}
+
+std::shared_ptr<TModel3d>
+TModelsManager::LoadModelCpuDeferred(
+    std::string const &DiskPath,
+    bool const Dynamic ) {
+    auto model { std::make_shared<TModel3d>() };
+    if( false == model->LoadFromFile( DiskPath, Dynamic, true ) ) {
+        return nullptr;
+    }
+    return model;
+}
+
+TModel3d *
+TModelsManager::PublishLoadedModel(
+    std::string const &VirtualName,
+    std::shared_ptr<TModel3d> Model ) {
+    if( Model == nullptr ) {
+        return nullptr;
+    }
+
+    auto const lookup { find_in_databank( VirtualName ) };
+    if( lookup.first && lookup.second != nullptr ) {
+        return lookup.second;
+    }
+
+    Model->Init();
+    m_models.emplace_back();
+    m_models.back().Model = std::move( Model );
+    m_modelsmap.emplace( VirtualName, m_models.size() - 1 );
+    return m_models.back().Model.get();
 }
 
 std::pair<bool, TModel3d *>

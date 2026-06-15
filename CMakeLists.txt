@@ -156,6 +156,7 @@ set(SOURCES
 "scene/eu7/eu7_section.cpp"
 "scene/eu7/eu7_section_stream.cpp"
 "scene/eu7/eu7_model_prefetch.cpp"
+"scene/eu7/eu7_pack_mesh_loader.cpp"
 "scene/eu7/eu7_reader.cpp"
 "scene/eu7/eu7_emit.cpp"
 "scene/eu7/eu7_apply.cpp"

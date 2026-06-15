@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "scene/scene.h"
 
+#include "scene/eu7/eu7_types.h"
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
 #include "vehicle/Camera.h"
@@ -351,6 +352,21 @@ basic_cell::insert( TTraction *Traction ) {
     m_traction.emplace_back( Traction );
     // re-calculate cell bounding area, in case traction piece extends outside the cell's boundaries
     enclose_area( Traction );
+}
+
+// adds provided model instance to the section, optionally using baked PACK cell id
+void
+basic_section::insert( TAnimModel *Instance ) {
+
+    auto &targetcell {
+        ( Instance->m_eu7_pack && Instance->m_pack_cell_id < scene::eu7::kEu7PackCellIdInvalid ) ?
+            m_cells[ Instance->m_pack_cell_id ] :
+            cell( Instance->location() ) };
+    targetcell.insert( Instance );
+    m_area.radius = std::max(
+        m_area.radius,
+        static_cast<float>(
+            glm::length( m_area.center - targetcell.area().center ) + targetcell.area().radius ) );
 }
 
 // adds provided model instance to the cell
@@ -1317,6 +1333,16 @@ basic_region::RadioStop( glm::dvec3 const &Location ) {
     }
 }
 
+void
+basic_region::insert( TAnimModel *Instance ) {
+
+    auto const location { Instance->location() };
+    if( false == point_inside( location ) ) {
+        return;
+    }
+    section( location ).insert( Instance );
+}
+
 std::vector<std::string> switchtrackbedtextures {
     "rkpd34r190-tpd1",
     "rkpd34r190-tpd2",
@@ -1795,6 +1821,15 @@ void basic_region::create_map_geometry()
             if (s)
                 s->create_map_geometry(m_map_geometrybank);
         }
+    m_map_geometry_built = true;
+}
+
+void basic_region::ensure_map_geometry()
+{
+    if( m_map_geometry_built ) {
+        return;
+    }
+    create_map_geometry();
 }
 
 void basic_region::update_poi_geometry()

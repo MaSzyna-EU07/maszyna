@@ -286,7 +286,9 @@ public:
     // adds provided lines to the section
     void
         insert( lines_node Lines );
-    // adds provided node to the section
+    // adds provided model instance to the section
+    void
+        insert( TAnimModel *Instance );
     template <class Type_>
     void
         insert( Type_ *Node ) {
@@ -420,6 +422,8 @@ public:
                 // TBD, TODO: clamp coordinates to region boundaries?
                 return; }
             section( location ).insert( Node ); }
+    void
+        insert( TAnimModel *Instance );
     // inserts provided node in the region and registers its ends in lookup directory
     template <class Type_>
     void
@@ -453,6 +457,8 @@ public:
 	void
 	    create_map_geometry();
 	void
+	    ensure_map_geometry();
+	void
 	    update_poi_geometry();
     basic_section* get_section(size_t section)
 	    { return m_sections[section]; }
@@ -472,6 +478,7 @@ public:
 
     gfx::geometrybank_handle m_map_geometrybank;
 	gfx::geometrybank_handle m_map_poipoints;
+	bool m_map_geometry_built { false };
 
 // methods
     // checks whether specified point is within boundaries of the region

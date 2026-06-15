@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "simulation/simulationtime.h"
 #include "application/application.h"
+#include "scene/eu7/eu7_section_stream.h"
 #include "model/AnimModel.h"
 #include "rendering/opengl33geometrybank.h"
 #include "rendering/screenshot.h"
@@ -733,8 +734,11 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			m_current_viewport = &vp;
 		}
 
-		if ((!simulation::is_ready) || (Global.gfx_skiprendering))
-		{
+		if(
+			( !simulation::is_ready ) || ( Global.gfx_skiprendering ) ||
+			scene::eu7::loading_screen_blocks_world(
+				scene::eu7::stream_loading_position(),
+				scene::eu7::kSectionStreamLoadingDismissRadiusKm ) ) {
 			gl::framebuffer::unbind();
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/AnimModel.h"
 #include "world/Traction.h"
 #include "application/application.h"
+#include "scene/eu7/eu7_section_stream.h"
 #include "utilities/Logs.h"
 #include "rendering/openglgeometrybank.h"
 #include "rendering/openglcolor.h"
@@ -414,7 +415,11 @@ opengl_renderer::Render_pass( rendermode const Mode ) {
 
             m_colorpass = m_renderpass;
 
-            if( ( !simulation::is_ready ) || ( Global.gfx_skiprendering ) ) {
+            if(
+                ( !simulation::is_ready ) || ( Global.gfx_skiprendering ) ||
+                scene::eu7::loading_screen_blocks_world(
+                    scene::eu7::stream_loading_position(),
+                    scene::eu7::kSectionStreamLoadingDismissRadiusKm ) ) {
                 ::glClearColor( 51.0f / 255.f, 102.0f / 255.f, 85.0f / 255.f, 1.f ); // initial background Color
                 ::glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
                 break;

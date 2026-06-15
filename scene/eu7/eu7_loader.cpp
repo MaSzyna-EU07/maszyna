@@ -553,6 +553,7 @@ load_module( std::string const &path, simulation::state_serializer &serializer )
     auto const resolved { resolve_scenery_path( path ) };
     auto const ok { load_module_recursive( path, serializer, g_load_session ) };
     if( ok ) {
+        log_load_stats();
         if( auto const cached { g_module_file_cache.find( resolved ) };
             cached != g_module_file_cache.end() && cached->second.has_pack_chunk ) {
             init_section_stream( cached->second, resolved, serializer );

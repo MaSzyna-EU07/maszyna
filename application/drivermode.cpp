@@ -447,10 +447,6 @@ void driver_mode::enter()
 
 	TDynamicObject *nPlayerTrain{((Global.local_start_vehicle != "ghostview") ? simulation::Vehicles.find(Global.local_start_vehicle) : nullptr)};
 
-	if( scene::eu7::section_stream_active() ) {
-		scene::eu7::dismiss_loading_screen();
-	}
-
 	Camera.Init(Global.FreeCameraInit[0], Global.FreeCameraInitAngle[0], nullptr);
 	Global.pCamera = Camera;
 	Global.pDebugCamera = DebugCamera;
@@ -468,14 +464,6 @@ void driver_mode::enter()
 			Camera = Global.pCamera;
 		}
 		scene::eu7::update_section_stream( Global.pCamera.Pos );
-		for( int i { 0 }; i < 64; ++i ) {
-			scene::eu7::drain_section_stream();
-			if( scene::eu7::section_stream_ready_around(
-					stream_pos,
-					scene::eu7::kSectionStreamBootstrapRadiusKm ) ) {
-				break;
-			}
-		}
 	}
 
 	if (nPlayerTrain)

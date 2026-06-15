@@ -289,7 +289,10 @@ public:
 	void AddTo(TSubModel *tmp, TSubModel *SubModel);
 	void LoadFromTextFile(std::string const &FileName, bool dynamic);
 	void LoadFromBinFile(std::string const &FileName, bool dynamic);
-    bool LoadFromFile(std::string const &FileName, bool dynamic);
+    bool LoadFromFile(
+        std::string const &FileName,
+        bool dynamic,
+        bool defer_gpu_init = false );
     TSubModel *AppendChildFromGeometry(const std::string &name, const std::string &parent, const gfx::vertex_array &vertices, const gfx::index_array &indices);
 	void SaveToBinFile(std::string const &FileName);
 	uint32_t Flags() const { return iFlags; };

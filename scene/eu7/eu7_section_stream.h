@@ -19,8 +19,15 @@ class state_serializer;
 
 namespace scene::eu7 {
 
-constexpr int kSectionStreamBootstrapRadiusKm { 4 };
-constexpr int kSectionStreamGameplayRadiusKm { 4 };
+// Fazy streamingu PACK (eu7_section_stream.cpp):
+// 1) loading_screen — minimalny bootstrap (~2–3 km) podczas ekranu ladowania;
+// 2) radius_fill — po dismiss: lekki, ciagly drain az do kSectionStreamTargetRadiusKm;
+// 3) maintenance — po zapelnieniu 20 km: wolny lookahead w kierunku lotu.
+constexpr int kSectionStreamLoadingDismissRadiusKm { 1 };
+constexpr int kSectionStreamPresentableRadiusKm { 2 };
+constexpr int kSectionStreamBootstrapRadiusKm { 3 };
+constexpr int kSectionStreamGameplayRadiusKm { 5 };
+constexpr int kSectionStreamTargetRadiusKm { 20 };
 
 void
 init_section_stream(
@@ -65,15 +72,15 @@ kick_section_stream_bootstrap();
 void
 try_bootstrap_section_stream();
 
-// Po zaladowaniu scenariusza: bootstrap + drain PACK przed wejsciem w jazde.
+// Po zaladowaniu scenariusza: kick bootstrap + opcjonalny krotki drain (0 = tylko async).
 void
-preload_section_stream( double MaxDrainMs = 300.0 );
+preload_section_stream( double MaxDrainMs = 0.0 );
 
 // Wszystkie sekcje PACK w pierścieniu RadiusKm wokol pozycji wczytane i zaaplikowane.
 [[nodiscard]] bool
 section_stream_ready_around(
     glm::dvec3 const &WorldPosition,
-    int RadiusKm = kSectionStreamBootstrapRadiusKm );
+    int RadiusKm = kSectionStreamTargetRadiusKm );
 
 // ready_around stabilnie przez kilka klatek — bez migania overlay/sceny.
 [[nodiscard]] bool
@@ -86,7 +93,7 @@ section_stream_presentable_around(
 [[nodiscard]] bool
 loading_screen_blocks_world(
     glm::dvec3 const &WorldPosition,
-    int RadiusKm = kSectionStreamBootstrapRadiusKm );
+    int RadiusKm = kSectionStreamLoadingDismissRadiusKm );
 
 [[nodiscard]] bool
 loading_screen_dismissed();

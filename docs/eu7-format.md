@@ -85,8 +85,9 @@ Nie ma pola "łączny rozmiar pliku" w nagłówku. Po nagłówku następują chu
 | `6`     | `kEu7VersionV6`         | `kVersionRuntime`         | Adds site transform w rekordach INCL                           |
 | `7`     | `kEu7VersionV7`         | `kVersionRuntimeV7`       | Adds PIDX + PACK — modele scenerii per sekcja 1 km (streaming) |
 | `8`     | `kEu7VersionV8`         | —                         | Adds PROT (prototypy) + nowy format sekcji PACK v8            |
+| `9`     | `kEu7VersionV9`         | `kVersionRuntimeV9`       | PROT v9 (resolved_texture, pack_flags) + PACK sekcji v13      |
 
-**Runtime maszyna-fresh obsługuje wersje 4–8.** Wersje 1–3 nie są obsługiwane przez żaden z dostępnych loaderów.
+**Runtime maszyna-fresh obsługuje wersje 4–9.** Wersje 1–3 nie są obsługiwane przez żaden z dostępnych loaderów.
 
 ---
 
@@ -1025,6 +1026,7 @@ Overlay renderera: `inst-pool:` — ile instancji zakwalifikowanych do `Render_I
 | v6     | Chunk INCL rozszerzony o **site transform** (pełny TransformContext per include)                 |
 | v7     | Chunki **PIDX + PACK** — modele scenerii podzielone na kafelki 1 km, asynchroniczny streaming   |
 | v8     | Chunk **PROT** (prototypy) + nowy format sekcji PACK z `solo_count` + `inst_count`              |
+| v9     | **PROT v9** (resolved_texture, pack_flags, baked ranges) + **PACK v13** (mesh/tex indices, cell_id) |
 
 ---
 

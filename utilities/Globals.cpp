@@ -644,6 +644,12 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "eu7.pack.mesh.loader.workers")
+    {
+        ParseOneClamped(Parser, eu7_pack_mesh_loader_workers, 0, 16);
+        return true;
+    }
+
     if (token == "eu7.auto.bake")
     {
         ParseOne(Parser, eu7_auto_bake, 1, false);
@@ -1607,6 +1613,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "convertmodels", iConvertModels );
     export_as_text( Output, "file.binary.terrain", file_binary_terrain );
     export_as_text( Output, "eu7.pack.stream.workers.percent", eu7_pack_stream_workers_percent );
+    export_as_text( Output, "eu7.pack.mesh.loader.workers", eu7_pack_mesh_loader_workers );
     export_as_text( Output, "eu7.auto.bake", eu7_auto_bake );
     export_as_text( Output, "eu7.bake.threads", eu7_bake_threads );
     export_as_text( Output, "inactivepause", bInactivePause );

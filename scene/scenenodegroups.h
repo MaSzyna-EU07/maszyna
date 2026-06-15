@@ -37,6 +37,8 @@ public:
 	// update minimap objects
 	void
 	    update_map();
+	void
+	    ensure_map_index();
     // returns current active group, or null_handle if group stack is empty
     group_handle
         handle() const;
@@ -69,6 +71,7 @@ private:
 // members
     group_map m_groupmap; // map of established node groups
     std::stack<scene::group_handle> m_activegroup; // helper, group to be assigned to newly created nodes
+    bool m_map_index_built { false };
 };
 
 extern node_groups Groups;

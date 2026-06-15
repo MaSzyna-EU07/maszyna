@@ -31,6 +31,7 @@ constexpr std::uint32_t kEu7VersionV5 { 5 };
 constexpr std::uint32_t kEu7VersionV6 { 6 };
 constexpr std::uint32_t kEu7VersionV7 { 7 };
 constexpr std::uint32_t kEu7VersionV8 { 8 };
+constexpr std::uint32_t kEu7VersionV9 { 9 };
 
 constexpr std::uint32_t kChunkStrs { detail::make_id4( 'S', 'T', 'R', 'S' ) };
 constexpr std::uint32_t kChunkIncl { detail::make_id4( 'I', 'N', 'C', 'L' ) };
@@ -62,6 +63,7 @@ constexpr std::uint8_t kPackSectionFormatV9 { 2 };
 constexpr std::uint8_t kPackSectionFormatV10 { 3 };
 constexpr std::uint8_t kPackSectionFormatV11 { 4 };
 constexpr std::uint8_t kPackSectionFormatV12 { 5 };
+constexpr std::uint8_t kPackSectionFormatV13 { 6 };
 constexpr std::size_t kPackSectionChunkModels { 512 };
 
 } // namespace scene::eu7

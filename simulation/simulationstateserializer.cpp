@@ -32,8 +32,9 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "scene/eu7/eu7_bake.h"
 #include "scene/eu7/eu7_loader.h"
+#include "scene/eu7/eu7_types.h"
 #include "scene/eu7/eu7_load_stats.h"
-#include "scene/eu7/eu7_model_prefetch.h"
+#include "scene/eu7/eu7_pack_mesh_loader.h"
 #include "scene/eu7/eu7_pack_bench.h"
 #include "scene/eu7/eu7_section.h"
 #include "scene/eu7/eu7_transform.h"
@@ -48,7 +49,7 @@ namespace simulation {
 
 namespace {
 
-constexpr double kDeferTrainsetHorizDistM { 4000.0 };
+constexpr double kDeferTrainsetHorizDistM { 800.0 };
 constexpr double kDeferTrainsetHorizDistSq {
     kDeferTrainsetHorizDistM * kDeferTrainsetHorizDistM };
 constexpr double kTrainsetDrainMaxDistM { 12000.0 };
@@ -280,13 +281,6 @@ preload_unique_pack_meshes(
     }
 }
 
-[[nodiscard]] bool
-pack_model_needs_full_load( scene::eu7::Eu7Model const &model ) {
-    return false == model.light_states.empty()
-        || false == model.light_colors.empty()
-        || false == model.transition;
-}
-
 [[nodiscard]] scene::node_data const &
 pack_nodedata_cached(
     scene::eu7::Eu7Model const &model,
@@ -302,6 +296,12 @@ pack_nodedata_cached(
         nodedata.range_min = 0.0;
         nodedata.name = model.node.name;
         nodedata.type = "model";
+    }
+    else if( model.pack_flags != 0 ) {
+        nodedata.range_min = static_cast<double>( model.baked_range_min );
+        nodedata.range_max = static_cast<double>( model.baked_range_max );
+        nodedata.name = model.node.name;
+        nodedata.type = model.node.node_type;
     }
     else {
         nodedata = node_data_from_eu7( model.node );
@@ -517,7 +517,7 @@ state_serializer::insert_eu7_pack_models(
             continue;
         }
 
-        bool const needs_full_load { pack_model_needs_full_load( model ) };
+        bool const needs_full_load { scene::eu7::eu7_pack_model_needs_full_load( model ) };
         bool loaded { false };
         if( needs_full_load ) {
             scene::eu7::PackBenchTimer const load_timer {
@@ -536,29 +536,38 @@ state_serializer::insert_eu7_pack_models(
         else {
             scene::eu7::PackBenchTimer const load_timer {
                 &scene::eu7::Eu7PackBench::main_load_eu7_pack_ms };
-            auto model_file { model.model_file };
-            auto texture_file { model.texture_file };
-            replace_slashes( model_file );
-            replace_slashes( texture_file );
             TModel3d *mesh { nullptr };
-            if( false == model_file.empty() && model_file != "notload" ) {
-                auto const found { mesh_cache.find( model_file ) };
-                if( found != mesh_cache.end() ) {
-                    mesh = found->second;
-                }
-                else if( scene::eu7::ensure_pack_mesh_in_session_cache( model_file, mesh_cache ) ) {
-                    auto const loaded { mesh_cache.find( model_file ) };
-                    mesh = loaded != mesh_cache.end() ? loaded->second : nullptr;
-                }
+            if( false == model.model_file.empty() && model.model_file != "notload" ) {
+                mesh = scene::eu7::ensure_pack_mesh_in_session_cache(
+                    model.model_file, mesh_cache );
             }
-            loaded = instance->LoadEu7PackWarm( mesh, texture_file );
-            if( loaded ) {
-                scene::eu7::pack_bench_inc( &scene::eu7::Eu7PackBench::main_pack_fast_loads );
+            if(
+                mesh == nullptr &&
+                false == model.model_file.empty() &&
+                model.model_file != "notload" ) {
+                loaded = false;
+            }
+            else {
+                loaded = instance->LoadEu7PackWarm(
+                    mesh,
+                    model.texture_file,
+                    model.model_file,
+                    model.resolved_texture,
+                    model.textures_alpha,
+                    ( model.pack_flags & scene::eu7::kEu7PackFlagInstanceableHint ) != 0 );
+                if( loaded ) {
+                    scene::eu7::pack_bench_inc(
+                        &scene::eu7::Eu7PackBench::main_pack_fast_loads );
+                }
             }
         }
         if( false == loaded ) {
             TAnimModel::release_pack_instance( instance );
             continue;
+        }
+
+        if( model.pack_cell_id < scene::eu7::kEu7PackCellIdInvalid ) {
+            instance->m_pack_cell_id = model.pack_cell_id;
         }
 
         if( auto *const mesh { instance->Model() } ) {
@@ -736,8 +745,7 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 
     scene::Groups.close();
 
-	scene::Groups.update_map();
-	Region->create_map_geometry();
+    WriteLog( "Scenery: map geometry deferred (lazy on first map open)" );
 
 	return false;
 }

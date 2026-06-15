@@ -82,7 +82,8 @@ struct global_settings {
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan
     bool file_binary_terrain{ true }; // enable binary terrain (de)serialization
 	bool file_binary_terrain_state{true};
-    int eu7_pack_stream_workers_percent{ 75 }; // EU7 PACK async loader thread pool size (% of CPU threads)
+    int eu7_pack_stream_workers_percent{ 100 }; // EU7 PACK async loader thread pool size (% of CPU threads)
+    int eu7_pack_mesh_loader_workers{ 0 }; // 0 = main-thread only (background mesh threads unsafe with Global)
     bool eu7_auto_bake{ true }; // przy ladowaniu mapy: bake SCM→EU7 gdy brak lub nieaktualny .eu7
     int eu7_bake_threads{ 0 }; // watki bake (0 = auto = hardware_concurrency)
     // logs

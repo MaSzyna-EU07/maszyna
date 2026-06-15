@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Classes.h"
 
+#include <memory>
+
 class TMdlContainer {
     friend class TModelsManager;
 private:
@@ -24,6 +26,17 @@ public:
     // McZapkie: dodalem sciezke, notabene Path!=Patch :)
 	static TModel3d *GetModel(std::string const &Name, bool const dynamic = false, bool const Logerrors = true , int uid = 0);
     [[nodiscard]] static bool IsModelCached( std::string const &Name );
+    // EU7 PACK stream: CPU parse on workers, GPU Init on main thread.
+    [[nodiscard]] static std::pair<bool, TModel3d *>
+    TryGetCachedModel( std::string const &Name );
+    [[nodiscard]] static std::string
+    ResolveModelDiskPath( std::string Name );
+    [[nodiscard]] static std::shared_ptr<TModel3d>
+    LoadModelCpuDeferred( std::string const &DiskPath, bool const Dynamic = false );
+    [[nodiscard]] static TModel3d *
+    PublishLoadedModel(
+        std::string const &VirtualName,
+        std::shared_ptr<TModel3d> Model );
 
 private:
 // types:

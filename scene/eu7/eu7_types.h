@@ -11,8 +11,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -190,6 +192,8 @@ struct Eu7Lines {
     std::vector<Eu7WorldVertex> vertices;
 };
 
+constexpr std::uint16_t kEu7PackIndexEmpty { 0xFFFFu };
+
 struct Eu7Model {
     Eu7BasicNode node;
     glm::dvec3 location{};
@@ -197,18 +201,52 @@ struct Eu7Model {
     glm::dvec3 scale{ 1.0, 1.0, 1.0 };
     std::string model_file;
     std::string texture_file;
+    std::string resolved_texture;
     std::vector<float> light_states;
     std::vector<std::uint32_t> light_colors;
     bool transition = true;
     bool is_terrain = false;
+    std::uint8_t pack_flags { 0 };
+    std::uint32_t textures_alpha { 0 };
+    float baked_range_min { -1.f };
+    float baked_range_max { -1.f };
+    std::uint8_t pack_cell_id { 255 };
+    std::uint16_t pack_mesh_index { kEu7PackIndexEmpty };
+    std::uint16_t pack_texture_index { kEu7PackIndexEmpty };
 };
+
+constexpr std::uint8_t kEu7PackFlagNeedsFullLoad { 1u << 0 };
+constexpr std::uint8_t kEu7PackFlagInstanceableHint { 1u << 1 };
+constexpr std::uint8_t kEu7PackCellIdInvalid { 255u };
+
+[[nodiscard]] inline bool
+eu7_pack_model_needs_full_load( Eu7Model const &model ) {
+    if( model.pack_flags & kEu7PackFlagNeedsFullLoad ) {
+        return true;
+    }
+    if( model.pack_flags != 0 ) {
+        return false;
+    }
+    return false == model.light_states.empty()
+        || false == model.light_colors.empty()
+        || false == model.transition;
+}
 
 [[nodiscard]] inline std::string
 pack_nodedata_cache_key( Eu7Model const &model ) {
-    return model.model_file + '\x1f' + model.texture_file + '\x1f'
-        + std::to_string( model.node.range_squared_min ) + '\x1f'
-        + std::to_string( model.node.range_squared_max ) + '\x1f'
-        + ( model.is_terrain ? '1' : '0' );
+    std::string key;
+    key.reserve(
+        model.model_file.size() + model.texture_file.size() + 48 );
+    key.append( model.model_file );
+    key.push_back( '\x1f' );
+    key.append( model.texture_file );
+    key.push_back( '\x1f' );
+    key.append( std::to_string( model.node.range_squared_min ) );
+    key.push_back( '\x1f' );
+    key.append( std::to_string( model.node.range_squared_max ) );
+    key.push_back( '\x1f' );
+    key.push_back( model.is_terrain ? '1' : '0' );
+    return key;
 }
 
 // Wspolna definicja modelu (EU7B v8 PROT) — bez transformacji instancji.
@@ -216,10 +254,15 @@ struct Eu7ModelPrototype {
     Eu7BasicNode node;
     std::string model_file;
     std::string texture_file;
+    std::string resolved_texture;
     std::vector<float> light_states;
     std::vector<std::uint32_t> light_colors;
     bool transition = true;
     bool is_terrain = false;
+    std::uint8_t pack_flags { 0 };
+    std::uint32_t textures_alpha { 0 };
+    float baked_range_min { -1.f };
+    float baked_range_max { -1.f };
 };
 
 struct Eu7MemCell {
@@ -390,13 +433,84 @@ struct Eu7PackSectionLoad {
     std::vector<std::string> unique_textures;
 };
 
-struct Eu7PackSectionChunkLoad {
-    std::vector<Eu7Model> models;
+struct Eu7PackSectionPathTables {
     std::vector<std::string> unique_meshes;
     std::vector<std::string> unique_textures;
+};
+
+struct Eu7PackSectionChunkLoad {
+    std::vector<Eu7Model> models;
+    std::vector<std::string> unique_textures;
+    std::shared_ptr<Eu7PackSectionPathTables const> path_tables;
     std::uint32_t chunk_count { 1 };
     std::uint32_t chunk_index { 0 };
 };
+
+[[nodiscard]] inline std::string_view
+pack_model_mesh_path(
+    Eu7Model const &model,
+    Eu7PackSectionPathTables const *path_tables ) {
+    if( false == model.model_file.empty() ) {
+        return model.model_file;
+    }
+    if(
+        path_tables != nullptr &&
+        model.pack_mesh_index != kEu7PackIndexEmpty &&
+        model.pack_mesh_index < path_tables->unique_meshes.size() ) {
+        return path_tables->unique_meshes[ model.pack_mesh_index ];
+    }
+    return {};
+}
+
+[[nodiscard]] inline std::string_view
+pack_model_texture_path(
+    Eu7Model const &model,
+    Eu7PackSectionPathTables const *path_tables ) {
+    if( false == model.texture_file.empty() ) {
+        return model.texture_file;
+    }
+    if(
+        path_tables != nullptr &&
+        model.pack_texture_index != kEu7PackIndexEmpty &&
+        model.pack_texture_index < path_tables->unique_textures.size() ) {
+        return path_tables->unique_textures[ model.pack_texture_index ];
+    }
+    return {};
+}
+
+inline void
+resolve_pack_model_paths(
+    Eu7Model &model,
+    Eu7PackSectionPathTables const *path_tables ) {
+    if( path_tables == nullptr ) {
+        return;
+    }
+    if( model.model_file.empty() && model.pack_mesh_index != kEu7PackIndexEmpty ) {
+        if( model.pack_mesh_index < path_tables->unique_meshes.size() ) {
+            model.model_file = path_tables->unique_meshes[ model.pack_mesh_index ];
+        }
+        model.pack_mesh_index = kEu7PackIndexEmpty;
+    }
+    if( model.texture_file.empty() && model.pack_texture_index != kEu7PackIndexEmpty ) {
+        if( model.pack_texture_index < path_tables->unique_textures.size() ) {
+            model.texture_file = path_tables->unique_textures[ model.pack_texture_index ];
+        }
+        model.pack_texture_index = kEu7PackIndexEmpty;
+    }
+}
+
+inline void
+resolve_pack_model_paths(
+    Eu7Model *models,
+    std::size_t const count,
+    Eu7PackSectionPathTables const *path_tables ) {
+    if( models == nullptr || path_tables == nullptr ) {
+        return;
+    }
+    for( std::size_t i { 0 }; i < count; ++i ) {
+        resolve_pack_model_paths( models[ i ], path_tables );
+    }
+}
 
 struct Eu7PackCatalog {
     std::vector<Eu7PackIndexEntry> entries;

@@ -227,6 +227,16 @@ node_groups::update_map()
 	}
 }
 
+void
+node_groups::ensure_map_index()
+{
+    if( m_map_index_built ) {
+        return;
+    }
+    update_map();
+    m_map_index_built = true;
+}
+
 // returns current active group, or null_handle if group stack is empty
 group_handle
 node_groups::handle() const {

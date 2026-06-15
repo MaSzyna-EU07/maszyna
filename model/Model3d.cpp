@@ -1623,8 +1623,10 @@ glm::vec3 TSubModel::offset(float const Geometrytestoffsetthreshold) const
 	return offset;
 }
 
-bool TModel3d::LoadFromFile(std::string const &FileName, bool dynamic)
-{
+bool TModel3d::LoadFromFile(
+    std::string const &FileName,
+    bool const dynamic,
+    bool const defer_gpu_init ) {
 	// wczytanie modelu z pliku
 	/*
 	    // NOTE: disabled, this work is now done by the model manager
@@ -1646,20 +1648,24 @@ bool TModel3d::LoadFromFile(std::string const &FileName, bool dynamic)
 	{
 		WriteLog("Forced loading text model \"" + name + ".t3d\"");
 		LoadFromTextFile(name + ".t3d", dynamic);
-		if (!dynamic)
+		if( false == defer_gpu_init && false == dynamic ) {
 			Init();
+		}
 	}
 	else if (FileExists(asBinary))
 	{
 		LoadFromBinFile(asBinary, dynamic);
 		asBinary = "";
-		Init();
+		if( false == defer_gpu_init ) {
+			Init();
+		}
 	}
 	else if (FileExists(name + ".t3d"))
 	{
 		LoadFromTextFile(name + ".t3d", dynamic);
-		if (!dynamic)
+		if( false == defer_gpu_init && false == dynamic ) {
 			Init();
+		}
 	}
 
 	bool const result = Root ? (iSubModelsCount > 0) : false; // brak pliku albo problem z wczytaniem
