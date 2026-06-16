@@ -166,6 +166,7 @@ set(SOURCES
 "application/driveruilayer.cpp"
 "application/driveruipanels.cpp"
 "input/editorkeyboardinput.cpp"
+"editor/editorSettings.cpp"
 "application/editormode.cpp"
 "input/editormouseinput.cpp"
 "application/editoruilayer.cpp"
@@ -389,6 +390,8 @@ configure_file(${CMAKE_SOURCE_DIR}/eu07.rc.in
 if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
     set(SOURCES ${SOURCES} ${CMAKE_BINARY_DIR}/eu07.rc)
     set(SOURCES ${SOURCES} eu07.ico)
+    set(SOURCES ${SOURCES} eu07.ico
+			editor/editorSettings.hpp)
     add_compile_options("/utf-8")
 endif()
 

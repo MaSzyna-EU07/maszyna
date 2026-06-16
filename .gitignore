@@ -3,6 +3,9 @@ CMakeLists.txt.user
 CMakeSettings.json
 ci_shadervalidator/validateshaders
 
+# Cache folders
+.cache/
+
 # CMake build output
 build/
 bin/

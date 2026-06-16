@@ -51,6 +51,8 @@ class editor_mode : public application_mode
 	static TCamera& get_camera() { return Camera; }
 	static bool change_history() { return m_change_history; }
 	static void set_change_history(bool enabled) { m_change_history = enabled; }
+	static bool settings_open() { return m_settings_open; }
+	static void set_settings_open(bool enabled) { m_settings_open = enabled; }
   private:
 	// types
 	struct editormode_input
@@ -125,6 +127,7 @@ class editor_mode : public application_mode
 	bool mouseHold{false};
 	float kMaxPlacementDistance = 200.0f;
 	static bool m_change_history;
+	static bool m_settings_open;
 
 	// UI/history settings
 	int m_max_history_size{200};
@@ -143,4 +146,5 @@ class editor_mode : public application_mode
 	// clear history/redo pointers that reference the given node (prevent dangling pointers)
 	void nullify_history_pointers(scene::basic_node *node);
 	void render_change_history();
+	void render_settings();
 };

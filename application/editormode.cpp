@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editoruilayer.h"
 
 #include "application/application.h"
+#include "editor/editorSettings.hpp"
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
@@ -32,7 +33,8 @@ http://mozilla.org/MPL/2.0/.
 // Static member initialization
 TCamera editor_mode::Camera;
 bool editor_mode::m_focus_active = false;
-bool editor_mode::m_change_history = true;
+bool editor_mode::m_change_history = false;
+bool editor_mode::m_settings_open = false;
 
 namespace
 {
@@ -72,6 +74,7 @@ editor_ui *editor_mode::ui() const
 
 bool editor_mode::init()
 {
+    EditorSettings.load();
     Camera.Init({0, 15, 0}, {glm::radians(-30.0), glm::radians(180.0), 0}, nullptr);
     return m_input.init();
 }
@@ -464,12 +467,34 @@ bool editor_mode::update()
 
     simulation::is_ready = true;
 
-    // --- ImGui: Editor History Window & Settings ---
+    // --- ImGui: Editor Settings & History windows ---
+    if(m_settings_open)
+        render_settings();
+
     if(!m_change_history) return true;
- 
+
     render_change_history();
 
     return true;
+}
+
+void editor_mode::render_settings()
+{
+    ImGui::Begin("Editor Settings", &m_settings_open, ImGuiWindowFlags_AlwaysAutoResize);
+
+    ImGui::TextUnformatted("Camera movement");
+
+    const char *schemes[] = {"WSAD (new)", "Arrows (legacy)"};
+    int current = (EditorSettings.movement() == editorSettings::movement_scheme::legacy) ? 1 : 0;
+    if (ImGui::Combo("##movement_scheme", &current, schemes, IM_ARRAYSIZE(schemes)))
+    {
+        EditorSettings.movement(current == 1 ? editorSettings::movement_scheme::legacy
+                                             : editorSettings::movement_scheme::wsad);
+        m_input.keyboard.apply_scheme();
+        EditorSettings.save();
+    }
+
+    ImGui::End();
 }
 
 void editor_mode::update_camera(double const Deltatime)

@@ -17,6 +17,9 @@ public:
 // methods
     bool
         init() override;
+    // re-applies default bindings for the current movement scheme (e.g. after a settings change)
+    void
+        apply_scheme();
 
 protected:
 // methods

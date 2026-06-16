@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "input/editorkeyboardinput.h"
+#include "editor/editorSettings.hpp"
 
 bool
 editorkeyboard_input::init() {
@@ -22,16 +23,35 @@ editorkeyboard_input::init() {
 }
 
 void
+editorkeyboard_input::apply_scheme() {
+
+    default_bindings();
+    bind();
+}
+
+void
 editorkeyboard_input::default_bindings() {
 
-    m_bindingsetups = {
-        { user_command::moveleft, {GLFW_KEY_A, "Move left"} },
-        { user_command::moveright, {GLFW_KEY_D, "Move right"} },
-        { user_command::moveforward, {GLFW_KEY_W, "Move forwards"} },
-        { user_command::moveback, {GLFW_KEY_S, "Move backwards"} },
-        { user_command::moveup, {GLFW_KEY_E, "Move up"} },
-        { user_command::movedown, {GLFW_KEY_Q, "Move down"} },
-    };
+    if (EditorSettings.movement() == editorSettings::movement_scheme::legacy) {
+        m_bindingsetups = {
+            { user_command::moveleft, {GLFW_KEY_LEFT, "Move left"} },
+            { user_command::moveright, {GLFW_KEY_RIGHT, "Move right"} },
+            { user_command::moveforward, {GLFW_KEY_UP, "Move forwards"} },
+            { user_command::moveback, {GLFW_KEY_DOWN, "Move backwards"} },
+            { user_command::moveup, {GLFW_KEY_PAGE_UP, "Move up"} },
+            { user_command::movedown, {GLFW_KEY_PAGE_DOWN, "Move down"} },
+        };
+    }
+    else {
+        m_bindingsetups = {
+            { user_command::moveleft, {GLFW_KEY_A, "Move left"} },
+            { user_command::moveright, {GLFW_KEY_D, "Move right"} },
+            { user_command::moveforward, {GLFW_KEY_W, "Move forwards"} },
+            { user_command::moveback, {GLFW_KEY_S, "Move backwards"} },
+            { user_command::moveup, {GLFW_KEY_E, "Move up"} },
+            { user_command::movedown, {GLFW_KEY_Q, "Move down"} },
+        };
+    }
 }
 
 //---------------------------------------------------------------------------
