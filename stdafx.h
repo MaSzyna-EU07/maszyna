@@ -89,7 +89,11 @@
 #define glfwFocusWindow(w)
 #endif
 
+#if defined(__aarch64__) || defined(__arm64__)
+#define GLM_FORCE_NEON
+#else
 #define GLM_FORCE_AVX2
+#endif
 #define GLM_FORCE_SWIZZLE
 #define GLM_ENABLE_EXPERIMENTAL
 #define GLM_FORCE_CTOR_INIT

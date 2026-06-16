@@ -41,9 +41,18 @@ bool DebugTractionFlag = false;
 
 std::string Now()
 {
+#if defined(__APPLE__)
+	auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+	std::tm tm{};
+	localtime_r(&t, &tm);
+	char buf[64];
+	std::strftime(buf, sizeof(buf), "%c", &tm);
+	return std::string(buf);
+#else
 	auto now = std::chrono::system_clock::now();
 	auto local = std::chrono::current_zone()->to_local(now);
 	return std::format("{:%c}", local);
+#endif
 }
 
 // zwraca różnicę czasu
