@@ -282,6 +282,11 @@ class opengl33_renderer : public gfx_renderer {
 	void Render(TSubModel *Submodel);
 	void Render(TTrack *Track);
 	void Render(scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last);
+	// renders the per-track sleeper instances (TTrack::m_sleeper_local_transforms) via GPU instancing.
+	// caller must already have the camera-relative world-space transform set on the matrix stack.
+	// no-op if the track has no sleepermodel, Global.SleeperDistance is 0, or the camera is beyond
+	// Global.SleeperDistance from the track origin.
+	void Render_Sleepers( TTrack *Track );
 	bool Render_cab(TDynamicObject const *Dynamic, float const Lightlevel, bool const Alpha = false);
     bool Render_interior( bool const Alpha = false );
     bool Render_lowpoly( TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha = false );
@@ -361,6 +366,12 @@ class opengl33_renderer : public gfx_renderer {
 	renderpass_config m_renderpass; // parameters for current render pass
 	section_sequence m_sectionqueue; // list of sections in current render pass
 	cell_sequence m_cellqueue;
+	// frame-level accumulation of per-cell opaque instance buckets. Each visited
+	// cell's buckets are merged here keyed by (TModel3d*, skins), so that
+	// Render_Instanced() runs once per unique model across the whole pass instead
+	// of once per cell -- collapsing many tiny instanced draws into a few large
+	// batches. Reused every pass; cleared at the top of Render(scene::basic_region*).
+	scene::basic_cell::instance_bucket_map m_frame_instance_buckets;
   renderpass_config m_colorpass; // parametrs of most recent color pass
 	std::array<renderpass_config, 3> m_shadowpass; // parametrs of most recent shadowmap pass for each of csm stages
 	std::vector<TSubModel const *> m_pickcontrolsitems;
@@ -403,6 +414,12 @@ class opengl33_renderer : public gfx_renderer {
 	// than a single regular draw. The vertex shader reads per-instance modelview
 	// from instance_ubo[gl_InstanceID]. Reset to 0 by Render_Instanced() on exit.
 	std::size_t m_current_instance_count { 0 };
+	// persistent scratch buffer for Render_Instanced(): holds the per-instance
+	// camera-space root modelview matrices for the batch currently being built.
+	// Kept as a member rather than a function-local so its heap allocation is
+	// reused across calls -- clear() retains capacity, so once it has grown to
+	// the largest batch seen, steady-state frames perform no allocation here.
+	std::vector<glm::mat4> m_instance_modelviews;
 	gl::scene_ubs scene_ubs;
 	gl::model_ubs model_ubs;
 	gl::light_ubs light_ubs;

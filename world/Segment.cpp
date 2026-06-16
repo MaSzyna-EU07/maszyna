@@ -337,29 +337,29 @@ Math3D::vector3 TSegment::GetPoint(double const fDistance) const
     }
 };
 */
-// ustalenie pozycji osi na torze, przechyłki, pochylenia i kierunku jazdy
-void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &p, glm::vec3 &a) const {
+
+void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::vec3 &rotation) const {
     if (bCurve) {
         // można by wprowadzić uproszczony wzór dla okręgów płaskich
         auto const t = GetTFromS(fDistance); // aproksymacja dystansu na krzywej Beziera na parametr (t)
-        p = FastGetPoint( t );
+        position = FastGetPoint( t );
         // przechyłka w danym miejscu (zmienia się liniowo)
-        a.x = std::lerp( fRoll1, fRoll2, t );
+        rotation.x = std::lerp( fRoll1, fRoll2, t );
         // pochodna jest 3*A*t^2+2*B*t+C
         auto const tangent = t * ( t * 3.0 * vA + vB + vB ) + vC;
         // pochylenie krzywej (w pionie)
-        a.y = std::atan( tangent.y );
+        rotation.y = std::atan( tangent.y );
         // kierunek krzywej w planie
-        a.z = -std::atan2( tangent.x, tangent.z );
+        rotation.z = -std::atan2( tangent.x, tangent.z );
     }
     else {
         // wyliczenie dla odcinka prostego jest prostsze
         auto const t = fDistance / fLength; // zerowych torów nie ma
-        p = FastGetPoint( t );
+        position = FastGetPoint( t );
         // przechyłka w danym miejscu (zmienia się liniowo)
-        a.x = std::lerp( fRoll1, fRoll2, t );
-        a.y = fStoop; // pochylenie toru prostego
-        a.z = fDirection; // kierunek toru w planie
+        rotation.x = std::lerp( fRoll1, fRoll2, t );
+        rotation.y = fStoop; // pochylenie toru prostego
+        rotation.z = fDirection; // kierunek toru w planie
     }
 };
 

@@ -23,6 +23,8 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/DynObj.h"
 #include "vehicle/Driver.h"
 #include "model/AnimModel.h"
+#include "model/MdlMngr.h"
+#include "model/Model3d.h"
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
 #include "rendering/renderer.h"
@@ -923,6 +925,37 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             // memory cell holding friction value modifiers
             m_friction.first = parser->getToken<std::string>();
         }
+        else if( str == "sleepermodel" ) {
+            // sleepermodel <frequency> <model> <skin> <offsetX> <offsetY> <offsetZ> <ballastZ>
+            // - frequency: meters between consecutive sleeper instances (must be > 0)
+            // - model:     path to the .e3d sleeper model
+            // - skin:      replacable skin path, or "none" for the model's defaults
+            // - offset:    local-space offset applied per-instance (x=left/right, y=forward/back, z=up/down)
+            // - ballastZ:  vertical shift applied to the auto-generated trackbed (ballast). negative pushes ballast down.
+            float frequency { 0.f };
+            float offsetx { 0.f }, offsety { 0.f }, offsetz { 0.f };
+            float ballastz { 0.f };
+            parser->getTokens( 1, false ); *parser >> frequency;
+            auto modelpath { parser->getToken<std::string>( false ) };
+            auto skinpath  { parser->getToken<std::string>( false ) };
+            parser->getTokens( 3, false ); *parser >> offsetx >> offsety >> offsetz;
+            parser->getTokens( 1, false ); *parser >> ballastz;
+
+            if( frequency <= 0.01f ) {
+                ErrorLog( "Bad track: invalid sleepermodel frequency (" + std::to_string( frequency ) + ") for track \"" + m_name + "\"" );
+            }
+            else {
+                replace_slashes( modelpath );
+                m_sleeper_enabled = true;
+                m_sleeper_frequency = frequency;
+                m_sleeper_model_name = modelpath;
+                m_sleeper_skin_name = skinpath;
+                m_sleeper_offset = glm::vec3( offsetx, offsety, offsetz );
+                m_sleeper_ballast_z = ballastz;
+                // model and skin are resolved (and instance transforms baked) in build_sleeper_transforms,
+                // called after segment initialisation so the path geometry is final.
+            }
+        }
         else
             ErrorLog("Bad track: unknown property: \"" + str + "\" defined for track \"" + m_name + "\"");
         parser->getTokens();
@@ -942,6 +975,9 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         + CurrentSegment()->FastGetPoint( 0.5 )
         + CurrentSegment()->FastGetPoint_1() )
         / 3.0 );
+    // sleeper transforms are baked later in create_geometry(), once the owning cell has
+    // assigned this track its m_origin (otherwise the local-space matrices would be relative
+    // to a stale origin and the renderer would draw sleepers in the wrong place).
 }
 
 bool TTrack::AssignEvents() {
@@ -1313,6 +1349,11 @@ glm::vec3 TTrack::get_nearest_point(const glm::dvec3 &point) const
 // wypełnianie tablic VBO
 void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
 	gfx::userdata_array empty_userdata;
+    // bake per-instance sleeper transforms now that the owning cell has assigned m_origin.
+    // safe to call here even if the track has no sleepermodel (early-outs internally).
+    if( m_sleeper_enabled && m_sleeper_local_transforms.empty() ) {
+        build_sleeper_transforms();
+    }
     switch (iCategoryFlag & 15)
     {
     case 1: // tor
@@ -1328,6 +1369,14 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
             { // podsypka z podkładami jest tylko dla zwykłego toru
                 gfx::vertex_array bpts1;
                 create_track_bed_profile( bpts1, trPrev, trNext );
+                // optional vertical shift of the auto-generated ballast (sleepermodel ballastZ).
+                // positive value raises the trackbed, negative pushes it down so a custom
+                // sleeper model placed on top can sit flush with the ballast surface.
+                if( m_sleeper_enabled && ( m_sleeper_ballast_z != 0.f ) ) {
+                    for( auto &v : bpts1 ) {
+                        v.position.y += m_sleeper_ballast_z;
+                    }
+                }
                 auto const texturelength { texture_length( m_material2 ) };
                 gfx::vertex_array vertices;
                 Segment->RenderLoft(vertices, m_origin, bpts1, iTrapezoid > 0, texturelength);
@@ -2359,6 +2408,17 @@ TTrack::export_as_text_( std::ostream &Output ) const {
     }
     if( false == m_friction.first.empty() ) {
         Output << "friction " << m_friction.first << ' ';
+    }
+    if( m_sleeper_enabled && ( false == m_sleeper_model_name.empty() ) ) {
+        Output
+            << "sleepermodel "
+            << m_sleeper_frequency << ' '
+            << m_sleeper_model_name << ' '
+            << ( m_sleeper_skin_name.empty() ? std::string{ "none" } : m_sleeper_skin_name ) << ' '
+            << m_sleeper_offset.x << ' '
+            << m_sleeper_offset.y << ' '
+            << m_sleeper_offset.z << ' '
+            << m_sleeper_ballast_z << ' ';
     }
     // footer
     Output
@@ -3619,4 +3679,157 @@ path_table::IsolatedBusy( std::string const &Name ) const {
         }
     }
     multiplayer::WyslijString( Name, 10 ); // wolny (technically not found but, eh)
+}
+
+namespace {
+// Returns the list of segments to walk when laying out sleepers for a given track.
+// For plain tracks/turntables we just use the active Segment. For switches, crossings
+// and tributaries we use every initialised sub-path so the user gets sleepers covering
+// the full footprint of the junction (not just the currently-selected route).
+std::vector<TSegment *> sleeper_segments_for( TTrack const &Track )
+{
+    std::vector<TSegment *> out;
+    switch( Track.eType ) {
+    case tt_Switch:
+    case tt_Tributary: {
+        // both main + diverging branches
+        if( Track.SwitchExtension ) {
+            for( int i = 0; i < 2; ++i ) {
+                auto *seg = Track.SwitchExtension->Segments[ i ].get();
+                if( seg != nullptr ) { out.push_back( seg ); }
+            }
+        }
+        break;
+    }
+    case tt_Cross: {
+        // a road crossing potentially holds up to 6 connection segments; iterate them all,
+        // skipping zero-length / null entries.
+        if( Track.SwitchExtension ) {
+            for( int i = 0; i < 6; ++i ) {
+                auto *seg = Track.SwitchExtension->Segments[ i ].get();
+                if( seg == nullptr )    { continue; }
+                if( seg->GetLength() <= 0.0 ) { continue; }
+                out.push_back( seg );
+            }
+        }
+        break;
+    }
+    case tt_Normal:
+    case tt_Table:
+    default: {
+        if( Track.Segment ) { out.push_back( Track.Segment.get() ); }
+        break;
+    }
+    }
+    return out;
+}
+} // anonymous namespace
+
+// Resolves the sleeper model + (optional) replacable skin via the global model/material
+// managers, then walks every active sub-segment at the configured spacing and bakes a
+// local-space transform matrix (relative to m_origin) for every instance. The renderer
+// turns these into final camera-space modelview matrices at draw time.
+//
+// Per-instance orientation is built from an explicit tangent-based basis (right, up, forward)
+// rather than RPY-decomposed angles, so curves and switches stay aligned with the path
+// regardless of where they live in the parameter space.
+void TTrack::build_sleeper_transforms()
+{
+    m_sleeper_local_transforms.clear();
+    m_sleeper_model = nullptr;
+    m_sleeper_skin = 0;
+
+    if( false == m_sleeper_enabled )   { return; }
+    if( m_sleeper_model_name.empty() ) { return; }
+    if( m_sleeper_frequency <= 0.01f ) { return; }
+
+    auto const segments = sleeper_segments_for( *this );
+    if( segments.empty() ) { return; }
+
+    // resolve model
+    m_sleeper_model = TModelsManager::GetModel( m_sleeper_model_name, false );
+    if( m_sleeper_model == nullptr ) {
+        ErrorLog( "Bad track: sleepermodel model \"" + m_sleeper_model_name + "\" failed to load for track \"" + m_name + "\"" );
+        m_sleeper_enabled = false;
+        return;
+    }
+    // resolve replacable skin (optional)
+    if( ( false == m_sleeper_skin_name.empty() ) && ( m_sleeper_skin_name != "none" ) ) {
+        auto skinpath { m_sleeper_skin_name };
+        replace_slashes( skinpath );
+        m_sleeper_skin = GfxRenderer->Fetch_Material( skinpath );
+    }
+
+    auto const spacing = static_cast<double>( m_sleeper_frequency );
+    // small finite-difference epsilon used to extract the tangent from RaPositionGet.
+    // RaPositionGet's reported angles are correct in principle but for curves they're
+    // derived from the polynomial first derivative, which is sensitive to numerical noise
+    // at the segment endpoints. Sampling positions directly is robust for both straight
+    // segments and bezier curves, and it costs us two extra evaluations per sleeper.
+    double const eps = std::min( 0.1, spacing * 0.25 );
+    glm::vec3 const world_up { 0.f, 1.f, 0.f };
+
+    // user offset is (left/right, forward/back, up/down) in the local frame established by
+    // the basis below (x=right, y=up, z=forward). swap y<->z to match the documented axes.
+    glm::vec3 const local_offset { m_sleeper_offset.x, m_sleeper_offset.z, m_sleeper_offset.y };
+
+    for( auto *segment : segments ) {
+        auto const length = segment->GetLength();
+        if( length <= 0.0 ) { continue; }
+        // start half a frequency in so the first sleeper doesn't sit on the joint.
+        auto const start = std::min( spacing * 0.5, length * 0.5 );
+        auto const expected = static_cast<std::size_t>( std::max( 0.0, ( length - start ) / spacing ) ) + 1u;
+        m_sleeper_local_transforms.reserve( m_sleeper_local_transforms.size() + expected );
+
+        for( double s = start; s < length; s += spacing ) {
+            glm::dvec3 pos;
+            glm::vec3 angles;
+            segment->RaPositionGet( s, pos, angles );
+
+            // tangent direction via central difference (clamped to the segment endpoints)
+            auto const s_back = std::max( 0.0, s - eps );
+            auto const s_fwd  = std::min( length, s + eps );
+            glm::dvec3 p_back, p_fwd;
+            glm::vec3  dummy;
+            segment->RaPositionGet( s_back, p_back, dummy );
+            segment->RaPositionGet( s_fwd,  p_fwd,  dummy );
+            auto tangent = glm::vec3( p_fwd - p_back );
+            if( glm::length2( tangent ) < 1e-8f ) {
+                // degenerate sample (e.g. zero-length sub-segment); skip this position rather
+                // than emit a junk transform with NaN normals.
+                continue;
+            }
+            tangent = glm::normalize( tangent );
+
+            // build an orthonormal basis around the tangent. world up is the reference; if the
+            // track is almost vertical we fall back to world X so cross() doesn't collapse.
+            glm::vec3 up_ref = world_up;
+            if( std::abs( glm::dot( tangent, up_ref ) ) > 0.999f ) { up_ref = glm::vec3( 1.f, 0.f, 0.f ); }
+            glm::vec3 right = glm::normalize( glm::cross( up_ref, tangent ) );
+            glm::vec3 up    = glm::cross( tangent, right );
+
+            // apply track roll (banking) around the tangent / forward axis.
+            float const roll = angles.x;
+            if( roll != 0.f ) {
+                auto const roll_mat = glm::rotate( glm::mat4( 1.f ), roll, tangent );
+                right = glm::vec3( roll_mat * glm::vec4( right, 0.f ) );
+                up    = glm::vec3( roll_mat * glm::vec4( up,    0.f ) );
+            }
+
+            // assemble local transform: columns are (right, up, forward, translation).
+            // a sleeper modelled with X = sideways, Y = up, Z = along-track now ends up
+            // correctly oriented along the path tangent regardless of curve direction.
+            auto const localpos = glm::vec3( pos - m_origin );
+            glm::mat4 m { 1.f };
+            m[ 0 ] = glm::vec4( right,   0.f );
+            m[ 1 ] = glm::vec4( up,      0.f );
+            m[ 2 ] = glm::vec4( tangent, 0.f );
+            m[ 3 ] = glm::vec4( localpos, 1.f );
+
+            if( local_offset != glm::vec3( 0.f ) ) {
+                m = glm::translate( m, local_offset );
+            }
+            m_sleeper_local_transforms.emplace_back( m );
+        }
+    }
 }

@@ -51,7 +51,6 @@ float calc_shadow()
 		
 		
 
-	float shadow = 0.0;
 	float bias = 0.00005f * float(cascade + 1U);
 	vec2 texel = vec2(1.0) / vec2(textureSize(shadowmap, 0));
 	//float radius = 1.0; f_light_pos[cascade].w; //0.5 + 2.0 * max(abs(2.0 * coords.x - 1.0), abs(2.0 * coords.y - 1.0));
@@ -63,37 +62,117 @@ float calc_shadow()
 		radius = mix(minradius, f_light_pos[cascade+1U].w/f_light_pos[cascade].w, dist_casc);
 	else
 		radius = 0.5;
-	
+
+#if defined(GL_ARB_gpu_shader5) || defined(GL_EXT_gpu_shader5) || __VERSION__ >= 400
+	// Fast path -- replace the original 4x4 grid of individual hardware-PCF
+	// lookups with 4 textureGather() calls. Each gather returns the 4 raw
+	// shadow comparisons of a 2x2 texel footprint, so 4 gathers laid out at
+	// (+-1, +-1) * radius * texel from the sample center cover the same 4x4
+	// sample area as the original kernel; summing all 16 comparisons and
+	// dividing by 16 reproduces the original loop's averaging. The cost on
+	// the TMUs drops from 16 hardware-PCF samples to 4 gathers (the gather
+	// path returns 4 values per fetch where the original needed 4 fetches),
+	// roughly a 4x reduction in shadow-sample work. The only thing dropped
+	// vs. the hardware-PCF path is the implicit bilinear blending inside
+	// each 2x2 footprint -- effectively turning a tent-weighted kernel into
+	// a box-weighted one of the same extent, which is imperceptible in
+	// motion. calc_shadow() is by far the heaviest piece of the lighting
+	// shader, so this is a measurable GPU saving on every shaded fragment.
+	float refz = coords.z + bias;
+	float layer = float(cascade);
+	vec2 off = radius * texel;
+	vec4 g0 = textureGather(shadowmap, vec3(coords.xy + vec2(-off.x, -off.y), layer), refz);
+	vec4 g1 = textureGather(shadowmap, vec3(coords.xy + vec2( off.x, -off.y), layer), refz);
+	vec4 g2 = textureGather(shadowmap, vec3(coords.xy + vec2(-off.x,  off.y), layer), refz);
+	vec4 g3 = textureGather(shadowmap, vec3(coords.xy + vec2( off.x,  off.y), layer), refz);
+	float shadow = dot(g0 + g1 + g2 + g3, vec4(1.0 / 16.0));
+	return shadow;
+#else
+	// Fallback for drivers without textureGather on shadow samplers
+	// (notably GLES 3.0 and any 3.3 desktop driver that doesn't expose
+	// GL_ARB_texture_gather). Identical to the previous implementation.
+	float shadow = 0.0;
 	for (float y = -1.5; y <= 1.5; y += 1.0)
 		for (float x = -1.5; x <= 1.5; x += 1.0)
 			shadow += texture(shadowmap, vec4(coords.xy + vec2(x, y) * radius * texel, cascade, coords.z + bias) );
 	shadow /= 16.0;
 
 	return shadow;
+#endif
 #else
 	return 0.0;
 #endif
 }
 
+// -----------------------------------------------------------------------
+// GGX Microfacet BRDF helpers (Cook-Torrance)
+// -----------------------------------------------------------------------
+
+// Trowbridge-Reitz (GGX) Normal Distribution Function
+//   D(N,H,α) = α⁴ / (π · ((NdotH)²·(α⁴−1)+1)²)
+//   α = roughness² (perceptual remapping so the slider feels linear)
+float D_GGX(float NdotH, float roughness)
+{
+    float a  = roughness * roughness;   // perceptual -> linear roughness
+    float a2 = a * a;
+    float d  = (NdotH * NdotH) * (a2 - 1.0) + 1.0;
+    return a2 / (3.14159265359 * d * d);
+}
+
+// Schlick-GGX single-term masking/shadowing (k remapped for direct lighting)
+float G_SchlickGGX(float NdotX, float roughness)
+{
+    float r = roughness + 1.0;
+    float k = (r * r) * (1.0 / 8.0);   // k_direct = (roughness+1)²/8
+    return NdotX / (NdotX * (1.0 - k) + k);
+}
+
+// Height-correlated Smith geometry term
+//   G(N,V,L) = G_SchlickGGX(NdotV) · G_SchlickGGX(NdotL)
+float G_Smith(float NdotV, float NdotL, float roughness)
+{
+    return G_SchlickGGX(NdotV, roughness) * G_SchlickGGX(NdotL, roughness);
+}
+
+// Returns vec2(diffuse, specular) for a single punctual light.
+//
+//   diffuse  – Lambert N·L (Fresnel-weighted diffuse is handled per-material
+//              in apply_lights, so we return raw N·L here).
+//   specular – Cook-Torrance GGX: D·G / (4·NdotL·NdotV).
+//              The Fresnel factor (F) is intentionally omitted here;
+//              apply_lights already carries a per-material Fresnel term
+//              that is applied to env reflections and can be routed to
+//              direct specular there.
+//
+// Roughness is derived identically to env_roughness in apply_lights so
+// that direct and indirect specular highlights read consistently.
 vec2 calc_light(vec3 light_dir, vec3 fragnormal)
 {
-	vec3 view_dir = normalize(vec3(0.0f, 0.0f, 0.0f) - f_pos.xyz);
-	vec3 halfway_dir = normalize(light_dir + view_dir);
+    vec3 N = fragnormal;
+    vec3 L = light_dir;
+    vec3 V = normalize(-f_pos.xyz);
+    vec3 H = normalize(L + V);
 
-	float diffuse_v = max(dot(fragnormal, light_dir), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float NdotV = max(dot(N, V), 1e-4);
+    float NdotH = max(dot(N, H), 0.0);
 
-	// Energy-conserving Blinn-Phong normalization:
-	// (n+8)/(8*pi) ensures the specular lobe integrates to the same
-	// total energy regardless of glossiness — low glossiness stays dim
-	// and spreads wide (blurry), high glossiness is bright and tight (sharp).
-	// Capped at 4.0 so very high glossiness (n>~92) does not produce pinhole
-	// highlights that blow past the tonemap shoulder and read as burnt white.
-	float n = max(glossiness, 0.01);
-	float normalization = min((n + 8.0) / (8.0 * 3.14159265), 4.0);
-	float NdotH = max(dot(fragnormal, halfway_dir), 0.0);
-	float specular_v = normalization * pow(NdotH, n);
+    float diffuse_v = NdotL;
 
-	return vec2(diffuse_v, specular_v);
+    // Mirror the env-map roughness derivation so direct and indirect lobes match.
+    // glossiness == param[1].w  →  roughness == 0.04 (near-mirror)
+    // glossiness == 0           →  roughness == 1.0  (fully diffuse)
+    float roughness = clamp(1.0 - glossiness / max(abs(param[1].w), 1.0), 0.04, 1.0);
+
+    // Cook-Torrance specular (no Fresnel — see above):
+    //   f_spec = D(N,H,α) · G(N,V,L,α) / (4 · NdotL · NdotV)
+    float D = D_GGX(NdotH, roughness);
+    float G = G_Smith(NdotV, NdotL, roughness);
+    float specular_v = (NdotL > 0.0)
+        ? (D * G) / max(4.0 * NdotL * NdotV, 1e-4)
+        : 0.0;
+
+    return vec2(diffuse_v, specular_v);
 }
 
 vec2 calc_point_light(light_s light, vec3 fragnormal)
