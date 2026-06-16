@@ -25,7 +25,10 @@ http://mozilla.org/MPL/2.0/.
 
 
 #include "imgui/imgui.h"
+#include "imgui/ImGuizmo.h"
 #include "utilities/Logs.h"
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <cmath>
 #include <functional>
 #include <vector>
@@ -106,13 +109,13 @@ void editor_mode::start_focus(scene::basic_node *node, double duration)
     m_focus_duration = duration;
 
     m_focus_start_pos = Camera.Pos;
-    m_focus_start_lookat = Camera.LookAt;
+    m_focus_start_angle = Camera.LookAt;
 
-    m_focus_target_lookat = node->location();
+    m_focus_target_pos = node->location();
 
-    glm::dvec3 dir = m_focus_start_pos - m_focus_start_lookat;
+    glm::dvec3 dir = m_focus_target_pos - m_focus_start_pos;
     double dist = glm::length(dir);
-    m_focus_target_pos = m_focus_target_lookat + glm::dvec3(10.0, 3.0, 10.0);
+    m_focus_target_angle = m_focus_target_pos + glm::dvec3(10.0, 3.0, 10.0);
 }
 
 void editor_mode::handle_brush_mouse_hold(int Action, int Button)
@@ -212,10 +215,12 @@ void editor_mode::push_snapshot(scene::basic_node *node, EditorSnapshot::Action 
     if (auto *model = dynamic_cast<TAnimModel *>(node))
     {
         snap.rotation = model->Angles();
+        snap.scale = model->Scale();
     }
     else
     {
         snap.rotation = glm::vec3(0.0f);
+        snap.scale = glm::vec3(1.0f);
     }
 
     if (Action == EditorSnapshot::Action::Delete || Action == EditorSnapshot::Action::Add)
@@ -301,7 +306,10 @@ void editor_mode::undo_last()
     current.node_ptr = target;
     current.position = target->location();
     if (auto *model = dynamic_cast<TAnimModel *>(target))
+    {
         current.rotation = model->Angles();
+        current.scale = model->Scale();
+    }
     else
         current.rotation = glm::vec3(0.0f);
     g_redo.push_back(std::move(current));
@@ -328,6 +336,7 @@ void editor_mode::undo_last()
         glm::vec3 cur = model->Angles();
         glm::vec3 delta = snap.rotation - cur;
         m_editor.rotate(target, delta, 0);
+        model->Scale(snap.scale);
     }
 
     m_node = target;
@@ -379,7 +388,10 @@ void editor_mode::redo_last()
     {
         hist.position = target->location();
         if (auto *model = dynamic_cast<TAnimModel *>(target))
+        {
             hist.rotation = model->Angles();
+            hist.scale = model->Scale();
+        }
         hist.uuid = snap.uuid;
     }
     m_history.push_back(std::move(hist));
@@ -391,6 +403,7 @@ void editor_mode::redo_last()
         {
             created->location(snap.position);
             created->Angles(snap.rotation);
+            created->Scale(snap.scale);
             m_node = created;
             m_node->uuid = snap.uuid;
             ui()->set_node(m_node);
@@ -410,6 +423,7 @@ void editor_mode::redo_last()
         glm::vec3 cur = model->Angles();
         glm::vec3 delta = snap.rotation - cur;
         m_editor.rotate(target, delta, 0);
+        model->Scale(snap.scale);
     }
 
     m_node = target;
@@ -467,6 +481,9 @@ bool editor_mode::update()
 
     simulation::is_ready = true;
 
+    // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
+    render_gizmo();
+
     // --- ImGui: Editor Settings & History windows ---
     if(m_settings_open)
         render_settings();
@@ -494,7 +511,142 @@ void editor_mode::render_settings()
         EditorSettings.save();
     }
 
+    ImGui::Separator();
+    ImGui::Checkbox("Transform gizmo (ImGuizmo)", &m_gizmo_enabled);
+
     ImGui::End();
+}
+
+void editor_mode::render_gizmo()
+{
+    if (!m_gizmo_enabled)
+    {
+        m_gizmo_using = false;
+        return;
+    }
+
+    // compact control window: lets the user pick the transform mode without keyboard shortcuts
+    ImGui::Begin("Gizmo", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing);
+    int op = static_cast<int>(m_gizmo_op);
+    ImGui::RadioButton("Translate (Q)", &op, static_cast<int>(gizmo_operation::translate));
+    ImGui::SameLine();
+    ImGui::RadioButton("Rotate (W)", &op, static_cast<int>(gizmo_operation::rotate));
+    ImGui::SameLine();
+    ImGui::RadioButton("Scale (E)", &op, static_cast<int>(gizmo_operation::scale));
+    m_gizmo_op = static_cast<gizmo_operation>(op);
+
+    if (m_gizmo_op != gizmo_operation::scale) // ImGuizmo always scales in local space
+        ImGui::Checkbox("Local space (R)", &m_gizmo_local);
+    if (m_gizmo_op == gizmo_operation::translate)
+    {
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::InputFloat("Snap (hold Ctrl)", &m_gizmo_snap);
+        if (m_gizmo_snap < 0.0f)
+            m_gizmo_snap = 0.0f;
+    }
+    if (!m_node)
+        ImGui::TextDisabled("No node selected");
+    ImGui::End();
+
+    if (!m_node)
+    {
+        m_gizmo_using = false;
+        return;
+    }
+
+    ImGuizmo::BeginFrame();
+    ImGuizmo::SetOrthographic(false);
+
+    ImGuiIO const &io = ImGui::GetIO();
+    ImGuizmo::SetRect(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
+
+    // the view matrix comes from the most recent color pass and is camera-relative
+    // (rotation only), so the gizmo is positioned relative to the camera as well.
+    glm::mat4 const view = GfxRenderer->Camera_View_Matrix();
+    glm::dvec3 const camerapos = GfxRenderer->Camera_Position();
+
+    // the engine's own projection bakes in reverse-Z (and screen orientation), which ImGuizmo
+    // doesn't expect; rebuild a clean, standard perspective that matches the rendered view.
+    // for the main viewport the engine uses a symmetric frustum with this exact fov/aspect.
+    float const fovy = glm::radians(Global.FieldOfView / Global.ZoomFactor);
+    float const aspect = (io.DisplaySize.y > 0.0f) ? (io.DisplaySize.x / io.DisplaySize.y) : 1.0f;
+    glm::mat4 const projection = glm::perspective(fovy, aspect, 0.1f, 10000.0f);
+
+    // rotation/scale are only meaningful for instanced models; other node types translate only
+    TAnimModel *model = dynamic_cast<TAnimModel *>(m_node);
+
+    glm::vec3 const relativepos = glm::vec3(m_node->location() - camerapos);
+    glm::vec3 const angles = model ? model->Angles() : glm::vec3(0.0f);
+    glm::vec3 const scalevec = model ? model->Scale() : glm::vec3(1.0f);
+
+    // build the gizmo model matrix from the node's current translation + rotation + scale
+    float const translation[3] = {relativepos.x, relativepos.y, relativepos.z};
+    float const rotation[3] = {angles.x, angles.y, angles.z};
+    float const scale[3] = {scalevec.x, scalevec.y, scalevec.z};
+    glm::mat4 matrix(1.0f);
+    ImGuizmo::RecomposeMatrixFromComponents(translation, rotation, scale, glm::value_ptr(matrix));
+
+    // map the editor's transform mode onto ImGuizmo; fall back to translate for non-models
+    ImGuizmo::OPERATION operation = ImGuizmo::TRANSLATE;
+    EditorSnapshot::Action action = EditorSnapshot::Action::Move;
+    if (model && m_gizmo_op == gizmo_operation::rotate)
+    {
+        operation = ImGuizmo::ROTATE;
+        action = EditorSnapshot::Action::Rotate;
+    }
+    else if (model && m_gizmo_op == gizmo_operation::scale)
+    {
+        operation = ImGuizmo::SCALE;
+        action = EditorSnapshot::Action::Scale;
+    }
+    ImGuizmo::MODE const mode = m_gizmo_local ? ImGuizmo::LOCAL : ImGuizmo::WORLD;
+
+    // optional snapping while Ctrl is held (metres / degrees / scale factor depending on mode)
+    glm::vec3 snapvalue(0.0f);
+    if (operation == ImGuizmo::TRANSLATE)
+        snapvalue = glm::vec3(m_gizmo_snap);
+    else if (operation == ImGuizmo::ROTATE)
+        snapvalue = glm::vec3(5.0f);
+    else
+        snapvalue = glm::vec3(0.1f);
+    float const *snap = (Global.ctrlState && snapvalue.x > 0.0f) ? glm::value_ptr(snapvalue) : nullptr;
+
+    ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection),
+                         operation, mode, glm::value_ptr(matrix), nullptr, snap);
+
+    if (ImGuizmo::IsUsing())
+    {
+        // record a single undo snapshot at the start of the drag
+        if (!m_gizmo_using)
+        {
+            push_snapshot(m_node, action);
+            m_gizmo_using = true;
+        }
+
+        float newtranslation[3], newrotation[3], newscale[3];
+        ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(matrix), newtranslation, newrotation, newscale);
+
+        if (operation == ImGuizmo::ROTATE && model)
+        {
+            // apply the rotation delta relative to the model's current orientation
+            glm::vec3 const newangles(newrotation[0], newrotation[1], newrotation[2]);
+            m_editor.rotate(model, newangles - model->Angles(), 0.0f);
+        }
+        else if (operation == ImGuizmo::SCALE && model)
+        {
+            model->Scale(glm::vec3(newscale[0], newscale[1], newscale[2]));
+        }
+        else
+        {
+            glm::dvec3 const newworldpos = camerapos + glm::dvec3(newtranslation[0], newtranslation[1], newtranslation[2]);
+            // pass Snaptoground == true so the gizmo's Y component is applied (free 3D move)
+            m_editor.translate(m_node, newworldpos, true);
+        }
+    }
+    else
+    {
+        m_gizmo_using = false;
+    }
 }
 
 void editor_mode::update_camera(double const Deltatime)
@@ -510,7 +662,7 @@ void editor_mode::update_camera(double const Deltatime)
         // smoothstep easing
         double s = t * t * (3.0 - 2.0 * t);
         Camera.Pos = glm::mix(m_focus_start_pos, m_focus_target_pos, s);
-        Camera.LookAt = glm::mix(m_focus_start_lookat, m_focus_target_lookat, s);
+        Camera.LookAt = glm::mix(m_focus_start_angle, m_focus_target_angle, s);
         if (t >= 1.0)
             m_focus_active = false;
     }
@@ -561,6 +713,11 @@ void editor_mode::exit()
     g_redo.clear();
     m_history.clear();
 
+    // drop selection so a stale/dangling node pointer isn't used on the next editor session
+    m_node = nullptr;
+    m_gizmo_using = false;
+    ui()->set_node(nullptr);
+
     Application.set_cursor((Global.ControlPicking ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED));
 
     if (!Global.ControlPicking)
@@ -581,6 +738,25 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
     // first give UI a chance to handle the key
     if (!anyModifier && m_userinterface->on_key(Key, Action))
         return;
+
+    // gizmo transform shortcuts (Q/W/E/R) — only when the camera isn't being flown (RMB up).
+    // handled before the camera keyboard step because Q/W/E are also the fly-mode movement keys,
+    // which would otherwise consume them.
+    if (!anyModifier && is_press(Action)
+        && m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) != GLFW_PRESS)
+    {
+        bool handled = true;
+        switch (Key)
+        {
+        case GLFW_KEY_Q: m_gizmo_op = gizmo_operation::translate; break;
+        case GLFW_KEY_W: m_gizmo_op = gizmo_operation::rotate; break;
+        case GLFW_KEY_E: m_gizmo_op = gizmo_operation::scale; break;
+        case GLFW_KEY_R: m_gizmo_local = !m_gizmo_local; break;
+        default: handled = false; break;
+        }
+        if (handled)
+            return;
+    }
 
     // then internal input handling
     if (m_input.keyboard.key(Key, Action))
@@ -669,57 +845,9 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
 
 void editor_mode::on_cursor_pos(double const Horizontal, double const Vertical)
 {
-    dvec2 const mousemove = dvec2{Horizontal, Vertical} - m_input.mouse.position();
+    // object transforms are handled by the gizmo now; here we only forward the cursor to the
+    // mouse input, which rotates the camera while the right mouse button is held (panning mode)
     m_input.mouse.position(Horizontal, Vertical);
-
-    if (m_input.mouse.button(GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE)
-        return;
-    if (!m_node)
-        return;
-
-    if (m_takesnapshot)
-    {
-        // record appropriate action type depending on current input mode
-        if (mode_rotationX() || mode_rotationY() || mode_rotationZ())
-            push_snapshot(m_node, EditorSnapshot::Action::Rotate);
-        else
-            push_snapshot(m_node, EditorSnapshot::Action::Move);
-
-        m_takesnapshot = false;
-    }
-
-    if (mode_translation())
-    {
-        if (mode_translation_vertical())
-        {
-            float const translation = static_cast<float>(mousemove.y * -0.01);
-            m_editor.translate(m_node, translation);
-        }
-        else
-        {
-            auto mouseOffset = clamp_mouse_offset_to_max(GfxRenderer->Mouse_Position());
-            auto const mouseworldposition = Camera.Pos + mouseOffset;
-            m_editor.translate(m_node, mouseworldposition, mode_snap());
-        }
-    }
-    else if (mode_rotationY())
-    {
-        vec3 const rotation{0.0f, static_cast<float>(mousemove.x) * 0.25f, 0.0f};
-        float const quantization = (mode_snap() ? 5.0f : 0.0f);
-        m_editor.rotate(m_node, rotation, quantization);
-    }
-    else if (mode_rotationZ())
-    {
-        vec3 const rotation{0.0f, 0.0f, static_cast<float>(mousemove.x) * 0.25f};
-        float const quantization = (mode_snap() ? 5.0f : 0.0f);
-        m_editor.rotate(m_node, rotation, quantization);
-    }
-    else if (mode_rotationX())
-    {
-        vec3 const rotation{static_cast<float>(mousemove.y) * 0.25f, 0.0f, 0.0f};
-        float const quantization = (mode_snap() ? 5.0f : 0.0f);
-        m_editor.rotate(m_node, rotation, quantization);
-    }
 }
 
 void editor_mode::on_mouse_button(int const Button, int const Action, int const Mods)
@@ -811,6 +939,11 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
             m_dragging = false;
         }
     }
+    else if (Button == GLFW_MOUSE_BUTTON_RIGHT)
+    {
+        // game-engine style look: hide & grab the cursor while flying, restore it on release
+        Application.set_cursor(is_press(Action) ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    }
 
     m_input.mouse.button(Button, Action);
 }
@@ -852,7 +985,8 @@ void editor_mode::render_change_history(){
                         (s.action == EditorSnapshot::Action::Add) ? "ADD" :
                         (s.action == EditorSnapshot::Action::Delete) ? "DEL" :
                         (s.action == EditorSnapshot::Action::Move) ? "MOV" :
-                        (s.action == EditorSnapshot::Action::Rotate) ? "ROT" : "OTH",
+                        (s.action == EditorSnapshot::Action::Rotate) ? "ROT" :
+                        (s.action == EditorSnapshot::Action::Scale) ? "SCA" : "OTH",
                         s.node_name.empty() ? "(noname)" : s.node_name.c_str(),
                         s.position.x, s.position.y, s.position.z);
 
@@ -889,42 +1023,25 @@ void editor_mode::render_change_history(){
 
 void editor_mode::on_event_poll()
 {
-    m_input.poll();
+    // game-engine style camera: WSAD/EQ only fly the camera while the right mouse button is held.
+    // when it's released the keyboard is free for gizmo shortcuts, and we flush a zero-movement
+    // command once so the camera doesn't keep coasting on the last velocity it was given.
+    bool const flying = (m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS);
+    if (flying)
+    {
+        m_input.poll();
+    }
+    else if (m_camera_flying)
+    {
+        m_camera_relay.post(user_command::movehorizontal, 0.0, 0.0, GLFW_PRESS, 0);
+        m_camera_relay.post(user_command::movevertical, 0.0, 0.0, GLFW_PRESS, 0);
+    }
+    m_camera_flying = flying;
 }
 
 bool editor_mode::is_command_processor() const
 {
     return false;
-}
-
-bool editor_mode::mode_translation() const
-{
-    return (false == Global.altState);
-}
-
-bool editor_mode::mode_translation_vertical() const
-{
-    return (true == Global.shiftState);
-}
-
-bool editor_mode::mode_rotationY() const
-{
-    return ((true == Global.altState) && (false == Global.ctrlState) && (false == Global.shiftState));
-}
- 
-bool editor_mode::mode_rotationX() const
-{
-    return ((true == Global.altState) && (true == Global.ctrlState) && (false == Global.shiftState));
-}
-
-bool editor_mode::mode_rotationZ() const
-{
-    return ((true == Global.altState) && (true == Global.ctrlState) && (true == Global.shiftState));
-}
-
-bool editor_mode::mode_snap() const
-{
-    return ((false == Global.altState) && (true == Global.ctrlState) && (false == Global.shiftState));
 }
 
 bool editor_mode::focus_active()

@@ -105,6 +105,12 @@ class opengl33_renderer : public gfx_renderer {
         Pick_Node() const override { return m_picksceneryitem; }
     glm::dvec3
         Mouse_Position() const override { return m_worldmousecoordinates; }
+    glm::mat4
+        Camera_View_Matrix() const override { return glm::mat4( glm::mat3( m_colorpass.pass_camera.modelview() ) ); }
+    glm::mat4
+        Camera_Projection_Matrix() const override { return m_colorpass.pass_camera.projection(); }
+    glm::dvec3
+        Camera_Position() const override { return m_colorpass.pass_camera.position(); }
     // maintenance methods
     void
         Update( double const Deltatime ) override;

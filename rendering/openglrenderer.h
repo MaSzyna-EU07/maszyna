@@ -105,6 +105,12 @@ public:
         Pick_Node() const override { return m_picksceneryitem; }
     glm::dvec3
         Mouse_Position() const override { return m_worldmousecoordinates; }
+    glm::mat4
+        Camera_View_Matrix() const override { return glm::mat4( glm::mat3( m_colorpass.camera.modelview() ) ); }
+    glm::mat4
+        Camera_Projection_Matrix() const override { return m_colorpass.camera.projection(); }
+    glm::dvec3
+        Camera_Position() const override { return m_colorpass.camera.position(); }
     // maintenance methods
     void
         Update( double const Deltatime ) override;

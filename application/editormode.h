@@ -75,7 +75,7 @@ class editor_mode : public application_mode
 
 	struct EditorSnapshot
 	{
-		enum class Action { Move, Rotate, Add, Delete, Other };
+		enum class Action { Move, Rotate, Scale, Add, Delete, Other };
 
 		Action action{Action::Other};
 		std::string node_name;          // node identifier (basic_node::name())
@@ -84,6 +84,7 @@ class editor_mode : public application_mode
 		std::string serialized;         // full text for recreate (used for Add/Delete)
 		glm::dvec3 position{0.0, 0.0, 0.0};
 		glm::vec3 rotation{0.0f, 0.0f, 0.0f};
+		glm::vec3 scale{1.0f, 1.0f, 1.0f};
 		UID uuid; // node UUID for reference, used as fallback lookup for deleted/recreated nodes
 
 	};
@@ -93,12 +94,6 @@ class editor_mode : public application_mode
 	std::vector<EditorSnapshot> g_redo;
 	// methods
 	void update_camera(double const Deltatime);
-	bool mode_translation() const;
-	bool mode_translation_vertical() const;
-	bool mode_rotationY() const;
-	bool mode_rotationX() const;
-	bool mode_rotationZ() const;
-	bool mode_snap() const;
 
 	editor_ui *ui() const;
 	void redo_last();
@@ -113,14 +108,14 @@ class editor_mode : public application_mode
 	static bool m_focus_active;
 	glm::dvec3 m_focus_start_pos{0.0,0.0,0.0};
 	glm::dvec3 m_focus_target_pos{0.0,0.0,0.0};
-	glm::dvec3 m_focus_start_lookat{0.0,0.0,0.0};
-	glm::dvec3 m_focus_target_lookat{0.0,0.0,0.0};
+	glm::vec3 m_focus_start_angle{0.0f};   // camera pitch/yaw/roll at focus start
+	glm::vec3 m_focus_target_angle{0.0f};  // camera pitch/yaw/roll facing the focused object
 	double m_focus_time{0.0};
 	double m_focus_duration{0.6};
 
 	double fTime50Hz{0.0}; // bufor czasu dla komunikacji z PoKeys
 	scene::basic_editor m_editor;
-	scene::basic_node *m_node; // currently selected scene node
+	scene::basic_node *m_node{nullptr}; // currently selected scene node
 	bool m_takesnapshot{true}; // helper, hints whether snapshot of selected node(s) should be taken before modification
 	bool m_dragging = false;
 	glm::dvec3 oldPos;
@@ -128,6 +123,10 @@ class editor_mode : public application_mode
 	float kMaxPlacementDistance = 200.0f;
 	static bool m_change_history;
 	static bool m_settings_open;
+
+	// camera fly-mode (right mouse button held); used to flush motion when it's released
+	command_relay m_camera_relay;
+	bool m_camera_flying{false};
 
 	// UI/history settings
 	int m_max_history_size{200};
@@ -147,4 +146,13 @@ class editor_mode : public application_mode
 	void nullify_history_pointers(scene::basic_node *node);
 	void render_change_history();
 	void render_settings();
+
+	// ImGuizmo-based transform gizmo for the selected node
+	enum class gizmo_operation { translate, rotate, scale };
+	void render_gizmo();
+	bool m_gizmo_enabled{true};                                  // master switch for the in-viewport gizmo
+	bool m_gizmo_using{false};                                   // tracks an ongoing drag, so a single undo snapshot is taken per drag
+	bool m_gizmo_local{false};                                   // manipulate in the object's local space instead of world space
+	gizmo_operation m_gizmo_op{gizmo_operation::translate};      // current transform mode (translate/rotate/scale)
+	float m_gizmo_snap{1.0f};                                    // translation snap step (metres) applied while Ctrl is held
 };
