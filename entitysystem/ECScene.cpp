@@ -4,6 +4,7 @@
 
 #include "ECScene.h"
 #include "utilities/Logs.h"
+#include "simulation/simulation.h"
 
 ECScene::ECScene()
 	: m_loaded(false)
@@ -37,6 +38,9 @@ void ECScene::Unload()
 void ECScene::Update(float dt)
 {
 	if (!m_loaded)
+		return;
+
+	if (!simulation::is_ready)
 		return;
 
 	m_systems.Update(m_world, dt);

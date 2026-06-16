@@ -12,6 +12,14 @@
 #include <entt/entt.hpp>
 #include <utility>
 #include <type_traits>
+#include <unordered_map>
+#include <string>
+
+// Forward declaration so the name-index branch in AddComponent<T> compiles in
+// translation units that include ECWorld.h without BasicComponents.h.
+// if constexpr discards the branch for non-Identification T, but the name must
+// still resolve at parse time.
+namespace ECSComponent { struct Identification; }
 
 class ECWorld
 {
@@ -22,6 +30,8 @@ public:
 	entt::entity CreateEntity();
 	void DestroyEntity(entt::entity entity);
 	void Clear();
+	// Updates the name→entity index after an Identification component's Name is changed at runtime.
+	void UpdateNameIndex(entt::entity entity, const std::string &name);
 
 	bool IsAlive(entt::entity entity) const;
 
@@ -105,6 +115,7 @@ public:
 
 private:
 	entt::registry m_registry;
+	std::unordered_map<std::string, entt::entity> m_nameIndex;
 };
 
 template<typename T, typename... Args>
@@ -122,7 +133,10 @@ T& ECWorld::AddComponent(entt::entity entity, Args&&... args)
 		static T dummy{};
 		return dummy;
 	} else {
-		return m_registry.get<T>(entity);
+		auto &comp = m_registry.get<T>(entity);
+		if constexpr (std::is_same_v<T, ECSComponent::Identification>)
+			m_nameIndex[comp.Name.ToString()] = entity;
+		return comp;
 	}
 }
 

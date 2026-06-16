@@ -30,8 +30,68 @@ http://mozilla.org/MPL/2.0/.
 #include "entitysystem/components/RenderComponents.h"
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
+#include "utilities/AsyncFilePreloader.h"
 
 namespace simulation {
+
+// Resolve a raw scenario token to the exact model file path that
+// TModel3d::LoadFromFile will eventually open, or "" if it isn't a model.
+// Mirrors TModelsManager::find_on_disk + TModel3d::LoadFromFile path logic so
+// the preloader caches under the same key the loader later looks up.
+static std::string resolve_model_path( std::string name ) {
+    erase_extension( name );
+    name = ToLower( name );
+
+    std::string base;
+    for( auto const &ext : { std::string(".e3d"), std::string(".t3d") } ) {
+        if( FileExists( name + ext ) ) { base = name; break; }
+        if( FileExists( paths::models + name + ext ) ) { base = paths::models + name; break; }
+    }
+    if( base.empty() )
+        return {};
+
+    if( Global.priorityLoadText3D && FileExists( base + ".t3d" ) )
+        return base + ".t3d";
+    if( FileExists( base + ".e3d" ) )
+        return base + ".e3d";
+    if( FileExists( base + ".t3d" ) )
+        return base + ".t3d";
+    return {};
+}
+
+// Runs on a background thread: tokenizes the scenario (includes expanded by
+// cParser) ahead of the main parse and queues any token that resolves to a
+// model file. Best-effort — false positives fail to load harmlessly and
+// missed models simply fall back to synchronous disk reads.
+static void prefetch_scan_worker( std::string scenariofile, std::string scenerypath,
+                                  bool loadtraction, std::atomic<bool> *cancel ) {
+    try {
+        cParser scan( scenariofile, cParser::buffer_FILE, scenerypath, loadtraction );
+        std::string tok;
+        while( !( tok = scan.getToken<std::string>( false ) ).empty() ) {
+            if( cancel->load( std::memory_order_relaxed ) )
+                return;
+            // cheap filter: model references carry a path separator or extension;
+            // skips the millions of numeric vertex/coordinate tokens instantly.
+            if( tok.size() < 4 )
+                continue;
+            bool pathlike =
+                tok.find( '/' ) != std::string::npos
+             || tok.find( '\\' ) != std::string::npos
+             || ends_with( ToLower( tok ), ".t3d" )
+             || ends_with( ToLower( tok ), ".e3d" );
+            if( !pathlike )
+                continue;
+
+            std::string resolved = resolve_model_path( tok );
+            if( !resolved.empty() )
+                GModelPreloader.queue( resolved );
+        }
+    }
+    catch( ... ) {
+        // best-effort prefetch — never let a scan failure affect loading
+    }
+}
 
 std::shared_ptr<deserializer_state>
 state_serializer::deserialize_begin( std::string const &Scenariofile ) {
@@ -112,6 +172,14 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
         state->input.injectString(Global.prepend_scn);
     }
 
+    // kick off background disk preloading: a scan thread races ahead of the main
+    // parse discovering model files, worker threads read them into RAM, and
+    // LoadFromBinFile/LoadFromTextFile parse straight from memory on the main thread.
+    GModelPreloader.start();
+    state->prefetch_thread = std::thread(
+        prefetch_scan_worker, Scenariofile, Global.asCurrentSceneryPath,
+        Global.bLoadTraction, &state->prefetch_cancel );
+
 	return state;
 }
 
@@ -160,6 +228,13 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 		// as long as the scenario file wasn't rainsted-created base file override
 		Region->serialize( state->scenariofile );
 	}
+
+	// loading finished — stop preloader threads and free the cached file buffers
+	state->prefetch_cancel = true;
+	if( state->prefetch_thread.joinable() )
+		state->prefetch_thread.join();
+	GModelPreloader.stop();
+	GModelPreloader.clear();
 
 	return false;
 }
@@ -435,24 +510,38 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
 		return;
 	ECWorld& world = currentScene->World();
 
-	entt::entity entity = world.CreateEntity();
+	// Only create ECS entities for node types that actually use them.
+	// Geometry (triangles, lines) and infrastructure (track, traction) go through
+	// the legacy pipeline exclusively — creating entities for them wastes time and memory.
+	static const std::unordered_set<std::string> ecs_node_types = {
+		"dynamic", "model", "sound"
+	};
+	const bool needs_entity = ecs_node_types.count(nodedata.type) > 0;
 
-	auto& transformComponent = world.AddComponent<ECSComponent::Transform>(entity);
-	transformComponent.Position = Scratchpad.location.offset.empty() ? glm::dvec3(0.0) : Scratchpad.location.offset.top();
-	transformComponent.Rotation = Scratchpad.location.rotation;
+	entt::entity entity = entt::null;
+	if (needs_entity) {
+		entity = world.CreateEntity();
 
-	if (nodedata.range_max > 0.0 || nodedata.range_min >= 0.0) {
-		auto& lodComponent = world.AddComponent<ECSComponent::LODController>(entity);
-		lodComponent.RangeMin = nodedata.range_min;
-		lodComponent.RangeMax = nodedata.range_max;
+		auto& transformComponent = world.AddComponent<ECSComponent::Transform>(entity);
+		transformComponent.Position = Scratchpad.location.offset.empty() ? glm::dvec3(0.0) : Scratchpad.location.offset.top();
+		transformComponent.Rotation = Scratchpad.location.rotation;
+
+		if (nodedata.range_max > 0.0 || nodedata.range_min >= 0.0) {
+			auto& lodComponent = world.AddComponent<ECSComponent::LODController>(entity);
+			lodComponent.RangeMin = nodedata.range_min;
+			lodComponent.RangeMax = nodedata.range_max;
+		}
+
+		if (nodedata.name == "none") {
+			nodedata.name.clear();
+		} else {
+			auto& id = world.AddComponent<ECSComponent::Identification>(entity);
+			id.Name = nodedata.name;
+		}
+	} else {
+		if (nodedata.name == "none")
+			nodedata.name.clear();
 	}
-
-    if( nodedata.name == "none" ) {
-	    nodedata.name.clear();
-    } else {
-		auto& id = world.AddComponent<ECSComponent::Identification>(entity);
-		id.Name = nodedata.name;
-    }
     // type-based deserialization. not elegant but it'll do
     if( nodedata.type == "dynamic" ) {
  
@@ -588,7 +677,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
             }
             scene::Groups.insert( scene::Groups.handle(), instance );
             simulation::Region->insert( instance );
- 
+
             {
                 entt::entity modelEntity = world.FindEntityByName(instance->name());
                 if (modelEntity != entt::null) {
@@ -601,12 +690,30 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
                         t->Rotation = { instance->Angles().x, instance->Angles().y, instance->Angles().z, 1.0f };
                     }
 
-                    // smoke sources on static models
                     if (instance->Model() != nullptr) {
                         for (auto const &smokesource : instance->Model()->smoke_sources()) {
                             auto& emitter = world.AddComponent<ECSComponent::ParticleEmitter>(modelEntity);
                             emitter.emitterLocation = smokesource.second;
                             emitter.isActive = true;
+                        }
+                    }
+
+                    {
+                        std::string lname = instance->name();
+                        std::transform(lname.begin(), lname.end(), lname.begin(), ::tolower);
+                        bool isLamp = lname.find("lamp")      != std::string::npos
+                                   || lname.find("latarni")   != std::string::npos
+                                   || lname.find("reflektor") != std::string::npos
+                                   || lname.find("swiatlo")   != std::string::npos
+                                   || lname.find("light")     != std::string::npos;
+                        if (isLamp && !world.HasComponent<ECSComponent::SpotLight>(modelEntity)) {
+                            auto& spot = world.AddComponent<ECSComponent::SpotLight>(modelEntity);
+                            spot.Color      = glm::vec3(1.0f, 0.92f, 0.75f);
+                            spot.Intensity  = 1.5f;
+                            spot.Range      = 40.0f;
+                            spot.InnerAngle = 20.0f;
+                            spot.OuterAngle = 45.0f;
+                            spot.Enabled    = true;
                         }
                     }
                 }

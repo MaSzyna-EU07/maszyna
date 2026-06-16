@@ -44,7 +44,7 @@ void LightSystem::Update(ECWorld& world, float dt)
 
             light_array::free_light_record rec;
             rec.position     = transform.Position;
-            rec.direction    = glm::vec3(0.f, -1.f, 0.f); // default downward; rotation support can be added later
+            rec.direction    = glm::normalize(glm::mat3_cast(transform.Rotation) * glm::vec3(0.f, -1.f, 0.f));
             rec.color        = spot.Color;
             rec.intensity    = spot.Intensity;
             rec.range        = spot.Range;

@@ -579,18 +579,22 @@ void ui_layer::render_entity_hierarchy(ECWorld& world)
     {
         if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
         {
-			
-			float pos[3] = { static_cast<float>(transform->Position.x), static_cast<float>(transform->Position.y), static_cast<float>(transform->Position.z) };
+            float pos[3] = {
+                static_cast<float>(transform->Position.x),
+                static_cast<float>(transform->Position.y),
+                static_cast<float>(transform->Position.z) };
+            if (ImGui::DragFloat3("Position", pos, 0.1f)) {
+                transform->Position.x = pos[0];
+                transform->Position.y = pos[1];
+                transform->Position.z = pos[2];
+            }
 
-			if(ImGui::DragFloat3("Position", pos, 0.1f)){
+            glm::vec3 euler = glm::degrees(glm::eulerAngles(transform->Rotation));
+            if (ImGui::DragFloat3("Rotation (deg)", &euler.x, 0.5f)) {
+                transform->Rotation = glm::quat(glm::radians(euler));
+            }
 
-			}
-
-            ImGui::DragFloat3("Rotation",
-                &transform->Rotation.x, 0.1, -360.0, 360.0);
-
-            ImGui::DragFloat3("Scale",
-                &transform->Scale.x, 0.01, 0.0, 100000.0);
+            ImGui::DragFloat3("Scale", &transform->Scale.x, 0.01f, 0.0f, 100000.0f);
         }
     }
 
@@ -599,13 +603,9 @@ void ui_layer::render_entity_hierarchy(ECWorld& world)
     {
         if (ImGui::CollapsingHeader("Velocity", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            ImGui::DragFloat3("Value",
-                &velocity->Value.x, 0.1);
-
-			if (ImGui::Button("Stop"))
-			{
-				velocity->Value = glm::dvec3(0.0);
-			}
+            ImGui::DragFloat3("Value", &velocity->Value.x, 0.1f);
+            if (ImGui::Button("Stop"))
+                velocity->Value = glm::vec3(0.0f);
         }
     }
 
@@ -614,10 +614,12 @@ void ui_layer::render_entity_hierarchy(ECWorld& world)
     {
         if (ImGui::CollapsingHeader("LODController", ImGuiTreeNodeFlags_DefaultOpen))
         {
-			float range_min = lod->RangeMin;
-			float range_max = lod->RangeMax;
-            ImGui::DragFloat("Range Min", &range_min, 0.1, 0.0, 100000.0);
-            ImGui::DragFloat("Range Max", &range_max, 0.1, 0.0, 100000.0);
+            float range_min = static_cast<float>(lod->RangeMin);
+            float range_max = static_cast<float>(lod->RangeMax);
+            if (ImGui::DragFloat("Range Min", &range_min, 0.1f, 0.0f, 100000.0f))
+                lod->RangeMin = range_min;
+            if (ImGui::DragFloat("Range Max", &range_max, 0.1f, 0.0f, 100000.0f))
+                lod->RangeMax = range_max;
         }
     }
 
@@ -646,7 +648,6 @@ void ui_layer::render_entity_hierarchy(ECWorld& world)
 	}
 
 	// SpotLight
-
 	if (auto* light = world.GetComponent<ECSComponent::SpotLight>(m_selected_entity))
 	{
 		if (ImGui::CollapsingHeader("SpotLight", ImGuiTreeNodeFlags_DefaultOpen))
@@ -658,6 +659,58 @@ void ui_layer::render_entity_hierarchy(ECWorld& world)
 			ImGui::DragFloat("Inner Angle", &light->InnerAngle, 0.1f, 0.0f, light->OuterAngle);
 			ImGui::DragFloat("Outer Angle", &light->OuterAngle, 0.1f, light->InnerAngle, 90.0f);
 			ImGui::Checkbox("Cast Shadows", &light->CastShadows);
+		}
+	}
+
+	// SunLight
+	if (auto* sun = world.GetComponent<ECSComponent::SunLight>(m_selected_entity))
+	{
+		if (ImGui::CollapsingHeader("SunLight", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			ImGui::Checkbox("Enabled", &sun->Enabled);
+			ImGui::ColorEdit3("Color", &sun->Color.x);
+			ImGui::DragFloat("Intensity", &sun->Intensity, 0.01f, 0.0f, 10.0f);
+		}
+	}
+
+	// ParticleEmitter
+	if (auto* em = world.GetComponent<ECSComponent::ParticleEmitter>(m_selected_entity))
+	{
+		if (ImGui::CollapsingHeader("ParticleEmitter", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			ImGui::Checkbox("Active", &em->isActive);
+			ImGui::DragFloat("Spawn Rate", &em->spawnRate, 0.5f, 0.0f, 1000.0f);
+			ImGui::DragFloat("Lifetime", &em->particleLifetime, 0.1f, 0.1f, 60.0f);
+			ImGui::DragFloat("Air Resistance", &em->airResistance, 0.01f, 0.0f, 5.0f);
+			ImGui::DragFloat3("Gravity", &em->gravity.x, 0.01f);
+			ImGui::DragFloat4("Color Fade", &em->colorFade.x, 0.01f, -1.0f, 1.0f);
+			ImGui::Text("Particles alive: %zu", em->particles.size());
+			if (ImGui::Button("Clear particles"))
+				em->particles.clear();
+		}
+	}
+
+	// Billboard
+	if (auto* bill = world.GetComponent<ECSComponent::Billboard>(m_selected_entity))
+	{
+		if (ImGui::CollapsingHeader("Billboard", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			ImGui::Checkbox("Active", &bill->active);
+			ImGui::DragFloat("Size", &bill->size, 0.05f, 0.01f, 100.0f);
+			ImGui::Text("Texture: %s", bill->texturePath.ToString().c_str());
+		}
+	}
+
+	// Line
+	if (auto* line = world.GetComponent<ECSComponent::Line>(m_selected_entity))
+	{
+		if (ImGui::CollapsingHeader("Line", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			ImGui::Checkbox("Active", &line->active);
+			ImGui::DragFloat3("Start", &line->start.x, 0.1f);
+			ImGui::DragFloat3("End",   &line->end.x,   0.1f);
+			ImGui::ColorEdit3("Color", &line->color.x);
+			ImGui::DragFloat("Thickness", &line->thickness, 0.1f, 0.1f, 20.0f);
 		}
 	}
 

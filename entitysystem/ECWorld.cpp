@@ -12,13 +12,22 @@ entt::entity ECWorld::CreateEntity()
 
 void ECWorld::DestroyEntity(entt::entity entity)
 {
-	if (m_registry.valid(entity))
+	if (m_registry.valid(entity)) {
+		if (auto *id = m_registry.try_get<ECSComponent::Identification>(entity))
+			m_nameIndex.erase(id->Name.ToString());
 		m_registry.destroy(entity);
+	}
 }
 
 void ECWorld::Clear()
 {
+	m_nameIndex.clear();
 	m_registry.clear();
+}
+
+void ECWorld::UpdateNameIndex(entt::entity entity, const std::string &name)
+{
+	m_nameIndex[name] = entity;
 }
 
 bool ECWorld::IsAlive(entt::entity entity) const
@@ -29,18 +38,8 @@ bool ECWorld::IsAlive(entt::entity entity) const
 
 entt::entity ECWorld::FindEntityByName(const std::string& name) const
 {
-	auto view = m_registry.view<ECSComponent::Identification>();
-
-	for (auto entity : view)
-	{
-		const auto& id = view.get<ECSComponent::Identification>(entity);
-		if (id.Name.ToString() == name)
-		{
-			return entity;
-		}
-	}
-
-	return entt::null;
+	auto it = m_nameIndex.find(name);
+	return (it != m_nameIndex.end()) ? it->second : entt::null;
 }
 
 entt::registry& ECWorld::Registry()

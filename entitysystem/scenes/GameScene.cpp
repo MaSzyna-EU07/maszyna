@@ -16,6 +16,7 @@
 #include "entitysystem/systems/LineSystem.h"
 #include "entitysystem/systems/VehicleSyncSystem.h"
 #include "entitysystem/systems/BillboardSystem.h"
+#include "entitysystem/ECSPersistence.h"
 #include "utilities/Logs.h"
 
 GameScene::GameScene() = default;
@@ -37,6 +38,8 @@ void GameScene::OnLoad()
 #ifdef _DEBUG
 	CreateTestEntities();
 #endif
+
+	ecs_persistence::load(World(), "ecs_save.json");
 }
 
 void GameScene::OnUpdate(float dt)
@@ -45,6 +48,7 @@ void GameScene::OnUpdate(float dt)
 
 void GameScene::OnUnload()
 {
+	ecs_persistence::save(World(), "ecs_save.json");
 	World().Clear();
 }
 

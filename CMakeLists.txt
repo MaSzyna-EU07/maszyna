@@ -164,6 +164,7 @@ set(SOURCES
 "audio/audiorenderer.cpp"
 "utilities/motiontelemetry.cpp"
 "utilities/utilities.cpp"
+"utilities/AsyncFilePreloader.cpp"
 "application/uitranscripts.cpp"
 "world/station.cpp"
 "application/application.cpp"
@@ -431,7 +432,9 @@ if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
 			entitysystem/systems/VehicleSyncSystem.cpp
 			entitysystem/systems/VehicleSyncSystem.h
 			entitysystem/systems/BillboardSystem.cpp
-			entitysystem/systems/BillboardSystem.h)
+			entitysystem/systems/BillboardSystem.h
+			entitysystem/ECSPersistence.cpp
+			entitysystem/ECSPersistence.h)
     add_compile_options("/utf-8")
 endif()
 

@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "entitysystem/ECScene.h"
 #include "entitysystem/components/BasicComponents.h"
 #include "entitysystem/components/RenderComponents.h"
+#include "entitysystem/ECSPersistence.h"
 
 driver_ui::driver_ui()
 {
@@ -364,6 +365,100 @@ void driver_ui::register_driver_commands()
 			if (auto *t = world.GetComponent<ECSComponent::Transform>(entity))
 				emitter.emitterLocation = glm::vec3(t->Position);
 			dev::Console.print_ok("ParticleEmitter added to: " + args[1]);
+		});
+
+	con.register_command("ecs.addspotlight",
+		"Spawn SpotLight at position: ecs.addspotlight <name> <x> <y> <z> [r g b] [intensity] [range]",
+		[](const dev::args_t &args) {
+			if (args.size() < 5) { dev::Console.print_error("Usage: ecs.addspotlight <name> <x> <y> <z> [r g b] [intensity] [range]"); return; }
+			ECScene *scene = Application.sceneManager.CurrentScene();
+			if (!scene) { dev::Console.print_warn("No active scene"); return; }
+			ECWorld &world = scene->World();
+
+			auto entity = world.CreateEntity();
+
+			auto& id = world.AddComponent<ECSComponent::Identification>(entity);
+			id.Name = args[1];
+
+			auto& t = world.AddComponent<ECSComponent::Transform>(entity);
+			t.Position = glm::dvec3(std::stod(args[2]), std::stod(args[3]), std::stod(args[4]));
+
+			auto& spot = world.AddComponent<ECSComponent::SpotLight>(entity);
+			if (args.size() > 7) {
+				spot.Color = glm::vec3(std::stof(args[5]), std::stof(args[6]), std::stof(args[7]));
+			}
+			if (args.size() > 8) spot.Intensity = std::stof(args[8]);
+			if (args.size() > 9) spot.Range      = std::stof(args[9]);
+			spot.Enabled = true;
+
+			dev::Console.print_ok("SpotLight '" + args[1] + "' spawned at ("
+				+ args[2] + ", " + args[3] + ", " + args[4] + ")");
+		});
+
+	con.register_command("ecs.clone",
+		"Clone entity with optional offset: ecs.clone <src> <newname> [dx dy dz]",
+		[](const dev::args_t &args) {
+			if (args.size() < 3) { dev::Console.print_error("Usage: ecs.clone <src> <newname> [dx dy dz]"); return; }
+			ECScene *scene = Application.sceneManager.CurrentScene();
+			if (!scene) { dev::Console.print_warn("No active scene"); return; }
+			ECWorld &world = scene->World();
+
+			entt::entity src = world.FindEntityByName(args[1]);
+			if (src == entt::null) { dev::Console.print_error("Entity not found: " + args[1]); return; }
+			if (world.FindEntityByName(args[2]) != entt::null) { dev::Console.print_error("Name already exists: " + args[2]); return; }
+
+			glm::dvec3 offset{0.0};
+			if (args.size() >= 6) {
+				offset = glm::dvec3(std::stod(args[3]), std::stod(args[4]), std::stod(args[5]));
+			}
+
+			auto dst = world.CreateEntity();
+			auto &id = world.AddComponent<ECSComponent::Identification>(dst);
+			id.Name = args[2];
+
+			if (auto *t = world.GetComponent<ECSComponent::Transform>(src)) {
+				auto &nt = world.AddComponent<ECSComponent::Transform>(dst);
+				nt = *t;
+				nt.Position += offset;
+			}
+			if (auto *s = world.GetComponent<ECSComponent::SpotLight>(src))
+				world.AddComponent<ECSComponent::SpotLight>(dst) = *s;
+			if (auto *p = world.GetComponent<ECSComponent::ParticleEmitter>(src))
+				world.AddComponent<ECSComponent::ParticleEmitter>(dst) = *p;
+			if (auto *b = world.GetComponent<ECSComponent::Billboard>(src))
+				world.AddComponent<ECSComponent::Billboard>(dst) = *b;
+			if (auto *l = world.GetComponent<ECSComponent::Line>(src))
+				world.AddComponent<ECSComponent::Line>(dst) = *l;
+			if (auto *lod = world.GetComponent<ECSComponent::LODController>(src))
+				world.AddComponent<ECSComponent::LODController>(dst) = *lod;
+
+			dev::Console.print_ok("Cloned '" + args[1] + "' → '" + args[2] + "'");
+		});
+
+	con.register_command("ecs.save",
+		"Save ECS entities to JSON: ecs.save [filename=ecs_save.json]",
+		[](const dev::args_t &args) {
+			ECScene *scene = Application.sceneManager.CurrentScene();
+			if (!scene) { dev::Console.print_warn("No active scene"); return; }
+			std::string filename = (args.size() > 1) ? args[1] : "ecs_save.json";
+			int n = ecs_persistence::save(scene->World(), filename);
+			if (n >= 0)
+				dev::Console.print_ok("Saved " + std::to_string(n) + " entities to " + filename);
+			else
+				dev::Console.print_error("Cannot write: " + filename);
+		});
+
+	con.register_command("ecs.load",
+		"Load ECS entities from JSON: ecs.load [filename=ecs_save.json]",
+		[](const dev::args_t &args) {
+			ECScene *scene = Application.sceneManager.CurrentScene();
+			if (!scene) { dev::Console.print_warn("No active scene"); return; }
+			std::string filename = (args.size() > 1) ? args[1] : "ecs_save.json";
+			int n = ecs_persistence::load(scene->World(), filename);
+			if (n >= 0)
+				dev::Console.print_ok("Loaded " + std::to_string(n) + " entities from " + filename);
+			else
+				dev::Console.print_error("Cannot read or parse: " + filename);
 		});
 
 	con.print_info("Driver console ready. Type 'help' for commands.");

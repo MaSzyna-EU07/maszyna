@@ -11,6 +11,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/parser.h"
 #include "scene/scene.h"
+#include "utilities/AsyncFilePreloader.h"
+
+#include <thread>
+#include <atomic>
 
 namespace simulation {
 
@@ -23,8 +27,23 @@ struct deserializer_state {
 	    std::string,
 	    deserializefunctionbind> functionmap;
 
+	// background thread that scans the scenario ahead of the main parse and
+	// queues model files for asynchronous disk preloading
+	std::thread prefetch_thread;
+	std::atomic<bool> prefetch_cancel { false };
+
 	deserializer_state(std::string const &File, cParser::buffertype const Type, const std::string &Path, bool const Loadtraction)
 	    : scenariofile(File), input(File, Type, Path, Loadtraction) { }
+
+	~deserializer_state() {
+		// safety net for the aborted-load path; on success deserialize_continue
+		// has already joined and stopped the preloader (idempotent here)
+		prefetch_cancel = true;
+		if (prefetch_thread.joinable())
+			prefetch_thread.join();
+		GModelPreloader.stop();
+		GModelPreloader.clear();
+	}
 };
 
 class state_serializer {

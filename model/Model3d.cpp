@@ -18,6 +18,7 @@ Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
+#include "utilities/AsyncFilePreloader.h"
 #include "rendering/renderer.h"
 #include "utilities/Timer.h"
 #include "simulation/simulation.h"
@@ -2357,10 +2358,34 @@ bool TSubModel::HasAnyVertexUserData() const
 	return false;
 };
 
+// Helper: a read-only streambuf backed by an existing memory buffer.
+struct membuf : std::streambuf {
+    membuf(const char* begin, const char* end) {
+        setg(const_cast<char*>(begin), const_cast<char*>(begin), const_cast<char*>(end));
+    }
+};
+
 void TModel3d::LoadFromBinFile(std::string const &FileName, bool dynamic)
 { // wczytanie modelu z pliku binarnego
 	WriteLog("Loading binary format 3d model data from \"" + FileName + "\"...", logtype::model);
 
+	auto preloaded = GModelPreloader.get(FileName);
+	if (preloaded && !preloaded->empty()) {
+		// Fast path: file already in RAM — parse directly from memory, no disk I/O.
+		membuf mb(preloaded->data(), preloaded->data() + preloaded->size());
+		std::istream stream(&mb);
+		uint32_t type = sn_utils::ld_uint32(stream);
+		uint32_t size = sn_utils::ld_uint32(stream) - 8;
+		if (type == MAKE_ID4('E', '3', 'D', '0')) {
+			deserialize(stream, size, dynamic);
+			WriteLog("Finished loading 3d model data from \"" + FileName + "\"", logtype::model);
+		} else {
+			ErrorLog("Bad model: unknown main chunk in file \"" + FileName + "\"", logtype::model);
+		}
+		return;
+	}
+
+	// Slow path: synchronous disk read.
 	std::ifstream file(FileName, std::ios::binary);
 
 	uint32_t type = sn_utils::ld_uint32(file);
@@ -2375,7 +2400,6 @@ void TModel3d::LoadFromBinFile(std::string const &FileName, bool dynamic)
 	}
 	else
 	{
-		// throw std::runtime_error("e3d: unknown main chunk");
 		ErrorLog("Bad model: unknown main chunk in file \"" + FileName + "\"", logtype::model);
 		file.close();
 	}
@@ -2414,7 +2438,13 @@ void TModel3d::LoadFromTextFile(std::string const &FileName, bool dynamic)
 { // wczytanie submodelu z pliku tekstowego
 	WriteLog("Loading text format 3d model data from \"" + FileName + "\"...", logtype::model);
 	iFlags |= 0x0200; // wczytano z pliku tekstowego (właścicielami tablic są submodle)
-	cParser parser(FileName, cParser::buffer_FILE); // Ra: tu powinno być "models/"...
+
+	auto preloaded = GModelPreloader.get(FileName);
+	cParser parser(
+		preloaded && !preloaded->empty()
+			? std::string(preloaded->data(), preloaded->size())
+			: FileName,
+		preloaded && !preloaded->empty() ? cParser::buffer_TEXT : cParser::buffer_FILE); // Ra: tu powinno być "models/"...
 	TSubModel *SubModel;
 	std::string token = parser.getToken<std::string>();
 	while (token != "" || parser.eof())
