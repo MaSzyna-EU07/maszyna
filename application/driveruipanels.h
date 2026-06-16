@@ -100,9 +100,6 @@ private:
     bool render_section( std::vector<text_line> const &Lines );
     bool render_section_scenario();
     bool render_section_eventqueue();
-#ifdef WITH_UART
-    bool render_section_uart();
-#endif
     bool render_section_settings();
 	bool render_section_developer();
 	    // members

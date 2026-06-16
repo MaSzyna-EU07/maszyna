@@ -27,6 +27,8 @@ Copyright (C) 2007-2014 Maciej Cierniak
 #include "utilities/utilities.h"
 #include "utilities/Globals.h"
 #include "utilities/parser.h"
+#include "utilities/U8.h"
+
 
 //#include "utilities/Logs.h"
 
@@ -204,7 +206,7 @@ std::string to_hex_str(int const Value, int const Width)
 	return o.str();
 };
 
-std::string const fractionlabels[] = {" ", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"};
+std::string const fractionlabels[] = {U8(" "), U8("¹"), U8("²"), U8("³"), U8("⁴"), U8("⁵"), U8("⁶"), U8("⁷"), U8("⁸"), U8("⁹")};
 
 std::string to_minutes_str(float const Minutes, bool const Leadingzero, int const Width)
 {

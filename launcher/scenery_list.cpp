@@ -291,7 +291,7 @@ void ui::scenerylist_panel::draw_trainset(trainset_desc &trainset)
 		glm::ivec2 size = mini->size();
 		float width = 30.0f / size.y * size.x;
 		float beforeX = ImGui::GetCursorPosX();
-		ImGui::Image(reinterpret_cast<void*>(mini->get()), ImVec2(width, 30), ImVec2(0, 1), ImVec2(1, 0));
+		ImGui::Image((ImTextureID)(intptr_t)(mini->get()), ImVec2(width, 30), ImVec2(0, 1), ImVec2(1, 0));
 		float afterX = ImGui::GetCursorPosX();
 
 		ImGui::SameLine(beforeX);
@@ -299,7 +299,7 @@ void ui::scenerylist_panel::draw_trainset(trainset_desc &trainset)
 		if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAutoExpirePayload)) {
 			vehicle_moved data(trainset, dyn_desc, position - 1);
 
-			ImGui::Image(reinterpret_cast<void*>(mini->get()), ImVec2(width, 30), ImVec2(0, 1), ImVec2(1, 0));
+			ImGui::Image((ImTextureID)(intptr_t)mini->get(), ImVec2(width, 30), ImVec2(0, 1), ImVec2(1, 0));
 
 			ImGui::SetDragDropPayload("vehicle_set", &data, sizeof(vehicle_moved));
 			ImGui::EndDragDropSource();

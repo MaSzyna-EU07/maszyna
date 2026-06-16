@@ -22,11 +22,11 @@ namespace gl
         int index;
 
     public:
-        ubo(int size, int index, GLenum hint = GL_DYNAMIC_DRAW);
+	    ubo(size_t size, int index, GLenum hint = GL_DYNAMIC_DRAW);
 
         void bind_uniform();
 
-        void update(const uint8_t *data, int offset, int size);
+        void update(const uint8_t *data, int offset, GLsizeiptr size);
         template <typename T> void update(const T &data, size_t offset = 0)
         {
             update(reinterpret_cast<const uint8_t*>(&data), offset, sizeof(data));

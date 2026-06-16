@@ -39,8 +39,8 @@ namespace gl
         static void unbind(targets target);
 		static void unbind();
 
-        void allocate(targets target, int size, GLenum hint);
-        void upload(targets target, const void *data, int offset, int size);
-        void download(targets target, void *data, int offset, int size);
+        void allocate(targets target, GLsizeiptr size, GLenum hint);
+	    void upload(targets target, const void *data, int offset, GLsizeiptr size);
+	    void download(targets target, void *data, int offset, GLsizeiptr size);
     };
 }

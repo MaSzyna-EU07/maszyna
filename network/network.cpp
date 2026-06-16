@@ -125,7 +125,7 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 	}
 
 	if (msg.type == message::CLIENT_HELLO) {
-		auto cmd = dynamic_cast<const client_hello&>(msg);
+		const auto& cmd = dynamic_cast<const client_hello&>(msg);
 
 		if (cmd.version != EU07_NETWORK_VERSION // wrong version
 		        || !Global.ready_to_load) { // not ready yet
@@ -148,7 +148,7 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 		WriteLog("net: client accepted", logtype::net);
 	}
 	else if (msg.type == message::REQUEST_COMMAND) {
-		auto cmd = dynamic_cast<const request_command&>(msg);
+		const auto& cmd = dynamic_cast<const request_command&>(msg);
 
 		for (auto const &kv : cmd.commands)
 			client_commands_queue.emplace(kv);
@@ -189,7 +189,7 @@ std::tuple<double, double, command_queue::commands_map> network::client::get_nex
 
 
 	float size = delta_queue.size() - consume_counter;
-	auto entry = delta_queue.front();
+	const auto& entry = delta_queue.front();
 	float mult = entry.render_dt / std::chrono::duration_cast<std::chrono::duration<float>>(frame_time).count();
 
 	if (counter == 1 && size < MAX_BUFFER_SIZE * 2.0f) {
@@ -241,7 +241,7 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 	}
 
 	if (msg.type == message::SERVER_HELLO) {
-		auto cmd = dynamic_cast<const server_hello&>(msg);
+		const auto& cmd = dynamic_cast<const server_hello&>(msg);
 		conn->state = connection::ACTIVE;
 
 		if (!Global.ready_to_load) {
