@@ -6,9 +6,11 @@
 #include <eu07/scene/match.hpp>
 #include <eu07/scene/node/types.hpp>
 
+#include <charconv>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 namespace eu07::scene::node::io {
@@ -63,16 +65,23 @@ inline void appendRaw(std::vector<SourceToken>& raw, const SourceToken& token) {
         return 0.0;
     }
 
-    try {
-        std::size_t used = 0;
-        const double value = std::stod(std::string(text), &used);
-        if (used != text.size()) {
-            return std::nullopt;
-        }
-        return value;
-    } catch (...) {
+    // std::from_chars: bez alokacji std::string, bez wyjatkow, niezalezne od locale
+    // (separator dziesietny zawsze '.', co odpowiada formatowi EU07).
+    std::string_view body = text;
+    // std::stod akceptowal wiodacy '+'; from_chars nie — zachowujemy zgodnosc.
+    if (!body.empty() && body.front() == '+') {
+        body.remove_prefix(1);
+    }
+
+    double value = 0.0;
+    const char* const first = body.data();
+    const char* const last = body.data() + body.size();
+    const std::from_chars_result result =
+        std::from_chars(first, last, value, std::chars_format::general);
+    if (result.ec != std::errc{} || result.ptr != last) {
         return std::nullopt;
     }
+    return value;
 }
 
 [[nodiscard]] inline bool takeToken(
@@ -111,6 +120,24 @@ inline void appendRaw(std::vector<SourceToken>& raw, const SourceToken& token) {
     if (!value) {
         return false;
     }
+    out = *value;
+    return true;
+}
+
+// Szybki odczyt liczby z goracych petli wierzcholkow: bez kopii SourceToken
+// (uzywa peek zamiast consume) i bez dopisywania do bufora raw. Bezpieczne tam,
+// gdzie raw wierzcholkow nie jest pozniej czytany (siatki: triangles/strip/fan).
+// Przy niepowodzeniu NIE konsumuje tokenu — wolajacy i tak cofa strumien do
+// kotwicy wezla, wiec pozycja w miejscu bledu nie ma znaczenia.
+[[nodiscard]] inline bool takeDoubleFast(TokenStream& stream, double& out) {
+    if (stream.empty()) {
+        return false;
+    }
+    const std::optional<double> value = parseDouble(stream.peek().value);
+    if (!value) {
+        return false;
+    }
+    stream.skip();
     out = *value;
     return true;
 }

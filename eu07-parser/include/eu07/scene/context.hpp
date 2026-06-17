@@ -16,6 +16,8 @@ struct ParseContext {
     std::vector<std::filesystem::path> includeStack;
     std::vector<std::vector<std::string>> activeIncludeParameters;
     bool expandIncludes = true;
+    // PACK compose needs includes + models only; skip heavy geometry nodes (CityGML teren).
+    bool packComposeLightweight = false;
 };
 
 using DirectiveParser = bool (*)(TokenStream& stream, ParseContext& context);

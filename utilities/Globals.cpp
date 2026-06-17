@@ -662,6 +662,18 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "eu7.bake.cpu.percent")
+    {
+        ParseOneClamped(Parser, eu7_bake_cpu_percent, 1, 100);
+        return true;
+    }
+
+    if (token == "eu7.v2.runtime")
+    {
+        ParseOne(Parser, eu7v2_runtime, 1, false);
+        return true;
+    }
+
     if (token == "inactivepause")
     {
         ParseOne(Parser, bInactivePause);
@@ -1616,6 +1628,8 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "eu7.pack.mesh.loader.workers", eu7_pack_mesh_loader_workers );
     export_as_text( Output, "eu7.auto.bake", eu7_auto_bake );
     export_as_text( Output, "eu7.bake.threads", eu7_bake_threads );
+    export_as_text( Output, "eu7.bake.cpu.percent", eu7_bake_cpu_percent );
+    export_as_text( Output, "eu7.v2.runtime", eu7v2_runtime );
     export_as_text( Output, "inactivepause", bInactivePause );
     export_as_text( Output, "slowmotion", iSlowMotionMask );
     export_as_text( Output, "hideconsole", bHideConsole );

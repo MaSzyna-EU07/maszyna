@@ -86,6 +86,8 @@ struct global_settings {
     int eu7_pack_mesh_loader_workers{ 0 }; // 0 = main-thread only (background mesh threads unsafe with Global)
     bool eu7_auto_bake{ true }; // przy ladowaniu mapy: bake SCM→EU7 gdy brak lub nieaktualny .eu7
     int eu7_bake_threads{ 0 }; // watki bake (0 = auto = hardware_concurrency)
+    int eu7_bake_cpu_percent{ 80 }; // bake: docelowy % rdzeni logicznych, gdy eu7_bake_threads=0 (auto)
+    bool eu7v2_runtime{ false }; // eksperyment: transkoduj/laduj moduly przez chudy format eu7v2 (.eu7.v2)
     // logs
 	bool priorityLoadText3D{false}; // ladowanie T3D priorytetowo
     int iWriteLogEnabled{ 3 }; // maska bitowa: 1-zapis do pliku, 2-okienko, 4-nazwy torów

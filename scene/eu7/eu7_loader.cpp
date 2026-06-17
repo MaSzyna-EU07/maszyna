@@ -18,6 +18,9 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/eu7/eu7_section_stream.h"
 #include "scene/eu7/eu7_parameters.h"
 #include "scene/eu7/eu7_transform.h"
+#include "scene/eu7/v2/eu7v2_bake.h"
+#include "scene/eu7/v2/eu7v2_format.h"
+#include "scene/eu7/v2/eu7v2_load.h"
 #include "scene/scene.h"
 #include "scene/scenenode.h"
 #include "rendering/renderer.h"
@@ -30,11 +33,14 @@ http://mozilla.org/MPL/2.0/.
 
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace scene::eu7 {
 
@@ -42,6 +48,135 @@ namespace {
 
 std::unordered_map<std::string, Eu7Module> g_module_file_cache;
 bool g_packed_root_active { false };
+
+// --- eu7v2 experiment: lossy lean-format transcode/load ---------------------
+// Plik towarzyszacy obok legacy .eu7: <eu7>.v2
+[[nodiscard]] std::string
+eu7v2_sidecar_path( std::string const &eu7_path ) {
+    return eu7_path + ".v2";
+}
+
+// .v2 jest swiezy gdy istnieje i nie jest starszy niz zrodlowy .eu7.
+[[nodiscard]] bool
+eu7v2_sidecar_fresh( std::string const &eu7_path, std::string const &v2_path ) {
+    std::error_code ec;
+    if( false == std::filesystem::exists( v2_path, ec ) ) {
+        return false;
+    }
+    auto const v2_time { std::filesystem::last_write_time( v2_path, ec ) };
+    if( ec ) {
+        return false;
+    }
+    auto const src_time { std::filesystem::last_write_time( eu7_path, ec ) };
+    if( ec ) {
+        return false;
+    }
+    return v2_time >= src_time;
+}
+
+// Odczyt modulu z chudego .v2. Stratny: odtwarza wylacznie scene (PROT/INST/MESH
+// + rekordy), bez includes/pack/prototypow/flag. Zwraca false przy bledzie.
+[[nodiscard]] bool
+read_eu7v2_module( std::string const &v2_path, Eu7Module &out ) {
+    std::ifstream input { v2_path, std::ios::binary };
+    if( !input ) {
+        return false;
+    }
+    std::vector<std::uint8_t> bytes(
+        ( std::istreambuf_iterator<char>( input ) ),
+        std::istreambuf_iterator<char>() );
+    if( bytes.empty() ) {
+        return false;
+    }
+    Eu7Scene scene;
+    if( false == eu7v2::load_scene( bytes.data(), bytes.size(), scene ) ) {
+        return false;
+    }
+    out = Eu7Module{};
+    out.scene = std::move( scene );
+    return true;
+}
+
+// True gdy plik zaczyna sie magiem eu7v2 ('E','U','7','C').
+[[nodiscard]] bool
+file_is_eu7v2( std::string const &path ) {
+    std::ifstream input { path, std::ios::binary };
+    if( !input ) {
+        return false;
+    }
+    char magic[ 4 ] { 0, 0, 0, 0 };
+    input.read( magic, 4 );
+    if( input.gcount() != 4 ) {
+        return false;
+    }
+    return magic[ 0 ] == 'E' && magic[ 1 ] == 'U' && magic[ 2 ] == '7' && magic[ 3 ] == 'C';
+}
+
+// Pelny modul z formatu .eu7v2 (lossless): scena + includes + placement + flagi.
+[[nodiscard]] bool
+read_eu7v2_module_full( std::string const &path, Eu7Module &out ) {
+    std::ifstream input { path, std::ios::binary };
+    if( !input ) {
+        return false;
+    }
+    std::vector<std::uint8_t> bytes(
+        ( std::istreambuf_iterator<char>( input ) ),
+        std::istreambuf_iterator<char>() );
+    if( bytes.empty() ) {
+        return false;
+    }
+    out = Eu7Module{};
+    return eu7v2::load_module( bytes.data(), bytes.size(), out );
+}
+
+// Zapis chudego .v2 obok legacy .eu7 (best-effort, ciche niepowodzenie).
+void
+write_eu7v2_module( std::string const &v2_path, Eu7Module const &module ) {
+    auto const bytes { eu7v2::bake_scene( module.scene ) };
+    std::ofstream output { v2_path, std::ios::binary | std::ios::trunc };
+    if( !output ) {
+        return;
+    }
+    output.write(
+        reinterpret_cast<char const *>( bytes.data() ),
+        static_cast<std::streamsize>( bytes.size() ) );
+}
+
+// Odczyt modulu z transkodem eu7v2 gdy Global.eu7v2_runtime wlaczone:
+//  - jest swiezy .v2  -> czytaj z niego (szybka, stratna sciezka),
+//  - brak/nieswiezy   -> czytaj legacy i (dla nie-PACK) zapisz .v2 na nastepny raz.
+[[nodiscard]] Eu7Module
+read_module_maybe_v2( std::string const &resolved ) {
+    if( false == Global.eu7v2_runtime ) {
+        return read_module( resolved );
+    }
+    // Primary path: the module file itself is a native .eu7v2 container
+    // (text -> eu7v2 bake, no legacy .eu7). Load it losslessly.
+    if( file_is_eu7v2( resolved ) ) {
+        Eu7Module v2_module;
+        if( read_eu7v2_module_full( resolved, v2_module ) ) {
+            ++load_stats().module_v2_loaded;
+            return v2_module;
+        }
+        throw std::runtime_error( "EU7v2: uszkodzony modul \"" + resolved + "\"" );
+    }
+    // Legacy .eu7 with optional ".v2" sidecar transcode (older experiment).
+    auto const v2_path { eu7v2_sidecar_path( resolved ) };
+    if( eu7v2_sidecar_fresh( resolved, v2_path ) ) {
+        Eu7Module v2_module;
+        if( read_eu7v2_module( v2_path, v2_module ) ) {
+            ++load_stats().module_v2_loaded;
+            return v2_module;
+        }
+        WriteLog( "EU7v2: nieudany odczyt \"" + v2_path + "\", fallback legacy .eu7" );
+    }
+    auto legacy { read_module( resolved ) };
+    if( false == legacy.has_pack_chunk ) {
+        write_eu7v2_module( v2_path, legacy );
+        ++load_stats().module_v2_baked;
+    }
+    return legacy;
+}
 
 void
 apply_material( shape_node::shapenode_data &data, std::string material_name ) {
@@ -212,7 +347,7 @@ load_module_recursive(
         }
         else {
             ScopedTimer const read_timer { load_stats().read_ms };
-            owned_module = read_module( resolved );
+            owned_module = read_module_maybe_v2( resolved );
             ++load_stats().module_read;
             auto const emplaced { g_module_file_cache.emplace( resolved, std::move( owned_module ) ) };
             template_module = &emplaced.first->second;
@@ -370,13 +505,17 @@ resolve_scenery_path( std::string const &reference ) {
 std::string
 binary_path( std::string const &reference ) {
     auto path { resolve_scenery_path( reference ) };
+    if( Global.eu7v2_runtime ) {
+        return eu7v2::binary_path_from_text( path ).generic_string();
+    }
+    char const *const ext { ".eu7" };
     if( path.ends_with( ".scm" ) || path.ends_with( ".sbt" ) || path.ends_with( ".inc" ) ||
         path.ends_with( ".scn" ) ) {
-        path.replace( path.size() - 4, 4, ".eu7" );
+        path.replace( path.size() - 4, 4, ext );
     }
     else if( false == path.ends_with( ".eu7" ) ) {
         erase_extension( path );
-        path += ".eu7";
+        path += ext;
     }
     return path;
 }
@@ -421,7 +560,13 @@ terrain_binary_path( std::string const &terrain_reference ) {
 
 bool
 probe_file( std::string const &path ) {
-    return FileExists( path ) && is_valid_eu7b_file( path );
+    if( false == FileExists( path ) ) {
+        return false;
+    }
+    if( Global.eu7v2_runtime && file_is_eu7v2( path ) ) {
+        return true;
+    }
+    return is_valid_eu7b_file( path );
 }
 
 bool

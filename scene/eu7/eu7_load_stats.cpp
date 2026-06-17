@@ -80,7 +80,9 @@ log_load_stats() {
     WriteLog(
         "  read/cache: " + format_seconds( s.read_ms ) +
         " reads=" + std::to_string( s.module_read ) +
-        " cache_hit=" + std::to_string( s.module_cache_hit ) );
+        " cache_hit=" + std::to_string( s.module_cache_hit ) +
+        " v2_loaded=" + std::to_string( s.module_v2_loaded ) +
+        " v2_baked=" + std::to_string( s.module_v2_baked ) );
     WriteLog(
         "  scm fallback: " + format_seconds( s.scm_fallback_ms ) +
         " count=" + std::to_string( s.scm_fallback ) );

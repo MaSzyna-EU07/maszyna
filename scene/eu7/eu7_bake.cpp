@@ -32,6 +32,8 @@ http://mozilla.org/MPL/2.0/.
 
 
 
+#include <algorithm>
+
 #include <thread>
 
 
@@ -62,7 +64,31 @@ bake_thread_count() {
 
     auto const hardware { std::thread::hardware_concurrency() };
 
-    return hardware > 0 ? hardware : 1u;
+    if( hardware == 0 ) {
+
+        return 1u;
+
+    }
+
+    int percent { Global.eu7_bake_cpu_percent };
+
+    if( percent < 1 ) { percent = 1; }
+
+    if( percent > 100 ) { percent = 100; }
+
+    unsigned const threads {
+
+        std::max( 1u,
+
+            static_cast<unsigned>( ( static_cast<unsigned long long>( hardware ) * percent + 50 ) / 100 ) ) };
+
+    WriteLog(
+
+        "EU7 bake: auto watki=" + std::to_string( threads ) +
+
+        " (" + std::to_string( percent ) + "% z " + std::to_string( hardware ) + " rdzeni logicznych)" );
+
+    return threads;
 
 }
 
@@ -90,7 +116,27 @@ run_scenario_tree_bake(
 
     std::string error;
 
-    if( false == bake_parser::bake_scenario_tree( text_root, bake_thread_count(), error ) ) {
+    bool bake_ok { false };
+
+    if( Global.eu7v2_runtime ) {
+
+        auto const report {
+
+            bake_parser::bake_scenario_tree_eu7v2( text_root, bake_thread_count(), false ) };
+
+        bake_ok = report.baked;
+
+        error = report.error;
+
+    }
+
+    else {
+
+        bake_ok = bake_parser::bake_scenario_tree( text_root, bake_thread_count(), error );
+
+    }
+
+    if( false == bake_ok ) {
 
         if( probe_file( eu7_path ) ) {
 

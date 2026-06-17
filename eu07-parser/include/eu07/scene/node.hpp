@@ -51,6 +51,18 @@ inline void applyScratchContext(NodeHeader& header, const SceneScratchpad& scrat
         return false;
     }
 
+    if (context.packComposeLightweight) {
+        std::vector<SourceToken> raw;
+        while (!stream.empty() && !io::atEnd(stream, kind->subtype, kind->endMarker)) {
+            stream.consume();
+        }
+        if (!io::consumeEnd(stream, raw, kind->subtype, kind->endMarker)) {
+            stream.rewind(anchor);
+            return false;
+        }
+        return true;
+    }
+
     if (!kind->parseAndStore(stream, context.document, header, nullptr)) {
         stream.rewind(anchor);
         return false;

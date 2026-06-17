@@ -14,9 +14,29 @@ http://mozilla.org/MPL/2.0/.
 #include <fstream>
 #include <vector>
 #include <map>
+#include <array>
+#include <charconv>
+#include <type_traits>
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 // cParser -- generic class for parsing text data, either from file or provided string
+
+namespace cparser_detail {
+// Types for which std::from_chars matches the legacy stringstream extraction semantics.
+// Character types are excluded on purpose: narrow-stream extraction of char/wchar_t reads a
+// single character, whereas std::from_chars would parse an integer.
+template<typename T>
+inline constexpr bool use_from_chars_v =
+    ( std::is_integral_v<T>
+        && !std::is_same_v<T, bool>
+        && !std::is_same_v<T, char>
+        && !std::is_same_v<T, signed char>
+        && !std::is_same_v<T, unsigned char>
+        && !std::is_same_v<T, wchar_t>
+        && !std::is_same_v<T, char16_t>
+        && !std::is_same_v<T, char32_t> )
+    || std::is_floating_point_v<T>;
+} // namespace cparser_detail
 
 class cParser //: public std::stringstream
 {
@@ -126,6 +146,9 @@ class cParser //: public std::stringstream
     commentmap mComments {
         commentmap::value_type( "/*", "*/" ),
         commentmap::value_type( "//", "\n" ) };
+    // cached separator lookup table to avoid rebuilding it on every token read
+    char const *m_breakTableKey { nullptr };
+    std::array<bool, 256> m_breakTable {};
     std::shared_ptr<cParser> mIncludeParser; // child class to handle include directives.
     std::vector<std::string> parameters; // parameter list for included file.
     std::deque<std::string> tokens;
@@ -143,11 +166,34 @@ cParser::operator>>( Type_ &Right ) {
 
     if( true == this->tokens.empty() ) { return *this; }
 
-    std::stringstream converter( this->tokens.front() );
-    converter >> Right;
-    this->tokens.pop_front();
+    if constexpr( cparser_detail::use_from_chars_v<Type_> ) {
+        std::string const &token = this->tokens.front();
+        char const *first { token.data() };
+        char const *const last { first + token.size() };
+        // legacy stream extraction accepts a leading '+', std::from_chars does not
+        if( first != last && *first == '+' ) {
+            ++first;
+        }
+        Type_ value {};
+        auto const result { std::from_chars( first, last, value ) };
+        if( result.ec == std::errc() ) {
+            Right = value;
+        }
+        else {
+            // fall back to the legacy path for inputs from_chars rejects (inf/nan/hex/...)
+            std::stringstream converter( token );
+            converter >> Right;
+        }
+        this->tokens.pop_front();
+        return *this;
+    }
+    else {
+        std::stringstream converter( this->tokens.front() );
+        converter >> Right;
+        this->tokens.pop_front();
 
-    return *this;
+        return *this;
+    }
 }
 
 template<>

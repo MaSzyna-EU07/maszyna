@@ -23,8 +23,12 @@ public:
         return (*tokens_)[index_];
     }
 
-    [[nodiscard]] SourceToken consume() {
-        SourceToken token = peek();
+    // Returns a reference into the underlying token vector (which outlives the
+    // stream), so callers that only read a field (e.g. .sourceLine) or bind to
+    // const& pay no per-token std::string copy. Callers that need an owning
+    // copy still get one via copy-initialisation, exactly as before.
+    [[nodiscard]] const SourceToken& consume() {
+        const SourceToken& token = peek();
         ++index_;
         return token;
     }

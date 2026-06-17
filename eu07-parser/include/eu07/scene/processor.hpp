@@ -18,7 +18,7 @@
 
 #include <eu07/scene/include_resolve.hpp>
 
-
+#include <eu07/scene/parallel_models.hpp>
 
 #include <filesystem>
 
@@ -194,6 +194,7 @@ inline void expandInclude(ParseContext& context, const IncludeExpansionRequest& 
 
 struct SceneProcessOptions {
     bool expandIncludes = true;
+    bool packComposeLightweight = false;
 };
 
 [[nodiscard]] inline SceneProcessResult processScene(
@@ -203,6 +204,15 @@ struct SceneProcessOptions {
     const std::filesystem::path& baseDirectory = {},
 
     const SceneProcessOptions& options = {}) {
+
+    if (!options.expandIncludes) {
+        if (std::optional<SceneDocument> fast =
+                detail::tryProcessFlatModels(parsed, baseDirectory)) {
+            SceneProcessResult result;
+            result.document = std::move(*fast);
+            return result;
+        }
+    }
 
     TokenStream stream(parsed.tokens);
 
@@ -223,6 +233,7 @@ struct SceneProcessOptions {
     ParseContext context{document, {}, includeRoot, {}};
 
     context.expandIncludes = options.expandIncludes;
+    context.packComposeLightweight = options.packComposeLightweight;
 
     detail::processStream(stream, context);
 

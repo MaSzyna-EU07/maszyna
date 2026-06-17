@@ -21,6 +21,7 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 #include "application/application.h"
 #include "utilities/Logs.h"
 #include <cstdlib>
+#include <iostream>
 #ifdef WITHDUMPGEN
 #ifdef _WIN32
 #include <Windows.h>
@@ -88,6 +89,14 @@ int main(int argc, char *argv[])
 #endif
 	// init start timestamp
 	Global.startTimestamp = std::chrono::steady_clock::now();
+
+	// headless short-circuit: text -> eu7v2 bake (+optional verify), no window
+	if (eu07_application::wants_eu7v2_headless(argc, argv))
+	{
+		int const code{eu07_application::run_eu7v2_headless(argc, argv)};
+		std::cout.flush();
+		std::_Exit(code);
+	}
 
 	// quick short-circuit for standalone e3d export
 	if (argc == 6 && std::string(argv[1]) == "-e3d")

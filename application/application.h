@@ -36,6 +36,12 @@ public:
         init( int Argc, char *Argv[] );
     int
         run();
+    // Headless text -> eu7v2 bake (+optional roundtrip verify). Runs without a
+    // window / renderer / audio. Returns a process exit code (0 == OK).
+    static bool
+        wants_eu7v2_headless( int Argc, char *Argv[] );
+    static int
+        run_eu7v2_headless( int Argc, char *Argv[] );
     // issues request for a worker thread to perform specified task. returns: true if task was scheduled
 
     #ifdef WITH_DISCORD_RPC

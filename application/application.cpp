@@ -30,7 +30,10 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/dictionary.h"
 #include "version_info.h"
 #include "ref/discord-rpc/include/discord_rpc.h"
+#include "scene/eu7/eu7_bake_parser.h"
+#include "scene/eu7/eu7_bake_mem_guard.h"
 #include <chrono>
+#include <fstream>
 #include "utilities/translation.h"
 
 #if WITH_DISCORD_RPC
@@ -1094,6 +1097,105 @@ void eu07_application::init_files()
 #endif
 }
 namespace fs = std::filesystem;
+
+bool eu07_application::wants_eu7v2_headless(int Argc, char *Argv[])
+{
+	for (int i = 1; i < Argc; ++i)
+	{
+		if (std::string(Argv[i]) == "--eu7v2-bake")
+			return true;
+	}
+	return false;
+}
+
+int eu07_application::run_eu7v2_headless(int Argc, char *Argv[])
+{
+	std::string bake_path;
+	bool verify{false};
+	unsigned mem_limit_gb{scene::eu7::bake_parser::kDefaultBakeMemLimitGb};
+	unsigned max_threads{0u};
+	unsigned max_parse{0u};
+	unsigned heavy_parse_mb{0u};
+
+	for (int i = 1; i < Argc; ++i)
+	{
+		std::string const token{Argv[i]};
+		if (token == "--eu7v2-bake")
+		{
+			if (i + 1 < Argc)
+				bake_path = Argv[++i];
+		}
+		else if (token == "--eu7v2-verify")
+		{
+			verify = true;
+		}
+		else if (token == "--eu7v2-mem-limit-gb")
+		{
+			if (i + 1 < Argc)
+				mem_limit_gb = static_cast<unsigned>(std::stoul(Argv[++i]));
+		}
+		else if (token == "--eu7v2-max-parse")
+		{
+			if (i + 1 < Argc)
+				max_parse = static_cast<unsigned>(std::stoul(Argv[++i]));
+		}
+		else if (token == "--eu7v2-threads")
+		{
+			if (i + 1 < Argc)
+				max_threads = static_cast<unsigned>(std::stoul(Argv[++i]));
+		}
+		else if (token == "--eu7v2-heavy-parse-mb")
+		{
+			if (i + 1 < Argc)
+				heavy_parse_mb = static_cast<unsigned>(std::stoul(Argv[++i]));
+		}
+	}
+
+	auto report_line = [](std::string const &line) {
+		std::cout << line << std::endl;
+		std::ofstream log{"log.txt", std::ios::app};
+		if (log)
+			log << line << '\n';
+	};
+
+	if (bake_path.empty())
+	{
+		report_line("[eu7v2] BLAD: --eu7v2-bake wymaga sciezki do pliku .scn/.inc");
+		return 2;
+	}
+
+	report_line("[eu7v2] headless bake: " + bake_path + (verify ? " (+verify)" : ""));
+
+	scene::eu7::bake_parser::Eu7v2BakeReport const report{
+		scene::eu7::bake_parser::bake_scenario_tree_eu7v2(
+			bake_path, max_threads, verify, mem_limit_gb, max_parse, heavy_parse_mb)};
+
+	if (false == report.baked)
+	{
+		report_line("[eu7v2] BAKE FAIL: " + report.error);
+		return 1;
+	}
+
+	report_line(
+		"[eu7v2] modulow=" + std::to_string(report.module_count) +
+		" modeli=" + std::to_string(report.model_count) +
+		" root=" + report.root_binary_path);
+
+	if (false == report.error.empty())
+	{
+		report_line("[eu7v2] OSTRZEZENIE: " + report.error);
+	}
+
+	if (verify)
+	{
+		report_line(report.verify_ok ? "[eu7v2] VERIFY: PASS" : "[eu7v2] VERIFY: FAIL");
+		if (false == report.verify_ok)
+			return 1;
+	}
+
+	report_line("[eu7v2] OK");
+	return (report.error.empty()) ? 0 : 1;
+}
 
 int eu07_application::init_settings(int Argc, char *Argv[])
 {

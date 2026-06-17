@@ -106,4 +106,64 @@ struct SceneProcessResult {
            doc.test.size();
 }
 
+// Plaski plik flory: same wpisy node model, bez torow/siatek/include.
+[[nodiscard]] inline bool isModelOnlyDocument(const SceneDocument& document) noexcept {
+    if (document.nodeModel.empty()) {
+        return false;
+    }
+    return document.nodeDynamic.empty() && document.nodeTrackNormal.empty() &&
+           document.nodeTrackSwitch.empty() && document.nodeTrackRoad.empty() &&
+           document.nodeTrackCross.empty() && document.nodeTrackOther.empty() &&
+           document.nodeTraction.empty() && document.nodeTractionPower.empty() &&
+           document.nodeTriangles.empty() && document.nodeTriangleStrip.empty() &&
+           document.nodeTriangleFan.empty() && document.nodeLines.empty() &&
+           document.nodeLineStrip.empty() && document.nodeLineLoop.empty() &&
+           document.nodeMemcell.empty() && document.nodeEventlauncher.empty() &&
+           document.nodeSound.empty() && document.include.empty() && document.unknown.empty();
+}
+
+// Drops parsed node payloads already converted to RuntimeModule / PackFileCacheEntry.
+// Keeps include lists and lightweight directives. When release_models is false,
+// nodeModel is retained for a pending PACK build (model-only flora child).
+inline void releaseHeavySceneParseStorage(SceneDocument& document, bool const release_models) {
+    if (release_models) {
+        document.nodeModel.clear();
+        document.nodeModel.shrink_to_fit();
+    }
+    document.nodeTriangles.clear();
+    document.nodeTriangles.shrink_to_fit();
+    document.nodeTriangleStrip.clear();
+    document.nodeTriangleStrip.shrink_to_fit();
+    document.nodeTriangleFan.clear();
+    document.nodeTriangleFan.shrink_to_fit();
+    document.nodeLines.clear();
+    document.nodeLines.shrink_to_fit();
+    document.nodeLineStrip.clear();
+    document.nodeLineStrip.shrink_to_fit();
+    document.nodeLineLoop.clear();
+    document.nodeLineLoop.shrink_to_fit();
+    document.nodeTrackNormal.clear();
+    document.nodeTrackNormal.shrink_to_fit();
+    document.nodeTrackSwitch.clear();
+    document.nodeTrackSwitch.shrink_to_fit();
+    document.nodeTrackRoad.clear();
+    document.nodeTrackRoad.shrink_to_fit();
+    document.nodeTrackCross.clear();
+    document.nodeTrackCross.shrink_to_fit();
+    document.nodeTrackOther.clear();
+    document.nodeTrackOther.shrink_to_fit();
+    document.nodeTraction.clear();
+    document.nodeTraction.shrink_to_fit();
+    document.nodeTractionPower.clear();
+    document.nodeTractionPower.shrink_to_fit();
+    document.nodeMemcell.clear();
+    document.nodeMemcell.shrink_to_fit();
+    document.nodeEventlauncher.clear();
+    document.nodeEventlauncher.shrink_to_fit();
+    document.nodeSound.clear();
+    document.nodeSound.shrink_to_fit();
+    document.nodeDynamic.clear();
+    document.nodeDynamic.shrink_to_fit();
+}
+
 } // namespace eu07::scene

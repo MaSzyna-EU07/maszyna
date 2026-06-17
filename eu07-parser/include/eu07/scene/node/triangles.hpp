@@ -73,10 +73,12 @@ inline constexpr std::string_view kEndMarker = "endtriangles";
     std::vector<SourceToken>& raw,
     MeshVertex& vertex,
     const bool allowEndSuffix) {
-    if (!node::io::takeDouble(stream, raw, vertex.x) || !node::io::takeDouble(stream, raw, vertex.y) ||
-        !node::io::takeDouble(stream, raw, vertex.z) || !node::io::takeDouble(stream, raw, vertex.nx) ||
-        !node::io::takeDouble(stream, raw, vertex.ny) || !node::io::takeDouble(stream, raw, vertex.nz) ||
-        !node::io::takeDouble(stream, raw, vertex.u) || !node::io::takeDouble(stream, raw, vertex.v)) {
+    // Goraca petla: 8 liczb na wierzcholek czytanych bez kopii tokenu i bez raw
+    // (raw wierzcholkow siatek nie jest pozniej czytany przy bake).
+    if (!node::io::takeDoubleFast(stream, vertex.x) || !node::io::takeDoubleFast(stream, vertex.y) ||
+        !node::io::takeDoubleFast(stream, vertex.z) || !node::io::takeDoubleFast(stream, vertex.nx) ||
+        !node::io::takeDoubleFast(stream, vertex.ny) || !node::io::takeDoubleFast(stream, vertex.nz) ||
+        !node::io::takeDoubleFast(stream, vertex.u) || !node::io::takeDoubleFast(stream, vertex.v)) {
         return false;
     }
     if (allowEndSuffix && !stream.empty() && isKeyword(stream.peek().value, "end")) {
@@ -103,6 +105,16 @@ inline constexpr std::string_view kEndMarker = "endtriangles";
         }
     } else if (!node::io::takeString(stream, raw, out.texture)) {
         return false;
+    }
+
+    // Rezerwacja z gornego oszacowania (>=8 tokenow/wierzcholek), z capem aby
+    // nie przealokowac przy wczesnym wezle nad strumieniem calego pliku.
+    {
+        std::size_t estimate = stream.remaining() / 8;
+        if (estimate > 8192) {
+            estimate = 8192;
+        }
+        out.vertices.reserve(estimate);
     }
 
     while (!stream.empty() && !node::io::atEnd(stream, kSubtype, kEndMarker)) {

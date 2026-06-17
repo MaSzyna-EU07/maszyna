@@ -235,34 +235,40 @@ std::string cParser::readTokenFromStream(bool ToLower, const char *Break)
 	std::string token;
 	token.reserve(64);
 
-	const auto breakTable = makeBreakTable(Break);
-	char c = 0;
+	// rebuild the separator lookup table only when the break set actually changes;
+	// callers overwhelmingly pass the same string literal, so this stays cached.
+	if (Break != m_breakTableKey) {
+		m_breakTable = makeBreakTable(Break);
+		m_breakTableKey = Break;
+	}
+	const auto &breakTable = m_breakTable;
 
+	int ci = 0;
+	while ((ci = mStream->get()) != EOF) {
+		char c = static_cast<char>(ci);
+		if (c == '\n') {
+			++mLine;
+		}
 
-	while (token.empty() && mStream->peek() != EOF) {
-		while (mStream->peek() != EOF) { // idk why but with mStream->get(c) not all cars are loaded
-			c = static_cast<char>(mStream->get());
-			if (c == '\n') {
-				++mLine;
-			}
+		const unsigned char uc = static_cast<unsigned char>(c);
+		if (breakTable[uc]) {
+			// separator ends token (or continues skipping if token empty)
+			if (!token.empty())
+				break;
+			continue;
+		}
 
-			const unsigned char uc = static_cast<unsigned char>(c);
-			if (breakTable[uc]) {
-				// separator ends token (or continues skipping if token empty)
-				if (!token.empty())
-					break;
-				continue;
-			}
+		if (ToLower) c = toLowerChar(c);
+		token.push_back(c);
 
-			if (ToLower) c = toLowerChar(c);
-			token.push_back(c);
-
-			if (findQuotes(token)) {
-				continue; // glue quoted content
-			}
-			if (skipComments && trimComments(token)) {
-				break; // don't glue tokens separated by comment
-			}
+		if (findQuotes(token)) {
+			continue; // glue quoted content
+		}
+		if (skipComments && trimComments(token)) {
+			// comment stripped: return the token if we already have one,
+			// otherwise keep scanning for the next real token
+			if (!token.empty())
+				break;
 		}
 	}
 

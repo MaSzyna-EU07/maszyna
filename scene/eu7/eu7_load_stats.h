@@ -52,6 +52,8 @@ struct Eu7LoadStats {
     std::uint64_t sounds { 0 };
     std::uint64_t events { 0 };
     std::uint64_t trainsets { 0 };
+    std::uint64_t module_v2_loaded { 0 };
+    std::uint64_t module_v2_baked { 0 };
     std::uint64_t pack_skipped_includes { 0 };
     std::uint64_t pack_sections_loaded { 0 };
     std::uint64_t pack_models { 0 };

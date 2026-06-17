@@ -87,13 +87,20 @@ inline void tokenizeInto(
                 skipFieldSeparators(text);
                 continue;
             }
+            // Unterminated '[' (no matching ']' in the remainder): it is an
+            // ordinary character, not a bracket token. The engine's default
+            // break set is "\n\r\t ;", so '[' belongs inside identifiers such
+            // as event names ("Kon_It2[Sch2"). Fall through to the general scan
+            // below, which does NOT stop at '[' and therefore consumes it,
+            // guaranteeing the outer loop makes forward progress (previously it
+            // spun forever: the '[' was neither a bracket nor a separator nor a
+            // token character, so text never shrank).
         }
 
         const char* const start = text.data();
         while (!text.empty() &&
                !isFieldSeparator(static_cast<unsigned char>(text.front())) &&
-               text.front() != '"' &&
-               text.front() != '[') {
+               text.front() != '"') {
             text.remove_prefix(1);
         }
         const std::size_t len = static_cast<std::size_t>(text.data() - start);
@@ -459,10 +466,7 @@ struct ParseResult {
     return tokens;
 }
 
-[[nodiscard]] inline ParseResult parseFile(
-    const std::filesystem::path& path,
-    const ParseOptions& options = {}) {
-    const RawFile raw = readRawFile(path);
+[[nodiscard]] inline ParseResult parseRawFile(RawFile raw, const ParseOptions& options = {}) {
     LogicalPass logical = toLogicalLines(raw.lines);
 
     ParseResult result;
@@ -472,6 +476,12 @@ struct ParseResult {
         result.tokens = tokenizeSegments(logical.segments);
     }
     return result;
+}
+
+[[nodiscard]] inline ParseResult parseFile(
+    const std::filesystem::path& path,
+    const ParseOptions& options = {}) {
+    return parseRawFile(readRawFile(path), options);
 }
 
 [[nodiscard]] inline ParseResult parseText(const std::string& text) {

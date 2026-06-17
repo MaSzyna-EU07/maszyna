@@ -161,6 +161,8 @@ set(SOURCES
 "scene/eu7/eu7_emit.cpp"
 "scene/eu7/eu7_apply.cpp"
 "scene/eu7/eu7_bake.cpp"
+"scene/eu7/v2/eu7v2_bake.cpp"
+"scene/eu7/v2/eu7v2_load.cpp"
 "scene/eu7/eu7_parameters.cpp"
 "scene/scenenode.cpp"
 "simulation/simulation.cpp"
@@ -415,11 +417,14 @@ if(WITH_EU7_PARSER)
 		message(FATAL_ERROR "EU07 parser headers missing at ${EU07_PARSER_INCLUDE}. Sync eu07-parser/include from the parser repo.")
 	endif()
 
-	add_library(eu07_bake STATIC "scene/eu7/eu7_bake_parser.cpp")
+	add_library(eu07_bake STATIC "scene/eu7/eu7_bake_parser.cpp" "scene/eu7/v2/eu7v2_emit_runtime.cpp")
 	target_compile_features(eu07_bake PUBLIC cxx_std_23)
 	set_target_properties(eu07_bake PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
-	target_include_directories(eu07_bake PRIVATE "${EU07_PARSER_INCLUDE}")
+	target_include_directories(eu07_bake PRIVATE "${EU07_PARSER_INCLUDE}" "${CMAKE_CURRENT_SOURCE_DIR}")
 	target_link_libraries(eu07_bake PUBLIC Threads::Threads)
+	if(WIN32)
+		target_link_libraries(eu07_bake PUBLIC psapi)
+	endif()
 	if(MSVC)
 		target_compile_options(eu07_bake PRIVATE /utf-8 /Zc:__cplusplus /EHsc /wd4834)
 	endif()

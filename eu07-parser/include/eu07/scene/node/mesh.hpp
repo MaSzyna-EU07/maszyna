@@ -30,6 +30,15 @@ template <typename Parsed>
         return false;
     }
 
+    // Rezerwacja z gornego oszacowania (>=8 tokenow/wierzcholek), z capem.
+    {
+        std::size_t estimate = stream.remaining() / 8;
+        if (estimate > 8192) {
+            estimate = 8192;
+        }
+        out.vertices.reserve(estimate);
+    }
+
     while (!stream.empty() && !atEnd(stream, subtype, endMarker)) {
         MeshVertex vertex;
         const bool hasMore = stream.remaining() > 1;
