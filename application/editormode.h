@@ -15,6 +15,9 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Camera.h"
 #include "scene/sceneeditor.h"
 #include "scene/scenenode.h"
+#include "editor/editorTerrain.hpp"
+
+#include <memory>
 
 class editor_mode : public application_mode
 {
@@ -135,6 +138,30 @@ class editor_mode : public application_mode
 
 	// focus camera smoothly on specified node
 	void start_focus(scene::basic_node *node, double duration = 0.6);
+
+	// drops the node straight down onto the nearest surface below (terrain or another object)
+	void snap_to_ground(scene::basic_node *node);
+
+	// editable terrain patches created in the editor
+	void render_terrain_ui();
+	// creates a large terrain as a grid of adjacent chunks (each its own editable patch)
+	void create_chunked_terrain();
+	// raises/lowers terrain under the cursor while the left mouse button is held in sculpt mode
+	void handle_terrain_sculpt(double Deltatime);
+	// returns the terrain patch (if any) whose footprint covers the given world point
+	editor_terrain *terrain_at(double X, double Z);
+	// samples the selected model instance's geometry into a new editable terrain patch, then removes it
+	void capture_terrain();
+	std::vector<std::unique_ptr<editor_terrain>> m_terrains;
+	bool m_terrain_sculpt{false};     // when true, LMB sculpts terrain instead of picking
+	int m_terrain_cells{32};          // grid resolution (quads per side)
+	int m_terrain_chunks{4};          // chunks per side for a chunked terrain
+	float m_terrain_cellsize{2.0f};   // metres per quad
+	float m_terrain_baseheight{0.0f}; // flat starting height
+	float m_terrain_brush_radius{12.0f};
+	float m_terrain_brush_strength{4.0f}; // metres per second while held (one-shot for the buttons)
+	float m_terrain_simplify_error{0.5f}; // flatness tolerance (m) for mesh simplification
+	char m_terrain_texture[128]{""};  // optional ground texture name
 
 	// hierarchy management
 	void add_to_hierarchy(scene::basic_node *node);

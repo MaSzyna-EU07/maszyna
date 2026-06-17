@@ -21,6 +21,8 @@ http://mozilla.org/MPL/2.0/.
 #include "Console.h"
 #include "rendering/renderer.h"
 #include "model/AnimModel.h"
+#include "model/Model3d.h"
+#include "utilities/Float3d.h"
 #include "scene/scene.h"
 
 
@@ -29,8 +31,10 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <array>
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <vector>
 
 // Static member initialization
@@ -52,6 +56,65 @@ namespace
     inline bool is_press(int state)
     {
         return state == GLFW_PRESS;
+    }
+
+    // tests whether the vertical line through (Px,Pz) passes over triangle abc; if so returns the
+    // surface height at that point through OutY. used by the "snap to ground" (END) feature.
+    inline bool triangle_height_at(glm::dvec3 const &a, glm::dvec3 const &b, glm::dvec3 const &c,
+                                   double const Px, double const Pz, double &OutY)
+    {
+        double const ux = b.x - a.x, uz = b.z - a.z;
+        double const vx = c.x - a.x, vz = c.z - a.z;
+        double const wx = Px - a.x, wz = Pz - a.z;
+        double const den = ux * vz - vx * uz;
+        if (std::abs(den) < 1e-9)
+            return false; // degenerate or vertical triangle, no defined height
+        double const s = (wx * vz - vx * wz) / den;
+        double const t = (ux * wz - wx * uz) / den;
+        if (s < 0.0 || t < 0.0 || (s + t) > 1.0)
+            return false;
+        OutY = a.y + s * (b.y - a.y) + t * (c.y - a.y);
+        return true;
+    }
+
+    using world_triangle = std::array<glm::dvec3, 3>;
+
+    // walks a model's submodel tree (mirroring the renderer's transform chain) and appends every
+    // mesh triangle, in world space, to Out. siblings are iterated to avoid deep recursion.
+    void gather_submodel_triangles(TSubModel *Submodel, glm::dmat4 const &M, std::vector<world_triangle> &Out)
+    {
+        for (TSubModel *sub = Submodel; sub != nullptr; sub = sub->Next)
+        {
+            glm::dmat4 mlocal = M;
+            if ((sub->iFlags & 0xC000) && (sub->GetMatrix() != nullptr))
+                mlocal = M * glm::dmat4(glm::make_mat4(sub->GetMatrix()->readArray()));
+
+            if (sub->eType < TP_ROTATOR) // a drawable mesh, not a rotator/light/etc.
+            {
+                auto const handle = sub->m_geometry.handle;
+                if (handle.bank != 0 || handle.chunk != 0)
+                {
+                    auto const &verts = GfxRenderer->Vertices(handle);
+                    auto const &indices = GfxRenderer->Indices(handle);
+                    auto const to_world = [&](gfx::basic_vertex const &v) {
+                        return glm::dvec3(mlocal * glm::dvec4(glm::dvec3(v.position), 1.0));
+                    };
+                    if (false == indices.empty())
+                    {
+                        for (std::size_t i = 0; i + 2 < indices.size(); i += 3)
+                            Out.push_back({to_world(verts[indices[i]]), to_world(verts[indices[i + 1]]), to_world(verts[indices[i + 2]])});
+                    }
+                    else
+                    {
+                        for (std::size_t i = 0; i + 2 < verts.size(); i += 3)
+                            Out.push_back({to_world(verts[i]), to_world(verts[i + 1]), to_world(verts[i + 2])});
+                    }
+                }
+            }
+
+            if (sub->Child != nullptr)
+                gather_submodel_triangles(sub->Child, mlocal, Out); // children inherit this matrix
+        }
     }
 
 } 
@@ -104,18 +167,132 @@ void editor_mode::start_focus(scene::basic_node *node, double duration)
     if (!node)
         return;
 
+    glm::dvec3 const center = node->location();
+
+    // distance that frames the object's bounding sphere within the vertical FOV, with some margin
+    double const radius = std::max(1.0, static_cast<double>(node->radius()));
+    double const fovy = glm::radians(static_cast<double>(Global.FieldOfView) / std::max(0.01, static_cast<double>(Global.ZoomFactor)));
+    double distance = (radius / std::tan(fovy * 0.5)) * 1.6;
+    distance = std::clamp(distance, radius * 1.5, static_cast<double>(kMaxPlacementDistance));
+
+    // keep the camera on the side it currently views from, so the move turns toward the object
+    // rather than flying around it; fall back to a pleasant 3/4 direction when sitting on top of it
+    glm::dvec3 dir = Camera.Pos - center;
+    double const len = glm::length(dir);
+    dir = (len > 1e-3) ? dir / len : glm::normalize(glm::dvec3(1.0, 0.5, 1.0));
+
+    m_focus_start_pos = Camera.Pos;
+    m_focus_start_angle = Camera.Angle;
+    m_focus_target_pos = center + dir * distance;
+
+    // target orientation looks from the target position straight at the object
+    glm::dvec3 look = center - m_focus_target_pos;
+    double const looklen = glm::length(look);
+    if (looklen > 1e-6)
+        look /= looklen;
+    m_focus_target_angle = glm::vec3(
+        static_cast<float>(std::asin(glm::clamp(look.y, -1.0, 1.0))),   // pitch
+        static_cast<float>(std::atan2(-look.x, -look.z)),               // yaw
+        0.0f);                                                          // roll
+
     m_focus_active = true;
     m_focus_time = 0.0;
     m_focus_duration = duration;
+}
 
-    m_focus_start_pos = Camera.Pos;
-    m_focus_start_angle = Camera.LookAt;
+void editor_mode::snap_to_ground(scene::basic_node *node)
+{
+    if (!node || !simulation::Region)
+        return;
 
-    m_focus_target_pos = node->location();
+    glm::dvec3 const origin = node->location();
+    if (!simulation::Region->point_inside(origin))
+        return;
 
-    glm::dvec3 dir = m_focus_target_pos - m_focus_start_pos;
-    double dist = glm::length(dir);
-    m_focus_target_angle = m_focus_target_pos + glm::dvec3(10.0, 3.0, 10.0);
+    // small tolerance so a node already resting on a surface still snaps cleanly to it
+    double const epsilon = 0.05;
+    double bestY = -std::numeric_limits<double>::max();
+    bool found = false;
+
+    // record the highest surface that is at or below the node's current position at its (x,z)
+    auto consider_triangle = [&](glm::dvec3 const &a, glm::dvec3 const &b, glm::dvec3 const &c) {
+        double y;
+        if (triangle_height_at(a, b, c, origin.x, origin.z, y) && y <= origin.y + epsilon && y > bestY)
+        {
+            bestY = y;
+            found = true;
+        }
+    };
+
+    auto consider_shapes = [&](std::vector<scene::shape_node> const &shapes) {
+        for (auto const &shape : shapes)
+        {
+            // quick reject: skip shapes whose bounding circle doesn't cover our (x,z) column
+            auto const &sdata = shape.data();
+            double const sdx = origin.x - sdata.area.center.x;
+            double const sdz = origin.z - sdata.area.center.z;
+            if (sdx * sdx + sdz * sdz > static_cast<double>(sdata.area.radius) * sdata.area.radius)
+                continue;
+
+            auto const &verts = sdata.vertices;
+            for (std::size_t i = 0; i + 2 < verts.size(); i += 3)
+                consider_triangle(verts[i].position, verts[i + 1].position, verts[i + 2].position);
+        }
+    };
+
+    scene::basic_section &sec = simulation::Region->section(origin);
+    // section level holds the large opaque geometry, including legacy terrain
+    consider_shapes(sec.m_shapes);
+
+    // scan a 3x3 neighbourhood of cells for smaller geometry and other model instances below us
+    for (int dz = -1; dz <= 1; ++dz)
+        for (int dx = -1; dx <= 1; ++dx)
+        {
+            scene::basic_cell &cell = sec.cell(origin, glm::ivec2(dx, dz));
+            consider_shapes(cell.m_shapesopaque);
+            consider_shapes(cell.m_shapestranslucent);
+
+            // other instances are approximated by their bounding sphere, so a node can rest on top of them
+            for (auto *inst : cell.m_instancesopaque)
+            {
+                if (!inst || inst == node)
+                    continue;
+                glm::dvec3 const ic = inst->location();
+                double const r = static_cast<double>(inst->radius());
+                double const idx = origin.x - ic.x, idz = origin.z - ic.z;
+                double const horiz2 = idx * idx + idz * idz;
+                if (horiz2 < r * r)
+                {
+                    double const ytop = ic.y + std::sqrt(r * r - horiz2);
+                    if (ytop <= origin.y + epsilon && ytop > bestY)
+                    {
+                        bestY = ytop;
+                        found = true;
+                    }
+                }
+            }
+        }
+
+    // editable terrain patches keep their heightmap on the CPU, so query them directly
+    for (auto const &terrain : m_terrains)
+    {
+        if (!terrain || !terrain->contains(origin.x, origin.z))
+            continue;
+        double const y = terrain->height_at(origin.x, origin.z);
+        if (y <= origin.y + epsilon && y > bestY)
+        {
+            bestY = y;
+            found = true;
+        }
+    }
+
+    if (!found)
+        return;
+
+    push_snapshot(node, EditorSnapshot::Action::Move);
+    glm::dvec3 target = origin;
+    target.y = bestY;
+    m_editor.translate(node, target, true); // true == apply the computed Y (free vertical move)
 }
 
 void editor_mode::handle_brush_mouse_hold(int Action, int Button)
@@ -439,6 +616,16 @@ bool editor_mode::update()
 
     auto const deltarealtime = Timer::GetDeltaRenderTime();
 
+    // reconcile camera fly-mode with the real right-button state. ImGui is always fed the button
+    // events (even when it captures the mouse), so io.MouseDown[1] is authoritative; if a release
+    // was swallowed by an ImGui window while flying, force the editor out of fly-mode here so the
+    // camera doesn't get stuck spinning with a hidden cursor.
+    if (!ImGui::GetIO().MouseDown[1] && m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS)
+    {
+        m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE);
+        Application.set_cursor(GLFW_CURSOR_NORMAL);
+    }
+
     // fixed step render time routines (50 Hz)
     fTime50Hz += deltarealtime; // accumulate even when paused to keep frame reads stable
     while (fTime50Hz >= 1.0 / 50.0)
@@ -481,6 +668,10 @@ bool editor_mode::update()
 
     simulation::is_ready = true;
 
+    // continuous terrain sculpting while the left mouse button is held in sculpt mode
+    if (m_terrain_sculpt && mouseHold)
+        handle_terrain_sculpt(deltarealtime);
+
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
     render_gizmo();
 
@@ -514,12 +705,257 @@ void editor_mode::render_settings()
     ImGui::Separator();
     ImGui::Checkbox("Transform gizmo (ImGuizmo)", &m_gizmo_enabled);
 
+    render_terrain_ui();
+
     ImGui::End();
+}
+
+void editor_mode::render_terrain_ui()
+{
+    ImGui::Separator();
+    ImGui::TextUnformatted("Terrain");
+
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::InputInt("Grid cells", &m_terrain_cells);
+    m_terrain_cells = std::clamp(m_terrain_cells, 1, 512);
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::InputFloat("Cell size (m)", &m_terrain_cellsize);
+    if (m_terrain_cellsize < 0.1f)
+        m_terrain_cellsize = 0.1f;
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::InputFloat("Base height (m)", &m_terrain_baseheight);
+    ImGui::SetNextItemWidth(200.0f);
+    ImGui::InputText("Texture (optional)", m_terrain_texture, IM_ARRAYSIZE(m_terrain_texture));
+
+    if (ImGui::Button("Create flat terrain"))
+    {
+        // centre the new patch horizontally on the camera, flat at the requested base height
+        glm::dvec3 const center(Camera.Pos.x, static_cast<double>(m_terrain_baseheight), Camera.Pos.z);
+        auto terrain = std::make_unique<editor_terrain>();
+        if (terrain->create(center, m_terrain_cells, m_terrain_cellsize, std::string(m_terrain_texture)))
+            m_terrains.push_back(std::move(terrain));
+        else
+            WriteLog("Editor: failed to create terrain", logtype::generic);
+    }
+
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::InputInt("Chunks / side", &m_terrain_chunks);
+    m_terrain_chunks = std::clamp(m_terrain_chunks, 1, 32);
+    ImGui::SameLine();
+    if (ImGui::Button("Create chunked terrain"))
+        create_chunked_terrain();
+    ImGui::TextDisabled("total %d x %d m, %d chunks",
+                        static_cast<int>(m_terrain_chunks * m_terrain_cells * m_terrain_cellsize),
+                        static_cast<int>(m_terrain_chunks * m_terrain_cells * m_terrain_cellsize),
+                        m_terrain_chunks * m_terrain_chunks);
+
+    ImGui::Text("Patches: %zu", m_terrains.size());
+
+    // capture: sample the selected model's geometry into an editable patch and remove the original
+    if (dynamic_cast<TAnimModel *>(m_node) != nullptr)
+    {
+        if (ImGui::Button("Capture selected model as terrain"))
+            capture_terrain();
+    }
+    else
+    {
+        ImGui::TextDisabled("Capture: select a model instance first");
+    }
+
+    if (!m_terrains.empty())
+    {
+        ImGui::Separator();
+        ImGui::Checkbox("Sculpt mode (LMB raise / Shift = lower)", &m_terrain_sculpt);
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::InputFloat("Brush radius", &m_terrain_brush_radius);
+        if (m_terrain_brush_radius < 0.5f)
+            m_terrain_brush_radius = 0.5f;
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::InputFloat("Brush strength", &m_terrain_brush_strength);
+
+        // one-shot nudge of the most recent patch at its centre, handy for a quick test
+        auto &terrain = m_terrains.back();
+        glm::dvec3 const c = terrain->centre();
+        if (ImGui::Button("Raise centre"))
+            terrain->sculpt(c.x, c.z, m_terrain_brush_radius, m_terrain_brush_strength);
+        ImGui::SameLine();
+        if (ImGui::Button("Lower centre"))
+            terrain->sculpt(c.x, c.z, m_terrain_brush_radius, -m_terrain_brush_strength);
+
+        ImGui::Separator();
+        ImGui::TextUnformatted("Optimize (mesh simplification, all patches)");
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::InputFloat("Flatness tol (m)", &m_terrain_simplify_error);
+        if (m_terrain_simplify_error < 0.01f)
+            m_terrain_simplify_error = 0.01f;
+        if (ImGui::Button("Optimize all"))
+            for (auto &t : m_terrains)
+                if (t)
+                    t->optimize(m_terrain_simplify_error);
+        ImGui::SameLine();
+        if (ImGui::Button("Full-res all"))
+            for (auto &t : m_terrains)
+                if (t)
+                    t->unoptimize();
+
+        std::size_t tris = 0, full = 0;
+        for (auto &t : m_terrains)
+            if (t)
+            {
+                tris += t->triangles();
+                full += t->full_triangles();
+            }
+        ImGui::Text("Triangles: %zu / %zu", tris, full);
+    }
+}
+
+editor_terrain *editor_mode::terrain_at(double X, double Z)
+{
+    for (auto &terrain : m_terrains)
+        if (terrain && terrain->contains(X, Z))
+            return terrain.get();
+    return nullptr;
+}
+
+void editor_mode::create_chunked_terrain()
+{
+    int const chunks = std::clamp(m_terrain_chunks, 1, 32);
+    int const cells = std::clamp(m_terrain_cells, 1, 256);
+    float const cellsize = std::max(0.1f, m_terrain_cellsize);
+
+    double const chunkextent = static_cast<double>(cells) * cellsize;
+    double const half = 0.5 * chunks * chunkextent;
+    double const x0 = Camera.Pos.x - half; // corner of the whole field
+    double const z0 = Camera.Pos.z - half;
+
+    int created = 0;
+    for (int cz = 0; cz < chunks; ++cz)
+        for (int cx = 0; cx < chunks; ++cx)
+        {
+            // adjacent chunks share edges exactly (aligned grids, identical world coords),
+            // so a world-space brush keeps the seams consistent
+            glm::dvec3 const center(
+                x0 + (cx + 0.5) * chunkextent,
+                static_cast<double>(m_terrain_baseheight),
+                z0 + (cz + 0.5) * chunkextent);
+            auto terrain = std::make_unique<editor_terrain>();
+            if (terrain->create(center, cells, cellsize, std::string(m_terrain_texture)))
+            {
+                m_terrains.push_back(std::move(terrain));
+                ++created;
+            }
+        }
+
+    WriteLog("Editor: created chunked terrain with " + std::to_string(created) + " chunks", logtype::generic);
+}
+
+void editor_mode::handle_terrain_sculpt(double Deltatime)
+{
+    // world point under the cursor (Mouse_Position is camera-relative, like the brush placement uses)
+    glm::dvec3 const world = Camera.Pos + GfxRenderer->Mouse_Position();
+    // only sculpt when the cursor is actually over terrain (avoids editing on a stale depth read)
+    if (terrain_at(world.x, world.z) == nullptr)
+        return;
+
+    double const rate = m_terrain_brush_strength * Deltatime; // metres applied this frame
+    double const signedrate = (Global.shiftState ? -rate : rate);
+    // apply to every chunk the brush touches; each patch clips to its own bounds, so a stroke
+    // crossing a chunk boundary edits both and shared-edge vertices stay in sync
+    for (auto &terrain : m_terrains)
+        if (terrain)
+            terrain->sculpt(world.x, world.z, m_terrain_brush_radius, signedrate);
+}
+
+void editor_mode::capture_terrain()
+{
+    TAnimModel *model = dynamic_cast<TAnimModel *>(m_node);
+    if (model == nullptr || model->pModel == nullptr)
+    {
+        WriteLog("Editor: select a model instance to capture as terrain", logtype::generic);
+        return;
+    }
+
+    // instance world transform, matching the renderer: translate * rotateY * rotateX * rotateZ * scale
+    glm::dmat4 rootm(1.0);
+    rootm = glm::translate(rootm, model->location());
+    glm::vec3 const angles = model->Angles();
+    if (angles.y != 0.0f) rootm = glm::rotate(rootm, glm::radians(static_cast<double>(angles.y)), glm::dvec3(0.0, 1.0, 0.0));
+    if (angles.x != 0.0f) rootm = glm::rotate(rootm, glm::radians(static_cast<double>(angles.x)), glm::dvec3(1.0, 0.0, 0.0));
+    if (angles.z != 0.0f) rootm = glm::rotate(rootm, glm::radians(static_cast<double>(angles.z)), glm::dvec3(0.0, 0.0, 1.0));
+    glm::vec3 const scale = model->Scale();
+    rootm = glm::scale(rootm, glm::dvec3(scale));
+
+    std::vector<world_triangle> tris;
+    gather_submodel_triangles(model->pModel->Root, rootm, tris);
+    if (tris.empty())
+    {
+        WriteLog("Editor: selected model has no readable geometry to capture", logtype::generic);
+        return;
+    }
+
+    // horizontal bounds of the captured geometry
+    glm::dvec3 lo(std::numeric_limits<double>::max());
+    glm::dvec3 hi(-std::numeric_limits<double>::max());
+    for (auto const &t : tris)
+        for (auto const &p : t)
+        {
+            lo.x = std::min(lo.x, p.x); lo.y = std::min(lo.y, p.y); lo.z = std::min(lo.z, p.z);
+            hi.x = std::max(hi.x, p.x); hi.y = std::max(hi.y, p.y); hi.z = std::max(hi.z, p.z);
+        }
+
+    glm::dvec3 const center((lo.x + hi.x) * 0.5, lo.y, (lo.z + hi.z) * 0.5);
+    double const extent = std::max(hi.x - lo.x, hi.z - lo.z);
+    int const cells = std::max(1, m_terrain_cells);
+    float const cellsize = static_cast<float>(std::max(0.1, extent / cells));
+
+    // sampler: highest captured triangle at (x,z)
+    auto const sampler = [&tris](double X, double Z, double &OutY) -> bool {
+        double best = -std::numeric_limits<double>::max();
+        bool found = false;
+        for (auto const &t : tris)
+        {
+            double const minx = std::min({t[0].x, t[1].x, t[2].x});
+            double const maxx = std::max({t[0].x, t[1].x, t[2].x});
+            double const minz = std::min({t[0].z, t[1].z, t[2].z});
+            double const maxz = std::max({t[0].z, t[1].z, t[2].z});
+            if (X < minx || X > maxx || Z < minz || Z > maxz)
+                continue;
+            double y;
+            if (triangle_height_at(t[0], t[1], t[2], X, Z, y) && (!found || y > best))
+            {
+                best = y;
+                found = true;
+            }
+        }
+        if (found)
+            OutY = best;
+        return found;
+    };
+
+    auto terrain = std::make_unique<editor_terrain>();
+    if (!terrain->create(center, cells, cellsize, std::string(m_terrain_texture), sampler))
+    {
+        WriteLog("Editor: terrain capture failed", logtype::generic);
+        return;
+    }
+    m_terrains.push_back(std::move(terrain));
+
+    // remove the original instance (recorded as a deletion so it can be undone)
+    std::string as_text;
+    model->export_as_text(as_text);
+    push_snapshot(model, EditorSnapshot::Action::Delete, as_text);
+    nullify_history_pointers(model);
+    remove_from_hierarchy(model);
+    m_node = nullptr;
+    m_dragging = false;
+    ui()->set_node(nullptr);
+    simulation::State.delete_model(model);
 }
 
 void editor_mode::render_gizmo()
 {
-    if (!m_gizmo_enabled)
+    // the transform gizmo is suppressed while sculpting terrain, so the brush owns the mouse
+    if (!m_gizmo_enabled || m_terrain_sculpt)
     {
         m_gizmo_using = false;
         return;
@@ -651,8 +1087,10 @@ void editor_mode::render_gizmo()
 
 void editor_mode::update_camera(double const Deltatime)
 {
-    // account for keyboard-driven motion
-    // if focus animation active, interpolate camera toward target
+    Camera.Update();
+
+    // focus animation runs after Camera.Update() so it overrides any residual velocity/rotation;
+    // it smoothly drives both position and orientation toward the framed object
     if (m_focus_active)
     {
         m_focus_time += Deltatime;
@@ -660,14 +1098,23 @@ void editor_mode::update_camera(double const Deltatime)
         if (t >= 1.0)
             t = 1.0;
         // smoothstep easing
-        double s = t * t * (3.0 - 2.0 * t);
-        Camera.Pos = glm::mix(m_focus_start_pos, m_focus_target_pos, s);
-        Camera.LookAt = glm::mix(m_focus_start_angle, m_focus_target_angle, s);
+        float const s = static_cast<float>(t * t * (3.0 - 2.0 * t));
+
+        Camera.Pos = glm::mix(m_focus_start_pos, m_focus_target_pos, static_cast<double>(s));
+
+        // interpolate angles, taking the shortest path around the yaw wrap-around
+        constexpr float TWO_PI = 6.283185307179586f;
+        float const dyaw = std::remainder(m_focus_target_angle.y - m_focus_start_angle.y, TWO_PI);
+        Camera.Angle.x = m_focus_start_angle.x + (m_focus_target_angle.x - m_focus_start_angle.x) * s;
+        Camera.Angle.y = m_focus_start_angle.y + dyaw * s;
+        Camera.Angle.z = m_focus_start_angle.z + (m_focus_target_angle.z - m_focus_start_angle.z) * s;
+
+        // suppress any residual fly velocity so it doesn't fight the animation
+        Camera.Velocity = glm::dvec3(0.0);
+
         if (t >= 1.0)
             m_focus_active = false;
     }
-
-    Camera.Update();
 
     // reset window state (will be set again if UI requires it)
     Global.CabWindowOpen = false;
@@ -838,6 +1285,16 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         }
         break;
 
+    case GLFW_KEY_END:
+        if (is_press(Action) && m_node)
+        {
+            // Unreal-style "snap to floor": drop the selected node onto the surface below it.
+            // works against triangle geometry (shape_node terrain / opaque shapes); once a proper
+            // editable terrain mesh exists, dropping onto it works without further changes here.
+            snap_to_ground(m_node);
+        }
+        break;
+
     default:
         break;
     }
@@ -855,6 +1312,14 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
     // UI first
     if (m_userinterface->on_mouse_button(Button, Action))
     {
+        m_input.mouse.button(Button, Action);
+        return;
+    }
+
+    // in terrain sculpt mode the left button paints the terrain instead of picking nodes
+    if (m_terrain_sculpt && Button == GLFW_MOUSE_BUTTON_LEFT)
+    {
+        mouseHold = is_press(Action);
         m_input.mouse.button(Button, Action);
         return;
     }
