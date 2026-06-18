@@ -69,7 +69,7 @@ endif()
 
 option(WITH_OPENGL_MODERN "Compile with OpenGL modern renderer" ON)
 option(WITH_OPENGL_LEGACY "Compile with OpenGL legacy renderer" ON)
-option(WITH_PYTHON "Compile with python2" ON)
+option(WITH_PYTHON "Python 3.14 embedded scripting" ON)
 option(WITH_UART "Compile with libserialport" ON)
 option(WITH_LUA "Compile with lua scripting support" ON)
 option(WITH_OPENVR "Compile with OpenVR" OFF)
@@ -82,7 +82,6 @@ option(GENERATE_PDB "Generate executable with program debugging symbols" ON)
 option(ENABLE_MCC "Enable multicore compilation" ON)
 option(WITHDUMPGEN "Enable generating DMP files on crash" ON)
 option(ENABLE_AVX2 "Enable AVX2 instruction set (requires AVX2-capable CPU, Haswell/2013 or newer)" ON)
-
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
 # vcpkg init
@@ -255,7 +254,7 @@ if (WITH_CRASHPAD)
 	endif()
 endif()
 
-if (WITH_PYTHON)
+if(WITH_PYTHON)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_PYTHON")
 	set(SOURCES ${SOURCES} "scripting/PyInt.cpp")
 else()
@@ -359,7 +358,6 @@ if (WIN32)
 	set(OPENAL_INCLUDE_DIR ${OPENAL_INCLUDE_DIR} "${DEPS_DIR}/openal/include")
 	set(LIBSNDFILE_INCLUDE_DIR ${LIBSNDFILE_INCLUDE_DIR} "${DEPS_DIR}/libsndfile/include")
 	set(LUAJIT_INCLUDE_DIR ${LUAJIT_INCLUDE_DIR} "${DEPS_DIR}/luajit/include")
-	set(PYTHON_INCLUDE_DIR ${PYTHON_INCLUDE_DIR} "${DEPS_DIR}/python/include")
 	set(libserialport_INCLUDE_DIR ${LIBSERIALPORT_INCLUDE_DIR} "${DEPS_DIR}/libserialport/include")
 	set(OPENVR_INCLUDE_DIR "${DEPS_DIR}/openvr/include")
 
@@ -377,7 +375,6 @@ if (WIN32)
 	set(OPENAL_LIBRARY ${OPENAL_LIBRARY} "${DEPS_DIR}/openal/lib/${ARCH}/OpenAL32.lib")
 	set(LIBSNDFILE_LIBRARY ${LIBSNDFILE_LIBRARY} "${DEPS_DIR}/libsndfile/lib/${ARCH}/libsndfile-1.lib")
 	set(LUAJIT_LIBRARIES ${LUAJIT_LIBRARIES} "${DEPS_DIR}/luajit/lib/${ARCH}/lua51.lib")
-	set(PYTHON_LIBRARY ${PYTHON_LIBRARY} "${DEPS_DIR}/python/lib/${ARCH}/python27.lib")
 	set(libserialport_LIBRARY ${LIBSERIALPORT_LIBRARY} "${DEPS_DIR}/libserialport/lib/${ARCH}/libserialport-0.lib")
 	set(cppzmq_LIBRARY ${cppzmq_LIBRARY} "${DEPS_DIR}/cppzmq/lib/${ARCH}/libzmq.lib")
 	set(OPENVR_LIBRARY "${DEPS_DIR}/openvr/lib/${ARCH}/openvr_api.lib")
@@ -475,10 +472,17 @@ endif()
 
 target_link_libraries(${PROJECT_NAME} glfw)
 
-if (WITH_PYTHON)
-	find_package(PythonLibs 2 REQUIRED)
-	target_include_directories(${PROJECT_NAME} PRIVATE ${PYTHON_INCLUDE_DIRS})
-	target_link_libraries(${PROJECT_NAME} ${PYTHON_LIBRARIES})
+if(WITH_PYTHON)
+	find_package(Python3 3.14 REQUIRED COMPONENTS Development)
+	target_include_directories(${PROJECT_NAME} PRIVATE ${Python3_INCLUDE_DIRS})
+	target_link_libraries(${PROJECT_NAME} ${Python3_LIBRARIES})
+
+	if(WIN32)
+		set(EU07_PY_DLL "${Python3_ROOT_DIR}/python314.dll")
+		set(EU07_PY_ZLIB "${Python3_ROOT_DIR}/DLLs/zlib1.dll")
+		set(EU07_PY_LIBDIR "${Python3_ROOT_DIR}/Lib")
+		set(EU07_PY_DLLSDIR "${Python3_ROOT_DIR}/DLLs")
+	endif()
 endif()
 
 if (NOT WIN32)
@@ -559,6 +563,16 @@ if (WIN32)
 			COMMAND_EXPAND_LISTS
 	)
 endif ()
+
+if(WIN32 AND WITH_PYTHON)
+	add_custom_command(
+		TARGET ${PROJECT_NAME} POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_DLL}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_ZLIB}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory "${EU07_PY_LIBDIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/python64/Lib"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory "${EU07_PY_DLLSDIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/python64/DLLs"
+	)
+endif()
 
 if (WITH_BETTER_RENDERER)
     add_subdirectory("betterRenderer")

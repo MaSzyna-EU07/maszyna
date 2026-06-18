@@ -21,3 +21,6 @@ cmake-build-*/
 # Vcpkg manifest
 vcpkg.json
 /ref/crashpad
+
+# Local Python (setup.bat / CMake) for embedding
+tools/python314/

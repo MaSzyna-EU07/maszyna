@@ -16,13 +16,13 @@ init:
 install:
   - cmd: |
       git submodule update --init --recursive
-      call setup.bat
+      call setup-ci.bat
 
 before_build:
   - cmd: |
       if not exist build mkdir build
       cd build
-      cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=%CONFIG%
+      cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=%CONFIG% -DPython3_ROOT_DIR=C:/Python314-x64
 
 build_script:
   - cmd: |

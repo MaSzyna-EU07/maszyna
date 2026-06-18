@@ -7,7 +7,7 @@ class abstractscreenrenderer():
 		self.width = 0
 		self.height = 0
 		self.format = "RGB"
-		print lookup_path
+		print(lookup_path)
 
 	def openimage(self, name):
 		exts = [ ".png", ".tga", ".dds" ]
