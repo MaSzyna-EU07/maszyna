@@ -473,7 +473,8 @@ endif()
 target_link_libraries(${PROJECT_NAME} glfw)
 
 if(WITH_PYTHON)
-	find_package(Python3 3.14 REQUIRED COMPONENTS Development)
+	find_package(Python3 3.14 REQUIRED COMPONENTS Interpreter Development)
+	get_filename_component(Python3_ROOT_DIR "${Python3_EXECUTABLE}" DIRECTORY)
 	target_include_directories(${PROJECT_NAME} PRIVATE ${Python3_INCLUDE_DIRS})
 	target_link_libraries(${PROJECT_NAME} ${Python3_LIBRARIES})
 
