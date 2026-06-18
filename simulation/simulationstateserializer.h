@@ -73,6 +73,7 @@ private:
     void deserialize_time( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_trainset( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_terrain( cParser &Input, scene::scratch_data &Scratchpad );
+    void deserialize_editorterrain( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_endtrainset( cParser &Input, scene::scratch_data &Scratchpad );
     TTrack * deserialize_path( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
     TTraction * deserialize_traction( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );

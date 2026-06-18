@@ -55,11 +55,25 @@ class editor_terrain
 	// rebuilds the rendered mesh at full resolution (undoes optimize)
 	void unoptimize();
 
+	// removes the rendered shape from its section (stops drawing it); the renderer's geometry
+	// garbage collector reclaims the GPU memory shortly after. used by terrain streaming to unload.
+	void destroy();
+
 	// horizontal centre and extent, handy for the UI / camera framing
 	glm::dvec3 centre() const;
 	float extent() const { return m_cells * m_cellsize; }
 	bool valid() const { return m_cells > 0; }
 	bool optimized() const { return m_simplify; }
+	// set by sculpt() when the mesh changed and is currently full-resolution; cleared by optimize().
+	// used to auto-simplify only the chunks that were actually edited, once a stroke finishes.
+	bool dirty() const { return m_dirty; }
+	// set by sculpt() and never auto-cleared; used by streaming to know a chunk needs saving to disk
+	bool modified() const { return m_modified; }
+	void clear_modified() { m_modified = false; }
+
+	// direct access to the editable heightmap (row-major world Y, (cells+1)^2), for save/load
+	std::vector<float> const &heights() const { return m_heights; }
+	int cells() const { return m_cells; }
 	// rendered triangle count (drops after optimize)
 	std::size_t triangles() const { return m_vertexcount / 3; }
 	// full-resolution triangle count, for reference
@@ -94,4 +108,6 @@ class editor_terrain
 
 	bool m_simplify{false};        // whether the rendered mesh is currently simplified
 	float m_simplify_error{0.5f};  // flatness tolerance used by optimize()
+	bool m_dirty{false};           // edited since the last optimize (full-res, awaiting simplification)
+	bool m_modified{false};        // edited since load/save (for streaming persistence)
 };

@@ -168,6 +168,7 @@ set(SOURCES
 "input/editorkeyboardinput.cpp"
 "editor/editorSettings.cpp"
 "editor/editorTerrain.cpp"
+"editor/editorTerrainStreamer.cpp"
 "application/editormode.cpp"
 "input/editormouseinput.cpp"
 "application/editoruilayer.cpp"

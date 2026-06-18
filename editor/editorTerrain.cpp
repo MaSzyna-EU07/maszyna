@@ -237,6 +237,7 @@ void editor_terrain::optimize(float ErrorMetres)
 {
 	m_simplify = true;
 	m_simplify_error = (ErrorMetres > 0.0f ? ErrorMetres : 0.01f);
+	m_dirty = false;
 	regenerate(true);
 }
 
@@ -244,6 +245,28 @@ void editor_terrain::unoptimize()
 {
 	m_simplify = false;
 	regenerate(false);
+}
+
+void editor_terrain::destroy()
+{
+	if (m_section != nullptr)
+	{
+		// erase the shape whose geometry handle is ours; other shapes keep their handles (so they
+		// keep rendering), and the geometry GC reclaims our now-undrawn chunk's GPU memory
+		for (auto it = m_section->m_shapes.begin(); it != m_section->m_shapes.end(); ++it)
+		{
+			auto const h = it->data().geometry;
+			if (h.bank == m_geometry.bank && h.chunk == m_geometry.chunk)
+			{
+				m_section->m_shapes.erase(it);
+				break;
+			}
+		}
+	}
+	m_section = nullptr;
+	m_geometry = gfx::geometry_handle{0, 0};
+	m_cells = 0; // mark invalid
+	m_heights.clear();
 }
 
 bool editor_terrain::contains(double X, double Z) const
@@ -298,8 +321,10 @@ bool editor_terrain::sculpt(double X, double Z, double Radius, double Strength)
 	if (changed)
 	{
 		// sculpting edits the full-resolution mesh (fixed vertex count => fast in-place update);
-		// the user can re-run optimize() afterwards to simplify again
+		// mark dirty so it can be auto-simplified once the stroke finishes, and modified for saving
 		m_simplify = false;
+		m_dirty = true;
+		m_modified = true;
 		regenerate(false);
 	}
 	return changed;
