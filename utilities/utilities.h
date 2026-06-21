@@ -348,6 +348,15 @@ glm::dvec3 LoadPoint(class cParser &Input);
 // extracts a group of tokens from provided data stream
 std::string deserialize_random_set(cParser &Input, char const *Break = "\n\r\t ;");
 
+// like deserialize_random_set, but additionally records every raw token it consumes
+// (including any random-set brackets) into Raw, so the same expression can be replayed
+// and re-randomized later. returns the randomly chosen entry, as deserialize_random_set.
+std::string deserialize_random_set_capture(cParser &Input, std::vector<std::string> &Raw, char const *Break = "\n\r\t ;");
+
+// re-evaluates a raw random-set expression captured by deserialize_random_set_capture,
+// returning a fresh random choice. Pos is advanced through Raw.
+std::string resolve_random_set(std::vector<std::string> const &Raw, std::size_t &Pos);
+
 // extracts a group of <key, value> pairs from provided data stream
 // NOTE: expects no more than single pair per line
 template <typename MapType_> void deserialize_map(MapType_ &Map, cParser &Input)

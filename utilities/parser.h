@@ -14,6 +14,17 @@ http://mozilla.org/MPL/2.0/.
 #include <fstream>
 #include <vector>
 #include <map>
+#include <memory>
+#include <cstdint>
+
+// binary scenery twin support (full definitions in scene/scenerybinary.h, included
+// from parser.cpp). only forward declarations here to avoid pulling utilities.h in
+// before cParser is defined.
+namespace scene {
+    enum class scenery_file_kind : std::uint8_t;
+    struct scenery_entry;
+    class scenery_binary_writer;
+}
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 // cParser -- generic class for parsing text data, either from file or provided string
@@ -56,6 +67,11 @@ class cParser //: public std::stringstream
     inline
     bool
         eof() {
+            // in replay mode there is no character stream; exhaustion is reaching the
+            // end of the twin's entries with no include still being drained
+            if( m_replay ) {
+                return ( m_entryindex >= m_entrycount ) && ( !mIncludeParser );
+            }
             return mStream->eof(); };
     inline
     bool
@@ -84,6 +100,11 @@ class cParser //: public std::stringstream
 	// inject string as internal include
 	void injectString(const std::string &str);
 
+	// writes the compiled binary twin to disk if this parser was compiling one and the
+	// source was fully consumed. safe to call multiple times; the destructor also calls
+	// it as a fallback. used to flush the top-level twin promptly once loading finishes.
+	void flushBinaryTwin();
+
     // returns percentage of file processed so far
     int getProgress() const;
     int getFullProgress() const;
@@ -102,8 +123,17 @@ class cParser //: public std::stringstream
     bool skipComments = true;
 
   private:
-	void startIncludeFromParser(cParser &srcParser, bool ToLower, std::string includefile);
+	// reads an include directive (filename expression + parameters) from srcParser,
+	// records it for the binary twin when compiling, and opens the include with a
+	// freshly evaluated filename (re-randomizing any random set).
+	void processInclude(cParser &srcParser, bool ToLower);
+	// opens an include directly from a (filename, parameters) pair, as reconstructed
+	// from a binary twin's include entry, minus the stream-driven parameter parsing.
+	void startIncludeDirect(std::string includefile, std::vector<std::string> Params);
 	bool handleIncludeIfPresent(std::string &token, bool ToLower, const char *Break);
+	// serves the next token when replaying a binary twin, transparently entering
+	// child includes when an include entry is reached.
+	void readReplayToken(std::string &out, bool ToLower, const char *Break);
 	// methods:
     void readToken(std::string& out, bool ToLower = true, const char *Break = "\n\r\t ;");
 	static std::vector<std::string> readParameters( cParser &Input );
@@ -129,6 +159,19 @@ class cParser //: public std::stringstream
     std::shared_ptr<cParser> mIncludeParser; // child class to handle include directives.
     std::vector<std::string> parameters; // parameter list for included file.
     std::deque<std::string> tokens;
+    // --- binary scenery twin support ---
+    // replay: this file is served from its binary twin instead of text
+    bool m_replay { false };
+    std::vector<scene::scenery_entry> m_entries; // entries loaded from the twin (replay)
+    std::size_t m_entryindex { 0 }; // read cursor into m_entries
+    std::size_t m_entrycount { 0 }; // m_entries.size(), cached for inline eof()
+    // compile: this file is being captured into a binary twin alongside the text read
+    bool m_compiling { false };
+    std::unique_ptr<scene::scenery_binary_writer> m_writer;
+    std::string m_binarytwinpath; // destination path for the compiled twin
+    scene::scenery_file_kind m_binarykind {}; // value-initialised (== scenery_file_kind::scn)
+    bool m_capturesuppress { false }; // suppress token capture (include directive internals)
+    bool m_twinwritten { false }; // guards against writing the twin more than once
 };
 
 

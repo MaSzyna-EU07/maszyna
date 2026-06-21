@@ -149,6 +149,7 @@ set(SOURCES
 "input/messaging.cpp"
 "scene/scene.cpp"
 "scene/scenenode.cpp"
+"scene/scenerybinary.cpp"
 "simulation/simulation.cpp"
 "model/vertex.cpp"
 "audio/audio.cpp"

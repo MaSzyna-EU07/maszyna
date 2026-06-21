@@ -472,3 +472,53 @@ std::string deserialize_random_set(cParser &Input, char const *Break)
 		return "";
 	}
 }
+
+std::string deserialize_random_set_capture(cParser &Input, std::vector<std::string> &Raw, char const *Break)
+{
+	auto token{Input.getToken<std::string>(true, Break)};
+	std::replace(token.begin(), token.end(), '\\', '/');
+	Raw.emplace_back(token); // record the raw token verbatim (incl. brackets / "")
+	if (token != "[")
+	{
+		// simple case, single token
+		return token;
+	}
+	// random set: recurse for entries, recording every token, until the closing ']'
+	std::vector<std::string> tokens;
+	std::string entry;
+	while (((entry = deserialize_random_set_capture(Input, Raw, Break)) != "") && (entry != "]"))
+	{
+		tokens.emplace_back(entry);
+	}
+	if (false == tokens.empty())
+	{
+		std::shuffle(std::begin(tokens), std::end(tokens), Global.random_engine);
+		return tokens.front();
+	}
+	return "";
+}
+
+std::string resolve_random_set(std::vector<std::string> const &Raw, std::size_t &Pos)
+{
+	if (Pos >= Raw.size())
+	{
+		return "";
+	}
+	auto token{Raw[Pos++]};
+	if (token != "[")
+	{
+		return token;
+	}
+	std::vector<std::string> tokens;
+	std::string entry;
+	while (((entry = resolve_random_set(Raw, Pos)) != "") && (entry != "]"))
+	{
+		tokens.emplace_back(entry);
+	}
+	if (false == tokens.empty())
+	{
+		std::shuffle(std::begin(tokens), std::end(tokens), Global.random_engine);
+		return tokens.front();
+	}
+	return "";
+}

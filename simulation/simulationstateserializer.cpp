@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationsounds.h"
 #include "simulation/simulationenvironment.h"
 #include "scene/scenenodegroups.h"
+#include "scene/scenerybinary.h"
 #include "rendering/particles.h"
 #include "world/Event.h"
 #include "world/MemCell.h"
@@ -41,30 +42,13 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 
     simulation::State.init_scripting_interface();
 
-	// NOTE: for the time being import from text format is a given, since we don't have full binary serialization
-	std::shared_ptr<deserializer_state> state =
-	        std::make_shared<deserializer_state>(Scenariofile, cParser::buffer_FILE, Global.asCurrentSceneryPath, Global.bLoadTraction);
-
-    // TODO: check first for presence of serialized binary files
-    // if this fails, fall back on the legacy text format
-	state->scratchpad.name = Scenariofile;
-    if( ( true == Global.file_binary_terrain )
-     && ( Scenariofile != "$.scn" ) ) {
-        // compilation to binary file isn't supported for rainsted-created overrides
-        // NOTE: we postpone actual loading of the scene until we process time, season and weather data
-		state->scratchpad.binary.terrain = Region->is_scene( Scenariofile ) ;
-    }
-
-	if (false != state->scratchpad.binary.terrain)
-	{
-		Global.file_binary_terrain_state = true;
-		WriteLog("Default SBT present");
-    }
-	else
-	{
-		Global.file_binary_terrain_state = false;
-		WriteLog("Default SBT absent");
-    }
+    // open the scenario file. binary scenery twins (.scnb/.incb/.scmb) are handled
+    // transparently inside cParser: if a twin exists it is replayed instead of the
+    // text, otherwise the text is parsed and a twin compiled alongside it.
+    std::shared_ptr<deserializer_state> state =
+            std::make_shared<deserializer_state>( Scenariofile, cParser::buffer_FILE, Global.asCurrentSceneryPath, Global.bLoadTraction );
+    state->scenariofile = Scenariofile;
+    state->scratchpad.name = Scenariofile;
     scene::Groups.create();
 
 	if( false == state->input.ok() )
@@ -152,13 +136,12 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 	scene::Groups.update_map();
 	Region->create_map_geometry();
 
-	if( ( true == Global.file_binary_terrain )
-     && ( false == state->scratchpad.binary.terrain )
-	 && ( state->scenariofile != "$.scn" ) ) {
-		// if we didn't find usable binary version of the scenario files, create them now for future use
-		// as long as the scenario file wasn't rainsted-created base file override
-		Region->serialize( state->scenariofile );
-	}
+	// loading finished: flush the top-level scenario's binary twin now rather than
+	// waiting for the parser to be destroyed (the loader keeps the state around)
+	Input.flushBinaryTwin();
+	// wait out any background twin writes (includes) so they are complete and logged
+	// before we report the scenario as loaded
+	scene::scenerybinary_wait_all();
 
 	return false;
 }
@@ -361,16 +344,6 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
 
     if( true == Scratchpad.initialized ) { return; }
 
-    if( true == Scratchpad.binary.terrain ) {
-        // at this stage it should be safe to import terrain from the binary scene file
-        // TBD: postpone loading furter and only load required blocks during the simulation?
-		if (false == Scratchpad.binary.terrain_included)
-		{
-			Region->deserialize(Scratchpad.name);
-		}
-			
-    }
-
     simulation::Paths.InitTracks();
     simulation::Traction.InitTraction();
     simulation::Events.InitEvents();
@@ -500,37 +473,30 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     else if( nodedata.type == "model" ) {
 
         if( nodedata.range_min < 0.0 ) {
-            // 3d terrain
-            if( false == Scratchpad.binary.terrain ) {
-                // if we're loading data from text .scn file convert and import
-                auto *instance = deserialize_model( Input, Scratchpad, nodedata );
-                // model import can potentially fail
-                if( instance == nullptr ) { return; }
-                // go through submodels, and import them as shapes
-                auto const cellcount = instance->TerrainCount() + 1; // zliczenie submodeli
-                for( auto i = 1; i < cellcount; ++i ) {
-                    auto *submodel = instance->TerrainSquare( i - 1 );
+            // 3d terrain: convert the model's submodels into region shapes
+            auto *instance = deserialize_model( Input, Scratchpad, nodedata );
+            // model import can potentially fail
+            if( instance == nullptr ) { return; }
+            // go through submodels, and import them as shapes
+            auto const cellcount = instance->TerrainCount() + 1; // zliczenie submodeli
+            for( auto i = 1; i < cellcount; ++i ) {
+                auto *submodel = instance->TerrainSquare( i - 1 );
+                simulation::Region->insert(
+                    scene::shape_node().convert( submodel ),
+                    Scratchpad,
+                    false );
+                // if there's more than one group of triangles in the cell they're held as children of the primary submodel
+                submodel = submodel->ChildGet();
+                while( submodel != nullptr ) {
                     simulation::Region->insert(
                         scene::shape_node().convert( submodel ),
                         Scratchpad,
                         false );
-                    // if there's more than one group of triangles in the cell they're held as children of the primary submodel
-                    submodel = submodel->ChildGet();
-                    while( submodel != nullptr ) {
-                        simulation::Region->insert(
-                            scene::shape_node().convert( submodel ),
-                            Scratchpad,
-                            false );
-                        submodel = submodel->NextGet();
-                    }
+                    submodel = submodel->NextGet();
                 }
-                // with the import done we can get rid of the source model
-                delete instance;
             }
-            else {
-                // if binary terrain file was present, we already have this data
-                skip_until( Input, "endmodel" );
-            }
+            // with the import done we can get rid of the source model
+            delete instance;
         }
         else {
             // regular instance of 3d mesh
@@ -563,10 +529,8 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
           || ( nodedata.type == "triangle_fan" ) ) {
 
         auto const skip {
-            // all shapes will be loaded from the binary version of the file
-            ( true == Scratchpad.binary.terrain )
             // crude way to detect fixed switch trackbed geometry
-         || ( ( true == Global.CreateSwitchTrackbeds )
+            ( ( true == Global.CreateSwitchTrackbeds )
            && ( Input.Name().size() >= 15 )
            && Input.Name().starts_with("scenery/zwr")
            && Input.Name().ends_with(".inc") ) };
@@ -587,17 +551,10 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
           || ( nodedata.type == "line_strip" )
           || ( nodedata.type == "line_loop" ) ) {
 
-        if( false == Scratchpad.binary.terrain ) {
-
-            simulation::Region->insert(
-                scene::lines_node().import(
-                    Input, nodedata ),
-                Scratchpad );
-        }
-        else {
-            // all lines were already loaded from the binary version of the file
-            skip_until( Input, "endline" );
-        }
+        simulation::Region->insert(
+            scene::lines_node().import(
+                Input, nodedata ),
+            Scratchpad );
     }
     else if( nodedata.type == "memcell" ) {
 
@@ -785,22 +742,9 @@ state_serializer::deserialize_trainset( cParser &Input, scene::scratch_data &Scr
 void 
 state_serializer::deserialize_terrain(cParser &Input, scene::scratch_data &Scratchpad)
 {
-	std::string line;
-	Input.getTokens(1);
-	Input >> line;
-	if (Global.file_binary_terrain && line.ends_with(".sbt"))
-	{  
-        Scratchpad.binary.terrain = Region->is_scene(line);
-		Global.file_binary_terrain_state = true;
-		Scratchpad.binary.terrain_included = true;
-		Scratchpad.terrain_name = line;
-		WriteLog("Included SBT file: " + line);
-		Region->deserialize(Scratchpad.terrain_name);
-
-    }
-
-    skip_until(Input, "endterrain");
-	
+	// legacy directive; the SBT terrain blob has been retired and terrain now loads
+	// as ordinary scenery content, so the block is simply consumed.
+	skip_until(Input, "endterrain");
 }
 
 void

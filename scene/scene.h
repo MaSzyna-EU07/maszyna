@@ -37,12 +37,6 @@ int constexpr EU07_REGIONSIDESECTIONCOUNT = 500; // number of sections along a s
 
 struct scratch_data {
 
-    struct binary_data {
-
-        bool terrain{ false };
-		bool terrain_included{false};
-    } binary;
-
     struct location_data {
 
         std::stack<glm::dvec3> offset;
@@ -68,7 +62,6 @@ struct scratch_data {
     } trainset;
 
     std::string name;
-    std::string terrain_name;
 
     bool initialized { false };
 	bool time_initialized { false };
@@ -386,15 +379,6 @@ public:
     // legacy method, updates sounds around camera
     void
         update_sounds();
-    // checks whether specified file is a valid region data file
-    bool
-        is_scene( std::string const &Scenariofile ) const;
-    // stores content of the class in file with specified name
-    void
-        serialize( std::string const &Scenariofile ) const;
-    // restores content of the class from file with specified name. returns: true on success, false otherwise
-    bool
-        deserialize( std::string const &Scenariofile );
     // sends content of the class in legacy (text) format to provided stream
     void
         export_as_text( std::ostream &Output ) const;

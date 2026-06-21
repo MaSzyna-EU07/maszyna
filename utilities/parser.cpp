@@ -10,8 +10,15 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "utilities/parser.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
+#include "utilities/Globals.h"
 
 #include "scene/scenenodegroups.h"
+#include "scene/scenerybinary.h"
+
+#include <charconv>
+#include <cmath>
+#include <filesystem>
 
 /*
     MaSzyna EU07 locomotive simulator parser
@@ -46,6 +53,78 @@ inline bool startsWithBOM(const std::string &s)
 		&& static_cast<unsigned char>(s[1]) == 0xBB
 		&& static_cast<unsigned char>(s[2]) == 0xBF;
 }
+
+// true if the whole token is a finite decimal number; on success Value is set.
+// used to store numeric tokens as typed doubles in the binary twin instead of text.
+inline bool sniffNumber(const std::string &token, double &Value)
+{
+	if (token.empty())
+	{
+		return false;
+	}
+	const char *first = token.data();
+	const char *last = token.data() + token.size();
+	double value = 0.0;
+	auto const result = std::from_chars(first, last, value);
+	// require the entire token to be consumed and the value to be finite (reject
+	// "inf"/"nan"/overflow, and identifiers like "12abc" or "1.2.3")
+	if ((result.ec != std::errc()) || (result.ptr != last) || (false == std::isfinite(value)))
+	{
+		return false;
+	}
+	return (Value = value, true);
+}
+
+// shortest representation of a double that round-trips back to the same value,
+// used when serving a numeric twin entry to the (text-oriented) deserializer
+inline std::string formatNumber(double Value)
+{
+	char buffer[32];
+	auto const result = std::to_chars(buffer, buffer + sizeof(buffer), Value);
+	return std::string(buffer, result.ptr);
+}
+
+inline bool endsWithLower(const std::string &s, const char *suffix)
+{
+	const std::string suf(suffix);
+	return s.size() >= suf.size() && ToLower(s.substr(s.size() - suf.size())) == suf;
+}
+
+// scenery source files (and only these) get binary twins
+inline bool isSceneryFile(const std::string &name)
+{
+	// text scenery component files share one syntax (per wiki: SCN/SCM/CTR/INC).
+	// .eu7 is intentionally excluded: it is not a documented text format (it can be an
+	// editor/binary file), so tokenizing it into a twin would be wrong.
+	return endsWithLower(name, ".scn") || endsWithLower(name, ".inc")
+	    || endsWithLower(name, ".scm") || endsWithLower(name, ".ctr");
+}
+
+inline scene::scenery_file_kind sceneryKind(const std::string &name)
+{
+	if (endsWithLower(name, ".inc")) return scene::scenery_file_kind::inc;
+	if (endsWithLower(name, ".scm")) return scene::scenery_file_kind::scm;
+	return scene::scenery_file_kind::scn;
+}
+
+// the twin may be replayed only if it is at least as new as its source text, so that
+// editing a scenery file forces a recompile instead of replaying a stale twin
+inline bool twinIsFresh(const std::string &sourcefull, const std::string &twinfull)
+{
+	std::error_code ec;
+	auto const sourcetime = std::filesystem::last_write_time(sourcefull, ec);
+	if (ec)
+	{
+		// can't read the source time (e.g. packed/missing): trust the twin
+		return true;
+	}
+	auto const twintime = std::filesystem::last_write_time(twinfull, ec);
+	if (ec)
+	{
+		return false;
+	}
+	return (twintime >= sourcetime);
+}
 } // namespace
 
 // constructors
@@ -62,13 +141,57 @@ cParser::cParser(std::string const &Stream, buffertype const Type, std::string P
 	{
 	case buffer_FILE:
 	{
-		Path.append(Stream);
-		mStream = std::make_shared<std::ifstream>(Path, std::ios_base::binary);
-		// content of *.inc files is potentially grouped together
-		if ((Stream.size() >= 4) && (ToLower(Stream.substr(Stream.size() - 4)) == ".inc"))
+		// content of *.inc files is grouped together (same for text and binary replay)
+		if (endsWithLower(Stream, ".inc"))
 		{
 			mIncFile = true;
 			scene::Groups.create();
+		}
+
+		bool opened = false;
+		// scenery files (.scn/.inc/.scm) are backed by a binary twin: replay it if
+		// present, otherwise parse the text and compile a twin alongside it.
+		// rainsted-created '$' overrides are always parsed from text.
+		if (Global.file_binary_scenery && isSceneryFile(Stream) && (false == Stream.empty()) && (Stream[0] != '$'))
+		{
+			std::string twinrel = Stream;
+			erase_extension(twinrel);
+			twinrel += scene::scenerybinary_extension_for(Stream);
+			std::string const twinfull = mPath + twinrel;
+			std::string const sourcefull = mPath + Stream;
+
+			std::ifstream probe(twinfull, std::ios_base::binary);
+			scene::scenery_binary_reader reader;
+			if (probe.good() && twinIsFresh(sourcefull, twinfull) && reader.open(probe))
+			{
+				// replay: serve tokens from the twin, no text tokenization at all
+				m_entries = reader.entries();
+				m_entrycount = m_entries.size();
+				m_replay = true;
+				m_entryindex = 0;
+				mStream = std::make_shared<std::istringstream>(std::string());
+				opened = true;
+			}
+			else
+			{
+				Path.append(Stream);
+				mStream = std::make_shared<std::ifstream>(Path, std::ios_base::binary);
+				if (false == mStream->fail())
+				{
+					// no usable twin: compile one while parsing the text
+					m_compiling = true;
+					m_binarytwinpath = twinfull;
+					m_binarykind = sceneryKind(Stream);
+					m_writer = std::make_unique<scene::scenery_binary_writer>();
+				}
+				opened = true;
+			}
+		}
+		if (false == opened)
+		{
+			// non-scenery file, or binary scenery disabled: plain text parse
+			Path.append(Stream);
+			mStream = std::make_shared<std::ifstream>(Path, std::ios_base::binary);
 		}
 		break;
 	}
@@ -106,12 +229,34 @@ cParser::cParser(std::string const &Stream, buffertype const Type, std::string P
 // destructor
 cParser::~cParser()
 {
+	// fallback flush in case the twin wasn't explicitly finalized
+	flushBinaryTwin();
 
 	if (true == mIncFile)
 	{
 		// wrap up the node group holding content of processed file
 		scene::Groups.close();
 	}
+}
+
+void cParser::flushBinaryTwin()
+{
+	// write the twin only once, only when compiling, and only if the source text was
+	// fully consumed -- an aborted parse must not leave a truncated twin to be replayed
+	if ((false == m_compiling) || (false == static_cast<bool>(m_writer)) || m_twinwritten)
+	{
+		return;
+	}
+	if ((nullptr == mStream) || (false == mStream->eof()))
+	{
+		return;
+	}
+	m_twinwritten = true;
+
+	// hand the finished writer to the background pool; serialization and file I/O then
+	// overlap with the rest of the scene build instead of blocking it. ownership of the
+	// writer transfers to the task, so this cParser no longer touches it.
+	scene::scenerybinary_write_async(std::move(m_writer), m_binarytwinpath, m_binarykind);
 }
 
 template <> glm::vec3 cParser::getToken(bool const ToLower, char const *Break)
@@ -313,40 +458,63 @@ void cParser::skipIncludeBlock() {
 	} while (t != "end" && !t.empty());
 }
 
-void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::string includefile) {
-	replace_slashes(includefile);
+void cParser::processInclude(cParser& srcParser, bool ToLower) {
+	// the filename expression and parameters are part of the directive, not file
+	// content, so keep them out of this file's own captured token stream
+	bool const prevsuppress = m_capturesuppress;
+	m_capturesuppress = true;
+
+	std::vector<std::string> fileexpr;
+	std::string pick;
+	if (allowRandomIncludes) {
+		// capture the verbatim expression (incl. random-set brackets) and pick one
+		pick = deserialize_random_set_capture(srcParser, fileexpr);
+	}
+	else {
+		std::string filename;
+		srcParser.readToken(filename, ToLower);
+		std::replace(filename.begin(), filename.end(), '\\', '/');
+		fileexpr.emplace_back(filename);
+		pick = filename;
+	}
+	// consume the directive's parameter list (up to "end")
+	std::vector<std::string> params = readParameters(srcParser);
+
+	m_capturesuppress = prevsuppress;
+
+	// record the include reference verbatim so replay can re-randomize the choice
+	if (m_compiling && m_writer) {
+		m_writer->add_include(fileexpr, params);
+	}
+
+	// open the include for the live load with a freshly evaluated filename
+	replace_slashes(pick);
+	startIncludeDirect(std::move(pick), std::move(params));
+}
+
+void cParser::startIncludeDirect(std::string includefile, std::vector<std::string> Params) {
 
 	const bool allowTraction =
 		(true == LoadTraction) ||
 		((false == contains(includefile, "tr/")) && (false == contains(includefile, "tra/")));
 
 	if (!allowTraction) {
-		// skip include block until "end" (original behavior in token-mode include)
-		skipIncludeBlock();
-		return;
-	}
-
-	const bool isTerrain = contains(includefile, "_ter.scm");
-	if (isTerrain && true == Global.file_binary_terrain_state) {
-		WriteLog("SBT found, ignoring: " + includefile);
-		readParameters(srcParser); // preserve original side-effect: still consume parameters
+		// traction loading disabled: the include is simply not opened
 		return;
 	}
 
 	if (Global.ParserLogIncludes) {
-		if (isTerrain) WriteLog("including terrain: " + includefile);
-		else {
-			// WriteLog("including: " + includefile);
-		}
+		// WriteLog("including: " + includefile);
 	}
 
 	mIncludeParser = std::make_shared<cParser>(
-		includefile, /*buffer_FILE*/ static_cast<buffertype>(/*buffer_FILE*/ 0), mPath, LoadTraction, readParameters(srcParser)
+		includefile, buffer_FILE, mPath, LoadTraction, std::move(Params)
 	);
 	mIncludeParser->allowRandomIncludes = allowRandomIncludes;
 	mIncludeParser->autoclear(m_autoclear);
 
-	if (mIncludeParser->mSize <= 0) {
+	// a binary-twin replay child reports mSize 0 but is still valid
+	if (mIncludeParser->mSize <= 0 && (false == mIncludeParser->m_replay)) {
 		ErrorLog("Bad include: can't open file \"" + includefile + "\"");
 	}
 }
@@ -354,14 +522,7 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
 bool cParser::handleIncludeIfPresent(std::string& token, bool ToLower, const char* Break) {
 	// token-mode include: token == "include"
 	if (expandIncludes && token == "include") {
-		std::string includefile;
-		if (allowRandomIncludes)
-			includefile = deserialize_random_set(*this);
-		else
-			readToken(includefile, ToLower);
-
-		startIncludeFromParser(*this, ToLower, std::move(includefile));
-
+		processInclude(*this, ToLower);
 		// after processing include, return next token from current parser
 		readToken(token, ToLower, Break);
 		return true;
@@ -370,14 +531,7 @@ bool cParser::handleIncludeIfPresent(std::string& token, bool ToLower, const cha
 	// line-mode HACK: Break == "\n\r" and line begins with "include"
 	if ((std::strcmp(Break, "\n\r") == 0) && token.compare(0, 7, "include") == 0) {
 		cParser includeparser(token.substr(7));
-		std::string includefile;
-		if (allowRandomIncludes)
-			includefile = deserialize_random_set(includeparser);
-		else
-			includeparser.readToken(includefile, ToLower);
-
-		startIncludeFromParser(includeparser, ToLower, std::move(includefile));
-
+		processInclude(includeparser, ToLower);
 		readToken(token, ToLower, Break);
 		return true;
 	}
@@ -387,6 +541,14 @@ bool cParser::handleIncludeIfPresent(std::string& token, bool ToLower, const cha
 
 void cParser::readToken(std::string &out, bool ToLower, const char *Break)
 {
+	if (m_replay)
+	{
+		// served from the binary twin; includes are entered transparently
+		readReplayToken(out, ToLower, Break);
+		return;
+	}
+
+	bool fromOwn;
 	if (mIncludeParser)
 	{
 		mIncludeParser->readToken(out, ToLower, Break);
@@ -394,18 +556,98 @@ void cParser::readToken(std::string &out, bool ToLower, const char *Break)
 		{
 			mIncludeParser = nullptr;
 			out = readTokenFromStream(ToLower, Break);
+			fromOwn = true;
+		}
+		else
+		{
+			fromOwn = false;
 		}
 	}
 	else
 	{
 		out = readTokenFromStream(ToLower, Break);
+		fromOwn = true;
 	}
 
 	stripFirstTokenBOM(out, ToLower, Break);
 
+	// snapshot the raw token (BOM stripped, parameters NOT yet substituted) for the
+	// binary twin, so parameterised includes can be re-substituted at replay time
+	std::string const rawtoken = out;
+
 	substituteParameters(out, ToLower);
 
-	handleIncludeIfPresent(out, ToLower, Break);
+	bool const wasInclude = handleIncludeIfPresent(out, ToLower, Break);
+
+	// capture this file's own content into its twin. include directive tokens
+	// (the keyword/filename/parameters) are excluded via wasInclude/suppression,
+	// and child-include tokens (fromOwn == false) belong to the child's own twin.
+	if (m_compiling && m_writer && fromOwn && (false == wasInclude)
+	 && (false == m_capturesuppress) && (false == rawtoken.empty()))
+	{
+		// store numeric tokens as typed doubles (genuinely binary), everything else
+		// (names, paths, keywords, "(pN)" placeholders) as strings
+		double value = 0.0;
+		if (sniffNumber(rawtoken, value))
+		{
+			m_writer->add_number(value);
+		}
+		else
+		{
+			m_writer->add_token(rawtoken);
+		}
+	}
+}
+
+void cParser::readReplayToken(std::string &out, bool ToLower, const char *Break)
+{
+	// drain an active child include first, exactly like the text path
+	if (mIncludeParser)
+	{
+		mIncludeParser->readToken(out, ToLower, Break);
+		if (false == out.empty())
+		{
+			return;
+		}
+		mIncludeParser = nullptr;
+	}
+
+	while (m_entryindex < m_entries.size())
+	{
+		scene::scenery_entry const &entry = m_entries[m_entryindex++];
+		if (entry.type == scene::scenery_entry_type::token)
+		{
+			out = entry.text;
+			// re-apply this file's include parameters, mirroring the text path
+			substituteParameters(out, ToLower);
+			return;
+		}
+		if (entry.type == scene::scenery_entry_type::number)
+		{
+			// typed numeric entry: hand back its shortest round-tripping text form
+			// (no parameter substitution applies to a literal number)
+			out = formatNumber(entry.number);
+			return;
+		}
+		// include entry: re-evaluate the filename expression (re-randomizing any
+		// random set), then enter the child (its own twin or text) and serve its
+		// tokens; an empty/skipped child just advances to the next entry
+		std::size_t pos = 0;
+		std::string includefile = resolve_random_set(entry.fileexpr, pos);
+		replace_slashes(includefile);
+		startIncludeDirect(std::move(includefile), entry.params);
+		if (mIncludeParser)
+		{
+			mIncludeParser->readToken(out, ToLower, Break);
+			if (false == out.empty())
+			{
+				return;
+			}
+			mIncludeParser = nullptr;
+		}
+	}
+
+	out.clear();
 }
 
 std::vector<std::string> cParser::readParameters(cParser &Input)
@@ -523,6 +765,16 @@ void cParser::injectString(const std::string &str)
 
 int cParser::getProgress() const
 {
+	if (m_replay)
+	{
+		return ( m_entries.empty()
+		    ? 100
+		    : static_cast<int>(m_entryindex * 100 / m_entries.size()) );
+	}
+	if (mSize <= 0)
+	{
+		return 100;
+	}
 	return static_cast<int>(mStream->rdbuf()->pubseekoff(0, std::ios_base::cur) * 100 / mSize);
 }
 
