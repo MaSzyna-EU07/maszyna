@@ -49,6 +49,10 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
             std::make_shared<deserializer_state>( Scenariofile, cParser::buffer_FILE, Global.asCurrentSceneryPath, Global.bLoadTraction );
     state->scenariofile = Scenariofile;
     state->scratchpad.name = Scenariofile;
+    // first pass loads infrastructure (tracks/traction/events/memcells/sounds + directives);
+    // visual nodes are skipped by the reader and loaded in a second pass. for a text/compile
+    // load (no twin) this is a no-op and everything loads in a single pass.
+    state->input.setReplayPass( scene::scenery_load_pass::infrastructure );
     scene::Groups.create();
 
 	if( false == state->input.ok() )
@@ -104,10 +108,36 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 	cParser &Input = state->input;
 	scene::scratch_data &Scratchpad = state->scratchpad;
 
+    // stateful directives that build objects/lists; on the visual (second) pass they are
+    // skipped wholesale so their side effects (trainsets, events, cameras, ...) don't
+    // duplicate. transform/group directives (origin/rotate/scale/group) and idempotent
+    // setters are re-run, so deferred visual nodes get the correct placement.
+    static std::unordered_map<std::string, std::string> const visualskip {
+        { "trainset",    "endtrainset" },
+        { "event",       "endevent" },
+        { "camera",      "endcamera" },
+        { "light",       "endlight" },
+        { "description", "enddescription" },
+        { "test",        "endtest" },
+        { "sky",         "endsky" },
+        { "time",        "endtime" },
+        { "terrain",     "endterrain" },
+    };
+
     // deserialize content from the provided input
 	auto timelast { std::chrono::steady_clock::now() };
     std::string token { Input.getToken<std::string>() };
     while( false == token.empty() ) {
+
+        if( state->visualphase ) {
+            auto const skip = visualskip.find( token );
+            if( skip != visualskip.end() ) {
+                // consume the stateful directive without running its handler
+                skip_until( Input, skip->second );
+                token = Input.getToken<std::string>();
+                continue;
+            }
+        }
 
 		auto lookup = state->functionmap.find( token );
 		if( lookup != state->functionmap.end() ) {
@@ -129,6 +159,15 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
     if( false == Scratchpad.initialized ) {
         // manually perform scenario initialization
         deserialize_firstinit( Input, Scratchpad );
+    }
+
+    // first (infrastructure) pass finished: run a second pass over the same twin to load
+    // the visual nodes that were skipped. only possible when replaying a binary twin; a
+    // text/compile load did everything in one pass (restartReplay returns false).
+    if( ( false == state->visualphase )
+     && ( true == Input.restartReplay( scene::scenery_load_pass::visual ) ) ) {
+        state->visualphase = true;
+        return true; // continue with the visual pass
     }
 
     scene::Groups.close();

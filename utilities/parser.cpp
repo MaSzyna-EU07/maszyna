@@ -641,11 +641,37 @@ void cParser::startIncludeDirect(std::string includefile, std::vector<std::strin
 	);
 	mIncludeParser->allowRandomIncludes = allowRandomIncludes;
 	mIncludeParser->autoclear(m_autoclear);
+	// the child inherits the current load pass so the whole include tree is filtered
+	// consistently (e.g. visuals-only on the second pass)
+	mIncludeParser->setReplayPass(m_replaypass);
 
 	// a binary-twin replay child reports mSize 0 but is still valid
 	if (mIncludeParser->mSize <= 0 && (false == mIncludeParser->m_replay)) {
 		ErrorLog("Bad include: can't open file \"" + includefile + "\"");
 	}
+}
+
+void cParser::setReplayPass(scene::scenery_load_pass Pass)
+{
+	m_replaypass = Pass;
+	if (m_reader)
+	{
+		m_reader->set_pass(Pass);
+	}
+}
+
+bool cParser::restartReplay(scene::scenery_load_pass Pass)
+{
+	if ((false == m_replay) || (false == static_cast<bool>(m_reader)))
+	{
+		return false;
+	}
+	m_reader->open(m_twinbuf);
+	m_reader->set_pass(Pass);
+	m_replaypass = Pass;
+	m_replayexhausted = false;
+	mIncludeParser = nullptr;
+	return true;
 }
 
 bool cParser::handleIncludeIfPresent(std::string& token, bool ToLower, const char* Break) {

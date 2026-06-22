@@ -22,6 +22,9 @@ struct deserializer_state {
 	std::unordered_map<
 	    std::string,
 	    deserializefunctionbind> functionmap;
+	// progressive (two-pass) load over a binary twin: first pass loads infrastructure,
+	// second pass loads visual nodes. false while in the first (infrastructure) pass.
+	bool visualphase { false };
 
 	deserializer_state(std::string const &File, cParser::buffertype const Type, const std::string &Path, bool const Loadtraction)
 	    : scenariofile(File), input(File, Type, Path, Loadtraction) { }

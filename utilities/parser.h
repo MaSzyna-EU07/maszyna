@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 // before cParser is defined.
 namespace scene {
     enum class scenery_file_kind : std::uint8_t;
+    enum class scenery_load_pass : std::uint8_t;
     class scenery_binary_writer;
     class scenery_binary_reader;
 }
@@ -46,6 +47,13 @@ class cParser //: public std::stringstream
     // touching scene state, and return the (relative) filenames it includes so a parallel
     // baker can compile each of those twins on its own thread. requires BakeOnly ctor.
     std::vector<std::string> bakeFile();
+    // select which class of nodes the replay serves (propagated to include children).
+    // only meaningful in replay (twin) mode; ignored for text parsing.
+    void setReplayPass( scene::scenery_load_pass Pass );
+    // rewind the replay to the start of the twin with a (possibly new) pass, dropping any
+    // open include child. used to run a second pass (visual) over an already-loaded twin.
+    // returns false if this parser isn't replaying a twin (no second pass possible).
+    bool restartReplay( scene::scenery_load_pass Pass );
     // methods:
     template <typename Type_>
     cParser &
@@ -180,6 +188,7 @@ class cParser //: public std::stringstream
     // replay: this file is served from its binary twin instead of text
     bool m_replay { false };
     bool m_replayexhausted { false }; // all twin entries consumed (for inline eof())
+    scene::scenery_load_pass m_replaypass {}; // value-init == scenery_load_pass::all
     std::string m_twinbuf; // whole twin file held in memory; the reader views into it
     std::unique_ptr<scene::scenery_binary_reader> m_reader; // streams entries from m_twinbuf
     // compile: this file is being captured into a binary twin alongside the text read
