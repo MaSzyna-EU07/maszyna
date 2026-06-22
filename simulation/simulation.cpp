@@ -56,13 +56,34 @@ bool is_ready { false };
 std::shared_ptr<deserializer_state>
 state_manager::deserialize_begin(std::string const &Scenariofile) {
 
-	return m_serializer.deserialize_begin( Scenariofile );
+	m_loadstate = m_serializer.deserialize_begin( Scenariofile );
+	return m_loadstate;
 }
 
 bool
 state_manager::deserialize_continue(std::shared_ptr<deserializer_state> state) {
 
 	return m_serializer.deserialize_continue(state);
+}
+
+// true while a progressive load still has visual nodes to stream in (driver phase)
+bool
+state_manager::loading_visuals() const {
+
+	return ( m_loadstate && m_loadstate->visualphase && ( false == m_loadstate->done ) );
+}
+
+// advances the deferred visual-node load by one budgeted step; clears the state when done.
+// called every frame from the driver so the world's visuals fill in after play starts.
+void
+state_manager::continue_loading_visuals() {
+
+	if( false == loading_visuals() ) { return; }
+	m_serializer.deserialize_continue( m_loadstate );
+	if( m_loadstate->done ) {
+		WriteLog( "Progressive visual load complete" );
+		m_loadstate = nullptr;
+	}
 }
 
 // stores class data in specified file, in legacy (text) format

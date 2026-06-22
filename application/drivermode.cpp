@@ -171,6 +171,10 @@ bool driver_mode::update()
 	simulation::State.update_scripting_interface();
 	simulation::Environment.update();
 
+	// progressive loading: stream in the deferred visual nodes a little each frame, so
+	// the world fills in after play has already started on the infrastructure pass
+	simulation::State.continue_loading_visuals();
+
 	if (deltatime != 0.0)
 	{
 		// jak pauza, to nie ma po co tego przeliczać

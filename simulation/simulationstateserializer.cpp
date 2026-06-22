@@ -148,7 +148,10 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
         }
 
 		auto timenow = std::chrono::steady_clock::now();
-        if( std::chrono::duration_cast<std::chrono::milliseconds>( timenow - timelast ).count() >= 200 ) {
+        // small per-frame budget while streaming visuals in the driver (avoid stutter),
+        // generous budget while the loading screen is up (infrastructure pass)
+        auto const budget = ( state->visualphase ? 8 : 200 );
+        if( std::chrono::duration_cast<std::chrono::milliseconds>( timenow - timelast ).count() >= budget ) {
             Application.set_progress( Input.getProgress(), Input.getFullProgress() );
 			return true;
         }
@@ -161,13 +164,15 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
         deserialize_firstinit( Input, Scratchpad );
     }
 
-    // first (infrastructure) pass finished: run a second pass over the same twin to load
-    // the visual nodes that were skipped. only possible when replaying a binary twin; a
-    // text/compile load did everything in one pass (restartReplay returns false).
+    // first (infrastructure) pass finished: the scenario is now playable (tracks, events,
+    // signals, the player train are all loaded). hand control back so the loader can switch
+    // to the driver; the visual nodes load progressively from the driver via a second pass
+    // over the same twin. only possible when replaying a binary twin -- a text/compile load
+    // did everything in one pass (restartReplay returns false).
     if( ( false == state->visualphase )
      && ( true == Input.restartReplay( scene::scenery_load_pass::visual ) ) ) {
         state->visualphase = true;
-        return true; // continue with the visual pass
+        return false; // infrastructure ready -> go to driver; visuals continue there
     }
 
     scene::Groups.close();
@@ -182,6 +187,7 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 	// before we report the scenario as loaded
 	scene::scenerybinary_wait_all();
 
+	state->done = true;
 	return false;
 }
 

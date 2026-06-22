@@ -55,6 +55,12 @@ public:
 	// continues deserialization for given context, amount limited by time, returns true if needs to be called again
 	bool
 	    deserialize_continue(std::shared_ptr<deserializer_state> state);
+	// progressive load: true while deferred visual nodes are still streaming in (driver phase)
+	bool
+	    loading_visuals() const;
+	// advances the deferred visual-node load by one budgeted step (call once per frame)
+	void
+	    continue_loading_visuals();
     // stores class data in specified file, in legacy (text) format
     void
         export_as_text( std::string const &Scenariofile ) const;
@@ -62,6 +68,7 @@ public:
 private:
 // members
     state_serializer m_serializer;
+    std::shared_ptr<deserializer_state> m_loadstate; // retained across loader->driver for visual streaming
     struct {
         std::shared_ptr<TMemCell> weather, time, date;
     } m_scriptinginterface;

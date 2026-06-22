@@ -25,6 +25,8 @@ struct deserializer_state {
 	// progressive (two-pass) load over a binary twin: first pass loads infrastructure,
 	// second pass loads visual nodes. false while in the first (infrastructure) pass.
 	bool visualphase { false };
+	// set once the whole load (both passes / single text pass) has fully finished
+	bool done { false };
 
 	deserializer_state(std::string const &File, cParser::buffertype const Type, const std::string &Path, bool const Loadtraction)
 	    : scenariofile(File), input(File, Type, Path, Loadtraction) { }
