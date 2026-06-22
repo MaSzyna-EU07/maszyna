@@ -192,6 +192,13 @@ class cParser //: public std::stringstream
     // standalone/parallel bake: capture this file only, collect its include filenames
     bool m_bakeonly { false };
     std::vector<std::string> m_bakeincludes;
+    // v6 node-marker tracking during bake (wrap each top-level node for pass selection)
+    bool m_bakenode_active { false };
+    int m_bakenode_count { 0 };       // entries captured since "node" (1=node,...,5=type)
+    bool m_bakenode_visual { false };
+    std::string m_bakenode_end;       // terminator token; empty until type classified
+    // flushes a node still open at end-of-file (or unknown type), so its buffer is written
+    void bakeFinishNode();
 };
 
 

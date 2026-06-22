@@ -91,8 +91,15 @@ enum : std::uint64_t {
     TAG_F32     = 3, // followed by 4 little-endian bytes
     TAG_F64     = 4, // followed by 8 little-endian bytes
     TAG_QTOKEN  = 5, // quoted token; head >> 3 == interned string index
+    TAG_NODE    = 6, // node marker: followed by varint(class) + varint(byte span)
     TAG_BITS    = 3,
     TAG_MASK    = 0x7,
+};
+
+// node class stored in the TAG_NODE marker
+enum : std::uint64_t {
+    NODECLASS_INFRA  = 0,
+    NODECLASS_VISUAL = 1,
 };
 
 // writes a numeric value in the most compact lossless-enough form: integral values as a
@@ -132,27 +139,52 @@ scenery_binary_writer::intern( std::string const &Text ) {
     return index;
 }
 
+std::ostream &
+scenery_binary_writer::sink() {
+    return ( m_innode ? m_nodebuf : m_entries );
+}
+
 void
 scenery_binary_writer::add_token( std::string const &Token, bool Quoted ) {
     auto const tag = ( Quoted ? TAG_QTOKEN : TAG_TOKEN );
-    write_varint( m_entries, ( static_cast<std::uint64_t>( intern( Token ) ) << TAG_BITS ) | tag );
+    write_varint( sink(), ( static_cast<std::uint64_t>( intern( Token ) ) << TAG_BITS ) | tag );
     ++m_count;
 }
 
 void
 scenery_binary_writer::add_number( double Value ) {
-    write_number( m_entries, Value );
+    write_number( sink(), Value );
     ++m_count;
 }
 
 void
 scenery_binary_writer::add_include( std::vector<std::string> const &Fileexpr, std::vector<std::string> const &Params ) {
-    write_varint( m_entries, TAG_INCLUDE );
-    write_varint( m_entries, Fileexpr.size() );
-    for( auto const &token : Fileexpr ) { write_varint( m_entries, intern( token ) ); }
-    write_varint( m_entries, Params.size() );
-    for( auto const &param : Params ) { write_varint( m_entries, intern( param ) ); }
+    auto &out = sink();
+    write_varint( out, TAG_INCLUDE );
+    write_varint( out, Fileexpr.size() );
+    for( auto const &token : Fileexpr ) { write_varint( out, intern( token ) ); }
+    write_varint( out, Params.size() );
+    for( auto const &param : Params ) { write_varint( out, intern( param ) ); }
     ++m_count;
+}
+
+void
+scenery_binary_writer::begin_node() {
+    // start buffering this node's entries; end_node() emits the marker + buffered bytes
+    m_nodebuf.str( std::string() );
+    m_nodebuf.clear();
+    m_innode = true;
+}
+
+void
+scenery_binary_writer::end_node( bool Visual ) {
+    if( false == m_innode ) { return; }
+    m_innode = false;
+    auto const body = m_nodebuf.str();
+    write_varint( m_entries, TAG_NODE );
+    write_varint( m_entries, Visual ? NODECLASS_VISUAL : NODECLASS_INFRA );
+    write_varint( m_entries, body.size() );
+    m_entries.write( body.data(), static_cast<std::streamsize>( body.size() ) );
 }
 
 bool
@@ -171,8 +203,8 @@ scenery_binary_writer::write( std::ostream &Output, scenery_file_kind Kind ) con
         Output.write( text.data(), static_cast<std::streamsize>( text.size() ) );
     }
 
-    // entries: count, then the pre-encoded entry bytes (heads + payloads) verbatim
-    write_varint( Output, m_count );
+    // entries: the pre-encoded entry bytes (heads + payloads + node markers) verbatim,
+    // running to end-of-file (the reader streams until the buffer is exhausted)
     auto const encoded = m_entries.str();
     Output.write( encoded.data(), static_cast<std::streamsize>( encoded.size() ) );
 
@@ -183,8 +215,8 @@ bool
 scenery_binary_reader::open( std::string_view Buffer ) {
 
     m_table.clear();
-    m_cursor = m_end = nullptr;
-    m_remaining = m_total = 0;
+    m_begin = m_cursor = m_end = nullptr;
+    m_size = 0;
 
     char const *cursor = Buffer.data();
     char const *const end = Buffer.data() + Buffer.size();
@@ -207,27 +239,45 @@ scenery_binary_reader::open( std::string_view Buffer ) {
         cursor += len;
     }
 
-    m_total = m_remaining = static_cast<std::uint32_t>( read_varint( cursor, end ) );
-    m_cursor = cursor;
+    // entries run from here to end-of-buffer
+    m_begin = m_cursor = cursor;
     m_end = end;
+    m_size = end - cursor;
     return true;
 }
 
 bool
 scenery_binary_reader::next( scenery_entry_view &Out ) {
 
-    if( ( m_remaining == 0 ) || ( m_cursor >= m_end ) ) { return false; }
-    --m_remaining;
-
-    Out.fileexpr.clear();
-    Out.params.clear();
-
-    auto const head = read_varint( m_cursor, m_end );
-    auto const tag = head & TAG_MASK;
-
     auto const resolve = [ this ]( std::uint64_t index ) -> std::string_view {
         return ( index < m_table.size() ) ? m_table[ static_cast<std::size_t>( index ) ] : std::string_view();
     };
+
+    // skip node markers (and whole nodes not belonging to the current pass) until a
+    // servable entry is reached
+    std::uint64_t head = 0;
+    std::uint64_t tag = 0;
+    for( ;; ) {
+        if( m_cursor >= m_end ) { return false; }
+        head = read_varint( m_cursor, m_end );
+        tag = head & TAG_MASK;
+        if( tag != TAG_NODE ) { break; }
+        auto const cls = read_varint( m_cursor, m_end );
+        auto const span = read_varint( m_cursor, m_end );
+        bool const process =
+            ( m_pass == scenery_load_pass::all )
+         || ( ( m_pass == scenery_load_pass::infrastructure ) && ( cls == NODECLASS_INFRA ) )
+         || ( ( m_pass == scenery_load_pass::visual ) && ( cls == NODECLASS_VISUAL ) );
+        if( false == process ) {
+            // skip the whole node body
+            m_cursor += static_cast<std::ptrdiff_t>( span );
+            if( m_cursor > m_end ) { m_cursor = m_end; }
+        }
+        // when processing, fall through: the loop re-reads and decodes the node's first entry
+    }
+
+    Out.fileexpr.clear();
+    Out.params.clear();
 
     switch( tag ) {
         case TAG_INCLUDE: {

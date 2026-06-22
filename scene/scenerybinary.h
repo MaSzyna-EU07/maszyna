@@ -53,8 +53,19 @@ namespace scene {
 // v4: buffer-streamed reader, packed entry tags, zig-zag varint integers.
 // v5: tokens stored in original case (lower-cased per consumer at replay) with a quoted
 //     flag, so baking is grammar-independent (enables the headless/standalone baker).
+// v6: top-level nodes wrapped in a marker carrying their class (infrastructure/visual)
+//     and byte span, so the reader can serve or skip a whole node per load pass
+//     (enables progressive loading: infrastructure eager, visuals deferred).
 // bumping the version invalidates older twins so they are recompiled rather than misread.
-constexpr std::uint32_t SCENERYBINARY_MAGIC { MAKE_ID4( 'e', 'u', '7', 5 ) };
+constexpr std::uint32_t SCENERYBINARY_MAGIC { MAKE_ID4( 'e', 'u', '7', 6 ) };
+
+// which entries a reader serves in a given load pass; nodes outside the requested class
+// are skipped (directives/includes are always served, to keep transform/group state)
+enum class scenery_load_pass : std::uint8_t {
+    all = 0,            // everything (single-pass load, == pre-v6 behaviour)
+    infrastructure = 1, // directives + infrastructure nodes; visual nodes skipped
+    visual = 2,         // directives + visual nodes; infrastructure nodes skipped
+};
 
 // file extension of the binary twin, derived from source kind
 std::string const SCENERYBINARY_EXT_SCN { ".scnb" };
@@ -100,16 +111,24 @@ public:
     void add_number( double Value );
     // Fileexpr is the verbatim filename expression (single token or random set)
     void add_include( std::vector<std::string> const &Fileexpr, std::vector<std::string> const &Params );
+    // wrap a top-level node so the reader can serve/skip it per pass. between begin_node()
+    // and end_node() the add_*() entries are buffered; end_node() emits a marker (class +
+    // byte span) followed by the buffered entries.
+    void begin_node();
+    void end_node( bool Visual );
     std::size_t entry_count() const { return m_count; }
     // serializes header + string table + encoded entries. returns false on stream failure.
     bool write( std::ostream &Output, scenery_file_kind Kind ) const;
 
 private:
     std::uint32_t intern( std::string const &Text );
+    std::ostream &sink(); // current entry sink: node buffer while in a node, else m_entries
 
     std::unordered_map<std::string, std::uint32_t> m_lookup; // string -> table index
     std::vector<std::string> m_table;                        // interned strings, in order
     std::ostringstream m_entries;                            // encoded entry bytes
+    std::ostringstream m_nodebuf;                            // current node's entries (buffered)
+    bool m_innode { false };                                 // currently between begin/end_node
     std::size_t m_count { 0 };                               // number of entries
 };
 
@@ -123,18 +142,23 @@ public:
     bool open( std::string_view Buffer );
 
     scenery_file_kind kind() const { return m_kind; }
-    // decodes the next entry into Out; returns false once all entries are consumed
+    // selects which nodes are served vs skipped (default: all). may be changed between
+    // reads (e.g. to drive separate eager/visual passes over a re-opened twin).
+    void set_pass( scenery_load_pass Pass ) { m_pass = Pass; }
+    // decodes the next served entry into Out, skipping node markers / out-of-pass nodes;
+    // returns false once all entries are consumed
     bool next( scenery_entry_view &Out );
-    bool exhausted() const { return m_remaining == 0; }
-    // fraction of entries consumed so far, 0..100, for the loading bar
-    int progress() const { return ( m_total == 0 ? 100 : static_cast<int>( ( m_total - m_remaining ) * 100 / m_total ) ); }
+    bool exhausted() const { return m_cursor >= m_end; }
+    // fraction of bytes consumed so far, 0..100, for the loading bar
+    int progress() const { return ( m_size == 0 ? 100 : static_cast<int>( ( m_cursor - m_begin ) * 100 / m_size ) ); }
 
 private:
     std::vector<std::string_view> m_table;
+    char const *m_begin { nullptr }; // start of the entry section
     char const *m_cursor { nullptr };
     char const *m_end { nullptr };
-    std::uint32_t m_remaining { 0 };
-    std::uint32_t m_total { 0 };
+    std::ptrdiff_t m_size { 0 };      // entry section byte length
+    scenery_load_pass m_pass { scenery_load_pass::all };
     scenery_file_kind m_kind { scenery_file_kind::scn };
 };
 

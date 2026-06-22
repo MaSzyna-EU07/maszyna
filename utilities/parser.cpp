@@ -90,6 +90,34 @@ inline std::string formatNumber(double Value)
 	return std::string(buffer, result.ptr);
 }
 
+// classifies a scenery node by its `type` token (lower-cased) for v6 markers: sets Visual
+// and the node's terminator token. returns false for an unrecognized type. mapping
+// confirmed against the node deserializers.
+inline bool classifyNodeType(std::string const &Type, bool &Visual, std::string &Endtoken)
+{
+	struct entry { char const *type; bool visual; char const *end; };
+	static const entry table[] = {
+		{ "model",               true,  "endmodel" },
+		{ "triangles",           true,  "endtri" },
+		{ "triangle_strip",      true,  "endtri" },
+		{ "triangle_fan",        true,  "endtri" },
+		{ "lines",               true,  "endline" },
+		{ "line_strip",          true,  "endline" },
+		{ "line_loop",           true,  "endline" },
+		{ "track",               false, "endtrack" },
+		{ "traction",            false, "endtraction" },
+		{ "tractionpowersource", false, "end" },
+		{ "memcell",             false, "endmemcell" },
+		{ "eventlauncher",       false, "endevent" },
+		{ "sound",               false, "endsound" },
+		{ "dynamic",             false, "enddynamic" },
+	};
+	for (auto const &e : table) {
+		if (Type == e.type) { Visual = e.visual; Endtoken = e.end; return true; }
+	}
+	return false;
+}
+
 inline bool endsWithLower(const std::string &s, const char *suffix)
 {
 	const std::string suf(suffix);
@@ -286,12 +314,23 @@ cParser::~cParser()
 	}
 }
 
+void cParser::bakeFinishNode()
+{
+	// flush a node still open at end-of-file or one whose type was unrecognized
+	if (m_bakenode_active && m_writer)
+	{
+		m_writer->end_node(m_bakenode_visual);
+	}
+	m_bakenode_active = false;
+}
+
 std::vector<std::string> cParser::bakeFile()
 {
 	// drain the file: every token is captured into the twin, include directives are
 	// recorded (their candidate filenames collected) but not opened
 	std::string token;
 	do { token = getToken<std::string>(); } while (false == token.empty());
+	bakeFinishNode();
 
 	// write the twin synchronously -- the parallel baker already runs one file per
 	// worker thread, so there is no point handing this to the async pool
@@ -319,6 +358,7 @@ void cParser::flushBinaryTwin()
 		// source not fully consumed (aborted parse): don't leave a truncated twin
 		return;
 	}
+	bakeFinishNode(); // close a node still open at end-of-file
 	m_twinwritten = true;
 
 	// hand the finished writer to the background pool; serialization and file I/O then
@@ -698,6 +738,30 @@ void cParser::readToken(std::string &out, bool ToLower, const char *Break)
 		if (m_compiling && m_writer && fromOwn
 		 && (false == m_capturesuppress) && (false == rawtoken.empty()))
 		{
+			// v6: wrap each top-level node in a marker so the reader can serve/skip it per
+			// load pass. a node starts at the "node" keyword and ends at its type-specific
+			// terminator; nodes are never nested.
+			std::string const lowered = ::ToLower(rawtoken); // ::-qualified; the param `ToLower` shadows it
+			if ((false == m_bakenode_active) && (lowered == "node"))
+			{
+				m_writer->begin_node();
+				m_bakenode_active = true;
+				m_bakenode_count = 0;
+				m_bakenode_visual = false;
+				m_bakenode_end.clear();
+			}
+			else if (m_bakenode_active && m_bakenode_end.empty() && (lowered == "node"))
+			{
+				// previous node had an unrecognized type (no terminator found): close it
+				// just before this new node starts
+				bakeFinishNode();
+				m_writer->begin_node();
+				m_bakenode_active = true;
+				m_bakenode_count = 0;
+				m_bakenode_visual = false;
+				m_bakenode_end.clear();
+			}
+
 			// numeric tokens -> typed values; quoted strings preserve case at replay;
 			// other strings (names, paths, keywords, "(pN)") may be lower-cased per consumer
 			double value = 0.0;
@@ -708,6 +772,22 @@ void cParser::readToken(std::string &out, bool ToLower, const char *Break)
 			else
 			{
 				m_writer->add_token(rawtoken, rawquoted);
+			}
+
+			if (m_bakenode_active)
+			{
+				++m_bakenode_count;
+				if ((m_bakenode_count == 5) && m_bakenode_end.empty())
+				{
+					// 5th node entry is the type token (node, range_max, range_min, name, type)
+					classifyNodeType(lowered, m_bakenode_visual, m_bakenode_end);
+				}
+				else if ((false == m_bakenode_end.empty()) && (lowered == m_bakenode_end))
+				{
+					// terminator captured: close the node
+					m_writer->end_node(m_bakenode_visual);
+					m_bakenode_active = false;
+				}
 			}
 		}
 		return;
