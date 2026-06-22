@@ -82,7 +82,14 @@ class cParser //: public std::stringstream
     inline
     bool
         ok() {
-            return ( !mStream->fail() ); };
+            // historically !stream.fail(); with the in-memory buffer the stream is read
+            // only once at construction, so its fail bit never flips at end-of-input.
+            // ok() now means "there is still input to read", which is what the common
+            // `while( parser.ok() )` loops rely on, and is true right after opening a
+            // non-empty file (the `if( !ok() )` open checks) / false if the open failed
+            // (empty buffer) or once everything has been consumed.
+            if( m_replay ) { return ( false == m_replayexhausted ); }
+            return ( m_bufferpos < m_buffer.size() ); };
     cParser &
         autoclear( bool const Autoclear );
     inline
