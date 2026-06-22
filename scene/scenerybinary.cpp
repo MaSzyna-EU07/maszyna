@@ -21,6 +21,9 @@ http://mozilla.org/MPL/2.0/.
 #include <queue>
 #include <functional>
 #include <fstream>
+#include <string_view>
+#include <cmath>
+#include <cstring>
 
 namespace scene {
 
@@ -37,173 +40,229 @@ void write_varint( std::ostream &Output, std::uint64_t Value ) {
     } while( Value != 0 );
 }
 
-std::uint64_t read_varint( std::istream &Input ) {
+// zig-zag maps small-magnitude signed integers to small unsigned varints
+std::uint64_t zigzag_encode( std::int64_t Value ) {
+    return ( static_cast<std::uint64_t>( Value ) << 1 ) ^ static_cast<std::uint64_t>( Value >> 63 );
+}
+std::int64_t zigzag_decode( std::uint64_t Value ) {
+    return static_cast<std::int64_t>( ( Value >> 1 ) ^ ( ~( Value & 1 ) + 1 ) );
+}
+
+// buffer cursor reads (little-endian, matching sn_utils), bounds-checked: on overrun the
+// cursor is parked at the end and zero is returned, so a truncated twin decodes to empty
+// rather than reading out of bounds.
+std::uint64_t read_varint( char const *&Cursor, char const *End ) {
     std::uint64_t value = 0;
     int shift = 0;
-    while( shift < 64 ) {
-        int const c = Input.get();
-        if( c == std::char_traits<char>::eof() ) { break; }
-        value |= ( static_cast<std::uint64_t>( c & 0x7F ) << shift );
-        if( ( c & 0x80 ) == 0 ) { break; }
+    while( ( Cursor < End ) && ( shift < 64 ) ) {
+        std::uint8_t const byte = static_cast<std::uint8_t>( *Cursor++ );
+        value |= ( static_cast<std::uint64_t>( byte & 0x7F ) << shift );
+        if( ( byte & 0x80 ) == 0 ) { break; }
         shift += 7;
     }
     return value;
 }
+std::uint32_t read_u32le( char const *&Cursor, char const *End ) {
+    if( End - Cursor < 4 ) { Cursor = End; return 0; }
+    auto const *b = reinterpret_cast<std::uint8_t const *>( Cursor );
+    Cursor += 4;
+    return ( std::uint32_t( b[ 0 ] ) ) | ( std::uint32_t( b[ 1 ] ) << 8 )
+         | ( std::uint32_t( b[ 2 ] ) << 16 ) | ( std::uint32_t( b[ 3 ] ) << 24 );
+}
+float read_f32le( char const *&Cursor, char const *End ) {
+    if( End - Cursor < 4 ) { Cursor = End; return 0.f; }
+    std::uint32_t const v = read_u32le( Cursor, End );
+    float f; std::memcpy( &f, &v, 4 ); return f;
+}
+double read_f64le( char const *&Cursor, char const *End ) {
+    if( End - Cursor < 8 ) { Cursor = End; return 0.0; }
+    auto const *b = reinterpret_cast<std::uint8_t const *>( Cursor );
+    Cursor += 8;
+    std::uint64_t v = 0;
+    for( int i = 0; i < 8; ++i ) { v |= ( static_cast<std::uint64_t>( b[ i ] ) << ( 8 * i ) ); }
+    double d; std::memcpy( &d, &v, 8 ); return d;
+}
 
-// builds the per-file string table while interning, returning each string's index
-class string_interner {
-public:
-    std::uint32_t intern( std::string const &Text ) {
-        auto const it = m_lookup.find( Text );
-        if( it != m_lookup.end() ) { return it->second; }
-        auto const index = static_cast<std::uint32_t>( m_table.size() );
-        m_lookup.emplace( Text, index );
-        m_table.emplace_back( Text );
-        return index;
-    }
-    std::vector<std::string> const &table() const { return m_table; }
-private:
-    std::unordered_map<std::string, std::uint32_t> m_lookup;
-    std::vector<std::string> m_table;
+// on-disk entry tag, packed into the low 3 bits of the per-entry head varint
+enum : std::uint64_t {
+    TAG_TOKEN   = 0, // head >> 3 == interned string index
+    TAG_INCLUDE = 1,
+    TAG_INT     = 2, // followed by a zig-zag varint
+    TAG_F32     = 3, // followed by 4 little-endian bytes
+    TAG_F64     = 4, // followed by 8 little-endian bytes
+    TAG_QTOKEN  = 5, // quoted token; head >> 3 == interned string index
+    TAG_BITS    = 3,
+    TAG_MASK    = 0x7,
 };
+
+// writes a numeric value in the most compact lossless-enough form: integral values as a
+// zig-zag varint, otherwise f32 when it represents the value with negligible error,
+// otherwise full f64.
+void write_number( std::ostream &Output, double Value ) {
+    double integral = 0.0;
+    if( ( std::modf( Value, &integral ) == 0.0 )
+     && ( Value >= -9.007199254740992e15 ) && ( Value <= 9.007199254740992e15 ) ) {
+        write_varint( Output, TAG_INT );
+        write_varint( Output, zigzag_encode( static_cast<std::int64_t>( Value ) ) );
+        return;
+    }
+    float const f = static_cast<float>( Value );
+    bool const f32ok = std::isfinite( f )
+        && ( ( static_cast<double>( f ) == Value )
+          || ( std::abs( static_cast<double>( f ) - Value ) <= 1e-6 * std::abs( Value ) ) );
+    if( f32ok ) {
+        write_varint( Output, TAG_F32 );
+        sn_utils::ls_float32( Output, f );
+    }
+    else {
+        write_varint( Output, TAG_F64 );
+        sn_utils::ls_float64( Output, Value );
+    }
+}
 
 } // anonymous namespace
 
+std::uint32_t
+scenery_binary_writer::intern( std::string const &Text ) {
+    auto const it = m_lookup.find( Text );
+    if( it != m_lookup.end() ) { return it->second; }
+    auto const index = static_cast<std::uint32_t>( m_table.size() );
+    m_lookup.emplace( Text, index );
+    m_table.emplace_back( Text );
+    return index;
+}
+
 void
-scenery_binary_writer::add_token( std::string Token ) {
-    scenery_entry entry;
-    entry.type = scenery_entry_type::token;
-    entry.text = std::move( Token );
-    m_entries.emplace_back( std::move( entry ) );
+scenery_binary_writer::add_token( std::string const &Token, bool Quoted ) {
+    auto const tag = ( Quoted ? TAG_QTOKEN : TAG_TOKEN );
+    write_varint( m_entries, ( static_cast<std::uint64_t>( intern( Token ) ) << TAG_BITS ) | tag );
+    ++m_count;
 }
 
 void
 scenery_binary_writer::add_number( double Value ) {
-    scenery_entry entry;
-    entry.type = scenery_entry_type::number;
-    entry.number = Value;
-    m_entries.emplace_back( std::move( entry ) );
+    write_number( m_entries, Value );
+    ++m_count;
 }
 
 void
-scenery_binary_writer::add_include( std::vector<std::string> Fileexpr, std::vector<std::string> Params ) {
-    scenery_entry entry;
-    entry.type = scenery_entry_type::include;
-    entry.fileexpr = std::move( Fileexpr );
-    entry.params = std::move( Params );
-    m_entries.emplace_back( std::move( entry ) );
+scenery_binary_writer::add_include( std::vector<std::string> const &Fileexpr, std::vector<std::string> const &Params ) {
+    write_varint( m_entries, TAG_INCLUDE );
+    write_varint( m_entries, Fileexpr.size() );
+    for( auto const &token : Fileexpr ) { write_varint( m_entries, intern( token ) ); }
+    write_varint( m_entries, Params.size() );
+    for( auto const &param : Params ) { write_varint( m_entries, intern( param ) ); }
+    ++m_count;
 }
 
 bool
 scenery_binary_writer::write( std::ostream &Output, scenery_file_kind Kind ) const {
-
-    // first pass: intern every string the entries reference so keywords/paths that
-    // repeat are stored once and referenced by index
-    string_interner interner;
-    std::vector<std::uint32_t> tokenindex;       // index per token entry, in order
-    std::vector<std::vector<std::uint32_t>> fileexpridx, paramidx; // per include entry
-    for( auto const &entry : m_entries ) {
-        if( entry.type == scenery_entry_type::token ) {
-            tokenindex.emplace_back( interner.intern( entry.text ) );
-        }
-        else if( entry.type == scenery_entry_type::include ) {
-            std::vector<std::uint32_t> fe, pe;
-            for( auto const &token : entry.fileexpr ) { fe.emplace_back( interner.intern( token ) ); }
-            for( auto const &param : entry.params )   { pe.emplace_back( interner.intern( param ) ); }
-            fileexpridx.emplace_back( std::move( fe ) );
-            paramidx.emplace_back( std::move( pe ) );
-        }
-    }
 
     // header: magic + kind + flags
     sn_utils::ls_uint32( Output, SCENERYBINARY_MAGIC );
     sn_utils::s_uint8( Output, static_cast<std::uint8_t>( Kind ) );
     sn_utils::ls_uint32( Output, 0 ); // flags, reserved
 
-    // string table
-    auto const &table = interner.table();
-    sn_utils::ls_uint32( Output, static_cast<std::uint32_t>( table.size() ) );
-    for( auto const &text : table ) {
-        sn_utils::s_str( Output, text );
+    // string table: count, then each string as varint(length) + raw bytes (so the
+    // reader can take views into the buffer without scanning for terminators)
+    write_varint( Output, m_table.size() );
+    for( auto const &text : m_table ) {
+        write_varint( Output, text.size() );
+        Output.write( text.data(), static_cast<std::streamsize>( text.size() ) );
     }
 
-    // entries
-    sn_utils::ls_uint32( Output, static_cast<std::uint32_t>( m_entries.size() ) );
-    std::size_t tokencursor = 0, includecursor = 0;
-    for( auto const &entry : m_entries ) {
-        sn_utils::s_uint8( Output, static_cast<std::uint8_t>( entry.type ) );
-        if( entry.type == scenery_entry_type::include ) {
-            auto const &fe = fileexpridx[ includecursor ];
-            auto const &pe = paramidx[ includecursor ];
-            ++includecursor;
-            write_varint( Output, fe.size() );
-            for( auto idx : fe ) { write_varint( Output, idx ); }
-            write_varint( Output, pe.size() );
-            for( auto idx : pe ) { write_varint( Output, idx ); }
-        }
-        else if( entry.type == scenery_entry_type::number ) {
-            sn_utils::ls_float64( Output, entry.number );
-        }
-        else {
-            write_varint( Output, tokenindex[ tokencursor++ ] );
-        }
-    }
+    // entries: count, then the pre-encoded entry bytes (heads + payloads) verbatim
+    write_varint( Output, m_count );
+    auto const encoded = m_entries.str();
+    Output.write( encoded.data(), static_cast<std::streamsize>( encoded.size() ) );
 
     return ( false == Output.fail() );
 }
 
 bool
-scenery_binary_reader::open( std::istream &Input ) {
+scenery_binary_reader::open( std::string_view Buffer ) {
 
-    m_entries.clear();
+    m_table.clear();
+    m_cursor = m_end = nullptr;
+    m_remaining = m_total = 0;
 
-    auto const magic { sn_utils::ld_uint32( Input ) };
-    if( magic != SCENERYBINARY_MAGIC ) {
+    char const *cursor = Buffer.data();
+    char const *const end = Buffer.data() + Buffer.size();
+
+    if( end - cursor < 9 ) { return false; } // magic(4) + kind(1) + flags(4)
+    if( read_u32le( cursor, end ) != SCENERYBINARY_MAGIC ) {
         // unrecognized type or incompatible version
         return false;
     }
-    m_kind = static_cast<scenery_file_kind>( sn_utils::d_uint8( Input ) );
-    sn_utils::ld_uint32( Input ); // flags, reserved
+    m_kind = static_cast<scenery_file_kind>( static_cast<std::uint8_t>( *cursor++ ) );
+    read_u32le( cursor, end ); // flags, reserved
 
-    // string table
-    std::vector<std::string> table;
-    auto tablesize { sn_utils::ld_uint32( Input ) };
-    table.reserve( tablesize );
-    while( tablesize-- ) {
-        table.emplace_back( sn_utils::d_str( Input ) );
+    // string table: views into the buffer (no copies)
+    auto tablesize = read_varint( cursor, end );
+    m_table.reserve( tablesize );
+    while( ( tablesize-- != 0 ) && ( cursor < end ) ) {
+        auto const len = read_varint( cursor, end );
+        if( static_cast<std::uint64_t>( end - cursor ) < len ) { cursor = end; break; }
+        m_table.emplace_back( cursor, static_cast<std::size_t>( len ) );
+        cursor += len;
     }
-    // resolves an interned index back to its string, guarding against corruption
-    auto const resolve = [ & ]( std::uint64_t index ) -> std::string {
-        return ( index < table.size() ) ? table[ static_cast<std::size_t>( index ) ] : std::string();
+
+    m_total = m_remaining = static_cast<std::uint32_t>( read_varint( cursor, end ) );
+    m_cursor = cursor;
+    m_end = end;
+    return true;
+}
+
+bool
+scenery_binary_reader::next( scenery_entry_view &Out ) {
+
+    if( ( m_remaining == 0 ) || ( m_cursor >= m_end ) ) { return false; }
+    --m_remaining;
+
+    Out.fileexpr.clear();
+    Out.params.clear();
+
+    auto const head = read_varint( m_cursor, m_end );
+    auto const tag = head & TAG_MASK;
+
+    auto const resolve = [ this ]( std::uint64_t index ) -> std::string_view {
+        return ( index < m_table.size() ) ? m_table[ static_cast<std::size_t>( index ) ] : std::string_view();
     };
 
-    auto count { sn_utils::ld_uint32( Input ) };
-    m_entries.reserve( count );
-    while( count-- ) {
-        scenery_entry entry;
-        entry.type = static_cast<scenery_entry_type>( sn_utils::d_uint8( Input ) );
-        if( entry.type == scenery_entry_type::include ) {
-            auto expr { read_varint( Input ) };
-            entry.fileexpr.reserve( expr );
-            while( expr-- ) {
-                entry.fileexpr.emplace_back( resolve( read_varint( Input ) ) );
-            }
-            auto params { read_varint( Input ) };
-            entry.params.reserve( params );
-            while( params-- ) {
-                entry.params.emplace_back( resolve( read_varint( Input ) ) );
-            }
+    switch( tag ) {
+        case TAG_INCLUDE: {
+            Out.type = scenery_entry_type::include;
+            auto fe = read_varint( m_cursor, m_end );
+            Out.fileexpr.reserve( fe );
+            while( ( fe-- != 0 ) && ( m_cursor < m_end ) ) { Out.fileexpr.emplace_back( resolve( read_varint( m_cursor, m_end ) ) ); }
+            auto pe = read_varint( m_cursor, m_end );
+            Out.params.reserve( pe );
+            while( ( pe-- != 0 ) && ( m_cursor < m_end ) ) { Out.params.emplace_back( resolve( read_varint( m_cursor, m_end ) ) ); }
+            break;
         }
-        else if( entry.type == scenery_entry_type::number ) {
-            entry.number = sn_utils::ld_float64( Input );
-        }
-        else {
-            entry.text = resolve( read_varint( Input ) );
-        }
-        m_entries.emplace_back( std::move( entry ) );
+        case TAG_INT:
+            Out.type = scenery_entry_type::number;
+            Out.number = static_cast<double>( zigzag_decode( read_varint( m_cursor, m_end ) ) );
+            break;
+        case TAG_F32:
+            Out.type = scenery_entry_type::number;
+            Out.number = static_cast<double>( read_f32le( m_cursor, m_end ) );
+            break;
+        case TAG_F64:
+            Out.type = scenery_entry_type::number;
+            Out.number = read_f64le( m_cursor, m_end );
+            break;
+        case TAG_QTOKEN:
+            Out.type = scenery_entry_type::qtoken;
+            Out.text = resolve( head >> TAG_BITS );
+            break;
+        case TAG_TOKEN:
+        default:
+            Out.type = scenery_entry_type::token;
+            Out.text = resolve( head >> TAG_BITS );
+            break;
     }
-
-    return ( false == Input.fail() );
+    return true;
 }
 
 namespace {

@@ -22,8 +22,8 @@ http://mozilla.org/MPL/2.0/.
 // before cParser is defined.
 namespace scene {
     enum class scenery_file_kind : std::uint8_t;
-    struct scenery_entry;
     class scenery_binary_writer;
+    class scenery_binary_reader;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -39,9 +39,13 @@ class cParser //: public std::stringstream
         buffer_TEXT
     };
     // constructors:
-    cParser(std::string const &Stream, buffertype const Type = buffer_TEXT, std::string Path = "", bool const Loadtraction = true, std::vector<std::string> Parameters = std::vector<std::string>(), bool allowRandom = false );
+    cParser(std::string const &Stream, buffertype const Type = buffer_TEXT, std::string Path = "", bool const Loadtraction = true, std::vector<std::string> Parameters = std::vector<std::string>(), bool allowRandom = false, bool BakeOnly = false );
     // destructor:
     virtual ~cParser();
+    // bake-only: tokenize this file into its binary twin without opening includes or
+    // touching scene state, and return the (relative) filenames it includes so a parallel
+    // baker can compile each of those twins on its own thread. requires BakeOnly ctor.
+    std::vector<std::string> bakeFile();
     // methods:
     template <typename Type_>
     cParser &
@@ -70,9 +74,11 @@ class cParser //: public std::stringstream
             // in replay mode there is no character stream; exhaustion is reaching the
             // end of the twin's entries with no include still being drained
             if( m_replay ) {
-                return ( m_entryindex >= m_entrycount ) && ( !mIncludeParser );
+                return m_replayexhausted && ( !mIncludeParser );
             }
-            return mStream->eof(); };
+            // text is tokenized from an in-memory buffer; eof is the read cursor
+            // reaching its end
+            return ( m_bufferpos >= m_buffer.size() ); };
     inline
     bool
         ok() {
@@ -145,7 +151,9 @@ class cParser //: public std::stringstream
     // members:
     bool m_autoclear { true }; // unretrieved tokens are discarded when another read command is issued (legacy behaviour)
     bool LoadTraction { true }; // load traction?
-    std::shared_ptr<std::istream> mStream; // relevant kind of buffer is attached on creation.
+    std::shared_ptr<std::istream> mStream; // attached on creation; kept for open/fail state.
+    std::string m_buffer; // whole source text read into memory; tokenized from here
+    std::size_t m_bufferpos { 0 }; // read cursor into m_buffer
     std::string mFile; // name of the open file, if any
     std::string mPath; // path to open stream, for relative path lookups.
     std::streamoff mSize { 0 }; // size of open stream, for progress report.
@@ -160,11 +168,13 @@ class cParser //: public std::stringstream
     std::vector<std::string> parameters; // parameter list for included file.
     std::deque<std::string> tokens;
     // --- binary scenery twin support ---
+    // last token produced by readTokenFromStream was (partly) quoted -> case preserved
+    bool m_lastquoted { false };
     // replay: this file is served from its binary twin instead of text
     bool m_replay { false };
-    std::vector<scene::scenery_entry> m_entries; // entries loaded from the twin (replay)
-    std::size_t m_entryindex { 0 }; // read cursor into m_entries
-    std::size_t m_entrycount { 0 }; // m_entries.size(), cached for inline eof()
+    bool m_replayexhausted { false }; // all twin entries consumed (for inline eof())
+    std::string m_twinbuf; // whole twin file held in memory; the reader views into it
+    std::unique_ptr<scene::scenery_binary_reader> m_reader; // streams entries from m_twinbuf
     // compile: this file is being captured into a binary twin alongside the text read
     bool m_compiling { false };
     std::unique_ptr<scene::scenery_binary_writer> m_writer;
@@ -172,6 +182,9 @@ class cParser //: public std::stringstream
     scene::scenery_file_kind m_binarykind {}; // value-initialised (== scenery_file_kind::scn)
     bool m_capturesuppress { false }; // suppress token capture (include directive internals)
     bool m_twinwritten { false }; // guards against writing the twin more than once
+    // standalone/parallel bake: capture this file only, collect its include filenames
+    bool m_bakeonly { false };
+    std::vector<std::string> m_bakeincludes;
 };
 
 

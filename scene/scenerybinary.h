@@ -11,46 +11,50 @@ http://mozilla.org/MPL/2.0/.
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <iosfwd>
 #include <memory>
+#include <sstream>
+#include <unordered_map>
 
 #include "utilities/utilities.h" // MAKE_ID4
 
-// Binary, modular scenery container ("eu7" format, version 1).
+// Binary, modular scenery container ("eu7" format).
 //
-// Replaces the legacy text formats (.scn / .scm / .inc) and the old terrain-only
-// .sbt blob. The mapping is one-to-one and modular: every text file compiles to
-// exactly one binary twin and includes are preserved as references, so the binary
-// twin of one file points to the binary twins of the files it includes.
-//     route.scn -> route.scnb
-//     piece.inc -> piece.incb
-//     mesh.scm  -> mesh.scmb
+// Replaces the legacy text formats (.scn / .scm / .inc / .ctr) and the old terrain-only
+// .sbt blob. The mapping is one-to-one and modular: every text file compiles to exactly
+// one binary twin and includes are preserved as references, so the binary twin of one
+// file points to the binary twins of the files it includes.
+//     route.scn -> route.scnb     piece.inc -> piece.incb
+//     mesh.scm  -> mesh.scmb       events.ctr -> events.ctrb
 //
-// A binary twin stores the source file's own, fully resolved content (comments
-// stripped, parameters and random sets resolved) as an ordered list of entries.
-// Numeric tokens are stored as 8-byte IEEE doubles (so coordinates, ranges etc. are
-// genuinely binary, not ASCII). All string tokens (keywords like "node"/"endmodel",
-// names, paths) are interned into a per-file string table and referenced from the
-// entries by a small varint index, so a keyword that occurs thousands of times is
-// stored once. An "include" entry marks the spot where the source file pulled in
-// another file, carrying the (interned) include filename expression and parameters.
+// A twin stores the source file's own, fully resolved content (comments stripped,
+// parameters/random sets resolved) as an ordered list of entries:
+//   * string tokens (keywords like "node"/"endmodel", names, paths) are interned into a
+//     per-file table and referenced by a varint index, so a keyword that occurs
+//     thousands of times is stored once;
+//   * numeric tokens are stored typed -- integral values as a zig-zag varint (1-2 bytes
+//     for the many small ints), fractional values as an 8-byte IEEE double;
+//   * an "include" entry carries the (interned) filename expression and parameters.
+// Each entry's type is packed into the low bits of a single varint together with the
+// token index, so the common case (a token) costs just that one varint.
 //
-// The binary is consumed transparently at the cParser file layer: opening a file
-// whose binary twin exists serves tokens from the twin instead of tokenizing text,
-// and an include entry triggers the same include machinery as the text path (which
-// recursively prefers the included file's own binary twin). The scenery
-// deserializer is unaware of the format and needs no changes; the file's identity
-// (cParser::Name()), node grouping per .inc and parameter substitution are all
-// preserved exactly as in the text path.
+// Reading is buffer-based and streaming: the whole twin is read into memory once and
+// parsed by pointer (no per-byte stream calls), and entries are decoded on demand
+// (no intermediate materialisation), with string tokens served as views into the
+// buffer. The binary is consumed transparently at the cParser file layer; the scenery
+// deserializer is unaware of the format. cParser::Name(), per-.inc node grouping and
+// parameter substitution are preserved exactly as in the text path.
 
 namespace scene {
 
 // "eu7" + format version, little-endian via MAKE_ID4 ('e','u','7',<ver>).
-// v2 introduced typed numeric entries (f64); v3 interns string tokens into a per-file
-// table referenced by varint indices. bumping the version invalidates older twins so
-// they are recompiled rather than misread.
-constexpr std::uint32_t SCENERYBINARY_MAGIC { MAKE_ID4( 'e', 'u', '7', 3 ) };
+// v4: buffer-streamed reader, packed entry tags, zig-zag varint integers.
+// v5: tokens stored in original case (lower-cased per consumer at replay) with a quoted
+//     flag, so baking is grammar-independent (enables the headless/standalone baker).
+// bumping the version invalidates older twins so they are recompiled rather than misread.
+constexpr std::uint32_t SCENERYBINARY_MAGIC { MAKE_ID4( 'e', 'u', '7', 5 ) };
 
 // file extension of the binary twin, derived from source kind
 std::string const SCENERYBINARY_EXT_SCN { ".scnb" };
@@ -65,72 +69,91 @@ enum class scenery_file_kind : std::uint8_t {
     scm = 2,
 };
 
-// kind of a stored entry
+// logical kind of an entry as seen by the consumer (the on-disk integer/float split is
+// an encoding detail hidden inside the reader/writer)
 enum class scenery_entry_type : std::uint8_t {
-    token = 0,   // a non-numeric resolved token (name/path/keyword), stored as a string
+    token = 0,   // a non-numeric token (name/path/keyword); lower-cased per consumer at replay
     include = 1, // an include directive: pulls in another file with parameters
-    number = 2,  // a numeric token, stored as an 8-byte IEEE double
+    number = 2,  // a numeric token
+    qtoken = 3,  // a quoted token; case preserved verbatim at replay
 };
 
-// a single ordered element of a file's resolved content
-struct scenery_entry {
+// a decoded entry handed to the consumer during streaming reads; string fields are
+// views into the reader's buffer and are valid until the next read / reader destruction
+struct scenery_entry_view {
     scenery_entry_type type { scenery_entry_type::token };
-    // token value (token entries only)
-    std::string text;
-    // numeric value (number entries only)
-    double number { 0.0 };
-    // include only: the raw filename expression as written in the source, i.e. either
-    // a single filename token or a random set "[ a b c ]" (including the brackets).
-    // kept verbatim so the random choice is re-evaluated on every replay rather than
-    // frozen at compile time.
-    std::vector<std::string> fileexpr;
-    // include only: directive parameters
-    std::vector<std::string> params;
+    std::string_view text;                       // token
+    double number { 0.0 };                       // number
+    std::vector<std::string_view> fileexpr;      // include
+    std::vector<std::string_view> params;        // include
 };
 
-// accumulates a file's entries and writes them, with a header, to a stream
+// accumulates a file's content and serializes it. entries are encoded incrementally into
+// a compact byte buffer as they are added (strings interned on the fly), so even a huge
+// source file costs only its interned table plus a few bytes per token -- not a heavy
+// struct per token -- keeping parallel baking within memory.
 class scenery_binary_writer {
 
 public:
-    void add_token( std::string Token );
-    // stores a numeric token as a typed double
+    // Quoted marks the token as a quoted span (its case is preserved verbatim at replay)
+    void add_token( std::string const &Token, bool Quoted = false );
     void add_number( double Value );
     // Fileexpr is the verbatim filename expression (single token or random set)
-    void add_include( std::vector<std::string> Fileexpr, std::vector<std::string> Params );
-    std::size_t entry_count() const { return m_entries.size(); }
-    // serializes header + entries to the stream. returns false on stream failure.
+    void add_include( std::vector<std::string> const &Fileexpr, std::vector<std::string> const &Params );
+    std::size_t entry_count() const { return m_count; }
+    // serializes header + string table + encoded entries. returns false on stream failure.
     bool write( std::ostream &Output, scenery_file_kind Kind ) const;
 
 private:
-    std::vector<scenery_entry> m_entries;
+    std::uint32_t intern( std::string const &Text );
+
+    std::unordered_map<std::string, std::uint32_t> m_lookup; // string -> table index
+    std::vector<std::string> m_table;                        // interned strings, in order
+    std::ostringstream m_entries;                            // encoded entry bytes
+    std::size_t m_count { 0 };                               // number of entries
 };
 
-// reads a binary scenery file fully into memory and exposes its entries in order
+// parses a binary twin held in a memory buffer and streams its entries on demand.
+// the buffer must outlive the reader (the cParser owns both).
 class scenery_binary_reader {
 
 public:
-    // validates magic/version and loads every entry. returns false if the stream is
-    // not a valid current-version binary scenery file.
-    bool open( std::istream &Input );
+    // validates magic/version and indexes the string table; positions at the first
+    // entry. returns false if Buffer is not a valid current-version twin.
+    bool open( std::string_view Buffer );
 
     scenery_file_kind kind() const { return m_kind; }
-    std::vector<scenery_entry> const &entries() const { return m_entries; }
+    // decodes the next entry into Out; returns false once all entries are consumed
+    bool next( scenery_entry_view &Out );
+    bool exhausted() const { return m_remaining == 0; }
+    // fraction of entries consumed so far, 0..100, for the loading bar
+    int progress() const { return ( m_total == 0 ? 100 : static_cast<int>( ( m_total - m_remaining ) * 100 / m_total ) ); }
 
 private:
+    std::vector<std::string_view> m_table;
+    char const *m_cursor { nullptr };
+    char const *m_end { nullptr };
+    std::uint32_t m_remaining { 0 };
+    std::uint32_t m_total { 0 };
     scenery_file_kind m_kind { scenery_file_kind::scn };
-    std::vector<scenery_entry> m_entries;
 };
 
 // maps a source scenery filename to the extension of its binary twin
 std::string scenerybinary_extension_for( std::string const &Sourcefile );
 
-// Asynchronous baking: serializing and writing a twin is pure, self-contained work
-// (it only needs the writer's collected entries), so it is offloaded to a small thread
-// pool and overlaps with the rest of scene construction instead of blocking the load.
-// Takes ownership of the writer.
+// Asynchronous baking: serializing and writing a twin is self-contained work, so it is
+// offloaded to a small thread pool and overlaps with scene construction. Takes ownership
+// of the writer.
 void scenerybinary_write_async( std::unique_ptr<scenery_binary_writer> Writer, std::string Path, scenery_file_kind Kind );
-// Blocks until every queued async write has finished, then emits their log lines on the
-// calling (main) thread. Call once the scenario has finished loading.
+// Blocks until every queued async write has finished, logging results on the calling
+// (main) thread. Call once the scenario has finished loading.
 void scenerybinary_wait_all();
+
+// Headless bake: tokenizes the scenario file and, recursively, every file it includes,
+// writing each one's binary twin -- with no scene construction, renderer or window. Used
+// by the "-bake" command line mode to precompile a scenery offline. Fresh twins are left
+// untouched; only missing/stale ones are (re)compiled. Returns false if the file can't be
+// opened.
+bool scenerybinary_bake_headless( std::string const &Scenariofile, std::string const &Path, bool Loadtraction );
 
 } // namespace scene

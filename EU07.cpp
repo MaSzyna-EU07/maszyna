@@ -20,6 +20,7 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 
 #include "application/application.h"
 #include "utilities/Logs.h"
+#include "scene/scenerybinary.h"
 #include <cstdlib>
 #ifdef WITHDUMPGEN
 #ifdef _WIN32
@@ -97,6 +98,12 @@ int main(int argc, char *argv[])
 		int flags = std::stoi(std::string(argv[4]));
 		int dynamic = std::stoi(std::string(argv[5]));
 		export_e3d_standalone(in, out, flags, dynamic);
+	}
+	// headless bake: precompile a scenery (and all its includes) into binary twins with
+	// no window, renderer or simulation. usage: eu07 -bake <sceneryfile relative to scenery/>
+	else if (argc >= 3 && std::string(argv[1]) == "-bake")
+	{
+		scene::scenerybinary_bake_headless(argv[2], Global.asCurrentSceneryPath, Global.bLoadTraction);
 	}
 	else
 	{
