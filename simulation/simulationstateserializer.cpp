@@ -172,6 +172,14 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
     if( ( false == state->visualphase )
      && ( true == Input.restartReplay( scene::scenery_load_pass::visual ) ) ) {
         state->visualphase = true;
+        // rebuild the transform state from scratch for the visual pass: the directives
+        // (origin/rotate/scale) are replayed in order, so resetting here reproduces the
+        // single-pass placement exactly. without this, an unbalanced origin left on the
+        // stack by the infrastructure pass would be applied a second time and shift every
+        // deferred visual node ("terrain dumped next to the tracks").
+        Scratchpad.location.offset = {};
+        Scratchpad.location.scale = {};
+        Scratchpad.location.rotation = glm::vec3{};
         return false; // infrastructure ready -> go to driver; visuals continue there
     }
 
