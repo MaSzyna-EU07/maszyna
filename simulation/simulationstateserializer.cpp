@@ -32,8 +32,25 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <limits>
 
 namespace simulation {
+
+namespace {
+// camera-distance rings for nearest-first visual streaming: the squared outer radius of
+// each ring. the visual pass is replayed once per ring (nearest first), building only the
+// nodes whose squared distance to the camera falls in [inner, outer); the last ring is
+// unbounded so every remaining node is built exactly once.
+constexpr double RING_OUTER2[] = {
+    500.0 * 500.0,
+    1500.0 * 1500.0,
+    4000.0 * 4000.0,
+    std::numeric_limits<double>::infinity() };
+constexpr int RING_COUNT { static_cast<int>( sizeof( RING_OUTER2 ) / sizeof( RING_OUTER2[ 0 ] ) ) };
+inline int ring_lastindex() { return RING_COUNT - 1; }
+inline double ring_min2( int const K ) { return ( K <= 0 ? 0.0 : RING_OUTER2[ K - 1 ] ); }
+inline double ring_max2( int const K ) { return RING_OUTER2[ ( K < RING_COUNT ? K : RING_COUNT - 1 ) ]; }
+} // anonymous namespace
 
 std::shared_ptr<deserializer_state>
 state_serializer::deserialize_begin( std::string const &Scenariofile ) {
@@ -118,10 +135,15 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 	cParser &Input = state->input;
 	scene::scratch_data &Scratchpad = state->scratchpad;
 
-    // camera-ordered build phase: the visual replay has been enumerated into records and
-    // sorted; build them nearest-camera first, a budgeted slice per call.
-    if( state->enumdone ) {
-        return build_visual_records( state );
+    // mirror the camera-ring state so deserialize_model()/deserialize_node() can ring-test
+    // each node by distance: in the visual phase the twin is replayed once per ring and only
+    // the nodes in the current ring are built, the rest skipped in O(1)
+    m_ringactive = state->visualphase;
+    if( true == m_ringactive ) {
+        m_ringindex = state->ringindex;
+        m_ringeye = state->ringeye;
+        m_ringmin2 = ring_min2( state->ringindex );
+        m_ringmax2 = ring_max2( state->ringindex );
     }
 
     // stateful directives that build objects/lists; on the visual (second) pass they are
@@ -153,18 +175,6 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
                 token = Input.getToken<std::string>();
                 continue;
             }
-            if( ( true == state->enumerate ) && ( token == "node" ) ) {
-                // capture the visual node (text + transform/group snapshot) for later,
-                // camera-ordered building, instead of building it in file order now
-                enumerate_visual_node( *state );
-                auto timenow = std::chrono::steady_clock::now();
-                if( std::chrono::duration_cast<std::chrono::milliseconds>( timenow - timelast ).count() >= 8 ) {
-                    Application.set_progress( Input.getProgress(), Input.getFullProgress() );
-                    return true;
-                }
-                token = Input.getToken<std::string>();
-                continue;
-            }
         }
 
 		auto lookup = state->functionmap.find( token );
@@ -187,51 +197,44 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
         token = Input.getToken<std::string>();
     }
 
-    if( ( true == state->visualphase ) && ( true == state->enumerate ) ) {
-        // visual replay exhausted: order the captured nodes by distance to the camera so
-        // the player's surroundings stream in first (terrain shapes ahead of models, so the
-        // ground appears before the props on it), then switch to the build phase.
-        auto const eye { Global.pCamera.Pos };
-        for( auto &rec : state->records ) {
-            auto const d { rec.worldpos - eye };
-            rec.sortkey =
-                ( rec.isshape ?
-                    -1.0 : // shapes (terrain) first, regardless of distance
-                    ( d.x * d.x + d.y * d.y + d.z * d.z ) );
-        }
-        std::stable_sort(
-            std::begin( state->records ), std::end( state->records ),
-            []( visual_record const &L, visual_record const &R ) {
-                return L.sortkey < R.sortkey; } );
-        WriteLog( "Progressive visual load: " + std::to_string( state->records.size() ) + " deferred nodes enumerated, building nearest-camera first" );
-        state->enumerate = false;
-        state->enumdone = true;
-        return true; // proceed to the build phase
-    }
-
     if( false == Scratchpad.initialized ) {
         // manually perform scenario initialization
         deserialize_firstinit( Input, Scratchpad );
     }
 
+    // helper: reset the transform stack before each replay pass. the directives
+    // (origin/rotate/scale) are replayed in order, so resetting here reproduces the
+    // single-pass placement exactly; without it an unbalanced origin left on the stack would
+    // be applied again and shift every deferred visual node ("terrain dumped beside the tracks").
+    auto const resettransform = [ &Scratchpad ]() {
+        Scratchpad.location.offset = {};
+        Scratchpad.location.scale = {};
+        Scratchpad.location.rotation = glm::vec3{}; };
+
     // first (infrastructure) pass finished: the scenario is now playable (tracks, events,
     // signals, the player train are all loaded). hand control back so the loader can switch
-    // to the driver; the visual nodes load progressively from the driver via a second pass
-    // over the same twin. only possible when replaying a binary twin -- a text/compile load
-    // did everything in one pass (restartReplay returns false).
+    // to the driver; the visual nodes load progressively from the driver, replayed once per
+    // camera-distance ring (nearest first). the camera is sampled once here so the ring
+    // partition stays stable across passes. only possible when replaying a binary twin -- a
+    // text/compile load did everything in one pass (restartReplay returns false).
     if( ( false == state->visualphase )
      && ( true == Input.restartReplay( scene::scenery_load_pass::visual ) ) ) {
         state->visualphase = true;
-        state->enumerate = true; // capture deferred visual nodes, build them camera-ordered
-        // rebuild the transform state from scratch for the visual pass: the directives
-        // (origin/rotate/scale) are replayed in order, so resetting here reproduces the
-        // single-pass placement exactly. without this, an unbalanced origin left on the
-        // stack by the infrastructure pass would be applied a second time and shift every
-        // deferred visual node ("terrain dumped next to the tracks").
-        Scratchpad.location.offset = {};
-        Scratchpad.location.scale = {};
-        Scratchpad.location.rotation = glm::vec3{};
+        state->ringindex = 0;
+        state->ringeye = Global.pCamera.Pos;
+        resettransform();
+        WriteLog( "Progressive visual load: streaming deferred nodes nearest-camera first (" + std::to_string( RING_COUNT ) + " rings)" );
         return false; // infrastructure ready -> go to driver; visuals continue there
+    }
+
+    // a ring pass finished: advance to the next (farther) ring and replay again, until the
+    // outermost ring has been built
+    if( ( true == state->visualphase )
+     && ( state->ringindex < ring_lastindex() )
+     && ( true == Input.restartReplay( scene::scenery_load_pass::visual ) ) ) {
+        ++state->ringindex;
+        resettransform();
+        return true; // more rings to build
     }
 
     scene::Groups.close();
@@ -253,166 +256,6 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 
 	state->done = true;
 	return false;
-}
-
-// captures one visual node (the "node" token already consumed) into a record for later,
-// camera-ordered building: stores the node's verbatim tokens plus the transform/group
-// context it was read under. numbers come through cParser losslessly, so the rebuild is
-// exact. only model/triangles/lines reach the visual pass.
-void
-state_serializer::enumerate_visual_node( deserializer_state &State ) {
-
-    cParser &Input = State.input;
-    scene::scratch_data &Scratchpad = State.scratchpad;
-
-    // node header, original case preserved (model file paths are case-sensitive at replay)
-    auto const smax  { Input.getToken<std::string>( false ) };
-    auto const smin  { Input.getToken<std::string>( false ) };
-    auto const sname { Input.getToken<std::string>( false ) };
-    auto const stype { Input.getToken<std::string>( false ) };
-
-    auto lower = []( std::string s ) {
-        for( auto &c : s ) { c = static_cast<char>( std::tolower( static_cast<unsigned char>( c ) ) ); }
-        return s; };
-
-    auto const typelc { lower( stype ) };
-    std::string endtok;
-    bool ismodel { false };
-    bool istriangles { false };
-    if( typelc == "model" ) {
-        endtok = "endmodel"; ismodel = true;
-    }
-    else if( ( typelc == "triangles" ) || ( typelc == "triangle_strip" ) || ( typelc == "triangle_fan" ) ) {
-        endtok = "endtri"; istriangles = true;
-    }
-    else if( ( typelc == "lines" ) || ( typelc == "line_strip" ) || ( typelc == "line_loop" ) ) {
-        endtok = "endline";
-    }
-
-    // mirror deserialize_node's switch-trackbed skip here, while the source file name is
-    // still known (Input.Name() is the live include during replay; the per-record rebuild
-    // parser has no name). without this, fixed trackbed geometry from scenery/zwr*.inc that
-    // the in-order load drops would be rebuilt and duplicate the procedural trackbeds.
-    bool skipnode { false };
-    if( ( true == istriangles ) && ( true == Global.CreateSwitchTrackbeds ) ) {
-        auto const name { Input.Name() };
-        skipnode =
-            ( name.size() >= 15 )
-         && name.starts_with( "scenery/zwr" )
-         && name.ends_with( ".inc" );
-    }
-
-    // appends one token to the rebuilt node text, re-quoting it if it carries a token break
-    // (a quoted source token such as a name/path with spaces arrives here unquoted; without
-    // re-quoting it the rebuild parser would split it into several tokens)
-    auto appendtok = []( std::string &Text, std::string const &Token ) {
-        bool const needsquote {
-            Token.empty()
-         || ( Token.find_first_of( "\n\r\t ;" ) != std::string::npos ) };
-        Text.push_back( ' ' );
-        if( true == needsquote ) { Text.push_back( '\"' ); }
-        Text.append( Token );
-        if( true == needsquote ) { Text.push_back( '\"' ); } };
-
-    std::string text;
-    text.reserve( 96 );
-    text.append( "node" );
-    appendtok( text, smax );
-    appendtok( text, smin );
-    appendtok( text, sname );
-    appendtok( text, stype );
-
-    glm::dvec3 localpos { 0.0 };
-    int posread { 0 };
-    // read the rest of the node verbatim until its terminator (or the first end* token if the
-    // type is unrecognised), capturing a model's local position (the first 3 numbers)
-    for( ;; ) {
-        auto const tok { Input.getToken<std::string>( false ) };
-        if( tok.empty() ) { break; } // safety: input ran out
-        appendtok( text, tok );
-        if( ( true == ismodel ) && ( posread < 3 ) ) {
-            localpos[ posread ] = std::atof( tok.c_str() );
-            ++posread;
-        }
-        auto const toklc { lower( tok ) };
-        if( false == endtok.empty() ) {
-            if( toklc == endtok ) { break; }
-        }
-        else if( ( toklc.size() >= 3 ) && ( 0 == toklc.compare( 0, 3, "end" ) ) ) {
-            break;
-        }
-    }
-
-    if( true == skipnode ) {
-        // node consumed from the stream above; intentionally not recorded (matches the
-        // in-order load, which skips this geometry in favour of procedural trackbeds)
-        return;
-    }
-
-    visual_record rec;
-    rec.text = std::move( text );
-    rec.group = scene::Groups.handle();
-    rec.has_offset = ( false == Scratchpad.location.offset.empty() );
-    if( true == rec.has_offset ) { rec.offset = Scratchpad.location.offset.top(); }
-    rec.has_scale = ( false == Scratchpad.location.scale.empty() );
-    if( true == rec.has_scale ) { rec.scale = Scratchpad.location.scale.top(); }
-    rec.rotation = Scratchpad.location.rotation;
-    rec.isshape = ( false == ismodel );
-    if( true == ismodel ) {
-        rec.worldpos = transform( localpos, Scratchpad );
-    }
-    State.records.emplace_back( std::move( rec ) );
-}
-
-// builds the enumerated visual records in (already-sorted) nearest-camera-first order, a
-// budgeted slice per call. each node is rebuilt through the normal node path with its
-// captured transform/group restored, so placement, grouping and the per-cell instance
-// buckets come out identical to an in-order load.
-bool
-state_serializer::build_visual_records( std::shared_ptr<deserializer_state> state ) {
-
-    scene::scratch_data &Scratchpad = state->scratchpad;
-    auto timelast { std::chrono::steady_clock::now() };
-
-    while( state->buildcursor < state->records.size() ) {
-        auto &rec = state->records[ state->buildcursor ];
-        // restore the transform context captured for this node
-        Scratchpad.location.offset = {};
-        if( true == rec.has_offset ) { Scratchpad.location.offset.push( rec.offset ); }
-        Scratchpad.location.scale = {};
-        if( true == rec.has_scale ) { Scratchpad.location.scale.push( rec.scale ); }
-        Scratchpad.location.rotation = rec.rotation;
-        // re-attach to the node's original group and build via the normal node path (this
-        // routes instanceable models into their per-cell instance bucket automatically)
-        scene::Groups.push_active( rec.group );
-        {
-            cParser nodeparser( rec.text, cParser::buffer_TEXT );
-            nodeparser.getToken<std::string>(); // consume "node"
-            deserialize_node( nodeparser, Scratchpad );
-        }
-        scene::Groups.pop_active();
-        std::string().swap( rec.text ); // release the captured text as we go
-        ++state->buildcursor;
-
-        auto timenow = std::chrono::steady_clock::now();
-        if( std::chrono::duration_cast<std::chrono::milliseconds>( timenow - timelast ).count() >= 8 ) {
-            return true; // yield; resume next frame
-        }
-    }
-
-    // every deferred visual node is now built: finalise the scenario
-    scene::Groups.close();
-    scene::Groups.update_map();
-    Region->create_map_geometry();
-    // the visual model instances now exist, so initialise the events that bind to them
-    // (lights/animation/texture/visible) -- these were deferred during the infrastructure
-    // pass when their target models hadn't been streamed in yet
-    simulation::Events.InitInstanceEvents();
-    state->input.flushBinaryTwin();
-    scene::scenerybinary_wait_all();
-    std::vector<visual_record>().swap( state->records );
-    state->done = true;
-    return false;
 }
 
 void
@@ -797,6 +640,13 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
           || ( nodedata.type == "triangle_strip" )
           || ( nodedata.type == "triangle_fan" ) ) {
 
+        // explicit shapes have no single position to ring-test by, so build them only in the
+        // nearest ring pass (ring 0) and skip them in O(1) on the farther passes
+        if( ( true == m_ringactive ) && ( m_ringindex > 0 ) ) {
+            if( false == Input.skipReplayNode() ) { skip_until( Input, "endtri" ); }
+            return;
+        }
+
         auto const skip {
             // crude way to detect fixed switch trackbed geometry
             ( ( true == Global.CreateSwitchTrackbeds )
@@ -819,6 +669,12 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     else if( ( nodedata.type == "lines" )
           || ( nodedata.type == "line_strip" )
           || ( nodedata.type == "line_loop" ) ) {
+
+        // see the triangles branch: explicit shapes build in ring 0 only
+        if( ( true == m_ringactive ) && ( m_ringindex > 0 ) ) {
+            if( false == Input.skipReplayNode() ) { skip_until( Input, "endline" ); }
+            return;
+        }
 
         simulation::Region->insert(
             scene::lines_node().import(
@@ -1164,6 +1020,19 @@ state_serializer::deserialize_model( cParser &Input, scene::scratch_data &Scratc
         >> location.y
         >> location.z
         >> rotation.y;
+
+    // camera-ring visual streaming: build this model only if it falls in the ring currently
+    // being streamed; otherwise skip the rest of its body in O(1) and let a later (farther)
+    // ring pass pick it up. covers terrain models (range_min<0) too -- they also have X Y Z.
+    if( true == m_ringactive ) {
+        auto const world { transform( location, Scratchpad ) };
+        auto const d { world - m_ringeye };
+        auto const d2 { d.x * d.x + d.y * d.y + d.z * d.z };
+        if( ( d2 < m_ringmin2 ) || ( d2 >= m_ringmax2 ) ) {
+            if( false == Input.skipReplayNode() ) { skip_until( Input, "endmodel" ); }
+            return nullptr;
+        }
+    }
 
     auto *instance = new TAnimModel( Nodedata );
     instance->Angles( Scratchpad.location.rotation + rotation ); // dostosowanie do pochylania linii

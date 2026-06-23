@@ -57,6 +57,11 @@ class cParser //: public std::stringstream
     // true when this (top-level) file is served from a binary twin, i.e. a second
     // (visual) pass via restartReplay() is possible. false for a text/compile load.
     bool isReplaying() const { return m_replay; }
+    // skips the rest of the node currently being replayed in O(1) (jump over its v6 marker
+    // span), delegating to the active include child that is actually serving it. returns
+    // false if the skip can't be done here (e.g. a text include with no binary twin), so the
+    // caller can fall back to a token-by-token skip. used by the camera-ring visual load.
+    bool skipReplayNode();
     // methods:
     template <typename Type_>
     cParser &

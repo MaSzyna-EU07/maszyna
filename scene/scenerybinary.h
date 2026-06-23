@@ -148,6 +148,11 @@ public:
     // decodes the next served entry into Out, skipping node markers / out-of-pass nodes;
     // returns false once all entries are consumed
     bool next( scenery_entry_view &Out );
+    // jumps the cursor to the end of the node currently being served, so the rest of its
+    // body is skipped in O(1). valid right after next() handed out an entry belonging to a
+    // node; returns false (no-op) otherwise. used by the camera-ring visual load to drop a
+    // node outside the current distance ring once its position has been read.
+    bool skip_to_node_end() { if( m_nodeend == nullptr ) { return false; } m_cursor = m_nodeend; m_nodeend = nullptr; return true; }
     bool exhausted() const { return m_cursor >= m_end; }
     // fraction of bytes consumed so far, 0..100, for the loading bar
     int progress() const { return ( m_size == 0 ? 100 : static_cast<int>( ( m_cursor - m_begin ) * 100 / m_size ) ); }
@@ -157,6 +162,7 @@ private:
     char const *m_begin { nullptr }; // start of the entry section
     char const *m_cursor { nullptr };
     char const *m_end { nullptr };
+    char const *m_nodeend { nullptr }; // end of the node currently being served (for skip_to_node_end)
     std::ptrdiff_t m_size { 0 };      // entry section byte length
     scenery_load_pass m_pass { scenery_load_pass::all };
     scenery_file_kind m_kind { scenery_file_kind::scn };

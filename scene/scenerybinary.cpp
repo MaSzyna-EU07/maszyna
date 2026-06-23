@@ -273,6 +273,13 @@ scenery_binary_reader::next( scenery_entry_view &Out ) {
             m_cursor += static_cast<std::ptrdiff_t>( span );
             if( m_cursor > m_end ) { m_cursor = m_end; }
         }
+        else {
+            // remember where this node ends so the consumer can bail out of it in O(1)
+            // (skip_to_node_end) after peeking just its first few entries -- used by the
+            // camera-ring visual load to drop a node that's outside the current distance ring
+            m_nodeend = m_cursor + static_cast<std::ptrdiff_t>( span );
+            if( m_nodeend > m_end ) { m_nodeend = m_end; }
+        }
         // when processing, fall through: the loop re-reads and decodes the node's first entry
     }
 

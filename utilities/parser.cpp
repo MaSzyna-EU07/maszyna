@@ -888,6 +888,21 @@ void cParser::readReplayToken(std::string &out, bool ToLower, const char *Break)
 	out.clear();
 }
 
+bool cParser::skipReplayNode()
+{
+	// a node's entries are contiguous within a single file, served by the deepest active
+	// include child -- delegate down to whichever parser is actually replaying it
+	if (mIncludeParser) { return mIncludeParser->skipReplayNode(); }
+	if (m_replay && m_reader && m_reader->skip_to_node_end())
+	{
+		// any tokens already pulled into the lookahead deque belong to the node we just
+		// skipped past (or earlier) -- drop them so the next read starts at the next node
+		tokens.clear();
+		return true;
+	}
+	return false;
+}
+
 std::vector<std::string> cParser::readParameters(cParser &Input)
 {
 
