@@ -50,6 +50,10 @@ constexpr int RING_COUNT { static_cast<int>( sizeof( RING_OUTER2 ) / sizeof( RIN
 inline int ring_lastindex() { return RING_COUNT - 1; }
 inline double ring_min2( int const K ) { return ( K <= 0 ? 0.0 : RING_OUTER2[ K - 1 ] ); }
 inline double ring_max2( int const K ) { return RING_OUTER2[ ( K < RING_COUNT ? K : RING_COUNT - 1 ) ]; }
+// per-frame time budget (ms) the driver spends streaming visual nodes. larger = the
+// surroundings fill in faster but the frame it runs on is longer; on a heavy scene (low fps)
+// a too-small budget is a tiny duty cycle, so streaming a million flora instances drags.
+constexpr int VISUAL_BUDGET_MS { 16 };
 } // anonymous namespace
 
 std::shared_ptr<deserializer_state>
@@ -175,6 +179,29 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
                 token = Input.getToken<std::string>();
                 continue;
             }
+            // fast camera-ring skip: a visual model node carries its local position in its v7
+            // marker, so we can distance-test it and drop it in O(1) -- without deserialize_node
+            // decoding any of its tokens. this is what keeps the per-ring replay cheap when a
+            // scenery has a million flora instances. (shapes/older twins have no marker
+            // position; they fall through to deserialize_node, which ring-tests them itself.)
+            if( token == "node" ) {
+                double x, y, z;
+                if( true == Input.currentNodePosition( x, y, z ) ) {
+                    auto const world { transform( glm::dvec3{ x, y, z }, Scratchpad ) };
+                    auto const d { world - m_ringeye };
+                    auto const d2 { d.x * d.x + d.y * d.y + d.z * d.z };
+                    if( ( ( d2 < m_ringmin2 ) || ( d2 >= m_ringmax2 ) )
+                     && ( true == Input.skipReplayNode() ) ) {
+                        auto timenow = std::chrono::steady_clock::now();
+                        if( std::chrono::duration_cast<std::chrono::milliseconds>( timenow - timelast ).count() >= VISUAL_BUDGET_MS ) {
+                            Application.set_progress( Input.getProgress(), Input.getFullProgress() );
+                            return true;
+                        }
+                        token = Input.getToken<std::string>();
+                        continue;
+                    }
+                }
+            }
         }
 
 		auto lookup = state->functionmap.find( token );
@@ -186,9 +213,9 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
         }
 
 		auto timenow = std::chrono::steady_clock::now();
-        // small per-frame budget while streaming visuals in the driver (avoid stutter),
-        // generous budget while the loading screen is up (infrastructure pass)
-        auto const budget = ( state->visualphase ? 8 : 200 );
+        // per-frame budget while streaming visuals in the driver (kept modest to limit
+        // stutter), generous budget while the loading screen is up (infrastructure pass)
+        auto const budget = ( state->visualphase ? VISUAL_BUDGET_MS : 200 );
         if( std::chrono::duration_cast<std::chrono::milliseconds>( timenow - timelast ).count() >= budget ) {
             Application.set_progress( Input.getProgress(), Input.getFullProgress() );
 			return true;
@@ -1024,8 +1051,15 @@ state_serializer::deserialize_model( cParser &Input, scene::scratch_data &Scratc
     // camera-ring visual streaming: build this model only if it falls in the ring currently
     // being streamed; otherwise skip the rest of its body in O(1) and let a later (farther)
     // ring pass pick it up. covers terrain models (range_min<0) too -- they also have X Y Z.
+    // most out-of-ring models are already dropped O(1) at the dispatch loop via their v7
+    // marker; this is the fallback for nodes that reached here (in-ring, or no marker pos).
+    // use the marker position when present so this ring decision matches the dispatch one
+    // exactly -- otherwise a node near a ring boundary could be dropped by both adjacent rings.
     if( true == m_ringactive ) {
-        auto const world { transform( location, Scratchpad ) };
+        glm::dvec3 ringlocal { location };
+        double mx, my, mz;
+        if( true == Input.currentNodePosition( mx, my, mz ) ) { ringlocal = glm::dvec3{ mx, my, mz }; }
+        auto const world { transform( ringlocal, Scratchpad ) };
         auto const d { world - m_ringeye };
         auto const d2 { d.x * d.x + d.y * d.y + d.z * d.z };
         if( ( d2 < m_ringmin2 ) || ( d2 >= m_ringmax2 ) ) {

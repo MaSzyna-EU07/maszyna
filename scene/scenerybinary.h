@@ -56,8 +56,11 @@ namespace scene {
 // v6: top-level nodes wrapped in a marker carrying their class (infrastructure/visual)
 //     and byte span, so the reader can serve or skip a whole node per load pass
 //     (enables progressive loading: infrastructure eager, visuals deferred).
+// v7: a visual model node's marker also carries the model's local position (3 f32), so the
+//     camera-ring visual load can distance-test and skip a node in O(1) without reading any
+//     of its tokens -- the difference between scanning 1M flora nodes per ring and not.
 // bumping the version invalidates older twins so they are recompiled rather than misread.
-constexpr std::uint32_t SCENERYBINARY_MAGIC { MAKE_ID4( 'e', 'u', '7', 6 ) };
+constexpr std::uint32_t SCENERYBINARY_MAGIC { MAKE_ID4( 'e', 'u', '7', 7 ) };
 
 // which entries a reader serves in a given load pass; nodes outside the requested class
 // are skipped (directives/includes are always served, to keep transform/group state)
@@ -113,9 +116,11 @@ public:
     void add_include( std::vector<std::string> const &Fileexpr, std::vector<std::string> const &Params );
     // wrap a top-level node so the reader can serve/skip it per pass. between begin_node()
     // and end_node() the add_*() entries are buffered; end_node() emits a marker (class +
-    // byte span) followed by the buffered entries.
+    // byte span [+ local position for visual models]) followed by the buffered entries.
+    // Haspos/X/Y/Z give a model node's local position so the camera-ring load can skip it
+    // without reading its tokens.
     void begin_node();
-    void end_node( bool Visual );
+    void end_node( bool Visual, bool Haspos = false, double X = 0.0, double Y = 0.0, double Z = 0.0 );
     std::size_t entry_count() const { return m_count; }
     // serializes header + string table + encoded entries. returns false on stream failure.
     bool write( std::ostream &Output, scenery_file_kind Kind ) const;
@@ -153,6 +158,11 @@ public:
     // node; returns false (no-op) otherwise. used by the camera-ring visual load to drop a
     // node outside the current distance ring once its position has been read.
     bool skip_to_node_end() { if( m_nodeend == nullptr ) { return false; } m_cursor = m_nodeend; m_nodeend = nullptr; return true; }
+    // local position of the node currently being served, if its marker carried one (visual
+    // model nodes, v7+). returns false for shapes / infrastructure / older twins.
+    bool node_position( double &X, double &Y, double &Z ) const {
+        if( false == m_nodehaspos ) { return false; }
+        X = m_nodepos[ 0 ]; Y = m_nodepos[ 1 ]; Z = m_nodepos[ 2 ]; return true; }
     bool exhausted() const { return m_cursor >= m_end; }
     // fraction of bytes consumed so far, 0..100, for the loading bar
     int progress() const { return ( m_size == 0 ? 100 : static_cast<int>( ( m_cursor - m_begin ) * 100 / m_size ) ); }
@@ -163,6 +173,8 @@ private:
     char const *m_cursor { nullptr };
     char const *m_end { nullptr };
     char const *m_nodeend { nullptr }; // end of the node currently being served (for skip_to_node_end)
+    double m_nodepos[ 3 ] { 0.0, 0.0, 0.0 }; // local position of the current node (v7 model marker)
+    bool m_nodehaspos { false };            // whether the current node's marker carried a position
     std::ptrdiff_t m_size { 0 };      // entry section byte length
     scenery_load_pass m_pass { scenery_load_pass::all };
     scenery_file_kind m_kind { scenery_file_kind::scn };

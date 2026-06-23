@@ -319,7 +319,7 @@ void cParser::bakeFinishNode()
 	// flush a node still open at end-of-file or one whose type was unrecognized
 	if (m_bakenode_active && m_writer)
 	{
-		m_writer->end_node(m_bakenode_visual);
+		m_writer->end_node(m_bakenode_visual, m_bakenode_haspos, m_bakenode_pos[0], m_bakenode_pos[1], m_bakenode_pos[2]);
 	}
 	m_bakenode_active = false;
 }
@@ -774,6 +774,7 @@ void cParser::readToken(std::string &out, bool ToLower, const char *Break)
 				m_bakenode_active = true;
 				m_bakenode_count = 0;
 				m_bakenode_visual = false;
+				m_bakenode_haspos = false;
 				m_bakenode_end.clear();
 			}
 			else if (m_bakenode_active && m_bakenode_end.empty() && (lowered == "node"))
@@ -785,6 +786,7 @@ void cParser::readToken(std::string &out, bool ToLower, const char *Break)
 				m_bakenode_active = true;
 				m_bakenode_count = 0;
 				m_bakenode_visual = false;
+				m_bakenode_haspos = false;
 				m_bakenode_end.clear();
 			}
 
@@ -807,11 +809,18 @@ void cParser::readToken(std::string &out, bool ToLower, const char *Break)
 				{
 					// 5th node entry is the type token (node, range_max, range_min, name, type)
 					classifyNodeType(lowered, m_bakenode_visual, m_bakenode_end);
+					// a model node's entries 6,7,8 are its local X Y Z -- record them in the
+					// marker so the camera-ring load can skip the node without reading its body
+					m_bakenode_haspos = (lowered == "model");
+				}
+				else if (m_bakenode_haspos && (m_bakenode_count >= 6) && (m_bakenode_count <= 8))
+				{
+					m_bakenode_pos[m_bakenode_count - 6] = value;
 				}
 				else if ((false == m_bakenode_end.empty()) && (lowered == m_bakenode_end))
 				{
 					// terminator captured: close the node
-					m_writer->end_node(m_bakenode_visual);
+					m_writer->end_node(m_bakenode_visual, m_bakenode_haspos, m_bakenode_pos[0], m_bakenode_pos[1], m_bakenode_pos[2]);
 					m_bakenode_active = false;
 				}
 			}
@@ -901,6 +910,13 @@ bool cParser::skipReplayNode()
 		return true;
 	}
 	return false;
+}
+
+bool cParser::currentNodePosition(double &X, double &Y, double &Z)
+{
+	// delegate to the deepest active include child (it serves the current node), like skip
+	if (mIncludeParser) { return mIncludeParser->currentNodePosition(X, Y, Z); }
+	return (m_replay && m_reader && m_reader->node_position(X, Y, Z));
 }
 
 std::vector<std::string> cParser::readParameters(cParser &Input)

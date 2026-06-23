@@ -98,8 +98,9 @@ enum : std::uint64_t {
 
 // node class stored in the TAG_NODE marker
 enum : std::uint64_t {
-    NODECLASS_INFRA  = 0,
-    NODECLASS_VISUAL = 1,
+    NODECLASS_INFRA      = 0,
+    NODECLASS_VISUAL     = 1,
+    NODECLASS_VISUAL_POS = 2, // visual node whose marker is followed by 3 f32 local position
 };
 
 // writes a numeric value in the most compact lossless-enough form: integral values as a
@@ -177,13 +178,24 @@ scenery_binary_writer::begin_node() {
 }
 
 void
-scenery_binary_writer::end_node( bool Visual ) {
+scenery_binary_writer::end_node( bool Visual, bool Haspos, double X, double Y, double Z ) {
     if( false == m_innode ) { return; }
     m_innode = false;
     auto const body = m_nodebuf.str();
     write_varint( m_entries, TAG_NODE );
-    write_varint( m_entries, Visual ? NODECLASS_VISUAL : NODECLASS_INFRA );
+    auto const cls =
+        ( false == Visual ) ? NODECLASS_INFRA :
+        ( Haspos          ) ? NODECLASS_VISUAL_POS :
+                              NODECLASS_VISUAL;
+    write_varint( m_entries, cls );
     write_varint( m_entries, body.size() );
+    // a visual model node stores its local position right after the span, so the reader can
+    // hand it to the camera-ring load without the node body being decoded
+    if( cls == NODECLASS_VISUAL_POS ) {
+        sn_utils::ls_float32( m_entries, static_cast<float>( X ) );
+        sn_utils::ls_float32( m_entries, static_cast<float>( Y ) );
+        sn_utils::ls_float32( m_entries, static_cast<float>( Z ) );
+    }
     m_entries.write( body.data(), static_cast<std::streamsize>( body.size() ) );
 }
 
@@ -264,14 +276,23 @@ scenery_binary_reader::next( scenery_entry_view &Out ) {
         if( tag != TAG_NODE ) { break; }
         auto const cls = read_varint( m_cursor, m_end );
         auto const span = read_varint( m_cursor, m_end );
+        bool const isvisual = ( cls == NODECLASS_VISUAL ) || ( cls == NODECLASS_VISUAL_POS );
+        // a visual model marker carries the node's local position right after the span
+        m_nodehaspos = ( cls == NODECLASS_VISUAL_POS );
+        if( true == m_nodehaspos ) {
+            m_nodepos[ 0 ] = static_cast<double>( read_f32le( m_cursor, m_end ) );
+            m_nodepos[ 1 ] = static_cast<double>( read_f32le( m_cursor, m_end ) );
+            m_nodepos[ 2 ] = static_cast<double>( read_f32le( m_cursor, m_end ) );
+        }
         bool const process =
             ( m_pass == scenery_load_pass::all )
          || ( ( m_pass == scenery_load_pass::infrastructure ) && ( cls == NODECLASS_INFRA ) )
-         || ( ( m_pass == scenery_load_pass::visual ) && ( cls == NODECLASS_VISUAL ) );
+         || ( ( m_pass == scenery_load_pass::visual ) && ( true == isvisual ) );
         if( false == process ) {
             // skip the whole node body
             m_cursor += static_cast<std::ptrdiff_t>( span );
             if( m_cursor > m_end ) { m_cursor = m_end; }
+            m_nodehaspos = false;
         }
         else {
             // remember where this node ends so the consumer can bail out of it in O(1)

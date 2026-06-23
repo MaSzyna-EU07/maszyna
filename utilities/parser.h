@@ -62,6 +62,10 @@ class cParser //: public std::stringstream
     // false if the skip can't be done here (e.g. a text include with no binary twin), so the
     // caller can fall back to a token-by-token skip. used by the camera-ring visual load.
     bool skipReplayNode();
+    // local position of the node about to be replayed (the "node" token just read), if its
+    // v7 marker carried one (visual model nodes). lets the camera-ring load distance-test and
+    // skip a node without decoding its body. returns false for shapes / non-replay / older twins.
+    bool currentNodePosition( double &X, double &Y, double &Z );
     // methods:
     template <typename Type_>
     cParser &
@@ -214,6 +218,10 @@ class cParser //: public std::stringstream
     int m_bakenode_count { 0 };       // entries captured since "node" (1=node,...,5=type)
     bool m_bakenode_visual { false };
     std::string m_bakenode_end;       // terminator token; empty until type classified
+    // v7: a model node's local position (entries 6,7,8 = X,Y,Z), stored in its marker so the
+    // camera-ring load can distance-test it without decoding the node body
+    bool m_bakenode_haspos { false };
+    double m_bakenode_pos[ 3 ] { 0.0, 0.0, 0.0 };
     // flushes a node still open at end-of-file (or unknown type), so its buffer is written
     void bakeFinishNode();
 };
