@@ -108,7 +108,7 @@ inline bool classifyNodeType(std::string const &Type, bool &Visual, std::string 
 		{ "traction",            false, "endtraction" },
 		{ "tractionpowersource", false, "end" },
 		{ "memcell",             false, "endmemcell" },
-		{ "eventlauncher",       false, "endevent" },
+		{ "eventlauncher",       false, "end" },
 		{ "sound",               false, "endsound" },
 		{ "dynamic",             false, "enddynamic" },
 	};

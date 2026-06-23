@@ -59,8 +59,12 @@ namespace scene {
 // v7: a visual model node's marker also carries the model's local position (3 f32), so the
 //     camera-ring visual load can distance-test and skip a node in O(1) without reading any
 //     of its tokens -- the difference between scanning 1M flora nodes per ring and not.
+// v8: fixes the eventlauncher node terminator (it ends with "end", not "endevent"); twins
+//     baked before this had an over-long eventlauncher span that, when the node was skipped
+//     in the visual pass, swallowed the following endorigin -> the origin stack accumulated
+//     and flung terrain/models across the map. bumping invalidates those bad twins.
 // bumping the version invalidates older twins so they are recompiled rather than misread.
-constexpr std::uint32_t SCENERYBINARY_MAGIC { MAKE_ID4( 'e', 'u', '7', 7 ) };
+constexpr std::uint32_t SCENERYBINARY_MAGIC { MAKE_ID4( 'e', 'u', '7', 8 ) };
 
 // which entries a reader serves in a given load pass; nodes outside the requested class
 // are skipped (directives/includes are always served, to keep transform/group state)

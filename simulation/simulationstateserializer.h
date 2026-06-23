@@ -33,6 +33,12 @@ struct deserializer_state {
 	// starts so the ring partition is stable across passes.
 	int ringindex { 0 };
 	glm::dvec3 ringeye { 0.0 };
+	// ringeye must be sampled from the camera *after* control passes to the driver (the
+	// loader hasn't positioned the camera yet -- sampling there put every node in the far
+	// ring and built models last / seemingly never). sampled lazily on the first driver pass.
+	bool ringeye_valid { false };
+	int ringeye_waits { 0 }; // frames spent waiting for the camera to be positioned
+	bool ringall { false };  // no usable camera centre -> build all visual nodes in one pass
 
 	deserializer_state(std::string const &File, cParser::buffertype const Type, const std::string &Path, bool const Loadtraction)
 	    : scenariofile(File), input(File, Type, Path, Loadtraction) { }
@@ -104,6 +110,7 @@ private:
     // deserialize_continue() call so deserialize_model()/deserialize_node() can ring-test a
     // node by distance. inactive (builds everything) outside the ring/visual phase.
     bool m_ringactive { false };
+    bool m_ringall { false }; // no camera centre available -> build every node in one pass
     int m_ringindex { 0 };
     glm::dvec3 m_ringeye { 0.0 };
     double m_ringmin2 { 0.0 };

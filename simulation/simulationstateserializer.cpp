@@ -53,7 +53,7 @@ inline double ring_max2( int const K ) { return RING_OUTER2[ ( K < RING_COUNT ? 
 // per-frame time budget (ms) the driver spends streaming visual nodes. larger = the
 // surroundings fill in faster but the frame it runs on is longer; on a heavy scene (low fps)
 // a too-small budget is a tiny duty cycle, so streaming a million flora instances drags.
-constexpr int VISUAL_BUDGET_MS { 16 };
+constexpr int VISUAL_BUDGET_MS { 24 };
 } // anonymous namespace
 
 std::shared_ptr<deserializer_state>
@@ -144,6 +144,35 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
     // the nodes in the current ring are built, the rest skipped in O(1)
     m_ringactive = state->visualphase;
     if( true == m_ringactive ) {
+        if( false == state->ringeye_valid ) {
+            // the visual streaming builds nodes nearest-this-point first, so it must be the
+            // player's spawn. the camera isn't positioned during load (especially in ghostview),
+            // so prefer the player vehicle's position; fall back to the camera, then the
+            // scenery's first camera directive. wait a few frames if nothing is available yet.
+            auto const iszero = []( glm::dvec3 const &V ) { return ( V.x == 0.0 ) && ( V.y == 0.0 ) && ( V.z == 0.0 ); };
+            glm::dvec3 eye = Global.pCamera.Pos;
+            char const *src = "camera";
+            if( true == iszero( eye ) ) {
+                auto *player = simulation::Vehicles.find( Global.local_start_vehicle );
+                if( player != nullptr ) { eye = player->GetPosition(); src = "player vehicle"; }
+            }
+            if( true == iszero( eye ) ) { eye = Global.FreeCameraInit[ 0 ]; src = "camera directive"; }
+            if( ( true == iszero( eye ) ) && ( state->ringeye_waits < 120 ) ) {
+                ++state->ringeye_waits;
+                return true; // nothing positioned yet; try again next frame
+            }
+            state->ringeye = eye;
+            state->ringeye_valid = true;
+            // no spawn/camera to centre on (e.g. ghostview): nearest-first is meaningless, so
+            // build every visual node in a single budgeted pass instead of partitioning into
+            // distance rings (which would dump everything in the far ring and stream it last).
+            state->ringall = iszero( eye );
+            WriteLog( std::string( "Progressive visual load: " )
+                + ( state->ringall ?
+                    "no camera centre -- building all visual nodes in one pass" :
+                    "ring centre at " + std::to_string( eye.x ) + " " + std::to_string( eye.y ) + " " + std::to_string( eye.z ) + " (from " + src + ")" ) );
+        }
+        m_ringall = state->ringall;
         m_ringindex = state->ringindex;
         m_ringeye = state->ringeye;
         m_ringmin2 = ring_min2( state->ringindex );
@@ -184,7 +213,7 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
             // decoding any of its tokens. this is what keeps the per-ring replay cheap when a
             // scenery has a million flora instances. (shapes/older twins have no marker
             // position; they fall through to deserialize_node, which ring-tests them itself.)
-            if( token == "node" ) {
+            if( ( false == m_ringall ) && ( token == "node" ) ) {
                 double x, y, z;
                 if( true == Input.currentNodePosition( x, y, z ) ) {
                     auto const world { transform( glm::dvec3{ x, y, z }, Scratchpad ) };
@@ -234,6 +263,13 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
     // single-pass placement exactly; without it an unbalanced origin left on the stack would
     // be applied again and shift every deferred visual node ("terrain dumped beside the tracks").
     auto const resettransform = [ &Scratchpad ]() {
+        // a well-formed pass ends with a balanced (empty) transform stack; a leftover means
+        // an origin/scale was pushed but never popped -- e.g. a node whose binary marker span
+        // over-ran its terminator and skipped the following endorigin. warn rather than let it
+        // silently accumulate into the next pass.
+        if( false == Scratchpad.location.offset.empty() ) {
+            WriteLog( "Bad scenery: " + std::to_string( Scratchpad.location.offset.size() ) + " unbalanced origin(s) left on the stack at end of a load pass" );
+        }
         Scratchpad.location.offset = {};
         Scratchpad.location.scale = {};
         Scratchpad.location.rotation = glm::vec3{}; };
@@ -241,22 +277,22 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
     // first (infrastructure) pass finished: the scenario is now playable (tracks, events,
     // signals, the player train are all loaded). hand control back so the loader can switch
     // to the driver; the visual nodes load progressively from the driver, replayed once per
-    // camera-distance ring (nearest first). the camera is sampled once here so the ring
-    // partition stays stable across passes. only possible when replaying a binary twin -- a
-    // text/compile load did everything in one pass (restartReplay returns false).
+    // camera-distance ring (nearest first). the ring centre is sampled later, on the first
+    // driver pass (the camera isn't positioned here yet). only possible when replaying a binary
+    // twin -- a text/compile load did everything in one pass (restartReplay returns false).
     if( ( false == state->visualphase )
      && ( true == Input.restartReplay( scene::scenery_load_pass::visual ) ) ) {
         state->visualphase = true;
         state->ringindex = 0;
-        state->ringeye = Global.pCamera.Pos;
         resettransform();
         WriteLog( "Progressive visual load: streaming deferred nodes nearest-camera first (" + std::to_string( RING_COUNT ) + " rings)" );
         return false; // infrastructure ready -> go to driver; visuals continue there
     }
 
     // a ring pass finished: advance to the next (farther) ring and replay again, until the
-    // outermost ring has been built
+    // outermost ring has been built. skipped in build-all mode, which builds everything in one pass.
     if( ( true == state->visualphase )
+     && ( false == state->ringall )
      && ( state->ringindex < ring_lastindex() )
      && ( true == Input.restartReplay( scene::scenery_load_pass::visual ) ) ) {
         ++state->ringindex;
@@ -668,8 +704,9 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
           || ( nodedata.type == "triangle_fan" ) ) {
 
         // explicit shapes have no single position to ring-test by, so build them only in the
-        // nearest ring pass (ring 0) and skip them in O(1) on the farther passes
-        if( ( true == m_ringactive ) && ( m_ringindex > 0 ) ) {
+        // nearest ring pass (ring 0) and skip them in O(1) on the farther passes (build-all
+        // mode is a single pass, so they always build there)
+        if( ( true == m_ringactive ) && ( false == m_ringall ) && ( m_ringindex > 0 ) ) {
             if( false == Input.skipReplayNode() ) { skip_until( Input, "endtri" ); }
             return;
         }
@@ -697,8 +734,8 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
           || ( nodedata.type == "line_strip" )
           || ( nodedata.type == "line_loop" ) ) {
 
-        // see the triangles branch: explicit shapes build in ring 0 only
-        if( ( true == m_ringactive ) && ( m_ringindex > 0 ) ) {
+        // see the triangles branch: explicit shapes build in ring 0 only (or always, build-all)
+        if( ( true == m_ringactive ) && ( false == m_ringall ) && ( m_ringindex > 0 ) ) {
             if( false == Input.skipReplayNode() ) { skip_until( Input, "endline" ); }
             return;
         }
@@ -1055,7 +1092,7 @@ state_serializer::deserialize_model( cParser &Input, scene::scratch_data &Scratc
     // marker; this is the fallback for nodes that reached here (in-ring, or no marker pos).
     // use the marker position when present so this ring decision matches the dispatch one
     // exactly -- otherwise a node near a ring boundary could be dropped by both adjacent rings.
-    if( true == m_ringactive ) {
+    if( ( true == m_ringactive ) && ( false == m_ringall ) ) {
         glm::dvec3 ringlocal { location };
         double mx, my, mz;
         if( true == Input.currentNodePosition( mx, my, mz ) ) { ringlocal = glm::dvec3{ mx, my, mz }; }
