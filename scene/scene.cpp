@@ -275,6 +275,16 @@ basic_cell::insert( shape_node Shape ) {
         shapedata.translucent ?
             m_shapestranslucent :
             m_shapesopaque );
+    // if this cell's geometry was already baked (deferred visual streaming inserting into a
+    // section the renderer already finalised), don't try to merge into an existing shape
+    // whose CPU-side vertices were freed at bake time -- add the shape standalone and upload
+    // it straight into the live bank, otherwise it would never become visible.
+    if( m_geometrybank != null_handle ) {
+        Shape.origin( m_area.center );
+        shapes.emplace_back( Shape );
+        shapes.back().create_geometry( m_geometrybank );
+        return;
+    }
     for( auto &targetshape : shapes ) {
         // try to merge shapes with matching view ranges...
         auto const &targetshapedata { targetshape.data() };
@@ -302,6 +312,14 @@ basic_cell::insert( lines_node Lines ) {
     m_active = true;
 
     auto const &linesdata { Lines.data() };
+    // see the matching note in insert( shape_node ): once the cell is baked, append the new
+    // lines straight into the live bank rather than merging into vertex-freed geometry.
+    if( m_geometrybank != null_handle ) {
+        Lines.origin( m_area.center );
+        m_lines.emplace_back( Lines );
+        m_lines.back().create_geometry( m_geometrybank );
+        return;
+    }
     for( auto &targetlines : m_lines ) {
         // try to merge shapes with matching view ranges...
         auto const &targetlinesdata { targetlines.data() };
@@ -632,6 +650,10 @@ basic_cell::center( glm::dvec3 Center ) {
 void
 basic_cell::create_geometry( gfx::geometrybank_handle const &Bank ) {
 
+    // remember the bank for *all* cells (even ones empty at bake time): a deferred visual
+    // node may activate this cell later, and insert() needs the live bank to upload into.
+    m_geometrybank = Bank;
+
     if( false == m_active ) { return; } // nothing to do here
 
     for( auto &shape : m_shapesopaque )      { shape.create_geometry( Bank ); }
@@ -850,6 +872,14 @@ basic_section::insert( shape_node Shape ) {
     }
     else {
         // large, opaque shapes are placed on section level
+        // if the section was already baked (deferred visual streaming), append straight into
+        // the live bank instead of merging into vertex-freed geometry -- see basic_cell::insert.
+        if( true == m_geometrycreated ) {
+            Shape.origin( m_area.center );
+            m_shapes.emplace_back( Shape );
+            m_shapes.back().create_geometry( m_geometrybank );
+            return;
+        }
         for( auto &shape : m_shapes ) {
             // check first if the shape can't be merged with one of the shapes already present in the section
             if( true == shape.merge( Shape ) ) {

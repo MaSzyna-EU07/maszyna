@@ -40,6 +40,13 @@ public:
     // returns current active group, or null_handle if group stack is empty
     group_handle
         handle() const;
+    // makes Group the active group for subsequent inserts, without creating a new group.
+    // used by deferred (camera-ordered) visual loading to re-attach a node to the group it
+    // was originally read under during the enumeration pass. must be paired with pop_active().
+    void
+        push_active( scene::group_handle const Group ) { m_activegroup.push( Group ); }
+    void
+        pop_active() { if( false == m_activegroup.empty() ) { m_activegroup.pop(); } }
     // places provided node in specified group
     void
         insert( scene::group_handle const Group, scene::basic_node *Node );

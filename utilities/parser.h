@@ -54,6 +54,9 @@ class cParser //: public std::stringstream
     // open include child. used to run a second pass (visual) over an already-loaded twin.
     // returns false if this parser isn't replaying a twin (no second pass possible).
     bool restartReplay( scene::scenery_load_pass Pass );
+    // true when this (top-level) file is served from a binary twin, i.e. a second
+    // (visual) pass via restartReplay() is possible. false for a text/compile load.
+    bool isReplaying() const { return m_replay; }
     // methods:
     template <typename Type_>
     cParser &

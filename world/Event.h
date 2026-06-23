@@ -55,6 +55,13 @@ public:
     virtual
     void
         init() = 0;
+    // true for events that bind to visual model instances (lights/animation/texture/
+    // visible). With progressive loading these models are streamed in after the
+    // infrastructure pass, so such events must be initialised only once the deferred
+    // visual nodes exist -- not during the early InitEvents() of the infrastructure pass.
+    virtual
+    bool
+        binds_to_instances() const { return false; }
     // executes event
     virtual
     void
@@ -393,6 +400,7 @@ public:
 // methods
     // prepares event for use
     void init() override;
+    bool binds_to_instances() const override { return true; }
 
 private:
 // types
@@ -427,6 +435,7 @@ public:
 // methods
     // prepares event for use
     void init() override;
+    bool binds_to_instances() const override { return true; }
 
 private:
 // methods
@@ -456,6 +465,7 @@ public:
 // methods
     // prepares event for use
     void init() override;
+    bool binds_to_instances() const override { return true; }
 
 private:
 // methods
@@ -550,6 +560,7 @@ public:
 // methods
     // prepares event for use
     void init() override;
+    bool binds_to_instances() const override { return true; }
 
 private:
 // methods
@@ -690,9 +701,15 @@ public:
     // legacy method, executes queued events
     bool
         CheckQuery();
-    // legacy method, initializes events after deserialization from scenario file
+    // legacy method, initializes events after deserialization from scenario file.
+    // events that bind to visual model instances are skipped here and initialised later
+    // by InitInstanceEvents(), once the (progressively loaded) visual nodes are in place.
     void
         InitEvents();
+    // initializes the events skipped by InitEvents() (those binding to model instances).
+    // called once the deferred visual nodes have been built, so their target models exist.
+    void
+        InitInstanceEvents();
     // legacy method, initializes event launchers after deserialization from scenario file
     void
         InitLaunchers();

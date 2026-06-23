@@ -14,6 +14,24 @@ http://mozilla.org/MPL/2.0/.
 
 namespace simulation {
 
+// a deferred visual node captured during the visual enumeration pass, to be (re)built
+// later in camera-distance order. holds the node's fully resolved tokens as text -- numbers
+// come through cParser losslessly (std::to_chars shortest round-trip), so rebuilding from
+// this text reproduces the exact same node -- plus a snapshot of the transform/group context
+// it was read under, so the out-of-order rebuild places and groups it identically.
+struct visual_record {
+    std::string text;              // "node <range> <range> <name> <type> ... end<type>"
+    glm::dvec3 offset { 0.0 };     // top of the origin stack at capture (identity if none)
+    glm::vec3 scale { 1.f };       // top of the scale stack at capture (identity if none)
+    glm::vec3 rotation { 0.f };    // active rotation at capture
+    bool has_offset { false };
+    bool has_scale { false };
+    scene::group_handle group {};  // group the node was read under
+    glm::dvec3 worldpos { 0.0 };   // transformed position (for models; sort key source)
+    bool isshape { false };        // terrain shape/lines -> load before models (ground first)
+    double sortkey { 0.0 };        // squared distance to camera; lower = built sooner
+};
+
 struct deserializer_state {
 	std::string scenariofile;
 	cParser input;
@@ -27,6 +45,13 @@ struct deserializer_state {
 	bool visualphase { false };
 	// set once the whole load (both passes / single text pass) has fully finished
 	bool done { false };
+	// visual phase sub-state: while enumerate is true the visual pass captures deferred
+	// nodes into records instead of building them; once the replay is exhausted they are
+	// sorted by camera distance and built in that order (enumdone).
+	bool enumerate { false };
+	bool enumdone { false };
+	std::vector<visual_record> records;
+	std::size_t buildcursor { 0 };
 
 	deserializer_state(std::string const &File, cParser::buffertype const Type, const std::string &Path, bool const Loadtraction)
 	    : scenariofile(File), input(File, Type, Path, Loadtraction) { }
@@ -68,6 +93,10 @@ private:
     void deserialize_endgroup( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_light( cParser &Input, scene::scratch_data &Scratchpad );
 	void deserialize_node( cParser &Input, scene::scratch_data &Scratchpad );
+    // visual streaming (camera-ordered deferred load): capture one visual node (already
+    // past its "node" token) into a record; build budgeted records in sorted order.
+    void enumerate_visual_node( deserializer_state &State );
+    bool build_visual_records( std::shared_ptr<deserializer_state> State );
     void deserialize_origin( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_endorigin( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_scale( cParser &Input, scene::scratch_data &Scratchpad );

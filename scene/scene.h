@@ -234,6 +234,11 @@ public:
     } m_directories;
     // animation of owned items (legacy code, clean up along with track refactoring)
     bool m_geometrycreated { false };
+    // bank this cell's geometry was baked into; remembered so shapes/lines inserted
+    // *after* the section was first rendered (deferred visual streaming) can be appended
+    // straight into the live bank instead of being silently dropped. null until the owning
+    // section bakes its geometry, which doubles as the "already baked" signal.
+    gfx::geometrybank_handle m_geometrybank {};
 	unsigned int m_framestamp { 0 }; // id of last rendered gfx frame
     TTrack *tTrackAnim = nullptr; // obiekty do przeliczenia animacji
 	command_relay m_relay;

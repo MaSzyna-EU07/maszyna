@@ -2493,6 +2493,21 @@ void
 event_manager::InitEvents() {
     //łączenie eventów z pozostałymi obiektami
     for( auto *event : m_events ) {
+        // events binding to model instances are deferred: with progressive loading their
+        // target models stream in after this (infrastructure) pass, so binding them now
+        // would fail. InitInstanceEvents() initialises them once the visuals are in place.
+        if( true == event->binds_to_instances() ) { continue; }
+        event->init();
+        if( event->m_delay < 0 ) { AddToQuery( event, nullptr ); }
+    }
+}
+
+// initializes the events deferred by InitEvents() (those binding to model instances),
+// after the (progressively loaded) visual nodes have been built so the models exist.
+void
+event_manager::InitInstanceEvents() {
+    for( auto *event : m_events ) {
+        if( false == event->binds_to_instances() ) { continue; }
         event->init();
         if( event->m_delay < 0 ) { AddToQuery( event, nullptr ); }
     }
