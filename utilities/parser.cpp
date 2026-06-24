@@ -645,6 +645,18 @@ void cParser::startIncludeDirect(std::string includefile, std::vector<std::strin
 	// consistently (e.g. visuals-only on the second pass)
 	mIncludeParser->setReplayPass(m_replaypass);
 
+	// pass filtering (infra eager / visual deferred) relies on the per-node markers that
+	// only a binary twin carries. an un-baked (text) include has no markers, so it can't
+	// be split: it is loaded in full during the infrastructure pass. on the visual pass we
+	// must therefore NOT reopen it -- doing so would reprocess every node a second time
+	// (duplicates) and, for parameterized text includes, re-run their models against a
+	// parser whose parameters no longer apply, leaking a literal "(pN)" into the model
+	// loader (which then throws). drop it; its content already loaded on the first pass.
+	if ((m_replaypass == scene::scenery_load_pass::visual) && (false == mIncludeParser->m_replay)) {
+		mIncludeParser = nullptr;
+		return;
+	}
+
 	// a binary-twin replay child reports mSize 0 but is still valid
 	if (mIncludeParser->mSize <= 0 && (false == mIncludeParser->m_replay)) {
 		ErrorLog("Bad include: can't open file \"" + includefile + "\"");
