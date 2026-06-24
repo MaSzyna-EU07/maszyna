@@ -178,7 +178,7 @@ scenery_binary_writer::begin_node() {
 }
 
 void
-scenery_binary_writer::end_node( bool Visual, bool Haspos, double X, double Y, double Z ) {
+scenery_binary_writer::end_node( bool Visual, bool Haspos, double X, double Y, double Z, double Range ) {
     if( false == m_innode ) { return; }
     m_innode = false;
     auto const body = m_nodebuf.str();
@@ -189,12 +189,13 @@ scenery_binary_writer::end_node( bool Visual, bool Haspos, double X, double Y, d
                               NODECLASS_VISUAL;
     write_varint( m_entries, cls );
     write_varint( m_entries, body.size() );
-    // a visual model node stores its local position right after the span, so the reader can
-    // hand it to the camera-ring load without the node body being decoded
+    // a visual model node stores its local position + visibility range right after the span, so
+    // the reader can hand them to the streaming load without the node body being decoded
     if( cls == NODECLASS_VISUAL_POS ) {
         sn_utils::ls_float32( m_entries, static_cast<float>( X ) );
         sn_utils::ls_float32( m_entries, static_cast<float>( Y ) );
         sn_utils::ls_float32( m_entries, static_cast<float>( Z ) );
+        sn_utils::ls_float32( m_entries, static_cast<float>( Range ) );
     }
     m_entries.write( body.data(), static_cast<std::streamsize>( body.size() ) );
 }
@@ -271,9 +272,13 @@ scenery_binary_reader::next( scenery_entry_view &Out ) {
     std::uint64_t tag = 0;
     for( ;; ) {
         if( m_cursor >= m_end ) { return false; }
+        char const *markerstart = m_cursor; // where this entry's marker begins (for seek_node)
         head = read_varint( m_cursor, m_end );
         tag = head & TAG_MASK;
         if( tag != TAG_NODE ) { break; }
+        // record the served node's marker offset so the section-index streamer can seek back to
+        // it and rebuild the node on demand without re-scanning the whole twin
+        m_nodeoffset = static_cast<std::size_t>( markerstart - m_begin );
         auto const cls = read_varint( m_cursor, m_end );
         auto const span = read_varint( m_cursor, m_end );
         bool const isvisual = ( cls == NODECLASS_VISUAL ) || ( cls == NODECLASS_VISUAL_POS );
@@ -283,6 +288,7 @@ scenery_binary_reader::next( scenery_entry_view &Out ) {
             m_nodepos[ 0 ] = static_cast<double>( read_f32le( m_cursor, m_end ) );
             m_nodepos[ 1 ] = static_cast<double>( read_f32le( m_cursor, m_end ) );
             m_nodepos[ 2 ] = static_cast<double>( read_f32le( m_cursor, m_end ) );
+            m_noderange    = static_cast<double>( read_f32le( m_cursor, m_end ) );
         }
         bool const process =
             ( m_pass == scenery_load_pass::all )

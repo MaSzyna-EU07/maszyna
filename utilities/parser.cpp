@@ -319,7 +319,7 @@ void cParser::bakeFinishNode()
 	// flush a node still open at end-of-file or one whose type was unrecognized
 	if (m_bakenode_active && m_writer)
 	{
-		m_writer->end_node(m_bakenode_visual, m_bakenode_haspos, m_bakenode_pos[0], m_bakenode_pos[1], m_bakenode_pos[2]);
+		m_writer->end_node(m_bakenode_visual, m_bakenode_haspos, m_bakenode_pos[0], m_bakenode_pos[1], m_bakenode_pos[2], m_bakenode_rangemax);
 	}
 	m_bakenode_active = false;
 }
@@ -817,22 +817,48 @@ void cParser::readToken(std::string &out, bool ToLower, const char *Break)
 			if (m_bakenode_active)
 			{
 				++m_bakenode_count;
+					if (m_bakenode_count == 2)
+					{
+						// 2nd node entry is range_max (visibility range); kept in the model marker
+						// so the streamer builds far-but-large-range models eagerly. -1 (unlimited)
+						// when it isn't a plain number (e.g. an unresolved parameter).
+						double rmax;
+						m_bakenode_rangemax = (sniffNumber(rawtoken, rmax) ? rmax : -1.0);
+					}
 				if ((m_bakenode_count == 5) && m_bakenode_end.empty())
 				{
 					// 5th node entry is the type token (node, range_max, range_min, name, type)
 					classifyNodeType(lowered, m_bakenode_visual, m_bakenode_end);
 					// a model node's entries 6,7,8 are its local X Y Z -- record them in the
 					// marker so the camera-ring load can skip the node without reading its body
-					m_bakenode_haspos = (lowered == "model");
+					{
+						bool const isshape =
+							(lowered == "triangles") || (lowered == "triangle_strip") || (lowered == "triangle_fan")
+						 || (lowered == "lines") || (lowered == "line_strip") || (lowered == "line_loop");
+						m_bakenode_haspos = (lowered == "model") || isshape;
+						m_bakenode_shape = isshape;
+						m_bakenode_posstate = 0;
+						m_bakenode_posidx = 0;
+						}
 				}
-				else if (m_bakenode_haspos && (m_bakenode_count >= 6) && (m_bakenode_count <= 8))
+				else if (m_bakenode_haspos && (false == m_bakenode_shape) && (m_bakenode_count >= 6) && (m_bakenode_count <= 8))
 				{
 					m_bakenode_pos[m_bakenode_count - 6] = value;
 				}
-				else if ((false == m_bakenode_end.empty()) && (lowered == m_bakenode_end))
+				else if (m_bakenode_shape && (m_bakenode_posstate < 3))
+					{
+						// walk a shape to its first vertex: 0=before material -> if "material" enter the
+						// block (1), else it is a shortcut material (start seeking numbers, 2); 1=skip until
+						// "endmaterial"; 2=skip the texture string, then take the 3 vertex numbers.
+						double sv;
+						if (m_bakenode_posstate == 0) { m_bakenode_posstate = (lowered == "material") ? 1 : 2; }
+						else if (m_bakenode_posstate == 1) { if (lowered == "endmaterial") m_bakenode_posstate = 2; }
+						else if (sniffNumber(rawtoken, sv)) { m_bakenode_pos[m_bakenode_posidx++] = sv; if (m_bakenode_posidx == 3) m_bakenode_posstate = 3; }
+					}
+					else if ((false == m_bakenode_end.empty()) && (lowered == m_bakenode_end))
 				{
 					// terminator captured: close the node
-					m_writer->end_node(m_bakenode_visual, m_bakenode_haspos, m_bakenode_pos[0], m_bakenode_pos[1], m_bakenode_pos[2]);
+					m_writer->end_node(m_bakenode_visual, m_bakenode_haspos, m_bakenode_pos[0], m_bakenode_pos[1], m_bakenode_pos[2], m_bakenode_rangemax);
 					m_bakenode_active = false;
 				}
 			}
@@ -924,11 +950,54 @@ bool cParser::skipReplayNode()
 	return false;
 }
 
-bool cParser::currentNodePosition(double &X, double &Y, double &Z)
+bool cParser::currentNodePosition(double &X, double &Y, double &Z, double &Range)
 {
 	// delegate to the deepest active include child (it serves the current node), like skip
-	if (mIncludeParser) { return mIncludeParser->currentNodePosition(X, Y, Z); }
-	return (m_replay && m_reader && m_reader->node_position(X, Y, Z));
+	if (mIncludeParser) { return mIncludeParser->currentNodePosition(X, Y, Z, Range); }
+	return (m_replay && m_reader && m_reader->node_position(X, Y, Z, Range));
+}
+
+std::string cParser::currentReplayFile()
+{
+	if (mIncludeParser) { return mIncludeParser->currentReplayFile(); }
+	return mFile;
+}
+
+std::string cParser::currentReplayPath()
+{
+	if (mIncludeParser) { return mIncludeParser->currentReplayPath(); }
+	return mPath;
+}
+
+std::size_t cParser::currentReplayOffset()
+{
+	if (mIncludeParser) { return mIncludeParser->currentReplayOffset(); }
+	return (m_reader ? m_reader->node_offset() : 0);
+}
+
+std::vector<std::string> cParser::currentReplayParams()
+{
+	if (mIncludeParser) { return mIncludeParser->currentReplayParams(); }
+	return parameters;
+}
+
+void cParser::seekReplayNode(std::size_t Offset)
+{
+	// rebuild serves a single self-contained node, so drop any open include child and rewind
+	// this twin's reader to the node's marker; the next getToken() decodes it
+	mIncludeParser = nullptr;
+	tokens.clear();
+	if (m_replay && m_reader)
+	{
+		m_reader->set_pass(scene::scenery_load_pass::all);
+		m_reader->seek_node(Offset);
+		m_replayexhausted = false;
+	}
+}
+
+void cParser::setReplayParams(std::vector<std::string> Params)
+{
+	parameters = std::move(Params);
 }
 
 std::vector<std::string> cParser::readParameters(cParser &Input)

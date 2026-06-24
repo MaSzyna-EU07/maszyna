@@ -65,7 +65,22 @@ class cParser //: public std::stringstream
     // local position of the node about to be replayed (the "node" token just read), if its
     // v7 marker carried one (visual model nodes). lets the camera-ring load distance-test and
     // skip a node without decoding its body. returns false for shapes / non-replay / older twins.
-    bool currentNodePosition( double &X, double &Y, double &Z );
+    bool currentNodePosition( double &X, double &Y, double &Z, double &Range );
+    // --- section-index streaming: capture enough to rebuild the node about to be replayed
+    // (the deepest active include serves it) without re-scanning the whole twin later ---
+    // source file + base path of the twin the current node lives in (to re-open it)
+    std::string currentReplayFile();
+    std::string currentReplayPath();
+    // byte offset of the current node's marker within that twin (to seek back to it)
+    std::size_t currentReplayOffset();
+    // the include parameters in effect for the current node (its "(pN)" tokens resolve against
+    // these); empty for a node read directly from a parameterless file
+    std::vector<std::string> currentReplayParams();
+    // reposition this (replay) parser at a node recorded via currentReplayOffset() and serve it
+    // next; drops any open include child. used to rebuild one indexed node on demand.
+    void seekReplayNode( std::size_t Offset );
+    // set the include parameters used to resolve the next node's "(pN)" tokens during rebuild
+    void setReplayParams( std::vector<std::string> Params );
     // methods:
     template <typename Type_>
     cParser &
@@ -222,6 +237,13 @@ class cParser //: public std::stringstream
     // camera-ring load can distance-test it without decoding the node body
     bool m_bakenode_haspos { false };
     double m_bakenode_pos[ 3 ] { 0.0, 0.0, 0.0 };
+    double m_bakenode_rangemax { -1.0 }; // range_max (entry 2), stored in the model marker
+    // explicit shape (triangles/lines) position extraction: a shape has no fixed-index position
+    // like a model, so walk past its material to its first vertex and use that. posstate:
+    // 0=before material, 1=inside material...endmaterial, 2=seeking the 3 vertex numbers, 3=done.
+    bool m_bakenode_shape { false };
+    int m_bakenode_posstate { 0 };
+    int m_bakenode_posidx { 0 };
     // flushes a node still open at end-of-file (or unknown type), so its buffer is written
     void bakeFinishNode();
 };

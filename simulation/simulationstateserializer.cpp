@@ -37,24 +37,42 @@ http://mozilla.org/MPL/2.0/.
 namespace simulation {
 
 namespace {
-// camera-distance rings for nearest-first visual streaming: the squared outer radius of
-// each ring. the visual pass is replayed once per ring (nearest first), building only the
-// nodes whose squared distance to the camera falls in [inner, outer); the last ring is
-// unbounded so every remaining node is built exactly once.
-constexpr double RING_OUTER2[] = {
-    500.0 * 500.0,
-    1500.0 * 1500.0,
-    4000.0 * 4000.0,
-    std::numeric_limits<double>::infinity() };
-constexpr int RING_COUNT { static_cast<int>( sizeof( RING_OUTER2 ) / sizeof( RING_OUTER2[ 0 ] ) ) };
-inline int ring_lastindex() { return RING_COUNT - 1; }
-inline double ring_min2( int const K ) { return ( K <= 0 ? 0.0 : RING_OUTER2[ K - 1 ] ); }
-inline double ring_max2( int const K ) { return RING_OUTER2[ ( K < RING_COUNT ? K : RING_COUNT - 1 ) ]; }
+// camera-following visual streaming: visual nodes are built only for region sections within
+// this radius (m) of the camera, and more are built as the camera moves into new sections.
+// should comfortably cover the model render range so nothing visibly pops in at the edge.
+constexpr double STREAM_RADIUS { 2000.0 };
 // per-frame time budget (ms) the driver spends streaming visual nodes. larger = the
 // surroundings fill in faster but the frame it runs on is longer; on a heavy scene (low fps)
 // a too-small budget is a tiny duty cycle, so streaming a million flora instances drags.
 constexpr int VISUAL_BUDGET_MS { 24 };
+
+// fills Tobuild with the region-section indices within STREAM_RADIUS of Eye that are not yet
+// in Built. mirrors basic_region::section() indexing (clamped to the grid). returns count.
+std::size_t wanted_sections( glm::dvec3 const &Eye, std::unordered_set<int> const &Built, std::unordered_set<int> &Tobuild ) {
+    Tobuild.clear();
+    int const N { scene::EU07_REGIONSIDESECTIONCOUNT };
+    int const ccol { static_cast<int>( std::floor( Eye.x / scene::EU07_SECTIONSIZE + N / 2 ) ) };
+    int const crow { static_cast<int>( std::floor( Eye.z / scene::EU07_SECTIONSIZE + N / 2 ) ) };
+    int const span { static_cast<int>( std::ceil( STREAM_RADIUS / scene::EU07_SECTIONSIZE ) ) };
+    for( int r = crow - span; r <= crow + span; ++r ) {
+        for( int c = ccol - span; c <= ccol + span; ++c ) {
+            int const idx { std::clamp( r, 0, N - 1 ) * N + std::clamp( c, 0, N - 1 ) };
+            if( 0 == Built.count( idx ) ) { Tobuild.insert( idx ); }
+        }
+    }
+    return Tobuild.size();
+}
 } // anonymous namespace
+
+// region-section index enclosing a world position (row-major, clamped) -- matches
+// basic_region::section() so a node buckets into the same section it inserts into.
+int
+state_serializer::section_index( glm::dvec3 const &World ) {
+    int const N { scene::EU07_REGIONSIDESECTIONCOUNT };
+    int const col { static_cast<int>( std::floor( World.x / scene::EU07_SECTIONSIZE + N / 2 ) ) };
+    int const row { static_cast<int>( std::floor( World.z / scene::EU07_SECTIONSIZE + N / 2 ) ) };
+    return std::clamp( row, 0, N - 1 ) * N + std::clamp( col, 0, N - 1 );
+}
 
 std::shared_ptr<deserializer_state>
 state_serializer::deserialize_begin( std::string const &Scenariofile ) {
@@ -139,22 +157,42 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 	cParser &Input = state->input;
 	scene::scratch_data &Scratchpad = state->scratchpad;
 
-    // mirror the camera-ring state so deserialize_model()/deserialize_node() can ring-test
-    // each node by distance: in the visual phase the twin is replayed once per ring and only
-    // the nodes in the current ring are built, the rest skipped in O(1)
+    // reset the transform stack before each replay pass. the directives (origin/rotate/scale)
+    // are replayed in order, so resetting here reproduces the single-pass placement exactly;
+    // without it an unbalanced origin left on the stack would be applied again and shift nodes.
+    auto const resettransform = [ &Scratchpad ]() {
+        // a well-formed pass ends with a balanced (empty) transform stack; a leftover means an
+        // origin/scale was pushed but never popped -- e.g. a node whose binary marker span
+        // over-ran its terminator and skipped the following endorigin. warn rather than let it
+        // silently accumulate into the next pass.
+        if( false == Scratchpad.location.offset.empty() ) {
+            WriteLog( "Bad scenery: " + std::to_string( Scratchpad.location.offset.size() ) + " unbalanced origin(s) left on the stack at end of a load pass" );
+        }
+        Scratchpad.location.offset = {};
+        Scratchpad.location.scale = {};
+        Scratchpad.location.rotation = glm::vec3{}; };
+
+    // mirror the visual-streaming state so deserialize_model()/deserialize_node() can decide
+    // whether a node belongs to the section set being built this cycle (or, in ringall, build
+    // everything). inactive (builds everything) outside the visual phase.
     m_ringactive = state->visualphase;
     if( true == m_ringactive ) {
         if( false == state->ringeye_valid ) {
-            // the visual streaming builds nodes nearest-this-point first, so it must be the
-            // player's spawn. the camera isn't positioned during load (especially in ghostview),
-            // so prefer the player vehicle's position; fall back to the camera, then the
-            // scenery's first camera directive. wait a few frames if nothing is available yet.
+            // the camera centre decides spawn-area-first streaming; the camera isn't positioned
+            // during load (especially ghostview), so prefer the player vehicle, then the camera,
+            // then the scenery's first camera directive. wait a few frames if nothing is ready.
             auto const iszero = []( glm::dvec3 const &V ) { return ( V.x == 0.0 ) && ( V.y == 0.0 ) && ( V.z == 0.0 ); };
             glm::dvec3 eye = Global.pCamera.Pos;
             char const *src = "camera";
             if( true == iszero( eye ) ) {
                 auto *player = simulation::Vehicles.find( Global.local_start_vehicle );
                 if( player != nullptr ) { eye = player->GetPosition(); src = "player vehicle"; }
+            }
+            if( ( true == iszero( eye ) ) && ( false == simulation::Vehicles.sequence().empty() ) ) {
+                // no designated player (e.g. ghostview), but the scenery has consists -- centre on
+                // the first one; it sits on the network, near where the action is.
+                eye = simulation::Vehicles.sequence().front()->GetPosition();
+                src = "first vehicle";
             }
             if( true == iszero( eye ) ) { eye = Global.FreeCameraInit[ 0 ]; src = "camera directive"; }
             if( ( true == iszero( eye ) ) && ( state->ringeye_waits < 120 ) ) {
@@ -163,20 +201,55 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
             }
             state->ringeye = eye;
             state->ringeye_valid = true;
-            // no spawn/camera to centre on (e.g. ghostview): nearest-first is meaningless, so
-            // build every visual node in a single budgeted pass instead of partitioning into
-            // distance rings (which would dump everything in the far ring and stream it last).
+            // no spawn/camera to centre on (e.g. ghostview at the origin): camera-following is
+            // meaningless, so build every visual node in one pass. otherwise stream by section.
             state->ringall = iszero( eye );
+            state->sectionmode = ( false == state->ringall );
             WriteLog( std::string( "Progressive visual load: " )
                 + ( state->ringall ?
                     "no camera centre -- building all visual nodes in one pass" :
-                    "ring centre at " + std::to_string( eye.x ) + " " + std::to_string( eye.y ) + " " + std::to_string( eye.z ) + " (from " + src + ")" ) );
+                    "streaming sections within " + std::to_string( static_cast<int>( STREAM_RADIUS ) ) + "m of the camera (from " + src + ")" ) );
         }
         m_ringall = state->ringall;
-        m_ringindex = state->ringindex;
+        m_sectionmode = state->sectionmode;
+        m_shapes_built = state->shapes_built;
         m_ringeye = state->ringeye;
-        m_ringmin2 = ring_min2( state->ringindex );
-        m_ringmax2 = ring_max2( state->ringindex );
+        m_tobuild = &state->tobuild;
+
+        // section streaming. the first pass replays the whole twin once, indexing every deferred
+        // node under its section while building the spawn area. afterwards (state->indexed) the
+        // sections the camera moves into are rebuilt by seeking straight to their nodes -- no more
+        // whole-twin re-scans, which is what was tanking fps / dragging on a million-node scenery.
+        if( true == state->sectionmode ) {
+            if( true == state->indexed ) {
+                if( true == state->tobuild.empty() ) {
+                    if( 0 == wanted_sections( Global.pCamera.Pos, state->built, state->tobuild ) ) {
+                        return true; // surroundings already built; stay alive for camera moves
+                    }
+                }
+                m_rebuilding = true;
+                m_state = state.get();
+                auto streamstart { std::chrono::steady_clock::now() };
+                while( false == state->tobuild.empty() ) {
+                    int const sec = *state->tobuild.begin();
+                    state->tobuild.erase( state->tobuild.begin() );
+                    rebuild_section( *state, sec );
+                    state->built.insert( sec );
+                    if( std::chrono::duration_cast<std::chrono::milliseconds>( std::chrono::steady_clock::now() - streamstart ).count() >= VISUAL_BUDGET_MS ) { break; }
+                }
+                m_rebuilding = false;
+                return true;
+            }
+            // first pass: index every deferred node while building the spawn area
+            m_indexing = true;
+            m_state = state.get();
+            if( false == state->pass_active ) {
+                wanted_sections( Global.pCamera.Pos, state->built, state->tobuild );
+                Input.restartReplay( scene::scenery_load_pass::visual );
+                resettransform();
+                state->pass_active = true;
+            }
+        }
     }
 
     // stateful directives that build objects/lists; on the visual (second) pass they are
@@ -195,7 +268,10 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
         { "terrain",     "endterrain" },
     };
 
-    // deserialize content from the provided input
+    // deserialize content from the provided input. modest budget while streaming visuals in the
+    // driver (rendering is live, so a big slice would tank fps), generous budget while the loading
+    // screen is up (infrastructure pass, nothing rendering yet).
+    int const budget { state->visualphase ? VISUAL_BUDGET_MS : 200 };
 	auto timelast { std::chrono::steady_clock::now() };
     std::string token { Input.getToken<std::string>() };
     while( false == token.empty() ) {
@@ -208,21 +284,28 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
                 token = Input.getToken<std::string>();
                 continue;
             }
-            // fast camera-ring skip: a visual model node carries its local position in its v7
-            // marker, so we can distance-test it and drop it in O(1) -- without deserialize_node
-            // decoding any of its tokens. this is what keeps the per-ring replay cheap when a
-            // scenery has a million flora instances. (shapes/older twins have no marker
-            // position; they fall through to deserialize_node, which ring-tests them itself.)
-            if( ( false == m_ringall ) && ( token == "node" ) ) {
-                double x, y, z;
-                if( true == Input.currentNodePosition( x, y, z ) ) {
+            // fast section skip: a visual model node carries its local position in its v7
+            // marker, so we can section-test it and drop it in O(1) -- without deserialize_node
+            // decoding any of its tokens. this is what keeps the per-cycle replay cheap when a
+            // scenery has a million flora instances. (shapes/older twins have no marker position;
+            // they fall through to deserialize_node, which section-tests them itself.)
+            if( ( true == m_sectionmode ) && ( token == "node" ) ) {
+                double x, y, z, range;
+                if( true == Input.currentNodePosition( x, y, z, range ) ) {
                     auto const world { transform( glm::dvec3{ x, y, z }, Scratchpad ) };
-                    auto const d { world - m_ringeye };
-                    auto const d2 { d.x * d.x + d.y * d.y + d.z * d.z };
-                    if( ( ( d2 < m_ringmin2 ) || ( d2 >= m_ringmax2 ) )
+                    // a model visible from beyond the stream radius (large/unlimited range_max) is
+                    // built once, up front, regardless of section -- otherwise it would vanish at
+                    // distance. the rest are indexed and built when their section comes into range.
+                    bool const eager { ( range < 0.0 ) || ( range > STREAM_RADIUS ) };
+                    if( ( true == m_indexing ) && ( false == eager ) ) { capture_node( Input, Scratchpad, world ); }
+                    bool const wanted {
+                        eager ?
+                            ( false == m_shapes_built ) :
+                            ( 0 != m_tobuild->count( section_index( world ) ) ) };
+                    if( ( false == wanted )
                      && ( true == Input.skipReplayNode() ) ) {
                         auto timenow = std::chrono::steady_clock::now();
-                        if( std::chrono::duration_cast<std::chrono::milliseconds>( timenow - timelast ).count() >= VISUAL_BUDGET_MS ) {
+                        if( std::chrono::duration_cast<std::chrono::milliseconds>( timenow - timelast ).count() >= budget ) {
                             Application.set_progress( Input.getProgress(), Input.getFullProgress() );
                             return true;
                         }
@@ -242,9 +325,6 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
         }
 
 		auto timenow = std::chrono::steady_clock::now();
-        // per-frame budget while streaming visuals in the driver (kept modest to limit
-        // stutter), generous budget while the loading screen is up (infrastructure pass)
-        auto const budget = ( state->visualphase ? VISUAL_BUDGET_MS : 200 );
         if( std::chrono::duration_cast<std::chrono::milliseconds>( timenow - timelast ).count() >= budget ) {
             Application.set_progress( Input.getProgress(), Input.getFullProgress() );
 			return true;
@@ -258,67 +338,116 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
         deserialize_firstinit( Input, Scratchpad );
     }
 
-    // helper: reset the transform stack before each replay pass. the directives
-    // (origin/rotate/scale) are replayed in order, so resetting here reproduces the
-    // single-pass placement exactly; without it an unbalanced origin left on the stack would
-    // be applied again and shift every deferred visual node ("terrain dumped beside the tracks").
-    auto const resettransform = [ &Scratchpad ]() {
-        // a well-formed pass ends with a balanced (empty) transform stack; a leftover means
-        // an origin/scale was pushed but never popped -- e.g. a node whose binary marker span
-        // over-ran its terminator and skipped the following endorigin. warn rather than let it
-        // silently accumulate into the next pass.
-        if( false == Scratchpad.location.offset.empty() ) {
-            WriteLog( "Bad scenery: " + std::to_string( Scratchpad.location.offset.size() ) + " unbalanced origin(s) left on the stack at end of a load pass" );
-        }
-        Scratchpad.location.offset = {};
-        Scratchpad.location.scale = {};
-        Scratchpad.location.rotation = glm::vec3{}; };
+    // helper: make the scenario playable / persist the twin. the map, instance-bound events and
+    // twin flush are done once, after the first cycle (or the single build-all pass). the active
+    // group stack is left open on purpose in section mode -- later cycles keep inserting into it
+    // (update_map reads the persistent group map, not the stack, so it works either way).
+    auto const finalize = [ & ]( bool const Closegroups ) {
+        if( true == Closegroups ) { scene::Groups.close(); }
+        scene::Groups.update_map();
+        Region->create_map_geometry();
+        simulation::Events.InitInstanceEvents();
+        Input.flushBinaryTwin();
+        scene::scenerybinary_wait_all(); };
 
     // first (infrastructure) pass finished: the scenario is now playable (tracks, events,
-    // signals, the player train are all loaded). hand control back so the loader can switch
-    // to the driver; the visual nodes load progressively from the driver, replayed once per
-    // camera-distance ring (nearest first). the ring centre is sampled later, on the first
-    // driver pass (the camera isn't positioned here yet). only possible when replaying a binary
-    // twin -- a text/compile load did everything in one pass (restartReplay returns false).
+    // signals, the player train are all loaded). hand control back so the loader can switch to
+    // the driver; the visual nodes stream in from the driver. the camera centre / mode are
+    // resolved later, on the first driver pass (the camera isn't positioned here yet). only
+    // possible when replaying a binary twin -- a text/compile load did everything in one pass.
     if( ( false == state->visualphase )
      && ( true == Input.restartReplay( scene::scenery_load_pass::visual ) ) ) {
         state->visualphase = true;
-        state->ringindex = 0;
         resettransform();
-        WriteLog( "Progressive visual load: streaming deferred nodes nearest-camera first (" + std::to_string( RING_COUNT ) + " rings)" );
+        WriteLog( "Progressive visual load: infrastructure ready, streaming visuals from the driver" );
         return false; // infrastructure ready -> go to driver; visuals continue there
     }
 
-    // a ring pass finished: advance to the next (farther) ring and replay again, until the
-    // outermost ring has been built. skipped in build-all mode, which builds everything in one pass.
-    if( ( true == state->visualphase )
-     && ( false == state->ringall )
-     && ( state->ringindex < ring_lastindex() )
-     && ( true == Input.restartReplay( scene::scenery_load_pass::visual ) ) ) {
-        ++state->ringindex;
-        resettransform();
-        return true; // more rings to build
+    // section streaming: a build cycle's replay pass just finished. mark its sections built so
+    // they aren't rebuilt, finalize once after the first cycle, and stay alive so the next call
+    // can pick up sections the camera has since moved into. the load never reports "done".
+    if( ( true == state->visualphase ) && ( true == state->sectionmode ) ) {
+        if( true == state->pass_active ) {
+            state->built.insert( std::begin( state->tobuild ), std::end( state->tobuild ) );
+            state->tobuild.clear();
+            state->pass_active = false;
+            state->shapes_built = true; // explicit shapes + eager models are built in the first pass
+            m_indexing = false;
+            if( false == state->initial_done ) {
+                finalize( /*Closegroups*/ false ); // keep groups open for later cycles
+                state->initial_done = true;
+                state->indexed = true; // the first pass has indexed every deferred node by section
+                std::size_t refs = 0; for( auto const &s : state->index ) { refs += s.second.size(); }
+                WriteLog( "Progressive visual load: spawn ready (" + std::to_string( simulation::Instances.sequence().size() )
+                    + " instances), " + std::to_string( refs ) + " nodes indexed across " + std::to_string( state->index.size() ) + " sections" );
+            }
+        }
+        return true; // keep streaming alive; sections the camera enters are served from the index
     }
 
-    scene::Groups.close();
+    // build-all (no camera centre, e.g. ghostview): everything was built in this single pass.
+    finalize( /*Closegroups*/ true );
+    state->done = true;
+    return false;
+}
 
-	scene::Groups.update_map();
-	Region->create_map_geometry();
+int
+state_serializer::twin_id( deserializer_state &State, std::string const &File, std::string const &Path ) {
+    std::string key = Path + "|" + File;
+    auto const it = State.twinids.find( key );
+    if( it != State.twinids.end() ) { return it->second; }
+    int const id = static_cast<int>( State.twins.size() );
+    State.twins.emplace_back( File, Path );
+    State.twinids.emplace( std::move( key ), id );
+    return id;
+}
 
-	// all nodes (including visual model instances) are now loaded, so initialise the
-	// events that bind to model instances; in a single-pass (text/compile) load nothing
-	// was deferred, but InitEvents() still skipped them, so do it here too
-	simulation::Events.InitInstanceEvents();
+void
+state_serializer::capture_node( cParser &Input, scene::scratch_data const &Scratchpad, glm::dvec3 const &World ) {
+    // record where the node lives and the context it needs, so rebuild_section() can place it
+    // identically later without re-scanning the twin. only small-range nodes are indexed; large/
+    // unlimited-range ("eager") ones are built once up front and never streamed again.
+    if( m_state == nullptr ) { return; }
+    visual_ref ref;
+    ref.twin = twin_id( *m_state, Input.currentReplayFile(), Input.currentReplayPath() );
+    ref.offset = Input.currentReplayOffset();
+    ref.has_offset = ( false == Scratchpad.location.offset.empty() );
+    if( true == ref.has_offset ) { ref.t_offset = Scratchpad.location.offset.top(); }
+    ref.has_scale = ( false == Scratchpad.location.scale.empty() );
+    if( true == ref.has_scale ) { ref.t_scale = Scratchpad.location.scale.top(); }
+    ref.t_rotation = Scratchpad.location.rotation;
+    ref.params = Input.currentReplayParams();
+    m_state->index[ section_index( World ) ].emplace_back( std::move( ref ) );
+}
 
-	// loading finished: flush the top-level scenario's binary twin now rather than
-	// waiting for the parser to be destroyed (the loader keeps the state around)
-	Input.flushBinaryTwin();
-	// wait out any background twin writes (includes) so they are complete and logged
-	// before we report the scenario as loaded
-	scene::scenerybinary_wait_all();
-
-	state->done = true;
-	return false;
+void
+state_serializer::rebuild_section( deserializer_state &State, int Section ) {
+    auto const it = State.index.find( Section );
+    if( it == State.index.end() ) { return; }
+    scene::scratch_data &Scratchpad = State.scratchpad;
+    for( auto &ref : it->second ) {
+        // reuse one parser per twin across the whole stream (re-opening an .inc is not free)
+        auto pit = State.rebuild_parsers.find( ref.twin );
+        if( pit == State.rebuild_parsers.end() ) {
+            auto const &tw = State.twins[ ref.twin ];
+            pit = State.rebuild_parsers.emplace(
+                ref.twin,
+                std::make_unique<cParser>( tw.first, cParser::buffer_FILE, tw.second, Global.bLoadTraction ) ).first;
+        }
+        cParser &cp = *pit->second;
+        cp.seekReplayNode( ref.offset );
+        cp.setReplayParams( ref.params );
+        // restore the transform context captured for this node
+        Scratchpad.location.offset = {};
+        if( true == ref.has_offset ) { Scratchpad.location.offset.push( ref.t_offset ); }
+        Scratchpad.location.scale = {};
+        if( true == ref.has_scale ) { Scratchpad.location.scale.push( ref.t_scale ); }
+        Scratchpad.location.rotation = ref.t_rotation;
+        auto const tok = cp.getToken<std::string>();
+        if( tok == "node" ) { deserialize_node( cp, Scratchpad ); }
+    }
+    // the section is built; release its index entries
+    std::vector<visual_ref>().swap( it->second );
 }
 
 void
@@ -703,12 +832,23 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
           || ( nodedata.type == "triangle_strip" )
           || ( nodedata.type == "triangle_fan" ) ) {
 
-        // explicit shapes have no single position to ring-test by, so build them only in the
-        // nearest ring pass (ring 0) and skip them in O(1) on the farther passes (build-all
-        // mode is a single pass, so they always build there)
-        if( ( true == m_ringactive ) && ( false == m_ringall ) && ( m_ringindex > 0 ) ) {
-            if( false == Input.skipReplayNode() ) { skip_until( Input, "endtri" ); }
-            return;
+        // origin-placed shapes (e.g. flora includes) carry their world position in the active
+        // origin, so they section-stream like models: indexed on the first pass, rebuilt per
+        // section after. absolute shapes (terrain, no origin) have no single position -> built
+        // once in the first pass. (m_rebuilding: chosen from the index -> build unconditionally.)
+        if( ( true == m_sectionmode ) && ( false == m_rebuilding ) && ( nullptr != m_tobuild ) ) {
+            if( false == Scratchpad.location.offset.empty() ) {
+                glm::dvec3 const world { Scratchpad.location.offset.top() };
+                if( true == m_indexing ) { capture_node( Input, Scratchpad, world ); }
+                if( 0 == m_tobuild->count( section_index( world ) ) ) {
+                    if( false == Input.skipReplayNode() ) { skip_until( Input, "endtri" ); }
+                    return;
+                }
+            }
+            else if( true == m_shapes_built ) {
+                if( false == Input.skipReplayNode() ) { skip_until( Input, "endtri" ); }
+                return;
+            }
         }
 
         auto const skip {
@@ -734,10 +874,20 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
           || ( nodedata.type == "line_strip" )
           || ( nodedata.type == "line_loop" ) ) {
 
-        // see the triangles branch: explicit shapes build in ring 0 only (or always, build-all)
-        if( ( true == m_ringactive ) && ( false == m_ringall ) && ( m_ringindex > 0 ) ) {
-            if( false == Input.skipReplayNode() ) { skip_until( Input, "endline" ); }
-            return;
+        // see the triangles branch: origin-placed lines section-stream, absolute ones build once.
+        if( ( true == m_sectionmode ) && ( false == m_rebuilding ) && ( nullptr != m_tobuild ) ) {
+            if( false == Scratchpad.location.offset.empty() ) {
+                glm::dvec3 const world { Scratchpad.location.offset.top() };
+                if( true == m_indexing ) { capture_node( Input, Scratchpad, world ); }
+                if( 0 == m_tobuild->count( section_index( world ) ) ) {
+                    if( false == Input.skipReplayNode() ) { skip_until( Input, "endline" ); }
+                    return;
+                }
+            }
+            else if( true == m_shapes_built ) {
+                if( false == Input.skipReplayNode() ) { skip_until( Input, "endline" ); }
+                return;
+            }
         }
 
         simulation::Region->insert(
@@ -1085,21 +1235,28 @@ state_serializer::deserialize_model( cParser &Input, scene::scratch_data &Scratc
         >> location.z
         >> rotation.y;
 
-    // camera-ring visual streaming: build this model only if it falls in the ring currently
-    // being streamed; otherwise skip the rest of its body in O(1) and let a later (farther)
-    // ring pass pick it up. covers terrain models (range_min<0) too -- they also have X Y Z.
-    // most out-of-ring models are already dropped O(1) at the dispatch loop via their v7
-    // marker; this is the fallback for nodes that reached here (in-ring, or no marker pos).
-    // use the marker position when present so this ring decision matches the dispatch one
-    // exactly -- otherwise a node near a ring boundary could be dropped by both adjacent rings.
-    if( ( true == m_ringactive ) && ( false == m_ringall ) ) {
-        glm::dvec3 ringlocal { location };
-        double mx, my, mz;
-        if( true == Input.currentNodePosition( mx, my, mz ) ) { ringlocal = glm::dvec3{ mx, my, mz }; }
-        auto const world { transform( ringlocal, Scratchpad ) };
-        auto const d { world - m_ringeye };
-        auto const d2 { d.x * d.x + d.y * d.y + d.z * d.z };
-        if( ( d2 < m_ringmin2 ) || ( d2 >= m_ringmax2 ) ) {
+    // camera-following visual streaming: build this model only if its region section is in the
+    // set being built this cycle; otherwise skip the rest of its body in O(1) and let a later
+    // cycle (once the camera is near) pick it up. covers terrain models (range_min<0) too -- they
+    // also have X Y Z. most out-of-range models are already dropped O(1) at the dispatch loop via
+    // their v7 marker; this is the fallback for nodes that reached here (in-range, or no marker).
+    // use the marker position when present so this decision matches the dispatch one exactly.
+    // m_rebuilding: this node was chosen from the section index, so build it unconditionally.
+    if( ( true == m_sectionmode ) && ( false == m_rebuilding ) && ( nullptr != m_tobuild ) ) {
+        // models visible from beyond the stream radius build once (first cycle); the rest build
+        // when their section is in range. mirrors the dispatch-loop fast path exactly.
+        bool const eager { ( Nodedata.range_max < 0.0 ) || ( Nodedata.range_max > STREAM_RADIUS ) };
+        bool wanted;
+        if( true == eager ) {
+            wanted = ( false == m_shapes_built );
+        }
+        else {
+            glm::dvec3 modellocal { location };
+            double mx, my, mz, mr;
+            if( true == Input.currentNodePosition( mx, my, mz, mr ) ) { modellocal = glm::dvec3{ mx, my, mz }; }
+            wanted = ( 0 != m_tobuild->count( section_index( transform( modellocal, Scratchpad ) ) ) );
+        }
+        if( false == wanted ) {
             if( false == Input.skipReplayNode() ) { skip_until( Input, "endmodel" ); }
             return nullptr;
         }

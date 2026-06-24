@@ -64,7 +64,7 @@ namespace scene {
 //     in the visual pass, swallowed the following endorigin -> the origin stack accumulated
 //     and flung terrain/models across the map. bumping invalidates those bad twins.
 // bumping the version invalidates older twins so they are recompiled rather than misread.
-constexpr std::uint32_t SCENERYBINARY_MAGIC { MAKE_ID4( 'e', 'u', '7', 8 ) };
+constexpr std::uint32_t SCENERYBINARY_MAGIC { MAKE_ID4( 'e', 'u', '7', 9 ) };
 
 // which entries a reader serves in a given load pass; nodes outside the requested class
 // are skipped (directives/includes are always served, to keep transform/group state)
@@ -124,7 +124,7 @@ public:
     // Haspos/X/Y/Z give a model node's local position so the camera-ring load can skip it
     // without reading its tokens.
     void begin_node();
-    void end_node( bool Visual, bool Haspos = false, double X = 0.0, double Y = 0.0, double Z = 0.0 );
+    void end_node( bool Visual, bool Haspos = false, double X = 0.0, double Y = 0.0, double Z = 0.0, double Range = -1.0 );
     std::size_t entry_count() const { return m_count; }
     // serializes header + string table + encoded entries. returns false on stream failure.
     bool write( std::ostream &Output, scenery_file_kind Kind ) const;
@@ -162,11 +162,20 @@ public:
     // node; returns false (no-op) otherwise. used by the camera-ring visual load to drop a
     // node outside the current distance ring once its position has been read.
     bool skip_to_node_end() { if( m_nodeend == nullptr ) { return false; } m_cursor = m_nodeend; m_nodeend = nullptr; return true; }
-    // local position of the node currently being served, if its marker carried one (visual
-    // model nodes, v7+). returns false for shapes / infrastructure / older twins.
-    bool node_position( double &X, double &Y, double &Z ) const {
+    // local position + visibility range (range_max) of the node currently being served, if its
+    // marker carried one (visual model nodes, v8+). returns false for shapes / infrastructure /
+    // older twins. Range lets the streamer build far-but-large-range models (range_max beyond
+    // the stream radius) eagerly instead of dropping them when their section is out of range.
+    bool node_position( double &X, double &Y, double &Z, double &Range ) const {
         if( false == m_nodehaspos ) { return false; }
-        X = m_nodepos[ 0 ]; Y = m_nodepos[ 1 ]; Z = m_nodepos[ 2 ]; return true; }
+        X = m_nodepos[ 0 ]; Y = m_nodepos[ 1 ]; Z = m_nodepos[ 2 ]; Range = m_noderange; return true; }
+    // byte offset of the node currently being served, for the section-index streamer to seek back
+    std::size_t node_offset() const { return m_nodeoffset; }
+    // reposition at a node's marker (recorded via node_offset()) so the next next() re-serves it;
+    // used to rebuild a section's nodes on demand without re-scanning the twin
+    void seek_node( std::size_t Offset ) {
+        m_cursor = ( m_begin + Offset <= m_end ) ? m_begin + Offset : m_end;
+        m_nodeend = nullptr; m_nodehaspos = false; }
     bool exhausted() const { return m_cursor >= m_end; }
     // fraction of bytes consumed so far, 0..100, for the loading bar
     int progress() const { return ( m_size == 0 ? 100 : static_cast<int>( ( m_cursor - m_begin ) * 100 / m_size ) ); }
@@ -177,7 +186,9 @@ private:
     char const *m_cursor { nullptr };
     char const *m_end { nullptr };
     char const *m_nodeend { nullptr }; // end of the node currently being served (for skip_to_node_end)
-    double m_nodepos[ 3 ] { 0.0, 0.0, 0.0 }; // local position of the current node (v7 model marker)
+    double m_nodepos[ 3 ] { 0.0, 0.0, 0.0 }; // local position of the current node (v8 model marker)
+    double m_noderange { -1.0 };            // range_max of the current node (v9 model marker)
+    std::size_t m_nodeoffset { 0 };         // byte offset of the current node's marker (for seek_node)
     bool m_nodehaspos { false };            // whether the current node's marker carried a position
     std::ptrdiff_t m_size { 0 };      // entry section byte length
     scenery_load_pass m_pass { scenery_load_pass::all };
