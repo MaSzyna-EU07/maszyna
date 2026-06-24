@@ -160,6 +160,7 @@ scenery_binary_writer::add_number( double Value ) {
 
 void
 scenery_binary_writer::add_include( std::vector<std::string> const &Fileexpr, std::vector<std::string> const &Params ) {
+    m_has_include = true; // file references other files -> the infra pass must still process it
     auto &out = sink();
     write_varint( out, TAG_INCLUDE );
     write_varint( out, Fileexpr.size() );
@@ -183,6 +184,7 @@ scenery_binary_writer::end_node( bool Visual, bool Haspos, double X, double Y, d
     m_innode = false;
     auto const body = m_nodebuf.str();
     write_varint( m_entries, TAG_NODE );
+    if( false == Visual ) { m_has_infra = true; } // infrastructure node -> infra pass must process it
     auto const cls =
         ( false == Visual ) ? NODECLASS_INFRA :
         ( Haspos          ) ? NODECLASS_VISUAL_POS :
@@ -206,7 +208,9 @@ scenery_binary_writer::write( std::ostream &Output, scenery_file_kind Kind ) con
     // header: magic + kind + flags
     sn_utils::ls_uint32( Output, SCENERYBINARY_MAGIC );
     sn_utils::s_uint8( Output, static_cast<std::uint8_t>( Kind ) );
-    sn_utils::ls_uint32( Output, 0 ); // flags, reserved
+    // flags bit0: infra-relevant (has an infrastructure node or an include). a pure-visual leaf
+    // has it clear, so the infrastructure pass skips opening it entirely.
+    sn_utils::ls_uint32( Output, ( m_has_infra || m_has_include ) ? 1u : 0u );
 
     // string table: count, then each string as varint(length) + raw bytes (so the
     // reader can take views into the buffer without scanning for terminators)
@@ -240,7 +244,7 @@ scenery_binary_reader::open( std::string_view Buffer ) {
         return false;
     }
     m_kind = static_cast<scenery_file_kind>( static_cast<std::uint8_t>( *cursor++ ) );
-    read_u32le( cursor, end ); // flags, reserved
+    m_infra_relevant = ( ( read_u32le( cursor, end ) & 1u ) != 0u ); // flags bit0
 
     // string table: views into the buffer (no copies)
     auto tablesize = read_varint( cursor, end );

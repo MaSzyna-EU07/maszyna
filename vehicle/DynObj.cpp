@@ -2017,8 +2017,13 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
 */
     // utworzenie parametrów fizyki
     MoverParameters = new TMoverParameters(iDirection ? fVel : -fVel, Type_Name, asName, Cab);
+    // --- profile vehicle load (LoadFIZ physics parse vs LoadMMediaFile model/textures) ---
+    static double s_fiztime = 0.0, s_mediatime = 0.0; static long s_vehcount = 0;
+    auto const s_t0 = std::chrono::steady_clock::now();
     // McZapkie: TypeName musi byc nazwą CHK/MMD pojazdu
-    if (!MoverParameters->LoadFIZ(asBaseDir))
+    bool const s_fizok = MoverParameters->LoadFIZ(asBaseDir);
+    s_fiztime += std::chrono::duration<double>( std::chrono::steady_clock::now() - s_t0 ).count();
+    if (!s_fizok)
     { // jak wczytanie CHK się nie uda, to błąd
         if (ConversionError == 666)
             ErrorLog( "Bad vehicle: failed to locate definition file \"" + BaseDir + "/" + Type_Name + ".fiz" + "\"" );
@@ -2347,7 +2352,13 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
 */
     // wczytywanie z pliku nazwatypu.mmd, w tym model
     erase_extension( asReplacableSkin );
+    auto const s_t1 = std::chrono::steady_clock::now();
     LoadMMediaFile(Type_Name, asReplacableSkin);
+    s_mediatime += std::chrono::duration<double>( std::chrono::steady_clock::now() - s_t1 ).count();
+    if( ( ++s_vehcount % 500 ) == 0 ) {
+        WriteLog( "VEH PROFILE @" + std::to_string( s_vehcount ) + ": LoadFIZ " + std::to_string( s_fiztime )
+            + "s, LoadMMediaFile " + std::to_string( s_mediatime ) + "s" );
+    }
     // McZapkie-100402: wyszukiwanie submodeli sprzegów
     btCoupler1.Init( "coupler1", mdModel ); // false - ma być wyłączony
     btCoupler2.Init( "coupler2", mdModel );

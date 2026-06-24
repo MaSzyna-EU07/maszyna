@@ -46,6 +46,41 @@ constexpr double STREAM_RADIUS { 2000.0 };
 // a too-small budget is a tiny duty cycle, so streaming a million flora instances drags.
 constexpr int VISUAL_BUDGET_MS { 24 };
 
+// --- load profiler: where the load time actually goes, so we optimise the real bottleneck ---
+struct load_profile {
+    std::unordered_map<std::string, double> typetime;     // seconds building each node type (inside deserialize_node)
+    std::unordered_map<std::string, long>  typecount;     // how many of each node type
+    std::unordered_map<std::string, double> dispatchtime; // seconds per top-level token (node/event/trainset/...)
+    long   tokens { 0 };    // top-level getToken() dispatches (gauges the cParser scan cost)
+    double finalize { 0 };  // create_map_geometry + InitInstanceEvents
+    void reset() { typetime.clear(); typecount.clear(); dispatchtime.clear(); tokens = 0; finalize = 0; }
+    static void dump( std::unordered_map<std::string, double> const &M, char const *Tag, std::unordered_map<std::string, long> const *C ) {
+        std::vector<std::pair<std::string, double>> v( M.begin(), M.end() );
+        std::sort( v.begin(), v.end(), []( auto const &a, auto const &b ) { return a.second > b.second; } );
+        for( auto const &p : v ) {
+            if( p.second < 0.05 ) { break; }
+            WriteLog( std::string( "    " ) + Tag + " " + p.first + ": " + std::to_string( p.second ) + "s"
+                + ( C ? "  x" + std::to_string( ( *const_cast<std::unordered_map<std::string, long>*>( C ) )[ p.first ] ) : "" ) );
+        }
+    }
+    void log( char const *Phase ) {
+        double dtotal = finalize; for( auto const &p : dispatchtime ) { dtotal += p.second; }
+        WriteLog( "=== load profile [" + std::string( Phase ) + "]: dispatch " + std::to_string( dtotal )
+            + "s, getToken " + std::to_string( tokens ) + ", finalize " + std::to_string( finalize ) + "s ===" );
+        dump( dispatchtime, "[top]", nullptr );
+        dump( typetime, "[node]", &typecount );
+    }
+};
+load_profile g_profile;
+
+// RAII: add the elapsed time to Acc on scope exit (handles deserialize_node's many returns)
+struct scoped_accum {
+    std::chrono::steady_clock::time_point t0 { std::chrono::steady_clock::now() };
+    double &acc;
+    explicit scoped_accum( double &Acc ) : acc( Acc ) {}
+    ~scoped_accum() { acc += std::chrono::duration<double>( std::chrono::steady_clock::now() - t0 ).count(); }
+};
+
 // fills Tobuild with the region-section indices within STREAM_RADIUS of Eye that are not yet
 // in Built. mirrors basic_region::section() indexing (clamped to the grid). returns count.
 std::size_t wanted_sections( glm::dvec3 const &Eye, std::unordered_set<int> const &Built, std::unordered_set<int> &Tobuild ) {
@@ -78,6 +113,7 @@ std::shared_ptr<deserializer_state>
 state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 
     crashreport_add_info("scenario", Scenariofile);
+    cParser::clearInfraSkipCache(); // fresh per-load cache of pure-visual leaf includes
 
     // TODO: move initialization to separate routine so we can reuse it
     SafeDelete( Region );
@@ -275,6 +311,7 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 	auto timelast { std::chrono::steady_clock::now() };
     std::string token { Input.getToken<std::string>() };
     while( false == token.empty() ) {
+        ++g_profile.tokens; // profile: gauge the cParser scan cost
 
         if( state->visualphase ) {
             auto const skip = visualskip.find( token );
@@ -318,6 +355,7 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 
 		auto lookup = state->functionmap.find( token );
 		if( lookup != state->functionmap.end() ) {
+            scoped_accum const dispatchguard { g_profile.dispatchtime[ token ] };
             lookup->second();
         }
         else {
@@ -343,6 +381,7 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
     // group stack is left open on purpose in section mode -- later cycles keep inserting into it
     // (update_map reads the persistent group map, not the stack, so it works either way).
     auto const finalize = [ & ]( bool const Closegroups ) {
+        scoped_accum const fg { g_profile.finalize };
         if( true == Closegroups ) { scene::Groups.close(); }
         scene::Groups.update_map();
         Region->create_map_geometry();
@@ -359,6 +398,8 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
      && ( true == Input.restartReplay( scene::scenery_load_pass::visual ) ) ) {
         state->visualphase = true;
         resettransform();
+        g_profile.log( "infrastructure" );
+        g_profile.reset(); // measure the visual phase separately
         WriteLog( "Progressive visual load: infrastructure ready, streaming visuals from the driver" );
         return false; // infrastructure ready -> go to driver; visuals continue there
     }
@@ -380,6 +421,8 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
                 std::size_t refs = 0; for( auto const &s : state->index ) { refs += s.second.size(); }
                 WriteLog( "Progressive visual load: spawn ready (" + std::to_string( simulation::Instances.sequence().size() )
                     + " instances), " + std::to_string( refs ) + " nodes indexed across " + std::to_string( state->index.size() ) + " sections" );
+                g_profile.log( "visual first pass" );
+                g_profile.reset();
             }
         }
         return true; // keep streaming alive; sections the camera enters are served from the index
@@ -388,6 +431,7 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
     // build-all (no camera centre, e.g. ghostview): everything was built in this single pass.
     finalize( /*Closegroups*/ true );
     state->done = true;
+    g_profile.log( "visual build-all" );
     return false;
 }
 
@@ -706,6 +750,9 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         >> nodedata.name
         >> nodedata.type;
     if( nodedata.name == "none" ) { nodedata.name.clear(); }
+    // profile: attribute this node's build time to its type (see g_profile log at pass boundaries)
+    scoped_accum const profileguard { g_profile.typetime[ nodedata.type ] };
+    ++g_profile.typecount[ nodedata.type ];
     // type-based deserialization. not elegant but it'll do
     if( nodedata.type == "dynamic" ) {
 

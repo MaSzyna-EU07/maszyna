@@ -621,6 +621,14 @@ void cParser::processInclude(cParser& srcParser, bool ToLower) {
 	startIncludeDirect(std::move(pick), std::move(params));
 }
 
+std::map<std::string, bool> cParser::s_infraskip;
+
+bool cParser::infraRelevant() const {
+	return (m_replay && m_reader) ? m_reader->infra_relevant() : true;
+}
+
+void cParser::clearInfraSkipCache() { s_infraskip.clear(); }
+
 void cParser::startIncludeDirect(std::string includefile, std::vector<std::string> Params) {
 
 	const bool allowTraction =
@@ -630,6 +638,19 @@ void cParser::startIncludeDirect(std::string includefile, std::vector<std::strin
 	if (!allowTraction) {
 		// traction loading disabled: the include is simply not opened
 		return;
+	}
+
+	// infrastructure pass: don't open a pure-visual leaf (e.g. a flora .incb) just to skip its
+	// content -- on a million-instance scenery that was ~200k wasted reopens. the first open of
+	// each file records whether it's infra-relevant; later opens of the same file are skipped.
+	bool const infrapass = (m_replaypass == scene::scenery_load_pass::infrastructure);
+	std::string skipkey;
+	if (infrapass) {
+		skipkey = mPath + includefile;
+		auto const it = s_infraskip.find(skipkey);
+		if ((it != s_infraskip.end()) && (true == it->second)) {
+			return; // known pure-visual leaf
+		}
 	}
 
 	if (Global.ParserLogIncludes) {
@@ -644,6 +665,17 @@ void cParser::startIncludeDirect(std::string includefile, std::vector<std::strin
 	// the child inherits the current load pass so the whole include tree is filtered
 	// consistently (e.g. visuals-only on the second pass)
 	mIncludeParser->setReplayPass(m_replaypass);
+
+	// infrastructure pass: a pure-visual leaf twin has nothing to do here. record it (so the next
+	// of its thousands of reopens is skipped before even opening) and drop it now.
+	if (infrapass && mIncludeParser->m_replay) {
+		bool const relevant = mIncludeParser->infraRelevant();
+		s_infraskip[skipkey] = (false == relevant);
+		if (false == relevant) {
+			mIncludeParser = nullptr;
+			return;
+		}
+	}
 
 	// pass filtering (infra eager / visual deferred) relies on the per-node markers that
 	// only a binary twin carries. an un-baked (text) include has no markers, so it can't

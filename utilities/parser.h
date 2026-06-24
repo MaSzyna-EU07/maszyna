@@ -57,6 +57,12 @@ class cParser //: public std::stringstream
     // true when this (top-level) file is served from a binary twin, i.e. a second
     // (visual) pass via restartReplay() is possible. false for a text/compile load.
     bool isReplaying() const { return m_replay; }
+    // true if this twin has any infrastructure node or include (so the infra pass must process
+    // it); false for a pure-visual leaf (a flora .incb), which the infra pass can skip opening.
+    bool infraRelevant() const;
+    // clears the per-load cache of which include files are pure-visual leaves (call at the start
+    // of a scenario load so a rebake that changed a file's class isn't masked by a stale entry).
+    static void clearInfraSkipCache();
     // skips the rest of the node currently being replayed in O(1) (jump over its v6 marker
     // span), delegating to the active include child that is actually serving it. returns
     // false if the skip can't be done here (e.g. a text include with no binary twin), so the
@@ -212,6 +218,8 @@ class cParser //: public std::stringstream
     // --- binary scenery twin support ---
     // last token produced by readTokenFromStream was (partly) quoted -> case preserved
     bool m_lastquoted { false };
+    // per-load cache: include path -> true if it's a pure-visual leaf the infra pass skips opening
+    static std::map<std::string, bool> s_infraskip;
     // replay: this file is served from its binary twin instead of text
     bool m_replay { false };
     bool m_replayexhausted { false }; // all twin entries consumed (for inline eof())

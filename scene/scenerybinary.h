@@ -64,7 +64,7 @@ namespace scene {
 //     in the visual pass, swallowed the following endorigin -> the origin stack accumulated
 //     and flung terrain/models across the map. bumping invalidates those bad twins.
 // bumping the version invalidates older twins so they are recompiled rather than misread.
-constexpr std::uint32_t SCENERYBINARY_MAGIC { MAKE_ID4( 'e', 'u', '7', 9 ) };
+constexpr std::uint32_t SCENERYBINARY_MAGIC { MAKE_ID4( 'e', 'u', '7', 10 ) };
 
 // which entries a reader serves in a given load pass; nodes outside the requested class
 // are skipped (directives/includes are always served, to keep transform/group state)
@@ -139,6 +139,8 @@ private:
     std::ostringstream m_nodebuf;                            // current node's entries (buffered)
     bool m_innode { false };                                 // currently between begin/end_node
     std::size_t m_count { 0 };                               // number of entries
+    bool m_has_infra { false };                              // emitted any infrastructure node
+    bool m_has_include { false };                            // emitted any include directive
 };
 
 // parses a binary twin held in a memory buffer and streams its entries on demand.
@@ -151,6 +153,11 @@ public:
     bool open( std::string_view Buffer );
 
     scenery_file_kind kind() const { return m_kind; }
+    // true if this file has any infrastructure node or include directive. a pure-visual leaf
+    // (e.g. a flora .incb: triangles + transform directives only) returns false, so the
+    // infrastructure pass can skip opening it entirely instead of traversing it to drop its
+    // visual content -- which on a million-instance scenery was ~200k wasted reopens.
+    bool infra_relevant() const { return m_infra_relevant; }
     // selects which nodes are served vs skipped (default: all). may be changed between
     // reads (e.g. to drive separate eager/visual passes over a re-opened twin).
     void set_pass( scenery_load_pass Pass ) { m_pass = Pass; }
@@ -190,6 +197,7 @@ private:
     double m_noderange { -1.0 };            // range_max of the current node (v9 model marker)
     std::size_t m_nodeoffset { 0 };         // byte offset of the current node's marker (for seek_node)
     bool m_nodehaspos { false };            // whether the current node's marker carried a position
+    bool m_infra_relevant { true };         // header flag: has infrastructure node or include
     std::ptrdiff_t m_size { 0 };      // entry section byte length
     scenery_load_pass m_pass { scenery_load_pass::all };
     scenery_file_kind m_kind { scenery_file_kind::scn };
