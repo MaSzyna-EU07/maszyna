@@ -252,35 +252,21 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
         m_ringeye = state->ringeye;
         m_tobuild = &state->tobuild;
 
-        // section streaming. the first pass replays the whole twin once, indexing every deferred
-        // node under its section while building the spawn area. afterwards (state->indexed) the
-        // sections the camera moves into are rebuilt by seeking straight to their nodes -- no more
-        // whole-twin re-scans, which is what was tanking fps / dragging on a million-node scenery.
+        // section streaming: each cycle replays the visual twin once, building the nodes whose
+        // section is wanted (within range of the centre) and skipping the rest in O(1). a new
+        // cycle starts whenever the camera has moved into sections not yet built. NOTE: capturing
+        // a per-node index to avoid these re-scans was tried but the capture itself (params/paths
+        // for a million nodes) cost more than the scans it saved -- a bake-time section index is
+        // the real fix; for now the plain scan at least finishes and shows the spawn.
         if( true == state->sectionmode ) {
-            if( true == state->indexed ) {
-                if( true == state->tobuild.empty() ) {
-                    if( 0 == wanted_sections( Global.pCamera.Pos, state->built, state->tobuild ) ) {
-                        return true; // surroundings already built; stay alive for camera moves
-                    }
-                }
-                m_rebuilding = true;
-                m_state = state.get();
-                auto streamstart { std::chrono::steady_clock::now() };
-                while( false == state->tobuild.empty() ) {
-                    int const sec = *state->tobuild.begin();
-                    state->tobuild.erase( state->tobuild.begin() );
-                    rebuild_section( *state, sec );
-                    state->built.insert( sec );
-                    if( std::chrono::duration_cast<std::chrono::milliseconds>( std::chrono::steady_clock::now() - streamstart ).count() >= VISUAL_BUDGET_MS ) { break; }
-                }
-                m_rebuilding = false;
-                return true;
-            }
-            // first pass: index every deferred node while building the spawn area
-            m_indexing = true;
-            m_state = state.get();
             if( false == state->pass_active ) {
-                wanted_sections( Global.pCamera.Pos, state->built, state->tobuild );
+                // centre on the spawn (player/first vehicle) until the game starts, then follow the
+                // live driver camera. NOT the live camera during the first pass -- it isn't
+                // positioned yet (reads (0,0,0)), which built empty sections and left the spawn bare.
+                glm::dvec3 const eye { ( false == state->initial_done ) ? state->ringeye : Global.pCamera.Pos };
+                if( 0 == wanted_sections( eye, state->built, state->tobuild ) ) {
+                    return true; // nothing new in range; stay alive for camera moves
+                }
                 Input.restartReplay( scene::scenery_load_pass::visual );
                 resettransform();
                 state->pass_active = true;
@@ -304,10 +290,10 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
         { "terrain",     "endterrain" },
     };
 
-    // deserialize content from the provided input. modest budget while streaming visuals in the
-    // driver (rendering is live, so a big slice would tank fps), generous budget while the loading
-    // screen is up (infrastructure pass, nothing rendering yet).
-    int const budget { state->visualphase ? VISUAL_BUDGET_MS : 200 };
+    // deserialize content from the provided input. generous budget until the spawn is built (the
+    // loading screen is up: infra pass + first visual pass, nothing rendering yet), then a modest
+    // budget once streaming in the driver, where a big slice would tank fps on a live scene.
+    int const budget { state->indexed ? VISUAL_BUDGET_MS : 200 };
 	auto timelast { std::chrono::steady_clock::now() };
     std::string token { Input.getToken<std::string>() };
     while( false == token.empty() ) {
@@ -400,8 +386,11 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
         resettransform();
         g_profile.log( "infrastructure" );
         g_profile.reset(); // measure the visual phase separately
-        WriteLog( "Progressive visual load: infrastructure ready, streaming visuals from the driver" );
-        return false; // infrastructure ready -> go to driver; visuals continue there
+        WriteLog( "Progressive visual load: infrastructure ready, building spawn surroundings" );
+        // stay on the loading screen for the first (spawn) pass: it's budgeted generously there
+        // (nothing rendering) so the surroundings are built fast, instead of crawling in the driver
+        // at a small budget on a low-fps scene. control passes to the driver once the spawn is ready.
+        return true;
     }
 
     // section streaming: a build cycle's replay pass just finished. mark its sections built so
@@ -413,19 +402,17 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
             state->tobuild.clear();
             state->pass_active = false;
             state->shapes_built = true; // explicit shapes + eager models are built in the first pass
-            m_indexing = false;
             if( false == state->initial_done ) {
                 finalize( /*Closegroups*/ false ); // keep groups open for later cycles
                 state->initial_done = true;
-                state->indexed = true; // the first pass has indexed every deferred node by section
-                std::size_t refs = 0; for( auto const &s : state->index ) { refs += s.second.size(); }
-                WriteLog( "Progressive visual load: spawn ready (" + std::to_string( simulation::Instances.sequence().size() )
-                    + " instances), " + std::to_string( refs ) + " nodes indexed across " + std::to_string( state->index.size() ) + " sections" );
+                state->indexed = true; // first (spawn) pass done -> switch to the modest driver budget
+                WriteLog( "Progressive visual load: spawn ready (" + std::to_string( simulation::Instances.sequence().size() ) + " instances)" );
                 g_profile.log( "visual first pass" );
                 g_profile.reset();
+                return false; // spawn built on the loading screen -> hand to the driver; stream the rest there
             }
         }
-        return true; // keep streaming alive; sections the camera enters are served from the index
+        return true; // keep streaming alive; sections the camera enters are rebuilt as it moves
     }
 
     // build-all (no camera centre, e.g. ghostview): everything was built in this single pass.

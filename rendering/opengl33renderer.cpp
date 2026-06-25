@@ -681,6 +681,10 @@ void opengl33_renderer::SwapBuffers()
         + " traction: " + to_string( m_colorpass.draw_stats.traction, 7 ) + "\n"
         + " lines:    " + to_string( m_colorpass.draw_stats.lines, 7 ) + "\n"
         + "particles: " + to_string( m_colorpass.draw_stats.particles, 7 );
+
+    // profile: dump the steady-state frame breakdown so the fps bottleneck is measured, not guessed
+    { static int s_f = 0; if( ( ++s_f % 120 ) == 0 ) {
+        WriteLog( "=== FRAME PROFILE ===\n" + m_debugtimestext + "\n" + m_debugstatstext ); } }
 }
 
 void opengl33_renderer::draw_debug_ui()
