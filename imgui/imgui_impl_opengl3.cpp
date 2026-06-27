@@ -84,41 +84,38 @@ static unsigned int g_VboHandle = 0, g_ElementsHandle = 0;
 static int IMGUI_IMPL_OPENGL_HAS_DRAW_WITH_BASE_VERTEX = 0;
 
 // Functions
-bool    ImGui_ImplOpenGL3_Init(const char* glsl_version)
+bool ImGui_ImplOpenGL3_Init(const char* glsl_version)
 {
-    // Setup back-end capabilities flags
-    ImGuiIO& io = ImGui::GetIO();
-    io.BackendRendererName = "imgui_impl_opengl3";
+	ImGuiIO& io = ImGui::GetIO();
+	io.BackendRendererName = "imgui_impl_opengl3";
 
-    if (GLAD_GL_VERSION_3_3 || GLAD_GL_ES_VERSION_3_2)
-        IMGUI_IMPL_OPENGL_HAS_DRAW_WITH_BASE_VERTEX = 1;
+	if (GLAD_GL_VERSION_3_3 || GLAD_GL_ES_VERSION_3_2)
+		IMGUI_IMPL_OPENGL_HAS_DRAW_WITH_BASE_VERTEX = 1;
 
 #if IMGUI_IMPL_OPENGL_HAS_DRAW_WITH_BASE_VERTEX
-    io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;  // We can honor the ImDrawCmd::VtxOffset field, allowing for large meshes.
+	io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
 #endif
 
-    // Store GLSL version string so we can refer to it later in case we recreate shaders. Note: GLSL version is NOT the same as GL version. Leave this to NULL if unsure.
 #if defined(IMGUI_IMPL_OPENGL_ES2)
-    if (glsl_version == NULL)
-        glsl_version = "#version 100";
+	if (!glsl_version) glsl_version = "#version 100";
 #elif defined(IMGUI_IMPL_OPENGL_ES3)
-    if (glsl_version == NULL)
-        glsl_version = "#version 300 es";
+	if (!glsl_version) glsl_version = "#version 300 es";
 #else
-    if (glsl_version == NULL)
-        glsl_version = "#version 130";
+	if (!glsl_version) glsl_version = "#version 130";
 #endif
-    IM_ASSERT((int)strlen(glsl_version) + 2 < IM_ARRAYSIZE(g_GlslVersionString));
-    strcpy(g_GlslVersionString, glsl_version);
-    strcat(g_GlslVersionString, "\n");
 
-    // Make a dummy GL call (we don't actually need the result)
-    // IF YOU GET A CRASH HERE: it probably means that you haven't initialized the OpenGL function loader used by this code.
-    // Desktop OpenGL 3/4 need a function loader. See the IMGUI_IMPL_OPENGL_LOADER_xxx explanation above.
-    GLint current_texture;
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &current_texture);
+	const std::string_view v(glsl_version);
+	const size_t len = v.size();
 
-    return true;
+	IM_ASSERT(len + 2 < IM_ARRAYSIZE(g_GlslVersionString));
+	std::memcpy(g_GlslVersionString, v.data(), len);
+	g_GlslVersionString[len] = '\n';
+	g_GlslVersionString[len + 1] = '\0';
+
+	GLint current_texture;
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &current_texture);
+
+	return true;
 }
 
 void    ImGui_ImplOpenGL3_Shutdown()

@@ -407,14 +407,15 @@ void uart_input::poll()
 		memmove(&buffer[0], &tmp_buffer[4], 16);
         UartStatus.packets_received++;
 
-		if (conf.debug)
-		{
-			char buf[buffer.size() * 3 + 1];
-			size_t pos = 0;
-			for (uint8_t b : buffer)
-				pos += sprintf(&buf[pos], "%02X ", b);
-			WriteLog("uart: rx: " + std::string(buf));
-		}
+    	if (conf.debug)
+    	{
+    		std::string hex;
+    		hex.reserve(buffer.size() * 3);
+    		for (uint8_t b : buffer) {
+    			hex += std::format("{:02X} ", b);
+    		}
+    		WriteLog("uart: rx: " + hex);
+    	}
 
 		data_pending = false;
 
@@ -635,12 +636,12 @@ void uart_input::poll()
 
 		if (conf.debug)
 		{
-			char buf[buffer.size() * 3 + 1];
-            buf[ buffer.size() * 3 ] = 0;
-			size_t pos = 0;
-			for (uint8_t b : buffer)
-				pos += sprintf(&buf[pos], "%02X ", b);
-			WriteLog("uart: tx: " + std::string(buf));
+			std::string hex;
+			hex.reserve(buffer.size() * 3);
+			for (uint8_t b : buffer) {
+				hex += std::format("{:02X} ", b);
+			}
+			WriteLog("uart: tx: " + hex);
 		}
 
 	    ret = sp_blocking_write(port, (void*)buffer.data(), buffer.size(), 0);

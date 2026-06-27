@@ -28,6 +28,7 @@ Index of this file:
 
 */
 
+#include <string_view>
 #ifdef DBG_NEW
 #undef new
 #endif
@@ -143,8 +144,7 @@ void ImGui::TextEx(const char* text, const char* text_end, ImGuiTextFlags flags)
     IM_ASSERT(text != NULL);
     const char* text_begin = text;
     if (text_end == NULL)
-        text_end = text + strlen(text); // FIXME-OPT
-
+        text_end = text + std::string_view(text).size();
     const ImVec2 text_pos(window->DC.CursorPos.x, window->DC.CursorPos.y + window->DC.CurrLineTextBaseOffset);
     const float wrap_pos_x = window->DC.TextWrapPos;
     const bool wrap_enabled = (wrap_pos_x >= 0.0f);
@@ -1550,7 +1550,7 @@ static bool Items_SingleStringGetter(void* data, int idx, const char** out_text)
     {
         if (idx == items_count)
             break;
-        p += strlen(p) + 1;
+        p += std::string_view(p).size() + 1;
         items_count++;
     }
     if (!*p)
@@ -1615,7 +1615,7 @@ bool ImGui::Combo(const char* label, int* current_item, const char* items_separa
     const char* p = items_separated_by_zeros;       // FIXME-OPT: Avoid computing this, or at least only when combo is open
     while (*p)
     {
-        p += strlen(p) + 1;
+        p += std::string_view(p).size() + 1;
         items_count++;
     }
     bool value_changed = Combo(label, current_item, Items_SingleStringGetter, (void*)items_separated_by_zeros, items_count, height_in_items);
@@ -3285,7 +3285,9 @@ void ImGuiInputTextCallbackData::DeleteChars(int pos, int bytes_count)
 void ImGuiInputTextCallbackData::InsertChars(int pos, const char* new_text, const char* new_text_end)
 {
     const bool is_resizable = (Flags & ImGuiInputTextFlags_CallbackResize) != 0;
-    const int new_text_len = new_text_end ? (int)(new_text_end - new_text) : (int)strlen(new_text);
+    const int new_text_len = new_text_end
+		? static_cast<int>(new_text_end - new_text)
+		: static_cast<int>(std::string_view(new_text).size());
     if (new_text_len + BufTextLen >= BufSize)
     {
         if (!is_resizable)
@@ -3470,7 +3472,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
 
         // Take a copy of the initial buffer value (both in original UTF-8 format and converted to wchar)
         // From the moment we focused we are ignoring the content of 'buf' (unless we are in read-only mode)
-        const int buf_len = (int)strlen(buf);
+        const int buf_len = static_cast<int>(std::string_view(buf).size());
         state->InitialTextA.resize(buf_len + 1);    // UTF-8. we use +1 to make sure that .Data is always pointing to at least an empty string.
         memcpy(state->InitialTextA.Data, buf, buf_len + 1);
 
@@ -3738,7 +3740,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             if (const char* clipboard = GetClipboardText())
             {
                 // Filter pasted buffer
-                const int clipboard_len = (int)strlen(clipboard);
+                const int clipboard_len = static_cast<int>(std::string_view(clipboard).size());
                 ImWchar* clipboard_filtered = (ImWchar*)IM_ALLOC((clipboard_len+1) * sizeof(ImWchar));
                 int clipboard_filtered_len = 0;
                 for (const char* s = clipboard; *s; )
@@ -3855,7 +3857,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                     if (callback_data.SelectionEnd != utf8_selection_end)      { state->Stb.select_end = ImTextCountCharsFromUtf8(callback_data.Buf, callback_data.Buf + callback_data.SelectionEnd); }
                     if (callback_data.BufDirty)
                     {
-                        IM_ASSERT(callback_data.BufTextLen == (int)strlen(callback_data.Buf)); // You need to maintain BufTextLen if you change the text!
+                        IM_ASSERT(callback_data.BufTextLen == static_cast<int>(std::string_view(callback_data.Buf).size())); // You need to maintain BufTextLen if you change the text!
                         if (callback_data.BufTextLen > backup_current_text_length && is_resizable)
                             state->TextW.resize(state->TextW.Size + (callback_data.BufTextLen - backup_current_text_length));
                         state->CurLenW = ImTextStrFromUtf8(state->TextW.Data, state->TextW.Size, callback_data.Buf, NULL);
@@ -3928,7 +3930,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     if (is_displaying_hint)
     {
         buf_display = hint;
-        buf_display_end = hint + strlen(hint);
+        buf_display_end = hint + std::string_view(hint).size();
     }
 
     // Render text. We currently only render selection when the widget is active or while scrolling.
@@ -4098,7 +4100,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         else if (!is_displaying_hint && g.ActiveId == id)
             buf_display_end = buf_display + state->CurLenA;
         else if (!is_displaying_hint)
-            buf_display_end = buf_display + strlen(buf_display);
+            buf_display_end = buf_display + std::string_view(buf_display).size();
 
         if (is_multiline || (buf_display_end - buf_display) < buf_display_max_length)
         {
@@ -6924,7 +6926,7 @@ bool    ImGui::TabItemEx(ImGuiTabBar* tab_bar, const char* label, bool* p_open, 
 
     // Append name with zero-terminator
     tab->NameOffset = tab_bar->TabsNames.size();
-    tab_bar->TabsNames.append(label, label + strlen(label) + 1);
+    tab_bar->TabsNames.append(label, label + std::string_view(label).size() + 1);
 
     // If we are not reorderable, always reset offset based on submission order.
     // (We already handled layout and sizing using the previous known order, but sizing is not affected by order!)

@@ -7,6 +7,8 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
+#include <string_view>
+
 #include "stdafx.h"
 #include "audio/audiorenderer.h"
 
@@ -506,23 +508,30 @@ openal_renderer::fetch_source() {
     return newsource;
 }
 
+bool openal_renderer::logAvailableDevices()
+{
+	WriteLog("available audio devices:");
+
+	auto const *devices = ::alcGetString(nullptr, ALC_DEVICE_SPECIFIER);
+	if (!devices)
+	{
+		WriteLog("(none found)");
+		return false;
+	}
+
+	for (auto const* device = devices; *device; device += std::string_view(device).size() + 1) {
+		WriteLog(device);
+	}
+	return true;
+}
+
 bool
 openal_renderer::init_caps() {
 
-    if( ::alcIsExtensionPresent( nullptr, "ALC_ENUMERATION_EXT" ) == AL_TRUE ) {
-        // enumeration supported
-        WriteLog( "available audio devices:" );
-        auto const *devices { ::alcGetString( nullptr, ALC_DEVICE_SPECIFIER ) };
-        auto const
-            *device { devices },
-            *next { devices + 1 };
-        while( (device) && (*device != '\0') && (next) && (*next != '\0') ) {
-            WriteLog( { device } );
-            auto const len { std::strlen( device ) };
-            device += ( len + 1 );
-            next += ( len + 2 );
-        }
-    }
+	if (::alcIsExtensionPresent(nullptr, "ALC_ENUMERATION_EXT") == AL_TRUE
+		&& !logAvailableDevices()) {
+		return false;
+	}
 
     // NOTE: default value of audio renderer variable is empty string, meaning argument of NULL i.e. 'preferred' device
     m_device = ::alcOpenDevice( Global.AudioRenderer.c_str() );

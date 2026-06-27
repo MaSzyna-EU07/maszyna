@@ -33,6 +33,7 @@ Index of this file:
 #include "imgui_internal.h"
 
 #include <stdio.h>      // vsnprintf, sscanf, printf
+#include <string_view>
 #if !defined(alloca)
 #if defined(__GLIBC__) || defined(__sun) || defined(__CYGWIN__) || defined(__APPLE__) || defined(__SWITCH__)
 #include <alloca.h>     // alloca (glibc uses <alloca.h>. Note that Cygwin may have _WIN32 defined, so the order matters here)
@@ -1105,13 +1106,13 @@ void ImDrawList::AddText(const ImFont* font, float font_size, const ImVec2& pos,
     if ((col & IM_COL32_A_MASK) == 0)
         return;
 
-    if (text_end == NULL)
-        text_end = text_begin + strlen(text_begin);
+    if (text_end == nullptr)
+        text_end = text_begin + std::string_view(text_begin).size();;
     if (text_begin == text_end)
         return;
 
     // Pull default font/size from the shared ImDrawListSharedData instance
-    if (font == NULL)
+    if (font == nullptr)
         font = _Data->Font;
     if (font_size == 0.0f)
         font_size = _Data->FontSize;
@@ -1715,12 +1716,13 @@ ImFont* ImFontAtlas::AddFontFromMemoryCompressedTTF(const void* compressed_ttf_d
 
 ImFont* ImFontAtlas::AddFontFromMemoryCompressedBase85TTF(const char* compressed_ttf_data_base85, float size_pixels, const ImFontConfig* font_cfg, const ImWchar* glyph_ranges)
 {
-    int compressed_ttf_size = (((int)strlen(compressed_ttf_data_base85) + 4) / 5) * 4;
-    void* compressed_ttf = IM_ALLOC((size_t)compressed_ttf_size);
-    Decode85((const unsigned char*)compressed_ttf_data_base85, (unsigned char*)compressed_ttf);
-    ImFont* font = AddFontFromMemoryCompressedTTF(compressed_ttf, compressed_ttf_size, size_pixels, font_cfg, glyph_ranges);
-    IM_FREE(compressed_ttf);
-    return font;
+	const size_t len = std::string_view(compressed_ttf_data_base85).size();
+	const int compressed_ttf_size = (static_cast<int>(len) + 4) / 5 * 4;
+	void* compressed_ttf = IM_ALLOC(static_cast<size_t>(compressed_ttf_size));
+	Decode85(reinterpret_cast<const unsigned char*>(compressed_ttf_data_base85), static_cast<unsigned char*>(compressed_ttf));
+	ImFont* font = AddFontFromMemoryCompressedTTF(compressed_ttf, compressed_ttf_size, size_pixels, font_cfg, glyph_ranges);
+	IM_FREE(compressed_ttf);
+	return font;
 }
 
 int ImFontAtlas::AddCustomRectRegular(unsigned int id, int width, int height)
@@ -2735,7 +2737,9 @@ const char* ImFont::CalcWordWrapPositionA(float scale, const char* text, const c
 ImVec2 ImFont::CalcTextSizeA(float size, float max_width, float wrap_width, const char* text_begin, const char* text_end, const char** remaining) const
 {
     if (!text_end)
-        text_end = text_begin + strlen(text_begin); // FIXME-OPT: Need to avoid this.
+    {
+        text_end = text_begin + std::string_view(text_begin).size();
+    }
 
     const float line_height = size;
     const float scale = size / FontSize;
@@ -2744,7 +2748,7 @@ ImVec2 ImFont::CalcTextSizeA(float size, float max_width, float wrap_width, cons
     float line_width = 0.0f;
 
     const bool word_wrap_enabled = (wrap_width > 0.0f);
-    const char* word_wrap_eol = NULL;
+    const char* word_wrap_eol = nullptr;
 
     const char* s = text_begin;
     while (s < text_end)
@@ -2765,7 +2769,7 @@ ImVec2 ImFont::CalcTextSizeA(float size, float max_width, float wrap_width, cons
                     text_size.x = line_width;
                 text_size.y += line_height;
                 line_width = 0.0f;
-                word_wrap_eol = NULL;
+                word_wrap_eol = nullptr;
 
                 // Wrapping skips upcoming blanks
                 while (s < text_end)
@@ -2779,7 +2783,7 @@ ImVec2 ImFont::CalcTextSizeA(float size, float max_width, float wrap_width, cons
 
         // Decode and advance source
         const char* prev_s = s;
-        unsigned int c = (unsigned int)*s;
+        auto c = static_cast<unsigned int>(*s);
         if (c < 0x80)
         {
             s += 1;
@@ -2839,15 +2843,16 @@ void ImFont::RenderChar(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
         draw_list->PrimRectUV(ImVec2(pos.x + glyph->X0 * scale, pos.y + glyph->Y0 * scale), ImVec2(pos.x + glyph->X1 * scale, pos.y + glyph->Y1 * scale), ImVec2(glyph->U0, glyph->V0), ImVec2(glyph->U1, glyph->V1), col);
     }
 }
-
 void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col, const ImVec4& clip_rect, const char* text_begin, const char* text_end, float wrap_width, bool cpu_fine_clip) const
 {
     if (!text_end)
-        text_end = text_begin + strlen(text_begin); // ImGui:: functions generally already provides a valid text_end, so this is merely to handle direct calls.
+    {
+        text_end = text_begin + std::string_view(text_begin).size();
+    }
 
     // Align to be pixel perfect
-    pos.x = (float)(int)pos.x + DisplayOffset.x;
-    pos.y = (float)(int)pos.y + DisplayOffset.y;
+    pos.x = static_cast<float>(static_cast<int>(pos.x)) + DisplayOffset.x;
+    pos.y = static_cast<float>(static_cast<int>(pos.y)) + DisplayOffset.y;
     float x = pos.x;
     float y = pos.y;
     if (y > clip_rect.w)
@@ -2856,7 +2861,7 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
     const float scale = size / FontSize;
     const float line_height = FontSize * scale;
     const bool word_wrap_enabled = (wrap_width > 0.0f);
-    const char* word_wrap_eol = NULL;
+    const char* word_wrap_eol = nullptr;
 
     // Fast-forward to first visible line
     const char* s = text_begin;
@@ -2876,7 +2881,7 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
         float y_end = y;
         while (y_end < clip_rect.w && s_end < text_end)
         {
-            s_end = (const char*)memchr(s_end, '\n', text_end - s_end);
+            s_end = static_cast<const char *>(memchr(s_end, '\n', text_end - s_end));
             s_end = s_end ? s_end + 1 : text_end;
             y_end += line_height;
         }
@@ -2886,8 +2891,8 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
         return;
 
     // Reserve vertices for remaining worse case (over-reserving is useful and easily amortized)
-    const int vtx_count_max = (int)(text_end - s) * 4;
-    const int idx_count_max = (int)(text_end - s) * 6;
+    const int vtx_count_max = static_cast<int>(text_end - s) * 4;
+    const int idx_count_max = static_cast<int>(text_end - s) * 6;
     const int idx_expected_size = draw_list->IdxBuffer.Size + idx_count_max;
     draw_list->PrimReserve(idx_count_max, vtx_count_max);
 
@@ -2911,7 +2916,7 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
             {
                 x = pos.x;
                 y += line_height;
-                word_wrap_eol = NULL;
+                word_wrap_eol = nullptr;
 
                 // Wrapping skips upcoming blanks
                 while (s < text_end)
@@ -2924,7 +2929,7 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
         }
 
         // Decode and advance source
-        unsigned int c = (unsigned int)*s;
+        auto c = static_cast<unsigned int>(*s);
         if (c < 0x80)
         {
             s += 1;
@@ -2951,7 +2956,7 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
         }
 
         float char_width = 0.0f;
-        if (const ImFontGlyph* glyph = FindGlyph((ImWchar)c))
+        if (const ImFontGlyph* glyph = FindGlyph(static_cast<ImWchar>(c)))
         {
             char_width = glyph->AdvanceX * scale;
 
@@ -3003,8 +3008,12 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
 
                     // We are NOT calling PrimRectUV() here because non-inlined causes too much overhead in a debug builds. Inlined here:
                     {
-                        idx_write[0] = (ImDrawIdx)(vtx_current_idx); idx_write[1] = (ImDrawIdx)(vtx_current_idx+1); idx_write[2] = (ImDrawIdx)(vtx_current_idx+2);
-                        idx_write[3] = (ImDrawIdx)(vtx_current_idx); idx_write[4] = (ImDrawIdx)(vtx_current_idx+2); idx_write[5] = (ImDrawIdx)(vtx_current_idx+3);
+                        idx_write[0] = static_cast<ImDrawIdx>(vtx_current_idx);
+                    	idx_write[1] = static_cast<ImDrawIdx>(vtx_current_idx + 1);
+                    	idx_write[2] = static_cast<ImDrawIdx>(vtx_current_idx + 2);
+                        idx_write[3] = static_cast<ImDrawIdx>(vtx_current_idx);
+                    	idx_write[4] = static_cast<ImDrawIdx>(vtx_current_idx + 2);
+                    	idx_write[5] = static_cast<ImDrawIdx>(vtx_current_idx + 3);
                         vtx_write[0].pos.x = x1; vtx_write[0].pos.y = y1; vtx_write[0].col = col; vtx_write[0].uv.x = u1; vtx_write[0].uv.y = v1;
                         vtx_write[1].pos.x = x2; vtx_write[1].pos.y = y1; vtx_write[1].col = col; vtx_write[1].uv.x = u2; vtx_write[1].uv.y = v1;
                         vtx_write[2].pos.x = x2; vtx_write[2].pos.y = y2; vtx_write[2].col = col; vtx_write[2].uv.x = u2; vtx_write[2].uv.y = v2;
@@ -3021,8 +3030,8 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
     }
 
     // Give back unused vertices
-    draw_list->VtxBuffer.resize((int)(vtx_write - draw_list->VtxBuffer.Data));
-    draw_list->IdxBuffer.resize((int)(idx_write - draw_list->IdxBuffer.Data));
+    draw_list->VtxBuffer.resize(static_cast<int>(vtx_write - draw_list->VtxBuffer.Data));
+    draw_list->IdxBuffer.resize(static_cast<int>(idx_write - draw_list->IdxBuffer.Data));
     draw_list->CmdBuffer[draw_list->CmdBuffer.Size-1].ElemCount -= (idx_expected_size - draw_list->IdxBuffer.Size);
     draw_list->_VtxWritePtr = vtx_write;
     draw_list->_IdxWritePtr = idx_write;

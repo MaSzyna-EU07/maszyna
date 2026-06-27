@@ -76,87 +76,76 @@ std::deque<std::string> ErrorStack;
 // lock for log stacks
 std::mutex logMutex;
 
-
 void LogService()
 {
-	// prevent crash if mutex is not initialized
-	while (true)
-	{
-		try
-		{
-			logMutex.lock();
-			break;
-		}
-		catch (...) {}
-	}
-	logMutex.unlock();
+    while (!Global.applicationQuitOrder)
+    {
+        // --- Obsługa InfoStack ---
+        while (!InfoStack.empty())
+        {
+            std::string msg;
+            bool isError;
+            {
+                std::lock_guard<std::mutex> lock(logMutex);
+                msg = std::move(InfoStack.front().first);
+                isError = InfoStack.front().second;
+                InfoStack.pop_front();
+            }
 
-	while (!Global.applicationQuitOrder)
-	{
-		{
-			// --- Obsługa InfoStack ---
-			while (!InfoStack.empty())
-			{
-				logMutex.lock();
-				std::string msg = InfoStack.front().first;
-				bool isError = InfoStack.front().second;
-				InfoStack.pop_front();
-				logMutex.unlock();
+            // log to file
+            if (Global.iWriteLogEnabled & 1)
+            {
+                if (!output.is_open())
+                {
+                    std::string filename = (Global.MultipleLogs ? "logs/log (" + filename_scenery() + ") " + filename_date() + ".txt" : "log.txt");
+                    output.open(filename, std::ios::trunc);
+                }
+                output << msg << "\n";
+                output.flush();
+            }
 
-				// log to file
-				if (Global.iWriteLogEnabled & 1)
-				{
-					if (!output.is_open())
-					{
-						std::string filename = (Global.MultipleLogs ? "logs/log (" + filename_scenery() + ") " + filename_date() + ".txt" : "log.txt");
-						output.open(filename, std::ios::trunc);
-					}
-					output << msg << "\n";
-					output.flush();
-				}
+            // log to scrollback imgui
+            log_scrollback.emplace_back(std::move(msg));
+            if (log_scrollback.size() > 200)
+                log_scrollback.pop_front();
 
-				// log to scrollback imgui
-				log_scrollback.emplace_back(msg);
-				if (log_scrollback.size() > 200)
-					log_scrollback.pop_front();
+            // log to console
+            if (Global.iWriteLogEnabled & 2)
+            {
+                if (isError)
+                    printf("\033[1;37;41m%s\033[0m\n", msg.c_str());
+                else
+                    printf("\033[32m%s\033[0m\n", msg.c_str());
+            }
+        }
 
-				// log to console
-				if (Global.iWriteLogEnabled & 2)
-				{
-					if (isError)
-						printf("\033[1;37;41m%s\033[0m\n", msg.c_str());
-					else
-						printf("\033[32m%s\033[0m\n", msg.c_str());
-				}
-			}
+        // --- Obsługa ErrorStack ---
+        while (!ErrorStack.empty())
+        {
+            std::string msg;
+            {
+                std::lock_guard<std::mutex> lock(logMutex);
+                msg = std::move(ErrorStack.front());
+                ErrorStack.pop_front();
+            }
 
-			// --- Obsługa ErrorStack ---
-			while (!ErrorStack.empty())
-			{
-				logMutex.lock();
-				std::string msg = ErrorStack.front();
-				ErrorStack.pop_front();
-				logMutex.unlock();
+            if (!(Global.iWriteLogEnabled & 1))
+                continue;
 
-				if (!(Global.iWriteLogEnabled & 1))
-					continue;
+            if (!errors.is_open())
+            {
+                std::string filename = (Global.MultipleLogs ? "logs/errors (" + filename_scenery() + ") " + filename_date() + ".txt" : "errors.txt");
+                errors.open(filename, std::ios::trunc);
+                errors << "EU07.EXE " + Global.asVersion << "\n";
+            }
 
-				if (!errors.is_open())
-				{
-					std::string filename = (Global.MultipleLogs ? "logs/errors (" + filename_scenery() + ") " + filename_date() + ".txt" : "errors.txt");
-					errors.open(filename, std::ios::trunc);
-					errors << "EU07.EXE " + Global.asVersion << "\n";
-				}
+            errors << msg << "\n";
+            errors.flush();
+        }
 
-				errors << msg << "\n";
-				errors.flush();
-			}
-		}
-
-		std::this_thread::sleep_for(std::chrono::milliseconds(50));
-	}
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
 }
-
 
 bool ShouldSkipLog(std::string_view str, logtype type)
 {
@@ -180,8 +169,8 @@ void WriteLog(std::string_view str, logtype type, bool isError)
 
 	const auto message = FormatLogMessage(str);
 
-	std::lock_guard<std::mutex> lock(logMutex);
-	InfoStack.push_back({message, isError});
+	std::lock_guard lock(logMutex);
+	InfoStack.emplace_back(message, isError);
 }
 
 void ErrorLog(std::string_view str, logtype type)
@@ -191,8 +180,8 @@ void ErrorLog(std::string_view str, logtype type)
 
 	const auto message = FormatLogMessage(str);
 
-	std::lock_guard<std::mutex> lock(logMutex);
-	ErrorStack.push_back(message);
+	std::lock_guard lock(logMutex);
+	ErrorStack.emplace_back(message);
 }
 
 void WriteLog(const char* str, logtype type, bool isError)

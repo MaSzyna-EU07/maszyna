@@ -972,8 +972,10 @@ CODE
 #endif
 #include "imgui_internal.h"
 
+#include <cstring>
 #include <ctype.h>      // toupper
 #include <stdio.h>      // vsnprintf, sscanf, printf
+#include <string_view>
 #if defined(_MSC_VER) && _MSC_VER <= 1500 // MSVC 2008 or earlier
 #include <stddef.h>     // intptr_t
 #else
@@ -1347,11 +1349,18 @@ int ImStrnicmp(const char* str1, const char* str2, size_t count)
 
 void ImStrncpy(char* dst, const char* src, size_t count)
 {
-    if (count < 1)
-        return;
-    if (count > 1)
-        strncpy(dst, src, count - 1);
-    dst[count - 1] = 0;
+	if (count == 0)
+	{
+		return;
+	}
+
+	auto src_len = std::string_view(src).size();
+	auto copy_len = src_len < count - 1
+		? src_len
+		: count - 1;
+
+	std::memcpy(dst, src, copy_len);
+	dst[copy_len] = '\0';
 }
 
 char* ImStrdup(const char* str)
@@ -1363,22 +1372,38 @@ char* ImStrdup(const char* str)
 
 char* ImStrdupcpy(char* dst, size_t* p_dst_size, const char* src)
 {
-    size_t dst_buf_size = p_dst_size ? *p_dst_size : strlen(dst) + 1;
-    size_t src_size = strlen(src) + 1;
-    if (dst_buf_size < src_size)
-    {
-        IM_FREE(dst);
-        dst = (char*)IM_ALLOC(src_size);
-        if (p_dst_size)
-            *p_dst_size = src_size;
-    }
-    return (char*)memcpy(dst, (const void*)src, src_size);
+	if (!src) {
+		return dst;
+	}
+
+	size_t src_size = strlen(src) + 1;
+	size_t dst_size = 0;
+
+	if (dst) {
+		dst_size = p_dst_size ? *p_dst_size : strlen(dst) + 1;
+	}
+
+	if (!dst || dst_size < src_size) {
+		if (dst) {
+			IM_FREE(dst);
+		}
+		dst = static_cast<char *>(IM_ALLOC(src_size));
+		if (p_dst_size) {
+			*p_dst_size = src_size;
+		}
+	}
+
+	return static_cast<char *>(memcpy(dst, src, src_size));
 }
 
 const char* ImStrchrRange(const char* str, const char* str_end, char c)
 {
-    const char* p = (const char*)memchr(str, (int)c, str_end - str);
-    return p;
+	if (!str || !str_end || str >= str_end) {
+		return nullptr;
+	}
+
+	const auto len = static_cast<size_t>(str_end - str);
+	return static_cast<const char*>(std::memchr(str, c, len));
 }
 
 int ImStrlenW(const ImWchar* str)
@@ -1405,8 +1430,16 @@ const ImWchar* ImStrbolW(const ImWchar* buf_mid_line, const ImWchar* buf_begin) 
 
 const char* ImStristr(const char* haystack, const char* haystack_end, const char* needle, const char* needle_end)
 {
-    if (!needle_end)
-        needle_end = needle + strlen(needle);
+	if (!needle)
+	{
+		return nullptr;
+	}
+
+	std::string_view needle_view(needle);
+	if (!needle_end)
+	{
+		needle_end = needle + needle_view.size();
+	}
 
     const char un0 = (char)toupper(*needle);
     while ((!haystack_end && *haystack) || (haystack_end && haystack < haystack_end))
@@ -2107,25 +2140,26 @@ void ImGuiTextFilter::ImGuiTextRange::split(char separator, ImVector<ImGuiTextRa
 
 void ImGuiTextFilter::Build()
 {
-    Filters.resize(0);
-    ImGuiTextRange input_range(InputBuf, InputBuf+strlen(InputBuf));
-    input_range.split(',', &Filters);
+	Filters.resize(0);
 
-    CountGrep = 0;
-    for (int i = 0; i != Filters.Size; i++)
-    {
-        ImGuiTextRange& f = Filters[i];
-        while (f.b < f.e && ImCharIsBlankA(f.b[0]))
-            f.b++;
-        while (f.e > f.b && ImCharIsBlankA(f.e[-1]))
-            f.e--;
-        if (f.empty())
-            continue;
-        if (Filters[i].b[0] != '-')
-            CountGrep += 1;
-    }
+	const std::string_view input_view(InputBuf);
+	ImGuiTextRange input_range(input_view.data(), input_view.data() + input_view.size());
+	input_range.split(',', &Filters);
+
+	CountGrep = 0;
+	for (int i = 0; i < Filters.Size; i++)
+	{
+		ImGuiTextRange& f = Filters[i];
+		while (f.b < f.e && ImCharIsBlankA(f.b[0]))
+			f.b++;
+		while (f.e > f.b && ImCharIsBlankA(f.e[-1]))
+			f.e--;
+		if (f.empty())
+			continue;
+		if (f.b[0] != '-')
+			CountGrep++;
+	}
 }
-
 bool ImGuiTextFilter::PassFilter(const char* text, const char* text_end) const
 {
     if (Filters.empty())
@@ -2178,20 +2212,32 @@ char ImGuiTextBuffer::EmptyString[1] = { 0 };
 
 void ImGuiTextBuffer::append(const char* str, const char* str_end)
 {
-    int len = str_end ? (int)(str_end - str) : (int)strlen(str);
+	if (!str)
+	{
+		return;
+	}
 
-    // Add zero-terminator the first time
-    const int write_off = (Buf.Size != 0) ? Buf.Size : 1;
-    const int needed_sz = write_off + len;
-    if (write_off + len >= Buf.Capacity)
-    {
-        int new_capacity = Buf.Capacity * 2;
-        Buf.reserve(needed_sz > new_capacity ? needed_sz : new_capacity);
-    }
+	const std::string_view sv(str, str_end
+		? static_cast<size_t>(str_end - str)
+		: std::char_traits<char>::length(str));
 
-    Buf.resize(needed_sz);
-    memcpy(&Buf[write_off - 1], str, (size_t)len);
-    Buf[write_off - 1 + len] = 0;
+	if (sv.empty())
+	{
+		return;
+	}
+
+	const auto write_off = Buf.empty()
+		? 1
+		: static_cast<size_t>(Buf.Size);
+	const auto needed_sz = write_off + sv.size();
+
+	if (needed_sz >= static_cast<size_t>(Buf.Capacity)) {
+		Buf.reserve(static_cast<int>(std::max(needed_sz, static_cast<size_t>(Buf.Capacity * 2))));
+	}
+
+	Buf.resize(static_cast<int>(needed_sz));
+	std::memcpy(Buf.Data + write_off - 1, sv.data(), sv.size());
+	Buf[write_off - 1 + sv.size()] = '\0';
 }
 
 void ImGuiTextBuffer::appendf(const char* fmt, ...)
@@ -2385,44 +2431,50 @@ const char* ImGui::FindRenderedTextEnd(const char* text, const char* text_end)
 // RenderText***() functions calls ImDrawList::AddText() calls ImBitmapFont::RenderText()
 void ImGui::RenderText(ImVec2 pos, const char* text, const char* text_end, bool hide_text_after_hash)
 {
-    ImGuiContext& g = *GImGui;
-    ImGuiWindow* window = g.CurrentWindow;
+	ImGuiContext& g = *GImGui;
+	ImGuiWindow* window = g.CurrentWindow;
 
-    // Hide anything after a '##' string
-    const char* text_display_end;
-    if (hide_text_after_hash)
-    {
-        text_display_end = FindRenderedTextEnd(text, text_end);
-    }
-    else
-    {
-        if (!text_end)
-            text_end = text + strlen(text); // FIXME-OPT
-        text_display_end = text_end;
-    }
+	// Hide anything after a '##' string
+	const char* text_display_end;
+	if (hide_text_after_hash)
+	{
+		text_display_end = FindRenderedTextEnd(text, text_end);
+	}
+	else
+	{
+		if (!text_end)
+		{
+			text_end = text + std::string_view(text).size();
+		}
+		text_display_end = text_end;
+	}
 
-    if (text != text_display_end)
-    {
-        window->DrawList->AddText(g.Font, g.FontSize, pos, GetColorU32(ImGuiCol_Text), text, text_display_end);
-        if (g.LogEnabled)
-            LogRenderedText(&pos, text, text_display_end);
-    }
+	if (text != text_display_end)
+	{
+		window->DrawList->AddText(g.Font, g.FontSize, pos, GetColorU32(ImGuiCol_Text), text, text_display_end);
+		if (g.LogEnabled)
+			LogRenderedText(&pos, text, text_display_end);
+	}
 }
 
 void ImGui::RenderTextWrapped(ImVec2 pos, const char* text, const char* text_end, float wrap_width)
 {
-    ImGuiContext& g = *GImGui;
-    ImGuiWindow* window = g.CurrentWindow;
+	ImGuiContext& g = *GImGui;
+	ImGuiWindow* window = g.CurrentWindow;
 
-    if (!text_end)
-        text_end = text + strlen(text); // FIXME-OPT
+	if (!text_end)
+	{
+		text_end = text + std::string_view(text).size();
+	}
 
-    if (text != text_end)
-    {
-        window->DrawList->AddText(g.Font, g.FontSize, pos, GetColorU32(ImGuiCol_Text), text, text_end, wrap_width);
-        if (g.LogEnabled)
-            LogRenderedText(&pos, text, text_end);
-    }
+	if (text != text_end)
+	{
+		window->DrawList->AddText(g.Font, g.FontSize, pos, GetColorU32(ImGuiCol_Text), text, text_end, wrap_width);
+		if (g.LogEnabled)
+		{
+			LogRenderedText(&pos, text, text_end);
+		}
+	}
 }
 
 // Default clip_rect uses (pos_min,pos_max)
@@ -2682,7 +2734,7 @@ ImGuiWindow::ImGuiWindow(ImGuiContext* context, const char* name)
     WindowPadding = ImVec2(0.0f, 0.0f);
     WindowRounding = 0.0f;
     WindowBorderSize = 0.0f;
-    NameBufLen = (int)strlen(name) + 1;
+    NameBufLen = static_cast<int>(std::string_view(name).size()) + 1;
     MoveId = GetID("#MOVE");
     ChildId = 0;
     Scroll = ImVec2(0.0f, 0.0f);
@@ -9446,16 +9498,18 @@ void ImGui::LoadIniSettingsFromMemory(const char* ini_data, size_t ini_size)
     // For user convenience, we allow passing a non zero-terminated string (hence the ini_size parameter).
     // For our convenience and to make the code simpler, we'll also write zero-terminators within the buffer. So let's create a writable copy..
     if (ini_size == 0)
-        ini_size = strlen(ini_data);
-    char* buf = (char*)IM_ALLOC(ini_size + 1);
+    {
+        ini_size = std::string_view(ini_data).size();
+    }
+    char* buf = static_cast<char *>(IM_ALLOC(ini_size + 1));
     char* buf_end = buf + ini_size;
     memcpy(buf, ini_data, ini_size);
     buf[ini_size] = 0;
 
-    void* entry_data = NULL;
-    ImGuiSettingsHandler* entry_handler = NULL;
+    void* entry_data = nullptr;
+    ImGuiSettingsHandler* entry_handler = nullptr;
 
-    char* line_end = NULL;
+    char* line_end = nullptr;
     for (char* line = buf; line < buf_end; line = line_end + 1)
     {
         // Skip new lines markers, then find end of the line
@@ -9474,7 +9528,7 @@ void ImGui::LoadIniSettingsFromMemory(const char* ini_data, size_t ini_size)
             const char* name_end = line_end - 1;
             const char* type_start = line + 1;
             char* type_end = (char*)(intptr_t)ImStrchrRange(type_start, name_end, ']');
-            const char* name_start = type_end ? ImStrchrRange(type_end + 1, name_end, '[') : NULL;
+            const char* name_start = type_end ? ImStrchrRange(type_end + 1, name_end, '[') : nullptr;
             if (!type_end || !name_start)
             {
                 name_start = type_start; // Import legacy entries that have no type
@@ -9486,9 +9540,9 @@ void ImGui::LoadIniSettingsFromMemory(const char* ini_data, size_t ini_size)
                 name_start++;  // Skip second '['
             }
             entry_handler = FindSettingsHandler(type_start);
-            entry_data = entry_handler ? entry_handler->ReadOpenFn(&g, entry_handler, name_start) : NULL;
+            entry_data = entry_handler ? entry_handler->ReadOpenFn(&g, entry_handler, name_start) : nullptr;
         }
-        else if (entry_handler != NULL && entry_data != NULL)
+        else if (entry_handler != nullptr && entry_data != nullptr)
         {
             // Let type handler parse the line
             entry_handler->ReadLineFn(&g, entry_handler, entry_data, line);

@@ -155,7 +155,8 @@ private:
     // returns an instance of implementation-side part of the sound emitter
     audio::openal_source
         fetch_source();
-// members
+	static bool logAvailableDevices();
+	// members
     ALCdevice * m_device { nullptr };
     ALCcontext * m_context { nullptr };
     bool m_ready { false }; // renderer is initialized and functional

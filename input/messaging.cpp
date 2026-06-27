@@ -34,10 +34,9 @@ std::uint32_t const EU07_MESSAGEHEADER { MAKE_ID4( 'E','U','0','7' ) };
 void
 Navigate(std::string const &ClassName, UINT Msg, WPARAM wParam, LPARAM lParam) {
 #ifdef _WIN32
-    // wysłanie komunikatu do sterującego
-    HWND h = FindWindow(ClassName.c_str(), 0); // można by to zapamiętać
-    if (h == 0)
-        h = FindWindow(0, ClassName.c_str()); // można by to zapamiętać
+    HWND h = FindWindow(ClassName.c_str(), nullptr);
+    if (h == nullptr)
+        h = FindWindow(nullptr, ClassName.c_str());
     SendMessage(h, Msg, wParam, lParam);
 #endif
 }
@@ -59,10 +58,10 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
         case 2: {
             // event
             CommLog( Now() + " " + std::to_string( pRozkaz->iComm ) + " " +
-                std::string( pRozkaz->cString + 1, (unsigned)( pRozkaz->cString[ 0 ] ) ) + " rcvd" );
+                std::string( pRozkaz->cString + 1, static_cast<size_t>( pRozkaz->cString[ 0 ] ) ) + " rcvd" );
 
             if( Global.iMultiplayer ) {
-                auto *event = simulation::Events.FindEvent( std::string( pRozkaz->cString + 1, (unsigned)( pRozkaz->cString[ 0 ] ) ) );
+                auto *event = simulation::Events.FindEvent( std::string( pRozkaz->cString + 1, static_cast<size_t>( pRozkaz->cString[ 0 ] ) ) );
                 if( event != nullptr ) {
                     if( ( typeid( *event ) == typeid( multi_event ) )
                      || ( typeid( *event ) == typeid( lights_event ) )
@@ -78,13 +77,13 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
         case 3: // rozkaz dla AI
             if (Global.iMultiplayer)
             {
-                int i = int(pRozkaz->cString[8]); // długość pierwszego łańcucha (z przodu dwa floaty)
+                int i = pRozkaz->cString[8]; // długość pierwszego łańcucha (z przodu dwa floaty)
                 CommLog(
                     Now() + " " + std::to_string(pRozkaz->iComm) + " " +
-                    std::string(pRozkaz->cString + 11 + i, (unsigned)(pRozkaz->cString[10 + i])) +
+                    std::string(pRozkaz->cString + 11 + i, static_cast<size_t>(pRozkaz->cString[10 + i])) +
                     " rcvd");
-                // nazwa pojazdu jest druga
-                auto *vehicle = simulation::Vehicles.find( { pRozkaz->cString + 11 + i, (unsigned)pRozkaz->cString[ 10 + i ] } );
+            	// nazwa pojazdu jest druga
+                auto *vehicle = simulation::Vehicles.find( { pRozkaz->cString + 11 + i, static_cast<size_t>(pRozkaz->cString[ 10 + i ] ) } );
                 if( ( vehicle != nullptr )
                  && ( vehicle->Mechanik != nullptr ) ) {
                     vehicle->Mechanik->PutCommand(
@@ -92,16 +91,16 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
                         pRozkaz->fPar[0], pRozkaz->fPar[1],
                         nullptr,
                         stopExt ); // floaty są z przodu
-                    WriteLog("AI command: " + std::string(pRozkaz->cString + 9, i));
+                    WriteLog("AI command: " + std::string(pRozkaz->cString + 9, static_cast<size_t>(i)));
                 }
             }
             break;
         case 4: // badanie zajętości toru
         {
-			CommLog(Now() + " " + std::to_string(pRozkaz->iComm) + " " +
-                    std::string(pRozkaz->cString + 1, (unsigned)(pRozkaz->cString[0])) + " rcvd");
+            CommLog(Now() + " " + std::to_string(pRozkaz->iComm) + " " +
+                    std::string(pRozkaz->cString + 1, static_cast<size_t>(pRozkaz->cString[0])) + " rcvd");
 
-            auto *track = simulation::Paths.find( std::string( pRozkaz->cString + 1, (unsigned)( pRozkaz->cString[ 0 ] ) ) );
+            auto *track = simulation::Paths.find( std::string( pRozkaz->cString + 1, static_cast<size_t>( pRozkaz->cString[ 0 ] ) ) );
             if( ( track != nullptr )
              && ( track->IsEmpty() ) ) {
                 WyslijWolny( track->name() );
@@ -134,14 +133,14 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
                 CommLog(
                     Now() + " "
                   + std::to_string( pRozkaz->iComm ) + " "
-                  + std::string{ pRozkaz->cString + 1, (unsigned)( pRozkaz->cString[ 0 ] ) }
+                  + std::string{ pRozkaz->cString + 1, static_cast<unsigned>(pRozkaz->cString[0]) }
                   + " rcvd" );
                 if (pRozkaz->cString[0]) {
                     // jeśli długość nazwy jest niezerowa szukamy pierwszego pojazdu o takiej nazwie i odsyłamy parametry ramką #7
                     auto *vehicle = (
                         pRozkaz->cString[ 1 ] == '*' ?
-					        simulation::Train->Dynamic() :
-                            simulation::Vehicles.find( std::string{ pRozkaz->cString + 1, (unsigned)pRozkaz->cString[ 0 ] } ) );
+                            simulation::Train->Dynamic() :
+                            simulation::Vehicles.find( std::string{ pRozkaz->cString + 1, static_cast<size_t>(pRozkaz->cString[ 0 ] ) } ) );
                     if( vehicle != nullptr ) {
                         WyslijNamiary( vehicle ); // wysłanie informacji o pojeździe
                     }
@@ -182,7 +181,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
                 auto *lookup = (
                     pRozkaz->cString[ 2 ] == '*' ?
 				        simulation::Train->Dynamic() : // nazwa pojazdu użytkownika
-                        simulation::Vehicles.find( std::string( pRozkaz->cString + 2, (unsigned)pRozkaz->cString[ 1 ] ) ) ); // nazwa pojazdu
+                        simulation::Vehicles.find( std::string( pRozkaz->cString + 2, static_cast<unsigned>(pRozkaz->cString[1]) ) ) ); // nazwa pojazdu
                 if( lookup == nullptr ) { break; } // nothing found, nothing to do
                 auto *d { lookup };
                 while( d != nullptr ) {
@@ -206,20 +205,38 @@ void
 WyslijEvent(const std::string &e, const std::string &d)
 { // Ra: jeszcze do wyczyszczenia
 #ifdef _WIN32
-    DaneRozkaz r;
+    DaneRozkaz r{};
     r.iSygn = EU07_MESSAGEHEADER;
     r.iComm = 2; // 2 - event
-    size_t i = e.length(), j = d.length();
-    r.cString[0] = char(i);
-    strcpy(r.cString + 1, e.c_str()); // zakończony zerem
-    r.cString[i + 2] = char(j); // licznik po zerze kończącym
-    strcpy(r.cString + 3 + i, d.c_str()); // zakończony zerem
+
+    const std::string_view ev(e);
+    const std::string_view data(d);
+
+    const size_t i = ev.size();
+    const size_t j = data.size();
+    const size_t total_size = 12 + i + j;
+
+    if (total_size > sizeof(r.cString)) {
+        ErrorLog("Event data too large: " + std::to_string(total_size));
+        return;
+    }
+
+    r.cString[0] = static_cast<char>(i);
+    std::memcpy(r.cString + 1, ev.data(), i + 1);
+
+    r.cString[i + 2] = static_cast<char>(j);
+    std::memcpy(r.cString + 3 + i, data.data(), j + 1);
+
     COPYDATASTRUCT cData;
-    cData.dwData = EU07_MESSAGEHEADER; // sygnatura
-    cData.cbData = (DWORD)(12 + i + j); // 8+dwa liczniki i dwa zera kończące
+    cData.dwData = EU07_MESSAGEHEADER;
+    cData.cbData = static_cast<DWORD>(total_size);
     cData.lpData = &r;
-    Navigate( "TEU07SRK", WM_COPYDATA, (WPARAM)glfwGetWin32Window( Application.window() ), (LPARAM)&cData );
-	CommLog( Now() + " " + std::to_string(r.iComm) + " " + e + " sent" );
+
+    Navigate("TEU07SRK", WM_COPYDATA,
+             reinterpret_cast<WPARAM>(glfwGetWin32Window(Application.window())),
+             reinterpret_cast<LPARAM>(&cData));
+
+    CommLog(Now() + " " + std::to_string(r.iComm) + " " + e + " sent");
 #endif
 }
 
@@ -227,19 +244,27 @@ void
 WyslijUszkodzenia(const std::string &t, char fl)
 { // wysłanie informacji w postaci pojedynczego tekstu
 #ifdef _WIN32
-    DaneRozkaz r;
+    DaneRozkaz r{};
     r.iSygn = EU07_MESSAGEHEADER;
-	r.iComm = 13; // numer komunikatu
-	size_t i = t.length();
-	r.cString[0] = char(fl);
-	r.cString[1] = char(i);
-	strcpy(r.cString + 2, t.c_str()); // z zerem kończącym
-	COPYDATASTRUCT cData;
-    cData.dwData = EU07_MESSAGEHEADER; // sygnatura
-	cData.cbData = (DWORD)(11 + i); // 8+licznik i zero kończące
-	cData.lpData = &r;
-    Navigate( "TEU07SRK", WM_COPYDATA, (WPARAM)glfwGetWin32Window( Application.window() ), (LPARAM)&cData );
-	CommLog( Now() + " " + std::to_string(r.iComm) + " " + t + " sent");
+    r.iComm = 13;
+
+    const std::string_view tv(t);
+    const size_t i = tv.size();
+
+    r.cString[0] = fl;
+    r.cString[1] = static_cast<char>(i);
+    std::memcpy(r.cString + 2, tv.data(), i + 1);
+
+    COPYDATASTRUCT cData;
+    cData.dwData = EU07_MESSAGEHEADER;
+    cData.cbData = static_cast<DWORD>(11 + i);
+    cData.lpData = &r;
+
+    Navigate("TEU07SRK", WM_COPYDATA,
+             reinterpret_cast<WPARAM>(glfwGetWin32Window(Application.window())),
+             reinterpret_cast<LPARAM>(&cData));
+
+    CommLog(Now() + " " + std::to_string(r.iComm) + " " + t + " sent");
 #endif
 }
 
@@ -247,32 +272,40 @@ void
 WyslijString(const std::string &t, int n)
 { // wysłanie informacji w postaci pojedynczego tekstu
 #ifdef _WIN32
-    DaneRozkaz r;
+    DaneRozkaz r{};
     r.iSygn = EU07_MESSAGEHEADER;
-    r.iComm = n; // numer komunikatu
-    size_t i = t.length();
-    r.cString[0] = char(i);
-    strcpy(r.cString + 1, t.c_str()); // z zerem kończącym
+    r.iComm = n;
+
+    const std::string_view tv(t);
+    const size_t i = tv.size();
+
+    r.cString[0] = static_cast<char>(i);
+    std::memcpy(r.cString + 1, tv.data(), i + 1);
+
     COPYDATASTRUCT cData;
-    cData.dwData = EU07_MESSAGEHEADER; // sygnatura
-    cData.cbData = (DWORD)(10 + i); // 8+licznik i zero kończące
+    cData.dwData = EU07_MESSAGEHEADER;
+    cData.cbData = static_cast<DWORD>(10 + i);
     cData.lpData = &r;
-    Navigate( "TEU07SRK", WM_COPYDATA, (WPARAM)glfwGetWin32Window( Application.window() ), (LPARAM)&cData );
-	CommLog( Now() + " " + std::to_string(r.iComm) + " " + t + " sent");
+
+    Navigate("TEU07SRK", WM_COPYDATA,
+             reinterpret_cast<WPARAM>(glfwGetWin32Window(Application.window())),
+             reinterpret_cast<LPARAM>(&cData));
+
+    CommLog(Now() + " " + std::to_string(r.iComm) + " " + t + " sent");
 #endif
 }
 
 void
 WyslijWolny(const std::string &t)
-{ // Ra: jeszcze do wyczyszczenia
-    WyslijString(t, 4); // tor wolny
+{
+    WyslijString(t, 4);
 }
 
 void
 WyslijNamiary(TDynamicObject const *Vehicle)
-{ // wysłanie informacji o pojeździe - (float), długość ramki będzie zwiększana w miarę potrzeby
+{
 #ifdef _WIN32
-    DaneRozkaz r;
+    DaneRozkaz r{};
     r.iSygn = EU07_MESSAGEHEADER;
     r.iComm = 7; // 7 - dane pojazdu
 	int i = 32;
@@ -366,28 +399,34 @@ WyslijObsadzone()
 	int i = 0;
     for( auto *vehicle : vehiclelist ) {
         if( vehicle->Mechanik ) {
-            strcpy( r.cString + 64 * i, vehicle->asName.c_str() );
-            r.fPar[ 16 * i + 4 ] = vehicle->GetPosition().x;
-            r.fPar[ 16 * i + 5 ] = vehicle->GetPosition().y;
-            r.fPar[ 16 * i + 6 ] = vehicle->GetPosition().z;
-            r.iPar[ 16 * i + 7 ] = static_cast<int>( vehicle->Mechanik->action() );
-            strcpy( r.cString + 64 * i + 32, vehicle->GetTrack()->RemoteIsolatedName().c_str() );
-            strcpy( r.cString + 64 * i + 48, vehicle->Mechanik->TrainName().c_str() );
+            const std::string_view name(vehicle->asName);
+            const std::string_view track(vehicle->GetTrack()->RemoteIsolatedName());
+            const std::string_view train(vehicle->Mechanik->TrainName());
+
+            std::memcpy(r.cString + 64 * i, name.data(), std::min(name.size() + 1, static_cast<size_t>(64)));
+            r.fPar[16 * i + 4] = vehicle->GetPosition().x;
+            r.fPar[16 * i + 5] = vehicle->GetPosition().y;
+            r.fPar[16 * i + 6] = vehicle->GetPosition().z;
+            r.iPar[16 * i + 7] = static_cast<int>(vehicle->Mechanik->action());
+            std::memcpy(r.cString + 64 * i + 32, track.data(), std::min(track.size() + 1, static_cast<size_t>(32)));
+            std::memcpy(r.cString + 64 * i + 48, train.data(), std::min(train.size() + 1, static_cast<size_t>(16)));
             i++;
             if( i > 30 ) break;
         }
     }
-	while (i <= 30)
-	{
-		strcpy(r.cString + 64 * i, "none");
-		r.fPar[16 * i + 4] = 1;
-		r.fPar[16 * i + 5] = 2;
-		r.fPar[16 * i + 6] = 3;
-		r.iPar[16 * i + 7] = 0;
-		strcpy(r.cString + 64 * i + 32, "none");
-		strcpy(r.cString + 64 * i + 48, "none");
-		i++;
-	}
+
+    while (i <= 30)
+    {
+        const char* none = "none";
+        std::memcpy(r.cString + 64 * i, none, 5);
+        r.fPar[16 * i + 4] = 1;
+        r.fPar[16 * i + 5] = 2;
+        r.fPar[16 * i + 6] = 3;
+        r.iPar[16 * i + 7] = 0;
+        std::memcpy(r.cString + 64 * i + 32, none, 5);
+        std::memcpy(r.cString + 64 * i + 48, none, 5);
+        i++;
+    }
 
 	COPYDATASTRUCT cData;
     cData.dwData = EU07_MESSAGEHEADER;     // sygnatura
