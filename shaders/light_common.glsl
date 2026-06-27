@@ -27,8 +27,8 @@ float metalic = 0.0;
 //                       = sharper terminator (more contrast between
 //                       lit and shaded faces of the same surface).
 // ---------------------------------------------------------------------
-const float AMBIENT_SCALE       = 0.65;
-const float SUN_DIFFUSE_SCALE   = 2.5;
+const float AMBIENT_SCALE       = 0.3;
+const float SUN_DIFFUSE_SCALE   = 0.4;
 const float SUN_NDOTL_SHARPNESS = 1.25;
 
 float length2(vec3 v)
@@ -230,6 +230,32 @@ vec2 calc_headlights(light_s light, vec3 fragnormal)
 	return part * atten * lightintensity;
 }
 
+// -----------------------------------------------------------------------
+// Split-sum environment BRDF (Karis / UE4 analytic approximation).
+//
+// This is the missing piece that made matte specgloss surfaces "shine like
+// crazy": previously the env reflection was added at full strength
+// (envcolor * fresnel * reflectivity) and roughness only blurred the mip,
+// never dimmed the energy. A rough surface therefore mirrored the bright
+// sky just as strongly as a polished one.
+//
+// EnvBRDFApprox returns the pre-integrated specular scale (the "DFG" term)
+// for a given F0, roughness and view angle. For rough surfaces it collapses
+// toward ~0, so low-glossiness materials reflect almost nothing — matching
+// what Substance 3D Painter shows. Polished surfaces keep their full
+// reflection, and the grazing-angle Fresnel edge is preserved.
+//   roughness 1.0 (matte)  -> scale ~0.015  (virtually no reflection)
+//   roughness 0.0 (mirror) -> scale ~F0..1  (full reflection + Fresnel rim)
+vec3 EnvBRDFApprox(vec3 F0, float roughness, float NoV)
+{
+    const vec4 c0 = vec4(-1.0, -0.0275, -0.572,  0.022);
+    const vec4 c1 = vec4( 1.0,  0.0425,  1.040, -0.040);
+    vec4 r = roughness * c0 + c1;
+    float a004 = min(r.x * r.x, exp2(-9.28 * NoV)) * r.x + r.y;
+    vec2 AB = vec2(-1.04, 1.04) * a004 + r.zw;
+    return F0 * AB.x + AB.y;
+}
+
 // [0] - diffuse, [1] - specular
 // do magic here
 vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float reflectivity, float specularity, float shadowtone)
@@ -251,15 +277,25 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     float env_roughness = 1.0 - clamp(glossiness / max(abs(param[1].w), 1.0), 0.0, 1.0);
     vec3 envcolor = envmap_color_lod(fragnormal, env_roughness * MAX_REFLECTION_LOD);
 
-    // Tint texture toward fully-saturated under strong env, weighted by fresnel
+    // Pre-integrated env BRDF: roughness/F0/view-dependent specular scale.
+    // Replaces the old raw `fresnel` weighting so matte surfaces stop
+    // mirroring the sky. `env_spec` is the colour to multiply the cubemap by.
+    vec3 env_spec = EnvBRDFApprox(F0, env_roughness, NdotV);
+    float env_spec_w = max(env_spec.r, max(env_spec.g, env_spec.b));
+
+    // Tint texture toward fully-saturated under strong env, weighted by the
+    // env BRDF (so a rough/matte surface no longer gets washed toward env hue)
     vec3 texturecoloryuv = rgb2yuv(texturecolor);
     vec3 texturecolorfullv = yuv2rgb(vec3(0.2176, texturecoloryuv.gb));
     vec3 envyuv = rgb2yuv(envcolor);
-    texturecolor = mix(texturecolor, texturecolorfullv, envyuv.r * reflectivity * fresnel.r);
+    texturecolor = mix(texturecolor, texturecolorfullv, envyuv.r * reflectivity * env_spec_w);
 
     if (lights_count == 0U)
-        return (fragcolor + emissioncolor) * texturecolor
-             + envcolor * fresnel * reflectivity;
+        // Metals carry no diffuse term; env reflection is gated by the env BRDF
+        // (F0-tinted, roughness-attenuated) so matte surfaces barely reflect.
+        return fragcolor * texturecolor * (1.0 - metalic)
+             + emissioncolor * texturecolor
+             + envcolor * env_spec * reflectivity;
 
     vec2 sunlight = calc_dir_light(lights[0], fragnormal);
     // Sharpen sun N.L falloff so the lit-to-shaded terminator on cab
@@ -289,20 +325,29 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     if (shadowtone < 1.0)
         specularamount *= clamp(1.0 - shadow1, 0.0, 1.0);
 
-    fragcolor += emissioncolor;
     vec3 specularcolor = specularamount * lights[0].color;
 
-    // Env reflection tracked separately — must NOT go through the albedo multiply below
-    vec3 env_reflection = envcolor * fresnel * reflectivity * (1.0 - shadow1 * 0.5);
+    // Env reflection tracked separately — must NOT go through the albedo multiply
+    // below. Gated by the pre-integrated env BRDF (env_spec) so reflection energy
+    // falls off with roughness; F0 inside env_spec already tints metals by albedo.
+    vec3 env_reflection = envcolor * env_spec * reflectivity * (1.0 - shadow1 * 0.5);
 
-    // Diffuse + specular: albedo tints diffuse, metals also tint specular
-    vec3 result = mix(
-        (fragcolor + specularcolor) * texturecolor,
-         fragcolor * texturecolor + specularcolor,
-        metalic);
+    // --- Physically-based metal/rough combine (Substance 3D Painter parity) ---
+    // Dielectrics: keep the full diffuse albedo; the direct sun highlight stays
+    //              light-coloured because dielectric F0 is achromatic (~0.04) and
+    //              must NOT be tinted by the base colour.
+    // Metals:      drop the diffuse term entirely and tint the direct highlight
+    //              with the albedo (metal F0 == base colour).
+    // The highlight *strength* (specularamount) is deliberately left untouched so
+    // existing material tuning is preserved — only the colour/energy split that
+    // was previously inverted gets corrected.
+    vec3 diffuse_albedo = texturecolor * (1.0 - metalic);
+    vec3 spec_tint      = mix(vec3(1.0), texturecolor, metalic);
 
-    // Env added after albedo multiply: raw for dielectrics, albedo-tinted for metals
-    result += mix(env_reflection, env_reflection * texturecolor, metalic);
+    vec3 result = fragcolor      * diffuse_albedo   // sun + ambient + headlight diffuse
+                + specularcolor  * spec_tint        // direct sun highlight
+                + emissioncolor  * texturecolor     // emissive glow (albedo-tinted, unchanged)
+                + env_reflection;                   // env reflection (env_spec already F0-tinted)
 
     return result;
 }
