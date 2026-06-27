@@ -209,22 +209,42 @@ auto python_taskqueue::init() -> bool
 	crashreport_add_info("python.threadedupload", Global.python_threadedupload ? "yes" : "no");
 	crashreport_add_info("python.uploadmain", Global.python_uploadmain ? "yes" : "no");
 #ifdef _WIN32
-	if (sizeof(void *) == 8)
-		Py_SetPythonHome(L"python64");
-	else
-		Py_SetPythonHome(L"python");
+	const wchar_t *pythonhome = (sizeof(void *) == 8) ? L"python64" : L"python";
 #elif __linux__
-	if (sizeof(void *) == 8)
-		Py_SetPythonHome(L"linuxpython64");
-	else
-		Py_SetPythonHome(L"linuxpython");
+	const wchar_t *pythonhome = (sizeof(void *) == 8) ? L"linuxpython64" : L"linuxpython";
 #elif __APPLE__
-	if (sizeof(void *) == 8)
-		Py_SetPythonHome(L"macpython64");
-	else
-		Py_SetPythonHome(L"macpython");
+	const wchar_t *pythonhome = (sizeof(void *) == 8) ? L"macpython64" : L"macpython";
 #endif
-	Py_InitializeEx(0);
+
+	{
+		// Py_SetPythonHome / Py_InitializeEx are deprecated since Python 3.11.
+		// Use the PyConfig init API (PEP 587) instead.
+		PyConfig config;
+		PyConfig_InitPythonConfig(&config);
+		config.install_signal_handlers = 0; // matches former Py_InitializeEx(0)
+
+		PyStatus status = PyConfig_SetString(&config, &config.home, pythonhome);
+		if (PyStatus_Exception(status))
+		{
+			PyConfig_Clear(&config);
+			ErrorLog("Python Interpreter: failed to set PYTHONHOME");
+			return false;
+		}
+
+		status = Py_InitializeFromConfig(&config);
+		if (PyStatus_Exception(status))
+		{
+			std::string msg = "Python Interpreter: Py_InitializeFromConfig failed";
+			if (status.err_msg != nullptr)
+				msg += std::string(": ") + status.err_msg;
+			if (status.func != nullptr)
+				msg += std::string(" (in ") + status.func + ")";
+			PyConfig_Clear(&config);
+			ErrorLog(msg);
+			return false;
+		}
+		PyConfig_Clear(&config);
+	}
 
 	PyObject *stringiomodule{nullptr};
 	PyObject *stringioclassname{nullptr};
@@ -522,12 +542,13 @@ void python_taskqueue::run(GLFWwindow *Context, rendertask_sequence &Tasks, uplo
 		Condition.wait_for(std::chrono::milliseconds(250));
 	}
 	// clean up thread state data
-	// Python 3: PyEval_AcquireLock() is gone, use PyEval_RestoreThread / PyThreadState_Swap
+	// Re-acquire the GIL with this worker's thread state, then clear and delete it.
+	// PyThreadState_DeleteCurrent() frees the current thread state AND releases the GIL,
+	// so we must NOT call PyEval_SaveThread() afterwards: at that point the current
+	// thread state is already NULL and PyEval_SaveThread() fatals on a NULL tstate.
 	PyEval_RestoreThread(threadstate);
-	PyThreadState_Swap(nullptr);
 	PyThreadState_Clear(threadstate);
-	PyThreadState_Delete(threadstate);
-	PyEval_SaveThread();
+	PyThreadState_DeleteCurrent();
 
 	// detach the GL context before the worker terminates; some drivers
 	// (NVIDIA on X11, certain Mesa/Wayland configs) hang in process teardown
