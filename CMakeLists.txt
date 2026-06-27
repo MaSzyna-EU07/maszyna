@@ -478,6 +478,12 @@ if(WITH_PYTHON)
 	target_link_libraries(${PROJECT_NAME} ${Python3_LIBRARIES})
 
 	if(WIN32)
+		# Python3_ROOT_DIR is only an input hint and is not populated by
+		# find_package(... COMPONENTS Development). Derive the install root from
+		# the include dir (parent of <root>/include) when it was not provided.
+		if(NOT Python3_ROOT_DIR)
+			get_filename_component(Python3_ROOT_DIR "${Python3_INCLUDE_DIRS}" DIRECTORY)
+		endif()
 		set(EU07_PY_DLL "${Python3_ROOT_DIR}/python314.dll")
 		set(EU07_PY_ZLIB "${Python3_ROOT_DIR}/DLLs/zlib1.dll")
 		set(EU07_PY_LIBDIR "${Python3_ROOT_DIR}/Lib")
