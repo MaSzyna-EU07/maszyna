@@ -73,6 +73,13 @@ public:
     virtual auto Pick_Node() const -> scene::basic_node const * = 0;
 
     virtual auto Mouse_Position() const -> glm::dvec3 = 0;
+    // editor helpers: matrices/position of the most recent color pass camera.
+    // the view matrix is camera-relative (rotation only, camera at origin), matching the
+    // camera-relative rendering used by the engine; build object matrices relative to Camera_Position().
+    // default implementations return identity so backends without a usable camera still compile.
+    virtual auto Camera_View_Matrix() const -> glm::mat4 { return glm::mat4( 1.f ); }
+    virtual auto Camera_Projection_Matrix() const -> glm::mat4 { return glm::mat4( 1.f ); }
+    virtual auto Camera_Position() const -> glm::dvec3 { return glm::dvec3( 0.0 ); }
     // maintenance methods
     virtual void Update( double const Deltatime ) = 0;
     virtual void Update_Pick_Control() = 0;

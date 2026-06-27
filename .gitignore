@@ -3,6 +3,9 @@ CMakeLists.txt.user
 CMakeSettings.json
 ci_shadervalidator/validateshaders
 
+# Cache folders
+.cache/
+
 # CMake build output
 build/
 bin/
@@ -18,3 +21,6 @@ cmake-build-*/
 # Vcpkg manifest
 vcpkg.json
 /ref/crashpad
+
+# Local Python (setup.bat / CMake) for embedding
+tools/python314/

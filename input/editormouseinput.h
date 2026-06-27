@@ -37,6 +37,7 @@ private:
 // members
     command_relay m_relay;
     bool m_pickmodepanning { false }; // indicates mouse is in view panning mode
+    bool m_pickmodepanning_resync { false }; // skip the first delta after panning starts (avoids a jump when the cursor is grabbed/hidden)
     glm::dvec2 m_cursorposition { 0.0 }; // stored last cursor position, used for panning
     std::array<int, GLFW_MOUSE_BUTTON_LAST> m_buttons { GLFW_RELEASE };
 };

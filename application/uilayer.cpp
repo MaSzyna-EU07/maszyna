@@ -571,11 +571,16 @@ void ui_layer::render_menu_contents()
 			GfxRenderer->Debug_Ui_State(ret);
 		}
 		if(EditorModeFlag){
-			ImGui::MenuItem("Hierarchy", nullptr, &m_editor_hierarchy);	 
+			ImGui::MenuItem("Hierarchy", nullptr, &m_editor_hierarchy);
 			bool change_history_enabled = editor_mode::change_history();
 			if (ImGui::MenuItem("Change History", nullptr, &change_history_enabled))
 			{
 				editor_mode::set_change_history(change_history_enabled);
+			}
+			bool settings_open = editor_mode::settings_open();
+			if (ImGui::MenuItem("Editor Settings", nullptr, &settings_open))
+			{
+				editor_mode::set_settings_open(settings_open);
 			}
 		}
 		ImGui::EndMenu();

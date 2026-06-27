@@ -120,6 +120,10 @@ public:
     // imports data from provided submodel
     shape_node &
         convert( TSubModel const *Submodel );
+    // builds an opaque, always-visible shape from a world-space GL_TRIANGLES vertex list, stored
+    // relative to Origin. used by the editor's terrain to own editable geometry it can re-upload.
+    shape_node &
+        make_terrain( material_handle const Material, std::vector<world_vertex> Vertices, glm::dvec3 const Origin );
     // adds content of provided node to already enclosed geometry. returns: true if merge could be performed
     bool
         merge( shape_node &Shape );
@@ -138,6 +142,9 @@ public:
     // set origin point
     void
         origin( glm::dvec3 Origin );
+    // replaces the renderable geometry handle (used by the editor when it re-uploads terrain geometry)
+    void
+        geometry( gfx::geometry_handle const &Handle );
     // data access
     shapenode_data const &
         data() const;
@@ -162,6 +169,12 @@ inline
 void
 shape_node::origin( glm::dvec3 Origin ) {
     m_data.origin = Origin;
+}
+// replaces the renderable geometry handle
+inline
+void
+shape_node::geometry( gfx::geometry_handle const &Handle ) {
+    m_data.geometry = Handle;
 }
 // data access
 inline

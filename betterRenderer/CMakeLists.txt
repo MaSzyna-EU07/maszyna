@@ -62,8 +62,9 @@ target_include_directories(${LIBMANUL_NAME} PRIVATE
         "${DEPS_DIR}/glad/include")
 
 # Python.h
+find_package(Python3 3.14 REQUIRED COMPONENTS Development)
 target_include_directories(${LIBMANUL_NAME} PRIVATE
-        "${PYTHON_INCLUDE_DIR}")
+        "${Python3_INCLUDE_DIRS}")
 
 target_compile_definitions(${LIBMANUL_NAME} PRIVATE
         GLM_ENABLE_EXPERIMENTAL
