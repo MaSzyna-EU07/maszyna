@@ -53,7 +53,7 @@ namespace
 
 bool editor_mode::editormode_input::init()
 {
-    return (mouse.init() && keyboard.init());
+    return mouse.init() && keyboard.init();
 }
 
 void editor_mode::editormode_input::poll()
@@ -171,7 +171,7 @@ scene::basic_node* editor_mode::find_in_hierarchy(const std::string &uuid_str)
 {
     if (uuid_str.empty()) return nullptr;
     auto it = scene::Hierarchy.find(uuid_str);
-    return (it != scene::Hierarchy.end()) ? it->second : nullptr;
+    return it != scene::Hierarchy.end() ? it->second : nullptr;
 }
 
 scene::basic_node* editor_mode::find_node_by_any(scene::basic_node *node_ptr, const std::string &uuid_str, const std::string &name)
@@ -479,7 +479,7 @@ void editor_mode::update_camera(double const Deltatime)
     if (m_focus_active)
     {
         m_focus_time += Deltatime;
-        double t = m_focus_duration > 0.0 ? (m_focus_time / m_focus_duration) : 1.0;
+        double t = m_focus_duration > 0.0 ? m_focus_time / m_focus_duration : 1.0;
         if (t >= 1.0)
             t = 1.0;
         // smoothstep easing
@@ -510,7 +510,7 @@ void editor_mode::enter()
         auto const *vehicle = Camera.m_owner;
         if (vehicle)
         {
-            const int cab = (vehicle->MoverParameters->CabOccupied == 0 ? 1 : vehicle->MoverParameters->CabOccupied);
+            const int cab = vehicle->MoverParameters->CabOccupied == 0 ? 1 : vehicle->MoverParameters->CabOccupied;
             const glm::dvec3 left = vehicle->VectorLeft() * (double)cab;
             Camera.Pos = glm::dvec3(Camera.Pos.x, vehicle->GetPosition().y, Camera.Pos.z) + left * vehicle->GetWidth() + glm::dvec3(1.25f * left.x, 1.6f, 1.25f * left.z);
             Camera.m_owner = nullptr;
@@ -536,7 +536,7 @@ void editor_mode::exit()
     g_redo.clear();
     m_history.clear();
 
-    Application.set_cursor((Global.ControlPicking ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED));
+    Application.set_cursor(Global.ControlPicking ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
 
     if (!Global.ControlPicking)
     {
@@ -547,9 +547,9 @@ void editor_mode::exit()
 void editor_mode::on_key(int const Key, int const Scancode, int const Action, int const Mods)
 {
 #ifndef __unix__
-    Global.shiftState = (Mods & GLFW_MOD_SHIFT) ? true : false;
-    Global.ctrlState = (Mods & GLFW_MOD_CONTROL) ? true : false;
-    Global.altState = (Mods & GLFW_MOD_ALT) ? true : false;
+    Global.shiftState = Mods & GLFW_MOD_SHIFT ? true : false;
+    Global.ctrlState = Mods & GLFW_MOD_CONTROL ? true : false;
+    Global.altState = Mods & GLFW_MOD_ALT ? true : false;
 #endif
     bool anyModifier = Mods & (GLFW_MOD_SHIFT | GLFW_MOD_CONTROL | GLFW_MOD_ALT);
 
@@ -680,19 +680,19 @@ void editor_mode::on_cursor_pos(double const Horizontal, double const Vertical)
     else if (mode_rotationY())
     {
         vec3 const rotation{0.0f, static_cast<float>(mousemove.x) * 0.25f, 0.0f};
-        float const quantization = (mode_snap() ? 5.0f : 0.0f);
+        float const quantization = mode_snap() ? 5.0f : 0.0f;
         m_editor.rotate(m_node, rotation, quantization);
     }
     else if (mode_rotationZ())
     {
         vec3 const rotation{0.0f, 0.0f, static_cast<float>(mousemove.x) * 0.25f};
-        float const quantization = (mode_snap() ? 5.0f : 0.0f);
+        float const quantization = mode_snap() ? 5.0f : 0.0f;
         m_editor.rotate(m_node, rotation, quantization);
     }
     else if (mode_rotationX())
     {
         vec3 const rotation{static_cast<float>(mousemove.y) * 0.25f, 0.0f, 0.0f};
-        float const quantization = (mode_snap() ? 5.0f : 0.0f);
+        float const quantization = mode_snap() ? 5.0f : 0.0f;
         m_editor.rotate(m_node, rotation, quantization);
     }
 }
@@ -824,10 +824,10 @@ void editor_mode::render_change_history(){
         auto &s = m_history[i];
         char buf[256];
         std::snprintf(buf, sizeof(buf), "%3d: %s %s pos=(%.1f,%.1f,%.1f)", i,
-                        (s.action == EditorSnapshot::Action::Add) ? "ADD" :
-                        (s.action == EditorSnapshot::Action::Delete) ? "DEL" :
-                        (s.action == EditorSnapshot::Action::Move) ? "MOV" :
-                        (s.action == EditorSnapshot::Action::Rotate) ? "ROT" : "OTH",
+                        s.action == EditorSnapshot::Action::Add ? "ADD" :
+                        s.action == EditorSnapshot::Action::Delete ? "DEL" :
+                        s.action == EditorSnapshot::Action::Move ? "MOV" :
+                        s.action == EditorSnapshot::Action::Rotate ? "ROT" : "OTH",
                         s.node_name.empty() ? "(noname)" : s.node_name.c_str(),
                         s.position.x, s.position.y, s.position.z);
 
@@ -874,32 +874,32 @@ bool editor_mode::is_command_processor() const
 
 bool editor_mode::mode_translation() const
 {
-    return (false == Global.altState);
+    return false == Global.altState;
 }
 
 bool editor_mode::mode_translation_vertical() const
 {
-    return (true == Global.shiftState);
+    return true == Global.shiftState;
 }
 
 bool editor_mode::mode_rotationY() const
 {
-    return ((true == Global.altState) && (false == Global.ctrlState) && (false == Global.shiftState));
+    return true == Global.altState && false == Global.ctrlState && false == Global.shiftState;
 }
  
 bool editor_mode::mode_rotationX() const
 {
-    return ((true == Global.altState) && (true == Global.ctrlState) && (false == Global.shiftState));
+    return true == Global.altState && true == Global.ctrlState && false == Global.shiftState;
 }
 
 bool editor_mode::mode_rotationZ() const
 {
-    return ((true == Global.altState) && (true == Global.ctrlState) && (true == Global.shiftState));
+    return true == Global.altState && true == Global.ctrlState && true == Global.shiftState;
 }
 
 bool editor_mode::mode_snap() const
 {
-    return ((false == Global.altState) && (true == Global.ctrlState) && (false == Global.shiftState));
+    return false == Global.altState && true == Global.ctrlState && false == Global.shiftState;
 }
 
 bool editor_mode::focus_active()

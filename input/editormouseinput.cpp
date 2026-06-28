@@ -47,7 +47,7 @@ editormouse_input::button( int const Button, int const Action ) {
 
     // right button controls panning
     if( Button == GLFW_MOUSE_BUTTON_RIGHT ) {
-        m_pickmodepanning = ( Action == GLFW_PRESS );
+        m_pickmodepanning = Action == GLFW_PRESS;
     }
 }
 

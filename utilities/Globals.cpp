@@ -251,7 +251,7 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
     {
         std::string value;
         ParseOne(Parser, value);
-        asSky = (value == "yes" ? "1" : "0");
+        asSky = value == "yes" ? "1" : "0";
         return true;
     }
 
@@ -263,7 +263,7 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
         if (value == "tga")
             szDefaultExt = szTexturesTGA;
         else
-            szDefaultExt = (value[0] == '.' ? value : "." + value);
+            szDefaultExt = value[0] == '.' ? value : "." + value;
 
         return true;
     }
@@ -318,8 +318,8 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
             GfxRenderer = "experimental";
         }
 
-        BasicRenderer = (GfxRenderer == "simple");
-        LegacyRenderer = !NvRenderer && (GfxRenderer != "default");
+        BasicRenderer = GfxRenderer == "simple";
+        LegacyRenderer = !NvRenderer && GfxRenderer != "default";
         return true;
     }
 
@@ -338,7 +338,7 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
 
         shadowtune.map_size = clamp_power_of_two<unsigned int>(shadowtune.map_size, 512, 8192);
         shadowtune.range =
-            std::max((shadowtune.map_size <= 2048 ? 75.f : 75.f * shadowtune.map_size / 2048),
+            std::max(shadowtune.map_size <= 2048 ? 75.f : 75.f * shadowtune.map_size / 2048,
                      shadowtune.range);
         return true;
     }
@@ -696,7 +696,7 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
     {
         std::string value;
         ParseOne(Parser, value);
-        iPause |= (value == "yes" ? 1 : 0);
+        iPause |= value == "yes" ? 1 : 0;
         return true;
     }
 
@@ -704,7 +704,7 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
     {
         std::string value;
         ParseOne(Parser, value, 1);
-        priorityLoadText3D = (value == "yes");
+        priorityLoadText3D = value == "yes";
         return true;
     }
 
@@ -993,7 +993,7 @@ bool global_settings::ConfigParseHardware(cParser& Parser, const std::string& to
         {
             for (auto const& x : uartfeatures_map)
             {
-                *(x.second) = false;
+                *x.second = false;
             }
 
             std::string key;
@@ -1005,7 +1005,7 @@ bool global_settings::ConfigParseHardware(cParser& Parser, const std::string& to
 
                 if (uartfeatures_map.count(key))
                 {
-                    *(uartfeatures_map[key]) = true;
+                    *uartfeatures_map[key] = true;
                 }
             }
         }
@@ -1146,7 +1146,7 @@ bool global_settings::ConfigParseDebug(cParser& Parser, const std::string& token
         int in = 0;
         Parser >> in;
 
-        if ((in < 0) || (in > 5))
+        if (in < 0 || in > 5)
             in = 5;
 
         Parser.getTokens(4, false);
@@ -1167,7 +1167,7 @@ bool global_settings::ConfigParseDebug(cParser& Parser, const std::string& token
         int in = 0;
         Parser >> in;
 
-        if ((in < 0) || (in > 5))
+        if (in < 0 || in > 5)
             in = 5;
 
         Parser.getTokens(6, false);
@@ -1187,7 +1187,7 @@ bool global_settings::ConfigParseDebug(cParser& Parser, const std::string& token
         int out = 0;
         Parser >> out;
 
-        if ((out < 0) || (out > 6))
+        if (out < 0 || out > 6)
             out = 6;
 
         Parser.getTokens(4, false);
@@ -1208,7 +1208,7 @@ bool global_settings::ConfigParseDebug(cParser& Parser, const std::string& token
         int out = 0;
         Parser >> out;
 
-        if ((out < 0) || (out > 6))
+        if (out < 0 || out > 6)
             out = 6;
 
         Parser.getTokens(6, false);
@@ -1678,7 +1678,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
 
     std::vector<std::string> enabled_uartfeatures;
     for(auto const &x : uartfeatures_map) {
-        if(*(x.second)) {
+        if(*x.second) {
             enabled_uartfeatures.push_back(x.first);
         }
     }

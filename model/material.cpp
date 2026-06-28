@@ -34,7 +34,7 @@ opengl_material::deserialize( cParser &Input, bool const Loadnow ) {
         result = true; // once would suffice but, eh
     }
 
-    if( ( path == -1 )
+    if( path == -1
      && ( update_on_weather_change || update_on_season_change ) ) {
         // record current texture path in the material, potentially needed when material is reloaded on environment change
         // NOTE: we're storing this only for textures that can actually change, to keep the size of path database modest
@@ -95,7 +95,7 @@ void opengl_material::finalize(bool Loadnow)
                 if( shader && shader->texture_conf.find( key ) != shader->texture_conf.end() ) {
                     textures[ shader->texture_conf[ key ].id ] = GfxRenderer->Fetch_Texture( value, Loadnow );
                 }
-                else if( ( shader == nullptr )
+                else if( shader == nullptr
                       && ( lookup = texture_bindings.find( key ) ) != texture_bindings.end() ) {
                     textures[ lookup->second ] = GfxRenderer->Fetch_Texture( value, Loadnow );
                 }
@@ -228,8 +228,8 @@ void opengl_material::finalize(bool Loadnow)
         texture_handle handle = textures[entry.id];
         // NOTE: texture validation at this stage relies on forced texture load behaviour during its create() call
         // TODO: move texture id validation to later stage if/when deferred texture loading is implemented
-        if( ( handle )
-         && ( GfxRenderer->Texture( handle ).get_id() > 0 ) ) {
+        if( handle
+         && GfxRenderer->Texture(handle).get_id() > 0 ) {
             GfxRenderer->Texture(handle).set_components_hint((GLint)entry.components);
         }
         else {
@@ -277,7 +277,7 @@ std::unordered_set<std::string> seasons = {
 
 bool is_season( std::string const &String ) {
 
-    return ( seasons.find( String ) != seasons.end() );
+    return seasons.find(String) != seasons.end();
 }
 
 std::unordered_set<std::string> weather = {
@@ -285,7 +285,7 @@ std::unordered_set<std::string> weather = {
 
 bool is_weather( std::string const &String ) {
 
-    return ( weather.find( String ) != weather.end() );
+    return weather.find(String) != weather.end();
 }
 
 // imports member data pair from the config file
@@ -295,7 +295,7 @@ opengl_material::deserialize_mapping( cParser &Input, int const Priority, bool c
     // NOTE: comma can be part of legacy file names, so we don't treat it as a separator here
     auto key { Input.getToken<std::string>( true, "\n\r\t  ;[]" ) };
     // key can be an actual key or block end
-    if( ( true == key.empty() ) || ( key == "}" ) ) { return false; }
+    if( true == key.empty() || key == "}" ) { return false; }
 
     if( Priority != -1 ) {
         // regular attribute processing mode
@@ -448,10 +448,7 @@ float opengl_material::get_or_guess_opacity() const {
 bool
 opengl_material::is_translucent() const {
 
-    return (
-        textures[ 0 ] != null_handle ?
-            GfxRenderer->Texture( textures[ 0 ] ).get_has_alpha() :
-            false );
+    return textures[0] != null_handle ? GfxRenderer->Texture(textures[0]).get_has_alpha() : false;
 }
 
 // create material object from data stored in specified file.
@@ -501,8 +498,8 @@ material_manager::create( std::string const &Filename, bool const Loadnow ) {
             std::make_pair( filename, "make:" ) :
             find_on_disk( filename ) };
 
-    if( ( false == isgenerated )
-     && ( false == locator.first.empty() ) ) {
+    if( false == isgenerated
+     && false == locator.first.empty() ) {
         // try to parse located file resource
         cParser materialparser(
             locator.first + locator.second,
@@ -615,10 +612,7 @@ std::pair<std::string, std::string>
 material_manager::find_on_disk( std::string const &Materialname ) {
 
     auto const materialname { ToLower( Materialname ) };
-    return (
-        FileExists(
-            { Global.asCurrentTexturePath + materialname, materialname, paths::textures + materialname },
-            { ".mat" } ) );
+    return FileExists({Global.asCurrentTexturePath + materialname, materialname, paths::textures + materialname}, {".mat"});
 }
 
 //---------------------------------------------------------------------------

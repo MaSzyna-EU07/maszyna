@@ -299,7 +299,7 @@ void ui::map_panel::render_contents()
 
 	ImVec2 window_origin = ImGui::GetCursorPos();
 	ImVec2 screen_origin = ImGui::GetCursorScreenPos();
-	ImGui::ImageButton((ImTextureID)(intptr_t)(m_tex->id), surface_size_im, ImVec2(0, surface_size.y / fb_size), ImVec2(surface_size.x / fb_size, 0), 0);
+	ImGui::ImageButton((ImTextureID)(intptr_t)m_tex->id, surface_size_im, ImVec2(0, surface_size.y / fb_size), ImVec2(surface_size.x / fb_size, 0), 0);
 
 	if (ImGui::IsItemHovered())
 	{
@@ -565,7 +565,7 @@ void ui::track_switch_window::render_content()
                 m_relay.post(user_command::queueevent, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &m_switch->action[i]->name());
             if (ImGui::IsItemHovered()) {
                 for (size_t j = 0; j < 4; j++) {
-                    if ((names[i][0] - 'a') != j && (names[i][1] - 'a') != j)
+                    if (names[i][0] - 'a' != j && names[i][1] - 'a' != j)
                         continue;
                     highlight.push_back(std::make_pair(m_switch->track[j], m_switch->preview[i][j] == '1' ? 1 : 0));
                 }

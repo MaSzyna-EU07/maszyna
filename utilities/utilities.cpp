@@ -61,14 +61,14 @@ std::string Now()
 double CompareTime(double t1h, double t1m, double t2h, double t2m)
 {
 
-	if ((t2h < 0))
+	if (t2h < 0)
 		return 0;
 	else
 	{
 		auto t = (t2h - t1h) * 60 + t2m - t1m; // jeśli t2=00:05, a t1=23:50, to różnica wyjdzie ujemna
-		if ((t < -720)) // jeśli różnica przekracza 12h na minus
+		if (t < -720) // jeśli różnica przekracza 12h na minus
 			t = t + 1440; // to dodanie doby minut;else
-		if ((t > 720)) // jeśli przekracza 12h na plus
+		if (t > 720) // jeśli przekracza 12h na plus
 			t = t - 1440; // to odjęcie doby minut
 		return t;
 	}
@@ -130,8 +130,8 @@ std::string generate_uuid_v4()
 		b = static_cast<uint8_t>(dist(gen));
 
 	// UUID v4 (RFC 4122)
-	bytes[6] = (bytes[6] & 0x0F) | 0x40;
-	bytes[8] = (bytes[8] & 0x3F) | 0x80;
+	bytes[6] = bytes[6] & 0x0F | 0x40;
+	bytes[8] = bytes[8] & 0x3F | 0x80;
 
 	char buf[37]; // 36 znaków + \0
 	std::snprintf(buf, sizeof(buf),
@@ -153,16 +153,16 @@ double LocalRandom(double a, double b)
 
 bool FuzzyLogic(double Test, double Threshold, double Probability)
 {
-	if ((Test > Threshold) && (!DebugModeFlag))
-		return (Random() < Probability * Threshold * 1.0 / Test) /*im wiekszy Test tym wieksza szansa*/;
+	if (Test > Threshold && !DebugModeFlag)
+		return Random() < Probability * Threshold * 1.0 / Test /*im wiekszy Test tym wieksza szansa*/;
 	else
 		return false;
 }
 
 bool FuzzyLogicAI(double Test, double Threshold, double Probability)
 {
-	if ((Test > Threshold))
-		return (Random() < Probability * Threshold * 1.0 / Test) /*im wiekszy Test tym wieksza szansa*/;
+	if (Test > Threshold)
+		return Random() < Probability * Threshold * 1.0 / Test /*im wiekszy Test tym wieksza szansa*/;
 	else
 		return false;
 }
@@ -223,8 +223,8 @@ std::string to_minutes_str(float const Minutes, bool const Leadingzero, int cons
 	float minutesintegral;
 	auto const minutesfractional{std::modf(Minutes, &minutesintegral)};
 	auto const width{Width - 1};
-	auto minutes = (std::string(width - 1, ' ') + (Leadingzero ? std::to_string(100 + minutesintegral).substr(1, 2) : to_string(minutesintegral, 0)));
-	return (minutes.substr(minutes.size() - width, width) + fractionlabels[static_cast<int>(std::floor(minutesfractional * 10 + 0.1))]);
+	auto minutes = std::string(width - 1, ' ') + (Leadingzero ? std::to_string(100 + minutesintegral).substr(1, 2) : to_string(minutesintegral, 0));
+	return minutes.substr(minutes.size() - width, width) + fractionlabels[static_cast<int>(std::floor(minutesfractional * 10 + 0.1))];
 }
 
 int stol_def(const std::string &str, const int &DefaultValue)
@@ -307,7 +307,7 @@ std::string Bezogonkow(std::string Input, bool const Underscorestospaces)
 		{
 			input = space;
 		}
-		else if (Underscorestospaces && (input == underscore))
+		else if (Underscorestospaces && input == underscore)
 		{
 			input = space;
 		}
@@ -323,7 +323,7 @@ template <> bool extract_value(bool &Variable, std::string const &Key, std::stri
 	if (false == value.empty())
 	{
 		// set the specified variable to retrieved value
-		Variable = (ToLower(value) == "yes");
+		Variable = ToLower(value) == "yes";
 		return true; // located the variable
 	}
 	else
@@ -331,7 +331,7 @@ template <> bool extract_value(bool &Variable, std::string const &Key, std::stri
 		// set the variable to provided default value
 		if (false == Default.empty())
 		{
-			Variable = (ToLower(Default) == "yes");
+			Variable = ToLower(Default) == "yes";
 		}
 		return false; // couldn't locate the variable in provided input
 	}
@@ -422,13 +422,13 @@ std::ptrdiff_t len_common_prefix(std::string_view a, std::string_view b)
 bool contains(std::string_view const String, std::string_view Substring)
 {
 	// To be replaced with string::contains in C++ 23
-	return (String.find(Substring) != std::string::npos);
+	return String.find(Substring) != std::string::npos;
 }
 
 bool contains(std::string_view const String, char Character)
 {
 	// To be replaced with string::contains in C++ 23
-	return (String.find(Character) != std::string::npos);
+	return String.find(Character) != std::string::npos;
 }
 
 // helper, restores content of a 3d vector from provided input stream
@@ -457,7 +457,7 @@ std::string deserialize_random_set(cParser &Input, char const *Break)
 	// if instead of a single token we've encountered '[' this marks a beginning of a random set
 	// we retrieve all entries, then return a random one
 	std::vector<std::string> tokens;
-	while (((token = deserialize_random_set(Input, Break)) != "") && (token != "]"))
+	while ((token = deserialize_random_set(Input, Break)) != "" && token != "]")
 	{
 		tokens.emplace_back(token);
 	}

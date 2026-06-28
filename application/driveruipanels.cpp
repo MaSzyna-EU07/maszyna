@@ -48,12 +48,12 @@ drivingaid_panel::update() {
     auto const *train { simulation::Train };
     auto const *controlled { ( train ? train->Dynamic() : nullptr ) };
 
-    if( ( controlled == nullptr )
-     || ( controlled->Mechanik == nullptr ) ) { return; }
+    if( controlled == nullptr
+     || controlled->Mechanik == nullptr ) { return; }
 
     auto const *mover = controlled->MoverParameters;
     auto const *driver = controlled->Mechanik;
-    auto const *owner = ( controlled->ctOwner != nullptr ? controlled->ctOwner : controlled->Mechanik );
+    auto const *owner = controlled->ctOwner != nullptr ? controlled->ctOwner : controlled->Mechanik;
 
     { // throttle, velocity, speed limits and grade
         std::string expandedtext;
@@ -76,8 +76,8 @@ drivingaid_panel::update() {
             if( speedlimit != 0 ) { // if we aren't allowed to move then any next speed limit is irrelevant
                 // nie przekraczać rozkladowej
                 auto const schedulespeedlimit { (
-                    ( ( owner->OrderCurrentGet() & ( Obey_train | Bank ) ) != 0 ) && ( owner->TrainParams.TTVmax > 0.0 ) ? static_cast<int>( owner->TrainParams.TTVmax ) :
-                    ( ( owner->OrderCurrentGet() & ( Obey_train | Bank ) ) == 0 ) ? static_cast<int>( owner->fShuntVelocity ) :
+                    (owner->OrderCurrentGet() & (Obey_train | Bank)) != 0 && owner->TrainParams.TTVmax > 0.0 ? static_cast<int>( owner->TrainParams.TTVmax ) :
+                    (owner->OrderCurrentGet() & (Obey_train | Bank)) == 0 ? static_cast<int>( owner->fShuntVelocity ) :
                         -1 ) };
                 // first take note of any speed change which should occur after passing potential current speed limit
                 if( owner->VelLimitLastDist.second > 0 ) {
@@ -142,9 +142,12 @@ drivingaid_panel::update() {
         std::snprintf(
             m_buffer.data(), m_buffer.size(),
             STR_C("Throttle: %3d+%d %c%s"),
-            ( mover->EIMCtrlType > 0 ? std::max( 0, static_cast<int>( 100.4 * mover->eimic_real ) ) : driver->Controlling()->MainCtrlPos ),
-            ( mover->EIMCtrlType > 0 ? driver->Controlling()->MainCtrlPos : driver->Controlling()->ScndCtrlPos ),
-            ( mover->SpeedCtrlUnit.IsActive ? 'T' : mover->DirActive > 0 ? 'D' : mover->DirActive < 0 ? 'R' : 'N' ),
+            mover->EIMCtrlType > 0 ? std::max(0, static_cast<int>(100.4 * mover->eimic_real)) : driver->Controlling()->MainCtrlPos,
+            mover->EIMCtrlType > 0 ? driver->Controlling()->MainCtrlPos : driver->Controlling()->ScndCtrlPos,
+            mover->SpeedCtrlUnit.IsActive ? 'T' :
+		              mover->DirActive > 0          ? 'D' :
+		              mover->DirActive < 0          ? 'R' :
+		                                              'N',
             expandedtext.c_str());
 
         text_lines.emplace_back( m_buffer.data(), Global.UITextColor );
@@ -166,9 +169,9 @@ drivingaid_panel::update() {
             m_buffer.data(), m_buffer.size(),
             STR_C("Brakes: %5.1f+%-2.0f%c%s"),
 //            ( mover->EIMCtrlType == 0 ? basicbraking : mover->EIMCtrlType == 3 ? ( mover->UniCtrlIntegratedBrakeCtrl ? eimicbraking : basicbraking ) : eimicbraking ),
-            ( mover->UniCtrlIntegratedBrakeCtrl ? eimicbraking : basicbraking ),
+            mover->UniCtrlIntegratedBrakeCtrl ? eimicbraking : basicbraking,
             mover->LocalBrakePosA * LocalBrakePosNo,
-            ( mover->SlippingWheels ? '!' : ' ' ),
+            mover->SlippingWheels ? '!' : ' ',
             expandedtext.c_str() );
 
         text_lines.emplace_back( m_buffer.data(), Global.UITextColor );
@@ -197,13 +200,9 @@ drivingaid_panel::update() {
             }
         }
         std::string textline =
-		    ( (mover->SecuritySystem.is_vigilance_blinking() && (train != nullptr ? (train->fBlinkTimer > 0) : true))  ?
-                STR("!ALERTER! ") :
-                "          " );
+		    mover->SecuritySystem.is_vigilance_blinking() && (train != nullptr ? train->fBlinkTimer > 0 : true) ? STR("!ALERTER! ") : "          ";
         textline +=
-		    ( mover->SecuritySystem.is_cabsignal_blinking()  ?
-                STR("!SHP!") :
-                "     " );
+		    mover->SecuritySystem.is_cabsignal_blinking() ? STR("!SHP!") : "     ";
 
         text_lines.emplace_back( textline + "  " + expandedtext, Global.UITextColor );
     }
@@ -219,13 +218,12 @@ scenario_panel::update() {
     auto const *train { simulation::Train };
     auto const *controlled { ( train ? train->Dynamic() : nullptr ) };
     auto const &camera { Global.pCamera };
-    m_nearest = (
-        false == FreeFlyModeFlag ? controlled :
-        camera.m_owner != nullptr ? camera.m_owner :
-        std::get<TDynamicObject *>( simulation::Region->find_vehicle( camera.Pos, 20, false, false ) ) ); // w trybie latania lokalizujemy wg mapy
+    m_nearest = false == FreeFlyModeFlag  ? controlled :
+	            camera.m_owner != nullptr ? camera.m_owner :
+	                                        std::get<TDynamicObject *>(simulation::Region->find_vehicle(camera.Pos, 20, false, false)); // w trybie latania lokalizujemy wg mapy
     if( m_nearest == nullptr ) { return; }
     auto const *owner { (
-        ( ( m_nearest->Mechanik != nullptr ) && ( m_nearest->Mechanik->primary() ) ) ?
+        m_nearest->Mechanik != nullptr && m_nearest->Mechanik->primary() ?
             m_nearest->Mechanik :
             m_nearest->ctOwner ) };
     if( owner == nullptr ) { return; }
@@ -263,13 +261,13 @@ scenario_panel::render() {
     if( true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
         // potential assignment section
         auto const *owner { (
-            ( ( m_nearest->Mechanik != nullptr ) && ( m_nearest->Mechanik->primary() ) ) ?
+            m_nearest->Mechanik != nullptr && m_nearest->Mechanik->primary() ?
                 m_nearest->Mechanik :
                 m_nearest->ctOwner ) };
         if( owner != nullptr ) {
             auto const assignmentheader { STR("Assignment") };
-            if( ( false == owner->assignment().empty() )
-             && ( true == ImGui::CollapsingHeader( assignmentheader.c_str() ) ) ) {
+            if( false == owner->assignment().empty()
+             && true == ImGui::CollapsingHeader(assignmentheader.c_str()) ) {
                 ImGui::TextWrapped( "%s", owner->assignment().c_str() );
                 ImGui::Separator();
             }
@@ -330,10 +328,7 @@ timetable_panel::update() {
 
     if( vehicle == nullptr ) { return; }
     // if the nearest located vehicle doesn't have a direct driver, try to query its owner
-    auto const *owner = (
-        ( ( vehicle->Mechanik != nullptr ) && ( vehicle->Mechanik->primary() ) ) ?
-            vehicle->Mechanik :
-            vehicle->ctOwner );
+    auto const *owner = vehicle->Mechanik != nullptr && vehicle->Mechanik->primary() ? vehicle->Mechanik : vehicle->ctOwner;
     if( owner == nullptr ) { return; }
 
     auto const &table = owner->TrainTimetable();
@@ -364,8 +359,8 @@ timetable_panel::update() {
             // consist data
             auto consistmass { owner->fMass };
             auto consistlength { owner->fLength };
-            if( ( false == owner->is_dmu() )
-             && ( false == owner->is_emu() ) ) {
+            if( false == owner->is_dmu()
+             && false == owner->is_emu() ) {
 				//odejmij lokomotywy czynne, a przynajmniej aktualną
 				consistmass -= owner->pVehicle->MoverParameters->TotalMass;
 				// subtract potential other half of a two-part vehicle
@@ -429,29 +424,27 @@ timetable_panel::update() {
                         std::to_string( int( 100 + tableline->Dh ) ).substr( 1, 2 ) + ":" + to_minutes_str( tableline->Dm, true, 3 ) :
                         U8("  │   ") ) };
                 auto const candepart { (
-                       ( table.StationStart < table.StationIndex )
-                    && ( i < table.StationIndex )
-                    && ( ( tableline->Ah < 0 ) // pass-through, always valid
-                      || ( tableline->is_maintenance ) // maintenance stop, always valid
-                      || ( time.wHour * 60 + time.wMinute + time.wSecond * 0.0167 >= tableline->Dh * 60 + tableline->Dm ) ) ) };
-                auto const loadchangeinprogress { ( ( static_cast<int>( std::ceil( -1.0 * owner->fStopTime ) ) ) > 0 ) };
-                auto const isatpassengerstop { ( true == owner->IsAtPassengerStop ) && ( vehicle->MoverParameters->Vel < 1.0 ) };
+                       table.StationStart < table.StationIndex
+                    && i < table.StationIndex
+                    && ( tableline->Ah < 0 // pass-through, always valid
+                      || tableline->is_maintenance // maintenance stop, always valid
+                      || time.wHour * 60 + time.wMinute + time.wSecond * 0.0167 >= tableline->Dh * 60 + tableline->Dm ) ) };
+                auto const loadchangeinprogress { ( static_cast<int>(std::ceil(-1.0 * owner->fStopTime)) > 0 ) };
+                auto const isatpassengerstop { true == owner->IsAtPassengerStop && vehicle->MoverParameters->Vel < 1.0 };
                 auto const traveltime { (
                     i < 2 ? "   " :
                     tableline->Ah >= 0 ? to_minutes_str( CompareTime( table.TimeTable[ i - 1 ].Dh, table.TimeTable[ i - 1 ].Dm, tableline->Ah, tableline->Am ), false, 3 ) :
                     to_minutes_str( std::max( 0.0, CompareTime( table.TimeTable[ i - 1 ].Dh, table.TimeTable[ i - 1 ].Dm, tableline->Dh, tableline->Dm ) - 0.5 ), false, 3 ) ) };
                 auto const linecolor { (
-                    ( i != table.StationStart ) ? Global.UITextColor :
+                    i != table.StationStart ? Global.UITextColor :
                     loadchangeinprogress ? colors::uitextred :
                     candepart ? colors::uitextgreen : // czas minął i odjazd był, to nazwa stacji będzie na zielono
                     isatpassengerstop ? colors::uitextorange :
                     Global.UITextColor ) };
                 std::string const trackcount{ ( tableline->TrackNo == 1 ? U8(" ┃  ") : U8(" ║  " )) };
-                m_tablelines.emplace_back(
-                    ( U8("│ ") + vmax + U8(" │ ") + station + trackcount + arrival + U8(" │ ") + traveltime + U8(" │") ),
+                m_tablelines.emplace_back(U8("│ ") + vmax + U8(" │ ") + station + trackcount + arrival + U8(" │ ") + traveltime + U8(" │"),
                     linecolor );
-                m_tablelines.emplace_back(
-                    ( U8("│     │ ") + location + tableline->StationWare + trackcount + departure + U8(" │     │") ),
+                m_tablelines.emplace_back(U8("│     │ ") + location + tableline->StationWare + trackcount + departure + U8(" │     │"),
                     linecolor );
                 // divider/footer
                 if( i < table.StationCount ) {
@@ -522,20 +515,14 @@ void debug_panel::update()
 
 	// input item bindings
 	m_input.train = simulation::Train;
-	m_input.controlled = ( m_input.train ? m_input.train->Dynamic() : nullptr );
-	m_input.camera = &( Global.pCamera );
-	m_input.vehicle = (
-	    false == FreeFlyModeFlag ? m_input.controlled :
-	    m_input.camera->m_owner != nullptr ? m_input.camera->m_owner :
-	    std::get<TDynamicObject *>( simulation::Region->find_vehicle( m_input.camera->Pos, 20, false, false ) ) ); // w trybie latania lokalizujemy wg mapy
+	m_input.controlled = m_input.train ? m_input.train->Dynamic() : nullptr;
+	m_input.camera = &Global.pCamera;
+	m_input.vehicle = false == FreeFlyModeFlag           ? m_input.controlled :
+	                  m_input.camera->m_owner != nullptr ? m_input.camera->m_owner :
+	                                                       std::get<TDynamicObject *>(simulation::Region->find_vehicle(m_input.camera->Pos, 20, false, false)); // w trybie latania lokalizujemy wg mapy
 	m_input.mover =
-	    ( m_input.vehicle != nullptr ?
-	        m_input.vehicle->MoverParameters :
-	        nullptr );
-	m_input.mechanik = (
-	    m_input.vehicle != nullptr ?
-	        m_input.vehicle->Mechanik :
-	        nullptr );
+	    m_input.vehicle != nullptr ? m_input.vehicle->MoverParameters : nullptr;
+	m_input.mechanik = m_input.vehicle != nullptr ? m_input.vehicle->Mechanik : nullptr;
 
 	// header section
 	text_lines.clear();
@@ -602,7 +589,7 @@ debug_panel::render() {
         // sections
         ImGui::Separator();
         if( true == render_section( "Vehicle", m_vehiclelines ) ) {
-            if( DebugModeFlag && ( m_input.mover ) && ( m_input.mover->DamageFlag != 0 ) ) {
+            if( DebugModeFlag && m_input.mover && m_input.mover->DamageFlag != 0 ) {
                 if( true == ImGui::Button( "Stop and repair consist" ) ) {
                     command_relay relay;
                     relay.post(user_command::resetconsist, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &m_input.vehicle->name());
@@ -738,7 +725,7 @@ debug_panel::render_section_scenario() {
         {
             auto timerate { ( Global.fTimeSpeed == 60 ? 4 : Global.fTimeSpeed == 20 ? 3 : Global.fTimeSpeed == 5 ? 2 : 1 ) };
             if( ImGui::SliderInt( ( "x " + to_string( Global.fTimeSpeed, 0 ) + "###timeacceleration" ).c_str(), &timerate, 1, 4, "Time acceleration" ) ) {
-                Global.fTimeSpeed = ( timerate == 4 ? 60 : timerate == 3 ? 20 : timerate == 2 ? 5 : 1 );
+                Global.fTimeSpeed = timerate == 4 ? 60 : timerate == 3 ? 20 : timerate == 2 ? 5 : 1;
             }
         }
 		// base draw range slider
@@ -780,8 +767,8 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
     auto const &vehicle { *m_input.vehicle };
     auto const &mover { *m_input.mover };
 
-    auto const isowned { /* ( vehicle.Mechanik == nullptr ) && */ ( vehicle.ctOwner != nullptr ) && ( vehicle.ctOwner->Vehicle() != m_input.vehicle ) };
-    auto const isdieselenginepowered { ( mover.EngineType == TEngineType::DieselElectric ) || ( mover.EngineType == TEngineType::DieselEngine ) };
+    auto const isowned { /* ( vehicle.Mechanik == nullptr ) && */ vehicle.ctOwner != nullptr && vehicle.ctOwner->Vehicle() != m_input.vehicle };
+    auto const isdieselenginepowered { mover.EngineType == TEngineType::DieselElectric || mover.EngineType == TEngineType::DieselEngine };
     auto const isdieselinshuntmode { mover.ShuntMode && mover.EngineType == TEngineType::DieselElectric };
 
     std::snprintf(
@@ -803,24 +790,52 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
         m_buffer.data(), m_buffer.size(),
         STR_C("Devices: %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%s%s\nPower transfers: %.0f@%.0f%s[%.0f]%s%.0f@%.0f :: %.0f@%.0f%s[%.0f]%s%.0f@%.0f"),
         // devices
-        ( mover.Battery ? 'B' : '.' ),
-        ( mover.PantsValve.is_active ? '+' : '.' ),
-        ( mover.Pantographs[ end::rear  ].valve.is_active ? 'O' : ( mover.Pantographs[ end::rear  ].valve.is_enabled ? 'o' : '.' ) ),
-        ( mover.Pantographs[ end::front ].valve.is_active ? 'P' : ( mover.Pantographs[ end::front ].valve.is_enabled ? 'p' : '.' ) ),
-        ( mover.PantPressLockActive ? '!' : ( mover.PantPressSwitchActive ? '*' : '.' ) ),
-        ( mover.WaterPump.is_active ? 'W' : ( false == mover.WaterPump.breaker ? '-' : ( mover.WaterPump.is_enabled ? 'w' : '.' ) ) ),
-        ( mover.WaterHeater.is_damaged ? '!' : ( mover.WaterHeater.is_active ? 'H' : ( false == mover.WaterHeater.breaker ? '-' : ( mover.WaterHeater.is_enabled ? 'h' : '.' ) ) ) ),
-        ( mover.FuelPump.is_active ? 'F' : ( mover.FuelPump.is_enabled ? 'f' : '.' ) ),
-        ( mover.OilPump.is_active ? 'O' : ( mover.OilPump.is_enabled ? 'o' : '.' ) ),
-        ( mover.Mains ? 'M' : '.' ),
-        ( mover.FuseFlag ? '!' : '.' ),
-        ( mover.ConverterFlag ? 'X' : ( false == mover.ConverterAllowLocal ? '-' : ( mover.ConverterAllow ?  'x' : '.' ) ) ),
-        ( mover.ConvOvldFlag ? '!' : '.' ),
-        ( mover.CompressorFlag ? 'C' : ( false == mover.CompressorAllowLocal ? '-' : ( ( mover.CompressorAllow || ( mover.CompressorStart == start_t::automatic && mover.CompressorSpeed > 0.0 ) ) ? 'c' : '.' ) ) ),
-        ( mover.CompressorGovernorLock ? '!' : '.' ),
-        ( mover.StLinSwitchOff ? '-' : ( mover.ControlPressureSwitch ? '!' : ( mover.StLinFlag ? '+' : '.' ) ) ),
-        ( mover.Heating ? 'H' : ( mover.HeatingAllow ? 'h' : '.' ) ),
-        ( mover.Hamulec->Releaser() ? '^' : '.' ),
+        mover.Battery ? 'B' : '.',
+        mover.PantsValve.is_active ? '+' : '.',
+        mover.Pantographs[end::rear].valve.is_active  ? 'O' :
+	              mover.Pantographs[end::rear].valve.is_enabled ? 'o' :
+	                                                              '.',
+        mover.Pantographs[end::front].valve.is_active  ? 'P' :
+	              mover.Pantographs[end::front].valve.is_enabled ? 'p' :
+	                                                               '.',
+        mover.PantPressLockActive   ? '!' :
+	              mover.PantPressSwitchActive ? '*' :
+	                                            '.',
+        mover.WaterPump.is_active        ? 'W' :
+	              false == mover.WaterPump.breaker ? '-' :
+	              mover.WaterPump.is_enabled       ? 'w' :
+	                                                 '.',
+        mover.WaterHeater.is_damaged       ? '!' :
+	              mover.WaterHeater.is_active        ? 'H' :
+	              false == mover.WaterHeater.breaker ? '-' :
+	              mover.WaterHeater.is_enabled       ? 'h' :
+	                                                   '.',
+        mover.FuelPump.is_active  ? 'F' :
+	              mover.FuelPump.is_enabled ? 'f' :
+	                                          '.',
+        mover.OilPump.is_active  ? 'O' :
+	              mover.OilPump.is_enabled ? 'o' :
+	                                         '.',
+        mover.Mains ? 'M' : '.',
+        mover.FuseFlag ? '!' : '.',
+        mover.ConverterFlag                ? 'X' :
+	              false == mover.ConverterAllowLocal ? '-' :
+	              mover.ConverterAllow               ? 'x' :
+	                                                   '.',
+        mover.ConvOvldFlag ? '!' : '.',
+        mover.CompressorFlag                                                                                  ? 'C' :
+	              false == mover.CompressorAllowLocal                                                                   ? '-' :
+	              mover.CompressorAllow || (mover.CompressorStart == start_t::automatic && mover.CompressorSpeed > 0.0) ? 'c' :
+	                                                                                                                      '.',
+        mover.CompressorGovernorLock ? '!' : '.',
+        mover.StLinSwitchOff        ? '-' :
+	              mover.ControlPressureSwitch ? '!' :
+	              mover.StLinFlag             ? '+' :
+	                                            '.',
+        mover.Heating      ? 'H' :
+	              mover.HeatingAllow ? 'h' :
+	                                   '.',
+        mover.Hamulec->Releaser() ? '^' : '.',
         std::string( m_input.mechanik ? STR(" R") + ( mover.Radio ? std::to_string( m_input.mechanik->iRadioChannel ) : "-" ) : "" ).c_str(),
         std::string( isdieselenginepowered ? STR(" oil pressure: ") + to_string( mover.OilPump.pressure, 2 )  : "" ).c_str(),
         // power transfers
@@ -871,7 +886,7 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
             mover.dizel_heat.Ts,
             mover.dizel_heat.To,
             mover.dizel_heat.temperatura1,
-            ( mover.WaterCircuitsLink ? '-' : '|' ),
+            mover.WaterCircuitsLink ? '-' : '|',
             mover.dizel_heat.temperatura2 );
         textline += m_buffer.data();
     }
@@ -888,8 +903,8 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
         mover.LoadFlag,
         mover.LocalBrakePosA,
         mover.LocalBrakePosAEIM,
-        ( mover.ManualBrakePos / static_cast<float>( ManualBrakePosNo ) ),
-        ( mover.SpringBrake.Activate ? 1.f : 0.f ),
+        mover.ManualBrakePos / static_cast<float>(ManualBrakePosNo),
+        mover.SpringBrake.Activate ? 1.f : 0.f,
         // cylinders
         mover.BrakePress,
         mover.LocBrakePress,
@@ -911,7 +926,7 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
             m_buffer.data(), m_buffer.size(),
 		    STR_C(" pantograph: %.2f%cMT"),
             mover.PantPress,
-            ( mover.bPantKurek3 ? '-' : '|' ) );
+            mover.bPantKurek3 ? '-' : '|' );
         textline += m_buffer.data();
     }
 
@@ -924,7 +939,7 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
         mover.Ft * 0.001f * ( mover.CabOccupied ? mover.CabOccupied : vehicle.ctOwner ? vehicle.ctOwner->Controlling()->CabOccupied : 1 ) + 0.001f,
         mover.Fb * 0.001f,
 	    mover.FrictionForce() * 0.001f,
-        ( mover.SlippingWheels ? " (!)" : "" ),
+        mover.SlippingWheels ? " (!)" : "",
         // acceleration
         mover.AccSVBased,
         mover.AccN + 0.001f,
@@ -994,7 +1009,7 @@ void debug_panel::graph_data::render() {
 std::string
 debug_panel::update_vehicle_coupler( int const Side ) {
     // NOTE: mover and vehicle are guaranteed to be valid by the caller
-    auto const &mover { *( m_input.mover ) };
+    auto const &mover { *m_input.mover };
 
     std::string const controltype{ ( mover.Couplers[ Side ].control_type.empty() ? "[*]" : "[" + mover.Couplers[ Side ].control_type + "]" ) };
     std::string couplerstatus { STR("none") };
@@ -1022,7 +1037,7 @@ debug_panel::update_vehicle_coupler( int const Side ) {
 std::string
 debug_panel::update_vehicle_brake() const {
 	// NOTE: mover is guaranteed to be valid by the caller
-	auto const &mover { *( m_input.mover ) };
+	auto const &mover { *m_input.mover };
 
 	std::string brakedelay;
 
@@ -1063,9 +1078,7 @@ debug_panel::update_section_engine( std::vector<text_line> &Output ) {
 
 			if( i < 10 ) {
 				parameters +=
-                    ( ( m_input.train != nullptr ) && ( m_input.train->Dynamic() == m_input.vehicle ) ?
-                        " | " + TTrain::fPress_labels[ i ] + to_string( m_input.train->fPress[ i ][ 0 ], 2, 9 ) :
-                        "" );
+                    m_input.train != nullptr && m_input.train->Dynamic() == m_input.vehicle ? " | " + TTrain::fPress_labels[i] + to_string(m_input.train->fPress[i][0], 2, 9) : "";
 			}
 			else if( i == 12 ) {
 				parameters += "        med:";
@@ -1147,8 +1160,8 @@ debug_panel::update_section_ai( std::vector<text_line> &Output ) {
 
     Output.emplace_back( textline, Global.UITextColor );
 
-    if( ( mechanik.VelNext == 0.0 )
-     && ( mechanik.eSignNext ) ) {
+    if( mechanik.VelNext == 0.0
+     && mechanik.eSignNext ) {
         // jeśli ma zapamiętany event semafora, nazwa eventu semafora
         Output.emplace_back( "Current signal: " + Bezogonkow( mechanik.eSignNext->m_name ), Global.UITextColor );
     }
@@ -1210,7 +1223,8 @@ debug_panel::update_section_ai( std::vector<text_line> &Output ) {
         "Acceleration:\n desired: " + to_string( mechanik.AccDesired, 2 )
         + ", corrected: " + to_string( mechanik.AccDesired * mechanik.BrakeAccFactor(), 2 )
         + "\n current: " + to_string( mechanik.AbsAccS + 0.001f, 2 )
-        + ", slope: " + to_string( mechanik.fAccGravity + 0.001f, 2 ) + " (" + ( mechanik.fAccGravity > 0.01 ? "\\" : ( mechanik.fAccGravity < -0.01 ? "/" : "-" ) ) + ")"
+        + ", slope: " + to_string( mechanik.fAccGravity + 0.001f, 2 ) + " (" + ( mechanik.fAccGravity > 0.01 ? "\\" : mechanik.fAccGravity < -0.01 ? "/" :
+	                                           "-" ) + ")"
 		+ "\n desired diesel percentage: " + std::to_string(mechanik.DizelPercentage)
 	    + "/" + std::to_string(mechanik.DizelPercentage_Speed)
 		+ "/" + to_string(100.4*mechanik.mvControlling->eimic_real, 0);
@@ -1331,18 +1345,18 @@ debug_panel::update_section_eventqueue( std::vector<text_line> &Output ) {
 
 	Output.emplace_back( "Delay:   Event:", Global.UITextColor );
 
-	while( ( event != nullptr )
-	    && ( Output.size() < 30 ) ) {
+	while( event != nullptr
+	    && Output.size() < 30 ) {
 
-		if( ( false == event->m_ignored )
-		 && ( false == event->m_passive )
-		 && ( ( false == m_eventqueueactivevehicleonly )
-		   || ( event->m_activator == m_input.vehicle ) ) ) {
+		if( false == event->m_ignored
+		 && false == event->m_passive
+		 && ( false == m_eventqueueactivevehicleonly
+		   || event->m_activator == m_input.vehicle ) ) {
 
             auto const label { event->m_name + ( event->m_activator ? " (by: " + event->m_activator->asName + ")" : "" ) };
 
-            if( ( false == searchfilter.empty() )
-             && ( false == contains( label, searchfilter ) ) ) {
+            if( false == searchfilter.empty()
+             && false == contains(label, searchfilter) ) {
                 event = event->m_next;
                 continue;
             }
@@ -1359,10 +1373,7 @@ debug_panel::update_section_eventqueue( std::vector<text_line> &Output ) {
     }
     if( Output.size() == 1 ) {
         // event queue can be empty either because no event got through active filters, or because it is genuinely empty
-        Output.front().data = (
-            simulation::Events.begin() == nullptr ?
-                "(no queued events)" :
-                "(no matching events)" );
+        Output.front().data = simulation::Events.begin() == nullptr ? "(no queued events)" : "(no matching events)";
     }
 }
 
@@ -1398,9 +1409,9 @@ debug_panel::update_section_powergrid( std::vector<text_line> &Output ) {
 
 		Output.emplace_back(
 		    textline,
-		    ( ( powerstation->FastFuse || powerstation->SlowFuse ) ? nopowercolor :
-		      powerstation->OutputVoltage < ( 0.8 * powerstation->NominalVoltage ) ? lowpowercolor :
-		      Global.UITextColor ) );
+		    powerstation->FastFuse || powerstation->SlowFuse                 ? nopowercolor :
+		                              powerstation->OutputVoltage < 0.8 * powerstation->NominalVoltage ? lowpowercolor :
+		                                                                                                 Global.UITextColor );
 	}
 
 	if( Output.size() == 1 ) {

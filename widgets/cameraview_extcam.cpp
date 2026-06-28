@@ -113,7 +113,7 @@ void ui::cameraview_panel::render_contents()
 	}
 
 	ImVec2 surface_size = ImGui::GetContentRegionAvail();
-	ImGui::Image((ImTextureID)(intptr_t)(texture->id), surface_size);
+	ImGui::Image((ImTextureID)(intptr_t)texture->id, surface_size);
 }
 
 void ui::cameraview_panel::capture_func()

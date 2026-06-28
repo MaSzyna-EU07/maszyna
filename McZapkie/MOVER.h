@@ -300,26 +300,26 @@ enum light
 {
 
 	/// <summary>Headlight, left.</summary>
-	headlight_left = (1 << 0),
+	headlight_left = 1 << 0,
 	/// <summary>Red marker, left.</summary>
-	redmarker_left = (1 << 1),
+	redmarker_left = 1 << 1,
 	/// <summary>Headlight, upper centre.</summary>
-	headlight_upper = (1 << 2),
+	headlight_upper = 1 << 2,
 	// TBD, TODO: redmarker_upper support?
 	/// <summary>Headlight, right.</summary>
-	headlight_right = (1 << 4),
+	headlight_right = 1 << 4,
 	/// <summary>Red marker, right.</summary>
-	redmarker_right = (1 << 5),
+	redmarker_right = 1 << 5,
 	/// <summary>Rear-end markers (combined).</summary>
-	rearendsignals = (1 << 6),
+	rearendsignals = 1 << 6,
 	/// <summary>Auxiliary light, left (e.g. ditch light).</summary>
-	auxiliary_left = (1 << 7),
+	auxiliary_left = 1 << 7,
 	/// <summary>Auxiliary light, right.</summary>
-	auxiliary_right = (1 << 8),
+	auxiliary_right = 1 << 8,
 	/// <summary>High-beam headlight, left.</summary>
-	highbeamlight_left = (1 << 9),
+	highbeamlight_left = 1 << 9,
 	/// <summary>High-beam headlight, right.</summary>
-	highbeamlight_right = (1 << 10)
+	highbeamlight_right = 1 << 10
 };
 
 /// <summary>Door operation method (who controls them and how) — mutually exclusive.</summary>
@@ -1211,8 +1211,8 @@ struct TCoupling
 	double beta = 0.0;
 	TCouplerType CouplerType = TCouplerType::NoCoupler; /*typ sprzegu*/
 	int AutomaticCouplingFlag = coupling::coupler;
-	int AllowedFlag = (coupling::coupler | coupling::brakehose); // Ra: maska dostępnych
-	int PowerFlag = (coupling::power110v | coupling::power24v);
+	int AllowedFlag = coupling::coupler | coupling::brakehose; // Ra: maska dostępnych
+	int PowerFlag = coupling::power110v | coupling::power24v;
 	int PowerCoupling = coupling::permanent; // type of coupling required for power transfer
 	/*zmienne*/
 	bool AutomaticCouplingAllowed{true}; // whether automatic coupling can be currently performed
@@ -1238,11 +1238,11 @@ struct TCoupling
 
 	inline bool has_adapter() const
 	{
-		return (adapter_type != TCouplerType::NoCoupler);
+		return adapter_type != TCouplerType::NoCoupler;
 	}
 	inline TCouplerType const type() const
 	{
-		return (adapter_type == TCouplerType::NoCoupler ? CouplerType : adapter_type);
+		return adapter_type == TCouplerType::NoCoupler ? CouplerType : adapter_type;
 	}
 };
 
@@ -2092,7 +2092,7 @@ class TMoverParameters
 	bool CabMaster = false; // czy pojazd jest nadrzędny w składzie
 	inline bool IsCabMaster()
 	{
-		return ((CabActive == CabOccupied) && CabMaster);
+		return CabActive == CabOccupied && CabMaster;
 	} // czy aktualna kabina jest na pewno tą, z której można sterować
 	bool AutomaticCabActivation = true; // czy zmostkowany rozrzad przelacza sie sam przy zmianie kabiny
 	int InactiveCabFlag = 0; // co sie dzieje przy dezaktywacji kabiny
@@ -2300,7 +2300,7 @@ class TMoverParameters
 	bool EIMDirectionChangeAllow(void) const;
 	inline double IsVehicleEIMBrakingFactor()
 	{
-		return ((DynamicBrakeFlag && ResistorsFlag) ? 0.0 : eimv[eimv_Ipoj] < 0 ? -1.0 : 1.0);
+		return DynamicBrakeFlag && ResistorsFlag ? 0.0 : eimv[eimv_Ipoj] < 0 ? -1.0 : 1.0;
 	}
 	void BrakeLevelSet(double b);
 	bool BrakeLevelAdd(double b);
@@ -2317,7 +2317,7 @@ class TMoverParameters
 	double ShowEngineRotation(int VehN);
 
 	// Q *******************************************************************************************
-	double GetTrainsetVoltage(int const Coupling = (coupling::heating | coupling::highvoltage)) const;
+	double GetTrainsetVoltage(int const Coupling = coupling::heating | coupling::highvoltage) const;
 	double GetTrainsetHighVoltage() const;
 	bool switch_physics(bool const State);
 	double LocalBrakeRatio(void);

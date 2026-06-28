@@ -16,7 +16,7 @@ http://mozilla.org/MPL/2.0/.
 
 double TTrainParameters::CheckTrainLatency()
 {
-    if ((LastStationLatency > 1.0) || (LastStationLatency < 0))
+    if (LastStationLatency > 1.0 || LastStationLatency < 0)
         return LastStationLatency; /*spoznienie + lub do przodu - z tolerancja 1 min*/
     else
         return 0;
@@ -66,7 +66,7 @@ TTrainParameters::last_stop_sound() const {
 
 bool TTrainParameters::IsStop() const
 { // zapytanie, czy zatrzymywać na następnym punkcie rozkładu
-    if ((StationIndex <= StationCount))
+    if (StationIndex <= StationCount)
         return TimeTable[StationIndex].Ah >= 0; //-1 to brak postoju
     else
         return true; // na ostatnim się zatrzymać zawsze
@@ -74,19 +74,19 @@ bool TTrainParameters::IsStop() const
 
 bool TTrainParameters::IsLastStop() const {
 
-    return ( StationIndex >= StationCount );
+    return StationIndex >= StationCount;
 }
 
 
 bool TTrainParameters::IsMaintenance() const {
-    if( ( StationIndex <= StationCount ) )
+    if( StationIndex <= StationCount )
         return TimeTable[ StationIndex ].is_maintenance;
     else
         return false;
 }
 
 int TTrainParameters::radio_channel() const {
-    if( ( StationIndex <= StationCount ) )
+    if( StationIndex <= StationCount )
         return TimeTable[ StationIndex ].radio_channel;
     else
         return -1;
@@ -94,7 +94,7 @@ int TTrainParameters::radio_channel() const {
 
 // returns: sound file associated with current station, or -1
 sound_source TTrainParameters::current_stop_sound() const {
-    if( ( StationIndex <= StationCount ) )
+    if( StationIndex <= StationCount )
         return TimeTable[ StationIndex ].name_sound;
     else
         return { sound_placement::engine };
@@ -167,11 +167,11 @@ bool TTrainParameters::IsTimeToGo(double hh, double mm)
 // sprawdzenie, czy można już odjechać z aktualnego zatrzymania
 // StationIndex to numer następnego po dodarciu do aktualnego
 {
-    if ((StationIndex < 1))
+    if (StationIndex < 1)
         return true; // przed pierwszą jechać
-    else if ((StationIndex < StationCount))
+    else if (StationIndex < StationCount)
     { // oprócz ostatniego przystanku
-        if ((TimeTable[StationIndex].Ah < 0)) // odjazd z poprzedniego
+        if (TimeTable[StationIndex].Ah < 0) // odjazd z poprzedniego
             return true; // czas przyjazdu nie był podany - przelot
         else
             return CompareTime(hh, mm, TimeTable[StationIndex].Dh, TimeTable[StationIndex].Dm) <= 0;
@@ -183,17 +183,17 @@ bool TTrainParameters::IsTimeToGo(double hh, double mm)
 // returns: difference between specified time and scheduled departure from current stop, in seconds
 double TTrainParameters::seconds_until_departure( double const Hour, double const Minute ) const {
 
-    if( ( TimeTable[ StationStart ].Ah < 0 ) ) { // passthrough
+    if( TimeTable[StationStart].Ah < 0 ) { // passthrough
         return 0;
     }
-    return ( 60.0 * CompareTime( Hour, Minute, TimeTable[ StationStart ].Dh, TimeTable[ StationStart ].Dm ) );
+    return 60.0 * CompareTime(Hour, Minute, TimeTable[StationStart].Dh, TimeTable[StationStart].Dm);
 }
 
 std::string TTrainParameters::ShowRelation() const
 /*zwraca informację o relacji*/
 {
     // if (Relation1=TimeTable[1].StationName) and (Relation2=TimeTable[StationCount].StationName)
-    if ((Relation1 != "") && (Relation2 != ""))
+    if (Relation1 != "" && Relation2 != "")
         return Relation1 + " - " + Relation2;
     else
         return "";
@@ -233,7 +233,7 @@ void TTrainParameters::UpdateVelocity(int StationCount, double vActual)
 {
     int i = StationCount;
     // TTVmax:=vActual;  {PROWIZORKA!!!}
-    while ((i >= 0) && (TimeTable[i].vmax == -1))
+    while (i >= 0 && TimeTable[i].vmax == -1)
     {
         TimeTable[i].vmax = vActual; // prędkość dojazdu do przystanku i
         --i; // ewentualnie do poprzedniego też
@@ -256,7 +256,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
 
     int ConversionError = 0;
     EndTable = false;
-    if ((TrainName == ""))
+    if (TrainName == "")
     { // jeśli pusty rozkład
         // UpdateVelocity(StationCount,vMax); //ograniczenie do prędkości startowej
     }
@@ -274,7 +274,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
         if (!fin.is_open())
         { // jeśli nie ma pliku
             vmax = atoi(TrainName.c_str()); // nie ma pliku ale jest liczba
-            if ((vmax > 10) && (vmax < 200))
+            if (vmax > 10 && vmax < 200)
             {
                 TTVmax = vmax; // Ra 2014-07: zamiast rozkładu można podać Vmax
                 UpdateVelocity(StationCount, vmax); // ograniczenie do prędkości startowej
@@ -286,7 +286,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
         else
         { /*analiza rozkładu jazdy*/
             ConversionError = 0;
-            while (fin.good() && !((ConversionError != 0) || EndTable))
+            while (fin.good() && !(ConversionError != 0 || EndTable))
             {
                 std::getline(fin, lines); /*wczytanie linii*/
                 if (contains( lines, "___________________") ) /*linia pozioma górna*/
@@ -299,7 +299,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                             do
                             {
                                 fin >> s;
-                            } while (!(s == "|") || (fin.eof())); /*środkowy pion*/
+                            } while (!(s == "|") || fin.eof()); /*środkowy pion*/
                     }
                 }
                 else if (lines == "")
@@ -323,7 +323,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
 						do
 						{
 							fin >> s;
-						} while (!((s == "|") || (fin.bad())));
+						} while (!(s == "|" || fin.bad()));
 						fin >> TrainCategory;
 		                        continue;
 					}
@@ -332,7 +332,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
 			                        do
 			                        {
 			                            fin >> s;
-				                } while (!((s == "|") || (fin.bad())));
+				                } while (!(s == "|" || fin.bad()));
 			                        fin >> TrainLabel;
 			                        continue;
 			                 }
@@ -375,7 +375,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                     } // while (!();
                     while (fin >> s || !fin.bad())
                     {
-                        if ((s == "|") || (s == "\n"))
+                        if (s == "|" || s == "\n")
                             break;
                     } // while (!());
                     fin >> s;
@@ -389,7 +389,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                     do
                     {
                         fin >> s;
-                    } while (!((s == "|") || (fin.bad())));
+                    } while (!(s == "|" || fin.bad()));
                     fin >> LocSeries;
                     fin >> LocLoad; // = s2rE(ReadWord(fin));
                     do
@@ -403,7 +403,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                         do
                         {
                             fin >> s;
-                        } while (!((s == "[") || (fin.bad())));
+                        } while (!(s == "[" || fin.bad()));
                         TMTableLine *record = &TimeTable[StationCount];
                         {
                             if (s == "[")
@@ -431,7 +431,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                             do
                             {
                                 fin >> s;
-                            } while (!((s == "1") || (s == "2") || fin.bad()));
+                            } while (!(s == "1" || s == "2" || fin.bad()));
                             record->TrackNo = atoi(s.c_str());
                             fin >> s;
                             if (s != "|")
@@ -450,13 +450,13 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                             do
                             {
                                 fin >> s;
-                            } while (!((s != "|") || (fin.bad())));
+                            } while (!(s != "|" || fin.bad()));
                             if (s != "]")
                                 record->tm = atof(s.c_str());
                             do
                             {
                                 fin >> s;
-                            } while (!((s == "[") || fin.bad()));
+                            } while (!(s == "[" || fin.bad()));
                             fin >> s;
                             if (false == contains(s,"|"))
                             {
@@ -476,14 +476,14 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                                 fin >> s;
                             // stationware. added fix for empty entry
                             fin >> s;
-                            while( false == ( ( s == "1" )
-                                           || ( s == "2" )
+                            while( false == ( s == "1"
+                                           || s == "2"
                                            || fin.bad() ) ) {
                                 record->StationWare += s;
                                 fin >> s;
                             }
                             // cache relevant station data
-                            record->is_maintenance = ( contains( s, "pt" ) );
+                            record->is_maintenance = contains(s, "pt");
                             {
                                 auto const stationware { Split( record->StationWare, ',' ) };
                                 for( auto const &entry : stationware ) {
@@ -491,11 +491,11 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                                         continue;
                                     }
                                     auto const entrysplit { split_string_and_number( entry ) };
-                                    if( ( entrysplit.first == "R" )
-                                     && ( entrysplit.second <= 10 ) ) {
+                                    if( entrysplit.first == "R"
+                                     && entrysplit.second <= 10 ) {
                                         auto const radiochannel { entrysplit.second };
-                                        if( ( record->radio_channel == -1 )
-                                         || ( radiochannel != activeradiochannel ) ) {
+                                        if( record->radio_channel == -1
+                                         || radiochannel != activeradiochannel ) {
                                             // if the station has more than one radiochannel listed,
                                             // it generally means we should switch to the one we weren't using so far
                                             // TODO: reverse this behaviour (keep the channel used so far) once W28 signs are included in the system
@@ -530,7 +530,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                             do
                             {
                                 fin >> s;
-                            } while (!((s != "|") || (fin.bad())));
+                            } while (!(s != "|" || fin.bad()));
                             if (s != "]")
                                 record->tm = atof(s.c_str());
                             do
@@ -554,7 +554,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                             }
                             while (false == contains( s, "|" ) )
                                 fin >> s;
-                            while ((false == contains( s,"]") ))
+                            while (false == contains(s, "]"))
                                 fin >> s;
                             if (contains( s,"_|_") )
                                 EndTable = true;
@@ -567,8 +567,8 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
     }
     if (ConversionError == 0)
     {
-        if ((TimeTable[1].StationName == Relation1)) // jeśli nazwa pierwszego zgodna z relacją
-            if ((TimeTable[1].Ah < 0)) // a nie podany czas przyjazdu
+        if (TimeTable[1].StationName == Relation1) // jeśli nazwa pierwszego zgodna z relacją
+            if (TimeTable[1].Ah < 0) // a nie podany czas przyjazdu
             { // to mamy zatrzymanie na pierwszym, a nie przelot
                 TimeTable[1].Ah = TimeTable[1].Dh;
                 TimeTable[1].Am = TimeTable[1].Dm;
@@ -584,17 +584,17 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
         float adjustedtime; // do zwiększania czasu
         for (auto i = 1; i < i_end; ++i) // bez with, bo ciężko się przenosi na C++
         {
-            if ((TimeTable[i].Ah >= 0))
+            if (TimeTable[i].Ah >= 0)
             {
                 adjustedtime = clamp_circular<float>( TimeTable[i].Ah * 60 + TimeTable[i].Am + timeoffset, 24 * 60 ); // nowe minuty
-                TimeTable[i].Am = (int(60 * adjustedtime) % 3600) / 60.f;
-                TimeTable[i].Ah = int((adjustedtime) / 60) % 24;
+                TimeTable[i].Am = int(60 * adjustedtime) % 3600 / 60.f;
+                TimeTable[i].Ah = int(adjustedtime / 60) % 24;
             }
-            if ((TimeTable[i].Dh >= 0))
+            if (TimeTable[i].Dh >= 0)
             {
                 adjustedtime = clamp_circular<float>( TimeTable[i].Dh * 60 + TimeTable[i].Dm + timeoffset, 24 * 60 ); // nowe minuty
-                TimeTable[i].Dm = (int(60 * adjustedtime) % 3600) / 60.f;
-                TimeTable[i].Dh = int((adjustedtime) / 60) % 24;
+                TimeTable[i].Dm = int(60 * adjustedtime) % 3600 / 60.f;
+                TimeTable[i].Dh = int(adjustedtime / 60) % 24;
             }
         }
     }
@@ -632,7 +632,7 @@ TTrainParameters::load_sounds() {
 bool TTrainParameters::DirectionChange()
 // sprawdzenie, czy po zatrzymaniu wykonać kolejne komendy
 {
-    if ((StationIndex > 0) && (StationIndex < StationCount)) // dla ostatniej stacji nie
+    if (StationIndex > 0 && StationIndex < StationCount) // dla ostatniej stacji nie
         if (contains( TimeTable[StationIndex].StationWare, '@') )
             return true;
     return false;
@@ -657,15 +657,15 @@ void TTrainParameters::serialize( dictionary_source *Output ) const {
         for( auto stationidx = 1; stationidx <= StationCount; ++stationidx ) {
             auto const stationlabel { "train_station" + std::to_string( stationidx ) + "_" };
             auto const &timetableline { TimeTable[ stationidx ] };
-            Output->insert( ( stationlabel + "name" ), Bezogonkow( timetableline.StationName ) );
-            Output->insert( ( stationlabel + "fclt" ), Bezogonkow( timetableline.StationWare ) );
-            Output->insert( ( stationlabel + "lctn" ), timetableline.km );
-            Output->insert( ( stationlabel + "vmax" ), timetableline.vmax );
-            Output->insert( ( stationlabel + "ah" ), timetableline.Ah );
-            Output->insert( ( stationlabel + "am" ), timetableline.Am );
-            Output->insert( ( stationlabel + "dh" ), timetableline.Dh );
-            Output->insert( ( stationlabel + "dm" ), timetableline.Dm );
-            Output->insert( ( stationlabel + "tracks" ), timetableline.TrackNo );
+            Output->insert( stationlabel + "name", Bezogonkow( timetableline.StationName ) );
+            Output->insert( stationlabel + "fclt", Bezogonkow( timetableline.StationWare ) );
+            Output->insert( stationlabel + "lctn", timetableline.km );
+            Output->insert( stationlabel + "vmax", timetableline.vmax );
+            Output->insert( stationlabel + "ah", timetableline.Ah );
+            Output->insert( stationlabel + "am", timetableline.Am );
+            Output->insert( stationlabel + "dh", timetableline.Dh );
+            Output->insert( stationlabel + "dm", timetableline.Dm );
+            Output->insert( stationlabel + "tracks", timetableline.TrackNo );
         }
     }
 }

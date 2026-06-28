@@ -446,13 +446,13 @@ void eu07_application::queue_quit(bool direct)
 bool eu07_application::is_server() const
 {
 
-	return (m_network && m_network->servers);
+	return m_network && m_network->servers;
 }
 
 bool eu07_application::is_client() const
 {
 
-	return (m_network && m_network->client);
+	return m_network && m_network->client;
 }
 
 int eu07_application::run()
@@ -644,7 +644,7 @@ bool eu07_application::request(python_taskqueue::task_request const &Task)
 {
 
 	auto const result{m_taskqueue.insert(Task)};
-	if ((false == result) && (Task.input != nullptr))
+	if (false == result && Task.input != nullptr)
 	{
 		// clean up allocated resources since the worker won't
 	}
@@ -908,7 +908,7 @@ GLFWwindow *eu07_application::window(int const Windowindex, bool visible, int wi
 
 	if (Windowindex >= 0)
 	{
-		return (Windowindex < m_windows.size() ? m_windows[Windowindex] : nullptr);
+		return Windowindex < m_windows.size() ? m_windows[Windowindex] : nullptr;
 	}
 	// for index -1 create a new child window
 
@@ -1000,7 +1000,7 @@ void eu07_application::init_console()
 {
 #ifdef _WIN32
 	HWND consoleWnd = ::GetConsoleWindow();
-	const bool hadConsole = (consoleWnd != nullptr);
+	const bool hadConsole = consoleWnd != nullptr;
 
 	if (Global.ShowSystemConsole)
 	{
@@ -1274,7 +1274,7 @@ int eu07_application::init_glfw()
 		Global.bFullScreen = true;
 	}
 
-	auto *mainwindow = window(-1, true, Global.window_size.x, Global.window_size.y, (Global.bFullScreen ? monitor : nullptr), true, false);
+	auto *mainwindow = window(-1, true, Global.window_size.x, Global.window_size.y, Global.bFullScreen ? monitor : nullptr, true, false);
 
 	if (mainwindow == nullptr)
 	{
@@ -1475,7 +1475,7 @@ bool eu07_application::init_network()
 		tmp = std::gmtime(&utc_now);
 		memcpy(&tm_utc, tmp, sizeof(tm));
 
-		int64_t offset = (tm_local.tm_hour * 3600 + tm_local.tm_min * 60 + tm_local.tm_sec) - (tm_utc.tm_hour * 3600 + tm_utc.tm_min * 60 + tm_utc.tm_sec);
+		int64_t offset = tm_local.tm_hour * 3600 + tm_local.tm_min * 60 + tm_local.tm_sec - (tm_utc.tm_hour * 3600 + tm_utc.tm_min * 60 + tm_utc.tm_sec);
 
 		Global.starting_timestamp = utc_now + offset;
 		Global.ready_to_load = true;

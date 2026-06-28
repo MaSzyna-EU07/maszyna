@@ -218,10 +218,7 @@ class TTrain {
     void update_sounds_radio();
     inline
     end cab_to_end( int const End ) const {
-        return (
-            End == 2 ?
-                end::rear :
-                end::front ); }
+        return End == 2 ? end::rear : end::front; }
     inline
     end cab_to_end() const {
         return cab_to_end( iCabn ); }
@@ -926,7 +923,7 @@ private:
     // plays provided sound from position of the radio
 	bool radio_message_played;
     void radio_message( sound_source *Message, int const Channel );
-    inline auto const RadioChannel() const { return ( Dynamic()->Mechanik ? Dynamic()->Mechanik->iRadioChannel : 1 ); }
+    inline auto const RadioChannel() const { return Dynamic()->Mechanik ? Dynamic()->Mechanik->iRadioChannel : 1; }
     inline auto &RadioChannel() { return Dynamic()->Mechanik->iRadioChannel; }
     inline TDynamicObject *Dynamic() { return DynamicObject; };
     inline TDynamicObject const *Dynamic() const { return DynamicObject; };

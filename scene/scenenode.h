@@ -34,9 +34,7 @@ struct lighting_data {
 inline
 bool
 operator==( lighting_data const &Left, lighting_data const &Right ) {
-    return ( ( Left.diffuse  == Right.diffuse )
-          && ( Left.ambient  == Right.ambient )
-          && ( Left.specular == Right.specular ) );
+    return Left.diffuse == Right.diffuse && Left.ambient == Right.ambient && Left.specular == Right.specular;
 }
 
 inline

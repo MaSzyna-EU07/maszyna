@@ -33,7 +33,7 @@ bool TTrackFollower::Init(TTrack *pTrack, TDynamicObject *NewOwner, double fDir)
     SetCurrentTrack(pTrack, 0);
     iEventFlag = 3; // na torze startowym również wykonać eventy 1/2
     iEventallFlag = 3;
-    if ((pCurrentSegment)) // && (pCurrentSegment->GetLength()<fFirstDistance))
+    if (pCurrentSegment) // && (pCurrentSegment->GetLength()<fFirstDistance))
         return false;
     return true;
 }
@@ -51,7 +51,7 @@ TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, int end)
         {
         case tt_Switch: // jeśli zwrotnica, to przekładamy ją, aby uzyskać dobry segment
         {
-            int i = (end ? pCurrentTrack->iNextDirection : pCurrentTrack->iPrevDirection);
+            int i = end ? pCurrentTrack->iNextDirection : pCurrentTrack->iPrevDirection;
             if (i > 0) // jeżeli wjazd z ostrza
                 pTrack->SwitchForced(i >> 1, Owner); // to przełożenie zwrotnicy - rozprucie!
         }
@@ -91,7 +91,7 @@ TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, int end)
             pCurrentTrack->AxleCounter(-1, Owner); // opuszczenie tamtego toru
     }
     pCurrentTrack = pTrack;
-    pCurrentSegment = ( pCurrentTrack != nullptr ? pCurrentTrack->CurrentSegment() : nullptr );
+    pCurrentSegment = pCurrentTrack != nullptr ? pCurrentTrack->CurrentSegment() : nullptr;
     if (!pCurrentTrack)
         Error(Owner->MoverParameters->Name + " at NULL track");
     return pCurrentTrack;
@@ -121,19 +121,19 @@ bool TTrackFollower::Move(double fDistance, bool bPrimary)
 
             if( false == ismoving ) {
                 //McZapkie-140602: wyzwalanie zdarzenia gdy pojazd stoi
-                if( ( Owner->Mechanik != nullptr )
-                 && ( Owner->Mechanik->primary() ) ) {
+                if( Owner->Mechanik != nullptr
+                 && Owner->Mechanik->primary() ) {
                     // tylko dla jednego członu
                     pCurrentTrack->QueueEvents( pCurrentTrack->m_events0, Owner );
                 }
                 pCurrentTrack->QueueEvents( pCurrentTrack->m_events0all, Owner );
             }
-            else if( (fDistance < 0) && ( eventfilter < 0 ) ) {
+            else if( fDistance < 0 && eventfilter < 0 ) {
                 // event1, eventall1
                 if( SetFlag( iEventFlag, -1 ) ) {
                     // zawsze zeruje flagę sprawdzenia, jak mechanik dosiądzie, to się nie wykona
-                    if( ( Owner->Mechanik != nullptr )
-                     && ( Owner->Mechanik->primary() ) ) {
+                    if( Owner->Mechanik != nullptr
+                     && Owner->Mechanik->primary() ) {
                         // tylko dla jednego członu
                         // McZapkie-280503: wyzwalanie event tylko dla pojazdow z obsada
                         pCurrentTrack->QueueEvents( pCurrentTrack->m_events1, Owner );
@@ -144,12 +144,12 @@ bool TTrackFollower::Move(double fDistance, bool bPrimary)
                     pCurrentTrack->QueueEvents( pCurrentTrack->m_events1all, Owner );
                 }
             }
-            else if( ( fDistance > 0 ) && ( eventfilter > 0 ) ) {
+            else if( fDistance > 0 && eventfilter > 0 ) {
                 // event2, eventall2
                 if( SetFlag( iEventFlag, -2 ) ) {
                     // zawsze ustawia flagę sprawdzenia, jak mechanik dosiądzie, to się nie wykona
-                    if( ( Owner->Mechanik != nullptr )
-                     && ( Owner->Mechanik->primary() ) ) {
+                    if( Owner->Mechanik != nullptr
+                     && Owner->Mechanik->primary() ) {
                         // tylko dla jednego członu
                          pCurrentTrack->QueueEvents( pCurrentTrack->m_events2, Owner );
                     }
@@ -181,7 +181,7 @@ bool TTrackFollower::Move(double fDistance, bool bPrimary)
         */
         if (s < 0)
         { // jeśli przekroczenie toru od strony Point1
-            bCanSkip = ( bPrimary && pCurrentTrack->CheckDynamicObject( Owner ) );
+            bCanSkip = bPrimary && pCurrentTrack->CheckDynamicObject(Owner);
             if( bCanSkip ) {
                 // tylko główna oś przenosi pojazd do innego toru
                 // zdejmujemy pojazd z dotychczasowego toru
@@ -217,7 +217,7 @@ bool TTrackFollower::Move(double fDistance, bool bPrimary)
         }
         else if (s > pCurrentSegment->GetLength())
         { // jeśli przekroczenie toru od strony Point2
-            bCanSkip = ( bPrimary && pCurrentTrack->CheckDynamicObject( Owner ) );
+            bCanSkip = bPrimary && pCurrentTrack->CheckDynamicObject(Owner);
             if (bCanSkip) // tylko główna oś przenosi pojazd do innego toru
                 Owner->MyTrack->RemoveDynamicObject(Owner); // zdejmujemy pojazd z dotychczasowego toru
             fDistance = s - pCurrentSegment->GetLength();
@@ -274,7 +274,7 @@ bool TTrackFollower::ComputatePosition()
             vAngles.x = -vAngles.x; // przechyłka jest w przecinwą stronę
             vAngles.y = -vAngles.y; // pochylenie jest w przecinwą stronę
             vAngles.z +=
-                (vAngles.z >= M_PI) ? -M_PI : M_PI; // ale kierunek w planie jest obrócony o 180°
+                vAngles.z >= M_PI ? -M_PI : M_PI; // ale kierunek w planie jest obrócony o 180°
         }
         if (fOffsetH != 0.0)
         { // jeśli przesunięcie względem osi toru, to je doliczyć

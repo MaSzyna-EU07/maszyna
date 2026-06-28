@@ -34,7 +34,7 @@ public:
     inline
     double
         second() const {
-            return ( m_time.wMilliseconds * 0.001 + m_time.wSecond ); }
+            return m_time.wMilliseconds * 0.001 + m_time.wSecond; }
     inline
     int
         year_day() const {

@@ -228,9 +228,9 @@ public:
     // sets activation threshold of self-illumination to specitied value
     void SetSelfIllum( float const Threshold, bool const Includechildren = false, bool const Includesiblings = false );
 	inline float3 Translation1Get() {
-		return fMatrix ? *(fMatrix->TranslationGet()) + v_TransVector : v_TransVector; }
+		return fMatrix ? *fMatrix->TranslationGet() + v_TransVector : v_TransVector; }
 	inline float3 Translation2Get() {
-		return *(fMatrix->TranslationGet()) + Child->Translation1Get(); }
+		return *fMatrix->TranslationGet() + Child->Translation1Get(); }
     material_handle GetMaterial() const {
 		return m_material; }
 	void ParentMatrix(float4x4 *m) const;
@@ -278,11 +278,8 @@ public:
     TModel3d() = default;
     ~TModel3d();
     float bounding_radius() const {
-        return (
-            Root ?
-                Root->m_boundingradius :
-                0.f ); }
-	inline TSubModel * GetSMRoot() { return (Root); };
+        return Root ? Root->m_boundingradius : 0.f; }
+	inline TSubModel * GetSMRoot() { return Root; };
 	TSubModel * GetFromName(std::string const &Name) const;
 	TSubModel * AddToNamed(const char *Name, TSubModel *SubModel);
     nameoffset_sequence const & find_smoke_sources();

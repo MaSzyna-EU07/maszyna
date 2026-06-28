@@ -220,7 +220,7 @@ keyboard_input::recall_bindings() {
                             else {
                                 // replace any existing binding, preserve modifiers
                                 // (protection from cases where there's more than one key listed in the entry)
-                                keycode = keylookup->second | ( keycode & 0xffff0000 );
+                                keycode = keylookup->second | keycode & 0xffff0000;
                             }
                         }
                     }
@@ -272,29 +272,23 @@ keyboard_input::key( int const Key, int const Action ) {
 
     bool modifier( false );
 
-    if( ( Key == GLFW_KEY_LEFT_SHIFT ) || ( Key == GLFW_KEY_RIGHT_SHIFT ) ) {
+    if( Key == GLFW_KEY_LEFT_SHIFT || Key == GLFW_KEY_RIGHT_SHIFT) {
         // update internal state, but don't bother passing these
         input::key_shift =
-            ( Action == GLFW_RELEASE ?
-                false :
-                true );
+            Action == GLFW_RELEASE ? false : true;
         modifier = true;
         // whenever shift key is used it may affect currently pressed movement keys, so check and update these
     }
-    if( ( Key == GLFW_KEY_LEFT_CONTROL ) || ( Key == GLFW_KEY_RIGHT_CONTROL ) ) {
+    if( Key == GLFW_KEY_LEFT_CONTROL || Key == GLFW_KEY_RIGHT_CONTROL) {
         // update internal state, but don't bother passing these
         input::key_ctrl =
-            ( Action == GLFW_RELEASE ?
-                false :
-                true );
+            Action == GLFW_RELEASE ? false : true;
         modifier = true;
     }
-    if( ( Key == GLFW_KEY_LEFT_ALT ) || ( Key == GLFW_KEY_RIGHT_ALT ) ) {
+    if( Key == GLFW_KEY_LEFT_ALT || Key == GLFW_KEY_RIGHT_ALT) {
         // update internal state, but don't bother passing these
         input::key_alt =
-            ( Action == GLFW_RELEASE ?
-                false :
-                true );
+            Action == GLFW_RELEASE ? false : true;
     }
 
     if( Key == -1 ) { return false; }
@@ -310,8 +304,8 @@ keyboard_input::key( int const Key, int const Action ) {
     // include active modifiers for currently pressed key, except if the key is a modifier itself
     auto const key =
         Key
-        | ( modifier ? 0 : ( input::key_shift ? keymodifier::shift   : 0 ) )
-        | ( modifier ? 0 : ( input::key_ctrl  ? keymodifier::control : 0 ) );
+        | ( modifier ? 0 : input::key_shift ? keymodifier::shift : 0 )
+        | ( modifier ? 0 : input::key_ctrl ? keymodifier::control : 0 );
 
     auto const lookup = m_bindings.find( key );
     if( lookup == m_bindings.end() ) {
@@ -323,10 +317,7 @@ keyboard_input::key( int const Key, int const Action ) {
     // as we haven't yet implemented either item id system or multiplayer, the 'local' controlled vehicle and entity have temporary ids of 0
     // TODO: pass correct entity id once the missing systems are in place
 	m_relay.post( lookup->second, 0, 0, Action, 0 );
-    m_command = (
-        Action == GLFW_RELEASE ?
-            user_command::none :
-            lookup->second );
+    m_command = Action == GLFW_RELEASE ? user_command::none : lookup->second;
 
     return true;
 }
@@ -370,12 +361,7 @@ bool
 keyboard_input::is_movement_key( int const Key ) const {
 
     bool const ismovementkey =
-        ( ( Key == m_bindingscache.forward )
-       || ( Key == m_bindingscache.back )
-       || ( Key == m_bindingscache.left )
-       || ( Key == m_bindingscache.right )
-       || ( Key == m_bindingscache.up )
-       || ( Key == m_bindingscache.down ) );
+        Key == m_bindingscache.forward || Key == m_bindingscache.back || Key == m_bindingscache.left || Key == m_bindingscache.right || Key == m_bindingscache.up || Key == m_bindingscache.down;
 
     return ismovementkey;
 }
@@ -385,22 +371,20 @@ keyboard_input::poll() {
 
     glm::vec2 const movementhorizontal {
         // x-axis
-        ( Global.shiftState ? 1.f : (2.0f / 3.0f) ) *
+        ( Global.shiftState ? 1.f : 2.0f / 3.0f ) *
         ( input::keys[ m_bindingscache.left ] != GLFW_RELEASE ? -1.f :
           input::keys[ m_bindingscache.right ] != GLFW_RELEASE ? 1.f :
           0.f ),
         // z-axis
-        ( Global.shiftState ? 1.f : (2.0f / 3.0f) ) *
+        ( Global.shiftState ? 1.f : 2.0f / 3.0f ) *
         ( input::keys[ m_bindingscache.forward ] != GLFW_RELEASE ? 1.f :
           input::keys[ m_bindingscache.back ] != GLFW_RELEASE ?   -1.f :
           0.f ) };
 
-    if( (   movementhorizontal.x != 0.f ||   movementhorizontal.y != 0.f )
-     || ( m_movementhorizontal.x != 0.f || m_movementhorizontal.y != 0.f ) ) {
+    if( movementhorizontal.x != 0.f || movementhorizontal.y != 0.f
+     || m_movementhorizontal.x != 0.f || m_movementhorizontal.y != 0.f ) {
         m_relay.post(
-            ( true == Global.ctrlState ?
-                user_command::movehorizontalfast :
-                user_command::movehorizontal ),
+            true == Global.ctrlState ? user_command::movehorizontalfast : user_command::movehorizontal,
             movementhorizontal.x,
             movementhorizontal.y,
             GLFW_PRESS,
@@ -411,17 +395,15 @@ keyboard_input::poll() {
 
     float const movementvertical {
         // y-axis
-        ( Global.shiftState ? 1.f : (2.0f / 3.0f) ) *
+        ( Global.shiftState ? 1.f : 2.0f / 3.0f ) *
         ( input::keys[ m_bindingscache.up ] != GLFW_RELEASE ?    1.f :
           input::keys[ m_bindingscache.down ] != GLFW_RELEASE ? -1.f :
           0.f ) };
 
-    if( (   movementvertical != 0.f )
-     || ( m_movementvertical != 0.f ) ) {
+    if( movementvertical != 0.f
+     || m_movementvertical != 0.f ) {
         m_relay.post(
-            ( true == Global.ctrlState ?
-                user_command::moveverticalfast :
-                user_command::movevertical ),
+            true == Global.ctrlState ? user_command::moveverticalfast : user_command::movevertical,
             movementvertical,
             0,
             GLFW_PRESS,

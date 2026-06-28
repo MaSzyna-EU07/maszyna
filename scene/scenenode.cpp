@@ -50,9 +50,7 @@ void
 bounding_area::deserialize( std::istream &Input, bool const Preserveradius ) {
 
     center = sn_utils::d_dvec3( Input );
-    radius = ( Preserveradius ?
-        std::max( radius, sn_utils::ld_float32( Input ) ) :
-        sn_utils::ld_float32( Input ) );
+    radius = Preserveradius ? std::max(radius, sn_utils::ld_float32(Input)) : sn_utils::ld_float32(Input);
 }
 
 
@@ -73,9 +71,7 @@ shape_node::shapenode_data::serialize( std::ostream &Output ) const {
     // NOTE: material handle is created dynamically on load
     sn_utils::s_str(
         Output,
-        ( material != null_handle ?
-            GfxRenderer->Material( material )->GetName() :
-            "" ) );
+        material != null_handle ? GfxRenderer->Material(material)->GetName() : "" );
     lighting.serialize( Output );
     // geometry
     sn_utils::s_dvec3( Output, origin );
@@ -152,10 +148,7 @@ shape_node::import( cParser &Input, scene::node_data const &Nodedata ) {
     // import common data
     m_name = Nodedata.name;
     m_data.rangesquared_min = Nodedata.range_min * Nodedata.range_min;
-    m_data.rangesquared_max = (
-        Nodedata.range_max >= 0.0 ?
-            Nodedata.range_max * Nodedata.range_max :
-            std::numeric_limits<double>::max() );
+    m_data.rangesquared_max = Nodedata.range_max >= 0.0 ? Nodedata.range_max * Nodedata.range_max : std::numeric_limits<double>::max();
 
     std::string token = Input.getToken<std::string>();
     if( token == "material" ) {
@@ -201,30 +194,14 @@ shape_node::import( cParser &Input, scene::node_data const &Nodedata ) {
 
     // determine way to proceed from the assigned diffuse texture
     // TBT, TODO: add methods to material manager to access these simpler
-    auto const texturehandle = (
-        m_data.material != null_handle ?
-            GfxRenderer->Material( m_data.material )->GetTexture(0) :
-            null_handle );
-    auto const &texture = (
-        texturehandle ?
-            GfxRenderer->Texture( texturehandle ) :
-            *ITexture::null_texture() ); // dirty workaround for lack of better api
-    bool const clamps = (
-        texturehandle ?
-            contains( texture.get_traits(), 's' ) :
-            false );
-    bool const clampt = (
-        texturehandle ?
-            contains( texture.get_traits(), 't' ) :
-            false );
+    auto const texturehandle = m_data.material != null_handle ? GfxRenderer->Material(m_data.material)->GetTexture(0) : null_handle;
+    auto const &texture = texturehandle ? GfxRenderer->Texture(texturehandle) : *ITexture::null_texture(); // dirty workaround for lack of better api
+    bool const clamps = texturehandle ? contains(texture.get_traits(), 's') : false;
+    bool const clampt = texturehandle ? contains(texture.get_traits(), 't') : false;
 
     // remainder of legacy 'problend' system -- geometry assigned a texture with '@' in its name is treated as translucent, opaque otherwise
     if( texturehandle != null_handle ) {
-        m_data.translucent = (
-            ( ( contains( texture.get_name(), '@' ) )
-           && ( true == texture.get_has_alpha() ) ) ?
-                true :
-                false );
+        m_data.translucent = contains(texture.get_name(), '@') && true == texture.get_has_alpha() ? true : false;
     }
     else {
         m_data.translucent = false;
@@ -237,10 +214,7 @@ shape_node::import( cParser &Input, scene::node_data const &Nodedata ) {
         triangle_fan
     };
 
-    subtype const nodetype = (
-        Nodedata.type == "triangles" ?      triangles :
-        Nodedata.type == "triangle_strip" ? triangle_strip :
-                                            triangle_fan );
+    subtype const nodetype = Nodedata.type == "triangles" ? triangles : Nodedata.type == "triangle_strip" ? triangle_strip : triangle_fan;
     std::size_t vertexcount{ 0 };
     world_vertex vertex, vertex1, vertex2;
     do {
@@ -349,7 +323,7 @@ shape_node::convert( TSubModel const *Submodel ) {
     m_data.lighting.diffuse = Submodel->f4Diffuse;
     m_data.lighting.specular = Submodel->f4Specular;
     m_data.material = Submodel->m_material;
-    m_data.translucent = ( GfxRenderer->Material( m_data.material )->get_or_guess_opacity() == 0.0f );
+    m_data.translucent = GfxRenderer->Material(m_data.material)->get_or_guess_opacity() == 0.0f;
     // NOTE: we set unlimited view range typical for terrain, because we don't expect to convert any other 3d models
     m_data.rangesquared_max = std::numeric_limits<double>::max();
 
@@ -427,8 +401,8 @@ shape_node::convert( TSubModel const *Submodel ) {
 bool
 shape_node::merge( shape_node &Shape ) {
 
-    if( ( m_data.material != Shape.m_data.material )
-     || ( m_data.lighting != Shape.m_data.lighting ) ) {
+    if( m_data.material != Shape.m_data.material
+     || m_data.lighting != Shape.m_data.lighting ) {
         // can't merge nodes with different appearance
         return false;
     }
@@ -563,10 +537,7 @@ lines_node::import( cParser &Input, scene::node_data const &Nodedata ) {
     // import common data
     m_name = Nodedata.name;
     m_data.rangesquared_min = Nodedata.range_min * Nodedata.range_min;
-    m_data.rangesquared_max = (
-        Nodedata.range_max >= 0.0 ?
-            Nodedata.range_max * Nodedata.range_max :
-            std::numeric_limits<double>::max() );
+    m_data.rangesquared_max = Nodedata.range_max >= 0.0 ? Nodedata.range_max * Nodedata.range_max : std::numeric_limits<double>::max();
 
     // material
     Input.getTokens( 3, false );
@@ -588,10 +559,7 @@ lines_node::import( cParser &Input, scene::node_data const &Nodedata ) {
         line_loop
     };
     
-    subtype const nodetype = (
-        Nodedata.type == "lines" ?      lines :
-        Nodedata.type == "line_strip" ? line_strip :
-                                        line_loop );
+    subtype const nodetype = Nodedata.type == "lines" ? lines : Nodedata.type == "line_strip" ? line_strip : line_loop;
     std::size_t vertexcount { 0 };
     world_vertex vertex, vertex0, vertex1;
     std::string token = Input.getToken<std::string>();
@@ -635,8 +603,8 @@ lines_node::import( cParser &Input, scene::node_data const &Nodedata ) {
 
     } while( token != "endline" );
     // add closing line for the loop
-    if( ( nodetype == line_loop )
-     && ( vertexcount > 2 ) ) {
+    if( nodetype == line_loop
+     && vertexcount > 2 ) {
         m_data.vertices.emplace_back( vertex1 );
         m_data.vertices.emplace_back( vertex0 );
     }
@@ -652,8 +620,8 @@ lines_node::import( cParser &Input, scene::node_data const &Nodedata ) {
 bool
 lines_node::merge( lines_node &Lines ) {
 
-    if( ( m_data.line_width != Lines.m_data.line_width )
-     || ( m_data.lighting != Lines.m_data.lighting ) ) {
+    if( m_data.line_width != Lines.m_data.line_width
+     || m_data.lighting != Lines.m_data.lighting ) {
         // can't merge nodes with different appearance
         return false;
     }
@@ -728,10 +696,7 @@ basic_node::basic_node( scene::node_data const &Nodedata ) :
     uuid = UID::random();
     node_type = Nodedata.type;
     m_rangesquaredmin = Nodedata.range_min * Nodedata.range_min;
-    m_rangesquaredmax = (
-        Nodedata.range_max >= 0.0 ?
-            Nodedata.range_max * Nodedata.range_max :
-            std::numeric_limits<double>::max() );
+    m_rangesquaredmax = Nodedata.range_max >= 0.0 ? Nodedata.range_max * Nodedata.range_max : std::numeric_limits<double>::max();
 }
 
 // sends content of the class to provided stream

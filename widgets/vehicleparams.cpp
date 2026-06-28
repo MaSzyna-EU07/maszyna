@@ -142,19 +142,37 @@ void ui::vehicleparams_panel::render_contents()
 	std::vector<text_line> lines;
 	std::array<char, 1024> buffer;
 
-	auto const isdieselenginepowered{(mover.EngineType == TEngineType::DieselElectric) || (mover.EngineType == TEngineType::DieselEngine)};
+	auto const isdieselenginepowered{mover.EngineType == TEngineType::DieselElectric || mover.EngineType == TEngineType::DieselEngine};
 	auto const isdieselinshuntmode{mover.ShuntMode && mover.EngineType == TEngineType::DieselElectric};
 
 	std::snprintf(buffer.data(), buffer.size(), STR_C("Devices: %c%c%c%c%c%c%c%c%c%c%c%c%c%c%s%s\nPower transfers: %.0f@%.0f%s%s%s%.0f@%.0f"),
 	              // devices
-	              (mover.Battery ? 'B' : '.'), (mover.Mains ? 'M' : '.'), (mover.FuseFlag ? '!' : '.'), (mover.Pantographs[end::rear].is_active ? (mover.PantRearVolt > 0.0 ? 'O' : 'o') : '.'),
-	              (mover.Pantographs[end::front].is_active ? (mover.PantFrontVolt > 0.0 ? 'P' : 'p') : '.'), (mover.PantPressLockActive ? '!' : (mover.PantPressSwitchActive ? '*' : '.')),
-	              (mover.WaterPump.is_active ? 'W' : (false == mover.WaterPump.breaker ? '-' : (mover.WaterPump.is_enabled ? 'w' : '.'))),
-	              (true == mover.WaterHeater.is_damaged ? '!' : (mover.WaterHeater.is_active ? 'H' : (false == mover.WaterHeater.breaker ? '-' : (mover.WaterHeater.is_enabled ? 'h' : '.')))),
-	              (mover.FuelPump.is_active ? 'F' : (mover.FuelPump.is_enabled ? 'f' : '.')), (mover.OilPump.is_active ? 'O' : (mover.OilPump.is_enabled ? 'o' : '.')),
-	              (false == mover.ConverterAllowLocal ? '-' : (mover.ConverterAllow ? (mover.ConverterFlag ? 'X' : 'x') : '.')), (mover.ConvOvldFlag ? '!' : '.'),
-	              (mover.CompressorFlag ? 'C' : (false == mover.CompressorAllowLocal ? '-' : ((mover.CompressorAllow || mover.CompressorStart == start_t::automatic) ? 'c' : '.'))),
-	              (mover.CompressorGovernorLock ? '!' : '.'), "", std::string(isdieselenginepowered ? STR(" oil pressure: ") + to_string(mover.OilPump.pressure, 2) : "").c_str(),
+	              mover.Battery ? 'B' : '.', mover.Mains ? 'M' : '.', mover.FuseFlag ? '!' : '.', mover.Pantographs[end::rear].is_active ? (mover.PantRearVolt > 0.0 ? 'O' : 'o') : '.',
+	              mover.Pantographs[end::front].is_active ? (mover.PantFrontVolt > 0.0 ? 'P' : 'p') : '.', mover.PantPressLockActive   ? '!' :
+	              mover.PantPressSwitchActive ? '*' :
+	                                            '.',
+	              mover.WaterPump.is_active        ? 'W' :
+	              false == mover.WaterPump.breaker ? '-' :
+	              mover.WaterPump.is_enabled       ? 'w' :
+	                                                 '.',
+	              true == mover.WaterHeater.is_damaged ? '!' :
+	              mover.WaterHeater.is_active          ? 'H' :
+	              false == mover.WaterHeater.breaker   ? '-' :
+	              mover.WaterHeater.is_enabled         ? 'h' :
+	                                                     '.',
+	              mover.FuelPump.is_active  ? 'F' :
+	              mover.FuelPump.is_enabled ? 'f' :
+	                                          '.', mover.OilPump.is_active  ? 'O' :
+	              mover.OilPump.is_enabled ? 'o' :
+	                                         '.',
+	              false == mover.ConverterAllowLocal ? '-' :
+	              mover.ConverterAllow               ? (mover.ConverterFlag ? 'X' : 'x') :
+	                                                   '.', mover.ConvOvldFlag ? '!' : '.',
+	              mover.CompressorFlag                                                 ? 'C' :
+	              false == mover.CompressorAllowLocal                                  ? '-' :
+	              mover.CompressorAllow || mover.CompressorStart == start_t::automatic ? 'c' :
+	                                                                                     '.',
+	              mover.CompressorGovernorLock ? '!' : '.', "", std::string(isdieselenginepowered ? STR(" oil pressure: ") + to_string(mover.OilPump.pressure, 2) : "").c_str(),
 	              // power transfers
 	              mover.Couplers[end::front].power_high.voltage, mover.Couplers[end::front].power_high.current, std::string(mover.Couplers[end::front].power_high.is_local ? "" : "-").c_str(),
 	              std::string(vehicle.DirectionGet() ? ":<<:" : ":>>:").c_str(), std::string(mover.Couplers[end::rear].power_high.is_local ? "" : "-").c_str(),
@@ -179,7 +197,7 @@ void ui::vehicleparams_panel::render_contents()
 	if (isdieselenginepowered)
 	{
 		std::snprintf(buffer.data(), buffer.size(), STR_C("\nTemperatures:\n engine: %.2f, oil: %.2f, water: %.2f%c%.2f"), mover.dizel_heat.Ts, mover.dizel_heat.To, mover.dizel_heat.temperatura1,
-		              (mover.WaterCircuitsLink ? '-' : '|'), mover.dizel_heat.temperatura2);
+		              mover.WaterCircuitsLink ? '-' : '|', mover.dizel_heat.temperatura2);
 		ImGui::TextUnformatted(buffer.data());
 	}
 
@@ -212,7 +230,7 @@ void ui::vehicleparams_panel::render_contents()
 
 	if (mover.EnginePowerSource.SourceType == TPowerSource::CurrentCollector)
 	{
-		std::snprintf(buffer.data(), buffer.size(), STR_C(" pantograph: %.2f%cMT"), mover.PantPress, (mover.bPantKurek3 ? '-' : '|'));
+		std::snprintf(buffer.data(), buffer.size(), STR_C(" pantograph: %.2f%cMT"), mover.PantPress, mover.bPantKurek3 ? '-' : '|');
 		ImGui::TextUnformatted(buffer.data());
 	}
 
@@ -225,7 +243,7 @@ void ui::vehicleparams_panel::render_contents()
 	                       vehicle.ctOwner ? vehicle.ctOwner->Controlling()->CabActive :
 	                                         1) +
 	                  0.001f,
-	              mover.Fb * 0.001f, mover.Adhesive(mover.RunningTrack.friction), (mover.SlippingWheels ? " (!)" : ""),
+	              mover.Fb * 0.001f, mover.Adhesive(mover.RunningTrack.friction), mover.SlippingWheels ? " (!)" : "",
 	              // acceleration
 	              mover.AccSVBased, mover.AccN + 0.001f, std::string(std::abs(mover.RunningShape.R) > 10000.0 ? "~0" : to_string(mover.RunningShape.R, 0)).c_str(),
 	              // velocity

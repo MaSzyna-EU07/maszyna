@@ -474,7 +474,7 @@ void ui_layer::render_hierarchy(){
 void ui_layer::set_cursor(int const Mode)
 {
 	glfwSetInputMode(m_window, GLFW_CURSOR, Mode);
-	m_cursorvisible = (Mode != GLFW_CURSOR_DISABLED);
+	m_cursorvisible = Mode != GLFW_CURSOR_DISABLED;
 }
 
 void ui_layer::set_progress(std::string const &Text)
@@ -609,7 +609,7 @@ void ui_layer::render_background()
 	float tex_h = (float)tex.get_height();
 
 	// skalowanie "cover" – wypełnia cały ekran, zachowując proporcje
-	float scale_factor = (display_size.x / display_size.y) > (tex_w / tex_h) ? display_size.x / tex_w : display_size.y / tex_h;
+	float scale_factor = display_size.x / display_size.y > tex_w / tex_h ? display_size.x / tex_w : display_size.y / tex_h;
 
 	ImVec2 image_size(tex_w * scale_factor, tex_h * scale_factor);
 

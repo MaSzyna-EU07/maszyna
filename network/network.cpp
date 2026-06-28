@@ -194,7 +194,7 @@ std::tuple<double, double, command_queue::commands_map> network::client::get_nex
 
 	if (counter == 1 && size < MAX_BUFFER_SIZE * 2.0f) {
 		last_target = last_target * TARGET_MIX +
-		        (std::min(TARGET_MIN + jitteriness * JITTERINESS_MULTIPIER, MAX_BUFFER_SIZE)) * (1.0f - TARGET_MIX);
+		        std::min(TARGET_MIN + jitteriness * JITTERINESS_MULTIPIER, MAX_BUFFER_SIZE) * (1.0f - TARGET_MIX);
 		float diff = size - last_target;
 		jitteriness = std::max(jitteriness * JITTERINESS_MIX, std::abs(diff));
 

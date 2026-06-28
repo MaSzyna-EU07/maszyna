@@ -115,20 +115,17 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
         fLength = 0.01; // crude workaround TODO: fix this properly
     }
 
-    fStoop = std::atan2((Point2.y - Point1.y), fLength); // pochylenie toru prostego, żeby nie liczyć wielokrotnie
+    fStoop = std::atan2(Point2.y - Point1.y, fLength); // pochylenie toru prostego, żeby nie liczyć wielokrotnie
 
     fStep = fNewStep;
     // NOTE: optionally replace this part with the commented version, after solving geometry issues with double switches
-    if( ( pOwner->eType == tt_Switch )
-     && ( fStep * ( 3.0 * Global.SplineFidelity ) > fLength ) ) {
+    if( pOwner->eType == tt_Switch
+     && fStep * (3.0 * Global.SplineFidelity) > fLength ) {
         // NOTE: a workaround for too short switches (less than 3 segments) messing up animation/generation of blades
         fStep = fLength / ( 3.0 * Global.SplineFidelity );
     }
 //    iSegCount = static_cast<int>( std::ceil( fLength / fStep ) ); // potrzebne do VBO
-    iSegCount = (
-        pOwner->eType == tt_Switch ?
-            6 * Global.SplineFidelity :
-            static_cast<int>( std::ceil( fLength / fStep ) ) ); // potrzebne do VBO
+    iSegCount = pOwner->eType == tt_Switch ? 6 * Global.SplineFidelity : static_cast<int>(std::ceil(fLength / fStep)); // potrzebne do VBO
 
     fStep = fLength / iSegCount; // update step to equalize size of individual pieces
 
@@ -170,7 +167,7 @@ double TSegment::RombergIntegral(double const fA, double const fB) const
     double ms_apfRom[2][ms_iOrder];
 
     ms_apfRom[0][0] =
-        0.5 * fH * ((glm::length(GetFirstDerivative(fA))) + glm::length(GetFirstDerivative(fB)));
+        0.5 * fH * (glm::length(GetFirstDerivative(fA)) + glm::length(GetFirstDerivative(fB)));
     for (int i0 = 2, iP0 = 1; i0 <= ms_iOrder; i0++, iP0 *= 2, fH *= 0.5)
     {
         // approximations via the trapezoid rule
@@ -249,14 +246,14 @@ double TSegment::ComputeLength() const // McZapkie-150503: dlugosc miedzy punkta
         l += t; // zwiększenie wyliczanej długości
         last = tmp;
     }
-    return (l);
+    return l;
 }
 
 // finds point on segment closest to specified point in 3d space. returns: point on segment as value in range 0-1
 double
 TSegment::find_nearest_point( glm::dvec3 const &Point ) const {
 
-    if( ( false == bCurve ) || ( iSegCount == 1 ) ) {
+    if( false == bCurve || iSegCount == 1 ) {
         // for straight track just treat it as a single segment
         return
             nearest_segment_point(
@@ -300,22 +297,22 @@ glm::dvec3 TSegment::GetDirection(double const fDistance) const
 { // takie toporne liczenie pochodnej dla podanego dystansu od Point1
     double t1 = GetTFromS(fDistance - fDirectionOffset);
     if (t1 <= 0.0)
-        return (CPointOut - Point1); // na zewnątrz jako prosta
+        return CPointOut - Point1; // na zewnątrz jako prosta
     double t2 = GetTFromS(fDistance + fDirectionOffset);
     if (t2 >= 1.0)
-        return (Point1 - CPointIn); // na zewnątrz jako prosta
-    return (FastGetPoint(t2) - FastGetPoint(t1));
+        return Point1 - CPointIn; // na zewnątrz jako prosta
+    return FastGetPoint(t2) - FastGetPoint(t1);
 }
 
 glm::dvec3 TSegment::FastGetDirection(double fDistance, double fOffset)
 { // takie toporne liczenie pochodnej dla parametru 0.0÷1.0
     double t1 = fDistance - fOffset;
     if (t1 <= 0.0)
-        return (CPointOut - Point1); // wektor na początku jest stały
+        return CPointOut - Point1; // wektor na początku jest stały
     double t2 = fDistance + fOffset;
     if (t2 >= 1.0)
-        return (Point2 - CPointIn); // wektor na końcu jest stały
-    return (FastGetPoint(t2) - FastGetPoint(t1));
+        return Point2 - CPointIn; // wektor na końcu jest stały
+    return FastGetPoint(t2) - FastGetPoint(t1);
 }
 /*
 Math3D::vector3 TSegment::GetPoint(double const fDistance) const
@@ -366,9 +363,7 @@ void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::
 glm::dvec3 TSegment::FastGetPoint(double const t) const
 {
     // return (bCurve?std::lerp(t,Point1,CPointOut,CPointIn,Point2):((1.0-t)*Point1+(t)*Point2));
-    return (
-        ( ( true == bCurve ) || ( iSegCount != 1 ) ) ?
-            RaInterpolate( t ) : glm::mix(Point1, Point2, t));
+    return true == bCurve || iSegCount != 1 ? RaInterpolate(t) : glm::mix(Point1, Point2, t);
 }
 
 bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, const gfx::vertex_array &ShapePoints, bool const Transition, double fTextureLength, double Texturescale, int iSkip, int iEnd, std::pair<float, float> fOffsetX, glm::vec3 **p, bool bRender)
@@ -424,7 +419,7 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
 
         jmm2 = 1.f - m2; // nowa pozycja
         if( i == iEnd ) { // gdy przekroczyliśmy koniec - stąd dziury w torach...
-            step -= ( s - fEnd ); // jeszcze do wyliczenia mapowania potrzebny
+            step -= s - fEnd; // jeszcze do wyliczenia mapowania potrzebny
             s = fEnd;
             m2 = 1.f;
             jmm2 = 0.f;
@@ -465,7 +460,7 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                     if( *p )
                         if( !j ) // to dla pierwszego punktu
                         {
-                            *( *p ) = pt;
+                            **p = pt;
                             ( *p )++;
                         } // zapamiętanie brzegu jezdni
                 // dla trapezu drugi koniec ma inne współrzędne
@@ -484,7 +479,7 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                     if( *p )
                         if( !j ) // to dla pierwszego punktu
                             if( i == iSegCount ) {
-                                *( *p ) = pt;
+                                **p = pt;
                                 ( *p )++;
                             } // zapamiętanie brzegu jezdni
             }

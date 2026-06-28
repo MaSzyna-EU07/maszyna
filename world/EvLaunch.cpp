@@ -46,7 +46,7 @@ int vk_to_glfw_key( int const Keycode ) {
 		ErrorLog("unknown key: " + std::to_string(Keycode));
 	}
 
-	return ((int)modifier << 8) | key;
+	return (int)modifier << 8 | key;
 }
 
 bool TEventLauncher::Load(cParser *parser)
@@ -71,11 +71,9 @@ bool TEventLauncher::Load(cParser *parser)
                 { "radio_call3", radio_message::call3 }
             };
             auto lookup = messages.find( token );
-            iKey = (
-                lookup != messages.end() ?
-                    lookup->second :
-                    // a jak więcej, to jakby numer klawisza jest
-                    vk_to_glfw_key( stol_def( token, 0 ) ) );
+            iKey = lookup != messages.end() ? lookup->second :
+			                                  // a jak więcej, to jakby numer klawisza jest
+			                                  vk_to_glfw_key(stol_def(token, 0));
         }
     }
     parser->getTokens();
@@ -86,7 +84,7 @@ bool TEventLauncher::Load(cParser *parser)
     parser->getTokens();
     *parser >> token;
     asEvent2Name = token; // drugi event
-    if ((asEvent2Name == "end") || (asEvent2Name == "condition") || (asEvent2Name == "traintriggered"))
+    if (asEvent2Name == "end" || asEvent2Name == "condition" || asEvent2Name == "traintriggered")
     { // drugiego eventu może nie być, bo są z tym problemy, ale ciii...
 		token = asEvent2Name; // rozpoznane słowo idzie do dalszego przetwarzania
         asEvent2Name = "none"; // a drugiego eventu nie ma
@@ -143,7 +141,7 @@ bool TEventLauncher::Load(cParser *parser)
         auto const timeoffset{ static_cast<int>( Global.ScenarioTimeOffset * 60 ) };
         if( timeoffset != 0 ) {
             auto const adjustedtime{ clamp_circular( iHour * 60 + iMinute + timeoffset, 24 * 60 ) };
-            iHour = ( adjustedtime / 60 ) % 24;
+            iHour = adjustedtime / 60 % 24;
             iMinute = adjustedtime % 60;
         }
 
@@ -217,8 +215,8 @@ bool TEventLauncher::check_conditions() {
 
     auto bCond { true };
 
-    if( ( iCheckMask != 0 )
-     && ( MemCell != nullptr ) ) {
+    if( iCheckMask != 0
+     && MemCell != nullptr ) {
         // sprawdzanie warunku na komórce pamięci
         bCond = MemCell->Compare( szText, fVal1, fVal2, iCheckMask );
     }
@@ -229,15 +227,12 @@ bool TEventLauncher::check_conditions() {
 // sprawdzenie, czy jest globalnym wyzwalaczem czasu
 bool TEventLauncher::IsGlobal() const {
 
-    return ( ( DeltaTime == 0 )
-          && ( iHour >= 0 )
-          && ( iMinute >= 0 )
-          && ( dRadius < 0.0 ) ); // bez ograniczenia zasięgu
+    return DeltaTime == 0 && iHour >= 0 && iMinute >= 0 && dRadius < 0.0; // bez ograniczenia zasięgu
 }
 
 bool TEventLauncher::IsRadioActivated() const {
 
-    return ( iKey < 0 );
+    return iKey < 0;
 }
 
 // radius() subclass details, calculates node's bounding radius
@@ -293,8 +288,8 @@ TEventLauncher::export_as_text_( std::ostream &Output ) const {
     }
     else {
         // single activation at specified time
-        if( ( iHour < 0 )
-         && ( iMinute < 0 ) ) {
+        if( iHour < 0
+         && iMinute < 0 ) {
             Output << DeltaTime << ' ';
         }
         else {
@@ -302,7 +297,7 @@ TEventLauncher::export_as_text_( std::ostream &Output ) const {
             auto const timeoffset{ static_cast<int>( Global.ScenarioTimeOffset * 60 ) };
             auto const adjustedtime{ clamp_circular( iHour * 60 + iMinute - timeoffset, 24 * 60 ) };
             Output
-                << ( adjustedtime / 60 ) % 24
+                << adjustedtime / 60 % 24
                 << ( adjustedtime % 60 )
                 << ' ';
         }

@@ -61,28 +61,25 @@ world_environment::compute_season( int const Yearday ) {
 void
 world_environment::compute_weather() {
 
-    Global.Weather = (
-        Global.Overcast <= 0.10 ? "clear:" :
-        Global.Overcast <= 0.50 ? "scattered:" :
-        Global.Overcast <= 0.90 ? "broken:" :
-        Global.Overcast <= 1.00 ? "overcast:" :
-        
-            (Global.AirTemperature > 1 ? "rain:" :
-            "snow:" ) );
+    Global.Weather = Global.Overcast <= 0.10 ? "clear:" :
+	                 Global.Overcast <= 0.50 ? "scattered:" :
+	                 Global.Overcast <= 0.90 ? "broken:" :
+	                 Global.Overcast <= 1.00 ? "overcast:" :
 
-    Global.fTurbidity = (
-        Global.Overcast <= 0.10 ? 3 :
-        Global.Overcast <= 0.20 ? 4 :
-        Global.Overcast <= 0.30 ? 5 :
-        Global.Overcast <= 0.40 ? 5 :
-        Global.Overcast <= 0.50 ? 5 :
-        Global.Overcast <= 0.60 ? 5 :
-        Global.Overcast <= 0.70 ? 6 :
-        Global.Overcast <= 0.80 ? 7 :
-        Global.Overcast <= 0.90 ? 8 :
-        Global.Overcast > 0.90 ? 9 :
-        9
-        );
+	                 Global.AirTemperature > 1 ? "rain:" :
+	                                             "snow:";
+
+    Global.fTurbidity = Global.Overcast <= 0.10 ? 3 :
+	                    Global.Overcast <= 0.20 ? 4 :
+	                    Global.Overcast <= 0.30 ? 5 :
+	                    Global.Overcast <= 0.40 ? 5 :
+	                    Global.Overcast <= 0.50 ? 5 :
+	                    Global.Overcast <= 0.60 ? 5 :
+	                    Global.Overcast <= 0.70 ? 6 :
+	                    Global.Overcast <= 0.80 ? 7 :
+	                    Global.Overcast <= 0.90 ? 8 :
+	                    Global.Overcast > 0.90  ? 9 :
+	                                              9;
 }
 
 void
@@ -96,9 +93,7 @@ world_environment::init() {
     {
         auto const rainsoundoverride { simulation::Sound_overrides.find( "weather.rainsound:" ) };
         m_rainsound.deserialize(
-            ( rainsoundoverride != simulation::Sound_overrides.end() ?
-                rainsoundoverride->second :
-                "rain-sound-loop" ),
+            rainsoundoverride != simulation::Sound_overrides.end() ? rainsoundoverride->second : "rain-sound-loop",
             sound_type::single );
     }
     m_wind = basic_wind{
@@ -135,7 +130,7 @@ world_environment::update() {
     float keylightintensity;
     glm::vec3 keylightcolor;
 	Global.SunAngle = m_sun.getAngle();
-	if ((moonlightlevel > sunlightlevel) && (Global.SunAngle <(-20)))
+	if (moonlightlevel > sunlightlevel && Global.SunAngle < -20)
 	{
         // rare situations when the moon is brighter than the sun, typically at night
         Global.SunAngle = m_moon.getAngle();
@@ -165,7 +160,7 @@ world_environment::update() {
     auto const skydomecolour = m_skydome.GetAverageColor();
     auto const skydomehsv = colors::RGBtoHSV( skydomecolour );
     // sun strength is reduced by overcast level
-    keylightintensity *= ( 1.0f - std::min( 1.f, Global.Overcast ) * 0.65f );
+    keylightintensity *= 1.0f - std::min(1.f, Global.Overcast) * 0.65f;
 
     // intensity combines intensity of the sun and the light reflected by the sky dome
     // it'd be more technically correct to have just the intensity of the sun here,
@@ -180,7 +175,7 @@ world_environment::update() {
 
     // tonal impact of skydome color is inversely proportional to how high the sun is above the horizon
     // (this is pure conjecture, aimed more to 'look right' than be accurate)
-    float const ambienttone = std::clamp( 1.0f - ( Global.SunAngle / 90.0f ), 0.0f, 1.0f );
+    float const ambienttone = std::clamp( 1.0f - Global.SunAngle / 90.0f, 0.0f, 1.0f );
     float const ambientintensitynightfactor = 1.f - 0.75f * std::clamp( -m_sun.getAngle(), 0.0f, 18.0f ) / 18.0f;
     Global.DayLight.ambient[ 0 ] = std::lerp( skydomehsv.z, skydomecolour.r, ambienttone ) * ambientintensitynightfactor;
     Global.DayLight.ambient[ 1 ] = std::lerp( skydomehsv.z, skydomecolour.g, ambienttone ) * ambientintensitynightfactor;
@@ -190,23 +185,17 @@ world_environment::update() {
 
     // update the fog. setting it to match the average colour of the sky dome is cheap
     // but quite effective way to make the distant items blend with background better
-    Global.FogColor = ((m_skydome.GetAverageHorizonColor()) * keylightcolor) *
+    Global.FogColor = m_skydome.GetAverageHorizonColor() * keylightcolor *
 	                  std::clamp((float)Global.fLuminance, 0.f, 1.f);
 	
 
     // weather-related simulation factors
-    Global.FrictionWeatherFactor = (
-        Global.Weather == "rain:" ? 0.85f :
-        Global.Weather == "snow:" ? 0.75f :
-        1.0f );
+    Global.FrictionWeatherFactor = Global.Weather == "rain:" ? 0.85f : Global.Weather == "snow:" ? 0.75f : 1.0f;
 
-    Global.Period = (
-        m_sun.getAngle() > -12.0f ?
-            "day:" :
-            "night:" );
+    Global.Period = m_sun.getAngle() > -12.0f ? "day:" : "night:";
 
-    if( ( true == ( FreeFlyModeFlag || Global.CabWindowOpen ) )
-     && ( Global.Weather == "rain:" ) ) {
+    if( true == (FreeFlyModeFlag || Global.CabWindowOpen)
+     && Global.Weather == "rain:" ) {
         if( m_rainsound.is_combined() ) {
             m_rainsound.pitch( Global.Overcast - 1.0 );
         }

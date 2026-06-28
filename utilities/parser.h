@@ -60,7 +60,7 @@ class cParser //: public std::stringstream
     inline
     bool
         ok() {
-            return ( !mStream->fail() ); };
+            return !mStream->fail(); };
     cParser &
         autoclear( bool const Autoclear );
     inline
@@ -77,10 +77,7 @@ class cParser //: public std::stringstream
     inline
     std::string
         peek() const {
-            return (
-                false == tokens.empty() ?
-                    tokens.front() :
-                    "" ); }
+            return false == tokens.empty() ? tokens.front() : ""; }
 	// inject string as internal include
 	void injectString(const std::string &str);
 

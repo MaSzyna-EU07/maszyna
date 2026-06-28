@@ -112,7 +112,7 @@ bool driver_ui::on_key(int const Key, int const Action)
 	case GLFW_KEY_F12:
 	{ // ui mode selectors
 
-		if ((true == Global.ctrlState) || (true == Global.shiftState))
+		if (true == Global.ctrlState || true == Global.shiftState)
 		{
 			// only react to keys without modifiers
 			return false;
@@ -143,11 +143,11 @@ bool driver_ui::on_key(int const Key, int const Action)
 	case GLFW_KEY_F1:
 	{
 		// basic consist info
-		auto state = ((m_aidpanel.is_open == false) ? 0 : (m_aidpanel.is_expanded == false) ? 1 : 2);
+		auto state = m_aidpanel.is_open == false ? 0 : m_aidpanel.is_expanded == false ? 1 : 2;
 		state = clamp_circular(++state, 3);
 
-		m_aidpanel.is_open = (state > 0);
-		m_aidpanel.is_expanded = (state > 1);
+		m_aidpanel.is_open = state > 0;
+		m_aidpanel.is_expanded = state > 1;
 
 		return true;
 	}
@@ -155,11 +155,11 @@ bool driver_ui::on_key(int const Key, int const Action)
 	case GLFW_KEY_F2:
 	{
 		// timetable
-		auto state = ((m_timetablepanel.is_open == false) ? 0 : (m_timetablepanel.is_expanded == false) ? 1 : 2);
+		auto state = m_timetablepanel.is_open == false ? 0 : m_timetablepanel.is_expanded == false ? 1 : 2;
 		state = clamp_circular(++state, 3);
 
-		m_timetablepanel.is_open = (state > 0);
-		m_timetablepanel.is_expanded = (state > 1);
+		m_timetablepanel.is_open = state > 0;
+		m_timetablepanel.is_expanded = state > 1;
 
 		return true;
 	}
@@ -209,8 +209,8 @@ void driver_ui::update()
 {
 
 	auto const pausemask{1 | 2};
-	auto ispaused{(false == DebugModeFlag) && ((Global.iPause & pausemask) != 0)};
-	if ((ispaused != m_paused) && (false == Global.ControlPicking))
+	auto ispaused{false == DebugModeFlag && (Global.iPause & pausemask) != 0};
+	if (ispaused != m_paused && false == Global.ControlPicking)
 	{
 		set_cursor(ispaused);
 	}
@@ -252,7 +252,7 @@ void driver_ui::render_()
 	ImGui::SetNextWindowSize(ImVec2(-1, -1));
 	if (ImGui::BeginPopupModal(popupheader, nullptr, 0))
 	{
-		if ((ImGui::Button(STR_C("Resume"), ImVec2(150, 0))) || (ImGui::IsKeyReleased(ImGui::GetKeyIndex(ImGuiKey_Escape))))
+		if (ImGui::Button(STR_C("Resume"), ImVec2(150, 0)) || ImGui::IsKeyReleased(ImGui::GetKeyIndex(ImGuiKey_Escape)))
 		{
 			m_relay.post(user_command::pausetoggle, 0.0, 0.0, GLFW_RELEASE, 0);
 		}

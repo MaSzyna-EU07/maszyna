@@ -27,9 +27,7 @@ const char* uart_baudrates_list[] = {
     "2000000"
 };
 
-const size_t uart_baudrates_list_num = (
-        sizeof(uart_baudrates_list)/sizeof(uart_baudrates_list[0])
-    );
+const size_t uart_baudrates_list_num = sizeof(uart_baudrates_list) / sizeof(uart_baudrates_list[0]);
 
 void uart_status::reset_stats() {
     packets_sent = 0;
@@ -423,8 +421,8 @@ void uart_input::poll()
             auto const byte { std::get<std::size_t>( entry ) / 8 };
             auto const bit { std::get<std::size_t>( entry ) % 8 };
 
-            bool const state { ( ( buffer[ byte ] & ( 1 << bit ) ) != 0 ) };
-            bool const changed { ( ( ( old_packet[ byte ] & ( 1 << bit ) ) != 0 ) != state ) };
+            bool const state { ( ( buffer[ byte ] & 1 << bit ) != 0 ) };
+            bool const changed { ( (old_packet[byte] & 1 << bit) != 0 != state ) };
 
             if( false == changed ) { continue; }
 
@@ -432,16 +430,12 @@ void uart_input::poll()
             auto const action { (
                 type != input_type_t::impulse ?
                     GLFW_PRESS :
-                    ( state ?
-                        GLFW_PRESS :
-                        GLFW_RELEASE ) ) };
+                    state ? GLFW_PRESS : GLFW_RELEASE) };
 
             auto const command { (
                 type != input_type_t::toggle ?
                     std::get<2>( entry ) :
-                    ( state ?
-                        std::get<2>( entry ) :
-                        std::get<3>( entry ) ) ) };
+                    state ? std::get<2>(entry) : std::get<3>(entry) ) };
 
             // TODO: pass correct entity id once the missing systems are in place
 			relay.post( command, 0, 0, action, 0 );
@@ -461,7 +455,7 @@ void uart_input::poll()
 			}
 			else {
 				auto desiredpercent{ buffer[6] * 0.01 };
-				auto desiredposition{ desiredpercent > 0.01 ? 1 + ((simulation::Train->Occupied()->MainCtrlPosNo - 1) * desiredpercent) : buffer[6] };
+				auto desiredposition{ desiredpercent > 0.01 ? 1 + (simulation::Train->Occupied()->MainCtrlPosNo - 1) * desiredpercent : buffer[6] };
 				relay.post(
 					user_command::mastercontrollerset,
 					desiredposition,
@@ -484,7 +478,7 @@ void uart_input::poll()
         }
         if( true == conf.trainenable ) {
             // train brake
-            double const position { (float)( ( (uint16_t)buffer[ 8 ] | ( (uint16_t)buffer[ 9 ] << 8 ) ) - conf.mainbrakemin ) / ( conf.mainbrakemax - conf.mainbrakemin ) };
+            double const position { (float)( ( (uint16_t)buffer[ 8 ] | (uint16_t)buffer[9] << 8 ) - conf.mainbrakemin ) / ( conf.mainbrakemax - conf.mainbrakemin ) };
             relay.post(
                 user_command::trainbrakeset,
                 position,
@@ -495,7 +489,7 @@ void uart_input::poll()
         }
         if( true == conf.localenable ) {
             // independent brake
-            double const position { (float)( ( (uint16_t)buffer[ 10 ] | ( (uint16_t)buffer[ 11 ] << 8 ) ) - conf.localbrakemin ) / ( conf.localbrakemax - conf.localbrakemin ) };
+            double const position { (float)( ( (uint16_t)buffer[ 10 ] | (uint16_t)buffer[11] << 8 ) - conf.localbrakemin ) / ( conf.localbrakemax - conf.localbrakemin ) };
             relay.post(
                 user_command::independentbrakeset,
                 position,
@@ -538,7 +532,7 @@ void uart_input::poll()
         auto const trainstate = t->get_state();
 
 		SYSTEMTIME time = simulation::Time.data();
-		uint16_t tacho = Global.iPause ? 0 : (trainstate.velocity * conf.tachoscale);
+		uint16_t tacho = Global.iPause ? 0 : trainstate.velocity * conf.tachoscale;
 	    uint16_t tank_press = (uint16_t)std::min(conf.tankuart, trainstate.reservoir_pressure * 0.1f / conf.tankmax * conf.tankuart);
 	    uint16_t pipe_press = (uint16_t)std::min(conf.pipeuart, trainstate.pipe_pressure * 0.1f / conf.pipemax * conf.pipeuart);
 	    uint16_t brake_press = (uint16_t)std::min(conf.brakeuart, trainstate.brake_pressure * 0.1f / conf.brakemax * conf.brakeuart);
@@ -655,5 +649,5 @@ void uart_input::poll()
 }
 
 bool uart_input::is_connected() {
-    return (port != nullptr);
+    return port != nullptr;
 }

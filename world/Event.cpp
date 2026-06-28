@@ -164,7 +164,7 @@ basic_event::event_conditions::test() const {
                     "[*]" )
                 + " - ";
 
-            comparisonlog += ( comparisonresult ? "Pass" : "Fail" );
+            comparisonlog += comparisonresult ? "Pass" : "Fail";
 
             WriteLog( comparisonlog );
 
@@ -182,9 +182,9 @@ basic_event::event_conditions::deserialize( cParser &Input ) {
     // przetwarzanie warunków, wspólne dla Multiple i UpdateValues
 
     std::string token;
-    while( ( true == Input.getTokens() )
-        && ( false == ( token = Input.peek() ).empty() )
-        && ( false == basic_event::is_keyword( token ) ) ) {
+    while( true == Input.getTokens()
+        && false == (token = Input.peek()).empty()
+        && false == basic_event::is_keyword(token) ) {
 
         if( token == "trackoccupied" ) {
             flags |= flags::track_busy;
@@ -192,7 +192,7 @@ basic_event::event_conditions::deserialize( cParser &Input ) {
         else if( token == "trackfree" ) {
             flags |= flags::track_free;
         }
-        else if( ( token == "propability" ) || ( token == "probability" )) { //remove propability in few years after changing old scenery scripts 01.2021
+        else if( token == "propability" || token == "probability") { //remove propability in few years after changing old scenery scripts 01.2021
             flags |= flags::probability;
             Input.getTokens();
             Input >> probability;
@@ -304,8 +304,8 @@ basic_event::deserialize( cParser &Input, scene::scratch_data &Scratchpad ) {
 
     deserialize_( Input, Scratchpad );
     // subclass method is expected to leave next token past its own data preloaded on its exit
-    while( ( false == ( token = Input.peek() ).empty() )
-        && ( token != "endevent" ) ) {
+    while( false == (token = Input.peek()).empty()
+        && token != "endevent" ) {
 
         if( token == "randomdelay" ) { // losowe opóźnienie
             Input.getTokens();
@@ -335,7 +335,7 @@ basic_event::deserialize_targets( std::string const &Input ) {
 void
 basic_event::run() {
 
-    WriteLog( "EVENT LAUNCHED" + ( m_activator ? ( " by " + m_activator->asName ) : "" ) + ": " + m_name );
+    WriteLog( "EVENT LAUNCHED" + ( m_activator ? " by " + m_activator->asName : "" ) + ": " + m_name );
     run_();
 }
 
@@ -442,9 +442,9 @@ basic_event::input_location() const {
 bool
 basic_event::is_keyword( std::string const &Token ) {
     // TODO: convert to array lookup if keyword list gets longer
-    return ( Token == "endevent" )
-        || ( Token == "randomdelay" )
-        || ( Token == "departuredelay" );
+    return Token == "endevent"
+        || Token == "randomdelay"
+        || Token == "departuredelay";
 }
 
 
@@ -476,10 +476,7 @@ updatevalues_event::init() {
 std::string
 updatevalues_event::type() const {
 
-    return (
-        ( m_input.flags & flags::mode_add ) == 0 ?
-            "updatevalues" :
-            "addvalues" );
+    return (m_input.flags & flags::mode_add) == 0 ? "updatevalues" : "addvalues";
 }
 
 // deserialize() subclass details
@@ -504,8 +501,8 @@ updatevalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpa
     Input.getTokens();
     // optional blocks
     std::string token;
-    while( ( false == ( token = Input.peek() ).empty() )
-        && ( false == is_keyword( token ) ) ) {
+    while( false == (token = Input.peek()).empty()
+        && false == is_keyword(token) ) {
 
         if( token == "condition" ) {
             m_conditions.deserialize( Input );
@@ -521,10 +518,10 @@ updatevalues_event::run_() {
 
     if( false == m_conditions.test() ) { return; }
 
-    WriteLog( "Type: " + std::string( ( m_input.flags & flags::mode_add ) ? "AddValues" : "UpdateValues" ) + " & Track command - ["
-        + ( ( m_input.flags & flags::text ) ? m_input.data_text : "X" ) + "] ["
-        + ( ( m_input.flags & flags::value1 ) ? to_string( m_input.data_value_1, 2 ) : "X" ) + "] ["
-        + ( ( m_input.flags & flags::value2 ) ? to_string( m_input.data_value_2, 2 ) : "X" ) + "]" );
+    WriteLog( "Type: " + std::string( m_input.flags & flags::mode_add ? "AddValues" : "UpdateValues" ) + " & Track command - ["
+        + ( m_input.flags & flags::text ? m_input.data_text : "X" ) + "] ["
+        + ( m_input.flags & flags::value1 ? to_string( m_input.data_value_1, 2 ) : "X" ) + "] ["
+        + ( m_input.flags & flags::value2 ? to_string( m_input.data_value_2, 2 ) : "X" ) + "]" );
     for( auto &target : m_targets ) {
         auto *targetcell { static_cast<TMemCell *>( std::get<scene::basic_node *>( target ) ) };
         if( targetcell == nullptr ) { continue; }
@@ -566,7 +563,7 @@ updatevalues_event::export_as_text_( std::ostream &Output ) const {
 bool
 updatevalues_event::is_instant() const {
 
-    return ( ( ( m_input.flags & flags::mode_add ) != 0 ) && ( m_delay == 0.0 ) );
+    return (m_input.flags & flags::mode_add) != 0 && m_delay == 0.0;
 }
 
 
@@ -625,7 +622,7 @@ getvalues_event::run_() {
 
     cell->PutCommand(
         m_activator->Mechanik,
-        &( cell->location() ) );
+        &cell->location() );
 
     // potwierdzenie wykonania dla serwera (odczyt semafora już tak nie działa)
     if( Global.iMultiplayer ) {
@@ -670,7 +667,7 @@ double
 getvalues_event::input_value( int Index ) const {
 
     Index &= 1; // tylko 1 albo 2 jest prawidłowy
-    return ( Index == 1 ? m_input.data_cell()->Value1() : m_input.data_cell()->Value2() );
+    return Index == 1 ? m_input.data_cell()->Value1() : m_input.data_cell()->Value2();
 }
 
 glm::dvec3
@@ -792,8 +789,8 @@ putvalues_event::run_() {
             m_input.data_value_2,
             loc );
     }
-    else if( ( m_activator->ctOwner )
-          && ( is_command_for_owner( m_input ) ) ) {
+    else if( m_activator->ctOwner
+          && is_command_for_owner(m_input) ) {
         // send the command to consist owner,
         // we're acting on presumption there's hardly ever need to issue command to unmanned vehicle
         // and the intended recipient moved between vehicles after the event was queued
@@ -859,7 +856,7 @@ double
 putvalues_event::input_value( int Index ) const {
 
     Index &= 1; // tylko 1 albo 2 jest prawidłowy
-    return ( Index == 1 ? m_input.data_value_1 : m_input.data_value_2 );
+    return Index == 1 ? m_input.data_value_1 : m_input.data_value_2;
 }
 
 glm::dvec3
@@ -894,14 +891,14 @@ copyvalues_event::type() const {
 void
 copyvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
 
-    m_input.flags = ( flags::text | flags::value1 | flags::value2 ); // normalnie trzy
+    m_input.flags = flags::text | flags::value1 | flags::value2; // normalnie trzy
 
     std::string token;
     int paramidx { 0 };
 
-    while( ( true == Input.getTokens() )
-        && ( false == ( token = Input.peek() ).empty() )
-        && ( false == is_keyword( token ) ) ) {
+    while( true == Input.getTokens()
+        && false == (token = Input.peek()).empty()
+        && false == is_keyword(token) ) {
 
         Input >> token;
         switch( ++paramidx ) {
@@ -910,7 +907,7 @@ copyvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad 
                 break;
             }
             case 2: { // maska wartości
-                m_input.flags = stol_def( token, ( flags::text | flags::value1 | flags::value2 ) );
+                m_input.flags = stol_def( token, flags::text | flags::value1 | flags::value2 );
                 break;
             }
             default: {
@@ -931,9 +928,9 @@ copyvalues_event::run_() {
     m_input.data_value_2 = datasource->Value2();
 
     WriteLog( "Type: CopyValues - ["
-        + ( ( m_input.flags & flags::text ) ? m_input.data_text : "X" ) + "] ["
-        + ( ( m_input.flags & flags::value1 ) ? to_string( m_input.data_value_1, 2 ) : "X" ) + "] ["
-        + ( ( m_input.flags & flags::value2 ) ? to_string( m_input.data_value_2, 2 ) : "X" ) + "]" );
+        + ( m_input.flags & flags::text ? m_input.data_text : "X" ) + "] ["
+        + ( m_input.flags & flags::value1 ? to_string( m_input.data_value_1, 2 ) : "X" ) + "] ["
+        + ( m_input.flags & flags::value2 ? to_string( m_input.data_value_2, 2 ) : "X" ) + "]" );
     // TODO: dump status of target cells after the operation
     for( auto &target : m_targets ) {
         auto *targetcell { static_cast<TMemCell *>( std::get<scene::basic_node *>( target ) ) };
@@ -991,19 +988,19 @@ whois_event::type() const {
 void
 whois_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
 
-    m_input.flags = ( flags::text | flags::value1 | flags::value2 ); // normalnie trzy
+    m_input.flags = flags::text | flags::value1 | flags::value2; // normalnie trzy
 
     std::string token;
     int paramidx { 0 };
 
-    while( ( true == Input.getTokens() )
-        && ( false == ( token = Input.peek() ).empty() )
-        && ( false == is_keyword( token ) ) ) {
+    while( true == Input.getTokens()
+        && false == (token = Input.peek()).empty()
+        && false == is_keyword(token) ) {
 
         Input >> token;
         switch( ++paramidx ) {
             case 1: { // maska wartości
-                m_input.flags = stol_def( token, ( flags::text | flags::value1 | flags::value2 ) );
+                m_input.flags = stol_def( token, flags::text | flags::value1 | flags::value2 );
                 break;
             }
             default: {
@@ -1014,7 +1011,7 @@ whois_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
 }
 
 // run() subclass details
-void 
+void
 whois_event::run_() {
 
     for( auto &target : m_targets ) {
@@ -1032,7 +1029,7 @@ whois_event::run_() {
             // next station name
             if( m_input.flags & flags::mode_alt ) {
                 auto const *owner { (
-                    ( ( m_activator->Mechanik != nullptr ) && ( m_activator->Mechanik->primary() ) ) ?
+                    m_activator->Mechanik != nullptr && m_activator->Mechanik->primary() ?
                         m_activator->Mechanik :
                         m_activator->ctOwner ) };
                 auto const nextstop { (
@@ -1040,7 +1037,7 @@ whois_event::run_() {
                         owner->TrainTimetable().NextStop() :
                         "none" ) };
                 auto const isstop { (
-                    ( ( owner != nullptr ) && ( owner->IsStop() ) ) ?
+                    owner != nullptr && owner->IsStop() ?
                         1 :
                         0 ) }; // 1, gdy ma tu zatrzymanie
 
@@ -1078,7 +1075,7 @@ whois_event::run_() {
                 // jeśli typ pojazdu
                 // TODO: define and recognize individual request types
                 auto const owner { (
-                    ( ( m_activator->Mechanik != nullptr ) && ( m_activator->Mechanik->primary() ) ) ?
+                    m_activator->Mechanik != nullptr && m_activator->Mechanik->primary() ?
                         m_activator->Mechanik :
                         m_activator->ctOwner ) };
                 auto const consistbrakelevel { (
@@ -1253,9 +1250,9 @@ multi_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
     m_conditions.has_else = false;
 
     std::string token;
-    while( ( true == Input.getTokens() )
-        && ( false == ( token = Input.peek() ).empty() )
-        && ( false == is_keyword( token ) ) ) {
+    while( true == Input.getTokens()
+        && false == (token = Input.peek()).empty()
+        && false == is_keyword(token) ) {
 
         if( token == "condition" ) {
             m_conditions.deserialize( Input );
@@ -1273,7 +1270,7 @@ multi_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
                 WriteLog( "Multi-event \"" + m_name + "\" ignored link to event \"" + token + "\"" );
             }
             else {
-                m_children.emplace_back( token, nullptr, ( m_conditions.has_else == false ) );
+                m_children.emplace_back( token, nullptr, m_conditions.has_else == false );
             }
         }
     }
@@ -1762,9 +1759,9 @@ lights_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
     int lightidx { 0 };
 
     std::string token;
-    while( ( true == Input.getTokens() )
-        && ( false == ( token = Input.peek() ).empty() )
-        && ( false == is_keyword( token ) ) ) {
+    while( true == Input.getTokens()
+        && false == (token = Input.peek()).empty()
+        && false == is_keyword(token) ) {
 
         if( lightidx < lightcountlimit ) {
             Input >> m_lights[ lightidx++ ];
@@ -1807,8 +1804,8 @@ void
 lights_event::export_as_text_( std::ostream &Output ) const {
 
     auto lightidx{ 0 };
-    while( ( lightidx < iMaxNumLights )
-        && ( false == std::isnan( m_lights[ lightidx ] ) ) ) {
+    while( lightidx < iMaxNumLights
+        && false == std::isnan(m_lights[lightidx]) ) {
         Output << m_lights[ lightidx ] << ' ';
         ++lightidx;
     }
@@ -1830,8 +1827,8 @@ switch_event::init() {
             // jeśli nie jest zwrotnicą ani obrotnicą to będzie się zmieniał stan uszkodzenia
             targettrack->iAction |= 0x100;
         }
-        if( ( m_switchstate == 0 )
-            && ( m_switchmovedelay >= 0.0 ) ) {
+        if( m_switchstate == 0
+            && m_switchmovedelay >= 0.0 ) {
             // jeśli przełącza do stanu 0 & jeśli jest zdefiniowany dodatkowy ruch iglic
             // przesłanie parametrów
             targettrack->Switch(
@@ -1896,8 +1893,8 @@ void
 switch_event::export_as_text_( std::ostream &Output ) const {
 
     Output << m_switchstate << ' ';
-    if( ( m_switchmoverate  < 0.f )
-     || ( m_switchmovedelay < 0.f ) ) {
+    if( m_switchmoverate < 0.f
+     || m_switchmovedelay < 0.f ) {
         Output << m_switchmoverate << ' ';
     }
     if( m_switchmovedelay < 0.f ) {
@@ -2099,7 +2096,7 @@ void
 friction_event::run_() {
     // zmiana tarcia na scenerii
     WriteLog( "Type: Friction" );
-    Global.fFriction = ( m_friction );
+    Global.fFriction = m_friction;
 }
 
 // export_as_text() subclass details
@@ -2173,9 +2170,9 @@ void
 message_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
     // wyświetlenie komunikatu
     std::string token;
-    while( ( true == Input.getTokens() )
-        && ( false == ( token = Input.peek() ).empty() )
-        && ( false == is_keyword( token ) ) ) {
+    while( true == Input.getTokens()
+        && false == (token = Input.peek()).empty()
+        && false == is_keyword(token) ) {
         m_message += ( m_message.empty() ? "" : " " ) + token;
     }
 }
@@ -2255,10 +2252,10 @@ void
 event_manager::queue_receivers( radio_message const Message, glm::dvec3 const &Location ) {
 
     for( auto *launcher : m_radiodrivenlaunchers.sequence() ) {
-        if( ( launcher->key() == Message )
-         && ( ( launcher->dRadius < 0 )
-           || ( glm::length2( launcher->location() - Location ) < launcher->dRadius ) )
-         && ( true == launcher->check_conditions() ) ) {
+        if( launcher->key() == Message
+         && ( launcher->dRadius < 0
+           || glm::length2(launcher->location() - Location) < launcher->dRadius )
+         && true == launcher->check_conditions() ) {
             // NOTE: only execution of event1 is supported for radio messages
             // TBD, TODO: consider ability/way to execute event2
             simulation::Events.AddToQuery( launcher->Event1, nullptr );
@@ -2337,8 +2334,8 @@ event_manager::insert( basic_event *Event ) {
     if( lookup == m_eventmap.end() ) {
         // if it's first event with such name, it's potential candidate for the execution queue
         m_eventmap.emplace( Event->m_name, m_events.size() - 1 );
-        if( ( Event->m_ignored != true )
-         && ( contains( Event->m_name, "onstart" ) ) ) {
+        if( Event->m_ignored != true
+         && contains(Event->m_name, "onstart") ) {
             // event uruchamiany automatycznie po starcie
             AddToQuery( Event, nullptr );
         }
@@ -2381,7 +2378,7 @@ event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, doub
 
     if( Event->m_passive )     { return false; } // jeśli może być dodany do kolejki (nie używany w skanowaniu)
     if( Event->m_inqueue > 0 ) { return false; } // jeśli nie dodany jeszcze do kolejki
-        
+
     // kolejka eventów jest posortowana względem (fStartTime)
     Event->m_activator = Owner;
     if( Event->is_instant() ) {
@@ -2394,24 +2391,24 @@ event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, doub
             Event = Event->m_sibling;
             // NOTE: we could've received a new event from joint event above, so we need to check conditions just in case and discard the bad events
             // TODO: refactor this arrangement, it's hardly optimal
-        } while( ( Event != nullptr )
-              && ( ( Event->m_passive )
-                || ( Event->m_inqueue > 0 ) ) );
+        } while( Event != nullptr
+              && ( Event->m_passive
+                || Event->m_inqueue > 0 ) );
     }
-    if( ( Event != nullptr )
-     && ( false == Event->m_ignored ) ) {
+    if( Event != nullptr
+     && false == Event->m_ignored ) {
         // standardowe dodanie do kolejki
-        ++(Event->m_inqueue); // zabezpieczenie przed podwójnym dodaniem do kolejki
-        WriteLog( "EVENT ADDED TO QUEUE" + ( Owner ? ( " by " + Owner->asName ) : "" ) + ": " + Event->m_name );
+        ++Event->m_inqueue; // zabezpieczenie przed podwójnym dodaniem do kolejki
+        WriteLog( "EVENT ADDED TO QUEUE" + ( Owner ? " by " + Owner->asName : "" ) + ": " + Event->m_name );
         Event->m_launchtime = delay + std::abs( Event->m_delay ) + Timer::GetTime(); // czas od uruchomienia scenerii
         if( Event->m_delayrandom > 0.0 ) {
             // doliczenie losowego czasu opóźnienia
             Event->m_launchtime += Event->m_delayrandom * Random();
         }
-        if( ( Owner != nullptr )
-         && ( false == std::isnan( Event->m_delaydeparture ) ) ) {
+        if( Owner != nullptr
+         && false == std::isnan(Event->m_delaydeparture) ) {
             auto const *timetableowner { (
-                ( ( Owner->Mechanik != nullptr ) && ( Owner->Mechanik->primary() ) ) ?
+                Owner->Mechanik != nullptr && Owner->Mechanik->primary() ?
                     Owner->Mechanik :
                     Owner->ctOwner ) };
             if( timetableowner != nullptr ) {
@@ -2427,8 +2424,8 @@ event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, doub
         if( QueryRootEvent != nullptr ) {
             basic_event *target { QueryRootEvent };
             basic_event *previous { nullptr };
-            while( ( Event->m_launchtime >= target->m_launchtime )
-                && ( target->m_next != nullptr ) ) {
+            while( Event->m_launchtime >= target->m_launchtime
+                && target->m_next != nullptr ) {
                 previous = target;
                 target = target->m_next;
             }
@@ -2464,8 +2461,8 @@ event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, doub
 bool
 event_manager::CheckQuery() {
 
-    while( ( QueryRootEvent != nullptr )
-        && ( QueryRootEvent->m_launchtime < Timer::GetTime() ) )
+    while( QueryRootEvent != nullptr
+        && QueryRootEvent->m_launchtime < Timer::GetTime() )
     { // eventy są posortowana wg czasu wykonania
         m_workevent = QueryRootEvent; // wyjęcie eventu z kolejki
         if (QueryRootEvent->m_sibling) // jeśli jest kolejny o takiej samej nazwie
@@ -2479,9 +2476,9 @@ event_manager::CheckQuery() {
         }
         else // a jak nazwa jest unikalna, to kolejka idzie dalej
             QueryRootEvent = QueryRootEvent->m_next; // NULL w skrajnym przypadku
-        if( ( false == m_workevent->m_ignored ) && ( false == m_workevent->m_passive ) ) {
+        if( false == m_workevent->m_ignored && false == m_workevent->m_passive ) {
             // w zasadzie te wyłączone są skanowane i nie powinny się nigdy w kolejce znaleźć
-            --(m_workevent->m_inqueue); // teraz moze być ponownie dodany do kolejki
+            --m_workevent->m_inqueue; // teraz moze być ponownie dodany do kolejki
             m_workevent->run();
         } // if (tmpEvent->bEnabled)
     } // while

@@ -16,7 +16,7 @@ uint16_t sn_utils::ld_uint16(std::istream &s)
 {
 	uint8_t buf[2];
 	s.read((char*)buf, 2);
-	uint16_t v = (buf[1] << 8) | buf[0];
+	uint16_t v = buf[1] << 8 | buf[0];
 	return reinterpret_cast<uint16_t&>(v);
 }
 
@@ -25,7 +25,7 @@ uint32_t sn_utils::ld_uint32(std::istream &s)
 {
 	uint8_t buf[4];
 	s.read((char*)buf, 4);
-	uint32_t v = (buf[3] << 24) | (buf[2] << 16) | (buf[1] << 8) | buf[0];
+	uint32_t v = buf[3] << 24 | buf[2] << 16 | buf[1] << 8 | buf[0];
 	return reinterpret_cast<uint32_t&>(v);
 }
 
@@ -34,7 +34,7 @@ int32_t sn_utils::ld_int32(std::istream &s)
 {
 	uint8_t buf[4];
 	s.read((char*)buf, 4);
-	uint32_t v = (buf[3] << 24) | (buf[2] << 16) | (buf[1] << 8) | buf[0];
+	uint32_t v = buf[3] << 24 | buf[2] << 16 | buf[1] << 8 | buf[0];
 	return reinterpret_cast<int32_t&>(v);
 }
 
@@ -43,10 +43,10 @@ uint64_t sn_utils::ld_uint64(std::istream &s)
 {
 	uint8_t buf[8];
 	s.read((char*)buf, 8);
-	uint64_t v = ((uint64_t)buf[7] << 56) | ((uint64_t)buf[6] << 48) |
-	             ((uint64_t)buf[5] << 40) | ((uint64_t)buf[4] << 32) |
-	             ((uint64_t)buf[3] << 24) | ((uint64_t)buf[2] << 16) |
-	             ((uint64_t)buf[1] << 8) | (uint64_t)buf[0];
+	uint64_t v = (uint64_t)buf[7] << 56 | (uint64_t)buf[6] << 48 |
+	             (uint64_t)buf[5] << 40 | (uint64_t)buf[4] << 32 |
+	             (uint64_t)buf[3] << 24 | (uint64_t)buf[2] << 16 |
+	             (uint64_t)buf[1] << 8 | (uint64_t)buf[0];
 	return reinterpret_cast<uint64_t&>(v);
 }
 
@@ -55,10 +55,10 @@ int64_t sn_utils::ld_int64(std::istream &s)
 {
 	uint8_t buf[8];
 	s.read((char*)buf, 8);
-	uint64_t v = ((uint64_t)buf[7] << 56) | ((uint64_t)buf[6] << 48) |
-	             ((uint64_t)buf[5] << 40) | ((uint64_t)buf[4] << 32) |
-	             ((uint64_t)buf[3] << 24) | ((uint64_t)buf[2] << 16) |
-	             ((uint64_t)buf[1] << 8) | (uint64_t)buf[0];
+	uint64_t v = (uint64_t)buf[7] << 56 | (uint64_t)buf[6] << 48 |
+	             (uint64_t)buf[5] << 40 | (uint64_t)buf[4] << 32 |
+	             (uint64_t)buf[3] << 24 | (uint64_t)buf[2] << 16 |
+	             (uint64_t)buf[1] << 8 | (uint64_t)buf[0];
 	return reinterpret_cast<int64_t&>(v);
 }
 
@@ -67,7 +67,7 @@ float sn_utils::ld_float32(std::istream &s)
 {
 	uint8_t buf[4];
 	s.read((char*)buf, 4);
-	uint32_t v = (buf[3] << 24) | (buf[2] << 16) | (buf[1] << 8) | buf[0];
+	uint32_t v = buf[3] << 24 | buf[2] << 16 | buf[1] << 8 | buf[0];
 	return reinterpret_cast<float&>(v);
 }
 
@@ -76,10 +76,10 @@ double sn_utils::ld_float64(std::istream &s)
 {
 	uint8_t buf[8];
 	s.read((char*)buf, 8);
-	uint64_t v = ((uint64_t)buf[7] << 56) | ((uint64_t)buf[6] << 48) |
-		         ((uint64_t)buf[5] << 40) | ((uint64_t)buf[4] << 32) |
-	             ((uint64_t)buf[3] << 24) | ((uint64_t)buf[2] << 16) |
-		         ((uint64_t)buf[1] << 8) | (uint64_t)buf[0];
+	uint64_t v = (uint64_t)buf[7] << 56 | (uint64_t)buf[6] << 48 |
+		         (uint64_t)buf[5] << 40 | (uint64_t)buf[4] << 32 |
+	             (uint64_t)buf[3] << 24 | (uint64_t)buf[2] << 16 |
+		         (uint64_t)buf[1] << 8 | (uint64_t)buf[0];
 	return reinterpret_cast<double&>(v);
 }
 
@@ -101,7 +101,7 @@ std::string sn_utils::d_str(std::istream &s)
 
 bool sn_utils::d_bool(std::istream& s)
 {
-    return ( ld_uint16( s ) == 1 );
+    return ld_uint16(s) == 1;
 }
 
 glm::dvec3 sn_utils::d_dvec3(std::istream& s)
@@ -234,9 +234,7 @@ void sn_utils::s_bool(std::ostream &s, bool v)
 {
     ls_uint16(
         s,
-        ( true == v ?
-            1 :
-            0 ) );
+        true == v ? 1 : 0 );
 }
 
 void sn_utils::s_dvec3(std::ostream &s, glm::dvec3 const &v)

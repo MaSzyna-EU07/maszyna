@@ -88,7 +88,7 @@ void TSubModel::SetDiffuseOverride(glm::vec3 const &Color, bool const Includechi
 			sibling->SetDiffuseOverride(Color, Includechildren, false); // no need for all siblings to duplicate the work
 		}
 	}
-	if ((true == Includechildren) && (Child != nullptr))
+	if (true == Includechildren && Child != nullptr)
 	{
 		Child->SetDiffuseOverride(Color, Includechildren, true); // node's children include child's siblings and children
 	}
@@ -134,7 +134,7 @@ void TSubModel::SetVisibilityLevel(float const Level, bool const Includechildren
 			sibling->SetVisibilityLevel(Level, Includechildren, false); // no need for all siblings to duplicate the work
 		}
 	}
-	if ((true == Includechildren) && (Child != nullptr))
+	if (true == Includechildren && Child != nullptr)
 	{
 		Child->SetVisibilityLevel(Level, Includechildren, true); // node's children include child's siblings and children
 	}
@@ -156,7 +156,7 @@ void TSubModel::SetLightLevel(glm::vec4 const &Level, bool const Includechildren
 			sibling->SetLightLevel(Level, Includechildren, false); // no need for all siblings to duplicate the work
 		}
 	}
-	if ((true == Includechildren) && (Child != nullptr))
+	if (true == Includechildren && Child != nullptr)
 	{
 		Child->SetLightLevel(Level, Includechildren, true); // node's children include child's siblings and children
 	}
@@ -175,7 +175,7 @@ void TSubModel::SetSelfIllum(float const Threshold, bool const Includechildren, 
 			sibling->SetSelfIllum(Threshold, Includechildren, false); // no need for all siblings to duplicate the work
 		}
 	}
-	if ((true == Includechildren) && (Child != nullptr))
+	if (true == Includechildren && Child != nullptr)
 	{
 		Child->SetSelfIllum(Threshold, Includechildren, true); // node's children include child's siblings and children
 	}
@@ -243,7 +243,7 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 	{
 		std::string errormessage{"Bad model: expected submodel type definition not found while loading model \"" + parser.Name() + "\"" + "\ncurrent model data stream content: \""};
 		auto count{10};
-		while ((true == parser.getTokens()) && (false == (token = parser.peek()).empty()) && (token != "parent:"))
+		while (true == parser.getTokens() && false == (token = parser.peek()).empty() && token != "parent:")
 		{
 			// skip data until next submodel, dump first few tokens in the error message
 			if (--count > 0)
@@ -275,7 +275,7 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 	if (dynamic)
 	{
 		// dla pojazdu, blokujemy załączone submodele, które mogą być nieobsługiwane
-		if ((token.size() >= 3) && (token.find("_on") + 3 == token.length()))
+		if (token.size() >= 3 && token.find("_on") + 3 == token.length())
 		{
 			// jeśli nazwa kończy się na "_on" to domyślnie wyłączyć, żeby się nie nakładało z obiektem "_off"
 			iVisible = 0;
@@ -418,27 +418,27 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 		else if (material.find("replacableskin") != material.npos)
 		{ // McZapkie-060702: zmienialne skory modelu
 			m_material = -1;
-			iFlags |= (Opacity < 0.999) ? 1 : 0x10; // zmienna tekstura 1
+			iFlags |= Opacity < 0.999 ? 1 : 0x10; // zmienna tekstura 1
 		}
 		else if (material == "-1")
 		{
 			m_material = -1;
-			iFlags |= (Opacity < 0.999) ? 1 : 0x10; // zmienna tekstura 1
+			iFlags |= Opacity < 0.999 ? 1 : 0x10; // zmienna tekstura 1
 		}
 		else if (material == "-2")
 		{
 			m_material = -2;
-			iFlags |= (Opacity < 0.999) ? 2 : 0x10; // zmienna tekstura 2
+			iFlags |= Opacity < 0.999 ? 2 : 0x10; // zmienna tekstura 2
 		}
 		else if (material == "-3")
 		{
 			m_material = -3;
-			iFlags |= (Opacity < 0.999) ? 4 : 0x10; // zmienna tekstura 3
+			iFlags |= Opacity < 0.999 ? 4 : 0x10; // zmienna tekstura 3
 		}
 		else if (material == "-4")
 		{
 			m_material = -4;
-			iFlags |= (Opacity < 0.999) ? 8 : 0x10; // zmienna tekstura 4
+			iFlags |= Opacity < 0.999 ? 8 : 0x10; // zmienna tekstura 4
 		}
 		else
 		{
@@ -509,10 +509,10 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 		// check the scaling
 		auto const matrix = glm::make_mat4(fMatrix->readArray());
 		glm::vec3 const scale{glm::length(glm::vec3(glm::column(matrix, 0))), glm::length(glm::vec3(glm::column(matrix, 1))), glm::length(glm::vec3(glm::column(matrix, 2)))};
-		if ((std::abs(scale.x - 1.0f) > 0.01) || (std::abs(scale.y - 1.0f) > 0.01) || (std::abs(scale.z - 1.0f) > 0.01))
+		if (std::abs(scale.x - 1.0f) > 0.01 || std::abs(scale.y - 1.0f) > 0.01 || std::abs(scale.z - 1.0f) > 0.01)
 		{
 			ErrorLog("Bad model: transformation matrix for sub-model \"" + pName + "\" imposes geometry scaling (factors: " + to_string(scale) + ")", logtype::model);
-			m_normalizenormals = (((std::abs(scale.x - scale.y) < 0.01f) && (std::abs(scale.y - scale.z) < 0.01f)) ? rescale : normalize);
+			m_normalizenormals = std::abs(scale.x - scale.y) < 0.01f && std::abs(scale.y - scale.z) < 0.01f ? rescale : normalize;
 		}
 		transformscalestack *= (scale.x + scale.y + scale.z) / 3.0f;
 	}
@@ -536,7 +536,7 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 			}
 			token = parser.getToken<std::string>();
 		}
-		if ((token == "numverts:") || (token == "numverts"))
+		if (token == "numverts:" || token == "numverts")
 		{ // normalna lista wierzchołków
 			/*
 			            // Ra 15-01: to wczytać jako tekst - jeśli pierwszy znak zawiera "*", to
@@ -550,7 +550,7 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 			            }
 			*/
 			m_geometry.vertex_count = parser.getToken<int>(false);
-			if ((m_geometry.index_count <= 0) && (m_geometry.vertex_count % 3 != 0))
+			if (m_geometry.index_count <= 0 && m_geometry.vertex_count % 3 != 0)
 			{
 				m_geometry.vertex_count = 0;
 				Error("Bad model: incomplete triangle encountered in submodel \"" + pName + "\"");
@@ -588,12 +588,12 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 						++vertexidx;
 						// Ra: z konwersją na układ scenerii - będzie wydajniejsze wyświetlanie
 						wsp[idx] = -1; // wektory normalne nie są policzone dla tego wierzchołka
-						if ((idx % 3) == 0)
+						if (idx % 3 == 0)
 						{
 							// jeśli będzie maska -1, to dalej będą wierzchołki z wektorami normalnymi, podanymi jawnie
 							maska = parser.getToken<int>(false); // maska powierzchni trójkąta
 							// dla maski -1 będzie 0, czyli nie ma wspólnych wektorów normalnych
-							sg[idx / 3] = ((maska == -1) ? 0 : maska);
+							sg[idx / 3] = maska == -1 ? 0 : maska;
 						}
 						auto vertex{vertices + idx};
 						parser.getTokens(3, false);
@@ -630,8 +630,8 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 							{
 								// jeśli pierwszy trójkąt będzie zdegenerowany, to zostanie usunięty i nie ma co sprawdzać
 								// length2 is better than length for comparing because it does not require sqrt function
-								if ((glm::length2((vertex)->position - (vertex - 1)->position) > sq(1000.0)) || (glm::length2((vertex - 1)->position - (vertex - 2)->position) > sq(1000.0)) ||
-								    (glm::length2((vertex - 2)->position - (vertex)->position) > sq(1000.0)))
+								if (glm::length2(vertex->position - (vertex - 1)->position) > sq(1000.0) || glm::length2((vertex - 1)->position - (vertex - 2)->position) > sq(1000.0) ||
+								    glm::length2((vertex - 2)->position - vertex->position) > sq(1000.0))
 								{
 									// jeżeli są dalej niż 2km od siebie //Ra 15-01:
 									// obiekt wstawiany nie powinien być większy niż 300m (trójkąty terenu w E3D mogą mieć 1.5km)
@@ -649,7 +649,7 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 					for (int i = 0; i < facecount; ++i)
 					{
 						// pętla po trójkątach - będzie szybciej, jak wstępnie przeliczymy normalne trójkątów
-						auto const vertex{vertices + (i * 3)};
+						auto const vertex{vertices + i * 3};
 						auto facenormal = glm::cross(vertex->position - (vertex + 1)->position, vertex->position - (vertex + 2)->position);
 						facenormals.emplace_back(glm::length2(facenormal) > 0.0f ? glm::normalize(facenormal) : glm::vec3());
 					}
@@ -690,7 +690,7 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 							{
 								WriteLog("Bad model: zero length normal vector generated for sub-model \"" + pName + "\"", logtype::model);
 							}
-							vertex->normal = (glm::length2(vertexnormal) > 0.0f ? glm::normalize(vertexnormal) : facenormals[vertexidx / 3]); // przepisanie do wierzchołka trójkąta
+							vertex->normal = glm::length2(vertexnormal) > 0.0f ? glm::normalize(vertexnormal) : facenormals[vertexidx / 3]; // przepisanie do wierzchołka trójkąta
 						}
 					}
 					Vertices.resize(m_geometry.vertex_count); // in case we had some degenerate triangles along the way
@@ -740,9 +740,9 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 			parser.getTokens(5, false);
 			parser >> vertex->position.x >> vertex->position.y >> vertex->position.z >> color // zakodowany kolor
 			    >> discard;
-			vertex->normal = {((color) & 0xff) / 255.0f, // R
-			                  ((color >> 8) & 0xff) / 255.0f, // G
-			                  ((color >> 16) & 0xff) / 255.0f}; // B
+			vertex->normal = {(color & 0xff) / 255.0f, // R
+			                  (color >> 8 & 0xff) / 255.0f, // G
+			                  (color >> 16 & 0xff) / 255.0f}; // B
 		}
 	}
 	else if (eType == TP_FREESPOTLIGHT)
@@ -841,15 +841,15 @@ void TSubModel::InitialRotate(bool doit)
 		else if (Global.iConvertModels & 2)
 		{
 			// optymalizacja jest opcjonalna
-			if (((iFlags & 0xC000) == 0x8000) // o ile nie ma animacji
-			    && (false == is_emitter())) // don't optimize smoke emitter attachment points
+			if ((iFlags & 0xC000) == 0x8000 // o ile nie ma animacji
+			    && false == is_emitter()) // don't optimize smoke emitter attachment points
 			{ // jak nie ma potomnych, można wymnożyć przez transform i wyjedynkować go
 				float4x4 *mat = GetMatrix(); // transform submodelu
 				if (false == Vertices.empty())
 				{
 					for (auto &vertex : Vertices)
 					{
-						vertex.position = (*mat) * vertex.position;
+						vertex.position = *mat * vertex.position;
 					}
 					// zerujemy przesunięcie przed obracaniem normalnych
 					(*mat)(3)[0] = (*mat)(3)[1] = (*mat)(3)[2] = 0.0;
@@ -858,8 +858,8 @@ void TSubModel::InitialRotate(bool doit)
 						// gwiazdki mają kolory zamiast normalnych, to ich wtedy nie ruszamy
 						for (auto &vertex : Vertices)
 						{
-							vertex.normal = (*mat) * vertex.normal;
-							vertex.tangent.xyz = (*mat) * vertex.tangent.xyz;
+							vertex.normal = *mat * vertex.normal;
+							vertex.tangent.xyz = *mat * vertex.tangent.xyz;
 						}
 					}
 				}
@@ -925,7 +925,7 @@ int TSubModel::count_siblings()
 int TSubModel::count_children()
 {
 
-	return (Child == nullptr ? 0 : 1 + Child->count_siblings());
+	return Child == nullptr ? 0 : 1 + Child->count_siblings();
 }
 
 // locates submodel mapped with replacable -4
@@ -934,7 +934,7 @@ std::tuple<TSubModel *, bool> TSubModel::find_replacable4()
 
 	if (m_material == -4)
 	{
-		return std::make_tuple(this, (fLight != -1.0));
+		return std::make_tuple(this, fLight != -1.0);
 	}
 
 	if (Next != nullptr)
@@ -964,7 +964,7 @@ void TSubModel::find_smoke_sources(nameoffset_sequence &Sourcelist) const
 
 	auto const name{ToLower(pName)};
 
-	if ((eType == TP_ROTATOR) && (pName.find("smokesource_") == 0))
+	if (eType == TP_ROTATOR && pName.find("smokesource_") == 0)
 	{
 		Sourcelist.emplace_back(pName, offset());
 	}
@@ -994,7 +994,7 @@ uint32_t TSubModel::FlagsCheck()
 			if (Child->m_material != m_material) // i jest ona inna niż rodzica
 				Child->iFlags |= 0x80; // to trzeba sprawdzać, jak z teksturami jest
 		i = Child->FlagsCheck();
-		iFlags |= 0x00FF0000 & ((i << 16) | (i) | (i >> 8)); // potomny, rodzeństwo i dzieci
+		iFlags |= 0x00FF0000 & (i << 16 | i | i >> 8); // potomny, rodzeństwo i dzieci
 		if (eType == TP_TEXT)
 		{ // wyłączenie renderowania Next dla znaków
 		  // wyświetlacza tekstowego
@@ -1010,10 +1010,10 @@ uint32_t TSubModel::FlagsCheck()
 	{ // Next jest renderowany po danym submodelu (kolejność odwrócona
 	  // po wczytaniu T3D)
 		if (m_material) // o ile dany ma teksturę
-			if ((m_material != Next->m_material) || (i & 0x00800000)) // a ma inną albo dzieci zmieniają
+			if (m_material != Next->m_material || i & 0x00800000) // a ma inną albo dzieci zmieniają
 				iFlags |= 0x80; // to dany submodel musi sobie ją ustawiać
 		i = Next->FlagsCheck();
-		iFlags |= 0xFF000000 & ((i << 24) | (i << 8) | (i)); // następny, kolejne i ich dzieci
+		iFlags |= 0xFF000000 & (i << 24 | i << 8 | i); // następny, kolejne i ich dzieci
 		                                                     // tekstury nie ustawiamy tylko wtedy, gdy jest taka sama jak Next i jego
 		                                                     // dzieci nie zmieniają
 	}
@@ -1200,7 +1200,7 @@ void TSubModel::RaAnimation(glm::mat4 &m, TAnimType a)
 			if (sm->pName.size())
 			{
 				// musi mieć niepustą nazwę
-				if ((sm->pName[0] >= '0') && (sm->pName[0] <= '5'))
+				if (sm->pName[0] >= '0' && sm->pName[0] <= '5')
 				{
 					// zegarek ma 6 cyfr maksymalnie
 					sm->SetRotate(float3(0, 1, 0), -Global.fClockAngleDeg[sm->pName[0] - '0']);
@@ -1278,12 +1278,12 @@ int TSubModel::index_size() const
 	{
 		size = std::max(size, Child->index_size());
 	}
-	if ((size < 4) && (m_geometry.handle != null_handle))
+	if (size < 4 && m_geometry.handle != null_handle)
 	{
 		auto const indexcount{GfxRenderer->Indices(m_geometry.handle).size()};
-		size = std::max(size, (indexcount >= (1 << 16) ? 4 : indexcount >= (1 << 8) ? 2 : 1));
+		size = std::max(size, indexcount >= 1 << 16 ? 4 : indexcount >= 1 << 8 ? 2 : 1);
 	}
-	if ((size < 4) && (Next))
+	if (size < 4 && Next)
 	{
 		size = std::max(size, Next->index_size());
 	}
@@ -1355,7 +1355,7 @@ void TSubModel::create_geometry(std::size_t &Indexoffset, std::size_t &Vertexoff
 		m_geometry.vertex_offset = static_cast<int>(Vertexoffset);
 		Vertexoffset += Vertices.size();
 		// conveniently all relevant custom node types use GL_POINTS, or we'd have to determine the type on individual basis
-		auto type = (eType < TP_ROTATOR ? eType : GL_POINTS);
+		auto type = eType < TP_ROTATOR ? eType : GL_POINTS;
 		m_geometry.handle = GfxRenderer->Insert(Indices, Vertices, Userdata, Bank, type);
 	}
 
@@ -1417,7 +1417,7 @@ void TSubModel::ColorsSet(glm::vec3 const &Ambient, glm::vec3 const &Diffuse, gl
 bool TSubModel::is_emitter() const
 {
 
-	return ((eType == TP_ROTATOR) && (ToLower(pName).find("smokesource_") == 0));
+	return eType == TP_ROTATOR && ToLower(pName).find("smokesource_") == 0;
 }
 
 // pobranie transformacji względem wstawienia modelu
@@ -1438,13 +1438,13 @@ void TSubModel::ParentMatrix(float4x4 *m) const
 			submodelmatrix = float4x4(*submodel->GetMatrix());
 		}
 		// ...potentially adjust transformations of the root matrix if the model wasn't yet initialized...
-		if ((submodel->Parent == nullptr) && (false == submodel->m_rotation_init_done))
+		if (submodel->Parent == nullptr && false == submodel->m_rotation_init_done)
 		{
 			// dla ostatniego może być potrzebny dodatkowy obrót, jeśli wczytano z T3D, a nie obrócono jeszcze
 			submodelmatrix.InitialRotate();
 		}
 		// ...combine the transformations...
-		*m = submodelmatrix * (*m);
+		*m = submodelmatrix * *m;
 		// ...and move up the transformation chain for the iteration...
 		submodel = submodel->Parent;
 		// ... until we hit the root
@@ -1528,7 +1528,7 @@ TSubModel *TModel3d::AddToNamed(const char *Name, TSubModel *SubModel)
 {
 
 	TSubModel *sm = Name ? GetFromName(Name) : nullptr;
-	if ((sm == nullptr) && (Name != nullptr) && (std::strcmp(Name, "none") != 0))
+	if (sm == nullptr && Name != nullptr && std::strcmp(Name, "none") != 0)
 	{
 		ErrorLog("Bad model: parent for sub-model \"" + SubModel->pName + "\" doesn't exist or is located later in the model data", logtype::model);
 	}
@@ -1651,7 +1651,7 @@ bool TModel3d::LoadFromFile(std::string const &FileName, bool dynamic)
 			Init();
 	}
 
-	bool const result = Root ? (iSubModelsCount > 0) : false; // brak pliku albo problem z wczytaniem
+	bool const result = Root ? iSubModelsCount > 0 : false; // brak pliku albo problem z wczytaniem
 	if (false == result)
 	{
 		ErrorLog("Bad model: failed to load 3d model \"" + name + "\"");
@@ -1701,7 +1701,7 @@ void TSubModel::serialize(std::ostream &s, std::vector<TSubModel *> &models, std
 	sn_utils::ls_int32(s, (int)b_Anim);
 
 	uint32_t flags = iFlags;
-	if (m_material > 0 && (Global.iConvertModels & 16))
+	if (m_material > 0 && Global.iConvertModels & 16)
 		flags &= ~0x30; // don't save phase information, will be guessed on binary load from material
 	sn_utils::ls_uint32(s, flags);
 	sn_utils::ls_int32(s, (int32_t)get_container_pos(transforms, *fMatrix));
@@ -1972,11 +1972,11 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 				}
 				submodeloffsets.emplace_back(submodelgeometry.vertex_offset, submodelindex);
 			}
-			std::sort(std::begin(submodeloffsets), std::end(submodeloffsets), [](std::pair<int, int> const &Left, std::pair<int, int> const &Right) { return (Left.first) < (Right.first); });
+			std::sort(std::begin(submodeloffsets), std::end(submodeloffsets), [](std::pair<int, int> const &Left, std::pair<int, int> const &Right) { return Left.first < Right.first; });
 			// once sorted we can grab geometry as it comes, and assign it to the chunks it belongs to
 			size_t const vertextype{(((type & 0xFF000000) >> 24) - '0')};
-			hastangents = ((vertextype & 3) > 0);
-			hasuserdata = (vertextype & 4);
+			hastangents = (vertextype & 3) > 0;
+			hasuserdata = vertextype & 4;
 			size_t vertex_size = 0;
 			switch (vertextype & 3)
 			{
@@ -2022,7 +2022,7 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 						if (submodel.eType < TP_ROTATOR)
 						{
 							// normal vectors debug routine
-							if ((false == submodel.m_normalizenormals) && (std::abs(glm::length2(submodel.Vertices[i].normal) - 1.0f) > 0.01f))
+							if (false == submodel.m_normalizenormals && std::abs(glm::length2(submodel.Vertices[i].normal) - 1.0f) > 0.01f)
 							{
 								submodel.m_normalizenormals = TSubModel::normalize; // we don't know if uniform scaling would suffice
 								WriteLog("Bad model: non-unit normal vector(s) encountered during sub-model geometry deserialization", logtype::model);
@@ -2079,7 +2079,7 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 				}
 				submodeloffsets.emplace_back(submodelgeometry.index_offset, submodelindex);
 			}
-			std::sort(std::begin(submodeloffsets), std::end(submodeloffsets), [](std::pair<int, int> const &Left, std::pair<int, int> const &Right) { return (Left.first) < (Right.first); });
+			std::sort(std::begin(submodeloffsets), std::end(submodeloffsets), [](std::pair<int, int> const &Left, std::pair<int, int> const &Right) { return Left.first < Right.first; });
 			// once sorted we can grab indices in a continuous read, and assign them to the chunks they belong to
 			size_t const indexsize{(((type & 0xFF000000) >> 24) - '0')};
 			for (auto const &submodeloffset : submodeloffsets)
@@ -2204,11 +2204,11 @@ void TSubModel::BinInit(TSubModel *s, float4x4 *m, std::vector<std::string> *t, 
 { // ustawienie wskaźników w submodelu
 	// m7todo: brzydko
 	iVisible = 1; // tymczasowo używane
-	Child = (iChild > 0) ? s + iChild : nullptr; // zerowy nie może być potomnym
-	Next = (iNext > 0) ? s + iNext : nullptr; // zerowy nie może być następnym
-	fMatrix = ((iMatrix >= 0) && m) ? m + iMatrix : nullptr;
+	Child = iChild > 0 ? s + iChild : nullptr; // zerowy nie może być potomnym
+	Next = iNext > 0 ? s + iNext : nullptr; // zerowy nie może być następnym
+	fMatrix = iMatrix >= 0 && m ? m + iMatrix : nullptr;
 
-	if (n->size() && (iName >= 0))
+	if (n->size() && iName >= 0)
 	{
 		pName = n->at(iName);
 		if (!pName.empty())
@@ -2303,7 +2303,7 @@ void TSubModel::BinInit(TSubModel *s, float4x4 *m, std::vector<std::string> *t, 
 		m_material = GfxRenderer->Fetch_Material("stars");
 		iFlags |= 0x10;
 	}
-	else if ((eType == TP_FREESPOTLIGHT) && (iFlags & 0x10))
+	else if (eType == TP_FREESPOTLIGHT && iFlags & 0x10)
 	{
 		// we've added light glare which needs to be rendered during transparent phase,
 		// but models converted to e3d before addition won't have the render flag set correctly for this
@@ -2328,10 +2328,10 @@ void TSubModel::BinInit(TSubModel *s, float4x4 *m, std::vector<std::string> *t, 
 	{
 		auto const matrix = glm::make_mat4(fMatrix->readArray());
 		glm::vec3 const scale{glm::length(glm::vec3(glm::column(matrix, 0))), glm::length(glm::vec3(glm::column(matrix, 1))), glm::length(glm::vec3(glm::column(matrix, 2)))};
-		if ((std::abs(scale.x - 1.0f) > 0.01) || (std::abs(scale.y - 1.0f) > 0.01) || (std::abs(scale.z - 1.0f) > 0.01))
+		if (std::abs(scale.x - 1.0f) > 0.01 || std::abs(scale.y - 1.0f) > 0.01 || std::abs(scale.z - 1.0f) > 0.01)
 		{
 			ErrorLog("Bad model: transformation matrix for sub-model \"" + pName + "\" imposes geometry scaling (factors: " + to_string(scale) + ")", logtype::model);
-			m_normalizenormals = (((std::abs(scale.x - scale.y) < 0.01f) && (std::abs(scale.y - scale.z) < 0.01f)) ? rescale : normalize);
+			m_normalizenormals = std::abs(scale.x - scale.y) < 0.01f && std::abs(scale.y - scale.z) < 0.01f ? rescale : normalize;
 		}
 	}
 }
@@ -2492,7 +2492,7 @@ void TModel3d::Init()
 			Root->m_boundingradius = std::max(Root->m_boundingradius, root->m_boundingradius);
 		}
 
-		if ((Global.iConvertModels & 1) && (false == asBinary.empty()))
+		if (Global.iConvertModels & 1 && false == asBinary.empty())
 		{
 			SaveToBinFile(asBinary);
 			asBinary = ""; // zablokowanie powtórnego zapisu

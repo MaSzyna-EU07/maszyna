@@ -88,7 +88,7 @@ void render_task::run()
 			const int screenWidth = static_cast<int>(PyInt_AsLong(outputWidth));
 			const int screenHeight = static_cast<int>(PyInt_AsLong(outputHeight));
 
-			const bool useRgb = (false && !Global.gfx_usegles);
+			const bool useRgb = false && !Global.gfx_usegles;
 
 			const int glFormat = useRgb ? GL_SRGB8 : GL_SRGB8_ALPHA8;
 			const int glComponents = useRgb ? GL_RGB : GL_RGBA;
@@ -99,8 +99,8 @@ void render_task::run()
 			char *pythonBufferPtr = nullptr;
 
 			const bool bufferExtracted =
-				(PyString_AsStringAndSize(output, &pythonBufferPtr, &pythonBufferBytes) == 0)
-				&& (pythonBufferPtr != nullptr);
+				PyString_AsStringAndSize(output, &pythonBufferPtr, &pythonBufferBytes) == 0
+				&& pythonBufferPtr != nullptr;
 
 			if (!bufferExtracted)
 			{
@@ -263,8 +263,8 @@ auto python_taskqueue::init() -> bool
 	}
 
 	stringiomodule = PyImport_ImportModule("cStringIO");
-	stringioclassname = (stringiomodule != nullptr ? PyObject_GetAttrString(stringiomodule, "StringIO") : nullptr);
-	stringioobject = (stringioclassname != nullptr ? PyObject_CallObject(stringioclassname, nullptr) : nullptr);
+	stringioclassname = stringiomodule != nullptr ? PyObject_GetAttrString(stringiomodule, "StringIO") : nullptr;
+	stringioobject = stringioclassname != nullptr ? PyObject_CallObject(stringioclassname, nullptr) : nullptr;
 	m_stderr = {(stringioobject == nullptr ? nullptr : PySys_SetObject(const_cast<char *>("stderr"), stringioobject) != 0 ? nullptr : stringioobject)};
 
 	if (false == run_file("abstractscreenrenderer"))
@@ -349,7 +349,7 @@ void python_taskqueue::exit()
 auto python_taskqueue::insert(task_request const &Task) -> bool
 {
 
-	if (!m_initialized || (false == Global.python_enabled) || (Task.renderer.empty()) || (Task.input == nullptr) || (Task.target == 0))
+	if (!m_initialized || false == Global.python_enabled || Task.renderer.empty() || Task.input == nullptr || Task.target == 0)
 	{
 		return false;
 	}

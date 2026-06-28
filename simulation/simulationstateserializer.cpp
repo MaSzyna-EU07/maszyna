@@ -48,8 +48,8 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
     // TODO: check first for presence of serialized binary files
     // if this fails, fall back on the legacy text format
 	state->scratchpad.name = Scenariofile;
-    if( ( true == Global.file_binary_terrain )
-     && ( Scenariofile != "$.scn" ) ) {
+    if( true == Global.file_binary_terrain
+     && Scenariofile != "$.scn" ) {
         // compilation to binary file isn't supported for rainsted-created overrides
         // NOTE: we postpone actual loading of the scene until we process time, season and weather data
 		state->scratchpad.binary.terrain = Region->is_scene( Scenariofile ) ;
@@ -152,9 +152,9 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 	scene::Groups.update_map();
 	Region->create_map_geometry();
 
-	if( ( true == Global.file_binary_terrain )
-     && ( false == state->scratchpad.binary.terrain )
-	 && ( state->scenariofile != "$.scn" ) ) {
+	if( true == Global.file_binary_terrain
+     && false == state->scratchpad.binary.terrain
+	 && state->scenariofile != "$.scn" ) {
 		// if we didn't find usable binary version of the scenario files, create them now for future use
 		// as long as the scenario file wasn't rainsted-created base file override
 		Region->serialize( state->scenariofile );
@@ -169,8 +169,8 @@ state_serializer::deserialize_isolated( cParser &Input, scene::scratch_data &Scr
     auto token { Input.getToken<std::string>() };
     auto *groupowner { TIsolated::Find( token ) };
     // ...followed by list of its tracks
-    while( ( false == ( token = Input.getToken<std::string>() ).empty() )
-        && ( token != "endisolated" ) ) {
+    while( false == (token = Input.getToken<std::string>()).empty()
+        && token != "endisolated" ) {
         auto *track { simulation::Paths.find( token ) };
         if( track != nullptr )
             track->AddIsolated( groupowner );
@@ -185,8 +185,8 @@ state_serializer::deserialize_area( cParser &Input, scene::scratch_data &Scratch
     auto token { Input.getToken<std::string>() };
     auto *groupowner { TIsolated::Find( token ) };
     // ...followed by list of its children
-    while( ( false == ( token = Input.getToken<std::string>() ).empty() )
-        && ( token != "endarea" ) ) {
+    while( false == (token = Input.getToken<std::string>()).empty()
+        && token != "endarea" ) {
         // bind the children with their parent
         auto *isolated { TIsolated::Find( token ) };
         isolated->parent( groupowner );
@@ -197,8 +197,8 @@ void
 state_serializer::deserialize_assignment( cParser &Input, scene::scratch_data &Scratchpad ) {
 
     std::string token { Input.getToken<std::string>() };
-    while( ( false == token.empty() )
-        && ( token != "endassignment" ) ) {
+    while( false == token.empty()
+        && token != "endassignment" ) {
         // assignment is expected to come as string pairs: language id and the actual assignment enclosed in quotes to form a single token
         auto assignment{ Input.getToken<std::string>() };
         win1250_to_ascii( assignment );
@@ -248,8 +248,8 @@ state_serializer::deserialize_atmo( cParser &Input, scene::scratch_data &Scratch
         // NOTE: ugly, clean it up when we're done with world refactoring
         simulation::Environment.compute_weather();
     }
-    while( ( false == token.empty() )
-        && ( token != "endatmo" ) ) {
+    while( false == token.empty()
+        && token != "endatmo" ) {
         // anything else left in the section has no defined meaning
         token = Input.getToken<std::string>();
     }
@@ -388,11 +388,11 @@ void state_serializer::init_time() {
 	if( true == Global.ScenarioTimeCurrent ) {
 		// calculate time shift required to match scenario time with local clock
 		auto const *localtime = std::gmtime( &Global.starting_timestamp );
-		Global.ScenarioTimeOffset = ( ( localtime->tm_hour * 60 + localtime->tm_min ) - ( time.wHour * 60 + time.wMinute ) ) / 60.f;
+		Global.ScenarioTimeOffset = ( localtime->tm_hour * 60 + localtime->tm_min - ( time.wHour * 60 + time.wMinute ) ) / 60.f;
 	}
 	else if( false == std::isnan( Global.ScenarioTimeOverride ) ) {
 		// scenario time override takes precedence over scenario time offset
-		Global.ScenarioTimeOffset = ( ( Global.ScenarioTimeOverride * 60 ) - ( time.wHour * 60 + time.wMinute ) ) / 60.f;
+		Global.ScenarioTimeOffset = (Global.ScenarioTimeOverride * 60 - ( time.wHour * 60 + time.wMinute ) ) / 60.f;
 	}
 }
 
@@ -451,9 +451,9 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
             ErrorLog( "Bad scenario: duplicate vehicle name \"" + vehicle->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
         }
 
-        if( ( vehicle->MoverParameters->CategoryFlag == 1 ) // trains only
-         && ( ( ( vehicle->LightList( end::front ) & ( light::headlight_left | light::headlight_right | light::headlight_upper ) ) != 0 )
-           || ( ( vehicle->LightList( end::rear )  & ( light::headlight_left | light::headlight_right | light::headlight_upper ) ) != 0 ) ) ) {
+        if( vehicle->MoverParameters->CategoryFlag == 1 // trains only
+         && ( (vehicle->LightList(end::front) & (light::headlight_left | light::headlight_right | light::headlight_upper)) != 0
+           || (vehicle->LightList(end::rear) & (light::headlight_left | light::headlight_right | light::headlight_upper)) != 0 ) ) {
             simulation::Lights.insert( vehicle );
         }
     }
@@ -558,16 +558,16 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
             }
         }
     }
-    else if( ( nodedata.type == "triangles" )
-          || ( nodedata.type == "triangle_strip" )
-          || ( nodedata.type == "triangle_fan" ) ) {
+    else if( nodedata.type == "triangles"
+          || nodedata.type == "triangle_strip"
+          || nodedata.type == "triangle_fan" ) {
 
         auto const skip {
             // all shapes will be loaded from the binary version of the file
-            ( true == Scratchpad.binary.terrain )
+            true == Scratchpad.binary.terrain
             // crude way to detect fixed switch trackbed geometry
-         || ( ( true == Global.CreateSwitchTrackbeds )
-           && ( Input.Name().size() >= 15 )
+         || ( true == Global.CreateSwitchTrackbeds
+           && Input.Name().size() >= 15
            && Input.Name().starts_with("scenery/zwr")
            && Input.Name().ends_with(".inc") ) };
 
@@ -583,9 +583,9 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
             skip_until( Input, "endtri" );
         }
     }
-    else if( ( nodedata.type == "lines" )
-          || ( nodedata.type == "line_strip" )
-          || ( nodedata.type == "line_loop" ) ) {
+    else if( nodedata.type == "lines"
+          || nodedata.type == "line_strip"
+          || nodedata.type == "line_loop" ) {
 
         if( false == Scratchpad.binary.terrain ) {
 
@@ -685,10 +685,7 @@ state_serializer::deserialize_scale( cParser &Input, scene::scratch_data &Scratc
         factor = glm::vec3( 1.0f );
     }
     // scales compose component-wise, mirroring how origin offsets compose additively.
-    glm::vec3 const parent = (
-        Scratchpad.location.scale.empty() ?
-            glm::vec3( 1.0f ) :
-            Scratchpad.location.scale.top() );
+    glm::vec3 const parent = Scratchpad.location.scale.empty() ? glm::vec3(1.0f) : Scratchpad.location.scale.top();
     Scratchpad.location.scale.emplace( factor * parent );
 }
 
@@ -806,8 +803,8 @@ state_serializer::deserialize_terrain(cParser &Input, scene::scratch_data &Scrat
 void
 state_serializer::deserialize_endtrainset( cParser &Input, scene::scratch_data &Scratchpad ) {
 
-    if( ( false == Scratchpad.trainset.is_open )
-     || ( true == Scratchpad.trainset.vehicles.empty() ) ) {
+    if( false == Scratchpad.trainset.is_open
+     || true == Scratchpad.trainset.vehicles.empty() ) {
         // not bloody likely but we better check for it just the same
         ErrorLog( "Bad trainset: empty trainset defined in file \"" + Input.Name() + "\" (line " + std::to_string( Input.Line() - 1 ) + ")" );
         Scratchpad.trainset.is_open = false;
@@ -817,8 +814,8 @@ state_serializer::deserialize_endtrainset( cParser &Input, scene::scratch_data &
     std::size_t vehicleindex { 0 };
     for( auto *vehicle : Scratchpad.trainset.vehicles ) {
         // go through list of vehicles in the trainset, coupling them together and checking for potential driver
-        if( ( vehicle->Mechanik != nullptr )
-         && ( vehicle->Mechanik->primary() ) ) {
+        if( vehicle->Mechanik != nullptr
+         && vehicle->Mechanik->primary() ) {
             // primary driver will receive the timetable for this trainset
             Scratchpad.trainset.driver = vehicle;
             // they'll also receive assignment data if there's any
@@ -852,9 +849,7 @@ state_serializer::deserialize_endtrainset( cParser &Input, scene::scratch_data &
         // place end signals only on trains without a driver, activate markers otherwise
         Scratchpad.trainset.vehicles.back()->RaLightsSet(
             -1,
-            ( Scratchpad.trainset.driver != nullptr ?
-                light::redmarker_left | light::redmarker_right | light::rearendsignals :
-                light::rearendsignals ) );
+            Scratchpad.trainset.driver != nullptr ? light::redmarker_left | light::redmarker_right | light::rearendsignals : light::rearendsignals );
     }
     // all done
     Scratchpad.trainset.is_open = false;
@@ -887,10 +882,7 @@ state_serializer::deserialize_traction( cParser &Input, scene::scratch_data &Scr
     }
     // TODO: refactor track and wrapper classes and their de/serialization. do offset and rotation after deserialization is done
     auto *traction = new TTraction( Nodedata );
-    auto offset = (
-        Scratchpad.location.offset.empty() ?
-            glm::dvec3() :
-            Scratchpad.location.offset.top() );
+    auto offset = Scratchpad.location.offset.empty() ? glm::dvec3() : Scratchpad.location.offset.top();
     traction->Load( &Input, offset );
 
     return traction;
@@ -989,45 +981,27 @@ state_serializer::deserialize_dynamic( cParser &Input, scene::scratch_data &Scra
 	replace_slashes(skinfile);
 	replace_slashes(mmdfile);
 
-    auto const pathname = (
-        Scratchpad.trainset.is_open ?
-            Scratchpad.trainset.track :
-            Input.getToken<std::string>() );
+    auto const pathname = Scratchpad.trainset.is_open ? Scratchpad.trainset.track : Input.getToken<std::string>();
     auto const offset { Input.getToken<double>( false ) };
     auto const drivertype { Input.getToken<std::string>() };
-    auto const couplingdata = (
-        Scratchpad.trainset.is_open ?
-            Input.getToken<std::string>() :
-            "3" );
-    auto const velocity = (
-        Scratchpad.trainset.is_open ?
-            Scratchpad.trainset.velocity :
-            Input.getToken<float>( false ) );
+    auto const couplingdata = Scratchpad.trainset.is_open ? Input.getToken<std::string>() : "3";
+    auto const velocity = Scratchpad.trainset.is_open ? Scratchpad.trainset.velocity : Input.getToken<float>(false);
     // extract coupling type and optional parameters
     auto const couplingdatawithparams = couplingdata.find( '.' );
-    auto coupling = (
-        couplingdatawithparams != std::string::npos ?
-            std::atoi( couplingdata.substr( 0, couplingdatawithparams ).c_str() ) :
-            std::atoi( couplingdata.c_str() ) );
+    auto coupling = couplingdatawithparams != std::string::npos ? std::atoi(couplingdata.substr(0, couplingdatawithparams).c_str()) : std::atoi(couplingdata.c_str());
     if( coupling < 0 ) {
         // sprzęg zablokowany (pojazdy nierozłączalne przy manewrach)
-        coupling = ( -coupling ) | coupling::permanent;
+        coupling = -coupling | coupling::permanent;
     }
-    if( ( offset != -1.0 )
-     && ( std::abs( offset ) > 0.5 ) ) { // maksymalna odległość między sprzęgami - do przemyślenia
+    if( offset != -1.0
+     && std::abs(offset) > 0.5 ) { // maksymalna odległość między sprzęgami - do przemyślenia
         // likwidacja sprzęgu, jeśli odległość zbyt duża - to powinno być uwzględniane w fizyce sprzęgów...
         coupling = coupling::faux; 
     }
-    auto const params = (
-        couplingdatawithparams != std::string::npos ?
-            couplingdata.substr( couplingdatawithparams + 1 ) :
-            "" );
+    auto const params = couplingdatawithparams != std::string::npos ? couplingdata.substr(couplingdatawithparams + 1) : "";
     // load amount and type
     auto loadcount { Input.getToken<int>( false ) };
-    auto loadtype = (
-        loadcount ?
-            Input.getToken<std::string>() :
-            "" );
+    auto loadtype = loadcount ? Input.getToken<std::string>() : "";
     if( loadtype == "enddynamic" ) {
         // idiotoodporność: ładunek bez podanego typu nie liczy się jako ładunek
         loadcount = 0;
@@ -1042,11 +1016,11 @@ state_serializer::deserialize_dynamic( cParser &Input, scene::scratch_data &Scra
         return nullptr;
     }
 
-    if( ( true == Scratchpad.trainset.vehicles.empty() ) // jeśli pierwszy pojazd,
-     && ( false == path->m_events0.empty() ) // tor ma Event0
-     && ( std::abs( velocity ) <= 1.f ) // a skład stoi
-     && ( Scratchpad.trainset.offset >= 0.0 ) // ale może nie sięgać na owy tor
-     && ( Scratchpad.trainset.offset <  8.0 ) ) { // i raczej nie sięga
+    if( true == Scratchpad.trainset.vehicles.empty() // jeśli pierwszy pojazd,
+     && false == path->m_events0.empty() // tor ma Event0
+     && std::abs(velocity) <= 1.f // a skład stoi
+     && Scratchpad.trainset.offset >= 0.0 // ale może nie sięgać na owy tor
+     && Scratchpad.trainset.offset < 8.0 ) { // i raczej nie sięga
         // przesuwamy około pół EU07 dla wstecznej zgodności
         Scratchpad.trainset.offset = 8.0;
     }
@@ -1058,22 +1032,20 @@ state_serializer::deserialize_dynamic( cParser &Input, scene::scratch_data &Scra
             Nodedata.name,
             datafolder, skinfile, mmdfile,
             path,
-            ( offset == -1.0 ?
-                Scratchpad.trainset.offset :
-                Scratchpad.trainset.offset - offset ),
+            offset == -1.0 ? Scratchpad.trainset.offset : Scratchpad.trainset.offset - offset,
             drivertype,
             velocity,
             Scratchpad.trainset.name,
             loadcount, loadtype,
-            ( offset == -1.0 ),
+            offset == -1.0,
             params );
 
     if( length != 0.0 ) { // zero oznacza błąd
         // przesunięcie dla kolejnego, minus bo idziemy w stronę punktu 1
         Scratchpad.trainset.offset -= length;
         // automatically establish permanent connections for couplers which specify them in their definitions
-        if( ( coupling != 0 )
-         && ( vehicle->MoverParameters->Couplers[ ( offset == -1.0 ? end::front : end::rear ) ].AllowedFlag & coupling::permanent ) ) {
+        if( coupling != 0
+         && vehicle->MoverParameters->Couplers[(offset == -1.0 ? end::front : end::rear)].AllowedFlag & coupling::permanent ) {
             coupling |= coupling::permanent;
         }
         if( true == Scratchpad.trainset.is_open ) {
@@ -1129,8 +1101,8 @@ void
 state_serializer::skip_until( cParser &Input, std::string const &Token ) {
 
     std::string token { Input.getToken<std::string>() };
-    while( ( false == token.empty() )
-        && ( token != Token ) ) {
+    while( false == token.empty()
+        && token != Token ) {
 
         token = Input.getToken<std::string>();
     }
@@ -1245,8 +1217,8 @@ state_serializer::export_as_text(std::string const &Scenariofile) const {
 	// mem cells
 	ctrfile << "// memory cells\n";
 	for( auto const *memorycell : Memory.sequence() ) {
-		if( ( true == memorycell->is_exportable )
-		 && ( memorycell->group() == null_handle ) ) {
+		if( true == memorycell->is_exportable
+		 && memorycell->group() == null_handle) {
 			memorycell->export_as_text( ctrfile );
 		}
 	}

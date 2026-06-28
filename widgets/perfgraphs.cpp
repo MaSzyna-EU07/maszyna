@@ -10,7 +10,7 @@ void perfgraph_panel::render_contents() {
 	{
 		for (size_t i = 0; i < (size_t)TIMER_MAX; i++)
 		{
-			bool is_selected = (current_timer == (timers_e)i);
+			bool is_selected = current_timer == (timers_e)i;
 			if (ImGui::Selectable(timer_label[i].c_str(), is_selected))
 				current_timer = (timers_e)i;
 			if (is_selected)

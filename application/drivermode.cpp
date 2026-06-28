@@ -74,7 +74,7 @@ bool driver_mode::drivermode_input::init()
 {
 
 	// initialize input devices
-	auto result = (keyboard.init() && mouse.init());
+	auto result = keyboard.init() && mouse.init();
 	if (true == Global.InputGamepad)
 	{
 		gamepad.init();
@@ -268,7 +268,7 @@ bool driver_mode::update()
 			}
 		}
 
-		if ((simulation::Train == nullptr) && (false == FreeFlyModeFlag))
+		if (simulation::Train == nullptr && false == FreeFlyModeFlag)
 		{
 			// intercept cases when the driven train got removed after entering portal
 			InOutKey();
@@ -344,7 +344,7 @@ bool driver_mode::update()
 			// tooltip update
 			set_tooltip("");
 			auto const *train{simulation::Train};
-			if ((train != nullptr) && (false == FreeFlyModeFlag))
+			if (train != nullptr && false == FreeFlyModeFlag)
 			{
 				if (false == DebugModeFlag)
 				{
@@ -378,7 +378,7 @@ bool driver_mode::update()
 				{
 					// in debug mode show names of submodels, to help with cab setup and/or debugging
 					auto const cabcontrol = GfxRenderer->Pick_Control();
-					set_tooltip((cabcontrol ? cabcontrol->pName : ""));
+					set_tooltip(cabcontrol ? cabcontrol->pName : "");
 				}
 			}
 			if (Global.ControlPicking && FreeFlyModeFlag && DebugModeFlag)
@@ -410,7 +410,7 @@ bool driver_mode::update()
 
 	GfxRenderer->Update(deltarealtime);
 
-	simulation::is_ready = simulation::is_ready || ((simulation::Train != nullptr) && (simulation::Train->is_cab_initialized)) || (Global.local_start_vehicle == "ghostview");
+	simulation::is_ready = simulation::is_ready || (simulation::Train != nullptr && simulation::Train->is_cab_initialized) || Global.local_start_vehicle == "ghostview";
 
 	return true;
 }
@@ -419,7 +419,7 @@ bool driver_mode::update()
 void driver_mode::enter()
 {
 
-	TDynamicObject *nPlayerTrain{((Global.local_start_vehicle != "ghostview") ? simulation::Vehicles.find(Global.local_start_vehicle) : nullptr)};
+	TDynamicObject *nPlayerTrain{(Global.local_start_vehicle != "ghostview" ? simulation::Vehicles.find(Global.local_start_vehicle) : nullptr)};
 
 	Camera.Init(Global.FreeCameraInit[0], Global.FreeCameraInitAngle[0], nullptr);
 	Global.pCamera = Camera;
@@ -467,9 +467,9 @@ void driver_mode::on_key(int const Key, int const Scancode, int const Action, in
 {
 
 #ifndef __unix__
-	Global.shiftState = (Mods & GLFW_MOD_SHIFT) ? true : false;
-	Global.ctrlState = (Mods & GLFW_MOD_CONTROL) ? true : false;
-	Global.altState = (Mods & GLFW_MOD_ALT) ? true : false;
+	Global.shiftState = Mods & GLFW_MOD_SHIFT ? true : false;
+	Global.ctrlState = Mods & GLFW_MOD_CONTROL ? true : false;
+	Global.altState = Mods & GLFW_MOD_ALT ? true : false;
 #endif
 
 	bool anyModifier = Mods & (GLFW_MOD_SHIFT | GLFW_MOD_CONTROL | GLFW_MOD_ALT);
@@ -479,7 +479,7 @@ void driver_mode::on_key(int const Key, int const Scancode, int const Action, in
 	{
 		return;
 	}
-	if (Key == (GLFW_KEY_F12) && Global.shiftState && Action == GLFW_PRESS)
+	if (Key == GLFW_KEY_F12 && Global.shiftState && Action == GLFW_PRESS)
 	{
 		m_userinterface->showDebugUI();
 		return;
@@ -490,7 +490,7 @@ void driver_mode::on_key(int const Key, int const Scancode, int const Action, in
 		return;
 	}
 
-	if ((true == Global.InputMouse) && ((Key == GLFW_KEY_LEFT_ALT) || (Key == GLFW_KEY_RIGHT_ALT)))
+	if (true == Global.InputMouse && (Key == GLFW_KEY_LEFT_ALT || Key == GLFW_KEY_RIGHT_ALT))
 	{
 		// if the alt key was pressed toggle control picking mode and set matching cursor behaviour
 		if (Action == GLFW_PRESS)
@@ -558,7 +558,7 @@ bool driver_mode::is_command_processor() const
 void driver_mode::update_camera(double const Deltatime)
 {
 
-	auto *controlled = (simulation::Train ? simulation::Train->Dynamic() : nullptr);
+	auto *controlled = simulation::Train ? simulation::Train->Dynamic() : nullptr;
 
 	if (false == Global.ControlPicking)
 	{
@@ -626,7 +626,7 @@ void driver_mode::update_camera(double const Deltatime)
 	if (false == DebugCameraFlag)
 	{
 		// regular camera
-		if ((simulation::Train != nullptr) && (false == FreeFlyModeFlag) && (false == Global.CabWindowOpen))
+		if (simulation::Train != nullptr && false == FreeFlyModeFlag && false == Global.CabWindowOpen)
 		{
 			// if in cab potentially alter camera placement based on changes in train object
 			Camera.m_owneroffset = simulation::Train->pMechOffset;
@@ -636,20 +636,20 @@ void driver_mode::update_camera(double const Deltatime)
 
 		Camera.Update();
 
-		if ((simulation::Train != nullptr) && (false == FreeFlyModeFlag))
+		if (simulation::Train != nullptr && false == FreeFlyModeFlag)
 		{
 			// keep the camera within cab boundaries
 			Camera.m_owneroffset = simulation::Train->clamp_inside(Camera.m_owneroffset);
 		}
 
-		if ((simulation::Train != nullptr) && (false == FreeFlyModeFlag) && (false == Global.CabWindowOpen))
+		if (simulation::Train != nullptr && false == FreeFlyModeFlag && false == Global.CabWindowOpen)
 		{
 			// cache cab camera in case of view type switch
 			simulation::Train->pMechViewAngle = {Camera.Angle.x, Camera.Angle.y};
 			simulation::Train->pMechOffset = Camera.m_owneroffset;
 		}
 
-		if ((true == FreeFlyModeFlag) && (Camera.m_owner != nullptr))
+		if (true == FreeFlyModeFlag && Camera.m_owner != nullptr)
 		{
 			// cache external view config
 			auto &externalviewconfig{m_externalviewconfigs[m_externalviewmode]};
@@ -667,14 +667,14 @@ void driver_mode::update_camera(double const Deltatime)
 	// reset window state, it'll be set again if applicable in a check below
 	Global.CabWindowOpen = false;
 
-	if ((simulation::Train != nullptr) && (Camera.m_owner != nullptr) && (false == DebugCameraFlag))
+	if (simulation::Train != nullptr && Camera.m_owner != nullptr && false == DebugCameraFlag)
 	{
 		// jeśli jazda w kabinie, przeliczyć trzeba parametry kamery
 		/*
 		        auto tempangle = controlled->VectorFront() * ( controlled->MoverParameters->CabOccupied == -1 ? -1 : 1 );
 		        double modelrotate = atan2( -tempangle.x, tempangle.z );
 		*/
-		if ((false == FreeFlyModeFlag) && (true == Global.ctrlState) && ((m_input.keyboard.key(GLFW_KEY_LEFT) != GLFW_RELEASE) || (m_input.keyboard.key(GLFW_KEY_RIGHT) != GLFW_RELEASE)))
+		if (false == FreeFlyModeFlag && true == Global.ctrlState && (m_input.keyboard.key(GLFW_KEY_LEFT) != GLFW_RELEASE || m_input.keyboard.key(GLFW_KEY_RIGHT) != GLFW_RELEASE))
 		{
 			// jeśli lusterko lewe albo prawe (bez rzucania na razie)
 			Global.CabWindowOpen = true;
@@ -722,8 +722,8 @@ void driver_mode::update_camera(double const Deltatime)
 			auto shakencamerapos{Camera.m_owneroffset +
 			                     shakescale * glm::vec3(1.5 * Camera.m_owner->ShakeState.offset.x, 2.0 * Camera.m_owner->ShakeState.offset.y, 1.5 * Camera.m_owner->ShakeState.offset.z)};
 
-			Camera.Pos = (Camera.m_owner->GetWorldPosition(FreeFlyModeFlag ? glm::dvec3(shakencamerapos) : // TODO: vehicle collision box for the external vehicle camera
-			                                                                 simulation::Train->clamp_inside(shakencamerapos)));
+			Camera.Pos = Camera.m_owner->GetWorldPosition(FreeFlyModeFlag ? glm::dvec3(shakencamerapos) : // TODO: vehicle collision box for the external vehicle camera
+			                                                                simulation::Train->clamp_inside(shakencamerapos));
 
 			if (!Global.iPause)
 			{
@@ -902,15 +902,15 @@ void driver_mode::OnKeyDown(int cKey)
 
 	// actual key processing
 	// TODO: redo the input system
-	if ((cKey >= GLFW_KEY_0) && (cKey <= GLFW_KEY_9))
+	if (cKey >= GLFW_KEY_0 && cKey <= GLFW_KEY_9)
 	{
 		// klawisze cyfrowe
 		int i = cKey - GLFW_KEY_0; // numer klawisza
 		if (Global.shiftState)
 		{
 			// z [Shift] uruchomienie eventu
-			if ((Global.iPause == 0) // podczas pauzy klawisze nie działają
-			    && (KeyEvents[i] != nullptr))
+			if (Global.iPause == 0 // podczas pauzy klawisze nie działają
+			    && KeyEvents[i] != nullptr)
 			{
 				m_relay.post(user_command::queueevent, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &KeyEvents[i]->name());
 			}
@@ -921,7 +921,7 @@ void driver_mode::OnKeyDown(int cKey)
 			if (FreeFlyModeFlag)
 			{
 				// w trybie latania można przeskakiwać do ustawionych kamer
-				if ((Global.FreeCameraInit[i].x == 0.0) && (Global.FreeCameraInit[i].y == 0.0) && (Global.FreeCameraInit[i].z == 0.0))
+				if (Global.FreeCameraInit[i].x == 0.0 && Global.FreeCameraInit[i].y == 0.0 && Global.FreeCameraInit[i].z == 0.0)
 				{
 					// jeśli kamera jest w punkcie zerowym, zapamiętanie współrzędnych i kątów
 					Global.FreeCameraInit[i] = Camera.Pos;
@@ -966,7 +966,7 @@ void driver_mode::OnKeyDown(int cKey)
 		TDynamicObject *dynamic = std::get<TDynamicObject *>(simulation::Region->find_vehicle(Global.pCamera.Pos, 50, false, false));
 		if (dynamic)
 		{
-			m_relay.post(user_command::entervehicle, (Global.ctrlState ? GLFW_MOD_CONTROL : 0), (simulation::Train ? simulation::Train->id() : 0), GLFW_PRESS, 0, dynamic->GetPosition(),
+			m_relay.post(user_command::entervehicle, Global.ctrlState ? GLFW_MOD_CONTROL : 0, simulation::Train ? simulation::Train->id() : 0, GLFW_PRESS, 0, dynamic->GetPosition(),
 			             &dynamic->name());
 
 			change_train = dynamic->name();
@@ -982,11 +982,11 @@ void driver_mode::OnKeyDown(int cKey)
 
 			if (Global.ctrlState)
 			{
-				Global.fTimeSpeed = (Global.shiftState ? 60.0 : 20.0);
+				Global.fTimeSpeed = Global.shiftState ? 60.0 : 20.0;
 			}
 			else
 			{
-				Global.fTimeSpeed = (Global.shiftState ? 5.0 : Global.default_timespeed);
+				Global.fTimeSpeed = Global.shiftState ? 5.0 : Global.default_timespeed;
 			}
 		}
 		break;
@@ -1024,7 +1024,7 @@ void driver_mode::OnKeyDown(int cKey)
 	case GLFW_KEY_F11:
 	{
 		// editor mode
-		if ((false == Global.ctrlState) && (false == Global.shiftState))
+		if (false == Global.ctrlState && false == Global.shiftState)
 		{
 			Application.push_mode(eu07_application::mode::editor);
 		}
@@ -1044,14 +1044,14 @@ void driver_mode::OnKeyDown(int cKey)
 void driver_mode::DistantView(bool const Near)
 {
 
-	TDynamicObject const *vehicle = {((simulation::Train != nullptr) ? simulation::Train->Dynamic() : pDynamicNearest)};
+	TDynamicObject const *vehicle = {(simulation::Train != nullptr ? simulation::Train->Dynamic() : pDynamicNearest)};
 
 	if (vehicle == nullptr)
 	{
 		return;
 	}
 
-	auto const cab = (vehicle->MoverParameters->CabOccupied == 0 ? 1 : vehicle->MoverParameters->CabOccupied);
+	auto const cab = vehicle->MoverParameters->CabOccupied == 0 ? 1 : vehicle->MoverParameters->CabOccupied;
 	auto const left = vehicle->VectorLeft() * (double)cab;
 
 	if (true == Near)
@@ -1119,7 +1119,7 @@ void driver_mode::ExternalView()
 
 			Camera.m_owneroffset = {1.5 * owner->MoverParameters->Dim.W * offsetflip, std::max(5.0, 1.25 * owner->MoverParameters->Dim.H), -0.4 * owner->MoverParameters->Dim.L * offsetflip};
 
-			Camera.Angle.y = glm::radians((vehicle->MoverParameters->DirActive < 0 ? 180.0 : 0.0));
+			Camera.Angle.y = glm::radians(vehicle->MoverParameters->DirActive < 0 ? 180.0 : 0.0);
 		}
 		auto const shakeangles{owner->shake_angles()};
 		Camera.Angle.x -= 0.5 * shakeangles.second; // hustanie kamery przod tyl
@@ -1149,7 +1149,7 @@ void driver_mode::ExternalView()
 
 			Camera.m_owneroffset = {1.5 * owner->MoverParameters->Dim.W * offsetflip, std::max(5.0, 1.25 * owner->MoverParameters->Dim.H), 0.2 * owner->MoverParameters->Dim.L * offsetflip};
 
-			Camera.Angle.y = glm::radians((vehicle->MoverParameters->DirActive < 0 ? 0.0 : 180.0));
+			Camera.Angle.y = glm::radians(vehicle->MoverParameters->DirActive < 0 ? 0.0 : 180.0);
 		}
 		auto const shakeangles{owner->shake_angles()};
 		Camera.Angle.x -= 0.5 * shakeangles.second; // hustanie kamery przod tyl
@@ -1177,7 +1177,7 @@ void driver_mode::ExternalView()
 
 			Camera.m_owneroffset = {-0.65 * owner->MoverParameters->Dim.W * offsetflip, 0.90, 0.15 * owner->MoverParameters->Dim.L * offsetflip};
 
-			Camera.Angle.y = glm::radians((vehicle->MoverParameters->DirActive < 0 ? 180.0 : 0.0));
+			Camera.Angle.y = glm::radians(vehicle->MoverParameters->DirActive < 0 ? 180.0 : 0.0);
 		}
 		auto const shakeangles{owner->shake_angles()};
 		Camera.Angle.x -= 0.5 * shakeangles.second; // hustanie kamery przod tyl

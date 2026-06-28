@@ -95,14 +95,14 @@ void itemproperties_panel::update(scene::basic_node *Node)
 		text_lines.emplace_back(textline, Global.UITextColor);
 
 		// 3d shape
-		auto modelfile{((subnode->pModel != nullptr) ? subnode->pModel->NameGet() : "(none)")};
+		auto modelfile{(subnode->pModel != nullptr ? subnode->pModel->NameGet() : "(none)")};
 		if (modelfile.find(paths::models) == 0)
 		{
 			// don't include 'models/' in the path
 			modelfile.erase(0, std::string{paths::models}.size());
 		}
 		// texture
-		auto texturefile{((subnode->Material()->replacable_skins[1] != null_handle) ? GfxRenderer->Material(subnode->Material()->replacable_skins[1])->GetName() : "(none)")};
+		auto texturefile{(subnode->Material()->replacable_skins[1] != null_handle ? GfxRenderer->Material(subnode->Material()->replacable_skins[1])->GetName() : "(none)")};
 		if (texturefile.find(paths::textures) == 0)
 		{
 			// don't include 'textures/' in the path
@@ -129,12 +129,12 @@ void itemproperties_panel::update(scene::basic_node *Node)
 		           "\nwidth: " + std::to_string(subnode->fTrackWidth) + " m" + "\nfriction: " + to_string(subnode->fFriction, 2) + "\nquality: " + std::to_string(subnode->iQualityFlag);
 		text_lines.emplace_back(textline, Global.UITextColor);
 		// textures
-		auto texturefile{((subnode->m_material1 != null_handle) ? GfxRenderer->Material(subnode->m_material1)->GetName() : "(none)")};
+		auto texturefile{(subnode->m_material1 != null_handle ? GfxRenderer->Material(subnode->m_material1)->GetName() : "(none)")};
 		if (texturefile.find(paths::textures) == 0)
 		{
 			texturefile.erase(0, std::string{paths::textures}.size());
 		}
-		auto texturefile2{((subnode->m_material2 != null_handle) ? GfxRenderer->Material(subnode->m_material2)->GetName() : "(none)")};
+		auto texturefile2{(subnode->m_material2 != null_handle ? GfxRenderer->Material(subnode->m_material2)->GetName() : "(none)")};
 		if (texturefile2.find(paths::textures) == 0)
 		{
 			texturefile2.erase(0, std::string{paths::textures}.size());
@@ -166,13 +166,13 @@ void itemproperties_panel::update(scene::basic_node *Node)
 			}
 
 			textline += (textline.empty() ? "" : "\n") + eventsequence.first + ": [";
-			for (auto const &event : *(eventsequence.second))
+			for (auto const &event : *eventsequence.second)
 			{
 				if (textline.back() != '[')
 				{
 					textline += ", ";
 				}
-				textline += (event.second != nullptr ? Bezogonkow(event.second->m_name) : event.first + " (missing)");
+				textline += event.second != nullptr ? Bezogonkow(event.second->m_name) : event.first + " (missing)";
 			}
 			textline += "] ";
 		}
@@ -472,9 +472,9 @@ nodebank_panel::nodebank_panel(std::string const &Name, bool const Isopen) : ui_
 	auto groupend{groupbegin};
 	while (groupbegin != m_nodebank.end())
 	{
-		groupbegin = std::find_if(groupend, m_nodebank.end(), [](auto const &Entry) { return (false == Entry.second->empty()); });
-		groupend = std::find_if(groupbegin, m_nodebank.end(), [](auto const &Entry) { return (Entry.second->empty()); });
-		std::sort(groupbegin, groupend, [](auto const &Left, auto const &Right) { return (Left.first < Right.first); });
+		groupbegin = std::find_if(groupend, m_nodebank.end(), [](auto const &Entry) { return false == Entry.second->empty(); });
+		groupend = std::find_if(groupbegin, m_nodebank.end(), [](auto const &Entry) { return Entry.second->empty(); });
+		std::sort(groupbegin, groupend, [](auto const &Left, auto const &Right) { return Left.first < Right.first; });
 	}
 }
 void nodebank_panel::nodebank_reload()
@@ -500,9 +500,9 @@ void nodebank_panel::nodebank_reload()
 	auto groupend{groupbegin};
 	while (groupbegin != m_nodebank.end())
 	{
-		groupbegin = std::find_if(groupend, m_nodebank.end(), [](auto const &Entry) { return (false == Entry.second->empty()); });
-		groupend = std::find_if(groupbegin, m_nodebank.end(), [](auto const &Entry) { return (Entry.second->empty()); });
-		std::sort(groupbegin, groupend, [](auto const &Left, auto const &Right) { return (Left.first < Right.first); });
+		groupbegin = std::find_if(groupend, m_nodebank.end(), [](auto const &Entry) { return false == Entry.second->empty(); });
+		groupend = std::find_if(groupbegin, m_nodebank.end(), [](auto const &Entry) { return Entry.second->empty(); });
+		std::sort(groupbegin, groupend, [](auto const &Left, auto const &Right) { return Left.first < Right.first; });
 	}
 }
 
@@ -566,7 +566,7 @@ void nodebank_panel::render()
 					{
 						continue;
 					}
-					if ((false == searchfilter.empty()) && (false == contains(entry.first, searchfilter)))
+					if (false == searchfilter.empty() && false == contains(entry.first, searchfilter))
 					{
 						continue;
 					}
@@ -609,7 +609,7 @@ std::string nodebank_panel::generate_node_label(std::string Input) const
 	replace_slashes(model);
 	erase_extension(model);
 	replace_slashes(texture);
-	return (texture == "none" ? model : model + " (" + texture + ")");
+	return texture == "none" ? model : model + " (" + texture + ")";
 }
 
 void functions_panel::update(scene::basic_node const *Node)
