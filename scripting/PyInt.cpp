@@ -33,23 +33,55 @@ void render_task::run()
 	for (auto const &datapair : m_input->floats)
 	{
 		auto *value{PyGetFloat(datapair.second)};
+		if (value == nullptr)
+		{
+			PyErr_Clear();
+			continue;
+		}
 		PyDict_SetItemString(input, datapair.first.c_str(), value);
 		Py_DECREF(value);
 	}
 	for (auto const &datapair : m_input->integers)
 	{
 		auto *value{PyLong_FromLong(datapair.second)};
+		if (value == nullptr)
+		{
+			PyErr_Clear();
+			continue;
+		}
 		PyDict_SetItemString(input, datapair.first.c_str(), value);
 		Py_DECREF(value);
 	}
 	for (auto const &datapair : m_input->bools)
 	{
+		// Py_True / Py_False sa niesmiertelne, ale PyDict_SetItemString i tak
+		// pobiera wlasna referencje - nie zwalniamy
 		auto *value{PyGetBool(datapair.second)};
 		PyDict_SetItemString(input, datapair.first.c_str(), value);
 	}
 	for (auto const &datapair : m_input->strings)
 	{
-		auto *value{PyUnicode_FromString(datapair.second.c_str())};
+		// Nazwy scenerii/wagonow (asName, SceneryFile, asCarName, cCode...) moga
+		// byc albo w UTF-8, albo w starym kodowaniu Windows-1250. PyUnicode_FromString
+		// wymaga POPRAWNEGO UTF-8 - dla nie-UTF-8 zwracalo NULL, a potem
+		// PyDict_SetItemString(dict, key, NULL) robilo Py_INCREF na NULL -> crash.
+		//
+		// Strategia: najpierw probujemy UTF-8 (strict). Jesli sie nie uda - probujemy
+		// cp1250. Jesli oba zawioda - pomijamy klucz, ale nie wywracamy symulatora.
+		char const *const str{datapair.second.c_str()};
+		Py_ssize_t const len{static_cast<Py_ssize_t>(datapair.second.size())};
+
+		auto *value{PyUnicode_DecodeUTF8(str, len, "strict")};
+		if (value == nullptr)
+		{
+			PyErr_Clear();
+			value = PyUnicode_Decode(str, len, "cp1250", "strict");
+		}
+		if (value == nullptr)
+		{
+			PyErr_Clear();
+			continue;
+		}
 		PyDict_SetItemString(input, datapair.first.c_str(), value);
 		Py_DECREF(value);
 	}
