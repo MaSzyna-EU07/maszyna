@@ -71,9 +71,27 @@ TextureTest( std::string const &Name ) {
 }
 
 //---------------------------------------------------------------------------
+void TAnimPant::common_pantograph_settings()
+{ // wspólne ustawienia, liczone po przypisaniu wymiarów ramion
+	vPos = glm::dvec3(0, 0, 0);
+	fAngleL0 = glm::radians(2.8547285515689267247882521833308);
+	fAngleL = fAngleL0; // początkowy kąt dolnego ramienia
+	fAngleU0 = acos((fLenL1 * cos(fAngleL) + fHoriz) / fLenU1); // górne ramię
+	fAngleU = fAngleU0; // początkowy kąt
+	PantWys = fLenL1 * sin(fAngleL) + fLenU1 * sin(fAngleU) + fHeight; // wysokość początkowa
+	PantTraction = PantWys;
+	hvPowerWire = nullptr;
+	fWidthExtra = 0.381f; //(2.032m-1.027)/2
+	// poza obszarem roboczym jest aproksymacja łamaną o 5 odcinkach
+	fHeightExtra[0] = 0.0f;  //+0.0762
+	fHeightExtra[1] = -0.01f; //+0.1524
+	fHeightExtra[2] = -0.03f; //+0.2286
+	fHeightExtra[3] = -0.07f; //+0.3048
+	fHeightExtra[4] = -0.15f; //+0.3810
+}
+
 void TAnimPant::AKP_4E()
 { // ustawienie wymiarów dla pantografu AKP-4E
-	vPos = glm::dvec3(0, 0, 0); // przypisanie domyśnych współczynników do pantografów
     fLenL1 = 1.22; // 1.176289 w modelach
     fLenU1 = 1.755; // 1.724482197 w modelach
     fHoriz = 0.535; // 0.54555075 przesunięcie ślizgu w długości pojazdu względem
@@ -81,27 +99,10 @@ void TAnimPant::AKP_4E()
     // ramienia
     fHeight = 0.07; // wysokość ślizgu ponad oś obrotu
     fWidth = 0.635; // połowa szerokości ślizgu, 0.635 dla AKP-1 i AKP-4E
-	fAngleL0 = glm::radians(2.8547285515689267247882521833308);
-    fAngleL = fAngleL0; // początkowy kąt dolnego ramienia
-    // fAngleU0=acos((1.22*cos(fAngleL)+0.535)/1.755); //górne ramię
-    fAngleU0 = acos((fLenL1 * cos(fAngleL) + fHoriz) / fLenU1); // górne ramię
-    fAngleU = fAngleU0; // początkowy kąt
-    // PantWys=1.22*sin(fAngleL)+1.755*sin(fAngleU); //wysokość początkowa
-    PantWys = fLenL1 * sin(fAngleL) + fLenU1 * sin(fAngleU) + fHeight; // wysokość początkowa
-    PantTraction = PantWys;
-    hvPowerWire = NULL;
-    fWidthExtra = 0.381f; //(2.032m-1.027)/2
-    // poza obszarem roboczym jest aproksymacja łamaną o 5 odcinkach
-    fHeightExtra[0] = 0.0f; //+0.0762
-    fHeightExtra[1] = -0.01f; //+0.1524
-    fHeightExtra[2] = -0.03f; //+0.2286
-    fHeightExtra[3] = -0.07f; //+0.3048
-    fHeightExtra[4] = -0.15f; //+0.3810
+	common_pantograph_settings();
 };
 void TAnimPant::WBL85()
 { // ustawienie wymiarów dla pantografu WBL88
-	vPos = glm::dvec3(0, 0, 0); // przypisanie domyśnych współczynników do pantografów
-
     // mnozniki animacji ramion dla pantografu WBL88
 	rd1rf = 1.f;
 	rd2rf = 1.2;
@@ -115,27 +116,10 @@ void TAnimPant::WBL85()
 	                // osi obrotu dolnego ramienia
 	fHeight = 0.09353; // wysokość ślizgu ponad oś obrotu
 	fWidth = 0.4969; // połowa szerokości ślizgu
-	fAngleL0 = glm::radians(2.8547285515689267247882521833308);
-	fAngleL = fAngleL0; // początkowy kąt dolnego ramienia
-	// fAngleU0=acos((1.22*cos(fAngleL)+0.535)/1.755); //górne ramię
-	fAngleU0 = acos((fLenL1 * cos(fAngleL) + fHoriz) / fLenU1); // górne ramię
-	fAngleU = fAngleU0; // początkowy kąt
-	// PantWys=1.22*sin(fAngleL)+1.755*sin(fAngleU); //wysokość początkowa
-	PantWys = fLenL1 * sin(fAngleL) + fLenU1 * sin(fAngleU) + fHeight; // wysokość początkowa
-	PantTraction = PantWys;
-	hvPowerWire = NULL;
-	fWidthExtra = 0.381f; //(2.032m-1.027)/2
-	// poza obszarem roboczym jest aproksymacja łamaną o 5 odcinkach
-	fHeightExtra[0] = 0.0f; //+0.0762
-	fHeightExtra[1] = -0.01f; //+0.1524
-	fHeightExtra[2] = -0.03f; //+0.2286
-	fHeightExtra[3] = -0.07f; //+0.3048
-	fHeightExtra[4] = -0.15f; //+0.3810
+	common_pantograph_settings();
 };
 void TAnimPant::EC160_200()
 { // ustawienie wymiarów dla pantografow EC160 lub EC200
-	vPos = glm::dvec3(0, 0, 0); // przypisanie domyśnych współczynników do pantografów
-
 	// mnozniki animacji ramion dla pantografow EC160 lub EC200
 	rd1rf = 1.f;
 	rd2rf = 0.85;
@@ -149,27 +133,10 @@ void TAnimPant::EC160_200()
 	                // osi obrotu dolnego ramienia
 	fHeight = 0.09353; // wysokość ślizgu ponad oś obrotu
 	fWidth = 0.4969; // połowa szerokości ślizgu
-	fAngleL0 = glm::radians(2.8547285515689267247882521833308);
-	fAngleL = fAngleL0; // początkowy kąt dolnego ramienia
-	// fAngleU0=acos((1.22*cos(fAngleL)+0.535)/1.755); //górne ramię
-	fAngleU0 = acos((fLenL1 * cos(fAngleL) + fHoriz) / fLenU1); // górne ramię
-	fAngleU = fAngleU0; // początkowy kąt
-	// PantWys=1.22*sin(fAngleL)+1.755*sin(fAngleU); //wysokość początkowa
-	PantWys = fLenL1 * sin(fAngleL) + fLenU1 * sin(fAngleU) + fHeight; // wysokość początkowa
-	PantTraction = PantWys;
-	hvPowerWire = NULL;
-	fWidthExtra = 0.381f; //(2.032m-1.027)/2
-	// poza obszarem roboczym jest aproksymacja łamaną o 5 odcinkach
-	fHeightExtra[0] = 0.0f; //+0.0762
-	fHeightExtra[1] = -0.01f; //+0.1524
-	fHeightExtra[2] = -0.03f; //+0.2286
-	fHeightExtra[3] = -0.07f; //+0.3048
-	fHeightExtra[4] = -0.15f; //+0.3810
+	common_pantograph_settings();
 };
 void TAnimPant::DSAx()
 { // ustawienie wymiarów dla pantografow z rodziny DSA
-	vPos = glm::dvec3(0, 0, 0); // przypisanie domyśnych współczynników do pantografów
-
 	// mnozniki animacji ramion dla pantografow z rodziny DSA
 	rd1rf = 1.f;
 	rd2rf = 1.025;
@@ -183,22 +150,7 @@ void TAnimPant::DSAx()
 	                // osi obrotu dolnego ramienia
 	fHeight = 0.09353; // wysokość ślizgu ponad oś obrotu
 	fWidth = 0.4969; // połowa szerokości ślizgu
-	fAngleL0 = glm::radians(2.8547285515689267247882521833308);
-	fAngleL = fAngleL0; // początkowy kąt dolnego ramienia
-	// fAngleU0=acos((1.22*cos(fAngleL)+0.535)/1.755); //górne ramię
-	fAngleU0 = acos((fLenL1 * cos(fAngleL) + fHoriz) / fLenU1); // górne ramię
-	fAngleU = fAngleU0; // początkowy kąt
-	// PantWys=1.22*sin(fAngleL)+1.755*sin(fAngleU); //wysokość początkowa
-	PantWys = fLenL1 * sin(fAngleL) + fLenU1 * sin(fAngleU) + fHeight; // wysokość początkowa
-	PantTraction = PantWys;
-	hvPowerWire = NULL;
-	fWidthExtra = 0.381f; //(2.032m-1.027)/2
-	// poza obszarem roboczym jest aproksymacja łamaną o 5 odcinkach
-	fHeightExtra[0] = 0.0f; //+0.0762
-	fHeightExtra[1] = -0.01f; //+0.1524
-	fHeightExtra[2] = -0.03f; //+0.2286
-	fHeightExtra[3] = -0.07f; //+0.3048
-	fHeightExtra[4] = -0.15f; //+0.3810
+	common_pantograph_settings();
 };
 //---------------------------------------------------------------------------
 int TAnim::TypeSet(int i, TMoverParameters currentMover, int fl)
@@ -218,7 +170,7 @@ int TAnim::TypeSet(int i, TMoverParameters currentMover, int fl)
         break; // 1-drzwi
     case 2:
         iFlags = 0x020;
-        fParam = fl ? new float[fl] : NULL;
+        fParam = fl ? new float[fl] : nullptr;
         iFlags += fl << 8;
         break; // 2-wahacz, dźwignia itp.
     case 3:
@@ -389,7 +341,7 @@ TDynamicObject * TDynamicObject::FirstFind(int &coupler_nr, int cf)
     for (int i = 0; i < 300; i++) // ograniczenie do 300 na wypadek zapętlenia składu
     {
         if (!temp)
-            return NULL; // Ra: zabezpieczenie przed ewentaulnymi błędami sprzęgów
+            return nullptr; // Ra: zabezpieczenie przed ewentaulnymi błędami sprzęgów
         if ((temp->MoverParameters->Couplers[coupler_nr].CouplingFlag & cf) != cf)
             return temp; // nic nie ma już dalej podłączone sprzęgiem cf
         if (coupler_nr == end::front)
@@ -415,7 +367,7 @@ TDynamicObject * TDynamicObject::FirstFind(int &coupler_nr, int cf)
                 return temp; // jeśli jednak z tyłu nic nie ma
         }
     }
-    return NULL; // to tylko po wyczerpaniu pętli
+    return nullptr; // to tylko po wyczerpaniu pętli
 };
 
 //---------------------------------------------------------------------------
@@ -1446,7 +1398,7 @@ TDynamicObject * TDynamicObject::ABuScanNearestObject(glm::vec3 pos, TTrack *Tra
     TDynamicObject *FoundedObj;
     FoundedObj =
 	    ABuFindNearestObject(pos, Track, this, CouplNr); // zwraca numer sprzęgu znalezionego pojazdu
-    if (FoundedObj == NULL)
+    if (FoundedObj == nullptr)
     {
         double ActDist; // Przeskanowana odleglosc.
         double CurrDist = 0; // Aktualna dlugosc toru.
@@ -1478,11 +1430,11 @@ TDynamicObject * TDynamicObject::ABuScanNearestObject(glm::vec3 pos, TTrack *Tra
                     ScanDir = -ScanDir;
                 }
             }
-            if (Track != NULL)
+            if (Track != nullptr)
             { // jesli jest kolejny odcinek toru
                 CurrDist = Track->Length();
 				FoundedObj = ABuFindNearestObject(pos, Track, this, CouplNr);
-                if (FoundedObj != NULL)
+                if (FoundedObj != nullptr)
                     ActDist = ScanDist;
             }
             else // Jesli nie ma, to wychodzimy.
@@ -1505,7 +1457,7 @@ void TDynamicObject::ABuBogies()
 { // Obracanie wozkow na zakretach. Na razie
     // uwzględnia tylko zakręty,
     // bez zadnych gorek i innych przeszkod.
-    if ((smBogie[0] != NULL) && (smBogie[1] != NULL))
+    if ((smBogie[0] != nullptr) && (smBogie[1] != nullptr))
     {
         // modelRot.z=ABuAcos(Axle0.pPosition-Axle1.pPosition); //kąt obrotu pojazdu
         // [rad]
@@ -1661,13 +1613,13 @@ int TDynamicObject::Dettach(int dir)
         TDynamicObject *d = this;
         while (d)
         {
-            d->ctOwner = NULL; // usuwanie właściciela
+            d->ctOwner = nullptr; // usuwanie właściciela
             d = d->Prev();
         }
         d = Next();
         while (d)
         {
-            d->ctOwner = NULL; // usuwanie właściciela
+            d->ctOwner = nullptr; // usuwanie właściciela
             d = d->Next(); // i w drugą stronę
         }
     }
@@ -1872,8 +1824,8 @@ TDynamicObject::TDynamicObject() {
     vFront = vWorldFront;
     vLeft = vWorldLeft;
     iNumAxles = 0;
-    MoverParameters = NULL;
-    Mechanik = NULL;
+    MoverParameters = nullptr;
+    Mechanik = nullptr;
     MechInside = false;
     // McZapkie-270202
     Controller = AIdriver;
@@ -1881,7 +1833,7 @@ TDynamicObject::TDynamicObject() {
 //    NextConnected = PrevConnected = NULL;
 //    NextConnectedNo = PrevConnectedNo = 2; // ABu: Numery sprzegow. 2=nie podłączony
     bEnabled = true;
-    MyTrack = NULL;
+    MyTrack = nullptr;
     // McZapkie-260202
     dWheelAngle[0] = 0.0;
     dWheelAngle[1] = 0.0;
@@ -1889,19 +1841,19 @@ TDynamicObject::TDynamicObject() {
     // Winger 160204 - pantografy
     // PantVolume = 3.5;
     NoVoltTime = 0;
-    mdModel = NULL;
-    mdKabina = NULL;
+    mdModel = nullptr;
+    mdKabina = nullptr;
     // smWiazary[0]=smWiazary[1]=NULL;
-    smWahacze[0] = smWahacze[1] = smWahacze[2] = smWahacze[3] = NULL;
+    smWahacze[0] = smWahacze[1] = smWahacze[2] = smWahacze[3] = nullptr;
     fWahaczeAmp = 0;
-    smBrakeMode = NULL;
-    smLoadMode = NULL;
-    mdLoad = NULL;
-    mdLowPolyInt = NULL;
+    smBrakeMode = nullptr;
+    smLoadMode = nullptr;
+    mdLoad = nullptr;
+    mdLowPolyInt = nullptr;
     //smMechanik0 = smMechanik1 = NULL;
-    smBuforLewy[0] = smBuforLewy[1] = NULL;
-    smBuforPrawy[0] = smBuforPrawy[1] = NULL;
-    smBogie[0] = smBogie[1] = NULL;
+    smBuforLewy[0] = smBuforLewy[1] = nullptr;
+    smBuforPrawy[0] = smBuforPrawy[1] = nullptr;
+    smBogie[0] = smBogie[1] = nullptr;
 	bogieRot[0] = bogieRot[1] = glm::dvec3(0, 0, 0);
 	modelRot = glm::dvec3(0, 0, 0);
     cp1 = cp2 = sp1 = sp2 = 0;
@@ -1915,16 +1867,16 @@ TDynamicObject::TDynamicObject() {
 	// ustawienie liczby modeli animowanych podczas konstruowania obiektu a nie na 0
 	// prowadzi prosto do wysypów jeśli źle zdefiniowane mmd
     iAnimations = 0; // na razie nie ma żadnego
-    pAnimated = NULL;
+    pAnimated = nullptr;
     fShade = 0.0; // standardowe oświetlenie na starcie
     iHornWarning = 1; // numer syreny do użycia po otrzymaniu sygnału do jazdy
     asDestination = "none"; // stojący nigdzie nie jedzie
-    pValveGear = NULL; // Ra: tymczasowo
+    pValveGear = nullptr; // Ra: tymczasowo
     iCabs = 0; // maski bitowe modeli kabin
-    smBrakeSet = NULL; // nastawa hamulca (wajcha)
-    smLoadSet = NULL; // nastawa ładunku (wajcha)
-    smWiper = NULL; // wycieraczka (poniekąd też wajcha)
-    ctOwner = NULL; // na początek niczyj
+    smBrakeSet = nullptr; // nastawa hamulca (wajcha)
+    smLoadSet = nullptr; // nastawa ładunku (wajcha)
+    smWiper = nullptr; // wycieraczka (poniekąd też wajcha)
+    ctOwner = nullptr; // na początek niczyj
     iOverheadMask = 0; // maska przydzielana przez AI pojazdom posiadającym
     // pantograf, aby wymuszały
     // jazdę bezprądową
@@ -5246,8 +5198,8 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
     std::string asFileName = asBaseDir + TypeName + ".mmd";
     std::string asAnimName;
     bool Stop_InternalData = false;
-    pants = NULL; // wskaźnik pierwszego obiektu animującego dla pantografów
-	wipers = NULL; // wskaznik pierwszego obiektu animujacego dla wycieraczek
+    pants = nullptr; // wskaźnik pierwszego obiektu animującego dla pantografów
+	wipers = nullptr; // wskaznik pierwszego obiektu animujacego dla wycieraczek
     {
         // preliminary check whether the file exists
         cParser parser( TypeName + ".mmd", cParser::buffer_FILE, asBaseDir );
@@ -5507,7 +5459,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                                 // m(3)[1]=m[3][1]+0.054; //w górę o wysokość ślizgu (na razie tak)
                                 pants[i].fParamPants->vPos.z = m[3][0]; // przesunięcie w bok (asymetria)
                                 pants[i].fParamPants->vPos.y = m[3][1]; // przesunięcie w górę odczytane z modelu
-                                if ((sm = pants[i].smElement[0]->ChildGet()) != NULL)
+                                if ((sm = pants[i].smElement[0]->ChildGet()) != nullptr)
                                 { // jeśli ma potomny, można policzyć długość (odległość potomnego od osi obrotu)
                                     m = float4x4(*sm->GetMatrix()); // wystarczyłby wskaźnik, nie trzeba kopiować
                                     // może trzeba: pobrać macierz dolnego ramienia, wyzerować przesunięcie, przemnożyć przez macierz górnego
@@ -5521,7 +5473,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                                     // //normalnie ok. 0.05
                                     // pants[i].fParamPants->fAngleL0=pants[i].fParamPants->fAngleL;
                                     pants[i].fParamPants->fAngleL = pants[i].fParamPants->fAngleL0; // początkowy kąt dolnego ramienia
-                                    if ((sm = sm->ChildGet()) != NULL)
+                                    if ((sm = sm->ChildGet()) != nullptr)
                                     { // jeśli dalej jest ślizg, można policzyć długość górnego ramienia
                                         m = float4x4(*sm->GetMatrix()); // wystarczyłby wskaźnik,
                                         // nie trzeba kopiować trzeba by uwzględnić macierz dolnego ramienia, żeby uzyskać kąt do poziomu...

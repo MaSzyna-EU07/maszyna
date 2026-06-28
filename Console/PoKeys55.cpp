@@ -76,13 +76,13 @@ bool TPoKeys55::Connect()
     // First populate a list of plugged in devices (by specifying "DIGCF_PRESENT"), which are of the
     // specified class GUID.
     DeviceInfoTable =
-        SetupDiGetClassDevs(&InterfaceClassGuid, NULL, NULL, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+        SetupDiGetClassDevs(&InterfaceClassGuid, nullptr, nullptr, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
     // Now look through the list we just populated.  We are trying to see if any of them match our
     // device.
     while (true)
     {
         InterfaceDataStructure->cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
-        if (SetupDiEnumDeviceInterfaces(DeviceInfoTable, NULL, &InterfaceClassGuid, InterfaceIndex,
+        if (SetupDiEnumDeviceInterfaces(DeviceInfoTable, nullptr, &InterfaceClassGuid, InterfaceIndex,
                                         InterfaceDataStructure))
         {
             ErrorStatus = GetLastError();
@@ -113,11 +113,11 @@ bool TPoKeys55::Connect()
         // First query for the size of the hardware ID, so we can know how big a buffer to allocate
         // for the data.
         SetupDiGetDeviceRegistryProperty(DeviceInfoTable, &DevInfoData, SPDRP_HARDWAREID,
-                                         &dwRegType, NULL, 0, &dwRegSize);
+                                         &dwRegType, nullptr, 0, &dwRegSize);
         // Allocate a buffer for the hardware ID.
         // PropertyValueBuffer=(BYTE*)malloc(dwRegSize);
         PropertyValueBuffer = new BYTE[dwRegSize];
-        if (PropertyValueBuffer == NULL) // if null,error,couldn't allocate enough memory
+        if (PropertyValueBuffer == nullptr) // if null,error,couldn't allocate enough memory
         { // Can't really recover from this situation,just exit instead.
             // ShowMessage("Allocation PropertyValueBuffer impossible");
             SetupDiDestroyDeviceInfoList(
@@ -132,7 +132,7 @@ bool TPoKeys55::Connect()
         // and PID,in the example
         // format "Vid_04d8&Pid_003f".
         SetupDiGetDeviceRegistryProperty(DeviceInfoTable, &DevInfoData, SPDRP_HARDWAREID,
-                                         &dwRegType, PropertyValueBuffer, dwRegSize, NULL);
+                                         &dwRegType, PropertyValueBuffer, dwRegSize, nullptr);
         // Now check if the first string in the hardware ID matches the device ID of my USB device.
         // ListBox1->Items->Add((char*)PropertyValueBuffer);
         DeviceIDFromRegistry = reinterpret_cast<char*>(PropertyValueBuffer);
@@ -157,12 +157,11 @@ bool TPoKeys55::Connect()
             // get the structure (after we have allocated enough memory for the structure.)
             DetailedInterfaceDataStructure->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA);
             // First call populates "StructureSize" with the correct value
-            SetupDiGetDeviceInterfaceDetail(DeviceInfoTable, InterfaceDataStructure, NULL, 0,
-                                            &StructureSize, NULL);
+            SetupDiGetDeviceInterfaceDetail(DeviceInfoTable, InterfaceDataStructure, nullptr, 0,
+                                            &StructureSize, nullptr);
             DetailedInterfaceDataStructure =
                 (PSP_DEVICE_INTERFACE_DETAIL_DATA)(malloc(StructureSize)); // Allocate enough memory
-            if (DetailedInterfaceDataStructure ==
-                NULL) // if null,error,couldn't allocate enough memory
+            if (DetailedInterfaceDataStructure == nullptr) // if null,error,couldn't allocate enough memory
             { // Can't really recover from this situation,just exit instead.
                 SetupDiDestroyDeviceInfoList(
                     DeviceInfoTable); // Clean up the old structure we no longer need.
@@ -171,19 +170,18 @@ bool TPoKeys55::Connect()
             DetailedInterfaceDataStructure->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA);
             // Now call SetupDiGetDeviceInterfaceDetail() a second time to receive the goods.
             SetupDiGetDeviceInterfaceDetail(DeviceInfoTable, InterfaceDataStructure,
-                                            DetailedInterfaceDataStructure, StructureSize, NULL,
-                                            NULL);
+                                            DetailedInterfaceDataStructure, StructureSize, nullptr, nullptr);
             // We now have the proper device path,and we can finally open read and write handles to
             // the device.
             // We store the handles in the global variables "WriteHandle" and "ReadHandle",which we
             // will use later to actually communicate.
             WriteHandle = CreateFile((DetailedInterfaceDataStructure->DevicePath), GENERIC_WRITE,
-                                     FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, 0);
+                                     FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, 0);
             ErrorStatus = GetLastError();
             // if (ErrorStatus==ERROR_SUCCESS)
             // ToggleLedBtn->Enabled=true;//Make button no longer greyed out
             ReadHandle = CreateFile((DetailedInterfaceDataStructure->DevicePath), GENERIC_READ,
-                                    FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, 0);
+                                    FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, 0);
             ErrorStatus = GetLastError();
             if (ErrorStatus == ERROR_SUCCESS)
             {

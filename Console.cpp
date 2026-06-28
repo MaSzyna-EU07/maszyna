@@ -72,14 +72,14 @@ void SetLedState( unsigned char Code, bool bOn ) {
 int Console::iBits = 0; // zmienna statyczna - obiekt Console jest jednen wspólny
 int Console::iMode = 0;
 int Console::iConfig = 0;
-TPoKeys55 *Console::PoKeys55[2] = {NULL, NULL};
-TLPT *Console::LPT = NULL;
+TPoKeys55 *Console::PoKeys55[2] = {nullptr, nullptr};
+TLPT *Console::LPT = nullptr;
 int Console::iSwitch[8]; // bistabilne w kabinie, załączane z [Shift], wyłączane bez
 int Console::iButton[8]; // monostabilne w kabinie, załączane podczas trzymania klawisza
 
 Console::Console()
 {
-    PoKeys55[0] = PoKeys55[1] = NULL;
+    PoKeys55[0] = PoKeys55[1] = nullptr;
     for (int i = 0; i < 8; ++i)
     { // zerowanie przełączników
         iSwitch[i] = 0; // bity 0..127 - bez [Ctrl], 128..255 - z [Ctrl]
@@ -118,7 +118,7 @@ int Console::On()
         else
         { // połączenie nie wyszło, ma być NULL
             delete LPT;
-            LPT = NULL;
+            LPT = nullptr;
         }
         break;
     case 4: // PoKeys
@@ -131,7 +131,7 @@ int Console::On()
         else
         { // połączenie nie wyszło, ma być NULL
             delete PoKeys55[0];
-            PoKeys55[0] = NULL;
+            PoKeys55[0] = nullptr;
 			WriteLog("PoKeys not found!");
         }
         break;

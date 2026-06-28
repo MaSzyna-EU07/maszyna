@@ -46,7 +46,7 @@ piped_proc::piped_proc(std::string cmd, bool write)
 
 	saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
 	saAttr.bInheritHandle = TRUE;
-	saAttr.lpSecurityDescriptor = NULL;
+	saAttr.lpSecurityDescriptor = nullptr;
 
 	if (!CreatePipe(&pipe_rd, &pipe_wr, &saAttr, 0)) {
 		ErrorLog("piped_proc: CreatePipe failed!");
@@ -66,7 +66,7 @@ piped_proc::piped_proc(std::string cmd, bool write)
 		siStartInfo.hStdInput = pipe_rd;
 	siStartInfo.dwFlags |= STARTF_USESTDHANDLES;
 
-	if (!CreateProcessA(NULL, (char*)cmd.c_str(), NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &siStartInfo, &process)) {
+	if (!CreateProcessA(nullptr, (char*)cmd.c_str(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &siStartInfo, &process)) {
 		ErrorLog("piped_proc: CreateProcess failed!");
 		return;
 	}
@@ -92,7 +92,7 @@ size_t piped_proc::read(unsigned char *buf, size_t len)
 		return 0;
 
 	DWORD read = 0;
-	BOOL ret = ReadFile(pipe_rd, buf, len, &read, NULL);
+	BOOL ret = ReadFile(pipe_rd, buf, len, &read, nullptr);
 
 	return read;
 }
@@ -103,7 +103,7 @@ size_t piped_proc::write(unsigned char *buf, size_t len)
 		return 0;
 
 	DWORD wrote = 0;
-	BOOL ret = WriteFile(pipe_wr, buf, len, &wrote, NULL);
+	BOOL ret = WriteFile(pipe_wr, buf, len, &wrote, nullptr);
 
 	return wrote;
 }

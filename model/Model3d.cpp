@@ -30,7 +30,7 @@ using namespace Mtable;
 
 float TSubModel::fSquareDist = 0.f;
 std::uintptr_t TSubModel::iInstance; // numer renderowanego egzemplarza obiektu
-texture_handle const *TSubModel::ReplacableSkinId = NULL;
+texture_handle const *TSubModel::ReplacableSkinId = nullptr;
 int TSubModel::iAlpha = 0x30300030; // maska do testowania flag tekstur wymiennych
 TModel3d *TSubModel::pRoot; // Ra: tymczasowo wskaźnik na model widoczny z submodelu
 std::string *TSubModel::pasText;
@@ -1116,7 +1116,7 @@ TSubModel *TSubModel::GetFromName(std::string const &search, bool i)
 		if (result)
 			return result;
 	}
-	return NULL;
+	return nullptr;
 };
 
 // WORD hbIndices[18]={3,0,1,5,4,2,1,0,4,1,5,3,2,3,5,2,4,0};
