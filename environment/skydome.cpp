@@ -295,7 +295,7 @@ void CSkyDome::RebuildColors() {
             color.y = 0.65f * color.z;
         }
         // simple gradient, darkening towards the top
-        color *= std::clamp( ( 1.0f - vertex.y ), 0.f, 1.f );
+        color *= std::clamp( ( 1.0f - vertex.y ), 0.2f, 1.f );
         //color *= ( 0.25f - vertex.y );
         // gamma correction
         color = glm::pow( color, gammacorrection );
