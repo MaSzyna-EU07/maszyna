@@ -34,7 +34,7 @@ openal_buffer::openal_buffer( std::string const &Filename ) :
 	if (sf == nullptr)
 		throw std::runtime_error("sound: sf_open failed");
 
-	sf_command(sf, SFC_SET_NORM_FLOAT, NULL, SF_TRUE);
+	sf_command(sf, SFC_SET_NORM_FLOAT, nullptr, SF_TRUE);
 
 	float *fbuf = new float[si.frames * si.channels];
 	if (sf_readf_float(sf, fbuf, si.frames) != si.frames)

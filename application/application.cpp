@@ -593,6 +593,11 @@ int eu07_application::run()
 
 		// -------------------------------------------------------------------
 
+		// keep streamed terrain loaded around the active camera in every mode (editor + driver),
+		// once the simulation is live (avoid streaming while the scenery is still loading)
+		if (simulation::is_ready && EditorTerrain.active())
+			EditorTerrain.update(Global.pCamera.Pos);
+
 		m_taskqueue.update();
 		opengl_texture::reset_unit_cache();
 
@@ -1086,7 +1091,7 @@ void eu07_application::init_files()
 #ifdef _WIN32
 	DeleteFile("log.txt");
 	DeleteFile("errors.txt");
-	CreateDirectory("logs", NULL);
+	CreateDirectory("logs", nullptr);
 #elif __unix__
 	unlink("log.txt");
 	unlink("errors.txt");

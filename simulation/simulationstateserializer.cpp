@@ -27,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/application.h"
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
+#include "editor/editorTerrainStreamer.hpp"
 
 namespace simulation {
 
@@ -34,6 +35,10 @@ std::shared_ptr<deserializer_state>
 state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 
     crashreport_add_info("scenario", Scenariofile);
+
+    // drop any streamed editor terrain from a previously loaded scenery before the old region (and
+    // its sections, which those chunks referenced) is destroyed below
+    EditorTerrain.reset();
 
     // TODO: move initialization to separate routine so we can reuse it
     SafeDelete( Region );
@@ -101,6 +106,7 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 	            { "time",        &state_serializer::deserialize_time },
 	            { "trainset",    &state_serializer::deserialize_trainset },
 	            { "terrain",     &state_serializer::deserialize_terrain },
+	            { "editorterrain", &state_serializer::deserialize_editorterrain },
 	            { "endtrainset", &state_serializer::deserialize_endtrainset } };
 
 	for( auto &function : functionlist ) {
@@ -797,7 +803,32 @@ state_serializer::deserialize_terrain(cParser &Input, scene::scratch_data &Scrat
     }
 
     skip_until(Input, "endterrain");
-	
+
+}
+
+void
+state_serializer::deserialize_editorterrain(cParser &Input, scene::scratch_data &Scratchpad)
+{
+	// editor-authored streaming terrain. format:
+	//   editorterrain <folder> <cells> <cellsize> <radius> endeditorterrain
+	// the global streamer loads its 16-bit chunk files around the camera in every mode
+	std::string folder;
+	int cells = 32;
+	float cellsize = 2.0f;
+	int radius = 4;
+	Input.getTokens(4);
+	Input >> folder >> cells >> cellsize >> radius;
+	skip_until(Input, "endeditorterrain");
+
+	if (!folder.empty() && cells > 0 && cellsize > 0.0f)
+	{
+		EditorTerrain.directory(folder);
+		EditorTerrain.configure(cells, cellsize, (radius < 0 ? 0 : radius), 0.0f, std::string());
+		EditorTerrain.active(true);
+		WriteLog("Editor terrain stream enabled: " + folder + " (cells " + std::to_string(cells)
+		             + ", cellsize " + std::to_string(cellsize) + ", radius " + std::to_string(radius) + ")",
+		         logtype::generic);
+	}
 }
 
 void
@@ -1164,6 +1195,16 @@ state_serializer::export_as_text(std::string const &Scenariofile) const {
 	scmfile << "// sounds\n";
 	Region->export_as_text( scmfile );
 
+	// editor-authored streaming terrain: emit a directive pointing at its 16-bit chunk folder so the
+	// scenery streams it on load (in every mode)
+	if( EditorTerrain.active() ) {
+		scmfile << "// editor terrain\neditorterrain "
+		        << EditorTerrain.directory() << ' '
+		        << EditorTerrain.cells() << ' '
+		        << EditorTerrain.cellsize() << ' '
+		        << EditorTerrain.radius() << " endeditorterrain\n";
+	}
+
 	scmfile << "// modified objects\ninclude " << filename << "_export_dirty.scm\n";
 
 	std::ofstream ctrfile { absfilename + ".ctr" };
@@ -1210,6 +1251,16 @@ state_serializer::export_as_text(std::string const &Scenariofile) const {
 	// NOTE: sounds currently aren't included in groups
 	scmfile << "// sounds\n";
 	Region->export_as_text( scmfile );
+
+	// editor-authored streaming terrain: emit a directive pointing at its 16-bit chunk folder so the
+	// scenery streams it on load (in every mode)
+	if( EditorTerrain.active() ) {
+		scmfile << "// editor terrain\neditorterrain "
+		        << EditorTerrain.directory() << ' '
+		        << EditorTerrain.cells() << ' '
+		        << EditorTerrain.cellsize() << ' '
+		        << EditorTerrain.radius() << " endeditorterrain\n";
+	}
 
 	scmfile << "// modified objects\ninclude " << filename << "_export_dirty.scm\n";
 

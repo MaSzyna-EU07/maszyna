@@ -594,7 +594,7 @@ TTrain::TTrain()
 	pMechOffset = glm::dvec3(0, 0, 0);
 	fBlinkTimer = 0;
 	fHaslerTimer = 0;
-	DynamicSet(NULL); // ustawia wszystkie mv*
+	DynamicSet(nullptr); // ustawia wszystkie mv*
 	//-----
 	pMechSittingPosition = glm::dvec3(0, 0, 0); // ABu: 180404
 	fTachoTimer = 0.0; // włączenie skoków wskazań prędkościomierza
@@ -647,7 +647,7 @@ bool TTrain::Init(TDynamicObject *NewDynamicObject, bool e3d)
 
 	DynamicSet(NewDynamicObject);
 	if (!e3d)
-		if (DynamicObject->Mechanik == NULL)
+		if (DynamicObject->Mechanik == nullptr)
 			return false;
 
 	DynamicObject->MechInside = true;
@@ -10855,7 +10855,7 @@ void TTrain::DynamicSet(TDynamicObject *d)
 	}
 
 	mvControlled = DynamicObject->FindPowered()->MoverParameters;
-	mvSecond = NULL; // gdyby się nic nie znalazło
+	mvSecond = nullptr; // gdyby się nic nie znalazło
 	if (mvOccupied->Power > 1.0) // dwuczłonowe lub ukrotnienia, żeby nie szukać każdorazowo
 		if (mvOccupied->Couplers[1].Connected ? mvOccupied->Couplers[1].AllowedFlag & coupling::control : false)
 		{ // gdy jest człon od sprzęgu 1, a sprzęg łączony

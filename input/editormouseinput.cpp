@@ -25,6 +25,14 @@ editormouse_input::position( double Horizontal, double Vertical ) {
         m_cursorposition.y = Vertical;
         return;
     }
+    if( true == m_pickmodepanning_resync ) {
+        // panning just started (cursor may have been grabbed/hidden); reset the reference so the
+        // first frame doesn't produce a large, jarring camera jump
+        m_cursorposition.x = Horizontal;
+        m_cursorposition.y = Vertical;
+        m_pickmodepanning_resync = false;
+        return;
+    }
     glm::dvec2 cursorposition { Horizontal, Vertical };
     auto const viewoffset = cursorposition - m_cursorposition;
     m_relay.post(
@@ -47,7 +55,12 @@ editormouse_input::button( int const Button, int const Action ) {
 
     // right button controls panning
     if( Button == GLFW_MOUSE_BUTTON_RIGHT ) {
-        m_pickmodepanning = Action == GLFW_PRESS;
+        bool const panning = ( Action == GLFW_PRESS );
+        // when panning starts, request a one-frame resync so toggling the cursor grab doesn't jerk the view
+        if( panning && ( false == m_pickmodepanning ) ) {
+            m_pickmodepanning_resync = true;
+        }
+        m_pickmodepanning = panning;
     }
 }
 

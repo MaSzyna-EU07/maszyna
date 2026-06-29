@@ -397,6 +397,32 @@ shape_node::convert( TSubModel const *Submodel ) {
     return *this;
 }
 
+// builds an opaque, always-visible shape from a world-space GL_TRIANGLES vertex list
+shape_node &
+shape_node::make_terrain( material_handle const Material, std::vector<world_vertex> Vertices, glm::dvec3 const Origin ) {
+
+    m_data.material = Material;
+    m_data.translucent = false;
+    m_data.visible = true;
+    m_data.rangesquared_min = 0.0;
+    m_data.rangesquared_max = std::numeric_limits<double>::max();
+    m_data.origin = Origin;
+    m_data.vertices = std::move( Vertices );
+
+    // bounding area from the supplied geometry
+    m_data.area.center = glm::dvec3( 0.0 );
+    if( false == m_data.vertices.empty() ) {
+        for( auto const &vertex : m_data.vertices ) {
+            m_data.area.center += vertex.position;
+        }
+        m_data.area.center /= static_cast<double>( m_data.vertices.size() );
+    }
+    invalidate_radius();
+    radius(); // force recompute now, while vertices are still present
+
+    return *this;
+}
+
 // adds content of provided node to already enclosed geometry. returns: true if merge could be performed
 bool
 shape_node::merge( shape_node &Shape ) {

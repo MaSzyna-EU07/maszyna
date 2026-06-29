@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editoruilayer.h"
 
 #include "application/application.h"
+#include "editor/editorSettings.hpp"
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
@@ -20,19 +21,27 @@ http://mozilla.org/MPL/2.0/.
 #include "Console.h"
 #include "rendering/renderer.h"
 #include "model/AnimModel.h"
+#include "model/Model3d.h"
+#include "utilities/Float3d.h"
 #include "scene/scene.h"
 
 
 #include "imgui/imgui.h"
+#include "imgui/ImGuizmo.h"
 #include "utilities/Logs.h"
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <array>
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <vector>
 
 // Static member initialization
 TCamera editor_mode::Camera;
 bool editor_mode::m_focus_active = false;
-bool editor_mode::m_change_history = true;
+bool editor_mode::m_change_history = false;
+bool editor_mode::m_settings_open = false;
 
 namespace
 {
@@ -47,6 +56,65 @@ namespace
     inline bool is_press(int state)
     {
         return state == GLFW_PRESS;
+    }
+
+    // tests whether the vertical line through (Px,Pz) passes over triangle abc; if so returns the
+    // surface height at that point through OutY. used by the "snap to ground" (END) feature.
+    inline bool triangle_height_at(glm::dvec3 const &a, glm::dvec3 const &b, glm::dvec3 const &c,
+                                   double const Px, double const Pz, double &OutY)
+    {
+        double const ux = b.x - a.x, uz = b.z - a.z;
+        double const vx = c.x - a.x, vz = c.z - a.z;
+        double const wx = Px - a.x, wz = Pz - a.z;
+        double const den = ux * vz - vx * uz;
+        if (std::abs(den) < 1e-9)
+            return false; // degenerate or vertical triangle, no defined height
+        double const s = (wx * vz - vx * wz) / den;
+        double const t = (ux * wz - wx * uz) / den;
+        if (s < 0.0 || t < 0.0 || (s + t) > 1.0)
+            return false;
+        OutY = a.y + s * (b.y - a.y) + t * (c.y - a.y);
+        return true;
+    }
+
+    using world_triangle = std::array<glm::dvec3, 3>;
+
+    // walks a model's submodel tree (mirroring the renderer's transform chain) and appends every
+    // mesh triangle, in world space, to Out. siblings are iterated to avoid deep recursion.
+    void gather_submodel_triangles(TSubModel *Submodel, glm::dmat4 const &M, std::vector<world_triangle> &Out)
+    {
+        for (TSubModel *sub = Submodel; sub != nullptr; sub = sub->Next)
+        {
+            glm::dmat4 mlocal = M;
+            if ((sub->iFlags & 0xC000) && (sub->GetMatrix() != nullptr))
+                mlocal = M * glm::dmat4(glm::make_mat4(sub->GetMatrix()->readArray()));
+
+            if (sub->eType < TP_ROTATOR) // a drawable mesh, not a rotator/light/etc.
+            {
+                auto const handle = sub->m_geometry.handle;
+                if (handle.bank != 0 || handle.chunk != 0)
+                {
+                    auto const &verts = GfxRenderer->Vertices(handle);
+                    auto const &indices = GfxRenderer->Indices(handle);
+                    auto const to_world = [&](gfx::basic_vertex const &v) {
+                        return glm::dvec3(mlocal * glm::dvec4(glm::dvec3(v.position), 1.0));
+                    };
+                    if (false == indices.empty())
+                    {
+                        for (std::size_t i = 0; i + 2 < indices.size(); i += 3)
+                            Out.push_back({to_world(verts[indices[i]]), to_world(verts[indices[i + 1]]), to_world(verts[indices[i + 2]])});
+                    }
+                    else
+                    {
+                        for (std::size_t i = 0; i + 2 < verts.size(); i += 3)
+                            Out.push_back({to_world(verts[i]), to_world(verts[i + 1]), to_world(verts[i + 2])});
+                    }
+                }
+            }
+
+            if (sub->Child != nullptr)
+                gather_submodel_triangles(sub->Child, mlocal, Out); // children inherit this matrix
+        }
     }
 
 } 
@@ -72,6 +140,7 @@ editor_ui *editor_mode::ui() const
 
 bool editor_mode::init()
 {
+    EditorSettings.load();
     Camera.Init({0, 15, 0}, {glm::radians(-30.0), glm::radians(180.0), 0}, nullptr);
     return m_input.init();
 }
@@ -98,18 +167,132 @@ void editor_mode::start_focus(scene::basic_node *node, double duration)
     if (!node)
         return;
 
+    glm::dvec3 const center = node->location();
+
+    // distance that frames the object's bounding sphere within the vertical FOV, with some margin
+    double const radius = std::max(1.0, static_cast<double>(node->radius()));
+    double const fovy = glm::radians(static_cast<double>(Global.FieldOfView) / std::max(0.01, static_cast<double>(Global.ZoomFactor)));
+    double distance = (radius / std::tan(fovy * 0.5)) * 1.6;
+    distance = std::clamp(distance, radius * 1.5, static_cast<double>(kMaxPlacementDistance));
+
+    // keep the camera on the side it currently views from, so the move turns toward the object
+    // rather than flying around it; fall back to a pleasant 3/4 direction when sitting on top of it
+    glm::dvec3 dir = Camera.Pos - center;
+    double const len = glm::length(dir);
+    dir = (len > 1e-3) ? dir / len : glm::normalize(glm::dvec3(1.0, 0.5, 1.0));
+
+    m_focus_start_pos = Camera.Pos;
+    m_focus_start_angle = Camera.Angle;
+    m_focus_target_pos = center + dir * distance;
+
+    // target orientation looks from the target position straight at the object
+    glm::dvec3 look = center - m_focus_target_pos;
+    double const looklen = glm::length(look);
+    if (looklen > 1e-6)
+        look /= looklen;
+    m_focus_target_angle = glm::vec3(
+        static_cast<float>(std::asin(glm::clamp(look.y, -1.0, 1.0))),   // pitch
+        static_cast<float>(std::atan2(-look.x, -look.z)),               // yaw
+        0.0f);                                                          // roll
+
     m_focus_active = true;
     m_focus_time = 0.0;
     m_focus_duration = duration;
+}
 
-    m_focus_start_pos = Camera.Pos;
-    m_focus_start_lookat = Camera.LookAt;
+void editor_mode::snap_to_ground(scene::basic_node *node)
+{
+    if (!node || !simulation::Region)
+        return;
 
-    m_focus_target_lookat = node->location();
+    glm::dvec3 const origin = node->location();
+    if (!simulation::Region->point_inside(origin))
+        return;
 
-    glm::dvec3 dir = m_focus_start_pos - m_focus_start_lookat;
-    double dist = glm::length(dir);
-    m_focus_target_pos = m_focus_target_lookat + glm::dvec3(10.0, 3.0, 10.0);
+    // small tolerance so a node already resting on a surface still snaps cleanly to it
+    double const epsilon = 0.05;
+    double bestY = -std::numeric_limits<double>::max();
+    bool found = false;
+
+    // record the highest surface that is at or below the node's current position at its (x,z)
+    auto consider_triangle = [&](glm::dvec3 const &a, glm::dvec3 const &b, glm::dvec3 const &c) {
+        double y;
+        if (triangle_height_at(a, b, c, origin.x, origin.z, y) && y <= origin.y + epsilon && y > bestY)
+        {
+            bestY = y;
+            found = true;
+        }
+    };
+
+    auto consider_shapes = [&](std::vector<scene::shape_node> const &shapes) {
+        for (auto const &shape : shapes)
+        {
+            // quick reject: skip shapes whose bounding circle doesn't cover our (x,z) column
+            auto const &sdata = shape.data();
+            double const sdx = origin.x - sdata.area.center.x;
+            double const sdz = origin.z - sdata.area.center.z;
+            if (sdx * sdx + sdz * sdz > static_cast<double>(sdata.area.radius) * sdata.area.radius)
+                continue;
+
+            auto const &verts = sdata.vertices;
+            for (std::size_t i = 0; i + 2 < verts.size(); i += 3)
+                consider_triangle(verts[i].position, verts[i + 1].position, verts[i + 2].position);
+        }
+    };
+
+    scene::basic_section &sec = simulation::Region->section(origin);
+    // section level holds the large opaque geometry, including legacy terrain
+    consider_shapes(sec.m_shapes);
+
+    // scan a 3x3 neighbourhood of cells for smaller geometry and other model instances below us
+    for (int dz = -1; dz <= 1; ++dz)
+        for (int dx = -1; dx <= 1; ++dx)
+        {
+            scene::basic_cell &cell = sec.cell(origin, glm::ivec2(dx, dz));
+            consider_shapes(cell.m_shapesopaque);
+            consider_shapes(cell.m_shapestranslucent);
+
+            // other instances are approximated by their bounding sphere, so a node can rest on top of them
+            for (auto *inst : cell.m_instancesopaque)
+            {
+                if (!inst || inst == node)
+                    continue;
+                glm::dvec3 const ic = inst->location();
+                double const r = static_cast<double>(inst->radius());
+                double const idx = origin.x - ic.x, idz = origin.z - ic.z;
+                double const horiz2 = idx * idx + idz * idz;
+                if (horiz2 < r * r)
+                {
+                    double const ytop = ic.y + std::sqrt(r * r - horiz2);
+                    if (ytop <= origin.y + epsilon && ytop > bestY)
+                    {
+                        bestY = ytop;
+                        found = true;
+                    }
+                }
+            }
+        }
+
+    // editable terrain patches keep their heightmap on the CPU, so query them directly
+    for (editor_terrain *terrain : active_terrains())
+    {
+        if (!terrain->contains(origin.x, origin.z))
+            continue;
+        double const y = terrain->height_at(origin.x, origin.z);
+        if (y <= origin.y + epsilon && y > bestY)
+        {
+            bestY = y;
+            found = true;
+        }
+    }
+
+    if (!found)
+        return;
+
+    push_snapshot(node, EditorSnapshot::Action::Move);
+    glm::dvec3 target = origin;
+    target.y = bestY;
+    m_editor.translate(node, target, true); // true == apply the computed Y (free vertical move)
 }
 
 void editor_mode::handle_brush_mouse_hold(int Action, int Button)
@@ -209,10 +392,12 @@ void editor_mode::push_snapshot(scene::basic_node *node, EditorSnapshot::Action 
     if (auto *model = dynamic_cast<TAnimModel *>(node))
     {
         snap.rotation = model->Angles();
+        snap.scale = model->Scale();
     }
     else
     {
         snap.rotation = glm::vec3(0.0f);
+        snap.scale = glm::vec3(1.0f);
     }
 
     if (Action == EditorSnapshot::Action::Delete || Action == EditorSnapshot::Action::Add)
@@ -298,7 +483,10 @@ void editor_mode::undo_last()
     current.node_ptr = target;
     current.position = target->location();
     if (auto *model = dynamic_cast<TAnimModel *>(target))
+    {
         current.rotation = model->Angles();
+        current.scale = model->Scale();
+    }
     else
         current.rotation = glm::vec3(0.0f);
     g_redo.push_back(std::move(current));
@@ -325,6 +513,7 @@ void editor_mode::undo_last()
         glm::vec3 cur = model->Angles();
         glm::vec3 delta = snap.rotation - cur;
         m_editor.rotate(target, delta, 0);
+        model->Scale(snap.scale);
     }
 
     m_node = target;
@@ -376,7 +565,10 @@ void editor_mode::redo_last()
     {
         hist.position = target->location();
         if (auto *model = dynamic_cast<TAnimModel *>(target))
+        {
             hist.rotation = model->Angles();
+            hist.scale = model->Scale();
+        }
         hist.uuid = snap.uuid;
     }
     m_history.push_back(std::move(hist));
@@ -388,6 +580,7 @@ void editor_mode::redo_last()
         {
             created->location(snap.position);
             created->Angles(snap.rotation);
+            created->Scale(snap.scale);
             m_node = created;
             m_node->uuid = snap.uuid;
             ui()->set_node(m_node);
@@ -407,6 +600,7 @@ void editor_mode::redo_last()
         glm::vec3 cur = model->Angles();
         glm::vec3 delta = snap.rotation - cur;
         m_editor.rotate(target, delta, 0);
+        model->Scale(snap.scale);
     }
 
     m_node = target;
@@ -421,6 +615,16 @@ bool editor_mode::update()
     simulation::Environment.update();
 
     auto const deltarealtime = Timer::GetDeltaRenderTime();
+
+    // reconcile camera fly-mode with the real right-button state. ImGui is always fed the button
+    // events (even when it captures the mouse), so io.MouseDown[1] is authoritative; if a release
+    // was swallowed by an ImGui window while flying, force the editor out of fly-mode here so the
+    // camera doesn't get stuck spinning with a hidden cursor.
+    if (!ImGui::GetIO().MouseDown[1] && m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS)
+    {
+        m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE);
+        Application.set_cursor(GLFW_CURSOR_NORMAL);
+    }
 
     // fixed step render time routines (50 Hz)
     fTime50Hz += deltarealtime; // accumulate even when paused to keep frame reads stable
@@ -464,18 +668,651 @@ bool editor_mode::update()
 
     simulation::is_ready = true;
 
-    // --- ImGui: Editor History Window & Settings ---
+    // note: the streamer is advanced centrally in the application main loop (so it runs in every
+    // mode), using the published Global.pCamera; nothing to do here
+
+    // continuous terrain sculpting while the left mouse button is held in sculpt mode
+    if (m_terrain_sculpt && mouseHold)
+        handle_terrain_sculpt(deltarealtime);
+
+    // debounced auto mesh simplification: once sculpting has settled for a short while, simplify
+    // any chunk that was edited. holding the brush keeps the timer reset so we don't churn mid-stroke.
+    if (m_terrain_auto_optimize)
+    {
+        auto const terrains = active_terrains();
+        bool any_dirty = false;
+        for (editor_terrain *terrain : terrains)
+            if (terrain->dirty())
+            {
+                any_dirty = true;
+                break;
+            }
+
+        if (!any_dirty || (m_terrain_sculpt && mouseHold))
+        {
+            m_terrain_idle = 0.0; // actively editing (or nothing pending): hold off
+        }
+        else
+        {
+            m_terrain_idle += deltarealtime;
+            if (m_terrain_idle >= 0.5) // settle time
+            {
+                for (editor_terrain *terrain : terrains)
+                    if (terrain->dirty())
+                        terrain->optimize(m_terrain_simplify_error);
+                m_terrain_idle = 0.0;
+            }
+        }
+    }
+
+    // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
+    render_gizmo();
+
+    // --- ImGui: Editor Settings & History windows ---
+    if(m_settings_open)
+        render_settings();
+
     if(!m_change_history) return true;
- 
+
     render_change_history();
 
     return true;
 }
 
+void editor_mode::render_settings()
+{
+    ImGui::Begin("Editor Settings", &m_settings_open, ImGuiWindowFlags_AlwaysAutoResize);
+
+    ImGui::TextUnformatted("Camera movement");
+
+    const char *schemes[] = {"WSAD (new)", "Arrows (legacy)"};
+    int current = (EditorSettings.movement() == editorSettings::movement_scheme::legacy) ? 1 : 0;
+    if (ImGui::Combo("##movement_scheme", &current, schemes, IM_ARRAYSIZE(schemes)))
+    {
+        EditorSettings.movement(current == 1 ? editorSettings::movement_scheme::legacy
+                                             : editorSettings::movement_scheme::wsad);
+        m_input.keyboard.apply_scheme();
+        EditorSettings.save();
+    }
+
+    ImGui::Separator();
+    ImGui::Checkbox("Transform gizmo (ImGuizmo)", &m_gizmo_enabled);
+
+    render_terrain_ui();
+
+    ImGui::End();
+}
+
+void editor_mode::render_terrain_ui()
+{
+    ImGui::Separator();
+    ImGui::TextUnformatted("Terrain");
+
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::InputInt("Grid cells", &m_terrain_cells);
+    m_terrain_cells = std::clamp(m_terrain_cells, 1, 512);
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::InputFloat("Cell size (m)", &m_terrain_cellsize);
+    if (m_terrain_cellsize < 0.1f)
+        m_terrain_cellsize = 0.1f;
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::InputFloat("Base height (m)", &m_terrain_baseheight);
+    ImGui::SetNextItemWidth(200.0f);
+    ImGui::InputText("Texture (optional)", m_terrain_texture, IM_ARRAYSIZE(m_terrain_texture));
+
+    if (ImGui::Button("Create flat terrain"))
+    {
+        // centre the new patch horizontally on the camera, flat at the requested base height
+        glm::dvec3 const center(Camera.Pos.x, static_cast<double>(m_terrain_baseheight), Camera.Pos.z);
+        auto terrain = std::make_unique<editor_terrain>();
+        if (terrain->create(center, m_terrain_cells, m_terrain_cellsize, std::string(m_terrain_texture)))
+        {
+            if (m_terrain_auto_optimize)
+                terrain->optimize(m_terrain_simplify_error);
+            m_terrains.push_back(std::move(terrain));
+        }
+        else
+            WriteLog("Editor: failed to create terrain", logtype::generic);
+    }
+
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::InputInt("Chunks / side", &m_terrain_chunks);
+    m_terrain_chunks = std::clamp(m_terrain_chunks, 1, 32);
+    ImGui::SameLine();
+    if (ImGui::Button("Create chunked terrain"))
+        create_chunked_terrain();
+    ImGui::TextDisabled("total %d x %d m, %d chunks",
+                        static_cast<int>(m_terrain_chunks * m_terrain_cells * m_terrain_cellsize),
+                        static_cast<int>(m_terrain_chunks * m_terrain_cells * m_terrain_cellsize),
+                        m_terrain_chunks * m_terrain_chunks);
+
+    if (ImGui::Checkbox("Chunk edit mode (LMB add neighbour / Shift = delete)", &m_chunk_edit))
+        if (m_chunk_edit)
+            m_terrain_sculpt = false; // mutually exclusive with sculpting
+    ImGui::Text("Grid chunks: %zu", m_grid_chunks.size());
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Streaming (open world, follows camera)");
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::InputInt("Stream radius", &m_stream_radius);
+    m_stream_radius = std::clamp(m_stream_radius, 0, 16);
+    ImGui::Checkbox("Persist edits to disk (16-bit)", &m_stream_persist);
+    bool streaming = m_streamer.active();
+    if (ImGui::Checkbox("Stream terrain", &streaming))
+    {
+        if (streaming)
+        {
+            // per-scenery chunk folder so chunks from different sceneries don't collide
+            std::string scenery = Global.SceneryFile;
+            auto const slash = scenery.find_last_of("/\\");
+            if (slash != std::string::npos)
+                scenery = scenery.substr(slash + 1);
+            auto const dot = scenery.find_last_of('.');
+            if (dot != std::string::npos)
+                scenery = scenery.substr(0, dot);
+            if (scenery.empty())
+                scenery = "default";
+            m_streamer.directory("editor_terrain/" + scenery);
+
+            m_streamer.configure(m_terrain_cells, m_terrain_cellsize, m_stream_radius,
+                                 m_terrain_baseheight, std::string(m_terrain_texture));
+            m_streamer.simplify(m_terrain_auto_optimize, m_terrain_simplify_error);
+            m_streamer.persist(m_stream_persist);
+
+            // hand the authored grid chunks over to streaming: persist them to disk, then drop the
+            // in-memory meshes so the streamer owns residency (it loads them back within the radius)
+            for (auto &entry : m_grid_chunks)
+                if (entry.second)
+                    m_streamer.save_chunk(entry.first.first, entry.first.second, *entry.second);
+            for (auto &entry : m_grid_chunks)
+                if (entry.second)
+                    entry.second->destroy();
+            m_grid_chunks.clear();
+        }
+        else
+        {
+            m_streamer.clear(); // saves modified chunks before dropping them
+        }
+        m_streamer.active(streaming);
+    }
+    if (m_streamer.active())
+    {
+        // radius / simplify / persist are safe to tweak live; chunk size/base are fixed at toggle
+        m_streamer.radius(m_stream_radius);
+        m_streamer.simplify(m_terrain_auto_optimize, m_terrain_simplify_error);
+        m_streamer.persist(m_stream_persist);
+        ImGui::Text("Resident chunks: %zu  (dir: %s)", m_streamer.resident(), m_streamer.directory().c_str());
+    }
+
+    ImGui::Text("Patches: %zu", m_terrains.size());
+
+    // capture: sample the selected model's geometry into an editable patch and remove the original
+    if (dynamic_cast<TAnimModel *>(m_node) != nullptr)
+    {
+        if (ImGui::Button("Capture selected model as terrain"))
+            capture_terrain();
+    }
+    else
+    {
+        ImGui::TextDisabled("Capture: select a model instance first");
+    }
+
+    std::vector<editor_terrain *> const terrains = active_terrains();
+    if (!terrains.empty())
+    {
+        ImGui::Separator();
+        if (ImGui::Checkbox("Sculpt mode (LMB raise / Shift = lower)", &m_terrain_sculpt))
+            if (m_terrain_sculpt)
+                m_chunk_edit = false; // mutually exclusive with chunk editing
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::InputFloat("Brush radius", &m_terrain_brush_radius);
+        if (m_terrain_brush_radius < 0.5f)
+            m_terrain_brush_radius = 0.5f;
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::InputFloat("Brush strength", &m_terrain_brush_strength);
+
+        // one-shot nudge of the most recent manual patch at its centre, handy for a quick test
+        if (!m_terrains.empty())
+        {
+            auto &terrain = m_terrains.back();
+            glm::dvec3 const c = terrain->centre();
+            if (ImGui::Button("Raise centre"))
+                terrain->sculpt(c.x, c.z, m_terrain_brush_radius, m_terrain_brush_strength);
+            ImGui::SameLine();
+            if (ImGui::Button("Lower centre"))
+                terrain->sculpt(c.x, c.z, m_terrain_brush_radius, -m_terrain_brush_strength);
+        }
+
+        ImGui::Separator();
+        ImGui::TextUnformatted("Optimize (mesh simplification, all patches)");
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::InputFloat("Flatness tol (m)", &m_terrain_simplify_error);
+        if (m_terrain_simplify_error < 0.01f)
+            m_terrain_simplify_error = 0.01f;
+        ImGui::Checkbox("Auto-optimize after sculpt", &m_terrain_auto_optimize);
+        if (ImGui::Button("Optimize all"))
+            for (editor_terrain *t : terrains)
+                t->optimize(m_terrain_simplify_error);
+        ImGui::SameLine();
+        if (ImGui::Button("Full-res all"))
+            for (editor_terrain *t : terrains)
+                t->unoptimize();
+
+        std::size_t tris = 0, full = 0;
+        for (editor_terrain *t : terrains)
+        {
+            tris += t->triangles();
+            full += t->full_triangles();
+        }
+        ImGui::Text("Triangles: %zu / %zu", tris, full);
+    }
+}
+
+editor_terrain *editor_mode::terrain_at(double X, double Z)
+{
+    for (auto &terrain : m_terrains)
+        if (terrain && terrain->contains(X, Z))
+            return terrain.get();
+    double const size = chunk_grid_size();
+    auto const it = m_grid_chunks.find({static_cast<int>(std::floor(X / size)), static_cast<int>(std::floor(Z / size))});
+    if (it != m_grid_chunks.end() && it->second && it->second->contains(X, Z))
+        return it->second.get();
+    return m_streamer.terrain_at(X, Z);
+}
+
+std::vector<editor_terrain *> editor_mode::active_terrains()
+{
+    std::vector<editor_terrain *> out;
+    out.reserve(m_terrains.size() + m_grid_chunks.size() + m_streamer.resident());
+    for (auto &terrain : m_terrains)
+        if (terrain)
+            out.push_back(terrain.get());
+    for (auto &entry : m_grid_chunks)
+        if (entry.second)
+            out.push_back(entry.second.get());
+    m_streamer.collect(out);
+    return out;
+}
+
+void editor_mode::add_grid_chunk(int Cx, int Cz)
+{
+    std::pair<int, int> const key{Cx, Cz};
+    if (m_grid_chunks.count(key))
+        return; // already occupied
+
+    double const size = chunk_grid_size();
+    int const cells = std::clamp(m_terrain_cells, 1, 256);
+    glm::dvec3 const center((Cx + 0.5) * size, static_cast<double>(m_terrain_baseheight), (Cz + 0.5) * size);
+
+    auto terrain = std::make_unique<editor_terrain>();
+    if (!terrain->create(center, cells, m_terrain_cellsize, std::string(m_terrain_texture)))
+        return;
+    if (m_terrain_auto_optimize)
+        terrain->optimize(m_terrain_simplify_error);
+    m_grid_chunks[key] = std::move(terrain);
+}
+
+void editor_mode::remove_grid_chunk(int Cx, int Cz)
+{
+    auto const it = m_grid_chunks.find({Cx, Cz});
+    if (it == m_grid_chunks.end())
+        return;
+    if (it->second)
+        it->second->destroy();
+    m_grid_chunks.erase(it);
+}
+
+void editor_mode::handle_chunk_edit_click(bool DeleteMode)
+{
+    // world point under the cursor; must land on existing geometry to give a valid depth
+    glm::dvec3 const world = Camera.Pos + GfxRenderer->Mouse_Position();
+    double const size = chunk_grid_size();
+    int const cx = static_cast<int>(std::floor(world.x / size));
+    int const cz = static_cast<int>(std::floor(world.z / size));
+    bool const streaming = m_streamer.active();
+
+    if (DeleteMode)
+    {
+        if (streaming)
+            m_streamer.remove_chunk(cx, cz);
+        else
+            remove_grid_chunk(cx, cz);
+        return;
+    }
+
+    // if the clicked cell holds a chunk, target the neighbour nearest the clicked edge (the empty
+    // side); otherwise fill the clicked cell
+    bool const occupied = streaming
+                              ? (m_streamer.terrain_at(world.x, world.z) != nullptr)
+                              : (m_grid_chunks.count({cx, cz}) > 0);
+    int tcx = cx, tcz = cz;
+    if (occupied)
+    {
+        double const lx = world.x - cx * size, lz = world.z - cz * size;
+        double const dw = lx, de = size - lx, dn = lz, ds = size - lz;
+        double const nearest = std::min({dw, de, dn, ds});
+        if (nearest == dw)
+            tcx = cx - 1;
+        else if (nearest == de)
+            tcx = cx + 1;
+        else if (nearest == dn)
+            tcz = cz - 1;
+        else
+            tcz = cz + 1;
+    }
+
+    if (streaming)
+        m_streamer.add_chunk(tcx, tcz);
+    else
+        add_grid_chunk(tcx, tcz);
+}
+
+void editor_mode::create_chunked_terrain()
+{
+    int const chunks = std::clamp(m_terrain_chunks, 1, 32);
+    double const size = chunk_grid_size();
+
+    // snap the field to the global chunk grid (so it aligns with manual/streamed chunks), centred
+    // on the camera's chunk
+    int const ccx = static_cast<int>(std::floor(Camera.Pos.x / size));
+    int const ccz = static_cast<int>(std::floor(Camera.Pos.z / size));
+    int const half = chunks / 2;
+
+    int created = 0;
+    for (int dz = 0; dz < chunks; ++dz)
+        for (int dx = 0; dx < chunks; ++dx)
+        {
+            int const cx = ccx - half + dx, cz = ccz - half + dz;
+            if (!m_grid_chunks.count({cx, cz}))
+            {
+                add_grid_chunk(cx, cz);
+                ++created;
+            }
+        }
+
+    WriteLog("Editor: created chunked terrain with " + std::to_string(created) + " chunks", logtype::generic);
+}
+
+void editor_mode::save_scene_with_terrain()
+{
+    // commit authored terrain so the scenery streams it on load. if not already streaming, hand the
+    // manual grid chunks over to the streamer (same as toggling Stream terrain on)
+    if (!m_streamer.active())
+    {
+        std::string scenery = Global.SceneryFile;
+        auto const slash = scenery.find_last_of("/\\");
+        if (slash != std::string::npos)
+            scenery = scenery.substr(slash + 1);
+        auto const dot = scenery.find_last_of('.');
+        if (dot != std::string::npos)
+            scenery = scenery.substr(0, dot);
+        if (scenery.empty())
+            scenery = "default";
+
+        m_streamer.directory("editor_terrain/" + scenery);
+        m_streamer.configure(m_terrain_cells, m_terrain_cellsize, m_stream_radius, m_terrain_baseheight,
+                             std::string(m_terrain_texture));
+        m_streamer.simplify(m_terrain_auto_optimize, m_terrain_simplify_error);
+        m_streamer.persist(true);
+
+        for (auto &entry : m_grid_chunks)
+            if (entry.second)
+                m_streamer.save_chunk(entry.first.first, entry.first.second, *entry.second);
+        for (auto &entry : m_grid_chunks)
+            if (entry.second)
+                entry.second->destroy();
+        m_grid_chunks.clear();
+        m_streamer.active(true);
+    }
+
+    m_streamer.flush(); // save resident edited chunks to disk
+
+    // export scenery; the exported .scm now carries an `editorterrain` directive (streamer is active)
+    simulation::State.export_as_text(Global.SceneryFile);
+    WriteLog("Editor: saved scene + terrain", logtype::generic);
+}
+
+void editor_mode::handle_terrain_sculpt(double Deltatime)
+{
+    // world point under the cursor (Mouse_Position is camera-relative, like the brush placement uses)
+    glm::dvec3 const world = Camera.Pos + GfxRenderer->Mouse_Position();
+    // only sculpt when the cursor is actually over terrain (avoids editing on a stale depth read)
+    if (terrain_at(world.x, world.z) == nullptr)
+        return;
+
+    double const rate = m_terrain_brush_strength * Deltatime; // metres applied this frame
+    double const signedrate = (Global.shiftState ? -rate : rate);
+    // apply to every chunk the brush touches; each patch clips to its own bounds, so a stroke
+    // crossing a chunk boundary edits both and shared-edge vertices stay in sync
+    for (editor_terrain *terrain : active_terrains())
+        terrain->sculpt(world.x, world.z, m_terrain_brush_radius, signedrate);
+}
+
+void editor_mode::capture_terrain()
+{
+    TAnimModel *model = dynamic_cast<TAnimModel *>(m_node);
+    if (model == nullptr || model->pModel == nullptr)
+    {
+        WriteLog("Editor: select a model instance to capture as terrain", logtype::generic);
+        return;
+    }
+
+    // instance world transform, matching the renderer: translate * rotateY * rotateX * rotateZ * scale
+    glm::dmat4 rootm(1.0);
+    rootm = glm::translate(rootm, model->location());
+    glm::vec3 const angles = model->Angles();
+    if (angles.y != 0.0f) rootm = glm::rotate(rootm, glm::radians(static_cast<double>(angles.y)), glm::dvec3(0.0, 1.0, 0.0));
+    if (angles.x != 0.0f) rootm = glm::rotate(rootm, glm::radians(static_cast<double>(angles.x)), glm::dvec3(1.0, 0.0, 0.0));
+    if (angles.z != 0.0f) rootm = glm::rotate(rootm, glm::radians(static_cast<double>(angles.z)), glm::dvec3(0.0, 0.0, 1.0));
+    glm::vec3 const scale = model->Scale();
+    rootm = glm::scale(rootm, glm::dvec3(scale));
+
+    std::vector<world_triangle> tris;
+    gather_submodel_triangles(model->pModel->Root, rootm, tris);
+    if (tris.empty())
+    {
+        WriteLog("Editor: selected model has no readable geometry to capture", logtype::generic);
+        return;
+    }
+
+    // horizontal bounds of the captured geometry
+    glm::dvec3 lo(std::numeric_limits<double>::max());
+    glm::dvec3 hi(-std::numeric_limits<double>::max());
+    for (auto const &t : tris)
+        for (auto const &p : t)
+        {
+            lo.x = std::min(lo.x, p.x); lo.y = std::min(lo.y, p.y); lo.z = std::min(lo.z, p.z);
+            hi.x = std::max(hi.x, p.x); hi.y = std::max(hi.y, p.y); hi.z = std::max(hi.z, p.z);
+        }
+
+    glm::dvec3 const center((lo.x + hi.x) * 0.5, lo.y, (lo.z + hi.z) * 0.5);
+    double const extent = std::max(hi.x - lo.x, hi.z - lo.z);
+    int const cells = std::max(1, m_terrain_cells);
+    float const cellsize = static_cast<float>(std::max(0.1, extent / cells));
+
+    // sampler: highest captured triangle at (x,z)
+    auto const sampler = [&tris](double X, double Z, double &OutY) -> bool {
+        double best = -std::numeric_limits<double>::max();
+        bool found = false;
+        for (auto const &t : tris)
+        {
+            double const minx = std::min({t[0].x, t[1].x, t[2].x});
+            double const maxx = std::max({t[0].x, t[1].x, t[2].x});
+            double const minz = std::min({t[0].z, t[1].z, t[2].z});
+            double const maxz = std::max({t[0].z, t[1].z, t[2].z});
+            if (X < minx || X > maxx || Z < minz || Z > maxz)
+                continue;
+            double y;
+            if (triangle_height_at(t[0], t[1], t[2], X, Z, y) && (!found || y > best))
+            {
+                best = y;
+                found = true;
+            }
+        }
+        if (found)
+            OutY = best;
+        return found;
+    };
+
+    auto terrain = std::make_unique<editor_terrain>();
+    if (!terrain->create(center, cells, cellsize, std::string(m_terrain_texture), sampler))
+    {
+        WriteLog("Editor: terrain capture failed", logtype::generic);
+        return;
+    }
+    m_terrains.push_back(std::move(terrain));
+
+    // remove the original instance (recorded as a deletion so it can be undone)
+    std::string as_text;
+    model->export_as_text(as_text);
+    push_snapshot(model, EditorSnapshot::Action::Delete, as_text);
+    nullify_history_pointers(model);
+    remove_from_hierarchy(model);
+    m_node = nullptr;
+    m_dragging = false;
+    ui()->set_node(nullptr);
+    simulation::State.delete_model(model);
+}
+
+void editor_mode::render_gizmo()
+{
+    // the transform gizmo is suppressed while editing terrain, so the brush/chunk tool owns the mouse
+    if (!m_gizmo_enabled || m_terrain_sculpt || m_chunk_edit)
+    {
+        m_gizmo_using = false;
+        return;
+    }
+
+    // compact control window: lets the user pick the transform mode without keyboard shortcuts
+    ImGui::Begin("Gizmo", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing);
+    int op = static_cast<int>(m_gizmo_op);
+    ImGui::RadioButton("Translate (Q)", &op, static_cast<int>(gizmo_operation::translate));
+    ImGui::SameLine();
+    ImGui::RadioButton("Rotate (W)", &op, static_cast<int>(gizmo_operation::rotate));
+    ImGui::SameLine();
+    ImGui::RadioButton("Scale (E)", &op, static_cast<int>(gizmo_operation::scale));
+    m_gizmo_op = static_cast<gizmo_operation>(op);
+
+    if (m_gizmo_op != gizmo_operation::scale) // ImGuizmo always scales in local space
+        ImGui::Checkbox("Local space (R)", &m_gizmo_local);
+    if (m_gizmo_op == gizmo_operation::translate)
+    {
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::InputFloat("Snap (hold Ctrl)", &m_gizmo_snap);
+        if (m_gizmo_snap < 0.0f)
+            m_gizmo_snap = 0.0f;
+    }
+    if (!m_node)
+        ImGui::TextDisabled("No node selected");
+    ImGui::End();
+
+    if (!m_node)
+    {
+        m_gizmo_using = false;
+        return;
+    }
+
+    ImGuizmo::BeginFrame();
+    ImGuizmo::SetOrthographic(false);
+
+    ImGuiIO const &io = ImGui::GetIO();
+    ImGuizmo::SetRect(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
+
+    // the view matrix comes from the most recent color pass and is camera-relative
+    // (rotation only), so the gizmo is positioned relative to the camera as well.
+    glm::mat4 const view = GfxRenderer->Camera_View_Matrix();
+    glm::dvec3 const camerapos = GfxRenderer->Camera_Position();
+
+    // the engine's own projection bakes in reverse-Z (and screen orientation), which ImGuizmo
+    // doesn't expect; rebuild a clean, standard perspective that matches the rendered view.
+    // for the main viewport the engine uses a symmetric frustum with this exact fov/aspect.
+    float const fovy = glm::radians(Global.FieldOfView / Global.ZoomFactor);
+    float const aspect = (io.DisplaySize.y > 0.0f) ? (io.DisplaySize.x / io.DisplaySize.y) : 1.0f;
+    glm::mat4 const projection = glm::perspective(fovy, aspect, 0.1f, 10000.0f);
+
+    // rotation/scale are only meaningful for instanced models; other node types translate only
+    TAnimModel *model = dynamic_cast<TAnimModel *>(m_node);
+
+    glm::vec3 const relativepos = glm::vec3(m_node->location() - camerapos);
+    glm::vec3 const angles = model ? model->Angles() : glm::vec3(0.0f);
+    glm::vec3 const scalevec = model ? model->Scale() : glm::vec3(1.0f);
+
+    // build the gizmo model matrix from the node's current translation + rotation + scale
+    float const translation[3] = {relativepos.x, relativepos.y, relativepos.z};
+    float const rotation[3] = {angles.x, angles.y, angles.z};
+    float const scale[3] = {scalevec.x, scalevec.y, scalevec.z};
+    glm::mat4 matrix(1.0f);
+    ImGuizmo::RecomposeMatrixFromComponents(translation, rotation, scale, glm::value_ptr(matrix));
+
+    // map the editor's transform mode onto ImGuizmo; fall back to translate for non-models
+    ImGuizmo::OPERATION operation = ImGuizmo::TRANSLATE;
+    EditorSnapshot::Action action = EditorSnapshot::Action::Move;
+    if (model && m_gizmo_op == gizmo_operation::rotate)
+    {
+        operation = ImGuizmo::ROTATE;
+        action = EditorSnapshot::Action::Rotate;
+    }
+    else if (model && m_gizmo_op == gizmo_operation::scale)
+    {
+        operation = ImGuizmo::SCALE;
+        action = EditorSnapshot::Action::Scale;
+    }
+    ImGuizmo::MODE const mode = m_gizmo_local ? ImGuizmo::LOCAL : ImGuizmo::WORLD;
+
+    // optional snapping while Ctrl is held (metres / degrees / scale factor depending on mode)
+    glm::vec3 snapvalue(0.0f);
+    if (operation == ImGuizmo::TRANSLATE)
+        snapvalue = glm::vec3(m_gizmo_snap);
+    else if (operation == ImGuizmo::ROTATE)
+        snapvalue = glm::vec3(5.0f);
+    else
+        snapvalue = glm::vec3(0.1f);
+    float const *snap = (Global.ctrlState && snapvalue.x > 0.0f) ? glm::value_ptr(snapvalue) : nullptr;
+
+    ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection),
+                         operation, mode, glm::value_ptr(matrix), nullptr, snap);
+
+    if (ImGuizmo::IsUsing())
+    {
+        // record a single undo snapshot at the start of the drag
+        if (!m_gizmo_using)
+        {
+            push_snapshot(m_node, action);
+            m_gizmo_using = true;
+        }
+
+        float newtranslation[3], newrotation[3], newscale[3];
+        ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(matrix), newtranslation, newrotation, newscale);
+
+        if (operation == ImGuizmo::ROTATE && model)
+        {
+            // apply the rotation delta relative to the model's current orientation
+            glm::vec3 const newangles(newrotation[0], newrotation[1], newrotation[2]);
+            m_editor.rotate(model, newangles - model->Angles(), 0.0f);
+        }
+        else if (operation == ImGuizmo::SCALE && model)
+        {
+            model->Scale(glm::vec3(newscale[0], newscale[1], newscale[2]));
+        }
+        else
+        {
+            glm::dvec3 const newworldpos = camerapos + glm::dvec3(newtranslation[0], newtranslation[1], newtranslation[2]);
+            // pass Snaptoground == true so the gizmo's Y component is applied (free 3D move)
+            m_editor.translate(m_node, newworldpos, true);
+        }
+    }
+    else
+    {
+        m_gizmo_using = false;
+    }
+}
+
 void editor_mode::update_camera(double const Deltatime)
 {
-    // account for keyboard-driven motion
-    // if focus animation active, interpolate camera toward target
+    Camera.Update();
+
+    // focus animation runs after Camera.Update() so it overrides any residual velocity/rotation;
+    // it smoothly drives both position and orientation toward the framed object
     if (m_focus_active)
     {
         m_focus_time += Deltatime;
@@ -483,14 +1320,23 @@ void editor_mode::update_camera(double const Deltatime)
         if (t >= 1.0)
             t = 1.0;
         // smoothstep easing
-        double s = t * t * (3.0 - 2.0 * t);
-        Camera.Pos = glm::mix(m_focus_start_pos, m_focus_target_pos, s);
-        Camera.LookAt = glm::mix(m_focus_start_lookat, m_focus_target_lookat, s);
+        float const s = static_cast<float>(t * t * (3.0 - 2.0 * t));
+
+        Camera.Pos = glm::mix(m_focus_start_pos, m_focus_target_pos, static_cast<double>(s));
+
+        // interpolate angles, taking the shortest path around the yaw wrap-around
+        constexpr float TWO_PI = 6.283185307179586f;
+        float const dyaw = std::remainder(m_focus_target_angle.y - m_focus_start_angle.y, TWO_PI);
+        Camera.Angle.x = m_focus_start_angle.x + (m_focus_target_angle.x - m_focus_start_angle.x) * s;
+        Camera.Angle.y = m_focus_start_angle.y + dyaw * s;
+        Camera.Angle.z = m_focus_start_angle.z + (m_focus_target_angle.z - m_focus_start_angle.z) * s;
+
+        // suppress any residual fly velocity so it doesn't fight the animation
+        Camera.Velocity = glm::dvec3(0.0);
+
         if (t >= 1.0)
             m_focus_active = false;
     }
-
-    Camera.Update();
 
     // reset window state (will be set again if UI requires it)
     Global.CabWindowOpen = false;
@@ -536,7 +1382,12 @@ void editor_mode::exit()
     g_redo.clear();
     m_history.clear();
 
-    Application.set_cursor(Global.ControlPicking ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+    // drop selection so a stale/dangling node pointer isn't used on the next editor session
+    m_node = nullptr;
+    m_gizmo_using = false;
+    ui()->set_node(nullptr);
+
+   Application.set_cursor(Global.ControlPicking ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
 
     if (!Global.ControlPicking)
     {
@@ -556,6 +1407,25 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
     // first give UI a chance to handle the key
     if (!anyModifier && m_userinterface->on_key(Key, Action))
         return;
+
+    // gizmo transform shortcuts (Q/W/E/R) — only when the camera isn't being flown (RMB up).
+    // handled before the camera keyboard step because Q/W/E are also the fly-mode movement keys,
+    // which would otherwise consume them.
+    if (!anyModifier && is_press(Action)
+        && m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) != GLFW_PRESS)
+    {
+        bool handled = true;
+        switch (Key)
+        {
+        case GLFW_KEY_Q: m_gizmo_op = gizmo_operation::translate; break;
+        case GLFW_KEY_W: m_gizmo_op = gizmo_operation::rotate; break;
+        case GLFW_KEY_E: m_gizmo_op = gizmo_operation::scale; break;
+        case GLFW_KEY_R: m_gizmo_local = !m_gizmo_local; break;
+        default: handled = false; break;
+        }
+        if (handled)
+            return;
+    }
 
     // then internal input handling
     if (m_input.keyboard.key(Key, Action))
@@ -637,6 +1507,16 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         }
         break;
 
+    case GLFW_KEY_END:
+        if (is_press(Action) && m_node)
+        {
+            // Unreal-style "snap to floor": drop the selected node onto the surface below it.
+            // works against triangle geometry (shape_node terrain / opaque shapes); once a proper
+            // editable terrain mesh exists, dropping onto it works without further changes here.
+            snap_to_ground(m_node);
+        }
+        break;
+
     default:
         break;
     }
@@ -644,23 +1524,18 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
 
 void editor_mode::on_cursor_pos(double const Horizontal, double const Vertical)
 {
-    dvec2 const mousemove = dvec2{Horizontal, Vertical} - m_input.mouse.position();
+    // object transforms are handled by the gizmo now; here we only forward the cursor to the
+    // mouse input, which rotates the camera while the right mouse button is held (panning mode)
     m_input.mouse.position(Horizontal, Vertical);
+}
 
-    if (m_input.mouse.button(GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE)
-        return;
-    if (!m_node)
-        return;
-
-    if (m_takesnapshot)
+void editor_mode::on_mouse_button(int const Button, int const Action, int const Mods)
+{
+    // UI first
+    if (m_userinterface->on_mouse_button(Button, Action))
     {
-        // record appropriate action type depending on current input mode
-        if (mode_rotationX() || mode_rotationY() || mode_rotationZ())
-            push_snapshot(m_node, EditorSnapshot::Action::Rotate);
-        else
-            push_snapshot(m_node, EditorSnapshot::Action::Move);
-
-        m_takesnapshot = false;
+        m_input.mouse.button(Button, Action);
+        return;
     }
 
     if (mode_translation())
@@ -694,14 +1569,19 @@ void editor_mode::on_cursor_pos(double const Horizontal, double const Vertical)
         vec3 const rotation{static_cast<float>(mousemove.y) * 0.25f, 0.0f, 0.0f};
         float const quantization = mode_snap() ? 5.0f : 0.0f;
         m_editor.rotate(m_node, rotation, quantization);
-    }
-}
-
-void editor_mode::on_mouse_button(int const Button, int const Action, int const Mods)
-{
-    // UI first
-    if (m_userinterface->on_mouse_button(Button, Action))
+    // in chunk-edit mode the left button adds a neighbouring chunk (Shift = delete the clicked one)
+    if (m_chunk_edit && Button == GLFW_MOUSE_BUTTON_LEFT)
     {
+        if (is_press(Action))
+            handle_chunk_edit_click(Global.shiftState);
+        m_input.mouse.button(Button, Action);
+        return;
+    }
+
+    // in terrain sculpt mode the left button paints the terrain instead of picking nodes
+    if (m_terrain_sculpt && Button == GLFW_MOUSE_BUTTON_LEFT)
+    {
+        mouseHold = is_press(Action);
         m_input.mouse.button(Button, Action);
         return;
     }
@@ -786,6 +1666,11 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
             m_dragging = false;
         }
     }
+    else if (Button == GLFW_MOUSE_BUTTON_RIGHT)
+    {
+        // game-engine style look: hide & grab the cursor while flying, restore it on release
+        Application.set_cursor(is_press(Action) ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    }
 
     m_input.mouse.button(Button, Action);
 }
@@ -864,7 +1749,20 @@ void editor_mode::render_change_history(){
 
 void editor_mode::on_event_poll()
 {
-    m_input.poll();
+    // game-engine style camera: WSAD/EQ only fly the camera while the right mouse button is held.
+    // when it's released the keyboard is free for gizmo shortcuts, and we flush a zero-movement
+    // command once so the camera doesn't keep coasting on the last velocity it was given.
+    bool const flying = (m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS);
+    if (flying)
+    {
+        m_input.poll();
+    }
+    else if (m_camera_flying)
+    {
+        m_camera_relay.post(user_command::movehorizontal, 0.0, 0.0, GLFW_PRESS, 0);
+        m_camera_relay.post(user_command::movevertical, 0.0, 0.0, GLFW_PRESS, 0);
+    }
+    m_camera_flying = flying;
 }
 
 bool editor_mode::is_command_processor() const

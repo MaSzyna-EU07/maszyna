@@ -52,14 +52,20 @@ vec3 apply_lights_sunless(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, fl
     float env_roughness = 1.0 - clamp(glossiness / max(abs(param[1].w), 1.0), 0.0, 1.0);
     vec3 envcolor = envmap_color_lod(fragnormal, env_roughness * MAX_REFLECTION_LOD);
 
+    // Pre-integrated env BRDF (matches apply_lights): roughness-attenuated
+    // reflection so matte cab surfaces no longer mirror the environment.
+    vec3 env_spec = EnvBRDFApprox(F0, env_roughness, NdotV);
+    float env_spec_w = max(env_spec.r, max(env_spec.g, env_spec.b));
+
     vec3 texturecoloryuv = rgb2yuv(texturecolor);
     vec3 texturecolorfullv = yuv2rgb(vec3(0.2176, texturecoloryuv.gb));
     vec3 envyuv = rgb2yuv(envcolor);
-    texturecolor = mix(texturecolor, texturecolorfullv, envyuv.r * reflectivity * fresnel.r);
+    texturecolor = mix(texturecolor, texturecolorfullv, envyuv.r * reflectivity * env_spec_w);
 
     if (lights_count == 0U)
-        return (fragcolor + emissioncolor) * texturecolor
-             + envcolor * fresnel * reflectivity;
+        return fragcolor * texturecolor * (1.0 - metalic)
+             + emissioncolor * texturecolor
+             + envcolor * env_spec * reflectivity;
 
     vec2 sunlight = calc_dir_light(lights[0], fragnormal);
     // Sharpen N.L for stronger contrast between lit and shaded cab
@@ -83,18 +89,21 @@ vec3 apply_lights_sunless(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, fl
         fragcolor = mix(fragcolor, fragcolor * shadowtone, clamp(diffuseamount * shadow, 0.0, 1.0));
     }
 
-    fragcolor += emissioncolor;
     vec3 specularcolor = specularamount * lights[0].color;
 
-    // Env reflection separate from albedo multiply — same fix as apply_lights
-    vec3 env_reflection = envcolor * fresnel * reflectivity;
+    // Env reflection gated by env BRDF (roughness-attenuated, F0-tinted).
+    vec3 env_reflection = envcolor * env_spec * reflectivity;
 
-    vec3 result = mix(
-        (fragcolor + specularcolor) * texturecolor,
-         fragcolor * texturecolor + specularcolor,
-        metalic);
+    // Physically-based metal/rough combine (matches apply_lights / Substance):
+    // dielectric -> light-coloured highlight + full diffuse; metal -> albedo-tinted
+    // highlight, no diffuse term. Highlight strength left unchanged.
+    vec3 diffuse_albedo = texturecolor * (1.0 - metalic);
+    vec3 spec_tint      = mix(vec3(1.0), texturecolor, metalic);
 
-    result += mix(env_reflection, env_reflection * texturecolor, metalic);
+    vec3 result = fragcolor      * diffuse_albedo
+                + specularcolor  * spec_tint
+                + emissioncolor  * texturecolor
+                + env_reflection;   // env_spec already F0-tinted for metals
 
     return result;
 }

@@ -36,16 +36,16 @@ TAnimContainer::TAnimContainer()
     vTranslateTo = glm::dvec3(0.0, 0.0, 0.0); // docelowe przesunięcie
     fTranslateSpeed = 0.0;
     fAngleSpeed = 0.0;
-    pSubModel = NULL;
+    pSubModel = nullptr;
 	iAnim = 0; // położenie początkowe
-	evDone = NULL; // powiadamianie o zakończeniu animacji
+	evDone = nullptr; // powiadamianie o zakończeniu animacji
 }
 
 bool TAnimContainer::Init(TSubModel *pNewSubModel)
 {
     fRotateSpeed = 0.0f;
     pSubModel = pNewSubModel;
-    return pSubModel != NULL;
+    return pSubModel != nullptr;
 }
 
 void TAnimContainer::SetRotateAnim(glm::vec3 vNewRotateAngles, double fNewRotateSpeed)

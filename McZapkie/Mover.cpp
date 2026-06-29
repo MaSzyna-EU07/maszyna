@@ -536,7 +536,7 @@ TMoverParameters::TMoverParameters(double VelInitial, std::string TypeNameInit, 
 	{
 		Couplers[b].AllowedFlag = 3; // domyślnie hak i hamulec, inne trzeba włączyć jawnie w FIZ
 		Couplers[b].CouplingFlag = 0;
-		Couplers[b].Connected = NULL;
+		Couplers[b].Connected = nullptr;
 		Couplers[b].ConnectedNr = 0; // Ra: to nie ma znaczenia jak nie podłączony
 		Couplers[b].Render = false;
 		Couplers[b].CForce = 0.0;
@@ -4628,7 +4628,7 @@ void TMoverParameters::UpdatePipePressure(double dt)
 
 		LocBrakePress = LocHandle->GetCP();
 		for (int b = 0; b < 2; b++)
-			if ((TrainType & (dt_ET41 | dt_ET42)) != 0 && Couplers[b].Connected != NULL) // nie podoba mi się to rozwiązanie, chyba trzeba
+			if ((TrainType & (dt_ET41 | dt_ET42)) != 0 && Couplers[b].Connected != nullptr) // nie podoba mi się to rozwiązanie, chyba trzeba
 				// dodać jakiś wpis do fizyki na to
 				if ((Couplers[b].Connected->TrainType & (dt_ET41 | dt_ET42)) != 0 && (Couplers[b].CouplingFlag & 36) == 36)
 					LocBrakePress = std::max(Couplers[b].Connected->LocHandle->GetCP(), LocBrakePress);
@@ -4777,7 +4777,7 @@ void TMoverParameters::UpdateScndPipePressure(double dt)
 	dv2 = 0;
 
 	// sprzeg 1
-	if (Couplers[0].Connected != NULL)
+	if (Couplers[0].Connected != nullptr)
 		if (TestFlag(Couplers[0].CouplingFlag, ctrain_scndpneumatic))
 		{
 			c = Couplers[0].Connected; // skrot
@@ -4787,7 +4787,7 @@ void TMoverParameters::UpdateScndPipePressure(double dt)
 			c->Pipe2->Flow(-dv1);
 		}
 	// sprzeg 2
-	if (Couplers[1].Connected != NULL)
+	if (Couplers[1].Connected != nullptr)
 		if (TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic))
 		{
 			c = Couplers[1].Connected; // skrot
@@ -4796,7 +4796,7 @@ void TMoverParameters::UpdateScndPipePressure(double dt)
 				c->switch_physics(true);
 			c->Pipe2->Flow(-dv2);
 		}
-	if (Couplers[1].Connected != NULL && Couplers[0].Connected != NULL)
+	if (Couplers[1].Connected != nullptr && Couplers[0].Connected != nullptr)
 		if (TestFlag(Couplers[0].CouplingFlag, ctrain_scndpneumatic) && TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic))
 		{
 			dV = 0.00025 * dt * PF(Couplers[0].Connected->ScndPipePress, Couplers[1].Connected->ScndPipePress, Spz * 0.25);
@@ -4867,7 +4867,7 @@ double TMoverParameters::GetDVc(double dt)
 	dv1 = 0;
 	dv2 = 0;
 	// sprzeg 1
-	if (Couplers[0].Connected != NULL)
+	if (Couplers[0].Connected != nullptr)
 		if (TestFlag(Couplers[0].CouplingFlag, ctrain_pneumatic))
 		{ //*0.85
 			c = Couplers[0].Connected; // skrot           //0.08           //e/D * L/D = e/D^2 * L
@@ -4877,7 +4877,7 @@ double TMoverParameters::GetDVc(double dt)
 			c->Pipe->Flow(-dv1);
 		}
 	// sprzeg 2
-	if (Couplers[1].Connected != NULL)
+	if (Couplers[1].Connected != nullptr)
 		if (TestFlag(Couplers[1].CouplingFlag, ctrain_pneumatic))
 		{
 			c = Couplers[1].Connected; // skrot

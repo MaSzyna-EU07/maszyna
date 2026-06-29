@@ -41,9 +41,9 @@ int AirCoupler::GetStatus()
  */
 void AirCoupler::Clear()
 {
-    ModelOn = NULL;
-    ModelOff = NULL;
-    ModelxOn = NULL;
+    ModelOn = nullptr;
+    ModelOff = nullptr;
+    ModelxOn = nullptr;
     On = false;
     xOn = false;
 }
@@ -73,9 +73,9 @@ void AirCoupler::Load(cParser *Parser, TModel3d *Model)
 	}
     else
     {
-        ModelOn = NULL;
-        ModelxOn = NULL;
-        ModelOff = NULL;
+        ModelOn = nullptr;
+        ModelxOn = nullptr;
+        ModelOff = nullptr;
     }
 }
 

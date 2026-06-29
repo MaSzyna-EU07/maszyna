@@ -38,7 +38,7 @@ void render_task::run()
 	}
 	for (auto const &datapair : m_input->integers)
 	{
-		auto *value{PyGetInt(datapair.second)};
+		auto *value{PyLong_FromLong(datapair.second)};
 		PyDict_SetItemString(input, datapair.first.c_str(), value);
 		Py_DECREF(value);
 	}
@@ -49,7 +49,7 @@ void render_task::run()
 	}
 	for (auto const &datapair : m_input->strings)
 	{
-		auto *value{PyGetString(datapair.second.c_str())};
+		auto *value{PyUnicode_FromString(datapair.second.c_str())};
 		PyDict_SetItemString(input, datapair.first.c_str(), value);
 		Py_DECREF(value);
 	}
@@ -85,8 +85,8 @@ void render_task::run()
 
 		if (outputWidth != nullptr && outputHeight != nullptr && m_target != nullptr)
 		{
-			const int screenWidth = static_cast<int>(PyInt_AsLong(outputWidth));
-			const int screenHeight = static_cast<int>(PyInt_AsLong(outputHeight));
+			const int screenWidth = static_cast<int>(PyLong_AsLong(outputWidth));
+			const int screenHeight = static_cast<int>(PyLong_AsLong(outputHeight));
 
 			const bool useRgb = false && !Global.gfx_usegles;
 
@@ -98,9 +98,7 @@ void render_task::run()
 			Py_ssize_t pythonBufferBytes = 0;
 			char *pythonBufferPtr = nullptr;
 
-			const bool bufferExtracted =
-				PyString_AsStringAndSize(output, &pythonBufferPtr, &pythonBufferBytes) == 0
-				&& pythonBufferPtr != nullptr;
+			const bool bufferExtracted = PyBytes_AsStringAndSize(output, &pythonBufferPtr, &pythonBufferBytes) == 0 && pythonBufferPtr != nullptr;
 
 			if (!bufferExtracted)
 			{
@@ -199,25 +197,6 @@ void render_task::upload()
 	if (Global.python_uploadmain && m_target && m_target->shared_tex)
 	{
 		m_target->shared_tex->update_from_memory(m_target->width, m_target->height, reinterpret_cast<const uint8_t *>(m_target->image.data()));
-		// glBindTexture(GL_TEXTURE_2D, m_target->shared_tex->get_id());
-		// glTexImage2D(
-		//     GL_TEXTURE_2D, 0,
-		//     m_target->format,
-		//     m_target->width, m_target->height, 0,
-		//     m_target->components, GL_UNSIGNED_BYTE, m_target->image);
-		//
-		// if (Global.python_mipmaps)
-		//{
-		//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-		//	glGenerateMipmap(GL_TEXTURE_2D);
-		//}
-		// else
-		//{
-		//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		//}
-		//
-		// if (Global.python_threadedupload)
-		//	glFlush();
 	}
 }
 
@@ -229,26 +208,43 @@ auto python_taskqueue::init() -> bool
 
 	crashreport_add_info("python.threadedupload", Global.python_threadedupload ? "yes" : "no");
 	crashreport_add_info("python.uploadmain", Global.python_uploadmain ? "yes" : "no");
-
 #ifdef _WIN32
-	if (sizeof(void *) == 8)
-		Py_SetPythonHome(const_cast<char *>("python64"));
-	else
-		Py_SetPythonHome(const_cast<char *>("python"));
+	const wchar_t *pythonhome = (sizeof(void *) == 8) ? L"python64" : L"python";
 #elif __linux__
-	if (sizeof(void *) == 8)
-		Py_SetPythonHome(const_cast<char *>("linuxpython64"));
-	else
-		Py_SetPythonHome(const_cast<char *>("linuxpython"));
+	const wchar_t *pythonhome = (sizeof(void *) == 8) ? L"linuxpython64" : L"linuxpython";
 #elif __APPLE__
-	if (sizeof(void *) == 8)
-		Py_SetPythonHome(const_cast<char *>("macpython64"));
-	else
-		Py_SetPythonHome(const_cast<char *>("macpython"));
+	const wchar_t *pythonhome = (sizeof(void *) == 8) ? L"macpython64" : L"macpython";
 #endif
-	Py_InitializeEx(0);
 
-	PyEval_InitThreads();
+	{
+		// Py_SetPythonHome / Py_InitializeEx are deprecated since Python 3.11.
+		// Use the PyConfig init API (PEP 587) instead.
+		PyConfig config;
+		PyConfig_InitPythonConfig(&config);
+		config.install_signal_handlers = 0; // matches former Py_InitializeEx(0)
+
+		PyStatus status = PyConfig_SetString(&config, &config.home, pythonhome);
+		if (PyStatus_Exception(status))
+		{
+			PyConfig_Clear(&config);
+			ErrorLog("Python Interpreter: failed to set PYTHONHOME");
+			return false;
+		}
+
+		status = Py_InitializeFromConfig(&config);
+		if (PyStatus_Exception(status))
+		{
+			std::string msg = "Python Interpreter: Py_InitializeFromConfig failed";
+			if (status.err_msg != nullptr)
+				msg += std::string(": ") + status.err_msg;
+			if (status.func != nullptr)
+				msg += std::string(" (in ") + status.func + ")";
+			PyConfig_Clear(&config);
+			ErrorLog(msg);
+			return false;
+		}
+		PyConfig_Clear(&config);
+	}
 
 	PyObject *stringiomodule{nullptr};
 	PyObject *stringioclassname{nullptr};
@@ -297,7 +293,7 @@ auto python_taskqueue::init() -> bool
 	return true;
 
 release_and_exit:
-	PyEval_ReleaseLock();
+	PyEval_SaveThread();
 	return false;
 }
 
@@ -493,9 +489,9 @@ void python_taskqueue::run(GLFWwindow *Context, rendertask_sequence &Tasks, uplo
 		glfwMakeContextCurrent(Context);
 
 	// create a state object for this thread
-	PyEval_AcquireLock();
+	PyEval_AcquireThread(m_mainthread);
 	auto *threadstate{PyThreadState_New(m_mainthread->interp)};
-	PyEval_ReleaseLock();
+	PyEval_ReleaseThread(m_mainthread);
 
 	std::shared_ptr<render_task> task{nullptr};
 
@@ -546,11 +542,13 @@ void python_taskqueue::run(GLFWwindow *Context, rendertask_sequence &Tasks, uplo
 		Condition.wait_for(std::chrono::milliseconds(250));
 	}
 	// clean up thread state data
-	PyEval_AcquireLock();
-	PyThreadState_Swap(nullptr);
+	// Re-acquire the GIL with this worker's thread state, then clear and delete it.
+	// PyThreadState_DeleteCurrent() frees the current thread state AND releases the GIL,
+	// so we must NOT call PyEval_SaveThread() afterwards: at that point the current
+	// thread state is already NULL and PyEval_SaveThread() fatals on a NULL tstate.
+	PyEval_RestoreThread(threadstate);
 	PyThreadState_Clear(threadstate);
-	PyThreadState_Delete(threadstate);
-	PyEval_ReleaseLock();
+	PyThreadState_DeleteCurrent();
 
 	// detach the GL context before the worker terminates; some drivers
 	// (NVIDIA on X11, certain Mesa/Wayland configs) hang in process teardown
@@ -571,15 +569,20 @@ void python_taskqueue::update()
 
 void python_taskqueue::error()
 {
-
 	if (m_stderr != nullptr)
 	{
 		// std err pythona jest buforowane
 		PyErr_Print();
 		auto *errortext{PyObject_CallMethod(m_stderr, const_cast<char *>("getvalue"), nullptr)};
-		ErrorLog(PyString_AsString(errortext));
-		// czyscimy bufor na kolejne bledy
-		PyObject_CallMethod(m_stderr, const_cast<char *>("truncate"), const_cast<char *>("i"), 0);
+		if (errortext != nullptr)
+		{
+			const char *errstr = PyUnicode_AsUTF8(errortext);
+			if (errstr != nullptr)
+				ErrorLog(errstr);
+			Py_DECREF(errortext);
+		}
+		PyObject_CallMethod(m_stderr, const_cast<char *>("truncate"), const_cast<char *>("L"), (long long)0);
+		PyObject_CallMethod(m_stderr, const_cast<char *>("seek"), const_cast<char *>("L"), (long long)0);
 	}
 	else
 	{
@@ -598,16 +601,29 @@ void python_taskqueue::error()
 		auto *typetext{PyObject_Str(type)};
 		if (typetext != nullptr)
 		{
-			ErrorLog(PyString_AsString(typetext));
+			const char *s = PyUnicode_AsUTF8(typetext);
+			if (s)
+				ErrorLog(s);
+			Py_DECREF(typetext);
 		}
 		if (value != nullptr)
 		{
-			ErrorLog(PyString_AsString(value));
+			auto *valuetext{PyObject_Str(value)};
+			if (valuetext != nullptr)
+			{
+				const char *s = PyUnicode_AsUTF8(valuetext);
+				if (s)
+					ErrorLog(s);
+				Py_DECREF(valuetext);
+			}
 		}
 		auto *tracebacktext{PyObject_Str(traceback)};
 		if (tracebacktext != nullptr)
 		{
-			ErrorLog(PyString_AsString(tracebacktext));
+			const char *s = PyUnicode_AsUTF8(tracebacktext);
+			if (s)
+				ErrorLog(s);
+			Py_DECREF(tracebacktext);
 		}
 		else
 		{
@@ -636,7 +652,7 @@ std::vector<std::string> python_external_utils::PyObjectToStringArray(PyObject *
 			return emptyIfError;
 		}
 
-		const char *str = PyString_AsString(item);
+		const char *str = PyUnicode_AsUTF8(item);
 		if (str == nullptr)
 		{
 			Py_DECREF(item);
