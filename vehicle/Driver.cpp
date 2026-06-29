@@ -197,7 +197,7 @@ void TSpeedPos::Clear()
 	fSectionVelocityDist = 0.0; //brak długości
     fDist = 0.0;
     vPos = glm::dvec3(0, 0, 0);
-    trTrack = NULL; // brak wskaźnika
+    trTrack = nullptr; // brak wskaźnika
 };
 
 void TSpeedPos::CommandCheck()
@@ -1918,7 +1918,7 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
 
     if( WriteLogFlag ) {
 #ifdef _WIN32
-		CreateDirectory( "physicslog", NULL );
+		CreateDirectory( "physicslog", nullptr);
 #elif __unix__
 		mkdir( "physicslog", 0744 );
 #endif

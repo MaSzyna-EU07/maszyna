@@ -43,7 +43,7 @@ const int iLewo3[4] = {1, 3, 2, 1}; // segmenty do skręcania w lewo
 const int iPrawo3[4] = {-2, -1, -3, -2}; // segmenty do skręcania w prawo
 const int iProsto3[4] = {1, -1, 2, 1}; // segmenty do jazdy prosto
 const int iEnds3[13] = {3, 0, 2, 1, 2, 0, -1, 1, 0, 2, 0, 3, 1}; // numer sąsiedniego toru na końcu segmentu "-1"
-TIsolated *TIsolated::pRoot = NULL;
+TIsolated *TIsolated::pRoot = nullptr;
 
 TTrack::profiles_array TTrack::m_profiles;
 TTrack::profiles_map TTrack::m_profilesmap;
@@ -1067,7 +1067,7 @@ bool TTrack::AddDynamicObject(TDynamicObject *Dynamic)
     // Ra: usunąć po upowszechnieniu się odcinków izolowanych
     if (iCategoryFlag & 0x100) // jeśli usuwaczek
     {
-        Dynamic->MyTrack = NULL; // trzeba by to uzależnić od kierunku ruchu...
+        Dynamic->MyTrack = nullptr; // trzeba by to uzależnić od kierunku ruchu...
         return true;
     }
     if( Global.iMultiplayer ) {
@@ -1839,16 +1839,15 @@ bool TTrack::Switch(int i, float const t, float const d)
             { // 0: rozłączenie sąsiednich torów od obrotnicy
                 if (trPrev) // jeśli jest tor od Point1 obrotnicy
                     if (iPrevDirection) // 0:dołączony Point1, 1:dołączony Point2
-                        trPrev->trNext = NULL; // rozłączamy od Point2
+                        trPrev->trNext = nullptr; // rozłączamy od Point2
                     else
-                        trPrev->trPrev = NULL; // rozłączamy od Point1
+                        trPrev->trPrev = nullptr; // rozłączamy od Point1
                 if (trNext) // jeśli jest tor od Point2 obrotnicy
                     if (iNextDirection) // 0:dołączony Point1, 1:dołączony Point2
-                        trNext->trNext = NULL; // rozłączamy od Point2
+                        trNext->trNext = nullptr; // rozłączamy od Point2
                     else
-                        trNext->trPrev = NULL; // rozłączamy od Point1
-                trNext = trPrev =
-                    NULL; // na końcu rozłączamy obrotnicę (wkaźniki do sąsiadów już niepotrzebne)
+                        trNext->trPrev = nullptr; // rozłączamy od Point1
+                trNext = trPrev = nullptr; // na końcu rozłączamy obrotnicę (wkaźniki do sąsiadów już niepotrzebne)
                 fVelocity = 0.0; // AI, nie ruszaj się!
                 if (SwitchExtension->pOwner)
                     SwitchExtension->pOwner->RaTrackAnimAdd(this); // dodanie do listy animacyjnej
@@ -1975,7 +1974,7 @@ void TTrack::RaAnimListAdd(TTrack *t)
         else
         {
             SwitchExtension->pNextAnim = t;
-            t->SwitchExtension->pNextAnim = NULL; // nowo dodawany nie może mieć ogona
+            t->SwitchExtension->pNextAnim = nullptr; // nowo dodawany nie może mieć ogona
         }
     }
 };
@@ -2155,10 +2154,10 @@ int TTrack::TestPoint(const glm::dvec3 *Point)
     switch (eType)
     {
     case tt_Normal: // zwykły odcinek
-        if (trPrev == NULL)
+        if (trPrev == nullptr)
             if (Equal(Segment->FastGetPoint_0(), Point))
                 return 0;
-        if (trNext == NULL)
+        if (trNext == nullptr)
             if (Equal(Segment->FastGetPoint_1(), Point))
                 return 1;
         break;
@@ -2168,14 +2167,14 @@ int TTrack::TestPoint(const glm::dvec3 *Point)
         // Ra: TODO: jak się zmieni na bezpośrednie odwołania do segmentow zwrotnicy,
         // to się wykoleja, ponieważ trNext zależy od przełożenia
         Switch(0);
-        if (trPrev == NULL)
+        if (trPrev == nullptr)
             // if (Equal(SwitchExtension->Segments[0]->FastGetPoint_0(),Point))
             if (Equal(Segment->FastGetPoint_0(), Point))
             {
                 Switch(state);
                 return 2;
             }
-        if (trNext == NULL)
+        if (trNext == nullptr)
             // if (Equal(SwitchExtension->Segments[0]->FastGetPoint_1(),Point))
             if (Equal(Segment->FastGetPoint_1(), Point))
             {
@@ -2183,14 +2182,14 @@ int TTrack::TestPoint(const glm::dvec3 *Point)
                 return 3;
             }
         Switch(1); // można by się pozbyć tego przełączania
-        if (trPrev == NULL) // Ra: z tym chyba nie potrzeba łączyć
+        if (trPrev == nullptr) // Ra: z tym chyba nie potrzeba łączyć
             // if (Equal(SwitchExtension->Segments[1]->FastGetPoint_0(),Point))
             if (Equal(Segment->FastGetPoint_0(), Point))
             {
                 Switch(state); // Switch(0);
                 return 4;
             }
-        if (trNext == NULL) // TODO: to zależy od przełożenia zwrotnicy
+        if (trNext == nullptr) // TODO: to zależy od przełożenia zwrotnicy
             // if (Equal(SwitchExtension->Segments[1]->FastGetPoint_1(),Point))
             if (Equal(Segment->FastGetPoint_1(), Point))
             {
@@ -2675,7 +2674,7 @@ TTrack * TTrack::Connected(int s, double &d) const
                 d = -d;
         return SwitchExtension->pNexts[1];
     }
-    return NULL;
+    return nullptr;
 };
 
 // creates rail profile data for current track

@@ -113,7 +113,8 @@ class TAnimPant
 	float rg1rf{1.f}; // mnoznik obrotu ramienia gornego 1
 	float rg2rf{1.f}; // mnoznik obrotu ramienia gornego 2
 	float slizgrf{1.f}; // mnoznik obrotu slizgacza
-    void AKP_4E();
+	void common_pantograph_settings();
+	void AKP_4E();
 	void WBL85();
 	void DSAx();
 	void EC160_200();
