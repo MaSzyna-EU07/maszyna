@@ -27,8 +27,8 @@ float metalic = 0.0;
 //                       = sharper terminator (more contrast between
 //                       lit and shaded faces of the same surface).
 // ---------------------------------------------------------------------
-const float AMBIENT_SCALE       = 0.3;
-const float SUN_DIFFUSE_SCALE   = 0.4;
+const float AMBIENT_SCALE       = 0.65;
+const float SUN_DIFFUSE_SCALE   = 1.5;
 const float SUN_NDOTL_SHARPNESS = 1.25;
 
 float length2(vec3 v)
