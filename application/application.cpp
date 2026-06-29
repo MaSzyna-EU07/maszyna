@@ -1091,7 +1091,7 @@ void eu07_application::init_files()
 #ifdef _WIN32
 	DeleteFile("log.txt");
 	DeleteFile("errors.txt");
-	CreateDirectory("logs", NULL);
+	CreateDirectory("logs", nullptr);
 #elif __unix__
 	unlink("log.txt");
 	unlink("errors.txt");

@@ -74,7 +74,7 @@ TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, int end)
             }
             if ((end ? iSegment : -iSegment) < 0)
                 fDirection = -fDirection; // wtórna zmiana
-            pTrack->SwitchForced(abs(iSegment) - 1, NULL); // wybór zapamiętanego segmentu
+            pTrack->SwitchForced(abs(iSegment) - 1, nullptr); // wybór zapamiętanego segmentu
         }
         break;
         }
