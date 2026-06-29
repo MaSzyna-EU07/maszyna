@@ -84,8 +84,8 @@ TCamera::OnCommand( command_data const &Command ) {
 //            if( movespeed == 0.0 ) { break; } // enable to fix external cameras in place
 
             auto const speedmultiplier = (
-                ( ( m_owner == nullptr ) && ( Command.command == user_command::movehorizontalfast ) ) ?
-                    30.0 :
+                ( ( true == FreeFlyModeFlag ) && ( Command.command == user_command::movehorizontalfast ) ) ?
+                    ( m_owner == nullptr ) ? 30.0 : 5.0 :
                     1.0 );
 
             // left-right
@@ -107,8 +107,8 @@ TCamera::OnCommand( command_data const &Command ) {
 //            if( movespeed == 0.0 ) { break; } // enable to fix external cameras in place
 
             auto const speedmultiplier = (
-                ( ( m_owner == nullptr ) && ( Command.command == user_command::moveverticalfast ) ) ?
-                    10.0 :
+                ( ( true == FreeFlyModeFlag ) && ( Command.command == user_command::moveverticalfast ) ) ?
+                    ( m_owner == nullptr ) ? 10.0 : 3.0 :
                     1.0 );
             // up-down
             m_moverate.y = ComputeAxisSpeed(Command.param1, walkspeed, movespeed, stickthreshold) * speedmultiplier;
@@ -160,6 +160,7 @@ void TCamera::Update()
 
     // update position
     if( ( m_owner == nullptr )
+     || ( true == FreeFlyModeFlag )
      || ( false == Global.ctrlState )
      || ( true == DebugCameraFlag ) ) {
         // ctrl is used for mirror view, so we ignore the controls when in vehicle if ctrl is pressed
