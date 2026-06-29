@@ -106,6 +106,7 @@ private:
 // members
     user_command m_command { user_command::none }; // last, if any, issued command
     usercommand_map m_bindings;
+    std::unordered_map<int, int> m_modsforkeys; // modifiers that were used with the active keys
     command_relay m_relay;
     bindings_cache m_bindingscache;
     glm::vec2 m_movementhorizontal { 0.f };
