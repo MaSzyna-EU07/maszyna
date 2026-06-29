@@ -1875,7 +1875,7 @@ void opengl33_renderer::setup_environment_light(TEnvironmentType const Environme
 void opengl33_renderer::setup_sunlight_intensity( float const Factor ) {
 
     m_sunlight.apply_intensity( Factor );
-    light_ubs.lights[ 0 ].intensity = m_sunlight.factor;
+    light_ubs.lights[ 0 ].intensity = m_sunlight.factor * (1.0f - Global.Overcast * 0.33f);
     light_ubs.ambient = m_sunlight.ambient * m_sunlight.factor;
     light_ubo->update( light_ubs );
 }
