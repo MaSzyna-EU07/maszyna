@@ -2047,7 +2047,7 @@ bool opengl33_renderer::Render(world_environment *Environment)
 		// write cloud color into material
 		TSubModel *mdl = Environment->m_clouds.mdCloud->Root;
 		if (mdl->m_material != null_handle)
-			m_materials.material(mdl->m_material).params[0] = glm::vec4(color, 1.0f);
+			m_materials.material(mdl->m_material).params[0] = glm::vec4(color * 2.5f, 1.0f);
 
 		// render
 		Render(Environment->m_clouds.mdCloud, nullptr, 100.0);
