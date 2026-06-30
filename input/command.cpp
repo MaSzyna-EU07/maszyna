@@ -888,10 +888,9 @@ command_relay::post(user_command const Command, double const Param1, double cons
 		Recipient = simulation::Train->id();
 	}
 
-    if( ( command.target == command_target::vehicle )
-     && ( true == FreeFlyModeFlag )
-     && ( ( false == DebugModeFlag )
-       && ( true == Global.RealisticControlMode ) ) ) {
+    if( command.target == command_target::vehicle
+     && true == FreeFlyModeFlag
+     && false == DebugModeFlag && true == Global.RealisticControlMode ) {
         // in realistic control mode don't pass vehicle commands if the user isn't in one, unless we're in debug mode
         return;
     }

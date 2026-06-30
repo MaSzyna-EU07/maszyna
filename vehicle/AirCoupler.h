@@ -74,7 +74,7 @@ public:
     };
     inline bool Active() const
     {
-        return ( ( ModelOn != nullptr ) || ( ModelxOn != nullptr ) );
+        return ModelOn != nullptr || ModelxOn != nullptr;
     };
 };
 

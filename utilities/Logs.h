@@ -11,17 +11,17 @@ http://mozilla.org/MPL/2.0/.
 
 enum class logtype : unsigned int {
 
-    generic = ( 1 << 0 ),
-    file = ( 1 << 1 ),
-    model = ( 1 << 2 ),
-    texture = ( 1 << 3 ),
-    lua = ( 1 << 4 ),
-    material = ( 1 << 5 ),
-    shader = ( 1 << 6 ),
-    net = ( 1 << 7 ),
-    sound = ( 1 << 8 ),
-    traction = ( 1 << 9 ),
-    powergrid = ( 1 << 10 ),
+    generic = 1 << 0,
+    file = 1 << 1,
+    model = 1 << 2,
+    texture = 1 << 3,
+    lua = 1 << 4,
+    material = 1 << 5,
+    shader = 1 << 6,
+    net = 1 << 7,
+    sound = 1 << 8,
+    traction = 1 << 9,
+    powergrid = 1 << 10,
 };
 void LogService();
 void WriteLog( const char *str, logtype const Type = logtype::generic, bool isError = false );

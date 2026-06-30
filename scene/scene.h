@@ -341,7 +341,7 @@ public:
 
 //private:
 // types
-    using cell_array = std::array<basic_cell, (EU07_SECTIONSIZE / EU07_CELLSIZE) * (EU07_SECTIONSIZE / EU07_CELLSIZE)>;
+    using cell_array = std::array<basic_cell, EU07_SECTIONSIZE / EU07_CELLSIZE * (EU07_SECTIONSIZE / EU07_CELLSIZE)>;
     using shapenode_sequence = std::vector<shape_node>;
 // methods
     // provides access to section enclosing specified point

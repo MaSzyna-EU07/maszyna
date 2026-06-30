@@ -26,7 +26,7 @@ public:
     bool
         insert( Type_ *Item, std::string itemname ) {
             m_items.emplace_back( Item );
-            if( ( true == itemname.empty() ) || ( itemname == "none" ) ) {
+            if( true == itemname.empty() || itemname == "none" ) {
                 return true;
             }
             auto const itemhandle { m_items.size() - 1 };
@@ -64,10 +64,7 @@ public:
 	}
 	uint32_t find_id( std::string const &Name) const {
 		auto lookup = m_itemmap.find( Name );
-		return (
-		    lookup != m_itemmap.end() ?
-		        lookup->second :
-		        -1 );
+		return lookup != m_itemmap.end() ? lookup->second : -1;
 	}
 	void purge (Type_ *Item)
 	{
@@ -83,10 +80,7 @@ public:
     Type_ *
         find( std::string const &Name ) const {
             auto lookup = m_itemmap.find( Name );
-            return (
-                lookup != m_itemmap.end() ?
-                    m_items[ lookup->second ] :
-                    nullptr ); }
+            return lookup != m_itemmap.end() ? m_items[lookup->second] : nullptr; }
 
 protected:
 // types

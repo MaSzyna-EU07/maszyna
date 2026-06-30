@@ -120,7 +120,7 @@ void render_task::run()
 			const int screenWidth = static_cast<int>(PyLong_AsLong(outputWidth));
 			const int screenHeight = static_cast<int>(PyLong_AsLong(outputHeight));
 
-			const bool useRgb = (false && !Global.gfx_usegles);
+			const bool useRgb = false && !Global.gfx_usegles;
 
 			const int glFormat = useRgb ? GL_SRGB8 : GL_SRGB8_ALPHA8;
 			const int glComponents = useRgb ? GL_RGB : GL_RGBA;
@@ -130,7 +130,7 @@ void render_task::run()
 			Py_ssize_t pythonBufferBytes = 0;
 			char *pythonBufferPtr = nullptr;
 
-			const bool bufferExtracted = (PyBytes_AsStringAndSize(output, &pythonBufferPtr, &pythonBufferBytes) == 0) && (pythonBufferPtr != nullptr);
+			const bool bufferExtracted = PyBytes_AsStringAndSize(output, &pythonBufferPtr, &pythonBufferBytes) == 0 && pythonBufferPtr != nullptr;
 
 			if (!bufferExtracted)
 			{
@@ -241,7 +241,7 @@ auto python_taskqueue::init() -> bool
 	crashreport_add_info("python.threadedupload", Global.python_threadedupload ? "yes" : "no");
 	crashreport_add_info("python.uploadmain", Global.python_uploadmain ? "yes" : "no");
 #ifdef _WIN32
-	const wchar_t *pythonhome = (sizeof(void *) == 8) ? L"python64" : L"python";
+	const wchar_t *pythonhome = sizeof(void *) == 8 ? L"python64" : L"python";
 #elif __linux__
 	const wchar_t *pythonhome = (sizeof(void *) == 8) ? L"linuxpython64" : L"linuxpython";
 #elif __APPLE__
@@ -291,8 +291,8 @@ auto python_taskqueue::init() -> bool
 	}
 
 	stringiomodule = PyImport_ImportModule("io");
-	stringioclassname = (stringiomodule != nullptr ? PyObject_GetAttrString(stringiomodule, "StringIO") : nullptr);
-	stringioobject = (stringioclassname != nullptr ? PyObject_CallObject(stringioclassname, nullptr) : nullptr);
+	stringioclassname = stringiomodule != nullptr ? PyObject_GetAttrString(stringiomodule, "StringIO") : nullptr;
+	stringioobject = stringioclassname != nullptr ? PyObject_CallObject(stringioclassname, nullptr) : nullptr;
 	m_stderr = {(stringioobject == nullptr ? nullptr : PySys_SetObject(const_cast<char *>("stderr"), stringioobject) != 0 ? nullptr : stringioobject)};
 
 	if (false == run_file("abstractscreenrenderer"))
@@ -377,7 +377,7 @@ void python_taskqueue::exit()
 auto python_taskqueue::insert(task_request const &Task) -> bool
 {
 
-	if (!m_initialized || (false == Global.python_enabled) || (Task.renderer.empty()) || (Task.input == nullptr) || (Task.target == 0))
+	if (!m_initialized || false == Global.python_enabled || Task.renderer.empty() || Task.input == nullptr || Task.target == 0)
 	{
 		return false;
 	}

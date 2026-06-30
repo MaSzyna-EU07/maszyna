@@ -15,7 +15,7 @@ openal_source::bind( sound_source *Controller, uint32_sequence Sounds, Iterator_
             auto const &buffer { audio::renderer.buffer( bufferhandle ) };
 			if (buffer.id != null_resource) buffers.emplace_back( buffer.id ); } );
 
-    is_multipart = ( buffers.size() > 1 );
+    is_multipart = buffers.size() > 1;
 
     if( id != audio::null_resource && !buffers.empty()) {
         ::alSourceQueueBuffers( id, static_cast<ALsizei>( buffers.size() ), buffers.data() );

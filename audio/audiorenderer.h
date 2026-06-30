@@ -34,7 +34,7 @@ struct sound_properties {
     sound_category category { sound_category::unknown };
     float gain { 1.f };
     float soundproofing { 1.f };
-    std::uintptr_t soundproofing_stamp { ~( std::uintptr_t{ 0 } ) };
+    std::uintptr_t soundproofing_stamp { ~std::uintptr_t{0} };
 };
 
 enum class sync_state {

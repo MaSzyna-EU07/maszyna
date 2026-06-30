@@ -97,7 +97,7 @@ buffer_manager::~buffer_manager() {
 
     for( auto &buffer : m_buffers ) {
         if( buffer.id != null_resource ) {
-            ::alDeleteBuffers( 1, &( buffer.id ) );
+            ::alDeleteBuffers( 1, &buffer.id );
         }
     }
 }

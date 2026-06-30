@@ -26,7 +26,7 @@ float zmq_input::unpack_float(const zmq::message_t &msg) {
         return 0.0f;
 
     uint8_t *buf = (uint8_t*)msg.data();
-    uint32_t v = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
+    uint32_t v = buf[0] << 24 | buf[1] << 16 | buf[2] << 8 | buf[3];
     return reinterpret_cast<float&>(v);
 }
 
@@ -52,7 +52,7 @@ void zmq_input::poll()
             continue;
 
         uint8_t* buf = (uint8_t*)multipart[0].data();
-        uint32_t peer_id = (buf[1] << 24) | (buf[2] << 16) | (buf[3] << 8) | buf[4];
+        uint32_t peer_id = buf[1] << 24 | buf[2] << 16 | buf[3] << 8 | buf[4];
 
         auto peer_it = peers.find(peer_id);
         if (peer_it == peers.end()) {
@@ -139,8 +139,8 @@ void zmq_input::poll()
                 else if (type == input_type::none)
                     continue;
 
-                bool state = (value > 0.5f);
-                bool changed = (state != std::get<3>(entry));
+                bool state = value > 0.5f;
+                bool changed = state != std::get<3>(entry);
 
                 if (!changed)
                     continue;
@@ -148,16 +148,12 @@ void zmq_input::poll()
                 auto const action { (
                     type != input_type::impulse ?
                         GLFW_PRESS :
-                        ( state ?
-                            GLFW_PRESS :
-                            GLFW_RELEASE ) ) };
+                        state ? GLFW_PRESS : GLFW_RELEASE) };
 
                 auto const command { (
                     type != input_type::toggle ?
                         std::get<1>( entry ) :
-                        ( state ?
-                            std::get<1>( entry ) :
-                            std::get<2>( entry ) ) ) };
+                        state ? std::get<1>(entry) : std::get<2>(entry) ) };
 
                 std::get<3>(entry) = state;
 
@@ -181,7 +177,7 @@ void zmq_input::poll()
             continue;
         }
 
-        uint8_t peerbuf[5] = { 0, (uint8_t)(peer->first >> 24), (uint8_t)(peer->first >> 16), (uint8_t)(peer->first >> 8), (uint8_t)(peer->first) };
+        uint8_t peerbuf[5] = { 0, (uint8_t)(peer->first >> 24), (uint8_t)(peer->first >> 16), (uint8_t)(peer->first >> 8), (uint8_t)peer->first };
         zmq::multipart_t msg;
 
         msg.addmem(peerbuf, sizeof(peerbuf));

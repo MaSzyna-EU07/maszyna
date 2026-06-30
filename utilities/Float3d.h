@@ -34,7 +34,7 @@ class float3
 
 inline bool operator==(const float3 &v1, const float3 &v2)
 {
-    return (v1.x == v2.x && v1.y == v2.y && v1.z == v2.z);
+    return v1.x == v2.x && v1.y == v2.y && v1.z == v2.z;
 };
 inline float3 &operator+=(float3 &v1, const float3 &v2)
 {
@@ -60,7 +60,7 @@ inline float float3::Length() const
     return std::sqrt(LengthSquared());
 };
 inline float float3::LengthSquared() const {
-    return ( x * x + y * y + z * z );
+    return x * x + y * y + z * z;
 }
 inline float3 operator*( float3 const &v, float const  k ) {
     return float3( v.x * k, v.y * k, v.z * k );
@@ -90,7 +90,7 @@ inline float DotProduct( float3 const &v1, float3 const &v2 ) {
 
 inline float3 Interpolate( float3 const &First, float3 const &Second, float const Factor ) {
 
-    return ( First * ( 1.0f - Factor ) ) + ( Second * Factor );
+    return First * (1.0f - Factor) + Second * Factor;
 }
 
 class float4
@@ -131,7 +131,7 @@ inline float4 operator-(const float4 &q)
 };
 inline float4 operator-(const float4 &q1, const float4 &q2)
 { // z odejmowaniem nie ma lekko
-    return (-q1) * q2; // inwersja tylko dla znormalizowanych!
+    return -q1 * q2; // inwersja tylko dla znormalizowanych!
 };
 inline float4 operator+(const float4 &v1, const float4 &v2)
 {
@@ -250,7 +250,7 @@ public:
     inline bool IdentityIs()
     { // sprawdzenie jednostkowości
         for (int i = 0; i < 16; ++i)
-            if (e[i] != ((i % 5) ? 0.0 : 1.0)) // jedynki tylko na 0, 5, 10 i 15
+            if (e[i] != (i % 5 ? 0.0 : 1.0)) // jedynki tylko na 0, 5, 10 i 15
                 return false;
         return true;
     }
@@ -280,7 +280,7 @@ inline float4x4 &float4x4::Rotation(float const Angle, float3 const &Axis)
     auto const c = std::cos(Angle);
     auto const s = std::sin(Angle);
     // One minus c (short name for legibility of formulai)
-    auto const omc = (1.f - c);
+    auto const omc = 1.f - c;
     auto const axis = SafeNormalize(Axis);
     auto const xs = axis.x * s;
     auto const ys = axis.y * s;

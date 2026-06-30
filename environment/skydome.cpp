@@ -71,13 +71,13 @@ void CSkyDome::Generate() {
 
     for( int i = 0; i <= latitudes; ++i ) {
 
-        float const latitude = M_PI * ( -0.5f + (float)( i ) / latitudes / 2 );  // half-sphere only
+        float const latitude = M_PI * ( -0.5f + (float)i / latitudes / 2 );  // half-sphere only
         float const z = std::sin( latitude );
         float const zr = std::cos( latitude );
 
         for( int j = 0; j <= longitudes; ++j ) {
 
-            float const longitude = 2.0 * M_PI * (float)( j ) / longitudes;
+            float const longitude = 2.0 * M_PI * (float)j / longitudes;
             float const x = std::cos( longitude );
             float const y = std::sin( longitude );
 /*
@@ -89,7 +89,7 @@ void CSkyDome::Generate() {
             m_vertices.emplace_back( glm::vec3( -x * zr, -z - offset, -y * zr ) * radius );
             m_colours.emplace_back( glm::vec3( 0.75f, 0.75f, 0.75f ) ); // placeholder
 
-            if( (i == 0) || (j == 0) ) {
+            if( i == 0 || j == 0 ) {
                 // initial edge of the dome, don't start indices yet
                 ++index;
             }
@@ -188,8 +188,8 @@ void CSkyDome::RebuildColors() {
     auto gammacorrection = glm::mix( glm::vec3( 1.0f ), glm::vec3( 0.45f ), twilightfactor );
 
 	// get zenith luminance
-	float const chi = ( (4.0f / 9.0f) - (m_turbidity / 120.0f) ) * ( M_PI - (2.0f * m_thetasun) );
-	float zenithluminance = ( (4.0453f * m_turbidity) - 4.9710f ) * std::tan( chi ) - (0.2155f * m_turbidity) + 2.4192f; 
+	float const chi = ( 4.0f / 9.0f - m_turbidity / 120.0f ) * ( M_PI - 2.0f * m_thetasun );
+	float zenithluminance = ( 4.0453f * m_turbidity - 4.9710f ) * std::tan( chi ) - 0.2155f * m_turbidity + 2.4192f;
 
 	// get x / y zenith
 	float zenithx = GetZenith( m_zenithxmatrix, m_thetasun, m_turbidity );
@@ -243,8 +243,8 @@ void CSkyDome::RebuildColors() {
 		float const yover = std::max( 0.01f, zenithluminance * ( 1.0f + 2.0f * vertex.y ) / 3.0f );
 		
 		float const Y = std::lerp( yclear, yover, m_overcast );
-		float const X = (x / y) * Y;  
-		float const Z = ((1.0f - x - y) / y) * Y;
+		float const X = x / y * Y;
+		float const Z = (1.0f - x - y) / y * Y;
 		
 		colorconverter = glm::vec3( X, Y, Z );
 		color = colors::XYZtoRGB( colorconverter );
@@ -263,13 +263,13 @@ void CSkyDome::RebuildColors() {
         colorconverter.y = std::clamp( colorconverter.y * Global.m_skysaturationcorrection, 0.0f, 1.0f );
         // desaturate sky colour, based on overcast level
         if( colorconverter.y > 0.0f ) {
-            colorconverter.y *= ( 1.0f - 0.5f * m_overcast );
+            colorconverter.y *= 1.0f - 0.5f * m_overcast;
         }
 
         // override the hue, based on sun height above the horizon. crude way to deal with model shortcomings
         // correction begins when the sun is higher than 10 degrees above the horizon, and fully in effect at 10+15 degrees
         float const degreesabovehorizon = 90.0f - m_thetasun * ( 180.0f / M_PI );
-        auto const sunbasedphase = std::clamp( (1.0f / 15.0f) * ( degreesabovehorizon - 10.0f ), 0.0f, 1.0f );
+        auto const sunbasedphase = std::clamp( 1.0f / 15.0f * ( degreesabovehorizon - 10.0f ), 0.0f, 1.0f );
         // correction is applied in linear manner from the bottom, becomes fully in effect for vertices with y = 0.50
         auto const heightbasedphase = std::clamp( vertex.y * 2.0f, 0.0f, 1.0f );
         // this height-based factor is reduced the farther the sun is up in the sky
@@ -282,8 +282,8 @@ void CSkyDome::RebuildColors() {
 
         // crude correction for the times where the model breaks (late night)
         // TODO: use proper night sky calculation for these times instead
-        if( ( color.x <= 0.05f )
-         && ( color.y <= 0.05f ) ) {
+        if( color.x <= 0.05f
+         && color.y <= 0.05f ) {
             // darken the sky as the sun goes deeper below the horizon
             // 15:50:75 is picture-based night sky colour. it may not be accurate but looks 'right enough'
             color.z = 0.75f * std::max( color.z + m_sundirection.y, 0.075f );
@@ -291,7 +291,7 @@ void CSkyDome::RebuildColors() {
             color.y = 0.65f * color.z;
         }
         // simple gradient, darkening towards the top
-        color *= std::clamp( ( 1.0f - vertex.y * 0.75f ), 0.0f, 1.f );
+        color *= std::clamp( 1.0f - vertex.y * 0.75f, 0.0f, 1.f );
 
         float const horizonboost = 1.5f + m_overcast;
         float const horizonbandwidth = 0.2f; // boost tapers to 0 by ~11.5 degrees elevation
@@ -302,7 +302,7 @@ void CSkyDome::RebuildColors() {
         //color *= ( 0.25f - vertex.y );
         m_colours[ i ] = color;
         averagecolor += color;
-        if( ( m_vertices.size() - i ) <= ( m_tesselation * 10 + 10 ) ) {
+        if( m_vertices.size() - i <= m_tesselation * 10 + 10 ) {
             // calculate horizon colour from the bottom band of tris
             averagehorizoncolor += color;
         }

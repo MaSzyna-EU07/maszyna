@@ -121,7 +121,7 @@ state_manager::update_clocks() {
 
     // Ra 2014-07: przeliczenie kąta czasu (do animacji zależnych od czasu)
     auto const &time = simulation::Time.data();
-    Global.fTimeAngleDeg = time.wHour * 15.0 + time.wMinute * 0.25 + ( ( time.wSecond + 0.001 * time.wMilliseconds ) / 240.0 );
+    Global.fTimeAngleDeg = time.wHour * 15.0 + time.wMinute * 0.25 + (time.wSecond + 0.001 * time.wMilliseconds) / 240.0;
     Global.fClockAngleDeg[ 0 ] = 36.0 * ( time.wSecond % 10 ); // jednostki sekund
     Global.fClockAngleDeg[ 1 ] = 36.0 * ( time.wSecond / 10 ); // dziesiątki sekund
     Global.fClockAngleDeg[ 2 ] = 36.0 * ( time.wMinute % 10 ); // jednostki minut
@@ -233,7 +233,7 @@ void state_manager::process_commands() {
 
             // NOTE: because malformed scenario can have vehicle name duplicates we first try to locate vehicle in world, with name search as fallback
             TDynamicObject *targetvehicle = std::get<TDynamicObject *>( simulation::Region->find_vehicle( commanddata.location, 50, false, false ) );
-            if( ( targetvehicle == nullptr ) || ( targetvehicle->name() != commanddata.payload ) ) {
+            if( targetvehicle == nullptr || targetvehicle->name() != commanddata.payload ) {
                 targetvehicle = simulation::Vehicles.find( commanddata.payload );
             }
 
@@ -251,8 +251,8 @@ void state_manager::process_commands() {
                 }
 
                 auto const sameconsist{
-                    ( targetvehicle->ctOwner == currentvehicle->Mechanik )
-                 || ( targetvehicle->ctOwner == currentvehicle->ctOwner ) };
+                    targetvehicle->ctOwner == currentvehicle->Mechanik
+                 || targetvehicle->ctOwner == currentvehicle->ctOwner };
                 auto const isincharge{ currentvehicle->Mechanik->primary() };
                 auto const aidriveractive{ currentvehicle->Mechanik->AIControllFlag };
                 // TODO: support for primary mode request passed as commanddata.param1
@@ -387,7 +387,7 @@ void state_manager::process_commands() {
 
 				// pantographs
 				for( auto idx = 0; idx < vehicle->iAnimType[ ANIM_PANTS ]; ++idx ) {
-					auto &pantograph { *( vehicle->pants[ idx ].fParamPants ) };
+					auto &pantograph { *vehicle->pants[idx].fParamPants };
 					if( pantograph.PantWys >= 0.0 )  // negative value means pantograph is broken
 						continue;
 					pantograph.fAngleL = pantograph.fAngleL0;

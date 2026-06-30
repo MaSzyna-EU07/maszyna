@@ -173,7 +173,7 @@ private:
         main,
         end,
         // 31 bits for index into relevant array, msb selects between the sample table and the basic array
-        chunk = ( 1u << 31 )
+        chunk = 1u << 31
     };
 
 // methods

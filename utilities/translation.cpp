@@ -38,13 +38,13 @@ const std::string& locale::lookup_s(const std::string &msg, bool constant)
 	if (constant) {
 		auto it = pointer_cache.find(&msg);
 		if (it != pointer_cache.end())
-			return *((const std::string*)(it->second));
+			return *(const std::string *)it->second;
 	}
 
 	auto it = lang_mapping.find(msg);
 	if (it != lang_mapping.end()) {
 		if (constant)
-			pointer_cache.emplace(&msg, &(it->second));
+			pointer_cache.emplace(&msg, &it->second);
 		return it->second;
 	}
 
@@ -58,7 +58,7 @@ const char* locale::lookup_c(const char *msg, bool constant)
 	if (constant) {
 		auto it = pointer_cache.find(msg);
 		if (it != pointer_cache.end())
-			return (const char*)(it->second);
+			return (const char*)it->second;
 	}
 
 	auto it = lang_mapping.find(std::string(msg));
@@ -156,7 +156,7 @@ std::string locale::parse_c_literal(const std::string &str)
 					n2 -= 7;
 				if (n2 > 16)
 					n2 -= 32;
-				out += ((n1 << 4) | n2);
+				out += n1 << 4 | n2;
 			}
 			escape = false;
 		}
@@ -347,10 +347,7 @@ std::string locale::label_cab_control(std::string const &Label)
 	};
 
 	auto const it = cabcontrols_labels.find( Label );
-    return (
-	    it != cabcontrols_labels.end() ?
-	        lookup_s(it->second) :
-            "" );
+    return it != cabcontrols_labels.end() ? lookup_s(it->second) : "";
 }
 
 const std::string& locale::coupling_name(int c)

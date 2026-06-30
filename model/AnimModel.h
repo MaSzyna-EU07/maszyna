@@ -80,7 +80,7 @@ class TAnimContainer : std::enable_shared_from_this<TAnimContainer>
     bool Init(TSubModel *pNewSubModel);
     inline
     std::string NameGet() {
-        return (pSubModel ? pSubModel->pName : ""); };
+        return pSubModel ? pSubModel->pName : ""; };
     void SetRotateAnim( glm::vec3 vNewRotateAngles, double fNewRotateSpeed);
     void SetTranslateAnim( glm::dvec3 vNewTranslate, double fNewSpeed);
     void AnimSetVMD(double fNewSpeed);

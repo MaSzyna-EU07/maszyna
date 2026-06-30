@@ -28,7 +28,7 @@ scenario_time::init(std::time_t timestamp) {
 
     // potentially adjust scenario clock
     auto const requestedtime { clamp_circular<int>( m_time.wHour * 60 + m_time.wMinute + Global.ScenarioTimeOffset * 60, 24 * 60 ) };
-    auto const requestedhour { ( requestedtime / 60 ) % 24 };
+    auto const requestedhour { requestedtime / 60 % 24 };
     auto const requestedminute { requestedtime % 60 };
     // cache requested elements, if any
 
@@ -50,8 +50,8 @@ scenario_time::init(std::time_t timestamp) {
     if( requestedhour != -1 ) { m_time.wHour = static_cast<WORD>( std::clamp( requestedhour, 0, 23 ) ); }
     if( requestedminute != -1 ) { m_time.wMinute = static_cast<WORD>( std::clamp( requestedminute, 0, 59 ) ); }
     // if the time is taken from the local clock leave the seconds intact, otherwise set them to zero
-    if( ( requestedhour != -1 )
-     || ( requestedminute != 1 ) ) {
+    if( requestedhour != -1
+     || requestedminute != 1 ) {
         m_time.wSecond = 0;
 	}
 
@@ -82,13 +82,13 @@ scenario_time::init(std::time_t timestamp) {
         zonebias += timezoneinfo.StandardBias;
     }
 
-	m_timezonebias = ( zonebias / 60.0 );
+	m_timezonebias = zonebias / 60.0;
 }
 
 void
 scenario_time::update( double const Deltatime ) {
 
-    m_milliseconds += ( 1000.0 * Deltatime );
+    m_milliseconds += 1000.0 * Deltatime;
     while( m_milliseconds >= 1000.0 ) {
 
         ++m_time.wSecond;
@@ -154,7 +154,7 @@ scenario_time::daymonth( WORD &Day, WORD &Month, WORD const Year, WORD const Yea
 
     int const leap { is_leap( Year ) };
     WORD idx = 1;
-    while( ( idx < 13 ) && ( Yearday >= daytab[ leap ][ idx ] ) ) {
+    while( idx < 13 && Yearday >= daytab[leap][idx] ) {
 
         ++idx;
     }
@@ -178,7 +178,7 @@ scenario_time::julian_day() const {
     const int gregorianswitchday = 2299160;
     if( JD > gregorianswitchday ) {
 
-        int K3 = std::floor( std::floor( ( yy * 0.01 ) + 49 ) * 0.75 ) - 38;
+        int K3 = std::floor( std::floor( yy * 0.01 + 49 ) * 0.75 ) - 38;
         JD -= K3;
     }
 
@@ -201,10 +201,10 @@ scenario_time::day_of_week( int const Day, int const Month, int const Year ) con
 	int const m = Month > 2 ? Month : Month + 12;
 	int const y = Month > 2 ? Year : Year - 1;
 
-	int const h = ( q + ( 26 * ( m + 1 ) / 10 ) + y + ( y / 4 ) + 6 * ( y / 100 ) + ( y / 400 ) ) % 7;
+	int const h = ( q + 26 * (m + 1) / 10 + y + y / 4 + 6 * ( y / 100 ) + y / 400 ) % 7;
 	
 /*	return ( (h + 5) % 7 ) + 1; // iso week standard, with monday = 1
-*/	return ( (h + 6) % 7 ) + 1; // sunday = 1 numbering method, used in north america, japan 
+*/	return (h + 6) % 7 + 1; // sunday = 1 numbering method, used in north america, japan 
 }
 
 // calculates day of month for specified weekday of specified month of the year
@@ -251,7 +251,7 @@ scenario_time::convert_transition_time( SYSTEMTIME &Time ) const {
 bool
 scenario_time::is_leap( int const Year ) const {
 
-    return ( ( Year % 4 == 0 ) && ( ( Year % 100 != 0 ) || ( Year % 400 == 0 ) ) );
+    return Year % 4 == 0 && (Year % 100 != 0 || Year % 400 == 0);
 
 }
 //---------------------------------------------------------------------------

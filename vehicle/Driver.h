@@ -224,11 +224,11 @@ public:
     void TakeControl( bool const Aidriver, bool const Forcevehiclecheck = false );
     inline
     bool primary( bool const Primary ) {
-        SetFlag( iDrivigFlags, ( Primary ? movePrimary : -movePrimary ) );
+        SetFlag( iDrivigFlags, Primary ? movePrimary : -movePrimary );
         return primary(); }
     inline
     bool primary() const {
-        return ( ( iDrivigFlags & movePrimary ) != 0 ); };
+        return (iDrivigFlags & movePrimary) != 0; };
     inline
     TMoverParameters const *Controlling() const {
         return mvControlling; }
@@ -257,14 +257,13 @@ public:
         return TestFlag( mvOccupied->CategoryFlag, 2 ); }
     inline
     bool is_emu() const {
-        return ( mvControlling->TrainType == dt_EZT ); }
+        return mvControlling->TrainType == dt_EZT; }
     inline
     bool is_dmu() const {
-        return ( mvControlling->TrainType == dt_DMU ); }
+        return mvControlling->TrainType == dt_DMU; }
     inline
     bool has_diesel_engine() const {
-        return ( ( mvControlling->EngineType == TEngineType::DieselElectric )
-              || ( mvControlling->EngineType == TEngineType::DieselEngine ) );
+        return mvControlling->EngineType == TEngineType::DieselElectric || mvControlling->EngineType == TEngineType::DieselEngine;
     }
     TBrakeSystem consist_brake_system() const;
 private:

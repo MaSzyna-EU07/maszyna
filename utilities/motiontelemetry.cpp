@@ -32,7 +32,7 @@ motiontelemetry::motiontelemetry()
 	memset(&hints, 0, sizeof(hints));
 
 	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = (conf.proto == "tcp" ? SOCK_STREAM : SOCK_DGRAM);
+	hints.ai_socktype = conf.proto == "tcp" ? SOCK_STREAM : SOCK_DGRAM;
 
 	if (getaddrinfo(conf.address.c_str(), conf.port.c_str(), &hints, &res))
 		throw std::runtime_error("motiontelemetry: getaddrinfo failed");

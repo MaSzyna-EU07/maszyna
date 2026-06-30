@@ -155,7 +155,7 @@ public:
         mark_as_used( texture_handle const Texture );
     // provides direct access to specified texture object
     opengl_texture &
-        texture( texture_handle const Texture ) const { return *(m_textures[ Texture ].first); }
+        texture( texture_handle const Texture ) const { return *m_textures[Texture].first; }
     // performs a resource sweep
     void
         update();

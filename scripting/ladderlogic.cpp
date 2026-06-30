@@ -44,10 +44,10 @@ basic_element::output() const -> int {
             return std::get<variable>(data).value;
         }
         case basic_element::type_e::timer: {
-            return ( std::get<timer>(data).time_elapsed >= std::get<timer>(data).time_preset ? std::get<timer>(data).value : 0 );
+            return std::get<timer>(data).time_elapsed >= std::get<timer>(data).time_preset ? std::get<timer>(data).value : 0;
         }
         case basic_element::type_e::counter: {
-            return ( std::get<counter>(data).count_value >= std::get<counter>(data).count_limit ? 1 : 0 );
+            return std::get<counter>(data).count_value >= std::get<counter>(data).count_limit ? 1 : 0;
         }
     }
 
@@ -140,10 +140,7 @@ basic_controller::deserialize_operation( cParser &Input ) -> bool {
         >> operationparameter;
 
     auto const lookup { m_operationcodemap.find( operationname ) };
-    operation.code = (
-        lookup != m_operationcodemap.end() ?
-            lookup->second :
-            opcode_e::op_nop );
+    operation.code = lookup != m_operationcodemap.end() ? lookup->second : opcode_e::op_nop;
     if( lookup == m_operationcodemap.end() ) {
         log_error( "contains unknown command \"" + operationname + "\"", Input.Line() - 1 );
     }
@@ -292,7 +289,7 @@ basic_controller::run() -> int {
                     case basic_element::type_e::counter: {
                         std::get<basic_element::counter>(target.data).count_limit = operation.parameter1;
                         // increase counter value on input activation
-                        if( ( initialstate == 0 ) && ( target.input() != 0 ) ) {
+                        if( initialstate == 0 && target.input() != 0 ) {
 /*
                             // TBD: use overflow-prone version instead of safe one?
                             target.data.counter.count_value += 1;
@@ -387,10 +384,10 @@ basic_controller::guess_element_type_from_name( std::string const &Name ) const 
 
     auto const name { split_string_and_number( Name ) };
 
-    if( ( name.first == "t" ) || ( name.first == "ton" ) || ( name.first.find( "timer." ) == 0 ) ) {
+    if( name.first == "t" || name.first == "ton" || name.first.find("timer.") == 0 ) {
         return basic_element::type_e::timer;
     }
-    if( ( name.first == "c" ) || ( name.first.find( "counter." ) == 0 ) ) {
+    if( name.first == "c" || name.first.find("counter.") == 0 ) {
         return basic_element::type_e::counter;
     }
 

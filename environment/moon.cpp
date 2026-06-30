@@ -68,14 +68,14 @@ float cMoon::getIntensity() {
     // which roughly matches how much sunlight is reflected by the moon
     // We alter the intensity further based on current phase of the moon
     auto const phasefactor = 1.0f - std::abs( m_phase - 29.53f * 0.5f ) / ( 29.53f * 0.5f );
-	return static_cast<float>( ( m_body.etr/ 1399.0 ) * phasefactor * 0.15 ); // arbitrary scaling factor taken from etrn value
+	return static_cast<float>( m_body.etr / 1399.0 * phasefactor * 0.15 ); // arbitrary scaling factor taken from etrn value
 }
 
 void cMoon::setLocation( float const Longitude, float const Latitude ) {
 
 	// convert fraction from geographical base of 6o minutes
-	m_observer.longitude = (int)Longitude + (Longitude - (int)(Longitude)) * 100.0 / 60.0;
-	m_observer.latitude = (int)Latitude + (Latitude - (int)(Latitude)) * 100.0 / 60.0 ;
+	m_observer.longitude = (int)Longitude + (Longitude - (int)Longitude) * 100.0 / 60.0;
+	m_observer.latitude = (int)Latitude + (Latitude - (int)Latitude) * 100.0 / 60.0 ;
 }
 
 // sets current time, overriding one acquired from the system clock
@@ -120,7 +120,7 @@ void cMoon::move() {
         + 275 * localtime.wMonth / 9
         + localtime.wDay
         - 730530
-        + ( localut / 24.0 );
+        + localut / 24.0;
 
     // Universal Coordinated (Greenwich standard) time
     m_observer.utime = localut - m_observer.timezone;
@@ -254,7 +254,7 @@ void cMoon::refract() {
 		else
 			refcor  = -20.774 / tanelev;
 
-		prestemp = ( m_observer.press * 283.0 ) / ( 1013.0 * ( 273.0 + m_observer.temp ) );
+		prestemp = m_observer.press * 283.0 / ( 1013.0 * ( 273.0 + m_observer.temp ) );
 		refcor *= prestemp / 3600.0;
 	}
 
@@ -295,7 +295,7 @@ void cMoon::irradiance() {
 void
 cMoon::phase() {
     SYSTEMTIME lt = simulation::Time.data();
-	if ((lt.wMonth==5)&&(lt.wDay==4)) //May the forth be with you!
+	if (lt.wMonth == 5 && lt.wDay == 4) //May the forth be with you!
 		m_phase = 50;
 	else {
 		// calculate moon's age in days from new moon
