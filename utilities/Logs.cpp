@@ -108,7 +108,7 @@ void LogService()
 				{
 					if (!output.is_open())
 					{
-						std::string filename = (Global.MultipleLogs ? "logs/log (" + filename_scenery() + ") " + filename_date() + ".txt" : "log.txt");
+						std::string filename = Global.MultipleLogs ? "logs/log (" + filename_scenery() + ") " + filename_date() + ".txt" : "log.txt";
 						output.open(filename, std::ios::trunc);
 					}
 					output << msg << "\n";
@@ -143,7 +143,7 @@ void LogService()
 
 				if (!errors.is_open())
 				{
-					std::string filename = (Global.MultipleLogs ? "logs/errors (" + filename_scenery() + ") " + filename_date() + ".txt" : "errors.txt");
+					std::string filename = Global.MultipleLogs ? "logs/errors (" + filename_scenery() + ") " + filename_date() + ".txt" : "errors.txt";
 					errors.open(filename, std::ios::trunc);
 					errors << "EU07.EXE " + Global.asVersion << "\n";
 				}

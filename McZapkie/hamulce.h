@@ -1399,7 +1399,7 @@ class TH14K1 : public TDriverHandle
 
   private:
 	/// <summary>Position table for the H14K1 (range -1..4): {flow speed, target multiplier}.</summary>
-	static double const BPT_K[/*?*/ /*-1..4*/ (4) - (-1) + 1][2];
+	static double const BPT_K[/*?*/ /*-1..4*/ 4 - -1 + 1][2];
 	/// <summary>Lookup of bh_* function codes to handle position values.</summary>
 	static double const pos_table[11]; // = {-1, 4, -1, 0, 1, 2, 3, 4, 0, 0, 0};
 
@@ -1440,9 +1440,9 @@ class TSt113 : public TH14K1
 	/// <summary>Current EP intensity reported by the handle.</summary>
 	double EPS = 0.0;
 	/// <summary>Position table (override of H14K1's, with adjusted parameters).</summary>
-	static double const BPT_K[/*?*/ /*-1..4*/ (4) - (-1) + 1][2];
+	static double const BPT_K[/*?*/ /*-1..4*/ 4 - -1 + 1][2];
 	/// <summary>EP table — EP intensity per handle position (range -1..5).</summary>
-	static double const BEP_K[/*?*/ /*-1..5*/ (5) - (-1) + 1];
+	static double const BEP_K[/*?*/ /*-1..5*/ 5 - -1 + 1];
 	/// <summary>Lookup of bh_* function codes to handle position values.</summary>
 	static double const pos_table[11]; // = {-1, 5, -1, 0, 2, 3, 4, 5, 0, 0, 1};
 	/// <summary>Local control pressure (mirrors PP).</summary>

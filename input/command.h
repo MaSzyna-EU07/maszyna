@@ -490,7 +490,7 @@ private:
 	// hash operator for m_active_continuous
 	struct command_set_hash {
 		uint64_t operator() (const std::pair<user_command, uint32_t> &pair) const {
-			return ((uint64_t)pair.first << 32) | ((uint64_t) pair.second);
+			return (uint64_t)pair.first << 32 | (uint64_t)pair.second;
 		}
 	};
 

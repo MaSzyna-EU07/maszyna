@@ -45,7 +45,7 @@ bool TAnimContainer::Init(TSubModel *pNewSubModel)
 {
     fRotateSpeed = 0.0f;
     pSubModel = pNewSubModel;
-    return (pSubModel != nullptr);
+    return pSubModel != nullptr;
 }
 
 void TAnimContainer::SetRotateAnim(glm::vec3 vNewRotateAngles, double fNewRotateSpeed)
@@ -166,9 +166,9 @@ void TAnimContainer::UpdateModel() {
                     vRotateAngles.z += 360;
             }
 
-            if( ( vRotateAngles.x == 0.0 )
-             && ( vRotateAngles.y == 0.0 )
-             && ( vRotateAngles.z == 0.0 ) ) {
+            if( vRotateAngles.x == 0.0
+             && vRotateAngles.y == 0.0
+             && vRotateAngles.z == 0.0 ) {
                 iAnim &= ~1; // kąty są zerowe
             }
             if (!anim)
@@ -231,7 +231,7 @@ void TAnimContainer::PrepareModel()
 
 bool TAnimContainer::InMovement()
 { // czy trwa animacja - informacja dla obrotnicy
-    return (fRotateSpeed != 0.0) || (fTranslateSpeed != 0.0);
+    return fRotateSpeed != 0.0 || fTranslateSpeed != 0.0;
 }
 
 void TAnimContainer::EventAssign(basic_event *ev)
@@ -263,18 +263,18 @@ bool TAnimModel::Init(std::string const &asName, std::string const &asReplacable
 //    fBlinkTimer = Random() * ( fOnTime + fOffTime );
 
     pModel = TModelsManager::GetModel( asName );
-    return ( pModel != nullptr );
+    return pModel != nullptr;
 }
 
 bool
 TAnimModel::is_keyword( std::string const &Token ) const {
 
-    return ( Token == "endmodel" )
-        || ( Token == "lights" )
-        || ( Token == "lightcolors" )
-        || ( Token == "angles" )
-        || ( Token == "scale" )
-        || ( Token == "notransition" );
+    return Token == "endmodel"
+        || Token == "lights"
+        || Token == "lightcolors"
+        || Token == "angles"
+        || Token == "scale"
+        || Token == "notransition";
 }
 
 bool TAnimModel::Load(cParser *parser, bool ter)
@@ -334,8 +334,8 @@ bool TAnimModel::Load(cParser *parser, bool ter)
 
         if( token == "lights" ) {
             auto i{ 0 };
-            while( ( false == ( token = parser->getToken<std::string>() ).empty() )
-                && ( false == is_keyword( token ) ) ) {
+            while( false == (token = parser->getToken<std::string>()).empty()
+                && false == is_keyword(token) ) {
 
                 if( i < iNumLights ) {
                     // stan światła jest liczbą z ułamkiem
@@ -347,16 +347,16 @@ bool TAnimModel::Load(cParser *parser, bool ter)
 
         if( token == "lightcolors" ) {
             auto i{ 0 };
-            while( ( false == ( token = parser->getToken<std::string>() ).empty() )
-                && ( false == is_keyword( token ) ) ) {
+            while( false == (token = parser->getToken<std::string>()).empty()
+                && false == is_keyword(token) ) {
 
-                if( ( i < iNumLights )
-                 && ( token != "-1" ) ) { // -1 leaves the default color intact
+                if( i < iNumLights
+                 && token != "-1" ) { // -1 leaves the default color intact
                     auto const lightcolor { std::stoi( token, 0, 16 ) };
                     m_lightcolors[i] = {
-                        ( ( lightcolor >> 16 ) & 0xff ) / 255.f,
-                        ( ( lightcolor >> 8 )  & 0xff ) / 255.f,
-                        ( ( lightcolor )       & 0xff ) / 255.f };
+                        ( lightcolor >> 16 & 0xff ) / 255.f,
+                        ( lightcolor >> 8  & 0xff ) / 255.f,
+                        ( lightcolor       & 0xff ) / 255.f };
                 }
                 ++i;
             }
@@ -391,8 +391,8 @@ bool TAnimModel::Load(cParser *parser, bool ter)
             m_transition = false;
         }
 
-    } while( ( false == token.empty() )
-          && ( token != "endmodel" ) );
+    } while( false == token.empty()
+          && token != "endmodel" );
 
     update_instanceable_flag();
     return true;
@@ -486,7 +486,7 @@ std::shared_ptr<TAnimContainer> TAnimModel::AddContainer(std::string const &Name
 std::shared_ptr<TAnimContainer> TAnimModel::GetContainer(std::string const &Name)
 { // szukanie/dodanie sterowania submodelem dla egzemplarza
 	if (true == Name.empty())
-		return (!m_animlist.empty()) ? m_animlist.front() : nullptr; // pobranie pierwszego (dla obrotnicy)
+		return !m_animlist.empty() ? m_animlist.front() : nullptr; // pobranie pierwszego (dla obrotnicy)
 
 	for (auto entry : m_animlist) {
 		if (entry->NameGet() == Name)
@@ -583,34 +583,28 @@ void TAnimModel::RaPrepare()
             case ls_Off:
             case ls_Blink: {
                 if (LightsOn[i]) {
-                    LightsOn[i]->iVisible = ( m_lightopacities[i] > 0.f );
+                    LightsOn[i]->iVisible = m_lightopacities[i] > 0.f;
                     LightsOn[i]->SetVisibilityLevel( m_lightopacities[i], true, false );
                 }
                 if (LightsOff[i]) {
-                    LightsOff[i]->iVisible = ( m_lightopacities[i] < 1.f );
+                    LightsOff[i]->iVisible = m_lightopacities[i] < 1.f;
                     LightsOff[i]->SetVisibilityLevel( 1.f, true, false );
                 }
                 break;
             }
             case ls_Dark: {
                 // zapalone, gdy ciemno
-                state = (
-                    Global.fLuminance - std::max( 0.f, Global.Overcast - 1.f ) <= (
-                        lsLights[ i ] == static_cast<float>( ls_Dark ) ?
-                            DefaultDarkThresholdLevel :
-                            ( lsLights[ i ] - static_cast<float>( ls_Dark ) ) ) );
+                state =
+			        Global.fLuminance - std::max(0.f, Global.Overcast - 1.f) <= (lsLights[i] == static_cast<float>(ls_Dark) ? DefaultDarkThresholdLevel : lsLights[i] - static_cast<float>(ls_Dark));
                 break;
             }
             case ls_Home: {
                 // like ls_dark but off late at night
                 auto const simulationhour { simulation::Time.data().wHour };
-                state = (
-                    Global.fLuminance - std::max( 0.f, Global.Overcast - 1.f ) <= (
-                        lsLights[ i ] == static_cast<float>( ls_Home ) ?
-                            DefaultDarkThresholdLevel :
-                            ( lsLights[ i ] - static_cast<float>( ls_Home ) ) ) );
+                state =
+			        Global.fLuminance - std::max(0.f, Global.Overcast - 1.f) <= (lsLights[i] == static_cast<float>(ls_Home) ? DefaultDarkThresholdLevel : lsLights[i] - static_cast<float>(ls_Home));
                 // force the lights off between 1-5am
-                state = state && (( simulationhour < 1 ) || ( simulationhour >= 5 ));
+                state = state && (simulationhour < 1 || simulationhour >= 5);
                 break;
             }
             default: {
@@ -644,7 +638,7 @@ int TAnimModel::Flags()
 { // informacja dla TGround, czy ma być w Render, RenderAlpha, czy RenderMixed
     int i = pModel ? pModel->Flags() : 0; // pobranie flag całego modelu
     if( m_materialdata.replacable_skins[ 1 ] > 0 ) // jeśli ma wymienną teksturę 0
-        i |= (i & 0x01010001) * ((m_materialdata.textures_alpha & 1) ? 0x20 : 0x10);
+        i |= (i & 0x01010001) * (m_materialdata.textures_alpha & 1 ? 0x20 : 0x10);
     return i;
 }
 
@@ -745,7 +739,7 @@ TAnimModel::export_as_text_( std::ostream &Output ) const {
     // location and rotation. The 4th token after location is a legacy
     // shorthand for the Y rotation. We use it (and skip the angles block)
     // whenever the rotation is purely around Y, which is the common case.
-    bool const xz_rotation_zero = ( vAngle.x == 0.0f && vAngle.z == 0.0f );
+    bool const xz_rotation_zero = vAngle.x == 0.0f && vAngle.z == 0.0f;
     Output << std::fixed << std::setprecision( 3 )
         << location().x << ' '
         << location().y << ' '

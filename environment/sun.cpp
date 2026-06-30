@@ -79,8 +79,8 @@ float cSun::getIntensity() {
 void cSun::setLocation( float const Longitude, float const Latitude ) {
 
 	// convert fraction from geographical base of 6o minutes
-	m_observer.longitude = (int)Longitude + (Longitude - (int)(Longitude)) * 100.0 / 60.0;
-	m_observer.latitude = (int)Latitude + (Latitude - (int)(Latitude)) * 100.0 / 60.0 ;
+	m_observer.longitude = (int)Longitude + (Longitude - (int)Longitude) * 100.0 / 60.0;
+	m_observer.latitude = (int)Latitude + (Latitude - (int)Latitude) * 100.0 / 60.0 ;
 }
 
 // sets current time, overriding one acquired from the system clock
@@ -125,7 +125,7 @@ void cSun::move() {
         + 275 * localtime.wMonth / 9
         + localtime.wDay
         - 730530
-        + ( localut / 24.0 );
+        + localut / 24.0;
 
     // Universal Coordinated (Greenwich standard) time
     m_observer.utime = localut - m_observer.timezone;
@@ -228,7 +228,7 @@ void cSun::refract() {
 		else
 			refcor  = -20.774 / tanelev;
 
-		prestemp = ( m_observer.press * 283.0 ) / ( 1013.0 * ( 273.0 + m_observer.temp ) );
+		prestemp = m_observer.press * 283.0 / ( 1013.0 * ( 273.0 + m_observer.temp ) );
 		refcor *= prestemp / 3600.0;
 	}
 

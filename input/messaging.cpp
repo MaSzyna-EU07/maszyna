@@ -59,14 +59,14 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
         case 2: {
             // event
             CommLog( Now() + " " + std::to_string( pRozkaz->iComm ) + " " +
-                std::string( pRozkaz->cString + 1, (unsigned)( pRozkaz->cString[ 0 ] ) ) + " rcvd" );
+                std::string( pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0] ) + " rcvd" );
 
             if( Global.iMultiplayer ) {
-                auto *event = simulation::Events.FindEvent( std::string( pRozkaz->cString + 1, (unsigned)( pRozkaz->cString[ 0 ] ) ) );
+                auto *event = simulation::Events.FindEvent( std::string( pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0] ) );
                 if( event != nullptr ) {
-                    if( ( typeid( *event ) == typeid( multi_event ) )
-                     || ( typeid( *event ) == typeid( lights_event ) )
-                     || ( event->m_sibling != 0 ) ) {
+                    if( typeid(*event) == typeid(multi_event)
+                     || typeid(*event) == typeid(lights_event)
+                     || event->m_sibling != 0 ) {
                         // tylko jawne albo niejawne Multiple
 						command_relay relay;
 						relay.post(user_command::queueevent, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &event->name());
@@ -81,12 +81,12 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
                 int i = int(pRozkaz->cString[8]); // długość pierwszego łańcucha (z przodu dwa floaty)
                 CommLog(
                     Now() + " " + std::to_string(pRozkaz->iComm) + " " +
-                    std::string(pRozkaz->cString + 11 + i, (unsigned)(pRozkaz->cString[10 + i])) +
+                    std::string(pRozkaz->cString + 11 + i, (unsigned)pRozkaz->cString[10 + i]) +
                     " rcvd");
                 // nazwa pojazdu jest druga
                 auto *vehicle = simulation::Vehicles.find( { pRozkaz->cString + 11 + i, (unsigned)pRozkaz->cString[ 10 + i ] } );
-                if( ( vehicle != nullptr )
-                 && ( vehicle->Mechanik != nullptr ) ) {
+                if( vehicle != nullptr
+                 && vehicle->Mechanik != nullptr ) {
                     vehicle->Mechanik->PutCommand(
                         { pRozkaz->cString + 9, static_cast<std::size_t>(i) },
                         pRozkaz->fPar[0], pRozkaz->fPar[1],
@@ -99,11 +99,11 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
         case 4: // badanie zajętości toru
         {
 			CommLog(Now() + " " + std::to_string(pRozkaz->iComm) + " " +
-                    std::string(pRozkaz->cString + 1, (unsigned)(pRozkaz->cString[0])) + " rcvd");
+                    std::string(pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0]) + " rcvd");
 
-            auto *track = simulation::Paths.find( std::string( pRozkaz->cString + 1, (unsigned)( pRozkaz->cString[ 0 ] ) ) );
-            if( ( track != nullptr )
-             && ( track->IsEmpty() ) ) {
+            auto *track = simulation::Paths.find( std::string( pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0] ) );
+            if( track != nullptr
+             && track->IsEmpty() ) {
                 WyslijWolny( track->name() );
             }
         }
@@ -134,14 +134,11 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
                 CommLog(
                     Now() + " "
                   + std::to_string( pRozkaz->iComm ) + " "
-                  + std::string{ pRozkaz->cString + 1, (unsigned)( pRozkaz->cString[ 0 ] ) }
+                  + std::string{ pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0] }
                   + " rcvd" );
                 if (pRozkaz->cString[0]) {
                     // jeśli długość nazwy jest niezerowa szukamy pierwszego pojazdu o takiej nazwie i odsyłamy parametry ramką #7
-                    auto *vehicle = (
-                        pRozkaz->cString[ 1 ] == '*' ?
-					        simulation::Train->Dynamic() :
-                            simulation::Vehicles.find( std::string{ pRozkaz->cString + 1, (unsigned)pRozkaz->cString[ 0 ] } ) );
+                    auto *vehicle = pRozkaz->cString[1] == '*' ? simulation::Train->Dynamic() : simulation::Vehicles.find(std::string{pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0]});
                     if( vehicle != nullptr ) {
                         WyslijNamiary( vehicle ); // wysłanie informacji o pojeździe
                     }
@@ -162,8 +159,8 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
             break;
         case 10: // badanie zajętości jednego odcinka izolowanego
 			CommLog(Now() + " " + std::to_string(pRozkaz->iComm) + " " +
-                    std::string(pRozkaz->cString + 1, (unsigned)(pRozkaz->cString[0])) + " rcvd");
-            simulation::Paths.IsolatedBusy( std::string( pRozkaz->cString + 1, (unsigned)( pRozkaz->cString[ 0 ] ) ) );
+                    std::string(pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0]) + " rcvd");
+            simulation::Paths.IsolatedBusy( std::string( pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0] ) );
             break;
         case 11: // ustawienie parametrów ruchu pojazdu
             //    Ground.IsolatedBusy(AnsiString(pRozkaz->cString+1,(unsigned)(pRozkaz->cString[0])));
@@ -175,14 +172,12 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
 			break;
 		case 13: // ramka uszkodzenia i innych stanow pojazdu, np. wylaczenie CA, wlaczenie recznego itd.
 			CommLog(Now() + " " + std::to_string(pRozkaz->iComm) + " " +
-                    std::string(pRozkaz->cString + 1, (unsigned)(pRozkaz->cString[0])) +
+                    std::string(pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0]) +
                     " rcvd");
             if( pRozkaz->cString[ 1 ] ) // jeśli długość nazwy jest niezerowa
             { // szukamy pierwszego pojazdu o takiej nazwie i odsyłamy parametry ramką #13
-                auto *lookup = (
-                    pRozkaz->cString[ 2 ] == '*' ?
-				        simulation::Train->Dynamic() : // nazwa pojazdu użytkownika
-                        simulation::Vehicles.find( std::string( pRozkaz->cString + 2, (unsigned)pRozkaz->cString[ 1 ] ) ) ); // nazwa pojazdu
+                auto *lookup = pRozkaz->cString[2] == '*' ? simulation::Train->Dynamic() : // nazwa pojazdu użytkownika
+				                                            simulation::Vehicles.find(std::string(pRozkaz->cString + 2, (unsigned)pRozkaz->cString[1])); // nazwa pojazdu
                 if( lookup == nullptr ) { break; } // nothing found, nothing to do
                 auto *d { lookup };
                 while( d != nullptr ) {

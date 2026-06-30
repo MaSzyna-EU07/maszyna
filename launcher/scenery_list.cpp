@@ -291,7 +291,7 @@ void ui::scenerylist_panel::draw_trainset(trainset_desc &trainset)
 		glm::ivec2 size = mini->size();
 		float width = 30.0f / size.y * size.x;
 		float beforeX = ImGui::GetCursorPosX();
-		ImGui::Image((ImTextureID)(intptr_t)(mini->get()), ImVec2(width, 30), ImVec2(0, 1), ImVec2(1, 0));
+		ImGui::Image((ImTextureID)(intptr_t)mini->get(), ImVec2(width, 30), ImVec2(0, 1), ImVec2(1, 0));
 		float afterX = ImGui::GetCursorPosX();
 
 		ImGui::SameLine(beforeX);
@@ -338,7 +338,7 @@ void ui::scenerylist_panel::draw_droptarget(trainset_desc &trainset, int positio
 	if (ImGui::BeginDragDropTarget()) {
 		const ImGuiPayload *payload = ImGui::AcceptDragDropPayload("vehicle_pure");
 		if (payload) {
-			skin_set *ptr = *(reinterpret_cast<skin_set**>(payload->Data));
+			skin_set *ptr = *reinterpret_cast<skin_set **>(payload->Data);
 			std::shared_ptr<skin_set> skin;
 			for (auto &s : ptr->vehicle.lock()->matching_skinsets)
 				if (s.get() == ptr)
@@ -406,7 +406,7 @@ void ui::dynamic_edit_popup::render_content()
 		if (ImGui::BeginCombo(STR_C("Skin"), dynamic.skin->skin.c_str(), ImGuiComboFlags_HeightLargest))
 		{
 			for (auto const &skin : dynamic.vehicle->matching_skinsets) {
-				bool is_selected = (skin == dynamic.skin);
+				bool is_selected = skin == dynamic.skin;
 				if (ImGui::Selectable(skin->skin.c_str(), is_selected))
 					dynamic.skin = skin;
 				if (is_selected)
@@ -419,7 +419,7 @@ void ui::dynamic_edit_popup::render_content()
 	if (ImGui::BeginCombo(STR_C("Occupancy"), Translations.lookup_c(dynamic.drivertype.c_str())))
 	{
 		for (auto const &str : occupancy_names) {
-			bool is_selected = (str == dynamic.drivertype);
+			bool is_selected = str == dynamic.drivertype;
 			if (ImGui::Selectable(Translations.lookup_c(str.c_str()), is_selected))
 				dynamic.drivertype = str;
 			if (is_selected)

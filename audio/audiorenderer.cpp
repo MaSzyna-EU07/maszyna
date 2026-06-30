@@ -32,10 +32,7 @@ limit_velocity( glm::vec3 const &Velocity ) {
 
     auto const ratio { glm::length( Velocity ) / EU07_SOUND_VELOCITYLIMIT };
 
-    return (
-        ratio > 1.f ?
-            Velocity / ratio :
-            Velocity );
+    return ratio > 1.f ? Velocity / ratio : Velocity;
 }
 
 // starts playback of queued buffers
@@ -48,7 +45,7 @@ openal_source::play() {
 
     ALint state;
     ::alGetSourcei( id, AL_SOURCE_STATE, &state );
-    is_playing = ( state == AL_PLAYING );
+    is_playing = state == AL_PLAYING;
 }
 
 // stops the playback
@@ -90,14 +87,14 @@ openal_source::update( double const Deltatime, glm::vec3 const &Listenervelocity
         // for multipart sounds trim away processed buffers until only one remains, the last one may be set to looping by the controller
         // TBD, TODO: instead of change flag move processed buffer ids to separate queue, for accurate tracking of longer buffer sequences
         ALuint discard;
-        while( ( sound_index > 0 )
-            && ( sounds.size() > 1 ) ) {
+        while( sound_index > 0
+            && sounds.size() > 1 ) {
             ::alSourceUnqueueBuffers( id, 1, &discard );
             sounds.erase( std::begin( sounds ) );
             --sound_index;
             sound_change = true;
             // potentially adjust starting point of the last buffer (to reduce chance of reverb effect with multiple, looping copies playing)
-            if( ( controller->start() > 0.f ) && ( sounds.size() == 1 ) ) {
+            if( controller->start() > 0.f && sounds.size() == 1 ) {
                 ALint bufferid;
                 ::alGetSourcei(
                     id,
@@ -114,7 +111,7 @@ openal_source::update( double const Deltatime, glm::vec3 const &Listenervelocity
 
         int state;
         ::alGetSourcei( id, AL_SOURCE_STATE, &state );
-        is_playing = ( state == AL_PLAYING );
+        is_playing = state == AL_PLAYING;
     }
 
     // request instructions from the controller
@@ -131,9 +128,9 @@ openal_source::sync_with( sound_properties const &State ) {
         return;
     }
     // velocity
-    if( ( update_deltatime > 0.0 )
-     && ( sound_range >= 0 )
-     && ( properties.location != glm::dvec3() ) ) {
+    if( update_deltatime > 0.0
+     && sound_range >= 0
+     && properties.location != glm::dvec3() ) {
         // after sound position was initialized we can start velocity calculations
         sound_velocity = limit_velocity( ( State.location - properties.location ) / update_deltatime );
     }
@@ -145,10 +142,8 @@ openal_source::sync_with( sound_properties const &State ) {
     if( sound_range != -1 ) {
         // range cutoff check for songs other than 'unlimited'
         // NOTE: since we're comparing squared distances we can ignore that sound range can be negative
-        auto const cutoffrange = (
-            is_multipart ?
-                EU07_SOUND_CUTOFFRANGE : // we keep multi-part sounds around longer, to minimize restarts as the sounds get out and back in range
-                sound_range * 7.5f );
+        auto const cutoffrange = is_multipart ? EU07_SOUND_CUTOFFRANGE : // we keep multi-part sounds around longer, to minimize restarts as the sounds get out and back in range
+		                                        sound_range * 7.5f;
         if( glm::length2( sound_distance ) > std::min( sq(cutoffrange), sq(EU07_SOUND_CUTOFFRANGE) ) ) {
             stop();
             sync = sync_state::bad_distance; // flag sync failure for the controller
@@ -170,9 +165,9 @@ openal_source::sync_with( sound_properties const &State ) {
             State.category == sound_category::local ? Global.EnvironmentPositionalVolume :
             State.category == sound_category::ambient ? Global.EnvironmentAmbientVolume :
             1.f ) };
-    if( ( State.gain != properties.gain )
-     || ( State.soundproofing_stamp != properties.soundproofing_stamp )
-     || ( audio::event_volume_change ) ) {
+    if( State.gain != properties.gain
+     || State.soundproofing_stamp != properties.soundproofing_stamp
+     || audio::event_volume_change ) {
         // gain value has changed
         ::alSourcef( id, AL_GAIN, gain );
         auto const range { (
@@ -184,8 +179,8 @@ openal_source::sync_with( sound_properties const &State ) {
     if( sound_range != -1 ) {
         auto const rangesquared { sound_range * sound_range };
         auto const distancesquared { glm::length2( sound_distance ) };
-        if( ( distancesquared > rangesquared )
-         || ( false == is_in_range ) ) {
+        if( distancesquared > rangesquared
+         || false == is_in_range ) {
             // if the emitter is outside of its nominal hearing range or was outside of it during last check
             // adjust the volume to a suitable fraction of nominal value
             auto const fadedistance { sound_range * 0.75f };
@@ -196,7 +191,7 @@ openal_source::sync_with( sound_properties const &State ) {
                         0.f, 1.f ) ) };
             ::alSourcef( id, AL_GAIN, gain * rangefactor );
         }
-        is_in_range = ( distancesquared <= rangesquared );
+        is_in_range = distancesquared <= rangesquared;
     }
     // pitch
     if( State.pitch != properties.pitch ) {
@@ -245,9 +240,7 @@ openal_source::loop( bool const State ) {
     ::alSourcei(
         id,
         AL_LOOPING,
-        ( State ?
-            AL_TRUE :
-            AL_FALSE ) );
+        State ? AL_TRUE : AL_FALSE);
 }
 
 // releases bound buffers and resets state of the class variables
@@ -376,7 +369,7 @@ openal_renderer::update( double const Deltatime ) {
     // orientation
     glm::dmat4 cameramatrix;
     Global.pCamera.SetMatrix( cameramatrix );
-    auto cameraposition = Global.pCamera.Pos + glm::dvec3((Global.viewport_move * glm::mat3(cameramatrix)));
+    auto cameraposition = Global.pCamera.Pos + glm::dvec3(Global.viewport_move * glm::mat3(cameramatrix));
     cameramatrix = glm::dmat4(glm::inverse(Global.viewport_rotate)) * cameramatrix;
     auto rotationmatrix { glm::mat3{ cameramatrix } };
     glm::vec3 const orientation[] = {
@@ -399,7 +392,7 @@ openal_renderer::update( double const Deltatime ) {
             cameramove = glm::dvec3{ 0.0 };
         }
         // ... from cab change
-        if( ( simulation::Train != nullptr ) && ( simulation::Train->iCabn != m_activecab ) ) {
+        if( simulation::Train != nullptr && simulation::Train->iCabn != m_activecab ) {
             m_activecab = simulation::Train->iCabn;
             cameramove = glm::dvec3{ 0.0 };
         }
@@ -454,7 +447,7 @@ openal_renderer::fetch_source() {
     }
     if( newsource.id == audio::null_resource ) {
         // if there's no source to reuse, try to generate a new one
-        ::alGenSources( 1, &( newsource.id ) );
+        ::alGenSources( 1, &newsource.id );
     }
     if( newsource.id == audio::null_resource ) {
 		alGetError();
@@ -467,23 +460,23 @@ openal_renderer::fetch_source() {
 
         for( auto source { std::begin( m_sources ) }; source != std::cend( m_sources ); ++source ) {
 
-            if( ( source->id == audio::null_resource )
-             || ( true == source->is_multipart )
-             || ( false == source->is_playing ) ) {
+            if( source->id == audio::null_resource
+             || true == source->is_multipart
+             || false == source->is_playing ) {
 
                 continue;
             }
             auto const sourceweight { (
                 source->sound_range != -1 ?
-                    ( source->sound_range * source->sound_range ) / ( glm::length2( source->sound_distance ) + 1 ) :
+                    source->sound_range * source->sound_range / ( glm::length2( source->sound_distance ) + 1 ) :
                     std::numeric_limits<float>::max() ) };
             if( sourceweight < leastimportantweight ) {
                 leastimportantsource = source;
                 leastimportantweight = sourceweight;
             }
         }
-        if( ( leastimportantsource != std::end( m_sources ) )
-         && ( leastimportantweight < 1.f ) ) {
+        if( leastimportantsource != std::end(m_sources)
+         && leastimportantweight < 1.f ) {
             // only accept the candidate if it's outside of its nominal hearing range
             leastimportantsource->stop();
             // HACK: dt of 0 is a roundabout way to notify the controller its emitter has stopped
@@ -516,11 +509,11 @@ openal_renderer::init_caps() {
         auto const
             *device { devices },
             *next { devices + 1 };
-        while( (device) && (*device != '\0') && (next) && (*next != '\0') ) {
+        while( device && *device != '\0' && next && *next != '\0' ) {
             WriteLog( { device } );
             auto const len { std::strlen( device ) };
-            device += ( len + 1 );
-            next += ( len + 2 );
+            device += len + 1;
+            next += len + 2;
         }
     }
 

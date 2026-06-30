@@ -65,7 +65,7 @@ cParser::cParser(std::string const &Stream, buffertype const Type, std::string P
 		Path.append(Stream);
 		mStream = std::make_shared<std::ifstream>(Path, std::ios_base::binary);
 		// content of *.inc files is potentially grouped together
-		if ((Stream.size() >= 4) && (ToLower(Stream.substr(Stream.size() - 4)) == ".inc"))
+		if (Stream.size() >= 4 && ToLower(Stream.substr(Stream.size() - 4)) == ".inc")
 		{
 			mIncFile = true;
 			scene::Groups.create();
@@ -145,7 +145,7 @@ template <> cParser &cParser::operator>>(bool &Right)
 		return *this;
 	}
 
-	Right = ((this->tokens.front() == "true") || (this->tokens.front() == "yes") || (this->tokens.front() == "1"));
+	Right = this->tokens.front() == "true" || this->tokens.front() == "yes" || this->tokens.front() == "1";
 	this->tokens.pop_front();
 
 	return *this;
@@ -155,7 +155,7 @@ template <> bool cParser::getToken<bool>(bool const ToLower, const char *Break)
 {
 
 	auto const token = getToken<std::string>(true, Break);
-	return ((token == "true") || (token == "yes") || (token == "1"));
+	return token == "true" || token == "yes" || token == "1";
 }
 
 // methods
@@ -284,10 +284,10 @@ void cParser::substituteParameters(std::string& token, bool ToLower) {
 		if (close == std::string::npos) break; // malformed -> stop like old behavior (it would substr weirdly)
 
 		const std::string idxStr = token.substr(pos + 2, close - (pos + 2));
-		token.erase(pos, (close - pos) + 1);
+		token.erase(pos, close - pos + 1);
 
 		const size_t nr = static_cast<size_t>(std::atoi(idxStr.c_str()));
-		const std::string repl = (nr >= 1 && (nr - 1) < parameters.size())
+		const std::string repl = nr >= 1 && nr - 1 < parameters.size()
 			? parameters[nr - 1]
 			: std::string("none");
 
@@ -317,8 +317,8 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
 	replace_slashes(includefile);
 
 	const bool allowTraction =
-		(true == LoadTraction) ||
-		((false == contains(includefile, "tr/")) && (false == contains(includefile, "tra/")));
+		true == LoadTraction ||
+		(false == contains(includefile, "tr/") && false == contains(includefile, "tra/"));
 
 	if (!allowTraction) {
 		// skip include block until "end" (original behavior in token-mode include)
@@ -368,7 +368,7 @@ bool cParser::handleIncludeIfPresent(std::string& token, bool ToLower, const cha
 	}
 
 	// line-mode HACK: Break == "\n\r" and line begins with "include"
-	if ((std::strcmp(Break, "\n\r") == 0) && token.compare(0, 7, "include") == 0) {
+	if (std::strcmp(Break, "\n\r") == 0 && token.compare(0, 7, "include") == 0) {
 		cParser includeparser(token.substr(7));
 		std::string includefile;
 		if (allowRandomIncludes)
@@ -414,7 +414,7 @@ std::vector<std::string> cParser::readParameters(cParser &Input)
 	std::vector<std::string> includeparameters;
 	std::string parameter;
 	Input.readToken(parameter, false); // w parametrach nie zmniejszamy
-	while ((parameter.empty() == false) && (parameter != "end"))
+	while (parameter.empty() == false && parameter != "end")
 	{
 		includeparameters.emplace_back(parameter);
 		Input.readToken(parameter, false);
@@ -531,7 +531,7 @@ int cParser::getFullProgress() const
 
 	int progress = getProgress();
 	if (mIncludeParser)
-		return progress + ((100 - progress) * (mIncludeParser->getProgress()) / 100);
+		return progress + (100 - progress) * mIncludeParser->getProgress() / 100;
 	else
 		return progress;
 }

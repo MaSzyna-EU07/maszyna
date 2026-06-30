@@ -163,23 +163,23 @@ bool TMemCell::Compare( std::string const &szTestText, double const fTestValue1,
                 compare( szText, szTestText, TextOperator ) :
                 compare( szText.substr( 0, range ), szTestText.substr( 0, range ), TextOperator ) ) };
         checkpassed |=    result;
-        checkfailed |= ( !result );
+        checkfailed |= !result;
     }
     if( TestFlag( CheckMask, basic_event::flags::value1 ) ) {
         auto const result { compare( fValue1, fTestValue1, Value1Operator ) };
         checkpassed |=    result;
-        checkfailed |= ( !result );
+        checkfailed |= !result;
     }
     if( TestFlag( CheckMask, basic_event::flags::value2 ) ) {
         auto const result { compare( fValue2, fTestValue2, Value2Operator ) };
         checkpassed |=    result;
-        checkfailed |= ( !result );
+        checkfailed |= !result;
     }
 
     switch( Pass ) {
-        case comparison_pass::all:  { return ( checkfailed == false ); }
-        case comparison_pass::any:  { return ( checkpassed == true ); }
-        case comparison_pass::none: { return ( checkpassed == false ); }
+        case comparison_pass::all:  { return checkfailed == false; }
+        case comparison_pass::any:  { return checkpassed == true; }
+        case comparison_pass::none: { return checkpassed == false; }
         default:                    { return false; }
     }
 };
@@ -190,7 +190,7 @@ bool TMemCell::IsVelocity() const
         return true;
     if (eCommand == TCommandType::cm_ShuntVelocity)
         return true;
-    return (eCommand == TCommandType::cm_SetProximityVelocity);
+    return eCommand == TCommandType::cm_SetProximityVelocity;
 };
 
 void TMemCell::StopCommandSent()

@@ -46,8 +46,8 @@ public:
             auto const blanktimestamp { std::chrono::steady_clock::time_point() };
             int releasecount{ 0 };
             for( auto resourceindex = m_resourcesweepindex; resourceindex < sweeplastindex; ++resourceindex ) {
-                if( ( m_container[ resourceindex ].second != blanktimestamp )
-                 && ( m_resourcetimestamp - m_container[ resourceindex ].second > m_unusedresourcetimetolive ) ) {
+                if( m_container[resourceindex].second != blanktimestamp
+                 && m_resourcetimestamp - m_container[resourceindex].second > m_unusedresourcetimetolive ) {
 
                     m_container[ resourceindex ].first->release();
                     m_container[ resourceindex ].second = blanktimestamp;
@@ -59,10 +59,8 @@ public:
                 WriteLog( "Resource garbage sweep released " + std::to_string( releasecount ) + " " + ( releasecount == 1 ? m_resourcename : m_resourcename + "s" ) );
             }
 */
-            m_resourcesweepindex = (
-                m_resourcesweepindex + m_unusedresourcesweepsize >= m_container.size() ?
-                    0 : // if the next sweep chunk is beyond actual data, so start anew
-                    m_resourcesweepindex + m_unusedresourcesweepsize );
+            m_resourcesweepindex = m_resourcesweepindex + m_unusedresourcesweepsize >= m_container.size() ? 0 : // if the next sweep chunk is beyond actual data, so start anew
+		                                                                                                    m_resourcesweepindex + m_unusedresourcesweepsize;
     
             return releasecount; }
 

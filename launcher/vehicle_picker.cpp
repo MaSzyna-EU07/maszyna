@@ -47,15 +47,15 @@ void ui::vehiclepicker_panel::render_contents()
 
 			bool model_added = false;
 			bool can_break = false;
-			bool map_sel_eq = (selected_group && group == *selected_group);
+			bool map_sel_eq = selected_group && group == *selected_group;
 
 			for (auto const &vehicle : kv.second) {
 				if (vehicle->type != selected_type)
 					continue;
 
 				for (auto const &skinset : vehicle->matching_skinsets) {
-					bool map_group_eq = (skinset->group == group);
-					bool sel_group_eq = (selected_group && skinset->group == *selected_group);
+					bool map_group_eq = skinset->group == group;
+					bool sel_group_eq = selected_group && skinset->group == *selected_group;
 
 					if (!model_added && map_group_eq) {
 						model_list.push_back(&group);
@@ -253,7 +253,7 @@ bool ui::vehiclepicker_panel::skin_filter(const skin_set *skin, std::vector<sear
 			return true;
 	}
 
-	return alternative_present ? (!any) : false;
+	return alternative_present ? !any : false;
 }
 
 bool ui::vehiclepicker_panel::selectable_image(const char *desc, bool selected, const deferred_image* image, const skin_set *pickable)

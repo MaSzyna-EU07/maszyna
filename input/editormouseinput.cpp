@@ -55,9 +55,9 @@ editormouse_input::button( int const Button, int const Action ) {
 
     // right button controls panning
     if( Button == GLFW_MOUSE_BUTTON_RIGHT ) {
-        bool const panning = ( Action == GLFW_PRESS );
+        bool const panning = Action == GLFW_PRESS;
         // when panning starts, request a one-frame resync so toggling the cursor grab doesn't jerk the view
-        if( panning && ( false == m_pickmodepanning ) ) {
+        if( panning && false == m_pickmodepanning ) {
             m_pickmodepanning_resync = true;
         }
         m_pickmodepanning = panning;

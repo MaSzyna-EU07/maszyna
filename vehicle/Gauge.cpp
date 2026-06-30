@@ -49,18 +49,18 @@ void TGauge::Init(TSubModel *Submodel, TSubModel *Submodelon, TGaugeAnimation Ty
         auto *sm { ( SubModel ? SubModel->ChildGet() : nullptr ) };
         while( sm != nullptr ) {
             // pętla po submodelach potomnych i obracanie ich o kąt zależy od cyfry w (fValue)
-            if( ( sm->pName.size() )// musi mieć niepustą nazwę
-             && ( std::isdigit( sm->pName[ 0 ] ) ) ) {
+            if( sm->pName.size() // musi mieć niepustą nazwę
+             && std::isdigit(sm->pName[0]) ) {
                 sm->WillBeAnimated(); // wyłączenie optymalizacji
             }
             sm = sm->NextGet();
         }
         // do the same for the active version
-        sm = ( SubModelOn ? SubModelOn->ChildGet() : nullptr );
+        sm = SubModelOn ? SubModelOn->ChildGet() : nullptr;
         while( sm != nullptr ) {
             // pętla po submodelach potomnych i obracanie ich o kąt zależy od cyfry w (fValue)
-            if( ( sm->pName.size() )// musi mieć niepustą nazwę
-             && ( std::isdigit( sm->pName[ 0 ] ) ) ) {
+            if( sm->pName.size() // musi mieć niepustą nazwę
+             && std::isdigit(sm->pName[0]) ) {
                 sm->WillBeAnimated(); // wyłączenie optymalizacji
             }
             sm = sm->NextGet();
@@ -113,8 +113,8 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
             >> scale
             >> offset
             >> friction;
-        if( ( gaugetypename == "rotvar" )
-         || ( gaugetypename == "movvar" ) ) {
+        if( gaugetypename == "rotvar"
+         || gaugetypename == "movvar" ) {
             interpolatescale = true;
             Parser.getTokens( 2, false );
             Parser
@@ -132,8 +132,8 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
             >> scale
             >> offset
             >> friction;
-        if( ( gaugetypename == "rotvar" )
-         || ( gaugetypename == "movvar" ) ) {
+        if( gaugetypename == "rotvar"
+         || gaugetypename == "movvar" ) {
             interpolatescale = true;
             Parser.getTokens( 2, false );
             Parser
@@ -186,13 +186,13 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
     TSubModel *submodel { nullptr };
     std::array<TModel3d *, 2> sources { Owner->mdKabina, Owner->mdLowPolyInt };
     for( auto const *source : sources ) {
-        if( ( source != nullptr )
+        if( source != nullptr
          && ( submodel = source->GetFromName( submodelname ) ) != nullptr ) {
             // got what we wanted, bail out
             break;
         }
         // there's a possibility the default submodel was named with _off suffix
-        if( ( source != nullptr )
+        if( source != nullptr
          && ( submodel = source->GetFromName( submodelname + "_off" ) ) != nullptr ) {
             // got what we wanted, bail out
             break;
@@ -204,7 +204,7 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
     // see if we can locate optional submodel for active state, with _on suffix
     TSubModel *submodelon { nullptr };
     for( auto const *source : sources ) {
-        if( ( source != nullptr )
+        if( source != nullptr
          && ( submodelon = source->GetFromName( submodelname + "_on" ) ) != nullptr ) {
             // got what we wanted, bail out
             break;
@@ -220,10 +220,7 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
         { "dgt", TGaugeAnimation::gt_Digital }
     };
     auto lookup = gaugetypes.find( gaugetypename );
-    auto const type = (
-        lookup != gaugetypes.end() ?
-            lookup->second :
-            TGaugeAnimation::gt_Unknown );
+    auto const type = lookup != gaugetypes.end() ? lookup->second : TGaugeAnimation::gt_Unknown;
 
     Init( submodel, submodelon, type, scale, offset, friction, 0, endvalue, endscale, interpolatescale );
 
@@ -235,18 +232,17 @@ TGauge::Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad ) {
 
     // token can be a key or block end
     auto const key { Input.getToken<std::string>( true, "\n\r\t  ,;" ) };
-    if( ( true == key.empty() ) || ( key == "}" ) ) { return false; }
+    if( true == key.empty() || key == "}" ) { return false; }
     // if not block end then the key is followed by assigned value or sub-block
     if( key == "type:" ) {
         auto const gaugetype { Input.getToken<std::string>( true, "\n\r\t  ,;" ) };
-        m_type = (
-            gaugetype == "push" ? TGaugeType::push :
-            gaugetype == "impulse" ? TGaugeType::push :
-            gaugetype == "return" ? TGaugeType::push :
-            gaugetype == "delayed" ? TGaugeType::push_delayed :
-            gaugetype == "pushtoggle" ? TGaugeType::pushtoggle :
-            gaugetype == "toggle" ? TGaugeType::toggle :
-            TGaugeType::toggle ); // default
+        m_type = gaugetype == "push"       ? TGaugeType::push :
+		         gaugetype == "impulse"    ? TGaugeType::push :
+		         gaugetype == "return"     ? TGaugeType::push :
+		         gaugetype == "delayed"    ? TGaugeType::push_delayed :
+		         gaugetype == "pushtoggle" ? TGaugeType::pushtoggle :
+		         gaugetype == "toggle"     ? TGaugeType::toggle :
+		                                     TGaugeType::toggle; // default
     }
     else if( key == "soundinc:" ) {
         m_soundfxincrease.deserialize( Input, sound_type::single );
@@ -363,7 +359,7 @@ void TGauge::Update( bool const Power ) {
     // TODO: remove passing manually power state when LD is in place
     if( m_value != m_targetvalue ) {
         float dt = Timer::GetDeltaTime();
-        if( ( m_friction > 0 ) && ( dt < 0.5 * m_friction ) ) {
+        if( m_friction > 0 && dt < 0.5 * m_friction ) {
             // McZapkie-281102: zabezpieczenie przed oscylacjami dla dlugich czasow
             m_value += dt * ( m_targetvalue - m_value ) / m_friction;
             if( std::abs( m_targetvalue - m_value ) <= 0.0001 ) {
@@ -388,7 +384,7 @@ void TGauge::Update( bool const Power ) {
     if( SubModelOn != nullptr ) {
         SubModelOn->iVisible = m_state;
         if( SubModel != nullptr ) {
-            SubModel->iVisible = ( !m_state );
+            SubModel->iVisible = !m_state;
         }
     }
     // update submodel animations
@@ -437,7 +433,7 @@ void TGauge::UpdateValue()
             break;
         }
         case 'b': {
-            UpdateValue( ( *bData ? 1.f : 0.f ) );
+            UpdateValue( *bData ? 1.f : 0.f );
             break;
         }
         default: {
@@ -453,16 +449,7 @@ void TGauge::AssignState( bool const *State ) {
 
 float TGauge::GetScaledValue() const {
 
-    return (
-        ( false == m_interpolatescale ) ?
-            m_value * m_scale + m_offset :
-            m_value
-            * std::lerp(
-                m_scale, m_endscale,
-                std::clamp(
-                    m_value / m_endvalue,
-                    0.f, 1.f ) )
-            + m_offset );
+    return false == m_interpolatescale ? m_value * m_scale + m_offset : m_value * std::lerp(m_scale, m_endscale, std::clamp(m_value / m_endvalue, 0.f, 1.f)) + m_offset;
 }
 
 void
@@ -498,8 +485,8 @@ TGauge::UpdateAnimation( TSubModel *Submodel ) {
 */	    		std::string n( "000000000" + std::to_string( static_cast<int>( std::floor( GetScaledValue() ) ) ) );
             if( n.length() > 10 ) { n.erase( 0, n.length() - 10 ); } // also dumb but should work for now
             do { // pętla po submodelach potomnych i obracanie ich o kąt zależy od cyfry w (fValue)
-                if( ( sm->pName.size() )
-                 && ( std::isdigit( sm->pName[ 0 ] ) ) ) {
+                if( sm->pName.size()
+                 && std::isdigit(sm->pName[0]) ) {
                     sm->SetRotate(
                         float3( 0, 1, 0 ),
                         -36.0 * ( n[ '0' + 9 - sm->pName[ 0 ] ] - '0' ) );
@@ -518,10 +505,7 @@ TGauge::UpdateAnimation( TSubModel *Submodel ) {
 glm::vec3
 TGauge::model_offset() const {
 
-    return (
-        SubModel != nullptr ?
-            SubModel->offset( 1.f ) :
-            glm::vec3() );
+    return SubModel != nullptr ? SubModel->offset(1.f) : glm::vec3();
 }
 
 TGaugeType

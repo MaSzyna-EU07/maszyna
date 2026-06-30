@@ -74,7 +74,7 @@ basic_station::update_load( TDynamicObject *First, Mtable::TTrainParameters &Sch
                 loadcount *= 2;
             }
 
-            if( ( unloadcount > 0 ) || ( loadcount > 0 ) ) {
+            if( unloadcount > 0 || loadcount > 0 ) {
 
                 vehicle->LoadExchange( unloadcount, loadcount, Platform );
                 exchangetime = std::max( exchangetime, vehicle->LoadExchangeTime() );

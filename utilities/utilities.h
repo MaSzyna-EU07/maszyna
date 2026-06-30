@@ -17,7 +17,7 @@ http://mozilla.org/MPL/2.0/.
 
 template <typename T> T sign(T x)
 {
-	return x < static_cast<T>(0) ? static_cast<T>(-1) : (x > static_cast<T>(0) ? static_cast<T>(1) : static_cast<T>(0));
+	return x < static_cast<T>(0) ? static_cast<T>(-1) : x > static_cast<T>(0) ? static_cast<T>(1) : static_cast<T>(0);
 }
 
 template <typename T> constexpr T sq(T v)
@@ -99,11 +99,11 @@ double CompareTime(double t1h, double t1m, double t2h, double t2m);
 /*funkcje logiczne*/
 inline bool TestFlag(int const Flag, int const Value)
 {
-	return ((Flag & Value) == Value);
+	return (Flag & Value) == Value;
 }
 inline bool TestFlagAny(int const Flag, int const Value)
 {
-	return ((Flag & Value) != 0);
+	return (Flag & Value) != 0;
 }
 bool SetFlag(int &Flag, int const Value);
 bool ClearFlag(int &Flag, int const Value);
@@ -126,7 +126,7 @@ std::string to_minutes_str(float const Minutes, bool const Leadingzero, int cons
 template <std::same_as<bool> T> // Without this line this function can be used with other types implicit casted to boolean which may create hard to debug bugs.
 inline std::string to_string(T Value)
 {
-	return (Value == true ? "true" : "false");
+	return Value == true ? "true" : "false";
 }
 
 template <typename Type_, glm::precision Precision_ = glm::defaultp> std::string to_string(glm::tvec3<Type_, Precision_> const &Value)
@@ -241,7 +241,7 @@ template <typename T> bool is_equal(T const &Left, T const &Right, T const Epsil
 	if (Epsilon != T(0))
 		return glm::epsilonEqual(Left, Right, Epsilon);
 
-	return (Left == Right);
+	return Left == Right;
 }
 
 // keeps the provided value in specified range 0-Range, as if the range was circular buffer
@@ -278,7 +278,7 @@ template <typename T> T clamp_power_of_two(T Value, T const Min = T(1), T const 
 template <typename Type_> Type_ quantize(Type_ const Value, Type_ const Step)
 {
 
-	return (Step * std::round(Value / Step));
+	return Step * std::round(Value / Step);
 }
 
 template <typename T> T min_speed(T const Left, T const Right)
@@ -305,7 +305,7 @@ template <typename VecType_> bool degenerate(VecType_ const &Vertex1, VecType_ c
 {
 
 	//  degenerate( A, B, C, minarea ) = ( ( B - A ).cross( C - A ) ).lengthSquared() < ( 4.0f * minarea * minarea );
-	return (glm::length2(glm::cross(Vertex2 - Vertex1, Vertex3 - Vertex1)) == 0.0);
+	return glm::length2(glm::cross(Vertex2 - Vertex1, Vertex3 - Vertex1)) == 0.0;
 }
 
 // calculates bounding box for provided set of points
