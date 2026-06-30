@@ -36,7 +36,13 @@ inline std::array<bool, 256> makeBreakTable(const char *brk)
 
 inline char toLowerChar(char c)
 {
-	return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	// Only fold ASCII letters. Bytes >= 0x80 belong to multibyte UTF-8
+	// sequences and must be passed through untouched, otherwise a non-"C"
+	// global locale could remap them and corrupt UTF-8 encoded text.
+	const unsigned char uc = static_cast<unsigned char>(c);
+	if (uc < 0x80)
+		return static_cast<char>(std::tolower(uc));
+	return c;
 }
 
 inline bool startsWithBOM(const std::string &s)
