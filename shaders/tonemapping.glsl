@@ -69,12 +69,12 @@ vec3 Agx(vec3 val)
         0.0423756549057051, 0.0784336, 0.879142973793104
     );
 
-    // DEFAULT_LOG2_MIN = -10.0
-    // DEFAULT_LOG2_MAX = +6.5
+    // DEFAULT_LOG2_MIN = -6.0
+    // DEFAULT_LOG2_MAX = +4.5
     // MIDDLE_GRAY = 0.18
     // log2(pow(2, VALUE) * MIDDLE_GRAY)
-    const float min_ev = -12.47393;
-    const float max_ev = 0.526069;
+    const float min_ev = -8.47393;
+    const float max_ev = 2.026069;
     const float agx_eps = 1e-6;
 
     // Input transform (inset)
@@ -99,10 +99,7 @@ vec3 AgxEotf(vec3 val)
     // Inverse input transform (outset)
     val = agx_mat_inv * val;
 
-    // sRGB IEC 61966-2-1 2.2 Exponent Reference EOTF Display.
-    // If your render target already applies sRGB conversion, replace this with:
-    // return max(val, vec3(0.0));
-    return pow(max(val, vec3(0.0)), vec3(2.2));
+    return max(val, vec3(0.0));
 }
 
 vec3 AgxLook(vec3 val)
@@ -124,7 +121,7 @@ vec3 AgxLook(vec3 val)
     // Punchy
     slope = vec3(1.0);
     power = vec3(1.35);
-    sat = 1.4;
+    sat = 1.1;
 #endif
 
     // ASC CDL

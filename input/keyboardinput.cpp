@@ -302,10 +302,20 @@ keyboard_input::key( int const Key, int const Action ) {
     }
 
     // include active modifiers for currently pressed key, except if the key is a modifier itself
-    auto const key =
+    auto key =
         Key
         | ( modifier ? 0 : input::key_shift ? keymodifier::shift : 0 )
         | ( modifier ? 0 : input::key_ctrl ? keymodifier::control : 0 );
+
+    if( Action == GLFW_RELEASE ) {
+        auto const stored = m_modsforkeys.find( Key );
+        if( stored != m_modsforkeys.end() ) {
+            key = stored->second;
+        }
+        m_modsforkeys.erase( Key );
+    } else {
+        m_modsforkeys[ Key ] = key;
+    }
 
     auto const lookup = m_bindings.find( key );
     if( lookup == m_bindings.end() ) {

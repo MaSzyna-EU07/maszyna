@@ -496,7 +496,7 @@ void driver_mode::on_key(int const Key, int const Scancode, int const Action, in
 		if (Action == GLFW_PRESS)
 		{
 			// toggle picking mode
-			set_picking(!Global.ControlPicking);
+			set_picking(Global.shiftState ? true : (Global.ctrlState ? false : !Global.ControlPicking));
 		}
 	}
 

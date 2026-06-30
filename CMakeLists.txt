@@ -82,6 +82,7 @@ option(GENERATE_PDB "Generate executable with program debugging symbols" ON)
 option(ENABLE_MCC "Enable multicore compilation" ON)
 option(WITHDUMPGEN "Enable generating DMP files on crash" ON)
 option(ENABLE_AVX2 "Enable AVX2 instruction set (requires AVX2-capable CPU, Haswell/2013 or newer)" ON)
+option(ADD_VERSION_SUFFIX "Add date and commit hash to the executable name" ON)
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
 # vcpkg init
@@ -343,6 +344,11 @@ endif()
 configure_file("${CMAKE_SOURCE_DIR}/version_info.h.in" "${CMAKE_BINARY_DIR}/geninc/version_info.h")
 
 set (PREFIX "")
+set (SUFFIX "")
+
+if (ADD_VERSION_SUFFIX)
+	set (SUFFIX "_${SRC_SHORT_DATE}_${GIT_HASH}")
+endif()
 
 set(OPENVR_LIBRARY "openvr_api")
 set(OPENVR_INCLUDE_DIR "")
@@ -429,7 +435,7 @@ set_target_properties( ${PROJECT_NAME}
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     PDB_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/pdb"
-	OUTPUT_NAME "${PROJECT_NAME}${PREFIX}_${SRC_SHORT_DATE}_${GIT_HASH}"
+	OUTPUT_NAME "${PROJECT_NAME}${PREFIX}${SUFFIX}"
 	DEBUG_POSTFIX "_d"
 )
 
