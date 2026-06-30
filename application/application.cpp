@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "launcher/launchermode.h"
 
 #include "utilities/Globals.h"
+#include "utilities/utilities.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationsounds.h"
 #include "vehicle/Train.h"
@@ -1104,19 +1105,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 {
 	Global.asVersion = VERSION_INFO;
 
-	fs::path iniPath;
-
-#ifdef _WIN32
-	if (const char *appdata = std::getenv("APPDATA"))
-	{
-		iniPath = fs::path(appdata) / "MaSzyna" / "eu07.ini";
-	}
-#else
-	if (const char *home = std::getenv("HOME"))
-	{
-		iniPath = fs::path(home) / ".config" / "MaSzyna" / "eu07.ini";
-	}
-#endif
+	fs::path iniPath = user_config_path("eu07.ini");
 
 	if (!iniPath.empty() && fs::exists(iniPath))
 	{
