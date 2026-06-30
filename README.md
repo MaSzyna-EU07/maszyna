@@ -1,11 +1,14 @@
-![enter image description here](https://raw.githubusercontent.com/MaSzyna-EU07/maszyna/refs/heads/master/readme_header.png)
+
+![Repo banner](https://raw.githubusercontent.com/MaSzyna-EU07/maszyna/refs/heads/master/readme_header.png)
 
 # MaSzyna - Railway vehicle simulator
 
 
 [Website](https://eu07.pl/) · [Report an issue](https://github.com/MaSzyna-EU07/maszyna/issues) · [Community Discord](https://discord.gg/eu07) · [MaSzyna on Steam](https://store.steampowered.com/app/1033030/MaSzyna/) · [MaSzyna on Epic Games Store](https://store.epicgames.com/pl/p/maszyna-79052a)
 
-![Discord](https://img.shields.io/discord/1019306167803056158?style=flat-square&logo=discord&label=Discord&labelColor=white) ![AppVeyor Build](https://img.shields.io/appveyor/build/Hirek193/maszyna?style=flat-square) 
+![Discord](https://img.shields.io/discord/1019306167803056158?style=flat-square&logo=discord&label=Discord&labelColor=white) ![AppVeyor Build](https://img.shields.io/appveyor/build/Hirek193/maszyna?style=flat-square) ![Quality gate](https://img.shields.io/sonar/quality_gate/MaSzyna-EU07_maszyna?server=https%3A%2F%2Fsonarcloud.io&style=flat-square
+) ![Sonar cloud violations](https://img.shields.io/sonar/violations/MaSzyna-EU07_maszyna?server=https%3A%2F%2Fsonarcloud.io&format=long&style=flat-square
+) [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg?style=flat-square)](LICENSE) [![Last commit](https://img.shields.io/github/last-commit/MaSzyna-EU07/maszyna?style=flat-square&label=Last%20commit)](https://github.com/MaSzyna-EU07/maszyna/commits/master) [![Open issues](https://img.shields.io/github/issues/MaSzyna-EU07/maszyna?style=flat-square&label=Issues)](https://github.com/MaSzyna-EU07/maszyna/issues) [![Pull requests](https://img.shields.io/github/issues-pr/MaSzyna-EU07/maszyna?style=flat-square&label=Pull%20requests)](https://github.com/MaSzyna-EU07/maszyna/pulls) [![GitHub stars](https://img.shields.io/github/stars/MaSzyna-EU07/maszyna?style=flat-square&logo=github&label=Stars)](https://github.com/MaSzyna-EU07/maszyna/stargazers) [![GitHub forks](https://img.shields.io/github/forks/MaSzyna-EU07/maszyna?style=flat-square&logo=github&label=Forks)](https://github.com/MaSzyna-EU07/maszyna/forks) ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?style=flat-square&logo=cplusplus) ![Windows](https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square&logo=windows) ![Linux](https://img.shields.io/badge/platform-Linux-FCC624?style=flat-square&logo=linux&logoColor=black) ![OpenGL](https://img.shields.io/badge/OpenGL-3.3%2B-5586A4?style=flat-square&logo=opengl) 
 
 MaSzyna executable source code is licensed under the [MPL 2.0](https://www.mozilla.org/en-US/MPL/2.0/) and comes with a large pack of free assets under a [custom license](https://eu07.pl/docs/inne/readme_pliki/en-licence.html).
 
