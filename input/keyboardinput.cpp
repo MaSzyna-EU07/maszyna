@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/parser.h"
+#include "utilities/utilities.h"
 
 namespace input {
 
@@ -122,19 +123,8 @@ namespace fs = std::filesystem;
 bool
 keyboard_input::recall_bindings() {
 
-    fs::path iniPath;
+    fs::path iniPath = user_config_path("eu07_input-keyboard.ini");
 	std::string path = "";
-#ifdef _WIN32
-	if (const char *appdata = std::getenv("APPDATA"))
-	{
-		iniPath = fs::path(appdata) / "MaSzyna" / "eu07_input-keyboard.ini";
-	}
-#else
-	if (const char *home = std::getenv("HOME"))
-	{
-		iniPath = fs::path(home) / ".config" / "MaSzyna" / "eu07_input-keyboard.ini";
-	}
-#endif
 
 	if (!iniPath.empty() && fs::exists(iniPath))
 	{

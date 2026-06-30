@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "application/uilayer.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 
 auto const EU07_CONTROLLER_MOUSESLIDERSIZE{ 0.6 };
 
@@ -170,21 +171,9 @@ drivermouse_input::recall_bindings() {
 
     std::string filePath = "eu07_input-mouse.ini";
 
-#ifdef _WIN32
-	if (const char *appdata = std::getenv("APPDATA"))
-	{
-		fs::path appPath = fs::path(appdata) / "MaSzyna" / "eu07_input-mouse.ini";
-		if (fs::exists(appPath))
-			filePath = appPath.string();
-	}
-#else
-	if (const char *home = std::getenv("HOME"))
-	{
-		fs::path appPath = fs::path(home) / ".config" / "MaSzyna" / "eu07_input-mouse.ini";
-		if (fs::exists(appPath))
-			filePath = appPath.string();
-	}
-#endif 
+	fs::path appPath = user_config_path("eu07_input-mouse.ini");
+	if (!appPath.empty() && fs::exists(appPath))
+		filePath = appPath.string();
 
     cParser bindingparser(filePath.c_str(), cParser::buffer_FILE);
 

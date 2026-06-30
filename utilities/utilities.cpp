@@ -55,6 +55,22 @@ std::string Now()
 #endif
 }
 
+std::filesystem::path user_config_path(const std::string &filename)
+{
+	namespace fs = std::filesystem;
+#if defined(_WIN32)
+	if (const char *appdata = std::getenv("APPDATA"))
+		return fs::path(appdata) / "MaSzyna" / filename;
+#elif defined(__APPLE__)
+	if (const char *home = std::getenv("HOME"))
+		return fs::path(home) / "Library" / "Application Support" / "MaSzyna" / filename;
+#else
+	if (const char *home = std::getenv("HOME"))
+		return fs::path(home) / ".config" / "MaSzyna" / filename;
+#endif
+	return {}; // env var missing → caller falls back to CWD-relative filename
+}
+
 // zwraca różnicę czasu
 // jeśli pierwsza jest aktualna, a druga rozkładowa, to ujemna oznacza opóżnienie
 // na dłuższą metę trzeba uwzględnić datę, jakby opóżnienia miały przekraczać 12h (towarowych)

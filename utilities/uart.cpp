@@ -6,6 +6,7 @@
 #include "vehicle/Train.h"
 #include "utilities/parser.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 #include "simulation/simulationtime.h"
 #include "application/application.h"
 
@@ -192,21 +193,9 @@ uart_input::recall_bindings() {
     m_inputbindings.clear();
 	std::string filePath = "eu07_input-uart.ini";
 
-#ifdef _WIN32
-	if (const char *appdata = std::getenv("APPDATA"))
-	{
-		fs::path appPath = fs::path(appdata) / "MaSzyna" / "eu07_input-uart.ini";
-		if (fs::exists(appPath))
-			filePath = appPath.string();
-	}
-#else
-	if (const char *home = std::getenv("HOME"))
-	{
-		fs::path appPath = fs::path(home) / ".config" / "MaSzyna" / "eu07_input-uart.ini";
-		if (fs::exists(appPath))
-			filePath = appPath.string();
-	}
-#endif
+	fs::path appPath = user_config_path("eu07_input-uart.ini");
+	if (!appPath.empty() && fs::exists(appPath))
+		filePath = appPath.string();
 	cParser bindingparser(filePath.c_str(), cParser::buffer_FILE);
 	if (false == bindingparser.ok())
 	{

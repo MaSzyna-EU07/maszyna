@@ -25,6 +25,10 @@ template <typename T> constexpr T sq(T v)
 	return v * v;
 }
 
+// returns the per-user config path for `filename` (platform-specific dir),
+// or an empty path if the home/appdata env var is unavailable
+std::filesystem::path user_config_path(const std::string &filename);
+
 // TODO: Shouldn't this be in globals?
 namespace paths
 {
