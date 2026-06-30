@@ -95,9 +95,7 @@ gamepad_input::poll() {
                 // button pressed or released, both are important
                 on_button(
                     idx,
-                    ( buttons[ idx ] == 1 ?
-                        GLFW_PRESS :
-                        GLFW_RELEASE ) );
+                    buttons[idx] == 1 ? GLFW_PRESS : GLFW_RELEASE);
             }
             else {
                 // otherwise we only pass info about button being held down
@@ -156,21 +154,9 @@ bool
 gamepad_input::recall_bindings() {
 	std::string filePath = "eu07_input-gamepad.ini";
 
-#ifdef _WIN32
-	if (const char *appdata = std::getenv("APPDATA"))
-	{
-		fs::path appPath = fs::path(appdata) / "MaSzyna" / "eu07_input-gamepad.ini";
-		if (fs::exists(appPath))
-			filePath = appPath.string();
-	}
-#else
-	if (const char *home = std::getenv("HOME"))
-	{
-		fs::path appPath = fs::path(home) / ".config" / "MaSzyna" / "eu07_input-gamepad.ini";
-		if (fs::exists(appPath))
-			filePath = appPath.string();
-	}
-#endif
+	fs::path appPath = user_config_path("eu07_input-gamepad.ini");
+	if (!appPath.empty() && fs::exists(appPath))
+		filePath = appPath.string();
 
 	// bindingparser tworzony zawsze, z wybran� �cie�k�
 	cParser bindingparser(filePath.c_str(), cParser::buffer_FILE);
@@ -476,10 +462,7 @@ gamepad_input::process_axes() {
                     param = 0.0;
                 }
                 else {
-                    param = (
-                        param > 0.0 ?
-                            ( param - m_deadzone ) / ( 1.0 - m_deadzone ) :
-                            ( param + m_deadzone ) / ( 1.0 - m_deadzone ) );
+                    param = param > 0.0 ? (param - m_deadzone) / (1.0 - m_deadzone) : (param + m_deadzone) / (1.0 - m_deadzone);
                 }
                 if( param != 0.0 ) {
                     if( inputtype == input_type::value_invert ) {
@@ -515,8 +498,8 @@ gamepad_input::process_axes() {
         auto const param1 { std::get<0>( command.second ) };
         auto const param2 { std::get<1>( command.second ) };
         auto &lastparams { m_lastcommandparams[ command.first ] };
-        if( ( param1 != 0.0 ) || ( std::get<0>( lastparams ) != 0.0 )
-         || ( param2 != 0.0 ) || ( std::get<1>( lastparams ) != 0.0 ) ) {
+        if( param1 != 0.0 || std::get<0>(lastparams) != 0.0
+         || param2 != 0.0 || std::get<1>(lastparams) != 0.0 ) {
             m_relay.post(
                 command.first,
                 param1,

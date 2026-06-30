@@ -17,11 +17,11 @@ public:
         UID u;
         uint64_t a = gen();
         uint64_t b = gen();
-        for (int i = 0; i < 8; ++i) u.bytes[i] = uint8_t((a >> (i*8)) & 0xFF);
-        for (int i = 0; i < 8; ++i) u.bytes[8 + i] = uint8_t((b >> (i*8)) & 0xFF);
+        for (int i = 0; i < 8; ++i) u.bytes[i] = uint8_t(a >> (i * 8) & 0xFF);
+        for (int i = 0; i < 8; ++i) u.bytes[8 + i] = uint8_t(b >> (i * 8) & 0xFF);
 
-        u.bytes[6] = (u.bytes[6] & 0x0F) | 0x40;
-        u.bytes[8] = (u.bytes[8] & 0x3F) | 0x80;
+        u.bytes[6] = u.bytes[6] & 0x0F | 0x40;
+        u.bytes[8] = u.bytes[8] & 0x3F | 0x80;
 
         return u;
     }

@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "application/uilayer.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 
 auto const EU07_CONTROLLER_MOUSESLIDERSIZE{ 0.6 };
 
@@ -34,12 +35,12 @@ mouse_slider::bind( user_command const &Command ) {
         case user_command::jointcontrollerset:
         case user_command::mastercontrollerset:
         case user_command::secondcontrollerset: {
-            vehicle = ( train ? train->Controlled() : nullptr );
+            vehicle = train ? train->Controlled() : nullptr;
             break;
         }
         case user_command::trainbrakeset:
         case user_command::independentbrakeset: {
-            vehicle = ( train ? train->Occupied() : nullptr );
+            vehicle = train ? train->Occupied() : nullptr;
             break;
         }
         default: {
@@ -74,14 +75,8 @@ mouse_slider::bind( user_command const &Command ) {
             break;
         }
         case user_command::mastercontrollerset: {
-            m_valuerange = (
-                vehicle->CoupledCtrl ?
-                    vehicle->MainCtrlPosNo + vehicle->ScndCtrlPosNo :
-                    vehicle->MainCtrlPosNo );
-            m_value = (
-                vehicle->CoupledCtrl ?
-                    vehicle->MainCtrlPos + vehicle->ScndCtrlPos :
-                    vehicle->MainCtrlPos );
+            m_valuerange = vehicle->CoupledCtrl ? vehicle->MainCtrlPosNo + vehicle->ScndCtrlPosNo : vehicle->MainCtrlPosNo;
+            m_value = vehicle->CoupledCtrl ? vehicle->MainCtrlPos + vehicle->ScndCtrlPos : vehicle->MainCtrlPos;
             m_analogue = false;
             m_invertrange = false;
             break;
@@ -126,9 +121,7 @@ mouse_slider::bind( user_command const &Command ) {
 
     Application.set_cursor_pos(
         Global.window_size.y,
-        ( m_analogue ?
-            controledge - m_value * controlsize :
-            controledge - m_value * stepsize - 0.5 * stepsize ) );
+        m_analogue ? controledge - m_value * controlsize : controledge - m_value * stepsize - 0.5 * stepsize );
 }
 
 void
@@ -147,10 +140,7 @@ mouse_slider::on_move( double const Mousex, double const Mousey ) {
     auto const stepsize { controlsize / m_valuerange };
 
     auto mousey = std::clamp( Mousey, controledge - controlsize, controledge );
-    m_value = (
-        m_analogue ?
-            ( controledge - mousey ) / controlsize :
-            std::floor( ( controledge - mousey ) / stepsize ) );
+    m_value = m_analogue ? (controledge - mousey) / controlsize : std::floor((controledge - mousey) / stepsize);
     if( m_invertrange ) {
         m_value = ( m_analogue ? 1.0 : m_valuerange ) - m_value; }
 }
@@ -181,21 +171,9 @@ drivermouse_input::recall_bindings() {
 
     std::string filePath = "eu07_input-mouse.ini";
 
-#ifdef _WIN32
-	if (const char *appdata = std::getenv("APPDATA"))
-	{
-		fs::path appPath = fs::path(appdata) / "MaSzyna" / "eu07_input-mouse.ini";
-		if (fs::exists(appPath))
-			filePath = appPath.string();
-	}
-#else
-	if (const char *home = std::getenv("HOME"))
-	{
-		fs::path appPath = fs::path(home) / ".config" / "MaSzyna" / "eu07_input-mouse.ini";
-		if (fs::exists(appPath))
-			filePath = appPath.string();
-	}
-#endif 
+	fs::path appPath = user_config_path("eu07_input-mouse.ini");
+	if (!appPath.empty() && fs::exists(appPath))
+		filePath = appPath.string();
 
     cParser bindingparser(filePath.c_str(), cParser::buffer_FILE);
 
@@ -309,7 +287,7 @@ drivermouse_input::scroll( double const Xoffset, double const Yoffset ) {
         // TODO: allow configurable scroll commands
         auto command {
             adjust_command(
-                ( Yoffset > 0.0 ) ?
+                Yoffset > 0.0 ?
                     m_wheelbindings.up :
                     m_wheelbindings.down ) };
 
@@ -340,24 +318,20 @@ drivermouse_input::button( int const Button, int const Action ) {
             if( Action == GLFW_PRESS ) {
                 GfxRenderer->Pick_Node_Callback(
                     [this](scene::basic_node *node) {
-                        if( ( node == nullptr )
-                         || ( typeid( *node ) != typeid( TAnimModel ) ) )
+                        if( node == nullptr
+                         || typeid(*node) != typeid(TAnimModel) )
                             return;
                         simulation::Region->on_click( static_cast<TAnimModel const *>( node ) ); } );
             }
         }
         // right button controls panning
         if( Button == GLFW_MOUSE_BUTTON_RIGHT ) {
-            m_pickmodepanning = ( Action == GLFW_PRESS );
+            m_pickmodepanning = Action == GLFW_PRESS;
         }
     }
     else {
         // cab controls mode
-        user_command &mousecommand = (
-            Button == GLFW_MOUSE_BUTTON_LEFT ?
-                m_mousecommandleft :
-                m_mousecommandright
-            );
+        user_command &mousecommand = Button == GLFW_MOUSE_BUTTON_LEFT ? m_mousecommandleft : m_mousecommandright;
 
         if( Action == GLFW_RELEASE ) {
             if( mousecommand != user_command::none ) {
@@ -401,11 +375,7 @@ drivermouse_input::button( int const Button, int const Action ) {
 
                     auto const controlbindings { bindings( simulation::Train->GetLabel( control ) ) };
                     // if the recognized element under the cursor has a command associated with the pressed button, notify the recipient
-                    mousecommand = (
-                        Button == GLFW_MOUSE_BUTTON_LEFT ?
-                            controlbindings.first :
-                            controlbindings.second
-                        );
+                    mousecommand = Button == GLFW_MOUSE_BUTTON_LEFT ? controlbindings.first : controlbindings.second;
 
                     if( mousecommand == user_command::none ) {
                         // if we don't have any recognized element under the cursor and the right button was pressed, enter view panning mode
@@ -504,10 +474,7 @@ drivermouse_input::poll() {
 user_command
 drivermouse_input::command() const {
 
-    return (
-        m_slider.command() != user_command::none ? m_slider.command() :
-        m_mousecommandleft != user_command::none ? m_mousecommandleft :
-        m_mousecommandright );
+    return m_slider.command() != user_command::none ? m_slider.command() : m_mousecommandleft != user_command::none ? m_mousecommandleft : m_mousecommandright;
 }
 
 // returns pair of bindings associated with specified cab control
@@ -1151,8 +1118,8 @@ drivermouse_input::default_bindings() {
 user_command
 drivermouse_input::adjust_command( user_command Command ) {
 
-    if( ( true == Global.shiftState )
-     && ( Command != user_command::none ) ) {
+    if( true == Global.shiftState
+     && Command != user_command::none ) {
         switch( Command ) {
             case user_command::mastercontrollerincrease: { Command = user_command::mastercontrollerincreasefast; break; }
             case user_command::mastercontrollerdecrease: { Command = user_command::mastercontrollerdecreasefast; break; }

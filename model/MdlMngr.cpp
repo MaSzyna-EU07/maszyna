@@ -81,8 +81,8 @@ TModelsManager::GetModel(std::string const &Name, bool const Dynamic, bool const
     // - wczytanie modelu animowanego - Init() - sprawdzić
     std::string const buftp { Global.asCurrentTexturePath }; // zapamiętanie aktualnej ścieżki do tekstur,
     std::string filename { Name };
-    if( ( false == Dynamic )
-     && ( contains( Name, '/' ) ) ) {
+    if( false == Dynamic
+     && contains(Name, '/') ) {
         // pobieranie tekstur z katalogu, w którym jest model
         // when loading vehicles the path is set by the calling routine, so we can skip it here
         Global.asCurrentTexturePath += Name;
@@ -144,10 +144,7 @@ TModelsManager::find_on_disk( std::string const &Name ) {
     std::vector<std::string> extensions { { ".e3d" }, { ".t3d" } };
     for( auto const &extension : extensions ) {
 
-        auto lookup = (
-            FileExists( Name + extension ) ? Name :
-            FileExists( paths::models + Name + extension ) ? paths::models + Name :
-            "" );
+        auto lookup = FileExists(Name + extension) ? Name : FileExists(paths::models + Name + extension) ? paths::models + Name : "";
         if( false == lookup.empty() ) {
             return lookup;
         }

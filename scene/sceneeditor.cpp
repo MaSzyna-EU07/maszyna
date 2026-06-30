@@ -140,8 +140,8 @@ basic_editor::rotate( scene::basic_node *Node, glm::vec3 const &Angle, float con
 
     // quantize resulting angle if requested and type of the node allows it
     // TBD, TODO: angle quantization for types other than instanced models
-    if( ( Quantization > 0.f )
-     && ( typeid( *Node ) == typeid( TAnimModel ) ) ) {
+    if( Quantization > 0.f
+     && typeid(*Node) == typeid(TAnimModel) ) {
 
         auto const initialangle { static_cast<TAnimModel *>( Node )->Angles() };
         rotation += initialangle;

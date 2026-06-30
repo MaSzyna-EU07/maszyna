@@ -38,12 +38,12 @@ node_groups::close()
         auto const closinggroup { m_activegroup.top() };
         m_activegroup.pop();
         // if the completed group holds only one item and there's no chance more items will be added, disband it
-        if( ( true == m_activegroup.empty() )
-         || ( m_activegroup.top() != closinggroup ) ) {
+        if( true == m_activegroup.empty()
+         || m_activegroup.top() != closinggroup ) {
 
             auto lookup { m_groupmap.find( closinggroup ) };
-            if( ( lookup != m_groupmap.end() )
-             && ( ( lookup->second.nodes.size() + lookup->second.events.size() ) <= 1 ) ) {
+            if( lookup != m_groupmap.end()
+             && lookup->second.nodes.size() + lookup->second.events.size() <= 1 ) {
 
 				erase( lookup );
             }
@@ -92,7 +92,7 @@ bool node_groups::assign_cross_switch(map::track_switch& sw, std::string &sw_nam
         else
             pos = 3;
 
-        sw.preview[idx][pos] = ((pos_0 > pos_1) ? '0' : '1');
+        sw.preview[idx][pos] = pos_0 > pos_1 ? '0' : '1';
     }
 
     return true;
@@ -231,10 +231,7 @@ node_groups::update_map()
 group_handle
 node_groups::handle() const {
 
-    return (
-        m_activegroup.empty() ?
-            null_handle :
-            m_activegroup.top() );
+    return m_activegroup.empty() ? null_handle : m_activegroup.top();
 }
 
 // places provided node in specified group
@@ -279,8 +276,8 @@ node_groups::export_as_text( std::ostream &Output, bool Dirty ) const {
 				continue;
             // HACK: auto-generated memory cells aren't exported, so we check for this
             // TODO: is_exportable as basic_node method
-            if( ( typeid( *node ) == typeid( TMemCell ) )
-             && ( false == static_cast<TMemCell *>( node )->is_exportable ) ) {
+            if( typeid(*node) == typeid(TMemCell)
+             && false == static_cast<TMemCell *>(node)->is_exportable ) {
                 continue;
             }
 
@@ -322,10 +319,8 @@ node_groups::erase( group_map::const_iterator Group ) {
 group_handle
 node_groups::create_handle() {
     // NOTE: for simplification nested group structure are flattened
-    return(
-        m_activegroup.empty() ?
-            m_groupmap.size() + 1 : // new group isn't created until node registration
-            m_activegroup.top() );
+    return m_activegroup.empty() ? m_groupmap.size() + 1 : // new group isn't created until node registration
+	                               m_activegroup.top();
 }
 
 } // scene

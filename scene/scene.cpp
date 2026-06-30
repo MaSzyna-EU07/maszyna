@@ -34,9 +34,9 @@ void
 basic_cell::on_click( TAnimModel const *Instance ) {
 
     for( auto *launcher : m_eventlaunchers ) {
-        if( ( launcher->name() == Instance->name() )
-         && ( glm::length2( launcher->location() - Instance->location() ) < launcher->dRadius )
-         && ( true == launcher->check_conditions() ) ) {
+        if( launcher->name() == Instance->name()
+         && glm::length2(launcher->location() - Instance->location()) < launcher->dRadius
+         && true == launcher->check_conditions() ) {
             launch_event( launcher, true );
         }
     }
@@ -52,8 +52,8 @@ basic_cell::update_traction( TDynamicObject *Vehicle, int const Pantographindex 
 	auto const position = Vehicle->GetPosition(); // współrzędne środka pojazdu
 
     auto pantograph = Vehicle->pants[ Pantographindex ].fParamPants;
-    auto const pantographposition = position + ( vLeft * pantograph->vPos.z ) + ( vUp * pantograph->vPos.y ) + ( vFront * pantograph->vPos.x );
-    
+    auto const pantographposition = position + vLeft * pantograph->vPos.z + vUp * pantograph->vPos.y + vFront * pantograph->vPos.x;
+
     for( auto *traction : m_directories.traction ) {
 
         // współczynniki równania parametrycznego
@@ -64,8 +64,8 @@ basic_cell::update_traction( TDynamicObject *Vehicle, int const Pantographindex 
                     paramfrontdot :
                     0.001 ); // div0 trap
 
-        if( ( fRaParam < -0.001 )
-         || ( fRaParam >  1.001 ) ) { continue; }
+        if( fRaParam < -0.001
+         || fRaParam > 1.001 ) { continue; }
         // jeśli tylko jest w przedziale, wyznaczyć odległość wzdłuż wektorów vUp i vLeft
         // punkt styku płaszczyzny z drutem (dla generatora łuku el.)
         auto const vStyk = traction->pPoint1 + fRaParam * traction->vParametric;
@@ -76,8 +76,8 @@ basic_cell::update_traction( TDynamicObject *Vehicle, int const Pantographindex 
             // jeśli ponad pantografem (bo może łapać druty spod wiaduktu)
             auto const fHorizontal = std::abs( glm::dot( vGdzie, vLeft ) ) - pantograph->fWidth;
 
-            if( ( Global.bEnableTraction )
-             && ( fVertical < pantograph->PantWys - 0.15 ) ) {
+            if (Global.bEnableTraction
+             && fVertical < pantograph->PantWys - 0.15 ) {
                 // jeśli drut jest niżej niż 15cm pod ślizgiem przełączamy w tryb połamania, o ile jedzie;
                 // (bEnableTraction) aby dało się jeździć na koślawych sceneriach
                 // i do tego jeszcze wejdzie pod ślizg
@@ -185,8 +185,8 @@ basic_cell::RaTrackAnimAdd( TTrack *Track ) {
 void
 basic_cell::RaAnimate( unsigned int const Framestamp ) {
 
-    if( ( tTrackAnim == nullptr )
-     || ( Framestamp == m_framestamp ) ) {
+    if( tTrackAnim == nullptr
+     || Framestamp == m_framestamp ) {
         // nie ma nic do animowania
         return;
     }
@@ -244,11 +244,7 @@ basic_cell::deserialize( std::istream &Input ) {
         m_lines.emplace_back( lines_node().deserialize( Input ) );
     }
     // cell activation flag
-    m_active = (
-        ( true == m_active )
-     || ( false == m_shapesopaque.empty() )
-     || ( false == m_shapestranslucent.empty() )
-     || ( false == m_lines.empty() ) );
+    m_active = true == m_active || false == m_shapesopaque.empty() || false == m_shapestranslucent.empty() || false == m_lines.empty();
 }
 
 // sends content of the class in legacy (text) format to provided stream
@@ -274,18 +270,15 @@ basic_cell::insert( shape_node Shape ) {
 	    glm::length( m_area.center - Shape.data().area.center ) + Shape.radius() );
 
     auto const &shapedata { Shape.data() };
-    auto &shapes = (
-        shapedata.translucent ?
-            m_shapestranslucent :
-            m_shapesopaque );
+    auto &shapes = shapedata.translucent ? m_shapestranslucent : m_shapesopaque;
     for( auto &targetshape : shapes ) {
         // try to merge shapes with matching view ranges...
         auto const &targetshapedata { targetshape.data() };
-        if( ( shapedata.rangesquared_min == targetshapedata.rangesquared_min )
-         && ( shapedata.rangesquared_max == targetshapedata.rangesquared_max )
+        if( shapedata.rangesquared_min == targetshapedata.rangesquared_min
+         && shapedata.rangesquared_max == targetshapedata.rangesquared_max
         // ...and located close to each other (within arbitrary limit of 25m)
 		    // length2 is better than length for comparing because it does not require sqrt function
-         && ( glm::length2( shapedata.area.center - targetshapedata.area.center ) < sq(25.0) ) ) {
+         && glm::length2(shapedata.area.center - targetshapedata.area.center) < sq(25.0) ) {
 
             if( true == targetshape.merge( Shape ) ) {
                 // if the shape was merged there's nothing left to do
@@ -308,11 +301,11 @@ basic_cell::insert( lines_node Lines ) {
     for( auto &targetlines : m_lines ) {
         // try to merge shapes with matching view ranges...
         auto const &targetlinesdata { targetlines.data() };
-        if( ( linesdata.rangesquared_min == targetlinesdata.rangesquared_min )
-         && ( linesdata.rangesquared_max == targetlinesdata.rangesquared_max )
+        if( linesdata.rangesquared_min == targetlinesdata.rangesquared_min
+         && linesdata.rangesquared_max == targetlinesdata.rangesquared_max
         // ...and located close to each other (within arbitrary limit of 10m)
 		    // length2 is better than length for comparing because it does not require sqrt function
-         && ( glm::length2( linesdata.area.center - targetlinesdata.area.center ) < sq(10.0) ) ) {
+         && glm::length2(linesdata.area.center - targetlinesdata.area.center) < sq(10.0) ) {
 
             if( true == targetlines.merge( Lines ) ) {
                 // if the shape was merged there's nothing left to do
@@ -361,9 +354,7 @@ basic_cell::insert( TAnimModel *Instance ) {
 
     auto const flags = Instance->Flags();
     auto alpha =
-        ( Instance->Material() != nullptr ?
-            Instance->Material()->textures_alpha :
-            0x30300030 );
+        Instance->Material() != nullptr ? Instance->Material()->textures_alpha : 0x30300030;
 
     // assign model to appropriate render phases
     if( alpha & flags & 0x2F2F002F ) {
@@ -431,9 +422,7 @@ basic_cell::erase( TAnimModel *Instance ) {
 
     auto const flags = Instance->Flags();
     auto alpha =
-        ( Instance->Material() != nullptr ?
-            Instance->Material()->textures_alpha :
-            0x30300030 );
+        Instance->Material() != nullptr ? Instance->Material()->textures_alpha : 0x30300030;
 
     if( alpha & flags & 0x2F2F002F ) {
         // instance has translucent pieces
@@ -524,8 +513,8 @@ basic_cell::find( glm::dvec3 const &Point, float const Radius, bool const Onlyco
 
     for( auto *path : m_paths ) {
         for( auto *vehicle : path->Dynamics ) {
-            if( ( true == Onlycontrolled )
-             && ( vehicle->Mechanik == nullptr ) ) {
+            if( true == Onlycontrolled
+             && vehicle->Mechanik == nullptr ) {
                 continue;
             }
             if( false == Findbycoupler ) {
@@ -538,8 +527,8 @@ basic_cell::find( glm::dvec3 const &Point, float const Radius, bool const Onlyco
                     glm::length2( glm::dvec3{ vehicle->HeadPosition() } - Point ),
                     glm::length2( glm::dvec3{ vehicle->RearPosition() } - Point ) );
             }
-            if( ( distance > distancecutoff )
-             || ( distance > leastdistance ) ){
+            if( distance > distancecutoff
+             || distance > leastdistance ){
                 continue;
             }
             std::tie( vehiclenearest, leastdistance ) = std::tie( vehicle, distance );
@@ -599,19 +588,16 @@ basic_cell::find( glm::dvec3 const &Point, TTraction const *Other, int const Cur
 
     for( auto *traction : m_directories.traction ) {
 
-        if( ( traction == Other )
-         || ( traction->psSection != Other->psSection )
-         || ( traction == Other->hvNext[ 0 ] )
-         || ( traction == Other->hvNext[ 1 ] ) ) {
+        if( traction == Other
+         || traction->psSection != Other->psSection
+         || traction == Other->hvNext[0]
+         || traction == Other->hvNext[1] ) {
             // ignore pieces from different sections, and ones connected to the other piece
             continue;
         }
-        endpoint = (
-            glm::dot( traction->vParametric, Other->vParametric ) >= 0.0 ?
-                Currentdirection ^ 1 :
-                Currentdirection );
-        if( ( traction->psPower[ endpoint ] == nullptr )
-         || ( traction->fResistance[ endpoint ] < 0.0 ) ) {
+        endpoint = glm::dot(traction->vParametric, Other->vParametric) >= 0.0 ? Currentdirection ^ 1 : Currentdirection;
+        if( traction->psPower[endpoint] == nullptr
+         || traction->fResistance[endpoint] < 0.0 ) {
             continue;
         }
         distance = glm::length2( traction->location() - Point );
@@ -728,7 +714,7 @@ basic_section::update_traction( TDynamicObject *Vehicle, int const Pantographind
 	auto const position = Vehicle->GetPosition(); // współrzędne środka pojazdu
 
     auto pantograph = Vehicle->pants[ Pantographindex ].fParamPants;
-    auto const pantographposition = position + ( vLeft * pantograph->vPos.z ) + ( vUp * pantograph->vPos.y ) + ( vFront * pantograph->vPos.x );
+    auto const pantographposition = position + vLeft * pantograph->vPos.z + vUp * pantograph->vPos.y + vFront * pantograph->vPos.x;
 
     auto const radius { EU07_CELLSIZE * 0.5 }; // redius around point of interest
 
@@ -802,7 +788,7 @@ basic_section::serialize( std::ostream &Output ) const {
     // all done; calculate and record section size
     auto const sectionendpos { Output.tellp() };
     Output.seekp( sectionstartpos );
-    sn_utils::ls_uint32( Output, static_cast<uint32_t>( ( sizeof( uint32_t ) + ( sectionendpos - sectionstartpos ) ) ) );
+    sn_utils::ls_uint32( Output, static_cast<uint32_t>( sizeof(uint32_t) + (sectionendpos - sectionstartpos) ) );
     Output.seekp( sectionendpos );
 }
 
@@ -845,9 +831,9 @@ basic_section::insert( shape_node Shape ) {
         m_area.radius,
 	    static_cast<float>( glm::length( m_area.center - shapedata.area.center ) + Shape.radius() ) );
 
-    if( ( true == shapedata.translucent )
-     || ( shapedata.rangesquared_max <= 90000.0 )
-     || ( shapedata.rangesquared_min > 0.0 ) ) {
+    if( true == shapedata.translucent
+     || shapedata.rangesquared_max <= 90000.0
+     || shapedata.rangesquared_min > 0.0 ) {
         // small, translucent or not always visible shapes are placed in the sub-cells
         cell( shapedata.area.center ).insert( Shape );
     }
@@ -891,8 +877,8 @@ basic_section::find( glm::dvec3 const &Point, float const Radius, bool const Onl
             continue;
         }
         std::tie( vehiclefound, distancefound ) = cell.find( Point, Radius, Onlycontrolled, Findbycoupler );
-        if( ( vehiclefound != nullptr )
-         && ( distancefound < distancenearest ) ) {
+        if( vehiclefound != nullptr
+         && distancefound < distancenearest ) {
 
             std::tie( vehiclenearest, distancenearest ) = std::tie( vehiclefound, distancefound );
         }
@@ -937,8 +923,8 @@ basic_section::find( glm::dvec3 const &Point, TTraction const *Other, int const 
             continue;
         }
         std::tie( tractionfound, endpointfound, distancefound ) = cell.find( Point, Other, Currentdirection );
-        if( ( tractionfound != nullptr )
-         && ( distancefound < distancenearest ) ) {
+        if( tractionfound != nullptr
+         && distancefound < distancenearest ) {
 
             std::tie( tractionnearest, endpointnearest, distancenearest ) = std::tie( tractionfound, endpointfound, distancefound );
         }
@@ -1032,8 +1018,8 @@ basic_section::cell( glm::dvec3 const &Location, const glm::ivec2 &offset ) {
 
     return
         m_cells[
-              std::clamp( row,    0, ( EU07_SECTIONSIZE / EU07_CELLSIZE ) - 1 ) * ( EU07_SECTIONSIZE / EU07_CELLSIZE )
-            + std::clamp( column, 0, ( EU07_SECTIONSIZE / EU07_CELLSIZE ) - 1 ) ] ;
+              std::clamp( row,    0, EU07_SECTIONSIZE / EU07_CELLSIZE - 1 ) * ( EU07_SECTIONSIZE / EU07_CELLSIZE )
+            + std::clamp( column, 0, EU07_SECTIONSIZE / EU07_CELLSIZE - 1 ) ] ;
 }
 
 
@@ -1052,7 +1038,7 @@ basic_region::~basic_region() {
 void
 basic_region::on_click( TAnimModel const *Instance ) {
 
-    if( Instance->name().empty() || ( Instance->name() == "none" ) ) { return; }
+    if( Instance->name().empty() || Instance->name() == "none" ) { return; }
 
     auto const& location { Instance->location() };
 
@@ -1096,7 +1082,7 @@ basic_region::update_traction( TDynamicObject *Vehicle, int const Pantographinde
 	auto const position = Vehicle->GetPosition(); // współrzędne środka pojazdu
 
     auto p = Vehicle->pants[ Pantographindex ].fParamPants;
-    auto const pant0 = position + ( vLeft * p->vPos.z ) + ( vUp * p->vPos.y ) + ( vFront * p->vPos.x );
+    auto const pant0 = position + vLeft * p->vPos.z + vUp * p->vPos.y + vFront * p->vPos.x;
     p->PantTraction = std::numeric_limits<double>::max(); // taka za duża wartość
 
     auto const &sectionlist = sections( pant0, EU07_CELLSIZE * 0.5 );
@@ -1127,8 +1113,7 @@ basic_region::is_scene( std::string const &Scenariofile ) const {
     uint32_t headermain{ sn_utils::ld_uint32( input ) };
     uint32_t headertype{ sn_utils::ld_uint32( input ) };
 
-    if( ( headermain != EU07_FILEHEADER
-     || ( headertype != EU07_FILEVERSION_REGION ) ) ) {
+    if( headermain != EU07_FILEHEADER || headertype != EU07_FILEVERSION_REGION ) {
         // wrong file type
         return false;
     }
@@ -1199,8 +1184,7 @@ basic_region::deserialize( std::string const &Scenariofile ) {
     uint32_t headermain { sn_utils::ld_uint32( input ) };
     uint32_t headertype { sn_utils::ld_uint32( input ) };
 
-    if( ( headermain != EU07_FILEHEADER
-     || ( headertype != EU07_FILEVERSION_REGION ) ) ) {
+    if( headermain != EU07_FILEHEADER || headertype != EU07_FILEVERSION_REGION ) {
         // wrong file type
         WriteLog( "Bad file: \"" + filename + "\" is of either unrecognized type or version" );
         return false;
@@ -1326,8 +1310,8 @@ basic_region::insert( shape_node Shape, scratch_data &Scratchpad, bool const Tra
                 vertex.normal = glm::rotateY( vertex.normal, rotation.y );
             }
         }
-        if( ( false == Scratchpad.location.offset.empty() )
-         && ( Scratchpad.location.offset.top() != glm::dvec3( 0, 0, 0 ) ) ) {
+        if( false == Scratchpad.location.offset.empty()
+         && Scratchpad.location.offset.top() != glm::dvec3(0, 0, 0) ) {
             // ...and move
             auto const& offset = Scratchpad.location.offset.top();
             for( auto &vertex : shape.m_data.vertices ) {
@@ -1380,8 +1364,8 @@ basic_region::insert( lines_node Lines, scratch_data &Scratchpad ) {
             vertex.position = glm::rotateY<double>( vertex.position, rotation.y );
         }
     }
-    if( ( false == Scratchpad.location.offset.empty() )
-     && ( Scratchpad.location.offset.top() != glm::dvec3( 0, 0, 0 ) ) ) {
+    if( false == Scratchpad.location.offset.empty()
+     && Scratchpad.location.offset.top() != glm::dvec3(0, 0, 0) ) {
         // ...and move
         auto const &offset = Scratchpad.location.offset.top();
         for( auto &vertex : Lines.m_data.vertices ) {
@@ -1424,8 +1408,8 @@ basic_region::find_vehicle( glm::dvec3 const &Point, float const Radius, bool co
 
     for( auto *section : sectionlist ) {
         std::tie( foundvehicle, founddistance ) = section->find( Point, Radius, Onlycontrolled, Findbycoupler );
-        if( ( foundvehicle != nullptr )
-         && ( founddistance < nearestdistance ) ) {
+        if( foundvehicle != nullptr
+         && founddistance < nearestdistance ) {
 
             std::tie( nearestvehicle, nearestdistance ) = std::tie( foundvehicle, founddistance );
         }
@@ -1477,8 +1461,8 @@ basic_region::find_traction( glm::dvec3 const &Point, TTraction const *Other, in
 
     for( auto *section : sectionlist ) {
         std::tie( tractionfound, endpointfound, distancefound ) = section->find( Point, Other, Currentdirection );
-        if( ( tractionfound != nullptr )
-         && ( distancefound < distancenearest ) ) {
+        if( tractionfound != nullptr
+         && distancefound < distancenearest ) {
 
             std::tie( tractionnearest, endpointnearest, distancenearest ) = std::tie( tractionfound, endpointfound, distancefound );
         }
@@ -1509,8 +1493,8 @@ basic_region::sections( glm::dvec3 const &Point, float const Radius ) {
             if( column >= EU07_REGIONSIDESECTIONCOUNT ) { break; }
 
             auto *section { m_sections[ row * EU07_REGIONSIDESECTIONCOUNT + column ] };
-            if( ( section != nullptr )
-             && ( glm::length2( section->area().center - Point ) <= sq( section->area().radius + padding + Radius ) ) ) {
+            if( section != nullptr
+             && glm::length2(section->area().center - Point) <= sq(section->area().radius + padding + Radius) ) {
 
                 m_scratchpad.sections.emplace_back( section );
             }
@@ -1524,8 +1508,7 @@ bool
 basic_region::point_inside( glm::dvec3 const &Location ) {
 
     double const regionboundary = EU07_REGIONSIDESECTIONCOUNT / 2 * EU07_SECTIONSIZE;
-    return ( ( Location.x > -regionboundary ) && ( Location.x < regionboundary )
-          && ( Location.z > -regionboundary ) && ( Location.z < regionboundary ) );
+    return Location.x > -regionboundary && Location.x < regionboundary && Location.z > -regionboundary && Location.z < regionboundary;
 }
 
 // trims provided shape to fit into a section, adds trimmed part at the end of provided list
@@ -1544,12 +1527,12 @@ basic_region::RaTriangleDivider( shape_node &Shape, std::deque<shape_node> &Shap
     auto z0 = EU07_SECTIONSIZE * std::floor( 0.001 * Shape.m_data.area.center.z ) - margin;
     auto z1 = z0 + EU07_SECTIONSIZE + margin * 2;
 
-    if( ( Shape.m_data.vertices[ 0 ].position.x >= x0 ) && ( Shape.m_data.vertices[ 0 ].position.x <= x1 )
-     && ( Shape.m_data.vertices[ 0 ].position.z >= z0 ) && ( Shape.m_data.vertices[ 0 ].position.z <= z1 )
-     && ( Shape.m_data.vertices[ 1 ].position.x >= x0 ) && ( Shape.m_data.vertices[ 1 ].position.x <= x1 )
-     && ( Shape.m_data.vertices[ 1 ].position.z >= z0 ) && ( Shape.m_data.vertices[ 1 ].position.z <= z1 )
-     && ( Shape.m_data.vertices[ 2 ].position.x >= x0 ) && ( Shape.m_data.vertices[ 2 ].position.x <= x1 )
-     && ( Shape.m_data.vertices[ 2 ].position.z >= z0 ) && ( Shape.m_data.vertices[ 2 ].position.z <= z1 ) ) {
+    if( Shape.m_data.vertices[0].position.x >= x0 && Shape.m_data.vertices[0].position.x <= x1
+     && Shape.m_data.vertices[0].position.z >= z0 && Shape.m_data.vertices[0].position.z <= z1
+     && Shape.m_data.vertices[1].position.x >= x0 && Shape.m_data.vertices[1].position.x <= x1
+     && Shape.m_data.vertices[1].position.z >= z0 && Shape.m_data.vertices[1].position.z <= z1
+     && Shape.m_data.vertices[2].position.x >= x0 && Shape.m_data.vertices[2].position.x <= x1
+     && Shape.m_data.vertices[2].position.z >= z0 && Shape.m_data.vertices[2].position.z <= z1 ) {
         // trójkąt wystający mniej niż 200m z kw. kilometrowego jest do przyjęcia
         return false;
     }
@@ -1649,17 +1632,13 @@ basic_region::RaTriangleDivider( shape_node &Shape, std::deque<shape_node> &Shap
                 Shape.m_data.vertices[ 1 ].set_from_z(
                     Shape.m_data.vertices[ 0 ],
                     Shape.m_data.vertices[ 1 ],
-                    ( ( divide & 8 ) ?
-                        z1 :
-                        z0 ) );
+                    divide & 8 ? z1 : z0 );
             }
             else {
                 Shape.m_data.vertices[ 1 ].set_from_x(
                     Shape.m_data.vertices[ 0 ],
                     Shape.m_data.vertices[ 1 ],
-                    ( ( divide & 8 ) ?
-                        x1 :
-                        x0 ) );
+                    divide & 8 ? x1 : x0 );
             }
             newshape.m_data.vertices[ 0 ] = Shape.m_data.vertices[ 1 ]; // wierzchołek D jest wspólny
             break;
@@ -1672,17 +1651,13 @@ basic_region::RaTriangleDivider( shape_node &Shape, std::deque<shape_node> &Shap
                 Shape.m_data.vertices[ 2 ].set_from_z(
                     Shape.m_data.vertices[ 1 ],
                     Shape.m_data.vertices[ 2 ],
-                    ( ( divide & 8 ) ?
-                        z1 :
-                        z0 ) );
+                    divide & 8 ? z1 : z0 );
             }
             else {
                 Shape.m_data.vertices[ 2 ].set_from_x(
                     Shape.m_data.vertices[ 1 ],
                     Shape.m_data.vertices[ 2 ],
-                    ( ( divide & 8 ) ?
-                        x1 :
-                        x0 ) );
+                    divide & 8 ? x1 : x0 );
             }
             newshape.m_data.vertices[ 1 ] = Shape.m_data.vertices[ 2 ]; // wierzchołek D jest wspólny
             break;
@@ -1695,17 +1670,13 @@ basic_region::RaTriangleDivider( shape_node &Shape, std::deque<shape_node> &Shap
                 Shape.m_data.vertices[ 2 ].set_from_z(
                     Shape.m_data.vertices[ 2 ],
                     Shape.m_data.vertices[ 0 ],
-                    ( ( divide & 8 ) ?
-                        z1 :
-                        z0 ) );
+                    divide & 8 ? z1 : z0 );
             }
             else {
                 Shape.m_data.vertices[ 2 ].set_from_x(
                     Shape.m_data.vertices[ 2 ],
                     Shape.m_data.vertices[ 0 ],
-                    ( ( divide & 8 ) ?
-                        x1 :
-                        x0 ) );
+                    divide & 8 ? x1 : x0 );
             }
             newshape.m_data.vertices[ 0 ] = Shape.m_data.vertices[ 2 ]; // wierzchołek D jest wspólny
             break;

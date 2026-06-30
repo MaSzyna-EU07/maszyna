@@ -101,7 +101,7 @@ void ui::vehicles_bank::parse_category_entry(const std::string &param)
 void ui::vehicles_bank::parse_controllable_entry(const std::string &target, const std::string &param)
 {
 	get_vehicle(target)->controllable =
-	        (param.size() >= 1 && param[0] == '1');
+	        param.size() >= 1 && param[0] == '1';
 }
 
 void ui::vehicles_bank::parse_texture_info(const std::string &target, const std::string &param, std::shared_ptr<skin_meta> meta)

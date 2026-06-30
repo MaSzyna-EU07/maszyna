@@ -31,7 +31,7 @@ TController::update_hints() {
 
     m_hints.remove_if(
         []( auto const &Hint ) {
-            return ( std::get<hintpredicate>( Hint )( std::get<float>( Hint ) ) ); } );
+            return std::get<hintpredicate>(Hint)(std::get<float>(Hint)); } );
 }
 
 void
@@ -39,7 +39,7 @@ TController::remove_hint( driver_hint const Value ) {
 
     m_hints.remove_if(
         [=]( auto const &Hint ) {
-            return ( std::get<driver_hint>( Hint ) == Value ); } );
+            return std::get<driver_hint>(Hint) == Value; } );
 }
 
 void
@@ -88,7 +88,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( mvOccupied->BatteryStart != start_t::manual ) || ( mvOccupied->Power24vIsAvailable == true ) ); } );
+                    return mvOccupied->BatteryStart != start_t::manual || mvOccupied->Power24vIsAvailable == true; } );
             break;
         }
         case driver_hint::batteryoff: {
@@ -99,7 +99,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( mvOccupied->BatteryStart != start_t::manual ) || ( mvOccupied->Power24vIsAvailable == false ) ); } );
+                    return mvOccupied->BatteryStart != start_t::manual || mvOccupied->Power24vIsAvailable == false; } );
             break;
         }
 		// battery
@@ -112,7 +112,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
 			hint(
 				Action,
 				[this](float const Parameter) -> bool {
-				return ( ( mvOccupied->AutomaticCabActivation ) || (  mvOccupied->IsCabMaster() ) ); } );
+				return mvOccupied->AutomaticCabActivation || mvOccupied->IsCabMaster(); } );
 			break;
 		}
 		case driver_hint::cabdeactivation: {
@@ -123,7 +123,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
 			hint(
 				Action,
 				[this](float const Parameter) -> bool {
-				return ( ( mvOccupied->AutomaticCabActivation ) || ( ( mvOccupied->CabMaster == false ) && ( mvOccupied->CabActive == 0 ) ) ); } );
+				return mvOccupied->AutomaticCabActivation || (mvOccupied->CabMaster == false && mvOccupied->CabActive == 0); } );
 			break;
 		}
         // radio
@@ -135,7 +135,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvOccupied->Radio == true ); } );
+                    return mvOccupied->Radio == true; } );
             break;
         }
         case driver_hint::radiochannel: {
@@ -145,7 +145,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( iRadioChannel == static_cast<int>( Parameter ) ); },
+                    return iRadioChannel == static_cast<int>(Parameter); },
                 Actionparameter );
             break;
         }
@@ -157,7 +157,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvOccupied->Radio == false ); } );
+                    return mvOccupied->Radio == false; } );
             break;
         }
         // oil pump
@@ -170,7 +170,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     auto const &device { mvOccupied->OilPump };
-                    return ( ( device.start_type != start_t::manual ) || ( device.is_enabled == true ) || ( device.is_active == true ) || ( mvOccupied->Mains ) ); } );
+                    return device.start_type != start_t::manual || device.is_enabled == true || device.is_active == true || mvOccupied->Mains; } );
             break;
         }
         case driver_hint::oilpumpoff: {
@@ -182,7 +182,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     auto const &device { mvOccupied->OilPump };
-                    return ( ( device.start_type != start_t::manual ) || ( ( device.is_enabled == false ) && ( device.is_active == false ) ) ); } );
+                    return device.start_type != start_t::manual || (device.is_enabled == false && device.is_active == false); } );
             break;
         }
         // fuel pump
@@ -195,7 +195,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     auto const &device { mvOccupied->FuelPump };
-                    return ( ( device.start_type != start_t::manual ) || ( device.is_enabled == true ) || ( device.is_active == true ) ); } );
+                    return device.start_type != start_t::manual || device.is_enabled == true || device.is_active == true; } );
             break;
         }
         case driver_hint::fuelpumpoff: {
@@ -207,7 +207,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     auto const &device { mvOccupied->FuelPump };
-                    return ( ( device.start_type != start_t::manual ) || ( ( device.is_enabled == false ) && ( device.is_active == false ) ) ); } );
+                    return device.start_type != start_t::manual || (device.is_enabled == false && device.is_active == false); } );
             break;
         }
         // pantographs
@@ -219,7 +219,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvPantographUnit->bPantKurek3 == true ); } );
+                    return mvPantographUnit->bPantKurek3 == true; } );
             break;
         }
         case driver_hint::pantographairsourcesetauxiliary: {
@@ -230,7 +230,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvPantographUnit->bPantKurek3 == false ); } );
+                    return mvPantographUnit->bPantKurek3 == false; } );
             break;
         }
         case driver_hint::pantographcompressoron: {
@@ -241,7 +241,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvPantographUnit->PantCompFlag == true ); } );
+                    return mvPantographUnit->PantCompFlag == true; } );
             break;
         }
         case driver_hint::pantographcompressoroff: {
@@ -252,7 +252,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvPantographUnit->PantCompFlag == false ); } );
+                    return mvPantographUnit->PantCompFlag == false; } );
             break;
         }
         case driver_hint::pantographsvalveon: {
@@ -263,7 +263,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvPantographUnit->PantsValve.is_active == true ); } );
+                    return mvPantographUnit->PantsValve.is_active == true; } );
             break;
         }
         case driver_hint::frontpantographvalveon: {
@@ -274,7 +274,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [ this ]( float const Parameter ) -> bool {
-                    return ( ( mvPantographUnit->Pantographs[ end::front ].valve.is_active == true ) || ( ( Parameter > 0 ) && ( mvOccupied->Vel > Parameter ) ) ); },
+                    return mvPantographUnit->Pantographs[end::front].valve.is_active == true || (Parameter > 0 && mvOccupied->Vel > Parameter); },
                 Actionparameter );
             break;
         }
@@ -286,7 +286,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvPantographUnit->Pantographs[ end::front ].valve.is_active == false ); } );
+                    return mvPantographUnit->Pantographs[end::front].valve.is_active == false; } );
             break;
         }
         case driver_hint::rearpantographvalveon: {
@@ -297,7 +297,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [ this ]( float const Parameter ) -> bool {
-                    return ( ( mvPantographUnit->Pantographs[ end::rear ].valve.is_active == true ) || ( ( Parameter > 0 ) && ( mvOccupied->Vel > Parameter ) ) ); },
+                    return mvPantographUnit->Pantographs[end::rear].valve.is_active == true || (Parameter > 0 && mvOccupied->Vel > Parameter); },
                 Actionparameter );
             break;
         }
@@ -309,7 +309,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvPantographUnit->Pantographs[ end::rear ].valve.is_active == false ); } );
+                    return mvPantographUnit->Pantographs[end::rear].valve.is_active == false; } );
             break;
         }
         // converter
@@ -321,7 +321,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( IsAnyConverterEnabled == true ); } );
+                    return IsAnyConverterEnabled == true; } );
             break;
         }
         case driver_hint::converteroff: {
@@ -332,7 +332,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( IsAnyConverterExplicitlyEnabled == false ); } );
+                    return IsAnyConverterExplicitlyEnabled == false; } );
             break;
         }
         // relays
@@ -343,7 +343,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( mvOccupied->ConverterOverloadRelayStart != start_t::manual ) || ( mvOccupied->ConvOvldFlag == false ) ); } );
+                    return mvOccupied->ConverterOverloadRelayStart != start_t::manual || mvOccupied->ConvOvldFlag == false; } );
             break;
         }
         case driver_hint::maincircuitgroundreset: {
@@ -353,7 +353,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( mvOccupied->GroundRelayStart != start_t::manual ) || ( mvOccupied->GroundRelay == true ) ); } );
+                    return mvOccupied->GroundRelayStart != start_t::manual || mvOccupied->GroundRelay == true; } );
             break;
         }
         case driver_hint::tractionnmotoroverloadreset: {
@@ -363,7 +363,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvOccupied->FuseFlag == false ); } );
+                    return mvOccupied->FuseFlag == false; } );
             break;
         }
         // line breaker
@@ -375,7 +375,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( IsAnyLineBreakerOpen == false ); } );
+                    return IsAnyLineBreakerOpen == false; } );
             break;
         }
         case driver_hint::linebreakeropen: {
@@ -387,7 +387,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     // TBD, TODO: replace with consist-wide flag set true if any line breaker is closed?
-                    return ( mvControlling->Mains == false ); } );
+                    return mvControlling->Mains == false; } );
             break;
         }
         // compressor
@@ -399,7 +399,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( IsAnyCompressorEnabled == true ); } );
+                    return IsAnyCompressorEnabled == true; } );
             break;
         }
         case driver_hint::compressoroff: {
@@ -410,7 +410,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( IsAnyCompressorExplicitlyEnabled == false ); } );
+                    return IsAnyCompressorExplicitlyEnabled == false; } );
             break;
         }
         case driver_hint::frontmotorblowerson: {
@@ -423,7 +423,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this]( float const Parameter ) -> bool {
                     auto const &device { mvOccupied->MotorBlowers[ end::front ] };
-                    return ( ( device.start_type != start_t::manual ) || ( ( device.is_enabled == true ) && ( device.is_disabled == false ) ) ); } );
+                    return device.start_type != start_t::manual || (device.is_enabled == true && device.is_disabled == false); } );
             break;
         }
         case driver_hint::rearmotorblowerson: {
@@ -436,7 +436,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this]( float const Parameter ) -> bool {
                     auto const &device { mvOccupied->MotorBlowers[ end::rear ] };
-                    return ( ( device.start_type != start_t::manual ) || ( ( device.is_enabled == true ) && ( device.is_disabled == false ) ) ); } );
+                    return device.start_type != start_t::manual || (device.is_enabled == true && device.is_disabled == false); } );
             break;
         }
         // spring brake
@@ -448,7 +448,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this]( float const Parameter ) -> bool {
-                    return ( mvOccupied->SpringBrake.Activate == true ); } );
+                    return mvOccupied->SpringBrake.Activate == true; } );
             break;
         }
         case driver_hint::springbrakeoff: {
@@ -459,7 +459,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this]( float const Parameter ) -> bool {
-                    return ( mvOccupied->SpringBrake.Activate == false ); } );
+                    return mvOccupied->SpringBrake.Activate == false; } );
             break;
         }
         // manual brake
@@ -471,7 +471,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this]( float const Parameter ) -> bool {
-                    return ( ( mvOccupied->LocalBrake != TLocalBrake::ManualBrake ) || ( mvOccupied->MBrake == false ) || ( mvOccupied->ManualBrakePos == ManualBrakePosNo ) ); } );
+                    return mvOccupied->LocalBrake != TLocalBrake::ManualBrake || mvOccupied->MBrake == false || mvOccupied->ManualBrakePos == ManualBrakePosNo; } );
             break;
         }
         case driver_hint::manualbrakoff: {
@@ -482,14 +482,14 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this]( float const Parameter ) -> bool {
-                    return ( ( mvOccupied->LocalBrake != TLocalBrake::ManualBrake ) || ( mvOccupied->MBrake == false ) || ( mvOccupied->ManualBrakePos == 0 ) ); } );
+                    return mvOccupied->LocalBrake != TLocalBrake::ManualBrake || mvOccupied->MBrake == false || mvOccupied->ManualBrakePos == 0; } );
             break;
         }
         // master controller
         case driver_hint::mastercontrollersetidle: {
             if( AIControllFlag ) {
-                while( ( mvControlling->RList[ mvControlling->MainCtrlPos ].Mn == 0 )
-                    && ( mvControlling->IncMainCtrl( 1 ) ) ) {
+                while( mvControlling->RList[mvControlling->MainCtrlPos].Mn == 0
+                    && mvControlling->IncMainCtrl(1) ) {
                     ;
                 }
             }
@@ -497,7 +497,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this]( float const Parameter ) -> bool {
-                    return ( mvControlling->RList[ mvControlling->MainCtrlPos ].Mn > 0 ); } );
+                    return mvControlling->RList[mvControlling->MainCtrlPos].Mn > 0; } );
             break;
         }
         case driver_hint::mastercontrollersetseriesmode: {
@@ -507,8 +507,8 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                     if( mvControlling->ScndCtrlPos ) {
                         mvControlling->DecScndCtrl( 2 );
                     }
-                    while( ( mvControlling->RList[ mvControlling->MainCtrlPos ].Bn > 1 )
-                        && ( mvControlling->DecMainCtrl( 1 ) ) ) {
+                    while( mvControlling->RList[mvControlling->MainCtrlPos].Bn > 1
+                        && mvControlling->DecMainCtrl(1) ) {
                         ; // all work is performed in the header
                     }
                 }
@@ -517,7 +517,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this]( float const Parameter ) -> bool {
-                    return ( mvControlling->RList[ mvControlling->MainCtrlPos ].Bn < 2 ); } );
+                    return mvControlling->RList[mvControlling->MainCtrlPos].Bn < 2; } );
             break;
         }
         case driver_hint::mastercontrollersetzerospeed: {
@@ -528,13 +528,13 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( mvControlling->IsMainCtrlNoPowerPos() ) && ( mvControlling->IsScndCtrlNoPowerPos() ) ); } );
+                    return mvControlling->IsMainCtrlNoPowerPos() && mvControlling->IsScndCtrlNoPowerPos(); } );
             break;
         }
         case driver_hint::mastercontrollersetreverserunlock: {
             if( AIControllFlag ) {
-                while( ( false == mvControlling->EIMDirectionChangeAllow() )
-                    && ( mvControlling->DecMainCtrl( 1 ) ) ) {
+                while( false == mvControlling->EIMDirectionChangeAllow()
+                    && mvControlling->DecMainCtrl(1) ) {
                     ;
                 }
             }
@@ -542,7 +542,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvControlling->EIMDirectionChangeAllow() ); },
+                    return mvControlling->EIMDirectionChangeAllow(); },
                 mvControlling->MainCtrlMaxDirChangePos );
             break;
         }
@@ -554,7 +554,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( std::abs( mvControlling->Ft ) <= Parameter ); },
+                    return std::abs(mvControlling->Ft) <= Parameter; },
                 std::min(
                     0.0,
                     std::max(
@@ -576,12 +576,8 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( AccDesired <= EU07_AI_NOACCELERATION )
-                          || ( ( false == Ready ) && ( false == mvOccupied->ShuntMode ) )
-                          || ( AccDesired - AbsAccS <= 0.05 )
-                          || ( mvOccupied->EIMCtrlType > 0 ?
-                               ( mvControlling->eimic_real >= 1.0 ) :
-                               ( ( mvControlling->IsScndCtrlMaxPowerPos() ) && ( mvControlling->IsMainCtrlMaxPowerPos() ) ) ) ); } );
+                    return AccDesired <= EU07_AI_NOACCELERATION || (false == Ready && false == mvOccupied->ShuntMode) || AccDesired - AbsAccS <= 0.05 ||
+			                (mvOccupied->EIMCtrlType > 0 ? mvControlling->eimic_real >= 1.0 : mvControlling->IsScndCtrlMaxPowerPos() && mvControlling->IsMainCtrlMaxPowerPos()); } );
             break;
         }
         case driver_hint::bufferscompress: {
@@ -594,7 +590,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( std::abs( mvControlling->Ft ) > 30.0 ) || ( ( OrderCurrentGet() & Disconnect ) == 0 ) ); } );
+                    return std::abs(mvControlling->Ft) > 30.0 || (OrderCurrentGet() & Disconnect) == 0; } );
             break;
         }
 
@@ -606,7 +602,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvControlling->IsScndCtrlNoPowerPos() ); } );
+                    return mvControlling->IsScndCtrlNoPowerPos(); } );
             break;
         }
 
@@ -619,7 +615,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     auto const &device { mvControlling->WaterPump };
-                    return ( ( device.start_type != start_t::manual ) || ( ( device.is_enabled == true ) && ( device.is_disabled == false ) ) || ( device.is_active == true ) ); } );
+                    return device.start_type != start_t::manual || (device.is_enabled == true && device.is_disabled == false) || device.is_active == true; } );
             break;
         }
         case driver_hint::waterpumpoff: {
@@ -631,7 +627,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     auto const &device { mvControlling->WaterPump };
-                    return ( ( device.start_type != start_t::manual ) || ( ( device.is_enabled == false ) && ( device.is_active == false ) ) ); } );
+                    return device.start_type != start_t::manual || (device.is_enabled == false && device.is_active == false); } );
             break;
         }
         case driver_hint::waterpumpbreakeron: {
@@ -643,7 +639,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     auto const &device { mvControlling->WaterPump };
-                    return ( device.breaker == true ); } );
+                    return device.breaker == true; } );
             break;
         }
         case driver_hint::waterpumpbreakeroff: {
@@ -655,7 +651,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     auto const &device { mvControlling->WaterPump };
-                    return ( device.breaker == false ); } );
+                    return device.breaker == false; } );
             break;
         }
         case driver_hint::waterheateron: {
@@ -667,7 +663,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     auto const &device { mvControlling->WaterHeater };
-                    return ( device.is_enabled == true ); } );
+                    return device.is_enabled == true; } );
             break;
         }
         case driver_hint::waterheateroff: {
@@ -679,7 +675,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     auto const &device { mvControlling->WaterHeater };
-                    return ( device.is_enabled == false ); } );
+                    return device.is_enabled == false; } );
             break;
         }
         case driver_hint::waterheaterbreakeron: {
@@ -691,7 +687,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     auto const &device { mvControlling->WaterHeater };
-                    return ( device.breaker == true ); } );
+                    return device.breaker == true; } );
             break;
         }
         case driver_hint::waterheaterbreakeroff: {
@@ -703,7 +699,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     auto const &device { mvControlling->WaterHeater };
-                    return ( device.breaker == false ); } );
+                    return device.breaker == false; } );
             break;
         }
         case driver_hint::watercircuitslinkon: {
@@ -714,7 +710,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( mvControlling->dizel_heat.auxiliary_water_circuit == false ) || ( mvControlling->WaterCircuitsLink == true ) ); } );
+                    return mvControlling->dizel_heat.auxiliary_water_circuit == false || mvControlling->WaterCircuitsLink == true; } );
             break;
         }
         case driver_hint::watercircuitslinkoff: {
@@ -725,7 +721,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( mvControlling->dizel_heat.auxiliary_water_circuit == false ) || ( mvControlling->WaterCircuitsLink == false ) ); } );
+                    return mvControlling->dizel_heat.auxiliary_water_circuit == false || mvControlling->WaterCircuitsLink == false; } );
             break;
         }
         case driver_hint::waittemperaturetoolow: {
@@ -733,7 +729,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( false == IsHeatingTemperatureTooLow ); } );
+                    return false == IsHeatingTemperatureTooLow; } );
             break;
         }
         case driver_hint::waitpressuretoolow: {
@@ -741,7 +737,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( mvControlling->ScndPipePress > 4.5 ) || ( mvControlling->VeselVolume == 0.0 ) ); } );
+                    return mvControlling->ScndPipePress > 4.5 || mvControlling->VeselVolume == 0.0; } );
             break;
         }
         case driver_hint::waitpantographpressuretoolow: {
@@ -749,7 +745,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvPantographUnit->PantPress >= ( is_emu() ? ( mvPantographUnit->PantPressLockActive ? 4.6 : 2.6 ) : 4.2 ) ); } );
+                    return mvPantographUnit->PantPress >= (is_emu() ? (mvPantographUnit->PantPressLockActive ? 4.6 : 2.6) : 4.2); } );
             break;
         }
         case driver_hint::waitloadexchange: {
@@ -757,7 +753,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ExchangeTime <= 0 ); } );
+                    return ExchangeTime <= 0; } );
             break;
         }
         case driver_hint::waitdeparturetime: {
@@ -765,7 +761,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( IsAtPassengerStop == false ); } );
+                    return IsAtPassengerStop == false; } );
             break;
         }
 
@@ -779,8 +775,8 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
         case driver_hint::trainbrakesetpipeunlock: {
             if( AIControllFlag ) {
                 if( mvOccupied->HandleUnlock != -3 ) {
-                    while( ( BrakeCtrlPosition >= mvOccupied->HandleUnlock )
-                        && ( BrakeLevelAdd( -1 ) ) ) {
+                    while( BrakeCtrlPosition >= mvOccupied->HandleUnlock
+                        && BrakeLevelAdd(-1) ) {
                         // all work is done in the header
                         ;
                     }
@@ -790,7 +786,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( mvOccupied->HandleUnlock == -3 ) || ( BrakeCtrlPosition == mvOccupied->HandleUnlock ) ); } );
+                    return mvOccupied->HandleUnlock == -3 || BrakeCtrlPosition == mvOccupied->HandleUnlock; } );
             break;
         }
         case driver_hint::trainbrakerelease: {
@@ -802,15 +798,14 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( is_equal(  mvOccupied->fBrakeCtrlPos, mvOccupied->Handle->GetPos( bh_RP ), 0.2 )
-							|| ( mvOccupied->Handle->Time && ( mvOccupied->Handle->GetCP() > mvOccupied->HighPipePress - 0.05) ) ); } );
+                    return is_equal(mvOccupied->fBrakeCtrlPos, mvOccupied->Handle->GetPos(bh_RP), 0.2) || (mvOccupied->Handle->Time && mvOccupied->Handle->GetCP() > mvOccupied->HighPipePress - 0.05); } );
 //                    return ( BrakeCtrlPosition == gbh_RP ); } );
             break;
         }
         case driver_hint::trainbrakeapply: {
             if( AIControllFlag ) {
                 // za radą yB ustawiamy pozycję 3 kranu (ruszanie kranem w innych miejscach powino zostać wyłączone)
-                if( ( BrakeSystem == TBrakeSystem::ElectroPneumatic ) && ( false == ForcePNBrake ) ) {
+                if( BrakeSystem == TBrakeSystem::ElectroPneumatic && false == ForcePNBrake ) {
                     mvOccupied->BrakeLevelSet( mvOccupied->Handle->GetPos( bh_EPB ) );
                 }
                 else {
@@ -821,14 +816,14 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( IsConsistBraked /*|| ( ( OrderCurrentGet() & Disconnect ) == 0 ) */ ); } );
+                    return IsConsistBraked /*|| ( ( OrderCurrentGet() & Disconnect ) == 0 ) */; } );
             break;
         }
         case driver_hint::brakingforcedecrease: {
             if( AIControllFlag ) {
                 auto const brakingcontrolschange { DecBrake() };
                 // set optional delay between brake adjustments
-                if( ( brakingcontrolschange ) && ( Actionparameter > 0 ) ) {
+                if( brakingcontrolschange && Actionparameter > 0 ) {
                     fBrakeTime = Actionparameter;
                 }
             }
@@ -836,7 +831,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( std::abs( mvControlling->Fb ) <= Parameter ); },
+                    return std::abs(mvControlling->Fb) <= Parameter; },
                 std::min( 0.0, 0.95 * std::abs( mvControlling->Fb ) ) ); // keep hint until 5% decrease
             break;
         }
@@ -844,7 +839,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             if( AIControllFlag ) {
                 auto const brakingcontrolschange { IncBrake() };
                 // set optional delay between brake adjustments
-                if( ( brakingcontrolschange ) && ( Actionparameter > 0 ) ) {
+                if( brakingcontrolschange && Actionparameter > 0 ) {
                     fBrakeTime = Actionparameter;
                 }
             }
@@ -852,7 +847,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( std::abs( mvControlling->Fb ) > Parameter ) || ( is_equal( mvOccupied->fBrakeCtrlPos, mvOccupied->Handle->GetPos( bh_EB ), 0.2 ) ) ); },
+                    return std::abs(mvControlling->Fb) > Parameter || is_equal(mvOccupied->fBrakeCtrlPos, mvOccupied->Handle->GetPos(bh_EB), 0.2); },
                 std::max(
                     0.0,
                     std::max(
@@ -868,7 +863,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( Ready ) && ( fReady < 0.4 ) && ( is_equal( mvOccupied->fBrakeCtrlPos, mvOccupied->Handle->GetPos( bh_RP ), 0.2 ) ) ); } );
+                    return Ready && fReady < 0.4 && is_equal(mvOccupied->fBrakeCtrlPos, mvOccupied->Handle->GetPos(bh_RP), 0.2); } );
             break;
         }
         case driver_hint::brakingforcelap: {
@@ -894,7 +889,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvOccupied->LocalBrakePosA >= Parameter ); },
+                    return mvOccupied->LocalBrakePosA >= Parameter; },
                 ( LocalBrakePosNo - ( mvOccupied->EIMCtrlEmergency ? 1 : 0 ) ) / LocalBrakePosNo );
             break;
         }
@@ -906,7 +901,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvOccupied->LocalBrakePosA < 0.05 ); } );
+                    return mvOccupied->LocalBrakePosA < 0.05; } );
             break;
         }
         // reverser
@@ -918,7 +913,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvOccupied->DirActive * mvOccupied->CabActive > 0 ); } );
+                    return mvOccupied->DirActive * mvOccupied->CabActive > 0; } );
             break;
         }
         case driver_hint::directionbackward: {
@@ -929,7 +924,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvOccupied->DirActive * mvOccupied->CabActive < 0 ); } );
+                    return mvOccupied->DirActive * mvOccupied->CabActive < 0; } );
             break;
         }
         case driver_hint::directionother: {
@@ -942,7 +937,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( iDirection == iDirectionOrder ); } );
+                    return iDirection == iDirectionOrder; } );
             break;
         }
         case driver_hint::directionnone: {
@@ -953,7 +948,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvOccupied->DirActive == 0 ); } );
+                    return mvOccupied->DirActive == 0; } );
             break;
         }
         // anti-slip systems
@@ -965,7 +960,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( mvControlling->Sand == 0 ) || ( mvControlling->SandDose == true ) || ( mvControlling->SlippingWheels == false ) ); } );
+                    return mvControlling->Sand == 0 || mvControlling->SandDose == true || mvControlling->SlippingWheels == false; } );
             break;
         }
         case driver_hint::sandingoff: {
@@ -976,7 +971,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( mvControlling->Sand == 0 ) || ( mvControlling->SandDose == false ) ); } );
+                    return mvControlling->Sand == 0 || mvControlling->SandDose == false; } );
             break;
         }
         case driver_hint::antislip: {
@@ -986,7 +981,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( mvControlling->ASBType != 1 ) || ( ( mvControlling->Hamulec->GetBrakeStatus() & b_asb ) != 0 ) || ( mvControlling->SlippingWheels == false ) ); } );
+                    return mvControlling->ASBType != 1 || (mvControlling->Hamulec->GetBrakeStatus() & b_asb) != 0 || mvControlling->SlippingWheels == false; } );
             break;
         }
         // horns
@@ -999,7 +994,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     // NOTE: we provide slightly larger horn activation window for human driver
-                    return ( ( fWarningDuration + 5.0 < 0.05 ) || ( mvOccupied->WarningSignal != 0 ) ); } );
+                    return fWarningDuration + 5.0 < 0.05 || mvOccupied->WarningSignal != 0; } );
             break;
         }
         case driver_hint::hornoff: {
@@ -1025,7 +1020,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( mvOccupied->Doors.has_lock == false ) || ( mvOccupied->Doors.lock_enabled == true ) ); } );
+                    return mvOccupied->Doors.has_lock == false || mvOccupied->Doors.lock_enabled == true; } );
             break;
         }
         // departure signal
@@ -1037,7 +1032,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( mvOccupied->Doors.has_warning == false ) || ( mvOccupied->Doors.has_autowarning == true ) || ( mvOccupied->DepartureSignal == true ) || mvOccupied->Vel > 5.0 ); } );
+                    return mvOccupied->Doors.has_warning == false || mvOccupied->Doors.has_autowarning == true || mvOccupied->DepartureSignal == true || mvOccupied->Vel > 5.0; } );
             break;
         }
         case driver_hint::departuresignaloff: {
@@ -1048,56 +1043,56 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( ( mvOccupied->Doors.has_warning == false ) || ( mvOccupied->Doors.has_autowarning == true ) || ( mvOccupied->DepartureSignal == false ) ); } );
+                    return mvOccupied->Doors.has_warning == false || mvOccupied->Doors.has_autowarning == true || mvOccupied->DepartureSignal == false; } );
             break;
         }
         // consist doors
         case driver_hint::doorrightopen: {
-            if( ( AIControllFlag )
-             || ( pVehicle->MoverParameters->Doors.open_control == control_t::conductor ) ) {
+            if( AIControllFlag
+             || pVehicle->MoverParameters->Doors.open_control == control_t::conductor ) {
                 pVehicle->MoverParameters->OperateDoors( side::right, true );
             }
             remove_hint( driver_hint::doorrightclose );
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( IsAnyDoorOpen[ side::right ] == true ); } );
+                    return IsAnyDoorOpen[side::right] == true; } );
             break;
         }
         case driver_hint::doorrightclose: {
-            if( ( AIControllFlag )
-             || ( pVehicle->MoverParameters->Doors.open_control == control_t::conductor ) ) {
+            if( AIControllFlag
+             || pVehicle->MoverParameters->Doors.open_control == control_t::conductor ) {
                 pVehicle->MoverParameters->OperateDoors( side::right, false );
             }
             remove_hint( driver_hint::doorrightopen );
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( IsAnyDoorOpen[ side::right ] == false ); } );
+                    return IsAnyDoorOpen[side::right] == false; } );
             break;
         }
         case driver_hint::doorleftopen: {
-            if( ( AIControllFlag )
-             || ( pVehicle->MoverParameters->Doors.open_control == control_t::conductor ) ) {
+            if( AIControllFlag
+             || pVehicle->MoverParameters->Doors.open_control == control_t::conductor ) {
                 pVehicle->MoverParameters->OperateDoors( side::left, true );
             }
             remove_hint( driver_hint::doorleftclose );
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( IsAnyDoorOpen[ side::left ] == true ); } );
+                    return IsAnyDoorOpen[side::left] == true; } );
             break;
         }
         case driver_hint::doorleftclose: {
-            if( ( AIControllFlag )
-             || ( pVehicle->MoverParameters->Doors.open_control == control_t::conductor ) ) {
+            if( AIControllFlag
+             || pVehicle->MoverParameters->Doors.open_control == control_t::conductor ) {
                 pVehicle->MoverParameters->OperateDoors( side::left, false );
             }
             remove_hint( driver_hint::doorleftopen );
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( IsAnyDoorOpen[ side::left ] == false ); } );
+                    return IsAnyDoorOpen[side::left] == false; } );
             break;
         }
         case driver_hint::doorrightpermiton: {
@@ -1108,7 +1103,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( IsAnyDoorPermitActive[ side::right ] == true ); } );
+                    return IsAnyDoorPermitActive[side::right] == true; } );
             break;
         }
         case driver_hint::doorrightpermitoff: {
@@ -1119,7 +1114,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( IsAnyDoorPermitActive[ side::right ] == false ); } );
+                    return IsAnyDoorPermitActive[side::right] == false; } );
             break;
         }
         case driver_hint::doorleftpermiton: {
@@ -1130,7 +1125,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( IsAnyDoorPermitActive[ side::left ] == true ); } );
+                    return IsAnyDoorPermitActive[side::left] == true; } );
             break;
         }
         case driver_hint::doorleftpermitoff: {
@@ -1141,7 +1136,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( IsAnyDoorPermitActive[ side::left ] == false ); } );
+                    return IsAnyDoorPermitActive[side::left] == false; } );
             break;
         }
         // consist lights
@@ -1155,7 +1150,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     auto const &device { mvOccupied->CompartmentLights };
-                    return ( ( Global.fLuminance * ConsistShade > 0.40 ) || ( device.start_type != start_t::manual ) || ( ( device.is_enabled == true ) && ( device.is_disabled == false ) ) || ( device.is_active == true ) ); } );
+                    return Global.fLuminance * ConsistShade > 0.40 || device.start_type != start_t::manual || (device.is_enabled == true && device.is_disabled == false) || device.is_active == true; } );
             break;
         }
         case driver_hint::consistlightsoff: {
@@ -1168,7 +1163,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     auto const &device { mvOccupied->CompartmentLights };
-                    return ( ( Global.fLuminance * ConsistShade < 0.35 ) || ( device.start_type != start_t::manual ) || ( ( device.is_enabled == false ) && ( device.is_active == false ) ) ); } );
+                    return Global.fLuminance * ConsistShade < 0.35 || device.start_type != start_t::manual || (device.is_enabled == false && device.is_active == false); } );
             break;
         }
         // consist heating
@@ -1180,7 +1175,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvOccupied->HeatingAllow == true ); } );
+                    return mvOccupied->HeatingAllow == true; } );
             break;
         }
         case driver_hint::consistheatingoff: {
@@ -1191,7 +1186,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( mvOccupied->HeatingAllow == false ); } );
+                    return mvOccupied->HeatingAllow == false; } );
             break;
         }
 
@@ -1226,7 +1221,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     auto const &device { pVehicles[ end::front ]->MoverParameters->Couplers[ static_cast<int>( Parameter ) ] };
-                    return ( device.type() == TCouplerType::Automatic ); } );
+                    return device.type() == TCouplerType::Automatic; } );
             break;
         }
         case driver_hint::couplingadapterremove: {
@@ -1237,7 +1232,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) -> bool {
                     auto const &device { pVehicles[ end::front ]->MoverParameters->Couplers[ static_cast<int>( Parameter ) ] };
-                    return ( false == device.has_adapter() ); } );
+                    return false == device.has_adapter(); } );
             break;
         }
         // lights
@@ -1251,7 +1246,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( pVehicles[ end::front ]->has_signal_pc1_on() ); } );
+                    return pVehicles[end::front]->has_signal_pc1_on(); } );
             break;
         }
         case driver_hint::headcodepc2: {
@@ -1264,7 +1259,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( pVehicles[ end::front ]->has_signal_pc2_on() ); } );
+                    return pVehicles[end::front]->has_signal_pc2_on(); } );
             break;
         }
         case driver_hint::headcodetb1: {
@@ -1283,14 +1278,12 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 [this](float const Parameter) -> bool {
                     auto const activeend { mvOccupied->CabActive >= 0 ? end::front : end::rear };
                     auto const consistfront { mvOccupied->DirActive >= 0 ? end::front : end::rear };
-                    return (
-                        pVehicles[ consistfront ]->has_signal_on( activeend,  light::headlight_right )
-                     && pVehicles[ 1 - consistfront ]->has_signal_on( 1 - activeend, light::headlight_left ) ); } );
+                    return pVehicles[consistfront]->has_signal_on(activeend, light::headlight_right) && pVehicles[1 - consistfront]->has_signal_on(1 - activeend, light::headlight_left); } );
             break;
         }
         case driver_hint::headcodepc5: {
-            if( ( AIControllFlag )
-             || ( Global.AITrainman && ( false == pVehicles[ end::rear ]->is_connected( pVehicle, coupling::control ) ) ) ) {
+            if( AIControllFlag
+             || ( Global.AITrainman && false == pVehicles[end::rear]->is_connected(pVehicle, coupling::control) ) ) {
                 pVehicles[ end::rear ]->RaLightsSet( -1, light::redmarker_left | light::redmarker_right | light::rearendsignals );
             }
             remove_hint( driver_hint::headcodetb1 );
@@ -1298,7 +1291,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( pVehicles[ end::rear ]->has_signal_pc5_on() ); } );
+                    return pVehicles[end::rear]->has_signal_pc5_on(); } );
             break;
         }
         case driver_hint::lightsoff: {
@@ -1314,9 +1307,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 [this](float const Parameter) -> bool {
                     auto const activeend { mvOccupied->CabActive >= 0 ? end::front : end::rear };
                     auto const consistfront { mvOccupied->DirActive >= 0 ? end::front : end::rear };
-                    return (
-                        pVehicles[ consistfront ]->has_signal_on( activeend,  0 )
-                     && pVehicles[ 1 - consistfront ]->has_signal_on( 1 - activeend, 0 ) ); } );
+                    return pVehicles[consistfront]->has_signal_on(activeend, 0) && pVehicles[1 - consistfront]->has_signal_on(1 - activeend, 0); } );
             break;
         }
         // releaser
@@ -1328,7 +1319,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( true == mvOccupied->Hamulec->Releaser() ); } );
+                    return true == mvOccupied->Hamulec->Releaser(); } );
             break;
         }
         case driver_hint::releaseroff: {
@@ -1339,7 +1330,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return ( false == mvOccupied->Hamulec->Releaser() ); } );
+                    return false == mvOccupied->Hamulec->Releaser(); } );
             break;
         }
 

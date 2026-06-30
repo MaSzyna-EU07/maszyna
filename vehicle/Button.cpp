@@ -34,7 +34,7 @@ bool TButton::Init( std::string const &asName, TModel3d const *pModel, bool bNew
     m_state = bNewOn;
     Update();
 
-    return( ( pModelOn != nullptr ) || ( pModelOff != nullptr ) );
+    return pModelOn != nullptr || pModelOff != nullptr;
 };
 
 void TButton::Load( cParser &Parser, TDynamicObject const *Owner ) {
@@ -66,8 +66,8 @@ void TButton::Load( cParser &Parser, TDynamicObject const *Owner ) {
             break;
         }
     }
-    if( ( pModelOn  == nullptr )
-     && ( pModelOff == nullptr ) ) {
+    if( pModelOn == nullptr
+     && pModelOff == nullptr ) {
         // if we failed to locate even one state submodel, cry
         ErrorLog( "Bad model: failed to locate sub-model \"" + submodelname + "\" in 3d model(s) of \"" + Owner->name() + "\"", logtype::model );
     }
@@ -88,7 +88,7 @@ TButton::Load_mapping( cParser &Input ) {
 
     // token can be a key or block end
     std::string const key { Input.getToken<std::string>( true, "\n\r\t  ,;" ) };
-    if( ( true == key.empty() ) || ( key == "}" ) ) { return false; }
+    if( true == key.empty() || key == "}" ) { return false; }
     // if not block end then the key is followed by assigned value or sub-block
          if( key == "soundinc:" ) { m_soundfxincrease.deserialize( Input, sound_type::single ); }
     else if( key == "sounddec:" ) { m_soundfxdecrease.deserialize( Input, sound_type::single ); }
@@ -106,10 +106,7 @@ TButton::model_offset() const {
             pModelOff ? pModelOff :
             nullptr ) };
 
-    return (
-        submodel != nullptr ?
-            submodel->offset( std::numeric_limits<float>::max() ) :
-            glm::vec3() );
+    return submodel != nullptr ? submodel->offset(std::numeric_limits<float>::max()) : glm::vec3();
 }
 
 void
@@ -135,7 +132,7 @@ void TButton::Update( bool const Power ) {
     }
 
     if( pModelOn  != nullptr ) { pModelOn->iVisible  =   m_state; }
-    if( pModelOff != nullptr ) { pModelOff->iVisible = (!m_state); }
+    if( pModelOff != nullptr ) { pModelOff->iVisible = !m_state; }
 
 #ifdef _WIN32
     if (iFeedbackBit) {

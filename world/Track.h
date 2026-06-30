@@ -115,15 +115,15 @@ public:
     inline
     bool
         Busy() {
-            return (iAxles > 0); };
+            return iAxles > 0; };
     inline
     static TIsolated *
         Root() {
-            return (pRoot); };
+            return pRoot; };
     inline
     TIsolated *
         Next() {
-            return (pNext); };
+            return pNext; };
     inline
     void
         parent( TIsolated *Parent ) {
@@ -270,19 +270,13 @@ public:
     bool SwitchForced(int i, TDynamicObject *o);
     int CrossSegment(int from, int into);
     inline int GetSwitchState() {
-        return (
-            SwitchExtension ?
-                SwitchExtension->CurrentIndex :
-                -1); };
+        return SwitchExtension ? SwitchExtension->CurrentIndex : -1; };
     // returns number of different routes possible to take from given point
     // TODO: specify entry point, number of routes for switches can vary
     inline
     int
         RouteCount() const {
-        return (
-            SwitchExtension != nullptr ?
-                SwitchExtension->iRoads - 1 :
-                1 ); }
+        return SwitchExtension != nullptr ? SwitchExtension->iRoads - 1 : 1; }
     void Load(cParser *parser, glm::dvec3 const &pOrigin);
     bool AssignEvents();
     bool AssignForcedEvents(basic_event *NewEventPlus, basic_event *NewEventMinus);

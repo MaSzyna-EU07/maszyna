@@ -18,7 +18,7 @@ Copyright (C) 2007-2014 Maciej Cierniak
 
 double d2A( double const d )
 {
-    return (d * d) * 0.7854 / 1000.0;
+    return d * d * 0.7854 / 1000.0;
 }
 
 // ------ RURA ------
@@ -115,9 +115,9 @@ void TRapid::Update(double dt)
         ActMult = 1.0;
     }
 
-    if ((BCP * RapidMult) > (P() * ActMult))
+    if (BCP * RapidMult > P() * ActMult)
         dV = -PFVd(BCP, 0, DL, P() * ActMult / RapidMult) * dt;
-    else if ((BCP * RapidMult) < (P() * ActMult))
+    else if (BCP * RapidMult < P() * ActMult)
         dV = PFVa(BVP, BCP, DN, P() * ActMult / RapidMult) * dt;
     else
         dV = 0.0;
@@ -140,9 +140,9 @@ void TPrzekCiagly::Update(double dt)
     double const BCP{ Next->P() };
     double dV;
 
-    if ( BCP > (P() * Mult))
+    if ( BCP > P() * Mult)
         dV = -PFVd(BCP, 0, d2A(8.0), P() * Mult) * dt;
-    else if (BCP < (P() * Mult))
+    else if (BCP < P() * Mult)
         dV = PFVa(BVP, BCP, d2A(8.0), P() * Mult) * dt;
     else
         dV = 0.0;
@@ -226,7 +226,7 @@ double TNESt3::GetPF( double const PP, double const dt, double const Vel ) // pr
         dV = 0.0;
     //  BrakeCyl.Flow(-dV);
     Przekladniki[1]->Flow(-dV);
-    if ( ((BrakeStatus & b_on) == b_on) && (Przekladniki[1]->P() * HBG300 < MaxBP) )
+    if ( (BrakeStatus & b_on) == b_on && Przekladniki[1]->P() * HBG300 < MaxBP )
         dV =
             PF( BVP, BCP, Nozzles[dTN] * (nastG + 2.0 * (BCP < Podskok ? 1.0 : 0.0)) + Nozzles[dON] * (1.0 - nastG) )
             * dt * (0.1 + 4.9 * std::min( 0.2, (CVP - 0.05 - VVP) * BVM - BCP ) );
@@ -241,10 +241,7 @@ double TNESt3::GetPF( double const PP, double const dt, double const Vel ) // pr
         Przekladniki[i]->Update(dt);
         if (typeid(*Przekladniki[i]) == typeid(TRapid))
         {
-            RapidStatus = ( ( ( BrakeDelayFlag & bdelay_R ) == bdelay_R )
-                         && ( (   std::abs( Vel ) > 70.0 )
-                           || ( ( std::abs( Vel ) > 50.0 ) && ( RapidStatus ) )
-                           || ( RapidStaly ) ) );
+            RapidStatus = (BrakeDelayFlag & bdelay_R) == bdelay_R && (std::abs(Vel) > 70.0 || (std::abs(Vel) > 50.0 && RapidStatus) || RapidStaly);
             Przekladniki[i]->SetRapidStatus(RapidStatus);
         }
         else if( typeid( *Przekladniki[i] ) == typeid( TPrzeciwposlizg ) )
@@ -263,7 +260,7 @@ double TNESt3::GetPF( double const PP, double const dt, double const Vel ) // pr
 
     // przeplyw testowy miedzypojemnosci
     dV = PF(MPP, VVP, BVs(BCP)) + PF(MPP, CVP, CVs(BCP));
-    if ((MPP - 0.05) > BVP)
+    if (MPP - 0.05 > BVP)
         dV += PF(MPP - 0.05, BVP, Nozzles[dPT] * nastG + (1.0 - nastG) * Nozzles[dPO]);
     if (MPP > VVP)
         dV += PF(MPP, VVP, d2A(5.0));
@@ -277,7 +274,7 @@ double TNESt3::GetPF( double const PP, double const dt, double const Vel ) // pr
     dV1 += 0.98 * dV;
 
     // przeplyw ZP <-> MPJ
-    if ((MPP - 0.05) > BVP)
+    if (MPP - 0.05 > BVP)
         dV = PF(BVP, MPP - 0.05, Nozzles[dPT] * nastG + (1.0 - nastG) * Nozzles[dPO]) * dt;
     else
         dV = 0.0;
@@ -312,7 +309,7 @@ void TNESt3::Init( double const PP, double const HPP, double const LPP, double c
     CntrlRes = std::make_shared<TReservoir>();
     CntrlRes->CreateCap(15.0);
     CntrlRes->CreatePress(HPP);
-    BrakeStatus = (BP > 1.0 ? 1 : 0);
+    BrakeStatus = BP > 1.0 ? 1 : 0;
     Miedzypoj = std::make_shared<TReservoir>();
     Miedzypoj->CreateCap(5.0);
     Miedzypoj->CreatePress(PP);
@@ -323,7 +320,7 @@ void TNESt3::Init( double const PP, double const HPP, double const LPP, double c
 
     Zamykajacy = false;
 
-    if ( (typeid(*FM) == typeid(TDisk1)) || (typeid(*FM) == typeid(TDisk2)) ) // jesli zeliwo to schodz
+    if ( typeid(*FM) == typeid(TDisk1) || typeid(*FM) == typeid(TDisk2) ) // jesli zeliwo to schodz
         RapidStaly = true;
     else
         RapidStaly = false;
@@ -343,24 +340,24 @@ void TNESt3::CheckState(double const BCP, double &dV1) // glowny przyrzad rozrza
     double const CVP{ CntrlRes->P() };
     double const MPP{ Miedzypoj->P() };
 
-    if ((BCP < 0.25) && (VVP + 0.08 > CVP))
+    if (BCP < 0.25 && VVP + 0.08 > CVP)
         Przys_blok = false;
 
     // sprawdzanie stanu
     // if ((BrakeStatus and 1)=1)and(BCP>0.25)then
-    if (((VVP + 0.01 + BCP / BVM) < (CVP - 0.05)) && (Przys_blok))
-        BrakeStatus |= ( b_on | b_hld ); // hamowanie stopniowe;
-    else if ((VVP - 0.01 + (BCP - 0.1) / BVM) > (CVP - 0.05))
+    if (VVP + 0.01 + BCP / BVM < CVP - 0.05 && Przys_blok)
+        BrakeStatus |= b_on | b_hld; // hamowanie stopniowe;
+    else if (VVP - 0.01 + (BCP - 0.1) / BVM > CVP - 0.05)
         BrakeStatus &= ~( b_on | b_hld ); // luzowanie;
-    else if ((VVP + BCP / BVM) > (CVP - 0.05))
+    else if (VVP + BCP / BVM > CVP - 0.05)
         BrakeStatus &= ~b_on; // zatrzymanie napelaniania;
-    else if (((VVP + (BCP - 0.1) / BVM) < (CVP - 0.05)) && (BCP > 0.25)) // zatrzymanie luzowania
+    else if (VVP + (BCP - 0.1) / BVM < CVP - 0.05 && BCP > 0.25) // zatrzymanie luzowania
         BrakeStatus |= b_hld;
 
     if( ( BrakeStatus & b_hld ) == 0 )
         SoundFlag |= sf_CylU;
 
-    if (((VVP + 0.10) < CVP) && (BCP < 0.25)) // poczatek hamowania
+    if (VVP + 0.10 < CVP && BCP < 0.25) // poczatek hamowania
         if (false == Przys_blok)
         {
             ValveRes->CreatePress(0.1 * VVP);
@@ -371,7 +368,7 @@ void TNESt3::CheckState(double const BCP, double &dV1) // glowny przyrzad rozrza
 
     if (BCP > 0.5)
         Zamykajacy = true;
-    else if ((VVP - 0.6) < MPP)
+    else if (VVP - 0.6 < MPP)
         Zamykajacy = false;
 }
 
@@ -384,7 +381,7 @@ void TNESt3::CheckReleaser(double const dt) // odluzniacz
     if ((BrakeStatus & b_rls) == b_rls)
     {
         CntrlRes->Flow(PF(CVP, 0, 0.02) * dt);
-        if ((CVP < (VVP + 0.3)) || (false == autom))
+        if (CVP < VVP + 0.3 || false == autom)
             BrakeStatus &= ~b_rls;
     }
 }
@@ -395,9 +392,9 @@ double TNESt3::CVs(double const BP) // napelniacz sterujacego
     double const MPP{ Miedzypoj->P() };
 
     // przeplyw ZS <-> PG
-    if (MPP < (CVP - 0.17))
+    if (MPP < CVP - 0.17)
         return 0.0;
-    else if (MPP > (CVP - 0.08))
+    else if (MPP > CVP - 0.08)
         return Nozzles[dSd];
     else
         return Nozzles[dSm];
@@ -409,7 +406,7 @@ double TNESt3::BVs(double const BCP) // napelniacz pomocniczego
     double const MPP{ Miedzypoj->P() };
 
     // przeplyw ZP <-> rozdzielacz
-    if (MPP < (CVP - 0.3))
+    if (MPP < CVP - 0.3)
         return Nozzles[dP];
     else if( BCP < 0.5 ) {
         if( true == Zamykajacy )
@@ -425,7 +422,7 @@ void TNESt3::PLC(double const mass)
 {
     LoadC = 1.0 +
         ( mass < LoadM ?
-            ( (TareBP + (MaxBP - TareBP) * (mass - TareM) / (LoadM - TareM) ) / MaxBP - 1.0 ) :
+            (TareBP + (MaxBP - TareBP) * (mass - TareM) / (LoadM - TareM)) / MaxBP - 1.0 :
             0.0 );
 }
 
@@ -490,13 +487,13 @@ void TNESt3::SetSize( int const size, std::string const &params ) // ustawianie 
     else
         Przekladniki[2] = std::make_shared<TRura>();
 
-	if( ( contains( params, "3d" ) )
-	 || ( contains( params, "4d" ) ) ) {
+	if( contains(params, "3d")
+	 || contains(params, "4d") ) {
         autom = false;
 	}
     else
         autom = true;
-    if ((contains( params,"HBG300")))
+    if (contains(params, "HBG300"))
         HBG300 = 1.0;
     else
         HBG300 = 0.0;

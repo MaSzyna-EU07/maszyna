@@ -107,7 +107,7 @@ private:
     auto guess_element_type_from_name( std::string const &Name ) const->basic_element::type_e;
     inline
     auto inverse( int const Value ) const -> int {
-        return ( Value == 0 ? 1 : 0 ); }
+        return Value == 0 ? 1 : 0; }
     // element access
     inline
     auto element( element_handle const Element ) const -> basic_element const {

@@ -56,8 +56,8 @@ bool TTractionPowerSource::Load(cParser *parser) {
         bSection = true;
     }
     // skip rest of the section
-    while( ( false == token.empty() )
-        && ( token != "end" ) ) {
+    while( false == token.empty()
+        && token != "end" ) {
 
         token = parser->getToken<std::string>();
     }
@@ -123,10 +123,10 @@ double TTractionPowerSource::CurrentGet(double res)
             FuseTimer = 0;
         return 0;
     }
-	if ((res > 0) || ((res < 0) && (Recuperation || true)))
+	if (res > 0 || (res < 0 && (Recuperation || true)))
 		TotalAdmitance += 1.0 / res; // połączenie równoległe rezystancji jest równoważne sumie admitancji
-	float NomVolt = (TotalPreviousAdmitance < 0 ? NominalVoltage * 1.083 : NominalVoltage);
-	TotalCurrent = (TotalPreviousAdmitance != 0.0) ?
+	float NomVolt = TotalPreviousAdmitance < 0 ? NominalVoltage * 1.083 : NominalVoltage;
+	TotalCurrent = TotalPreviousAdmitance != 0.0 ?
 		NomVolt / (InternalRes + 1.0 / TotalPreviousAdmitance) :
 		0.0; // napięcie dzielone przez sumę rezystancji wewnętrznej i obciążenia
 	OutputVoltage = NomVolt - InternalRes * TotalCurrent; // napięcie na obciążeniu

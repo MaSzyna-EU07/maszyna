@@ -42,7 +42,7 @@ RGBtoHSV( glm::vec3 const &RGB ) {
         return hsv;
     }
     if( max > 0.0 ) { // NOTE: if Max is == 0, this divide would cause a crash
-        hsv.y = ( delta / max );                  // s
+        hsv.y = delta / max;                  // s
     }
     else {
         // if max is 0, then r = g = b = 0              
@@ -85,8 +85,8 @@ HSVtoRGB( glm::vec3 const &HSV ) {
     int const i = (int)hh;
     float const ff = hh - i;
     float const p = HSV.z * ( 1.f - HSV.y );
-    float const q = HSV.z * ( 1.f - ( HSV.y * ff ) );
-    float const t = HSV.z * ( 1.f - ( HSV.y * ( 1.f - ff ) ) );
+    float const q = HSV.z * ( 1.f - HSV.y * ff );
+    float const t = HSV.z * ( 1.f - HSV.y * (1.f - ff) );
 
     switch( i ) {
         case 0:

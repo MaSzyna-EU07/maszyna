@@ -659,10 +659,7 @@ public:
     inline
     bool
         insert( TEventLauncher *Launcher ) {
-            return (
-                Launcher->IsRadioActivated() ?
-                    m_radiodrivenlaunchers.insert( Launcher ) :
-                    m_inputdrivenlaunchers.insert( Launcher ) ); }
+            return Launcher->IsRadioActivated() ? m_radiodrivenlaunchers.insert(Launcher) : m_inputdrivenlaunchers.insert(Launcher); }
     inline void purge (TEventLauncher *Launcher) {
 		m_radiodrivenlaunchers.purge(Launcher);
 		m_inputdrivenlaunchers.purge(Launcher); }

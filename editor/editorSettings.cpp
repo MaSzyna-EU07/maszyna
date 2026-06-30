@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "editor/editorSettings.hpp"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 
 #include <cstdlib>
 #include <filesystem>
@@ -23,14 +24,8 @@ namespace fs = std::filesystem;
 
 fs::path settings_path()
 {
-#ifdef _WIN32
-	if (const char *appdata = std::getenv("APPDATA"))
-		return fs::path(appdata) / "MaSzyna" / "eu07_editor.ini";
-#else
-	if (const char *home = std::getenv("HOME"))
-		return fs::path(home) / ".config" / "MaSzyna" / "eu07_editor.ini";
-#endif
-	return fs::path("eu07_editor.ini");
+	fs::path p = user_config_path("eu07_editor.ini");
+	return p.empty() ? fs::path("eu07_editor.ini") : p;
 }
 
 const char *scheme_to_string(editorSettings::movement_scheme scheme)

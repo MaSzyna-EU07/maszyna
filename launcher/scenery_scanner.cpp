@@ -13,7 +13,7 @@ void scenery_scanner::scan()
 	for (auto &f : std::filesystem::directory_iterator("scenery")) {
 		std::filesystem::path path(std::filesystem::relative(f.path(), "scenery/"));
 
-		if (*(path.filename().string().begin()) == '$')
+		if (*path.filename().string().begin() == '$')
 			continue;
 
 		if (path.string().ends_with(".scn"))

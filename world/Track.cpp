@@ -58,16 +58,16 @@ TSwitchExtension::TSwitchExtension(TTrack *owner, int const what)
     fOffset2 = 0.f; // w zasadniczym wewnętrzna iglica dolega
     Segments[0] = std::make_shared<TSegment>(owner); // z punktu 1 do 2
     Segments[1] = std::make_shared<TSegment>(owner); // z punktu 3 do 4 (1=3 dla zwrotnic; odwrócony dla skrzyżowań, ewentualnie 1=4)
-    Segments[2] = (what >= 3) ?
+    Segments[2] = what >= 3 ?
                       std::make_shared<TSegment>(owner) :
                       nullptr; // z punktu 2 do 4       skrzyżowanie od góry:      wersja "-1":
-    Segments[3] = (what >= 4) ?
+    Segments[3] = what >= 4 ?
                       std::make_shared<TSegment>(owner) :
 					  nullptr; // z punktu 4 do 1              1       1=4 0 0=3
-    Segments[4] = (what >= 5) ?
+    Segments[4] = what >= 5 ?
                       std::make_shared<TSegment>(owner) :
 					  nullptr; // z punktu 1 do 3            4 x 3   3 3 x 2   2
-    Segments[5] = (what >= 6) ?
+    Segments[5] = what >= 6 ?
                       std::make_shared<TSegment>(owner) :
                       nullptr; // z punktu 3 do 2              2       2            1       1
 }
@@ -142,10 +142,7 @@ void TIsolated::Modify(int i, TDynamicObject *o)
                 simulation::Events.AddToQuery(evBusy, o); // dodanie zajętości do kolejki
 			if (Global.iMultiplayer) // jeśli multiplayer
 			{
-				auto const *owner = (
-					((o->Mechanik != nullptr) && (o->Mechanik->primary())) ?
-					o->Mechanik :
-					o->ctOwner);
+				auto const *owner = o->Mechanik != nullptr && o->Mechanik->primary() ? o->Mechanik : o->ctOwner;
 				auto textline = owner != nullptr ? Bezogonkow(owner->TrainName(), true) : "none";
 				if ("none" != textline && Global.bIsolatedTrainName) {
 					textline = ":" + Bezogonkow(owner->TrainName(), true);
@@ -234,7 +231,7 @@ TTrack * TTrack::NullCreate(int dir)
     nodedata.name = "auto_null"; // track isn't visible so only name is needed
     trk = new TTrack( nodedata );
     trk->m_visible = false; // nie potrzeba pokazywać, zresztą i tak nie ma tekstur
-    trk->iCategoryFlag = (iCategoryFlag & 15) | 0x80; // taki sam typ plus informacja, że dodatkowy
+    trk->iCategoryFlag = iCategoryFlag & 15 | 0x80; // taki sam typ plus informacja, że dodatkowy
     float r1, r2;
     Segment->GetRolls(r1, r2); // pobranie przechyłek na początku toru
 	glm::dvec3 p1, cv1, cv2, p2; // będziem tworzyć trajektorię lotu
@@ -277,7 +274,7 @@ TTrack * TTrack::NullCreate(int dir)
         trk->Init(); // utworzenie segmentu
         trk2 = new TTrack( nodedata );
         trk2->iCategoryFlag =
-            (iCategoryFlag & 15) | 0x80; // taki sam typ plus informacja, że dodatkowy
+            iCategoryFlag & 15 | 0x80; // taki sam typ plus informacja, że dodatkowy
         trk2->m_visible = false;
         trk2->fVelocity = 20.0; // zawracanie powoli
         trk2->fRadius = 20.0; // promień, aby się dodawało do tabelki prędkości i liczyło narastająco
@@ -329,7 +326,7 @@ void TTrack::ConnectPrevPrev(TTrack *pTrack, int typ)
     if (pTrack)
     { //(pTrack) może być zwrotnicą, a (this) tylko zwykłym odcinkiem
         trPrev = pTrack;
-        iPrevDirection = ((pTrack->eType == tt_Switch) ? 0 : (typ & 2));
+        iPrevDirection = pTrack->eType == tt_Switch ? 0 : typ & 2;
         pTrack->trPrev = this;
         pTrack->iPrevDirection = 0;
     }
@@ -346,11 +343,10 @@ void TTrack::ConnectPrevNext(TTrack *pTrack, int typ)
             if (pTrack->m_visible)
                 if (eType == tt_Normal) // jeśli łączone są dwa normalne
                     if (pTrack->eType == tt_Normal)
-                        if ((fTrackWidth !=
-                             pTrack->fTrackWidth) // Ra: jeśli kolejny ma inne wymiary
+                        if (fTrackWidth != pTrack->fTrackWidth // Ra: jeśli kolejny ma inne wymiary
                             ||
-                            (fTexHeight1 != pTrack->fTexHeight1) ||
-                            (fTexWidth != pTrack->fTexWidth) || (fTexSlope != pTrack->fTexSlope))
+                            fTexHeight1 != pTrack->fTexHeight1 ||
+                            fTexWidth != pTrack->fTexWidth || fTexSlope != pTrack->fTexSlope)
                             pTrack->iTrapezoid |= 2; // to rysujemy potworka
     }
 }
@@ -359,18 +355,17 @@ void TTrack::ConnectNextPrev(TTrack *pTrack, int typ)
     if (pTrack)
     {
         trNext = pTrack;
-        iNextDirection = ((pTrack->eType == tt_Switch) ? 0 : (typ & 2));
+        iNextDirection = pTrack->eType == tt_Switch ? 0 : typ & 2;
         pTrack->trPrev = this;
         pTrack->iPrevDirection = 1;
         if (m_visible)
             if (pTrack->m_visible)
                 if (eType == tt_Normal) // jeśli łączone są dwa normalne
                     if (pTrack->eType == tt_Normal)
-                        if ((fTrackWidth !=
-                             pTrack->fTrackWidth) // Ra: jeśli kolejny ma inne wymiary
+                        if (fTrackWidth != pTrack->fTrackWidth // Ra: jeśli kolejny ma inne wymiary
                             ||
-                            (fTexHeight1 != pTrack->fTexHeight1) ||
-                            (fTexWidth != pTrack->fTexWidth) || (fTexSlope != pTrack->fTexSlope))
+                            fTexHeight1 != pTrack->fTexHeight1 ||
+                            fTexWidth != pTrack->fTexWidth || fTexSlope != pTrack->fTexSlope)
                             iTrapezoid |= 2; // to rysujemy potworka
     }
 }
@@ -479,16 +474,13 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     }
     parser->getTokens();
     *parser >> token;
-    m_visible = (token.compare("vis") == 0); // visible
+    m_visible = token.compare("vis") == 0; // visible
     if (m_visible)
     {
         parser->getTokens();
         *parser >> str; // railtex
         replace_slashes(str);
-        m_material1 = (
-            str == "none" ?
-                null_handle :
-                GfxRenderer->Fetch_Material( str ) );
+        m_material1 = str == "none" ? null_handle : GfxRenderer->Fetch_Material(str);
         parser->getTokens();
         *parser >> fTexLength; // tex tile length
         if (fTexLength < 0.01)
@@ -496,10 +488,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         parser->getTokens();
         *parser >> str; // sub || railtex
         replace_slashes(str);
-        m_material2 = (
-            str == "none" ?
-                null_handle :
-                GfxRenderer->Fetch_Material( str ) );
+        m_material2 = str == "none" ? null_handle : GfxRenderer->Fetch_Material(str);
         parser->getTokens(3);
         *parser
             >> fTexHeight1
@@ -561,8 +550,8 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         }
 
         // length2 is better than length for comparing because it does not require sqrt function
-        if( (glm::length2(( p1 + p1 + p2 ) / 3.0 - p1 - cp1) < sq(0.02))
-         || (glm::length2(( p1 + p2 + p2 ) / 3.0 - p2 + cp1) < sq(0.02)) ) {
+        if( glm::length2((p1 + p1 + p2) / 3.0 - p1 - cp1) < sq(0.02)
+         || glm::length2((p1 + p2 + p2) / 3.0 - p2 + cp1) < sq(0.02) ) {
             // "prostowanie" prostych z kontrolnymi, dokładność 2cm
 			cp1 = cp2 = glm::dvec3(0, 0, 0);
         }
@@ -577,7 +566,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         }
         else {
             // HACK: crude check whether claimed straight is an actual straight piece
-			if ((cp1 == glm::dvec3()) && (cp2 == glm::dvec3()))
+			if (cp1 == glm::dvec3() && cp2 == glm::dvec3())
 			{
                 segsize = 10.0; // for straights, 10m per segment works good enough
             }
@@ -591,7 +580,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             }
         }
 
-        if ((cp1 == glm::dvec3()) && (cp2 == glm::dvec3()))
+        if (cp1 == glm::dvec3() && cp2 == glm::dvec3())
 		{
             // Ra: hm, czasem dla prostego są podane...
             // gdy prosty, kontrolne wyliczane przy zmiennej przechyłce
@@ -602,7 +591,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             Segment->Init( p1, cp1 + p1, cp2 + p2, p2, segsize, r1, r2 );
         }
 
-        if ((r1 != 0) || (r2 != 0))
+        if (r1 != 0 || r2 != 0)
             iTrapezoid = 1; // są przechyłki do uwzględniania w rysowaniu
 
         if (eType == tt_Table) // obrotnica ma doklejkę
@@ -675,7 +664,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         }
         else {
             // HACK: crude check whether claimed straight is an actual straight piece
-			if ((cp1 == glm::dvec3()) && (cp2 == glm::dvec3()))
+			if (cp1 == glm::dvec3() && cp2 == glm::dvec3())
 			{
                 segsize = 10.0; // for straights, 10m per segment works good enough
             }
@@ -689,7 +678,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             }
         }
 
-        if ((cp1 == glm::dvec3()) && (cp2 == glm::dvec3()))
+        if (cp1 == glm::dvec3() && cp2 == glm::dvec3())
 		{
             // Ra: hm, czasem dla prostego są podane...
             // gdy prosty, kontrolne wyliczane przy zmiennej przechyłce
@@ -723,8 +712,8 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         if( eType != tt_Cross ) {
             // dla skrzyżowań muszą być podane kontrolne
 			// length2 is better than length for comparing because it does not require sqrt function
-            if( (glm::length2(( p3 + p3 + p4 ) / 3.0 - p3 - cp3) < sq(0.02))
-             || (glm::length2(( p3 + p4 + p4 ) / 3.0 - p4 + cp3) < sq(0.02)) ) {
+            if( glm::length2((p3 + p3 + p4) / 3.0 - p3 - cp3) < sq(0.02)
+             || glm::length2((p3 + p4 + p4) / 3.0 - p4 + cp3) < sq(0.02) ) {
                 // "prostowanie" prostych z kontrolnymi, dokładność 2cm
 				cp3 = cp4 = glm::dvec3(0, 0, 0);
             }
@@ -740,7 +729,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         }
         else {
             // HACK: crude check whether claimed straight is an actual straight piece
-			if ((cp3 == glm::dvec3()) && (cp4 == glm::dvec3()))
+			if (cp3 == glm::dvec3() && cp4 == glm::dvec3())
 			{
                 segsize = 10.0; // for straights, 10m per segment works good enough
             }
@@ -754,7 +743,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             }
         }
 
-        if ((cp3 == glm::dvec3()) && (cp4 == glm::dvec3()))
+        if (cp3 == glm::dvec3() && cp4 == glm::dvec3())
 		{
             // Ra: hm, czasem dla prostego są podane...
             // gdy prosty, kontrolne wyliczane przy zmiennej przechyłce
@@ -990,7 +979,7 @@ bool TTrack::AssignEvents() {
         { "event2", &m_events2 }, { "eventall2", &m_events2all } };
 
     for( auto &eventsequence : eventsequences ) {
-        for( auto &event : *( eventsequence.second ) ) {
+        for( auto &event : *eventsequence.second ) {
             event.second = simulation::Events.FindEvent( event.first );
             if( event.second != nullptr ) {
                 m_events = true;
@@ -1004,8 +993,8 @@ bool TTrack::AssignEvents() {
 
     auto const trackname { name() };
 
-    if( ( Global.iHiddenEvents & 1 )
-     && ( false == trackname.empty() ) ) {
+    if (Global.iHiddenEvents & 1
+     && false == trackname.empty() ) {
         // jeśli podana jest nazwa torów, można szukać eventów skojarzonych przez nazwę
         for( auto &eventsequence : eventsequences ) {
             auto *event = simulation::Events.FindEvent( trackname + ':' + eventsequence.first );
@@ -1017,7 +1006,7 @@ bool TTrack::AssignEvents() {
         }
     }
 
-    return ( lookupfail == false );
+    return lookupfail == false;
 }
 
 bool TTrack::AssignForcedEvents(basic_event *NewEventPlus, basic_event *NewEventMinus)
@@ -1045,8 +1034,8 @@ void TTrack::QueueEvents( event_sequence const &Events, TDynamicObject const *Ow
 void TTrack::QueueEvents( event_sequence const &Events, TDynamicObject const *Owner, double const Delaylimit ) {
 
     for( auto const &event : Events ) {
-        if( ( event.second != nullptr )
-         && ( event.second->m_delay <= Delaylimit) ) {
+        if( event.second != nullptr
+         && event.second->m_delay <= Delaylimit ) {
             simulation::Events.AddToQuery( event.second, Owner );
         }
     }
@@ -1109,7 +1098,7 @@ bool TTrack::RemoveDynamicObject(TDynamicObject *Dynamic)
         Dynamics.pop_front();
         result = true;
     }
-    else if( *( --Dynamics.end() ) == Dynamic ) {
+    else if( *--Dynamics.end() == Dynamic ) {
         // ...or the back of the queue...
         Dynamics.pop_back();
         result = true;
@@ -1153,12 +1142,9 @@ bool TTrack::InMovement()
                 if (!SwitchExtension->CurrentIndex)
                     return false; // 0=zablokowana się nie animuje
                 // trzeba każdorazowo porównywać z kątem modelu
-				auto ac = (
-                    SwitchExtension->pModel ?
-                        SwitchExtension->pModel->GetContainer() :
-                        nullptr );
+				auto ac = SwitchExtension->pModel ? SwitchExtension->pModel->GetContainer() : nullptr;
                 return ac ?
-                           (ac->AngleGet() != SwitchExtension->fOffset) ||
+                           ac->AngleGet() != SwitchExtension->fOffset ||
                                !(ac->TransGet() == SwitchExtension->vTrans) :
                            false;
                 // return true; //jeśli jest taki obiekt
@@ -1174,7 +1160,7 @@ void TTrack::RaAssign( TAnimModel *am, basic_event *done, basic_event *joined )
         SwitchExtension->pModel = am;
         SwitchExtension->evMinus = done; // event zakończenia animacji (zadanie nowej przedłuża)
         SwitchExtension->evPlus = joined; // event potwierdzenia połączenia (gdy nie znajdzie, to się nie połączy)
-        if( ( am != nullptr ) && ( am->GetContainer() ) ) {// może nie być?
+        if( am != nullptr && am->GetContainer() ) {// może nie być?
             am->GetContainer()->EventAssign( done ); // zdarzenie zakończenia animacji
         }
     }
@@ -1372,7 +1358,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 // optional vertical shift of the auto-generated ballast (sleepermodel ballastZ).
                 // positive value raises the trackbed, negative pushes it down so a custom
                 // sleeper model placed on top can sit flush with the ballast surface.
-                if( m_sleeper_enabled && ( m_sleeper_ballast_z != 0.f ) ) {
+                if( m_sleeper_enabled && m_sleeper_ballast_z != 0.f ) {
                     for( auto &v : bpts1 ) {
                         v.position.y += m_sleeper_ballast_z;
                     }
@@ -1380,10 +1366,10 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 auto const texturelength { texture_length( m_material2 ) };
                 gfx::vertex_array vertices;
                 Segment->RenderLoft(vertices, m_origin, bpts1, iTrapezoid > 0, texturelength);
-                if( ( Bank != 0 ) && ( true == Geometry2.empty() ) ) {
+                if( Bank != 0 && true == Geometry2.empty() ) {
                     Geometry2.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
                 }
-                if( ( Bank == 0 ) && ( false == Geometry2.empty() ) ) {
+                if( Bank == 0 && false == Geometry2.empty() ) {
                     // special variant, replace existing data for a turntable track
 					GfxRenderer->Replace(vertices, empty_userdata, Geometry2[0], GL_TRIANGLE_STRIP);
                 }
@@ -1393,14 +1379,14 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 auto const nnumPts { track_rail_profile( m_profile1.second ).size() / 2 };
                 auto const texturelength { texture_length( m_material1 ) };
                 gfx::vertex_array vertices;
-                if( ( Bank != 0 ) && ( true == Geometry1.empty() ) ) {
+                if( Bank != 0 && true == Geometry1.empty() ) {
                     Segment->RenderLoft( vertices, m_origin, rpts1, iTrapezoid > 0, texturelength );
                     Geometry1.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
                     vertices.clear(); // reuse the scratchpad
                     Segment->RenderLoft( vertices, m_origin, rpts2, iTrapezoid > 0, texturelength );
                     Geometry1.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
                 }
-                if( ( Bank == 0 ) && ( false == Geometry1.empty() ) ) {
+                if( Bank == 0 && false == Geometry1.empty() ) {
                     // special variant, replace existing data for a turntable track
                     Segment->RenderLoft( vertices, m_origin, rpts1, iTrapezoid > 0, texturelength );
 					GfxRenderer->Replace(vertices, empty_userdata, Geometry1[0], GL_TRIANGLE_STRIP);
@@ -1550,13 +1536,13 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 gfx::vertex_array rpts1, rpts2; // współrzędne przekroju i mapowania dla prawej i lewej strony
                 create_road_side_profile( rpts1, rpts2, bpts1 );
                 gfx::vertex_array vertices;
-                if( ( fTexHeight1 >= 0.0 ) || ( slop != 0.0 ) ) {
+                if( fTexHeight1 >= 0.0 || slop != 0.0 ) {
                     // tylko jeśli jest z prawej
                     Segment->RenderLoft( vertices, m_origin, rpts1, iTrapezoid > 0, texturelength );
                     Geometry2.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
                     vertices.clear();
                 }
-                if( ( fTexHeight1 >= 0.0 ) || ( side != 0.0 ) ) {
+                if( fTexHeight1 >= 0.0 || side != 0.0 ) {
                     // tylko jeśli jest z lewej
                     Segment->RenderLoft( vertices, m_origin, rpts2, iTrapezoid > 0, texturelength );
                     Geometry2.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
@@ -1627,13 +1613,13 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 gfx::vertex_array rpts1, rpts2; // współrzędne przekroju i mapowania dla prawej i lewej strony
                 create_road_side_profile( rpts1, rpts2, bpts1, true );
                 // Ra 2014-07: trzeba to przerobić na pętlę i pobierać profile (przynajmniej 2..4) z sąsiednich dróg
-                bool render = ( m_material2 != 0 ); // renderować nie trzeba, ale trzeba wyznaczyć punkty brzegowe nawierzchni
+                bool render = m_material2 != 0; // renderować nie trzeba, ale trzeba wyznaczyć punkty brzegowe nawierzchni
                 auto const side{ std::abs( fTexWidth ) }; // szerokść podsypki na zewnątrz szyny albo pobocza
                 auto const texturelength{ texture_length( m_material2 ) };
                 gfx::vertex_array vertices;
                 if (SwitchExtension->iRoads == 4)
                 { // pobocza do trapezowatej nawierzchni - dodatkowe punkty z drugiej strony odcinka
-                    if( ( fTexHeight1 >= 0.0 ) || ( side != 0.0 ) ) {
+                    if( fTexHeight1 >= 0.0 || side != 0.0 ) {
                         SwitchExtension->Segments[ 2 ]->RenderLoft( vertices, m_origin, rpts2, true, texturelength, 1.0, 0, 0, {}, &b, render );
                         if( true == render ) {
                             Geometry2.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
@@ -1658,7 +1644,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 }
                 else {
                     // punkt 3 pokrywa się z punktem 1, jak w zwrotnicy; połączenie 1->2 nie musi być prostoliniowe
-                    if( ( fTexHeight1 >= 0.0 ) || ( side != 0.0 ) ) {
+                    if( fTexHeight1 >= 0.0 || side != 0.0 ) {
                         SwitchExtension->Segments[ 2 ]->RenderLoft( vertices, m_origin, rpts2, true, texturelength, 1.0, 0, 0, {}, &b, render ); // z P2 do P4
                         if( true == render ) {
                             Geometry2.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
@@ -1680,8 +1666,8 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
             // renderowanie nawierzchni na końcu
             double sina0 = sin(a[0]), cosa0 = cos(a[0]);
             double u, v;
-            if( ( false == SwitchExtension->bPoints ) // jeśli tablica nie wypełniona
-             && ( b != nullptr ) ) {
+            if( false == SwitchExtension->bPoints // jeśli tablica nie wypełniona
+             && b != nullptr ) {
                 SwitchExtension->bPoints = true; // tablica punktów została wypełniona
             }
 
@@ -1862,13 +1848,13 @@ bool TTrack::Switch(int i, float const t, float const d)
                 if (trNext || trPrev)
                 {
                     fVelocity = 6.0; // jazda dozwolona
-                    if( ( trPrev )
-                     && ( trPrev->fVelocity == 0.0 ) ) {
+                    if( trPrev
+                     && trPrev->fVelocity == 0.0 ) {
                         // ustawienie 0 da możliwość zatrzymania AI na obrotnicy
                         trPrev->VelocitySet( 6.0 ); // odblokowanie dołączonego toru do jazdy
                     }
-                    if( ( trNext )
-                     && ( trNext->fVelocity == 0.0 ) ) {
+                    if( trNext
+                     && trNext->fVelocity == 0.0 ) {
                         trNext->VelocitySet( 6.0 );
                     }
                     if( SwitchExtension->evPlus ) { // w starych sceneriach może nie być
@@ -1937,15 +1923,15 @@ int TTrack::CrossSegment(int from, int into)
         break;
     case 1: // left
 //        WriteLog( "Turning left from P" + to_string( from + 1 ) + " on " + name() );
-        i = (SwitchExtension->iRoads == 4) ? iLewo4[from] : iLewo3[from];
+        i = SwitchExtension->iRoads == 4 ? iLewo4[from] : iLewo3[from];
         break;
     case 2: // right
 //        WriteLog( "Turning right from P" + to_string( from + 1 ) + " on " + name() );
-        i = (SwitchExtension->iRoads == 4) ? iPrawo4[from] : iPrawo3[from];
+        i = SwitchExtension->iRoads == 4 ? iPrawo4[from] : iPrawo3[from];
         break;
     case 3: // stright
 //        WriteLog( "Going straight from P" + to_string( from + 1 ) + " on " + name() );
-        i = (SwitchExtension->iRoads == 4) ? iProsto4[from] : iProsto3[from];
+        i = SwitchExtension->iRoads == 4 ? iProsto4[from] : iProsto3[from];
         break;
     }
     if (i)
@@ -1958,7 +1944,7 @@ int TTrack::CrossSegment(int from, int into)
 
 void TTrack::RaAnimListAdd(TTrack *t)
 { // dodanie toru do listy animacyjnej
-    if ((t != nullptr) && (SwitchExtension != nullptr))
+    if (t != nullptr && SwitchExtension != nullptr)
     {
         if (t == this)
             return; // siebie nie dodajemy drugi raz do listy
@@ -2014,10 +2000,10 @@ TTrack * TTrack::RaAnimate()
             }
         }
         // skip the geometry update if no geometry for this track was generated yet
-        if( ( ( m_material1 != 0 )
-           || ( m_material2 != 0 ) )
-         && ( ( false == Geometry1.empty() )
-           || ( false == Geometry2.empty() ) ) ) {
+        if( ( m_material1 != 0
+           || m_material2 != 0 )
+         && ( false == Geometry1.empty()
+           || false == Geometry2.empty() ) ) {
             // iglice liczone tylko dla zwrotnic
             gfx::vertex_array rpts1, rpts2;
             create_track_rail_profile( rpts1, rpts2 );
@@ -2075,12 +2061,10 @@ TTrack * TTrack::RaAnimate()
             SwitchExtension->CurrentIndex) // 0=zablokowana się nie animuje
         { // trzeba każdorazowo porównywać z kątem modelu
             // //pobranie kąta z modelu
-			auto ac = (
-                SwitchExtension->pModel ?
-                    SwitchExtension->pModel->GetContainer() : // pobranie głównego submodelu
-                    nullptr );
+			auto ac = SwitchExtension->pModel ? SwitchExtension->pModel->GetContainer() : // pobranie głównego submodelu
+			                                    nullptr;
             if( ac ) {
-                if( ( ac->AngleGet() != SwitchExtension->fOffset )
+                if( ac->AngleGet() != SwitchExtension->fOffset
                 || !( ac->TransGet() == SwitchExtension->vTrans ) ) { // czy przemieściło się od ostatniego sprawdzania
 
                     double hlen = 0.5 * SwitchExtension->Segments[ 0 ]->GetLength(); // połowa długości
@@ -2127,9 +2111,9 @@ double TTrack::WidthTotal()
 
 bool TTrack::IsGroupable()
 { // czy wyświetlanie toru może być zgrupwane z innymi
-    if ((eType == tt_Switch) || (eType == tt_Table))
+    if (eType == tt_Switch || eType == tt_Table)
         return false; // tory ruchome nie są grupowane
-    if ((eEnvironment == e_canyon) || (eEnvironment == e_tunnel))
+    if (eEnvironment == e_canyon || eEnvironment == e_tunnel)
         return false; // tory ze zmianą światła
     return true;
 };
@@ -2322,10 +2306,7 @@ TTrack::export_as_text_( std::ostream &Output ) const {
             << texturefile << ' '
             << fTexLength << ' ';
 
-        texturefile = (
-            m_material2 != null_handle ?
-                GfxRenderer->Material( m_material2 )->GetName() :
-                "none" );
+        texturefile = m_material2 != null_handle ? GfxRenderer->Material(m_material2)->GetName() : "none";
         if( texturefile.find( paths::textures ) == 0 ) {
             // don't include 'textures/' in the path
             texturefile.erase( 0, std::string{ paths::textures }.size() );
@@ -2333,7 +2314,7 @@ TTrack::export_as_text_( std::ostream &Output ) const {
         Output << texturefile << ' ';
 
         Output
-            << (fTexHeight1 - fTexHeightOffset ) * ( ( iCategoryFlag & 4 ) ? -1 : 1 ) << ' '
+            << (fTexHeight1 - fTexHeightOffset ) * ( iCategoryFlag & 4 ? -1 : 1 ) << ' '
             << fTexWidth << ' '
             << fTexSlope << ' ';
     }
@@ -2367,7 +2348,7 @@ TTrack::export_as_text_( std::ostream &Output ) const {
         { "event2", &m_events2 }, { "eventall2", &m_events2all } };
 
     for( auto &eventsequence : eventsequences ) {
-        for( auto &event : *( eventsequence.second ) ) {
+        for( auto &event : *eventsequence.second ) {
             // NOTE: actual event name can be potentially different from its cached name, if it was renamed in the editor
             // therefore on export we pull the name from the event itself, if the binding isn't broken
             Output
@@ -2378,8 +2359,8 @@ TTrack::export_as_text_( std::ostream &Output ) const {
                 << ' ';
         }
     }
-    if( ( SwitchExtension )
-     && ( SwitchExtension->fVelocity != -1.0 ) ) {
+    if( SwitchExtension
+     && SwitchExtension->fVelocity != -1.0 ) {
         Output << "velocity " << SwitchExtension->fVelocity << ' ';
     }
     else {
@@ -2396,8 +2377,8 @@ TTrack::export_as_text_( std::ostream &Output ) const {
     if( fVerticalRadius != 0.f ) {
         Output << "vradius " << fVerticalRadius << ' ';
     }
-    if( ( eType == tt_Switch )
-     && ( SwitchExtension->m_material3 != null_handle ) ) {
+    if( eType == tt_Switch
+     && SwitchExtension->m_material3 != null_handle) {
         auto texturefile { GfxRenderer->Material( m_material2 )->GetName() };
         if( texturefile.find( paths::textures ) == 0 ) {
             // don't include 'textures/' in the path
@@ -2408,7 +2389,7 @@ TTrack::export_as_text_( std::ostream &Output ) const {
     if( false == m_friction.first.empty() ) {
         Output << "friction " << m_friction.first << ' ';
     }
-    if( m_sleeper_enabled && ( false == m_sleeper_model_name.empty() ) ) {
+    if( m_sleeper_enabled && false == m_sleeper_model_name.empty() ) {
         Output
             << "sleepermodel "
             << m_sleeper_frequency << ' '
@@ -2546,10 +2527,7 @@ TTrack::texture_length( material_handle const Material ) {
         return fTexLength;
     }
     auto const texturelength { GfxRenderer->Material( Material )->GetSize().y };
-    return (
-        texturelength < 0.f ?
-            fTexLength :
-            texturelength );
+    return texturelength < 0.f ? fTexLength : texturelength;
 }
 
 void TTrack::MovedUp1(float const dh)
@@ -2561,17 +2539,17 @@ void TTrack::MovedUp1(float const dh)
 // ustawienie prędkości z ograniczeniem do pierwotnej wartości (zapisanej w scenerii)
 void TTrack::VelocitySet(float v) {
     // TBD, TODO: add a variable to preserve potential speed limit set by the track configuration on basic track pieces
-    if( ( SwitchExtension )
-     && ( SwitchExtension->fVelocity != -1 ) ) {
+    if( SwitchExtension
+     && SwitchExtension->fVelocity != -1 ) {
         // zwrotnica może mieć odgórne ograniczenie, nieprzeskakiwalne eventem
         fVelocity =
             min_speed<float>(
                 v,
-                ( SwitchExtension->fVelocity > 0 ?
+                SwitchExtension->fVelocity > 0 ?
                     SwitchExtension->fVelocity : // positive limit applies to both switch tracks
-                    ( SwitchExtension->CurrentIndex == 0 ?
+                    SwitchExtension->CurrentIndex == 0 ?
                         -1 : // negative limit applies only to the diverging track
-                        -SwitchExtension->fVelocity ) ) );
+                        -SwitchExtension->fVelocity );
     }
     else {
         fVelocity = v; // nie ma ograniczenia
@@ -2580,7 +2558,7 @@ void TTrack::VelocitySet(float v) {
 
 double TTrack::VelocityGet()
 { // pobranie dozwolonej prędkości podczas skanowania
-    return ((iDamageFlag & 128) ? 0.0 : fVelocity); // tor uszkodzony = prędkość zerowa
+    return iDamageFlag & 128 ? 0.0 : fVelocity; // tor uszkodzony = prędkość zerowa
 };
 
 float TTrack::Friction() const {
@@ -2616,14 +2594,8 @@ TTrack::DoubleSlip() const {
 
     // crude way to discern part of double slip switch:
     // a switch with name ending in _a or _b or _c or _d
-    return (
-        ( iCategoryFlag == 1 )
-     && ( eType == tt_Switch )
-     && ( m_name.size() > 2 )
-     && ( m_name.back() >= 'a' )
-     && ( m_name.back() <= 'd' )
-     && ( ( m_name[ m_name.size() - 2 ] == '_' )
-       || ( m_name.rfind( '_' ) != std::string::npos ) ) );
+    return iCategoryFlag == 1 && eType == tt_Switch && m_name.size() > 2 && m_name.back() >= 'a' && m_name.back() <= 'd' &&
+	       (m_name[m_name.size() - 2] == '_' || m_name.rfind('_') != std::string::npos);
 }
 
 
@@ -2633,7 +2605,7 @@ TTrack * TTrack::Connected(int s, double &d) const
     TTrack *t; // nie zmieniamy kierunku (d), jeśli nie ma toru dalej
     if (eType != tt_Cross)
     { // jeszcze trzeba sprawdzić zgodność
-        t = (s > 0) ? trNext : trPrev;
+        t = s > 0 ? trNext : trPrev;
         if (t) // o ile jest na co przejść, zmieniamy znak kierunku na nowym torze
             if (t->eType == tt_Cross)
             { // jeśli wjazd na skrzyżowanie, trzeba ustalić segment, bo od tego zależy zmiana
@@ -2644,33 +2616,33 @@ TTrack * TTrack::Connected(int s, double &d) const
             }
             else
             {
-                if ((s > 0) ? iNextDirection : !iPrevDirection)
+                if (s > 0 ? iNextDirection : !iPrevDirection)
                     d = -d; // następuje zmiana kierunku wózka albo kierunku skanowania
                 // s=((s>0)?iNextDirection:iPrevDirection)?-1:1; //kierunek toru po zmianie
             }
-        return (t); // zwrotnica ma odpowiednio ustawione (trNext)
+        return t; // zwrotnica ma odpowiednio ustawione (trNext)
     }
-    switch ((SwitchExtension->iRoads == 4) ? iEnds4[s + 6] :
+    switch (SwitchExtension->iRoads == 4 ? iEnds4[s + 6] :
                                              iEnds3[s + 6]) // numer końca 0..3, -1 to błąd
     { // zjazd ze skrzyżowania
     case 0:
         if (SwitchExtension->pPrevs[0])
-            if ((s > 0) == SwitchExtension->iPrevDirection[0])
+            if (s > 0 == SwitchExtension->iPrevDirection[0])
                 d = -d;
         return SwitchExtension->pPrevs[0];
     case 1:
         if (SwitchExtension->pNexts[0])
-            if ((s > 0) == SwitchExtension->iNextDirection[0])
+            if (s > 0 == SwitchExtension->iNextDirection[0])
                 d = -d;
         return SwitchExtension->pNexts[0];
     case 2:
         if (SwitchExtension->pPrevs[1])
-            if ((s > 0) == SwitchExtension->iPrevDirection[1])
+            if (s > 0 == SwitchExtension->iPrevDirection[1])
                 d = -d;
         return SwitchExtension->pPrevs[1];
     case 3:
         if (SwitchExtension->pNexts[1])
-            if ((s > 0) == SwitchExtension->iNextDirection[1])
+            if (s > 0 == SwitchExtension->iNextDirection[1])
                 d = -d;
         return SwitchExtension->pNexts[1];
     }
@@ -2834,11 +2806,7 @@ TTrack::create_track_blade_profile( gfx::vertex_array &Right, gfx::vertex_array 
 void
 TTrack::create_track_bed_profile( gfx::vertex_array &Output, TTrack const *Previous, TTrack const *Next ) {
     // geometry parameters
-    auto * profilesource = (
-        eType != tt_Switch ? this :
-        Previous && Previous->eType != tt_Switch ? Previous :
-        Next && Next->eType != tt_Switch ? Next :
-        this );
+    auto * profilesource = eType != tt_Switch ? this : Previous && Previous->eType != tt_Switch ? Previous : Next && Next->eType != tt_Switch ? Next : this;
 
     auto const texheight1 { profilesource->fTexHeight1 };
     auto const texwidth { profilesource->fTexWidth };
@@ -2861,10 +2829,10 @@ TTrack::create_track_bed_profile( gfx::vertex_array &Output, TTrack const *Previ
 
     glm::vec3 normal2;
     float fHTW2, side2, slop2, rozp2, fTexHeight2, hypot2;
-    if( ( Next != nullptr )
-     && ( Next->eType != tt_Switch )
-     && ( ( iTrapezoid & 2 ) // ten bit oznacza, że istnieje odpowiednie pNext
-       || ( eType == tt_Switch ) ) ) { 
+    if( Next != nullptr
+     && Next->eType != tt_Switch
+     && ( iTrapezoid & 2 // ten bit oznacza, że istnieje odpowiednie pNext
+       || eType == tt_Switch ) ) { 
         fHTW2 = 0.5f * std::abs(Next->fTrackWidth); // połowa rozstawu/nawierzchni
         side2 = std::abs(Next->fTexWidth);
         slop2 = std::abs(Next->fTexSlope); // nie jest używane później
@@ -2905,7 +2873,7 @@ TTrack::create_track_bed_profile( gfx::vertex_array &Output, TTrack const *Previ
         cos2 { std::cos( roll2 ) };
 
     // profile
-    auto const transition { ( iTrapezoid != 0 ) || ( eType == tt_Switch ) };
+    auto const transition { iTrapezoid != 0 || eType == tt_Switch };
     auto const pointcount { transition ? 10 : 5 };
     Output.resize( pointcount );
     // potentially retrieve texture length override from the assigned material
@@ -3081,7 +3049,7 @@ TTrack::create_road_profile( gfx::vertex_array &Output, bool const Forcetransiti
     auto const map1 = max > 0.f ? fHTW / max : 0.5f; // obcięcie tekstury od strony 1
     auto const map2 = max > 0.f ? fHTW2 / max : 0.5f; // obcięcie tekstury od strony 2
 
-    auto const transition { ( true == Forcetransition ) || ( iTrapezoid != 0 ) };
+    auto const transition { true == Forcetransition || iTrapezoid != 0 };
 
     auto const pointcount{ transition ? 4 : 2 };
     Output.resize( pointcount );
@@ -3156,7 +3124,7 @@ TTrack::create_road_side_profile( gfx::vertex_array &Right, gfx::vertex_array &L
 
     auto const texturelength{ texture_length( m_material2 ) };
 
-    auto const transition { ( true == Forcetransition ) || ( iTrapezoid != 0 ) };
+    auto const transition { true == Forcetransition || iTrapezoid != 0 };
 
     auto const pointcount{ transition ? 6 : 3 };
     Right.resize( pointcount );
@@ -3221,22 +3189,10 @@ TTrack::create_road_side_profile( gfx::vertex_array &Right, gfx::vertex_array &L
         // krawężnik jest mapowany od 31/64 do 32/64 lewy i od 32/64 do 33/64 prawy
         auto const d = -fTexHeight1 / 3.75f; // krawężnik o wysokości 150mm jest pochylony 40mm
         auto const max = fTexRatio2 * texturelength; // test: szerokość proporcjonalna do długości
-        auto const map1l = (
-            max > 0.f ?
-                side / max :
-                0.484375f ); // obcięcie tekstury od lewej strony punktu 1
-        auto const map1r = (
-            max > 0.f ?
-                slop / max :
-                0.484375f ); // obcięcie tekstury od prawej strony punktu 1
-        auto const h1r = (
-            slop > d ?
-                -fTexHeight1 :
-                0.f );
-        auto const h1l = (
-            side > d ?
-                -fTexHeight1 :
-                0.f );
+        auto const map1l = max > 0.f ? side / max : 0.484375f; // obcięcie tekstury od lewej strony punktu 1
+        auto const map1r = max > 0.f ? slop / max : 0.484375f; // obcięcie tekstury od prawej strony punktu 1
+        auto const h1r = slop > d ? -fTexHeight1 : 0.f;
+        auto const h1l = side > d ? -fTexHeight1 : 0.f;
 
         Right[ 0 ] = {
             {Road[ 0 ].position.x + slop, Road[ 0 ].position.y + h1r, 0.f},
@@ -3265,26 +3221,11 @@ TTrack::create_road_side_profile( gfx::vertex_array &Right, gfx::vertex_array &L
 
         if( transition ) {
             // pobocza do trapezowatej nawierzchni - dodatkowe punkty z drugiej strony odcinka
-            slop2 = (
-                std::fabs( ( iTrapezoid & 2 ) ?
-                    slop2 :
-                    slop ) ); // szerokość chodnika po prawej
-            auto const map2l = (
-                max > 0.f ?
-                    side2 / max :
-                    0.484375f ); // obcięcie tekstury od lewej strony punktu 2
-            auto const map2r = (
-                max > 0.f ?
-                    slop2 / max :
-                    0.484375f ); // obcięcie tekstury od prawej strony punktu 2
-            auto const h2r = (
-                slop2 > d ?
-                    -fTexHeight2 :
-                    0.f );
-            auto const h2l = (
-                side2 > d ?
-                    -fTexHeight2 :
-                    0.f );
+            slop2 = std::fabs(iTrapezoid & 2 ? slop2 : slop); // szerokość chodnika po prawej
+            auto const map2l = max > 0.f ? side2 / max : 0.484375f; // obcięcie tekstury od lewej strony punktu 2
+            auto const map2r = max > 0.f ? slop2 / max : 0.484375f; // obcięcie tekstury od prawej strony punktu 2
+            auto const h2r = slop2 > d ? -fTexHeight2 : 0.f;
+            auto const h2l = side2 > d ? -fTexHeight2 : 0.f;
 
             Right[ 3 ] = {
                 {Road[ 2 ].position.x + slop2, Road[ 2 ].position.y + h2r, 0.f},
@@ -3317,14 +3258,12 @@ TTrack::create_road_side_profile( gfx::vertex_array &Right, gfx::vertex_array &L
 void
 TTrack::create_switch_trackbed( gfx::vertex_array &Output ) {
     // try to get trackbed material from a regular track connected to the primary path
-    if( ( SwitchExtension->m_material3 == null_handle )
-     && ( trPrev != nullptr )
-     && ( trPrev->eType == tt_Normal ) ) {
+    if( SwitchExtension->m_material3 == null_handle && trPrev != nullptr
+     && trPrev->eType == tt_Normal ) {
         SwitchExtension->m_material3 = trPrev->m_material2;
     }
-    if( ( SwitchExtension->m_material3 == null_handle )
-     && ( trNext != nullptr )
-     && ( trNext->eType == tt_Normal ) ) {
+    if( SwitchExtension->m_material3 == null_handle && trNext != nullptr
+     && trNext->eType == tt_Normal ) {
         SwitchExtension->m_material3 = trNext->m_material2;
     }
     // without material don't bother
@@ -3429,7 +3368,7 @@ TTrack::copy_adjacent_trackbed_material( TTrack const *Exclude ) {
     }
 
     for( auto *adjacent : adjacents ) {
-        if( ( adjacent != nullptr ) && ( adjacent != Exclude ) ) {
+        if( adjacent != nullptr && adjacent != Exclude ) {
             material = adjacent->copy_adjacent_trackbed_material( this );
             if( material != null_handle ) { break; } // got what we wanted
         }
@@ -3574,8 +3513,8 @@ path_table::InitTracks() {
         }
         } // switch
 
-        if( ( trackname[ 0 ] == '*' )
-         && ( !track->CurrentPrev() && track->CurrentNext() ) ) {
+        if( trackname[0] == '*'
+         && !track->CurrentPrev() && track->CurrentNext() ) {
             // możliwy portal, jeśli nie podłączony od strony 1
             // ustawienie flagi portalu
             track->iCategoryFlag |= 0x100;
@@ -3642,8 +3581,8 @@ void
 path_table::TrackBusyList() const {
     // wysłanie informacji o wszystkich zajętych odcinkach
     for( auto const *path : m_items ) {
-        if( ( false == path->name().empty() ) // musi być nazwa
-         && ( false == path->Dynamics.empty() ) ) {
+        if( false == path->name().empty() // musi być nazwa
+         && false == path->Dynamics.empty() ) {
             // zajęty
             multiplayer::WyslijString( path->name(), 8 );
         }
@@ -3753,7 +3692,7 @@ void TTrack::build_sleeper_transforms()
         return;
     }
     // resolve replacable skin (optional)
-    if( ( false == m_sleeper_skin_name.empty() ) && ( m_sleeper_skin_name != "none" ) ) {
+    if( false == m_sleeper_skin_name.empty() && m_sleeper_skin_name != "none" ) {
         auto skinpath { m_sleeper_skin_name };
         replace_slashes( skinpath );
         m_sleeper_skin = GfxRenderer->Fetch_Material( skinpath );

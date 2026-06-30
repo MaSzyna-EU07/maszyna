@@ -712,7 +712,7 @@ private:
             Axle1.pPosition :
             Axle0.pPosition; };
     inline double Roll() {
-        return ( ( Axle1.GetRoll() + Axle0.GetRoll() ) ); }
+        return Axle1.GetRoll() + Axle0.GetRoll(); }
 /*
     // TODO: check if scanning takes into account direction when selecting axle
     // if it does, replace the version above
@@ -743,16 +743,14 @@ private:
     // calculates distance between event-starting axle and front of the vehicle
     double tracing_offset() const;
     inline TTrack * GetTrack() {
-        return (iAxleFirst ?
-            Axle1.GetTrack() :
-            Axle0.GetTrack()); };
+        return iAxleFirst ? Axle1.GetTrack() : Axle0.GetTrack(); };
 
     // McZapkie-260202
     void LoadMMediaFile(std::string const &TypeName, std::string const &ReplacableSkin);
     TModel3d *LoadMMediaFile_mdload( std::string const &Name ) const;
 
     inline double ABuGetDirection() const { // ABu.
-        return (Axle1.GetTrack() == MyTrack ? Axle1.GetDirection() : Axle0.GetDirection()); };
+        return Axle1.GetTrack() == MyTrack ? Axle1.GetDirection() : Axle0.GetDirection(); };
     // zwraca kierunek pojazdu na torze z aktywną osą
     inline double RaDirectionGet() const {
         return iAxleFirst ?

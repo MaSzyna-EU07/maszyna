@@ -60,7 +60,7 @@ double TP10yBg::GetFC(double N, double Vel)
     C = 0.353 - A * 0.029;
     u0 = 0.41 - C;
     V0 = 25.7 + 20 * A;
-    return (u0 + C * exp(-Vel * 1.0 / V0));
+    return u0 + C * exp(-Vel * 1.0 / V0);
 }
 
 double TP10yBgu::GetFC(double N, double Vel)
@@ -74,7 +74,7 @@ double TP10yBgu::GetFC(double N, double Vel)
     C = 0.353 - A * 0.044;
     u0 = 0.41 - C;
     V0 = 25.7 + 21 * A;
-    return (u0 + C * exp(-Vel * 1.0 / V0));
+    return u0 + C * exp(-Vel * 1.0 / V0);
 }
 
 double TP10::GetFC(double N, double Vel)

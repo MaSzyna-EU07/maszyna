@@ -71,7 +71,7 @@ namespace
             return false; // degenerate or vertical triangle, no defined height
         double const s = (wx * vz - vx * wz) / den;
         double const t = (ux * wz - wx * uz) / den;
-        if (s < 0.0 || t < 0.0 || (s + t) > 1.0)
+        if (s < 0.0 || t < 0.0 || s + t > 1.0)
             return false;
         OutY = a.y + s * (b.y - a.y) + t * (c.y - a.y);
         return true;
@@ -86,7 +86,7 @@ namespace
         for (TSubModel *sub = Submodel; sub != nullptr; sub = sub->Next)
         {
             glm::dmat4 mlocal = M;
-            if ((sub->iFlags & 0xC000) && (sub->GetMatrix() != nullptr))
+            if (sub->iFlags & 0xC000 && sub->GetMatrix() != nullptr)
                 mlocal = M * glm::dmat4(glm::make_mat4(sub->GetMatrix()->readArray()));
 
             if (sub->eType < TP_ROTATOR) // a drawable mesh, not a rotator/light/etc.
@@ -121,7 +121,7 @@ namespace
 
 bool editor_mode::editormode_input::init()
 {
-    return (mouse.init() && keyboard.init());
+    return mouse.init() && keyboard.init();
 }
 
 void editor_mode::editormode_input::poll()
@@ -172,14 +172,14 @@ void editor_mode::start_focus(scene::basic_node *node, double duration)
     // distance that frames the object's bounding sphere within the vertical FOV, with some margin
     double const radius = std::max(1.0, static_cast<double>(node->radius()));
     double const fovy = glm::radians(static_cast<double>(Global.FieldOfView) / std::max(0.01, static_cast<double>(Global.ZoomFactor)));
-    double distance = (radius / std::tan(fovy * 0.5)) * 1.6;
+    double distance = radius / std::tan(fovy * 0.5) * 1.6;
     distance = std::clamp(distance, radius * 1.5, static_cast<double>(kMaxPlacementDistance));
 
     // keep the camera on the side it currently views from, so the move turns toward the object
     // rather than flying around it; fall back to a pleasant 3/4 direction when sitting on top of it
     glm::dvec3 dir = Camera.Pos - center;
     double const len = glm::length(dir);
-    dir = (len > 1e-3) ? dir / len : glm::normalize(glm::dvec3(1.0, 0.5, 1.0));
+    dir = len > 1e-3 ? dir / len : glm::normalize(glm::dvec3(1.0, 0.5, 1.0));
 
     m_focus_start_pos = Camera.Pos;
     m_focus_start_angle = Camera.Angle;
@@ -354,7 +354,7 @@ scene::basic_node* editor_mode::find_in_hierarchy(const std::string &uuid_str)
 {
     if (uuid_str.empty()) return nullptr;
     auto it = scene::Hierarchy.find(uuid_str);
-    return (it != scene::Hierarchy.end()) ? it->second : nullptr;
+    return it != scene::Hierarchy.end() ? it->second : nullptr;
 }
 
 scene::basic_node* editor_mode::find_node_by_any(scene::basic_node *node_ptr, const std::string &uuid_str, const std::string &name)
@@ -726,7 +726,7 @@ void editor_mode::render_settings()
     ImGui::TextUnformatted("Camera movement");
 
     const char *schemes[] = {"WSAD (new)", "Arrows (legacy)"};
-    int current = (EditorSettings.movement() == editorSettings::movement_scheme::legacy) ? 1 : 0;
+    int current = EditorSettings.movement() == editorSettings::movement_scheme::legacy ? 1 : 0;
     if (ImGui::Combo("##movement_scheme", &current, schemes, IM_ARRAYSIZE(schemes)))
     {
         EditorSettings.movement(current == 1 ? editorSettings::movement_scheme::legacy
@@ -983,8 +983,8 @@ void editor_mode::handle_chunk_edit_click(bool DeleteMode)
     // if the clicked cell holds a chunk, target the neighbour nearest the clicked edge (the empty
     // side); otherwise fill the clicked cell
     bool const occupied = streaming
-                              ? (m_streamer.terrain_at(world.x, world.z) != nullptr)
-                              : (m_grid_chunks.count({cx, cz}) > 0);
+                              ? m_streamer.terrain_at(world.x, world.z) != nullptr
+                              : m_grid_chunks.count({cx, cz}) > 0;
     int tcx = cx, tcz = cz;
     if (occupied)
     {
@@ -1081,7 +1081,7 @@ void editor_mode::handle_terrain_sculpt(double Deltatime)
         return;
 
     double const rate = m_terrain_brush_strength * Deltatime; // metres applied this frame
-    double const signedrate = (Global.shiftState ? -rate : rate);
+    double const signedrate = Global.shiftState ? -rate : rate;
     // apply to every chunk the brush touches; each patch clips to its own bounds, so a stroke
     // crossing a chunk boundary edits both and shared-edge vertices stay in sync
     for (editor_terrain *terrain : active_terrains())
@@ -1227,7 +1227,7 @@ void editor_mode::render_gizmo()
     // doesn't expect; rebuild a clean, standard perspective that matches the rendered view.
     // for the main viewport the engine uses a symmetric frustum with this exact fov/aspect.
     float const fovy = glm::radians(Global.FieldOfView / Global.ZoomFactor);
-    float const aspect = (io.DisplaySize.y > 0.0f) ? (io.DisplaySize.x / io.DisplaySize.y) : 1.0f;
+    float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
     glm::mat4 const projection = glm::perspective(fovy, aspect, 0.1f, 10000.0f);
 
     // rotation/scale are only meaningful for instanced models; other node types translate only
@@ -1267,7 +1267,7 @@ void editor_mode::render_gizmo()
         snapvalue = glm::vec3(5.0f);
     else
         snapvalue = glm::vec3(0.1f);
-    float const *snap = (Global.ctrlState && snapvalue.x > 0.0f) ? glm::value_ptr(snapvalue) : nullptr;
+    float const *snap = Global.ctrlState && snapvalue.x > 0.0f ? glm::value_ptr(snapvalue) : nullptr;
 
     ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection),
                          operation, mode, glm::value_ptr(matrix), nullptr, snap);
@@ -1316,7 +1316,7 @@ void editor_mode::update_camera(double const Deltatime)
     if (m_focus_active)
     {
         m_focus_time += Deltatime;
-        double t = m_focus_duration > 0.0 ? (m_focus_time / m_focus_duration) : 1.0;
+        double t = m_focus_duration > 0.0 ? m_focus_time / m_focus_duration : 1.0;
         if (t >= 1.0)
             t = 1.0;
         // smoothstep easing
@@ -1356,7 +1356,7 @@ void editor_mode::enter()
         auto const *vehicle = Camera.m_owner;
         if (vehicle)
         {
-            const int cab = (vehicle->MoverParameters->CabOccupied == 0 ? 1 : vehicle->MoverParameters->CabOccupied);
+            const int cab = vehicle->MoverParameters->CabOccupied == 0 ? 1 : vehicle->MoverParameters->CabOccupied;
             const glm::dvec3 left = vehicle->VectorLeft() * (double)cab;
             Camera.Pos = glm::dvec3(Camera.Pos.x, vehicle->GetPosition().y, Camera.Pos.z) + left * vehicle->GetWidth() + glm::dvec3(1.25f * left.x, 1.6f, 1.25f * left.z);
             Camera.m_owner = nullptr;
@@ -1387,7 +1387,7 @@ void editor_mode::exit()
     m_gizmo_using = false;
     ui()->set_node(nullptr);
 
-    Application.set_cursor((Global.ControlPicking ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED));
+    Application.set_cursor(Global.ControlPicking ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
 
     if (!Global.ControlPicking)
     {
@@ -1398,9 +1398,9 @@ void editor_mode::exit()
 void editor_mode::on_key(int const Key, int const Scancode, int const Action, int const Mods)
 {
 #ifndef __unix__
-    Global.shiftState = (Mods & GLFW_MOD_SHIFT) ? true : false;
-    Global.ctrlState = (Mods & GLFW_MOD_CONTROL) ? true : false;
-    Global.altState = (Mods & GLFW_MOD_ALT) ? true : false;
+    Global.shiftState = Mods & GLFW_MOD_SHIFT ? true : false;
+    Global.ctrlState = Mods & GLFW_MOD_CONTROL ? true : false;
+    Global.altState = Mods & GLFW_MOD_ALT ? true : false;
 #endif
     bool anyModifier = Mods & (GLFW_MOD_SHIFT | GLFW_MOD_CONTROL | GLFW_MOD_ALT);
 
@@ -1678,11 +1678,11 @@ void editor_mode::render_change_history(){
         auto &s = m_history[i];
         char buf[256];
         std::snprintf(buf, sizeof(buf), "%3d: %s %s pos=(%.1f,%.1f,%.1f)", i,
-                        (s.action == EditorSnapshot::Action::Add) ? "ADD" :
-                        (s.action == EditorSnapshot::Action::Delete) ? "DEL" :
-                        (s.action == EditorSnapshot::Action::Move) ? "MOV" :
-                        (s.action == EditorSnapshot::Action::Rotate) ? "ROT" :
-                        (s.action == EditorSnapshot::Action::Scale) ? "SCA" : "OTH",
+                        s.action == EditorSnapshot::Action::Add ? "ADD" :
+                        s.action == EditorSnapshot::Action::Delete ? "DEL" :
+                        s.action == EditorSnapshot::Action::Move ? "MOV" :
+                        s.action == EditorSnapshot::Action::Rotate ? "ROT" :
+                        s.action == EditorSnapshot::Action::Scale ? "SCA" : "OTH",
                         s.node_name.empty() ? "(noname)" : s.node_name.c_str(),
                         s.position.x, s.position.y, s.position.z);
 
@@ -1722,7 +1722,7 @@ void editor_mode::on_event_poll()
     // game-engine style camera: WSAD/EQ only fly the camera while the right mouse button is held.
     // when it's released the keyboard is free for gizmo shortcuts, and we flush a zero-movement
     // command once so the camera doesn't keep coasting on the last velocity it was given.
-    bool const flying = (m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS);
+    bool const flying = m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
     if (flying)
     {
         m_input.poll();
