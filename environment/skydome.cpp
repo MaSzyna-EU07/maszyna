@@ -265,7 +265,7 @@ void CSkyDome::RebuildColors() {
         colorconverter.y = std::clamp( colorconverter.y * Global.m_skysaturationcorrection, 0.0f, 1.0f );
         // desaturate sky colour, based on overcast level
         if( colorconverter.y > 0.0f ) {
-            colorconverter.y *= ( 1.0f - 0.5f * m_overcast );
+            colorconverter.y *= ( 1.0f - 0.5f * std::pow ( m_overcast, 4.0f) );
         }
 
         // override the hue, based on sun height above the horizon. crude way to deal with model shortcomings
