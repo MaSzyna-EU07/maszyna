@@ -4293,12 +4293,12 @@ void TController::Doors( bool const Open, int const Side ) {
     		{
     			// Not warned yet, not warning yet - start the warning signal.
     			cue_action( driver_hint::departuresignalon ); // załącenie bzyczka
-    			fActionTime = Random( -0.3, -0.8 ); // 0.3-0.8 second buzzer
+    			fActionTime = Random( -0.8, -0.3 ); // 0.3-0.8 second buzzer
     			return;
     		}
     		// Not warned yet, warning now - stop the warning signal and mark it as done.
     		cue_action( driver_hint::departuresignaloff );
-    		fActionTime = Random( 0.0, -0.2 ); // Wait just a bit more before departing
+    		fActionTime = Random( -0.2, 0.0 ); // Wait just a bit more before departing
     		iDrivigFlags |= moveDepartureWarned;
     		return;
     	}
