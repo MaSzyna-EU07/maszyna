@@ -3014,7 +3014,7 @@ TDynamicObject::update_load_offset() {
             0.0 :
             100.0 * MoverParameters->LoadAmount / MoverParameters->MaxLoad ) };
 
-    LoadOffset = std::lerp( MoverParameters->LoadType.offset_min, 0.f, std::clamp( 0.0, loadpercentage * 0.01, 1.0 ) );
+    LoadOffset = std::lerp( MoverParameters->LoadType.offset_min, 0.f, safe_clamp( 0.0, loadpercentage * 0.01, 1.0 ) );
 }
 
 void
@@ -3453,7 +3453,7 @@ bool TDynamicObject::Update(double dt, double dt1)
 				else
 					p->MoverParameters->MED_EPVC_CurrentTime += dt1;
 				bool EPVC = p->MoverParameters->MED_EPVC && (p->MoverParameters->MED_EPVC_Time < 0 || p->MoverParameters->MED_EPVC_CurrentTime < p->MoverParameters->MED_EPVC_Time);
-				float VelC = EPVC ? std::clamp(p->MoverParameters->Vel, p->MoverParameters->MED_Vmin, p->MoverParameters->MED_Vmax) : p->MoverParameters->MED_Vref;//korekcja EP po prędkości
+				float VelC = EPVC ? safe_clamp(p->MoverParameters->Vel, p->MoverParameters->MED_Vmin, p->MoverParameters->MED_Vmax) : p->MoverParameters->MED_Vref;//korekcja EP po prędkości
                 float FmaxPoj = Nmax *
 					p->MoverParameters->Hamulec->GetFC(
 						Nmax / (p->MoverParameters->NAxles * p->MoverParameters->NBpA), VelC) *
@@ -3647,22 +3647,20 @@ bool TDynamicObject::Update(double dt, double dt1)
 								// crude bump simulation, drop down on even axles, move back up on
 								// the odd ones
 								// MoverParameters->AccVert += (MoverParameters->Vel*0.1f) *
-								static double minV, maxV;
-								std::tie(minV, maxV) = std::minmax(MoverParameters->Vmax, MoverParameters->Vmax - (MoverParameters->Vel + MoverParameters->Vmax * 0.32f));
-								double precalculatedValue = std::clamp(0.0, minV, maxV) * .05f * (MyTrack->iDamageFlag * 0.25f);
+								double const headroom = std::clamp(
+								    MoverParameters->Vmax - ( MoverParameters->Vel + MoverParameters->Vmax * 0.32f ),
+								    0.0, MoverParameters->Vmax );
+								double const jolt = headroom * .05f * ( MyTrack->iDamageFlag * 0.25f );
 								if (MyTrack->eType == tt_Normal)
 								{
-									std::tie(minV, maxV) = std::minmax(4.0, precalculatedValue);
-									MoverParameters->AccVert += std::clamp(0.0, minV, maxV);
+									MoverParameters->AccVert += std::clamp( jolt, 0.0, 4.0 );
 								}
 								else if (MyTrack->eType == tt_Switch)
 								{
-									std::tie(minV, maxV) = std::minmax(1.0, precalculatedValue);
-									double accHorizontal = std::clamp(0.0, minV, maxV) * (axleindex % 2 != 0 ? 1 : -1);
+									double const accHorizontal = std::clamp( jolt, 0.0, 1.0 ) * ((axleindex % 2) != 0 ? 1 : -1);
 									MoverParameters->AccS += accHorizontal;
 									MoverParameters->AccN += accHorizontal;
-									std::tie(minV, maxV) = std::minmax(2.0, precalculatedValue);
-									MoverParameters->AccVert += std::clamp(0.0, minV, maxV);
+									MoverParameters->AccVert += std::clamp( jolt, 0.0, 2.0 );
 								}
                             }
                         }
