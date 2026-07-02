@@ -320,6 +320,10 @@ int eu07_application::init(int Argc, char *Argv[])
 		return result;
 	}
 
+	if (!Global.random_seed)
+		Global.random_seed = std::random_device{}();
+	Global.random_engine.seed(Global.random_seed);
+
 	// configure the OS console according to Globals.ShowSystemConsole.
 	// must run AFTER init_settings (so the ini-loaded value is honoured) and
 	// BEFORE the first WriteLog below (so colored \033[...] sequences emitted
@@ -1456,10 +1460,6 @@ bool eu07_application::init_network()
 	else
 	{
 		// we're simulation master
-		if (!Global.random_seed)
-			Global.random_seed = std::random_device{}();
-		Global.random_engine.seed(Global.random_seed);
-
 		// TODO: sort out this timezone mess
 		std::time_t utc_now = std::time(nullptr);
 
