@@ -197,7 +197,8 @@ void scenarioloader_ui::render_()
 	ImDrawList* draw_list = ImGui::GetWindowDrawList();
 	ImGui::PushFont(font_loading);
 	ImGui::SetWindowFontScale(1);
-	const float font_scale_mult = 48 / ImGui::GetFontSize();
+	const float scale = Global.window_size.x / 1920.f;
+	const float font_scale_mult = 48 / ImGui::GetFontSize() * scale;
 	
 	// Gradient at the lower half of the screen
 	if (!Global.NvRenderer)
@@ -207,14 +208,14 @@ void scenarioloader_ui::render_()
 	}
 	
 	// [O] Loading...
-	const float margin_left_icon = 35.0f;
-	const float margin_bottom_loading = 80.0f;
-	const float spacing = 10.0f; // odstęp między ikoną a tekstem
+	const float margin_left_icon = 35.0f * scale;
+	const float margin_bottom_loading = 80.0f * scale;
+	const float spacing = 10.0f * scale; // odstęp między ikoną a tekstem
 
 	// Loading icon
 	const deferred_image *img = &m_loading_wheel_frames[38];
 	const auto loading_tex = img->get();
-	const auto loading_size = img->size();
+	const auto loading_size = glm::vec2(img->size()) * glm::vec2(scale);
 
 	ImVec2 icon_pos(margin_left_icon, screen_size.y - margin_bottom_loading - loading_size.y);
 
@@ -235,10 +236,10 @@ void scenarioloader_ui::render_()
 	// draw only if we have any trivia loaded
 	if (m_trivia.size() > 0)
 	{
-		const float margin_right = 80.0f;
-		const float margin_bottom = 80.0f;
-		const float line_spacing = 25.0f;
-		const float header_gap = 10.0f;
+		const float margin_right = 80.0f * scale;
+		const float margin_bottom = 80.0f * scale;
+		const float line_spacing = 25.0f * scale;
+		const float header_gap = 10.0f * scale;
 
 		// Measure width of trivia lines
 		ImGui::SetWindowFontScale(font_scale_mult * 0.6f);
@@ -283,7 +284,7 @@ void scenarioloader_ui::render_()
 	if (!sceneryName.empty())
 	{
 		ImVec2 text_size = ImGui::CalcTextSize(sceneryName.c_str());
-		ImVec2 text_pos = ImVec2(screen_size.x - 16 - text_size.x, 16);
+		ImVec2 text_pos = ImVec2(screen_size.x - 16 * scale - text_size.x, 16 * scale);
 		draw_list->AddText(text_pos, IM_COL32_WHITE, sceneryName.c_str());
 	}
 	
@@ -300,7 +301,7 @@ void scenarioloader_ui::generate_gradient_tex()
 	if (Global.NvRenderer)
 		return;
 	constexpr int image_width = 1;
-	constexpr int image_height = 256;
+	constexpr int image_height = 1024;
 	const auto image_data = new char[image_width * image_height * 4];
 	for (int x = 0; x < image_width; x++)
 		for (int y = 0; y < image_height; y++)
@@ -308,7 +309,7 @@ void scenarioloader_ui::generate_gradient_tex()
 			image_data[(y * image_width + x) * 4] = 0;
 			image_data[(y * image_width + x) * 4 + 1] = 0;
 			image_data[(y * image_width + x) * 4 + 2] = 0;
-			image_data[(y * image_width + x) * 4 + 3] = std::clamp(static_cast<int>(pow(y / 255.f, 0.7) * 255), 0, 255);
+			image_data[(y * image_width + x) * 4 + 3] = std::clamp(static_cast<int>(pow(y / 1023.f, 0.7) * 255), 0, 255);
 		}
 
 	// Create a OpenGL texture identifier
