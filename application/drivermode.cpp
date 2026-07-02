@@ -171,7 +171,7 @@ bool driver_mode::update()
 	simulation::State.update_scripting_interface();
 	simulation::Environment.update();
 
-	if (deltatime != 0.0)
+	if (deltatime != 0.0 || false == simulation::is_ready)
 	{
 		// jak pauza, to nie ma po co tego przeliczać
 		simulation::Time.update(deltatime);
