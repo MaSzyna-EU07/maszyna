@@ -6012,7 +6012,7 @@ double TMoverParameters::TractionForce(double dt)
 						// charakterystyka pradnicy obcowzbudnej (elipsa) - twierdzenie Pitagorasa
 						EngineVoltage = std::sqrt(std::abs(square(tempUmax) - square(tempUmax * Im / tempImax))) * (tempMCP - 1) + (1.0 - Im / tempImax) * tempUmax * (tempMCPN - tempMCP);
 						EngineVoltage /= tempMCPN - 1;
-						EngineVoltage = std::clamp(EngineVoltage, Im * 0.05, 1000.0 * tmp / std::abs(Im));
+						EngineVoltage = safe_clamp(EngineVoltage, Im * 0.05, 1000.0 * tmp / std::abs(Im));
 					}
 				}
 
@@ -7442,11 +7442,11 @@ void TMoverParameters::CheckEIMIC(double dt)
 
 		if (MainCtrlActualPos != MainCtrlPos || LastRelayTime > InitialCtrlDelay)
 		{
-			eimic -= std::clamp(-UniCtrlList[MainCtrlPos].SetCtrlVal + eimic, 0.0,
+			eimic -= safe_clamp(-UniCtrlList[MainCtrlPos].SetCtrlVal + eimic, 0.0,
 			               MainCtrlActualPos == MainCtrlPos ? dt * UniCtrlList[MainCtrlPos].SpeedDown : sign(UniCtrlList[MainCtrlPos].SpeedDown) * 0.01); // odejmuj do X
-			eimic += std::clamp(UniCtrlList[MainCtrlPos].SetCtrlVal - eimic, 0.0,
+			eimic += safe_clamp(UniCtrlList[MainCtrlPos].SetCtrlVal - eimic, 0.0,
 			               MainCtrlActualPos == MainCtrlPos ? dt * UniCtrlList[MainCtrlPos].SpeedUp : sign(UniCtrlList[MainCtrlPos].SpeedUp) * 0.01); // dodawaj do X
-			eimic = std::clamp(eimic, UniCtrlList[MainCtrlPos].MinCtrlVal, UniCtrlList[MainCtrlPos].MaxCtrlVal);
+			eimic = safe_clamp(eimic, UniCtrlList[MainCtrlPos].MinCtrlVal, UniCtrlList[MainCtrlPos].MaxCtrlVal);
 		}
 		if (MainCtrlActualPos == MainCtrlPos)
 			LastRelayTime += dt;
@@ -7564,13 +7564,13 @@ void TMoverParameters::CheckSpeedCtrl(double dt)
 					// TODO: check how to disable integral part when braking in smart way
 					// double factorI = eimicSpeedCtrlIntegral >= 0 ? SpeedCtrlUnit.FactorIpos : SpeedCtrlUnit.FactorIneg;
 					double factorI = eimicSpeedCtrlIntegral >= 0 ? SpeedCtrlUnit.FactorIpos : SpeedCtrlUnit.FactorIneg;
-					eimicSpeedCtrlIntegral = std::clamp(eimicSpeedCtrlIntegral + factorI * eSCP * dt, -1.0 + eSCP, 1.0 - eSCP);
+					eimicSpeedCtrlIntegral = safe_clamp(eimicSpeedCtrlIntegral + factorI * eSCP * dt, -1.0 + eSCP, 1.0 - eSCP);
 				}
 				else
 				{
 					eimicSpeedCtrlIntegral = 0;
 				}
-				auto const DesiredeimicSpeedCtrl{std::clamp(eimicSpeedCtrlIntegral + eSCP, -SpeedCtrlUnit.DesiredPower, accfactor)};
+				auto const DesiredeimicSpeedCtrl{safe_clamp(eimicSpeedCtrlIntegral + eSCP, -SpeedCtrlUnit.DesiredPower, accfactor)};
 				eimicSpeedCtrl = std::clamp(DesiredeimicSpeedCtrl, eimicSpeedCtrl - SpeedCtrlUnit.PowerDownSpeed * dt, eimicSpeedCtrl + SpeedCtrlUnit.PowerUpSpeed * dt);
 				if (Vel < SpeedCtrlUnit.FullPowerVelocity)
 				{
@@ -8183,7 +8183,7 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 		enMoment = 0;
 		double enrot_min = enrot - (std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) - Moment) / dizel_AIM * dt;
 		double enrot_max = enrot + (std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) + Moment) / dizel_AIM * dt;
-		enrot = std::clamp(n, enrot_min, enrot_max);
+		enrot = safe_clamp(n, enrot_min, enrot_max);
 	}
 	if (hydro_R && hydro_R_Placement == 1)
 		gearMoment -= dizel_MomentumRetarder(hydro_TC_nOut, dt);
@@ -8564,7 +8564,7 @@ bool TMoverParameters::ChangeDoorPermitPreset(int const Change, range_t const No
 	if (false == Doors.permit_presets.empty())
 	{
 
-		Doors.permit_preset = std::clamp(Doors.permit_preset + Change, 0, static_cast<int>(Doors.permit_presets.size() - 1));
+		Doors.permit_preset = safe_clamp(Doors.permit_preset + Change, 0, static_cast<int>(Doors.permit_presets.size() - 1));
 		auto const doors{Doors.permit_presets[Doors.permit_preset]};
 		auto const permitleft{((doors & 1) != 0)};
 		auto const permitright{((doors & 2) != 0)};

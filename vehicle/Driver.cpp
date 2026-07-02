@@ -3701,7 +3701,7 @@ bool TController::IncSpeedEIM() {
             // TBD, TODO: set position based on desired acceleration?
             OK = mvControlling->MainCtrlPos < mvControlling->MainCtrlPosNo;
             if( OK ) {
-                mvControlling->MainCtrlPos = std::clamp( mvControlling->MainCtrlPos + 1, 6, mvControlling->MainCtrlPosNo );
+                mvControlling->MainCtrlPos = safe_clamp( mvControlling->MainCtrlPos + 1, 6, mvControlling->MainCtrlPosNo );
             }
 */
             break;
@@ -4293,12 +4293,12 @@ void TController::Doors( bool const Open, int const Side ) {
     		{
     			// Not warned yet, not warning yet - start the warning signal.
     			cue_action( driver_hint::departuresignalon ); // załącenie bzyczka
-    			fActionTime = Random( -0.3, -0.8 ); // 0.3-0.8 second buzzer
+    			fActionTime = Random( -0.8, -0.3 ); // 0.3-0.8 second buzzer
     			return;
     		}
     		// Not warned yet, warning now - stop the warning signal and mark it as done.
     		cue_action( driver_hint::departuresignaloff );
-    		fActionTime = Random( 0.0, -0.2 ); // Wait just a bit more before departing
+    		fActionTime = Random( -0.2, 0.0 ); // Wait just a bit more before departing
     		iDrivigFlags |= moveDepartureWarned;
     		return;
     	}
@@ -7669,7 +7669,7 @@ TController::adjust_desired_speed_for_current_speed() {
         if( iVehicles - ControlledEnginesCount > 0 ) {
             MaxAcc *= std::clamp( vel * 0.025, 0.2, 1.0 );
         }
-		AccDesired = std::min(AccDesired, std::clamp(MaxAcc, HeavyCargoTrainAcceleration, AccPreferred));
+		AccDesired = std::min(AccDesired, safe_clamp(MaxAcc, HeavyCargoTrainAcceleration, AccPreferred));
         // TBD: expand this behaviour to all trains with car(s) exceeding certain weight?
 		/*
         if( ( IsPassengerTrain ) && ( iVehicles - ControlledEnginesCount > 0 ) ) {
@@ -7770,8 +7770,7 @@ TController::adjust_desired_speed_for_braking_test() {
             break;
         }
         case 3: {
-		    auto [minV, maxV] = std::minmax(fAccThreshold * 1.01f, fAccThreshold * 1.21f);
-		    AccDesired = std::clamp(-AbsAccS, minV, maxV);
+            AccDesired = safe_clamp( -AbsAccS, fAccThreshold * 1.01, fAccThreshold * 1.21 );
             VelDesired = DBT_VelocityBrake;
             if( vel <= DBT_VelocityRelease ) {
                 DynamicBrakeTest = 4;

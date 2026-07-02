@@ -248,6 +248,19 @@ template <typename T> bool is_equal(T const &Left, T const &Right, T const Epsil
 	return Left == Right;
 }
 
+// Tolerant clamp. Unlike std::clamp, this does NOT invoke undefined behaviour when
+// the bounds are inverted (Lo > Hi) - it normalizes them instead. This restores the
+// pre-refactor behaviour of the old custom clamp() for code paths where the bounds are
+// computed at runtime and can legitimately cross (e.g. AI acceleration/braking limits,
+// physics jolt calculations), where std::clamp's UB produced wrong results.
+template <typename Type_>
+constexpr Type_ safe_clamp( Type_ const Value, Type_ const Lo, Type_ const Hi )
+{
+	return ( Hi < Lo )
+		? std::clamp( Value, Hi, Lo )
+		: std::clamp( Value, Lo, Hi );
+}
+
 // keeps the provided value in specified range 0-Range, as if the range was circular buffer
 template <typename T> T clamp_circular(T Value, T const Range = T(360))
 {
