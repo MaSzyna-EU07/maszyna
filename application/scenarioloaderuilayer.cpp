@@ -301,7 +301,7 @@ void scenarioloader_ui::generate_gradient_tex()
 	if (Global.NvRenderer)
 		return;
 	constexpr int image_width = 1;
-	constexpr int image_height = 256;
+	constexpr int image_height = 1024;
 	const auto image_data = new char[image_width * image_height * 4];
 	for (int x = 0; x < image_width; x++)
 		for (int y = 0; y < image_height; y++)
@@ -309,7 +309,7 @@ void scenarioloader_ui::generate_gradient_tex()
 			image_data[(y * image_width + x) * 4] = 0;
 			image_data[(y * image_width + x) * 4 + 1] = 0;
 			image_data[(y * image_width + x) * 4 + 2] = 0;
-			image_data[(y * image_width + x) * 4 + 3] = std::clamp(static_cast<int>(pow(y / 255.f, 0.7) * 255), 0, 255);
+			image_data[(y * image_width + x) * 4 + 3] = std::clamp(static_cast<int>(pow(y / 1023.f, 0.7) * 255), 0, 255);
 		}
 
 	// Create a OpenGL texture identifier
