@@ -372,10 +372,14 @@ openal_renderer::update( double const Deltatime ) {
     auto cameraposition = Global.pCamera.Pos + glm::dvec3(Global.viewport_move * glm::mat3(cameramatrix));
     cameramatrix = glm::dmat4(glm::inverse(Global.viewport_rotate)) * cameramatrix;
     auto rotationmatrix { glm::mat3{ cameramatrix } };
-    glm::vec3 const orientation[] = {
-        glm::vec3{ 0, 0,-1 } * rotationmatrix ,
-        glm::vec3{ 0, 1, 0 } * rotationmatrix };
-    ::alListenerfv( AL_ORIENTATION, reinterpret_cast<ALfloat const *>( orientation ) );
+    // AL_ORIENTATION expects 6 tightly-packed floats (at, then up). Do NOT reinterpret a
+    // glm::vec3[2] here: with GLM_FORCE_DEFAULT_ALIGNED_GENTYPES a glm::vec3 is 16 bytes
+    // (padded), so the array is not 6 contiguous floats and the 'up' vector gets read from
+    // padding as garbage, corrupting the listener basis (left/right swapped).
+    auto const at { glm::vec3{ 0, 0,-1 } * rotationmatrix };
+    auto const up { glm::vec3{ 0, 1, 0 } * rotationmatrix };
+    ALfloat const orientation[ 6 ] = { at.x, at.y, at.z, up.x, up.y, up.z };
+    ::alListenerfv( AL_ORIENTATION, orientation );
     // velocity
     if( Deltatime > 0 ) {
         auto cameramove { cameraposition - cached_camerapos };
