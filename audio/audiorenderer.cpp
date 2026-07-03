@@ -571,7 +571,7 @@ openal_renderer::init_caps() {
 
     WriteLog(
         "Audio Renderer: " + al_renderer
-        + " OpenAL Version: " + oalversion );
+        + " OpenAL API spec: " + oalversion ); // ALC spec level, always 1.1; not the library version
 
     WriteLog( "Supported extensions: " + std::string{ (char *)::alcGetString( m_device, ALC_EXTENSIONS ) } );
 
@@ -588,6 +588,13 @@ openal_renderer::init_caps() {
 	{
 		ErrorLog("sound: cannot select context");
 		return false;
+	}
+
+	// the version reported above is the OpenAL API spec level (always 1.1); the real implementation
+	// version string (e.g. "1.1 ALSOFT 1.24.2") is only queryable once a context is current
+	if( auto const *libversion { (char const *)::alGetString( AL_VERSION ) } ) {
+		crashreport_add_info( "openal_lib_version", libversion );
+		WriteLog( "sound: library version: " + std::string{ libversion } );
 	}
 
 	if (alIsExtensionPresent("AL_SOFT_deferred_updates"))
