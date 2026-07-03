@@ -17,6 +17,12 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "vehicle/Train.h"
 
+// ALC_EXT_disconnect / ALC_SOFT_reopen_device tokens; the bundled AL headers ship no alext.h,
+// but OpenAL Soft provides these at runtime (resolved via alcGetProcAddress).
+#ifndef ALC_CONNECTED
+#define ALC_CONNECTED 0x313
+#endif
+
 namespace audio {
 
 openal_renderer renderer;
@@ -363,6 +369,32 @@ openal_renderer::update( double const Deltatime ) {
 	if (alcDeviceResumeSOFT)
 		alcDeviceResumeSOFT(m_device);
 
+	// follow audio output device changes (OpenAL won't on its own): if the active device is
+	// gone (e.g. headphones unplugged) reopen playback on the current default output. Polled at
+	// ~1 Hz to avoid per-frame ALC round-trips.
+	if( m_candetectdisconnect ) {
+		m_devicechecktime += Deltatime;
+		if( m_devicechecktime >= 1.0 ) {
+			m_devicechecktime = 0.0;
+			ALCint connected{ ALC_TRUE };
+			::alcGetIntegerv( m_device, ALC_CONNECTED, 1, &connected );
+			if( connected == ALC_FALSE ) {
+				if( alcReopenDeviceSOFT != nullptr ) {
+					// NULL device name selects the current default output; context and sources are preserved
+					if( alcReopenDeviceSOFT( m_device, nullptr, m_contextattributes ) == ALC_TRUE ) {
+						WriteLog( "sound: active audio device lost, reopened on the current default output" );
+					}
+					else {
+						ErrorLog( "sound: active audio device lost, reopening on the default output failed (retrying)" );
+					}
+				}
+				else {
+					ErrorLog( "sound: active audio device lost and ALC_SOFT_reopen_device is unavailable; cannot recover" );
+				}
+			}
+		}
+	}
+
     // update listener
     // gain
     ::alListenerf( AL_GAIN, Global.AudioVolume );
@@ -544,6 +576,7 @@ openal_renderer::init_caps() {
     WriteLog( "Supported extensions: " + std::string{ (char *)::alcGetString( m_device, ALC_EXTENSIONS ) } );
 
 	ALCint attr[3] = { ALC_MONO_SOURCES, Global.audio_max_sources, 0 }; // request more sounds
+	std::copy( std::begin( attr ), std::end( attr ), std::begin( m_contextattributes ) ); // cached for device reopen
 
     m_context = ::alcCreateContext( m_device, attr );
     if( m_context == nullptr ) {
@@ -572,6 +605,12 @@ openal_renderer::init_caps() {
 	}
 	if (!alcDevicePauseSOFT || !alcDeviceResumeSOFT)
 		WriteLog("sound: warning: extension ALC_SOFT_pause_device not found");
+
+	m_candetectdisconnect = ( alcIsExtensionPresent( m_device, "ALC_EXT_disconnect" ) == ALC_TRUE );
+	if( alcIsExtensionPresent( m_device, "ALC_SOFT_reopen_device" ) == ALC_TRUE )
+		alcReopenDeviceSOFT = (ALCboolean(*)(ALCdevice*, ALCchar const*, ALCint const*))alcGetProcAddress( m_device, "alcReopenDeviceSOFT" );
+	if( !alcReopenDeviceSOFT )
+		WriteLog( "sound: warning: extension ALC_SOFT_reopen_device not found; audio output device changes won't be followed" );
 
     return true;
 }

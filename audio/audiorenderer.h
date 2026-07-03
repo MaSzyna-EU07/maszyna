@@ -176,6 +176,12 @@ private:
 	void (*alProcessUpdatesSOFT)() = nullptr;
 	void (*alcDevicePauseSOFT)(ALCdevice*) = nullptr;
 	void (*alcDeviceResumeSOFT)(ALCdevice*) = nullptr;
+	// ALC_SOFT_reopen_device: move playback to the current default output when the active
+	// device disappears (e.g. headphones unplugged mid-game), keeping context and sources
+	ALCboolean (*alcReopenDeviceSOFT)(ALCdevice*, ALCchar const*, ALCint const*) = nullptr;
+	bool m_candetectdisconnect{ false }; // ALC_EXT_disconnect present, ALC_CONNECTED is queryable
+	ALCint m_contextattributes[3]{ 0, 0, 0 }; // cached context attribs, reused when reopening the device
+	double m_devicechecktime{ 0.0 }; // accumulates dt to throttle the ALC_CONNECTED poll to ~1 Hz
 };
 
 extern openal_renderer renderer;
