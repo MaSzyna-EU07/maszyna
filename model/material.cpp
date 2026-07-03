@@ -92,7 +92,7 @@ void opengl_material::finalize(bool Loadnow)
                 key.erase(0, 1);
                 key.pop_back();
                 std::map<std::string, int>::iterator lookup;
-                if( shader && shader->texture_conf.find( key ) != shader->texture_conf.end() ) {
+                if( shader && shader->texture_conf.contains(key) ) {
                     textures[ shader->texture_conf[ key ].id ] = GfxRenderer->Fetch_Texture( value, Loadnow );
                 }
                 else if( shader == nullptr
@@ -161,7 +161,7 @@ void opengl_material::finalize(bool Loadnow)
                 {
                     key.erase(0, 1);
                     key.pop_back();
-                    if (shader->param_conf.find(key) != shader->param_conf.end())
+                    if (shader->param_conf.contains(key))
                     {
                         gl::shader::param_entry entry = shader->param_conf[key];
                         for (size_t i = 0; i < entry.size; i++)
@@ -277,7 +277,7 @@ std::unordered_set<std::string> seasons = {
 
 bool is_season( std::string const &String ) {
 
-    return seasons.find(String) != seasons.end();
+    return seasons.contains(String);
 }
 
 std::unordered_set<std::string> weather = {
@@ -285,7 +285,7 @@ std::unordered_set<std::string> weather = {
 
 bool is_weather( std::string const &String ) {
 
-    return weather.find(String) != weather.end();
+    return weather.contains(String);
 }
 
 // imports member data pair from the config file

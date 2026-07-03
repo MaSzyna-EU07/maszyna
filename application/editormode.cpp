@@ -937,7 +937,7 @@ std::vector<editor_terrain *> editor_mode::active_terrains()
 void editor_mode::add_grid_chunk(int Cx, int Cz)
 {
     std::pair<int, int> const key{Cx, Cz};
-    if (m_grid_chunks.count(key))
+    if (m_grid_chunks.contains(key))
         return; // already occupied
 
     double const size = chunk_grid_size();
@@ -984,7 +984,7 @@ void editor_mode::handle_chunk_edit_click(bool DeleteMode)
     // side); otherwise fill the clicked cell
     bool const occupied = streaming
                               ? m_streamer.terrain_at(world.x, world.z) != nullptr
-                              : m_grid_chunks.count({cx, cz}) > 0;
+                              : m_grid_chunks.contains({cx, cz});
     int tcx = cx, tcz = cz;
     if (occupied)
     {
@@ -1023,7 +1023,7 @@ void editor_mode::create_chunked_terrain()
         for (int dx = 0; dx < chunks; ++dx)
         {
             int const cx = ccx - half + dx, cz = ccz - half + dz;
-            if (!m_grid_chunks.count({cx, cz}))
+            if (!m_grid_chunks.contains({cx, cz}))
             {
                 add_grid_chunk(cx, cz);
                 ++created;

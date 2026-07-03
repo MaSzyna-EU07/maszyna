@@ -989,7 +989,7 @@ bool global_settings::ConfigParseHardware(cParser& Parser, const std::string& to
         Parser.getTokens(1);
         std::string firstToken = Parser.peek();
 
-        if (firstToken.find('|') != std::string::npos || firstToken == "none" || uartfeatures_map.count(firstToken))
+        if (firstToken.find('|') != std::string::npos || firstToken == "none" || uartfeatures_map.contains(firstToken))
         {
             for (auto const& x : uartfeatures_map)
             {
@@ -1003,7 +1003,7 @@ bool global_settings::ConfigParseHardware(cParser& Parser, const std::string& to
             {
                 std::getline(firstTokenStream, key, '|');
 
-                if (uartfeatures_map.count(key))
+                if (uartfeatures_map.contains(key))
                 {
                     *uartfeatures_map[key] = true;
                 }

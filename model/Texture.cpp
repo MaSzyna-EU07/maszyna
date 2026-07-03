@@ -119,7 +119,7 @@ texture_manager::texture_manager() {
 void opengl_texture::gles_match_internalformat(GLuint internalformat)
 {
     // ignore compressed formats (and hope that GLES driver will support it)
-    if (precompressed_formats.find(internalformat) != precompressed_formats.end())
+    if (precompressed_formats.contains(internalformat))
         return;
 
     // don't care about sRGB here

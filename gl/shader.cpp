@@ -214,7 +214,7 @@ void gl::shader::parse_texture_entries(std::string &str)
             {
                 std::string comp;
                 token_ss >> comp;
-                if (components_mapping.find(comp) == components_mapping.end())
+                if (!components_mapping.contains(comp))
                     log_error("unknown components: " + comp);
                 else
                     conf.components = components_mapping[comp];
@@ -272,7 +272,7 @@ void gl::shader::parse_param_entries(std::string &str)
             {
                 std::string tok;
                 token_ss >> tok;
-                if (defaultparams_mapping.find(tok) == defaultparams_mapping.end())
+                if (!defaultparams_mapping.contains(tok))
                     log_error("unknown param default: " + tok);
                 conf.defaultparam = defaultparams_mapping[tok];
             }

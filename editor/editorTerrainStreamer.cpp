@@ -140,7 +140,7 @@ void terrain_streamer::update(glm::dvec3 const &CameraPos)
 		for (int dx = -m_radius; dx <= m_radius && !built; ++dx)
 		{
 			chunk_key const key{camera.first + dx, camera.second + dz};
-			if (m_chunks.count(key))
+			if (m_chunks.contains(key))
 				continue;
 
 			// only stream chunks that were actually authored (exist on disk); empty space stays empty
@@ -236,7 +236,7 @@ void terrain_streamer::save_chunk(int Cx, int Cz, editor_terrain const &Terrain)
 void terrain_streamer::add_chunk(int Cx, int Cz)
 {
 	chunk_key const key{Cx, Cz};
-	if (m_chunks.count(key))
+	if (m_chunks.contains(key))
 		return; // already resident
 
 	glm::dvec3 const centre = chunk_centre(Cx, Cz);
