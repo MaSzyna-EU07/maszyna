@@ -141,12 +141,12 @@ private:
     source_list m_sources;
     source_sequence m_sourcespares;
 
-    // Poprawione deklaracje dla OpenAL 1.25
-    void (*m_alDeferUpdatesSOFT)(void) { nullptr };
-    void (*m_alProcessUpdatesSOFT)(void) { nullptr };
-    void (*m_alcDevicePauseSOFT)(ALCdevice*) { nullptr };
-    void (*m_alcDeviceResumeSOFT)(ALCdevice*) { nullptr };
-    ALCboolean (*m_alcReopenDeviceSOFT)(ALCdevice*, ALCchar const*, ALCint const*) { nullptr };
+    // OpenAL Soft extension entry points, resolved at runtime via al(c)GetProcAddress
+    LPALDEFERUPDATESSOFT m_alDeferUpdatesSOFT { nullptr };
+    LPALPROCESSUPDATESSOFT m_alProcessUpdatesSOFT { nullptr };
+    LPALCDEVICEPAUSESOFT m_alcDevicePauseSOFT { nullptr };
+    LPALCDEVICERESUMESOFT m_alcDeviceResumeSOFT { nullptr };
+    LPALCREOPENDEVICESOFT m_alcReopenDeviceSOFT { nullptr };
 
     bool m_candetectdisconnect { false };
     ALCint m_contextattributes[3] { 0, 0, 0 };
@@ -155,12 +155,11 @@ private:
     // ALC_SOFT_system_events: event-driven following of output-device / default-output changes.
     // Preferred over polling because it reliably catches both device removal and default changes
     // (e.g. re-plugging headphones), which alcGetString(DEFAULT_ALL_DEVICES) does not report live.
-    using alc_event_proc = void (*)( ALCenum, ALCenum, ALCdevice*, ALCsizei, ALCchar const*, void* );
-    ALCboolean (*m_alcEventControlSOFT)( ALCsizei, ALCenum const*, ALCboolean ) { nullptr };
-    void (*m_alcEventCallbackSOFT)( alc_event_proc, void* ) { nullptr };
+    LPALCEVENTCONTROLSOFT m_alcEventControlSOFT { nullptr };
+    LPALCEVENTCALLBACKSOFT m_alcEventCallbackSOFT { nullptr };
     bool m_usedeviceevents { false };
     std::atomic<bool> m_outputchanged { false }; // set from the (possibly off-thread) event callback
-    static void device_event_callback( ALCenum eventtype, ALCenum devicetype, ALCdevice *device, ALCsizei length, ALCchar const *message, void *userparam );
+    static void ALC_APIENTRY device_event_callback( ALCenum eventtype, ALCenum devicetype, ALCdevice *device, ALCsizei length, ALCchar const *message, void *userparam ) noexcept;
 };
 
 extern openal_renderer renderer;

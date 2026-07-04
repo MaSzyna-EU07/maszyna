@@ -17,23 +17,6 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "vehicle/Train.h"
 
-// ALC_EXT_disconnect / ALC_SOFT_reopen_device tokens; the bundled AL headers ship no alext.h,
-// but OpenAL Soft provides these at runtime (resolved via alcGetProcAddress).
-#ifndef ALC_CONNECTED
-#define ALC_CONNECTED 0x313
-#endif
-// ALC_ENUMERATE_ALL_EXT token; identifies the system's current default output device
-#ifndef ALC_DEFAULT_ALL_DEVICES_SPECIFIER
-#define ALC_DEFAULT_ALL_DEVICES_SPECIFIER 0x1012
-#endif
-// ALC_SOFT_system_events tokens (bundled headers may predate them); functions resolved at runtime
-#ifndef ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT
-#define ALC_PLAYBACK_DEVICE_SOFT                    0x19D4
-#define ALC_CAPTURE_DEVICE_SOFT                     0x19D5
-#define ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT  0x19D6
-#define ALC_EVENT_TYPE_DEVICE_REMOVED_SOFT          0x19D8
-#endif
-
 namespace audio {
 
 openal_renderer renderer;
@@ -299,8 +282,8 @@ openal_renderer::~openal_renderer() {
 
 // invoked by OpenAL (possibly on an internal thread) on device events; only flags the change,
 // the actual reopen is done on the main thread in update()
-void
-openal_renderer::device_event_callback( ALCenum eventtype, ALCenum devicetype, ALCdevice */*device*/, ALCsizei /*length*/, ALCchar const */*message*/, void *userparam ) {
+void ALC_APIENTRY
+openal_renderer::device_event_callback( ALCenum eventtype, ALCenum devicetype, ALCdevice */*device*/, ALCsizei /*length*/, ALCchar const */*message*/, void *userparam ) noexcept {
 
     if( userparam == nullptr ) { return; }
     if( devicetype == ALC_CAPTURE_DEVICE_SOFT ) { return; } // only care about playback output
@@ -639,23 +622,23 @@ openal_renderer::init_caps() {
     // Initialize all extension function pointers
     if (alIsExtensionPresent("AL_SOFT_deferred_updates"))
     {
-        m_alDeferUpdatesSOFT = (void(*)())alGetProcAddress("alDeferUpdatesSOFT");
-        m_alProcessUpdatesSOFT = (void(*)())alGetProcAddress("alProcessUpdatesSOFT");
+        m_alDeferUpdatesSOFT = (LPALDEFERUPDATESSOFT)alGetProcAddress("alDeferUpdatesSOFT");
+        m_alProcessUpdatesSOFT = (LPALPROCESSUPDATESSOFT)alGetProcAddress("alProcessUpdatesSOFT");
     }
     if (!m_alDeferUpdatesSOFT || !m_alProcessUpdatesSOFT)
         WriteLog("sound: warning: extension AL_SOFT_deferred_updates not found");
 
     if (alcIsExtensionPresent(m_device, "ALC_SOFT_pause_device"))
     {
-        m_alcDevicePauseSOFT = (void(*)(ALCdevice*))alcGetProcAddress(m_device, "alcDevicePauseSOFT");
-        m_alcDeviceResumeSOFT = (void(*)(ALCdevice*))alcGetProcAddress(m_device, "alcDeviceResumeSOFT");
+        m_alcDevicePauseSOFT = (LPALCDEVICEPAUSESOFT)alcGetProcAddress(m_device, "alcDevicePauseSOFT");
+        m_alcDeviceResumeSOFT = (LPALCDEVICERESUMESOFT)alcGetProcAddress(m_device, "alcDeviceResumeSOFT");
     }
     if (!m_alcDevicePauseSOFT || !m_alcDeviceResumeSOFT)
         WriteLog("sound: warning: extension ALC_SOFT_pause_device not found");
 
     m_candetectdisconnect = ( alcIsExtensionPresent( m_device, "ALC_EXT_disconnect" ) == ALC_TRUE );
     if( alcIsExtensionPresent( m_device, "ALC_SOFT_reopen_device" ) == ALC_TRUE )
-        m_alcReopenDeviceSOFT = (ALCboolean(*)(ALCdevice*, ALCchar const*, ALCint const*))alcGetProcAddress( m_device, "alcReopenDeviceSOFT" );
+        m_alcReopenDeviceSOFT = (LPALCREOPENDEVICESOFT)alcGetProcAddress( m_device, "alcReopenDeviceSOFT" );
     if( !m_alcReopenDeviceSOFT )
         WriteLog( "sound: warning: extension ALC_SOFT_reopen_device not found; audio output device changes won't be followed" );
 
@@ -663,8 +646,8 @@ openal_renderer::init_caps() {
     // catches both device removal and default-output changes, incl. re-plugging headphones
     if( m_alcReopenDeviceSOFT != nullptr
      && alcIsExtensionPresent( m_device, "ALC_SOFT_system_events" ) == ALC_TRUE ) {
-        m_alcEventControlSOFT = (ALCboolean(*)(ALCsizei, ALCenum const*, ALCboolean))alcGetProcAddress( m_device, "alcEventControlSOFT" );
-        m_alcEventCallbackSOFT = (void(*)(alc_event_proc, void*))alcGetProcAddress( m_device, "alcEventCallbackSOFT" );
+        m_alcEventControlSOFT = (LPALCEVENTCONTROLSOFT)alcGetProcAddress( m_device, "alcEventControlSOFT" );
+        m_alcEventCallbackSOFT = (LPALCEVENTCALLBACKSOFT)alcGetProcAddress( m_device, "alcEventCallbackSOFT" );
         if( m_alcEventControlSOFT != nullptr && m_alcEventCallbackSOFT != nullptr ) {
             m_alcEventCallbackSOFT( &openal_renderer::device_event_callback, this );
             ALCenum const events[]{ ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT, ALC_EVENT_TYPE_DEVICE_REMOVED_SOFT };
