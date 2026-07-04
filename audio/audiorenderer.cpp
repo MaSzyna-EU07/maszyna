@@ -22,8 +22,8 @@ namespace audio {
 openal_renderer renderer;
 bool event_volume_change { false };
 
-float const EU07_SOUND_CUTOFFRANGE { 3000.f }; // 2750 m = max expected emitter spawn range, plus safety margin
-float const EU07_SOUND_VELOCITYLIMIT { 250 / 3.6f }; // 343 m/sec ~= speed of sound; arbitrary limit of 250 km/h
+constexpr float EU07_SOUND_CUTOFFRANGE { 3000.f }; // 2750 m = max expected emitter spawn range, plus safety margin
+constexpr float EU07_SOUND_VELOCITYLIMIT { 250 / 3.6f }; // 343 m/sec ~= speed of sound; arbitrary limit of 250 km/h
 
 // potentially clamps length of provided vector to 343 meters
 // TBD: make a generic method for utilities out of this

@@ -32,17 +32,17 @@ http://mozilla.org/MPL/2.0/.
 // 101206 Ra: trapezoidalne drogi i tory
 // 110720 Ra: rozprucie zwrotnicy i odcinki izolowane
 
-static float const fMaxOffset = 0.1f; // double(0.1f)==0.100000001490116
+static constexpr float fMaxOffset = 0.1f; // double(0.1f)==0.100000001490116
 // const int NextMask[4]={0,1,0,1}; //tor następny dla stanów 0, 1, 2, 3
 // const int PrevMask[4]={0,0,1,1}; //tor poprzedni dla stanów 0, 1, 2, 3
-const int iLewo4[4] = {5, 3, 4, 6}; // segmenty (1..6) do skręcania w lewo
-const int iPrawo4[4] = {-4, -6, -3, -5}; // segmenty (1..6) do skręcania w prawo
-const int iProsto4[4] = {1, -1, 2, -2}; // segmenty (1..6) do jazdy prosto
-const int iEnds4[13] = {3, 0, 2, 1, 2, 0, -1, 1, 3, 2, 0, 3, 1}; // numer sąsiedniego toru na końcu segmentu "-1"
-const int iLewo3[4] = {1, 3, 2, 1}; // segmenty do skręcania w lewo
-const int iPrawo3[4] = {-2, -1, -3, -2}; // segmenty do skręcania w prawo
-const int iProsto3[4] = {1, -1, 2, 1}; // segmenty do jazdy prosto
-const int iEnds3[13] = {3, 0, 2, 1, 2, 0, -1, 1, 0, 2, 0, 3, 1}; // numer sąsiedniego toru na końcu segmentu "-1"
+constexpr int iLewo4[4] = {5, 3, 4, 6}; // segmenty (1..6) do skręcania w lewo
+constexpr int iPrawo4[4] = {-4, -6, -3, -5}; // segmenty (1..6) do skręcania w prawo
+constexpr int iProsto4[4] = {1, -1, 2, -2}; // segmenty (1..6) do jazdy prosto
+constexpr int iEnds4[13] = {3, 0, 2, 1, 2, 0, -1, 1, 3, 2, 0, 3, 1}; // numer sąsiedniego toru na końcu segmentu "-1"
+constexpr int iLewo3[4] = {1, 3, 2, 1}; // segmenty do skręcania w lewo
+constexpr int iPrawo3[4] = {-2, -1, -3, -2}; // segmenty do skręcania w prawo
+constexpr int iProsto3[4] = {1, -1, 2, 1}; // segmenty do jazdy prosto
+constexpr int iEnds3[13] = {3, 0, 2, 1, 2, 0, -1, 1, 0, 2, 0, 3, 1}; // numer sąsiedniego toru na końcu segmentu "-1"
 TIsolated *TIsolated::pRoot = nullptr;
 
 TTrack::profiles_array TTrack::m_profiles;
@@ -543,7 +543,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         if (iCategoryFlag & 1)
         { // zero na główce szyny
           // TODO: delay these calculations unti rail profile and thus height is known
-            auto const railheight { 0.18 };
+			constexpr auto railheight { 0.18 };
             p1.y += railheight;
             p2.y += railheight;
             // na przechyłce doliczyć jeszcze pół przechyłki
@@ -638,7 +638,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         if (iCategoryFlag & 1)
         { // zero na główce szyny
           // TODO: delay these calculations unti rail profile and thus height is known
-            auto const railheight { 0.18 };
+			constexpr auto railheight { 0.18 };
             p1.y += railheight;
             p2.y += railheight;
             // na przechyłce doliczyć jeszcze pół przechyłki?
@@ -703,7 +703,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         if (iCategoryFlag & 1)
         { // zero na główce szyny
           // TODO: delay these calculations unti rail profile and thus height is known
-            auto const railheight{ 0.18 };
+			constexpr auto railheight{ 0.18 };
             p3.y += railheight;
             p4.y += railheight;
             // na przechyłce doliczyć jeszcze pół przechyłki?
@@ -1078,7 +1078,7 @@ bool TTrack::AddDynamicObject(TDynamicObject *Dynamic)
     return true;
 };
 
-const int numPts = 4;
+constexpr int numPts = 4;
 
 bool TTrack::CheckDynamicObject(TDynamicObject *Dynamic)
 { // sprawdzenie, czy pojazd jest przypisany do toru
@@ -1407,7 +1407,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 // positive jointlength: the switch is typically used along the main track, negative: along the diverging track
                 // TODO: determine this from names of textures assigned to the tracks
 //                auto const jointlength { static_cast<int>( std::ceil( SwitchExtension->Segments[ 0 ]->RaSegCount() * 0.15 ) ) };
-                auto const jointlength { 0 }; // temporary until implementation of the above
+				constexpr auto jointlength { 0 }; // temporary until implementation of the above
                 if (SwitchExtension->RightSwitch)
                 { // nowa wersja z SPKS, ale odwrotnie lewa/prawa
                     gfx::vertex_array vertices;
@@ -3282,14 +3282,14 @@ TTrack::create_switch_trackbed( gfx::vertex_array &Output ) {
     create_track_bed_profile( trackbedprofile, SwitchExtension->pPrevs[ 1 ], SwitchExtension->pNexts[ 1 ] );
     SwitchExtension->Segments[ 1 ]->RenderLoft( trackbedvertices2, m_origin, trackbedprofile, true, texturelength );
     // ...then combine them into a single geometry sequence
-    auto const segmentsize { 10 };
+	constexpr auto segmentsize { 10 };
     auto const segmentcount { trackbedvertices1.size() / segmentsize };
     auto *sampler1 { trackbedvertices1.data() };
     auto *sampler2 { trackbedvertices2.data() };
     auto const isright { SwitchExtension->RightSwitch };
     auto const isleft { false == isright };
     auto const samplersoffset { isright ? 2 : 0 };
-    auto const geometryoffset { 0.025f };
+	constexpr auto geometryoffset { 0.025f };
     for( int segment = 0; segment < segmentcount; ++segment ) {
         // main trackbed
         // lower outer edge to avoid z-fighting

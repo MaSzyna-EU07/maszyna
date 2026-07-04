@@ -250,7 +250,7 @@ void cSun::irradiance() {
 	const double s2 = std::sin( glm::radians( d2 ) );
 	m_body.erv += 0.000719*c2 + 0.000077*s2;
 
-	const double solcon = 1367.0;									// Solar constant, 1367 W/sq m
+	constexpr double solcon = 1367.0;									// Solar constant, 1367 W/sq m
 
 	m_body.coszen  = std::cos( glm::radians( m_body.zenref ) );
 	if( m_body.coszen > 0.0 ) {

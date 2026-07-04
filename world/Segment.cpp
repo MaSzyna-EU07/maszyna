@@ -162,7 +162,7 @@ double TSegment::RombergIntegral(double const fA, double const fB) const
 {
     double fH = fB - fA;
 
-    const int ms_iOrder = 5;
+	constexpr int ms_iOrder = 5;
 
     double ms_apfRom[2][ms_iOrder];
 
@@ -193,7 +193,7 @@ double TSegment::RombergIntegral(double const fA, double const fB) const
 double TSegment::GetTFromS(double const s) const
 {
     // initial guess for Newton's method
-	const double fTolerance = 0.001;
+	constexpr double fTolerance = 0.001;
 	const double fRatio = s / RombergIntegral(0, 1);
     double fTime = std::lerp( 0.0, 1.0, fRatio );
 
@@ -291,7 +291,7 @@ TSegment::find_nearest_point( glm::dvec3 const &Point ) const {
     }
 }
 
-const double fDirectionOffset = 0.1; // długość wektora do wyliczenia kierunku
+constexpr double fDirectionOffset = 0.1; // długość wektora do wyliczenia kierunku
 
 glm::dvec3 TSegment::GetDirection(double const fDistance) const
 { // takie toporne liczenie pochodnej dla podanego dystansu od Point1

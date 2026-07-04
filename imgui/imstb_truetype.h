@@ -2495,7 +2495,7 @@ static stbtt_int32  stbtt__GetGlyphGPOSInfoAdvance(const stbtt_fontinfo *info, i
                             int straw, needle;
 					        const stbtt_uint16 valueFormat1 = ttUSHORT(table + 4);
 					        const stbtt_uint16 valueFormat2 = ttUSHORT(table + 6);
-					        const stbtt_int32 valueRecordPairSizeInBytes = 2;
+					        constexpr stbtt_int32 valueRecordPairSizeInBytes = 2;
 					        const stbtt_uint16 pairSetCount = ttUSHORT(table + 8);
 					        const stbtt_uint16 pairPosOffset = ttUSHORT(table + 10 + 2 * coverageIndex);
                             stbtt_uint8 *pairValueTable = table + pairPosOffset;
@@ -3362,7 +3362,7 @@ static void stbtt__rasterize(stbtt__bitmap *result, stbtt__point *pts, int *wcou
 #if STBTT_RASTERIZER_VERSION == 1
    int vsubsample = result->h < 8 ? 15 : 5;
 #elif STBTT_RASTERIZER_VERSION == 2
-	const int vsubsample = 1;
+   constexpr int vsubsample = 1;
 #else
    #error "Unrecognized value of STBTT_RASTERIZER_VERSION"
 #endif

@@ -129,7 +129,7 @@ public:
     opengl_material const & Material( TSubModel const * Submodel ) const;
 
 // members
-    GLenum static const sunlight { GL_LIGHT0 };
+	constexpr GLenum static sunlight { GL_LIGHT0 };
 
     static std::unique_ptr<gfx_renderer> create_func();
 

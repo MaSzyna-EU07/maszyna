@@ -963,7 +963,7 @@ opengl_texture::create( bool const Static ) {
 				glTexParameteri(target, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
                 wrap_mode_s = GL_CLAMP_TO_BORDER;
                 wrap_mode_t = GL_CLAMP_TO_BORDER;
-				const float borderColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+				constexpr float borderColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
                 glTexParameterfv(target, GL_TEXTURE_BORDER_COLOR, borderColor);
 			}
             glTexParameteri( target, GL_TEXTURE_MAG_FILTER, GL_LINEAR );

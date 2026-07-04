@@ -25,8 +25,8 @@ http://mozilla.org/MPL/2.0/.
 namespace scene {
 
 std::string const EU07_FILEEXTENSION_REGION { ".sbt" };
-std::uint32_t const EU07_FILEHEADER { MAKE_ID4( 'E','U','0','7' ) };
-std::uint32_t const EU07_FILEVERSION_REGION { MAKE_ID4( 'S', 'B', 'T', '2' ) };
+constexpr std::uint32_t EU07_FILEHEADER { MAKE_ID4( 'E','U','0','7' ) };
+constexpr std::uint32_t EU07_FILEVERSION_REGION { MAKE_ID4( 'S', 'B', 'T', '2' ) };
 std::map<std::string, basic_node *> Hierarchy;
  
 // potentially activates event handler with the same name as provided node, and within handler activation range
@@ -682,7 +682,7 @@ basic_cell::launch_event( TEventLauncher *Launcher, bool local_only ) {
 			simulation::Events.AddToQuery( Launcher->Event1, nullptr );
 		}
 	} else {
-		const command_relay commandrelay;
+		constexpr command_relay commandrelay;
         if (Global.shiftState && Launcher->Event2 != nullptr)
 			commandrelay.post(user_command::queueevent, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &Launcher->Event2->name());
 		else if (Launcher->Event1)
@@ -716,7 +716,7 @@ basic_section::update_traction( TDynamicObject *Vehicle, int const Pantographind
     auto pantograph = Vehicle->pants[ Pantographindex ].fParamPants;
     auto const pantographposition = position + vLeft * pantograph->vPos.z + vUp * pantograph->vPos.y + vFront * pantograph->vPos.x;
 
-    auto const radius { EU07_CELLSIZE * 0.5 }; // redius around point of interest
+	constexpr auto radius { EU07_CELLSIZE * 0.5 }; // redius around point of interest
 
     for( auto &cell : m_cells ) {
         // we reject early cells which aren't within our area of interest
@@ -915,7 +915,7 @@ basic_section::find( glm::dvec3 const &Point, TTraction const *Other, int const 
         endpointfound,
         endpointnearest { -1 };
 
-    auto const radius { 0.0 }; // { EU07_CELLSIZE * 0.5 }; // experimentally limited, check if it has any negative effect
+	constexpr auto radius { 0.0 }; // { EU07_CELLSIZE * 0.5 }; // experimentally limited, check if it has any negative effect
 
     for( auto &cell : m_cells ) {
         // we reject early cells which aren't within our area of interest
@@ -940,7 +940,7 @@ basic_section::center( glm::dvec3 Center ) {
     // set accordingly center points of the section's partitioning cells
     // NOTE: we should also update origin point for the contained nodes, but in practice we can skip this
     // as all nodes will be added only after the proper center point was set, and won't change
-    auto const centeroffset = -( EU07_SECTIONSIZE / EU07_CELLSIZE / 2 * EU07_CELLSIZE ) + EU07_CELLSIZE / 2;
+	constexpr auto centeroffset = -( EU07_SECTIONSIZE / EU07_CELLSIZE / 2 * EU07_CELLSIZE ) + EU07_CELLSIZE / 2;
     glm::dvec3 sectioncornercenter { m_area.center + glm::dvec3{ centeroffset, 0, centeroffset } };
     auto row { 0 }, column { 0 };
     for( auto &cell : m_cells ) {
@@ -1054,7 +1054,7 @@ basic_region::update_events() {
     if( false == simulation::is_ready ) { return; }
 
     // render events and sounds from sectors near enough to the viewer
-    auto const range = EU07_SECTIONSIZE; // arbitrary range
+	constexpr auto range = EU07_SECTIONSIZE; // arbitrary range
     auto const &sectionlist = sections( Global.pCamera.Pos, range );
     for( auto *section : sectionlist ) {
         section->update_events( Global.pCamera.Pos, range );
@@ -1065,7 +1065,7 @@ basic_region::update_events() {
 void
 basic_region::update_sounds() {
     // render events and sounds from sectors near enough to the viewer
-    auto const range = 2750.f; // audible range of 100 db sound
+	constexpr auto range = 2750.f; // audible range of 100 db sound
     auto const &sectionlist = sections( Global.pCamera.Pos, range );
     for( auto *section : sectionlist ) {
         section->update_sounds( Global.pCamera.Pos, range );
@@ -1253,7 +1253,7 @@ basic_region::TrackJoin( TTrack *Track ) {
 void
 basic_region::RadioStop( glm::dvec3 const &Location ) {
 
-    auto const range = 2000.f;
+	constexpr auto range = 2000.f;
     auto const &sectionlist = sections( Location, range );
     for( auto *section : sectionlist ) {
         section->radio_stop( Location, range );
@@ -1484,7 +1484,7 @@ basic_region::sections( glm::dvec3 const &Point, float const Radius ) {
     int const originx = centerx - sectioncount / 2;
     int const originz = centerz - sectioncount / 2;
 
-    auto const padding { 0.0 }; // { EU07_SECTIONSIZE * 0.25 }; // TODO: check if we can get away with padding of 0
+	constexpr auto padding { 0.0 }; // { EU07_SECTIONSIZE * 0.25 }; // TODO: check if we can get away with padding of 0
 
     for( int row = originz; row <= originz + sectioncount; ++row ) {
         if( row < 0 ) { continue; }
@@ -1508,7 +1508,7 @@ basic_region::sections( glm::dvec3 const &Point, float const Radius ) {
 bool
 basic_region::point_inside( glm::dvec3 const &Location ) {
 
-    double const regionboundary = EU07_REGIONSIDESECTIONCOUNT / 2 * EU07_SECTIONSIZE;
+	constexpr double regionboundary = EU07_REGIONSIDESECTIONCOUNT / 2 * EU07_SECTIONSIZE;
     return Location.x > -regionboundary && Location.x < regionboundary && Location.z > -regionboundary && Location.z < regionboundary;
 }
 
@@ -1522,7 +1522,7 @@ basic_region::RaTriangleDivider( shape_node &Shape, std::deque<shape_node> &Shap
         return false;
     }
 
-    auto const margin { 200.0 };
+	constexpr auto margin { 200.0 };
     auto x0 = EU07_SECTIONSIZE * std::floor( 0.001 * Shape.m_data.area.center.x ) - margin;
     auto x1 = x0 + EU07_SECTIONSIZE + margin * 2;
     auto z0 = EU07_SECTIONSIZE * std::floor( 0.001 * Shape.m_data.area.center.z ) - margin;
@@ -1706,7 +1706,7 @@ basic_region::section( glm::dvec3 const &Location ) {
         // there's no guarantee the section exists at this point, so check and if needed, create it
         section = new basic_section();
         // assign center of the section
-        auto const centeroffset = -( EU07_REGIONSIDESECTIONCOUNT / 2 * EU07_SECTIONSIZE ) + EU07_SECTIONSIZE / 2;
+		constexpr auto centeroffset = -( EU07_REGIONSIDESECTIONCOUNT / 2 * EU07_SECTIONSIZE ) + EU07_SECTIONSIZE / 2;
         glm::dvec3 regioncornercenter { centeroffset, 0, centeroffset };
         section->center( regioncornercenter + glm::dvec3{ column * EU07_SECTIONSIZE, 0.0, row * EU07_SECTIONSIZE } );
     }

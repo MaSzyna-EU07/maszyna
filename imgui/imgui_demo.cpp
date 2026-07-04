@@ -1282,16 +1282,16 @@ static void ShowDemoWindowWidgets()
         ImS64 LLONG_MAX = 9223372036854775807LL;
         ImU64 ULLONG_MAX = (2ULL * 9223372036854775807LL + 1);
         #endif
-        const char    s8_zero  = 0,   s8_one  = 1,   s8_fifty  = 50, s8_min  = -128,        s8_max = 127;
-        const ImU8    u8_zero  = 0,   u8_one  = 1,   u8_fifty  = 50, u8_min  = 0,           u8_max = 255;
-        const short   s16_zero = 0,   s16_one = 1,   s16_fifty = 50, s16_min = -32768,      s16_max = 32767;
-        const ImU16   u16_zero = 0,   u16_one = 1,   u16_fifty = 50, u16_min = 0,           u16_max = 65535;
-        const ImS32   s32_zero = 0,   s32_one = 1,   s32_fifty = 50, s32_min = INT_MIN/2,   s32_max = INT_MAX/2,    s32_hi_a = INT_MAX/2 - 100,    s32_hi_b = INT_MAX/2;
-        const ImU32   u32_zero = 0,   u32_one = 1,   u32_fifty = 50, u32_min = 0,           u32_max = UINT_MAX/2,   u32_hi_a = UINT_MAX/2 - 100,   u32_hi_b = UINT_MAX/2;
-        const ImS64   s64_zero = 0,   s64_one = 1,   s64_fifty = 50, s64_min = LLONG_MIN/2, s64_max = LLONG_MAX/2,  s64_hi_a = LLONG_MAX/2 - 100,  s64_hi_b = LLONG_MAX/2;
-        const ImU64   u64_zero = 0,   u64_one = 1,   u64_fifty = 50, u64_min = 0,           u64_max = ULLONG_MAX/2, u64_hi_a = ULLONG_MAX/2 - 100, u64_hi_b = ULLONG_MAX/2;
-        const float   f32_zero = 0.f, f32_one = 1.f, f32_lo_a = -10000000000.0f, f32_hi_a = +10000000000.0f;
-        const double  f64_zero = 0.,  f64_one = 1.,  f64_lo_a = -1000000000000000.0, f64_hi_a = +1000000000000000.0;
+		constexpr char    s8_zero  = 0,   s8_one  = 1,   s8_fifty  = 50, s8_min  = -128,        s8_max = 127;
+		constexpr ImU8    u8_zero  = 0,   u8_one  = 1,   u8_fifty  = 50, u8_min  = 0,           u8_max = 255;
+		constexpr short   s16_zero = 0,   s16_one = 1,   s16_fifty = 50, s16_min = -32768,      s16_max = 32767;
+		constexpr ImU16   u16_zero = 0,   u16_one = 1,   u16_fifty = 50, u16_min = 0,           u16_max = 65535;
+		constexpr ImS32   s32_zero = 0,   s32_one = 1,   s32_fifty = 50, s32_min = INT_MIN/2,   s32_max = INT_MAX/2,    s32_hi_a = INT_MAX/2 - 100,    s32_hi_b = INT_MAX/2;
+		constexpr ImU32   u32_zero = 0,   u32_one = 1,   u32_fifty = 50, u32_min = 0,           u32_max = UINT_MAX/2,   u32_hi_a = UINT_MAX/2 - 100,   u32_hi_b = UINT_MAX/2;
+		constexpr ImS64   s64_zero = 0,   s64_one = 1,   s64_fifty = 50, s64_min = LLONG_MIN/2, s64_max = LLONG_MAX/2,  s64_hi_a = LLONG_MAX/2 - 100,  s64_hi_b = LLONG_MAX/2;
+		constexpr ImU64   u64_zero = 0,   u64_one = 1,   u64_fifty = 50, u64_min = 0,           u64_max = ULLONG_MAX/2, u64_hi_a = ULLONG_MAX/2 - 100, u64_hi_b = ULLONG_MAX/2;
+		constexpr float   f32_zero = 0.f, f32_one = 1.f, f32_lo_a = -10000000000.0f, f32_hi_a = +10000000000.0f;
+		constexpr double  f64_zero = 0.,  f64_one = 1.,  f64_lo_a = -1000000000000000.0, f64_hi_a = +1000000000000000.0;
 
         // State
         static char   s8_v  = 127;
@@ -1305,7 +1305,7 @@ static void ShowDemoWindowWidgets()
         static float  f32_v = 0.123f;
         static double f64_v = 90000.01234567890123456789;
 
-        const float drag_speed = 0.2f;
+		constexpr float drag_speed = 0.2f;
         static bool drag_clamp = false;
         ImGui::Text("Drags:");
         ImGui::Checkbox("Clamp integers to 0..50", &drag_clamp); ImGui::SameLine(); HelpMarker("As with every widgets in dear imgui, we never modify values unless there is a user interaction.\nYou can override the clamping limits by using CTRL+Click to input a value.");
@@ -1398,7 +1398,7 @@ static void ShowDemoWindowWidgets()
 
     if (ImGui::TreeNode("Vertical Sliders"))
     {
-        const float spacing = 4;
+		constexpr float spacing = 4;
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(spacing, spacing));
 
         static int int_value = 0;
@@ -1426,7 +1426,7 @@ static void ShowDemoWindowWidgets()
         ImGui::SameLine();
         ImGui::PushID("set2");
         static float values2[4] = { 0.20f, 0.80f, 0.40f, 0.25f };
-        const int rows = 3;
+		constexpr int rows = 3;
         const ImVec2 small_slider_size(18, (160.0f-(rows-1)*spacing)/rows);
         for (int nx = 0; nx < 4; nx++)
         {
@@ -1868,7 +1868,7 @@ static void ShowDemoWindowLayout()
         // Manually wrapping (we should eventually provide this as an automatic layout feature, but for now you can do it manually)
         ImGui::Text("Manually wrapping:");
 		const ImGuiStyle & style = ImGui::GetStyle();
-		const int buttons_count = 20;
+		constexpr int buttons_count = 20;
 		const float window_visible_x2 = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
         for (int n = 0; n < buttons_count; n++)
         {
@@ -1888,7 +1888,7 @@ static void ShowDemoWindowLayout()
     {
         if (ImGui::TreeNode("Basic"))
         {
-			const ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_None;
+			constexpr ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_None;
             if (ImGui::BeginTabBar("MyTabBar", tab_bar_flags))
             {
                 if (ImGui::BeginTabItem("Avocado"))
@@ -1977,7 +1977,7 @@ static void ShowDemoWindowLayout()
         }
         // Capture the group size and create widgets using the same size
 		const ImVec2 size = ImGui::GetItemRectSize();
-        const float values[5] = { 0.5f, 0.20f, 0.80f, 0.60f, 0.25f };
+		constexpr float values[5] = { 0.5f, 0.20f, 0.80f, 0.60f, 0.25f };
         ImGui::PlotHistogram("##values", values, IM_ARRAYSIZE(values), 0, NULL, 0.0f, 1.0f, size);
 
         ImGui::Button("ACTION", ImVec2((size.x - ImGui::GetStyle().ItemSpacing.x)*0.5f, size.y));
@@ -2084,7 +2084,7 @@ static void ShowDemoWindowLayout()
             ImGui::BeginGroup();
             ImGui::Text("%s", i == 0 ? "Top" : i == 1 ? "25%" : i == 2 ? "Center" : i == 3 ? "75%" : "Bottom");
 
-			const ImGuiWindowFlags child_flags = ImGuiWindowFlags_MenuBar;
+			constexpr ImGuiWindowFlags child_flags = ImGuiWindowFlags_MenuBar;
             ImGui::BeginChild(ImGui::GetID((void*)(intptr_t)i), ImVec2(child_w, 200.0f), true, child_flags);
             if (scroll_to_off)
                 ImGui::SetScrollY(scroll_to_off_px);
@@ -2657,7 +2657,7 @@ static void ShowDemoWindowColumns()
         ImGui::SetNextWindowContentSize(ImVec2(1500.0f, 0.0f));
         ImGui::BeginChild("##ScrollingRegion", ImVec2(0, ImGui::GetFontSize() * 20), false, ImGuiWindowFlags_HorizontalScrollbar);
         ImGui::Columns(10);
-		const int ITEMS_COUNT = 2000;
+		constexpr int ITEMS_COUNT = 2000;
         ImGuiListClipper clipper(ITEMS_COUNT);  // Also demonstrate using the clipper for large list
         while (clipper.Step())
         {
@@ -4144,7 +4144,7 @@ static void ShowExampleAppConstrainedResize(bool* p_open)
 // Demonstrate creating a simple static window with no decoration + a context-menu to choose which corner of the screen to use.
 static void ShowExampleAppSimpleOverlay(bool* p_open)
 {
-    const float DISTANCE = 10.0f;
+	constexpr float DISTANCE = 10.0f;
     static int corner = 0;
 	const ImGuiIO & io = ImGui::GetIO();
     if (corner != -1)
@@ -4241,10 +4241,10 @@ static void ShowExampleAppCustomRendering(bool* p_open)
             const ImVec2 p = ImGui::GetCursorScreenPos();
             const ImU32 col = ImColor(colf);
             float x = p.x + 4.0f, y = p.y + 4.0f;
-			const float spacing = 10.0f;
-			const ImDrawCornerFlags corners_none = 0;
-			const ImDrawCornerFlags corners_all = ImDrawCornerFlags_All;
-			const ImDrawCornerFlags corners_tl_br = ImDrawCornerFlags_TopLeft | ImDrawCornerFlags_BotRight;
+			constexpr float spacing = 10.0f;
+			constexpr ImDrawCornerFlags corners_none = 0;
+			constexpr ImDrawCornerFlags corners_all = ImDrawCornerFlags_All;
+			constexpr ImDrawCornerFlags corners_tl_br = ImDrawCornerFlags_TopLeft | ImDrawCornerFlags_BotRight;
             for (int n = 0; n < 2; n++)
             {
                 // First line uses a thickness of 1.0f, second line uses the configurable thickness

@@ -31,7 +31,7 @@ int constexpr EU07_PICKBUFFERSIZE { 1024 }; // size of (square) textures bound w
 int constexpr EU07_ENVIRONMENTBUFFERSIZE { 256 }; // size of (square) environmental cube map texture
 int constexpr EU07_REFLECTIONFIDELITYOFFSET { 250 }; // artificial increase of range for reflection pass detail reduction
 
-float const EU07_OPACITYDEFAULT { 0.5f };
+constexpr float EU07_OPACITYDEFAULT { 0.5f };
 
 bool
 opengl_renderer::Init( GLFWwindow *Window ) {
@@ -301,7 +301,7 @@ opengl_renderer::Init( GLFWwindow *Window ) {
     }
     // prepare basic geometry chunks
     auto const geometrybank = Create_Bank();
-    float const size = 2.5f;
+	constexpr float size = 2.5f;
     gfx::vertex_array billboard_array{
         { { -size,  size, 0.f }, glm::vec3(), { 1.f, 1.f } },
         { {  size,  size, 0.f }, glm::vec3(), { 0.f, 1.f } },
@@ -328,7 +328,7 @@ opengl_renderer::Render() {
     if( simulation::is_ready ) {
         m_sunlight = Global.DayLight;
         // quantize sun angle to reduce shadow crawl
-        auto const quantizationstep { 0.004f };
+		constexpr auto quantizationstep { 0.004f };
         m_sunlight.direction = glm::normalize( quantizationstep * glm::roundEven( m_sunlight.direction * ( 1.f / quantizationstep ) ) );
     }
     // generate new frame

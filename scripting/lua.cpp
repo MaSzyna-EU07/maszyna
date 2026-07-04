@@ -288,7 +288,7 @@ int lua::scriptapi_dynobj_putvalues(lua_State *L)
 	auto [str, num1, num2] = get_memcell_values(L, 2);
 	if (!dyn)
 		return 0;
-	const TLocation loc{};
+	constexpr TLocation loc{};
 	if (dyn->Mechanik)
 		dyn->Mechanik->PutCommand(str, num1, num2, loc);
 	else

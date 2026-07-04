@@ -591,7 +591,7 @@ debug_panel::render() {
         if( true == render_section( "Vehicle", m_vehiclelines ) ) {
             if( DebugModeFlag && m_input.mover && m_input.mover->DamageFlag != 0 ) {
                 if( true == ImGui::Button( "Stop and repair consist" ) ) {
-					const command_relay relay;
+					constexpr command_relay relay;
                     relay.post(user_command::resetconsist, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &m_input.vehicle->name());
                 }
             }
@@ -625,7 +625,7 @@ debug_panel::render() {
         ImGui::Separator();
         bool flag = DebugModeFlag;
         if (ImGui::Checkbox("Debug Mode", &flag)) {
-			const command_relay relay;
+			constexpr command_relay relay;
             relay.post(user_command::debugtoggle, 0.0, 0.0, GLFW_RELEASE, 0);
         }
     }
@@ -647,7 +647,7 @@ debug_panel::render_section_scenario() {
         auto fogrange = std::log( Global.fFogEnd );
         if( ImGui::SliderFloat(
             ( to_string( std::exp( fogrange ), 0, 5 ) + " m###fogend" ).c_str(), &fogrange, std::log( 10.0f ), std::log( 50000.0f ), "Fog distance" ) ) {
-			const command_relay relay;
+			constexpr command_relay relay;
             relay.post(
                 user_command::setweather,
                 std::clamp( std::exp( fogrange ), 10.0f, 50000.0f ),
@@ -661,7 +661,7 @@ debug_panel::render_section_scenario() {
 		        (to_string(Airtemperature, 1) + " deg C###Airtemperature").c_str(),
 		        &Airtemperature, -35.0f, 40.0f, "Air Temperature"))
 		{
-			const command_relay relay;
+			constexpr command_relay relay;
             relay.post(
                 user_command::settemperature, 
                 std::clamp(Airtemperature, -35.0f, 40.0f),
@@ -673,7 +673,7 @@ debug_panel::render_section_scenario() {
     {
         if( ImGui::SliderFloat(
             ( to_string( Global.Overcast, 2, 5 ) + " (" + Global.Weather + ")###overcast" ).c_str(), &Global.Overcast, 0.0f, 2.0f, "Cloud cover" ) ) {
-			const command_relay relay;
+			constexpr command_relay relay;
             relay.post(
                 user_command::setweather,
                 Global.fFogEnd,
@@ -685,7 +685,7 @@ debug_panel::render_section_scenario() {
     {
         if( ImGui::SliderFloat(
             ( to_string( Global.fMoveLight, 0, 5 ) + " (" + Global.Season + ")###movelight" ).c_str(), &Global.fMoveLight, 0.0f, 364.0f, "Day of year" ) ) {
-			const command_relay relay;
+			constexpr command_relay relay;
             relay.post(
                 user_command::setdatetime,
                 std::clamp( Global.fMoveLight, 0.0f, 365.0f ),
@@ -713,7 +713,7 @@ debug_panel::render_section_scenario() {
                     + ":"
                     + std::string( std::to_string( int( 100 + simulation::Time.data().wMinute ) ).substr( 1, 2 ) ) ) };
             if( ImGui::SliderInt( ( timestring + " (" + Global.Period + ")###simulationtime" ).c_str(), &time, 0, 1439, "Time of day" ) ) {
-				const command_relay relay;
+				constexpr command_relay relay;
                 relay.post(
                     user_command::setdatetime,
                     Global.fMoveLight,
@@ -1595,7 +1595,7 @@ debug_panel::render_section_settings() {
     if (simulation::Train) {
         float val = simulation::Train->get_radiovolume();
         if( ImGui::SliderFloat( ( std::to_string( static_cast<int>( val * 100 ) ) + "%###volumeradio" ).c_str(), &val, 0.0f, 1.0f, "Vehicle radio volume" ) ) {
-			const command_relay relay;
+			constexpr command_relay relay;
             relay.post(user_command::radiovolumeset, val, 0.0, GLFW_PRESS, 0);
         }
     }

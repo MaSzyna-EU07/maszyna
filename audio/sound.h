@@ -13,12 +13,12 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Classes.h"
 #include "utilities/Names.h"
 
-float const EU07_SOUND_GLOBALRANGE { -1.f };
-float const EU07_SOUND_CABCONTROLSCUTOFFRANGE { 7.5f };
-float const EU07_SOUND_CABANNOUNCEMENTCUTOFFRANGE{ -10.f };
-float const EU07_SOUND_BRAKINGCUTOFFRANGE { 100.f };
-float const EU07_SOUND_RUNNINGNOISECUTOFFRANGE { 200.f };
-float const EU07_SOUND_HANDHELDRADIORANGE { 3500.f };
+constexpr float EU07_SOUND_GLOBALRANGE { -1.f };
+constexpr float EU07_SOUND_CABCONTROLSCUTOFFRANGE { 7.5f };
+constexpr float EU07_SOUND_CABANNOUNCEMENTCUTOFFRANGE{ -10.f };
+constexpr float EU07_SOUND_BRAKINGCUTOFFRANGE { 100.f };
+constexpr float EU07_SOUND_RUNNINGNOISECUTOFFRANGE { 200.f };
+constexpr float EU07_SOUND_HANDHELDRADIORANGE { 3500.f };
 
 enum class sound_type {
     single,
@@ -46,7 +46,7 @@ enum class sound_placement {
     custom, // source doesn't fit in any standard location or requires custom soundproofing
 };
 
-auto const EU07_SOUNDPROOFING_NONE{ 1.f };
+constexpr auto EU07_SOUNDPROOFING_NONE{ 1.f };
 auto const EU07_SOUNDPROOFING_SOME{ std::sqrt( 0.65f ) };
 auto const EU07_SOUNDPROOFING_STRONG{ std::sqrt( 0.20f ) };
 auto const EU07_SOUNDPROOFING_VERYSTRONG{ std::sqrt( 0.01f ) };

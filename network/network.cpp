@@ -7,7 +7,7 @@
 #include "application/application.h"
 #include "utilities/Globals.h"
 
-std::uint32_t const EU07_NETWORK_VERSION = 2;
+constexpr std::uint32_t EU07_NETWORK_VERSION = 2;
 
 namespace network {
 

@@ -25,11 +25,11 @@ opengl33_precipitation::create( int const Tesselation ) {
     m_uvs.clear();
     m_indices.clear();
 
-    auto const heightfactor { 10.f }; // height-to-radius factor
-    auto const verticaltexturestretchfactor { 1.5f }; // crude motion blur
+	constexpr auto heightfactor { 10.f }; // height-to-radius factor
+	constexpr auto verticaltexturestretchfactor { 1.5f }; // crude motion blur
 
 	// create geometry chunk
-    auto const latitudes { 3 }; // just a cylinder with end cones
+	constexpr auto latitudes { 3 }; // just a cylinder with end cones
     auto const longitudes { Tesselation };
     auto const longitudehalfstep { 0.5f * static_cast<float>( 2.0 * M_PI * 1.f / longitudes ) }; // for crude uv correction
 

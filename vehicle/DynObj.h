@@ -29,24 +29,24 @@ http://mozilla.org/MPL/2.0/.
 //---------------------------------------------------------------------------
 //---------------------------------------------------------------------------
 //---------------------------------------------------------------------------
-int const ANIM_WHEELS = 0; // koła
-int const ANIM_DOORS = 1; // drzwi
-int const ANIM_LEVERS = 2; // elementy obracane (wycieraczki, koła skrętne, przestawiacze, klocki ham.)
-int const ANIM_BUFFERS = 3; // elementy przesuwane (zderzaki)
-int const ANIM_BOOGIES = 4; // wózki (są skręcane w dwóch osiach)
-int const ANIM_PANTS = 5; // pantografy
-int const ANIM_STEAMS = 6; // napęd parowozu
-int const ANIM_DOORSTEPS = 7;
-int const ANIM_MIRRORS = 8;
-int const ANIM_WIPERS = 9;
-int const ANIM_TYPES = 10; // Ra: ilość typów animacji
+constexpr int ANIM_WHEELS = 0; // koła
+constexpr int ANIM_DOORS = 1; // drzwi
+constexpr int ANIM_LEVERS = 2; // elementy obracane (wycieraczki, koła skrętne, przestawiacze, klocki ham.)
+constexpr int ANIM_BUFFERS = 3; // elementy przesuwane (zderzaki)
+constexpr int ANIM_BOOGIES = 4; // wózki (są skręcane w dwóch osiach)
+constexpr int ANIM_PANTS = 5; // pantografy
+constexpr int ANIM_STEAMS = 6; // napęd parowozu
+constexpr int ANIM_DOORSTEPS = 7;
+constexpr int ANIM_MIRRORS = 8;
+constexpr int ANIM_WIPERS = 9;
+constexpr int ANIM_TYPES = 10; // Ra: ilość typów animacji
 
 class TAnim;
 //typedef void(__closure *TUpdate)(TAnim *pAnim); // typ funkcji aktualizującej położenie submodeli
 typedef std::function<void(TAnim *)> TUpdate; // __closure is Borland-specific extension
 
 // McZapkie-250202
-int const MaxAxles = 16; // ABu 280105: zmienione z 8 na 16
+constexpr int MaxAxles = 16; // ABu 280105: zmienione z 8 na 16
 // const MaxAnimatedAxles=16; //i to tez.
 // const MaxAnimatedDoors=16;  //NBMX  wrzesien 2003
 /*

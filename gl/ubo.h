@@ -39,13 +39,13 @@ namespace gl
 
 #pragma pack(push, 1)
 
-    const size_t MAX_TEXTURES = 8;
-    const size_t ENVMAP_SIZE = 1024;
-    const size_t MAX_CASCADES = 3;
-    const size_t HELPER_TEXTURES = 4;
-    const size_t SHADOW_TEX = MAX_TEXTURES + 0;
-    const size_t ENV_TEX = MAX_TEXTURES + 1;
-    const size_t HEADLIGHT_TEX = MAX_TEXTURES + 2;
+    constexpr size_t MAX_TEXTURES = 8;
+    constexpr size_t ENVMAP_SIZE = 1024;
+    constexpr size_t MAX_CASCADES = 3;
+    constexpr size_t HELPER_TEXTURES = 4;
+    constexpr size_t SHADOW_TEX = MAX_TEXTURES + 0;
+    constexpr size_t ENV_TEX = MAX_TEXTURES + 1;
+    constexpr size_t HEADLIGHT_TEX = MAX_TEXTURES + 2;
 
     struct scene_ubs
     {
@@ -62,7 +62,7 @@ namespace gl
 
     static_assert(sizeof(scene_ubs) == 400, "bad size of ubs");
 
-    const size_t MAX_PARAMS = 3;
+    constexpr size_t MAX_PARAMS = 3;
 
     struct model_ubs
     {
@@ -94,7 +94,7 @@ namespace gl
 
     // maximum number of instances per single GPU-instanced draw call.
     // 256 mat4 = 16 KiB, the guaranteed minimum UBO size. Bigger batches must split.
-    const size_t MAX_INSTANCES_PER_BATCH = 256;
+    constexpr size_t MAX_INSTANCES_PER_BATCH = 256;
 
     struct instance_ubs
     {
@@ -134,7 +134,7 @@ namespace gl
 
     static_assert(sizeof(light_element_ubs) == 144, "bad size of ubs");
 
-    const size_t MAX_LIGHTS = 8;
+    constexpr size_t MAX_LIGHTS = 8;
 
     struct light_ubs
     {

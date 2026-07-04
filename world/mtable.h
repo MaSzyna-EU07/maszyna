@@ -17,7 +17,7 @@ http://mozilla.org/MPL/2.0/.
 namespace Mtable
 {
 
-static int const MaxTTableSize = 100; // można by to robić dynamicznie
+static constexpr int MaxTTableSize = 100; // można by to robić dynamicznie
 static auto hrsd = ".";
 
 // Ra: pozycja zerowa rozkładu chyba nie ma sensu

@@ -1755,7 +1755,7 @@ void
 lights_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
 
     // TBD, TODO: remove light count limit?
-    auto const lightcountlimit { 8 };
+	constexpr auto lightcountlimit { 8 };
     m_lights.resize( lightcountlimit );
     int lightidx { 0 };
 

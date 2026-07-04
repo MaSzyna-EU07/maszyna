@@ -22,7 +22,7 @@ basic_precipitation::~basic_precipitation() {
 bool
 basic_precipitation::init() {
 
-    auto const heightfactor { 10.f }; // height-to-radius factor
+	constexpr auto heightfactor { 10.f }; // height-to-radius factor
     m_moverate *= heightfactor;
 
     return true;

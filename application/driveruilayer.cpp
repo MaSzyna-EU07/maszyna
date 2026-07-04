@@ -208,7 +208,7 @@ bool driver_ui::on_mouse_button(int const Button, int const Action)
 void driver_ui::update()
 {
 
-	auto const pausemask{1 | 2};
+	constexpr auto pausemask{1 | 2};
 	const auto ispaused{false == DebugModeFlag && (Global.iPause & pausemask) != 0};
 	if (ispaused != m_paused && false == Global.ControlPicking)
 	{

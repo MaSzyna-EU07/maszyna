@@ -210,7 +210,7 @@ void editor_mode::snap_to_ground(scene::basic_node *node)
         return;
 
     // small tolerance so a node already resting on a surface still snaps cleanly to it
-    double const epsilon = 0.05;
+	constexpr double epsilon = 0.05;
     double bestY = -std::numeric_limits<double>::max();
     bool found = false;
 

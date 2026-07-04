@@ -56,11 +56,11 @@ static double ComputeAxisSpeed(double param, double walkspeed, double maxspeed, 
 bool
 TCamera::OnCommand( command_data const &Command ) {
 
-    auto const walkspeed { 1.0 };
-    auto const runspeed { 10.0 };
+	constexpr auto walkspeed { 1.0 };
+	constexpr auto runspeed { 10.0 };
 
 	// threshold position on stick between walk lerp and walk/run lerp
-	auto const stickthreshold = 2.0 / 3.0;
+	constexpr auto stickthreshold = 2.0 / 3.0;
 
     bool iscameracommand { true };
     switch( Command.command ) {

@@ -140,7 +140,7 @@ class opengl33_renderer : public gfx_renderer {
 	void Update_AnimModel(TAnimModel *model);
 
 	// members
-    GLenum static const sunlight{0};
+	constexpr GLenum static sunlight{0};
 
     static std::unique_ptr<gfx_renderer> create_func();
 

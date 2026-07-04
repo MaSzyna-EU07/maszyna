@@ -43,7 +43,7 @@ public:
                 std::min(
                     m_resourcesweepindex + m_unusedresourcesweepsize,
                     m_container.size() );
-            auto const blanktimestamp { std::chrono::steady_clock::time_point() };
+		    constexpr auto blanktimestamp { std::chrono::steady_clock::time_point() };
             int releasecount{ 0 };
             for( auto resourceindex = m_resourcesweepindex; resourceindex < sweeplastindex; ++resourceindex ) {
                 if( m_container[resourceindex].second != blanktimestamp

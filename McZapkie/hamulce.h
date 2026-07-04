@@ -36,150 +36,150 @@ Knorr/West EP - żeby był
 #include "friction.h" // Pascal unit
 
 /// <summary>Number of positions of the local (auxiliary/manual) brake handle.</summary>
-static int const LocalBrakePosNo = 10; /*ilosc nastaw hamulca recznego lub pomocniczego*/
+static constexpr int LocalBrakePosNo = 10; /*ilosc nastaw hamulca recznego lub pomocniczego*/
 /// <summary>Maximum number of positions of the main (train) brake handle.</summary>
-static int const MainBrakeMaxPos = 10; /*max. ilosc nastaw hamulca zasadniczego*/
+static constexpr int MainBrakeMaxPos = 10; /*max. ilosc nastaw hamulca zasadniczego*/
 
 /*nastawy hamulca*/
 /// <summary>Brake delay setting flag: G (goods/freight slow).</summary>
-static int const bdelay_G = 1; // G
+static constexpr int bdelay_G = 1; // G
 /// <summary>Brake delay setting flag: P (passenger fast).</summary>
-static int const bdelay_P = 2; // P
+static constexpr int bdelay_P = 2; // P
 /// <summary>Brake delay setting flag: R (rapid - high braking force).</summary>
-static int const bdelay_R = 4; // R
+static constexpr int bdelay_R = 4; // R
 /// <summary>Brake delay setting flag: Mg (magnetic rail brake enabled).</summary>
-static int const bdelay_M = 8; // Mg
+static constexpr int bdelay_M = 8; // Mg
 
 /*stan hamulca*/
 /// <summary>Brake state flag: brake released (no action).</summary>
-static int const b_off = 0; // luzowanie
+static constexpr int b_off = 0; // luzowanie
 /// <summary>Brake state flag: hold (lap) - keep current cylinder pressure.</summary>
-static int const b_hld = 1; // trzymanie
+static constexpr int b_hld = 1; // trzymanie
 /// <summary>Brake state flag: applying - filling brake cylinder.</summary>
-static int const b_on = 2; // napelnianie
+static constexpr int b_on = 2; // napelnianie
 /// <summary>Brake state flag: replenishing the auxiliary reservoir.</summary>
-static int const b_rfl = 4; // uzupelnianie
+static constexpr int b_rfl = 4; // uzupelnianie
 /// <summary>Brake state flag: releaser engaged (vents the control reservoir to release brakes).</summary>
-static int const b_rls = 8; // odluzniacz
+static constexpr int b_rls = 8; // odluzniacz
 /// <summary>Brake state flag: electro-pneumatic action active.</summary>
-static int const b_ep = 16; // elektropneumatyczny
+static constexpr int b_ep = 16; // elektropneumatyczny
 /// <summary>Brake state flag: anti-slip protection holding the brake (preventing further filling).</summary>
-static int const b_asb = 32; // przeciwposlizg-wstrzymanie
+static constexpr int b_asb = 32; // przeciwposlizg-wstrzymanie
 /// <summary>Brake state flag: anti-slip protection releasing the brake.</summary>
-static int const b_asb_unbrake = 64; // przeciwposlizg-luzowanie
+static constexpr int b_asb_unbrake = 64; // przeciwposlizg-luzowanie
 /// <summary>Brake state flag: brake disabled / damaged.</summary>
-static int const b_dmg = 128; // wylaczony z dzialania
+static constexpr int b_dmg = 128; // wylaczony z dzialania
 
 /*uszkodzenia hamulca*/
 /// <summary>Brake damage flag: faulty filling phase.</summary>
-static int const df_on = 1; // napelnianie
+static constexpr int df_on = 1; // napelnianie
 /// <summary>Brake damage flag: faulty release phase.</summary>
-static int const df_off = 2; // luzowanie
+static constexpr int df_off = 2; // luzowanie
 /// <summary>Brake damage flag: leak in auxiliary reservoir (ZP).</summary>
-static int const df_br = 4; // wyplyw z ZP
+static constexpr int df_br = 4; // wyplyw z ZP
 /// <summary>Brake damage flag: leak in valve pre-chamber.</summary>
-static int const df_vv = 8; // wyplyw z komory wstepnej
+static constexpr int df_vv = 8; // wyplyw z komory wstepnej
 /// <summary>Brake damage flag: leak in brake cylinder.</summary>
-static int const df_bc = 16; // wyplyw z silownika
+static constexpr int df_bc = 16; // wyplyw z silownika
 /// <summary>Brake damage flag: leak in control reservoir (ZS).</summary>
-static int const df_cv = 32; // wyplyw z ZS
+static constexpr int df_cv = 32; // wyplyw z ZS
 /// <summary>Brake damage flag: stuck at low load step.</summary>
-static int const df_PP = 64; // zawsze niski stopien
+static constexpr int df_PP = 64; // zawsze niski stopien
 /// <summary>Brake damage flag: stuck at high load step.</summary>
-static int const df_RR = 128; // zawsze wysoki stopien
+static constexpr int df_RR = 128; // zawsze wysoki stopien
 
 /*indeksy dzwiekow FV4a*/
 /// <summary>FV4a sound index: braking flow.</summary>
-static int const s_fv4a_b = 0; // hamowanie
+static constexpr int s_fv4a_b = 0; // hamowanie
 /// <summary>FV4a sound index: release flow.</summary>
-static int const s_fv4a_u = 1; // luzowanie
+static constexpr int s_fv4a_u = 1; // luzowanie
 /// <summary>FV4a sound index: emergency braking flow.</summary>
-static int const s_fv4a_e = 2; // hamowanie nagle
+static constexpr int s_fv4a_e = 2; // hamowanie nagle
 /// <summary>FV4a sound index: control wave outflow.</summary>
-static int const s_fv4a_x = 3; // wyplyw sterujacego fala
+static constexpr int s_fv4a_x = 3; // wyplyw sterujacego fala
 /// <summary>FV4a sound index: timing chamber outflow.</summary>
-static int const s_fv4a_t = 4; // wyplyw z czasowego
+static constexpr int s_fv4a_t = 4; // wyplyw z czasowego
 
 /*pary cierne*/
 /// <summary>Friction pair: P10 (default cast iron).</summary>
-static int const bp_P10 = 0;
+static constexpr int bp_P10 = 0;
 /// <summary>Friction pair: P10 phosphoric cast iron with Bg block.</summary>
-static int const bp_P10Bg = 2; // żeliwo fosforowe P10
+static constexpr int bp_P10Bg = 2; // żeliwo fosforowe P10
 /// <summary>Friction pair: P10 phosphoric cast iron with Bgu block.</summary>
-static int const bp_P10Bgu = 1;
+static constexpr int bp_P10Bgu = 1;
 /// <summary>Friction pair: low-friction composite (b.n.t.) with Bg block.</summary>
-static int const bp_LLBg = 4; // komp. b.n.t.
+static constexpr int bp_LLBg = 4; // komp. b.n.t.
 /// <summary>Friction pair: low-friction composite (b.n.t.) with Bgu block.</summary>
-static int const bp_LLBgu = 3;
+static constexpr int bp_LLBgu = 3;
 /// <summary>Friction pair: low-friction composite (n.t.) with Bg block.</summary>
-static int const bp_LBg = 6; // komp. n.t.
+static constexpr int bp_LBg = 6; // komp. n.t.
 /// <summary>Friction pair: low-friction composite (n.t.) with Bgu block.</summary>
-static int const bp_LBgu = 5;
+static constexpr int bp_LBgu = 5;
 /// <summary>Friction pair: high-friction composite (w.t.) with Bg block.</summary>
-static int const bp_KBg = 8; // komp. w.t.
+static constexpr int bp_KBg = 8; // komp. w.t.
 /// <summary>Friction pair: high-friction composite (w.t.) with Bgu block.</summary>
-static int const bp_KBgu = 7;
+static constexpr int bp_KBgu = 7;
 /// <summary>Friction pair: disc brake type 1.</summary>
-static int const bp_D1 = 9; // tarcze
+static constexpr int bp_D1 = 9; // tarcze
 /// <summary>Friction pair: disc brake type 2.</summary>
-static int const bp_D2 = 10;
+static constexpr int bp_D2 = 10;
 /// <summary>Friction pair: Frenoplast FR513 composite.</summary>
-static int const bp_FR513 = 11; // Frenoplast FR513
+static constexpr int bp_FR513 = 11; // Frenoplast FR513
 /// <summary>Friction pair: Cosid composite.</summary>
-static int const bp_Cosid = 12; // jakistam kompozyt :D
+static constexpr int bp_Cosid = 12; // jakistam kompozyt :D
 /// <summary>Friction pair: PKP cast iron with Bg block.</summary>
-static int const bp_PKPBg = 13; // żeliwo PKP
+static constexpr int bp_PKPBg = 13; // żeliwo PKP
 /// <summary>Friction pair: PKP cast iron with Bgu block.</summary>
-static int const bp_PKPBgu = 14;
+static constexpr int bp_PKPBgu = 14;
 /// <summary>Friction pair flag: magnetic rail brake (added bitwise to other types).</summary>
-static int const bp_MHS = 128; // magnetyczny hamulec szynowy
+static constexpr int bp_MHS = 128; // magnetyczny hamulec szynowy
 /// <summary>Friction pair: P10y phosphoric cast iron with Bg block.</summary>
-static int const bp_P10yBg = 15; // żeliwo fosforowe P10
+static constexpr int bp_P10yBg = 15; // żeliwo fosforowe P10
 /// <summary>Friction pair: P10y phosphoric cast iron with Bgu block.</summary>
-static int const bp_P10yBgu = 16;
+static constexpr int bp_P10yBgu = 16;
 /// <summary>Friction pair: Frenoplast FR510 composite.</summary>
-static int const bp_FR510 = 17; // Frenoplast FR510
+static constexpr int bp_FR510 = 17; // Frenoplast FR510
 
 /// <summary>Sound flag: accelerator (rapid pressure drop in valve pre-chamber).</summary>
-static int const sf_Acc = 1; // przyspieszacz
+static constexpr int sf_Acc = 1; // przyspieszacz
 /// <summary>Sound flag: brake transmission/load relay actuating.</summary>
-static int const sf_BR = 2; // przekladnia
+static constexpr int sf_BR = 2; // przekladnia
 /// <summary>Sound flag: brake cylinder filling.</summary>
-static int const sf_CylB = 4; // cylinder - napelnianie
+static constexpr int sf_CylB = 4; // cylinder - napelnianie
 /// <summary>Sound flag: brake cylinder venting.</summary>
-static int const sf_CylU = 8; // cylinder - oproznianie
+static constexpr int sf_CylU = 8; // cylinder - oproznianie
 /// <summary>Sound flag: releaser actuated.</summary>
-static int const sf_rel = 16; // odluzniacz
+static constexpr int sf_rel = 16; // odluzniacz
 /// <summary>Sound flag: electro-pneumatic valves switching.</summary>
-static int const sf_ep = 32; // zawory ep
+static constexpr int sf_ep = 32; // zawory ep
 
 /// <summary>Brake handle position index: minimum position.</summary>
-static int const bh_MIN = 0; // minimalna pozycja
+static constexpr int bh_MIN = 0; // minimalna pozycja
 /// <summary>Brake handle position index: maximum position.</summary>
-static int const bh_MAX = 1; // maksymalna pozycja
+static constexpr int bh_MAX = 1; // maksymalna pozycja
 /// <summary>Brake handle position index: filling stroke (high-pressure overcharge); if not present, equivalent to running.</summary>
-static int const bh_FS = 2; // napelnianie uderzeniowe //jesli nie ma, to jazda
+static constexpr int bh_FS = 2; // napelnianie uderzeniowe //jesli nie ma, to jazda
 /// <summary>Brake handle position index: running (driving) position.</summary>
-static int const bh_RP = 3; // jazda
+static constexpr int bh_RP = 3; // jazda
 /// <summary>Brake handle position index: cut-off (double traction / neutral).</summary>
-static int const bh_NP = 4; // odciecie - podwojna trakcja
+static constexpr int bh_NP = 4; // odciecie - podwojna trakcja
 /// <summary>Brake handle position index: minimum braking step (lap or first step).</summary>
-static int const bh_MB = 5; // odciecie - utrzymanie stopnia hamowania/pierwszy 1 stopien hamowania
+static constexpr int bh_MB = 5; // odciecie - utrzymanie stopnia hamowania/pierwszy 1 stopien hamowania
 /// <summary>Brake handle position index: full service brake.</summary>
-static int const bh_FB = 6; // pelne
+static constexpr int bh_FB = 6; // pelne
 /// <summary>Brake handle position index: emergency brake.</summary>
-static int const bh_EB = 7; // nagle
+static constexpr int bh_EB = 7; // nagle
 /// <summary>Brake handle position index: EP release (full release for angular EP).</summary>
-static int const bh_EPR = 8; // ep - luzowanie  //pelny luz dla ep kątowego
+static constexpr int bh_EPR = 8; // ep - luzowanie  //pelny luz dla ep kątowego
 /// <summary>Brake handle position index: EP hold/lap; if equal to release, button-only EP control.</summary>
-static int const bh_EPN = 9; // ep - utrzymanie //jesli rowne luzowaniu, wtedy sterowanie przyciskiem
+static constexpr int bh_EPN = 9; // ep - utrzymanie //jesli rowne luzowaniu, wtedy sterowanie przyciskiem
 /// <summary>Brake handle position index: EP brake (full braking for angular EP).</summary>
-static int const bh_EPB = 10; // ep - hamowanie  //pelne hamowanie dla ep kątowego
+static constexpr int bh_EPB = 10; // ep - hamowanie  //pelne hamowanie dla ep kątowego
 
 /// <summary>Diameter of the brake pipe (1") used in flow calculations.</summary>
-static double const SpgD = 0.7917;
+static constexpr double SpgD = 0.7917;
 /// <summary>Cross-section of a 1" brake pipe expressed in l/m (used to keep volumes in liters and lengths in meters).</summary>
-static double const SpO = 0.5067; // przekroj przewodu 1" w l/m
+static constexpr double SpO = 0.5067; // przekroj przewodu 1" w l/m
                                   // wyj: jednostka dosyc dziwna, ale wszystkie obliczenia
                                   // i pojemnosci sa podane w litrach (rozsadne wielkosci)
                                   // zas dlugosc pojazdow jest podana w metrach

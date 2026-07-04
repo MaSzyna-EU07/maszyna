@@ -22,7 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
 
-auto const EU07_CONTROLLER_MOUSESLIDERSIZE{ 0.6 };
+constexpr auto EU07_CONTROLLER_MOUSESLIDERSIZE{ 0.6 };
 
 void
 mouse_slider::bind( user_command const &Command ) {

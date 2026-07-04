@@ -129,8 +129,8 @@ void cMoon::move() {
     m_body.oblecl = clamp_circular( 23.4393 - 3.563e-7 * daynumber );
     // moon parameters
 	const double longascnode = clamp_circular( 125.1228 - 0.0529538083  * daynumber ); // N, degrees
-    double const inclination = 5.1454; // i, degrees
-    double const mndistance = 60.2666; // a, in earth radii
+	constexpr double inclination = 5.1454; // i, degrees
+	constexpr double mndistance = 60.2666; // a, in earth radii
     // argument of perigee
     double const perigeearg = clamp_circular( 318.0634 + 0.1643573223  * daynumber ); // w, degrees
     // mean anomaly
@@ -279,7 +279,7 @@ void cMoon::irradiance() {
 	const double s2 = sin( degtorad * d2 );
 	m_body.erv += 0.000719*c2 + 0.000077*s2;
 
-	const double solcon = 1367.0;									// Solar constant, 1367 W/sq m
+	constexpr double solcon = 1367.0;									// Solar constant, 1367 W/sq m
 
 	m_body.coszen  = cos( degtorad * m_body.zenref );
 	if( m_body.coszen > 0.0 ) {

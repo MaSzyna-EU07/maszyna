@@ -20,8 +20,8 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/DynObj.h"
 #include "scene/scenenode.h"
 
-const int iMaxNumLights = 8;
-float const DefaultDarkThresholdLevel { 0.325f };
+constexpr int iMaxNumLights = 8;
+constexpr float DefaultDarkThresholdLevel { 0.325f };
 
 // typy stanu świateł
 enum TLightState

@@ -24,11 +24,11 @@ http://mozilla.org/MPL/2.0/.
 
 // typedef enum {st_Off, st_Starting, st_On, st_ShuttingDown} T4State;
 
-const double fCzuwakBlink = 0.15;
-const float fConverterPrzekaznik = 1.5f; // hunter-261211: do przekaznika nadmiarowego przetwornicy
+constexpr double fCzuwakBlink = 0.15;
+constexpr float fConverterPrzekaznik = 1.5f; // hunter-261211: do przekaznika nadmiarowego przetwornicy
 // 0.33f
 // const double fBuzzerTime= 5.0f;
-const float fHaslerTime = 1.2f;
+constexpr float fHaslerTime = 1.2f;
 
 class TCab {
 

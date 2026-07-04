@@ -60,7 +60,7 @@ CSkyDome::~CSkyDome() {
 
 void CSkyDome::Generate() {
 	// radius of dome
-    float const radius = 1.0f;
+	constexpr float radius = 1.0f;
     float const offset = 0.1f * radius; // horizontal offset, a cheap way to prevent a gap between ground and horizon
 
 	// create geometry chunk
@@ -294,7 +294,7 @@ void CSkyDome::RebuildColors() {
         color *= std::clamp( 1.0f - vertex.y * 0.75f, 0.0f, 1.f );
 
         float const horizonboost = 1.5f + m_overcast;
-        float const horizonbandwidth = 0.2f; // boost tapers to 0 by ~11.5 degrees elevation
+		constexpr float horizonbandwidth = 0.2f; // boost tapers to 0 by ~11.5 degrees elevation
         float const horizonband = std::clamp( 1.0f - vertex.y / horizonbandwidth, 0.0f, 1.0f );
 
         color *= std::lerp( 1.0, horizonboost, horizonband );

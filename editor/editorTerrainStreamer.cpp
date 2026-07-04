@@ -112,7 +112,7 @@ void terrain_streamer::save_heights(int Cx, int Cz, editor_terrain const &Terrai
 	if (!f)
 		return;
 
-	char const magic[4] = {'E', 'T', 'C', '1'};
+	constexpr char magic[4] = {'E', 'T', 'C', '1'};
 	std::uint16_t const cells = static_cast<std::uint16_t>(Terrain.cells());
 	f.write(magic, 4);
 	f.write(reinterpret_cast<char const *>(&cells), sizeof(cells));

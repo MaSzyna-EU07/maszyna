@@ -51,8 +51,8 @@ enum stream {
     texture  = 0x8
 };
 
-unsigned int const basic_streams { position | normal | texture };
-unsigned int const color_streams { position | color | texture };
+constexpr unsigned int basic_streams { position | normal | texture };
+constexpr unsigned int color_streams { position | color | texture };
 
 struct stream_units {
 

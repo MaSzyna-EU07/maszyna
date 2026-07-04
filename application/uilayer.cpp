@@ -540,7 +540,7 @@ void ui_layer::render_menu_contents()
 		bool flag = DebugModeFlag;
 		if (ImGui::MenuItem(STR_C("Debug mode"), nullptr, &flag))
 		{
-			const command_relay relay;
+			constexpr command_relay relay;
 			relay.post(user_command::debugtoggle, 0.0, 0.0, GLFW_RELEASE, 0);
 		}
 		ImGui::MenuItem(STR_C("Quit"), "F10", &m_quit_active);

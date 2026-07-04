@@ -312,9 +312,9 @@ char charsetconversiontable[] = "E?,?\"_++?%S<STZZ?`'\"\".--??s>stzz"
 std::string Bezogonkow(std::string Input, bool const Underscorestospaces)
 {
 
-	char const extendedcharsetbit{static_cast<char>(0x80)};
-	char const space{' '};
-	char const underscore{'_'};
+	constexpr char extendedcharsetbit{static_cast<char>(0x80)};
+	constexpr char space{' '};
+	constexpr char underscore{'_'};
 
 	for (auto &input : Input)
 	{

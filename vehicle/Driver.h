@@ -19,12 +19,12 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "application/driverhints.h"
 
-auto const EU07_AI_ACCELERATION = 0.05;
-auto const EU07_AI_NOACCELERATION = -0.05;
-auto const EU07_AI_BRAKINGTESTACCELERATION = -0.06;
-auto const EU07_AI_NOMOVEMENT = 0.05; // standstill velocity threshold
-auto const EU07_AI_MOVEMENT = 1.0; // deliberate movement velocity threshold
-auto const EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE = 10000.0;
+constexpr auto EU07_AI_ACCELERATION = 0.05;
+constexpr auto EU07_AI_NOACCELERATION = -0.05;
+constexpr auto EU07_AI_BRAKINGTESTACCELERATION = -0.06;
+constexpr auto EU07_AI_NOMOVEMENT = 0.05; // standstill velocity threshold
+constexpr auto EU07_AI_MOVEMENT = 1.0; // deliberate movement velocity threshold
+constexpr auto EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE = 10000.0;
 
 enum TOrders
 { // rozkazy dla AI
@@ -183,20 +183,20 @@ class TSpeedPos
 };
 
 //----------------------------------------------------------------------------
-static const bool Aggressive = true;
-static const bool Easyman = false;
-static const bool AIdriver = true;
-static const bool Humandriver = false;
-static const int maxorders = 64; // ilość rozkazów w tabelce
-static const int maxdriverfails = 4; // ile błędów może zrobić AI zanim zmieni nastawienie
+static constexpr bool Aggressive = true;
+static constexpr bool Easyman = false;
+static constexpr bool AIdriver = true;
+static constexpr bool Humandriver = false;
+static constexpr int maxorders = 64; // ilość rozkazów w tabelce
+static constexpr int maxdriverfails = 4; // ile błędów może zrobić AI zanim zmieni nastawienie
 extern bool WriteLogFlag; // logowanie parametrów fizycznych
-static const int BrakeAccTableSize = 20;
+static constexpr int BrakeAccTableSize = 20;
 
-static const int gbh_NP = -2; //odciecie w hamulcu ogolnym
-static const int gbh_RP = 0; //jazda w hamulcu ogolnym
-static const int gbh_FS = -1; //napelnianie uderzeniowe w hamulcu ogolnym
-static const int gbh_MIN = -2; //minimalna pozycja w hamulcu ogolnym
-static const int gbh_MAX = 6; //maksymalna pozycja w hamulcu ogolnym
+static constexpr int gbh_NP = -2; //odciecie w hamulcu ogolnym
+static constexpr int gbh_RP = 0; //jazda w hamulcu ogolnym
+static constexpr int gbh_FS = -1; //napelnianie uderzeniowe w hamulcu ogolnym
+static constexpr int gbh_MIN = -2; //minimalna pozycja w hamulcu ogolnym
+static constexpr int gbh_MAX = 6; //maksymalna pozycja w hamulcu ogolnym
 //----------------------------------------------------------------------------
 
 class TController {

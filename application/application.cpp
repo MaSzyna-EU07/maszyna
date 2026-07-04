@@ -444,7 +444,7 @@ void eu07_application::queue_quit(bool direct)
 		return;
 	}
 
-	const command_relay relay;
+	constexpr command_relay relay;
 	relay.post(user_command::quitsimulation, 0.0, 0.0, GLFW_PRESS, 0);
 }
 
@@ -901,7 +901,7 @@ void eu07_application::on_focus_change(bool focus)
 {
 	if (Global.bInactivePause && m_network.has_value() && !m_network->client)
 	{ // jeśli ma być pauzowanie okna w tle
-		const command_relay relay;
+		constexpr command_relay relay;
 		relay.post(user_command::focuspauseset, focus ? 1.0 : 0.0, 0.0, GLFW_PRESS, 0);
 	}
 }

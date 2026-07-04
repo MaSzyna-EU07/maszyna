@@ -18,10 +18,10 @@ http://mozilla.org/MPL/2.0/.
 #define EU07_USE_GEOMETRYINDEXING
 
 // Ra: specjalne typy submodeli, poza tym GL_TRIANGLES itp.
-const int TP_ROTATOR = 256;
-const int TP_FREESPOTLIGHT = 257;
-const int TP_STARS = 258;
-const int TP_TEXT = 259;
+constexpr int TP_ROTATOR = 256;
+constexpr int TP_FREESPOTLIGHT = 257;
+constexpr int TP_STARS = 258;
+constexpr int TP_TEXT = 259;
 
 enum class TAnimType // rodzaj animacji
 {

@@ -82,75 +82,75 @@ zwiekszenie nacisku przy duzych predkosciach w hamulcach Oerlikona
 extern int ConversionError;
 
 /// <summary>Static friction coefficient for steel-on-steel contact (used for adhesion at standstill).</summary>
-const double Steel2Steel_friction = 0.15; // tarcie statyczne
+constexpr double Steel2Steel_friction = 0.15; // tarcie statyczne
 /// <summary>Earth gravitational acceleration [m/s^2].</summary>
-const double g = 9.81; // przyspieszenie ziemskie
+constexpr double g = 9.81; // przyspieszenie ziemskie
 /// <summary>Sand consumption rate when sanding is active [kg/s].</summary>
-const double SandSpeed = 0.1; // ile kg/s}
+constexpr double SandSpeed = 0.1; // ile kg/s}
 /// <summary>2*pi shortcut.</summary>
-const double Pirazy2 = 6.2831853071794f;
+constexpr double Pirazy2 = 6.2831853071794f;
 
 //-- var, const, procedure ---------------------------------------------------
 /// <summary>Truthy alias used by CheckLocomotiveParameters() to ignore a check failure.</summary>
-static bool const Go = true;
+static constexpr bool Go = true;
 /// <summary>Falsy alias used by CheckLocomotiveParameters() to abort on a check failure.</summary>
-static bool const Hold = false; /*dla CheckLocomotiveParameters*/
+static constexpr bool Hold = false; /*dla CheckLocomotiveParameters*/
 /// <summary>Maximum number of resistor / scheme entries for electric motor traction.</summary>
-static int const ResArraySize = 64; /*dla silnikow elektrycznych*/
+static constexpr int ResArraySize = 64; /*dla silnikow elektrycznych*/
 /// <summary>Maximum number of motor-parameter table entries (gear stages).</summary>
-static int const MotorParametersArraySize = 10;
+static constexpr int MotorParametersArraySize = 10;
 /// <summary>Maximum number of pantograph current collectors per vehicle.</summary>
-static int const maxcc = 4; /*max. ilosc odbierakow pradu*/
+static constexpr int maxcc = 4; /*max. ilosc odbierakow pradu*/
 // static int const LocalBrakePosNo = 10;         /*ilosc nastaw hamulca pomocniczego*/
 // static int const MainBrakeMaxPos = 10;          /*max. ilosc nastaw hamulca zasadniczego*/
 /// <summary>Number of positions on the manual (parking) brake handle.</summary>
-static int const ManualBrakePosNo = 20; /*ilosc nastaw hamulca recznego*/
+static constexpr int ManualBrakePosNo = 20; /*ilosc nastaw hamulca recznego*/
 /// <summary>Number of positions on the lights selector switch.</summary>
-static int const LightsSwitchPosNo = 16;
+static constexpr int LightsSwitchPosNo = 16;
 /// <summary>Maximum number of positions of the universal (auxiliary) controller.</summary>
-static int const UniversalCtrlArraySize = 32; /*max liczba pozycji uniwersalnego nastawnika*/
+static constexpr int UniversalCtrlArraySize = 32; /*max liczba pozycji uniwersalnego nastawnika*/
 
 /*uszkodzenia toru*/
 /// <summary>Track damage flag: rail wear.</summary>
-static int const dtrack_railwear = 2;
+static constexpr int dtrack_railwear = 2;
 /// <summary>Track damage flag: free / loose rail.</summary>
-static int const dtrack_freerail = 4;
+static constexpr int dtrack_freerail = 4;
 /// <summary>Track damage flag: thin (worn-out) rail.</summary>
-static int const dtrack_thinrail = 8;
+static constexpr int dtrack_thinrail = 8;
 /// <summary>Track damage flag: bent rail.</summary>
-static int const dtrack_railbend = 16;
+static constexpr int dtrack_railbend = 16;
 /// <summary>Track damage flag: vegetation overgrowth.</summary>
-static int const dtrack_plants = 32;
+static constexpr int dtrack_plants = 32;
 /// <summary>Track damage flag: track impassable for movement.</summary>
-static int const dtrack_nomove = 64;
+static constexpr int dtrack_nomove = 64;
 /// <summary>Track damage flag: rails missing entirely.</summary>
-static int const dtrack_norail = 128;
+static constexpr int dtrack_norail = 128;
 
 /*uszkodzenia taboru*/
 /// <summary>Vehicle damage flag: thin wheel (locomotives).</summary>
-static int const dtrain_thinwheel = 1; /*dla lokomotyw*/
+static constexpr int dtrain_thinwheel = 1; /*dla lokomotyw*/
 /// <summary>Vehicle damage flag: shifted load (wagons).</summary>
-static int const dtrain_loadshift = 1; /*dla wagonow*/
+static constexpr int dtrain_loadshift = 1; /*dla wagonow*/
 /// <summary>Vehicle damage flag: wheel wear.</summary>
-static int const dtrain_wheelwear = 2;
+static constexpr int dtrain_wheelwear = 2;
 /// <summary>Vehicle damage flag: bearing failure.</summary>
-static int const dtrain_bearing = 4;
+static constexpr int dtrain_bearing = 4;
 /// <summary>Vehicle damage flag: coupling damage.</summary>
-static int const dtrain_coupling = 8;
+static constexpr int dtrain_coupling = 8;
 /// <summary>Vehicle damage flag: ventilator failure (electric locomotive).</summary>
-static int const dtrain_ventilator = 16; /*dla lokomotywy el.*/
+static constexpr int dtrain_ventilator = 16; /*dla lokomotywy el.*/
 /// <summary>Vehicle damage flag: load damage (wagons).</summary>
-static int const dtrain_loaddamage = 16; /*dla wagonow*/
+static constexpr int dtrain_loaddamage = 16; /*dla wagonow*/
 /// <summary>Vehicle damage flag: engine failure (locomotives).</summary>
-static int const dtrain_engine = 32; /*dla lokomotyw*/
+static constexpr int dtrain_engine = 32; /*dla lokomotyw*/
 /// <summary>Vehicle damage flag: load destroyed (wagons).</summary>
-static int const dtrain_loaddestroyed = 32; /*dla wagonow*/
+static constexpr int dtrain_loaddestroyed = 32; /*dla wagonow*/
 /// <summary>Vehicle damage flag: axle damage.</summary>
-static int const dtrain_axle = 64;
+static constexpr int dtrain_axle = 64;
 /// <summary>Vehicle damage flag: derailment.</summary>
-static int const dtrain_out = 128; /*wykolejenie*/
+static constexpr int dtrain_out = 128; /*wykolejenie*/
 /// <summary>Vehicle damage flag: broken pantograph.</summary>
-static int const dtrain_pantograph = 256; /*polamanie pantografu*/
+static constexpr int dtrain_pantograph = 256; /*polamanie pantografu*/
 
 /// <summary>Reason for a derailment event.</summary>
 enum DerailReason
@@ -185,23 +185,23 @@ enum DerailReason
 
 /*typ sprzegu*/
 /// <summary>Coupling type: virtual — vehicles share a track and are aware of each other.</summary>
-static int const ctrain_virtual = 0; // gdy pojazdy na tym samym torze się widzą wzajemnie
+static constexpr int ctrain_virtual = 0; // gdy pojazdy na tym samym torze się widzą wzajemnie
 /// <summary>Coupling type: physical coupler.</summary>
-static int const ctrain_coupler = 1; // sprzeg fizyczny
+static constexpr int ctrain_coupler = 1; // sprzeg fizyczny
 /// <summary>Coupling type: pneumatic brake hose.</summary>
-static int const ctrain_pneumatic = 2; // przewody hamulcowe
+static constexpr int ctrain_pneumatic = 2; // przewody hamulcowe
 /// <summary>Coupling type: control cable (multiple-unit).</summary>
-static int const ctrain_controll = 4; // przewody sterujące (ukrotnienie)
+static constexpr int ctrain_controll = 4; // przewody sterujące (ukrotnienie)
 /// <summary>Coupling type: high-voltage power cable.</summary>
-static int const ctrain_power = 8; // przewody zasilające (WN)
+static constexpr int ctrain_power = 8; // przewody zasilające (WN)
 /// <summary>Coupling type: passenger gangway.</summary>
-static int const ctrain_passenger = 16; // mostek przejściowy
+static constexpr int ctrain_passenger = 16; // mostek przejściowy
 /// <summary>Coupling type: secondary 8 atm pneumatic line (yellow, main air).</summary>
-static int const ctrain_scndpneumatic = 32; // przewody 8 atm (żółte; zasilanie powietrzem)
+static constexpr int ctrain_scndpneumatic = 32; // przewody 8 atm (żółte; zasilanie powietrzem)
 /// <summary>Coupling type: high-voltage train heating cable.</summary>
-static int const ctrain_heating = 64; // przewody ogrzewania WN
+static constexpr int ctrain_heating = 64; // przewody ogrzewania WN
 /// <summary>Coupling type: permanent (inter-section) — not separable during ordinary shunting; encoded as negative in config files.</summary>
-static int const ctrain_depot = 128; // nie rozłączalny podczas zwykłych manewrów (międzyczłonowy), we wpisie wartość ujemna
+static constexpr int ctrain_depot = 128; // nie rozłączalny podczas zwykłych manewrów (międzyczłonowy), we wpisie wartość ujemna
 /// <summary>Vehicle ends — front or rear (mutually exclusive).</summary>
 enum end
 {
@@ -338,15 +338,15 @@ enum control_t
 };
 /*typ hamulca elektrodynamicznego*/
 /// <summary>Electrodynamic-brake type: no ED brake.</summary>
-static int const dbrake_none = 0;
+static constexpr int dbrake_none = 0;
 /// <summary>Electrodynamic-brake type: passive (always on while moving).</summary>
-static int const dbrake_passive = 1;
+static constexpr int dbrake_passive = 1;
 /// <summary>Electrodynamic-brake type: switchable (driver toggles).</summary>
-static int const dbrake_switch = 2;
+static constexpr int dbrake_switch = 2;
 /// <summary>Electrodynamic-brake type: reversal (engaged via reverser).</summary>
-static int const dbrake_reversal = 4;
+static constexpr int dbrake_reversal = 4;
 /// <summary>Electrodynamic-brake type: automatic (engages from main brake).</summary>
-static int const dbrake_automatic = 8;
+static constexpr int dbrake_automatic = 8;
 
 /*dzwieki*/
 /// <summary>Bit flags identifying sound events emitted by a vehicle. Combinable.</summary>
@@ -436,126 +436,126 @@ enum activation
 // zamienione na flagi bitowe, aby szybko wybierać grupę (np. EZT+SZT)
 //  TODO: convert to enums, they're used as specific checks anyway
 /// <summary>Vehicle type flag: default (no special handling).</summary>
-static int const dt_Default = 0;
+static constexpr int dt_Default = 0;
 /// <summary>Vehicle type flag: EZT (electric multiple unit).</summary>
-static int const dt_EZT = 1;
+static constexpr int dt_EZT = 1;
 /// <summary>Vehicle type flag: ET41 locomotive.</summary>
-static int const dt_ET41 = 2;
+static constexpr int dt_ET41 = 2;
 /// <summary>Vehicle type flag: ET42 locomotive.</summary>
-static int const dt_ET42 = 4;
+static constexpr int dt_ET42 = 4;
 /// <summary>Vehicle type flag: pseudo-diesel (electric drivetrain with diesel input model).</summary>
-static int const dt_PseudoDiesel = 8;
+static constexpr int dt_PseudoDiesel = 8;
 /// <summary>Vehicle type flag: ET22 locomotive (added in Megapack).</summary>
-static int const dt_ET22 = 0x10; // używane od Megapacka
+static constexpr int dt_ET22 = 0x10; // używane od Megapacka
 /// <summary>Vehicle type flag: SN61 (set from CHK only, not used in conditions).</summary>
-static int const dt_SN61 = 0x20; // nie używane w warunkach, ale ustawiane z CHK
+static constexpr int dt_SN61 = 0x20; // nie używane w warunkach, ale ustawiane z CHK
 /// <summary>Vehicle type flag: EP05 locomotive.</summary>
-static int const dt_EP05 = 0x40;
+static constexpr int dt_EP05 = 0x40;
 /// <summary>Vehicle type flag: ET40 locomotive.</summary>
-static int const dt_ET40 = 0x80;
+static constexpr int dt_ET40 = 0x80;
 /// <summary>Vehicle type flag: ŠKODA 181 locomotive.</summary>
-static int const dt_181 = 0x100;
+static constexpr int dt_181 = 0x100;
 /// <summary>Vehicle type flag: DMU (diesel multiple unit).</summary>
-static int const dt_DMU = 0x200;
+static constexpr int dt_DMU = 0x200;
 
 // stałe dla asynchronów
 /// <summary>EIM config index: dfic — frequency rise rate at start.</summary>
-static int const eimc_s_dfic = 0;
+static constexpr int eimc_s_dfic = 0;
 /// <summary>EIM config index: dfmax — maximum frequency rate of change.</summary>
-static int const eimc_s_dfmax = 1;
+static constexpr int eimc_s_dfmax = 1;
 /// <summary>EIM config index: p — number of pole pairs.</summary>
-static int const eimc_s_p = 2;
+static constexpr int eimc_s_p = 2;
 /// <summary>EIM config index: cfu — voltage / frequency conversion coefficient.</summary>
-static int const eimc_s_cfu = 3;
+static constexpr int eimc_s_cfu = 3;
 /// <summary>EIM config index: cim — current / current conversion coefficient.</summary>
-static int const eimc_s_cim = 4;
+static constexpr int eimc_s_cim = 4;
 /// <summary>EIM config index: icif — magnetisation current ratio.</summary>
-static int const eimc_s_icif = 5;
+static constexpr int eimc_s_icif = 5;
 /// <summary>EIM config index: Uzmax — maximum DC link voltage.</summary>
-static int const eimc_f_Uzmax = 7;
+static constexpr int eimc_f_Uzmax = 7;
 /// <summary>EIM config index: Uzh — DC link voltage at field-weakening transition.</summary>
-static int const eimc_f_Uzh = 8;
+static constexpr int eimc_f_Uzh = 8;
 /// <summary>EIM config index: DU — voltage drop at the converter.</summary>
-static int const eimc_f_DU = 9;
+static constexpr int eimc_f_DU = 9;
 /// <summary>EIM config index: I0 — no-load magnetising current.</summary>
-static int const eimc_f_I0 = 10;
+static constexpr int eimc_f_I0 = 10;
 /// <summary>EIM config index: cfu — V/f gain in normal mode.</summary>
-static int const eimc_f_cfu = 11;
+static constexpr int eimc_f_cfu = 11;
 /// <summary>EIM config index: cfuH — V/f gain in field-weakening region.</summary>
-static int const eimc_f_cfuH = 12;
+static constexpr int eimc_f_cfuH = 12;
 /// <summary>EIM config index: F0 — starting force at zero speed.</summary>
-static int const eimc_p_F0 = 13;
+static constexpr int eimc_p_F0 = 13;
 /// <summary>EIM config index: a1 — force-frequency slope coefficient.</summary>
-static int const eimc_p_a1 = 14;
+static constexpr int eimc_p_a1 = 14;
 /// <summary>EIM config index: Pmax — maximum power.</summary>
-static int const eimc_p_Pmax = 15;
+static constexpr int eimc_p_Pmax = 15;
 /// <summary>EIM config index: Fh — force at field-weakening point.</summary>
-static int const eimc_p_Fh = 16;
+static constexpr int eimc_p_Fh = 16;
 /// <summary>EIM config index: Ph — power at field-weakening point.</summary>
-static int const eimc_p_Ph = 17;
+static constexpr int eimc_p_Ph = 17;
 /// <summary>EIM config index: Vh0 — speed where field weakening begins.</summary>
-static int const eimc_p_Vh0 = 18;
+static constexpr int eimc_p_Vh0 = 18;
 /// <summary>EIM config index: Vh1 — speed of full field weakening.</summary>
-static int const eimc_p_Vh1 = 19;
+static constexpr int eimc_p_Vh1 = 19;
 /// <summary>EIM config index: Imax — maximum motor current.</summary>
-static int const eimc_p_Imax = 20;
+static constexpr int eimc_p_Imax = 20;
 /// <summary>EIM config index: abed — anti-skid set point.</summary>
-static int const eimc_p_abed = 21;
+static constexpr int eimc_p_abed = 21;
 /// <summary>EIM config index: eped — EP brake intensity bias.</summary>
-static int const eimc_p_eped = 22;
+static constexpr int eimc_p_eped = 22;
 
 // zmienne dla asynchronów
 /// <summary>EIM variable index: FMAXMAX — absolute maximum allowable force.</summary>
-static int const eimv_FMAXMAX = 0;
+static constexpr int eimv_FMAXMAX = 0;
 /// <summary>EIM variable index: Fmax — current force limit.</summary>
-static int const eimv_Fmax = 1;
+static constexpr int eimv_Fmax = 1;
 /// <summary>EIM variable index: ks — slip coefficient.</summary>
-static int const eimv_ks = 2;
+static constexpr int eimv_ks = 2;
 /// <summary>EIM variable index: df — frequency offset.</summary>
-static int const eimv_df = 3;
+static constexpr int eimv_df = 3;
 /// <summary>EIM variable index: fp — base frequency.</summary>
-static int const eimv_fp = 4;
+static constexpr int eimv_fp = 4;
 /// <summary>EIM variable index: U — applied voltage.</summary>
-static int const eimv_U = 5;
+static constexpr int eimv_U = 5;
 /// <summary>EIM variable index: pole — pole-pair indicator.</summary>
-static int const eimv_pole = 6;
+static constexpr int eimv_pole = 6;
 /// <summary>EIM variable index: Ic — control current.</summary>
-static int const eimv_Ic = 7;
+static constexpr int eimv_Ic = 7;
 /// <summary>EIM variable index: If — field current.</summary>
-static int const eimv_If = 8;
+static constexpr int eimv_If = 8;
 /// <summary>EIM variable index: M — torque.</summary>
-static int const eimv_M = 9;
+static constexpr int eimv_M = 9;
 /// <summary>EIM variable index: Fr — actual force.</summary>
-static int const eimv_Fr = 10;
+static constexpr int eimv_Fr = 10;
 /// <summary>EIM variable index: Ipoj — line current.</summary>
-static int const eimv_Ipoj = 11;
+static constexpr int eimv_Ipoj = 11;
 /// <summary>EIM variable index: Pm — mechanical power.</summary>
-static int const eimv_Pm = 12;
+static constexpr int eimv_Pm = 12;
 /// <summary>EIM variable index: Pe — electrical power.</summary>
-static int const eimv_Pe = 13;
+static constexpr int eimv_Pe = 13;
 /// <summary>EIM variable index: eta — efficiency.</summary>
-static int const eimv_eta = 14;
+static constexpr int eimv_eta = 14;
 /// <summary>EIM variable index: fkr — critical frequency.</summary>
-static int const eimv_fkr = 15;
+static constexpr int eimv_fkr = 15;
 /// <summary>EIM variable index: Uzsmax — maximum measured DC link voltage.</summary>
-static int const eimv_Uzsmax = 16;
+static constexpr int eimv_Uzsmax = 16;
 /// <summary>EIM variable index: Pmax — instantaneous power limit.</summary>
-static int const eimv_Pmax = 17;
+static constexpr int eimv_Pmax = 17;
 /// <summary>EIM variable index: Fzad — set-point force.</summary>
-static int const eimv_Fzad = 18;
+static constexpr int eimv_Fzad = 18;
 /// <summary>EIM variable index: Imax — maximum allowed current.</summary>
-static int const eimv_Imax = 19;
+static constexpr int eimv_Imax = 19;
 /// <summary>EIM variable index: Fful — full force.</summary>
-static int const eimv_Fful = 20;
+static constexpr int eimv_Fful = 20;
 
 /// <summary>Brake-of-mode flag: PS (pneumatic, primary).</summary>
-static int const bom_PS = 1;
+static constexpr int bom_PS = 1;
 /// <summary>Brake-of-mode flag: PN (pneumatic, no electrodynamic).</summary>
-static int const bom_PN = 2;
+static constexpr int bom_PN = 2;
 /// <summary>Brake-of-mode flag: EP (electro-pneumatic).</summary>
-static int const bom_EP = 4;
+static constexpr int bom_EP = 4;
 /// <summary>Brake-of-mode flag: MED (mixed pneumatic+ED).</summary>
-static int const bom_MED = 8;
+static constexpr int bom_MED = 8;
 
 /// <summary>Bit flags reporting vehicle problems that prevent driving.</summary>
 enum TProblem // lista problemów taboru, które uniemożliwiają jazdę

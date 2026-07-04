@@ -107,7 +107,7 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 	WriteLog("...gfx data pre-loading done");
 
 	// prepare basic geometry chunks
-	float const size = 2.5f / 2.0f;
+	constexpr float size = 2.5f / 2.0f;
         auto const geometrybank = Create_Bank();
 
     gfx::vertex_array billboard_array{
@@ -571,7 +571,7 @@ bool opengl33_renderer::Render()
 	{
 		m_sunlight = Global.DayLight;
 		// quantize sun angle to reduce shadow crawl
-		auto const quantizationstep{0.004f};
+		constexpr auto quantizationstep{0.004f};
 		m_sunlight.direction = glm::normalize(quantizationstep * glm::roundEven(m_sunlight.direction * (1.f / quantizationstep)));
 	}
 	// generate new frame
@@ -4134,7 +4134,7 @@ void opengl33_renderer::Render_vr_models()
     tmpmat = glm::dmat3(tmpmat);
     glMultMatrixd(glm::value_ptr(glm::inverse(tmpmat)));
 	const std::vector<TModel3d*> list = vr->get_render_models();
-	const material_data data;
+	constexpr material_data data;
     for (TModel3d *mdl : list)
         Render(mdl, &data, 0.0);
     ::glPopMatrix();
@@ -5219,7 +5219,7 @@ void opengl33_renderer::Update_Lights(light_array &Lights)
             auto const &ownerdimensions{ scenelight.owner->MoverParameters->Dim };
             auto const up{ static_cast<glm::dvec3>( scenelight.owner->VectorUp() ) };
             auto const size{ static_cast<float>( std::max( ownerdimensions.W, ownerdimensions.H ) * 1.0 ) }; // ensure square ratio
-            auto const cone{ 5.f };
+			constexpr auto cone{ 5.f };
             auto const offset{ 75.f * ( 5.f / cone ) };
             headlights.position() =
                 scenelight.owner->GetPosition()

@@ -1117,8 +1117,8 @@ void TTrain::OnCommand_aidriverdisable(TTrain *Train, command_data const &Comman
 	}
 }
 
-auto const EU07_CONTROLLER_BASERETURNDELAY{0.5f};
-auto const EU07_CONTROLLER_KEYBOARDETURNDELAY{1.5f};
+constexpr auto EU07_CONTROLLER_BASERETURNDELAY{0.5f};
+constexpr auto EU07_CONTROLLER_KEYBOARDETURNDELAY{1.5f};
 
 void TTrain::OnCommand_jointcontrollerset(TTrain *Train, command_data const &Command)
 {
@@ -6091,7 +6091,7 @@ void TTrain::OnCommand_redmarkerstoggle(TTrain *Train, command_data const &Comma
 		auto locationRear = vehicle->RearPosition() - glm::dvec3(Command.location);
 		int const CouplNr{std::clamp(vehicle->DirectionGet() * (glm::dot(locationHead, locationHead) > glm::dot(locationRear, locationRear) ? 1 : -1), 0, 1)}; // z [-1,1] zrobić [0,1]
 
-		auto const lightset{redmarker_left | redmarker_right};
+		constexpr auto lightset{redmarker_left | redmarker_right};
 
 		vehicle->MoverParameters->iLights[CouplNr] =
 		    false == TestFlag(vehicle->MoverParameters->iLights[CouplNr], lightset) ?
@@ -6116,7 +6116,7 @@ void TTrain::OnCommand_endsignalstoggle(TTrain *Train, command_data const &Comma
 		    std::clamp(vehicle->DirectionGet() * (glm::length2(vehicle->HeadPosition() - glm::dvec3(Command.location)) > glm::length2(vehicle->RearPosition() - glm::dvec3(Command.location)) ? 1 : -1), 0,
 		          1)}; // z [-1,1] zrobić [0,1]
 
-		auto const lightset{rearendsignals};
+		constexpr auto lightset{rearendsignals};
 
 		vehicle->MoverParameters->iLights[CouplNr] =
 		    false == TestFlag(vehicle->MoverParameters->iLights[CouplNr], lightset) ?
@@ -8295,10 +8295,10 @@ void TTrain::OnCommand_cabchangeforward(TTrain *Train, command_data const &Comma
 	if (Command.action == GLFW_PRESS)
 	{
 		auto const *owner{(Train->DynamicObject->ctOwner != nullptr ? Train->DynamicObject->ctOwner : Train->DynamicObject->Mechanik)};
-		auto const movedirection{1};
+		constexpr auto movedirection{1};
 		if (false == Train->CabChange(movedirection))
 		{
-			auto const exitdirection{(movedirection > 0 ? front : rear)};
+			constexpr auto exitdirection{(movedirection > 0 ? front : rear)};
 			if (TestFlag(Train->mvOccupied->Couplers[exitdirection].CouplingFlag, gangway))
 			{
 				// przejscie do nastepnego pojazdu
@@ -8326,11 +8326,11 @@ void TTrain::OnCommand_cabchangebackward(TTrain *Train, command_data const &Comm
 	if (Command.action == GLFW_PRESS)
 	{
 		auto const *owner{(Train->DynamicObject->ctOwner != nullptr ? Train->DynamicObject->ctOwner : Train->DynamicObject->Mechanik)};
-		auto const movedirection{-1};
+		constexpr auto movedirection{-1};
 		if (false == Train->CabChange(movedirection))
 		{
 			// current vehicle doesn't extend any farther in this direction, check if we there's one connected we can move to
-			auto const exitdirection{(movedirection > 0 ? front : rear)};
+			constexpr auto exitdirection{(movedirection > 0 ? front : rear)};
 			if (TestFlag(Train->mvOccupied->Couplers[exitdirection].CouplingFlag, gangway))
 			{
 				// przejscie do nastepnego pojazdu
@@ -8580,7 +8580,7 @@ bool TTrain::Update(double const Deltatime)
 	}
 
 	// McZapkie: predkosc wyswietlana na tachometrze brana jest z obrotow kol
-	auto const maxtacho{3.0};
+	constexpr auto maxtacho{3.0};
 
 	double maxSpeed = mvControlled->Vmax * 1.05; // zachowanie starej logiki jak nie ma definicji max tarczki
 	if (mvOccupied->maxTachoSpeed != 0)
@@ -9396,7 +9396,7 @@ bool TTrain::Update(double const Deltatime)
 	if (ggJointCtrl.SubModel != nullptr)
 	{
 		// joint master controller moves forward to adjust power and backward to adjust brakes
-		auto const brakerangemultiplier{/* NOTE: scaling disabled as it was conflicting with associating sounds with control positions
+		constexpr auto brakerangemultiplier{/* NOTE: scaling disabled as it was conflicting with associating sounds with control positions
 		                                ( mvControlled->CoupledCtrl ?
 		                                    mvControlled->MainCtrlPosNo + mvControlled->ScndCtrlPosNo :
 		                                    mvControlled->MainCtrlPosNo )
@@ -9816,7 +9816,7 @@ void TTrain::update_sounds(double const Deltatime)
 {
 
 	double volume{0.0};
-	double const brakevolumescale{0.5};
+	constexpr double brakevolumescale{0.5};
 
 	// Winger-160404 - syczenie pomocniczego (luzowanie)
 	if (m_lastlocalbrakepressure != -1.f)

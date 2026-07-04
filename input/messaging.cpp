@@ -29,7 +29,7 @@ extern "C"
 
 namespace multiplayer {
 
-std::uint32_t const EU07_MESSAGEHEADER { MAKE_ID4( 'E','U','0','7' ) };
+constexpr std::uint32_t EU07_MESSAGEHEADER { MAKE_ID4( 'E','U','0','7' ) };
 
 void
 Navigate(std::string const &ClassName, UINT Msg, WPARAM wParam, LPARAM lParam) {
@@ -68,7 +68,7 @@ OnCommandGet(DaneRozkaz *pRozkaz)
                      || typeid(*event) == typeid(lights_event)
                      || event->m_sibling != 0 ) {
                         // tylko jawne albo niejawne Multiple
-						const command_relay relay;
+						constexpr command_relay relay;
 						relay.post(user_command::queueevent, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &event->name());
                     }
                 }

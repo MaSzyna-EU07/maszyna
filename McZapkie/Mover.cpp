@@ -22,8 +22,8 @@ http://mozilla.org/MPL/2.0/.
 // Jeśli jakieś zmienne nie są używane w mover.pas, też można je przenosić.
 // Przeniesienie wszystkiego na raz zrobiło by zbyt wielki chaos do ogarnięcia.
 
-const double dEpsilon = 0.01; // 1cm (zależy od typu sprzęgu...)
-const double CouplerTune = 0.1; // skalowanie tlumiennosci
+constexpr double dEpsilon = 0.01; // 1cm (zależy od typu sprzęgu...)
+constexpr double CouplerTune = 0.1; // skalowanie tlumiennosci
 
 int ConversionError = 0;
 
@@ -1228,7 +1228,7 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 
 		if (coupler.CouplingFlag == faux || true == TestFlag(othervehicle->DamageFlag, dtrain_out))
 		{ // HACK: limit excessive speed derailment checks to vehicles which aren't part of the same consist
-			auto const safevelocitylimit{15.0};
+			constexpr auto safevelocitylimit{15.0};
 			auto const velocitydifference{glm::length(glm::angleAxis(Rot.Rz, glm::dvec3{0, 1, 0}) * V - glm::angleAxis(othervehicle->Rot.Rz, glm::dvec3{0, 1, 0}) * othervehicle->V) *
 			                              3.6}; // m/s -> km/h
 
@@ -1356,8 +1356,8 @@ void TMoverParameters::Derail(DerailReason const Reason)
 // *************************************************************************************************
 double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShape &Shape, TTrackParam &Track, TTractionParam &ElectricTraction, TLocation const &NewLoc, TRotation const &NewRot)
 {
-	const double Vepsilon = 1e-5;
-	const double Aepsilon = 1e-3; // ASBSpeed=0.8;
+	constexpr double Vepsilon = 1e-5;
+	constexpr double Aepsilon = 1e-3; // ASBSpeed=0.8;
 
 	if (!TestFlag(DamageFlag, dtrain_out))
 	{ // Ra: to przepisywanie tu jest bez sensu
@@ -2117,7 +2117,7 @@ void TMoverParameters::HeatingCheck(double const Timestep)
 		return;
 	}
 	// ...detailed check if we're still here
-	auto const heatingpowerthreshold{0.1};
+	constexpr auto heatingpowerthreshold{0.1};
 	// start with blank slate
 	auto voltage{0.0};
 	// then try specified power source
@@ -4122,7 +4122,7 @@ bool TMoverParameters::BrakeReleaser(int state)
 // *************************************************************************************************
 bool TMoverParameters::UniversalBrakeButton(int button, int state)
 {
-	const bool OK = true; // false tylko jeśli nie uda się wysłać, GF 20161124
+	constexpr bool OK = true; // false tylko jeśli nie uda się wysłać, GF 20161124
 	UniversalBrakeButtonActive[button] = state > 0;
 	int flag = 0;
 	if (Power24vIsAvailable || Power110vIsAvailable)
@@ -4481,8 +4481,8 @@ void TMoverParameters::UpdatePipePressure(double dt)
 		Pipe->Act();
 	}
 
-	const double LBDelay = 100;
-	const double kL = 0.5;
+	constexpr double LBDelay = 100;
+	constexpr double kL = 0.5;
 	// double dV;
 	// TMoverParameters *c; // T_MoverParameters
 	double temp;
@@ -4768,7 +4768,7 @@ void TMoverParameters::UpdateScndPipePressure(double dt)
 		Pipe2->Act();
 	}
 
-	const double Spz = 0.5067;
+	constexpr double Spz = 0.5067;
 	TMoverParameters *c;
 	double dv1, dv2, dV;
 
@@ -5267,9 +5267,9 @@ double TMoverParameters::FrictionForce() const
 double TMoverParameters::Adhesive(double staticfriction) const
 {
 	double adhesion = 0.0;
-	const double adh_factor = 0.25; // współczynnik określający, jak bardzo spada tarcie przy poślizgu
-	const double slipfactor = 0.33; // współczynnik określający, jak szybko spada tarcie przy poślizgu
-	const double sandfactor = 1.25; // współczynnik określający, jak mocno pomaga piasek
+	constexpr double adh_factor = 0.25; // współczynnik określający, jak bardzo spada tarcie przy poślizgu
+	constexpr double slipfactor = 0.33; // współczynnik określający, jak szybko spada tarcie przy poślizgu
+	constexpr double sandfactor = 1.25; // współczynnik określający, jak mocno pomaga piasek
 	/*
 	    // ABu: male przerobki, tylko czy to da jakikolwiek skutek w FPS?
 	    //     w kazdym razie zaciemni kod na pewno :)
@@ -6715,7 +6715,7 @@ bool TMoverParameters::RelayReset(int const Relays, range_t const Notify)
 double TMoverParameters::v2n(void)
 {
 	// przelicza predkosc liniowa na obrotowa
-	const double dmgn = 0.5;
+	constexpr double dmgn = 0.5;
 	double n, deltan = 0;
 
 	n = V / (M_PI * WheelDiameter); // predkosc obrotowa wynikajaca z liniowej [obr/s]
@@ -7912,7 +7912,7 @@ bool TMoverParameters::dizel_Update(double dt)
 	{
 		dizel_EngageChange(dt);
 		DU = dizel_AutoGearCheck();
-		double const fillspeed{2};
+		constexpr double fillspeed{2};
 		dizel_fill = dizel_fill + fillspeed * dt * (dizel_fillcheck(MainCtrlPos, dt) - dizel_fill);
 	}
 
@@ -8262,14 +8262,14 @@ void TMoverParameters::dizel_HeatSet(float const Value)
 void TMoverParameters::dizel_Heat(double const dt)
 {
 
-	auto const qs{44700.0};
-	auto const Cs{11000.0};
-	auto const Cw{4.189};
-	auto const Co{1.885};
-	auto const gwmin{400.0};
-	auto const gwmax{4000.0};
-	auto const gwmin2{400.0};
-	auto const gwmax2{4000.0};
+	constexpr auto qs{44700.0};
+	constexpr auto Cs{11000.0};
+	constexpr auto Cw{4.189};
+	constexpr auto Co{1.885};
+	constexpr auto gwmin{400.0};
+	constexpr auto gwmax{4000.0};
+	constexpr auto gwmin2{400.0};
+	constexpr auto gwmax2{4000.0};
 
 	dizel_heat.Te = Global.AirTemperature;
 
@@ -8323,7 +8323,7 @@ void TMoverParameters::dizel_Heat(double const dt)
 	*/
 	auto const Qp = (true == WaterHeater.is_active && true == WaterPump.is_active && dizel_heat.Twy < 60 && dizel_heat.Twy2 < 60 ? 1 : 0) * 1000;
 
-	auto const kurek07{1}; // unknown/unimplemented device TBD, TODO: identify and implement?
+	constexpr auto kurek07{1}; // unknown/unimplemented device TBD, TODO: identify and implement?
 
 	if (true == dizel_heat.auxiliary_water_circuit)
 	{
@@ -9041,7 +9041,7 @@ bool issection(std::string const &Name, std::string const &Input)
 
 int s2NPW(std::string s)
 { // wylicza ilosc osi napednych z opisu ukladu osi
-	const char A = 64;
+	constexpr char A = 64;
 	int NPW = 0;
 	for (std::size_t k = 0; k < s.size(); ++k)
 	{
@@ -9053,7 +9053,7 @@ int s2NPW(std::string s)
 
 int s2NNW(std::string s)
 { // wylicza ilosc osi nienapedzanych z opisu ukladu osi
-	const char Zero = 48;
+	constexpr char Zero = 48;
 	int NNW = 0;
 	for (std::size_t k = 0; k < s.size(); ++k)
 	{
@@ -9606,9 +9606,9 @@ void TMoverParameters::BrakeSubsystemDecode()
 bool TMoverParameters::LoadFIZ(std::string chkpath)
 {
 	chkPath = chkpath; // assign class path for reloading
-	const int param_ok = 1;
-	const int wheels_ok = 2;
-	const int dimensions_ok = 4;
+	constexpr int param_ok = 1;
+	constexpr int wheels_ok = 2;
+	constexpr int dimensions_ok = 4;
 
 	ConversionError = 666;
 	LISTLINE = 0;
@@ -10388,7 +10388,7 @@ void TMoverParameters::LoadFIZ_Wheels(std::string const &line)
 		        AxleInertialMoment = 1.0;
 		*/
 		// approximation formula by youby
-		auto const k = 472.0; // arbitrary constant
+		constexpr auto k = 472.0; // arbitrary constant
 		AxleInertialMoment = k / 4.0 * std::pow(WheelDiameter, 4.0) * NAxles;
 		Mred = k * std::pow(WheelDiameter, 2.0) * NAxles;
 	}
@@ -11504,7 +11504,7 @@ void TMoverParameters::LoadFIZ_DList(std::string const &Input)
 	// Calculation of fuel consumption coefficient for futher calculation
 	const double dizel_max_power = dizel_nmax * (dizel_Mnmax - dizel_Mstand) * M_PI * 2 * 0.001; // power in kW
 	const double dizel_max_energy = dizel_max_power; // energy per one hour in kWh is equal to power in kW times 1 h
-	const double fuel_density = 850; // g/l
+	constexpr double fuel_density = 850; // g/l
 	dizel_FuelConsumption = dizel_NominalFuelConsumptionRate * dizel_max_energy / fuel_density / dizel_nmax;
 }
 

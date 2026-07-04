@@ -40,7 +40,7 @@ http://mozilla.org/MPL/2.0/.
 #define vWorldLeft glm::cross(vWorldUp, vWorldFront)
 
 #define M_2PI 6.283185307179586476925286766559;
-const float maxrot = (float)(M_PI / 3.0); // 60°
+constexpr float maxrot = (float)(M_PI / 3.0); // 60°
 
 std::string const TDynamicObject::MED_labels[] = {
     "masa: ", "amax: ", "Fzad: ", "FmPN: ", "FmED: ", "FrED: ", "FzPN: ", "nPrF: "
@@ -2154,7 +2154,7 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
                 switch( ActPar.front() ) {
                     case 'F': {
                         // fixed flat size
-                        auto const indexstart { 1 };
+					    constexpr auto indexstart { 1 };
                         auto const indexend { ActPar.find_first_not_of( "1234567890", indexstart ) };
                         fixedflatsize = std::atoi( ActPar.substr( indexstart, indexend ).c_str() );
                         ActPar.erase( 0, indexend );
@@ -2162,7 +2162,7 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
                     }
                     case 'R': {
                         // random flat size
-                        auto const indexstart { 1 };
+					    constexpr auto indexstart { 1 };
                         auto const indexend { ActPar.find_first_not_of( "1234567890", indexstart ) };
                         randomflatsize = std::atoi( ActPar.substr( indexstart, indexend ).c_str() );
                         ActPar.erase( 0, indexend );
@@ -2170,7 +2170,7 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
                     }
                     case 'P': {
                         // random flat probability
-                        auto const indexstart { 1 };
+					    constexpr auto indexstart { 1 };
                         auto const indexend { ActPar.find_first_not_of( "1234567890", indexstart ) };
                         flatchance = std::atoi( ActPar.substr( indexstart, indexend ).c_str() );
                         ActPar.erase( 0, indexend );
@@ -2178,7 +2178,7 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
                     }
                     case 'H': {
                         // truck hunting
-                        auto const indexstart { 1 };
+					    constexpr auto indexstart { 1 };
                         auto const indexend { ActPar.find_first_not_of( "1234567890", indexstart ) };
                         auto const huntingchance { std::atoi( ActPar.substr( indexstart, indexend ).c_str() ) };
                         MoverParameters->TruckHunting = Random(0, 100) < huntingchance;
@@ -2230,7 +2230,7 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
             // immediately followed by max load override
             // TBD: make it instead an optional sub-parameter?
             {
-                auto const indexstart { 0 };
+				constexpr auto indexstart { 0 };
                 auto const indexend { ActPar.find_first_not_of( "1234567890", indexstart ) };
                 MoverParameters->MaxLoad = std::atoi( ActPar.substr( indexstart, indexend ).c_str() );
                 ActPar.erase( 0, indexend );
@@ -4728,7 +4728,7 @@ void TDynamicObject::RenderSounds() {
         }
     }
     // NBMX Obsluga drzwi, MC: zuniwersalnione
-    std::array<side, 2> const sides { right, left };
+	constexpr std::array<side, 2> sides { right, left };
     for( auto const side : sides ) {
 
         auto const &door { MoverParameters->Doors.instances[ side ] };
@@ -7701,7 +7701,7 @@ TDynamicObject *
 TDynamicObject::FindPantographCarrier() {
 
     // try first within a single unit, broaden to all vehicles under our control if first attempt fails
-    std::array<coupling, 2> const couplings = { permanent, control };
+	constexpr std::array<coupling, 2> couplings = { permanent, control };
 
     for( auto const coupling : couplings ) {
         auto *result =

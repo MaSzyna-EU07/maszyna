@@ -458,10 +458,10 @@ void TNESt3::SetLBP(double const P)
 
 void TNESt3::SetSize( int const size, std::string const &params ) // ustawianie dysz (rozmiaru ZR)
 {
-    static double const dNO1l = 1.250;
-    static double const dNT1l = 0.510;
-    static double const dOO1l = 0.907;
-    static double const dOT1l = 0.524;
+    static constexpr double dNO1l = 1.250;
+    static constexpr double dNT1l = 0.510;
+    static constexpr double dOO1l = 0.907;
+    static constexpr double dOT1l = 0.524;
 
     if (contains( params, "ESt3" ) )
     {

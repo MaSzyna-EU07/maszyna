@@ -145,17 +145,17 @@ Tutaj łączymy teorię z praktyką - tu nic nie działa i nikt nie wie dlaczego
 // 7. samouczacy sie algorytm hamowania
 
 // stałe
-const double EasyReactionTime = 0.5; //[s] przebłyski świadomości dla zwykłej jazdy
-const double HardReactionTime = 0.2;
-const double EasyAcceleration = 0.85; //[m/ss]
-const double HardAcceleration = 9.81;
-const double PassengetTrainAcceleration = 0.40;
-const double HeavyPassengetTrainAcceleration = 0.20;
-const double CargoTrainAcceleration = 0.25;
-const double HeavyCargoTrainAcceleration = 0.10;
-const double PrepareTime = 2.0; //[s] przebłyski świadomości przy odpalaniu
+constexpr double EasyReactionTime = 0.5; //[s] przebłyski świadomości dla zwykłej jazdy
+constexpr double HardReactionTime = 0.2;
+constexpr double EasyAcceleration = 0.85; //[m/ss]
+constexpr double HardAcceleration = 9.81;
+constexpr double PassengetTrainAcceleration = 0.40;
+constexpr double HeavyPassengetTrainAcceleration = 0.20;
+constexpr double CargoTrainAcceleration = 0.25;
+constexpr double HeavyCargoTrainAcceleration = 0.10;
+constexpr double PrepareTime = 2.0; //[s] przebłyski świadomości przy odpalaniu
 bool WriteLogFlag = false;
-double const deltalog = 0.05; // przyrost czasu
+constexpr double deltalog = 0.05; // przyrost czasu
 
 std::string StopReasonTable[] = {
     // przyczyny zatrzymania ruchu AI
@@ -844,7 +844,7 @@ void TController::TableCheck(double fDistance)
     }
 };
 
-auto const passengerstopmaxdistance { 400.0 }; // maximum allowed distance between passenger stop point and consist head
+constexpr auto passengerstopmaxdistance { 400.0 }; // maximum allowed distance between passenger stop point and consist head
 
 TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fNext, double &fAcc)
 { // ustalenie parametrów, zwraca typ komendy, jeśli sygnał podaje prędkość do jazdy
@@ -1396,7 +1396,7 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
                 // NOTE: magnet induction calculation presumes the driver is located in the front vehicle
                 // TBD, TODO: take into account actual position of controlled/occupied vehicle in the consist, whichever comes first
                 auto const magnetlocation { pVehicles[ front ]->MoverParameters->SecuritySystem.MagnetLocation };
-                auto const magnetrange { 1.0 };
+			    constexpr auto magnetrange { 1.0 };
                 auto const ismagnetpassed { Point.fDist < -( magnetlocation + magnetrange ) };
                 if( Point.fDist < -magnetlocation ) {
                     // NOTE: normally we'd activate the magnet once the leading vehicle passes it
@@ -2294,8 +2294,8 @@ void TController::AutoRewident()
 
 double TController::ESMVelocity(bool Main)
 {
-	const double fCurrentCoeff = 0.9;
-	const double fFrictionCoeff = 0.85;
+	constexpr double fCurrentCoeff = 0.9;
+	constexpr double fFrictionCoeff = 0.85;
 	double ESMVel = 9999;
 	int MCPN = mvControlling->MainCtrlActualPos;
 	int SCPN = mvControlling->ScndCtrlActualPos;

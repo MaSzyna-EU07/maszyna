@@ -218,7 +218,7 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
 	const GLboolean last_enable_cull_face = glIsEnabled(GL_CULL_FACE);
 	const GLboolean last_enable_depth_test = glIsEnabled(GL_DEPTH_TEST);
 	const GLboolean last_enable_scissor_test = glIsEnabled(GL_SCISSOR_TEST);
-	const bool clip_origin_lower_left = true;
+	constexpr bool clip_origin_lower_left = true;
 
     // Setup desired GL state
     // Recreate the VAO every time (this is to easily allow multiple GL contexts to be rendered to. VAO are not shared among GL contexts)

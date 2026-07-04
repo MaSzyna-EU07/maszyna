@@ -45,26 +45,26 @@ Co brakuje:
 - PZZ dla dodatkowego
 */
 
-static int const dMAX = 11; // dysze
-static int const dON = 0; // osobowy napelnianie (+ZP)
-static int const dOO = 1; // osobowy oproznianie
-static int const dTN = 2; // towarowy napelnianie (+ZP)
-static int const dTO = 3; // towarowy oproznianie
-static int const dP = 4; // zbiornik pomocniczy
-static int const dSd = 5; // zbiornik sterujacy
-static int const dSm = 6; // zbiornik sterujacy
-static int const dPd = 7; // duzy przelot zamykajcego
-static int const dPm = 8; // maly przelot zamykajacego
-static int const dPO = 9; // zasilanie pomocniczego O
-static int const dPT = 10; // zasilanie pomocniczego T
+static constexpr int dMAX = 11; // dysze
+static constexpr int dON = 0; // osobowy napelnianie (+ZP)
+static constexpr int dOO = 1; // osobowy oproznianie
+static constexpr int dTN = 2; // towarowy napelnianie (+ZP)
+static constexpr int dTO = 3; // towarowy oproznianie
+static constexpr int dP = 4; // zbiornik pomocniczy
+static constexpr int dSd = 5; // zbiornik sterujacy
+static constexpr int dSm = 6; // zbiornik sterujacy
+static constexpr int dPd = 7; // duzy przelot zamykajcego
+static constexpr int dPm = 8; // maly przelot zamykajacego
+static constexpr int dPO = 9; // zasilanie pomocniczego O
+static constexpr int dPT = 10; // zasilanie pomocniczego T
 
 // przekladniki
-static int const p_none = 0;
-static int const p_rapid = 1;
-static int const p_pp = 2;
-static int const p_al2 = 3;
-static int const p_ppz = 4;
-static int const P_ed = 5;
+static constexpr int p_none = 0;
+static constexpr int p_rapid = 1;
+static constexpr int p_pp = 2;
+static constexpr int p_al2 = 3;
+static constexpr int p_ppz = 4;
+static constexpr int P_ed = 5;
 
 class TPrzekladnik : public TReservoir // przekladnik (powtarzacz)
 

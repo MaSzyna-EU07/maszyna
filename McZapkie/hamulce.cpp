@@ -20,7 +20,7 @@ Copyright (C) 2007-2014 Maciej Cierniak
 
 //---FUNKCJE OGOLNE---
 
-static double const DPL = 0.25;
+static constexpr double DPL = 0.25;
 double const TFV4aM::pos_table[11] = {-2, 6, -1, 0, -2, 1, 4, 6, 0, 0, 0};
 double const TMHZ_EN57::pos_table[11] = {-1, 10, -1, 0, 0, 2, 9, 10, 0, 0, 0};
 double const TMHZ_K5P::pos_table[11] = {-1, 3, -1, 0, 1, 1, 2, 3, 0, 0, 0};
@@ -108,7 +108,7 @@ double PF(double const P1, double const P2, double const S, double const DP)
 /// <returns>Volumetric flow rate (signed).</returns>
 double PF1(double const P1, double const P2, double const S)
 {
-	static double const DPS = 0.001;
+	static constexpr double DPS = 0.001;
 
 	double const PH = std::max(P1, P2) + 1.0; // wyzsze cisnienie absolutne
 	double const PL = P1 + P2 - PH + 2.0; // nizsze cisnienie absolutne
@@ -303,10 +303,10 @@ end; */
 /// <returns>Cylinder pressure in bar.</returns>
 double TBrakeCyl::P()
 {
-	static double const VS = 0.005;
-	static double const pS = 0.05;
-	static double const VD = 1.10;
-	static double const cD = 1;
+	static constexpr double VS = 0.005;
+	static constexpr double pS = 0.05;
+	static constexpr double VD = 1.10;
+	static constexpr double cD = 1;
 	static double const pD = VD - cD;
 
 	const double VtoC = Cap > 0.0 ? Vol / Cap : 0.0; // stosunek cisnienia do objetosci.
@@ -2968,7 +2968,7 @@ void TDriverHandle::SetUniversalFlag(int flag)
 /// <returns>Brake pipe volume change for this step.</returns>
 double TFV4a::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 {
-	static int const LBDelay = 100;
+	static constexpr int LBDelay = 100;
 
 	ep = PP; // SPKS!!
 	double LimPP = std::min(BPT[std::lround(i_bcp) + 2][1], HP);
@@ -3057,8 +3057,8 @@ void TFV4a::Init(double Press)
 /// <returns>Brake pipe volume change for this step.</returns>
 double TFV4aM::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 {
-	int const LBDelay{100};
-	double const xpM{0.3}; // mnoznik membrany komory pod
+	constexpr int LBDelay{100};
+	constexpr double xpM{0.3}; // mnoznik membrany komory pod
 
 	ep = PP / 2.0 * 1.5 + ep / 2.0 * 0.5; // SPKS!!
 
@@ -3293,7 +3293,7 @@ bool TFV4aM::EQ(double pos, double i_pos)
 /// <returns>Brake pipe volume change for this step.</returns>
 double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 {
-	static int const LBDelay = 100;
+	static constexpr int LBDelay = 100;
 
 	double LimPP;
 	double dpPipe;
@@ -3502,7 +3502,7 @@ bool TMHZ_EN57::EQ(double pos, double i_pos)
 /// <returns>Brake pipe volume change for this step.</returns>
 double TMHZ_K5P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 {
-	static int const LBDelay = 100;
+	static constexpr int LBDelay = 100;
 
 	double LimCP;
 	double dpPipe;
@@ -3685,7 +3685,7 @@ bool TMHZ_K5P::EQ(double pos, double i_pos)
 /// <returns>Brake pipe volume change for this step.</returns>
 double TMHZ_6P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 {
-	static int const LBDelay = 100;
+	static constexpr int LBDelay = 100;
 
 	double LimCP;
 	double dpPipe;
@@ -3869,7 +3869,7 @@ bool TMHZ_6P::EQ(double pos, double i_pos)
 /// <returns>Brake pipe volume change for this step.</returns>
 double TM394::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 {
-	static int const LBDelay = 65;
+	static constexpr int LBDelay = 65;
 
 	double LimPP;
 	double dpPipe;
@@ -3965,10 +3965,10 @@ double TM394::GetPos(int i)
 /// <returns>Brake pipe volume change for this step.</returns>
 double TH14K1::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 {
-	int const LBDelay = 100; // szybkosc + zasilanie sterujacego
+	constexpr int LBDelay = 100; // szybkosc + zasilanie sterujacego
 	//   static double const BPT_K[/*?*/ /*-1..4*/ (4) - (-1) + 1][2] =
 	//{ (10, 0), (4, 1), (0, 1), (4, 0), (4, -1), (15, -1) };
-	double const NomPress = 5.0;
+	constexpr double NomPress = 5.0;
 
 	int BCP = std::lround(i_bcp);
 	if (i_bcp < -1)
@@ -4057,8 +4057,8 @@ double TH14K1::GetPos(int i)
 /// <returns>Brake pipe volume change for this step.</returns>
 double TSt113::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 {
-	static int const LBDelay = 100; // szybkosc + zasilanie sterujacego
-	static double const NomPress = 5.0;
+	static constexpr int LBDelay = 100; // szybkosc + zasilanie sterujacego
+	static constexpr double NomPress = 5.0;
 
 	double LimPP;
 	double dpMainValve;
@@ -4149,7 +4149,7 @@ void TSt113::Init(double Press)
 /// <returns>Brake pipe volume change for this step.</returns>
 double Ttest::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 {
-	static int const LBDelay = 100;
+	static constexpr int LBDelay = 100;
 
 	double LimPP;
 	double dpPipe;
@@ -4302,7 +4302,7 @@ double TH1405::GetCP()
 /// <returns>Brake pipe volume change for this step.</returns>
 double TFVel6::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 {
-	static int const LBDelay = 100;
+	static constexpr int LBDelay = 100;
 
 	double LimPP;
 	double dpMainValve;
@@ -4399,7 +4399,7 @@ void TFVel6::Init(double Press)
 /// <returns>Brake pipe volume change for this step.</returns>
 double TFVE408::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 {
-	static int const LBDelay = 100;
+	static constexpr int LBDelay = 100;
 
 	double LimPP;
 	double dpMainValve;

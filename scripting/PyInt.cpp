@@ -120,11 +120,11 @@ void render_task::run()
 			const int screenWidth = static_cast<int>(PyLong_AsLong(outputWidth));
 			const int screenHeight = static_cast<int>(PyLong_AsLong(outputHeight));
 
-			const bool useRgb = false && !Global.gfx_usegles;
+			constexpr bool useRgb = false && !Global.gfx_usegles;
 
-			const int glFormat = useRgb ? GL_SRGB8 : GL_SRGB8_ALPHA8;
-			const int glComponents = useRgb ? GL_RGB : GL_RGBA;
-			const size_t bytesPerPixel = useRgb ? 3u : 4u;
+			constexpr int glFormat = useRgb ? GL_SRGB8 : GL_SRGB8_ALPHA8;
+			constexpr int glComponents = useRgb ? GL_RGB : GL_RGBA;
+			constexpr size_t bytesPerPixel = useRgb ? 3u : 4u;
 			const size_t expectedBytes = static_cast<size_t>(screenWidth) * static_cast<size_t>(screenHeight) * bytesPerPixel;
 
 			Py_ssize_t pythonBufferBytes = 0;

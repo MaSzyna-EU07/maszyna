@@ -126,7 +126,7 @@ class python_taskqueue
 
   private:
 	// types
-	static int const WORKERCOUNT{1};
+	static constexpr int WORKERCOUNT{1};
 	using worker_array = std::array<std::jthread, WORKERCOUNT>;
 	using rendertask_sequence = threading::lockable<std::deque<std::shared_ptr<render_task>>>;
 	using uploadtask_sequence = threading::lockable<std::deque<std::shared_ptr<render_task>>>;
