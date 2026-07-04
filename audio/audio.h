@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #else
 #include <AL/al.h>
 #include <AL/alc.h>
+#include <AL/alext.h>
 #endif
 
 namespace audio {
