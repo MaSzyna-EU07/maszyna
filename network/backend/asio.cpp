@@ -3,7 +3,7 @@
 #include "scene/sn_utils.h"
 #include "utilities/Logs.h"
 
-network::tcp::connection::connection(asio::io_context &io_ctx, bool client, size_t counter)
+network::tcp::connection::connection(asio::io_context &io_ctx, const bool client, const size_t counter)
     : network::connection(client, counter),
       m_socket(io_ctx)
 {
@@ -39,7 +39,7 @@ void network::tcp::connection::read_header()
 	                              std::placeholders::_1, std::placeholders::_2));
 }
 
-void network::tcp::connection::handle_header(const asio::error_code &err, size_t bytes_transferred)
+void network::tcp::connection::handle_header(const asio::error_code &err, const size_t bytes_transferred)
 {
 	if (err) {
 		disconnect();
@@ -69,7 +69,7 @@ void network::tcp::connection::handle_header(const asio::error_code &err, size_t
 	                 std::bind(&connection::handle_data, this, std::placeholders::_1, std::placeholders::_2));
 }
 
-void network::tcp::connection::handle_data(const asio::error_code &err, size_t bytes_transferred)
+void network::tcp::connection::handle_data(const asio::error_code &err, const size_t bytes_transferred)
 {
 	if (err) {
 		disconnect();
@@ -133,7 +133,7 @@ void network::tcp::connection::send_message(const message &msg)
 
 // -----------------
 
-network::tcp::server::server(std::shared_ptr<std::istream> buf, asio::io_context &io_ctx, const std::string &host, uint32_t port)
+network::tcp::server::server(std::shared_ptr<std::istream> buf, asio::io_context &io_ctx, const std::string &host, const uint32_t port)
     : network::server(buf), m_acceptor(io_ctx), m_io_ctx(io_ctx)
 {
 	const auto endpoint = asio::ip::tcp::endpoint(asio::ip::make_address(host), port);
@@ -172,7 +172,7 @@ void network::tcp::server::handle_accept(std::shared_ptr<connection> conn, const
 
 // ------------------
 
-network::tcp::client::client(asio::io_context &io_ctxx, const std::string &hostarg, uint32_t portarg)
+network::tcp::client::client(asio::io_context &io_ctxx, const std::string &hostarg, const uint32_t portarg)
     : host(hostarg), port(portarg), io_ctx(io_ctxx)
 {
 }

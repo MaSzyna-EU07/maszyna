@@ -150,7 +150,7 @@ void TAnimPant::DSAx()
 	common_pantograph_settings();
 };
 //---------------------------------------------------------------------------
-int TAnim::TypeSet(int i, TMoverParameters currentMover, int fl)
+int TAnim::TypeSet(const int i, TMoverParameters currentMover, const int fl)
 { // ustawienie typu animacji i zależnej od niego ilości animowanych submodeli
     fMaxDist = -1.0; // normalnie nie pokazywać
     switch (i)
@@ -329,7 +329,7 @@ bool TDynamicObject::destination_data::deserialize_mapping( cParser &Input ) {
 
 
 //---------------------------------------------------------------------------
-TDynamicObject * TDynamicObject::FirstFind(int &coupler_nr, int cf)
+TDynamicObject * TDynamicObject::FirstFind(int &coupler_nr, const int cf)
 { // szukanie skrajnego połączonego pojazdu w pociagu
     // od strony sprzegu (coupler_nr) obiektu (start)
 	auto temp = this;
@@ -445,7 +445,7 @@ float TDynamicObject::GetEPP()
 };
 
 //---------------------------------------------------------------------------
-TDynamicObject * TDynamicObject::GetFirstDynamic(int cpl_type, int cf)
+TDynamicObject * TDynamicObject::GetFirstDynamic(int cpl_type, const int cf)
 { // Szukanie skrajnego połączonego pojazdu w pociagu
     // od strony sprzegu (cpl_type) obiektu szukajacego
     // Ra: wystarczy jedna funkcja do szukania w obu kierunkach
@@ -457,7 +457,7 @@ void TDynamicObject::ABuSetModelShake(glm::dvec3 mShake)
     modelShake = mShake;
 };
 
-int TDynamicObject::GetPneumatic(bool front, bool red)
+int TDynamicObject::GetPneumatic(const bool front, const bool red)
 {
     int x, y, z; // 1=prosty, 2=skośny
     if (red)
@@ -494,7 +494,7 @@ int TDynamicObject::GetPneumatic(bool front, bool red)
     return z;
 }
 
-void TDynamicObject::SetPneumatic(bool front, bool red)
+void TDynamicObject::SetPneumatic(const bool front, const bool red)
 {
 	int x = 0,
 		ten = 0,
@@ -1585,7 +1585,7 @@ TDynamicObject::ABuFindObject( int &Foundcoupler, double &Distance, TTrack const
     return foundobject;
 }
 
-int TDynamicObject::DettachStatus(int dir)
+int TDynamicObject::DettachStatus(const int dir)
 { // sprawdzenie odległości sprzęgów
     // rzeczywistych od strony (dir):
     // 0=przód,1=tył
@@ -1596,7 +1596,7 @@ int TDynamicObject::DettachStatus(int dir)
     return MoverParameters->DettachStatus(dir); // czy jest w odpowiedniej odległości?
 }
 
-int TDynamicObject::Dettach(int dir)
+int TDynamicObject::Dettach(const int dir)
 { // rozłączenie sprzęgów rzeczywistych od
     // strony (dir): 0=przód,1=tył
     // zwraca maskę bitową aktualnych sprzegów (0 jeśli rozłączony)
@@ -1885,7 +1885,7 @@ TDynamicObject::~TDynamicObject() {
     SafeDeleteArray( pAnimated ); // lista animowanych submodeli
 }
 
-void TDynamicObject::place_on_track(TTrack *Track, double fDist, bool Reversed)
+void TDynamicObject::place_on_track(TTrack *Track, double fDist, const bool Reversed)
 {
 	for( auto &axle : m_axlesounds ) {
 		// wyszukiwanie osi (0 jest na końcu, dlatego dodajemy długość?)
@@ -2575,7 +2575,7 @@ TDynamicObject::create_controller( std::string const Type, bool const Trainset )
     }
 }
 
-void TDynamicObject::FastMove(double fDistance)
+void TDynamicObject::FastMove(const double fDistance)
 {
     MoverParameters->dMoveLen = MoverParameters->dMoveLen + fDistance;
 }
@@ -2726,7 +2726,7 @@ void TDynamicObject::Move(double fDistance)
     }
 };
 
-void TDynamicObject::AttachNext(TDynamicObject *Object, int iType)
+void TDynamicObject::AttachNext(TDynamicObject *Object, const int iType)
 { // Ra: doczepia Object na końcu składu (nazwa funkcji może być myląca)
     // Ra: używane tylko przy wczytywaniu scenerii
     auto const vehicleend { iDirection };
@@ -2773,7 +2773,7 @@ void TDynamicObject::AttachNext(TDynamicObject *Object, int iType)
     Object->update_neighbours();
 }
 
-bool TDynamicObject::UpdateForce(double dt)
+bool TDynamicObject::UpdateForce(const double dt)
 {
     if (!bEnabled)
         return false;
@@ -4217,7 +4217,7 @@ glm::dvec3 TDynamicObject::get_future_movement() const
 	return m_future_movement;
 }
 
-void TDynamicObject::move_set(double distance)
+void TDynamicObject::move_set(const double distance)
 {
 	auto d = this;
 	while( d ) {
@@ -4231,7 +4231,7 @@ void TDynamicObject::move_set(double distance)
 	}
 }
 
-bool TDynamicObject::FastUpdate(double dt)
+bool TDynamicObject::FastUpdate(const double dt)
 {
     if (dt == 0.0)
         return true; // Ra: pauza
@@ -7157,7 +7157,7 @@ void TDynamicObject::RadioStop()
 };
 
 //---------------------------------------------------------------------------
-void TDynamicObject::Damage(char flag)
+void TDynamicObject::Damage(const char flag)
 {
 	if (flag & 1)  //różnicówka nie robi nic
 	{
@@ -7258,7 +7258,7 @@ void TDynamicObject::SetLights() {
     }
 };
 
-void TDynamicObject::RaLightsSet(int head, int rear)
+void TDynamicObject::RaLightsSet(const int head, int rear)
 { // zapalenie świateł z przodu i z
     // tyłu, zależne od kierunku
     // pojazdu
@@ -7461,7 +7461,7 @@ bool TDynamicObject::has_signal_on( int const Side, int const Pattern ) const {
     return MoverParameters->iLights[Side] == (Pattern & iInventory[Side]);
 }
 
-int TDynamicObject::DirectionSet(int d)
+int TDynamicObject::DirectionSet(const int d)
 { // ustawienie kierunku w składzie (wykonuje AI)
     auto const lastdirection { iDirection };
     iDirection = d > 0 ? 1 : 0; // d:1=zgodny,-1=przeciwny; iDirection:1=zgodny,0=przeciwny;
@@ -7488,10 +7488,10 @@ int TDynamicObject::DirectionSet(int d)
 TDynamicObject * TDynamicObject::PrevAny() const {
     return MoverParameters->Neighbours[ iDirection ^ 1 ].vehicle;
 }
-TDynamicObject * TDynamicObject::Prev(int C) const {
+TDynamicObject * TDynamicObject::Prev(const int C) const {
 	return MoverParameters->Couplers[iDirection ^ 1].CouplingFlag & C ? MoverParameters->Neighbours[iDirection ^ 1].vehicle : nullptr;// gdy sprzęg wirtualny, to jakby nic nie było
 }
-TDynamicObject * TDynamicObject::Next(int C) const {
+TDynamicObject * TDynamicObject::Next(const int C) const {
 	return MoverParameters->Couplers[iDirection].CouplingFlag & C ? MoverParameters->Neighbours[iDirection].vehicle : nullptr;// gdy sprzęg wirtualny, to jakby nic nie było
 }
 
@@ -7719,7 +7719,7 @@ TDynamicObject::FindPantographCarrier() {
 
 //---------------------------------------------------------------------------
 
-void TDynamicObject::ParamSet(int what, int into)
+void TDynamicObject::ParamSet(const int what, const int into)
 { // ustawienie lokalnego parametru (what) na stan (into)
     switch (what & 0xFF00)
     {
@@ -7921,7 +7921,7 @@ followup:
     }
 }
 
-void TDynamicObject::OverheadTrack(float o)
+void TDynamicObject::OverheadTrack(const float o)
 { // ewentualne wymuszanie jazdy
     // bezprądowej z powodu informacji
     // w torze
@@ -8574,7 +8574,7 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
 
 // legacy method, calculates changes in simulation state over specified time
 void
-vehicle_table::update( double Deltatime, int Iterationcount ) {
+vehicle_table::update(const double Deltatime, const int Iterationcount ) {
     // Ra: w zasadzie to trzeba by utworzyć oddzielną listę taboru do liczenia fizyki
     //    na którą by się zapisywały wszystkie pojazdy będące w ruchu
     //    pojazdy stojące nie potrzebują aktualizacji, chyba że np. ktoś im zmieni nastawę hamulca

@@ -4,7 +4,7 @@
 #include "utilities/Logs.h"
 #include <png.h>
 
-void screenshot_manager::screenshot_save_thread( char *img, int w, int h )
+void screenshot_manager::screenshot_save_thread( char *img, const int w, const int h )
 {
 	png_image png;
 	memset(&png, 0, sizeof(png_image));

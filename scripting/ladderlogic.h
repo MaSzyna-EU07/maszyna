@@ -126,7 +126,7 @@ private:
 };
 
 template<typename ...Args_>
-basic_element::basic_element( type_e Type, Args_ ...Args )
+basic_element::basic_element(const type_e Type, Args_ ...Args )
 {
     switch( Type ) {
         case type_e::variable: {

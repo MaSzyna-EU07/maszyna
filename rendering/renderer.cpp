@@ -13,7 +13,7 @@ http://mozilla.org/MPL/2.0/.
 
 std::unique_ptr<gfx_renderer> GfxRenderer;
 
-bool gfx_renderer_factory::register_backend(const std::string &backend, create_method func)
+bool gfx_renderer_factory::register_backend(const std::string &backend, const create_method func)
 {
     backends[backend] = func;
     return true;

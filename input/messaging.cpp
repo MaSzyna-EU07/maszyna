@@ -32,7 +32,7 @@ namespace multiplayer {
 constexpr std::uint32_t EU07_MESSAGEHEADER { MAKE_ID4( 'E','U','0','7' ) };
 
 void
-Navigate(std::string const &ClassName, UINT Msg, WPARAM wParam, LPARAM lParam) {
+Navigate(std::string const &ClassName, const UINT Msg, const WPARAM wParam, const LPARAM lParam) {
 #ifdef _WIN32
     // wysłanie komunikatu do sterującego
     HWND h = FindWindow(ClassName.c_str(), 0); // można by to zapamiętać
@@ -219,7 +219,7 @@ WyslijEvent(const std::string &e, const std::string &d)
 }
 
 void
-WyslijUszkodzenia(const std::string &t, char fl)
+WyslijUszkodzenia(const std::string &t, const char fl)
 { // wysłanie informacji w postaci pojedynczego tekstu
 #ifdef _WIN32
     DaneRozkaz r;
@@ -239,7 +239,7 @@ WyslijUszkodzenia(const std::string &t, char fl)
 }
 
 void
-WyslijString(const std::string &t, int n)
+WyslijString(const std::string &t, const int n)
 { // wysłanie informacji w postaci pojedynczego tekstu
 #ifdef _WIN32
     DaneRozkaz r;
@@ -395,7 +395,7 @@ WyslijObsadzone()
 }
 
 void
-WyslijParam(int nr, int fl)
+WyslijParam(const int nr, const int fl)
 { // wysłanie parametrów symulacji w ramce (nr) z flagami (fl)
 #ifdef _WIN32
     DaneRozkaz r;

@@ -162,7 +162,7 @@ void TCab::Load(cParser &Parser)
 	bOccupied = true;
 }
 
-TGauge &TCab::Gauge(int n)
+TGauge &TCab::Gauge(const int n)
 { // pobranie adresu obiektu aniomowanego ruchem
 	/*
 	    if (n < 0)
@@ -185,7 +185,7 @@ TGauge &TCab::Gauge(int n)
 	}
 };
 
-TButton &TCab::Button(int n)
+TButton &TCab::Button(const int n)
 { // pobranie adresu obiektu animowanego wyborem 1 z 2
 	/*
 	    if (n < 0)
@@ -633,7 +633,7 @@ TTrain::TTrain()
 
 TTrain::~TTrain() {}
 
-bool TTrain::Init(TDynamicObject *NewDynamicObject, bool e3d)
+bool TTrain::Init(TDynamicObject *NewDynamicObject, const bool e3d)
 { // powiązanie ręcznego sterowania kabiną z pojazdem
 	if (NewDynamicObject->Mechanik == nullptr)
 	{
@@ -10286,7 +10286,7 @@ void TTrain::update_sounds_radio()
 	}
 }
 
-void TTrain::update_screens(double dt)
+void TTrain::update_screens(const double dt)
 {
 	for (auto &screen : m_screens)
 	{
@@ -10322,7 +10322,7 @@ void TTrain::add_distance(double const Distance)
 	}
 }
 
-bool TTrain::CabChange(int iDirection)
+bool TTrain::CabChange(const int iDirection)
 { // McZapkie-090902: zmiana kabiny 1->0->2 i z powrotem
 	if (DynamicObject->Mechanik == nullptr || true == DynamicObject->Mechanik->AIControllFlag)
 	{
@@ -10823,7 +10823,7 @@ return (token == "none");
 	return true;
 }
 
-glm::dvec3 TTrain::MirrorPosition(bool lewe)
+glm::dvec3 TTrain::MirrorPosition(const bool lewe)
 { // zwraca współrzędne widoku kamery z lusterka
 	auto const shiftdirection{(lewe ? -1 : 1) * (iCabn == 2 ? 1 : -1)};
 
@@ -12472,7 +12472,7 @@ void train_table::updateAsync(double dt)
 	}
 }
 
-void train_table::update(double dt)
+void train_table::update(const double dt)
 {
 	for (TTrain *train : m_items)
 	{

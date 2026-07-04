@@ -29,7 +29,7 @@ public:
     std::string to_string() const {
         std::ostringstream os;
         os << std::hex << std::setfill('0');
-        auto put = [&](int i){
+        auto put = [&](const int i){
             os << std::setw(2) << static_cast<int>(bytes[i]);
         };
         // format 8-4-4-4-12

@@ -39,12 +39,12 @@ void TCamera::Reset() {
 };
 
 
-void TCamera::OnCursorMove(double x, double y) {
+void TCamera::OnCursorMove(const double x, const double y) {
     m_rotationoffsets.x += y;
     m_rotationoffsets.y += x;
 }
 
-static double ComputeAxisSpeed(double param, double walkspeed, double maxspeed, double threshold) {
+static double ComputeAxisSpeed(const double param, const double walkspeed, const double maxspeed, const double threshold) {
 	const double absval = std::abs(param);
     // 2/3rd of the stick range lerps walk speed, past that we lerp between max walk and run speed
 	const double walk = walkspeed * std::min(absval / threshold, 1.0);
@@ -118,7 +118,7 @@ TCamera::OnCommand( command_data const &Command ) {
     return iscameracommand;
 }
 
-static void UpdateVelocityAxis(double& velocity, double moverate, double deltatime)
+static void UpdateVelocityAxis(double& velocity, const double moverate, const double deltatime)
 {
     velocity = std::clamp(velocity + moverate * 10.0 * deltatime, -std::abs(moverate), std::abs(moverate));
 }

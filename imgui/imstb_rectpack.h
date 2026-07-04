@@ -227,7 +227,7 @@ enum
    STBRP__INIT_skyline = 1
 };
 
-STBRP_DEF void stbrp_setup_heuristic(stbrp_context *context, int heuristic)
+STBRP_DEF void stbrp_setup_heuristic(stbrp_context *context, const int heuristic)
 {
    switch (context->init_mode) {
       case STBRP__INIT_skyline:
@@ -239,7 +239,7 @@ STBRP_DEF void stbrp_setup_heuristic(stbrp_context *context, int heuristic)
    }
 }
 
-STBRP_DEF void stbrp_setup_allow_out_of_mem(stbrp_context *context, int allow_out_of_mem)
+STBRP_DEF void stbrp_setup_allow_out_of_mem(stbrp_context *context, const int allow_out_of_mem)
 {
    if (allow_out_of_mem)
       // if it's ok to run out of memory, then don't bother aligning them;
@@ -259,7 +259,7 @@ STBRP_DEF void stbrp_setup_allow_out_of_mem(stbrp_context *context, int allow_ou
    }
 }
 
-STBRP_DEF void stbrp_init_target(stbrp_context *context, int width, int height, stbrp_node *nodes, int num_nodes)
+STBRP_DEF void stbrp_init_target(stbrp_context *context, const int width, const int height, stbrp_node *nodes, const int num_nodes)
 {
    int i;
 #ifndef STBRP_LARGE_RECTS
@@ -292,7 +292,7 @@ STBRP_DEF void stbrp_init_target(stbrp_context *context, int width, int height, 
 }
 
 // find minimum y position if it starts at x1
-static int stbrp__skyline_find_min_y(stbrp_context *c, stbrp_node *first, int x0, int width, int *pwaste)
+static int stbrp__skyline_find_min_y(stbrp_context *c, stbrp_node *first, const int x0, const int width, int *pwaste)
 {
 	const stbrp_node *node = first;
 	const int x1 = x0 + width;
@@ -348,7 +348,7 @@ typedef struct
    stbrp_node **prev_link;
 } stbrp__findresult;
 
-static stbrp__findresult stbrp__skyline_find_best_pos(stbrp_context *c, int width, int height)
+static stbrp__findresult stbrp__skyline_find_best_pos(stbrp_context *c, int width, const int height)
 {
    int best_waste = (1<<30), best_x, best_y = (1 << 30);
    stbrp__findresult fr;
@@ -450,7 +450,7 @@ static stbrp__findresult stbrp__skyline_find_best_pos(stbrp_context *c, int widt
    return fr;
 }
 
-static stbrp__findresult stbrp__skyline_pack_rectangle(stbrp_context *context, int width, int height)
+static stbrp__findresult stbrp__skyline_pack_rectangle(stbrp_context *context, const int width, const int height)
 {
    // find best position according to heuristic
    stbrp__findresult res = stbrp__skyline_find_best_pos(context, width, height);
@@ -555,7 +555,7 @@ static int STBRP__CDECL rect_original_order(const void *a, const void *b)
 #define STBRP__MAXVAL  0xffff
 #endif
 
-STBRP_DEF int stbrp_pack_rects(stbrp_context *context, stbrp_rect *rects, int num_rects)
+STBRP_DEF int stbrp_pack_rects(stbrp_context *context, stbrp_rect *rects, const int num_rects)
 {
    int i, all_rects_packed = 1;
 

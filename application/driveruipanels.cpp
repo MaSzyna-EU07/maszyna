@@ -989,7 +989,7 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
 	last_time = Timer::GetTime();
 }
 
-void debug_panel::graph_data::update(float val) {
+void debug_panel::graph_data::update(const float val) {
 	data[pos] = val;
 
 	pos++;

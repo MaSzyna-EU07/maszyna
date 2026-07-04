@@ -34,7 +34,7 @@ size_t piped_proc::write(unsigned char *buf, size_t len)
 	return fwrite(buf, 1, len, file);
 }
 #elif _WIN32
-piped_proc::piped_proc(std::string cmd, bool write)
+piped_proc::piped_proc(std::string cmd, const bool write)
 {
 	PROCESS_INFORMATION process;
 	STARTUPINFO siStartInfo;
@@ -86,7 +86,7 @@ piped_proc::~piped_proc()
 		CloseHandle(proc_h);
 }
 
-size_t piped_proc::read(unsigned char *buf, size_t len)
+size_t piped_proc::read(unsigned char *buf, const size_t len)
 {
 	if (!pipe_rd)
 		return 0;
@@ -97,7 +97,7 @@ size_t piped_proc::read(unsigned char *buf, size_t len)
 	return read;
 }
 
-size_t piped_proc::write(unsigned char *buf, size_t len)
+size_t piped_proc::write(unsigned char *buf, const size_t len)
 {
 	if (!pipe_wr)
 		return 0;

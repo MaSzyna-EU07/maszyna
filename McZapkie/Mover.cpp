@@ -33,12 +33,12 @@ std::vector<std::string> const TMoverParameters::eimc_labels = {"dfic: ", "dfmax
 std::vector<std::string> const TMoverParameters::eimv_labels = {
     "Fkrt:", "Fmax:", "ks:  ", "df:  ", "fp:  ", "Us:  ", "pole:", "Ic:  ", "If:  ", "M:   ", "Fr:  ", "Ipoj:", "Pm:  ", "Pe:  ", "eta: ", "fkr: ", "Uzsm:", "Pmax:", "Fzad:", "Imax:", "Fful:"};
 
-inline double square(double val) // SQR() zle liczylo w current() ...
+inline double square(const double val) // SQR() zle liczylo w current() ...
 {
 	return val * val;
 }
 
-double ComputeCollision(double &v1, double &v2, double m1, double m2, double beta, bool vc)
+double ComputeCollision(double &v1, double &v2, const double m1, const double m2, const double beta, const bool vc)
 { // oblicza zmiane predkosci i przyrost pedu wskutek kolizji
 	assert(beta < 1.0);
 
@@ -55,12 +55,12 @@ double ComputeCollision(double &v1, double &v2, double m1, double m2, double bet
 	}
 }
 
-int DirPatch(int Coupler1, int Coupler2)
+int DirPatch(const int Coupler1, const int Coupler2)
 { // poprawka dla liczenia sil przy ustawieniu przeciwnym obiektow
 	return Coupler1 != Coupler2 ? 1 : -1;
 }
 
-int DirF(int CouplerN)
+int DirF(const int CouplerN)
 {
 	switch (CouplerN)
 	{
@@ -73,7 +73,7 @@ int DirF(int CouplerN)
 	}
 }
 
-void TSecuritySystem::set_enabled(bool e)
+void TSecuritySystem::set_enabled(const bool e)
 {
 	if (vigilance_enabled || cabsignal_enabled || radiostop_enabled)
 		enabled = e;
@@ -118,7 +118,7 @@ void TSecuritySystem::cabsignal_reset()
 	}
 }
 
-void TSecuritySystem::update(double dt, double vel, bool pwr, int cab)
+void TSecuritySystem::update(const double dt, const double vel, const bool pwr, const int cab)
 {
 	if (!enabled || !pwr || DebugModeFlag)
 	{
@@ -218,7 +218,7 @@ bool TSecuritySystem::radiostop_available() const
 	return radiostop_enabled;
 }
 
-void TSecuritySystem::set_cabsignal_lock(bool v)
+void TSecuritySystem::set_cabsignal_lock(const bool v)
 {
 	cabsignal_lock = v;
 }
@@ -231,7 +231,7 @@ bool TSecuritySystem::is_engine_blocked() const
 	return velocity < AwareMinSpeed && pressed;
 }
 
-void TSecuritySystem::load(std::string const &line, double Vmax)
+void TSecuritySystem::load(std::string const &line, const double Vmax)
 {
 	const std::string awaresystem = extract_value("AwareSystem", line);
 	if (awaresystem.find("Active") != std::string::npos)
@@ -254,7 +254,7 @@ void TSecuritySystem::load(std::string const &line, double Vmax)
 	extract_value(CabDependent, "CabDependent", line, "");
 }
 
-double TableInterpolation(std::map<double, double> &Map, double Parameter)
+double TableInterpolation(std::map<double, double> &Map, const double Parameter)
 {
 	if (Map.size() == 0)
 		return 0.0;
@@ -282,7 +282,7 @@ double TableInterpolation(std::map<double, double> &Map, double Parameter)
 // Q: 20160716
 // Obliczanie natężenie prądu w silnikach
 // *************************************************************************************************
-double TMoverParameters::Current(double n, double U)
+double TMoverParameters::Current(const double n, const double U)
 {
 	// wazna funkcja - liczy prad plynacy przez silniki polaczone szeregowo lub rownolegle
 	// w zaleznosci od polozenia nastawnikow MainCtrl i ScndCtrl oraz predkosci obrotowej n
@@ -463,7 +463,7 @@ double TMoverParameters::Current(double n, double U)
 // *************************************************************************************************
 //  główny konstruktor
 // *************************************************************************************************
-TMoverParameters::TMoverParameters(double VelInitial, std::string TypeNameInit, std::string NameInit, int Cab) : TypeName(TypeNameInit), Name(NameInit), CabOccupied(Cab)
+TMoverParameters::TMoverParameters(const double VelInitial, std::string TypeNameInit, std::string NameInit, const int Cab) : TypeName(TypeNameInit), Name(NameInit), CabOccupied(Cab)
 {
 	WriteLog("------------------------------------------------------");
 	WriteLog("init default physic values for " + NameInit + ", [" + TypeNameInit + "]");
@@ -582,7 +582,7 @@ double TMoverParameters::CouplerDist(TMoverParameters const *Left, TMoverParamet
 	return Distance(Left->Loc, Right->Loc, Left->Dim, Right->Dim); // odległość pomiędzy sprzęgami (kula!)
 };
 
-bool TMoverParameters::Attach(int ConnectNo, int ConnectToNr, TMoverParameters *ConnectTo, int CouplingType, bool Enforce, bool Audible)
+bool TMoverParameters::Attach(const int ConnectNo, const int ConnectToNr, TMoverParameters *ConnectTo, const int CouplingType, const bool Enforce, const bool Audible)
 { // łączenie do swojego sprzęgu (ConnectNo) pojazdu (ConnectTo) stroną (ConnectToNr)
 	// Ra: zwykle wykonywane dwukrotnie, dla każdego pojazdu oddzielnie
 	// Ra: trzeba by odróżnić wymóg dociśnięcia od uszkodzenia sprzęgu przy podczepianiu AI do składu
@@ -641,7 +641,7 @@ bool TMoverParameters::Attach(int ConnectNo, int ConnectToNr, TMoverParameters *
 	return true;
 }
 
-int TMoverParameters::DettachStatus(int ConnectNo)
+int TMoverParameters::DettachStatus(const int ConnectNo)
 { // Ra: sprawdzenie, czy odległość jest dobra do rozłączania
 	// powinny być 3 informacje: =0 sprzęg już rozłączony, <0 da się rozłączyć. >0 nie da się rozłączyć
 	if (!Couplers[ConnectNo].Connected)
@@ -656,7 +656,7 @@ int TMoverParameters::DettachStatus(int ConnectNo)
 	return Neighbours[ConnectNo].distance > 0.2 ? -Couplers[ConnectNo].CouplingFlag : Couplers[ConnectNo].CouplingFlag;
 };
 
-bool TMoverParameters::Dettach(int ConnectNo)
+bool TMoverParameters::Dettach(const int ConnectNo)
 { // rozlaczanie
 
 	auto &coupler{Couplers[ConnectNo]};
@@ -723,7 +723,7 @@ bool TMoverParameters::DirectionForward()
 
 // Nastawianie hamulców
 
-void TMoverParameters::BrakeLevelSet(double b)
+void TMoverParameters::BrakeLevelSet(const double b)
 { // ustawienie pozycji hamulca na wartość (b) w zakresie od -2 do BrakeCtrlPosNo
 	// jedyny dopuszczalny sposób przestawienia hamulca zasadniczego
 	if (fBrakeCtrlPos == b)
@@ -764,7 +764,7 @@ void TMoverParameters::BrakeLevelSet(double b)
 	*/
 };
 
-bool TMoverParameters::BrakeLevelAdd(double b)
+bool TMoverParameters::BrakeLevelAdd(const double b)
 { // dodanie wartości (b) do pozycji hamulca (w tym ujemnej)
 	// zwraca false, gdy po dodaniu było by poza zakresem
 	BrakeLevelSet(fBrakeCtrlPos + b);
@@ -781,7 +781,7 @@ bool TMoverParameters::DecBrakeLevel()
 	return BrakeLevelAdd(-1.0);
 }; // nowa wersja na użytek AI, false gdy osiągnięto pozycję -1
 
-bool TMoverParameters::ChangeCab(int direction)
+bool TMoverParameters::ChangeCab(const int direction)
 { // zmiana kabiny i resetowanie ustawien
 	if (std::abs(CabOccupied + direction) < 2)
 	{
@@ -838,7 +838,7 @@ bool TMoverParameters::IsMotorOverloadRelayHighThresholdOn() const
 }
 
 // KURS90 - sprężarka pantografów; Ra 2014-07: teraz jest to zbiornik rozrządu, chociaż to jeszcze nie tak
-void TMoverParameters::UpdatePantVolume(double dt)
+void TMoverParameters::UpdatePantVolume(const double dt)
 {
 	// check the pantograph compressor while at it
 	// TODO: move the check to a separate method
@@ -934,7 +934,7 @@ void TMoverParameters::UpdatePantVolume(double dt)
 	}
 };
 
-void TMoverParameters::UpdateBatteryVoltage(double dt)
+void TMoverParameters::UpdateBatteryVoltage(const double dt)
 { // przeliczenie obciążenia baterii
 	double sn1 = 0.0, sn2 = 0.0, sn3 = 0.0, sn4 = 0.0,
 	       sn5 = 0.0; // Ra: zrobić z tego amperomierz NN
@@ -1354,7 +1354,7 @@ void TMoverParameters::Derail(DerailReason const Reason)
 // *************************************************************************************************
 // Oblicza przemieszczenie taboru
 // *************************************************************************************************
-double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShape &Shape, TTrackParam &Track, TTractionParam &ElectricTraction, TLocation const &NewLoc, TRotation const &NewRot)
+double TMoverParameters::ComputeMovement(const double dt, const double dt1, const TTrackShape &Shape, TTrackParam &Track, TTractionParam &ElectricTraction, TLocation const &NewLoc, TRotation const &NewRot)
 {
 	constexpr double Vepsilon = 1e-5;
 	constexpr double Aepsilon = 1e-3; // ASBSpeed=0.8;
@@ -1478,7 +1478,7 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 // Oblicza przemieszczenie taboru - uproszczona wersja
 // *************************************************************************************************
 
-double TMoverParameters::FastComputeMovement(double dt, const TTrackShape &Shape, TTrackParam &Track, TLocation const &NewLoc, TRotation const &NewRot)
+double TMoverParameters::FastComputeMovement(const double dt, const TTrackShape &Shape, TTrackParam &Track, TLocation const &NewLoc, TRotation const &NewRot)
 {
 	int b;
 	// T_MoverParameters::FastComputeMovement(dt, Shape, Track, NewLoc, NewRot);
@@ -1990,7 +1990,7 @@ void TMoverParameters::PowerCouplersCheck(double const Deltatime, coupling const
 	}
 }
 
-double TMoverParameters::ShowEngineRotation(int VehN)
+double TMoverParameters::ShowEngineRotation(const int VehN)
 { // Zwraca wartość prędkości obrotowej silnika wybranego pojazdu. Do 3 pojazdów (3×SN61).
 	int b;
 	switch (VehN)
@@ -2340,7 +2340,7 @@ void TMoverParameters::LightsCheck(double const Timestep)
 	                  light.dimming;
 }
 
-double TMoverParameters::ShowCurrent(int AmpN) const
+double TMoverParameters::ShowCurrent(const int AmpN) const
 { // Odczyt poboru prądu na podanym amperomierzu
 	switch (EngineType)
 	{
@@ -2372,7 +2372,7 @@ double TMoverParameters::ShowCurrent(int AmpN) const
 // zwiększenie nastawinika
 // *************************************************************************************************
 
-bool TMoverParameters::IncMainCtrl(int CtrlSpeed)
+bool TMoverParameters::IncMainCtrl(const int CtrlSpeed)
 {
 	// basic fail conditions:
 	if (MainCtrlPosNo <= 0 || CabActive == 0)
@@ -2555,7 +2555,7 @@ bool TMoverParameters::IncMainCtrl(int CtrlSpeed)
 // Q: 20160710
 // zmniejszenie nastawnika
 // *****************************************************************************
-bool TMoverParameters::DecMainCtrl(int CtrlSpeed)
+bool TMoverParameters::DecMainCtrl(const int CtrlSpeed)
 {
 	bool OK = false;
 	// basic fail conditions:
@@ -2729,7 +2729,7 @@ int TMoverParameters::MainCtrlPowerPos() const
 // Q: 20160710
 // zwiększenie bocznika
 // *************************************************************************************************
-bool TMoverParameters::IncScndCtrl(int CtrlSpeed)
+bool TMoverParameters::IncScndCtrl(const int CtrlSpeed)
 {
 	bool OK = false;
 
@@ -2802,7 +2802,7 @@ bool TMoverParameters::IncScndCtrl(int CtrlSpeed)
 // Q: 20160710
 // zmniejszenie bocznika
 // *************************************************************************************************
-bool TMoverParameters::DecScndCtrl(int CtrlSpeed)
+bool TMoverParameters::DecScndCtrl(const int CtrlSpeed)
 {
 	bool OK = false;
 
@@ -2968,7 +2968,7 @@ bool TMoverParameters::CabDeactivisationAuto(bool const Enforce)
 // Q: 20160710
 // Siła napędzająca drezynę po naciśnięciu wajhy
 // *************************************************************************************************
-bool TMoverParameters::AddPulseForce(int Multipler)
+bool TMoverParameters::AddPulseForce(const int Multipler)
 {
 	bool APF;
 	if (EngineType == TEngineType::WheelsDriven && EnginePowerSource.SourceType == TPowerSource::InternalSource && EnginePowerSource.PowerType == TPowerType::BioPower)
@@ -3106,7 +3106,7 @@ bool TMoverParameters::Sandbox(bool const State, range_t const Notify)
 // yB: 20190909
 // włączenie / wyłączenie automatycznej piasecznicy
 // *************************************************************************************************
-bool TMoverParameters::SandboxAutoAllow(bool State)
+bool TMoverParameters::SandboxAutoAllow(const bool State)
 {
 	// SendCtrlToNext("SandboxAutoAllow", int(State), CabActive, ctrain_controll);
 
@@ -3136,7 +3136,7 @@ void TMoverParameters::SecuritySystemReset(void) // zbijanie czuwaka/SHP
 // Q: 20160711
 // sprawdzanie stanu CA/SHP
 // *************************************************************************************************
-void TMoverParameters::SecuritySystemCheck(double dt)
+void TMoverParameters::SecuritySystemCheck(const double dt)
 {
 	const bool isPower = Power24vIsAvailable || Power110vIsAvailable;
 	SecuritySystem.update(dt, Vel, isPower, CabActive);
@@ -3151,7 +3151,7 @@ void TMoverParameters::SecuritySystemCheck(double dt)
 // Q: 20160710
 // włączenie / wyłączenie baterii
 // *************************************************************************************************
-bool TMoverParameters::BatterySwitch(bool State, range_t const Notify)
+bool TMoverParameters::BatterySwitch(const bool State, range_t const Notify)
 {
 	auto const initialstate{Battery};
 
@@ -3175,7 +3175,7 @@ bool TMoverParameters::BatterySwitch(bool State, range_t const Notify)
 // Q: 20160710
 // włączenie / wyłączenie hamulca elektro-pneumatycznego
 // *************************************************************************************************
-bool TMoverParameters::EpFuseSwitch(bool State)
+bool TMoverParameters::EpFuseSwitch(const bool State)
 {
 	if (EpFuse != State)
 	{
@@ -3192,7 +3192,7 @@ bool TMoverParameters::EpFuseSwitch(bool State)
 // yB: 20190906
 // włączenie / wyłączenie hamulca sprezynowego
 // *************************************************************************************************
-bool TMoverParameters::SpringBrakeActivate(bool State)
+bool TMoverParameters::SpringBrakeActivate(const bool State)
 {
 	if (Power24vIsAvailable || Power110vIsAvailable)
 	{
@@ -3211,7 +3211,7 @@ bool TMoverParameters::SpringBrakeActivate(bool State)
 // yB: 20190906
 // włączenie / wyłączenie odciecia hamulca sprezynowego
 // *************************************************************************************************
-bool TMoverParameters::SpringBrakeShutOff(bool State)
+bool TMoverParameters::SpringBrakeShutOff(const bool State)
 {
 	if (SpringBrake.ShuttOff != State)
 	{
@@ -3289,7 +3289,7 @@ bool TMoverParameters::AntiSlippingButton(void)
 }
 
 // water pump breaker state toggle
-bool TMoverParameters::WaterPumpBreakerSwitch(bool State, range_t const Notify)
+bool TMoverParameters::WaterPumpBreakerSwitch(const bool State, range_t const Notify)
 {
 	/*
 	    if( FuelPump.start_type == start::automatic ) {
@@ -3310,7 +3310,7 @@ bool TMoverParameters::WaterPumpBreakerSwitch(bool State, range_t const Notify)
 }
 
 // water pump state toggle
-bool TMoverParameters::WaterPumpSwitch(bool State, range_t const Notify)
+bool TMoverParameters::WaterPumpSwitch(const bool State, range_t const Notify)
 {
 
 	if (WaterPump.start_type == start_t::battery)
@@ -3332,7 +3332,7 @@ bool TMoverParameters::WaterPumpSwitch(bool State, range_t const Notify)
 }
 
 // water pump state toggle
-bool TMoverParameters::WaterPumpSwitchOff(bool State, range_t const Notify)
+bool TMoverParameters::WaterPumpSwitchOff(const bool State, range_t const Notify)
 {
 
 	if (WaterPump.start_type == start_t::battery)
@@ -3354,7 +3354,7 @@ bool TMoverParameters::WaterPumpSwitchOff(bool State, range_t const Notify)
 }
 
 // water heater breaker state toggle
-bool TMoverParameters::WaterHeaterBreakerSwitch(bool State, range_t const Notify)
+bool TMoverParameters::WaterHeaterBreakerSwitch(const bool State, range_t const Notify)
 {
 	/*
 	    if( FuelPump.start_type == start::automatic ) {
@@ -3375,7 +3375,7 @@ bool TMoverParameters::WaterHeaterBreakerSwitch(bool State, range_t const Notify
 }
 
 // water heater state toggle
-bool TMoverParameters::WaterHeaterSwitch(bool State, range_t const Notify)
+bool TMoverParameters::WaterHeaterSwitch(const bool State, range_t const Notify)
 {
 	/*
 	    if( FuelPump.start_type == start::automatic ) {
@@ -3396,7 +3396,7 @@ bool TMoverParameters::WaterHeaterSwitch(bool State, range_t const Notify)
 }
 
 // water circuits link state toggle
-bool TMoverParameters::WaterCircuitsLinkSwitch(bool State, range_t const Notify)
+bool TMoverParameters::WaterCircuitsLinkSwitch(const bool State, range_t const Notify)
 {
 
 	if (false == dizel_heat.auxiliary_water_circuit)
@@ -3418,7 +3418,7 @@ bool TMoverParameters::WaterCircuitsLinkSwitch(bool State, range_t const Notify)
 }
 
 // fuel pump state toggle
-bool TMoverParameters::FuelPumpSwitch(bool State, range_t const Notify)
+bool TMoverParameters::FuelPumpSwitch(const bool State, range_t const Notify)
 {
 
 	if (FuelPump.start_type == start_t::automatic)
@@ -3439,7 +3439,7 @@ bool TMoverParameters::FuelPumpSwitch(bool State, range_t const Notify)
 	return FuelPump.is_enabled != initialstate;
 }
 
-bool TMoverParameters::FuelPumpSwitchOff(bool State, range_t const Notify)
+bool TMoverParameters::FuelPumpSwitchOff(const bool State, range_t const Notify)
 {
 
 	if (FuelPump.start_type == start_t::automatic)
@@ -3461,7 +3461,7 @@ bool TMoverParameters::FuelPumpSwitchOff(bool State, range_t const Notify)
 }
 
 // oil pump state toggle
-bool TMoverParameters::OilPumpSwitch(bool State, range_t const Notify)
+bool TMoverParameters::OilPumpSwitch(const bool State, range_t const Notify)
 {
 
 	if (OilPump.start_type == start_t::automatic)
@@ -3482,7 +3482,7 @@ bool TMoverParameters::OilPumpSwitch(bool State, range_t const Notify)
 	return OilPump.is_enabled != initialstate;
 }
 
-bool TMoverParameters::OilPumpSwitchOff(bool State, range_t const Notify)
+bool TMoverParameters::OilPumpSwitchOff(const bool State, range_t const Notify)
 {
 
 	if (OilPump.start_type == start_t::automatic)
@@ -3503,7 +3503,7 @@ bool TMoverParameters::OilPumpSwitchOff(bool State, range_t const Notify)
 	return OilPump.is_disabled != initialstate;
 }
 
-bool TMoverParameters::MotorBlowersSwitch(bool State, end const Side, range_t const Notify)
+bool TMoverParameters::MotorBlowersSwitch(const bool State, end const Side, range_t const Notify)
 {
 
 	auto &fan{MotorBlowers[Side]};
@@ -3527,7 +3527,7 @@ bool TMoverParameters::MotorBlowersSwitch(bool State, end const Side, range_t co
 	return fan.is_enabled != initialstate;
 }
 
-bool TMoverParameters::MotorBlowersSwitchOff(bool State, end const Side, range_t const Notify)
+bool TMoverParameters::MotorBlowersSwitchOff(const bool State, end const Side, range_t const Notify)
 {
 
 	auto &fan{MotorBlowers[Side]};
@@ -3551,7 +3551,7 @@ bool TMoverParameters::MotorBlowersSwitchOff(bool State, end const Side, range_t
 	return fan.is_disabled != initialstate;
 }
 
-bool TMoverParameters::CompartmentLightsSwitch(bool State, range_t const Notify)
+bool TMoverParameters::CompartmentLightsSwitch(const bool State, range_t const Notify)
 {
 
 	if (CompartmentLights.start_type == start_t::automatic)
@@ -3573,7 +3573,7 @@ bool TMoverParameters::CompartmentLightsSwitch(bool State, range_t const Notify)
 }
 
 // water pump state toggle
-bool TMoverParameters::CompartmentLightsSwitchOff(bool State, range_t const Notify)
+bool TMoverParameters::CompartmentLightsSwitchOff(const bool State, range_t const Notify)
 {
 
 	if (CompartmentLights.start_type == start_t::automatic)
@@ -3699,7 +3699,7 @@ bool TMoverParameters::MainSwitchCheck() const
 // Q: 20160713
 // włączenie / wyłączenie przetwornicy
 // *************************************************************************************************
-bool TMoverParameters::ConverterSwitch(bool State, range_t const Notify)
+bool TMoverParameters::ConverterSwitch(const bool State, range_t const Notify)
 {
 
 	auto const initialstate{ConverterAllow};
@@ -3721,7 +3721,7 @@ bool TMoverParameters::ConverterSwitch(bool State, range_t const Notify)
 // Q: 20160713
 // włączenie / wyłączenie sprężarki
 // *************************************************************************************************
-bool TMoverParameters::CompressorSwitch(bool State, range_t const Notify)
+bool TMoverParameters::CompressorSwitch(const bool State, range_t const Notify)
 {
 
 	if (CompressorStart != start_t::manual)
@@ -3920,7 +3920,7 @@ bool TMoverParameters::DecDynamicBrakeLevel(float const CtrlSpeed)
 // *************************************************************************************************
 // bezposrednie ustawienie nastawnika hamulca elektrodynamicznego (DynamicBrakeCtrl)
 // *************************************************************************************************
-bool TMoverParameters::DynamicBrakeLevelSet(double Position)
+bool TMoverParameters::DynamicBrakeLevelSet(const double Position)
 {
 	if (false == SplitEDPneumaticBrake)
 		return false;
@@ -4002,7 +4002,7 @@ bool TMoverParameters::DecManualBrakeLevel(int CtrlSpeed)
 // Q: 20160713
 // reczne przelaczanie hamulca elektrodynamicznego
 // *************************************************************************************************
-bool TMoverParameters::DynamicBrakeSwitch(bool Switch)
+bool TMoverParameters::DynamicBrakeSwitch(const bool Switch)
 {
 	bool DBS;
 
@@ -4030,7 +4030,7 @@ bool TMoverParameters::DynamicBrakeSwitch(bool Switch)
 // Q: 20160711
 // włączenie / wyłączenie hamowania awaryjnego
 // *************************************************************************************************
-bool TMoverParameters::RadiostopSwitch(bool Switch)
+bool TMoverParameters::RadiostopSwitch(const bool Switch)
 {
 	bool EBS;
 	if (BrakeSystem != TBrakeSystem::Individual && BrakeCtrlPosNo > 0)
@@ -4096,7 +4096,7 @@ bool TMoverParameters::AntiSlippingBrake(void)
 // Q: 20160711
 // włączenie / wyłączenie odluźniacza
 // *************************************************************************************************
-bool TMoverParameters::BrakeReleaser(int state)
+bool TMoverParameters::BrakeReleaser(const int state)
 {
 	bool OK = true; // false tylko jeśli nie uda się wysłać, GF 20161124
 	if (state != 0)
@@ -4120,7 +4120,7 @@ bool TMoverParameters::BrakeReleaser(int state)
 // yB: 20160711
 // włączenie / wyłączenie uniwersalnego przycisku hamulcowego
 // *************************************************************************************************
-bool TMoverParameters::UniversalBrakeButton(int button, int state)
+bool TMoverParameters::UniversalBrakeButton(const int button, const int state)
 {
 	constexpr bool OK = true; // false tylko jeśli nie uda się wysłać, GF 20161124
 	UniversalBrakeButtonActive[button] = state > 0;
@@ -4150,7 +4150,7 @@ bool TMoverParameters::UniversalBrakeButton(int button, int state)
 // Q: 20160711
 // włączenie / wyłączenie hamulca elektro-pneumatycznego
 // *************************************************************************************************
-bool TMoverParameters::SwitchEPBrake(int state)
+bool TMoverParameters::SwitchEPBrake(const int state)
 {
 	bool OK;
 
@@ -4173,7 +4173,7 @@ bool TMoverParameters::SwitchEPBrake(int state)
 // Q: 20160711
 // zwiększenie ciśnienia hamowania
 // *************************************************************************************************
-bool TMoverParameters::IncBrakePress(double &brake, double PressLimit, double dp)
+bool TMoverParameters::IncBrakePress(double &brake, const double PressLimit, double dp)
 {
 	bool IBP;
 	//  if (DynamicBrakeType<>dbrake_switch) and (DynamicBrakeType<>dbrake_none) and
@@ -4202,7 +4202,7 @@ bool TMoverParameters::IncBrakePress(double &brake, double PressLimit, double dp
 // Q: 20160711
 // zmniejszenie ciśnienia hamowania
 // *************************************************************************************************
-bool TMoverParameters::DecBrakePress(double &brake, double PressLimit, double dp)
+bool TMoverParameters::DecBrakePress(double &brake, const double PressLimit, const double dp)
 {
 	bool DBP;
 
@@ -4228,7 +4228,7 @@ bool TMoverParameters::DecBrakePress(double &brake, double PressLimit, double dp
 // Q: 20160711
 // przełączenie nastawy hamulca O/P/T
 // *************************************************************************************************
-bool TMoverParameters::BrakeDelaySwitch(int BDS)
+bool TMoverParameters::BrakeDelaySwitch(const int BDS)
 {
 	bool rBDS;
 	if (Hamulec->SetBDF(BDS))
@@ -4297,7 +4297,7 @@ bool TMoverParameters::DecBrakeMult(void)
 // Q: 20160712
 // zaktualizowanie ciśnienia w hamulcach
 // *************************************************************************************************
-void TMoverParameters::UpdateBrakePressure(double dt)
+void TMoverParameters::UpdateBrakePressure(const double dt)
 {
 	// const double LBDelay = 5.0; // stala czasowa hamulca
 	// double Rate, Speed, dp, sm;
@@ -4316,7 +4316,7 @@ void TMoverParameters::UpdateBrakePressure(double dt)
 // Q: 20160712
 // Obliczanie pracy sprężarki
 // *************************************************************************************************
-void TMoverParameters::CompressorCheck(double dt)
+void TMoverParameters::CompressorCheck(const double dt)
 {
 
 	if (CompressorSpeed == 0.0)
@@ -4473,7 +4473,7 @@ void TMoverParameters::CompressorCheck(double dt)
 // Q: 20160712
 // aktualizacja ciśnienia w przewodzie głównym
 // *************************************************************************************************
-void TMoverParameters::UpdatePipePressure(double dt)
+void TMoverParameters::UpdatePipePressure(const double dt)
 {
 	if (PipePress > 1.0)
 	{
@@ -4760,7 +4760,7 @@ void TMoverParameters::UpdatePipePressure(double dt)
 // Q: 20160713
 // Aktualizacja ciśnienia w przewodzie zasilającym
 // *************************************************************************************************
-void TMoverParameters::UpdateScndPipePressure(double dt)
+void TMoverParameters::UpdateScndPipePressure(const double dt)
 {
 	if (ScndPipePress > 1.0)
 	{
@@ -4859,7 +4859,7 @@ void TMoverParameters::UpdateSpringBrake(double dt)
 // Q: 20160715
 // oblicza i zwraca przepływ powietrza pomiędzy pojazdami
 // *************************************************************************************************
-double TMoverParameters::GetDVc(double dt)
+double TMoverParameters::GetDVc(const double dt)
 {
 	// T_MoverParameters *c;
 	TMoverParameters *c;
@@ -4996,7 +4996,7 @@ void TMoverParameters::ComputeMass()
 // Obliczanie wypadkowej siły z wszystkich działających sił
 // *************************************************************************************************
 // TBD, TODO: move some of the calculations out of the method, they're relevant to more than just force calculations
-void TMoverParameters::ComputeTotalForce(double dt)
+void TMoverParameters::ComputeTotalForce(const double dt)
 {
 
 	Vel = std::abs(V) * 3.6; // prędkość w km/h
@@ -5136,7 +5136,7 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	FTotal = FTrain - Sign(V) * FStand;
 }
 
-double TMoverParameters::BrakeForceR(double ratio, double velocity)
+double TMoverParameters::BrakeForceR(double ratio, const double velocity)
 {
 	double press = 0;
 	if (MBPM > 2)
@@ -5165,7 +5165,7 @@ double TMoverParameters::BrakeForceR(double ratio, double velocity)
 	return BrakeForceP(press * ratio, velocity);
 }
 
-double TMoverParameters::BrakeForceP(double press, double velocity)
+double TMoverParameters::BrakeForceP(const double press, const double velocity)
 {
 	double BFP = 0;
 	double K = ((press * P2FTrans - BrakeCylSpring) * BrakeCylMult[0] - BrakeSlckAdj) * BrakeRigEff;
@@ -5264,7 +5264,7 @@ double TMoverParameters::FrictionForce() const
 // Q: 20160713
 // Oblicza przyczepność
 // *************************************************************************************************
-double TMoverParameters::Adhesive(double staticfriction) const
+double TMoverParameters::Adhesive(const double staticfriction) const
 {
 	double adhesion = 0.0;
 	constexpr double adh_factor = 0.25; // współczynnik określający, jak bardzo spada tarcie przy poślizgu
@@ -5319,7 +5319,7 @@ double TMoverParameters::Adhesive(double staticfriction) const
 // Q: 20160713
 // Obliczanie sił dzialających na sprzęgach
 // *************************************************************************************************
-double TMoverParameters::CouplerForce(int const End, double dt)
+double TMoverParameters::CouplerForce(int const End, const double dt)
 {
 
 	auto &coupler{Couplers[End]};
@@ -5477,7 +5477,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 // Q: 20160714
 // oblicza sile trakcyjna lokomotywy (dla elektrowozu tez calkowity prad)
 // *************************************************************************************************
-double TMoverParameters::TractionForce(double dt)
+double TMoverParameters::TractionForce(const double dt)
 {
 	double PosRatio, dmoment, dtrans, tmp;
 
@@ -6568,7 +6568,7 @@ double TMoverParameters::TractionForce(double dt)
 // Q: 20160713
 // Obliczenie predkości obrotowej kół???
 // *************************************************************************************************
-double TMoverParameters::ComputeRotatingWheel(double WForce, double dt, double n) const
+double TMoverParameters::ComputeRotatingWheel(const double WForce, const double dt, const double n) const
 {
 	double newn = 0, eps = 0;
 	if (n == 0 && WForce * Sign(V) < 0)
@@ -6742,7 +6742,7 @@ double TMoverParameters::v2n(void)
 // Q: 20160714
 // Oblicza moment siły wytwarzany przez silnik
 // *************************************************************************************************
-double TMoverParameters::Momentum(double I)
+double TMoverParameters::Momentum(const double I)
 {
 	// liczy moment sily wytwarzany przez silnik elektryczny}
 	int SP;
@@ -6760,7 +6760,7 @@ double TMoverParameters::Momentum(double I)
 // Q: 20160714
 // Oblicza moment siły do sterowania wzbudzeniem
 // *************************************************************************************************
-double TMoverParameters::MomentumF(double I, double Iw, int SCP)
+double TMoverParameters::MomentumF(const double I, const double Iw, const int SCP)
 {
 	// umozliwia dokladne sterowanie wzbudzeniem
 
@@ -6789,7 +6789,7 @@ bool TMoverParameters::CutOffEngine(void)
 // Q: 20160713
 // Przełączenie wysoki / niski prąd rozruchu
 // *************************************************************************************************
-bool TMoverParameters::MaxCurrentSwitch(bool State, range_t const Notify)
+bool TMoverParameters::MaxCurrentSwitch(const bool State, range_t const Notify)
 {
 	auto const initialstate{MotorOverloadRelayHighThreshold};
 
@@ -6807,7 +6807,7 @@ bool TMoverParameters::MaxCurrentSwitch(bool State, range_t const Notify)
 // Q: 20160713
 // Przełączenie wysoki / niski prąd rozruchu automatycznego
 // *************************************************************************************************
-bool TMoverParameters::MinCurrentSwitch(bool State)
+bool TMoverParameters::MinCurrentSwitch(const bool State)
 {
 	bool MCS = false;
 	if ((EngineType == TEngineType::ElectricSeriesMotor && IminHi > IminLo) || (TrainType == dt_EZT && EngineType != TEngineType::ElectricInductionMotor))
@@ -6855,7 +6855,7 @@ bool TMoverParameters::ResistorsFlagCheck(void) const
 // Q: 20160713
 // Włączenie / wyłączenie automatycznego rozruchu
 // *************************************************************************************************
-bool TMoverParameters::AutoRelaySwitch(bool State)
+bool TMoverParameters::AutoRelaySwitch(const bool State)
 {
 	bool ARS;
 	if (AutoRelayType == 2 && AutoRelayFlag != State)
@@ -7323,7 +7323,7 @@ bool TMoverParameters::DropAllPantographs(bool const State, range_t const Notify
 	return State != initialstate;
 }
 
-void TMoverParameters::CheckEIMIC(double dt)
+void TMoverParameters::CheckEIMIC(const double dt)
 {
 	const double offset = EIMCtrlAdditionalZeros ? 1.0 : 0.0;
 	const double multiplier = (EIMCtrlEmergency ? 1.0 : 0.0) + offset;
@@ -7511,7 +7511,7 @@ void TMoverParameters::CheckEIMIC(double dt)
 	eimic = std::clamp(eimic, -1.0, eimicpowerenabled ? eimic_max : 0.0);
 }
 
-void TMoverParameters::CheckSpeedCtrl(double dt)
+void TMoverParameters::CheckSpeedCtrl(const double dt)
 {
 	if (EIMCtrlType == 0)
 	{
@@ -7613,7 +7613,7 @@ void TMoverParameters::CheckSpeedCtrl(double dt)
 	}
 }
 
-void TMoverParameters::SpeedCtrlButton(int button)
+void TMoverParameters::SpeedCtrlButton(const int button)
 {
 	if (SpeedCtrl && ScndCtrlPos > 0)
 	{
@@ -7667,7 +7667,7 @@ bool TMoverParameters::SpeedCtrlPowerDec()
 // Q: 20160715
 // Zmienia parametr do którego dąży sprzęgło
 // *************************************************************************************************
-bool TMoverParameters::dizel_EngageSwitch(double state)
+bool TMoverParameters::dizel_EngageSwitch(const double state)
 {
 	if (EngineType == TEngineType::DieselEngine && state <= 1 && state >= 0 && state != dizel_engagestate)
 	{
@@ -7871,7 +7871,7 @@ bool TMoverParameters::dizel_StartupCheck()
 // Q: 20160715
 // Aktualizacja stanu silnika
 // *************************************************************************************************
-bool TMoverParameters::dizel_Update(double dt)
+bool TMoverParameters::dizel_Update(const double dt)
 {
 
 	WaterPumpCheck(dt);
@@ -7925,7 +7925,7 @@ bool TMoverParameters::dizel_Update(double dt)
 // Q: 20160715
 // oblicza napelnienie, uzwglednia regulator obrotow
 // *************************************************************************************************
-double TMoverParameters::dizel_fillcheck(int mcp, double dt)
+double TMoverParameters::dizel_fillcheck(const int mcp, const double dt)
 {
 	auto realfill{0.0};
 
@@ -8027,7 +8027,7 @@ double TMoverParameters::dizel_fillcheck(int mcp, double dt)
 // Q: 20160715
 // Oblicza moment siły wytwarzany przez silnik spalinowy
 // *************************************************************************************************
-double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
+double TMoverParameters::dizel_Momentum(const double dizel_fill, double n, const double dt)
 { // liczy moment sily wytwarzany przez silnik spalinowy}
 	double Moment = 0, enMoment = 0, gearMoment = 0, eps = 0, newn = 0, friction = 0, neps = 0;
 	double TorqueH = 0, TorqueL = 0, TorqueC = 0;
@@ -8200,7 +8200,7 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 	return gearMoment;
 }
 
-double TMoverParameters::dizel_MomentumRetarder(double n, double dt)
+double TMoverParameters::dizel_MomentumRetarder(double n, const double dt)
 {
 	double RetarderRequest = Mains ? std::max(0.0, -eimic_real) : 0;
 	if (hydro_R_WithIndividual)
@@ -8876,7 +8876,7 @@ void TMoverParameters::update_doors(double const Deltatime)
 // Q: 20160713
 // Przesuwa pojazd o podaną wartość w bok względem toru (dla samochodów)
 // *************************************************************************************************
-bool TMoverParameters::ChangeOffsetH(double DeltaOffset)
+bool TMoverParameters::ChangeOffsetH(const double DeltaOffset)
 {
 	bool COH = false;
 	if (TestFlag(CategoryFlag, 2) && TestFlag(RunningTrack.CategoryFlag, 2))
@@ -8898,7 +8898,7 @@ bool TMoverParameters::ChangeOffsetH(double DeltaOffset)
 // Q: 20160713
 // Testuje zmienną (narazie tylko 0) i na podstawie uszkodzenia zwraca informację tekstową
 // *************************************************************************************************
-std::string TMoverParameters::EngineDescription(int what) const
+std::string TMoverParameters::EngineDescription(const int what) const
 {
 	std::string outstr{"OK"};
 	switch (what)
@@ -11709,7 +11709,7 @@ TEngineType TMoverParameters::LoadFIZ_EngineDecode(std::string const &Engine)
 // Q: 20160717
 // *************************************************************************************************
 
-bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int Dir)
+bool TMoverParameters::CheckLocomotiveParameters(const bool ReadyFlag, int Dir)
 {
 	WriteLog("check locomotive parameters...");
 	int b;
@@ -12097,7 +12097,7 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int Dir)
 // Q: 20160714
 // Wstawia komendę z parametrem, od sprzęgu i w lokalizacji do pojazdu
 // *************************************************************************************************
-void TMoverParameters::PutCommand(std::string NewCommand, double NewValue1, double NewValue2, const TLocation &NewLocation)
+void TMoverParameters::PutCommand(std::string NewCommand, const double NewValue1, const double NewValue2, const TLocation &NewLocation)
 {
 	CommandLast = NewCommand; // zapamiętanie komendy
 
@@ -12122,7 +12122,7 @@ double TMoverParameters::GetExternalCommand(std::string &Command)
 // Q: 20160714
 // Ustawienie komendy wraz z parametrami
 // *************************************************************************************************
-bool TMoverParameters::SetInternalCommand(std::string NewCommand, double NewValue1, double NewValue2, int const Couplertype)
+bool TMoverParameters::SetInternalCommand(std::string NewCommand, const double NewValue1, const double NewValue2, int const Couplertype)
 {
 	bool SIC;
 	if (CommandIn.Command == NewCommand && CommandIn.Value1 == NewValue1 && CommandIn.Value2 == NewValue2 && CommandIn.Coupling == Couplertype)
@@ -12187,7 +12187,7 @@ bool TMoverParameters::SendCtrlToNext(std::string const CtrlCommand, double cons
 // Komenda musi być zdefiniowana tutaj, a jeśli się wywołuje funkcję, to ona nie może
 // sama przesyłać do kolejnych pojazdów. Należy też się zastanowić, czy dla uzyskania
 // jakiejś zmiany (np. IncMainCtrl) lepiej wywołać funkcję, czy od razu wysłać komendę.
-bool TMoverParameters::RunCommand(std::string Command, double CValue1, double CValue2, int const Couplertype)
+bool TMoverParameters::RunCommand(std::string Command, const double CValue1, const double CValue2, int const Couplertype)
 {
 	bool OK{false};
 
@@ -12753,7 +12753,7 @@ bool TMoverParameters::RunInternalCommand()
 // Q: 20160714
 // Zwraca wartość natężenia prądu na wybranym amperomierzu. Podfunkcja do ShowCurrent.
 // *************************************************************************************************
-double TMoverParameters::ShowCurrentP(int AmpN) const
+double TMoverParameters::ShowCurrentP(const int AmpN) const
 {
 	int b, Bn;
 	bool Grupowy;

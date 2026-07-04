@@ -84,7 +84,7 @@ bool editor_terrain::create(glm::dvec3 const &Center, int Cells, float CellSize,
 	return true;
 }
 
-glm::dvec3 editor_terrain::vertex_position(int Ix, int Iz) const
+glm::dvec3 editor_terrain::vertex_position(const int Ix, const int Iz) const
 {
 	return glm::dvec3(
 	    m_x0 + static_cast<double>(Ix) * m_cellsize,
@@ -105,7 +105,7 @@ glm::vec3 editor_terrain::vertex_normal(int Ix, int Iz) const
 	return glm::normalize(n);
 }
 
-world_vertex editor_terrain::make_vertex(int Ix, int Iz) const
+world_vertex editor_terrain::make_vertex(const int Ix, const int Iz) const
 {
 	world_vertex v;
 	v.position = vertex_position(Ix, Iz);
@@ -115,7 +115,7 @@ world_vertex editor_terrain::make_vertex(int Ix, int Iz) const
 }
 
 // emits one quad (two upward-facing triangles) spanning grid corners (X0,Z0)..(X1,Z1)
-void editor_terrain::emit_quad(int X0, int Z0, int X1, int Z1, std::vector<world_vertex> &Out) const
+void editor_terrain::emit_quad(const int X0, const int Z0, const int X1, const int Z1, std::vector<world_vertex> &Out) const
 {
 	world_vertex const v00 = make_vertex(X0, Z0);
 	world_vertex const v10 = make_vertex(X1, Z0);
@@ -132,7 +132,7 @@ void editor_terrain::emit_quad(int X0, int Z0, int X1, int Z1, std::vector<world
 }
 
 // true if every grid vertex inside the block stays within Error of the bilinear plane of its corners
-bool editor_terrain::block_flat(int X0, int Z0, int X1, int Z1, float Error) const
+bool editor_terrain::block_flat(const int X0, const int Z0, const int X1, const int Z1, const float Error) const
 {
 	float const h00 = m_heights[index(X0, Z0)];
 	float const h10 = m_heights[index(X1, Z0)];
@@ -155,7 +155,7 @@ bool editor_terrain::block_flat(int X0, int Z0, int X1, int Z1, float Error) con
 }
 
 // adaptive quadtree: collapse flat blocks into a single quad, otherwise split into four
-void editor_terrain::emit_block(int X0, int Z0, int X1, int Z1, float Error, std::vector<world_vertex> &Out) const
+void editor_terrain::emit_block(const int X0, const int Z0, const int X1, const int Z1, const float Error, std::vector<world_vertex> &Out) const
 {
 	bool const splitx = (X1 - X0) > 1;
 	bool const splitz = (Z1 - Z0) > 1;
@@ -178,7 +178,7 @@ void editor_terrain::emit_block(int X0, int Z0, int X1, int Z1, float Error, std
 		emit_block(xm, zm, X1, Z1, Error, Out);
 }
 
-void editor_terrain::build_vertices(std::vector<world_vertex> &Out, bool Simplify) const
+void editor_terrain::build_vertices(std::vector<world_vertex> &Out, const bool Simplify) const
 {
 	Out.clear();
 	Out.reserve(static_cast<std::size_t>(m_cells) * m_cells * 6);
@@ -194,7 +194,7 @@ void editor_terrain::build_vertices(std::vector<world_vertex> &Out, bool Simplif
 			emit_quad(ix, iz, ix + 1, iz + 1, Out);
 }
 
-void editor_terrain::regenerate(bool Simplify)
+void editor_terrain::regenerate(const bool Simplify)
 {
 	if (!valid())
 		return;
@@ -233,7 +233,7 @@ void editor_terrain::regenerate(bool Simplify)
 	m_vertexcount = gpuverts.size();
 }
 
-void editor_terrain::optimize(float ErrorMetres)
+void editor_terrain::optimize(const float ErrorMetres)
 {
 	m_simplify = true;
 	m_simplify_error = (ErrorMetres > 0.0f ? ErrorMetres : 0.01f);
@@ -269,14 +269,14 @@ void editor_terrain::destroy()
 	m_heights.clear();
 }
 
-bool editor_terrain::contains(double X, double Z) const
+bool editor_terrain::contains(const double X, const double Z) const
 {
 	double const x1 = m_x0 + static_cast<double>(m_cells) * m_cellsize;
 	double const z1 = m_z0 + static_cast<double>(m_cells) * m_cellsize;
 	return (X >= m_x0 && X <= x1 && Z >= m_z0 && Z <= z1);
 }
 
-double editor_terrain::height_at(double X, double Z) const
+double editor_terrain::height_at(const double X, const double Z) const
 {
 	double const fx = (X - m_x0) / m_cellsize;
 	double const fz = (Z - m_z0) / m_cellsize;
@@ -298,7 +298,7 @@ double editor_terrain::height_at(double X, double Z) const
 	return h11 + (1.0 - tx) * (h01 - h11) + (1.0 - tz) * (h10 - h11);
 }
 
-bool editor_terrain::sculpt(double X, double Z, double Radius, double Strength)
+bool editor_terrain::sculpt(const double X, const double Z, const double Radius, const double Strength)
 {
 	if (!valid() || Radius <= 0.0)
 		return false;

@@ -381,7 +381,7 @@ brush_object_list::brush_object_list(std::string const &Name, bool const Isopen)
 	size_max = {1000, 500};
 }
 
-bool brush_object_list::VectorGetter(void *data, int idx, const char **out_text)
+bool brush_object_list::VectorGetter(void *data, const int idx, const char **out_text)
 {
 	const auto *vec = static_cast<std::vector<std::string> *>(data);
 

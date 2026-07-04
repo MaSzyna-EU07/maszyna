@@ -181,7 +181,7 @@ namespace ImGuizmo
       SCALE = SCALE_X | SCALE_Y | SCALE_Z
    };
 
-   inline OPERATION operator|(OPERATION lhs, OPERATION rhs)
+   inline OPERATION operator|(const OPERATION lhs, const OPERATION rhs)
    {
      return static_cast<OPERATION>(static_cast<int>(lhs) | static_cast<int>(rhs));
    }

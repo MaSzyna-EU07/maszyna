@@ -16,7 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "rendering/renderer.h"
 
-void TButton::Clear(int i)
+void TButton::Clear(const int i)
 {
     *this = TButton();
     if( i >= 0 ) {
@@ -25,7 +25,7 @@ void TButton::Clear(int i)
     Update(); // kasowanie bitu Feedback, o ile jakiś ustawiony
 };
 
-bool TButton::Init( std::string const &asName, TModel3d const *pModel, bool bNewOn ) {
+bool TButton::Init( std::string const &asName, TModel3d const *pModel, const bool bNewOn ) {
 
     if( pModel == nullptr ) { return false; }
 
@@ -157,7 +157,7 @@ TButton::play() {
 }
 
 void
-TButton::gain(float new_volume) {
+TButton::gain(const float new_volume) {
 	m_soundfxincrease.gain(new_volume);
 	m_soundfxdecrease.gain(new_volume);
 }

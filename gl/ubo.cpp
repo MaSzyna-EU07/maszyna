@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "ubo.h"
 
-gl::ubo::ubo(size_t size, int idx, GLenum hint)
+gl::ubo::ubo(const size_t size, const int idx, const GLenum hint)
 {
     allocate(UNIFORM_BUFFER, size, hint);
     index = idx;
@@ -13,7 +13,7 @@ void gl::ubo::bind_uniform()
     bind_base(UNIFORM_BUFFER, index);
 }
 
-void gl::ubo::update(const uint8_t *data, int offset, GLsizeiptr size)
+void gl::ubo::update(const uint8_t *data, const int offset, const GLsizeiptr size)
 {
     upload(UNIFORM_BUFFER, data, offset, size);
 }

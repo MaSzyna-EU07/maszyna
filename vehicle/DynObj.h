@@ -621,7 +621,7 @@ private:
 	TDynamicObject * PrevAny() const;
 	TDynamicObject * Prev(int C = -1) const;
 	TDynamicObject * Next(int C = -1) const;
-    void SetdMoveLen(double dMoveLen) {
+    void SetdMoveLen(const double dMoveLen) {
         MoverParameters->dMoveLen = dMoveLen; }
     void ResetdMoveLen() {
         MoverParameters->dMoveLen = 0; }

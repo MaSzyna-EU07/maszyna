@@ -14,7 +14,7 @@ ui::scenerylist_panel::scenerylist_panel(scenery_scanner &scanner)
 {
 }
 
-bool ui::scenerylist_panel::on_key(int key, int action)
+bool ui::scenerylist_panel::on_key(const int key, int action)
 {
 	if (!is_open)
 		return false;
@@ -332,7 +332,7 @@ void ui::scenerylist_panel::draw_trainset(trainset_desc &trainset)
 	ImGui::PopID();
 }
 
-void ui::scenerylist_panel::draw_droptarget(trainset_desc &trainset, int position)
+void ui::scenerylist_panel::draw_droptarget(trainset_desc &trainset, const int position)
 {
 	ImGui::Dummy(ImVec2(15, 30));
 	if (ImGui::BeginDragDropTarget()) {

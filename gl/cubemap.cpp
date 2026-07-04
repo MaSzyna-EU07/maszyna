@@ -15,7 +15,7 @@ gl::cubemap::~cubemap()
     glDeleteTextures(1, *this);
 }
 
-void gl::cubemap::alloc(GLint format, int width, int height, GLenum components, GLenum type)
+void gl::cubemap::alloc(const GLint format, const int width, const int height, const GLenum components, const GLenum type)
 {
 	glBindTexture(GL_TEXTURE_CUBE_MAP, *this);
 	for (GLuint tgt = GL_TEXTURE_CUBE_MAP_POSITIVE_X; tgt <= GL_TEXTURE_CUBE_MAP_NEGATIVE_Z; tgt++)
@@ -29,7 +29,7 @@ void gl::cubemap::alloc(GLint format, int width, int height, GLenum components, 
 	glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
 }
 
-void gl::cubemap::bind(int unit)
+void gl::cubemap::bind(const int unit)
 {
     glActiveTexture(unit);
     glBindTexture(GL_TEXTURE_CUBE_MAP, *this);

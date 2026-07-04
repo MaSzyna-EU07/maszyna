@@ -309,7 +309,7 @@ public:
     TTrack * RaAnimate();
 
     void RadioStop();
-    void AxleCounter(int i, TDynamicObject *o) {
+    void AxleCounter(const int i, TDynamicObject *o) {
         for (TIsolated *iso : Isolated)
             iso->Modify(i, o); }; // dodanie lub odjęcie osi
     std::string RemoteIsolatedName();

@@ -23,7 +23,7 @@ typedef void(__stdcall *OutPortType)(USHORT BasePort, USHORT value);
 InPortType InPort;
 OutPortType OutPort;
 
-bool TLPT::Connect(int port)
+bool TLPT::Connect(const int port)
 {
 	WriteLog("lpt: trying to connect lpt, port " + std::to_string(port));
 
@@ -57,7 +57,7 @@ bool TLPT::Connect(int port)
     return OutPort != 0;
 };
 
-void TLPT::Out(int x)
+void TLPT::Out(const int x)
 { // wysłanie bajtu do portu
     OutPort(address, x);
 };

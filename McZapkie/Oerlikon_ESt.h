@@ -205,7 +205,7 @@ class TNESt3 : public TBrake {
     double LBP = 0.0; // cisnienie hamulca pomocniczego
 
   public:
-	TNESt3(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) :
+	TNESt3(const double i_mbp, const double i_bcr, const double i_bcd, const double i_brc, const int i_bcn, const int i_BD, const int i_mat, const int i_ba, const int i_nbpa) :
            TBrake(       i_mbp,        i_bcr,        i_bcd,        i_brc,     i_bcn,     i_BD,     i_mat,     i_ba,     i_nbpa)
 	{}
     void Init( double PP, double HPP, double LPP, double BP, int BDF ) /*override*/;

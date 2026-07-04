@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "pbo.h"
 
-void gl::pbo::request_read(int x, int y, int lx, int ly, int pixsize, GLenum format, GLenum type)
+void gl::pbo::request_read(const int x, const int y, const int lx, const int ly, const int pixsize, const GLenum format, const GLenum type)
 {
 	const int s = lx * ly * pixsize;
     if (s != size)
@@ -18,7 +18,7 @@ void gl::pbo::request_read(int x, int y, int lx, int ly, int pixsize, GLenum for
     sync.emplace();
 }
 
-bool gl::pbo::read_data(int lx, int ly, void *data, int pixsize)
+bool gl::pbo::read_data(const int lx, const int ly, void *data, const int pixsize)
 {
     is_busy();
 
@@ -51,13 +51,13 @@ bool gl::pbo::is_busy()
     return true;
 }
 
-void* gl::pbo::map(GLuint mode, targets target)
+void* gl::pbo::map(const GLuint mode, const targets target)
 {
 	bind(target);
 	return glMapBuffer(glenum_target(target), mode);
 }
 
-void gl::pbo::unmap(targets target)
+void gl::pbo::unmap(const targets target)
 {
 	bind(target);
 	glUnmapBuffer(glenum_target(target));

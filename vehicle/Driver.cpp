@@ -366,7 +366,7 @@ std::string TSpeedPos::TableText() const
     return "Empty";
 }
 
-bool TSpeedPos::IsProperSemaphor(TOrders order)
+bool TSpeedPos::IsProperSemaphor(const TOrders order)
 { // sprawdzenie czy semafor jest zgodny z trybem jazdy
 	if (order < Obey_train) // Wait_for_orders, Prepare_engine, Change_direction, Connect, Disconnect, Shunt
     {
@@ -383,7 +383,7 @@ bool TSpeedPos::IsProperSemaphor(TOrders order)
 	return false; // true gdy zatrzymanie, wtedy nie ma po co skanować dalej
 }
 
-bool TSpeedPos::Set(basic_event *event, double dist, double length, TOrders order)
+bool TSpeedPos::Set(basic_event *event, const double dist, const double length, const TOrders order)
 { // zapamiętanie zdarzenia
     fDist = dist;
     iFlags = spEvent;
@@ -414,7 +414,7 @@ bool TSpeedPos::Set(basic_event *event, double dist, double length, TOrders orde
     return false; // true gdy zatrzymanie, wtedy nie ma po co skanować dalej
 };
 
-void TSpeedPos::Set(TTrack *track, double dist, int flag)
+void TSpeedPos::Set(TTrack *track, const double dist, const int flag)
 { // zapamiętanie zmiany prędkości w torze
     fDist = dist; // odległość do początku toru
     trTrack = track; // TODO: (t) może być NULL i nie odczytamy końca poprzedniego :/
@@ -768,7 +768,7 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
     }
 };
 
-void TController::TableCheck(double fDistance)
+void TController::TableCheck(const double fDistance)
 { // przeliczenie odległości w tabelce, ewentualnie doskanowanie (bez analizy prędkości itp.)
     if( iTableDirection != iDirection ) {
         // jak zmiana kierunku, to skanujemy od końca składu
@@ -1818,7 +1818,7 @@ void TController::TableSort() {
 
 //---------------------------------------------------------------------------
 
-TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, bool Primary) :// czy ma aktywnie prowadzić?
+TController::TController(const bool AI, TDynamicObject *NewControll, bool InitPsyche, const bool Primary) :// czy ma aktywnie prowadzić?
               AIControllFlag( AI ),     pVehicle( NewControll )
 {
     if( pVehicle != nullptr ) {
@@ -1918,7 +1918,7 @@ TController::~TController()
 };
 
 // zamiana kodu rozkazu na opis
-std::string TController::Order2Str(TOrders Order)
+std::string TController::Order2Str(const TOrders Order)
 {
 
     if( (Order & Change_direction) != 0
@@ -2292,7 +2292,7 @@ void TController::AutoRewident()
 
 }
 
-double TController::ESMVelocity(bool Main)
+double TController::ESMVelocity(const bool Main)
 {
 	constexpr double fCurrentCoeff = 0.9;
 	constexpr double fFrictionCoeff = 0.85;
@@ -2342,7 +2342,7 @@ int TController::CheckDirection() {
     return d;
 }
 
-bool TController::CheckVehicles(TOrders user)
+bool TController::CheckVehicles(const TOrders user)
 { // sprawdzenie stanu posiadanych pojazdów w składzie i zapalenie świateł
     TDynamicObject *p; // roboczy wskaźnik na pojazd
     iVehicles = 0; // ilość pojazdów w składzie
@@ -2554,7 +2554,7 @@ bool TController::CheckVehicles(TOrders user)
     return true;
 }
 
-void TController::Lights(int head, int rear)
+void TController::Lights(const int head, const int rear)
 { // zapalenie świateł w skłądzie
     pVehicles[ front ]->RaLightsSet(head, -1); // zapalenie przednich w pierwszym
     pVehicles[ end::rear ]->RaLightsSet(-1, rear); // zapalenie końcówek w ostatnim
@@ -2603,7 +2603,7 @@ TBrakeSystem TController::consist_brake_system() const {
     return isepcapable ? TBrakeSystem::ElectroPneumatic : TBrakeSystem::Pneumatic;
 }
 
-int TController::OrderDirectionChange(int newdir, TMoverParameters *Vehicle)
+int TController::OrderDirectionChange(const int newdir, TMoverParameters *Vehicle)
 { // zmiana kierunku jazdy, niezależnie od kabiny
 	const int testd = newdir;
     if (Vehicle->Vel < 0.5)
@@ -2633,12 +2633,12 @@ int TController::OrderDirectionChange(int newdir, TMoverParameters *Vehicle)
     return (int)VelforDriver; // zwraca prędkość mechanika
 }
 
-void TController::WaitingSet(double Seconds)
+void TController::WaitingSet(const double Seconds)
 { // ustawienie odczekania po zatrzymaniu (ustawienie w trakcie jazdy zatrzyma)
     fStopTime = -Seconds; // ujemna wartość oznacza oczekiwanie (potem >=0.0)
 }
 
-void TController::SetVelocity(double NewVel, double NewVelNext, TStopReason r)
+void TController::SetVelocity(const double NewVel, const double NewVelNext, const TStopReason r)
 { // ustawienie nowej prędkości
     WaitingTime = -WaitingExpireTime; // przypisujemy -WaitingExpireTime, a potem porównujemy z zerem
     if (NewVel == 0.0) { // jeśli ma stanąć
@@ -3613,7 +3613,7 @@ void TController::ZeroSpeed( bool const Enforce ) {
     }
 }
 
-bool TController::DecSpeed(bool force)
+bool TController::DecSpeed(const bool force)
 { // zmniejszenie prędkości (ale nie hamowanie)
     bool OK = false; // domyślnie false, aby wyszło z pętli while
     switch (mvOccupied->EngineType)
@@ -3751,7 +3751,7 @@ bool TController::DecSpeedEIM( int const Amount )
 	return OK;
 }
 
-void TController::BrakeLevelSet(double b)
+void TController::BrakeLevelSet(const double b)
 { // ustawienie pozycji hamulca na wartość (b) w zakresie od -2 do BrakeCtrlPosNo
   // jedyny dopuszczalny sposób przestawienia hamulca zasadniczego
 	if (BrakeCtrlPosition == b)
@@ -3759,7 +3759,7 @@ void TController::BrakeLevelSet(double b)
 	BrakeCtrlPosition = std::clamp(b, (double)gbh_MIN, (double)gbh_MAX);
 }
 
-bool TController::BrakeLevelAdd(double b)
+bool TController::BrakeLevelAdd(const double b)
 { // dodanie wartości (b) do pozycji hamulca (w tym ujemnej)
   // zwraca false, gdy po dodaniu było by poza zakresem
 	BrakeLevelSet(BrakeCtrlPosition + b);
@@ -5102,7 +5102,7 @@ void TController::OrderCheck()
         OrdersClear(); // czyszczenie rozkazów i przeskok do zerowej pozycji
 }
 
-void TController::OrderNext(TOrders NewOrder)
+void TController::OrderNext(const TOrders NewOrder)
 { // ustawienie rozkazu do wykonania jako następny
     if (OrderList[OrderPos] == NewOrder)
         return; // jeśli robi to, co trzeba, to koniec
@@ -5127,7 +5127,7 @@ void TController::OrderNext(TOrders NewOrder)
 #endif
 }
 
-void TController::OrderPush(TOrders NewOrder)
+void TController::OrderPush(const TOrders NewOrder)
 { // zapisanie na stosie kolejnego rozkazu do wykonania
     if (OrderPos == OrderTop) // jeśli miałby być zapis na aktalnej pozycji
         if (OrderList[OrderPos] < Shunt) // ale nie jedzie
@@ -5155,7 +5155,7 @@ void TController::OrdersDump( std::string const Neworder, bool const Verbose )
     }
 };
 
-void TController::OrdersInit(double fVel)
+void TController::OrdersInit(const double fVel)
 { // wypełnianie tabelki rozkazów na podstawie rozkładu
     // ustawienie kolejności komend, niezależnie kto prowadzi
     OrdersClear(); // usunięcie poprzedniej tabeli
@@ -5378,7 +5378,7 @@ TTrack * TController::BackwardTraceRoute(double &fDistance, double &fDirection, 
 }
 
 // sprawdzanie zdarzeń semaforów i ograniczeń szlakowych
-void TController::SetProximityVelocity( double dist, double vel, glm::dvec3 const *pos )
+void TController::SetProximityVelocity(const double dist, const double vel, glm::dvec3 const *pos )
 { // Ra:przeslanie do AI prędkości
     /*
      //!!!! zastąpić prawidłową reakcją AI na SetProximityVelocity !!!!
@@ -5669,7 +5669,7 @@ void TController::TakeControl( bool const Aidriver, bool const Forcevehiclecheck
     }
 };
 
-void TController::DirectionForward(bool forward)
+void TController::DirectionForward(const bool forward)
 { // ustawienie jazdy do przodu dla true i do tyłu dla false (zależy od kabiny)
     ZeroSpeed( true ); // TODO: check if force switch is needed anymore here
     // HACK: make sure the master controller isn't set in position which prevents direction change
@@ -5882,7 +5882,7 @@ std::string TController::OwnerName() const
 };
 
 void
-TController::update_timers( double dt ) {
+TController::update_timers(const double dt ) {
 
     ElapsedTime += dt;
     WaitingTime += dt;

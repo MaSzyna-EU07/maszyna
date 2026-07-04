@@ -375,7 +375,7 @@ opengl_texture::make_stub()
 }
 
 void
-opengl_texture::make_from_memory(size_t width, size_t height, const uint8_t *raw)
+opengl_texture::make_from_memory(const size_t width, const size_t height, const uint8_t *raw)
 {
     release();
 
@@ -392,7 +392,7 @@ opengl_texture::make_from_memory(size_t width, size_t height, const uint8_t *raw
     is_texstub = false;
 }
 
-void opengl_texture::update_from_memory(size_t width, size_t height, const uint8_t *raw)
+void opengl_texture::update_from_memory(const size_t width, const size_t height, const uint8_t *raw)
 {
 	if (id != -1 && (width != data_width || height != data_height || GL_SRGB8_ALPHA8 != data_format || GL_RGBA != data_components))
 	{
@@ -878,7 +878,7 @@ opengl_texture::load_TGA() {
 }
 
 bool
-opengl_texture::bind(size_t unit) {
+opengl_texture::bind(const size_t unit) {
 
     if( false == is_ready
      && false == create() ) {
@@ -906,7 +906,7 @@ opengl_texture::bind(size_t unit) {
 }
 
 void
-opengl_texture::unbind(size_t unit)
+opengl_texture::unbind(const size_t unit)
 {
     if (GLAD_GL_ARB_direct_state_access)
     {
@@ -1137,7 +1137,7 @@ opengl_texture::release() {
 }
 
 void
-opengl_texture::alloc_rendertarget( GLint format, GLint components, int width, int height, int l, int s, GLint wrap ) {
+opengl_texture::alloc_rendertarget(const GLint format, const GLint components, const int width, const int height, const int l, const int s, const GLint wrap ) {
 
     data_width = width;
     data_height = height;
@@ -1162,7 +1162,7 @@ opengl_texture::alloc_rendertarget( GLint format, GLint components, int width, i
 }
 
 void
-opengl_texture::set_components_hint( GLint hint ) {
+opengl_texture::set_components_hint(const GLint hint ) {
 
     components_hint = hint;
 }
@@ -1267,7 +1267,7 @@ texture_manager::unit( GLint const Textureunit ) {
 
 // ustalenie numeru tekstury, wczytanie jeśli jeszcze takiej nie było
 texture_handle
-texture_manager::create( std::string Filename, bool const Loadnow, GLint Formathint ) {
+texture_manager::create( std::string Filename, bool const Loadnow, const GLint Formathint ) {
 
     if( contains( Filename, '|' ) ) {
         Filename.erase( Filename.find( '|' ) ); // po | może być nazwa kolejnej tekstury

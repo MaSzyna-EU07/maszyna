@@ -230,7 +230,7 @@ std::unordered_map<std::string, zmq_input::output_fields> zmq_input::output_fiel
     { "time_millisecond_of_day", output_fields::time_millisecond_of_day }
 };
 
-zmq::message_t zmq_input::pack_field(output_fields f) {
+zmq::message_t zmq_input::pack_field(const output_fields f) {
     const SYSTEMTIME time = simulation::Time.data();
 
     if (f == output_fields::time_month_of_era)

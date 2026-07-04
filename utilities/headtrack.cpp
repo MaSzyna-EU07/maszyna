@@ -22,7 +22,7 @@ void headtrack::find_joy() {
     joy_id = -1;
 }
 
-float headtrack::get_axis(const float *data, int count, int axis, float mul) {
+float headtrack::get_axis(const float *data, const int count, const int axis, const float mul) {
     if (axis < 0)
         return 0.0f;
     if (axis >= count)

@@ -500,7 +500,7 @@ class TBrake
 	virtual void SetED(double const EDstate) {}; // stan hamulca ED do luzowania
 	/// <summary>Sets the universal-button flags (see TUniversalBrake).</summary>
 	/// <param name="flag">Combined ub_* flags.</param>
-	virtual void SetUniversalFlag(int flag)
+	virtual void SetUniversalFlag(const int flag)
 	{
 		UniversalFlag = flag;
 	} // przycisk uniwersalny
@@ -556,7 +556,7 @@ class TWest : public TBrake
 	void SetLP(double TM, double LM, double TBP); // parametry przystawki wazacej
 
 	/// <summary>Constructs the distributor by forwarding all parameters to TBrake.</summary>
-	TWest(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TBrake(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa) {}
+	TWest(const double i_mbp, const double i_bcr, const double i_bcd, const double i_brc, const int i_bcn, const int i_BD, const int i_mat, const int i_ba, const int i_nbpa) : TBrake(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa) {}
 };
 
 /// <summary>
@@ -614,7 +614,7 @@ class TESt : public TBrake
 	void ForceEmptiness() /*override*/; // wymuszenie bycia pustym
 
 	/// <summary>Constructs the ESt distributor and creates the control reservoir.</summary>
-	TESt(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TBrake(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
+	TESt(const double i_mbp, const double i_bcr, const double i_bcd, const double i_brc, const int i_bcn, const int i_BD, const int i_mat, const int i_ba, const int i_nbpa) : TBrake(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
 	{
 		CntrlRes = std::make_shared<TReservoir>();
 	}
@@ -636,7 +636,7 @@ class TESt3 : public TESt
 	double GetPF(double PP, double dt, double Vel) /*override*/; // przeplyw miedzy komora wstepna i PG
 
 	/// <summary>Constructs the ESt3 distributor.</summary>
-	TESt3(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TESt(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa) {}
+	TESt3(const double i_mbp, const double i_bcr, const double i_bcd, const double i_brc, const int i_bcn, const int i_BD, const int i_mat, const int i_ba, const int i_nbpa) : TESt(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa) {}
 };
 
 /// <summary>
@@ -669,7 +669,7 @@ class TESt3AL2 : public TESt3
 	void SetLP(double TM, double LM, double TBP); // parametry przystawki wazacej
 
 	/// <summary>Constructs the distributor and creates the impulse chamber.</summary>
-	TESt3AL2(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TESt3(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
+	TESt3AL2(const double i_mbp, const double i_bcr, const double i_bcd, const double i_brc, const int i_bcn, const int i_BD, const int i_mat, const int i_ba, const int i_nbpa) : TESt3(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
 	{
 		ImplsRes = std::make_shared<TReservoir>();
 	}
@@ -700,7 +700,7 @@ class TESt4R : public TESt
 	double GetPF(double PP, double dt, double Vel) /*override*/; // przeplyw miedzy komora wstepna i PG
 
 	/// <summary>Constructs the distributor and creates the impulse chamber.</summary>
-	TESt4R(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TESt(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
+	TESt4R(const double i_mbp, const double i_bcr, const double i_bcd, const double i_brc, const int i_bcn, const int i_BD, const int i_mat, const int i_ba, const int i_nbpa) : TESt(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
 	{
 		ImplsRes = std::make_shared<TReservoir>();
 	}
@@ -743,7 +743,7 @@ class TLSt : public TESt4R
 	virtual void SetED(double EDstate); // stan hamulca ED do luzowania
 
 	/// <summary>Constructs the LSt distributor.</summary>
-	TLSt(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TESt4R(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa) {}
+	TLSt(const double i_mbp, const double i_bcr, const double i_bcd, const double i_brc, const int i_bcn, const int i_BD, const int i_mat, const int i_ba, const int i_nbpa) : TESt4R(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa) {}
 };
 
 /// <summary>
@@ -826,7 +826,7 @@ class TEStEP2 : public TLSt
 	void virtual EPCalc(double dt);
 
 	/// <summary>Constructs the EP2 distributor.</summary>
-	TEStEP2(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TLSt(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa) {}
+	TEStEP2(const double i_mbp, const double i_bcr, const double i_bcd, const double i_brc, const int i_bcn, const int i_BD, const int i_mat, const int i_ba, const int i_nbpa) : TLSt(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa) {}
 };
 
 /// <summary>
@@ -845,7 +845,7 @@ class TEStEP1 : public TEStEP2
 	void SetEPS(double nEPS) override; // stan hamulca EP
 
 	/// <summary>Constructs the EP1 distributor.</summary>
-	TEStEP1(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TEStEP2(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
+	TEStEP1(const double i_mbp, const double i_bcr, const double i_bcd, const double i_brc, const int i_bcn, const int i_BD, const int i_mat, const int i_ba, const int i_nbpa) : TEStEP2(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
 	{
 	}
 };
@@ -884,7 +884,7 @@ class TCV1 : public TBrake
 	void ForceEmptiness() /*override*/; // wymuszenie bycia pustym
 
 	/// <summary>Constructs the CV1 distributor and creates the control reservoir.</summary>
-	TCV1(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TBrake(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
+	TCV1(const double i_mbp, const double i_bcr, const double i_bcd, const double i_brc, const int i_bcn, const int i_BD, const int i_mat, const int i_ba, const int i_nbpa) : TBrake(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
 	{
 		CntrlRes = std::make_shared<TReservoir>();
 	}
@@ -931,7 +931,7 @@ class TCV1L_TR : public TCV1
 	double GetHPFlow(double HP, double dt) /*override*/; // przeplyw - 8 bar
 
 	/// <summary>Constructs the CV1-L-TR and creates the impulse chamber.</summary>
-	TCV1L_TR(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TCV1(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
+	TCV1L_TR(const double i_mbp, const double i_bcr, const double i_bcd, const double i_brc, const int i_bcn, const int i_BD, const int i_mat, const int i_ba, const int i_nbpa) : TCV1(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
 	{
 		ImplsRes = std::make_shared<TReservoir>();
 	}
@@ -998,7 +998,7 @@ class TKE : public TBrake
 	void ForceEmptiness() /*override*/; // wymuszenie bycia pustym
 
 	/// <summary>Constructs the KE distributor and creates the control / impulse / secondary reservoirs.</summary>
-	TKE(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TBrake(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
+	TKE(const double i_mbp, const double i_bcr, const double i_bcd, const double i_brc, const int i_bcn, const int i_BD, const int i_mat, const int i_ba, const int i_nbpa) : TBrake(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
 	{
 		ImplsRes = std::make_shared<TReservoir>();
 		CntrlRes = std::make_shared<TReservoir>();

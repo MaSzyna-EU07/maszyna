@@ -20,7 +20,7 @@ double TFricMat::GetFC(double N, double Vel)
     return 1;
 }
 
-double TP10Bg::GetFC(double N, double Vel)
+double TP10Bg::GetFC(const double N, const double Vel)
 {
     //  GetFC:=0.60*((1.6*N+100)/(8.0*N+100))*((Vel+100)/(5*Vel+100))*(1.0032-0.0007*N-0.0001*N*N);
     //  GetFC:=47/(2*Vel+100)*(2.145-0.0538*N+0.00074*N*N-0.00000536*N*N*N)/2.145;
@@ -34,7 +34,7 @@ double TP10Bg::GetFC(double N, double Vel)
             0.384 * exp(-Vel * 1.0 / 25.7) - 0.028;
 }
 
-double TP10Bgu::GetFC(double N, double Vel)
+double TP10Bgu::GetFC(const double N, const double Vel)
 {
     //  GetFC:=0.60*((1.6*N+100)/(8.0*N+100))*((Vel+100)/(5*Vel+100));
     //  GetFC:=47/(2*Vel+100)*(2.137-0.0514*N+0.000832*N*N-0.00000604*N*N*N)/2.137;
@@ -49,7 +49,7 @@ double TP10Bgu::GetFC(double N, double Vel)
             0.381 * exp(-Vel * 1.0 / 25.7) - 0.022; // 0.05*exp(-0.2*N);
 }
 
-double TP10yBg::GetFC(double N, double Vel)
+double TP10yBg::GetFC(const double N, const double Vel)
 {
     double A;
     double C;
@@ -63,7 +63,7 @@ double TP10yBg::GetFC(double N, double Vel)
     return u0 + C * exp(-Vel * 1.0 / V0);
 }
 
-double TP10yBgu::GetFC(double N, double Vel)
+double TP10yBgu::GetFC(const double N, const double Vel)
 {
     double A;
     double C;
@@ -77,14 +77,14 @@ double TP10yBgu::GetFC(double N, double Vel)
     return u0 + C * exp(-Vel * 1.0 / V0);
 }
 
-double TP10::GetFC(double N, double Vel)
+double TP10::GetFC(const double N, const double Vel)
 {
     return
         0.60 * ((1.6 * N + 100) * 1.0 / (8.0 * N + 100)) * ((Vel + 100) * 1.0 / (5 * Vel + 100));
     //  GetFC:=43/(2*Vel+100)*(2.145-0.0538*N+0.00074*N*N-0.00000536*N*N*N)/2.145
 }
 
-double TFR513::GetFC(double N, double Vel)
+double TFR513::GetFC(double N, const double Vel)
 {
     return 0.3 - Vel * 0.00081;
     //  GetFC:=43/(2*Vel+100)*(2.145-0.0538*N+0.00074*N*N-0.00000536*N*N*N)/2.145
@@ -95,7 +95,7 @@ double TCosid::GetFC(double N, double Vel)
     return 0.27;
 }
 
-double TDisk1::GetFC(double N, double Vel)
+double TDisk1::GetFC(const double N, double Vel)
 {
     return 0.2375 + 0.000885 * N - 0.000345 * N * N;
 }

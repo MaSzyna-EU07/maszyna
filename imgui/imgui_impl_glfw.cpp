@@ -79,7 +79,7 @@ static void ImGui_ImplGlfw_SetClipboardText(void* user_data, const char* text)
     glfwSetClipboardString((GLFWwindow*)user_data, text);
 }
 
-void ImGui_ImplGlfw_MouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
+void ImGui_ImplGlfw_MouseButtonCallback(GLFWwindow* window, const int button, const int action, const int mods)
 {
     if (g_PrevUserCallbackMousebutton != NULL)
         g_PrevUserCallbackMousebutton(window, button, action, mods);
@@ -88,7 +88,7 @@ void ImGui_ImplGlfw_MouseButtonCallback(GLFWwindow* window, int button, int acti
         g_MouseJustPressed[button] = true;
 }
 
-void ImGui_ImplGlfw_ScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
+void ImGui_ImplGlfw_ScrollCallback(GLFWwindow* window, const double xoffset, const double yoffset)
 {
     if (g_PrevUserCallbackScroll != NULL)
         g_PrevUserCallbackScroll(window, xoffset, yoffset);
@@ -98,7 +98,7 @@ void ImGui_ImplGlfw_ScrollCallback(GLFWwindow* window, double xoffset, double yo
     io.MouseWheel += (float)yoffset;
 }
 
-void ImGui_ImplGlfw_KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
+void ImGui_ImplGlfw_KeyCallback(GLFWwindow* window, const int key, const int scancode, const int action, const int mods)
 {
     if (g_PrevUserCallbackKey != NULL)
         g_PrevUserCallbackKey(window, key, scancode, action, mods);
@@ -116,7 +116,7 @@ void ImGui_ImplGlfw_KeyCallback(GLFWwindow* window, int key, int scancode, int a
     io.KeySuper = io.KeysDown[GLFW_KEY_LEFT_SUPER] || io.KeysDown[GLFW_KEY_RIGHT_SUPER];
 }
 
-void ImGui_ImplGlfw_CharCallback(GLFWwindow* window, unsigned int c)
+void ImGui_ImplGlfw_CharCallback(GLFWwindow* window, const unsigned int c)
 {
     if (g_PrevUserCallbackChar != NULL)
         g_PrevUserCallbackChar(window, c);
@@ -125,7 +125,7 @@ void ImGui_ImplGlfw_CharCallback(GLFWwindow* window, unsigned int c)
     io.AddInputCharacter(c);
 }
 
-static bool ImGui_ImplGlfw_Init(GLFWwindow* window, bool install_callbacks, GlfwClientApi client_api)
+static bool ImGui_ImplGlfw_Init(GLFWwindow* window, const bool install_callbacks, const GlfwClientApi client_api)
 {
     g_Window = window;
     g_Time = 0.0;
@@ -193,12 +193,12 @@ static bool ImGui_ImplGlfw_Init(GLFWwindow* window, bool install_callbacks, Glfw
     return true;
 }
 
-bool ImGui_ImplGlfw_InitForOpenGL(GLFWwindow* window, bool install_callbacks)
+bool ImGui_ImplGlfw_InitForOpenGL(GLFWwindow* window, const bool install_callbacks)
 {
     return ImGui_ImplGlfw_Init(window, install_callbacks, GlfwClientApi_OpenGL);
 }
 
-bool ImGui_ImplGlfw_InitForVulkan(GLFWwindow* window, bool install_callbacks)
+bool ImGui_ImplGlfw_InitForVulkan(GLFWwindow* window, const bool install_callbacks)
 {
     return ImGui_ImplGlfw_Init(window, install_callbacks, GlfwClientApi_Vulkan);
 }

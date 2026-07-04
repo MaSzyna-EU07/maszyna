@@ -58,7 +58,7 @@ Działanie jest następujące:
 TKeyTrans Console::ktTable[4 * 256];
 
 // Ra: bajer do migania LED-ami w klawiaturze
-void SetLedState( unsigned char Code, bool bOn ) {
+void SetLedState(const unsigned char Code, const bool bOn ) {
 #ifdef _WIN32
     if( bOn != ( GetKeyState( Code ) != 0 ) ) {
         keybd_event( Code, MapVirtualKey( Code, 0 ), KEYEVENTF_EXTENDEDKEY | 0, 0 );
@@ -92,7 +92,7 @@ Console::~Console()
     Off();
 };
 
-void Console::ModeSet(int m, int h)
+void Console::ModeSet(const int m, const int h)
 { // ustawienie trybu pracy
     iMode = m;
     iConfig = h;
@@ -154,7 +154,7 @@ void Console::Off()
     SafeDelete( LPT );
 };
 
-void Console::BitsSet(int mask, int entry)
+void Console::BitsSet(const int mask, int entry)
 { // ustawienie bitów o podanej masce (mask) na wejściu (entry)
     if ((iBits & mask) != mask) // jeżeli zmiana
     {
@@ -167,7 +167,7 @@ void Console::BitsSet(int mask, int entry)
     }
 };
 
-void Console::BitsClear(int mask, int entry)
+void Console::BitsClear(const int mask, int entry)
 { // zerowanie bitów o podanej masce (mask) na wejściu (entry)
     if (iBits & mask) // jeżeli zmiana
     {
@@ -177,7 +177,7 @@ void Console::BitsClear(int mask, int entry)
     }
 };
 
-void Console::BitsUpdate(int mask)
+void Console::BitsUpdate(const int mask)
 { // aktualizacja stanu interfejsu informacji zwrotnej; (mask) - zakres zmienianych bitów
     switch (iMode)
     {
@@ -298,7 +298,7 @@ void Console::Update()
             }
 };
 
-float Console::AnalogGet(int x)
+float Console::AnalogGet(const int x)
 { // pobranie wartości analogowej
     if (iMode == 4)
         if (PoKeys55[0])
@@ -306,7 +306,7 @@ float Console::AnalogGet(int x)
     return -1.0;
 };
 
-float Console::AnalogCalibrateGet(int x)
+float Console::AnalogCalibrateGet(const int x)
 { // pobranie i kalibracja wartości analogowej, jeśli nie ma PoKeys zwraca NULL
     if (iMode == 4 && PoKeys55[0])
     {
@@ -325,7 +325,7 @@ float Console::AnalogCalibrateGet(int x)
     return -1.0; // odcięcie
 };
 
-unsigned char Console::DigitalGet(int x)
+unsigned char Console::DigitalGet(const int x)
 { // pobranie wartości cyfrowej
     if (iMode == 4)
         if (PoKeys55[0])
@@ -333,7 +333,7 @@ unsigned char Console::DigitalGet(int x)
     return 0;
 };
 
-void Console::OnKeyDown(int k)
+void Console::OnKeyDown(const int k)
 { // naciśnięcie klawisza z powoduje wyłączenie, a
     if (k & 0x10000) // jeśli [Shift]
     { // ustawienie bitu w tabeli przełączników bistabilnych
@@ -357,7 +357,7 @@ void Console::OnKeyDown(int k)
     }
 };
 
-void Console::OnKeyUp(int k)
+void Console::OnKeyUp(const int k)
 { // puszczenie klawisza w zasadzie nie ma znaczenia dla iSwitch, ale zeruje iButton
     if ((k & 0x20000) == 0) // monostabilne tylko bez [Ctrl]
         if (k & 0x10000) // jeśli [Shift]
@@ -366,12 +366,12 @@ void Console::OnKeyUp(int k)
             iButton[char(k) >> 5] &= ~(1 << (k & 31)); // wyłącz monostabilny podstawowy
 };
 
-int Console::KeyDownConvert(int k)
+int Console::KeyDownConvert(const int k)
 {
     return int(ktTable[k & 0x3FF].iDown);
 };
 
-int Console::KeyUpConvert(int k)
+int Console::KeyUpConvert(const int k)
 {
     return int(ktTable[k & 0x3FF].iUp);
 };

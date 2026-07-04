@@ -94,7 +94,7 @@ void TSubModel::SetDiffuseOverride(glm::vec3 const &Color, bool const Includechi
 	}
 }
 
-std::optional<glm::vec3> TSubModel::GetDiffuse(float Includesiblings)
+std::optional<glm::vec3> TSubModel::GetDiffuse(const float Includesiblings)
 {
 	if (eType == TP_FREESPOTLIGHT)
 	{
@@ -815,7 +815,7 @@ basic_vertex *TSubModel::TrianglePtr(int tex, int pos, glm::vec3 const &Ambient,
 };
 */
 
-void TSubModel::InitialRotate(bool doit)
+void TSubModel::InitialRotate(const bool doit)
 { // konwersja układu współrzędnych na zgodny ze scenerią
 	if (iFlags & 0xC000) // jeśli jest animacja albo niejednostkowy transform
 	{ // niejednostkowy transform jest mnożony i wystarczy zabawy
@@ -1020,7 +1020,7 @@ uint32_t TSubModel::FlagsCheck()
 	return iFlags;
 };
 
-void TSubModel::SetRotate(float3 vNewRotateAxis, float fNewAngle)
+void TSubModel::SetRotate(const float3 vNewRotateAxis, const float fNewAngle)
 { // obrócenie submodelu wg podanej
   // osi (np. wskazówki w kabinie)
 	v_RotateAxis = vNewRotateAxis;
@@ -1033,7 +1033,7 @@ void TSubModel::SetRotate(float3 vNewRotateAxis, float fNewAngle)
 	iAnimOwner = iInstance; // zapamiętanie czyja jest animacja
 }
 
-void TSubModel::SetRotateXYZ(float3 vNewAngles)
+void TSubModel::SetRotateXYZ(const float3 vNewAngles)
 { // obrócenie submodelu o
   // podane kąty wokół osi
   // lokalnego układu
@@ -1055,7 +1055,7 @@ void TSubModel::SetRotateXYZ(glm::vec3 vNewAngles)
 	iAnimOwner = iInstance; // zapamiętanie czyja jest animacja
 }
 
-void TSubModel::SetTranslate(float3 vNewTransVector)
+void TSubModel::SetTranslate(const float3 vNewTransVector)
 { // przesunięcie submodelu (np. w kabinie)
 	v_TransVector = vNewTransVector;
 	b_Anim = TAnimType::at_Translate;
@@ -1073,7 +1073,7 @@ void TSubModel::SetTranslate(glm::vec3 vNewTransVector)
 	iAnimOwner = iInstance; // zapamiętanie czyja jest animacja
 }
 
-void TSubModel::SetRotateIK1(float3 vNewAngles)
+void TSubModel::SetRotateIK1(const float3 vNewAngles)
 { // obrócenie submodelu o
   // podane kąty wokół osi
   // lokalnego układu
@@ -1083,13 +1083,13 @@ void TSubModel::SetRotateIK1(float3 vNewAngles)
 
 struct ToLower
 {
-	char operator()(char input)
+	char operator()(const char input)
 	{
 		return tolower(input);
 	}
 };
 
-TSubModel *TSubModel::GetFromName(std::string const &search, bool i)
+TSubModel *TSubModel::GetFromName(std::string const &search, const bool i)
 {
 	TSubModel *result;
 	// std::transform(search.begin(),search.end(),search.begin(),ToLower());
@@ -1121,14 +1121,14 @@ TSubModel *TSubModel::GetFromName(std::string const &search, bool i)
 
 // WORD hbIndices[18]={3,0,1,5,4,2,1,0,4,1,5,3,2,3,5,2,4,0};
 
-void TSubModel::RaAnimation(TAnimType a)
+void TSubModel::RaAnimation(const TAnimType a)
 {
 	glm::mat4 m = OpenGLMatrices.data(GL_MODELVIEW);
 	RaAnimation(m, a);
 	glLoadMatrixf(glm::value_ptr(m));
 }
 
-void TSubModel::RaAnimation(glm::mat4 &m, TAnimType a)
+void TSubModel::RaAnimation(glm::mat4 &m, const TAnimType a)
 { // wykonanie animacji niezależnie od renderowania
 	switch (a)
 	{ // korekcja położenia, jeśli submodel jest animowany
@@ -1612,7 +1612,7 @@ glm::vec3 TSubModel::offset(float const Geometrytestoffsetthreshold) const
 	return offset;
 }
 
-bool TModel3d::LoadFromFile(std::string const &FileName, bool dynamic)
+bool TModel3d::LoadFromFile(std::string const &FileName, const bool dynamic)
 {
 	// wczytanie modelu z pliku
 	/*
@@ -1921,7 +1921,7 @@ void TSubModel::deserialize(std::istream &s)
 	m_rotation_init_done = true;
 }
 
-void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
+void TModel3d::deserialize(std::istream &s, const size_t size, const bool dynamic)
 {
 	Root = nullptr;
 	if (m_geometrybank == null_handle)
@@ -2356,7 +2356,7 @@ bool TSubModel::HasAnyVertexUserData() const
 	return false;
 };
 
-void TModel3d::LoadFromBinFile(std::string const &FileName, bool dynamic)
+void TModel3d::LoadFromBinFile(std::string const &FileName, const bool dynamic)
 { // wczytanie modelu z pliku binarnego
 	WriteLog("Loading binary format 3d model data from \"" + FileName + "\"...", logtype::model);
 
@@ -2409,7 +2409,7 @@ TSubModel *TModel3d::AppendChildFromGeometry(const std::string &name, const std:
 	return sm;
 }
 
-void TModel3d::LoadFromTextFile(std::string const &FileName, bool dynamic)
+void TModel3d::LoadFromTextFile(std::string const &FileName, const bool dynamic)
 { // wczytanie submodelu z pliku tekstowego
 	WriteLog("Loading text format 3d model data from \"" + FileName + "\"...", logtype::model);
 	iFlags |= 0x0200; // wczytano z pliku tekstowego (właścicielami tablic są submodle)
@@ -2518,7 +2518,7 @@ int TModel3d::TerrainCount() const
 	}
 	return i;
 };
-TSubModel *TModel3d::TerrainSquare(int n)
+TSubModel *TModel3d::TerrainSquare(const int n)
 { // pobieranie wskaźnika do submodelu (n)
 	int i = 0;
 	TSubModel *r = Root;

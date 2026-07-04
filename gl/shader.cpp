@@ -407,7 +407,7 @@ gl::program::~program()
     glDeleteProgram(*this);
 }
 
-void gl::program::bind(GLuint i)
+void gl::program::bind(const GLuint i)
 {
     glUseProgram(i);
 }

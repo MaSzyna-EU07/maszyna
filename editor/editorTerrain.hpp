@@ -80,7 +80,7 @@ class editor_terrain
 	std::size_t full_triangles() const { return static_cast<std::size_t>(m_cells) * m_cells * 2; }
 
   private:
-	int index(int Ix, int Iz) const { return Iz * (m_cells + 1) + Ix; }
+	int index(const int Ix, const int Iz) const { return Iz * (m_cells + 1) + Ix; }
 	glm::dvec3 vertex_position(int Ix, int Iz) const;
 	glm::vec3 vertex_normal(int Ix, int Iz) const;
 	world_vertex make_vertex(int Ix, int Iz) const;

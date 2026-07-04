@@ -3093,7 +3093,7 @@ opengl_renderer::Render( TTrack *Track ) {
 
 // experimental, does track rendering in two passes, to take advantage of reduced texture switching
 void
-opengl_renderer::Render( scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last ) {
+opengl_renderer::Render(const scene::basic_cell::path_sequence::const_iterator First, const scene::basic_cell::path_sequence::const_iterator Last ) {
 
     ::glColor3fv( glm::value_ptr( colors::white ) );
     // setup

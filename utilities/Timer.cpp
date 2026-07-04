@@ -47,7 +47,7 @@ double GetDeltaRenderTime()
     return DeltaRenderTime;
 }
 
-void set_delta_override(double t)
+void set_delta_override(const double t)
 {
 	override_delta = t;
 }
@@ -61,7 +61,7 @@ void ResetTimers()
 
 uint64_t fr, count, oldCount;
 
-void UpdateTimers(bool pause)
+void UpdateTimers(const bool pause)
 {
 #ifdef _WIN32
     QueryPerformanceFrequency((LARGE_INTEGER *)&fr);

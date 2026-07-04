@@ -54,28 +54,28 @@ namespace ImGuizmo
    static const float DEG2RAD = (ZPI / 180.f);
 constexpr float screenRotateSize = 0.06f;
 
-   static OPERATION operator&(OPERATION lhs, OPERATION rhs)
+   static OPERATION operator&(const OPERATION lhs, const OPERATION rhs)
    {
      return static_cast<OPERATION>(static_cast<int>(lhs) & static_cast<int>(rhs));
    }
 
-   static bool operator!=(OPERATION lhs, int rhs)
+   static bool operator!=(const OPERATION lhs, const int rhs)
    {
      return static_cast<int>(lhs) != rhs;
    }
 
-   static bool operator==(OPERATION lhs, int rhs)
+   static bool operator==(const OPERATION lhs, const int rhs)
    {
      return static_cast<int>(lhs) == rhs;
    }
 
-   static bool Intersects(OPERATION lhs, OPERATION rhs)
+   static bool Intersects(const OPERATION lhs, const OPERATION rhs)
    {
      return (lhs & rhs) != 0;
    }
 
    // True if lhs contains rhs
-   static bool Contains(OPERATION lhs, OPERATION rhs)
+   static bool Contains(const OPERATION lhs, const OPERATION rhs)
    {
      return (lhs & rhs) == rhs;
    }
@@ -106,7 +106,7 @@ constexpr float screenRotateSize = 0.06f;
       r[15] = a[12] * b[3] + a[13] * b[7] + a[14] * b[11] + a[15] * b[15];
    }
 
-   void Frustum(float left, float right, float bottom, float top, float znear, float zfar, float* m16)
+   void Frustum(const float left, const float right, const float bottom, const float top, const float znear, const float zfar, float* m16)
    {
       float temp, temp2, temp3, temp4;
       temp = 2.0f * znear;
@@ -131,7 +131,7 @@ constexpr float screenRotateSize = 0.06f;
       m16[15] = 0.0;
    }
 
-   void Perspective(float fovyInDegrees, float aspectRatio, float znear, float zfar, float* m16)
+   void Perspective(const float fovyInDegrees, const float aspectRatio, const float znear, const float zfar, float* m16)
    {
       float ymax, xmax;
       ymax = znear * tanf(fovyInDegrees * DEG2RAD);
@@ -202,7 +202,7 @@ constexpr float screenRotateSize = 0.06f;
    public:
       float x, y, z, w;
 
-      void Lerp(const vec_t& v, float t)
+      void Lerp(const vec_t& v, const float t)
       {
          x += (v.x - x) * t;
          y += (v.y - y) * t;
@@ -210,13 +210,13 @@ constexpr float screenRotateSize = 0.06f;
          w += (v.w - w) * t;
       }
 
-      void Set(float v) { x = y = z = w = v; }
-      void Set(float _x, float _y, float _z = 0.f, float _w = 0.f) { x = _x; y = _y; z = _z; w = _w; }
+      void Set(const float v) { x = y = z = w = v; }
+      void Set(const float _x, const float _y, const float _z = 0.f, const float _w = 0.f) { x = _x; y = _y; z = _z; w = _w; }
 
       vec_t& operator -= (const vec_t& v) { x -= v.x; y -= v.y; z -= v.z; w -= v.w; return *this; }
       vec_t& operator += (const vec_t& v) { x += v.x; y += v.y; z += v.z; w += v.w; return *this; }
       vec_t& operator *= (const vec_t& v) { x *= v.x; y *= v.y; z *= v.z; w *= v.w; return *this; }
-      vec_t& operator *= (float v) { x *= v;    y *= v;    z *= v;    w *= v;    return *this; }
+      vec_t& operator *= (const float v) { x *= v;    y *= v;    z *= v;    w *= v;    return *this; }
 
       vec_t operator * (float f) const;
       vec_t operator - () const;
@@ -270,14 +270,14 @@ constexpr float screenRotateSize = 0.06f;
       void TransformVector(const vec_t& v, const matrix_t& matrix) { (*this) = v; this->TransformVector(matrix); }
       void TransformPoint(const vec_t& v, const matrix_t& matrix) { (*this) = v; this->TransformPoint(matrix); }
 
-      float& operator [] (size_t index) { return ((float*)&x)[index]; }
-      const float& operator [] (size_t index) const { return ((float*)&x)[index]; }
+      float& operator [] (const size_t index) { return ((float*)&x)[index]; }
+      const float& operator [] (const size_t index) const { return ((float*)&x)[index]; }
       bool operator!=(const vec_t& other) const { return memcmp(this, &other, sizeof(vec_t)); }
    };
 
-   vec_t makeVect(float _x, float _y, float _z = 0.f, float _w = 0.f) { vec_t res; res.x = _x; res.y = _y; res.z = _z; res.w = _w; return res; }
-   vec_t makeVect(ImVec2 v) { vec_t res; res.x = v.x; res.y = v.y; res.z = 0.f; res.w = 0.f; return res; }
-   vec_t vec_t::operator * (float f) const { return makeVect(x * f, y * f, z * f, w * f); }
+   vec_t makeVect(const float _x, const float _y, const float _z = 0.f, const float _w = 0.f) { vec_t res; res.x = _x; res.y = _y; res.z = _z; res.w = _w; return res; }
+   vec_t makeVect(const ImVec2 v) { vec_t res; res.x = v.x; res.y = v.y; res.z = 0.f; res.w = 0.f; return res; }
+   vec_t vec_t::operator * (const float f) const { return makeVect(x * f, y * f, z * f, w * f); }
    vec_t vec_t::operator - () const { return makeVect(-x, -y, -z, -w); }
    vec_t vec_t::operator - (const vec_t& v) const { return makeVect(x - v.x, y - v.y, z - v.z, w - v.w); }
    vec_t vec_t::operator + (const vec_t& v) const { return makeVect(x + v.x, y + v.y, z + v.z, w + v.w); }
@@ -331,7 +331,7 @@ constexpr float screenRotateSize = 0.06f;
 
       operator float* () { return m16; }
       operator const float* () const { return m16; }
-      void Translation(float _x, float _y, float _z) { this->Translation(makeVect(_x, _y, _z)); }
+      void Translation(const float _x, const float _y, const float _z) { this->Translation(makeVect(_x, _y, _z)); }
 
       void Translation(const vec_t& vt)
       {
@@ -341,7 +341,7 @@ constexpr float screenRotateSize = 0.06f;
          v.position.Set(vt.x, vt.y, vt.z, 1.f);
       }
 
-      void Scale(float _x, float _y, float _z)
+      void Scale(const float _x, const float _y, const float _z)
       {
          v.right.Set(_x, 0.f, 0.f, 0.f);
          v.up.Set(0.f, _y, 0.f, 0.f);
@@ -466,7 +466,7 @@ constexpr float screenRotateSize = 0.06f;
       w = out.w;
    }
 
-   float matrix_t::Inverse(const matrix_t& srcMatrix, bool affine)
+   float matrix_t::Inverse(const matrix_t& srcMatrix, const bool affine)
    {
       float det = 0;
 
@@ -562,7 +562,7 @@ constexpr float screenRotateSize = 0.06f;
       return det;
    }
 
-   void matrix_t::RotationAxis(const vec_t& axis, float angle)
+   void matrix_t::RotationAxis(const vec_t& axis, const float angle)
    {
 	   const float length2 = axis.LengthSq();
       if (length2 < FLT_EPSILON)
@@ -627,17 +627,17 @@ constexpr float screenRotateSize = 0.06f;
       MT_SCALE_XYZ
    };
 
-   static bool IsTranslateType(int type)
+   static bool IsTranslateType(const int type)
    {
      return type >= MT_MOVE_X && type <= MT_MOVE_SCREEN;
    }
 
-   static bool IsRotateType(int type)
+   static bool IsRotateType(const int type)
    {
      return type >= MT_ROTATE_X && type <= MT_ROTATE_SCREEN;
    }
 
-   static bool IsScaleType(int type)
+   static bool IsScaleType(const int type)
    {
      return type >= MT_SCALE_X && type <= MT_SCALE_XYZ;
    }
@@ -766,7 +766,7 @@ constexpr float screenRotateSize = 0.06f;
    static int GetRotateType(OPERATION op);
    static int GetScaleType(OPERATION op);
 
-   static ImVec2 worldToPos(const vec_t& worldPos, const matrix_t& mat, ImVec2 position = ImVec2(gContext.mX, gContext.mY), ImVec2 size = ImVec2(gContext.mWidth, gContext.mHeight))
+   static ImVec2 worldToPos(const vec_t& worldPos, const matrix_t& mat, const ImVec2 position = ImVec2(gContext.mX, gContext.mY), const ImVec2 size = ImVec2(gContext.mWidth, gContext.mHeight))
    {
       vec_t trans;
       trans.TransformPoint(worldPos, mat);
@@ -780,7 +780,7 @@ constexpr float screenRotateSize = 0.06f;
       return ImVec2(trans.x, trans.y);
    }
 
-   static void ComputeCameraRay(vec_t& rayOrigin, vec_t& rayDir, ImVec2 position = ImVec2(gContext.mX, gContext.mY), ImVec2 size = ImVec2(gContext.mWidth, gContext.mHeight))
+   static void ComputeCameraRay(vec_t& rayOrigin, vec_t& rayDir, const ImVec2 position = ImVec2(gContext.mX, gContext.mY), const ImVec2 size = ImVec2(gContext.mWidth, gContext.mHeight))
    {
 	   const ImGuiIO & io = ImGui::GetIO();
 
@@ -885,12 +885,12 @@ constexpr float screenRotateSize = 0.06f;
       return plan.Dot3(point) + plan.w;
    }
 
-   static bool IsInContextRect(ImVec2 p)
+   static bool IsInContextRect(const ImVec2 p)
    {
       return IsWithin(p.x, gContext.mX, gContext.mXMax) && IsWithin(p.y, gContext.mY, gContext.mYMax);
    }
 
-   void SetRect(float x, float y, float width, float height)
+   void SetRect(const float x, const float y, const float width, const float height)
    {
       gContext.mX = x;
       gContext.mY = y;
@@ -901,7 +901,7 @@ constexpr float screenRotateSize = 0.06f;
       gContext.mDisplayRatio = width / height;
    }
 
-   void SetOrthographic(bool isOrthographic)
+   void SetOrthographic(const bool isOrthographic)
    {
       gContext.mIsOrthographic = isOrthographic;
    }
@@ -952,7 +952,7 @@ constexpr float screenRotateSize = 0.06f;
          (Intersects(gContext.mOperation, SCALE) && GetScaleType(gContext.mOperation) != MT_NONE) || IsUsing();
    }
 
-   bool IsOver(OPERATION op)
+   bool IsOver(const OPERATION op)
    {
       if(IsUsing())
       {
@@ -973,7 +973,7 @@ constexpr float screenRotateSize = 0.06f;
       return false;
    }
 
-   void Enable(bool enable)
+   void Enable(const bool enable)
    {
       gContext.mbEnable = enable;
       if (!enable)
@@ -983,7 +983,7 @@ constexpr float screenRotateSize = 0.06f;
       }
    }
 
-   static void ComputeContext(const float* view, const float* projection, float* matrix, MODE mode)
+   static void ComputeContext(const float* view, const float* projection, float* matrix, const MODE mode)
    {
       gContext.mMode = mode;
       gContext.mViewMat = *(matrix_t*)view;
@@ -1038,7 +1038,7 @@ constexpr float screenRotateSize = 0.06f;
       ComputeCameraRay(gContext.mRayOrigin, gContext.mRayVector);
    }
 
-   static void ComputeColors(ImU32* colors, int type, OPERATION operation)
+   static void ComputeColors(ImU32* colors, const int type, const OPERATION operation)
    {
       if (gContext.mbEnable)
       {
@@ -1081,7 +1081,7 @@ constexpr float screenRotateSize = 0.06f;
       }
    }
 
-   static void ComputeTripodAxisAndVisibility(int axisIndex, vec_t& dirAxis, vec_t& dirPlaneX, vec_t& dirPlaneY, bool& belowAxisLimit, bool& belowPlaneLimit)
+   static void ComputeTripodAxisAndVisibility(const int axisIndex, vec_t& dirAxis, vec_t& dirPlaneX, vec_t& dirPlaneY, bool& belowAxisLimit, bool& belowPlaneLimit)
    {
       dirAxis = directionUnary[axisIndex];
       dirPlaneX = directionUnary[(axisIndex + 1) % 3];
@@ -1134,7 +1134,7 @@ constexpr float screenRotateSize = 0.06f;
       }
    }
 
-   static void ComputeSnap(float* value, float snap)
+   static void ComputeSnap(float* value, const float snap)
    {
       if (snap <= FLT_EPSILON)
       {
@@ -1174,7 +1174,7 @@ constexpr float screenRotateSize = 0.06f;
       return angle;
    }
 
-   static void DrawRotationGizmo(OPERATION op, int type)
+   static void DrawRotationGizmo(const OPERATION op, const int type)
    {
       if(!Intersects(op, ROTATE))
       {
@@ -1271,7 +1271,7 @@ constexpr float screenRotateSize = 0.06f;
       }
    }
 
-   static void DrawScaleGizmo(OPERATION op, int type)
+   static void DrawScaleGizmo(const OPERATION op, const int type)
    {
       ImDrawList* drawList = gContext.mDrawList;
 
@@ -1354,7 +1354,7 @@ constexpr float screenRotateSize = 0.06f;
    }
 
 
-   static void DrawTranslationGizmo(OPERATION op, int type)
+   static void DrawTranslationGizmo(const OPERATION op, const int type)
    {
       ImDrawList* drawList = gContext.mDrawList;
       if (!drawList)
@@ -1714,7 +1714,7 @@ constexpr float screenRotateSize = 0.06f;
    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
    //
 
-   static int GetScaleType(OPERATION op)
+   static int GetScaleType(const OPERATION op)
    {
 	   const ImGuiIO & io = ImGui::GetIO();
       int type = MT_NONE;
@@ -1760,7 +1760,7 @@ constexpr float screenRotateSize = 0.06f;
       return type;
    }
 
-   static int GetRotateType(OPERATION op)
+   static int GetRotateType(const OPERATION op)
    {
 	   const ImGuiIO & io = ImGui::GetIO();
       int type = MT_NONE;
@@ -1814,7 +1814,7 @@ constexpr float screenRotateSize = 0.06f;
       return type;
    }
 
-   static int GetMoveType(OPERATION op, vec_t* gizmoHitProportion)
+   static int GetMoveType(const OPERATION op, vec_t* gizmoHitProportion)
    {
       if(!Intersects(op, TRANSLATE))
       {
@@ -2246,17 +2246,17 @@ constexpr float screenRotateSize = 0.06f;
       mat.v.position.Set(translation[0], translation[1], translation[2], 1.f);
    }
 
-   void SetID(int id)
+   void SetID(const int id)
    {
       gContext.mActualID = id;
    }
 
-   void AllowAxisFlip(bool value)
+   void AllowAxisFlip(const bool value)
    {
      gContext.mAllowAxisFlip = value;
    }
 
-   bool Manipulate(const float* view, const float* projection, OPERATION operation, MODE mode, float* matrix, float* deltaMatrix, const float* snap, const float* localBounds, const float* boundsSnap)
+   bool Manipulate(const float* view, const float* projection, const OPERATION operation, const MODE mode, float* matrix, float* deltaMatrix, const float* snap, const float* localBounds, const float* boundsSnap)
    {
       ComputeContext(view, projection, matrix, mode);
 
@@ -2302,7 +2302,7 @@ constexpr float screenRotateSize = 0.06f;
       return manipulated;
    }
 
-   void SetGizmoSizeClipSpace(float value)
+   void SetGizmoSizeClipSpace(const float value)
    {
       gContext.mGizmoSizeClipSpace = value;
    }

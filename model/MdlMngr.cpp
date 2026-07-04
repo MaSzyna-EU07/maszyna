@@ -42,7 +42,7 @@ TModelsManager::stringmodelcontainerindex_map TModelsManager::m_modelsmap;
 
 // wczytanie modelu do tablicy
 TModel3d *
-TModelsManager::LoadModel(std::string const &Name, std::string const &virtualName, bool dynamic) {
+TModelsManager::LoadModel(std::string const &Name, std::string const &virtualName, const bool dynamic) {
     
     m_models.emplace_back();
 	const auto model = m_models.back().LoadModel( Name, dynamic );
@@ -57,7 +57,7 @@ TModelsManager::LoadModel(std::string const &Name, std::string const &virtualNam
 }
 
 TModel3d *
-TModelsManager::GetModel(std::string const &Name, bool const Dynamic, bool const Logerrors, int uid )
+TModelsManager::GetModel(std::string const &Name, bool const Dynamic, bool const Logerrors, const int uid )
 { // model może być we wpisie "node...model" albo "node...dynamic", a także być dodatkowym w dynamic
     // (kabina, wnętrze, ładunek)
     // dla "node...dynamic" mamy podaną ścieżkę w "\dynamic\" i musi być co najmniej 1 poziom, zwkle

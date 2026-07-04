@@ -2,7 +2,7 @@
 #include "query.h"
 #include "utilities/Globals.h"
 
-gl::query::query(targets target)
+gl::query::query(const targets target)
     : target(target)
 {
 	glGenQueries(1, *this);
@@ -49,7 +49,7 @@ std::optional<int64_t> gl::query::result()
 	return std::nullopt;
 }
 
-GLenum gl::query::glenum_target(targets target)
+GLenum gl::query::glenum_target(const targets target)
 {
 	static GLenum mapping[6] =
 	{

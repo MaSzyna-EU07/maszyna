@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "buffer.h"
 
-GLenum gl::buffer::glenum_target(targets target)
+GLenum gl::buffer::glenum_target(const targets target)
 {
 	static GLenum mapping[13] =
     {
@@ -22,7 +22,7 @@ GLenum gl::buffer::glenum_target(targets target)
     return mapping[target];
 }
 
-void gl::buffer::bind(targets target)
+void gl::buffer::bind(const targets target)
 {
     if (binding_points[target] == *this)
         return;
@@ -31,13 +31,13 @@ void gl::buffer::bind(targets target)
     binding_points[target] = *this;
 }
 
-void gl::buffer::bind_base(targets target, GLuint index)
+void gl::buffer::bind_base(const targets target, const GLuint index)
 {
     glBindBufferBase(glenum_target(target), index, *this);
     binding_points[target] = *this;
 }
 
-void gl::buffer::unbind(targets target)
+void gl::buffer::unbind(const targets target)
 {
     if( binding_points[ target ] == 0 ) { return; }
 
@@ -61,19 +61,19 @@ gl::buffer::~buffer()
     glDeleteBuffers(1, *this);
 }
 
-void gl::buffer::allocate(targets target, GLsizeiptr size, GLenum hint)
+void gl::buffer::allocate(const targets target, const GLsizeiptr size, const GLenum hint)
 {
     bind(target);
     glBufferData(glenum_target(target), size, nullptr, hint);
 }
 
-void gl::buffer::upload(targets target, const void *data, int offset, GLsizeiptr size)
+void gl::buffer::upload(const targets target, const void *data, const int offset, const GLsizeiptr size)
 {
     bind(target);
     glBufferSubData(glenum_target(target), offset, size, data);
 }
 
-void gl::buffer::download(targets target, void *data, int offset, GLsizeiptr size)
+void gl::buffer::download(const targets target, void *data, const int offset, const GLsizeiptr size)
 {
     bind(target);
     if (GLAD_GL_VERSION_3_3)

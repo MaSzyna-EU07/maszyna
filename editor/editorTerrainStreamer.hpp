@@ -30,16 +30,16 @@ class terrain_streamer
 
 	terrain_streamer() = default;
 
-	void active(bool State) { m_active = State; }
+	void active(const bool State) { m_active = State; }
 	bool active() const { return m_active; }
 
 	// per-chunk configuration (applied to chunks built from now on)
 	void configure(int Cells, float CellSize, int Radius, float BaseHeight, std::string const &Texture);
-	void simplify(bool Auto, float Error) { m_auto_optimize = Auto; m_simplify_error = Error; }
+	void simplify(const bool Auto, const float Error) { m_auto_optimize = Auto; m_simplify_error = Error; }
 	// safe to change while resident (only affects how far chunks load/unload)
-	void radius(int Radius) { m_radius = Radius < 0 ? 0 : Radius; }
+	void radius(const int Radius) { m_radius = Radius < 0 ? 0 : Radius; }
 	// persist edited chunks to disk on unload, and load them back instead of regenerating
-	void persist(bool Enable) { m_persist = Enable; }
+	void persist(const bool Enable) { m_persist = Enable; }
 	void directory(std::string const &Dir)
 	{
 		if (!Dir.empty() && Dir != m_dir)
@@ -70,7 +70,7 @@ class terrain_streamer
 	// persist an externally-authored chunk (e.g. a manual grid chunk being handed over to streaming)
 	void save_chunk(int Cx, int Cz, editor_terrain const &Terrain);
 	// chunk coordinate covering (X,Z)
-	chunk_key key_for(double X, double Z) const { return key_at(X, Z); }
+	chunk_key key_for(const double X, const double Z) const { return key_at(X, Z); }
 
 	std::size_t resident() const { return m_chunks.size(); }
 	float chunk_world_size() const { return m_cells * m_cellsize; }

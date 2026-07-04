@@ -723,7 +723,7 @@ private:
 
 inline
 void
-basic_event::group( scene::group_handle Group ) {
+basic_event::group(const scene::group_handle Group ) {
     m_group = Group;
 }
 

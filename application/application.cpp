@@ -71,45 +71,45 @@ extern WNDPROC BaseWindowProc;
 
 // user input callbacks
 
-void focus_callback(GLFWwindow *window, int focus)
+void focus_callback(GLFWwindow *window, const int focus)
 {
 	Application.on_focus_change(focus != 0);
 }
 
-void framebuffer_resize_callback(GLFWwindow *, int w, int h)
+void framebuffer_resize_callback(GLFWwindow *, const int w, const int h)
 {
 	Global.fb_size = glm::ivec2(w, h);
 }
 
-void window_resize_callback(GLFWwindow *, int w, int h)
+void window_resize_callback(GLFWwindow *, const int w, const int h)
 {
 	Global.window_size = glm::ivec2(w, h);
 	Application.on_window_resize(w, h);
 }
 
-void cursor_pos_callback(GLFWwindow *window, double x, double y)
+void cursor_pos_callback(GLFWwindow *window, const double x, const double y)
 {
 	Global.cursor_pos = glm::ivec2(x, y);
 	Application.on_cursor_pos(x, y);
 }
 
-void mouse_button_callback(GLFWwindow *window, int button, int action, int mods)
+void mouse_button_callback(GLFWwindow *window, const int button, const int action, const int mods)
 {
 	Application.on_mouse_button(button, action, mods);
 }
 
-void scroll_callback(GLFWwindow *window, double xoffset, double yoffset)
+void scroll_callback(GLFWwindow *window, const double xoffset, const double yoffset)
 {
 	Application.on_scroll(xoffset, yoffset);
 }
 
-void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
+void key_callback(GLFWwindow *window, const int key, const int scancode, const int action, const int mods)
 {
 
 	Application.on_key(key, scancode, action, mods);
 }
 
-void char_callback(GLFWwindow *window, unsigned int c)
+void char_callback(GLFWwindow *window, const unsigned int c)
 {
 	Application.on_char(c);
 }
@@ -304,7 +304,7 @@ void eu07_application::DiscordRPCService()
 }
 #endif
 
-int eu07_application::init(int Argc, char *Argv[])
+int eu07_application::init(const int Argc, char *Argv[])
 {
 
 	int result{0};
@@ -436,7 +436,7 @@ double eu07_application::generate_sync()
 	return sync;
 }
 
-void eu07_application::queue_quit(bool direct)
+void eu07_application::queue_quit(const bool direct)
 {
 	if (direct || !m_modes[m_modestack.top()]->is_command_processor())
 	{
@@ -891,13 +891,13 @@ void eu07_application::on_scroll(double const Xoffset, double const Yoffset)
 	m_modes[m_modestack.top()]->on_scroll(Xoffset, Yoffset);
 }
 
-void eu07_application::on_char(unsigned int c)
+void eu07_application::on_char(const unsigned int c)
 {
 	if (ui_layer::char_callback(c))
 		return;
 }
 
-void eu07_application::on_focus_change(bool focus)
+void eu07_application::on_focus_change(const bool focus)
 {
 	if (Global.bInactivePause && m_network.has_value() && !m_network->client)
 	{ // jeśli ma być pauzowanie okna w tle
@@ -906,14 +906,14 @@ void eu07_application::on_focus_change(bool focus)
 	}
 }
 
-void eu07_application::on_window_resize(int w, int h)
+void eu07_application::on_window_resize(const int w, const int h)
 {
 	if (m_modestack.empty())
 		return;
 	m_modes[m_modestack.top()]->on_window_resize(w, h);
 }
 
-GLFWwindow *eu07_application::window(int const Windowindex, bool visible, int width, int height, GLFWmonitor *monitor, bool keep_ownership, bool share_ctx)
+GLFWwindow *eu07_application::window(int const Windowindex, const bool visible, const int width, const int height, GLFWmonitor *monitor, const bool keep_ownership, const bool share_ctx)
 {
 
 	if (Windowindex >= 0)
@@ -1105,7 +1105,7 @@ void eu07_application::init_files()
 }
 namespace fs = std::filesystem;
 
-int eu07_application::init_settings(int Argc, char *Argv[])
+int eu07_application::init_settings(const int Argc, char *Argv[])
 {
 	Global.asVersion = VERSION_INFO;
 

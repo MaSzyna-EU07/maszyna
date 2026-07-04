@@ -28,7 +28,7 @@ fs::path settings_path()
 	return p.empty() ? fs::path("eu07_editor.ini") : p;
 }
 
-const char *scheme_to_string(editorSettings::movement_scheme scheme)
+const char *scheme_to_string(const editorSettings::movement_scheme scheme)
 {
 	return scheme == editorSettings::movement_scheme::legacy ? "legacy" : "wsad";
 }

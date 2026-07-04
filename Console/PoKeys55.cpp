@@ -201,7 +201,7 @@ bool TPoKeys55::Connect()
     return false;
 }
 //---------------------------------------------------------------------------
-bool TPoKeys55::Write(unsigned char c, unsigned char b3, unsigned char b4, unsigned char b5)
+bool TPoKeys55::Write(const unsigned char c, const unsigned char b3, const unsigned char b4, const unsigned char b5)
 {
     DWORD BytesWritten = 0;
     OutputBuffer[0] = 0; // The first byte is the "Report ID" and does not get transmitted over the
@@ -287,14 +287,14 @@ std::string TPoKeys55::Version()
     return "";
 };
 
-bool TPoKeys55::PWM(int x, float y)
+bool TPoKeys55::PWM(const int x, const float y)
 { // ustawienie wskazanego PWM (@12Mhz: 12000=1ms=1000Hz)
     // iPWM[7]=1024; //1024==85333.3333333333ns=11718.75Hz
     iPWM[x] = int(0.5f + 0x0FFF * y) & 0x0FFF; // 0x0FFF=4095
     return true;
 }
 
-bool TPoKeys55::Update(bool pause)
+bool TPoKeys55::Update(const bool pause)
 { // funkcja powinna być wywoływana regularnie, np. raz w każdej ramce ekranowej
     if (pause)
     { // specjalna procedura, jeśli utracone połączenie spowodowało pauzę

@@ -224,7 +224,7 @@ opengl_vbogeometrybank::delete_buffer() {
 }
 
 void
-opengl_vbogeometrybank::bind_streams( stream_units const &Units, unsigned int const Streams, size_t offset ) {
+opengl_vbogeometrybank::bind_streams( stream_units const &Units, unsigned int const Streams, const size_t offset ) {
 
     if( Streams & position ) {
         ::glVertexPointer( 3, GL_FLOAT, sizeof( basic_vertex ), reinterpret_cast<void const *>( offsetof(gfx::basic_vertex, position) + sizeof( basic_vertex ) * offset ) );

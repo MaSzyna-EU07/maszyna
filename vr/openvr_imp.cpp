@@ -30,7 +30,7 @@ vr_openvr::vr_openvr()
     hiddenarea_mesh[(size_t)eye_right] = create_hiddenarea_model(eye_right);
 }
 
-std::unique_ptr<TModel3d> vr_openvr::create_hiddenarea_model(eye_e e)
+std::unique_ptr<TModel3d> vr_openvr::create_hiddenarea_model(const eye_e e)
 {
     vr::HiddenAreaMesh_t mesh = vr_system->GetHiddenAreaMesh(e == eye_left ? vr::Eye_Left : vr::Eye_Right, vr::k_eHiddenAreaMesh_Standard);
     if (!mesh.unTriangleCount)
@@ -52,7 +52,7 @@ std::unique_ptr<TModel3d> vr_openvr::create_hiddenarea_model(eye_e e)
     return model;
 }
 
-TModel3d* vr_openvr::get_hiddenarea_mesh(eye_e eye)
+TModel3d* vr_openvr::get_hiddenarea_mesh(const eye_e eye)
 {
     return hiddenarea_mesh[(size_t)eye].get();
 };
@@ -64,7 +64,7 @@ glm::ivec2 vr_openvr::get_target_size()
     return glm::ivec2(vr_w, vr_h);
 }
 
-viewport_proj_config vr_openvr::get_proj_config(eye_e e)
+viewport_proj_config vr_openvr::get_proj_config(const eye_e e)
 {
     vr::EVREye eye = e == eye_left ? vr::Eye_Left : vr::Eye_Right;
 
@@ -351,7 +351,7 @@ bool vr_openvr::update_component(const std::string &rendermodel, vr::VRInputValu
     return !(component_state.uProperties & vr::VRComponentProperty_IsStatic);
 }
 
-void vr_openvr::submit(eye_e eye, opengl_texture* tex)
+void vr_openvr::submit(const eye_e eye, opengl_texture* tex)
 {
     vr::Texture_t hmd_tex =
         { (void*)(uint64_t)tex->id,

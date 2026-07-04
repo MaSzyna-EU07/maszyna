@@ -48,12 +48,12 @@ namespace
     using vec3 = glm::vec3;
     using dvec2 = glm::dvec2;
 
-    bool is_release(int state)
+    bool is_release(const int state)
     {
         return state == GLFW_RELEASE;
     }
 
-    bool is_press(int state)
+    bool is_press(const int state)
     {
         return state == GLFW_PRESS;
     }
@@ -373,7 +373,7 @@ scene::basic_node* editor_mode::find_node_by_any(scene::basic_node *node_ptr, co
     return nullptr;
 }
 
-void editor_mode::push_snapshot(scene::basic_node *node, EditorSnapshot::Action Action, std::string const &Serialized)
+void editor_mode::push_snapshot(scene::basic_node *node, const EditorSnapshot::Action Action, std::string const &Serialized)
 {
     if (!node)
         return;
@@ -908,7 +908,7 @@ void editor_mode::render_terrain_ui()
     }
 }
 
-editor_terrain *editor_mode::terrain_at(double X, double Z)
+editor_terrain *editor_mode::terrain_at(const double X, const double Z)
 {
     for (const auto &terrain : m_terrains)
         if (terrain && terrain->contains(X, Z))
@@ -1131,7 +1131,7 @@ void editor_mode::capture_terrain()
     float const cellsize = static_cast<float>(std::max(0.1, extent / cells));
 
     // sampler: highest captured triangle at (x,z)
-    auto const sampler = [&tris](double X, double Z, double &OutY) -> bool {
+    auto const sampler = [&tris](const double X, const double Z, double &OutY) -> bool {
         double best = -std::numeric_limits<double>::max();
         bool found = false;
         for (auto const &t : tris)
@@ -1745,7 +1745,7 @@ bool editor_mode::focus_active()
     return m_focus_active;
 }
 
-void editor_mode::set_focus_active(bool isActive)
+void editor_mode::set_focus_active(const bool isActive)
 {
     m_focus_active = isActive;
 }

@@ -22,7 +22,7 @@ double TTrainParameters::CheckTrainLatency()
         return 0;
 }
 
-double TTrainParameters::WatchMTable(double DistCounter)
+double TTrainParameters::WatchMTable(const double DistCounter)
 { // zwraca odleglość do najblizszej stacji z zatrzymaniem
     double dist;
 
@@ -105,7 +105,7 @@ bool TTrainParameters::UpdateMTable( scenario_time const &Time, std::string cons
     return UpdateMTable( Time.data().wHour, Time.data().wMinute + Time.data().wSecond * 0.0167, NewName );
 }
 
-bool TTrainParameters::UpdateMTable(double hh, double mm, std::string const &NewName)
+bool TTrainParameters::UpdateMTable(const double hh, const double mm, std::string const &NewName)
 /*odfajkowanie dojechania do stacji (NewName) i przeliczenie opóźnienia*/
 {
     bool OK;
@@ -163,7 +163,7 @@ void TTrainParameters::StationIndexInc()
     ++StationIndex;
 }
 
-bool TTrainParameters::IsTimeToGo(double hh, double mm)
+bool TTrainParameters::IsTimeToGo(const double hh, const double mm)
 // sprawdzenie, czy można już odjechać z aktualnego zatrzymania
 // StationIndex to numer następnego po dodarciu do aktualnego
 {
@@ -231,7 +231,7 @@ void TTrainParameters::NewName(std::string const &NewTrainName)
     LocLoad = 0;
 }
 
-void TTrainParameters::UpdateVelocity(int StationCount, double vActual)
+void TTrainParameters::UpdateVelocity(const int StationCount, const double vActual)
 // zapisywanie prędkości maksymalnej do wcześniejszych odcinków
 // wywoływane z numerem ostatniego przetworzonego przystanku
 {
@@ -674,7 +674,7 @@ void TTrainParameters::serialize( dictionary_source *Output ) const {
     }
 }
 
-void TMTableTime::UpdateMTableTime(double deltaT)
+void TMTableTime::UpdateMTableTime(const double deltaT)
 // dodanie czasu (deltaT) w sekundach, z przeliczeniem godziny
 {
     mr += deltaT; // dodawanie sekund

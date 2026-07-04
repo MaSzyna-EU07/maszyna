@@ -49,7 +49,7 @@ extern bool DebugCameraFlag;
 extern bool DebugTractionFlag;
 
 /*funkcje matematyczne*/
-inline double Sign(double x)
+inline double Sign(const double x)
 {
 	return x >= 0 ? 1.0 : -1.0;
 }
@@ -70,7 +70,7 @@ inline double Random()
 	return Random(0.0, 1.0);
 }
 
-inline double Random(double b)
+inline double Random(const double b)
 {
 	return Random(0.0, b);
 }
@@ -80,7 +80,7 @@ inline double LocalRandom()
 	return LocalRandom(0.0, 1.0);
 }
 
-inline double LocalRandom(double b)
+inline double LocalRandom(const double b)
 {
 	return LocalRandom(0.0, b);
 }

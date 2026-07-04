@@ -74,7 +74,7 @@ std::filesystem::path user_config_path(const std::string &filename)
 // zwraca różnicę czasu
 // jeśli pierwsza jest aktualna, a druga rozkładowa, to ujemna oznacza opóżnienie
 // na dłuższą metę trzeba uwzględnić datę, jakby opóżnienia miały przekraczać 12h (towarowych)
-double CompareTime(double t1h, double t1m, double t2h, double t2m)
+double CompareTime(const double t1h, const double t1m, const double t2h, const double t2m)
 {
 
 	if (t2h < 0)
@@ -170,7 +170,7 @@ double LocalRandom(double a, double b)
 	return dist(Global.local_random_engine);
 }
 
-bool FuzzyLogic(double Test, double Threshold, double Probability)
+bool FuzzyLogic(const double Test, const double Threshold, const double Probability)
 {
 	if (Test > Threshold && !DebugModeFlag)
 		return Random() < Probability * Threshold * 1.0 / Test /*im wiekszy Test tym wieksza szansa*/;
@@ -178,7 +178,7 @@ bool FuzzyLogic(double Test, double Threshold, double Probability)
 		return false;
 }
 
-bool FuzzyLogicAI(double Test, double Threshold, double Probability)
+bool FuzzyLogicAI(const double Test, const double Threshold, const double Probability)
 {
 	if (Test > Threshold)
 		return Random() < Probability * Threshold * 1.0 / Test /*im wiekszy Test tym wieksza szansa*/;
@@ -206,14 +206,14 @@ std::pair<std::string, int> split_string_and_number(std::string const &Key)
 	return {Key, 0};
 }
 
-std::string to_string(int Value, int width)
+std::string to_string(const int Value, const int width)
 {
 	std::ostringstream o;
 	o << std::setw(width) << Value;
 	return std::move(o).str();
 };
 
-std::string to_string(double Value, int precision)
+std::string to_string(const double Value, const int precision)
 {
 	std::ostringstream o;
 	o << std::fixed << std::setprecision(precision) << Value;
@@ -260,7 +260,7 @@ std::string ToLower(std::string const &text)
 {
 
 	auto lowercase{text};
-	std::transform(std::begin(text), std::end(text), std::begin(lowercase), [](unsigned char c) { return std::tolower(c); });
+	std::transform(std::begin(text), std::end(text), std::begin(lowercase), [](const unsigned char c) { return std::tolower(c); });
 	return lowercase;
 }
 
@@ -268,7 +268,7 @@ std::string ToUpper(std::string const &text)
 {
 
 	auto uppercase{text};
-	std::transform(std::begin(text), std::end(text), std::begin(uppercase), [](unsigned char c) { return std::toupper(c); });
+	std::transform(std::begin(text), std::end(text), std::begin(uppercase), [](const unsigned char c) { return std::toupper(c); });
 	return uppercase;
 }
 
@@ -438,13 +438,13 @@ std::ptrdiff_t len_common_prefix(std::string_view a, std::string_view b)
 }
 
 // returns true if provided string contains another provided string
-bool contains(std::string_view const String, std::string_view Substring)
+bool contains(std::string_view const String, const std::string_view Substring)
 {
 	// To be replaced with string::contains in C++ 23
 	return String.find(Substring) != std::string::npos;
 }
 
-bool contains(std::string_view const String, char Character)
+bool contains(std::string_view const String, const char Character)
 {
 	// To be replaced with string::contains in C++ 23
 	return String.find(Character) != std::string::npos;

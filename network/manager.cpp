@@ -27,7 +27,7 @@ command_queue::commands_map network::server_manager::pop_commands()
 	return map;
 }
 
-void network::server_manager::push_delta(double render_dt, double dt, double sync, const command_queue::commands_map &commands)
+void network::server_manager::push_delta(const double render_dt, const double dt, const double sync, const command_queue::commands_map &commands)
 {
 	if (dt == 0.0 && commands.empty())
 		return;

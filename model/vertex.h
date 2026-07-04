@@ -17,7 +17,7 @@ struct world_vertex {
     glm::vec3 normal;
     glm::vec2 texture;
 
-    static world_vertex lerp(world_vertex const &a, world_vertex const &b, double factor)
+    static world_vertex lerp(world_vertex const &a, world_vertex const &b, const double factor)
 	{
 		return static_cast<world_vertex>(a * (1.0f - factor) + b * factor);
 	}

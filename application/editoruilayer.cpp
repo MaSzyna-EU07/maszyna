@@ -49,7 +49,7 @@ void editor_ui::update()
 		m_brushobjects.update(*ptr);
 }
 
-void editor_ui::toggleBrushSettings(bool isVisible)
+void editor_ui::toggleBrushSettings(const bool isVisible)
 {
 	if (m_brushobjects.is_open != isVisible)
 		m_brushobjects.is_open = isVisible;
@@ -65,7 +65,7 @@ void editor_ui::add_node_template(const std::string &desc)
 	m_nodebankpanel.add_template(desc);
 }
 
-std::string const *editor_ui::get_active_node_template(bool bypassRandom)
+std::string const *editor_ui::get_active_node_template(const bool bypassRandom)
 {
 	if (!bypassRandom && m_brushobjects.is_open && m_brushobjects.useRandom && m_brushobjects.Objects.size() > 0)
 	{

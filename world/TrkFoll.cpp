@@ -26,7 +26,7 @@ TTrackFollower::~TTrackFollower()
 {
 }
 
-bool TTrackFollower::Init(TTrack *pTrack, TDynamicObject *NewOwner, double fDir)
+bool TTrackFollower::Init(TTrack *pTrack, TDynamicObject *NewOwner, const double fDir)
 {
     fDirection = fDir;
     Owner = NewOwner;
@@ -44,7 +44,7 @@ void TTrackFollower::Reset()
 	fDirection = 1.0;
 }
 
-TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, int end)
+TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, const int end)
 { // przejechanie na inny odcinkek toru, z ewentualnym rozpruciem
     if (pTrack)
         switch (pTrack->eType)
@@ -97,7 +97,7 @@ TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, int end)
     return pCurrentTrack;
 };
 
-bool TTrackFollower::Move(double fDistance, bool bPrimary)
+bool TTrackFollower::Move(double fDistance, const bool bPrimary)
 { // przesuwanie wózka po torach o odległość (fDistance), z wyzwoleniem eventów
     // bPrimary=true - jest pierwszą osią w pojeździe, czyli generuje eventy i przepisuje pojazd
     // Ra: zwraca false, jeśli pojazd ma być usunięty

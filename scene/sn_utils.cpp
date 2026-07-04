@@ -137,7 +137,7 @@ uint8_t sn_utils::d_uint8( std::istream& s ) {
 }
 
 
-void sn_utils::ls_uint16(std::ostream &s, uint16_t v)
+void sn_utils::ls_uint16(std::ostream &s, const uint16_t v)
 {
 	uint8_t buf[2];
 	buf[0] = v;
@@ -145,7 +145,7 @@ void sn_utils::ls_uint16(std::ostream &s, uint16_t v)
 	s.write((char*)buf, 2);
 }
 
-void sn_utils::ls_uint32(std::ostream &s, uint32_t v)
+void sn_utils::ls_uint32(std::ostream &s, const uint32_t v)
 {
 	uint8_t buf[4];
 	buf[0] = v;
@@ -155,7 +155,7 @@ void sn_utils::ls_uint32(std::ostream &s, uint32_t v)
 	s.write((char*)buf, 4);
 }
 
-void sn_utils::ls_int32(std::ostream &s, int32_t v)
+void sn_utils::ls_int32(std::ostream &s, const int32_t v)
 {
 	uint8_t buf[4];
 	buf[0] = v;
@@ -165,7 +165,7 @@ void sn_utils::ls_int32(std::ostream &s, int32_t v)
 	s.write((char*)buf, 4);
 }
 
-void sn_utils::ls_uint64(std::ostream &s, uint64_t v)
+void sn_utils::ls_uint64(std::ostream &s, const uint64_t v)
 {
 	uint8_t buf[8];
 	buf[0] = v;
@@ -179,7 +179,7 @@ void sn_utils::ls_uint64(std::ostream &s, uint64_t v)
 	s.write((char*)buf, 8);
 }
 
-void sn_utils::ls_int64(std::ostream &s, int64_t v)
+void sn_utils::ls_int64(std::ostream &s, const int64_t v)
 {
 	uint8_t buf[8];
 	buf[0] = v;
@@ -230,7 +230,7 @@ void sn_utils::s_str(std::ostream &s, std::string v)
 	s.write(buf, v.size() + 1);
 }
 
-void sn_utils::s_bool(std::ostream &s, bool v)
+void sn_utils::s_bool(std::ostream &s, const bool v)
 {
     ls_uint16(
         s,

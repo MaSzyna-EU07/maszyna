@@ -104,7 +104,7 @@ state_manager::init_scripting_interface() {
 
 // legacy method, calculates changes in simulation state over specified time
 void
-state_manager::update( double const Deltatime, int Iterationcount ) {
+state_manager::update( double const Deltatime, const int Iterationcount ) {
     // aktualizacja animacji krokiem FPS: dt=krok czasu [s], dt*iter=czas od ostatnich przeliczeń
     if (Deltatime == 0.0) { return; }
 

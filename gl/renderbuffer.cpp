@@ -12,12 +12,12 @@ gl::renderbuffer::~renderbuffer()
     glDeleteRenderbuffers(1, *this);
 }
 
-void gl::renderbuffer::bind(GLuint id)
+void gl::renderbuffer::bind(const GLuint id)
 {
     glBindRenderbuffer(GL_RENDERBUFFER, id);
 }
 
-void gl::renderbuffer::alloc(GLuint format, int width, int height, int samples)
+void gl::renderbuffer::alloc(const GLuint format, const int width, const int height, const int samples)
 {
     bind();
 	if (samples == 1)

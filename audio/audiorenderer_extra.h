@@ -3,7 +3,7 @@
 namespace audio {
 template <class Iterator_>
 openal_source &
-openal_source::bind( sound_source *Controller, uint32_sequence Sounds, Iterator_ First, Iterator_ Last ) {
+openal_source::bind( sound_source *Controller, const uint32_sequence Sounds, Iterator_ First, Iterator_ Last ) {
 
     controller = Controller;
     sounds = Sounds;

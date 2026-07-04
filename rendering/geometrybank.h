@@ -75,7 +75,7 @@ struct geometry_handle {
     geometry_handle() :
         bank( 0 ), chunk( 0 )
     {}
-    geometry_handle( std::uint32_t Bank, std::uint32_t Chunk ) :
+    geometry_handle(const std::uint32_t Bank, const std::uint32_t Chunk ) :
                              bank( Bank ),      chunk( Chunk )
     {}
 // methods
@@ -145,14 +145,14 @@ protected:
         index_array indices; // index data
 		userdata_array userdata;
         // NOTE: constructor doesn't copy provided geometry data, but moves it
-        geometry_chunk( vertex_array &Vertices, userdata_array& Userdata, unsigned int Type ) :
+        geometry_chunk( vertex_array &Vertices, userdata_array& Userdata, const unsigned int Type ) :
                                                             type( Type )
         {
             vertices.swap( Vertices );
 			userdata.swap( Userdata );
         }
         // NOTE: constructor doesn't copy provided geometry data, but moves it
-        geometry_chunk( index_array &Indices, vertex_array &Vertices, userdata_array& Userdata, unsigned int Type ) :
+        geometry_chunk( index_array &Indices, vertex_array &Vertices, userdata_array& Userdata, const unsigned int Type ) :
                                                                                        type( Type )
         {
             vertices.swap( Vertices );

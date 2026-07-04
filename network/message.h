@@ -18,7 +18,7 @@ struct message
 
 	type_e type;
 
-	message(type_e t) : type(t) {}
+	message(const type_e t) : type(t) {}
 	virtual void serialize(std::ostream &stream) const {}
 	virtual void deserialize(std::istream &stream) {}
 };
@@ -49,7 +49,7 @@ struct server_hello : public message
 
 struct request_command : public message
 {
-	request_command(type_e type) : message(type) {}
+	request_command(const type_e type) : message(type) {}
 	request_command() : message(REQUEST_COMMAND) {}
 
 	command_queue::commands_map commands;

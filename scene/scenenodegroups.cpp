@@ -53,7 +53,7 @@ node_groups::close()
     return handle();
 }
 
-bool node_groups::assign_cross_switch(map::track_switch& sw, std::string &sw_name, std::string const &id, size_t idx)
+bool node_groups::assign_cross_switch(map::track_switch& sw, std::string &sw_name, std::string const &id, const size_t idx)
 {
     sw.action[idx] = simulation::Events.FindEvent(sw_name + ":" + id);
     if (!sw.action[idx])
@@ -268,7 +268,7 @@ node_groups::insert( group_handle const Group, basic_event *Event ) {
 
 // sends basic content of the class in legacy (text) format to provided stream
 void
-node_groups::export_as_text( std::ostream &Output, bool Dirty ) const {
+node_groups::export_as_text( std::ostream &Output, const bool Dirty ) const {
     for( auto const &group : m_groupmap ) {
 		bool any = false;
         for( auto *node : group.second.nodes ) {
@@ -304,7 +304,7 @@ node_groups::export_as_text( std::ostream &Output, bool Dirty ) const {
 
 // removes specified group from the group list and group information from the group's nodes
 void
-node_groups::erase( group_map::const_iterator Group ) {
+node_groups::erase(const group_map::const_iterator Group ) {
 
     for( auto *node : Group->second.nodes ) {
         node->group( null_handle );

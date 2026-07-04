@@ -71,7 +71,7 @@ bool TTractionPowerSource::Load(cParser *parser) {
     return true;
 };
 
-bool TTractionPowerSource::Update(double dt)
+bool TTractionPowerSource::Update(const double dt)
 { // powinno być wykonane raz na krok fizyki
   // iloczyn napięcia i admitancji daje prąd
     if( FastFuse || SlowFuse ) {
@@ -114,7 +114,7 @@ bool TTractionPowerSource::Update(double dt)
     return true;
 };
 
-double TTractionPowerSource::CurrentGet(double res)
+double TTractionPowerSource::CurrentGet(const double res)
 { // pobranie wartości prądu przypadającego na rezystancję (res)
     // niech pamięta poprzednią admitancję i wg niej przydziela prąd
     if (SlowFuse || FastFuse)

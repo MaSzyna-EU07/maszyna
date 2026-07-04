@@ -34,7 +34,7 @@ std::array<bool, 256> makeBreakTable(const char *brk)
 	return arr;
 }
 
-char toLowerChar(char c)
+char toLowerChar(const char c)
 {
 	// Only fold ASCII letters. Bytes >= 0x80 belong to multibyte UTF-8
 	// sequences and must be passed through untouched, otherwise a non-"C"
@@ -55,7 +55,7 @@ bool startsWithBOM(const std::string &s)
 } // namespace
 
 // constructors
-cParser::cParser(std::string const &Stream, buffertype const Type, std::string Path, bool const Loadtraction, std::vector<std::string> Parameters, bool allowRandom)
+cParser::cParser(std::string const &Stream, buffertype const Type, std::string Path, bool const Loadtraction, std::vector<std::string> Parameters, const bool allowRandom)
     : allowRandomIncludes(allowRandom), LoadTraction(Loadtraction), mPath(Path)
 {
 	// store to calculate sub-sequent includes from relative path
@@ -177,7 +177,7 @@ cParser &cParser::autoclear(bool const Autoclear)
 	return *this;
 }
 
-bool cParser::getTokens(unsigned int Count, bool ToLower, const char *Break)
+bool cParser::getTokens(const unsigned int Count, const bool ToLower, const char *Break)
 {
 	if (true == m_autoclear)
 	{
@@ -224,7 +224,7 @@ bool cParser::getTokens(unsigned int Count, bool ToLower, const char *Break)
 		return true;
 }
 
-std::string cParser::readTokenFromStream(bool ToLower, const char *Break)
+std::string cParser::readTokenFromStream(const bool ToLower, const char *Break)
 {
 	std::string token;
 	token.reserve(64);
@@ -263,7 +263,7 @@ std::string cParser::readTokenFromStream(bool ToLower, const char *Break)
 	return token;
 }
 
-void cParser::stripFirstTokenBOM(std::string& token, bool ToLower, const char* Break) {
+void cParser::stripFirstTokenBOM(std::string& token, const bool ToLower, const char* Break) {
 	if (!mFirstToken) return;
 	mFirstToken = false;
 
@@ -279,7 +279,7 @@ void cParser::stripFirstTokenBOM(std::string& token, bool ToLower, const char* B
 	}
 }
 
-void cParser::substituteParameters(std::string& token, bool ToLower) {
+void cParser::substituteParameters(std::string& token, const bool ToLower) {
 	if (parameters.empty()) return;
 
 	// Replace occurrences of "(pN)" anywhere in token.
@@ -357,7 +357,7 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
 	}
 }
 
-bool cParser::handleIncludeIfPresent(std::string& token, bool ToLower, const char* Break) {
+bool cParser::handleIncludeIfPresent(std::string& token, const bool ToLower, const char* Break) {
 	// token-mode include: token == "include"
 	if (expandIncludes && token == "include") {
 		std::string includefile;
@@ -391,7 +391,7 @@ bool cParser::handleIncludeIfPresent(std::string& token, bool ToLower, const cha
 	return false;
 }
 
-void cParser::readToken(std::string &out, bool ToLower, const char *Break)
+void cParser::readToken(std::string &out, const bool ToLower, const char *Break)
 {
 	if (mIncludeParser)
 	{

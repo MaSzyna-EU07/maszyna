@@ -46,7 +46,7 @@ private:
 		dynamic_desc &dynamic;
 		int position;
 
-		vehicle_moved(trainset_desc &source, dynamic_desc &dynamic, int position)
+		vehicle_moved(trainset_desc &source, dynamic_desc &dynamic, const int position)
 		    : source(source), dynamic(dynamic), position(position) {}
 	};
 

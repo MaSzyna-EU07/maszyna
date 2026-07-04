@@ -29,7 +29,7 @@ int constexpr EU07_PICKBUFFERSIZE{ 1024 }; // size of (square) textures bound wi
 int constexpr EU07_REFLECTIONFIDELITYOFFSET { 250 }; // artificial increase of range for reflection pass detail reduction
 
 void GLAPIENTRY
-ErrorCallback( GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam ) {
+ErrorCallback( GLenum source, const GLenum type, const GLuint id, const GLenum severity, GLsizei length, const GLchar* message, const void* userParam ) {
 /*
     auto const typestring {
         type == GL_DEBUG_TYPE_ERROR ? "error" :
@@ -1461,7 +1461,7 @@ glm::mat4 opengl33_renderer::perspective_projection(const viewport_proj_config &
 	return glm::translate(R * M, -c.pe);
 }
 
-glm::mat4 opengl33_renderer::perspective_projection_raw(float fovy, float aspect, float znear, float zfar)
+glm::mat4 opengl33_renderer::perspective_projection_raw(const float fovy, const float aspect, const float znear, const float zfar)
 {
     if (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control)
     {
@@ -1487,7 +1487,7 @@ glm::mat4 opengl33_renderer::perspective_projection_raw(float fovy, float aspect
                glm::perspective(fovy, aspect, znear, zfar);
 }
 
-glm::mat4 opengl33_renderer::ortho_projection(float l, float r, float b, float t, float znear, float zfar)
+glm::mat4 opengl33_renderer::ortho_projection(const float l, const float r, const float b, const float t, const float znear, const float zfar)
 {
 	const glm::mat4 proj = glm::ortho(l, r, b, t, znear, zfar);
 	if (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control)
@@ -1511,7 +1511,7 @@ glm::mat4 opengl33_renderer::ortho_projection(float l, float r, float b, float t
 		       proj;
 }
 
-glm::mat4 opengl33_renderer::ortho_frustumtest_projection(float l, float r, float b, float t, float znear, float zfar)
+glm::mat4 opengl33_renderer::ortho_frustumtest_projection(const float l, const float r, const float b, const float t, const float znear, const float zfar)
 {
 	// for frustum calculation, use standard opengl matrix
 	return glm::ortho(l, r, b, t, znear, zfar);
@@ -2337,7 +2337,7 @@ opengl_material const & opengl33_renderer::Material( TSubModel const * Submodel 
     return m_materials.material( material );
 }
 
-texture_handle opengl33_renderer::Fetch_Texture(std::string const &Filename, bool const Loadnow, GLint format_hint)
+texture_handle opengl33_renderer::Fetch_Texture(std::string const &Filename, bool const Loadnow, const GLint format_hint)
 {
 	return m_textures.create(Filename, Loadnow, format_hint);
 }
@@ -2800,7 +2800,7 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 	m_frame_instance_buckets.clear();
 }
 
-void opengl33_renderer::Draw_Geometry(std::vector<gfx::geometrybank_handle>::iterator begin, std::vector<gfx::geometrybank_handle>::iterator end)
+void opengl33_renderer::Draw_Geometry(const std::vector<gfx::geometrybank_handle>::iterator begin, const std::vector<gfx::geometrybank_handle>::iterator end)
 {
 	m_geometry.draw(begin, end);
 }
@@ -2825,7 +2825,7 @@ void opengl33_renderer::draw(const gfx::geometry_handle &handle)
 	}
 }
 
-void opengl33_renderer::draw(std::vector<gfx::geometrybank_handle>::iterator it, std::vector<gfx::geometrybank_handle>::iterator end)
+void opengl33_renderer::draw(const std::vector<gfx::geometrybank_handle>::iterator it, const std::vector<gfx::geometrybank_handle>::iterator end)
 {
 	model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
 	model_ubo->update(model_ubs);
@@ -3850,7 +3850,7 @@ void opengl33_renderer::Render(TTrack *Track)
 }
 
 // experimental, does track rendering in two passes, to take advantage of reduced texture switching
-void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last)
+void opengl33_renderer::Render(const scene::basic_cell::path_sequence::const_iterator First, const scene::basic_cell::path_sequence::const_iterator Last)
 {
 
 	// setup
@@ -4826,7 +4826,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 			Render_Alpha(Submodel->Next);
 };
 
-bool opengl33_renderer::Debug_Ui_State(std::optional<bool> param)
+bool opengl33_renderer::Debug_Ui_State(const std::optional<bool> param)
 {
     if (param) {
         debug_ui_active = *param;
@@ -4920,7 +4920,7 @@ void opengl33_renderer::Update_Pick_Node()
 	}
 }
 
-void opengl33_renderer::Pick_Control_Callback(std::function<void(TSubModel const *, glm::vec2 pos)> callback)
+void opengl33_renderer::Pick_Control_Callback(const std::function<void(TSubModel const *, glm::vec2 pos)> callback)
 {
   if (!Global.render_cab) {
     callback(nullptr, glm::vec2());
@@ -4929,7 +4929,7 @@ void opengl33_renderer::Pick_Control_Callback(std::function<void(TSubModel const
 	m_control_pick_requests.push_back(callback);
 }
 
-void opengl33_renderer::Pick_Node_Callback(std::function<void(scene::basic_node *)> callback)
+void opengl33_renderer::Pick_Node_Callback(const std::function<void(scene::basic_node *)> callback)
 {
 	m_node_pick_requests.push_back(callback);
 }

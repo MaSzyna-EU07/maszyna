@@ -413,7 +413,7 @@ namespace {
 // doesn't match a recognised animation keyword — these are driven by event-
 // triggered SetRotate/SetTranslate at runtime, which would silently break if
 // the model were batched.
-bool anim_type_unsafe_for_instancing( TAnimType a ) {
+bool anim_type_unsafe_for_instancing(const TAnimType a ) {
     switch( a ) {
     case TAnimType::at_Rotate:
     case TAnimType::at_RotateXYZ:
@@ -650,7 +650,7 @@ int TAnimModel::TerrainCount()
     return pModel ? pModel->TerrainCount() : 0;
 }
 
-TSubModel * TAnimModel::TerrainSquare(int n)
+TSubModel * TAnimModel::TerrainSquare(const int n)
 { // pobieranie wskaźników do pierwszego submodelu
     return pModel ? pModel->TerrainSquare(n) : 0;
 }

@@ -284,7 +284,7 @@ TGauge::Load_mapping( cParser &Input, scratch_data &Scratchpad ) {
 
 // ustawienie wartości docelowej. plays provided fallback sound, if no sound was defined in the control itself
 bool
-TGauge::UpdateValue( float fNewDesired, std::optional<sound_source> &Fallbacksound ) {
+TGauge::UpdateValue(const float fNewDesired, std::optional<sound_source> &Fallbacksound ) {
 
     if( false == UpdateValue( fNewDesired ) ) {
         if( Fallbacksound ) {
@@ -296,7 +296,7 @@ TGauge::UpdateValue( float fNewDesired, std::optional<sound_source> &Fallbacksou
 }
 
 bool
-TGauge::UpdateValue( float fNewDesired ) {
+TGauge::UpdateValue(const float fNewDesired ) {
 
     auto const desiredtimes100 = static_cast<int>( std::round( 100.0 * fNewDesired ) );
     if( desiredtimes100 == static_cast<int>( std::round( 100.0 * m_targetvalue ) ) ) {
@@ -338,7 +338,7 @@ TGauge::UpdateValue( float fNewDesired ) {
     return false; // no suitable sound was found
 };
 
-void TGauge::PutValue(float fNewDesired)
+void TGauge::PutValue(const float fNewDesired)
 { // McZapkie-281102: natychmiastowe wpisanie wartosci
     m_targetvalue = fNewDesired;
     m_value = m_targetvalue;

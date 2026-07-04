@@ -358,7 +358,7 @@ int TTraction::TestPoint(glm::dvec3 const &Point)
 
 //łączenie segmentu (with) od strony (my) do jego (to)
 void
-TTraction::Connect(int my, TTraction *with, int to) {
+TTraction::Connect(const int my, TTraction *with, const int to) {
 
     hvNext[ my ] = with;
     iNext[ my ] = to;
@@ -463,7 +463,7 @@ void TTraction::PowerSet(TTractionPowerSource *ps)
     }
 };
 
-double TTraction::VoltageGet(double u, double i)
+double TTraction::VoltageGet(const double u, const double i)
 { // pobranie napięcia na przęśle po podłączeniu do niego rezystancji (res) - na razie jest to prąd
     if (!psSection)
         if (!psPowered)

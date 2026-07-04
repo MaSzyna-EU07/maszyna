@@ -11,7 +11,7 @@ TTranscripts Transcripts;
 
 // dodanie linii do tabeli, (show) i (hide) w [s] od aktualnego czasu
 void
-TTranscripts::AddLine( std::string const &txt, float show, float hide, bool it ) {
+TTranscripts::AddLine( std::string const &txt, float show, float hide, const bool it ) {
 
     if( show == hide ) { return; } // komentarz jest ignorowany
 

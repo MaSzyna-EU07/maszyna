@@ -454,7 +454,7 @@ public:
 	    create_map_geometry();
 	void
 	    update_poi_geometry();
-    basic_section* get_section(size_t section)
+    basic_section* get_section(const size_t section)
 	    { return m_sections[section]; }
 	gfx::geometrybank_handle
 	    get_map_poi_geometry() { return m_map_poipoints; }

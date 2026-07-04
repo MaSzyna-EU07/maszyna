@@ -173,7 +173,7 @@ class TSpeedPos
     bool Update();
     // aktualizuje odległość we wpisie
 	void
-        UpdateDistance( double dist ) {
+        UpdateDistance(const double dist ) {
             fDist -= dist; }
     bool Set(basic_event *e, double d, double length, TOrders order = Wait_for_orders);
     void Set(TTrack *t, double d, int f);
@@ -483,7 +483,7 @@ private:
 // methods
 public:
     int CrossRoute( TTrack *tr );
-  void MoveDistanceAdd( double distance ) {
+  void MoveDistanceAdd(const double distance ) {
         dMoveLen += distance * iDirection;
     } //jak jedzie do tyłu to trzeba uwzględniać, że distance jest ujemna
 private:

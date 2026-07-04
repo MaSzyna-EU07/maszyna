@@ -33,7 +33,7 @@ void locale::init()
 	WriteLog("translation: " + std::to_string(lang_mapping.size()) + " strings loaded");
 }
 
-const std::string& locale::lookup_s(const std::string &msg, bool constant)
+const std::string& locale::lookup_s(const std::string &msg, const bool constant)
 {
 	if (constant) {
 		const auto it = pointer_cache.find(&msg);
@@ -53,7 +53,7 @@ const std::string& locale::lookup_s(const std::string &msg, bool constant)
 	return msg;
 }
 
-const char* locale::lookup_c(const char *msg, bool constant)
+const char* locale::lookup_c(const char *msg, const bool constant)
 {
 	if (constant) {
 		const auto it = pointer_cache.find(msg);

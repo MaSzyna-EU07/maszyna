@@ -105,7 +105,7 @@ class TMTableTime
     int mm = 0;
     double mr = 0.0;
     void UpdateMTableTime(double deltaT);
-    TMTableTime(int InitH, int InitM ) :
+    TMTableTime(const int InitH, const int InitM ) :
         hh( InitH ),
         mm( InitM )
 	{}

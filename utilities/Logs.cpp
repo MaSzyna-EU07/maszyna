@@ -158,7 +158,7 @@ void LogService()
 }
 
 
-bool ShouldSkipLog(std::string_view str, logtype type)
+bool ShouldSkipLog(const std::string_view str, logtype type)
 {
 	return str.empty() ||
 		   TestFlag(Global.DisabledLogTypes, static_cast<unsigned int>(type));
@@ -173,7 +173,7 @@ std::string FormatLogMessage(std::string_view str)
 	return std::format("[ {:8.3f} ]\t\t{}", seconds, str);
 }
 
-void WriteLog(std::string_view str, logtype type, bool isError)
+void WriteLog(const std::string_view str, const logtype type, bool isError)
 {
 	if (ShouldSkipLog(str, type))
 		return;
@@ -184,7 +184,7 @@ void WriteLog(std::string_view str, logtype type, bool isError)
 	InfoStack.push_back({message, isError});
 }
 
-void ErrorLog(std::string_view str, logtype type)
+void ErrorLog(const std::string_view str, const logtype type)
 {
 	if (ShouldSkipLog(str, type))
 		return;
@@ -195,7 +195,7 @@ void ErrorLog(std::string_view str, logtype type)
 	ErrorStack.push_back(message);
 }
 
-void WriteLog(const char* str, logtype type, bool isError)
+void WriteLog(const char* str, const logtype type, const bool isError)
 {
 	if (str == nullptr || *str == '\0')
 		return;
@@ -203,7 +203,7 @@ void WriteLog(const char* str, logtype type, bool isError)
 	WriteLog(std::string_view{str}, type, isError);
 }
 
-void ErrorLog(const char* str, logtype type)
+void ErrorLog(const char* str, const logtype type)
 {
 	if (str == nullptr || *str == '\0')
 		return;

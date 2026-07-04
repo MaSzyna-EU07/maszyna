@@ -15,8 +15,8 @@ WNDPROC BaseWindowProc;
 PCOPYDATASTRUCT pDane;
 
 LRESULT APIENTRY WndProc( HWND hWnd, // handle for this window
-                         UINT uMsg, // message for this window
-                         WPARAM wParam, // additional message information
+                         const UINT uMsg, // message for this window
+                         const WPARAM wParam, // additional message information
                          LPARAM lParam) // additional message information
 {
     switch( uMsg ) // check for windows messages

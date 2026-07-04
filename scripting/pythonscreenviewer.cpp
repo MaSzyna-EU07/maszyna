@@ -5,25 +5,25 @@
 #include "gl/vao.h"
 #include "utilities/Logs.h"
 
-void texture_window_resize(GLFWwindow *win, int w, int h)
+void texture_window_resize(GLFWwindow *win, const int w, const int h)
 {
 	const auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
     texwindow->notify_window_size(win, w, h);
 }
 
-void texture_window_fb_resize(GLFWwindow *win, int w, int h)
+void texture_window_fb_resize(GLFWwindow *win, const int w, const int h)
 {
 	const auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
     texwindow->notify_window_fb_size(win, w, h);
 }
 
-void texture_window_mouse_button(GLFWwindow *win, int button, int action, int mods)
+void texture_window_mouse_button(GLFWwindow *win, const int button, const int action, int mods)
 {
 	const auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
     texwindow->notify_click(win, button, action);
 }
 
-void texture_window_cursor_pos(GLFWwindow *win, double x, double y)
+void texture_window_cursor_pos(GLFWwindow *win, const double x, const double y)
 {
 	const auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
     texwindow->notify_cursor_pos(win, x, y);
@@ -185,7 +185,7 @@ void python_screen_viewer::threadfunc()
 	}
 }
 
-void python_screen_viewer::notify_window_fb_size(GLFWwindow *window, int w, int h)
+void python_screen_viewer::notify_window_fb_size(GLFWwindow *window, const int w, const int h)
 {
     for (const auto &conf : m_windows) {
         if (conf->window == window) {
@@ -196,7 +196,7 @@ void python_screen_viewer::notify_window_fb_size(GLFWwindow *window, int w, int 
     }
 }
 
-void python_screen_viewer::notify_window_size(GLFWwindow *window, int w, int h)
+void python_screen_viewer::notify_window_size(GLFWwindow *window, const int w, const int h)
 {
 	for (const auto &conf : m_windows) {
 		if (conf->window == window) {
@@ -207,7 +207,7 @@ void python_screen_viewer::notify_window_size(GLFWwindow *window, int w, int h)
 	}
 }
 
-void python_screen_viewer::notify_cursor_pos(GLFWwindow *window, double x, double y)
+void python_screen_viewer::notify_cursor_pos(GLFWwindow *window, const double x, const double y)
 {
     for (const auto &conf : m_windows) {
         if (conf->window == window) {

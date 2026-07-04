@@ -117,7 +117,7 @@ TIsolated::AssignEvents() {
     evDec = simulation::Events.FindEvent( asName + ":dec" );
 }
 
-void TIsolated::Modify(int i, TDynamicObject *o)
+void TIsolated::Modify(const int i, TDynamicObject *o)
 { // dodanie lub odjęcie osi
     if (iAxles)
     { // grupa zajęta
@@ -207,7 +207,7 @@ TTrack::sort_by_material( TTrack const *Left, TTrack const *Right ) {
     return std::tie( Left->m_material1, Left->m_material2 ) < std::tie( Right->m_material1, Right->m_material2 );
 }
 
-TTrack * TTrack::Create400m(int what, double dx)
+TTrack * TTrack::Create400m(const int what, const double dx)
 { // tworzenie toru do wstawiania taboru podczas konwersji na E3D
     scene::node_data nodedata;
     nodedata.name = "auto_400m"; // track isn't visible so only name is needed
@@ -321,7 +321,7 @@ TTrack * TTrack::NullCreate(int dir)
     return trk;
 };
 
-void TTrack::ConnectPrevPrev(TTrack *pTrack, int typ)
+void TTrack::ConnectPrevPrev(TTrack *pTrack, const int typ)
 { //łączenie torów - Point1 własny do Point1 cudzego
     if (pTrack)
     { //(pTrack) może być zwrotnicą, a (this) tylko zwykłym odcinkiem
@@ -331,7 +331,7 @@ void TTrack::ConnectPrevPrev(TTrack *pTrack, int typ)
         pTrack->iPrevDirection = 0;
     }
 }
-void TTrack::ConnectPrevNext(TTrack *pTrack, int typ)
+void TTrack::ConnectPrevNext(TTrack *pTrack, const int typ)
 { //łaczenie torów - Point1 własny do Point2 cudzego
     if (pTrack)
     {
@@ -350,7 +350,7 @@ void TTrack::ConnectPrevNext(TTrack *pTrack, int typ)
                             pTrack->iTrapezoid |= 2; // to rysujemy potworka
     }
 }
-void TTrack::ConnectNextPrev(TTrack *pTrack, int typ)
+void TTrack::ConnectNextPrev(TTrack *pTrack, const int typ)
 { //łaczenie torów - Point2 własny do Point1 cudzego
     if (pTrack)
     {
@@ -369,7 +369,7 @@ void TTrack::ConnectNextPrev(TTrack *pTrack, int typ)
                             iTrapezoid |= 2; // to rysujemy potworka
     }
 }
-void TTrack::ConnectNextNext(TTrack *pTrack, int typ)
+void TTrack::ConnectNextNext(TTrack *pTrack, const int typ)
 { //łaczenie torów - Point2 własny do Point2 cudzego
     if (pTrack)
     {
@@ -1252,7 +1252,7 @@ void TTrack::get_map_active_paths(map_colored_paths &handles)
 	}
 }
 
-void TTrack::get_map_paths_for_state(map_colored_paths &handles, int state)
+void TTrack::get_map_paths_for_state(map_colored_paths &handles, const int state)
 {
     if (iCategoryFlag != 1 || eType != tt_Switch)
         return;
@@ -1759,7 +1759,7 @@ void TTrack::RenderDynSounds()
     }
 };
 //---------------------------------------------------------------------------
-bool TTrack::SetConnections(int i)
+bool TTrack::SetConnections(const int i)
 { // przepisanie aktualnych połączeń toru do odpowiedniego segmentu
     if (SwitchExtension)
     {
@@ -1887,7 +1887,7 @@ bool TTrack::Switch(int i, float const t, float const d)
     return false;
 };
 
-bool TTrack::SwitchForced(int i, TDynamicObject *o)
+bool TTrack::SwitchForced(const int i, TDynamicObject *o)
 { // rozprucie rozjazdu
     if (SwitchExtension)
         if (eType == tt_Switch)
@@ -1915,7 +1915,7 @@ bool TTrack::SwitchForced(int i, TDynamicObject *o)
     return true;
 };
 
-int TTrack::CrossSegment(int from, int into)
+int TTrack::CrossSegment(const int from, const int into)
 { // ustawienie wskaźnika na segement w pożądanym kierunku (into) od strony (from)
     // zwraca kod segmentu, z kierunkiem jazdy jako znakiem ±
     int i = 0;
@@ -2540,7 +2540,7 @@ void TTrack::MovedUp1(float const dh)
 };
 
 // ustawienie prędkości z ograniczeniem do pierwotnej wartości (zapisanej w scenerii)
-void TTrack::VelocitySet(float v) {
+void TTrack::VelocitySet(const float v) {
     // TBD, TODO: add a variable to preserve potential speed limit set by the track configuration on basic track pieces
     if( SwitchExtension
      && SwitchExtension->fVelocity != -1 ) {
@@ -2602,7 +2602,7 @@ TTrack::DoubleSlip() const {
 }
 
 
-TTrack * TTrack::Connected(int s, double &d) const
+TTrack * TTrack::Connected(const int s, double &d) const
 { // zwraca wskaźnik na sąsiedni tor, w kierunku określonym znakiem (s), odwraca (d) w razie
     // niezgodności kierunku torów
     TTrack *t; // nie zmieniamy kierunku (d), jeśli nie ma toru dalej

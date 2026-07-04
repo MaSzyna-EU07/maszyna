@@ -204,7 +204,7 @@ void calculate_tangents(vertex_array &vertices, index_array const &indices, int 
     }
 }
 
-void calculate_indices( index_array &Indices, vertex_array &Vertices, userdata_array &Userdata, float tolerancescale ) {
+void calculate_indices( index_array &Indices, vertex_array &Vertices, userdata_array &Userdata, const float tolerancescale ) {
 
     Indices.resize( Vertices.size() );
     std::iota( std::begin( Indices ), std::end( Indices ), 0 );

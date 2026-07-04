@@ -1281,7 +1281,7 @@ state_serializer::export_as_text(std::string const &Scenariofile) const {
 }
 
 void
-state_serializer::export_nodes_to_stream(std::ostream &scmfile, bool Dirty)
+state_serializer::export_nodes_to_stream(std::ostream &scmfile, const bool Dirty)
 {
 	// groups
 	scmfile << "// groups\n";

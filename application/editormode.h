@@ -54,9 +54,9 @@ class editor_mode : public application_mode
 	static void  set_focus_active(bool isActive);
 	static TCamera& get_camera() { return Camera; }
 	static bool change_history() { return m_change_history; }
-	static void set_change_history(bool enabled) { m_change_history = enabled; }
+	static void set_change_history(const bool enabled) { m_change_history = enabled; }
 	static bool settings_open() { return m_settings_open; }
-	static void set_settings_open(bool enabled) { m_settings_open = enabled; }
+	static void set_settings_open(const bool enabled) { m_settings_open = enabled; }
   private:
 	// types
 	struct editormode_input

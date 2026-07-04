@@ -70,7 +70,7 @@ void ui::cameraview_panel::render()
 	ImGui::End();
 }
 
-bool ui::cameraview_panel::set_state(bool rec)
+bool ui::cameraview_panel::set_state(const bool rec)
 {
 	if (recording == rec)
 		return false;

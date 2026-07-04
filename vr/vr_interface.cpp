@@ -4,7 +4,7 @@
 
 vr_interface::~vr_interface() {}
 
-bool vr_interface_factory::register_backend(const std::string &backend, create_method func)
+bool vr_interface_factory::register_backend(const std::string &backend, const create_method func)
 {
     backends[backend] = func;
     return true;

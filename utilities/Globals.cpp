@@ -44,14 +44,14 @@ void global_settings::LoadIniFile(std::string asFileName)
 }
 
 template <typename T>
-static void ParseOne(cParser& parser, T& out, int tokenCount = 1, bool convert = false)
+static void ParseOne(cParser& parser, T& out, const int tokenCount = 1, const bool convert = false)
 {
     parser.getTokens(tokenCount, convert);
     parser >> out;
 }
 
 template <typename T>
-static void ParseOneClamped(cParser& parser, T& out, T minValue, T maxValue, int tokenCount = 1, bool convert = false)
+static void ParseOneClamped(cParser& parser, T& out, T minValue, T maxValue, const int tokenCount = 1, const bool convert = false)
 {
     parser.getTokens(tokenCount, convert);
     parser >> out;

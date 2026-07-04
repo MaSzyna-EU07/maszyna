@@ -43,7 +43,7 @@ double const TFVE408::pos_table[11] = {0, 10, 0, 0, 10, 7, 8, 9, 0, 1, 5};
 /// <param name="P1">Source pressure [bar].</param>
 /// <param name="P2">Destination pressure [bar].</param>
 /// <returns>Dimensionless flow driver (positive when P2 &gt; P1).</returns>
-double PR(double P1, double P2)
+double PR(const double P1, const double P2)
 {
 	const double PH = std::max(P1, P2) + 0.1;
 	const double PL = P1 + P2 - PH + 0.2;
@@ -57,7 +57,7 @@ double PR(double P1, double P2)
 /// <param name="P2">Destination pressure [bar].</param>
 /// <param name="S">Effective orifice cross-section.</param>
 /// <returns>Volumetric flow rate (signed).</returns>
-double PF_old(double P1, double P2, double S)
+double PF_old(const double P1, const double P2, const double S)
 {
 	const double PH = std::max(P1, P2) + 1;
 	const double PL = P1 + P2 - PH + 2;
@@ -203,7 +203,7 @@ double PFVd(double PH, double PL, double const S, double LIM, double const DP)
 /// <param name="pos">Continuous handle position.</param>
 /// <param name="i_pos">Detent centre to compare against.</param>
 /// <returns>True if pos is within ±0.5 of i_pos.</returns>
-bool is_EQ(double pos, double i_pos)
+bool is_EQ(const double pos, const double i_pos)
 {
 	return pos <= i_pos + 0.5 && pos > i_pos - 0.5;
 }
@@ -233,7 +233,7 @@ double TReservoir::P()
 /// The change is applied to <c>Vol</c> on the next call to <see cref="Act"/>.
 /// </summary>
 /// <param name="dv">Flow delta (positive = into reservoir, negative = out).</param>
-void TReservoir::Flow(double dv)
+void TReservoir::Flow(const double dv)
 {
 	dVol = dVol + dv;
 }
@@ -252,7 +252,7 @@ void TReservoir::Act()
 /// Sets the reservoir capacity in liters.
 /// </summary>
 /// <param name="Capacity">Capacity in liters.</param>
-void TReservoir::CreateCap(double Capacity)
+void TReservoir::CreateCap(const double Capacity)
 {
 	Cap = Capacity;
 }
@@ -262,7 +262,7 @@ void TReservoir::CreateCap(double Capacity)
 /// and clears any pending flow.
 /// </summary>
 /// <param name="Press">Initial pressure in bar.</param>
-void TReservoir::CreatePress(double Press)
+void TReservoir::CreatePress(const double Press)
 {
 	Vol = Cap * Press;
 	dVol = 0;
@@ -367,7 +367,7 @@ end  ; */
 /// <param name="i_mat">Friction material id (bp_* constant, optionally OR'ed with bp_MHS).</param>
 /// <param name="i_ba">Number of braked axles.</param>
 /// <param name="i_nbpa">Number of blocks per axle.</param>
-TBrake::TBrake(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa)
+TBrake::TBrake(const double i_mbp, const double i_bcr, const double i_bcd, const double i_brc, const int i_bcn, const int i_BD, int i_mat, const int i_ba, const int i_nbpa)
 {
 	// inherited:: Create;
 	MaxBP = i_mbp;
@@ -1313,7 +1313,7 @@ void TEStEP2::SetLP(double const TM, double const LM, double const TBP)
 /// quadratic-in-EPS rate and a load-weighing-aware ceiling at MaxBP * LoadC.
 /// </summary>
 /// <param name="dt">Time step [s].</param>
-void TEStEP2::EPCalc(double dt)
+void TEStEP2::EPCalc(const double dt)
 {
 	const double temp = BrakeRes->P() * int(EPS > 0);
 	const double dv = PF(temp, LBP, 0.00053 + 0.00060 * int(EPS < 0)) * dt * EPS * EPS * int(LBP * EPS < MaxBP * LoadC);
@@ -1327,7 +1327,7 @@ void TEStEP2::EPCalc(double dt)
 /// opening with a clamped error term S.
 /// </summary>
 /// <param name="dt">Time step [s].</param>
-void TEStEP1::EPCalc(double dt)
+void TEStEP1::EPCalc(const double dt)
 {
 	const double temp = EPS - std::floor(EPS); // część ułamkowa jest hamulcem EP
 	const double LBPLim = std::min(MaxBP * LoadC * temp, BrakeRes->P()); // do czego dążymy
@@ -2940,14 +2940,14 @@ double TDriverHandle::GetEP(double pos)
 /// Latches the manual overcharge / assimilation button state.
 /// </summary>
 /// <param name="Active">True while the button is pressed.</param>
-void TDriverHandle::OvrldButton(bool Active)
+void TDriverHandle::OvrldButton(const bool Active)
 {
 	ManualOvrldActive = Active;
 }
 
 /// <summary>Stores the universal-button flags (combined ub_* values).</summary>
 /// <param name="flag">Universal-button bitfield.</param>
-void TDriverHandle::SetUniversalFlag(int flag)
+void TDriverHandle::SetUniversalFlag(const int flag)
 {
 	UniversalFlag = flag;
 }
@@ -2966,7 +2966,7 @@ void TDriverHandle::SetUniversalFlag(int flag)
 /// <param name="dt">Time step [s].</param>
 /// <param name="ep">EP / equalising input [bar].</param>
 /// <returns>Brake pipe volume change for this step.</returns>
-double TFV4a::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
+double TFV4a::GetPF(const double i_bcp, const double PP, const double HP, const double dt, double ep)
 {
 	static constexpr int LBDelay = 100;
 
@@ -3034,7 +3034,7 @@ double TFV4a::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 
 /// <summary>Initialises CP and RP to the supplied pressure.</summary>
 /// <param name="Press">Initial pressure [bar].</param>
-void TFV4a::Init(double Press)
+void TFV4a::Init(const double Press)
 {
 	CP = Press;
 	RP = Press;
@@ -3055,7 +3055,7 @@ void TFV4a::Init(double Press)
 /// <param name="dt">Time step [s].</param>
 /// <param name="ep">EP / equalising input [bar].</param>
 /// <returns>Brake pipe volume change for this step.</returns>
-double TFV4aM::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
+double TFV4aM::GetPF(double i_bcp, const double PP, const double HP, const double dt, double ep)
 {
 	constexpr int LBDelay{100};
 	constexpr double xpM{0.3}; // mnoznik membrany komory pod
@@ -3213,7 +3213,7 @@ double TFV4aM::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 
 /// <summary>Initialises CP and RP to the supplied pressure.</summary>
 /// <param name="Press">Initial pressure [bar].</param>
-void TFV4aM::Init(double Press)
+void TFV4aM::Init(const double Press)
 {
 	CP = Press;
 	RP = Press;
@@ -3221,14 +3221,14 @@ void TFV4aM::Init(double Press)
 
 /// <summary>Sets the reductor adjustment offset (turning the reductor cap).</summary>
 /// <param name="nAdj">Pressure correction [bar].</param>
-void TFV4aM::SetReductor(double nAdj)
+void TFV4aM::SetReductor(const double nAdj)
 {
 	RedAdj = nAdj;
 }
 
 /// <summary>Returns Sounds[i] for valid indices, 0 otherwise.</summary>
 /// <param name="i">Sound channel index (s_fv4a_*).</param>
-double TFV4aM::GetSound(int i)
+double TFV4aM::GetSound(const int i)
 {
 	if (i > 4)
 		return 0;
@@ -3238,7 +3238,7 @@ double TFV4aM::GetSound(int i)
 
 /// <summary>Returns pos_table[i] (handle position for the requested function code).</summary>
 /// <param name="i">Function code (bh_*).</param>
-double TFV4aM::GetPos(int i)
+double TFV4aM::GetPos(const int i)
 {
 	return pos_table[i];
 }
@@ -3262,7 +3262,7 @@ double TFV4aM::GetRP()
 /// </summary>
 /// <param name="pos">Continuous handle position.</param>
 /// <returns>Interpolated target pressure [bar].</returns>
-double TFV4aM::LPP_RP(double pos) // cisnienie z zaokraglonej pozycji;
+double TFV4aM::LPP_RP(const double pos) // cisnienie z zaokraglonej pozycji;
 {
 	int const i_pos = 2 + std::floor(pos); // zaokraglone w dol
 
@@ -3271,7 +3271,7 @@ double TFV4aM::LPP_RP(double pos) // cisnienie z zaokraglonej pozycji;
 /// <summary>Returns true if pos is within ±0.5 of i_pos (detent test).</summary>
 /// <param name="pos">Continuous handle position.</param>
 /// <param name="i_pos">Detent centre.</param>
-bool TFV4aM::EQ(double pos, double i_pos)
+bool TFV4aM::EQ(const double pos, const double i_pos)
 {
 	return pos <= i_pos + 0.5 && pos > i_pos - 0.5;
 }
@@ -3291,7 +3291,7 @@ bool TFV4aM::EQ(double pos, double i_pos)
 /// <param name="dt">Time step [s].</param>
 /// <param name="ep">EP / equalising input [bar].</param>
 /// <returns>Brake pipe volume change for this step.</returns>
-double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
+double TMHZ_EN57::GetPF(double i_bcp, const double PP, const double HP, const double dt, double ep)
 {
 	static constexpr int LBDelay = 100;
 
@@ -3387,21 +3387,21 @@ double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep
 
 /// <summary>Initialises CP to the supplied pressure.</summary>
 /// <param name="Press">Initial pressure [bar].</param>
-void TMHZ_EN57::Init(double Press)
+void TMHZ_EN57::Init(const double Press)
 {
 	CP = Press;
 }
 
 /// <summary>Sets the reductor adjustment offset.</summary>
 /// <param name="nAdj">Pressure correction [bar].</param>
-void TMHZ_EN57::SetReductor(double nAdj)
+void TMHZ_EN57::SetReductor(const double nAdj)
 {
 	RedAdj = nAdj;
 }
 
 /// <summary>Returns Sounds[i] for valid indices, 0 otherwise.</summary>
 /// <param name="i">Sound channel index.</param>
-double TMHZ_EN57::GetSound(int i)
+double TMHZ_EN57::GetSound(const int i)
 {
 	if (i > 4)
 		return 0;
@@ -3411,7 +3411,7 @@ double TMHZ_EN57::GetSound(int i)
 
 /// <summary>Returns pos_table[i].</summary>
 /// <param name="i">Function code (bh_*).</param>
-double TMHZ_EN57::GetPos(int i)
+double TMHZ_EN57::GetPos(const int i)
 {
 	return pos_table[i];
 }
@@ -3433,7 +3433,7 @@ double TMHZ_EN57::GetRP()
 /// (linear ramp 0..1 between positions 0 and 8, zero above 9.5).
 /// </summary>
 /// <param name="pos">Handle position.</param>
-double TMHZ_EN57::GetEP(double pos)
+double TMHZ_EN57::GetEP(const double pos)
 {
 	if (pos < 9.5)
 		return std::clamp(0.125 * pos, 0., 1.);
@@ -3448,7 +3448,7 @@ double TMHZ_EN57::GetEP(double pos)
 /// </summary>
 /// <param name="pos">Continuous handle position.</param>
 /// <returns>Target brake-pipe pressure [bar].</returns>
-double TMHZ_EN57::LPP_RP(double pos) // cisnienie z zaokraglonej pozycji;
+double TMHZ_EN57::LPP_RP(const double pos) // cisnienie z zaokraglonej pozycji;
 {
 	if (pos > 8.5)
 		return 5.0 - 0.15 * pos - 0.35;
@@ -3470,7 +3470,7 @@ double TMHZ_EN57::LPP_RP(double pos) // cisnienie z zaokraglonej pozycji;
 /// <param name="OverP">Unbrake over-pressure [bar].</param>
 /// <param name="OMP">Overload (assimilation) max pressure.</param>
 /// <param name="OPD">Overload pressure decay rate.</param>
-void TMHZ_EN57::SetParams(bool AO, bool MO, double OverP, double, double OMP, double OPD)
+void TMHZ_EN57::SetParams(const bool AO, const bool MO, const double OverP, double, const double OMP, const double OPD)
 {
 	AutoOvrld = AO;
 	ManualOvrld = MO;
@@ -3481,7 +3481,7 @@ void TMHZ_EN57::SetParams(bool AO, bool MO, double OverP, double, double OMP, do
 }
 
 /// <summary>Returns true if pos is within ±0.5 of i_pos (detent test).</summary>
-bool TMHZ_EN57::EQ(double pos, double i_pos)
+bool TMHZ_EN57::EQ(const double pos, const double i_pos)
 {
 	return pos <= i_pos + 0.5 && pos > i_pos - 0.5;
 }
@@ -3500,7 +3500,7 @@ bool TMHZ_EN57::EQ(double pos, double i_pos)
 /// <param name="dt">Time step [s].</param>
 /// <param name="ep">EP / equalising input [bar].</param>
 /// <returns>Brake pipe volume change for this step.</returns>
-double TMHZ_K5P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
+double TMHZ_K5P::GetPF(double i_bcp, const double PP, const double HP, const double dt, double ep)
 {
 	static constexpr int LBDelay = 100;
 
@@ -3599,7 +3599,7 @@ double TMHZ_K5P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 
 /// <summary>Initialises CP and enables the time / EP-time chambers.</summary>
 /// <param name="Press">Initial pressure [bar].</param>
-void TMHZ_K5P::Init(double Press)
+void TMHZ_K5P::Init(const double Press)
 {
 	CP = Press;
 	Time = true;
@@ -3608,14 +3608,14 @@ void TMHZ_K5P::Init(double Press)
 
 /// <summary>Sets the reductor adjustment offset.</summary>
 /// <param name="nAdj">Pressure correction [bar].</param>
-void TMHZ_K5P::SetReductor(double nAdj)
+void TMHZ_K5P::SetReductor(const double nAdj)
 {
 	RedAdj = nAdj;
 }
 
 /// <summary>Returns Sounds[i] for valid indices, 0 otherwise.</summary>
 /// <param name="i">Sound channel index.</param>
-double TMHZ_K5P::GetSound(int i)
+double TMHZ_K5P::GetSound(const int i)
 {
 	if (i > 4)
 		return 0;
@@ -3625,7 +3625,7 @@ double TMHZ_K5P::GetSound(int i)
 
 /// <summary>Returns pos_table[i].</summary>
 /// <param name="i">Function code (bh_*).</param>
-double TMHZ_K5P::GetPos(int i)
+double TMHZ_K5P::GetPos(const int i)
 {
 	return pos_table[i];
 }
@@ -3653,7 +3653,7 @@ double TMHZ_K5P::GetRP()
 /// <param name="FSF">Filling-stroke factor offset (FillingStrokeFactor = 1 + FSF).</param>
 /// <param name="OMP">Overload max pressure.</param>
 /// <param name="OPD">Overload pressure decay rate.</param>
-void TMHZ_K5P::SetParams(bool AO, bool MO, double OverP, double FSF, double OMP, double OPD)
+void TMHZ_K5P::SetParams(const bool AO, const bool MO, const double OverP, const double FSF, const double OMP, const double OPD)
 {
 	AutoOvrld = AO;
 	ManualOvrld = MO;
@@ -3665,7 +3665,7 @@ void TMHZ_K5P::SetParams(bool AO, bool MO, double OverP, double FSF, double OMP,
 }
 
 /// <summary>Returns true if pos is within ±0.5 of i_pos (detent test).</summary>
-bool TMHZ_K5P::EQ(double pos, double i_pos)
+bool TMHZ_K5P::EQ(const double pos, const double i_pos)
 {
 	return pos <= i_pos + 0.5 && pos > i_pos - 0.5;
 }
@@ -3683,7 +3683,7 @@ bool TMHZ_K5P::EQ(double pos, double i_pos)
 /// <param name="dt">Time step [s].</param>
 /// <param name="ep">EP / equalising input [bar].</param>
 /// <returns>Brake pipe volume change for this step.</returns>
-double TMHZ_6P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
+double TMHZ_6P::GetPF(double i_bcp, const double PP, const double HP, const double dt, double ep)
 {
 	static constexpr int LBDelay = 100;
 
@@ -3782,7 +3782,7 @@ double TMHZ_6P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 
 /// <summary>Initialises CP and enables the time / EP-time chambers.</summary>
 /// <param name="Press">Initial pressure [bar].</param>
-void TMHZ_6P::Init(double Press)
+void TMHZ_6P::Init(const double Press)
 {
 	CP = Press;
 	Time = true;
@@ -3791,14 +3791,14 @@ void TMHZ_6P::Init(double Press)
 
 /// <summary>Sets the reductor adjustment offset.</summary>
 /// <param name="nAdj">Pressure correction [bar].</param>
-void TMHZ_6P::SetReductor(double nAdj)
+void TMHZ_6P::SetReductor(const double nAdj)
 {
 	RedAdj = nAdj;
 }
 
 /// <summary>Returns Sounds[i] for valid indices, 0 otherwise.</summary>
 /// <param name="i">Sound channel index.</param>
-double TMHZ_6P::GetSound(int i)
+double TMHZ_6P::GetSound(const int i)
 {
 	if (i > 4)
 		return 0;
@@ -3808,7 +3808,7 @@ double TMHZ_6P::GetSound(int i)
 
 /// <summary>Returns pos_table[i].</summary>
 /// <param name="i">Function code (bh_*).</param>
-double TMHZ_6P::GetPos(int i)
+double TMHZ_6P::GetPos(const int i)
 {
 	return pos_table[i];
 }
@@ -3836,7 +3836,7 @@ double TMHZ_6P::GetRP()
 /// <param name="FSF">Filling-stroke factor offset.</param>
 /// <param name="OMP">Overload max pressure.</param>
 /// <param name="OPD">Overload pressure decay rate.</param>
-void TMHZ_6P::SetParams(bool AO, bool MO, double OverP, double FSF, double OMP, double OPD)
+void TMHZ_6P::SetParams(const bool AO, const bool MO, const double OverP, const double FSF, const double OMP, const double OPD)
 {
 	AutoOvrld = AO;
 	ManualOvrld = MO;
@@ -3848,7 +3848,7 @@ void TMHZ_6P::SetParams(bool AO, bool MO, double OverP, double FSF, double OMP, 
 }
 
 /// <summary>Returns true if pos is within ±0.5 of i_pos (detent test).</summary>
-bool TMHZ_6P::EQ(double pos, double i_pos)
+bool TMHZ_6P::EQ(const double pos, const double i_pos)
 {
 	return pos <= i_pos + 0.5 && pos > i_pos - 0.5;
 }
@@ -3867,7 +3867,7 @@ bool TMHZ_6P::EQ(double pos, double i_pos)
 /// <param name="dt">Time step [s].</param>
 /// <param name="ep">EP / equalising input [bar].</param>
 /// <returns>Brake pipe volume change for this step.</returns>
-double TM394::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
+double TM394::GetPF(const double i_bcp, const double PP, const double HP, const double dt, double ep)
 {
 	static constexpr int LBDelay = 65;
 
@@ -3916,7 +3916,7 @@ double TM394::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 
 /// <summary>Initialises CP and enables the time chamber.</summary>
 /// <param name="Press">Initial pressure [bar].</param>
-void TM394::Init(double Press)
+void TM394::Init(const double Press)
 {
 	CP = Press;
 	Time = true;
@@ -3924,7 +3924,7 @@ void TM394::Init(double Press)
 
 /// <summary>Sets the reductor adjustment offset.</summary>
 /// <param name="nAdj">Pressure correction [bar].</param>
-void TM394::SetReductor(double nAdj)
+void TM394::SetReductor(const double nAdj)
 {
 	RedAdj = nAdj;
 }
@@ -3943,7 +3943,7 @@ double TM394::GetRP()
 
 /// <summary>Returns pos_table[i].</summary>
 /// <param name="i">Function code (bh_*).</param>
-double TM394::GetPos(int i)
+double TM394::GetPos(const int i)
 {
 	return pos_table[i];
 }
@@ -3963,7 +3963,7 @@ double TM394::GetPos(int i)
 /// <param name="dt">Time step [s].</param>
 /// <param name="ep">EP / equalising input [bar].</param>
 /// <returns>Brake pipe volume change for this step.</returns>
-double TH14K1::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
+double TH14K1::GetPF(const double i_bcp, const double PP, const double HP, const double dt, double ep)
 {
 	constexpr int LBDelay = 100; // szybkosc + zasilanie sterujacego
 	//   static double const BPT_K[/*?*/ /*-1..4*/ (4) - (-1) + 1][2] =
@@ -4009,7 +4009,7 @@ double TH14K1::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 
 /// <summary>Initialises CP and enables the time / EP-time chambers.</summary>
 /// <param name="Press">Initial pressure [bar].</param>
-void TH14K1::Init(double Press)
+void TH14K1::Init(const double Press)
 {
 	CP = Press;
 	Time = true;
@@ -4018,7 +4018,7 @@ void TH14K1::Init(double Press)
 
 /// <summary>Sets the reductor adjustment offset.</summary>
 /// <param name="nAdj">Pressure correction [bar].</param>
-void TH14K1::SetReductor(double nAdj)
+void TH14K1::SetReductor(const double nAdj)
 {
 	RedAdj = nAdj;
 }
@@ -4037,7 +4037,7 @@ double TH14K1::GetRP()
 
 /// <summary>Returns pos_table[i].</summary>
 /// <param name="i">Function code (bh_*).</param>
-double TH14K1::GetPos(int i)
+double TH14K1::GetPos(const int i)
 {
 	return pos_table[i];
 }
@@ -4055,7 +4055,7 @@ double TH14K1::GetPos(int i)
 /// <param name="dt">Time step [s].</param>
 /// <param name="ep">EP / equalising input [bar].</param>
 /// <returns>Brake pipe volume change for this step.</returns>
-double TSt113::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
+double TSt113::GetPF(const double i_bcp, const double PP, const double HP, const double dt, double ep)
 {
 	static constexpr int LBDelay = 100; // szybkosc + zasilanie sterujacego
 	static constexpr double NomPress = 5.0;
@@ -4121,7 +4121,7 @@ double TSt113::GetEP()
 
 /// <summary>Returns pos_table[i].</summary>
 /// <param name="i">Function code (bh_*).</param>
-double TSt113::GetPos(int i)
+double TSt113::GetPos(const int i)
 {
 	return pos_table[i];
 }
@@ -4147,7 +4147,7 @@ void TSt113::Init(double Press)
 /// <param name="dt">Time step [s].</param>
 /// <param name="ep">EP / equalising input [bar].</param>
 /// <returns>Brake pipe volume change for this step.</returns>
-double Ttest::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
+double Ttest::GetPF(const double i_bcp, const double PP, const double HP, const double dt, double ep)
 {
 	static constexpr int LBDelay = 100;
 
@@ -4182,7 +4182,7 @@ double Ttest::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 
 /// <summary>Initialises CP to the supplied pressure.</summary>
 /// <param name="Press">Initial pressure [bar].</param>
-void Ttest::Init(double Press)
+void Ttest::Init(const double Press)
 {
 	CP = Press;
 }
@@ -4200,7 +4200,7 @@ void Ttest::Init(double Press)
 /// <param name="dt">Time step [s].</param>
 /// <param name="ep">EP / equalising input (unused).</param>
 /// <returns>Negated cylinder pressure delta for this step.</returns>
-double TFD1::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
+double TFD1::GetPF(const double i_bcp, double PP, const double HP, const double dt, double ep)
 {
 	double DP;
 	double temp;
@@ -4215,7 +4215,7 @@ double TFD1::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 
 /// <summary>Initialises MaxBP and the action speed (defaults to 1.0).</summary>
 /// <param name="Press">Maximum cylinder pressure [bar].</param>
-void TFD1::Init(double Press)
+void TFD1::Init(const double Press)
 {
 	MaxBP = Press;
 	Speed = 1.0;
@@ -4229,7 +4229,7 @@ double TFD1::GetCP()
 
 /// <summary>Sets the action speed multiplier (scales the response time).</summary>
 /// <param name="nSpeed">Speed multiplier.</param>
-void TFD1::SetSpeed(double nSpeed)
+void TFD1::SetSpeed(const double nSpeed)
 {
 	Speed = nSpeed;
 }
@@ -4248,7 +4248,7 @@ void TFD1::SetSpeed(double nSpeed)
 /// <param name="dt">Time step [s].</param>
 /// <param name="ep">EP / equalising input (unused).</param>
 /// <returns>Negated cylinder pressure delta for this step.</returns>
-double TH1405::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
+double TH1405::GetPF(const double i_bcp, double PP, const double HP, const double dt, double ep)
 {
 	double DP;
 	double temp;
@@ -4274,7 +4274,7 @@ double TH1405::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 
 /// <summary>Initialises MaxBP and enables the time chamber.</summary>
 /// <param name="Press">Maximum cylinder pressure [bar].</param>
-void TH1405::Init(double Press)
+void TH1405::Init(const double Press)
 {
 	MaxBP = Press;
 	Time = true;
@@ -4300,7 +4300,7 @@ double TH1405::GetCP()
 /// <param name="dt">Time step [s].</param>
 /// <param name="ep">EP / equalising input (unused).</param>
 /// <returns>Brake pipe volume change for this step.</returns>
-double TFVel6::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
+double TFVel6::GetPF(const double i_bcp, const double PP, const double HP, const double dt, double ep)
 {
 	static constexpr int LBDelay = 100;
 
@@ -4361,14 +4361,14 @@ double TFVel6::GetEP()
 
 /// <summary>Returns pos_table[i].</summary>
 /// <param name="i">Function code (bh_*).</param>
-double TFVel6::GetPos(int i)
+double TFVel6::GetPos(const int i)
 {
 	return pos_table[i];
 }
 
 /// <summary>Returns Sounds[i] for valid indices, 0 otherwise.</summary>
 /// <param name="i">Sound channel index (0..2).</param>
-double TFVel6::GetSound(int i)
+double TFVel6::GetSound(const int i)
 {
 	if (i > 2)
 		return 0;
@@ -4397,7 +4397,7 @@ void TFVel6::Init(double Press)
 /// <param name="dt">Time step [s].</param>
 /// <param name="ep">EP / equalising input (unused).</param>
 /// <returns>Brake pipe volume change for this step.</returns>
-double TFVE408::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
+double TFVE408::GetPF(const double i_bcp, const double PP, const double HP, const double dt, double ep)
 {
 	static constexpr int LBDelay = 100;
 
@@ -4464,14 +4464,14 @@ double TFVE408::GetRP()
 
 /// <summary>Returns pos_table[i].</summary>
 /// <param name="i">Function code (bh_*).</param>
-double TFVE408::GetPos(int i)
+double TFVE408::GetPos(const int i)
 {
 	return pos_table[i];
 }
 
 /// <summary>Returns Sounds[i] for valid indices, 0 otherwise.</summary>
 /// <param name="i">Sound channel index (0..2).</param>
-double TFVE408::GetSound(int i)
+double TFVE408::GetSound(const int i)
 {
 	if (i > 2)
 		return 0;

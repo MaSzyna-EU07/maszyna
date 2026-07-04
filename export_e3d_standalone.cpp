@@ -4,7 +4,7 @@
 #include "utilities/Globals.h"
 #include "rendering/renderer.h"
 
-void export_e3d_standalone(std::string in, std::string out, int flags, bool dynamic)
+void export_e3d_standalone(std::string in, std::string out, const int flags, const bool dynamic)
 {
     Global.iConvertModels = flags;
     Global.iWriteLogEnabled = 2;

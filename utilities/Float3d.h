@@ -17,7 +17,7 @@ class float3
   public:
     float x, y, z;
     float3(void){};
-    float3(float a, float b, float c)
+    float3(const float a, const float b, const float c)
     {
         x = a;
         y = b;
@@ -102,7 +102,7 @@ class float4
         x = y = z = 0.f;
         w = 1.f;
     };
-    float4(float a, float b, float c, float d)
+    float4(const float a, const float b, const float c, const float d)
     {
         x = a;
         y = b;
@@ -164,7 +164,7 @@ inline float4 &operator*=(float4 &v1, float const d)
     v1.w *= d;
     return v1;
 };
-inline float4 Slerp(const float4 &q0, const float4 &q1, float t)
+inline float4 Slerp(const float4 &q0, const float4 &q1, const float t)
 // void Slerp(QUATERNION *Out, const QUATERNION &q0, const QUATERNION &q1, float t)
 { // interpolacja sweryczna
     float cosOmega = Dot(q0, q1);
@@ -217,7 +217,7 @@ public:
         for (int i = 0; i < 16; ++i)
             e[i] = f[i];
     };
-    float * operator()(int i)
+    float * operator()(const int i)
     {
         return &e[i << 2];
     }
@@ -231,7 +231,7 @@ public:
             e[i] = 0;
         e[0] = e[5] = e[10] = e[15] = 1.0f;
     }
-    const float *operator[](int i) const
+    const float *operator[](const int i) const
     {
         return &e[i << 2];
     };
@@ -331,13 +331,12 @@ inline float4x4 operator*(const float4x4 &m1, const float4x4 &m2)
 };
 
 // From code in Graphics Gems; p. 766
-inline float Det2x2(float a, float b, float c, float d)
+inline float Det2x2(const float a, const float b, const float c, const float d)
 { // obliczenie wyznacznika macierzy 2×2
     return a * d - b * c;
 };
 
-inline float Det3x3(float a1, float a2, float a3, float b1, float b2, float b3, float c1, float c2,
-                    float c3)
+inline float Det3x3(const float a1, const float a2, const float a3, const float b1, const float b2, const float b3, const float c1, const float c2, const float c3)
 { // obliczenie wyznacznika macierzy 3×3
     return +a1 * Det2x2(b2, b3, c2, c3) - b1 * Det2x2(a2, a3, c2, c3) + c1 * Det2x2(a2, a3, b2, b3);
 };

@@ -20,7 +20,7 @@ scenario_time Time;
 } // simulation
 
 void
-scenario_time::init(std::time_t timestamp) {
+scenario_time::init(const std::time_t timestamp) {
 	const char monthdaycounts[ 2 ][ 13 ] = {
         { 0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 },
         { 0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 } };
@@ -185,7 +185,7 @@ scenario_time::julian_day() const {
     return JD;
 }
 
-void scenario_time::set_time(int yearday, int minute) {
+void scenario_time::set_time(const int yearday, const int minute) {
 	m_yearday = yearday;
 	daymonth(m_time.wDay, m_time.wMonth, m_time.wYear, m_yearday);
 	m_time.wHour = minute / 60;

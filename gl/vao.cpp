@@ -20,7 +20,7 @@ gl::vao::~vao()
 	glDeleteVertexArrays(1, *this);
 }
 
-void gl::vao::setup_attrib(buffer &buffer, int attrib, int size, int type, int stride, int offset)
+void gl::vao::setup_attrib(buffer &buffer, const int attrib, const int size, const int type, const int stride, const int offset)
 {
 	if (use_vao) {
 		bind();

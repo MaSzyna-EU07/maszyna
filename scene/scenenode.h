@@ -159,7 +159,7 @@ private:
 // set visibility
 inline
 void
-shape_node::visible( bool State ) {
+shape_node::visible(const bool State ) {
     m_data.visible = State;
 }
 // set origin point
@@ -252,7 +252,7 @@ private:
 // set visibility
 inline
 void
-lines_node::visible( bool State ) {
+lines_node::visible(const bool State ) {
     m_data.visible = State;
 }
 // set origin point
@@ -433,7 +433,7 @@ basic_node::visible() const {
 
 inline
 void
-basic_node::group( group_handle Group ) {
+basic_node::group(const group_handle Group ) {
     m_group = Group;
 }
 

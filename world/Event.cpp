@@ -2351,7 +2351,7 @@ event_manager::insert( basic_event *Event ) {
     return true;
 }
 
-basic_event * event_manager::FindEventById(uint32_t id)
+basic_event * event_manager::FindEventById(const uint32_t id)
 {
 	if (id < m_events.size())
 		return m_events[id];
@@ -2381,7 +2381,7 @@ event_manager::FindEvent( std::string const &Name )
 
 // legacy method, inserts specified event in the event query
 bool
-event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, double delay ) {
+event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, const double delay ) {
 
     if( Event->m_passive )     { return false; } // jeśli może być dodany do kolejki (nie używany w skanowaniu)
     if( Event->m_inqueue > 0 ) { return false; } // jeśli nie dodany jeszcze do kolejki

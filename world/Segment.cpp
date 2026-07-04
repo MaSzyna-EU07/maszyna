@@ -304,7 +304,7 @@ glm::dvec3 TSegment::GetDirection(double const fDistance) const
     return FastGetPoint(t2) - FastGetPoint(t1);
 }
 
-glm::dvec3 TSegment::FastGetDirection(double fDistance, double fOffset)
+glm::dvec3 TSegment::FastGetDirection(const double fDistance, const double fOffset)
 { // takie toporne liczenie pochodnej dla parametru 0.0÷1.0
 	const double t1 = fDistance - fOffset;
     if (t1 <= 0.0)

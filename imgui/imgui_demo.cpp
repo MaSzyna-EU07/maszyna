@@ -827,7 +827,7 @@ static void ShowDemoWindowWidgets()
         ImGui::Combo("combo 3 (array)", &item_current_3, items, IM_ARRAYSIZE(items));
 
         // Simplified one-liner Combo() using an accessor function
-        struct FuncHolder { static bool ItemGetter(void* data, int idx, const char** out_str) { *out_str = ((const char**)data)[idx]; return true; } };
+        struct FuncHolder { static bool ItemGetter(void* data, const int idx, const char** out_str) { *out_str = ((const char**)data)[idx]; return true; } };
         static int item_current_4 = 0;
         ImGui::Combo("combo 4 (function)", &item_current_4, &FuncHolder::ItemGetter, items, IM_ARRAYSIZE(items));
 
@@ -1013,7 +1013,7 @@ static void ShowDemoWindowWidgets()
 
                 // Tip: Because ImGui:: is a namespace you would typicall add your own function into the namespace in your own source files.
                 // For example, you may add a function called ImGui::InputText(const char* label, MyString* my_str).
-                static bool MyInputTextMultiline(const char* label, ImVector<char>* my_str, const ImVec2& size = ImVec2(0, 0), ImGuiInputTextFlags flags = 0)
+                static bool MyInputTextMultiline(const char* label, ImVector<char>* my_str, const ImVec2& size = ImVec2(0, 0), const ImGuiInputTextFlags flags = 0)
                 {
                     IM_ASSERT((flags & ImGuiInputTextFlags_CallbackResize) == 0);
                     return ImGui::InputTextMultiline(label, my_str->begin(), (size_t)my_str->size(), size, flags | ImGuiInputTextFlags_CallbackResize, MyResizeCallback, (void*)my_str);
@@ -1063,8 +1063,8 @@ static void ShowDemoWindowWidgets()
         // FIXME: This is rather awkward because current plot API only pass in indices. We probably want an API passing floats and user provide sample rate/count.
         struct Funcs
         {
-            static float Sin(void*, int i) { return sinf(i * 0.1f); }
-            static float Saw(void*, int i) { return (i & 1) ? 1.0f : -1.0f; }
+            static float Sin(void*, const int i) { return sinf(i * 0.1f); }
+            static float Saw(void*, const int i) { return (i & 1) ? 1.0f : -1.0f; }
         };
         static int func_type = 0, display_count = 70;
         ImGui::Separator();
@@ -3956,7 +3956,7 @@ static void ShowExampleAppPropertyEditor(bool* p_open)
 
     struct funcs
     {
-        static void ShowDummyObject(const char* prefix, int uid)
+        static void ShowDummyObject(const char* prefix, const int uid)
         {
             ImGui::PushID(uid);                      // Use object uid as identifier. Most commonly you could also use the object pointer as a base ID.
             ImGui::AlignTextToFramePadding();  // Text and Tree nodes are less high than regular widgets, here we add vertical spacing to make the tree lines equal high.
@@ -4365,7 +4365,7 @@ struct MyDocument
     bool        WantClose;      // Set when the document
     ImVec4      Color;          // An arbitrary variable associated to the document
 
-    MyDocument(const char* name, bool open = true, const ImVec4& color = ImVec4(1.0f,1.0f,1.0f,1.0f))
+    MyDocument(const char* name, const bool open = true, const ImVec4& color = ImVec4(1.0f,1.0f,1.0f,1.0f))
     {
         Name = name;
         Open = OpenPrev = open;

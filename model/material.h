@@ -56,7 +56,7 @@ struct opengl_material : public IMaterial {
 	  {
 		  return shadow_rank;
 	  }
-	  virtual texture_handle GetTexture(int slot) const override
+	  virtual texture_handle GetTexture(const int slot) const override
 	  {
 		  return textures[slot];
 	  }

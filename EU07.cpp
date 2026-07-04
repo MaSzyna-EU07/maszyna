@@ -79,7 +79,7 @@ LONG WINAPI CrashHandler(EXCEPTION_POINTERS *ExceptionInfo)
 
 #endif
 
-int main(int argc, char *argv[])
+int main(const int argc, char *argv[])
 {
 #ifdef WITHDUMPGEN
 #ifdef _WIN32

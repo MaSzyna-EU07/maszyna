@@ -16,7 +16,7 @@ public:
 	bool save();
 
 	movement_scheme movement() const { return m_movement; }
-	void movement(movement_scheme scheme) { m_movement = scheme; }
+	void movement(const movement_scheme scheme) { m_movement = scheme; }
 
 private:
 	movement_scheme m_movement{movement_scheme::wsad};

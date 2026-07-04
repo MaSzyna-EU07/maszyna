@@ -106,7 +106,7 @@ void opengl33_vaogeometrybank::setup_buffer()
 }
 
 void
-opengl33_vaogeometrybank::setup_attrib(size_t offset)
+opengl33_vaogeometrybank::setup_attrib(const size_t offset)
 {
     m_vao->setup_attrib( *m_vertexbuffer, 0, 3, GL_FLOAT, sizeof( basic_vertex ), offsetof(basic_vertex, position) + offset * sizeof( basic_vertex ) );
     // NOTE: normal and color streams share the data
@@ -115,7 +115,7 @@ opengl33_vaogeometrybank::setup_attrib(size_t offset)
 	m_vao->setup_attrib( *m_vertexbuffer, 3, 4, GL_FLOAT, sizeof( basic_vertex ), offsetof(basic_vertex, tangent) + offset * sizeof( basic_vertex ) );
 }
 
-void opengl33_vaogeometrybank::setup_userdata(size_t offset) {
+void opengl33_vaogeometrybank::setup_userdata(const size_t offset) {
 	const size_t offset_evaluated = m_vertex_count * sizeof(basic_vertex) + offset * sizeof( vertex_userdata );
 	m_vao->setup_attrib( *m_vertexbuffer, 4, 4, GL_FLOAT, sizeof( vertex_userdata ), offsetof(vertex_userdata, data) + offset_evaluated );}
 

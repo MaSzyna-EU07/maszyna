@@ -20,7 +20,7 @@ http://mozilla.org/MPL/2.0/.
 // simulation-level streamer instance (see header)
 terrain_streamer EditorTerrain;
 
-void terrain_streamer::configure(int Cells, float CellSize, int Radius, float BaseHeight, std::string const &Texture)
+void terrain_streamer::configure(const int Cells, const float CellSize, const int Radius, const float BaseHeight, std::string const &Texture)
 {
 	m_cells = std::max(1, Cells);
 	m_cellsize = std::max(0.1f, CellSize);
@@ -29,19 +29,19 @@ void terrain_streamer::configure(int Cells, float CellSize, int Radius, float Ba
 	m_texture = Texture;
 }
 
-terrain_streamer::chunk_key terrain_streamer::key_at(double X, double Z) const
+terrain_streamer::chunk_key terrain_streamer::key_at(const double X, const double Z) const
 {
 	double const size = chunk_world_size();
 	return {static_cast<int>(std::floor(X / size)), static_cast<int>(std::floor(Z / size))};
 }
 
-glm::dvec3 terrain_streamer::chunk_centre(int Cx, int Cz) const
+glm::dvec3 terrain_streamer::chunk_centre(const int Cx, const int Cz) const
 {
 	double const size = chunk_world_size();
 	return glm::dvec3((Cx + 0.5) * size, static_cast<double>(m_baseheight), (Cz + 0.5) * size);
 }
 
-std::string terrain_streamer::chunk_path(int Cx, int Cz) const
+std::string terrain_streamer::chunk_path(const int Cx, const int Cz) const
 {
 	return m_dir + "/chunk_" + std::to_string(Cx) + "_" + std::to_string(Cz) + ".etc";
 }
@@ -60,7 +60,7 @@ bool terrain_streamer::chunk_on_disk(chunk_key const &Key)
 
 // 16-bit chunk file: 'ETC1' | uint16 cells | float baseY | float step | (cells+1)^2 * uint16
 // where worldY = baseY + raw * step (per-chunk auto-scaled to fit the height range losslessly-ish)
-bool terrain_streamer::load_heights(int Cx, int Cz, std::vector<float> &Out) const
+bool terrain_streamer::load_heights(const int Cx, const int Cz, std::vector<float> &Out) const
 {
 	std::ifstream f(chunk_path(Cx, Cz), std::ios::binary);
 	if (!f)
@@ -92,7 +92,7 @@ bool terrain_streamer::load_heights(int Cx, int Cz, std::vector<float> &Out) con
 	return true;
 }
 
-void terrain_streamer::save_heights(int Cx, int Cz, editor_terrain const &Terrain)
+void terrain_streamer::save_heights(const int Cx, const int Cz, editor_terrain const &Terrain)
 {
 	auto const &h = Terrain.heights();
 	if (h.empty())
@@ -154,7 +154,7 @@ void terrain_streamer::update(glm::dvec3 const &CameraPos)
 			int const cells = m_cells;
 			float const cs = m_cellsize;
 			editor_terrain::height_sampler sampler =
-			    [&loaded, x0, z0, cells, cs](double X, double Z, double &OutY) -> bool {
+			    [&loaded, x0, z0, cells, cs](const double X, const double Z, double &OutY) -> bool {
 				int ix = static_cast<int>(std::lround((X - x0) / cs));
 				int iz = static_cast<int>(std::lround((Z - z0) / cs));
 				ix = std::clamp(ix, 0, cells);
@@ -219,7 +219,7 @@ void terrain_streamer::collect(std::vector<editor_terrain *> &Out) const
 			Out.push_back(entry.second.get());
 }
 
-editor_terrain *terrain_streamer::terrain_at(double X, double Z) const
+editor_terrain *terrain_streamer::terrain_at(const double X, const double Z) const
 {
 	auto const it = m_chunks.find(key_at(X, Z));
 	if (it != m_chunks.end() && it->second && it->second->contains(X, Z))

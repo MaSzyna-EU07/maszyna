@@ -36,12 +36,12 @@ void TRura::Update(double dt)
 
 // ------ PRZECIWPOSLIG ------
 
-void TPrzeciwposlizg::SetPoslizg(bool flag)
+void TPrzeciwposlizg::SetPoslizg(const bool flag)
 {
     Poslizg = flag;
 }
 
-void TPrzeciwposlizg::Update(double dt)
+void TPrzeciwposlizg::Update(const double dt)
 {
     if (true == Poslizg)
     {
@@ -55,7 +55,7 @@ void TPrzeciwposlizg::Update(double dt)
 
 // ------ PRZEKLADNIK ------
 
-void TPrzekladnik::Update(double dt)
+void TPrzekladnik::Update(const double dt)
 {
     double dV;
 
@@ -78,7 +78,7 @@ void TPrzekladnik::Update(double dt)
 
 // ------ PRZEKLADNIK RAPID ------
 
-void TRapid::SetRapidParams(double mult, double size)
+void TRapid::SetRapidParams(const double mult, const double size)
 {
     RapidMult = mult;
     RapidStatus = false;
@@ -94,12 +94,12 @@ void TRapid::SetRapidParams(double mult, double size)
     }
 }
 
-void TRapid::SetRapidStatus(bool rs)
+void TRapid::SetRapidStatus(const bool rs)
 {
     RapidStatus = rs;
 }
 
-void TRapid::Update(double dt)
+void TRapid::Update(const double dt)
 {
 	const double BVP{ BrakeRes->P() };
 	const double BCP{ Next->P() };
@@ -129,12 +129,12 @@ void TRapid::Update(double dt)
 
 // ------ PRZEKŁADNIK CIĄGŁY ------
 
-void TPrzekCiagly::SetMult(double m)
+void TPrzekCiagly::SetMult(const double m)
 {
     Mult = m;
 }
 
-void TPrzekCiagly::Update(double dt)
+void TPrzekCiagly::Update(const double dt)
 {
     double const BVP{ BrakeRes->P() };
     double const BCP{ Next->P() };
@@ -154,12 +154,12 @@ void TPrzekCiagly::Update(double dt)
 
 // ------ PRZEKŁADNIK CIĄGŁY ------
 
-void TPrzek_PZZ::SetLBP(double P)
+void TPrzek_PZZ::SetLBP(const double P)
 {
     LBP = P;
 }
 
-void TPrzek_PZZ::Update(double dt)
+void TPrzek_PZZ::Update(const double dt)
 {
 
     double const BVP{ BrakeRes->P() };
@@ -181,12 +181,12 @@ void TPrzek_PZZ::Update(double dt)
 
 // ------ PRZECIWPOSLIG ------
 
-void TPrzekED::SetP(double P)
+void TPrzekED::SetP(const double P)
 {
     MaxP = P;
 }
 
-void TPrzekED::Update(double dt)
+void TPrzekED::Update(const double dt)
 {
     if (Next->P() > MaxP)
     {

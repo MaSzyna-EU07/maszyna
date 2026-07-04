@@ -30,7 +30,7 @@ void network::connection::set_handler(std::function<void (const message &)> hand
 	message_handler = handler;
 }
 
-network::connection::connection(bool client, size_t counter) {
+network::connection::connection(const bool client, const size_t counter) {
 	packet_counter = counter;
 	is_client = client;
 	state = AWAITING_HELLO;
@@ -173,7 +173,7 @@ void network::client::update()
 }
 
 // client
-std::tuple<double, double, command_queue::commands_map> network::client::get_next_delta(int counter)
+std::tuple<double, double, command_queue::commands_map> network::client::get_next_delta(const int counter)
 {
 	const auto now = std::chrono::high_resolution_clock::now();
 	if (counter == 1) {

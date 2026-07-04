@@ -675,7 +675,7 @@ glm::vec3 basic_cell::find_nearest_track_point(const glm::dvec3 &pos)
 
 // executes event assigned to specified launcher
 void
-basic_cell::launch_event( TEventLauncher *Launcher, bool local_only ) {
+basic_cell::launch_event( TEventLauncher *Launcher, const bool local_only ) {
 	WriteLog( "Eventlauncher: " + Launcher->name() );
 	if (!local_only) {
 		if( Launcher->Event1 ) {

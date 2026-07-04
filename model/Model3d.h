@@ -208,7 +208,7 @@ public:
         iFlags |= 0x4000; };
 	void InitialRotate(bool doit);
 	void BinInit(TSubModel *s, float4x4 *m, std::vector<std::string> *t, std::vector<std::string> *n, bool dynamic);
-	static void ReplacableSet(material_handle const *r, int a) {
+	static void ReplacableSet(material_handle const *r, const int a) {
 		ReplacableSkinId = r;
 		iAlpha = a; };
 	void Name_Material( std::string const &Name );

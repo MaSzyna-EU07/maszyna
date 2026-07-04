@@ -106,31 +106,31 @@ ui_layer::ui_layer()
 
 ui_layer::~ui_layer() {}
 
-bool ui_layer::key_callback(int key, int scancode, int action, int mods)
+bool ui_layer::key_callback(const int key, const int scancode, const int action, const int mods)
 {
 	ImGui_ImplGlfw_KeyCallback(m_window, key, scancode, action, mods);
 	return m_imguiio->WantCaptureKeyboard;
 }
 
-bool ui_layer::char_callback(unsigned int c)
+bool ui_layer::char_callback(const unsigned int c)
 {
 	ImGui_ImplGlfw_CharCallback(m_window, c);
 	return m_imguiio->WantCaptureKeyboard;
 }
 
-bool ui_layer::scroll_callback(double xoffset, double yoffset)
+bool ui_layer::scroll_callback(const double xoffset, const double yoffset)
 {
 	ImGui_ImplGlfw_ScrollCallback(m_window, xoffset, yoffset);
 	return m_imguiio->WantCaptureMouse;
 }
 
-bool ui_layer::mouse_button_callback(int button, int action, int mods)
+bool ui_layer::mouse_button_callback(const int button, const int action, const int mods)
 {
 	ImGui_ImplGlfw_MouseButtonCallback(m_window, button, action, mods);
 	return m_imguiio->WantCaptureMouse;
 }
 
-static ImVec4 imvec_lerp(const ImVec4 &a, const ImVec4 &b, float t)
+static ImVec4 imvec_lerp(const ImVec4 &a, const ImVec4 &b, const float t)
 {
 	return ImVec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t);
 }
@@ -356,7 +356,7 @@ bool ui_layer::on_mouse_button(int const Button, int const Action)
 	return false;
 }
 
-void ui_layer::on_window_resize(int w, int h)
+void ui_layer::on_window_resize(const int w, const int h)
 {
 	for (auto *panel : m_panels)
 		panel->on_window_resize(w, h);
