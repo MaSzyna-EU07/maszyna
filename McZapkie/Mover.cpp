@@ -1354,7 +1354,7 @@ void TMoverParameters::Derail(DerailReason const Reason)
 // *************************************************************************************************
 // Oblicza przemieszczenie taboru
 // *************************************************************************************************
-double TMoverParameters::ComputeMovement(const double dt, const double dt1, const TTrackShape &Shape, TTrackParam &Track, TTractionParam &ElectricTraction, TLocation const &NewLoc, TRotation const &NewRot)
+double TMoverParameters::ComputeMovement(const double dt, const double dt1, const TTrackShape &Shape, const TTrackParam &Track, const TTractionParam &ElectricTraction, TLocation const &NewLoc, TRotation const &NewRot)
 {
 	constexpr double Vepsilon = 1e-5;
 	constexpr double Aepsilon = 1e-3; // ASBSpeed=0.8;

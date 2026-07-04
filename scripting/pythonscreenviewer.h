@@ -38,8 +38,8 @@ public:
     python_screen_viewer(std::shared_ptr<python_rt> rt, std::shared_ptr<std::vector<glm::vec2>> touchlist, std::string name);
 	~python_screen_viewer();
 
-	void notify_window_size(GLFWwindow *window, int w, int h);
-    void notify_window_fb_size(GLFWwindow *window, int w, int h);
-    void notify_cursor_pos(GLFWwindow *window, double x, double y);
+	void notify_window_size(const GLFWwindow *window, int w, int h);
+    void notify_window_fb_size(const GLFWwindow *window, int w, int h);
+    void notify_cursor_pos(const GLFWwindow *window, double x, double y);
     void notify_click(GLFWwindow *window, int button, int action);
 };

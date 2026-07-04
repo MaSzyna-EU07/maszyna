@@ -132,7 +132,7 @@ class python_taskqueue
 	using uploadtask_sequence = threading::lockable<std::deque<std::shared_ptr<render_task>>>;
 	// methods
 	auto fetch_renderer(std::string Renderer) -> PyObject *;
-	void run(GLFWwindow *Context, rendertask_sequence &Tasks, uploadtask_sequence &Upload_Tasks, threading::condition_variable &Condition, std::atomic<bool> &Exit);
+	void run(GLFWwindow *Context, rendertask_sequence &Tasks, uploadtask_sequence &Upload_Tasks, threading::condition_variable &Condition, const std::atomic<bool> &Exit);
 	void error();
 
 	// members

@@ -452,7 +452,7 @@ void TController::TableClear()
     eSignSkip = nullptr; // nic nie pomijamy
 };
 
-std::vector<basic_event *> TController::CheckTrackEvent( TTrack *Track, double const fDirection )
+std::vector<basic_event *> TController::CheckTrackEvent(const TTrack *Track, double const fDirection )
 { // sprawdzanie eventów na podanym torze do podstawowego skanowania
     std::vector<basic_event *> events;
     auto const &eventsequence { ( fDirection > 0 ? Track->m_events2 : Track->m_events1 ) };
@@ -5258,7 +5258,7 @@ std::string TController::StopReasonText() const
 //- rozpoznają tylko zerową prędkość (jako koniec toru i brak podstaw do dalszego skanowania)
 //----------------------------------------------------------------------------------------------------------------------
 
-bool TController::IsOccupiedByAnotherConsist( TTrack *Track, double const Distance = 0 )
+bool TController::IsOccupiedByAnotherConsist(const TTrack *Track, double const Distance = 0 )
 { // najpierw sprawdzamy, czy na danym torze są pojazdy z innego składu
     if( false == Track->Dynamics.empty() ) {
         for (const auto dynamic : Track->Dynamics ) {
@@ -5827,7 +5827,7 @@ std::string TController::TableText( std::size_t const Index ) const
     }
 };
 
-int TController::CrossRoute(TTrack *tr)
+int TController::CrossRoute(const TTrack *tr)
 { // zwraca numer segmentu dla skrzyżowania (tr)
     // pożądany numer segmentu jest określany podczas skanowania drogi
     // droga powinna być określona sposobem przejazdu przez skrzyżowania albo współrzędnymi miejsca
@@ -6037,7 +6037,7 @@ TController::determine_consist_state() {
 
     pVehicle->for_each(
         control,
-        [this]( TDynamicObject * Vehicle ) {
+        [this](const TDynamicObject * Vehicle ) {
             auto const *vehicle { Vehicle->MoverParameters };
             IsAnyConverterOverloadRelayOpen |= vehicle->ConvOvldFlag;
             IsAnyMotorOverloadRelayOpen |= vehicle->FuseFlag;

@@ -132,7 +132,7 @@ void    ImGui_ImplOpenGL3_NewFrame()
         ImGui_ImplOpenGL3_CreateDeviceObjects();
 }
 
-static void ImGui_ImplOpenGL3_SetupRenderState(ImDrawData* draw_data, const int fb_width, const int fb_height, const GLuint vertex_array_object)
+static void ImGui_ImplOpenGL3_SetupRenderState(const ImDrawData * draw_data, const int fb_width, const int fb_height, const GLuint vertex_array_object)
 {
     // Setup render state: alpha-blending enabled, no face culling, no depth testing, scissor enabled, polygon fill
     glEnable(GL_BLEND);

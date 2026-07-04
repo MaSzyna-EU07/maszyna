@@ -185,7 +185,7 @@ void python_screen_viewer::threadfunc()
 	}
 }
 
-void python_screen_viewer::notify_window_fb_size(GLFWwindow *window, const int w, const int h)
+void python_screen_viewer::notify_window_fb_size(const GLFWwindow *window, const int w, const int h)
 {
     for (const auto &conf : m_windows) {
         if (conf->window == window) {
@@ -196,7 +196,7 @@ void python_screen_viewer::notify_window_fb_size(GLFWwindow *window, const int w
     }
 }
 
-void python_screen_viewer::notify_window_size(GLFWwindow *window, const int w, const int h)
+void python_screen_viewer::notify_window_size(const GLFWwindow *window, const int w, const int h)
 {
 	for (const auto &conf : m_windows) {
 		if (conf->window == window) {
@@ -207,7 +207,7 @@ void python_screen_viewer::notify_window_size(GLFWwindow *window, const int w, c
 	}
 }
 
-void python_screen_viewer::notify_cursor_pos(GLFWwindow *window, const double x, const double y)
+void python_screen_viewer::notify_cursor_pos(const GLFWwindow *window, const double x, const double y)
 {
     for (const auto &conf : m_windows) {
         if (conf->window == window) {

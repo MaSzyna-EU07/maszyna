@@ -1533,7 +1533,7 @@ void ImGui::EndCombo()
 }
 
 // Getter for the old Combo() API: const char*[]
-static bool Items_ArrayGetter(void* data, const int idx, const char** out_text)
+static bool Items_ArrayGetter(const void * data, const int idx, const char** out_text)
 {
 	const auto items = (const char* const*)data;
     if (out_text)
@@ -1542,7 +1542,7 @@ static bool Items_ArrayGetter(void* data, const int idx, const char** out_text)
 }
 
 // Getter for the old Combo() API: "item1\0item2\0item3\0"
-static bool Items_SingleStringGetter(void* data, const int idx, const char** out_text)
+static bool Items_SingleStringGetter(const void * data, const int idx, const char** out_text)
 {
     // FIXME-OPT: we could pre-compute the indices to fasten this. But only 1 active combo means the waste is limited.
 	const auto items_separated_by_zeros = (const char*)data;
@@ -1709,7 +1709,7 @@ int ImGui::DataTypeFormatString(char* buf, const int buf_size, const ImGuiDataTy
     return 0;
 }
 
-void ImGui::DataTypeApplyOp(const ImGuiDataType data_type, const int op, void* output, void* arg1, const void* arg2)
+void ImGui::DataTypeApplyOp(const ImGuiDataType data_type, const int op, void* output, const void * arg1, const void* arg2)
 {
     IM_ASSERT(op == '+' || op == '-');
     switch (data_type)
@@ -6349,10 +6349,10 @@ bool ImGui::MenuItem(const char* label, const char* shortcut, bool* p_selected, 
 namespace ImGui
 {
     static void             TabBarLayout(ImGuiTabBar* tab_bar);
-    static ImU32            TabBarCalcTabID(ImGuiTabBar* tab_bar, const char* label);
+    static ImU32            TabBarCalcTabID(const ImGuiTabBar * tab_bar, const char* label);
     static float            TabBarCalcMaxTabWidth();
-    static float            TabBarScrollClamp(ImGuiTabBar* tab_bar, float scrolling);
-    static void             TabBarScrollToTab(ImGuiTabBar* tab_bar, ImGuiTabItem* tab);
+    static float            TabBarScrollClamp(const ImGuiTabBar * tab_bar, float scrolling);
+    static void             TabBarScrollToTab(ImGuiTabBar* tab_bar, const ImGuiTabItem * tab);
     static ImGuiTabItem*    TabBarScrollingButtons(ImGuiTabBar* tab_bar);
     static ImGuiTabItem*    TabBarTabListPopupButton(ImGuiTabBar* tab_bar);
 }
@@ -6661,7 +6661,7 @@ static void ImGui::TabBarLayout(ImGuiTabBar* tab_bar)
 }
 
 // Dockables uses Name/ID in the global namespace. Non-dockable items use the ID stack.
-static ImU32   ImGui::TabBarCalcTabID(ImGuiTabBar* tab_bar, const char* label)
+static ImU32   ImGui::TabBarCalcTabID(const ImGuiTabBar * tab_bar, const char* label)
 {
     if (tab_bar->Flags & ImGuiTabBarFlags_DockNode)
     {
@@ -6718,13 +6718,13 @@ void ImGui::TabBarCloseTab(ImGuiTabBar* tab_bar, ImGuiTabItem* tab)
     }
 }
 
-static float ImGui::TabBarScrollClamp(ImGuiTabBar* tab_bar, float scrolling)
+static float ImGui::TabBarScrollClamp(const ImGuiTabBar * tab_bar, float scrolling)
 {
     scrolling = ImMin(scrolling, tab_bar->OffsetMax - tab_bar->BarRect.GetWidth());
     return ImMax(scrolling, 0.0f);
 }
 
-static void ImGui::TabBarScrollToTab(ImGuiTabBar* tab_bar, ImGuiTabItem* tab)
+static void ImGui::TabBarScrollToTab(ImGuiTabBar* tab_bar, const ImGuiTabItem * tab)
 {
 	const ImGuiContext & g = *GImGui;
 	const float margin = g.FontSize * 1.0f; // When to scroll to make Tab N+1 visible always make a bit of N visible to suggest more scrolling area (since we don't have a scrollbar)
@@ -7244,7 +7244,7 @@ float ImGui::GetColumnNormFromOffset(const ImGuiColumns* columns, const float of
 
 static constexpr float COLUMNS_HIT_RECT_HALF_WIDTH = 4.0f;
 
-static float GetDraggedColumnOffset(ImGuiColumns* columns, const int column_index)
+static float GetDraggedColumnOffset(const ImGuiColumns * columns, const int column_index)
 {
     // Active (dragged) column always follow mouse. The reason we need this is that dragging a column to the right edge of an auto-resizing
     // window creates a feedback loop because we store normalized positions. So while dragging we enforce absolute positioning.

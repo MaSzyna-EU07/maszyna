@@ -136,6 +136,6 @@ class map_panel : public ui_panel
 	void render_contents() override;
 };
 
-void handle_map_object_click(ui_panel &parent, std::shared_ptr<map::map_object> &obj);
+void handle_map_object_click(ui_panel &parent, const std::shared_ptr<map::map_object> &obj);
 void handle_map_object_hover(std::shared_ptr<map::map_object> &obj);
 } // namespace ui

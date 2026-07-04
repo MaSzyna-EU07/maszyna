@@ -64,9 +64,9 @@ private:
     void deserialize_light( cParser &Input, scene::scratch_data &Scratchpad );
 	void deserialize_node( cParser &Input, scene::scratch_data &Scratchpad );
   static void deserialize_origin( cParser &Input, scene::scratch_data &Scratchpad );
-  static void deserialize_endorigin( cParser &Input, scene::scratch_data &Scratchpad );
+  static void deserialize_endorigin(const cParser &Input, scene::scratch_data &Scratchpad );
   static void deserialize_scale( cParser &Input, scene::scratch_data &Scratchpad );
-  static void deserialize_endscale( cParser &Input, scene::scratch_data &Scratchpad );
+  static void deserialize_endscale(const cParser &Input, scene::scratch_data &Scratchpad );
   static void deserialize_rotate( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_sky( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_test( cParser &Input, scene::scratch_data &Scratchpad );
@@ -74,11 +74,11 @@ private:
     void deserialize_trainset( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_terrain( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_editorterrain( cParser &Input, scene::scratch_data &Scratchpad );
-  static void deserialize_endtrainset( cParser &Input, scene::scratch_data &Scratchpad );
+  static void deserialize_endtrainset(const cParser &Input, scene::scratch_data &Scratchpad );
   static TTrack * deserialize_path( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
     TTraction * deserialize_traction( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
-    TTractionPowerSource * deserialize_tractionpowersource( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
-    TMemCell * deserialize_memorycell( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
+    TTractionPowerSource * deserialize_tractionpowersource( cParser &Input, const scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
+    TMemCell * deserialize_memorycell( cParser &Input, const scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
     TEventLauncher * deserialize_eventlauncher( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
 	TAnimModel * deserialize_model( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
     TDynamicObject * deserialize_dynamic( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );

@@ -51,7 +51,7 @@ void AirCoupler::Clear()
 /**
  * Looks for submodels in the model and updates pointers.
  */
-void AirCoupler::Init(std::string const &asName, TModel3d *Model)
+void AirCoupler::Init(std::string const &asName, const TModel3d *Model)
 {
     if (!Model)
         return;

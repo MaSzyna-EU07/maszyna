@@ -254,7 +254,7 @@ public:
                 return false;
         return true;
     }
-    void Quaternion(float4 *q);
+    void Quaternion(const float4 *q);
 	float3 *TranslationGet()
     {
         return (float3 *)(e + 12);

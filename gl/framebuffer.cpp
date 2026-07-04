@@ -80,7 +80,7 @@ void gl::framebuffer::blit_from(framebuffer *other, const int w, const int h, co
     blit(other, this, 0, 0, w, h, mask, attachment);
 }
 
-void gl::framebuffer::blit(framebuffer *src, framebuffer *dst, const int sx, const int sy, const int w, const int h, const GLbitfield mask, const GLenum attachment)
+void gl::framebuffer::blit(const framebuffer *src, const framebuffer *dst, const int sx, const int sy, const int w, const int h, const GLbitfield mask, const GLenum attachment)
 {
     glBindFramebuffer(GL_READ_FRAMEBUFFER, src ? *src : 0);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, dst ? *dst : 0);

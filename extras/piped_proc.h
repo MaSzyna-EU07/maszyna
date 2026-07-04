@@ -25,6 +25,6 @@ HANDLE pipe_wr = nullptr;
 public:
     piped_proc(std::string cmd, bool write = false);
 	size_t read(unsigned char *buf, size_t len);
-	size_t write(unsigned char *buf, size_t len);
+	size_t write(const unsigned char *buf, size_t len);
 	~piped_proc();
 };

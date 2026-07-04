@@ -262,7 +262,7 @@ public:
     TTrack *Connected(int s, double &d) const;
     bool SetConnections(int i);
     bool Switch(int i, float t = -1.f, float d = -1.f);
-    bool SwitchForced(int i, TDynamicObject *o);
+    bool SwitchForced(int i, const TDynamicObject *o);
     int CrossSegment(int from, int into);
 	int GetSwitchState() {
         return SwitchExtension ? SwitchExtension->CurrentIndex : -1; };
@@ -276,9 +276,9 @@ public:
     bool AssignForcedEvents(basic_event *NewEventPlus, basic_event *NewEventMinus);
 	static void QueueEvents( event_sequence const &Events, TDynamicObject const *Owner );
 	static void QueueEvents( event_sequence const &Events, TDynamicObject const *Owner, double Delaylimit );
-    bool CheckDynamicObject(TDynamicObject *Dynamic);
+    bool CheckDynamicObject(const TDynamicObject *Dynamic);
     bool AddDynamicObject(TDynamicObject *Dynamic);
-    bool RemoveDynamicObject(TDynamicObject *Dynamic);
+    bool RemoveDynamicObject(const TDynamicObject *Dynamic);
 
     // set origin point
     void
@@ -290,7 +290,7 @@ public:
 
 	gfx::geometrybank_handle extra_map_geometry; // handle for map highlighting
 
-	TTrack *Next(TTrack *visitor);
+	TTrack *Next(const TTrack *visitor);
 	double ActiveLength();
 
 	void create_geometry( gfx::geometrybank_handle const &Bank ); // wypełnianie VBO

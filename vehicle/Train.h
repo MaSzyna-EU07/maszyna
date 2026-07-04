@@ -202,7 +202,7 @@ class TTrain {
     // potentially moves train brake lever to neutral position
     void zero_charging_train_brake();
     // sets specified brake acting speed for specified vehicle, potentially updating state of cab controls to match
-    void set_train_brake_speed( TDynamicObject *Vehicle, int Speed );
+    void set_train_brake_speed(const TDynamicObject *Vehicle, int Speed );
     // sets the motor connector button in paired unit to specified state
     void set_paired_open_motor_connectors_button( bool State );
     // helper, common part of pantograph selection methods
@@ -227,8 +227,8 @@ class TTrain {
 	static void OnCommand_lightsset(TTrain *Train, command_data const &Command);
 	static void OnCommand_wiperswitchincrease(TTrain *Train, command_data const &Command);
 	static void OnCommand_wiperswitchdecrease(TTrain *Train, command_data const &Command);
-    static void OnCommand_aidriverenable( TTrain *Train, command_data const &Command );
-    static void OnCommand_aidriverdisable( TTrain *Train, command_data const &Command );
+    static void OnCommand_aidriverenable(const TTrain *Train, command_data const &Command );
+    static void OnCommand_aidriverdisable(const TTrain *Train, command_data const &Command );
     static void OnCommand_jointcontrollerset( TTrain *Train, command_data const &Command );
 
     static void OnCommand_mastercontrollerincrease( TTrain *Train, command_data const &Command );
@@ -237,25 +237,25 @@ class TTrain {
     static void OnCommand_mastercontrollerdecreasefast( TTrain *Train, command_data const &Command );
     static void OnCommand_mastercontrollerset( TTrain *Train, command_data const &Command );
 
-	static void OnCommand_DynamicBrakeControllerIncrease( TTrain *Train, command_data const &Command );
-	static void OnCommand_DynamicBrakeControllerIncreaseFast( TTrain *Train, command_data const &Command );
-	static void OnCommand_DynamicBrakeControllerDecrease( TTrain *Train, command_data const &Command );
-	static void OnCommand_DynamicBrakeControllerDecreaseFast( TTrain *Train, command_data const &Command );
-	static void OnCommand_DynamicBrakeControllerSet( TTrain *Train, command_data const &Command );
+	static void OnCommand_DynamicBrakeControllerIncrease(const TTrain *Train, command_data const &Command );
+	static void OnCommand_DynamicBrakeControllerIncreaseFast(const TTrain *Train, command_data const &Command );
+	static void OnCommand_DynamicBrakeControllerDecrease(const TTrain *Train, command_data const &Command );
+	static void OnCommand_DynamicBrakeControllerDecreaseFast(const TTrain *Train, command_data const &Command );
+	static void OnCommand_DynamicBrakeControllerSet(const TTrain *Train, command_data const &Command );
 
     static void OnCommand_secondcontrollerincrease( TTrain *Train, command_data const &Command );
-    static void OnCommand_secondcontrollerincreasefast( TTrain *Train, command_data const &Command );
+    static void OnCommand_secondcontrollerincreasefast(const TTrain *Train, command_data const &Command );
     static void OnCommand_secondcontrollerdecrease( TTrain *Train, command_data const &Command );
-    static void OnCommand_secondcontrollerdecreasefast( TTrain *Train, command_data const &Command );
+    static void OnCommand_secondcontrollerdecreasefast(const TTrain *Train, command_data const &Command );
     static void OnCommand_secondcontrollerset( TTrain *Train, command_data const &Command );
-    static void OnCommand_notchingrelaytoggle( TTrain *Train, command_data const &Command );
+    static void OnCommand_notchingrelaytoggle(const TTrain *Train, command_data const &Command );
     static void OnCommand_tempomattoggle( TTrain *Train, command_data const &Command );
     static void OnCommand_mucurrentindicatorothersourceactivate( TTrain *Train, command_data const &Command );
     static void OnCommand_independentbrakeincrease( TTrain *Train, command_data const &Command );
     static void OnCommand_independentbrakeincreasefast( TTrain *Train, command_data const &Command );
     static void OnCommand_independentbrakedecrease( TTrain *Train, command_data const &Command );
     static void OnCommand_independentbrakedecreasefast( TTrain *Train, command_data const &Command );
-    static void OnCommand_independentbrakeset( TTrain *Train, command_data const &Command );
+    static void OnCommand_independentbrakeset(const TTrain *Train, command_data const &Command );
     static void OnCommand_independentbrakebailoff( TTrain *Train, command_data const &Command );
 	static void OnCommand_universalbrakebutton1(TTrain *Train, command_data const &Command);
 	static void OnCommand_universalbrakebutton2(TTrain *Train, command_data const &Command);
@@ -270,12 +270,12 @@ class TTrain {
     static void OnCommand_trainbrakefullservice( TTrain *Train, command_data const &Command );
     static void OnCommand_trainbrakehandleoff( TTrain *Train, command_data const &Command );
     static void OnCommand_trainbrakeemergency( TTrain *Train, command_data const &Command );
-    static void OnCommand_trainbrakebasepressureincrease( TTrain *Train, command_data const &Command );
-    static void OnCommand_trainbrakebasepressuredecrease( TTrain *Train, command_data const &Command );
-    static void OnCommand_trainbrakebasepressurereset( TTrain *Train, command_data const &Command );
-    static void OnCommand_trainbrakeoperationtoggle( TTrain *Train, command_data const &Command );
-    static void OnCommand_manualbrakeincrease( TTrain *Train, command_data const &Command );
-    static void OnCommand_manualbrakedecrease( TTrain *Train, command_data const &Command );
+    static void OnCommand_trainbrakebasepressureincrease(const TTrain *Train, command_data const &Command );
+    static void OnCommand_trainbrakebasepressuredecrease(const TTrain *Train, command_data const &Command );
+    static void OnCommand_trainbrakebasepressurereset(const TTrain *Train, command_data const &Command );
+    static void OnCommand_trainbrakeoperationtoggle(const TTrain *Train, command_data const &Command );
+    static void OnCommand_manualbrakeincrease(const TTrain *Train, command_data const &Command );
+    static void OnCommand_manualbrakedecrease(const TTrain *Train, command_data const &Command );
     static void OnCommand_alarmchaintoggle( TTrain *Train, command_data const &Command );
     static void OnCommand_alarmchainenable(TTrain *Train, command_data const &Command);
     static void OnCommand_alarmchaindisable(TTrain *Train, command_data const &Command);
@@ -294,11 +294,11 @@ class TTrain {
     static void OnCommand_brakeactingspeedsetcargo( TTrain *Train, command_data const &Command );
     static void OnCommand_brakeactingspeedsetpassenger( TTrain *Train, command_data const &Command );
     static void OnCommand_brakeactingspeedsetrapid( TTrain *Train, command_data const &Command );
-    static void OnCommand_brakeloadcompensationincrease( TTrain *Train, command_data const &Command );
-    static void OnCommand_brakeloadcompensationdecrease( TTrain *Train, command_data const &Command );
+    static void OnCommand_brakeloadcompensationincrease(const TTrain *Train, command_data const &Command );
+    static void OnCommand_brakeloadcompensationdecrease(const TTrain *Train, command_data const &Command );
     static void OnCommand_mubrakingindicatortoggle( TTrain *Train, command_data const &Command );
-    static void OnCommand_reverserincrease( TTrain *Train, command_data const &Command );
-    static void OnCommand_reverserdecrease( TTrain *Train, command_data const &Command );
+    static void OnCommand_reverserincrease(const TTrain *Train, command_data const &Command );
+    static void OnCommand_reverserdecrease(const TTrain *Train, command_data const &Command );
     static void OnCommand_reverserforwardhigh( TTrain *Train, command_data const &Command );
     static void OnCommand_reverserforward( TTrain *Train, command_data const &Command );
     static void OnCommand_reverserneutral( TTrain *Train, command_data const &Command );
@@ -372,10 +372,10 @@ class TTrain {
     static void OnCommand_motorblowersenablerear( TTrain *Train, command_data const &Command );
     static void OnCommand_motorblowersdisablerear( TTrain *Train, command_data const &Command );
     static void OnCommand_motorblowersdisableall( TTrain *Train, command_data const &Command );
-    static void OnCommand_coolingfanstoggle( TTrain *Train, command_data const &Command );
+    static void OnCommand_coolingfanstoggle(const TTrain *Train, command_data const &Command );
     static void OnCommand_motorconnectorsopen( TTrain *Train, command_data const &Command );
     static void OnCommand_motorconnectorsclose( TTrain *Train, command_data const &Command );
-    static void OnCommand_motordisconnect( TTrain *Train, command_data const &Command );
+    static void OnCommand_motordisconnect(const TTrain *Train, command_data const &Command );
     static void OnCommand_motoroverloadrelaythresholdtoggle( TTrain *Train, command_data const &Command );
     static void OnCommand_motoroverloadrelaythresholdsetlow( TTrain *Train, command_data const &Command );
     static void OnCommand_motoroverloadrelaythresholdsethigh( TTrain *Train, command_data const &Command );
@@ -455,10 +455,10 @@ class TTrain {
     static void OnCommand_dooropenall( TTrain *Train, command_data const &Command );
     static void OnCommand_doorcloseall( TTrain *Train, command_data const &Command );
     static void OnCommand_doorsteptoggle( TTrain *Train, command_data const &Command );
-    static void OnCommand_doormodetoggle( TTrain *Train, command_data const &Command );
-	static void OnCommand_mirrorstoggle( TTrain *Train, command_data const &Command );
-    static void OnCommand_nearestcarcouplingincrease( TTrain *Train, command_data const &Command );
-    static void OnCommand_nearestcarcouplingdisconnect( TTrain *Train, command_data const &Command );
+    static void OnCommand_doormodetoggle(const TTrain *Train, command_data const &Command );
+	static void OnCommand_mirrorstoggle(const TTrain *Train, command_data const &Command );
+    static void OnCommand_nearestcarcouplingincrease(const TTrain *Train, command_data const &Command );
+    static void OnCommand_nearestcarcouplingdisconnect(const TTrain *Train, command_data const &Command );
     static void OnCommand_nearestcarcoupleradapterattach( TTrain *Train, command_data const &Command );
     static void OnCommand_nearestcarcoupleradapterremove( TTrain *Train, command_data const &Command );
     static void OnCommand_occupiedcarcouplingdisconnect( TTrain *Train, command_data const &Command );
@@ -468,8 +468,8 @@ class TTrain {
     static void OnCommand_hornhighactivate( TTrain *Train, command_data const &Command );
     static void OnCommand_whistleactivate( TTrain *Train, command_data const &Command );
     static void OnCommand_radiotoggle( TTrain *Train, command_data const &Command );
-    static void OnCommand_radioenable( TTrain *Train, command_data const &Command );
-    static void OnCommand_radiodisable( TTrain *Train, command_data const &Command );
+    static void OnCommand_radioenable(const TTrain *Train, command_data const &Command );
+    static void OnCommand_radiodisable(const TTrain *Train, command_data const &Command );
     static void OnCommand_radiochannelincrease( TTrain *Train, command_data const &Command );
     static void OnCommand_radiochanneldecrease( TTrain *Train, command_data const &Command );
     static void OnCommand_radiochannelset( TTrain *Train, command_data const &Command );
@@ -485,16 +485,16 @@ class TTrain {
     static void OnCommand_cabchangeforward( TTrain *Train, command_data const &Command );
     static void OnCommand_cabchangebackward( TTrain *Train, command_data const &Command );
     static void OnCommand_generictoggle( TTrain *Train, command_data const &Command );
-	static void OnCommand_vehiclemoveforwards( TTrain *Train, command_data const &Command );
-	static void OnCommand_vehiclemovebackwards( TTrain *Train, command_data const &Command );
-	static void OnCommand_vehicleboost( TTrain *Train, command_data const &Command );
+	static void OnCommand_vehiclemoveforwards(const TTrain *Train, command_data const &Command );
+	static void OnCommand_vehiclemovebackwards(const TTrain *Train, command_data const &Command );
+	static void OnCommand_vehicleboost(const TTrain *Train, command_data const &Command );
 	static void OnCommand_springbraketoggle(TTrain *Train, command_data const &Command);
 	static void OnCommand_springbrakeenable(TTrain *Train, command_data const &Command);
 	static void OnCommand_springbrakedisable(TTrain *Train, command_data const &Command);
 	static void OnCommand_springbrakeshutofftoggle(TTrain *Train, command_data const &Command);
-	static void OnCommand_springbrakeshutoffenable(TTrain *Train, command_data const &Command);
-	static void OnCommand_springbrakeshutoffdisable(TTrain *Train, command_data const &Command);
-	static void OnCommand_springbrakerelease(TTrain *Train, command_data const &Command);
+	static void OnCommand_springbrakeshutoffenable(const TTrain *Train, command_data const &Command);
+	static void OnCommand_springbrakeshutoffdisable(const TTrain *Train, command_data const &Command);
+	static void OnCommand_springbrakerelease(const TTrain *Train, command_data const &Command);
     static void OnCommand_distancecounteractivate( TTrain *Train, command_data const &Command );
 	static void OnCommand_speedcontrolincrease(TTrain *Train, command_data const &Command);
 	static void OnCommand_speedcontroldecrease(TTrain *Train, command_data const &Command);
@@ -919,7 +919,7 @@ private:
 	float fDieselParams[9][10]; // parametry dla silnikow asynchronicznych
     // plays provided sound from position of the radio
 	bool radio_message_played;
-    void radio_message( sound_source *Message, int Channel );
+    void radio_message(const sound_source *Message, int Channel );
 	auto const RadioChannel() const { return Dynamic()->Mechanik ? Dynamic()->Mechanik->iRadioChannel : 1; }
 	auto &RadioChannel() { return Dynamic()->Mechanik->iRadioChannel; }
 	TDynamicObject *Dynamic() { return DynamicObject; };

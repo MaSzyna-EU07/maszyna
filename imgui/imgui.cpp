@@ -1038,7 +1038,7 @@ static void             SetCurrentWindow(ImGuiWindow* window);
 static void             FindHoveredWindow();
 static ImGuiWindow*     CreateNewWindow(const char* name, ImVec2 size, ImGuiWindowFlags flags);
 static void             CheckStacksSize(ImGuiWindow* window, bool write);
-static ImVec2           CalcNextScrollFromScrollTargetAndClamp(ImGuiWindow* window, bool snap_on_edges);
+static ImVec2           CalcNextScrollFromScrollTargetAndClamp(const ImGuiWindow * window, bool snap_on_edges);
 
 static void             AddDrawListToDrawData(ImVector<ImDrawList*>* out_list, ImDrawList* draw_list);
 static void             AddWindowToSortBuffer(ImVector<ImGuiWindow*>* out_sorted_windows, ImGuiWindow* window);
@@ -1048,7 +1048,7 @@ static ImRect           GetViewportRect();
 // Settings
 static void*            SettingsHandlerWindow_ReadOpen(ImGuiContext*, ImGuiSettingsHandler*, const char* name);
 static void             SettingsHandlerWindow_ReadLine(ImGuiContext*, ImGuiSettingsHandler*, void* entry, const char* line);
-static void             SettingsHandlerWindow_WriteAll(ImGuiContext* imgui_ctx, ImGuiSettingsHandler* handler, ImGuiTextBuffer* buf);
+static void             SettingsHandlerWindow_WriteAll(ImGuiContext* imgui_ctx, const ImGuiSettingsHandler * handler, ImGuiTextBuffer* buf);
 
 // Platform Dependents default implementation for IO functions
 static const char*      GetClipboardTextFn_DefaultImpl(void* user_data);
@@ -1071,7 +1071,7 @@ static void             NavProcessItem(ImGuiWindow* window, const ImRect& nav_bb
 static ImVec2           NavCalcPreferredRefPos();
 static void             NavSaveLastChildNavWindowIntoParent(ImGuiWindow* nav_window);
 static ImGuiWindow*     NavRestoreLastChildNavWindow(ImGuiWindow* window);
-static int              FindWindowFocusIndex(ImGuiWindow* window);
+static int              FindWindowFocusIndex(const ImGuiWindow * window);
 
 // Misc
 static void             UpdateMouseInputs();
@@ -1110,8 +1110,8 @@ ImGuiContext*   GImGui = NULL;
 // If you use DLL hotreloading you might need to call SetAllocatorFunctions() after reloading code from this file.
 // Otherwise, you probably don't want to modify them mid-program, and if you use global/static e.g. ImVector<> instances you may need to keep them accessible during program destruction.
 #ifndef IMGUI_DISABLE_DEFAULT_ALLOCATORS
-static void*   MallocWrapper(const size_t size, void* user_data)    { IM_UNUSED(user_data); return malloc(size); }
-static void    FreeWrapper(void* ptr, void* user_data)        { IM_UNUSED(user_data); free(ptr); }
+static void*   MallocWrapper(const size_t size, const void * user_data)    { IM_UNUSED(user_data); return malloc(size); }
+static void    FreeWrapper(void* ptr, const void * user_data)        { IM_UNUSED(user_data); free(ptr); }
 #else
 static void*   MallocWrapper(size_t size, void* user_data)    { IM_UNUSED(user_data); IM_UNUSED(size); IM_ASSERT(0); return NULL; }
 static void    FreeWrapper(void* ptr, void* user_data)        { IM_UNUSED(user_data); IM_UNUSED(ptr); IM_ASSERT(0); }
@@ -1915,7 +1915,7 @@ ImU32 ImGui::GetColorU32(const ImU32 col)
 //-----------------------------------------------------------------------------
 
 // std::lower_bound but without the bullshit
-static ImGuiStorage::ImGuiStoragePair* LowerBound(ImVector<ImGuiStorage::ImGuiStoragePair>& data, const ImGuiID key)
+static ImGuiStorage::ImGuiStoragePair* LowerBound(const ImVector<ImGuiStorage::ImGuiStoragePair>& data, const ImGuiID key)
 {
     ImGuiStorage::ImGuiStoragePair* first = data.Data;
 	const ImGuiStorage::ImGuiStoragePair* last = data.Data + data.Size;
@@ -2669,7 +2669,7 @@ void ImGui::RenderNavHighlight(const ImRect& bb, const ImGuiID id, const ImGuiNa
 //-----------------------------------------------------------------------------
 
 // ImGuiWindow is mostly a dumb struct. It merely has a constructor and a few helper methods
-ImGuiWindow::ImGuiWindow(ImGuiContext* context, const char* name)
+ImGuiWindow::ImGuiWindow(const ImGuiContext * context, const char* name)
     : DrawListInst(&context->DrawListSharedData)
 {
     Name = ImStrdup(name);
@@ -2942,7 +2942,7 @@ void ImGui::MarkItemEdited(const ImGuiID id)
     g.CurrentWindow->DC.LastItemStatusFlags |= ImGuiItemStatusFlags_Edited;
 }
 
-static inline bool IsWindowContentHoverable(ImGuiWindow* window, const ImGuiHoveredFlags flags)
+static inline bool IsWindowContentHoverable(const ImGuiWindow * window, const ImGuiHoveredFlags flags)
 {
     // An active popup disable hovering on other windows (apart from its own children)
     // FIXME-OPT: This could be cached/stored within the window.
@@ -3449,7 +3449,7 @@ void ImGui::UpdateMouseMovingWindowEndFrame()
     }
 }
 
-static bool IsWindowActiveAndVisible(ImGuiWindow* window)
+static bool IsWindowActiveAndVisible(const ImGuiWindow * window)
 {
     return (window->Active) && (!window->Hidden);
 }
@@ -4119,7 +4119,7 @@ void ImDrawDataBuilder::FlattenIntoSingleLayer()
     }
 }
 
-static void SetupDrawData(ImVector<ImDrawList*>* draw_lists, ImDrawData* draw_data)
+static void SetupDrawData(const ImVector<ImDrawList*>* draw_lists, ImDrawData* draw_data)
 {
 	const ImGuiIO & io = ImGui::GetIO();
     draw_data->Valid = true;
@@ -4909,7 +4909,7 @@ static ImGuiWindow* CreateNewWindow(const char* name, ImVec2 size, const ImGuiWi
     return window;
 }
 
-static ImVec2 CalcWindowSizeAfterConstraint(ImGuiWindow* window, ImVec2 new_size)
+static ImVec2 CalcWindowSizeAfterConstraint(const ImGuiWindow * window, ImVec2 new_size)
 {
 	const ImGuiContext & g = *GImGui;
     if (g.NextWindowData.Flags & ImGuiNextWindowDataFlags_HasSizeConstraint)
@@ -4941,7 +4941,7 @@ static ImVec2 CalcWindowSizeAfterConstraint(ImGuiWindow* window, ImVec2 new_size
     return new_size;
 }
 
-static ImVec2 CalcWindowContentSize(ImGuiWindow* window)
+static ImVec2 CalcWindowContentSize(const ImGuiWindow * window)
 {
     if (window->Collapsed)
         if (window->AutoFitFramesX <= 0 && window->AutoFitFramesY <= 0)
@@ -5036,7 +5036,7 @@ static const ImGuiResizeGripDef resize_grip_def[4] =
     { ImVec2(1,0), ImVec2(-1,+1), 9,12 }, // Upper right
 };
 
-static ImRect GetResizeBorderRect(ImGuiWindow* window, const int border_n, const float perp_padding, const float thickness)
+static ImRect GetResizeBorderRect(const ImGuiWindow * window, const int border_n, const float perp_padding, const float thickness)
 {
     ImRect rect = window->Rect();
     if (thickness == 0.0f) rect.Max -= ImVec2(1,1);
@@ -6129,7 +6129,7 @@ void ImGui::FocusWindow(ImGuiWindow* window)
         BringWindowToDisplayFront(window);
 }
 
-void ImGui::FocusTopMostWindowUnderOne(ImGuiWindow* under_this_window, ImGuiWindow* ignore_window)
+void ImGui::FocusTopMostWindowUnderOne(ImGuiWindow* under_this_window, const ImGuiWindow * ignore_window)
 {
     ImGuiContext& g = *GImGui;
 
@@ -6499,7 +6499,7 @@ const char* ImGui::GetStyleColorName(const ImGuiCol idx)
     return "Unknown";
 }
 
-bool ImGui::IsWindowChildOf(ImGuiWindow* window, ImGuiWindow* potential_parent)
+bool ImGui::IsWindowChildOf(const ImGuiWindow * window, const ImGuiWindow * potential_parent)
 {
     if (window->RootWindow == potential_parent)
         return true;
@@ -6577,7 +6577,7 @@ bool ImGui::IsWindowFocused(const ImGuiFocusedFlags flags)
 // Can we focus this window with CTRL+TAB (or PadMenu + PadFocusPrev/PadFocusNext)
 // Note that NoNavFocus makes the window not reachable with CTRL+TAB but it can still be focused with mouse or programmaticaly.
 // If you want a window to never be focused, you may use the e.g. NoInputs flag.
-bool ImGui::IsWindowNavFocusable(ImGuiWindow* window)
+bool ImGui::IsWindowNavFocusable(const ImGuiWindow * window)
 {
     return window->Active && window == window->RootWindow && !(window->Flags & ImGuiWindowFlags_NoNavFocus);
 }
@@ -7193,7 +7193,7 @@ void ImGui::Unindent(const float indent_w)
 // [SECTION] SCROLLING
 //-----------------------------------------------------------------------------
 
-static ImVec2 CalcNextScrollFromScrollTargetAndClamp(ImGuiWindow* window, const bool snap_on_edges)
+static ImVec2 CalcNextScrollFromScrollTargetAndClamp(const ImGuiWindow * window, const bool snap_on_edges)
 {
 	const ImGuiContext & g = *GImGui;
     ImVec2 scroll = window->Scroll;
@@ -7521,7 +7521,7 @@ bool ImGui::OpenPopupOnItemClick(const char* str_id, const int mouse_button)
     return false;
 }
 
-void ImGui::ClosePopupsOverWindow(ImGuiWindow* ref_window, const bool restore_focus_to_window_under_popup)
+void ImGui::ClosePopupsOverWindow(const ImGuiWindow * ref_window, const bool restore_focus_to_window_under_popup)
 {
     ImGuiContext& g = *GImGui;
     if (g.OpenPopupStack.empty())
@@ -7781,7 +7781,7 @@ ImVec2 ImGui::FindBestWindowPosForPopupEx(const ImVec2& ref_pos, const ImVec2& s
     return pos;
 }
 
-ImRect ImGui::GetWindowAllowedExtentRect(ImGuiWindow* window)
+ImRect ImGui::GetWindowAllowedExtentRect(const ImGuiWindow * window)
 {
     IM_UNUSED(window);
 	const ImVec2 padding = GImGui->Style.DisplaySafeAreaPadding;
@@ -8096,7 +8096,7 @@ void ImGui::NavMoveRequestForward(const ImGuiDir move_dir, const ImGuiDir clip_d
     g.NavWindow->NavRectRel[g.NavLayer] = bb_rel;
 }
 
-void ImGui::NavMoveRequestTryWrapping(ImGuiWindow* window, const ImGuiNavMoveFlags move_flags)
+void ImGui::NavMoveRequestTryWrapping(const ImGuiWindow * window, const ImGuiNavMoveFlags move_flags)
 {
 	const ImGuiContext & g = *GImGui;
     if (g.NavWindow != window || !NavMoveRequestButNoResultYet() || g.NavMoveRequestForward != ImGuiNavForward_None || g.NavLayer != 0)
@@ -8170,7 +8170,7 @@ static inline void ImGui::NavUpdateAnyRequestFlag()
 }
 
 // This needs to be called before we submit any widget (aka in or before Begin)
-void ImGui::NavInitWindow(ImGuiWindow* window, const bool force_reinit)
+void ImGui::NavInitWindow(const ImGuiWindow * window, const bool force_reinit)
 {
     ImGuiContext& g = *GImGui;
     IM_ASSERT(window == g.NavWindow);
@@ -8662,7 +8662,7 @@ static float ImGui::NavUpdatePageUpPageDown(const int allowed_dir_flags)
     return 0.0f;
 }
 
-static int ImGui::FindWindowFocusIndex(ImGuiWindow* window) // FIXME-OPT O(N)
+static int ImGui::FindWindowFocusIndex(const ImGuiWindow * window) // FIXME-OPT O(N)
 {
     ImGuiContext& g = *GImGui;
     for (int i = g.WindowsFocusOrder.Size-1; i >= 0; i--)
@@ -8841,7 +8841,7 @@ static void ImGui::NavUpdateWindowing()
 }
 
 // Window has already passed the IsWindowNavFocusable()
-static const char* GetFallbackWindowNameForWindowingList(ImGuiWindow* window)
+static const char* GetFallbackWindowNameForWindowingList(const ImGuiWindow * window)
 {
     if (window->Flags & ImGuiWindowFlags_Popup)
         return "(Popup)";
@@ -9384,7 +9384,7 @@ void ImGui::MarkIniSettingsDirty()
         g.SettingsDirtyTimer = g.IO.IniSavingRate;
 }
 
-void ImGui::MarkIniSettingsDirty(ImGuiWindow* window)
+void ImGui::MarkIniSettingsDirty(const ImGuiWindow * window)
 {
     ImGuiContext& g = *GImGui;
     if (!(window->Flags & ImGuiWindowFlags_NoSavedSettings))
@@ -9557,7 +9557,7 @@ static void SettingsHandlerWindow_ReadLine(ImGuiContext*, ImGuiSettingsHandler*,
     else if (sscanf(line, "Collapsed=%d", &i) == 1)     settings->Collapsed = (i != 0);
 }
 
-static void SettingsHandlerWindow_WriteAll(ImGuiContext* ctx, ImGuiSettingsHandler* handler, ImGuiTextBuffer* buf)
+static void SettingsHandlerWindow_WriteAll(ImGuiContext* ctx, const ImGuiSettingsHandler * handler, ImGuiTextBuffer* buf)
 {
     // Gather data from windows that were active during this session
     // (if a window wasn't opened in this session we preserve its settings)
@@ -9817,7 +9817,7 @@ void ImGui::ShowMetricsWindow(bool* p_open)
     // - NodeTabBar
     struct Funcs
     {
-        static ImRect GetWindowRect(ImGuiWindow* window, const int rect_type)
+        static ImRect GetWindowRect(const ImGuiWindow * window, const int rect_type)
         {
             if (rect_type == WRT_OuterRect)                 { return window->Rect(); }
             else

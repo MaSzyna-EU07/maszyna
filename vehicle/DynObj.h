@@ -285,16 +285,16 @@ private:
 /*
     void UpdateNone(TAnim *pAnim){}; // animacja pusta (funkcje ustawiania submodeli, gdy blisko kamery)
 */
-    void UpdateAxle(TAnim *pAnim); // animacja osi
-    void UpdateDoorTranslate(TAnim *pAnim); // animacja drzwi - przesuw
-    void UpdateDoorRotate(TAnim *pAnim); // animacja drzwi - obrót
-    void UpdateDoorFold(TAnim *pAnim); // animacja drzwi - składanie
-	void UpdateDoorPlug(TAnim *pAnim);      // animacja drzwi - odskokowo-przesuwne
-	static void UpdatePant(TAnim *pAnim); // animacja pantografu
-    void UpdatePlatformTranslate(TAnim *pAnim); // doorstep animation, shift
-    void UpdatePlatformRotate(TAnim *pAnim); // doorstep animation, rotate
-    void UpdateMirror(TAnim *pAnim); // mirror animation
-	void UpdateWiper(TAnim *pAnim); // wiper animation
+    void UpdateAxle(const TAnim *pAnim); // animacja osi
+    void UpdateDoorTranslate(const TAnim *pAnim); // animacja drzwi - przesuw
+    void UpdateDoorRotate(const TAnim *pAnim); // animacja drzwi - obrót
+    void UpdateDoorFold(const TAnim *pAnim); // animacja drzwi - składanie
+	void UpdateDoorPlug(const TAnim *pAnim);      // animacja drzwi - odskokowo-przesuwne
+	static void UpdatePant(const TAnim *pAnim); // animacja pantografu
+    void UpdatePlatformTranslate(const TAnim *pAnim); // doorstep animation, shift
+    void UpdatePlatformRotate(const TAnim *pAnim); // doorstep animation, rotate
+    void UpdateMirror(const TAnim *pAnim); // mirror animation
+	void UpdateWiper(const TAnim *pAnim); // wiper animation
 	/*
     void UpdateLeverDouble(TAnim *pAnim); // animacja gałki zależna od double
     void UpdateLeverFloat(TAnim *pAnim); // animacja gałki zależna od float
@@ -804,7 +804,7 @@ private:
     void for_each( coupling Coupling, UnaryFunction_ Function );
     void ParamSet(int what, int into);
     // zapytanie do AI, po którym segmencie skrzyżowania jechać
-    int RouteWish(TTrack *tr);
+    int RouteWish(const TTrack *tr);
     void DestinationSet(std::string to, std::string numer);
     material_handle DestinationFind( std::string Destination );
     void OverheadTrack(float o);

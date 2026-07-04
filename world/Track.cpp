@@ -1080,7 +1080,7 @@ bool TTrack::AddDynamicObject(TDynamicObject *Dynamic)
 
 constexpr int numPts = 4;
 
-bool TTrack::CheckDynamicObject(TDynamicObject *Dynamic)
+bool TTrack::CheckDynamicObject(const TDynamicObject *Dynamic)
 { // sprawdzenie, czy pojazd jest przypisany do toru
     for (const auto dynamic : Dynamics ) {
         if( dynamic == Dynamic ) {
@@ -1090,7 +1090,7 @@ bool TTrack::CheckDynamicObject(TDynamicObject *Dynamic)
     return false;
 };
 
-bool TTrack::RemoveDynamicObject(TDynamicObject *Dynamic)
+bool TTrack::RemoveDynamicObject(const TDynamicObject *Dynamic)
 { // usunięcie pojazdu z listy przypisanych do toru
     bool result = false;
     if( *Dynamics.begin() == Dynamic ) {
@@ -1201,7 +1201,7 @@ void TTrack::create_map_geometry(std::vector<gfx::basic_vertex> &Bank, const gfx
 	}
 }
 
-TTrack *TTrack::Next(TTrack *visitor) {
+TTrack *TTrack::Next(const TTrack *visitor) {
 	if (eType == tt_Normal) {
 		if (trNext != visitor)
 			return trNext;
@@ -1887,7 +1887,7 @@ bool TTrack::Switch(int i, float const t, float const d)
     return false;
 };
 
-bool TTrack::SwitchForced(const int i, TDynamicObject *o)
+bool TTrack::SwitchForced(const int i, const TDynamicObject *o)
 { // rozprucie rozjazdu
     if (SwitchExtension)
         if (eType == tt_Switch)

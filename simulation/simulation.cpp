@@ -503,7 +503,7 @@ void state_manager::delete_eventlauncher(TEventLauncher *launcher) {
 
 // passes specified sound to all vehicles within range as a radio message broadcasted on specified channel
 void
-radio_message( sound_source *Message, int const Channel ) {
+radio_message(const sound_source *Message, int const Channel ) {
 
     if( Train != nullptr ) {
         Train->radio_message( Message, Channel );

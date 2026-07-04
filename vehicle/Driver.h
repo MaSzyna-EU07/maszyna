@@ -482,13 +482,13 @@ private:
 // scantable
 // methods
 public:
-    int CrossRoute( TTrack *tr );
+    int CrossRoute(const TTrack *tr );
   void MoveDistanceAdd(const double distance ) {
         dMoveLen += distance * iDirection;
     } //jak jedzie do tyłu to trzeba uwzględniać, że distance jest ujemna
 private:
     // Ra: metody obsługujące skanowanie toru
-  static std::vector<basic_event *> CheckTrackEvent( TTrack *Track, double fDirection );
+  static std::vector<basic_event *> CheckTrackEvent(const TTrack *Track, double fDirection );
     bool TableAddNew();
     bool TableNotFound( basic_event const *Event, double Distance ) const;
     void TableTraceRoute( double fDistance, TDynamicObject *pVehicle );
@@ -510,7 +510,7 @@ private:
     void TableClear();
     int TableDirection() { return iTableDirection; }
     // Ra: stare funkcje skanujące, używane do szukania sygnalizatora z tyłu
-    bool IsOccupiedByAnotherConsist( TTrack *Track, double Distance );
+    bool IsOccupiedByAnotherConsist(const TTrack *Track, double Distance );
 	static basic_event *CheckTrackEventBackward( double fDirection, TTrack *Track, TDynamicObject *Vehicle, int Eventdirection = 1, end End = rear );
     TTrack *BackwardTraceRoute( double &fDistance, double &fDirection, TDynamicObject *Vehicle, basic_event *&Event, int Eventdirection = 1, end End = rear, bool Untiloccupied = true );
     void SetProximityVelocity( double dist, double vel, glm::dvec3 const *pos );

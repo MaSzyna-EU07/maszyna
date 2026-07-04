@@ -50,7 +50,7 @@ bool TDynamicObject::bDynamicRemove { false };
 
 // helper, locates submodel with specified name in specified 3d model; returns: pointer to the submodel, or null
 TSubModel *
-GetSubmodelFromName( TModel3d * const Model, std::string const Name ) {
+GetSubmodelFromName(const TModel3d * const Model, std::string const Name ) {
 
     return Model ? Model->GetFromName(Name) : nullptr;
 }
@@ -550,7 +550,7 @@ void TDynamicObject::SetPneumatic(const bool front, const bool red)
     } // który pokazywać z tyłu
 }
 
-void TDynamicObject::UpdateAxle(TAnim *pAnim)
+void TDynamicObject::UpdateAxle(const TAnim *pAnim)
 { // animacja osi
 	const size_t wheel_id = pAnim->dWheelAngle;
     pAnim->smAnimated->SetRotate(float3(1, 0, 0), dWheelAngle[wheel_id]);
@@ -558,7 +558,7 @@ void TDynamicObject::UpdateAxle(TAnim *pAnim)
 };
 
 // animacja drzwi - przesuw
-void TDynamicObject::UpdateDoorTranslate(TAnim *pAnim) {
+void TDynamicObject::UpdateDoorTranslate(const TAnim *pAnim) {
     if( pAnim->smAnimated == nullptr ) { return; }
 
     auto const &door { MoverParameters->Doors.instances[ (
@@ -574,7 +574,7 @@ void TDynamicObject::UpdateDoorTranslate(TAnim *pAnim) {
 };
 
 // animacja drzwi - obrót
-void TDynamicObject::UpdateDoorRotate(TAnim *pAnim) {
+void TDynamicObject::UpdateDoorRotate(const TAnim *pAnim) {
 
     if( pAnim->smAnimated == nullptr ) { return; }
 
@@ -589,7 +589,7 @@ void TDynamicObject::UpdateDoorRotate(TAnim *pAnim) {
 };
 
 // animacja drzwi - obrót
-void TDynamicObject::UpdateDoorFold(TAnim *pAnim) {
+void TDynamicObject::UpdateDoorFold(const TAnim *pAnim) {
 
     if( pAnim->smAnimated == nullptr ) { return; }
 
@@ -621,7 +621,7 @@ void TDynamicObject::UpdateDoorFold(TAnim *pAnim) {
 };
 
 // animacja drzwi - odskokprzesuw
-void TDynamicObject::UpdateDoorPlug(TAnim *pAnim) {
+void TDynamicObject::UpdateDoorPlug(const TAnim *pAnim) {
 
     if( pAnim->smAnimated == nullptr ) { return; }
 
@@ -641,7 +641,7 @@ void TDynamicObject::UpdateDoorPlug(TAnim *pAnim) {
                 door.position - MoverParameters->Doors.range_out * 0.5f ) } );
 }
 
-void TDynamicObject::UpdatePant(TAnim *pAnim)
+void TDynamicObject::UpdatePant(const TAnim *pAnim)
 { // animacja pantografu - 4 obracane ramiona, ślizg piąty
 	float a, b, c;
 	a = glm::degrees(pAnim->fParamPants->fAngleL - pAnim->fParamPants->fAngleL0);
@@ -660,7 +660,7 @@ void TDynamicObject::UpdatePant(TAnim *pAnim)
 }
 
 // doorstep animation, shift
-void TDynamicObject::UpdatePlatformTranslate( TAnim *pAnim ) {
+void TDynamicObject::UpdatePlatformTranslate(const TAnim *pAnim ) {
 
     if( pAnim->smAnimated == nullptr ) { return; }
 
@@ -677,7 +677,7 @@ void TDynamicObject::UpdatePlatformTranslate( TAnim *pAnim ) {
 }
 
 // doorstep animation, rotate
-void TDynamicObject::UpdatePlatformRotate( TAnim *pAnim ) {
+void TDynamicObject::UpdatePlatformRotate(const TAnim *pAnim ) {
 
     if( pAnim->smAnimated == nullptr ) { return; }
 
@@ -692,7 +692,7 @@ void TDynamicObject::UpdatePlatformRotate( TAnim *pAnim ) {
 }
 
 // mirror animation, rotate
-void TDynamicObject::UpdateMirror( TAnim *pAnim ) {
+void TDynamicObject::UpdateMirror(const TAnim *pAnim ) {
 
     if( pAnim->smAnimated == nullptr ) { return; }
 
@@ -713,7 +713,7 @@ void TDynamicObject::UpdateMirror( TAnim *pAnim ) {
 }
 
 // wipers
-void TDynamicObject::UpdateWiper(TAnim* pAnim)
+void TDynamicObject::UpdateWiper(const TAnim * pAnim)
 {
 	if (!pAnim || !pAnim->smElement)
 		return;
@@ -7691,7 +7691,7 @@ TDynamicObject * TDynamicObject::FindPowered()
     auto *lookup {
         find_vehicle(
             coupling,
-            []( TDynamicObject * vehicle ) {
+            [](const TDynamicObject * vehicle ) {
                 return vehicle->MoverParameters->Power > 1.0; } ) };
 
     return lookup != nullptr ? lookup : this; // always return valid vehicle for backward compatibility
@@ -7707,7 +7707,7 @@ TDynamicObject::FindPantographCarrier() {
         auto *result =
             find_vehicle(
                 coupling,
-                []( TDynamicObject * vehicle ) {
+                [](const TDynamicObject * vehicle ) {
                     return vehicle->MoverParameters->EnginePowerSource.SourceType == TPowerSource::CurrentCollector && vehicle->MoverParameters->EnginePowerSource.CollectorParameters.CollectorsNo > 0; } );
         if( result != nullptr ) {
             return result;
@@ -7760,7 +7760,7 @@ void TDynamicObject::ParamSet(const int what, const int into)
     }
 };
 
-int TDynamicObject::RouteWish(TTrack *tr)
+int TDynamicObject::RouteWish(const TTrack *tr)
 { // zapytanie do AI, po którym
     // segmencie (-6..6) jechać na
     // skrzyżowaniu (tr)

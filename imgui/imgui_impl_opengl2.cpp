@@ -57,7 +57,7 @@ void    ImGui_ImplOpenGL2_NewFrame()
         ImGui_ImplOpenGL2_CreateDeviceObjects();
 }
 
-static void ImGui_ImplOpenGL2_SetupRenderState(ImDrawData* draw_data, const int fb_width, const int fb_height)
+static void ImGui_ImplOpenGL2_SetupRenderState(const ImDrawData * draw_data, const int fb_width, const int fb_height)
 {
     // Setup render state: alpha-blending enabled, no face culling, no depth testing, scissor enabled, vertex/texcoord/color pointers, polygon fill.
     glEnable(GL_BLEND);

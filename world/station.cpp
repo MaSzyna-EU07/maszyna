@@ -22,7 +22,7 @@ basic_station Station;
 
 // exchanges load with consist attached to specified vehicle, operating on specified schedule
 double
-basic_station::update_load( TDynamicObject *First, TTrainParameters &Schedule, int const Platform ) {
+basic_station::update_load( TDynamicObject *First, const TTrainParameters &Schedule, int const Platform ) {
 
     // TODO: filter out maintenance stops when determining first and last stop
     auto const firststop { Schedule.StationIndex == 1 };

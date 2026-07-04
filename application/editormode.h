@@ -187,12 +187,12 @@ class editor_mode : public application_mode
 
 	// hierarchy management
 	static void add_to_hierarchy(scene::basic_node *node);
-	static void remove_from_hierarchy(scene::basic_node *node);
+	static void remove_from_hierarchy(const scene::basic_node *node);
 	static scene::basic_node* find_in_hierarchy(const std::string &uuid_str);
 	scene::basic_node* find_node_by_any(scene::basic_node *node_ptr, const std::string &uuid_str, const std::string &name);
 
 	// clear history/redo pointers that reference the given node (prevent dangling pointers)
-	void nullify_history_pointers(scene::basic_node *node);
+	void nullify_history_pointers(const scene::basic_node *node);
 	void render_change_history();
 	void render_settings();
 

@@ -53,7 +53,7 @@ node_groups::close()
     return handle();
 }
 
-bool node_groups::assign_cross_switch(map::track_switch& sw, std::string &sw_name, std::string const &id, const size_t idx)
+bool node_groups::assign_cross_switch(map::track_switch& sw, const std::string &sw_name, std::string const &id, const size_t idx)
 {
     sw.action[idx] = simulation::Events.FindEvent(sw_name + ":" + id);
     if (!sw.action[idx])

@@ -18,7 +18,7 @@ public:
 // methods
     // exchanges load with consist attached to specified vehicle, operating on specified schedule; returns: time needed for exchange, in seconds
   static double
-        update_load( TDynamicObject *First, Mtable::TTrainParameters &Schedule, int Platform );
+        update_load( TDynamicObject *First, const Mtable::TTrainParameters &Schedule, int Platform );
 };
 
 namespace simulation {

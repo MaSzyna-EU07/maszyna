@@ -150,7 +150,7 @@ public:
         erase( TAnimModel *Instance );
     // removes provided memory cell from the cell
     void
-        erase( TMemCell *Memorycell );
+        erase(const TMemCell *Memorycell );
     // find a vehicle located nearest to specified point, within specified radius. reurns: located vehicle and distance
     std::tuple<TDynamicObject *, float>
         find( glm::dvec3 const &Point, float Radius, bool Onlycontrolled, bool Findbycoupler ) const;
@@ -214,7 +214,7 @@ public:
     using memorycell_sequence = std::vector<TMemCell *>;
 // methods
 	static void
-	    launch_event(TEventLauncher *Launcher, bool local_only);
+	    launch_event(const TEventLauncher *Launcher, bool local_only);
     void
         enclose_area( basic_node *Node );
 // members

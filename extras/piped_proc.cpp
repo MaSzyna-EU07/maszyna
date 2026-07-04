@@ -97,7 +97,7 @@ size_t piped_proc::read(unsigned char *buf, const size_t len)
 	return read;
 }
 
-size_t piped_proc::write(unsigned char *buf, const size_t len)
+size_t piped_proc::write(const unsigned char *buf, const size_t len)
 {
 	if (!pipe_wr)
 		return 0;

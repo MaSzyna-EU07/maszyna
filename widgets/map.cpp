@@ -368,7 +368,7 @@ void ui::map_panel::render_contents()
 	render_labels(transform, window_origin, surface_size);
 }
 
-void ui::handle_map_object_click(ui_panel &parent, std::shared_ptr<map::map_object> &obj)
+void ui::handle_map_object_click(ui_panel &parent, const std::shared_ptr<map::map_object> &obj)
 {
 	if (auto sem = std::dynamic_pointer_cast<map::semaphore>(obj))
 	{

@@ -219,7 +219,7 @@ std::vector<ui::vehiclepicker_panel::search_info> ui::vehiclepicker_panel::parse
 	return info_list;
 }
 
-bool ui::vehiclepicker_panel::skin_filter(const skin_set *skin, std::vector<search_info> &info_list)
+bool ui::vehiclepicker_panel::skin_filter(const skin_set *skin, const std::vector<search_info> &info_list)
 {
 	bool any = false;
 	bool alternative_present = false;

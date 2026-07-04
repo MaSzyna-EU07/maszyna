@@ -60,6 +60,6 @@ private:
 	};
 
 	static std::vector<search_info> parse_search_query(const std::string &str);
-	static bool skin_filter(const skin_set *skin, std::vector<search_info> &info_list);
+	static bool skin_filter(const skin_set *skin, const std::vector<search_info> &info_list);
 };
 } // namespace ui

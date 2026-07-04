@@ -1247,7 +1247,7 @@ void ImDrawListSplitter::Split(ImDrawList* draw_list, const int channels_count)
     }
 }
 
-static inline bool CanMergeDrawCommands(ImDrawCmd* a, ImDrawCmd* b)
+static inline bool CanMergeDrawCommands(const ImDrawCmd * a, const ImDrawCmd * b)
 {
     return memcmp(&a->ClipRect, &b->ClipRect, sizeof(a->ClipRect)) == 0 && a->TextureId == b->TextureId && a->VtxOffset == b->VtxOffset && !a->UserCallback && !b->UserCallback;
 }
@@ -1365,7 +1365,7 @@ void ImDrawData::ScaleClipRects(const ImVec2& fb_scale)
 //-----------------------------------------------------------------------------
 
 // Generic linear color gradient, write to RGB fields, leave A untouched.
-void ImGui::ShadeVertsLinearColorGradientKeepAlpha(ImDrawList* draw_list, const int vert_start_idx, const int vert_end_idx, const ImVec2 gradient_p0, const ImVec2 gradient_p1, const ImU32 col0,
+void ImGui::ShadeVertsLinearColorGradientKeepAlpha(const ImDrawList * draw_list, const int vert_start_idx, const int vert_end_idx, const ImVec2 gradient_p0, const ImVec2 gradient_p1, const ImU32 col0,
                                                    const ImU32 col1)
 {
 	const ImVec2 gradient_extent = gradient_p1 - gradient_p0;
@@ -1384,7 +1384,7 @@ void ImGui::ShadeVertsLinearColorGradientKeepAlpha(ImDrawList* draw_list, const 
 }
 
 // Distribute UV over (a, b) rectangle
-void ImGui::ShadeVertsLinearUV(ImDrawList* draw_list, const int vert_start_idx, const int vert_end_idx, const ImVec2& a, const ImVec2& b, const ImVec2& uv_a, const ImVec2& uv_b, const bool clamp)
+void ImGui::ShadeVertsLinearUV(const ImDrawList * draw_list, const int vert_start_idx, const int vert_end_idx, const ImVec2& a, const ImVec2& b, const ImVec2& uv_a, const ImVec2& uv_b, const bool clamp)
 {
     const ImVec2 size = b - a;
     const ImVec2 uv_size = uv_b - uv_a;
@@ -2111,7 +2111,7 @@ void ImFontAtlasBuildRegisterDefaultCustomRects(ImFontAtlas* atlas)
         atlas->CustomRectIds[0] = atlas->AddCustomRectRegular(FONT_ATLAS_DEFAULT_TEX_DATA_ID, 2, 2);
 }
 
-void ImFontAtlasBuildSetupFont(ImFontAtlas* atlas, ImFont* font, ImFontConfig* font_config, const float ascent, const float descent)
+void ImFontAtlasBuildSetupFont(ImFontAtlas* atlas, ImFont* font, const ImFontConfig * font_config, const float ascent, const float descent)
 {
     if (!font_config->MergeMode)
     {
@@ -3201,7 +3201,7 @@ static const unsigned char *stb_decompress_token(const unsigned char *i)
     return i;
 }
 
-static unsigned int stb_adler32(const unsigned int adler32, unsigned char *buffer, unsigned int buflen)
+static unsigned int stb_adler32(const unsigned int adler32, const unsigned char *buffer, unsigned int buflen)
 {
 	constexpr unsigned long ADLER_MOD = 65521;
     unsigned long s1 = adler32 & 0xffff, s2 = adler32 >> 16;

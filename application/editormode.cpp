@@ -342,7 +342,7 @@ void editor_mode::add_to_hierarchy(scene::basic_node *node)
     scene::Hierarchy[node->uuid.to_string()] = node;
 }
 
-void editor_mode::remove_from_hierarchy(scene::basic_node *node)
+void editor_mode::remove_from_hierarchy(const scene::basic_node *node)
 {
     if (!node) return;
 	const auto it = scene::Hierarchy.find(node->uuid.to_string());
@@ -423,7 +423,7 @@ glm::dvec3 editor_mode::clamp_mouse_offset_to_max(const glm::dvec3 &offset)
     return glm::normalize(offset) * static_cast<double>(kMaxPlacementDistance);
 }
 
-void editor_mode::nullify_history_pointers(scene::basic_node *node)
+void editor_mode::nullify_history_pointers(const scene::basic_node *node)
 {
     if (!node)
         return;

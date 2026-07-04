@@ -26,7 +26,7 @@ namespace gl
         void blit_to(framebuffer *other, int w, int h, GLbitfield mask, GLenum attachment);
         void blit_from(framebuffer *other, int w, int h, GLbitfield mask, GLenum attachment);
 
-        static void blit(framebuffer *src, framebuffer *dst, int sx, int sy, int w, int h, GLbitfield mask, GLenum attachment);
+        static void blit(const framebuffer *src, const framebuffer *dst, int sx, int sy, int w, int h, GLbitfield mask, GLenum attachment);
 
         using bindable::bind;
         static void bind(GLuint id);

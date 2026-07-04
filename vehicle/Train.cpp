@@ -1027,7 +1027,7 @@ void TTrain::zero_charging_train_brake()
 	}
 }
 
-void TTrain::set_train_brake_speed(TDynamicObject *Vehicle, int const Speed)
+void TTrain::set_train_brake_speed(const TDynamicObject *Vehicle, int const Speed)
 {
 
 	if (true == Vehicle->MoverParameters->BrakeDelaySwitch(Speed))
@@ -1085,7 +1085,7 @@ TDynamicObject *TTrain::find_nearest_consist_vehicle(bool freefly, glm::vec3 pos
 }
 
 // command handlers
-void TTrain::OnCommand_aidriverenable(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_aidriverenable(const TTrain *Train, command_data const &Command)
 {
 
 	if (Command.action == GLFW_PRESS)
@@ -1105,7 +1105,7 @@ void TTrain::OnCommand_aidriverenable(TTrain *Train, command_data const &Command
 	}
 }
 
-void TTrain::OnCommand_aidriverdisable(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_aidriverdisable(const TTrain *Train, command_data const &Command)
 {
 
 	if (Command.action == GLFW_PRESS)
@@ -1325,7 +1325,7 @@ void TTrain::OnCommand_mastercontrollerset(TTrain *Train, command_data const &Co
 		Train->m_mastercontrollerreturndelay = EU07_CONTROLLER_BASERETURNDELAY; // NOTE: keyboard return delay is omitted for other input sources
 	}
 }
-void TTrain::OnCommand_DynamicBrakeControllerIncrease(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_DynamicBrakeControllerIncrease(const TTrain *Train, command_data const &Command)
 {
 	if (Command.action == GLFW_RELEASE)
 	{
@@ -1340,7 +1340,7 @@ void TTrain::OnCommand_DynamicBrakeControllerIncrease(TTrain *Train, command_dat
 	Train->mvControlled->IncDynamicBrakeLevel(1.0f);
 }
 
-void TTrain::OnCommand_DynamicBrakeControllerIncreaseFast(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_DynamicBrakeControllerIncreaseFast(const TTrain *Train, command_data const &Command)
 {
 	if (Command.action != GLFW_PRESS)
 	{
@@ -1354,7 +1354,7 @@ void TTrain::OnCommand_DynamicBrakeControllerIncreaseFast(TTrain *Train, command
 	Train->mvControlled->IncDynamicBrakeLevel(static_cast<float>(Train->mvControlled->DynamicBrakeCtrlPosNo));
 }
 
-void TTrain::OnCommand_DynamicBrakeControllerDecrease(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_DynamicBrakeControllerDecrease(const TTrain *Train, command_data const &Command)
 {
 	if (Command.action == GLFW_RELEASE)
 	{
@@ -1369,7 +1369,7 @@ void TTrain::OnCommand_DynamicBrakeControllerDecrease(TTrain *Train, command_dat
 	Train->mvControlled->DecDynamicBrakeLevel(1.0f);
 }
 
-void TTrain::OnCommand_DynamicBrakeControllerDecreaseFast(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_DynamicBrakeControllerDecreaseFast(const TTrain *Train, command_data const &Command)
 {
 	if (Command.action != GLFW_PRESS)
 	{
@@ -1383,7 +1383,7 @@ void TTrain::OnCommand_DynamicBrakeControllerDecreaseFast(TTrain *Train, command
 	Train->mvControlled->DecDynamicBrakeLevel(static_cast<float>(Train->mvControlled->DynamicBrakeCtrlPosNo));
 }
 
-void TTrain::OnCommand_DynamicBrakeControllerSet(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_DynamicBrakeControllerSet(const TTrain *Train, command_data const &Command)
 {
 	if (Command.action == GLFW_RELEASE)
 	{
@@ -1446,7 +1446,7 @@ void TTrain::OnCommand_secondcontrollerincrease(TTrain *Train, command_data cons
 	}
 }
 
-void TTrain::OnCommand_secondcontrollerincreasefast(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_secondcontrollerincreasefast(const TTrain *Train, command_data const &Command)
 {
 
 	if (Command.action != GLFW_RELEASE)
@@ -1463,7 +1463,7 @@ void TTrain::OnCommand_secondcontrollerincreasefast(TTrain *Train, command_data 
 	}
 }
 
-void TTrain::OnCommand_notchingrelaytoggle(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_notchingrelaytoggle(const TTrain *Train, command_data const &Command)
 {
 
 	if (Command.action == GLFW_PRESS)
@@ -1662,7 +1662,7 @@ void TTrain::OnCommand_secondcontrollerdecrease(TTrain *Train, command_data cons
 	}
 }
 
-void TTrain::OnCommand_secondcontrollerdecreasefast(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_secondcontrollerdecreasefast(const TTrain *Train, command_data const &Command)
 {
 
 	if (Command.action != GLFW_RELEASE)
@@ -1824,7 +1824,7 @@ void TTrain::OnCommand_independentbrakedecreasefast(TTrain *Train, command_data 
 	}
 }
 
-void TTrain::OnCommand_independentbrakeset(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_independentbrakeset(const TTrain *Train, command_data const &Command)
 {
 
 	if (Command.action != GLFW_RELEASE)
@@ -2075,7 +2075,7 @@ void TTrain::OnCommand_trainbrakeemergency(TTrain *Train, command_data const &Co
 	}
 }
 
-void TTrain::OnCommand_trainbrakebasepressureincrease(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_trainbrakebasepressureincrease(const TTrain *Train, command_data const &Command)
 {
 
 	if (Command.action != GLFW_RELEASE)
@@ -2097,7 +2097,7 @@ void TTrain::OnCommand_trainbrakebasepressureincrease(TTrain *Train, command_dat
 	}
 }
 
-void TTrain::OnCommand_trainbrakebasepressuredecrease(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_trainbrakebasepressuredecrease(const TTrain *Train, command_data const &Command)
 {
 
 	if (Command.action != GLFW_RELEASE)
@@ -2119,7 +2119,7 @@ void TTrain::OnCommand_trainbrakebasepressuredecrease(TTrain *Train, command_dat
 	}
 }
 
-void TTrain::OnCommand_trainbrakebasepressurereset(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_trainbrakebasepressurereset(const TTrain *Train, command_data const &Command)
 {
 
 	if (Command.action == GLFW_PRESS)
@@ -2129,7 +2129,7 @@ void TTrain::OnCommand_trainbrakebasepressurereset(TTrain *Train, command_data c
 	}
 }
 
-void TTrain::OnCommand_trainbrakeoperationtoggle(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_trainbrakeoperationtoggle(const TTrain *Train, command_data const &Command)
 {
 
 	if (Command.action == GLFW_PRESS)
@@ -2145,7 +2145,7 @@ void TTrain::OnCommand_trainbrakeoperationtoggle(TTrain *Train, command_data con
 	}
 }
 
-void TTrain::OnCommand_manualbrakeincrease(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_manualbrakeincrease(const TTrain *Train, command_data const &Command)
 {
 
 	if (Command.action != GLFW_RELEASE)
@@ -2165,7 +2165,7 @@ void TTrain::OnCommand_manualbrakeincrease(TTrain *Train, command_data const &Co
 	}
 }
 
-void TTrain::OnCommand_manualbrakedecrease(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_manualbrakedecrease(const TTrain *Train, command_data const &Command)
 {
 
 	if (Command.action != GLFW_RELEASE)
@@ -2571,7 +2571,7 @@ void TTrain::OnCommand_brakeactingspeedsetrapid(TTrain *Train, command_data cons
 	}
 }
 
-void TTrain::OnCommand_brakeloadcompensationincrease(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_brakeloadcompensationincrease(const TTrain *Train, command_data const &Command)
 {
 
 	if (true == Command.freefly && Command.action == GLFW_PRESS)
@@ -2584,7 +2584,7 @@ void TTrain::OnCommand_brakeloadcompensationincrease(TTrain *Train, command_data
 	}
 }
 
-void TTrain::OnCommand_brakeloadcompensationdecrease(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_brakeloadcompensationdecrease(const TTrain *Train, command_data const &Command)
 {
 
 	if (true == Command.freefly && Command.action == GLFW_PRESS)
@@ -2659,7 +2659,7 @@ void TTrain::OnCommand_wiperswitchdecrease(TTrain *Train, command_data const &Co
 	}
 }
 
-void TTrain::OnCommand_reverserincrease(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_reverserincrease(const TTrain *Train, command_data const &Command)
 {
 
 	if (Command.action == GLFW_PRESS)
@@ -2684,7 +2684,7 @@ void TTrain::OnCommand_reverserincrease(TTrain *Train, command_data const &Comma
 	}
 }
 
-void TTrain::OnCommand_reverserdecrease(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_reverserdecrease(const TTrain *Train, command_data const &Command)
 {
 
 	if (Command.action == GLFW_PRESS)
@@ -4998,7 +4998,7 @@ void TTrain::OnCommand_motorblowersdisableall(TTrain *Train, command_data const 
 	}
 }
 
-void TTrain::OnCommand_coolingfanstoggle(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_coolingfanstoggle(const TTrain *Train, command_data const &Command)
 {
 
 	if (Command.action != GLFW_PRESS)
@@ -5088,7 +5088,7 @@ void TTrain::OnCommand_motorconnectorsclose(TTrain *Train, command_data const &C
 	}
 }
 
-void TTrain::OnCommand_motordisconnect(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_motordisconnect(const TTrain *Train, command_data const &Command)
 {
 
 	if (Train->mvControlled->TrainType == dt_EZT ? Train->mvControlled != Train->mvOccupied : Train->iCabn != 0)
@@ -6854,7 +6854,7 @@ void TTrain::OnCommand_springbrakeshutofftoggle(TTrain *Train, command_data cons
 	}
 };
 
-void TTrain::OnCommand_springbrakeshutoffenable(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_springbrakeshutoffenable(const TTrain *Train, command_data const &Command)
 {
 	if (Command.action == GLFW_PRESS)
 	{
@@ -6863,7 +6863,7 @@ void TTrain::OnCommand_springbrakeshutoffenable(TTrain *Train, command_data cons
 	}
 };
 
-void TTrain::OnCommand_springbrakeshutoffdisable(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_springbrakeshutoffdisable(const TTrain *Train, command_data const &Command)
 {
 	if (Command.action == GLFW_PRESS)
 	{
@@ -6872,7 +6872,7 @@ void TTrain::OnCommand_springbrakeshutoffdisable(TTrain *Train, command_data con
 	}
 };
 
-void TTrain::OnCommand_springbrakerelease(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_springbrakerelease(const TTrain *Train, command_data const &Command)
 {
 	if (Command.action == GLFW_PRESS)
 	{
@@ -7717,7 +7717,7 @@ void TTrain::OnCommand_doorsteptoggle(TTrain *Train, command_data const &Command
 	}
 }
 
-void TTrain::OnCommand_doormodetoggle(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_doormodetoggle(const TTrain *Train, command_data const &Command)
 {
 
 	if (Command.action == GLFW_PRESS)
@@ -7726,7 +7726,7 @@ void TTrain::OnCommand_doormodetoggle(TTrain *Train, command_data const &Command
 	}
 }
 
-void TTrain::OnCommand_mirrorstoggle(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_mirrorstoggle(const TTrain *Train, command_data const &Command)
 {
 
 	if (Command.action != GLFW_PRESS)
@@ -7747,7 +7747,7 @@ void TTrain::OnCommand_mirrorstoggle(TTrain *Train, command_data const &Command)
 	}
 }
 
-void TTrain::OnCommand_nearestcarcouplingincrease(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_nearestcarcouplingincrease(const TTrain *Train, command_data const &Command)
 {
 
 	if (true == Command.freefly && Command.action == GLFW_PRESS)
@@ -7771,7 +7771,7 @@ void TTrain::OnCommand_nearestcarcouplingincrease(TTrain *Train, command_data co
 	}
 }
 
-void TTrain::OnCommand_nearestcarcouplingdisconnect(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_nearestcarcouplingdisconnect(const TTrain *Train, command_data const &Command)
 {
 
 	if (true == Command.freefly && Command.action == GLFW_PRESS)
@@ -8075,7 +8075,7 @@ void TTrain::OnCommand_radiotoggle(TTrain *Train, command_data const &Command)
 	}
 }
 
-void TTrain::OnCommand_radioenable(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_radioenable(const TTrain *Train, command_data const &Command)
 {
 	if (Command.action != GLFW_PRESS)
 	{
@@ -8088,7 +8088,7 @@ void TTrain::OnCommand_radioenable(TTrain *Train, command_data const &Command)
 	}
 }
 
-void TTrain::OnCommand_radiodisable(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_radiodisable(const TTrain *Train, command_data const &Command)
 {
 	if (Command.action != GLFW_PRESS)
 	{
@@ -8352,7 +8352,7 @@ void TTrain::OnCommand_cabchangebackward(TTrain *Train, command_data const &Comm
 	}
 }
 
-void TTrain::OnCommand_vehiclemoveforwards(TTrain *Train, const command_data &Command)
+void TTrain::OnCommand_vehiclemoveforwards(const TTrain *Train, const command_data &Command)
 {
 	if (Command.action == GLFW_RELEASE || !DebugModeFlag)
 		return;
@@ -8360,7 +8360,7 @@ void TTrain::OnCommand_vehiclemoveforwards(TTrain *Train, const command_data &Co
 	Train->DynamicObject->move_set(100.0);
 }
 
-void TTrain::OnCommand_vehiclemovebackwards(TTrain *Train, const command_data &Command)
+void TTrain::OnCommand_vehiclemovebackwards(const TTrain *Train, const command_data &Command)
 {
 	if (Command.action == GLFW_RELEASE || !DebugModeFlag)
 		return;
@@ -8368,7 +8368,7 @@ void TTrain::OnCommand_vehiclemovebackwards(TTrain *Train, const command_data &C
 	Train->DynamicObject->move_set(-100.0);
 }
 
-void TTrain::OnCommand_vehicleboost(TTrain *Train, const command_data &Command)
+void TTrain::OnCommand_vehicleboost(const TTrain *Train, const command_data &Command)
 {
 	if (Command.action == GLFW_RELEASE || !DebugModeFlag)
 		return;
@@ -11032,7 +11032,7 @@ const TTrain::screenentry_sequence &TTrain::get_screens()
 	return m_screens;
 }
 
-void TTrain::radio_message(sound_source *Message, int const Channel)
+void TTrain::radio_message(const sound_source *Message, int const Channel)
 {
 
 	auto const soundrange{Message->range()};

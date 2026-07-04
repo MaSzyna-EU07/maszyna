@@ -832,7 +832,7 @@ static void stbi__start_mem(stbi__context *s, stbi_uc const *buffer, const int l
 }
 
 // initialize a callback-based context
-static void stbi__start_callbacks(stbi__context *s, stbi_io_callbacks *c, void *user)
+static void stbi__start_callbacks(stbi__context *s, const stbi_io_callbacks *c, void *user)
 {
    s->io = *c;
    s->io_user_data = user;
@@ -906,7 +906,7 @@ typedef struct
 
 #ifndef STBI_NO_JPEG
 static int      stbi__jpeg_test(stbi__context *s);
-static void    *stbi__jpeg_load(stbi__context *s, int *x, int *y, int *comp, int req_comp, stbi__result_info *ri);
+static void    *stbi__jpeg_load(stbi__context *s, int *x, int *y, int *comp, int req_comp, const stbi__result_info *ri);
 static int      stbi__jpeg_info(stbi__context *s, int *x, int *y, int *comp);
 #endif
 
@@ -925,7 +925,7 @@ static int      stbi__bmp_info(stbi__context *s, int *x, int *y, int *comp);
 
 #ifndef STBI_NO_TGA
 static int      stbi__tga_test(stbi__context *s);
-static void    *stbi__tga_load(stbi__context *s, int *x, int *y, int *comp, int req_comp, stbi__result_info *ri);
+static void    *stbi__tga_load(stbi__context *s, int *x, int *y, int *comp, int req_comp, const stbi__result_info *ri);
 static int      stbi__tga_info(stbi__context *s, int *x, int *y, int *comp);
 #endif
 
@@ -938,19 +938,19 @@ static int      stbi__psd_is16(stbi__context *s);
 
 #ifndef STBI_NO_HDR
 static int      stbi__hdr_test(stbi__context *s);
-static float   *stbi__hdr_load(stbi__context *s, int *x, int *y, int *comp, int req_comp, stbi__result_info *ri);
+static float   *stbi__hdr_load(stbi__context *s, int *x, int *y, int *comp, int req_comp, const stbi__result_info *ri);
 static int      stbi__hdr_info(stbi__context *s, int *x, int *y, int *comp);
 #endif
 
 #ifndef STBI_NO_PIC
 static int      stbi__pic_test(stbi__context *s);
-static void    *stbi__pic_load(stbi__context *s, int *x, int *y, int *comp, int req_comp, stbi__result_info *ri);
+static void    *stbi__pic_load(stbi__context *s, int *x, int *y, int *comp, int req_comp, const stbi__result_info *ri);
 static int      stbi__pic_info(stbi__context *s, int *x, int *y, int *comp);
 #endif
 
 #ifndef STBI_NO_GIF
 static int      stbi__gif_test(stbi__context *s);
-static void    *stbi__gif_load(stbi__context *s, int *x, int *y, int *comp, int req_comp, stbi__result_info *ri);
+static void    *stbi__gif_load(stbi__context *s, int *x, int *y, int *comp, int req_comp, const stbi__result_info *ri);
 static void    *stbi__load_gif_main(stbi__context *s, int **delays, int *x, int *y, int *z, int *comp, int req_comp);
 static int      stbi__gif_info(stbi__context *s, int *x, int *y, int *comp);
 #endif
@@ -1310,7 +1310,7 @@ static stbi__uint16 *stbi__load_and_postprocess_16bit(stbi__context *s, int *x, 
 }
 
 #if !defined(STBI_NO_HDR) && !defined(STBI_NO_LINEAR)
-static void stbi__float_postprocess(float *result, int *x, int *y, int *comp, const int req_comp)
+static void stbi__float_postprocess(float *result, const int *x, const int *y, const int *comp, const int req_comp)
 {
    if (stbi__vertically_flip_on_load && result != NULL) {
 	   const int channels = req_comp ? req_comp : *comp;
@@ -1624,7 +1624,7 @@ stbi_inline static stbi_uc stbi__get8(stbi__context *s)
 #if defined(STBI_NO_JPEG) && defined(STBI_NO_HDR) && defined(STBI_NO_PIC) && defined(STBI_NO_PNM)
 // nothing
 #else
-stbi_inline static int stbi__at_eof(stbi__context *s)
+stbi_inline static int stbi__at_eof(const stbi__context *s)
 {
    if (s->io.read) {
       if (!(s->io.eof)(s->io_user_data)) return 0;
@@ -1999,7 +1999,7 @@ typedef struct
    stbi_uc *(*resample_row_hv_2_kernel)(stbi_uc *out, stbi_uc *in_near, stbi_uc *in_far, int w, int hs);
 } stbi__jpeg;
 
-static int stbi__build_huffman(stbi__huffman *h, int *count)
+static int stbi__build_huffman(stbi__huffman *h, const int *count)
 {
    int i,j,k=0;
    unsigned int code;
@@ -2046,7 +2046,7 @@ static int stbi__build_huffman(stbi__huffman *h, int *count)
 
 // build a table that decodes both magnitude and value of small ACs in
 // one go.
-static void stbi__build_fast_ac(stbi__int16 *fast_ac, stbi__huffman *h)
+static void stbi__build_fast_ac(stbi__int16 *fast_ac, const stbi__huffman *h)
 {
    int i;
    for (i=0; i < (1 << FAST_BITS); ++i) {
@@ -2093,7 +2093,7 @@ static void stbi__grow_buffer_unsafe(stbi__jpeg *j)
 static const stbi__uint32 stbi__bmask[17]={0,1,3,7,15,31,63,127,255,511,1023,2047,4095,8191,16383,32767,65535};
 
 // decode a jpeg huffman value from the bitstream
-stbi_inline static int stbi__jpeg_huff_decode(stbi__jpeg *j, stbi__huffman *h)
+stbi_inline static int stbi__jpeg_huff_decode(stbi__jpeg *j, const stbi__huffman *h)
 {
    unsigned int temp;
    int c,k;
@@ -2206,7 +2206,7 @@ static const stbi_uc stbi__jpeg_dezigzag[64+15] =
 };
 
 // decode one 64-entry block--
-static int stbi__jpeg_decode_block(stbi__jpeg *j, short data[64], stbi__huffman *hdc, stbi__huffman *hac, stbi__int16 *fac, const int b, stbi__uint16 *dequant)
+static int stbi__jpeg_decode_block(stbi__jpeg *j, short data[64], stbi__huffman *hdc, stbi__huffman *hac, const stbi__int16 *fac, const int b, const stbi__uint16 *dequant)
 {
    int diff,dc,k;
    int t;
@@ -2291,7 +2291,7 @@ static int stbi__jpeg_decode_block_prog_dc(stbi__jpeg *j, short data[64], stbi__
 
 // @OPTIMIZE: store non-zigzagged during the decode passes,
 // and only de-zigzag when dequantizing
-static int stbi__jpeg_decode_block_prog_ac(stbi__jpeg *j, short data[64], stbi__huffman *hac, stbi__int16 *fac)
+static int stbi__jpeg_decode_block_prog_ac(stbi__jpeg *j, short data[64], stbi__huffman *hac, const stbi__int16 *fac)
 {
    int k;
    if (j->spec_start == 0) return stbi__err("can't merge dc and ac", "Corrupt JPEG");
@@ -3069,7 +3069,7 @@ static int stbi__parse_entropy_coded_data(stbi__jpeg *z)
    }
 }
 
-static void stbi__jpeg_dequantize(short *data, stbi__uint16 *dequant)
+static void stbi__jpeg_dequantize(short *data, const stbi__uint16 *dequant)
 {
    int i;
    for (i=0; i < 64; ++i)
@@ -3385,7 +3385,7 @@ static int stbi__decode_jpeg_header(stbi__jpeg *z, const int scan)
    return 1;
 }
 
-static stbi_uc stbi__skip_jpeg_junk_at_end(stbi__jpeg *j)
+static stbi_uc stbi__skip_jpeg_junk_at_end(const stbi__jpeg *j)
 {
    // some JPEGs have junk at end, skip over it but if we find what looks
    // like a valid marker, resume there
@@ -3452,7 +3452,7 @@ typedef stbi_uc *(*resample_row_func)(stbi_uc *out, stbi_uc *in0, stbi_uc *in1,
 
 #define stbi__div4(x) ((stbi_uc) ((x) >> 2))
 
-static stbi_uc *resample_row_1(stbi_uc *out, stbi_uc *in_near, stbi_uc *in_far, const int w, const int hs)
+static stbi_uc *resample_row_1(const stbi_uc *out, stbi_uc *in_near, const stbi_uc *in_far, const int w, const int hs)
 {
    STBI_NOTUSED(out);
    STBI_NOTUSED(in_far);
@@ -3461,7 +3461,7 @@ static stbi_uc *resample_row_1(stbi_uc *out, stbi_uc *in_near, stbi_uc *in_far, 
    return in_near;
 }
 
-static stbi_uc* stbi__resample_row_v_2(stbi_uc *out, stbi_uc *in_near, stbi_uc *in_far, const int w, const int hs)
+static stbi_uc* stbi__resample_row_v_2(stbi_uc *out, const stbi_uc *in_near, const stbi_uc *in_far, const int w, const int hs)
 {
    // need to generate two samples vertically for every one in input
    int i;
@@ -3471,7 +3471,7 @@ static stbi_uc* stbi__resample_row_v_2(stbi_uc *out, stbi_uc *in_near, stbi_uc *
    return out;
 }
 
-static stbi_uc*  stbi__resample_row_h_2(stbi_uc *out, stbi_uc *in_near, stbi_uc *in_far, const int w, const int hs)
+static stbi_uc*  stbi__resample_row_h_2(stbi_uc *out, const stbi_uc *in_near, const stbi_uc *in_far, const int w, const int hs)
 {
    // need to generate two samples horizontally for every one in input
    int i;
@@ -3501,7 +3501,7 @@ static stbi_uc*  stbi__resample_row_h_2(stbi_uc *out, stbi_uc *in_near, stbi_uc 
 
 #define stbi__div16(x) ((stbi_uc) ((x) >> 4))
 
-static stbi_uc *stbi__resample_row_hv_2(stbi_uc *out, stbi_uc *in_near, stbi_uc *in_far, const int w, const int hs)
+static stbi_uc *stbi__resample_row_hv_2(stbi_uc *out, const stbi_uc *in_near, const stbi_uc *in_far, const int w, const int hs)
 {
    // need to generate 2x2 samples for every one in input
    int i,t0,t1;
@@ -3642,7 +3642,7 @@ static stbi_uc *stbi__resample_row_hv_2_simd(stbi_uc *out, stbi_uc *in_near, stb
 }
 #endif
 
-static stbi_uc *stbi__resample_row_generic(stbi_uc *out, stbi_uc *in_near, stbi_uc *in_far, const int w, const int hs)
+static stbi_uc *stbi__resample_row_generic(stbi_uc *out, const stbi_uc *in_near, const stbi_uc *in_far, const int w, const int hs)
 {
    // resample with nearest-neighbor
    int i,j;
@@ -4024,7 +4024,7 @@ static stbi_uc *load_jpeg_image(stbi__jpeg *z, int *out_x, int *out_y, int *comp
    }
 }
 
-static void *stbi__jpeg_load(stbi__context *s, int *x, int *y, int *comp, const int req_comp, stbi__result_info *ri)
+static void *stbi__jpeg_load(stbi__context *s, int *x, int *y, int *comp, const int req_comp, const stbi__result_info *ri)
 {
    unsigned char* result;
    stbi__jpeg* j = (stbi__jpeg*) stbi__malloc(sizeof(stbi__jpeg));
@@ -4188,7 +4188,7 @@ typedef struct
    stbi__zhuffman z_length, z_distance;
 } stbi__zbuf;
 
-stbi_inline static int stbi__zeof(stbi__zbuf *z)
+stbi_inline static int stbi__zeof(const stbi__zbuf *z)
 {
    return (z->zbuffer >= z->zbuffer_end);
 }
@@ -4220,7 +4220,7 @@ stbi_inline static unsigned int stbi__zreceive(stbi__zbuf *z, const int n)
    return k;
 }
 
-static int stbi__zhuffman_decode_slowpath(stbi__zbuf *a, stbi__zhuffman *z)
+static int stbi__zhuffman_decode_slowpath(stbi__zbuf *a, const stbi__zhuffman *z)
 {
    int b,s,k;
    // not resolved by fast table, so compute it the slow way
@@ -4671,7 +4671,7 @@ static const stbi_uc stbi__depth_scale_table[9] = { 0, 0xff, 0x55, 0, 0x11, 0,0,
 // adds an extra all-255 alpha channel
 // dest == src is legal
 // img_n must be 1 or 3
-static void stbi__create_png_alpha_expand8(stbi_uc *dest, stbi_uc *src, const stbi__uint32 x, const int img_n)
+static void stbi__create_png_alpha_expand8(stbi_uc *dest, const stbi_uc *src, const stbi__uint32 x, const int img_n)
 {
    int i;
    // must process data backwards since we allow dest==src
@@ -4692,7 +4692,7 @@ static void stbi__create_png_alpha_expand8(stbi_uc *dest, stbi_uc *src, const st
 }
 
 // create the png data from post-deflated data
-static int stbi__create_png_image_raw(stbi__png *a, stbi_uc *raw, const stbi__uint32 raw_len, const int out_n, const stbi__uint32 x, const stbi__uint32 y, const int depth, const int color)
+static int stbi__create_png_image_raw(stbi__png *a, const stbi_uc *raw, const stbi__uint32 raw_len, const int out_n, const stbi__uint32 x, const stbi__uint32 y, const int depth, const int color)
 {
 	const int bytes = (depth == 16 ? 2 : 1);
 	const stbi__context *s = a->s;
@@ -4902,7 +4902,7 @@ static int stbi__create_png_image(stbi__png *a, stbi_uc *image_data, stbi__uint3
    return 1;
 }
 
-static int stbi__compute_transparency(stbi__png *z, stbi_uc tc[3], const int out_n)
+static int stbi__compute_transparency(const stbi__png *z, stbi_uc tc[3], const int out_n)
 {
 	const stbi__context *s = z->s;
    stbi__uint32 i, pixel_count = s->img_x * s->img_y;
@@ -4927,7 +4927,7 @@ static int stbi__compute_transparency(stbi__png *z, stbi_uc tc[3], const int out
    return 1;
 }
 
-static int stbi__compute_transparency16(stbi__png *z, stbi__uint16 tc[3], const int out_n)
+static int stbi__compute_transparency16(const stbi__png *z, stbi__uint16 tc[3], const int out_n)
 {
 	const stbi__context *s = z->s;
    stbi__uint32 i, pixel_count = s->img_x * s->img_y;
@@ -4952,7 +4952,7 @@ static int stbi__compute_transparency16(stbi__png *z, stbi__uint16 tc[3], const 
    return 1;
 }
 
-static int stbi__expand_png_palette(stbi__png *a, stbi_uc *palette, const int len, const int pal_img_n)
+static int stbi__expand_png_palette(stbi__png *a, const stbi_uc *palette, const int len, const int pal_img_n)
 {
    stbi__uint32 i, pixel_count = a->s->img_x * a->s->img_y;
    stbi_uc *p, *temp_out, *orig = a->out;
@@ -5029,7 +5029,7 @@ STBIDEF void stbi_convert_iphone_png_to_rgb_thread(const int flag_true_if_should
                                 : stbi__de_iphone_flag_global)
 #endif // STBI_THREAD_LOCAL
 
-static void stbi__de_iphone(stbi__png *z)
+static void stbi__de_iphone(const stbi__png *z)
 {
 	const stbi__context *s = z->s;
    stbi__uint32 i, pixel_count = s->img_x * s->img_y;
@@ -5865,7 +5865,7 @@ static void stbi__tga_read_rgb16(stbi__context *s, stbi_uc* out)
    // so let's treat all 15 and 16bit TGAs as RGB with no alpha.
 }
 
-static void *stbi__tga_load(stbi__context *s, int *x, int *y, int *comp, const int req_comp, stbi__result_info *ri)
+static void *stbi__tga_load(stbi__context *s, int *x, int *y, int *comp, const int req_comp, const stbi__result_info *ri)
 {
    //   read in the TGA header stuff
 	const int tga_offset = stbi__get8(s);
@@ -6494,7 +6494,7 @@ static stbi_uc *stbi__pic_load_core(stbi__context *s, const int width, const int
    return result;
 }
 
-static void *stbi__pic_load(stbi__context *s,int *px,int *py,int *comp,int req_comp, stbi__result_info *ri)
+static void *stbi__pic_load(stbi__context *s,int *px,int *py,int *comp,int req_comp, const stbi__result_info *ri)
 {
    stbi_uc *result;
    int i, x,y, internal_comp;
@@ -6772,7 +6772,7 @@ static stbi_uc *stbi__process_gif_raster(stbi__context *s, stbi__gif *g)
 
 // this function is designed to support animated gifs, although stb_image doesn't support it
 // two back is the image from two frames ago, used for a very specific disposal format
-static stbi_uc *stbi__gif_load_next(stbi__context *s, stbi__gif *g, int *comp, const int req_comp, stbi_uc *two_back)
+static stbi_uc *stbi__gif_load_next(stbi__context *s, stbi__gif *g, int *comp, const int req_comp, const stbi_uc *two_back)
 {
    int dispose;
    int first_frame;
@@ -6946,7 +6946,7 @@ static stbi_uc *stbi__gif_load_next(stbi__context *s, stbi__gif *g, int *comp, c
    }
 }
 
-static void *stbi__load_gif_main_outofmem(stbi__gif *g, stbi_uc *out, int **delays)
+static void *stbi__load_gif_main_outofmem(const stbi__gif *g, stbi_uc *out, int **delays)
 {
    STBI_FREE(g->out);
    STBI_FREE(g->history);
@@ -7042,7 +7042,7 @@ static void *stbi__load_gif_main(stbi__context *s, int **delays, int *x, int *y,
    }
 }
 
-static void *stbi__gif_load(stbi__context *s, int *x, int *y, int *comp, const int req_comp, stbi__result_info *ri)
+static void *stbi__gif_load(stbi__context *s, int *x, int *y, int *comp, const int req_comp, const stbi__result_info *ri)
 {
    stbi_uc *u = 0;
    stbi__gif g;
@@ -7125,7 +7125,7 @@ static char *stbi__hdr_gettoken(stbi__context *z, char *buffer)
    return buffer;
 }
 
-static void stbi__hdr_convert(float *output, stbi_uc *input, const int req_comp)
+static void stbi__hdr_convert(float *output, const stbi_uc *input, const int req_comp)
 {
    if ( input[3] != 0 ) {
       float f1;
@@ -7152,7 +7152,7 @@ static void stbi__hdr_convert(float *output, stbi_uc *input, const int req_comp)
    }
 }
 
-static float *stbi__hdr_load(stbi__context *s, int *x, int *y, int *comp, int req_comp, stbi__result_info *ri)
+static float *stbi__hdr_load(stbi__context *s, int *x, int *y, int *comp, int req_comp, const stbi__result_info *ri)
 {
    char buffer[STBI__HDR_BUFLEN];
    char *token;

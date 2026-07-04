@@ -662,7 +662,7 @@ state_serializer::deserialize_origin( cParser &Input, scene::scratch_data &Scrat
 }
 
 void
-state_serializer::deserialize_endorigin( cParser &Input, scene::scratch_data &Scratchpad ) {
+state_serializer::deserialize_endorigin(const cParser &Input, scene::scratch_data &Scratchpad ) {
 
     if( false == Scratchpad.location.offset.empty() ) {
         Scratchpad.location.offset.pop();
@@ -696,7 +696,7 @@ state_serializer::deserialize_scale( cParser &Input, scene::scratch_data &Scratc
 }
 
 void
-state_serializer::deserialize_endscale( cParser &Input, scene::scratch_data &Scratchpad ) {
+state_serializer::deserialize_endscale(const cParser &Input, scene::scratch_data &Scratchpad ) {
 
     if( false == Scratchpad.location.scale.empty() ) {
         Scratchpad.location.scale.pop();
@@ -832,7 +832,7 @@ state_serializer::deserialize_editorterrain(cParser &Input, scene::scratch_data 
 }
 
 void
-state_serializer::deserialize_endtrainset( cParser &Input, scene::scratch_data &Scratchpad ) {
+state_serializer::deserialize_endtrainset(const cParser &Input, scene::scratch_data &Scratchpad ) {
 
     if( false == Scratchpad.trainset.is_open
      || true == Scratchpad.trainset.vehicles.empty() ) {
@@ -920,7 +920,7 @@ state_serializer::deserialize_traction( cParser &Input, scene::scratch_data &Scr
 }
 
 TTractionPowerSource *
-state_serializer::deserialize_tractionpowersource( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata ) {
+state_serializer::deserialize_tractionpowersource( cParser &Input, const scene::scratch_data &Scratchpad, scene::node_data const &Nodedata ) {
 
     if( false == Global.bLoadTraction ) {
         skip_until( Input, "end" );
@@ -936,7 +936,7 @@ state_serializer::deserialize_tractionpowersource( cParser &Input, scene::scratc
 }
 
 TMemCell *
-state_serializer::deserialize_memorycell( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata ) {
+state_serializer::deserialize_memorycell( cParser &Input, const scene::scratch_data &Scratchpad, scene::node_data const &Nodedata ) {
 
     auto *memorycell = new TMemCell( Nodedata );
     memorycell->Load( &Input );

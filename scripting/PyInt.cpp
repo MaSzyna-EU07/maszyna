@@ -514,7 +514,7 @@ auto python_taskqueue::fetch_renderer(std::string const Renderer) -> PyObject *
 	return renderer;
 }
 
-void python_taskqueue::run(GLFWwindow *Context, rendertask_sequence &Tasks, uploadtask_sequence &Upload_Tasks, threading::condition_variable &Condition, std::atomic<bool> &Exit)
+void python_taskqueue::run(GLFWwindow *Context, rendertask_sequence &Tasks, uploadtask_sequence &Upload_Tasks, threading::condition_variable &Condition, const std::atomic<bool> &Exit)
 {
 
 	if (Context)

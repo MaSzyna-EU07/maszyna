@@ -429,7 +429,7 @@ basic_cell::erase( TAnimModel *Instance ) {
         m_instancetranslucent.erase(
             std::remove_if(
                 std::begin( m_instancetranslucent ), std::end( m_instancetranslucent ),
-                [=]( TAnimModel *instance ) {
+                [=](const TAnimModel *instance ) {
                     return instance == Instance; } ),
             std::end( m_instancetranslucent ) );
     }
@@ -439,7 +439,7 @@ basic_cell::erase( TAnimModel *Instance ) {
         m_instancesopaque.erase(
             std::remove_if(
                 std::begin( m_instancesopaque ), std::end( m_instancesopaque ),
-                [=]( TAnimModel *instance ) {
+                [=](const TAnimModel *instance ) {
                     return instance == Instance; } ),
             std::end( m_instancesopaque ) );
         // also remove from the per-(pModel, skins) instance bucket if present
@@ -466,12 +466,12 @@ basic_cell::erase( TAnimModel *Instance ) {
 
 // removes provided memory cell from the cell
 void
-basic_cell::erase( TMemCell *Memorycell ) {
+basic_cell::erase(const TMemCell *Memorycell ) {
 
     m_memorycells.erase(
         std::remove_if(
             std::begin( m_memorycells ), std::end( m_memorycells ),
-            [=]( TMemCell *memorycell ) {
+            [=](const TMemCell *memorycell ) {
                 return memorycell == Memorycell; } ),
         std::end( m_memorycells ) );
 }
@@ -675,7 +675,7 @@ glm::vec3 basic_cell::find_nearest_track_point(const glm::dvec3 &pos)
 
 // executes event assigned to specified launcher
 void
-basic_cell::launch_event( TEventLauncher *Launcher, const bool local_only ) {
+basic_cell::launch_event(const TEventLauncher *Launcher, const bool local_only ) {
 	WriteLog( "Eventlauncher: " + Launcher->name() );
 	if (!local_only) {
 		if( Launcher->Event1 ) {
