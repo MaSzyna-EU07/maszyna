@@ -49,8 +49,7 @@ class opengl33_renderer : public gfx_renderer {
         Render() override;
     void
         SwapBuffers() override;
-    inline
-    float
+	float
         Framerate() override { return m_framerate; }
     // geometry methods
     // NOTE: hands-on geometry management is exposed as a temporary measure; ultimately all visualization data should be generated/handled automatically by the renderer itself
@@ -58,13 +57,13 @@ class opengl33_renderer : public gfx_renderer {
     gfx::geometrybank_handle
         Create_Bank() override;
     // creates a new indexed geometry chunk of specified type from supplied data, in specified bank. returns: handle to the chunk or NULL
-	gfx::geometry_handle Insert(gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int const Type) override;
+	gfx::geometry_handle Insert(gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int Type) override;
     // creates a new geometry chunk of specified type from supplied data, in specified bank. returns: handle to the chunk or NULL
-	gfx::geometry_handle Insert(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int const Type) override;
+	gfx::geometry_handle Insert(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int Type) override;
     // replaces data of specified chunk with the supplied vertex data, starting from specified offset
-	bool Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, const std::size_t Offset = 0) override;
+	bool Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int Type, std::size_t Offset = 0) override;
     // adds supplied vertex data at the end of specified chunk
-	bool Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) override;
+	bool Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int Type) override;
     // provides direct access to index data of specfied chunk
     gfx::index_array const &
         Indices( gfx::geometry_handle const &Geometry ) const override;
@@ -76,27 +75,27 @@ class opengl33_renderer : public gfx_renderer {
 		UserData( gfx::geometry_handle const &Geometry ) const override;
     // material methods
     material_handle
-        Fetch_Material( std::string const &Filename, bool const Loadnow = true ) override;
+        Fetch_Material( std::string const &Filename, bool Loadnow = true ) override;
     void
-        Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) override;
+        Bind_Material( material_handle Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) override;
     IMaterial const *
-        Material( material_handle const Material ) const override;
+        Material( material_handle Material ) const override;
     // shader methods
     auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gl::program> override;
     // texture methods
     texture_handle
-        Fetch_Texture( std::string const &Filename, bool const Loadnow = true, GLint format_hint = GL_SRGB_ALPHA ) override;
+        Fetch_Texture( std::string const &Filename, bool Loadnow = true, GLint format_hint = GL_SRGB_ALPHA ) override;
     void
-        Bind_Texture( texture_handle const Texture ) override;
+        Bind_Texture( texture_handle Texture ) override;
     void
-        Bind_Texture( std::size_t const Unit, texture_handle const Texture ) override;
+        Bind_Texture( std::size_t Unit, texture_handle Texture ) override;
     ITexture &
-        Texture( texture_handle const Texture ) override;
+        Texture( texture_handle Texture ) override;
     ITexture const &
-        Texture( texture_handle const Texture ) const override;
+        Texture( texture_handle Texture ) const override;
     // utility methods
     void
-        Pick_Control_Callback( std::function<void( TSubModel const *, const glm::vec2 )> Callback ) override;
+        Pick_Control_Callback( std::function<void( TSubModel const *, glm::vec2 )> Callback ) override;
     void
         Pick_Node_Callback( std::function<void( scene::basic_node * )> Callback ) override;
     TSubModel const *
@@ -113,7 +112,7 @@ class opengl33_renderer : public gfx_renderer {
         Camera_Position() const override { return m_colorpass.pass_camera.position(); }
     // maintenance methods
     void
-        Update( double const Deltatime ) override;
+        Update( double Deltatime ) override;
     bool
         Debug_Ui_State(std::optional<bool>) override;
     void
@@ -131,13 +130,13 @@ class opengl33_renderer : public gfx_renderer {
 
 
 
-    opengl_material & Material( material_handle const Material );
+    opengl_material & Material( material_handle Material );
     opengl_material const & Material( TSubModel const * Submodel ) const;
     // draws supplied geometry handles
     void Draw_Geometry(std::vector<gfx::geometrybank_handle>::iterator begin, std::vector<gfx::geometrybank_handle>::iterator end);
 	void Draw_Geometry(const gfx::geometrybank_handle &handle);
 	// material methods
-    void Bind_Material_Shadow(material_handle const Material);
+    void Bind_Material_Shadow(material_handle Material);
 	void Update_AnimModel(TAnimModel *model);
 
 	// members
@@ -257,24 +256,24 @@ class opengl33_renderer : public gfx_renderer {
 	// methods
     std::unique_ptr<gl::program> make_shader(std::string v, std::string f);
 	bool Init_caps();
-	void setup_pass(viewport_config &Viewport, renderpass_config &Config, rendermode const Mode, float const Znear = 0.f, float const Zfar = 1.f, bool const Ignoredebug = false);
+	void setup_pass(viewport_config &Viewport, renderpass_config &Config, rendermode Mode, float Znear = 0.f, float Zfar = 1.f, bool Ignoredebug = false);
 	void setup_matrices();
-    void setup_drawing(bool const Alpha = false);
+    void setup_drawing(bool Alpha = false);
     void setup_shadow_unbind_map();
     void setup_shadow_bind_map();
     void setup_shadow_color( glm::vec4 const &Shadowcolor );
     void setup_env_map(gl::cubemap *tex);
-	void setup_environment_light(TEnvironmentType const Environment = e_flat);
-    void setup_sunlight_intensity( float const Factor = 1.f);
+	void setup_environment_light(TEnvironmentType Environment = e_flat);
+    void setup_sunlight_intensity( float Factor = 1.f);
 	// runs jobs needed to generate graphics for specified render pass
-	void Render_pass(viewport_config &vp, rendermode const Mode);
+	void Render_pass(viewport_config &vp, rendermode Mode);
 	// creates dynamic environment cubemap
 	bool Render_reflections(viewport_config &vp);
 	bool Render(world_environment *Environment);
 	void Render(scene::basic_region *Region);
 	void Render(section_sequence::iterator First, section_sequence::iterator Last);
 	void Render(cell_sequence::iterator First, cell_sequence::iterator Last);
-    void Render(scene::shape_node const &Shape, bool const Ignorerange);
+    void Render(scene::shape_node const &Shape, bool Ignorerange);
 	void Render(TAnimModel *Instance);
 	// batched render path for many TAnimModel instances that share the same TModel3d.
 	// Caller guarantees every instance has m_instanceable == true (no per-instance lights,
@@ -283,8 +282,8 @@ class opengl33_renderer : public gfx_renderer {
 	// instances counter. Instances are still individually frustum/distance culled.
 	void Render_Instanced( TModel3d *Model, std::vector<TAnimModel *> const &Instances );
 	bool Render(TDynamicObject *Dynamic);
-    bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
-	bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance);
+    bool Render(TModel3d *Model, material_data const *Material, float Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
+	bool Render(TModel3d *Model, material_data const *Material, float Squaredistance);
 	void Render(TSubModel *Submodel);
 	void Render(TTrack *Track);
 	void Render(scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last);
@@ -293,10 +292,10 @@ class opengl33_renderer : public gfx_renderer {
 	// no-op if the track has no sleepermodel, Global.SleeperDistance is 0, or the camera is beyond
 	// Global.SleeperDistance from the track origin.
 	void Render_Sleepers( TTrack *Track );
-	bool Render_cab(TDynamicObject const *Dynamic, float const Lightlevel, bool const Alpha = false);
-    bool Render_interior( bool const Alpha = false );
-    bool Render_lowpoly( TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha = false );
-    bool Render_coupler_adapter( TDynamicObject *Dynamic, float const Squaredistance, int const End, bool const Alpha = false );
+	bool Render_cab(TDynamicObject const *Dynamic, float Lightlevel, bool Alpha = false);
+    bool Render_interior( bool Alpha = false );
+    bool Render_lowpoly( TDynamicObject *Dynamic, float Squaredistance, bool Setup, bool Alpha = false );
+    bool Render_coupler_adapter( TDynamicObject *Dynamic, float Squaredistance, int End, bool Alpha = false );
 	void Render(TMemCell *Memcell);
 	void Render_particles();
 	void Render_precipitation();
@@ -307,11 +306,11 @@ class opengl33_renderer : public gfx_renderer {
 	void Render_Alpha(TTraction *Traction);
     void Render_Alpha(scene::lines_node const &Lines);
 	bool Render_Alpha(TDynamicObject *Dynamic);
-	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
-	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance);
+	bool Render_Alpha(TModel3d *Model, material_data const *Material, float Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
+	bool Render_Alpha(TModel3d *Model, material_data const *Material, float Squaredistance);
 	void Render_Alpha(TSubModel *Submodel);
 	void Update_Lights(light_array &Lights);
-	glm::vec3 pick_color(std::size_t const Index);
+	glm::vec3 pick_color(std::size_t Index);
 	std::size_t pick_index(glm::ivec3 const &Color);
 
 	bool init_viewport(viewport_config &vp);

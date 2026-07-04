@@ -32,7 +32,7 @@ struct opengl_texture : public ITexture {
     static void
         unbind( size_t unit );
     virtual bool
-        create( bool const Static = false ) override;
+        create( bool Static = false ) override;
     // releases resources allocated on the opengl end, storing local copy if requested
     void
         release() override;
@@ -107,7 +107,7 @@ public:
     void load_STBI();
     void load_TGA();
     void set_filtering() const;
-    void downsize( GLuint const Format );
+    void downsize( GLuint Format );
     void flip_vertical();
     void gles_match_internalformat(GLuint format);
 
@@ -144,15 +144,15 @@ public:
 
     // activates specified texture unit
     void
-        unit( GLint const Textureunit );
+        unit( GLint Textureunit );
     // creates texture object out of data stored in specified file
     texture_handle
-        create( std::string Filename, bool const Loadnow = true, GLint Formathint = GL_SRGB_ALPHA );
+        create( std::string Filename, bool Loadnow = true, GLint Formathint = GL_SRGB_ALPHA );
     // binds specified texture to specified texture unit
     void
-        bind( std::size_t const Unit, texture_handle const Texture );
+        bind( std::size_t Unit, texture_handle Texture );
     opengl_texture &
-        mark_as_used( texture_handle const Texture );
+        mark_as_used( texture_handle Texture );
     // provides direct access to specified texture object
     opengl_texture &
         texture( texture_handle const Texture ) const { return *m_textures[Texture].first; }

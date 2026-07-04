@@ -109,11 +109,11 @@ class float4
         z = c;
         w = d;
     };
-    float inline LengthSquared() const
+    float LengthSquared() const
     {
         return x * x + y * y + z * z + w * w;
     };
-    float inline Length() const
+    float Length() const
     {
         return sqrt(x * x + y * y + z * z + w * w);
     };
@@ -246,8 +246,8 @@ public:
             e[i + 2] = f; // zamiana Y i Z
         }
     };
-    inline float4x4 &Rotation(float const angle, float3 const &axis);
-    inline bool IdentityIs()
+    inline float4x4 &Rotation(float angle, float3 const &axis);
+	bool IdentityIs()
     { // sprawdzenie jednostkowości
         for (int i = 0; i < 16; ++i)
             if (e[i] != (i % 5 ? 0.0 : 1.0)) // jedynki tylko na 0, 5, 10 i 15
@@ -255,7 +255,7 @@ public:
         return true;
     }
     void Quaternion(float4 *q);
-    inline float3 *TranslationGet()
+	float3 *TranslationGet()
     {
         return (float3 *)(e + 12);
     }

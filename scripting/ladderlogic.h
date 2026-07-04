@@ -61,13 +61,13 @@ class basic_controller {
 public:
 // methods
     auto load( std::string const &Filename ) -> bool;
-    auto update( double const Timestep ) -> int;
+    auto update( double Timestep ) -> int;
     // finds element with specified name, potentially creating new element of specified type initialized with provided arguments. returns: handle to the element
     template<typename ...Args_>
     auto find_or_insert( std::string const &Name, basic_element::type_e Type = basic_element::type_e::variable, Args_ ...Args ) -> element_handle;
     // data access
-    auto input( element_handle const Element ) -> int &;
-    auto output( element_handle const Element ) const -> int;
+    auto input( element_handle Element ) -> int &;
+    auto output( element_handle Element ) const -> int;
 
 private:
 //types
@@ -100,20 +100,17 @@ private:
 // methods
     auto deserialize_operation( cParser &Input ) -> bool;
     // adds provided item to the collection. returns: true if there's no duplicate with the same name, false otherwise
-    auto insert( std::string const Name, basic_element Element ) -> element_handle;
+    auto insert( std::string Name, basic_element Element ) -> element_handle;
     // runs one cycle of current program. returns: error code or 0 if there's no error
     auto run() -> int;
-    void log_error( std::string const &Error, int const Line = -1 ) const;
+    void log_error( std::string const &Error, int Line = -1 ) const;
     auto guess_element_type_from_name( std::string const &Name ) const->basic_element::type_e;
-    inline
-    auto inverse( int const Value ) const -> int {
+	auto inverse( int const Value ) const -> int {
         return Value == 0 ? 1 : 0; }
     // element access
-    inline
-    auto element( element_handle const Element ) const -> basic_element const {
+	auto element( element_handle const Element ) const -> basic_element const {
         return m_elements[ Element - 1 ]; }
-    inline
-    auto element( element_handle const Element ) -> basic_element & {
+	auto element( element_handle const Element ) -> basic_element & {
         return m_elements[ Element - 1 ]; }
 // members
     static std::map<std::string, opcode_e> const m_operationcodemap;

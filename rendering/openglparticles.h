@@ -24,7 +24,7 @@ public:
     void
         update( opengl_camera const &Camera );
     std::size_t
-        render( GLint const Textureunit );
+        render( GLint Textureunit );
 private:
 // types
     struct particle_vertex {

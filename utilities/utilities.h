@@ -109,8 +109,8 @@ inline bool TestFlagAny(int const Flag, int const Value)
 {
 	return (Flag & Value) != 0;
 }
-bool SetFlag(int &Flag, int const Value);
-bool ClearFlag(int &Flag, int const Value);
+bool SetFlag(int &Flag, int Value);
+bool ClearFlag(int &Flag, int Value);
 
 bool FuzzyLogic(double Test, double Threshold, double Probability);
 /*jesli Test>Threshold to losowanie*/
@@ -124,11 +124,11 @@ std::pair<std::string, int> split_string_and_number(std::string const &Key);
 std::string to_string(int Value, int width);
 std::string to_string(double Value, int precision);
 std::string to_string(double Value, int precision, int width);
-std::string to_hex_str(int const Value, int const width = 4);
-std::string to_minutes_str(float const Minutes, bool const Leadingzero, int const Width);
+std::string to_hex_str(int Value, int width = 4);
+std::string to_minutes_str(float Minutes, bool Leadingzero, int Width);
 
 template <std::same_as<bool> T> // Without this line this function can be used with other types implicit casted to boolean which may create hard to debug bugs.
-inline std::string to_string(T Value)
+std::string to_string(T Value)
 {
 	return Value == true ? "true" : "false";
 }
@@ -151,7 +151,7 @@ std::string ToUpper(std::string const &text);
 // replaces polish letters with basic ascii
 void win1250_to_ascii(std::string &Input);
 // TODO: unify with win1250_to_ascii()
-std::string Bezogonkow(std::string Input, bool const Underscorestospaces = false);
+std::string Bezogonkow(std::string Input, bool Underscorestospaces = false);
 
 std::string win1250_to_utf8(const std::string &input);
 
@@ -224,17 +224,17 @@ std::string substr_path(std::string const &Filename);
 std::ptrdiff_t len_common_prefix(std::string_view a, std::string_view b);
 
 // returns true if provided string contains another provided string
-bool contains(std::string_view const String, std::string_view Substring);
-bool contains(std::string_view const String, char Character);
+bool contains(std::string_view String, std::string_view Substring);
+bool contains(std::string_view String, char Character);
 
 // TODO: Ideally unique_ptr should be used instead of this (not safe) inline functions
-template <typename T> inline void SafeDelete(T* &Pointer)
+template <typename T> void SafeDelete(T* &Pointer)
 {
 	delete Pointer;
 	Pointer = nullptr;
 }
 
-template <typename T> inline void SafeDeleteArray(T *&Pointer)
+template <typename T> void SafeDeleteArray(T *&Pointer)
 {
 	delete[] Pointer;
 	Pointer = nullptr;

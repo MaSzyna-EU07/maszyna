@@ -52,10 +52,10 @@ private:
         replace_( geometry_handle const &Geometry ) override;
     // draw() subclass details
     auto
-        draw_( geometry_handle const &Geometry, stream_units const &Units, unsigned int const Streams ) -> std::size_t override;
+        draw_( geometry_handle const &Geometry, stream_units const &Units, unsigned int Streams ) -> std::size_t override;
     // draw_instanced() subclass details — issues glDrawElementsInstancedBaseVertex
     auto
-        draw_instanced_( geometry_handle const &Geometry, stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams ) -> std::size_t override;
+        draw_instanced_( geometry_handle const &Geometry, stream_units const &Units, std::size_t InstanceCount, unsigned int Streams ) -> std::size_t override;
     // release() subclass details
     void
         release_() override;

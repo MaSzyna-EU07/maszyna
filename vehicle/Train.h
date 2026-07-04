@@ -35,7 +35,7 @@ class TCab {
 public:
 // methods
     void Load(cParser &Parser);
-    void Update( bool const Power );
+    void Update( bool Power );
     TGauge &Gauge( int n = -1 ); // pobranie adresu obiektu
     TButton &Button( int n = -1 ); // pobranie adresu obiektu
 // members
@@ -71,7 +71,7 @@ public:
     std::string
         find( TSubModel const *Control ) const;
     bool
-        contains( std::string const Control ) const;
+        contains( std::string Control ) const;
 };
 
 class TTrain {
@@ -153,30 +153,28 @@ class TTrain {
     // McZapkie-010302
     bool Init(TDynamicObject *NewDynamicObject, bool e3d = false);
 
-    inline glm::dvec3 GetDirection() const
+	glm::dvec3 GetDirection() const
 	{
         return DynamicObject->VectorFront(); };
-    inline glm::dvec3 GetUp() const
+	glm::dvec3 GetUp() const
 	{
         return DynamicObject->VectorUp(); };
-    inline
-    std::string GetLabel( TSubModel const *Control ) const {
+	std::string GetLabel( TSubModel const *Control ) const {
         return m_controlmapper.find( Control ); }
     void UpdateCab();
-    bool Update( double const Deltatime );
+    bool Update( double Deltatime );
 	void UpdateDirectionRelays();
 	void SetupDirectionRelays();
 	bool prevBatState = false;
 	int prevDirection = 0;
-    void add_distance( double const Distance );
+    void add_distance( double Distance );
     // McZapkie-310302: ladowanie parametrow z pliku
     bool LoadMMediaFile(std::string const &asFileName);
     std::shared_ptr<dictionary_source> GetTrainState( dictionary_source const &Extraparameters );
     state_t get_state() const;
-	inline float get_radiovolume() const { return m_radiovolume; }
+	float get_radiovolume() const { return m_radiovolume; }
     // basic_table interface
-    inline
-    std::string name() const {
+	std::string name() const {
         return Dynamic()->name(); }
 
   private:
@@ -188,39 +186,37 @@ class TTrain {
     void clear_cab_controls();
     // sets cabin controls based on current state of the vehicle
     // NOTE: we can get rid of this function once we have per-cab persistent state
-    void set_cab_controls( int const Cab );
+    void set_cab_controls( int Cab );
     // initializes a gauge matching provided label. returns: true if the label was found, false otherwise
-    bool initialize_gauge(cParser &Parser, std::string const &Label, int const Cabindex);
+    bool initialize_gauge(cParser &Parser, std::string const &Label, int Cabindex);
     // initializes a button matching provided label. returns: true if the label was found, false otherwise
-    bool initialize_button(cParser &Parser, std::string const &Label, int const Cabindex);
+    bool initialize_button(cParser &Parser, std::string const &Label, int Cabindex);
     // helper, returns true for EMU with oerlikon brake
     bool is_eztoer() const;
     // locates nearest vehicle belonging to the consist
 	TDynamicObject *find_nearest_consist_vehicle(bool freefly, glm::vec3 pos) const;
     // mover master controller to specified position
-    void set_master_controller( double const Position );
+    void set_master_controller( double Position );
     // moves train brake lever to specified position, potentially emits switch sound if conditions are met
-    void set_train_brake( double const Position );
+    void set_train_brake( double Position );
     // potentially moves train brake lever to neutral position
     void zero_charging_train_brake();
     // sets specified brake acting speed for specified vehicle, potentially updating state of cab controls to match
-    void set_train_brake_speed( TDynamicObject *Vehicle, int const Speed );
+    void set_train_brake_speed( TDynamicObject *Vehicle, int Speed );
     // sets the motor connector button in paired unit to specified state
-    void set_paired_open_motor_connectors_button( bool const State );
+    void set_paired_open_motor_connectors_button( bool State );
     // helper, common part of pantograph selection methods
-    void change_pantograph_selection( int const Change );
+    void change_pantograph_selection( int Change );
     // helper, common part of pantograh valves state update methods
     void update_pantograph_valves();
     // update function subroutines
-    void update_sounds( double const Deltatime );
+    void update_sounds( double Deltatime );
     void update_sounds_runningnoise( sound_source &Sound );
     void update_sounds_resonancenoise( sound_source &Sound );
     void update_sounds_radio();
-    inline
-    end cab_to_end( int const End ) const {
+	end cab_to_end( int const End ) const {
         return End == 2 ? rear : front; }
-    inline
-    end cab_to_end() const {
+	end cab_to_end() const {
         return cab_to_end( iCabn ); }
 	void update_screens(double dt);
 
@@ -922,19 +918,19 @@ private:
 	float fDieselParams[9][10]; // parametry dla silnikow asynchronicznych
     // plays provided sound from position of the radio
 	bool radio_message_played;
-    void radio_message( sound_source *Message, int const Channel );
-    inline auto const RadioChannel() const { return Dynamic()->Mechanik ? Dynamic()->Mechanik->iRadioChannel : 1; }
-    inline auto &RadioChannel() { return Dynamic()->Mechanik->iRadioChannel; }
-    inline TDynamicObject *Dynamic() { return DynamicObject; };
-    inline TDynamicObject const *Dynamic() const { return DynamicObject; };
-    inline TMoverParameters *Controlled() { return mvControlled; };
-    inline TMoverParameters const *Controlled() const { return mvControlled; };
-    inline TMoverParameters *Occupied() { return mvOccupied; };
-    inline TMoverParameters const *Occupied() const { return mvOccupied; };
+    void radio_message( sound_source *Message, int Channel );
+	auto const RadioChannel() const { return Dynamic()->Mechanik ? Dynamic()->Mechanik->iRadioChannel : 1; }
+	auto &RadioChannel() { return Dynamic()->Mechanik->iRadioChannel; }
+	TDynamicObject *Dynamic() { return DynamicObject; };
+	TDynamicObject const *Dynamic() const { return DynamicObject; };
+	TMoverParameters *Controlled() { return mvControlled; };
+	TMoverParameters const *Controlled() const { return mvControlled; };
+	TMoverParameters *Occupied() { return mvOccupied; };
+	TMoverParameters const *Occupied() const { return mvOccupied; };
     void DynamicSet(TDynamicObject *d);
     void MoveToVehicle( TDynamicObject *target );
     // checks whether specified point is within boundaries of the active cab
-	bool point_inside(glm::dvec3 const Point) const;
+	bool point_inside(glm::dvec3 Point) const;
 	glm::dvec3 clamp_inside(glm::dvec3 const &Point) const;
     const screenentry_sequence & get_screens();
 
@@ -946,7 +942,7 @@ class train_table : public basic_table<TTrain> {
 public:
     void update( double dt );
     void updateAsync( double dt );
-    TTrain *find_id( std::uint16_t const Id ) const;
+    TTrain *find_id( std::uint16_t Id ) const;
 };
 
 //---------------------------------------------------------------------------

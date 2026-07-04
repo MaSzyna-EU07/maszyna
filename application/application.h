@@ -59,29 +59,29 @@ public:
     bool
         pop_mode();
     bool
-        push_mode( mode const Mode );
+        push_mode( mode Mode );
     void
         set_title( std::string const &Title );
     void
-        set_progress( float const Progress = 0.f, float const Subtaskprogress = 0.f );
+        set_progress( float Progress = 0.f, float Subtaskprogress = 0.f );
     void
         set_tooltip( std::string const &Tooltip );
     void
-        set_cursor( int const Mode );
+        set_cursor( int Mode );
     void
-        set_cursor_pos( double const Horizontal, double const Vertical );
+        set_cursor_pos( double Horizontal, double Vertical );
     void queue_screenshot();
     // input handlers
-    void on_key( int const Key, int const Scancode, int const Action, int const Mods );
-    void on_char( unsigned int const Char );
-    void on_cursor_pos( double const Horizontal, double const Vertical );
-    void on_mouse_button( int const Button, int const Action, int const Mods );
-    void on_scroll( double const Xoffset, double const Yoffset );
+    void on_key( int Key, int Scancode, int Action, int Mods );
+    void on_char( unsigned int Char );
+    void on_cursor_pos( double Horizontal, double Vertical );
+    void on_mouse_button( int Button, int Action, int Mods );
+    void on_scroll( double Xoffset, double Yoffset );
 	void on_focus_change(bool focus);
 	void on_window_resize(int w, int h);
     // gives access to specified window, creates a new window if index == -1
     GLFWwindow *
-        window( int const Windowindex = 0, bool visible = false, int width = 1, int height = 1, GLFWmonitor *monitor = nullptr, bool keep_ownership = true, bool share_ctx = true );
+        window( int Windowindex = 0, bool visible = false, int width = 1, int height = 1, GLFWmonitor *monitor = nullptr, bool keep_ownership = true, bool share_ctx = true );
     GLFWmonitor * find_monitor( const std::string &str ) const;
     std::string describe_monitor( GLFWmonitor *monitor ) const;
 	// generate network sync verification number

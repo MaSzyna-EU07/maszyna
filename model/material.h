@@ -35,7 +35,7 @@ struct opengl_material : public IMaterial {
     opengl_material();
 
 // methods
-    bool deserialize(cParser &Input, bool const Loadnow);
+    bool deserialize(cParser &Input, bool Loadnow);
 	  virtual void finalize(bool Loadnow) override;
 	  virtual bool update() override;
 	  virtual float get_or_guess_opacity() const override;
@@ -74,7 +74,7 @@ private:
 // methods
     // imports member data pair from the config file
     bool
-        deserialize_mapping( cParser &Input, int const Priority, bool const Loadnow );
+        deserialize_mapping( cParser &Input, int Priority, bool Loadnow );
         void log_error(const std::string &str);
 
 // members
@@ -108,7 +108,7 @@ public:
     material_manager() { m_materials.emplace_back( opengl_material() ); } // empty bindings for null material
 
     material_handle
-        create( std::string const &Filename, bool const Loadnow );
+        create( std::string const &Filename, bool Loadnow );
     opengl_material const &
         material( material_handle const Material ) const { return m_materials[ Material ]; }
     opengl_material &

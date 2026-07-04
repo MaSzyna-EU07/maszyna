@@ -21,17 +21,17 @@ public:
     explicit TMemCell( scene::node_data const &Nodedata );
 // methods
     void
-        UpdateValues( std::string const &szNewText, double const fNewValue1, double const fNewValue2, int const CheckMask );
+        UpdateValues( std::string const &szNewText, double fNewValue1, double fNewValue2, int CheckMask );
     bool
         Load(cParser *parser);
     void
         PutCommand( TController *Mech, glm::dvec3 const *Loc ) const;
     bool
-        Compare( std::string const &szTestText, double const fTestValue1, double const fTestValue2, int const CheckMask,
-            comparison_operator const TextOperator = comparison_operator::equal,
-            comparison_operator const Value1Operator = comparison_operator::equal,
-            comparison_operator const Value2Operator = comparison_operator::equal,
-            comparison_pass const Pass = comparison_pass::all ) const;
+        Compare( std::string const &szTestText, double fTestValue1, double fTestValue2, int CheckMask,
+            comparison_operator TextOperator = comparison_operator::equal,
+            comparison_operator Value1Operator = comparison_operator::equal,
+            comparison_operator Value2Operator = comparison_operator::equal,
+            comparison_pass Pass = comparison_pass::all ) const;
     std::string const &
         Text() const {
             return szText; }

@@ -40,35 +40,28 @@ public:
 	void
         calculate(glm::mat4 const &Projection, glm::mat4 const &Modelview);
 	// returns true if specified point is inside of the frustum
-    inline
-    bool
+	bool
         point_inside( glm::vec3 const &Point ) const { return point_inside( Point.x, Point.y, Point.z ); }
-    inline
-    bool
+	bool
         point_inside( float3 const &Point ) const { return point_inside( Point.x, Point.y, Point.z ); }
     bool
-        point_inside( float const X, float const Y, float const Z ) const;
+        point_inside( float X, float Y, float Z ) const;
 	// tests if the sphere is in frustum, returns the distance between origin and sphere centre
-    inline
-    float
+	float
         sphere_inside( glm::dvec3 const &Center, float const Radius ) const { return sphere_inside( static_cast<float>( Center.x ), static_cast<float>( Center.y ), static_cast<float>( Center.z ), Radius ); }
-    inline
-    float
+	float
         sphere_inside( glm::vec3 const &Center, float const Radius ) const { return sphere_inside( Center.x, Center.y, Center.z, Radius ); }
-    inline
-    float
+	float
         sphere_inside( float3 const &Center, float const Radius ) const { return sphere_inside( Center.x, Center.y, Center.z, Radius ); }
     float
-        sphere_inside( float const X, float const Y, float const Z, float const Radius ) const;
+        sphere_inside( float X, float Y, float Z, float Radius ) const;
 	// returns true if specified cube is inside of the frustum. Size = half of the length
-    inline
-    bool
+	bool
         cube_inside( glm::vec3 const &Center, float const Size ) const { return cube_inside( Center.x, Center.y, Center.z, Size ); }
-    inline
-    bool
+	bool
         cube_inside( float3 const &Center, float const Size ) const { return cube_inside( Center.x, Center.y, Center.z, Size ); }
     bool
-        cube_inside( float const X, float const Y, float const Z, float const Size ) const;
+        cube_inside( float X, float Y, float Z, float Size ) const;
 
 private:
 // types:
@@ -79,7 +72,7 @@ private:
 
 // methods:
 	void
-        normalize_plane( side const Side );	// normalizes a plane (A side) from the frustum
+        normalize_plane( side Side );	// normalizes a plane (A side) from the frustum
 
 // members:
 	float m_frustum[6][4]; // holds the A B C and D values (normal & distance) for each side of the frustum.

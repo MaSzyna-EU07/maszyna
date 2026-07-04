@@ -217,12 +217,12 @@ public:
     std::string asDestination; // dokąd pojazd ma być kierowany "(stacja):(tor)"
 	glm::dmat4 mMatrix; // macierz przekształcenia do renderowania modeli
     TMoverParameters *MoverParameters; // parametry fizyki ruchu oraz przeliczanie
-    inline TDynamicObject *NextConnected() { return MoverParameters->Neighbours[ rear ].vehicle; }; // pojazd podłączony od strony sprzęgu 1 (kabina -1)
-    inline TDynamicObject *PrevConnected() { return MoverParameters->Neighbours[ front ].vehicle; }; // pojazd podłączony od strony sprzęgu 0 (kabina 1)
-    inline TDynamicObject *NextConnected() const { return MoverParameters->Neighbours[ rear ].vehicle; }; // pojazd podłączony od strony sprzęgu 1 (kabina -1)
-    inline TDynamicObject *PrevConnected() const { return MoverParameters->Neighbours[ front ].vehicle; }; // pojazd podłączony od strony sprzęgu 0 (kabina 1)
-    inline int NextConnectedNo() const { return MoverParameters->Neighbours[ rear ].vehicle_end; }
-    inline int PrevConnectedNo() const { return MoverParameters->Neighbours[ front ].vehicle_end; }
+	TDynamicObject *NextConnected() { return MoverParameters->Neighbours[ rear ].vehicle; }; // pojazd podłączony od strony sprzęgu 1 (kabina -1)
+	TDynamicObject *PrevConnected() { return MoverParameters->Neighbours[ front ].vehicle; }; // pojazd podłączony od strony sprzęgu 0 (kabina 1)
+	TDynamicObject *NextConnected() const { return MoverParameters->Neighbours[ rear ].vehicle; }; // pojazd podłączony od strony sprzęgu 1 (kabina -1)
+	TDynamicObject *PrevConnected() const { return MoverParameters->Neighbours[ front ].vehicle; }; // pojazd podłączony od strony sprzęgu 0 (kabina 1)
+	int NextConnectedNo() const { return MoverParameters->Neighbours[ rear ].vehicle_end; }
+	int PrevConnectedNo() const { return MoverParameters->Neighbours[ front ].vehicle_end; }
 
     // Dev tools
 	void Reload();
@@ -272,8 +272,7 @@ private:
     material_data m_materialdata;
 
 public:
-    inline
-    material_data const
+	material_data const
         *Material() const {
             return &m_materialdata; }
     // tymczasowo udostępnione do wyszukiwania drutu
@@ -436,8 +435,8 @@ private:
         sound_source rsEngageSlippery { sound_placement::engine }; // moved from cab
 		sound_source retarder { sound_placement::engine };
 
-        void position( glm::vec3 const Location );
-		void render( TMoverParameters const &Vehicle, double const Deltatime );
+        void position( glm::vec3 Location );
+		void render( TMoverParameters const &Vehicle, double Deltatime );
     };
     // single source per door (pair) on the centreline
     struct doorspeaker_sounds {
@@ -464,7 +463,7 @@ private:
     void ABuModelRoll();
     void TurnOff();
     // update state of load exchange operation
-    void update_exchange( double const Deltatime );
+    void update_exchange( double Deltatime );
 
 // members
     AirCoupler btCoupler1; // sprzegi
@@ -606,7 +605,7 @@ private:
     std::string asModel;
 
   private:
-    TDynamicObject *ABuFindObject( int &Foundcoupler, double &Distance, TTrack const *Track, int const Direction, int const Mycoupler ) const;
+    TDynamicObject *ABuFindObject( int &Foundcoupler, double &Distance, TTrack const *Track, int Direction, int Mycoupler ) const;
     void ABuCheckMyTrack();
 
     std::string rTypeName; // nazwa typu pojazdu
@@ -618,7 +617,7 @@ private:
 	bool HeadlightsAoff{false}; // wygaszone swiatelki A
 	bool HeadlightsBoff{false}; // wygaszone swiatelki B
     // checks whether there's unbroken connection of specified type to specified vehicle
-    bool is_connected( TDynamicObject const *Vehicle, coupling const Coupling = coupler ) const;
+    bool is_connected( TDynamicObject const *Vehicle, coupling Coupling = coupler ) const;
 	TDynamicObject * PrevAny() const;
 	TDynamicObject * Prev(int C = -1) const;
 	TDynamicObject * Next(int C = -1) const;
@@ -670,15 +669,15 @@ private:
         std::string Name, std::string BaseDir, std::string asReplacableSkin, std::string Type_Name,
         TTrack *Track, double fDist, std::string DriverType, double fVel, std::string TrainName,
         float Load, std::string LoadType, bool Reversed, std::string);
-    int init_sections( TModel3d const *Model, std::string const &Nameprefix, bool const Overrideselfillum );
+    int init_sections( TModel3d const *Model, std::string const &Nameprefix, bool Overrideselfillum );
     bool init_destination( TModel3d *Model );
-    void create_controller( std::string const Type, bool const Trainset );
+    void create_controller( std::string Type, bool Trainset );
     void AttachNext(TDynamicObject *Object, int iType = 1);
     bool UpdateForce(double dt);
     // initiates load change by specified amounts, with a platform on specified side
-    void LoadExchange( int const Disembark, int const Embark, int const Platforms );
+    void LoadExchange( int Disembark, int Embark, int Platforms );
     // calculates time needed to complete current load change, using specified platforms
-    float LoadExchangeTime( int const Platforms );
+    float LoadExchangeTime( int Platforms );
     // calculates time needed to complete current load change, using previously specified platforms
     float LoadExchangeTime() const;
     // calculates current load exchange factor, where 1 = nominal rate, higher = faster
@@ -694,83 +693,83 @@ private:
     void Move(double fDistance);
     void FastMove(double fDistance);
     void RenderSounds();
-    inline glm::dvec3 GetPosition() const {
+	glm::dvec3 GetPosition() const {
         return vPosition; };
     // converts location from vehicle coordinates frame to world frame
-    inline glm::dvec3 GetWorldPosition( glm::dvec3 const &Location ) const {
+	glm::dvec3 GetWorldPosition( glm::dvec3 const &Location ) const {
         return vPosition + glm::dvec3(mMatrix * glm::dvec4(Location, 1.0)); }
     // pobranie współrzędnych czoła
-    inline glm::dvec3 HeadPosition() const {
+	glm::dvec3 HeadPosition() const {
         return vCoulpler[iDirection ^ 1]; };
     // pobranie współrzędnych tyłu
-    inline glm::dvec3 RearPosition() const {
+	glm::dvec3 RearPosition() const {
         return vCoulpler[iDirection]; };
-    inline glm::dvec3 CouplerPosition( end const End ) const {
+	glm::dvec3 CouplerPosition( end const End ) const {
         return vCoulpler[ End ]; }
-    inline glm::dvec3 AxlePositionGet() {
+	glm::dvec3 AxlePositionGet() {
         return iAxleFirst ?
             Axle1.pPosition :
             Axle0.pPosition; };
-    inline double Roll() {
+	double Roll() {
         return Axle1.GetRoll() + Axle0.GetRoll(); }
 /*
-    // TODO: check if scanning takes into account direction when selecting axle
-    // if it does, replace the version above
-    // if it doesn't, fix it so it does
-    inline glm::dvec3 AxlePositionGet() {
-        return (
-            iDirection ?
-                ( iAxleFirst ? Axle1.pPosition : Axle0.pPosition ) :
-                ( iAxleFirst ? Axle0.pPosition : Axle1.pPosition ) ); }
-*/
-    inline glm::dvec3 VectorFront() const {
+	    // TODO: check if scanning takes into account direction when selecting axle
+	    // if it does, replace the version above
+	    // if it doesn't, fix it so it does
+	    inline glm::dvec3 AxlePositionGet() {
+	        return (
+	            iDirection ?
+	                ( iAxleFirst ? Axle1.pPosition : Axle0.pPosition ) :
+	                ( iAxleFirst ? Axle0.pPosition : Axle1.pPosition ) ); }
+	*/
+	glm::dvec3 VectorFront() const {
         return vFront; };
-    inline glm::dvec3 VectorUp() const {
+	glm::dvec3 VectorUp() const {
         return vUp; };
-    inline glm::dvec3 VectorLeft() const {
+	glm::dvec3 VectorLeft() const {
         return vLeft; };
-    inline double const * Matrix() const {
+	double const * Matrix() const {
         return glm::value_ptr(mMatrix); };
-    inline double * Matrix() {
+	double * Matrix() {
         return glm::value_ptr(mMatrix); };
-    inline double GetVelocity() const {
+	double GetVelocity() const {
         return MoverParameters->Vel; };
-    inline double GetLength() const {
+	double GetLength() const {
         return MoverParameters->Dim.L; };
-    inline double GetWidth() const {
+	double GetWidth() const {
         return MoverParameters->Dim.W; };
     double radius() const;
     // calculates distance between event-starting axle and front of the vehicle
     double tracing_offset() const;
-    inline TTrack * GetTrack() {
+	TTrack * GetTrack() {
         return iAxleFirst ? Axle1.GetTrack() : Axle0.GetTrack(); };
 
     // McZapkie-260202
     void LoadMMediaFile(std::string const &TypeName, std::string const &ReplacableSkin);
     TModel3d *LoadMMediaFile_mdload( std::string const &Name ) const;
 
-    inline double ABuGetDirection() const { // ABu.
+	double ABuGetDirection() const { // ABu.
         return Axle1.GetTrack() == MyTrack ? Axle1.GetDirection() : Axle0.GetDirection(); };
     // zwraca kierunek pojazdu na torze z aktywną osą
-    inline double RaDirectionGet() const {
+	double RaDirectionGet() const {
         return iAxleFirst ?
             Axle1.GetDirection() :
             Axle0.GetDirection(); };
     // zwraca przesunięcie wózka względem Point1 toru z aktywną osią
-    inline double RaTranslationGet() const {
+	double RaTranslationGet() const {
         return iAxleFirst ?
             Axle1.GetTranslation() :
             Axle0.GetTranslation(); };
     // zwraca tor z aktywną osią
-    inline TTrack const * RaTrackGet() const {
+	TTrack const * RaTrackGet() const {
         return iAxleFirst ?
             Axle1.GetTrack() :
             Axle0.GetTrack(); };
 
-    void couple( int const Side );
-    int uncouple( int const Side );
-    bool attach_coupler_adapter( int const Side, bool const Enforce = false );
-    bool remove_coupler_adapter( int const Side );
+    void couple( int Side );
+    int uncouple( int Side );
+    bool attach_coupler_adapter( int Side, bool Enforce = false );
+    bool remove_coupler_adapter( int Side );
     void RadioStop();
 	void Damage(char flag);
 	void pants_up();
@@ -781,8 +780,8 @@ private:
     bool has_signal_pc1_on() const;
     bool has_signal_pc2_on() const;
     bool has_signal_pc5_on() const;
-    bool has_signal_on( int const Side, int const Pattern ) const;
-    void set_cab_lights( int const Cab, float const Level );
+    bool has_signal_on( int Side, int Pattern ) const;
+    void set_cab_lights( int Cab, float Level );
     TDynamicObject * FirstFind(int &coupler_nr, int cf = 1);
     float GetEPP(); // wyliczanie sredniego cisnienia w PG
     int DirectionSet(int d); // ustawienie kierunku w składzie
@@ -795,14 +794,14 @@ private:
     // updates potential collision sources
     void update_neighbours();
     // locates potential collision source within specified range, scanning its route in specified direction
-    auto find_vehicle( int const Direction, double const Range ) const -> std::tuple<TDynamicObject *, int, double, bool>;
+    auto find_vehicle( int Direction, double Range ) const -> std::tuple<TDynamicObject *, int, double, bool>;
     // locates potential vehicle connected with specific coupling type and satisfying supplied predicate
     template <typename Predicate_>
-    auto find_vehicle( coupling const Coupling, Predicate_ const Predicate ) -> TDynamicObject *;
+    auto find_vehicle( coupling Coupling, Predicate_ Predicate ) -> TDynamicObject *;
     TDynamicObject * FindPowered();
     TDynamicObject * FindPantographCarrier();
     template <typename UnaryFunction_>
-    void for_each( coupling const Coupling, UnaryFunction_ const Function );
+    void for_each( coupling Coupling, UnaryFunction_ Function );
     void ParamSet(int what, int into);
     // zapytanie do AI, po którym segmencie skrzyżowania jechać
     int RouteWish(TTrack *tr);
@@ -812,7 +811,7 @@ private:
     glm::dvec3 get_future_movement() const;
 	void move_set(double distance);
     // playes specified announcement, potentially preceding it with a chime
-    void announce( announcement_t const Announcement, bool const Chime = true );
+    void announce( announcement_t Announcement, bool Chime = true );
     // returns soundproofing for specified sound type and listener location
     float soundproofing( int const Placement, int const Listener ) const {
         return m_soundproofing[ Placement - 1 ][ Listener + 1 ]; }
@@ -829,7 +828,7 @@ private:
 // TBD, TODO: make an object out of it
 public:
 // methods
-    void update_shake( double const Timedelta );
+    void update_shake( double Timedelta );
     std::pair<double, double> shake_angles() const;
 // members
     struct baseshake_config {
@@ -874,7 +873,7 @@ public:
         update_traction( TDynamicObject *Vehicle );
     // legacy method, sends list of vehicles over network
     void
-        DynamicList( bool const Onlycontrolled = false ) const;
+        DynamicList( bool Onlycontrolled = false ) const;
 
 private:
     // maintenance; removes from tracks consists with vehicles marked as disabled

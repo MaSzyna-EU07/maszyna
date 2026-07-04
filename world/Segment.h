@@ -54,11 +54,11 @@ class TSegment
 	glm::dvec3 vA, vB, vC; // współczynniki wielomianów trzeciego stopnia vD==Point1
     TTrack *pOwner = nullptr; // wskaźnik na właściciela
 
-    glm::dvec3 GetFirstDerivative(double const fTime) const;
-	double RombergIntegral(double const fA, double const fB) const;
-	double GetTFromS(double const s) const;
-	glm::dvec3 RaInterpolate(double const t) const;
-	glm::dvec3 RaInterpolate0(double const t) const;
+    glm::dvec3 GetFirstDerivative(double fTime) const;
+	double RombergIntegral(double fA, double fB) const;
+	double GetTFromS(double s) const;
+	glm::dvec3 RaInterpolate(double t) const;
+	glm::dvec3 RaInterpolate0(double t) const;
 
 public:
     bool bCurve = false;
@@ -71,22 +71,19 @@ public:
     // finds point on segment closest to specified point in 3d space. returns: point on segment as value in range 0-1
     double
         find_nearest_point( glm::dvec3 const &Point ) const;
-    inline 
-    glm::dvec3
+	glm::dvec3
         GetDirection1() const {
             return bCurve ? CPointOut - Point1 : CPointOut; };
-    inline
-    glm::dvec3
+	glm::dvec3
         GetDirection2() const {
             return bCurve ? CPointIn - Point2 : CPointIn; };
 	glm::dvec3
-        GetDirection(double const fDistance) const;
-    inline
-    glm::dvec3
+        GetDirection(double fDistance) const;
+	glm::dvec3
         GetDirection() const {
             return CPointOut; };
 	glm::dvec3
-        FastGetDirection(double const fDistance, double const fOffset);
+        FastGetDirection(double fDistance, double fOffset);
 /*
     Math3D::vector3
         GetPoint(double const fDistance) const;
@@ -98,39 +95,33 @@ public:
 	/// <param name="fDistance">Distance from p1</param>
 	/// <param name="position">Calculated position</param>
 	/// <param name="rotation">Calculated rotation</param>
-	void RaPositionGet(double const fDistance, glm::dvec3 &position, glm::vec3 &rotation) const;
-	glm::dvec3 FastGetPoint(double const t) const;
-    inline
-    glm::dvec3
+	void RaPositionGet(double fDistance, glm::dvec3 &position, glm::vec3 &rotation) const;
+	glm::dvec3 FastGetPoint(double t) const;
+	glm::dvec3
         FastGetPoint_0() const {
             return Point1; };
-    inline
-    glm::dvec3
+	glm::dvec3
         FastGetPoint_1() const {
             return Point2; };
-    inline
-    float
+	float
         GetRoll(double const Distance) const {
             return std::lerp( fRoll1, fRoll2, static_cast<float>(Distance / fLength) ); }
-    inline
-    void
+	void
         GetRolls(float &r1, float &r2) const {
             // pobranie przechyłek (do generowania trójkątów)
             r1 = fRoll1;
             r2 = fRoll2; }
 
     bool
-        RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, bool const Transition, double fTextureLength, double Texturescale = 1.0, int iSkip = 0, int iEnd = 0, std::pair<float, float> fOffsetX = {0.f, 0.f}, glm::vec3 **p = nullptr, bool bRender = true );
+        RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, bool Transition, double fTextureLength, double Texturescale = 1.0, int iSkip = 0, int iEnd = 0, std::pair<float, float> fOffsetX = {0.f, 0.f}, glm::vec3 **p = nullptr, bool bRender = true );
 /*
-    void
-        Render();
-*/
-    inline
-    double
+	    void
+	        Render();
+	*/
+	double
         GetLength() const {
             return fLength; };
-    inline
-    int
+	int
         RaSegCount() const {
             return fTsBuffer.empty() ? 1 : iSegCount; };
 

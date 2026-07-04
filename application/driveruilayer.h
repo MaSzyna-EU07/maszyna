@@ -30,13 +30,13 @@ public:
 	void showDebugUI() override;
     // potentially processes provided input key. returns: true if the input was processed, false otherwise
     bool
-        on_key( int const Key, int const Action ) override;
+        on_key( int Key, int Action ) override;
     // potentially processes provided mouse movement. returns: true if the input was processed, false otherwise
     bool
-        on_cursor_pos( double const Horizontal, double const Vertical ) override;
+        on_cursor_pos( double Horizontal, double Vertical ) override;
     // potentially processes provided mouse button. returns: true if the input was processed, false otherwise
     bool
-        on_mouse_button( int const Button, int const Action ) override;
+        on_mouse_button( int Button, int Action ) override;
     // updates state of UI elements
     void
         update() override;
@@ -49,7 +49,7 @@ private:
 // methods
     // sets visibility of the cursor
     void
-        set_cursor( bool const Visible );
+        set_cursor( bool Visible );
     // render() subclass details
     void
         render_() override;

@@ -93,7 +93,7 @@ private:
     void update_section_uart( std::vector<text_line> &Output );
 #endif
     // section update helpers
-    std::string update_vehicle_coupler( int const Side );
+    std::string update_vehicle_coupler( int Side );
     std::string update_vehicle_brake() const;
     // renders provided lines, under specified collapsing header
     bool render_section( std::string const &Header, std::vector<text_line> const &Lines );

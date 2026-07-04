@@ -33,26 +33,26 @@ class basic_editor {
 public:
 // methods
     void
-        translate( basic_node *Node, glm::dvec3 const &Location, bool const Snaptoground );
+        translate( basic_node *Node, glm::dvec3 const &Location, bool Snaptoground );
     void
-        translate( basic_node *Node, float const Offset );
+        translate( basic_node *Node, float Offset );
     void
-        rotate( basic_node *Node, glm::vec3 const &Angle, float const Quantization );
+        rotate( basic_node *Node, glm::vec3 const &Angle, float Quantization );
 
 private:
 // methods
     void
         translate_node( basic_node *Node, glm::dvec3 const &Location );
     void
-        translate_node( basic_node *Node, float const Offset );
+        translate_node( basic_node *Node, float Offset );
     void
         translate_instance( TAnimModel *Instance, glm::dvec3 const &Location );
     void
-        translate_instance( TAnimModel *Instance, float const Offset );
+        translate_instance( TAnimModel *Instance, float Offset );
     void
         translate_memorycell( TMemCell *Memorycell, glm::dvec3 const &Location );
     void
-        translate_memorycell( TMemCell *Memorycell, float const Offset );
+        translate_memorycell( TMemCell *Memorycell, float Offset );
     void
         rotate_node( basic_node *Node, glm::vec3 const &Angle );
     void

@@ -55,7 +55,7 @@ public:
         create( std::string const &Filename );
     // provides direct access to a specified buffer
     openal_buffer const &
-        buffer( buffer_handle const Buffer ) const;
+        buffer( buffer_handle Buffer ) const;
 
 private:
 // types

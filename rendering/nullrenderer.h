@@ -52,8 +52,7 @@ public:
         Render() override { return true; }
     void
         SwapBuffers() override {}
-    inline
-    float
+	float
         Framerate() override { return 10.0f; }
 
     bool AddViewport(const global_settings::extraviewport_config &conf) override { return false; }
@@ -121,7 +120,7 @@ public:
         Texture( texture_handle const Texture ) const override { throw std::runtime_error("not impl"); }
     // utility methods
     void
-        Pick_Control_Callback( std::function<void( TSubModel const *, const glm::vec2  )> Callback ) override {}
+        Pick_Control_Callback( std::function<void( TSubModel const *, glm::vec2  )> Callback ) override {}
     void
         Pick_Node_Callback( std::function<void( scene::basic_node * )> Callback ) override {}
     TSubModel const *

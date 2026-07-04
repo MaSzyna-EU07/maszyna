@@ -90,7 +90,7 @@ public:
         on_click( TAnimModel const *Instance );
     // legacy method, finds and assigns traction piece to specified pantograph of provided vehicle
     void
-        update_traction( TDynamicObject *Vehicle, int const Pantographindex );
+        update_traction( TDynamicObject *Vehicle, int Pantographindex );
     // legacy method, polls event launchers within radius around specified point
     void
         update_events();
@@ -105,7 +105,7 @@ public:
         RaTrackAnimAdd( TTrack *Track );
     // legacy method, updates geometry for pieces in the animation list
     void
-        RaAnimate( unsigned int const Framestamp );
+        RaAnimate( unsigned int Framestamp );
     // sends content of the class to provided stream
     void
         serialize( std::ostream &Output ) const;
@@ -153,7 +153,7 @@ public:
         erase( TMemCell *Memorycell );
     // find a vehicle located nearest to specified point, within specified radius. reurns: located vehicle and distance
     std::tuple<TDynamicObject *, float>
-        find( glm::dvec3 const &Point, float const Radius, bool const Onlycontrolled, bool const Findbycoupler ) const;
+        find( glm::dvec3 const &Point, float Radius, bool Onlycontrolled, bool Findbycoupler ) const;
     // finds a path with one of its ends located in specified point. returns: located path and id of the matching endpoint
     std::tuple<TTrack *, int>
         find( glm::dvec3 const &Point, TTrack const *Exclude ) const;
@@ -162,7 +162,7 @@ public:
         find( glm::dvec3 const &Point, TTraction const *Exclude ) const;
     // finds a traction piece located nearest to specified point, sharing section with specified other piece and powered in specified direction. returns: located traction piece
     std::tuple<TTraction *, int, float>
-        find( glm::dvec3 const &Point, TTraction const *Other, int const Currentdirection ) const;
+        find( glm::dvec3 const &Point, TTraction const *Other, int Currentdirection ) const;
     // sets center point of the cell
     void
         center( glm::dvec3 Center );
@@ -170,7 +170,7 @@ public:
     void
         create_geometry( gfx::geometrybank_handle const &Bank );
 	void
-	    create_map_geometry(std::vector<gfx::basic_vertex> &Bank, const gfx::geometrybank_handle Extra);
+	    create_map_geometry(std::vector<gfx::basic_vertex> &Bank, gfx::geometrybank_handle Extra);
 	void
 	    get_map_active_paths(map_colored_paths &handles);
 	glm::vec3 find_nearest_track_point(const glm::dvec3 &pos);
@@ -261,16 +261,16 @@ public:
         on_click( TAnimModel const *Instance );
     // legacy method, finds and assigns traction piece to specified pantograph of provided vehicle
     void
-        update_traction( TDynamicObject *Vehicle, int const Pantographindex );
+        update_traction( TDynamicObject *Vehicle, int Pantographindex );
     // legacy method, updates sounds and polls event launchers within radius around specified point
     void
-        update_events( glm::dvec3 const &Location, float const Radius );
+        update_events( glm::dvec3 const &Location, float Radius );
     // legacy method, updates sounds and polls event launchers within radius around specified point
     void
-        update_sounds( glm::dvec3 const &Location, float const Radius );
+        update_sounds( glm::dvec3 const &Location, float Radius );
     // legacy method, triggers radio-stop procedure for all vehicles in 2km radius around specified location
     void
-        radio_stop( glm::dvec3 const &Location, float const Radius );
+        radio_stop( glm::dvec3 const &Location, float Radius );
     // sends content of the class to provided stream
     void
         serialize( std::ostream &Output ) const;
@@ -310,7 +310,7 @@ public:
             cell( Point ).register_end( Node ); }
     // find a vehicle located nearest to specified point, within specified radius. reurns: located vehicle and distance
     std::tuple<TDynamicObject *, float>
-        find( glm::dvec3 const &Point, float const Radius, bool const Onlycontrolled, bool const Findbycoupler );
+        find( glm::dvec3 const &Point, float Radius, bool Onlycontrolled, bool Findbycoupler );
     // finds a path with one of its ends located in specified point. returns: located path and id of the matching endpoint
     std::tuple<TTrack *, int>
         find( glm::dvec3 const &Point, TTrack const *Exclude );
@@ -319,7 +319,7 @@ public:
         find( glm::dvec3 const &Point, TTraction const *Exclude );
     // finds a traction piece located nearest to specified point, sharing section with specified other piece and powered in specified direction. returns: located traction piece
     std::tuple<TTraction *, int, float>
-        find( glm::dvec3 const &Point, TTraction const *Other, int const Currentdirection );
+        find( glm::dvec3 const &Point, TTraction const *Other, int Currentdirection );
     // sets center point of the section
     void
         center( glm::dvec3 Center );
@@ -327,7 +327,7 @@ public:
     void
         create_geometry();
 	void
-	    create_map_geometry(const gfx::geometrybank_handle handle);
+	    create_map_geometry(gfx::geometrybank_handle handle);
 	void
 	    get_map_active_paths(map_colored_paths &handles);
     // provides access to bounding area data
@@ -379,7 +379,7 @@ public:
         on_click( TAnimModel const *Instance );
     // legacy method, finds and assigns traction piece to specified pantograph of provided vehicle
     void
-        update_traction( TDynamicObject *Vehicle, int const Pantographindex );
+        update_traction( TDynamicObject *Vehicle, int Pantographindex );
     // legacy method, polls event launchers around camera
     void
         update_events();
@@ -406,7 +406,7 @@ public:
         RadioStop( glm::dvec3 const &Location );
     // inserts provided shape in the region
     void
-        insert( shape_node Shape, scratch_data &Scratchpad, bool const Transform );
+        insert( shape_node Shape, scratch_data &Scratchpad, bool Transform );
     // inserts provided lines in the region
     void
         insert( lines_node Lines, scratch_data &Scratchpad );
@@ -437,7 +437,7 @@ public:
                 section( location ).erase( Node ); } }
     // find a vehicle located nearest to specified point, within specified radius. reurns: located vehicle and distance
     std::tuple<TDynamicObject *, float>
-        find_vehicle( glm::dvec3 const &Point, float const Radius, bool const Onlycontrolled, bool const Findbycoupler );
+        find_vehicle( glm::dvec3 const &Point, float Radius, bool Onlycontrolled, bool Findbycoupler );
     // finds a path with one of its ends located in specified point. returns: located path and id of the matching endpoint
     std::tuple<TTrack *, int>
         find_path( glm::dvec3 const &Point, TTrack const *Exclude );
@@ -446,10 +446,10 @@ public:
         find_traction( glm::dvec3 const &Point, TTraction const *Exclude );
     // finds a traction piece located nearest to specified point, sharing section with specified other piece and powered in specified direction. returns: located traction piece
     std::tuple<TTraction *, int>
-        find_traction( glm::dvec3 const &Point, TTraction const *Other, int const Currentdirection );
+        find_traction( glm::dvec3 const &Point, TTraction const *Other, int Currentdirection );
     // finds sections inside specified sphere. returns: list of sections
     std::vector<basic_section *> const &
-        sections( glm::dvec3 const &Point, float const Radius );
+        sections( glm::dvec3 const &Point, float Radius );
 	void
 	    create_map_geometry();
 	void

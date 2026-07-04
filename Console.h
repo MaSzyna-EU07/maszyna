@@ -50,7 +50,7 @@ class Console
     static int On();
     static void Off();
 
-	inline static bool Pressed(int x)
+	static bool Pressed(int x)
 	{ // na razie tak - czyta się tylko klawiatura
 	    if (glfwGetKey(Application.window(), x) == GLFW_TRUE)
 	        return true;

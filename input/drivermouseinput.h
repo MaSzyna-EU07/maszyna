@@ -24,9 +24,8 @@ public:
     void
         release();
     void
-        on_move( double const Mousex, double const Mousey );
-    inline
-    user_command
+        on_move( double Mousex, double Mousey );
+	user_command
         command() const {
             return m_command; }
     double
@@ -55,13 +54,13 @@ public:
     bool
         recall_bindings();
     void
-        button( int const Button, int const Action );
+        button( int Button, int Action );
     int
-        button( int const Button ) const;
+        button( int Button ) const;
     void
-        move( double const Horizontal, double const Vertical );
+        move( double Horizontal, double Vertical );
     void
-        scroll( double const Xoffset, double const Yoffset );
+        scroll( double Xoffset, double Yoffset );
     void
         poll();
     user_command

@@ -77,7 +77,7 @@ class TTrainParameters
     bool IsMaintenance() const;
     bool IsTimeToGo(double hh, double mm);
     // returns: difference between specified time and scheduled departure from current stop, in seconds
-    double seconds_until_departure( double const Hour, double const Minute ) const;
+    double seconds_until_departure( double Hour, double Minute ) const;
     bool UpdateMTable(double hh, double mm, std::string const &NewName);
     bool UpdateMTable( scenario_time const &Time, std::string const &NewName );
     bool RewindTimeTable( std::string actualStationName );

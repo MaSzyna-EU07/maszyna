@@ -68,7 +68,7 @@ private:
 };
 
 // passes specified sound to all vehicles within range as a radio message broadcasted on specified channel
-void radio_message( sound_source *Message, int const Channel );
+void radio_message( sound_source *Message, int Channel );
 
 extern state_manager State;
 extern event_manager Events;

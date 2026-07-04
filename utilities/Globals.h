@@ -359,13 +359,13 @@ struct global_settings {
 	bool ConfigParseNetwork(cParser& Parser, const std::string& token);
 	bool ConfigParseHardware(cParser& Parser, const std::string& token);
 	bool ConfigParseDebug(cParser& Parser, const std::string& token);
-	bool ConfigParse_gfx( cParser &parser, std::string_view const Token );
+	bool ConfigParse_gfx( cParser &parser, std::string_view Token );
     // sends basic content of the class in legacy (text) format to provided stream
     void
         export_as_text( std::ostream &Output ) const;
     template <typename Type_>
     void
-        export_as_text( std::ostream &Output, std::string const Key, Type_ const &Value ) const;
+        export_as_text( std::ostream &Output, std::string Key, Type_ const &Value ) const;
 };
 
 template <typename Type_>
@@ -377,11 +377,11 @@ global_settings::export_as_text( std::ostream &Output, std::string const Key, Ty
 
 template <>
 void
-global_settings::export_as_text( std::ostream &Output, std::string const Key, std::string const &Value ) const;
+global_settings::export_as_text( std::ostream &Output, std::string Key, std::string const &Value ) const;
 
 template <>
 void
-global_settings::export_as_text( std::ostream &Output, std::string const Key, bool const &Value ) const;
+global_settings::export_as_text( std::ostream &Output, std::string Key, bool const &Value ) const;
 
 extern global_settings& GetGlobalSettings();
 

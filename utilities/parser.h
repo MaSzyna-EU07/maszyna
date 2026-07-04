@@ -28,7 +28,7 @@ class cParser //: public std::stringstream
         buffer_TEXT
     };
     // constructors:
-    cParser(std::string const &Stream, buffertype const Type = buffer_TEXT, std::string Path = "", bool const Loadtraction = true, std::vector<std::string> Parameters = std::vector<std::string>(), bool allowRandom = false );
+    cParser(std::string const &Stream, buffertype Type = buffer_TEXT, std::string Path = "", bool Loadtraction = true, std::vector<std::string> Parameters = std::vector<std::string>(), bool allowRandom = false );
     // destructor:
     virtual ~cParser();
     // methods:
@@ -42,29 +42,24 @@ class cParser //: public std::stringstream
 		    Output_ output;
             *this >> output;
 		    return output; };
-    inline
-    void
+	void
         ignoreToken() {
 		std::string out;
             readToken(out); };
-    inline
-    bool
+	bool
         expectToken( std::string const &Value ) {
 		std::string out;
 		readToken(out);
             return out == Value; };
-    inline
-    bool
+	bool
         eof() {
             return mStream->eof(); };
-    inline
-    bool
+	bool
         ok() {
             return !mStream->fail(); };
     cParser &
-        autoclear( bool const Autoclear );
-    inline
-    bool
+        autoclear( bool Autoclear );
+	bool
         autoclear() const {
             return m_autoclear; }
     bool
@@ -74,8 +69,7 @@ class cParser //: public std::stringstream
 	void substituteParameters(std::string &token, bool ToLower);
 	void skipIncludeBlock();
 	// returns next incoming token, if any, without removing it from the set
-    inline
-    std::string
+	std::string
         peek() const {
             return false == tokens.empty() ? tokens.front() : ""; }
 	// inject string as internal include
@@ -104,7 +98,7 @@ class cParser //: public std::stringstream
 	// methods:
     void readToken(std::string& out, bool ToLower = true, const char *Break = "\n\r\t ;");
 	static std::vector<std::string> readParameters( cParser &Input );
-    std::string readQuotes( char const Quote = '\"' );
+    std::string readQuotes( char Quote = '\"' );
     void skipComment( std::string const &Endmark );
     bool findQuotes( std::string &String );
     bool trimComments( std::string &String );
@@ -131,7 +125,7 @@ class cParser //: public std::stringstream
 
 template <>
 glm::vec3
-cParser::getToken( bool const ToLower, const char *Break );
+cParser::getToken( bool ToLower, const char *Break );
 
 
 template<typename Type_>
@@ -157,4 +151,4 @@ cParser::operator>>( bool &Right );
 
 template<>
 bool
-cParser::getToken<bool>( bool const ToLower, const char *Break );
+cParser::getToken<bool>( bool ToLower, const char *Break );

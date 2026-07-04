@@ -21,15 +21,13 @@ public:
     bool
         init();
     void
-        position( double const Horizontal, double const Vertical );
-    inline
-    glm::dvec2
+        position( double Horizontal, double Vertical );
+	glm::dvec2
         position() const {
             return m_cursorposition; }
     void
-        button( int const Button, int const Action );
-    inline
-    int
+        button( int Button, int Action );
+	int
         button( int const Button ) const {
             return m_buttons[ Button ]; }
 

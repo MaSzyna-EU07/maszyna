@@ -51,7 +51,7 @@ private:
         replace_( geometry_handle const &Geometry ) override;
     // draw() subclass details
     auto
-        draw_( geometry_handle const &Geometry, stream_units const &Units, unsigned int const Streams ) -> std::size_t override;
+        draw_( geometry_handle const &Geometry, stream_units const &Units, unsigned int Streams ) -> std::size_t override;
     // release() subclass details
     void
         release_() override;
@@ -63,7 +63,7 @@ private:
         delete_buffer();
     static
     void
-        bind_streams(stream_units const &Units, unsigned int const Streams , size_t offset = 0);
+        bind_streams(stream_units const &Units, unsigned int Streams , size_t offset = 0);
     static
     void
         release_streams();
@@ -109,7 +109,7 @@ private:
         replace_( geometry_handle const &Geometry ) override;
     // draw() subclass details
     auto
-        draw_( geometry_handle const &Geometry, stream_units const &Units, unsigned int const Streams ) -> std::size_t override;
+        draw_( geometry_handle const &Geometry, stream_units const &Units, unsigned int Streams ) -> std::size_t override;
     // release () subclass details
     void
         release_() override;

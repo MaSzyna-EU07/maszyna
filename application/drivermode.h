@@ -86,18 +86,18 @@ private:
         std::string
             binding_hints( std::pair<user_command, user_command> const &Commands ) const;
         std::pair<user_command, user_command>
-            command_fallback( user_command const Command ) const;
+            command_fallback( user_command Command ) const;
     };
 
 // methods
-    void update_camera( const double Deltatime );
+    void update_camera(double Deltatime );
     // handles vehicle change flag
     void OnKeyDown( int cKey );
     void InOutKey();
     void CabView();
     void ExternalView();
-    void DistantView( bool const Near = false );
-	void set_picking( bool const Picking );
+    void DistantView( bool Near = false );
+	void set_picking( bool Picking );
 
 // members
     drivermode_input m_input;

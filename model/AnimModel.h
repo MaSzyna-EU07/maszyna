@@ -78,8 +78,7 @@ class TAnimContainer : std::enable_shared_from_this<TAnimContainer>
     // wyświetlania
 	TAnimContainer();
     bool Init(TSubModel *pNewSubModel);
-    inline
-    std::string NameGet() {
+	std::string NameGet() {
         return pSubModel ? pSubModel->pName : ""; };
     void SetRotateAnim( glm::vec3 vNewRotateAngles, double fNewRotateSpeed);
     void SetTranslateAnim( glm::dvec3 vNewTranslate, double fNewSpeed);
@@ -88,19 +87,15 @@ class TAnimContainer : std::enable_shared_from_this<TAnimContainer>
     void UpdateModel();
     void UpdateModelIK();
     bool InMovement(); // czy w trakcie animacji?
-    inline
-    double AngleGet() {
+	double AngleGet() {
         return vRotateAngles.z; }; // jednak ostatnia, T3D ma inny układ
-    inline
-    glm::dvec3 TransGet() {
+	glm::dvec3 TransGet() {
         return glm::dvec3(-vTranslation.x, vTranslation.z, vTranslation.y); }; // zmiana, bo T3D ma inny układ
-    inline
-    void WillBeAnimated() {
+	void WillBeAnimated() {
         if (pSubModel)
             pSubModel->WillBeAnimated(); };
     void EventAssign(basic_event *ev);
-    inline
-    basic_event * Event() {
+	basic_event * Event() {
         return evDone; };
 };
 
@@ -120,27 +115,23 @@ public:
     bool Load(cParser *parser, bool ter = false);
 	std::shared_ptr<TAnimContainer> AddContainer(std::string const &Name);
 	std::shared_ptr<TAnimContainer> GetContainer(std::string const &Name = "");
-	void LightSet( int const n, float const v );
-    void SkinSet( int const Index, material_handle const Material );
-	std::optional<std::tuple<float, float, std::optional<glm::vec3> > > LightGet( int const n );
+	void LightSet( int n, float v );
+    void SkinSet( int Index, material_handle Material );
+	std::optional<std::tuple<float, float, std::optional<glm::vec3> > > LightGet( int n );
     int TerrainCount();
     TSubModel * TerrainSquare(int n);
     int Flags();
 	void on_season_update();
-    inline
-    material_data const *
+	material_data const *
         Material() const {
             return &m_materialdata; }
-    inline
-    TModel3d *
+	TModel3d *
         Model() const {
             return pModel; }
-    inline
-    void
+	void
         Angles( glm::vec3 const &Angles ) {
             vAngle = Angles; }
-    inline
-    glm::vec3
+	glm::vec3
         Angles() const {
             return vAngle; }
     // per-axis scale, applied between rotation and the submodel-local transform chain.
@@ -148,19 +139,16 @@ public:
     // optional `scale <factor>` / `scale <x> <y> <z>` token inside a `node model` block.
     // Per-axis values let you stretch a model along a single dimension; uniform input
     // (single float) broadcasts to all three axes.
-    inline
-    void
+	void
         Scale( glm::vec3 const &Factor ) {
             m_scale = glm::vec3(
                 Factor.x > 0.0f ? Factor.x : 1.0f,
                 Factor.y > 0.0f ? Factor.y : 1.0f,
                 Factor.z > 0.0f ? Factor.z : 1.0f ); }
-    inline
-    void
+	void
         Scale( float const Factor ) {
             Scale( glm::vec3( Factor ) ); }
-    inline
-    glm::vec3 const &
+	glm::vec3 const &
         Scale() const {
             return m_scale; }
 // members
@@ -172,7 +160,7 @@ public:
 public:
 // methods
     void RaPrepare(); // ustawienie animacji egzemplarza na wzorcu
-    void RaAnimate( unsigned int const Framestamp ); // przeliczenie animacji egzemplarza
+    void RaAnimate( unsigned int Framestamp ); // przeliczenie animacji egzemplarza
 
     // radius() subclass details, calculates node's bounding radius
     float radius_();

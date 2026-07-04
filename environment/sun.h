@@ -28,13 +28,13 @@ public:
     // returns current intensity of the sun
 	float getIntensity();
     // sets current time, overriding one acquired from the system clock
-    void setTime( int const Hour, int const Minute, int const Second );
+    void setTime( int Hour, int Minute, int Second );
 	// sets current geographic location
-	void setLocation( float const Longitude, float const Latitude );
+	void setLocation( float Longitude, float Latitude );
 	// sets ambient temperature in degrees C.
-	void setTemperature( float const Temperature );
+	void setTemperature( float Temperature );
 	// sets surface pressure in milibars
-	void setPressure( float const Pressure );
+	void setPressure( float Pressure );
 
 // constructors:
 	cSun();

@@ -128,7 +128,7 @@ protected:
     };
 // methods
     template <class TableType_>
-    void init_targets( TableType_ &Repository, std::string const &Targettype, bool const Logerrors = true );
+    void init_targets( TableType_ &Repository, std::string const &Targettype, bool Logerrors = true );
     // returns true if provided token is a an event desription keyword, false otherwise
     static bool is_keyword( std::string const &Token );
 
@@ -648,7 +648,7 @@ public:
         queue( TEventLauncher *Launcher );
     // inserts in the event query events assigned to event launchers capable of receiving specified radio message sent from specified location
     void
-        queue_receivers( radio_message const Message, glm::dvec3 const &Location );
+        queue_receivers( radio_message Message, glm::dvec3 const &Location );
     // legacy method, updates event queues
     void
         update();
@@ -656,16 +656,14 @@ public:
     // TBD, TODO: return handle to the event
     bool
         insert( basic_event *Event );
-    inline
-    bool
+	bool
         insert( TEventLauncher *Launcher ) {
             return Launcher->IsRadioActivated() ? m_radiodrivenlaunchers.insert(Launcher) : m_inputdrivenlaunchers.insert(Launcher); }
-    inline void purge (TEventLauncher *Launcher) {
+	void purge (TEventLauncher *Launcher) {
 		m_radiodrivenlaunchers.purge(Launcher);
 		m_inputdrivenlaunchers.purge(Launcher); }
     // returns first event in the queue
-    inline
-    basic_event *
+	basic_event *
         begin() {
             return QueryRootEvent; }
 
@@ -677,7 +675,7 @@ public:
     // legacy method, returns pointer to specified event, or null
     basic_event *
         FindEvent( std::string const &Name );
-	inline TEventLauncher* FindEventlauncher(std::string const &Name) {
+	TEventLauncher * FindEventlauncher(std::string const &Name) {
 		const auto ptr = m_inputdrivenlaunchers.find(Name);
 		return ptr ? ptr : m_radiodrivenlaunchers.find(Name);
 	}

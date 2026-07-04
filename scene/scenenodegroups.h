@@ -42,17 +42,17 @@ public:
         handle() const;
     // places provided node in specified group
     void
-        insert( group_handle const Group, basic_node *Node );
+        insert( group_handle Group, basic_node *Node );
     // places provided event in specified group
     void
-        insert( group_handle const Group, basic_event *Event );
+        insert( group_handle Group, basic_event *Event );
     // grants direct access to specified group
     basic_group &
         group( group_handle const Group ) {
             return m_groupmap[ Group ]; }
     // sends basic content of the class in legacy (text) format to provided stream
     void
-        export_as_text( std::ostream &Output, bool const Dirty ) const;
+        export_as_text( std::ostream &Output, bool Dirty ) const;
 
 private:
 // types

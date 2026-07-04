@@ -13,7 +13,7 @@ public:
 
 
     static UID random() {
-        static thread_local std::mt19937_64 gen(std::random_device{}());
+		thread_local std::mt19937_64 gen(std::random_device{}());
         UID u;
 		const uint64_t a = gen();
 		const uint64_t b = gen();

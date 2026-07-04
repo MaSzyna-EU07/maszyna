@@ -19,11 +19,9 @@ public:
 // constructors
     opengl_camera() = default;
 // methods:
-    inline
-    void
+	void
         update_frustum() { update_frustum( m_projection, m_modelview ); }
-    inline
-    void
+	void
         update_frustum(glm::mat4 frustumtest_proj) {
             update_frustum(frustumtest_proj, m_modelview); }
     void
@@ -32,26 +30,19 @@ public:
         visible( scene::bounding_area const &Area ) const;
     bool
         visible( TDynamicObject const *Dynamic ) const;
-    inline
-    glm::dvec3 const &
+	glm::dvec3 const &
         position() const { return m_position; }
-    inline
-    glm::dvec3 &
+	glm::dvec3 &
         position() { return m_position; }
-    inline
-    glm::mat4 const &
+	glm::mat4 const &
         projection() const { return m_projection; }
-    inline
-    glm::mat4 &
+	glm::mat4 &
         projection() { return m_projection; }
-    inline
-    glm::mat4 const &
+	glm::mat4 const &
         modelview() const { return m_modelview; }
-    inline
-    glm::mat4 &
+	glm::mat4 &
         modelview() { return m_modelview; }
-    inline
-    std::vector<glm::vec4> &
+	std::vector<glm::vec4> &
         frustum_points() { return m_frustumpoints; }
     // transforms provided set of clip space points to world space
     template <class Iterator_>

@@ -1027,7 +1027,7 @@ struct TPowerParameters
 			TPowerType PowerType;
 		};
 	};
-	inline TPowerParameters()
+	TPowerParameters()
 	{
 		MaxVoltage = 0.0;
 		MaxCurrent = 0.0;
@@ -1236,11 +1236,11 @@ struct TCoupling
 	bool Render = false; /*ABu: czy rysowac jak zaczepiony sprzeg*/
 	std::string control_type; // abstraction of control coupling interface and communication standard
 
-	inline bool has_adapter() const
+	bool has_adapter() const
 	{
 		return adapter_type != TCouplerType::NoCoupler;
 	}
-	inline TCouplerType const type() const
+	TCouplerType const type() const
 	{
 		return adapter_type == TCouplerType::NoCoupler ? CouplerType : adapter_type;
 	}
@@ -2090,7 +2090,7 @@ class TMoverParameters
 	int CabActive = 0; // numer kabiny, z której jest sterowanie: 1 lub -1; w przeciwnym razie brak sterowania - rozrzad
 	int CabOccupied = 0; // numer kabiny, w ktorej jest obsada (zwykle jedna na skład) // TODO: move to TController
 	bool CabMaster = false; // czy pojazd jest nadrzędny w składzie
-	inline bool IsCabMaster()
+	bool IsCabMaster()
 	{
 		return CabActive == CabOccupied && CabMaster;
 	} // czy aktualna kabina jest na pewno tą, z której można sterować
@@ -2293,12 +2293,12 @@ class TMoverParameters
 	bool Attach(int ConnectNo, int ConnectToNr, TMoverParameters *ConnectTo, int CouplingType, bool Enforce = false, bool Audible = true);
 	int DettachStatus(int ConnectNo);
 	bool Dettach(int ConnectNo);
-	void damage_coupler(int const End);
+	void damage_coupler(int End);
 	void Derail(DerailReason Reason);
 	bool DirectionForward();
 	bool DirectionBackward(void); /*! kierunek ruchu*/
 	bool EIMDirectionChangeAllow(void) const;
-	inline double IsVehicleEIMBrakingFactor()
+	double IsVehicleEIMBrakingFactor()
 	{
 		return DynamicBrakeFlag && ResistorsFlag ? 0.0 : eimv[eimv_Ipoj] < 0 ? -1.0 : 1.0;
 	}
@@ -2307,19 +2307,19 @@ class TMoverParameters
 	bool IncBrakeLevel(); // wersja na użytek AI
 	bool DecBrakeLevel();
 	bool ChangeCab(int direction);
-	bool CurrentSwitch(bool const State);
+	bool CurrentSwitch(bool State);
 	bool IsMotorOverloadRelayHighThresholdOn() const;
 	void UpdateBatteryVoltage(double dt);
 	double ComputeMovement(double dt, double dt1, const TTrackShape &Shape, TTrackParam &Track, TTractionParam &ElectricTraction, TLocation const &NewLoc,
 	                       TRotation const &NewRot); // oblicza przesuniecie pojazdu
 	double FastComputeMovement(double dt, const TTrackShape &Shape, TTrackParam &Track, TLocation const &NewLoc, TRotation const &NewRot); // oblicza przesuniecie pojazdu - wersja zoptymalizowana
-	void compute_movement_(double const Deltatime);
+	void compute_movement_(double Deltatime);
 	double ShowEngineRotation(int VehN);
 
 	// Q *******************************************************************************************
-	double GetTrainsetVoltage(int const Coupling = heating | highvoltage) const;
+	double GetTrainsetVoltage(int Coupling = heating | highvoltage) const;
 	double GetTrainsetHighVoltage() const;
-	bool switch_physics(bool const State);
+	bool switch_physics(bool State);
 	double LocalBrakeRatio(void);
 	double ManualBrakeRatio(void);
 	double PipeRatio(void); /*ile napelniac*/
@@ -2330,16 +2330,16 @@ class TMoverParameters
 	double EngineMaxRPM() const;
 
 	/*! przesylanie komend sterujacych*/
-	bool SendCtrlToNext(std::string const CtrlCommand, double const ctrlvalue, double const dir, int const Couplertype = control);
-	bool SetInternalCommand(std::string NewCommand, double NewValue1, double NewValue2, int const Couplertype = control);
+	bool SendCtrlToNext(std::string CtrlCommand, double ctrlvalue, double dir, int Couplertype = control);
+	bool SetInternalCommand(std::string NewCommand, double NewValue1, double NewValue2, int Couplertype = control);
 	double GetExternalCommand(std::string &Command);
-	bool RunCommand(std::string Command, double CValue1, double CValue2, int const Couplertype = control);
+	bool RunCommand(std::string Command, double CValue1, double CValue2, int Couplertype = control);
 	bool RunInternalCommand();
 	void PutCommand(std::string NewCommand, double NewValue1, double NewValue2, const TLocation &NewLocation);
-	bool CabActivisation(bool const Enforce = false);
-	bool CabDeactivisation(bool const Enforce = false);
-	bool CabActivisationAuto(bool const Enforce = false);
-	bool CabDeactivisationAuto(bool const Enforce = false);
+	bool CabActivisation(bool Enforce = false);
+	bool CabDeactivisation(bool Enforce = false);
+	bool CabActivisationAuto(bool Enforce = false);
+	bool CabDeactivisationAuto(bool Enforce = false);
 
 	/*! funkcje zwiekszajace/zmniejszajace nastawniki*/
 	/*! glowny nastawnik:*/
@@ -2360,16 +2360,16 @@ class TMoverParameters
 
 	bool AddPulseForce(int Multipler); /*dla drezyny*/
 
-	bool SandboxManual(bool const State, range_t const Notify = range_t::consist); /*wlacza/wylacza reczne sypanie piasku*/
-	bool SandboxAuto(bool const State, range_t const Notify = range_t::consist); /*wlacza/wylacza automatyczne sypanie piasku*/
-	bool Sandbox(bool const State, range_t const Notify = range_t::consist); /*wlacza/wylacza sypanie piasku*/
-	bool SandboxAutoAllow(bool const State); /*wlacza/wylacza zezwolenie na automatyczne sypanie piasku*/
+	bool SandboxManual(bool State, range_t Notify = range_t::consist); /*wlacza/wylacza reczne sypanie piasku*/
+	bool SandboxAuto(bool State, range_t Notify = range_t::consist); /*wlacza/wylacza automatyczne sypanie piasku*/
+	bool Sandbox(bool State, range_t Notify = range_t::consist); /*wlacza/wylacza sypanie piasku*/
+	bool SandboxAutoAllow(bool State); /*wlacza/wylacza zezwolenie na automatyczne sypanie piasku*/
 
 	/*! zbijanie czuwaka/SHP*/
 	void SecuritySystemReset(void);
 	void SecuritySystemCheck(double dt);
 
-	bool BatterySwitch(bool State, range_t const Notify = range_t::consist);
+	bool BatterySwitch(bool State, range_t Notify = range_t::consist);
 	bool EpFuseSwitch(bool State);
 	bool SpringBrakeActivate(bool State);
 	bool SpringBrakeShutOff(bool State);
@@ -2378,20 +2378,20 @@ class TMoverParameters
 	/*! stopnie hamowania - hamulec zasadniczy*/
 	bool IncBrakeLevelOld(void);
 	bool DecBrakeLevelOld(void);
-	bool IncLocalBrakeLevel(float const CtrlSpeed);
-	bool DecLocalBrakeLevel(float const CtrlSpeed);
+	bool IncLocalBrakeLevel(float CtrlSpeed);
+	bool DecLocalBrakeLevel(float CtrlSpeed);
 	/*! ABu 010205: - skrajne polozenia ham. pomocniczego*/
 	bool IncManualBrakeLevel(int CtrlSpeed);
 	bool DecManualBrakeLevel(int CtrlSpeed);
 	/*! oddzielny nastawnik hamulca elektrodynamicznego (gdy SplitEDPneumaticBrake)*/
-	bool IncDynamicBrakeLevel(float const CtrlSpeed);
-	bool DecDynamicBrakeLevel(float const CtrlSpeed);
+	bool IncDynamicBrakeLevel(float CtrlSpeed);
+	bool DecDynamicBrakeLevel(float CtrlSpeed);
 	bool DynamicBrakeLevelSet(double Position);
 	double DynamicBrakeRatio(void) const;
 	bool DynamicBrakeAvailable(void) const; /*czy ED dostepny w aktualnym oknie predkosci Vh0..Vh1*/
 	bool DynamicBrakeSwitch(bool Switch);
 	bool RadiostopSwitch(bool Switch);
-	bool AlarmChainSwitch(bool const State);
+	bool AlarmChainSwitch(bool State);
 	bool AntiSlippingBrake(void);
 	bool BrakeReleaser(int state);
 	bool UniversalBrakeButton(int button, int state); /*uniwersalny przycisk hamulca*/
@@ -2423,54 +2423,54 @@ class TMoverParameters
 	double BrakeForceR(double ratio, double velocity);
 	double BrakeForceP(double press, double velocity);
 	double BrakeForce(const TTrackParam &Track);
-	double CouplerForce(int const End, double dt);
-	void CollisionDetect(int const End, double const dt);
+	double CouplerForce(int End, double dt);
+	void CollisionDetect(int End, double dt);
 	/*obrot kol uwzgledniajacy poslizg*/
 	double ComputeRotatingWheel(double WForce, double dt, double n) const;
 
 	/*--funkcje dla lokomotyw*/
-	bool WaterPumpBreakerSwitch(bool State, range_t const Notify = range_t::consist); // water pump breaker state toggle
-	bool WaterPumpSwitch(bool State, range_t const Notify = range_t::consist); // water pump state toggle
-	bool WaterPumpSwitchOff(bool State, range_t const Notify = range_t::consist); // water pump state toggle
-	bool WaterHeaterBreakerSwitch(bool State, range_t const Notify = range_t::consist); // water heater breaker state toggle
-	bool WaterHeaterSwitch(bool State, range_t const Notify = range_t::consist); // water heater state toggle
-	bool WaterCircuitsLinkSwitch(bool State, range_t const Notify = range_t::consist); // water circuits link state toggle
-	bool FuelPumpSwitch(bool State, range_t const Notify = range_t::consist); // fuel pump state toggle
-	bool FuelPumpSwitchOff(bool State, range_t const Notify = range_t::consist); // fuel pump state toggle
-	bool OilPumpSwitch(bool State, range_t const Notify = range_t::consist); // oil pump state toggle
-	bool OilPumpSwitchOff(bool State, range_t const Notify = range_t::consist); // oil pump state toggle
-	bool MotorBlowersSwitch(bool State, end const Side, range_t const Notify = range_t::consist); // traction motor fan state toggle
-	bool MotorBlowersSwitchOff(bool State, end const Side, range_t const Notify = range_t::consist); // traction motor fan state toggle
-	bool CompartmentLightsSwitch(bool State, range_t const Notify = range_t::consist); // compartment lights state toggle
-	bool CompartmentLightsSwitchOff(bool State, range_t const Notify = range_t::consist); // compartment lights state toggle
-	bool MainSwitch(bool const State, range_t const Notify = range_t::consist); /*! wylacznik glowny*/
-	void MainSwitch_(bool const State);
+	bool WaterPumpBreakerSwitch(bool State, range_t Notify = range_t::consist); // water pump breaker state toggle
+	bool WaterPumpSwitch(bool State, range_t Notify = range_t::consist); // water pump state toggle
+	bool WaterPumpSwitchOff(bool State, range_t Notify = range_t::consist); // water pump state toggle
+	bool WaterHeaterBreakerSwitch(bool State, range_t Notify = range_t::consist); // water heater breaker state toggle
+	bool WaterHeaterSwitch(bool State, range_t Notify = range_t::consist); // water heater state toggle
+	bool WaterCircuitsLinkSwitch(bool State, range_t Notify = range_t::consist); // water circuits link state toggle
+	bool FuelPumpSwitch(bool State, range_t Notify = range_t::consist); // fuel pump state toggle
+	bool FuelPumpSwitchOff(bool State, range_t Notify = range_t::consist); // fuel pump state toggle
+	bool OilPumpSwitch(bool State, range_t Notify = range_t::consist); // oil pump state toggle
+	bool OilPumpSwitchOff(bool State, range_t Notify = range_t::consist); // oil pump state toggle
+	bool MotorBlowersSwitch(bool State, end Side, range_t Notify = range_t::consist); // traction motor fan state toggle
+	bool MotorBlowersSwitchOff(bool State, end Side, range_t Notify = range_t::consist); // traction motor fan state toggle
+	bool CompartmentLightsSwitch(bool State, range_t Notify = range_t::consist); // compartment lights state toggle
+	bool CompartmentLightsSwitchOff(bool State, range_t Notify = range_t::consist); // compartment lights state toggle
+	bool MainSwitch(bool State, range_t Notify = range_t::consist); /*! wylacznik glowny*/
+	void MainSwitch_(bool State);
 	bool MainSwitchCheck() const; // checks conditions for closing the line breaker
-	bool ConverterSwitch(bool State, range_t const Notify = range_t::consist); /*! wl/wyl przetwornicy*/
-	bool CompressorSwitch(bool State, range_t const Notify = range_t::consist); /*! wl/wyl sprezarki*/
-	bool ChangeCompressorPreset(int const Change, range_t const Notify = range_t::consist);
-	bool HeatingSwitch(bool const State, range_t const Notify = range_t::consist);
-	void HeatingSwitch_(bool const State);
+	bool ConverterSwitch(bool State, range_t Notify = range_t::consist); /*! wl/wyl przetwornicy*/
+	bool CompressorSwitch(bool State, range_t Notify = range_t::consist); /*! wl/wyl sprezarki*/
+	bool ChangeCompressorPreset(int Change, range_t Notify = range_t::consist);
+	bool HeatingSwitch(bool State, range_t Notify = range_t::consist);
+	void HeatingSwitch_(bool State);
 	double EnginePowerSourceVoltage() const; // returns voltage of defined main engine power source
 
 	/*-funkcje typowe dla lokomotywy elektrycznej*/
-	void LowVoltagePowerCheck(double const Deltatime);
-	void MainsCheck(double const Deltatime);
-	void PowerCouplersCheck(double const Deltatime, coupling const Coupling);
-	void ConverterCheck(double const Timestep); // przetwornica
-	void HeatingCheck(double const Timestep);
-	void WaterPumpCheck(double const Timestep);
-	void WaterHeaterCheck(double const Timestep);
-	void FuelPumpCheck(double const Timestep);
-	void OilPumpCheck(double const Timestep);
-	void MotorBlowersCheck(double const Timestep);
-	void PantographsCheck(double const Timestep);
-	void LightsCheck(double const Timestep);
-	bool FuseOn(range_t const Notify = range_t::consist); // bezpiecznik nadamiary
+	void LowVoltagePowerCheck(double Deltatime);
+	void MainsCheck(double Deltatime);
+	void PowerCouplersCheck(double Deltatime, coupling Coupling);
+	void ConverterCheck(double Timestep); // przetwornica
+	void HeatingCheck(double Timestep);
+	void WaterPumpCheck(double Timestep);
+	void WaterHeaterCheck(double Timestep);
+	void FuelPumpCheck(double Timestep);
+	void OilPumpCheck(double Timestep);
+	void MotorBlowersCheck(double Timestep);
+	void PantographsCheck(double Timestep);
+	void LightsCheck(double Timestep);
+	bool FuseOn(range_t Notify = range_t::consist); // bezpiecznik nadamiary
 	bool FuseFlagCheck(void) const; // sprawdzanie flagi nadmiarowego
 	void FuseOff(void); // wylaczenie nadmiarowego
-	bool UniversalResetButton(int const Button, range_t const Notify = range_t::consist);
-	bool RelayReset(int const Relays, range_t const Notify = range_t::consist); // resets specified relays
+	bool UniversalResetButton(int Button, range_t Notify = range_t::consist);
+	bool RelayReset(int Relays, range_t Notify = range_t::consist); // resets specified relays
 	double ShowCurrent(int AmpN) const; // pokazuje bezwgl. wartosc pradu na wybranym amperomierzu
 	double ShowCurrentP(int AmpN) const; // pokazuje bezwgl. wartosc pradu w wybranym pojezdzie                                                             //Q 20160722
 
@@ -2484,16 +2484,16 @@ class TMoverParameters
 
 	bool CutOffEngine(void); // odlaczenie udszkodzonych silnikow
 	/*funkcje automatycznego rozruchu np EN57*/
-	bool MaxCurrentSwitch(bool State, range_t const Notify = range_t::consist); // przelacznik pradu wysokiego rozruchu
+	bool MaxCurrentSwitch(bool State, range_t Notify = range_t::consist); // przelacznik pradu wysokiego rozruchu
 	bool MinCurrentSwitch(bool State); // przelacznik pradu automatycznego rozruchu
 	bool AutoRelaySwitch(bool State); // przelacznik automatycznego rozruchu
 	bool AutoRelayCheck(); // symulacja automatycznego rozruchu
 	bool MotorConnectorsCheck();
 	bool ResistorsFlagCheck(void) const; // sprawdzenie kontrolki oporow rozruchowych NBMX
 
-	bool OperatePantographsValve(operation_t const State, range_t const Notify = range_t::consist);
-	bool OperatePantographValve(end const End, operation_t const State, range_t const Notify = range_t::consist);
-	bool DropAllPantographs(bool const State, range_t const Notify = range_t::consist);
+	bool OperatePantographsValve(operation_t State, range_t Notify = range_t::consist);
+	bool OperatePantographValve(end End, operation_t State, range_t Notify = range_t::consist);
+	bool DropAllPantographs(bool State, range_t Notify = range_t::consist);
 
 	void CheckEIMIC(double dt); // sprawdzenie i zmiana nastawy zintegrowanego nastawnika jazdy/hamowania
 	void CheckSpeedCtrl(double dt);
@@ -2510,23 +2510,23 @@ class TMoverParameters
 	double dizel_fillcheck(int mcp, double dt);
 	double dizel_Momentum(double dizel_fill, double n, double dt);
 	double dizel_MomentumRetarder(double n, double dt); // moment hamowania retardera
-	void dizel_HeatSet(float const Value);
-	void dizel_Heat(double const dt);
+	void dizel_HeatSet(float Value);
+	void dizel_Heat(double dt);
 	bool dizel_StartupCheck();
 	bool dizel_Update(double dt);
 
 	/* funckje dla wagonow*/
-	bool AssignLoad(std::string const &Name, float const Amount = 0.f);
+	bool AssignLoad(std::string const &Name, float Amount = 0.f);
 	bool LoadingDone(double LSpeed, std::string const &Loadname);
-	bool PermitDoors(side const Door, bool const State = true, range_t const Notify = range_t::consist);
-	void PermitDoors_(side const Door, bool const State = true);
-	bool ChangeDoorPermitPreset(int const Change, range_t const Notify = range_t::consist);
-	bool PermitDoorStep(bool const State, range_t const Notify = range_t::consist);
-	bool ChangeDoorControlMode(bool const State, range_t const Notify = range_t::consist);
-	bool OperateDoors(side const Door, bool const State, range_t const Notify = range_t::consist);
-	bool LockDoors(bool const State, range_t const Notify = range_t::consist);
-	bool signal_departure(bool const State, range_t const Notify = range_t::consist); // toggles departure warning
-	void update_doors(double const Deltatime); // door controller update
+	bool PermitDoors(side Door, bool State = true, range_t Notify = range_t::consist);
+	void PermitDoors_(side Door, bool State = true);
+	bool ChangeDoorPermitPreset(int Change, range_t Notify = range_t::consist);
+	bool PermitDoorStep(bool State, range_t Notify = range_t::consist);
+	bool ChangeDoorControlMode(bool State, range_t Notify = range_t::consist);
+	bool OperateDoors(side Door, bool State, range_t Notify = range_t::consist);
+	bool LockDoors(bool State, range_t Notify = range_t::consist);
+	bool signal_departure(bool State, range_t Notify = range_t::consist); // toggles departure warning
+	void update_doors(double Deltatime); // door controller update
 
 	/* funkcje dla samochodow*/
 	bool ChangeOffsetH(double DeltaOffset);
@@ -2543,7 +2543,7 @@ class TMoverParameters
 	void LoadFIZ_Wheels(std::string const &line);
 	void LoadFIZ_Brake(std::string const &line);
 	void LoadFIZ_Doors(std::string const &line);
-	void LoadFIZ_BuffCoupl(std::string const &line, int const Index);
+	void LoadFIZ_BuffCoupl(std::string const &line, int Index);
 	void LoadFIZ_TurboPos(std::string const &line);
 	void LoadFIZ_Cntrl(std::string const &line);
 	void LoadFIZ_Blending(std::string const &line);
@@ -2568,7 +2568,7 @@ class TMoverParameters
 	void LoadFIZ_LightsList(std::string const &Input);
 	void LoadFIZ_DimmerList(std::string const &Input);
 	void LoadFIZ_CompressorList(std::string const &Input);
-	void LoadFIZ_PowerParamsDecode(TPowerParameters &Powerparameters, std::string const Prefix, std::string const &Input);
+	void LoadFIZ_PowerParamsDecode(TPowerParameters &Powerparameters, std::string Prefix, std::string const &Input);
 	TPowerType LoadFIZ_PowerDecode(std::string const &Power);
 	TPowerSource LoadFIZ_SourceDecode(std::string const &Source);
 	TEngineType LoadFIZ_EngineDecode(std::string const &Engine);

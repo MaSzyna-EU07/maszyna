@@ -19,39 +19,31 @@ public:
     opengl_color() = default;
 
 // methods:
-    inline
-    void
+	void
         color3( glm::vec3 const &Color ) {
             return color4( glm::vec4{ Color, 1.f } ); }
-    inline
-    void
+	void
         color3( float const Red, float const Green, float const Blue ) {
             return color3( glm::vec3 { Red, Green, Blue } ); }
-    inline
-    void
+	void
         color3( float const *Value ) {
             return color3( glm::make_vec3( Value ) ); }
-    inline
-    void
+	void
         color4( glm::vec4 const &Color ) {
             if( ( Color != m_color ) || ( false == Global.bUseVBO ) ) {
                 m_color = Color;
                 ::glColor4fv( glm::value_ptr( m_color ) ); } }
-    inline
-    void
+	void
         color4( float const Red, float const Green, float const Blue, float const Alpha ) {
             return color4( glm::vec4{ Red, Green, Blue, Alpha } ); }
-    inline
-    void
+	void
         color4( float const *Value ) {
             return color4( glm::make_vec4( Value ) );
     }
-    inline
-    glm::vec4 const &
+	glm::vec4 const &
         data() const {
             return m_color; }
-    inline
-    float const *
+	float const *
         data_array() const {
             return glm::value_ptr( m_color ); }
 

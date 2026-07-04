@@ -24,17 +24,17 @@ public:
 // methods
     TTrack * SetCurrentTrack(TTrack *pTrack, int end);
     bool Move(double fDistance, bool bPrimary);
-    inline TTrack * GetTrack() const {
+	TTrack * GetTrack() const {
         return pCurrentTrack; };
     // przechyłka policzona przy ustalaniu pozycji
-    inline double GetRoll() {
+	double GetRoll() {
         return vAngles.x; };
     //{return pCurrentSegment->GetRoll(fCurrentDistance)*fDirection;}; //zamiast liczyć można pobrać
     // zwrot na torze
-    inline double GetDirection() const {
+	double GetDirection() const {
         return fDirection; };
     // ABu-030403
-    inline double GetTranslation() const {
+	double GetTranslation() const {
         return fCurrentDistance; };
     // inline double GetLength(vector3 p1, vector3 cp1, vector3 cp2, vector3 p2)
     //{ return pCurrentSegment->ComputeLength(p1,cp1,cp2,p2); };

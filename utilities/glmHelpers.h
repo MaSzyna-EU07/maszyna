@@ -12,7 +12,7 @@ inline glm::dmat4 BasisChange(glm::dvec3 v, glm::dvec3 n)
 	return BasisChange(u, v, n);
 }
 
-template <typename T> inline glm::vec<3, T> RotateY(const glm::vec<3, T> &v, T angle)
+template <typename T> glm::vec<3, T> RotateY(const glm::vec<3, T> &v, T angle)
 {
 	T s = std::sin(angle);
 	T c = std::cos(angle);

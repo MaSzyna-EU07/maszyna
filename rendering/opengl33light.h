@@ -17,7 +17,7 @@ struct opengl33_light : public basic_light {
 
 	float factor;
 
-	void apply_intensity(float const Factor = 1.0f);
+	void apply_intensity(float Factor = 1.0f);
 	void apply_angle();
 
 	opengl33_light &operator=(basic_light const &Right) {

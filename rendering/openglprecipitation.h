@@ -22,11 +22,11 @@ public:
     void
         update();
 	void
-        render( GLint const Textureunit );
+        render( GLint Textureunit );
 
 private:
 // methods
-    void create( int const Tesselation );
+    void create( int Tesselation );
 // members
     std::vector<glm::vec3> m_vertices;
     std::vector<glm::vec2> m_uvs;

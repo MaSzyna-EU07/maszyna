@@ -4920,7 +4920,7 @@ void opengl33_renderer::Update_Pick_Node()
 	}
 }
 
-void opengl33_renderer::Pick_Control_Callback(std::function<void(TSubModel const *, const glm::vec2 pos)> callback)
+void opengl33_renderer::Pick_Control_Callback(std::function<void(TSubModel const *, glm::vec2 pos)> callback)
 {
   if (!Global.render_cab) {
     callback(nullptr, glm::vec2());

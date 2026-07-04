@@ -5,16 +5,16 @@
 
 class CSkyDome {
 public:
-    CSkyDome( int const Tesselation = 54 );
+    CSkyDome( int Tesselation = 54 );
 	~CSkyDome();
 	void Generate();
 	void RebuildColors();
 
 	bool SetSunPosition( glm::vec3 const &Direction );
 	
-	void SetTurbidity( const float Turbidity = 5.0f );
-	void SetExposure( const bool Linearexposure, const float Expfactor );		
-    void SetOvercastFactor( const float Overcast = 0.0f );
+	void SetTurbidity(float Turbidity = 5.0f );
+	void SetExposure(bool Linearexposure, float Expfactor );		
+    void SetOvercastFactor(float Overcast = 0.0f );
 
 	// update skydome
     void Update( glm::vec3 const &Sun );
@@ -59,9 +59,9 @@ private:
     static float m_zenithymatrix[ 3 ][ 4 ];
 	
 	// coloring
-	void GetPerez( float *Perez, float Distribution[ 5 ][ 2 ], const float Turbidity );
-	float GetZenith( float Zenithmatrix[ 3 ][ 4 ], const float Theta, const float Turbidity );		
-	float PerezFunctionO1( float Perezcoeffs[ 5 ], const float Thetasun, const float Zenithval );
-	float PerezFunctionO2( float Perezcoeffs[ 5 ], const float Icostheta, const float Gamma, const float Cosgamma2, const float Zenithval );
+	void GetPerez( float *Perez, float Distribution[ 5 ][ 2 ], float Turbidity );
+	float GetZenith( float Zenithmatrix[ 3 ][ 4 ], float Theta, float Turbidity );		
+	float PerezFunctionO1( float Perezcoeffs[ 5 ], float Thetasun, float Zenithval );
+	float PerezFunctionO2( float Perezcoeffs[ 5 ], float Icostheta, float Gamma, float Cosgamma2, float Zenithval );
 };
 

@@ -56,7 +56,7 @@ class TTraction;
 class TSwitchExtension
 { // dodatkowe dane do toru, który jest zwrotnicą
   public:
-    TSwitchExtension(TTrack *owner, int const what);
+    TSwitchExtension(TTrack *owner, int what);
     ~TSwitchExtension();
     std::shared_ptr<TSegment> Segments[6]; // dwa tory od punktu 1, pozosta³e dwa od 2? Ra 140101: 6 po³¹czeñ dla skrzy¿owañ
     TTrack *pNexts[2]; // tory do³¹czone do punktów 2 i 4
@@ -112,24 +112,19 @@ public:
     static TIsolated * Find(const std::string &n); // znalezienie obiektu albo utworzenie nowego
     void AssignEvents();
     void Modify(int i, TDynamicObject *o); // dodanie lub odjęcie osi
-    inline
-    bool
+	bool
         Busy() {
             return iAxles > 0; };
-    inline
-    static TIsolated *
+	static TIsolated *
         Root() {
             return pRoot; };
-    inline
-    TIsolated *
+	TIsolated *
         Next() {
             return pNext; };
-    inline
-    void
+	void
         parent( TIsolated *Parent ) {
             pParent = Parent; }
-    inline
-    TIsolated *
+	TIsolated *
         parent() const {
             return pParent; }
     // members
@@ -249,39 +244,38 @@ public:
     static bool sort_by_material( TTrack const *Left, TTrack const *Right );
     static TTrack * Create400m(int what, double dx);
     TTrack * NullCreate(int dir);
-    inline bool IsEmpty() {
+	bool IsEmpty() {
         return Dynamics.empty(); };
     void ConnectPrevPrev(TTrack *pNewPrev, int typ);
     void ConnectPrevNext(TTrack *pNewPrev, int typ);
     void ConnectNextPrev(TTrack *pNewNext, int typ);
     void ConnectNextNext(TTrack *pNewNext, int typ);
     material_handle copy_adjacent_trackbed_material( TTrack const *Exclude = nullptr );
-    inline double Length() const {
+	double Length() const {
         return Segment->GetLength(); };
-	inline std::shared_ptr<TSegment> CurrentSegment() const {
+	std::shared_ptr<TSegment> CurrentSegment() const {
         return Segment; };
-    inline TTrack *CurrentNext() const {
+	TTrack *CurrentNext() const {
         return trNext; };
-    inline TTrack *CurrentPrev() const {
+	TTrack *CurrentPrev() const {
         return trPrev; };
     TTrack *Connected(int s, double &d) const;
     bool SetConnections(int i);
-    bool Switch(int i, float const t = -1.f, float const d = -1.f);
+    bool Switch(int i, float t = -1.f, float d = -1.f);
     bool SwitchForced(int i, TDynamicObject *o);
     int CrossSegment(int from, int into);
-    inline int GetSwitchState() {
+	int GetSwitchState() {
         return SwitchExtension ? SwitchExtension->CurrentIndex : -1; };
     // returns number of different routes possible to take from given point
     // TODO: specify entry point, number of routes for switches can vary
-    inline
-    int
+	int
         RouteCount() const {
         return SwitchExtension != nullptr ? SwitchExtension->iRoads - 1 : 1; }
     void Load(cParser *parser, glm::dvec3 const &pOrigin);
     bool AssignEvents();
     bool AssignForcedEvents(basic_event *NewEventPlus, basic_event *NewEventMinus);
     void QueueEvents( event_sequence const &Events, TDynamicObject const *Owner );
-    void QueueEvents( event_sequence const &Events, TDynamicObject const *Owner, double const Delaylimit );
+    void QueueEvents( event_sequence const &Events, TDynamicObject const *Owner, double Delaylimit );
     bool CheckDynamicObject(TDynamicObject *Dynamic);
     bool AddDynamicObject(TDynamicObject *Dynamic);
     bool RemoveDynamicObject(TDynamicObject *Dynamic);
@@ -300,7 +294,7 @@ public:
 	double ActiveLength();
 
 	void create_geometry( gfx::geometrybank_handle const &Bank ); // wypełnianie VBO
-	void create_map_geometry(std::vector<gfx::basic_vertex> &Bank, const gfx::geometrybank_handle Extra);
+	void create_map_geometry(std::vector<gfx::basic_vertex> &Bank, gfx::geometrybank_handle Extra);
 	void get_map_active_paths(map_colored_paths &handles);
     void get_map_paths_for_state(map_colored_paths &handles, int state);
 	void get_map_future_paths(map_colored_paths &handles);
@@ -325,7 +319,7 @@ public:
     double WidthTotal();
     bool IsGroupable();
 	int TestPoint(const glm::dvec3 *Point);
-    void MovedUp1(float const dh);
+    void MovedUp1(float dh);
     void VelocitySet(float v);
     double VelocityGet();
     float Friction() const;
@@ -352,16 +346,16 @@ private:
     // loads content of specified file and converts it into a vertex array
     static gfx::vertex_array deserialize_profile( std::string const &Profile );
     // provides direct access to vertex data of specified profile
-    static gfx::vertex_array const & track_rail_profile( int const Profile );
+    static gfx::vertex_array const & track_rail_profile( int Profile );
     // returns texture length for specified material
-    float texture_length( material_handle const Material );
+    float texture_length( material_handle Material );
     // creates profile for a part of current path
     void create_switch_trackbed( gfx::vertex_array &Output );
     void create_track_rail_profile( gfx::vertex_array &Right, gfx::vertex_array &Left );
     void create_track_blade_profile( gfx::vertex_array &Right, gfx::vertex_array &Left );
     void create_track_bed_profile( gfx::vertex_array &Output, TTrack const *Previous, TTrack const *Next );
-    void create_road_profile( gfx::vertex_array &Output, bool const Forcetransition = false );
-    void create_road_side_profile( gfx::vertex_array &Right, gfx::vertex_array &Left, gfx::vertex_array const &Road, bool const Forcetransition = false );
+    void create_road_profile( gfx::vertex_array &Output, bool Forcetransition = false );
+    void create_road_side_profile( gfx::vertex_array &Right, gfx::vertex_array &Left, gfx::vertex_array const &Road, bool Forcetransition = false );
     /// <summary>
     /// resolves the sleeper model/skin via the model and material managers, and fills
     /// m_sleeper_local_transforms by walking the active segment(s) at m_sleeper_frequency.

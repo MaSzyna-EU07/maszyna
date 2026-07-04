@@ -21,7 +21,7 @@ public:
 // constructor
     TTractionPowerSource( scene::node_data const &Nodedata );
 // methods
-    void Init(double const u, double const i);
+    void Init(double u, double i);
     bool Load(cParser *parser);
     bool Update(double dt);
     double CurrentGet(double res);
@@ -73,7 +73,7 @@ class powergridsource_table : public basic_table<TTractionPowerSource> {
 public:
     // legacy method, calculates changes in simulation state over specified time
     void
-        update( double const Deltatime );
+        update( double Deltatime );
 };
 
 //---------------------------------------------------------------------------

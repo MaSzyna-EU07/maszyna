@@ -28,10 +28,10 @@ struct basic_vertex {
     {}
 	static basic_vertex convert(world_vertex const &world, glm::dvec3 const &origin);
 	world_vertex to_world(glm::dvec3 const &origin = glm::dvec3(0.)) const;
-	void serialize( std::ostream&, bool const Tangent = false ) const;
-    void deserialize( std::istream&, bool const Tangent = false );
-    void serialize_packed( std::ostream&, bool const Tangent = false ) const;
-    void deserialize_packed( std::istream&, bool const Tangent = false );
+	void serialize( std::ostream&, bool Tangent = false ) const;
+    void deserialize( std::istream&, bool Tangent = false );
+    void serialize_packed( std::ostream&, bool Tangent = false ) const;
+    void deserialize_packed( std::istream&, bool Tangent = false );
 };
 
 struct vertex_userdata{
@@ -65,7 +65,7 @@ using vertex_array = std::vector<basic_vertex>;
 using userdata_array = std::vector<vertex_userdata>;
 using index_array = std::vector<basic_index>;
 
-void calculate_tangents( vertex_array &vertices, index_array const &indices, int const type );
+void calculate_tangents( vertex_array &vertices, index_array const &indices, int type );
 void calculate_indices( index_array &Indices, vertex_array &Vertices, userdata_array &Userdata, float tolerancescale = 1.0f );
 
 // generic geometry bank class, allows storage, update and drawing of geometry chunks
@@ -79,8 +79,8 @@ struct geometry_handle {
                              bank( Bank ),      chunk( Chunk )
     {}
 // methods
-    inline
-    operator std::uint64_t() const {
+
+	operator std::uint64_t() const {
 /*
         return bank << 14 | chunk; }
 */
@@ -110,17 +110,17 @@ public:
 
 // methods:
     // creates a new geometry chunk of specified type from supplied data. returns: handle to the chunk or NULL
-    auto create( vertex_array &Vertices, userdata_array& Userdata, unsigned int const Type ) -> geometry_handle;
+    auto create( vertex_array &Vertices, userdata_array& Userdata, unsigned int Type ) -> geometry_handle;
     // creates a new indexed geometry chunk of specified type from supplied data. returns: handle to the chunk or NULL
-    auto create( index_array &Indices, vertex_array &Vertices, userdata_array& Userdata, unsigned int const Type ) -> geometry_handle;
+    auto create( index_array &Indices, vertex_array &Vertices, userdata_array& Userdata, unsigned int Type ) -> geometry_handle;
     // replaces vertex data of specified chunk with the supplied data, starting from specified offset
-    auto replace( vertex_array &Vertices, userdata_array& Userdata, geometry_handle const &Geometry, std::size_t const Offset = 0 ) -> bool;
+    auto replace( vertex_array &Vertices, userdata_array& Userdata, geometry_handle const &Geometry, std::size_t Offset = 0 ) -> bool;
     // adds supplied vertex data at the end of specified chunk
     auto append( vertex_array &Vertices, userdata_array& Userdata, geometry_handle const &Geometry ) -> bool;
     // draws geometry stored in specified chunk
-    auto draw( geometry_handle const &Geometry, stream_units const &Units, unsigned int const Streams = basic_streams ) -> std::size_t;
+    auto draw( geometry_handle const &Geometry, stream_units const &Units, unsigned int Streams = basic_streams ) -> std::size_t;
     // draws geometry stored in specified chunk N times via glDrawElementsInstanced*
-    auto draw_instanced( geometry_handle const &Geometry, stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams = basic_streams ) -> std::size_t;
+    auto draw_instanced( geometry_handle const &Geometry, stream_units const &Units, std::size_t InstanceCount, unsigned int Streams = basic_streams ) -> std::size_t;
     // draws geometry stored in supplied list of chunks
     template <typename Iterator_>
     auto draw( Iterator_ First, Iterator_ Last, stream_units const &Units, unsigned int const Streams = basic_streams ) ->std::size_t {
@@ -164,11 +164,9 @@ protected:
     using geometrychunk_sequence = std::vector<geometry_chunk>;
 
 // methods
-    inline
-    auto chunk( geometry_handle const Geometry ) -> geometry_chunk & {
+	auto chunk( geometry_handle const Geometry ) -> geometry_chunk & {
             return m_chunks[ Geometry.chunk - 1 ]; }
-    inline
-    auto chunk( geometry_handle const Geometry ) const -> geometry_chunk const & {
+	auto chunk( geometry_handle const Geometry ) const -> geometry_chunk const & {
             return m_chunks[ Geometry.chunk - 1 ]; }
 
 // members:
@@ -181,7 +179,7 @@ private:
     // replace() subclass details
     virtual void replace_( geometry_handle const &Geometry ) = 0;
     // draw() subclass details
-    virtual auto draw_( geometry_handle const &Geometry, stream_units const &Units, unsigned int const Streams ) -> std::size_t = 0;
+    virtual auto draw_( geometry_handle const &Geometry, stream_units const &Units, unsigned int Streams ) -> std::size_t = 0;
     // draw_instanced() subclass details. Default implementation falls back to N regular draws.
     virtual auto draw_instanced_( geometry_handle const &Geometry, stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams ) -> std::size_t {
         std::size_t count { 0 };
@@ -206,18 +204,18 @@ public:
     // registers a new geometry bank. returns: handle to the bank
     auto register_bank(std::unique_ptr<geometry_bank> bank) -> geometrybank_handle;
     // creates a new geometry chunk of specified type from supplied data, in specified bank. returns: handle to the chunk or NULL
-    auto create_chunk( vertex_array &Vertices, userdata_array &Userdata, geometrybank_handle const &Geometry, int const Type ) -> geometry_handle;
+    auto create_chunk( vertex_array &Vertices, userdata_array &Userdata, geometrybank_handle const &Geometry, int Type ) -> geometry_handle;
     // creates a new indexed geometry chunk of specified type from supplied data, in specified bank. returns: handle to the chunk or NULL
-    auto create_chunk( index_array &Indices, vertex_array &Vertices, userdata_array &Userdata, geometrybank_handle const &Geometry, unsigned int const Type ) -> geometry_handle;
+    auto create_chunk( index_array &Indices, vertex_array &Vertices, userdata_array &Userdata, geometrybank_handle const &Geometry, unsigned int Type ) -> geometry_handle;
     // replaces data of specified chunk with the supplied vertex data, starting from specified offset
-    auto replace( vertex_array &Vertices, userdata_array &Userdata, geometry_handle const &Geometry, std::size_t const Offset = 0 ) -> bool;
+    auto replace( vertex_array &Vertices, userdata_array &Userdata, geometry_handle const &Geometry, std::size_t Offset = 0 ) -> bool;
     // adds supplied vertex data at the end of specified chunk
     auto append( vertex_array &Vertices, userdata_array &Userdata, geometry_handle const &Geometry ) -> bool;
     // draws geometry stored in specified chunk
-    void draw( geometry_handle const &Geometry, unsigned int const Streams = basic_streams );
+    void draw( geometry_handle const &Geometry, unsigned int Streams = basic_streams );
     // draws geometry stored in specified chunk InstanceCount times via GPU instancing.
     // The shader reads per-instance modelview matrices from instance_ubo[gl_InstanceID].
-    void draw_instanced( geometry_handle const &Geometry, std::size_t const InstanceCount, unsigned int const Streams = basic_streams );
+    void draw_instanced( geometry_handle const &Geometry, std::size_t InstanceCount, unsigned int Streams = basic_streams );
     template <typename Iterator_>
     void draw( Iterator_ First, Iterator_ Last, unsigned int const Streams = basic_streams ) {
             while( First != Last ) { 
@@ -246,15 +244,12 @@ private:
     stream_units m_units;
 
 // methods
-    inline
-    auto valid( geometry_handle const &Geometry ) const -> bool {
+	auto valid( geometry_handle const &Geometry ) const -> bool {
             return ( ( Geometry.bank != 0 )
                   && ( Geometry.bank <= m_geometrybanks.size() ) ); }
-    inline
-    auto bank( geometry_handle const Geometry ) -> geometrybanktimepointpair_sequence::value_type & {
+	auto bank( geometry_handle const Geometry ) -> geometrybanktimepointpair_sequence::value_type & {
             return m_geometrybanks[ Geometry.bank - 1 ]; }
-    inline
-    auto bank( geometry_handle const Geometry ) const -> geometrybanktimepointpair_sequence::value_type const & {
+	auto bank( geometry_handle const Geometry ) const -> geometrybanktimepointpair_sequence::value_type const & {
             return m_geometrybanks[ Geometry.bank - 1 ]; }
 
 // members:

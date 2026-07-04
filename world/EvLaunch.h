@@ -34,8 +34,7 @@ public:
     bool check_activation();
     // checks conditions associated with the event. returns: true if the conditions are met
     bool check_conditions();
-    inline
-    auto key() const {
+	auto key() const {
         return iKey; }
     bool IsGlobal() const;
     bool IsRadioActivated() const;

@@ -11,7 +11,7 @@ public:
 
 // methods:
     void init();
-    void update( bool const Includephase = false );
+    void update( bool Includephase = false );
 	void render();
 	// returns vector pointing at the sun
 	glm::vec3 getDirection() const;
@@ -22,13 +22,13 @@ public:
     // returns current phase of the moon
     float getPhase() const { return m_phase; }
     // sets current time, overriding one acquired from the system clock
-    void setTime( int const Hour, int const Minute, int const Second );
+    void setTime( int Hour, int Minute, int Second );
 	// sets current geographic location
-	void setLocation( float const Longitude, float const Latitude );
+	void setLocation( float Longitude, float Latitude );
     // sets ambient temperature in degrees C.
-    void setTemperature( float const Temperature );
+    void setTemperature( float Temperature );
     // sets surface pressure in milibars
-    void setPressure( float const Pressure );
+    void setPressure( float Pressure );
 
 // constructors:
 	cMoon();
@@ -50,7 +50,7 @@ protected:
 	void irradiance();
     void phase();
     // helper, normalize values to range 0...1
-    float normalize( const float Value ) const;
+    float normalize(float Value ) const;
 
 // members:
 

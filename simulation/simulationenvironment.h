@@ -32,36 +32,36 @@ public:
     void update();
     void update_precipitation();
     void update_moon();
-    void time( int const Hour = -1, int const Minute = -1, int const Second = -1 );
+    void time( int Hour = -1, int Minute = -1, int Second = -1 );
     // switches between static and dynamic daylight calculation
     void on_daylight_change();
     // calculates current season of the year based on set simulation date
-	void compute_season( int const Yearday );
+	void compute_season( int Yearday );
     // calculates current weather
 	void compute_weather();
     // data access
-    inline auto const &
+	auto const &
         sun() const {
             return m_sun; }
-    inline auto const &
+	auto const &
         moon() const {
             return m_moon; }
-    inline auto const &
+	auto const &
         light_intensity() const {
             return m_lightintensity; }
-    inline auto const &
+	auto const &
         skydome() const {
             return m_skydome; }
-    inline auto &
+	auto &
         skydome() {
             return m_skydome; }
-    inline auto const &
+	auto const &
         precipitation() const {
             return m_precipitation; }
-    inline auto const &
+	auto const &
         wind() const {
             return m_wind.vector; }
-    inline auto const &
+	auto const &
         wind_azimuth() const {
             return m_wind.azimuth; }
 

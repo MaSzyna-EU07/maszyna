@@ -10,17 +10,17 @@ namespace gl
         GLuint id = 0;
 
     public:
-        inline operator GLuint() const
+	    operator GLuint() const
         {
             return id;
         }
 
-        inline operator GLuint* const()
+	    operator GLuint* const()
         {
             return &id;
         }
 
-        inline operator const GLuint* const() const
+	    operator const GLuint* const() const
         {
             return &id;
         }

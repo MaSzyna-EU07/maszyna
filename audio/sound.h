@@ -58,7 +58,7 @@ class sound_source {
 
 public:
 // constructors
-    sound_source( sound_placement const Placement = sound_placement::general, float const Range = 50.f );
+    sound_source( sound_placement Placement = sound_placement::general, float Range = 50.f );
 
 // destructor
     ~sound_source();
@@ -66,9 +66,9 @@ public:
 // methods
     // restores state of the class from provided data stream
     sound_source &
-        deserialize( cParser &Input, sound_type const Legacytype, int const Legacyparameters = 0, int const Chunkrange = 100 );
+        deserialize( cParser &Input, sound_type Legacytype, int Legacyparameters = 0, int Chunkrange = 100 );
     sound_source &
-        deserialize( std::string const &Input, sound_type const Legacytype, int const Legacyparameters = 0 );
+        deserialize( std::string const &Input, sound_type Legacytype, int Legacyparameters = 0 );
     // sends content of the class in legacy (text) format to provided stream
     void
         export_as_text( std::ostream &Output ) const;
@@ -77,25 +77,25 @@ public:
         copy_sounds( sound_source const &Source );
     // issues contextual play commands for the audio renderer
     void
-        play( int const Flags = 0 );
+        play( int Flags = 0 );
     // maintains playback of sounds started by event
     void
         play_event();
     // stops currently active play commands controlled by this emitter
     void
-        stop( bool const Skipend = false );
+        stop( bool Skipend = false );
     // adjusts parameters of provided implementation-side sound source
     void
         update( audio::openal_source &Source );
     // sets base volume of the emiter to specified value
     sound_source &
-        gain( float const Gain );
+        gain( float Gain );
     // returns current base volume of the emitter
     float
         gain() const;
     // sets base pitch of the emitter to specified value
     sound_source &
-        pitch( float const Pitch );
+        pitch( float Pitch );
     // owner setter/getter
     void
         owner( TDynamicObject const *Owner );
@@ -103,7 +103,7 @@ public:
         owner() const;
     // sound source offset setter/getter
     void
-        offset( glm::vec3 const Offset );
+        offset( glm::vec3 Offset );
     glm::vec3 const &
         offset() const;
     // sound source name setter/getter
@@ -113,7 +113,7 @@ public:
         name() const;
     // playback starting point shift setter/getter
     void
-        start( float const Offset );
+        start( float Offset );
     float const &
         start() const;
     // custom soundproofing setter/getter
@@ -126,13 +126,13 @@ public:
         empty() const;
     // returns true if the source is emitting any sound; by default doesn't take into account optional ending soudnds
     bool
-        is_playing( bool const Includesoundends = false ) const;
+        is_playing( bool Includesoundends = false ) const;
     // returns true if the source uses sample table
     bool
         is_combined() const;
     // returns true if specified buffer is one of the optional bookends
     bool
-        is_bookend( audio::buffer_handle const Buffer ) const;
+        is_bookend( audio::buffer_handle Buffer ) const;
     // returns true if the source has optional bookends
     bool
         has_bookends() const;
@@ -141,7 +141,7 @@ public:
         location() const;
     // returns defined range of the sound
     void
-        range( float const Range );
+        range( float Range );
     float const
         range() const;
 
@@ -196,16 +196,16 @@ private:
     void
         update_combined( audio::openal_source &Source );
     void
-        update_crossfade( sound_handle const Chunk );
+        update_crossfade( sound_handle Chunk );
     void
-        update_counter( sound_handle const Sound, int const Value );
+        update_counter( sound_handle Sound, int Value );
     void
         update_location();
     // potentially updates area-based gain factor of the source. returns: true if location has changed
     bool
         update_soundproofing();
     void
-        insert( sound_handle const Sound );
+        insert( sound_handle Sound );
     template <class Iterator_>
     void
         insert( Iterator_ First, Iterator_ Last ) {
@@ -219,9 +219,9 @@ private:
                     sounds.emplace_back( soundhandle ); } );
             audio::renderer.insert( std::begin( buffers ), std::end( buffers ), this, sounds ); }
     sound_data &
-        sound( sound_handle const Sound );
+        sound( sound_handle Sound );
     sound_data const &
-        sound( sound_handle const Sound ) const;
+        sound( sound_handle Sound ) const;
 
 // members
     TDynamicObject const * m_owner { nullptr }; // optional, the vehicle carrying this sound source

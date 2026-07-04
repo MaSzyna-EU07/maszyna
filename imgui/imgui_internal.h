@@ -815,7 +815,7 @@ struct ImGuiNextWindowData
     ImVec2                      MenuBarOffsetMinVal;    // *Always on* This is not exposed publicly, so we don't clear it.
 
     ImGuiNextWindowData()       { memset(this, 0, sizeof(*this)); }
-    inline void ClearFlags()    { Flags = ImGuiNextWindowDataFlags_None; }
+	void ClearFlags()    { Flags = ImGuiNextWindowDataFlags_None; }
 };
 
 enum ImGuiNextItemDataFlags_
@@ -833,7 +833,7 @@ struct ImGuiNextItemData
     ImGuiCond                   OpenCond;
 
     ImGuiNextItemData()         { memset(this, 0, sizeof(*this)); }
-    inline void ClearFlags()    { Flags = ImGuiNextItemDataFlags_None; }
+	void ClearFlags()    { Flags = ImGuiNextItemDataFlags_None; }
 };
 
 //-----------------------------------------------------------------------------

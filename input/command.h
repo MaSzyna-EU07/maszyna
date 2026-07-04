@@ -460,16 +460,16 @@ public:
 // methods
 	// posts specified command for specified recipient into m_intercept_queue
 	void
-	    push( command_data const &Command, uint32_t const Recipient );
+	    push( command_data const &Command, uint32_t Recipient );
     // retrieves oldest posted command for specified recipient, if any. returns: true on retrieval, false if there's nothing to retrieve
     bool
-        pop( command_data &Command, uint32_t const Recipient );
+        pop( command_data &Command, uint32_t Recipient );
     // generates active continuous commands
     void
         update();
     // checks if given command must be scheduled on server
 	bool
-	    is_network_target(const uint32_t Recipient);
+	    is_network_target(uint32_t Recipient);
 
 	// pops commands from intercept queue
 	commands_map pop_intercept_queue();
@@ -485,7 +485,7 @@ private:
 	// contains intercepted commands to be read by application layer
 	commands_map m_intercept_queue;
 
-	void push_direct( command_data const &Command, uint32_t const Recipient );
+	void push_direct( command_data const &Command, uint32_t Recipient );
 
 	// hash operator for m_active_continuous
 	struct command_set_hash {
@@ -528,8 +528,8 @@ public:
 // methods
 	// posts specified command for the specified recipient
     void
-	    post(user_command const Command, double const Param1, double const Param2,
-	        int const Action, uint16_t Recipient, glm::vec3 Position = glm::vec3(0.0f) , const std::string *Payload = nullptr) const;
+	    post(user_command Command, double Param1, double Param2,
+	        int Action, uint16_t Recipient, glm::vec3 Position = glm::vec3(0.0f) , const std::string *Payload = nullptr) const;
 private:
 // types
 // members

@@ -24,7 +24,7 @@ http://mozilla.org/MPL/2.0/.
 
 namespace
 {
-inline std::array<bool, 256> makeBreakTable(const char *brk)
+std::array<bool, 256> makeBreakTable(const char *brk)
 {
 	std::array<bool, 256> arr{};
 	for (const unsigned char c : std::string_view(brk ? brk : ""))
@@ -34,7 +34,7 @@ inline std::array<bool, 256> makeBreakTable(const char *brk)
 	return arr;
 }
 
-inline char toLowerChar(char c)
+char toLowerChar(char c)
 {
 	// Only fold ASCII letters. Bytes >= 0x80 belong to multibyte UTF-8
 	// sequences and must be passed through untouched, otherwise a non-"C"
@@ -45,7 +45,7 @@ inline char toLowerChar(char c)
 	return c;
 }
 
-inline bool startsWithBOM(const std::string &s)
+bool startsWithBOM(const std::string &s)
 {
 	return s.size() >= 3
 		&& static_cast<unsigned char>(s[0]) == 0xEF

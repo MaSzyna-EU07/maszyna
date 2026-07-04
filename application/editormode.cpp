@@ -48,19 +48,19 @@ namespace
     using vec3 = glm::vec3;
     using dvec2 = glm::dvec2;
 
-    inline bool is_release(int state)
+    bool is_release(int state)
     {
         return state == GLFW_RELEASE;
     }
 
-    inline bool is_press(int state)
+    bool is_press(int state)
     {
         return state == GLFW_PRESS;
     }
 
     // tests whether the vertical line through (Px,Pz) passes over triangle abc; if so returns the
     // surface height at that point through OutY. used by the "snap to ground" (END) feature.
-    inline bool triangle_height_at(glm::dvec3 const &a, glm::dvec3 const &b, glm::dvec3 const &c,
+    bool triangle_height_at(glm::dvec3 const &a, glm::dvec3 const &b, glm::dvec3 const &c,
                                    double const Px, double const Pz, double &OutY)
     {
         double const ux = b.x - a.x, uz = b.z - a.z;

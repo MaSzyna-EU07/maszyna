@@ -19,7 +19,7 @@ class TCamera {
   public: // McZapkie: potrzebuje do kiwania na boki
 	void Init(glm::dvec3 const &Location, glm::dvec3 const &Angle, TDynamicObject *Owner);
     void Reset();
-    void OnCursorMove(double const x, double const y);
+    void OnCursorMove(double x, double y);
     bool OnCommand( command_data const &Command );
     void Update();
     bool SetMatrix(glm::dmat4 &Matrix);

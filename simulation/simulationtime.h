@@ -22,27 +22,22 @@ public:
     void
 	    init(time_t timestamp = 0);
     void
-        update( double const Deltatime );
-    inline
-    SYSTEMTIME &
+        update( double Deltatime );
+	SYSTEMTIME &
         data() {
             return m_time; }
-    inline
-    SYSTEMTIME const &
+	SYSTEMTIME const &
         data() const {
             return m_time; }
-    inline
-    double
+	double
         second() const {
             return m_time.wMilliseconds * 0.001 + m_time.wSecond; }
-    inline
-    int
+	int
         year_day() const {
             return m_yearday; }
     int
         julian_day() const;
-    inline
-    double
+	double
         zone_bias() const {
             return m_timezonebias; }
 	void
@@ -56,22 +51,22 @@ private:
         convert_transition_time( SYSTEMTIME &Time ) const;
     // calculates day and month from given day of year
     void
-        daymonth( WORD &Day, WORD &Month, WORD const Year, WORD const Yearday );
+        daymonth( WORD &Day, WORD &Month, WORD Year, WORD Yearday );
     // calculates day of year from given date
     int
-        year_day( int Day, int const Month, int const Year ) const;
+        year_day( int Day, int Month, int Year ) const;
     // calculates day of week for provided date
     int
-        day_of_week( int const Day, int const Month, int const Year ) const;
+        day_of_week( int Day, int Month, int Year ) const;
     // calculates day of month for specified weekday of specified month of the year
     int
-        day_of_month( int const Week, int const Weekday, int const Month, int const Year ) const;
+        day_of_month( int Week, int Weekday, int Month, int Year ) const;
     // returns number of days between specified days of week
     int
-        weekdays( int const First, int const Second ) const;
+        weekdays( int First, int Second ) const;
     // returns true if specified year is a leap year, false otherwise
     bool
-        is_leap( int const Year ) const;
+        is_leap( int Year ) const;
 
     SYSTEMTIME m_time;
     double m_milliseconds{ 0.0 };

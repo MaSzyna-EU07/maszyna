@@ -97,7 +97,7 @@ class editor_mode : public application_mode
 	std::vector<EditorSnapshot> m_history; // history of changes to nodes, used for undo functionality
 	std::vector<EditorSnapshot> g_redo;
 	// methods
-	void update_camera(double const Deltatime);
+	void update_camera(double Deltatime);
 
 	editor_ui *ui() const;
 	void redo_last();

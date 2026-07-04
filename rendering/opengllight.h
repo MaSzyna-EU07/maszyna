@@ -16,7 +16,7 @@ struct opengl_light : public basic_light {
     GLuint id { (GLuint)-1 };
 
     void
-        apply_intensity( float const Factor = 1.0f );
+        apply_intensity( float Factor = 1.0f );
     void
         apply_angle();
 

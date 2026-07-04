@@ -160,7 +160,7 @@ public: // chwilowo
 	std::string m_materialname; // robocza nazwa tekstury do zapisania w pliku binarnym
 	std::string pName; // robocza nazwa
 public:
-	int SeekFaceNormal( std::vector<unsigned int> const &Masks, int const Startface, unsigned int const Mask, glm::vec3 const &Position, gfx::vertex_array const &Vertices );
+	int SeekFaceNormal( std::vector<unsigned int> const &Masks, int Startface, unsigned int Mask, glm::vec3 const &Position, gfx::vertex_array const &Vertices );
 	void RaAnimation(TAnimType a);
 	void RaAnimation(glm::mat4 &m, TAnimType a);
     // returns true if the submodel is a smoke emitter attachment point, false otherwise
@@ -196,11 +196,11 @@ public:
 	void SetTranslate(float3 vNewTransVector);
 	void SetRotateIK1(float3 vNewAngles);
 	TSubModel * GetFromName( std::string const &search, bool i = true );
-	inline float4x4 * GetMatrix() { return fMatrix; };
-    inline float4x4 const * GetMatrix() const { return fMatrix; };
+	float4x4 * GetMatrix() { return fMatrix; };
+	float4x4 const * GetMatrix() const { return fMatrix; };
     // returns offset vector from root
-    glm::vec3 offset( float const Geometrytestoffsetthreshold = 0.f ) const;
-    inline void Hide() { iVisible = 0; };
+    glm::vec3 offset( float Geometrytestoffsetthreshold = 0.f ) const;
+	void Hide() { iVisible = 0; };
 
     void create_geometry( std::size_t &Indexoffset, std::size_t &Vertexoffset, gfx::geometrybank_handle const &Bank );
 	uint32_t FlagsCheck();
@@ -218,18 +218,18 @@ public:
 	void UnFlagNext() { iFlags &= 0x00FFFFFF; };
 	void ColorsSet( glm::vec3 const &Ambient, glm::vec3 const &Diffuse, glm::vec3 const &Specular );
     // sets rgb components of diffuse color override to specified value
-    void SetDiffuseOverride( glm::vec3 const &Color, bool const Includechildren = false, bool const Includesiblings = false );
+    void SetDiffuseOverride( glm::vec3 const &Color, bool Includechildren = false, bool Includesiblings = false );
     // gets rgb components of any freespot diffuse color (searches also in children)
     std::optional<glm::vec3> GetDiffuse( float Includesiblings = false );
     // sets visibility level (alpha component) to specified value
-    void SetVisibilityLevel( float const Level, bool const Includechildren = false, bool const Includesiblings = false );
+    void SetVisibilityLevel( float Level, bool Includechildren = false, bool Includesiblings = false );
     // sets light level (alpha component of illumination color) to specified value
-    void SetLightLevel( glm::vec4 const &Level, bool const Includechildren = false, bool const Includesiblings = false );
+    void SetLightLevel( glm::vec4 const &Level, bool Includechildren = false, bool Includesiblings = false );
     // sets activation threshold of self-illumination to specitied value
-    void SetSelfIllum( float const Threshold, bool const Includechildren = false, bool const Includesiblings = false );
-	inline float3 Translation1Get() {
+    void SetSelfIllum( float Threshold, bool Includechildren = false, bool Includesiblings = false );
+	float3 Translation1Get() {
 		return fMatrix ? *fMatrix->TranslationGet() + v_TransVector : v_TransVector; }
-	inline float3 Translation2Get() {
+	float3 Translation2Get() {
 		return *fMatrix->TranslationGet() + Child->Translation1Get(); }
     material_handle GetMaterial() const {
 		return m_material; }
@@ -247,9 +247,9 @@ public:
 		std::vector<std::string>&,
 		std::vector<std::string>&,
 		std::vector<float4x4>&);
-    void serialize_geometry( std::ostream &Output, bool const Packed, bool const Indexed, bool const UserData ) const;
+    void serialize_geometry( std::ostream &Output, bool Packed, bool Indexed, bool UserData ) const;
     int index_size() const;
-    void serialize_indices( std::ostream &Output, int const Size ) const;
+    void serialize_indices( std::ostream &Output, int Size ) const;
     // places contained geometry in provided ground node
 };
 
@@ -279,7 +279,7 @@ public:
     ~TModel3d();
     float bounding_radius() const {
         return Root ? Root->m_boundingradius : 0.f; }
-	inline TSubModel * GetSMRoot() { return Root; };
+	TSubModel * GetSMRoot() { return Root; };
 	TSubModel * GetFromName(std::string const &Name) const;
 	TSubModel * AddToNamed(const char *Name, TSubModel *SubModel);
     nameoffset_sequence const & find_smoke_sources();

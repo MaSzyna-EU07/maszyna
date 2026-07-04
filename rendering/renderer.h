@@ -41,13 +41,13 @@ public:
     // creates a new geometry bank. returns: handle to the bank or NULL
     virtual auto Create_Bank() -> gfx::geometrybank_handle = 0;
     // creates a new indexed geometry chunk of specified type from supplied data, in specified bank. returns: handle to the chunk or NULL
-    virtual auto Insert(gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int const Type) -> gfx::geometry_handle = 0;
+    virtual auto Insert(gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int Type) -> gfx::geometry_handle = 0;
     // creates a new geometry chunk of specified type from supplied data, in specified bank. returns: handle to the chunk or NULL
-    virtual auto Insert(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int const Type) -> gfx::geometry_handle = 0;
+    virtual auto Insert(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int Type) -> gfx::geometry_handle = 0;
     // replaces data of specified chunk with the supplied vertex data, starting from specified offset
-    virtual auto Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, const std::size_t Offset = 0) -> bool = 0;
+    virtual auto Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int Type, std::size_t Offset = 0) -> bool = 0;
     // adds supplied vertex data at the end of specified chunk
-    virtual auto Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) -> bool = 0;
+    virtual auto Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int Type) -> bool = 0;
     // provides direct access to index data of specfied chunk
     virtual auto Indices( gfx::geometry_handle const &Geometry ) const->gfx::index_array const & = 0;
 	// provides direct access to vertex data of specfied chunk
@@ -55,19 +55,19 @@ public:
 	// provides direct access to vertex user data of specfied chunk
 	virtual auto UserData( gfx::geometry_handle const &Geometry ) const ->gfx::userdata_array const & = 0;
     // material methods
-    virtual auto Fetch_Material( std::string const &Filename, bool const Loadnow = true ) -> material_handle = 0;
-    virtual void Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) = 0;
-    virtual auto Material( material_handle const Material ) const -> IMaterial const * = 0;
+    virtual auto Fetch_Material( std::string const &Filename, bool Loadnow = true ) -> material_handle = 0;
+    virtual void Bind_Material( material_handle Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) = 0;
+    virtual auto Material( material_handle Material ) const -> IMaterial const * = 0;
     // shader methods
     virtual auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gl::program> = 0;
     // texture methods
-    virtual auto Fetch_Texture( std::string const &Filename, bool const Loadnow = true, GLint format_hint = GL_SRGB_ALPHA ) -> texture_handle = 0;
-    virtual void Bind_Texture( texture_handle const Texture ) = 0;
-    virtual void Bind_Texture( std::size_t const Unit, texture_handle const Texture ) = 0;
-    virtual auto Texture( texture_handle const Texture ) -> ITexture & = 0;
-    virtual auto Texture( texture_handle const Texture ) const -> ITexture const & = 0;
+    virtual auto Fetch_Texture( std::string const &Filename, bool Loadnow = true, GLint format_hint = GL_SRGB_ALPHA ) -> texture_handle = 0;
+    virtual void Bind_Texture( texture_handle Texture ) = 0;
+    virtual void Bind_Texture( std::size_t Unit, texture_handle Texture ) = 0;
+    virtual auto Texture( texture_handle Texture ) -> ITexture & = 0;
+    virtual auto Texture( texture_handle Texture ) const -> ITexture const & = 0;
     // utility methods
-    virtual void Pick_Control_Callback( std::function<void( TSubModel const *, const glm::vec2 )> Callback ) = 0;
+    virtual void Pick_Control_Callback( std::function<void( TSubModel const *, glm::vec2 )> Callback ) = 0;
     virtual void Pick_Node_Callback( std::function<void( scene::basic_node * )> Callback ) = 0;
     virtual auto Pick_Control() const -> TSubModel const * = 0;
     virtual auto Pick_Node() const -> scene::basic_node const * = 0;
@@ -81,7 +81,7 @@ public:
     virtual auto Camera_Projection_Matrix() const -> glm::mat4 { return glm::mat4( 1.f ); }
     virtual auto Camera_Position() const -> glm::dvec3 { return glm::dvec3( 0.0 ); }
     // maintenance methods
-    virtual void Update( double const Deltatime ) = 0;
+    virtual void Update( double Deltatime ) = 0;
     virtual void Update_Pick_Control() = 0;
     virtual void Update_Pick_Node() = 0;
     virtual auto Update_Mouse_Position() -> glm::dvec3 = 0;

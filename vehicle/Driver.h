@@ -172,8 +172,7 @@ class TSpeedPos
     void Clear();
     bool Update();
     // aktualizuje odległość we wpisie
-    inline
-    void
+	void
         UpdateDistance( double dist ) {
             fDist -= dist; }
     bool Set(basic_event *e, double d, double length, TOrders order = Wait_for_orders);
@@ -221,48 +220,35 @@ public:
 public:
     void Update( double dt ); // uruchamiac przynajmniej raz na sekundę
     void MoveTo( TDynamicObject *to );
-    void TakeControl( bool const Aidriver, bool const Forcevehiclecheck = false );
-    inline
-    bool primary( bool const Primary ) {
+    void TakeControl( bool Aidriver, bool Forcevehiclecheck = false );
+	bool primary( bool const Primary ) {
         SetFlag( iDrivigFlags, Primary ? movePrimary : -movePrimary );
         return primary(); }
-    inline
-    bool primary() const {
+	bool primary() const {
         return (iDrivigFlags & movePrimary) != 0; };
-    inline
-    TMoverParameters const *Controlling() const {
+	TMoverParameters const *Controlling() const {
         return mvControlling; }
-    inline
-    TMoverParameters const *Occupied() const {
+	TMoverParameters const *Occupied() const {
         return mvOccupied; }
     void DirectionInitial();
     void DirectionChange();
-    inline
-    int Direction() const {
+	int Direction() const {
         return iDirection; }
-    inline
-    TAction & action() {
+	TAction & action() {
         return eAction; }
-    inline
-    TAction const & action() const {
+	TAction const & action() const {
         return eAction; }
-    inline
-    bool is_active() const {
+	bool is_active() const {
         return TestFlag( iDrivigFlags, moveActive ); }
-    inline
-    bool is_train() const {
+	bool is_train() const {
         return TestFlag( mvOccupied->CategoryFlag, 1 ); }
-    inline
-    bool is_car() const {
+	bool is_car() const {
         return TestFlag( mvOccupied->CategoryFlag, 2 ); }
-    inline
-    bool is_emu() const {
+	bool is_emu() const {
         return mvControlling->TrainType == dt_EZT; }
-    inline
-    bool is_dmu() const {
+	bool is_dmu() const {
         return mvControlling->TrainType == dt_DMU; }
-    inline
-    bool has_diesel_engine() const {
+	bool has_diesel_engine() const {
         return mvControlling->EngineType == TEngineType::DieselElectric || mvControlling->EngineType == TEngineType::DieselEngine;
     }
     TBrakeSystem consist_brake_system() const;
@@ -276,11 +262,11 @@ private:
     void ZeroLocalBrake();
     bool IncSpeed();
     bool DecSpeed( bool force = false );
-    void ZeroSpeed( bool const Enforce = false );
+    void ZeroSpeed( bool Enforce = false );
     bool IncBrakeEIM();
     bool DecBrakeEIM();
     bool IncSpeedEIM();
-    bool DecSpeedEIM( int const Amount = 1 );
+    bool DecSpeedEIM( int Amount = 1 );
     void BrakeLevelSet( double b );
     bool BrakeLevelAdd( double b );
     void SpeedSet();
@@ -303,25 +289,23 @@ private:
     double BrakeAccFactor() const;
     // modifies brake distance for low target speeds, to ease braking rate in such situations
     float
-        braking_distance_multiplier( float const Targetvelocity ) const;
-    inline
-        int DrivigFlags() const {
+        braking_distance_multiplier( float Targetvelocity ) const;
+	int DrivigFlags() const {
             return iDrivigFlags; };
-    inline
-        double DirectionalVel() const {
+	double DirectionalVel() const {
             return mvOccupied->Vel * sign( iDirection * mvOccupied->V ); }
 
-    void update_timers( double const dt );
-    void update_logs( double const dt );
+    void update_timers( double dt );
+    void update_logs( double dt );
     void determine_consist_state();
     void determine_braking_distance();
     void determine_proximity_ranges();
-    void scan_route( double const Range );
-    void scan_obstacles( double const Range );
+    void scan_route( double Range );
+    void scan_obstacles( double Range );
     void control_wheelslip();
     void control_pantographs();
-    void control_horns( double const Timedelta );
-    void control_security_system( double const Timedelta );
+    void control_horns( double Timedelta );
+    void control_security_system( double Timedelta );
     void control_handles();
     void control_lights();
     void control_compartment_lights();
@@ -334,15 +318,15 @@ private:
     void check_departure();
     void UpdateConnect();
     void UpdateDisconnect();
-    int unit_count( int const Threshold ) const;
+    int unit_count( int Threshold ) const;
     void UpdateChangeDirection();
     void UpdateLooseShunt();
     void UpdateObeyTrain();
 	void GuardOpenDoor();
-    void pick_optimal_speed( double const Range );
+    void pick_optimal_speed( double Range );
     void adjust_desired_speed_for_obstacles();
     void adjust_desired_speed_for_limits();
-    void adjust_desired_speed_for_target_speed( double const Range );
+    void adjust_desired_speed_for_target_speed( double Range );
     void adjust_desired_speed_for_current_speed();
     void adjust_desired_speed_for_braking_test();
     void control_tractive_and_braking_force();
@@ -354,16 +338,16 @@ private:
     void increase_tractive_force();
     void control_braking_force();
     void apply_independent_brake_only();
-    void check_route_ahead( double const Range );
-    void check_route_behind( double const Range );
+    void check_route_ahead( double Range );
+    void check_route_behind( double Range );
     void UpdateBrakingHelper();
-    void hint( driver_hint const Value, hintpredicate const Predicate, float const Predicateparameter = 0.f );
+    void hint( driver_hint Value, hintpredicate Predicate, float Predicateparameter = 0.f );
     void update_hints();
-    void remove_hint( driver_hint const Value );
+    void remove_hint( driver_hint Value );
     void remove_train_brake_hints();
     void remove_master_controller_hints();
     void remove_reverser_hints();
-    void cue_action( driver_hint const Action, float const Actionparameter = 0.f );
+    void cue_action( driver_hint Action, float Actionparameter = 0.f );
 // members
 public:
     bool AIControllFlag = false; // rzeczywisty/wirtualny maszynista
@@ -472,12 +456,12 @@ public:
     void PutCommand( std::string NewCommand, double NewValue1, double NewValue2, const TLocation &NewLocation, TStopReason reason = stopComm );
     bool PutCommand( std::string NewCommand, double NewValue1, double NewValue2, glm::dvec3 const *NewLocation, TStopReason reason = stopComm );
     // defines assignment data
-    inline auto assignment() -> std::string & { return m_assignment; }
-    inline auto assignment() const -> std::string const & { return m_assignment; }
+	auto assignment() -> std::string & { return m_assignment; }
+	auto assignment() const -> std::string const & { return m_assignment; }
     std::string OrderCurrent() const;
 private:
     void RecognizeCommand(); // odczytuje komende przekazana lokomotywie
-    void JumpToNextOrder( bool const Skipmergedchangedirection = false );
+    void JumpToNextOrder( bool Skipmergedchangedirection = false );
     void JumpToFirstOrder();
     void OrderPush( TOrders NewOrder );
     void OrderNext( TOrders NewOrder );
@@ -486,7 +470,7 @@ private:
     void OrderCheck();
     void OrdersInit( double fVel );
     void OrdersClear();
-    void OrdersDump( std::string const Neworder, bool const Verbose = true );
+    void OrdersDump( std::string Neworder, bool Verbose = true );
     std::string Order2Str( TOrders Order ) const;
 // members
     std::string m_assignment;
@@ -499,39 +483,39 @@ private:
 // methods
 public:
     int CrossRoute( TTrack *tr );
-    inline void MoveDistanceAdd( double distance ) {
+  void MoveDistanceAdd( double distance ) {
         dMoveLen += distance * iDirection;
     } //jak jedzie do tyłu to trzeba uwzględniać, że distance jest ujemna
 private:
     // Ra: metody obsługujące skanowanie toru
-    std::vector<basic_event *> CheckTrackEvent( TTrack *Track, double const fDirection ) const;
+    std::vector<basic_event *> CheckTrackEvent( TTrack *Track, double fDirection ) const;
     bool TableAddNew();
-    bool TableNotFound( basic_event const *Event, double const Distance ) const;
+    bool TableNotFound( basic_event const *Event, double Distance ) const;
     void TableTraceRoute( double fDistance, TDynamicObject *pVehicle );
     void TableCheck( double fDistance );
     TCommandType TableUpdate( double &fVelDes, double &fDist, double &fNext, double &fAcc );
-    bool TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, double const Signaldistance );
-    bool TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex );
+    bool TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, double Signaldistance );
+    bool TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int Pointindex );
     // returns most recently calculated distance to potential obstacle ahead
     double TrackObstacle() const;
     void TablePurger();
     void TableSort();
-    inline double MoveDistanceGet() const {
+  double MoveDistanceGet() const {
         return dMoveLen;
     }
-    inline void MoveDistanceReset() {
+  void MoveDistanceReset() {
         dMoveLen = 0.0;
     }
     std::size_t TableSize() const { return sSpeedTable.size(); }
     void TableClear();
     int TableDirection() { return iTableDirection; }
     // Ra: stare funkcje skanujące, używane do szukania sygnalizatora z tyłu
-    bool IsOccupiedByAnotherConsist( TTrack *Track, double const Distance );
-    basic_event *CheckTrackEventBackward( double fDirection, TTrack *Track, TDynamicObject *Vehicle, int const Eventdirection = 1, end const End = rear );
-    TTrack *BackwardTraceRoute( double &fDistance, double &fDirection, TDynamicObject *Vehicle, basic_event *&Event, int const Eventdirection = 1, end const End = rear, bool const Untiloccupied = true );
+    bool IsOccupiedByAnotherConsist( TTrack *Track, double Distance );
+    basic_event *CheckTrackEventBackward( double fDirection, TTrack *Track, TDynamicObject *Vehicle, int Eventdirection = 1, end End = rear );
+    TTrack *BackwardTraceRoute( double &fDistance, double &fDirection, TDynamicObject *Vehicle, basic_event *&Event, int Eventdirection = 1, end End = rear, bool Untiloccupied = true );
     void SetProximityVelocity( double dist, double vel, glm::dvec3 const *pos );
-    TCommandType BackwardScan( double const Range );
-    std::string TableText( std::size_t const Index ) const;
+    TCommandType BackwardScan( double Range );
+    std::string TableText( std::size_t Index ) const;
 /*
     void RouteSwitch(int d);
 */
@@ -582,12 +566,12 @@ public:
 private:
     bool PrepareEngine();
     bool ReleaseEngine();
-    void Doors( bool const Open, int const Side = 0 );
+    void Doors( bool Open, int Side = 0 );
     // returns true if any vehicle in the consist has an open door
     bool doors_open() const;
     bool doors_permit_active() const;
     void AutoRewident(); // ustawia hamulce w składzie
-    void announce( announcement_t const Announcement );
+    void announce( announcement_t Announcement );
 // members
     double fLength = 0.0; // długość składu (do wyciągania z ograniczeń)
     double fMass = 0.0; // całkowita masa do liczenia stycznej składowej grawitacji

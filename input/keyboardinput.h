@@ -50,22 +50,21 @@ public:
     bool
         init() { return true; }
     bool
-        key( int const Key, int const Action );
+        key( int Key, int Action );
     int
-        key( int const Key ) const;
+        key( int Key ) const;
     void
         poll();
-    inline
-    user_command const
+	user_command const
         command() const {
             return m_command; }
     bindingsetup_sequence&
         bindings() {
             return m_bindingsetups; }
     int
-        binding( user_command const Command ) const;
+        binding( user_command Command ) const;
     std::string
-        binding_hint( user_command const Command ) const;
+        binding_hint( user_command Command ) const;
     void
         dump_bindings();
 
@@ -101,7 +100,7 @@ private:
 
 // methods
     bool
-        is_movement_key( int const Key ) const;
+        is_movement_key( int Key ) const;
 
 // members
     user_command m_command { user_command::none }; // last, if any, issued command

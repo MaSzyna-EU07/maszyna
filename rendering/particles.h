@@ -47,7 +47,7 @@ public:
         deserialize( cParser &Input );
     // updates state of provided variable
     void
-        update( Type_ &Variable, double const Timedelta ) const;
+        update( Type_ &Variable, double Timedelta ) const;
     void
         bind( Type_ const *Modifier ) {
             m_valuechangemodifier = Modifier; }
@@ -92,7 +92,7 @@ public:
         bind( TAnimModel const *Node );
     // updates state of owned particles
     void
-        update( double const Timedelta, bool const Onlydespawn );
+        update( double Timedelta, bool Onlydespawn );
     glm::vec3 const &
         color() const {
             return m_emitter.color; }
@@ -135,7 +135,7 @@ private:
         initialize( smoke_particle &Particle );
     // updates state of provided particle and bounding box. returns: true if particle is still alive afterwards, false otherwise
     bool
-        update( smoke_particle &Particle, bounding_box &Boundingbox, double const Timedelta );
+        update( smoke_particle &Particle, bounding_box &Boundingbox, double Timedelta );
 // members
     // config/inputs
     // TBD: union and indicator, or just plain owner variables?
@@ -176,11 +176,11 @@ public:
 // methods
     // adds a new particle source of specified type, placing it in specified world location. returns: true on success, false if the specified type definition couldn't be located
     bool
-        insert( std::string const &Sourcetemplate, glm::dvec3 const Location );
+        insert( std::string const &Sourcetemplate, glm::dvec3 Location );
     bool
-        insert( std::string const &Sourcetemplate, TDynamicObject const *Vehicle, glm::dvec3 const Location );
+        insert( std::string const &Sourcetemplate, TDynamicObject const *Vehicle, glm::dvec3 Location );
     bool
-        insert( std::string const &Sourcetemplate, TAnimModel const *Node, glm::dvec3 const Location );
+        insert( std::string const &Sourcetemplate, TAnimModel const *Node, glm::dvec3 Location );
     // updates state of all owned emitters
     void
         update();

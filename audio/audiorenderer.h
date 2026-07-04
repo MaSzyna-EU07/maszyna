@@ -76,7 +76,7 @@ struct openal_source {
         play();
     // updates state of the source
     void
-        update( double const Deltatime, glm::vec3 const &Listenervelocity );
+        update( double Deltatime, glm::vec3 const &Listenervelocity );
     // configures state of the source to match the provided set of properties
     void
         sync_with( sound_properties const &State );
@@ -85,13 +85,13 @@ struct openal_source {
         stop();
     // toggles looping of the sound emitted by the source
    void
-        loop( bool const State );
+        loop( bool State );
     // sets max audible distance for sounds emitted by the source
    void
-       range( float const Range );
+       range( float Range );
    // sets modifier applied to the pitch of sounds emitted by the source
    void
-       pitch( float const Pitch );
+       pitch( float Pitch );
     // releases bound buffers and resets state of the class variables
     // NOTE: doesn't release allocated implementation-side source
     void
@@ -126,7 +126,7 @@ public:
         fetch_buffer( std::string const &Filename );
     // provides direct access to a specified buffer
     openal_buffer const &
-        buffer( buffer_handle const Buffer ) const;
+        buffer( buffer_handle Buffer ) const;
     // core methods
     // initializes the service
     bool
@@ -141,7 +141,7 @@ public:
         erase( sound_source const *Controller );
     // updates state of all active emitters
     void
-        update( double const Deltatime );
+        update( double Deltatime );
 
     glm::dvec3 cached_camerapos;
 

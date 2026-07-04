@@ -59,7 +59,7 @@ struct bounding_area {
         serialize( std::ostream &Output ) const;
     // restores content of the struct from provided input stream. 
     void
-        deserialize( std::istream &Input, bool const Preserveradius = true );
+        deserialize( std::istream &Input, bool Preserveradius = true );
 };
 
 //using group_handle = std::size_t;
@@ -121,7 +121,7 @@ public:
     // builds an opaque, always-visible shape from a world-space GL_TRIANGLES vertex list, stored
     // relative to Origin. used by the editor's terrain to own editable geometry it can re-upload.
     shape_node &
-        make_terrain( material_handle const Material, std::vector<world_vertex> Vertices, glm::dvec3 const Origin );
+        make_terrain( material_handle Material, std::vector<world_vertex> Vertices, glm::dvec3 Origin );
     // adds content of provided node to already enclosed geometry. returns: true if merge could be performed
     bool
         merge( shape_node &Shape );
@@ -344,7 +344,7 @@ public:
         name() const;
 	virtual std::string tooltip() const;
     void
-        location( glm::dvec3 const Location );
+        location( glm::dvec3 Location );
     glm::dvec3 const &
         location() const;
 	glm::dvec3 &
@@ -352,7 +352,7 @@ public:
     float const &
         radius();
     void
-        visible( bool const Visible );
+        visible( bool Visible );
     bool
         visible() const;
     void

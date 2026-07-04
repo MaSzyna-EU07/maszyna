@@ -61,7 +61,7 @@ class brush_object_list : public ui_panel
 	std::string Template;
 
   public:
-	brush_object_list(std::string const &Name, bool const Isopen);
+	brush_object_list(std::string const &Name, bool Isopen);
 	void render() override;
 	void update(std::string nodeTemplate);
 
@@ -85,7 +85,7 @@ class nodebank_panel : public ui_panel
 	};
 	edit_mode mode = MODIFY;
 
-	nodebank_panel(std::string const &Name, bool const Isopen);
+	nodebank_panel(std::string const &Name, bool Isopen);
 	void nodebank_reload();
 	void render() override;
 	void add_template(const std::string &desc);

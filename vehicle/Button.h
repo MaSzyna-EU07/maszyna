@@ -18,25 +18,22 @@ class TButton {
 public:
 // methods
     TButton() = default;
-    void Clear(int const i = -1);
-    inline
-    void FeedbackBitSet( int const i ) {
+    void Clear(int i = -1);
+	void FeedbackBitSet( int const i ) {
         iFeedbackBit = 1 << i; };
-    void Turn( bool const State );
-    inline
-    bool GetValue() const {
+    void Turn( bool State );
+	bool GetValue() const {
         return m_state; }
-    inline
-    bool Active() {
+	bool Active() {
         return pModelOn != nullptr || pModelOff != nullptr; }
-    void Update( bool const Power = true );
+    void Update( bool Power = true );
     bool Init( std::string const &asName, TModel3d const *pModel, bool bNewOn = false );
     void Load( cParser &Parser, TDynamicObject const *Owner );
     void AssignBool(bool const *bValue);
     // returns offset of submodel associated with the button from the model centre
     glm::vec3 model_offset() const;
 	void gain(float new_volume);
-	inline uint8_t b() { return m_state ? 1 : 0; };
+	uint8_t b() { return m_state ? 1 : 0; };
 
 private:
 // methods

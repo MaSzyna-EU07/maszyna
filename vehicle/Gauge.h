@@ -38,17 +38,16 @@ public:
     TGauge() = default;
     explicit TGauge( sound_source const &Soundtemplate );
 
-    inline
-    void Clear() {
+	void Clear() {
         *this = TGauge(); }
-    void Init(TSubModel *Submodel, TSubModel *Submodelon, TGaugeAnimation Type, float Scale = 1, float Offset = 0, float Friction = 0, float Value = 0, float const Endvalue = -1.0, float const Endscale = -1.0, bool const Interpolate = false );
-    void Load(cParser &Parser, TDynamicObject const *Owner, double const mul = 1.0);
+    void Init(TSubModel *Submodel, TSubModel *Submodelon, TGaugeAnimation Type, float Scale = 1, float Offset = 0, float Friction = 0, float Value = 0, float Endvalue = -1.0, float Endscale = -1.0, bool Interpolate = false );
+    void Load(cParser &Parser, TDynamicObject const *Owner, double mul = 1.0);
     bool UpdateValue( float fNewDesired );
     bool UpdateValue( float fNewDesired, std::optional<sound_source> &Fallbacksound );
     void PutValue(float fNewDesired);
     float GetValue() const;
     float GetDesiredValue() const;
-    void Update( bool const Power = true );
+    void Update( bool Power = true );
     void AssignFloat(float *fValue);
     void AssignDouble(double *dValue);
     void AssignInt(int *iValue);
@@ -58,11 +57,9 @@ public:
     // returns offset of submodel associated with the button from the model centre
     glm::vec3 model_offset() const;
     TGaugeType type() const;
-    inline
-    bool is_push() const {
+	bool is_push() const {
         return ( static_cast<int>( type() ) & static_cast<int>( TGaugeType::push ) ) != 0; }
-    inline
-    bool is_toggle() const {
+	bool is_toggle() const {
         return ( static_cast<int>( type() ) & static_cast<int>( TGaugeType::toggle ) ) != 0; }
     bool is_delayed() const {
         return ( static_cast<int>( type() ) & static_cast<int>( TGaugeType::delayed ) ) != 0; }
