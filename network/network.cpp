@@ -175,7 +175,7 @@ void network::client::update()
 // client
 std::tuple<double, double, command_queue::commands_map> network::client::get_next_delta(int counter)
 {
-	auto now = std::chrono::high_resolution_clock::now();
+	const auto now = std::chrono::high_resolution_clock::now();
 	if (counter == 1) {
 		frame_time = now - last_frame;
 		last_frame = now;
@@ -187,23 +187,22 @@ std::tuple<double, double, command_queue::commands_map> network::client::get_nex
 		        command_queue::commands_map>(0.0, 0.0, command_queue::commands_map());
 	}
 
-
-	float size = delta_queue.size() - consume_counter;
+	const float size = delta_queue.size() - consume_counter;
 	const auto& entry = delta_queue.front();
-	float mult = entry.render_dt / std::chrono::duration_cast<std::chrono::duration<float>>(frame_time).count();
+	const float mult = entry.render_dt / std::chrono::duration_cast<std::chrono::duration<float>>(frame_time).count();
 
 	if (counter == 1 && size < MAX_BUFFER_SIZE * 2.0f) {
 		last_target = last_target * TARGET_MIX +
 		        (std::min(TARGET_MIN + jitteriness * JITTERINESS_MULTIPIER, MAX_BUFFER_SIZE)) * (1.0f - TARGET_MIX);
-		float diff = size - last_target;
+		const float diff = size - last_target;
 		jitteriness = std::max(jitteriness * JITTERINESS_MIX, std::abs(diff));
 
-		float speed = 1.0f + diff * CONSUME_MULTIPIER;
+		const float speed = 1.0f + diff * CONSUME_MULTIPIER;
 
 		consume_counter += speed;
 	}
 
-	float last_rcv_diff = std::chrono::duration_cast<std::chrono::duration<float>>(now - last_rcv).count();
+	const float last_rcv_diff = std::chrono::duration_cast<std::chrono::duration<float>>(now - last_rcv).count();
 
 	if (size > MAX_BUFFER_SIZE || consume_counter > mult || last_rcv_diff > 1.0f) {
 		if (consume_counter > mult) {
@@ -266,7 +265,7 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 	if (msg.type == message::FRAME_INFO) {
 		resume_frame_counter++;
 
-		auto delta = dynamic_cast<const frame_info&>(msg);
+		const auto delta = dynamic_cast<const frame_info&>(msg);
 		delta_queue.push(delta);
 		last_rcv = std::chrono::high_resolution_clock::now();
 	}

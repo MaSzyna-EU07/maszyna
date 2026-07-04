@@ -54,9 +54,9 @@ LONG WINAPI CrashHandler(EXCEPTION_POINTERS *ExceptionInfo)
 	oss << "crash_" << std::setw(4) << std::setfill('0') << st.wYear << "-" << std::setw(2) << std::setfill('0') << st.wMonth << "-" << std::setw(2) << std::setfill('0') << st.wDay << "_"
 	    << std::setw(2) << std::setfill('0') << st.wHour << "-" << std::setw(2) << std::setfill('0') << st.wMinute << "-" << std::setw(2) << std::setfill('0') << st.wSecond << ".dmp";
 
-	std::string filename = oss.str();
+	const std::string filename = oss.str();
 
-	HANDLE hFile = CreateFileA(filename.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	const HANDLE hFile = CreateFileA(filename.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (hFile != INVALID_HANDLE_VALUE)
 	{
 		MINIDUMP_EXCEPTION_INFORMATION dumpInfo;
@@ -65,7 +65,7 @@ LONG WINAPI CrashHandler(EXCEPTION_POINTERS *ExceptionInfo)
 		dumpInfo.ClientPointers = FALSE;
 
 		// Wybrana kombinacja flag
-		auto dumpType = MINIDUMP_TYPE(MiniDumpWithFullMemory | MiniDumpWithHandleData | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules | MiniDumpWithIndirectlyReferencedMemory |
+		const auto dumpType = MINIDUMP_TYPE(MiniDumpWithFullMemory | MiniDumpWithHandleData | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules | MiniDumpWithIndirectlyReferencedMemory |
 		                                       MiniDumpWithFullMemoryInfo | MiniDumpWithTokenInformation);
 
 		MessageBoxA(nullptr, "Simulator crash occured :(\n", "Simulator crashed :(", MB_ICONERROR);
@@ -92,10 +92,10 @@ int main(int argc, char *argv[])
 	// quick short-circuit for standalone e3d export
 	if (argc == 6 && std::string(argv[1]) == "-e3d")
 	{
-		std::string in(argv[2]);
-		std::string out(argv[3]);
-		int flags = std::stoi(std::string(argv[4]));
-		int dynamic = std::stoi(std::string(argv[5]));
+		const std::string in(argv[2]);
+		const std::string out(argv[3]);
+		const int flags = std::stoi(std::string(argv[4]));
+		const int dynamic = std::stoi(std::string(argv[5]));
 		export_e3d_standalone(in, out, flags, dynamic);
 	}
 	else

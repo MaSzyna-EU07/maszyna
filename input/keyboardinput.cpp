@@ -238,7 +238,7 @@ void keyboard_input::dump_bindings()
 	for (const std::pair<user_command, std::tuple<int, std::string>> &binding : m_bindingsetups) {
 		stream << simulation::Commands_descriptions[static_cast<std::size_t>(binding.first)].name << ' ';
 
-		int keycode = std::get<int>(binding.second);
+		const int keycode = std::get<int>(binding.second);
 		auto it = keytonamemap.find(keycode & 0xFFFF);
 		if (it != keytonamemap.end()) {
 			if (keycode & keymodifier::control)

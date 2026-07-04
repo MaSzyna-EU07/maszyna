@@ -41,7 +41,7 @@ node_groups::close()
         if( true == m_activegroup.empty()
          || m_activegroup.top() != closinggroup ) {
 
-            auto lookup { m_groupmap.find( closinggroup ) };
+			const auto lookup { m_groupmap.find( closinggroup ) };
             if( lookup != m_groupmap.end()
              && lookup->second.nodes.size() + lookup->second.events.size() <= 1 ) {
 
@@ -62,7 +62,7 @@ bool node_groups::assign_cross_switch(map::track_switch& sw, std::string &sw_nam
     if (!sw.action[idx])
         return false;
 
-	auto multi = dynamic_cast<multi_event*>(sw.action[idx]);
+	const auto multi = dynamic_cast<multi_event*>(sw.action[idx]);
 
     if (!multi)
         return false;
@@ -73,13 +73,13 @@ bool node_groups::assign_cross_switch(map::track_switch& sw, std::string &sw_nam
         if (it->size() > 4)
             continue;
 
-        int pos_a = it->find_last_of('a');
-        int pos_b = it->find_last_of('b');
-        int pos_c = it->find_last_of('c');
-        int pos_d = it->find_last_of('d');
+		const int pos_a = it->find_last_of('a');
+		const int pos_b = it->find_last_of('b');
+		const int pos_c = it->find_last_of('c');
+		const int pos_d = it->find_last_of('d');
 
-        int pos_0 = it->find_last_of('0');
-        int pos_1 = it->find_last_of('1');
+		const int pos_0 = it->find_last_of('0');
+		const int pos_1 = it->find_last_of('1');
 
         int pos;
 
@@ -135,7 +135,7 @@ node_groups::update_map()
 			}
 
             if (Global.map_manualswitchcontrol) {
-                if (auto track = dynamic_cast<TTrack*>(node)) {
+                if (const auto track = dynamic_cast<TTrack*>(node)) {
                     if (track->eType != tt_Switch)
                         continue;
 
@@ -161,7 +161,7 @@ node_groups::update_map()
                     if (sw_name.size() <= 2)
                         continue;
 
-                    char lastc = sw_name.back();
+					const char lastc = sw_name.back();
                     sw_name.pop_back();
                     if (sw_name.back() == '_')
                         sw_name.pop_back();
@@ -184,7 +184,7 @@ node_groups::update_map()
                         continue;
 
                     last_switch->track[lastc - 'a'] = track;
-                    for (auto trk : last_switch->track)
+                    for (const auto trk : last_switch->track)
                         if (!trk)
                             goto skip_e;
 
@@ -203,7 +203,7 @@ node_groups::update_map()
                     last_switch_map.erase(sw_name);
                 }
             } else {
-                if (auto launcher = dynamic_cast<TEventLauncher*>(node)) {
+                if (const auto launcher = dynamic_cast<TEventLauncher*>(node)) {
                     if (!launcher || !launcher->Event1 || !launcher->Event2)
                         continue;
 
@@ -287,7 +287,7 @@ node_groups::export_as_text( std::ostream &Output, bool Dirty ) const {
 
             node->export_as_text( Output );
         }
-        for( auto *event : group.second.events ) {
+        for (const auto *event : group.second.events ) {
 			if (Dirty)
 				continue;
 

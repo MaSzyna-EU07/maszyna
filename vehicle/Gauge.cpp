@@ -184,7 +184,7 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
         endscale *= mul;
     }
     TSubModel *submodel { nullptr };
-    std::array<TModel3d *, 2> sources { Owner->mdKabina, Owner->mdLowPolyInt };
+	const std::array<TModel3d *, 2> sources { Owner->mdKabina, Owner->mdLowPolyInt };
     for( auto const *source : sources ) {
         if( source != nullptr
          && ( submodel = source->GetFromName( submodelname ) ) != nullptr ) {
@@ -219,7 +219,7 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
         { "wip", TGaugeAnimation::gt_Wiper },
         { "dgt", TGaugeAnimation::gt_Digital }
     };
-    auto lookup = gaugetypes.find( gaugetypename );
+	const auto lookup = gaugetypes.find( gaugetypename );
     auto const type = lookup != gaugetypes.end() ? lookup->second : TGaugeAnimation::gt_Unknown;
 
     Init( submodel, submodelon, type, scale, offset, friction, 0, endvalue, endscale, interpolatescale );
@@ -358,7 +358,7 @@ void TGauge::Update( bool const Power ) {
     // update value
     // TODO: remove passing manually power state when LD is in place
     if( m_value != m_targetvalue ) {
-        float dt = Timer::GetDeltaTime();
+		const float dt = Timer::GetDeltaTime();
         if( m_friction > 0 && dt < 0.5 * m_friction ) {
             // McZapkie-281102: zabezpieczenie przed oscylacjami dla dlugich czasow
             m_value += dt * ( m_targetvalue - m_value ) / m_friction;

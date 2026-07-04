@@ -71,7 +71,7 @@ light_array::update() {
 
             // set intensity
             if( light.count > 0 ) {
-				bool isEnabled = light.index == end::front ? !light.owner->HeadlightsAoff : !light.owner->HeadlightsBoff;
+				const bool isEnabled = light.index == end::front ? !light.owner->HeadlightsAoff : !light.owner->HeadlightsBoff;
 
 				light.intensity = std::max(0.0f, std::log((float)light.count + 1.0f));
 				if (light.owner->DimHeadlights && !light.owner->HighBeamLights && isEnabled) // tylko przyciemnione

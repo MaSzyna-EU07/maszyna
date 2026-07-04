@@ -31,7 +31,7 @@ float zmq_input::unpack_float(const zmq::message_t &msg) {
 }
 
 zmq::message_t zmq_input::pack_float(float f) {
-    uint32_t v = reinterpret_cast<uint32_t&>(f);
+	const uint32_t v = reinterpret_cast<uint32_t&>(f);
     uint8_t buf[4];
     buf[3] = v;
     buf[2] = v >> 8;
@@ -240,7 +240,7 @@ zmq::message_t zmq_input::pack_field(zmq_input::output_fields f) {
     if (f == output_fields::time_millisecond_of_day)
         return pack_float(time.wSecond * 1000 + time.wMilliseconds);
 
-    TTrain *train = simulation::Train;
+	const TTrain *train = simulation::Train;
     if (!train)
         return pack_float(0.0f);
     const TTrain::state_t state = train->get_state();

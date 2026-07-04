@@ -57,14 +57,14 @@ std::string lua::get_error() const
 void lua::interpret(const std::string& file) const
 {
 	if (luaL_dofile(state, file.c_str())) {
-		std::string str = lua_tostring(state, -1);
+		const std::string str = lua_tostring(state, -1);
 		ErrorLog("lua: Runtime error: " + str, logtype::lua);
 	}
 }
 
 int lua::atpanic(lua_State *s)
 {
-	std::string err = lua_tostring(s, -1);
+	const std::string err = lua_tostring(s, -1);
 	ErrorLog("lua: Runtime error: " + err, logtype::lua);
     return 0;
 }
@@ -124,11 +124,11 @@ memcell_values lua::get_memcell_values(lua_State *L, int idx)
 
 int lua::scriptapi_event_create(lua_State *L)
 {
-	std::string name = lua_tostring(L, 1);
-	double delay = lua_tonumber(L, 2);
-	double randomdelay = lua_tonumber(L, 3);
+	const std::string name = lua_tostring(L, 1);
+	const double delay = lua_tonumber(L, 2);
+	const double randomdelay = lua_tonumber(L, 3);
 	lua_pushvalue(L, 4);
-	int funcRef = luaL_ref(L, LUA_REGISTRYINDEX);
+	const int funcRef = luaL_ref(L, LUA_REGISTRYINDEX);
 
 	basic_event *event = new lua_event(L, funcRef);
 	event->m_name = name;
@@ -144,7 +144,7 @@ int lua::scriptapi_event_create(lua_State *L)
 
 int lua::scriptapi_event_find(lua_State *L)
 {
-	std::string name = lua_tostring(L, 1);
+	const std::string name = lua_tostring(L, 1);
 	basic_event *event = simulation::Events.FindEvent(name);
 	if (event)
 	{
@@ -157,15 +157,15 @@ int lua::scriptapi_event_find(lua_State *L)
 
 int lua::scriptapi_event_exists(lua_State *L)
 {
-	std::string name = lua_tostring(L, 1);
-	basic_event *event = simulation::Events.FindEvent(name);
+	const std::string name = lua_tostring(L, 1);
+	const basic_event *event = simulation::Events.FindEvent(name);
 	lua_pushboolean(L, event != nullptr);
 	return 1;
 }
 
 int lua::scriptapi_event_getname(lua_State *L)
 {
-	auto *event = static_cast<basic_event *>(lua_touserdata(L, 1));
+	const auto *event = static_cast<basic_event *>(lua_touserdata(L, 1));
 	if (event)
 	{
 		lua_pushstring(L, event->m_name.c_str());
@@ -177,8 +177,8 @@ int lua::scriptapi_event_getname(lua_State *L)
 int lua::scriptapi_event_dispatch(lua_State *L)
 {
 	auto *event = static_cast<basic_event *>(lua_touserdata(L, 1));
-	auto *activator = static_cast<TDynamicObject *>(lua_touserdata(L, 2));
-	double delay = lua_tonumber(L, 3);
+	const auto *activator = static_cast<TDynamicObject *>(lua_touserdata(L, 2));
+	const double delay = lua_tonumber(L, 3);
 	if (event)
 		simulation::Events.AddToQuery(event, activator, delay);
 	return 0;
@@ -186,9 +186,9 @@ int lua::scriptapi_event_dispatch(lua_State *L)
 
 int lua::scriptapi_event_dispatch_n(lua_State *L)
 {
-	std::string name = lua_tostring(L, 1);
-	auto *activator = static_cast<TDynamicObject *>(lua_touserdata(L, 2));
-	double delay = lua_tonumber(L, 3);
+	const std::string name = lua_tostring(L, 1);
+	const auto *activator = static_cast<TDynamicObject *>(lua_touserdata(L, 2));
+	const double delay = lua_tonumber(L, 3);
 	basic_event *event = simulation::Events.FindEvent(name);
 	if (event)
 		simulation::Events.AddToQuery(event, activator, delay);
@@ -199,7 +199,7 @@ int lua::scriptapi_event_dispatch_n(lua_State *L)
 
 int lua::scriptapi_track_find(lua_State *L)
 {
-	std::string name = lua_tostring(L, 1);
+	const std::string name = lua_tostring(L, 1);
 	TTrack *track = simulation::Paths.find(name);
 	if (track)
 	{
@@ -223,7 +223,7 @@ int lua::scriptapi_track_isoccupied(lua_State *L)
 
 int lua::scriptapi_track_isoccupied_n(lua_State *L)
 {
-	std::string name = lua_tostring(L, 1);
+	const std::string name = lua_tostring(L, 1);
 	TTrack *track = simulation::Paths.find(name);
 	if (track)
 	{
@@ -236,7 +236,7 @@ int lua::scriptapi_track_isoccupied_n(lua_State *L)
 
 int lua::scriptapi_isolated_find(lua_State *L)
 {
-	std::string name = lua_tostring(L, 1);
+	const std::string name = lua_tostring(L, 1);
 	TIsolated *isolated = TIsolated::Find(name);
 	if (isolated)
 	{
@@ -260,7 +260,7 @@ int lua::scriptapi_isolated_isoccupied(lua_State *L)
 
 int lua::scriptapi_isolated_isoccupied_n(lua_State *L)
 {
-	std::string name = lua_tostring(L, 1);
+	const std::string name = lua_tostring(L, 1);
 	TIsolated *isolated = TIsolated::Find(name);
 	if (isolated)
 	{
@@ -273,7 +273,7 @@ int lua::scriptapi_isolated_isoccupied_n(lua_State *L)
 
 int lua::scriptapi_train_getname(lua_State *L)
 {
-	auto *dyn = static_cast<TDynamicObject *>(lua_touserdata(L, 1));
+	const auto *dyn = static_cast<TDynamicObject *>(lua_touserdata(L, 1));
 	if (dyn && dyn->Mechanik)
 	{
 		lua_pushstring(L, dyn->Mechanik->TrainName().c_str());
@@ -284,11 +284,11 @@ int lua::scriptapi_train_getname(lua_State *L)
 
 int lua::scriptapi_dynobj_putvalues(lua_State *L)
 {
-	auto *dyn = static_cast<TDynamicObject *>(lua_touserdata(L, 1));
+	const auto *dyn = static_cast<TDynamicObject *>(lua_touserdata(L, 1));
 	auto [str, num1, num2] = get_memcell_values(L, 2);
 	if (!dyn)
 		return 0;
-	TLocation loc{};
+	const TLocation loc{};
 	if (dyn->Mechanik)
 		dyn->Mechanik->PutCommand(str, num1, num2, loc);
 	else
@@ -298,7 +298,7 @@ int lua::scriptapi_dynobj_putvalues(lua_State *L)
 
 int lua::scriptapi_memcell_find(lua_State *L)
 {
-	std::string str = lua_tostring(L, 1);
+	const std::string str = lua_tostring(L, 1);
 	TMemCell *mc = simulation::Memory.find(str);
 	if (mc)
 	{
@@ -311,15 +311,15 @@ int lua::scriptapi_memcell_find(lua_State *L)
 
 int lua::scriptapi_memcell_read(lua_State *L)
 {
-	auto *mc = static_cast<TMemCell *>(lua_touserdata(L, 1));
+	const auto *mc = static_cast<TMemCell *>(lua_touserdata(L, 1));
 	push_memcell_values(L, mc);
 	return 1;
 }
 
 int lua::scriptapi_memcell_read_n(lua_State *L)
 {
-	std::string str = lua_tostring(L, 1);
-	TMemCell *mc = simulation::Memory.find(str);
+	const std::string str = lua_tostring(L, 1);
+	const TMemCell *mc = simulation::Memory.find(str);
 	push_memcell_values(L, mc);
 	if (!mc)
 		ErrorLog("lua: missing memcell: " + str);
@@ -338,7 +338,7 @@ int lua::scriptapi_memcell_update(lua_State *L)
 
 int lua::scriptapi_memcell_update_n(lua_State *L)
 {
-	std::string mstr = lua_tostring(L, 1);
+	const std::string mstr = lua_tostring(L, 1);
 	auto [str, num1, num2] = get_memcell_values(L, 2);
 	TMemCell *mc = simulation::Memory.find(mstr);
 	if (mc)
@@ -351,22 +351,22 @@ int lua::scriptapi_memcell_update_n(lua_State *L)
 
 int lua::scriptapi_random(lua_State *L)
 {
-	double a = lua_tonumber(L, 1);
-	double b = lua_tonumber(L, 2);
+	const double a = lua_tonumber(L, 1);
+	const double b = lua_tonumber(L, 2);
 	lua_pushnumber(L, Random(a, b));
 	return 1;
 }
 
 int lua::scriptapi_writelog(lua_State *L)
 {
-	std::string txt = lua_tostring(L, 1);
+	const std::string txt = lua_tostring(L, 1);
 	WriteLog("lua: log: " + txt, logtype::lua);
 	return 0;
 }
 
 int lua::scriptapi_writeerrorlog(lua_State *L)
 {
-	std::string txt = lua_tostring(L, 1);
+	const std::string txt = lua_tostring(L, 1);
 	ErrorLog("lua: log: " + txt, logtype::lua);
 	return 0;
 }

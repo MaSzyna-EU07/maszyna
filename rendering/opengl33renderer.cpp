@@ -393,7 +393,7 @@ bool opengl33_renderer::AddViewport(const global_settings::extraviewport_config 
     vp->proj_type = viewport_config::custom;
     vp->draw_range = conf.draw_range;
 
-    bool ret = init_viewport(*vp);
+	const bool ret = init_viewport(*vp);
 	glfwMakeContextCurrent(m_window);
 
 	return ret;
@@ -445,7 +445,7 @@ bool opengl33_renderer::init_viewport(viewport_config &vp)
 		glBindVertexArray(v);
 	}
 
-	int samples = 1 << Global.iMultisampling;
+	const int samples = 1 << Global.iMultisampling;
 
 	model_ubo->bind_uniform();
 	scene_ubo->bind_uniform();
@@ -510,8 +510,8 @@ bool opengl33_renderer::init_viewport(viewport_config &vp)
 
 		if (Global.gfx_postfx_ssao_enabled)
 		{
-			int ssao_w = std::max(1, vp.width  / 2);
-			int ssao_h = std::max(1, vp.height / 2);
+			const int ssao_w = std::max(1, vp.width  / 2);
+			const int ssao_h = std::max(1, vp.height / 2);
 
 			vp.ssao_tex = std::make_unique<opengl_texture>();
 			vp.ssao_tex->alloc_rendertarget(GL_R8, GL_RED, ssao_w, ssao_h, 1, 1, GL_CLAMP_TO_EDGE);
@@ -559,7 +559,7 @@ bool opengl33_renderer::Render()
 
 	if (!Global.gfx_usegles)
 	{
-		std::optional<int64_t> result = m_timequery->result();
+		const std::optional<int64_t> result = m_timequery->result();
 		if (result) {
 			m_gllasttime = *result;
 			m_timequery->begin();
@@ -622,7 +622,7 @@ void opengl33_renderer::SwapBuffers()
 {
 	Timer::subsystem.gfx_swap.start();
 
-	for (auto &viewport : m_viewports) {
+	for (const auto &viewport : m_viewports) {
         if (viewport->window && viewport->real_window)
 			glfwSwapBuffers(viewport->window);
 	}
@@ -1489,7 +1489,7 @@ glm::mat4 opengl33_renderer::perspective_projection_raw(float fovy, float aspect
 
 glm::mat4 opengl33_renderer::ortho_projection(float l, float r, float b, float t, float znear, float zfar)
 {
-	glm::mat4 proj = glm::ortho(l, r, b, t, znear, zfar);
+	const glm::mat4 proj = glm::ortho(l, r, b, t, znear, zfar);
 	if (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control)
 		// when clip_control available, use projection matrix with 1..0 Z range
 		return glm::mat4( //
@@ -2141,11 +2141,11 @@ material_handle opengl33_renderer::Fetch_Material(std::string const &Filename, b
 
 std::shared_ptr<gl::program> opengl33_renderer::Fetch_Shader(const std::string &name)
 {
-	auto it = m_shaders.find(name);
+	const auto it = m_shaders.find(name);
 	if (it == m_shaders.end())
 	{
 		gl::shader fragment("mat_" + name + ".frag");
-		auto program = new gl::program({fragment, *m_vertex_shader.get()});
+		const auto program = new gl::program({fragment, *m_vertex_shader.get()});
 		m_shaders.insert({name, std::shared_ptr<gl::program>(program)});
 	}
 
@@ -2305,7 +2305,7 @@ void opengl33_renderer::Bind_Material_Shadow(material_handle const Material)
 {
 	if (Material != null_handle)
 	{
-		auto &material = m_materials.material(Material);
+		const auto &material = m_materials.material(Material);
 
 		if (material.textures[0] != null_handle)
 		{
@@ -3653,7 +3653,7 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 
 	if ((Submodel->iVisible) && (TSubModel::fSquareDist >= Submodel->fSquareMinDist) && (TSubModel::fSquareDist < Submodel->fSquareMaxDist))
 	{
-		glm::mat4 future_stack = model_ubs.future;
+		const glm::mat4 future_stack = model_ubs.future;
 
 		if (Submodel->iFlags & 0xC000)
 		{
@@ -3664,7 +3664,7 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 			{
 				Submodel->RaAnimation(Submodel->b_aAnim);
 
-				glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
+				const glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
 				model_ubs.future *= (mv * Submodel->future_transform) * glm::inverse(mv);
 			}
 		}
@@ -4133,8 +4133,8 @@ void opengl33_renderer::Render_vr_models()
     Global.pCamera.SetMatrix(tmpmat);
     tmpmat = glm::dmat3(tmpmat);
     glMultMatrixd(glm::value_ptr(glm::inverse(tmpmat)));
-    std::vector<TModel3d*> list = vr->get_render_models();
-    material_data data;
+	const std::vector<TModel3d*> list = vr->get_render_models();
+	const material_data data;
     for (TModel3d *mdl : list)
         Render(mdl, &data, 0.0);
     ::glPopMatrix();
@@ -4516,7 +4516,7 @@ bool opengl33_renderer::Render_Alpha(TDynamicObject *Dynamic)
 bool opengl33_renderer::Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance)
 {
 
-	auto alpha = (Material != nullptr ? Material->textures_alpha : 0x30300030);
+	const auto alpha = (Material != nullptr ? Material->textures_alpha : 0x30300030);
 
 	if (0 == (alpha & Model->iFlags & 0x2F2F002F))
 	{
@@ -5043,7 +5043,7 @@ void opengl33_renderer::Update(double const Deltatime)
 	// adjust draw ranges etc, based on recent performance
 
 	if (Global.targetfps != 0.0f) {
-		float fps_diff = Global.targetfps - m_framerate;
+		const float fps_diff = Global.targetfps - m_framerate;
 		if (fps_diff > 0.0f)
 			Global.fDistanceFactor = std::max(0.5f, Global.fDistanceFactor - 0.05f);
 		else
@@ -5291,9 +5291,9 @@ void opengl33_renderer::Update_Lights(light_array &Lights)
 
 bool opengl33_renderer::Init_caps()
 {
-	std::string gl_renderer((char *)glGetString(GL_RENDERER));
-	std::string gl_vendor((char *)glGetString(GL_VENDOR));
-	std::string gl_version((char *)glGetString(GL_VERSION));
+	const std::string gl_renderer((char *)glGetString(GL_RENDERER));
+	const std::string gl_vendor((char *)glGetString(GL_VENDOR));
+	const std::string gl_version((char *)glGetString(GL_VERSION));
 
 	crashreport_add_info("gl_renderer", gl_renderer);
 	crashreport_add_info("gl_vendor", gl_vendor);
@@ -5314,7 +5314,7 @@ bool opengl33_renderer::Init_caps()
 	WriteLog("Supported extensions:");
 	for (int i = 0; i < extCount; i++)
 	{
-		auto ext = (const char *)glGetStringi(GL_EXTENSIONS, i);
+		const auto ext = (const char *)glGetStringi(GL_EXTENSIONS, i);
 		WriteLog(ext);
 	}
 	WriteLog("--------");

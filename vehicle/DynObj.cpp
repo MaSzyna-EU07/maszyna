@@ -552,7 +552,7 @@ void TDynamicObject::SetPneumatic(bool front, bool red)
 
 void TDynamicObject::UpdateAxle(TAnim *pAnim)
 { // animacja osi
-    size_t wheel_id = pAnim->dWheelAngle;
+	const size_t wheel_id = pAnim->dWheelAngle;
     pAnim->smAnimated->SetRotate(float3(1, 0, 0), dWheelAngle[wheel_id]);
     pAnim->smAnimated->future_transform = glm::rotate((float)glm::radians(m_future_wheels_angle[wheel_id]), glm::vec3(1.0f, 0.0f, 0.0f));
 };
@@ -718,7 +718,7 @@ void TDynamicObject::UpdateWiper(TAnim* pAnim)
 	if (!pAnim || !pAnim->smElement)
 		return;
 
-	int i = pAnim->iNumber; 
+	const int i = pAnim->iNumber; 
     // odwaramy animacje dla parzystych indexow
 	const double rotateAngle = (i + 1) % 2 == 0 ? -MoverParameters->WiperAngle : MoverParameters->WiperAngle;
 
@@ -1525,7 +1525,7 @@ TDynamicObject::ABuFindObject( int &Foundcoupler, double &Distance, TTrack const
     }
 
     double objectposition; // robocza odległość od kolejnych pojazdów na danym odcinku
-    for( auto dynamic : Track->Dynamics ) {
+    for (const auto dynamic : Track->Dynamics ) {
 
         if( dynamic == this ) { continue; } // szukający się nie liczy
 /*
@@ -1894,7 +1894,7 @@ void TDynamicObject::place_on_track(TTrack *Track, double fDist, bool Reversed)
 		         -axle.offset :
 		        axle.offset + MoverParameters->Dim.L ) + fDist;
 	}
-	double fAxleDistHalf = fAxleDist * 0.5;
+	const double fAxleDistHalf = fAxleDist * 0.5;
 	// przesuwanie pojazdu tak, aby jego początek był we wskazanym miejcu
 	fDist -= 0.5 * MoverParameters->Dim.L; // dodajemy pół długości pojazdu, bo ustawiamy jego środek (zliczanie na minus)
 	switch (iNumAxles) {
@@ -2739,8 +2739,8 @@ void TDynamicObject::AttachNext(TDynamicObject *Object, int iType)
 
     // potentially attach automatic coupler adapter to allow the connection
     // HACK: we're doing it after establishin actual connection, as the method needs valid neighbour data
-    auto &coupler { MoverParameters->Couplers[ vehicleend ] };
-    auto &othercoupler { Object->MoverParameters->Couplers[ ( othervehicleend != 2 ? othervehicleend : coupler.ConnectedNr ) ] };
+	const auto &coupler { MoverParameters->Couplers[ vehicleend ] };
+	const auto &othercoupler { Object->MoverParameters->Couplers[ ( othervehicleend != 2 ? othervehicleend : coupler.ConnectedNr ) ] };
 
     if( coupler.type() != othercoupler.type() ) {
         if( othercoupler.type() == TCouplerType::Automatic ) {
@@ -4181,7 +4181,7 @@ void TDynamicObject::pants_up()
 	auto d = this;
 	bool isAnyPantUp = false;
 	while (d) {
-		for (auto &item : d->MoverParameters->Pantographs)
+		for (const auto &item : d->MoverParameters->Pantographs)
 		{
 			isAnyPantUp |= item.is_active;
 		}
@@ -4189,7 +4189,7 @@ void TDynamicObject::pants_up()
 	}
 	d = Prev(4);
 	while (d) {
-		for (auto &item : d->MoverParameters->Pantographs)
+		for (const auto &item : d->MoverParameters->Pantographs)
 		{
 			isAnyPantUp |= item.is_active;
 		}
@@ -7295,9 +7295,9 @@ void TDynamicObject::RaLightsSet(int head, int rear)
 		bool tRight = MoverParameters->iLights[vehicleend] & (light::auxiliary_right | light::headlight_right); // a tu z prawej
         if (Controller == Humandriver) {
 
-            int &currentDimPos = MoverParameters->modernDimmerPosition;
-			auto &dimmerPositions = MoverParameters->dimPositions;
-			TMoverParameters::dimPosition dps = dimmerPositions[currentDimPos];
+			const int &currentDimPos = MoverParameters->modernDimmerPosition;
+			const auto &dimmerPositions = MoverParameters->dimPositions;
+			const TMoverParameters::dimPosition dps = dimmerPositions[currentDimPos];
 
             // domyślnie
 			HighBeamLights = false;
@@ -7359,9 +7359,9 @@ void TDynamicObject::SetLightDimmings()
 	if (Controller == Humandriver)
 	{
 
-		int &currentDimPos = MoverParameters->modernDimmerPosition;
-		auto &dimmerPositions = MoverParameters->dimPositions;
-		TMoverParameters::dimPosition dps = dimmerPositions[currentDimPos];
+		const int &currentDimPos = MoverParameters->modernDimmerPosition;
+		const auto &dimmerPositions = MoverParameters->dimPositions;
+		const TMoverParameters::dimPosition dps = dimmerPositions[currentDimPos];
 
 		// domyślnie
 		HighBeamLights = false;
@@ -8247,7 +8247,7 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
     }
 
 	if (Vehicle.Mains) {
-		float power = std::clamp(Vehicle.eimv_pr, 0.0, 1.0);
+		const float power = std::clamp(Vehicle.eimv_pr, 0.0, 1.0);
 
 		fake_engine
 		        .pitch(fake_engine.m_frequencyoffset + power * fake_engine.m_frequencyfactor)
@@ -8311,7 +8311,7 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
     }
 
 	if (Vehicle.hydro_R) {
-		float speed = std::abs(Vehicle.hydro_R_n);
+		const float speed = std::abs(Vehicle.hydro_R_n);
 
 		retarder
 			.pitch(retarder.m_frequencyoffset + speed * retarder.m_frequencyfactor)

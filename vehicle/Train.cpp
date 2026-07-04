@@ -849,8 +849,8 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState(dictionary_source const
 		dict->insert("compressors_" + idx + "_car_no", std::get<2>(bCompressors[i]));
 	}
 
-	bool kier = DynamicObject->DirectionGet() * mvOccupied->CabOccupied > 0;
-	TDynamicObject *p = DynamicObject->GetFirstDynamic(mvOccupied->CabOccupied < 0 ? end::rear : end::front, 4);
+	const bool kier = DynamicObject->DirectionGet() * mvOccupied->CabOccupied > 0;
+	const TDynamicObject *p = DynamicObject->GetFirstDynamic(mvOccupied->CabOccupied < 0 ? end::rear : end::front, 4);
 	int in = 0;
 	while (p && in < 8)
 	{
@@ -1878,7 +1878,7 @@ void TTrain::OnCommand_independentbrakebailoff(TTrain *Train, command_data const
 	else
 	{
 		// car brake handling, while in walk mode
-		auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)};
+		const auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)};
 		if (vehicle != nullptr)
 		{
 			if (Command.action == GLFW_PRESS)
@@ -2135,7 +2135,7 @@ void TTrain::OnCommand_trainbrakeoperationtoggle(TTrain *Train, command_data con
 	if (Command.action == GLFW_PRESS)
 	{
 
-		auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)};
+		const auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)};
 		if (vehicle == nullptr)
 		{
 			return;
@@ -2151,7 +2151,7 @@ void TTrain::OnCommand_manualbrakeincrease(TTrain *Train, command_data const &Co
 	if (Command.action != GLFW_RELEASE)
 	{
 
-		auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)};
+		const auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)};
 		if (vehicle == nullptr)
 		{
 			return;
@@ -2171,7 +2171,7 @@ void TTrain::OnCommand_manualbrakedecrease(TTrain *Train, command_data const &Co
 	if (Command.action != GLFW_RELEASE)
 	{
 
-		auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)};
+		const auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)};
 		if (vehicle == nullptr)
 		{
 			return;
@@ -2576,7 +2576,7 @@ void TTrain::OnCommand_brakeloadcompensationincrease(TTrain *Train, command_data
 
 	if (true == Command.freefly && Command.action == GLFW_PRESS)
 	{
-		auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)};
+		const auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)};
 		if (vehicle != nullptr)
 		{
 			vehicle->MoverParameters->IncBrakeMult();
@@ -2589,7 +2589,7 @@ void TTrain::OnCommand_brakeloadcompensationdecrease(TTrain *Train, command_data
 
 	if (true == Command.freefly && Command.action == GLFW_PRESS)
 	{
-		auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)};
+		const auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)};
 		if (vehicle != nullptr)
 		{
 			vehicle->MoverParameters->DecBrakeMult();
@@ -3516,7 +3516,7 @@ void TTrain::update_pantograph_valves()
 {
 
 	auto const &presets{mvOccupied->PantsPreset.first};
-	auto &selection{mvOccupied->PantsPreset.second[cab_to_end()]};
+	const auto &selection{mvOccupied->PantsPreset.second[cab_to_end()]};
 
 	auto const preset{presets[selection] - '0'};
 	auto const swapends{cab_to_end() != end::front};
@@ -3550,7 +3550,7 @@ void TTrain::change_pantograph_selection(int const Change)
 void TTrain::OnCommand_pantographvalvesupdate(TTrain *Train, command_data const &Command)
 {
 
-	bool hasSeparateSwitches = Train->m_controlmapper.contains("pantvalvesupdate_bt:") && Train->m_controlmapper.contains("pantvalvesoff_bt:");
+	const bool hasSeparateSwitches = Train->m_controlmapper.contains("pantvalvesupdate_bt:") && Train->m_controlmapper.contains("pantvalvesoff_bt:");
 
 	if (Command.action == GLFW_REPEAT)
 	{
@@ -3590,7 +3590,7 @@ void TTrain::OnCommand_pantographvalvesupdate(TTrain *Train, command_data const 
 void TTrain::OnCommand_pantographvalvesoff(TTrain *Train, command_data const &Command)
 {
 
-	bool hasSeparateSwitches = Train->m_controlmapper.contains("pantvalvesupdate_bt:") && Train->m_controlmapper.contains("pantvalvesoff_bt:");
+	const bool hasSeparateSwitches = Train->m_controlmapper.contains("pantvalvesupdate_bt:") && Train->m_controlmapper.contains("pantvalvesoff_bt:");
 
 	if (Command.action == GLFW_REPEAT)
 	{
@@ -5893,7 +5893,7 @@ void TTrain::OnCommand_modernlightdimmerincrease(TTrain *Train, command_data con
 		// update modern dimmer state
 
 		auto &dimPos = Train->mvOccupied->modernDimmerPosition;
-		auto dimCount = Train->mvOccupied->dimPositions.size();
+		const auto dimCount = Train->mvOccupied->dimPositions.size();
 		if (dimPos + 1 < dimCount)
 			dimPos++;
 		else if (Train->mvOccupied->modernDimmerCanCycle)
@@ -5917,7 +5917,7 @@ void TTrain::OnCommand_modernlightdimmerdecrease(TTrain *Train, command_data con
 	if (Command.action == GLFW_PRESS)
 	{
 		auto &dimPos = Train->mvOccupied->modernDimmerPosition;
-		auto dimCount = Train->mvOccupied->dimPositions.size();
+		const auto dimCount = Train->mvOccupied->dimPositions.size();
 
 		if (dimCount == 0)
 			return;
@@ -6106,7 +6106,7 @@ void TTrain::OnCommand_endsignalstoggle(TTrain *Train, command_data const &Comma
 	if (true == Command.freefly && Command.action == GLFW_PRESS)
 	{
 
-		auto *vehicle{std::get<TDynamicObject *>(simulation::Region->find_vehicle(Command.location, 10, false, true))};
+		const auto *vehicle{std::get<TDynamicObject *>(simulation::Region->find_vehicle(Command.location, 10, false, true))};
 
 		if (vehicle == nullptr)
 		{
@@ -6878,7 +6878,7 @@ void TTrain::OnCommand_springbrakerelease(TTrain *Train, command_data const &Com
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
 
-		auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)};
+		const auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)};
 		if (vehicle == nullptr)
 		{
 			return;
@@ -6985,9 +6985,9 @@ void TTrain::OnCommand_inverterenable(TTrain *Train, command_data const &Command
 	if (Command.action == GLFW_PRESS)
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
-		bool kier = Train->DynamicObject->DirectionGet() * Train->mvOccupied->CabOccupied > 0;
-		int flag = Train->DynamicObject->MoverParameters->InverterControlCouplerFlag;
-		TDynamicObject *p = Train->DynamicObject->GetFirstDynamic(Train->mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
+		const bool kier = Train->DynamicObject->DirectionGet() * Train->mvOccupied->CabOccupied > 0;
+		const int flag = Train->DynamicObject->MoverParameters->InverterControlCouplerFlag;
+		const TDynamicObject *p = Train->DynamicObject->GetFirstDynamic(Train->mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
 		while (p)
 		{
 			if (p->MoverParameters->eimc[eimc_p_Pmax] > 1)
@@ -7024,9 +7024,9 @@ void TTrain::OnCommand_inverterdisable(TTrain *Train, command_data const &Comman
 	if (Command.action == GLFW_PRESS)
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
-		bool kier = Train->DynamicObject->DirectionGet() * Train->mvOccupied->CabOccupied > 0;
-		int flag = Train->DynamicObject->MoverParameters->InverterControlCouplerFlag;
-		TDynamicObject *p = Train->DynamicObject->GetFirstDynamic(Train->mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
+		const bool kier = Train->DynamicObject->DirectionGet() * Train->mvOccupied->CabOccupied > 0;
+		const int flag = Train->DynamicObject->MoverParameters->InverterControlCouplerFlag;
+		const TDynamicObject *p = Train->DynamicObject->GetFirstDynamic(Train->mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
 		while (p)
 		{
 			if (p->MoverParameters->eimc[eimc_p_Pmax] > 1)
@@ -7063,9 +7063,9 @@ void TTrain::OnCommand_invertertoggle(TTrain *Train, command_data const &Command
 	if (Command.action == GLFW_PRESS)
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
-		bool kier = Train->DynamicObject->DirectionGet() * Train->mvOccupied->CabOccupied > 0;
-		int flag = Train->DynamicObject->MoverParameters->InverterControlCouplerFlag;
-		TDynamicObject *p = Train->DynamicObject->GetFirstDynamic(Train->mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
+		const bool kier = Train->DynamicObject->DirectionGet() * Train->mvOccupied->CabOccupied > 0;
+		const int flag = Train->DynamicObject->MoverParameters->InverterControlCouplerFlag;
+		const TDynamicObject *p = Train->DynamicObject->GetFirstDynamic(Train->mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
 		while (p)
 		{
 			if (p->MoverParameters->eimc[eimc_p_Pmax] > 1)
@@ -8373,14 +8373,14 @@ void TTrain::OnCommand_vehicleboost(TTrain *Train, const command_data &Command)
 	if (Command.action == GLFW_RELEASE || !DebugModeFlag)
 		return;
 
-	double boost = Command.param1 != 0.0 ? Command.param1 : 2.78;
+	const double boost = Command.param1 != 0.0 ? Command.param1 : 2.78;
 
 	if (Train->DynamicObject == nullptr)
 	{
 		return;
 	}
 
-	auto *vehicle{Train->DynamicObject};
+	const auto *vehicle{Train->DynamicObject};
 	while (vehicle)
 	{
 		vehicle->MoverParameters->V += vehicle->DirectionGet() * boost;
@@ -8589,7 +8589,7 @@ bool TTrain::Update(double const Deltatime)
 	}
 	fTachoVelocity = static_cast<float>(std::min(std::abs(11.31 * mvControlled->WheelDiameter * mvControlled->nrot), maxSpeed));
 	{ // skacze osobna zmienna
-		float ff = simulation::Time.data().wSecond; // skacze co sekunde - pol sekundy
+		const float ff = simulation::Time.data().wSecond; // skacze co sekunde - pol sekundy
 		// pomiar, pol sekundy ustawienie
 		if (ff != fTachoTimer) // jesli w tej sekundzie nie zmienial
 		{
@@ -8643,8 +8643,8 @@ bool TTrain::Update(double const Deltatime)
 		fHCurrent[3] = mvControlled->ShowCurrent(3);
 	}
 
-	bool kier = DynamicObject->DirectionGet() * mvOccupied->CabOccupied > 0;
-	TDynamicObject *p = DynamicObject->GetFirstDynamic(mvOccupied->CabOccupied < 0 ? end::rear : end::front, 4);
+	const bool kier = DynamicObject->DirectionGet() * mvOccupied->CabOccupied > 0;
+	const TDynamicObject *p = DynamicObject->GetFirstDynamic(mvOccupied->CabOccupied < 0 ? end::rear : end::front, 4);
 	int in = 0;
 	fEIMParams[0][6] = 0;
 	iCarNo = 0;
@@ -8843,7 +8843,7 @@ bool TTrain::Update(double const Deltatime)
 
 	// youBy - prad w drugim czlonie: galaz lub calosc
 	{
-		TDynamicObject *tmp{nullptr};
+		const TDynamicObject *tmp{nullptr};
 		if (DynamicObject->NextConnected())
 			if (TestFlag(mvControlled->Couplers[end::rear].CouplingFlag, coupling::control) && mvOccupied->CabOccupied == 1)
 				tmp = DynamicObject->NextConnected();
@@ -8976,7 +8976,7 @@ bool TTrain::Update(double const Deltatime)
 	if (mvControlled->SlippingWheels)
 	{
 		// Ra 2014-12: lokomotywy 181/182 dostają SlippingWheels po zahamowaniu powyżej 2.85 bara i buczały
-		double veldiff = (DynamicObject->GetVelocity() - fTachoVelocity) / mvControlled->Vmax;
+		const double veldiff = (DynamicObject->GetVelocity() - fTachoVelocity) / mvControlled->Vmax;
 		if (veldiff < -0.01)
 		{
 			// 1% Vmax rezerwy, żeby 181/182 nie buczały po zahamowaniu, ale to proteza
@@ -9303,7 +9303,7 @@ bool TTrain::Update(double const Deltatime)
 	}
 
 	{ // yB - wskazniki drugiego czlonu
-		TDynamicObject *tmp{nullptr}; //=mvControlled->mvSecond; //Ra 2014-07: trzeba to jeszcze wyjąć z kabiny...
+		const TDynamicObject *tmp{nullptr}; //=mvControlled->mvSecond; //Ra 2014-07: trzeba to jeszcze wyjąć z kabiny...
 		// Ra 2014-07: no nie ma potrzeby szukać tego w każdej klatce
 		if (TestFlag(mvControlled->Couplers[1].CouplingFlag, coupling::control) && mvOccupied->CabOccupied > 0)
 			tmp = DynamicObject->NextConnected();
@@ -10202,7 +10202,7 @@ void TTrain::update_sounds_resonancenoise(sound_source &Sound)
 	auto const frequency{Sound.m_frequencyoffset + Sound.m_frequencyfactor * mvOccupied->Vel * normalizer};
 
 	// volume calculation
-	auto volume = Sound.m_amplitudeoffset + Sound.m_amplitudefactor * std::lerp(mvOccupied->Vel / (1 + mvOccupied->Vmax), 1.0, 0.5); // scale base volume between 0.5-1.0
+	const auto volume = Sound.m_amplitudeoffset + Sound.m_amplitudefactor * std::lerp(mvOccupied->Vel / (1 + mvOccupied->Vmax), 1.0, 0.5); // scale base volume between 0.5-1.0
 
 	if (volume > 0.05)
 	{
@@ -10261,7 +10261,7 @@ void TTrain::update_sounds_radio()
 	}
 	// adjust audibility of remaining messages based on current radio conditions
 	auto const radioenabled{true == mvOccupied->Radio && (mvOccupied->Power24vIsAvailable || mvOccupied->Power110vIsAvailable)};
-	for (auto &message : m_radiomessages)
+	for (const auto &message : m_radiomessages)
 	{
 		auto const volume{true == radioenabled && Dynamic()->Mechanik != nullptr && message.first == RadioChannel() ? m_radiovolume : 0.0};
 		message.second->gain(volume);
@@ -10298,7 +10298,7 @@ void TTrain::update_screens(double dt)
 
 		screen.updatetimecounter = screen.updatetime > 0 ? 0 : -1;
 
-		auto state_dict = GetTrainState(screen.parameters);
+		const auto state_dict = GetTrainState(screen.parameters);
 
 		state_dict->insert("touches", *screen.touch_list);
 		screen.touch_list->clear();
@@ -10871,7 +10871,7 @@ void TTrain::DynamicSet(TDynamicObject *d)
 		}
 	// cache nearest unit equipped with pantographs
 	{
-		auto *lookup{DynamicObject->FindPantographCarrier()};
+		const auto *lookup{DynamicObject->FindPantographCarrier()};
 		// HACK: set pointer to existing vehicle to avoid error checking all over the place
 		mvPantographUnit = lookup != nullptr ? lookup->MoverParameters : mvControlled;
 	}
@@ -11597,14 +11597,14 @@ void TTrain::set_cab_controls(int const Cab)
 	ggRadioVolumeSelector.PutValue(m_radiovolume);
 
 	// finding each inverter - not so optimal, but action ins performed only during changing cabin
-	bool kier = DynamicObject->DirectionGet() * mvOccupied->CabOccupied > 0;
-	int flag = DynamicObject->MoverParameters->InverterControlCouplerFlag;
+	const bool kier = DynamicObject->DirectionGet() * mvOccupied->CabOccupied > 0;
+	const int flag = DynamicObject->MoverParameters->InverterControlCouplerFlag;
 	int itemstart = 0;
 	for (auto &item : ggInverterToggleButtons) // for each button
 	{
 		int itemindex = itemstart;
 		itemstart++;
-		TDynamicObject *p = DynamicObject->GetFirstDynamic(mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
+		const TDynamicObject *p = DynamicObject->GetFirstDynamic(mvOccupied->CabOccupied < 0 ? end::rear : end::front, flag);
 		while (p)
 		{
 			if (p->MoverParameters->eimc[eimc_p_Pmax] > 1)
@@ -11742,7 +11742,7 @@ bool TTrain::initialize_button(cParser &Parser, std::string const &Label, int co
 	    {"i-edenabled", btEDenabled},
 	};
 	{
-		auto lookup = lights.find(Label);
+		const auto lookup = lights.find(Label);
 		if (lookup != lights.end())
 		{
 			lookup->second.Load(Parser, DynamicObject);
@@ -11761,7 +11761,7 @@ bool TTrain::initialize_button(cParser &Parser, std::string const &Label, int co
 	    {"i-cablight:", &Cabine[iCabn].bLight},
 	};
 	{
-		auto lookup = autolights.find(Label);
+		const auto lookup = autolights.find(Label);
 		if (lookup != autolights.end())
 		{
 			auto &button = Cabine[Cabindex].Button(-1); // pierwsza wolna lampka
@@ -11798,7 +11798,7 @@ bool TTrain::initialize_button(cParser &Parser, std::string const &Label, int co
 	}
 	else if (Label == "i-doors:")
 	{
-		int i = Parser.getToken<int>() - 1;
+		const int i = Parser.getToken<int>() - 1;
 		auto &button = Cabine[Cabindex].Button(-1); // pierwsza wolna lampka
 		button.Load(Parser, DynamicObject);
 		button.AssignBool(bDoors[0] + 3 * i);

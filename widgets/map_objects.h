@@ -30,7 +30,7 @@ struct semaphore : public map_object
 	TMemCell *memcell = nullptr;
 
 	virtual gfx::basic_vertex vertex() override {
-		bool stop_signal = memcell->IsVelocity() && (memcell->Value1() == 0.0);
+		const bool stop_signal = memcell->IsVelocity() && (memcell->Value1() == 0.0);
 		return gfx::basic_vertex(location, glm::vec3(),
 		    (!stop_signal) ? glm::vec2(0.0f, 0.2f) : glm::vec2(0.2f, 0.4f));
 	}

@@ -169,7 +169,7 @@ void render_task::run()
 	auto *commandsPO = PyObject_CallMethod(m_renderer, const_cast<char *>("getCommands"), nullptr);
 	if (commandsPO != nullptr)
 	{
-		std::vector<std::string> commands = python_external_utils::PyObjectToStringArray(commandsPO);
+		const std::vector<std::string> commands = python_external_utils::PyObjectToStringArray(commandsPO);
 
 		Py_DECREF(commandsPO);
 		// we perform any actions ONLY when there are any commands in buffer
@@ -180,7 +180,7 @@ void render_task::run()
 				std::string baseCmd;
 				int p1 = 0, p2 = 0;
 
-				size_t pos1 = cmd.find(';');
+				const size_t pos1 = cmd.find(';');
 				if (pos1 == std::string::npos)
 				{
 					baseCmd = cmd;
@@ -189,7 +189,7 @@ void render_task::run()
 				{
 					baseCmd = cmd.substr(0, pos1);
 
-					size_t pos2 = cmd.find(';', pos1 + 1);
+					const size_t pos2 = cmd.find(';', pos1 + 1);
 					if (pos2 == std::string::npos)
 					{
 						p1 = std::stoi(cmd.substr(pos1 + 1));
@@ -346,7 +346,7 @@ void python_taskqueue::exit()
 	// which the previous code did not do (cancel() is a no-op stub).
 	{
 		std::lock_guard<std::mutex> lock(m_tasks.mutex);
-		for (auto &task : m_tasks.data)
+		for (const auto &task : m_tasks.data)
 		{
 			task->cancel();
 		}
@@ -359,7 +359,7 @@ void python_taskqueue::exit()
 	// reclaim cached python objects while the interpreter is still alive,
 	// so no Py_DECREF lands on a finalized interpreter during later teardown
 	acquire_lock();
-	for (auto &entry : m_renderers)
+	for (const auto &entry : m_renderers)
 	{
 		Py_XDECREF(entry.second);
 	}
@@ -593,7 +593,7 @@ void python_taskqueue::update()
 {
 	std::lock_guard<std::mutex> lock(m_uploadtasks.mutex);
 
-	for (auto &task : m_uploadtasks.data)
+	for (const auto &task : m_uploadtasks.data)
 		task->upload();
 
 	m_uploadtasks.data.clear();
@@ -674,7 +674,7 @@ std::vector<std::string> python_external_utils::PyObjectToStringArray(PyObject *
 		return emptyIfError;
 	}
 
-	Py_ssize_t size = PySequence_Size(pyList);
+	const Py_ssize_t size = PySequence_Size(pyList);
 	for (Py_ssize_t i = 0; i < size; ++i)
 	{
 		PyObject *item = PySequence_GetItem(pyList, i); // Increments reference count

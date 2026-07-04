@@ -345,7 +345,7 @@ void editor_mode::add_to_hierarchy(scene::basic_node *node)
 void editor_mode::remove_from_hierarchy(scene::basic_node *node)
 {
     if (!node) return;
-    auto it = scene::Hierarchy.find(node->uuid.to_string());
+	const auto it = scene::Hierarchy.find(node->uuid.to_string());
     if (it != scene::Hierarchy.end())
         scene::Hierarchy.erase(it);
 }
@@ -353,7 +353,7 @@ void editor_mode::remove_from_hierarchy(scene::basic_node *node)
 scene::basic_node* editor_mode::find_in_hierarchy(const std::string &uuid_str)
 {
     if (uuid_str.empty()) return nullptr;
-    auto it = scene::Hierarchy.find(uuid_str);
+	const auto it = scene::Hierarchy.find(uuid_str);
     return it != scene::Hierarchy.end() ? it->second : nullptr;
 }
 
@@ -389,7 +389,7 @@ void editor_mode::push_snapshot(scene::basic_node *node, EditorSnapshot::Action 
     snap.position = node->location();
     snap.uuid = node->uuid;
     
-    if (auto *model = dynamic_cast<TAnimModel *>(node))
+    if (const auto *model = dynamic_cast<TAnimModel *>(node))
     {
         snap.rotation = model->Angles();
         snap.scale = model->Scale();
@@ -417,7 +417,7 @@ void editor_mode::push_snapshot(scene::basic_node *node, EditorSnapshot::Action 
 
 glm::dvec3 editor_mode::clamp_mouse_offset_to_max(const glm::dvec3 &offset)
 {
-    double len = glm::length(offset);
+	const double len = glm::length(offset);
     if (len <= static_cast<double>(kMaxPlacementDistance) || len <= 1e-6)
         return offset;
     return glm::normalize(offset) * static_cast<double>(kMaxPlacementDistance);
@@ -681,7 +681,7 @@ bool editor_mode::update()
     {
         auto const terrains = active_terrains();
         bool any_dirty = false;
-        for (editor_terrain *terrain : terrains)
+        for (const editor_terrain *terrain : terrains)
             if (terrain->dirty())
             {
                 any_dirty = true;
@@ -910,7 +910,7 @@ void editor_mode::render_terrain_ui()
 
 editor_terrain *editor_mode::terrain_at(double X, double Z)
 {
-    for (auto &terrain : m_terrains)
+    for (const auto &terrain : m_terrains)
         if (terrain && terrain->contains(X, Z))
             return terrain.get();
     double const size = chunk_grid_size();
@@ -1402,7 +1402,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
     Global.ctrlState = Mods & GLFW_MOD_CONTROL ? true : false;
     Global.altState = Mods & GLFW_MOD_ALT ? true : false;
 #endif
-    bool anyModifier = Mods & (GLFW_MOD_SHIFT | GLFW_MOD_CONTROL | GLFW_MOD_ALT);
+	const bool anyModifier = Mods & (GLFW_MOD_SHIFT | GLFW_MOD_CONTROL | GLFW_MOD_ALT);
 
     // first give UI a chance to handle the key
     if (!anyModifier && m_userinterface->on_key(Key, Action))
@@ -1473,14 +1473,14 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
     case GLFW_KEY_DELETE:
         if (is_press(Action))
         {
-			auto model = dynamic_cast<TAnimModel *>(m_node);
+			const auto model = dynamic_cast<TAnimModel *>(m_node);
             if (model)
             {
                 // record deletion for undo (serialize full node)
                 std::string as_text;
                 
                 model->export_as_text(as_text);
-                std::string debug = "Deleting node: " + as_text + "\nSerialized data:\n";
+				const std::string debug = "Deleting node: " + as_text + "\nSerialized data:\n";
                 push_snapshot(model, EditorSnapshot::Action::Delete, as_text);
                 WriteLog(debug, logtype::generic);
 
@@ -1654,7 +1654,7 @@ void editor_mode::render_change_history(){
         m_max_history_size = std::max(0, maxsize);
         if ((int)m_history.size() > m_max_history_size && m_max_history_size >= 0)
         {
-            auto remove_count = (int)m_history.size() - m_max_history_size;
+			const auto remove_count = (int)m_history.size() - m_max_history_size;
             m_history.erase(m_history.begin(), m_history.begin() + remove_count);
             // adjust selected index
             if (m_selected_history_idx >= (int)m_history.size())
@@ -1705,8 +1705,8 @@ void editor_mode::render_change_history(){
     {
         if (m_selected_history_idx >= 0 && m_selected_history_idx < (int)m_history.size())
         {
-            int target = m_selected_history_idx;
-            int undoCount = (int)m_history.size() - 1 - target;
+			const int target = m_selected_history_idx;
+			const int undoCount = (int)m_history.size() - 1 - target;
             for (int k = 0; k < undoCount; ++k)
                 undo_last();
             m_selected_history_idx = -1;

@@ -39,8 +39,8 @@ opengl_precipitation::create( int const Tesselation ) {
     std::uint16_t index = 0;
 
 //    auto const radius { 25.f }; // cylinder radius
-    std::vector<float> radii { 25.f, 10.f, 5.f, 1.f };
-    for( auto radius : radii ) {
+	const std::vector<float> radii { 25.f, 10.f, 5.f, 1.f };
+    for (const auto radius : radii ) {
 
         for( int i = 0; i <= latitudes; ++i ) {
 
@@ -57,7 +57,7 @@ opengl_precipitation::create( int const Tesselation ) {
                 m_vertices.emplace_back( glm::vec3( -x * zr, -z * heightfactor, -y * zr ) * radius );
                 // uvs
                 // NOTE: first and last row receives modified u values to deal with limitation of mapping onto triangles
-                auto u = (
+				const auto u = (
                     i == 0 ? longitude + longitudehalfstep :
                     i == latitudes ? longitude - longitudehalfstep :
                     longitude );

@@ -85,7 +85,7 @@ sound_source::deserialize( cParser &Input, sound_type const Legacytype, int cons
             m_soundchunks.back().second.fadeout = std::max( Chunkrange, m_soundchunks.back().second.threshold );
 //            m_soundchunks.back().second.fadeout = m_soundchunks.back().second.threshold;
             // test if the chunk table contains any actual samples while at it
-            for( auto &soundchunk : m_soundchunks ) {
+            for (const auto &soundchunk : m_soundchunks ) {
                 if( soundchunk.first.buffer != null_handle ) {
                     m_soundchunksempty = false;
                     break;
@@ -247,7 +247,7 @@ sound_source::deserialize_mapping( cParser &Input ) {
             { "external", sound_placement::external },
             { "custom", sound_placement::custom },
             { "general", sound_placement::general } };
-        auto lookup{ placements.find( value ) };
+		const auto lookup{ placements.find( value ) };
         if( lookup != placements.end() ) {
             m_placement = lookup->second;
         }
@@ -269,7 +269,7 @@ sound_source::deserialize_mapping( cParser &Input ) {
             { "amplitudeoffset:", m_amplitudeoffset },
             { "range:", m_range } };
 
-        auto lookup { properties.find( key ) };
+		const auto lookup { properties.find( key ) };
         if( lookup != properties.end() ) {
             Input.getTokens( 1, false, "\n\r\t ,;" );
             Input >> lookup->second;
@@ -802,7 +802,7 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
         // chunks other than the first can have fadein
         auto const fadeinwidth { chunkdata.threshold - chunkdata.fadein };
         if( soundpoint < chunkdata.threshold ) {
-            float lineargain =
+			const float lineargain =
                 std::lerp(
                     0.f, 1.f,
                     std::clamp(
@@ -822,7 +822,7 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
         auto const fadeoutwidth { chunkdata.fadeout - m_soundchunks[ chunkindex + 1 ].second.fadein };
         auto const fadeoutstart { chunkdata.fadeout - fadeoutwidth };
         if( soundpoint > fadeoutstart ) {
-			float lineargain =
+			const float lineargain =
                 std::lerp(
                     0.f, 1.f,
                     std::clamp(
@@ -973,7 +973,7 @@ sound_source::update_soundproofing() {
                 4 ) : // free roam view
         listenervehicle->MoverParameters->CabOccupied ) }; // some internal view so we can be sure listener isn't a nullptr
     // location-based gain factor:
-    std::uintptr_t soundproofingstamp =
+	const std::uintptr_t soundproofingstamp =
         reinterpret_cast<std::uintptr_t>( listenervehicle )
         + ( listenervehicle ?
                 occupiedcab :

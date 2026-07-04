@@ -46,9 +46,9 @@ double ComputeCollision(double &v1, double &v2, double m1, double m2, double bet
 		return 0;
 	else
 	{
-		double sum = m1 + m2;
-		double w1 = (m2 * v2 * 2.0 + v1 * (m1 - m2)) / sum;
-		double w2 = (m1 * v1 * 2.0 + v2 * (m2 - m1)) / sum;
+		const double sum = m1 + m2;
+		const double w1 = (m2 * v2 * 2.0 + v1 * (m1 - m2)) / sum;
+		const double w2 = (m1 * v1 * 2.0 + v2 * (m2 - m1)) / sum;
 		v1 = w1 * std::sqrt(1.0 - beta); // niejawna zmiana predkosci wskutek zderzenia
 		v2 = w2 * std::sqrt(1.0 - beta);
 		return m1 * (w2 - w1) * (1 - beta);
@@ -130,8 +130,8 @@ void TSecuritySystem::update(double dt, double vel, bool pwr, int cab)
 		return;
 	}
 
-	bool just_powered_on = !power && pwr;
-	bool just_activated = CabDependent && cabactive != cab;
+	const bool just_powered_on = !power && pwr;
+	const bool just_activated = CabDependent && cabactive != cab;
 
 	/* enabling battery */
 	if (cabsignal_enabled && (just_powered_on || just_activated))
@@ -233,7 +233,7 @@ bool TSecuritySystem::is_engine_blocked() const
 
 void TSecuritySystem::load(std::string const &line, double Vmax)
 {
-	std::string awaresystem = extract_value("AwareSystem", line);
+	const std::string awaresystem = extract_value("AwareSystem", line);
 	if (awaresystem.find("Active") != std::string::npos)
 		vigilance_enabled = true;
 	if (awaresystem.find("CabSignal") != std::string::npos)
@@ -274,7 +274,7 @@ double TableInterpolation(std::map<double, double> &Map, double Parameter)
 		lower--;
 		upper--;
 	}
-	double ratio = (upper->second - lower->second) / (upper->first - lower->first);
+	const double ratio = (upper->second - lower->second) / (upper->first - lower->first);
 	return lower->second + (Parameter - lower->first) * ratio;
 }
 
@@ -660,7 +660,7 @@ bool TMoverParameters::Dettach(int ConnectNo)
 { // rozlaczanie
 
 	auto &coupler{Couplers[ConnectNo]};
-	auto &othervehicle{coupler.Connected};
+	const auto &othervehicle{coupler.Connected};
 	auto &othercoupler{othervehicle->Couplers[coupler.ConnectedNr]};
 
 	if (othervehicle == nullptr)
@@ -735,7 +735,7 @@ void TMoverParameters::BrakeLevelSet(double b)
 		fBrakeCtrlPos = Handle->GetPos(bh_MAX);
 	// TODO: verify whether BrakeCtrlPosR and fBrakeCtrlPos can be rolled into single variable
 	BrakeCtrlPosR = fBrakeCtrlPos;
-	int x = static_cast<int>(std::floor(fBrakeCtrlPos)); // jeśli odwołujemy się do BrakeCtrlPos w pośrednich, to musi być
+	const int x = static_cast<int>(std::floor(fBrakeCtrlPos)); // jeśli odwołujemy się do BrakeCtrlPos w pośrednich, to musi być
 	// obcięte a nie zaokrągone
 	while (x > BrakeCtrlPos && BrakeCtrlPos < BrakeCtrlPosNo) // jeśli zwiększyło się o 1
 		if (!IncBrakeLevelOld()) // T_MoverParameters::
@@ -1188,10 +1188,10 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 		return;
 	} // shouldn't normally happen but, eh
 
-	auto &coupler{Couplers[End]};
+	const auto &coupler{Couplers[End]};
 	auto *othervehicle{Neighbours[End].vehicle->MoverParameters};
 	auto const otherend{Neighbours[End].vehicle_end};
-	auto &othercoupler{othervehicle->Couplers[otherend]};
+	const auto &othercoupler{othervehicle->Couplers[otherend]};
 
 	auto velocity{V};
 	auto othervehiclevelocity{othervehicle->V};
@@ -1573,7 +1573,7 @@ void TMoverParameters::compute_movement_(double const Deltatime)
 	// Uproszczona symulacja wentylatorow rezystora hamowania
 
 	// Prad oddawany na rezystor
-	double Irh = abs(eimv[eimv_Pe]) - abs(eimv[eimv_Ipoj]);
+	const double Irh = abs(eimv[eimv_Pe]) - abs(eimv[eimv_Ipoj]);
 
 	// Wlacz wentylator jesli prad rekuperacji przekroczy maksymalny dla pasywnego chlodzenia rezystora
 	if (Irh > Imaxrpc && eimv[eimv_Ipoj] < 0)
@@ -2287,7 +2287,7 @@ void TMoverParameters::PantographsCheck(double const Timestep)
 {
 
 	{
-		auto &valve{PantsValve};
+		const auto &valve{PantsValve};
 		auto const lowvoltagepower{valve.solenoid ? Power24vIsAvailable || Power110vIsAvailable : true};
 		auto const autostart{valve.start_type == start_t::automatic || valve.start_type == start_t::manualwithautofallback};
 		auto const manualcontrol{valve.start_type == start_t::manual || valve.start_type == start_t::manualwithautofallback};
@@ -2912,7 +2912,7 @@ bool TMoverParameters::CabActivisation(bool const Enforce)
 
 bool TMoverParameters::CabActivisationAuto(bool const Enforce)
 {
-	bool OK = AutomaticCabActivation ? CabActivisation(Enforce) : false;
+	const bool OK = AutomaticCabActivation ? CabActivisation(Enforce) : false;
 	return OK;
 }
 
@@ -2959,7 +2959,7 @@ bool TMoverParameters::CabDeactivisation(bool const Enforce)
 
 bool TMoverParameters::CabDeactivisationAuto(bool const Enforce)
 {
-	bool OK = AutomaticCabActivation ? CabDeactivisation(Enforce) : false;
+	const bool OK = AutomaticCabActivation ? CabDeactivisation(Enforce) : false;
 	return OK;
 }
 
@@ -3029,7 +3029,7 @@ bool TMoverParameters::SandboxManual(bool const State, range_t const Notify)
 bool TMoverParameters::SandboxAuto(bool const State, range_t const Notify)
 {
 	bool result{false};
-	bool NewState = State && SandDoseAutoAllow;
+	const bool NewState = State && SandDoseAutoAllow;
 	if (SandDoseAuto != NewState)
 	{
 		if (SandDoseAuto == false)
@@ -3137,7 +3137,7 @@ void TMoverParameters::SecuritySystemReset(void) // zbijanie czuwaka/SHP
 // *************************************************************************************************
 void TMoverParameters::SecuritySystemCheck(double dt)
 {
-	bool isPower = Power24vIsAvailable || Power110vIsAvailable;
+	const bool isPower = Power24vIsAvailable || Power110vIsAvailable;
 	SecuritySystem.update(dt, Vel, isPower, CabActive);
 
 	if (!Battery || !Radio)
@@ -4121,7 +4121,7 @@ bool TMoverParameters::BrakeReleaser(int state)
 // *************************************************************************************************
 bool TMoverParameters::UniversalBrakeButton(int button, int state)
 {
-	bool OK = true; // false tylko jeśli nie uda się wysłać, GF 20161124
+	const bool OK = true; // false tylko jeśli nie uda się wysłać, GF 20161124
 	UniversalBrakeButtonActive[button] = state > 0;
 	int flag = 0;
 	if (Power24vIsAvailable || Power110vIsAvailable)
@@ -4342,7 +4342,7 @@ void TMoverParameters::CompressorCheck(double dt)
 	EmergencyValveOpen = Compressor > (EmergencyValveOpen ? EmergencyValveOff : EmergencyValveOn);
 	if (EmergencyValveOpen)
 	{
-		float dV = PF(0, Compressor, EmergencyValveArea) * dt;
+		const float dV = PF(0, Compressor, EmergencyValveArea) * dt;
 		CompressedVolume -= dV;
 	}
 
@@ -4513,13 +4513,13 @@ void TMoverParameters::UpdatePipePressure(double dt)
 			// in EIM stock the pneumatic local brake is normally driven only by the MED algorithm
 			// (LocalBrakePosAEIM). When SplitEDPneumaticBrake is active the dedicated LocalBrake
 			// lever should apply pneumatic pressure on the locomotive directly, bypassing MED.
-			double lbpa = SplitEDPneumaticBrake ? LocalBrakePosA : 0.0;
+			const double lbpa = SplitEDPneumaticBrake ? LocalBrakePosA : 0.0;
 			dpLocalValve = LocHandle->GetPF(std::max(lbpa, LocalBrakePosAEIM), Hamulec->GetBCP(), ScndPipePress, dt, 0);
 		}
 
 		LockPipe = PipePress < (LockPipe ? LockPipeOff : LockPipeOn);
-		bool lock_new = (LockPipe && !UnlockPipe && BrakeCtrlPosR > HandleUnlock) || (EmergencyCutsOffHandle && EmergencyValveFlow > 0); // new simple codition based on .fiz
-		bool lock_old = BrakeHandle == TBrakeHandle::FV4a // old complex condition based on assumptions
+		const bool lock_new = (LockPipe && !UnlockPipe && BrakeCtrlPosR > HandleUnlock) || (EmergencyCutsOffHandle && EmergencyValveFlow > 0); // new simple codition based on .fiz
+		const bool lock_old = BrakeHandle == TBrakeHandle::FV4a // old complex condition based on assumptions
 		                && PipePress < 2.75 && (Hamulec->GetStatus() & b_rls) == 0 && BrakeSubsystem == TBrakeSubSystem::ss_LSt && TrainType != dt_EZT && !UnlockPipe;
 
 		if (lock_old || lock_new)
@@ -4830,18 +4830,18 @@ void TMoverParameters::UpdateScndPipePressure(double dt)
 // *************************************************************************************************
 void TMoverParameters::UpdateSpringBrake(double dt)
 {
-	double BP = SpringBrake.PNBrakeConnection ? BrakePress : 0;
-	double MSP = SpringBrake.ShuttOff ? 0 : SpringBrake.MaxSetPressure;
+	const double BP = SpringBrake.PNBrakeConnection ? BrakePress : 0;
+	const double MSP = SpringBrake.ShuttOff ? 0 : SpringBrake.MaxSetPressure;
 	if (!SpringBrake.Activate)
 	{
-		double desired_press = std::min(std::max(MSP, BP), Pipe2->P());
-		double dv = PF(desired_press, SpringBrake.SBP, SpringBrake.ValveOffArea);
+		const double desired_press = std::min(std::max(MSP, BP), Pipe2->P());
+		const double dv = PF(desired_press, SpringBrake.SBP, SpringBrake.ValveOffArea);
 		SpringBrake.Cylinder->Flow(-dv);
 		Pipe2->Flow(std::max(dv, 0.0));
 	}
 	else
 	{
-		double dv = PF(BP, SpringBrake.SBP, SpringBrake.ValveOnArea);
+		const double dv = PF(BP, SpringBrake.SBP, SpringBrake.ValveOnArea);
 		SpringBrake.Cylinder->Flow(-dv);
 	}
 	if (SpringBrake.SBP > SpringBrake.ResetPressure)
@@ -5029,7 +5029,7 @@ void TMoverParameters::ComputeTotalForce(double dt)
 		// TBD, TODO: more accurate approach?
 		FStand *= 1e20;
 	}
-	double old_nrot = abs(nrot);
+	const double old_nrot = abs(nrot);
 	nrot = v2n(); // przeliczenie prędkości liniowej na obrotową
 
 	if (true == TestFlag(BrakeMethod, bp_MHS) && PipePress < 3.0 // ustawione na sztywno na 3 bar
@@ -5103,7 +5103,7 @@ void TMoverParameters::ComputeTotalForce(double dt)
 		}
 		else
 		{
-			double factor = FTrain - Fb * Sign(V) != 0 ? Fwheels / (FTrain - Fb * Sign(V)) : 1.0;
+			const double factor = FTrain - Fb * Sign(V) != 0 ? Fwheels / (FTrain - Fb * Sign(V)) : 1.0;
 			Fb *= factor;
 			FTrain *= factor;
 		}
@@ -5874,7 +5874,7 @@ double TMoverParameters::TractionForce(double dt)
 			// jazda manewrowa
 			if (EIMCtrlType > 0) // sterowanie cyfrowe
 			{
-				auto eimic_positive = std::max(0.0, eimic_real);
+				const auto eimic_positive = std::max(0.0, eimic_real);
 				auto const rpmratio{EngineRPMRatio()};
 				tempImax = DElist[MainCtrlPosNo].Imax * eimic_positive;
 				tempUmax = DElist[MainCtrlPosNo].Umax * std::min(eimic_positive, rpmratio);
@@ -6007,8 +6007,8 @@ double TMoverParameters::TractionForce(double dt)
 					}
 					else
 					{
-						auto tempMCP = EIMCtrlType > 0 ? 1 + 99 * std::max(1.0, eimic_real) : MainCtrlPos;
-						auto tempMCPN = EIMCtrlType > 0 ? 100 : MainCtrlPosNo;
+						const auto tempMCP = EIMCtrlType > 0 ? 1 + 99 * std::max(1.0, eimic_real) : MainCtrlPos;
+						const auto tempMCPN = EIMCtrlType > 0 ? 100 : MainCtrlPosNo;
 						// charakterystyka pradnicy obcowzbudnej (elipsa) - twierdzenie Pitagorasa
 						EngineVoltage = std::sqrt(std::abs(square(tempUmax) - square(tempUmax * Im / tempImax))) * (tempMCP - 1) + (1.0 - Im / tempImax) * tempUmax * (tempMCPN - tempMCP);
 						EngineVoltage /= tempMCPN - 1;
@@ -6231,7 +6231,7 @@ double TMoverParameters::TractionForce(double dt)
 			if (true == Mains && !SecuritySystem.is_engine_blocked())
 			{
 				double ActiveInverters = 0.0;
-				for (auto &inv : Inverters)
+				for (const auto &inv : Inverters)
 				{
 					if (inv.IsActive)
 						ActiveInverters += 1.0;
@@ -6298,7 +6298,7 @@ double TMoverParameters::TractionForce(double dt)
 						SpeedCtrlTimer += dt;
 						if (SpeedCtrlTimer > SpeedCtrlDelay)
 						{
-							int NewSCAP = (float)ScndCtrlPos / (float)ScndCtrlPosNo * Vmax;
+							const int NewSCAP = (float)ScndCtrlPos / (float)ScndCtrlPosNo * Vmax;
 							if (NewSCAP != SpeedCtrlValue)
 							{
 								SpeedCtrlValue = NewSCAP;
@@ -6414,7 +6414,7 @@ double TMoverParameters::TractionForce(double dt)
 				else
 					tmp = eimc[eimc_f_Uzmax];
 
-				auto f_cfu{DynamicBrakeFlag ? eimc[eimc_f_cfuH] : eimc[eimc_f_cfu]};
+				const auto f_cfu{DynamicBrakeFlag ? eimc[eimc_f_cfuH] : eimc[eimc_f_cfu]};
 
 				eimv[eimv_Uzsmax] = std::min(EngineVoltage - eimc[eimc_f_DU], tmp);
 				eimv[eimv_fkr] = eimv[eimv_Uzsmax] / f_cfu;
@@ -7324,8 +7324,8 @@ bool TMoverParameters::DropAllPantographs(bool const State, range_t const Notify
 
 void TMoverParameters::CheckEIMIC(double dt)
 {
-	double offset = EIMCtrlAdditionalZeros ? 1.0 : 0.0;
-	double multiplier = (EIMCtrlEmergency ? 1.0 : 0.0) + offset;
+	const double offset = EIMCtrlAdditionalZeros ? 1.0 : 0.0;
+	const double multiplier = (EIMCtrlEmergency ? 1.0 : 0.0) + offset;
 	// gdy SplitEDPneumaticBrake jest wlaczone, sterowanie ujemne (hamowanie ED) bierzemy
 	// z osobnego nastawnika DynamicBrakeCtrl, a nie z hamulca pomocniczego (LocalBrake).
 	// Dodatkowo zapotrzebowanie ED jest ograniczone przez strefe Vh0..Vh1: powyzej Vh1 - pelny ED,
@@ -7389,7 +7389,7 @@ void TMoverParameters::CheckEIMIC(double dt)
 	case 2:
 		if (MainCtrlActualPos != MainCtrlPos || LastRelayTime > InitialCtrlDelay)
 		{
-			double delta = MainCtrlActualPos == MainCtrlPos ? dt * CtrlDelay : 0.01;
+			const double delta = MainCtrlActualPos == MainCtrlPos ? dt * CtrlDelay : 0.01;
 			switch (MainCtrlPos)
 			{
 			case 0:
@@ -7549,10 +7549,10 @@ void TMoverParameters::CheckSpeedCtrl(double dt)
 					if (eimic > 0.0009)
 						eimic = 1.0;
 				}
-				double error = std::max(SpeedCtrlValue + SpeedCtrlUnit.Offset, 0.0) - Vel;
-				double factorP = error > 0 ? SpeedCtrlUnit.FactorPpos : SpeedCtrlUnit.FactorPneg;
+				const double error = std::max(SpeedCtrlValue + SpeedCtrlUnit.Offset, 0.0) - Vel;
+				const double factorP = error > 0 ? SpeedCtrlUnit.FactorPpos : SpeedCtrlUnit.FactorPneg;
 				double eSCP = std::clamp(factorP * error, -1.2, 1.0); // P module
-				bool retarder_not_work = EngineType != TEngineType::DieselEngine || Vel < SpeedCtrlUnit.BrakeInterventionVel;
+				const bool retarder_not_work = EngineType != TEngineType::DieselEngine || Vel < SpeedCtrlUnit.BrakeInterventionVel;
 				if (eSCP < -1.0)
 				{
 					SpeedCtrlUnit.BrakeInterventionBraking = eSCP < -1.1 && retarder_not_work && eimicSpeedCtrl < -0.99 * SpeedCtrlUnit.DesiredPower;
@@ -7563,7 +7563,7 @@ void TMoverParameters::CheckSpeedCtrl(double dt)
 				{
 					// TODO: check how to disable integral part when braking in smart way
 					// double factorI = eimicSpeedCtrlIntegral >= 0 ? SpeedCtrlUnit.FactorIpos : SpeedCtrlUnit.FactorIneg;
-					double factorI = eimicSpeedCtrlIntegral >= 0 ? SpeedCtrlUnit.FactorIpos : SpeedCtrlUnit.FactorIneg;
+					const double factorI = eimicSpeedCtrlIntegral >= 0 ? SpeedCtrlUnit.FactorIpos : SpeedCtrlUnit.FactorIneg;
 					eimicSpeedCtrlIntegral = safe_clamp(eimicSpeedCtrlIntegral + factorI * eSCP * dt, -1.0 + eSCP, 1.0 - eSCP);
 				}
 				else
@@ -7624,7 +7624,7 @@ void TMoverParameters::SpeedCtrlInc()
 {
 	if (SpeedCtrl && ScndCtrlPos > 0)
 	{
-		double x = floor(SpeedCtrlValue / SpeedCtrlUnit.VelocityStep) + 1.0;
+		const double x = floor(SpeedCtrlValue / SpeedCtrlUnit.VelocityStep) + 1.0;
 		SpeedCtrlValue = std::min(x * SpeedCtrlUnit.VelocityStep, SpeedCtrlUnit.MaxVelocity);
 	}
 }
@@ -7633,7 +7633,7 @@ void TMoverParameters::SpeedCtrlDec()
 {
 	if (SpeedCtrl && ScndCtrlPos > 0)
 	{
-		double x = ceil(SpeedCtrlValue / SpeedCtrlUnit.VelocityStep) - 1.0;
+		const double x = ceil(SpeedCtrlValue / SpeedCtrlUnit.VelocityStep) - 1.0;
 		SpeedCtrlValue = std::max(x * SpeedCtrlUnit.VelocityStep, SpeedCtrlUnit.MinVelocity);
 	}
 }
@@ -8071,7 +8071,7 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 	if (hydro_TC) // jesli przetwornik momentu
 	{
 		// napelnianie przetwornika
-		bool IsPower = EIMCtrlType > 0 ? eimic_real > 0.005 : MainCtrlPowerPos() > 0;
+		const bool IsPower = EIMCtrlType > 0 ? eimic_real > 0.005 : MainCtrlPowerPos() > 0;
 		if (IsPower && Mains && enrot > dizel_nmin * 0.9)
 			hydro_TC_Fill += hydro_TC_FillRateInc * dt;
 		// oproznianie przetwornika
@@ -8111,7 +8111,7 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 		HydroTorque += hydro_TC_nIn * hydro_TC_nIn * hydro_TC_TorqueInIn;
 		HydroTorque += (hydro_TC_nIn - hydro_TC_nOut) * hydro_TC_TorqueInOut;
 		HydroTorque += hydro_TC_nOut * hydro_TC_nOut * hydro_TC_TorqueOutOut;
-		double nOut2In = hydro_TC_nOut / std::max(0.01, hydro_TC_nIn);
+		const double nOut2In = hydro_TC_nOut / std::max(0.01, hydro_TC_nIn);
 		if (hydro_TC_Table.size() > 1)
 		{
 			hydro_TC_TMRatio = TableInterpolation(hydro_TC_Table, nOut2In);
@@ -8181,8 +8181,8 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 		dizel_engagedeltaomega = 0;
 		gearMoment = Moment;
 		enMoment = 0;
-		double enrot_min = enrot - (std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) - Moment) / dizel_AIM * dt;
-		double enrot_max = enrot + (std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) + Moment) / dizel_AIM * dt;
+		const double enrot_min = enrot - (std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) - Moment) / dizel_AIM * dt;
+		const double enrot_max = enrot + (std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) + Moment) / dizel_AIM * dt;
 		enrot = safe_clamp(n, enrot_min, enrot_max);
 	}
 	if (hydro_R && hydro_R_Placement == 1)
@@ -8236,10 +8236,10 @@ double TMoverParameters::dizel_MomentumRetarder(double n, double dt)
 	}
 
 	double Moment = hydro_R_MaxTorque;
-	double pwr = Moment * std::abs(n) * M_PI * 2 * 0.001;
+	const double pwr = Moment * std::abs(n) * M_PI * 2 * 0.001;
 	if (pwr > hydro_R_MaxPower)
 		Moment = Moment * hydro_R_MaxPower / pwr;
-	double moment_in = n * n * hydro_R_TorqueInIn;
+	const double moment_in = n * n * hydro_R_TorqueInIn;
 	Moment = std::min(moment_in, Moment * hydro_R_Fill);
 
 	hydro_R_Torque = Moment;
@@ -8983,7 +8983,7 @@ double TMoverParameters::GetTrainsetVoltage(int const Coupling) const
 		{
 			continue;
 		}
-		auto *connectedpowercoupling = (Coupling & (coupling::highvoltage | coupling::heating)) != 0 ? &coupler.Connected->Couplers[coupler.ConnectedNr].power_high :
+		const auto *connectedpowercoupling = (Coupling & (coupling::highvoltage | coupling::heating)) != 0 ? &coupler.Connected->Couplers[coupler.ConnectedNr].power_high :
 		                               (Coupling & coupling::power110v) != 0                         ? &coupler.Connected->Couplers[coupler.ConnectedNr].power_110v :
 		                               (Coupling & coupling::power24v) != 0                          ? &coupler.Connected->Couplers[coupler.ConnectedNr].power_24v :
 		                                                                                               nullptr;
@@ -9238,7 +9238,7 @@ bool TMoverParameters::readRList(std::string const &Input)
 		WriteLog("Read RList: arguments missing in line " + std::to_string(LISTLINE + 1));
 		return false;
 	}
-	auto idx = LISTLINE++;
+	const auto idx = LISTLINE++;
 	if (idx >= sizeof(RList) / sizeof(TScheme))
 	{
 		WriteLog("Read RList: number of entries exceeded capacity of the data table");
@@ -9263,7 +9263,7 @@ bool TMoverParameters::readUCList(std::string const &line)
 
 	cParser parser(line);
 	parser.getTokens(10, false);
-	auto idx = LISTLINE++;
+	const auto idx = LISTLINE++;
 	if (idx >= sizeof(UniCtrlList) / sizeof(TUniversalCtrl))
 	{
 		WriteLog("Read UCList: number of entries exceeded capacity of the data table");
@@ -9281,7 +9281,7 @@ bool TMoverParameters::readDList(std::string const &line)
 
 	cParser parser(line);
 	parser.getTokens(3, false);
-	auto idx = LISTLINE++;
+	const auto idx = LISTLINE++;
 	if (idx >= sizeof(RList) / sizeof(TScheme))
 	{
 		WriteLog("Read DList: number of entries exceeded capacity of the data table");
@@ -9381,7 +9381,7 @@ bool TMoverParameters::readFFList(std::string const &line)
 		WriteLog("Read FList: arguments missing in line " + std::to_string(LISTLINE + 1));
 		return false;
 	}
-	int idx = LISTLINE++;
+	const int idx = LISTLINE++;
 	if (idx >= sizeof(FFlist) / sizeof(TFFScheme))
 	{
 		WriteLog("Read FList: number of entries exceeded capacity of the data table");
@@ -9401,7 +9401,7 @@ bool TMoverParameters::readFFEDList(std::string const &line)
 		WriteLog("Read FList: arguments missing in line " + std::to_string(LISTLINE + 1));
 		return false;
 	}
-	int idx = LISTLINE++;
+	const int idx = LISTLINE++;
 	if (idx >= sizeof(FFEDlist) / sizeof(TFFScheme))
 	{
 		WriteLog("Read FList: number of entries exceeded capacity of the data table");
@@ -9421,7 +9421,7 @@ bool TMoverParameters::readWiperList(std::string const &line)
 		WriteLog("Read WiperList: arguments missing in line " + std::to_string(LISTLINE + 1));
 		return false;
 	}
-	int idx = LISTLINE++;
+	const int idx = LISTLINE++;
 	if (idx >= sizeof(WiperList) / sizeof(TWiperScheme))
 	{
 		WriteLog("Read WiperList: number of entries exceeded capacity of the data table");
@@ -9457,7 +9457,7 @@ bool TMoverParameters::readWWList(std::string const &line)
 		WriteLog("Read WWList: arguments missing in line " + std::to_string(LISTLINE + 1));
 		return false;
 	}
-	int idx = LISTLINE++;
+	const int idx = LISTLINE++;
 	if (idx >= sizeof(DElist) / sizeof(TDEScheme))
 	{
 		WriteLog("Read WWList: number of entries exceeded capacity of the data table");
@@ -9485,7 +9485,7 @@ bool TMoverParameters::readLightsList(std::string const &Input)
 		WriteLog("Read LightsList: arguments missing in line " + std::to_string(LISTLINE + 1));
 		return false;
 	}
-	int idx = LISTLINE++;
+	const int idx = LISTLINE++;
 	if (idx > 16)
 	{
 		WriteLog("Read LightsList: number of entries exceeded capacity of the data table");
@@ -9505,7 +9505,7 @@ bool TMoverParameters::readCompressorList(std::string const &Input)
 		WriteLog("Read CompressorList: arguments missing in line " + std::to_string(LISTLINE + 1));
 		return false;
 	}
-	int idx = LISTLINE++;
+	const int idx = LISTLINE++;
 	if (idx > 8 - 1)
 	{
 		WriteLog("Read CompressorList: number of entries exceeded capacity of the data table");
@@ -9551,7 +9551,7 @@ void TMoverParameters::BrakeValveDecode(std::string const &Valve)
 	                                              {"CV1_L_TR", TBrakeValve::CV1_L_TR},
 	                                              {"CV1", TBrakeValve::CV1},
 	                                              {"CV1_R", TBrakeValve::CV1_R}};
-	auto lookup = valvetypes.find(Valve);
+	const auto lookup = valvetypes.find(Valve);
 	BrakeValve = lookup != valvetypes.end() ? lookup->second : TBrakeValve::Other;
 
 	if (BrakeValve == TBrakeValve::Other && contains(Valve, "ESt"))
@@ -10256,7 +10256,7 @@ void TMoverParameters::LoadFIZ_Param(std::string const &line)
 		std::map<std::string, int> categories{{"train", 1}, {"road", 2}, {"unimog", 3}, {"ship", 4}, {"airplane,", 8}};
 		std::string category;
 		extract_value(category, "Category", line, "none");
-		auto lookup = categories.find(category);
+		const auto lookup = categories.find(category);
 		CategoryFlag = lookup != categories.end() ? lookup->second : 0;
 		if (CategoryFlag == 0)
 		{
@@ -10280,7 +10280,7 @@ void TMoverParameters::LoadFIZ_Param(std::string const &line)
 		};
 		std::string type;
 		extract_value(type, "Type", line, "none");
-		auto lookup = types.find(ToLower(type));
+		const auto lookup = types.find(ToLower(type));
 		TrainType = lookup != types.end() ? lookup->second : dt_Default;
 	}
 
@@ -10452,7 +10452,7 @@ void TMoverParameters::LoadFIZ_Brake(std::string const &line)
 			{
 				std::map<std::string, int> brakemethods{{"P10-Bg", bp_P10Bg},  {"P10-Bgu", bp_P10Bgu},  {"FR513", bp_FR513}, {"FR510", bp_FR510},          {"Cosid", bp_Cosid},
 				                                        {"P10yBg", bp_P10yBg}, {"P10yBgu", bp_P10yBgu}, {"Disk1", bp_D1},    {"Disk1+Mg", bp_D1 + bp_MHS}, {"Disk2", bp_D2}};
-				auto lookup = brakemethods.find(extract_value("BM", line));
+				const auto lookup = brakemethods.find(extract_value("BM", line));
 				BrakeMethod = lookup != brakemethods.end() ? lookup->second : 0;
 			}
 
@@ -10502,7 +10502,7 @@ void TMoverParameters::LoadFIZ_Brake(std::string const &line)
 		    {"Coupler1", 4}, // włączana w silnikowym EZT z przodu
 		    {"Coupler2", 5} // włączana w silnikowym EZT z tyłu
 		};
-		auto lookup = compressorpowers.find(extract_value("CompressorPower", line));
+		const auto lookup = compressorpowers.find(extract_value("CompressorPower", line));
 		CompressorPower = lookup != compressorpowers.end() ? lookup->second : 1;
 	}
 
@@ -10541,12 +10541,12 @@ void TMoverParameters::LoadFIZ_Doors(std::string const &line)
 	    {"Passenger", control_t::passenger}, {"AutomaticCtrl", control_t::autonomous}, {"DriverCtrl", control_t::driver}, {"Conductor", control_t::conductor}, {"Mixed", control_t::mixed}};
 	// opening method
 	{
-		auto lookup = doorcontrols.find(extract_value("OpenCtrl", line));
+		const auto lookup = doorcontrols.find(extract_value("OpenCtrl", line));
 		Doors.open_control = lookup != doorcontrols.end() ? lookup->second : control_t::passenger;
 	}
 	// closing method
 	{
-		auto lookup = doorcontrols.find(extract_value("CloseCtrl", line));
+		const auto lookup = doorcontrols.find(extract_value("CloseCtrl", line));
 		Doors.close_control = lookup != doorcontrols.end() ? lookup->second : control_t::passenger;
 	}
 	// automatic closing conditions
@@ -10556,7 +10556,7 @@ void TMoverParameters::LoadFIZ_Doors(std::string const &line)
 	// operation permit
 	extract_value(Doors.permit_needed, "DoorNeedPermit", line, "");
 	{
-		auto permitpresets = Split(extract_value("DoorPermitList", line), '|');
+		const auto permitpresets = Split(extract_value("DoorPermitList", line), '|');
 		for (auto const &permit : permitpresets)
 		{
 			Doors.permit_presets.emplace_back(std::stoi(permit));
@@ -10585,7 +10585,7 @@ void TMoverParameters::LoadFIZ_Doors(std::string const &line)
 	};
 	// opening method
 	{
-		auto lookup = doortypes.find(extract_value("DoorOpenMethod", line));
+		const auto lookup = doortypes.find(extract_value("DoorOpenMethod", line));
 		Doors.type = lookup != doortypes.end() ? lookup->second : 2; // default type is plain, rotating door
 	}
 
@@ -10632,7 +10632,7 @@ void TMoverParameters::LoadFIZ_BuffCoupl(std::string const &line, int const Inde
 	std::map<std::string, TCouplerType> couplertypes{
 	    {"Automatic", TCouplerType::Automatic}, {"Screw", TCouplerType::Screw}, {"Chain", TCouplerType::Chain}, {"Bare", TCouplerType::Bare}, {"Articulated", TCouplerType::Articulated},
 	};
-	auto lookup = couplertypes.find(extract_value("CType", line));
+	const auto lookup = couplertypes.find(extract_value("CType", line));
 	coupler->CouplerType = lookup != couplertypes.end() ? lookup->second : TCouplerType::NoCoupler;
 
 	extract_value(coupler->SpringKC, "kC", line, "");
@@ -11087,7 +11087,7 @@ void TMoverParameters::LoadFIZ_SpeedControl(std::string const &Line)
 	SpeedCtrlTypeTime = extract_value("SpeedCtrlType", Line) == "Time" ? true : false;
 	extract_value(SpeedCtrlAutoTurnOffFlag, "SpeedCtrlATOF", Line, "");
 
-	auto speedpresets = Split(extract_value("SpeedButtons", Line), '|');
+	const auto speedpresets = Split(extract_value("SpeedButtons", Line), '|');
 	int speed_no = 0;
 	for (auto const &speed : speedpresets)
 	{
@@ -11121,11 +11121,11 @@ void TMoverParameters::LoadFIZ_Engine(std::string const &Input)
 
 	EngineType = LoadFIZ_EngineDecode(extract_value("EngineType", Input));
 
-	std::string transmission = extract_value("Trans", Input);
+	const std::string transmission = extract_value("Trans", Input);
 	if (false == transmission.empty())
 	{
 		// transmission type. moved here because more than one engine type has this entry
-		auto ratios = Split(transmission, ':'); // e.g. 18:79
+		const auto ratios = Split(transmission, ':'); // e.g. 18:79
 
 		if (ratios.size() != 2)
 		{
@@ -11499,9 +11499,9 @@ void TMoverParameters::LoadFIZ_DList(std::string const &Input)
 	}
 
 	// Calculation of fuel consumption coefficient for futher calculation
-	double dizel_max_power = dizel_nmax * (dizel_Mnmax - dizel_Mstand) * M_PI * 2 * 0.001; // power in kW
-	double dizel_max_energy = dizel_max_power; // energy per one hour in kWh is equal to power in kW times 1 h
-	double fuel_density = 850; // g/l
+	const double dizel_max_power = dizel_nmax * (dizel_Mnmax - dizel_Mstand) * M_PI * 2 * 0.001; // power in kW
+	const double dizel_max_energy = dizel_max_power; // energy per one hour in kWh is equal to power in kW times 1 h
+	const double fuel_density = 850; // g/l
 	dizel_FuelConsumption = dizel_NominalFuelConsumptionRate * dizel_max_energy / fuel_density / dizel_nmax;
 }
 
@@ -11670,7 +11670,7 @@ TPowerType TMoverParameters::LoadFIZ_PowerDecode(std::string const &Power)
 
 	std::map<std::string, TPowerType> powertypes{
 	    {"BioPower", TPowerType::BioPower}, {"MechPower", TPowerType::MechPower}, {"ElectricPower", TPowerType::ElectricPower}, {"SteamPower", TPowerType::SteamPower}};
-	auto lookup = powertypes.find(Power);
+	const auto lookup = powertypes.find(Power);
 	return lookup != powertypes.end() ? lookup->second : TPowerType::NoPower;
 }
 
@@ -11682,7 +11682,7 @@ TPowerSource TMoverParameters::LoadFIZ_SourceDecode(std::string const &Source)
 	                                                 {"Accumulator", TPowerSource::Accumulator}, {"CurrentCollector", TPowerSource::CurrentCollector},
 	                                                 {"PowerCable", TPowerSource::PowerCable},   {"Heater", TPowerSource::Heater},
 	                                                 {"Internal", TPowerSource::InternalSource}, {"Main", TPowerSource::Main}};
-	auto lookup = powersources.find(Source);
+	const auto lookup = powersources.find(Source);
 	return lookup != powersources.end() ? lookup->second : TPowerSource::NotDefined;
 }
 
@@ -11698,7 +11698,7 @@ TEngineType TMoverParameters::LoadFIZ_EngineDecode(std::string const &Engine)
 	                                               {"DumbDE", TEngineType::DieselElectric},
 	                                               {"ElectricInductionMotor", TEngineType::ElectricInductionMotor},
 	                                               {"Main", TEngineType::Main}};
-	auto lookup = enginetypes.find(Engine);
+	const auto lookup = enginetypes.find(Engine);
 	return lookup != enginetypes.end() ? lookup->second : TEngineType::None;
 }
 
@@ -12051,7 +12051,7 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int Dir)
 	BrakeOpModeFlag = bom_PN;
 
 	// yB: jesli pojazdy nie maja zadeklarowanych czasow, to wsadz z przepisow +-16,(6)%
-	int DefBrakeTable[8] = {15, 4, 25, 25, 13, 3, 12, 2};
+	const int DefBrakeTable[8] = {15, 4, 25, 25, 13, 3, 12, 2};
 
 	for (b = 1; b < 4; b++)
 	{
@@ -12790,7 +12790,7 @@ bool TMoverParameters::reload_FIZ()
 	WriteLog("[DEV] Reloading FIZ for " + Name);
 	// pause simulation
 	Global.iPause |= 0b1000;
-	bool result = LoadFIZ(chkPath);
+	const bool result = LoadFIZ(chkPath);
 	if (result == true)
 	{
 		// jesli sie udalo przeladowac FIZ

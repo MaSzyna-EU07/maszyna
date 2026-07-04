@@ -49,7 +49,7 @@ std::string Now()
 	std::strftime(buf, sizeof(buf), "%c", &tm);
 	return std::string(buf);
 #else
-	auto now = std::chrono::system_clock::now();
+	const auto now = std::chrono::system_clock::now();
 	auto local = std::chrono::current_zone()->to_local(now);
 	return std::format("{:%c}", local);
 #endif
@@ -242,7 +242,7 @@ std::string to_minutes_str(float const Minutes, bool const Leadingzero, int cons
 	float minutesintegral;
 	auto const minutesfractional{std::modf(Minutes, &minutesintegral)};
 	auto const width{Width - 1};
-	auto minutes = std::string(width - 1, ' ') + (Leadingzero ? std::to_string(100 + minutesintegral).substr(1, 2) : to_string(minutesintegral, 0));
+	const auto minutes = std::string(width - 1, ' ') + (Leadingzero ? std::to_string(100 + minutesintegral).substr(1, 2) : to_string(minutesintegral, 0));
 	return minutes.substr(minutes.size() - width, width) + fractionlabels[static_cast<int>(std::floor(minutesfractional * 10 + 0.1))];
 }
 
@@ -338,7 +338,7 @@ std::string Bezogonkow(std::string Input, bool const Underscorestospaces)
 template <> bool extract_value(bool &Variable, std::string const &Key, std::string const &Input, std::string const &Default)
 {
 
-	auto value = extract_value(Key, Input);
+	const auto value = extract_value(Key, Input);
 	if (false == value.empty())
 	{
 		// set the specified variable to retrieved value
@@ -381,7 +381,7 @@ std::pair<std::string, std::string> FileExists(std::vector<std::string> const &N
 // returns time of last modification for specified file
 std::time_t last_modified(std::string const &Filename)
 {
-	std::string fn = Filename;
+	const std::string fn = Filename;
 	struct stat filestat;
 	if (::stat(fn.c_str(), &filestat) == 0)
 		return filestat.st_mtime;
@@ -411,7 +411,7 @@ bool erase_extension(std::string &Filename)
 
 void erase_leading_slashes(std::string &Filename)
 {
-	auto pos = Filename.find_first_not_of('/');
+	const auto pos = Filename.find_first_not_of('/');
 	Filename.erase(0, pos);
 }
 
@@ -425,7 +425,7 @@ void replace_slashes(std::string &Filename)
 std::string substr_path(std::string const &Filename)
 {
 	// String::substr returns new string so substr_path has to return std::string
-	 if (auto pos = Filename.rfind('/'); pos != std::string::npos)
+	 if (const auto pos = Filename.rfind('/'); pos != std::string::npos)
         return Filename.substr(0, pos + 1);
     return {};
 }

@@ -12,7 +12,7 @@ ui::vehicleparams_panel::vehicleparams_panel(const std::string &vehicle) : ui_pa
 
 void screen_window_callback(ImGuiSizeCallbackData *data)
 {
-	auto config = static_cast<const global_settings::pythonviewport_config *>(data->UserData);
+	const auto config = static_cast<const global_settings::pythonviewport_config *>(data->UserData);
 	data->DesiredSize.y = data->DesiredSize.x * (float)config->size.y / (float)config->size.x;
 }
 
@@ -20,11 +20,11 @@ void ui::vehicleparams_panel::draw_infobutton(const char *str, ImVec2 pos, const
 {
 	if (pos.x != -1.0f)
 	{
-		ImVec2 window_size = ImGui::GetWindowSize();
+		const ImVec2 window_size = ImGui::GetWindowSize();
 
-		ImGuiStyle &style = ImGui::GetStyle();
-		ImVec2 text_size = ImGui::CalcTextSize(str);
-		auto button_size = ImVec2(text_size.x + style.FramePadding.x * 2.0f, text_size.y + style.FramePadding.y * 2.0f);
+		const ImGuiStyle &style = ImGui::GetStyle();
+		const ImVec2 text_size = ImGui::CalcTextSize(str);
+		const auto button_size = ImVec2(text_size.x + style.FramePadding.x * 2.0f, text_size.y + style.FramePadding.y * 2.0f);
 
 		pos.x = pos.x * window_size.x / 512.0f - button_size.x / 2.0f;
 		pos.y = pos.y * window_size.y / 118.0f - button_size.y / 2.0f;
@@ -54,9 +54,9 @@ void ui::vehicleparams_panel::draw_mini(const TMoverParameters &mover)
 	auto &tex = GfxRenderer->Texture(vehicle_mini);
 	tex.create();
 
-	ImVec2 size = ImGui::GetContentRegionAvail();
-	float x = size.x;
-	float y = x * ((float)tex.get_height() / tex.get_width());
+	const ImVec2 size = ImGui::GetContentRegionAvail();
+	const float x = size.x;
+	const float y = x * ((float)tex.get_height() / tex.get_width());
 
 	if (ImGui::BeginChild("mini", ImVec2(x, y)))
 	{

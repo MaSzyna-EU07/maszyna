@@ -474,7 +474,7 @@ double TTraction::VoltageGet(double u, double i)
     // 1. zasilacz psPower[0] z rezystancją fResistance[0] oraz jego wewnętrzną
     // 2. zasilacz psPower[1] z rezystancją fResistance[1] oraz jego wewnętrzną
     // 3. zasilacz psPowered z jego wewnętrzną rezystancją dla przęseł zasilanych bezpośrednio
-    double res = i != 0.0 ? u / i : 10000.0;
+	const double res = i != 0.0 ? u / i : 10000.0;
     if( psPowered != nullptr ) {
         // yB: dla zasilanego nie baw się w gwiazdy, tylko bierz bezpośrednio
         return res != 0.0 ? psPowered->CurrentGet(res) * res : 0.0;

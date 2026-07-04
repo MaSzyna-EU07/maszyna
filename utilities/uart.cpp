@@ -28,7 +28,7 @@ const char* uart_baudrates_list[] = {
     "2000000"
 };
 
-const size_t uart_baudrates_list_num = sizeof(uart_baudrates_list) / sizeof(uart_baudrates_list[0]);
+const size_t uart_baudrates_list_num = std::size(uart_baudrates_list);
 
 void uart_status::reset_stats() {
     packets_sent = 0;

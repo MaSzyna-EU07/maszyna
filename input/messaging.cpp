@@ -68,7 +68,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
                      || typeid(*event) == typeid(lights_event)
                      || event->m_sibling != 0 ) {
                         // tylko jawne albo niejawne Multiple
-						command_relay relay;
+						const command_relay relay;
 						relay.post(user_command::queueevent, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &event->name());
                     }
                 }
@@ -78,13 +78,13 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
         case 3: // rozkaz dla AI
             if (Global.iMultiplayer)
             {
-                int i = int(pRozkaz->cString[8]); // długość pierwszego łańcucha (z przodu dwa floaty)
+				const int i = int(pRozkaz->cString[8]); // długość pierwszego łańcucha (z przodu dwa floaty)
                 CommLog(
                     Now() + " " + std::to_string(pRozkaz->iComm) + " " +
                     std::string(pRozkaz->cString + 11 + i, (unsigned)pRozkaz->cString[10 + i]) +
                     " rcvd");
                 // nazwa pojazdu jest druga
-                auto *vehicle = simulation::Vehicles.find( { pRozkaz->cString + 11 + i, (unsigned)pRozkaz->cString[ 10 + i ] } );
+				const auto *vehicle = simulation::Vehicles.find( { pRozkaz->cString + 11 + i, (unsigned)pRozkaz->cString[ 10 + i ] } );
                 if( vehicle != nullptr
                  && vehicle->Mechanik != nullptr ) {
                     vehicle->Mechanik->PutCommand(
@@ -114,7 +114,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
             if (*pRozkaz->iPar == 0) // sprawdzenie czasu
                 if (*pRozkaz->iPar & 1) // ustawienie czasu
                 {
-                    auto t = pRozkaz->fPar[1];
+					const auto t = pRozkaz->fPar[1];
                     simulation::Time.data().wDay = std::floor(t); // niby nie powinno być dnia, ale...
                     if (Global.fMoveLight >= 0)
                         Global.fMoveLight = t; // trzeba by deklinację Słońca przeliczyć
@@ -138,7 +138,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
                   + " rcvd" );
                 if (pRozkaz->cString[0]) {
                     // jeśli długość nazwy jest niezerowa szukamy pierwszego pojazdu o takiej nazwie i odsyłamy parametry ramką #7
-                    auto *vehicle = pRozkaz->cString[1] == '*' ? simulation::Train->Dynamic() : simulation::Vehicles.find(std::string{pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0]});
+					const auto *vehicle = pRozkaz->cString[1] == '*' ? simulation::Train->Dynamic() : simulation::Vehicles.find(std::string{pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0]});
                     if( vehicle != nullptr ) {
                         WyslijNamiary( vehicle ); // wysłanie informacji o pojeździe
                     }
@@ -225,7 +225,7 @@ WyslijUszkodzenia(const std::string &t, char fl)
     DaneRozkaz r;
     r.iSygn = EU07_MESSAGEHEADER;
 	r.iComm = 13; // numer komunikatu
-	size_t i = t.length();
+	const size_t i = t.length();
 	r.cString[0] = char(fl);
 	r.cString[1] = char(i);
 	strcpy(r.cString + 2, t.c_str()); // z zerem kończącym
@@ -245,7 +245,7 @@ WyslijString(const std::string &t, int n)
     DaneRozkaz r;
     r.iSygn = EU07_MESSAGEHEADER;
     r.iComm = n; // numer komunikatu
-    size_t i = t.length();
+	const size_t i = t.length();
     r.cString[0] = char(i);
     strcpy(r.cString + 1, t.c_str()); // z zerem kończącym
     COPYDATASTRUCT cData;
@@ -271,7 +271,7 @@ WyslijNamiary(TDynamicObject const *Vehicle)
     r.iSygn = EU07_MESSAGEHEADER;
     r.iComm = 7; // 7 - dane pojazdu
 	int i = 32;
-	size_t j = Vehicle->asName.length();
+	const size_t j = Vehicle->asName.length();
     r.iPar[0] = i; // ilość danych liczbowych
     r.fPar[1] = Global.fTimeAngleDeg / 360.0; // aktualny czas (1.0=doba)
     r.fPar[2] = Vehicle->MoverParameters->Loc.X; // pozycja X
@@ -356,7 +356,7 @@ WyslijObsadzone()
 	for (int i=0; i<1984; ++i) r.cString[i] = 0;
 
     // TODO: clean this up, we shouldn't be relying on direct list access
-    auto &vehiclelist = simulation::Vehicles.sequence();
+	const auto &vehiclelist = simulation::Vehicles.sequence();
 
 	int i = 0;
     for( auto *vehicle : vehiclelist ) {

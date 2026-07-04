@@ -183,7 +183,7 @@ void TSubModel::SetSelfIllum(float const Threshold, bool const Includechildren, 
 
 int TSubModel::SeekFaceNormal(std::vector<unsigned int> const &Masks, int const Startface, unsigned int const Mask, glm::vec3 const &Position, gfx::vertex_array const &Vertices)
 { // szukanie punktu stycznego do (pt), zwraca numer wierzchołka, a nie trójkąta
-	int facecount = m_geometry.vertex_count / 3;
+	const int facecount = m_geometry.vertex_count / 3;
 	for (int faceidx = Startface; faceidx < facecount; ++faceidx)
 	{
 		// pętla po trójkątach, od trójkąta (f)
@@ -913,7 +913,7 @@ int TSubModel::count_siblings()
 {
 
 	auto siblingcount{0};
-	auto *sibling{Next};
+	const auto *sibling{Next};
 	while (sibling != nullptr)
 	{
 		++siblingcount;
@@ -1179,7 +1179,7 @@ void TSubModel::RaAnimation(glm::mat4 &m, TAnimType a)
 	case TAnimType::at_Billboard: // obrót w pionie do kamery
 	{
 		glm::mat4 mat = glm::make_mat4(OpenGLMatrices.data_array(GL_MODELVIEW));
-		auto gdzie = float3(mat[3][0], mat[3][1], mat[3][2]); // początek układu współrzędnych submodelu względem kamery
+		const auto gdzie = float3(mat[3][0], mat[3][1], mat[3][2]); // początek układu współrzędnych submodelu względem kamery
 		m = glm::mat4(1.0f);
 		m = glm::translate(m, glm::vec3(gdzie.x, gdzie.y, gdzie.z)); // początek układu zostaje bez zmian
 		m = glm::rotate(m, (float)atan2(gdzie.x, gdzie.z), glm::vec3(0.0f, 1.0f, 0.0f)); // jedynie obracamy w pionie o kąt
@@ -1231,9 +1231,9 @@ void TSubModel::serialize_geometry(std::ostream &Output, bool const Packed, bool
 	{
 		if (Packed)
 		{
-			auto vertices = GfxRenderer->Vertices(m_geometry.handle);
-			auto userdatas = GfxRenderer->UserData(m_geometry.handle);
-			bool has_userdata = !userdatas.empty();
+			const auto vertices = GfxRenderer->Vertices(m_geometry.handle);
+			const auto userdatas = GfxRenderer->UserData(m_geometry.handle);
+			const bool has_userdata = !userdatas.empty();
 			for (int i = 0; i < vertices.size(); ++i)
 			{
 				vertices[i].serialize_packed(Output, Indexed);
@@ -1248,9 +1248,9 @@ void TSubModel::serialize_geometry(std::ostream &Output, bool const Packed, bool
 		}
 		else
 		{
-			auto vertices = GfxRenderer->Vertices(m_geometry.handle);
-			auto userdatas = GfxRenderer->UserData(m_geometry.handle);
-			bool has_userdata = !userdatas.empty();
+			const auto vertices = GfxRenderer->Vertices(m_geometry.handle);
+			const auto userdatas = GfxRenderer->UserData(m_geometry.handle);
+			const bool has_userdata = !userdatas.empty();
 			for (int i = 0; i < vertices.size(); ++i)
 			{
 				vertices[i].serialize(Output, Indexed);
@@ -1682,7 +1682,7 @@ template <typename L, typename T> size_t get_container_pos(L &list, T o)
 // strukturę TModel3d::SerializerContext?
 void TSubModel::serialize(std::ostream &s, std::vector<TSubModel *> &models, std::vector<std::string> &names, std::vector<std::string> &textures, std::vector<float4x4> &transforms)
 {
-	size_t end = (size_t)s.tellp() + 256;
+	const size_t end = (size_t)s.tellp() + 256;
 
 	if (!Next)
 		sn_utils::ls_int32(s, -1);
@@ -1743,7 +1743,7 @@ void TSubModel::serialize(std::ostream &s, std::vector<TSubModel *> &models, std
 	sn_utils::ls_float32(s, diffuseMultiplier);
 
 	// fill empty space
-	size_t fill = end - s.tellp();
+	const size_t fill = end - s.tellp();
 	for (size_t i = 0; i < fill; i++)
 		s.put(0);
 }
@@ -1929,15 +1929,15 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 		m_geometrybank = GfxRenderer->Create_Bank();
 	}
 
-	std::streampos end = s.tellg() + (std::streampos)size;
+	const std::streampos end = s.tellg() + (std::streampos)size;
 	bool hastangents{false};
 	bool hasuserdata{false};
 
 	while (s.tellg() < end)
 	{
-		uint32_t type = sn_utils::ld_uint32(s);
-		uint32_t size = sn_utils::ld_uint32(s) - 8;
-		size_t pos = s.tellg();
+		const uint32_t type = sn_utils::ld_uint32(s);
+		const uint32_t size = sn_utils::ld_uint32(s) - 8;
+		const size_t pos = s.tellg();
 		std::streampos end = pos + (std::streampos)size;
 
 		if ((type & 0x00FFFFFF) == MAKE_ID4('S', 'U', 'B', 0)) // submodels
@@ -1945,8 +1945,8 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 			if (Root != nullptr)
 				throw std::runtime_error("e3d: duplicated SUB chunk");
 
-			size_t sm_size = 256 + 64 * (((type & 0xFF000000) >> 24) - '0');
-			size_t sm_cnt = size / sm_size;
+			const size_t sm_size = 256 + 64 * (((type & 0xFF000000) >> 24) - '0');
+			const size_t sm_cnt = size / sm_size;
 			iSubModelsCount = (int)sm_cnt;
 			Root = new TSubModel[sm_cnt];
 			for (size_t i = 0; i < sm_cnt; ++i)
@@ -2126,7 +2126,7 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 		{
 			if (false == Matrices.empty())
 				throw std::runtime_error("e3d: duplicated TRA chunk");
-			size_t t_cnt = size / 64;
+			const size_t t_cnt = size / 64;
 
 			Matrices.resize(t_cnt);
 			for (size_t i = 0; i < t_cnt; ++i)
@@ -2136,7 +2136,7 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 		{
 			if (false == Matrices.empty())
 				throw std::runtime_error("e3d: duplicated TRA chunk");
-			size_t t_cnt = size / 128;
+			const size_t t_cnt = size / 128;
 
 			Matrices.resize(t_cnt);
 			for (size_t i = 0; i < t_cnt; ++i)
@@ -2362,8 +2362,8 @@ void TModel3d::LoadFromBinFile(std::string const &FileName, bool dynamic)
 
 	std::ifstream file(FileName, std::ios::binary);
 
-	uint32_t type = sn_utils::ld_uint32(file);
-	uint32_t size = sn_utils::ld_uint32(file) - 8;
+	const uint32_t type = sn_utils::ld_uint32(file);
+	const uint32_t size = sn_utils::ld_uint32(file) - 8;
 
 	if (type == MAKE_ID4('E', '3', 'D', '0'))
 	{
@@ -2384,7 +2384,7 @@ TSubModel *TModel3d::AppendChildFromGeometry(const std::string &name, const std:
 {
 	iFlags |= 0x0200;
 
-	auto sm = new TSubModel();
+	const auto sm = new TSubModel();
 	sm->Parent = AddToNamed(parent.c_str(), sm);
 	sm->m_geometry.vertex_count = vertices.size();
 	sm->m_geometry.index_count = indices.size();

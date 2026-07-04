@@ -21,7 +21,7 @@ command_queue::commands_map network::server_manager::pop_commands()
 {
 	command_queue::commands_map map;
 
-	for (auto srv : servers)
+	for (const auto srv : servers)
 		add_to_dequemap(map, srv->pop_commands());
 
 	return map;
@@ -38,7 +38,7 @@ void network::server_manager::push_delta(double render_dt, double dt, double syn
 	msg.sync = sync;
 	msg.commands = commands;
 
-	for (auto srv : servers)
+	for (const auto srv : servers)
 		srv->push_delta(msg);
 
 	serialize_message(msg, *backbuffer.get());
@@ -46,7 +46,7 @@ void network::server_manager::push_delta(double render_dt, double dt, double syn
 
 void network::server_manager::create_server(const std::string &backend, const std::string &conf)
 {
-	auto it = backend_list().find(backend);
+	const auto it = backend_list().find(backend);
 	if (it == backend_list().end()) {
 		ErrorLog("net: unknown backend: " + backend);
 		return;
@@ -61,7 +61,7 @@ network::manager::manager()
 
 void network::manager::update()
 {
-	for (auto &backend : backend_list())
+	for (const auto &backend : backend_list())
 		backend.second->update();
 
 	if (client)
@@ -76,7 +76,7 @@ void network::manager::create_server(const std::string &backend, const std::stri
 
 void network::manager::connect(const std::string &backend, const std::string &conf)
 {
-	auto it = backend_list().find(backend);
+	const auto it = backend_list().find(backend);
 	if (it == backend_list().end()) {
 		ErrorLog("net: unknown backend: " + backend);
 		return;

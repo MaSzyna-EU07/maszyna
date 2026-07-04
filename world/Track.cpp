@@ -1082,7 +1082,7 @@ const int numPts = 4;
 
 bool TTrack::CheckDynamicObject(TDynamicObject *Dynamic)
 { // sprawdzenie, czy pojazd jest przypisany do toru
-    for( auto dynamic : Dynamics ) {
+    for (const auto dynamic : Dynamics ) {
         if( dynamic == Dynamic ) {
             return true;
         }
@@ -1142,7 +1142,7 @@ bool TTrack::InMovement()
                 if (!SwitchExtension->CurrentIndex)
                     return false; // 0=zablokowana się nie animuje
                 // trzeba każdorazowo porównywać z kątem modelu
-				auto ac = SwitchExtension->pModel ? SwitchExtension->pModel->GetContainer() : nullptr;
+				const auto ac = SwitchExtension->pModel ? SwitchExtension->pModel->GetContainer() : nullptr;
                 return ac ?
                            ac->AngleGet() != SwitchExtension->fOffset ||
                                !(ac->TransGet() == SwitchExtension->vTrans) :
@@ -1208,7 +1208,7 @@ TTrack *TTrack::Next(TTrack *visitor) {
 		else
 			return trPrev;
 	} else if (eType == tt_Switch) {
-		int state = GetSwitchState();
+		const int state = GetSwitchState();
 
 		if (SwitchExtension->pPrevs[0] == visitor
 		        || SwitchExtension->pPrevs[1] == visitor)
@@ -1754,7 +1754,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
 
 void TTrack::RenderDynSounds()
 { // odtwarzanie dźwięków pojazdów jest niezależne od ich wyświetlania
-    for( auto dynamic : Dynamics ) {
+    for (const auto dynamic : Dynamics ) {
         dynamic->RenderSounds();
     }
 };
@@ -2095,7 +2095,7 @@ TTrack * TTrack::RaAnimate()
 //---------------------------------------------------------------------------
 void TTrack::RadioStop()
 { // przekazanie pojazdom rozkazu zatrzymania
-    for( auto dynamic : Dynamics ) {
+    for (const auto dynamic : Dynamics ) {
         dynamic->RadioStop();
     }
 };
@@ -2147,7 +2147,7 @@ int TTrack::TestPoint(const glm::dvec3 *Point)
         break;
     case tt_Switch: // zwrotnica
     {
-        int state = GetSwitchState(); // po co?
+		const int state = GetSwitchState(); // po co?
         // Ra: TODO: jak się zmieni na bezpośrednie odwołania do segmentow zwrotnicy,
         // to się wykoleja, ponieważ trNext zależy od przełożenia
         Switch(0);

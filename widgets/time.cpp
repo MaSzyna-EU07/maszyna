@@ -26,7 +26,7 @@ void ui::time_panel::render_contents()
 
 void ui::time_panel::open()
 {
-	auto &data = simulation::Time.data();
+	const auto &data = simulation::Time.data();
 	time = (float)data.wHour + (float)data.wMinute / 60.0f;
 
 	yearday = simulation::Time.year_day();

@@ -19,7 +19,7 @@ bool ui::scenerylist_panel::on_key(int key, int action)
 	if (!is_open)
 		return false;
 
-	auto it = keyboard.keytonamemap.find(key);
+	const auto it = keyboard.keytonamemap.find(key);
 	if (it == keyboard.keytonamemap.end())
 		return false;
 
@@ -50,7 +50,7 @@ void ui::scenerylist_panel::draw_scenery_list()
 	{
 		collapse_open = ImGui::CollapsingHeader(category.first.c_str());
 		if (collapse_open) {
-			for (auto desc : category.second)
+			for (const auto desc : category.second)
 			{
 				std::string name = desc->path.stem().string();
 
@@ -82,7 +82,7 @@ void ui::scenerylist_panel::draw_scenery_info()
 
 void ui::scenerylist_panel::open_link(const std::string &link)
 {
-	std::string file = ToLower(link);
+	const std::string file = ToLower(link);
 #ifdef _WIN32
 	system(("start \"eu07_link\" \"" + file + "\"").c_str());
 #elif __linux__
@@ -95,7 +95,7 @@ void ui::scenerylist_panel::open_link(const std::string &link)
 void ui::scenerylist_panel::draw_scenery_image()
 {
 	if (!selected_scenery->image_path.empty()) {
-		auto desc = const_cast<scenery_desc*>(selected_scenery);
+		const auto desc = const_cast<scenery_desc*>(selected_scenery);
         desc->image = GfxRenderer->Fetch_Texture(selected_scenery->image_path, true);
 		desc->image_path.clear();
 	}
@@ -105,8 +105,8 @@ void ui::scenerylist_panel::draw_scenery_image()
 		tex.create();
 
 		if (tex.get_is_ready()) {
-			float avail_width = ImGui::GetContentRegionAvailWidth();
-			float height = avail_width / tex.get_width() * tex.get_height();
+			const float avail_width = ImGui::GetContentRegionAvailWidth();
+			const float height = avail_width / tex.get_width() * tex.get_height();
 
 			ImGui::Image(reinterpret_cast<void *>(tex.get_id()), ImVec2(avail_width, height), ImVec2(0, 1), ImVec2(1, 0));
 		}
@@ -238,8 +238,8 @@ void ui::scenerylist_panel::draw_summary_tooltip(const dynamic_desc &dyn_desc)
 {
 	if (dyn_desc.vehicle && dyn_desc.skin)
 	{
-		std::string name = (dyn_desc.vehicle->path.parent_path() / dyn_desc.vehicle->path.stem()).string();
-		std::string skin = dyn_desc.skin->skin;
+		const std::string name = (dyn_desc.vehicle->path.parent_path() / dyn_desc.vehicle->path.stem()).string();
+		const std::string skin = dyn_desc.skin->skin;
 		ImGui::Text(STR_C("ID: %s"), dyn_desc.name.c_str());
 		ImGui::NewLine();
 
@@ -338,7 +338,7 @@ void ui::scenerylist_panel::draw_droptarget(trainset_desc &trainset, int positio
 	if (ImGui::BeginDragDropTarget()) {
 		const ImGuiPayload *payload = ImGui::AcceptDragDropPayload("vehicle_pure");
 		if (payload) {
-			skin_set *ptr = *reinterpret_cast<skin_set **>(payload->Data);
+			const skin_set *ptr = *reinterpret_cast<skin_set **>(payload->Data);
 			std::shared_ptr<skin_set> skin;
 			for (auto &s : ptr->vehicle.lock()->matching_skinsets)
 				if (s.get() == ptr)
@@ -354,7 +354,7 @@ void ui::scenerylist_panel::draw_droptarget(trainset_desc &trainset, int positio
 
 		payload = ImGui::AcceptDragDropPayload("vehicle_set");
 		if (payload) {
-			auto moved = reinterpret_cast<vehicle_moved*>(payload->Data);
+			const auto moved = reinterpret_cast<vehicle_moved*>(payload->Data);
 
 			dynamic_desc desc_copy = moved->dynamic;
 			int offset = 0;
@@ -399,14 +399,14 @@ void ui::dynamic_edit_popup::render_content()
 
 	if (dynamic.vehicle && dynamic.skin)
 	{
-		std::string name = (dynamic.vehicle->path.parent_path() / dynamic.vehicle->path.stem()).string();
+		const std::string name = (dynamic.vehicle->path.parent_path() / dynamic.vehicle->path.stem()).string();
 
 		ImGui::Text(STR_C("Type: %s"), name.c_str());
 
 		if (ImGui::BeginCombo(STR_C("Skin"), dynamic.skin->skin.c_str(), ImGuiComboFlags_HeightLargest))
 		{
 			for (auto const &skin : dynamic.vehicle->matching_skinsets) {
-				bool is_selected = skin == dynamic.skin;
+				const bool is_selected = skin == dynamic.skin;
 				if (ImGui::Selectable(skin->skin.c_str(), is_selected))
 					dynamic.skin = skin;
 				if (is_selected)
@@ -419,7 +419,7 @@ void ui::dynamic_edit_popup::render_content()
 	if (ImGui::BeginCombo(STR_C("Occupancy"), Translations.lookup_c(dynamic.drivertype.c_str())))
 	{
 		for (auto const &str : occupancy_names) {
-			bool is_selected = str == dynamic.drivertype;
+			const bool is_selected = str == dynamic.drivertype;
 			if (ImGui::Selectable(Translations.lookup_c(str.c_str()), is_selected))
 				dynamic.drivertype = str;
 			if (is_selected)

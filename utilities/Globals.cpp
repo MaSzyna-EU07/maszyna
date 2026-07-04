@@ -987,7 +987,7 @@ bool global_settings::ConfigParseHardware(cParser& Parser, const std::string& to
     if (token == "uartfeature")
     {
         Parser.getTokens(1);
-        std::string firstToken = Parser.peek();
+		const std::string firstToken = Parser.peek();
 
         if (firstToken.find('|') != std::string::npos || firstToken == "none" || uartfeatures_map.contains(firstToken))
         {

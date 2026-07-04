@@ -13,7 +13,7 @@ bool ui::keymapper_panel::key(int key)
 	if (!is_open || bind_active == user_command::none)
 		return false;
 
-	auto it = keyboard.keytonamemap.find(key);
+	const auto it = keyboard.keytonamemap.find(key);
 	if (it == keyboard.keytonamemap.end())
 		return false;
 
@@ -26,7 +26,7 @@ bool ui::keymapper_panel::key(int key)
 		key = 0;
 
 	// Replace the binding with a new key.
-	auto it2 = keyboard.bindings().find(bind_active);
+	const auto it2 = keyboard.bindings().find(bind_active);
 	if (it2 != keyboard.bindings().end()) {
 		it2->second = std::tuple<int, std::string>(key, std::get<std::string>(it2->second));
 	}
@@ -57,7 +57,7 @@ void ui::keymapper_panel::render_contents()
 		ImGui::Text((description.size() > 0 ? description : "(No description)").c_str());
 
 		// Binding key button
-		int keycode = std::get<int>(binding.second);
+		const int keycode = std::get<int>(binding.second);
 		std::string label;
 
 		if (keycode & keyboard_input::keymodifier::control)

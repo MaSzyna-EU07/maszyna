@@ -36,12 +36,12 @@ void locale::init()
 const std::string& locale::lookup_s(const std::string &msg, bool constant)
 {
 	if (constant) {
-		auto it = pointer_cache.find(&msg);
+		const auto it = pointer_cache.find(&msg);
 		if (it != pointer_cache.end())
 			return *(const std::string *)it->second;
 	}
 
-	auto it = lang_mapping.find(msg);
+	const auto it = lang_mapping.find(msg);
 	if (it != lang_mapping.end()) {
 		if (constant)
 			pointer_cache.emplace(&msg, &it->second);
@@ -56,12 +56,12 @@ const std::string& locale::lookup_s(const std::string &msg, bool constant)
 const char* locale::lookup_c(const char *msg, bool constant)
 {
 	if (constant) {
-		auto it = pointer_cache.find(msg);
+		const auto it = pointer_cache.find(msg);
 		if (it != pointer_cache.end())
 			return (const char*)it->second;
 	}
 
-	auto it = lang_mapping.find(std::string(msg));
+	const auto it = lang_mapping.find(std::string(msg));
 	if (it != lang_mapping.end()) {
 		if (constant)
 			pointer_cache.emplace(msg, it->second.c_str());
@@ -370,7 +370,7 @@ const std::string& locale::coupling_name(int c)
 
 	static std::string unknown(STRN("unknown"));
 
-	auto it = coupling_names.find(static_cast<coupling>(c));
+	const auto it = coupling_names.find(static_cast<coupling>(c));
 	if (it != coupling_names.end())
 		return lookup_s(it->second);
 	else

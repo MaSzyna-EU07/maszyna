@@ -629,7 +629,7 @@ void TAnimModel::RaPrepare()
     TSubModel::iInstance = reinterpret_cast<std::uintptr_t>( this ); //żeby nie robić cudzych animacji
     TSubModel::pasText = &asText; // przekazanie tekstu do wyświetlacza (!!!! do przemyślenia)
 
-	for (auto entry : m_animlist) {
+	for (const auto entry : m_animlist) {
 		entry->PrepareModel();
 	}
 }
@@ -690,7 +690,7 @@ void TAnimModel::AnimUpdate(double dt)
 { // wykonanie zakolejkowanych animacji, nawet gdy modele nie są aktualnie wyświetlane
 	acAnimList.remove_if([](std::weak_ptr<TAnimContainer> ptr)
 	{
-		std::shared_ptr<TAnimContainer> container = ptr.lock();
+		    const std::shared_ptr<TAnimContainer> container = ptr.lock();
 		if (!container)
 			return true;
 

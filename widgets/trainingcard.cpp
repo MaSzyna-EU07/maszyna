@@ -91,7 +91,7 @@ void trainingcard_panel::render_contents()
 	if (ImGui::BeginPopupModal("Zapisywanie danych"))
 	{
 		ImGui::SetWindowSize(ImVec2(-1, -1));
-		int s = state.load();
+		const int s = state.load();
 
 		if (s == 1)
 		{
@@ -121,8 +121,8 @@ void trainingcard_panel::render_contents()
 
 	if (start_time_wall)
 	{
-		std::tm *tm = std::localtime(&(*start_time_wall));
-		std::string rep = "Czas rozpoczęcia: " + std::to_string(tm->tm_year + 1900) + "-" + std::to_string(tm->tm_mon + 1) + "-" + std::to_string(tm->tm_mday) + " " + std::to_string(tm->tm_hour) +
+		const std::tm *tm = std::localtime(&(*start_time_wall));
+		const std::string rep = "Czas rozpoczęcia: " + std::to_string(tm->tm_year + 1900) + "-" + std::to_string(tm->tm_mon + 1) + "-" + std::to_string(tm->tm_mday) + " " + std::to_string(tm->tm_hour) +
 		                  ":" + std::to_string(tm->tm_min);
 		ImGui::TextUnformatted(rep.c_str());
 	}
@@ -159,11 +159,11 @@ void trainingcard_panel::render_contents()
 		if (ImGui::Button("Rozpocznij szkolenie"))
 		{
 			start_time_wall = std::time(nullptr);
-			std::tm *tm = std::localtime(&(*start_time_wall));
+			const std::tm *tm = std::localtime(&(*start_time_wall));
 			recording_timestamp = std::to_string(tm->tm_year + 1900) + std::to_string(tm->tm_mon + 1) + std::to_string(tm->tm_mday) + std::to_string(tm->tm_hour) + std::to_string(tm->tm_min) + "_" +
 			                      std::string(trainee_name.c_str()) + "_" + std::string(instructor_name.c_str());
 
-			int ret = StartRecording();
+			const int ret = StartRecording();
 			if (ret != 1)
 			{
 				state.store(ret);

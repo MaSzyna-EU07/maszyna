@@ -544,7 +544,7 @@ ui::track_switch_window::track_switch_window(ui_panel &panel, std::shared_ptr<ma
 bool ui::track_switch_window::render()
 {
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
-    bool ret = popup::render();
+	const bool ret = popup::render();
     ImGui::PopStyleVar();
     return ret;
 }
@@ -557,7 +557,7 @@ void ui::track_switch_window::render_content()
 
     highlight.clear();
 
-    std::array<std::string, 4> names = { "ac", "ad", "bc", "bd" };
+	const std::array<std::string, 4> names = { "ac", "ad", "bc", "bd" };
 
     for (size_t i = 0; i < 4; i++) {
         if (m_switch->action[i]) {
@@ -661,19 +661,19 @@ void ui::vehicle_click_window::render_content()
 	ImGui::TextUnformatted(STR_C("Light signal:"));
 
 	if (ImGui::Button(STR_C("none"))) {
-		std::string name = m_vehicle->name + "%SetSignal";
+		const std::string name = m_vehicle->name + "%SetSignal";
 		m_relay.post(user_command::sendaicommand, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(), &name);
 
 		ImGui::CloseCurrentPopup();
 	}
 	if (ImGui::Button(STR_C("Pc6"))) {
-		std::string name = m_vehicle->name + "%SetSignal";
+		const std::string name = m_vehicle->name + "%SetSignal";
 		m_relay.post(user_command::sendaicommand, Signal_Pc6, 1.0, GLFW_PRESS, 0, glm::vec3(), &name);
 
 		ImGui::CloseCurrentPopup();
 	}
 	if (ImGui::Button(STR_C("A1"))) {
-		std::string name = m_vehicle->name + "%SetSignal";
+		const std::string name = m_vehicle->name + "%SetSignal";
 		m_relay.post(user_command::sendaicommand, Signal_A1, 1.0, GLFW_PRESS, 0, glm::vec3(), &name);
 
 		ImGui::CloseCurrentPopup();
@@ -701,7 +701,7 @@ void ui::vehicle_click_window::render_content()
 		ImGui::InputInt(STR_C("Param 1"), &command_param1);
 		ImGui::InputInt(STR_C("Param 2"), &command_param2);
 		if (ImGui::Button(STR_C("Send"))) {
-			std::string name = m_vehicle->name + "%" + std::string(command_buf.data());
+			const std::string name = m_vehicle->name + "%" + std::string(command_buf.data());
 			m_relay.post(user_command::sendaicommand, command_param1, command_param2, GLFW_PRESS, 0, glm::vec3(), &name);
 
 			ImGui::CloseCurrentPopup();

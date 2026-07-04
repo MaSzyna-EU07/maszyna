@@ -195,7 +195,7 @@ void sn_utils::ls_int64(std::ostream &s, int64_t v)
 
 void sn_utils::ls_float32(std::ostream &s, float t)
 {
-	uint32_t v = reinterpret_cast<uint32_t&>(t);
+	const uint32_t v = reinterpret_cast<uint32_t&>(t);
 	uint8_t buf[4];
 	buf[0] = v;
 	buf[1] = v >> 8;
@@ -206,7 +206,7 @@ void sn_utils::ls_float32(std::ostream &s, float t)
 
 void sn_utils::ls_float64(std::ostream &s, double t)
 {
-	uint64_t v = reinterpret_cast<uint64_t&>(t);
+	const uint64_t v = reinterpret_cast<uint64_t&>(t);
 	uint8_t buf[8];
 	buf[0] = v;
 	buf[1] = v >> 8;

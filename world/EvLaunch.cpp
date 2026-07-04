@@ -70,7 +70,7 @@ bool TEventLauncher::Load(cParser *parser)
                 { "radio_call1", radio_message::call1 },
                 { "radio_call3", radio_message::call3 }
             };
-            auto lookup = messages.find( token );
+			const auto lookup = messages.find( token );
             iKey = lookup != messages.end() ? lookup->second :
 			                                  // a jak więcej, to jakby numer klawisza jest
 			                                  vk_to_glfw_key(stol_def(token, 0));
@@ -160,11 +160,11 @@ bool TEventLauncher::check_activation_key() {
 	if (iKey <= 0)
 		return false;
 
-	char key = iKey & 0xff;
+	const char key = iKey & 0xff;
 
 	bool result = Console::Pressed(key);
 
-	char modifier = iKey >> 8;
+	const char modifier = iKey >> 8;
 	if (modifier & GLFW_MOD_SHIFT)
 		result &= Global.shiftState;
 	if (modifier & GLFW_MOD_CONTROL)

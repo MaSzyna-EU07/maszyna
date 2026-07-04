@@ -56,10 +56,10 @@ void TPoKeys55::Close()
 bool TPoKeys55::Connect()
 { // Ra: to jest do wyczyszcznia z niepotrzebnych zmiennych i komunikatów
     Close();
-    GUID InterfaceClassGuid = {0x4d1e55b2, 0xf16f, 0x11cf, 0x88, 0xcb, 0x00,
+	const GUID InterfaceClassGuid = {0x4d1e55b2, 0xf16f, 0x11cf, 0x88, 0xcb, 0x00,
                                0x11,       0x11,   0x00,   0x00, 0x30}; // wszystkie HID tak mają
     HDEVINFO DeviceInfoTable;
-	auto InterfaceDataStructure = new SP_DEVICE_INTERFACE_DATA;
+	const auto InterfaceDataStructure = new SP_DEVICE_INTERFACE_DATA;
 	auto DetailedInterfaceDataStructure =
         new SP_DEVICE_INTERFACE_DETAIL_DATA;
     SP_DEVINFO_DATA DevInfoData;

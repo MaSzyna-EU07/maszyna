@@ -145,10 +145,10 @@ static void ImGui_ImplOpenGL3_SetupRenderState(ImDrawData* draw_data, int fb_wid
     // Setup viewport, orthographic projection matrix
     // Our visible imgui space lies from draw_data->DisplayPos (top left) to draw_data->DisplayPos+data_data->DisplaySize (bottom right). DisplayPos is (0,0) for single viewport apps.
     glViewport(0, 0, (GLsizei)fb_width, (GLsizei)fb_height);
-    float L = draw_data->DisplayPos.x;
-    float R = draw_data->DisplayPos.x + draw_data->DisplaySize.x;
-    float T = draw_data->DisplayPos.y;
-    float B = draw_data->DisplayPos.y + draw_data->DisplaySize.y;
+	const float L = draw_data->DisplayPos.x;
+	const float R = draw_data->DisplayPos.x + draw_data->DisplaySize.x;
+	const float T = draw_data->DisplayPos.y;
+	const float B = draw_data->DisplayPos.y + draw_data->DisplaySize.y;
     const float ortho_projection[4][4] =
     {
         { 2.0f/(R-L),   0.0f,         0.0f,   0.0f },
@@ -182,8 +182,8 @@ static void ImGui_ImplOpenGL3_SetupRenderState(ImDrawData* draw_data, int fb_wid
 void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
 {
     // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
-    int fb_width = (int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
-    int fb_height = (int)(draw_data->DisplaySize.y * draw_data->FramebufferScale.y);
+	const int fb_width = (int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
+	const int fb_height = (int)(draw_data->DisplaySize.y * draw_data->FramebufferScale.y);
     if (fb_width <= 0 || fb_height <= 0)
         return;
 
@@ -214,11 +214,11 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
     GLenum last_blend_dst_alpha; glGetIntegerv(GL_BLEND_DST_ALPHA, (GLint*)&last_blend_dst_alpha);
     GLenum last_blend_equation_rgb; glGetIntegerv(GL_BLEND_EQUATION_RGB, (GLint*)&last_blend_equation_rgb);
     GLenum last_blend_equation_alpha; glGetIntegerv(GL_BLEND_EQUATION_ALPHA, (GLint*)&last_blend_equation_alpha);
-    GLboolean last_enable_blend = glIsEnabled(GL_BLEND);
-    GLboolean last_enable_cull_face = glIsEnabled(GL_CULL_FACE);
-    GLboolean last_enable_depth_test = glIsEnabled(GL_DEPTH_TEST);
-    GLboolean last_enable_scissor_test = glIsEnabled(GL_SCISSOR_TEST);
-    bool clip_origin_lower_left = true;
+	const GLboolean last_enable_blend = glIsEnabled(GL_BLEND);
+	const GLboolean last_enable_cull_face = glIsEnabled(GL_CULL_FACE);
+	const GLboolean last_enable_depth_test = glIsEnabled(GL_DEPTH_TEST);
+	const GLboolean last_enable_scissor_test = glIsEnabled(GL_SCISSOR_TEST);
+	const bool clip_origin_lower_left = true;
 
     // Setup desired GL state
     // Recreate the VAO every time (this is to easily allow multiple GL contexts to be rendered to. VAO are not shared among GL contexts)
@@ -230,8 +230,8 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
     ImGui_ImplOpenGL3_SetupRenderState(draw_data, fb_width, fb_height, vertex_array_object);
 
     // Will project scissor/clipping rectangles into framebuffer space
-    ImVec2 clip_off = draw_data->DisplayPos;         // (0,0) unless using multi-viewports
-    ImVec2 clip_scale = draw_data->FramebufferScale; // (1,1) unless using retina display which are often (2,2)
+	const ImVec2 clip_off = draw_data->DisplayPos;         // (0,0) unless using multi-viewports
+	const ImVec2 clip_scale = draw_data->FramebufferScale; // (1,1) unless using retina display which are often (2,2)
 
     // Render command lists
     for (int n = 0; n < draw_data->CmdListsCount; n++)
@@ -320,7 +320,7 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
 bool ImGui_ImplOpenGL3_CreateFontsTexture()
 {
     // Build texture atlas
-    ImGuiIO& io = ImGui::GetIO();
+	const ImGuiIO & io = ImGui::GetIO();
     unsigned char* pixels;
     int width, height;
     io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);   // Load as RGBA 32-bits (75% of the memory is wasted, but default font is so small) because it is more likely to be compatible with user's existing shaders. If your ImTextureId represent a higher-level concept than just a GL texture id, consider calling GetTexDataAsAlpha8() instead to save on GPU memory.
@@ -350,7 +350,7 @@ void ImGui_ImplOpenGL3_DestroyFontsTexture()
 {
     if (g_FontTexture)
     {
-        ImGuiIO& io = ImGui::GetIO();
+		const ImGuiIO & io = ImGui::GetIO();
         glDeleteTextures(1, &g_FontTexture);
         io.Fonts->TexID = 0;
         g_FontTexture = 0;
@@ -408,7 +408,7 @@ bool    ImGui_ImplOpenGL3_CreateDeviceObjects()
     int glsl_version = 130;
     sscanf(g_GlslVersionString, "#version %d", &glsl_version);
 
-	auto vertex_shader_glsl_120 =
+	const auto vertex_shader_glsl_120 =
         "uniform mat4 ProjMtx;\n"
         "attribute vec2 Position;\n"
         "attribute vec2 UV;\n"
@@ -422,7 +422,7 @@ bool    ImGui_ImplOpenGL3_CreateDeviceObjects()
         "    gl_Position = ProjMtx * vec4(Position.xy,0,1);\n"
         "}\n";
 
-	auto vertex_shader_glsl_130 =
+	const auto vertex_shader_glsl_130 =
         "uniform mat4 ProjMtx;\n"
         "in vec2 Position;\n"
         "in vec2 UV;\n"
@@ -436,7 +436,7 @@ bool    ImGui_ImplOpenGL3_CreateDeviceObjects()
         "    gl_Position = ProjMtx * vec4(Position.xy,0,1);\n"
         "}\n";
 
-	auto vertex_shader_glsl_300_es =
+	const auto vertex_shader_glsl_300_es =
         "precision mediump float;\n"
         "layout (location = 0) in vec2 Position;\n"
         "layout (location = 1) in vec2 UV;\n"
@@ -451,7 +451,7 @@ bool    ImGui_ImplOpenGL3_CreateDeviceObjects()
         "    gl_Position = ProjMtx * vec4(Position.xy,0,1);\n"
         "}\n";
 
-	auto vertex_shader_glsl_410_core =
+	const auto vertex_shader_glsl_410_core =
         "layout (location = 0) in vec2 Position;\n"
         "layout (location = 1) in vec2 UV;\n"
         "layout (location = 2) in vec4 Color;\n"
@@ -465,7 +465,7 @@ bool    ImGui_ImplOpenGL3_CreateDeviceObjects()
         "    gl_Position = ProjMtx * vec4(Position.xy,0,1);\n"
         "}\n";
 
-	auto fragment_shader_glsl_120 =
+	const auto fragment_shader_glsl_120 =
         "#ifdef GL_ES\n"
         "    precision mediump float;\n"
         "#endif\n"
@@ -477,7 +477,7 @@ bool    ImGui_ImplOpenGL3_CreateDeviceObjects()
         "    gl_FragColor = Frag_Color * texture2D(Texture, Frag_UV.st);\n"
         "}\n";
 
-	auto fragment_shader_glsl_130 =
+	const auto fragment_shader_glsl_130 =
         "uniform sampler2D Texture;\n"
         "in vec2 Frag_UV;\n"
         "in vec4 Frag_Color;\n"
@@ -487,7 +487,7 @@ bool    ImGui_ImplOpenGL3_CreateDeviceObjects()
         "    Out_Color = FBOUT(Frag_Color * texture(Texture, Frag_UV.st));\n"
         "}\n";
 
-	auto fragment_shader_glsl_300_es =
+	const auto fragment_shader_glsl_300_es =
         "precision mediump float;\n"
         "uniform sampler2D Texture;\n"
         "in vec2 Frag_UV;\n"
@@ -498,7 +498,7 @@ bool    ImGui_ImplOpenGL3_CreateDeviceObjects()
         "    Out_Color = FBOUT(Frag_Color * texture(Texture, Frag_UV.st));\n"
         "}\n";
 
-	auto fragment_shader_glsl_410_core =
+	const auto fragment_shader_glsl_410_core =
         "in vec2 Frag_UV;\n"
         "in vec4 Frag_Color;\n"
         "uniform sampler2D Texture;\n"
@@ -539,8 +539,8 @@ bool    ImGui_ImplOpenGL3_CreateDeviceObjects()
     glCompileShader(g_VertHandle);
     CheckShader(g_VertHandle, "vertex shader");
 
-	auto fbout_copy = "vec4 FBOUT(vec4 x) { return x; }\n";
-	auto fbout_gamma = "vec4 FBOUT(vec4 x) { return vec4(pow(x.rgb, vec3(1.0 / 2.2)), x.a); }\n";
+	const auto fbout_copy = "vec4 FBOUT(vec4 x) { return x; }\n";
+	const auto fbout_gamma = "vec4 FBOUT(vec4 x) { return vec4(pow(x.rgb, vec3(1.0 / 2.2)), x.a); }\n";
 
     const GLchar* fragment_shader_with_version[3] = { g_GlslVersionString, Global.gfx_shadergamma ? fbout_gamma : fbout_copy, fragment_shader };
     g_FragHandle = glCreateShader(GL_FRAGMENT_SHADER);

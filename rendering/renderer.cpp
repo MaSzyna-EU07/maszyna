@@ -21,7 +21,7 @@ bool gfx_renderer_factory::register_backend(const std::string &backend, gfx_rend
 
 std::unique_ptr<gfx_renderer> gfx_renderer_factory::create(const std::string &backend)
 {
-    auto it = backends.find(backend);
+	const auto it = backends.find(backend);
     if (it != backends.end())
         return it->second();
 

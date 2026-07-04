@@ -193,8 +193,8 @@ double TSegment::RombergIntegral(double const fA, double const fB) const
 double TSegment::GetTFromS(double const s) const
 {
     // initial guess for Newton's method
-    double fTolerance = 0.001;
-    double fRatio = s / RombergIntegral(0, 1);
+	const double fTolerance = 0.001;
+	const double fRatio = s / RombergIntegral(0, 1);
     double fTime = std::lerp( 0.0, 1.0, fRatio );
 
     int iteration = 0;
@@ -295,10 +295,10 @@ const double fDirectionOffset = 0.1; // długość wektora do wyliczenia kierunk
 
 glm::dvec3 TSegment::GetDirection(double const fDistance) const
 { // takie toporne liczenie pochodnej dla podanego dystansu od Point1
-    double t1 = GetTFromS(fDistance - fDirectionOffset);
+	const double t1 = GetTFromS(fDistance - fDirectionOffset);
     if (t1 <= 0.0)
         return CPointOut - Point1; // na zewnątrz jako prosta
-    double t2 = GetTFromS(fDistance + fDirectionOffset);
+	const double t2 = GetTFromS(fDistance + fDirectionOffset);
     if (t2 >= 1.0)
         return Point1 - CPointIn; // na zewnątrz jako prosta
     return FastGetPoint(t2) - FastGetPoint(t1);
@@ -306,10 +306,10 @@ glm::dvec3 TSegment::GetDirection(double const fDistance) const
 
 glm::dvec3 TSegment::FastGetDirection(double fDistance, double fOffset)
 { // takie toporne liczenie pochodnej dla parametru 0.0÷1.0
-    double t1 = fDistance - fOffset;
+	const double t1 = fDistance - fOffset;
     if (t1 <= 0.0)
         return CPointOut - Point1; // wektor na początku jest stały
-    double t2 = fDistance + fOffset;
+	const double t2 = fDistance + fOffset;
     if (t2 >= 1.0)
         return Point2 - CPointIn; // wektor na końcu jest stały
     return FastGetPoint(t2) - FastGetPoint(t1);

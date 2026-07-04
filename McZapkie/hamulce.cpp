@@ -45,8 +45,8 @@ double const TFVE408::pos_table[11] = {0, 10, 0, 0, 10, 7, 8, 9, 0, 1, 5};
 /// <returns>Dimensionless flow driver (positive when P2 &gt; P1).</returns>
 double PR(double P1, double P2)
 {
-	double PH = std::max(P1, P2) + 0.1;
-	double PL = P1 + P2 - PH + 0.2;
+	const double PH = std::max(P1, P2) + 0.1;
+	const double PL = P1 + P2 - PH + 0.2;
 	return (P2 - P1) / (1.13 * PH - PL);
 }
 
@@ -59,8 +59,8 @@ double PR(double P1, double P2)
 /// <returns>Volumetric flow rate (signed).</returns>
 double PF_old(double P1, double P2, double S)
 {
-	double PH = std::max(P1, P2) + 1;
-	double PL = P1 + P2 - PH + 2;
+	const double PH = std::max(P1, P2) + 1;
+	const double PL = P1 + P2 - PH + 2;
 	if (PH - PL < 0.0001)
 		return 0;
 	else if (PH - PL < 0.05)
@@ -139,7 +139,7 @@ double PFVa(double PH, double PL, double const S, double LIM, double const DP)
 		LIM = LIM + 1;
 		PH = PH + 1; // wyzsze cisnienie absolutne
 		PL = PL + 1; // nizsze cisnienie absolutne
-		double sg = std::min(1.0, PL / PH); // bezwymiarowy stosunek cisnien. NOTE: sg is capped at 1 to prevent calculations from going awry. TODO, TBD: log these as errors?
+		const double sg = std::min(1.0, PL / PH); // bezwymiarowy stosunek cisnien. NOTE: sg is capped at 1 to prevent calculations from going awry. TODO, TBD: log these as errors?
 		double FM = PH * 197 * S; // najwyzszy mozliwy przeplyw, wraz z kierunkiem
 		if (LIM - PL < DP)
 			FM = FM * (LIM - PL) / DP; // jesli jestesmy przy nastawieniu, to zawor sie przymyka
@@ -173,7 +173,7 @@ double PFVd(double PH, double PL, double const S, double LIM, double const DP)
 		LIM = LIM + 1;
 		PH = PH + 1.0; // wyzsze cisnienie absolutne
 		PL = PL + 1.0; // nizsze cisnienie absolutne
-		double sg = std::min(1.0, PL / PH); // bezwymiarowy stosunek cisnien
+		const double sg = std::min(1.0, PL / PH); // bezwymiarowy stosunek cisnien
 		double FM = PH * 197.0 * S; // najwyzszy mozliwy przeplyw, wraz z kierunkiem
 		if (PH - LIM < 0.1)
 			FM = FM * (PH - LIM) / DP; // jesli jestesmy przy nastawieniu, to zawor sie przymyka
@@ -302,7 +302,7 @@ double TBrakeCyl::P()
 	static double const cD = 1;
 	static double const pD = VD - cD;
 
-	double VtoC = Cap > 0.0 ? Vol / Cap : 0.0; // stosunek cisnienia do objetosci.
+	const double VtoC = Cap > 0.0 ? Vol / Cap : 0.0; // stosunek cisnienia do objetosci.
 	                                             // Added div/0 trap for vehicles with incomplete definitions (cars etc)
 	//  P:=VtoC;
 	if (VtoC < VS)
@@ -583,7 +583,7 @@ int TBrake::GetStatus()
 /// </summary>
 int TBrake::GetSoundFlag()
 {
-	int result = SoundFlag;
+	const int result = SoundFlag;
 	SoundFlag = 0;
 	return result;
 }
@@ -833,8 +833,8 @@ void TWest::SetLP(double const TM, double const LM, double const TBP)
 /// <param name="dt">Time step [s].</param>
 void TESt::CheckReleaser(double const dt)
 {
-	double VVP = std::min(ValveRes->P(), BrakeRes->P() + 0.05);
-	double CVP = CntrlRes->P() - 0.0;
+	const double VVP = std::min(ValveRes->P(), BrakeRes->P() + 0.05);
+	const double CVP = CntrlRes->P() - 0.0;
 
 	// odluzniacz
 	if ((BrakeStatus & b_rls) == b_rls)
@@ -1298,8 +1298,8 @@ void TEStEP2::SetLP(double const TM, double const LM, double const TBP)
 /// <param name="dt">Time step [s].</param>
 void TEStEP2::EPCalc(double dt)
 {
-	double temp = BrakeRes->P() * int(EPS > 0);
-	double dv = PF(temp, LBP, 0.00053 + 0.00060 * int(EPS < 0)) * dt * EPS * EPS * int(LBP * EPS < MaxBP * LoadC);
+	const double temp = BrakeRes->P() * int(EPS > 0);
+	const double dv = PF(temp, LBP, 0.00053 + 0.00060 * int(EPS < 0)) * dt * EPS * EPS * int(LBP * EPS < MaxBP * LoadC);
 	LBP = LBP - dv;
 }
 
@@ -1312,10 +1312,10 @@ void TEStEP2::EPCalc(double dt)
 /// <param name="dt">Time step [s].</param>
 void TEStEP1::EPCalc(double dt)
 {
-	double temp = EPS - std::floor(EPS); // część ułamkowa jest hamulcem EP
-	double LBPLim = std::min(MaxBP * LoadC * temp, BrakeRes->P()); // do czego dążymy
-	double S = 10 * std::clamp(LBPLim - LBP, -0.1, 0.1); // przymykanie zaworku
-	double dv = PF(S > 0 ? BrakeRes->P() : 0, LBP, abs(S) * (0.00053 + 0.00060 * int(S < 0))) * dt; // przepływ
+	const double temp = EPS - std::floor(EPS); // część ułamkowa jest hamulcem EP
+	const double LBPLim = std::min(MaxBP * LoadC * temp, BrakeRes->P()); // do czego dążymy
+	const double S = 10 * std::clamp(LBPLim - LBP, -0.1, 0.1); // przymykanie zaworku
+	const double dv = PF(S > 0 ? BrakeRes->P() : 0, LBP, abs(S) * (0.00053 + 0.00060 * int(S < 0))) * dt; // przepływ
 	LBP = LBP - dv;
 }
 
@@ -1342,9 +1342,9 @@ void TEStEP1::SetEPS(double const nEPS)
 /// <returns>Net volume exchanged with the brake pipe.</returns>
 double TESt3::GetPF(double const PP, double const dt, double const Vel)
 {
-	double BVP{BrakeRes->P()};
+	const double BVP{BrakeRes->P()};
 	double VVP{ValveRes->P()};
-	double BCP{BrakeCyl->P()};
+	const double BCP{BrakeCyl->P()};
 	double CVP{CntrlRes->P() - 0.0};
 
 	double dv{0.0};
@@ -1715,7 +1715,7 @@ double TLSt::GetPF(double const PP, double const dt, double const Vel)
 		SoundFlag |= sf_CylU;
 	}
 	// equivalent of checkreleaser() in the base class?
-	bool is_releasing = BrakeStatus & b_rls || UniversalFlag & TUniversalBrake::ub_Release;
+	const bool is_releasing = BrakeStatus & b_rls || UniversalFlag & TUniversalBrake::ub_Release;
 	if (is_releasing)
 	{
 		if (CVP < 0.0)
@@ -2949,7 +2949,7 @@ double TFV4a::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 
 	ep = PP; // SPKS!!
 	double LimPP = std::min(BPT[std::lround(i_bcp) + 2][1], HP);
-	double ActFlowSpeed = BPT[std::lround(i_bcp) + 2][0];
+	const double ActFlowSpeed = BPT[std::lround(i_bcp) + 2][0];
 
 	if (i_bcp == i_bcpno)
 		LimPP = 2.9;
@@ -2958,7 +2958,7 @@ double TFV4a::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	RP = RP + 20 * std::min(std::abs(ep - RP), 0.05) * PR(RP, ep) * dt / 2.5;
 
 	LimPP = CP;
-	double dpPipe = std::min(HP, LimPP);
+	const double dpPipe = std::min(HP, LimPP);
 
 	double dpMainValve = PF(dpPipe, PP, ActFlowSpeed / LBDelay) * dt;
 	if (CP > RP + 0.05)
@@ -3964,7 +3964,7 @@ double TH14K1::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	{
 		LimPP = CP;
 	}
-	double ActFlowSpeed = BPT_K[BCP + 1][0];
+	const double ActFlowSpeed = BPT_K[BCP + 1][0];
 
 	CP = CP + 6 * std::min(std::abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
 

@@ -45,7 +45,7 @@ TModel3d *
 TModelsManager::LoadModel(std::string const &Name, std::string const &virtualName, bool dynamic) {
     
     m_models.emplace_back();
-    auto model = m_models.back().LoadModel( Name, dynamic );
+	const auto model = m_models.back().LoadModel( Name, dynamic );
     if( model != nullptr ) {
 		m_modelsmap.emplace( virtualName, m_models.size() - 1 );
     }
@@ -95,7 +95,7 @@ TModelsManager::GetModel(std::string const &Name, bool const Dynamic, bool const
 		postfix = "^^" + std::to_string(uid);
 
 	// see if we have it in the databank
-	auto banklookup { find_in_databank( filename + postfix ) };
+	const auto banklookup { find_in_databank( filename + postfix ) };
     TModel3d *model { banklookup.second };
     if( true == banklookup.first ) {
         Global.asCurrentTexturePath = buftp;
@@ -103,7 +103,7 @@ TModelsManager::GetModel(std::string const &Name, bool const Dynamic, bool const
     }
 
     // first load attempt, check if it's on disk
-    std::string disklookup { find_on_disk( filename ) };
+	const std::string disklookup { find_on_disk( filename ) };
 
     if( false == disklookup.empty() ) {
 		model = LoadModel( disklookup, disklookup + postfix, Dynamic ); // model nie znaleziony, to wczytać
@@ -123,7 +123,7 @@ TModelsManager::GetModel(std::string const &Name, bool const Dynamic, bool const
 std::pair<bool, TModel3d *>
 TModelsManager::find_in_databank( std::string const &Name ) {
 
-    std::vector<std::string> filenames {
+	const std::vector<std::string> filenames {
         Name,
         paths::models + Name };
 
@@ -141,7 +141,7 @@ TModelsManager::find_in_databank( std::string const &Name ) {
 std::string
 TModelsManager::find_on_disk( std::string const &Name ) {
 
-    std::vector<std::string> extensions { { ".e3d" }, { ".t3d" } };
+	const std::vector<std::string> extensions { { ".e3d" }, { ".t3d" } };
     for( auto const &extension : extensions ) {
 
         auto lookup = FileExists(Name + extension) ? Name : FileExists(paths::models + Name + extension) ? paths::models + Name : "";

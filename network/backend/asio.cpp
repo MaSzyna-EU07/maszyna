@@ -52,13 +52,13 @@ void network::tcp::connection::handle_header(const asio::error_code &err, size_t
 		return;
 	}
 
-	uint32_t sig = sn_utils::ld_uint32(header);
+	const uint32_t sig = sn_utils::ld_uint32(header);
 	if (sig != NETWORK_MAGIC) {
 		disconnect();
 		return;
 	}
 
-	uint32_t len = sn_utils::ld_uint32(header);
+	const uint32_t len = sn_utils::ld_uint32(header);
 	m_body_buffer.resize(len);
 	if (len > MAX_MSG_SIZE) {
 		disconnect();
@@ -82,7 +82,7 @@ void network::tcp::connection::handle_data(const asio::error_code &err, size_t b
 	}
 
 	std::istringstream stream(m_body_buffer);
-	std::shared_ptr<message> msg = deserialize_message(stream);
+	const std::shared_ptr<message> msg = deserialize_message(stream);
 	if (message_handler)
 		message_handler(*msg);
 
@@ -91,14 +91,14 @@ void network::tcp::connection::handle_data(const asio::error_code &err, size_t b
 
 void network::tcp::connection::write_message(const message &msg, std::ostream &stream)
 {
-	size_t beg = (size_t)stream.tellp();
+	const size_t beg = (size_t)stream.tellp();
 
 	sn_utils::ls_uint32(stream, NETWORK_MAGIC);
 	sn_utils::ls_uint32(stream, 0);
 
 	serialize_message(msg, stream);
 
-	size_t size = (size_t)stream.tellp() - beg - 8;
+	const size_t size = (size_t)stream.tellp() - beg - 8;
 	if (size > MAX_MSG_SIZE) {
 		ErrorLog("net: message too big", logtype::net);
 		return;
@@ -136,7 +136,7 @@ void network::tcp::connection::send_message(const message &msg)
 network::tcp::server::server(std::shared_ptr<std::istream> buf, asio::io_context &io_ctx, const std::string &host, uint32_t port)
     : network::server(buf), m_acceptor(io_ctx), m_io_ctx(io_ctx)
 {
-	auto endpoint = asio::ip::tcp::endpoint(asio::ip::make_address(host), port);
+	const auto endpoint = asio::ip::tcp::endpoint(asio::ip::make_address(host), port);
 	m_acceptor.open(endpoint.protocol());
 	m_acceptor.set_option(asio::socket_base::reuse_address(true));
 	m_acceptor.set_option(asio::ip::tcp::no_delay(true));
@@ -185,7 +185,7 @@ void network::tcp::client::connect()
 	auto conn = std::make_shared<connection>(io_ctx, true, resume_frame_counter);
 	conn->set_handler(std::bind(&client::handle_message, this, conn, std::placeholders::_1));
 
-	asio::ip::tcp::endpoint endpoint(
+	const asio::ip::tcp::endpoint endpoint(
 	            asio::ip::make_address(host), port);
 	conn->m_socket.open(endpoint.protocol());
 	conn->m_socket.set_option(asio::ip::tcp::no_delay(true));

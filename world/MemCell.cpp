@@ -157,7 +157,7 @@ bool TMemCell::Compare( std::string const &szTestText, double const fTestValue1,
 
     if( TestFlag( CheckMask, basic_event::flags::text ) ) {
         // porównać teksty
-        auto range = szTestText.find( '*' );
+		const auto range = szTestText.find( '*' );
         auto const result { (
             range == std::string::npos ?
                 compare( szText, szTestText, TextOperator ) :
@@ -277,7 +277,7 @@ memory_table::InitCells() {
 void
 memory_table::log_all() {
 
-    for( auto *cell : m_items ) {
+    for (const auto *cell : m_items ) {
         cell->LogValues();
     }
 }

@@ -125,7 +125,7 @@ void flip_dxt1_image(void *data, int width, int height)
 {
 	int x, y;
 	struct dxt1_block temp1, temp2;
-	auto blocks = (struct dxt1_block *)data;
+	const auto blocks = (struct dxt1_block *)data;
 	
 	width	= (width	+ 3) / 4;
 	height	= (height	+ 3) / 4;
@@ -154,7 +154,7 @@ void flip_dxt23_image(void *data, int width, int height)
 {
 	int x, y;
 	struct dxt23_block temp1, temp2;
-	auto blocks = (struct dxt23_block *)data;
+	const auto blocks = (struct dxt23_block *)data;
 	
 	width	= (width	+ 3) / 4;
 	height	= (height	+ 3) / 4;
@@ -183,7 +183,7 @@ void flip_dxt45_image(void *data, int width, int height)
 {
 	int x, y;
 	struct dxt45_block temp1, temp2;
-	auto blocks = (struct dxt45_block *)data;
+	const auto blocks = (struct dxt45_block *)data;
 	
 	width	= (width	+ 3) / 4;
 	height	= (height	+ 3) / 4;

@@ -249,7 +249,7 @@ opengl_vbogeometrybank::bind_streams( gfx::stream_units const &Units, unsigned i
         ::glDisableClientState( GL_COLOR_ARRAY );
     }
     if( Streams & gfx::stream::texture ) {
-        for( auto unit : Units.texture ) {
+        for (const auto unit : Units.texture ) {
             ::glClientActiveTexture( GL_TEXTURE0 + unit );
             ::glTexCoordPointer( 2, GL_FLOAT, sizeof( gfx::basic_vertex ), reinterpret_cast<void const *>( offsetof(gfx::basic_vertex, texture) + sizeof( gfx::basic_vertex ) * offset ) );
             ::glEnableClientState( GL_TEXTURE_COORD_ARRAY );
@@ -257,7 +257,7 @@ opengl_vbogeometrybank::bind_streams( gfx::stream_units const &Units, unsigned i
         m_activetexturearrays = Units.texture;
     }
     else {
-        for( auto unit : Units.texture ) {
+        for (const auto unit : Units.texture ) {
             ::glClientActiveTexture( GL_TEXTURE0 + unit );
             ::glDisableClientState( GL_TEXTURE_COORD_ARRAY );
         }
@@ -273,7 +273,7 @@ opengl_vbogeometrybank::release_streams() {
     ::glDisableClientState( GL_VERTEX_ARRAY );
     ::glDisableClientState( GL_NORMAL_ARRAY );
     ::glDisableClientState( GL_COLOR_ARRAY );
-    for( auto unit : m_activetexturearrays ) {
+    for (const auto unit : m_activetexturearrays ) {
         ::glClientActiveTexture( GL_TEXTURE0 + unit );
         ::glDisableClientState( GL_TEXTURE_COORD_ARRAY );
     }
@@ -321,7 +321,7 @@ opengl_dlgeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stream_
                 auto const &vertex { chunk.vertices[ index ] };
                      if( Streams & gfx::stream::normal ) { ::glNormal3fv( glm::value_ptr( vertex.normal ) ); }
                 else if( Streams & gfx::stream::color ) { ::glColor3fv( glm::value_ptr( vertex.normal ) ); }
-                if( Streams & gfx::stream::texture ) { for( auto unit : Units.texture ) { ::glMultiTexCoord2fv( unit, glm::value_ptr( vertex.texture ) ); } }
+                if( Streams & gfx::stream::texture ) { for (const auto unit : Units.texture ) { ::glMultiTexCoord2fv( unit, glm::value_ptr( vertex.texture ) ); } }
                 if( Streams & gfx::stream::position ) { ::glVertex3fv( glm::value_ptr( vertex.position ) ); }
             }
         }
@@ -330,7 +330,7 @@ opengl_dlgeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stream_
             for( auto const &vertex : chunk.vertices ) {
                      if( Streams & gfx::stream::normal ) { ::glNormal3fv( glm::value_ptr( vertex.normal ) ); }
                 else if( Streams & gfx::stream::color ) { ::glColor3fv( glm::value_ptr( vertex.normal ) ); }
-                if( Streams & gfx::stream::texture ) { for( auto unit : Units.texture ) { ::glMultiTexCoord2fv( unit, glm::value_ptr( vertex.texture ) ); } }
+                if( Streams & gfx::stream::texture ) { for (const auto unit : Units.texture ) { ::glMultiTexCoord2fv( unit, glm::value_ptr( vertex.texture ) ); } }
                 if( Streams & gfx::stream::position ) { ::glVertex3fv( glm::value_ptr( vertex.position ) ); }
             }
         }

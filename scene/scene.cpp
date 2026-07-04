@@ -450,7 +450,7 @@ basic_cell::erase( TAnimModel *Instance ) {
             if( mat != nullptr ) {
                 for( int i = 0; i < 5; ++i ) { key.skins[i] = mat->replacable_skins[i]; }
             }
-            auto bucket = m_instancebuckets_opaque.find( key );
+			const auto bucket = m_instancebuckets_opaque.find( key );
             if( bucket != m_instancebuckets_opaque.end() ) {
                 bucket->second.erase(
                     std::remove( std::begin( bucket->second ), std::end( bucket->second ), Instance ),
@@ -511,7 +511,7 @@ basic_cell::find( glm::dvec3 const &Point, float const Radius, bool const Onlyco
     float distance;
     float const distancecutoff { Radius * Radius }; // we'll ignore vehicles farther than this
 
-    for( auto *path : m_paths ) {
+    for (const auto *path : m_paths ) {
         for( auto *vehicle : path->Dynamics ) {
             if( true == Onlycontrolled
              && vehicle->Mechanik == nullptr ) {
@@ -682,7 +682,7 @@ basic_cell::launch_event( TEventLauncher *Launcher, bool local_only ) {
 			simulation::Events.AddToQuery( Launcher->Event1, nullptr );
 		}
 	} else {
-        command_relay commandrelay;
+		const command_relay commandrelay;
         if (Global.shiftState && Launcher->Event2 != nullptr)
 			commandrelay.post(user_command::queueevent, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &Launcher->Event2->name());
 		else if (Launcher->Event1)
@@ -1031,7 +1031,7 @@ basic_region::basic_region() {
 
 basic_region::~basic_region() {
 
-    for( auto *section : m_sections ) { if( section != nullptr ) { delete section; } }
+    for (const auto *section : m_sections ) { if( section != nullptr ) { delete section; } }
 }
 
 // potentially activates event handler with the same name as provided node, and within handler activation range
@@ -1110,8 +1110,8 @@ basic_region::is_scene( std::string const &Scenariofile ) const {
     // file type and version check
     std::ifstream input( filename, std::ios::binary );
 
-    uint32_t headermain{ sn_utils::ld_uint32( input ) };
-    uint32_t headertype{ sn_utils::ld_uint32( input ) };
+	const uint32_t headermain{ sn_utils::ld_uint32( input ) };
+	const uint32_t headertype{ sn_utils::ld_uint32( input ) };
 
     if( headermain != EU07_FILEHEADER || headertype != EU07_FILEVERSION_REGION ) {
         // wrong file type
@@ -1143,7 +1143,7 @@ basic_region::serialize( std::string const &Scenariofile ) const {
     // sections
     // TBD, TODO: build table of sections and file offsets, if we postpone section loading until they're within range
     std::uint32_t sectioncount { 0 };
-    for( auto *section : m_sections ) {
+    for (const auto *section : m_sections ) {
         if( section != nullptr ) {
             ++sectioncount;
         }
@@ -1151,7 +1151,7 @@ basic_region::serialize( std::string const &Scenariofile ) const {
     // section count, followed by section data
     sn_utils::ls_uint32( output, sectioncount );
     std::uint32_t sectionindex { 0 };
-    for( auto *section : m_sections ) {
+    for (const auto *section : m_sections ) {
         // section data: section index, followed by length of section data, followed by section data
         if( section != nullptr ) {
             sn_utils::ls_uint32( output, sectionindex );
@@ -1181,8 +1181,8 @@ basic_region::deserialize( std::string const &Scenariofile ) {
     // file type and version check
     std::ifstream input( filename, std::ios::binary );
 
-    uint32_t headermain { sn_utils::ld_uint32( input ) };
-    uint32_t headertype { sn_utils::ld_uint32( input ) };
+	const uint32_t headermain { sn_utils::ld_uint32( input ) };
+	const uint32_t headertype { sn_utils::ld_uint32( input ) };
 
     if( headermain != EU07_FILEHEADER || headertype != EU07_FILEVERSION_REGION ) {
         // wrong file type
@@ -1210,7 +1210,7 @@ basic_region::deserialize( std::string const &Scenariofile ) {
 void
 basic_region::export_as_text( std::ostream &Output ) const {
 
-    for( auto *section : m_sections ) {
+    for (const auto *section : m_sections ) {
         // text format export dumps only relevant basic objects from non-empty sections
         if( section != nullptr ) {
             section->export_as_text( Output );
@@ -1734,7 +1734,7 @@ void basic_region::update_poi_geometry()
 		vertices.push_back(std::move(sem->vertex()));
 
 	if (!m_map_poipoints) {
-        gfx::geometrybank_handle poibank = GfxRenderer->Create_Bank();
+		const gfx::geometrybank_handle poibank = GfxRenderer->Create_Bank();
         m_map_poipoints = GfxRenderer->Insert(vertices, userdata, poibank, GL_POINTS);
 	}
 	else {

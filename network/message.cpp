@@ -55,11 +55,11 @@ void ::network::request_command::serialize(std::ostream &stream) const
 
 void network::request_command::deserialize(std::istream &stream)
 {
-	uint32_t commands_size = sn_utils::ld_uint32(stream);
+	const uint32_t commands_size = sn_utils::ld_uint32(stream);
 	for (uint32_t i = 0; i < commands_size; i++)
 	{
 		uint32_t recipient = sn_utils::ld_uint32(stream);
-		uint32_t sequence_size = sn_utils::ld_uint32(stream);
+		const uint32_t sequence_size = sn_utils::ld_uint32(stream);
 
 		command_queue::commanddata_sequence sequence;
 		for (uint32_t i = 0; i < sequence_size; i++)
@@ -103,7 +103,7 @@ void network::frame_info::deserialize(std::istream &stream)
 
 std::shared_ptr<network::message> network::deserialize_message(std::istream &stream)
 {
-	auto type = (message::type_e)sn_utils::ld_uint16(stream);
+	const auto type = (message::type_e)sn_utils::ld_uint16(stream);
 
 	std::shared_ptr<message> msg;
 

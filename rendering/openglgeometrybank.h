@@ -87,7 +87,7 @@ public:
     opengl_dlgeometrybank() = default;
 // destructor:
     ~opengl_dlgeometrybank() {
-        for( auto &chunkrecord : m_chunkrecords ) {
+        for (const auto &chunkrecord : m_chunkrecords ) {
             ::glDeleteLists( chunkrecord.list, 1 ); } }
 
 private:

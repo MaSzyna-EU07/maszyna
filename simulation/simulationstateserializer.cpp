@@ -127,7 +127,7 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 	scene::scratch_data &Scratchpad = state->scratchpad;
 
     // deserialize content from the provided input
-	auto timelast { std::chrono::steady_clock::now() };
+	const auto timelast { std::chrono::steady_clock::now() };
 	auto token { Input.getToken<std::string>() };
     while( false == token.empty() ) {
 
@@ -390,7 +390,7 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
 }
 
 void state_serializer::init_time() {
-	auto &time = simulation::Time.data();
+	const auto &time = simulation::Time.data();
 	if( true == Global.ScenarioTimeCurrent ) {
 		// calculate time shift required to match scenario time with local clock
 		auto const *localtime = std::gmtime( &Global.starting_timestamp );
@@ -758,9 +758,9 @@ state_serializer::deserialize_time( cParser &Input, scene::scratch_data &Scratch
 void
 state_serializer::deserialize_trainset( cParser &Input, scene::scratch_data &Scratchpad ) {
 
-	int line = Input.LineMain();
+	const int line = Input.LineMain();
 	if (line != -1) {
-		auto it = Global.trainset_overrides.find(line);
+		const auto it = Global.trainset_overrides.find(line);
 		if (it != Global.trainset_overrides.end()) {
 			skip_until(Input, "endtrainset");
 			Input.injectString(it->second);

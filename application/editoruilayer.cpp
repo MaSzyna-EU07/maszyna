@@ -44,7 +44,7 @@ void editor_ui::update()
 	m_itempropertiespanel.update(m_node);
 	m_functionspanel.update(m_node);
 
-	auto ptr = get_active_node_template(true);
+	const auto ptr = get_active_node_template(true);
 	if (ptr)
 		m_brushobjects.update(*ptr);
 }

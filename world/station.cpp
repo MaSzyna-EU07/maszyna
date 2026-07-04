@@ -56,7 +56,7 @@ basic_station::update_load( TDynamicObject *First, Mtable::TTrainParameters &Sch
         if( parameters.LoadType.name == "passengers" ) {
             // NOTE: for the time being we're doing simple, random load change calculation
             // TODO: exchange driven by station parameters and time of the day
-            auto unloadcount = static_cast<int>(
+			const auto unloadcount = static_cast<int>(
                 TestFlag( parameters.DamageFlag, dtrain_out ) ? parameters.LoadAmount :
                 laststop ? parameters.LoadAmount :
                 firststop ? 0 :

@@ -112,14 +112,14 @@ void cSun::move() {
     if( m_observer.minute >= 0 ) { localtime.wMinute = m_observer.minute; }
     if( m_observer.second >= 0 ) { localtime.wSecond = m_observer.second; }
 
-    double localut =
+	const double localut =
         localtime.wHour
         + localtime.wMinute / 60.0 // too low resolution, noticeable skips
         + localtime.wSecond / 3600.0; // good enough in normal circumstances
 /*
-        + localtime.wMilliseconds / 3600000.0; // for really smooth movement
-*/ 
-   double daynumber =
+	        + localtime.wMilliseconds / 3600000.0; // for really smooth movement
+	*/
+	const double daynumber =
        367 * localtime.wYear
         - 7 * ( localtime.wYear + ( localtime.wMonth + 9 ) / 12 ) / 4
         + 275 * localtime.wMonth / 9
@@ -168,8 +168,8 @@ void cSun::move() {
     m_body.declin = radtodeg * std::asin( std::sin( m_body.oblecl * degtorad ) * std::sin( m_body.eclong * degtorad ) );
 
     // right ascension
-    double top = std::cos( degtorad * m_body.oblecl ) * std::sin( degtorad * m_body.eclong );
-    double bottom = std::cos( degtorad * m_body.eclong );
+	const double top = std::cos( degtorad * m_body.oblecl ) * std::sin( degtorad * m_body.eclong );
+	const double bottom = std::cos( degtorad * m_body.eclong );
 
     m_body.rascen = clamp_circular( radtodeg * std::atan2( top, bottom ) );
 
@@ -187,11 +187,11 @@ void cSun::move() {
 
     double cz;	// cosine of the solar zenith angle
 
-    double tdatcd = std::cos( degtorad * m_body.declin );
-    double tdatch = std::cos( degtorad * m_body.hrang );
-    double tdatcl = std::cos( degtorad * m_observer.latitude );
-    double tdatsd = std::sin( degtorad * m_body.declin );
-    double tdatsl = std::sin( degtorad * m_observer.latitude );
+	const double tdatcd = std::cos( degtorad * m_body.declin );
+	const double tdatch = std::cos( degtorad * m_body.hrang );
+	const double tdatcl = std::cos( degtorad * m_observer.latitude );
+	const double tdatsd = std::sin( degtorad * m_body.declin );
+	const double tdatsl = std::sin( degtorad * m_observer.latitude );
 
     cz = tdatsd * tdatsl + tdatcd * tdatcl * tdatch;
 
@@ -242,15 +242,15 @@ void cSun::refract() {
 void cSun::irradiance() {
 
 	m_body.dayang = ( simulation::Time.year_day() - 1 ) * 360.0 / 365.0;
-	double sd = std::sin( glm::radians( m_body.dayang ) ); // sine of the day angle
-	double cd = std::cos( glm::radians( m_body.dayang ) ); // cosine of the day angle or delination
+	const double sd = std::sin( glm::radians( m_body.dayang ) ); // sine of the day angle
+	const double cd = std::cos( glm::radians( m_body.dayang ) ); // cosine of the day angle or delination
 	m_body.erv = 1.000110 + 0.034221*cd + 0.001280*sd;
-	double d2 = 2.0 * m_body.dayang;
-	double c2 = std::cos( glm::radians( d2 ) );
-	double s2 = std::sin( glm::radians( d2 ) );
+	const double d2 = 2.0 * m_body.dayang;
+	const double c2 = std::cos( glm::radians( d2 ) );
+	const double s2 = std::sin( glm::radians( d2 ) );
 	m_body.erv += 0.000719*c2 + 0.000077*s2;
 
-	double solcon = 1367.0;									// Solar constant, 1367 W/sq m
+	const double solcon = 1367.0;									// Solar constant, 1367 W/sq m
 
 	m_body.coszen  = std::cos( glm::radians( m_body.zenref ) );
 	if( m_body.coszen > 0.0 ) {

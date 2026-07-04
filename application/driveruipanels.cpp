@@ -473,13 +473,13 @@ timetable_panel::render() {
 
 	ImGui::PushFont(ui_layer::font_mono);
 
-    auto flags =
+	const auto flags =
         ImGuiWindowFlags_NoFocusOnAppearing
         | ImGuiWindowFlags_NoCollapse
         | ( size.x > 0 ? ImGuiWindowFlags_NoResize : 0 );
 
     // HACK: Make sure the timetable window is of correct width when using a larger font size.
-    float horizontalScale = Global.ui_fontsize / 13;
+	const float horizontalScale = Global.ui_fontsize / 13;
     if( size.x > 0 ) {
         ImGui::SetNextWindowSize( ImVec2S( size.x * horizontalScale, size.y ) );
     }
@@ -565,7 +565,7 @@ debug_panel::render() {
 
 	ImGui::PushFont(ui_layer::font_mono);
 
-    auto flags =
+	const auto flags =
         ImGuiWindowFlags_NoFocusOnAppearing
         | ImGuiWindowFlags_NoCollapse
         | ( size.x > 0 ? ImGuiWindowFlags_NoResize : 0 );
@@ -591,7 +591,7 @@ debug_panel::render() {
         if( true == render_section( "Vehicle", m_vehiclelines ) ) {
             if( DebugModeFlag && m_input.mover && m_input.mover->DamageFlag != 0 ) {
                 if( true == ImGui::Button( "Stop and repair consist" ) ) {
-                    command_relay relay;
+					const command_relay relay;
                     relay.post(user_command::resetconsist, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &m_input.vehicle->name());
                 }
             }
@@ -611,8 +611,8 @@ debug_panel::render() {
 		render_section_developer(); // Developer tools
 #ifdef WITH_UART
         if(true == render_section( "UART", m_uartlines)) {
-            int ports_num = UartStatus.available_ports.size();
-			auto avlports = new char*[ports_num];
+			const int ports_num = UartStatus.available_ports.size();
+			const auto avlports = new char*[ports_num];
             for (int i=0; i < ports_num; i++) {
                 avlports[i] = (char *) UartStatus.available_ports[i].c_str();
             }
@@ -625,7 +625,7 @@ debug_panel::render() {
         ImGui::Separator();
         bool flag = DebugModeFlag;
         if (ImGui::Checkbox("Debug Mode", &flag)) {
-            command_relay relay;
+			const command_relay relay;
             relay.post(user_command::debugtoggle, 0.0, 0.0, GLFW_RELEASE, 0);
         }
     }
@@ -647,7 +647,7 @@ debug_panel::render_section_scenario() {
         auto fogrange = std::log( Global.fFogEnd );
         if( ImGui::SliderFloat(
             ( to_string( std::exp( fogrange ), 0, 5 ) + " m###fogend" ).c_str(), &fogrange, std::log( 10.0f ), std::log( 50000.0f ), "Fog distance" ) ) {
-            command_relay relay;
+			const command_relay relay;
             relay.post(
                 user_command::setweather,
                 std::clamp( std::exp( fogrange ), 10.0f, 50000.0f ),
@@ -661,7 +661,7 @@ debug_panel::render_section_scenario() {
 		        (to_string(Airtemperature, 1) + " deg C###Airtemperature").c_str(),
 		        &Airtemperature, -35.0f, 40.0f, "Air Temperature"))
 		{
-			command_relay relay;
+			const command_relay relay;
             relay.post(
                 user_command::settemperature, 
                 std::clamp(Airtemperature, -35.0f, 40.0f),
@@ -673,7 +673,7 @@ debug_panel::render_section_scenario() {
     {
         if( ImGui::SliderFloat(
             ( to_string( Global.Overcast, 2, 5 ) + " (" + Global.Weather + ")###overcast" ).c_str(), &Global.Overcast, 0.0f, 2.0f, "Cloud cover" ) ) {
-            command_relay relay;
+			const command_relay relay;
             relay.post(
                 user_command::setweather,
                 Global.fFogEnd,
@@ -685,7 +685,7 @@ debug_panel::render_section_scenario() {
     {
         if( ImGui::SliderFloat(
             ( to_string( Global.fMoveLight, 0, 5 ) + " (" + Global.Season + ")###movelight" ).c_str(), &Global.fMoveLight, 0.0f, 364.0f, "Day of year" ) ) {
-            command_relay relay;
+			const command_relay relay;
             relay.post(
                 user_command::setdatetime,
                 std::clamp( Global.fMoveLight, 0.0f, 365.0f ),
@@ -713,7 +713,7 @@ debug_panel::render_section_scenario() {
                     + ":"
                     + std::string( std::to_string( int( 100 + simulation::Time.data().wMinute ) ).substr( 1, 2 ) ) ) };
             if( ImGui::SliderInt( ( timestring + " (" + Global.Period + ")###simulationtime" ).c_str(), &time, 0, 1439, "Time of day" ) ) {
-                command_relay relay;
+				const command_relay relay;
                 relay.post(
                     user_command::setdatetime,
                     Global.fMoveLight,
@@ -980,7 +980,7 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
     }
 
 	if (!std::isnan(last_time)) {
-		double dt = Timer::GetTime() - last_time;
+		const double dt = Timer::GetTime() - last_time;
 		AccN_jerk_graph.update((mover.AccN - last_AccN) / dt);
 		AccN_acc_graph.update(mover.AccN);
 	}
@@ -1012,7 +1012,7 @@ debug_panel::update_vehicle_coupler( int const Side ) {
     auto const &mover { *m_input.mover };
 
     std::string const controltype{ ( mover.Couplers[ Side ].control_type.empty() ? "[*]" : "[" + mover.Couplers[ Side ].control_type + "]" ) };
-    std::string couplerstatus { STR("none") };
+	const std::string couplerstatus { STR("none") };
     std::string const adapterstatus { ( mover.Couplers[ Side ].adapter_type == TCouplerType::NoCoupler ? "" : "[A]" ) };
 
 	auto const *connected { m_input.vehicle->MoverParameters->Neighbours[ Side ].vehicle };
@@ -1041,7 +1041,7 @@ debug_panel::update_vehicle_brake() const {
 
 	std::string brakedelay;
 
-	std::vector<std::pair<int, std::string>> delays {
+	const std::vector<std::pair<int, std::string>> delays {
 		{ bdelay_G, "G" },
 		{ bdelay_P, "P" },
 		{ bdelay_R, "R" },
@@ -1285,7 +1285,7 @@ debug_panel::update_section_scantable( std::vector<text_line> &Output ) {
 #ifdef WITH_UART
 void
 debug_panel::update_section_uart( std::vector<text_line> &Output ) {
-    uart_status *status = &UartStatus;
+	const uart_status *status = &UartStatus;
 
     Output.emplace_back(
         ("Port: " + status->port_name).c_str(),
@@ -1296,7 +1296,7 @@ debug_panel::update_section_uart( std::vector<text_line> &Output ) {
         Global.UITextColor
     );
     if(status->is_connected) {
-        std::string synctext = status->is_synced ? "SYNCED" : "NOT SYNCED";
+		const std::string synctext = status->is_synced ? "SYNCED" : "NOT SYNCED";
         Output.emplace_back(("CONNECTED, " + synctext).c_str(), Global.UITextColor);
     } else {
         Output.emplace_back("* NOT CONNECTED *", Global.UITextColor);
@@ -1595,7 +1595,7 @@ debug_panel::render_section_settings() {
     if (simulation::Train) {
         float val = simulation::Train->get_radiovolume();
         if( ImGui::SliderFloat( ( std::to_string( static_cast<int>( val * 100 ) ) + "%###volumeradio" ).c_str(), &val, 0.0f, 1.0f, "Vehicle radio volume" ) ) {
-            command_relay relay;
+			const command_relay relay;
             relay.post(user_command::radiovolumeset, val, 0.0, GLFW_PRESS, 0);
         }
     }
@@ -1624,7 +1624,7 @@ transcripts_panel::render() {
     if( false == is_open ) { return; }
     if( true == text_lines.empty() ) { return; }
 
-    auto flags =
+	const auto flags =
         ImGuiWindowFlags_NoFocusOnAppearing
         | ImGuiWindowFlags_NoCollapse
         | ( size.x > 0 ? ImGuiWindowFlags_NoResize : 0 );

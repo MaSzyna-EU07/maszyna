@@ -158,7 +158,7 @@ void Console::BitsSet(int mask, int entry)
 { // ustawienie bitów o podanej masce (mask) na wejściu (entry)
     if ((iBits & mask) != mask) // jeżeli zmiana
     {
-        int old = iBits; // poprzednie stany
+		const int old = iBits; // poprzednie stany
         iBits |= mask;
         BitsUpdate(old ^ iBits); // 1 dla bitów zmienionych
         if (iMode == 4)
@@ -171,7 +171,7 @@ void Console::BitsClear(int mask, int entry)
 { // zerowanie bitów o podanej masce (mask) na wejściu (entry)
     if (iBits & mask) // jeżeli zmiana
     {
-        int old = iBits; // poprzednie stany
+		const int old = iBits; // poprzednie stany
         iBits &= ~mask;
         BitsUpdate(old ^ iBits); // 1 dla bitów zmienionych
     }
@@ -267,7 +267,7 @@ void Console::ValueSet(int x, double y)
                 WriteLog( " fraction=" + std::to_string( y ) );
             }
         }
-        double temp = (((((
+		const double temp = (((((
               Global.fCalibrateOut[x][5]  * y)
             + Global.fCalibrateOut[x][4]) * y
             + Global.fCalibrateOut[x][3]) * y

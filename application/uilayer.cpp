@@ -501,7 +501,7 @@ void ui_layer::clear_panels()
 
 void ui_layer::add_owned_panel(ui_panel *Panel)
 {
-	for (auto &panel : m_ownedpanels)
+	for (const auto &panel : m_ownedpanels)
 		if (panel->name() == Panel->name())
 		{
 			delete Panel;
@@ -516,7 +516,7 @@ void ui_layer::render_panels()
 {
 	for (auto *panel : m_panels)
 		panel->render();
-	for (auto &panel : m_ownedpanels)
+	for (const auto &panel : m_ownedpanels)
 		panel->render();
 
 	if (m_imgui_demo)
@@ -540,7 +540,7 @@ void ui_layer::render_menu_contents()
 		bool flag = DebugModeFlag;
 		if (ImGui::MenuItem(STR_C("Debug mode"), nullptr, &flag))
 		{
-			command_relay relay;
+			const command_relay relay;
 			relay.post(user_command::debugtoggle, 0.0, 0.0, GLFW_RELEASE, 0);
 		}
 		ImGui::MenuItem(STR_C("Quit"), "F10", &m_quit_active);
@@ -606,21 +606,21 @@ void ui_layer::render_background()
 	if (m_background == 0)
 		return;
 
-	ImVec2 display_size = ImGui::GetIO().DisplaySize;
+	const ImVec2 display_size = ImGui::GetIO().DisplaySize;
 	ITexture &tex = GfxRenderer->Texture(m_background);
 	tex.create();
 
-	float tex_w = (float)tex.get_width();
-	float tex_h = (float)tex.get_height();
+	const float tex_w = (float)tex.get_width();
+	const float tex_h = (float)tex.get_height();
 
 	// skalowanie "cover" – wypełnia cały ekran, zachowując proporcje
-	float scale_factor = display_size.x / display_size.y > tex_w / tex_h ? display_size.x / tex_w : display_size.y / tex_h;
+	const float scale_factor = display_size.x / display_size.y > tex_w / tex_h ? display_size.x / tex_w : display_size.y / tex_h;
 
-	ImVec2 image_size(tex_w * scale_factor, tex_h * scale_factor);
+	const ImVec2 image_size(tex_w * scale_factor, tex_h * scale_factor);
 
 	// wyśrodkowanie obrazka
-	ImVec2 start_position((display_size.x - image_size.x) * 0.5f, (display_size.y - image_size.y) * 0.5f);
-	ImVec2 end_position(start_position.x + image_size.x, start_position.y + image_size.y);
+	const ImVec2 start_position((display_size.x - image_size.x) * 0.5f, (display_size.y - image_size.y) * 0.5f);
+	const ImVec2 end_position(start_position.x + image_size.x, start_position.y + image_size.y);
 
 	// obrazek jest odwrócony w pionie – odwracamy UV
 	ImGui::GetBackgroundDrawList()->AddImage(reinterpret_cast<ImTextureID>(tex.get_id()), start_position, end_position, ImVec2(0, 1), ImVec2(1, 0));

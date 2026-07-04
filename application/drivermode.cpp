@@ -74,7 +74,7 @@ bool driver_mode::drivermode_input::init()
 {
 
 	// initialize input devices
-	auto result = keyboard.init() && mouse.init();
+	const auto result = keyboard.init() && mouse.init();
 	if (true == Global.InputGamepad)
 	{
 		gamepad.init();
@@ -419,7 +419,7 @@ bool driver_mode::update()
 void driver_mode::enter()
 {
 
-	TDynamicObject *nPlayerTrain{(Global.local_start_vehicle != "ghostview" ? simulation::Vehicles.find(Global.local_start_vehicle) : nullptr)};
+	const TDynamicObject *nPlayerTrain{(Global.local_start_vehicle != "ghostview" ? simulation::Vehicles.find(Global.local_start_vehicle) : nullptr)};
 
 	Camera.Init(Global.FreeCameraInit[0], Global.FreeCameraInitAngle[0], nullptr);
 	Global.pCamera = Camera;
@@ -472,7 +472,7 @@ void driver_mode::on_key(int const Key, int const Scancode, int const Action, in
 	Global.altState = Mods & GLFW_MOD_ALT ? true : false;
 #endif
 
-	bool anyModifier = Mods & (GLFW_MOD_SHIFT | GLFW_MOD_CONTROL | GLFW_MOD_ALT);
+	const bool anyModifier = Mods & (GLFW_MOD_SHIFT | GLFW_MOD_CONTROL | GLFW_MOD_ALT);
 
 	// give the ui first shot at the input processing...
 	if (!anyModifier && true == m_userinterface->on_key(Key, Action))

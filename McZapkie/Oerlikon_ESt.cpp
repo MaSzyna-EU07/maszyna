@@ -59,8 +59,8 @@ void TPrzekladnik::Update(double dt)
 {
     double dV;
 
-    double BCP{ Next->P() };
-    double BVP{ BrakeRes->P() };
+	const double BCP{ Next->P() };
+	const double BVP{ BrakeRes->P() };
 
     if ( BCP > P() )
         dV = -PFVd(BCP, 0, d2A(10), P()) * dt;
@@ -101,8 +101,8 @@ void TRapid::SetRapidStatus(bool rs)
 
 void TRapid::Update(double dt)
 {
-    double BVP{ BrakeRes->P() };
-    double BCP{ Next->P() };
+	const double BVP{ BrakeRes->P() };
+	const double BCP{ Next->P() };
     double ActMult;
     double dV;
 

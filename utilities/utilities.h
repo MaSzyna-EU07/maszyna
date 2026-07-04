@@ -87,7 +87,7 @@ inline double LocalRandom(double b)
 
 inline double BorlandTime()
 {
-	auto timesinceepoch = std::time(nullptr);
+	const auto timesinceepoch = std::time(nullptr);
 	return timesinceepoch / (24.0 * 60 * 60);
 	/*
 	    // std alternative
@@ -177,7 +177,7 @@ inline std::string extract_value(std::string const &Key, std::string const &Inpu
 template <typename Type_> bool extract_value(Type_ &Variable, std::string const &Key, std::string const &Input, std::string const &Default)
 {
 
-	auto value = extract_value(Key, Input);
+	const auto value = extract_value(Key, Input);
 	if (false == value.empty())
 	{
 		// set the specified variable to retrieved value

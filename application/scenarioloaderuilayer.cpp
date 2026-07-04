@@ -23,7 +23,7 @@ size_t utf8_char_count(const std::string& str)
 	size_t count = 0;
 	for (size_t i = 0; i < str.length(); )
 	{
-		unsigned char c = static_cast<unsigned char>(str[i]);
+		const unsigned char c = static_cast<unsigned char>(str[i]);
 		if ((c & 0x80) == 0x00)
 		{
 			// 1-byte character (ASCII)
@@ -108,7 +108,7 @@ std::vector<std::string> scenarioloader_ui::get_random_trivia()
 		size_t current_chars = 0;
 		for (size_t i = 0; i < str.length() && current_chars < char_count; )
 		{
-			unsigned char c = static_cast<unsigned char>(str[i]);
+			const unsigned char c = static_cast<unsigned char>(str[i]);
 			if ((c & 0x80) == 0x00)
 			{
 				i += 1;
@@ -137,8 +137,8 @@ std::vector<std::string> scenarioloader_ui::get_random_trivia()
 
 	// UTF-8 safe find space within character limit
 	auto find_space_before_char_count = [&](const std::string& str, size_t max_chars) -> size_t {
-		size_t byte_limit = get_byte_pos_for_char_count(str, max_chars);
-		size_t search_limit = std::min(str.length(), byte_limit);
+		const size_t byte_limit = get_byte_pos_for_char_count(str, max_chars);
+		const size_t search_limit = std::min(str.length(), byte_limit);
 
 		// Search backwards for a space that's not in the middle of a UTF-8 sequence
 		for (int idx = static_cast<int>(search_limit); idx >= 0; idx--) {

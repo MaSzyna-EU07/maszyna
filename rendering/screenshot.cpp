@@ -44,7 +44,7 @@ void screenshot_manager::screenshot_save_thread( char *img, int w, int h )
 	perf = ts.tv_nsec;
 #endif
 
-	std::string filename = Global.screenshot_dir + "/" + std::string(datetime) +
+	const std::string filename = Global.screenshot_dir + "/" + std::string(datetime) +
 	                       "_" + std::to_string(perf) + ".png";
 
     if (png_image_write_to_file(&png, filename.c_str(), 0, img, stride, nullptr) == 1)

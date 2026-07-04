@@ -45,10 +45,10 @@ void TCamera::OnCursorMove(double x, double y) {
 }
 
 static double ComputeAxisSpeed(double param, double walkspeed, double maxspeed, double threshold) {
-    double absval = std::abs(param);
+	const double absval = std::abs(param);
     // 2/3rd of the stick range lerps walk speed, past that we lerp between max walk and run speed
-    double walk = walkspeed * std::min(absval / threshold, 1.0);
-    double run  = std::max(0.0, absval - threshold) / (1.0 - threshold) * std::max(0.0, maxspeed - walkspeed);
+	const double walk = walkspeed * std::min(absval / threshold, 1.0);
+	const double run  = std::max(0.0, absval - threshold) / (1.0 - threshold) * std::max(0.0, maxspeed - walkspeed);
     return (param >= 0.0 ? 1.0 : -1.0) * (walk + run);
 }
 

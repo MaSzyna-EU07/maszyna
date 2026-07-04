@@ -272,7 +272,7 @@ void itemproperties_panel::render()
 		return;
 	}
 
-	auto flags = ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse | (size.x > 0 ? ImGuiWindowFlags_NoResize : 0);
+	const auto flags = ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse | (size.x > 0 ? ImGuiWindowFlags_NoResize : 0);
 
 	if (size.x > 0)
 	{
@@ -383,7 +383,7 @@ brush_object_list::brush_object_list(std::string const &Name, bool const Isopen)
 
 bool brush_object_list::VectorGetter(void *data, int idx, const char **out_text)
 {
-	auto *vec = static_cast<std::vector<std::string> *>(data);
+	const auto *vec = static_cast<std::vector<std::string> *>(data);
 
 	if (idx < 0 || idx >= vec->size())
 		return false;
@@ -416,7 +416,7 @@ void brush_object_list::render()
 		return;
 	}
 
-	auto flags = ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse | (size.x > 0 ? ImGuiWindowFlags_NoResize : 0);
+	const auto flags = ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse | (size.x > 0 ? ImGuiWindowFlags_NoResize : 0);
 	if (ImGui::Begin("Brush random set", nullptr, flags))
 	{
 		ImGui::SliderFloat("Spacing", &spacing, 0.1f, 20.0f, "%.1f m");
@@ -513,7 +513,7 @@ void nodebank_panel::render()
 		return;
 	}
 
-	auto flags = ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse | (size.x > 0 ? ImGuiWindowFlags_NoResize : 0);
+	const auto flags = ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse | (size.x > 0 ? ImGuiWindowFlags_NoResize : 0);
 
 	if (size.x > 0)
 	{
@@ -639,7 +639,7 @@ void functions_panel::render()
 		return;
 	}
 
-	auto flags = ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse | (size.x > 0 ? ImGuiWindowFlags_NoResize : 0);
+	const auto flags = ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse | (size.x > 0 ? ImGuiWindowFlags_NoResize : 0);
 
 	if (size.x > 0)
 	{

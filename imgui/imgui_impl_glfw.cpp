@@ -249,11 +249,11 @@ static void ImGui_ImplGlfw_UpdateMousePosAndButtons()
 
 static void ImGui_ImplGlfw_UpdateMouseCursor()
 {
-    ImGuiIO& io = ImGui::GetIO();
+	const ImGuiIO & io = ImGui::GetIO();
     if ((io.ConfigFlags & ImGuiConfigFlags_NoMouseCursorChange) || glfwGetInputMode(g_Window, GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
         return;
 
-    ImGuiMouseCursor imgui_cursor = ImGui::GetMouseCursor();
+	const ImGuiMouseCursor imgui_cursor = ImGui::GetMouseCursor();
     if (imgui_cursor == ImGuiMouseCursor_None || io.MouseDrawCursor)
     {
         // Hide OS mouse cursor if imgui is drawing it or if it wants no cursor
@@ -320,7 +320,7 @@ void ImGui_ImplGlfw_NewFrame()
         io.DisplayFramebufferScale = ImVec2((float)display_w / w, (float)display_h / h);
 
     // Setup time step
-    double current_time = glfwGetTime();
+	const double current_time = glfwGetTime();
     io.DeltaTime = g_Time > 0.0 ? (float)(current_time - g_Time) : (float)(1.0f/60.0f);
     g_Time = current_time;
 

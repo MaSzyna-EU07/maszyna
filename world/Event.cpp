@@ -126,7 +126,7 @@ basic_event::event_conditions::test() const {
     if( flags & ( flags::text | flags::value1 | flags::value2 ) ) {
         // porównanie wartości
         for( auto &cellwrapper : *memcompare_cells ) {
-            auto *cell { static_cast<TMemCell *>( std::get<scene::basic_node *>( cellwrapper ) ) };
+			const auto *cell { static_cast<TMemCell *>( std::get<scene::basic_node *>( cellwrapper ) ) };
             if( cell == nullptr ) {
 //                ErrorLog( "Event " + asName + " trying conditional_memcompare with nonexistent memcell" );
                 continue; // though this is technically error, we treat it as a success to maintain backward compatibility
@@ -357,7 +357,7 @@ basic_event::export_as_text( std::ostream &Output ) const {
     else {
         auto targetidx { 0 };
         for( auto &target : m_targets ) {
-            auto *targetnode { std::get<scene::basic_node *>( target ) };
+			const auto *targetnode { std::get<scene::basic_node *>( target ) };
             Output
                 << ( targetnode != nullptr ? targetnode->name() : std::get<std::string>( target ) )
                 << ( ++targetidx < m_targets.size() ? '|' : ' ' );
@@ -534,7 +534,7 @@ updatevalues_event::run_() {
 //        targetcell->LogValues();
         if( targetcell->Track == nullptr ) { continue; }
         // McZapkie-100302 - updatevalues oprocz zmiany wartosci robi putcommand dla wszystkich 'dynamic' na danym torze
-        for( auto vehicle : targetcell->Track->Dynamics ) {
+        for (const auto vehicle : targetcell->Track->Dynamics ) {
             if( vehicle->Mechanik ) {
                 WriteLog( " Vehicle: [" + vehicle->name() + "]" );
                 targetcell->PutCommand(
@@ -575,7 +575,7 @@ getvalues_event::init() {
     init_targets( simulation::Memory, "memory cell" );
     // custom target initialization code
     for( auto &target : m_targets ) {
-        auto *targetcell { static_cast<TMemCell *>( std::get<scene::basic_node *>( target ) ) };
+		const auto *targetcell { static_cast<TMemCell *>( std::get<scene::basic_node *>( target ) ) };
         if( targetcell == nullptr ) { continue; }
         if( targetcell->IsVelocity() ) {
             // jeśli odczyt komórki a komórka zawiera komendę SetVelocity albo ShuntVelocity
@@ -1189,7 +1189,7 @@ logvalues_event::run_() {
     else {
         // jeśli była podana nazwa komórki
         for( auto &target : m_targets ) {
-            auto *targetcell { static_cast<TMemCell *>( std::get<scene::basic_node *>( target ) ) };
+			const auto *targetcell { static_cast<TMemCell *>( std::get<scene::basic_node *>( target ) ) };
             if( targetcell == nullptr ) { continue; }
             targetcell->LogValues();
         }
@@ -1322,7 +1322,7 @@ multi_event::export_as_text_( std::ostream &Output ) const {
 
     for( auto const &childevent : m_children ) {
         if( true == std::get<bool>( childevent ) ) {
-            auto *childeventdata { std::get<basic_event *>( childevent ) };
+			const auto *childeventdata { std::get<basic_event *>( childevent ) };
             Output
                 << ( childeventdata != nullptr ?
                     childeventdata->m_name :
@@ -1335,7 +1335,7 @@ multi_event::export_as_text_( std::ostream &Output ) const {
         Output << "else ";
         for( auto const &childevent : m_children ) {
             if( false == std::get<bool>( childevent ) ) {
-                auto *childeventdata{ std::get<basic_event *>( childevent ) };
+				const auto *childeventdata{ std::get<basic_event *>( childevent ) };
                 Output
                     << ( childeventdata != nullptr ?
                         childeventdata->m_name :
@@ -1652,7 +1652,7 @@ animation_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
         {
             m_animationfilename = token;
             std::ifstream file( paths::models + m_animationfilename, std::ios::binary | std::ios::ate ); file.unsetf( std::ios::skipws );
-            auto size = file.tellg();   // ios::ate already positioned us at the end of the file
+			const auto size = file.tellg();   // ios::ate already positioned us at the end of the file
             file.seekg( 0, std::ios::beg ); // rewind the caret afterwards
             // animation size, previously held in param 7
             m_animationfilesize = size;
@@ -1685,7 +1685,7 @@ animation_event::run_() {
 	// animation modes target specific submodels
 	m_animationcontainers.remove_if([this](std::weak_ptr<TAnimContainer> ptr)
 	{
-		auto targetcontainer = ptr.lock();
+		    const auto targetcontainer = ptr.lock();
 		if (!targetcontainer)
 			return true;
 
@@ -2235,7 +2235,7 @@ make_event( cParser &Input, scene::scratch_data &Scratchpad ) {
 
 event_manager::~event_manager() {
 
-    for( auto *event : m_events ) {
+    for (const auto *event : m_events ) {
         delete event;
     }
 }
@@ -2292,7 +2292,7 @@ event_manager::update() {
 bool
 event_manager::insert( basic_event *Event ) {
     // najpierw sprawdzamy, czy nie ma, a potem dopisujemy
-    auto lookup = m_eventmap.find( Event->m_name );
+	const auto lookup = m_eventmap.find( Event->m_name );
     if( lookup != m_eventmap.end() ) {
         // duplicate of already existing event
         auto const size = Event->m_name.size();
@@ -2499,7 +2499,7 @@ event_manager::InitEvents() {
 void
 event_manager::InitLaunchers() {
 
-    std::vector<basic_table<TEventLauncher> *> launchertables {
+	const std::vector<basic_table<TEventLauncher> *> launchertables {
         &m_inputdrivenlaunchers,
         &m_radiodrivenlaunchers
     };

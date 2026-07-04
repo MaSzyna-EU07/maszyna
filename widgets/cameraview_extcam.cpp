@@ -112,17 +112,17 @@ void ui::cameraview_panel::render_contents()
 		}
 	}
 
-	ImVec2 surface_size = ImGui::GetContentRegionAvail();
+	const ImVec2 surface_size = ImGui::GetContentRegionAvail();
 	ImGui::Image((ImTextureID)(intptr_t)(texture->id), surface_size);
 }
 
 void ui::cameraview_panel::capture_func()
 {
-	std::string cmdline = Global.extcam_cmd;
+	const std::string cmdline = Global.extcam_cmd;
 
 	piped_proc proc(cmdline);
 
-	size_t frame_size = Global.extcam_res.x * Global.extcam_res.y * 3;
+	const size_t frame_size = Global.extcam_res.x * Global.extcam_res.y * 3;
 	auto read_buffer = new uint8_t[frame_size];
 	auto active_buffer = new uint8_t[frame_size];
 
@@ -165,15 +165,15 @@ void ui::cameraview_panel::record_func()
 
 	if (!rec_name.empty()) {
 		const std::string magic{"{RECORD}"};
-		size_t pos = cmdline.find(magic);
+		const size_t pos = cmdline.find(magic);
 		if (pos != -1)
 			cmdline.replace(pos, magic.size(), rec_name);
 	}
 
 	piped_proc proc(cmdline, true);
 
-	size_t frame_size = Global.extcam_res.x * Global.extcam_res.y * 3;
-	auto read_buffer = new uint8_t[frame_size];
+	const size_t frame_size = Global.extcam_res.x * Global.extcam_res.y * 3;
+	const auto read_buffer = new uint8_t[frame_size];
 	uint32_t last_cnt = 0;
 	size_t bufpos = frame_size;
 
@@ -182,7 +182,7 @@ void ui::cameraview_panel::record_func()
 		if (bufpos == frame_size)
 		{
 			std::unique_lock<std::mutex> lock(mutex);
-			auto r = notify_var.wait_for(lock, std::chrono::milliseconds(50), [this, last_cnt]{return last_cnt != frame_cnt;});
+			const auto r = notify_var.wait_for(lock, std::chrono::milliseconds(50), [this, last_cnt]{return last_cnt != frame_cnt;});
 			last_cnt = frame_cnt;
 			if (!image_ptr || !r)
 				continue;

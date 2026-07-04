@@ -111,7 +111,7 @@ void scenery_scanner::parse_trainset(cParser &parser)
 		parser.getTokens(7, false);
 		parser >> datafolder >> skinfile >> mmdfile >> dyn.offset >> dyn.drivertype >> params >> dyn.loadcount;
 
-		size_t params_pos = params.find('.');
+		const size_t params_pos = params.find('.');
 		if (params_pos != -1 && params_pos < params.size()) {
 			dyn.params = params.substr(params_pos + 1, -1);
 			params.erase(params_pos);

@@ -678,7 +678,7 @@ public:
     basic_event *
         FindEvent( std::string const &Name );
 	inline TEventLauncher* FindEventlauncher(std::string const &Name) {
-		auto ptr = m_inputdrivenlaunchers.find(Name);
+		const auto ptr = m_inputdrivenlaunchers.find(Name);
 		return ptr ? ptr : m_radiodrivenlaunchers.find(Name);
 	}
     // legacy method, inserts specified event in the event query

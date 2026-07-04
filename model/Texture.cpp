@@ -137,7 +137,7 @@ void opengl_texture::gles_match_internalformat(GLuint internalformat)
         for (int y = 0; y < data_height; y++)
             for (int x = 0; x < data_width; x++)
             {
-                int offset = (y * data_width + x) * 3;
+				const int offset = (y * data_width + x) * 3;
                 reverse[offset + 0] = data[offset + 2];
                 reverse[offset + 1] = data[offset + 1];
                 reverse[offset + 2] = data[offset + 0];
@@ -154,7 +154,7 @@ void opengl_texture::gles_match_internalformat(GLuint internalformat)
         for (int y = 0; y < data_height; y++)
             for (int x = 0; x < data_width; x++)
             {
-                int offset = (y * data_width + x) * 4;
+				const int offset = (y * data_width + x) * 4;
                 reverse[offset + 0] = data[offset + 2];
                 reverse[offset + 1] = data[offset + 1];
                 reverse[offset + 2] = data[offset + 0];
@@ -206,9 +206,9 @@ void opengl_texture::gles_match_internalformat(GLuint internalformat)
     for (int y = 0; y < data_height; y++)
         for (int x = 0; x < data_width; x++)
         {
-            int pixel = y * data_width + x;
-            int in_off = pixel * in_c;
-            int out_off = pixel * out_c;
+			const int pixel = y * data_width + x;
+			const int in_off = pixel * in_c;
+			const int out_off = pixel * out_c;
             for (int i = 0; i < out_c; i++)
             {
                 if (i < in_c)
@@ -426,9 +426,9 @@ opengl_texture::make_request() {
 
     auto const components { Split( name, '?' ) };
 
-	auto dictionary = std::make_shared<dictionary_source>( components.back() );
+	const auto dictionary = std::make_shared<dictionary_source>( components.back() );
 
-	auto rt = std::make_shared<python_rt>();
+	const auto rt = std::make_shared<python_rt>();
 	rt->shared_tex = this;
 
 	Application.request( { ToLower( components.front() ), dictionary, rt } );
@@ -623,7 +623,7 @@ opengl_texture::load_DDS() {
 void
 opengl_texture::load_KTX() {
     std::ifstream file( name + type, std::ios::binary | std::ios::ate ); file.unsetf( std::ios::skipws );
-    std::size_t filesize = static_cast<size_t>(file.tellg());   // ios::ate already positioned us at the end of the file
+	const std::size_t filesize = static_cast<size_t>(file.tellg());   // ios::ate already positioned us at the end of the file
     file.seekg( 0, std::ios::beg ); // rewind the caret afterwards
 
     std::vector<char> filecontent;
@@ -665,7 +665,7 @@ opengl_texture::load_KTX() {
             started = true;
         }
 
-        size_t data_offset = data.size();
+		const size_t data_offset = data.size();
         data.resize(data.size() + sub_data.size_bytes);
         memcpy(data.data() + data_offset, sub_data.buff, sub_data.size_bytes);
     }
@@ -705,7 +705,7 @@ opengl_texture::load_TEX() {
     file.read( (char *)&data_width, sizeof( int ) );
     file.read( (char *)&data_height, sizeof( int ) );
 
-    std::size_t datasize = data_width * data_height * ( hasalpha ? 4 : 3 );
+	const std::size_t datasize = data_width * data_height * ( hasalpha ? 4 : 3 );
 
     data.resize( datasize );
     file.read( reinterpret_cast<char *>( &data[0] ), datasize );
@@ -772,7 +772,7 @@ opengl_texture::load_TGA() {
             unsigned char buffer[ 4 ] = { 255, 255, 255, 255 }; // alpha channel will be white
 
 			auto datapointer = (unsigned int*)&data[0];
-			auto bufferpointer = (unsigned int*)&buffer[ 0 ];
+			const auto bufferpointer = (unsigned int*)&buffer[ 0 ];
 
             int const pixelcount = data_width * data_height;
 
@@ -798,7 +798,7 @@ opengl_texture::load_TGA() {
         const int pixelcount = data_width * data_height;
 
 		auto datapointer = (unsigned int *)&data[0];
-		auto bufferpointer = (unsigned int *)&buffer[ 0 ];
+		const auto bufferpointer = (unsigned int *)&buffer[ 0 ];
 
         do {
             unsigned char chunkheader = 0;
@@ -963,7 +963,7 @@ opengl_texture::create( bool const Static ) {
 				glTexParameteri(target, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
                 wrap_mode_s = GL_CLAMP_TO_BORDER;
                 wrap_mode_t = GL_CLAMP_TO_BORDER;
-                float borderColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+				const float borderColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
                 glTexParameterfv(target, GL_TEXTURE_BORDER_COLOR, borderColor);
 			}
             glTexParameteri( target, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
@@ -1006,7 +1006,7 @@ opengl_texture::create( bool const Static ) {
             // now map that mess into opengl internal format
 
             GLint components = data_components;
-            auto f_it = precompressed_formats.find(data_format);
+			const auto f_it = precompressed_formats.find(data_format);
             if (f_it != precompressed_formats.end())
                 components = data_format;
 
@@ -1024,7 +1024,7 @@ opengl_texture::create( bool const Static ) {
                 gles_match_internalformat(internal_format);
             }
 
-            auto blocksize_it = precompressed_formats.find(internal_format);
+			const auto blocksize_it = precompressed_formats.find(internal_format);
 
             if ( data_mapcount == 1 && !glGenerateMipmap ) {
                 glTexParameteri(target, GL_GENERATE_MIPMAP, GL_TRUE);
@@ -1411,7 +1411,7 @@ std::string
 texture_manager::info() const {
 
     // TODO: cache this data and update only during resource sweep
-    std::size_t totaltexturecount{ m_textures.size() - 1 };
+	const std::size_t totaltexturecount{ m_textures.size() - 1 };
     std::size_t totaltexturesize{ 0 };
 #ifdef EU07_DEFERRED_TEXTURE_UPLOAD
     std::size_t readytexturecount{ 0 };

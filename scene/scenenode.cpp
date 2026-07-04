@@ -60,7 +60,7 @@ void
 shape_node::shapenode_data::serialize( std::ostream &Output ) const {
     // bounding area
     area.serialize( Output );
-	bool has_userdata = !userdata.empty();
+	const bool has_userdata = !userdata.empty();
     // visibility
     sn_utils::ls_float64( Output, rangesquared_min );
     sn_utils::ls_float64( Output, rangesquared_max );
@@ -98,7 +98,7 @@ shape_node::shapenode_data::deserialize( std::istream &Input ) {
     visible = sn_utils::d_bool( Input );
     // material
     translucent = sn_utils::d_bool( Input );
-	bool has_userdata = sn_utils::d_bool( Input );
+	const bool has_userdata = sn_utils::d_bool( Input );
     auto const materialname { sn_utils::d_str( Input ) };
     if( false == materialname.empty() ) {
         material = GfxRenderer->Fetch_Material( materialname );

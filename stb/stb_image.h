@@ -752,7 +752,7 @@ static int stbi__cpuid3(void)
 #if !defined(STBI_NO_JPEG) && defined(STBI_SSE2)
 static int stbi__sse2_available(void)
 {
-   int info3 = stbi__cpuid3();
+	const int info3 = stbi__cpuid3();
    return ((info3 >> 26) & 1) != 0;
 }
 #endif
@@ -1189,7 +1189,7 @@ static void *stbi__load_main(stbi__context *s, int *x, int *y, int *comp, int re
 static stbi_uc *stbi__convert_16_to_8(stbi__uint16 *orig, int w, int h, int channels)
 {
    int i;
-   int img_len = w * h * channels;
+	const int img_len = w * h * channels;
    stbi_uc *reduced;
 
    reduced = (stbi_uc *) stbi__malloc(img_len);
@@ -1205,7 +1205,7 @@ static stbi_uc *stbi__convert_16_to_8(stbi__uint16 *orig, int w, int h, int chan
 static stbi__uint16 *stbi__convert_8_to_16(stbi_uc *orig, int w, int h, int channels)
 {
    int i;
-   int img_len = w * h * channels;
+	const int img_len = w * h * channels;
    stbi__uint16 *enlarged;
 
    enlarged = (stbi__uint16 *) stbi__malloc(img_len*2);
@@ -1221,7 +1221,7 @@ static stbi__uint16 *stbi__convert_8_to_16(stbi_uc *orig, int w, int h, int chan
 static void stbi__vertical_flip(void *image, int w, int h, int bytes_per_pixel)
 {
    int row;
-   size_t bytes_per_row = (size_t)w * bytes_per_pixel;
+	const size_t bytes_per_row = (size_t)w * bytes_per_pixel;
    stbi_uc temp[2048];
    stbi_uc *bytes = (stbi_uc *)image;
 
@@ -1231,7 +1231,7 @@ static void stbi__vertical_flip(void *image, int w, int h, int bytes_per_pixel)
       // swap row0 with row1
       size_t bytes_left = bytes_per_row;
       while (bytes_left) {
-         size_t bytes_copy = (bytes_left < sizeof(temp)) ? bytes_left : sizeof(temp);
+			const size_t bytes_copy = (bytes_left < sizeof(temp)) ? bytes_left : sizeof(temp);
          memcpy(temp, row0, bytes_copy);
          memcpy(row0, row1, bytes_copy);
          memcpy(row1, temp, bytes_copy);
@@ -1246,7 +1246,7 @@ static void stbi__vertical_flip(void *image, int w, int h, int bytes_per_pixel)
 static void stbi__vertical_flip_slices(void *image, int w, int h, int z, int bytes_per_pixel)
 {
    int slice;
-   int slice_size = w * h * bytes_per_pixel;
+	const int slice_size = w * h * bytes_per_pixel;
 
    stbi_uc *bytes = (stbi_uc *)image;
    for (slice = 0; slice < z; ++slice) {
@@ -1275,7 +1275,7 @@ static unsigned char *stbi__load_and_postprocess_8bit(stbi__context *s, int *x, 
    // @TODO: move stbi__convert_format to here
 
    if (stbi__vertically_flip_on_load) {
-      int channels = req_comp ? req_comp : *comp;
+	   const int channels = req_comp ? req_comp : *comp;
       stbi__vertical_flip(result, *x, *y, channels * sizeof(stbi_uc));
    }
 
@@ -1302,7 +1302,7 @@ static stbi__uint16 *stbi__load_and_postprocess_16bit(stbi__context *s, int *x, 
    // @TODO: special case RGB-to-Y (and RGBA-to-YA) for 8-bit-to-16-bit case to keep more precision
 
    if (stbi__vertically_flip_on_load) {
-      int channels = req_comp ? req_comp : *comp;
+	   const int channels = req_comp ? req_comp : *comp;
       stbi__vertical_flip(result, *x, *y, channels * sizeof(stbi__uint16));
    }
 
@@ -1313,7 +1313,7 @@ static stbi__uint16 *stbi__load_and_postprocess_16bit(stbi__context *s, int *x, 
 static void stbi__float_postprocess(float *result, int *x, int *y, int *comp, int req_comp)
 {
    if (stbi__vertically_flip_on_load && result != NULL) {
-      int channels = req_comp ? req_comp : *comp;
+	   const int channels = req_comp ? req_comp : *comp;
       stbi__vertical_flip(result, *x, *y, channels * sizeof(float));
    }
 }
@@ -1541,7 +1541,7 @@ STBIDEF int      stbi_is_hdr          (char const *filename)
 STBIDEF int stbi_is_hdr_from_file(FILE *f)
 {
    #ifndef STBI_NO_HDR
-   long pos = ftell(f);
+	const long pos = ftell(f);
    int res;
    stbi__context s;
    stbi__start_file(&s,f);
@@ -1595,7 +1595,7 @@ enum
 
 static void stbi__refill_buffer(stbi__context *s)
 {
-   int n = (s->io.read)(s->io_user_data,(char*)s->buffer_start,s->buflen);
+	const int n = (s->io.read)(s->io_user_data,(char*)s->buffer_start,s->buflen);
    s->callback_already_read += (int) (s->img_buffer - s->img_buffer_original);
    if (n == 0) {
       // at end of file, treat same as if from memory, but need to handle case
@@ -1648,7 +1648,7 @@ static void stbi__skip(stbi__context *s, int n)
       return;
    }
    if (s->io.read) {
-      int blen = (int) (s->img_buffer_end - s->img_buffer);
+	   const int blen = (int) (s->img_buffer_end - s->img_buffer);
       if (blen < n) {
          s->img_buffer = s->img_buffer_end;
          (s->io.skip)(s->io_user_data, n - blen);
@@ -1665,7 +1665,7 @@ static void stbi__skip(stbi__context *s, int n)
 static int stbi__getn(stbi__context *s, stbi_uc *buffer, int n)
 {
    if (s->io.read) {
-      int blen = (int) (s->img_buffer_end - s->img_buffer);
+	   const int blen = (int) (s->img_buffer_end - s->img_buffer);
       if (blen < n) {
          int res, count;
 
@@ -1692,7 +1692,7 @@ static int stbi__getn(stbi__context *s, stbi_uc *buffer, int n)
 #else
 static int stbi__get16be(stbi__context *s)
 {
-   int z = stbi__get8(s);
+	const int z = stbi__get8(s);
    return (z << 8) + stbi__get8(s);
 }
 #endif
@@ -1702,7 +1702,7 @@ static int stbi__get16be(stbi__context *s)
 #else
 static stbi__uint32 stbi__get32be(stbi__context *s)
 {
-   stbi__uint32 z = stbi__get16be(s);
+	const stbi__uint32 z = stbi__get16be(s);
    return (z << 16) + stbi__get16be(s);
 }
 #endif
@@ -1712,7 +1712,7 @@ static stbi__uint32 stbi__get32be(stbi__context *s)
 #else
 static int stbi__get16le(stbi__context *s)
 {
-   int z = stbi__get8(s);
+	const int z = stbi__get8(s);
    return z + (stbi__get8(s) << 8);
 }
 #endif
@@ -2032,10 +2032,10 @@ static int stbi__build_huffman(stbi__huffman *h, int *count)
    // build non-spec acceleration table; 255 is flag for not-accelerated
    memset(h->fast, 255, 1 << FAST_BITS);
    for (i=0; i < k; ++i) {
-      int s = h->size[i];
+	   const int s = h->size[i];
       if (s <= FAST_BITS) {
-         int c = h->code[i] << (FAST_BITS-s);
-         int m = 1 << (FAST_BITS-s);
+		   const int c = h->code[i] << (FAST_BITS-s);
+		   const int m = 1 << (FAST_BITS-s);
          for (j=0; j < m; ++j) {
             h->fast[c+j] = (stbi_uc) i;
          }
@@ -2050,18 +2050,18 @@ static void stbi__build_fast_ac(stbi__int16 *fast_ac, stbi__huffman *h)
 {
    int i;
    for (i=0; i < (1 << FAST_BITS); ++i) {
-      stbi_uc fast = h->fast[i];
+	   const stbi_uc fast = h->fast[i];
       fast_ac[i] = 0;
       if (fast < 255) {
-         int rs = h->values[fast];
-         int run = (rs >> 4) & 15;
-         int magbits = rs & 15;
-         int len = h->size[fast];
+		   const int rs = h->values[fast];
+		   const int run = (rs >> 4) & 15;
+		   const int magbits = rs & 15;
+		   const int len = h->size[fast];
 
          if (magbits && len + magbits <= FAST_BITS) {
             // magnitude code followed by receive_extend code
             int k = ((i << len) & ((1 << FAST_BITS) - 1)) >> (FAST_BITS - magbits);
-            int m = 1 << (magbits - 1);
+			   const int m = 1 << (magbits - 1);
             if (k < m) k += (~0U << magbits) + 1;
             // if the result is small enough, we can fit it in fast_ac table
             if (k >= -128 && k <= 127)
@@ -2074,7 +2074,7 @@ static void stbi__build_fast_ac(stbi__int16 *fast_ac, stbi__huffman *h)
 static void stbi__grow_buffer_unsafe(stbi__jpeg *j)
 {
    do {
-      unsigned int b = j->nomore ? 0 : stbi__get8(j->s);
+	   const unsigned int b = j->nomore ? 0 : stbi__get8(j->s);
       if (b == 0xff) {
          int c = stbi__get8(j->s);
          while (c == 0xff) c = stbi__get8(j->s); // consume fill bytes
@@ -2105,7 +2105,7 @@ stbi_inline static int stbi__jpeg_huff_decode(stbi__jpeg *j, stbi__huffman *h)
    c = (j->code_buffer >> (32 - FAST_BITS)) & ((1 << FAST_BITS)-1);
    k = h->fast[c];
    if (k < 255) {
-      int s = h->size[k];
+	   const int s = h->size[k];
       if (s > j->code_bits)
          return -1;
       j->code_buffer <<= s;
@@ -2243,7 +2243,7 @@ static int stbi__jpeg_decode_block(stbi__jpeg *j, short data[64], stbi__huffman 
          zig = stbi__jpeg_dezigzag[k++];
          data[zig] = (short) ((r >> 8) * dequant[zig]);
       } else {
-         int rs = stbi__jpeg_huff_decode(j, hac);
+		  const int rs = stbi__jpeg_huff_decode(j, hac);
          if (rs < 0) return stbi__err("bad huffman code","Corrupt JPEG");
          s = rs & 15;
          r = rs >> 4;
@@ -2297,7 +2297,7 @@ static int stbi__jpeg_decode_block_prog_ac(stbi__jpeg *j, short data[64], stbi__
    if (j->spec_start == 0) return stbi__err("can't merge dc and ac", "Corrupt JPEG");
 
    if (j->succ_high == 0) {
-      int shift = j->succ_low;
+	   const int shift = j->succ_low;
 
       if (j->eob_run) {
          --j->eob_run;
@@ -2320,7 +2320,7 @@ static int stbi__jpeg_decode_block_prog_ac(stbi__jpeg *j, short data[64], stbi__
             zig = stbi__jpeg_dezigzag[k++];
             data[zig] = (short) ((r >> 8) * (1 << shift));
          } else {
-            int rs = stbi__jpeg_huff_decode(j, hac);
+			   const int rs = stbi__jpeg_huff_decode(j, hac);
             if (rs < 0) return stbi__err("bad huffman code","Corrupt JPEG");
             s = rs & 15;
             r = rs >> 4;
@@ -2343,7 +2343,7 @@ static int stbi__jpeg_decode_block_prog_ac(stbi__jpeg *j, short data[64], stbi__
    } else {
       // refinement scan for these AC coefficients
 
-      short bit = (short) (1 << j->succ_low);
+	   const short bit = (short) (1 << j->succ_low);
 
       if (j->eob_run) {
          --j->eob_run;
@@ -2362,7 +2362,7 @@ static int stbi__jpeg_decode_block_prog_ac(stbi__jpeg *j, short data[64], stbi__
          k = j->spec_start;
          do {
             int r,s;
-            int rs = stbi__jpeg_huff_decode(j, hac); // @OPTIMIZE see if we can use the fast path here, advance-by-r is so slow, eh
+			   const int rs = stbi__jpeg_huff_decode(j, hac); // @OPTIMIZE see if we can use the fast path here, advance-by-r is so slow, eh
             if (rs < 0) return stbi__err("bad huffman code","Corrupt JPEG");
             s = rs & 15;
             r = rs >> 4;
@@ -2952,16 +2952,16 @@ static int stbi__parse_entropy_coded_data(stbi__jpeg *z)
       if (z->scan_n == 1) {
          int i,j;
          STBI_SIMD_ALIGN(short, data[64]);
-         int n = z->order[0];
+		 const int n = z->order[0];
          // non-interleaved data, we just need to process one block at a time,
          // in trivial scanline order
          // number of blocks to do just depends on how many actual "pixels" this
          // component has, independent of interleaved MCU blocking and such
-         int w = (z->img_comp[n].x+7) >> 3;
-         int h = (z->img_comp[n].y+7) >> 3;
+		 const int w = (z->img_comp[n].x+7) >> 3;
+		 const int h = (z->img_comp[n].y+7) >> 3;
          for (j=0; j < h; ++j) {
             for (i=0; i < w; ++i) {
-               int ha = z->img_comp[n].ha;
+				const int ha = z->img_comp[n].ha;
                if (!stbi__jpeg_decode_block(z, data, z->huff_dc+z->img_comp[n].hd, z->huff_ac+ha, z->fast_ac[ha], n, z->dequant[z->img_comp[n].tq])) return 0;
                z->idct_block_kernel(z->img_comp[n].data+z->img_comp[n].w2*j*8+i*8, z->img_comp[n].w2, data);
                // every data block is an MCU, so countdown the restart interval
@@ -2982,14 +2982,14 @@ static int stbi__parse_entropy_coded_data(stbi__jpeg *z)
             for (i=0; i < z->img_mcu_x; ++i) {
                // scan an interleaved mcu... process scan_n components in order
                for (k=0; k < z->scan_n; ++k) {
-                  int n = z->order[k];
+				   const int n = z->order[k];
                   // scan out an mcu's worth of this component; that's just determined
                   // by the basic H and V specified for the component
                   for (y=0; y < z->img_comp[n].v; ++y) {
                      for (x=0; x < z->img_comp[n].h; ++x) {
-                        int x2 = (i*z->img_comp[n].h + x)*8;
-                        int y2 = (j*z->img_comp[n].v + y)*8;
-                        int ha = z->img_comp[n].ha;
+						   const int x2 = (i*z->img_comp[n].h + x)*8;
+						   const int y2 = (j*z->img_comp[n].v + y)*8;
+						   const int ha = z->img_comp[n].ha;
                         if (!stbi__jpeg_decode_block(z, data, z->huff_dc+z->img_comp[n].hd, z->huff_ac+ha, z->fast_ac[ha], n, z->dequant[z->img_comp[n].tq])) return 0;
                         z->idct_block_kernel(z->img_comp[n].data+z->img_comp[n].w2*y2+x2, z->img_comp[n].w2, data);
                      }
@@ -3009,13 +3009,13 @@ static int stbi__parse_entropy_coded_data(stbi__jpeg *z)
    } else {
       if (z->scan_n == 1) {
          int i,j;
-         int n = z->order[0];
+		  const int n = z->order[0];
          // non-interleaved data, we just need to process one block at a time,
          // in trivial scanline order
          // number of blocks to do just depends on how many actual "pixels" this
          // component has, independent of interleaved MCU blocking and such
-         int w = (z->img_comp[n].x+7) >> 3;
-         int h = (z->img_comp[n].y+7) >> 3;
+		  const int w = (z->img_comp[n].x+7) >> 3;
+		  const int h = (z->img_comp[n].y+7) >> 3;
          for (j=0; j < h; ++j) {
             for (i=0; i < w; ++i) {
                short *data = z->img_comp[n].coeff + 64 * (i + j * z->img_comp[n].coeff_w);
@@ -3023,7 +3023,7 @@ static int stbi__parse_entropy_coded_data(stbi__jpeg *z)
                   if (!stbi__jpeg_decode_block_prog_dc(z, data, &z->huff_dc[z->img_comp[n].hd], n))
                      return 0;
                } else {
-                  int ha = z->img_comp[n].ha;
+					  const int ha = z->img_comp[n].ha;
                   if (!stbi__jpeg_decode_block_prog_ac(z, data, &z->huff_ac[ha], z->fast_ac[ha]))
                      return 0;
                }
@@ -3042,13 +3042,13 @@ static int stbi__parse_entropy_coded_data(stbi__jpeg *z)
             for (i=0; i < z->img_mcu_x; ++i) {
                // scan an interleaved mcu... process scan_n components in order
                for (k=0; k < z->scan_n; ++k) {
-                  int n = z->order[k];
+				   const int n = z->order[k];
                   // scan out an mcu's worth of this component; that's just determined
                   // by the basic H and V specified for the component
                   for (y=0; y < z->img_comp[n].v; ++y) {
                      for (x=0; x < z->img_comp[n].h; ++x) {
-                        int x2 = (i*z->img_comp[n].h + x);
-                        int y2 = (j*z->img_comp[n].v + y);
+						   const int x2 = (i*z->img_comp[n].h + x);
+						   const int y2 = (j*z->img_comp[n].v + y);
                         short *data = z->img_comp[n].coeff + 64 * (x2 + y2 * z->img_comp[n].coeff_w);
                         if (!stbi__jpeg_decode_block_prog_dc(z, data, &z->huff_dc[z->img_comp[n].hd], n))
                            return 0;
@@ -3082,8 +3082,8 @@ static void stbi__jpeg_finish(stbi__jpeg *z)
       // dequantize and idct the data
       int i,j,n;
       for (n=0; n < z->s->img_n; ++n) {
-         int w = (z->img_comp[n].x+7) >> 3;
-         int h = (z->img_comp[n].y+7) >> 3;
+		  const int w = (z->img_comp[n].x+7) >> 3;
+		  const int h = (z->img_comp[n].y+7) >> 3;
          for (j=0; j < h; ++j) {
             for (i=0; i < w; ++i) {
                short *data = z->img_comp[n].coeff + 64 * (i + j * z->img_comp[n].coeff_w);
@@ -3110,7 +3110,7 @@ static int stbi__process_marker(stbi__jpeg *z, int m)
       case 0xDB: // DQT - define quantization table
          L = stbi__get16be(z->s)-2;
          while (L > 0) {
-            int q = stbi__get8(z->s);
+			 const int q = stbi__get8(z->s);
             int p = q >> 4, sixteen = (p != 0);
             int t = q & 15,i;
             if (p != 0 && p != 1) return stbi__err("bad DQT type","Corrupt JPEG");
@@ -3127,9 +3127,9 @@ static int stbi__process_marker(stbi__jpeg *z, int m)
          while (L > 0) {
             stbi_uc *v;
             int sizes[16],i,n=0;
-            int q = stbi__get8(z->s);
-            int tc = q >> 4;
-            int th = q & 15;
+			const int q = stbi__get8(z->s);
+			const int tc = q >> 4;
+			const int th = q & 15;
             if (tc > 1 || th > 3) return stbi__err("bad DHT header","Corrupt JPEG");
             for (i=0; i < 16; ++i) {
                sizes[i] = stbi__get8(z->s);
@@ -3202,13 +3202,13 @@ static int stbi__process_marker(stbi__jpeg *z, int m)
 static int stbi__process_scan_header(stbi__jpeg *z)
 {
    int i;
-   int Ls = stbi__get16be(z->s);
+	const int Ls = stbi__get16be(z->s);
    z->scan_n = stbi__get8(z->s);
    if (z->scan_n < 1 || z->scan_n > 4 || z->scan_n > (int) z->s->img_n) return stbi__err("bad SOS component count","Corrupt JPEG");
    if (Ls != 6+2*z->scan_n) return stbi__err("bad SOS len","Corrupt JPEG");
    for (i=0; i < z->scan_n; ++i) {
       int id = stbi__get8(z->s), which;
-      int q = stbi__get8(z->s);
+		const int q = stbi__get8(z->s);
       for (which = 0; which < z->s->img_n; ++which)
          if (z->img_comp[which].id == id)
             break;
@@ -3430,8 +3430,8 @@ static int stbi__decode_jpeg_image(stbi__jpeg *j)
          if (STBI__RESTART(m))
             m = stbi__get_marker(j);
       } else if (stbi__DNL(m)) {
-         int Ld = stbi__get16be(j->s);
-         stbi__uint32 NL = stbi__get16be(j->s);
+		  const int Ld = stbi__get16be(j->s);
+		  const stbi__uint32 NL = stbi__get16be(j->s);
          if (Ld != 4) return stbi__err("bad DNL len", "Corrupt JPEG");
          if (NL != j->s->img_y) return stbi__err("bad DNL height", "Corrupt JPEG");
          m = stbi__get_marker(j);
@@ -3475,7 +3475,7 @@ static stbi_uc*  stbi__resample_row_h_2(stbi_uc *out, stbi_uc *in_near, stbi_uc 
 {
    // need to generate two samples horizontally for every one in input
    int i;
-   stbi_uc *input = in_near;
+   const stbi_uc *input = in_near;
 
    if (w == 1) {
       // if only one sample, can't do any interpolation
@@ -3486,7 +3486,7 @@ static stbi_uc*  stbi__resample_row_h_2(stbi_uc *out, stbi_uc *in_near, stbi_uc 
    out[0] = input[0];
    out[1] = stbi__div4(input[0]*3 + input[1] + 2);
    for (i=1; i < w-1; ++i) {
-      int n = 3*input[i]+2;
+	   const int n = 3*input[i]+2;
       out[i*2+0] = stbi__div4(n+input[i-1]);
       out[i*2+1] = stbi__div4(n+input[i+1]);
    }
@@ -3660,10 +3660,10 @@ static void stbi__YCbCr_to_RGB_row(stbi_uc *out, const stbi_uc *y, const stbi_uc
 {
    int i;
    for (i=0; i < count; ++i) {
-      int y_fixed = (y[i] << 20) + (1<<19); // rounding
+	   const int y_fixed = (y[i] << 20) + (1<<19); // rounding
       int r,g,b;
-      int cr = pcr[i] - 128;
-      int cb = pcb[i] - 128;
+	   const int cr = pcr[i] - 128;
+	   const int cb = pcb[i] - 128;
       r = y_fixed +  cr* stbi__float2fixed(1.40200f);
       g = y_fixed + (cr*-stbi__float2fixed(0.71414f)) + ((cb*-stbi__float2fixed(0.34414f)) & 0xffff0000);
       b = y_fixed                                     +   cb* stbi__float2fixed(1.77200f);
@@ -3857,7 +3857,7 @@ typedef struct
 // fast 0..255 * 0..255 => 0..255 rounded multiplication
 static stbi_uc stbi__blinn_8x8(stbi_uc x, stbi_uc y)
 {
-   unsigned int t = x*y + 128;
+	const unsigned int t = x*y + 128;
    return (stbi_uc) ((t + (t >>8)) >> 8);
 }
 
@@ -3926,7 +3926,7 @@ static stbi_uc *load_jpeg_image(stbi__jpeg *z, int *out_x, int *out_y, int *comp
          stbi_uc *out = output + n * z->s->img_x * j;
          for (k=0; k < decode_n; ++k) {
             stbi__resample *r = &res_comp[k];
-            int y_bot = r->ystep >= (r->vs >> 1);
+			 const int y_bot = r->ystep >= (r->vs >> 1);
             coutput[k] = r->resample(z->img_comp[k].linebuf,
                                      y_bot ? r->line1 : r->line0,
                                      y_bot ? r->line0 : r->line1,
@@ -3939,7 +3939,7 @@ static stbi_uc *load_jpeg_image(stbi__jpeg *z, int *out_x, int *out_y, int *comp
             }
          }
          if (n >= 3) {
-            stbi_uc *y = coutput[0];
+			 const stbi_uc *y = coutput[0];
             if (z->s->img_n == 3) {
                if (is_rgb) {
                   for (i=0; i < z->s->img_x; ++i) {
@@ -3955,7 +3955,7 @@ static stbi_uc *load_jpeg_image(stbi__jpeg *z, int *out_x, int *out_y, int *comp
             } else if (z->s->img_n == 4) {
                if (z->app14_color_transform == 0) { // CMYK
                   for (i=0; i < z->s->img_x; ++i) {
-                     stbi_uc m = coutput[3][i];
+					  const stbi_uc m = coutput[3][i];
                      out[0] = stbi__blinn_8x8(coutput[0][i], m);
                      out[1] = stbi__blinn_8x8(coutput[1][i], m);
                      out[2] = stbi__blinn_8x8(coutput[2][i], m);
@@ -3965,7 +3965,7 @@ static stbi_uc *load_jpeg_image(stbi__jpeg *z, int *out_x, int *out_y, int *comp
                } else if (z->app14_color_transform == 2) { // YCCK
                   z->YCbCr_to_RGB_kernel(out, y, coutput[1], coutput[2], z->s->img_x, n);
                   for (i=0; i < z->s->img_x; ++i) {
-                     stbi_uc m = coutput[3][i];
+					  const stbi_uc m = coutput[3][i];
                      out[0] = stbi__blinn_8x8(255 - out[0], m);
                      out[1] = stbi__blinn_8x8(255 - out[1], m);
                      out[2] = stbi__blinn_8x8(255 - out[2], m);
@@ -3993,10 +3993,10 @@ static stbi_uc *load_jpeg_image(stbi__jpeg *z, int *out_x, int *out_y, int *comp
                }
             } else if (z->s->img_n == 4 && z->app14_color_transform == 0) {
                for (i=0; i < z->s->img_x; ++i) {
-                  stbi_uc m = coutput[3][i];
-                  stbi_uc r = stbi__blinn_8x8(coutput[0][i], m);
-                  stbi_uc g = stbi__blinn_8x8(coutput[1][i], m);
-                  stbi_uc b = stbi__blinn_8x8(coutput[2][i], m);
+					 const stbi_uc m = coutput[3][i];
+					 const stbi_uc r = stbi__blinn_8x8(coutput[0][i], m);
+					 const stbi_uc g = stbi__blinn_8x8(coutput[1][i], m);
+					 const stbi_uc b = stbi__blinn_8x8(coutput[2][i], m);
                   out[0] = stbi__compute_y(r, g, b);
                   out[1] = 255;
                   out += n;
@@ -4008,7 +4008,7 @@ static stbi_uc *load_jpeg_image(stbi__jpeg *z, int *out_x, int *out_y, int *comp
                   out += n;
                }
             } else {
-               stbi_uc *y = coutput[0];
+				 const stbi_uc *y = coutput[0];
                if (n == 1)
                   for (i=0; i < z->s->img_x; ++i) out[i] = y[i];
                else
@@ -4148,10 +4148,10 @@ static int stbi__zbuild_huffman(stbi__zhuffman *z, const stbi_uc *sizelist, int 
    }
    z->maxcode[16] = 0x10000; // sentinel
    for (i=0; i < num; ++i) {
-      int s = sizelist[i];
+	   const int s = sizelist[i];
       if (s) {
-         int c = next_code[s] - z->firstcode[s] + z->firstsymbol[s];
-         stbi__uint16 fastv = (stbi__uint16) ((s << 9) | i);
+		   const int c = next_code[s] - z->firstcode[s] + z->firstsymbol[s];
+		   const stbi__uint16 fastv = (stbi__uint16) ((s << 9) | i);
          z->size [c] = (stbi_uc     ) s;
          z->value[c] = (stbi__uint16) i;
          if (s <= STBI__ZFAST_BITS) {
@@ -4346,7 +4346,7 @@ static int stbi__parse_huffman_block(stbi__zbuf *a)
          }
          p = (stbi_uc *) (zout - dist);
          if (dist == 1) { // run of one byte; common in images.
-            stbi_uc v = *p;
+			 const stbi_uc v = *p;
             if (len) { do *zout++ = v; while (--len); }
          } else {
             if (len) { do *zout++ = *p++; while (--len); }
@@ -4363,14 +4363,14 @@ static int stbi__compute_huffman_codes(stbi__zbuf *a)
    stbi_uc codelength_sizes[19];
    int i,n;
 
-   int hlit  = stbi__zreceive(a,5) + 257;
-   int hdist = stbi__zreceive(a,5) + 1;
-   int hclen = stbi__zreceive(a,4) + 4;
-   int ntot  = hlit + hdist;
+   const int hlit  = stbi__zreceive(a,5) + 257;
+   const int hdist = stbi__zreceive(a,5) + 1;
+   const int hclen = stbi__zreceive(a,4) + 4;
+   const int ntot  = hlit + hdist;
 
    memset(codelength_sizes, 0, sizeof(codelength_sizes));
    for (i=0; i < hclen; ++i) {
-      int s = stbi__zreceive(a,3);
+	   const int s = stbi__zreceive(a,3);
       codelength_sizes[length_dezigzag[i]] = (stbi_uc) s;
    }
    if (!stbi__zbuild_huffman(&z_codelength, codelength_sizes, 19)) return 0;
@@ -4436,10 +4436,10 @@ static int stbi__parse_uncompressed_block(stbi__zbuf *a)
 
 static int stbi__parse_zlib_header(stbi__zbuf *a)
 {
-   int cmf   = stbi__zget8(a);
-   int cm    = cmf & 15;
+	const int cmf   = stbi__zget8(a);
+	const int cm    = cmf & 15;
    /* int cinfo = cmf >> 4; */
-   int flg   = stbi__zget8(a);
+	const int flg   = stbi__zget8(a);
    if (stbi__zeof(a)) return stbi__err("bad zlib header","Corrupt PNG"); // zlib spec
    if ((cmf*256+flg) % 31 != 0) return stbi__err("bad zlib header","Corrupt PNG"); // zlib spec
    if (flg & 32) return stbi__err("no preset dict","Corrupt PNG"); // preset dictionary not allowed in png
@@ -4658,11 +4658,11 @@ static int stbi__paeth(int a, int b, int c)
    // This formulation looks very different from the reference in the PNG spec, but is
    // actually equivalent and has favorable data dependencies and admits straightforward
    // generation of branch-free code, which helps performance significantly.
-   int thresh = c*3 - (a + b);
-   int lo = a < b ? a : b;
-   int hi = a < b ? b : a;
-   int t0 = (hi <= thresh) ? lo : c;
-   int t1 = (thresh <= lo) ? hi : t0;
+	const int thresh = c*3 - (a + b);
+	const int lo = a < b ? a : b;
+	const int hi = a < b ? b : a;
+	const int t0 = (hi <= thresh) ? lo : c;
+	const int t1 = (thresh <= lo) ? hi : t0;
    return t1;
 }
 
@@ -4694,16 +4694,16 @@ static void stbi__create_png_alpha_expand8(stbi_uc *dest, stbi_uc *src, stbi__ui
 // create the png data from post-deflated data
 static int stbi__create_png_image_raw(stbi__png *a, stbi_uc *raw, stbi__uint32 raw_len, int out_n, stbi__uint32 x, stbi__uint32 y, int depth, int color)
 {
-   int bytes = (depth == 16 ? 2 : 1);
-   stbi__context *s = a->s;
+	const int bytes = (depth == 16 ? 2 : 1);
+	const stbi__context *s = a->s;
    stbi__uint32 i,j,stride = x*out_n*bytes;
    stbi__uint32 img_len, img_width_bytes;
    stbi_uc *filter_buf;
    int all_ok = 1;
    int k;
-   int img_n = s->img_n; // copy it into a local for later
+	const int img_n = s->img_n; // copy it into a local for later
 
-   int output_bytes = out_n*bytes;
+	const int output_bytes = out_n*bytes;
    int filter_bytes = img_n*bytes;
    int width = x;
 
@@ -4736,9 +4736,9 @@ static int stbi__create_png_image_raw(stbi__png *a, stbi_uc *raw, stbi__uint32 r
    for (j=0; j < y; ++j) {
       // cur/prior filter buffers alternate
       stbi_uc *cur = filter_buf + (j & 1)*img_width_bytes;
-      stbi_uc *prior = filter_buf + (~j & 1)*img_width_bytes;
+		const stbi_uc *prior = filter_buf + (~j & 1)*img_width_bytes;
       stbi_uc *dest = a->out + stride*j;
-      int nk = width * filter_bytes;
+		const int nk = width * filter_bytes;
       int filter = *raw++;
 
       // check filter type
@@ -4787,11 +4787,11 @@ static int stbi__create_png_image_raw(stbi__png *a, stbi_uc *raw, stbi__uint32 r
 
       // expand decoded bits in cur to dest, also adding an extra alpha channel if desired
       if (depth < 8) {
-         stbi_uc scale = (color == 0) ? stbi__depth_scale_table[depth] : 1; // scale grayscale values to 0..255 range
-         stbi_uc *in = cur;
+			const stbi_uc scale = (color == 0) ? stbi__depth_scale_table[depth] : 1; // scale grayscale values to 0..255 range
+			const stbi_uc *in = cur;
          stbi_uc *out = dest;
          stbi_uc inb = 0;
-         stbi__uint32 nsmp = x*img_n;
+			const stbi__uint32 nsmp = x*img_n;
 
          // expand bits to bytes first
          if (depth == 4) {
@@ -4826,7 +4826,7 @@ static int stbi__create_png_image_raw(stbi__png *a, stbi_uc *raw, stbi__uint32 r
       } else if (depth == 16) {
          // convert the image data from big-endian to platform-native
          stbi__uint16 *dest16 = (stbi__uint16*)dest;
-         stbi__uint32 nsmp = x*img_n;
+			const stbi__uint32 nsmp = x*img_n;
 
          if (img_n == out_n) {
             for (i = 0; i < nsmp; ++i, ++dest16, cur += 2)
@@ -4859,8 +4859,8 @@ static int stbi__create_png_image_raw(stbi__png *a, stbi_uc *raw, stbi__uint32 r
 
 static int stbi__create_png_image(stbi__png *a, stbi_uc *image_data, stbi__uint32 image_data_len, int out_n, int depth, int color, int interlaced)
 {
-   int bytes = (depth == 16 ? 2 : 1);
-   int out_bytes = out_n * bytes;
+	const int bytes = (depth == 16 ? 2 : 1);
+	const int out_bytes = out_n * bytes;
    stbi_uc *final;
    int p;
    if (!interlaced)
@@ -4870,24 +4870,24 @@ static int stbi__create_png_image(stbi__png *a, stbi_uc *image_data, stbi__uint3
    final = (stbi_uc *) stbi__malloc_mad3(a->s->img_x, a->s->img_y, out_bytes, 0);
    if (!final) return stbi__err("outofmem", "Out of memory");
    for (p=0; p < 7; ++p) {
-      int xorig[] = { 0,4,0,2,0,1,0 };
-      int yorig[] = { 0,0,4,0,2,0,1 };
-      int xspc[]  = { 8,8,4,4,2,2,1 };
-      int yspc[]  = { 8,8,8,4,4,2,2 };
+		const int xorig[] = { 0,4,0,2,0,1,0 };
+		const int yorig[] = { 0,0,4,0,2,0,1 };
+		const int xspc[]  = { 8,8,4,4,2,2,1 };
+		const int yspc[]  = { 8,8,8,4,4,2,2 };
       int i,j,x,y;
       // pass1_x[4] = 0, pass1_x[5] = 1, pass1_x[12] = 1
       x = (a->s->img_x - xorig[p] + xspc[p]-1) / xspc[p];
       y = (a->s->img_y - yorig[p] + yspc[p]-1) / yspc[p];
       if (x && y) {
-         stbi__uint32 img_len = ((((a->s->img_n * x * depth) + 7) >> 3) + 1) * y;
+			const stbi__uint32 img_len = ((((a->s->img_n * x * depth) + 7) >> 3) + 1) * y;
          if (!stbi__create_png_image_raw(a, image_data, image_data_len, out_n, x, y, depth, color)) {
             STBI_FREE(final);
             return 0;
          }
          for (j=0; j < y; ++j) {
             for (i=0; i < x; ++i) {
-               int out_y = j*yspc[p]+yorig[p];
-               int out_x = i*xspc[p]+xorig[p];
+					const int out_y = j*yspc[p]+yorig[p];
+					const int out_x = i*xspc[p]+xorig[p];
                memcpy(final + out_y*a->s->img_x*out_bytes + out_x*out_bytes,
                       a->out + (j*x+i)*out_bytes, out_bytes);
             }
@@ -4904,7 +4904,7 @@ static int stbi__create_png_image(stbi__png *a, stbi_uc *image_data, stbi__uint3
 
 static int stbi__compute_transparency(stbi__png *z, stbi_uc tc[3], int out_n)
 {
-   stbi__context *s = z->s;
+	const stbi__context *s = z->s;
    stbi__uint32 i, pixel_count = s->img_x * s->img_y;
    stbi_uc *p = z->out;
 
@@ -4929,7 +4929,7 @@ static int stbi__compute_transparency(stbi__png *z, stbi_uc tc[3], int out_n)
 
 static int stbi__compute_transparency16(stbi__png *z, stbi__uint16 tc[3], int out_n)
 {
-   stbi__context *s = z->s;
+	const stbi__context *s = z->s;
    stbi__uint32 i, pixel_count = s->img_x * s->img_y;
    stbi__uint16 *p = (stbi__uint16*) z->out;
 
@@ -4965,7 +4965,7 @@ static int stbi__expand_png_palette(stbi__png *a, stbi_uc *palette, int len, int
 
    if (pal_img_n == 3) {
       for (i=0; i < pixel_count; ++i) {
-         int n = orig[i]*4;
+		  const int n = orig[i]*4;
          p[0] = palette[n  ];
          p[1] = palette[n+1];
          p[2] = palette[n+2];
@@ -4973,7 +4973,7 @@ static int stbi__expand_png_palette(stbi__png *a, stbi_uc *palette, int len, int
       }
    } else {
       for (i=0; i < pixel_count; ++i) {
-         int n = orig[i]*4;
+		  const int n = orig[i]*4;
          p[0] = palette[n  ];
          p[1] = palette[n+1];
          p[2] = palette[n+2];
@@ -5031,13 +5031,13 @@ STBIDEF void stbi_convert_iphone_png_to_rgb_thread(int flag_true_if_should_conve
 
 static void stbi__de_iphone(stbi__png *z)
 {
-   stbi__context *s = z->s;
+	const stbi__context *s = z->s;
    stbi__uint32 i, pixel_count = s->img_x * s->img_y;
    stbi_uc *p = z->out;
 
    if (s->img_out_n == 3) {  // convert bgr to rgb
       for (i=0; i < pixel_count; ++i) {
-         stbi_uc t = p[0];
+			const stbi_uc t = p[0];
          p[0] = p[2];
          p[2] = t;
          p += 3;
@@ -5047,10 +5047,10 @@ static void stbi__de_iphone(stbi__png *z)
       if (stbi__unpremultiply_on_load) {
          // convert bgr to rgb and unpremultiply
          for (i=0; i < pixel_count; ++i) {
-            stbi_uc a = p[3];
-            stbi_uc t = p[0];
+				const stbi_uc a = p[3];
+				const stbi_uc t = p[0];
             if (a) {
-               stbi_uc half = a / 2;
+					const stbi_uc half = a / 2;
                p[0] = (p[2] * 255 + half) / a;
                p[1] = (p[1] * 255 + half) / a;
                p[2] = ( t   * 255 + half) / a;
@@ -5063,7 +5063,7 @@ static void stbi__de_iphone(stbi__png *z)
       } else {
          // convert bgr to rgb
          for (i=0; i < pixel_count; ++i) {
-            stbi_uc t = p[0];
+			 const stbi_uc t = p[0];
             p[0] = p[2];
             p[2] = t;
             p += 4;
@@ -5092,7 +5092,7 @@ static int stbi__parse_png_file(stbi__png *z, int scan, int req_comp)
    if (scan == STBI__SCAN_type) return 1;
 
    for (;;) {
-      stbi__pngchunk c = stbi__get_chunk_header(s);
+	   const stbi__pngchunk c = stbi__get_chunk_header(s);
       switch (c.type) {
          case STBI__PNG_TYPE('C','g','B','I'):
             is_iphone = 1;
@@ -5179,7 +5179,7 @@ static int stbi__parse_png_file(stbi__png *z, int scan, int req_comp)
             if (c.length > (1u << 30)) return stbi__err("IDAT size limit", "IDAT section larger than 2^30 bytes");
             if ((int)(ioff + c.length) < (int)ioff) return 0;
             if (ioff + c.length > idata_limit) {
-               stbi__uint32 idata_limit_old = idata_limit;
+				const stbi__uint32 idata_limit_old = idata_limit;
                stbi_uc *p;
                if (idata_limit == 0) idata_limit = c.length > 4096 ? c.length : 4096;
                while (ioff + c.length > idata_limit)
@@ -5357,7 +5357,7 @@ static int stbi__bmp_test_raw(stbi__context *s)
 
 static int stbi__bmp_test(stbi__context *s)
 {
-   int r = stbi__bmp_test_raw(s);
+	const int r = stbi__bmp_test_raw(s);
    stbi__rewind(s);
    return r;
 }
@@ -5467,7 +5467,7 @@ static void *stbi__bmp_parse_header(stbi__context *s, stbi__bmp_data *info)
    if (stbi__get16le(s) != 1) return stbi__errpuc("bad BMP", "bad BMP");
    info->bpp = stbi__get16le(s);
    if (hsz != 12) {
-      int compress = stbi__get32le(s);
+	   const int compress = stbi__get32le(s);
       if (compress == 1 || compress == 2) return stbi__errpuc("BMP RLE", "BMP type not supported: RLE");
       if (compress >= 4) return stbi__errpuc("BMP JPEG/PNG", "BMP type not supported: unsupported compression"); // this includes PNG/JPEG modes
       if (compress == 3 && info->bpp != 16 && info->bpp != 32) return stbi__errpuc("bad BMP", "bad BMP"); // bitfields requires 16 or 32 bits/pixel
@@ -5848,12 +5848,12 @@ errorEnd:
 // read 16bit value and convert to 24bit RGB
 static void stbi__tga_read_rgb16(stbi__context *s, stbi_uc* out)
 {
-   stbi__uint16 px = (stbi__uint16)stbi__get16le(s);
-   stbi__uint16 fiveBitMask = 31;
+	const stbi__uint16 px = (stbi__uint16)stbi__get16le(s);
+	const stbi__uint16 fiveBitMask = 31;
    // we have 3 channels with 5bits each
-   int r = (px >> 10) & fiveBitMask;
-   int g = (px >> 5) & fiveBitMask;
-   int b = px & fiveBitMask;
+	const int r = (px >> 10) & fiveBitMask;
+	const int g = (px >> 5) & fiveBitMask;
+	const int b = px & fiveBitMask;
    // Note that this saves the data in RGB(A) order, so it doesn't need to be swapped later
    out[0] = (stbi_uc)((r * 255)/31);
    out[1] = (stbi_uc)((g * 255)/31);
@@ -5868,8 +5868,8 @@ static void stbi__tga_read_rgb16(stbi__context *s, stbi_uc* out)
 static void *stbi__tga_load(stbi__context *s, int *x, int *y, int *comp, int req_comp, stbi__result_info *ri)
 {
    //   read in the TGA header stuff
-   int tga_offset = stbi__get8(s);
-   int tga_indexed = stbi__get8(s);
+	const int tga_offset = stbi__get8(s);
+	const int tga_indexed = stbi__get8(s);
    int tga_image_type = stbi__get8(s);
    int tga_is_RLE = 0;
    int tga_palette_start = stbi__get16le(s);
@@ -5877,9 +5877,9 @@ static void *stbi__tga_load(stbi__context *s, int *x, int *y, int *comp, int req
    int tga_palette_bits = stbi__get8(s);
    int tga_x_origin = stbi__get16le(s);
    int tga_y_origin = stbi__get16le(s);
-   int tga_width = stbi__get16le(s);
-   int tga_height = stbi__get16le(s);
-   int tga_bits_per_pixel = stbi__get8(s);
+	const int tga_width = stbi__get16le(s);
+	const int tga_height = stbi__get16le(s);
+	const int tga_bits_per_pixel = stbi__get8(s);
    int tga_comp, tga_rgb16=0;
    int tga_inverted = stbi__get8(s);
    // int tga_alpha_bits = tga_inverted & 15; // the 4 lowest bits - unused (useless?)
@@ -5929,7 +5929,7 @@ static void *stbi__tga_load(stbi__context *s, int *x, int *y, int *comp, int req
 
    if ( !tga_indexed && !tga_is_RLE && !tga_rgb16 ) {
       for (i=0; i < tga_height; ++i) {
-         int row = tga_inverted ? tga_height -i - 1 : i;
+		  const int row = tga_inverted ? tga_height -i - 1 : i;
          stbi_uc *tga_row = tga_data + row*tga_width*tga_comp;
          stbi__getn(s, tga_row, tga_width * tga_comp);
       }
@@ -5972,7 +5972,7 @@ static void *stbi__tga_load(stbi__context *s, int *x, int *y, int *comp, int req
             if ( RLE_count == 0 )
             {
                //   yep, get the next byte as a RLE command
-               int RLE_cmd = stbi__get8(s);
+				const int RLE_cmd = stbi__get8(s);
                RLE_count = 1 + (RLE_cmd & 127);
                RLE_repeating = RLE_cmd >> 7;
                read_next_pixel = 1;
@@ -6029,7 +6029,7 @@ static void *stbi__tga_load(stbi__context *s, int *x, int *y, int *comp, int req
             int index2 = (tga_height - 1 - j) * tga_width * tga_comp;
             for (i = tga_width * tga_comp; i > 0; --i)
             {
-               unsigned char temp = tga_data[index1];
+				const unsigned char temp = tga_data[index1];
                tga_data[index1] = tga_data[index2];
                tga_data[index2] = temp;
                ++index1;
@@ -6050,7 +6050,7 @@ static void *stbi__tga_load(stbi__context *s, int *x, int *y, int *comp, int req
       unsigned char* tga_pixel = tga_data;
       for (i=0; i < tga_width * tga_height; ++i)
       {
-         unsigned char temp = tga_pixel[0];
+		  const unsigned char temp = tga_pixel[0];
          tga_pixel[0] = tga_pixel[2];
          tga_pixel[2] = temp;
          tga_pixel += tga_comp;
@@ -6077,7 +6077,7 @@ static void *stbi__tga_load(stbi__context *s, int *x, int *y, int *comp, int req
 #ifndef STBI_NO_PSD
 static int stbi__psd_test(stbi__context *s)
 {
-   int r = (stbi__get32be(s) == 0x38425053);
+	const int r = (stbi__get32be(s) == 0x38425053);
    stbi__rewind(s);
    return r;
 }
@@ -6248,12 +6248,12 @@ static void *stbi__psd_load(stbi__context *s, int *x, int *y, int *comp, int req
             // Fill this channel with default data.
             if (bitdepth == 16 && bpc == 16) {
                stbi__uint16 *q = ((stbi__uint16 *) out) + channel;
-               stbi__uint16 val = channel == 3 ? 65535 : 0;
+				const stbi__uint16 val = channel == 3 ? 65535 : 0;
                for (i = 0; i < pixelCount; i++, q += 4)
                   *q = val;
             } else {
                stbi_uc *p = out+channel;
-               stbi_uc val = channel == 3 ? 255 : 0;
+				const stbi_uc val = channel == 3 ? 255 : 0;
                for (i = 0; i < pixelCount; i++, p += 4)
                   *p = val;
             }
@@ -6282,9 +6282,9 @@ static void *stbi__psd_load(stbi__context *s, int *x, int *y, int *comp, int req
          for (i=0; i < w*h; ++i) {
             stbi__uint16 *pixel = (stbi__uint16 *) out + 4*i;
             if (pixel[3] != 0 && pixel[3] != 65535) {
-               float a = pixel[3] / 65535.0f;
-               float ra = 1.0f / a;
-               float inv_a = 65535.0f * (1 - ra);
+				const float a = pixel[3] / 65535.0f;
+				const float ra = 1.0f / a;
+				const float inv_a = 65535.0f * (1 - ra);
                pixel[0] = (stbi__uint16) (pixel[0]*ra + inv_a);
                pixel[1] = (stbi__uint16) (pixel[1]*ra + inv_a);
                pixel[2] = (stbi__uint16) (pixel[2]*ra + inv_a);
@@ -6294,9 +6294,9 @@ static void *stbi__psd_load(stbi__context *s, int *x, int *y, int *comp, int req
          for (i=0; i < w*h; ++i) {
             unsigned char *pixel = out + 4*i;
             if (pixel[3] != 0 && pixel[3] != 255) {
-               float a = pixel[3] / 255.0f;
-               float ra = 1.0f / a;
-               float inv_a = 255.0f * (1 - ra);
+				const float a = pixel[3] / 255.0f;
+				const float ra = 1.0f / a;
+				const float inv_a = 255.0f * (1 - ra);
                pixel[0] = (unsigned char) (pixel[0]*ra + inv_a);
                pixel[1] = (unsigned char) (pixel[1]*ra + inv_a);
                pixel[2] = (unsigned char) (pixel[2]*ra + inv_a);
@@ -6416,7 +6416,7 @@ static stbi_uc *stbi__pic_load_core(stbi__context *s,int width,int height,int *c
       int packet_idx;
 
       for(packet_idx=0; packet_idx < num_packets; ++packet_idx) {
-         stbi__pic_packet *packet = &packets[packet_idx];
+		  const stbi__pic_packet *packet = &packets[packet_idx];
          stbi_uc *dest = result+y*width*4;
 
          switch (packet->type) {
@@ -6537,7 +6537,7 @@ static void *stbi__pic_load(stbi__context *s,int *px,int *py,int *comp,int req_c
 
 static int stbi__pic_test(stbi__context *s)
 {
-   int r = stbi__pic_test_core(s);
+	const int r = stbi__pic_test_core(s);
    stbi__rewind(s);
    return r;
 }
@@ -6586,7 +6586,7 @@ static int stbi__gif_test_raw(stbi__context *s)
 
 static int stbi__gif_test(stbi__context *s)
 {
-   int r = stbi__gif_test_raw(s);
+	const int r = stbi__gif_test_raw(s);
    stbi__rewind(s);
    return r;
 }
@@ -6723,7 +6723,7 @@ static stbi_uc *stbi__process_gif_raster(stbi__context *s, stbi__gif *g)
          bits |= (stbi__int32) stbi__get8(s) << valid_bits;
          valid_bits += 8;
       } else {
-         stbi__int32 code = bits & codemask;
+		  const stbi__int32 code = bits & codemask;
          bits >>= codesize;
          valid_bits -= codesize;
          // @OPTIMIZE: is there some way we can accelerate the non-clear path?
@@ -6837,7 +6837,7 @@ static stbi_uc *stbi__gif_load_next(stbi__context *s, stbi__gif *g, int *comp, i
    memset( g->history, 0x00, g->w * g->h );        // pixels that were affected previous frame
 
    for (;;) {
-      int tag = stbi__get8(s);
+	   const int tag = stbi__get8(s);
       switch (tag) {
          case 0x2C: /* Image Descriptor */
          {
@@ -6905,7 +6905,7 @@ static stbi_uc *stbi__gif_load_next(stbi__context *s, stbi__gif *g, int *comp, i
          case 0x21: // Comment Extension.
          {
             int len;
-            int ext = stbi__get8(s);
+			 const int ext = stbi__get8(s);
             if (ext == 0xF9) { // Graphic Control Extension.
                len = stbi__get8(s);
                if (len == 4) {
@@ -6961,7 +6961,7 @@ static void *stbi__load_gif_main(stbi__context *s, int **delays, int *x, int *y,
 {
    if (stbi__gif_test(s)) {
       int layers = 0;
-      stbi_uc *u = 0;
+	   const stbi_uc *u = 0;
       stbi_uc *out = 0;
       stbi_uc *two_back = 0;
       stbi__gif g;
@@ -7699,7 +7699,7 @@ STBIDEF int stbi_info_from_file(FILE *f, int *x, int *y, int *comp)
 {
    int r;
    stbi__context s;
-   long pos = ftell(f);
+   const long pos = ftell(f);
    stbi__start_file(&s, f);
    r = stbi__info_main(&s,x,y,comp);
    fseek(f,pos,SEEK_SET);
@@ -7720,7 +7720,7 @@ STBIDEF int stbi_is_16_bit_from_file(FILE *f)
 {
    int r;
    stbi__context s;
-   long pos = ftell(f);
+   const long pos = ftell(f);
    stbi__start_file(&s, f);
    r = stbi__is_16_main(&s);
    fseek(f,pos,SEEK_SET);

@@ -44,7 +44,7 @@ public:
 	}
 	void purge (std::string const &Name)
 	{
-		auto lookup = m_itemmap.find( Name );
+		const auto lookup = m_itemmap.find( Name );
 		if (lookup == m_itemmap.end())
 			return;
 		delete m_items[lookup->second];
@@ -53,7 +53,7 @@ public:
 	}
 	void detach (std::string const &Name)
 	{
-		auto lookup = m_itemmap.find( Name );
+		const auto lookup = m_itemmap.find( Name );
 		if (lookup == m_itemmap.end())
 			return;
 
@@ -63,7 +63,7 @@ public:
 		m_itemmap.erase(lookup);
 	}
 	uint32_t find_id( std::string const &Name) const {
-		auto lookup = m_itemmap.find( Name );
+		const auto lookup = m_itemmap.find( Name );
 		return lookup != m_itemmap.end() ? lookup->second : -1;
 	}
 	void purge (Type_ *Item)
@@ -79,7 +79,7 @@ public:
     // locates item with specified name. returns pointer to the item, or nullptr
     Type_ *
         find( std::string const &Name ) const {
-            auto lookup = m_itemmap.find( Name );
+		const auto lookup = m_itemmap.find( Name );
             return lookup != m_itemmap.end() ? m_items[lookup->second] : nullptr; }
 
 protected:

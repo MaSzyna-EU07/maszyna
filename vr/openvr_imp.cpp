@@ -19,7 +19,7 @@ vr_openvr::vr_openvr()
     vr::VRInput()->GetInputSourceHandle("/user/hand/left", &inputhandle_left);
     vr::VRInput()->GetInputSourceHandle("/user/hand/right", &inputhandle_right);
 
-    std::string action_path = std::filesystem::current_path().string() + "/openvrconfig/openvr_actions.json";
+	const std::string action_path = std::filesystem::current_path().string() + "/openvrconfig/openvr_actions.json";
     vr::VRInput()->SetActionManifestPath(action_path.c_str());
 
     vr::VRInput()->GetActionSetHandle("/actions/main", &actionset);
@@ -342,7 +342,7 @@ bool vr_openvr::update_component(const std::string &rendermodel, vr::VRInputValu
 
     vr::VRRenderModels()->GetComponentStateForDevicePath(rendermodel.c_str(), component->pName.c_str(), handle, &state, &component_state);
 
-    glm::mat4 component_pose = get_matrix(component_state.mTrackingToComponentRenderModel);
+	const glm::mat4 component_pose = get_matrix(component_state.mTrackingToComponentRenderModel);
     bool visible = (component_state.uProperties & vr::VRComponentProperty_IsVisible);
 
     component->ReplaceMatrix(component_pose);
@@ -368,7 +368,7 @@ std::vector<TModel3d*> vr_openvr::get_render_models()
     if (!draw_controllers)
         return list;
 
-    for (auto entry : controllers)
+    for (const auto entry : controllers)
     {
         if (entry && entry->model && entry->pending_components.empty())
             list.push_back(entry->model.get());

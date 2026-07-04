@@ -143,7 +143,7 @@ opengl_renderer::Init( GLFWwindow *Window ) {
         ::glFramebufferTexture2DEXT( GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, m_picktexture, 0 );
         ::glFramebufferRenderbufferEXT( GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT, m_pickdepthbuffer );
         // check if we got it working
-        GLenum status = ::glCheckFramebufferStatusEXT( GL_FRAMEBUFFER_EXT );
+		const GLenum status = ::glCheckFramebufferStatusEXT( GL_FRAMEBUFFER_EXT );
         if( status == GL_FRAMEBUFFER_COMPLETE_EXT ) {
             WriteLog( "Picking framebuffer setup complete" );
         }
@@ -288,7 +288,7 @@ opengl_renderer::Init( GLFWwindow *Window ) {
         ::glFramebufferTexture2DEXT( GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_CUBE_MAP_POSITIVE_X, m_environmentcubetexture, 0 );
         ::glFramebufferRenderbufferEXT( GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT, m_environmentdepthbuffer );
         // check if we got it working
-        GLenum status = ::glCheckFramebufferStatusEXT( GL_FRAMEBUFFER_EXT );
+		const GLenum status = ::glCheckFramebufferStatusEXT( GL_FRAMEBUFFER_EXT );
         if( status == GL_FRAMEBUFFER_COMPLETE_EXT ) {
             WriteLog( "Reflections framebuffer setup complete" );
             m_environmentcubetexturesupport = true;
@@ -3738,7 +3738,7 @@ opengl_renderer::Render_Alpha( TDynamicObject *Dynamic ) {
 bool
 opengl_renderer::Render_Alpha( TModel3d *Model, material_data const *Material, float const Squaredistance ) {
 
-    auto alpha =
+	const auto alpha =
         ( Material != nullptr ?
             Material->textures_alpha :
             0x30300030 );
@@ -4393,9 +4393,9 @@ opengl_renderer::Disable_Lights() {
 bool
 opengl_renderer::Init_caps() {
 
-    std::string gl_renderer((char *)glGetString(GL_RENDERER));
-    std::string gl_vendor((char *)glGetString(GL_VENDOR));
-    std::string gl_version((char *)glGetString(GL_VERSION));
+	const std::string gl_renderer((char *)glGetString(GL_RENDERER));
+	const std::string gl_vendor((char *)glGetString(GL_VENDOR));
+	const std::string gl_version((char *)glGetString(GL_VERSION));
 
     crashreport_add_info("gl_renderer", gl_renderer);
     crashreport_add_info("gl_vendor", gl_vendor);
@@ -4414,7 +4414,7 @@ opengl_renderer::Init_caps() {
 
     m_isATI = (gl_vendor.find("ATI") != -1);
 
-	auto extensions = (char*)glGetString( GL_EXTENSIONS );
+	const auto extensions = (char*)glGetString( GL_EXTENSIONS );
     if (extensions)
         WriteLog( "Supported extensions: \n" + std::string(extensions));
 

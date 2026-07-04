@@ -87,7 +87,7 @@ void gl::framebuffer::blit(framebuffer *src, framebuffer *dst, int sx, int sy, i
 
     if (mask & GL_COLOR_BUFFER_BIT)
     {
-        int attachment_n = attachment - GL_COLOR_ATTACHMENT0;
+		const int attachment_n = attachment - GL_COLOR_ATTACHMENT0;
 
         {
             GLenum outputs[8] = { GL_NONE };
@@ -111,7 +111,7 @@ void gl::framebuffer::blit(framebuffer *src, framebuffer *dst, int sx, int sy, i
 void gl::framebuffer::setup_drawing(int attachments)
 {
     bind();
-    GLenum a[8] =
+	const GLenum a[8] =
     {
         GL_COLOR_ATTACHMENT0,
         GL_COLOR_ATTACHMENT1,

@@ -353,13 +353,15 @@ static void stbiw__writefv(stbi__write_context *s, const char *fmt, va_list v)
          case '1': { unsigned char x = STBIW_UCHAR(va_arg(v, int));
                      s->func(s->context,&x,1);
                      break; }
-         case '2': { int x = va_arg(v,int);
+         case '2': {
+			 const int x = va_arg(v,int);
                      unsigned char b[2];
                      b[0] = STBIW_UCHAR(x);
                      b[1] = STBIW_UCHAR(x>>8);
                      s->func(s->context,b,2);
                      break; }
-         case '4': { stbiw_uint32 x = va_arg(v,int);
+         case '4': {
+			 const stbiw_uint32 x = va_arg(v,int);
                      unsigned char b[4];
                      b[0]=STBIW_UCHAR(x);
                      b[1]=STBIW_UCHAR(x>>8);
@@ -490,7 +492,7 @@ static int stbiw__outfile(stbi__write_context *s, int rgb_dir, int vdir, int x, 
 
 static int stbi_write_bmp_core(stbi__write_context *s, int x, int y, int comp, const void *data)
 {
-   int pad = (-x*3) & 3;
+	const int pad = (-x*3) & 3;
    return stbiw__outfile(s,-1,-1,x,y,comp,1,(void *) data,0,pad,
            "11 4 22 4" "4 44 22 444444",
            'B', 'M', 14+40+(x*3+pad)*y, 0,0, 14+40,  // file header
@@ -509,7 +511,7 @@ STBIWDEF int stbi_write_bmp(char const *filename, int x, int y, int comp, const 
 {
    stbi__write_context s = { 0 };
    if (stbi__start_write_file(&s,filename)) {
-      int r = stbi_write_bmp_core(&s, x, y, comp, data);
+	   const int r = stbi_write_bmp_core(&s, x, y, comp, data);
       stbi__end_write_file(&s);
       return r;
    } else
@@ -519,9 +521,9 @@ STBIWDEF int stbi_write_bmp(char const *filename, int x, int y, int comp, const 
 
 static int stbi_write_tga_core(stbi__write_context *s, int x, int y, int comp, void *data)
 {
-   int has_alpha = (comp == 2 || comp == 4);
-   int colorbytes = has_alpha ? comp-1 : comp;
-   int format = colorbytes < 2 ? 3 : 2; // 3 color channels (RGB/RGBA) = 2, 1 color channel (Y/YA) = 3
+	const int has_alpha = (comp == 2 || comp == 4);
+	const int colorbytes = has_alpha ? comp-1 : comp;
+	const int format = colorbytes < 2 ? 3 : 2; // 3 color channels (RGB/RGBA) = 2, 1 color channel (Y/YA) = 3
 
    if (y < 0 || x < 0)
       return 0;
@@ -579,13 +581,13 @@ static int stbi_write_tga_core(stbi__write_context *s, int x, int y, int comp, v
             }
 
             if (diff) {
-               unsigned char header = STBIW_UCHAR(len - 1);
+				const unsigned char header = STBIW_UCHAR(len - 1);
                stbiw__write1(s, header);
                for (k = 0; k < len; ++k) {
                   stbiw__write_pixel(s, -1, comp, has_alpha, 0, begin + k * comp);
                }
             } else {
-               unsigned char header = STBIW_UCHAR(len - 129);
+				const unsigned char header = STBIW_UCHAR(len - 129);
                stbiw__write1(s, header);
                stbiw__write_pixel(s, -1, comp, has_alpha, 0, begin);
             }
@@ -608,7 +610,7 @@ STBIWDEF int stbi_write_tga(char const *filename, int x, int y, int comp, const 
 {
    stbi__write_context s = { 0 };
    if (stbi__start_write_file(&s,filename)) {
-      int r = stbi_write_tga_core(&s, x, y, comp, (void *) data);
+	   const int r = stbi_write_tga_core(&s, x, y, comp, (void *) data);
       stbi__end_write_file(&s);
       return r;
    } else
@@ -625,12 +627,12 @@ STBIWDEF int stbi_write_tga(char const *filename, int x, int y, int comp, const 
 static void stbiw__linear_to_rgbe(unsigned char *rgbe, float *linear)
 {
    int exponent;
-   float maxcomp = stbiw__max(linear[0], stbiw__max(linear[1], linear[2]));
+	const float maxcomp = stbiw__max(linear[0], stbiw__max(linear[1], linear[2]));
 
    if (maxcomp < 1e-32f) {
       rgbe[0] = rgbe[1] = rgbe[2] = rgbe[3] = 0;
    } else {
-      float normalize = (float) frexp(maxcomp, &exponent) * 256.0f/maxcomp;
+		const float normalize = (float) frexp(maxcomp, &exponent) * 256.0f/maxcomp;
 
       rgbe[0] = (unsigned char)(linear[0] * normalize);
       rgbe[1] = (unsigned char)(linear[1] * normalize);
@@ -782,7 +784,7 @@ STBIWDEF int stbi_write_hdr(char const *filename, int x, int y, int comp, const 
 {
    stbi__write_context s = { 0 };
    if (stbi__start_write_file(&s,filename)) {
-      int r = stbi_write_hdr_core(&s, x, y, comp, (float *) data);
+	   const int r = stbi_write_hdr_core(&s, x, y, comp, (float *) data);
       stbi__end_write_file(&s);
       return r;
    } else
@@ -812,7 +814,7 @@ STBIWDEF int stbi_write_hdr(char const *filename, int x, int y, int comp, const 
 
 static void *stbiw__sbgrowf(void **arr, int increment, int itemsize)
 {
-   int m = *arr ? 2*stbiw__sbm(*arr)+increment : increment+1;
+	const int m = *arr ? 2*stbiw__sbm(*arr)+increment : increment+1;
    void *p = STBIW_REALLOC_SIZED(*arr ? stbiw__sbraw(*arr) : 0, *arr ? (stbiw__sbm(*arr)*itemsize + sizeof(int)*2) : 0, itemsize * m + sizeof(int)*2);
    STBIW_ASSERT(p);
    if (p) {
@@ -1046,7 +1048,7 @@ static unsigned int stbiw__crc32(unsigned char *buffer, int len)
 
 static void stbiw__wpcrc(unsigned char **data, int len)
 {
-   unsigned int crc = stbiw__crc32(*data - len - 4, len+4);
+	const unsigned int crc = stbiw__crc32(*data - len - 4, len+4);
    stbiw__wp32(*data, crc);
 }
 
@@ -1063,11 +1065,11 @@ static void stbiw__encode_png_line(unsigned char *pixels, int stride_bytes, int 
 {
    static int mapping[] = { 0,1,2,3,4 };
    static int firstmap[] = { 0,1,0,5,6 };
-   int *mymap = (y != 0) ? mapping : firstmap;
+   const int *mymap = (y != 0) ? mapping : firstmap;
    int i;
-   int type = mymap[filter_type];
-   unsigned char *z = pixels + stride_bytes * (stbi__flip_vertically_on_write ? height-1-y : y);
-   int signed_stride = stbi__flip_vertically_on_write ? -stride_bytes : stride_bytes;
+   const int type = mymap[filter_type];
+   const unsigned char *z = pixels + stride_bytes * (stbi__flip_vertically_on_write ? height-1-y : y);
+   const int signed_stride = stbi__flip_vertically_on_write ? -stride_bytes : stride_bytes;
 
    if (type==0) {
       memcpy(line_buffer, z, width*n);
@@ -1098,8 +1100,8 @@ static void stbiw__encode_png_line(unsigned char *pixels, int stride_bytes, int 
 STBIWDEF unsigned char *stbi_write_png_to_mem(const unsigned char *pixels, int stride_bytes, int x, int y, int n, int *out_len)
 {
    int force_filter = stbi_write_force_png_filter;
-   int ctype[5] = { -1, 0, 4, 2, 6 };
-   unsigned char sig[8] = { 137,80,78,71,13,10,26,10 };
+	const int ctype[5] = { -1, 0, 4, 2, 6 };
+	const unsigned char sig[8] = { 137,80,78,71,13,10,26,10 };
    unsigned char *out,*o, *filt, *zlib;
    signed char *line_buffer;
    int j,zlen;
@@ -1225,7 +1227,7 @@ static void stbiw__jpg_writeBits(stbi__write_context *s, int *bitBufP, int *bitC
    bitCnt += bs[1];
    bitBuf |= bs[0] << (24 - bitCnt);
    while(bitCnt >= 8) {
-      unsigned char c = (bitBuf >> 16) & 255;
+	   const unsigned char c = (bitBuf >> 16) & 255;
       stbiw__putc(s, c);
       if(c == 255) {
          stbiw__putc(s, 0);
@@ -1241,18 +1243,18 @@ static void stbiw__jpg_DCT(float *d0p, float *d1p, float *d2p, float *d3p, float
    float d0 = *d0p, d1 = *d1p, d2 = *d2p, d3 = *d3p, d4 = *d4p, d5 = *d5p, d6 = *d6p, d7 = *d7p;
    float z1, z2, z3, z4, z5, z11, z13;
 
-   float tmp0 = d0 + d7;
-   float tmp7 = d0 - d7;
-   float tmp1 = d1 + d6;
-   float tmp6 = d1 - d6;
-   float tmp2 = d2 + d5;
-   float tmp5 = d2 - d5;
-   float tmp3 = d3 + d4;
-   float tmp4 = d3 - d4;
+   const float tmp0 = d0 + d7;
+   const float tmp7 = d0 - d7;
+   const float tmp1 = d1 + d6;
+   const float tmp6 = d1 - d6;
+   const float tmp2 = d2 + d5;
+   const float tmp5 = d2 - d5;
+   const float tmp3 = d3 + d4;
+   const float tmp4 = d3 - d4;
 
    // Even part
    float tmp10 = tmp0 + tmp3;   // phase 2
-   float tmp13 = tmp0 - tmp3;
+   const float tmp13 = tmp0 - tmp3;
    float tmp11 = tmp1 + tmp2;
    float tmp12 = tmp1 - tmp2;
 
@@ -1342,14 +1344,14 @@ static int stbiw__jpg_processDU(stbi__write_context *s, int *bitBuf, int *bitCnt
       return DU[0];
    }
    for(i = 1; i <= end0pos; ++i) {
-      int startpos = i;
+	   const int startpos = i;
       int nrzeroes;
       unsigned short bits[2];
       for (; DU[i]==0 && i<=end0pos; ++i) {
       }
       nrzeroes = i-startpos;
       if ( nrzeroes >= 16 ) {
-         int lng = nrzeroes>>4;
+		   const int lng = nrzeroes>>4;
          int nrmarker;
          for (nrmarker=1; nrmarker <= lng; ++nrmarker)
             stbiw__jpg_writeBits(s, bitBuf, bitCnt, M16zeroes);
@@ -1587,7 +1589,7 @@ STBIWDEF int stbi_write_jpg(char const *filename, int x, int y, int comp, const 
 {
    stbi__write_context s = { 0 };
    if (stbi__start_write_file(&s,filename)) {
-      int r = stbi_write_jpg_core(&s, x, y, comp, data, quality);
+	   const int r = stbi_write_jpg_core(&s, x, y, comp, data, quality);
       stbi__end_write_file(&s);
       return r;
    } else

@@ -41,7 +41,7 @@ bool has_gl_extension(char const *name) {
     GLint count = 0;
     glGetIntegerv(GL_NUM_EXTENSIONS, &count);
     for (GLint i = 0; i < count; ++i) {
-		auto ext = reinterpret_cast<char const *>(glGetStringi(GL_EXTENSIONS, i));
+		const auto ext = reinterpret_cast<char const *>(glGetStringi(GL_EXTENSIONS, i));
         if (ext != nullptr && std::strcmp(ext, name) == 0) {
             return true;
         }
@@ -72,11 +72,11 @@ void gl::shader::expand_includes(std::string &str, const std::string &basedir)
 {
     size_t start_pos = 0;
 
-    std::string magic = "#include";
+	const std::string magic = "#include";
     while ((start_pos = str.find(magic, start_pos)) != str.npos)
     {
-        size_t fp = str.find('<', start_pos);
-        size_t fe = str.find('>', start_pos);
+		const size_t fp = str.find('<', start_pos);
+		const size_t fe = str.find('>', start_pos);
         if (fp == str.npos || fe == str.npos)
             return;
 
@@ -308,7 +308,7 @@ gl::shader::shader(const std::string &filename)
 {
     name = filename;
 
-    std::pair<GLuint, std::string> source = process_source(filename, "shaders/");
+	const std::pair<GLuint, std::string> source = process_source(filename, "shaders/");
 
     const GLchar *cstr = source.second.c_str();
 
@@ -341,8 +341,8 @@ void gl::program::init()
 
     for (auto it : texture_conf)
     {
-        shader::texture_entry &e = it.second;
-        GLuint loc = glGetUniformLocation(*this, it.first.c_str());
+		const shader::texture_entry &e = it.second;
+		const GLuint loc = glGetUniformLocation(*this, it.first.c_str());
         glUniform1i(loc, e.id);
     }
 

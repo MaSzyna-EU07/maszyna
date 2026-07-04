@@ -60,7 +60,7 @@ std::string filename_date() {
 
 std::string filename_scenery() {
 
-    auto extension = Global.SceneryFile.rfind( '.' );
+	const auto extension = Global.SceneryFile.rfind( '.' );
     if( extension != std::string::npos ) {
         return Global.SceneryFile.substr( 0, extension );
     }
@@ -99,7 +99,7 @@ void LogService()
 			{
 				logMutex.lock();
 				std::string msg = InfoStack.front().first;
-				bool isError = InfoStack.front().second;
+				const bool isError = InfoStack.front().second;
 				InfoStack.pop_front();
 				logMutex.unlock();
 

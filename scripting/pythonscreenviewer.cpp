@@ -7,25 +7,25 @@
 
 void texture_window_resize(GLFWwindow *win, int w, int h)
 {
-	auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
+	const auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
     texwindow->notify_window_size(win, w, h);
 }
 
 void texture_window_fb_resize(GLFWwindow *win, int w, int h)
 {
-	auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
+	const auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
     texwindow->notify_window_fb_size(win, w, h);
 }
 
 void texture_window_mouse_button(GLFWwindow *win, int button, int action, int mods)
 {
-	auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
+	const auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
     texwindow->notify_click(win, button, action);
 }
 
 void texture_window_cursor_pos(GLFWwindow *win, double x, double y)
 {
-	auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
+	const auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
     texwindow->notify_cursor_pos(win, x, y);
 }
 
@@ -187,7 +187,7 @@ void python_screen_viewer::threadfunc()
 
 void python_screen_viewer::notify_window_fb_size(GLFWwindow *window, int w, int h)
 {
-    for (auto &conf : m_windows) {
+    for (const auto &conf : m_windows) {
         if (conf->window == window) {
             conf->fb_size.x = w;
             conf->fb_size.y = h;
@@ -198,7 +198,7 @@ void python_screen_viewer::notify_window_fb_size(GLFWwindow *window, int w, int 
 
 void python_screen_viewer::notify_window_size(GLFWwindow *window, int w, int h)
 {
-	for (auto &conf : m_windows) {
+	for (const auto &conf : m_windows) {
 		if (conf->window == window) {
             conf->window_size.x = w;
             conf->window_size.y = h;
@@ -209,7 +209,7 @@ void python_screen_viewer::notify_window_size(GLFWwindow *window, int w, int h)
 
 void python_screen_viewer::notify_cursor_pos(GLFWwindow *window, double x, double y)
 {
-    for (auto &conf : m_windows) {
+    for (const auto &conf : m_windows) {
         if (conf->window == window) {
             conf->cursor_pos.x = x;
             conf->cursor_pos.y = y;

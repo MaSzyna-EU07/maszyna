@@ -139,7 +139,7 @@ mouse_slider::on_move( double const Mousex, double const Mousey ) {
     auto const controledge { Global.window_size.y * 0.5 + controlsize * 0.5 };
     auto const stepsize { controlsize / m_valuerange };
 
-    auto mousey = std::clamp( Mousey, controledge - controlsize, controledge );
+	const auto mousey = std::clamp( Mousey, controledge - controlsize, controledge );
     m_value = m_analogue ? (controledge - mousey) / controlsize : std::floor((controledge - mousey) / stepsize);
     if( m_invertrange ) {
         m_value = ( m_analogue ? 1.0 : m_valuerange ) - m_value; }
@@ -285,7 +285,7 @@ drivermouse_input::scroll( double const Xoffset, double const Yoffset ) {
     else {
         // scroll adjusts master controller
         // TODO: allow configurable scroll commands
-        auto command {
+		const auto command {
             adjust_command(
                 Yoffset > 0.0 ?
                     m_wheelbindings.up :

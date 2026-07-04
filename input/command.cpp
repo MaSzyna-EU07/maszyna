@@ -795,11 +795,11 @@ std::unordered_map<std::string, user_command> commandMap = {
 
 void command_queue::update()
 {
-	double delta = Timer::GetDeltaTime();
+	const double delta = Timer::GetDeltaTime();
 	for (auto c : m_active_continuous)
 	{
 		command_data data({c.first, GLFW_REPEAT, 0.0, 0.0, delta, false, glm::vec3()}); // todo: improve
-		auto lookup = m_commands.emplace( c.second, commanddata_sequence() );
+		const auto lookup = m_commands.emplace( c.second, commanddata_sequence() );
 		// recipient stack was either located or created, so we can add to it quite safely
 		lookup.first->second.emplace_back( data );
 	}
@@ -809,7 +809,7 @@ void command_queue::update()
 void
 command_queue::push( command_data const &Command, uint32_t const Recipient ) {
 	if (is_network_target(Recipient)) {
-		auto lookup = m_intercept_queue.emplace(Recipient, commanddata_sequence());
+		const auto lookup = m_intercept_queue.emplace(Recipient, commanddata_sequence());
 		lookup.first->second.emplace_back(Command);
 	} else {
 		push_direct(Command, Recipient);
@@ -828,7 +828,7 @@ void command_queue::push_direct(const command_data &Command, const uint32_t Reci
 			return;
 	}
 
-	auto lookup = m_commands.emplace( Recipient, commanddata_sequence() );
+	const auto lookup = m_commands.emplace( Recipient, commanddata_sequence() );
 	// recipient stack was either located or created, so we can add to it quite safely
 	lookup.first->second.emplace_back( Command );
 }
@@ -837,7 +837,7 @@ void command_queue::push_direct(const command_data &Command, const uint32_t Reci
 bool
 command_queue::pop( command_data &Command, uint32_t const Recipient ) {
 
-    auto lookup = m_commands.find( Recipient );
+	const auto lookup = m_commands.find( Recipient );
     if( lookup == m_commands.end() ) {
         // no command stack for this recipient, so no commands
         return false;

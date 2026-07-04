@@ -66,7 +66,7 @@ void AirCoupler::Init(std::string const &asName, TModel3d *Model)
 */
 void AirCoupler::Load(cParser *Parser, TModel3d *Model)
 {
-	auto name = Parser->getToken<std::string>();
+	const auto name = Parser->getToken<std::string>();
     if(Model)
     {
 		Init(name, Model);

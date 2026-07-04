@@ -30,7 +30,7 @@ void ui::vehicles_bank::parse_entry(const std::string &line)
 	std::string content;
 	std::shared_ptr<skin_meta> meta;
 
-	size_t pos = line.find("//");
+	const size_t pos = line.find("//");
 	if (pos != -1)
 		meta = parse_meta(line.substr(pos));
 	content = line.substr(0, pos);
@@ -86,7 +86,7 @@ void ui::vehicles_bank::parse_category_entry(const std::string &param)
 	if (tok.size() < 1)
 		return;
 
-	auto it = type_map.find(tok[0]);
+	const auto it = type_map.find(tok[0]);
 	if (it != type_map.end())
 		ctx_type = it->second;
 	else if (tok[0] >= 'A' && tok[0] <= 'Z')
@@ -191,7 +191,7 @@ std::shared_ptr<ui::skin_meta> ui::vehicles_bank::parse_meta(const std::string &
 
 void ui::vehicles_bank::parse_coupling_rule(const std::string &target, const std::string &param)
 {
-	auto target_vehicle = get_vehicle(target);
+	const auto target_vehicle = get_vehicle(target);
 
 	if (param == "?")
 		return;
@@ -249,7 +249,7 @@ std::shared_ptr<ui::vehicle_desc> ui::vehicles_bank::get_vehicle(const std::stri
 	auto path = ctx_path / ToLower(name);
 	path = std::filesystem::path(path.generic_string());
 
-	auto it = vehicles.find(path);
+	const auto it = vehicles.find(path);
 	if (it != vehicles.end()) {
 		return it->second;
 	}

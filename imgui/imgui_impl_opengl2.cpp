@@ -99,8 +99,8 @@ static void ImGui_ImplOpenGL2_SetupRenderState(ImDrawData* draw_data, int fb_wid
 void ImGui_ImplOpenGL2_RenderDrawData(ImDrawData* draw_data)
 {
     // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
-    int fb_width = (int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
-    int fb_height = (int)(draw_data->DisplaySize.y * draw_data->FramebufferScale.y);
+	const int fb_width = (int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
+	const int fb_height = (int)(draw_data->DisplaySize.y * draw_data->FramebufferScale.y);
     if (fb_width == 0 || fb_height == 0)
         return;
 
@@ -115,8 +115,8 @@ void ImGui_ImplOpenGL2_RenderDrawData(ImDrawData* draw_data)
     ImGui_ImplOpenGL2_SetupRenderState(draw_data, fb_width, fb_height);
 
     // Will project scissor/clipping rectangles into framebuffer space
-    ImVec2 clip_off = draw_data->DisplayPos;         // (0,0) unless using multi-viewports
-    ImVec2 clip_scale = draw_data->FramebufferScale; // (1,1) unless using retina display which are often (2,2)
+	const ImVec2 clip_off = draw_data->DisplayPos;         // (0,0) unless using multi-viewports
+	const ImVec2 clip_scale = draw_data->FramebufferScale; // (1,1) unless using retina display which are often (2,2)
 
     // Render command lists
     for (int n = 0; n < draw_data->CmdListsCount; n++)
@@ -181,7 +181,7 @@ void ImGui_ImplOpenGL2_RenderDrawData(ImDrawData* draw_data)
 bool ImGui_ImplOpenGL2_CreateFontsTexture()
 {
     // Build texture atlas
-    ImGuiIO& io = ImGui::GetIO();
+	const ImGuiIO & io = ImGui::GetIO();
     unsigned char* pixels;
     int width, height;
     io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);   // Load as RGBA 32-bits (75% of the memory is wasted, but default font is so small) because it is more likely to be compatible with user's existing shaders. If your ImTextureId represent a higher-level concept than just a GL texture id, consider calling GetTexDataAsAlpha8() instead to save on GPU memory.
@@ -209,7 +209,7 @@ void ImGui_ImplOpenGL2_DestroyFontsTexture()
 {
     if (g_FontTexture)
     {
-        ImGuiIO& io = ImGui::GetIO();
+		const ImGuiIO & io = ImGui::GetIO();
         glDeleteTextures(1, &g_FontTexture);
         io.Fonts->TexID = 0;
         g_FontTexture = 0;

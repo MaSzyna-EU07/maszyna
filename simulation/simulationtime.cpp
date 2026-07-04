@@ -21,7 +21,7 @@ scenario_time Time;
 
 void
 scenario_time::init(std::time_t timestamp) {
-    char monthdaycounts[ 2 ][ 13 ] = {
+	const char monthdaycounts[ 2 ][ 13 ] = {
         { 0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 },
         { 0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 } };
     ::memcpy( m_monthdaycounts, monthdaycounts, sizeof( monthdaycounts ) );
@@ -32,7 +32,7 @@ scenario_time::init(std::time_t timestamp) {
     auto const requestedminute { requestedtime % 60 };
     // cache requested elements, if any
 
-	std::tm *tms = std::gmtime(&timestamp);
+	const std::tm *tms = std::gmtime(&timestamp);
 	m_time.wYear = tms->tm_year + 1900;
 	m_time.wMonth = tms->tm_mon + 1;
 	m_time.wDayOfWeek = tms->tm_wday;
@@ -147,7 +147,7 @@ scenario_time::year_day( int Day, const int Month, const int Year ) const {
 void
 scenario_time::daymonth( WORD &Day, WORD &Month, WORD const Year, WORD const Yearday ) {
 
-    WORD daytab[ 2 ][ 13 ] = {
+	const WORD daytab[ 2 ][ 13 ] = {
         { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365 },
         { 0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 366 }
     };
@@ -165,12 +165,12 @@ scenario_time::daymonth( WORD &Day, WORD &Month, WORD const Year, WORD const Yea
 int
 scenario_time::julian_day() const {
 
-    int yy = ( m_time.wYear < 0 ? m_time.wYear + 1 : m_time.wYear ) - std::floor( ( 12 - m_time.wMonth ) / 10.f );
+	const int yy = ( m_time.wYear < 0 ? m_time.wYear + 1 : m_time.wYear ) - std::floor( ( 12 - m_time.wMonth ) / 10.f );
     int mm = m_time.wMonth + 9;
     if( mm >= 12 ) { mm -= 12; }
 
-    int K1 = std::floor( 365.25 * ( yy + 4712 ) );
-    int K2 = std::floor( 30.6 * mm + 0.5 );
+	const int K1 = std::floor( 365.25 * ( yy + 4712 ) );
+	const int K2 = std::floor( 30.6 * mm + 0.5 );
 
     // for dates in Julian calendar
     int JD = K1 + K2 + m_time.wDay + 59;
@@ -178,7 +178,7 @@ scenario_time::julian_day() const {
     const int gregorianswitchday = 2299160;
     if( JD > gregorianswitchday ) {
 
-        int K3 = std::floor( std::floor( yy * 0.01 + 49 ) * 0.75 ) - 38;
+		const int K3 = std::floor( std::floor( yy * 0.01 + 49 ) * 0.75 ) - 38;
         JD -= K3;
     }
 
@@ -212,7 +212,7 @@ int
 scenario_time::day_of_month( int const Week, int const Weekday, int const Month, int const Year ) const {
 
 	int day = 0;
-	int dayoffset = weekdays( day_of_week( 1, Month, Year ), Weekday );
+	const int dayoffset = weekdays( day_of_week( 1, Month, Year ), Weekday );
 
     day = ( Week - 1 ) * 7 + 1 + dayoffset;
 

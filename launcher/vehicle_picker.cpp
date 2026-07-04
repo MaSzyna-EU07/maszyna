@@ -17,7 +17,7 @@ void ui::vehiclepicker_panel::render_contents()
 
 	if (ImGui::BeginChild("box1")) {
 		for (auto const &e : type_names) {
-			deferred_image *image = nullptr;
+			const deferred_image *image = nullptr;
 			auto it = bank.category_icons.find(e.first);
 			if (it != bank.category_icons.end())
 				image = &it->second;
@@ -47,15 +47,15 @@ void ui::vehiclepicker_panel::render_contents()
 
 			bool model_added = false;
 			bool can_break = false;
-			bool map_sel_eq = selected_group && group == *selected_group;
+			const bool map_sel_eq = selected_group && group == *selected_group;
 
 			for (auto const &vehicle : kv.second) {
 				if (vehicle->type != selected_type)
 					continue;
 
 				for (auto const &skinset : vehicle->matching_skinsets) {
-					bool map_group_eq = skinset->group == group;
-					bool sel_group_eq = selected_group && skinset->group == *selected_group;
+					const bool map_group_eq = skinset->group == group;
+					const bool sel_group_eq = selected_group && skinset->group == *selected_group;
 
 					if (!model_added && map_group_eq) {
 						model_list.push_back(&group);
@@ -81,9 +81,9 @@ void ui::vehiclepicker_panel::render_contents()
 			ImGuiListClipper clipper(model_list.size());
 			while (clipper.Step())
 				for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
-					auto group = model_list[i];
+					const auto group = model_list[i];
 
-					deferred_image *image = nullptr;
+					const deferred_image *image = nullptr;
 					auto it = bank.group_icons.find(*group);
 					if (it != bank.group_icons.end())
 						image = &it->second;
@@ -144,14 +144,14 @@ void ui::vehiclepicker_panel::render_contents()
 		ImGuiListClipper clipper(skinset_list.size());
 		while (clipper.Step())
 			for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
-				auto skin = skinset_list[i];
+				const auto skin = skinset_list[i];
 
 				//std::string label = skin->skins[0].stem().string();
 				std::string label = skin->skin;
 				if (skin->meta && !skin->meta->name.empty() && skin->meta->name != "?")
 					label = skin->meta->name;
 
-				auto mini = skin->mini ? &skin->mini : &placeholder_mini;
+				const auto mini = skin->mini ? &skin->mini : &placeholder_mini;
 				if (selectable_image(label.c_str(), skin == selected_skinset, mini, skin))
 					selected_skinset = skin;
 

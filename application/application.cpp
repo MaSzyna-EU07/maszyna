@@ -209,8 +209,8 @@ void eu07_application::DiscordRPCService()
 	Discord_Initialize(discord_app_id, &handlers, 1, nullptr);
 
 	// calculate startup timestamp
-	auto now = std::chrono::system_clock::now();
-	auto now_c = std::chrono::system_clock::to_time_t(now);
+	const auto now = std::chrono::system_clock::now();
+	const auto now_c = std::chrono::system_clock::to_time_t(now);
 
 	// Init RPC object
 	static DiscordRichPresence discord_rpc;
@@ -221,7 +221,7 @@ void eu07_application::DiscordRPCService()
 	// run loop
 	while (!glfwWindowShouldClose(m_windows.front()) && !m_modestack.empty() && !Global.applicationQuitOrder)
 	{
-		auto currentMode = m_modestack.top();
+		const auto currentMode = m_modestack.top();
 		if (currentMode == mode::launcher)
 		{
 			// in launcher mode
@@ -278,7 +278,7 @@ void eu07_application::DiscordRPCService()
 				PlayerVehicle = Translations.lookup_s("Driving: ") + PlayerVehicle;
 				discord_rpc.details = PlayerVehicle.c_str();
 
-				uint16_t playerTrainVelocity = simulation::Train->Dynamic()->GetVelocity();
+				const uint16_t playerTrainVelocity = simulation::Train->Dynamic()->GetVelocity();
 				if (playerTrainVelocity > 1)
 				{
 					// ikonka ze jedziemy i nie spimy
@@ -444,7 +444,7 @@ void eu07_application::queue_quit(bool direct)
 		return;
 	}
 
-	command_relay relay;
+	const command_relay relay;
 	relay.post(user_command::quitsimulation, 0.0, 0.0, GLFW_PRESS, 0);
 }
 
@@ -483,7 +483,7 @@ int eu07_application::run()
 		//
 		// trivia: being client and server is possible
 
-		double frameStartTime = Timer::GetTime();
+		const double frameStartTime = Timer::GetTime();
 
 		if (m_modes[m_modestack.top()]->is_command_processor())
 		{
@@ -512,7 +512,7 @@ int eu07_application::run()
 					auto frame_info = m_network->client->get_next_delta(MAX_NETWORK_PER_FRAME - loop_remaining);
 
 					// use delta and commands received from master
-					double delta = std::get<0>(frame_info);
+					const double delta = std::get<0>(frame_info);
 					Timer::set_delta_override(delta);
 					slave_sync = std::get<1>(frame_info);
 					add_to_dequemap(commands_to_exec, std::get<2>(frame_info));
@@ -542,14 +542,14 @@ int eu07_application::run()
 				// update continuous commands
 				simulation::Commands.update();
 
-				double sync = generate_sync();
+				const double sync = generate_sync();
 
 				// if we're the server
 				if (m_network && m_network->servers)
 				{
 					// send delta, sync, and commands we just executed to clients
-					double delta = Timer::GetDeltaTime();
-					double render = Timer::GetDeltaRenderTime();
+					const double delta = Timer::GetDeltaTime();
+					const double render = Timer::GetDeltaRenderTime();
 					m_network->servers->push_delta(render, delta, sync, commands_to_exec);
 				}
 
@@ -565,7 +565,7 @@ int eu07_application::run()
 					}
 
 					// set total delta for rendering code
-					double totalDelta = Timer::GetTime() - frameStartTime;
+					const double totalDelta = Timer::GetTime() - frameStartTime;
 					Timer::set_delta_override(totalDelta);
 				}
 			}
@@ -573,8 +573,8 @@ int eu07_application::run()
 			if (!loop_remaining)
 			{
 				// loop break forced by counter
-				float received = m_network->client->get_frame_counter();
-				float awaiting = m_network->client->get_awaiting_frames();
+				const float received = m_network->client->get_frame_counter();
+				const float awaiting = m_network->client->get_awaiting_frames();
 
 				// TODO: don't meddle with mode progresbar
 				m_modes[m_modestack.top()]->set_progress(100.0f * (received - awaiting) / received);
@@ -901,7 +901,7 @@ void eu07_application::on_focus_change(bool focus)
 {
 	if (Global.bInactivePause && m_network.has_value() && !m_network->client)
 	{ // jeśli ma być pauzowanie okna w tle
-		command_relay relay;
+		const command_relay relay;
 		relay.post(user_command::focuspauseset, focus ? 1.0 : 0.0, 0.0, GLFW_PRESS, 0);
 	}
 }
@@ -1047,7 +1047,7 @@ void eu07_application::init_console()
 		// as text ("←[32m" etc). Open CONOUT$ directly to get the real screen
 		// buffer handle, then flip VT on it.
 		auto enable_vt = [](const char *devName) {
-			HANDLE h = ::CreateFileA(
+			const HANDLE h = ::CreateFileA(
 				devName,
 				GENERIC_READ | GENERIC_WRITE,
 				FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -1109,7 +1109,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 {
 	Global.asVersion = VERSION_INFO;
 
-	fs::path iniPath = user_config_path("eu07.ini");
+	const fs::path iniPath = user_config_path("eu07.ini");
 
 	if (!iniPath.empty() && fs::exists(iniPath))
 	{
@@ -1461,15 +1461,15 @@ bool eu07_application::init_network()
 	{
 		// we're simulation master
 		// TODO: sort out this timezone mess
-		std::time_t utc_now = std::time(nullptr);
+		const std::time_t utc_now = std::time(nullptr);
 
 		tm tm_local, tm_utc;
-		tm *tmp = std::localtime(&utc_now);
+		const tm *tmp = std::localtime(&utc_now);
 		memcpy(&tm_local, tmp, sizeof(tm));
 		tmp = std::gmtime(&utc_now);
 		memcpy(&tm_utc, tmp, sizeof(tm));
 
-		int64_t offset = tm_local.tm_hour * 3600 + tm_local.tm_min * 60 + tm_local.tm_sec - (tm_utc.tm_hour * 3600 + tm_utc.tm_min * 60 + tm_utc.tm_sec);
+		const int64_t offset = tm_local.tm_hour * 3600 + tm_local.tm_min * 60 + tm_local.tm_sec - (tm_utc.tm_hour * 3600 + tm_utc.tm_min * 60 + tm_utc.tm_sec);
 
 		Global.starting_timestamp = utc_now + offset;
 		Global.ready_to_load = true;

@@ -529,7 +529,7 @@ openal_renderer::init_caps() {
     ::alcGetIntegerv( m_device, ALC_MINOR_VERSION, 1, &versionminor );
     auto const oalversion { std::to_string( versionmajor ) + "." + std::to_string( versionminor ) };
 
-    std::string al_renderer((char *)::alcGetString( m_device, ALC_DEVICE_SPECIFIER ));
+	const std::string al_renderer((char *)::alcGetString( m_device, ALC_DEVICE_SPECIFIER ));
     crashreport_add_info("openal_renderer", al_renderer);
     crashreport_add_info("openal_version", oalversion);
 
@@ -539,7 +539,7 @@ openal_renderer::init_caps() {
 
     WriteLog( "Supported extensions: " + std::string{ (char *)::alcGetString( m_device, ALC_EXTENSIONS ) } );
 
-	ALCint attr[3] = { ALC_MONO_SOURCES, Global.audio_max_sources, 0 }; // request more sounds
+	const ALCint attr[3] = { ALC_MONO_SOURCES, Global.audio_max_sources, 0 }; // request more sounds
 
     m_context = ::alcCreateContext( m_device, attr );
     if( m_context == nullptr ) {

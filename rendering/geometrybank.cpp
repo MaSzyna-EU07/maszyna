@@ -212,7 +212,7 @@ void calculate_indices( index_array &Indices, vertex_array &Vertices, userdata_a
     vertex_array indexedvertices{};
 	userdata_array indexeduserdata{};
     indexedvertices.reserve( std::max<size_t>( 100, Vertices.size() / 3 ) ); // optimistic guesstimate, but should reduce re-allocation somewhat
-	bool has_userdata = !Userdata.empty();
+	const bool has_userdata = !Userdata.empty();
 	if (has_userdata)
 		indexeduserdata.reserve(std::max<size_t>(100, Userdata.size() / 3));
 	auto const matchtolerance { 1e-5f * tolerancescale };
@@ -258,7 +258,7 @@ geometry_bank::create( gfx::vertex_array &Vertices, userdata_array &Userdata, un
 
     m_chunks.emplace_back( Vertices, Userdata, Type );
     // NOTE: handle is effectively (index into chunk array + 1) this leaves value of 0 to serve as error/empty handle indication
-    gfx::geometry_handle chunkhandle { 0, static_cast<std::uint32_t>(m_chunks.size()) };
+	const gfx::geometry_handle chunkhandle { 0, static_cast<std::uint32_t>(m_chunks.size()) };
     // template method implementation
     create_( chunkhandle );
     // all done
@@ -273,7 +273,7 @@ geometry_bank::create( gfx::index_array &Indices, gfx::vertex_array &Vertices, u
 
     m_chunks.emplace_back( Indices, Vertices, Userdata, Type );
     // NOTE: handle is effectively (index into chunk array + 1) this leaves value of 0 to serve as error/empty handle indication
-    gfx::geometry_handle chunkhandle { 0, static_cast<std::uint32_t>(m_chunks.size()) };
+	const gfx::geometry_handle chunkhandle { 0, static_cast<std::uint32_t>(m_chunks.size()) };
     // template method implementation
     create_( chunkhandle );
     // all done

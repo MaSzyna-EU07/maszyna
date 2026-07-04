@@ -27,7 +27,7 @@ namespace
 inline std::array<bool, 256> makeBreakTable(const char *brk)
 {
 	std::array<bool, 256> arr{};
-	for (unsigned char c : std::string_view(brk ? brk : ""))
+	for (const unsigned char c : std::string_view(brk ? brk : ""))
 	{
 		arr[c] = true;
 	}
@@ -535,7 +535,7 @@ int cParser::getProgress() const
 int cParser::getFullProgress() const
 {
 
-	int progress = getProgress();
+	const int progress = getProgress();
 	if (mIncludeParser)
 		return progress + (100 - progress) * mIncludeParser->getProgress() / 100;
 	else

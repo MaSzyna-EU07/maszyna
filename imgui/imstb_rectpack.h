@@ -294,8 +294,8 @@ STBRP_DEF void stbrp_init_target(stbrp_context *context, int width, int height, 
 // find minimum y position if it starts at x1
 static int stbrp__skyline_find_min_y(stbrp_context *c, stbrp_node *first, int x0, int width, int *pwaste)
 {
-   stbrp_node *node = first;
-   int x1 = x0 + width;
+	const stbrp_node *node = first;
+	const int x1 = x0 + width;
    int min_y, visited_width, waste_area;
 
    STBRP__NOTUSED(c);
@@ -419,7 +419,7 @@ static stbrp__findresult stbrp__skyline_find_best_pos(stbrp_context *c, int widt
       while (tail->x < width)
          tail = tail->next;
       while (tail) {
-         int xpos = tail->x - width;
+		  const int xpos = tail->x - width;
          int y,waste;
          STBRP_ASSERT(xpos >= 0);
          // find the left position that matches this
@@ -532,8 +532,8 @@ static stbrp__findresult stbrp__skyline_pack_rectangle(stbrp_context *context, i
 // [DEAR IMGUI] Added STBRP__CDECL
 static int STBRP__CDECL rect_height_compare(const void *a, const void *b)
 {
-	auto p = (const stbrp_rect *) a;
-	auto q = (const stbrp_rect *) b;
+	const auto p = (const stbrp_rect *) a;
+	const auto q = (const stbrp_rect *) b;
    if (p->h > q->h)
       return -1;
    if (p->h < q->h)
@@ -544,8 +544,8 @@ static int STBRP__CDECL rect_height_compare(const void *a, const void *b)
 // [DEAR IMGUI] Added STBRP__CDECL
 static int STBRP__CDECL rect_original_order(const void *a, const void *b)
 {
-	auto p = (const stbrp_rect *) a;
-	auto q = (const stbrp_rect *) b;
+	const auto p = (const stbrp_rect *) a;
+	const auto q = (const stbrp_rect *) b;
    return (p->was_packed < q->was_packed) ? -1 : (p->was_packed > q->was_packed);
 }
 
@@ -571,7 +571,7 @@ STBRP_DEF int stbrp_pack_rects(stbrp_context *context, stbrp_rect *rects, int nu
       if (rects[i].w == 0 || rects[i].h == 0) {
          rects[i].x = rects[i].y = 0;  // empty rect needs no space
       } else {
-         stbrp__findresult fr = stbrp__skyline_pack_rectangle(context, rects[i].w, rects[i].h);
+		  const stbrp__findresult fr = stbrp__skyline_pack_rectangle(context, rects[i].w, rects[i].h);
          if (fr.prev_link) {
             rects[i].x = (stbrp_coord) fr.x;
             rects[i].y = (stbrp_coord) fr.y;

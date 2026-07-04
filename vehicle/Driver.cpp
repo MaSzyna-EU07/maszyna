@@ -200,9 +200,9 @@ void TSpeedPos::Clear()
 
 void TSpeedPos::CommandCheck()
 { // sprawdzenie typu komendy w evencie i określenie prędkości
-    TCommandType command = evEvent->input_command();
-    double value1 = evEvent->input_value(1);
-    double value2 = evEvent->input_value(2);
+	const TCommandType command = evEvent->input_command();
+	const double value1 = evEvent->input_value(1);
+	const double value2 = evEvent->input_value(2);
     switch (command)
     {
     case TCommandType::cm_ShuntVelocity:
@@ -459,9 +459,9 @@ std::vector<basic_event *> TController::CheckTrackEvent( TTrack *Track, double c
     std::vector<basic_event *> events;
     auto const &eventsequence { ( fDirection > 0 ? Track->m_events2 : Track->m_events1 ) };
     for( auto const &event : eventsequence ) {
-        if( event.second != nullptr
-         && event.second->m_passive ) {
-            events.emplace_back( event.second );
+        if( event != nullptr
+         && event->m_passive ) {
+            events.emplace_back( event );
         }
     }
     return events;
@@ -476,7 +476,7 @@ bool TController::TableAddNew()
 
 bool TController::TableNotFound(basic_event const *Event, double const Distance ) const
 { // sprawdzenie, czy nie został już dodany do tabelki (np. podwójne W4 robi problemy)
-    auto lookup =
+	const auto lookup =
         std::find_if(
             sSpeedTable.begin(),
             sSpeedTable.end(),
@@ -1150,8 +1150,8 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                 Drugi paramer dodatni - długość peronu (W4).
                 */
                 auto L = 0.0;
-				auto Par1 = Point.evEvent->input_value(1);
-				auto Par2 = Point.evEvent->input_value(2);
+				const auto Par1 = Point.evEvent->input_value(1);
+				const auto Par2 = Point.evEvent->input_value(2);
 				if (Par2 >= 0 || fLength < -Par2) { //użyj tego W4
 					if (Par1 < 0) {
                         L = -Par1;
@@ -2014,7 +2014,7 @@ void TController::Activation()
     iDirection = iDirectionOrder; // kierunek (względem sprzęgów pojazdu z AI) właśnie został ustalony (zmieniony)
     if (iDirection)
     { // jeśli jest ustalony kierunek
-        auto *initialvehicle { pVehicle };
+		const auto *initialvehicle { pVehicle };
 /*
         auto const initiallocalbrakelevel { mvOccupied->LocalBrakePosA };
 */
@@ -2107,7 +2107,7 @@ void TController::Activation()
 void TController::AutoRewident()
 { // autorewident: nastawianie hamulców w składzie
     int r = 0, g = 0, p = 0; // ilości wagonów poszczególnych typów
-    TDynamicObject *d = pVehicles[0]; // pojazd na czele składu
+	const TDynamicObject *d = pVehicles[0]; // pojazd na czele składu
     // 1. Zebranie informacji o składzie pociągu — przejście wzdłuż składu i odczyt parametrów:
     //   · ilość wagonów -> są zliczane, wszystkich pojazdów jest (iVehicles)
     //   · długość (jako suma) -> jest w (fLength)
@@ -2266,7 +2266,7 @@ void TController::AutoRewident()
         BrakingLevelIncrease = IsHeavyCargoTrain ? 0.25 : IsCargoTrain ? 0.25 : 0.25;
 
         if( is_emu() ) {
-            auto ep_factor { ( BrakeSystem == TBrakeSystem::ElectroPneumatic ? 8 : 4 ) };
+			const auto ep_factor { ( BrakeSystem == TBrakeSystem::ElectroPneumatic ? 8 : 4 ) };
             if( mvControlling->EngineType == TEngineType::ElectricInductionMotor ) {
                 // HACK: emu with induction motors need to start their braking a bit sooner than the ones with series motors
                 fNominalAccThreshold = std::max( -0.60, -fBrake_a0[ BrakeAccTableSize ] - ep_factor * fBrake_a1[ BrakeAccTableSize ] );
@@ -2295,8 +2295,8 @@ void TController::AutoRewident()
 
 double TController::ESMVelocity(bool Main)
 {
-	double fCurrentCoeff = 0.9;
-	double fFrictionCoeff = 0.85;
+	const double fCurrentCoeff = 0.9;
+	const double fFrictionCoeff = 0.85;
 	double ESMVel = 9999;
 	int MCPN = mvControlling->MainCtrlActualPos;
 	int SCPN = mvControlling->ScndCtrlActualPos;
@@ -2306,7 +2306,7 @@ double TController::ESMVelocity(bool Main)
 		SCPN += 1;
 	if (mvControlling->RList[MCPN].ScndAct < 255 && mvControlling->ScndCtrlActualPos == 0)
 		SCPN = mvControlling->RList[MCPN].ScndAct;
-	double FrictionMax = mvControlling->Mass*9.81*mvControlling->Adhesive(mvControlling->RunningTrack.friction)*fFrictionCoeff;
+	const double FrictionMax = mvControlling->Mass*9.81*mvControlling->Adhesive(mvControlling->RunningTrack.friction)*fFrictionCoeff;
 	double IF = mvControlling->Imax;
 	double MS = 0;
 	double Fmax = 0;
@@ -2324,11 +2324,11 @@ double TController::ESMVelocity(bool Main)
         }
 	}
 	IF = std::min(IF, mvControlling->Imax*fCurrentCoeff);
-	double R = mvControlling->RList[MCPN].R + mvControlling->CircuitRes + mvControlling->RList[MCPN].Mn*mvControlling->WindingRes;
-	double pole = mvControlling->MotorParam[SCPN].fi *
+	const double R = mvControlling->RList[MCPN].R + mvControlling->CircuitRes + mvControlling->RList[MCPN].Mn*mvControlling->WindingRes;
+	const double pole = mvControlling->MotorParam[SCPN].fi *
 		std::max(abs(IF) / (abs(IF) + mvControlling->MotorParam[SCPN].Isat) - mvControlling->MotorParam[SCPN].fi0, 0.0);
-	double Us = abs(mvControlling->EngineVoltage) - IF*R;
-	double ns = std::max(0.0, Us / (pole*mvControlling->RList[MCPN].Mn));
+	const double Us = abs(mvControlling->EngineVoltage) - IF*R;
+	const double ns = std::max(0.0, Us / (pole*mvControlling->RList[MCPN].Mn));
 	ESMVel = ns * mvControlling->WheelDiameter*M_PI*3.6/mvControlling->Transmision.Ratio;
 	return ESMVel;
 }
@@ -2589,7 +2589,7 @@ TBrakeSystem TController::consist_brake_system() const {
     auto isepcapable = true;
     if( pVehicles[ end::front ] != pVehicles[ end::rear ] ) {
         // more detailed version, will use manual braking also for coupled sets of controlled vehicles
-        auto *vehicle = pVehicles[ end::front ]; // start from first
+		const auto *vehicle = pVehicles[ end::front ]; // start from first
         while( true == isepcapable
             && vehicle != nullptr ) {
             // NOTE: we could simplify this by doing only check of the rear coupler, but this can be quite tricky in itself
@@ -2606,7 +2606,7 @@ TBrakeSystem TController::consist_brake_system() const {
 
 int TController::OrderDirectionChange(int newdir, TMoverParameters *Vehicle)
 { // zmiana kierunku jazdy, niezależnie od kabiny
-    int testd = newdir;
+	const int testd = newdir;
     if (Vehicle->Vel < 0.5)
     { // jeśli prawie stoi, można zmienić kierunek, musi być wykonane dwukrotnie, bo za pierwszym razem daje na zero
         switch (newdir * Vehicle->CabActive)
@@ -3017,7 +3017,7 @@ bool TController::IncBrake()
 */
                 if( pVehicles[ end::front ] != pVehicles[ end::rear ] ) {
                     // more detailed version, will use manual braking also for coupled sets of controlled vehicles
-                    auto *vehicle = pVehicles[ end::front ]; // start from first
+				    const auto *vehicle = pVehicles[ end::front ]; // start from first
                     while( true == standalone
                         && vehicle != nullptr ) {
                         // NOTE: we could simplify this by doing only check of the rear coupler, but this can be quite tricky in itself
@@ -3070,7 +3070,7 @@ bool TController::IncBrake()
 						pos_corr += mvOccupied->Handle->GetCP()*0.2;
 
 					}
-					double deltaAcc = -AccDesired*BrakeAccFactor() - (fBrake_a0[0] + 4.0 * (/*GBH mvOccupied->BrakeCtrlPosR*/BrakeCtrlPosition - 1 - pos_corr)*fBrake_a1[0]);
+				    const double deltaAcc = -AccDesired*BrakeAccFactor() - (fBrake_a0[0] + 4.0 * (/*GBH mvOccupied->BrakeCtrlPosR*/BrakeCtrlPosition - 1 - pos_corr)*fBrake_a1[0]);
 
                     if( deltaAcc > fBrake_a1[0])
 					{
@@ -3577,7 +3577,7 @@ bool TController::IncSpeed()
 		if (mvControlling->EIMCtrlType > 0) {
 			if (true == Ready)
 			{
-				bool max = mvControlling->Vel > mvControlling->dizel_minVelfullengage
+				const bool max = mvControlling->Vel > mvControlling->dizel_minVelfullengage
 				    	|| (mvControlling->SpeedCtrl && mvControlling->ScndCtrlPos > 0);
 				DizelPercentage = max ? 100 : 1;
 			}
@@ -3958,7 +3958,7 @@ void TController::SpeedCntrl(double DesiredSpeed)
 	}
 	else if (mvControlling->ScndCtrlPosNo > 1 && !mvOccupied->SpeedCtrlTypeTime)
 	{
-		int DesiredPos = 1 + mvControlling->ScndCtrlPosNo * ((DesiredSpeed - 1.0) / mvControlling->Vmax);
+		const int DesiredPos = 1 + mvControlling->ScndCtrlPosNo * ((DesiredSpeed - 1.0) / mvControlling->Vmax);
         while( mvControlling->ScndCtrlPos > DesiredPos && true == mvControlling->DecScndCtrl(1) ) { ; } // all work is done in the condition loop
         while( mvControlling->ScndCtrlPos < DesiredPos && true == mvControlling->IncScndCtrl(1) ) { ; } // all work is done in the condition loop
 	}
@@ -4060,8 +4060,8 @@ void TController::SetTimeControllers()
 	if (mvControlling->EngineType == TEngineType::DieselEngine && mvControlling->EIMCtrlType == 3)
 	{
 
-        DizelPercentage_Speed = DizelPercentage; //wstepnie procenty
-		auto MinVel{ std::min(mvControlling->hydro_TC_LockupSpeed, mvControlling->Vmax / 6) }; //minimal velocity
+        DizelPercentage_Speed = DizelPercentage; // wstepnie procenty
+		const auto MinVel{ std::min(mvControlling->hydro_TC_LockupSpeed, mvControlling->Vmax / 6) }; //minimal velocity
 		//when speed controll unit is active - start with the procedure
 		if (mvControlling->SpeedCtrl && mvControlling->ScndCtrlPos > 0) {
 			if (mvControlling->ScndCtrlPos > 0 && mvControlling->Vel < 1 + mvControlling->SpeedCtrlUnit.StartVelocity && DizelPercentage > 0)
@@ -4119,12 +4119,12 @@ void TController::SetTimeControllers()
 	//5.2. Analog direct controller
 	if (mvControlling->EngineType == TEngineType::DieselEngine && mvControlling->Vmax > 30)
 	{
-		int MaxPos = mvControlling->MainCtrlPosNo;
+		const int MaxPos = mvControlling->MainCtrlPosNo;
 		int MinPos = MaxPos;
 		for (int i = MaxPos; i > 1 && mvControlling->RList[i].Mn > 0; i--) MinPos = i;
 		if (MaxPos > MinPos && mvControlling->MainCtrlPos > 0 && AccDesired > 0)
 		{
-			double Factor = 5 * mvControlling->Vmax / (mvControlling->Vmax + mvControlling->Vel);
+			const double Factor = 5 * mvControlling->Vmax / (mvControlling->Vmax + mvControlling->Vel);
 			int DesiredPos = MinPos + (MaxPos - MinPos)*(VelDesired > mvControlling->Vel ? (VelDesired - mvControlling->Vel) / Factor : 0);
 			if (DesiredPos > MaxPos) DesiredPos = MaxPos;
 			if (DesiredPos < MinPos) DesiredPos = MinPos;
@@ -4228,7 +4228,7 @@ void TController::CheckTimeControllers()
 	//5.1. Digital controller in DMUs with hydro
 	if (mvControlling->EngineType == TEngineType::DieselEngine && mvControlling->EIMCtrlType == 3)
 	{
-		int DizelActualPercentage = 100.4 * mvControlling->eimic_real;
+		const int DizelActualPercentage = 100.4 * mvControlling->eimic_real;
 		int NeutralPos = mvControlling->MainCtrlPosNo - 1; //przedostatnia powinna wstrzymywać - hipoteza robocza
 		for (int i = mvControlling->MainCtrlPosNo; i >= 0; i--)
 			if (mvControlling->UniCtrlList[i].SetCtrlVal <= 0 && mvControlling->UniCtrlList[i].SpeedDown < 0.01) //niby zero, ale nie zmniejsza procentów
@@ -5262,7 +5262,7 @@ std::string TController::StopReasonText() const
 bool TController::IsOccupiedByAnotherConsist( TTrack *Track, double const Distance = 0 )
 { // najpierw sprawdzamy, czy na danym torze są pojazdy z innego składu
     if( false == Track->Dynamics.empty() ) {
-        for( auto dynamic : Track->Dynamics ) {
+        for (const auto dynamic : Track->Dynamics ) {
             if( dynamic->ctOwner != this ) {
                 // jeśli jest jakiś cudzy to tor jest zajęty i skanowanie nie obowiązuje
                 if( Distance == 0 ) {
@@ -5812,7 +5812,7 @@ void TController::ControllingSet()
 	BrakeSystem = mvOccupied->BrakeSystem; // domyślny sposób hamowania
     mvControlling = pVehicle->FindPowered()->MoverParameters; // poszukiwanie członu sterowanego
     {
-        auto *lookup { pVehicle->FindPantographCarrier() };
+		const auto *lookup { pVehicle->FindPantographCarrier() };
         mvPantographUnit = lookup != nullptr ? lookup->MoverParameters : mvControlling;
     }
     BrakeSystem = consist_brake_system();
@@ -5938,7 +5938,7 @@ TController::determine_consist_state() {
 	fBrake_a1[0] = fBrake_a1[index];
 
 	if (is_emu() || is_dmu()) {
-		auto Coeff = std::clamp( mvOccupied->Vel*0.015 , 0.5 , 1.0);
+		const auto Coeff = std::clamp( mvOccupied->Vel*0.015 , 0.5 , 1.0);
 		fAccThreshold = fNominalAccThreshold * Coeff - fBrake_a0[BrakeAccTableSize] * (1.0 - Coeff);
 	}
 
@@ -5952,7 +5952,7 @@ TController::determine_consist_state() {
 	IsAnyDoorOpen[ side::right ] = IsAnyDoorOpen[ side::left ] = false;
     IsAnyDoorPermitActive[ side::right ] = IsAnyDoorPermitActive[ side::left ] = false;
     ConsistShade = 0.0;
-    auto *p { pVehicles[ end::front ] }; // pojazd na czole składu
+	const auto *p { pVehicles[ end::front ] }; // pojazd na czole składu
     double dy; // składowa styczna grawitacji, w przedziale <0,1>
     while (p)
     { // sprawdzenie odhamowania wszystkich połączonych pojazdów
@@ -6059,7 +6059,7 @@ TController::determine_consist_state() {
         auto absaccs { fAccGravity }; // Ra 2014-03: jesli skład stoi, to działa na niego składowa styczna grawitacji
         if( mvOccupied->Vel > EU07_AI_NOMOVEMENT ) {
             absaccs = 0;
-            auto *d = pVehicles[ end::front ]; // pojazd na czele składu
+			const auto *d = pVehicles[ end::front ]; // pojazd na czele składu
             while( d ) {
                 absaccs += d->MoverParameters->TotalMass * d->MoverParameters->AccS * ( d->DirectionGet() == iDirection ? 1 : -1 );
                 d = d->Next(); // kolejny pojazd, podłączony od tyłu (licząc od czoła)
@@ -6535,7 +6535,7 @@ TController::scan_obstacles( double const Range ) {
     // HACK: vehicle order in the consist is based on intended travel direction
     // if our actual travel direction doesn't match that, we should be scanning from the other end of the consist
     // we cast to int to avoid getting confused by microstutters
-    auto *frontvehicle { pVehicles[ ( static_cast<int>( mvOccupied->V ) * iDirection >= 0 ? end::front : end::rear ) ] };
+	const auto *frontvehicle { pVehicles[ ( static_cast<int>( mvOccupied->V ) * iDirection >= 0 ? end::front : end::rear ) ] };
 
     int routescandirection;
     // for moving vehicle determine heading from velocity; for standing fall back on the set direction
@@ -6757,7 +6757,7 @@ TController::check_load_exchange() {
     if( fStopTime > 0 ) { return; }
 
     // czas postoju przed dalszą jazdą (np. na przystanku)
-    auto *vehicle { pVehicles[ end::front ] };
+	const auto *vehicle { pVehicles[ end::front ] };
     while( vehicle != nullptr ) {
         auto const vehicleexchangetime { vehicle->LoadExchangeTime() };
         DoesAnyDoorNeedOpening |= vehicleexchangetime > 0 && vehicle->LoadExchangeSpeed() == 0;
@@ -6829,7 +6829,7 @@ TController::UpdateLooseShunt() {
      && AccDesired > 0.1
      && mvOccupied->Vel < 1.0 ) {
 
-        auto *vehicle { Obstacle.vehicle };
+		const auto *vehicle { Obstacle.vehicle };
         auto const direction { ( vehicle->Prev() != nullptr ? end::front : end::rear ) };
         while( vehicle != nullptr ) {
             if( vehicle->MoverParameters->BrakePress > 0.2 ) {
@@ -6889,7 +6889,7 @@ TController::UpdateConnect() {
     // podłączanie do składu
     if (iDrivigFlags & moveConnect) {
         // sprzęgi sprawdzamy w pierwszej kolejności, bo jak połączony, to koniec
-        auto *vehicle { iCouplingVehicle.value().first };
+		const auto *vehicle { iCouplingVehicle.value().first };
         auto const couplingend { iCouplingVehicle.value().second };
         auto *vehicleparameters { vehicle->MoverParameters };
         if( vehicleparameters->Couplers[ couplingend ].CouplingFlag != iCoupler ) {
@@ -6949,7 +6949,7 @@ TController::UpdateConnect() {
 void
 TController::GuardOpenDoor() {
 	if ((iDrivigFlags & moveGuardOpenDoor) != 0) {
-		auto *vehicle{ pVehicles[end::front] };
+		const auto *vehicle{ pVehicles[end::front] };
 		while (vehicle != nullptr && vehicle->MoverParameters->Doors.range == 0) {
 			vehicle = vehicle->Next();
 		}
@@ -6972,7 +6972,7 @@ TController::GuardOpenDoor() {
 int
 TController::unit_count( int const Threshold ) const {
 
-    auto *vehicle { pVehicle };
+	const auto *vehicle { pVehicle };
     auto unitcount { 1 };
     do {
         auto const decoupledend{ ( vehicle->DirectionGet() > 0 ? // numer sprzęgu od strony czoła składu
@@ -7900,7 +7900,7 @@ void TController::control_tractive_force() {
     // zmniejszanie predkosci
     // margines dla prędkości jest doliczany tylko jeśli oczekiwana prędkość jest większa od 5km/h
     if( false == TestFlag( iDrivigFlags, movePress ) ) {
-		double SpeedCtrlMargin = mvControlling->SpeedCtrlUnit.IsActive && VelDesired > 5 ? 3 : 0;
+		const double SpeedCtrlMargin = mvControlling->SpeedCtrlUnit.IsActive && VelDesired > 5 ? 3 : 0;
         // jeśli nie dociskanie
         if( AccDesired <= EU07_AI_NOACCELERATION ) {
             cue_action( driver_hint::mastercontrollersetzerospeed );
