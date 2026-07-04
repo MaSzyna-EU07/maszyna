@@ -354,18 +354,18 @@ const std::string& locale::coupling_name(int c)
 {
 	static std::unordered_map<coupling, std::string> coupling_names =
 	{
-	    { coupling::faux, STRN("faux") },
-	    { coupling::coupler, STRN("coupler") },
-	    { coupling::brakehose, STRN("brake hose") },
-	    { coupling::control, STRN("control") },
-	    { coupling::highvoltage, STRN("high voltage") },
-	    { coupling::gangway, STRN("gangway") },
-	    { coupling::mainhose, STRN("main hose") },
-	    { coupling::heating, STRN("heating") },
-	    { coupling::permanent, STRN("permanent") },
-        { coupling::power24v, STRN("power 24V") },
-        { coupling::power110v, STRN("power 110V") },
-        { coupling::power3x400v, STRN("power 3x400V") },
+	    { faux, STRN("faux") },
+	    { coupler, STRN("coupler") },
+	    { brakehose, STRN("brake hose") },
+	    { control, STRN("control") },
+	    { highvoltage, STRN("high voltage") },
+	    { gangway, STRN("gangway") },
+	    { mainhose, STRN("main hose") },
+	    { heating, STRN("heating") },
+	    { permanent, STRN("permanent") },
+        { power24v, STRN("power 24V") },
+        { power110v, STRN("power 110V") },
+        { power3x400v, STRN("power 3x400V") },
 	};
 
 	static std::string unknown(STRN("unknown"));

@@ -24,7 +24,7 @@ scenario_time::init(std::time_t timestamp) {
 	const char monthdaycounts[ 2 ][ 13 ] = {
         { 0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 },
         { 0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 } };
-    ::memcpy( m_monthdaycounts, monthdaycounts, sizeof( monthdaycounts ) );
+    memcpy( m_monthdaycounts, monthdaycounts, sizeof( monthdaycounts ) );
 
     // potentially adjust scenario clock
     auto const requestedtime { clamp_circular<int>( m_time.wHour * 60 + m_time.wMinute + Global.ScenarioTimeOffset * 60, 24 * 60 ) };

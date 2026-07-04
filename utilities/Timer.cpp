@@ -94,7 +94,7 @@ void UpdateTimers(bool pause)
 #if __unix__
 	double fTime = (double)(count / 1000000000);
 #elif _WIN32_WINNT >= _WIN32_WINNT_VISTA
-	const double fTime = ::GetTickCount64() * 0.001f; // Get current time in seconds
+	const double fTime = GetTickCount64() * 0.001f; // Get current time in seconds
 #elif _WIN32
     double fTime = ::GetTickCount() * 0.001f; // Get current time in seconds
 #endif

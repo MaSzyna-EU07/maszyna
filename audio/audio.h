@@ -54,8 +54,8 @@ public:
     buffer_handle
         create( std::string const &Filename );
     // provides direct access to a specified buffer
-    audio::openal_buffer const &
-        buffer( audio::buffer_handle const Buffer ) const;
+    openal_buffer const &
+        buffer( buffer_handle const Buffer ) const;
 
 private:
 // types

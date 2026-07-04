@@ -215,8 +215,8 @@ fixedstep_modifier<Type_>::update( Type_ &Variable, double const Timedelta ) con
             m_valuechange / *( m_valuechangemodifier ) ) };
     Variable += ( valuechange * static_cast<float>( Timedelta ) );
     // clamp down to allowed value range
-    Variable = glm::max( Variable, m_valuelimits[ value_limit::min ] );
-    Variable = glm::min( Variable, m_valuelimits[ value_limit::max ] );
+    Variable = glm::max( Variable, m_valuelimits[ min ] );
+    Variable = glm::min( Variable, m_valuelimits[ max ] );
 }
 
 template <typename Type_>
@@ -227,8 +227,8 @@ fixedstep_modifier<Type_>::deserialize( cParser &Input ) {
 
     std::unordered_map<std::string, Type_ &> const variablemap {
         { "step:", m_valuechange },
-        { "min:", m_valuelimits[ value_limit::min ] },
-        { "max:", m_valuelimits[ value_limit::max ] } };
+        { "min:", m_valuelimits[ min ] },
+        { "max:", m_valuelimits[ max ] } };
 
     std::string key;
 

@@ -22,7 +22,7 @@ http://mozilla.org/MPL/2.0/.
 namespace scene {
 
 void
-basic_editor::translate( scene::basic_node *Node, glm::dvec3 const &Location, bool const Snaptoground ) {
+basic_editor::translate( basic_node *Node, glm::dvec3 const &Location, bool const Snaptoground ) {
 
 	auto &initiallocation { Node->location() };
 
@@ -49,7 +49,7 @@ basic_editor::translate( scene::basic_node *Node, glm::dvec3 const &Location, bo
         // translate entire group
         // TODO: contextual switch between group and item translation
         // TODO: translation of affected/relevant events
-        auto &nodegroup { scene::Groups.group( Node->group() ).nodes };
+        auto &nodegroup { Groups.group( Node->group() ).nodes };
         std::for_each(
             std::begin( nodegroup ), std::end( nodegroup ),
             [&]( auto *node ) {
@@ -58,7 +58,7 @@ basic_editor::translate( scene::basic_node *Node, glm::dvec3 const &Location, bo
 }
 
 void
-basic_editor::translate( scene::basic_node *Node, float const Offset ) {
+basic_editor::translate( basic_node *Node, float const Offset ) {
 
     // NOTE: offset scaling is calculated early so the same multiplier can be applied to potential whole group
     auto const distance { glm::length( Node->location() - Global.pCamera.Pos ) };
@@ -71,7 +71,7 @@ basic_editor::translate( scene::basic_node *Node, float const Offset ) {
         // translate entire group
         // TODO: contextual switch between group and item translation
         // TODO: translation of affected/relevant events
-        auto &nodegroup { scene::Groups.group( Node->group() ).nodes };
+        auto &nodegroup { Groups.group( Node->group() ).nodes };
         std::for_each(
             std::begin( nodegroup ), std::end( nodegroup ),
             [&]( auto *node ) {
@@ -80,7 +80,7 @@ basic_editor::translate( scene::basic_node *Node, float const Offset ) {
 }
 
 void
-basic_editor::translate_node( scene::basic_node *Node, glm::dvec3 const &Location ) {
+basic_editor::translate_node( basic_node *Node, glm::dvec3 const &Location ) {
 
     if( typeid( *Node ) == typeid( TAnimModel ) ) {
         translate_instance( static_cast<TAnimModel *>( Node ), Location );
@@ -91,7 +91,7 @@ basic_editor::translate_node( scene::basic_node *Node, glm::dvec3 const &Locatio
 }
 
 void
-basic_editor::translate_node( scene::basic_node *Node, float const Offset ) {
+basic_editor::translate_node( basic_node *Node, float const Offset ) {
 
     if( typeid( *Node ) == typeid( TAnimModel ) ) {
         translate_instance( static_cast<TAnimModel *>( Node ), Offset );
@@ -134,7 +134,7 @@ basic_editor::translate_memorycell( TMemCell *Memorycell, float const Offset ) {
 }
 
 void
-basic_editor::rotate( scene::basic_node *Node, glm::vec3 const &Angle, float const Quantization ) {
+basic_editor::rotate( basic_node *Node, glm::vec3 const &Angle, float const Quantization ) {
 
     glm::vec3 rotation{Angle.x, Angle.y, Angle.z};
 
@@ -160,7 +160,7 @@ basic_editor::rotate( scene::basic_node *Node, glm::vec3 const &Angle, float con
         // TODO: contextual switch between group and item rotation
         // TODO: translation of affected/relevant events
         auto const &rotationcenter { Node->location() };
-        auto const &nodegroup { scene::Groups.group( Node->group() ).nodes };
+        auto const &nodegroup { Groups.group( Node->group() ).nodes };
         std::for_each(
             std::begin( nodegroup ), std::end( nodegroup ),
             [&]( auto *node ) {
@@ -176,7 +176,7 @@ basic_editor::rotate( scene::basic_node *Node, glm::vec3 const &Angle, float con
 }
 
 void
-basic_editor::rotate_node( scene::basic_node *Node, glm::vec3 const &Angle ) {
+basic_editor::rotate_node( basic_node *Node, glm::vec3 const &Angle ) {
 
     if( typeid( *Node ) == typeid( TAnimModel ) ) {
         rotate_instance( static_cast<TAnimModel *>( Node ), Angle );

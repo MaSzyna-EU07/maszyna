@@ -114,12 +114,12 @@ protected:
         comparison_operator memcompare_value2_operator { comparison_operator::equal }; // used by conditional_memcompare
         comparison_operator memcompare_text_operator { comparison_operator::equal }; // used by conditional_memcompare
         comparison_pass memcompare_pass { comparison_pass::all }; // used by conditional_memcompare
-        basic_event::node_sequence *memcompare_cells; // used by conditional_memcompare
+        node_sequence *memcompare_cells; // used by conditional_memcompare
         std::vector<TTrack *> tracks; // used by conditional_track
         bool has_else { false };
 
         void deserialize( cParser &Input );
-        void bind( basic_event::node_sequence *Nodes );
+        void bind( node_sequence *Nodes );
         void init();
         // verifies whether event meets execution condition(s)
         bool test() const;

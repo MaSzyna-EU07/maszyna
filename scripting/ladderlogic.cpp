@@ -21,14 +21,14 @@ int basic_element::blank = -1;
 auto
 basic_element::input() -> int & {
 
-    switch( (basic_element::type_e)data.index() ) {
-        case basic_element::type_e::variable: {
+    switch( (type_e)data.index() ) {
+        case type_e::variable: {
             return std::get<variable>(data).value;
         }
-        case basic_element::type_e::timer: {
+        case type_e::timer: {
             return std::get<timer>(data).value;
         }
-        case basic_element::type_e::counter: {
+        case type_e::counter: {
             return std::get<counter>(data).value;
         }
     }
@@ -39,14 +39,14 @@ basic_element::input() -> int & {
 auto
 basic_element::output() const -> int {
 
-    switch( (basic_element::type_e)data.index() ) {
-        case basic_element::type_e::variable: {
+    switch( (type_e)data.index() ) {
+        case type_e::variable: {
             return std::get<variable>(data).value;
         }
-        case basic_element::type_e::timer: {
+        case type_e::timer: {
             return std::get<timer>(data).time_elapsed >= std::get<timer>(data).time_preset ? std::get<timer>(data).value : 0;
         }
-        case basic_element::type_e::counter: {
+        case type_e::counter: {
             return std::get<counter>(data).count_value >= std::get<counter>(data).count_limit ? 1 : 0;
         }
     }

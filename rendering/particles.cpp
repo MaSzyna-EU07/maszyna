@@ -23,14 +23,14 @@ smoke_source::particle_emitter::deserialize( cParser &Input ) {
     if( Input.getToken<std::string>() != "{" ) { return; }
 
     std::unordered_map<std::string, float &> const variablemap {
-        { "min_inclination:", inclination[ value_limit::min ] },
-        { "max_inclination:", inclination[ value_limit::max ] },
-        { "min_velocity:", velocity[ value_limit::min ] },
-        { "max_velocity:", velocity[ value_limit::max ] },
-        { "min_size:", size[ value_limit::min ] },
-        { "max_size:", size[ value_limit::max ] },
-        { "min_opacity:", opacity[ value_limit::min ] },
-        { "max_opacity:", opacity[ value_limit::max ] } };
+        { "min_inclination:", inclination[ min ] },
+        { "max_inclination:", inclination[ max ] },
+        { "min_velocity:", velocity[ min ] },
+        { "max_velocity:", velocity[ max ] },
+        { "min_size:", size[ min ] },
+        { "max_size:", size[ max ] },
+        { "min_opacity:", opacity[ min ] },
+        { "max_opacity:", opacity[ max ] } };
     std::string key;
 
     while( ( false == ( ( key = Input.getToken<std::string>( true, "\n\r\t  ,;[]" ) ).empty() ) )
@@ -58,20 +58,20 @@ smoke_source::particle_emitter::deserialize( cParser &Input ) {
 void
 smoke_source::particle_emitter::initialize( smoke_particle &Particle ) {
 
-    auto const polarangle { glm::radians( LocalRandom( inclination[ value_limit::min ], inclination[ value_limit::max ] ) ) }; // theta
+    auto const polarangle { glm::radians( LocalRandom( inclination[ min ], inclination[ max ] ) ) }; // theta
     auto const azimuthalangle { glm::radians( LocalRandom( -180, 180 ) ) }; // phi
     // convert spherical coordinates to opengl coordinates
     auto const launchvector { glm::vec3(
         std::sin( polarangle ) * std::sin( azimuthalangle ) * -1,
         std::cos( polarangle ),
         std::sin( polarangle ) * std::cos( azimuthalangle ) ) };
-        auto const launchvelocity { static_cast<float>( LocalRandom( velocity[ value_limit::min ], velocity[ value_limit::max ] ) ) };
+        auto const launchvelocity { static_cast<float>( LocalRandom( velocity[ min ], velocity[ max ] ) ) };
     
     Particle.velocity = launchvector * launchvelocity;
 
     Particle.rotation = glm::radians( LocalRandom( 0, 360 ) );
-    Particle.size = LocalRandom( size[ value_limit::min ], size[ value_limit::max ] );
-    Particle.opacity = LocalRandom( opacity[ value_limit::min ], opacity[ value_limit::max ] ) / Global.SmokeFidelity;
+    Particle.size = LocalRandom( size[ min ], size[ max ] );
+    Particle.opacity = LocalRandom( opacity[ min ], opacity[ max ] ) / Global.SmokeFidelity;
     Particle.age = 0;
 }
 
@@ -282,8 +282,8 @@ smoke_source::update( double const Timedelta, bool const Onlydespawn ) {
     }
     // determine bounding area from calculated bounding box
     if( false == m_particles.empty() ) {
-		m_area.center = glm::mix(boundingbox[value_limit::min], boundingbox[value_limit::max], 0.5);
-        m_area.radius = 0.5 * ( glm::length( boundingbox[ value_limit::max ] - boundingbox[ value_limit::min ] ) );
+		m_area.center = glm::mix(boundingbox[min], boundingbox[max], 0.5);
+        m_area.radius = 0.5 * ( glm::length( boundingbox[ max ] - boundingbox[ min ] ) );
     }
     else {
         m_area.center = location();
@@ -392,8 +392,8 @@ smoke_source::update( smoke_particle &Particle, bounding_box &Boundingbox, doubl
     Particle.age += Timedelta;
 
     // update bounding box
-    Boundingbox[ value_limit::min ] = glm::min( Boundingbox[ value_limit::min ], Particle.position - glm::dvec3{ Particle.size } );
-    Boundingbox[ value_limit::max ] = glm::max( Boundingbox[ value_limit::max ], Particle.position + glm::dvec3{ Particle.size } );
+    Boundingbox[ min ] = glm::min( Boundingbox[ min ], Particle.position - glm::dvec3{ Particle.size } );
+    Boundingbox[ max ] = glm::max( Boundingbox[ max ], Particle.position + glm::dvec3{ Particle.size } );
 
     return true;
 }

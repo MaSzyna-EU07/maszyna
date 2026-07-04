@@ -197,8 +197,8 @@ keyboard_input::recall_bindings() {
                     } else if (bindingkeyname == "//") {
                         descriptionStarted = true;
                     } else {
-                            if( bindingkeyname == "shift" ) { keycode |= keymodifier::shift; }
-                        else if( bindingkeyname == "ctrl" )  { keycode |= keymodifier::control; }
+                            if( bindingkeyname == "shift" ) { keycode |= shift; }
+                        else if( bindingkeyname == "ctrl" )  { keycode |= control; }
                         else if( bindingkeyname == "none" )  { keycode = 0; }
                         else {
                             // regular key, convert it to glfw key code
@@ -241,9 +241,9 @@ void keyboard_input::dump_bindings()
 		const int keycode = std::get<int>(binding.second);
 		auto it = keytonamemap.find(keycode & 0xFFFF);
 		if (it != keytonamemap.end()) {
-			if (keycode & keymodifier::control)
+			if (keycode & control)
 				stream << "ctrl ";
-			if (keycode & keymodifier::shift)
+			if (keycode & shift)
 				stream << "shift ";
 
 			stream << it->second;
@@ -294,8 +294,8 @@ keyboard_input::key( int const Key, int const Action ) {
     // include active modifiers for currently pressed key, except if the key is a modifier itself
     auto key =
         Key
-        | ( modifier ? 0 : input::key_shift ? keymodifier::shift : 0 )
-        | ( modifier ? 0 : input::key_ctrl ? keymodifier::control : 0 );
+        | ( modifier ? 0 : input::key_shift ? shift : 0 )
+        | ( modifier ? 0 : input::key_ctrl ? control : 0 );
 
     if( Action == GLFW_RELEASE ) {
         auto const stored = m_modsforkeys.find( Key );
@@ -448,10 +448,10 @@ keyboard_input::binding_hint( user_command const Command ) const {
     if( lookup == keytonamemap.end() ) { return ""; }
 
     std::string hint;
-    if( ( binding & keymodifier::shift ) != 0 ) {
+    if( ( binding & shift ) != 0 ) {
         hint += "SHIFT ";
     }
-    if( ( binding & keymodifier::control ) != 0 ) {
+    if( ( binding & control ) != 0 ) {
         hint += "CTRL ";
     }
     hint += lookup->second;

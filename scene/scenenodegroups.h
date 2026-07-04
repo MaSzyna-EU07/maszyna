@@ -16,7 +16,7 @@ namespace scene {
 
 struct basic_group {
 // members
-    std::vector<scene::basic_node *> nodes;
+    std::vector<basic_node *> nodes;
     std::vector<basic_event *> events;
 };
 
@@ -42,13 +42,13 @@ public:
         handle() const;
     // places provided node in specified group
     void
-        insert( scene::group_handle const Group, scene::basic_node *Node );
+        insert( group_handle const Group, basic_node *Node );
     // places provided event in specified group
     void
-        insert( scene::group_handle const Group, basic_event *Event );
+        insert( group_handle const Group, basic_event *Event );
     // grants direct access to specified group
-    scene::basic_group &
-        group( scene::group_handle const Group ) {
+    basic_group &
+        group( group_handle const Group ) {
             return m_groupmap[ Group ]; }
     // sends basic content of the class in legacy (text) format to provided stream
     void
@@ -56,7 +56,7 @@ public:
 
 private:
 // types
-    using group_map = std::unordered_map<scene::group_handle, scene::basic_group>;
+    using group_map = std::unordered_map<group_handle, basic_group>;
 // methods
     // removes specified group from the group list and group information from the group's nodes
     void
@@ -68,7 +68,7 @@ private:
         assign_cross_switch(map::track_switch&sw, std::string &sw_name, const std::string &id, size_t idx);
 // members
     group_map m_groupmap; // map of established node groups
-    std::stack<scene::group_handle> m_activegroup; // helper, group to be assigned to newly created nodes
+    std::stack<group_handle> m_activegroup; // helper, group to be assigned to newly created nodes
 };
 
 extern node_groups Groups;

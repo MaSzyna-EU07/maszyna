@@ -78,7 +78,7 @@ private:
 // methods
     // imports member data pair from the config file
     bool
-        Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad );
+        Load_mapping( cParser &Input, scratch_data &Scratchpad );
     float
         GetScaledValue() const;
     void

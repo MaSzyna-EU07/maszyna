@@ -1097,10 +1097,10 @@ TSubModel *TSubModel::GetFromName(std::string const &search, bool i)
 	// AnsiString name=AnsiString();
 	std::string search_lc = search;
 	if (i)
-		std::transform(search_lc.begin(), search_lc.end(), search_lc.begin(), ::tolower);
+		std::transform(search_lc.begin(), search_lc.end(), search_lc.begin(), tolower);
 	std::string pName_lc = pName;
 	if (i)
-		std::transform(pName_lc.begin(), pName_lc.end(), pName_lc.begin(), ::tolower);
+		std::transform(pName_lc.begin(), pName_lc.end(), pName_lc.begin(), tolower);
 	if (pName.size() && search.size())
 		if (pName_lc == search_lc)
 			return this;

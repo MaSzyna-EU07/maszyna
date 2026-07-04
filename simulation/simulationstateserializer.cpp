@@ -44,7 +44,7 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
     SafeDelete( Region );
     Region = new scene::basic_region();
 
-    simulation::State.init_scripting_interface();
+    State.init_scripting_interface();
 
 	// NOTE: for the time being import from text format is a given, since we don't have full binary serialization
 	auto state =
@@ -177,7 +177,7 @@ state_serializer::deserialize_isolated( cParser &Input, scene::scratch_data &Scr
     // ...followed by list of its tracks
     while( false == (token = Input.getToken<std::string>()).empty()
         && token != "endisolated" ) {
-        auto *track { simulation::Paths.find( token ) };
+        auto *track { Paths.find( token ) };
         if( track != nullptr )
             track->AddIsolated( groupowner );
         else
@@ -252,7 +252,7 @@ state_serializer::deserialize_atmo( cParser &Input, scene::scratch_data &Scratch
         }
         // overcast drives weather so do a calculation here
         // NOTE: ugly, clean it up when we're done with world refactoring
-        simulation::Environment.compute_weather();
+        Environment.compute_weather();
     }
     while( false == token.empty()
         && token != "endatmo" ) {
@@ -342,7 +342,7 @@ state_serializer::deserialize_event( cParser &Input, scene::scratch_data &Scratc
 
     event->deserialize( Input, Scratchpad );
 
-    if( true == simulation::Events.insert( event ) ) {
+    if( true == Events.insert( event ) ) {
         scene::Groups.insert( scene::Groups.handle(), event );
     }
     else {
@@ -356,7 +356,7 @@ void state_serializer::deserialize_lua( cParser &Input, scene::scratch_data &Scr
        std::string file;
        Input >> file;
 #ifdef WITH_LUA
-       simulation::Lua.interpret(Global.asCurrentSceneryPath + file);
+       Lua.interpret(Global.asCurrentSceneryPath + file);
 #else
        ErrorLog(file + ": lua scripts not supported in this build.");
 #endif
@@ -377,11 +377,11 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
 			
     }
 
-    simulation::Paths.InitTracks();
-    simulation::Traction.InitTraction();
-    simulation::Events.InitEvents();
-    simulation::Events.InitLaunchers();
-    simulation::Memory.InitCells();
+    Paths.InitTracks();
+    Traction.InitTraction();
+    Events.InitEvents();
+    Events.InitLaunchers();
+    Memory.InitCells();
 
 	if (!Scratchpad.time_initialized)
 		init_time();
@@ -390,7 +390,7 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
 }
 
 void state_serializer::init_time() {
-	const auto &time = simulation::Time.data();
+	const auto &time = Time.data();
 	if( true == Global.ScenarioTimeCurrent ) {
 		// calculate time shift required to match scenario time with local clock
 		auto const *localtime = std::gmtime( &Global.starting_timestamp );
@@ -452,22 +452,22 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
             }
         }
 
-        if( false == simulation::Vehicles.insert( vehicle ) ) {
+        if( false == Vehicles.insert( vehicle ) ) {
 
             ErrorLog( "Bad scenario: duplicate vehicle name \"" + vehicle->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
         }
 
         if( vehicle->MoverParameters->CategoryFlag == 1 // trains only
-         && ( (vehicle->LightList(end::front) & (light::headlight_left | light::headlight_right | light::headlight_upper)) != 0
-           || (vehicle->LightList(end::rear) & (light::headlight_left | light::headlight_right | light::headlight_upper)) != 0 ) ) {
-            simulation::Lights.insert( vehicle );
+         && ( (vehicle->LightList(front) & (headlight_left | headlight_right | headlight_upper)) != 0
+           || (vehicle->LightList(rear) & (headlight_left | headlight_right | headlight_upper)) != 0 ) ) {
+            Lights.insert( vehicle );
         }
     }
     else if( nodedata.type == "track" ) {
 
         auto *path { deserialize_path( Input, Scratchpad, nodedata ) };
         // duplicates of named tracks are currently experimentally allowed
-        if( false == simulation::Paths.insert( path ) ) {
+        if( false == Paths.insert( path ) ) {
             ErrorLog( "Bad scenario: duplicate track name \"" + path->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
 /*
             delete path;
@@ -475,7 +475,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
 */
         }
         scene::Groups.insert( scene::Groups.handle(), path );
-        simulation::Region->insert_and_register( path );
+        Region->insert_and_register( path );
     }
     else if( nodedata.type == "traction" ) {
 
@@ -483,11 +483,11 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         // traction loading is optional
         if( traction == nullptr ) { return; }
 
-        if( false == simulation::Traction.insert( traction ) ) {
+        if( false == Traction.insert( traction ) ) {
             ErrorLog( "Bad scenario: duplicate traction piece name \"" + traction->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
         }
         scene::Groups.insert( scene::Groups.handle(), traction );
-        simulation::Region->insert_and_register( traction );
+        Region->insert_and_register( traction );
     }
     else if( nodedata.type == "tractionpowersource" ) {
 
@@ -495,7 +495,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         // traction loading is optional
         if( powersource == nullptr ) { return; }
 
-        if( false == simulation::Powergrid.insert( powersource ) ) {
+        if( false == Powergrid.insert( powersource ) ) {
             ErrorLog( "Bad scenario: duplicate power grid source name \"" + powersource->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
         }
 /*
@@ -516,14 +516,14 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
                 auto const cellcount = instance->TerrainCount() + 1; // zliczenie submodeli
                 for( auto i = 1; i < cellcount; ++i ) {
                     auto *submodel = instance->TerrainSquare( i - 1 );
-                    simulation::Region->insert(
+                    Region->insert(
                         scene::shape_node().convert( submodel ),
                         Scratchpad,
                         false );
                     // if there's more than one group of triangles in the cell they're held as children of the primary submodel
                     submodel = submodel->ChildGet();
                     while( submodel != nullptr ) {
-                        simulation::Region->insert(
+                        Region->insert(
                             scene::shape_node().convert( submodel ),
                             Scratchpad,
                             false );
@@ -553,11 +553,11 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
                 }
             }
 
-            if( false == simulation::Instances.insert( instance ) ) {
+            if( false == Instances.insert( instance ) ) {
                 ErrorLog( "Bad scenario: duplicate 3d model instance name \"" + instance->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
             }
             scene::Groups.insert( scene::Groups.handle(), instance );
-            simulation::Region->insert( instance );
+            Region->insert( instance );
             scene::basic_node *hierarchy_node = instance;
             if (hierarchy_node)
             {   scene::Hierarchy[hierarchy_node->uuid.to_string()] = hierarchy_node;
@@ -579,7 +579,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
 
         if( false == skip ) {
 
-            simulation::Region->insert(
+            Region->insert(
                 scene::shape_node().import(
                     Input, nodedata ),
                 Scratchpad,
@@ -595,7 +595,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
 
         if( false == Scratchpad.binary.terrain ) {
 
-            simulation::Region->insert(
+            Region->insert(
                 scene::lines_node().import(
                     Input, nodedata ),
                 Scratchpad );
@@ -608,38 +608,38 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     else if( nodedata.type == "memcell" ) {
 
         auto *memorycell { deserialize_memorycell( Input, Scratchpad, nodedata ) };
-        if( false == simulation::Memory.insert( memorycell ) ) {
+        if( false == Memory.insert( memorycell ) ) {
             ErrorLog( "Bad scenario: duplicate memory cell name \"" + memorycell->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
         }
         scene::Groups.insert( scene::Groups.handle(), memorycell );
-        simulation::Region->insert( memorycell );
+        Region->insert( memorycell );
     }
     else if( nodedata.type == "eventlauncher" ) {
 
         auto *eventlauncher { deserialize_eventlauncher( Input, Scratchpad, nodedata ) };
-        if( false == simulation::Events.insert( eventlauncher ) ) {
+        if( false == Events.insert( eventlauncher ) ) {
             ErrorLog( "Bad scenario: duplicate event launcher name \"" + eventlauncher->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
         }
             // event launchers can be either global, or local with limited range of activation
             // each gets assigned different caretaker
         if( true == eventlauncher->IsGlobal() ) {
-            simulation::Events.queue( eventlauncher );
+            Events.queue( eventlauncher );
         }
         else {
             scene::Groups.insert( scene::Groups.handle(), eventlauncher );
             if( false == eventlauncher->IsRadioActivated() ) {
                 // NOTE: radio-activated launchers due to potentially large activation radius are resolved on global level rather than put in a region cell
-                simulation::Region->insert( eventlauncher );
+                Region->insert( eventlauncher );
             }
         }
     }
     else if( nodedata.type == "sound" ) {
 
         auto *sound { deserialize_sound( Input, Scratchpad, nodedata ) };
-        if( false == simulation::Sounds.insert( sound ) ) {
+        if( false == Sounds.insert( sound ) ) {
             ErrorLog( "Bad scenario: duplicate sound node name \"" + sound->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
         }
-        simulation::Region->insert( sound );
+        Region->insert( sound );
     }
 
 }
@@ -740,7 +740,7 @@ state_serializer::deserialize_time( cParser &Input, scene::scratch_data &Scratch
     // current scenario time
     cParser timeparser( Input.getToken<std::string>() );
     timeparser.getTokens( 2, false, ":" );
-    auto &time = simulation::Time.data();
+    auto &time = Time.data();
     timeparser
         >> time.wHour
         >> time.wMinute;
@@ -875,12 +875,12 @@ state_serializer::deserialize_endtrainset( cParser &Input, scene::scratch_data &
                 0,
                 nullptr );
     }
-    if( Scratchpad.trainset.couplings.back() == coupling::faux ) {
+    if( Scratchpad.trainset.couplings.back() == faux ) {
         // jeśli ostatni pojazd ma sprzęg 0 to założymy mu końcówki blaszane (jak AI się odpali, to sobie poprawi)
         // place end signals only on trains without a driver, activate markers otherwise
         Scratchpad.trainset.vehicles.back()->RaLightsSet(
             -1,
-            Scratchpad.trainset.driver != nullptr ? light::redmarker_left | light::redmarker_right | light::rearendsignals : light::rearendsignals );
+            Scratchpad.trainset.driver != nullptr ? redmarker_left | redmarker_right | rearendsignals : rearendsignals );
     }
     // all done
     Scratchpad.trainset.is_open = false;
@@ -1022,12 +1022,12 @@ state_serializer::deserialize_dynamic( cParser &Input, scene::scratch_data &Scra
     auto coupling = couplingdatawithparams != std::string::npos ? std::atoi(couplingdata.substr(0, couplingdatawithparams).c_str()) : std::atoi(couplingdata.c_str());
     if( coupling < 0 ) {
         // sprzęg zablokowany (pojazdy nierozłączalne przy manewrach)
-        coupling = -coupling | coupling::permanent;
+        coupling = -coupling | permanent;
     }
     if( offset != -1.0
      && std::abs(offset) > 0.5 ) { // maksymalna odległość między sprzęgami - do przemyślenia
         // likwidacja sprzęgu, jeśli odległość zbyt duża - to powinno być uwzględniane w fizyce sprzęgów...
-        coupling = coupling::faux; 
+        coupling = faux; 
     }
     auto const params = couplingdatawithparams != std::string::npos ? couplingdata.substr(couplingdatawithparams + 1) : "";
     // load amount and type
@@ -1039,7 +1039,7 @@ state_serializer::deserialize_dynamic( cParser &Input, scene::scratch_data &Scra
         loadtype = "";
     }
 
-    auto *path = simulation::Paths.find( pathname );
+    auto *path = Paths.find( pathname );
     if( path == nullptr ) {
 
         ErrorLog( "Bad scenario: vehicle \"" + Nodedata.name + "\" placed on nonexistent path \"" + pathname + "\" in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
@@ -1076,8 +1076,8 @@ state_serializer::deserialize_dynamic( cParser &Input, scene::scratch_data &Scra
         Scratchpad.trainset.offset -= length;
         // automatically establish permanent connections for couplers which specify them in their definitions
         if( coupling != 0
-         && vehicle->MoverParameters->Couplers[(offset == -1.0 ? end::front : end::rear)].AllowedFlag & coupling::permanent ) {
-            coupling |= coupling::permanent;
+         && vehicle->MoverParameters->Couplers[(offset == -1.0 ? front : rear)].AllowedFlag & permanent ) {
+            coupling |= permanent;
         }
         if( true == Scratchpad.trainset.is_open ) {
             Scratchpad.trainset.vehicles.emplace_back( vehicle );
@@ -1337,8 +1337,8 @@ TAnimModel *state_serializer::create_model(const std::string &src, const std::st
 
 	cloned->mark_dirty();
 	cloned->location(position);
-	simulation::Instances.insert(cloned);
-	simulation::Region->insert(cloned);
+	Instances.insert(cloned);
+	Region->insert(cloned);
 
 	return cloned;
 }
@@ -1362,10 +1362,10 @@ TEventLauncher *state_serializer::create_eventlauncher(const std::string &src, c
 	if (!launcher)
 		return nullptr;
 
-	launcher->Event1 = simulation::Events.FindEvent( launcher->asEvent1Name );
+	launcher->Event1 = Events.FindEvent( launcher->asEvent1Name );
 	launcher->location(position);
-	simulation::Events.insert(launcher);
-	simulation::Region->insert(launcher);
+	Events.insert(launcher);
+	Region->insert(launcher);
 
 	return launcher;
 }

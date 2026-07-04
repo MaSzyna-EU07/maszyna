@@ -59,7 +59,7 @@ cParser::cParser(std::string const &Stream, buffertype const Type, std::string P
     : allowRandomIncludes(allowRandom), LoadTraction(Loadtraction), mPath(Path)
 {
 	// store to calculate sub-sequent includes from relative path
-	if (Type == buffertype::buffer_FILE)
+	if (Type == buffer_FILE)
 	{
 		mFile = Stream;
 	}

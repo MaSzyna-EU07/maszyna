@@ -107,17 +107,17 @@ public:
     void
         mode( GLuint const Mode ) {
             switch( Mode ) {
-                case GL_MODELVIEW:  { m_mode = stack_mode::gl_modelview; break; }
-                case GL_PROJECTION: { m_mode = stack_mode::gl_projection; break; }
-                case GL_TEXTURE:    { m_mode = stack_mode::gl_texture; break; }
+                case GL_MODELVIEW:  { m_mode = gl_modelview; break; }
+                case GL_PROJECTION: { m_mode = gl_projection; break; }
+                case GL_TEXTURE:    { m_mode = gl_texture; break; }
                 default:            { break; } }
             if( m_upload ) {::glMatrixMode( Mode ); } }
     glm::mat4 const &
         data( GLuint const Mode = -1 ) const {
             switch( Mode ) {
-                case GL_MODELVIEW:  { return m_stacks[ stack_mode::gl_modelview ].data(); }
-                case GL_PROJECTION: { return m_stacks[ stack_mode::gl_projection ].data(); }
-                case GL_TEXTURE:    { return m_stacks[ stack_mode::gl_texture ].data(); }
+                case GL_MODELVIEW:  { return m_stacks[ gl_modelview ].data(); }
+                case GL_PROJECTION: { return m_stacks[ gl_projection ].data(); }
+                case GL_TEXTURE:    { return m_stacks[ gl_texture ].data(); }
                 default:            { return m_stacks[ m_mode ].data(); } } }
     float const *
         data_array( GLuint const Mode = -1 ) const {
@@ -207,7 +207,7 @@ public:
 
 private:
 // members:
-    stack_mode m_mode{ stack_mode::gl_projection };
+    stack_mode m_mode{ gl_projection };
     openglstack_array m_stacks;
     bool m_upload { true };
 };

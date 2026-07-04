@@ -81,24 +81,24 @@ state_manager::init_scripting_interface() {
             0, -1,
             "__simulation.weather",
             "memcell" } );
-        simulation::Memory.insert( memorycell );
-        simulation::Region->insert( memorycell );
+        Memory.insert( memorycell );
+        Region->insert( memorycell );
     }
     {
         auto *memorycell = new TMemCell( {
             0, -1,
             "__simulation.time",
             "memcell" } );
-        simulation::Memory.insert( memorycell );
-        simulation::Region->insert( memorycell );
+        Memory.insert( memorycell );
+        Region->insert( memorycell );
     }
     {
         auto *memorycell = new TMemCell( {
             0, -1,
             "__simulation.date",
             "memcell" } );
-        simulation::Memory.insert( memorycell );
-        simulation::Region->insert( memorycell );
+        Memory.insert( memorycell );
+        Region->insert( memorycell );
     }
 }
 
@@ -112,15 +112,15 @@ state_manager::update( double const Deltatime, int Iterationcount ) {
     // NOTE: we perform animations first, as they can determine factors like contact with powergrid
     TAnimModel::AnimUpdate( totaltime ); // wykonanie zakolejkowanych animacji
 
-    simulation::Powergrid.update( totaltime );
-    simulation::Vehicles.update( Deltatime, Iterationcount );
+    Powergrid.update( totaltime );
+    Vehicles.update( Deltatime, Iterationcount );
 }
 
 void
 state_manager::update_clocks() {
 
     // Ra 2014-07: przeliczenie kąta czasu (do animacji zależnych od czasu)
-    auto const &time = simulation::Time.data();
+    auto const &time = Time.data();
     Global.fTimeAngleDeg = time.wHour * 15.0 + time.wMinute * 0.25 + (time.wSecond + 0.001 * time.wMilliseconds) / 240.0;
     Global.fClockAngleDeg[ 0 ] = 36.0 * ( time.wSecond % 10 ); // jednostki sekund
     Global.fClockAngleDeg[ 1 ] = 36.0 * ( time.wSecond / 10 ); // dziesiątki sekund
@@ -137,11 +137,11 @@ state_manager::update_scripting_interface() {
     auto *time{ Memory.find( "__simulation.time" ) };
     auto *date{ Memory.find( "__simulation.date" ) };
 
-    if( simulation::is_ready ) {
+    if( is_ready ) {
         // potentially adjust weather
         if( weather->Value1() != m_scriptinginterface.weather->Value1() ) {
             Global.Overcast = std::clamp( (float)weather->Value1(), 0.f, 2.f );
-            simulation::Environment.compute_weather();
+            Environment.compute_weather();
         }
         if( weather->Value2() != m_scriptinginterface.weather->Value2() ) {
 			Global.fFogEnd = std::clamp( (float)weather->Value2(), 10.f, 25000.f );
@@ -182,7 +182,7 @@ void state_manager::process_commands() {
 	command_data commanddata;
 	while( Commands.pop( commanddata, (uint32_t)command_target::simulation )) {
 		if (commanddata.command == user_command::consistreleaser) {
-			TDynamicObject *found_vehicle = simulation::Vehicles.find(commanddata.payload);
+			TDynamicObject *found_vehicle = Vehicles.find(commanddata.payload);
 			TDynamicObject *vehicle = found_vehicle;
 
 			while (vehicle) {
@@ -232,15 +232,15 @@ void state_manager::process_commands() {
                 continue;
 
             // NOTE: because malformed scenario can have vehicle name duplicates we first try to locate vehicle in world, with name search as fallback
-			auto targetvehicle = std::get<TDynamicObject *>( simulation::Region->find_vehicle( commanddata.location, 50, false, false ) );
+			auto targetvehicle = std::get<TDynamicObject *>( Region->find_vehicle( commanddata.location, 50, false, false ) );
             if( targetvehicle == nullptr || targetvehicle->name() != commanddata.payload ) {
-                targetvehicle = simulation::Vehicles.find( commanddata.payload );
+                targetvehicle = Vehicles.find( commanddata.payload );
             }
 
 			if (!targetvehicle)
 				continue;
 
-            auto *senderlocaltrain { simulation::Trains.find_id( static_cast<std::uint16_t>( commanddata.param2 ) ) };
+            auto *senderlocaltrain { Trains.find_id( static_cast<std::uint16_t>( commanddata.param2 ) ) };
             if( senderlocaltrain  ) {
                 auto *currentvehicle { senderlocaltrain->Dynamic() };
                 auto const samevehicle { currentvehicle == targetvehicle };
@@ -270,14 +270,14 @@ void state_manager::process_commands() {
                 }
             }
 
-            auto *train { simulation::Trains.find( targetvehicle->name() ) };
+            auto *train { Trains.find( targetvehicle->name() ) };
 
             if (train)
                 continue;
 
 			train = new TTrain();
 			if (train->Init(targetvehicle)) {
-				simulation::Trains.insert(train);
+				Trains.insert(train);
 			}
 			else {
 				delete train;
@@ -301,7 +301,7 @@ void state_manager::process_commands() {
 			basic_event *ev = Events.FindEvent(event_name);
 			TDynamicObject *vehicle = nullptr;
 			if (!vehicle_name.empty())
-				vehicle = simulation::Vehicles.find(vehicle_name);
+				vehicle = Vehicles.find(vehicle_name);
 
 			if (ev)
 				Events.AddToQuery(ev, vehicle);
@@ -310,7 +310,7 @@ void state_manager::process_commands() {
 		if (commanddata.command == user_command::setlight) {
 			int light = std::round(commanddata.param1);
 			float state = commanddata.param2;
-			TAnimModel *model = simulation::Instances.find(commanddata.payload);
+			TAnimModel *model = Instances.find(commanddata.payload);
 			if (model)
 				model->LightSet(light, state);
 		}
@@ -318,29 +318,29 @@ void state_manager::process_commands() {
 		if (commanddata.command == user_command::setdatetime) {
 			int yearday = std::round(commanddata.param1);
 			int minute = std::round(commanddata.param2);
-			simulation::Time.set_time(yearday, minute);
+			Time.set_time(yearday, minute);
 
             auto const weather { Global.Weather };
-            simulation::Environment.compute_season(yearday);
+            Environment.compute_season(yearday);
             if( weather != Global.Weather ) {
                 // HACK: force re-calculation of precipitation
                 Global.Overcast = std::clamp( Global.Overcast - 0.0001f, 0.0f, 2.0f );
             }
 
-            simulation::Environment.update_moon();
+            Environment.update_moon();
         }
 
 		if (commanddata.command == user_command::setweather) {
 			Global.fFogEnd = commanddata.param1;
 			Global.Overcast = commanddata.param2;
 
-			simulation::Environment.compute_weather();
+			Environment.compute_weather();
 		}
 
 		if (commanddata.command == user_command::settemperature) {
 			Global.AirTemperature = commanddata.param1;
 			Global.Overcast = commanddata.param2;
-			simulation::Environment.compute_weather();
+			Environment.compute_weather();
 		}
 
 		if (commanddata.command == user_command::insertmodel) {
@@ -351,21 +351,21 @@ void state_manager::process_commands() {
 			std::getline(ss, name, ':');
 			std::getline(ss, data, ':');
 
-			TAnimModel *model = simulation::State.create_model(data, name, commanddata.location);
-            simulation::State.create_eventlauncher("node -1 0 launcher eventlauncher 0 0 0 0.8 none -10000.0 obstacle_collision traintriggered end", name + "_snd", commanddata.location);
+			TAnimModel *model = State.create_model(data, name, commanddata.location);
+            State.create_eventlauncher("node -1 0 launcher eventlauncher 0 0 0 0.8 none -10000.0 obstacle_collision traintriggered end", name + "_snd", commanddata.location);
 		}
 
 		if (commanddata.command == user_command::deletemodel) {
-			simulation::State.delete_model(simulation::Instances.find(commanddata.payload));
-			simulation::State.delete_eventlauncher(simulation::Events.FindEventlauncher(commanddata.payload + "_snd"));
+			State.delete_model(Instances.find(commanddata.payload));
+			State.delete_eventlauncher(Events.FindEventlauncher(commanddata.payload + "_snd"));
 		}
 
 		if (commanddata.command == user_command::globalradiostop) {
-			simulation::Region->RadioStop( commanddata.location );
+			Region->RadioStop( commanddata.location );
 		}
 
 		if (commanddata.command == user_command::resetconsist) {
-			TDynamicObject *found_vehicle = simulation::Vehicles.find(commanddata.payload);
+			TDynamicObject *found_vehicle = Vehicles.find(commanddata.payload);
 			TDynamicObject *vehicle = found_vehicle;
 
 			while (vehicle) {
@@ -404,12 +404,12 @@ void state_manager::process_commands() {
 		}
 
 		if (commanddata.command == user_command::fillcompressor) {
-			TDynamicObject *vehicle = simulation::Vehicles.find(commanddata.payload);
+			TDynamicObject *vehicle = Vehicles.find(commanddata.payload);
 			vehicle->MoverParameters->CompressedVolume = 8.0f * vehicle->MoverParameters->VeselVolume;
 		}
 
 		if (commanddata.command == user_command::dynamicmove) {
-			TDynamicObject *vehicle = simulation::Vehicles.find(commanddata.payload);
+			TDynamicObject *vehicle = Vehicles.find(commanddata.payload);
 			if (vehicle)
 				vehicle->move_set(commanddata.param1);
 		}
@@ -422,8 +422,8 @@ void state_manager::process_commands() {
 			std::getline(ss, vehicle_name, '%');
 			std::getline(ss, track_name, '%');
 
-			TTrack *track = simulation::Paths.find(track_name);
-			TDynamicObject *vehicle = simulation::Vehicles.find(vehicle_name);
+			TTrack *track = Paths.find(track_name);
+			TDynamicObject *vehicle = Vehicles.find(vehicle_name);
 
 			while (vehicle) {
 				if (vehicle->Next())
@@ -446,7 +446,7 @@ void state_manager::process_commands() {
 		}
 
 		if (commanddata.command == user_command::pullalarmchain) {
-			TDynamicObject *vehicle = simulation::Vehicles.find(commanddata.payload);
+			TDynamicObject *vehicle = Vehicles.find(commanddata.payload);
 			if (vehicle)
 				vehicle->MoverParameters->AlarmChainSwitch(true);
 		}
@@ -459,7 +459,7 @@ void state_manager::process_commands() {
 			std::getline(ss, vehicle_name, '%');
 			std::getline(ss, command, '%');
 
-			TDynamicObject *vehicle = simulation::Vehicles.find(vehicle_name);
+			TDynamicObject *vehicle = Vehicles.find(vehicle_name);
 			glm::dvec3 location = commanddata.location;
 			if (vehicle && vehicle->Mechanik)
 				vehicle->Mechanik->PutCommand(command, commanddata.param1, commanddata.param2, &location);

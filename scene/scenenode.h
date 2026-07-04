@@ -83,7 +83,7 @@ public:
     struct shapenode_data {
     // members:
         // placement and visibility
-        scene::bounding_area area; // bounding area, in world coordinates
+        bounding_area area; // bounding area, in world coordinates
         double rangesquared_min { 0.0 }; // visibility range, min
         double rangesquared_max { 0.0 }; // visibility range, max
         bool visible { true }; // visibility flag
@@ -114,7 +114,7 @@ public:
         deserialize( std::istream &Input );
     // restores content of the node from provided input stream
     shape_node &
-        import( cParser &Input, scene::node_data const &Nodedata );
+        import( cParser &Input, node_data const &Nodedata );
     // imports data from provided submodel
     shape_node &
         convert( TSubModel const *Submodel );
@@ -193,7 +193,7 @@ public:
     struct linesnode_data {
     // members:
         // placement and visibility
-        scene::bounding_area area; // bounding area, in world coordinates
+        bounding_area area; // bounding area, in world coordinates
         double rangesquared_min { 0.0 }; // visibility range, min
         double rangesquared_max { 0.0 }; // visibility range, max
         bool visible { true }; // visibility flag
@@ -223,7 +223,7 @@ public:
         deserialize( std::istream &Input );
     // restores content of the node from provided input stream
     lines_node &
-        import( cParser &Input, scene::node_data const &Nodedata );
+        import( cParser &Input, node_data const &Nodedata );
     // adds content of provided node to already enclosed geometry. returns: true if merge could be performed
     bool
         merge( lines_node &Lines );
@@ -325,7 +325,7 @@ class basic_node {
 
 public:
 // constructor
-    explicit basic_node( scene::node_data const &Nodedata );
+    explicit basic_node( node_data const &Nodedata );
 // destructor
     virtual ~basic_node() = default;
 // methods
@@ -356,8 +356,8 @@ public:
     bool
         visible() const;
     void
-        group( scene::group_handle Group );
-    scene::group_handle
+        group( group_handle Group );
+    group_handle
         group() const;
 	void
 	    mark_dirty() { m_dirty = true; }
@@ -368,8 +368,8 @@ public:
 
 public:
 // members
-    scene::group_handle m_group { null_handle }; // group this node belongs to, if any
-    scene::bounding_area m_area;
+    group_handle m_group { null_handle }; // group this node belongs to, if any
+    bounding_area m_area;
     double m_rangesquaredmin { 0.0 }; // visibility range, min
     double m_rangesquaredmax { 0.0 }; // visibility range, max
     bool m_visible { true }; // visibility flag
@@ -433,12 +433,12 @@ basic_node::visible() const {
 
 inline
 void
-basic_node::group( scene::group_handle Group ) {
+basic_node::group( group_handle Group ) {
     m_group = Group;
 }
 
 inline
-scene::group_handle
+group_handle
 basic_node::group() const {
     return m_group;
 }

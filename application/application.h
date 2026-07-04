@@ -59,7 +59,7 @@ public:
     bool
         pop_mode();
     bool
-        push_mode( eu07_application::mode const Mode );
+        push_mode( mode const Mode );
     void
         set_title( std::string const &Title );
     void
@@ -96,7 +96,7 @@ public:
 
 private:
 // types
-    using modeptr_array = std::array<std::shared_ptr<application_mode>, static_cast<std::size_t>( mode::count_ )>;
+    using modeptr_array = std::array<std::shared_ptr<application_mode>, static_cast<std::size_t>( count_ )>;
     using mode_stack = std::stack<mode>;
 // methods
 	  bool needs_ogl() const;

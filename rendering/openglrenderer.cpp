@@ -85,14 +85,14 @@ opengl_renderer::Init( GLFWwindow *Window ) {
     // setup lighting
     ::glLightModelfv( GL_LIGHT_MODEL_AMBIENT, glm::value_ptr(m_baseambient) );
     ::glEnable( GL_LIGHTING );
-    ::glEnable( opengl_renderer::sunlight );
+    ::glEnable( sunlight );
 
     // rgb value for 5780 kelvin
     Global.DayLight.diffuse[ 0 ] = 255.0f / 255.0f;
     Global.DayLight.diffuse[ 1 ] = 242.0f / 255.0f;
     Global.DayLight.diffuse[ 2 ] = 231.0f / 255.0f;
     Global.DayLight.is_directional = true;
-    m_sunlight.id = opengl_renderer::sunlight;
+    m_sunlight.id = sunlight;
     //    ::glLightf( opengl_renderer::sunlight, GL_SPOT_CUTOFF, 90.0f );
 
     // create dynamic light pool
@@ -767,16 +767,16 @@ bool opengl_renderer::Render_interior( bool const Alpha ) {
         glm::dvec3 const originoffset { dynamic->vPosition - m_renderpass.camera.position() };
         float const squaredistance{ glm::length2( glm::vec3{ originoffset } / Global.ZoomFactor ) };
         dynamics.emplace_back( squaredistance, dynamic );
-        dynamic = dynamic->Next( coupling::permanent );
+        dynamic = dynamic->Next( permanent );
     }
     // draw also interiors of permanently coupled vehicles in front, if there's any
-    dynamic = simulation::Train->Dynamic()->Prev( coupling::permanent );
+    dynamic = simulation::Train->Dynamic()->Prev( permanent );
     while( dynamic != nullptr ) {
 
         glm::dvec3 const originoffset { dynamic->vPosition - m_renderpass.camera.position() };
         float const squaredistance{ glm::length2( glm::vec3{ originoffset } / Global.ZoomFactor ) };
         dynamics.emplace_back( squaredistance, dynamic );
-        dynamic = dynamic->Prev( coupling::permanent );
+        dynamic = dynamic->Prev( permanent );
     }
     if( Alpha ) {
         std::sort(
@@ -869,9 +869,9 @@ bool opengl_renderer::Render_coupler_adapter( TDynamicObject *Dynamic, float con
     auto const position { glm::dvec3 {
         0.f,
         Dynamic->MoverParameters->Couplers[ End ].adapter_height,
-        ( Dynamic->MoverParameters->Couplers[ End ].adapter_length + Dynamic->MoverParameters->Dim.L * 0.5 ) * ( End == end::front ? 1 : -1 ) } };
+        ( Dynamic->MoverParameters->Couplers[ End ].adapter_length + Dynamic->MoverParameters->Dim.L * 0.5 ) * ( End == front ? 1 : -1 ) } };
 
-    auto const angle{ glm::vec3{ 0, ( End == end::front ? 0 : 180 ), 0 } };
+    auto const angle{ glm::vec3{ 0, ( End == front ? 0 : 180 ), 0 } };
 
     if( Alpha ) {
         Render_Alpha( Dynamic->m_coupleradapters[ End ], Dynamic->Material(), Squaredistance, position, angle );
@@ -1203,7 +1203,7 @@ opengl_renderer::setup_units( bool const Diffuse, bool const Shadows, bool const
             }
             else {
                 // ...otherwise fallback on static spherical image
-                m_textures.bind( textureunit::helper, m_reflectiontexture );
+                m_textures.bind( helper, m_reflectiontexture );
                 ::glEnable( GL_TEXTURE_2D );
             }
         }
@@ -2509,8 +2509,8 @@ opengl_renderer::Render( TDynamicObject *Dynamic ) {
                 Render( attachment, Dynamic->Material(), squaredistance );
             }
             // optional coupling adapters
-            Render_coupler_adapter( Dynamic, squaredistance, end::front );
-            Render_coupler_adapter( Dynamic, squaredistance, end::rear );
+            Render_coupler_adapter( Dynamic, squaredistance, front );
+            Render_coupler_adapter( Dynamic, squaredistance, rear );
             // post-render cleanup
             m_renderspecular = false;
             if( Dynamic->fShade > 0.0f ) {
@@ -2536,8 +2536,8 @@ opengl_renderer::Render( TDynamicObject *Dynamic ) {
                 Render( attachment, Dynamic->Material(), squaredistance );
             }
             // optional coupling adapters
-            Render_coupler_adapter( Dynamic, squaredistance, end::front );
-            Render_coupler_adapter( Dynamic, squaredistance, end::rear );
+            Render_coupler_adapter( Dynamic, squaredistance, front );
+            Render_coupler_adapter( Dynamic, squaredistance, rear );
             if( Dynamic->mdLoad ) {
                 // renderowanie nieprzezroczystego ładunku
                 Render( Dynamic->mdLoad, Dynamic->Material(), squaredistance, { 0.f, Dynamic->LoadOffset, 0.f }, {} );
@@ -3713,8 +3713,8 @@ opengl_renderer::Render_Alpha( TDynamicObject *Dynamic ) {
         Render_Alpha( attachment, Dynamic->Material(), squaredistance );
     }
     // optional coupling adapters
-    Render_coupler_adapter( Dynamic, squaredistance, end::front, true );
-    Render_coupler_adapter( Dynamic, squaredistance, end::rear, true );
+    Render_coupler_adapter( Dynamic, squaredistance, front, true );
+    Render_coupler_adapter( Dynamic, squaredistance, rear, true );
     if( Dynamic->mdLoad ) {
         // renderowanie nieprzezroczystego ładunku
         Render_Alpha( Dynamic->mdLoad, Dynamic->Material(), squaredistance, { 0.f, Dynamic->LoadOffset, 0.f }, {} );
@@ -4522,7 +4522,7 @@ std::unique_ptr<gfx_renderer> opengl_renderer::create_func()
     return std::unique_ptr<gfx_renderer>(new opengl_renderer());
 }
 
-bool opengl_renderer::renderer_register = gfx_renderer_factory::get_instance()->register_backend("legacy", opengl_renderer::create_func);
+bool opengl_renderer::renderer_register = gfx_renderer_factory::get_instance()->register_backend("legacy", create_func);
 
 bool opengl_renderer::opengl_imgui_renderer::Init()
 {

@@ -79,7 +79,7 @@ private:
 
 // methods:
 	void
-        normalize_plane( cFrustum::side const Side );	// normalizes a plane (A side) from the frustum
+        normalize_plane( side const Side );	// normalizes a plane (A side) from the frustum
 
 // members:
 	float m_frustum[6][4]; // holds the A B C and D values (normal & distance) for each side of the frustum.

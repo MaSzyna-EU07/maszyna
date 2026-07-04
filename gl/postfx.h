@@ -10,9 +10,9 @@ namespace gl
     class postfx
     {
     private:
-        gl::program program;
-        static std::shared_ptr<gl::shader> vertex;
-        static std::shared_ptr<gl::vao> vao;
+        program program;
+        static std::shared_ptr<shader> vertex;
+        static std::shared_ptr<vao> vao;
 
     public:
         postfx(const std::string &s);

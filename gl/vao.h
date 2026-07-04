@@ -10,7 +10,7 @@ namespace gl
     {
 		struct attrib_params {
 			// TBD: should be shared_ptr? (when buffer is destroyed by owner VAO could still potentially exist)
-			gl::buffer &buffer;
+			buffer &buffer;
 
 			int attrib;
 			int size;

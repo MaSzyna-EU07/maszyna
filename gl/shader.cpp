@@ -226,7 +226,7 @@ void gl::shader::parse_texture_entries(std::string &str)
         {
             if (name.empty())
                 log_error("empty name");
-            else if (conf.id >= gl::MAX_TEXTURES)
+            else if (conf.id >= MAX_TEXTURES)
                 log_error("invalid texture binding: " + std::to_string(conf.id));
             else
                 texture_conf.emplace(std::make_pair(name, conf));
@@ -283,7 +283,7 @@ void gl::shader::parse_param_entries(std::string &str)
         {
             if (name.empty())
                 log_error("empty name");
-            else if (conf.location >= gl::MAX_PARAMS)
+            else if (conf.location >= MAX_PARAMS)
                 log_error("invalid param binding: " + std::to_string(conf.location));
             else if (conf.offset > 3)
                 log_error("invalid offset: " + std::to_string(conf.offset));
@@ -346,9 +346,9 @@ void gl::program::init()
         glUniform1i(loc, e.id);
     }
 
-    glUniform1i(glGetUniformLocation(*this, "shadowmap"), gl::SHADOW_TEX);
-    glUniform1i(glGetUniformLocation(*this, "envmap"), gl::ENV_TEX);
-    glUniform1i(glGetUniformLocation(*this, "headlightmap"), gl::HEADLIGHT_TEX);
+    glUniform1i(glGetUniformLocation(*this, "shadowmap"), SHADOW_TEX);
+    glUniform1i(glGetUniformLocation(*this, "envmap"), ENV_TEX);
+    glUniform1i(glGetUniformLocation(*this, "headlightmap"), HEADLIGHT_TEX);
 
 	GLuint index;
 
@@ -370,14 +370,14 @@ gl::program::program()
     **this = glCreateProgram();
 }
 
-gl::program::program(std::vector<std::reference_wrapper<const gl::shader>> shaders) : program()
+gl::program::program(std::vector<std::reference_wrapper<const shader>> shaders) : program()
 {
-    for (const gl::shader &s : shaders)
+    for (const shader &s : shaders)
         attach(s);
     link();
 }
 
-void gl::program::attach(const gl::shader &s)
+void gl::program::attach(const shader &s)
 {
     for (auto it : s.texture_conf)
         texture_conf.emplace(std::make_pair(it.first, std::move(it.second)));

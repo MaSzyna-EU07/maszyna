@@ -218,7 +218,7 @@ class TTrain {
     void update_sounds_radio();
     inline
     end cab_to_end( int const End ) const {
-        return End == 2 ? end::rear : end::front; }
+        return End == 2 ? rear : front; }
     inline
     end cab_to_end() const {
         return cab_to_end( iCabn ); }

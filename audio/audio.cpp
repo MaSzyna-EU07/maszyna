@@ -97,20 +97,20 @@ buffer_manager::~buffer_manager() {
 
     for( auto &buffer : m_buffers ) {
         if( buffer.id != null_resource ) {
-            ::alDeleteBuffers( 1, &buffer.id );
+            alDeleteBuffers( 1, &buffer.id );
         }
     }
 }
 
 // creates buffer object out of data stored in specified file. returns: handle to the buffer or null_handle if creation failed
-audio::buffer_handle
+buffer_handle
 buffer_manager::create( std::string const &Filename ) {
 
     auto filename { ToLower( Filename ) };
 
     erase_extension( filename );
 
-    audio::buffer_handle lookup { null_handle };
+    buffer_handle lookup { null_handle };
     std::string filelookup;
     if( false == Global.asCurrentDynamicPath.empty() ) {
         // try dynamic-specific sounds first
@@ -149,14 +149,14 @@ buffer_manager::create( std::string const &Filename ) {
 }
 
 // provides direct access to a specified buffer
-audio::openal_buffer const &
-buffer_manager::buffer( audio::buffer_handle const Buffer ) const {
+openal_buffer const &
+buffer_manager::buffer( buffer_handle const Buffer ) const {
 
     return m_buffers[ Buffer ];
 }
 
 // places in the bank a buffer containing data stored in specified file. returns: handle to the buffer
-audio::buffer_handle
+buffer_handle
 buffer_manager::emplace( std::string Filename ) {
 
     buffer_handle const handle { m_buffers.size() };
@@ -171,7 +171,7 @@ buffer_manager::emplace( std::string Filename ) {
     return handle;
 }
 
-audio::buffer_handle
+buffer_handle
 buffer_manager::find_buffer( std::string const &Buffername ) const {
 
     auto const lookup = m_buffermappings.find( Buffername );

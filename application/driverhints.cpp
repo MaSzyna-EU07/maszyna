@@ -268,48 +268,48 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
         }
         case driver_hint::frontpantographvalveon: {
             if( AIControllFlag ) {
-                mvOccupied->OperatePantographValve( end::front, operation_t::enable );
+                mvOccupied->OperatePantographValve( front, operation_t::enable );
             }
             remove_hint( driver_hint::frontpantographvalveoff );
             hint(
                 Action,
                 [ this ]( float const Parameter ) -> bool {
-                    return mvPantographUnit->Pantographs[end::front].valve.is_active == true || (Parameter > 0 && mvOccupied->Vel > Parameter); },
+                    return mvPantographUnit->Pantographs[front].valve.is_active == true || (Parameter > 0 && mvOccupied->Vel > Parameter); },
                 Actionparameter );
             break;
         }
         case driver_hint::frontpantographvalveoff: {
             if( AIControllFlag ) {
-                mvOccupied->OperatePantographValve( end::front, operation_t::disable );
+                mvOccupied->OperatePantographValve( front, operation_t::disable );
             }
             remove_hint( driver_hint::frontpantographvalveon );
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return mvPantographUnit->Pantographs[end::front].valve.is_active == false; } );
+                    return mvPantographUnit->Pantographs[front].valve.is_active == false; } );
             break;
         }
         case driver_hint::rearpantographvalveon: {
             if( AIControllFlag ) {
-                mvOccupied->OperatePantographValve( end::rear, operation_t::enable );
+                mvOccupied->OperatePantographValve( rear, operation_t::enable );
             }
             remove_hint( driver_hint::rearpantographvalveoff );
             hint(
                 Action,
                 [ this ]( float const Parameter ) -> bool {
-                    return mvPantographUnit->Pantographs[end::rear].valve.is_active == true || (Parameter > 0 && mvOccupied->Vel > Parameter); },
+                    return mvPantographUnit->Pantographs[rear].valve.is_active == true || (Parameter > 0 && mvOccupied->Vel > Parameter); },
                 Actionparameter );
             break;
         }
         case driver_hint::rearpantographvalveoff: {
             if( AIControllFlag ) {
-                mvOccupied->OperatePantographValve( end::rear, operation_t::disable );
+                mvOccupied->OperatePantographValve( rear, operation_t::disable );
             }
             remove_hint( driver_hint::rearpantographvalveon );
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return mvPantographUnit->Pantographs[end::rear].valve.is_active == false; } );
+                    return mvPantographUnit->Pantographs[rear].valve.is_active == false; } );
             break;
         }
         // converter
@@ -338,7 +338,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
         // relays
         case driver_hint::primaryconverteroverloadreset: {
             if( AIControllFlag ) {
-                mvOccupied->RelayReset( relay_t::primaryconverteroverload );
+                mvOccupied->RelayReset( primaryconverteroverload );
             }
             hint(
                 Action,
@@ -348,7 +348,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
         }
         case driver_hint::maincircuitgroundreset: {
             if( AIControllFlag ) {
-                mvOccupied->RelayReset( relay_t::maincircuitground );
+                mvOccupied->RelayReset( maincircuitground );
             }
             hint(
                 Action,
@@ -358,7 +358,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
         }
         case driver_hint::tractionnmotoroverloadreset: {
             if( AIControllFlag ) {
-                mvOccupied->RelayReset( relay_t::tractionnmotoroverload );
+                mvOccupied->RelayReset( tractionnmotoroverload );
             }
             hint(
                 Action,
@@ -415,27 +415,27 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
         }
         case driver_hint::frontmotorblowerson: {
             if( AIControllFlag ) {
-                mvOccupied->MotorBlowersSwitchOff( false, end::front );
-                mvOccupied->MotorBlowersSwitch( true, end::front );
+                mvOccupied->MotorBlowersSwitchOff( false, front );
+                mvOccupied->MotorBlowersSwitch( true, front );
             }
             remove_hint( driver_hint::frontmotorblowersoff );
             hint(
                 Action,
                 [this]( float const Parameter ) -> bool {
-                    auto const &device { mvOccupied->MotorBlowers[ end::front ] };
+                    auto const &device { mvOccupied->MotorBlowers[ front ] };
                     return device.start_type != start_t::manual || (device.is_enabled == true && device.is_disabled == false); } );
             break;
         }
         case driver_hint::rearmotorblowerson: {
             if( AIControllFlag ) {
-                mvOccupied->MotorBlowersSwitchOff( false, end::rear );
-                mvOccupied->MotorBlowersSwitch( true, end::rear );
+                mvOccupied->MotorBlowersSwitchOff( false, rear );
+                mvOccupied->MotorBlowersSwitch( true, rear );
             }
             remove_hint( driver_hint::rearmotorblowersoff );
             hint(
                 Action,
                 [this]( float const Parameter ) -> bool {
-                    auto const &device { mvOccupied->MotorBlowers[ end::rear ] };
+                    auto const &device { mvOccupied->MotorBlowers[ rear ] };
                     return device.start_type != start_t::manual || (device.is_enabled == true && device.is_disabled == false); } );
             break;
         }
@@ -1049,94 +1049,94 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
         // consist doors
         case driver_hint::doorrightopen: {
             if( AIControllFlag
-             || pVehicle->MoverParameters->Doors.open_control == control_t::conductor ) {
-                pVehicle->MoverParameters->OperateDoors( side::right, true );
+             || pVehicle->MoverParameters->Doors.open_control == conductor ) {
+                pVehicle->MoverParameters->OperateDoors( right, true );
             }
             remove_hint( driver_hint::doorrightclose );
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return IsAnyDoorOpen[side::right] == true; } );
+                    return IsAnyDoorOpen[right] == true; } );
             break;
         }
         case driver_hint::doorrightclose: {
             if( AIControllFlag
-             || pVehicle->MoverParameters->Doors.open_control == control_t::conductor ) {
-                pVehicle->MoverParameters->OperateDoors( side::right, false );
+             || pVehicle->MoverParameters->Doors.open_control == conductor ) {
+                pVehicle->MoverParameters->OperateDoors( right, false );
             }
             remove_hint( driver_hint::doorrightopen );
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return IsAnyDoorOpen[side::right] == false; } );
+                    return IsAnyDoorOpen[right] == false; } );
             break;
         }
         case driver_hint::doorleftopen: {
             if( AIControllFlag
-             || pVehicle->MoverParameters->Doors.open_control == control_t::conductor ) {
-                pVehicle->MoverParameters->OperateDoors( side::left, true );
+             || pVehicle->MoverParameters->Doors.open_control == conductor ) {
+                pVehicle->MoverParameters->OperateDoors( left, true );
             }
             remove_hint( driver_hint::doorleftclose );
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return IsAnyDoorOpen[side::left] == true; } );
+                    return IsAnyDoorOpen[left] == true; } );
             break;
         }
         case driver_hint::doorleftclose: {
             if( AIControllFlag
-             || pVehicle->MoverParameters->Doors.open_control == control_t::conductor ) {
-                pVehicle->MoverParameters->OperateDoors( side::left, false );
+             || pVehicle->MoverParameters->Doors.open_control == conductor ) {
+                pVehicle->MoverParameters->OperateDoors( left, false );
             }
             remove_hint( driver_hint::doorleftopen );
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return IsAnyDoorOpen[side::left] == false; } );
+                    return IsAnyDoorOpen[left] == false; } );
             break;
         }
         case driver_hint::doorrightpermiton: {
             if( AIControllFlag ) {
-                pVehicle->MoverParameters->PermitDoors( side::right, true );
+                pVehicle->MoverParameters->PermitDoors( right, true );
             }
             remove_hint( driver_hint::doorrightpermitoff );
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return IsAnyDoorPermitActive[side::right] == true; } );
+                    return IsAnyDoorPermitActive[right] == true; } );
             break;
         }
         case driver_hint::doorrightpermitoff: {
             if( AIControllFlag ) {
-                pVehicle->MoverParameters->PermitDoors( side::right, false );
+                pVehicle->MoverParameters->PermitDoors( right, false );
             }
             remove_hint( driver_hint::doorrightpermiton );
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return IsAnyDoorPermitActive[side::right] == false; } );
+                    return IsAnyDoorPermitActive[right] == false; } );
             break;
         }
         case driver_hint::doorleftpermiton: {
             if( AIControllFlag ) {
-                pVehicle->MoverParameters->PermitDoors( side::left, true );
+                pVehicle->MoverParameters->PermitDoors( left, true );
             }
             remove_hint( driver_hint::doorleftpermitoff );
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return IsAnyDoorPermitActive[side::left] == true; } );
+                    return IsAnyDoorPermitActive[left] == true; } );
             break;
         }
         case driver_hint::doorleftpermitoff: {
             if( AIControllFlag ) {
-                pVehicle->MoverParameters->PermitDoors( side::left, false );
+                pVehicle->MoverParameters->PermitDoors( left, false );
             }
             remove_hint( driver_hint::doorleftpermiton );
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return IsAnyDoorPermitActive[side::left] == false; } );
+                    return IsAnyDoorPermitActive[left] == false; } );
             break;
         }
         // consist lights
@@ -1215,30 +1215,30 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
         case driver_hint::couplingadapterattach: {
             // TODO: run also for potential settings-based virtual assistant
             if( AIControllFlag ) {
-                pVehicles[ end::front ]->attach_coupler_adapter( Actionparameter );
+                pVehicles[ front ]->attach_coupler_adapter( Actionparameter );
             }
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    auto const &device { pVehicles[ end::front ]->MoverParameters->Couplers[ static_cast<int>( Parameter ) ] };
+                    auto const &device { pVehicles[ front ]->MoverParameters->Couplers[ static_cast<int>( Parameter ) ] };
                     return device.type() == TCouplerType::Automatic; } );
             break;
         }
         case driver_hint::couplingadapterremove: {
             if( AIControllFlag || Global.AITrainman ) {
-                pVehicles[ end::front ]->remove_coupler_adapter( Actionparameter );
+                pVehicles[ front ]->remove_coupler_adapter( Actionparameter );
             }
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    auto const &device { pVehicles[ end::front ]->MoverParameters->Couplers[ static_cast<int>( Parameter ) ] };
+                    auto const &device { pVehicles[ front ]->MoverParameters->Couplers[ static_cast<int>( Parameter ) ] };
                     return false == device.has_adapter(); } );
             break;
         }
         // lights
         case driver_hint::headcodepc1: {
             if( AIControllFlag ) {
-                pVehicles[ end::front ]->RaLightsSet( light::headlight_left | light::headlight_right | light::headlight_upper, -1 );
+                pVehicles[ front ]->RaLightsSet( headlight_left | headlight_right | headlight_upper, -1 );
             }
             remove_hint( driver_hint::headcodepc2 );
             remove_hint( driver_hint::headcodetb1 );
@@ -1246,12 +1246,12 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return pVehicles[end::front]->has_signal_pc1_on(); } );
+                    return pVehicles[front]->has_signal_pc1_on(); } );
             break;
         }
         case driver_hint::headcodepc2: {
             if( AIControllFlag ) {
-                pVehicles[ end::front ]->RaLightsSet( light::redmarker_left | light::headlight_right | light::headlight_upper, -1 );
+                pVehicles[ front ]->RaLightsSet( redmarker_left | headlight_right | headlight_upper, -1 );
             }
             remove_hint( driver_hint::headcodepc1 );
             remove_hint( driver_hint::headcodetb1 );
@@ -1259,15 +1259,15 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return pVehicles[end::front]->has_signal_pc2_on(); } );
+                    return pVehicles[front]->has_signal_pc2_on(); } );
             break;
         }
         case driver_hint::headcodetb1: {
             // HACK: the 'front' and 'rear' of the consist is determined by current consist direction
             // since direction shouldn't affect Tb1 light configuration, we 'counter' this behaviour by virtually swapping end vehicles
             if( AIControllFlag ) {
-                if( mvOccupied->DirActive >= 0 ) { Lights( light::headlight_right, light::headlight_left ); }
-                else                             { Lights( light::headlight_left, light::headlight_right ); }
+                if( mvOccupied->DirActive >= 0 ) { Lights( headlight_right, headlight_left ); }
+                else                             { Lights( headlight_left, headlight_right ); }
             }
             remove_hint( driver_hint::headcodepc1 );
             remove_hint( driver_hint::headcodepc2 );
@@ -1276,22 +1276,22 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    auto const activeend { mvOccupied->CabActive >= 0 ? end::front : end::rear };
-                    auto const consistfront { mvOccupied->DirActive >= 0 ? end::front : end::rear };
-                    return pVehicles[consistfront]->has_signal_on(activeend, light::headlight_right) && pVehicles[1 - consistfront]->has_signal_on(1 - activeend, light::headlight_left); } );
+                    auto const activeend { mvOccupied->CabActive >= 0 ? front : rear };
+                    auto const consistfront { mvOccupied->DirActive >= 0 ? front : rear };
+                    return pVehicles[consistfront]->has_signal_on(activeend, headlight_right) && pVehicles[1 - consistfront]->has_signal_on(1 - activeend, headlight_left); } );
             break;
         }
         case driver_hint::headcodepc5: {
             if( AIControllFlag
-             || ( Global.AITrainman && false == pVehicles[end::rear]->is_connected(pVehicle, coupling::control) ) ) {
-                pVehicles[ end::rear ]->RaLightsSet( -1, light::redmarker_left | light::redmarker_right | light::rearendsignals );
+             || ( Global.AITrainman && false == pVehicles[rear]->is_connected(pVehicle, control) ) ) {
+                pVehicles[ rear ]->RaLightsSet( -1, redmarker_left | redmarker_right | rearendsignals );
             }
             remove_hint( driver_hint::headcodetb1 );
             remove_hint( driver_hint::lightsoff );
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    return pVehicles[end::rear]->has_signal_pc5_on(); } );
+                    return pVehicles[rear]->has_signal_pc5_on(); } );
             break;
         }
         case driver_hint::lightsoff: {
@@ -1305,8 +1305,8 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             hint(
                 Action,
                 [this](float const Parameter) -> bool {
-                    auto const activeend { mvOccupied->CabActive >= 0 ? end::front : end::rear };
-                    auto const consistfront { mvOccupied->DirActive >= 0 ? end::front : end::rear };
+                    auto const activeend { mvOccupied->CabActive >= 0 ? front : rear };
+                    auto const consistfront { mvOccupied->DirActive >= 0 ? front : rear };
                     return pVehicles[consistfront]->has_signal_on(activeend, 0) && pVehicles[1 - consistfront]->has_signal_on(1 - activeend, 0); } );
             break;
         }

@@ -28,7 +28,7 @@ public:
     void
         reset() {
             m_activevertexbuffer = 0;
-            m_activestreams = gfx::stream::none; }
+            m_activestreams = none; }
 
 private:
 // types:
@@ -45,13 +45,13 @@ private:
 // methods:
     // create() subclass details
     void
-        create_( gfx::geometry_handle const &Geometry ) override;
+        create_( geometry_handle const &Geometry ) override;
     // replace() subclass details
     void
-        replace_( gfx::geometry_handle const &Geometry ) override;
+        replace_( geometry_handle const &Geometry ) override;
     // draw() subclass details
     auto
-        draw_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams ) -> std::size_t override;
+        draw_( geometry_handle const &Geometry, stream_units const &Units, unsigned int const Streams ) -> std::size_t override;
     // release() subclass details
     void
         release_() override;
@@ -63,7 +63,7 @@ private:
         delete_buffer();
     static
     void
-        bind_streams(gfx::stream_units const &Units, unsigned int const Streams , size_t offset = 0);
+        bind_streams(stream_units const &Units, unsigned int const Streams , size_t offset = 0);
     static
     void
         release_streams();
@@ -103,18 +103,18 @@ private:
 // methods:
     // create() subclass details
     void
-        create_( gfx::geometry_handle const &Geometry ) override;
+        create_( geometry_handle const &Geometry ) override;
     // replace() subclass details
     void
-        replace_( gfx::geometry_handle const &Geometry ) override;
+        replace_( geometry_handle const &Geometry ) override;
     // draw() subclass details
     auto
-        draw_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams ) -> std::size_t override;
+        draw_( geometry_handle const &Geometry, stream_units const &Units, unsigned int const Streams ) -> std::size_t override;
     // release () subclass details
     void
         release_() override;
     void
-        delete_list( gfx::geometry_handle const &Geometry );
+        delete_list( geometry_handle const &Geometry );
 
 // members:
     chunkrecord_sequence m_chunkrecords; // helper data for all stored geometry chunks, in matching order

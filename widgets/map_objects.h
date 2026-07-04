@@ -19,8 +19,8 @@ struct map_object
 	}
 };
 
-using object_list = std::vector<std::shared_ptr<map::map_object>>;
-using sorted_object_list = std::map<float, std::shared_ptr<map::map_object>>;
+using object_list = std::vector<std::shared_ptr<map_object>>;
+using sorted_object_list = std::map<float, std::shared_ptr<map_object>>;
 
 // semaphore description (only for minimap purposes)
 struct semaphore : public map_object

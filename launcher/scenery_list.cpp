@@ -310,7 +310,7 @@ void ui::scenerylist_panel::draw_trainset(trainset_desc &trainset)
 			selected_trainset = &trainset;
 		}
 		else if (ImGui::IsItemClicked(1)) {
-			register_popup(std::make_unique<ui::dynamic_edit_popup>(*this, dyn_desc));
+			register_popup(std::make_unique<dynamic_edit_popup>(*this, dyn_desc));
 		}
 		else if (ImGui::IsItemHovered()) {
 			ImGui::BeginTooltip();

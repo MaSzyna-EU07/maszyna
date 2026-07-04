@@ -26,7 +26,7 @@ char endstring[10] = "\n";
 std::deque<std::string> log_scrollback;
 
 std::string filename_date() {
-    ::SYSTEMTIME st;
+    SYSTEMTIME st;
 
 #ifdef __unix__
     timespec ts;
@@ -41,7 +41,7 @@ std::string filename_date() {
     st.wSecond = tms->tm_sec;
     st.wMilliseconds = ts.tv_nsec / 1000000;
 #elif _WIN32
-    ::GetLocalTime( &st );
+    GetLocalTime( &st );
 #endif
 
     std::snprintf(

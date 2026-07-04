@@ -38,7 +38,7 @@ struct DaneRozkaz2 {              // struktura komunikacji z EU07.EXE
 
 void Navigate( std::string const &ClassName, UINT Msg, WPARAM wParam, LPARAM lParam );
 
-void OnCommandGet( multiplayer::DaneRozkaz *pRozkaz );
+void OnCommandGet( DaneRozkaz *pRozkaz );
 
 void WyslijEvent( const std::string &e, const std::string &d );
 void WyslijString( const std::string &t, int n );

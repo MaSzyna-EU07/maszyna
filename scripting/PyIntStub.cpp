@@ -19,7 +19,7 @@ void python_taskqueue::exit()
 {
 }
 
-bool python_taskqueue::insert(python_taskqueue::task_request const &Task)
+bool python_taskqueue::insert(task_request const &Task)
 {
 	return false;
 }

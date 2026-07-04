@@ -20,12 +20,12 @@ http://mozilla.org/MPL/2.0/.
 void
 segment_data::deserialize( cParser &Input, glm::dvec3 const &Offset ) {
 
-    points[ segment_data::point::start ] = LoadPoint( Input ) + Offset;
+    points[ start ] = LoadPoint( Input ) + Offset;
     Input.getTokens();
     Input >> rolls[ 0 ];
-    points[ segment_data::point::control1 ] = LoadPoint( Input );
-    points[ segment_data::point::control2 ] = LoadPoint( Input );
-    points[ segment_data::point::end ] = LoadPoint( Input ) + Offset;
+    points[ control1 ] = LoadPoint( Input );
+    points[ control2 ] = LoadPoint( Input );
+    points[ end ] = LoadPoint( Input ) + Offset;
     Input.getTokens( 2 );
     Input
         >> rolls[ 1 ]
@@ -53,7 +53,7 @@ bool TSegment::Init(glm::dvec3 NewPoint1, glm::dvec3 NewPoint2, double fNewStep,
 */
     { // prosty ze zmienną przechyłką musi być segmentowany jak krzywe
         dir = (NewPoint2 - NewPoint1) / 3.0; // punkty kontrolne prostego są w 1/3 długości
-        return TSegment::Init(
+        return Init(
             NewPoint1, NewPoint1 + dir,
             NewPoint2 - dir, NewPoint2,
             fNewStep, fNewRoll1, fNewRoll2, true);

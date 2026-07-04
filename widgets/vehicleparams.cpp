@@ -62,9 +62,9 @@ void ui::vehicleparams_panel::draw_mini(const TMoverParameters &mover)
 	{
 		ImGui::Image(reinterpret_cast<void *>(tex.get_id()), ImVec2(x, y), ImVec2(0, 1), ImVec2(1, 0));
 
-		if (mover.Pantographs[end::rear].is_active)
+		if (mover.Pantographs[rear].is_active)
 			draw_infobutton("╨╨╨", ImVec2(126, 10));
-		if (mover.Pantographs[end::front].is_active)
+		if (mover.Pantographs[front].is_active)
 			draw_infobutton("╨╨╨", ImVec2(290, 10));
 
 		if (mover.Battery)
@@ -79,17 +79,17 @@ void ui::vehicleparams_panel::draw_mini(const TMoverParameters &mover)
 		if (mover.WarningSignal)
 			draw_infobutton(STR_C("horn"), ImVec2(361, 11));
 
-		if (mover.iLights[end::front] & light::redmarker_left)
+		if (mover.iLights[front] & redmarker_left)
 			draw_infobutton("o", ImVec2(490, 71), ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
-		else if (mover.iLights[end::front] & light::headlight_left)
+		else if (mover.iLights[front] & headlight_left)
 			draw_infobutton("O", ImVec2(490, 71), ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
 
-		if (mover.iLights[end::front] & light::redmarker_right)
+		if (mover.iLights[front] & redmarker_right)
 			draw_infobutton("o", ImVec2(443, 71), ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
-		else if (mover.iLights[end::front] & light::headlight_right)
+		else if (mover.iLights[front] & headlight_right)
 			draw_infobutton("O", ImVec2(443, 71), ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
 
-		if (mover.iLights[end::front] & light::headlight_upper)
+		if (mover.iLights[front] & headlight_upper)
 			draw_infobutton("O", ImVec2(467, 18), ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
 	}
 	ImGui::EndChild();
@@ -147,8 +147,8 @@ void ui::vehicleparams_panel::render_contents()
 
 	std::snprintf(buffer.data(), buffer.size(), STR_C("Devices: %c%c%c%c%c%c%c%c%c%c%c%c%c%c%s%s\nPower transfers: %.0f@%.0f%s%s%s%.0f@%.0f"),
 	              // devices
-	              (mover.Battery ? 'B' : '.'), (mover.Mains ? 'M' : '.'), (mover.FuseFlag ? '!' : '.'), (mover.Pantographs[end::rear].is_active ? (mover.PantRearVolt > 0.0 ? 'O' : 'o') : '.'),
-	              (mover.Pantographs[end::front].is_active ? (mover.PantFrontVolt > 0.0 ? 'P' : 'p') : '.'), (mover.PantPressLockActive ? '!' : (mover.PantPressSwitchActive ? '*' : '.')),
+	              (mover.Battery ? 'B' : '.'), (mover.Mains ? 'M' : '.'), (mover.FuseFlag ? '!' : '.'), (mover.Pantographs[rear].is_active ? (mover.PantRearVolt > 0.0 ? 'O' : 'o') : '.'),
+	              (mover.Pantographs[front].is_active ? (mover.PantFrontVolt > 0.0 ? 'P' : 'p') : '.'), (mover.PantPressLockActive ? '!' : (mover.PantPressSwitchActive ? '*' : '.')),
 	              (mover.WaterPump.is_active ? 'W' : (false == mover.WaterPump.breaker ? '-' : (mover.WaterPump.is_enabled ? 'w' : '.'))),
 	              (true == mover.WaterHeater.is_damaged ? '!' : (mover.WaterHeater.is_active ? 'H' : (false == mover.WaterHeater.breaker ? '-' : (mover.WaterHeater.is_enabled ? 'h' : '.')))),
 	              (mover.FuelPump.is_active ? 'F' : (mover.FuelPump.is_enabled ? 'f' : '.')), (mover.OilPump.is_active ? 'O' : (mover.OilPump.is_enabled ? 'o' : '.')),
@@ -156,9 +156,9 @@ void ui::vehicleparams_panel::render_contents()
 	              (mover.CompressorFlag ? 'C' : (false == mover.CompressorAllowLocal ? '-' : ((mover.CompressorAllow || mover.CompressorStart == start_t::automatic) ? 'c' : '.'))),
 	              (mover.CompressorGovernorLock ? '!' : '.'), "", std::string(isdieselenginepowered ? STR(" oil pressure: ") + to_string(mover.OilPump.pressure, 2) : "").c_str(),
 	              // power transfers
-	              mover.Couplers[end::front].power_high.voltage, mover.Couplers[end::front].power_high.current, std::string(mover.Couplers[end::front].power_high.is_local ? "" : "-").c_str(),
-	              std::string(vehicle.DirectionGet() ? ":<<:" : ":>>:").c_str(), std::string(mover.Couplers[end::rear].power_high.is_local ? "" : "-").c_str(),
-	              mover.Couplers[end::rear].power_high.voltage, mover.Couplers[end::rear].power_high.current);
+	              mover.Couplers[front].power_high.voltage, mover.Couplers[front].power_high.current, std::string(mover.Couplers[front].power_high.is_local ? "" : "-").c_str(),
+	              std::string(vehicle.DirectionGet() ? ":<<:" : ":>>:").c_str(), std::string(mover.Couplers[rear].power_high.is_local ? "" : "-").c_str(),
+	              mover.Couplers[rear].power_high.voltage, mover.Couplers[rear].power_high.current);
 
 	ImGui::TextUnformatted(buffer.data());
 
@@ -171,8 +171,8 @@ void ui::vehicleparams_panel::render_contents()
 	              // engine
 	              mover.EnginePower, std::abs(mover.TrainType == dt_EZT ? mover.ShowCurrent(0) : mover.Im),
 	              // revolutions
-	              std::abs(mover.enrot) * 60, std::abs(mover.nrot) * mover.Transmision.Ratio * 60, mover.RventRot * 60, std::abs(mover.MotorBlowers[end::front].revolutions),
-	              std::abs(mover.MotorBlowers[end::rear].revolutions), mover.dizel_heat.rpmw, mover.dizel_heat.rpmw2);
+	              std::abs(mover.enrot) * 60, std::abs(mover.nrot) * mover.Transmision.Ratio * 60, mover.RventRot * 60, std::abs(mover.MotorBlowers[front].revolutions),
+	              std::abs(mover.MotorBlowers[rear].revolutions), mover.dizel_heat.rpmw, mover.dizel_heat.rpmw2);
 
 	ImGui::TextUnformatted(buffer.data());
 

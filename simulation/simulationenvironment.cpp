@@ -201,7 +201,7 @@ world_environment::update() {
         }
         m_rainsound
             .gain( m_rainsound.m_amplitudeoffset + m_rainsound.m_amplitudefactor * 1.f )
-            .play( sound_flags::exclusive | sound_flags::looping );
+            .play( exclusive | looping );
     }
     else {
         m_rainsound.stop();

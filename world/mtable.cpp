@@ -139,7 +139,7 @@ bool TTrainParameters::UpdateMTable(double hh, double mm, std::string const &New
     return OK; /*czy jest nastepna stacja*/
 }
 
-bool Mtable::TTrainParameters::RewindTimeTable(std::string actualStationName) {
+bool TTrainParameters::RewindTimeTable(std::string actualStationName) {
 
     if( actualStationName.compare( 0, 19, "PassengerStopPoint:" ) == 0 ) {
         actualStationName = ToLower( actualStationName.substr( 19 ) );

@@ -22,8 +22,8 @@ light_array::insert( TDynamicObject const *Owner ) {
 
     // we're only storing lights for locos, which have two sets of lights, front and rear
     // for a more generic role this function would have to be tweaked to add vehicle type-specific light combinations
-    data.emplace_back( Owner, end::front );
-    data.emplace_back( Owner, end::rear );
+    data.emplace_back( Owner, front );
+    data.emplace_back( Owner, rear );
 }
 
 void
@@ -43,7 +43,7 @@ light_array::update() {
 
     for( auto &light : data ) {
         // update light parameters to match current data of the owner
-        if( light.index == end::front ) {
+        if( light.index == front ) {
             // front light set
             light.position = light.owner->GetPosition() + ( light.owner->VectorFront() * ( std::max( 0.0, light.owner->GetLength() * 0.5 - 2.0 ) ) );// +( light.owner->VectorUp() * 0.25 );
             light.direction = glm::make_vec3( glm::value_ptr(light.owner->VectorFront()) ); // TODO: It is needed to get value_ptr and then make_vec3?
@@ -63,15 +63,15 @@ light_array::update() {
             auto const lights { light.owner->MoverParameters->iLights[ light.index ] & light.owner->LightList( static_cast<end>( light.index ) ) };
             // ...then check their individual state
             light.count = 0
-                + ( ( lights & light::headlight_left  ) ? 1 : 0 )
-                + ( ( lights & light::headlight_right ) ? 1 : 0 )
-                + ( ( lights & light::headlight_upper ) ? 1 : 0 )
-                + ( ( lights & light::highbeamlight_left ) ? 1: 0)
-                + ( ( lights & light::highbeamlight_right ) ? 1 : 0);
+                + ( ( lights & headlight_left  ) ? 1 : 0 )
+                + ( ( lights & headlight_right ) ? 1 : 0 )
+                + ( ( lights & headlight_upper ) ? 1 : 0 )
+                + ( ( lights & highbeamlight_left ) ? 1: 0)
+                + ( ( lights & highbeamlight_right ) ? 1 : 0);
 
             // set intensity
             if( light.count > 0 ) {
-				const bool isEnabled = light.index == end::front ? !light.owner->HeadlightsAoff : !light.owner->HeadlightsBoff;
+				const bool isEnabled = light.index == front ? !light.owner->HeadlightsAoff : !light.owner->HeadlightsBoff;
 
 				light.intensity = std::max(0.0f, std::log((float)light.count + 1.0f));
 				if (light.owner->DimHeadlights && !light.owner->HighBeamLights && isEnabled) // tylko przyciemnione
@@ -89,9 +89,9 @@ light_array::update() {
 
                 // TBD, TODO: intensity can be affected further by other factors
                 light.state = {
-                    ( ( lights & light::headlight_left | light::highbeamlight_left ) ? 1.f : 0.f ),
-                    ( ( lights & light::headlight_upper ) ? 1.f : 0.f ), 
-                    ( ( lights & light::headlight_right | light::highbeamlight_right) ? 1.f : 0.f ) };
+                    ( ( lights & headlight_left | highbeamlight_left ) ? 1.f : 0.f ),
+                    ( ( lights & headlight_upper ) ? 1.f : 0.f ), 
+                    ( ( lights & headlight_right | highbeamlight_right) ? 1.f : 0.f ) };
 
                 light.color = {
                     static_cast<float>(light.owner->MoverParameters->refR) / 255.0f,

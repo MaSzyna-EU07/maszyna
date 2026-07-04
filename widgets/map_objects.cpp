@@ -45,7 +45,7 @@ map::sorted_object_list map::objects::find_in_range(glm::vec3 from, float distan
 		float dist = glm::distance2(entry_location, search_point);
 		if (dist < max_distance2)
 		{
-			auto entry = std::make_shared<map::vehicle>();
+			auto entry = std::make_shared<vehicle>();
 			entry->dynobj = dynobj;
 			entry->name = dynobj->name();
 			items.emplace(dist, std::move(entry));

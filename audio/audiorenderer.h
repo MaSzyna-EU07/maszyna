@@ -52,10 +52,10 @@ struct openal_source {
     friend class openal_renderer;
 
 // types
-    using buffer_sequence = std::vector<audio::buffer_handle>;
+    using buffer_sequence = std::vector<buffer_handle>;
 
 // members
-    ALuint id { audio::null_resource }; // associated AL resource
+    ALuint id { null_resource }; // associated AL resource
     sound_source *controller { nullptr }; // source controller 
     uint32_sequence sounds; // 
 //    buffer_sequence buffers; // sequence of samples the source will emit
@@ -122,11 +122,11 @@ public:
 // methods
     // buffer methods
     // returns handle to a buffer containing audio data from specified file
-    audio::buffer_handle
+    buffer_handle
         fetch_buffer( std::string const &Filename );
     // provides direct access to a specified buffer
-    audio::openal_buffer const &
-        buffer( audio::buffer_handle const Buffer ) const;
+    openal_buffer const &
+        buffer( buffer_handle const Buffer ) const;
     // core methods
     // initializes the service
     bool
@@ -147,13 +147,13 @@ public:
 
 private:
 // types
-    using source_list = std::list<audio::openal_source>;
+    using source_list = std::list<openal_source>;
     using source_sequence = std::stack<ALuint>;
 // methods
     bool
         init_caps();
     // returns an instance of implementation-side part of the sound emitter
-    audio::openal_source
+    openal_source
         fetch_source();
 // members
     ALCdevice * m_device { nullptr };

@@ -527,8 +527,8 @@ private:
     int TableDirection() { return iTableDirection; }
     // Ra: stare funkcje skanujące, używane do szukania sygnalizatora z tyłu
     bool IsOccupiedByAnotherConsist( TTrack *Track, double const Distance );
-    basic_event *CheckTrackEventBackward( double fDirection, TTrack *Track, TDynamicObject *Vehicle, int const Eventdirection = 1, end const End = end::rear );
-    TTrack *BackwardTraceRoute( double &fDistance, double &fDirection, TDynamicObject *Vehicle, basic_event *&Event, int const Eventdirection = 1, end const End = end::rear, bool const Untiloccupied = true );
+    basic_event *CheckTrackEventBackward( double fDirection, TTrack *Track, TDynamicObject *Vehicle, int const Eventdirection = 1, end const End = rear );
+    TTrack *BackwardTraceRoute( double &fDistance, double &fDirection, TDynamicObject *Vehicle, basic_event *&Event, int const Eventdirection = 1, end const End = rear, bool const Untiloccupied = true );
     void SetProximityVelocity( double dist, double vel, glm::dvec3 const *pos );
     TCommandType BackwardScan( double const Range );
     std::string TableText( std::size_t const Index ) const;
@@ -552,7 +552,7 @@ private:
 // methods
 public:
     const std::string &TrainName() const;
-    Mtable::TTrainParameters const & TrainTimetable() const;
+    TTrainParameters const & TrainTimetable() const;
 private:
     std::string Relation() const;
     int StationIndex() const;
@@ -562,7 +562,7 @@ private:
     // tests whether the train is delayed and sets accordingly a driving flag
     void UpdateDelayFlag();
 // members
-    Mtable::TTrainParameters TrainParams; // rozkład jazdy zawsze jest, nawet jeśli pusty
+    TTrainParameters TrainParams; // rozkład jazdy zawsze jest, nawet jeśli pusty
     std::string asNextStop; // nazwa następnego punktu zatrzymania wg rozkładu
 //    int iStationStart = 0; // numer pierwszej stacji pokazywanej na podglądzie rozkładu
     std::string m_lastexchangestop; // HACK: safeguard to prevent multiple load exchanges per station

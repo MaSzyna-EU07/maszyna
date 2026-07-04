@@ -383,7 +383,7 @@ std::time_t last_modified(std::string const &Filename)
 {
 	const std::string fn = Filename;
 	struct stat filestat;
-	if (::stat(fn.c_str(), &filestat) == 0)
+	if (stat(fn.c_str(), &filestat) == 0)
 		return filestat.st_mtime;
 	else
 		return 0;

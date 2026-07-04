@@ -169,7 +169,7 @@ cFrustum::cube_inside( float const X, float const Y, float const Z, float const 
     return true;
 }
 
-void cFrustum::normalize_plane( cFrustum::side const Side ) {
+void cFrustum::normalize_plane( side const Side ) {
 
 	const float magnitude =
         std::sqrt(

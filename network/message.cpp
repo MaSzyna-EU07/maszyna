@@ -30,7 +30,7 @@ void network::server_hello::deserialize(std::istream &stream)
     scenario = sn_utils::d_str(stream);
 }
 
-void ::network::request_command::serialize(std::ostream &stream) const
+void network::request_command::serialize(std::ostream &stream) const
 {
 	sn_utils::ls_uint32(stream, commands.size());
 	for (auto const &kv : commands)

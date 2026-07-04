@@ -774,7 +774,7 @@ void TController::TableCheck(double fDistance)
 { // przeliczenie odległości w tabelce, ewentualnie doskanowanie (bez analizy prędkości itp.)
     if( iTableDirection != iDirection ) {
         // jak zmiana kierunku, to skanujemy od końca składu
-        TableTraceRoute( fDistance, pVehicles[ end::rear ] );
+        TableTraceRoute( fDistance, pVehicles[ rear ] );
         TableSort();
     }
     else if (iTableDirection)
@@ -801,7 +801,7 @@ void TController::TableCheck(double fDistance)
                         --iLast;
                     }
                     tLast = sSpeedTable[ i ].trTrack;
-                    TableTraceRoute( fDistance, pVehicles[ end::rear ] );
+                    TableTraceRoute( fDistance, pVehicles[ rear ] );
                     TableSort();
                     // nie kontynuujemy pętli, trzeba doskanować ciąg dalszy
                     break;
@@ -838,7 +838,7 @@ void TController::TableCheck(double fDistance)
         sSpeedTable[iLast].Update(); // aktualizacja ostatniego
         // WriteLog("TableCheck: Upate last track. Dist=" + AnsiString(sSpeedTable[iLast].fDist));
         if( sSpeedTable[ iLast ].fDist < fDistance ) {
-            TableTraceRoute( fDistance, pVehicles[ end::rear ] ); // doskanowanie dalszego odcinka
+            TableTraceRoute( fDistance, pVehicles[ rear ] ); // doskanowanie dalszego odcinka
             TableSort();
         }
         // garbage collection
@@ -1226,7 +1226,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                         m_lastexchangestop = asNextStop;
                         m_lastexchangedirection = pVehicle->DirectionGet();
                         m_lastexchangeplatforms = static_cast<int>( std::floor( std::abs( Point.evEvent->input_value( 2 ) ) ) ) % 10;
-                        auto const exchangetime { simulation::Station.update_load( pVehicles[ end::front ], TrainParams, m_lastexchangeplatforms ) };
+                        auto const exchangetime { simulation::Station.update_load( pVehicles[ front ], TrainParams, m_lastexchangeplatforms ) };
                         WaitingSet( exchangetime );
                         // announce the stop name while at it
                         announce( announcement_t::current );
@@ -1397,7 +1397,7 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
             case TCommandType::cm_SecuritySystemMagnet: {
                 // NOTE: magnet induction calculation presumes the driver is located in the front vehicle
                 // TBD, TODO: take into account actual position of controlled/occupied vehicle in the consist, whichever comes first
-                auto const magnetlocation { pVehicles[ end::front ]->MoverParameters->SecuritySystem.MagnetLocation };
+                auto const magnetlocation { pVehicles[ front ]->MoverParameters->SecuritySystem.MagnetLocation };
                 auto const magnetrange { 1.0 };
                 auto const ismagnetpassed { Point.fDist < -( magnetlocation + magnetrange ) };
                 if( Point.fDist < -magnetlocation ) {
@@ -1487,9 +1487,9 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
                 basic_event *foundevent = nullptr;
                 if( Point.fDist - fMaxProximityDist > 0 ) {
                     auto scandistance{ Point.fDist + fLength - fMaxProximityDist };
-                    auto *scanvehicle{ pVehicles[ end::rear ] };
+                    auto *scanvehicle{ pVehicles[ rear ] };
                     auto scandirection{ scanvehicle->DirectionGet() * scanvehicle->RaDirectionGet() };
-                    auto *foundtrack = BackwardTraceRoute( scandistance, scandirection, scanvehicle, foundevent, -1, end::front, false );
+                    auto *foundtrack = BackwardTraceRoute( scandistance, scandirection, scanvehicle, foundevent, -1, front, false );
                 }
                 if( foundevent == nullptr ) {
                     iDrivigFlags |= moveTrackEnd; // to dalsza jazda trwale ograniczona (W5, koniec toru)
@@ -1824,12 +1824,12 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
               AIControllFlag( AI ),     pVehicle( NewControll )
 {
     if( pVehicle != nullptr ) {
-        pVehicles[ end::front ] = pVehicle->GetFirstDynamic( end::front ); // pierwszy w kierunku jazdy (Np. Pc1)
-        pVehicles[ end::rear ] = pVehicle->GetFirstDynamic( end::rear ); // ostatni w kierunku jazdy (końcówki)
+        pVehicles[ front ] = pVehicle->GetFirstDynamic( front ); // pierwszy w kierunku jazdy (Np. Pc1)
+        pVehicles[ rear ] = pVehicle->GetFirstDynamic( rear ); // ostatni w kierunku jazdy (końcówki)
     }
     else {
-        pVehicles[ end::front ] = nullptr;
-        pVehicles[ end::rear ] = nullptr;
+        pVehicles[ front ] = nullptr;
+        pVehicles[ rear ] = nullptr;
     }
     ControllingSet(); // utworzenie połączenia do sterowanego pojazdu
     if( mvOccupied != nullptr ) {
@@ -2027,7 +2027,7 @@ void TController::Activation()
         ZeroDirection();
         mvOccupied->CabOccupied = mvOccupied->CabActive; // użytkownik moze zmienić CabOccupied wychodząc
         mvOccupied->CabDeactivisation(); // tak jest w Train.cpp
-        if (TestFlag(pVehicle->MoverParameters->Couplers[iDirectionOrder < 0 ? end::rear : end::front].CouplingFlag, coupling::control)) {
+        if (TestFlag(pVehicle->MoverParameters->Couplers[iDirectionOrder < 0 ? rear : front].CouplingFlag, control)) {
             ZeroLocalBrake();
             if( initialspringbrakestate ) {
                 mvOccupied->SpringBrakeActivate( false );
@@ -2039,8 +2039,8 @@ void TController::Activation()
         // przejście AI na drugą stronę EN57, ET41 itp.
         // TODO: clean this up, there's lot of redundancy with TMoverParameters::ChangeCab() and TTrain::MoveToVehicle()
         {
-            int movedirection { ( iDirection < 0 ? end::rear : end::front ) };
-            auto *targetvehicle { pVehicle->FirstFind( movedirection, coupling::control ) };
+            int movedirection { ( iDirection < 0 ? rear : front ) };
+            auto *targetvehicle { pVehicle->FirstFind( movedirection, control ) };
             if( pVehicle != targetvehicle ) {
                 auto *targetvehicledriver { targetvehicle->Mechanik }; // zapamiętanie tego, co ewentualnie tam siedzi, żeby w razie dwóch zamienić miejscami
                 // move to the new vehicle
@@ -2352,7 +2352,7 @@ bool TController::CheckVehicles(TOrders user)
     p = pVehicle->FirstFind(d); // pojazd na czele składu
     if (!p)
         p = pVehicle;
-    pVehicles[end::front] = p;
+    pVehicles[front] = p;
     // liczenie pojazdów w składzie i ustalenie parametrów
     auto dir = d = 1 - d; // a dalej będziemy zliczać od czoła do tyłu
     fLength = 0.0; // długość składu do badania wyjechania za ograniczenie
@@ -2383,7 +2383,7 @@ bool TController::CheckVehicles(TOrders user)
             }
         }
         ++iVehicles; // jest jeden pojazd więcej
-        pVehicles[end::rear] = p; // zapamiętanie ostatniego
+        pVehicles[rear] = p; // zapamiętanie ostatniego
         fLength += p->MoverParameters->Dim.L; // dodanie długości pojazdu
         fMass += p->MoverParameters->TotalMass; // dodanie masy łącznie z ładunkiem
         fVelMax = min_speed( fVelMax, p->MoverParameters->Vmax ); // ustalenie maksymalnej prędkości dla składu
@@ -2403,7 +2403,7 @@ bool TController::CheckVehicles(TOrders user)
     if (iDrivigFlags & movePrimary)
     { // jeśli jest aktywnie prowadzącym pojazd, może zrobić własny porządek
         auto pantmask = 1;
-        p = pVehicles[end::front];
+        p = pVehicles[front];
         // establish ownership and vehicle order
         while (p)
         {
@@ -2418,13 +2418,13 @@ bool TController::CheckVehicles(TOrders user)
             p = p->Next(); // pojazd podłączony od tyłu (licząc od czoła)
         }
         // with the order established the virtual train manager can do their work
-        p = pVehicles[ end::front ];
+        p = pVehicles[ front ];
         ControlledEnginesCount = p->MoverParameters->Power > 1.0 ? 1 : 0;
         auto hasheaters { false };
         while (p)
         {
             if( p != pVehicle ) {
-                if( false == p->is_connected( pVehicle, coupling::control ) ) {
+                if( false == p->is_connected( pVehicle, control ) ) {
                     // NOTE: don't set battery in controllable vehicles, let the user/ai do it explicitly
                     // HACK: wagony muszą mieć baterię załączoną do otwarcia drzwi...
                     p->MoverParameters->BatterySwitch( true );
@@ -2453,8 +2453,8 @@ bool TController::CheckVehicles(TOrders user)
 
         if( user == Connect && true == main ) {
             // HACK: with additional vehicles in the consist ensure all linked vehicles are set to move in the same direction
-            if( pVehicle->Prev(coupling::control) != nullptr
-             || pVehicle->Next(coupling::control) != nullptr ) {
+            if( pVehicle->Prev(control) != nullptr
+             || pVehicle->Next(control) != nullptr ) {
                 sync_consist_reversers();
             }
             // potentially sync compartment lighting state for the newly connected vehicles
@@ -2491,7 +2491,7 @@ bool TController::CheckVehicles(TOrders user)
         }
 
         // detect push-pull train configurations and mark them accordingly
-        if( pVehicles[ end::front ]->is_connected( pVehicles[ end::rear ], coupling::control ) ) {
+        if( pVehicles[ front ]->is_connected( pVehicles[ rear ], control ) ) {
             // zmiana czoła przez zmianę kabiny
             iDrivigFlags |= movePushPull;
         }
@@ -2513,10 +2513,10 @@ bool TController::CheckVehicles(TOrders user)
                     if( AIControllFlag ) {
                         // światła manewrowe (Tb1) tylko z przodu, aby nie pozostawić odczepionego ze światłem
                         if( mvOccupied->DirActive >= 0 ) { // jak ma kierunek do przodu
-                            pVehicles[ end::rear ]->RaLightsSet( -1, 0 );
+                            pVehicles[ rear ]->RaLightsSet( -1, 0 );
                         }
                         else { // jak dociska
-                            pVehicles[ end::front ]->RaLightsSet( 0, -1 );
+                            pVehicles[ front ]->RaLightsSet( 0, -1 );
                         }
                     }
                 }
@@ -2529,7 +2529,7 @@ bool TController::CheckVehicles(TOrders user)
                 // TODO: replace connection test with connection check between last engine and first car, specifically
                 auto const isheatingcouplingactive { (
                     ControlledEnginesCount == 1 ?
-                        pVehicles[ end::front ]->is_connected( pVehicles[ end::rear ], coupling::heating ) :
+                        pVehicles[ front ]->is_connected( pVehicles[ rear ], heating ) :
                         true ) };
                 auto const isheatingneeded {
                     (is_emu() || is_dmu() ? true :
@@ -2557,7 +2557,7 @@ bool TController::CheckVehicles(TOrders user)
 
 void TController::Lights(int head, int rear)
 { // zapalenie świateł w skłądzie
-    pVehicles[ end::front ]->RaLightsSet(head, -1); // zapalenie przednich w pierwszym
+    pVehicles[ front ]->RaLightsSet(head, -1); // zapalenie przednich w pierwszym
     pVehicles[ end::rear ]->RaLightsSet(-1, rear); // zapalenie końcówek w ostatnim
 }
 
@@ -2587,17 +2587,17 @@ TBrakeSystem TController::consist_brake_system() const {
     if( mvOccupied->BrakeSystem != TBrakeSystem::ElectroPneumatic ) { return mvOccupied->BrakeSystem; }
 
     auto isepcapable = true;
-    if( pVehicles[ end::front ] != pVehicles[ end::rear ] ) {
+    if( pVehicles[ front ] != pVehicles[ rear ] ) {
         // more detailed version, will use manual braking also for coupled sets of controlled vehicles
-		const auto *vehicle = pVehicles[ end::front ]; // start from first
+		const auto *vehicle = pVehicles[ front ]; // start from first
         while( true == isepcapable
             && vehicle != nullptr ) {
             // NOTE: we could simplify this by doing only check of the rear coupler, but this can be quite tricky in itself
             // TODO: add easier ways to access front/rear coupler taking into account vehicle's direction
-            isepcapable = (vehicle->MoverParameters->Couplers[end::front].Connected == nullptr ||
-			               (vehicle->MoverParameters->Couplers[end::front].CouplingFlag & coupling::control && vehicle->MoverParameters->Couplers[end::front].Connected->Power > -1)) &&
-			              (vehicle->MoverParameters->Couplers[end::rear].Connected == nullptr ||
-			               (vehicle->MoverParameters->Couplers[end::rear].CouplingFlag & coupling::control && vehicle->MoverParameters->Couplers[end::rear].Connected->Power > -1));
+            isepcapable = (vehicle->MoverParameters->Couplers[front].Connected == nullptr ||
+			               (vehicle->MoverParameters->Couplers[front].CouplingFlag & control && vehicle->MoverParameters->Couplers[front].Connected->Power > -1)) &&
+			              (vehicle->MoverParameters->Couplers[rear].Connected == nullptr ||
+			               (vehicle->MoverParameters->Couplers[rear].CouplingFlag & control && vehicle->MoverParameters->Couplers[rear].Connected->Power > -1));
             vehicle = vehicle->Next(); // kolejny pojazd, podłączony od tyłu (licząc od czoła)
         }
     }
@@ -2807,10 +2807,10 @@ bool TController::PrepareEngine()
                     cue_action( driver_hint::waitpressuretoolow );
                 }
                 // enable motor blowers
-                if( mvOccupied->MotorBlowers[ end::front ].speed != 0 ) {
+                if( mvOccupied->MotorBlowers[ front ].speed != 0 ) {
                     cue_action( driver_hint::frontmotorblowerson );
                 }
-                if( mvOccupied->MotorBlowers[ end::rear ].speed != 0 ) {
+                if( mvOccupied->MotorBlowers[ rear ].speed != 0 ) {
                     cue_action( driver_hint::rearmotorblowerson );
                 }
             }
@@ -2991,12 +2991,12 @@ bool TController::IncBrake()
              || mvOccupied->TrainType == dt_ET42 ) {
                 // NOTE: we're doing simplified checks full of presuptions here.
                 // they'll break if someone does strange thing like turning around the second unit
-                if( mvOccupied->Couplers[end::rear].CouplingFlag & coupling::permanent
-                 && mvOccupied->Couplers[end::rear].Connected->Couplers[end::rear].Connected != nullptr ) {
+                if( mvOccupied->Couplers[rear].CouplingFlag & permanent
+                 && mvOccupied->Couplers[rear].Connected->Couplers[rear].Connected != nullptr ) {
                     standalone = false;
                 }
-                if( mvOccupied->Couplers[end::front].CouplingFlag & coupling::permanent
-                 && mvOccupied->Couplers[end::front].Connected->Couplers[end::front].Connected != nullptr ) {
+                if( mvOccupied->Couplers[front].CouplingFlag & permanent
+                 && mvOccupied->Couplers[front].Connected->Couplers[front].Connected != nullptr ) {
                     standalone = false;
                 }
             }
@@ -3015,18 +3015,18 @@ bool TController::IncBrake()
                     ( ( mvOccupied->Couplers[ 0 ].CouplingFlag == 0 )
                    && ( mvOccupied->Couplers[ 1 ].CouplingFlag == 0 ) );
 */
-                if( pVehicles[ end::front ] != pVehicles[ end::rear ] ) {
+                if( pVehicles[ front ] != pVehicles[ rear ] ) {
                     // more detailed version, will use manual braking also for coupled sets of controlled vehicles
-				    const auto *vehicle = pVehicles[ end::front ]; // start from first
+				    const auto *vehicle = pVehicles[ front ]; // start from first
                     while( true == standalone
                         && vehicle != nullptr ) {
                         // NOTE: we could simplify this by doing only check of the rear coupler, but this can be quite tricky in itself
                         // TODO: add easier ways to access front/rear coupler taking into account vehicle's direction
                         standalone =
-                            (vehicle->MoverParameters->Couplers[end::front].Connected == nullptr ||
-					                  (vehicle->MoverParameters->Couplers[end::front].CouplingFlag & coupling::control && vehicle->MoverParameters->Couplers[end::front].Connected->Power > 1)) &&
-					                 (vehicle->MoverParameters->Couplers[end::rear].Connected == nullptr ||
-					                  (vehicle->MoverParameters->Couplers[end::rear].CouplingFlag & coupling::control && vehicle->MoverParameters->Couplers[end::rear].Connected->Power > 1));
+                            (vehicle->MoverParameters->Couplers[front].Connected == nullptr ||
+					                  (vehicle->MoverParameters->Couplers[front].CouplingFlag & control && vehicle->MoverParameters->Couplers[front].Connected->Power > 1)) &&
+					                 (vehicle->MoverParameters->Couplers[rear].Connected == nullptr ||
+					                  (vehicle->MoverParameters->Couplers[rear].CouplingFlag & control && vehicle->MoverParameters->Couplers[rear].Connected->Power > 1));
                         vehicle = vehicle->Next(); // kolejny pojazd, podłączony od tyłu (licząc od czoła)
                     }
                 }
@@ -4171,10 +4171,10 @@ void TController::SetTimeControllers()
 	//6. UniversalBrakeButtons
 	//6.1. Checking flags for Over pressure
 	if (std::abs(BrakeCtrlPosition - gbh_FS)<0.5) {
-		UniversalBrakeButtons |= TUniversalBrake::ub_HighPressure | TUniversalBrake::ub_Overload;
+		UniversalBrakeButtons |= ub_HighPressure | ub_Overload;
 	}
 	else {
-		UniversalBrakeButtons &= ~(TUniversalBrake::ub_HighPressure | TUniversalBrake::ub_Overload);
+		UniversalBrakeButtons &= ~(ub_HighPressure | ub_Overload);
 	}
 	//6.2. Setting buttons
 	for (int i = 0; i < 3; i++) {
@@ -4265,8 +4265,8 @@ void TController::Doors( bool const Open, int const Side ) {
             }
         }
         // consist-wide remote signals to open doors doors
-        if( pVehicle->MoverParameters->Doors.open_control == control_t::conductor
-         || pVehicle->MoverParameters->Doors.open_control == control_t::driver
+        if( pVehicle->MoverParameters->Doors.open_control == conductor
+         || pVehicle->MoverParameters->Doors.open_control == driver
             // NOTE: disabled for mixed controls, leave it up to passengers to open doors by themselves
 /*         || ( pVehicle->MoverParameters->Doors.open_control == control_t::mixed ) */ ) {
             if( Side & prawe ) {
@@ -4305,9 +4305,9 @@ void TController::Doors( bool const Open, int const Side ) {
 
         if( true == doors_open() ) {
             // consist-wide remote signals to close doors
-            if( pVehicle->MoverParameters->Doors.close_control == control_t::conductor
-             || pVehicle->MoverParameters->Doors.close_control == control_t::driver
-             || pVehicle->MoverParameters->Doors.close_control == control_t::mixed ) {
+            if( pVehicle->MoverParameters->Doors.close_control == conductor
+             || pVehicle->MoverParameters->Doors.close_control == driver
+             || pVehicle->MoverParameters->Doors.close_control == mixed ) {
                 cue_action( driver_hint::doorrightclose );
                 cue_action( driver_hint::doorleftclose );
             }
@@ -4318,19 +4318,19 @@ void TController::Doors( bool const Open, int const Side ) {
         }
         // if applicable close manually-operated doors in vehicles which may ignore remote signals
         {
-			const auto *vehicle = pVehicles[ end::front ]; // pojazd na czole składu
+			const auto *vehicle = pVehicles[ front ]; // pojazd na czole składu
             while( vehicle != nullptr ) {
                 // zamykanie drzwi w pojazdach - flaga zezwolenia była by lepsza
                 auto const ismanualdoor {
                     vehicle->MoverParameters->Doors.auto_velocity == -1.f
-                 && ( vehicle->MoverParameters->Doors.close_control == control_t::passenger
-                   || vehicle->MoverParameters->Doors.close_control == control_t::mixed ) };
+                 && ( vehicle->MoverParameters->Doors.close_control == passenger
+                   || vehicle->MoverParameters->Doors.close_control == mixed ) };
 
                 if( true == ismanualdoor
                  && ( vehicle->LoadExchangeTime() == 0.f
                    || vehicle->MoverParameters->Vel > EU07_AI_MOVEMENT ) ) {
-                    vehicle->MoverParameters->OperateDoors( side::right, false, range_t::local );
-                    vehicle->MoverParameters->OperateDoors( side::left, false, range_t::local );
+                    vehicle->MoverParameters->OperateDoors( right, false, range_t::local );
+                    vehicle->MoverParameters->OperateDoors( left, false, range_t::local );
                 }
                 vehicle = vehicle->Next(); // pojazd podłączony z tyłu (patrząc od czoła)
             }
@@ -4345,13 +4345,13 @@ void TController::Doors( bool const Open, int const Side ) {
 bool
 TController::doors_open() const {
 
-    return IsAnyDoorOpen[side::right] || IsAnyDoorOpen[side::left];
+    return IsAnyDoorOpen[right] || IsAnyDoorOpen[left];
 }
 
 bool
 TController::doors_permit_active() const {
 
-    return IsAnyDoorPermitActive[side::right] || IsAnyDoorPermitActive[side::left];
+    return IsAnyDoorPermitActive[right] || IsAnyDoorPermitActive[left];
 }
 
 void
@@ -4364,7 +4364,7 @@ TController::announce( announcement_t const Announcement ) {
         return;
     }
 
-    auto *vehicle { pVehicles[ end::front ] };
+    auto *vehicle { pVehicles[ front ] };
     while( vehicle ) {
         vehicle->announce( Announcement );
         vehicle = vehicle->Next();
@@ -4439,14 +4439,14 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
                 if( true == AIControllFlag ) {
                     // simplified door closing procedure, to sync actual door state with the door state flag
                     // NOTE: this may result in visually ugly quick switch between closing and opening the doors, but eh
-                    if( pVehicle->MoverParameters->Doors.close_control == control_t::driver
-                     || pVehicle->MoverParameters->Doors.close_control == control_t::mixed ) {
-                        pVehicle->MoverParameters->OperateDoors( side::right, false );
-                        pVehicle->MoverParameters->OperateDoors( side::left, false );
+                    if( pVehicle->MoverParameters->Doors.close_control == driver
+                     || pVehicle->MoverParameters->Doors.close_control == mixed ) {
+                        pVehicle->MoverParameters->OperateDoors( right, false );
+                        pVehicle->MoverParameters->OperateDoors( left, false );
                     }
                     if( pVehicle->MoverParameters->Doors.permit_needed ) {
-                        pVehicle->MoverParameters->PermitDoors( side::right, false );
-                        pVehicle->MoverParameters->PermitDoors( side::left, false );
+                        pVehicle->MoverParameters->PermitDoors( right, false );
+                        pVehicle->MoverParameters->PermitDoors( left, false );
                     }
                 }
                 iDrivigFlags &= ~moveDoorOpened;
@@ -4482,7 +4482,7 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
                 NewCommand = TrainParams.Relation2; // relacja docelowa z rozkładu
             }
             // jeszcze poustawiać tekstury na wyświetlaczach
-            TDynamicObject *p = pVehicles[end::front];
+            TDynamicObject *p = pVehicles[front];
             while (p)
             {
                 p->DestinationSet(NewCommand, TrainParams.TrainName); // relacja docelowa
@@ -4713,13 +4713,13 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
             if( NewValue1 >= 0.0 ) {
                 // jeśli ilość wagonów inna niż wszystkie będzie odczepianie,
                 // ale jeśli wagony są z przodu, to trzeba najpierw zmienić kierunek
-                if( mvOccupied->Couplers[mvOccupied->DirAbsolute > 0 ? end::rear : end::front].Connected == nullptr // z tyłu nic
-                 && mvOccupied->Couplers[mvOccupied->DirAbsolute > 0 ? end::front : end::rear].Connected != nullptr ) { // a z przodu skład
+                if( mvOccupied->Couplers[mvOccupied->DirAbsolute > 0 ? rear : front].Connected == nullptr // z tyłu nic
+                 && mvOccupied->Couplers[mvOccupied->DirAbsolute > 0 ? front : rear].Connected != nullptr ) { // a z przodu skład
                     iDirectionOrder = -iDirection; // zmiana na ciągnięcie
                     OrderNext( Change_direction ); // najpierw zmień kierunek (zastąpi Disconnect)
                     OrderPush( Disconnect ); // a odczep już po zmianie kierunku
                 }
-                else if( mvOccupied->Couplers[ mvOccupied->DirAbsolute > 0 ? end::rear : end::front ].Connected != nullptr ) { // z tyłu coś
+                else if( mvOccupied->Couplers[ mvOccupied->DirAbsolute > 0 ? rear : front ].Connected != nullptr ) { // z tyłu coś
                     OrderNext( Disconnect ); // jak ciągnie, to tylko odczep (NewValue1) wagonów
                 }
                 else {
@@ -4803,8 +4803,8 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
 
     if( NewCommand == "SetLights" ) {
         // set consist lights pattern hints
-        m_lighthints[ end::front ] = static_cast<int>( NewValue1 );
-        m_lighthints[ end::rear ] = static_cast<int>( NewValue2 );
+        m_lighthints[ front ] = static_cast<int>( NewValue1 );
+        m_lighthints[ rear ] = static_cast<int>( NewValue2 );
         if( true == TestFlag( OrderCurrentGet(), Obey_train ) ) {
             // light hints only apply in the obey_train mode
             CheckVehicles();
@@ -5082,7 +5082,7 @@ void TController::OrderCheck()
 
     if( OrderCurrentGet() != Obey_train ) {
         // reset light hints
-        m_lighthints[ end::front ] = m_lighthints[ end::rear ] = -1;
+        m_lighthints[ front ] = m_lighthints[ rear ] = -1;
     }
     if( OrderCurrentGet() & ( Shunt | Loose_shunt | Connect | Obey_train | Bank ) ) {
         CheckVehicles(); // sprawdzić światła
@@ -5288,7 +5288,7 @@ basic_event * TController::CheckTrackEventBackward(double fDirection, TTrack *Tr
     // NOTE: this method returns only one event which meets the conditions, due to limitations in the caller
     // TBD, TODO: clean up the caller and return all suitable events, as in theory things will go awry if the track has more than one signal
     auto const dir{ Vehicle->VectorFront() * (double)Vehicle->DirectionGet() };
-    auto const pos{ End == end::front ? Vehicle->RearPosition() : Vehicle->HeadPosition() };
+    auto const pos{ End == front ? Vehicle->RearPosition() : Vehicle->HeadPosition() };
     auto const &eventsequence { ( fDirection * Eventdirection > 0 ? Track->m_events2 : Track->m_events1 ) };
     for( auto const &event : eventsequence ) {
         if( event.second != nullptr
@@ -5298,7 +5298,7 @@ basic_event * TController::CheckTrackEventBackward(double fDirection, TTrack *Tr
             auto const sl{ event.second->input_location() }; // położenie komórki pamięci
             auto const sem{ sl - pos }; // wektor do komórki pamięci od końca składu
             auto const isahead { dir.x * sem.x + dir.z * sem.z > 0 };
-            if( End == end::front ? isahead : !isahead ) {
+            if( End == front ? isahead : !isahead ) {
                 // iloczyn skalarny jest ujemny, gdy sygnał stoi z tyłu
                 return event.second;
             }
@@ -5427,9 +5427,9 @@ TCommandType TController::BackwardScan( double const Range )
     basic_event *e = nullptr; // event potencjalnie od semafora
     // opcjonalnie może być skanowanie od "wskaźnika" z przodu, np. W5, Tm=Ms1, koniec toru wg
     // drugiej osi w kierunku ruchu
-    auto const *scantrack{BackwardTraceRoute(scandist, scandir, pVehicles[end::front], e)};
+    auto const *scantrack{BackwardTraceRoute(scandist, scandir, pVehicles[front], e)};
     auto const dir{(double)startdir *
-                   pVehicles[end::front]->VectorFront()}; // wektor w kierunku jazdy/szukania
+                   pVehicles[front]->VectorFront()}; // wektor w kierunku jazdy/szukania
 
     // jeśli wstecz wykryto koniec toru to raczej nic się nie da w takiej sytuacji zrobić
     if (e == nullptr)
@@ -5451,7 +5451,7 @@ TCommandType TController::BackwardScan( double const Range )
     {
         // najpierw sprawdzamy, czy semafor czy inny znak został przejechany
         auto const sl{e->input_location()}; // położenie komórki pamięci
-        auto const pos{pVehicles[end::rear]->RearPosition()}; // pozycja tyłu
+        auto const pos{pVehicles[rear]->RearPosition()}; // pozycja tyłu
         auto const sem{sl - pos}; // wektor do komórki pamięci od końca składu
         if (dir.x * sem.x + dir.z * sem.z < 0)
         {
@@ -5635,9 +5635,9 @@ void TController::TakeControl( bool const Aidriver, bool const Forcevehiclecheck
                 // jeśli nic nie robi
                 OrderNext( Prepare_engine );
                 if( pVehicle->MoverParameters->iLights[ ( mvOccupied->CabActive < 0 ?
-                        end::rear :
-                        end::front ) ]
-                    & ( light::headlight_left | light::headlight_right | light::headlight_upper ) ) // któreś ze świateł zapalone?
+                        rear :
+                        front ) ]
+                    & ( headlight_left | headlight_right | headlight_upper ) ) // któreś ze świateł zapalone?
                 { // od wersji 357 oczekujemy podania komend dla AI przez scenerię
 /*
                     if( pVehicle->MoverParameters->iLights[ mvOccupied->CabActive < 0 ? end::rear : end::front ] & light::headlight_upper ) // górne światło zapalone
@@ -5739,7 +5739,7 @@ void TController::sync_consist_reversers() {
     }
 }
 
-Mtable::TTrainParameters const &
+TTrainParameters const &
 TController::TrainTimetable() const {
     return TrainParams;
 }
@@ -5948,11 +5948,11 @@ TController::determine_consist_state() {
 	                                                                                                       mvOccupied->PipePress < std::max(3.9, mvOccupied->BrakePressureActual.PipePressureVal) + 0.1;
     fAccGravity = 0.0; // przyspieszenie wynikające z pochylenia
     IsAnyCouplerStretched = false;
-    IsAnyDoorOnlyOpen[ side::right ] = IsAnyDoorOnlyOpen[ side::left ] = false;
-	IsAnyDoorOpen[ side::right ] = IsAnyDoorOpen[ side::left ] = false;
-    IsAnyDoorPermitActive[ side::right ] = IsAnyDoorPermitActive[ side::left ] = false;
+    IsAnyDoorOnlyOpen[ right ] = IsAnyDoorOnlyOpen[ left ] = false;
+	IsAnyDoorOpen[ right ] = IsAnyDoorOpen[ left ] = false;
+    IsAnyDoorPermitActive[ right ] = IsAnyDoorPermitActive[ left ] = false;
     ConsistShade = 0.0;
-	const auto *p { pVehicles[ end::front ] }; // pojazd na czole składu
+	const auto *p { pVehicles[ front ] }; // pojazd na czole składu
     double dy; // składowa styczna grawitacji, w przedziale <0,1>
     while (p)
     { // sprawdzenie odhamowania wszystkich połączonych pojazdów
@@ -5996,24 +5996,24 @@ TController::determine_consist_state() {
         // check coupler state
         IsAnyCouplerStretched =
             IsAnyCouplerStretched
-            || vehicle->Couplers[end::front].stretch_duration > 0.0
-            || vehicle->Couplers[end::rear].stretch_duration > 0.0;
+            || vehicle->Couplers[front].stretch_duration > 0.0
+            || vehicle->Couplers[rear].stretch_duration > 0.0;
         // check door state
         {
 			auto const switchsides{ p->DirectionGet() != (iDirection == 0 ? mvOccupied->CabOccupied : iDirection) };
-            auto const &rightdoor { vehicle->Doors.instances[ ( switchsides ? side::left : side::right ) ] };
-            auto const &leftdoor { vehicle->Doors.instances[ ( switchsides ? side::right : side::left ) ] };
-            if( vehicle->Doors.close_control != control_t::autonomous ) {
-                IsAnyDoorOpen[ side::right ] |= false == rightdoor.is_closed;
-                IsAnyDoorOpen[ side::left  ] |= false == leftdoor.is_closed;
+            auto const &rightdoor { vehicle->Doors.instances[ ( switchsides ? left : right ) ] };
+            auto const &leftdoor { vehicle->Doors.instances[ ( switchsides ? right : left ) ] };
+            if( vehicle->Doors.close_control != autonomous ) {
+                IsAnyDoorOpen[ right ] |= false == rightdoor.is_closed;
+                IsAnyDoorOpen[ left  ] |= false == leftdoor.is_closed;
             }
-			if (vehicle->Doors.close_control != control_t::autonomous) {
-				IsAnyDoorOnlyOpen[ side::right ] |= false == rightdoor.is_door_closed;
-				IsAnyDoorOnlyOpen[ side::left  ] |= false == leftdoor.is_door_closed;
+			if (vehicle->Doors.close_control != autonomous) {
+				IsAnyDoorOnlyOpen[ right ] |= false == rightdoor.is_door_closed;
+				IsAnyDoorOnlyOpen[ left  ] |= false == leftdoor.is_door_closed;
 			}
             if( vehicle->Doors.permit_needed ) {
-                IsAnyDoorPermitActive[ side::right ] |= rightdoor.open_permit;
-                IsAnyDoorPermitActive[ side::left  ] |= leftdoor.open_permit;
+                IsAnyDoorPermitActive[ right ] |= rightdoor.open_permit;
+                IsAnyDoorPermitActive[ left  ] |= leftdoor.open_permit;
             }
         }
         // measure lighting level
@@ -6037,7 +6037,7 @@ TController::determine_consist_state() {
     IsAnyConverterExplicitlyEnabled = false;
 
     pVehicle->for_each(
-        coupling::control,
+        control,
         [this]( TDynamicObject * Vehicle ) {
             auto const *vehicle { Vehicle->MoverParameters };
             IsAnyConverterOverloadRelayOpen |= vehicle->ConvOvldFlag;
@@ -6059,7 +6059,7 @@ TController::determine_consist_state() {
         auto absaccs { fAccGravity }; // Ra 2014-03: jesli skład stoi, to działa na niego składowa styczna grawitacji
         if( mvOccupied->Vel > EU07_AI_NOMOVEMENT ) {
             absaccs = 0;
-			const auto *d = pVehicles[ end::front ]; // pojazd na czele składu
+			const auto *d = pVehicles[ front ]; // pojazd na czele składu
             while( d ) {
                 absaccs += d->MoverParameters->TotalMass * d->MoverParameters->AccS * ( d->DirectionGet() == iDirection ? 1 : -1 );
                 d = d->Next(); // kolejny pojazd, podłączony od tyłu (licząc od czoła)
@@ -6080,7 +6080,7 @@ TController::determine_consist_state() {
     }
     // second pass, for diesel engines verify the (live) engines are fully started
     // TODO: cache presence of diesel engines in the consist, to skip this test if there isn't any
-    p = pVehicles[ end::front ]; // pojazd na czole składu
+    p = pVehicles[ front ]; // pojazd na czole składu
     while( true == Ready
         && p != nullptr ) {
 
@@ -6146,7 +6146,7 @@ TController::control_pantographs() {
 
     // raise/lower pantographs as needed
     auto const useregularpantographlayout {
-        pVehicle->Next(coupling::control) == nullptr // standalone
+        pVehicle->Next(control) == nullptr // standalone
      || is_emu() // special case
      || mvControlling->TrainType == dt_ET41 }; // special case
 
@@ -6159,10 +6159,10 @@ TController::control_pantographs() {
 
         if( fOverhead2 > 0.0 || iOverheadDown ) {
             // jazda z opuszczonymi pantografami
-            if( mvPantographUnit->Pantographs[ end::front ].is_active ) {
+            if( mvPantographUnit->Pantographs[ front ].is_active ) {
                 cue_action( driver_hint::frontpantographvalveoff );
             }
-            if( mvPantographUnit->Pantographs[ end::rear ].is_active ) {
+            if( mvPantographUnit->Pantographs[ rear ].is_active ) {
                 cue_action( driver_hint::rearpantographvalveoff );
             }
         }
@@ -6390,25 +6390,25 @@ TController::control_lights() {
         // jeśli jazda pociągowa
         if( true == TestFlag( OrderCurrentGet(), Obey_train ) ) {
             // head lights
-            if( m_lighthints[ end::front ] == -1 ) {
+            if( m_lighthints[ front ] == -1 ) {
                 cue_action( driver_hint::headcodepc1 );
             }
-            else if( m_lighthints[ end::front ] == ( light::redmarker_left | light::headlight_right | light::headlight_upper ) ) {
+            else if( m_lighthints[ front ] == ( redmarker_left | headlight_right | headlight_upper ) ) {
                 cue_action( driver_hint::headcodepc2 );
             }
             else {
                 // custom light pattern
                 if( AIControllFlag ) {
-                    pVehicles[ end::front ]->RaLightsSet( m_lighthints[ end::front ], -1 );
+                    pVehicles[ front ]->RaLightsSet( m_lighthints[ front ], -1 );
                 }
             }
             // tail lights
-            if( m_lighthints[ end::rear ] == -1 ) {
+            if( m_lighthints[ rear ] == -1 ) {
                 cue_action( driver_hint::headcodepc5 );
             }
             else {
                 if( AIControllFlag ) {
-                    pVehicles[ end::rear ]->RaLightsSet( -1, m_lighthints[ end::rear ] );
+                    pVehicles[ rear ]->RaLightsSet( -1, m_lighthints[ rear ] );
                 }
             }
         }
@@ -6419,8 +6419,8 @@ TController::control_lights() {
     }
     else if( is_car() ) {
         Lights(
-            light::headlight_left | light::headlight_right,
-            light::redmarker_left | light::redmarker_right );
+            headlight_left | headlight_right,
+            redmarker_left | redmarker_right );
     }
 }
 
@@ -6535,7 +6535,7 @@ TController::scan_obstacles( double const Range ) {
     // HACK: vehicle order in the consist is based on intended travel direction
     // if our actual travel direction doesn't match that, we should be scanning from the other end of the consist
     // we cast to int to avoid getting confused by microstutters
-	const auto *frontvehicle { pVehicles[ ( static_cast<int>( mvOccupied->V ) * iDirection >= 0 ? end::front : end::rear ) ] };
+	const auto *frontvehicle { pVehicles[ ( static_cast<int>( mvOccupied->V ) * iDirection >= 0 ? front : rear ) ] };
 
     int routescandirection;
     // for moving vehicle determine heading from velocity; for standing fall back on the set direction
@@ -6543,11 +6543,11 @@ TController::scan_obstacles( double const Range ) {
 	        frontvehicle->MoverParameters->V > 0.0 :
 	        pVehicle->DirectionGet() == frontvehicle->DirectionGet() ? iDirection >= 0 : iDirection <= 0 ) {
         // towards coupler 0
-        routescandirection = end::front;
+        routescandirection = front;
     }
     else {
         // towards coupler 1
-        routescandirection = end::rear;
+        routescandirection = rear;
     }
 /*
     if( pVehicle->MoverParameters->CabOccupied < 0 ) {
@@ -6757,7 +6757,7 @@ TController::check_load_exchange() {
     if( fStopTime > 0 ) { return; }
 
     // czas postoju przed dalszą jazdą (np. na przystanku)
-	const auto *vehicle { pVehicles[ end::front ] };
+	const auto *vehicle { pVehicles[ front ] };
     while( vehicle != nullptr ) {
         auto const vehicleexchangetime { vehicle->LoadExchangeTime() };
         DoesAnyDoorNeedOpening |= vehicleexchangetime > 0 && vehicle->LoadExchangeSpeed() == 0;
@@ -6830,7 +6830,7 @@ TController::UpdateLooseShunt() {
      && mvOccupied->Vel < 1.0 ) {
 
 		const auto *vehicle { Obstacle.vehicle };
-        auto const direction { ( vehicle->Prev() != nullptr ? end::front : end::rear ) };
+        auto const direction { ( vehicle->Prev() != nullptr ? front : rear ) };
         while( vehicle != nullptr ) {
             if( vehicle->MoverParameters->BrakePress > 0.2 ) {
                 vehicle->MoverParameters->BrakeLevelSet( 0 ); // hamulec na zero, aby nie hamował
@@ -6838,7 +6838,7 @@ TController::UpdateLooseShunt() {
             }
             // NOTE: we trust the consist to be arranged in a valid chain
             // TBD, TODO: traversal direction validation?
-            vehicle = direction == end::front ? vehicle->Prev() : vehicle->Next();
+            vehicle = direction == front ? vehicle->Prev() : vehicle->Next();
         }
     }
 }
@@ -6865,7 +6865,7 @@ TController::UpdateObeyTrain() {
                 tsGuardSignal.owner( pVehicle );
                 // place virtual conductor some distance away
                 tsGuardSignal.offset( { pVehicle->MoverParameters->Dim.W * -0.75f, 1.7f, std::min( -20.0, -0.2 * fLength ) } );
-                tsGuardSignal.play( sound_flags::exclusive );
+                tsGuardSignal.play( exclusive );
                 // NOTE: we can't rely on is_playing() check as sound playback is based on distance from local camera
                 fActionTime = -5.0; // niech trochę potrzyma
             }
@@ -6936,10 +6936,10 @@ TController::UpdateConnect() {
                 // write down which vehicle should be coupled with the target consist,
                 // so we don't lose track of it if the user does something unexpected
                 iCouplingVehicle = {
-                    pVehicles[ end::front ],
-                    ( pVehicles[ end::front ]->DirectionGet() > 0 ?
-                        end::front :
-                        end::rear ) };
+                    pVehicles[ front ],
+                    ( pVehicles[ front ]->DirectionGet() > 0 ?
+                        front :
+                        rear ) };
                 iDrivigFlags |= moveConnect;
             }
         }
@@ -6949,7 +6949,7 @@ TController::UpdateConnect() {
 void
 TController::GuardOpenDoor() {
 	if ((iDrivigFlags & moveGuardOpenDoor) != 0) {
-		const auto *vehicle{ pVehicles[end::front] };
+		const auto *vehicle{ pVehicles[front] };
 		while (vehicle != nullptr && vehicle->MoverParameters->Doors.range == 0) {
 			vehicle = vehicle->Next();
 		}
@@ -6957,10 +6957,10 @@ TController::GuardOpenDoor() {
 			auto const lewe = vehicle->DirectionGet() > 0 ? 1 : 2;
 			auto const prawe = 3 - lewe;
 			if (m_lastexchangeplatforms & lewe) {
-				vehicle->MoverParameters->OperateDoors(side::left, true, range_t::local);
+				vehicle->MoverParameters->OperateDoors(left, true, range_t::local);
 			}
 			if (m_lastexchangeplatforms & prawe) {
-				vehicle->MoverParameters->OperateDoors(side::right, true, range_t::local);
+				vehicle->MoverParameters->OperateDoors(right, true, range_t::local);
 			}
 		}
 		else {
@@ -6976,14 +6976,14 @@ TController::unit_count( int const Threshold ) const {
     auto unitcount { 1 };
     do {
         auto const decoupledend{ ( vehicle->DirectionGet() > 0 ? // numer sprzęgu od strony czoła składu
-            end::rear :
-            end::front ) };
+            rear :
+            front ) };
         auto const coupling { vehicle->MoverParameters->Couplers[ decoupledend ].CouplingFlag };
-        if( coupling == coupling::faux ) {
+        if( coupling == faux ) {
             break;
         }
         // jeżeli sprzęg zablokowany to liczymy człony jako jeden
-        if( ( coupling & coupling::permanent ) == 0 ) {
+        if( ( coupling & permanent ) == 0 ) {
             ++unitcount;
         }
         vehicle = vehicle->Next();
@@ -7025,10 +7025,10 @@ TController::UpdateDisconnect() {
             // szukanie pojazdu do odczepienia
             do {
                 decoupledend = decoupledvehicle->DirectionGet() > 0 ? // numer sprzęgu od strony czoła składu
-                    end::front :
-                    end::rear;
+                    front :
+                    rear;
                 // jeżeli sprzęg zablokowany to liczymy człony jako jeden
-                if( decoupledvehicle->MoverParameters->Couplers[ decoupledend ].CouplingFlag & coupling::permanent ) {
+                if( decoupledvehicle->MoverParameters->Couplers[ decoupledend ].CouplingFlag & permanent ) {
                     ++vehiclecount;
                 }
                 if( decoupledvehicle != pVehicle ) {
@@ -7051,7 +7051,7 @@ TController::UpdateDisconnect() {
                     decoupledvehicle->Dettach( decoupledend );
                 }
                 // tylko jeśli odepnie
-                if( decoupledvehicle->MoverParameters->Couplers[ decoupledend ].CouplingFlag == coupling::faux ) {
+                if( decoupledvehicle->MoverParameters->Couplers[ decoupledend ].CouplingFlag == faux ) {
                     WriteLog( "Uncoupling [" + mvOccupied->Name + "]: uncoupled" );
                     iVehicleCount = -2;
                     // update trainset state
@@ -7062,7 +7062,7 @@ TController::UpdateDisconnect() {
                         decoupledvehicle->remove_coupler_adapter( decoupledend );
                     }
 */
-                    if( pVehicles[ end::front ]->MoverParameters->Couplers[ decoupledend ].has_adapter() ) {
+                    if( pVehicles[ front ]->MoverParameters->Couplers[ decoupledend ].has_adapter() ) {
                         cue_action( driver_hint::couplingadapterremove, decoupledend );
                     }
                 }
@@ -7665,7 +7665,7 @@ TController::adjust_desired_speed_for_current_speed() {
             }
         }
         // HACK: limit acceleration for cargo trains, to reduce probability of breaking couplers on sudden jolts
-		auto MaxAcc{ 0.5 * mvOccupied->Couplers[(mvOccupied->DirAbsolute >= 0 ? end::rear : end::front)].FmaxC / fMass };
+		auto MaxAcc{ 0.5 * mvOccupied->Couplers[(mvOccupied->DirAbsolute >= 0 ? rear : front)].FmaxC / fMass };
         if( iVehicles - ControlledEnginesCount > 0 ) {
             MaxAcc *= std::clamp( vel * 0.025, 0.2, 1.0 );
         }
@@ -8131,10 +8131,10 @@ void TController::control_main_pipe() {
     // unlocking main pipe
 	if( AccDesired > -0.03
      && true == mvOccupied->LockPipe ) {
-		UniversalBrakeButtons |= TUniversalBrake::ub_UnlockPipe;
+		UniversalBrakeButtons |= ub_UnlockPipe;
 	}
 	else if (false == mvOccupied->LockPipe ) {
-		UniversalBrakeButtons &= ~TUniversalBrake::ub_UnlockPipe;
+		UniversalBrakeButtons &= ~ub_UnlockPipe;
 	}
 
     // napełnianie uderzeniowe

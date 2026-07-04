@@ -25,7 +25,7 @@ namespace network
 		manager();
 
 		std::optional<server_manager> servers;
-		std::shared_ptr<network::client> client;
+		std::shared_ptr<client> client;
 
 		void create_server(const std::string &backend, const std::string &conf);
 		void connect(const std::string &backend, const std::string &conf);

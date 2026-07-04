@@ -58,7 +58,7 @@ struct world_vertex {
     void
         set_half( world_vertex const &Vertex1, world_vertex const &Vertex2 ) {
             *this =
-                world_vertex::lerp(
+                lerp(
                     Vertex1,
                     Vertex2,
                     0.5 ); }
@@ -66,7 +66,7 @@ struct world_vertex {
     void
         set_from_x( world_vertex const &Vertex1, world_vertex const &Vertex2, double const X ) {
             *this =
-                world_vertex::lerp(
+                lerp(
                     Vertex1,
                     Vertex2,
                     ( X - Vertex1.position.x ) / ( Vertex2.position.x - Vertex1.position.x ) ); }
@@ -74,7 +74,7 @@ struct world_vertex {
     void
         set_from_z( world_vertex const &Vertex1, world_vertex const &Vertex2, double const Z ) {
             *this =
-                world_vertex::lerp(
+                lerp(
                     Vertex1,
                     Vertex2,
                     ( Z - Vertex1.position.z ) / ( Vertex2.position.z - Vertex1.position.z ) ); }

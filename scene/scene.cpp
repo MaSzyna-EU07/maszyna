@@ -692,7 +692,7 @@ basic_cell::launch_event( TEventLauncher *Launcher, bool local_only ) {
 
 // adjusts cell bounding area to enclose specified node
 void
-basic_cell::enclose_area( scene::basic_node *Node ) {
+basic_cell::enclose_area( basic_node *Node ) {
 
     m_area.radius = std::max(
         m_area.radius,

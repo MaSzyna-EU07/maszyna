@@ -122,14 +122,14 @@ sound_source::deserialize( cParser &Input, sound_type const Legacytype, int cons
                 Input >> m_range;
             }
         }
-        if( Legacyparameters & sound_parameters::amplitude ) {
+        if( Legacyparameters & amplitude ) {
             if( Input.getTokens( 2, false ) ) {
                 Input
                     >> m_amplitudefactor
                     >> m_amplitudeoffset;
             }
         }
-        if( Legacyparameters & sound_parameters::frequency ) {
+        if( Legacyparameters & frequency ) {
             if( Input.getTokens( 2, false ) ) {
                 Input
                     >> m_frequencyfactor
@@ -161,16 +161,16 @@ sound_source::deserialize_mapping( cParser &Input ) {
 
     // if not block end then the key is followed by assigned value or sub-block
     if( key == "soundmain:" ) {
-        sound( sound_id::main ).buffer = audio::renderer.fetch_buffer( deserialize_random_set( Input, "\n\r\t ,;" ) );
+        sound( main ).buffer = audio::renderer.fetch_buffer( deserialize_random_set( Input, "\n\r\t ,;" ) );
     }
     else if( key == "soundset:" ) {
         deserialize_soundset( Input );
     }
     else if( key == "soundbegin:" ) {
-        sound( sound_id::begin ).buffer = audio::renderer.fetch_buffer( deserialize_random_set( Input, "\n\r\t ,;" ) );
+        sound( begin ).buffer = audio::renderer.fetch_buffer( deserialize_random_set( Input, "\n\r\t ,;" ) );
     }
     else if( key == "soundend:" ) {
-        sound( sound_id::end ).buffer = audio::renderer.fetch_buffer( deserialize_random_set( Input, "\n\r\t ,;" ) );
+        sound( end ).buffer = audio::renderer.fetch_buffer( deserialize_random_set( Input, "\n\r\t ,;" ) );
     }
     else if( key == "soundproofing:" ) {
         // custom soundproofing in format [ p1, p2, p3, p4, p5, p6 ]
@@ -286,9 +286,9 @@ sound_source::deserialize_soundset( cParser &Input ) {
     auto const soundset { deserialize_random_set( Input, "\n\r\t ,;" ) };
     // split retrieved set
     cParser setparser( soundset );
-    sound( sound_id::begin ).buffer = audio::renderer.fetch_buffer( setparser.getToken<std::string>( true, "|" ) );
-    sound( sound_id::main ).buffer  = audio::renderer.fetch_buffer( setparser.getToken<std::string>( true, "|" ) );
-    sound( sound_id::end ).buffer   = audio::renderer.fetch_buffer( setparser.getToken<std::string>( true, "|" ) );
+    sound( begin ).buffer = audio::renderer.fetch_buffer( setparser.getToken<std::string>( true, "|" ) );
+    sound( main ).buffer  = audio::renderer.fetch_buffer( setparser.getToken<std::string>( true, "|" ) );
+    sound( end ).buffer   = audio::renderer.fetch_buffer( setparser.getToken<std::string>( true, "|" ) );
 }
 
 // sends content of the class in legacy (text) format to provided stream
@@ -296,7 +296,7 @@ sound_source::deserialize_soundset( cParser &Input ) {
 void
 sound_source::export_as_text( std::ostream &Output ) const {
 
-    if( sound( sound_id::main ).buffer == null_handle ) { return;  }
+    if( sound( main ).buffer == null_handle ) { return;  }
 
     // generic node header
     Output
@@ -315,7 +315,7 @@ sound_source::export_as_text( std::ostream &Output ) const {
         << m_offset.y << ' '
         << m_offset.z << ' ';
     // sound data
-    auto soundfile { audio::renderer.buffer( sound( sound_id::main ).buffer ).name };
+    auto soundfile { audio::renderer.buffer( sound( main ).buffer ).name };
     if( soundfile.find( paths::sounds ) == 0 ) {
         // don't include 'sounds/' in the path
         soundfile.erase( 0, std::string{ paths::sounds }.size() );
@@ -383,7 +383,7 @@ sound_source::play( int const Flags ) {
     // TBD, TODO: user-configurable
     m_properties.category = m_owner ? sound_category::vehicle : m_range < 0 ? sound_category::ambient : sound_category::local;
 
-    if( sound( sound_id::main ).buffer != null_handle ) {
+    if( sound( main ).buffer != null_handle ) {
         // basic variant: single main sound, with optional bookends
         play_basic();
     }
@@ -399,20 +399,20 @@ sound_source::play_basic() {
     if( false == is_playing() ) {
         // dispatch appropriate sound
         if( true == m_playbeginning
-         && sound(sound_id::begin).buffer != null_handle) {
-            std::vector<sound_id> sounds { sound_id::begin, sound_id::main };
+         && sound(begin).buffer != null_handle) {
+            std::vector<sound_id> sounds { begin, main };
             insert( std::begin( sounds ), std::end( sounds ) );
             m_playbeginning = false;
         }
         else {
-            insert( sound_id::main );
+            insert( main );
         }
     }
     else {
         // for single part non-looping samples we allow spawning multiple instances, if not prevented by set flags
-        if( (m_flags & (sound_flags::exclusive | sound_flags::looping)) == 0
-         && sound(sound_id::begin).buffer == null_handle) {
-            insert( sound_id::main );
+        if( (m_flags & (exclusive | looping)) == 0
+         && sound(begin).buffer == null_handle) {
+            insert( main );
         }
     }
 }
@@ -430,35 +430,35 @@ sound_source::play_combined() {
         if( soundpoint < soundchunk.second.fadein )  { break; }
         if( soundpoint >= soundchunk.second.fadeout ) { continue; }
         
-        if( soundchunk.first.buffer == null_handle || ( (m_flags & (sound_flags::exclusive | sound_flags::looping)) != 0
+        if( soundchunk.first.buffer == null_handle || ( (m_flags & (exclusive | looping)) != 0
            && soundchunk.first.playing > 0 ) ) {
             // combined sounds only play looped, single copy of each activated chunk
             continue;
         }
 
         if( idx > 0 ) {
-            insert( sound_id::chunk | idx );
+            insert( chunk | idx );
         }
         else {
             // initial chunk requires some safety checks if the optional bookend is present,
             // so we don't queue another instance while the bookend is still playing
-            if( sound( sound_id::begin ).buffer == null_handle ) {
+            if( sound( begin ).buffer == null_handle ) {
                 // no bookend, safe to play the chunk
-                insert( sound_id::chunk | idx );
+                insert( chunk | idx );
             }
             else {
                 // branches:
                 // beginning requested, not playing; queue beginning and chunk
                 // beginning not requested, not playing; queue chunk
                 // otherwise skip, one instance is already in the audio queue
-                if( sound( sound_id::begin ).playing == 0 ) {
+                if( sound( begin ).playing == 0 ) {
                     if( true == m_playbeginning ) {
-                        std::vector<sound_handle> sounds{ sound_id::begin, sound_id::chunk | idx };
+                        std::vector<sound_handle> sounds{ begin, chunk | idx };
                         insert( std::begin( sounds ), std::end( sounds ) );
                         m_playbeginning = false;
                     }
                     else {
-                        insert( sound_id::chunk | idx );
+                        insert( chunk | idx );
                     }
                 }
             }
@@ -482,7 +482,7 @@ sound_source::compute_combined_point() const {
 void
 sound_source::play_event() {
 
-    if( true == TestFlag( m_flags, sound_flags::event | sound_flags::looping ) ) {
+    if( true == TestFlag( m_flags, event | looping ) ) {
         // events can potentially start scenery sounds out of the sound's audible range
         // such sounds are stopped on renderer side, but unless stopped by the simulation keep their activation flags
         // we use this to discern event-started sounds which should be re-activated if the listener gets close enough
@@ -504,11 +504,11 @@ sound_source::stop( bool const Skipend ) {
     m_stop = true;
 
     if( false == Skipend
-     && sound(sound_id::end).buffer != null_handle
+     && sound(end).buffer != null_handle
 	    /*     && ( sound( sound_id::end ).buffer != sound( sound_id::main ).buffer ) */ // end == main can happen in malformed legacy cases
-     && sound(sound_id::end).playing < 2 ) { // allows potential single extra instance to account for longer overlapping sounds
+     && sound(end).playing < 2 ) { // allows potential single extra instance to account for longer overlapping sounds
         // spawn potentially defined sound end sample, if the emitter is currently active
-        insert( sound_id::end );
+        insert( end );
     }
 }
 
@@ -523,7 +523,7 @@ sound_source::update( audio::openal_source &Source ) {
         m_stop = true;
     }
 
-    if( sound( sound_id::main ).buffer != null_handle ) {
+    if( sound( main ).buffer != null_handle ) {
         // basic variant: single main sound, with optional bookends
         update_basic( Source );
         return;
@@ -542,21 +542,21 @@ sound_source::update_basic( audio::openal_source &Source ) {
 
         auto const soundhandle { Source.sounds[ Source.sound_index ] };
 
-        if( sound( sound_id::begin ).buffer != null_handle ) {
+        if( sound( begin ).buffer != null_handle ) {
             // potentially a multipart sound
             // detect the moment when the sound moves from startup sample to the main
             if( true == Source.sound_change ) {
                 // when it happens update active sample counters, and potentially activate the looping
-                if( soundhandle == sound_id::main ) {
-                    update_counter( sound_id::begin, -1 );
+                if( soundhandle == main ) {
+                    update_counter( begin, -1 );
                 }
                 update_counter( soundhandle, 1 );
-                Source.loop( soundhandle == sound_id::main ? TestFlag(m_flags, sound_flags::looping) : false );
+                Source.loop( soundhandle == main ? TestFlag(m_flags, looping) : false );
             }
         }
 
         if( true == m_stop
-         && soundhandle != sound_id::end ) {
+         && soundhandle != end ) {
             // kill the sound if stop was requested, unless it's sound bookend sample
             update_counter( soundhandle, -1 );
             Source.stop();
@@ -593,7 +593,7 @@ sound_source::update_basic( audio::openal_source &Source ) {
             auto const soundhandle { Source.sounds[ Source.sound_index ] };
             // emitter initialization
             // main sample can be optionally set to loop
-            Source.loop( soundhandle == sound_id::main ? TestFlag(m_flags, sound_flags::looping) : false );
+            Source.loop( soundhandle == main ? TestFlag(m_flags, looping) : false );
             Source.range( m_range );
             Source.pitch( m_pitchvariation );
             update_location();
@@ -638,19 +638,19 @@ sound_source::update_combined( audio::openal_source &Source ) {
 
         auto const soundhandle { Source.sounds[ Source.sound_index ] };
 
-        if( sound( sound_id::begin ).buffer != null_handle ) {
+        if( sound( begin ).buffer != null_handle ) {
             // potentially a multipart sound
             // detect the moment when the sound moves from startup sample to the main
             if( true == Source.sound_change ) {
                 // when it happens update active sample counters, and activate the looping
-                update_counter( sound_id::begin, -1 );
+                update_counter( begin, -1 );
                 update_counter( soundhandle, 1 );
                 Source.loop( true );
             }
         }
 
         if( true == m_stop
-         && soundhandle != sound_id::end ) {
+         && soundhandle != end ) {
             // kill the sound if stop was requested, unless it's sound bookend sample
             Source.stop();
             update_counter( soundhandle, -1 );
@@ -671,11 +671,11 @@ sound_source::update_combined( audio::openal_source &Source ) {
             return;
         }
 */
-        if( ( soundhandle & sound_id::chunk ) != 0 ) {
+        if( ( soundhandle & chunk ) != 0 ) {
             // for sound chunks, test whether the chunk should still be active given current value of the controlling variable
-            if( ( m_flags & ( sound_flags::exclusive | sound_flags::looping ) ) != 0 ) {
+            if( ( m_flags & ( exclusive | looping ) ) != 0 ) {
                 auto const soundpoint { compute_combined_point() };
-                auto const &soundchunk { m_soundchunks[ soundhandle ^ sound_id::chunk ] };
+                auto const &soundchunk { m_soundchunks[ soundhandle ^ chunk ] };
                 if( soundpoint < soundchunk.second.fadein
                  || soundpoint >= soundchunk.second.fadeout ) {
                     Source.stop();
@@ -709,9 +709,9 @@ sound_source::update_combined( audio::openal_source &Source ) {
             // the emitter wasn't yet started
             auto const soundhandle { Source.sounds[ Source.sound_index ] };
             // emitter initialization
-            if( soundhandle != sound_id::begin
-             && soundhandle != sound_id::end
-             && true == TestFlag(m_flags, sound_flags::looping) ) {
+            if( soundhandle != begin
+             && soundhandle != end
+             && true == TestFlag(m_flags, looping) ) {
                 // main sample can be optionally set to loop
                 Source.loop( true );
             }
@@ -747,7 +747,7 @@ sound_source::update_combined( audio::openal_source &Source ) {
 void
 sound_source::update_crossfade( sound_handle const Chunk ) {
 
-    if( ( Chunk & sound_id::chunk ) == 0 ) {
+    if( ( Chunk & chunk ) == 0 ) {
         // bookend sounds are played at their base pitch
         m_properties.pitch = 1.f;
         return;
@@ -756,7 +756,7 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
     auto const soundpoint { compute_combined_point() };
 
     // NOTE: direct access to implementation details ahead, kinda fugly
-    auto const chunkindex { Chunk ^ sound_id::chunk };
+    auto const chunkindex { Chunk ^ chunk };
     auto const &chunkdata { m_soundchunks[ chunkindex ].second };
 
     // relative pitch adjustment
@@ -862,14 +862,14 @@ bool
 sound_source::empty() const {
 
     // NOTE: we test only the main sound, won't bother playing potential bookends if this is missing
-    return sound(sound_id::main).buffer == null_handle && m_soundchunksempty;
+    return sound(main).buffer == null_handle && m_soundchunksempty;
 }
 
 // returns true if the source is emitting any sound
 bool
 sound_source::is_playing( bool const Includesoundends ) const {
 
-    auto isplaying { sound(sound_id::begin).playing > 0 || sound(sound_id::main).playing > 0 };
+    auto isplaying { sound(begin).playing > 0 || sound(main).playing > 0 };
     if( false == isplaying
      && false == m_soundchunks.empty() ) {
         // for emitters with sample tables check also if any of the chunks is active
@@ -887,21 +887,21 @@ sound_source::is_playing( bool const Includesoundends ) const {
 bool
 sound_source::is_combined() const {
 
-    return !m_soundchunks.empty() && sound(sound_id::main).buffer == null_handle;
+    return !m_soundchunks.empty() && sound(main).buffer == null_handle;
 }
 
 // returns true if specified buffer is one of the optional bookends
 bool
 sound_source::is_bookend( audio::buffer_handle const Buffer ) const {
 
-    return sound(sound_id::begin).buffer == Buffer || sound(sound_id::end).buffer == Buffer;
+    return sound(begin).buffer == Buffer || sound(end).buffer == Buffer;
 }
 
 // returns true if the source has optional bookends
 bool
 sound_source::has_bookends() const {
 
-    return sound(sound_id::begin).buffer != null_handle && sound(sound_id::end).buffer != null_handle;
+    return sound(begin).buffer != null_handle && sound(end).buffer != null_handle;
 }
 
 // returns location of the sound source in simulation region space
@@ -1023,11 +1023,11 @@ sound_source::insert( sound_handle const Sound ) {
 sound_source::sound_data &
 sound_source::sound( sound_handle const Sound ) {
 
-    return (Sound & sound_id::chunk) == sound_id::chunk ? m_soundchunks[Sound ^ sound_id::chunk].first : m_sounds[Sound];
+    return (Sound & chunk) == chunk ? m_soundchunks[Sound ^ chunk].first : m_sounds[Sound];
 }
 
 sound_source::sound_data const &
 sound_source::sound( sound_handle const Sound ) const {
 
-    return (Sound & sound_id::chunk) == sound_id::chunk ? m_soundchunks[Sound ^ sound_id::chunk].first : m_sounds[Sound];
+    return (Sound & chunk) == chunk ? m_soundchunks[Sound ^ chunk].first : m_sounds[Sound];
 }

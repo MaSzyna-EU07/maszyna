@@ -1087,7 +1087,7 @@ void driver_mode::ExternalView()
 	if (true == m_externalview)
 	{
 		// we're already in some external view mode, so select next one on the list
-		m_externalviewmode = clamp_circular(++m_externalviewmode, static_cast<int>(view::count_));
+		m_externalviewmode = clamp_circular(++m_externalviewmode, static_cast<int>(count_));
 	}
 
 	FreeFlyModeFlag = true;
@@ -1097,10 +1097,10 @@ void driver_mode::ExternalView()
 	// configure camera placement for the selected view mode
 	switch (m_externalviewmode)
 	{
-	case view::consistfront:
+	case consistfront:
 	{
 		// bind camera with the vehicle
-		auto *owner{vehicle->Mechanik->Vehicle(end::front)};
+		auto *owner{vehicle->Mechanik->Vehicle(front)};
 
 		Camera.m_owner = owner;
 
@@ -1127,10 +1127,10 @@ void driver_mode::ExternalView()
 
 		break;
 	}
-	case view::consistrear:
+	case consistrear:
 	{
 		// bind camera with the vehicle
-		auto *owner{vehicle->Mechanik->Vehicle(end::rear)};
+		auto *owner{vehicle->Mechanik->Vehicle(rear)};
 
 		Camera.m_owner = owner;
 
@@ -1156,9 +1156,9 @@ void driver_mode::ExternalView()
 		Camera.Angle.z = shakeangles.first; // hustanie kamery na boki
 		break;
 	}
-	case view::bogie:
+	case bogie:
 	{
-		auto *owner{vehicle->Mechanik->Vehicle(end::front)};
+		auto *owner{vehicle->Mechanik->Vehicle(front)};
 
 		Camera.m_owner = owner;
 
@@ -1185,7 +1185,7 @@ void driver_mode::ExternalView()
 
 		break;
 	}
-	case view::driveby:
+	case driveby:
 	{
 		DistantView(false);
 		break;

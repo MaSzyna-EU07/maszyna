@@ -27,7 +27,7 @@ public:
     };
 // constructors
     template<typename ...Args_>
-    basic_element( basic_element::type_e Type = basic_element::type_e::variable, Args_ ...Args );
+    basic_element( type_e Type = type_e::variable, Args_ ...Args );
 // methods
     // data access
     auto input() -> int &;
@@ -116,7 +116,7 @@ private:
     auto element( element_handle const Element ) -> basic_element & {
         return m_elements[ Element - 1 ]; }
 // members
-    static std::map<std::string, basic_controller::opcode_e> const m_operationcodemap;
+    static std::map<std::string, opcode_e> const m_operationcodemap;
     element_sequence m_elements; // collection of elements accessed by the plc program
     name_sequence m_elementnames;
     handle_sequence m_timerhandles; // indices of timer elements, timer update optimization helper
@@ -129,7 +129,7 @@ private:
 };
 
 template<typename ...Args_>
-basic_element::basic_element( basic_element::type_e Type, Args_ ...Args )
+basic_element::basic_element( type_e Type, Args_ ...Args )
 {
     switch( Type ) {
         case type_e::variable: {

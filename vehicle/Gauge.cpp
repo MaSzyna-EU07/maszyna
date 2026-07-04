@@ -228,7 +228,7 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
 };
 
 bool
-TGauge::Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad ) {
+TGauge::Load_mapping( cParser &Input, scratch_data &Scratchpad ) {
 
     // token can be a key or block end
     auto const key { Input.getToken<std::string>( true, "\n\r\t  ,;" ) };
@@ -316,7 +316,7 @@ TGauge::UpdateValue( float fNewDesired ) {
     }
     else {
         // toggle the control to continous range/exclusive sound mode from now on
-        m_soundtype = sound_flags::exclusive;
+        m_soundtype = exclusive;
     }
     // ...and if there isn't any, fall back on the basic set...
     auto const currentvalue = GetValue();

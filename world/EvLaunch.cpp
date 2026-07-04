@@ -67,8 +67,8 @@ bool TEventLauncher::Load(cParser *parser)
         else {
             // this launcher may be activated by radio message
             std::map<std::string, int> messages {
-                { "radio_call1", radio_message::call1 },
-                { "radio_call3", radio_message::call3 }
+                { "radio_call1", call1 },
+                { "radio_call3", call3 }
             };
 			const auto lookup = messages.find( token );
             iKey = lookup != messages.end() ? lookup->second :

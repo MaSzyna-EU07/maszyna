@@ -624,7 +624,7 @@ struct TCommand
 	/// <summary>Second numeric argument.</summary>
 	double Value2 = 0.0;
 	/// <summary>Coupling flag controlling how the command propagates between vehicles.</summary>
-	int Coupling{coupling::control}; // coupler flag used to determine command propagation
+	int Coupling{control}; // coupler flag used to determine command propagation
 	/// <summary>World-space location associated with the command.</summary>
 	TLocation Location;
 };
@@ -1210,10 +1210,10 @@ struct TCoupling
 	double FmaxC = 1000.0;
 	double beta = 0.0;
 	TCouplerType CouplerType = TCouplerType::NoCoupler; /*typ sprzegu*/
-	int AutomaticCouplingFlag = coupling::coupler;
-	int AllowedFlag = coupling::coupler | coupling::brakehose; // Ra: maska dostępnych
-	int PowerFlag = coupling::power110v | coupling::power24v;
-	int PowerCoupling = coupling::permanent; // type of coupling required for power transfer
+	int AutomaticCouplingFlag = coupler;
+	int AllowedFlag = coupler | brakehose; // Ra: maska dostępnych
+	int PowerFlag = power110v | power24v;
+	int PowerCoupling = permanent; // type of coupling required for power transfer
 	/*zmienne*/
 	bool AutomaticCouplingAllowed{true}; // whether automatic coupling can be currently performed
 	int CouplingFlag = 0; /*0 - wirtualnie, 1 - sprzegi, 2 - pneumatycznie, 4 - sterowanie, 8 - kabel mocy*/
@@ -1424,10 +1424,10 @@ class TMoverParameters
 	struct door_data
 	{
 		// config
-		control_t open_control{control_t::passenger};
+		control_t open_control{passenger};
 		float open_rate{1.f};
 		float open_delay{0.f};
-		control_t close_control{control_t::passenger};
+		control_t close_control{passenger};
 		float close_rate{1.f};
 		float close_delay{0.f};
 		int type{2};
@@ -2317,7 +2317,7 @@ class TMoverParameters
 	double ShowEngineRotation(int VehN);
 
 	// Q *******************************************************************************************
-	double GetTrainsetVoltage(int const Coupling = coupling::heating | coupling::highvoltage) const;
+	double GetTrainsetVoltage(int const Coupling = heating | highvoltage) const;
 	double GetTrainsetHighVoltage() const;
 	bool switch_physics(bool const State);
 	double LocalBrakeRatio(void);
@@ -2330,10 +2330,10 @@ class TMoverParameters
 	double EngineMaxRPM() const;
 
 	/*! przesylanie komend sterujacych*/
-	bool SendCtrlToNext(std::string const CtrlCommand, double const ctrlvalue, double const dir, int const Couplertype = coupling::control);
-	bool SetInternalCommand(std::string NewCommand, double NewValue1, double NewValue2, int const Couplertype = coupling::control);
+	bool SendCtrlToNext(std::string const CtrlCommand, double const ctrlvalue, double const dir, int const Couplertype = control);
+	bool SetInternalCommand(std::string NewCommand, double NewValue1, double NewValue2, int const Couplertype = control);
 	double GetExternalCommand(std::string &Command);
-	bool RunCommand(std::string Command, double CValue1, double CValue2, int const Couplertype = coupling::control);
+	bool RunCommand(std::string Command, double CValue1, double CValue2, int const Couplertype = control);
 	bool RunInternalCommand();
 	void PutCommand(std::string NewCommand, double NewValue1, double NewValue2, const TLocation &NewLocation);
 	bool CabActivisation(bool const Enforce = false);

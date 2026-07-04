@@ -18,12 +18,12 @@ namespace gfx {
 // opengl vbo-based variant of the geometry bank
 
 GLuint opengl_vbogeometrybank::m_activevertexbuffer { 0 }; // buffer bound currently on the opengl end, if any
-unsigned int opengl_vbogeometrybank::m_activestreams { gfx::stream::none }; // currently enabled data type pointers
+unsigned int opengl_vbogeometrybank::m_activestreams { none }; // currently enabled data type pointers
 std::vector<GLint> opengl_vbogeometrybank::m_activetexturearrays; // currently enabled texture coord arrays
 
 // create() subclass details
 void
-opengl_vbogeometrybank::create_( gfx::geometry_handle const &Geometry ) {
+opengl_vbogeometrybank::create_( geometry_handle const &Geometry ) {
     // adding a chunk means we'll be (re)building the buffer, which will fill the chunk records, amongst other things.
     // thus we don't need to initialize the values here
     m_chunkrecords.emplace_back( chunk_record() );
@@ -33,12 +33,12 @@ opengl_vbogeometrybank::create_( gfx::geometry_handle const &Geometry ) {
 
 // replace() subclass details
 void
-opengl_vbogeometrybank::replace_( gfx::geometry_handle const &Geometry ) {
+opengl_vbogeometrybank::replace_( geometry_handle const &Geometry ) {
 
     auto &chunkrecord = m_chunkrecords[ Geometry.chunk - 1 ];
     chunkrecord.is_good = false;
     // if the overall length of the chunk didn't change we can get away with reusing the old buffer...
-    if( geometry_bank::chunk( Geometry ).vertices.size() != chunkrecord.vertex_count ) {
+    if( chunk( Geometry ).vertices.size() != chunkrecord.vertex_count ) {
         // ...but otherwise we'll need to allocate a new one
         // TBD: we could keep and reuse the old buffer also if the new chunk is smaller than the old one,
         // but it'd require some extra tracking and work to keep all chunks up to date; also wasting vram; may be not worth it?
@@ -48,7 +48,7 @@ opengl_vbogeometrybank::replace_( gfx::geometry_handle const &Geometry ) {
 
 // draw() subclass details
 std::size_t
-opengl_vbogeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams ) {
+opengl_vbogeometrybank::draw_( geometry_handle const &Geometry, stream_units const &Units, unsigned int const Streams ) {
 
     setup_buffer();
 
@@ -59,20 +59,20 @@ opengl_vbogeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stream
     if( m_activevertexbuffer != m_vertexbuffer ) {
         bind_buffer();
     }
-    auto const &chunk = gfx::geometry_bank::chunk( Geometry );
+    auto const &chunk = geometry_bank::chunk( Geometry );
     if( false == chunkrecord.is_good ) {
         // we may potentially need to upload new buffer data before we can draw it
         if( chunkrecord.index_count > 0 ) {
             ::glBufferSubData(
                 GL_ELEMENT_ARRAY_BUFFER,
-                chunkrecord.index_offset * sizeof( gfx::basic_index ),
-                chunkrecord.index_count * sizeof( gfx::basic_index ),
+                chunkrecord.index_offset * sizeof( basic_index ),
+                chunkrecord.index_count * sizeof( basic_index ),
                 chunk.indices.data() );
         }
         ::glBufferSubData(
             GL_ARRAY_BUFFER,
-            chunkrecord.vertex_offset * sizeof( gfx::basic_vertex ),
-            chunkrecord.vertex_count * sizeof( gfx::basic_vertex ),
+            chunkrecord.vertex_offset * sizeof( basic_vertex ),
+            chunkrecord.vertex_count * sizeof( basic_vertex ),
             chunk.vertices.data() );
         chunkrecord.is_good = true;
     }
@@ -91,7 +91,7 @@ opengl_vbogeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stream
             ::glDrawRangeElementsBaseVertex(
                 chunk.type,
                 0, chunkrecord.vertex_count,
-                chunkrecord.index_count, GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
+                chunkrecord.index_count, GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( basic_index ) ),
                 chunkrecord.vertex_offset );
         }
         else {
@@ -99,7 +99,7 @@ opengl_vbogeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stream
             ::glDrawRangeElements(
                 chunk.type,
                 0, chunkrecord.vertex_count,
-                chunkrecord.index_count, GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ) );
+                chunkrecord.index_count, GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( basic_index ) ) );
         }
     }
     else {
@@ -171,7 +171,7 @@ opengl_vbogeometrybank::setup_buffer() {
     if( indexcount > 0 ) {
         ::glBufferData(
             GL_ELEMENT_ARRAY_BUFFER,
-            indexcount * sizeof( gfx::basic_index ),
+            indexcount * sizeof( basic_index ),
             nullptr,
             GL_STATIC_DRAW );
         if( ::glGetError() == GL_OUT_OF_MEMORY ) {
@@ -183,7 +183,7 @@ opengl_vbogeometrybank::setup_buffer() {
     }
     ::glBufferData(
         GL_ARRAY_BUFFER,
-        vertexcount * sizeof( gfx::basic_vertex ),
+        vertexcount * sizeof( basic_vertex ),
         nullptr,
         GL_STATIC_DRAW );
     if( ::glGetError() == GL_OUT_OF_MEMORY ) {
@@ -200,7 +200,7 @@ opengl_vbogeometrybank::bind_buffer() {
     ::glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, m_indexbuffer );
     ::glBindBuffer( GL_ARRAY_BUFFER, m_vertexbuffer );
     m_activevertexbuffer = m_vertexbuffer;
-    m_activestreams = gfx::stream::none;
+    m_activestreams = none;
 }
 
 void
@@ -224,34 +224,34 @@ opengl_vbogeometrybank::delete_buffer() {
 }
 
 void
-opengl_vbogeometrybank::bind_streams( gfx::stream_units const &Units, unsigned int const Streams, size_t offset ) {
+opengl_vbogeometrybank::bind_streams( stream_units const &Units, unsigned int const Streams, size_t offset ) {
 
-    if( Streams & gfx::stream::position ) {
-        ::glVertexPointer( 3, GL_FLOAT, sizeof( gfx::basic_vertex ), reinterpret_cast<void const *>( offsetof(gfx::basic_vertex, position) + sizeof( gfx::basic_vertex ) * offset ) );
+    if( Streams & position ) {
+        ::glVertexPointer( 3, GL_FLOAT, sizeof( basic_vertex ), reinterpret_cast<void const *>( offsetof(gfx::basic_vertex, position) + sizeof( basic_vertex ) * offset ) );
         ::glEnableClientState( GL_VERTEX_ARRAY );
     }
     else {
         ::glDisableClientState( GL_VERTEX_ARRAY );
     }
     // NOTE: normal and color streams share the data, making them effectively mutually exclusive
-    if( Streams & gfx::stream::normal ) {
-        ::glNormalPointer( GL_FLOAT, sizeof( gfx::basic_vertex ), reinterpret_cast<void const *>( offsetof(gfx::basic_vertex, normal) + sizeof( gfx::basic_vertex ) * offset ) );
+    if( Streams & normal ) {
+        ::glNormalPointer( GL_FLOAT, sizeof( basic_vertex ), reinterpret_cast<void const *>( offsetof(gfx::basic_vertex, normal) + sizeof( basic_vertex ) * offset ) );
         ::glEnableClientState( GL_NORMAL_ARRAY );
     }
     else {
         ::glDisableClientState( GL_NORMAL_ARRAY );
     }
-    if( Streams & gfx::stream::color ) {
-        ::glColorPointer( 3, GL_FLOAT, sizeof( gfx::basic_vertex ), reinterpret_cast<void const *>( offsetof(gfx::basic_vertex, normal) + sizeof( gfx::basic_vertex ) * offset ) );
+    if( Streams & color ) {
+        ::glColorPointer( 3, GL_FLOAT, sizeof( basic_vertex ), reinterpret_cast<void const *>( offsetof(gfx::basic_vertex, normal) + sizeof( basic_vertex ) * offset ) );
         ::glEnableClientState( GL_COLOR_ARRAY );
     }
     else {
         ::glDisableClientState( GL_COLOR_ARRAY );
     }
-    if( Streams & gfx::stream::texture ) {
+    if( Streams & texture ) {
         for (const auto unit : Units.texture ) {
             ::glClientActiveTexture( GL_TEXTURE0 + unit );
-            ::glTexCoordPointer( 2, GL_FLOAT, sizeof( gfx::basic_vertex ), reinterpret_cast<void const *>( offsetof(gfx::basic_vertex, texture) + sizeof( gfx::basic_vertex ) * offset ) );
+            ::glTexCoordPointer( 2, GL_FLOAT, sizeof( basic_vertex ), reinterpret_cast<void const *>( offsetof(gfx::basic_vertex, texture) + sizeof( basic_vertex ) * offset ) );
             ::glEnableClientState( GL_TEXTURE_COORD_ARRAY );
         }
         m_activetexturearrays = Units.texture;
@@ -278,7 +278,7 @@ opengl_vbogeometrybank::release_streams() {
         ::glDisableClientState( GL_TEXTURE_COORD_ARRAY );
     }
 
-    m_activestreams = gfx::stream::none;
+    m_activestreams = none;
     m_activetexturearrays.clear();
 }
 
@@ -286,21 +286,21 @@ opengl_vbogeometrybank::release_streams() {
 
 // create() subclass details
 void
-opengl_dlgeometrybank::create_( gfx::geometry_handle const &Geometry ) {
+opengl_dlgeometrybank::create_( geometry_handle const &Geometry ) {
 
     m_chunkrecords.emplace_back( chunk_record() );
 }
 
 // replace() subclass details
 void
-opengl_dlgeometrybank::replace_( gfx::geometry_handle const &Geometry ) {
+opengl_dlgeometrybank::replace_( geometry_handle const &Geometry ) {
 
     delete_list( Geometry );
 }
 
 // draw() subclass details
 std::size_t
-opengl_dlgeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams ) {
+opengl_dlgeometrybank::draw_( geometry_handle const &Geometry, stream_units const &Units, unsigned int const Streams ) {
 
     auto &chunkrecord = m_chunkrecords[ Geometry.chunk - 1 ];
     if( chunkrecord.streams != Streams ) {
@@ -311,7 +311,7 @@ opengl_dlgeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stream_
         // we don't have a list ready, so compile one
         chunkrecord.streams = Streams;
         chunkrecord.list = ::glGenLists( 1 );
-        auto const &chunk = gfx::geometry_bank::chunk( Geometry );
+        auto const &chunk = geometry_bank::chunk( Geometry );
         ::glNewList( chunkrecord.list, GL_COMPILE );
 
         ::glBegin( chunk.type );
@@ -319,19 +319,19 @@ opengl_dlgeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stream_
             // indexed geometry
             for( auto const &index : chunk.indices ) {
                 auto const &vertex { chunk.vertices[ index ] };
-                     if( Streams & gfx::stream::normal ) { ::glNormal3fv( glm::value_ptr( vertex.normal ) ); }
-                else if( Streams & gfx::stream::color ) { ::glColor3fv( glm::value_ptr( vertex.normal ) ); }
-                if( Streams & gfx::stream::texture ) { for (const auto unit : Units.texture ) { ::glMultiTexCoord2fv( unit, glm::value_ptr( vertex.texture ) ); } }
-                if( Streams & gfx::stream::position ) { ::glVertex3fv( glm::value_ptr( vertex.position ) ); }
+                     if( Streams & normal ) { ::glNormal3fv( glm::value_ptr( vertex.normal ) ); }
+                else if( Streams & color ) { ::glColor3fv( glm::value_ptr( vertex.normal ) ); }
+                if( Streams & texture ) { for (const auto unit : Units.texture ) { ::glMultiTexCoord2fv( unit, glm::value_ptr( vertex.texture ) ); } }
+                if( Streams & position ) { ::glVertex3fv( glm::value_ptr( vertex.position ) ); }
             }
         }
         else {
             // raw geometry
             for( auto const &vertex : chunk.vertices ) {
-                     if( Streams & gfx::stream::normal ) { ::glNormal3fv( glm::value_ptr( vertex.normal ) ); }
-                else if( Streams & gfx::stream::color ) { ::glColor3fv( glm::value_ptr( vertex.normal ) ); }
-                if( Streams & gfx::stream::texture ) { for (const auto unit : Units.texture ) { ::glMultiTexCoord2fv( unit, glm::value_ptr( vertex.texture ) ); } }
-                if( Streams & gfx::stream::position ) { ::glVertex3fv( glm::value_ptr( vertex.position ) ); }
+                     if( Streams & normal ) { ::glNormal3fv( glm::value_ptr( vertex.normal ) ); }
+                else if( Streams & color ) { ::glColor3fv( glm::value_ptr( vertex.normal ) ); }
+                if( Streams & texture ) { for (const auto unit : Units.texture ) { ::glMultiTexCoord2fv( unit, glm::value_ptr( vertex.texture ) ); } }
+                if( Streams & position ) { ::glVertex3fv( glm::value_ptr( vertex.position ) ); }
             }
         }
         ::glEnd();
@@ -358,19 +358,19 @@ opengl_dlgeometrybank::release_() {
             ::glDeleteLists( chunkrecord.list, 1 );
             chunkrecord.list = 0;
         }
-        chunkrecord.streams = gfx::stream::none;
+        chunkrecord.streams = none;
     }
 }
 
 void
-opengl_dlgeometrybank::delete_list( gfx::geometry_handle const &Geometry ) {
+opengl_dlgeometrybank::delete_list( geometry_handle const &Geometry ) {
     // NOTE: given it's our own internal method we trust it to be called with valid parameters
     auto &chunkrecord = m_chunkrecords[ Geometry.chunk - 1 ];
     if( chunkrecord.list != 0 ) {
         ::glDeleteLists( chunkrecord.list, 1 );
         chunkrecord.list = 0;
     }
-    chunkrecord.streams = gfx::stream::none;
+    chunkrecord.streams = none;
 }
 
 } // namespace gfx

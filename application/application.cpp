@@ -222,7 +222,7 @@ void eu07_application::DiscordRPCService()
 	while (!glfwWindowShouldClose(m_windows.front()) && !m_modestack.empty() && !Global.applicationQuitOrder)
 	{
 		const auto currentMode = m_modestack.top();
-		if (currentMode == mode::launcher)
+		if (currentMode == launcher)
 		{
 			// in launcher mode
 
@@ -236,7 +236,7 @@ void eu07_application::DiscordRPCService()
 			std::this_thread::sleep_for(std::chrono::milliseconds(5000)); // update RPC every 5 secs
 			continue;
 		}
-		else if (currentMode == mode::scenarioloader)
+		else if (currentMode == scenarioloader)
 		{
 			std::string rpcScnName = Global.SceneryFile;
 			if (rpcScnName[0] == '$')
@@ -261,7 +261,7 @@ void eu07_application::DiscordRPCService()
 			continue;
 		}
 
-		if (currentMode != mode::driver)
+		if (currentMode != driver)
 			continue;
 
 		// Discord RPC updater
@@ -1009,7 +1009,7 @@ void eu07_application::init_debug()
 void eu07_application::init_console()
 {
 #ifdef _WIN32
-	HWND consoleWnd = ::GetConsoleWindow();
+	HWND consoleWnd = GetConsoleWindow();
 	const bool hadConsole = consoleWnd != nullptr;
 
 	if (Global.ShowSystemConsole)
@@ -1019,7 +1019,7 @@ void eu07_application::init_console()
 			// no console inherited (e.g. WINDOWS subsystem build, or launched
 			// detached) -- create one and wire stdio to it so printf in
 			// utilities/Logs.cpp actually reaches the user
-			if (::AllocConsole())
+			if (AllocConsole())
 			{
 				FILE *fp = nullptr;
 				freopen_s(&fp, "CONOUT$", "w", stdout);
@@ -1031,7 +1031,7 @@ void eu07_application::init_console()
 				std::cerr.clear();
 				std::clog.clear();
 				std::cin.clear();
-				consoleWnd = ::GetConsoleWindow();
+				consoleWnd = GetConsoleWindow();
 			}
 		}
 
@@ -1047,7 +1047,7 @@ void eu07_application::init_console()
 		// as text ("←[32m" etc). Open CONOUT$ directly to get the real screen
 		// buffer handle, then flip VT on it.
 		auto enable_vt = [](const char *devName) {
-			const HANDLE h = ::CreateFileA(
+			const HANDLE h = CreateFileA(
 				devName,
 				GENERIC_READ | GENERIC_WRITE,
 				FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -1058,11 +1058,11 @@ void eu07_application::init_console()
 			if (h == INVALID_HANDLE_VALUE)
 				return;
 			DWORD mode = 0;
-			if (::GetConsoleMode(h, &mode))
+			if (GetConsoleMode(h, &mode))
 			{
-				::SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING | ENABLE_PROCESSED_OUTPUT);
+				SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING | ENABLE_PROCESSED_OUTPUT);
 			}
-			::CloseHandle(h);
+			CloseHandle(h);
 		};
 		// CONOUT$ is the console's active screen buffer; enabling VT on it
 		// affects everything that ends up being written there, regardless of
@@ -1071,9 +1071,9 @@ void eu07_application::init_console()
 
 		if (consoleWnd)
 		{
-			::ShowWindow(consoleWnd, SW_SHOW);
+			ShowWindow(consoleWnd, SW_SHOW);
 			// give the console a recognisable title
-			::SetConsoleTitleA("MaSzyna log");
+			SetConsoleTitleA("MaSzyna log");
 		}
 	}
 	else
@@ -1081,7 +1081,7 @@ void eu07_application::init_console()
 		// user wants no console window -- hide whatever we have
 		if (consoleWnd)
 		{
-			::ShowWindow(consoleWnd, SW_HIDE);
+			ShowWindow(consoleWnd, SW_HIDE);
 		}
 		// if we'd allocated one ourselves on a previous run path we'd FreeConsole here,
 		// but on first init the console (if any) was inherited from the launcher and
@@ -1298,7 +1298,7 @@ int eu07_application::init_glfw()
 	Hwnd = glfwGetWin32Window(mainwindow);
 	BaseWindowProc = (WNDPROC)::SetWindowLongPtr(Hwnd, GWLP_WNDPROC, (LONG_PTR)WndProc);
 	// switch off the topmost flag
-	::SetWindowPos(Hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+	SetWindowPos(Hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 #endif
 
 	return 0;
@@ -1431,9 +1431,9 @@ int eu07_application::init_modes()
 
 	// activate the default mode
 	if (Global.SceneryFile.empty())
-		push_mode(mode::launcher);
+		push_mode(launcher);
 	else
-		push_mode(mode::scenarioloader);
+		push_mode(scenarioloader);
 
 	return 0;
 }

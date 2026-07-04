@@ -39,12 +39,12 @@ limit_velocity( glm::vec3 const &Velocity ) {
 void
 openal_source::play() {
 
-    if( id == audio::null_resource ) { return; } // no implementation-side source to match, no point
+    if( id == null_resource ) { return; } // no implementation-side source to match, no point
 
-    ::alSourcePlay( id );
+    alSourcePlay( id );
 
     ALint state;
-    ::alGetSourcei( id, AL_SOURCE_STATE, &state );
+    alGetSourcei( id, AL_SOURCE_STATE, &state );
     is_playing = state == AL_PLAYING;
 }
 
@@ -52,16 +52,16 @@ openal_source::play() {
 void
 openal_source::stop() {
 
-    if( id == audio::null_resource ) { return; } // no implementation-side source to match, no point
+    if( id == null_resource ) { return; } // no implementation-side source to match, no point
 
     loop( false );
     // NOTE: workaround for potential edge cases where ::alSourceStop() doesn't set source which wasn't yet started to AL_STOPPED
     int state;
-    ::alGetSourcei( id, AL_SOURCE_STATE, &state );
+    alGetSourcei( id, AL_SOURCE_STATE, &state );
     if( state == AL_INITIAL ) {
         play();
     }
-    ::alSourceStop( id );
+    alSourceStop( id );
     is_playing = false;
 }
 
@@ -80,29 +80,29 @@ openal_source::update( double const Deltatime, glm::vec3 const &Listenervelocity
         stop();
     }
 */
-    if( id != audio::null_resource ) {
+    if( id != null_resource ) {
 
         sound_change = false;
-        ::alGetSourcei( id, AL_BUFFERS_PROCESSED, &sound_index );
+        alGetSourcei( id, AL_BUFFERS_PROCESSED, &sound_index );
         // for multipart sounds trim away processed buffers until only one remains, the last one may be set to looping by the controller
         // TBD, TODO: instead of change flag move processed buffer ids to separate queue, for accurate tracking of longer buffer sequences
         ALuint discard;
         while( sound_index > 0
             && sounds.size() > 1 ) {
-            ::alSourceUnqueueBuffers( id, 1, &discard );
+            alSourceUnqueueBuffers( id, 1, &discard );
             sounds.erase( std::begin( sounds ) );
             --sound_index;
             sound_change = true;
             // potentially adjust starting point of the last buffer (to reduce chance of reverb effect with multiple, looping copies playing)
             if( controller->start() > 0.f && sounds.size() == 1 ) {
                 ALint bufferid;
-                ::alGetSourcei(
+                alGetSourcei(
                     id,
                     AL_BUFFER,
                     &bufferid );
                 ALint buffersize;
-                ::alGetBufferi( bufferid, AL_SIZE, &buffersize );
-                ::alSourcei(
+                alGetBufferi( bufferid, AL_SIZE, &buffersize );
+                alSourcei(
                     id,
                     AL_SAMPLE_OFFSET,
                     static_cast<ALint>( controller->start() * ( buffersize / sizeof( std::int16_t ) ) ) );
@@ -110,7 +110,7 @@ openal_source::update( double const Deltatime, glm::vec3 const &Listenervelocity
         }
 
         int state;
-        ::alGetSourcei( id, AL_SOURCE_STATE, &state );
+        alGetSourcei( id, AL_SOURCE_STATE, &state );
         is_playing = state == AL_PLAYING;
     }
 
@@ -122,7 +122,7 @@ openal_source::update( double const Deltatime, glm::vec3 const &Listenervelocity
 void
 openal_source::sync_with( sound_properties const &State ) {
 
-    if( id == audio::null_resource ) {
+    if( id == null_resource ) {
         // no implementation-side source to match, return sync error so the controller can clean up on its end
         sync = sync_state::bad_resource;
         return;
@@ -135,7 +135,7 @@ openal_source::sync_with( sound_properties const &State ) {
         sound_velocity = limit_velocity( ( State.location - properties.location ) / update_deltatime );
     }
     // NOTE: velocity at this point can be either listener velocity for global sounds, actual sound velocity, or 0 if sound position is yet unknown
-    ::alSourcefv( id, AL_VELOCITY, glm::value_ptr( sound_velocity ) );
+    alSourcefv( id, AL_VELOCITY, glm::value_ptr( sound_velocity ) );
 
     // location
     sound_distance = State.location - renderer.cached_camerapos;
@@ -151,11 +151,11 @@ openal_source::sync_with( sound_properties const &State ) {
         }
     }
     if( sound_range >= 0 ) {
-        ::alSourcefv( id, AL_POSITION, glm::value_ptr( sound_distance ) );
+        alSourcefv( id, AL_POSITION, glm::value_ptr( sound_distance ) );
     }
     else {
         // sounds with 'unlimited' or negative range are positioned on top of the listener
-        ::alSourcefv( id, AL_POSITION, glm::value_ptr( glm::vec3() ) );
+        alSourcefv( id, AL_POSITION, glm::value_ptr( glm::vec3() ) );
     }
     // gain
     auto const gain {
@@ -167,14 +167,14 @@ openal_source::sync_with( sound_properties const &State ) {
             1.f ) };
     if( State.gain != properties.gain
      || State.soundproofing_stamp != properties.soundproofing_stamp
-     || audio::event_volume_change ) {
+     || event_volume_change ) {
         // gain value has changed
-        ::alSourcef( id, AL_GAIN, gain );
+        alSourcef( id, AL_GAIN, gain );
         auto const range { (
             sound_range >= 0 ?
                 sound_range :
                 5 ) }; // range of -1 means sound of unlimited range, positioned at the listener
-        ::alSourcef( id, AL_REFERENCE_DISTANCE, range * ( 1.f / 16.f ) * State.soundproofing );
+        alSourcef( id, AL_REFERENCE_DISTANCE, range * ( 1.f / 16.f ) * State.soundproofing );
     }
     if( sound_range != -1 ) {
         auto const rangesquared { sound_range * sound_range };
@@ -189,14 +189,14 @@ openal_source::sync_with( sound_properties const &State ) {
                     1.f, 0.f, std::clamp(
                         ( distancesquared - rangesquared ) / ( fadedistance * fadedistance ),
                         0.f, 1.f ) ) };
-            ::alSourcef( id, AL_GAIN, gain * rangefactor );
+            alSourcef( id, AL_GAIN, gain * rangefactor );
         }
         is_in_range = distancesquared <= rangesquared;
     }
     // pitch
     if( State.pitch != properties.pitch ) {
         // pitch value has changed
-        ::alSourcef( id, AL_PITCH, std::clamp( State.pitch * pitch_variation, 0.1f, 10.f ) );
+        alSourcef( id, AL_PITCH, std::clamp( State.pitch * pitch_variation, 0.1f, 10.f ) );
     }
     // all synced up
     properties = State;
@@ -210,14 +210,14 @@ openal_source::range( float const Range ) {
     // NOTE: we cache actual specified range, as we'll be giving 'unlimited' range special treatment
     sound_range = Range;
 
-    if( id == audio::null_resource ) { return; } // no implementation-side source to match, no point
+    if( id == null_resource ) { return; } // no implementation-side source to match, no point
 
     auto const range { (
         Range >= 0 ?
             Range :
             5 ) }; // range of -1 means sound of unlimited range, positioned at the listener
-    ::alSourcef( id, AL_REFERENCE_DISTANCE, range * ( 1.f / 16.f ) );
-    ::alSourcef( id, AL_ROLLOFF_FACTOR, 1.75f );
+    alSourcef( id, AL_REFERENCE_DISTANCE, range * ( 1.f / 16.f ) );
+    alSourcef( id, AL_ROLLOFF_FACTOR, 1.75f );
 }
 
 // sets modifier applied to the pitch of sounds emitted by the source
@@ -233,11 +233,11 @@ openal_source::pitch( float const Pitch ) {
 void
 openal_source::loop( bool const State ) {
 
-    if( id == audio::null_resource ) { return; } // no implementation-side source to match, no point
+    if( id == null_resource ) { return; } // no implementation-side source to match, no point
     if( is_looping == State ) { return; }
 
     is_looping = State;
-    ::alSourcei(
+    alSourcei(
         id,
         AL_LOOPING,
         State ? AL_TRUE : AL_FALSE);
@@ -248,7 +248,7 @@ openal_source::loop( bool const State ) {
 void
 openal_source::clear() {
 
-    if( id != audio::null_resource ) {
+    if( id != null_resource ) {
         // unqueue bound buffers:
         // ensure no buffer is in use...
         stop();
@@ -256,7 +256,7 @@ openal_source::clear() {
         std::vector<ALuint> bufferids;
         bufferids.resize( sounds.size() );
         // ...release the buffers...
-        ::alSourceUnqueueBuffers( id, bufferids.size(), bufferids.data() );
+        alSourceUnqueueBuffers( id, bufferids.size(), bufferids.data() );
     }
     // ...and reset reset the properties, except for the id of the allocated source
     // NOTE: not strictly necessary since except for the id the source data typically get discarded in next step
@@ -269,21 +269,21 @@ openal_source::clear() {
 
 openal_renderer::~openal_renderer() {
 
-    ::alcMakeContextCurrent( nullptr );
+    alcMakeContextCurrent( nullptr );
 
-    if( m_context != nullptr ) { ::alcDestroyContext( m_context ); }
-    if( m_device != nullptr )  { ::alcCloseDevice( m_device ); }
+    if( m_context != nullptr ) { alcDestroyContext( m_context ); }
+    if( m_device != nullptr )  { alcCloseDevice( m_device ); }
 }
 
-audio::buffer_handle
+buffer_handle
 openal_renderer::fetch_buffer( std::string const &Filename ) {
 
     return m_buffers.create( Filename );
 }
 
 // provides direct access to a specified buffer
-audio::openal_buffer const &
-openal_renderer::buffer( audio::buffer_handle const Buffer ) const {
+openal_buffer const &
+openal_renderer::buffer( buffer_handle const Buffer ) const {
 
     return m_buffers.buffer( Buffer );
 }
@@ -300,8 +300,8 @@ openal_renderer::init() {
         // basic initialization failed
         return false;
     }
-    ::alDistanceModel( AL_INVERSE_DISTANCE_CLAMPED );
-    ::alDopplerFactor( 0.25f );
+    alDistanceModel( AL_INVERSE_DISTANCE_CLAMPED );
+    alDopplerFactor( 0.25f );
     // all done
     m_ready = true;
     return true;
@@ -316,7 +316,7 @@ openal_renderer::erase( sound_source const *Controller ) {
         if( source->controller == Controller ) {
             // if the controller is the one specified, kill it
             source->clear();
-            if( source->id != audio::null_resource ) {
+            if( source->id != null_resource ) {
                 // keep around functional sources, but no point in doing it with the above-the-limit ones
                 m_sourcespares.push( source->id );
             }
@@ -349,7 +349,7 @@ openal_renderer::update( double const Deltatime ) {
 			errname = "AL_OUT_OF_MEMORY";
 		else
 			errname = "unknown";
-		
+
 		ErrorLog("sound: al error: " + errname);
 	}
 
@@ -365,7 +365,7 @@ openal_renderer::update( double const Deltatime ) {
 
     // update listener
     // gain
-    ::alListenerf( AL_GAIN, Global.AudioVolume );
+    alListenerf( AL_GAIN, Global.AudioVolume );
     // orientation
     glm::dmat4 cameramatrix;
     Global.pCamera.SetMatrix( cameramatrix );
@@ -375,7 +375,7 @@ openal_renderer::update( double const Deltatime ) {
     glm::vec3 const orientation[] = {
         glm::vec3{ 0, 0,-1 } * rotationmatrix ,
         glm::vec3{ 0, 1, 0 } * rotationmatrix };
-    ::alListenerfv( AL_ORIENTATION, reinterpret_cast<ALfloat const *>( orientation ) );
+    alListenerfv( AL_ORIENTATION, reinterpret_cast<ALfloat const *>( orientation ) );
     // velocity
     if( Deltatime > 0 ) {
         auto cameramove { cameraposition - cached_camerapos };
@@ -402,7 +402,7 @@ openal_renderer::update( double const Deltatime ) {
         }
         m_listenervelocity = limit_velocity( cameramove / Deltatime );
 
-        ::alListenerfv( AL_VELOCITY, reinterpret_cast<ALfloat const *>( glm::value_ptr( m_listenervelocity ) ) );
+        alListenerfv( AL_VELOCITY, reinterpret_cast<ALfloat const *>( glm::value_ptr( m_listenervelocity ) ) );
     }
 
     // update active emitters
@@ -413,7 +413,7 @@ openal_renderer::update( double const Deltatime ) {
         // if after the update the source isn't playing, put it away on the spare stack, it's done
         if( false == source->is_playing ) {
             source->clear();
-            if( source->id != audio::null_resource ) {
+            if( source->id != null_resource ) {
                 // keep around functional sources, but no point in doing it with the above-the-limit ones
                 m_sourcespares.push( source->id );
             }
@@ -426,7 +426,7 @@ openal_renderer::update( double const Deltatime ) {
     }
 
     // reset potentially used volume change flag
-    audio::event_volume_change = false;
+    event_volume_change = false;
 
 	if (alProcessUpdatesSOFT)
 	{
@@ -436,20 +436,20 @@ openal_renderer::update( double const Deltatime ) {
 }
 
 // returns an instance of implementation-side part of the sound emitter
-audio::openal_source
+openal_source
 openal_renderer::fetch_source() {
 
-    audio::openal_source newsource;
+    openal_source newsource;
     if( false == m_sourcespares.empty() ) {
         // reuse (a copy of) already allocated source
         newsource.id = m_sourcespares.top();
         m_sourcespares.pop();
     }
-    if( newsource.id == audio::null_resource ) {
+    if( newsource.id == null_resource ) {
         // if there's no source to reuse, try to generate a new one
-        ::alGenSources( 1, &newsource.id );
+        alGenSources( 1, &newsource.id );
     }
-    if( newsource.id == audio::null_resource ) {
+    if( newsource.id == null_resource ) {
 		alGetError();
         // if we still don't have a working source, see if we can sacrifice an already active one
         // under presumption it's more important to play new sounds than keep the old ones going
@@ -460,7 +460,7 @@ openal_renderer::fetch_source() {
 
         for( auto source { std::begin( m_sources ) }; source != std::cend( m_sources ); ++source ) {
 
-            if( source->id == audio::null_resource
+            if( source->id == null_resource
              || true == source->is_multipart
              || false == source->is_playing ) {
 
@@ -488,12 +488,12 @@ openal_renderer::fetch_source() {
         }
     }
 
-    if( newsource.id == audio::null_resource ) {
+    if( newsource.id == null_resource ) {
         // for sources with functional emitter reset emitter parameters from potential last use
-        ::alSourcef( newsource.id, AL_PITCH, 1.f );
-        ::alSourcef( newsource.id, AL_GAIN, 1.f );
-        ::alSourcefv( newsource.id, AL_POSITION, glm::value_ptr( glm::vec3{ 0.f } ) );
-        ::alSourcefv( newsource.id, AL_VELOCITY, glm::value_ptr( glm::vec3{ 0.f } ) );
+        alSourcef( newsource.id, AL_PITCH, 1.f );
+        alSourcef( newsource.id, AL_GAIN, 1.f );
+        alSourcefv( newsource.id, AL_POSITION, glm::value_ptr( glm::vec3{ 0.f } ) );
+        alSourcefv( newsource.id, AL_VELOCITY, glm::value_ptr( glm::vec3{ 0.f } ) );
     }
 
     return newsource;
@@ -502,10 +502,10 @@ openal_renderer::fetch_source() {
 bool
 openal_renderer::init_caps() {
 
-    if( ::alcIsExtensionPresent( nullptr, "ALC_ENUMERATION_EXT" ) == AL_TRUE ) {
+    if( alcIsExtensionPresent( nullptr, "ALC_ENUMERATION_EXT" ) == AL_TRUE ) {
         // enumeration supported
         WriteLog( "available audio devices:" );
-        auto const *devices { ::alcGetString( nullptr, ALC_DEVICE_SPECIFIER ) };
+        auto const *devices { alcGetString( nullptr, ALC_DEVICE_SPECIFIER ) };
         auto const
             *device { devices },
             *next { devices + 1 };
@@ -518,18 +518,18 @@ openal_renderer::init_caps() {
     }
 
     // NOTE: default value of audio renderer variable is empty string, meaning argument of NULL i.e. 'preferred' device
-    m_device = ::alcOpenDevice( Global.AudioRenderer.c_str() );
+    m_device = alcOpenDevice( Global.AudioRenderer.c_str() );
     if( m_device == nullptr ) {
         ErrorLog( "Failed to obtain audio device" );
         return false;
     }
 
     ALCint versionmajor, versionminor;
-    ::alcGetIntegerv( m_device, ALC_MAJOR_VERSION, 1, &versionmajor );
-    ::alcGetIntegerv( m_device, ALC_MINOR_VERSION, 1, &versionminor );
+    alcGetIntegerv( m_device, ALC_MAJOR_VERSION, 1, &versionmajor );
+    alcGetIntegerv( m_device, ALC_MINOR_VERSION, 1, &versionminor );
     auto const oalversion { std::to_string( versionmajor ) + "." + std::to_string( versionminor ) };
 
-	const std::string al_renderer((char *)::alcGetString( m_device, ALC_DEVICE_SPECIFIER ));
+	const std::string al_renderer((char *)alcGetString( m_device, ALC_DEVICE_SPECIFIER ));
     crashreport_add_info("openal_renderer", al_renderer);
     crashreport_add_info("openal_version", oalversion);
 
@@ -537,11 +537,11 @@ openal_renderer::init_caps() {
         "Audio Renderer: " + al_renderer
         + " OpenAL Version: " + oalversion );
 
-    WriteLog( "Supported extensions: " + std::string{ (char *)::alcGetString( m_device, ALC_EXTENSIONS ) } );
+    WriteLog( "Supported extensions: " + std::string{ (char *)alcGetString( m_device, ALC_EXTENSIONS ) } );
 
 	const ALCint attr[3] = { ALC_MONO_SOURCES, Global.audio_max_sources, 0 }; // request more sounds
 
-    m_context = ::alcCreateContext( m_device, attr );
+    m_context = alcCreateContext( m_device, attr );
     if( m_context == nullptr ) {
         ErrorLog( "Failed to create audio context" );
         return false;

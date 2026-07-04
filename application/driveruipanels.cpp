@@ -364,9 +364,9 @@ timetable_panel::update() {
 				//odejmij lokomotywy czynne, a przynajmniej aktualną
 				consistmass -= owner->pVehicle->MoverParameters->TotalMass;
 				// subtract potential other half of a two-part vehicle
-				auto const *previous { owner->pVehicle->Prev( coupling::permanent ) };
+				auto const *previous { owner->pVehicle->Prev( permanent ) };
 				if( previous != nullptr ) { consistmass -= previous->MoverParameters->TotalMass; }
-				auto const *next { owner->pVehicle->Next( coupling::permanent ) };
+				auto const *next { owner->pVehicle->Next( permanent ) };
 				if( next != nullptr ) { consistmass -= next->MoverParameters->TotalMass; }
 			}
             std::snprintf(
@@ -781,8 +781,8 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
         mover.EngineDescription( 0 ).c_str(),
         // TODO: put wheel flat reporting in the enginedescription()
         std::string( mover.WheelFlat > 0.01 ? " Flat: " + to_string( mover.WheelFlat, 1 ) + " mm" : "" ).c_str(),
-        update_vehicle_coupler( end::front ).c_str(),
-        update_vehicle_coupler( end::rear ).c_str() );
+        update_vehicle_coupler( front ).c_str(),
+        update_vehicle_coupler( rear ).c_str() );
 
     Output.emplace_back( std::string{ m_buffer.data() }, Global.UITextColor );
 
@@ -792,11 +792,11 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
         // devices
         mover.Battery ? 'B' : '.',
         mover.PantsValve.is_active ? '+' : '.',
-        mover.Pantographs[end::rear].valve.is_active  ? 'O' :
-	              mover.Pantographs[end::rear].valve.is_enabled ? 'o' :
+        mover.Pantographs[rear].valve.is_active  ? 'O' :
+	              mover.Pantographs[rear].valve.is_enabled ? 'o' :
 	                                                              '.',
-        mover.Pantographs[end::front].valve.is_active  ? 'P' :
-	              mover.Pantographs[end::front].valve.is_enabled ? 'p' :
+        mover.Pantographs[front].valve.is_active  ? 'P' :
+	              mover.Pantographs[front].valve.is_enabled ? 'p' :
 	                                                               '.',
         mover.PantPressLockActive   ? '!' :
 	              mover.PantPressSwitchActive ? '*' :
@@ -840,21 +840,21 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
         std::string( isdieselenginepowered ? STR(" oil pressure: ") + to_string( mover.OilPump.pressure, 2 )  : "" ).c_str(),
         // power transfers
         // 3000v
-        mover.Couplers[ end::front ].power_high.voltage,
-        mover.Couplers[ end::front ].power_high.current,
-        std::string( mover.Couplers[ end::front ].power_high.is_local ? ":" : ":=" ).c_str(),
+        mover.Couplers[ front ].power_high.voltage,
+        mover.Couplers[ front ].power_high.current,
+        std::string( mover.Couplers[ front ].power_high.is_local ? ":" : ":=" ).c_str(),
         mover.EngineVoltage,
-        std::string( mover.Couplers[ end::rear ].power_high.is_local ? ":" : "=:" ).c_str(),
-        mover.Couplers[ end::rear ].power_high.voltage,
-        mover.Couplers[ end::rear ].power_high.current,
+        std::string( mover.Couplers[ rear ].power_high.is_local ? ":" : "=:" ).c_str(),
+        mover.Couplers[ rear ].power_high.voltage,
+        mover.Couplers[ rear ].power_high.current,
         // 110v
-        mover.Couplers[ end::front ].power_110v.voltage,
-        mover.Couplers[ end::front ].power_110v.current,
-        std::string( mover.Couplers[ end::front ].power_110v.is_local ? ":" : ":=" ).c_str(),
+        mover.Couplers[ front ].power_110v.voltage,
+        mover.Couplers[ front ].power_110v.current,
+        std::string( mover.Couplers[ front ].power_110v.is_local ? ":" : ":=" ).c_str(),
         mover.PowerCircuits[ 1 ].first,
-        std::string( mover.Couplers[ end::rear ].power_110v.is_local ? ":" : "=:" ).c_str(),
-        mover.Couplers[ end::rear ].power_110v.voltage,
-        mover.Couplers[ end::rear ].power_110v.current );
+        std::string( mover.Couplers[ rear ].power_110v.is_local ? ":" : "=:" ).c_str(),
+        mover.Couplers[ rear ].power_110v.voltage,
+        mover.Couplers[ rear ].power_110v.current );
 
     Output.emplace_back( m_buffer.data(), Global.UITextColor );
 
@@ -872,8 +872,8 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
         std::abs( mover.enrot ) * 60,
         std::abs( mover.nrot ) * mover.Transmision.Ratio * 60,
         mover.RventRot * 60,
-        std::abs( mover.MotorBlowers[end::front].revolutions ),
-        std::abs( mover.MotorBlowers[end::rear].revolutions ),
+        std::abs( mover.MotorBlowers[front].revolutions ),
+        std::abs( mover.MotorBlowers[rear].revolutions ),
         mover.dizel_heat.rpmw,
         mover.dizel_heat.rpmw2 );
 

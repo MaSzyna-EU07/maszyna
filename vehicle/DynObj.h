@@ -217,12 +217,12 @@ public:
     std::string asDestination; // dokąd pojazd ma być kierowany "(stacja):(tor)"
 	glm::dmat4 mMatrix; // macierz przekształcenia do renderowania modeli
     TMoverParameters *MoverParameters; // parametry fizyki ruchu oraz przeliczanie
-    inline TDynamicObject *NextConnected() { return MoverParameters->Neighbours[ end::rear ].vehicle; }; // pojazd podłączony od strony sprzęgu 1 (kabina -1)
-    inline TDynamicObject *PrevConnected() { return MoverParameters->Neighbours[ end::front ].vehicle; }; // pojazd podłączony od strony sprzęgu 0 (kabina 1)
-    inline TDynamicObject *NextConnected() const { return MoverParameters->Neighbours[ end::rear ].vehicle; }; // pojazd podłączony od strony sprzęgu 1 (kabina -1)
-    inline TDynamicObject *PrevConnected() const { return MoverParameters->Neighbours[ end::front ].vehicle; }; // pojazd podłączony od strony sprzęgu 0 (kabina 1)
-    inline int NextConnectedNo() const { return MoverParameters->Neighbours[ end::rear ].vehicle_end; }
-    inline int PrevConnectedNo() const { return MoverParameters->Neighbours[ end::front ].vehicle_end; }
+    inline TDynamicObject *NextConnected() { return MoverParameters->Neighbours[ rear ].vehicle; }; // pojazd podłączony od strony sprzęgu 1 (kabina -1)
+    inline TDynamicObject *PrevConnected() { return MoverParameters->Neighbours[ front ].vehicle; }; // pojazd podłączony od strony sprzęgu 0 (kabina 1)
+    inline TDynamicObject *NextConnected() const { return MoverParameters->Neighbours[ rear ].vehicle; }; // pojazd podłączony od strony sprzęgu 1 (kabina -1)
+    inline TDynamicObject *PrevConnected() const { return MoverParameters->Neighbours[ front ].vehicle; }; // pojazd podłączony od strony sprzęgu 0 (kabina 1)
+    inline int NextConnectedNo() const { return MoverParameters->Neighbours[ rear ].vehicle_end; }
+    inline int PrevConnectedNo() const { return MoverParameters->Neighbours[ front ].vehicle_end; }
 
     // Dev tools
 	void Reload();
@@ -618,7 +618,7 @@ private:
 	bool HeadlightsAoff{false}; // wygaszone swiatelki A
 	bool HeadlightsBoff{false}; // wygaszone swiatelki B
     // checks whether there's unbroken connection of specified type to specified vehicle
-    bool is_connected( TDynamicObject const *Vehicle, coupling const Coupling = coupling::coupler ) const;
+    bool is_connected( TDynamicObject const *Vehicle, coupling const Coupling = coupler ) const;
 	TDynamicObject * PrevAny() const;
 	TDynamicObject * Prev(int C = -1) const;
 	TDynamicObject * Next(int C = -1) const;

@@ -85,7 +85,7 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 	Global.DayLight.diffuse[1] = 242.0f / 255.0f;
 	Global.DayLight.diffuse[2] = 231.0f / 255.0f;
 	Global.DayLight.is_directional = true;
-	m_sunlight.id = opengl33_renderer::sunlight;
+	m_sunlight.id = sunlight;
 
 	// create dynamic light pool
 	for (int idx = 0; idx < Global.DynamicLightCount; ++idx)
@@ -1254,16 +1254,16 @@ bool opengl33_renderer::Render_interior( bool const Alpha ) {
         glm::dvec3 const originoffset { dynamic->vPosition - m_renderpass.pass_camera.position() };
         float const squaredistance{ glm::length2( glm::vec3{ originoffset } / Global.ZoomFactor ) };
         dynamics.emplace_back( squaredistance, dynamic );
-        dynamic = dynamic->Next( coupling::permanent );
+        dynamic = dynamic->Next( permanent );
     }
     // draw also interiors of permanently coupled vehicles in front, if there's any
-    dynamic = simulation::Train->Dynamic()->Prev( coupling::permanent );
+    dynamic = simulation::Train->Dynamic()->Prev( permanent );
     while( dynamic != nullptr ) {
 
         glm::dvec3 const originoffset { dynamic->vPosition - m_renderpass.pass_camera.position() };
         float const squaredistance{ glm::length2( glm::vec3{ originoffset } / Global.ZoomFactor ) };
         dynamics.emplace_back( squaredistance, dynamic );
-        dynamic = dynamic->Prev( coupling::permanent );
+        dynamic = dynamic->Prev( permanent );
     }
     if( Alpha ) {
         std::sort(
@@ -1360,11 +1360,11 @@ bool opengl33_renderer::Render_coupler_adapter( TDynamicObject *Dynamic, float c
     auto const position { glm::dvec3 {
         0.f,
         Dynamic->MoverParameters->Couplers[ End ].adapter_height,
-        ( Dynamic->MoverParameters->Couplers[ End ].adapter_length + Dynamic->MoverParameters->Dim.L * 0.5 ) * ( End == end::front ? 1 : -1 ) } };
+        ( Dynamic->MoverParameters->Couplers[ End ].adapter_length + Dynamic->MoverParameters->Dim.L * 0.5 ) * ( End == front ? 1 : -1 ) } };
 
     auto const angle { glm::vec3{
         0,
-        ( End == end::front ? 0 : 180 ),
+        ( End == front ? 0 : 180 ),
         0 } };
 
     if( Alpha ) {
@@ -3449,8 +3449,8 @@ bool opengl33_renderer::Render(TDynamicObject *Dynamic)
             Render( attachment, Dynamic->Material(), squaredistance );
         }
         // optional coupling adapters
-        Render_coupler_adapter( Dynamic, squaredistance, end::front );
-        Render_coupler_adapter( Dynamic, squaredistance, end::rear );
+        Render_coupler_adapter( Dynamic, squaredistance, front );
+        Render_coupler_adapter( Dynamic, squaredistance, rear );
 
         // post-render cleanup
 		if (Dynamic->fShade > 0.0f)
@@ -3475,8 +3475,8 @@ bool opengl33_renderer::Render(TDynamicObject *Dynamic)
             Render( attachment, Dynamic->Material(), squaredistance );
         }
         // optional coupling adapters
-        Render_coupler_adapter( Dynamic, squaredistance, end::front );
-        Render_coupler_adapter( Dynamic, squaredistance, end::rear );
+        Render_coupler_adapter( Dynamic, squaredistance, front );
+        Render_coupler_adapter( Dynamic, squaredistance, rear );
         if( Dynamic->mdLoad ) {
             // renderowanie nieprzezroczystego ładunku
             Render( Dynamic->mdLoad, Dynamic->Material(), squaredistance, { 0.f, Dynamic->LoadOffset, 0.f }, {} );
@@ -4489,8 +4489,8 @@ bool opengl33_renderer::Render_Alpha(TDynamicObject *Dynamic)
         Render_Alpha( attachment, Dynamic->Material(), squaredistance );
     }
     // optional coupling adapters
-    Render_coupler_adapter( Dynamic, squaredistance, end::front, true );
-    Render_coupler_adapter( Dynamic, squaredistance, end::rear, true );
+    Render_coupler_adapter( Dynamic, squaredistance, front, true );
+    Render_coupler_adapter( Dynamic, squaredistance, rear, true );
     if( Dynamic->mdLoad ) {
         // renderowanie nieprzezroczystego ładunku
         Render_Alpha( Dynamic->mdLoad, Dynamic->Material(), squaredistance, { 0.f, Dynamic->LoadOffset, 0.f }, {} );
@@ -5423,7 +5423,7 @@ std::unique_ptr<gfx_renderer> opengl33_renderer::create_func()
     return std::unique_ptr<gfx_renderer>(new opengl33_renderer());
 }
 
-bool opengl33_renderer::renderer_register = gfx_renderer_factory::get_instance()->register_backend("modern", opengl33_renderer::create_func);
+bool opengl33_renderer::renderer_register = gfx_renderer_factory::get_instance()->register_backend("modern", create_func);
 
 bool opengl33_renderer::opengl33_imgui_renderer::Init()
 {

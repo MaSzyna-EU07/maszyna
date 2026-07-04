@@ -20,7 +20,7 @@ gl::vao::~vao()
 	glDeleteVertexArrays(1, *this);
 }
 
-void gl::vao::setup_attrib(gl::buffer &buffer, int attrib, int size, int type, int stride, int offset)
+void gl::vao::setup_attrib(buffer &buffer, int attrib, int size, int type, int stride, int offset)
 {
 	if (use_vao) {
 		bind();
@@ -61,7 +61,7 @@ void gl::vao::bind()
 	}
 	else {
 		for (attrib_params &param : params) {
-			param.buffer.bind(gl::buffer::ARRAY_BUFFER);
+			param.buffer.bind(buffer::ARRAY_BUFFER);
 			glVertexAttribPointer(param.attrib, param.size, param.type, GL_FALSE, param.stride, reinterpret_cast<void*>(param.offset));
 			glEnableVertexAttribArray(param.attrib);
 		}
@@ -70,9 +70,9 @@ void gl::vao::bind()
 			glDisableVertexAttribArray(i);
 
 		if (ebo)
-			ebo->bind(gl::buffer::ELEMENT_ARRAY_BUFFER);
+			ebo->bind(buffer::ELEMENT_ARRAY_BUFFER);
 		else
-			gl::buffer::unbind(gl::buffer::ELEMENT_ARRAY_BUFFER);
+			buffer::unbind(buffer::ELEMENT_ARRAY_BUFFER);
 	}
 }
 

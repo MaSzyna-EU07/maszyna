@@ -26,13 +26,13 @@ vr_openvr::vr_openvr()
     vr::VRInput()->GetActionHandle("/actions/main/in/PrimaryAction", &primary_action);
     vr::VRInput()->GetActionHandle("/actions/main/in/SecondaryAction", &secondary_action);
 
-    hiddenarea_mesh[(size_t)vr_interface::eye_left] = create_hiddenarea_model(vr_interface::eye_left);
-    hiddenarea_mesh[(size_t)vr_interface::eye_right] = create_hiddenarea_model(vr_interface::eye_right);
+    hiddenarea_mesh[(size_t)eye_left] = create_hiddenarea_model(eye_left);
+    hiddenarea_mesh[(size_t)eye_right] = create_hiddenarea_model(eye_right);
 }
 
-std::unique_ptr<TModel3d> vr_openvr::create_hiddenarea_model(vr_interface::eye_e e)
+std::unique_ptr<TModel3d> vr_openvr::create_hiddenarea_model(eye_e e)
 {
-    vr::HiddenAreaMesh_t mesh = vr_system->GetHiddenAreaMesh((e == vr_interface::eye_left) ? vr::Eye_Left : vr::Eye_Right, vr::k_eHiddenAreaMesh_Standard);
+    vr::HiddenAreaMesh_t mesh = vr_system->GetHiddenAreaMesh((e == eye_left) ? vr::Eye_Left : vr::Eye_Right, vr::k_eHiddenAreaMesh_Standard);
     if (!mesh.unTriangleCount)
         return nullptr;
 
@@ -66,7 +66,7 @@ glm::ivec2 vr_openvr::get_target_size()
 
 viewport_proj_config vr_openvr::get_proj_config(eye_e e)
 {
-    vr::EVREye eye = (e == vr_interface::eye_left) ? vr::Eye_Left : vr::Eye_Right;
+    vr::EVREye eye = (e == eye_left) ? vr::Eye_Left : vr::Eye_Right;
 
     float left, right, top, bottom; // tangents of half-angles from center view axis
     vr_system->GetProjectionRaw(eye, &left, &right, &top, &bottom);
@@ -351,14 +351,14 @@ bool vr_openvr::update_component(const std::string &rendermodel, vr::VRInputValu
     return !(component_state.uProperties & vr::VRComponentProperty_IsStatic);
 }
 
-void vr_openvr::submit(vr_openvr::eye_e eye, opengl_texture* tex)
+void vr_openvr::submit(eye_e eye, opengl_texture* tex)
 {
     vr::Texture_t hmd_tex =
         { (void*)(uint64_t)tex->id,
           vr::TextureType_OpenGL,
           vr::ColorSpace_Gamma };
 
-    vr::VRCompositor()->Submit(eye == vr_interface::eye_left ? vr::Eye_Left : vr::Eye_Right, &hmd_tex);
+    vr::VRCompositor()->Submit(eye == eye_left ? vr::Eye_Left : vr::Eye_Right, &hmd_tex);
 }
 
 std::vector<TModel3d*> vr_openvr::get_render_models()
@@ -976,4 +976,4 @@ std::unordered_map<std::string, vr_openvr::button_bindings> vr_openvr::m_buttonb
         user_command::none } },
 };
 
-bool vr_openvr::backend_register = vr_interface_factory::get_instance()->register_backend("openvr", vr_openvr::create_func);
+bool vr_openvr::backend_register = vr_interface_factory::get_instance()->register_backend("openvr", create_func);

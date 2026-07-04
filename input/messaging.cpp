@@ -43,7 +43,7 @@ Navigate(std::string const &ClassName, UINT Msg, WPARAM wParam, LPARAM lParam) {
 }
 
 void
-OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
+OnCommandGet(DaneRozkaz *pRozkaz)
 { // odebranie komunikatu z serwera
     if (pRozkaz->iSygn == EU07_MESSAGEHEADER )
         switch (pRozkaz->iComm)
@@ -303,8 +303,8 @@ WyslijNamiary(TDynamicObject const *Vehicle)
                 + Vehicle->MoverParameters->DoorLeftOpened * 16
                 + Vehicle->MoverParameters->DoorRightOpened * 32
 #else
-                + ( false == Vehicle->MoverParameters->Doors.instances[side::left].is_closed ) * 16
-                + ( false == Vehicle->MoverParameters->Doors.instances[side::right].is_closed ) * 32
+                + ( false == Vehicle->MoverParameters->Doors.instances[left].is_closed ) * 16
+                + ( false == Vehicle->MoverParameters->Doors.instances[right].is_closed ) * 32
 #endif
                 + Vehicle->MoverParameters->FuseFlag * 64
                 + Vehicle->MoverParameters->DepartureSignal * 128;

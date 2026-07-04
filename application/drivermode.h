@@ -104,9 +104,9 @@ private:
     std::array<basic_event *, 10> KeyEvents { nullptr }; // eventy wyzwalane z klawiaury
     TCamera Camera;
     TCamera DebugCamera;
-    int m_externalviewmode { view::consistfront }; // selected external view mode
+    int m_externalviewmode { consistfront }; // selected external view mode
 	bool m_externalview { true };
-    std::array<view_config, view::count_> m_externalviewconfigs;
+    std::array<view_config, count_> m_externalviewconfigs;
     TDynamicObject *pDynamicNearest { nullptr }; // vehicle nearest to the active camera. TODO: move to camera
     double fTime50Hz { 0.0 }; // bufor czasu dla komunikacji z PoKeys
     double const m_primaryupdaterate { 1.0 / 100.0 };

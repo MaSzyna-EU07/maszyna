@@ -347,7 +347,7 @@ void ui::map_panel::render_contents()
 			if (ImGui::IsMouseClicked(1))
 			{
 				if (objects.size() > 1)
-					register_popup(std::make_unique<ui::disambiguation_popup>(*this, std::move(objects)));
+					register_popup(std::make_unique<disambiguation_popup>(*this, std::move(objects)));
 				else if (objects.size() == 1)
 					handle_map_object_click(*this, objects.begin()->second);
 				else
