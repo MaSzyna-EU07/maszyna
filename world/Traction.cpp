@@ -504,20 +504,27 @@ double TTraction::VoltageGet(double u, double i)
             i1 = psPower[1]->CurrentGet(r1g);
             return (i0 + i1) * res;
         }
-        else if (r0t >= 0.0)
-            return psPower[0]->CurrentGet(res + r0t) * res;
-        else if (r1t >= 0.0)
-            return psPower[1]->CurrentGet(res + r1t) * res;
         else
-            return 0.0; // co z tym zrobić?
+		{
+			if (r0t >= 0.0)
+				return psPower[0]->CurrentGet(res + r0t) * res;
+			if (r1t >= 0.0)
+				return psPower[1]->CurrentGet(res + r1t) * res;
+			else
+				return 0.0;
+		}
+		// co z tym zrobić?
     }
-    else if (psPower[0] && r0t >= 0.0)
-    { // jeśli odcinek podłączony jest tylko z jednej strony
-        return psPower[0]->CurrentGet(res + r0t) * res;
-    }
-    else if (psPower[1] && r1t >= 0.0)
-        return psPower[1]->CurrentGet(res + r1t) * res;
-    return 0.0; // gdy nie podłączony wcale?
+    else
+	{
+		if (psPower[0] && r0t >= 0.0)
+		{ // jeśli odcinek podłączony jest tylko z jednej strony
+			return psPower[0]->CurrentGet(res + r0t) * res;
+		}
+		if (psPower[1] && r1t >= 0.0)
+			return psPower[1]->CurrentGet(res + r1t) * res;
+	}
+	return 0.0; // gdy nie podłączony wcale?
 };
 
 glm::vec3

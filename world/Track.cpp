@@ -1787,97 +1787,100 @@ bool TTrack::SetConnections(int i)
 bool TTrack::Switch(int i, float const t, float const d)
 { // przełączenie torów z uruchomieniem animacji
     if (SwitchExtension) // tory przełączalne mają doklejkę
-        if (eType == tt_Switch)
-        { // przekładanie zwrotnicy jak zwykle
-            if (t > 0.f) // prędkość liniowa ruchu iglic
-                SwitchExtension->fOffsetSpeed = t; // prędkość łatwiej zgrać z animacją modelu
-            if (d >= 0.f) // dodatkowy ruch drugiej iglicy (zamknięcie nastawnicze)
-                SwitchExtension->fOffsetDelay = d;
-            i &= 1; // ograniczenie błędów !!!!
-            SwitchExtension->fDesiredOffset =
-                i ? fMaxOffset + SwitchExtension->fOffsetDelay : -SwitchExtension->fOffsetDelay;
-            SwitchExtension->CurrentIndex = i;
-            Segment = SwitchExtension->Segments[i]; // wybranie aktywnej drogi - potrzebne to?
-            trNext = SwitchExtension->pNexts[i]; // przełączenie końców
-            trPrev = SwitchExtension->pPrevs[i];
-            iNextDirection = SwitchExtension->iNextDirection[i];
-            iPrevDirection = SwitchExtension->iPrevDirection[i];
-            fRadius = fRadiusTable[i]; // McZapkie: wybor promienia toru
-            if( SwitchExtension->fVelocity <= -2 ) {
-                //-1 oznacza maksymalną prędkość, a dalsze ujemne to ograniczenie na bok
-                fVelocity = i ? -SwitchExtension->fVelocity : -1;
-            }
-            else {
-                fVelocity = SwitchExtension->fVelocity;
-            }
-            if (SwitchExtension->pOwner ? SwitchExtension->pOwner->RaTrackAnimAdd(this) :
-                                          true) // jeśli nie dodane do animacji
-            { // nie ma się co bawić
-                SwitchExtension->fOffset = SwitchExtension->fDesiredOffset;
-                // przeliczenie położenia iglic; czy zadziała na niewyświetlanym sektorze w VBO?
-                RaAnimate();
-            }
-            return true;
-        }
-        else if (eType == tt_Table)
-        { // blokowanie (0, szukanie torów) lub odblokowanie (1, rozłączenie) obrotnicy
-            if (i) // NOTE: this condition seems opposite to intention/comment? TODO: investigate this
-            { // 0: rozłączenie sąsiednich torów od obrotnicy
-                if (trPrev) // jeśli jest tor od Point1 obrotnicy
-                    if (iPrevDirection) // 0:dołączony Point1, 1:dołączony Point2
-                        trPrev->trNext = nullptr; // rozłączamy od Point2
-                    else
-                        trPrev->trPrev = nullptr; // rozłączamy od Point1
-                if (trNext) // jeśli jest tor od Point2 obrotnicy
-                    if (iNextDirection) // 0:dołączony Point1, 1:dołączony Point2
-                        trNext->trNext = nullptr; // rozłączamy od Point2
-                    else
-                        trNext->trPrev = nullptr; // rozłączamy od Point1
-                trNext = trPrev = nullptr; // na końcu rozłączamy obrotnicę (wkaźniki do sąsiadów już niepotrzebne)
-                fVelocity = 0.0; // AI, nie ruszaj się!
-                if (SwitchExtension->pOwner)
-                    SwitchExtension->pOwner->RaTrackAnimAdd(this); // dodanie do listy animacyjnej
-                // TODO: unregister path ends in the owner cell
-            }
-            else
-            { // 1: ustalenie finalnego położenia (gdy nie było animacji)
-                RaAnimate(); // ostatni etap animowania
-                // zablokowanie pozycji i połączenie do sąsiednich torów
-                // TODO: register new position of the path endpoints with the region
-                simulation::Region->TrackJoin( this );
-                if (trNext || trPrev)
-                {
-                    fVelocity = 6.0; // jazda dozwolona
-                    if( trPrev
-                     && trPrev->fVelocity == 0.0 ) {
-                        // ustawienie 0 da możliwość zatrzymania AI na obrotnicy
-                        trPrev->VelocitySet( 6.0 ); // odblokowanie dołączonego toru do jazdy
-                    }
-                    if( trNext
-                     && trNext->fVelocity == 0.0 ) {
-                        trNext->VelocitySet( 6.0 );
-                    }
-                    if( SwitchExtension->evPlus ) { // w starych sceneriach może nie być
-                        // potwierdzenie wykonania (np. odpala WZ)
-                        simulation::Events.AddToQuery( SwitchExtension->evPlus, nullptr );
-                    }
-                }
-            }
-            SwitchExtension->CurrentIndex = i; // zapamiętanie stanu zablokowania
-            return true;
-        }
-        else if (eType == tt_Cross)
-        { // to jest przydatne tylko do łączenia odcinków
-            i &= 1;
-            SwitchExtension->CurrentIndex = i;
-            Segment = SwitchExtension->Segments[i]; // wybranie aktywnej drogi - potrzebne to?
-            trNext = SwitchExtension->pNexts[i]; // przełączenie końców
-            trPrev = SwitchExtension->pPrevs[i];
-            iNextDirection = SwitchExtension->iNextDirection[i];
-            iPrevDirection = SwitchExtension->iPrevDirection[i];
-            return true;
-        }
-    if (iCategoryFlag == 1)
+	{
+		if (eType == tt_Switch)
+		{ // przekładanie zwrotnicy jak zwykle
+			if (t > 0.f) // prędkość liniowa ruchu iglic
+				SwitchExtension->fOffsetSpeed = t; // prędkość łatwiej zgrać z animacją modelu
+			if (d >= 0.f) // dodatkowy ruch drugiej iglicy (zamknięcie nastawnicze)
+				SwitchExtension->fOffsetDelay = d;
+			i &= 1; // ograniczenie błędów !!!!
+			SwitchExtension->fDesiredOffset = i ? fMaxOffset + SwitchExtension->fOffsetDelay : -SwitchExtension->fOffsetDelay;
+			SwitchExtension->CurrentIndex = i;
+			Segment = SwitchExtension->Segments[i]; // wybranie aktywnej drogi - potrzebne to?
+			trNext = SwitchExtension->pNexts[i]; // przełączenie końców
+			trPrev = SwitchExtension->pPrevs[i];
+			iNextDirection = SwitchExtension->iNextDirection[i];
+			iPrevDirection = SwitchExtension->iPrevDirection[i];
+			fRadius = fRadiusTable[i]; // McZapkie: wybor promienia toru
+			if (SwitchExtension->fVelocity <= -2)
+			{
+				//-1 oznacza maksymalną prędkość, a dalsze ujemne to ograniczenie na bok
+				fVelocity = i ? -SwitchExtension->fVelocity : -1;
+			}
+			else
+			{
+				fVelocity = SwitchExtension->fVelocity;
+			}
+			if (SwitchExtension->pOwner ? SwitchExtension->pOwner->RaTrackAnimAdd(this) : true) // jeśli nie dodane do animacji
+			{ // nie ma się co bawić
+				SwitchExtension->fOffset = SwitchExtension->fDesiredOffset;
+				// przeliczenie położenia iglic; czy zadziała na niewyświetlanym sektorze w VBO?
+				RaAnimate();
+			}
+			return true;
+		}
+		if (eType == tt_Table)
+		{ // blokowanie (0, szukanie torów) lub odblokowanie (1, rozłączenie) obrotnicy
+			if (i) // NOTE: this condition seems opposite to intention/comment? TODO: investigate this
+			{ // 0: rozłączenie sąsiednich torów od obrotnicy
+				if (trPrev) // jeśli jest tor od Point1 obrotnicy
+					if (iPrevDirection) // 0:dołączony Point1, 1:dołączony Point2
+						trPrev->trNext = nullptr; // rozłączamy od Point2
+					else
+						trPrev->trPrev = nullptr; // rozłączamy od Point1
+				if (trNext) // jeśli jest tor od Point2 obrotnicy
+					if (iNextDirection) // 0:dołączony Point1, 1:dołączony Point2
+						trNext->trNext = nullptr; // rozłączamy od Point2
+					else
+						trNext->trPrev = nullptr; // rozłączamy od Point1
+				trNext = trPrev = nullptr; // na końcu rozłączamy obrotnicę (wkaźniki do sąsiadów już niepotrzebne)
+				fVelocity = 0.0; // AI, nie ruszaj się!
+				if (SwitchExtension->pOwner)
+					SwitchExtension->pOwner->RaTrackAnimAdd(this); // dodanie do listy animacyjnej
+				// TODO: unregister path ends in the owner cell
+			}
+			else
+			{ // 1: ustalenie finalnego położenia (gdy nie było animacji)
+				RaAnimate(); // ostatni etap animowania
+				// zablokowanie pozycji i połączenie do sąsiednich torów
+				// TODO: register new position of the path endpoints with the region
+				simulation::Region->TrackJoin(this);
+				if (trNext || trPrev)
+				{
+					fVelocity = 6.0; // jazda dozwolona
+					if (trPrev && trPrev->fVelocity == 0.0)
+					{
+						// ustawienie 0 da możliwość zatrzymania AI na obrotnicy
+						trPrev->VelocitySet(6.0); // odblokowanie dołączonego toru do jazdy
+					}
+					if (trNext && trNext->fVelocity == 0.0)
+					{
+						trNext->VelocitySet(6.0);
+					}
+					if (SwitchExtension->evPlus)
+					{ // w starych sceneriach może nie być
+						// potwierdzenie wykonania (np. odpala WZ)
+						simulation::Events.AddToQuery(SwitchExtension->evPlus, nullptr);
+					}
+				}
+			}
+			SwitchExtension->CurrentIndex = i; // zapamiętanie stanu zablokowania
+			return true;
+		}
+		else if (eType == tt_Cross)
+		{ // to jest przydatne tylko do łączenia odcinków
+			i &= 1;
+			SwitchExtension->CurrentIndex = i;
+			Segment = SwitchExtension->Segments[i]; // wybranie aktywnej drogi - potrzebne to?
+			trNext = SwitchExtension->pNexts[i]; // przełączenie końców
+			trPrev = SwitchExtension->pPrevs[i];
+			iNextDirection = SwitchExtension->iNextDirection[i];
+			iPrevDirection = SwitchExtension->iPrevDirection[i];
+			return true;
+		}
+	}
+	if (iCategoryFlag == 1)
         iDamageFlag = (iDamageFlag & 127) + 128 * (i & 1); // przełączanie wykolejenia
     else
         Error("Cannot switch normal track");

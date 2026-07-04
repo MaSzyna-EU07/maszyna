@@ -55,23 +55,53 @@ inline
 comparison_pass
 comparison_pass_from_string( std::string const Input ) {
          if( Input == "all" ) { return comparison_pass::all; }
-    else if( Input == "any" ) { return comparison_pass::any; }
-    else if( Input == "none" ) { return comparison_pass::none; }
+    else
+	     {
+		     if (Input == "any")
+		     {
+			     return comparison_pass::any;
+		     }
+		     if (Input == "none")
+		     {
+			     return comparison_pass::none;
+		     }
+	     }
 
-    return comparison_pass::all; // legacy default
+	     return comparison_pass::all; // legacy default
 }
 
 inline
 comparison_operator
 comparison_operator_from_string( std::string const Input ) {
          if( Input == "==" ) { return comparison_operator::equal; }
-    else if( Input == "!=" ) { return comparison_operator::not_equal; }
-    else if( Input == "<" )  { return comparison_operator::lt; }
-    else if( Input == ">" )  { return comparison_operator::gt; }
-    else if( Input == "<=" ) { return comparison_operator::lt_eq; }
-    else if( Input == ">=" ) { return comparison_operator::gt_eq; }
+    else
+	     {
+		     if (Input == "!=")
+		     {
+			     return comparison_operator::not_equal;
+		     }
+		     if (Input == "<")
+		     {
+			     return comparison_operator::lt;
+		     }
+		     else
+		     {
+			     if (Input == ">")
+			     {
+				     return comparison_operator::gt;
+			     }
+			     if (Input == "<=")
+			     {
+				     return comparison_operator::lt_eq;
+			     }
+			     else if (Input == ">=")
+			     {
+				     return comparison_operator::gt_eq;
+			     }
+		     }
+	     }
 
-    return comparison_operator::equal; // legacy default
+	     return comparison_operator::equal; // legacy default
 }
 
 //---------------------------------------------------------------------------

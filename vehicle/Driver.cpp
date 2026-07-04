@@ -348,14 +348,12 @@ std::string TSpeedPos::GetName() const
 {
     if( iFlags & spTrack ) // jeśli tor
         return trTrack->name();
-    else if( iFlags & spEvent ) // jeśli event
-        return
-            evEvent->m_name
-            + " [" + std::to_string( static_cast<int>( evEvent->input_value( 1 ) ) )
-            + ", " + std::to_string( static_cast<int>( evEvent->input_value( 2 ) ) )
-            + "]";
     else
-        return "";
+	{
+		if (iFlags & spEvent) // jeśli event
+			return evEvent->m_name + " [" + std::to_string(static_cast<int>(evEvent->input_value(1))) + ", " + std::to_string(static_cast<int>(evEvent->input_value(2))) + "]";
+		return "";
+	}
 }
 
 std::string TSpeedPos::TableText() const

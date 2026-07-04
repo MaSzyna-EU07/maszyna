@@ -63,10 +63,12 @@ double PF_old(double P1, double P2, double S)
 	const double PL = P1 + P2 - PH + 2;
 	if (PH - PL < 0.0001)
 		return 0;
-	else if (PH - PL < 0.05)
-		return 20 * (PH - PL) * (PH + 1) * 222 * S * (P2 - P1) / (1.13 * PH - PL);
 	else
+	{
+		if (PH - PL < 0.05)
+			return 20 * (PH - PL) * (PH + 1) * 222 * S * (P2 - P1) / (1.13 * PH - PL);
 		return (PH + 1) * 222 * S * (P2 - P1) / (1.13 * PH - PL);
+	}
 }
 
 /// <summary>
@@ -86,11 +88,12 @@ double PF(double const P1, double const P2, double const S, double const DP)
 	double const sg = PL / PH; // bezwymiarowy stosunek cisnien
 	double const FM = PH * 197.0 * S * Sign(P2 - P1); // najwyzszy mozliwy przeplyw, wraz z kierunkiem
 	if (sg > 0.5) // jesli ponizej stosunku krytycznego
+	{
 		if (PH - PL < DP) // niewielka roznica cisnien
 			return (1.0 - sg) / DPL * FM * 2.0 * std::sqrt(DP * (PH - DP));
 		//      return 1/DPL*(PH-PL)*fm*2*SQRT((sg)*(1-sg));
-		else
-			return FM * 2.0 * std::sqrt(sg * (1.0 - sg));
+		return FM * 2.0 * std::sqrt(sg * (1.0 - sg));
+	}
 	else // powyzej stosunku krytycznego
 		return FM;
 }
@@ -112,10 +115,11 @@ double PF1(double const P1, double const P2, double const S)
 	double const sg = PL / PH; // bezwymiarowy stosunek cisnien
 	double const FM = PH * 197.0 * S * Sign(P2 - P1); // najwyzszy mozliwy przeplyw, wraz z kierunkiem
 	if (sg > 0.5) // jesli ponizej stosunku krytycznego
+	{
 		if (sg < DPS) // niewielka roznica cisnien
 			return (1.0 - sg) / DPS * FM * 2.0 * std::sqrt(DPS * (1.0 - DPS));
-		else
-			return FM * 2.0 * std::sqrt(sg * (1.0 - sg));
+		return FM * 2.0 * std::sqrt(sg * (1.0 - sg));
+	}
 	else // powyzej stosunku krytycznego
 		return FM;
 }
@@ -144,10 +148,12 @@ double PFVa(double PH, double PL, double const S, double LIM, double const DP)
 		if (LIM - PL < DP)
 			FM = FM * (LIM - PL) / DP; // jesli jestesmy przy nastawieniu, to zawor sie przymyka
 		if (sg > 0.5) // jesli ponizej stosunku krytycznego
+		{
 			if (PH - PL < DPL) // niewielka roznica cisnien
 				return (PH - PL) / DPL * FM * 2 * std::sqrt(sg * (1 - sg)); // BUG: (1-sg) can be < 0, leading to sqrt(-x)
-			else
-				return FM * 2 * std::sqrt(sg * (1 - sg)); // BUG: (1-sg) can be < 0, leading to sqrt(-x)
+			return FM * 2 * std::sqrt(sg * (1 - sg));
+		}
+		// BUG: (1-sg) can be < 0, leading to sqrt(-x)
 		else // powyzej stosunku krytycznego
 			return FM;
 	}
@@ -178,10 +184,11 @@ double PFVd(double PH, double PL, double const S, double LIM, double const DP)
 		if (PH - LIM < 0.1)
 			FM = FM * (PH - LIM) / DP; // jesli jestesmy przy nastawieniu, to zawor sie przymyka
 		if (sg > 0.5) // jesli ponizej stosunku krytycznego
+		{
 			if (PH - PL < DPL) // niewielka roznica cisnien
 				return (PH - PL) / DPL * FM * 2.0 * std::sqrt(sg * (1.0 - sg));
-			else
-				return FM * 2.0 * std::sqrt(sg * (1.0 - sg));
+			return FM * 2.0 * std::sqrt(sg * (1.0 - sg));
+		}
 		else // powyzej stosunku krytycznego
 			return FM;
 	}
@@ -307,10 +314,13 @@ double TBrakeCyl::P()
 	//  P:=VtoC;
 	if (VtoC < VS)
 		return VtoC * pS / VS; // objetosc szkodliwa
-	else if (VtoC > VD)
-		return VtoC - cD; // caly silownik;
 	else
-		return pS + (VtoC - VS) / (VD - VS) * (pD - pS); // wysuwanie tloka
+	{
+		if (VtoC > VD)
+			return VtoC - cD; // caly silownik;
+		return pS + (VtoC - VS) / (VD - VS) * (pD - pS);
+	}
+	// wysuwanie tloka
 } //*)
 
 //---HAMULEC---
@@ -940,15 +950,19 @@ double TESt::CVs(double const BP)
 	// przeplyw ZS <-> PG
 	if (VVP < CVP - 0.12 || BVP < CVP - 0.3 || BP > 0.4)
 		return 0;
-	else if (VVP > CVP + 0.4)
-		if (BVP > CVP + 0.2)
-			return 0.23;
-		else
-			return 0.05;
-	else if (BVP > CVP - 0.1)
-		return 1;
 	else
-		return 0.3;
+	{
+		if (VVP > CVP + 0.4)
+		{
+			if (BVP > CVP + 0.2)
+				return 0.23;
+			return 0.05;
+		}
+		if (BVP > CVP - 0.1)
+			return 1;
+		else
+			return 0.3;
+	}
 }
 
 /// <summary>
@@ -971,13 +985,16 @@ double TESt::BVs(double const BCP)
 	// przeplyw ZP <-> rozdzielacz
 	if (BVP < CVP - 0.3)
 		return 0.6;
-	else if (BCP < 0.5)
-		if (VVP > CVP + 0.4)
-			return 0.1;
-		else
-			return 0.3;
 	else
+	{
+		if (BCP < 0.5)
+		{
+			if (VVP > CVP + 0.4)
+				return 0.1;
+			return 0.3;
+		}
 		return 0;
+	}
 }
 
 /// <summary>
@@ -2217,10 +2234,12 @@ double TCV1::BVs(double const BCP)
 	// przeplyw ZP <-> rozdzielacz
 	if (BVP < CVP - 0.1)
 		return 1;
-	else if (BCP > 0.05)
-		return 0;
 	else
+	{
+		if (BCP > 0.05)
+			return 0;
 		return 0.2 * (1.5 - int(BVP > VVP));
+	}
 }
 
 /// <summary>
@@ -2591,10 +2610,12 @@ double TKE::CVs(double const BP)
 	// przeplyw ZS <-> PG
 	if (BP > 0.2)
 		return 0;
-	else if (VVP > CVP + 0.4)
-		return 0.05;
 	else
+	{
+		if (VVP > CVP + 0.4)
+			return 0.05;
 		return 0.23;
+	}
 }
 
 /// <summary>
@@ -2617,10 +2638,12 @@ double TKE::BVs(double const BCP)
 	// przeplyw ZP <-> rozdzielacz
 	if (BVP > VVP)
 		return 0;
-	else if (BVP < CVP - 0.3)
-		return 0.6;
 	else
+	{
+		if (BVP < CVP - 0.3)
+			return 0.6;
 		return 0.13;
+	}
 }
 
 /// <summary>
@@ -3429,10 +3452,12 @@ double TMHZ_EN57::LPP_RP(double pos) // cisnienie z zaokraglonej pozycji;
 {
 	if (pos > 8.5)
 		return 5.0 - 0.15 * pos - 0.35;
-	else if (pos > 0.5)
-		return 5.0 - 0.15 * pos - 0.1;
 	else
+	{
+		if (pos > 0.5)
+			return 5.0 - 0.15 * pos - 0.1;
 		return 5.0;
+	}
 }
 
 /// <summary>

@@ -215,53 +215,55 @@ bool TTrackFollower::Move(double fDistance, bool bPrimary)
             }
             continue;
         }
-        else if (s > pCurrentSegment->GetLength())
-        { // jeśli przekroczenie toru od strony Point2
-            bCanSkip = bPrimary && pCurrentTrack->CheckDynamicObject(Owner);
-            if (bCanSkip) // tylko główna oś przenosi pojazd do innego toru
-                Owner->MyTrack->RemoveDynamicObject(Owner); // zdejmujemy pojazd z dotychczasowego toru
-            fDistance = s - pCurrentSegment->GetLength();
-            dir = fDirection;
-            if (pCurrentTrack->eType == tt_Cross)
-            {
-                if (!SetCurrentTrack(pCurrentTrack->Connected(iSegment, fDirection), 1))
-                    return false; // wyjście z błędem
-            }
-            else if (!SetCurrentTrack(pCurrentTrack->Connected(1, fDirection), 1)) // ustawia fDirection
-                return false; // wyjście z błędem
-            if (dir != fDirection) //(pCurrentTrack->iNextDirection)
-            { // gdy zmiana kierunku toru (Point2->Point2)
-                fDistance = -fDistance; //(s-pCurrentSegment->GetLength());
-                fCurrentDistance = pCurrentSegment->GetLength();
-            }
-            else // gdy kierunek bez zmiany (Point2->Point1)
-                fCurrentDistance = 0;
-            if (bCanSkip)
-            { // jak główna oś, to dodanie pojazdu do nowego toru
-                pCurrentTrack->AddDynamicObject(Owner);
-                iEventFlag = 3; // McZapkie-020602: umozliwienie uruchamiania event1,2 po zmianie toru
-                iEventallFlag = 3;
-                if (!Owner->MyTrack)
-                    return false;
-            }
-            continue;
-        }
         else
-        { // gdy zostaje na tym samym torze (przesuwanie już nie zmienia toru)
-            if (bPrimary)
-            { // tylko gdy początkowe ustawienie, dodajemy eventy stania do kolejki
-                if (Owner->MoverParameters->CabOccupied != 0) {
+		{
+			if (s > pCurrentSegment->GetLength())
+			{ // jeśli przekroczenie toru od strony Point2
+				bCanSkip = bPrimary && pCurrentTrack->CheckDynamicObject(Owner);
+				if (bCanSkip) // tylko główna oś przenosi pojazd do innego toru
+					Owner->MyTrack->RemoveDynamicObject(Owner); // zdejmujemy pojazd z dotychczasowego toru
+				fDistance = s - pCurrentSegment->GetLength();
+				dir = fDirection;
+				if (pCurrentTrack->eType == tt_Cross)
+				{
+					if (!SetCurrentTrack(pCurrentTrack->Connected(iSegment, fDirection), 1))
+						return false; // wyjście z błędem
+				}
+				else if (!SetCurrentTrack(pCurrentTrack->Connected(1, fDirection), 1)) // ustawia fDirection
+					return false; // wyjście z błędem
+				if (dir != fDirection) //(pCurrentTrack->iNextDirection)
+				{ // gdy zmiana kierunku toru (Point2->Point2)
+					fDistance = -fDistance; //(s-pCurrentSegment->GetLength());
+					fCurrentDistance = pCurrentSegment->GetLength();
+				}
+				else // gdy kierunek bez zmiany (Point2->Point1)
+					fCurrentDistance = 0;
+				if (bCanSkip)
+				{ // jak główna oś, to dodanie pojazdu do nowego toru
+					pCurrentTrack->AddDynamicObject(Owner);
+					iEventFlag = 3; // McZapkie-020602: umozliwienie uruchamiania event1,2 po zmianie toru
+					iEventallFlag = 3;
+					if (!Owner->MyTrack)
+						return false;
+				}
+				continue;
+			}
+			// gdy zostaje na tym samym torze (przesuwanie już nie zmienia toru)
+			if (bPrimary)
+			{ // tylko gdy początkowe ustawienie, dodajemy eventy stania do kolejki
+				if (Owner->MoverParameters->CabOccupied != 0)
+				{
 
-                    pCurrentTrack->QueueEvents( pCurrentTrack->m_events1, Owner, -1.0 );
-                    pCurrentTrack->QueueEvents( pCurrentTrack->m_events2, Owner, -1.0 );
-                }
-                pCurrentTrack->QueueEvents( pCurrentTrack->m_events1all, Owner, -1.0 );
-                pCurrentTrack->QueueEvents( pCurrentTrack->m_events2all, Owner, -1.0 );
-            }
-            fCurrentDistance = s;
-            return ComputatePosition(); // przeliczenie XYZ, true o ile nie wyjechał na NULL
-        }
-    }
+					pCurrentTrack->QueueEvents(pCurrentTrack->m_events1, Owner, -1.0);
+					pCurrentTrack->QueueEvents(pCurrentTrack->m_events2, Owner, -1.0);
+				}
+				pCurrentTrack->QueueEvents(pCurrentTrack->m_events1all, Owner, -1.0);
+				pCurrentTrack->QueueEvents(pCurrentTrack->m_events2all, Owner, -1.0);
+			}
+			fCurrentDistance = s;
+			return ComputatePosition(); // przeliczenie XYZ, true o ile nie wyjechał na NULL
+		}
+	}
 };
 
 bool TTrackFollower::ComputatePosition()

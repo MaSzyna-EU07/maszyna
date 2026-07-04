@@ -394,10 +394,12 @@ double TNESt3::CVs(double const BP) // napelniacz sterujacego
     // przeplyw ZS <-> PG
     if (MPP < CVP - 0.17)
         return 0.0;
-    else if (MPP > CVP - 0.08)
-        return Nozzles[dSd];
     else
-        return Nozzles[dSm];
+	{
+		if (MPP > CVP - 0.08)
+			return Nozzles[dSd];
+		return Nozzles[dSm];
+	}
 }
 
 double TNESt3::BVs(double const BCP) // napelniacz pomocniczego
@@ -408,14 +410,17 @@ double TNESt3::BVs(double const BCP) // napelniacz pomocniczego
     // przeplyw ZP <-> rozdzielacz
     if (MPP < CVP - 0.3)
         return Nozzles[dP];
-    else if( BCP < 0.5 ) {
-        if( true == Zamykajacy )
-            return Nozzles[ dPm ]; // 1.25
-        else
-            return Nozzles[ dPd ];
-    }
     else
-        return 0.0;
+	{
+		if (BCP < 0.5)
+		{
+			if (true == Zamykajacy)
+				return Nozzles[dPm]; // 1.25
+			else
+				return Nozzles[dPd];
+		}
+		return 0.0;
+	}
 }
 
 void TNESt3::PLC(double const mass)

@@ -7612,10 +7612,12 @@ static int      stbi__pnm_info(stbi__context *s, int *x, int *y, int *comp)
    maxv = stbi__pnm_getinteger(s, &c);  // read max value
    if (maxv > 65535)
       return stbi__err("max value > 65535", "PPM image supports only 8-bit and 16-bit images");
-   else if (maxv > 255)
-      return 16;
    else
-      return 8;
+   {
+	   if (maxv > 255)
+		   return 16;
+	   return 8;
+   }
 }
 
 static int stbi__pnm_is16(stbi__context *s)

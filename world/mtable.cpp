@@ -169,15 +169,19 @@ bool TTrainParameters::IsTimeToGo(double hh, double mm)
 {
     if (StationIndex < 1)
         return true; // przed pierwszą jechać
-    else if (StationIndex < StationCount)
-    { // oprócz ostatniego przystanku
-        if (TimeTable[StationIndex].Ah < 0) // odjazd z poprzedniego
-            return true; // czas przyjazdu nie był podany - przelot
-        else
-            return CompareTime(hh, mm, TimeTable[StationIndex].Dh, TimeTable[StationIndex].Dm) <= 0;
-    }
-    else // gdy rozkład się skończył
-        return false; // dalej nie jechać
+    else
+	{
+		if (StationIndex < StationCount)
+		{ // oprócz ostatniego przystanku
+			if (TimeTable[StationIndex].Ah < 0) // odjazd z poprzedniego
+				return true; // czas przyjazdu nie był podany - przelot
+			else
+				return CompareTime(hh, mm, TimeTable[StationIndex].Dh, TimeTable[StationIndex].Dm) <= 0;
+		}
+		// gdy rozkład się skończył
+		return false;
+	}
+	// dalej nie jechać
 }
 
 // returns: difference between specified time and scheduled departure from current stop, in seconds

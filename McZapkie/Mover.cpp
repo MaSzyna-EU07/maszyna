@@ -1133,6 +1133,7 @@ double TMoverParameters::PipeRatio(void)
 	double pr;
 
 	if (DeltaPipePress > 0)
+	{
 		if (false) // SPKS!! no to jak nie wchodzimy to po co branch?
 		{
 			if (3.0 * PipePress > HighPipePress + LowPipePress + LowPipePress)
@@ -1145,8 +1146,8 @@ double TMoverParameters::PipeRatio(void)
 			// if (Compressor > 0.5)
 			//     then pr : = pr * 1.333; // dziwny rapid wywalamy
 		}
-		else
-			pr = (HighPipePress - std::max(LowPipePress, std::min(HighPipePress, PipePress))) / DeltaPipePress;
+		pr = (HighPipePress - std::max(LowPipePress, std::min(HighPipePress, PipePress))) / DeltaPipePress;
+	}
 	else
 		pr = 0;
 	return pr;
@@ -9830,22 +9831,24 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 			continue;
 		}
 
-		else if (issection("BuffCoupl1.", inputline))
+		else
 		{
+			if (issection("BuffCoupl1.", inputline))
+			{
 
-			startBPT = false;
-			fizlines.emplace("BuffCoupl1", inputline);
-			LoadFIZ_BuffCoupl(inputline, 1);
-			continue;
-		}
+				startBPT = false;
+				fizlines.emplace("BuffCoupl1", inputline);
+				LoadFIZ_BuffCoupl(inputline, 1);
+				continue;
+			}
+			if (issection("BuffCoupl2.", inputline))
+			{
 
-		else if (issection("BuffCoupl2.", inputline))
-		{
-
-			startBPT = false;
-			fizlines.emplace("BuffCoupl2", inputline);
-			LoadFIZ_BuffCoupl(inputline, 2);
-			continue;
+				startBPT = false;
+				fizlines.emplace("BuffCoupl2", inputline);
+				LoadFIZ_BuffCoupl(inputline, 2);
+				continue;
+			}
 		}
 
 		if (issection("TurboPos:", inputline))

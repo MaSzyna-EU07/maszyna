@@ -9819,14 +9819,41 @@ void ImGui::ShowMetricsWindow(bool* p_open)
         static ImRect GetWindowRect(ImGuiWindow* window, int rect_type)
         {
             if (rect_type == WRT_OuterRect)                 { return window->Rect(); }
-            else if (rect_type == WRT_OuterRectClipped)     { return window->OuterRectClipped; }
-            else if (rect_type == WRT_InnerRect)            { return window->InnerRect; }
-            else if (rect_type == WRT_InnerClipRect)        { return window->InnerClipRect; }
-            else if (rect_type == WRT_WorkRect)             { return window->WorkRect; }
-            else if (rect_type == WRT_Contents)             {
-				const ImVec2 min = window->InnerRect.Min - window->Scroll + window->WindowPadding; return ImRect(min, min + window->ContentSize); }
-            else if (rect_type == WRT_ContentsRegionRect)   { return window->ContentsRegionRect; }
-            IM_ASSERT(0);
+            else
+			{
+				if (rect_type == WRT_OuterRectClipped)
+				{
+					return window->OuterRectClipped;
+				}
+				if (rect_type == WRT_InnerRect)
+				{
+					return window->InnerRect;
+				}
+				else
+				{
+					if (rect_type == WRT_InnerClipRect)
+					{
+						return window->InnerClipRect;
+					}
+					if (rect_type == WRT_WorkRect)
+					{
+						return window->WorkRect;
+					}
+					else
+					{
+						if (rect_type == WRT_Contents)
+						{
+							const ImVec2 min = window->InnerRect.Min - window->Scroll + window->WindowPadding;
+							return ImRect(min, min + window->ContentSize);
+						}
+						if (rect_type == WRT_ContentsRegionRect)
+						{
+							return window->ContentsRegionRect;
+						}
+					}
+				}
+			}
+			IM_ASSERT(0);
             return ImRect();
         }
 

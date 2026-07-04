@@ -2302,21 +2302,27 @@ event_manager::insert( basic_event *Event ) {
             return false;
         }
         // tymczasowo wyjątki:
-        else if( Event->m_name.ends_with("lineinfo:") ) {
-            // tymczasowa utylizacja duplikatów W5
-            return false;
-        }
-        else if( Event->m_name.ends_with("_warning") ) {
-            // tymczasowa utylizacja duplikatu z trąbieniem
-            return false;
-        }
-        else if( Event->m_name.ends_with("_shp") ) {
-            // nie podlegają logowaniu
-            // tymczasowa utylizacja duplikatu SHP
-            return false;
-        }
+        else
+		{
+			if (Event->m_name.ends_with("lineinfo:"))
+			{
+				// tymczasowa utylizacja duplikatów W5
+				return false;
+			}
+			if (Event->m_name.ends_with("_warning"))
+			{
+				// tymczasowa utylizacja duplikatu z trąbieniem
+				return false;
+			}
+			else if (Event->m_name.ends_with("_shp"))
+			{
+				// nie podlegają logowaniu
+				// tymczasowa utylizacja duplikatu SHP
+				return false;
+			}
+		}
 
-        auto *duplicate = m_events[ lookup->second ];
+		auto *duplicate = m_events[ lookup->second ];
         if( Global.bJoinEvents ) {
             // doczepka (taki wirtualny multiple bez warunków)
             duplicate->append( Event );

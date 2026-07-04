@@ -1188,10 +1188,20 @@ static stbtt_uint32 stbtt__cff_int(stbtt__buf *b)
 {
 	const int b0 = stbtt__buf_get8(b);
    if (b0 >= 32 && b0 <= 246)       return b0 - 139;
-   else if (b0 >= 247 && b0 <= 250) return (b0 - 247)*256 + stbtt__buf_get8(b) + 108;
-   else if (b0 >= 251 && b0 <= 254) return -(b0 - 251)*256 - stbtt__buf_get8(b) - 108;
-   else if (b0 == 28)               return stbtt__buf_get16(b);
-   else if (b0 == 29)               return stbtt__buf_get32(b);
+   else
+   {
+	   if (b0 >= 247 && b0 <= 250)
+		   return (b0 - 247) * 256 + stbtt__buf_get8(b) + 108;
+	   if (b0 >= 251 && b0 <= 254)
+		   return -(b0 - 251) * 256 - stbtt__buf_get8(b) - 108;
+	   else
+	   {
+		   if (b0 == 28)
+			   return stbtt__buf_get16(b);
+		   if (b0 == 29)
+			   return stbtt__buf_get32(b);
+	   }
+   }
    STBTT_assert(0);
    return 0;
 }
@@ -1469,82 +1479,99 @@ STBTT_DEF int stbtt_FindGlyphIndex(const stbtt_fontinfo *info, int unicode_codep
       if (unicode_codepoint < bytes-6)
          return ttBYTE(data + index_map + 6 + unicode_codepoint);
       return 0;
-   } else if (format == 6) {
-		const stbtt_uint32 first = ttUSHORT(data + index_map + 6);
-		const stbtt_uint32 count = ttUSHORT(data + index_map + 8);
-      if ((stbtt_uint32) unicode_codepoint >= first && (stbtt_uint32) unicode_codepoint < first+count)
-         return ttUSHORT(data + index_map + 10 + (unicode_codepoint - first)*2);
-      return 0;
-   } else if (format == 2) {
-      STBTT_assert(0); // @TODO: high-byte mapping for japanese/chinese/korean
-      return 0;
-   } else if (format == 4) { // standard mapping for windows fonts: binary search collection of ranges
-		const stbtt_uint16 segcount = ttUSHORT(data+index_map+6) >> 1;
-      stbtt_uint16 searchRange = ttUSHORT(data+index_map+8) >> 1;
-      stbtt_uint16 entrySelector = ttUSHORT(data+index_map+10);
-		const stbtt_uint16 rangeShift = ttUSHORT(data+index_map+12) >> 1;
+   } else
+   {
+	   if (format == 6)
+	   {
+		   const stbtt_uint32 first = ttUSHORT(data + index_map + 6);
+		   const stbtt_uint32 count = ttUSHORT(data + index_map + 8);
+		   if ((stbtt_uint32)unicode_codepoint >= first && (stbtt_uint32)unicode_codepoint < first + count)
+			   return ttUSHORT(data + index_map + 10 + (unicode_codepoint - first) * 2);
+		   return 0;
+	   }
+	   if (format == 2)
+	   {
+		   STBTT_assert(0); // @TODO: high-byte mapping for japanese/chinese/korean
+		   return 0;
+	   }
+	   else
+	   {
+		   if (format == 4)
+		   { // standard mapping for windows fonts: binary search collection of ranges
+			   const stbtt_uint16 segcount = ttUSHORT(data + index_map + 6) >> 1;
+			   stbtt_uint16 searchRange = ttUSHORT(data + index_map + 8) >> 1;
+			   stbtt_uint16 entrySelector = ttUSHORT(data + index_map + 10);
+			   const stbtt_uint16 rangeShift = ttUSHORT(data + index_map + 12) >> 1;
 
-      // do a binary search of the segments
-		const stbtt_uint32 endCount = index_map + 14;
-      stbtt_uint32 search = endCount;
+			   // do a binary search of the segments
+			   const stbtt_uint32 endCount = index_map + 14;
+			   stbtt_uint32 search = endCount;
 
-      if (unicode_codepoint > 0xffff)
-         return 0;
+			   if (unicode_codepoint > 0xffff)
+				   return 0;
 
-      // they lie from endCount .. endCount + segCount
-      // but searchRange is the nearest power of two, so...
-      if (unicode_codepoint >= ttUSHORT(data + search + rangeShift*2))
-         search += rangeShift*2;
+			   // they lie from endCount .. endCount + segCount
+			   // but searchRange is the nearest power of two, so...
+			   if (unicode_codepoint >= ttUSHORT(data + search + rangeShift * 2))
+				   search += rangeShift * 2;
 
-      // now decrement to bias correctly to find smallest
-      search -= 2;
-      while (entrySelector) {
-         stbtt_uint16 end;
-         searchRange >>= 1;
-         end = ttUSHORT(data + search + searchRange*2);
-         if (unicode_codepoint > end)
-            search += searchRange*2;
-         --entrySelector;
-      }
-      search += 2;
+			   // now decrement to bias correctly to find smallest
+			   search -= 2;
+			   while (entrySelector)
+			   {
+				   stbtt_uint16 end;
+				   searchRange >>= 1;
+				   end = ttUSHORT(data + search + searchRange * 2);
+				   if (unicode_codepoint > end)
+					   search += searchRange * 2;
+				   --entrySelector;
+			   }
+			   search += 2;
 
-      {
-         stbtt_uint16 offset, start;
-			const stbtt_uint16 item = (stbtt_uint16) ((search - endCount) >> 1);
+			   {
+				   stbtt_uint16 offset, start;
+				   const stbtt_uint16 item = (stbtt_uint16)((search - endCount) >> 1);
 
-         STBTT_assert(unicode_codepoint <= ttUSHORT(data + endCount + 2*item));
-         start = ttUSHORT(data + index_map + 14 + segcount*2 + 2 + 2*item);
-         if (unicode_codepoint < start)
-            return 0;
+				   STBTT_assert(unicode_codepoint <= ttUSHORT(data + endCount + 2 * item));
+				   start = ttUSHORT(data + index_map + 14 + segcount * 2 + 2 + 2 * item);
+				   if (unicode_codepoint < start)
+					   return 0;
 
-         offset = ttUSHORT(data + index_map + 14 + segcount*6 + 2 + 2*item);
-         if (offset == 0)
-            return (stbtt_uint16) (unicode_codepoint + ttSHORT(data + index_map + 14 + segcount*4 + 2 + 2*item));
+				   offset = ttUSHORT(data + index_map + 14 + segcount * 6 + 2 + 2 * item);
+				   if (offset == 0)
+					   return (stbtt_uint16)(unicode_codepoint + ttSHORT(data + index_map + 14 + segcount * 4 + 2 + 2 * item));
 
-         return ttUSHORT(data + offset + (unicode_codepoint-start)*2 + index_map + 14 + segcount*6 + 2 + 2*item);
-      }
-   } else if (format == 12 || format == 13) {
-		const stbtt_uint32 ngroups = ttULONG(data+index_map+12);
-      stbtt_int32 low,high;
-      low = 0; high = (stbtt_int32)ngroups;
-      // Binary search the right group.
-      while (low < high) {
-			const stbtt_int32 mid = low + ((high-low) >> 1); // rounds down, so low <= mid < high
-			const stbtt_uint32 start_char = ttULONG(data+index_map+16+mid*12);
-			const stbtt_uint32 end_char = ttULONG(data+index_map+16+mid*12+4);
-         if ((stbtt_uint32) unicode_codepoint < start_char)
-            high = mid;
-         else if ((stbtt_uint32) unicode_codepoint > end_char)
-            low = mid+1;
-         else {
-				const stbtt_uint32 start_glyph = ttULONG(data+index_map+16+mid*12+8);
-            if (format == 12)
-               return start_glyph + unicode_codepoint-start_char;
-            else // format == 13
-               return start_glyph;
-         }
-      }
-      return 0; // not found
+				   return ttUSHORT(data + offset + (unicode_codepoint - start) * 2 + index_map + 14 + segcount * 6 + 2 + 2 * item);
+			   }
+		   }
+		   if (format == 12 || format == 13)
+		   {
+			   const stbtt_uint32 ngroups = ttULONG(data + index_map + 12);
+			   stbtt_int32 low, high;
+			   low = 0;
+			   high = (stbtt_int32)ngroups;
+			   // Binary search the right group.
+			   while (low < high)
+			   {
+				   const stbtt_int32 mid = low + ((high - low) >> 1); // rounds down, so low <= mid < high
+				   const stbtt_uint32 start_char = ttULONG(data + index_map + 16 + mid * 12);
+				   const stbtt_uint32 end_char = ttULONG(data + index_map + 16 + mid * 12 + 4);
+				   if ((stbtt_uint32)unicode_codepoint < start_char)
+					   high = mid;
+				   else if ((stbtt_uint32)unicode_codepoint > end_char)
+					   low = mid + 1;
+				   else
+				   {
+					   const stbtt_uint32 start_glyph = ttULONG(data + index_map + 16 + mid * 12 + 8);
+					   if (format == 12)
+						   return start_glyph + unicode_codepoint - start_char;
+					   else // format == 13
+						   return start_glyph;
+				   }
+			   }
+			   return 0; // not found
+		   }
+	   }
    }
    // @TODO
    STBTT_assert(0);
