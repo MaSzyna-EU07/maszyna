@@ -22,6 +22,17 @@ http://mozilla.org/MPL/2.0/.
 #ifndef ALC_CONNECTED
 #define ALC_CONNECTED 0x313
 #endif
+// ALC_ENUMERATE_ALL_EXT token; identifies the system's current default output device
+#ifndef ALC_DEFAULT_ALL_DEVICES_SPECIFIER
+#define ALC_DEFAULT_ALL_DEVICES_SPECIFIER 0x1012
+#endif
+// ALC_SOFT_system_events tokens (bundled headers may predate them); functions resolved at runtime
+#ifndef ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT
+#define ALC_PLAYBACK_DEVICE_SOFT                    0x19D4
+#define ALC_CAPTURE_DEVICE_SOFT                     0x19D5
+#define ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT  0x19D6
+#define ALC_EVENT_TYPE_DEVICE_REMOVED_SOFT          0x19D8
+#endif
 
 namespace audio {
 
@@ -157,11 +168,14 @@ openal_source::sync_with( sound_properties const &State ) {
         }
     }
     if( sound_range >= 0 ) {
-        ::alSourcefv( id, AL_POSITION, glm::value_ptr( sound_distance ) );
+        // Convert dvec3 to vec3 for OpenAL
+        glm::vec3 sound_distance_float = glm::vec3(sound_distance);
+        ::alSourcefv( id, AL_POSITION, glm::value_ptr( sound_distance_float ) );
     }
     else {
         // sounds with 'unlimited' or negative range are positioned on top of the listener
-        ::alSourcefv( id, AL_POSITION, glm::value_ptr( glm::vec3() ) );
+        glm::vec3 zero_pos{ 0.f, 0.f, 0.f };
+        ::alSourcefv( id, AL_POSITION, glm::value_ptr( zero_pos ) );
     }
     // gain
     auto const gain {
@@ -184,7 +198,7 @@ openal_source::sync_with( sound_properties const &State ) {
     }
     if( sound_range != -1 ) {
         auto const rangesquared { sound_range * sound_range };
-        auto const distancesquared { glm::length2( sound_distance ) };
+        auto const distancesquared { static_cast<float>( glm::length2( sound_distance ) ) };
         if( distancesquared > rangesquared
          || false == is_in_range ) {
             // if the emitter is outside of its nominal hearing range or was outside of it during last check
@@ -275,10 +289,24 @@ openal_source::clear() {
 
 openal_renderer::~openal_renderer() {
 
+    if( m_alcEventCallbackSOFT != nullptr ) { m_alcEventCallbackSOFT( nullptr, nullptr ); } // stop callbacks before teardown
+
     ::alcMakeContextCurrent( nullptr );
 
     if( m_context != nullptr ) { ::alcDestroyContext( m_context ); }
     if( m_device != nullptr )  { ::alcCloseDevice( m_device ); }
+}
+
+// invoked by OpenAL (possibly on an internal thread) on device events; only flags the change,
+// the actual reopen is done on the main thread in update()
+void
+openal_renderer::device_event_callback( ALCenum eventtype, ALCenum devicetype, ALCdevice */*device*/, ALCsizei /*length*/, ALCchar const */*message*/, void *userparam ) {
+
+    if( userparam == nullptr ) { return; }
+    if( devicetype == ALC_CAPTURE_DEVICE_SOFT ) { return; } // only care about playback output
+    if( eventtype != ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT
+     && eventtype != ALC_EVENT_TYPE_DEVICE_REMOVED_SOFT ) { return; }
+    static_cast<openal_renderer*>( userparam )->m_outputchanged.store( true );
 }
 
 audio::buffer_handle
@@ -339,61 +367,66 @@ openal_renderer::erase( sound_source const *Controller ) {
 void
 openal_renderer::update( double const Deltatime ) {
 
-	ALenum err = alGetError();
-	if (err != AL_NO_ERROR)
-	{
-		std::string errname;
-		if (err == AL_INVALID_NAME)
-			errname = "AL_INVALID_NAME";
-		else if (err == AL_INVALID_ENUM)
-			errname = "AL_INVALID_ENUM";
-		else if (err == AL_INVALID_VALUE)
-			errname = "AL_INVALID_VALUE";
-		else if (err == AL_INVALID_OPERATION)
-			errname = "AL_INVALID_OPERATION";
-		else if (err == AL_OUT_OF_MEMORY)
-			errname = "AL_OUT_OF_MEMORY";
-		else
-			errname = "unknown";
-		
-		ErrorLog("sound: al error: " + errname);
-	}
+    ALenum err = alGetError();
+    if (err != AL_NO_ERROR)
+    {
+        std::string errname;
+        if (err == AL_INVALID_NAME)
+            errname = "AL_INVALID_NAME";
+        else if (err == AL_INVALID_ENUM)
+            errname = "AL_INVALID_ENUM";
+        else if (err == AL_INVALID_VALUE)
+            errname = "AL_INVALID_VALUE";
+        else if (err == AL_INVALID_OPERATION)
+            errname = "AL_INVALID_OPERATION";
+        else if (err == AL_OUT_OF_MEMORY)
+            errname = "AL_OUT_OF_MEMORY";
+        else
+            errname = "unknown";
 
-	if (Deltatime == 0.0)
-	{
-		if (alcDevicePauseSOFT)
-			alcDevicePauseSOFT(m_device);
-		return;
-	}
+        ErrorLog("sound: al error: " + errname);
+    }
 
-	if (alcDeviceResumeSOFT)
-		alcDeviceResumeSOFT(m_device);
+    if (Deltatime == 0.0)
+    {
+        if (m_alcDevicePauseSOFT)
+            m_alcDevicePauseSOFT(m_device);
+        return;
+    }
 
-	// follow audio output device changes (OpenAL won't on its own): if the active device is
-	// gone (e.g. headphones unplugged) reopen playback on the current default output. Polled at
-	// ~1 Hz to avoid per-frame ALC round-trips.
-	if( m_candetectdisconnect ) {
-		m_devicechecktime += Deltatime;
-		if( m_devicechecktime >= 1.0 ) {
-			m_devicechecktime = 0.0;
-			ALCint connected{ ALC_TRUE };
-			::alcGetIntegerv( m_device, ALC_CONNECTED, 1, &connected );
-			if( connected == ALC_FALSE ) {
-				if( alcReopenDeviceSOFT != nullptr ) {
-					// NULL device name selects the current default output; context and sources are preserved
-					if( alcReopenDeviceSOFT( m_device, nullptr, m_contextattributes ) == ALC_TRUE ) {
-						WriteLog( "sound: active audio device lost, reopened on the current default output" );
-					}
-					else {
-						ErrorLog( "sound: active audio device lost, reopening on the default output failed (retrying)" );
-					}
-				}
-				else {
-					ErrorLog( "sound: active audio device lost and ALC_SOFT_reopen_device is unavailable; cannot recover" );
-				}
-			}
-		}
-	}
+    if (m_alcDeviceResumeSOFT)
+        m_alcDeviceResumeSOFT(m_device);
+
+    // keep audio on the correct output (OpenAL won't re-route on its own). Reopen playback on the
+    // current default output when the active device is lost (headphones unplugged) or the system
+    // default output changes (headphones plugged back in, or default switched in Windows). NULL
+    // device name selects the current default; context and sources are preserved.
+    if( m_alcReopenDeviceSOFT != nullptr && Global.AudioRenderer.empty() ) {
+        bool needsreopen{ false };
+        if( m_usedeviceevents ) {
+            // event-driven: the callback (any thread) flags default-output / device-removal changes
+            needsreopen = m_outputchanged.exchange( false );
+        }
+        else if( m_candetectdisconnect ) {
+            // fallback without ALC_SOFT_system_events: poll for a hard disconnect at ~1 Hz
+            m_devicechecktime += Deltatime;
+            if( m_devicechecktime >= 1.0 ) {
+                m_devicechecktime = 0.0;
+                ALCint connected{ ALC_TRUE };
+                ::alcGetIntegerv( m_device, ALC_CONNECTED, 1, &connected );
+                needsreopen = ( connected == ALC_FALSE );
+            }
+        }
+        if( needsreopen ) {
+            if( m_alcReopenDeviceSOFT( m_device, nullptr, m_contextattributes ) == ALC_TRUE ) {
+                auto const *nowon { (char const *)::alcGetString( nullptr, ALC_DEFAULT_ALL_DEVICES_SPECIFIER ) };
+                WriteLog( "sound: audio output changed, reopened playback on \"" + std::string{ nowon ? nowon : "?" } + "\"" );
+            }
+            else {
+                ErrorLog( "sound: audio output changed but reopening on the default device failed (will retry)" );
+            }
+        }
+    }
 
     // update listener
     // gain
@@ -464,11 +497,11 @@ openal_renderer::update( double const Deltatime ) {
     // reset potentially used volume change flag
     audio::event_volume_change = false;
 
-	if (alProcessUpdatesSOFT)
-	{
-		alProcessUpdatesSOFT();
-		alDeferUpdatesSOFT();
-	}
+    if (m_alProcessUpdatesSOFT && m_alDeferUpdatesSOFT)
+    {
+        m_alProcessUpdatesSOFT();
+        m_alDeferUpdatesSOFT();
+    }
 }
 
 // returns an instance of implementation-side part of the sound emitter
@@ -484,9 +517,14 @@ openal_renderer::fetch_source() {
     if( newsource.id == audio::null_resource ) {
         // if there's no source to reuse, try to generate a new one
         ::alGenSources( 1, &newsource.id );
+        // Check for errors
+        ALenum err = alGetError();
+        if (err != AL_NO_ERROR) {
+            ErrorLog("sound: failed to generate source, error: " + std::to_string(err));
+            newsource.id = audio::null_resource;
+        }
     }
     if( newsource.id == audio::null_resource ) {
-		alGetError();
         // if we still don't have a working source, see if we can sacrifice an already active one
         // under presumption it's more important to play new sounds than keep the old ones going
         // TBD, TODO: for better results we could use range and/or position for the new sound
@@ -504,7 +542,7 @@ openal_renderer::fetch_source() {
             }
             auto const sourceweight { (
                 source->sound_range != -1 ?
-                    source->sound_range * source->sound_range / ( glm::length2( source->sound_distance ) + 1 ) :
+                    source->sound_range * source->sound_range / ( static_cast<float>( glm::length2( source->sound_distance ) ) + 1 ) :
                     std::numeric_limits<float>::max() ) };
             if( sourceweight < leastimportantweight ) {
                 leastimportantsource = source;
@@ -524,12 +562,13 @@ openal_renderer::fetch_source() {
         }
     }
 
-    if( newsource.id == audio::null_resource ) {
+    if( newsource.id != audio::null_resource ) {
         // for sources with functional emitter reset emitter parameters from potential last use
         ::alSourcef( newsource.id, AL_PITCH, 1.f );
         ::alSourcef( newsource.id, AL_GAIN, 1.f );
-        ::alSourcefv( newsource.id, AL_POSITION, glm::value_ptr( glm::vec3{ 0.f } ) );
-        ::alSourcefv( newsource.id, AL_VELOCITY, glm::value_ptr( glm::vec3{ 0.f } ) );
+        glm::vec3 zero_pos{ 0.f, 0.f, 0.f };
+        ::alSourcefv( newsource.id, AL_POSITION, glm::value_ptr( zero_pos ) );
+        ::alSourcefv( newsource.id, AL_VELOCITY, glm::value_ptr( zero_pos ) );
     }
 
     return newsource;
@@ -554,7 +593,7 @@ openal_renderer::init_caps() {
     }
 
     // NOTE: default value of audio renderer variable is empty string, meaning argument of NULL i.e. 'preferred' device
-    m_device = ::alcOpenDevice( Global.AudioRenderer.c_str() );
+    m_device = ::alcOpenDevice( Global.AudioRenderer.empty() ? nullptr : Global.AudioRenderer.c_str() );
     if( m_device == nullptr ) {
         ErrorLog( "Failed to obtain audio device" );
         return false;
@@ -575,8 +614,8 @@ openal_renderer::init_caps() {
 
     WriteLog( "Supported extensions: " + std::string{ (char *)::alcGetString( m_device, ALC_EXTENSIONS ) } );
 
-	ALCint attr[3] = { ALC_MONO_SOURCES, Global.audio_max_sources, 0 }; // request more sounds
-	std::copy( std::begin( attr ), std::end( attr ), std::begin( m_contextattributes ) ); // cached for device reopen
+    ALCint attr[3] = { ALC_MONO_SOURCES, Global.audio_max_sources, 0 }; // request more sounds
+    std::copy( std::begin( attr ), std::end( attr ), std::begin( m_contextattributes ) ); // cached for device reopen
 
     m_context = ::alcCreateContext( m_device, attr );
     if( m_context == nullptr ) {
@@ -584,40 +623,56 @@ openal_renderer::init_caps() {
         return false;
     }
 
-	if (!alcMakeContextCurrent(m_context))
-	{
-		ErrorLog("sound: cannot select context");
-		return false;
-	}
+    if (!alcMakeContextCurrent(m_context))
+    {
+        ErrorLog("sound: cannot select context");
+        return false;
+    }
 
-	// the version reported above is the OpenAL API spec level (always 1.1); the real implementation
-	// version string (e.g. "1.1 ALSOFT 1.24.2") is only queryable once a context is current
-	if( auto const *libversion { (char const *)::alGetString( AL_VERSION ) } ) {
-		crashreport_add_info( "openal_lib_version", libversion );
-		WriteLog( "sound: library version: " + std::string{ libversion } );
-	}
+    // the version reported above is the OpenAL API spec level (always 1.1); the real implementation
+    // version string (e.g. "1.1 ALSOFT 1.24.2") is only queryable once a context is current
+    if( auto const *libversion { (char const *)::alGetString( AL_VERSION ) } ) {
+        crashreport_add_info( "openal_lib_version", libversion );
+        WriteLog( "sound: library version: " + std::string{ libversion } );
+    }
 
-	if (alIsExtensionPresent("AL_SOFT_deferred_updates"))
-	{
-		alDeferUpdatesSOFT = (void(*)())alGetProcAddress("alDeferUpdatesSOFT");
-		alProcessUpdatesSOFT = (void(*)())alGetProcAddress("alProcessUpdatesSOFT");
-	}
-	if (!alDeferUpdatesSOFT || !alProcessUpdatesSOFT)
-		WriteLog("sound: warning: extension AL_SOFT_deferred_updates not found");
+    // Initialize all extension function pointers
+    if (alIsExtensionPresent("AL_SOFT_deferred_updates"))
+    {
+        m_alDeferUpdatesSOFT = (void(*)())alGetProcAddress("alDeferUpdatesSOFT");
+        m_alProcessUpdatesSOFT = (void(*)())alGetProcAddress("alProcessUpdatesSOFT");
+    }
+    if (!m_alDeferUpdatesSOFT || !m_alProcessUpdatesSOFT)
+        WriteLog("sound: warning: extension AL_SOFT_deferred_updates not found");
 
-	if (alcIsExtensionPresent(m_device, "ALC_SOFT_pause_device"))
-	{
-		alcDevicePauseSOFT = (void(*)(ALCdevice*))alcGetProcAddress(m_device, "alcDevicePauseSOFT");
-		alcDeviceResumeSOFT = (void(*)(ALCdevice*))alcGetProcAddress(m_device, "alcDeviceResumeSOFT");
-	}
-	if (!alcDevicePauseSOFT || !alcDeviceResumeSOFT)
-		WriteLog("sound: warning: extension ALC_SOFT_pause_device not found");
+    if (alcIsExtensionPresent(m_device, "ALC_SOFT_pause_device"))
+    {
+        m_alcDevicePauseSOFT = (void(*)(ALCdevice*))alcGetProcAddress(m_device, "alcDevicePauseSOFT");
+        m_alcDeviceResumeSOFT = (void(*)(ALCdevice*))alcGetProcAddress(m_device, "alcDeviceResumeSOFT");
+    }
+    if (!m_alcDevicePauseSOFT || !m_alcDeviceResumeSOFT)
+        WriteLog("sound: warning: extension ALC_SOFT_pause_device not found");
 
-	m_candetectdisconnect = ( alcIsExtensionPresent( m_device, "ALC_EXT_disconnect" ) == ALC_TRUE );
-	if( alcIsExtensionPresent( m_device, "ALC_SOFT_reopen_device" ) == ALC_TRUE )
-		alcReopenDeviceSOFT = (ALCboolean(*)(ALCdevice*, ALCchar const*, ALCint const*))alcGetProcAddress( m_device, "alcReopenDeviceSOFT" );
-	if( !alcReopenDeviceSOFT )
-		WriteLog( "sound: warning: extension ALC_SOFT_reopen_device not found; audio output device changes won't be followed" );
+    m_candetectdisconnect = ( alcIsExtensionPresent( m_device, "ALC_EXT_disconnect" ) == ALC_TRUE );
+    if( alcIsExtensionPresent( m_device, "ALC_SOFT_reopen_device" ) == ALC_TRUE )
+        m_alcReopenDeviceSOFT = (ALCboolean(*)(ALCdevice*, ALCchar const*, ALCint const*))alcGetProcAddress( m_device, "alcReopenDeviceSOFT" );
+    if( !m_alcReopenDeviceSOFT )
+        WriteLog( "sound: warning: extension ALC_SOFT_reopen_device not found; audio output device changes won't be followed" );
+
+    // prefer event-driven output following (ALC_SOFT_system_events) over polling: it reliably
+    // catches both device removal and default-output changes, incl. re-plugging headphones
+    if( m_alcReopenDeviceSOFT != nullptr
+     && alcIsExtensionPresent( m_device, "ALC_SOFT_system_events" ) == ALC_TRUE ) {
+        m_alcEventControlSOFT = (ALCboolean(*)(ALCsizei, ALCenum const*, ALCboolean))alcGetProcAddress( m_device, "alcEventControlSOFT" );
+        m_alcEventCallbackSOFT = (void(*)(alc_event_proc, void*))alcGetProcAddress( m_device, "alcEventCallbackSOFT" );
+        if( m_alcEventControlSOFT != nullptr && m_alcEventCallbackSOFT != nullptr ) {
+            m_alcEventCallbackSOFT( &openal_renderer::device_event_callback, this );
+            ALCenum const events[]{ ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT, ALC_EVENT_TYPE_DEVICE_REMOVED_SOFT };
+            m_alcEventControlSOFT( 2, events, ALC_TRUE );
+            m_usedeviceevents = true;
+            WriteLog( "sound: following audio output device changes via ALC_SOFT_system_events" );
+        }
+    }
 
     return true;
 }
