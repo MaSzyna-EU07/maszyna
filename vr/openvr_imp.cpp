@@ -32,7 +32,7 @@ vr_openvr::vr_openvr()
 
 std::unique_ptr<TModel3d> vr_openvr::create_hiddenarea_model(eye_e e)
 {
-    vr::HiddenAreaMesh_t mesh = vr_system->GetHiddenAreaMesh((e == eye_left) ? vr::Eye_Left : vr::Eye_Right, vr::k_eHiddenAreaMesh_Standard);
+    vr::HiddenAreaMesh_t mesh = vr_system->GetHiddenAreaMesh(e == eye_left ? vr::Eye_Left : vr::Eye_Right, vr::k_eHiddenAreaMesh_Standard);
     if (!mesh.unTriangleCount)
         return nullptr;
 
@@ -66,7 +66,7 @@ glm::ivec2 vr_openvr::get_target_size()
 
 viewport_proj_config vr_openvr::get_proj_config(eye_e e)
 {
-    vr::EVREye eye = (e == eye_left) ? vr::Eye_Left : vr::Eye_Right;
+    vr::EVREye eye = e == eye_left ? vr::Eye_Left : vr::Eye_Right;
 
     float left, right, top, bottom; // tangents of half-angles from center view axis
     vr_system->GetProjectionRaw(eye, &left, &right, &top, &bottom);
@@ -85,7 +85,7 @@ viewport_proj_config vr_openvr::get_proj_config(eye_e e)
 
 glm::mat4 vr_openvr::get_matrix(const vr::HmdMatrix34_t &src)
 {
-    return glm::mat4(glm::transpose(glm::make_mat3x4((float*)(src.m))));
+    return glm::mat4(glm::transpose(glm::make_mat3x4((float*)src.m)));
 }
 
 void vr_openvr::begin_frame()
@@ -273,8 +273,8 @@ texture_done:
     vr::InputDigitalActionData_t actiondata_sec;
     vr::VRInput()->GetDigitalActionData(secondary_action, &actiondata_sec, sizeof(actiondata_sec), vr::k_ulInvalidInputValueHandle);
 
-    bool any_changed = (actiondata_pri.bChanged || actiondata_sec.bChanged);
-    bool any_active = (actiondata_pri.bState || actiondata_sec.bState);
+    bool any_changed = actiondata_pri.bChanged || actiondata_sec.bChanged;
+    bool any_active = actiondata_pri.bState || actiondata_sec.bState;
 
     if (command_active == user_command::none && any_changed) {
         bool primary = actiondata_pri.bState;
@@ -343,10 +343,10 @@ bool vr_openvr::update_component(const std::string &rendermodel, vr::VRInputValu
     vr::VRRenderModels()->GetComponentStateForDevicePath(rendermodel.c_str(), component->pName.c_str(), handle, &state, &component_state);
 
 	const glm::mat4 component_pose = get_matrix(component_state.mTrackingToComponentRenderModel);
-    bool visible = (component_state.uProperties & vr::VRComponentProperty_IsVisible);
+    bool visible = component_state.uProperties & vr::VRComponentProperty_IsVisible;
 
     component->ReplaceMatrix(component_pose);
-    component->iVisible = (visible ? 1 : 0);
+    component->iVisible = visible ? 1 : 0;
 
     return !(component_state.uProperties & vr::VRComponentProperty_IsStatic);
 }

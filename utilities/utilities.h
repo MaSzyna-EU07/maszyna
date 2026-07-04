@@ -256,7 +256,7 @@ template <typename T> bool is_equal(T const &Left, T const &Right, T const Epsil
 template <typename Type_>
 constexpr Type_ safe_clamp( Type_ const Value, Type_ const Lo, Type_ const Hi )
 {
-	return ( Hi < Lo )
+	return Hi < Lo
 		? std::clamp( Value, Hi, Lo )
 		: std::clamp( Value, Lo, Hi );
 }
