@@ -1279,7 +1279,7 @@ void TTrack::get_map_future_paths(map_colored_paths &handles) {
 
 		float distance = Global.map_highlight_distance;
 		TTrack *track = trPrev;
-		TTrack *visitor = this;
+		auto visitor = this;
 
 		while (distance > 0.0f && track && track->iterate_stamp != stamp) {
 			handles.future.push_back(track->extra_map_geometry);

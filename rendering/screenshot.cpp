@@ -57,7 +57,7 @@ void screenshot_manager::screenshot_save_thread( char *img, int w, int h )
 
 void screenshot_manager::make_screenshot()
 {
-    char *img = new char[Global.fb_size.x * Global.fb_size.y * 4];
+	auto img = new char[Global.fb_size.x * Global.fb_size.y * 4];
     glReadPixels(0, 0, Global.fb_size.x, Global.fb_size.y, Global.gfx_usegles ? GL_RGBA : GL_RGB, GL_UNSIGNED_BYTE, (GLvoid*)img);
 	//m7t: use pbo
 	

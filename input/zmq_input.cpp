@@ -87,8 +87,8 @@ void zmq_input::poll()
                 std::getline(stream, id1, '/');
                 std::getline(stream, id2, '/');
 
-                input_type type = input_type::none;
-                user_command cmd1 = user_command::none, cmd2 = user_command::none;
+				auto type = input_type::none;
+				auto cmd1 = user_command::none, cmd2 = user_command::none;
 
                 auto cmd1_it = nametocommandmap.find(id1);
                 if (cmd1_it != nametocommandmap.end())

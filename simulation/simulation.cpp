@@ -232,7 +232,7 @@ void state_manager::process_commands() {
                 continue;
 
             // NOTE: because malformed scenario can have vehicle name duplicates we first try to locate vehicle in world, with name search as fallback
-            TDynamicObject *targetvehicle = std::get<TDynamicObject *>( simulation::Region->find_vehicle( commanddata.location, 50, false, false ) );
+			auto targetvehicle = std::get<TDynamicObject *>( simulation::Region->find_vehicle( commanddata.location, 50, false, false ) );
             if( targetvehicle == nullptr || targetvehicle->name() != commanddata.payload ) {
                 targetvehicle = simulation::Vehicles.find( commanddata.payload );
             }

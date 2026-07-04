@@ -41,7 +41,7 @@ bool has_gl_extension(char const *name) {
     GLint count = 0;
     glGetIntegerv(GL_NUM_EXTENSIONS, &count);
     for (GLint i = 0; i < count; ++i) {
-        char const *ext = reinterpret_cast<char const *>(glGetStringi(GL_EXTENSIONS, i));
+		auto ext = reinterpret_cast<char const *>(glGetStringi(GL_EXTENSIONS, i));
         if (ext != nullptr && std::strcmp(ext, name) == 0) {
             return true;
         }

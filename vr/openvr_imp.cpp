@@ -45,8 +45,7 @@ std::unique_ptr<TModel3d> vr_openvr::create_hiddenarea_model(vr_interface::eye_e
                                glm::vec2(0.0f)));
     }
 
-
-    std::unique_ptr<TModel3d> model = std::make_unique<TModel3d>();
+	auto model = std::make_unique<TModel3d>();
     model->AppendChildFromGeometry("__root", "none", vertices, gfx::index_array());
     model->Init();
 

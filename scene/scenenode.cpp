@@ -150,7 +150,7 @@ shape_node::import( cParser &Input, scene::node_data const &Nodedata ) {
     m_data.rangesquared_min = Nodedata.range_min * Nodedata.range_min;
     m_data.rangesquared_max = Nodedata.range_max >= 0.0 ? Nodedata.range_max * Nodedata.range_max : std::numeric_limits<double>::max();
 
-    std::string token = Input.getToken<std::string>();
+	auto token = Input.getToken<std::string>();
     if( token == "material" ) {
         // lighting settings
         token = Input.getToken<std::string>();
@@ -588,7 +588,7 @@ lines_node::import( cParser &Input, scene::node_data const &Nodedata ) {
     subtype const nodetype = Nodedata.type == "lines" ? lines : Nodedata.type == "line_strip" ? line_strip : line_loop;
     std::size_t vertexcount { 0 };
     world_vertex vertex, vertex0, vertex1;
-    std::string token = Input.getToken<std::string>();
+	auto token = Input.getToken<std::string>();
     do {
         vertex.position.x = std::atof( token.c_str() );
         Input.getTokens( 2, false );

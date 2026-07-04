@@ -575,7 +575,7 @@ void driver_mode::update_camera(double const Deltatime)
 				}
 				else
 				{
-					TDynamicObject *d = std::get<TDynamicObject *>(simulation::Region->find_vehicle(Camera.Pos, 300, false, false));
+					auto d = std::get<TDynamicObject *>(simulation::Region->find_vehicle(Camera.Pos, 300, false, false));
 					if (!d)
 						d = std::get<TDynamicObject *>(simulation::Region->find_vehicle(Camera.Pos, 1000, false, false)); // dalej szukanie, jesli bliżej nie ma
 
@@ -963,7 +963,7 @@ void driver_mode::OnKeyDown(int cKey)
 			// only available in free fly mode
 			break;
 
-		TDynamicObject *dynamic = std::get<TDynamicObject *>(simulation::Region->find_vehicle(Global.pCamera.Pos, 50, false, false));
+		auto dynamic = std::get<TDynamicObject *>(simulation::Region->find_vehicle(Global.pCamera.Pos, 50, false, false));
 		if (dynamic)
 		{
 			m_relay.post(user_command::entervehicle, Global.ctrlState ? GLFW_MOD_CONTROL : 0, simulation::Train ? simulation::Train->id() : 0, GLFW_PRESS, 0, dynamic->GetPosition(),

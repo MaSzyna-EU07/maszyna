@@ -19,8 +19,8 @@ http://mozilla.org/MPL/2.0/.
 // HID\Vid_1dc3&Pid_1001&Rev_1000&MI_01 - MI_01 to jest interfejs komunikacyjny (00-joystick,
 // 02-klawiatura)
 
-HANDLE WriteHandle = INVALID_HANDLE_VALUE;
-HANDLE ReadHandle = INVALID_HANDLE_VALUE;
+auto WriteHandle = INVALID_HANDLE_VALUE;
+auto ReadHandle = INVALID_HANDLE_VALUE;
 // GUID InterfaceClassGuid={0x4d1e55b2,0xf16f,0x11cf,0x88,0xcb,0x00,0x11,0x11,0x00,0x00,0x30};
 //{4d1e55b2-f16f-11cf-88cb-001111000030}
 
@@ -59,8 +59,8 @@ bool TPoKeys55::Connect()
     GUID InterfaceClassGuid = {0x4d1e55b2, 0xf16f, 0x11cf, 0x88, 0xcb, 0x00,
                                0x11,       0x11,   0x00,   0x00, 0x30}; // wszystkie HID tak mają
     HDEVINFO DeviceInfoTable;
-    PSP_DEVICE_INTERFACE_DATA InterfaceDataStructure = new SP_DEVICE_INTERFACE_DATA;
-    PSP_DEVICE_INTERFACE_DETAIL_DATA DetailedInterfaceDataStructure =
+	auto InterfaceDataStructure = new SP_DEVICE_INTERFACE_DATA;
+	auto DetailedInterfaceDataStructure =
         new SP_DEVICE_INTERFACE_DETAIL_DATA;
     SP_DEVINFO_DATA DevInfoData;
     DWORD InterfaceIndex = 0;

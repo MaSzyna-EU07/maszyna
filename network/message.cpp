@@ -103,7 +103,7 @@ void network::frame_info::deserialize(std::istream &stream)
 
 std::shared_ptr<network::message> network::deserialize_message(std::istream &stream)
 {
-	message::type_e type = (message::type_e)sn_utils::ld_uint16(stream);
+	auto type = (message::type_e)sn_utils::ld_uint16(stream);
 
 	std::shared_ptr<message> msg;
 

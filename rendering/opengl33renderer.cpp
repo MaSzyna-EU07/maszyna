@@ -549,7 +549,7 @@ std::unique_ptr<gl::program> opengl33_renderer::make_shader(std::string v, std::
 {
 	gl::shader vert(v);
 	gl::shader frag(f);
-	gl::program *prog = new gl::program({vert, frag});
+	auto prog = new gl::program({vert, frag});
 	return std::unique_ptr<gl::program>(prog);
 }
 
@@ -2145,7 +2145,7 @@ std::shared_ptr<gl::program> opengl33_renderer::Fetch_Shader(const std::string &
 	if (it == m_shaders.end())
 	{
 		gl::shader fragment("mat_" + name + ".frag");
-		gl::program *program = new gl::program({fragment, *m_vertex_shader.get()});
+		auto program = new gl::program({fragment, *m_vertex_shader.get()});
 		m_shaders.insert({name, std::shared_ptr<gl::program>(program)});
 	}
 
@@ -5314,7 +5314,7 @@ bool opengl33_renderer::Init_caps()
 	WriteLog("Supported extensions:");
 	for (int i = 0; i < extCount; i++)
 	{
-		const char *ext = (const char *)glGetStringi(GL_EXTENSIONS, i);
+		auto ext = (const char *)glGetStringi(GL_EXTENSIONS, i);
 		WriteLog(ext);
 	}
 	WriteLog("--------");

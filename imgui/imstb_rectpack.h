@@ -532,8 +532,8 @@ static stbrp__findresult stbrp__skyline_pack_rectangle(stbrp_context *context, i
 // [DEAR IMGUI] Added STBRP__CDECL
 static int STBRP__CDECL rect_height_compare(const void *a, const void *b)
 {
-   const stbrp_rect *p = (const stbrp_rect *) a;
-   const stbrp_rect *q = (const stbrp_rect *) b;
+	auto p = (const stbrp_rect *) a;
+	auto q = (const stbrp_rect *) b;
    if (p->h > q->h)
       return -1;
    if (p->h < q->h)
@@ -544,8 +544,8 @@ static int STBRP__CDECL rect_height_compare(const void *a, const void *b)
 // [DEAR IMGUI] Added STBRP__CDECL
 static int STBRP__CDECL rect_original_order(const void *a, const void *b)
 {
-   const stbrp_rect *p = (const stbrp_rect *) a;
-   const stbrp_rect *q = (const stbrp_rect *) b;
+	auto p = (const stbrp_rect *) a;
+	auto q = (const stbrp_rect *) b;
    return (p->was_packed < q->was_packed) ? -1 : (p->was_packed > q->was_packed);
 }
 

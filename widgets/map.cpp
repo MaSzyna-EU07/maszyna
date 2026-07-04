@@ -16,7 +16,7 @@ ui::map_panel::map_panel() : ui_panel(STR_C("Map"), false)
 	window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 
 #ifdef WITH_OPENGL_MODERN
-    opengl33_renderer *gl33 = dynamic_cast<opengl33_renderer*>(GfxRenderer.get());
+	auto gl33 = dynamic_cast<opengl33_renderer*>(GfxRenderer.get());
     if (!gl33) {
         ErrorLog("map not supported on old renderer");
         return;
@@ -146,7 +146,7 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
 	scene_ubo->bind_uniform();
 
 #ifdef WITH_OPENGL_MODERN
-    opengl33_renderer *gl33 = dynamic_cast<opengl33_renderer*>(GfxRenderer.get());
+	auto gl33 = dynamic_cast<opengl33_renderer*>(GfxRenderer.get());
 
     gl33->Draw_Geometry(m_section_handles.begin(), m_section_handles.end());
 

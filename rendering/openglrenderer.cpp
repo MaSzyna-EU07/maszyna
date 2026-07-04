@@ -4414,7 +4414,7 @@ opengl_renderer::Init_caps() {
 
     m_isATI = (gl_vendor.find("ATI") != -1);
 
-    char* extensions = (char*)glGetString( GL_EXTENSIONS );
+	auto extensions = (char*)glGetString( GL_EXTENSIONS );
     if (extensions)
         WriteLog( "Supported extensions: \n" + std::string(extensions));
 

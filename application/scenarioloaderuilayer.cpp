@@ -67,7 +67,7 @@ scenarioloader_ui::scenarioloader_ui()
 std::vector<std::string> scenarioloader_ui::get_random_trivia()
 {
 	WriteLog("Loading random trivia...");
-	std::vector<std::string> trivia = std::vector<std::string>();
+	auto trivia = std::vector<std::string>();
 
 	if (!FileExists("lang/trivia_" + Global.asLang + ".json") 
 		&& !FileExists("lang/trivia_en.json"))
@@ -203,7 +203,7 @@ void scenarioloader_ui::render_()
 	// Gradient at the lower half of the screen
 	if (!Global.NvRenderer)
 	{
-		const ImTextureID tex = (ImTextureID)(intptr_t)m_gradient_overlay_tex; // See https://github.com/ocornut/imgui/wiki/Image-Loading-and-Displaying-Examples#example-for-opengl-users
+		const auto tex = (ImTextureID)(intptr_t)m_gradient_overlay_tex; // See https://github.com/ocornut/imgui/wiki/Image-Loading-and-Displaying-Examples#example-for-opengl-users
 		draw_list->AddImage(tex, ImVec2(0, Global.window_size.y / 2), ImVec2(Global.window_size.x, Global.window_size.y), ImVec2(0, 0), ImVec2(1, 1));
 	}
 	
@@ -284,7 +284,7 @@ void scenarioloader_ui::render_()
 	if (!sceneryName.empty())
 	{
 		ImVec2 text_size = ImGui::CalcTextSize(sceneryName.c_str());
-		ImVec2 text_pos = ImVec2(screen_size.x - 16 * scale - text_size.x, 16 * scale);
+		auto text_pos = ImVec2(screen_size.x - 16 * scale - text_size.x, 16 * scale);
 		draw_list->AddText(text_pos, IM_COL32_WHITE, sceneryName.c_str());
 	}
 	

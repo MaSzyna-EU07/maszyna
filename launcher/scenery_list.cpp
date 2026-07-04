@@ -95,7 +95,7 @@ void ui::scenerylist_panel::open_link(const std::string &link)
 void ui::scenerylist_panel::draw_scenery_image()
 {
 	if (!selected_scenery->image_path.empty()) {
-		scenery_desc *desc = const_cast<scenery_desc*>(selected_scenery);
+		auto desc = const_cast<scenery_desc*>(selected_scenery);
         desc->image = GfxRenderer->Fetch_Texture(selected_scenery->image_path, true);
 		desc->image_path.clear();
 	}
@@ -354,7 +354,7 @@ void ui::scenerylist_panel::draw_droptarget(trainset_desc &trainset, int positio
 
 		payload = ImGui::AcceptDragDropPayload("vehicle_set");
 		if (payload) {
-			vehicle_moved *moved = reinterpret_cast<vehicle_moved*>(payload->Data);
+			auto moved = reinterpret_cast<vehicle_moved*>(payload->Data);
 
 			dynamic_desc desc_copy = moved->dynamic;
 			int offset = 0;

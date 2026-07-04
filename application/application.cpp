@@ -203,7 +203,7 @@ void eu07_application::DiscordRPCService()
 {
 	// initialize discord-rpc
 	WriteLog("Initializing Discord Rich Presence...");
-	static const char *discord_app_id = "1343662664504840222";
+	static auto discord_app_id = "1343662664504840222";
 	DiscordEventHandlers handlers;
 	memset(&handlers, 0, sizeof(handlers));
 	Discord_Initialize(discord_app_id, &handlers, 1, nullptr);

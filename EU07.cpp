@@ -65,7 +65,7 @@ LONG WINAPI CrashHandler(EXCEPTION_POINTERS *ExceptionInfo)
 		dumpInfo.ClientPointers = FALSE;
 
 		// Wybrana kombinacja flag
-		MINIDUMP_TYPE dumpType = MINIDUMP_TYPE(MiniDumpWithFullMemory | MiniDumpWithHandleData | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules | MiniDumpWithIndirectlyReferencedMemory |
+		auto dumpType = MINIDUMP_TYPE(MiniDumpWithFullMemory | MiniDumpWithHandleData | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules | MiniDumpWithIndirectlyReferencedMemory |
 		                                       MiniDumpWithFullMemoryInfo | MiniDumpWithTokenInformation);
 
 		MessageBoxA(nullptr, "Simulator crash occured :(\n", "Simulator crashed :(", MB_ICONERROR);

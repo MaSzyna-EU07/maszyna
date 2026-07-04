@@ -138,7 +138,7 @@ TTraction::Load( cParser *parser, glm::dvec3 const &pOrigin ) {
         >> WireOffset;
     m_visible = parser->getToken<std::string>() == "vis";
 
-    std::string token { parser->getToken<std::string>() };
+	auto token { parser->getToken<std::string>() };
     if( token == "parallel" ) {
         // jawne wskazanie innego przęsła, na które może przestawić się pantograf
         parser->getTokens();

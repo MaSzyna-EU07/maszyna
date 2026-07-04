@@ -37,7 +37,7 @@ void ui::vehiclelist_panel::render_contents()
 		if (vehicle->Mechanik)
 			timetable = vehicle->Mechanik->TrainName() + ", ";
 
-		std::string label = std::string(name + ", " + timetable + std::to_string(speed) + " km/h###");
+		auto label = std::string(name + ", " + timetable + std::to_string(speed) + " km/h###");
 
 		ImGui::PushID(vehicle);
 		if (ImGui::Button(label.c_str())) {

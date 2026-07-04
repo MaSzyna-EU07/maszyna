@@ -47,7 +47,7 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
     simulation::State.init_scripting_interface();
 
 	// NOTE: for the time being import from text format is a given, since we don't have full binary serialization
-	std::shared_ptr<deserializer_state> state =
+	auto state =
 	        std::make_shared<deserializer_state>(Scenariofile, cParser::buffer_FILE, Global.asCurrentSceneryPath, Global.bLoadTraction);
 
     // TODO: check first for presence of serialized binary files
@@ -128,7 +128,7 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 
     // deserialize content from the provided input
 	auto timelast { std::chrono::steady_clock::now() };
-    std::string token { Input.getToken<std::string>() };
+	auto token { Input.getToken<std::string>() };
     while( false == token.empty() ) {
 
 		auto lookup = state->functionmap.find( token );
@@ -202,7 +202,7 @@ state_serializer::deserialize_area( cParser &Input, scene::scratch_data &Scratch
 void
 state_serializer::deserialize_assignment( cParser &Input, scene::scratch_data &Scratchpad ) {
 
-    std::string token { Input.getToken<std::string>() };
+	auto token { Input.getToken<std::string>() };
     while( false == token.empty()
         && token != "endassignment" ) {
         // assignment is expected to come as string pairs: language id and the actual assignment enclosed in quotes to form a single token
@@ -238,7 +238,7 @@ state_serializer::deserialize_atmo( cParser &Input, scene::scratch_data &Scratch
                 10.0, 25000.0 );
     }
 
-    std::string token { Input.getToken<std::string>() };
+	auto token { Input.getToken<std::string>() };
     if( token != "endatmo" ) {
         // optional overcast parameter
         Global.Overcast = std::stof( token );
@@ -1131,7 +1131,7 @@ state_serializer::deserialize_sound( cParser &Input, scene::scratch_data &Scratc
 void
 state_serializer::skip_until( cParser &Input, std::string const &Token ) {
 
-    std::string token { Input.getToken<std::string>() };
+	auto token { Input.getToken<std::string>() };
     while( false == token.empty()
         && token != Token ) {
 

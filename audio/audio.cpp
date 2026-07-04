@@ -36,7 +36,7 @@ openal_buffer::openal_buffer( std::string const &Filename ) :
 
 	sf_command(sf, SFC_SET_NORM_FLOAT, nullptr, SF_TRUE);
 
-	float *fbuf = new float[si.frames * si.channels];
+	auto fbuf = new float[si.frames * si.channels];
 	if (sf_readf_float(sf, fbuf, si.frames) != si.frames)
 		throw std::runtime_error("sound: incomplete file");
 
@@ -47,7 +47,7 @@ openal_buffer::openal_buffer( std::string const &Filename ) :
 	if (si.channels != 1)
 		WriteLog("sound: warning: mixing multichannel file to mono");
 
-	int16_t *buf = new int16_t[si.frames];
+	auto buf = new int16_t[si.frames];
 	for (size_t i = 0; i < si.frames; i++)
 	{
 		float accum = 0;

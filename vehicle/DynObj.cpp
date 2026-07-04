@@ -332,7 +332,7 @@ bool TDynamicObject::destination_data::deserialize_mapping( cParser &Input ) {
 TDynamicObject * TDynamicObject::FirstFind(int &coupler_nr, int cf)
 { // szukanie skrajnego połączonego pojazdu w pociagu
     // od strony sprzegu (coupler_nr) obiektu (start)
-    TDynamicObject *temp = this;
+	auto temp = this;
     for (int i = 0; i < 300; i++) // ograniczenie do 300 na wypadek zapętlenia składu
     {
         if (!temp)
@@ -369,7 +369,7 @@ TDynamicObject * TDynamicObject::FirstFind(int &coupler_nr, int cf)
 float TDynamicObject::GetEPP()
 { // szukanie skrajnego połączonego pojazdu w pociagu
     // od strony sprzegu (coupler_nr) obiektu (start)
-    TDynamicObject *temp = this;
+	auto temp = this;
     int coupler_nr = 0;
     double eq = 0.0;
     double am = 0.0;
@@ -1603,7 +1603,7 @@ int TDynamicObject::Dettach(int dir)
     if (ctOwner)
     { // jeśli pojazd ma przypisany obiekt nadzorujący skład, to póki
         // są wskaźniki
-        TDynamicObject *d = this;
+		auto d = this;
         while (d)
         {
             d->ctOwner = nullptr; // usuwanie właściciela
@@ -3356,13 +3356,13 @@ bool TDynamicObject::Update(double dt, double dt1)
             auto const FzadPN = Fzad - FrED * MoverParameters->MED_FrED_factor;
             //np = 0;
             // BUG: likely memory leak, allocation per inner loop, deleted only once outside
-            // TODO: sort this shit out
-			bool* PrzekrF = new bool[np];
+            //  TODO: sort this shit out
+			auto PrzekrF = new bool[np];
 			float nPrzekrF = 0;
 			bool test = true;
-			float* FzED = new float[np];
-			float* FzEP = new float[np];
-			float* FmaxEP = new float[np];
+			auto FzED = new float[np];
+			auto FzEP = new float[np];
+			auto FmaxEP = new float[np];
 			// 3. ustaw pojazdom sile hamowania ED
             //   - proporcjonalnie do mozliwosci
 
@@ -3693,7 +3693,7 @@ bool TDynamicObject::Update(double dt, double dt1)
 
     if (MoverParameters->Vel != 0)
     { // McZapkie-050402: krecenie kolami:
-        glm::dvec3 old_wheels = glm::dvec3(dWheelAngle[0], dWheelAngle[1], dWheelAngle[2]);
+		auto old_wheels = glm::dvec3(dWheelAngle[0], dWheelAngle[1], dWheelAngle[2]);
 
         dWheelAngle[0] += 114.59155902616464175359630962821 * MoverParameters->V * dt1 /
                           MoverParameters->WheelDiameterL; // przednie toczne
@@ -4178,7 +4178,7 @@ bool TDynamicObject::Update(double dt, double dt1)
 
 void TDynamicObject::pants_up()
 {
-	TDynamicObject *d = this;
+	auto d = this;
 	bool isAnyPantUp = false;
 	while (d) {
 		for (auto &item : d->MoverParameters->Pantographs)
@@ -4219,7 +4219,7 @@ glm::dvec3 TDynamicObject::get_future_movement() const
 
 void TDynamicObject::move_set(double distance)
 {
-	TDynamicObject *d = this;
+	auto d = this;
 	while( d ) {
 		d->Move( distance * d->DirectionGet() );
 		d = d->Next(); // pozostałe też
@@ -7145,7 +7145,7 @@ void TDynamicObject::RadioStop()
          && MoverParameters->Radio ) {
             // jeśli pojazd ma RadioStop i jest on aktywny
             // HACK cast until math types unification
-			glm::dvec3 pos = static_cast<glm::dvec3>(vPosition);
+			auto pos = static_cast<glm::dvec3>(vPosition);
             Mechanik->PutCommand( "Emergency_brake", 1.0, 1.0, &pos, stopRadio );
             // add onscreen notification for human driver
             // TODO: do it selectively for the 'local' driver once the multiplayer is in

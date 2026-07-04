@@ -36,7 +36,7 @@ void launcher_ui::render_()
 {
 	ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove;
 	const float topbar_height = 50 * Global.ui_scale;
-	const ImVec2 topbar_button_size = ImVec2(150 * Global.ui_scale, topbar_height - 16);
+	const auto topbar_button_size = ImVec2(150 * Global.ui_scale, topbar_height - 16);
 	ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImVec2(Global.window_size.x, topbar_height));
 

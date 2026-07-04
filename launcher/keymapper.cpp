@@ -52,7 +52,7 @@ void ui::keymapper_panel::render_contents()
 		ImGui::Text(simulation::Commands_descriptions[static_cast<std::size_t>(binding.first)].name.c_str());
 
 		// Binding description
-		std::string description = std::get<std::string>(binding.second);
+		auto description = std::get<std::string>(binding.second);
 		ImGui::SameLine(260);
 		ImGui::Text((description.size() > 0 ? description : "(No description)").c_str());
 

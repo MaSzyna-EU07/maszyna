@@ -1797,7 +1797,7 @@ void TController::TableSort() {
         // we skip last slot and no point in checking if there's only one other entry
         return;
     }
-    TSpeedPos sp_temp = TSpeedPos(); // uzywany do przenoszenia
+	auto sp_temp = TSpeedPos(); // uzywany do przenoszenia
     for( int i = 0; i < iLast - 1; ++i ) {
         // pętla tylko do dwóch pozycji od końca bo ostatniej nie modyfikujemy
         if (sSpeedTable[i].fDist > sSpeedTable[i + 1].fDist)
@@ -4813,7 +4813,7 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
     }
 
 	if (NewCommand == "SetSignal") {
-		TSignals signal = (TSignals)std::lrint(NewValue1);
+		auto signal = (TSignals)std::lrint(NewValue1);
 
 		for (int i = Signal_START; i <= Signal_MAX; i++)
 			iDrivigFlags &= ~(1 << i);

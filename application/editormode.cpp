@@ -1090,7 +1090,7 @@ void editor_mode::handle_terrain_sculpt(double Deltatime)
 
 void editor_mode::capture_terrain()
 {
-    TAnimModel *model = dynamic_cast<TAnimModel *>(m_node);
+	auto model = dynamic_cast<TAnimModel *>(m_node);
     if (model == nullptr || model->pModel == nullptr)
     {
         WriteLog("Editor: select a model instance to capture as terrain", logtype::generic);
@@ -1231,9 +1231,9 @@ void editor_mode::render_gizmo()
     glm::mat4 const projection = glm::perspective(fovy, aspect, 0.1f, 10000.0f);
 
     // rotation/scale are only meaningful for instanced models; other node types translate only
-    TAnimModel *model = dynamic_cast<TAnimModel *>(m_node);
+	auto model = dynamic_cast<TAnimModel *>(m_node);
 
-    glm::vec3 const relativepos = glm::vec3(m_node->location() - camerapos);
+	auto const relativepos = glm::vec3(m_node->location() - camerapos);
     glm::vec3 const angles = model ? model->Angles() : glm::vec3(0.0f);
     glm::vec3 const scalevec = model ? model->Scale() : glm::vec3(1.0f);
 
@@ -1246,7 +1246,7 @@ void editor_mode::render_gizmo()
 
     // map the editor's transform mode onto ImGuizmo; fall back to translate for non-models
     ImGuizmo::OPERATION operation = ImGuizmo::TRANSLATE;
-    EditorSnapshot::Action action = EditorSnapshot::Action::Move;
+	auto action = EditorSnapshot::Action::Move;
     if (model && m_gizmo_op == gizmo_operation::rotate)
     {
         operation = ImGuizmo::ROTATE;
@@ -1473,7 +1473,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
     case GLFW_KEY_DELETE:
         if (is_press(Action))
         {
-            TAnimModel *model = dynamic_cast<TAnimModel *>(m_node);
+			auto model = dynamic_cast<TAnimModel *>(m_node);
             if (model)
             {
                 // record deletion for undo (serialize full node)

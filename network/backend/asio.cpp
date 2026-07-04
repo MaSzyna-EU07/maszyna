@@ -148,7 +148,7 @@ network::tcp::server::server(std::shared_ptr<std::istream> buf, asio::io_context
 
 void network::tcp::server::accept_conn()
 {
-    std::shared_ptr<connection> conn = std::make_shared<connection>(m_io_ctx);
+	auto conn = std::make_shared<connection>(m_io_ctx);
     conn->set_handler(std::bind(&server::handle_message, this, conn, std::placeholders::_1));
 
     m_acceptor.async_accept(conn->m_socket, std::bind(&server::handle_accept, this, conn, std::placeholders::_1));
@@ -182,7 +182,7 @@ void network::tcp::client::connect()
 	if (this->conn)
 		return;
 
-	std::shared_ptr<connection> conn = std::make_shared<connection>(io_ctx, true, resume_frame_counter);
+	auto conn = std::make_shared<connection>(io_ctx, true, resume_frame_counter);
 	conn->set_handler(std::bind(&client::handle_message, this, conn, std::placeholders::_1));
 
 	asio::ip::tcp::endpoint endpoint(

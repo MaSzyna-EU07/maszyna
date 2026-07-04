@@ -62,7 +62,7 @@ bool node_groups::assign_cross_switch(map::track_switch& sw, std::string &sw_nam
     if (!sw.action[idx])
         return false;
 
-    multi_event *multi = dynamic_cast<multi_event*>(sw.action[idx]);
+	auto multi = dynamic_cast<multi_event*>(sw.action[idx]);
 
     if (!multi)
         return false;
@@ -135,7 +135,7 @@ node_groups::update_map()
 			}
 
             if (Global.map_manualswitchcontrol) {
-                if (TTrack *track = dynamic_cast<TTrack*>(node)) {
+                if (auto track = dynamic_cast<TTrack*>(node)) {
                     if (track->eType != tt_Switch)
                         continue;
 
@@ -203,7 +203,7 @@ node_groups::update_map()
                     last_switch_map.erase(sw_name);
                 }
             } else {
-                if (TEventLauncher *launcher = dynamic_cast<TEventLauncher*>(node)) {
+                if (auto launcher = dynamic_cast<TEventLauncher*>(node)) {
                     if (!launcher || !launcher->Event1 || !launcher->Event2)
                         continue;
 

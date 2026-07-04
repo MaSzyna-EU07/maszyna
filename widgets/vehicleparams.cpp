@@ -24,7 +24,7 @@ void ui::vehicleparams_panel::draw_infobutton(const char *str, ImVec2 pos, const
 
 		ImGuiStyle &style = ImGui::GetStyle();
 		ImVec2 text_size = ImGui::CalcTextSize(str);
-		ImVec2 button_size = ImVec2(text_size.x + style.FramePadding.x * 2.0f, text_size.y + style.FramePadding.y * 2.0f);
+		auto button_size = ImVec2(text_size.x + style.FramePadding.x * 2.0f, text_size.y + style.FramePadding.y * 2.0f);
 
 		pos.x = pos.x * window_size.x / 512.0f - button_size.x / 2.0f;
 		pos.y = pos.y * window_size.y / 118.0f - button_size.y / 2.0f;
@@ -124,8 +124,8 @@ void ui::vehicleparams_panel::render_contents()
 
 					glm::mat3 proj = glm::translate(glm::scale(glm::mat3(), 1.0f / viewport.scale), viewport.offset);
 
-					glm::vec2 uv0 = glm::vec2(proj * glm::vec3(0.0f, 1.0f, 1.0f));
-					glm::vec2 uv1 = glm::vec2(proj * glm::vec3(1.0f, 0.0f, 1.0f));
+					auto uv0 = glm::vec2(proj * glm::vec3(0.0f, 1.0f, 1.0f));
+					auto uv1 = glm::vec2(proj * glm::vec3(1.0f, 0.0f, 1.0f));
 
 					ImVec2 size = ImGui::GetContentRegionAvail();
 

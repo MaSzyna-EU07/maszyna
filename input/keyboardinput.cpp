@@ -251,7 +251,7 @@ void keyboard_input::dump_bindings()
 			stream << "none";
 		}
 
-        std::string description = std::get<std::string>(binding.second);
+		auto description = std::get<std::string>(binding.second);
         if (description.size() > 0)
             stream << " // " << description << "\r\n";
 	}

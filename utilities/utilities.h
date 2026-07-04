@@ -32,12 +32,12 @@ std::filesystem::path user_config_path(const std::string &filename);
 // TODO: Shouldn't this be in globals?
 namespace paths
 {
-inline constexpr const char *scenery = "scenery/";
-inline constexpr const char *textures = "textures/";
-inline constexpr const char *models = "models/";
-inline constexpr const char *dynamic = "dynamic/";
-inline constexpr const char *sounds = "sounds/";
-inline constexpr const char *data = "data/";
+inline constexpr auto scenery = "scenery/";
+inline constexpr auto textures = "textures/";
+inline constexpr auto models = "models/";
+inline constexpr auto dynamic = "dynamic/";
+inline constexpr auto sounds = "sounds/";
+inline constexpr auto data = "data/";
 }
 
 #define MAKE_ID4(a, b, c, d) (((std::uint32_t)(d) << 24) | ((std::uint32_t)(c) << 16) | ((std::uint32_t)(b) << 8) | (std::uint32_t)(a))

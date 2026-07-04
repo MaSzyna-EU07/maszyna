@@ -769,8 +769,8 @@ static void ShowDemoWindowWidgets()
             float zoom = 4.0f;
             ImGui::Text("Min: (%.2f, %.2f)", region_x, region_y);
             ImGui::Text("Max: (%.2f, %.2f)", region_x + region_sz, region_y + region_sz);
-            ImVec2 uv0 = ImVec2((region_x) / my_tex_w, (region_y) / my_tex_h);
-            ImVec2 uv1 = ImVec2((region_x + region_sz) / my_tex_w, (region_y + region_sz) / my_tex_h);
+			auto uv0 = ImVec2((region_x) / my_tex_w, (region_y) / my_tex_h);
+			auto uv1 = ImVec2((region_x + region_sz) / my_tex_w, (region_y + region_sz) / my_tex_h);
             ImGui::Image(my_tex_id, ImVec2(region_sz * zoom, region_sz * zoom), uv0, uv1, ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
             ImGui::EndTooltip();
         }
@@ -932,7 +932,7 @@ static void ShowDemoWindowWidgets()
             {
                 for (int x = 0; x < 3; x++)
                 {
-                    ImVec2 alignment = ImVec2((float)x / 2.0f, (float)y / 2.0f);
+					auto alignment = ImVec2((float)x / 2.0f, (float)y / 2.0f);
                     char name[32];
                     sprintf(name, "(%.1f,%.1f)", alignment.x, alignment.y);
                     if (x > 0) ImGui::SameLine();
@@ -1003,7 +1003,7 @@ static void ShowDemoWindowWidgets()
                 {
                     if (data->EventFlag == ImGuiInputTextFlags_CallbackResize)
                     {
-                        ImVector<char>* my_str = (ImVector<char>*)data->UserData;
+						auto my_str = (ImVector<char>*)data->UserData;
                         IM_ASSERT(my_str->begin() == data->Buf);
                         my_str->resize(data->BufSize);  // NB: On resizing calls, generally data->BufSize == data->BufTextLen + 1
                         data->Buf = my_str->begin();
@@ -1100,7 +1100,7 @@ static void ShowDemoWindowWidgets()
 
     if (ImGui::TreeNode("Color/Picker Widgets"))
     {
-        static ImVec4 color = ImVec4(114.0f/255.0f, 144.0f/255.0f, 154.0f/255.0f, 200.0f/255.0f);
+        static auto color = ImVec4(114.0f/255.0f, 144.0f/255.0f, 154.0f/255.0f, 200.0f/255.0f);
 
         static bool alpha_preview = true;
         static bool alpha_half_preview = false;
@@ -3250,8 +3250,8 @@ void ImGui::ShowStyleEditor(ImGuiStyle* ref)
             }
             if (ImGui::TreeNode("Atlas texture", "Atlas texture (%dx%d pixels)", atlas->TexWidth, atlas->TexHeight))
             {
-                ImVec4 tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-                ImVec4 border_col = ImVec4(1.0f, 1.0f, 1.0f, 0.5f);
+				auto tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+				auto border_col = ImVec4(1.0f, 1.0f, 1.0f, 0.5f);
                 ImGui::Image(atlas->TexID, ImVec2((float)atlas->TexWidth, (float)atlas->TexHeight), ImVec2(0, 0), ImVec2(1, 1), tint_col, border_col);
                 ImGui::TreePop();
             }
@@ -3602,7 +3602,7 @@ struct ExampleAppConsole
 
     static int TextEditCallbackStub(ImGuiInputTextCallbackData* data) // In C++11 you are better off using lambdas for this sort of forwarding callbacks
     {
-        ExampleAppConsole* console = (ExampleAppConsole*)data->UserData;
+		auto console = (ExampleAppConsole*)data->UserData;
         return console->TextEditCallback(data);
     }
 
@@ -4146,8 +4146,8 @@ static void ShowExampleAppSimpleOverlay(bool* p_open)
     ImGuiIO& io = ImGui::GetIO();
     if (corner != -1)
     {
-        ImVec2 window_pos = ImVec2((corner & 1) ? io.DisplaySize.x - DISTANCE : DISTANCE, (corner & 2) ? io.DisplaySize.y - DISTANCE : DISTANCE);
-        ImVec2 window_pos_pivot = ImVec2((corner & 1) ? 1.0f : 0.0f, (corner & 2) ? 1.0f : 0.0f);
+		auto window_pos = ImVec2((corner & 1) ? io.DisplaySize.x - DISTANCE : DISTANCE, (corner & 2) ? io.DisplaySize.y - DISTANCE : DISTANCE);
+		auto window_pos_pivot = ImVec2((corner & 1) ? 1.0f : 0.0f, (corner & 2) ? 1.0f : 0.0f);
         ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
     }
     ImGui::SetNextWindowBgAlpha(0.35f); // Forward background
@@ -4231,7 +4231,7 @@ static void ShowExampleAppCustomRendering(bool* p_open)
         {
             static float sz = 36.0f;
             static float thickness = 3.0f;
-            static ImVec4 colf = ImVec4(1.0f, 1.0f, 0.4f, 1.0f);
+            static auto colf = ImVec4(1.0f, 1.0f, 0.4f, 1.0f);
             ImGui::DragFloat("Size", &sz, 0.2f, 2.0f, 72.0f, "%.0f");
             ImGui::DragFloat("Thickness", &thickness, 0.05f, 1.0f, 8.0f, "%.02f");
             ImGui::ColorEdit4("Color", &colf.x);
@@ -4295,7 +4295,7 @@ static void ShowExampleAppCustomRendering(bool* p_open)
 
             bool adding_preview = false;
             ImGui::InvisibleButton("canvas", canvas_size);
-            ImVec2 mouse_pos_in_canvas = ImVec2(ImGui::GetIO().MousePos.x - canvas_pos.x, ImGui::GetIO().MousePos.y - canvas_pos.y);
+			auto mouse_pos_in_canvas = ImVec2(ImGui::GetIO().MousePos.x - canvas_pos.x, ImGui::GetIO().MousePos.y - canvas_pos.y);
             if (adding_line)
             {
                 adding_preview = true;
@@ -4334,7 +4334,7 @@ static void ShowExampleAppCustomRendering(bool* p_open)
             ImGui::Checkbox("Draw in Foreground draw list", &draw_fg);
             ImVec2 window_pos = ImGui::GetWindowPos();
             ImVec2 window_size = ImGui::GetWindowSize();
-            ImVec2 window_center = ImVec2(window_pos.x + window_size.x * 0.5f, window_pos.y + window_size.y * 0.5f);
+			auto window_center = ImVec2(window_pos.x + window_size.x * 0.5f, window_pos.y + window_size.y * 0.5f);
             if (draw_bg)
                 ImGui::GetBackgroundDrawList()->AddCircle(window_center, window_size.x * 0.6f, IM_COL32(255, 0, 0, 200), 32, 10+4);
             if (draw_fg)

@@ -592,7 +592,7 @@ opengl_texture::load_DDS() {
 	// while DDS stores it with top-left origin. we need to flip it.
 	if (Global.dds_upper_origin)
 	{
-        char *mipmap = (char*)&data[0];
+		auto mipmap = (char*)&data[0];
         int mapcount = data_mapcount,
             width = data_width,
             height = data_height;
@@ -771,8 +771,8 @@ opengl_texture::load_TGA() {
             // rgb or greyscale image, expand to bgra
             unsigned char buffer[ 4 ] = { 255, 255, 255, 255 }; // alpha channel will be white
 
-            unsigned int *datapointer = (unsigned int*)&data[0];
-            unsigned int *bufferpointer = (unsigned int*)&buffer[ 0 ];
+			auto datapointer = (unsigned int*)&data[0];
+			auto bufferpointer = (unsigned int*)&buffer[ 0 ];
 
             int const pixelcount = data_width * data_height;
 
@@ -797,8 +797,8 @@ opengl_texture::load_TGA() {
         unsigned char buffer[ 4 ] = { 255, 255, 255, 255 };
         const int pixelcount = data_width * data_height;
 
-        unsigned int *datapointer = (unsigned int *)&data[0];
-        unsigned int *bufferpointer = (unsigned int *)&buffer[ 0 ];
+		auto datapointer = (unsigned int *)&data[0];
+		auto bufferpointer = (unsigned int *)&buffer[ 0 ];
 
         do {
             unsigned char chunkheader = 0;

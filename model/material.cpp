@@ -339,7 +339,7 @@ opengl_material::deserialize_mapping( cParser &Input, int const Priority, bool c
         else if (key.compare(0, 5, "param") == 0) {
             key.erase(0, 5);
 
-            std::string value = Input.getToken<std::string>( true, "\n\r\t;" );
+			auto value = Input.getToken<std::string>( true, "\n\r\t;" );
             std::istringstream stream(value);
             glm::vec4 data;
             stream >> data.r;

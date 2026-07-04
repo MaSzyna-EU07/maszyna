@@ -46,7 +46,7 @@ bool TTractionPowerSource::Load(cParser *parser) {
         >> FastFuseRepetition
         >> SlowFuseTimeOut;
 
-    std::string token { parser->getToken<std::string>() };
+	auto token { parser->getToken<std::string>() };
     if( token == "recuperation" ) {
         Recuperation = true;
     }

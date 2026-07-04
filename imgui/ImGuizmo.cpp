@@ -1210,7 +1210,7 @@ namespace ImGuizmo
          {
             continue;
          }
-         ImVec2* circlePos = (ImVec2*) alloca(sizeof(ImVec2) * (circleMul * halfCircleSegmentCount + 1));
+		 auto circlePos = (ImVec2*) alloca(sizeof(ImVec2) * (circleMul * halfCircleSegmentCount + 1));
 
          float angleStart = atan2f(cameraToModelNormalized[(4 - axis) % 3], cameraToModelNormalized[(3 - axis) % 3]) + ZPI * 0.5f;
 
@@ -2357,7 +2357,7 @@ namespace ImGuizmo
          ImVec2 faceCoordsScreen[4];
          ImU32 color;
       };
-      CubeFace* faces = (CubeFace*)_malloca(sizeof(CubeFace) * matrixCount * 6);
+	  auto faces = (CubeFace*)_malloca(sizeof(CubeFace) * matrixCount * 6);
 
       if (!faces)
       {
@@ -2440,8 +2440,8 @@ namespace ImGuizmo
          }
       }
       qsort(faces, cubeFaceCount, sizeof(CubeFace), [](void const* _a, void const* _b) {
-         CubeFace* a = (CubeFace*)_a;
-         CubeFace* b = (CubeFace*)_b;
+		        auto a = (CubeFace*)_a;
+		        auto b = (CubeFace*)_b;
          if (a->z < b->z)
          {
             return 1;

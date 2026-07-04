@@ -7,25 +7,25 @@
 
 void texture_window_resize(GLFWwindow *win, int w, int h)
 {
-    python_screen_viewer *texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
+	auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
     texwindow->notify_window_size(win, w, h);
 }
 
 void texture_window_fb_resize(GLFWwindow *win, int w, int h)
 {
-	python_screen_viewer *texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
+	auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
     texwindow->notify_window_fb_size(win, w, h);
 }
 
 void texture_window_mouse_button(GLFWwindow *win, int button, int action, int mods)
 {
-    python_screen_viewer *texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
+	auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
     texwindow->notify_click(win, button, action);
 }
 
 void texture_window_cursor_pos(GLFWwindow *win, double x, double y)
 {
-    python_screen_viewer *texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
+	auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
     texwindow->notify_cursor_pos(win, x, y);
 }
 

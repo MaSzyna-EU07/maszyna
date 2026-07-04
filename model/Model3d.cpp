@@ -293,7 +293,7 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 
 	if (parser.expectToken("anim:")) // Ra: ta informacja by się przydała!
 	{ // rodzaj animacji
-		std::string type = parser.getToken<std::string>();
+		auto type = parser.getToken<std::string>();
 		if (type != "false")
 		{
 			iFlags |= 0x4000; // jak animacja, to trzeba przechowywać macierz zawsze
@@ -341,7 +341,7 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 	}
 	parser.ignoreToken(); // zignorowanie nazwy "SelfIllum:"
 	{
-		std::string light = parser.getToken<std::string>();
+		auto light = parser.getToken<std::string>();
 		if (light == "true")
 			fLight = 2.0; // zawsze świeci
 		else if (light == "false")
@@ -407,7 +407,7 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 
 		if (!parser.expectToken("map:"))
 			Error("Model map parse failure!");
-		std::string material = parser.getToken<std::string>();
+		auto material = parser.getToken<std::string>();
 		std::replace(material.begin(), material.end(), '\\', '/');
 		if (material == "none")
 		{ // rysowanie podanym kolorem
@@ -1179,7 +1179,7 @@ void TSubModel::RaAnimation(glm::mat4 &m, TAnimType a)
 	case TAnimType::at_Billboard: // obrót w pionie do kamery
 	{
 		glm::mat4 mat = glm::make_mat4(OpenGLMatrices.data_array(GL_MODELVIEW));
-		float3 gdzie = float3(mat[3][0], mat[3][1], mat[3][2]); // początek układu współrzędnych submodelu względem kamery
+		auto gdzie = float3(mat[3][0], mat[3][1], mat[3][2]); // początek układu współrzędnych submodelu względem kamery
 		m = glm::mat4(1.0f);
 		m = glm::translate(m, glm::vec3(gdzie.x, gdzie.y, gdzie.z)); // początek układu zostaje bez zmian
 		m = glm::rotate(m, (float)atan2(gdzie.x, gdzie.z), glm::vec3(0.0f, 1.0f, 0.0f)); // jedynie obracamy w pionie o kąt
@@ -2338,7 +2338,7 @@ void TSubModel::BinInit(TSubModel *s, float4x4 *m, std::vector<std::string> *t, 
 
 bool TSubModel::HasAnyVertexUserData() const
 {
-	for (const TSubModel *sm = this; sm; sm = sm->Next)
+	for (auto sm = this; sm; sm = sm->Next)
 	{
 		if (m_geometry.handle)
 		{
@@ -2384,7 +2384,7 @@ TSubModel *TModel3d::AppendChildFromGeometry(const std::string &name, const std:
 {
 	iFlags |= 0x0200;
 
-	TSubModel *sm = new TSubModel();
+	auto sm = new TSubModel();
 	sm->Parent = AddToNamed(parent.c_str(), sm);
 	sm->m_geometry.vertex_count = vertices.size();
 	sm->m_geometry.index_count = indices.size();
@@ -2415,7 +2415,7 @@ void TModel3d::LoadFromTextFile(std::string const &FileName, bool dynamic)
 	iFlags |= 0x0200; // wczytano z pliku tekstowego (właścicielami tablic są submodle)
 	cParser parser(FileName, cParser::buffer_FILE); // Ra: tu powinno być "models/"...
 	TSubModel *SubModel;
-	std::string token = parser.getToken<std::string>();
+	auto token = parser.getToken<std::string>();
 	while (token != "" || parser.eof())
 	{
 		std::string parent;

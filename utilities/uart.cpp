@@ -72,7 +72,7 @@ void uart_input::find_ports() {
         status->active_port_index = -1;
         status->selected_port_index = -1;
         for (int i=0; ports[i]; i++) {
-            std::string newport = std::string(sp_get_port_name(ports[i]));
+			auto newport = std::string(sp_get_port_name(ports[i]));
             status->available_ports.emplace_back(newport);
             if(newport == status->port_name) {
                 status->active_port_index = i;

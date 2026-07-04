@@ -123,8 +123,8 @@ void ui::cameraview_panel::capture_func()
 	piped_proc proc(cmdline);
 
 	size_t frame_size = Global.extcam_res.x * Global.extcam_res.y * 3;
-	uint8_t *read_buffer = new uint8_t[frame_size];
-	uint8_t *active_buffer = new uint8_t[frame_size];
+	auto read_buffer = new uint8_t[frame_size];
+	auto active_buffer = new uint8_t[frame_size];
 
 	size_t bufpos = 0;
 
@@ -173,7 +173,7 @@ void ui::cameraview_panel::record_func()
 	piped_proc proc(cmdline, true);
 
 	size_t frame_size = Global.extcam_res.x * Global.extcam_res.y * 3;
-	uint8_t *read_buffer = new uint8_t[frame_size];
+	auto read_buffer = new uint8_t[frame_size];
 	uint32_t last_cnt = 0;
 	size_t bufpos = frame_size;
 
