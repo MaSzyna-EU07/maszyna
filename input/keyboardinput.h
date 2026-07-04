@@ -51,8 +51,8 @@ public:
         init() { return true; }
     bool
         key( int Key, int Action );
-    int
-        key( int Key ) const;
+	static int
+        key( int Key );
     void
         poll();
 	user_command const

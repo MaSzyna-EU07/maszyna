@@ -274,8 +274,8 @@ public:
     void Load(cParser *parser, glm::dvec3 const &pOrigin);
     bool AssignEvents();
     bool AssignForcedEvents(basic_event *NewEventPlus, basic_event *NewEventMinus);
-    void QueueEvents( event_sequence const &Events, TDynamicObject const *Owner );
-    void QueueEvents( event_sequence const &Events, TDynamicObject const *Owner, double Delaylimit );
+	static void QueueEvents( event_sequence const &Events, TDynamicObject const *Owner );
+	static void QueueEvents( event_sequence const &Events, TDynamicObject const *Owner, double Delaylimit );
     bool CheckDynamicObject(TDynamicObject *Dynamic);
     bool AddDynamicObject(TDynamicObject *Dynamic);
     bool RemoveDynamicObject(TDynamicObject *Dynamic);
@@ -381,11 +381,11 @@ public:
     void
         TrackBusyList() const;
     // legacy method, sends list of occupied path sections over network
-    void
-        IsolatedBusyList() const;
+	static void
+        IsolatedBusyList();
     // legacy method, sends state of specified path section over network
-    void
-        IsolatedBusy( std::string const &Name ) const;
+	static void
+        IsolatedBusy( std::string const &Name );
 };
 
 //---------------------------------------------------------------------------

@@ -273,9 +273,9 @@ private:
         Update_Lights( light_array &Lights );
     bool
         Init_caps();
-    glm::vec3
+	static glm::vec3
         pick_color( std::size_t Index );
-    std::size_t
+	static std::size_t
         pick_index( glm::ivec3 const &Color );
 
 // members

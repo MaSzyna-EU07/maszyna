@@ -59,9 +59,9 @@ private:
     static float m_zenithymatrix[ 3 ][ 4 ];
 	
 	// coloring
-	void GetPerez( float *Perez, float Distribution[ 5 ][ 2 ], float Turbidity );
-	float GetZenith( float Zenithmatrix[ 3 ][ 4 ], float Theta, float Turbidity );		
-	float PerezFunctionO1( float Perezcoeffs[ 5 ], float Thetasun, float Zenithval );
-	float PerezFunctionO2( float Perezcoeffs[ 5 ], float Icostheta, float Gamma, float Cosgamma2, float Zenithval );
+	static void GetPerez( float *Perez, float Distribution[ 5 ][ 2 ], float Turbidity );
+	static float GetZenith( float Zenithmatrix[ 3 ][ 4 ], float Theta, float Turbidity );
+	static float PerezFunctionO1( float Perezcoeffs[ 5 ], float Thetasun, float Zenithval );
+	static float PerezFunctionO2( float Perezcoeffs[ 5 ], float Icostheta, float Gamma, float Cosgamma2, float Zenithval );
 };
 

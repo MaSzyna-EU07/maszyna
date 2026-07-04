@@ -127,7 +127,7 @@ std::unordered_map<user_command, std::pair<user_command, user_command>> commandf
     {user_command::batterydisable, {user_command::batterytoggle, user_command::none}},
 };
 
-std::pair<user_command, user_command> driver_mode::drivermode_input::command_fallback(user_command const Command) const
+std::pair<user_command, user_command> driver_mode::drivermode_input::command_fallback(user_command const Command)
 {
 
 	if (Command == user_command::none)

@@ -214,7 +214,8 @@ class TTrain {
     void update_sounds_runningnoise( sound_source &Sound );
     void update_sounds_resonancenoise( sound_source &Sound );
     void update_sounds_radio();
-	end cab_to_end( int const End ) const {
+	static end cab_to_end( int const End )
+	{
         return End == 2 ? rear : front; }
 	end cab_to_end() const {
         return cab_to_end( iCabn ); }

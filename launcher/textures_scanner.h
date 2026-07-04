@@ -87,7 +87,7 @@ private:
 	void parse_texture_rule(const std::string &target, const std::string &param);
 	void parse_texture_info(const std::string &target, const std::string &param, std::shared_ptr<skin_meta> meta);
 
-	std::shared_ptr<skin_meta> parse_meta(const std::string &str);
+	static std::shared_ptr<skin_meta> parse_meta(const std::string &str);
 	std::shared_ptr<vehicle_desc> get_vehicle(const std::string &name);
 
 	vehicle_type ctx_type = vehicle_type::unknown;

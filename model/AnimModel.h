@@ -171,7 +171,7 @@ public:
     // export() subclass details, sends basic content of the class in legacy (text) format to provided stream
     void export_as_text_( std::ostream &Output ) const;
     // checks whether provided token is a legacy (text) format keyword
-    bool is_keyword( std::string const &Token ) const;
+	static bool is_keyword( std::string const &Token );
 
 // members
 	std::shared_ptr<TAnimContainer> pRoot; // pojemniki sterujące, tylko dla aniomowanych submodeli

@@ -194,7 +194,8 @@ void scenario_time::set_time(int yearday, int minute) {
 
 // calculates day of week for provided date
 int
-scenario_time::day_of_week( int const Day, int const Month, int const Year ) const {
+scenario_time::day_of_week( int const Day, int const Month, int const Year )
+{
 
 	// using Zeller's congruence, http://en.wikipedia.org/wiki/Zeller%27s_congruence
 	int const q = Day;
@@ -234,7 +235,8 @@ scenario_time::day_of_month( int const Week, int const Weekday, int const Month,
 
 // returns number of days between specified days of week
 int
-scenario_time::weekdays( int const First, int const Second ) const {
+scenario_time::weekdays( int const First, int const Second )
+{
 
     if( Second >= First ) { return Second - First; }
     else { return 7 - First + Second; }
@@ -249,7 +251,8 @@ scenario_time::convert_transition_time( SYSTEMTIME &Time ) const {
 }
 
 bool
-scenario_time::is_leap( int const Year ) const {
+scenario_time::is_leap( int const Year )
+{
 
     return Year % 4 == 0 && (Year % 100 != 0 || Year % 400 == 0);
 

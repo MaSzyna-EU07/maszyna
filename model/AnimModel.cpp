@@ -267,7 +267,8 @@ bool TAnimModel::Init(std::string const &asName, std::string const &asReplacable
 }
 
 bool
-TAnimModel::is_keyword( std::string const &Token ) const {
+TAnimModel::is_keyword( std::string const &Token )
+{
 
     return Token == "endmodel"
         || Token == "lights"

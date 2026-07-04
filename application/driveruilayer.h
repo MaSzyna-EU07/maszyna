@@ -48,7 +48,7 @@ protected:
 private:
 // methods
     // sets visibility of the cursor
-    void
+  static void
         set_cursor( bool Visible );
     // render() subclass details
     void

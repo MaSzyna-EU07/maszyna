@@ -323,7 +323,8 @@ keyboard_input::key( int const Key, int const Action ) {
 }
 
 int
-keyboard_input::key( int const Key ) const {
+keyboard_input::key( int const Key )
+{
 
     return input::keys[ Key ];
 }

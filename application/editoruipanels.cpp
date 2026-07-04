@@ -599,7 +599,7 @@ const std::string *nodebank_panel::get_active_template()
 	return m_selectedtemplate.get();
 }
 
-std::string nodebank_panel::generate_node_label(std::string Input) const
+std::string nodebank_panel::generate_node_label(std::string Input)
 {
 
 	auto tokenizer{cParser(Input)};

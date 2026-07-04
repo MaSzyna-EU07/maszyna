@@ -66,14 +66,14 @@ public:
         set_progress( float Progress = 0.f, float Subtaskprogress = 0.f );
     void
         set_tooltip( std::string const &Tooltip );
-    void
+	static void
         set_cursor( int Mode );
     void
         set_cursor_pos( double Horizontal, double Vertical );
     void queue_screenshot();
     // input handlers
     void on_key( int Key, int Scancode, int Action, int Mods );
-    void on_char( unsigned int Char );
+	static void on_char( unsigned int Char );
     void on_cursor_pos( double Horizontal, double Vertical );
     void on_mouse_button( int Button, int Action, int Mods );
     void on_scroll( double Xoffset, double Yoffset );
@@ -83,9 +83,9 @@ public:
     GLFWwindow *
         window( int Windowindex = 0, bool visible = false, int width = 1, int height = 1, GLFWmonitor *monitor = nullptr, bool keep_ownership = true, bool share_ctx = true );
     GLFWmonitor * find_monitor( const std::string &str ) const;
-    std::string describe_monitor( GLFWmonitor *monitor ) const;
+	static std::string describe_monitor( GLFWmonitor *monitor );
 	// generate network sync verification number
-	double
+	static double
 	    generate_sync();
 	void
         queue_quit(bool direct);
@@ -99,19 +99,19 @@ private:
     using modeptr_array = std::array<std::shared_ptr<application_mode>, static_cast<std::size_t>( count_ )>;
     using mode_stack = std::stack<mode>;
 // methods
-	  bool needs_ogl() const;
+	static bool needs_ogl();
     void init_debug();
-    void init_console();
+	static void init_console();
     void init_files();
-    int  init_settings( int Argc, char *Argv[] );
-    int  init_locale();
+	static int  init_settings( int Argc, char *Argv[] );
+	static int  init_locale();
     int  init_glfw();
     void init_callbacks();
-    int  init_ogl();
+	static int  init_ogl();
     int  init_ui();
     int  init_gfx();
-    int  init_audio();
-    int  init_data();
+	static int  init_audio();
+	static int  init_data();
     int  init_modes();
 	bool init_network();
     int run_crashgui();

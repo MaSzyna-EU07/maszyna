@@ -45,17 +45,17 @@ private:
         translate_node( basic_node *Node, glm::dvec3 const &Location );
     void
         translate_node( basic_node *Node, float Offset );
-    void
+	static void
         translate_instance( TAnimModel *Instance, glm::dvec3 const &Location );
-    void
+	static void
         translate_instance( TAnimModel *Instance, float Offset );
-    void
+	static void
         translate_memorycell( TMemCell *Memorycell, glm::dvec3 const &Location );
-    void
+	static void
         translate_memorycell( TMemCell *Memorycell, float Offset );
     void
         rotate_node( basic_node *Node, glm::vec3 const &Angle );
-    void
+	static void
         rotate_instance( TAnimModel *Instance, glm::vec3 const &Angle );
 };
 

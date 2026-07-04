@@ -1093,7 +1093,8 @@ basic_region::update_traction( TDynamicObject *Vehicle, int const Pantographinde
 
 // checks whether specified file is a valid region data file
 bool
-basic_region::is_scene( std::string const &Scenariofile ) const {
+basic_region::is_scene( std::string const &Scenariofile )
+{
 
     auto filename { Scenariofile };
     while( filename[ 0 ] == '$' ) {

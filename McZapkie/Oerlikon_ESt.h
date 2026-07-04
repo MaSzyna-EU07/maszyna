@@ -210,7 +210,7 @@ class TNESt3 : public TBrake {
 	{}
     void Init( double PP, double HPP, double LPP, double BP, int BDF ) /*override*/;
     virtual double GetPF( double PP, double dt, double Vel ) /*override*/; // przeplyw miedzy komora wstepna i PG
-    void EStParams(double i_crc); // parametry charakterystyczne dla ESt
+	static void EStParams(double i_crc); // parametry charakterystyczne dla ESt
     virtual double GetCRP() /*override*/;
     void CheckState(double BCP, double &dV1); // glowny przyrzad rozrzadczy
     void CheckReleaser(double dt); // odluzniacz

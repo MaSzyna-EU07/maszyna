@@ -582,7 +582,7 @@ class TESt : public TBrake
 	double GetPF(double PP, double dt, double Vel) /*override*/; // przeplyw miedzy komora wstepna i PG
 	/// <summary>Sets ESt-specific characteristic parameters (placeholder; used by some variants).</summary>
 	/// <param name="i_crc">Characteristic value.</param>
-	void EStParams(double i_crc); // parametry charakterystyczne dla ESt
+	static void EStParams(double i_crc); // parametry charakterystyczne dla ESt
 	/// <summary>Returns the control reservoir (ZS) pressure.</summary>
 	double GetCRP() /*override*/;
 	/// <summary>
@@ -877,7 +877,7 @@ class TCV1 : public TBrake
 	/// <param name="dV1">In/out brake pipe flow correction.</param>
 	void CheckState(double BCP, double &dV1);
 	/// <summary>Returns the ZS-filling slide valve opening factor for the given cylinder pressure.</summary>
-	double CVs(double BP);
+	static double CVs(double BP);
 	/// <summary>Returns the ZP-filling slide valve opening factor for the given cylinder pressure.</summary>
 	double BVs(double BCP);
 	/// <summary>Vents valve, brake and control reservoirs to zero.</summary>
@@ -1143,9 +1143,9 @@ class TFV4aM : public TDriverHandle
 	/// Returns the brake pipe pressure target interpolated from BPT[] for the given handle position.
 	/// </summary>
 	/// <param name="pos">Handle position.</param>
-	double LPP_RP(double pos);
+	static double LPP_RP(double pos);
 	/// <summary>Returns true if pos is within ±0.5 of i_pos (detent comparison).</summary>
-	bool EQ(double pos, double i_pos);
+	static bool EQ(double pos, double i_pos);
 
   public:
 	/// <summary>Computes brake pipe flow for the FV4a/M handle (interpolated BPT, wave modelling, accelerator).</summary>
@@ -1193,9 +1193,9 @@ class TMHZ_EN57 : public TDriverHandle
 	static double const pos_table[11]; //= { -2, 10, -1, 0, 0, 2, 9, 10, 0, 0, 0 };
 
 	/// <summary>Returns the brake pipe pressure target for the given handle position (piecewise).</summary>
-	double LPP_RP(double pos);
+	static double LPP_RP(double pos);
 	/// <summary>Returns true if pos is within ±0.5 of i_pos.</summary>
-	bool EQ(double pos, double i_pos);
+	static bool EQ(double pos, double i_pos);
 
   public:
 	/// <summary>Computes brake pipe flow for MHZ_EN57 (covers handle positions -1..10 with EP/pneumatic mix).</summary>
@@ -1249,7 +1249,7 @@ class TMHZ_K5P : public TDriverHandle
 	static double const pos_table[11]; //= { -2, 10, -1, 0, 0, 2, 9, 10, 0, 0, 0 };
 
 	/// <summary>Returns true if pos is within ±0.5 of i_pos.</summary>
-	bool EQ(double pos, double i_pos);
+	static bool EQ(double pos, double i_pos);
 
   public:
 	/// <summary>Computes brake pipe flow for the K5P 5-position handle (release / cut-off / brake / emergency).</summary>
@@ -1302,7 +1302,7 @@ class TMHZ_6P : public TDriverHandle
 	static double const pos_table[11]; //= { -2, 10, -1, 0, 0, 2, 9, 10, 0, 0, 0 };
 
 	/// <summary>Returns true if pos is within ±0.5 of i_pos.</summary>
-	bool EQ(double pos, double i_pos);
+	static bool EQ(double pos, double i_pos);
 
   public:
 	/// <summary>Computes brake pipe flow for the 6P handle.</summary>

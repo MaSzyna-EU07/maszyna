@@ -56,17 +56,17 @@ private:
     int
         year_day( int Day, int Month, int Year ) const;
     // calculates day of week for provided date
-    int
-        day_of_week( int Day, int Month, int Year ) const;
+	static int
+        day_of_week( int Day, int Month, int Year );
     // calculates day of month for specified weekday of specified month of the year
     int
         day_of_month( int Week, int Weekday, int Month, int Year ) const;
     // returns number of days between specified days of week
-    int
-        weekdays( int First, int Second ) const;
+	static int
+        weekdays( int First, int Second );
     // returns true if specified year is a leap year, false otherwise
-    bool
-        is_leap( int Year ) const;
+	static bool
+        is_leap( int Year );
 
     SYSTEMTIME m_time;
     double m_milliseconds{ 0.0 };

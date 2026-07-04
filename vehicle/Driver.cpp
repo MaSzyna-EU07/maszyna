@@ -452,7 +452,7 @@ void TController::TableClear()
     eSignSkip = nullptr; // nic nie pomijamy
 };
 
-std::vector<basic_event *> TController::CheckTrackEvent( TTrack *Track, double const fDirection ) const
+std::vector<basic_event *> TController::CheckTrackEvent( TTrack *Track, double const fDirection )
 { // sprawdzanie eventów na podanym torze do podstawowego skanowania
     std::vector<basic_event *> events;
     auto const &eventsequence { ( fDirection > 0 ? Track->m_events2 : Track->m_events1 ) };
@@ -1918,7 +1918,8 @@ TController::~TController()
 };
 
 // zamiana kodu rozkazu na opis
-std::string TController::Order2Str(TOrders Order) const {
+std::string TController::Order2Str(TOrders Order)
+{
 
     if( (Order & Change_direction) != 0
      && Order != Change_direction ) {

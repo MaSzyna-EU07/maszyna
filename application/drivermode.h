@@ -85,8 +85,8 @@ private:
         void poll();
         std::string
             binding_hints( std::pair<user_command, user_command> const &Commands ) const;
-        std::pair<user_command, user_command>
-            command_fallback( user_command Command ) const;
+		static std::pair<user_command, user_command>
+            command_fallback( user_command Command );
     };
 
 // methods

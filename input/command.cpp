@@ -877,7 +877,8 @@ void command_queue::push_commands(const commands_map &commands) {
 
 void
 command_relay::post(user_command const Command, double const Param1, double const Param2,
-                     int const Action, uint16_t Recipient, glm::vec3 Position, const std::string *Payload) const {
+                     int const Action, uint16_t Recipient, glm::vec3 Position, const std::string *Payload)
+{
 
     auto const &command = simulation::Commands_descriptions[ static_cast<std::size_t>( Command ) ];
 

@@ -182,7 +182,8 @@ buffer_manager::find_buffer( std::string const &Buffername ) const {
 }
 
 std::string
-buffer_manager::find_file( std::string const &Filename ) const {
+buffer_manager::find_file( std::string const &Filename )
+{
 
     auto const lookup {
         FileExists(

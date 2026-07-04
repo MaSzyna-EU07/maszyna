@@ -61,12 +61,12 @@ private:
 	void draw_launch_box();
 	void draw_trainset_box();
 	bool launch_simulation();
-	void add_replace_entry(const trainset_desc &trainset);
-	void draw_summary_tooltip(const dynamic_desc &dyn_desc);
+	static void add_replace_entry(const trainset_desc &trainset);
+	static void draw_summary_tooltip(const dynamic_desc &dyn_desc);
 
-	void open_link(const std::string &link);
+	static void open_link(const std::string &link);
 	void draw_trainset(trainset_desc &trainset);
-	void draw_droptarget(trainset_desc &trainset, int position);
+	static void draw_droptarget(trainset_desc &trainset, int position);
 	void purge_selected_trainset();
 };
 } // namespace ui

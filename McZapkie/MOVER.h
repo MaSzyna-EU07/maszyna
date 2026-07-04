@@ -2569,9 +2569,9 @@ class TMoverParameters
 	void LoadFIZ_DimmerList(std::string const &Input);
 	void LoadFIZ_CompressorList(std::string const &Input);
 	void LoadFIZ_PowerParamsDecode(TPowerParameters &Powerparameters, std::string Prefix, std::string const &Input);
-	TPowerType LoadFIZ_PowerDecode(std::string const &Power);
-	TPowerSource LoadFIZ_SourceDecode(std::string const &Source);
-	TEngineType LoadFIZ_EngineDecode(std::string const &Engine);
+	static TPowerType LoadFIZ_PowerDecode(std::string const &Power);
+	static TPowerSource LoadFIZ_SourceDecode(std::string const &Source);
+	static TEngineType LoadFIZ_EngineDecode(std::string const &Engine);
 	bool readMPT0(std::string const &line);
 	bool readMPT(std::string const &line); // Q 20160717
 	bool readMPTElectricSeries(std::string const &line);

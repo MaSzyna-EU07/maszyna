@@ -213,7 +213,7 @@ public:
     using eventlauncher_sequence = std::vector<TEventLauncher *>;
     using memorycell_sequence = std::vector<TMemCell *>;
 // methods
-    void
+	static void
 	    launch_event(TEventLauncher *Launcher, bool local_only);
     void
         enclose_area( basic_node *Node );
@@ -387,8 +387,8 @@ public:
     void
         update_sounds();
     // checks whether specified file is a valid region data file
-    bool
-        is_scene( std::string const &Scenariofile ) const;
+	static bool
+        is_scene( std::string const &Scenariofile );
     // stores content of the class in file with specified name
     void
         serialize( std::string const &Scenariofile ) const;
@@ -475,7 +475,7 @@ public:
 
 // methods
     // checks whether specified point is within boundaries of the region
-    bool
+	static bool
         point_inside( glm::dvec3 const &Location );
     // legacy method, trims provided shape to fit into a section. adds trimmed part at the end of provided list, returns true if changes were made
     static

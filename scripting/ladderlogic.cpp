@@ -380,7 +380,7 @@ basic_controller::log_error( std::string const &Error, int const Line ) const {
 }
 
 auto
-basic_controller::guess_element_type_from_name( std::string const &Name ) const -> basic_element::type_e {
+basic_controller::guess_element_type_from_name( std::string const &Name ) -> basic_element::type_e {
 
     auto const name { split_string_and_number( Name ) };
 

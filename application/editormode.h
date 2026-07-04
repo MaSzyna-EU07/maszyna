@@ -186,9 +186,9 @@ class editor_mode : public application_mode
 	bool m_stream_persist{true}; // save edited chunks to disk and load them back
 
 	// hierarchy management
-	void add_to_hierarchy(scene::basic_node *node);
-	void remove_from_hierarchy(scene::basic_node *node);
-	scene::basic_node* find_in_hierarchy(const std::string &uuid_str);
+	static void add_to_hierarchy(scene::basic_node *node);
+	static void remove_from_hierarchy(scene::basic_node *node);
+	static scene::basic_node* find_in_hierarchy(const std::string &uuid_str);
 	scene::basic_node* find_node_by_any(scene::basic_node *node_ptr, const std::string &uuid_str, const std::string &name);
 
 	// clear history/redo pointers that reference the given node (prevent dangling pointers)

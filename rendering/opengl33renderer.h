@@ -254,15 +254,15 @@ class opengl33_renderer : public gfx_renderer {
 	typedef std::vector<opengl33_light> opengllight_array;
 
 	// methods
-    std::unique_ptr<gl::program> make_shader(std::string v, std::string f);
+	static std::unique_ptr<gl::program> make_shader(std::string v, std::string f);
 	bool Init_caps();
 	void setup_pass(viewport_config &Viewport, renderpass_config &Config, rendermode Mode, float Znear = 0.f, float Zfar = 1.f, bool Ignoredebug = false);
 	void setup_matrices();
     void setup_drawing(bool Alpha = false);
-    void setup_shadow_unbind_map();
+	static void setup_shadow_unbind_map();
     void setup_shadow_bind_map();
     void setup_shadow_color( glm::vec4 const &Shadowcolor );
-    void setup_env_map(gl::cubemap *tex);
+	static void setup_env_map(gl::cubemap *tex);
 	void setup_environment_light(TEnvironmentType Environment = e_flat);
     void setup_sunlight_intensity( float Factor = 1.f);
 	// runs jobs needed to generate graphics for specified render pass
@@ -310,8 +310,8 @@ class opengl33_renderer : public gfx_renderer {
 	bool Render_Alpha(TModel3d *Model, material_data const *Material, float Squaredistance);
 	void Render_Alpha(TSubModel *Submodel);
 	void Update_Lights(light_array &Lights);
-	glm::vec3 pick_color(std::size_t Index);
-	std::size_t pick_index(glm::ivec3 const &Color);
+	static glm::vec3 pick_color(std::size_t Index);
+	static std::size_t pick_index(glm::ivec3 const &Color);
 
 	bool init_viewport(viewport_config &vp);
 
@@ -394,10 +394,10 @@ class opengl33_renderer : public gfx_renderer {
 
     double m_precipitationrotation;
 
-    glm::mat4 perspective_projection_raw(float fovy, float aspect, float znear, float zfar);
-	glm::mat4 perspective_projection(const viewport_proj_config &c, float n, float f, glm::mat4 &frustum);
-    glm::mat4 ortho_projection(float left, float right, float bottom, float top, float z_near, float z_far);
-    glm::mat4 ortho_frustumtest_projection(float left, float right, float bottom, float top, float z_near, float z_far);
+	static glm::mat4 perspective_projection_raw(float fovy, float aspect, float znear, float zfar);
+	static glm::mat4 perspective_projection(const viewport_proj_config &c, float n, float f, glm::mat4 &frustum);
+	static glm::mat4 ortho_projection(float left, float right, float bottom, float top, float z_near, float z_far);
+	static glm::mat4 ortho_frustumtest_projection(float left, float right, float bottom, float top, float z_near, float z_far);
 
     std::vector<std::function<void(TSubModel const *, glm::vec2)>> m_control_pick_requests;
     std::vector<std::function<void(scene::basic_node *)>> m_node_pick_requests;

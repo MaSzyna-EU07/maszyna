@@ -23,7 +23,7 @@ public:
 
 private:
 	bool parse_translation(std::istream &stream);
-	std::string parse_c_literal(const std::string &str);
+  static std::string parse_c_literal(const std::string &str);
 
 	std::unordered_map<std::string, std::string> lang_mapping;
 	std::unordered_map<const void*, const void*> pointer_cache;

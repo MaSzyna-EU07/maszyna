@@ -69,8 +69,8 @@ private:
     buffer_handle
         find_buffer( std::string const &Buffername ) const;
     // checks whether specified file exists. returns: name of the located file, or empty string.
-    std::string
-        find_file( std::string const &Filename ) const;
+	static std::string
+        find_file( std::string const &Filename );
 // members
     buffer_sequence m_buffers;
     index_map m_buffermappings;

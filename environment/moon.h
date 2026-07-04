@@ -12,7 +12,7 @@ public:
 // methods:
     void init();
     void update( bool Includephase = false );
-	void render();
+	static void render();
 	// returns vector pointing at the sun
 	glm::vec3 getDirection() const;
 	// returns current elevation above horizon
@@ -50,7 +50,7 @@ protected:
 	void irradiance();
     void phase();
     // helper, normalize values to range 0...1
-    float normalize(float Value ) const;
+	static float normalize(float Value );
 
 // members:
 

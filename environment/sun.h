@@ -14,7 +14,7 @@ public:
 // methods:
     void init();
     void update();
-	void render();
+	static void render();
 /*
     // returns location of the sun in the 3d scene
     glm::vec3 getPosition();

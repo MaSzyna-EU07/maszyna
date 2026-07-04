@@ -3594,7 +3594,8 @@ path_table::TrackBusyList() const {
 
 // legacy method, sends list of occupied path sections over network
 void
-path_table::IsolatedBusyList() const {
+path_table::IsolatedBusyList()
+{
     // wysłanie informacji o wszystkich odcinkach izolowanych
     TIsolated *Current;
     for( Current = TIsolated::Root(); Current; Current = Current->Next() ) {
@@ -3607,7 +3608,8 @@ path_table::IsolatedBusyList() const {
 
 // legacy method, sends state of specified path section over network
 void
-path_table::IsolatedBusy( std::string const &Name ) const {
+path_table::IsolatedBusy( std::string const &Name )
+{
     // wysłanie informacji o odcinku izolowanym (t)
     // Ra 2014-06: do wyszukania użyć drzewka nazw
     TIsolated *Current;

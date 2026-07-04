@@ -960,7 +960,7 @@ GLFWmonitor *eu07_application::find_monitor(const std::string &str) const
 	return nullptr;
 }
 
-std::string eu07_application::describe_monitor(GLFWmonitor *monitor) const
+std::string eu07_application::describe_monitor(GLFWmonitor *monitor)
 {
 	std::string name(glfwGetMonitorName(monitor));
 	std::replace(std::begin(name), std::end(name), ' ', '_');
@@ -973,7 +973,7 @@ std::string eu07_application::describe_monitor(GLFWmonitor *monitor) const
 
 // private:
 
-bool eu07_application::needs_ogl() const
+bool eu07_application::needs_ogl()
 {
 	return !Global.NvRenderer;
 }

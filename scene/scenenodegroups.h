@@ -64,7 +64,7 @@ private:
     // creates handle for a new group
     group_handle
         create_handle();
-    bool
+	static bool
         assign_cross_switch(map::track_switch&sw, std::string &sw_name, const std::string &id, size_t idx);
 // members
     group_map m_groupmap; // map of established node groups

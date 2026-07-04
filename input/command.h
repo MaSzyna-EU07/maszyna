@@ -468,7 +468,7 @@ public:
     void
         update();
     // checks if given command must be scheduled on server
-	bool
+	static bool
 	    is_network_target(uint32_t Recipient);
 
 	// pops commands from intercept queue
@@ -527,9 +527,9 @@ class command_relay {
 public:
 // methods
 	// posts specified command for the specified recipient
-    void
+  static void
 	    post(user_command Command, double Param1, double Param2,
-	        int Action, uint16_t Recipient, glm::vec3 Position = glm::vec3(0.0f) , const std::string *Payload = nullptr) const;
+	        int Action, uint16_t Recipient, glm::vec3 Position = glm::vec3(0.0f) , const std::string *Payload = nullptr);
 private:
 // types
 // members

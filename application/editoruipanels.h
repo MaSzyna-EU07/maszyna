@@ -93,7 +93,7 @@ class nodebank_panel : public ui_panel
 
   private:
 	// methods:
-	std::string generate_node_label(std::string Input) const;
+	static std::string generate_node_label(std::string Input);
 	// members:
 	std::vector<std::pair<std::string, std::shared_ptr<std::string>>> m_nodebank;
 	char m_nodesearch[128];

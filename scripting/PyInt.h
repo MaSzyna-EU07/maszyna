@@ -81,7 +81,7 @@ class render_task
 	// methods
 	void run();
 	void upload();
-	void cancel();
+	static void cancel();
 	auto target() const -> std::shared_ptr<python_rt>
 	{
 		return m_target;
@@ -110,19 +110,19 @@ class python_taskqueue
 	python_taskqueue() = default;
 	// methods
 	// initializes the module. returns true on success
-	auto init() -> bool;
+	static auto init() -> bool;
 	// shuts down the module
-	void exit();
+	static void exit();
 	// adds specified task along with provided collection of data to the work queue. returns true on success
-	auto insert(task_request const &Task) -> bool;
+	static auto insert(task_request const &Task) -> bool;
 	// executes python script stored in specified file. returns true on success
-	auto run_file(std::string const &File, std::string const &Path = "") -> bool;
+	static auto run_file(std::string const &File, std::string const &Path = "") -> bool;
 	// acquires the python gil and sets the main thread as current
-	void acquire_lock();
+	static void acquire_lock();
 	// releases the python gil and swaps the main thread out
-	void release_lock();
+	static void release_lock();
 
-	void update();
+	static void update();
 
   private:
 	// types

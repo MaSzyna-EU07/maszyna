@@ -104,8 +104,8 @@ private:
     // runs one cycle of current program. returns: error code or 0 if there's no error
     auto run() -> int;
     void log_error( std::string const &Error, int Line = -1 ) const;
-    auto guess_element_type_from_name( std::string const &Name ) const->basic_element::type_e;
-	auto inverse( int const Value ) const -> int {
+	static auto guess_element_type_from_name( std::string const &Name ) -> basic_element::type_e;
+	static auto inverse( int const Value ) -> int {
         return Value == 0 ? 1 : 0; }
     // element access
 	auto element( element_handle const Element ) const -> basic_element const {

@@ -73,7 +73,7 @@ namespace gl
         void parse_texture_entries(std::string &str);
         void parse_param_entries(std::string &str);
 
-        std::string read_file(const std::string &filename);
+	    static std::string read_file(const std::string &filename);
 
         static std::unordered_map<std::string, components_e> components_mapping;
         static std::unordered_map<std::string, defaultparam_e> defaultparams_mapping;

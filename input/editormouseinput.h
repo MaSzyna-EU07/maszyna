@@ -18,7 +18,7 @@ public:
     editormouse_input() = default;
 
 // methods
-    bool
+	static bool
         init();
     void
         position( double Horizontal, double Vertical );

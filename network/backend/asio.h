@@ -32,7 +32,7 @@ namespace network::tcp
 		std::string m_header_buffer;
 		std::string m_body_buffer;
 
-		void write_message(const message &msg, std::ostream &stream);
+	    static void write_message(const message &msg, std::ostream &stream);
 		void send_data(std::shared_ptr<std::string> buffer);
 		void read_header();
 		void handle_header(const asio::error_code &err, size_t bytes_transferred);

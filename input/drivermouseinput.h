@@ -89,7 +89,7 @@ private:
     void
         default_bindings();
     // potentially replaces supplied command with a more relevant one
-    user_command
+	static user_command
         adjust_command( user_command Command );
 
 // members

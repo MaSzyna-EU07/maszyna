@@ -206,7 +206,7 @@ public:
     int iAxleFirst; // numer pierwszej osi w kierunku ruchu (oś wiążąca pojazd z torem i wyzwalająca eventy)
     float fAxleDist; // rozstaw wózków albo osi do liczenia proporcji zacienienia
 	glm::vec3 modelRot; // obrot pudła względem świata - do przeanalizowania, czy potrzebne!!!
-    TDynamicObject * ABuFindNearestObject(glm::vec3 pos, TTrack *Track, TDynamicObject *MyPointer, int &CouplNr );
+	static TDynamicObject * ABuFindNearestObject(glm::vec3 pos, TTrack *Track, TDynamicObject *MyPointer, int &CouplNr );
     
     glm::dvec3 m_future_movement;
     glm::dvec3 m_future_wheels_angle;
@@ -290,7 +290,7 @@ private:
     void UpdateDoorRotate(TAnim *pAnim); // animacja drzwi - obrót
     void UpdateDoorFold(TAnim *pAnim); // animacja drzwi - składanie
 	void UpdateDoorPlug(TAnim *pAnim);      // animacja drzwi - odskokowo-przesuwne
-	void UpdatePant(TAnim *pAnim); // animacja pantografu
+	static void UpdatePant(TAnim *pAnim); // animacja pantografu
     void UpdatePlatformTranslate(TAnim *pAnim); // doorstep animation, shift
     void UpdatePlatformRotate(TAnim *pAnim); // doorstep animation, rotate
     void UpdateMirror(TAnim *pAnim); // mirror animation
@@ -460,7 +460,7 @@ private:
 // methods
     void ABuLittleUpdate(double ObjSqrDist);
     void ABuBogies();
-    void ABuModelRoll();
+	static void ABuModelRoll();
     void TurnOff();
     // update state of load exchange operation
     void update_exchange( double Deltatime );
@@ -869,7 +869,7 @@ public:
     void
         update( double dt, int iter );
     // legacy method, checks for presence and height of traction wire for specified vehicle
-    void
+	static void
         update_traction( TDynamicObject *Vehicle );
     // legacy method, sends list of vehicles over network
     void

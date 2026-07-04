@@ -471,7 +471,7 @@ private:
     void OrdersInit( double fVel );
     void OrdersClear();
     void OrdersDump( std::string Neworder, bool Verbose = true );
-    std::string Order2Str( TOrders Order ) const;
+	static std::string Order2Str( TOrders Order );
 // members
     std::string m_assignment;
     glm::dvec3 vCommandLocation; // polozenie wskaznika, sygnalizatora lub innego obiektu do ktorego odnosi sie komenda // NOTE: not used
@@ -488,7 +488,7 @@ public:
     } //jak jedzie do tyłu to trzeba uwzględniać, że distance jest ujemna
 private:
     // Ra: metody obsługujące skanowanie toru
-    std::vector<basic_event *> CheckTrackEvent( TTrack *Track, double fDirection ) const;
+  static std::vector<basic_event *> CheckTrackEvent( TTrack *Track, double fDirection );
     bool TableAddNew();
     bool TableNotFound( basic_event const *Event, double Distance ) const;
     void TableTraceRoute( double fDistance, TDynamicObject *pVehicle );
@@ -511,7 +511,7 @@ private:
     int TableDirection() { return iTableDirection; }
     // Ra: stare funkcje skanujące, używane do szukania sygnalizatora z tyłu
     bool IsOccupiedByAnotherConsist( TTrack *Track, double Distance );
-    basic_event *CheckTrackEventBackward( double fDirection, TTrack *Track, TDynamicObject *Vehicle, int Eventdirection = 1, end End = rear );
+	static basic_event *CheckTrackEventBackward( double fDirection, TTrack *Track, TDynamicObject *Vehicle, int Eventdirection = 1, end End = rear );
     TTrack *BackwardTraceRoute( double &fDistance, double &fDirection, TDynamicObject *Vehicle, basic_event *&Event, int Eventdirection = 1, end End = rear, bool Untiloccupied = true );
     void SetProximityVelocity( double dist, double vel, glm::dvec3 const *pos );
     TCommandType BackwardScan( double Range );

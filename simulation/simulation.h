@@ -25,17 +25,17 @@ class state_manager {
 
 public:
 // methods
-    void
+  static void
         init_scripting_interface();
     // legacy method, calculates changes in simulation state over specified time
-    void
+  static void
         update( double Deltatime, int Iterationcount );
-    void
+  static void
         update_clocks();
     void
         update_scripting_interface();
     // process input commands
-    void
+  static void
         process_commands();
  	// create model from node string
 	TAnimModel *
@@ -44,10 +44,10 @@ public:
 	TEventLauncher *
 	    create_eventlauncher(const std::string &src, const std::string &name, const glm::dvec3 &position);
 	// delete TAnimModel instance
-	void
+  static void
 	    delete_model(TAnimModel *model);
 	// delete TEventLauncher instance
-	void
+  static void
 	    delete_eventlauncher(TEventLauncher *launcher);
 	// starts deserialization from specified file, returns context pointer on success, throws otherwise
 	std::shared_ptr<deserializer_state>

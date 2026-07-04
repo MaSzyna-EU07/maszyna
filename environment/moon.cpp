@@ -306,7 +306,8 @@ cMoon::phase() {
 
 // normalize values to range 0...1
 float
-cMoon::normalize( const float Value ) const {
+cMoon::normalize( const float Value )
+{
 
     float value = Value - floor( Value );
     if( value < 0.f ) { ++value; }

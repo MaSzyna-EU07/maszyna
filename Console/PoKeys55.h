@@ -27,7 +27,7 @@ class TPoKeys55
     TPoKeys55();
     ~TPoKeys55();
     bool Connect();
-    void Close();
+	static void Close();
     bool Write(unsigned char c, unsigned char b3, unsigned char b4 = 0, unsigned char b5 = 0);
 	bool Read();
     bool ReadLoop(int i);

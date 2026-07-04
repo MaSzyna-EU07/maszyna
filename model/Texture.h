@@ -100,7 +100,7 @@ struct opengl_texture : public ITexture {
 public:
 // methods
     void make_request();
-    void load_PNG();
+  static void load_PNG();
     void load_DDS();
     void load_KTX();
     void load_TEX();
@@ -143,7 +143,7 @@ public:
     ~texture_manager() { delete_textures(); }
 
     // activates specified texture unit
-    void
+	static void
         unit( GLint Textureunit );
     // creates texture object out of data stored in specified file
     texture_handle

@@ -829,7 +829,8 @@ putvalues_event::export_as_text_( std::ostream &Output ) const {
 
 //determines whether provided input should be passed to consist owner
 bool
-putvalues_event::is_command_for_owner( input_data const &Input ) const {
+putvalues_event::is_command_for_owner( input_data const &Input )
+{
 
     if (Input.data_text.starts_with("Load=") || Input.data_text.starts_with("UnLoad=")) {
 		return false;
