@@ -265,20 +265,20 @@ keyboard_input::key( int const Key, int const Action ) {
     if( Key == GLFW_KEY_LEFT_SHIFT || Key == GLFW_KEY_RIGHT_SHIFT) {
         // update internal state, but don't bother passing these
         input::key_shift =
-            Action == GLFW_RELEASE ? false : true;
+            Action != GLFW_RELEASE;
         modifier = true;
         // whenever shift key is used it may affect currently pressed movement keys, so check and update these
     }
     if( Key == GLFW_KEY_LEFT_CONTROL || Key == GLFW_KEY_RIGHT_CONTROL) {
         // update internal state, but don't bother passing these
         input::key_ctrl =
-            Action == GLFW_RELEASE ? false : true;
+            Action != GLFW_RELEASE;
         modifier = true;
     }
     if( Key == GLFW_KEY_LEFT_ALT || Key == GLFW_KEY_RIGHT_ALT) {
         // update internal state, but don't bother passing these
         input::key_alt =
-            Action == GLFW_RELEASE ? false : true;
+            Action != GLFW_RELEASE;
     }
 
     if( Key == -1 ) { return false; }
