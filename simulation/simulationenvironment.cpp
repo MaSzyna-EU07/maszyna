@@ -185,9 +185,7 @@ world_environment::update() {
 
     // update the fog. setting it to match the average colour of the sky dome is cheap
     // but quite effective way to make the distant items blend with background better
-    Global.FogColor = m_skydome.GetAverageHorizonColor() * keylightcolor *
-	                  std::clamp((float)Global.fLuminance, 0.f, 1.f);
-	
+    Global.FogColor = glm::mix ( m_skydome.GetAverageHorizonColor(), glm::vec3 (1.0f), moonlightlevel * 0.1f);
 
     // weather-related simulation factors
     Global.FrictionWeatherFactor = Global.Weather == "rain:" ? 0.85f : Global.Weather == "snow:" ? 0.75f : 1.0f;
