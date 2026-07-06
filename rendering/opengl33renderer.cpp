@@ -1912,7 +1912,7 @@ bool opengl33_renderer::Render(world_environment *Environment)
     ::glBlendFunc( GL_SRC_ALPHA, GL_ONE );
 
     // stars
-	if (Environment->m_stars.m_stars != nullptr)
+	if (Environment->m_stars.m_stars != nullptr && Global.fFogEnd > 500.f)
 	{
 		// setup
 		::glPushMatrix();
