@@ -30,11 +30,11 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "utilities/dictionary.h"
 #include "version_info.h"
-#include "ref/discord-rpc/include/discord_rpc.h"
 #include <chrono>
 #include "utilities/translation.h"
 
 #if WITH_DISCORD_RPC
+#include "ref/discord-rpc/include/discord_rpc.h"
 #include <discord_rpc.h>
 #endif
 
@@ -198,7 +198,7 @@ int eu07_application::run_crashgui()
 	}
 	return -1;
 }
-#ifdef WITH_DISCORD_RPC
+#if WITH_DISCORD_RPC
 void eu07_application::DiscordRPCService()
 {
 	// initialize discord-rpc
@@ -410,7 +410,7 @@ int eu07_application::init(int Argc, char *Argv[])
 	}
 
 
-	#ifdef WITH_DISCORD_RPC
+	#if WITH_DISCORD_RPC
 	// Run DiscordRPC service
 	std::thread sDiscordRPC(&eu07_application::DiscordRPCService, this);
 	Global.threads.emplace("DiscordRPC", std::move(sDiscordRPC));
@@ -707,7 +707,7 @@ void eu07_application::exit()
 			it->second.join();
 	}
 
-	#ifdef WITH_DISCORD_RPC
+	#if WITH_DISCORD_RPC
 	it = Global.threads.find("DiscordRPC");
 	if (it != Global.threads.end())
 	{
