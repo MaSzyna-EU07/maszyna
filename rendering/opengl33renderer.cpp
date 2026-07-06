@@ -2041,12 +2041,12 @@ bool opengl33_renderer::Render(world_environment *Environment)
 			    ( glm::vec3 { Global.DayLight.ambient }
                 + 0.35f * glm::vec3{ Global.DayLight.diffuse } ) * simulation::Environment.light_intensity()
                 * 0.5f,
-			    glm::vec3{ 0.f }, glm::vec3{ 1.f } ) };
+			    glm::vec3{ 0.f }, glm::vec3{ 1.f } ) * (2.5f + duskfactor)};
 
 		// write cloud color into material
 		TSubModel *mdl = Environment->m_clouds.mdCloud->Root;
 		if (mdl->m_material != null_handle)
-			m_materials.material(mdl->m_material).params[0] = glm::vec4(color * 2.5f, 1.0f);
+			m_materials.material(mdl->m_material).params[0] = glm::vec4(color, 1.0f);
 
 		// render
 		Render(Environment->m_clouds.mdCloud, nullptr, 100.0);
