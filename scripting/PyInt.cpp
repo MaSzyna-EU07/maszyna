@@ -278,6 +278,23 @@ auto python_taskqueue::init() -> bool
 		PyConfig_Clear(&config);
 	}
 
+	// make CWD-local packages (e.g. the asset-side "scripts" package used by
+	// texture/screen renderers) importable. Embedded CPython builds sys.path
+	// from PYTHONHOME only; unlike the python CLI it does not prepend the
+	// working directory, and unlike Windows' getpathp.c it does not add the
+	// executable's directory either, so on POSIX "from scripts import ..."
+	// would otherwise fail. "." matches how the engine resolves all other
+	// assets (relative to CWD). Idempotent/harmless on Windows.
+	if (PyObject *syspath = PySys_GetObject("path")) // borrowed ref
+	{
+		PyObject *cwd = PyUnicode_FromString(".");
+		if (cwd != nullptr)
+		{
+			PyList_Insert(syspath, 0, cwd);
+			Py_DECREF(cwd);
+		}
+	}
+
 	PyObject *stringiomodule{nullptr};
 	PyObject *stringioclassname{nullptr};
 	PyObject *stringioobject{nullptr};
