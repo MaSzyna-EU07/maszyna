@@ -342,7 +342,7 @@ struct global_settings {
 
 	std::unordered_map<int, std::string> trainset_overrides;
 
-    float m_skysaturationcorrection{ 1.65f };
+    float m_skysaturationcorrection{ 1.25f };
     float m_skyhuecorrection{ 0.5f };
 
 	// methods

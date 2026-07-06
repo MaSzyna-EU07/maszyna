@@ -60,9 +60,7 @@ cMoon::getAngle() const {
     return (float)m_body.elevref;
 }
 	
-float cMoon::getIntensity() {
-
-	irradiance();
+float cMoon::getIntensity() const {
     // NOTE: we don't have irradiance model for the moon so we cheat here
     // calculating intensity of the sun instead, and returning 15% of the value,
     // which roughly matches how much sunlight is reflected by the moon
@@ -227,6 +225,7 @@ void cMoon::move() {
 	m_body.zenetr = std::acos( cz ) * radtodeg;
 	m_body.elevetr = 90.0 - m_body.zenetr;
 	refract();
+	irradiance();
 }
 
 void cMoon::refract() {

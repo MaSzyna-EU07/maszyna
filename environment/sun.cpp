@@ -70,9 +70,7 @@ cSun::getHourAngle() const {
     return m_body.hrang;
 }
 
-float cSun::getIntensity() {
-
-	irradiance();
+float cSun::getIntensity() const {
 	return (float)( m_body.etr/ 1399.0 );	// arbitrary scaling factor taken from etrn value
 }
 
@@ -201,6 +199,7 @@ void cSun::move() {
     m_body.zenetr = std::acos( cz ) * radtodeg;
     m_body.elevetr = 90.0 - m_body.zenetr;
     refract();
+    irradiance();
 }
 
 void cSun::refract() {
