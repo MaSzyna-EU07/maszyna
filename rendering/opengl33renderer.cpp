@@ -3777,7 +3777,7 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 			case rendermode::color:
 			case rendermode::reflections:
 			{
-				if (Global.fLuminance < Submodel->fLight)
+				if (Global.fLuminance < Submodel->fLight * 1.5f)
 				{
 					Bind_Material(Submodel->m_material, Submodel);
 
