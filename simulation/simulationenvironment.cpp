@@ -69,15 +69,15 @@ world_environment::compute_weather() {
 	                 Global.AirTemperature > 1 ? "rain:" :
 	                                             "snow:";
 
-    Global.fTurbidity = Global.Overcast <= 0.10 ? 3 :
+    Global.fTurbidity = Global.Overcast <= 0.10 ? 4 :
 	                    Global.Overcast <= 0.20 ? 4 :
 	                    Global.Overcast <= 0.30 ? 5 :
 	                    Global.Overcast <= 0.40 ? 5 :
-	                    Global.Overcast <= 0.50 ? 5 :
-	                    Global.Overcast <= 0.60 ? 5 :
-	                    Global.Overcast <= 0.70 ? 6 :
-	                    Global.Overcast <= 0.80 ? 7 :
-	                    Global.Overcast <= 0.90 ? 8 :
+	                    Global.Overcast <= 0.50 ? 6 :
+	                    Global.Overcast <= 0.60 ? 6 :
+	                    Global.Overcast <= 0.70 ? 7 :
+	                    Global.Overcast <= 0.80 ? 8 :
+	                    Global.Overcast <= 0.90 ? 9 :
 	                    Global.Overcast > 0.90  ? 9 :
 	                                              9;
 }
