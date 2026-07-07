@@ -1,0 +1,87 @@
+name: SonarQube Cloud
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types: [ opened, reopened, synchronize ]
+
+jobs:
+  sonar:
+    name: Analyze
+    runs-on: ubuntu-24.04
+    env:
+      BUILD_WRAPPER_OUT_DIR: bw-output
+      SONAR_EXCLUSIONS: betterRenderer/**,ref/**,imgui/**,stb/**,build/**,bw-output/**
+      SONAR_SCANNER_JAVA_OPTS: -Xmx5g
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            build-essential \
+            libgl1-mesa-dev libglew-dev libglfw3-dev \
+            libpng-dev libopenal-dev libluajit-5.1-dev \
+            libserialport-dev libsndfile1-dev \
+            xorg-dev libxkbcommon-dev libwayland-dev wayland-protocols
+
+      - name: Build current OpenAL Soft
+        run: |
+          git clone --depth 1 --branch 1.24.2 https://github.com/kcat/openal-soft.git /tmp/openal-soft
+          cmake -S /tmp/openal-soft -B /tmp/openal-soft/build \
+            -DCMAKE_BUILD_TYPE=Release -DALSOFT_EXAMPLES=OFF -DALSOFT_UTILS=OFF
+          cmake --build /tmp/openal-soft/build -j"$(nproc)"
+          sudo cmake --install /tmp/openal-soft/build
+          sudo ldconfig
+
+      # A little bit of magic for unbreaking GCC. Not an issue for Clang and MSVC.
+      # Fix for specific hard-errors for a combo of: varagrs and always_inline
+      - name: Patch GLM for GCC
+        run: |
+          sed -i 's/GLM_FUNC_QUALIFIER std::string format(const char\* message, \.\.\.)/inline std::string format(const char* message, ...)/' \
+            ref/glm/glm/gtx/string_cast.inl
+          grep -n "std::string format(const char\* message" ref/glm/glm/gtx/string_cast.inl
+
+      - name: Install SonarQube Cloud Build Wrapper
+        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
+
+      - name: Configure (CMake)
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWITH_BETTER_RENDERER=OFF \
+            -DWITH_ZMQ=OFF -DWITH_OPENVR=OFF -DUSE_LTO=OFF \
+            -DCMAKE_CXX_FLAGS="-Wno-attributes -fno-inline-functions-called-once" \
+            -DPython3_EXECUTABLE="$(which python3)"
+
+      - name: Build under Build Wrapper
+        run: |
+          build-wrapper-linux-x86-64 \
+            --out-dir "${BUILD_WRAPPER_OUT_DIR}" \
+            cmake --build build --config Release -j"$(nproc)"
+
+      # sonar.cfamily.taintAnalysis=false
+      # it's a deliberate choice, due to memory exhausting of a Github-hosted runner.
+      #
+      # Why off?: The jobs were OOM-killed. It's a trade-off, we still get everything else.
+      # Most bugs are caught though.
+      - name: SonarQube Cloud scan
+        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            --define sonar.cfamily.compile-commands=${{ env.BUILD_WRAPPER_OUT_DIR }}/compile_commands.json
+            --define sonar.cfamily.taintAnalysis=false 
