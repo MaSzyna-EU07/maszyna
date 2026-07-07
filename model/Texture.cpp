@@ -410,14 +410,16 @@ void opengl_texture::update_from_memory(size_t width, size_t height, const uint8
 		set_filtering();
 		glTexParameteri(target, GL_TEXTURE_WRAP_S, wrap_mode_s);
 		glTexParameteri(target, GL_TEXTURE_WRAP_T, wrap_mode_t);
-		glTexParameteri(target, GL_GENERATE_MIPMAP, GL_TRUE);
+		if (!glGenerateMipmap)
+			glTexParameteri(target, GL_GENERATE_MIPMAP, GL_TRUE);
 	}
 	else
 	{
 		glBindTexture(target, id);
 	}
 	glTexImage2D(target, 0, data_format, data_width, data_height, 0, data_components, GL_UNSIGNED_BYTE, raw);
-	glGenerateMipmap(target);
+	if (glGenerateMipmap)
+		glGenerateMipmap(target);
 	glFlush();
 }
 
