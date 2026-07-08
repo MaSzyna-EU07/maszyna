@@ -299,7 +299,23 @@ void ui::map_panel::render_contents()
 
 	ImVec2 window_origin = ImGui::GetCursorPos();
 	ImVec2 screen_origin = ImGui::GetCursorScreenPos();
-	ImGui::ImageButton((ImTextureID)(intptr_t)(m_tex->id), surface_size_im, ImVec2(0, surface_size.y / fb_size), ImVec2(surface_size.x / fb_size, 0), 0);
+
+	// Specify alpha for the map image tint so the map window
+	// honors the ui.bg.opacity setting like other windows.
+	// Make the button frame fully transparent so ImageButton's
+	// ImGuiCol_Button background (green and opaque on hover) doesn't
+	// show behind the tinted image.
+	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+	ImGui::ImageButton((ImTextureID)(intptr_t)(m_tex->id),
+					   surface_size_im,
+					   ImVec2(0, surface_size.y / fb_size),
+					   ImVec2(surface_size.x / fb_size, 0),
+					   0,
+					   ImVec4(0.0f, 0.0f, 0.0f, 0.0f),
+					   ImVec4(1.0f, 1.0f, 1.0f, Global.UIBgOpacity));
+	ImGui::PopStyleColor(3);
 
 	if (ImGui::IsItemHovered())
 	{
