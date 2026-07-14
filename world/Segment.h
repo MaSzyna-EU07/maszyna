@@ -46,7 +46,8 @@ class TSegment
         fRoll1 { 0.f },
         fRoll2 { 0.f }; // przechyłka na końcach
     double fLength { -1.0 }; // długość policzona
-    std::vector<double> fTsBuffer; // wartości parametru krzywej dla równych odcinków
+    std::vector<double> fTsBuffer; // wartości parametru krzywej t dla równych odcinków s
+    std::vector<double> fTsSlope; // nachylenie dt/du (= dt/ds * fStep) w tych samych punktach
     double fStep = 0.0;
     int iSegCount = 0; // ilość odcinków do rysowania krzywej
     double fDirection = 0.0; // Ra: kąt prostego w planie; dla łuku kąt od Point1
@@ -57,6 +58,7 @@ class TSegment
     glm::dvec3 GetFirstDerivative(double const fTime) const;
 	double RombergIntegral(double const fA, double const fB) const;
 	double GetTFromS(double const s) const;
+	double FastGetTFromS(double const s) const;
 	glm::dvec3 RaInterpolate(double const t) const;
 	glm::dvec3 RaInterpolate0(double const t) const;
 

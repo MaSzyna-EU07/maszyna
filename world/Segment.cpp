@@ -136,6 +136,23 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
     }
     fTsBuffer[ iSegCount ] = 1.0;
 
+    // pre-compute Hermite slopes dt/du = fStep / |B'(t)| for FastGetTFromS
+    // (dt/ds = 1/|B'(t)|, scaled by fStep to the interval coordinate u)
+    fTsSlope.resize( iSegCount + 1 );
+    for( int i = 0; i <= iSegCount; ++i ) {
+        // ds/dt = |B'(t)|
+        double const speed = glm::length( GetFirstDerivative( fTsBuffer[ i ] ) );
+        // dt/du = fStep / (ds/dt)
+        fTsSlope[ i ] = speed > 0.0 ? fStep / speed : 0.0;
+    }
+    // clamp slopes to keep t(s) monotone (PCHIP / Fritsch-Carlson condition)
+    for( int i = 0; i <= iSegCount; ++i ) {
+        double limit = std::numeric_limits<double>::max();
+        if( i > 0 )         { limit = std::min( limit, 3.0 * ( fTsBuffer[ i ] - fTsBuffer[ i - 1 ] ) ); }
+        if( i < iSegCount ) { limit = std::min( limit, 3.0 * ( fTsBuffer[ i + 1 ] - fTsBuffer[ i ] ) ); }
+        fTsSlope[ i ] = std::min( fTsSlope[ i ], limit );
+    }
+
     return true;
 }
 
@@ -194,7 +211,7 @@ double TSegment::GetTFromS(double const s) const
 {
     // initial guess for Newton's method
     double fTolerance = 0.001;
-    double fRatio = s / RombergIntegral(0, 1);
+    double fRatio = s / fLength; // fLength is approx RombergIntegral(0, 1), good enough to start Newton
     double fTime = std::lerp( 0.0, 1.0, fRatio );
 
     int iteration = 0;
@@ -216,6 +233,27 @@ double TSegment::GetTFromS(double const s) const
 	// MessageBox(0,"Too many iterations","GetTFromS",MB_OK);
 	return fTime;
 };
+
+double TSegment::FastGetTFromS(double const s) const
+{ // Faster version of GetTFromS: cubic Hermite interpolation using
+	// the precomputed values in fTsBuffer and slopes in fTsSlope. It
+	// avoids the expensive RombergIntegral+Newton per call. Hermite
+	// interpolation is C1-continuous, so no sudden speed changes when
+	// moving from one interval to the next.
+	// NOTE: for s outside <0, fLength> the result is extrapolated
+	// outside <0, 1>, which is the expected behavior (see e.g. usage
+	// in GetDirection())
+	int const i = std::clamp(static_cast<int>(s / fStep), 0, iSegCount - 1); // interval index
+	double const u = (s - i * fStep) / fStep; // position within interval (possibly outside)
+	double const u2 = u * u;
+	double const u3 = u2 * u;
+	double const h01 = -2.0 * u3 + 3.0 * u2;
+	double const t = ( ( 1.0 - h01 )         * fTsBuffer[ i ] +
+					   ( u3 - 2.0 * u2 + u ) * fTsSlope [ i ] +
+					   ( h01 )               * fTsBuffer[ i + 1 ] +
+					   ( u3 - u2 )           * fTsSlope [ i + 1 ] );
+	return t;
+}
 
 glm::dvec3 TSegment::RaInterpolate(double const t) const
 { // wyliczenie XYZ na krzywej Beziera z użyciem współczynników
@@ -295,10 +333,10 @@ const double fDirectionOffset = 0.1; // długość wektora do wyliczenia kierunk
 
 glm::dvec3 TSegment::GetDirection(double const fDistance) const
 { // takie toporne liczenie pochodnej dla podanego dystansu od Point1
-    double t1 = GetTFromS(fDistance - fDirectionOffset);
+    double t1 = FastGetTFromS(fDistance - fDirectionOffset);
     if (t1 <= 0.0)
         return CPointOut - Point1; // na zewnątrz jako prosta
-    double t2 = GetTFromS(fDistance + fDirectionOffset);
+    double t2 = FastGetTFromS(fDistance + fDirectionOffset);
     if (t2 >= 1.0)
         return Point1 - CPointIn; // na zewnątrz jako prosta
     return FastGetPoint(t2) - FastGetPoint(t1);
@@ -319,7 +357,7 @@ Math3D::vector3 TSegment::GetPoint(double const fDistance) const
 { // wyliczenie współrzędnych XYZ na torze w odległości (fDistance) od Point1
     if (bCurve)
     { // można by wprowadzić uproszczony wzór dla okręgów płaskich
-        double t = GetTFromS(fDistance); // aproksymacja dystansu na krzywej Beziera
+        double t = FastGetTFromS(fDistance); // aproksymacja dystansu na krzywej Beziera
         // return std::lerp(t,Point1,CPointOut,CPointIn,Point2);
         return RaInterpolate(t);
     }
@@ -338,7 +376,7 @@ Math3D::vector3 TSegment::GetPoint(double const fDistance) const
 void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::vec3 &rotation) const {
     if (bCurve) {
         // można by wprowadzić uproszczony wzór dla okręgów płaskich
-        auto const t = GetTFromS(fDistance); // aproksymacja dystansu na krzywej Beziera na parametr (t)
+        auto const t = FastGetTFromS(fDistance); // aproksymacja dystansu na krzywej Beziera na parametr (t)
         position = FastGetPoint( t );
         // przechyłka w danym miejscu (zmienia się liniowo)
         rotation.x = std::lerp( fRoll1, fRoll2, t );
