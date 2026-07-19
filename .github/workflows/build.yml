@@ -12,13 +12,14 @@ on:
   pull_request:
     types: [ opened, reopened, synchronize ]
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   build:
     name: Build under Build Wrapper
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     env:
       BUILD_WRAPPER_OUT_DIR: bw-output
     steps:
@@ -80,14 +81,17 @@ jobs:
       # Metadata the trusted workflow needs to identify the PR.
       # Treated as UNVERIFIED input there and re-checked against the API.
       - name: Record event metadata
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           mkdir -p .sonar-meta
-          echo "${{ github.event_name }}"                     > .sonar-meta/event
-          echo "${{ github.event.pull_request.number }}"       > .sonar-meta/pr_number
-          echo "${{ github.event.pull_request.head.sha }}"     > .sonar-meta/head_sha
-          echo "${{ github.event.pull_request.base.ref }}"     > .sonar-meta/base_ref
-          echo "${{ github.event.pull_request.head.ref }}"     > .sonar-meta/head_ref
-          echo "${{ github.sha }}"                             > .sonar-meta/sha
+          printf '%s\n' "$EVENT_NAME"   > .sonar-meta/event
+          printf '%s\n' "$PR_NUMBER"    > .sonar-meta/pr_number
+          printf '%s\n' "$PR_HEAD_SHA"  > .sonar-meta/head_sha
+          printf '%s\n' "$COMMIT_SHA"   > .sonar-meta/sha
 
       # The C/C++ analyzer needs the sources AND the build-wrapper output.
       # compile_commands.json holds absolute paths, so the trusted workflow must
