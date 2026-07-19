@@ -182,16 +182,14 @@ int eu07_application::run_crashgui()
 		ui_layer::render_internal();
 		glfwSwapBuffers(m_windows.front());
 
-		if (y)
-		{
+		if (y){
 			crashreport_upload_accept();
 			if (autoup)
 				crashreport_set_autoupload();
 			return 0;
 		}
 
-		if (n)
-		{
+		if (n){
 			crashreport_upload_reject();
 			return 0;
 		}
