@@ -129,6 +129,13 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
 
     fStep = fLength / iSegCount; // update step to equalize size of individual pieces
 
+	InitTFromSInterpolateData();
+    return true;
+}
+
+void TSegment::InitTFromSInterpolateData()
+{
+    // pre-compute the curve parameter t at equal distance intervals
     fTsBuffer.resize( iSegCount + 1 );
     fTsBuffer[ 0 ] = 0.0;
     for( int i = 1; i < iSegCount; ++i ) {
@@ -136,12 +143,6 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
     }
     fTsBuffer[ iSegCount ] = 1.0;
 
-	InitTFromSInterpolateData();
-    return true;
-}
-
-void TSegment::InitTFromSInterpolateData()
-{
     // pre-compute Hermite slopes dt/du = fStep / |B'(t)| for FastGetTFromS
     // (dt/ds = 1/|B'(t)|, scaled by fStep to the interval coordinate u)
     fTsSlope.resize( iSegCount + 1 );
