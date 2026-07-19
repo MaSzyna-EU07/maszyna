@@ -11,23 +11,78 @@ name: SonarQube Cloud
 on:
   workflow_run:
     workflows: [ "Build" ]
-    types: [ completed ]
+    types: [ requested, completed ]
 
-permissions:
-  contents: read
-  actions: read
-  pull-requests: write
+# Default to nothing; each job opts in to exactly what it needs.
+permissions: {}
+
+env:
+  SHA: ${{ github.event.workflow_run.head_sha }}
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
 jobs:
+  # Build has just started. Park a pending status on the commit so branch
+  # protection blocks the merge until the analysis reports back.
+  pending:
+    name: Mark pending
+    if: github.event.action == 'requested'
+    runs-on: ubuntu-24.04
+    permissions:
+      statuses: write
+    steps:
+      - name: Post pending status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X POST "repos/${{ github.repository }}/statuses/$SHA" \
+            -f state=pending \
+            -f context="SonarQube Cloud" \
+            -f description="Waiting for build to finish" \
+            -f target_url="$RUN_URL"
+
+  # Build failed or was cancelled, so no analysis will happen. Clear the
+  # pending status, otherwise the PR stays unmergeable forever.
+  aborted:
+    name: Build did not succeed
+    if: github.event.action == 'completed' && github.event.workflow_run.conclusion != 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      statuses: write
+    steps:
+      - name: Post error status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X POST "repos/${{ github.repository }}/statuses/$SHA" \
+            -f state=error \
+            -f context="SonarQube Cloud" \
+            -f description="Build ${{ github.event.workflow_run.conclusion }}, analysis skipped" \
+            -f target_url="$RUN_URL"
+
   sonar:
     name: Analyze
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event.action == 'completed' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read      # checkout trusted config
+      actions: read       # download artifact from the Build run
+      statuses: write     # post the commit status
+      pull-requests: read # verify PR head sha via the API
     env:
       BUILD_WRAPPER_OUT_DIR: bw-output
       SONAR_EXCLUSIONS: betterRenderer/**,ref/**,imgui/**,stb/**,build/**,bw-output/**
       SONAR_SCANNER_JAVA_OPTS: -Xmx5g
     steps:
+      - name: Post pending status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X POST "repos/${{ github.repository }}/statuses/$SHA" \
+            -f state=pending \
+            -f context="SonarQube Cloud" \
+            -f description="Analysis in progress" \
+            -f target_url="$RUN_URL"
+
       # Trusted copy of the repo config, used to overwrite anything the PR
       # might have tampered with (sonar-project.properties etc).
       - name: Checkout trusted config from master
@@ -76,8 +131,8 @@ jobs:
 
           # The artifact is attacker-controlled: validate shape, then confirm
           # against the API that this PR really has this head commit.
-          [[ "$pr"  =~ ^[0-9]+$ ]]          || { echo "::error::bad PR number"; exit 1; }
-          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]    || { echo "::error::bad head sha";  exit 1; }
+          [[ "$pr"  =~ ^[0-9]+$ ]]       || { echo "::error::bad PR number"; exit 1; }
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::bad head sha";  exit 1; }
 
           api_sha=$(gh api "repos/$REPO/pulls/$pr" --jq '.head.sha')
           base=$(gh api "repos/$REPO/pulls/$pr" --jq '.base.ref')
@@ -99,6 +154,9 @@ jobs:
       #
       # Why off?: The jobs were OOM-killed. It's a trade-off, we still get everything else.
       # Most bugs are caught though.
+      #
+      # sonar.qualitygate.wait=true blocks until the server finishes processing,
+      # so this step's exit code reflects the actual gate result.
       - name: SonarQube Cloud scan (pull request)
         if: steps.meta.outputs.event == 'pull_request'
         uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
@@ -110,12 +168,16 @@ jobs:
             --define sonar.cfamily.compile-commands=${{ env.BUILD_WRAPPER_OUT_DIR }}/compile_commands.json
             --define sonar.cfamily.taintAnalysis=false
             --define sonar.exclusions=${{ env.SONAR_EXCLUSIONS }}
+            --define sonar.qualitygate.wait=true
             --define sonar.scm.revision=${{ github.event.workflow_run.head_sha }}
             --define sonar.pullrequest.key=${{ steps.meta.outputs.pr }}
             --define sonar.pullrequest.branch=${{ steps.meta.outputs.head }}
             --define sonar.pullrequest.base=${{ steps.meta.outputs.base }}
 
-      - name: SonarQube Cloud scan (branch)
+      # No sonar.branch.name here on purpose: branch analysis is a paid feature,
+      # and passing it would push the scanner onto that code path. Omitting it
+      # means this is a plain main-branch analysis, which the Free plan allows.
+      - name: SonarQube Cloud scan (main branch)
         if: steps.meta.outputs.event != 'pull_request'
         uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
         env:
@@ -126,5 +188,27 @@ jobs:
             --define sonar.cfamily.compile-commands=${{ env.BUILD_WRAPPER_OUT_DIR }}/compile_commands.json
             --define sonar.cfamily.taintAnalysis=false
             --define sonar.exclusions=${{ env.SONAR_EXCLUSIONS }}
-            --define sonar.branch.name=${{ github.event.workflow_run.head_branch }}
+            --define sonar.qualitygate.wait=true
             --define sonar.scm.revision=${{ github.event.workflow_run.head_sha }}
+
+      - name: Report success
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X POST "repos/${{ github.repository }}/statuses/$SHA" \
+            -f state=success \
+            -f context="SonarQube Cloud" \
+            -f description="Quality gate passed" \
+            -f target_url="$RUN_URL"
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X POST "repos/${{ github.repository }}/statuses/$SHA" \
+            -f state=failure \
+            -f context="SonarQube Cloud" \
+            -f description="Quality gate failed or analysis errored" \
+            -f target_url="$RUN_URL"
