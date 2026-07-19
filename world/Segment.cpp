@@ -163,21 +163,8 @@ void TSegment::InitTFromSInterpolateData()
 
 glm::dvec3 TSegment::GetFirstDerivative(double const fTime) const
 {
-
-    double fOmTime = 1.0 - fTime;
-    double fPowTime = fTime;
-	glm::dvec3 kResult = fOmTime * (CPointOut - Point1);
-
-    // int iDegreeM1 = 3 - 1;
-
-    double fCoeff = 2 * fPowTime;
-    kResult = (kResult + fCoeff * (CPointIn - CPointOut)) * fOmTime;
-    fPowTime *= fTime;
-
-    kResult += fPowTime * (Point2 - CPointIn);
-    kResult *= 3;
-
-    return kResult;
+	// derivative is 3*A*t^2 + 2*B*t + C
+	return fTime * ( fTime * 3.0 * vA + vB + vB ) + vC;
 }
 
 double TSegment::RombergIntegral(double const fA, double const fB) const
@@ -385,8 +372,8 @@ void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::
         position = FastGetPoint( t );
         // przechyłka w danym miejscu (zmienia się liniowo)
         rotation.x = std::lerp( fRoll1, fRoll2, t );
-        // pochodna jest 3*A*t^2+2*B*t+C
-        auto const tangent = t * ( t * 3.0 * vA + vB + vB ) + vC;
+        // pochodna
+        auto const tangent = GetFirstDerivative( t );
         // pochylenie krzywej (w pionie)
         rotation.y = std::atan( tangent.y );
         // kierunek krzywej w planie
