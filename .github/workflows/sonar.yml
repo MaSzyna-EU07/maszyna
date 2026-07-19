@@ -1,0 +1,130 @@
+# .github/workflows/sonar.yml
+# TRUSTED CONTEXT. Has SONAR_TOKEN.
+# Rule: never execute anything that came out of the artifact. No build, no
+# npm/pip install, no scripts, no PR-supplied scanner config. Data only.
+#
+# NOTE: workflow_run workflows are only picked up from the DEFAULT branch.
+# Changes to this file take effect after they land on master.
+
+name: SonarQube Cloud
+
+on:
+  workflow_run:
+    workflows: [ "Build" ]
+    types: [ completed ]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+jobs:
+  sonar:
+    name: Analyze
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    env:
+      BUILD_WRAPPER_OUT_DIR: bw-output
+      SONAR_EXCLUSIONS: betterRenderer/**,ref/**,imgui/**,stb/**,build/**,bw-output/**
+      SONAR_SCANNER_JAVA_OPTS: -Xmx5g
+    steps:
+      # Trusted copy of the repo config, used to overwrite anything the PR
+      # might have tampered with (sonar-project.properties etc).
+      - name: Checkout trusted config from master
+        uses: actions/checkout@v5
+        with:
+          ref: master
+          path: .trusted
+
+      - name: Download analysis input
+        uses: actions/download-artifact@v4
+        with:
+          name: sonar-input
+          path: /tmp/sonar-input
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Unpack analysis input
+        run: |
+          set -euo pipefail
+          tar -xzf /tmp/sonar-input/workspace.tar.gz -C "$GITHUB_WORKSPACE"
+          # Strip PR-controlled scanner configuration, restore the trusted one.
+          rm -f "$GITHUB_WORKSPACE/sonar-project.properties" \
+                "$GITHUB_WORKSPACE/.sonarcloud.properties"
+          if [ -f "$GITHUB_WORKSPACE/.trusted/sonar-project.properties" ]; then
+            cp "$GITHUB_WORKSPACE/.trusted/sonar-project.properties" "$GITHUB_WORKSPACE/"
+          fi
+
+      - name: Resolve and verify PR metadata
+        id: meta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          event=$(tr -d '\r\n' < .sonar-meta/event)
+          echo "event=$event" >> "$GITHUB_OUTPUT"
+
+          if [ "$event" != "pull_request" ]; then
+            echo "Branch build, no PR parameters."
+            exit 0
+          fi
+
+          pr=$(tr -d '\r\n' < .sonar-meta/pr_number)
+          sha=$(tr -d '\r\n' < .sonar-meta/head_sha)
+
+          # The artifact is attacker-controlled: validate shape, then confirm
+          # against the API that this PR really has this head commit.
+          [[ "$pr"  =~ ^[0-9]+$ ]]          || { echo "::error::bad PR number"; exit 1; }
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]    || { echo "::error::bad head sha";  exit 1; }
+
+          api_sha=$(gh api "repos/$REPO/pulls/$pr" --jq '.head.sha')
+          base=$(gh api "repos/$REPO/pulls/$pr" --jq '.base.ref')
+          head=$(gh api "repos/$REPO/pulls/$pr" --jq '.head.ref')
+
+          if [ "$api_sha" != "$sha" ]; then
+            echo "::error::head sha mismatch (artifact=$sha api=$api_sha)"
+            exit 1
+          fi
+
+          {
+            echo "pr=$pr"
+            echo "base=$base"
+            echo "head=$head"
+          } >> "$GITHUB_OUTPUT"
+
+      # sonar.cfamily.taintAnalysis=false
+      # it's a deliberate choice, due to memory exhausting of a Github-hosted runner.
+      #
+      # Why off?: The jobs were OOM-killed. It's a trade-off, we still get everything else.
+      # Most bugs are caught though.
+      - name: SonarQube Cloud scan (pull request)
+        if: steps.meta.outputs.event == 'pull_request'
+        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            --define sonar.cfamily.compile-commands=${{ env.BUILD_WRAPPER_OUT_DIR }}/compile_commands.json
+            --define sonar.cfamily.taintAnalysis=false
+            --define sonar.exclusions=${{ env.SONAR_EXCLUSIONS }}
+            --define sonar.scm.revision=${{ github.event.workflow_run.head_sha }}
+            --define sonar.pullrequest.key=${{ steps.meta.outputs.pr }}
+            --define sonar.pullrequest.branch=${{ steps.meta.outputs.head }}
+            --define sonar.pullrequest.base=${{ steps.meta.outputs.base }}
+
+      - name: SonarQube Cloud scan (branch)
+        if: steps.meta.outputs.event != 'pull_request'
+        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            --define sonar.cfamily.compile-commands=${{ env.BUILD_WRAPPER_OUT_DIR }}/compile_commands.json
+            --define sonar.cfamily.taintAnalysis=false
+            --define sonar.exclusions=${{ env.SONAR_EXCLUSIONS }}
+            --define sonar.branch.name=${{ github.event.workflow_run.head_branch }}
+            --define sonar.scm.revision=${{ github.event.workflow_run.head_sha }}
