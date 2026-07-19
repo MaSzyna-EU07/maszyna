@@ -1,4 +1,9 @@
-name: SonarQube Cloud
+# .github/workflows/build.yml
+# UNTRUSTED CONTEXT. This workflow runs fork-authored code.
+# It must never reference `secrets.*` (other than the default GITHUB_TOKEN,
+# which is read-only here). Do not add SONAR_TOKEN to this file.
+
+name: Build
 
 on:
   push:
@@ -7,14 +12,15 @@ on:
   pull_request:
     types: [ opened, reopened, synchronize ]
 
+permissions:
+  contents: read
+
 jobs:
-  sonar:
-    name: Analyze
+  build:
+    name: Build under Build Wrapper
     runs-on: ubuntu-24.04
     env:
       BUILD_WRAPPER_OUT_DIR: bw-output
-      SONAR_EXCLUSIONS: betterRenderer/**,ref/**,imgui/**,stb/**,build/**,bw-output/**
-      SONAR_SCANNER_JAVA_OPTS: -Xmx5g
     steps:
       - uses: actions/checkout@v5
         with:
@@ -46,7 +52,7 @@ jobs:
           sudo ldconfig
 
       # A little bit of magic for unbreaking GCC. Not an issue for Clang and MSVC.
-      # Fix for specific hard-errors for a combo of: varagrs and always_inline
+      # Fix for specific hard-errors for a combo of: varargs and always_inline
       - name: Patch GLM for GCC
         run: |
           sed -i 's/GLM_FUNC_QUALIFIER std::string format(const char\* message, \.\.\.)/inline std::string format(const char* message, ...)/' \
@@ -71,17 +77,34 @@ jobs:
             --out-dir "${BUILD_WRAPPER_OUT_DIR}" \
             cmake --build build --config Release -j"$(nproc)"
 
-      # sonar.cfamily.taintAnalysis=false
-      # it's a deliberate choice, due to memory exhausting of a Github-hosted runner.
-      #
-      # Why off?: The jobs were OOM-killed. It's a trade-off, we still get everything else.
-      # Most bugs are caught though.
-      - name: SonarQube Cloud scan
-        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: https://sonarcloud.io
+      # Metadata the trusted workflow needs to identify the PR.
+      # Treated as UNVERIFIED input there and re-checked against the API.
+      - name: Record event metadata
+        run: |
+          mkdir -p .sonar-meta
+          echo "${{ github.event_name }}"                     > .sonar-meta/event
+          echo "${{ github.event.pull_request.number }}"       > .sonar-meta/pr_number
+          echo "${{ github.event.pull_request.head.sha }}"     > .sonar-meta/head_sha
+          echo "${{ github.event.pull_request.base.ref }}"     > .sonar-meta/base_ref
+          echo "${{ github.event.pull_request.head.ref }}"     > .sonar-meta/head_ref
+          echo "${{ github.sha }}"                             > .sonar-meta/sha
+
+      # The C/C++ analyzer needs the sources AND the build-wrapper output.
+      # compile_commands.json holds absolute paths, so the trusted workflow must
+      # unpack this at the same $GITHUB_WORKSPACE path — same repo, so it matches.
+      - name: Pack analysis input
+        run: |
+          tar -czf /tmp/workspace.tar.gz \
+            --exclude='./build/CMakeFiles' \
+            --exclude='*.o' \
+            --exclude='*.a' \
+            --exclude='*.so' \
+            -C "$GITHUB_WORKSPACE" .
+
+      - name: Upload analysis input
+        uses: actions/upload-artifact@v4
         with:
-          args: >
-            --define sonar.cfamily.compile-commands=${{ env.BUILD_WRAPPER_OUT_DIR }}/compile_commands.json
-            --define sonar.cfamily.taintAnalysis=false 
+          name: sonar-input
+          path: /tmp/workspace.tar.gz
+          retention-days: 1
+          if-no-files-found: error
