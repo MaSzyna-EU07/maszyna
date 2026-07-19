@@ -136,13 +136,19 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
     }
     fTsBuffer[ iSegCount ] = 1.0;
 
+	InitTFromSInterpolateData();
+    return true;
+}
+
+void TSegment::InitTFromSInterpolateData()
+{
     // pre-compute Hermite slopes dt/du = fStep / |B'(t)| for FastGetTFromS
     // (dt/ds = 1/|B'(t)|, scaled by fStep to the interval coordinate u)
     fTsSlope.resize( iSegCount + 1 );
     for( int i = 0; i <= iSegCount; ++i ) {
-        // ds/dt = |B'(t)|
+        // compute ds/dt derivative = |B'(t)|
         double const speed = glm::length( GetFirstDerivative( fTsBuffer[ i ] ) );
-        // dt/du = fStep / (ds/dt)
+        // compute dt/du derivative = fStep / (ds/dt)
         fTsSlope[ i ] = speed > 0.0 ? fStep / speed : 0.0;
     }
     // clamp slopes to keep t(s) monotone (PCHIP / Fritsch-Carlson condition)
@@ -152,8 +158,6 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
         if( i < iSegCount ) { limit = std::min( limit, 3.0 * ( fTsBuffer[ i + 1 ] - fTsBuffer[ i ] ) ); }
         fTsSlope[ i ] = std::min( fTsSlope[ i ], limit );
     }
-
-    return true;
 }
 
 glm::dvec3 TSegment::GetFirstDerivative(double const fTime) const

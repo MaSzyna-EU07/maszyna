@@ -57,6 +57,7 @@ class TSegment
 
     glm::dvec3 GetFirstDerivative(double const fTime) const;
 	double RombergIntegral(double const fA, double const fB) const;
+	void InitTFromSInterpolateData();
 	double GetTFromS(double const s) const;
 	double FastGetTFromS(double const s) const;
 	glm::dvec3 RaInterpolate(double const t) const;
