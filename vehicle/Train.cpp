@@ -9039,81 +9039,46 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaSHP.Turn(mvOccupied->SecuritySystem.is_cabsignal_blinking());
 		btLampkaCzuwakaSHP.Turn(btLampkaSHP.GetValue() || btLampkaCzuwaka.GetValue());
 
-		btLampkaWylSzybki.Turn(m_linebreakerstate == 2 || true == mvControlled->Mains ? true : false);
-		btLampkaWylSzybkiOff.Turn(m_linebreakerstate == 2 || true == mvControlled->Mains ? false : true);
-		btLampkaMainBreakerReady.Turn(mvControlled->MainsInitTimeCountdown > 0.0 || m_linebreakerstate == 2 || true == mvControlled->Mains ? false : true);
-		btLampkaMainBreakerBlinkingIfReady.Turn(
-		    m_linebreakerstate == 2 || true == mvControlled->Mains || (mvControlled->MainsInitTimeCountdown < 0.0 && simulation::Time.data().wMilliseconds > 500) ? true : false);
+		btLampkaWylSzybki.Turn(m_linebreakerstate == 2 || mvControlled->Mains);
+		btLampkaWylSzybkiOff.Turn(m_linebreakerstate != 2 && !mvControlled->Mains);
+		btLampkaMainBreakerReady.Turn(mvControlled->MainsInitTimeCountdown <= 0.0 && m_linebreakerstate != 2 && !mvControlled->Mains);
+		btLampkaMainBreakerBlinkingIfReady.Turn(m_linebreakerstate == 2 || mvControlled->Mains || mvControlled->MainsInitTimeCountdown < 0.0 && simulation::Time.data().wMilliseconds > 500);
 
 		btLampkaPrzetw.Turn(mvOccupied->Power110vIsAvailable);
-		btLampkaPrzetwOff.Turn(false == mvOccupied->Power110vIsAvailable);
+		btLampkaPrzetwOff.Turn(!mvOccupied->Power110vIsAvailable);
 		btLampkaNadmPrzetw.Turn(Dynamic()->Mechanik ? Dynamic()->Mechanik->IsAnyConverterOverloadRelayOpen : mvControlled->ConvOvldFlag);
 
-		btLampkaOpory.Turn(mvControlled->StLinFlag ? mvControlled->ResistorsFlagCheck() : false);
-
-		btLampkaBezoporowa.Turn(true == mvControlled->ResistorsFlagCheck() || mvControlled->MainCtrlActualPos == 0); // do EU04
-
-		btLampkaStyczn.Turn(mvControlled->StLinFlag || mvControlled->ControlPressureSwitch ? false : mvControlled->BrakePress < 1.0); // mozna prowadzic rozruch
-
-		btLampkaPrzekRozn.Turn(mvControlled->GroundRelay || mvControlled->ControlPressureSwitch ? false : mvControlled->BrakePress < 1.0); // relay is off and needs a reset
-
-		btLampkaNadmSil.Turn(false == mvControlled->FuseFlagCheck() || mvControlled->ControlPressureSwitch ? false : mvControlled->BrakePress < 1.0); // relay is off and needs a reset
-
-		if ((mvControlled->CabOccupied == 1 && TestFlag(mvControlled->Couplers[end::rear].CouplingFlag, coupling::control)) ||
-		    (mvControlled->CabOccupied == -1 && TestFlag(mvControlled->Couplers[end::front].CouplingFlag, coupling::control)))
-		{
-			btLampkaUkrotnienie.Turn(true);
-		}
-		else
-		{
-			btLampkaUkrotnienie.Turn(false);
-		}
-
-		//         if
-		//         ((TestFlag(mvControlled->BrakeStatus,+b_Rused+b_Ractive)))//Lampka drugiego stopnia hamowania
+		btLampkaOpory.Turn(mvControlled->StLinFlag && mvControlled->ResistorsFlagCheck());
+		btLampkaBezoporowa.Turn(mvControlled->ResistorsFlagCheck() || mvControlled->MainCtrlActualPos == 0); // do EU04
+		btLampkaStyczn.Turn(!mvControlled->StLinFlag && !mvControlled->ControlPressureSwitch && mvControlled->BrakePress < 1.0); // mozna prowadzic rozruch
+		btLampkaPrzekRozn.Turn(!mvControlled->GroundRelay && !mvControlled->ControlPressureSwitch && mvControlled->BrakePress < 1.0); // relay is off and needs a reset
+		btLampkaNadmSil.Turn(mvControlled->FuseFlagCheck() && !mvControlled->ControlPressureSwitch && mvControlled->BrakePress < 1.0); // relay is off and needs a reset
+		btLampkaUkrotnienie.Turn(TestFlag(mvControlled->Couplers[mvControlled->CabOccupied == 1 ? rear : front].CouplingFlag, control));
 		btLampkaHamPosp.Turn(TestFlag(mvOccupied->Hamulec->GetBrakeStatus(), 1)); // lampka drugiego stopnia hamowania
 		// TODO: youBy wyciągnąć flagę wysokiego stopnia
-
-		// hunter-121211: lampka zanikowo-pradowego wentylatorow:
-		btLampkaNadmWent.Turn(mvControlled->RventRot < 5.0 && mvControlled->ResistorsFlagCheck());
-		//-------
-
-		btLampkaWysRozr.Turn(!(mvControlled->Imax < mvControlled->ImaxHi));
-
-		if (false == mvControlled->DelayCtrlFlag &&
-		    (mvControlled->ScndCtrlActualPos > 0 || (mvControlled->RList[mvControlled->MainCtrlActualPos].ScndAct != 0 && mvControlled->RList[mvControlled->MainCtrlActualPos].ScndAct != 255)))
-		{
-			btLampkaBoczniki.Turn(true);
-		}
-		else
-		{
-			btLampkaBoczniki.Turn(false);
-		}
+		btLampkaNadmWent.Turn(mvControlled->RventRot < 5.0 && mvControlled->ResistorsFlagCheck()); // hunter-121211: lampka zanikowo-pradowego wentylatorow
+		btLampkaWysRozr.Turn(mvControlled->Imax >= mvControlled->ImaxHi);
 
 		btLampkaNapNastHam.Turn(mvControlled->DirActive != 0); // napiecie na nastawniku hamulcowym
 		btLampkaSprezarka.Turn(mvControlled->CompressorFlag); // mutopsitka dziala
-		btLampkaSprezarkaOff.Turn(false == mvControlled->CompressorFlag);
-		btLampkaFuelPumpOff.Turn(false == mvControlled->FuelPump.is_active);
+		btLampkaSprezarkaOff.Turn(!mvControlled->CompressorFlag);
+		btLampkaFuelPumpOff.Turn(!mvControlled->FuelPump.is_active);
+
 		// boczniki
-		unsigned char scp; // Ra: dopisałem "unsigned"
-		// Ra: w SU45 boczniki wchodzą na MainCtrlPos, a nie na MainCtrlActualPos
+		// Ra: w SU45 boczniki wchodzą na ScndCtrlPos, a nie na ScndCtrlActualPos
 		// - pokićkał ktoś?
-		scp = mvControlled->RList[mvControlled->MainCtrlPos].ScndAct;
+		int scp = mvControlled->RList[mvControlled->MainCtrlPos].ScndAct;
 		scp = scp == 255 ? 0 : scp; // Ra: whatta hella is this?
-		if (mvControlled->ScndCtrlPos > 0 || mvControlled->ScndInMain != 0 && scp > 0)
-		{ // boczniki pojedynczo
-			btLampkaBocznik1.Turn(true);
-			btLampkaBocznik2.Turn(mvControlled->ScndCtrlPos > 1);
-			btLampkaBocznik3.Turn(mvControlled->ScndCtrlPos > 2);
-			btLampkaBocznik4.Turn(mvControlled->ScndCtrlPos > 3);
-		}
-		else
-		{ // wyłączone wszystkie cztery
-			btLampkaBocznik1.Turn(false);
-			btLampkaBocznik2.Turn(false);
-			btLampkaBocznik3.Turn(false);
-			btLampkaBocznik4.Turn(false);
-		}
+		btLampkaBoczniki.Turn(!mvControlled->DelayCtrlFlag && mvControlled->ScndCtrlActualPos > 0 || scp > 0);
+		btLampkaBocznik1.Turn(!mvControlled->DelayCtrlFlag && mvControlled->ScndCtrlPos > 0 || mvControlled->ScndCtrlActualPos > 0 || scp > 0);
+		btLampkaBocznik2.Turn(!mvControlled->DelayCtrlFlag && mvControlled->ScndCtrlPos > 1 || mvControlled->ScndCtrlActualPos > 1 || scp > 1);
+		btLampkaBocznik3.Turn(!mvControlled->DelayCtrlFlag && mvControlled->ScndCtrlPos > 2 || mvControlled->ScndCtrlActualPos > 2 || scp > 2);
+		btLampkaBocznik4.Turn(!mvControlled->DelayCtrlFlag && mvControlled->ScndCtrlPos > 3 || mvControlled->ScndCtrlActualPos > 3 || scp > 3);
+
+		// biegi dla motoraka
+		btLampkaGear1.Turn(mvControlled->ScndCtrlActualPos == 1 && mvControlled->dizel_engagestate > 0); // bieg 1
+		btLampkaGear2.Turn(mvControlled->ScndCtrlActualPos == 2 && mvControlled->dizel_engagestate > 0); // bieg 2
+		btLampkaHydroLockup.Turn(mvControlled->hydro_TC_Lockup); // zblokowanie skrzyni z silnikiem
 
 		if (mvControlled->Signalling == true)
 		{
@@ -9152,7 +9117,7 @@ bool TTrain::Update(double const Deltatime)
 		default:
 		{
 			btLampkaHamienie.Turn(mvOccupied->BrakePress >= 0.1 || mvControlled->DynamicBrakeFlag);
-			btLampkaBrakingOff.Turn(mvOccupied->BrakePress < 0.1 && false == mvControlled->DynamicBrakeFlag);
+			btLampkaBrakingOff.Turn(mvOccupied->BrakePress < 0.1 && !mvControlled->DynamicBrakeFlag);
 			break;
 		}
 		}
@@ -9238,9 +9203,18 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaWysRozr.Turn(false);
 		btLampkaOpory.Turn(false);
 		btLampkaStyczn.Turn(false);
+		btLampkaPrzekRozn.Turn(false);
+		btLampkaNadmSil.Turn(false);
 		btLampkaUkrotnienie.Turn(false);
 		btLampkaHamPosp.Turn(false);
 		btLampkaBoczniki.Turn(false);
+		btLampkaBocznik1.Turn(false);
+		btLampkaBocznik2.Turn(false);
+		btLampkaBocznik3.Turn(false);
+		btLampkaBocznik4.Turn(false);
+		btLampkaGear1.Turn(false);
+		btLampkaGear2.Turn(false);
+		btLampkaHydroLockup.Turn(false);
 		btLampkaNapNastHam.Turn(false);
 		btLampkaPrzetw.Turn(false);
 		btLampkaPrzetwOff.Turn(false);
@@ -11276,6 +11250,9 @@ void TTrain::clear_cab_controls()
 	btLampkaBocznik2.Clear();
 	btLampkaBocznik3.Clear();
 	btLampkaBocznik4.Clear();
+	btLampkaGear1.Clear();
+	btLampkaGear2.Clear();
+	btLampkaHydroLockup.Clear();
 	btLampkaRadiotelefon.Clear();
 	btLampkaHamienie.Clear();
 	btLampkaBrakingOff.Clear();
@@ -11689,6 +11666,9 @@ bool TTrain::initialize_button(cParser &Parser, std::string const &Label, int co
 	    {"i-scnd2:", btLampkaBocznik2},
 	    {"i-scnd3:", btLampkaBocznik3},
 	    {"i-scnd4:", btLampkaBocznik4},
+	    {"i-gear1:", btLampkaGear1},
+	    {"i-gear2:", btLampkaGear2},
+	    {"i-hydrolockup:", btLampkaHydroLockup},
 	    {"i-braking:", btLampkaHamienie},
 	    {"i-brakingoff:", btLampkaBrakingOff},
 	    {"i-dynamicbrake:", btLampkaED},
