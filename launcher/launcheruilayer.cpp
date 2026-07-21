@@ -12,7 +12,7 @@ launcher_ui::launcher_ui() : m_scenery_scanner(m_vehicles_bank), m_scenerylist_p
 	add_external_panel(&m_keymapper_panel);
 	add_external_panel(&m_vehiclepicker_panel);
 
-	open_panel(&m_vehiclepicker_panel);
+	open_panel(&m_scenerylist_panel);
 	m_suppress_menu = true;
 
 }
