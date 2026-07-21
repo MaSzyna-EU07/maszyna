@@ -98,7 +98,9 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #define GLM_FORCE_CTOR_INIT
 #define GLM_FORCE_INLINE
+#ifdef _MSC_VER
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
+#endif
 #define GLM_FORCE_INTRINSICS
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
