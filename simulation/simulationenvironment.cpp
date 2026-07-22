@@ -69,15 +69,15 @@ world_environment::compute_weather() {
 	                 Global.AirTemperature > 1 ? "rain:" :
 	                                             "snow:";
 
-    Global.fTurbidity = Global.Overcast <= 0.10 ? 3 :
+    Global.fTurbidity = Global.Overcast <= 0.10 ? 4 :
 	                    Global.Overcast <= 0.20 ? 4 :
 	                    Global.Overcast <= 0.30 ? 5 :
 	                    Global.Overcast <= 0.40 ? 5 :
-	                    Global.Overcast <= 0.50 ? 5 :
-	                    Global.Overcast <= 0.60 ? 5 :
-	                    Global.Overcast <= 0.70 ? 6 :
-	                    Global.Overcast <= 0.80 ? 7 :
-	                    Global.Overcast <= 0.90 ? 8 :
+	                    Global.Overcast <= 0.50 ? 6 :
+	                    Global.Overcast <= 0.60 ? 6 :
+	                    Global.Overcast <= 0.70 ? 7 :
+	                    Global.Overcast <= 0.80 ? 8 :
+	                    Global.Overcast <= 0.90 ? 9 :
 	                    Global.Overcast > 0.90  ? 9 :
 	                                              9;
 }
@@ -115,7 +115,7 @@ world_environment::update() {
     float twilightfactor = std::clamp( -m_sun.getAngle(), 0.0f, 18.0f ) / 18.0f;
     // NOTE: sun light receives extra padding to prevent moon from kicking in too soon
     auto const sunlightlevel = m_sun.getIntensity() + 0.05f * ( 1.f - twilightfactor );
-    auto const moonlightlevel = m_moon.getIntensity() * 0.65f; // scaled down by arbitrary factor, it's pretty bright otherwise
+    auto const moonlightlevel = m_moon.getIntensity() * 1.5f * (1.0f - 0.5f * std::clamp( Global.Overcast, 0.0f, 1.0f ));
 
     // ...update skydome to match the current sun position as well...
     // twilight factor can be reset later down, so we do it here while it's still reflecting state of the sun
@@ -185,9 +185,7 @@ world_environment::update() {
 
     // update the fog. setting it to match the average colour of the sky dome is cheap
     // but quite effective way to make the distant items blend with background better
-    Global.FogColor = m_skydome.GetAverageHorizonColor() * keylightcolor *
-	                  std::clamp((float)Global.fLuminance, 0.f, 1.f);
-	
+    Global.FogColor = glm::mix ( m_skydome.GetAverageHorizonColor(), glm::vec3 (1.0f), moonlightlevel * 0.1f);
 
     // weather-related simulation factors
     Global.FrictionWeatherFactor = Global.Weather == "rain:" ? 0.85f : Global.Weather == "snow:" ? 0.75f : 1.0f;

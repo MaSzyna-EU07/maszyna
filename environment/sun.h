@@ -26,7 +26,7 @@ public:
     // return current hour angle
     double getHourAngle() const;
     // returns current intensity of the sun
-	float getIntensity();
+	float getIntensity() const;
     // sets current time, overriding one acquired from the system clock
     void setTime( int const Hour, int const Minute, int const Second );
 	// sets current geographic location
