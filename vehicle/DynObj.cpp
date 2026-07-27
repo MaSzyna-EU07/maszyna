@@ -17,7 +17,6 @@ http://mozilla.org/MPL/2.0/.
 
 #include "simulation/simulation.h"
 #include "rendering/lightarray.h"
-#include "vehicle/Camera.h"
 #include "vehicle/Train.h"
 #include "vehicle/Driver.h"
 #include "utilities/Globals.h"
@@ -32,7 +31,6 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "application/uitranscripts.h"
 #include "input/messaging.h"
-#include "vehicle/Driver.h"
 
 // Ra: taki zapis funkcjonuje lepiej, ale może nie jest optymalny
 #define vWorldFront glm::vec3(0, 0, 1)
