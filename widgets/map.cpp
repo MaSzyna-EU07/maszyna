@@ -8,6 +8,7 @@
 #include "vehicle/Driver.h"
 #include "model/AnimModel.h"
 #include "application/application.h"
+#include "utilities/translation.h"
 
 ui::map_panel::map_panel() : ui_panel(STR_C("Map"), false)
 {
