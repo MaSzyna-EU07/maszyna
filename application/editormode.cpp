@@ -1362,8 +1362,11 @@ void editor_mode::enter()
             Camera.m_owner = nullptr;
             Camera.LookAt = vehicle->GetPosition();
             Camera.RaLook(); // single camera reposition
-            FreeFlyModeFlag = true;
         }
+        // edytor pracuje wyłącznie kamerą swobodną. Przy starcie prosto do edytora nie ma pojazdu, z
+        // którego można by wysiąść, a flagę i tak trzeba podnieść - inaczej kamera zostaje w trybie
+        // kabinowym, nie mając kabiny
+        FreeFlyModeFlag = true;
     }
 
     Global.ControlPicking = true;
@@ -1455,7 +1458,12 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
 
         if (!Global.ctrlState && !Global.shiftState)
         {
-            Application.pop_mode();
+            // przy starcie do edytora nie ma trybu, do którego można wrócić - zdjęcie ostatniego trybu
+            // zostawiłoby pusty stos, z którego reszta klatki nadal by czytała
+            if (Global.editor_startup)
+                Application.queue_quit(true);
+            else
+                Application.pop_mode();
         }
         else if (Global.ctrlState && Global.shiftState)
         {

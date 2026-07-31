@@ -60,7 +60,12 @@ bool scenarioloader_mode::update() {
 	// TODO: implement and use next mode cue
 
 	Application.pop_mode();
-	Application.push_mode( eu07_application::mode::driver );
+	// przy starcie do edytora symulacja w ogóle nie rusza: nie ma trybu prowadzenia pod spodem, więc nie
+	// liczy się fizyki, AI ani rozkładów - zostaje sam wczytany świat do obrabiania
+	Application.push_mode(
+	    Global.editor_startup ?
+	        eu07_application::mode::editor :
+	        eu07_application::mode::driver );
 
     return true;
 }

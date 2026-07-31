@@ -1140,12 +1140,24 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 				Global.local_start_vehicle = ToLower(Argv[++i]);
 			}
 		}
+		else if (token == "-editor")
+		{
+			Global.editor_startup = true;
+		}
 		else
 		{
 			std::cout << "usage: " << std::string(Argv[0]) << " [-s sceneryfilepath]"
-			          << " [-v vehiclename]" << std::endl;
+			          << " [-v vehiclename]"
+			          << " [-editor]" << std::endl;
 			return -1;
 		}
+	}
+
+	if (Global.editor_startup && Global.SceneryFile.empty())
+	{
+		// edytor potrzebuje wczytanego świata, ale niekoniecznie czegokolwiek w nim - pusta sceneria daje
+		// sam region, oświetlenie i zegar, bez taboru i rozkładów
+		Global.SceneryFile = "pusta.scn";
 	}
 
 	return 0;

@@ -77,6 +77,8 @@ struct global_settings {
     std::string szTexturesDDS{ ".dds" }; // lista tekstur od DDS
     std::string szDefaultExt{ szTexturesDDS };
 	std::string SceneryFile;
+    // uruchomienie prosto do edytora, z pominięciem symulacji; edytor jest wtedy trybem podstawowym
+    bool editor_startup{ false };
     std::string local_start_vehicle{ "EU07-424" };
     int iConvertModels{ 0 }; // tworzenie plików binarnych
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan
