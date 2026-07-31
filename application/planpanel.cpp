@@ -11,24 +11,26 @@ http://mozilla.org/MPL/2.0/.
 #include "application/planpanel.h"
 
 #include "application/editormode.h"
+#include "editor/polandmap.h"
 #include "rendering/renderer.h"
 #include "utilities/Globals.h"
 
 namespace
 {
 
-// the plan works in the project's cartesian frame, the scenery in the engine's world space. with no
-// georeference set the two share an origin, so the mapping is just the naming of the axes: easting
-// runs along world x, northing against world z
+// the plan works in EPSG:2180, the scenery in the engine's world space around its own zero. the
+// georeference says which point of the projection that zero stands for; a fictional scenery leaves
+// it at the origin, so the two frames differ only in the naming of the axes - easting runs along
+// world x, northing against world z
 glm::dvec3 plan_to_world(double const X, double const Y)
 {
-	return {X, 0.0, -Y};
+	return {X - Global.scenery_origin.x, 0.0, -(Y - Global.scenery_origin.y)};
 }
 
 void world_to_plan(glm::dvec3 const &World, double &X, double &Y)
 {
-	X = World.x;
-	Y = -World.z;
+	X = World.x + Global.scenery_origin.x;
+	Y = -World.z + Global.scenery_origin.y;
 }
 
 // places a world point on screen using the camera of the most recent colour pass. the engine renders
@@ -89,6 +91,200 @@ void plan_panel::render_contents()
 	render_toolbar();
 	render_gaps();
 	render_storage();
+	render_newmap_dialog();
+	render_location_dialog();
+}
+
+void plan_panel::render_newmap_dialog()
+{
+	if (false == ImGui::BeginPopupModal("New map", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		return;
+	}
+
+	ImGui::TextUnformatted("What is this scenery going to be?");
+	ImGui::Spacing();
+
+	if (ImGui::Button("Fictional", ImVec2(160.0f, 0.0f)))
+	{
+		start_map(false, 0.0, 0.0);
+		ImGui::CloseCurrentPopup();
+	}
+	ImGui::SameLine();
+	ImGui::TextDisabled("coordinates mean nothing outside the scenery");
+
+	if (ImGui::Button("Real place", ImVec2(160.0f, 0.0f)))
+	{
+		// start the picker on the middle of the country, showing the whole of it
+		m_pickingplace = true;
+		m_pickx = 500000.0;
+		m_picky = 350000.0;
+		m_mapviewx = m_pickx;
+		m_mapviewy = m_picky;
+		m_mapscale = 0.0;
+		ImGui::CloseCurrentPopup();
+		ImGui::OpenPopup("Scenery location");
+	}
+	ImGui::SameLine();
+	ImGui::TextDisabled("pin the scenery's zero to a point in Poland");
+
+	ImGui::Spacing();
+	if (ImGui::Button("Cancel"))
+	{
+		ImGui::CloseCurrentPopup();
+	}
+
+	ImGui::EndPopup();
+}
+
+void plan_panel::render_location_dialog()
+{
+	if (m_pickingplace)
+	{
+		// the popup has to be opened from the same stack level it is drawn on
+		ImGui::OpenPopup("Scenery location");
+		m_pickingplace = false;
+	}
+
+	if (false == ImGui::BeginPopupModal("Scenery location", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		return;
+	}
+
+	ImVec2 const mapsize{560.0f, 460.0f};
+	auto const origin{ImGui::GetCursorScreenPos()};
+	ImGui::InvisibleButton("poland_map", mapsize);
+	auto const hovered{ImGui::IsItemHovered()};
+
+	auto const &outline{editor::poland_outline()};
+	auto const &places{editor::poland_places()};
+
+	// fit the whole country the first time round; afterwards the wheel decides
+	if (m_mapscale <= 0.0)
+	{
+		auto minx{std::numeric_limits<double>::max()};
+		auto miny{std::numeric_limits<double>::max()};
+		auto maxx{std::numeric_limits<double>::lowest()};
+		auto maxy{std::numeric_limits<double>::lowest()};
+		for (auto const &point : outline)
+		{
+			minx = std::min(minx, point.x);
+			maxx = std::max(maxx, point.x);
+			miny = std::min(miny, point.y);
+			maxy = std::max(maxy, point.y);
+		}
+		m_mapviewx = (minx + maxx) * 0.5;
+		m_mapviewy = (miny + maxy) * 0.5;
+		m_mapscale = std::min(mapsize.x / std::max(1.0, maxx - minx), mapsize.y / std::max(1.0, maxy - miny)) * 0.92;
+	}
+
+	ImVec2 const centre{origin.x + mapsize.x * 0.5f, origin.y + mapsize.y * 0.5f};
+	auto const to_screen = [&](double const X, double const Y) {
+		return ImVec2{centre.x + static_cast<float>((X - m_mapviewx) * m_mapscale), centre.y - static_cast<float>((Y - m_mapviewy) * m_mapscale)};
+	};
+	auto const to_map = [&](ImVec2 const &Point, double &X, double &Y) {
+		X = m_mapviewx + (Point.x - centre.x) / m_mapscale;
+		Y = m_mapviewy - (Point.y - centre.y) / m_mapscale;
+	};
+
+	auto const mouse{ImGui::GetIO().MousePos};
+	if (hovered && ImGui::GetIO().MouseWheel != 0.0f)
+	{
+		double anchorx{0.0};
+		double anchory{0.0};
+		to_map(mouse, anchorx, anchory);
+		m_mapscale = std::clamp(m_mapscale * std::pow(1.2, ImGui::GetIO().MouseWheel), 1e-5, 1.0);
+		m_mapviewx = anchorx - (mouse.x - centre.x) / m_mapscale;
+		m_mapviewy = anchory + (mouse.y - centre.y) / m_mapscale;
+	}
+	if (hovered && ImGui::IsMouseClicked(0))
+	{
+		to_map(mouse, m_pickx, m_picky);
+	}
+
+	auto *drawlist{ImGui::GetWindowDrawList()};
+	drawlist->PushClipRect(origin, ImVec2(origin.x + mapsize.x, origin.y + mapsize.y), true);
+	drawlist->AddRectFilled(origin, ImVec2(origin.x + mapsize.x, origin.y + mapsize.y), IM_COL32(22, 30, 38, 255));
+
+	std::vector<ImVec2> border;
+	border.reserve(outline.size());
+	for (auto const &point : outline)
+	{
+		border.push_back(to_screen(point.x, point.y));
+	}
+	drawlist->AddPolyline(border.data(), static_cast<int>(border.size()), IM_COL32(120, 190, 140, 255), true, 1.5f);
+
+	for (auto const &place : places)
+	{
+		auto const point{to_screen(place.position.x, place.position.y)};
+		drawlist->AddCircleFilled(point, 3.0f, IM_COL32(200, 200, 200, 255));
+		drawlist->AddText(ImVec2(point.x + 5.0f, point.y - 6.0f), IM_COL32(190, 190, 190, 255), place.name.c_str());
+	}
+
+	auto const picked{to_screen(m_pickx, m_picky)};
+	drawlist->AddCircleFilled(picked, 5.0f, IM_COL32(255, 210, 90, 255));
+	drawlist->AddLine(ImVec2(picked.x - 12.0f, picked.y), ImVec2(picked.x + 12.0f, picked.y), IM_COL32(255, 210, 90, 200));
+	drawlist->AddLine(ImVec2(picked.x, picked.y - 12.0f), ImVec2(picked.x, picked.y + 12.0f), IM_COL32(255, 210, 90, 200));
+
+	drawlist->PopClipRect();
+
+	ImGui::TextDisabled("schematic outline - click to place the scenery's zero, wheel zooms");
+
+	ImGui::SetNextItemWidth(180.0f);
+	ImGui::InputDouble("easting", &m_pickx, 100.0, 1000.0, "%.0f");
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(180.0f);
+	ImGui::InputDouble("northing", &m_picky, 100.0, 1000.0, "%.0f");
+
+	ImGui::SetNextItemWidth(220.0f);
+	if (ImGui::BeginCombo("go to", "pick a city"))
+	{
+		for (auto const &place : places)
+		{
+			if (ImGui::Selectable(place.name.c_str()))
+			{
+				m_pickx = place.position.x;
+				m_picky = place.position.y;
+				m_mapviewx = m_pickx;
+				m_mapviewy = m_picky;
+			}
+		}
+		ImGui::EndCombo();
+	}
+
+	ImGui::Spacing();
+	if (ImGui::Button("Use this place", ImVec2(160.0f, 0.0f)))
+	{
+		start_map(true, m_pickx, m_picky);
+		ImGui::CloseCurrentPopup();
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Cancel"))
+	{
+		ImGui::CloseCurrentPopup();
+	}
+
+	ImGui::EndPopup();
+}
+
+void plan_panel::start_map(bool const Georeferenced, double const Originx, double const Originy)
+{
+	Global.scenery_georeferenced = Georeferenced;
+	Global.scenery_origin = {Originx, Originy};
+
+	m_document.niwelety.clear();
+	m_document.niwelety.push_back({"niweleta 1", {}, {}});
+	m_niweleta = 0;
+	m_pending = false;
+	m_draggedvertex = -1;
+	solve();
+
+	// the scenery's zero is where the work starts, whichever frame it stands for
+	auto &camera{editor_mode::get_camera()};
+	camera.Pos.x = 0.0;
+	camera.Pos.z = 0.0;
+
+	m_status = Georeferenced ? "map pinned at " + to_string(Originx, 0) + ", " + to_string(Originy, 0) + " (EPSG:2180)" : "fictional map";
 }
 
 void plan_panel::handle_scene()
@@ -228,8 +424,21 @@ void plan_panel::render_toolbar()
 
 	ImGui::Text("top-down view, %.0f m across", Global.editor_ortho_extent * 2.0f);
 	ImGui::TextDisabled("click the scenery to lay points, drag a point to move it, wheel zooms");
+	if (Global.scenery_georeferenced)
+	{
+		ImGui::Text("zero at %.0f, %.0f (EPSG:2180)", Global.scenery_origin.x, Global.scenery_origin.y);
+	}
+	else
+	{
+		ImGui::TextDisabled("fictional map, no georeference");
+	}
 	ImGui::Separator();
 
+	if (ImGui::Button("New map"))
+	{
+		ImGui::OpenPopup("New map");
+	}
+	ImGui::SameLine();
 	if (ImGui::Button("New niweleta"))
 	{
 		m_document.niwelety.push_back({"niweleta " + std::to_string(m_document.niwelety.size() + 1), {}, {}});

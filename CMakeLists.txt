@@ -167,6 +167,8 @@ set(SOURCES
 "application/driveruipanels.cpp"
 "input/editorkeyboardinput.cpp"
 "editor/editorSettings.cpp"
+"editor/puwg1992.cpp"
+"editor/polandmap.cpp"
 "editor/editorTerrain.cpp"
 "editor/editorTerrainStreamer.cpp"
 "application/editormode.cpp"

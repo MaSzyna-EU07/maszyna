@@ -32,6 +32,11 @@ class plan_panel : public ui_panel
 	void render_toolbar();
 	void render_gaps();
 	void render_storage();
+	// asks what kind of scenery is being started, and where on the map it sits
+	void render_newmap_dialog();
+	void render_location_dialog();
+	// clears the drawing and sets the point of EPSG:2180 that the scenery's zero stands for
+	void start_map(bool const Georeferenced, double const Originx, double const Originy);
 	// paints the solved plan over the rendered scenery and takes the clicks that build it
 	void handle_scene();
 	void draw_on_scene();
@@ -64,4 +69,11 @@ class plan_panel : public ui_panel
 	double m_pendingy{0.0};
 	std::string m_status;
 	char m_path[256]{"editor/plan.m0s"};
+	// location picker: the point being considered, and the view over the schematic map of Poland
+	bool m_pickingplace{false};
+	double m_pickx{0.0};
+	double m_picky{0.0};
+	double m_mapviewx{0.0};
+	double m_mapviewy{0.0};
+	double m_mapscale{0.0};
 };

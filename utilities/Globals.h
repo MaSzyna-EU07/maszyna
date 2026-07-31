@@ -82,6 +82,10 @@ struct global_settings {
     // rzut z góry bez perspektywy, do kreślenia planu torowiska na tle wczytanej scenerii
     bool editor_ortho{ false };
     float editor_ortho_extent{ 250.f }; // połowa wysokości widoku w metrach, czyli zoom rzutu
+    // punkt EPSG:2180 odpowiadający zeru scenerii. Bez tego sceneria jest fikcyjna i jej współrzędne
+    // nie znaczą nic poza nią samą
+    bool scenery_georeferenced{ false };
+    glm::dvec2 scenery_origin{ 0.0, 0.0 };
     std::string local_start_vehicle{ "EU07-424" };
     int iConvertModels{ 0 }; // tworzenie plików binarnych
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan
