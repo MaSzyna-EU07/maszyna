@@ -210,11 +210,10 @@ void plan_panel::render_location_dialog()
 	{
 		// the picture on screen is the one that was fetched, which may lag the current view by a
 		// request; drawing it against its own box keeps it registered while the new one arrives
+		// the image arrives with its first row at the north edge, so the default texture coordinates
+		// already line up: the first row belongs at the top, against the box's northern edge
 		auto const &covered{m_topomap.covered()};
-		// the image arrives with its first row at the north edge, which is the opposite of what the
-		// default texture coordinates assume, so the vertical ones are swapped
-		drawlist->AddImage(reinterpret_cast<ImTextureID>(static_cast<intptr_t>(backdrop)), to_screen(covered.min_x, covered.max_y), to_screen(covered.max_x, covered.min_y), ImVec2(0.0f, 1.0f),
-		                   ImVec2(1.0f, 0.0f));
+		drawlist->AddImage(reinterpret_cast<ImTextureID>(static_cast<intptr_t>(backdrop)), to_screen(covered.min_x, covered.max_y), to_screen(covered.max_x, covered.min_y));
 	}
 
 	auto const picked{to_screen(m_pickx, m_picky)};
@@ -352,9 +351,8 @@ void plan_panel::draw_on_scene()
 			{
 				continue;
 			}
-			// same north-first row order as the picker's base map, so the same swap applies
-			drawlist->AddImageQuad(reinterpret_cast<ImTextureID>(static_cast<intptr_t>(tile.texture)), corners[0], corners[1], corners[2], corners[3], ImVec2(0.0f, 1.0f), ImVec2(1.0f, 1.0f),
-			                       ImVec2(1.0f, 0.0f), ImVec2(0.0f, 0.0f));
+			// first row is the northern edge, which is the corner the default coordinates start from
+			drawlist->AddImageQuad(reinterpret_cast<ImTextureID>(static_cast<intptr_t>(tile.texture)), corners[0], corners[1], corners[2], corners[3]);
 		}
 	}
 
@@ -514,7 +512,7 @@ void plan_panel::render_gaps()
 		return;
 	}
 
-	ImGui::BeginChild("plan_gaps", ImVec2(0.0f, 130.0f), false);
+	ImGui::BeginChild("plan_gaps", ImVec2(0.0f, 220.0f), false);
 	for (std::size_t gap = 0; gap < niweleta->fits.size(); ++gap)
 	{
 		auto &fit{niweleta->fits[gap]};
@@ -522,16 +520,23 @@ void plan_panel::render_gaps()
 
 		ImGui::Text("gap %d", static_cast<int>(gap));
 		ImGui::SameLine(70.0f);
-		ImGui::SetNextItemWidth(150.0f);
-		if (ImGui::Combo("##mode", &fit.mode, "none\0arc\0arc + clothoids\0"))
+		ImGui::SetNextItemWidth(170.0f);
+		// the library numbers these; 3 is the unified compound, any number of arcs eased by clothoids
+		if (ImGui::Combo("##mode", &fit.mode, "none\0arc\0arc + clothoids\0compound\0"))
 		{
 			if (fit.mode != 0 && fit.radius <= 0.0)
 			{
 				fit.radius = 300.0; // something drawable to start from, rather than a rejected fit
 			}
+			if (fit.mode == 3 && fit.arcs.empty())
+			{
+				// a basket needs at least two arcs to be one; the last absorbs the leftover deflection
+				fit.arcs.push_back({600.0, 60.0, 0.0});
+				fit.arcs.push_back({300.0, 0.0, 0.0});
+			}
 			solve();
 		}
-		if (fit.mode != 0)
+		if (fit.mode == 1 || fit.mode == 2)
 		{
 			ImGui::SameLine();
 			ImGui::SetNextItemWidth(120.0f);
@@ -549,6 +554,10 @@ void plan_panel::render_gaps()
 				solve();
 			}
 		}
+		if (fit.mode == 3)
+		{
+			render_compound(fit);
+		}
 		// a fit the library could not produce is simply absent from its answer; say so rather than
 		// leaving the parameters looking as though they took effect
 		if (fit.mode != 0 && false == fit_applied(gap))
@@ -560,6 +569,83 @@ void plan_panel::render_gaps()
 		ImGui::PopID();
 	}
 	ImGui::EndChild();
+}
+
+void plan_panel::render_compound(maj0sted::web::GapFit &Fit)
+{
+	ImGui::Indent();
+
+	ImGui::SetNextItemWidth(110.0f);
+	if (ImGui::InputDouble("entry", &Fit.entry_t, 5.0, 20.0, "%.1f"))
+	{
+		solve();
+	}
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(110.0f);
+	if (ImGui::InputDouble("exit", &Fit.exit_t, 5.0, 20.0, "%.1f"))
+	{
+		solve();
+	}
+	ImGui::SameLine();
+	ImGui::TextDisabled("end clothoids");
+
+	for (std::size_t i = 0; i < Fit.arcs.size(); ++i)
+	{
+		auto &arc{Fit.arcs[i]};
+		auto const last{i + 1 == Fit.arcs.size()};
+		ImGui::PushID(static_cast<int>(i));
+
+		ImGui::Text("%d.", static_cast<int>(i + 1));
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(110.0f);
+		if (ImGui::InputDouble("R", &arc.radius, 10.0, 100.0, "%.1f"))
+		{
+			solve();
+		}
+		// the closing arc takes up whatever deflection the earlier ones leave, so its length is not
+		// ours to set, and there is no arc after it to ease into
+		if (false == last)
+		{
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(110.0f);
+			if (ImGui::InputDouble("len", &arc.length, 10.0, 50.0, "%.1f"))
+			{
+				solve();
+			}
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(110.0f);
+			if (ImGui::InputDouble("ease", &arc.transition_to_next, 5.0, 20.0, "%.1f"))
+			{
+				solve();
+			}
+		}
+		else
+		{
+			ImGui::SameLine();
+			ImGui::TextDisabled("closes the curve");
+		}
+
+		ImGui::PopID();
+	}
+
+	if (ImGui::SmallButton("Add arc"))
+	{
+		// inserted before the closing arc, so that one stays the one that closes the curve
+		auto const radius{Fit.arcs.empty() ? 300.0 : Fit.arcs.back().radius};
+		Fit.arcs.insert(Fit.arcs.end() - (Fit.arcs.empty() ? 0 : 1), {radius, 60.0, 0.0});
+		solve();
+	}
+	if (Fit.arcs.size() > 2)
+	{
+		ImGui::SameLine();
+		if (ImGui::SmallButton("Remove arc"))
+		{
+			Fit.arcs.erase(Fit.arcs.end() - 2);
+			solve();
+		}
+	}
+
+	ImGui::Unindent();
 }
 
 void plan_panel::render_storage()

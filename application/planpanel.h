@@ -32,6 +32,8 @@ class plan_panel : public ui_panel
 	// methods
 	void render_toolbar();
 	void render_gaps();
+	// parameters of a basket curve: the end clothoids and the chain of arcs between them
+	void render_compound(maj0sted::web::GapFit &Fit);
 	void render_storage();
 	// asks what kind of scenery is being started, and where on the map it sits
 	void render_newmap_dialog();

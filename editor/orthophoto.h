@@ -68,6 +68,11 @@ class orthophoto_source
 	void worker();
 	// decodes the cached bytes of a tile and uploads them; returns 0 when the image is unusable
 	unsigned int upload(maj0sted::web::TileKey const &Key);
+	// imagery of a given piece of ground never changes, so a fetched tile is kept on disk and the
+	// next session starts with it instead of going back to a service that is slow and flaky
+	static std::string tile_path(maj0sted::web::TileKey const &Key);
+	bool load_from_disk(maj0sted::web::TileKey const &Key);
+	void save_to_disk(maj0sted::web::TileKey const &Key);
 	// members
 	maj0sted::web::TileService m_service;
 	std::unordered_map<maj0sted::web::TileKey, unsigned int, maj0sted::web::TileKeyHash> m_textures;

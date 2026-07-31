@@ -230,6 +230,12 @@ std::vector<orthophoto_source::ready_tile> orthophoto_source::collect(maj0sted::
 	std::vector<ready_tile> tiles;
 	for (auto const &key : maj0sted::web::TileGrid::tiles_for_view(View, maj0sted::web::TileGrid::kLevel, Maxtiles))
 	{
+		// a tile kept from an earlier session seeds the cache, so no request goes out for it at all
+		if (false == m_service.has(key))
+		{
+			load_from_disk(key);
+		}
+
 		auto const status = m_service.request(key);
 		if (status == maj0sted::web::TileStatus::Failed)
 		{
@@ -244,6 +250,8 @@ std::vector<orthophoto_source::ready_tile> orthophoto_source::collect(maj0sted::
 		auto found = m_textures.find(key);
 		if (found == m_textures.end())
 		{
+			// the first time a tile is drawn is also the moment its bytes are known to be good
+			save_to_disk(key);
 			found = m_textures.emplace(key, upload(key)).first;
 		}
 		if (found->second != 0)
@@ -286,6 +294,53 @@ unsigned int orthophoto_source::upload(maj0sted::web::TileKey const &Key)
 	stbi_image_free(pixels);
 
 	return texture;
+}
+
+std::string orthophoto_source::tile_path(maj0sted::web::TileKey const &Key)
+{
+	return "editor/cache/orto/" + std::to_string(Key.zoom) + "_" + std::to_string(Key.x) + "_" + std::to_string(Key.y) + ".img";
+}
+
+bool orthophoto_source::load_from_disk(maj0sted::web::TileKey const &Key)
+{
+	std::ifstream file(tile_path(Key), std::ios::binary);
+	if (false == file.is_open())
+	{
+		return false;
+	}
+
+	std::vector<std::uint8_t> bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+	if (bytes.empty())
+	{
+		return false;
+	}
+
+	m_service.store(Key, std::move(bytes));
+
+	return true;
+}
+
+void orthophoto_source::save_to_disk(maj0sted::web::TileKey const &Key)
+{
+	auto const *image = m_service.peek(Key);
+	if (image == nullptr || image->bytes.empty())
+	{
+		return;
+	}
+
+	auto const path = tile_path(Key);
+	std::error_code error;
+	std::filesystem::create_directories(std::filesystem::path(path).parent_path(), error);
+	if (std::filesystem::exists(path, error))
+	{
+		return; // came from the disk in the first place
+	}
+
+	std::ofstream file(path, std::ios::binary);
+	if (file.is_open())
+	{
+		file.write(reinterpret_cast<char const *>(image->bytes.data()), static_cast<std::streamsize>(image->bytes.size()));
+	}
 }
 
 std::size_t orthophoto_source::pending() const
