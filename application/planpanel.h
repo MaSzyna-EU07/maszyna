@@ -24,6 +24,7 @@ class plan_panel : public ui_panel
   public:
 	plan_panel(std::string const &Name, bool const Isopen);
 
+	void update() override;
 	void render_contents() override;
 
   private:

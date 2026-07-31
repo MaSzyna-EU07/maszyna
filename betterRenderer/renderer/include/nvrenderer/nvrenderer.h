@@ -129,6 +129,16 @@ class NvRenderer : public gfx_renderer, public MaResourceRegistry {
   virtual TSubModel const *Pick_Control() const override;
   virtual scene::basic_node const *Pick_Node() const override;
   virtual glm::dvec3 Mouse_Position() const override;
+  // matrices of the most recent colour pass, for overlays drawn on top of the rendered world
+  virtual glm::mat4 Camera_View_Matrix() const override {
+    return static_cast<glm::mat4>(m_camera_view);
+  }
+  virtual glm::mat4 Camera_Projection_Matrix() const override {
+    return static_cast<glm::mat4>(m_camera_projection);
+  }
+  virtual glm::dvec3 Camera_Position() const override {
+    return m_camera_position;
+  }
   virtual void Update(double const Deltatime) override;
   virtual void Update_Pick_Control() override;
   virtual void Update_Pick_Node() override;
@@ -222,6 +232,12 @@ class NvRenderer : public gfx_renderer, public MaResourceRegistry {
 
   glm::dvec3 m_mouse_ro;
   glm::dvec3 m_mouse_rd;
+
+  // colour pass camera, kept so overlays can place world points on screen. the view matrix is
+  // camera-relative (rotation only), matching the camera-relative rendering used throughout
+  glm::dmat4 m_camera_view{1.};
+  glm::dmat4 m_camera_projection{1.};
+  glm::dvec3 m_camera_position{0.};
   TSubModel const *m_picked_submodel = nullptr;
 
   using section_sequence = std::vector<scene::basic_section *>;

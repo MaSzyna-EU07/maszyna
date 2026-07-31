@@ -1591,7 +1591,19 @@ void opengl33_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
 		auto const zfar  = ( Zfar  > 1.f ? Zfar : Config.draw_range * Zfar );
 		auto const znear = ( Znear > 1.f ? Znear : Znear > 0.f ? Znear * zfar : 0.1f * Global.ZoomFactor);
 
-		camera.projection() = perspective_projection(Viewport.projection, znear, zfar, frustumtest_proj);
+		// the editor's top-down plan view drops the perspective, so distances read the same wherever
+		// they sit on screen; the off-axis virtual screen above has no meaning then
+		if (Global.editor_ortho && Viewport.main && Viewport.proj_type == viewport_config::normal)
+		{
+			auto const halfheight = Global.editor_ortho_extent;
+			auto const halfwidth = halfheight * std::max(1.f, (float)Global.window_size.x) / std::max(1.f, (float)Global.window_size.y);
+			camera.projection() = ortho_projection(-halfwidth, halfwidth, -halfheight, halfheight, znear, zfar);
+			frustumtest_proj = ortho_frustumtest_projection(-halfwidth, halfwidth, -halfheight, halfheight, znear, zfar);
+		}
+		else
+		{
+			camera.projection() = perspective_projection(Viewport.projection, znear, zfar, frustumtest_proj);
+		}
 		break;
 	}
 	case rendermode::shadows:

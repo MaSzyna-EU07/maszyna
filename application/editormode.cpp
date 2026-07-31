@@ -1307,9 +1307,40 @@ void editor_mode::render_gizmo()
     }
 }
 
+void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
+{
+    if (false == Global.editor_ortho)
+    {
+        return;
+    }
+    // in the plan view the wheel decides how much ground fits on screen; the camera itself stays put,
+    // because with no perspective its height changes nothing but the clipping
+    Global.editor_ortho_extent = std::clamp(Global.editor_ortho_extent * std::pow(0.85f, static_cast<float>(Yoffset)), 5.0f, 20000.0f);
+}
+
 void editor_mode::update_camera(double const Deltatime)
 {
     Camera.Update();
+
+    // the plan view looks straight down. the camera keeps its ground position, so panning works just
+    // as it does in the perspective view, but the orientation is pinned and handed back on the way out
+    if (Global.editor_ortho)
+    {
+        if (false == m_orthoactive)
+        {
+            m_orthoangle = Camera.Angle;
+            m_orthoactive = true;
+        }
+        Camera.Angle.x = glm::radians(-90.0f);
+        Camera.Angle.z = 0.0f;
+        // high enough to clear anything the scenery may have under the cursor
+        Camera.Pos.y = std::max(Camera.Pos.y, 500.0);
+    }
+    else if (m_orthoactive)
+    {
+        Camera.Angle = m_orthoangle;
+        m_orthoactive = false;
+    }
 
     // focus animation runs after Camera.Update() so it overrides any residual velocity/rotation;
     // it smoothly drives both position and orientation toward the framed object
@@ -1391,6 +1422,7 @@ void editor_mode::enter()
 void editor_mode::exit()
 {
     EditorModeFlag = false;
+    Global.editor_ortho = false; // the plan view must not follow us out of the editor
     Global.ControlPicking = m_statebackup.picking;
     FreeFlyModeFlag = m_statebackup.freefly;
     Global.pCamera = m_statebackup.camera;

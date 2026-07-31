@@ -79,6 +79,9 @@ struct global_settings {
 	std::string SceneryFile;
     // uruchomienie prosto do edytora, z pominięciem symulacji; edytor jest wtedy trybem podstawowym
     bool editor_startup{ false };
+    // rzut z góry bez perspektywy, do kreślenia planu torowiska na tle wczytanej scenerii
+    bool editor_ortho{ false };
+    float editor_ortho_extent{ 250.f }; // połowa wysokości widoku w metrach, czyli zoom rzutu
     std::string local_start_vehicle{ "EU07-424" };
     int iConvertModels{ 0 }; // tworzenie plików binarnych
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan

@@ -39,10 +39,7 @@ class editor_mode : public application_mode
 	void on_key(int Key, int Scancode, int Action, int Mods) override;
 	void on_cursor_pos(double Horizontal, double Vertical) override;
 	void on_mouse_button(int Button, int Action, int Mods) override;
-	void on_scroll(double const Xoffset, double const Yoffset) override
-	{
-		;
-	}
+	void on_scroll(double const Xoffset, double const Yoffset) override;
 	void on_window_resize(int w, int h) override
 	{
 		;
@@ -107,6 +104,10 @@ class editor_mode : public application_mode
 	state_backup m_statebackup; // helper, cached variables to be restored on mode exit
 	editormode_input m_input;
 	static TCamera Camera;
+
+	// camera orientation from before the plan view took over, to be handed back when it is left
+	bool m_orthoactive{false};
+	glm::vec3 m_orthoangle{0.0f};
 
 	// focus (smooth camera fly-to) state
 	static bool m_focus_active;

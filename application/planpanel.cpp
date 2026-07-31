@@ -83,8 +83,19 @@ plan_panel::plan_panel(std::string const &Name, bool const Isopen) : ui_panel(Na
 	solve();
 }
 
+void plan_panel::update()
+{
+	// the plan belongs on the scenery itself, so opening the tool puts the viewport into the
+	// distortion-free view from above and closing it hands the camera back
+	Global.editor_ortho = is_open;
+}
+
 void plan_panel::render_contents()
 {
+	ImGui::Text("view: top-down, %.0f m across", Global.editor_ortho_extent * 2.0f);
+	ImGui::SameLine();
+	ImGui::TextDisabled("(wheel over the scenery zooms it)");
+
 	render_toolbar();
 	render_canvas();
 	render_gaps();

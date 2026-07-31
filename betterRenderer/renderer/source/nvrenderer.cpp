@@ -352,9 +352,26 @@ bool NvRenderer::Render() {
 
       double fov = glm::radians(static_cast<double>(Global.FieldOfView) /
                                 Global.ZoomFactor);
-      glm::dmat4 projection = glm::perspectiveFovRH_ZO(
-          fov, static_cast<double>(Global.window_size.x),
-          static_cast<double>(Global.window_size.y), pass.m_draw_range, .1);
+
+      // the track plan is drawn on a distortion-free view from above, so the whole pass switches to
+      // an orthographic projection. everything downstream - the mouse ray below, the frustum test,
+      // the shadow fitting - reads this matrix, so nothing else needs to know which one it is
+      double const orthoheight = Global.editor_ortho_extent;
+      double const orthowidth =
+          orthoheight * static_cast<double>(Global.window_size.x) /
+          std::max(1., static_cast<double>(Global.window_size.y));
+      glm::dmat4 projection =
+          Global.editor_ortho
+              ? glm::orthoRH_ZO(-orthowidth, orthowidth, -orthoheight,
+                                orthoheight, pass.m_draw_range, .1)
+              : glm::perspectiveFovRH_ZO(
+                    fov, static_cast<double>(Global.window_size.x),
+                    static_cast<double>(Global.window_size.y),
+                    pass.m_draw_range, .1);
+
+      m_camera_view = transform;
+      m_camera_projection = projection;
+      m_camera_position = pass.m_origin;
 
       SingleFrustumTester frustum_tester{projection, transform};
       DrawConstants draw_constants{};
@@ -471,11 +488,15 @@ bool NvRenderer::Render() {
 
         glm::vec3 light_color, light_direction;
         m_sky->CalcLighting(light_direction, light_color);
+        // cascades are fitted to what the camera actually sees, so they follow the plan view too
         m_shadow_map->CalcCascades(
-            glm::perspectiveFovRH_ZO(fov,
-                                     static_cast<double>(Global.window_size.x),
-                                     static_cast<double>(Global.window_size.y),
-                                     .1, pass.m_draw_range),
+            Global.editor_ortho
+                ? glm::orthoRH_ZO(-orthowidth, orthowidth, -orthoheight,
+                                  orthoheight, .1, pass.m_draw_range)
+                : glm::perspectiveFovRH_ZO(
+                      fov, static_cast<double>(Global.window_size.x),
+                      static_cast<double>(Global.window_size.y), .1,
+                      pass.m_draw_range),
             transform, -light_direction);
         m_shadow_map->UpdateConstants(command_list);
         m_gbuffer_shadow->Clear(command_list);
