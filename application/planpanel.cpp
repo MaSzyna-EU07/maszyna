@@ -158,8 +158,6 @@ void plan_panel::render_location_dialog()
 	ImGui::InvisibleButton("poland_map", mapsize);
 	auto const hovered{ImGui::IsItemHovered()};
 
-	auto const &places{editor::poland_places()};
-
 	// fit the whole country the first time round; afterwards the wheel decides
 	if (m_mapscale <= 0.0)
 	{
@@ -213,14 +211,10 @@ void plan_panel::render_location_dialog()
 		// the picture on screen is the one that was fetched, which may lag the current view by a
 		// request; drawing it against its own box keeps it registered while the new one arrives
 		auto const &covered{m_topomap.covered()};
-		drawlist->AddImage(reinterpret_cast<ImTextureID>(static_cast<intptr_t>(backdrop)), to_screen(covered.min_x, covered.max_y), to_screen(covered.max_x, covered.min_y));
-	}
-
-	for (auto const &place : places)
-	{
-		auto const point{to_screen(place.position.x, place.position.y)};
-		drawlist->AddCircleFilled(point, 3.0f, IM_COL32(200, 200, 200, 255));
-		drawlist->AddText(ImVec2(point.x + 5.0f, point.y - 6.0f), IM_COL32(190, 190, 190, 255), place.name.c_str());
+		// the image arrives with its first row at the north edge, which is the opposite of what the
+		// default texture coordinates assume, so the vertical ones are swapped
+		drawlist->AddImage(reinterpret_cast<ImTextureID>(static_cast<intptr_t>(backdrop)), to_screen(covered.min_x, covered.max_y), to_screen(covered.max_x, covered.min_y), ImVec2(0.0f, 1.0f),
+		                   ImVec2(1.0f, 0.0f));
 	}
 
 	auto const picked{to_screen(m_pickx, m_picky)};
@@ -237,22 +231,6 @@ void plan_panel::render_location_dialog()
 	ImGui::SameLine();
 	ImGui::SetNextItemWidth(180.0f);
 	ImGui::InputDouble("northing", &m_picky, 100.0, 1000.0, "%.0f");
-
-	ImGui::SetNextItemWidth(220.0f);
-	if (ImGui::BeginCombo("go to", "pick a city"))
-	{
-		for (auto const &place : places)
-		{
-			if (ImGui::Selectable(place.name.c_str()))
-			{
-				m_pickx = place.position.x;
-				m_picky = place.position.y;
-				m_mapviewx = m_pickx;
-				m_mapviewy = m_picky;
-			}
-		}
-		ImGui::EndCombo();
-	}
 
 	ImGui::Spacing();
 	if (ImGui::Button("Use this place", ImVec2(160.0f, 0.0f)))
@@ -374,7 +352,9 @@ void plan_panel::draw_on_scene()
 			{
 				continue;
 			}
-			drawlist->AddImageQuad(reinterpret_cast<ImTextureID>(static_cast<intptr_t>(tile.texture)), corners[0], corners[1], corners[2], corners[3]);
+			// same north-first row order as the picker's base map, so the same swap applies
+			drawlist->AddImageQuad(reinterpret_cast<ImTextureID>(static_cast<intptr_t>(tile.texture)), corners[0], corners[1], corners[2], corners[3], ImVec2(0.0f, 1.0f), ImVec2(1.0f, 1.0f),
+			                       ImVec2(1.0f, 0.0f), ImVec2(0.0f, 0.0f));
 		}
 	}
 

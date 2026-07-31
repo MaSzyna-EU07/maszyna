@@ -9,25 +9,13 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include <string>
-#include <vector>
-
 #include <glm/glm.hpp>
 
 namespace editor
 {
 
-// a named point to start a scenery from, in EPSG:2180 metres
-struct map_place
-{
-	std::string name;
-	glm::dvec2 position;
-};
-
-// larger cities, to put the view somewhere recognisable before picking the exact spot
-std::vector<map_place> const &poland_places();
-
-// the whole country's extent in EPSG:2180 metres, as the starting view of a location picker
+// the whole country's extent in EPSG:2180 metres, as the opening view of a location picker. from
+// there the base map itself carries the detail, so nothing else has to be drawn on top of it
 void poland_extent(glm::dvec2 &Min, glm::dvec2 &Max);
 
 } // namespace editor

@@ -1121,6 +1121,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 	}
 
 	// process command line arguments
+	auto scenerywasasked = false;
 	for (int i = 1; i < Argc; ++i)
 	{
 
@@ -1131,6 +1132,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			if (i + 1 < Argc)
 			{
 				Global.SceneryFile = ToLower(Argv[++i]);
+				scenerywasasked = true;
 			}
 		}
 		else if (token == "-v")
@@ -1153,10 +1155,11 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		}
 	}
 
-	if (Global.editor_startup && Global.SceneryFile.empty())
+	if (Global.editor_startup && false == scenerywasasked)
 	{
-		// the editor needs a loaded world, but not necessarily anything in it - an empty scenery gives
-		// just the region, the lighting and the clock, with no rolling stock and no timetables
+		// the editor opens on empty ground unless a scenery was actually asked for. whatever the ini
+		// happens to name is the last thing that was driven, which has nothing to do with editing; an
+		// empty scenery still gives the region, the lighting and the clock, just nothing standing on it
 		Global.SceneryFile = "pusta.scn";
 	}
 
