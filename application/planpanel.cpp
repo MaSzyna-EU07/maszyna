@@ -10,58 +10,49 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/planpanel.h"
 
+#include "application/editormode.h"
+#include "rendering/renderer.h"
 #include "utilities/Globals.h"
 
 namespace
 {
 
-// screen placement of the canvas together with the plan point it is centred on; rebuilt every frame
-// from the panel's view state, so the transform never goes stale against a resized window
-struct canvas_view
+// the plan works in the project's cartesian frame, the scenery in the engine's world space. with no
+// georeference set the two share an origin, so the mapping is just the naming of the axes: easting
+// runs along world x, northing against world z
+glm::dvec3 plan_to_world(double const X, double const Y)
 {
-	ImVec2 origin{0.f, 0.f};
-	ImVec2 size{0.f, 0.f};
-	double viewx{0.0};
-	double viewy{0.0};
-	double scale{1.0};
+	return {X, 0.0, -Y};
+}
 
-	ImVec2 centre() const { return {origin.x + size.x * 0.5f, origin.y + size.y * 0.5f}; }
-
-	// northing grows towards the top of the screen, so the vertical axis is flipped
-	ImVec2 to_screen(double const X, double const Y) const
-	{
-		auto const middle{centre()};
-		return {middle.x + static_cast<float>((X - viewx) * scale), middle.y - static_cast<float>((Y - viewy) * scale)};
-	}
-
-	void to_plan(ImVec2 const &Point, double &X, double &Y) const
-	{
-		auto const middle{centre()};
-		X = viewx + (Point.x - middle.x) / scale;
-		Y = viewy - (Point.y - middle.y) / scale;
-	}
-};
-
-// grid spacing is picked so the cells stay roughly the same size on screen whatever the zoom, and
-// always lands on a round number of metres a surveyor would recognise
-double grid_step(double const Scale)
+void world_to_plan(glm::dvec3 const &World, double &X, double &Y)
 {
-	auto const target{80.0 / std::max(Scale, 1e-6)}; // metres per cell at the wanted screen size
-	auto const magnitude{std::pow(10.0, std::floor(std::log10(std::max(target, 1e-6))))};
-	auto const steps = {1.0, 2.0, 5.0, 10.0};
-	for (auto const step : steps)
+	X = World.x;
+	Y = -World.z;
+}
+
+// places a world point on screen using the camera of the most recent colour pass. the engine renders
+// camera-relative, so the view matrix carries rotation only and the position is subtracted here
+bool world_to_screen(glm::dvec3 const &World, ImVec2 &Screen)
+{
+	auto const relative{glm::vec3(World - GfxRenderer->Camera_Position())};
+	auto const clip{GfxRenderer->Camera_Projection_Matrix() * GfxRenderer->Camera_View_Matrix() * glm::vec4(relative, 1.0f)};
+
+	if (clip.w <= 0.0f)
 	{
-		if (magnitude * step >= target)
-		{
-			return magnitude * step;
-		}
+		return false; // behind the camera
 	}
-	return magnitude * 10.0;
+
+	auto const ndc{glm::vec3(clip) / clip.w};
+	auto const display{ImGui::GetIO().DisplaySize};
+	Screen = {(ndc.x * 0.5f + 0.5f) * display.x, (0.5f - ndc.y * 0.5f) * display.y};
+
+	return true;
 }
 
 ImU32 element_colour(int const Kind, bool const Active)
 {
-	auto const alpha{Active ? 255 : 90};
+	auto const alpha{Active ? 255 : 110};
 	switch (Kind)
 	{
 	case 1: // arc
@@ -77,8 +68,8 @@ ImU32 element_colour(int const Kind, bool const Active)
 
 plan_panel::plan_panel(std::string const &Name, bool const Isopen) : ui_panel(Name, Isopen)
 {
-	size_min = {520, 460};
-	size_max = {2000, 1600};
+	size_min = {420, 240};
+	size_max = {900, 900};
 	m_document.niwelety.push_back({"niweleta 1", {}, {}});
 	solve();
 }
@@ -92,118 +83,31 @@ void plan_panel::update()
 
 void plan_panel::render_contents()
 {
-	ImGui::Text("view: top-down, %.0f m across", Global.editor_ortho_extent * 2.0f);
-	ImGui::SameLine();
-	ImGui::TextDisabled("(wheel over the scenery zooms it)");
+	handle_scene();
+	draw_on_scene();
 
 	render_toolbar();
-	render_canvas();
 	render_gaps();
 	render_storage();
 }
 
-void plan_panel::render_toolbar()
+void plan_panel::handle_scene()
 {
-	auto *niweleta{current_niweleta()};
-
-	if (ImGui::Button("New niweleta"))
+	// clicks that land on a panel belong to the panel, not to the ground under it
+	if (ImGui::GetIO().WantCaptureMouse)
 	{
-		m_document.niwelety.push_back({"niweleta " + std::to_string(m_document.niwelety.size() + 1), {}, {}});
-		m_niweleta = m_document.niwelety.size() - 1;
-		m_pending = false;
-		solve();
-	}
-	ImGui::SameLine();
-	if (ImGui::Button("Undo point"))
-	{
-		drop_last_vertex();
-	}
-	ImGui::SameLine();
-	if (ImGui::Button("Frame all"))
-	{
-		frame_all();
-	}
-	ImGui::SameLine();
-	ImGui::Checkbox("Draw", &m_drawing);
-
-	if (m_document.niwelety.size() > 1)
-	{
-		auto const preview{m_document.niwelety[m_niweleta].name};
-		ImGui::SetNextItemWidth(220.0f);
-		if (ImGui::BeginCombo("Edited", preview.c_str()))
-		{
-			for (std::size_t i = 0; i < m_document.niwelety.size(); ++i)
-			{
-				if (ImGui::Selectable(m_document.niwelety[i].name.c_str(), i == m_niweleta))
-				{
-					m_niweleta = i;
-					m_pending = false;
-				}
-			}
-			ImGui::EndCombo();
-		}
+		m_draggedvertex = -1;
+		return;
 	}
 
-	ImGui::Text("straights: %d, points: %d", niweleta != nullptr ? static_cast<int>(niweleta->straights.size()) : 0, static_cast<int>(vertex_count()));
-	ImGui::Separator();
-}
+	double cursorx{0.0};
+	double cursory{0.0};
+	world_to_plan(Global.pCamera.Pos + GfxRenderer->Mouse_Position(), cursorx, cursory);
 
-void plan_panel::render_canvas()
-{
-	auto const available{ImGui::GetContentRegionAvail()};
-	// the tables below the canvas need room of their own, but the canvas takes whatever is left
-	ImVec2 const canvassize{std::max(available.x, 240.0f), std::max(available.y - 210.0f, 200.0f)};
-
-	canvas_view view;
-	view.origin = ImGui::GetCursorScreenPos();
-	view.size = canvassize;
-	view.viewx = m_viewx;
-	view.viewy = m_viewy;
-	view.scale = m_scale;
-
-	ImGui::InvisibleButton("plan_canvas", canvassize);
-	auto const hovered{ImGui::IsItemHovered()};
 	auto const mouse{ImGui::GetIO().MousePos};
 
-	double mousex{0.0};
-	double mousey{0.0};
-	view.to_plan(mouse, mousex, mousey);
-
-	// zoom around the cursor, so the ground under it stays put
-	if (hovered && ImGui::GetIO().MouseWheel != 0.0f)
-	{
-		m_scale = std::clamp(m_scale * std::pow(1.15, ImGui::GetIO().MouseWheel), 0.002, 40.0);
-		view.scale = m_scale;
-		auto const middle{view.centre()};
-		m_viewx = mousex - (mouse.x - middle.x) / m_scale;
-		m_viewy = mousey + (mouse.y - middle.y) / m_scale;
-		view.viewx = m_viewx;
-		view.viewy = m_viewy;
-	}
-
-	// panning latches on, so the view keeps following the cursor once it leaves the canvas
-	if (hovered && ImGui::IsMouseDragging(1))
-	{
-		m_panning = true;
-	}
-	if (m_panning)
-	{
-		if (false == ImGui::IsMouseDragging(1))
-		{
-			m_panning = false;
-		}
-		else
-		{
-			auto const delta{ImGui::GetIO().MouseDelta};
-			m_viewx -= delta.x / m_scale;
-			m_viewy += delta.y / m_scale;
-			view.viewx = m_viewx;
-			view.viewy = m_viewy;
-		}
-	}
-
-	// grab an existing point before laying a new one, so corners can be nudged into place
-	if (hovered && ImGui::IsMouseClicked(0))
+	// grabbing an existing point comes first, so corners can be nudged into place
+	if (ImGui::IsMouseClicked(0))
 	{
 		m_draggedvertex = -1;
 		for (std::size_t i = 0; i < vertex_count(); ++i)
@@ -211,8 +115,12 @@ void plan_panel::render_canvas()
 			double x{0.0};
 			double y{0.0};
 			vertex_position(i, x, y);
-			auto const point{view.to_screen(x, y)};
-			if (std::abs(point.x - mouse.x) <= 6.0f && std::abs(point.y - mouse.y) <= 6.0f)
+			ImVec2 point;
+			if (false == world_to_screen(plan_to_world(x, y), point))
+			{
+				continue;
+			}
+			if (std::abs(point.x - mouse.x) <= 8.0f && std::abs(point.y - mouse.y) <= 8.0f)
 			{
 				m_draggedvertex = static_cast<int>(i);
 				break;
@@ -220,46 +128,29 @@ void plan_panel::render_canvas()
 		}
 		if (m_draggedvertex == -1 && m_drawing)
 		{
-			append_vertex(mousex, mousey);
+			append_vertex(cursorx, cursory);
 		}
 	}
+
 	if (m_draggedvertex != -1)
 	{
 		if (ImGui::IsMouseDown(0))
 		{
-			move_vertex(static_cast<std::size_t>(m_draggedvertex), mousex, mousey);
+			move_vertex(static_cast<std::size_t>(m_draggedvertex), cursorx, cursory);
 		}
 		else
 		{
 			m_draggedvertex = -1;
 		}
 	}
+}
 
-	auto *drawlist{ImGui::GetWindowDrawList()};
-	auto const canvasend{ImVec2(view.origin.x + canvassize.x, view.origin.y + canvassize.y)};
-	drawlist->PushClipRect(view.origin, canvasend, true);
-	drawlist->AddRectFilled(view.origin, canvasend, IM_COL32(24, 26, 30, 255));
+void plan_panel::draw_on_scene()
+{
+	// the background list paints over the rendered scenery but under every window, so the controls
+	// stay readable on top of the drawing
+	auto *drawlist{ImGui::GetBackgroundDrawList()};
 
-	// grid, with the project origin picked out
-	auto const step{grid_step(m_scale)};
-	double left{0.0};
-	double top{0.0};
-	double right{0.0};
-	double bottom{0.0};
-	view.to_plan(view.origin, left, top);
-	view.to_plan(canvasend, right, bottom);
-	for (auto x = std::floor(left / step) * step; x <= right; x += step)
-	{
-		auto const colour{std::abs(x) < step * 0.5 ? IM_COL32(90, 90, 110, 255) : IM_COL32(48, 50, 58, 255)};
-		drawlist->AddLine(view.to_screen(x, top), view.to_screen(x, bottom), colour);
-	}
-	for (auto y = std::floor(bottom / step) * step; y <= top; y += step)
-	{
-		auto const colour{std::abs(y) < step * 0.5 ? IM_COL32(90, 90, 110, 255) : IM_COL32(48, 50, 58, 255)};
-		drawlist->AddLine(view.to_screen(left, y), view.to_screen(right, y), colour);
-	}
-
-	// solved geometry: two rails per centreline, coloured by the kind of element they came from
 	std::vector<ImVec2> points;
 	for (std::size_t n = 0; n < m_solved.size(); ++n)
 	{
@@ -274,42 +165,109 @@ void plan_panel::render_canvas()
 			points.reserve(polyline.points.size());
 			for (auto const &point : polyline.points)
 			{
-				points.push_back(view.to_screen(point.x, point.y));
+				ImVec2 screen;
+				if (false == world_to_screen(plan_to_world(point.x, point.y), screen))
+				{
+					continue;
+				}
+				points.push_back(screen);
 			}
-			drawlist->AddPolyline(points.data(), static_cast<int>(points.size()), element_colour(polyline.kind, active), false, active ? 2.0f : 1.0f);
+			if (points.size() < 2)
+			{
+				continue;
+			}
+			drawlist->AddPolyline(points.data(), static_cast<int>(points.size()), element_colour(polyline.kind, active), false, active ? 2.5f : 1.5f);
 		}
 	}
 
-	// editable points of the niweleta being drawn, plus the corner still waiting for its partner
+	// editable points of the niweleta being drawn
 	for (std::size_t i = 0; i < vertex_count(); ++i)
 	{
 		double x{0.0};
 		double y{0.0};
 		vertex_position(i, x, y);
-		auto const point{view.to_screen(x, y)};
-		drawlist->AddCircleFilled(point, 4.0f, static_cast<int>(i) == m_draggedvertex ? IM_COL32(255, 240, 120, 255) : IM_COL32(235, 235, 235, 255));
+		ImVec2 screen;
+		if (false == world_to_screen(plan_to_world(x, y), screen))
+		{
+			continue;
+		}
+		drawlist->AddCircleFilled(screen, 5.0f, static_cast<int>(i) == m_draggedvertex ? IM_COL32(255, 240, 120, 255) : IM_COL32(240, 240, 240, 255));
 	}
+
+	// the corner still waiting for the one that closes its straight, and the rubber band to the cursor
+	auto const mouse{ImGui::GetIO().MousePos};
+	auto const overscenery{false == ImGui::GetIO().WantCaptureMouse};
 	if (m_pending)
 	{
-		auto const point{view.to_screen(m_pendingx, m_pendingy)};
-		drawlist->AddCircleFilled(point, 4.0f, IM_COL32(255, 240, 120, 255));
-		if (hovered)
+		ImVec2 screen;
+		if (world_to_screen(plan_to_world(m_pendingx, m_pendingy), screen))
 		{
-			drawlist->AddLine(point, mouse, IM_COL32(255, 240, 120, 160));
+			drawlist->AddCircleFilled(screen, 5.0f, IM_COL32(255, 240, 120, 255));
+			if (overscenery)
+			{
+				drawlist->AddLine(screen, mouse, IM_COL32(255, 240, 120, 170), 1.5f);
+			}
 		}
 	}
-	else if (hovered && m_drawing && m_draggedvertex == -1 && vertex_count() > 0)
+	else if (overscenery && m_drawing && m_draggedvertex == -1 && vertex_count() > 0)
 	{
 		double x{0.0};
 		double y{0.0};
 		vertex_position(vertex_count() - 1, x, y);
-		drawlist->AddLine(view.to_screen(x, y), mouse, IM_COL32(255, 240, 120, 160));
+		ImVec2 screen;
+		if (world_to_screen(plan_to_world(x, y), screen))
+		{
+			drawlist->AddLine(screen, mouse, IM_COL32(255, 240, 120, 170), 1.5f);
+		}
+	}
+}
+
+void plan_panel::render_toolbar()
+{
+	auto *niweleta{current_niweleta()};
+
+	ImGui::Text("top-down view, %.0f m across", Global.editor_ortho_extent * 2.0f);
+	ImGui::TextDisabled("click the scenery to lay points, drag a point to move it, wheel zooms");
+	ImGui::Separator();
+
+	if (ImGui::Button("New niweleta"))
+	{
+		m_document.niwelety.push_back({"niweleta " + std::to_string(m_document.niwelety.size() + 1), {}, {}});
+		m_niweleta = m_document.niwelety.size() - 1;
+		m_pending = false;
+		solve();
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Undo point"))
+	{
+		drop_last_vertex();
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Go to plan"))
+	{
+		go_to_plan();
+	}
+	ImGui::SameLine();
+	ImGui::Checkbox("Draw", &m_drawing);
+
+	if (m_document.niwelety.size() > 1)
+	{
+		ImGui::SetNextItemWidth(220.0f);
+		if (ImGui::BeginCombo("Edited", m_document.niwelety[m_niweleta].name.c_str()))
+		{
+			for (std::size_t i = 0; i < m_document.niwelety.size(); ++i)
+			{
+				if (ImGui::Selectable(m_document.niwelety[i].name.c_str(), i == m_niweleta))
+				{
+					m_niweleta = i;
+					m_pending = false;
+				}
+			}
+			ImGui::EndCombo();
+		}
 	}
 
-	drawlist->PopClipRect();
-
-	ImGui::Text("cursor: %.1f, %.1f m   grid: %g m   scale: %.3g px/m", mousex, mousey, step, m_scale);
-	ImGui::TextDisabled("left click lays a point, drag a point to move it, right drag pans, wheel zooms");
+	ImGui::Text("straights: %d, points: %d", niweleta != nullptr ? static_cast<int>(niweleta->straights.size()) : 0, static_cast<int>(vertex_count()));
 }
 
 void plan_panel::render_gaps()
@@ -326,7 +284,7 @@ void plan_panel::render_gaps()
 		return;
 	}
 
-	ImGui::BeginChild("plan_gaps", ImVec2(0.0f, 120.0f), false);
+	ImGui::BeginChild("plan_gaps", ImVec2(0.0f, 130.0f), false);
 	for (std::size_t gap = 0; gap < niweleta->fits.size(); ++gap)
 	{
 		auto &fit{niweleta->fits[gap]};
@@ -377,7 +335,7 @@ void plan_panel::render_gaps()
 void plan_panel::render_storage()
 {
 	ImGui::Separator();
-	ImGui::SetNextItemWidth(280.0f);
+	ImGui::SetNextItemWidth(240.0f);
 	ImGui::InputText("##path", m_path, sizeof(m_path));
 	ImGui::SameLine();
 	if (ImGui::Button("Save"))
@@ -399,7 +357,7 @@ void plan_panel::render_storage()
 			m_pending = false;
 			m_draggedvertex = -1;
 			solve();
-			frame_all();
+			go_to_plan();
 			m_status = "loaded " + std::string(m_path);
 		}
 		else
@@ -561,7 +519,7 @@ void plan_panel::drop_last_vertex()
 	solve();
 }
 
-void plan_panel::frame_all()
+void plan_panel::go_to_plan()
 {
 	auto minx{std::numeric_limits<double>::max()};
 	auto miny{std::numeric_limits<double>::max()};
@@ -581,16 +539,15 @@ void plan_panel::frame_all()
 
 	if (minx > maxx)
 	{
-		// nothing drawn yet: sit on the project origin at a scale that shows a few hundred metres
-		m_viewx = 0.0;
-		m_viewy = 0.0;
-		m_scale = 2.0;
-		return;
+		return; // nothing drawn yet, so there is nowhere to go
 	}
 
-	m_viewx = (minx + maxx) * 0.5;
-	m_viewy = (miny + maxy) * 0.5;
+	auto &camera{editor_mode::get_camera()};
+	auto const centre{plan_to_world((minx + maxx) * 0.5, (miny + maxy) * 0.5)};
+	camera.Pos.x = centre.x;
+	camera.Pos.z = centre.z;
 
+	// show the whole drawing with a little room around it
 	auto const span{std::max({maxx - minx, maxy - miny, 50.0})};
-	m_scale = std::clamp(400.0 / span, 0.002, 40.0);
+	Global.editor_ortho_extent = std::clamp(static_cast<float>(span * 0.6), 5.0f, 20000.0f);
 }

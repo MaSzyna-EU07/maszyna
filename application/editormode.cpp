@@ -1591,6 +1591,14 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
         return;
     }
 
+    // while the plan tool is up the left button belongs to it: it lays and moves the points of the
+    // track layout, so it must not also pick or place scenery nodes
+    if (Global.editor_ortho && Button == GLFW_MOUSE_BUTTON_LEFT)
+    {
+        m_input.mouse.button(Button, Action);
+        return;
+    }
+
     // in chunk-edit mode the left button adds a neighbouring chunk (Shift = delete the clicked one)
     if (m_chunk_edit && Button == GLFW_MOUSE_BUTTON_LEFT)
     {

@@ -14,10 +14,10 @@ http://mozilla.org/MPL/2.0/.
 #include "maj0sted/app/editor_document.hpp"
 #include "maj0sted/web/editor.hpp"
 
-// drawing board for track layout: straights laid down by hand and the curves fitted into the gaps
-// between them, in the project's own cartesian frame (EPSG:2180, metres). none of the geometry is
-// computed here - the panel collects the input, hands the whole document to maj0sted and paints
-// what comes back. scenery nodes are not touched.
+// track layout tool: straights laid down by hand on the scenery itself and the curves fitted into
+// the gaps between them. the panel holds only the controls - the drawing happens in the viewport,
+// which the tool puts into a top-down orthographic view for the purpose. none of the geometry is
+// computed here: maj0sted solves the whole document and the panel paints what comes back.
 class plan_panel : public ui_panel
 {
 
@@ -30,9 +30,11 @@ class plan_panel : public ui_panel
   private:
 	// methods
 	void render_toolbar();
-	void render_canvas();
 	void render_gaps();
 	void render_storage();
+	// paints the solved plan over the rendered scenery and takes the clicks that build it
+	void handle_scene();
+	void draw_on_scene();
 	// re-runs the solver over the whole document; cheap enough to do on every edit
 	void solve();
 	maj0sted::web::NiweletaSpec *current_niweleta();
@@ -48,23 +50,18 @@ class plan_panel : public ui_panel
 	void append_vertex(double const X, double const Y);
 	void move_vertex(std::size_t const Index, double const X, double const Y);
 	void drop_last_vertex();
-	// centres the view on the drawing, or on a default patch of ground when nothing is drawn yet
-	void frame_all();
+	// takes the camera to the middle of the drawing
+	void go_to_plan();
 	// members
 	maj0sted::app::EditorDocument m_document;
 	std::vector<maj0sted::web::NiweletaPolys> m_solved;
 	std::size_t m_niweleta{0}; // niweleta being drawn into
 	int m_draggedvertex{-1};
-	bool m_drawing{true}; // whether a click on the canvas lays track or only picks vertices
-	bool m_panning{false};
+	bool m_drawing{true}; // whether a click on the scenery lays track or only picks existing points
 	// first corner of a niweleta has nothing to attach to, so it waits for the second click
 	bool m_pending{false};
 	double m_pendingx{0.0};
 	double m_pendingy{0.0};
-	// view: the plan point sitting at the centre of the canvas, and the zoom in pixels per metre
-	double m_viewx{0.0};
-	double m_viewy{0.0};
-	double m_scale{2.0};
 	std::string m_status;
 	char m_path[256]{"editor/plan.m0s"};
 };
