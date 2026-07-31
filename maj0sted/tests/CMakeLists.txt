@@ -1,0 +1,49 @@
+add_executable(maj0sted_test_map_project test_map_project.cpp)
+target_link_libraries(maj0sted_test_map_project PRIVATE maj0sted::maj0sted)
+target_include_directories(maj0sted_test_map_project PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME map_project COMMAND maj0sted_test_map_project)
+
+add_executable(maj0sted_test_niweleta test_niweleta.cpp)
+target_link_libraries(maj0sted_test_niweleta PRIVATE maj0sted::maj0sted)
+target_include_directories(maj0sted_test_niweleta PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME niweleta COMMAND maj0sted_test_niweleta)
+
+add_executable(maj0sted_test_plan_alignment test_plan_alignment.cpp)
+target_link_libraries(maj0sted_test_plan_alignment PRIVATE maj0sted::maj0sted)
+target_include_directories(maj0sted_test_plan_alignment PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME plan_alignment COMMAND maj0sted_test_plan_alignment)
+
+add_executable(maj0sted_test_parallelism test_parallelism.cpp)
+target_link_libraries(maj0sted_test_parallelism PRIVATE maj0sted::maj0sted)
+target_include_directories(maj0sted_test_parallelism PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME parallelism COMMAND maj0sted_test_parallelism)
+
+add_executable(maj0sted_test_fitting test_fitting.cpp)
+target_link_libraries(maj0sted_test_fitting PRIVATE maj0sted::maj0sted)
+target_include_directories(maj0sted_test_fitting PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME fitting COMMAND maj0sted_test_fitting)
+
+add_executable(maj0sted_test_serialization test_serialization.cpp)
+target_link_libraries(maj0sted_test_serialization PRIVATE maj0sted::maj0sted)
+target_include_directories(maj0sted_test_serialization PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME serialization COMMAND maj0sted_test_serialization)
+
+add_executable(maj0sted_test_render test_render.cpp)
+target_link_libraries(maj0sted_test_render PRIVATE maj0sted::maj0sted)
+target_include_directories(maj0sted_test_render PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME render COMMAND maj0sted_test_render)
+
+add_executable(maj0sted_test_web test_web.cpp)
+target_link_libraries(maj0sted_test_web PRIVATE maj0sted::maj0sted)
+target_include_directories(maj0sted_test_web PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME web COMMAND maj0sted_test_web)
+
+add_executable(maj0sted_test_tile_cache test_tile_cache.cpp)
+target_link_libraries(maj0sted_test_tile_cache PRIVATE maj0sted::maj0sted)
+target_include_directories(maj0sted_test_tile_cache PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME tile_cache COMMAND maj0sted_test_tile_cache)
+
+add_executable(maj0sted_test_document test_document.cpp)
+target_link_libraries(maj0sted_test_document PRIVATE maj0sted::maj0sted)
+target_include_directories(maj0sted_test_document PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME document COMMAND maj0sted_test_document)

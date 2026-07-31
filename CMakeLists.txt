@@ -516,6 +516,11 @@ add_subdirectory(ref/json)
 target_link_libraries(${PROJECT_NAME} nlohmann_json::nlohmann_json)
 target_include_directories(${PROJECT_NAME} PRIVATE ${NLOHMANN_JSON_INCLUDE_INSTALL_DIR})
 
+# track layout domain model used by the editor; plain C++20, no dependencies of its own
+add_subdirectory(maj0sted)
+set_target_properties(maj0sted PROPERTIES FOLDER "libraries")
+target_link_libraries(${PROJECT_NAME} maj0sted::maj0sted)
+
 
 
 if (WITH_DISCORD_RPC)
