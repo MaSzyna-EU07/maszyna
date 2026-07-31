@@ -1347,6 +1347,20 @@ void editor_mode::update_camera(double const Deltatime)
 
 void editor_mode::enter()
 {
+    if (Global.editor_startup)
+    {
+        // kamerę ze scenerii ustawia tryb prowadzenia, a przy starcie prosto do edytora on w ogóle nie
+        // wstaje - bez tego kopiujemy niżej pustą kamerę globalną i widok jest czarny
+        auto const scenerycamera = Global.FreeCameraInit[0] != glm::dvec3(0.0);
+        // sceneria nie musi podawać kamery; wtedy zostaje domyślny widok edytora, znad punktu zerowego
+        Camera.Init(scenerycamera ? Global.FreeCameraInit[0] : glm::dvec3{0.0, 15.0, 0.0},
+                    scenerycamera ? Global.FreeCameraInitAngle[0] : glm::vec3{glm::radians(-30.0f), glm::radians(180.0f), 0.0f}, nullptr);
+        Global.pCamera = Camera;
+        Global.pDebugCamera = Camera;
+        FreeFlyModeFlag = true;
+        Timer::ResetTimers(); // czas wczytywania scenerii nie ma trafić w deltę pierwszej klatki
+    }
+
     m_statebackup = {Global.pCamera, FreeFlyModeFlag, Global.ControlPicking};
 
     Camera = Global.pCamera;
