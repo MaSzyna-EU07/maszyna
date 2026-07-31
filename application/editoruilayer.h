@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/uilayer.h"
 #include "application/editoruipanels.h"
+#include "application/planpanel.h"
 
 namespace scene
 {
@@ -38,11 +39,15 @@ class editor_ui : public ui_layer
 	float getSpacing();
 	void toggleBrushSettings(bool isVisible);
 
+  protected:
+	void render_menu_contents() override;
+
   private:
 	// members
 	itemproperties_panel m_itempropertiespanel{"Node Properties", true};
 	functions_panel m_functionspanel{"Functions", true};
 	nodebank_panel m_nodebankpanel{"Node Bank", true};
 	brush_object_list m_brushobjects{"Brush properties", false};
+	plan_panel m_planpanel{"Plan", false};
 	scene::basic_node *m_node{nullptr}; // currently bound scene node, if any
 };

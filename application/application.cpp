@@ -1155,8 +1155,8 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 
 	if (Global.editor_startup && Global.SceneryFile.empty())
 	{
-		// edytor potrzebuje wczytanego świata, ale niekoniecznie czegokolwiek w nim - pusta sceneria daje
-		// sam region, oświetlenie i zegar, bez taboru i rozkładów
+		// the editor needs a loaded world, but not necessarily anything in it - an empty scenery gives
+		// just the region, the lighting and the clock, with no rolling stock and no timetables
 		Global.SceneryFile = "pusta.scn";
 	}
 

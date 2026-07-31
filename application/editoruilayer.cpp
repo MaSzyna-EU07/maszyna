@@ -25,6 +25,7 @@ editor_ui::editor_ui()
 	add_external_panel(&m_nodebankpanel);
 	add_external_panel(&m_functionspanel);
 	add_external_panel(&m_brushobjects);
+	add_external_panel(&m_planpanel);
 }
 
 // updates state of UI elements
@@ -47,6 +48,17 @@ void editor_ui::update()
 	auto ptr = get_active_node_template(true);
 	if (ptr)
 		m_brushobjects.update(*ptr);
+}
+
+void editor_ui::render_menu_contents()
+{
+	ui_layer::render_menu_contents();
+
+	if (ImGui::BeginMenu("Track layout"))
+	{
+		ImGui::MenuItem(m_planpanel.name().c_str(), nullptr, &m_planpanel.is_open);
+		ImGui::EndMenu();
+	}
 }
 
 void editor_ui::toggleBrushSettings(bool isVisible)

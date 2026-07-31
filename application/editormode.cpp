@@ -1349,16 +1349,16 @@ void editor_mode::enter()
 {
     if (Global.editor_startup)
     {
-        // kamerę ze scenerii ustawia tryb prowadzenia, a przy starcie prosto do edytora on w ogóle nie
-        // wstaje - bez tego kopiujemy niżej pustą kamerę globalną i widok jest czarny
+        // the scenery camera is set up by the driver mode, which never runs when we start straight in
+        // the editor; without this we'd copy an untouched global camera below and render a black view
         auto const scenerycamera = Global.FreeCameraInit[0] != glm::dvec3(0.0);
-        // sceneria nie musi podawać kamery; wtedy zostaje domyślny widok edytora, znad punktu zerowego
+        // a scenery doesn't have to name a camera; fall back on the editor's own view above the origin
         Camera.Init(scenerycamera ? Global.FreeCameraInit[0] : glm::dvec3{0.0, 15.0, 0.0},
                     scenerycamera ? Global.FreeCameraInitAngle[0] : glm::vec3{glm::radians(-30.0f), glm::radians(180.0f), 0.0f}, nullptr);
         Global.pCamera = Camera;
         Global.pDebugCamera = Camera;
         FreeFlyModeFlag = true;
-        Timer::ResetTimers(); // czas wczytywania scenerii nie ma trafić w deltę pierwszej klatki
+        Timer::ResetTimers(); // keep the scenery loading time out of the first frame's delta
     }
 
     m_statebackup = {Global.pCamera, FreeFlyModeFlag, Global.ControlPicking};
@@ -1377,9 +1377,8 @@ void editor_mode::enter()
             Camera.LookAt = vehicle->GetPosition();
             Camera.RaLook(); // single camera reposition
         }
-        // edytor pracuje wyłącznie kamerą swobodną. Przy starcie prosto do edytora nie ma pojazdu, z
-        // którego można by wysiąść, a flagę i tak trzeba podnieść - inaczej kamera zostaje w trybie
-        // kabinowym, nie mając kabiny
+        // the editor always works with a free camera. starting straight in it there's no vehicle to
+        // step out of, but the flag still has to go up or the camera stays in cab mode without a cab
         FreeFlyModeFlag = true;
     }
 
@@ -1472,8 +1471,8 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
 
         if (!Global.ctrlState && !Global.shiftState)
         {
-            // przy starcie do edytora nie ma trybu, do którego można wrócić - zdjęcie ostatniego trybu
-            // zostawiłoby pusty stos, z którego reszta klatki nadal by czytała
+            // when started straight in the editor there's no mode to fall back to, and popping the last
+            // one would leave the rest of the frame reading an empty stack
             if (Global.editor_startup)
                 Application.queue_quit(true);
             else

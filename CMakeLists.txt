@@ -173,6 +173,7 @@ set(SOURCES
 "input/editormouseinput.cpp"
 "application/editoruilayer.cpp"
 "application/editoruipanels.cpp"
+"application/planpanel.cpp"
 "application/scenarioloadermode.cpp"
 "application/scenarioloaderuilayer.cpp"
 "scene/scenenodegroups.cpp"
