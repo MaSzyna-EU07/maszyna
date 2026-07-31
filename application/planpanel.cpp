@@ -151,31 +151,24 @@ void plan_panel::render_location_dialog()
 		return;
 	}
 
-	ImVec2 const mapsize{560.0f, 460.0f};
+	// the request is one square image, so the view is square too and the pixels map one to one
+	int const mappixels = 512;
+	ImVec2 const mapsize{static_cast<float>(mappixels), static_cast<float>(mappixels)};
 	auto const origin{ImGui::GetCursorScreenPos()};
 	ImGui::InvisibleButton("poland_map", mapsize);
 	auto const hovered{ImGui::IsItemHovered()};
 
-	auto const &outline{editor::poland_outline()};
 	auto const &places{editor::poland_places()};
 
 	// fit the whole country the first time round; afterwards the wheel decides
 	if (m_mapscale <= 0.0)
 	{
-		auto minx{std::numeric_limits<double>::max()};
-		auto miny{std::numeric_limits<double>::max()};
-		auto maxx{std::numeric_limits<double>::lowest()};
-		auto maxy{std::numeric_limits<double>::lowest()};
-		for (auto const &point : outline)
-		{
-			minx = std::min(minx, point.x);
-			maxx = std::max(maxx, point.x);
-			miny = std::min(miny, point.y);
-			maxy = std::max(maxy, point.y);
-		}
-		m_mapviewx = (minx + maxx) * 0.5;
-		m_mapviewy = (miny + maxy) * 0.5;
-		m_mapscale = std::min(mapsize.x / std::max(1.0, maxx - minx), mapsize.y / std::max(1.0, maxy - miny)) * 0.92;
+		glm::dvec2 min;
+		glm::dvec2 max;
+		editor::poland_extent(min, max);
+		m_mapviewx = (min.x + max.x) * 0.5;
+		m_mapviewy = (min.y + max.y) * 0.5;
+		m_mapscale = mapsize.x / std::max({max.x - min.x, max.y - min.y, 1.0});
 	}
 
 	ImVec2 const centre{origin.x + mapsize.x * 0.5f, origin.y + mapsize.y * 0.5f};
@@ -203,16 +196,25 @@ void plan_panel::render_location_dialog()
 	}
 
 	auto *drawlist{ImGui::GetWindowDrawList()};
-	drawlist->PushClipRect(origin, ImVec2(origin.x + mapsize.x, origin.y + mapsize.y), true);
-	drawlist->AddRectFilled(origin, ImVec2(origin.x + mapsize.x, origin.y + mapsize.y), IM_COL32(22, 30, 38, 255));
+	auto const mapend{ImVec2(origin.x + mapsize.x, origin.y + mapsize.y)};
+	drawlist->PushClipRect(origin, mapend, true);
+	drawlist->AddRectFilled(origin, mapend, IM_COL32(22, 30, 38, 255));
 
-	std::vector<ImVec2> border;
-	border.reserve(outline.size());
-	for (auto const &point : outline)
+	// the topographic base map behind everything, asked for at exactly the box on screen
+	double viewminx{0.0};
+	double viewminy{0.0};
+	double viewmaxx{0.0};
+	double viewmaxy{0.0};
+	to_map(origin, viewminx, viewmaxy);
+	to_map(mapend, viewmaxx, viewminy);
+	auto const backdrop{m_topomap.texture_for({viewminx, viewminy, viewmaxx, viewmaxy}, mappixels)};
+	if (backdrop != 0)
 	{
-		border.push_back(to_screen(point.x, point.y));
+		// the picture on screen is the one that was fetched, which may lag the current view by a
+		// request; drawing it against its own box keeps it registered while the new one arrives
+		auto const &covered{m_topomap.covered()};
+		drawlist->AddImage(reinterpret_cast<ImTextureID>(static_cast<intptr_t>(backdrop)), to_screen(covered.min_x, covered.max_y), to_screen(covered.max_x, covered.min_y));
 	}
-	drawlist->AddPolyline(border.data(), static_cast<int>(border.size()), IM_COL32(120, 190, 140, 255), true, 1.5f);
 
 	for (auto const &place : places)
 	{
@@ -228,7 +230,7 @@ void plan_panel::render_location_dialog()
 
 	drawlist->PopClipRect();
 
-	ImGui::TextDisabled("schematic outline - click to place the scenery's zero, wheel zooms");
+	ImGui::TextDisabled(m_topomap.loading() ? "fetching the topographic map..." : "click to place the scenery's zero, wheel zooms");
 
 	ImGui::SetNextItemWidth(180.0f);
 	ImGui::InputDouble("easting", &m_pickx, 100.0, 1000.0, "%.0f");
@@ -283,6 +285,9 @@ void plan_panel::start_map(bool const Georeferenced, double const Originx, doubl
 	auto &camera{editor_mode::get_camera()};
 	camera.Pos.x = 0.0;
 	camera.Pos.z = 0.0;
+
+	// a new map starts on empty ground - whatever scenery was loaded has nothing to do with it
+	Global.editor_reset_scenery = true;
 
 	m_status = Georeferenced ? "map pinned at " + to_string(Originx, 0) + ", " + to_string(Originy, 0) + " (EPSG:2180)" : "fictional map";
 }
@@ -346,6 +351,32 @@ void plan_panel::draw_on_scene()
 	// the background list paints over the rendered scenery but under every window, so the controls
 	// stay readable on top of the drawing
 	auto *drawlist{ImGui::GetBackgroundDrawList()};
+
+	// orthophoto under everything else. only a georeferenced map knows where on the ground it sits,
+	// so a fictional one gets no imagery
+	if (m_showortho && Global.scenery_georeferenced)
+	{
+		auto const centre{Global.pCamera.Pos};
+		double planx{0.0};
+		double plany{0.0};
+		world_to_plan(centre, planx, plany);
+		auto const reach{static_cast<double>(Global.editor_ortho_extent) * 1.4};
+
+		for (auto const &tile : m_ortho.collect({planx - reach, plany - reach, planx + reach, plany + reach}))
+		{
+			ImVec2 corners[4];
+			// the tile is a ground rectangle; on screen it is whatever the camera makes of it
+			auto const ok = world_to_screen(plan_to_world(tile.box.min_x, tile.box.max_y), corners[0]) &&
+			                world_to_screen(plan_to_world(tile.box.max_x, tile.box.max_y), corners[1]) &&
+			                world_to_screen(plan_to_world(tile.box.max_x, tile.box.min_y), corners[2]) &&
+			                world_to_screen(plan_to_world(tile.box.min_x, tile.box.min_y), corners[3]);
+			if (false == ok)
+			{
+				continue;
+			}
+			drawlist->AddImageQuad(reinterpret_cast<ImTextureID>(static_cast<intptr_t>(tile.texture)), corners[0], corners[1], corners[2], corners[3]);
+		}
+	}
 
 	std::vector<ImVec2> points;
 	for (std::size_t n = 0; n < m_solved.size(); ++n)
@@ -458,6 +489,16 @@ void plan_panel::render_toolbar()
 	}
 	ImGui::SameLine();
 	ImGui::Checkbox("Draw", &m_drawing);
+	if (Global.scenery_georeferenced)
+	{
+		ImGui::SameLine();
+		ImGui::Checkbox("Orthophoto", &m_showortho);
+		if (m_showortho && m_ortho.pending() > 0)
+		{
+			ImGui::SameLine();
+			ImGui::TextDisabled("(%d tiles on the way)", static_cast<int>(m_ortho.pending()));
+		}
+	}
 
 	if (m_document.niwelety.size() > 1)
 	{

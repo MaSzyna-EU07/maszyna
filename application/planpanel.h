@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/uilayer.h"
 
+#include "editor/orthophoto.h"
 #include "maj0sted/app/editor_document.hpp"
 #include "maj0sted/web/editor.hpp"
 
@@ -76,4 +77,8 @@ class plan_panel : public ui_panel
 	double m_mapviewx{0.0};
 	double m_mapviewy{0.0};
 	double m_mapscale{0.0};
+	// topographic base map behind the picker, and the orthophoto under the plan itself
+	editor::wms_image m_topomap{maj0sted::web::WmsConfig::geoportal_topo()};
+	editor::orthophoto_source m_ortho;
+	bool m_showortho{true};
 };

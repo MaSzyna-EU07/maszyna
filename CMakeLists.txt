@@ -169,6 +169,7 @@ set(SOURCES
 "editor/editorSettings.cpp"
 "editor/puwg1992.cpp"
 "editor/polandmap.cpp"
+"editor/orthophoto.cpp"
 "editor/editorTerrain.cpp"
 "editor/editorTerrainStreamer.cpp"
 "application/editormode.cpp"

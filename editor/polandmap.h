@@ -24,11 +24,10 @@ struct map_place
 	glm::dvec2 position;
 };
 
-// schematic outline of the country's border, in EPSG:2180 metres. coarse on purpose: it is here so
-// a region can be pointed at, not so anything can be measured against it
-std::vector<glm::dvec2> const &poland_outline();
-
 // larger cities, to put the view somewhere recognisable before picking the exact spot
 std::vector<map_place> const &poland_places();
+
+// the whole country's extent in EPSG:2180 metres, as the starting view of a location picker
+void poland_extent(glm::dvec2 &Min, glm::dvec2 &Max);
 
 } // namespace editor

@@ -609,6 +609,19 @@ void editor_mode::redo_last()
 
 bool editor_mode::update()
 {
+    if (Global.editor_reset_scenery)
+    {
+        // starting a new map: drop whatever scenery is loaded and come back on empty ground. done
+        // here rather than where it was asked for, because taking the editor off the mode stack in
+        // the middle of drawing its own panels would pull the ground out from under them
+        Global.editor_reset_scenery = false;
+        Global.editor_startup = true; // the editor is the base mode from here on, whatever started it
+        Global.SceneryFile = "pusta.scn";
+        Application.pop_mode();
+        Application.push_mode(eu07_application::mode::scenarioloader);
+        return true;
+    }
+
     Timer::UpdateTimers(true);
 
     simulation::State.update_clocks();

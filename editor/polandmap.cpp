@@ -26,21 +26,10 @@ struct geo_point
 	double longitude;
 };
 
-// the border walked clockwise from the north-west corner: Baltic coast, the Kaliningrad and
-// Lithuanian borders, the Bug, the Carpathians and Sudetes, then the Nysa and Odra back north.
-// tens of kilometres of error in places - this is a locator sketch, nothing more
-constexpr geo_point kOutline[]{
-    {53.93, 14.27}, {54.05, 14.60}, {54.18, 15.58}, {54.42, 16.41}, {54.58, 16.86}, {54.76, 17.55},
-    {54.79, 18.40}, {54.60, 18.65}, {54.52, 18.55}, {54.35, 18.95}, {54.37, 19.35}, {54.45, 19.64},
-    {54.37, 20.50}, {54.35, 21.50}, {54.36, 22.00}, {54.36, 22.79}, {54.25, 23.20}, {54.15, 23.48},
-    {53.95, 23.90}, {53.20, 23.93}, {52.70, 23.85}, {52.30, 23.60}, {52.07, 23.62}, {51.55, 23.55},
-    {50.87, 24.15}, {50.72, 24.15}, {50.40, 23.70}, {50.28, 23.50}, {49.80, 22.92}, {49.20, 22.68},
-    {49.09, 22.55}, {49.25, 22.00}, {49.42, 21.75}, {49.35, 21.00}, {49.40, 20.50}, {49.20, 20.10},
-    {49.40, 19.80}, {49.40, 19.50}, {49.40, 19.20}, {49.51, 18.85}, {49.75, 18.63}, {49.95, 18.05},
-    {50.10, 17.70}, {50.31, 17.38}, {50.45, 16.90}, {50.20, 16.60}, {50.40, 16.35}, {50.44, 16.25},
-    {50.75, 15.80}, {50.75, 15.55}, {50.85, 15.00}, {50.87, 14.82}, {51.30, 14.95}, {51.60, 14.75},
-    {52.00, 14.70}, {52.35, 14.55}, {52.59, 14.65}, {52.85, 14.40}, {53.10, 14.35}, {53.55, 14.30},
-    {53.75, 14.28}};
+// the country's corners, wide enough to hold all of it: the Odra in the west, the Bug in the east,
+// the Tatras in the south and the coast in the north
+constexpr geo_point kSouthWest{49.00, 14.10};
+constexpr geo_point kNorthEast{54.90, 24.20};
 
 struct named_geo_point
 {
@@ -59,19 +48,17 @@ constexpr named_geo_point kPlaces[]{
 
 } // namespace
 
-std::vector<glm::dvec2> const &poland_outline()
+void poland_extent(glm::dvec2 &Min, glm::dvec2 &Max)
 {
-	static std::vector<glm::dvec2> const outline = []() {
-		std::vector<glm::dvec2> points;
-		points.reserve(std::size(kOutline));
-		for (auto const &point : kOutline)
-		{
-			points.push_back(puwg1992(point.latitude, point.longitude));
-		}
-		return points;
-	}();
+	// the projection is not axis-aligned with the graticule, so the extreme corners come from
+	// projecting all four of them and taking the outermost values
+	auto const sw = puwg1992(kSouthWest.latitude, kSouthWest.longitude);
+	auto const se = puwg1992(kSouthWest.latitude, kNorthEast.longitude);
+	auto const nw = puwg1992(kNorthEast.latitude, kSouthWest.longitude);
+	auto const ne = puwg1992(kNorthEast.latitude, kNorthEast.longitude);
 
-	return outline;
+	Min = {std::min({sw.x, se.x, nw.x, ne.x}), std::min({sw.y, se.y, nw.y, ne.y})};
+	Max = {std::max({sw.x, se.x, nw.x, ne.x}), std::max({sw.y, se.y, nw.y, ne.y})};
 }
 
 std::vector<map_place> const &poland_places()
