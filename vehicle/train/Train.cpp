@@ -13,7 +13,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "vehicle/Train.h"
+#include "vehicle/train/Train.h"
 
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
