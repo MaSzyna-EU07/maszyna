@@ -2,7 +2,7 @@
 #include "utilities/motiontelemetry.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
-#include "vehicle/Train.h"
+#include "../vehicle/train/Train.h"
 #include "utilities/Timer.h"
 #include "vehicle/Driver.h"
 #include "simulation/simulation.h"

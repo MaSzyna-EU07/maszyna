@@ -12,7 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationstateserializer.h"
 #include "utilities/Classes.h"
 #include "world/Event.h"
-#include "vehicle/Train.h"
+#include "../vehicle/train/Train.h"
 #include "rendering/particles.h"
 
 #ifdef WITH_LUA

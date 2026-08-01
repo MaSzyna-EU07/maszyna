@@ -17,7 +17,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "simulation/simulation.h"
 #include "rendering/lightarray.h"
-#include "vehicle/Train.h"
+#include "train/Train.h"
 #include "vehicle/Driver.h"
 #include "utilities/Globals.h"
 #include "utilities/Timer.h"

@@ -20,7 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scene.h"
 #include "rendering/lightarray.h"
 #include "rendering/particles.h"
-#include "vehicle/Train.h"
+#include "../vehicle/train/Train.h"
 #include "vehicle/Driver.h"
 #include "vehicle/DynObj.h"
 #include "model/Model3d.h"

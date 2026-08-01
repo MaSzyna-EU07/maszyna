@@ -2,7 +2,7 @@
 #include "widgets/map.h"
 #include "widgets/map_objects.h"
 #include "utilities/Logs.h"
-#include "vehicle/Train.h"
+#include "../vehicle/train/Train.h"
 #include "vehicle/Camera.h"
 #include "simulation/simulation.h"
 #include "vehicle/Driver.h"

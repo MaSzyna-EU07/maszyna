@@ -16,7 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
-#include "vehicle/Train.h"
+#include "../vehicle/train/Train.h"
 #include "vehicle/DynObj.h"
 #include "model/AnimModel.h"
 #include "world/Traction.h"
