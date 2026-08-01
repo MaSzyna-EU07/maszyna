@@ -549,13 +549,6 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             // na przechyłce doliczyć jeszcze pół przechyłki
         }
 
-        // length2 is better than length for comparing because it does not require sqrt function
-        if( glm::length2((p1 + p1 + p2) / 3.0 - p1 - cp1) < sq(0.02)
-         || glm::length2((p1 + p2 + p2) / 3.0 - p2 + cp1) < sq(0.02) ) {
-            // "prostowanie" prostych z kontrolnymi, dokładność 2cm
-			cp1 = cp2 = glm::dvec3(0, 0, 0);
-        }
-
         if( fRadius != 0 ) {
             // gdy podany promień
             segsize =
@@ -644,16 +637,6 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             // na przechyłce doliczyć jeszcze pół przechyłki?
         }
 
-        if( eType != tt_Cross ) {
-            // dla skrzyżowań muszą być podane kontrolne
-			// length2 is better than length for comparing because it does not require sqrt function
-            if( glm::length2(( p1 + p1 + p2 ) / 3.0 - p1 - cp1 ) < sq(0.02)
-             || glm::length2(( p1 + p2 + p2 ) / 3.0 - p2 + cp1 ) < sq(0.02) ) {
-                // "prostowanie" prostych z kontrolnymi, dokładność 2cm
-				cp1 = cp2 = glm::dvec3(0, 0, 0);
-            }
-        }
-
         if( fRadiusTable[ 0 ] != 0 ) {
             // gdy podany promień
             segsize =
@@ -707,16 +690,6 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             p3.y += railheight;
             p4.y += railheight;
             // na przechyłce doliczyć jeszcze pół przechyłki?
-        }
-
-        if( eType != tt_Cross ) {
-            // dla skrzyżowań muszą być podane kontrolne
-			// length2 is better than length for comparing because it does not require sqrt function
-            if( glm::length2((p3 + p3 + p4) / 3.0 - p3 - cp3) < sq(0.02)
-             || glm::length2((p3 + p4 + p4) / 3.0 - p4 + cp3) < sq(0.02) ) {
-                // "prostowanie" prostych z kontrolnymi, dokładność 2cm
-				cp3 = cp4 = glm::dvec3(0, 0, 0);
-            }
         }
 
         if( fRadiusTable[ 1 ] != 0 ) {

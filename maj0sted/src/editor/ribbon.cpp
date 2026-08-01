@@ -1,17 +1,17 @@
-#include "maj0sted/web/ribbon.hpp"
+#include "maj0sted/editor/ribbon.hpp"
 
 #include <cmath>
 
 #include "maj0sted/domain/geometry/segment_layout.hpp"
 
-namespace maj0sted::web {
+namespace maj0sted::editor {
 
 using maj0sted::domain::geometry::layout_segment;
 using maj0sted::domain::geometry::Pose;
 using maj0sted::domain::geometry::XY;
 
-std::vector<WebPolyline> solve_ribbon(const RibbonRequest& request) {
-    std::vector<WebPolyline> result;
+std::vector<PlanPolyline> solve_ribbon(const RibbonRequest& request) {
+    std::vector<PlanPolyline> result;
     result.reserve(request.elements.size());
 
     Pose pose{request.x0, request.y0, std::sin(request.az0), std::cos(request.az0)};
@@ -41,15 +41,15 @@ std::vector<WebPolyline> solve_ribbon(const RibbonRequest& request) {
         std::vector<XY> points;
         pose = layout_segment(k0, k1, length, pose, &points);
 
-        WebPolyline polyline;
+        PlanPolyline polyline;
         polyline.kind = kind;
         polyline.points.reserve(points.size());
         for (const auto& p : points) {
-            polyline.points.push_back(WebPoint{p.x, p.y});
+            polyline.points.push_back(PlanPoint{p.x, p.y});
         }
         result.push_back(std::move(polyline));
     }
     return result;
 }
 
-}  // namespace maj0sted::web
+}  // namespace maj0sted::editor

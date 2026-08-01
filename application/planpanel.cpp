@@ -16,7 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "utilities/Globals.h"
 
-#include "maj0sted/web/ribbon.hpp"
+#include "maj0sted/editor/ribbon.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -94,9 +94,9 @@ ImU32 element_colour(int const Kind, bool const Active)
 
 // one centreline element recovered from a left/right rail pair
 // dual rails from a centreline, same 1.5 m gauge as maj0sted::render::RailRenderer
-std::vector<maj0sted::web::WebPolyline> rails_from_centreline(std::vector<maj0sted::web::WebPolyline> const &Centre, double const Gauge = 1.5)
+std::vector<maj0sted::editor::PlanPolyline> rails_from_centreline(std::vector<maj0sted::editor::PlanPolyline> const &Centre, double const Gauge = 1.5)
 {
-	std::vector<maj0sted::web::WebPolyline> out;
+	std::vector<maj0sted::editor::PlanPolyline> out;
 	auto const half{Gauge * 0.5};
 	for (auto const &poly : Centre)
 	{
@@ -106,7 +106,7 @@ std::vector<maj0sted::web::WebPolyline> rails_from_centreline(std::vector<maj0st
 		}
 		for (double const side : {half, -half})
 		{
-			maj0sted::web::WebPolyline rail;
+			maj0sted::editor::PlanPolyline rail;
 			rail.kind = poly.kind;
 			rail.length = poly.length;
 			rail.radius_start = poly.radius_start;
@@ -230,7 +230,7 @@ double point_segment_distance(double const Px, double const Py, double const Ax,
 }
 
 // distance from (X,Y) to the gap track: curve elements plus the two bounding straights
-double distance_to_gap_track(maj0sted::web::NiweletaPolys const &Solved, int const Gap, double const X, double const Y)
+double distance_to_gap_track(maj0sted::editor::NiweletaPolys const &Solved, int const Gap, double const X, double const Y)
 {
 	auto best{std::numeric_limits<double>::infinity()};
 	for (auto const &poly : Solved.polylines)
@@ -257,9 +257,9 @@ struct GapSample
 };
 
 // centreline of a fitted gap, sampled in element order
-std::vector<GapSample> sample_gap_centreline(maj0sted::web::NiweletaPolys const &Solved, int const Gap)
+std::vector<GapSample> sample_gap_centreline(maj0sted::editor::NiweletaPolys const &Solved, int const Gap)
 {
-	std::map<int, maj0sted::web::WebPolyline const *> by_el;
+	std::map<int, maj0sted::editor::PlanPolyline const *> by_el;
 	for (auto const &poly : Solved.polylines)
 	{
 		if (poly.gap != Gap || poly.element_index < 0 || poly.points.size() < 2)
@@ -378,7 +378,7 @@ struct CmpStationHandle
 	double y{0.0};
 };
 
-std::vector<CmpStationHandle> compound_station_handles(maj0sted::web::GapFit const &Fit, maj0sted::web::NiweletaPolys const &Solved, int const Gap)
+std::vector<CmpStationHandle> compound_station_handles(maj0sted::editor::GapFit const &Fit, maj0sted::editor::NiweletaPolys const &Solved, int const Gap)
 {
 	std::vector<CmpStationHandle> handles;
 	if (Fit.mode != 3 || Fit.arcs.empty())
@@ -420,7 +420,7 @@ std::vector<CmpStationHandle> compound_station_handles(maj0sted::web::GapFit con
 	return handles;
 }
 
-std::vector<GapSample> sample_draft_centreline(std::vector<maj0sted::web::WebPolyline> const &Polys)
+std::vector<GapSample> sample_draft_centreline(std::vector<maj0sted::editor::PlanPolyline> const &Polys)
 {
 	std::vector<GapSample> out;
 	double along{0.0};
@@ -444,7 +444,7 @@ std::vector<GapSample> sample_draft_centreline(std::vector<maj0sted::web::WebPol
 }
 
 // draft stations: every arc has L (including the last), unlike GapFit
-std::vector<CmpStationHandle> draft_station_handles(maj0sted::app::BasketDraft const &Draft, std::vector<maj0sted::web::WebPolyline> const &Polys)
+std::vector<CmpStationHandle> draft_station_handles(maj0sted::app::BasketDraft const &Draft, std::vector<maj0sted::editor::PlanPolyline> const &Polys)
 {
 	std::vector<CmpStationHandle> handles;
 	if (false == Draft.active || Draft.arcs.empty())
@@ -707,6 +707,7 @@ void plan_panel::handle_scene()
 		m_dragging = false;
 		m_dragging_cmp = false;
 		m_dragging_draft = false;
+		m_drag_junction = -1;
 		return;
 	}
 
@@ -721,7 +722,16 @@ void plan_panel::handle_scene()
 	{
 		int hit_niw{-1};
 		int hit_str{-1};
-		if (hit_straight(mouse, hit_niw, hit_str, true) && hit_niw >= 0 && static_cast<std::size_t>(hit_niw) < m_document.niwelety.size())
+		// straights catch only their trimmed remainders; fall back to the whole solved axis (curves
+		// included) so a double-click anywhere on the visible track still selects its niweleta
+		bool hit{hit_straight(mouse, hit_niw, hit_str, true)};
+		if (false == hit)
+		{
+			hit_niw = nearest_niweleta_axis(mouse, 18.0f);
+			hit_str = -1;
+			hit = hit_niw >= 0;
+		}
+		if (hit && hit_niw >= 0 && static_cast<std::size_t>(hit_niw) < m_document.niwelety.size())
 		{
 			m_dragging = false;
 			m_dragging_cmp = false;
@@ -875,6 +885,26 @@ void plan_panel::handle_scene()
 			return;
 		}
 
+		// grabbing a switch's start to slide it along the through track
+		for (std::size_t j = 0; j < m_junctions.size(); ++j)
+		{
+			if (false == m_junctions[j].valid)
+			{
+				continue;
+			}
+			ImVec2 sw;
+			if (world_to_screen(plan_to_world(m_junctions[j].px, m_junctions[j].py), sw) && std::hypot(sw.x - mouse.x, sw.y - mouse.y) <= 9.0f)
+			{
+				clear_selection();
+				m_dragging_cmp = false;
+				m_dragging_draft = false;
+				m_drag_junction = static_cast<int>(j);
+				m_drawing = false;
+				m_status = "przesuwanie rozjazdu";
+				return;
+			}
+		}
+
 		int hit_niw{-1};
 		int hit_str{-1};
 		int hit_end{-1};
@@ -916,7 +946,25 @@ void plan_panel::handle_scene()
 		}
 	}
 
-	if (m_dragging_draft)
+	if (m_drag_junction >= 0)
+	{
+		if (ImGui::IsMouseDown(0) && static_cast<std::size_t>(m_drag_junction) < m_document.junctions.size())
+		{
+			auto &junction{m_document.junctions[static_cast<std::size_t>(m_drag_junction)]};
+			double station{junction.station};
+			// slide along the through track: the cursor's nearest station on its centreline
+			if (junction.through >= 0 && station_on_through(static_cast<std::size_t>(junction.through), cursorx, cursory, station))
+			{
+				junction.station = station;
+				solve();
+			}
+		}
+		else
+		{
+			m_drag_junction = -1;
+		}
+	}
+	else if (m_dragging_draft)
 	{
 		if (ImGui::IsMouseDown(0))
 		{
@@ -997,9 +1045,9 @@ void plan_panel::draw_on_scene()
 		auto const display{ImGui::GetIO().DisplaySize};
 		auto const halfheight{static_cast<double>(Global.editor_ortho_extent)};
 		auto const halfwidth{halfheight * std::max(1.0f, display.x) / std::max(1.0f, display.y)};
-		maj0sted::web::TileBBox const view{planx - halfwidth, plany - halfheight, planx + halfwidth, plany + halfheight};
+		maj0sted::editor::TileBBox const view{planx - halfwidth, plany - halfheight, planx + halfwidth, plany + halfheight};
 
-		auto const draw_box = [&](maj0sted::web::TileBBox const &Box, unsigned int const Texture) {
+		auto const draw_box = [&](maj0sted::editor::TileBBox const &Box, unsigned int const Texture) {
 			ImVec2 corners[4];
 			auto const ok = world_to_screen(plan_to_world(Box.min_x, Box.max_y), corners[0]) && world_to_screen(plan_to_world(Box.max_x, Box.max_y), corners[1]) &&
 			                world_to_screen(plan_to_world(Box.max_x, Box.min_y), corners[2]) && world_to_screen(plan_to_world(Box.min_x, Box.min_y), corners[3]);
@@ -1114,7 +1162,7 @@ void plan_panel::draw_on_scene()
 		}
 		for (auto const gap : gaps)
 		{
-			std::map<int, maj0sted::web::WebPolyline const *> by_el;
+			std::map<int, maj0sted::editor::PlanPolyline const *> by_el;
 			for (auto const &poly : solved.polylines)
 			{
 				if (poly.gap != gap || poly.points.size() < 2 || poly.element_index < 0)
@@ -1127,7 +1175,7 @@ void plan_panel::draw_on_scene()
 				}
 			}
 
-			std::vector<maj0sted::web::WebPolyline const *> arcs;
+			std::vector<maj0sted::editor::PlanPolyline const *> arcs;
 			for (auto const &[idx, poly] : by_el)
 			{
 				(void)idx;
@@ -1855,7 +1903,7 @@ void plan_panel::render_gaps()
 	}
 }
 
-void plan_panel::render_compound(maj0sted::web::GapFit &Fit, std::size_t const Gap, bool &Dirty)
+void plan_panel::render_compound(maj0sted::editor::GapFit &Fit, std::size_t const Gap, bool &Dirty)
 {
 	ImGui::Indent();
 
@@ -2189,7 +2237,7 @@ void plan_panel::fit_compound_to_guides()
 		{
 			return std::numeric_limits<double>::infinity();
 		}
-		auto const solved{maj0sted::web::solve_project(trial.niwelety)};
+		auto const solved{maj0sted::editor::solve_project(trial.niwelety)};
 		if (m_niweleta >= solved.size())
 		{
 			return std::numeric_limits<double>::infinity();
@@ -2288,13 +2336,21 @@ void plan_panel::render_switches()
 			{
 				m_sw_crossing = preset.crossing_n;
 				m_sw_radius = preset.radius;
+				m_sw_length = preset.length;
 			}
 		}
 		ImGui::EndCombo();
 	}
-	// each single-arc template spans R*atan(1/n) between its tangent points; shown so its length is known
+	// the template's catalogue length (PR->KR); custom switches with no template just span their curve
 	ImGui::SameLine();
-	ImGui::TextDisabled("dl. ~%.1f m", m_sw_radius * std::atan(1.0 / std::max(1.0, m_sw_crossing)));
+	if (m_sw_length > 0.0)
+	{
+		ImGui::TextDisabled("dl. %.3f m (Id-1)", m_sw_length);
+	}
+	else
+	{
+		ImGui::TextDisabled("dl. ~%.1f m (sam luk)", m_sw_radius * std::atan(1.0 / std::max(1.0, m_sw_crossing)));
+	}
 
 	ImGui::SetNextItemWidth(90.0f);
 	ImGui::Combo("strona", &m_sw_side, "w lewo\0w prawo\0");
@@ -2354,6 +2410,12 @@ void plan_panel::render_switches()
 			ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "nie wpasowany");
 		}
 		ImGui::SameLine();
+		if (ImGui::SmallButton(junction.side == 0 ? "L->P" : "P->L"))
+		{
+			junction.side = junction.side == 0 ? 1 : 0;
+			solve();
+		}
+		ImGui::SameLine();
 		if (ImGui::SmallButton("usuń"))
 		{
 			m_document.junctions.erase(m_document.junctions.begin() + static_cast<long>(i));
@@ -2373,9 +2435,12 @@ void plan_panel::render_switches()
 				junction.curve.mode = 3;
 				if (junction.curve.arcs.empty())
 				{
-					// a basket needs at least two arcs; the last absorbs the rest of the turn
-					junction.curve.arcs.push_back({junction.curve.radius > 0.0 ? junction.curve.radius * 2.0 : 600.0, 40.0, 0.0});
-					junction.curve.arcs.push_back({junction.curve.radius > 0.0 ? junction.curve.radius : 300.0, 0.0, 0.0});
+					// a basket needs at least two arcs; a gentler entry radius eases into the nominal
+					// one, whose closing arc absorbs the rest of the turn. a short fixed length keeps
+					// the whole curve inside the turnout rather than far past its end
+					auto const nominal{junction.curve.radius > 0.0 ? junction.curve.radius : 300.0};
+					junction.curve.arcs.push_back({nominal * 2.0, 6.0, 0.0});
+					junction.curve.arcs.push_back({nominal, 0.0, 0.0});
 				}
 			}
 			else
@@ -2480,52 +2545,26 @@ void plan_panel::add_switch_on(std::size_t const Through, double const Wx, doubl
 	{
 		return;
 	}
-	auto const &centre{m_solved[Through].centreline};
-	if (centre.size() < 2)
+	double best_station{0.0};
+	if (false == station_on_through(Through, Wx, Wy, best_station))
 	{
 		m_status = "niweleta bez osi";
 		return;
 	}
 
-	// nearest station: walk the centreline, project the click onto each segment
-	double best_station{0.0};
-	double best_dist{std::numeric_limits<double>::max()};
-	double travelled{0.0};
-	for (std::size_t i = 0; i + 1 < centre.size(); ++i)
-	{
-		double const ax{centre[i].x};
-		double const ay{centre[i].y};
-		double const dx{centre[i + 1].x - ax};
-		double const dy{centre[i + 1].y - ay};
-		double const seg{std::hypot(dx, dy)};
-		if (seg < 1e-9)
-		{
-			continue;
-		}
-		double const t{std::clamp(((Wx - ax) * dx + (Wy - ay) * dy) / (seg * seg), 0.0, 1.0)};
-		double const px{ax + dx * t};
-		double const py{ay + dy * t};
-		double const d{std::hypot(Wx - px, Wy - py)};
-		if (d < best_dist)
-		{
-			best_dist = d;
-			best_station = travelled + seg * t;
-		}
-		travelled += seg;
-	}
-
-	maj0sted::web::Junction junction;
+	maj0sted::editor::Junction junction;
 	junction.through = static_cast<int>(Through);
 	junction.station = best_station;
 	junction.side = m_sw_side;
 	junction.facing = true;
 	junction.crossing_n = m_sw_crossing;
+	junction.length = m_sw_length; // catalogue length from the template, 0 for a custom switch
 	junction.curve.mode = 1; // plain arc; the internal curve can be made compound later
 	junction.curve.radius = m_sw_radius;
 	junction.branch = static_cast<int>(m_document.niwelety.size());
 
 	// a branch niweleta to draw the diverging track into, pinned to the frog by the solver
-	maj0sted::web::NiweletaSpec branch;
+	maj0sted::editor::NiweletaSpec branch;
 	branch.name = "odnoga " + std::to_string(m_document.niwelety.size() + 1);
 	branch.straights.push_back({Wx, Wy, Wx + 10.0, Wy, false}); // placeholder, repositioned below
 	m_document.niwelety.push_back(std::move(branch));
@@ -2674,7 +2713,7 @@ void plan_panel::solve()
 	}
 	maj0sted::app::apply_straight_constraints(m_document.niwelety);
 	// switches pin their branches, so the whole layout is solved together
-	auto layout{maj0sted::web::solve_layout(m_document.niwelety, m_document.junctions)};
+	auto layout{maj0sted::editor::solve_layout(m_document.niwelety, m_document.junctions)};
 	m_solved = std::move(layout.niwelety);
 	m_junctions = std::move(layout.junctions);
 }
@@ -2686,12 +2725,12 @@ void plan_panel::apply_constraints()
 }
 
 
-maj0sted::web::NiweletaSpec *plan_panel::current_niweleta()
+maj0sted::editor::NiweletaSpec *plan_panel::current_niweleta()
 {
 	return m_niweleta < m_document.niwelety.size() ? &m_document.niwelety[m_niweleta] : nullptr;
 }
 
-maj0sted::web::NiweletaSpec const *plan_panel::current_niweleta() const
+maj0sted::editor::NiweletaSpec const *plan_panel::current_niweleta() const
 {
 	return m_niweleta < m_document.niwelety.size() ? &m_document.niwelety[m_niweleta] : nullptr;
 }
@@ -2721,7 +2760,7 @@ bool plan_panel::fit_applied(std::size_t const Gap) const
 	return false;
 }
 
-maj0sted::web::StraightSpec const *plan_panel::handle_straight(std::size_t const Niw, std::size_t const Index) const
+maj0sted::editor::StraightSpec const *plan_panel::handle_straight(std::size_t const Niw, std::size_t const Index) const
 {
 	if (Niw >= m_document.niwelety.size())
 	{
@@ -2814,7 +2853,7 @@ void plan_panel::delete_selected_straight()
 	niweleta->straights.erase(niweleta->straights.begin() + sel);
 
 	// gaps touching the removed straight disappear; later gaps shift down
-	std::vector<maj0sted::web::GapFit> kept;
+	std::vector<maj0sted::editor::GapFit> kept;
 	kept.reserve(niweleta->fits.size());
 	for (auto const &fit : niweleta->fits)
 	{
@@ -3388,6 +3427,82 @@ bool plan_panel::hit_endpoint(ImVec2 const &Mouse, int &OutNiw, int &OutStr, int
 				OutStr = static_cast<int>(i);
 				OutEnd = end;
 				found = true;
+			}
+		}
+	}
+	return found;
+}
+
+bool plan_panel::station_on_through(std::size_t const Through, double const Wx, double const Wy, double &OutStation) const
+{
+	if (Through >= m_solved.size())
+	{
+		return false;
+	}
+	auto const &centre{m_solved[Through].centreline};
+	if (centre.size() < 2)
+	{
+		return false;
+	}
+	// walk the axis, project the point onto each segment, keep the nearest station (arc length)
+	double best_station{0.0};
+	double best_dist{std::numeric_limits<double>::max()};
+	double travelled{0.0};
+	for (std::size_t i = 0; i + 1 < centre.size(); ++i)
+	{
+		double const ax{centre[i].x};
+		double const ay{centre[i].y};
+		double const dx{centre[i + 1].x - ax};
+		double const dy{centre[i + 1].y - ay};
+		double const seg{std::hypot(dx, dy)};
+		if (seg < 1e-9)
+		{
+			continue;
+		}
+		double const t{std::clamp(((Wx - ax) * dx + (Wy - ay) * dy) / (seg * seg), 0.0, 1.0)};
+		double const d{std::hypot(Wx - (ax + dx * t), Wy - (ay + dy * t))};
+		if (d < best_dist)
+		{
+			best_dist = d;
+			best_station = travelled + seg * t;
+		}
+		travelled += seg;
+	}
+	OutStation = best_station;
+	return true;
+}
+
+int plan_panel::nearest_niweleta_axis(ImVec2 const &Mouse, float const Tolerance) const
+{
+	auto best{Tolerance};
+	int found{-1};
+	for (std::size_t n = 0; n < m_solved.size(); ++n)
+	{
+		for (auto const &polyline : m_solved[n].polylines)
+		{
+			for (std::size_t i = 0; i + 1 < polyline.points.size(); ++i)
+			{
+				ImVec2 a;
+				ImVec2 b;
+				if (false == world_to_screen(plan_to_world(polyline.points[i].x, polyline.points[i].y), a) ||
+				    false == world_to_screen(plan_to_world(polyline.points[i + 1].x, polyline.points[i + 1].y), b))
+				{
+					continue;
+				}
+				auto const dx{b.x - a.x};
+				auto const dy{b.y - a.y};
+				auto const len2{dx * dx + dy * dy};
+				if (len2 <= 0.0f)
+				{
+					continue;
+				}
+				auto const t{std::clamp(((Mouse.x - a.x) * dx + (Mouse.y - a.y) * dy) / len2, 0.0f, 1.0f)};
+				auto const d{std::hypot(Mouse.x - (a.x + t * dx), Mouse.y - (a.y + t * dy))};
+				if (d <= best)
+				{
+					best = d;
+					found = static_cast<int>(n);
+				}
 			}
 		}
 	}

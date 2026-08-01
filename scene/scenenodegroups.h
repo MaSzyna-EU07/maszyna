@@ -34,6 +34,10 @@ public:
     // indicates creation of current group ended. returns: handle to the parent group or null_handle if group stack is empty
     group_handle
         close();
+    // drops every group without touching node pointers — call when the region that owned
+    // those nodes is about to be (or has just been) destroyed, before a scenery reload
+    void
+        clear();
 	// update minimap objects
 	void
 	    update_map();

@@ -53,6 +53,16 @@ node_groups::close()
     return handle();
 }
 
+void
+node_groups::clear()
+{
+    // nodes/events are owned by the region (or already gone with it); do not dereference them
+    m_groupmap.clear();
+    while( false == m_activegroup.empty() ) {
+        m_activegroup.pop();
+    }
+}
+
 bool node_groups::assign_cross_switch(map::track_switch& sw, std::string &sw_name, std::string const &id, size_t idx)
 {
     sw.action[idx] = simulation::Events.FindEvent(sw_name + ":" + id);

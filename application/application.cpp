@@ -218,77 +218,74 @@ void eu07_application::DiscordRPCService()
 	discord_rpc.startTimestamp = static_cast<int64_t>(now_c);
 	discord_rpc.largeImageText = "MaSzyna";
 
-	// run loop
-	while (!glfwWindowShouldClose(m_windows.front()) && !m_modestack.empty() && !Global.applicationQuitOrder)
+	// run until quit — do NOT require a non-empty mode stack: pop/push during scenery reload
+	// briefly empties the stack, and exiting here would Discord_Shutdown() mid-session (or race on top())
+	while (!Global.applicationQuitOrder && !m_windows.empty() && !glfwWindowShouldClose(m_windows.front()))
 	{
-		auto currentMode = m_modestack.top();
+		if (m_modestack.empty())
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			continue;
+		}
+
+		auto const currentMode = m_modestack.top();
 		if (currentMode == mode::launcher)
 		{
-			// in launcher mode
-
 			discord_rpc.state = Translations.lookup_c("In main menu");
 			discord_rpc.details = Translations.lookup_c("Browsing scenarios...");
 			discord_rpc.largeImageKey = "";
 			discord_rpc.largeImageText = "MaSzyna";
-			// RPC upload
 			Discord_UpdatePresence(&discord_rpc);
-
-			std::this_thread::sleep_for(std::chrono::milliseconds(5000)); // update RPC every 5 secs
-			continue;
 		}
 		else if (currentMode == mode::scenarioloader)
 		{
 			std::string rpcScnName = Global.SceneryFile;
-			if (rpcScnName[0] == '$')
+			if (!rpcScnName.empty() && rpcScnName.front() == '$')
 				rpcScnName.erase(0, 1);
-			rpcScnName.erase(rpcScnName.size() - 4, 4);
-			if (rpcScnName.find('_') != std::string::npos)
-			{
-				std::replace(rpcScnName.begin(), rpcScnName.end(), '_', ' ');
-			}
+			if (rpcScnName.size() >= 4)
+				rpcScnName.erase(rpcScnName.size() - 4, 4);
+			std::replace(rpcScnName.begin(), rpcScnName.end(), '_', ' ');
 
-			// realworld timestamp from datetime
-			static std::string state = Translations.lookup_s("Scenery: ") + rpcScnName;
+			static std::string state;
+			state = Translations.lookup_s("Scenery: ") + rpcScnName;
 			discord_rpc.state = state.c_str();
 			discord_rpc.details = Translations.lookup_c("Loading scenery...");
 			discord_rpc.largeImageKey = "logo";
 			discord_rpc.largeImageText = "MaSzyna";
-
-			// RPC upload
 			Discord_UpdatePresence(&discord_rpc);
-
-			std::this_thread::sleep_for(std::chrono::milliseconds(5000)); // update RPC every 5 secs
-			continue;
 		}
-
-		if (currentMode != mode::driver)
-			continue;
-
-		// Discord RPC updater
-		if (simulation::is_ready)
+		else if (currentMode == mode::editor)
+		{
+			discord_rpc.state = "Dłubie w edytorze";
+			discord_rpc.details = Global.SceneryFile.c_str();
+			discord_rpc.largeImageKey = "logo";
+			discord_rpc.largeImageText = "MaSzyna";
+			discord_rpc.smallImageKey = "";
+			discord_rpc.smallImageText = "";
+			Discord_UpdatePresence(&discord_rpc);
+		}
+		else if (currentMode == mode::driver && simulation::is_ready)
 		{
 			std::string PlayerVehicle;
-			if (simulation::Train != nullptr)
+			if (simulation::Train != nullptr && simulation::Train->Dynamic() != nullptr)
 			{
 				PlayerVehicle = simulation::Train->name();
-				// make to upper
 				for (auto &c : PlayerVehicle)
-					c = toupper(c);
+					c = static_cast<char>(toupper(static_cast<unsigned char>(c)));
 
 				PlayerVehicle = Translations.lookup_s("Driving: ") + PlayerVehicle;
 				discord_rpc.details = PlayerVehicle.c_str();
 
-				uint16_t playerTrainVelocity = simulation::Train->Dynamic()->GetVelocity();
+				auto const playerTrainVelocity = static_cast<uint16_t>(simulation::Train->Dynamic()->GetVelocity());
 				if (playerTrainVelocity > 1)
 				{
-					// ikonka ze jedziemy i nie spimy
 					discord_rpc.smallImageKey = "driving";
-					std::string smallText = Translations.lookup_s("Speed: ") + std::to_string(playerTrainVelocity) + " km/h";
+					static std::string smallText;
+					smallText = Translations.lookup_s("Speed: ") + std::to_string(playerTrainVelocity) + " km/h";
 					discord_rpc.smallImageText = smallText.c_str();
 				}
 				else
 				{
-					// krecimy postoj
 					discord_rpc.smallImageKey = "halt";
 					discord_rpc.smallImageText = Translations.lookup_c("Stopped");
 				}
@@ -296,7 +293,8 @@ void eu07_application::DiscordRPCService()
 
 			Discord_UpdatePresence(&discord_rpc);
 		}
-		std::this_thread::sleep_for(std::chrono::milliseconds(5000)); // update RPC every 5 secs
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(5000));
 	}
 
 	Discord_Shutdown();

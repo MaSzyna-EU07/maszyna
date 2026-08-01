@@ -4,9 +4,9 @@
 #include <vector>
 
 #include "check.hpp"
-#include "maj0sted/web/tile_cache.hpp"
+#include "maj0sted/editor/tile_cache.hpp"
 
-using namespace maj0sted::web;
+using namespace maj0sted::editor;
 
 namespace {
 

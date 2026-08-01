@@ -5,13 +5,13 @@
 #include <vector>
 
 #include "maj0sted/domain/map_project.hpp"
-#include "maj0sted/web/editor.hpp"
+#include "maj0sted/editor/editor.hpp"
 
 namespace maj0sted::app {
 
 struct EditorDocument {
-    std::vector<maj0sted::web::NiweletaSpec> niwelety;
-    std::vector<maj0sted::web::Junction> junctions;
+    std::vector<maj0sted::editor::NiweletaSpec> niwelety;
+    std::vector<maj0sted::editor::Junction> junctions;
     double view_x{0.0};
     double view_y{0.0};
     double view_extent{0.0};

@@ -55,4 +55,29 @@ double ParallelismService::perpendicular_distance(const Straight& origin,
     return std::abs(d_east * normal.east + d_north * normal.north);
 }
 
+Straight ParallelismService::project_onto_offset_line(const Straight& origin,
+                                                      double offset_m,
+                                                      const Straight& segment) {
+    const double az = origin.azimuth().radians();
+    const double ux = std::sin(az);
+    const double uy = std::cos(az);
+    const Vec normal = left_normal(origin.azimuth());
+    const double ox = origin.start().x() + normal.east * offset_m;
+    const double oy = origin.start().y() + normal.north * offset_m;
+
+    auto station = [&](double x, double y) {
+        return (x - ox) * ux + (y - oy) * uy;
+    };
+    double t1 = station(segment.start().x(), segment.start().y());
+    double t2 = station(segment.end().x(), segment.end().y());
+    if (std::abs(t2 - t1) < 1.0) {
+        const double tm = 0.5 * (t1 + t2);
+        const double half = (t2 >= t1) ? 0.5 : -0.5;
+        t1 = tm - half;
+        t2 = tm + half;
+    }
+    return Straight{CartesianPosition{ox + ux * t1, oy + uy * t1},
+                    CartesianPosition{ox + ux * t2, oy + uy * t2}};
+}
+
 }  // namespace maj0sted::domain

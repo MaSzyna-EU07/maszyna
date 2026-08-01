@@ -617,6 +617,7 @@ bool editor_mode::update()
         Global.editor_reset_scenery = false;
         Global.editor_startup = true; // the editor is the base mode from here on, whatever started it
         Global.SceneryFile = "pusta.scn";
+        simulation::is_ready = false;
         Application.pop_mode();
         Application.push_mode(eu07_application::mode::scenarioloader);
         return true;
@@ -1326,9 +1327,29 @@ void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
     {
         return;
     }
-    // in the plan view the wheel decides how much ground fits on screen; the camera itself stays put,
-    // because with no perspective its height changes nothing but the clipping
-    Global.editor_ortho_extent = std::clamp(Global.editor_ortho_extent * std::pow(0.85f, static_cast<float>(Yoffset)), 5.0f, 20000.0f);
+
+    // the wheel decides how much ground fits on screen. shift the camera so the point under the
+    // cursor stays put - same idea as zooming a map, rather than scaling around the view centre
+    auto const oldextent = Global.editor_ortho_extent;
+    auto const newextent = std::clamp(oldextent * std::pow(0.85f, static_cast<float>(Yoffset)), 5.0f, 20000.0f);
+    if (newextent == oldextent)
+    {
+        return;
+    }
+
+    auto const width = std::max(1, Global.window_size.x);
+    auto const height = std::max(1, Global.window_size.y);
+    auto const ndcx = (static_cast<double>(Global.cursor_pos.x) / width) * 2.0 - 1.0;
+    auto const ndcy = 1.0 - (static_cast<double>(Global.cursor_pos.y) / height) * 2.0;
+    auto const halfheight = static_cast<double>(oldextent);
+    auto const halfwidth = halfheight * static_cast<double>(width) / static_cast<double>(height);
+    auto const scale = static_cast<double>(newextent) / static_cast<double>(oldextent);
+
+    // top-down with yaw pinned to north: view x follows world x, view y follows -world z
+    Camera.Pos.x += ndcx * halfwidth * (1.0 - scale);
+    Camera.Pos.z -= ndcy * halfheight * (1.0 - scale);
+
+    Global.editor_ortho_extent = newextent;
 }
 
 void editor_mode::update_camera(double const Deltatime)
@@ -1346,6 +1367,9 @@ void editor_mode::update_camera(double const Deltatime)
         }
         Camera.Angle.x = glm::radians(-90.0f);
         Camera.Angle.z = 0.0f;
+        // a plan is read with north up. the editor's own camera starts turned around, which left the
+        // whole view - scenery, imagery and drawing alike - standing on its head
+        Camera.Angle.y = 0.0f;
         // high enough to clear anything the scenery may have under the cursor
         Camera.Pos.y = std::max(Camera.Pos.y, 500.0);
     }

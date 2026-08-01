@@ -16,8 +16,8 @@ http://mozilla.org/MPL/2.0/.
 #include "maj0sted/app/editor_document.hpp"
 #include "maj0sted/app/straight_constraints.hpp"
 #include "maj0sted/io/scn_export.hpp"
-#include "maj0sted/web/editor.hpp"
-#include "maj0sted/web/ribbon.hpp"
+#include "maj0sted/editor/editor.hpp"
+#include "maj0sted/editor/ribbon.hpp"
 
 #include <vector>
 
@@ -39,7 +39,7 @@ class plan_panel : public ui_panel
 	void render_toolbar();
 	void render_draft();
 	void render_gaps();
-	void render_compound(maj0sted::web::GapFit &Fit, std::size_t const Gap, bool &Dirty);
+	void render_compound(maj0sted::editor::GapFit &Fit, std::size_t const Gap, bool &Dirty);
 	void fit_compound_to_guides();
 	void clear_fit_guides();
 	void render_storage();
@@ -51,12 +51,12 @@ class plan_panel : public ui_panel
 	void draw_on_scene();
 	void solve();
 	void apply_constraints();
-	maj0sted::web::NiweletaSpec *current_niweleta();
-	maj0sted::web::NiweletaSpec const *current_niweleta() const;
+	maj0sted::editor::NiweletaSpec *current_niweleta();
+	maj0sted::editor::NiweletaSpec const *current_niweleta() const;
 	void align_fits();
 	bool fit_applied(std::size_t const Gap) const;
 	// independent anchored straights: each endpoint is its own handle
-	maj0sted::web::StraightSpec const *handle_straight(std::size_t const Niw, std::size_t const Index) const;
+	maj0sted::editor::StraightSpec const *handle_straight(std::size_t const Niw, std::size_t const Index) const;
 	void append_vertex(double const X, double const Y);
 	void drop_last_vertex();
 	void delete_selected_straight();
@@ -65,6 +65,10 @@ class plan_panel : public ui_panel
 	// hit tests (screen pixels). niw=-1 means "current niweleta only"
 	bool hit_endpoint(ImVec2 const &Mouse, int &OutNiw, int &OutStr, int &OutEnd) const;
 	bool hit_straight(ImVec2 const &Mouse, int &OutNiw, int &OutStr, bool const AllNiwelety) const;
+	// nearest niweleta by its solved axis (curves included), for a forgiving double-click select
+	int nearest_niweleta_axis(ImVec2 const &Mouse, float const Tolerance) const;
+	// nearest station (arc length) on a through niweleta's axis to a plan point; for placing/moving switches
+	bool station_on_through(std::size_t const Through, double const Wx, double const Wy, double &OutStation) const;
 	// compound basket: draggable ends of entry/exit KP, free arcs and between-KP
 	bool hit_compound_station(ImVec2 const &Mouse, int &OutGap, int &OutKind, int &OutArc) const;
 	void drag_compound_station(double const X, double const Y);
@@ -90,8 +94,8 @@ class plan_panel : public ui_panel
 
 	// members
 	maj0sted::app::EditorDocument m_document;
-	std::vector<maj0sted::web::NiweletaPolys> m_solved;
-	std::vector<maj0sted::web::JunctionGeom> m_junctions;
+	std::vector<maj0sted::editor::NiweletaPolys> m_solved;
+	std::vector<maj0sted::editor::JunctionGeom> m_junctions;
 	std::size_t m_niweleta{0};
 
 	// switch placement: 0 idle, 1 waiting for a click on the through track
@@ -99,6 +103,8 @@ class plan_panel : public ui_panel
 	int m_sw_side{0};          // 0 left, 1 right
 	double m_sw_crossing{9.0};  // skos 1:n
 	double m_sw_radius{190.0};  // internal arc radius (metres)
+	double m_sw_length{0.0};    // catalogue length from the chosen template (0 = just the curve)
+	int m_drag_junction{-1};    // index of the switch being slid along its through track, or -1
 
 	int m_sel_straight{-1};
 	int m_sel_end{-1};
@@ -136,7 +142,7 @@ class plan_panel : public ui_panel
 	std::vector<FitGuide> m_fit_guides;
 
 	maj0sted::app::BasketDraft m_draft;
-	std::vector<maj0sted::web::WebPolyline> m_draft_polys;
+	std::vector<maj0sted::editor::PlanPolyline> m_draft_polys;
 	// 0 idle, 1 pick straight end to continue from
 	int m_draft_place{0};
 	// next click appends: 0 = luk, 1 = KP (wej/między), 2 = KP wyjście (kończy: prosta + kotwica)
@@ -162,9 +168,9 @@ class plan_panel : public ui_panel
 	double m_mapviewy{0.0};
 	double m_mapscale{0.0};
 
-	editor::wms_image m_topomap{maj0sted::web::WmsConfig::geoportal_topo()};
+	editor::wms_image m_topomap{maj0sted::editor::WmsConfig::geoportal_topo()};
 	editor::orthophoto_source m_ortho;
 	// 1 km topo cells for views wider than a kilometre (orto's 100 m grid is too dense there)
-	editor::orthophoto_source m_topo{maj0sted::web::WmsConfig::geoportal_topo(), 1000, "topo"};
+	editor::orthophoto_source m_topo{maj0sted::editor::WmsConfig::geoportal_topo(), 1000, "topo"};
 	bool m_showortho{true};
 };

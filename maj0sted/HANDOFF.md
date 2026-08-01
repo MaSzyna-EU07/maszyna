@@ -19,14 +19,14 @@ Toolchain WASM: `emsdk` jest w `~/emsdk` (`source ~/emsdk/emsdk_env.sh` dodaje `
 ```bash
 cd /home/maj00r/Projects/maj0sted
 FLAGS="-std=c++20 -Iinclude -Wall -Wextra -Wpedantic -Wconversion -Wshadow"
-SRC="src/domain/*.cpp src/io/*.cpp src/render/*.cpp src/web/solve.cpp src/web/tile_cache.cpp src/app/editor_document.cpp"
+SRC="src/domain/*.cpp src/io/*.cpp src/render/*.cpp src/editor/solve.cpp src/editor/tile_cache.cpp src/app/editor_document.cpp"
 for t in map_project niweleta plan_alignment parallelism fitting serialization render web tile_cache document; do
   g++ $FLAGS -Itests $SRC tests/test_$t.cpp -o /tmp/t_$t && /tmp/t_$t | tail -1
 done
 ```
 Wszystkie testy przechodzą, kompilacja bez ostrzeżeń. Oszczędnie: kompiluj tylko
 zmieniony test z minimalnym zestawem źródeł (np. `tile_cache` wymaga tylko
-`src/web/tile_cache.cpp`; `document` — `src/domain/*.cpp src/io/project_serializer.cpp
+`src/editor/tile_cache.cpp`; `document` — `src/domain/*.cpp src/io/project_serializer.cpp
 src/app/editor_document.cpp`). Szybki syntax-check: `g++ $FLAGS -fsyntax-only ...`.
 
 Budowa WASM: `source ~/emsdk/emsdk_env.sh && cd web && ./build.sh`
@@ -90,7 +90,7 @@ Budowa WASM: `source ~/emsdk/emsdk_env.sh && cd web && ./build.sh`
   równoległości (patrz niżej — StraightId nie są globalnie unikalne).
 
 ### Rendering: dwie szyny
-`src/web/editor.cpp` rysuje **dwie szyny w rozstawie 1500 mm** (`kHalfGauge=0.75`,
+`src/editor/editor.cpp` rysuje **dwie szyny w rozstawie 1500 mm** (`kHalfGauge=0.75`,
 ±750 mm od osi) zamiast samej osi. `offset_points` przesuwa linię osi wzdłuż
 normalnej per-wierzchołek (różnica centralna, normalna lewa `(-dy,dx)`),
 `push_rails` emituje lewą i prawą szynę zachowując `kind` (kolor). Uchwyty edycji
@@ -100,7 +100,7 @@ normalnej per-wierzchołek (różnica centralna, normalna lewa `(-dy,dx)`),
 Zasada: **cała logika jest w libce**; `web/` to cienki renderer + przekazywanie
 wejścia. `web/maj0sted_bindings.cpp` (embind) to jedyny plik zależny od emscripten.
 
-- **Kafle podkładu WMS** (`maj0sted::web`, `web/tile_cache.hpp/.cpp`) ✓
+- **Kafle podkładu WMS** (`maj0sted::editor`, `web/tile_cache.hpp/.cpp`) ✓
   - `TileGrid` — **jeden stały grid kafli 100 m × 100 m** w **EPSG:2180**
     (`kCellMetres=100`, **1024 px/kafel** → 100/1024 m/px, origin (0,0), jeden
     poziom `kLevel=0`, **bez piramidy per-zoom**); `tile_at`, `bbox`,

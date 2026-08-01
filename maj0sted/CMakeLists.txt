@@ -31,15 +31,19 @@ add_library(maj0sted STATIC
     src/domain/parallelism_service.cpp
     src/domain/fitting_service.cpp
     src/domain/gap_fitter.cpp
+    src/domain/turnout.cpp
     src/io/project_serializer.cpp
     src/io/svg_writer.cpp
+    src/io/scn_export.cpp
     src/render/plan_sampler.cpp
     src/render/rail_renderer.cpp
-    src/web/solve.cpp
-    src/web/editor.cpp
-    src/web/ribbon.cpp
-    src/web/tile_cache.cpp
+    src/editor/solve.cpp
+    src/editor/editor.cpp
+    src/editor/ribbon.cpp
+    src/editor/tile_cache.cpp
     src/app/editor_document.cpp
+    src/app/straight_constraints.cpp
+    src/app/basket_draft.cpp
 )
 add_library(maj0sted::maj0sted ALIAS maj0sted)
 

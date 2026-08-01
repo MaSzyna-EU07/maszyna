@@ -22,8 +22,11 @@ namespace editor
 struct turnout_preset
 {
 	std::string name;
-	double crossing_n;
-	double radius;
+	double crossing_n;   // skos 1:n
+	double radius;       // metres
+	double length;       // catalogue length PR->KR along the through track, metres
+	double blade_angle;  // kąt nagięcia iglicy (beta), radians; the diverging leaves the straight here
+	double pre_blade;    // odcinek przediglicowy: straight lead PR -> blade tip, metres
 };
 
 // typical Polish turnouts (rozjazdy zwyczajne). the (skos, R) pairs are the recognised standard;

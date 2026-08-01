@@ -3,9 +3,9 @@
 #include <string>
 #include <vector>
 
-#include "maj0sted/web/solve.hpp"  // WebPoint, WebPolyline
+#include "maj0sted/editor/solve.hpp"  // PlanPoint, PlanPolyline
 
-namespace maj0sted::web {
+namespace maj0sted::editor {
 
 /// An anchored straight segment (two XY endpoints).
 struct StraightSpec {
@@ -63,7 +63,7 @@ struct NiweletaSpec {
 };
 
 struct NiweletaPolys {
-    std::vector<WebPolyline> polylines;
+    std::vector<PlanPolyline> polylines;
     /// Centreline segments after adjacent fits trim the input straights. Kept
     /// index-aligned with NiweletaSpec::straights for editor hit handles.
     std::vector<StraightSpec> rendered_straights;
@@ -74,7 +74,7 @@ struct NiweletaPolys {
     std::vector<GapFit> applied_fits;
     /// The solved axis as one polyline, in order, with no duplicate join points.
     /// Lets a station along the niweleta be resolved to a pose (see pose_at).
-    std::vector<WebPoint> centreline;
+    std::vector<PlanPoint> centreline;
 };
 
 /// Builds each niweleta, fits every requested gap, and returns the sampled plan
@@ -98,6 +98,7 @@ struct Junction {
     int side{0};            ///< 0 = diverges left, 1 = diverges right
     bool facing{true};      ///< true opens toward increasing station, false back
     double crossing_n{9.0}; ///< crossing mark 1:n (skos) → leaving angle atan(1/n)
+    double length{0.0};     ///< catalogue length (PR→KR along the through track); 0 = just the curve
     GapFit curve;           ///< the internal diverging curve: arc / compound / basket
     int branch{-1};         ///< index of the branch niweleta, pinned to the frog
 };
@@ -114,7 +115,7 @@ struct JunctionGeom {
     double tangent_back{0.0};  ///< theoretical tangent length after the curve
     double length{0.0};        ///< diverging curve length (switch point to frog), metres
     /// The diverging curve, as rails ready to draw.
-    std::vector<WebPolyline> polylines;
+    std::vector<PlanPolyline> polylines;
 };
 
 /// A whole layout solved at once: the niwelety plus every switch. Returned by
@@ -132,4 +133,4 @@ struct LayoutSolution {
 [[nodiscard]] LayoutSolution solve_layout(std::vector<NiweletaSpec> niwelety,
                                           const std::vector<Junction>& junctions);
 
-}  // namespace maj0sted::web
+}  // namespace maj0sted::editor

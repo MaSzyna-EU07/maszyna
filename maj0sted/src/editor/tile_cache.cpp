@@ -1,4 +1,4 @@
-#include "maj0sted/web/tile_cache.hpp"
+#include "maj0sted/editor/tile_cache.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -7,14 +7,7 @@
 #include <numeric>
 #include <utility>
 
-#ifdef __EMSCRIPTEN__
-#include <cstring>
-
-#include <emscripten/emscripten.h>
-#include <emscripten/fetch.h>
-#endif
-
-namespace maj0sted::web {
+namespace maj0sted::editor {
 
 namespace {
 
@@ -33,17 +26,23 @@ constexpr int kMaxRetries = 10;
 
 // --- TileGrid ------------------------------------------------------------
 
-double TileGrid::resolution(int /*zoom*/) noexcept {
-    return kCellMetres / static_cast<double>(kTilePixels);  // constant, single grid
+double TileGrid::cell_metres(const TileKey& key) noexcept {
+    return key.zoom >= kCellZoomMin ? static_cast<double>(key.zoom) : kCellMetres;
 }
 
-double TileGrid::tile_span(int /*zoom*/) noexcept {
-    return kCellMetres;  // every cell is 100 m × 100 m
+double TileGrid::resolution(int zoom) noexcept {
+    return tile_span(zoom) / static_cast<double>(kTilePixels);
 }
 
-TileKey TileGrid::tile_at(double x, double y, int /*zoom*/) noexcept {
-    const auto safe_index = [](double coordinate, double origin) {
-        const double value = std::floor((coordinate - origin) / kCellMetres);
+double TileGrid::tile_span(int zoom) noexcept {
+    return zoom >= kCellZoomMin ? static_cast<double>(zoom) : kCellMetres;
+}
+
+TileKey TileGrid::tile_at(double x, double y, int zoom) noexcept {
+    const double cell = tile_span(zoom);
+    const int key_zoom = zoom >= kCellZoomMin ? zoom : kLevel;
+    const auto safe_index = [cell](double coordinate, double origin) {
+        const double value = std::floor((coordinate - origin) / cell);
         if (!std::isfinite(value)) return 0;
         if (value <= static_cast<double>(std::numeric_limits<int>::min())) {
             return std::numeric_limits<int>::min();
@@ -53,20 +52,21 @@ TileKey TileGrid::tile_at(double x, double y, int /*zoom*/) noexcept {
         }
         return static_cast<int>(value);
     };
-    return TileKey{kLevel, safe_index(x, kOriginX), safe_index(y, kOriginY)};
+    return TileKey{key_zoom, safe_index(x, kOriginX), safe_index(y, kOriginY)};
 }
 
 TileBBox TileGrid::bbox(const TileKey& key) noexcept {
-    const double min_x = kOriginX + static_cast<double>(key.x) * kCellMetres;
-    const double min_y = kOriginY + static_cast<double>(key.y) * kCellMetres;
-    return TileBBox{min_x, min_y, min_x + kCellMetres, min_y + kCellMetres};
+    const double cell = cell_metres(key);
+    const double min_x = kOriginX + static_cast<double>(key.x) * cell;
+    const double min_y = kOriginY + static_cast<double>(key.y) * cell;
+    return TileBBox{min_x, min_y, min_x + cell, min_y + cell};
 }
 
 int TileGrid::zoom_for_resolution(double /*metres_per_pixel*/) noexcept {
     return kLevel;  // one fixed 100 m grid, no pyramid
 }
 
-std::vector<TileKey> TileGrid::tiles_for_view(const TileBBox& view, int /*zoom*/,
+std::vector<TileKey> TileGrid::tiles_for_view(const TileBBox& view, int zoom,
                                               int max_tiles) {
     std::vector<TileKey> tiles;
     if (max_tiles <= 0 || !std::isfinite(view.min_x) ||
@@ -79,8 +79,8 @@ std::vector<TileKey> TileGrid::tiles_for_view(const TileBBox& view, int /*zoom*/
     const double min_y = std::min(view.min_y, view.max_y);
     const double max_y = std::max(view.min_y, view.max_y);
 
-    const TileKey lo = tile_at(min_x, min_y);
-    const TileKey hi = tile_at(max_x, max_y);
+    const TileKey lo = tile_at(min_x, min_y, zoom);
+    const TileKey hi = tile_at(max_x, max_y, zoom);
 
     using Wide = std::int64_t;
     const Wide width = static_cast<Wide>(hi.x) - lo.x + 1;
@@ -113,11 +113,12 @@ std::vector<TileKey> TileGrid::tiles_for_view(const TileBBox& view, int /*zoom*/
         centre_y - rows / 2, static_cast<Wide>(lo.y),
         static_cast<Wide>(hi.y) - rows + 1);
 
+    const int key_zoom = zoom >= kCellZoomMin ? zoom : kLevel;
     tiles.reserve(static_cast<std::size_t>(columns * rows));
     for (Wide row = first_row; row < first_row + rows; ++row) {
         for (Wide col = first_col; col < first_col + columns; ++col) {
             tiles.push_back(
-                TileKey{kLevel, static_cast<int>(col), static_cast<int>(row)});
+                TileKey{key_zoom, static_cast<int>(col), static_cast<int>(row)});
         }
     }
     return tiles;
@@ -127,8 +128,8 @@ std::vector<TileKey> TileGrid::tiles_for_view(const TileBBox& view, int /*zoom*/
 
 WmsConfig WmsConfig::geoportal_ortho() {
     WmsConfig cfg;
-    // Public Geoportal ortophoto WMS (EPSG:2180). If this endpoint blocks CORS
-    // for emscripten_fetch, swap base_url/layers via set_config() from the host.
+    // Public Geoportal ortophoto WMS (EPSG:2180). Swap base_url/layers via
+    // set_config() from the host to point at a different backend.
     cfg.base_url =
         "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution";
     cfg.layers = "Raster";
@@ -233,59 +234,11 @@ void TileService::complete_fetch(const TileKey& key, bool ok,
     }
 }
 
-#ifdef __EMSCRIPTEN__
-namespace {
-// Delay between retry attempts, so a persistently failing endpoint is retried
-// steadily rather than in a tight loop.
-constexpr int kRetryDelayMs = 1500;
-
-struct FetchCtx {
-    TileService* self;
-    TileKey key;
-};
-
-struct RetryCtx {
-    TileService* self;
-    TileKey key;
-};
-
-void on_retry(void* user_data) {
-    auto* ctx = static_cast<RetryCtx*>(user_data);
-    TileService* self = ctx->self;
-    const TileKey key = ctx->key;
-    delete ctx;
-    self->retry_now(key);
-}
-
-void on_fetch_success(emscripten_fetch_t* fetch) {
-    auto* ctx = static_cast<FetchCtx*>(fetch->userData);
-    std::vector<std::uint8_t> bytes(
-        reinterpret_cast<const std::uint8_t*>(fetch->data),
-        reinterpret_cast<const std::uint8_t*>(fetch->data) +
-            static_cast<std::size_t>(fetch->numBytes));
-    TileService* self = ctx->self;
-    const TileKey key = ctx->key;
-    delete ctx;
-    emscripten_fetch_close(fetch);
-    self->complete_fetch(key, true, std::move(bytes), {});
-}
-
-void on_fetch_error(emscripten_fetch_t* fetch) {
-    auto* ctx = static_cast<FetchCtx*>(fetch->userData);
-    TileService* self = ctx->self;
-    const TileKey key = ctx->key;
-    delete ctx;
-    emscripten_fetch_close(fetch);
-    self->complete_fetch(key, false, {}, {});
-}
-}  // namespace
-#endif
-
 void TileService::begin_fetch(const TileKey& key) {
     const std::string url = url_for(key);
 
-    // An injected fetcher wins on every platform (used by native tests and any
-    // host that wants to route the request itself).
+    // The host injects the fetcher (the editor's threaded downloader, or a test
+    // stub). Without one there is no transport, so the tile simply fails.
     if (fetcher_) {
         const TileKey captured = key;
         fetcher_(url, [this, captured](bool ok, std::vector<std::uint8_t> bytes,
@@ -294,33 +247,15 @@ void TileService::begin_fetch(const TileKey& key) {
         });
         return;
     }
-
-#ifdef __EMSCRIPTEN__
-    emscripten_fetch_attr_t attr;
-    emscripten_fetch_attr_init(&attr);
-    std::strcpy(attr.requestMethod, "GET");
-    attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
-    attr.userData = new FetchCtx{this, key};
-    attr.onsuccess = on_fetch_success;
-    attr.onerror = on_fetch_error;
-    emscripten_fetch(&attr, url.c_str());
-#else
-    // No network backend available (native, no injected fetcher): mark failed.
     complete_fetch(key, false, {}, {});
-#endif
 }
 
 void TileService::retry_now(const TileKey& key) { begin_fetch(key); }
 
 void TileService::schedule_retry(const TileKey& key) {
-#ifdef __EMSCRIPTEN__
-    // Defer asynchronously: infinite retry without blocking or recursion.
-    emscripten_async_call(&on_retry, new RetryCtx{this, key}, kRetryDelayMs);
-#else
-    // Injected-fetcher path (native/tests): re-issue immediately. The fetcher
-    // controls timing, so a fetcher that eventually succeeds ends the loop.
+    // Re-issue at once; the injected fetcher owns the timing, so a fetcher that
+    // eventually succeeds ends the retry loop.
     begin_fetch(key);
-#endif
 }
 
-}  // namespace maj0sted::web
+}  // namespace maj0sted::editor

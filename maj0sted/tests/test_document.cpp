@@ -5,9 +5,9 @@
 #include "maj0sted/app/editor_document.hpp"
 
 using namespace maj0sted::app;
-using maj0sted::web::GapFit;
-using maj0sted::web::NiweletaSpec;
-using maj0sted::web::StraightSpec;
+using maj0sted::editor::GapFit;
+using maj0sted::editor::NiweletaSpec;
+using maj0sted::editor::StraightSpec;
 
 namespace {
 
@@ -28,14 +28,28 @@ EditorDocument sample_document() {
     NiweletaSpec b;
     b.name = "Bocznica z spacją";
     b.straights = {StraightSpec{500000.25, 300000.75, 500200.0, 300000.0}};
+    b.straights[0].rel_kind = 1;
+    b.straights[0].rel_niw = 0;
+    b.straights[0].rel_str = 0;
+    b.straights[0].rel_offset = -4.5;
 
     doc.niwelety = {a, b};
+    doc.view_x = 500100.5;
+    doc.view_y = 300050.25;
+    doc.view_extent = 420.0;
+    doc.origin_set = true;
+    doc.georeferenced = true;
+    doc.origin_x = 500000.0;
+    doc.origin_y = 300000.0;
     return doc;
 }
 
 bool same(const StraightSpec& x, const StraightSpec& y) {
     return x.x1 == y.x1 && x.y1 == y.y1 && x.x2 == y.x2 && x.y2 == y.y2 &&
-           x.hidden == y.hidden;
+           x.hidden == y.hidden && x.rel_kind == y.rel_kind &&
+           x.rel_niw == y.rel_niw && x.rel_str == y.rel_str &&
+           x.rel_offset == y.rel_offset && x.rel_cot == y.rel_cot &&
+           x.rel_side == y.rel_side && x.rel_length == y.rel_length;
 }
 
 bool same(const GapFit& x, const GapFit& y) {
@@ -46,6 +60,13 @@ bool same(const GapFit& x, const GapFit& y) {
 }
 
 void check_equal(const EditorDocument& x, const EditorDocument& y) {
+    CHECK(x.view_x == y.view_x);
+    CHECK(x.view_y == y.view_y);
+    CHECK(x.view_extent == y.view_extent);
+    CHECK(x.origin_set == y.origin_set);
+    CHECK(x.georeferenced == y.georeferenced);
+    CHECK(x.origin_x == y.origin_x);
+    CHECK(x.origin_y == y.origin_y);
     CHECK(x.niwelety.size() == y.niwelety.size());
     if (x.niwelety.size() != y.niwelety.size()) return;
     for (std::size_t n = 0; n < x.niwelety.size(); ++n) {

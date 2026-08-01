@@ -17,9 +17,9 @@
 namespace maj0sted::app {
 
 using namespace maj0sted::domain;
-using maj0sted::web::GapFit;
-using maj0sted::web::NiweletaSpec;
-using maj0sted::web::StraightSpec;
+using maj0sted::editor::GapFit;
+using maj0sted::editor::NiweletaSpec;
+using maj0sted::editor::StraightSpec;
 
 namespace {
 
@@ -201,6 +201,8 @@ std::string serialize_document(const EditorDocument& document) {
             out += " " + num(a.radius) + " " + num(a.length) + " " +
                    num(a.transition_to_next);
         }
+        // catalogue length trails the arcs, so files written before it still parse (length stays 0)
+        out += " " + num(j.length);
         out += "\n";
     }
     return out;
@@ -397,7 +399,7 @@ EditorDocument deserialize_document(const std::string& text) {
                     if (base + 2 >= e.size()) {
                         throw std::runtime_error{"maj0sted: truncated 'efit2' arcs"};
                     }
-                    f.arcs.push_back(maj0sted::web::CompoundArcSpec{
+                    f.arcs.push_back(maj0sted::editor::CompoundArcSpec{
                         to_double(e[base]), to_double(e[base + 1]),
                         to_double(e[base + 2])});
                 }
@@ -445,7 +447,7 @@ EditorDocument deserialize_document(const std::string& text) {
                     if (e.size() < 12 || e[0] != "ejunc") {
                         throw std::runtime_error{"maj0sted: bad 'ejunc' line"};
                     }
-                    maj0sted::web::Junction junction;
+                    maj0sted::editor::Junction junction;
                     junction.through = static_cast<int>(to_long(e[1]));
                     junction.station = to_double(e[2]);
                     junction.side = static_cast<int>(to_long(e[3]));
@@ -463,9 +465,14 @@ EditorDocument deserialize_document(const std::string& text) {
                         if (base + 2 >= e.size()) {
                             throw std::runtime_error{"maj0sted: truncated 'ejunc' arcs"};
                         }
-                        junction.curve.arcs.push_back(maj0sted::web::CompoundArcSpec{
+                        junction.curve.arcs.push_back(maj0sted::editor::CompoundArcSpec{
                             to_double(e[base]), to_double(e[base + 1]),
                             to_double(e[base + 2])});
+                    }
+                    // optional catalogue length after the arcs (absent in the earliest files)
+                    const std::size_t after_arcs = 13 + static_cast<std::size_t>(arc_count) * 3;
+                    if (e.size() > after_arcs) {
+                        junction.length = to_double(e[after_arcs]);
                     }
                     document.junctions.push_back(std::move(junction));
                 }
@@ -476,9 +483,9 @@ EditorDocument deserialize_document(const std::string& text) {
 }
 
 std::string default_project_path() {
-    // Under Emscripten the host mounts IDBFS at /data (see web/index.html), so
-    // this path is persistent across reloads once FS.syncfs has flushed.
-    return "/data/maj0sted/project.m0s";
+    // Fallback only; the editor passes its own path (see plan_panel). Relative, so
+    // it lands under the working directory rather than at a filesystem root.
+    return "editor/project.m0s";
 }
 
 bool save_project(const EditorDocument& document, const std::string& path) {

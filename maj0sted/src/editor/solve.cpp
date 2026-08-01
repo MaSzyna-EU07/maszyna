@@ -1,11 +1,11 @@
-#include "maj0sted/web/solve.hpp"
+#include "maj0sted/editor/solve.hpp"
 
 #include <optional>
 
 #include "maj0sted/maj0sted.hpp"
 #include "maj0sted/render/plan_sampler.hpp"
 
-namespace maj0sted::web {
+namespace maj0sted::editor {
 
 using namespace maj0sted::domain;
 
@@ -41,15 +41,15 @@ FitResult make_fit(const Niweleta& niweleta, StraightId entry, StraightId exit,
                                                : std::nullopt});
 }
 
-std::vector<WebPolyline> to_polylines(const render::Scene& scene) {
-    std::vector<WebPolyline> result;
+std::vector<PlanPolyline> to_polylines(const render::Scene& scene) {
+    std::vector<PlanPolyline> result;
     result.reserve(scene.polylines.size());
     for (const auto& polyline : scene.polylines) {
-        WebPolyline out;
+        PlanPolyline out;
         out.kind = static_cast<int>(polyline.kind);
         out.points.reserve(polyline.points.size());
         for (const auto& p : polyline.points) {
-            out.points.push_back(WebPoint{p.x, p.y});
+            out.points.push_back(PlanPoint{p.x, p.y});
         }
         result.push_back(std::move(out));
     }
@@ -58,7 +58,7 @@ std::vector<WebPolyline> to_polylines(const render::Scene& scene) {
 
 }  // namespace
 
-std::vector<WebPolyline> solve_scene(const SolveRequest& request) {
+std::vector<PlanPolyline> solve_scene(const SolveRequest& request) {
     Niweleta niweleta{NiweletaId{1}};
     const CartesianPosition a{request.ax, request.ay};
     const CartesianPosition b{request.bx, request.by};
@@ -95,4 +95,4 @@ std::vector<WebPolyline> solve_scene(const SolveRequest& request) {
     return to_polylines(render::sample(niweleta.plan()));
 }
 
-}  // namespace maj0sted::web
+}  // namespace maj0sted::editor

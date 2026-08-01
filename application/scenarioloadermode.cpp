@@ -53,11 +53,16 @@ bool scenarioloader_mode::update() {
 	}
 	catch (invalid_scenery_exception &e) {
 		ErrorLog( "Bad init: scenario loading failed" );
+		state.reset();
 		Application.pop_mode();
 	}
 
 	WriteLog( "Scenario loading time: " + std::to_string( std::chrono::duration_cast<std::chrono::seconds>( std::chrono::system_clock::now() - timestart ).count() ) + " seconds" );
 	// TODO: implement and use next mode cue
+
+	// the mode object is kept for the next time a scenery is loaded; without dropping the context
+	// here, a later enter() would skip deserialize_begin and finish an already-spent parser again
+	state.reset();
 
 	Application.pop_mode();
 	// starting into the editor the simulation never runs at all: there's no driver mode underneath, so
@@ -78,6 +83,11 @@ bool scenarioloader_mode::is_command_processor() const {
 void scenarioloader_mode::enter() {
     // TBD: hide cursor in fullscreen mode?
     Application.set_cursor( GLFW_CURSOR_NORMAL );
+
+    // a new map from the editor re-enters this mode while the previous load's context is still
+    // sitting in `state`; clear it so update() opens the file again instead of re-finishing an
+    // exhausted parser (Groups.close / create_map_geometry on an already-built region)
+    state.reset();
 
     simulation::is_ready = false;
 

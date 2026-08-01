@@ -40,6 +40,10 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
     // its sections, which those chunks referenced) is destroyed below
     EditorTerrain.reset();
 
+    // groups hold raw pointers into the region; wipe them before the region goes away so a reload
+    // cannot walk dangling nodes in update_map() / erase()
+    scene::Groups.clear();
+
     // TODO: move initialization to separate routine so we can reuse it
     SafeDelete( Region );
     Region = new scene::basic_region();

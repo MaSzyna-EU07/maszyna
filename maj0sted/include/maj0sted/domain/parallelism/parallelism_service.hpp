@@ -30,6 +30,10 @@ public:
     /// Perpendicular distance (>= 0) from @p other's start point to the
     /// (infinite) line carrying @p origin.
     static double perpendicular_distance(const Straight& origin, const Straight& other);
+
+    [[nodiscard]] static Straight project_onto_offset_line(const Straight& origin,
+                                                           double offset_m,
+                                                           const Straight& segment);
 };
 
 }  // namespace maj0sted::domain

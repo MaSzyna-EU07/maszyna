@@ -1,4 +1,4 @@
-#include "maj0sted/web/editor.hpp"
+#include "maj0sted/editor/editor.hpp"
 
 #include <cmath>
 #include <cstdint>
@@ -9,6 +9,7 @@
 
 #include "maj0sted/domain/fitting/gap_fitter.hpp"
 #include "maj0sted/domain/geometry/segment_layout.hpp"
+#include "maj0sted/domain/geometry/turnout.hpp"
 #include "maj0sted/maj0sted.hpp"
 #include "maj0sted/render/rail_renderer.hpp"
 #include "maj0sted/render/track_renderer.hpp"
@@ -19,7 +20,7 @@
 // All fitting business logic lives in maj0sted::domain::GapFitter; all rail
 // geometry lives in maj0sted::render::RailRenderer. Nothing here decides how a
 // curve is fitted or how it is drawn.
-namespace maj0sted::web {
+namespace maj0sted::editor {
 
 using namespace maj0sted::domain;
 using maj0sted::domain::geometry::layout_segment;
@@ -156,19 +157,19 @@ std::vector<render::CentrelineElement> sample_centrelines(
     return axis;
 }
 
-// Renders the centreline elements to WebPolylines through the renderer
+// Renders the centreline elements to PlanPolylines through the renderer
 // interface. A different render::TrackRenderer could be dropped in here without
 // touching anything above.
-std::vector<WebPolyline> render_rails(
+std::vector<PlanPolyline> render_rails(
     const std::vector<render::CentrelineElement>& axis) {
     render::RailRenderer rail_renderer;
     render::TrackRenderer& renderer = rail_renderer;
     for (const auto& element : axis) renderer.add(element);
 
-    std::vector<WebPolyline> polylines;
+    std::vector<PlanPolyline> polylines;
     polylines.reserve(rail_renderer.rails().size());
     for (const auto& rail : rail_renderer.rails()) {
-        WebPolyline poly;
+        PlanPolyline poly;
         poly.kind = static_cast<int>(rail.kind);
         poly.straight_index = rail.straight_index;
         poly.gap = rail.gap;
@@ -177,7 +178,7 @@ std::vector<WebPolyline> render_rails(
         poly.radius_start = rail.radius_start;
         poly.radius_end = rail.radius_end;
         poly.points.reserve(rail.points.size());
-        for (const auto& p : rail.points) poly.points.push_back(WebPoint{p.x, p.y});
+        for (const auto& p : rail.points) poly.points.push_back(PlanPoint{p.x, p.y});
         polylines.push_back(std::move(poly));
     }
     return polylines;
@@ -226,7 +227,7 @@ NiweletaPolys build(const NiweletaSpec& spec) {
                 const auto& last = result.centreline.back();
                 if (std::hypot(p.x - last.x, p.y - last.y) < 1e-9) continue;
             }
-            result.centreline.push_back(WebPoint{p.x, p.y});
+            result.centreline.push_back(PlanPoint{p.x, p.y});
         }
     }
 
@@ -238,7 +239,7 @@ NiweletaPolys build(const NiweletaSpec& spec) {
 // The pose (position + unit heading) at arc length @p station along a centreline
 // polyline. Clamped to the ends; heading comes from the segment the station falls
 // on. Returns false only for a centreline too short to have a direction.
-bool pose_at(const std::vector<WebPoint>& centreline, double station, Pose& out) {
+bool pose_at(const std::vector<PlanPoint>& centreline, double station, Pose& out) {
     if (centreline.size() < 2) return false;
 
     double travelled = 0.0;
@@ -261,36 +262,32 @@ bool pose_at(const std::vector<WebPoint>& centreline, double station, Pose& out)
     return false;
 }
 
-// Samples a fitted curve chain into centreline elements, starting from @p start.
-// Same layout the gap fits go through, so the switch curve is drawn identically.
-std::vector<render::CentrelineElement> sample_curve(
-    const std::vector<PlanElement>& curve, Pose start) {
-    std::vector<render::CentrelineElement> axis;
-    Pose pose = start;
-    int element_index = 0;
-    for (const auto& element : curve) {
-        double k0 = 0.0, k1 = 0.0, length = 0.0;
-        render::CentrelineElement out;
-        out.kind = sample_params(element, k0, k1, length);
-        std::vector<XY> pts;
-        pose = layout_segment(k0, k1, length, pose, &pts);
-        out.points.reserve(pts.size());
-        for (const auto& p : pts) out.points.push_back(render::Point{p.x, p.y});
-        out.element_index = element_index++;
-        out.length = length;
-        out.radius_start = radius_of(k0);
-        out.radius_end = radius_of(k1);
-        axis.push_back(std::move(out));
+// Translates the editor's switch DTO into a domain Turnout: a plain-arc curve
+// (mode 1) or a basket of arcs eased by clothoids (mode 3). All the turnout
+// business — turning to the crossing angle, closing the last arc, the frog rail —
+// lives in the domain; nothing here decides geometry.
+domain::Turnout to_turnout(const Junction& junction) {
+    domain::DivergingCurve curve;
+    if (junction.curve.mode == 3 && junction.curve.arcs.size() >= 2) {
+        for (const auto& arc : junction.curve.arcs) {
+            curve.arcs.push_back(
+                domain::TurnoutArc{arc.radius, arc.length, arc.transition_to_next});
+        }
+        curve.entry_transition = junction.curve.entry_t;
+        curve.exit_transition = junction.curve.exit_t;
+    } else {
+        curve.arcs.push_back(domain::TurnoutArc{junction.curve.radius, 0.0, 0.0});
     }
-    return axis;
+    return domain::Turnout{
+        domain::CrossingMark{junction.crossing_n},
+        junction.side == 0 ? domain::DivergeSide::Left : domain::DivergeSide::Right,
+        std::move(curve), junction.length};
 }
 
-// The diverging curve and frog of one switch, from the solved through niweleta.
-// The switch's theoretical point sits at @p station on the through track; two
-// tangent lines cross there (the through heading and that heading turned by the
-// crossing angle), and the internal curve is fitted to round the corner between
-// them — a plain arc, or a compound basket, whatever the switch asks for. The
-// branch begins where the curve ends.
+// The drawable geometry of one switch. @p station is the switch's start on the
+// through track (początek rozjazdu) — the point the user clicks. The diverging
+// path and frog come from the domain; here we only place them on the through
+// track and sample them into rails.
 JunctionGeom solve_junction(const Junction& junction,
                             const std::vector<NiweletaPolys>& solved) {
     JunctionGeom geom;
@@ -298,61 +295,50 @@ JunctionGeom solve_junction(const Junction& junction,
         static_cast<std::size_t>(junction.through) >= solved.size()) {
         return geom;
     }
-    if (junction.crossing_n <= 0.0) return geom;
 
-    Pose theoretical{};
-    if (!pose_at(solved[junction.through].centreline, junction.station,
-                 theoretical)) {
+    Pose start{};
+    if (!pose_at(solved[junction.through].centreline, junction.station, start)) {
         return geom;
     }
-
     // a trailing switch opens against the running direction: flip the heading
-    double thx = theoretical.hx;
-    double thy = theoretical.hy;
     if (!junction.facing) {
-        thx = -thx;
-        thy = -thy;
+        start.hx = -start.hx;
+        start.hy = -start.hy;
     }
 
-    // the diverging tangent line: the through heading turned by the crossing
-    // angle, left (positive) or right (negative)
-    const double angle =
-        (junction.side == 0 ? 1.0 : -1.0) * std::atan(1.0 / junction.crossing_n);
-    const double dhx = thx * std::cos(angle) - thy * std::sin(angle);
-    const double dhy = thx * std::sin(angle) + thy * std::cos(angle);
+    const auto turnout = domain::lay_turnout(start, to_turnout(junction));
+    if (!turnout.valid) return geom;
 
-    // two long guide straights meeting at the theoretical point X; the fitter
-    // rounds the corner and hands back the tangent points that become the switch
-    // start and the frog. long enough that the tangent points land on them.
-    const double guide = 5000.0;
-    const CartesianPosition x{theoretical.x, theoretical.y};
-    Straight entry{CartesianPosition{x.x() - thx * guide, x.y() - thy * guide}, x};
-    Straight exit{x, CartesianPosition{x.x() + dhx * guide, x.y() + dhy * guide}};
-
-    const auto request = to_request(junction.curve);
-    if (!request) return geom;  // a switch with no curve is not a switch
-    const auto connection = GapFitter::connect(entry, exit, *request);
-    if (!connection) return geom;
-
-    const FitResult& fit = connection->fit;
-    const CartesianPosition s = fit.tangent_in;   // switch start
-    const CartesianPosition f = fit.tangent_out;  // frog
+    // sample the domain segments into drawable rails
+    std::vector<render::CentrelineElement> axis;
+    Pose pose = start;
+    for (const auto& segment : turnout.path) {
+        std::vector<XY> pts;
+        render::CentrelineElement element;
+        element.kind =
+            std::abs(segment.k1 - segment.k0) >= 1e-12 ? render::ElementKind::Transition
+            : std::abs(segment.k0) >= 1e-12            ? render::ElementKind::Arc
+                                                       : render::ElementKind::Straight;
+        pose = layout_segment(segment.k0, segment.k1, segment.length, pose, &pts);
+        element.points.reserve(pts.size());
+        for (const auto& p : pts) element.points.push_back(render::Point{p.x, p.y});
+        element.length = segment.length;
+        element.radius_start = radius_of(segment.k0);
+        element.radius_end = radius_of(segment.k1);
+        axis.push_back(std::move(element));
+    }
 
     geom.valid = true;
-    geom.px = s.x();
-    geom.py = s.y();
-    geom.fx = f.x();
-    geom.fy = f.y();
-    geom.fhx = dhx;
-    geom.fhy = dhy;
-    // theoretical tangent lengths: from the crossing point to each tangent point
-    geom.tangent_front = std::hypot(s.x() - x.x(), s.y() - x.y());
-    geom.tangent_back = std::hypot(f.x() - x.x(), f.y() - x.y());
-
-    const auto axis = sample_curve(fit.curve, Pose{s.x(), s.y(), thx, thy});
-    for (const auto& element : axis) geom.length += element.length;
+    geom.px = start.x;
+    geom.py = start.y;
+    geom.fx = turnout.frog.x;
+    geom.fy = turnout.frog.y;
+    geom.fhx = turnout.frog.hx;
+    geom.fhy = turnout.frog.hy;
+    geom.tangent_front = turnout.tangent_front;
+    geom.tangent_back = turnout.tangent_back;
+    geom.length = turnout.diverging_length;
     geom.polylines = render_rails(axis);
-
     return geom;
 }
 
@@ -405,4 +391,4 @@ LayoutSolution solve_layout(std::vector<NiweletaSpec> niwelety,
     return out;
 }
 
-}  // namespace maj0sted::web
+}  // namespace maj0sted::editor

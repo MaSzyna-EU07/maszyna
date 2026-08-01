@@ -2,9 +2,9 @@
 
 #include <vector>
 
-#include "maj0sted/web/solve.hpp"  // WebPoint, WebPolyline
+#include "maj0sted/editor/solve.hpp"  // PlanPoint, PlanPolyline
 
-namespace maj0sted::web {
+namespace maj0sted::editor {
 
 /// One element of an alignment "ribbon" (element chain), defined intrinsically.
 struct RibbonElement {
@@ -27,6 +27,6 @@ struct RibbonRequest {
 };
 
 /// Lays the ribbon out and returns one polyline per element, ready to draw.
-[[nodiscard]] std::vector<WebPolyline> solve_ribbon(const RibbonRequest& request);
+[[nodiscard]] std::vector<PlanPolyline> solve_ribbon(const RibbonRequest& request);
 
-}  // namespace maj0sted::web
+}  // namespace maj0sted::editor

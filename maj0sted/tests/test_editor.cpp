@@ -2,14 +2,14 @@
 #include <numbers>
 
 #include "check.hpp"
-#include "maj0sted/web/editor.hpp"
-#include "maj0sted/web/solve.hpp"
+#include "maj0sted/editor/editor.hpp"
+#include "maj0sted/editor/solve.hpp"
 
-using namespace maj0sted::web;
+using namespace maj0sted::editor;
 
 namespace {
 
-bool has_kind(const std::vector<WebPolyline>& polylines, int kind) {
+bool has_kind(const std::vector<PlanPolyline>& polylines, int kind) {
     for (const auto& p : polylines) {
         if (p.kind == kind) return true;
     }
@@ -120,7 +120,7 @@ void editor_emits_two_rails_at_standard_gauge() {
     CHECK(solved[0].polylines[0].straight_index == 0);
     CHECK(solved[0].polylines[0].gap == -1);
     CHECK(std::abs(solved[0].polylines[0].length - 5.0) < 1e-9);
-    const WebPolyline* arc = nullptr;
+    const PlanPolyline* arc = nullptr;
     for (const auto& polyline : solved[0].polylines) {
         if (polyline.kind == 1) {
             arc = &polyline;
@@ -138,7 +138,7 @@ void editor_emits_two_rails_at_standard_gauge() {
 
 void editor_exposes_transition_radius_range() {
     const auto solved = solve_project({short_corner(5.0, 2.0)});
-    const WebPolyline* transition = nullptr;
+    const PlanPolyline* transition = nullptr;
     for (const auto& polyline : solved[0].polylines) {
         if (polyline.kind == 2) {
             transition = &polyline;

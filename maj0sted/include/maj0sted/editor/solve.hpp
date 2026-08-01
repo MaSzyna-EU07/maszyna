@@ -2,12 +2,11 @@
 
 #include <vector>
 
-namespace maj0sted::web {
+namespace maj0sted::editor {
 
 /// A request from the GUI: three draggable vertices (entry straight A->B, exit
-/// straight B->C) plus the fit parameters. Plain doubles so it maps trivially
-/// onto a JS object / WASM boundary. This layer is pure C++ — the emscripten
-/// bindings are a thin wrapper around it, and it is unit-tested natively.
+/// straight B->C) plus the fit parameters. Plain doubles, a flat DTO across the
+/// boundary between the editor UI and this solver.
 struct SolveRequest {
     double ax{0.0}, ay{0.0};  ///< vertex A (entry start)
     double bx{0.0}, by{0.0};  ///< vertex B (corner: entry end = exit start)
@@ -28,13 +27,13 @@ struct SolveRequest {
 };
 
 /// A point in the CRS.
-struct WebPoint {
+struct PlanPoint {
     double x{0.0};
     double y{0.0};
 };
 
 /// One polyline; @c kind is render::ElementKind (0 straight, 1 arc, 2 transition).
-struct WebPolyline {
+struct PlanPolyline {
     int kind{0};
     /// Logical owner used by map hit-testing. Exactly one is non-negative.
     int straight_index{-1};
@@ -45,12 +44,12 @@ struct WebPolyline {
     /// Zero denotes an infinite radius (straight end of a transition).
     double radius_start{0.0};
     double radius_end{0.0};
-    std::vector<WebPoint> points;
+    std::vector<PlanPoint> points;
 };
 
 /// Builds the niweleta, runs the requested fit (falling back to the bare
 /// straights if the parameters do not admit a fit) and returns the sampled plan
 /// as polylines ready to draw.
-[[nodiscard]] std::vector<WebPolyline> solve_scene(const SolveRequest& request);
+[[nodiscard]] std::vector<PlanPolyline> solve_scene(const SolveRequest& request);
 
-}  // namespace maj0sted::web
+}  // namespace maj0sted::editor
