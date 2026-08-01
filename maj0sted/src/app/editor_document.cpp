@@ -144,6 +144,14 @@ std::string serialize_document(const EditorDocument& document) {
 
     // ...then the lossless editor section (straights + fit parameters).
     out += "editor " + std::to_string(document.niwelety.size()) + "\n";
+    if (document.view_extent > 0.0) {
+        out += "eview " + num(document.view_x) + " " + num(document.view_y) + " " +
+               num(document.view_extent) + "\n";
+    }
+    if (document.origin_set) {
+        out += "eorigin " + (document.georeferenced ? std::string{"1"} : "0") + " " +
+               num(document.origin_x) + " " + num(document.origin_y) + "\n";
+    }
     for (const auto& spec : document.niwelety) {
         out += "eniw " + std::to_string(spec.straights.size()) + " " +
                std::to_string(spec.fits.size()) + "\n";
@@ -151,6 +159,19 @@ std::string serialize_document(const EditorDocument& document) {
         for (const auto& s : spec.straights) {
             out += "estr " + num(s.x1) + " " + num(s.y1) + " " + num(s.x2) + " " +
                    num(s.y2) + " " + (s.hidden ? "1" : "0") + "\n";
+        }
+        for (std::size_t i = 0; i < spec.straights.size(); ++i) {
+            const auto& s = spec.straights[i];
+            if (s.rel_kind == 1) {
+                out += "epar " + std::to_string(i) + " " +
+                       std::to_string(s.rel_niw) + " " + std::to_string(s.rel_str) +
+                       " " + num(s.rel_offset) + "\n";
+            } else if (s.rel_kind == 2) {
+                out += "eskew " + std::to_string(i) + " " +
+                       std::to_string(s.rel_niw) + " " + std::to_string(s.rel_str) +
+                       " " + num(s.rel_cot) + " " + std::to_string(s.rel_side) + " " +
+                       num(s.rel_length) + "\n";
+            }
         }
         for (const auto& f : spec.fits) {
             // efit2: gap mode radius transition entry_t exit_t <n> [r len trans]*
@@ -165,6 +186,22 @@ std::string serialize_document(const EditorDocument& document) {
             }
             out += "\n";
         }
+    }
+    // switches: through/station/side/facing/skew/branch, then the internal curve
+    // inline in the same shape as an efit2 tail (mode radius trans entry exit <n> …)
+    out += "ejuncs " + std::to_string(document.junctions.size()) + "\n";
+    for (const auto& j : document.junctions) {
+        out += "ejunc " + std::to_string(j.through) + " " + num(j.station) + " " +
+               std::to_string(j.side) + " " + (j.facing ? std::string{"1"} : "0") +
+               " " + num(j.crossing_n) + " " + std::to_string(j.branch) + " " +
+               std::to_string(j.curve.mode) + " " + num(j.curve.radius) + " " +
+               num(j.curve.transition) + " " + num(j.curve.entry_t) + " " +
+               num(j.curve.exit_t) + " " + std::to_string(j.curve.arcs.size());
+        for (const auto& a : j.curve.arcs) {
+            out += " " + num(a.radius) + " " + num(a.length) + " " +
+                   num(a.transition_to_next);
+        }
+        out += "\n";
     }
     return out;
 }
@@ -214,6 +251,57 @@ EditorDocument deserialize_document(const std::string& text) {
         throw std::runtime_error{"maj0sted: expected 'editor <count>'"};
     }
     const long niweleta_count = to_long(header[1]);
+    // Optional camera/zoom line (absent in older files).
+    {
+        std::size_t peek = cursor;
+        while (peek < lines.size()) {
+            bool only_ws = true;
+            for (const char c : lines[peek]) {
+                if (!std::isspace(static_cast<unsigned char>(c))) {
+                    only_ws = false;
+                    break;
+                }
+            }
+            if (!only_ws) {
+                break;
+            }
+            ++peek;
+        }
+        if (peek < lines.size()) {
+            const auto view_tok = tokenize(lines[peek]);
+            if (view_tok.size() >= 4 && view_tok[0] == "eview") {
+                next();
+                document.view_x = to_double(view_tok[1]);
+                document.view_y = to_double(view_tok[2]);
+                document.view_extent = to_double(view_tok[3]);
+            }
+        }
+        // Optional local-zero line (absent in older files). May follow eview.
+        peek = cursor;
+        while (peek < lines.size()) {
+            bool only_ws = true;
+            for (const char c : lines[peek]) {
+                if (!std::isspace(static_cast<unsigned char>(c))) {
+                    only_ws = false;
+                    break;
+                }
+            }
+            if (!only_ws) {
+                break;
+            }
+            ++peek;
+        }
+        if (peek < lines.size()) {
+            const auto origin_tok = tokenize(lines[peek]);
+            if (origin_tok.size() >= 4 && origin_tok[0] == "eorigin") {
+                next();
+                document.origin_set = true;
+                document.georeferenced = to_long(origin_tok[1]) != 0;
+                document.origin_x = to_double(origin_tok[2]);
+                document.origin_y = to_double(origin_tok[3]);
+            }
+        }
+    }
     for (long n = 0; n < niweleta_count; ++n) {
         const auto eniw = tokenize(next());
         if (eniw.size() < 3 || eniw[0] != "eniw") {
@@ -237,6 +325,57 @@ EditorDocument deserialize_document(const std::string& text) {
             spec.straights.push_back(
                 StraightSpec{to_double(e[1]), to_double(e[2]), to_double(e[3]),
                              to_double(e[4]), e.size() >= 6 && to_long(e[5]) != 0});
+        }
+        // Optional parallel/skew lines sit between straights and fits; older files omit them.
+        auto apply_relation = [&](const std::vector<std::string>& e) -> bool {
+            if (e.empty()) return false;
+            if (e[0] == "epar" && e.size() >= 5) {
+                const long idx = to_long(e[1]);
+                if (idx < 0 || static_cast<std::size_t>(idx) >= spec.straights.size()) {
+                    throw std::runtime_error{"maj0sted: bad 'epar' index"};
+                }
+                auto& s = spec.straights[static_cast<std::size_t>(idx)];
+                s.rel_kind = 1;
+                s.rel_niw = static_cast<int>(to_long(e[2]));
+                s.rel_str = static_cast<int>(to_long(e[3]));
+                s.rel_offset = to_double(e[4]);
+                return true;
+            }
+            if (e[0] == "eskew" && e.size() >= 7) {
+                const long idx = to_long(e[1]);
+                if (idx < 0 || static_cast<std::size_t>(idx) >= spec.straights.size()) {
+                    throw std::runtime_error{"maj0sted: bad 'eskew' index"};
+                }
+                auto& s = spec.straights[static_cast<std::size_t>(idx)];
+                s.rel_kind = 2;
+                s.rel_niw = static_cast<int>(to_long(e[2]));
+                s.rel_str = static_cast<int>(to_long(e[3]));
+                s.rel_cot = to_double(e[4]);
+                s.rel_side = static_cast<int>(to_long(e[5]));
+                s.rel_length = to_double(e[6]);
+                return true;
+            }
+            return false;
+        };
+        auto peek_tokens = [&]() -> std::vector<std::string> {
+            std::size_t i = cursor;
+            while (i < lines.size()) {
+                bool only_ws = true;
+                for (const char c : lines[i]) {
+                    if (!std::isspace(static_cast<unsigned char>(c))) {
+                        only_ws = false;
+                        break;
+                    }
+                }
+                if (!only_ws) {
+                    return tokenize(lines[i]);
+                }
+                ++i;
+            }
+            return {};
+        };
+        while (apply_relation(peek_tokens())) {
+            next(); // consume the relation line
         }
         for (long i = 0; i < fit_count; ++i) {
             const auto e = tokenize(next());
@@ -281,6 +420,57 @@ EditorDocument deserialize_document(const std::string& text) {
             spec.fits.push_back(f);
         }
         document.niwelety.push_back(std::move(spec));
+    }
+    // Optional switches section (absent in older files); mirrors the eview/eorigin peek.
+    {
+        std::size_t peek = cursor;
+        while (peek < lines.size()) {
+            bool only_ws = true;
+            for (const char c : lines[peek]) {
+                if (!std::isspace(static_cast<unsigned char>(c))) {
+                    only_ws = false;
+                    break;
+                }
+            }
+            if (!only_ws) break;
+            ++peek;
+        }
+        if (peek < lines.size()) {
+            const auto head = tokenize(lines[peek]);
+            if (head.size() >= 2 && head[0] == "ejuncs") {
+                next();  // consume the 'ejuncs <count>' header
+                const long junction_count = to_long(head[1]);
+                for (long j = 0; j < junction_count; ++j) {
+                    const auto e = tokenize(next());
+                    if (e.size() < 12 || e[0] != "ejunc") {
+                        throw std::runtime_error{"maj0sted: bad 'ejunc' line"};
+                    }
+                    maj0sted::web::Junction junction;
+                    junction.through = static_cast<int>(to_long(e[1]));
+                    junction.station = to_double(e[2]);
+                    junction.side = static_cast<int>(to_long(e[3]));
+                    junction.facing = to_long(e[4]) != 0;
+                    junction.crossing_n = to_double(e[5]);
+                    junction.branch = static_cast<int>(to_long(e[6]));
+                    junction.curve.mode = static_cast<int>(to_long(e[7]));
+                    junction.curve.radius = to_double(e[8]);
+                    junction.curve.transition = to_double(e[9]);
+                    junction.curve.entry_t = to_double(e[10]);
+                    junction.curve.exit_t = to_double(e[11]);
+                    const long arc_count = e.size() >= 13 ? to_long(e[12]) : 0;
+                    for (long a = 0; a < arc_count; ++a) {
+                        const std::size_t base = 13 + static_cast<std::size_t>(a) * 3;
+                        if (base + 2 >= e.size()) {
+                            throw std::runtime_error{"maj0sted: truncated 'ejunc' arcs"};
+                        }
+                        junction.curve.arcs.push_back(maj0sted::web::CompoundArcSpec{
+                            to_double(e[base]), to_double(e[base + 1]),
+                            to_double(e[base + 2])});
+                    }
+                    document.junctions.push_back(std::move(junction));
+                }
+            }
+        }
     }
     return document;
 }

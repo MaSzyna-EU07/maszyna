@@ -218,9 +218,142 @@ NiweletaPolys build(const NiweletaSpec& spec) {
     const auto axis =
         sample_centrelines(spec, straights, fits, result.rendered_straights);
 
+    // Flatten the axis into one polyline for station lookups, dropping the join
+    // points each element repeats at its start.
+    for (const auto& element : axis) {
+        for (const auto& p : element.points) {
+            if (!result.centreline.empty()) {
+                const auto& last = result.centreline.back();
+                if (std::hypot(p.x - last.x, p.y - last.y) < 1e-9) continue;
+            }
+            result.centreline.push_back(WebPoint{p.x, p.y});
+        }
+    }
+
     // 3. Presentation: hand the centreline to a renderer.
     result.polylines = render_rails(axis);
     return result;
+}
+
+// The pose (position + unit heading) at arc length @p station along a centreline
+// polyline. Clamped to the ends; heading comes from the segment the station falls
+// on. Returns false only for a centreline too short to have a direction.
+bool pose_at(const std::vector<WebPoint>& centreline, double station, Pose& out) {
+    if (centreline.size() < 2) return false;
+
+    double travelled = 0.0;
+    for (std::size_t i = 0; i + 1 < centreline.size(); ++i) {
+        const auto& a = centreline[i];
+        const auto& b = centreline[i + 1];
+        const double dx = b.x - a.x;
+        const double dy = b.y - a.y;
+        const double seg = std::hypot(dx, dy);
+        if (seg < 1e-12) continue;
+
+        // the last segment also catches any station beyond the centreline's end
+        if (station <= travelled + seg || i + 2 == centreline.size()) {
+            const double t = std::clamp((station - travelled) / seg, 0.0, 1.0);
+            out = Pose{a.x + dx * t, a.y + dy * t, dx / seg, dy / seg};
+            return true;
+        }
+        travelled += seg;
+    }
+    return false;
+}
+
+// Samples a fitted curve chain into centreline elements, starting from @p start.
+// Same layout the gap fits go through, so the switch curve is drawn identically.
+std::vector<render::CentrelineElement> sample_curve(
+    const std::vector<PlanElement>& curve, Pose start) {
+    std::vector<render::CentrelineElement> axis;
+    Pose pose = start;
+    int element_index = 0;
+    for (const auto& element : curve) {
+        double k0 = 0.0, k1 = 0.0, length = 0.0;
+        render::CentrelineElement out;
+        out.kind = sample_params(element, k0, k1, length);
+        std::vector<XY> pts;
+        pose = layout_segment(k0, k1, length, pose, &pts);
+        out.points.reserve(pts.size());
+        for (const auto& p : pts) out.points.push_back(render::Point{p.x, p.y});
+        out.element_index = element_index++;
+        out.length = length;
+        out.radius_start = radius_of(k0);
+        out.radius_end = radius_of(k1);
+        axis.push_back(std::move(out));
+    }
+    return axis;
+}
+
+// The diverging curve and frog of one switch, from the solved through niweleta.
+// The switch's theoretical point sits at @p station on the through track; two
+// tangent lines cross there (the through heading and that heading turned by the
+// crossing angle), and the internal curve is fitted to round the corner between
+// them — a plain arc, or a compound basket, whatever the switch asks for. The
+// branch begins where the curve ends.
+JunctionGeom solve_junction(const Junction& junction,
+                            const std::vector<NiweletaPolys>& solved) {
+    JunctionGeom geom;
+    if (junction.through < 0 ||
+        static_cast<std::size_t>(junction.through) >= solved.size()) {
+        return geom;
+    }
+    if (junction.crossing_n <= 0.0) return geom;
+
+    Pose theoretical{};
+    if (!pose_at(solved[junction.through].centreline, junction.station,
+                 theoretical)) {
+        return geom;
+    }
+
+    // a trailing switch opens against the running direction: flip the heading
+    double thx = theoretical.hx;
+    double thy = theoretical.hy;
+    if (!junction.facing) {
+        thx = -thx;
+        thy = -thy;
+    }
+
+    // the diverging tangent line: the through heading turned by the crossing
+    // angle, left (positive) or right (negative)
+    const double angle =
+        (junction.side == 0 ? 1.0 : -1.0) * std::atan(1.0 / junction.crossing_n);
+    const double dhx = thx * std::cos(angle) - thy * std::sin(angle);
+    const double dhy = thx * std::sin(angle) + thy * std::cos(angle);
+
+    // two long guide straights meeting at the theoretical point X; the fitter
+    // rounds the corner and hands back the tangent points that become the switch
+    // start and the frog. long enough that the tangent points land on them.
+    const double guide = 5000.0;
+    const CartesianPosition x{theoretical.x, theoretical.y};
+    Straight entry{CartesianPosition{x.x() - thx * guide, x.y() - thy * guide}, x};
+    Straight exit{x, CartesianPosition{x.x() + dhx * guide, x.y() + dhy * guide}};
+
+    const auto request = to_request(junction.curve);
+    if (!request) return geom;  // a switch with no curve is not a switch
+    const auto connection = GapFitter::connect(entry, exit, *request);
+    if (!connection) return geom;
+
+    const FitResult& fit = connection->fit;
+    const CartesianPosition s = fit.tangent_in;   // switch start
+    const CartesianPosition f = fit.tangent_out;  // frog
+
+    geom.valid = true;
+    geom.px = s.x();
+    geom.py = s.y();
+    geom.fx = f.x();
+    geom.fy = f.y();
+    geom.fhx = dhx;
+    geom.fhy = dhy;
+    // theoretical tangent lengths: from the crossing point to each tangent point
+    geom.tangent_front = std::hypot(s.x() - x.x(), s.y() - x.y());
+    geom.tangent_back = std::hypot(f.x() - x.x(), f.y() - x.y());
+
+    const auto axis = sample_curve(fit.curve, Pose{s.x(), s.y(), thx, thy});
+    for (const auto& element : axis) geom.length += element.length;
+    geom.polylines = render_rails(axis);
+
+    return geom;
 }
 
 }  // namespace
@@ -230,6 +363,46 @@ std::vector<NiweletaPolys> solve_project(const std::vector<NiweletaSpec>& niwele
     result.reserve(niwelety.size());
     for (const auto& spec : niwelety) result.push_back(build(spec));
     return result;
+}
+
+LayoutSolution solve_layout(std::vector<NiweletaSpec> niwelety,
+                            const std::vector<Junction>& junctions) {
+    // Pass 1: solve unpinned, to read the through centrelines the frogs sit on.
+    auto solved = solve_project(niwelety);
+
+    // Lock each branch's leaving straight to the frog: it starts at the frog and
+    // runs along the frog heading, so the branch is tangent to the switch curve
+    // no matter what the user draws. Only its length is theirs — the projection of
+    // wherever they dragged its far end onto the frog heading. Because the first
+    // straight is pinned tangent, any fit in the branch's first gap (a plain arc
+    // or a łuk koszowy) meets the switch tangentially by construction.
+    for (const auto& junction : junctions) {
+        const auto geom = solve_junction(junction, solved);
+        if (!geom.valid) continue;
+        if (junction.branch < 0 ||
+            static_cast<std::size_t>(junction.branch) >= niwelety.size()) {
+            continue;
+        }
+        auto& branch = niwelety[junction.branch];
+        if (branch.straights.empty()) continue;
+        auto& first = branch.straights.front();
+        double length = (first.x2 - geom.fx) * geom.fhx + (first.y2 - geom.fy) * geom.fhy;
+        if (!(length > 1.0)) length = 1.0;  // keep a usable minimum, also catches NaN
+        first.x1 = geom.fx;
+        first.y1 = geom.fy;
+        first.x2 = geom.fx + geom.fhx * length;
+        first.y2 = geom.fy + geom.fhy * length;
+    }
+
+    // Pass 2: solve with the branches pinned, then read the switches off the
+    // final centrelines (the through track may itself be a pinned branch).
+    LayoutSolution out;
+    out.niwelety = solve_project(niwelety);
+    out.junctions.reserve(junctions.size());
+    for (const auto& junction : junctions) {
+        out.junctions.push_back(solve_junction(junction, out.niwelety));
+    }
+    return out;
 }
 
 }  // namespace maj0sted::web
