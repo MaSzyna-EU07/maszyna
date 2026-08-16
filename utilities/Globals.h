@@ -224,7 +224,8 @@ struct global_settings {
         {"train", &uart_conf.trainenable},
         {"local", &uart_conf.localenable},
         {"radiovolume", &uart_conf.radiovolumeenable},
-        {"radiochannel", &uart_conf.radiochannelenable}
+        {"radiochannel", &uart_conf.radiochannelenable},
+        {"dynamicbrake", &uart_conf.dynamicenable},
     };
 #endif
 #ifdef WITH_ZMQ
