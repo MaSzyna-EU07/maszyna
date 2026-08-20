@@ -342,6 +342,47 @@ JunctionGeom solve_junction(const Junction& junction,
     return geom;
 }
 
+// Rigidly repositions a whole branch niweleta so its leaving straight starts at
+// the frog and runs along the frog heading. The branch becomes tangent to the
+// switch curve however it was drawn, and — crucially — every straight appended
+// behind the leaving straight rides along under the SAME rigid motion, so the
+// shape of those fragments (and the fits between them) is preserved. Rewriting
+// only the first straight would snap it to the frog while the appended fragments
+// stayed where they were drawn, so their gap fits would be solved against a
+// straight that had jumped out from under them.
+void pin_branch_to_frog(NiweletaSpec& branch, const JunctionGeom& frog) {
+    if (branch.straights.empty()) return;
+
+    // The leaving straight fixes the rigid motion: its start maps to the frog and
+    // its drawn direction rotates onto the frog heading. A leaving straight too
+    // short to have a direction contributes no rotation.
+    const StraightSpec& leaving = branch.straights.front();
+    const double anchor_x = leaving.x1;
+    const double anchor_y = leaving.y1;
+    const double dx = leaving.x2 - leaving.x1;
+    const double dy = leaving.y2 - leaving.y1;
+    const double drawn_length = std::hypot(dx, dy);
+    double cos_r = 1.0;
+    double sin_r = 0.0;
+    if (drawn_length > 1e-9) {
+        const double hx = dx / drawn_length;
+        const double hy = dy / drawn_length;
+        cos_r = hx * frog.fhx + hy * frog.fhy;  // drawn direction · frog heading
+        sin_r = hx * frog.fhy - hy * frog.fhx;  // drawn direction × frog heading
+    }
+
+    const auto move = [&](double& x, double& y) {
+        const double vx = x - anchor_x;
+        const double vy = y - anchor_y;
+        x = frog.fx + cos_r * vx - sin_r * vy;
+        y = frog.fy + sin_r * vx + cos_r * vy;
+    };
+    for (auto& straight : branch.straights) {
+        move(straight.x1, straight.y1);
+        move(straight.x2, straight.y2);
+    }
+}
+
 }  // namespace
 
 std::vector<NiweletaPolys> solve_project(const std::vector<NiweletaSpec>& niwelety) {
@@ -356,12 +397,10 @@ LayoutSolution solve_layout(std::vector<NiweletaSpec> niwelety,
     // Pass 1: solve unpinned, to read the through centrelines the frogs sit on.
     auto solved = solve_project(niwelety);
 
-    // Lock each branch's leaving straight to the frog: it starts at the frog and
-    // runs along the frog heading, so the branch is tangent to the switch curve
-    // no matter what the user draws. Only its length is theirs — the projection of
-    // wherever they dragged its far end onto the frog heading. Because the first
-    // straight is pinned tangent, any fit in the branch's first gap (a plain arc
-    // or a łuk koszowy) meets the switch tangentially by construction.
+    // Pin each branch to its frog. The whole branch is moved rigidly so its
+    // leaving straight starts at the frog and runs along the frog heading (tangent
+    // to the switch curve), carrying every fragment appended behind it along
+    // unchanged — so any fit in the branch still meets the switch tangentially.
     for (const auto& junction : junctions) {
         const auto geom = solve_junction(junction, solved);
         if (!geom.valid) continue;
@@ -369,15 +408,7 @@ LayoutSolution solve_layout(std::vector<NiweletaSpec> niwelety,
             static_cast<std::size_t>(junction.branch) >= niwelety.size()) {
             continue;
         }
-        auto& branch = niwelety[junction.branch];
-        if (branch.straights.empty()) continue;
-        auto& first = branch.straights.front();
-        double length = (first.x2 - geom.fx) * geom.fhx + (first.y2 - geom.fy) * geom.fhy;
-        if (!(length > 1.0)) length = 1.0;  // keep a usable minimum, also catches NaN
-        first.x1 = geom.fx;
-        first.y1 = geom.fy;
-        first.x2 = geom.fx + geom.fhx * length;
-        first.y2 = geom.fy + geom.fhy * length;
+        pin_branch_to_frog(niwelety[junction.branch], geom);
     }
 
     // Pass 2: solve with the branches pinned, then read the switches off the

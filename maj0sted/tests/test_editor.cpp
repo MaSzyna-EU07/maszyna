@@ -212,6 +212,47 @@ void hidden_tangent_guide_fits_curve_without_rendering_track() {
     CHECK(arc_rails == 2);
 }
 
+void branch_rides_rigidly_when_pinned_to_frog() {
+    // Through track along +x; a switch diverges left at station 100.
+    NiweletaSpec through;
+    through.straights = {StraightSpec{0.0, 0.0, 200.0, 0.0}};
+
+    // Branch drawn far away as an L: a leaving straight plus one appended straight
+    // joined by an arc. Pinning must move the WHOLE branch rigidly onto the frog,
+    // so the appended fragment rides along instead of being left ~1.4 km away
+    // (the pre-fix behaviour, which only relocated the leaving straight).
+    NiweletaSpec branch;
+    branch.straights = {StraightSpec{1000.0, 1000.0, 1090.0, 1000.0},
+                        StraightSpec{1100.0, 1000.0, 1100.0, 1090.0}};
+    branch.fits = {GapFit{.gap = 0, .mode = 1, .radius = 20.0}};
+
+    Junction j{};
+    j.through = 0;
+    j.station = 100.0;
+    j.side = 0;  // diverge left
+    j.facing = true;
+    j.crossing_n = 9.0;
+    j.curve.mode = 1;
+    j.curve.radius = 190.0;
+    j.branch = 1;
+
+    const auto solution = solve_layout({through, branch}, {j});
+    CHECK(solution.junctions.size() == 1);
+    CHECK(solution.junctions[0].valid);
+    CHECK(solution.niwelety.size() == 2);
+
+    const auto& g = solution.junctions[0];
+    const auto& branch_solved = solution.niwelety[1];
+    CHECK(!branch_solved.centreline.empty());
+    // The branch starts exactly at the frog...
+    CHECK(std::hypot(branch_solved.centreline.front().x - g.fx,
+                     branch_solved.centreline.front().y - g.fy) < 1e-6);
+    // ...and the appended fragment rode along: nothing sits far from the frog.
+    for (const auto& p : branch_solved.centreline) {
+        CHECK(std::hypot(p.x - g.fx, p.y - g.fy) < 300.0);
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -225,5 +266,6 @@ int main() {
     RUN(editor_leaves_parallel_offset_unfitted);
     RUN(editor_honours_requested_radius_via_single_arc);
     RUN(hidden_tangent_guide_fits_curve_without_rendering_track);
+    RUN(branch_rides_rigidly_when_pinned_to_frog);
     return REPORT();
 }
