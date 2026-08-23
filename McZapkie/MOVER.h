@@ -1584,7 +1584,7 @@ class TMoverParameters
 	double BatteryVoltage = 0.0; /*Winger - baterie w elektrykach*/
 	bool Battery = false; /*Czy sa zalaczone baterie*/
 	start_t BatteryStart = start_t::manual;
-	bool EpFuse = true; /*Czy sa zalavzone baterie*/
+	bool EpFuse = true; /*Czy jest wlaczony hamulec EP*/
 	double EpForce = 0.0; /*Poziom zadanej sily EP*/
 	bool Signalling = false; /*Czy jest zalaczona sygnalizacja hamowania ostatniego wagonu*/
 	bool Radio = false; /*Czy jest zalaczony radiotelefon*/

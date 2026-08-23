@@ -2236,7 +2236,10 @@ void TController::AutoRewident()
     }
 
     BrakeSystem = consist_brake_system();
-    mvOccupied->EpFuseSwitch( BrakeSystem == TBrakeSystem::ElectroPneumatic );
+	// Change the EP fuse state only when AI is in charge, don't fiddle with controls when the user is controlling the vehicle
+    if (AIControllFlag) {
+	    mvOccupied->EpFuseSwitch(BrakeSystem == TBrakeSystem::ElectroPneumatic);
+    }
 
     if( OrderCurrentGet() & ( Obey_train | Bank ) ) {
         // 4. Przeliczanie siły hamowania
