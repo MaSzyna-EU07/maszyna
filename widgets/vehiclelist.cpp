@@ -11,21 +11,6 @@ ui::vehiclelist_panel::vehiclelist_panel(ui_layer &parent)
 
 void ui::vehiclelist_panel::render_contents()
 {
-    if (m_first_show && Global.gui_trainingdefault) {
-        for (TDynamicObject *vehicle : simulation::Vehicles.sequence())
-        {
-            if (!vehicle->Mechanik || vehicle->name() != ToLower(Global.local_start_vehicle))
-                continue;
-
-            ui_panel *panel = new vehicleparams_panel(vehicle->name());
-            m_parent.add_owned_panel(panel);
-        }
-
-        m_first_show = false;
-        is_open = false;
-        return;
-    }
-
 	for (TDynamicObject *vehicle : simulation::Vehicles.sequence())
 	{
 		if (!vehicle->Mechanik)

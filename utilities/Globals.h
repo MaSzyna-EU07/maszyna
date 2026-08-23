@@ -245,7 +245,6 @@ struct global_settings {
 	bool crash_damage = true;
 	bool gui_defaultwindows = true;
 	bool gui_showtranscripts = true;
-    bool gui_trainingdefault = false;
 
 	std::string extcam_cmd;
 	std::string extcam_rec;

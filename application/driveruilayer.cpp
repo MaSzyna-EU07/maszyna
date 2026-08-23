@@ -30,7 +30,6 @@ driver_ui::driver_ui()
 	if (Global.gui_showtranscripts)
 		add_external_panel(&m_transcriptspanel);
 
-	add_external_panel(&m_trainingcardpanel);
 	add_external_panel(&m_vehiclelist);
 	add_external_panel(&m_timepanel);
 	add_external_panel(&m_mappanel);
@@ -58,13 +57,6 @@ driver_ui::driver_ui()
 		m_aidpanel.is_open = true;
 		m_scenariopanel.is_open = true;
 	}
-
-	if (Global.gui_trainingdefault)
-	{
-		m_mappanel.is_open = true;
-		m_trainingcardpanel.is_open = true;
-		m_vehiclelist.is_open = true;
-	}
 }
 
 void driver_ui::render_menu_contents()
@@ -79,7 +71,6 @@ void driver_ui::render_menu_contents()
 		ImGui::MenuItem(m_debugpanel.name().c_str(), "F12", &m_debugpanel.is_open);
 		ImGui::MenuItem(m_mappanel.name().c_str(), "Tab", &m_mappanel.is_open);
 		ImGui::MenuItem(m_vehiclelist.name().c_str(), nullptr, &m_vehiclelist.is_open);
-		ImGui::MenuItem(m_trainingcardpanel.name().c_str(), nullptr, &m_trainingcardpanel.is_open);
 		ImGui::MenuItem(m_cameraviewpanel.name().c_str(), nullptr, &m_cameraviewpanel.is_open);
 		if (DebugModeFlag)
 			ImGui::MenuItem(m_perfgraphpanel.name().c_str(), nullptr, &m_perfgraphpanel.is_open);
@@ -237,14 +228,7 @@ void driver_ui::set_cursor(bool const Visible)
 // render() subclass details
 void driver_ui::render_()
 {
-	const std::string *rec_name = m_trainingcardpanel.is_recording();
-	if (rec_name && m_cameraviewpanel.set_state(true))
-	{
-		m_cameraviewpanel.rec_name = *rec_name;
-		m_cameraviewpanel.is_open = true;
-	}
-	else if (!rec_name)
-		m_cameraviewpanel.set_state(false);
+	m_cameraviewpanel.set_state(false);
 
 	// pause/quit modal
 	auto const popupheader{STR_C("Simulation Paused")};

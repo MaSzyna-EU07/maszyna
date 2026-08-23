@@ -14,10 +14,8 @@ http://mozilla.org/MPL/2.0/.
 #include "input/command.h"
 
 #include "widgets/vehiclelist.h"
-#include "widgets/vehicleparams.h"
 #include "widgets/map.h"
 #include "widgets/time.h"
-#include "widgets/trainingcard.h"
 #include "widgets/perfgraphs.h"
 #include "widgets/cameraview_extcam.h"
 
@@ -60,7 +58,6 @@ private:
     timetable_panel m_timetablepanel { "Timetable", false };
     debug_panel m_debugpanel { "Debug Data", false };
     transcripts_panel m_transcriptspanel { "Transcripts", true }; // voice transcripts
-	trainingcard_panel m_trainingcardpanel;
 	perfgraph_panel m_perfgraphpanel;
     bool m_paused { false };
 
