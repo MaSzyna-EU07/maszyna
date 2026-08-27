@@ -104,6 +104,9 @@ class plan_panel : public ui_panel
 	double m_sw_crossing{9.0};  // skos 1:n
 	double m_sw_radius{190.0};  // internal arc radius (metres)
 	double m_sw_length{0.0};    // catalogue length from the chosen template (0 = just the curve)
+	double m_sw_pre_blade{0.0};   // odcinek przediglicowy from the template, metres
+	double m_sw_blade_angle{0.0}; // kąt nagięcia iglicy (beta) from the template, radians
+	double m_sw_blade_length{0.0};// the straight blade from the template, metres
 	int m_drag_junction{-1};    // index of the switch being slid along its through track, or -1
 
 	int m_sel_straight{-1};

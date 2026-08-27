@@ -47,3 +47,8 @@ add_executable(maj0sted_test_document test_document.cpp)
 target_link_libraries(maj0sted_test_document PRIVATE maj0sted::maj0sted)
 target_include_directories(maj0sted_test_document PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME document COMMAND maj0sted_test_document)
+
+add_executable(maj0sted_test_turnout test_turnout.cpp)
+target_link_libraries(maj0sted_test_turnout PRIVATE maj0sted::maj0sted)
+target_include_directories(maj0sted_test_turnout PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME turnout COMMAND maj0sted_test_turnout)

@@ -2337,6 +2337,9 @@ void plan_panel::render_switches()
 				m_sw_crossing = preset.crossing_n;
 				m_sw_radius = preset.radius;
 				m_sw_length = preset.length;
+				m_sw_pre_blade = preset.pre_blade;
+				m_sw_blade_angle = preset.blade_angle;
+				m_sw_blade_length = preset.blade_length;
 			}
 		}
 		ImGui::EndCombo();
@@ -2559,6 +2562,10 @@ void plan_panel::add_switch_on(std::size_t const Through, double const Wx, doubl
 	junction.facing = true;
 	junction.crossing_n = m_sw_crossing;
 	junction.length = m_sw_length; // catalogue length from the template, 0 for a custom switch
+	// the blade figures come from the template too; all zero lays a tangent arc from PR
+	junction.pre_blade = m_sw_pre_blade;
+	junction.blade_angle = m_sw_blade_angle;
+	junction.blade_length = m_sw_blade_length;
 	junction.curve.mode = 1; // plain arc; the internal curve can be made compound later
 	junction.curve.radius = m_sw_radius;
 	junction.branch = static_cast<int>(m_document.niwelety.size());

@@ -33,7 +33,7 @@ bool build_curve(const DivergingCurve& curve, double total_angle, double sign,
     double consumed = 0.0;  // deflection of everything before the closing arc
 
     if (curve.entry_transition > 0.0) {
-        out.push_back({0.0, sign / first_radius, curve.entry_transition});
+        out.push_back({0.0, 0.0, sign / first_radius, curve.entry_transition});
         consumed += std::abs(deflection(out.back()));
     }
 
@@ -41,12 +41,12 @@ bool build_curve(const DivergingCurve& curve, double total_angle, double sign,
     for (std::size_t i = 0; i + 1 < curve.arcs.size(); ++i) {
         const double radius = curve.arcs[i].radius;
         if (radius <= 0.0) return false;
-        out.push_back({sign / radius, sign / radius, curve.arcs[i].length});
+        out.push_back({0.0, sign / radius, sign / radius, curve.arcs[i].length});
         consumed += std::abs(deflection(out.back()));
 
         const double next_radius = curve.arcs[i + 1].radius;
         if (curve.arcs[i].transition_to_next > 0.0 && next_radius > 0.0) {
-            out.push_back({sign / radius, sign / next_radius,
+            out.push_back({0.0, sign / radius, sign / next_radius,
                            curve.arcs[i].transition_to_next});
             consumed += std::abs(deflection(out.back()));
         }
@@ -56,17 +56,26 @@ bool build_curve(const DivergingCurve& curve, double total_angle, double sign,
     const double closing = total_angle - consumed - exit_deflection;
     if (closing <= 0.0) return false;  // the fixed parts already reach the crossing angle
 
-    out.push_back({sign / last_radius, sign / last_radius, closing * last_radius});
+    out.push_back({0.0, sign / last_radius, sign / last_radius, closing * last_radius});
     if (curve.exit_transition > 0.0) {
-        out.push_back({sign / last_radius, 0.0, curve.exit_transition});
+        out.push_back({0.0, sign / last_radius, 0.0, curve.exit_transition});
     }
     return true;
 }
 
-// Advances @p pose along @p segment (without sampling points; that is the
-// renderer's job) and returns the end pose.
+// Turns @p pose in place by @p angle (a heading break, no travel).
+Pose turn(const Pose& pose, double angle) {
+    if (angle == 0.0) return pose;
+    const double c = std::cos(angle);
+    const double s = std::sin(angle);
+    return Pose{pose.x, pose.y, pose.hx * c - pose.hy * s, pose.hx * s + pose.hy * c};
+}
+
+// Advances @p pose over @p segment (without sampling points; that is the
+// renderer's job): the heading break first, then the travel. Returns the end pose.
 Pose advance(const TurnoutSegment& segment, const Pose& pose) {
-    return layout_segment(segment.k0, segment.k1, segment.length, pose, nullptr);
+    return layout_segment(segment.k0, segment.k1, segment.length,
+                          turn(pose, segment.turn_in), nullptr);
 }
 
 // Where the through tangent (through @p a along @p a heading) meets the diverging
@@ -91,10 +100,27 @@ TurnoutGeometry lay_turnout(const Pose& start, const Turnout& turnout) {
     if (angle <= 0.0) return geometry;
     const double sign = turnout.side == DivergeSide::Left ? 1.0 : -1.0;
 
-    if (!build_curve(turnout.curve, angle, sign, geometry.path)) {
+    const double blade = turnout.blade_angle;
+    if (blade < 0.0 || blade >= angle) return geometry;  // the blade may not reach the frog on its own
+
+    // odcinek przediglicowy: still along the through track, the blade tip sits at its end
+    if (turnout.pre_blade > 0.0) {
+        geometry.path.push_back(TurnoutSegment{0.0, 0.0, 0.0, turnout.pre_blade});
+    }
+    // the blade breaks away by beta and runs straight to its heel; with no blade
+    // length the break still stands and the curve starts at the tip
+    if (turnout.blade_length > 0.0) {
+        geometry.path.push_back(TurnoutSegment{sign * blade, 0.0, 0.0, turnout.blade_length});
+    }
+
+    // the curve only has `alfa - beta` left to turn through
+    std::vector<TurnoutSegment> curve_path;
+    if (!build_curve(turnout.curve, angle - blade, sign, curve_path)) {
         geometry.path.clear();
         return geometry;
     }
+    if (turnout.blade_length <= 0.0) curve_path.front().turn_in += sign * blade;
+    geometry.path.insert(geometry.path.end(), curve_path.begin(), curve_path.end());
 
     // walk the curve to the frog direction (the crossing angle)
     Pose pose = start;
@@ -112,7 +138,7 @@ TurnoutGeometry lay_turnout(const Pose& start, const Turnout& turnout) {
                       ? (turnout.length - through_projection) / cos_angle
                       : turnout.curve.arcs.back().radius * std::tan(angle * 0.5);
     if (rail > 0.0) {
-        const TurnoutSegment frog_rail{0.0, 0.0, rail};
+        const TurnoutSegment frog_rail{0.0, 0.0, 0.0, rail};
         geometry.path.push_back(frog_rail);
         pose = advance(frog_rail, pose);
     }

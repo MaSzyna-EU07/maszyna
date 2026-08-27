@@ -281,7 +281,9 @@ domain::Turnout to_turnout(const Junction& junction) {
     return domain::Turnout{
         domain::CrossingMark{junction.crossing_n},
         junction.side == 0 ? domain::DivergeSide::Left : domain::DivergeSide::Right,
-        std::move(curve), junction.length};
+        std::move(curve),     junction.length,
+        junction.pre_blade,   junction.blade_angle,
+        junction.blade_length};
 }
 
 // The drawable geometry of one switch. @p station is the switch's start on the
@@ -319,6 +321,13 @@ JunctionGeom solve_junction(const Junction& junction,
             std::abs(segment.k1 - segment.k0) >= 1e-12 ? render::ElementKind::Transition
             : std::abs(segment.k0) >= 1e-12            ? render::ElementKind::Arc
                                                        : render::ElementKind::Straight;
+        // the blade's heading break happens in place, before the segment is laid
+        if (segment.turn_in != 0.0) {
+            const double c = std::cos(segment.turn_in);
+            const double s = std::sin(segment.turn_in);
+            pose = Pose{pose.x, pose.y, pose.hx * c - pose.hy * s,
+                        pose.hx * s + pose.hy * c};
+        }
         pose = layout_segment(segment.k0, segment.k1, segment.length, pose, &pts);
         element.points.reserve(pts.size());
         for (const auto& p : pts) element.points.push_back(render::Point{p.x, p.y});

@@ -99,6 +99,9 @@ struct Junction {
     bool facing{true};      ///< true opens toward increasing station, false back
     double crossing_n{9.0}; ///< crossing mark 1:n (skos) → leaving angle atan(1/n)
     double length{0.0};     ///< catalogue length (PR→KR along the through track); 0 = just the curve
+    double pre_blade{0.0};   ///< odcinek przediglicowy: straight lead PR → blade tip, metres
+    double blade_angle{0.0}; ///< kąt nagięcia iglicy (beta), radians; 0 = curve tangent from PR
+    double blade_length{0.0};///< the straight blade, tip → heel where the curve starts, metres
     GapFit curve;           ///< the internal diverging curve: arc / compound / basket
     int branch{-1};         ///< index of the branch niweleta, pinned to the frog
 };

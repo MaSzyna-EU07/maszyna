@@ -27,6 +27,7 @@ struct turnout_preset
 	double length;       // catalogue length PR->KR along the through track, metres
 	double blade_angle;  // kąt nagięcia iglicy (beta), radians; the diverging leaves the straight here
 	double pre_blade;    // odcinek przediglicowy: straight lead PR -> blade tip, metres
+	double blade_length; // the straight blade itself, tip -> heel where the arc starts, metres
 };
 
 // typical Polish turnouts (rozjazdy zwyczajne). the (skos, R) pairs are the recognised standard;

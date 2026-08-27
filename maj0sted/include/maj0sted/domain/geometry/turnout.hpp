@@ -52,12 +52,24 @@ struct Turnout {
     DivergeSide side{DivergeSide::Left};
     DivergingCurve curve;
     double length{0.0};  ///< catalogue length along the through track; 0 = a tangent-length rail
+    /// Odcinek przediglicowy: the straight lead from the switch start to the blade
+    /// tip, still along the through track. Zero for a curve tangent from the start.
+    double pre_blade{0.0};
+    /// Kąt nagięcia iglicy (beta), radians: the heading break at the blade tip. The
+    /// diverging track leaves the through track here, not tangentially, and the
+    /// curve then turns through only the remaining `alfa - beta`. Zero for a
+    /// tangential (curved-blade) turnout.
+    double blade_angle{0.0};
+    /// The straight blade itself, from its tip to its heel where the curve begins.
+    /// Zero starts the curve at the tip.
+    double blade_length{0.0};
 };
 
 /// One laid segment of the diverging path, as the constant/linear curvature the
 /// renderer and the fitter already share (see segment_layout): a straight when
 /// both curvatures are zero, an arc when they are equal, a clothoid otherwise.
 struct TurnoutSegment {
+    double turn_in{0.0};  ///< signed heading break applied before laying this segment (the blade)
     double k0{0.0};
     double k1{0.0};
     double length{0.0};
@@ -73,12 +85,13 @@ struct TurnoutGeometry {
     double diverging_length{0.0};      ///< total length of the diverging path (curve + frog rail)
 };
 
-/// Lays a turnout forward from @p start — the switch start, tangent to the through
-/// track — turning toward its side until the heading has swung by the crossing
-/// angle, then running straight to the catalogue length. Never throws; returns
+/// Lays a turnout forward from @p start — the switch start (początek rozjazdu),
+/// tangent to the through track: the pre-blade straight, the blade breaking away
+/// by `blade_angle`, the curve turning through what is left of the crossing angle,
+/// then the frog rail out to the catalogue length. Never throws; returns
 /// `valid == false` when the parameters admit no geometry: a non-positive radius,
-/// or a curve whose fixed parts already overshoot the crossing angle before the
-/// closing arc.
+/// a blade angle that is negative or already reaches the crossing angle, or a
+/// curve whose fixed parts overshoot the remaining angle before the closing arc.
 [[nodiscard]] TurnoutGeometry lay_turnout(const geometry::Pose& start,
                                           const Turnout& turnout);
 

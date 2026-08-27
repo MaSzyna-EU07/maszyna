@@ -20,16 +20,17 @@ std::vector<turnout_preset> const &turnout_presets()
 	// the type tables (metres). the diverging leaves not tangent but at the blade angle (beta) after a
 	// straight pre-blade lead, then arcs by (alfa - beta) to the frog.
 	//
-	// blade_angle and pre_blade are NOT yet from Id-1 - left at 0 (a tangent arc from PR) until the
-	// catalogue figures are in. Fill them per type when we have them; the geometry already supports it.
+	// blade_angle, pre_blade and blade_length are NOT yet from Id-1 - left at 0, which lays a tangent
+	// arc straight from PR. Fill them per type when the catalogue figures are in; the geometry
+	// (domain::lay_turnout) already lays the pre-blade lead, the blade break and the shortened arc.
 	static std::vector<turnout_preset> const presets{
-	    {"Rz 1:7,5 R190", 7.5, 190.0, 25.222, 0.0, 0.0},
-	    {"Rz 1:9 R190", 9.0, 190.0, 27.138, 0.0, 0.0},
-	    {"Rz 1:9 R300", 9.0, 300.0, 33.230, 0.0, 0.0},
-	    {"Rz 1:12 R500", 12.0, 500.0, 41.594, 0.0, 0.0},
-	    {"Rz 1:14 R500", 14.0, 500.0, 42.371, 0.0, 0.0},
-	    {"Rz 1:14 R760", 14.0, 760.0, 54.216, 0.0, 0.0},
-	    {"Rz 1:18,5 R1200", 18.5, 1200.0, 64.818, 0.0, 0.0}};
+	    {"Rz 1:7,5 R190", 7.5, 190.0, 25.222, 0.0, 0.0, 0.0},
+	    {"Rz 1:9 R190", 9.0, 190.0, 27.138, 0.0, 0.0, 0.0},
+	    {"Rz 1:9 R300", 9.0, 300.0, 33.230, 0.0, 0.0, 0.0},
+	    {"Rz 1:12 R500", 12.0, 500.0, 41.594, 0.0, 0.0, 0.0},
+	    {"Rz 1:14 R500", 14.0, 500.0, 42.371, 0.0, 0.0, 0.0},
+	    {"Rz 1:14 R760", 14.0, 760.0, 54.216, 0.0, 0.0, 0.0},
+	    {"Rz 1:18,5 R1200", 18.5, 1200.0, 64.818, 0.0, 0.0, 0.0}};
 	return presets;
 }
 
