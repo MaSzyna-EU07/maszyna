@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
 #include "maj0sted/render/scene.hpp"  // Point, ElementKind
@@ -12,12 +13,12 @@ namespace maj0sted::render {
 /// hands to a renderer.
 struct CentrelineElement {
     ElementKind kind{ElementKind::Straight};
-    std::vector<Point> points;  ///< sampled axis in CRS metres
-    int straight_index{-1};     ///< owning straight, or -1 for a curve element
-    int gap{-1};                ///< owning gap, or -1 for a straight
-    int element_index{-1};      ///< position within a gap's curve chain
-    double length{0.0};         ///< element length (metres)
-    double radius_start{0.0};   ///< 0 == infinite (straight / clothoid open end)
+    std::vector<Point> points;    ///< sampled axis in CRS metres
+    std::uint32_t element_id{0};  ///< the authored element this came from
+    std::uint32_t owner_id{0};    ///< the track or turnout it belongs to
+    bool from_turnout{false};     ///< true when owner_id names a turnout
+    double length{0.0};           ///< element length (metres)
+    double radius_start{0.0};     ///< 0 == infinite (straight / clothoid open end)
     double radius_end{0.0};
 };
 

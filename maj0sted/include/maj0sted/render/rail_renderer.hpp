@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
 #include "maj0sted/render/track_renderer.hpp"
@@ -12,9 +13,9 @@ namespace maj0sted::render {
 struct RailPolyline {
     ElementKind kind{ElementKind::Straight};
     std::vector<Point> points;
-    int straight_index{-1};
-    int gap{-1};
-    int element_index{-1};
+    std::uint32_t element_id{0};
+    std::uint32_t owner_id{0};
+    bool from_turnout{false};
     double length{0.0};
     double radius_start{0.0};
     double radius_end{0.0};

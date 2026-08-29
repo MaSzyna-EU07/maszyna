@@ -513,6 +513,13 @@ endif()
 find_package(Threads REQUIRED)
 target_link_libraries(${PROJECT_NAME} Threads::Threads)
 
+# the editor's map imagery talks to a WMS over https. windows has WinHttp in the platform sdk;
+# everywhere else libcurl is the transport (see editor/orthophoto.cpp)
+if (NOT WIN32)
+	find_package(CURL REQUIRED)
+	target_link_libraries(${PROJECT_NAME} CURL::libcurl)
+endif()
+
 find_package(GLM REQUIRED)
 target_include_directories(${PROJECT_NAME} PRIVATE ${GLM_INCLUDE_DIR})
 

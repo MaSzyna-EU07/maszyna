@@ -34,14 +34,23 @@ Turnout {
 
     PR : Pose      // początek rozjazdu: styczny do toru zasadniczego
     KR : Pose      // koniec (krzyżownica): kierunek = tor zasadniczy obrócony o alfa
+    length : L = a + b                     // katalogowa: styczna przednia + tylna
+                                           // (Rz 190-1:9: 13,834 + 13,304 = 27,138)
+                                           // koniec rozjazdu na torze zasadniczym to
+                                           // rzut KR na prostą, krótszy od L
     crossing_angle : alfa = atan(1/n)      // radiany
 
-    blade_angle      : beta                // kąt nagięcia iglicy (kąt zwrotnicowy)
-    pre_blade_length : d                   // odcinek przediglicowy: prosty, PR -> ostrze iglicy
+    pieces        : [Piece...]             // geometria toru zwrotnego, PR -> KR, wprost z katalogu
+    blade         : { u, w }               // grubosc scietego ostrza, szerokosc glowki szyny
 
     through_axis  : [Bezier...]            // tor zasadniczy przez rozjazd (zwykle prosty)
-    diverging_axis: [Bezier...]            // przediglicowy -> iglica(prosta @ beta) -> luk -> prosta -> KR
+    diverging_axis: [Bezier...]            // te same odcinki, przybliżone Bézierami
 }
+
+Piece  { part, length, radius_start, radius_end, turn_in }
+       // part: 0 przediglicowy | 1 iglica | 2 luk | 3 prosta krzyzownicowa
+       // radius 0 = prosta; rowne = luk; rozne = krzywa przejsciowa
+       // turn_in = kat nagiecia iglicy (beta); 0 = iglica styczna do opornicy
 
 Pose   { x, y, hx, hy }                    // pozycja + jednostkowa styczna
 Bezier { p0, p1, p2, p3 }                  // kubiczna, punkty kontrolne w XY (metry)
@@ -51,27 +60,46 @@ Tor zasadniczy nie jest dzielony — `through_axis` jest podany dla kompletnośc
 (runtime często ma już tor główny). Rozjazd wnosi przede wszystkim
 `diverging_axis` + osprzęt + podrozjazdnice spinające oba tory.
 
-## Początek odnogi: odcinek przediglicowy + iglica
+## Początek odnogi: lista odcinków, nie jeden kształt
 
-Odnoga **nie zaczyna się łukiem**. To zwrotnica sieczna z iglicą prostą:
+Odnoga to **lista odcinków z katalogu**, kładziona po kolei od `PR`. Nic w niej
+nie jest dopasowywane: skos i długość katalogowa są tym, do czego wynik się
+**sprawdza** (`angle_residual`, `length_residual`), a nie tym, co domyka ostatni
+łuk. Typowe zestawy:
 
-1. **odcinek przediglicowy** — prosta w kierunku toru zasadniczego (kąt 0), od
-   `PR` do ostrza iglicy. Tu rozjazd jest jeszcze równoległy do toru głównego;
-   tu siedzi napęd.
-2. **iglica** — **prosta odcięta pod kątem `beta`** („prosta dogięta do
-   prostego"). Odnoga odchodzi od toru zasadniczego dopiero tutaj, o kąt nagięcia
-   iglicy `beta`.
-3. **łuk** — promień `R`, skręca od `beta` do kąta krzyżownicy `alfa`, czyli o
-   **`alfa − beta`** (nie o całe `alfa`).
-4. **prosta krzyżownicowa** — pod kątem `alfa`, do `KR`.
+- **zwrotnica sieczna z iglicą prostą** — `[przediglicowy] [iglica prosta @ beta]
+  [łuk o alfa − beta] [prosta krzyżownicowa]`,
+- **zwrotnica z iglicą łukową styczną do opornicy** — `[iglica łuk R od PR]
+  [łuk R] [prosta krzyżownicowa]`, `beta = 0` wszędzie: odnoga odchodzi stycznie,
+  bez załamania kierunku.
 
-Stąd `diverging_axis` = `[przediglicowy] [iglica @ beta] [łuk] [prosta] `. Iglice
-łukowe (styczne, `beta ≈ 0`, ostrze wtopione w łuk) to inny wariant — na razie
-modelujemy iglicę prostą.
+**Ścięte ostrze** (Koc, rys. 5.9). Iglicy nie da się zaostrzyć do zera. Łuk
+iglicy jest **teoretycznie styczny do opornicy w PR**, ale sama iglica zaczyna
+się dopiero tam, gdzie jest z czego — w *ostrzu*, w odległości `a` od PR — a jej
+zestrugany dziób o długości `d` dochodzi do punktu **A**, gdzie iglica ma już
+grubość `u`. To, co leży między PR a ostrzem, to odcinek przediglicowy: krzywa
+już tam jest, pojazd jeszcze jedzie po torze zasadniczym.
 
-**Model:** zespół iglic kotwiony w ostrzu (`PR` + `pre_blade_length` wzdłuż toru
-głównego), zorientowany wzdłuż toru zasadniczego, nadaje `beta`; długość iglicy
-jest po stronie modelu.
+Wszystko wychodzi z jednej drogi — do zadanego luzu między iglicą a opornicą:
+
+```
+s(y) = R * (acos(cos beta - y/R1) - beta)    // iglica łukowa, R1 = R + s/2
+s(y) = y / sin beta                          // iglica prosta
+a + d = s(u)              struganie = s(w) - a
+```
+
+Luz otwiera się na **łuku samej iglicy** (`R1 = R + s/2`, Koc 5.2), ale `s(y)`
+jest stacją **po osi** — promień szyny zamienia luz na kąt, nie mierzy długości.
+Rysunek wymiaruje iglicę po szynie, więc katalogowe `a + d` to `s(u)` przeskalowane
+o `R1/R`; na tablicy 5.1 zgadza się do dziesiątej części milimetra przy
+1200–1:18,5 i do sześciu przy 190–1:9. Dlatego typ niesie tylko `u`, `d` i `w`,
+a `a` się **wyprowadza**.
+
+(Templotowe `pl = w / tan beta` to to samo struganie rzutowane na opornicę.)
+
+**Model:** zespół iglic kotwiony w ostrzu, zorientowany wzdłuż osi iglicy w tym
+punkcie; edytor podaje `PR`, ostrze, koniec dzioba `A` i koniec strugania jako
+znaczniki (`kind` 0, 1, 7, 8).
 
 ## Bézier — definicja i próbkowanie
 
@@ -167,10 +195,11 @@ animacji przełożenia — do ustalenia z modelarzem. Pozycja bazowa: `PR`.
 długość i osie w postaci polilinii. Do kontraktu trzeba dołożyć:
 
 - **`crossing_mark` i `rail_profile`** w danych eksportu,
-- **`blade_angle` (beta) i `pre_blade_length`** — dziś `lay_turnout` kładzie łuk
-  styczny od `PR` (beta = 0, brak przediglicowego). Trzeba: odcinek przediglicowy
-  (prosty), iglicę prostą pod `beta`, łuk o `alfa − beta`, prostą do `KR`,
-- te dwa parametry **w szablonach** (`turnout_preset`) per typ,
+- ~~`blade_angle` i `pre_blade_length`~~ — zrobione inaczej: `lay_turnout` kładzie
+  **listę odcinków** z typu, więc przediglicowy, iglica (prosta pod `beta` albo
+  łukowa styczna), łuk i prosta krzyżownicowa to po prostu jej pozycje,
+- **wymiary Id-1 w szablonach** (`turnout_preset`): długości iglic i odcinków
+  przediglicowych, `u` per typ — dziś liczone z odsunięcia pięty,
 - osie jako **Béziery** (dziś polilinie) — konwersja łuk/klotoida → kubiczne wg
   powyższego,
 - jawne oznaczenie „to rozjazd" (nie zwykły łuk), z `PR`/`KR`/`alfa`.

@@ -2,9 +2,8 @@
 
 #include <ostream>
 #include <string>
-#include <vector>
 
-#include "maj0sted/editor/editor.hpp"
+#include "maj0sted/editor/solution.hpp"
 
 namespace maj0sted::io {
 
@@ -22,12 +21,18 @@ struct ScnExportResult {
     double origin_north{0.0};
 };
 
-[[nodiscard]] ScnExportResult export_scn(
-    const std::vector<maj0sted::editor::NiweletaPolys>& solved,
-    const ScnExportOptions& options, std::ostream& out);
+/// Writes the solved layout as MaSzyna scenery. The axis comes straight out of
+/// the solution: the exporter used to average the two drawn rails back together
+/// to recover it, which put the whole geometry through the renderer and back.
+///
+/// Height is still a constant and both roll slots are still zero — the vertical
+/// alignment is a separate piece of work, and nothing in the editor produces one
+/// yet.
+[[nodiscard]] ScnExportResult export_scn(const editor::Solution& solution,
+                                         const ScnExportOptions& options,
+                                         std::ostream& out);
 
-[[nodiscard]] ScnExportOptions resolve_scn_origin(
-    const std::vector<maj0sted::editor::NiweletaPolys>& solved,
-    ScnExportOptions options);
+[[nodiscard]] ScnExportOptions resolve_scn_origin(const editor::Solution& solution,
+                                                  ScnExportOptions options);
 
 }  // namespace maj0sted::io

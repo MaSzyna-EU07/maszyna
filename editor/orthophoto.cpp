@@ -17,6 +17,8 @@ http://mozilla.org/MPL/2.0/.
 #include <windows.h>
 #include <winhttp.h>
 #pragma comment(lib, "winhttp.lib")
+#else
+#include <curl/curl.h>
 #endif
 
 namespace editor
@@ -127,9 +129,64 @@ bool http_get(std::string const &Url, std::vector<std::uint8_t> &Bytes, std::str
 
 #else
 
-bool http_get(std::string const &, std::vector<std::uint8_t> &, std::string &)
+// libcurl's write callback: appends one chunk of the body to the caller's buffer
+std::size_t append_body(char const *Data, std::size_t const Size, std::size_t const Count, void *Userdata)
 {
-	return false; // no native transport on this platform yet
+	auto &bytes = *static_cast<std::vector<std::uint8_t> *>(Userdata);
+	auto const length = Size * Count;
+	bytes.insert(bytes.end(), Data, Data + length);
+	return length;
+}
+
+// plain HTTPS GET, the same shape as the WinHttp one above: one request, one answer, nothing kept
+// between calls. libcurl wants its global init done once before any handle exists, and this is the
+// only place in the program that uses it, so a function-local static does the job thread-safely
+bool http_get(std::string const &Url, std::vector<std::uint8_t> &Bytes, std::string &Contenttype)
+{
+	static bool const initialised = (curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK);
+	if (false == initialised)
+	{
+		return false;
+	}
+
+	CURL *handle = curl_easy_init();
+	if (handle == nullptr)
+	{
+		return false;
+	}
+
+	Bytes.clear();
+	curl_easy_setopt(handle, CURLOPT_URL, Url.c_str());
+	curl_easy_setopt(handle, CURLOPT_USERAGENT, kUserAgent);
+	curl_easy_setopt(handle, CURLOPT_FOLLOWLOCATION, 1L);
+	curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, append_body);
+	curl_easy_setopt(handle, CURLOPT_WRITEDATA, &Bytes);
+	// a stuck transfer must not hold a worker forever; the caller retries
+	curl_easy_setopt(handle, CURLOPT_CONNECTTIMEOUT, 10L);
+	curl_easy_setopt(handle, CURLOPT_TIMEOUT, 30L);
+	// workers run on their own threads: keep libcurl off signals, which are process-wide
+	curl_easy_setopt(handle, CURLOPT_NOSIGNAL, 1L);
+
+	bool ok = (curl_easy_perform(handle) == CURLE_OK);
+	if (true == ok)
+	{
+		long status = 0;
+		curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &status);
+		char const *type = nullptr;
+		if ((curl_easy_getinfo(handle, CURLINFO_CONTENT_TYPE, &type) == CURLE_OK) && (type != nullptr))
+		{
+			Contenttype.assign(type);
+		}
+		ok = (status == 200) && (false == Bytes.empty());
+	}
+	if (false == ok)
+	{
+		Bytes.clear();
+	}
+
+	curl_easy_cleanup(handle);
+
+	return ok;
 }
 
 #endif

@@ -46,9 +46,9 @@ void RailRenderer::add(const CentrelineElement& element) {
     for (const double side : {half_gauge_, -half_gauge_}) {
         RailPolyline rail;
         rail.kind = element.kind;
-        rail.straight_index = element.straight_index;
-        rail.gap = element.gap;
-        rail.element_index = element.element_index;
+        rail.element_id = element.element_id;
+        rail.owner_id = element.owner_id;
+        rail.from_turnout = element.from_turnout;
         rail.length = element.length;
         rail.radius_start = element.radius_start;
         rail.radius_end = element.radius_end;

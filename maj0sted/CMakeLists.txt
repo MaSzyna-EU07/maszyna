@@ -2,14 +2,13 @@ cmake_minimum_required(VERSION 3.20)
 
 project(maj0sted
     VERSION 0.1.0
-    DESCRIPTION "Domain-Driven Design library for a railway track-layout editor"
+    DESCRIPTION "Model and solver for a railway track-layout editor"
     LANGUAGES CXX)
 
 # ----------------------------------------------------------------------------
 # Options
 # ----------------------------------------------------------------------------
 option(MAJ0STED_BUILD_TESTS        "Build unit tests"          ON)
-option(MAJ0STED_BUILD_EXAMPLES     "Build usage examples"      ON)
 option(MAJ0STED_WARNINGS_AS_ERRORS "Treat warnings as errors"  OFF)
 
 # Only drive tests/examples/install defaults when built on its own, not when
@@ -24,26 +23,17 @@ endif()
 # The static library
 # ----------------------------------------------------------------------------
 add_library(maj0sted STATIC
-    src/domain/map_project.cpp
-    src/domain/horizontal_alignment.cpp
-    src/domain/vertical_alignment.cpp
-    src/domain/niweleta.cpp
-    src/domain/parallelism_service.cpp
-    src/domain/fitting_service.cpp
-    src/domain/gap_fitter.cpp
     src/domain/turnout.cpp
-    src/io/project_serializer.cpp
-    src/io/svg_writer.cpp
-    src/io/scn_export.cpp
-    src/render/plan_sampler.cpp
-    src/render/rail_renderer.cpp
-    src/editor/solve.cpp
-    src/editor/editor.cpp
-    src/editor/ribbon.cpp
+    src/editor/model.cpp
+    src/editor/solution.cpp
+    src/editor/chain.cpp
+    src/editor/sketch.cpp
+    src/editor/layout.cpp
+    src/editor/render.cpp
     src/editor/tile_cache.cpp
-    src/app/editor_document.cpp
-    src/app/straight_constraints.cpp
-    src/app/basket_draft.cpp
+    src/render/rail_renderer.cpp
+    src/io/document_io.cpp
+    src/io/scn_export.cpp
 )
 add_library(maj0sted::maj0sted ALIAS maj0sted)
 
@@ -75,13 +65,6 @@ endif()
 if(MAJ0STED_BUILD_TESTS AND MAJ0STED_STANDALONE)
     enable_testing()
     add_subdirectory(tests)
-endif()
-
-# ----------------------------------------------------------------------------
-# Examples
-# ----------------------------------------------------------------------------
-if(MAJ0STED_BUILD_EXAMPLES AND MAJ0STED_STANDALONE)
-    add_subdirectory(examples)
 endif()
 
 # ----------------------------------------------------------------------------

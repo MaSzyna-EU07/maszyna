@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <numbers>
 #include <sstream>
 #include <vector>
@@ -9,15 +10,13 @@
 namespace maj0sted::io {
 namespace {
 
-using maj0sted::editor::NiweletaPolys;
 using maj0sted::editor::PlanPoint;
-using maj0sted::editor::PlanPolyline;
+using maj0sted::editor::SolvedElement;
+using maj0sted::editor::SolvedTrack;
 
 struct AxisElement {
     int kind{0};
-    int straight_index{-1};
-    int gap{-1};
-    int element_index{-1};
+    std::uint32_t element_id{0};
     double length{0.0};
     double radius_start{0.0};
     double radius_end{0.0};
@@ -30,49 +29,25 @@ struct WorldXYZ {
     double z{0.0};
 };
 
-std::vector<AxisElement> recover_axis(const NiweletaPolys& solved) {
+/// The solved elements, in the shape the emitter below wants. Nothing is
+/// recovered or averaged: the solution already holds the axis.
+std::vector<AxisElement> axis_of(const SolvedTrack& track) {
+    const auto radius_of = [](double k) {
+        return std::abs(k) > 1e-9 ? 1.0 / std::abs(k) : 0.0;
+    };
     std::vector<AxisElement> out;
-    const auto& polys = solved.polylines;
-    for (std::size_t i = 0; i < polys.size();) {
-        const auto& a = polys[i];
-        if (a.points.size() < 2) {
-            ++i;
-            continue;
-        }
-        if (i + 1 < polys.size()) {
-            const auto& b = polys[i + 1];
-            if (b.straight_index == a.straight_index && b.gap == a.gap &&
-                b.element_index == a.element_index &&
-                b.points.size() == a.points.size()) {
-                AxisElement el;
-                el.kind = a.kind;
-                el.straight_index = a.straight_index;
-                el.gap = a.gap;
-                el.element_index = a.element_index;
-                el.length = a.length;
-                el.radius_start = a.radius_start;
-                el.radius_end = a.radius_end;
-                el.points.resize(a.points.size());
-                for (std::size_t k = 0; k < a.points.size(); ++k) {
-                    el.points[k] = {(a.points[k].x + b.points[k].x) * 0.5,
-                                    (a.points[k].y + b.points[k].y) * 0.5};
-                }
-                out.push_back(std::move(el));
-                i += 2;
-                continue;
-            }
-        }
-        AxisElement el;
-        el.kind = a.kind;
-        el.straight_index = a.straight_index;
-        el.gap = a.gap;
-        el.element_index = a.element_index;
-        el.length = a.length;
-        el.radius_start = a.radius_start;
-        el.radius_end = a.radius_end;
-        el.points = a.points;
-        out.push_back(std::move(el));
-        ++i;
+    out.reserve(track.elements.size());
+    for (const SolvedElement& element : track.elements) {
+        AxisElement axis;
+        axis.kind = element.kind == maj0sted::editor::Kind::Line     ? 0
+                    : element.kind == maj0sted::editor::Kind::Arc    ? 1
+                                                                     : 2;
+        axis.element_id = static_cast<std::uint32_t>(element.id);
+        axis.length = element.length;
+        axis.radius_start = radius_of(element.k0);
+        axis.radius_end = radius_of(element.k1);
+        axis.points = element.points;
+        out.push_back(std::move(axis));
     }
     return out;
 }
@@ -215,29 +190,29 @@ void write_scn_track(std::ostream& out, const std::string& name, const WorldXYZ&
 
 }  // namespace
 
-ScnExportOptions resolve_scn_origin(const std::vector<NiweletaPolys>& solved,
+ScnExportOptions resolve_scn_origin(const maj0sted::editor::Solution& solution,
                                     ScnExportOptions options) {
     if (std::abs(options.origin_east) >= 1.0 ||
         std::abs(options.origin_north) >= 1.0) {
         return options;
     }
-    for (const auto& s : solved) {
-        const auto axis = recover_axis(s);
-        if (!axis.empty() && !axis.front().points.empty()) {
-            const auto& p = axis.front().points.front();
-            if (std::abs(p.x) > 10000.0 || std::abs(p.y) > 10000.0) {
-                options.origin_east = p.x;
-                options.origin_north = p.y;
-            }
-            break;
+    for (const auto& track : solution.tracks) {
+        if (track.elements.empty() || track.elements.front().points.empty()) {
+            continue;
         }
+        const auto& point = track.elements.front().points.front();
+        if (std::abs(point.x) > 10000.0 || std::abs(point.y) > 10000.0) {
+            options.origin_east = point.x;
+            options.origin_north = point.y;
+        }
+        break;
     }
     return options;
 }
 
-ScnExportResult export_scn(const std::vector<NiweletaPolys>& solved,
+ScnExportResult export_scn(const maj0sted::editor::Solution& solution,
                            const ScnExportOptions& options, std::ostream& out) {
-    const auto opt = resolve_scn_origin(solved, options);
+    const auto opt = resolve_scn_origin(solution, options);
     ScnExportResult result;
     result.origin_east = opt.origin_east;
     result.origin_north = opt.origin_north;
@@ -248,8 +223,9 @@ ScnExportResult export_scn(const std::vector<NiweletaPolys>& solved,
     const double kRailY = opt.rail_y;
     const double kMaxArcAngle = opt.max_arc_angle;
 
-    for (std::size_t n = 0; n < solved.size(); ++n) {
-        const auto axis = recover_axis(solved[n]);
+    for (const auto& track : solution.tracks) {
+        const auto track_id = static_cast<std::uint32_t>(track.id);
+        const auto axis = axis_of(track);
         for (std::size_t ei = 0; ei < axis.size(); ++ei) {
             const auto& el = axis[ei];
             if (el.points.size() < 2) {
@@ -315,13 +291,8 @@ ScnExportResult export_scn(const std::vector<NiweletaPolys>& solved,
                 }
 
                 std::ostringstream name;
-                name << "plan_n" << n;
-                if (el.straight_index >= 0) {
-                    name << "_s" << el.straight_index;
-                } else {
-                    name << "_g" << el.gap << "_e" << el.element_index;
-                }
-                name << '_' << tag << '_' << result.tracks;
+                name << "plan_t" << track_id << "_e" << el.element_id << '_' << tag
+                     << '_' << result.tracks;
                 const auto track_name = name.str();
                 if (result.first_track_name.empty()) {
                     result.first_track_name = track_name;
