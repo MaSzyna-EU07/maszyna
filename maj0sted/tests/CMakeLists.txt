@@ -28,6 +28,16 @@ target_link_libraries(maj0sted_test_turnout PRIVATE maj0sted::maj0sted)
 target_include_directories(maj0sted_test_turnout PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME turnout COMMAND maj0sted_test_turnout)
 
+add_executable(maj0sted_test_scn test_scn.cpp)
+target_link_libraries(maj0sted_test_scn PRIVATE maj0sted::maj0sted)
+target_include_directories(maj0sted_test_scn PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME scn COMMAND maj0sted_test_scn)
+
+add_executable(maj0sted_test_join test_join.cpp)
+target_link_libraries(maj0sted_test_join PRIVATE maj0sted::maj0sted)
+target_include_directories(maj0sted_test_join PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME join COMMAND maj0sted_test_join)
+
 add_executable(maj0sted_test_tile_cache test_tile_cache.cpp)
 target_link_libraries(maj0sted_test_tile_cache PRIVATE maj0sted::maj0sted)
 target_include_directories(maj0sted_test_tile_cache PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

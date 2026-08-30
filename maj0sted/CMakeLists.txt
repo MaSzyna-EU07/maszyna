@@ -28,6 +28,7 @@ add_library(maj0sted STATIC
     src/editor/solution.cpp
     src/editor/chain.cpp
     src/editor/sketch.cpp
+    src/editor/join.cpp
     src/editor/layout.cpp
     src/editor/render.cpp
     src/editor/tile_cache.cpp

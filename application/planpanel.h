@@ -55,13 +55,17 @@ class plan_panel : public ui_panel
 	void render_toolbar();
 	void render_elements();
 	void render_turnouts();
+	// joining two tracks into one: the radius a join may bend at, and the button that starts
+	// pointing at the ends to join. everything else about it happens on the map
+	void render_join();
 	void render_turnout_type(maj0sted::editor::TurnoutType &Type_);
 	// the catalogue drawing of the chosen type, in its own window: the diverging path piece by
 	// piece, both tracks' rails, and the points a drawing is dimensioned from
 	void render_template_window();
 	void render_diagnostics();
 	void render_storage();
-	void export_scn();
+	void export_scn(bool Run_);
+	void run_scn();
 	void seed_catalogue();
 	void render_newmap_dialog();
 	void render_location_dialog();
@@ -106,6 +110,17 @@ class plan_panel : public ui_panel
 	bool hit_straight_end(ImVec2 const &Mouse, std::size_t &OutIndex, int &OutEnd) const;
 	bool hit_element(ImVec2 const &Mouse, ElementId &OutElement, TrackId &OutTrack) const;
 	bool hit_turnout(ImVec2 const &Mouse, TurnoutId &OutTurnout) const;
+	// the loose end of any track: OutEnd 0 for the one it starts on, 1 for the one it runs out to.
+	// a track hanging on a turnout's port has no free start, so that one is not offered
+	bool hit_track_end(ImVec2 const &Mouse, float const Tolerance, TrackId &OutTrack, int &OutEnd) const;
+	// whether that end is loose at all: one that already stands on another track's end is joined
+	// to it, and there is nothing to join twice
+	bool loose_end(maj0sted::editor::SolvedTrack const &Track_, int const End_) const;
+	// how an end reads for a join laid out of it or into it: one facing the wrong way for that
+	// is taken backwards, which is what turning the track round would do to it anyway
+	static maj0sted::domain::geometry::Pose join_pose(maj0sted::editor::SolvedTrack const &Track_, int const End_, bool const Leaving_);
+	// lays the join and leaves one track, saying what it cost
+	void join_ends(TrackId const A, int const Aend, TrackId const B, int const Bend);
 	// nearest station along a solved track's axis, for placing and sliding turnouts
 	bool station_on(TrackId const Track, double const Wx, double const Wy, double &OutStation) const;
 	TrackId nearest_track_axis(ImVec2 const &Mouse, float const Tolerance) const;
@@ -143,6 +158,11 @@ class plan_panel : public ui_panel
 	int m_pick_turnout{0};
 	// 0 idle, 1 waiting for the element the selected one is to be held parallel to
 	int m_pick_parallel{0};
+	// scalanie by pointing at it: 0 idle, 1 waiting for the first end, 2 for the second. a track
+	// joins onto another end to start, so which of the two ends is clicked says which way round
+	int m_pick_join{0};
+	TrackId m_join_first{};
+	int m_join_first_end{0};
 
 	// what the next appended element is made of
 	double m_new_radius{300.0};
@@ -150,6 +170,8 @@ class plan_panel : public ui_panel
 	int m_new_hand{1};
 	// the radius a corner is rounded with when laying by clicking
 	double m_corner_radius{300.0};
+	// the radius a join may bend at
+	double m_join_radius{300.0};
 	// miedzytorze a new hold is given, metres
 	double m_new_offset{4.75};
 
@@ -173,6 +195,11 @@ class plan_panel : public ui_panel
 	std::string m_status;
 	char m_path[256]{"editor/plan.m0s"};
 	char m_scn_path[256]{"scenery/plan_export.scn"};
+	std::vector<std::string> m_scn_warnings;
+	// the exported scenery is opened in the editor by default: it stands up without a locomotive,
+	// and looking at what was drawn is what the export is usually for
+	bool m_scn_run_editor{true};
+	bool m_scn_trainset{true};
 
 	bool m_pickingplace{false};
 	double m_pickx{0.0};

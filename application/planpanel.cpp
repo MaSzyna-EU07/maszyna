@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "utilities/Globals.h"
 
+#include "maj0sted/editor/join.hpp"
 #include "maj0sted/editor/sketch.hpp"
 #include "maj0sted/io/document_io.hpp"
 
@@ -24,6 +25,11 @@ http://mozilla.org/MPL/2.0/.
 #include <fstream>
 #include <limits>
 #include <numbers>
+
+#if !defined(_WIN32)
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 namespace
 {
@@ -43,6 +49,83 @@ using maj0sted::editor::TurnoutId;
 glm::dvec3 plan_to_world(double const X, double const Y)
 {
 	return {X - Global.scenery_origin.x, 0.0, -(Y - Global.scenery_origin.y)};
+}
+
+// where this very program stands on disk. the editor and the simulator are one exe, so running the
+// exported scenery is running ourselves again with the scenery named on the command line
+std::string executable_path()
+{
+#if defined(_WIN32)
+	char buffer[MAX_PATH]{};
+	auto const length{GetModuleFileNameA(nullptr, buffer, MAX_PATH)};
+	return length > 0 ? std::string(buffer, length) : std::string{};
+#else
+	char buffer[4096]{};
+	auto const length{::readlink("/proc/self/exe", buffer, sizeof(buffer) - 1)};
+	return length > 0 ? std::string(buffer, static_cast<std::size_t>(length)) : std::string{};
+#endif
+}
+
+// starts it and lets go: the editor keeps whatever is on its screen, and the second instance is not
+// ours to wait for. on unix that is two forks, so nothing is left behind for us to reap
+bool spawn_detached(std::string const &Executable, std::vector<std::string> const &Arguments, std::string const &Directory)
+{
+	if (Executable.empty())
+	{
+		return false;
+	}
+#if defined(_WIN32)
+	std::string command{'"' + Executable + '"'};
+	for (auto const &argument : Arguments)
+	{
+		command += " \"" + argument + '"';
+	}
+	STARTUPINFOA startup{};
+	startup.cb = sizeof(startup);
+	PROCESS_INFORMATION process{};
+	if (0 == CreateProcessA(nullptr, command.data(), nullptr, nullptr, FALSE, 0, nullptr, Directory.empty() ? nullptr : Directory.c_str(), &startup, &process))
+	{
+		return false;
+	}
+	CloseHandle(process.hThread);
+	CloseHandle(process.hProcess);
+	return true;
+#else
+	// laid out before the fork: between forking and exec'ing, a process with threads in it must not
+	// go anywhere near the allocator
+	std::vector<char *> argv;
+	argv.push_back(const_cast<char *>(Executable.c_str()));
+	for (auto const &argument : Arguments)
+	{
+		argv.push_back(const_cast<char *>(argument.c_str()));
+	}
+	argv.push_back(nullptr);
+
+	auto const first{::fork()};
+	if (first < 0)
+	{
+		return false;
+	}
+	if (first == 0)
+	{
+		if (::fork() == 0)
+		{
+			::setsid();
+			if (false == Directory.empty())
+			{
+				if (::chdir(Directory.c_str()) != 0)
+				{
+					::_exit(127);
+				}
+			}
+			::execv(Executable.c_str(), argv.data());
+		}
+		::_exit(0);
+	}
+	int status{0};
+	::waitpid(first, &status, 0);
+	return true;
+#endif
 }
 
 // the construction points of a turnout, by TurnoutMark::kind. the map and the template drawing name
@@ -999,6 +1082,8 @@ void plan_panel::handle_scene()
 	{
 		m_pick_turnout = 0;
 		m_pick_parallel = 0;
+		m_pick_join = 0;
+		m_join_first = TrackId::none;
 		m_pending = false;
 		clear_selection();
 		m_status.clear();
@@ -1039,6 +1124,31 @@ void plan_panel::handle_scene()
 			m_status = "wskaz odcinek innego toru";
 		}
 		m_pick_parallel = 0;
+		return;
+	}
+	if (m_pick_join != 0 && ImGui::IsMouseClicked(0))
+	{
+		TrackId which{TrackId::none};
+		int end{0};
+		if (false == hit_track_end(mouse, 18.0f, which, end))
+		{
+			m_status = "kliknij w koniec toru - zapalone konce sa te, ktore da sie polaczyc";
+			return;
+		}
+		if (m_pick_join == 1)
+		{
+			m_join_first = which;
+			m_join_first_end = end;
+			m_pick_join = 2;
+			m_status = "teraz wskaz drugi koniec";
+			return;
+		}
+		if (which == m_join_first)
+		{
+			m_status = "to ten sam tor";
+			return;
+		}
+		join_ends(m_join_first, m_join_first_end, which, end);
 		return;
 	}
 
@@ -1457,6 +1567,133 @@ void plan_panel::draw_on_scene()
 			drawlist->AddCircle(screen, 6.0f, IM_COL32(255, 240, 140, 230), 0, 2.0f);
 		}
 	}
+
+	// scalanie: every end a join could be made from or to, and what would be laid between the one
+	// already picked and whichever the cursor is over
+	if (m_pick_join != 0)
+	{
+		auto const mouse{ImGui::GetIO().MousePos};
+		TrackId hovered{TrackId::none};
+		int hovered_end{0};
+		auto const over{hit_track_end(mouse, 18.0f, hovered, hovered_end)};
+
+		for (auto const &track : m_solution.tracks)
+		{
+			for (int end = 0; end < 2; ++end)
+			{
+				if (false == loose_end(track, end))
+				{
+					continue;
+				}
+				auto const &pose{end == 0 ? track.start : track.end};
+				ImVec2 screen;
+				if (false == world_to_screen(plan_to_world(pose.x, pose.y), screen))
+				{
+					continue;
+				}
+				auto const picked{m_pick_join == 2 && track.id == m_join_first && end == m_join_first_end};
+				auto const under{over && track.id == hovered && end == hovered_end};
+				auto const colour{picked ? IM_COL32(120, 255, 160, 250) : under ? IM_COL32(255, 255, 255, 250) : IM_COL32(255, 240, 140, 190)};
+				// a start is a square and an end is a circle, so which way a join would run is
+				// there to be seen and not guessed at
+				if (end == 0)
+				{
+					drawlist->AddRect(ImVec2(screen.x - 6.0f, screen.y - 6.0f), ImVec2(screen.x + 6.0f, screen.y + 6.0f), colour, 0.0f, 0, picked || under ? 3.0f : 1.5f);
+				}
+				else
+				{
+					drawlist->AddCircle(screen, 6.0f, colour, 0, picked || under ? 3.0f : 1.5f);
+				}
+				// the whole track lights up with the end under the cursor, so there is no doubt
+				// about which one is being taken hold of
+				if (false == (picked || under) || track.centreline.size() < 2)
+				{
+					continue;
+				}
+				std::vector<ImVec2> axis;
+				axis.reserve(track.centreline.size());
+				for (auto const &point : track.centreline)
+				{
+					ImVec2 at;
+					if (world_to_screen(plan_to_world(point.x, point.y), at))
+					{
+						axis.push_back(at);
+					}
+				}
+				if (axis.size() > 1)
+				{
+					drawlist->AddPolyline(axis.data(), static_cast<int>(axis.size()), (colour & 0x00ffffffu) | 0x66000000u, false, 6.0f);
+				}
+			}
+		}
+
+		// the proposal itself, before anything is done to the document. it runs from the
+		// end pointed at first to the one under the cursor, whichever way round the two
+		// tracks happen to be written down: an end is left the way it points, a start is
+		// left the way it came, and the arriving end reads the other way about
+		if (m_pick_join == 2 && over && hovered != m_join_first)
+		{
+			auto const *head{maj0sted::editor::find_track(m_solution, m_join_first)};
+			auto const *tail{maj0sted::editor::find_track(m_solution, hovered)};
+			if (head != nullptr && tail != nullptr)
+			{
+				auto const leaving{join_pose(*head, m_join_first_end, true)};
+				auto const arriving{join_pose(*tail, hovered_end, false)};
+				maj0sted::editor::JoinSettings settings;
+				settings.radius = m_join_radius;
+				auto const plan{maj0sted::editor::plan_join(leaving, arriving, settings)};
+
+				std::string label;
+				if (plan.ok)
+				{
+					std::vector<maj0sted::domain::geometry::XY> points;
+					auto walker{leaving};
+					for (auto const &element : plan.elements)
+					{
+						auto const k{element.kind == Kind::Line || element.radius <= 0.0 ? 0.0 : element.hand / element.radius};
+						walker = maj0sted::domain::geometry::layout_segment(k, k, element.length, walker, &points);
+					}
+					std::vector<ImVec2> line;
+					line.reserve(points.size());
+					for (auto const &point : points)
+					{
+						ImVec2 screen;
+						if (world_to_screen(plan_to_world(point.x, point.y), screen))
+						{
+							line.push_back(screen);
+						}
+					}
+					if (line.size() > 1)
+					{
+						dashed_polyline(drawlist, line, IM_COL32(120, 255, 160, 235), 2.5f);
+					}
+					label = maj0sted::editor::join_kind_name(plan.kind);
+					auto laid{0.0};
+					for (auto const &element : plan.elements)
+					{
+						laid += element.length;
+					}
+					if (laid > 0.0)
+					{
+						label += ", " + to_string(laid, 1) + " m";
+					}
+					if (plan.tightest > 0.0)
+					{
+						label += ", R=" + to_string(plan.tightest, 0) + " m";
+					}
+				}
+				else
+				{
+					label = plan.why;
+				}
+
+				auto const size{ImGui::CalcTextSize(label.c_str())};
+				ImVec2 const corner(mouse.x + 16.0f, mouse.y + 16.0f);
+				drawlist->AddRectFilled(ImVec2(corner.x - 4.0f, corner.y - 3.0f), ImVec2(corner.x + size.x + 4.0f, corner.y + size.y + 3.0f), IM_COL32(15, 20, 30, 215), 3.0f);
+				drawlist->AddText(corner, plan.ok ? IM_COL32(160, 255, 190, 250) : IM_COL32(255, 190, 110, 250), label.c_str());
+			}
+		}
+	}
 }
 
 void plan_panel::go_to_plan()
@@ -1591,7 +1828,149 @@ void plan_panel::render_toolbar()
 		go_to_plan();
 	}
 
+	render_join();
+
 	ImGui::Separator();
+}
+
+void plan_panel::render_join()
+{
+	if (m_document.tracks.size() < 2)
+	{
+		return;
+	}
+	ImGui::SameLine();
+	if (ImGui::Button(m_pick_join != 0 ? "Lacze... (Esc)" : "Polacz"))
+	{
+		m_pick_join = m_pick_join != 0 ? 0 : 1;
+		m_join_first = TrackId::none;
+		m_status = m_pick_join != 0 ? "wskaz dwa wolne konce torow; podglad pokaze, co miedzy nimi stanie" : "";
+	}
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("wolne konce torow zapalaja sie na mapie: kwadrat to poczatek, kolo to koniec.\n"
+		                  "wskaz dwa dowolne - wyjdzie z tego jeden tor. gdy trzeba, jeden z nich\n"
+		                  "zostaje czytany od drugiego konca: w terenie nic sie nie rusza.\n"
+		                  "gdy oba leza na jednej prostej, wychodzi jedna prosta, bez zadnego luku");
+	}
+	if (m_pick_join != 0)
+	{
+		ImGui::SetNextItemWidth(120.0f);
+		ImGui::InputDouble("R polaczenia [m]", &m_join_radius, 10.0, 100.0, "%.0f");
+	}
+}
+
+void plan_panel::join_ends(TrackId const A, int const Aend, TrackId const B, int const Bend)
+{
+	maj0sted::editor::JoinSettings settings;
+	settings.radius = m_join_radius;
+
+	auto const report{maj0sted::editor::join_ends(m_document, m_solution, A, Aend, B, Bend, settings)};
+	if (false == report.ok)
+	{
+		m_status = report.why;
+		return;
+	}
+
+	// whichever track was left standing is the one to select afterwards, and it is not
+	// always the first clicked - the other one may have been the only one that could turn
+	auto const survivor{maj0sted::editor::find_track(m_document, A) != nullptr ? A : B};
+
+	char status[256];
+	std::snprintf(status, sizeof(status), "polaczone: %s, %d odcinkow zlanych w jeden, %d rozjazdow przeniesionych%s", maj0sted::editor::join_kind_name(report.join.kind), report.fused,
+	              report.turnouts, report.reversed ? ", jeden tor czytany od drugiego konca" : "");
+	m_status = status;
+	m_track = survivor;
+	m_pick_join = 0;
+	m_join_first = TrackId::none;
+	auto const *joined{maj0sted::editor::find_track(m_document, survivor)};
+	if (joined != nullptr)
+	{
+		std::snprintf(m_namebuf, sizeof(m_namebuf), "%s", joined->name.c_str());
+	}
+	clear_selection();
+	solve();
+}
+
+maj0sted::domain::geometry::Pose plan_panel::join_pose(maj0sted::editor::SolvedTrack const &Track_, int const End_, bool const Leaving_)
+{
+	auto pose{End_ == 1 ? Track_.end : Track_.start};
+	// what is laid runs out of one end and into the other, so an end that points the
+	// wrong way for that is read backwards - which is exactly what turning the track
+	// round would do to it
+	if (Leaving_ ? End_ == 0 : End_ == 1)
+	{
+		pose.hx = -pose.hx;
+		pose.hy = -pose.hy;
+	}
+	return pose;
+}
+
+bool plan_panel::loose_end(maj0sted::editor::SolvedTrack const &Track_, int const End_) const
+{
+	if (Track_.elements.empty())
+	{
+		return false;
+	}
+	if (End_ == 0)
+	{
+		// a track hanging on a turnout's port starts on the frog, and that is not a loose end
+		auto const *authored{maj0sted::editor::find_track(m_document, Track_.id)};
+		if (authored == nullptr || false == std::holds_alternative<maj0sted::editor::AtPose>(authored->anchor))
+		{
+			return false;
+		}
+	}
+
+	// and one already standing on another track's end is joined to it, whether or not the two are
+	// one track in the document
+	auto const &pose{End_ == 0 ? Track_.start : Track_.end};
+	for (auto const &other : m_solution.tracks)
+	{
+		if (other.id == Track_.id || other.elements.empty())
+		{
+			continue;
+		}
+		for (auto const &at : {other.start, other.end})
+		{
+			if (std::hypot(at.x - pose.x, at.y - pose.y) < 0.10)
+			{
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+bool plan_panel::hit_track_end(ImVec2 const &Mouse, float const Tolerance, TrackId &OutTrack, int &OutEnd) const
+{
+	auto best{Tolerance};
+	auto found{false};
+	for (auto const &track : m_solution.tracks)
+	{
+		for (int end = 0; end < 2; ++end)
+		{
+			if (false == loose_end(track, end))
+			{
+				continue;
+			}
+			auto const &pose{end == 0 ? track.start : track.end};
+			ImVec2 screen;
+			if (false == world_to_screen(plan_to_world(pose.x, pose.y), screen))
+			{
+				continue;
+			}
+			auto const distance{std::hypot(screen.x - Mouse.x, screen.y - Mouse.y)};
+			if (distance < best)
+			{
+				best = static_cast<float>(distance);
+				OutTrack = track.id;
+				OutEnd = end;
+				found = true;
+			}
+		}
+	}
+	return found;
 }
 
 void plan_panel::render_elements()
@@ -2659,6 +3038,8 @@ void plan_panel::render_storage()
 			m_document.origin_x = Global.scenery_origin.x;
 			m_document.origin_y = Global.scenery_origin.y;
 			m_pending = false;
+			m_pick_join = 0;
+			m_join_first = TrackId::none;
 			clear_selection();
 			solve();
 			if (m_document.view_extent > 0.0)
@@ -2673,6 +3054,10 @@ void plan_panel::render_storage()
 			{
 				go_to_plan();
 			}
+			if (false == m_document.scn_path.empty())
+			{
+				std::snprintf(m_scn_path, sizeof(m_scn_path), "%s", m_document.scn_path.c_str());
+			}
 			m_status = "loaded " + std::string(m_path);
 		}
 		else
@@ -2686,29 +3071,95 @@ void plan_panel::render_storage()
 	ImGui::SameLine();
 	if (ImGui::Button("Export SCN"))
 	{
-		export_scn();
+		export_scn(false);
 	}
+	ImGui::SameLine();
+	if (ImGui::Button("Export i uruchom"))
+	{
+		export_scn(true);
+	}
+	ImGui::Checkbox("uruchom w edytorze", &m_scn_run_editor);
+	ImGui::SameLine();
+	// the trainset is what the simulator looks for a player train in: without one it loads the
+	// scenery and drops straight back out, so driving needs it and looking around does not
+	ImGui::Checkbox("z pociagiem", &m_scn_trainset);
 	if (false == m_status.empty())
 	{
 		ImGui::TextDisabled("%s", m_status.c_str());
 	}
+	for (auto const &warning : m_scn_warnings)
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", warning.c_str());
+	}
 }
 
-void plan_panel::export_scn()
+void plan_panel::export_scn(bool const Run_)
 {
 	solve();
+	m_scn_warnings.clear();
+	// where a plan exports to belongs to the plan: say it once and it is there the next time the
+	// project is opened, whichever MaSzyna it was drawn for
+	m_document.scn_path = m_scn_path;
 	maj0sted::io::ScnExportOptions opt;
 	opt.origin_east = Global.scenery_origin.x;
 	opt.origin_north = Global.scenery_origin.y;
+	opt.trainset = m_scn_trainset;
 	std::ofstream out(m_scn_path, std::ios::binary | std::ios::trunc);
 	if (!out)
 	{
 		m_status = "could not write " + std::string(m_scn_path);
 		return;
 	}
-	auto const result{maj0sted::io::export_scn(m_solution, opt, out)};
+	auto const result{maj0sted::io::export_scn(m_document, m_solution, opt, out)};
 	out.flush();
-	m_status = out.good() ? ("exported " + std::to_string(result.tracks) + " tracks") : ("could not write " + std::string(m_scn_path));
+	if (false == out.good())
+	{
+		m_status = "could not write " + std::string(m_scn_path);
+		return;
+	}
+	out.close();
+	m_status = "wyeksportowano " + std::to_string(result.tracks) + " odcinków i " + std::to_string(result.switches) + " zwrotnic";
+	m_scn_warnings = result.warnings;
+	if (false == m_scn_warnings.empty())
+	{
+		m_status += ", " + std::to_string(m_scn_warnings.size()) + " uwag";
+	}
+	if (Run_)
+	{
+		run_scn();
+	}
+}
+
+void plan_panel::run_scn()
+{
+	// the simulator names a scenery relative to scenery/, so that is what is handed over rather than
+	// the path the file was written to
+	std::string scenery{m_scn_path};
+	std::string root;
+	auto const slash{scenery.find_last_of("/\\")};
+	if (slash != std::string::npos)
+	{
+		// the game is wherever the scenery folder is: exporting into another MaSzyna's scenery and
+		// then running ours out of this directory would find the file and none of the models
+		auto const folder{scenery.substr(0, slash)};
+		auto const parent{folder.find_last_of("/\\")};
+		root = parent != std::string::npos ? folder.substr(0, parent) : std::string{};
+		scenery = scenery.substr(slash + 1);
+	}
+
+	std::vector<std::string> arguments{"-s", scenery};
+	if (m_scn_run_editor)
+	{
+		arguments.push_back("-editor");
+	}
+	if (spawn_detached(executable_path(), arguments, root))
+	{
+		m_status += "; uruchomiono " + scenery + (root.empty() ? "" : " w " + root);
+	}
+	else
+	{
+		m_status += "; nie udało się uruchomić symulatora";
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -2881,6 +3332,8 @@ void plan_panel::start_map(bool const Georeferenced, double const Originx, doubl
 
 	m_pick_turnout = 0;
 	m_pick_parallel = 0;
+	m_pick_join = 0;
+	m_join_first = TrackId::none;
 	solve();
 
 	// the scenery's zero is where the work starts, whichever frame it stands for

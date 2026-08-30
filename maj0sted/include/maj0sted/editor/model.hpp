@@ -189,6 +189,11 @@ struct Document {
     std::vector<TurnoutPlacement> turnouts;
     std::vector<Track> tracks;
 
+    /// Where this plan is exported to, and so which MaSzyna it is exported into:
+    /// the scenery folder names the game the file lands in, and running what was
+    /// drawn means running the simulator there. Empty until it is said once.
+    std::string scn_path;
+
     double view_x{0.0}, view_y{0.0}, view_extent{0.0};
     bool origin_set{false};
     bool georeferenced{false};

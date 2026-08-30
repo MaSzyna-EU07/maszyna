@@ -471,6 +471,92 @@ void a_chain_starting_on_a_curve_carries_its_head_along() {
     CHECK(near(again->elements[2].k0, 1.0 / 250.0, 1e-12));
 }
 
+/// The same chain, but hanging off a turnout's frog. Now the head corner may not
+/// be slid anywhere — it leaves the frog, and that is that — so the line under
+/// the straight behind it follows wherever the curve comes out, and the straight
+/// gives up the difference in its length. Which is the only thing here that can.
+void a_branch_off_a_frog_lets_its_first_straight_give() {
+    Document document;
+
+    TurnoutType type;
+    type.name = "Rz 1:9 R190";
+    type.crossing_n = 9.0;
+    type.length = 27.138;
+    type.blade = BladeSpec{0.005, 0.070};
+    type.pieces = {
+        TurnoutPieceSpec{0, 3.3108, 0.0, 0.0, 0.0},
+        TurnoutPieceSpec{1, 7.188, 190.0, 190.0, 0.0},
+        TurnoutPieceSpec{2, 190.0 * std::atan(1.0 / 9.0) - 7.188, 190.0, 190.0, 0.0},
+        TurnoutPieceSpec{3, 2.7808, 0.0, 0.0, 0.0},
+    };
+    document.turnout_types.push_back(type);
+
+    const TrackId main = add_track(document, {line(document, 1000.0)});
+
+    TurnoutPlacement placement;
+    placement.id = mint_turnout(document);
+    placement.type = type.name;
+    placement.on = main;
+    placement.station = 300.0;
+    placement.hand = -1;
+    document.turnouts.push_back(placement);
+
+    Track branch;
+    branch.id = mint_track(document);
+    branch.name = "odnoga";
+    branch.anchor = AtPort{placement.id, Port::Frog};
+    // straight off the frog it is not: the branch carries on curving, then runs out
+    branch.elements = {arc(document, 300.0, -1, 120.0), line(document, 400.0),
+                       arc(document, 500.0, 1, 150.0), line(document, 300.0)};
+    document.tracks.push_back(branch);
+
+    const Solution before = solve(document);
+    const SolvedTrack* laid = find_track(before, branch.id);
+    const SolvedTurnout* turnout = find_turnout(before, placement.id);
+    CHECK(laid != nullptr && turnout != nullptr && before.diagnostics.empty());
+    if (laid == nullptr || turnout == nullptr) {
+        return;
+    }
+    const double straight_before = document.tracks[1].elements[1].length;
+
+    Skeleton skeleton;
+    std::string why;
+    const bool got = skeleton_of(document.tracks[1], *laid, skeleton, why);
+    CHECK(got);
+    if (!got) {
+        std::printf("  why: %s\n", why.c_str());
+        return;
+    }
+    CHECK(skeleton.pinned);
+
+    // Open out the curve leaving the frog. This used to be refused outright.
+    document.tracks[1].elements[0].radius = 400.0;
+    const bool relaid = lay_along_skeleton(document.tracks[1], skeleton, why);
+    CHECK(relaid);
+    if (!relaid) {
+        std::printf("  why: %s\n", why.c_str());
+        return;
+    }
+
+    // The head kept its length — it is authored, not fitted — and the straight
+    // after it took up what the wider curve cost.
+    CHECK(near(document.tracks[1].elements[0].length, 120.0, 1e-12));
+    CHECK(std::abs(document.tracks[1].elements[1].length - straight_before) > 1.0);
+
+    const Solution after = solve(document);
+    CHECK(after.diagnostics.empty());
+    const SolvedTrack* again = find_track(after, branch.id);
+    CHECK(again != nullptr);
+    if (again == nullptr) {
+        return;
+    }
+    // Still on the frog, and the far end still runs where it ran.
+    CHECK(near(again->start.x, turnout->frog.x, 1e-9));
+    CHECK(near(again->start.y, turnout->frog.y, 1e-9));
+    CHECK(near(again->elements[3].start.hx, laid->elements[3].start.hx, 1e-9));
+    CHECK(near(again->elements[3].start.hy, laid->elements[3].start.hy, 1e-9));
+}
+
 /// A transition curve's radius is the one it ends on, so it belongs to what
 /// comes after it. The transition running out of an arc into a straight ends
 /// flat, and no amount of editing the arc may put the arc's radius on it — that
@@ -543,6 +629,7 @@ int main() {
     RUN(a_new_radius_is_absorbed_by_its_own_corner);
     RUN(a_chain_ending_on_a_curve_still_re_fits);
     RUN(a_chain_starting_on_a_curve_carries_its_head_along);
+    RUN(a_branch_off_a_frog_lets_its_first_straight_give);
     RUN(a_joint_only_ever_looks_forward);
     RUN(touching_straights_are_reported);
     return REPORT();

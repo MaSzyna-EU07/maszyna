@@ -80,6 +80,13 @@ struct Skeleton {
     std::vector<Support> lines;
     double start_x{0.0}, start_y{0.0};  ///< where the first straight begins
     double end_x{0.0}, end_y{0.0};      ///< where the last straight ends
+    /// Where the chain has to begin, and whether that is a place anybody may
+    /// move. A branch on a turnout's port may not: its first curve is laid from
+    /// the frog and the line under the straight after it follows wherever that
+    /// curve comes out, rather than the curve being slid along a line drawn
+    /// before the edit.
+    bool pinned{false};
+    domain::geometry::Pose begins{};
 };
 
 /// Pulls @p track's skeleton out of @p solved.

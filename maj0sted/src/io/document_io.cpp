@@ -14,7 +14,8 @@ namespace {
 
 using namespace maj0sted::editor;
 
-constexpr int kVersion = 6;
+constexpr int kVersion = 7;
+constexpr int kNoExportPath = 6;          // before a plan remembered where it exports to
 constexpr int kStraightOnly = 5;          // before a placement could be bent onto a łuk
 constexpr int kNoseless = 4;              // the piece list, but before the blade carried its nose
 constexpr int kLegacyTurnoutVersion = 3;  // arcs + blade fields, before the piece list
@@ -244,6 +245,8 @@ std::string serialize(const Document& document) {
     out += "origin " + std::string(document.origin_set ? "1" : "0") + " " +
            std::string(document.georeferenced ? "1" : "0") + " " + num(document.origin_x) +
            " " + num(document.origin_y) + "\n";
+    // the tail is kept whole, so a path may have spaces in it like any other name
+    out += "scn " + document.scn_path + "\n";
 
     out += "types " + std::to_string(document.turnout_types.size()) + "\n";
     for (const auto& type : document.turnout_types) {
@@ -309,8 +312,8 @@ std::optional<Document> deserialize(const std::string& text) {
     {
         const std::optional<Line> header = reader.next("m0s", 2);
         if (!header || !to_int(header->tokens[1], version) ||
-            (version != kVersion && version != kStraightOnly && version != kNoseless &&
-             version != kLegacyTurnoutVersion)) {
+            (version != kVersion && version != kNoExportPath && version != kStraightOnly &&
+             version != kNoseless && version != kLegacyTurnoutVersion)) {
             return std::nullopt;
         }
     }
@@ -336,6 +339,15 @@ std::optional<Document> deserialize(const std::string& text) {
         }
         document.origin_set = line->tokens[1] == "1";
         document.georeferenced = line->tokens[2] == "1";
+    }
+    if (version > kNoExportPath) {
+        // an older plan never said where it exported to, and the host has its own
+        // answer for that
+        const std::optional<Line> line = reader.next("scn", 1);
+        if (!line) {
+            return std::nullopt;
+        }
+        document.scn_path = std::string{line->tail};
     }
 
     const auto count_of = [&](std::string_view tag, std::size_t& out) {

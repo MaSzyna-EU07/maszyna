@@ -377,6 +377,8 @@ bool skeleton_of(const Track& track, const SolvedTrack& solved, Skeleton& out,
     out.start_y = solved.elements[straights.front()].start.y;
     out.end_x = solved.elements[straights.back()].end.x;
     out.end_y = solved.elements[straights.back()].end.y;
+    out.pinned = !std::holds_alternative<AtPose>(track.anchor);
+    out.begins = solved.start;
     return true;
 }
 
@@ -392,7 +394,7 @@ bool lay_along_skeleton(Track& track, const Skeleton& skeleton, std::string& why
         return false;
     }
 
-    const std::vector<Support>& lines = skeleton.lines;
+    std::vector<Support> lines = skeleton.lines;
     // Where each corner leaves the line before it and lands on the line after it,
     // as distances along those lines. Nothing is written until every one of them
     // works out.
@@ -401,6 +403,25 @@ bool lay_along_skeleton(Track& track, const Skeleton& skeleton, std::string& why
     std::vector<Fitted> fitted(straights.size() > 0 ? straights.size() - 1 : 0);
 
     arrives[0] = along(lines[0], skeleton.start_x, skeleton.start_y);
+
+    if (has_head && skeleton.pinned) {
+        // The chain leaves a frog, so its first curve starts where it starts and
+        // ends where it ends: the line under the straight behind that curve is not
+        // the one it was drawn on but wherever the curve now comes out. What the
+        // change costs is then taken up by that straight's length, which is the
+        // one thing here free to give.
+        std::vector<double> as_authored;
+        for (const std::size_t at : groups.front().arcs) {
+            as_authored.push_back(track.elements[at].length);
+        }
+        const Pose local = lay_group(track, groups.front(), as_authored);
+        const Pose& from = skeleton.begins;
+        lines[0] = Support{from.x + local.x * from.hx - local.y * from.hy,
+                           from.y + local.x * from.hy + local.y * from.hx,
+                           local.hx * from.hx - local.hy * from.hy,
+                           local.hx * from.hy + local.hy * from.hx};
+        arrives[0] = 0.0;
+    }
     leaves[straights.size() - 1] =
         along(lines[straights.size() - 1], skeleton.end_x, skeleton.end_y);
 
@@ -454,14 +475,7 @@ bool lay_along_skeleton(Track& track, const Skeleton& skeleton, std::string& why
 
     if (std::holds_alternative<AtPose>(track.anchor)) {
         track.anchor = AtPose{begins.x, begins.y, std::atan2(begins.hx, begins.hy)};
-    } else if (has_head) {
-        // A branch pinned to a turnout's port and starting mid-curve: its first
-        // straight is wherever the frog and that curve put it, so there is nothing
-        // here that may move.
-        why = "tor jest przypięty do rozjazdu i zaczyna się łukiem — nie ma czego dopasować "
-              "bez odrywania go od krzyżownicy";
-        return false;
-    } else if (std::hypot(begins.x - skeleton.start_x, begins.y - skeleton.start_y) > 1e-6) {
+    } else if (std::hypot(begins.x - skeleton.begins.x, begins.y - skeleton.begins.y) > 1e-6) {
         why = "tor jest przypięty do rozjazdu — jego początku nie da się przesunąć";
         return false;
     }

@@ -74,6 +74,8 @@ Document sample() {
     document.georeferenced = true;
     document.origin_x = 6540000.25;
     document.origin_y = 5760000.5;
+    // an absolute path into another MaSzyna, spaces and all
+    document.scn_path = "/home/kto to/MaSzyna/scenery/plan export.scn";
     return document;
 }
 
@@ -167,6 +169,8 @@ void every_field_survives() {
     CHECK(reloaded->origin_x == 6540000.25);
     CHECK(reloaded->view_extent == 2000.0);
     CHECK(reloaded->georeferenced);
+    // and where the plan is exported to, which says which MaSzyna it is drawn for
+    CHECK(reloaded->scn_path == "/home/kto to/MaSzyna/scenery/plan export.scn");
     // Ids keep going where they left off, so nothing minted later collides.
     CHECK(reloaded->next_id == document.next_id);
 }
@@ -183,7 +187,7 @@ void an_older_file_is_refused() {
         "tracks 0\n";
     CHECK(!maj0sted::io::deserialize(version_2).has_value());
     CHECK(!maj0sted::io::deserialize("").has_value());
-    CHECK(!maj0sted::io::deserialize("m0s 7\n").has_value());
+    CHECK(!maj0sted::io::deserialize("m0s 8\n").has_value());
 }
 
 void a_file_from_before_lukowanie_still_opens() {
@@ -202,7 +206,24 @@ void a_file_from_before_lukowanie_still_opens() {
     CHECK(document->turnouts[0].station == 100.0);
     CHECK(document->turnouts[0].bend_from_track);
     CHECK(document->turnouts[0].bend == 0.0);
-    CHECK(maj0sted::io::serialize(*document).find("m0s 6") != std::string::npos);
+    CHECK(maj0sted::io::serialize(*document).find("m0s 7") != std::string::npos);
+}
+
+void a_file_from_before_the_export_path_still_opens() {
+    // Version 6 said nothing about where a plan exported to, so it opens with
+    // nothing said and the host falls back on its own answer.
+    const std::string version_6 =
+        "m0s 6\nnext 3\nview 0 0 0\norigin 0 0 0 0\ntypes 0\nturnouts 0\n"
+        "tracks 1\ntrack 1\ntkname tor\nanchor pose 0 0 0\nelements 1\n"
+        "element 2 line 0 0 250\n";
+    const auto document = maj0sted::io::deserialize(version_6);
+    CHECK(document.has_value());
+    if (!document) {
+        return;
+    }
+    CHECK(document->scn_path.empty());
+    CHECK(document->tracks.size() == 1);
+    CHECK(maj0sted::io::serialize(*document).find("m0s 7") != std::string::npos);
 }
 
 void a_file_from_before_the_nose_still_opens() {
@@ -225,7 +246,7 @@ void a_file_from_before_the_nose_still_opens() {
     CHECK(document->turnout_types[0].pieces.size() == 1);
 
     // and it is written back in the new form, with a place for the nose
-    CHECK(maj0sted::io::serialize(*document).find("m0s 6") != std::string::npos);
+    CHECK(maj0sted::io::serialize(*document).find("m0s 7") != std::string::npos);
 }
 
 void an_old_file_upgrades_to_the_piece_list() {
