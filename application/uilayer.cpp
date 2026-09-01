@@ -1,3 +1,4 @@
+
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -638,3 +639,4 @@ void ui_layer::render_background()
 	// obrazek jest odwrócony w pionie – odwracamy UV
 	ImGui::GetBackgroundDrawList()->AddImage(reinterpret_cast<ImTextureID>(tex.get_id()), start_position, end_position, ImVec2(0, 1), ImVec2(1, 0));
 }
+

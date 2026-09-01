@@ -1514,7 +1514,12 @@ void load()
             ss >> key;
             if (key.empty())
                 continue;
-            if (key == "enabled") ss >> s.enabled;
+            if (key == "enabled")
+            {
+                std::string flag;
+                ss >> flag;
+                s.enabled = ( flag == "yes" || flag == "true" || flag == "1" );
+            }
             else if (key == "panel_width") ss >> s.panel_width;
             else if (key == "panel_height") ss >> s.panel_height;
             else if (key == "margin") ss >> s.margin;
@@ -1540,21 +1545,23 @@ void load()
 
 void save()
 {
-    // only rewrite an existing hud.ini (never create files on the user's behalf)
+    // auto-create hud.ini in the game root on first drag drop; keep any user-added keys
     std::ifstream in("hud.ini");
-    if (!in.is_open())
-        return;
     std::stringstream out;
-    std::string line;
-    while (std::getline(in, line))
+    if (in.is_open())
     {
-        std::istringstream ls(line);
-        std::string key;
-        ls >> key;
-        if (key == "panel_x" || key == "panel_y" || key == "sig_x" || key == "sig_y")
-            continue; // rewritten below
-        out << line << "\n";
+        std::string line;
+        while (std::getline(in, line))
+        {
+            std::istringstream ls(line);
+            std::string key;
+            ls >> key;
+            if (key == "panel_x" || key == "panel_y" || key == "sig_x" || key == "sig_y" || key == "enabled")
+                continue; // rewritten below
+            out << line << "\n";
+        }
     }
+    out << "enabled " << (g.enabled ? "yes" : "no") << "\n";
     out << "panel_x " << g.panel_x << "\n";
     out << "panel_y " << g.panel_y << "\n";
     out << "sig_x " << g.sig_x << "\n";
@@ -1603,7 +1610,6 @@ void set_dragging( bool const Drag )
 }
 
 void apply_visibility()
-
 {
     if (g_panel != nullptr)
         g_panel->is_open = g_visible;
@@ -1641,7 +1647,8 @@ hud_panel::update()
     {
         pos = { -1, -1 }; // suspend the anchor while the user drags
     }
-    else if (cfg.panel_x >= 0 && cfg.panel_y >= 0)
+    else if (cfg.panel_x >= 0 && cfg.panel_y >= 0
+          && cfg.panel_x + cfg.panel_width <= fb.x && cfg.panel_y + cfg.panel_height <= fb.y)
         pos = { cfg.panel_x, cfg.panel_y };
     else
         pos = { fb.x - size.x - cfg.margin, fb.y - size.y - cfg.margin };
@@ -1998,7 +2005,8 @@ hud_signal_panel::update()
     {
         pos = { -1, -1 }; // suspend the anchor while the user drags
     }
-    else if (cfg.sig_x >= 0 && cfg.sig_y >= 0)
+    else if (cfg.sig_x >= 0 && cfg.sig_y >= 0
+          && cfg.sig_x + cfg.sig_width <= fb.x && cfg.sig_y + cfg.sig_height <= fb.y)
         pos = { cfg.sig_x, cfg.sig_y };
     else
         pos = { ( fb.x - size.x ) / 2, cfg.sig_top };
@@ -2091,6 +2099,14 @@ hud_signal_panel::render_contents()
     {
         std::snprintf( buf, sizeof( buf ), STR_C("Next limit %.1f km: %d"), nextdist * 0.001, nextlimit );
         dl->AddText( ui_layer::font_default, 13.0f, ImVec2( winpos.x + cfg.sig_text_left, winpos.y + cfg.sig_text_top + 18.0f ), IM_COL32( 255, 255, 255, 200 ), buf );
+    }
+
+    // persistent passenger stop / exchange reminder (same source as the old Driving Aid line,
+    // reuses the game's own translated string)
+    if ( owner->ExchangeTime > 0.0 )
+    {
+        std::snprintf( buf, sizeof( buf ), STR_C(" Loading/unloading in progress (%d s left)"), static_cast<int>( std::ceil( owner->ExchangeTime ) ) );
+        dl->AddText( ui_layer::font_default, 13.0f, ImVec2( winpos.x + cfg.sig_text_left, winpos.y + cfg.sig_text_top + 36.0f ), IM_COL32( 140, 235, 160, 230 ), buf );
     }
 
     // --- CA / SHP alert banner -------------------------------------------------

@@ -41,7 +41,7 @@ struct settings {
 void load();
 void save();
 settings const &get();
-// shared live visibility (used by the key binding, the Driving Aid checkbox and the HUD panels)
+// shared live visibility (used by the key binding, the menu entry and the HUD panels)
 void set_panels( ui_panel *Panel, ui_panel *SignalPanel );
 bool visible();
 void set_visible( bool Show );

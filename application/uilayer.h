@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/Texture.h"
 #include "widgets/popup.h"
 
+
 // GuiLayer -- basic user interface class. draws requested information on top of openGL screen
 
 class ui_panel {
