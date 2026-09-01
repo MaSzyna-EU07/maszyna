@@ -44,7 +44,7 @@ void main()
 	float specularity = (tex_color.r + tex_color.g + tex_color.b) * 0.5;
 	glossiness = abs(param[1].w);
 	
-	fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, reflectivity, specularity, shadow_tone);
+	fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, reflectivity, 0, shadow_tone);
 
 	if(alphatestfail)
 		fragcolor.r = 1.0;
