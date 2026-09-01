@@ -1,4 +1,4 @@
-﻿/*
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -55,7 +55,6 @@ private:
         render_() override;
 
 // members
-	drivingaid_panel m_aidpanel { "Driving Aid", false };
 	scenario_panel m_scenariopanel { "Scenario", false };
     timetable_panel m_timetablepanel { "Timetable", false };
     debug_panel m_debugpanel { "Debug Data", false };
@@ -69,4 +68,6 @@ private:
 	ui::map_panel m_mappanel;
 	ui::time_panel m_timepanel;
 	ui::cameraview_panel m_cameraviewpanel;
+	hud_panel m_hudpanel { "HUD", true };
+	hud_signal_panel m_hudsignalpanel { "HUDSignal", true };
 };

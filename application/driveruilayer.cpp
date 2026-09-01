@@ -1,4 +1,4 @@
-﻿/*
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -20,10 +20,10 @@ http://mozilla.org/MPL/2.0/.
 
 driver_ui::driver_ui()
 {
+	hudcfg::load();
 
 	clear_panels();
 	// bind the panels with ui object. maybe not the best place for this but, eh
-	add_external_panel(&m_aidpanel);
 	add_external_panel(&m_scenariopanel);
 	add_external_panel(&m_timetablepanel);
 	add_external_panel(&m_debugpanel);
@@ -37,9 +37,9 @@ driver_ui::driver_ui()
 	add_external_panel(&m_logpanel);
 	add_external_panel(&m_perfgraphpanel);
 	add_external_panel(&m_cameraviewpanel);
+	add_external_panel(&m_hudpanel);
+	add_external_panel(&m_hudsignalpanel);
 	m_logpanel.is_open = false;
-
-	m_aidpanel.title = STR("Driving Aid");
 
 	m_scenariopanel.title = STR("Scenario");
 	m_scenariopanel.size_min = {435, 85};
@@ -55,7 +55,6 @@ driver_ui::driver_ui()
 
 	if (Global.gui_defaultwindows)
 	{
-		m_aidpanel.is_open = true;
 		m_scenariopanel.is_open = true;
 	}
 
@@ -65,6 +64,14 @@ driver_ui::driver_ui()
 		m_trainingcardpanel.is_open = true;
 		m_vehiclelist.is_open = true;
 	}
+
+	if (false == hudcfg::get().enabled)
+	{
+		m_hudpanel.is_open = false;
+		m_hudsignalpanel.is_open = false;
+	}
+
+	hudcfg::set_panels( &m_hudpanel, &m_hudsignalpanel );
 }
 
 void driver_ui::render_menu_contents()
@@ -73,14 +80,16 @@ void driver_ui::render_menu_contents()
 
 	if (ImGui::BeginMenu(STR_C("Mode windows")))
 	{
-		ImGui::MenuItem(m_aidpanel.title.c_str(), "F1", &m_aidpanel.is_open);
-		ImGui::MenuItem(m_scenariopanel.title.c_str(), "F1", &m_aidpanel.is_open);
+		ImGui::MenuItem(m_scenariopanel.title.c_str(), nullptr, &m_scenariopanel.is_open);
 		ImGui::MenuItem(STR_C("Timetable"), "F2", &m_timetablepanel.is_open);
 		ImGui::MenuItem(m_debugpanel.name().c_str(), "F12", &m_debugpanel.is_open);
 		ImGui::MenuItem(m_mappanel.name().c_str(), "Tab", &m_mappanel.is_open);
 		ImGui::MenuItem(m_vehiclelist.name().c_str(), nullptr, &m_vehiclelist.is_open);
 		ImGui::MenuItem(m_trainingcardpanel.name().c_str(), nullptr, &m_trainingcardpanel.is_open);
 		ImGui::MenuItem(m_cameraviewpanel.name().c_str(), nullptr, &m_cameraviewpanel.is_open);
+		bool hudshown { hudcfg::visible() };
+		if (ImGui::MenuItem(STR_C("HUD overlay"), "F1", &hudshown))
+			hudcfg::set_visible( hudshown );
 		if (DebugModeFlag)
 			ImGui::MenuItem(m_perfgraphpanel.name().c_str(), nullptr, &m_perfgraphpanel.is_open);
 
@@ -142,13 +151,8 @@ bool driver_ui::on_key(int const Key, int const Action)
 
 	case GLFW_KEY_F1:
 	{
-		// basic consist info
-		auto state = m_aidpanel.is_open == false ? 0 : m_aidpanel.is_expanded == false ? 1 : 2;
-		state = clamp_circular(++state, 3);
-
-		m_aidpanel.is_open = state > 0;
-		m_aidpanel.is_expanded = state > 1;
-
+		// HUD overlay toggle (per maintainers' request; the Driving Aid panel hosts the checkbox)
+		hudcfg::toggle();
 		return true;
 	}
 

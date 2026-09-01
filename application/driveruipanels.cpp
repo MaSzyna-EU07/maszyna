@@ -1,4 +1,4 @@
-﻿/*
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -9,6 +9,9 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/driveruipanels.h"
+
+#include <fstream>
+#include <sstream>
 
 #include "utilities/Globals.h"
 #include "application/application.h"
@@ -25,6 +28,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Driver.h"
 #include "model/AnimModel.h"
 #include "vehicle/DynObj.h"
+#include "McZapkie/MOVER.h"
 #include "model/Model3d.h"
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
@@ -38,175 +42,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/uart.h"
 #endif
 
-void
-drivingaid_panel::update() {
-
-    if( false == is_open ) { return; }
-
-	text_lines.clear();
-
-    auto const *train { simulation::Train };
-    auto const *controlled { ( train ? train->Dynamic() : nullptr ) };
-
-    if( controlled == nullptr
-     || controlled->Mechanik == nullptr ) { return; }
-
-    auto const *mover = controlled->MoverParameters;
-    auto const *driver = controlled->Mechanik;
-    auto const *owner = controlled->ctOwner != nullptr ? controlled->ctOwner : controlled->Mechanik;
-
-    { // throttle, velocity, speed limits and grade
-        std::string expandedtext;
-        if( is_expanded ) {
-            // grade
-            std::string gradetext;
-            auto const reverser { ( mover->DirActive > 0 ? 1 : -1 ) };
-            auto const grade { controlled->VectorFront().y * 100 * ( controlled->DirectionGet() == reverser ? 1 : -1 ) * reverser };
-            if( std::abs( grade ) >= 0.25 ) {
-                std::snprintf(
-                    m_buffer.data(), m_buffer.size(),
-				    STR_C(" Grade: %.1f%%%%"),
-                    grade );
-                gradetext = m_buffer.data();
-            }
-            // next speed limit
-            auto const speedlimit { static_cast<int>( owner->VelDesired ) };
-            auto nextspeedlimit { speedlimit };
-            auto nextspeedlimitdistance { std::numeric_limits<double>::max() };
-            if( speedlimit != 0 ) { // if we aren't allowed to move then any next speed limit is irrelevant
-                // nie przekraczać rozkladowej
-                auto const schedulespeedlimit { (
-                    (owner->OrderCurrentGet() & (Obey_train | Bank)) != 0 && owner->TrainParams.TTVmax > 0.0 ? static_cast<int>( owner->TrainParams.TTVmax ) :
-                    (owner->OrderCurrentGet() & (Obey_train | Bank)) == 0 ? static_cast<int>( owner->fShuntVelocity ) :
-                        -1 ) };
-                // first take note of any speed change which should occur after passing potential current speed limit
-                if( owner->VelLimitLastDist.second > 0 ) {
-                    nextspeedlimit = min_speed( schedulespeedlimit, static_cast<int>( owner->VelLimitLastDist.first ) );
-                    nextspeedlimitdistance = owner->VelLimitLastDist.second;
-                }
-                // then take into account speed change ahead, compare it with speed after potentially clearing last limit
-                // lower of these two takes priority; otherwise limit lasts at least until potential last limit is cleared
-                auto const noactivespeedlimit { owner->VelLimitLastDist.second < 0 };
-                auto const speedatproximitydistance { min_speed( schedulespeedlimit, static_cast<int>( owner->VelNext ) ) };
-                if( speedatproximitydistance == nextspeedlimit ) {
-                    if( noactivespeedlimit ) {
-                        nextspeedlimit = speedatproximitydistance;
-                        nextspeedlimitdistance = owner->ActualProximityDist;
-                    }
-                }
-                else if( speedatproximitydistance < nextspeedlimit ) {
-                    // if the speed limit ahead is more strict than our current limit, it's important enough to report
-                    if( speedatproximitydistance < owner->VelDesired ) {
-                        nextspeedlimit = speedatproximitydistance;
-                        nextspeedlimitdistance = owner->ActualProximityDist;
-                    }
-                    // otherwise report it only if it's located after our current (lower) limit ends
-                    else if( owner->ActualProximityDist > nextspeedlimitdistance ) {
-                        nextspeedlimit = speedatproximitydistance;
-                        nextspeedlimitdistance = owner->ActualProximityDist;
-                    }
-                }
-                else if( noactivespeedlimit ) { // implicit proximity > last, report only if last limit isn't present
-                    nextspeedlimit = speedatproximitydistance;
-                    nextspeedlimitdistance = owner->ActualProximityDist;
-                }
-                // HACK: if our current speed limit extends beyond our scan range don't display potentially misleading information about its length
-                if( nextspeedlimitdistance >= EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE ) {
-                    nextspeedlimit = speedlimit;
-                }
-                // HACK: hide next speed limit if the 'limit' is a vehicle in front of us
-                else if( owner->ActualProximityDist == std::abs( owner->TrackObstacle() ) ) {
-                    nextspeedlimit = speedlimit;
-                }
-            }
-            std::string nextspeedlimittext;
-            if( nextspeedlimit != speedlimit ) {
-                std::snprintf(
-                    m_buffer.data(), m_buffer.size(),
-				    STR_C(", new limit: %d km/h in %.1f km"),
-                    nextspeedlimit,
-                    nextspeedlimitdistance * 0.001 );
-                nextspeedlimittext = m_buffer.data();
-            }
-            // current speed and limit
-            std::snprintf(
-                m_buffer.data(), m_buffer.size(),
-			    STR_C(" Speed: %d km/h (limit %d km/h%s)%s"),
-                static_cast<int>( std::floor( mover->Vel ) ),
-                speedlimit,
-                nextspeedlimittext.c_str(),
-                gradetext.c_str() );
-            expandedtext = m_buffer.data();
-        }
-        // base data and optional bits put together
-        std::snprintf(
-            m_buffer.data(), m_buffer.size(),
-            STR_C("Throttle: %3d+%d %c%s"),
-            mover->EIMCtrlType > 0 ? std::max(0, static_cast<int>(100.4 * mover->eimic_real)) : driver->Controlling()->MainCtrlPos,
-            mover->EIMCtrlType > 0 ? driver->Controlling()->MainCtrlPos : driver->Controlling()->ScndCtrlPos,
-            mover->SpeedCtrlUnit.IsActive ? 'T' :
-		              mover->DirActive > 0          ? 'D' :
-		              mover->DirActive < 0          ? 'R' :
-		                                              'N',
-            expandedtext.c_str());
-
-        text_lines.emplace_back( m_buffer.data(), Global.UITextColor );
-    }
-
-    { // brakes, air pressure
-        std::string expandedtext;
-        if( is_expanded ) {
-            std::snprintf (
-                m_buffer.data(), m_buffer.size(),
-			    STR_C(" Pressure: %.2f kPa (train pipe: %.2f kPa)"),
-                mover->BrakePress * 100,
-                mover->PipePress * 100 );
-            expandedtext = m_buffer.data();
-        }
-        auto const basicbraking { mover->fBrakeCtrlPos };
-        auto const eimicbraking { std::max( 0.0, -100.0 * mover->eimic_real ) };
-        std::snprintf(
-            m_buffer.data(), m_buffer.size(),
-            STR_C("Brakes: %5.1f+%-2.0f%c%s"),
-//            ( mover->EIMCtrlType == 0 ? basicbraking : mover->EIMCtrlType == 3 ? ( mover->UniCtrlIntegratedBrakeCtrl ? eimicbraking : basicbraking ) : eimicbraking ),
-            mover->UniCtrlIntegratedBrakeCtrl ? eimicbraking : basicbraking,
-            mover->LocalBrakePosA * LocalBrakePosNo,
-            mover->SlippingWheels ? '!' : ' ',
-            expandedtext.c_str() );
-
-        text_lines.emplace_back( m_buffer.data(), Global.UITextColor );
-    }
-
-    { // alerter, hints
-        std::string expandedtext;
-        if( is_expanded ) {
-            auto const stoptime { static_cast<int>( owner->ExchangeTime ) };
-            if( stoptime > 0 ) {
-                std::snprintf(
-                    m_buffer.data(), m_buffer.size(),
-				    STR_C(" Loading/unloading in progress (%d s left)"),
-                    stoptime );
-                expandedtext = m_buffer.data();
-            }
-            else {
-                auto const trackobstacledistance { std::abs( owner->TrackObstacle() ) };
-                if( trackobstacledistance <= 75.0 ) {
-                    std::snprintf(
-                        m_buffer.data(), m_buffer.size(),
-					    STR_C(" Another vehicle ahead (distance: %.1f m)"),
-                        trackobstacledistance );
-                    expandedtext = m_buffer.data();
-                }
-            }
-        }
-        std::string textline =
-		    mover->SecuritySystem.is_vigilance_blinking() && (train != nullptr ? train->fBlinkTimer > 0 : true) ? STR("!ALERTER! ") : "          ";
-        textline +=
-		    mover->SecuritySystem.is_cabsignal_blinking() ? STR("!SHP!") : "     ";
-
-        text_lines.emplace_back( textline + "  " + expandedtext, Global.UITextColor );
-    }
-}
 
 void
 scenario_panel::update() {
@@ -1647,4 +1482,648 @@ transcripts_panel::render() {
         }
     }
     ImGui::End();
+}
+
+//---------------------------------------------------------------------------
+// hudcfg: external HUD layout configuration, hud.ini next to the executable
+//---------------------------------------------------------------------------
+
+namespace hudcfg {
+
+static settings g;
+static ui_panel *g_panel { nullptr };
+static ui_panel *g_signalpanel { nullptr };
+static bool g_visible { true };
+static bool g_dragging { false };
+static void apply_visibility();
+
+void load()
+{
+    settings s; // defaults when keys are missing
+    std::ifstream file("hud.ini");
+    if (file.is_open())
+    {
+        std::string line;
+        while (std::getline(file, line))
+        {
+            auto const comment { line.find("//") };
+            if (comment != std::string::npos)
+                line.resize(comment);
+            std::istringstream ss(line);
+            std::string key;
+            ss >> key;
+            if (key.empty())
+                continue;
+            if (key == "enabled") ss >> s.enabled;
+            else if (key == "panel_width") ss >> s.panel_width;
+            else if (key == "panel_height") ss >> s.panel_height;
+            else if (key == "margin") ss >> s.margin;
+            else if (key == "speed_size") ss >> s.speed_size;
+            else if (key == "panel_x") ss >> s.panel_x;
+            else if (key == "panel_y") ss >> s.panel_y;
+            else if (key == "sig_width") ss >> s.sig_width;
+            else if (key == "sig_height") ss >> s.sig_height;
+            else if (key == "sig_top") ss >> s.sig_top;
+            else if (key == "sig_digit_size") ss >> s.sig_digit_size;
+            else if (key == "sig_digit_left") ss >> s.sig_digit_left;
+            else if (key == "sig_square_margin") ss >> s.sig_square_margin;
+            else if (key == "sig_square_size") ss >> s.sig_square_size;
+            else if (key == "sig_text_left") ss >> s.sig_text_left;
+            else if (key == "sig_text_top") ss >> s.sig_text_top;
+            else if (key == "sig_x") ss >> s.sig_x;
+            else if (key == "sig_y") ss >> s.sig_y;
+            // unknown keys are ignored
+        }
+    }
+    g = s;
+}
+
+void save()
+{
+    // only rewrite an existing hud.ini (never create files on the user's behalf)
+    std::ifstream in("hud.ini");
+    if (!in.is_open())
+        return;
+    std::stringstream out;
+    std::string line;
+    while (std::getline(in, line))
+    {
+        std::istringstream ls(line);
+        std::string key;
+        ls >> key;
+        if (key == "panel_x" || key == "panel_y" || key == "sig_x" || key == "sig_y")
+            continue; // rewritten below
+        out << line << "\n";
+    }
+    out << "panel_x " << g.panel_x << "\n";
+    out << "panel_y " << g.panel_y << "\n";
+    out << "sig_x " << g.sig_x << "\n";
+    out << "sig_y " << g.sig_y << "\n";
+    std::ofstream outfile("hud.ini", std::ios::trunc);
+    outfile << out.str();
+}
+
+settings const &get()
+{
+    return g;
+}
+
+void set_panels( ui_panel *Panel, ui_panel *SignalPanel )
+{
+    g_panel = Panel;
+    g_signalpanel = SignalPanel;
+    g_visible = g.enabled;
+    apply_visibility();
+}
+
+void set_visible( bool const Show )
+{
+    g_visible = Show;
+    apply_visibility();
+}
+
+bool visible()
+{
+    return g_visible;
+}
+
+void toggle()
+{
+    set_visible( !g_visible );
+}
+
+bool dragging()
+{
+    return g_dragging;
+}
+
+void set_dragging( bool const Drag )
+{
+    g_dragging = Drag;
+}
+
+void apply_visibility()
+
+{
+    if (g_panel != nullptr)
+        g_panel->is_open = g_visible;
+    if (g_signalpanel != nullptr)
+        g_signalpanel->is_open = g_visible;
+}
+
+void set_panel_pos( int const X, int const Y )
+{
+    g.panel_x = X;
+    g.panel_y = Y;
+    save();
+}
+
+void set_signal_pos( int const X, int const Y )
+{
+    g.sig_x = X;
+    g.sig_y = Y;
+    save();
+}
+
+}
+
+//---------------------------------------------------------------------------
+// hud_panel: heads-up display overlay (borderless, freely movable window)
+//---------------------------------------------------------------------------
+
+void
+hud_panel::update()
+{
+    auto const &fb { Global.fb_size };
+    auto const &cfg { hudcfg::get() };
+    size = { cfg.panel_width, cfg.panel_height };
+    if ( hudcfg::dragging() )
+    {
+        pos = { -1, -1 }; // suspend the anchor while the user drags
+    }
+    else if (cfg.panel_x >= 0 && cfg.panel_y >= 0)
+        pos = { cfg.panel_x, cfg.panel_y };
+    else
+        pos = { fb.x - size.x - cfg.margin, fb.y - size.y - cfg.margin };
+}
+
+void
+hud_panel::render_contents()
+{
+    auto winpos { ImGui::GetWindowPos() };
+    float const dt { ImGui::GetIO().DeltaTime };
+    float const now { static_cast<float>( ImGui::GetTime() ) };
+    auto *dl { ImGui::GetWindowDrawList() };
+
+    // draggable module: the whole window is a drag zone (persisted to hud.ini)
+    {
+        static bool dragging { false };
+        auto const wsize { ImGui::GetWindowSize() };
+        ImGui::SetCursorPos( ImVec2( 0.0f, 0.0f ) );
+        ImGui::InvisibleButton( "##hud_drag", wsize );
+        if ( ImGui::IsItemActive() )
+        {
+            dragging = true;
+            hudcfg::set_dragging( true );
+            auto const delta { ImGui::GetIO().MouseDelta };
+            winpos = ImVec2( winpos.x + delta.x, winpos.y + delta.y );
+            ImGui::SetWindowPos( winpos );
+        }
+        if ( dragging && ImGui::IsMouseReleased( 0 ) )
+        {
+            dragging = false;
+            hudcfg::set_dragging( false );
+            winpos = ImGui::GetWindowPos();
+            hudcfg::set_panel_pos( static_cast<int>( winpos.x ), static_cast<int>( winpos.y ) );
+        }
+        // subtle grip indicator at the bottom-right corner
+        for ( int i = 0; i < 3; ++i )
+            dl->AddCircleFilled( ImVec2( winpos.x + wsize.x - 12.0f - i * 8.0f, winpos.y + wsize.y - 8.0f ), 1.8f, IM_COL32( 255, 255, 255, 70 ) );
+    }
+
+    auto const *train { simulation::Train };
+    auto const *controlled { train ? train->Dynamic() : nullptr };
+    auto const *mover { controlled ? controlled->MoverParameters : nullptr };
+    if (controlled == nullptr || mover == nullptr)
+        return;
+
+    // --- data ----------------------------------------------------------------
+    // NOTE: mover->Vel is already in km/h (same value the game's own driving aid uses)
+    float const speed_kmh { static_cast<float>( std::abs( controlled->GetVelocity() ) ) };
+
+    auto const *owner { controlled->ctOwner != nullptr ? controlled->ctOwner : controlled->Mechanik };
+    int const speedlimit { owner ? static_cast<int>( owner->VelDesired ) : 0 };
+
+    // current track gradient in per-mille, sign convention taken from driving aid panel; positive = uphill
+    auto const reverser { ( mover->DirActive > 0 ? 1 : -1 ) };
+    double const grade_pm { controlled->VectorFront().y * 1000.0 * ( controlled->DirectionGet() == reverser ? 1.0 : -1.0 ) * reverser };
+
+    // --- speed state coloring: ONLY speed-limit thresholds change the color ---
+    // yellow at limit+1, red at limit+4 (e.g. limit 40: 41 km/h yellow, 44 km/h red)
+    bool const overspeed_flash { speedlimit > 0 && speed_kmh >= speedlimit + 4.0f };
+    bool const overspeed_warn { speedlimit > 0 && speed_kmh >= speedlimit + 1.0f };
+
+    glm::vec4 target;
+    bool danger { false };
+    if ( overspeed_flash ) { target = { 1.00f, 0.15f, 0.08f, 1.00f }; danger = true; }
+    else if ( overspeed_warn ) { target = { 1.00f, 0.80f, 0.05f, 1.00f }; }
+    else { target = { 0.70f, 0.88f, 1.00f, 1.00f }; } // default color, no acceleration/braking tints
+
+    // smooth color transition: fast for the only-flashing state, slow otherwise
+    float const k { danger ? 12.0f : 4.0f };
+    float const t { 1.0f - std::exp( -k * ( dt > 0.0f ? dt : 0.0f ) ) };
+    m_speedcolor += ( target - m_speedcolor ) * t;
+    // pulse alpha ONLY in the overspeed+4 state
+    float const alpha { danger ? ( 0.60f + 0.40f * std::sin( now * 12.0f ) ) : 1.0f };
+
+    // --- vehicle-type dependent bar list ------------------------------------
+    // EMU cab cars may carry no engine data; the consist's POWER UNIT holds the controller state.
+    // This matches the game's own driving aid, which reads driver->Controlling() for the throttle.
+    auto const *ctrlv { owner != nullptr && owner->Controlling() != nullptr ? owner->Controlling() : mover };
+    auto const enginetype { ctrlv->EngineType };
+    bool const is_electric { enginetype == TEngineType::ElectricSeriesMotor || enginetype == TEngineType::ElectricInductionMotor };
+    bool const is_diesel { enginetype == TEngineType::DieselEngine || enginetype == TEngineType::DieselElectric };
+    float const cur1 { train->fHCurrent[1] };
+    float const cur2 { train->fHCurrent[2] };
+    // branch ammeters only exist when the current scheme has parallel circuits (Bn>=2),
+    // exactly like the sim's own ShowCurrentP: Bn < AmpN returns 0
+    bool const dc_series { enginetype == TEngineType::ElectricSeriesMotor };
+    bool const parallel_branches { dc_series && ctrlv->MainCtrlActualPos > 0 && ctrlv->MainCtrlActualPos <= ctrlv->MainCtrlPosNo && ctrlv->RList[ctrlv->MainCtrlActualPos].Bn >= 2 };
+    bool const two_groups { is_electric && ( parallel_branches || ( !dc_series && ( std::abs( cur1 ) > 0.01f || std::abs( cur2 ) > 0.01f ) ) ) };
+    // electro-dynamic brake: current flows back (shown negative, red), brake handle becomes ED position.
+    // composite (integrated drive+brake) handle vehicles are excluded: their wheel already shows
+    // drive/brake bidirectionally, and what they do when pulling back is not ED braking
+    bool const composite_handle { ctrlv->EIMCtrlType > 0 || ctrlv->UniCtrlIntegratedBrakeCtrl };
+    bool const dynbrake { is_electric && !composite_handle && mover->DynamicBrakeFlag };
+    auto const current_col { dynbrake ? IM_COL32( 255, 70, 45, 240 ) : 0u };
+
+    auto const bar_col = []( float const frac ) -> ImU32 {
+        if ( frac >= 0.95f ) return IM_COL32( 255, 70, 45, 240 );
+        if ( frac >= 0.80f ) return IM_COL32( 255, 200, 40, 240 );
+        return IM_COL32( 130, 220, 140, 240 );
+    };
+    char buf[ 64 ];
+    auto const draw_bar = [&]( float const Y, char const *Label, float const Value, float const Vmax, char const *ValueText, ImU32 const ColOverride = 0 )
+    {
+        float const x0 { winpos.x + 8.0f };
+        float const w { 230.0f };
+        float const frac { Vmax > 0.0f ? std::clamp( Value / Vmax, 0.0f, 1.0f ) : 0.0f };
+        dl->AddText( ui_layer::font_default, 15.0f, ImVec2( x0, Y ), IM_COL32( 255, 255, 255, 190 ), Label );
+        dl->AddRectFilled( ImVec2( x0 + 70.0f, Y + 18.0f ), ImVec2( x0 + 70.0f + w, Y + 28.0f ), IM_COL32( 255, 255, 255, 30 ), 4.0f );
+        if ( frac > 0.005f )
+            dl->AddRectFilled( ImVec2( x0 + 70.0f, Y + 18.0f ), ImVec2( x0 + 70.0f + w * frac, Y + 28.0f ), ColOverride != 0 ? ColOverride : bar_col( frac ), 4.0f );
+        dl->AddText( ui_layer::font_default, 15.0f, ImVec2( x0 + 70.0f + w + 10.0f, Y ), IM_COL32( 255, 255, 255, 240 ), ValueText );
+    };
+
+    float barY { winpos.y + 6.0f };
+    if ( is_diesel )
+    {
+        // real diesel instrument: engine revolutions (RPM), see EngineRPMRatio/EngineMaxRPM
+        double const rpmratio { std::clamp( mover->EngineRPMRatio(), 0.0, 1.0 ) };
+        double const rpm { mover->EngineMaxRPM() * rpmratio };
+        std::snprintf( buf, sizeof( buf ), "%.0f rpm", rpm );
+        draw_bar( barY, STR_C("Engine RPM"), static_cast<float>( rpmratio ), 1.0f, buf );
+        barY += 26.0f;
+    }
+    else if ( is_electric )
+    {
+        if ( two_groups )
+        {
+            std::snprintf( buf, sizeof( buf ), "%.0f A", dynbrake ? -std::abs( cur1 ) : std::abs( cur1 ) );
+            draw_bar( barY, STR_C("Current 1"), std::abs( cur1 ), 500.0f, buf, current_col );
+            barY += 26.0f;
+            std::snprintf( buf, sizeof( buf ), "%.0f A", dynbrake ? -std::abs( cur2 ) : std::abs( cur2 ) );
+            draw_bar( barY, STR_C("Current 2"), std::abs( cur2 ), 500.0f, buf, current_col );
+            barY += 26.0f;
+        }
+        else
+        {
+            std::snprintf( buf, sizeof( buf ), "%.0f A", dynbrake ? -std::abs( train->fHCurrent[0] ) : std::abs( train->fHCurrent[0] ) );
+            draw_bar( barY, STR_C("Current"), std::abs( train->fHCurrent[0] ), 800.0f, buf, current_col );
+            barY += 26.0f;
+        }
+    }
+    // brake pipe pressure (SPKS), labelled as the pipe itself
+    float const pipefrac { std::clamp( static_cast<float>( mover->PipePress ) / 6.0f, 0.0f, 1.0f ) };
+    std::snprintf( buf, sizeof( buf ), "%.1f bar", mover->PipePress );
+    ImU32 const pipecol { mover->PipePress < 3.0 ? IM_COL32( 255, 70, 45, 240 ) : ( mover->PipePress < 4.5 ? IM_COL32( 255, 200, 40, 240 ) : IM_COL32( 130, 220, 140, 240 ) ) };
+    draw_bar( barY, STR_C("Brake pipe"), pipefrac, 1.0f, buf, pipecol );
+    barY += 26.0f;
+    // main brake handle position (same source as the game's driving aid "basicbraking" value);
+    // vehicles with electro-dynamic brake show the ED brake position instead
+    if ( dynbrake )
+    {
+        float const dbpos { static_cast<float>( mover->DynamicBrakeCtrlPos ) };
+        float const dbno { mover->DynamicBrakeCtrlPosNo > 0 ? static_cast<float>( mover->DynamicBrakeCtrlPosNo ) : 10.0f };
+        std::snprintf( buf, sizeof( buf ), "%.0f/%.0f", std::floor( dbpos * dbno + 0.5f ), dbno );
+        draw_bar( barY, STR_C("Dynamic brake"), dbpos, 1.0f, buf );
+    }
+    else
+    {
+        float const brakcfrac { mover->BrakeCtrlPosNo > 0 ? std::clamp( static_cast<float>( std::max( 0.0, mover->fBrakeCtrlPos ) ) / mover->BrakeCtrlPosNo, 0.0f, 1.0f ) : 0.0f };
+        std::snprintf( buf, sizeof( buf ), "%.1f", mover->fBrakeCtrlPos );
+        draw_bar( barY, STR_C("train brake"), brakcfrac, 1.0f, buf );
+    }
+    barY += 26.0f;
+    float const indfrac { static_cast<float>( std::clamp( mover->LocalBrakePosA, 0.0, 1.0 ) ) };
+    std::snprintf( buf, sizeof( buf ), "%.0f/10", std::floor( indfrac * 10.0f ) );
+    draw_bar( barY, STR_C("independent brake"), indfrac, 1.0f, buf );
+    barY += 26.0f;
+    // brake cylinder pressure (cab gauge "CYLINDER HAMULCOWY"), real SPKS value
+    float const cylfrac { std::clamp( static_cast<float>( mover->BrakePress ) / 6.0f, 0.0f, 1.0f ) };
+    std::snprintf( buf, sizeof( buf ), "%.2f bar", mover->BrakePress );
+    ImU32 const cylcol { mover->BrakePress < 0.5f ? IM_COL32( 130, 220, 140, 240 ) : ( mover->BrakePress < 3.5f ? IM_COL32( 255, 200, 40, 240 ) : IM_COL32( 255, 70, 45, 240 ) ) };
+    draw_bar( barY, STR_C("Brake cylinder"), cylfrac, 1.0f, buf, cylcol );
+
+    // the sim uses two controller models; their position SEMANTICS differ:
+    //  - MCPN-defined (EU07 etc.): handle position = MainCtrlPos, max = MainCtrlPosNo
+    //  - RList-defined (EN57-class): state = MainCtrlActualPos (RList index), max = RlistSize
+    // MainCtrlActualPos is an internal scheme pointer and must NOT be mixed in for MCPN vehicles.
+    bool const mcpn_ctrl { ctrlv->MainCtrlPosNo > 0 };
+    int const notchpos { mcpn_ctrl ? ctrlv->MainCtrlPos : ctrlv->MainCtrlActualPos };
+    int const notchmax { mcpn_ctrl ? ctrlv->MainCtrlPosNo : ctrlv->RlistSize };
+    bool const eim_throttle { ctrlv->EIMCtrlType > 0 };
+    char zone[ 32 ];
+    float notchfrac { 0.0f };
+    std::string notchtext;
+    {
+        char nbuf[ 48 ];
+        if ( eim_throttle )
+        {
+            // unified drive+brake control (e.g. SM42 handwheel): positive = drive, negative = brake
+            double const pct { std::clamp( ctrlv->eimic_real * 100.0, -100.0, 100.0 ) };
+            if ( pct > 3.0 ) std::snprintf( zone, sizeof( zone ), "%s", STR_C("Traction") );
+            else if ( pct < -3.0 ) std::snprintf( zone, sizeof( zone ), "%s", STR_C("Braking") );
+            else std::snprintf( zone, sizeof( zone ), "%s", STR_C("Neutral") );
+            notchfrac = static_cast<float>( std::abs( pct ) / 100.0 );
+            std::snprintf( nbuf, sizeof( nbuf ), "%+.0f%%", pct );
+            notchtext = nbuf;
+        }
+        else if ( is_diesel )
+        {
+            // diesel: throttle positions (RList holds fuel fill for diesels)
+            std::snprintf( zone, sizeof( zone ), "%s", notchpos > 0 ? STR_C("Throttle") : STR_C("Idle") );
+            if ( notchmax > 0 )
+            {
+                std::snprintf( nbuf, sizeof( nbuf ), "%d/%d", notchpos, notchmax );
+                notchtext = nbuf;
+            }
+            notchfrac = notchmax > 0 ? std::clamp( static_cast<float>( notchpos ) / notchmax, 0.0f, 1.0f ) : 0.0f;
+        }
+        else
+        {
+            // electric: series / parallel / shunt zones; scheme lookup uses the physical state index
+            if ( notchpos > 0 || ctrlv->ScndCtrlPos > 0 )
+            {
+                if ( ctrlv->ScndCtrlPos > 0 ) std::snprintf( zone, sizeof( zone ), "%s", STR_C("Shunt") );
+                else
+                {
+                    auto const &scheme { ctrlv->RList[ctrlv->MainCtrlActualPos] };
+                    if ( scheme.ScndAct > 0 ) std::snprintf( zone, sizeof( zone ), "%s", STR_C("Shunt") );
+                    else if ( scheme.Bn > 1 ) std::snprintf( zone, sizeof( zone ), "%s", STR_C("Parallel") );
+                    else if ( scheme.Mn > 1 ) std::snprintf( zone, sizeof( zone ), "%s", STR_C("Series") );
+                    else std::snprintf( zone, sizeof( zone ), "%s", STR_C("Traction") );
+                }
+            }
+            else
+                std::snprintf( zone, sizeof( zone ), "%s", STR_C("Idle") );
+            if ( notchmax > 0 )
+            {
+                std::snprintf( nbuf, sizeof( nbuf ), "%d/%d", notchpos, notchmax );
+                notchtext = nbuf;
+            }
+            notchfrac = notchmax > 0 ? std::clamp( static_cast<float>( notchpos ) / notchmax, 0.0f, 1.0f ) : 0.0f;
+        }
+    }
+    // --- notch / controller row (same layout style as the bars above) --------
+    float const nstripy { winpos.y + 180.0f };
+    float const sx0 { winpos.x + 78.0f };
+    float const sw { 230.0f };
+    dl->AddText( ui_layer::font_default, 15.0f, ImVec2( winpos.x + 8.0f, nstripy ), IM_COL32( 255, 255, 255, 190 ), STR_C("Notch") );
+    // value text: position + zone name, e.g. "9/16 并联"
+    char notchvalue[ 64 ];
+    std::snprintf( notchvalue, sizeof( notchvalue ), "%s%s%s", notchtext.c_str(), notchtext.empty() ? "" : " ", zone );
+    dl->AddText( ui_layer::font_default, 15.0f, ImVec2( sx0 + sw + 10.0f, nstripy ), IM_COL32( 255, 255, 255, 240 ), notchvalue );
+    dl->AddRectFilled( ImVec2( sx0, nstripy + 18.0f ), ImVec2( sx0 + sw, nstripy + 28.0f ), IM_COL32( 255, 255, 255, 30 ), 4.0f );
+    if ( eim_throttle )
+    {
+        // center-zero bidirectional gauge: right = drive (green), left = brake (amber)
+        float const cx { sx0 + sw * 0.5f };
+        dl->AddRectFilled( ImVec2( cx - 1.0f, nstripy + 17.0f ), ImVec2( cx + 1.0f, nstripy + 29.0f ), IM_COL32( 255, 255, 255, 70 ) );
+        if ( notchfrac > 0.005f )
+        {
+            if ( ctrlv->eimic_real < 0.0 )
+                dl->AddRectFilled( ImVec2( cx - sw * 0.5f * notchfrac, nstripy + 18.0f ), ImVec2( cx, nstripy + 28.0f ), IM_COL32( 255, 190, 40, 230 ), 4.0f );
+            else
+                dl->AddRectFilled( ImVec2( cx, nstripy + 18.0f ), ImVec2( cx + sw * 0.5f * notchfrac, nstripy + 28.0f ), IM_COL32( 90, 220, 120, 230 ), 4.0f );
+        }
+    }
+    else if ( notchfrac > 0.005f )
+        dl->AddRectFilled( ImVec2( sx0, nstripy + 18.0f ), ImVec2( sx0 + sw * notchfrac, nstripy + 28.0f ), IM_COL32( 90, 160, 255, 230 ), 4.0f );
+
+    // field-weakening (shunt) controller row; only DC electrics have real field weakening
+    // (on induction vehicles SCPN>0 means a power step switch, not a shunt controller)
+    if ( ctrlv->ScndCtrlPosNo > 0 && dc_series )
+    {
+        float const nstripy2 { winpos.y + 210.0f };
+        float const shfrac { std::clamp( static_cast<float>( ctrlv->ScndCtrlPos ) / ctrlv->ScndCtrlPosNo, 0.0f, 1.0f ) };
+        dl->AddText( ui_layer::font_default, 15.0f, ImVec2( winpos.x + 8.0f, nstripy2 ), IM_COL32( 255, 255, 255, 190 ), STR_C("Shunt") );
+        std::snprintf( notchvalue, sizeof( notchvalue ), "%d/%d", ctrlv->ScndCtrlPos, ctrlv->ScndCtrlPosNo );
+        dl->AddText( ui_layer::font_default, 15.0f, ImVec2( sx0 + sw + 10.0f, nstripy2 ), IM_COL32( 255, 255, 255, 240 ), notchvalue );
+        dl->AddRectFilled( ImVec2( sx0, nstripy2 + 18.0f ), ImVec2( sx0 + sw, nstripy2 + 28.0f ), IM_COL32( 255, 255, 255, 30 ), 4.0f );
+        if ( shfrac > 0.005f )
+            dl->AddRectFilled( ImVec2( sx0, nstripy2 + 18.0f ), ImVec2( sx0 + sw * shfrac, nstripy2 + 28.0f ), IM_COL32( 180, 130, 255, 230 ), 4.0f );
+    }
+
+    // --- draw: big speed digits ------------------------------------------------
+    std::snprintf( buf, sizeof( buf ), "%03.0f", speed_kmh );
+    ImFont const * const font { ui_layer::font_hud };
+    float const fontsize { hudcfg::get().speed_size };
+    ImVec2 const textsize { font->CalcTextSizeA( fontsize, std::numeric_limits<float>::max(), 0.0f, buf ) };
+    // bottom-anchored: digits sit 12 px above the window's bottom edge
+    ImVec2 const dpos { winpos.x + 52.0f + ( 258.0f - textsize.x ) * 0.5f, winpos.y + hudcfg::get().panel_height - 12.0f - textsize.y };
+    ImU32 const col { ImGui::ColorConvertFloat4ToU32( ImVec4( m_speedcolor.x, m_speedcolor.y, m_speedcolor.z, alpha ) ) };
+    // outline/shadow then fill
+    dl->AddText( font, fontsize, ImVec2( dpos.x + 3.0f, dpos.y + 3.0f ), IM_COL32( 0, 0, 0, 150 ), buf );
+    dl->AddText( font, fontsize, dpos, col, buf );
+    // km/h caption
+    dl->AddText( ui_layer::font_default, 15.0f, ImVec2( dpos.x + textsize.x + 5.0f, dpos.y + textsize.y - 6.0f ), IM_COL32( 255, 255, 255, 180 ), "km/h" );
+
+    // --- draw: direction arrows (simple solid triangles) -------------------------
+    auto const arrow_col { []( bool const Active ) { return Active ? IM_COL32( 255, 255, 255, 245 ) : IM_COL32( 200, 210, 220, 45 ); } };
+    float const ax { winpos.x + 34.0f };
+    // up triangle = forward
+    bool const fwd { mover->DirActive > 0 };
+    dl->AddTriangleFilled(
+        ImVec2( ax - 17.0f, dpos.y + 46.0f ),
+        ImVec2( ax + 17.0f, dpos.y + 46.0f ),
+        ImVec2( ax, dpos.y + 4.0f ),
+        arrow_col( fwd ) );
+    // down triangle = backward
+    bool const bwd { mover->DirActive < 0 };
+    dl->AddTriangleFilled(
+        ImVec2( ax - 17.0f, dpos.y + 58.0f ),
+        ImVec2( ax + 17.0f, dpos.y + 58.0f ),
+        ImVec2( ax, dpos.y + 104.0f ),
+        arrow_col( bwd ) );
+
+    // --- draw: gradient triangles with numeric value (hidden when flat) ----------------
+    // value text reuses the game's own translated format "Grade: %.1f%%%%" (F1 driving aid source)
+    if ( grade_pm > 2.5 || grade_pm < -2.5 )
+    {
+        ImU32 const slope_col { IM_COL32( 110, 235, 120, 240 ) };
+        auto const slope_num_col = []( double const Grade ) -> int {
+            double const a { std::abs( Grade ) };
+            if ( a >= 35.0 ) return 0;   // steep: red
+            if ( a >= 20.0 ) return 1;   // noticeable: amber
+            return 2;                    // mild: green
+        };
+        int const ns { slope_num_col( grade_pm ) };
+        ImU32 const snumcol { ns == 0 ? IM_COL32( 240, 80, 60, 240 ) : ( ns == 1 ? IM_COL32( 255, 200, 40, 240 ) : IM_COL32( 110, 235, 120, 240 ) ) };
+        char gbuf[ 32 ];
+        // use the game's exact translation key (leading space included), same call pattern as the F1 driving aid
+        std::snprintf( gbuf, sizeof( gbuf ), STR_C(" Grade: %.1f%%%%"), std::abs( grade_pm ) * 0.1 );
+        float const sx { winpos.x + 346.0f };
+        if ( grade_pm > 2.5 ) // uphill
+        {
+            dl->AddTriangleFilled( ImVec2( sx - 16.0f, dpos.y + 40.0f ), ImVec2( sx + 16.0f, dpos.y + 40.0f ), ImVec2( sx, dpos.y + 4.0f ), slope_col );
+            dl->AddText( ui_layer::font_default, 11.0f, ImVec2( winpos.x + 300.0f, dpos.y + 44.0f ), snumcol, gbuf );
+        }
+        else // downhill
+        {
+            dl->AddTriangleFilled( ImVec2( sx - 16.0f, dpos.y + 52.0f ), ImVec2( sx + 16.0f, dpos.y + 52.0f ), ImVec2( sx, dpos.y + 88.0f ), slope_col );
+            dl->AddText( ui_layer::font_default, 11.0f, ImVec2( winpos.x + 300.0f, dpos.y + 94.0f ), snumcol, gbuf );
+        }
+    }
+}
+
+//---------------------------------------------------------------------------
+// hud_signal_panel: top-of-screen signal preview + speed limit strip
+//---------------------------------------------------------------------------
+
+void
+hud_signal_panel::update()
+{
+    auto const &fb { Global.fb_size };
+    auto const &cfg { hudcfg::get() };
+    auto const *train { simulation::Train };
+    auto const *controlled { train ? train->Dynamic() : nullptr };
+    auto const *mover { controlled ? controlled->MoverParameters : nullptr };
+    bool const alarm { mover != nullptr && (
+        mover->SecuritySystem.is_vigilance_blinking() || mover->SecuritySystem.is_beeping() ||
+        mover->SecuritySystem.is_cabsignal_blinking() || mover->SecuritySystem.is_cabsignal_beeping() ||
+        mover->SecuritySystem.is_braking() ) };
+    size = { cfg.sig_width, alarm ? cfg.sig_height + 40 : cfg.sig_height };
+    if ( hudcfg::dragging() )
+    {
+        pos = { -1, -1 }; // suspend the anchor while the user drags
+    }
+    else if (cfg.sig_x >= 0 && cfg.sig_y >= 0)
+        pos = { cfg.sig_x, cfg.sig_y };
+    else
+        pos = { ( fb.x - size.x ) / 2, cfg.sig_top };
+}
+
+void
+hud_signal_panel::render_contents()
+{
+    auto winpos { ImGui::GetWindowPos() };
+    float const dt { ImGui::GetIO().DeltaTime };
+    auto *dl { ImGui::GetWindowDrawList() };
+
+    // draggable module: the whole window is a drag zone (persisted to hud.ini)
+    {
+        static bool dragging { false };
+        auto const wsize { ImGui::GetWindowSize() };
+        ImGui::SetCursorPos( ImVec2( 0.0f, 0.0f ) );
+        ImGui::InvisibleButton( "##hud_sig_drag", wsize );
+        if ( ImGui::IsItemActive() )
+        {
+            dragging = true;
+            hudcfg::set_dragging( true );
+            auto const delta { ImGui::GetIO().MouseDelta };
+            winpos = ImVec2( winpos.x + delta.x, winpos.y + delta.y );
+            ImGui::SetWindowPos( winpos );
+        }
+        if ( dragging && ImGui::IsMouseReleased( 0 ) )
+        {
+            dragging = false;
+            hudcfg::set_dragging( false );
+            winpos = ImGui::GetWindowPos();
+            hudcfg::set_signal_pos( static_cast<int>( winpos.x ), static_cast<int>( winpos.y ) );
+        }
+        // subtle grip indicator at the bottom-right corner
+        for ( int i = 0; i < 3; ++i )
+            dl->AddCircleFilled( ImVec2( winpos.x + wsize.x - 12.0f - i * 8.0f, winpos.y + wsize.y - 8.0f ), 1.8f, IM_COL32( 255, 255, 255, 70 ) );
+    }
+
+    auto const *train { simulation::Train };
+    auto const *controlled { train ? train->Dynamic() : nullptr };
+    auto const *owner { controlled ? ( controlled->ctOwner != nullptr ? controlled->ctOwner : controlled->Mechanik ) : nullptr };
+    if ( controlled == nullptr || owner == nullptr )
+        return;
+
+    auto const *mover { controlled->MoverParameters };
+
+    int const limit { static_cast<int>( owner->VelDesired ) };
+    int const nextlimit { static_cast<int>( owner->VelNext ) };
+    double const nextdist { owner->ActualProximityDist };
+
+    if ( limit != m_prevlimit )
+    {
+        m_flash = 2.0f;
+        m_prevlimit = limit;
+    }
+    if ( m_flash > 0.0f )
+        m_flash -= dt;
+
+    int dr, dg, db;
+    // color shows the speed-limit intensity relative to the vehicle's maximum speed (real quantity, not a guessed lamp aspect)
+    double const vmax { controlled->MoverParameters->Vmax };
+    if ( limit <= 0 ) { dr = 235; dg = 60; db = 50; }
+    else if ( vmax > 0.0 && limit < 0.7 * vmax ) { dr = 240; dg = 190; db = 40; }
+    else { dr = 90; dg = 210; db = 100; }
+    float const brightalpha { m_flash > 0.0f ? ( 0.55f + 0.45f * std::sin( static_cast<float>( ImGui::GetTime() ) * 14.0f ) ) : 1.0f };
+
+    // signal colour block, digit line centred on the block's centre line
+    auto const &cfg { hudcfg::get() };
+    float const sqm { cfg.sig_square_margin };
+    float const sqs { cfg.sig_square_size };
+    dl->AddRectFilled( ImVec2( winpos.x + sqm, winpos.y + sqm ), ImVec2( winpos.x + sqm + sqs, winpos.y + sqm + sqs ), IM_COL32( 255, 255, 255, 40 ), 6.0f );
+    dl->AddRectFilled( ImVec2( winpos.x + sqm + 4.0f, winpos.y + sqm + 4.0f ), ImVec2( winpos.x + sqm + sqs - 4.0f, winpos.y + sqm + sqs - 4.0f ), IM_COL32( dr, dg, db, static_cast<int>( 255.0f * brightalpha ) ), 4.0f );
+
+    // big limit number; vertical position follows the block's centre line
+    char buf[ 96 ];
+    std::snprintf( buf, sizeof( buf ), "%d", limit );
+    ImU32 const digitcol { limit <= 0 ? IM_COL32( 235, 60, 50, static_cast<int>( 255.0f * brightalpha ) ) : IM_COL32( 255, 255, 255, static_cast<int>( 235.0f * brightalpha ) ) };
+    float const sqcy { sqm + sqs * 0.5f };
+    dl->AddText( ui_layer::font_hud, cfg.sig_digit_size, ImVec2( winpos.x + cfg.sig_digit_left, winpos.y + sqcy - cfg.sig_digit_size * 0.55f ), digitcol, buf );
+
+    // distance to the next signal (real data from the AI route scan)
+    double const sigdist { owner->FirstSemaphorDist };
+    if ( sigdist < 5000.0 )
+    {
+        std::snprintf( buf, sizeof( buf ), STR_C("Signal %.0f m"), sigdist );
+        dl->AddText( ui_layer::font_default, 13.0f, ImVec2( winpos.x + cfg.sig_text_left, winpos.y + cfg.sig_text_top ), IM_COL32( 255, 255, 255, 200 ), buf );
+    }
+    // next limit preview
+    if ( nextlimit != limit && nextdist < 5000.0 && nextdist > 0.0 )
+    {
+        std::snprintf( buf, sizeof( buf ), STR_C("Next limit %.1f km: %d"), nextdist * 0.001, nextlimit );
+        dl->AddText( ui_layer::font_default, 13.0f, ImVec2( winpos.x + cfg.sig_text_left, winpos.y + cfg.sig_text_top + 18.0f ), IM_COL32( 255, 255, 255, 200 ), buf );
+    }
+
+    // --- CA / SHP alert banner -------------------------------------------------
+    // trigger: real SecuritySystem state; text: read from the game's own active hints
+    auto const &sec { mover->SecuritySystem };
+    bool const cabflash { sec.is_cabsignal_blinking() || sec.is_cabsignal_beeping() || sec.is_braking() };
+    bool const vflash { !cabflash && ( sec.is_vigilance_blinking() || sec.is_beeping() ) };
+    if ( cabflash || vflash )
+    {
+        // read the prompt straight from the game's hint data (same source as the F1 "Hints" list)
+        char const *alarmtext { nullptr };
+        if ( owner != nullptr )
+        {
+            for ( auto const &hint : owner->m_hints )
+            {
+                auto const h { std::get<driver_hint>( hint ) };
+                if ( h == driver_hint::shpsystemreset || h == driver_hint::securitysystemreset )
+                {
+                    alarmtext = Translations.lookup_c( driver_hints_texts[ static_cast<size_t>( h ) ], true );
+                    break;
+                }
+            }
+        }
+        if ( alarmtext == nullptr )
+            alarmtext = cabflash ? Translations.lookup_c( "Acknowledge SHP", true ) : Translations.lookup_c( "Acknowledge alerter", true );
+        int r, g, b;
+        if ( sec.is_braking() ) { r = 240; g = 60; b = 45; }
+        else { r = 250; g = 195; b = 40; }
+        float const pulse { 0.5f + 0.5f * std::sin( static_cast<float>( ImGui::GetTime() ) * 10.0f ) };
+        float const y { winpos.y + hudcfg::get().sig_height + 4.0f };
+        // pulse the container background, keep the text at full brightness
+        dl->AddRectFilled( ImVec2( winpos.x + 8.0f, y ), ImVec2( winpos.x + 312.0f, y + 30.0f ), IM_COL32( 12, 12, 12, 150 ), 6.0f );
+        dl->AddRectFilled( ImVec2( winpos.x + 8.0f, y ), ImVec2( winpos.x + 312.0f, y + 30.0f ), IM_COL32( r, g, b, static_cast<int>( 70.0f + 90.0f * pulse ) ), 6.0f );
+        dl->AddText( ui_layer::font_default, 19.0f, ImVec2( winpos.x + 22.0f, y + 6.0f ), IM_COL32( r, g, b, 255 ), alarmtext );
+    }
 }

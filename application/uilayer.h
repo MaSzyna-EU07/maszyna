@@ -1,4 +1,4 @@
-﻿/*
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -122,6 +122,7 @@ public:
 	static ImFont *font_default;
 	static ImFont *font_mono;
 	static ImFont *font_loading;
+	static ImFont *font_hud;
 
 protected:
 // members
