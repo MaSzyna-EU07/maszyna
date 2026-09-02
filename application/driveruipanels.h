@@ -11,35 +11,15 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/uilayer.h"
 #include "utilities/Classes.h"
+#include "utilities/Globals.h"
 
-// HUD configuration: shared public config keys (hud.* in eu07.ini) via global_settings; missing keys keep defaults
+// HUD overlay configuration; the layout values live in Global.gui_hud (in-code defaults,
+// updated at runtime while dragging), while the "gui.hud.enabled" switch alone is read
+// from the existing config file (eu07.ini) by the common config parser
 namespace hudcfg {
 
-struct settings {
-    bool enabled { true };
-    // bottom-right main panel
-    int panel_width { 380 };
-    int panel_height { 374 };
-    int margin { 16 };             // distance from screen right/bottom edges
-    float speed_size { 110.0f };   // big speed digits size
-    int panel_x { -1 };            // free-position override; -1 = corner anchored
-    int panel_y { -1 };
-    // top signal strip
-    int sig_width { 320 };
-    int sig_height { 66 };
-    int sig_top { 6 };                 // distance from screen top
-    float sig_digit_size { 58.0f };    // limit number size
-    float sig_digit_left { 56.0f };    // limit number left offset
-    float sig_square_margin { 10.0f }; // signal colour block offset from window edge
-    float sig_square_size { 34.0f };   // signal colour block side length
-    float sig_text_left { 170.0f };    // right-hand info text column
-    float sig_text_top { 16.0f };
-    int sig_x { -1 };              // free-position override; -1 = top-centred
-    int sig_y { -1 };
-};
+using settings = global_settings::hud_config;
 
-void load();   // sync from the shared public configuration (global_settings hud.* keys)
-void save();   // sync to the shared public configuration and store it (global_settings::SaveIniFile)
 settings const &get();
 // shared live visibility (used by the key binding, the menu entry and the HUD panels)
 void set_panels( ui_panel *Panel, ui_panel *SignalPanel );

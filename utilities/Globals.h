@@ -247,6 +247,32 @@ struct global_settings {
 	bool gui_showtranscripts = true;
     bool gui_trainingdefault = false;
 
+    // HUD overlay layout; only the "gui.hud.enabled" switch is a configuration key in eu07.ini,
+    // the remaining values are runtime (drag/position) state kept in code with defaults
+    struct hud_config {
+        bool enabled { true };
+        // bottom-right main panel
+        int panel_width { 380 };
+        int panel_height { 374 };
+        int margin { 16 };             // distance from screen right/bottom edges
+        float speed_size { 110.0f };   // big speed digits size
+        int panel_x { -1 };            // free-position override; -1 = corner anchored
+        int panel_y { -1 };
+        // top signal strip
+        int sig_width { 320 };
+        int sig_height { 66 };
+        int sig_top { 6 };                 // distance from screen top
+        float sig_digit_size { 58.0f };    // limit number size
+        float sig_digit_left { 56.0f };    // limit number left offset
+        float sig_square_margin { 10.0f }; // signal colour block offset from window edge
+        float sig_square_size { 34.0f };   // signal colour block side length
+        float sig_text_left { 170.0f };    // right-hand info text column
+        float sig_text_top { 16.0f };
+        int sig_x { -1 };              // free-position override; -1 = top-centred
+        int sig_y { -1 };
+    };
+    hud_config gui_hud;
+
 	std::string extcam_cmd;
 	std::string extcam_rec;
 	glm::ivec2 extcam_res{800, 600};
@@ -290,27 +316,6 @@ struct global_settings {
 
     float ui_fontsize = 13.0f;
     float ui_scale = 1.0f;
-
-    // HUD (in-game driver overlay) settings, stored in the shared public
-    // configuration via the "hud.*" keys (defaults match hudcfg::settings)
-    bool hud_enabled = true;
-    int hud_panel_width = 380;
-    int hud_panel_height = 374;
-    int hud_margin = 16;
-    float hud_speed_size = 110.0f;
-    int hud_panel_x = -1;
-    int hud_panel_y = -1;
-    int hud_sig_width = 320;
-    int hud_sig_height = 66;
-    int hud_sig_top = 6;
-    float hud_sig_digit_size = 58.0f;
-    float hud_sig_digit_left = 56.0f;
-    float hud_sig_square_margin = 10.0f;
-    float hud_sig_square_size = 34.0f;
-    float hud_sig_text_left = 170.0f;
-    float hud_sig_text_top = 16.0f;
-    int hud_sig_x = -1;
-    int hud_sig_y = -1;
 
 	float map_highlight_distance = 3000.0f;
 
@@ -368,9 +373,6 @@ struct global_settings {
 
 	// methods
 	void LoadIniFile( std::string asFileName );
-	// write the full public configuration back to disk (values updated in place,
-	// comments and unknown keys preserved); returns true on success
-	bool SaveIniFile();
 	void FinalizeConfig();
 	void ConfigParse(cParser &parser);
 	bool ConfigParseGeneral(cParser& Parser, const std::string& token);
