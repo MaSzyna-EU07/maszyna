@@ -21,7 +21,12 @@ http://mozilla.org/MPL/2.0/.
 #include "Console.h"
 #include "scripting/PyInt.h"
 #include "utilities/Timer.h"
+#include "utilities/utilities.h"
 #include "vao.h"
+
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 
 void global_settings::LoadIniFile(std::string asFileName)
 {
@@ -41,6 +46,90 @@ void global_settings::LoadIniFile(std::string asFileName)
 
 	cParser parser(asFileName, cParser::buffer_FILE);
 	ConfigParse(parser);
+}
+
+bool global_settings::SaveIniFile()
+{
+	namespace fs = std::filesystem;
+
+	// save where the config is looked for at startup (user config dir first, exe dir otherwise)
+	fs::path path = user_config_path("eu07.ini");
+	if (path.empty() || !fs::exists(path))
+		path = "eu07.ini";
+
+	// canonical "key value..." output of the full public configuration
+	std::ostringstream dumpstream;
+	export_as_text(dumpstream);
+
+	struct dump_entry {
+		std::string key;
+		std::string line;
+	};
+	std::vector<dump_entry> entries;
+	{
+		std::istringstream dump(dumpstream.str());
+		std::string line;
+		while (std::getline(dump, line))
+		{
+			if (line.empty())
+				continue;
+			std::istringstream ls(line);
+			std::string key;
+			ls >> key;
+			entries.push_back({ key, line });
+		}
+	}
+
+	// merge with the existing file: update values of known keys in place
+	// (keeping their comments), preserve unknown keys and comments, append
+	// keys that are not present in the file yet
+	std::vector<std::string> result;
+	std::vector<bool> used(entries.size(), false);
+	{
+		std::ifstream stream(path);
+		std::string line;
+		while (std::getline(stream, line))
+		{
+			std::istringstream ls(line);
+			std::string key;
+			ls >> key;
+			std::string replacement;
+			for (std::size_t i = 0; i < entries.size(); ++i)
+			{
+				if (!used[i] && entries[i].key == key)
+				{
+					replacement = entries[i].line;
+					used[i] = true;
+					break;
+				}
+			}
+			if (replacement.empty())
+			{
+				result.push_back(line);
+			}
+			else
+			{
+				auto const comment = line.find("//");
+				if (comment != std::string::npos)
+					replacement += " " + line.substr(comment);
+				result.push_back(replacement);
+			}
+		}
+	}
+
+	for (std::size_t i = 0; i < entries.size(); ++i)
+		if (!used[i])
+			result.push_back(entries[i].line);
+
+	std::ofstream stream(path, std::ios::trunc);
+	if (!stream.is_open())
+	{
+		ErrorLog("failed to save configuration to " + path.string());
+		return false;
+	}
+	for (auto const &line : result)
+		stream << line << "\n";
+	return true;
 }
 
 template <typename T>
@@ -790,6 +879,114 @@ bool global_settings::ConfigParseUI(cParser& Parser, const std::string& token)
     if (token == "gui.trainingdefault")
     {
         ParseOne(Parser, gui_trainingdefault, 1);
+        return true;
+    }
+
+    if (token == "hud.enabled")
+    {
+        ParseOne(Parser, hud_enabled, 1);
+        return true;
+    }
+
+    if (token == "hud.panel_width")
+    {
+        ParseOne(Parser, hud_panel_width, 1);
+        return true;
+    }
+
+    if (token == "hud.panel_height")
+    {
+        ParseOne(Parser, hud_panel_height, 1);
+        return true;
+    }
+
+    if (token == "hud.margin")
+    {
+        ParseOne(Parser, hud_margin, 1);
+        return true;
+    }
+
+    if (token == "hud.speed_size")
+    {
+        ParseOne(Parser, hud_speed_size, 1);
+        return true;
+    }
+
+    if (token == "hud.panel_x")
+    {
+        ParseOne(Parser, hud_panel_x, 1);
+        return true;
+    }
+
+    if (token == "hud.panel_y")
+    {
+        ParseOne(Parser, hud_panel_y, 1);
+        return true;
+    }
+
+    if (token == "hud.sig_width")
+    {
+        ParseOne(Parser, hud_sig_width, 1);
+        return true;
+    }
+
+    if (token == "hud.sig_height")
+    {
+        ParseOne(Parser, hud_sig_height, 1);
+        return true;
+    }
+
+    if (token == "hud.sig_top")
+    {
+        ParseOne(Parser, hud_sig_top, 1);
+        return true;
+    }
+
+    if (token == "hud.sig_digit_size")
+    {
+        ParseOne(Parser, hud_sig_digit_size, 1);
+        return true;
+    }
+
+    if (token == "hud.sig_digit_left")
+    {
+        ParseOne(Parser, hud_sig_digit_left, 1);
+        return true;
+    }
+
+    if (token == "hud.sig_square_margin")
+    {
+        ParseOne(Parser, hud_sig_square_margin, 1);
+        return true;
+    }
+
+    if (token == "hud.sig_square_size")
+    {
+        ParseOne(Parser, hud_sig_square_size, 1);
+        return true;
+    }
+
+    if (token == "hud.sig_text_left")
+    {
+        ParseOne(Parser, hud_sig_text_left, 1);
+        return true;
+    }
+
+    if (token == "hud.sig_text_top")
+    {
+        ParseOne(Parser, hud_sig_text_top, 1);
+        return true;
+    }
+
+    if (token == "hud.sig_x")
+    {
+        ParseOne(Parser, hud_sig_x, 1);
+        return true;
+    }
+
+    if (token == "hud.sig_y")
+    {
+        ParseOne(Parser, hud_sig_y, 1);
         return true;
     }
 
@@ -1645,6 +1842,24 @@ global_settings::export_as_text( std::ostream &Output ) const {
         << UITextColor.g * 255 << " "
         << UITextColor.b * 255 << "\n";
     export_as_text( Output, "ui.bg.opacity", UIBgOpacity );
+    export_as_text( Output, "hud.enabled", hud_enabled );
+    export_as_text( Output, "hud.panel_width", hud_panel_width );
+    export_as_text( Output, "hud.panel_height", hud_panel_height );
+    export_as_text( Output, "hud.margin", hud_margin );
+    export_as_text( Output, "hud.speed_size", hud_speed_size );
+    export_as_text( Output, "hud.panel_x", hud_panel_x );
+    export_as_text( Output, "hud.panel_y", hud_panel_y );
+    export_as_text( Output, "hud.sig_width", hud_sig_width );
+    export_as_text( Output, "hud.sig_height", hud_sig_height );
+    export_as_text( Output, "hud.sig_top", hud_sig_top );
+    export_as_text( Output, "hud.sig_digit_size", hud_sig_digit_size );
+    export_as_text( Output, "hud.sig_digit_left", hud_sig_digit_left );
+    export_as_text( Output, "hud.sig_square_margin", hud_sig_square_margin );
+    export_as_text( Output, "hud.sig_square_size", hud_sig_square_size );
+    export_as_text( Output, "hud.sig_text_left", hud_sig_text_left );
+    export_as_text( Output, "hud.sig_text_top", hud_sig_text_top );
+    export_as_text( Output, "hud.sig_x", hud_sig_x );
+    export_as_text( Output, "hud.sig_y", hud_sig_y );
     export_as_text( Output, "input.gamepad", InputGamepad );
 #ifdef WITH_UART
     if( uart_conf.enable ) {

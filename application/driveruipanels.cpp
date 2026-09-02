@@ -10,9 +10,6 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/driveruipanels.h"
 
-#include <fstream>
-#include <sstream>
-
 #include "utilities/Globals.h"
 #include "application/application.h"
 #include "utilities/translation.h"
@@ -1485,7 +1482,7 @@ transcripts_panel::render() {
 }
 
 //---------------------------------------------------------------------------
-// hudcfg: external HUD layout configuration, hud.ini next to the executable
+// hudcfg: HUD layout configuration via the shared public config (hud.* keys in eu07.ini)
 //---------------------------------------------------------------------------
 
 namespace hudcfg {
@@ -1499,75 +1496,39 @@ static void apply_visibility();
 
 void load()
 {
-    settings s; // defaults when keys are missing
-    std::ifstream file("hud.ini");
-    if (file.is_open())
-    {
-        std::string line;
-        while (std::getline(file, line))
-        {
-            auto const comment { line.find("//") };
-            if (comment != std::string::npos)
-                line.resize(comment);
-            std::istringstream ss(line);
-            std::string key;
-            ss >> key;
-            if (key.empty())
-                continue;
-            if (key == "enabled")
-            {
-                std::string flag;
-                ss >> flag;
-                s.enabled = ( flag == "yes" || flag == "true" || flag == "1" );
-            }
-            else if (key == "panel_width") ss >> s.panel_width;
-            else if (key == "panel_height") ss >> s.panel_height;
-            else if (key == "margin") ss >> s.margin;
-            else if (key == "speed_size") ss >> s.speed_size;
-            else if (key == "panel_x") ss >> s.panel_x;
-            else if (key == "panel_y") ss >> s.panel_y;
-            else if (key == "sig_width") ss >> s.sig_width;
-            else if (key == "sig_height") ss >> s.sig_height;
-            else if (key == "sig_top") ss >> s.sig_top;
-            else if (key == "sig_digit_size") ss >> s.sig_digit_size;
-            else if (key == "sig_digit_left") ss >> s.sig_digit_left;
-            else if (key == "sig_square_margin") ss >> s.sig_square_margin;
-            else if (key == "sig_square_size") ss >> s.sig_square_size;
-            else if (key == "sig_text_left") ss >> s.sig_text_left;
-            else if (key == "sig_text_top") ss >> s.sig_text_top;
-            else if (key == "sig_x") ss >> s.sig_x;
-            else if (key == "sig_y") ss >> s.sig_y;
-            // unknown keys are ignored
-        }
-    }
+    // settings arrive from the shared public configuration ("hud.*" keys in the
+    // existing config file, parsed into global_settings); missing keys keep defaults
+    settings s;
+    s.enabled            = Global.hud_enabled;
+    s.panel_width        = Global.hud_panel_width;
+    s.panel_height       = Global.hud_panel_height;
+    s.margin             = Global.hud_margin;
+    s.speed_size         = Global.hud_speed_size;
+    s.panel_x            = Global.hud_panel_x;
+    s.panel_y            = Global.hud_panel_y;
+    s.sig_width          = Global.hud_sig_width;
+    s.sig_height         = Global.hud_sig_height;
+    s.sig_top            = Global.hud_sig_top;
+    s.sig_digit_size     = Global.hud_sig_digit_size;
+    s.sig_digit_left     = Global.hud_sig_digit_left;
+    s.sig_square_margin  = Global.hud_sig_square_margin;
+    s.sig_square_size    = Global.hud_sig_square_size;
+    s.sig_text_left      = Global.hud_sig_text_left;
+    s.sig_text_top       = Global.hud_sig_text_top;
+    s.sig_x              = Global.hud_sig_x;
+    s.sig_y              = Global.hud_sig_y;
     g = s;
 }
 
 void save()
 {
-    // auto-create hud.ini in the game root on first drag drop; keep any user-added keys
-    std::ifstream in("hud.ini");
-    std::stringstream out;
-    if (in.is_open())
-    {
-        std::string line;
-        while (std::getline(in, line))
-        {
-            std::istringstream ls(line);
-            std::string key;
-            ls >> key;
-            if (key == "panel_x" || key == "panel_y" || key == "sig_x" || key == "sig_y" || key == "enabled")
-                continue; // rewritten below
-            out << line << "\n";
-        }
-    }
-    out << "enabled " << (g.enabled ? "yes" : "no") << "\n";
-    out << "panel_x " << g.panel_x << "\n";
-    out << "panel_y " << g.panel_y << "\n";
-    out << "sig_x " << g.sig_x << "\n";
-    out << "sig_y " << g.sig_y << "\n";
-    std::ofstream outfile("hud.ini", std::ios::trunc);
-    outfile << out.str();
+    // persist through the shared public configuration output (global_settings)
+    Global.hud_enabled = g.enabled;
+    Global.hud_panel_x = g.panel_x;
+    Global.hud_panel_y = g.panel_y;
+    Global.hud_sig_x = g.sig_x;
+    Global.hud_sig_y = g.sig_y;
+    Global.SaveIniFile();
 }
 
 settings const &get()
@@ -1662,7 +1623,7 @@ hud_panel::render_contents()
     float const now { static_cast<float>( ImGui::GetTime() ) };
     auto *dl { ImGui::GetWindowDrawList() };
 
-    // draggable module: the whole window is a drag zone (persisted to hud.ini)
+    // draggable module: the whole window is a drag zone (position persisted to the shared config)
     {
         static bool dragging { false };
         auto const wsize { ImGui::GetWindowSize() };
@@ -2019,7 +1980,7 @@ hud_signal_panel::render_contents()
     float const dt { ImGui::GetIO().DeltaTime };
     auto *dl { ImGui::GetWindowDrawList() };
 
-    // draggable module: the whole window is a drag zone (persisted to hud.ini)
+    // draggable module: the whole window is a drag zone (position persisted to the shared config)
     {
         static bool dragging { false };
         auto const wsize { ImGui::GetWindowSize() };
@@ -2056,8 +2017,10 @@ hud_signal_panel::render_contents()
     int const limit { static_cast<int>( owner->VelDesired ) };
     int const nextlimit { static_cast<int>( owner->VelNext ) };
     double const nextdist { owner->ActualProximityDist };
+    // in the sim VelDesired < 0 means "no speed limit" (while 0 = stop); surface it as green "-"
+    bool const nolimit { limit < 0 };
 
-    if ( limit != m_prevlimit )
+    if ( !nolimit && limit != m_prevlimit )
     {
         m_flash = 2.0f;
         m_prevlimit = limit;
@@ -2066,9 +2029,11 @@ hud_signal_panel::render_contents()
         m_flash -= dt;
 
     int dr, dg, db;
-    // color shows the speed-limit intensity relative to the vehicle's maximum speed (real quantity, not a guessed lamp aspect)
+    // color shows the speed-limit intensity relative to the vehicle's maximum speed
+    // (real quantity; the sim does not expose a raw lamp aspect)
     double const vmax { controlled->MoverParameters->Vmax };
-    if ( limit <= 0 ) { dr = 235; dg = 60; db = 50; }
+    if ( nolimit ) { dr = 90; dg = 210; db = 100; }
+    else if ( limit <= 0 ) { dr = 235; dg = 60; db = 50; }
     else if ( vmax > 0.0 && limit < 0.7 * vmax ) { dr = 240; dg = 190; db = 40; }
     else { dr = 90; dg = 210; db = 100; }
     float const brightalpha { m_flash > 0.0f ? ( 0.55f + 0.45f * std::sin( static_cast<float>( ImGui::GetTime() ) * 14.0f ) ) : 1.0f };
@@ -2083,9 +2048,12 @@ hud_signal_panel::render_contents()
     // big limit number; vertical position follows the block's centre line
     char buf[ 96 ];
     std::snprintf( buf, sizeof( buf ), "%d", limit );
-    ImU32 const digitcol { limit <= 0 ? IM_COL32( 235, 60, 50, static_cast<int>( 255.0f * brightalpha ) ) : IM_COL32( 255, 255, 255, static_cast<int>( 235.0f * brightalpha ) ) };
+    ImU32 const digitcol { nolimit ? IM_COL32( 110, 235, 120, 215 ) : ( limit <= 0 ? IM_COL32( 235, 60, 50, static_cast<int>( 255.0f * brightalpha ) ) : IM_COL32( 255, 255, 255, static_cast<int>( 235.0f * brightalpha ) ) ) };
     float const sqcy { sqm + sqs * 0.5f };
-    dl->AddText( ui_layer::font_hud, cfg.sig_digit_size, ImVec2( winpos.x + cfg.sig_digit_left, winpos.y + sqcy - cfg.sig_digit_size * 0.55f ), digitcol, buf );
+    if ( nolimit )
+        dl->AddText( ui_layer::font_default, cfg.sig_digit_size, ImVec2( winpos.x + cfg.sig_digit_left, winpos.y + sqcy - cfg.sig_digit_size * 0.55f ), digitcol, "--" );
+    else
+        dl->AddText( ui_layer::font_hud, cfg.sig_digit_size, ImVec2( winpos.x + cfg.sig_digit_left, winpos.y + sqcy - cfg.sig_digit_size * 0.55f ), digitcol, buf );
 
     // distance to the next signal (real data from the AI route scan)
     double const sigdist { owner->FirstSemaphorDist };

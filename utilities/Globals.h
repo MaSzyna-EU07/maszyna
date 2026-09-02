@@ -291,6 +291,27 @@ struct global_settings {
     float ui_fontsize = 13.0f;
     float ui_scale = 1.0f;
 
+    // HUD (in-game driver overlay) settings, stored in the shared public
+    // configuration via the "hud.*" keys (defaults match hudcfg::settings)
+    bool hud_enabled = true;
+    int hud_panel_width = 380;
+    int hud_panel_height = 374;
+    int hud_margin = 16;
+    float hud_speed_size = 110.0f;
+    int hud_panel_x = -1;
+    int hud_panel_y = -1;
+    int hud_sig_width = 320;
+    int hud_sig_height = 66;
+    int hud_sig_top = 6;
+    float hud_sig_digit_size = 58.0f;
+    float hud_sig_digit_left = 56.0f;
+    float hud_sig_square_margin = 10.0f;
+    float hud_sig_square_size = 34.0f;
+    float hud_sig_text_left = 170.0f;
+    float hud_sig_text_top = 16.0f;
+    int hud_sig_x = -1;
+    int hud_sig_y = -1;
+
 	float map_highlight_distance = 3000.0f;
 
 	std::string exec_on_exit;
@@ -347,6 +368,9 @@ struct global_settings {
 
 	// methods
 	void LoadIniFile( std::string asFileName );
+	// write the full public configuration back to disk (values updated in place,
+	// comments and unknown keys preserved); returns true on success
+	bool SaveIniFile();
 	void FinalizeConfig();
 	void ConfigParse(cParser &parser);
 	bool ConfigParseGeneral(cParser& Parser, const std::string& token);

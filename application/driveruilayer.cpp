@@ -72,7 +72,7 @@ driver_ui::driver_ui()
 	}
 
 	hudcfg::set_panels( &m_hudpanel, &m_hudsignalpanel );
-	// HUD is open by default on entering the game; hud.ini "enabled no" opts out
+	// HUD is open by default on entering the game; eu07.ini "hud.enabled no" opts out
 	hudcfg::set_visible( hudcfg::get().enabled );
 	m_hudpanel.is_open = m_hudsignalpanel.is_open = hudcfg::visible();
 }

@@ -12,7 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/uilayer.h"
 #include "utilities/Classes.h"
 
-// external HUD configuration (hud.ini next to the executable; missing keys keep defaults)
+// HUD configuration: shared public config keys (hud.* in eu07.ini) via global_settings; missing keys keep defaults
 namespace hudcfg {
 
 struct settings {
@@ -38,8 +38,8 @@ struct settings {
     int sig_y { -1 };
 };
 
-void load();
-void save();
+void load();   // sync from the shared public configuration (global_settings hud.* keys)
+void save();   // sync to the shared public configuration and store it (global_settings::SaveIniFile)
 settings const &get();
 // shared live visibility (used by the key binding, the menu entry and the HUD panels)
 void set_panels( ui_panel *Panel, ui_panel *SignalPanel );
