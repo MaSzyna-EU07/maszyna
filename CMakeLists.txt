@@ -200,6 +200,7 @@ set(SOURCES
 "widgets/popup.cpp"
 "widgets/time.cpp"
 "widgets/vehicleparams.cpp"
+"widgets/trainingcard.cpp"
 "widgets/perfgraphs.cpp"
 
 "${DEPS_DIR}/glad/src/glad.c"
