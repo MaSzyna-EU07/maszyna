@@ -787,6 +787,12 @@ bool global_settings::ConfigParseUI(cParser& Parser, const std::string& token)
         return true;
     }
 
+    if (token == "gui.trainingdefault")
+    {
+        ParseOne(Parser, gui_trainingdefault, 1);
+        return true;
+    }
+
     return false;
 }
 
