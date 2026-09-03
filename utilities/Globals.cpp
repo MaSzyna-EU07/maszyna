@@ -223,6 +223,12 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
         return true;
     }
 
+    if (token == "targetfps")
+    {
+        ParseOne(Parser, targetfps, 1, false);
+        return true;
+    }
+
     if (token == "heightbase")
     {
         ParseOne(Parser, fDistanceFactor, 1, false);
