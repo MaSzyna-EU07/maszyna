@@ -2375,8 +2375,8 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     TurnOff(); // resetowanie zmiennych submodeli
 
 	// Trains only: Initialize lights
-	if (MoverParameters->CategoryFlag == 1 && (LightList(front) & (headlight_left | headlight_right | headlight_upper)) != 0
-	                                       || (LightList(rear)  & (headlight_left | headlight_right | headlight_upper)) != 0)
+	if (MoverParameters->CategoryFlag == 1 && ((LightList(front) & (headlight_left | headlight_right | headlight_upper)) != 0
+	                                       ||  (LightList(rear)  & (headlight_left | headlight_right | headlight_upper)) != 0))
 		simulation::Lights.insert(this);
     if( mdLowPolyInt != nullptr ) {
         // check the low poly interior for potential compartments of interest, ie ones which can be individually lit
@@ -2548,8 +2548,8 @@ TDynamicObject::init_destination( TModel3d *Model ) {
 }
 
 void TDynamicObject::init_smoke_sources(const TModel3d *Model) const {
-	for (auto const &smokesource : Model->smoke_sources())
-		simulation::Particles.insert(smokesource.first, this, smokesource.second);
+	for (const auto &[sourcetemplate, location] : Model->smoke_sources())
+		simulation::Particles.insert(sourcetemplate, this, location);
 }
 
 void

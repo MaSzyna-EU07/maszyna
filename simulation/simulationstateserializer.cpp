@@ -1371,7 +1371,7 @@ void state_serializer::create_trainset(const std::string &src) {
 			deserialize_endtrainset(parser, scratch);
 		else {
 			deserialize_endtrainset(parser, scratch);
-			ErrorLog( "Bad scenario: encountered invalid token \"" + token + "\" in file \"" + parser.Name() + "\" (line " + std::to_string( parser.Line() ) + ")" );
+			ErrorLog( std::format(R"(Bad scenario: encountered invalid token "{}" in file "{}" (line {}))", token, parser.Name(), std::to_string(parser.Line())));
 			break;
 		}
 
