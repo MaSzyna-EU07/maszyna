@@ -237,26 +237,24 @@ double TNESt3::GetPF( double const PP, double const dt, double const Vel ) // pr
     BrakeRes->Flow(dV);
 
     for (int i = 1; i < 4; ++i)
-    {
         Przekladniki[i]->Update(dt);
-        if (typeid(*Przekladniki[i]) == typeid(TRapid))
-        {
-            RapidStatus = (BrakeDelayFlag & bdelay_R) == bdelay_R && (std::abs(Vel) > 70.0 || (std::abs(Vel) > 50.0 && RapidStatus) || RapidStaly);
-            Przekladniki[i]->SetRapidStatus(RapidStatus);
-        }
-        else if( typeid( *Przekladniki[i] ) == typeid( TPrzeciwposlizg ) )
-            Przekladniki[i]->SetPoslizg((BrakeStatus & b_asb) == b_asb);
-        else if( typeid( *Przekladniki[ i ] ) == typeid( TPrzekED ) ) {
-            if( Vel < -15.0 )
-                Przekladniki[ i ]->SetP( 0.0 );
-            else
-                Przekladniki[ i ]->SetP( MaxBP * 3.0 );
-        }
-        else if( typeid( *Przekladniki[i] ) == typeid( TPrzekCiagly ) )
-            Przekladniki[i]->SetMult(LoadC);
-        else if( typeid( *Przekladniki[i] ) == typeid( TPrzek_PZZ ) )
-            Przekladniki[i]->SetLBP(LBP);
+
+    if( PrzekRapid != nullptr ) {
+        RapidStatus = (BrakeDelayFlag & bdelay_R) == bdelay_R && (std::abs(Vel) > 70.0 || (std::abs(Vel) > 50.0 && RapidStatus) || RapidStaly);
+        PrzekRapid->SetRapidStatus(RapidStatus);
     }
+    if( PrzekPoslizg != nullptr )
+        PrzekPoslizg->SetPoslizg((BrakeStatus & b_asb) == b_asb);
+    if( PrzekED != nullptr ) {
+        if( Vel < -15.0 )
+            PrzekED->SetP( 0.0 );
+        else
+            PrzekED->SetP( MaxBP * 3.0 );
+    }
+    if( PrzekCiagly != nullptr )
+        PrzekCiagly->SetMult(LoadC);
+    if( PrzekPZZ != nullptr )
+        PrzekPZZ->SetLBP(LBP);
 
     // przeplyw testowy miedzypojemnosci
     dV = PF(MPP, VVP, BVs(BCP)) + PF(MPP, CVP, CVs(BCP));
@@ -458,6 +456,12 @@ void TNESt3::SetSize( int const size, std::string const &params ) // ustawianie 
     static double const dOO1l = 0.907;
     static double const dOT1l = 0.524;
 
+    PrzekRapid.reset();
+    PrzekPoslizg.reset();
+    PrzekED.reset();
+    PrzekCiagly.reset();
+    PrzekPZZ.reset();
+
     if (contains( params, "ESt3" ) )
     {
         Podskok = 0.7;
@@ -467,23 +471,36 @@ void TNESt3::SetSize( int const size, std::string const &params ) // ustawianie 
     else
     {
         Podskok = -1.0;
-        Przekladniki[1] = std::make_shared<TRapid>();
-        if (contains( params, "-s216" ) )
-            Przekladniki[1]->SetRapidParams(2, 16);
-        else
-            Przekladniki[1]->SetRapidParams(2, 0);
-        Przekladniki[3] = std::make_shared<TPrzeciwposlizg>();
+        PrzekRapid = std::make_shared<TRapid>();
+        Przekladniki[1] = PrzekRapid;
+
         if (contains( params,"-ED") )
         {
-            Przekladniki[1]->SetRapidParams(2, 18);
-            Przekladniki[3] = std::make_shared<TPrzekED>();
+            PrzekRapid->SetRapidParams(2, 18);
+            PrzekED = std::make_shared<TPrzekED>();
+            Przekladniki[3] = PrzekED;
+        }
+        else
+        {
+            if (contains( params, "-s216" ) )
+                PrzekRapid->SetRapidParams(2, 16);
+            else
+                PrzekRapid->SetRapidParams(2, 0);
+            PrzekPoslizg = std::make_shared<TPrzeciwposlizg>();
+            Przekladniki[3] = PrzekPoslizg;
         }
     }
 
     if (contains(params,"AL2") )
-        Przekladniki[2] = std::make_shared<TPrzekCiagly>();
+    {
+        PrzekCiagly = std::make_shared<TPrzekCiagly>();
+        Przekladniki[2] = PrzekCiagly;
+    }
     else if (contains(params,"PZZ") )
-        Przekladniki[2] = std::make_shared<TPrzek_PZZ>();
+    {
+        PrzekPZZ = std::make_shared<TPrzek_PZZ>();
+        Przekladniki[2] = PrzekPZZ;
+    }
     else
         Przekladniki[2] = std::make_shared<TRura>();
 
