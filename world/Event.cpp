@@ -1129,20 +1129,28 @@ whois_event::run_() {
                 + "[engine power: " + to_string( m_activator->MoverParameters->Power, 2 ) + "]" );
         }
         // +0
-        else if( m_activator->Mechanik ) {
-            if( m_activator->Mechanik->primary() ) { // tylko jeśli ktoś tam siedzi - nie powinno dotyczyć pasażera!
+        else {
+            // same owner selection as the +8/+16/+24/+32/+40/+48 branches above: fall back to
+            // the consist's controlling vehicle if the activator itself isn't one (e.g. a wagon
+            // triggered the event ahead of its locomotive) - +0 used to require the activator's
+            // own Mechanik and silently produce nothing for a wagon-triggered whois
+            auto const *owner { (
+                m_activator->Mechanik != nullptr && m_activator->Mechanik->primary() ?
+                    m_activator->Mechanik :
+                    m_activator->ctOwner ) };
+            if( owner != nullptr ) {
                 targetcell->UpdateValues(
-                    m_activator->Mechanik->TrainName(),
-                    m_activator->Mechanik->StationCount() - m_activator->Mechanik->StationIndex(), // ile przystanków do końca
-                    m_activator->Mechanik->IsStop() ?
+                    owner->TrainName(),
+                    owner->StationCount() - owner->StationIndex(), // ile przystanków do końca
+                    owner->IsStop() ?
                         1 :
                         0, // 1, gdy ma tu zatrzymanie
                     m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
                 WriteLog(
                     "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
-                    + "[train: " + m_activator->Mechanik->TrainName() + "], "
-                    + "[stations left: " + std::to_string( m_activator->Mechanik->StationCount() - m_activator->Mechanik->StationIndex() ) + "], "
-                    + "[stop at next station: " + ( m_activator->Mechanik->IsStop() ? "yes" : "no") + "]" );
+                    + "[train: " + owner->TrainName() + "], "
+                    + "[stations left: " + std::to_string( owner->StationCount() - owner->StationIndex() ) + "], "
+                    + "[stop at next station: " + ( owner->IsStop() ? "yes" : "no") + "]" );
             }
         }
     }
