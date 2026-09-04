@@ -1018,13 +1018,42 @@ whois_event::run_() {
         auto *targetcell { static_cast<TMemCell *>( std::get<scene::basic_node *>( target ) ) };
         if( targetcell == nullptr ) { continue; }
         // event effect code
+        // +64: station after the next one, unused, stop there or passthrough
         // +40: next station name, unused, stop at next station (duplicate of +0 2nd numeric value)
         // +32: vehicle name
         // +24: vehicle type, consist brake level, obstacle distance
         // +16: load type, load amount, max load amount
         // +8: destination, direction, engine power
         // +0: train name, station count, stop on next station
-        if( m_input.flags & flags::whois_name ) {
+        if( m_input.flags & flags::whois_ahead ) {
+            // +64
+            // the timetable entry one past the next stop, and whether the train stops there
+            auto const *owner { (
+                m_activator->Mechanik != nullptr && m_activator->Mechanik->primary() ?
+                    m_activator->Mechanik :
+                    m_activator->ctOwner ) };
+            auto const aheadname { (
+                owner != nullptr ?
+                    owner->TrainTimetable().StationNameAhead( 1 ) :
+                    "none" ) };
+            auto const aheadstop { (
+                owner != nullptr && owner->TrainTimetable().StationIsStopAhead( 1 ) ?
+                    1 :
+                    0 ) };
+
+            targetcell->UpdateValues(
+                aheadname, // station after the next one
+                0, // unused
+                aheadstop, // stop there or passthrough
+                m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
+
+            WriteLog(
+                "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
+                + "[station after next: " + aheadname + "], "
+                + "[X], "
+                + "[stop there: " + ( aheadstop != 0 ? "yes" : "no" ) + "]" );
+        }
+        else if( m_input.flags & flags::whois_name ) {
             // +32 or +40
             // next station name
             if( m_input.flags & flags::mode_alt ) {

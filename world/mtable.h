@@ -70,6 +70,10 @@ class TTrainParameters
     std::string ShowRelation() const;
     double WatchMTable(double DistCounter);
     std::string NextStop() const;
+    // nazwa wpisu rozkladu Offset pozycji za StationIndex (Offset>=1); "none" poza koncem rozkladu
+    std::string StationNameAhead( int Offset ) const;
+    // true, gdy ten wpis to zaplanowany postoj (ma godzine przyjazdu), false dla przelotu / poza koncem
+    bool StationIsStopAhead( int Offset ) const;
     sound_source next_stop_sound() const;
     sound_source last_stop_sound() const;
     bool IsStop() const;

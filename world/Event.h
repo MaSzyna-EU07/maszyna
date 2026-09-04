@@ -37,6 +37,7 @@ public:
         mode_alt    = 1 << 3,
         whois_load  = 1 << 4,
         whois_name  = 1 << 5,
+        whois_ahead = 1 << 6,
         // condition values
         track_busy  = 1 << 3,
         track_free  = 1 << 4,
