@@ -24,6 +24,7 @@ driver_ui::driver_ui()
 
 	clear_panels();
 	// bind the panels with ui object. maybe not the best place for this but, eh
+	add_external_panel(&m_aidpanel);
 	add_external_panel(&m_scenariopanel);
 	add_external_panel(&m_timetablepanel);
 	add_external_panel(&m_debugpanel);
@@ -38,8 +39,14 @@ driver_ui::driver_ui()
 	add_external_panel(&m_perfgraphpanel);
 	add_external_panel(&m_cameraviewpanel);
 	add_external_panel(&m_hudpanel);
+	add_external_panel(&m_hudspeedpanel);
 	add_external_panel(&m_hudsignalpanel);
+	add_external_panel(&m_hudcustompanel);
+	// F1 switching to the Custom mode automatically opens the customisation window
+	hudcfg::set_custom_window( &m_hudcustompanel );
 	m_logpanel.is_open = false;
+
+	m_aidpanel.title = STR("Driving Aid");
 
 	m_scenariopanel.title = STR("Scenario");
 	m_scenariopanel.size_min = {435, 85};
@@ -55,6 +62,7 @@ driver_ui::driver_ui()
 
 	if (Global.gui_defaultwindows)
 	{
+		m_aidpanel.is_open = true;
 		m_scenariopanel.is_open = true;
 	}
 
@@ -71,10 +79,9 @@ driver_ui::driver_ui()
 		m_hudsignalpanel.is_open = false;
 	}
 
-	hudcfg::set_panels( &m_hudpanel, &m_hudsignalpanel );
-	// HUD is open by default on entering the game; "gui.hud.enabled no" in eu07.ini opts out
-	hudcfg::set_visible( hudcfg::get().enabled );
-	m_hudpanel.is_open = m_hudsignalpanel.is_open = hudcfg::visible();
+	hudcfg::set_panels( &m_hudpanel, &m_hudsignalpanel, &m_hudspeedpanel );
+	// visibility is driven entirely by hudcfg (mode + group switches):
+	// fresh installs start OFF, F1 brings the HUD up; do NOT force is_open here
 }
 
 void driver_ui::render_menu_contents()
@@ -83,16 +90,26 @@ void driver_ui::render_menu_contents()
 
 	if (ImGui::BeginMenu(STR_C("Mode windows")))
 	{
-		ImGui::MenuItem(m_scenariopanel.title.c_str(), nullptr, &m_scenariopanel.is_open);
+		ImGui::MenuItem(m_aidpanel.title.c_str(), "F1", &m_aidpanel.is_open);
+		ImGui::MenuItem(m_scenariopanel.title.c_str(), "F3", &m_scenariopanel.is_open);
 		ImGui::MenuItem(STR_C("Timetable"), "F2", &m_timetablepanel.is_open);
 		ImGui::MenuItem(m_debugpanel.name().c_str(), "F12", &m_debugpanel.is_open);
 		ImGui::MenuItem(m_mappanel.name().c_str(), "Tab", &m_mappanel.is_open);
 		ImGui::MenuItem(m_vehiclelist.name().c_str(), nullptr, &m_vehiclelist.is_open);
 		ImGui::MenuItem(m_trainingcardpanel.name().c_str(), nullptr, &m_trainingcardpanel.is_open);
 		ImGui::MenuItem(m_cameraviewpanel.name().c_str(), nullptr, &m_cameraviewpanel.is_open);
-		bool hudshown { hudcfg::visible() };
-		if (ImGui::MenuItem(STR_C("HUD overlay"), "F1", &hudshown))
-			hudcfg::set_visible( hudshown );
+		if (ImGui::BeginMenu(STR_C("HUD")))
+		{
+			// HUD display modes (F1 cycles the same list; entering Custom opens the setup window)
+			for (int i = 0; i < hudcfg::mode_count(); ++i)
+			{
+				if (ImGui::MenuItem(STR_C(hudcfg::mode_name(i)), i == 0 ? "F1" : nullptr, hudcfg::mode() == i))
+					hudcfg::set_mode(i);
+			}
+			ImGui::Separator();
+			ImGui::MenuItem(STR_C("HUD customisation"), nullptr, &m_hudcustompanel.is_open);
+			ImGui::EndMenu();
+		}
 		if (DebugModeFlag)
 			ImGui::MenuItem(m_perfgraphpanel.name().c_str(), nullptr, &m_perfgraphpanel.is_open);
 
@@ -106,6 +123,17 @@ void driver_ui::render_menu_contents()
 void driver_ui::showDebugUI()
 {
 	m_debugpanel.is_open = !m_debugpanel.is_open;
+}
+
+void driver_ui::toggle_driving_aid()
+{
+	// basic consist info, same 3-state cycle as before (closed -> compact -> expanded -> closed);
+	// reached via Shift+F1 (drivermode::on_key), previously on plain F1
+	auto state = m_aidpanel.is_open == false ? 0 : m_aidpanel.is_expanded == false ? 1 : 2;
+	state = clamp_circular(++state, 3);
+
+	m_aidpanel.is_open = state > 0;
+	m_aidpanel.is_expanded = state > 1;
 }
 
 // potentially processes provided input key. returns: true if key was processed, false otherwise
@@ -154,8 +182,8 @@ bool driver_ui::on_key(int const Key, int const Action)
 
 	case GLFW_KEY_F1:
 	{
-		// HUD overlay toggle (per maintainers' request; the Driving Aid panel hosts the checkbox)
-		hudcfg::toggle();
+		// cycle HUD display modes; the old driving aid moved to Shift+F1 (see drivermode::on_key)
+		hudcfg::cycle_mode();
 		return true;
 	}
 

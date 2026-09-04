@@ -251,6 +251,15 @@ struct global_settings {
     // the remaining values are runtime (drag/position) state kept in code with defaults
     struct hud_config {
         bool enabled { true };
+        int mode { 0 };              // HUD display mode: 0=Standard 1=Custom 2=Off
+        bool mode_saved { false };   // internal: whether the user has selected a mode yet (ini)
+        bool panel { true };         // main panel group switch (Custom mode only)
+        bool strip { true };         // top signal strip group switch (Custom mode only)
+        bool speed_panel { true };   // speed panel group switch (Custom mode only)
+        std::string custom_items;    // csv of enabled item ids in Custom mode (empty = all on)
+        // split speed panel (speed/direction/grade), free position (default -1 = auto below)
+        int speed_x { -1 };
+        int speed_y { -1 };
         // bottom-right main panel
         int panel_width { 380 };
         int panel_height { 374 };

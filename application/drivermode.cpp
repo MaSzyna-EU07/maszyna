@@ -1,4 +1,4 @@
-﻿/*
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -482,6 +482,12 @@ void driver_mode::on_key(int const Key, int const Scancode, int const Action, in
 	if (Key == GLFW_KEY_F12 && Global.shiftState && Action == GLFW_PRESS)
 	{
 		m_userinterface->showDebugUI();
+		return;
+	}
+	if (Key == GLFW_KEY_F1 && Global.shiftState && Action == GLFW_PRESS)
+	{
+		// old driving aid lives here: F1 cycles the HUD modes, Shift+F1 opens/expands the driving aid
+		m_userinterface->toggle_driving_aid();
 		return;
 	}
 	// ...if the input is left untouched, pass it on

@@ -84,6 +84,8 @@ public:
     static void set_unit( GLint const Textureunit ) { m_textureunit = GL_TEXTURE0 + Textureunit; }
     static void shutdown();
 	virtual void showDebugUI() {};
+    // cycles the old driving aid panel (Shift+F1); default no-op outside driver mode
+    virtual void toggle_driving_aid() {};
     // potentially processes provided input key. returns: true if the input was processed, false otherwise
     virtual bool on_key( int Key, int Action );
     // potentially processes provided mouse movement. returns: true if the input was processed, false otherwise

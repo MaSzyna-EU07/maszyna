@@ -799,6 +799,49 @@ bool global_settings::ConfigParseUI(cParser& Parser, const std::string& token)
         return true;
     }
 
+    if (token == "gui.hud.mode")
+    {
+        ParseOne(Parser, gui_hud.mode, 1);
+        gui_hud.mode_saved = true; // user has set the mode before: honour it on next start
+        return true;
+    }
+
+    if (token == "gui.hud.panel")
+    {
+        ParseOne(Parser, gui_hud.panel, 1);
+        return true;
+    }
+
+    if (token == "gui.hud.strip")
+    {
+        ParseOne(Parser, gui_hud.strip, 1);
+        return true;
+    }
+
+    if (token == "gui.hud.speed_panel")
+    {
+        ParseOne(Parser, gui_hud.speed_panel, 1);
+        return true;
+    }
+
+    if (token == "gui.hud.custom")
+    {
+        ParseOne(Parser, gui_hud.custom_items, 1);
+        return true;
+    }
+
+    if (token == "gui.hud.speed_x")
+    {
+        ParseOne(Parser, gui_hud.speed_x, 1);
+        return true;
+    }
+
+    if (token == "gui.hud.speed_y")
+    {
+        ParseOne(Parser, gui_hud.speed_y, 1);
+        return true;
+    }
+
     return false;
 }
 
@@ -1654,6 +1697,13 @@ global_settings::export_as_text( std::ostream &Output ) const {
     // HUD overlay switch, the only HUD key stored in the common configuration (eu07.ini);
     // the remaining layout/position values are runtime state, not exported
     export_as_text( Output, "gui.hud.enabled", gui_hud.enabled );
+    export_as_text( Output, "gui.hud.mode", gui_hud.mode );
+    export_as_text( Output, "gui.hud.panel", gui_hud.panel );
+    export_as_text( Output, "gui.hud.strip", gui_hud.strip );
+    export_as_text( Output, "gui.hud.speed_panel", gui_hud.speed_panel );
+    export_as_text( Output, "gui.hud.custom", gui_hud.custom_items );
+    export_as_text( Output, "gui.hud.speed_x", gui_hud.speed_x );
+    export_as_text( Output, "gui.hud.speed_y", gui_hud.speed_y );
     export_as_text( Output, "input.gamepad", InputGamepad );
 #ifdef WITH_UART
     if( uart_conf.enable ) {

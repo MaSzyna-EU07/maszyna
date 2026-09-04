@@ -28,6 +28,9 @@ public:
     driver_ui();
 // methods
 	void showDebugUI() override;
+    // cycles the old driving aid panel (Shift+F1): closed -> compact -> expanded -> closed
+    void
+        toggle_driving_aid() override;
     // potentially processes provided input key. returns: true if the input was processed, false otherwise
     bool
         on_key( int const Key, int const Action ) override;
@@ -55,6 +58,7 @@ private:
         render_() override;
 
 // members
+	drivingaid_panel m_aidpanel { "Driving Aid", false };
 	scenario_panel m_scenariopanel { "Scenario", false };
     timetable_panel m_timetablepanel { "Timetable", false };
     debug_panel m_debugpanel { "Debug Data", false };
@@ -69,5 +73,7 @@ private:
 	ui::time_panel m_timepanel;
 	ui::cameraview_panel m_cameraviewpanel;
 	hud_panel m_hudpanel { "HUD", true };
+	hud_speed_panel m_hudspeedpanel { "HUDSpeed", true };
 	hud_signal_panel m_hudsignalpanel { "HUDSignal", true };
+	hud_custom_panel m_hudcustompanel { "HUD customisation", false };
 };

@@ -12,6 +12,10 @@ http://mozilla.org/MPL/2.0/.
 #include "application/uilayer.h"
 #include "utilities/Classes.h"
 #include "utilities/Globals.h"
+#include "model/AnimModel.h"
+
+class TDynamicObject;
+class TController;
 
 // HUD overlay configuration; the layout values live in Global.gui_hud (in-code defaults,
 // updated at runtime while dragging), while the "gui.hud.enabled" switch alone is read
@@ -20,20 +24,92 @@ namespace hudcfg {
 
 using settings = global_settings::hud_config;
 
+// HUD display modes (F1 cycles): 0 = Standard (default set), 1 = Custom (per-item checkboxes),
+// 2 = Off. Both panels can also be switched on/off as groups, but only in Custom mode
+enum hud_mode : int {
+    standard = 0,
+    custom = 1,
+    off = 2,
+};
+
+// vehicle-dependent capabilities used to grey out items the current vehicle does not have
+struct vehicle_caps {
+    bool ed        { true };  // dedicated ED handle (SplitEDPneumaticBrake, EP09 excluded)
+    bool shunt     { true };  // field-weakening controller (DC series with SCPN)
+    bool doors     { true };  // passenger doors (EMU/DMU)
+    bool speedctrl { true };  // cruise control (tempomat) fitted
+};
+
+// registry of every displayable HUD data item. stable string ids are used for persistence
+// (eu07.ini) and as the extension point for future developers: adding a row here makes the
+// datum appear in the customisation window and become togglable - nothing else is needed
+struct hud_item {
+    char const *id;        // stable key; persisted as gui.hud.custom "<id>,<id>,..."
+    char const *name;      // display name; STR_C() translation key (falls back to the literal)
+    int         group;     // 0 = main panel, 1 = top signal strip, 2 = speed panel
+    bool        default_on;
+};
+
 settings const &get();
 // shared live visibility (used by the key binding, the menu entry and the HUD panels)
-void set_panels( ui_panel *Panel, ui_panel *SignalPanel );
+void set_panels( ui_panel *Panel, ui_panel *SignalPanel, ui_panel *SpeedPanel );
+// the customisation window; F1 entering the Custom mode opens it automatically
+void set_custom_window( ui_panel *Panel );
 bool visible();
 void set_visible( bool Show );
 void toggle();
+// display modes; F1 cycles, persisted as gui.hud.mode
+int mode();
+int mode_count();
+void set_mode( int Mode );
+void cycle_mode();
+char const *mode_name( int Mode );
+// top strip / main panel / speed panel group switches (only effective in Custom mode)
+bool panel_group();
+bool strip_group();
+bool speed_group();
+void set_panel_group( bool On );
+void set_strip_group( bool On );
+void set_speed_group( bool On );
+// mode-name feedback toast in seconds (drawn on the HUD panel while > 0)
+float toast();
+void update_toast( float DeltaTime );
+// item registry lookup / effective visibility for the current mode
+hud_item const *item( char const *Id );
+int item_count();
+hud_item const &item_by_index( int Index );
+bool item_visible( char const *Id );
+// vehicle-dependent availability (false = the vehicle has no such system):
+// e.g. EU07 has no ED handle, so the "Dynamic brake" item is greyed out in the window
+bool item_available( char const *Id, vehicle_caps const &Caps );
+// Custom-mode checkbox state; writes back to gui.hud.custom
+bool custom_checked( char const *Id );
+void set_custom_item( char const *Id, bool Checked );
+// effective main-panel height, stretched by the amount of visible data (min = speed zone only)
+int main_panel_height();
 // drag state: while dragging the update() anchor is suspended
 bool dragging();
 void set_dragging( bool Drag );
 // free positioning (called by the drag handles)
 void set_panel_pos( int X, int Y );
 void set_signal_pos( int X, int Y );
+void set_speed_pos( int X, int Y );
 
 }
+
+class drivingaid_panel : public ui_expandable_panel {
+
+public:
+    drivingaid_panel( std::string const &Name, bool const Isopen )
+        : ui_expandable_panel( Name, Isopen )
+    {}
+
+    void update() override;
+
+private:
+// members
+    std::array<char, 256> m_buffer;
+};
 
 class timetable_panel : public ui_expandable_panel {
 
@@ -168,16 +244,59 @@ public:
         : ui_panel( Name, Isopen )
     {
         no_title_bar = true;
-        window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar
+        window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar
                      | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing;
     }
 
+    // custom render: auto-sized by content until the player grabs the resize grip
+    void render() override;
     void update() override;
     void render_contents() override;
 
 private:
 // members
     glm::vec4 m_speedcolor { 0.70f, 0.88f, 1.00f, 1.00f };
+    bool m_manual_size { false }; // true once the player resizes the panel (no auto-height then)
+};
+
+// split-out speed panel: big speed digits + direction arrows + gradient triangles
+// (kept at the position where the speed zone used to sit, below the data panel);
+// resizable via the bottom-right grip, contents scale with the window size
+class hud_speed_panel : public ui_panel {
+
+public:
+    hud_speed_panel( std::string const &Name, bool const Isopen )
+        : ui_panel( Name, Isopen )
+    {
+        no_title_bar = true;
+        window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar
+                     | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing;
+    }
+
+    // custom render: auto-sized until the player grabs the resize grip
+    void render() override;
+    void update() override;
+    void render_contents() override;
+
+private:
+// members
+    glm::vec4 m_speedcolor { 0.70f, 0.88f, 1.00f, 1.00f };
+    bool m_manual_size { false }; // true once the player resizes the panel
+};
+
+// live signal aspect: lamp states of the next semaphore, read from its anim models
+// (same source the minimap signal window uses; flashing aspects reproduce via opacity)
+struct hud_signal_aspect {
+    bool live { false };
+    int  lamps { 0 };
+    std::array<bool, iMaxNumLights> lit {};
+    std::array<glm::vec3, iMaxNumLights> col {};
+    std::array<float, iMaxNumLights> bright {};
+    // signal point data regardless of lamp display distance (drives the next-limit colour)
+    bool        has_signal { false };
+    double      signal_vel { -1.0 };     // next signal point speed (0 = stop)
+    int         signal_flags { 0 };      // signal point type flags (shunt / stop-point / semaphore)
+    glm::vec3   signal_col {};           // its semantic lamp colour
 };
 
 // top-of-screen signal preview + speed limit strip; pops and flashes when the limit changes
@@ -188,15 +307,44 @@ public:
         : ui_panel( Name, Isopen )
     {
         no_title_bar = true;
-        window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar
+        window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar
                      | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing;
     }
 
+    // custom render: auto-sized by content until the player grabs the resize grip
+    void render() override;
     void update() override;
     void render_contents() override;
 
 private:
+    // picks the next signal-grade point from the AI speed table (friend access) and
+    // collects its lamp states; the chosen signal **stays pinned** (frozen display)
+    // until it is passed, then the state resets and a new signal is read
+    hud_signal_aspect scan_aspect( TDynamicObject const *Controlled, TController const *Owner );
+    // content height for the current display state (lamp column / limit rows)
+    int base_height() const;
 // members
     int m_prevlimit { -1 };
     float m_flash { 0.0f };
+    bool m_manual_size { false }; // true once the player resizes the strip (no auto-height then)
+    // signal display lock (object lock: live re-reads until the signal is passed)
+    bool m_pinned { false };
+    std::string m_pinname;        // locked signal scene-group name
+};
+
+// custom HUD configuration window: same style as the other internal windows (draggable,
+// closable with the X). closing it does NOT hide the HUD - the overlay keeps showing per
+// the checked items until F1 is pressed again
+class hud_custom_panel : public ui_panel {
+
+public:
+    hud_custom_panel( std::string const &Name, bool const Isopen )
+        : ui_panel( Name, Isopen )
+    {
+        size_min = { 340, 240 };
+        size_max = { 560, 700 };
+    }
+
+    void update() override;
+    void render_contents() override;
 };

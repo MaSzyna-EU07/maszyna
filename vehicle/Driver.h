@@ -208,6 +208,7 @@ class TController {
     friend class scenario_panel;
     friend class debug_panel;
     friend class hud_panel;
+    friend class hud_speed_panel;
     friend class hud_signal_panel;
     friend class whois_event;
 
