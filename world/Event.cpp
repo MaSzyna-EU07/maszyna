@@ -1014,6 +1014,8 @@ whois_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
 void
 whois_event::run_() {
 
+    if( m_activator == nullptr ) { return; }
+
     for( auto &target : m_targets ) {
         auto *targetcell { static_cast<TMemCell *>( std::get<scene::basic_node *>( target ) ) };
         if( targetcell == nullptr ) { continue; }
