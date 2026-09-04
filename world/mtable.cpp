@@ -77,20 +77,13 @@ bool TTrainParameters::IsLastStop() const {
     return StationIndex >= StationCount;
 }
 
-std::string TTrainParameters::StationNameAhead( int Offset ) const
-{ // nazwa wpisu rozkladu Offset pozycji za aktualnym (bez pomijania przelotow)
+TMTableLine const &TTrainParameters::TimeTableEntryAhead( int Offset ) const
+{ // wpis rozkladu Offset pozycji za aktualnym (bez pomijania przelotow);
+  // poza zakresem 1..StationCount zwraca techniczny wpis zerowy
     int const idx { StationIndex + Offset };
     if( ( idx < 1 ) || ( idx > StationCount ) )
-        return "none";
-    return TimeTable[idx].StationName;
-}
-
-bool TTrainParameters::StationIsStopAhead( int Offset ) const
-{ // czy wpis Offset pozycji za aktualnym to zaplanowany postoj
-    int const idx { StationIndex + Offset };
-    if( ( idx < 1 ) || ( idx > StationCount ) )
-        return false;
-    return TimeTable[idx].Ah >= 0; //-1 to brak postoju
+        return TimeTable[0];
+    return TimeTable[idx];
 }
 
 

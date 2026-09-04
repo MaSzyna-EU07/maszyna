@@ -1034,14 +1034,12 @@ whois_event::run_() {
                 m_activator->Mechanik != nullptr && m_activator->Mechanik->primary() ?
                     m_activator->Mechanik :
                     m_activator->ctOwner ) };
-            auto const aheadname { (
+            auto const *entry { (
                 owner != nullptr ?
-                    owner->TrainTimetable().StationNameAhead( 1 ) :
-                    "none" ) };
-            auto const aheadstop { (
-                owner != nullptr && owner->TrainTimetable().StationIsStopAhead( 1 ) ?
-                    1 :
-                    0 ) };
+                    &owner->TrainTimetable().TimeTableEntryAhead( 1 ) :
+                    nullptr ) };
+            auto const aheadname { ( entry != nullptr ? entry->StationName : "none" ) };
+            auto const aheadstop { ( entry != nullptr && entry->Ah >= 0 ? 1 : 0 ) };
 
             targetcell->UpdateValues(
                 aheadname, // station after the next one
