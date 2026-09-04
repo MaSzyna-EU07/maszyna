@@ -78,6 +78,7 @@ class TTrain {
 
     friend class drivingaid_panel;
     friend class hud_panel;
+    friend class hud_signal_panel;
 
   public:
 // types
