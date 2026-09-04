@@ -1018,15 +1018,17 @@ whois_event::run_() {
         auto *targetcell { static_cast<TMemCell *>( std::get<scene::basic_node *>( target ) ) };
         if( targetcell == nullptr ) { continue; }
         // event effect code
-        // +64: station after the next one, unused, stop there or passthrough
+        // +48: station after the next one, unused, stop there or passthrough
         // +40: next station name, unused, stop at next station (duplicate of +0 2nd numeric value)
         // +32: vehicle name
         // +24: vehicle type, consist brake level, obstacle distance
         // +16: load type, load amount, max load amount
         // +8: destination, direction, engine power
         // +0: train name, station count, stop on next station
-        if( m_input.flags & flags::whois_ahead ) {
-            // +64
+        if( ( m_input.flags & ( flags::whois_name | flags::whois_load | flags::mode_alt ) )
+            == ( flags::whois_name | flags::whois_load ) ) {
+            // +48 (the whois_name | whois_load combination was unused; +56, same with mode_alt
+            // set, stays free for a future mode)
             // the timetable entry one past the next stop, and whether the train stops there
             auto const *owner { (
                 m_activator->Mechanik != nullptr && m_activator->Mechanik->primary() ?
