@@ -1014,7 +1014,12 @@ whois_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
 void
 whois_event::run_() {
 
-    if( m_activator == nullptr ) { return; }
+    if( m_activator == nullptr ) {
+        // no triggering vehicle to report on - most likely whois was launched from a
+        // scenery event chain rather than a track/isolation crossing
+        WriteLog( "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - no activator, event ignored" );
+        return;
+    }
 
     for( auto &target : m_targets ) {
         auto *targetcell { static_cast<TMemCell *>( std::get<scene::basic_node *>( target ) ) };
