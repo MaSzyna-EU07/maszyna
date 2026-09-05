@@ -82,8 +82,8 @@ public:
 	explicit hardware_manager( config const &Config );
 	~hardware_manager();
 
-	// called once per simulation frame from the input polling code
-	void update( double const Deltatime );
+	// called once per simulation frame from the input polling code; the time step is measured here
+	void update();
 
 	std::vector<link_report> const &reports() const { return m_reports; }
 	bool active() const { return false == m_links.empty(); }
@@ -102,6 +102,8 @@ private:
 	std::vector<std::unique_ptr<hardware_link>> m_links;
 	std::vector<link_report> m_reports;
 	state_snapshot m_snapshot;
+	std::chrono::steady_clock::time_point m_lastupdate;
+	bool m_updatestarted = false;
 	std::thread m_thread;
 	std::atomic<bool> m_quit { false };
 };

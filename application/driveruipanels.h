@@ -92,6 +92,9 @@ private:
 #ifdef WITH_UART
     void update_section_uart( std::vector<text_line> &Output );
 #endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+    void update_section_hardware( std::vector<text_line> &Output );
+#endif
     // section update helpers
     std::string update_vehicle_coupler( int const Side );
     std::string update_vehicle_brake() const;
@@ -116,7 +119,8 @@ private:
         m_eventqueuelines,
         m_powergridlines,
         m_rendererlines,
-        m_uartlines;
+        m_uartlines,
+        m_hardwarelines;
 
 	double last_time = std::numeric_limits<double>::quiet_NaN();
 

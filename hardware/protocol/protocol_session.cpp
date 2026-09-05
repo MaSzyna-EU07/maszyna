@@ -182,7 +182,7 @@ void protocol_session::send( message_type const Type, std::uint8_t const Flags, 
 	++m_diagnostics.tx_frames;
 	m_txrate.add();
 
-	if( true == m_config.debug_frames )
+	if( true == debug_flags.log_frames )
 	{
 		WriteLog( "hardware: tx " + std::string( to_string( Type ) ) + ", " + std::to_string( Payload.size() ) + " bytes" );
 	}
@@ -206,7 +206,7 @@ void protocol_session::send_nack( std::uint32_t const Transaction, message_type 
 	send( message_type::nack, packetflag_response | packetflag_error, writer );
 	++m_diagnostics.nacks;
 
-	if( true == m_config.debug )
+	if( true == debug_flags.log_messages )
 	{
 		WriteLog( "hardware: nack " + std::string( to_string( Type ) ) + ", " + std::string( to_string( Error ) ) );
 	}
@@ -318,7 +318,7 @@ void protocol_session::handle_packet( decoded_packet const &Packet )
 	m_lastreceivedsequence = Packet.header.sequence;
 	m_sequenceseen = true;
 
-	if( true == m_config.debug_frames )
+	if( true == debug_flags.log_frames )
 	{
 		WriteLog( "hardware: rx " + std::string( to_string( Packet.header.type ) ) + ", " + std::to_string( Packet.payload.size() ) + " bytes" );
 	}
@@ -366,7 +366,7 @@ void protocol_session::handle_packet( decoded_packet const &Packet )
 
 		case message_type::device_ready:
 			m_state = session_state::ready;
-			if( true == m_config.debug )
+			if( true == debug_flags.log_messages )
 			{
 				WriteLog( "hardware: device '" + m_devicename + "' is ready" );
 			}

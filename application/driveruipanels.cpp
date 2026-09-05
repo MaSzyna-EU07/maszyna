@@ -38,6 +38,10 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/uart.h"
 #endif
 
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+#include "hardware/hardware_manager.h"
+#endif
+
 void
 drivingaid_panel::update() {
 
@@ -544,6 +548,9 @@ void debug_panel::update()
 #ifdef WITH_UART
     m_uartlines.clear();
 #endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+    m_hardwarelines.clear();
+#endif
 
 	update_section_vehicle( m_vehiclelines );
 	update_section_engine( m_enginelines );
@@ -556,6 +563,9 @@ void debug_panel::update()
 	update_section_renderer( m_rendererlines );
 #ifdef WITH_UART
     update_section_uart(m_uartlines);
+#endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+    update_section_hardware(m_hardwarelines);
 #endif
 }
 
@@ -619,6 +629,18 @@ debug_panel::render() {
             ImGui::Combo("Port", &UartStatus.selected_port_index, avlports, ports_num);
             ImGui::Combo("Baud", &UartStatus.selected_baud_index, uart_baudrates_list, uart_baudrates_list_num);
             ImGui::Checkbox("Enabled", &UartStatus.enabled);
+        }
+#endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+        if( true == render_section( "Hardware Protocol v2", m_hardwarelines ) ) {
+            bool logmessages = hardware::debug_flags.log_messages;
+            if( ImGui::Checkbox( "Log protocol messages", &logmessages ) ) {
+                hardware::debug_flags.log_messages = logmessages;
+            }
+            bool logframes = hardware::debug_flags.log_frames;
+            if( ImGui::Checkbox( "Log every frame", &logframes ) ) {
+                hardware::debug_flags.log_frames = logframes;
+            }
         }
 #endif
         // toggles
@@ -1308,6 +1330,97 @@ debug_panel::update_section_uart( std::vector<text_line> &Output ) {
         ).c_str(),
         Global.UITextColor
     );
+}
+#endif
+
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+void
+debug_panel::update_section_hardware( std::vector<text_line> &Output ) {
+
+    auto const *manager = hardware::hardware_manager::instance();
+    if( ( manager == nullptr ) || ( false == manager->active() ) ) {
+        Output.emplace_back( "(no links configured, add an \"uart2 <port> <baud>\" entry to eu07.ini)", Global.UITextColor );
+        return;
+    }
+
+    for( auto const &report : manager->reports() ) {
+
+        auto const &protocol = report.protocol;
+
+        std::string textline =
+            ( report.device_name.empty() ? std::string( "(waiting for device)" ) : report.device_name )
+            + ( report.device_role.empty() ? "" : " [" + report.device_role + "]" )
+            + ( report.device_id.empty() ? "" : " id: " + report.device_id )
+            + ( report.firmware_version.empty() ? "" : " fw: " + report.firmware_version );
+
+        textline +=
+            "\n" + report.transport_kind + " " + report.endpoint
+            + "  " + hardware::to_string( report.state )
+            + " / " + hardware::to_string( report.session );
+
+        if( report.session_id != 0 ) {
+            textline +=
+                "\nprotocol v" + std::to_string( report.protocol_major ) + "." + std::to_string( report.protocol_minor )
+                + "  session " + std::to_string( report.session_id )
+                + "  frame " + std::to_string( report.frame_size ) + " b"
+                + "  handles " + std::to_string( report.handles )
+                + "  subscriptions " + std::to_string( report.subscriptions );
+        }
+
+        textline +=
+            "\nrx " + to_string( protocol.rx_rate, 0 ) + " pkt/s"
+            + "  tx " + to_string( protocol.tx_rate, 0 ) + " pkt/s"
+            + "  rtt " + to_string( protocol.round_trip_time_ms, 1 ) + " ms"
+            + "  last frame " + to_string( protocol.last_rx_age, 2 ) + " s ago";
+
+        textline +=
+            "\nframes rx " + std::to_string( protocol.rx_frames ) + " tx " + std::to_string( protocol.tx_frames )
+            + "  bytes rx " + std::to_string( report.transport.rx_bytes ) + " tx " + std::to_string( report.transport.tx_bytes );
+
+        textline +=
+            "\nprotocol errors: crc " + std::to_string( protocol.crc_errors )
+            + "  frame " + std::to_string( protocol.frame_errors )
+            + "  length " + std::to_string( protocol.length_errors )
+            + "  version " + std::to_string( protocol.version_errors )
+            + "  gaps " + std::to_string( protocol.sequence_gaps );
+
+        textline +=
+            "\nunknown: message " + std::to_string( protocol.unknown_messages )
+            + "  symbol " + std::to_string( protocol.unknown_symbols )
+            + "  handle " + std::to_string( protocol.unknown_handles )
+            + "  duplicates " + std::to_string( protocol.duplicate_commands )
+            + "  rate limited " + std::to_string( protocol.rate_limited );
+
+        textline +=
+            "\nack " + std::to_string( protocol.acks )
+            + "  nack " + std::to_string( protocol.nacks )
+            + "  state updates " + std::to_string( protocol.state_updates )
+            + "  commands " + std::to_string( protocol.commands_executed )
+            + "  controls " + std::to_string( protocol.controls_applied );
+
+        textline +=
+            "\nsession uptime " + to_string( protocol.connection_uptime, 0 ) + " s"
+            + "  transport errors " + std::to_string( report.transport.transport_errors )
+            + "  reconnects " + std::to_string( report.transport.reconnects );
+
+        if( false == report.transport.last_error.empty() ) {
+            textline += "\nlast transport error: " + report.transport.last_error;
+        }
+
+        if( true == report.device.available ) {
+            textline +=
+                "\ndevice: uptime " + std::to_string( report.device.uptime_ms / 1000 ) + " s"
+                + ", supply " + to_string( report.device.supply_voltage, 2 ) + " V"
+                + ", temperature " + to_string( report.device.temperature, 1 ) + " deg C"
+                + ", overflows rx " + std::to_string( report.device.rx_overflows ) + " tx " + std::to_string( report.device.tx_overflows )
+                + ", watchdog resets " + std::to_string( report.device.watchdog_resets );
+            if( false == report.device.firmware_build.empty() ) {
+                textline += ", build " + report.device.firmware_build;
+            }
+        }
+
+        Output.emplace_back( textline, Global.UITextColor );
+    }
 }
 #endif
 

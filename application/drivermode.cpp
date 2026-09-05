@@ -55,6 +55,13 @@ void driver_mode::drivermode_input::poll()
 		uart->poll();
 	}
 #endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+	if (hardware != nullptr)
+	{
+		// exchanges frames already gathered by the hardware worker thread, never touches the port itself
+		hardware->update();
+	}
+#endif
 #ifdef WITH_ZMQ
 	if (zmq != nullptr)
 	{
@@ -84,6 +91,12 @@ bool driver_mode::drivermode_input::init()
 	{
 		uart = std::make_unique<uart_input>();
 		uart->init();
+	}
+#endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+	if (true == Global.hardware_conf.enable)
+	{
+		hardware = std::make_unique<hardware::hardware_manager>(Global.hardware_conf);
 	}
 #endif
 #ifdef WITH_ZMQ

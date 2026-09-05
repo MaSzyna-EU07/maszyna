@@ -30,6 +30,8 @@ constexpr std::size_t read_chunk_size = 4096;
 
 } // anonymous namespace
 
+debug_switches debug_flags;
+
 hardware_manager *hardware_manager::s_instance = nullptr;
 
 hardware_link::hardware_link( std::unique_ptr<hardware_transport> Transport, config const &Config ) : m_transport( std::move( Transport ) ), m_config( Config ), m_session( *this, Config )
@@ -224,6 +226,9 @@ hardware_manager::hardware_manager( config const &Config ) : m_config( Config )
 	}
 #endif
 
+	debug_flags.log_messages = m_config.debug;
+	debug_flags.log_frames = m_config.debug_frames;
+
 	m_reports.resize( m_links.size() );
 
 	if( false == m_links.empty() )
@@ -259,18 +264,28 @@ void hardware_manager::worker()
 	}
 }
 
-void hardware_manager::update( double const Deltatime )
+void hardware_manager::update()
 {
 	if( true == m_links.empty() )
 	{
 		return;
 	}
 
+	// the input polling code doesn't carry a time step, so the sessions get their own
+	auto const now = std::chrono::steady_clock::now();
+	double deltatime = 0.0;
+	if( true == m_updatestarted )
+	{
+		deltatime = std::clamp( std::chrono::duration<double>( now - m_lastupdate ).count(), 0.0, 0.5 );
+	}
+	m_updatestarted = true;
+	m_lastupdate = now;
+
 	state_registry::capture( m_snapshot );
 
 	for( std::size_t index = 0; index < m_links.size(); ++index )
 	{
-		m_links[ index ]->update( Deltatime, m_snapshot );
+		m_links[ index ]->update( deltatime, m_snapshot );
 		m_reports[ index ] = m_links[ index ]->report();
 	}
 }

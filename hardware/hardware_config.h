@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <atomic>
 #include <string>
 #include <vector>
 
@@ -52,5 +53,14 @@ struct config
 	// additionally log every frame; very noisy
 	bool debug_frames = false;
 };
+
+// logging switches which can be flipped at run time from the simulator debug panel
+struct debug_switches
+{
+	std::atomic<bool> log_messages { false };
+	std::atomic<bool> log_frames { false };
+};
+
+extern debug_switches debug_flags;
 
 } // namespace hardware
