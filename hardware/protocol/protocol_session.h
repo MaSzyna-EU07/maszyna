@@ -49,6 +49,8 @@ public:
 	void reset();
 	// consumes one decoded frame
 	void handle_packet( decoded_packet const &Packet );
+	// publishes the state of the current simulation frame, before the received frames are processed
+	void set_snapshot( state_snapshot const &Snapshot ) { m_snapshot = Snapshot; }
 	// periodic work: heartbeats, subscription updates, timeouts
 	void update( double const Deltatime, state_snapshot const &Snapshot );
 	// copies the current condition into the debug report

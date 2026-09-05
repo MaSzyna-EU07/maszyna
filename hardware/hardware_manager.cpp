@@ -202,6 +202,9 @@ void hardware_link::update( double const Deltatime, state_snapshot const &Snapsh
 	m_lastframeerrors = counters;
 	m_session.add_frame_errors( delta );
 
+	// the session answers a subscription with an immediate snapshot, so it needs the current state first
+	m_session.set_snapshot( Snapshot );
+
 	for( auto const &packet : packets )
 	{
 		m_session.handle_packet( packet );
