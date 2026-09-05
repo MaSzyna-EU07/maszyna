@@ -43,6 +43,20 @@ void global_settings::LoadIniFile(std::string asFileName)
 	ConfigParse(parser);
 }
 
+// mirrors LoadIniFile: dumps the whole current configuration set back to the file.
+// the original engine only ever READ the main ini, so saving on clean exit is what
+// makes the HUD overlay state/positions persist
+void global_settings::SaveIniFile(std::string const &asFileName)
+{
+	std::ofstream stream(asFileName, std::ios::out | std::ios::trunc);
+	if (!stream.is_open())
+	{
+		WriteLog("settings: cannot save ini file: " + asFileName);
+		return;
+	}
+	export_as_text(stream);
+}
+
 template <typename T>
 static void ParseOne(cParser& parser, T& out, int tokenCount = 1, bool convert = false)
 {
@@ -839,6 +853,23 @@ bool global_settings::ConfigParseUI(cParser& Parser, const std::string& token)
     if (token == "gui.hud.speed_y")
     {
         ParseOne(Parser, gui_hud.speed_y, 1);
+        return true;
+    }
+
+    // compact position lines: gui.hud.pos <main|strip|speed> x,y,z
+    if (token == "gui.hud.pos")
+    {
+        std::string name;
+        std::string coords;
+        Parser.getTokens(2, false);
+        Parser >> name >> coords;
+        int x = -1, y = -1, z = 0;
+        if (std::sscanf(coords.c_str(), "%d,%d,%d", &x, &y, &z) >= 2)
+        {
+            if (name == "main") { gui_hud.panel_x = x; gui_hud.panel_y = y; }
+            else if (name == "strip") { gui_hud.sig_x = x; gui_hud.sig_y = y; }
+            else if (name == "speed") { gui_hud.speed_x = x; gui_hud.speed_y = y; }
+        }
         return true;
     }
 

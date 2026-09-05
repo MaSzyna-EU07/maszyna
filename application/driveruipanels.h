@@ -342,7 +342,7 @@ public:
         : ui_panel( Name, Isopen )
     {
         size_min = { 340, 240 };
-        size_max = { 560, 700 };
+        size_max = { 560, 1000000 };
     }
 
     void update() override;

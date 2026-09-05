@@ -382,6 +382,9 @@ struct global_settings {
 
 	// methods
 	void LoadIniFile( std::string asFileName );
+	// writes the full configuration back to the file (used on clean exit; the original
+	// engine only read the ini - export_as_text previously fed just the startup log)
+	void SaveIniFile( std::string const &asFileName );
 	void FinalizeConfig();
 	void ConfigParse(cParser &parser);
 	bool ConfigParseGeneral(cParser& Parser, const std::string& token);

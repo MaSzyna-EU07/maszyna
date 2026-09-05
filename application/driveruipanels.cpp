@@ -35,6 +35,10 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "widgets/vehicleparams.h"
 #include "utilities/U8.h"
+#include "utilities/utilities.h"
+#include <fstream>
+#include <sstream>
+#include <filesystem>
 
 #define DRIVER_HINT_CONTENT
 #include "application/driverhints.h"
@@ -1717,12 +1721,13 @@ static std::array<bool, ITEM_COUNT> g_custom_on;
 static void apply_visibility();
 static void sync_custom_items( std::string const &Csv );
 
-// legacy ini values (3-mode era): 0=Minimal 1=Standard 2=Custom 3=Off -> 0=Standard 1=Custom 2=Off
+// Current scheme is already 0=Standard 1=Custom 2=Off.
+// Only remap the pre-HUD 4-mode value 3 (= Off). Mapping 0/1/2 would break persistence
+// (saved Off=2 was wrongly restored as Custom).
 static int normalize_hud_mode( int const Old )
 {
-    if ( Old <= 1 ) return standard;
-    if ( Old == 2 ) return custom;
-    return off;
+    if ( Old == 3 ) return off;          // legacy 4-mode Off
+    return std::clamp<int>( Old, standard, off );
 }
 
 static int item_index( char const *Id )
@@ -1738,10 +1743,119 @@ int mode()
     return std::clamp<int>( g_mode, standard, off );
 }
 
+
+// Write HUD switch/layout keys back into eu07.ini (update existing lines or append).
+// Called from every setter so toggles survive the next launch without relying on a
+// full-config export path (the app does not rewrite eu07.ini on exit).
+static void save_hud_settings()
+{
+    namespace fs = std::filesystem;
+    fs::path iniPath = user_config_path( "eu07.ini" );
+    if ( iniPath.empty() )
+        iniPath = "eu07.ini";
+
+    // collect the keys we own
+    std::vector<std::pair<std::string, std::string>> keys;
+    keys.emplace_back( "gui.hud.enabled", Global.gui_hud.enabled ? "yes" : "no" );
+    keys.emplace_back( "gui.hud.mode", std::to_string( Global.gui_hud.mode ) );
+    keys.emplace_back( "gui.hud.panel", Global.gui_hud.panel ? "yes" : "no" );
+    keys.emplace_back( "gui.hud.strip", Global.gui_hud.strip ? "yes" : "no" );
+    keys.emplace_back( "gui.hud.speed_panel", Global.gui_hud.speed_panel ? "yes" : "no" );
+    keys.emplace_back( "gui.hud.custom", Global.gui_hud.custom_items );
+    // compact position lines (name is part of the value so one key token works for match)
+    {
+        std::ostringstream o;
+        o << "main " << Global.gui_hud.panel_x << "," << Global.gui_hud.panel_y << ",0";
+        keys.emplace_back( "gui.hud.pos", o.str() );
+    }
+    // NOTE: gui.hud.pos has 3 lines with different first value token; handled specially below
+
+    std::string content;
+    {
+        std::ifstream in( iniPath );
+        if ( in )
+            content.assign( std::istreambuf_iterator<char>( in ), std::istreambuf_iterator<char>() );
+    }
+
+    auto upsert_line = [&]( std::string const &key, std::string const &value, std::string const &match_prefix = {} )
+    {
+        // match_prefix: when set, the line must also start with "key match_prefix" (for pos lines)
+        std::string needle = key;
+        std::string newline = key + " " + value + "\n";
+        std::istringstream iss( content );
+        std::string out;
+        std::string line;
+        bool found = false;
+        while ( std::getline( iss, line ) )
+        {
+            // strip CR
+            if ( !line.empty() && line.back() == '\r' )
+                line.pop_back();
+            bool is_match = false;
+            if ( line.compare( 0, needle.size(), needle ) == 0
+              && ( line.size() == needle.size() || line[ needle.size() ] == ' ' || line[ needle.size() ] == '\t' ) )
+            {
+                if ( match_prefix.empty()
+                  || line.compare( needle.size() + 1, match_prefix.size(), match_prefix ) == 0 )
+                {
+                    is_match = true;
+                }
+            }
+            if ( is_match )
+            {
+                out += newline;
+                found = true;
+            }
+            else
+            {
+                out += line;
+                out += '\n';
+            }
+        }
+        if ( !found )
+            out += newline;
+        content = std::move( out );
+    };
+
+    upsert_line( "gui.hud.enabled", Global.gui_hud.enabled ? "yes" : "no" );
+    upsert_line( "gui.hud.mode", std::to_string( Global.gui_hud.mode ) );
+    upsert_line( "gui.hud.panel", Global.gui_hud.panel ? "yes" : "no" );
+    upsert_line( "gui.hud.strip", Global.gui_hud.strip ? "yes" : "no" );
+    upsert_line( "gui.hud.speed_panel", Global.gui_hud.speed_panel ? "yes" : "no" );
+    upsert_line( "gui.hud.custom", Global.gui_hud.custom_items );
+
+    {
+        std::ostringstream o;
+        o << "main " << Global.gui_hud.panel_x << "," << Global.gui_hud.panel_y << ",0";
+        upsert_line( "gui.hud.pos", o.str(), "main" );
+    }
+    {
+        std::ostringstream o;
+        o << "strip " << Global.gui_hud.sig_x << "," << Global.gui_hud.sig_y << ",0";
+        upsert_line( "gui.hud.pos", o.str(), "strip" );
+    }
+    {
+        std::ostringstream o;
+        o << "speed " << Global.gui_hud.speed_x << "," << Global.gui_hud.speed_y << ",0";
+        upsert_line( "gui.hud.pos", o.str(), "speed" );
+    }
+
+    // ensure parent dir exists (first-run user config folder)
+    if ( !iniPath.parent_path().empty() )
+    {
+        std::error_code ec;
+        fs::create_directories( iniPath.parent_path(), ec );
+    }
+    std::ofstream out( iniPath, std::ios::trunc );
+    if ( out )
+        out << content;
+}
+
 void set_mode( int const Mode )
 {
     g_mode = std::clamp<int>( Mode, standard, off );
     Global.gui_hud.mode = g_mode; // persisted in eu07.ini
+    Global.gui_hud.mode_saved = true; // honour this choice on next start
     // the Off mode hides the overlay; any other mode shows it again
     set_visible( g_mode != off );
     // entering Custom mode opens the customisation window (it can be closed with X afterwards);
@@ -1749,6 +1863,7 @@ void set_mode( int const Mode )
     if ( g_customwindow != nullptr )
         g_customwindow->is_open = ( g_mode == custom );
     g_toast = 1.5f;
+    save_hud_settings();
 }
 
 void set_custom_window( ui_panel *Panel )
@@ -1785,13 +1900,17 @@ bool strip_group()
 void set_panel_group( bool const On )
 {
     g_panelon = On;
+    Global.gui_hud.panel = On;
     apply_visibility();
+    save_hud_settings();
 }
 
 void set_strip_group( bool const On )
 {
     g_stripon = On;
+    Global.gui_hud.strip = On;
     apply_visibility();
+    save_hud_settings();
 }
 
 bool speed_group()
@@ -1802,7 +1921,9 @@ bool speed_group()
 void set_speed_group( bool const On )
 {
     g_speedon = On;
+    Global.gui_hud.speed_panel = On;
     apply_visibility();
+    save_hud_settings();
 }
 
 float toast()
@@ -1854,6 +1975,7 @@ void set_custom_item( char const *Id, bool const Checked )
             csv += items[ j ].id;
         }
     Global.gui_hud.custom_items = csv;
+    save_hud_settings();
 }
 
 bool item_visible( char const *Id )
@@ -1902,9 +2024,15 @@ int main_panel_height()
 
 static void sync_custom_items( std::string const &Csv )
 {
-    // default state = defaults; then apply the persisted csv list (ids of ON items)
+    // empty CSV = use code defaults; non-empty = exact set of ON items (unchecked defaults stay off)
+    if ( Csv.empty() )
+    {
+        for ( int i = 0; i < ITEM_COUNT; ++i )
+            g_custom_on[ i ] = items[ i ].default_on;
+        return;
+    }
     for ( int i = 0; i < ITEM_COUNT; ++i )
-        g_custom_on[ i ] = items[ i ].default_on;
+        g_custom_on[ i ] = false;
     for ( auto const &idstr : Split( Csv, ',' ) )
     {
         int const i { item_index( idstr.c_str() ) };
@@ -1979,18 +2107,21 @@ void set_panel_pos( int const X, int const Y )
     // keep the free-position overrides in the common settings (no separate config file)
     Global.gui_hud.panel_x = X;
     Global.gui_hud.panel_y = Y;
+    save_hud_settings();
 }
 
 void set_signal_pos( int const X, int const Y )
 {
     Global.gui_hud.sig_x = X;
     Global.gui_hud.sig_y = Y;
+    save_hud_settings();
 }
 
 void set_speed_pos( int const X, int const Y )
 {
     Global.gui_hud.speed_x = X;
     Global.gui_hud.speed_y = Y;
+    save_hud_settings();
 }
 
 }
@@ -2387,16 +2518,19 @@ hud_panel::render_contents()
         }
     }
     // --- notch / controller row (flows right after the instrument bars) --------
+    // geometry MUST match draw_bar: label at x0, bar at x0+70, value at x0+70+barW+10
     float nstripy { barY };
-    float const sx0 { winpos.x + cx0 + 78.0f };
+    float const x0 { winpos.x + cx0 + 8.0f };
+    float const sx0 { x0 + 70.0f };                 // bar start (same as data bars)
+    float const valx { x0 + 70.0f + barW + 10.0f };  // value column (same as data bars)
     float const sw { barW };
     char notchvalue[ 64 ]; // shared by the notch strip and the shunt strip below
     if ( hudcfg::item_visible( "notch" ) )
     {
-    dl->AddText( ui_layer::font_default, 15.0f, ImVec2( winpos.x + 8.0f, nstripy ), IM_COL32( 255, 255, 255, 190 ), STR_C("Notch") );
+    dl->AddText( ui_layer::font_default, 15.0f, ImVec2( x0, nstripy ), IM_COL32( 255, 255, 255, 190 ), STR_C("Notch") );
     // value text: position + zone name, e.g. "9/16 并联"
     std::snprintf( notchvalue, sizeof( notchvalue ), "%s%s%s", notchtext.c_str(), notchtext.empty() ? "" : " ", zone );
-    dl->AddText( ui_layer::font_default, 15.0f, ImVec2( sx0 + sw + 10.0f, nstripy ), IM_COL32( 255, 255, 255, 240 ), notchvalue );
+    dl->AddText( ui_layer::font_default, 15.0f, ImVec2( valx, nstripy ), IM_COL32( 255, 255, 255, 240 ), notchvalue );
     dl->AddRectFilled( ImVec2( sx0, nstripy + 20.0f ), ImVec2( sx0 + sw, nstripy + 30.0f ), IM_COL32( 255, 255, 255, 30 ), 4.0f );
     if ( eim_throttle )
     {
@@ -2433,8 +2567,8 @@ hud_panel::render_contents()
         float const dbno { mover->DynamicBrakeCtrlPosNo > 0 ? static_cast<float>( mover->DynamicBrakeCtrlPosNo ) : 10.0f };
         float const dbfrac { static_cast<float>( mover->DynamicBrakeCtrlPos ) };
         std::snprintf( dbval, sizeof( dbval ), "%.0f/%.0f", std::floor( dbfrac * dbno + 0.5f ), dbno );
-        dl->AddText( ui_layer::font_default, 15.0f, ImVec2( winpos.x + 8.0f, nstripy2 ), IM_COL32( 255, 255, 255, 190 ), STR_C("Dynamic brake") );
-        dl->AddText( ui_layer::font_default, 15.0f, ImVec2( sx0 + sw + 10.0f, nstripy2 ), IM_COL32( 255, 255, 255, 240 ), dbval );
+        dl->AddText( ui_layer::font_default, 15.0f, ImVec2( x0, nstripy2 ), IM_COL32( 255, 255, 255, 190 ), STR_C("Dynamic brake") );
+        dl->AddText( ui_layer::font_default, 15.0f, ImVec2( valx, nstripy2 ), IM_COL32( 255, 255, 255, 240 ), dbval );
         dl->AddRectFilled( ImVec2( sx0, nstripy2 + 20.0f ), ImVec2( sx0 + sw, nstripy2 + 30.0f ), IM_COL32( 255, 255, 255, 30 ), 4.0f );
         if ( dbfrac > 0.005f )
             dl->AddRectFilled( ImVec2( sx0, nstripy2 + 20.0f ), ImVec2( sx0 + sw * dbfrac, nstripy2 + 30.0f ), IM_COL32( 110, 220, 250, 230 ), 4.0f );
@@ -2445,9 +2579,9 @@ hud_panel::render_contents()
     if ( has_shunt && hudcfg::item_visible( "shunt" ) )
     {
         float const shfrac { std::clamp( static_cast<float>( ctrlv->ScndCtrlPos ) / ctrlv->ScndCtrlPosNo, 0.0f, 1.0f ) };
-        dl->AddText( ui_layer::font_default, 15.0f, ImVec2( winpos.x + 8.0f, nstripy2 ), IM_COL32( 255, 255, 255, 190 ), STR_C("Shunt") );
+        dl->AddText( ui_layer::font_default, 15.0f, ImVec2( x0, nstripy2 ), IM_COL32( 255, 255, 255, 190 ), STR_C("Shunt") );
         std::snprintf( notchvalue, sizeof( notchvalue ), "%d/%d", ctrlv->ScndCtrlPos, ctrlv->ScndCtrlPosNo );
-        dl->AddText( ui_layer::font_default, 15.0f, ImVec2( sx0 + sw + 10.0f, nstripy2 ), IM_COL32( 255, 255, 255, 240 ), notchvalue );
+        dl->AddText( ui_layer::font_default, 15.0f, ImVec2( valx, nstripy2 ), IM_COL32( 255, 255, 255, 240 ), notchvalue );
         dl->AddRectFilled( ImVec2( sx0, nstripy2 + 20.0f ), ImVec2( sx0 + sw, nstripy2 + 30.0f ), IM_COL32( 255, 255, 255, 30 ), 4.0f );
         if ( shfrac > 0.005f )
             dl->AddRectFilled( ImVec2( sx0, nstripy2 + 20.0f ), ImVec2( sx0 + sw * shfrac, nstripy2 + 30.0f ), IM_COL32( 180, 130, 255, 230 ), 4.0f );
