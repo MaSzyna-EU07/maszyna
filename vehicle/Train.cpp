@@ -953,7 +953,7 @@ TTrain::state_t TTrain::get_state() const
 	    static_cast<float>(mvPantographUnit->PantPress),
 	    fHVoltage,
 	    {fHCurrent[mvControlled->TrainType & dt_EZT ? 0 : 1], fHCurrent[2], fHCurrent[3]},
-		mvOccupied->EngineVoltage,
+		static_cast<uint32_t>(mvOccupied->EngineVoltage),
 	    ggLVoltage.GetValue(),
 	    mvOccupied->DistCounter,
 	    static_cast<std::uint8_t>(RadioChannel()),
