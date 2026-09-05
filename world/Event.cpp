@@ -2195,7 +2195,13 @@ message_event::export_as_text_( std::ostream &Output ) const {
 basic_event *
 make_event( cParser &Input, scene::scratch_data &Scratchpad ) {
 
-    auto const name = ToLower( Input.getToken<std::string>() );
+    // getToken() already lowercases ASCII letters via the parser's toLowerChar(),
+    // which deliberately leaves bytes >= 0x80 untouched. The extra ToLower() here
+    // ran std::tolower() over every byte, so under a non-"C" global locale it
+    // remapped cp1250 uppercase accented letters (e.g. 0xAF -> 0xBF) - producing a
+    // registered name that no lookup site (Track::AssignEvents, child-event and
+    // launcher resolution) could match, since those normalize with the parser only.
+    auto const name = Input.getToken<std::string>();
     auto const type = Input.getToken<std::string>();
 
     basic_event *event { nullptr };
