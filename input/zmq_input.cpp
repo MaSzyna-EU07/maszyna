@@ -71,9 +71,9 @@ void zmq_input::poll()
             for (size_t i = 3; i < multipart.size(); i++) {
                 std::string chan_name((char*)multipart[i].data(), multipart[i].size());
 
-                auto chan_it = output_fields_map.find(chan_name);
-                if (chan_it != output_fields_map.end())
-                    peer_it->second.sopi_list.push_back(chan_it->second);
+                auto const *descriptor = hardware::state_registry::instance().find(chan_name);
+                if (descriptor != nullptr)
+                    peer_it->second.sopi_list.push_back(descriptor);
             }
         }
         if (multipart[1] == zmq::message_t("REG_SIPO", 8)) {
@@ -162,6 +162,9 @@ void zmq_input::poll()
         }
     }
 
+    hardware::state_snapshot snapshot;
+    hardware::state_registry::capture(snapshot);
+
     auto now = std::chrono::high_resolution_clock::now();
 
     for (auto peer = peers.begin(); peer != peers.end();) {
@@ -183,130 +186,12 @@ void zmq_input::poll()
         msg.addmem(peerbuf, sizeof(peerbuf));
         msg.addstr("SOPI_DATA");
 
-        for (output_fields field : peer->second.sopi_list)
-            msg.add(pack_field(field));
+        for (auto const *field : peer->second.sopi_list)
+            msg.add(pack_float(static_cast<float>(field->getter(snapshot).numeric)));
 
         if (!msg.send(*sock, ZMQ_DONTWAIT))
             peer = peers.erase(peer);
         else
             ++peer;
     }
-}
-
-std::unordered_map<std::string, zmq_input::output_fields> zmq_input::output_fields_map = {
-    { "shp", output_fields::shp },
-    { "alerter", output_fields::alerter },
-    { "radio_stop", output_fields::radio_stop },
-    { "motor_resistors", output_fields::motor_resistors },
-    { "line_breaker", output_fields::line_breaker },
-    { "motor_overload", output_fields::motor_overload },
-    { "motor_connectors", output_fields::motor_connectors },
-    { "wheelslip", output_fields::wheelslip },
-    { "converter_overload", output_fields::converter_overload },
-    { "converter_off", output_fields::converter_off },
-    { "compressor_overload", output_fields::compressor_overload },
-    { "ventilator_overload", output_fields::ventilator_overload },
-    { "motor_overload_threshold", output_fields::motor_overload_threshold },
-    { "train_heating", output_fields::train_heating },
-    { "cab", output_fields::cab },
-    { "recorder_braking", output_fields::recorder_braking },
-    { "recorder_power", output_fields::recorder_power },
-    { "alerter_sound",output_fields:: alerter_sound },
-    { "coupled_hv_voltage_relays", output_fields::coupled_hv_voltage_relays },
-    { "velocity", output_fields::velocity },
-    { "reservoir_pressure", output_fields::reservoir_pressure },
-    { "pipe_pressure", output_fields::pipe_pressure },
-    { "brake_pressure", output_fields::brake_pressure },
-    { "hv_voltage", output_fields::hv_voltage },
-    { "hv_current_1", output_fields::hv_current_1 },
-    { "hv_current_2", output_fields::hv_current_2 },
-    { "hv_current_3", output_fields::hv_current_3 },
-    { "lv_voltage", output_fields::lv_voltage },
-    { "distance", output_fields::distance },
-    { "radio_channel", output_fields::radio_channel },
-    { "springbrake_active", output_fields::springbrake_active },
-    { "time_month_of_era", output_fields::time_month_of_era },
-    { "time_minute_of_month", output_fields::time_minute_of_month },
-    { "time_millisecond_of_day", output_fields::time_millisecond_of_day }
-};
-
-zmq::message_t zmq_input::pack_field(zmq_input::output_fields f) {
-    const SYSTEMTIME time = simulation::Time.data();
-
-    if (f == output_fields::time_month_of_era)
-        return pack_float((time.wYear - 1) * 12 + time.wMonth - 1);
-    if (f == output_fields::time_minute_of_month)
-        return pack_float((time.wDay - 1) * 1440 + time.wHour * 60 + time.wMinute);
-    if (f == output_fields::time_millisecond_of_day)
-        return pack_float(time.wSecond * 1000 + time.wMilliseconds);
-
-    TTrain *train = simulation::Train;
-    if (!train)
-        return pack_float(0.0f);
-    const TTrain::state_t state = train->get_state();
-
-    if (f == output_fields::shp)
-        return pack_float(state.shp);
-    if (f == output_fields::alerter)
-        return pack_float(state.alerter);
-    if (f == output_fields::radio_stop)
-        return pack_float(state.radio_stop);
-    if (f == output_fields::motor_resistors)
-        return pack_float(state.motor_resistors);
-    if (f == output_fields::line_breaker)
-        return pack_float(state.line_breaker);
-    if (f == output_fields::motor_overload)
-        return pack_float(state.motor_overload);
-    if (f == output_fields::motor_connectors)
-        return pack_float(state.motor_connectors);
-    if (f == output_fields::wheelslip)
-        return pack_float(state.wheelslip);
-    if (f == output_fields::converter_overload)
-        return pack_float(state.converter_overload);
-    if (f == output_fields::converter_off)
-        return pack_float(state.converter_off);
-    if (f == output_fields::compressor_overload)
-        return pack_float(state.compressor_overload);
-    if (f == output_fields::ventilator_overload)
-        return pack_float(state.ventilator_overload);
-    if (f == output_fields::motor_overload_threshold)
-        return pack_float(state.motor_overload_threshold);
-    if (f == output_fields::train_heating)
-        return pack_float(state.train_heating);
-    if (f == output_fields::cab)
-        return pack_float(state.cab);
-    if (f == output_fields::recorder_braking)
-        return pack_float(state.recorder_braking);
-    if (f == output_fields::recorder_power)
-        return pack_float(state.recorder_power);
-    if (f == output_fields::alerter_sound)
-        return pack_float(state.alerter_sound);
-    if (f == output_fields::coupled_hv_voltage_relays)
-        return pack_float(state.coupled_hv_voltage_relays);
-    if (f == output_fields::velocity)
-        return pack_float(state.velocity);
-    if (f == output_fields::reservoir_pressure)
-        return pack_float(state.reservoir_pressure);
-    if (f == output_fields::pipe_pressure)
-        return pack_float(state.pipe_pressure);
-    if (f == output_fields::brake_pressure)
-        return pack_float(state.brake_pressure);
-    if (f == output_fields::hv_voltage)
-        return pack_float(state.hv_voltage);
-    if (f == output_fields::hv_current_1)
-        return pack_float(state.hv_current[0]);
-    if (f == output_fields::hv_current_2)
-        return pack_float(state.hv_current[1]);
-    if (f == output_fields::hv_current_3)
-        return pack_float(state.hv_current[2]);
-    if (f == output_fields::lv_voltage)
-        return pack_float(state.lv_voltage);
-    if (f == output_fields::distance)
-        return pack_float(state.distance);
-    if (f == output_fields::radio_channel)
-        return pack_float(state.radio_channel);
-    if (f == output_fields::springbrake_active)
-        return pack_float(state.springbrake_active);
-
-    return pack_float(0.0f);
 }

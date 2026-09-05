@@ -268,6 +268,11 @@ if (WITH_UART)
 	set(SOURCES ${SOURCES} "utilities/uart.cpp")
 endif()
 
+if (WITH_HARDWARE_PROTOCOL_V2 OR WITH_ZMQ)
+	# shared TrainState registry, used both by the hardware protocol and by the zmq interface
+	set(SOURCES ${SOURCES} "hardware/registry/state_registry.cpp")
+endif()
+
 if (WITH_HARDWARE_PROTOCOL_V2)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_HARDWARE_PROTOCOL_V2")
 	set(SOURCES ${SOURCES}
@@ -278,7 +283,6 @@ if (WITH_HARDWARE_PROTOCOL_V2)
 		"hardware/protocol/protocol_session.cpp"
 		"hardware/registry/command_registry.cpp"
 		"hardware/registry/hardware_symbol_registry.cpp"
-		"hardware/registry/state_registry.cpp"
 		"hardware/subscriptions/subscription_manager.cpp")
 	if (WITH_UART)
 		# the serial transport is the only one which needs libserialport

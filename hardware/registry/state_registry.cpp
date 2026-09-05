@@ -12,7 +12,6 @@ http://mozilla.org/MPL/2.0/.
 
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
-#include "utilities/Globals.h"
 
 namespace hardware
 {
@@ -29,8 +28,10 @@ state_value make_value( state_snapshot const &Snapshot, value_type const Type, d
 	    false == Snapshot.available ? value_quality::unavailable :
 	    false == Applicable ? value_quality::not_applicable :
 	    value_quality::valid );
-	if( result.quality != value_quality::valid )
+	if( result.quality == value_quality::unavailable )
 	{
+		// there's nothing to report; a value which merely doesn't apply keeps whatever the
+		// simulator holds, the quality flag is what tells the device not to trust it
 		result.numeric = 0.0;
 	}
 	return result;
@@ -115,7 +116,7 @@ state_registry::state_registry()
 	add( "radio_channel", value_type::uint8, "", 0.0, 15.0, []( state_snapshot const &s ) { return make_value( s, value_type::uint8, s.train.radio_channel ); } );
 
 	// measurements, in engineering units
-	add( "velocity", value_type::float32, "km/h", 0.0, 400.0, []( state_snapshot const &s ) { return make_value( s, value_type::float32, Global.iPause ? 0.0 : s.train.velocity ); } );
+	add( "velocity", value_type::float32, "km/h", 0.0, 400.0, []( state_snapshot const &s ) { return make_value( s, value_type::float32, s.train.velocity ); } );
 	add( "reservoir_pressure", value_type::float32, "bar", 0.0, 16.0, []( state_snapshot const &s ) { return make_value( s, value_type::float32, s.train.reservoir_pressure ); } );
 	add( "pipe_pressure", value_type::float32, "bar", 0.0, 16.0, []( state_snapshot const &s ) { return make_value( s, value_type::float32, s.train.pipe_pressure ); } );
 	add( "brake_pressure", value_type::float32, "bar", 0.0, 16.0, []( state_snapshot const &s ) { return make_value( s, value_type::float32, s.train.brake_pressure ); } );
