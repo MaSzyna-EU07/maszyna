@@ -24,7 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/lightarray.h"
 #include "rendering/particles.h"
 #include "scene/scene.h"
-#include "vehicle/Train.h"
+#include "../vehicle/train/Train.h"
 #include "application/application.h"
 #include "utilities/Logs.h"
 #include "vehicle/Driver.h"

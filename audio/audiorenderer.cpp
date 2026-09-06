@@ -15,7 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Camera.h"
 #include "utilities/Logs.h"
 #include "simulation/simulation.h"
-#include "vehicle/Train.h"
+#include "../vehicle/train/Train.h"
 
 namespace audio {
 

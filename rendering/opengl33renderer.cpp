@@ -12,7 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/color.h"
 #include "utilities/Globals.h"
 #include "utilities/Timer.h"
-#include "vehicle/Train.h"
+#include "../vehicle/train/Train.h"
 #include "vehicle/Camera.h"
 #include "simulation/simulation.h"
 #include "utilities/Logs.h"

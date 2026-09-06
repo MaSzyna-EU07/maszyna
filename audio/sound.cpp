@@ -13,7 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/parser.h"
 #include "utilities/Globals.h"
 #include "vehicle/Camera.h"
-#include "vehicle/Train.h"
+#include "../vehicle/train/Train.h"
 #include "vehicle/DynObj.h"
 #include "simulation/simulation.h"
 #include "audio/audiorenderer_extra.h"
