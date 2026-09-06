@@ -54,5 +54,8 @@ namespace network
 		// the local scenario is loaded; a client asks the server for a snapshot of the
 		// world as it stands right now
 		void notify_scenario_loaded();
+
+		// our world drifted away from the authoritative one; ask to be corrected
+		void request_resync(uint64_t tick, uint64_t state_hash);
 	};
 }

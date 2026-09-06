@@ -23,6 +23,7 @@ struct message
 		CREW_UPDATE,
 		CLIENT_READY,
 		SNAPSHOT,
+		REQUEST_RESYNC,
 		TYPE_MAX
 	};
 
@@ -44,6 +45,10 @@ struct client_hello : public message
 	uint32_t start_packet;
 	// build identification of the connecting simulator, informational only
 	std::string app_version;
+	// identity handed out by this server on an earlier connection, echoed back so that a
+	// player who dropped out gets their seat and their peer id back. it is a reconnect
+	// token, not a credential - it says "this is the same session", nothing more
+	uint64_t session_token{ 0 };
 };
 
 // sent by the server instead of SERVER_HELLO when the client cannot join;
@@ -70,6 +75,8 @@ struct server_hello : public message
 	std::string app_version;
 	// identity assigned to the joining peer for the rest of the session
 	uint32_t peer_id{ PEER_NONE };
+	// hand this back on a later connection to be recognised as the same participant
+	uint64_t session_token{ 0 };
 
 	virtual void serialize(std::ostream &stream) const override;
 	virtual void deserialize(std::istream &stream) override;
@@ -106,6 +113,19 @@ struct snapshot : public message
 
 	uint64_t tick{ 0 };
 	std::string blob;
+
+	virtual void serialize(std::ostream &stream) const override;
+	virtual void deserialize(std::istream &stream) override;
+};
+
+// a peer telling the server its world has drifted too far to carry on, and asking to be
+// put back in line
+struct request_resync : public message
+{
+	request_resync() : message(REQUEST_RESYNC) {}
+
+	uint64_t tick{ 0 };
+	uint64_t state_hash{ 0 };
 
 	virtual void serialize(std::ostream &stream) const override;
 	virtual void deserialize(std::istream &stream) override;

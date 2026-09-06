@@ -125,6 +125,8 @@ private:
     bool m_screenshot_queued = false;
     // consecutive authoritative steps whose state digest did not match ours
     std::uint64_t m_statemismatches { 0 };
+    // tick at which we last asked the server to put us back in line
+    std::uint64_t m_lastresynctick { 0 };
 
     modeptr_array m_modes { nullptr }; // collection of available application behaviour modes
     mode_stack m_modestack; // current behaviour mode

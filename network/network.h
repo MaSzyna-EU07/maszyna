@@ -124,6 +124,8 @@ namespace network
 		void send_commands(command_queue::commands_map commands);
 		// tells the server the scenario is loaded and a snapshot can be applied
 		void send_ready();
+		// our world has drifted too far to carry on; ask to be put back in line
+		void send_resync_request(uint64_t tick, uint64_t state_hash);
 		// lobby requests; the server is the one that decides
 		void send_claim(NetworkEntityId entity_id);
 		void send_leave(NetworkEntityId entity_id);

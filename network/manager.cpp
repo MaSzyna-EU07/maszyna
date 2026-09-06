@@ -88,6 +88,7 @@ void network::server_manager::publish_vehicle_list()
 
 void network::server_manager::update_crews()
 {
+	Crews.expire_absences();
 	Crews.reconcile();
 
 	if (--crew_publish_countdown <= 0) {
@@ -155,6 +156,12 @@ void network::manager::notify_scenario_loaded()
 {
 	if (client)
 		client->send_ready();
+}
+
+void network::manager::request_resync(uint64_t tick, uint64_t state_hash)
+{
+	if (client)
+		client->send_resync_request(tick, state_hash);
 }
 
 void network::manager::update()

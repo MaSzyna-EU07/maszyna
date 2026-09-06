@@ -368,6 +368,8 @@ struct global_settings {
 	uint64_t simulation_tick = 0;
 	// set once a joining client has taken over the state of the world from the server
 	bool network_snapshot_applied = false;
+	// identity handed out by the server, presented again when reconnecting
+	uint64_t network_session_token = 0;
 
 	std::unordered_map<int, std::string> trainset_overrides;
 

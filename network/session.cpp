@@ -184,6 +184,73 @@ bool crew_registry::leave(PeerId Peer, NetworkEntityId Id)
 	return true;
 }
 
+PeerId resolve_peer_identity(uint64_t &Token)
+{
+	static std::unordered_map<uint64_t, PeerId> known;
+
+	if (Token != 0)
+	{
+		auto const lookup = known.find(Token);
+		if (lookup != known.end())
+		{
+			WriteLog("net: peer " + std::to_string(lookup->second) + " recognised, reconnecting", logtype::net);
+			Crews.resume_peer(lookup->second);
+			return lookup->second;
+		}
+	}
+
+	auto const peer = allocate_peer_id();
+
+	// only has to be hard to collide with, not hard to guess: it decides who is who
+	// across a dropped connection, nothing more
+	Token = ((uint64_t)Global.local_random_engine() << 32) ^ (uint64_t)Global.local_random_engine() ^ ((uint64_t)peer << 8);
+	if (Token == 0)
+		Token = peer;
+
+	known.emplace(Token, peer);
+
+	return peer;
+}
+
+void crew_registry::suspend_peer(PeerId Peer)
+{
+	if (vehicle_of(Peer) == ENTITY_NONE)
+		return;
+
+	m_absent[Peer] = Timer::GetTime() + RECONNECT_GRACE_SECONDS;
+
+	WriteLog("net: peer " + std::to_string(Peer) + " lost its connection, holding its seat for " + std::to_string((int)RECONNECT_GRACE_SECONDS) + " s", logtype::net);
+}
+
+void crew_registry::resume_peer(PeerId Peer)
+{
+	m_absent.erase(Peer);
+}
+
+bool crew_registry::is_absent(PeerId Peer) const
+{
+	return m_absent.find(Peer) != m_absent.end();
+}
+
+void crew_registry::expire_absences()
+{
+	auto const now = Timer::GetTime();
+
+	for (auto it = m_absent.begin(); it != m_absent.end();)
+	{
+		if (now < it->second)
+		{
+			++it;
+			continue;
+		}
+
+		WriteLog("net: peer " + std::to_string(it->first) + " did not come back, giving up its seat", logtype::net);
+		auto const peer = it->first;
+		it = m_absent.erase(it);
+		drop_peer(peer);
+	}
+}
+
 void crew_registry::drop_peer(PeerId Peer)
 {
 	for (auto &pair : m_vehicles)

@@ -53,6 +53,7 @@ void network::connection::connected()
 		msg.version = EU07_NETWORK_VERSION;
 		msg.start_packet = packet_counter;
 		msg.app_version = Global.asVersion;
+		msg.session_token = Global.network_session_token;
 		send_message(msg);
 	}
 }
@@ -93,9 +94,10 @@ void network::server::prune_clients()
 		if ((*it)->state == connection::DEAD) {
 			if ((*it)->peer_id != PEER_NONE) {
 				WriteLog("net: peer " + std::to_string((*it)->peer_id) + " disconnected", logtype::net);
-				// a vehicle keeps running for whoever is left on board; it only falls back
-				// to the AI when the crew becomes empty, which Crews decides on its own
-				Crews.drop_peer((*it)->peer_id);
+				// the seat is held for a while in case the peer comes straight back. a
+				// vehicle keeps running for whoever is left on board either way; it only
+				// falls back to the AI once the crew really is empty
+				Crews.suspend_peer((*it)->peer_id);
 			}
 			it = clients.erase(it);
 			continue;
@@ -169,7 +171,8 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
         reply.config = 0; // TODO: pass bitfield with state of relevant setting switches
         reply.scenario = Global.SceneryFile;
 		reply.app_version = Global.asVersion;
-		reply.peer_id = allocate_peer_id();
+		reply.session_token = cmd.session_token;
+		reply.peer_id = resolve_peer_identity(reply.session_token);
 		conn->peer_id = reply.peer_id;
 		// the peer now goes and loads the scenario. it gets the state of the world as a
 		// snapshot when it reports back, instead of replaying the session frame by frame
@@ -195,6 +198,11 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 			return;
 		}
 
+		// the roster first, so that the crew section of the snapshot resolves to names
+		vehicle_list roster;
+		roster.vehicles = Entities.entries();
+		conn->send_message(roster);
+
 		snapshot reply;
 		reply.tick = Global.simulation_tick;
 		reply.blob = take_snapshot();
@@ -208,6 +216,17 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 
 		// and it still has to learn who is where
 		Crews.mark_all_pending();
+	}
+	else if (msg.type == message::REQUEST_RESYNC) {
+		const auto& cmd = dynamic_cast<const request_resync&>(msg);
+
+		WriteLog("net: resync requested by peer " + std::to_string(conn->peer_id) + " at tick "
+		         + std::to_string(cmd.tick) + " (its digest " + std::to_string(cmd.state_hash) + ")", logtype::net);
+
+		snapshot reply;
+		reply.tick = Global.simulation_tick;
+		reply.blob = take_snapshot();
+		conn->send_message(reply);
 	}
 	else if (msg.type == message::CLAIM_VEHICLE) {
 		const auto& cmd = dynamic_cast<const claim_vehicle&>(msg);
@@ -355,6 +374,17 @@ void network::client::send_ready()
 	WriteLog("net: scenario loaded, asking the server for a snapshot", logtype::net);
 }
 
+void network::client::send_resync_request(uint64_t tick, uint64_t state_hash)
+{
+	if (!conn || conn->state != connection::ACTIVE)
+		return;
+
+	request_resync msg;
+	msg.tick = tick;
+	msg.state_hash = state_hash;
+	conn->send_message(msg);
+}
+
 void network::client::send_claim(NetworkEntityId entity_id)
 {
 	if (!conn || conn->state != connection::ACTIVE)
@@ -419,6 +449,11 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 			WriteLog("net: assigned peer id " + std::to_string(cmd.peer_id), logtype::net);
 		}
 
+		if (cmd.session_token != 0) {
+			// kept for the next connection, so that a dropout does not cost us our seat
+			Global.network_session_token = cmd.session_token;
+		}
+
 		Global.network_status.clear();
 
 		WriteLog("net: accept received", logtype::net);
@@ -438,6 +473,15 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 
 		if (apply_snapshot(cmd.blob)) {
 			Global.network_snapshot_applied = true;
+
+			// the roster may say we are on a crew already - after a reconnect, or because
+			// the claim was granted while we were still loading. walk into that cab
+			auto const own = Crews.vehicle_of(Global.network_peer_id);
+			if (own != ENTITY_NONE) {
+				auto const name = Entities.name_of(own);
+				if (!name.empty())
+					Global.network_pending_vehicle = name;
+			}
 		}
 		else {
 			ErrorLog("net: could not apply the snapshot handed to us", logtype::net);

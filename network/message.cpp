@@ -7,6 +7,7 @@ void network::client_hello::serialize(std::ostream &stream) const
 	sn_utils::ls_int32(stream, version);
 	sn_utils::ls_uint32(stream, start_packet);
 	sn_utils::s_str(stream, app_version);
+	sn_utils::ls_uint64(stream, session_token);
 }
 
 void network::client_hello::deserialize(std::istream &stream)
@@ -14,6 +15,7 @@ void network::client_hello::deserialize(std::istream &stream)
 	version = sn_utils::ld_int32(stream);
 	start_packet = sn_utils::ld_uint32(stream);
 	app_version = sn_utils::d_str(stream);
+	session_token = sn_utils::ld_uint64(stream);
 }
 
 void network::server_reject::serialize(std::ostream &stream) const
@@ -34,6 +36,7 @@ void network::server_hello::serialize(std::ostream &stream) const
     sn_utils::s_str(stream, scenario);
 	sn_utils::s_str(stream, app_version);
 	sn_utils::ls_uint32(stream, peer_id);
+	sn_utils::ls_uint64(stream, session_token);
 }
 
 void network::server_hello::deserialize(std::istream &stream)
@@ -44,6 +47,7 @@ void network::server_hello::deserialize(std::istream &stream)
     scenario = sn_utils::d_str(stream);
 	app_version = sn_utils::d_str(stream);
 	peer_id = sn_utils::ld_uint32(stream);
+	session_token = sn_utils::ld_uint64(stream);
 }
 
 void network::vehicle_list::serialize(std::ostream &stream) const
@@ -104,6 +108,18 @@ void network::snapshot::deserialize(std::istream &stream)
 	uint32_t const size = sn_utils::ld_uint32(stream);
 	blob.assign(size, '\0');
 	stream.read(blob.data(), size);
+}
+
+void network::request_resync::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint64(stream, tick);
+	sn_utils::ls_uint64(stream, state_hash);
+}
+
+void network::request_resync::deserialize(std::istream &stream)
+{
+	tick = sn_utils::ld_uint64(stream);
+	state_hash = sn_utils::ld_uint64(stream);
 }
 
 void network::claim_vehicle::serialize(std::ostream &stream) const
@@ -277,6 +293,8 @@ std::shared_ptr<network::message> network::deserialize_message(std::istream &str
 		msg = std::make_shared<client_ready>();
 	else if (type == message::SNAPSHOT)
 		msg = std::make_shared<snapshot>();
+	else if (type == message::REQUEST_RESYNC)
+		msg = std::make_shared<request_resync>();
 
 	if (!msg) {
 		// unknown message type; hand back a marker the peer handlers treat as a protocol error

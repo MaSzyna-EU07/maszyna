@@ -55,8 +55,17 @@ public:
 	claim_result claim(PeerId Peer, NetworkEntityId Id);
 	// returns true when the peer really was part of the crew
 	bool leave(PeerId Peer, NetworkEntityId Id);
-	// removes a peer from every crew it belonged to, e.g. after a disconnect
+	// removes a peer from every crew it belonged to
 	void drop_peer(PeerId Peer);
+	// the peer lost its connection. its seat is held for a while, so that a short dropout
+	// does not empty a cab and hand a vehicle back to the AI under the other driver's nose
+	void suspend_peer(PeerId Peer);
+	// the peer made it back in time and keeps everything it had
+	void resume_peer(PeerId Peer);
+	// actually removes the peers whose grace period ran out
+	void expire_absences();
+	// true while the peer is gone but still holding its seat
+	bool is_absent(PeerId Peer) const;
 
 	std::vector<PeerId> crew_of(NetworkEntityId Id) const;
 	bool is_member(PeerId Peer, NetworkEntityId Id) const;
@@ -84,9 +93,20 @@ private:
 
 	std::unordered_map<NetworkEntityId, vehicle_crew> m_vehicles;
 	std::vector<NetworkEntityId> m_pending;
+	// peers that dropped out, with the moment their seat stops being held
+	std::unordered_map<PeerId, double> m_absent;
 };
 
 extern crew_registry Crews;
+
+// how long a disconnected peer keeps its place in the crew
+constexpr double RECONNECT_GRACE_SECONDS = 60.0;
+
+// resolves the identity of a connecting peer. an unknown or empty token means somebody
+// new and gets a fresh peer id together with a token of their own; a token this server
+// handed out before brings back the peer id that went with it, and with it the seat in
+// whatever crew the peer was on
+PeerId resolve_peer_identity(uint64_t &Token);
 
 // what a peer is allowed to ask the simulation for
 enum class command_verdict

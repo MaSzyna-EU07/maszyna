@@ -461,6 +461,15 @@ void eu07_application::request_vehicle_leave(network::NetworkEntityId const Enti
 		m_network->request_leave(Entity);
 }
 
+namespace {
+
+// how many steps in a row may disagree with the authority before we ask to be corrected,
+// and how long to leave the correction alone before asking again
+uint64_t const NETWORK_RESYNC_THRESHOLD = 120;
+uint64_t const NETWORK_RESYNC_COOLDOWN = 600;
+
+} // namespace
+
 void eu07_application::network_scenario_loaded()
 {
 	if (m_network)
@@ -595,6 +604,16 @@ int eu07_application::run()
 								         logtype::net);
 							}
 							Global.desync = (float)m_statemismatches;
+
+							// a short disagreement rides itself out; a lasting one will not,
+							// and calls for the authoritative state rather than a restart
+							if ((m_statemismatches >= NETWORK_RESYNC_THRESHOLD) &&
+							    (m_lastresynctick == 0 || authoritative.tick > m_lastresynctick + NETWORK_RESYNC_COOLDOWN))
+							{
+								m_lastresynctick = authoritative.tick;
+								WriteLog("net: resync requested at tick " + std::to_string(authoritative.tick), logtype::net);
+								m_network->request_resync(authoritative.tick, statehash);
+							}
 						}
 						else
 						{
