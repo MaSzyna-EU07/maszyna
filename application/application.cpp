@@ -460,6 +460,18 @@ bool eu07_application::is_client() const
 	return m_network && m_network->client;
 }
 
+void eu07_application::request_vehicle_claim(network::NetworkEntityId const Entity)
+{
+	if (m_network)
+		m_network->request_claim(Entity);
+}
+
+void eu07_application::request_vehicle_leave(network::NetworkEntityId const Entity)
+{
+	if (m_network)
+		m_network->request_leave(Entity);
+}
+
 int eu07_application::run()
 {
 	auto frame{0};

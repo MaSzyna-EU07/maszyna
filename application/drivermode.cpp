@@ -266,6 +266,22 @@ bool driver_mode::update()
 
 		// variable step simulation time routines
 
+		if (Global.network_leave_pending)
+		{
+			// we were taken off the crew (by our own request or by the server), so the
+			// camera goes back to observing. the cab instance itself stays put, it may
+			// still be occupied by somebody else or handed back to the AI
+			Global.network_leave_pending = false;
+			if (simulation::Train != nullptr)
+			{
+				if (!FreeFlyModeFlag)
+					InOutKey();
+				simulation::Train = nullptr;
+				Camera.m_owner = nullptr;
+				Global.local_start_vehicle = "ghostview";
+			}
+		}
+
 		if (change_train.empty() && !Global.network_pending_vehicle.empty())
 		{
 			// vehicle picked in the multiplayer lobby; the cab itself is built by the
@@ -282,8 +298,17 @@ bool driver_mode::update()
 				Global.local_start_vehicle = change_train;
 				simulation::Train = train;
 				InOutKey();
-				m_relay.post(user_command::aidriverdisable, 0.0, 0.0, GLFW_PRESS, 0);
+				if (!Application.is_server() && !Application.is_client())
+				{
+					// in a multiplayer session the AI handover belongs to the server, which
+					// also knows whether the vehicle had an AI driver in the first place
+					m_relay.post(user_command::aidriverdisable, 0.0, 0.0, GLFW_PRESS, 0);
+				}
 				change_train.clear();
+
+				auto ui = std::dynamic_pointer_cast<driver_ui>(m_userinterface);
+				if (ui != nullptr)
+					ui->show_multiplayer_lobby(false);
 			}
 		}
 

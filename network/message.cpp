@@ -80,6 +80,67 @@ void network::vehicle_list::deserialize(std::istream &stream)
 	}
 }
 
+void network::claim_vehicle::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint32(stream, entity_id);
+}
+
+void network::claim_vehicle::deserialize(std::istream &stream)
+{
+	entity_id = sn_utils::ld_uint32(stream);
+}
+
+void network::claim_granted::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint32(stream, entity_id);
+}
+
+void network::claim_granted::deserialize(std::istream &stream)
+{
+	entity_id = sn_utils::ld_uint32(stream);
+}
+
+void network::claim_denied::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint32(stream, entity_id);
+	sn_utils::s_str(stream, reason);
+}
+
+void network::claim_denied::deserialize(std::istream &stream)
+{
+	entity_id = sn_utils::ld_uint32(stream);
+	reason = sn_utils::d_str(stream);
+}
+
+void network::leave_vehicle::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint32(stream, entity_id);
+}
+
+void network::leave_vehicle::deserialize(std::istream &stream)
+{
+	entity_id = sn_utils::ld_uint32(stream);
+}
+
+void network::crew_update::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint32(stream, entity_id);
+	sn_utils::ls_uint32(stream, (uint32_t)crew.size());
+	for (PeerId const peer : crew)
+		sn_utils::ls_uint32(stream, peer);
+}
+
+void network::crew_update::deserialize(std::istream &stream)
+{
+	entity_id = sn_utils::ld_uint32(stream);
+
+	crew.clear();
+	uint32_t const count = sn_utils::ld_uint32(stream);
+	crew.reserve(count);
+	for (uint32_t i = 0; i < count; i++)
+		crew.emplace_back(sn_utils::ld_uint32(stream));
+}
+
 void ::network::request_command::serialize(std::ostream &stream) const
 {
 	sn_utils::ls_uint32(stream, commands.size());
@@ -169,6 +230,16 @@ std::shared_ptr<network::message> network::deserialize_message(std::istream &str
 		msg = std::make_shared<server_reject>();
 	else if (type == message::VEHICLE_LIST)
 		msg = std::make_shared<vehicle_list>();
+	else if (type == message::CLAIM_VEHICLE)
+		msg = std::make_shared<claim_vehicle>();
+	else if (type == message::CLAIM_GRANTED)
+		msg = std::make_shared<claim_granted>();
+	else if (type == message::CLAIM_DENIED)
+		msg = std::make_shared<claim_denied>();
+	else if (type == message::LEAVE_VEHICLE)
+		msg = std::make_shared<leave_vehicle>();
+	else if (type == message::CREW_UPDATE)
+		msg = std::make_shared<crew_update>();
 
 	if (!msg) {
 		// unknown message type; hand back a marker the peer handlers treat as a protocol error

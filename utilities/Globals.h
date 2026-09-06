@@ -358,6 +358,10 @@ struct global_settings {
 	uint32_t network_peer_id = 0;
 	// vehicle the local player asked to enter from the multiplayer lobby
 	std::string network_pending_vehicle;
+	// set when the local player left the crew and should go back to observing
+	bool network_leave_pending = false;
+	// last answer of the server to a lobby request, shown in the lobby
+	std::string network_lobby_message;
 
 	std::unordered_map<int, std::string> trainset_overrides;
 

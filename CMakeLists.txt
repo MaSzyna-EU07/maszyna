@@ -194,6 +194,7 @@ set(SOURCES
 "network/message.cpp"
 "network/manager.cpp"
 "network/entities.cpp"
+"network/session.cpp"
 "network/backend/asio.cpp"
 
 "widgets/vehiclelist.cpp"

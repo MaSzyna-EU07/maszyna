@@ -19,6 +19,11 @@ namespace network
 		void create_server(const std::string &backend, const std::string &conf);
 		// refreshes the authoritative vehicle roster and publishes it when it changed
 		void publish_vehicle_list();
+		// brings the world in line with the crew roster and announces every change
+		void update_crews();
+		// crew request coming from the local participant, which needs no transport
+		void apply_local_claim(NetworkEntityId entity_id);
+		void apply_local_leave(NetworkEntityId entity_id);
 
 	private:
 		// how many frames may pass between two unconditional broadcasts of the roster
@@ -26,6 +31,7 @@ namespace network
 
 		std::vector<vehicle_entry> last_published_list;
 		int publish_countdown = 0;
+		int crew_publish_countdown = 0;
 	};
 
     class manager
@@ -39,5 +45,10 @@ namespace network
 		void create_server(const std::string &backend, const std::string &conf);
 		void connect(const std::string &backend, const std::string &conf);
 		void update();
+
+		// routes a lobby request to whoever holds the authority: straight into the crew
+		// registry when we are the server, over the wire when we are a client
+		void request_claim(NetworkEntityId entity_id);
+		void request_leave(NetworkEntityId entity_id);
 	};
 }

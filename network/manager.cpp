@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "network/manager.h"
 #include "simulation/simulation.h"
 #include "utilities/Logs.h"
+#include "utilities/Globals.h"
 
 network::server_manager::server_manager()
 {
@@ -82,13 +83,80 @@ void network::server_manager::publish_vehicle_list()
 		srv->push_message(msg);
 }
 
+void network::server_manager::update_crews()
+{
+	Crews.reconcile();
+
+	if (--crew_publish_countdown <= 0) {
+		// peers that joined after somebody took a vehicle over have to learn about it too
+		crew_publish_countdown = PUBLISH_INTERVAL_FRAMES;
+		Crews.mark_all_pending();
+	}
+
+	auto const changed = Crews.take_pending_updates();
+	for (NetworkEntityId const id : changed) {
+		crew_update msg;
+		msg.entity_id = id;
+		msg.crew = Crews.crew_of(id);
+
+		for (auto srv : servers)
+			srv->push_message(msg);
+	}
+}
+
+void network::server_manager::apply_local_claim(NetworkEntityId entity_id)
+{
+	auto const result = Crews.claim(PEER_HOST, entity_id);
+
+	if (result == claim_result::granted || result == claim_result::already_member) {
+		Global.network_lobby_message.clear();
+		Global.network_pending_vehicle = Entities.name_of(entity_id);
+	}
+	else {
+		WriteLog("net: refused local claim of vehicle " + std::to_string(entity_id) + ": " + describe(result), logtype::net);
+		Global.network_lobby_message = describe(result);
+	}
+}
+
+void network::server_manager::apply_local_leave(NetworkEntityId entity_id)
+{
+	if (Crews.leave(PEER_HOST, entity_id))
+		Global.network_leave_pending = true;
+}
+
+void network::manager::request_claim(NetworkEntityId entity_id)
+{
+	if (client) {
+		client->send_claim(entity_id);
+		return;
+	}
+
+	if (servers)
+		servers->apply_local_claim(entity_id);
+}
+
+void network::manager::request_leave(NetworkEntityId entity_id)
+{
+	if (client) {
+		client->send_leave(entity_id);
+		// the server owns the roster, but stepping out of our own cab is a local matter
+		Global.network_leave_pending = true;
+		return;
+	}
+
+	if (servers)
+		servers->apply_local_leave(entity_id);
+}
+
 void network::manager::update()
 {
 	for (auto &backend : backend_list())
 		backend.second->update();
 
-	if (servers && simulation::is_ready)
+	if (servers && simulation::is_ready) {
+		servers->update_crews();
 		servers->publish_vehicle_list();
+	}
 
 	if (client)
 		client->update();

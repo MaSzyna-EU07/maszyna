@@ -97,23 +97,37 @@ network::server::server(std::shared_ptr<std::istream> buf) : backbuffer(buf)
 
 }
 
-void network::server::push_delta(const frame_info &msg)
+void network::server::prune_clients()
 {
 	for (auto it = clients.begin(); it != clients.end(); ) {
 		if ((*it)->state == connection::DEAD) {
+			if ((*it)->peer_id != PEER_NONE) {
+				WriteLog("net: peer " + std::to_string((*it)->peer_id) + " disconnected", logtype::net);
+				// a vehicle keeps running for whoever is left on board; it only falls back
+				// to the AI when the crew becomes empty, which Crews decides on its own
+				Crews.drop_peer((*it)->peer_id);
+			}
 			it = clients.erase(it);
 			continue;
 		}
-
-		if ((*it)->state == connection::ACTIVE)
-			(*it)->send_message(msg);
-
 		it++;
+	}
+}
+
+void network::server::push_delta(const frame_info &msg)
+{
+	prune_clients();
+
+	for (auto const &client : clients) {
+		if (client->state == connection::ACTIVE)
+			client->send_message(msg);
 	}
 }
 
 void network::server::push_message(const message &msg)
 {
+	prune_clients();
+
 	for (auto const &client : clients) {
 		if (client->state == connection::ACTIVE)
 			client->send_message(msg);
@@ -176,6 +190,29 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 
 		WriteLog("net: peer " + std::to_string(conn->peer_id) + " connected, build \"" + cmd.app_version
 		         + "\", scenario \"" + Global.SceneryFile + "\"", logtype::net);
+	}
+	else if (msg.type == message::CLAIM_VEHICLE) {
+		const auto& cmd = dynamic_cast<const claim_vehicle&>(msg);
+
+		auto const result = Crews.claim(conn->peer_id, cmd.entity_id);
+		if (result == claim_result::granted || result == claim_result::already_member) {
+			claim_granted reply;
+			reply.entity_id = cmd.entity_id;
+			conn->send_message(reply);
+		}
+		else {
+			WriteLog("net: refused claim of vehicle " + std::to_string(cmd.entity_id) + " by peer "
+			         + std::to_string(conn->peer_id) + ": " + describe(result), logtype::net);
+
+			claim_denied reply;
+			reply.entity_id = cmd.entity_id;
+			reply.reason = describe(result);
+			conn->send_message(reply);
+		}
+	}
+	else if (msg.type == message::LEAVE_VEHICLE) {
+		const auto& cmd = dynamic_cast<const leave_vehicle&>(msg);
+		Crews.leave(conn->peer_id, cmd.entity_id);
 	}
 	else if (msg.type == message::REQUEST_COMMAND) {
 		const auto& cmd = dynamic_cast<const request_command&>(msg);
@@ -267,6 +304,26 @@ void network::client::send_commands(command_queue::commands_map commands)
 	conn->send_message(msg);
 }
 
+void network::client::send_claim(NetworkEntityId entity_id)
+{
+	if (!conn || conn->state != connection::ACTIVE)
+		return;
+
+	claim_vehicle msg;
+	msg.entity_id = entity_id;
+	conn->send_message(msg);
+}
+
+void network::client::send_leave(NetworkEntityId entity_id)
+{
+	if (!conn || conn->state != connection::ACTIVE)
+		return;
+
+	leave_vehicle msg;
+	msg.entity_id = entity_id;
+	conn->send_message(msg);
+}
+
 void network::client::handle_message(std::shared_ptr<connection> conn, const message &msg)
 {
 	if (msg.type >= message::TYPE_MAX)
@@ -320,6 +377,28 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 	if (msg.type == message::VEHICLE_LIST) {
 		const auto& cmd = dynamic_cast<const vehicle_list&>(msg);
 		Entities.adopt(cmd.vehicles);
+	}
+
+	if (msg.type == message::CREW_UPDATE) {
+		const auto& cmd = dynamic_cast<const crew_update&>(msg);
+		Crews.mirror(cmd.entity_id, cmd.crew);
+	}
+
+	if (msg.type == message::CLAIM_GRANTED) {
+		const auto& cmd = dynamic_cast<const claim_granted&>(msg);
+
+		WriteLog("net: claim of vehicle " + std::to_string(cmd.entity_id) + " granted", logtype::net);
+		Global.network_lobby_message.clear();
+		// the cab itself is built by the replicated entervehicle the server posts;
+		// we only have to walk into it once it shows up
+		Global.network_pending_vehicle = Entities.name_of(cmd.entity_id);
+	}
+
+	if (msg.type == message::CLAIM_DENIED) {
+		const auto& cmd = dynamic_cast<const claim_denied&>(msg);
+
+		WriteLog("net: claim of vehicle " + std::to_string(cmd.entity_id) + " denied: " + cmd.reason, logtype::net);
+		Global.network_lobby_message = cmd.reason;
 	}
 
 	if (msg.type == message::FRAME_INFO) {

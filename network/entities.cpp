@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "network/entities.h"
+#include "network/session.h"
 
 #include "simulation/simulation.h"
 #include "vehicle/DynObj.h"
@@ -105,9 +106,7 @@ void entity_registry::refresh()
 		TDynamicObject const *vehicle = resolve(entry.id);
 
 		entry.ai_active = (vehicle != nullptr && vehicle->Mechanik != nullptr && vehicle->Mechanik->AIControllFlag);
-		// until the crew model of stage 3 is in place, an existing cab instance is the
-		// only evidence that somebody took the vehicle over
-		entry.crew_count = (simulation::Trains.find(entry.name) != nullptr ? 1 : 0);
+		entry.crew_count = Crews.count(entry.id);
 		entry.crew_capacity = CREW_CAPACITY;
 		entry.claimable = (vehicle != nullptr && entry.crew_count < entry.crew_capacity);
 	}

@@ -93,6 +93,11 @@ public:
         is_server() const;
     bool
         is_client() const;
+    // asks the session authority to put us on the crew of given vehicle, or take us off it
+    void
+        request_vehicle_claim( network::NetworkEntityId const Entity );
+    void
+        request_vehicle_leave( network::NetworkEntityId const Entity );
 
 private:
 // types

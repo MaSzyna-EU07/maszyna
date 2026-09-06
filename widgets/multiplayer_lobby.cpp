@@ -12,10 +12,11 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/application.h"
 #include "network/entities.h"
+#include "network/session.h"
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
-#include "utilities/utilities.h"
 #include "utilities/translation.h"
+#include "utilities/utilities.h"
 #include "vehicle/Driver.h"
 #include "vehicle/DynObj.h"
 #include "vehicle/Train.h"
@@ -23,21 +24,30 @@ http://mozilla.org/MPL/2.0/.
 ui::multiplayer_lobby_panel::multiplayer_lobby_panel()
     : ui_panel(STR_C("Multiplayer lobby"), false)
 {
-	size_min = {480, 260};
+	size_min = {520, 280};
 }
 
-void ui::multiplayer_lobby_panel::enter_vehicle(std::string const &Name)
+std::string ui::multiplayer_lobby_panel::describe_crew(network::NetworkEntityId const Entity) const
 {
-	TDynamicObject *vehicle = simulation::Vehicles.find(Name);
-	if (vehicle == nullptr)
-		return;
+	auto const crew = network::Crews.crew_of(Entity);
+	if (crew.empty())
+		return std::string();
 
-	std::string payload{Name};
-	// the request travels as an ordinary simulation command, so every peer builds the cab
-	m_relay.post(user_command::entervehicle, 0.0, simulation::Train ? simulation::Train->id() : 0, GLFW_PRESS, 0, vehicle->GetPosition(), &payload);
-	// ...and the driver mode moves our own camera in once the cab shows up locally
-	Global.network_pending_vehicle = Name;
-	is_open = false;
+	std::string description;
+	for (network::PeerId const peer : crew)
+	{
+		if (!description.empty())
+			description += ", ";
+
+		if (peer == Global.network_peer_id)
+			description += STR("you");
+		else if (peer == network::PEER_HOST)
+			description += STR("host");
+		else
+			description += STR("player") + " " + std::to_string(peer);
+	}
+
+	return description;
 }
 
 void ui::multiplayer_lobby_panel::render_contents()
@@ -53,6 +63,10 @@ void ui::multiplayer_lobby_panel::render_contents()
 
 	ImGui::Text("%s: %s, peer %u", STR_C("Session"), host ? (client ? "host + client" : "host") : "client", Global.network_peer_id);
 	ImGui::TextUnformatted(Global.SceneryFile.c_str());
+
+	if (!Global.network_lobby_message.empty())
+		ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), "%s", Global.network_lobby_message.c_str());
+
 	ImGui::Separator();
 
 	auto const &entries = network::Entities.entries();
@@ -62,24 +76,18 @@ void ui::multiplayer_lobby_panel::render_contents()
 		return;
 	}
 
-	std::string const currentvehicle{simulation::Train != nullptr && simulation::Train->Dynamic() != nullptr ? simulation::Train->Dynamic()->name() : std::string()};
-
-	if (!FreeFlyModeFlag)
-	{
-		ImGui::TextUnformatted(STR_C("Leave the cab to change vehicles."));
-		ImGui::Separator();
-	}
+	network::NetworkEntityId const ownvehicle{network::Crews.vehicle_of(Global.network_peer_id)};
 
 	ImGui::Columns(4, "mp_vehicles", false);
-	ImGui::SetColumnWidth(1, 80.0f * Global.ui_scale);
-	ImGui::SetColumnWidth(2, 90.0f * Global.ui_scale);
+	ImGui::SetColumnWidth(1, 70.0f * Global.ui_scale);
+	ImGui::SetColumnWidth(2, 200.0f * Global.ui_scale);
 	ImGui::SetColumnWidth(3, 130.0f * Global.ui_scale);
 
 	ImGui::TextDisabled("%s", STR_C("Vehicle"));
 	ImGui::NextColumn();
 	ImGui::TextDisabled("%s", STR_C("Crew"));
 	ImGui::NextColumn();
-	ImGui::TextDisabled("%s", STR_C("Driver"));
+	ImGui::TextDisabled("%s", STR_C("On board"));
 	ImGui::NextColumn();
 	ImGui::NextColumn();
 	ImGui::Separator();
@@ -94,21 +102,28 @@ void ui::multiplayer_lobby_panel::render_contents()
 		ImGui::Text("%u/%u", (unsigned)entry.crew_count, (unsigned)entry.crew_capacity);
 		ImGui::NextColumn();
 
-		ImGui::TextUnformatted(entry.crew_count > 0 ? STR_C("player") : entry.ai_active ? STR_C("AI") : STR_C("free"));
+		std::string const crew{describe_crew(entry.id)};
+		if (!crew.empty())
+			ImGui::TextUnformatted(crew.c_str());
+		else
+			ImGui::TextDisabled("%s", entry.ai_active ? STR_C("AI") : STR_C("free"));
 		ImGui::NextColumn();
 
-		if (entry.name == currentvehicle)
+		if (entry.id == ownvehicle)
 		{
-			ImGui::TextUnformatted(STR_C("you"));
+			if (ImGui::Button(STR_C("Leave"), ImVec2(-1, 0)))
+				Application.request_vehicle_leave(entry.id);
 		}
-		else if (entry.claimable && FreeFlyModeFlag && network::Entities.resolve(entry.id) != nullptr)
+		else if (entry.claimable)
 		{
-			if (ImGui::Button(STR_C("Enter"), ImVec2(-1, 0)))
-				enter_vehicle(entry.name);
+			// a vehicle somebody else is already working on can still be joined, that is
+			// what the crew capacity is for
+			if (ImGui::Button(entry.crew_count > 0 ? STR_C("Join crew") : STR_C("Enter"), ImVec2(-1, 0)))
+				claim(entry.id, ownvehicle);
 		}
 		else
 		{
-			ImGui::TextDisabled("%s", entry.claimable ? "-" : STR_C("occupied"));
+			ImGui::TextDisabled("%s", STR_C("full"));
 		}
 		ImGui::NextColumn();
 
@@ -116,4 +131,15 @@ void ui::multiplayer_lobby_panel::render_contents()
 	}
 
 	ImGui::Columns(1);
+}
+
+void ui::multiplayer_lobby_panel::claim(network::NetworkEntityId const Entity, network::NetworkEntityId const Current)
+{
+	if (Current != network::ENTITY_NONE)
+	{
+		// one person cannot work two vehicles at once
+		Application.request_vehicle_leave(Current);
+	}
+
+	Application.request_vehicle_claim(Entity);
 }

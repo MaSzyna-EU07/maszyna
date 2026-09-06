@@ -16,6 +16,11 @@ struct message
 		REQUEST_COMMAND,
 		SERVER_REJECT,
 		VEHICLE_LIST,
+		CLAIM_VEHICLE,
+		CLAIM_GRANTED,
+		CLAIM_DENIED,
+		LEAVE_VEHICLE,
+		CREW_UPDATE,
 		TYPE_MAX
 	};
 
@@ -75,6 +80,63 @@ struct vehicle_list : public message
 	vehicle_list() : message(VEHICLE_LIST) {}
 
 	std::vector<vehicle_entry> vehicles;
+
+	virtual void serialize(std::ostream &stream) const override;
+	virtual void deserialize(std::istream &stream) override;
+};
+
+// a peer asking the server to be put on the crew of a vehicle
+struct claim_vehicle : public message
+{
+	claim_vehicle() : message(CLAIM_VEHICLE) {}
+
+	uint32_t entity_id{ ENTITY_NONE };
+
+	virtual void serialize(std::ostream &stream) const override;
+	virtual void deserialize(std::istream &stream) override;
+};
+
+// answer to a claim the server accepted
+struct claim_granted : public message
+{
+	claim_granted() : message(CLAIM_GRANTED) {}
+
+	uint32_t entity_id{ ENTITY_NONE };
+
+	virtual void serialize(std::ostream &stream) const override;
+	virtual void deserialize(std::istream &stream) override;
+};
+
+// answer to a claim the server refused, with a reason the lobby can show
+struct claim_denied : public message
+{
+	claim_denied() : message(CLAIM_DENIED) {}
+
+	uint32_t entity_id{ ENTITY_NONE };
+	std::string reason;
+
+	virtual void serialize(std::ostream &stream) const override;
+	virtual void deserialize(std::istream &stream) override;
+};
+
+// a peer stepping off the crew of a vehicle
+struct leave_vehicle : public message
+{
+	leave_vehicle() : message(LEAVE_VEHICLE) {}
+
+	uint32_t entity_id{ ENTITY_NONE };
+
+	virtual void serialize(std::ostream &stream) const override;
+	virtual void deserialize(std::istream &stream) override;
+};
+
+// authoritative crew of one vehicle, broadcast whenever it changes
+struct crew_update : public message
+{
+	crew_update() : message(CREW_UPDATE) {}
+
+	uint32_t entity_id{ ENTITY_NONE };
+	std::vector<PeerId> crew;
 
 	virtual void serialize(std::ostream &stream) const override;
 	virtual void deserialize(std::istream &stream) override;

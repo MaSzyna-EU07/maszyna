@@ -10,7 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "application/uilayer.h"
-#include "input/command.h"
+#include "network/entities.h"
 
 namespace ui
 {
@@ -27,9 +27,8 @@ public:
 	void render_contents() override;
 
 private:
-	void enter_vehicle(std::string const &Name);
-
-	command_relay m_relay;
+	void claim(network::NetworkEntityId const Entity, network::NetworkEntityId const Current);
+	std::string describe_crew(network::NetworkEntityId const Entity) const;
 };
 
 } // namespace ui

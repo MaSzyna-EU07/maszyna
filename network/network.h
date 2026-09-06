@@ -6,6 +6,7 @@
 #include <chrono>
 #include "network/message.h"
 #include "network/entities.h"
+#include "network/session.h"
 #include "input/command.h"
 
 namespace network
@@ -65,6 +66,10 @@ namespace network
 
 		command_queue::commands_map client_commands_queue;
 
+	protected:
+		// drops peers whose socket is gone, together with their crew memberships
+		void prune_clients();
+
 	public:
 		server(std::shared_ptr<std::istream> buf);
 		void push_delta(const frame_info &msg);
@@ -105,6 +110,9 @@ namespace network
 		void update();
 		std::tuple<double, double, command_queue::commands_map> get_next_delta(int counter);
 		void send_commands(command_queue::commands_map commands);
+		// lobby requests; the server is the one that decides
+		void send_claim(NetworkEntityId entity_id);
+		void send_leave(NetworkEntityId entity_id);
 		int get_frame_counter() {
 			return resume_frame_counter;
 		}
