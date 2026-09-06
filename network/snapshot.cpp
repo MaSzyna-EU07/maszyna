@@ -20,6 +20,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "vehicle/Driver.h"
 #include "vehicle/DynObj.h"
+#include "world/Event.h"
+#include "world/MemCell.h"
 #include "world/Track.h"
 
 namespace
@@ -27,9 +29,29 @@ namespace
 
 uint32_t const SNAPSHOT_MAGIC{0x4e535545}; // 'EUSN'
 
-// a vehicle is only put back on the rails when it really is somewhere else; nudging one
-// that is already in place would only shake it about
-double const REPOSITION_THRESHOLD{0.5};
+// how far a vehicle may sit from where the authority says it is before it gets put back.
+// a joining peer is placed exactly; a running one is left to its own physics for small
+// errors, because nudging a vehicle every fraction of a second is worse than the error
+double const REPOSITION_TOLERANCE_JOIN{0.5};
+double const REPOSITION_TOLERANCE_CORRECTION{2.5};
+
+// ---------------------------------------------------------------------------
+// what the authority last sent, so that a routine correction only carries changes
+
+std::unordered_map<std::string, uint64_t> g_lastvehicles;
+std::unordered_map<std::string, uint64_t> g_lastmemcells;
+std::unordered_map<std::string, int> g_lastswitches;
+
+uint64_t digest_of(std::string const &Text)
+{
+	uint64_t hash{14695981039346656037ull};
+	for (char const character : Text)
+	{
+		hash ^= (uint64_t)(unsigned char)character;
+		hash *= 1099511628211ull;
+	}
+	return hash;
+}
 
 void write_chunk(std::ostream &Stream, network::snapshot_chunk const Id, std::string const &Body)
 {
@@ -41,7 +63,7 @@ void write_chunk(std::ostream &Stream, network::snapshot_chunk const Id, std::st
 // ---------------------------------------------------------------------------
 // session
 
-std::string write_session()
+std::string write_session(bool const Full)
 {
 	std::ostringstream body;
 
@@ -57,15 +79,20 @@ std::string write_session()
 	sn_utils::ls_float64(body, Global.Overcast);
 	sn_utils::ls_float64(body, Global.AirTemperature);
 
-	// the engine drives gameplay randomness, so a joining peer has to pick it up as it is
-	std::ostringstream engine;
-	engine << Global.random_engine;
-	sn_utils::s_str(body, engine.str());
+	// the engine drives gameplay randomness, so a joining peer has to pick it up as it is.
+	// it is several kilobytes though, far too much to repeat in every routine correction
+	sn_utils::s_bool(body, Full);
+	if (Full)
+	{
+		std::ostringstream engine;
+		engine << Global.random_engine;
+		sn_utils::s_str(body, engine.str());
+	}
 
 	return body.str();
 }
 
-void read_session(std::istream &Stream)
+void read_session(std::istream &Stream, network::snapshot_mode const Mode)
 {
 	auto const tick = sn_utils::ld_uint64(Stream);
 	auto const timestamp = sn_utils::ld_int64(Stream);
@@ -78,7 +105,10 @@ void read_session(std::istream &Stream)
 	auto const overcast = sn_utils::ld_float64(Stream);
 	auto const temperature = sn_utils::ld_float64(Stream);
 
-	auto const enginestate = sn_utils::d_str(Stream);
+	bool const hasengine = sn_utils::d_bool(Stream);
+	std::string enginestate;
+	if (hasengine)
+		enginestate = sn_utils::d_str(Stream);
 
 	Global.simulation_tick = tick;
 	Global.starting_timestamp = timestamp;
@@ -96,14 +126,282 @@ void read_session(std::istream &Stream)
 		std::istringstream engine(enginestate);
 		engine >> Global.random_engine;
 	}
+
+	(void)Mode;
 }
 
 // ---------------------------------------------------------------------------
 // vehicles
 
-std::string write_vehicles()
+// everything about one vehicle the rest of the session needs to agree on
+struct vehicle_state
 {
-	std::ostringstream body;
+	std::string name;
+	std::string track;
+	double translation{0.0};
+	uint8_t axlefirst{0};
+	uint8_t direction{0};
+	glm::dvec3 position{};
+
+	double velocity{0.0};
+	double velocitykmh{0.0};
+	int32_t diractive{0};
+	int32_t mainctrl{0};
+	int32_t scndctrl{0};
+	int32_t brakectrl{0};
+	double localbrake{0.0};
+
+	double pipepress{0.0};
+	double brakepress{0.0};
+	double scndpipepress{0.0};
+	double eqvtpipepress{0.0};
+	double compressor{0.0};
+	double compressedvolume{0.0};
+
+	// switch positions and permissions - the inputs of the vehicle, not its outputs.
+	// getting these right lets the receiving peer derive the rest for itself
+	bool mains{false};
+	bool battery{false};
+	bool converterallow{false};
+	bool compressorallow{false};
+	int32_t cabactive{0};
+	int32_t caboccupied{0};
+	std::array<bool, 2> pantenabled{{false, false}};
+	std::array<bool, 2> pantdisabled{{false, false}};
+	std::array<bool, 2> pantactive{{false, false}};
+	int32_t lights[2]{0, 0};
+	// door open/close intent, one entry per side; the local model derives the rest
+	std::array<bool, 2> dooropen{{false, false}};
+	std::array<bool, 2> doorpermit{{false, false}};
+	bool aiactive{false};
+};
+
+void serialize_vehicle(std::ostream &Stream, vehicle_state const &State)
+{
+	sn_utils::s_str(Stream, State.name);
+	sn_utils::s_str(Stream, State.track);
+	sn_utils::ls_float64(Stream, State.translation);
+	sn_utils::s_uint8(Stream, State.axlefirst);
+	sn_utils::s_uint8(Stream, State.direction);
+	sn_utils::s_dvec3(Stream, State.position);
+
+	sn_utils::ls_float64(Stream, State.velocity);
+	sn_utils::ls_float64(Stream, State.velocitykmh);
+	sn_utils::ls_int32(Stream, State.diractive);
+	sn_utils::ls_int32(Stream, State.mainctrl);
+	sn_utils::ls_int32(Stream, State.scndctrl);
+	sn_utils::ls_int32(Stream, State.brakectrl);
+	sn_utils::ls_float64(Stream, State.localbrake);
+
+	sn_utils::ls_float64(Stream, State.pipepress);
+	sn_utils::ls_float64(Stream, State.brakepress);
+	sn_utils::ls_float64(Stream, State.scndpipepress);
+	sn_utils::ls_float64(Stream, State.eqvtpipepress);
+	sn_utils::ls_float64(Stream, State.compressor);
+	sn_utils::ls_float64(Stream, State.compressedvolume);
+
+	sn_utils::s_bool(Stream, State.mains);
+	sn_utils::s_bool(Stream, State.battery);
+	sn_utils::s_bool(Stream, State.converterallow);
+	sn_utils::s_bool(Stream, State.compressorallow);
+	sn_utils::ls_int32(Stream, State.cabactive);
+	sn_utils::ls_int32(Stream, State.caboccupied);
+	for (int i = 0; i < 2; ++i)
+	{
+		sn_utils::s_bool(Stream, State.pantenabled[i]);
+		sn_utils::s_bool(Stream, State.pantdisabled[i]);
+		sn_utils::s_bool(Stream, State.pantactive[i]);
+	}
+	sn_utils::ls_int32(Stream, State.lights[0]);
+	sn_utils::ls_int32(Stream, State.lights[1]);
+	for (int i = 0; i < 2; ++i)
+	{
+		sn_utils::s_bool(Stream, State.dooropen[i]);
+		sn_utils::s_bool(Stream, State.doorpermit[i]);
+	}
+	sn_utils::s_bool(Stream, State.aiactive);
+}
+
+vehicle_state deserialize_vehicle(std::istream &Stream)
+{
+	vehicle_state state;
+
+	state.name = sn_utils::d_str(Stream);
+	state.track = sn_utils::d_str(Stream);
+	state.translation = sn_utils::ld_float64(Stream);
+	state.axlefirst = sn_utils::d_uint8(Stream);
+	state.direction = sn_utils::d_uint8(Stream);
+	state.position = sn_utils::d_dvec3(Stream);
+
+	state.velocity = sn_utils::ld_float64(Stream);
+	state.velocitykmh = sn_utils::ld_float64(Stream);
+	state.diractive = sn_utils::ld_int32(Stream);
+	state.mainctrl = sn_utils::ld_int32(Stream);
+	state.scndctrl = sn_utils::ld_int32(Stream);
+	state.brakectrl = sn_utils::ld_int32(Stream);
+	state.localbrake = sn_utils::ld_float64(Stream);
+
+	state.pipepress = sn_utils::ld_float64(Stream);
+	state.brakepress = sn_utils::ld_float64(Stream);
+	state.scndpipepress = sn_utils::ld_float64(Stream);
+	state.eqvtpipepress = sn_utils::ld_float64(Stream);
+	state.compressor = sn_utils::ld_float64(Stream);
+	state.compressedvolume = sn_utils::ld_float64(Stream);
+
+	state.mains = sn_utils::d_bool(Stream);
+	state.battery = sn_utils::d_bool(Stream);
+	state.converterallow = sn_utils::d_bool(Stream);
+	state.compressorallow = sn_utils::d_bool(Stream);
+	state.cabactive = sn_utils::ld_int32(Stream);
+	state.caboccupied = sn_utils::ld_int32(Stream);
+	for (int i = 0; i < 2; ++i)
+	{
+		state.pantenabled[i] = sn_utils::d_bool(Stream);
+		state.pantdisabled[i] = sn_utils::d_bool(Stream);
+		state.pantactive[i] = sn_utils::d_bool(Stream);
+	}
+	state.lights[0] = sn_utils::ld_int32(Stream);
+	state.lights[1] = sn_utils::ld_int32(Stream);
+	for (int i = 0; i < 2; ++i)
+	{
+		state.dooropen[i] = sn_utils::d_bool(Stream);
+		state.doorpermit[i] = sn_utils::d_bool(Stream);
+	}
+	state.aiactive = sn_utils::d_bool(Stream);
+
+	return state;
+}
+
+vehicle_state read_from(TDynamicObject const &Vehicle)
+{
+	auto const &mover = *Vehicle.MoverParameters;
+	auto const *track = Vehicle.RaTrackGet();
+
+	vehicle_state state;
+	state.name = Vehicle.name();
+	state.track = (track != nullptr ? track->name() : std::string());
+	state.translation = Vehicle.RaTranslationGet();
+	state.axlefirst = (uint8_t)(Vehicle.iAxleFirst ? 1 : 0);
+	state.direction = (uint8_t)(Vehicle.iDirection ? 1 : 0);
+	state.position = Vehicle.GetPosition();
+
+	state.velocity = mover.V;
+	state.velocitykmh = mover.Vel;
+	state.diractive = mover.DirActive;
+	state.mainctrl = mover.MainCtrlPos;
+	state.scndctrl = mover.ScndCtrlPos;
+	state.brakectrl = mover.BrakeCtrlPos;
+	state.localbrake = mover.LocalBrakePosA;
+
+	state.pipepress = mover.PipePress;
+	state.brakepress = mover.BrakePress;
+	state.scndpipepress = mover.ScndPipePress;
+	state.eqvtpipepress = mover.EqvtPipePress;
+	state.compressor = mover.Compressor;
+	state.compressedvolume = mover.CompressedVolume;
+
+	state.mains = mover.Mains;
+	state.battery = mover.Battery;
+	state.converterallow = mover.ConverterAllow;
+	state.compressorallow = mover.CompressorAllow;
+	state.cabactive = mover.CabActive;
+	state.caboccupied = mover.CabOccupied;
+	for (int i = 0; i < 2; ++i)
+	{
+		state.pantenabled[i] = mover.Pantographs[i].valve.is_enabled;
+		state.pantdisabled[i] = mover.Pantographs[i].valve.is_disabled;
+		state.pantactive[i] = mover.Pantographs[i].is_active;
+	}
+	state.lights[0] = mover.iLights[0];
+	state.lights[1] = mover.iLights[1];
+	for (int i = 0; i < 2; ++i)
+	{
+		state.dooropen[i] = mover.Doors.instances[i].is_open;
+		state.doorpermit[i] = mover.Doors.instances[i].open_permit;
+	}
+	state.aiactive = (Vehicle.Mechanik != nullptr && Vehicle.Mechanik->AIControllFlag);
+
+	return state;
+}
+
+// applies everything except where the vehicle is; position is dealt with per consist,
+// because moving one vehicle of a coupled set on its own tears the couplers apart
+void apply_controls(TDynamicObject &Vehicle, vehicle_state const &State)
+{
+	auto &mover = *Vehicle.MoverParameters;
+
+	mover.V = State.velocity;
+	mover.Vel = State.velocitykmh;
+	mover.DirActive = State.diractive;
+	mover.MainCtrlPos = State.mainctrl;
+	mover.ScndCtrlPos = State.scndctrl;
+	mover.BrakeCtrlPos = State.brakectrl;
+	mover.LocalBrakePosA = State.localbrake;
+
+	mover.PipePress = State.pipepress;
+	mover.BrakePress = State.brakepress;
+	mover.ScndPipePress = State.scndpipepress;
+	mover.EqvtPipePress = State.eqvtpipepress;
+	mover.Compressor = State.compressor;
+	mover.CompressedVolume = State.compressedvolume;
+
+	// the appliances go through the vehicle's own switches wherever it has them, so that
+	// whatever they drag along stays consistent. range local: every vehicle carries its
+	// own state in the update, there is no need to push it down the consist twice
+	if (mover.Battery != State.battery)
+		mover.BatterySwitch(State.battery, range_t::local);
+	if (mover.Mains != State.mains)
+		mover.MainSwitch(State.mains, range_t::local);
+	if (mover.ConverterAllow != State.converterallow)
+		mover.ConverterSwitch(State.converterallow, range_t::local);
+	if (mover.CompressorAllow != State.compressorallow)
+		mover.CompressorSwitch(State.compressorallow, range_t::local);
+
+	mover.CabActive = State.cabactive;
+	mover.CabOccupied = State.caboccupied;
+
+	for (int i = 0; i < 2; ++i)
+	{
+		mover.Pantographs[i].valve.is_enabled = State.pantenabled[i];
+		mover.Pantographs[i].valve.is_disabled = State.pantdisabled[i];
+		mover.Pantographs[i].is_active = State.pantactive[i];
+	}
+
+	mover.iLights[0] = State.lights[0];
+	mover.iLights[1] = State.lights[1];
+
+	for (int i = 0; i < 2; ++i)
+	{
+		auto const side = (i == 0 ? side::right : side::left);
+		if (mover.Doors.instances[i].open_permit != State.doorpermit[i])
+			mover.PermitDoors(side, State.doorpermit[i], range_t::local);
+		if (mover.Doors.instances[i].is_open != State.dooropen[i])
+			mover.OperateDoors(side, State.dooropen[i], range_t::local);
+	}
+
+	if (Vehicle.Mechanik != nullptr && Vehicle.Mechanik->AIControllFlag != State.aiactive)
+		Vehicle.Mechanik->TakeControl(State.aiactive);
+}
+
+// puts a vehicle back where the authority says it is. place_on_track() wants the distance
+// of the vehicle's nose along the track, while what travels in the update is the offset of
+// its leading bogie; this inverts the arithmetic that function itself does
+void reposition(TDynamicObject &Vehicle, vehicle_state const &State)
+{
+	TTrack *track = (State.track.empty() ? nullptr : simulation::Paths.find(State.track));
+	if (track == nullptr)
+		return;
+
+	double const half = Vehicle.fAxleDist * 0.5;
+	double const axleoffset = (State.axlefirst ? -half : half);
+	double const sign = (State.direction ? 1.0 : -1.0);
+	double const nose = (State.translation - axleoffset) * sign + 0.5 * Vehicle.MoverParameters->Dim.L;
+
+	Vehicle.place_on_track(track, nose, false);
+}
+
+std::string write_vehicles(bool const Full)
+{
 	std::ostringstream entries;
 	uint32_t count{0};
 
@@ -112,33 +410,35 @@ std::string write_vehicles()
 		if (vehicle == nullptr || vehicle->MoverParameters == nullptr)
 			continue;
 
-		auto const &mover = *vehicle->MoverParameters;
-		auto const *track = vehicle->RaTrackGet();
+		auto const state = read_from(*vehicle);
 
-		sn_utils::s_str(entries, vehicle->name());
-		sn_utils::s_str(entries, track != nullptr ? track->name() : std::string());
-		sn_utils::ls_float64(entries, vehicle->RaTranslationGet());
-		sn_utils::s_uint8(entries, (uint8_t)(vehicle->iAxleFirst ? 1 : 0));
-		sn_utils::s_uint8(entries, (uint8_t)(vehicle->iDirection ? 1 : 0));
-		sn_utils::s_dvec3(entries, vehicle->GetPosition());
+		std::ostringstream packed;
+		serialize_vehicle(packed, state);
+		auto const record = packed.str();
 
-		sn_utils::ls_float64(entries, mover.V);
-		sn_utils::ls_float64(entries, mover.Vel);
-		sn_utils::ls_int32(entries, mover.DirActive);
-		sn_utils::ls_int32(entries, mover.MainCtrlPos);
-		sn_utils::ls_int32(entries, mover.ScndCtrlPos);
-		sn_utils::ls_int32(entries, mover.BrakeCtrlPos);
-		sn_utils::ls_float64(entries, mover.LocalBrakePosA);
-		sn_utils::ls_float64(entries, mover.PipePress);
-		sn_utils::ls_float64(entries, mover.BrakePress);
-		sn_utils::ls_float64(entries, mover.ScndPipePress);
-		sn_utils::ls_float64(entries, mover.Compressor);
-		sn_utils::ls_float64(entries, mover.CompressedVolume);
-		sn_utils::s_bool(entries, vehicle->Mechanik != nullptr && vehicle->Mechanik->AIControllFlag);
+		if (!Full)
+		{
+			// a vehicle that is standing still and has not been touched needs no update
+			auto const digest = digest_of(record);
+			auto const previous = g_lastvehicles.find(state.name);
+			if (previous != g_lastvehicles.end() && previous->second == digest)
+				continue;
 
+			g_lastvehicles[state.name] = digest;
+		}
+		else
+		{
+			g_lastvehicles[state.name] = digest_of(record);
+		}
+
+		entries.write(record.data(), record.size());
 		++count;
 	}
 
+	if (count == 0)
+		return std::string();
+
+	std::ostringstream body;
 	sn_utils::ls_uint32(body, count);
 	auto const packed = entries.str();
 	body.write(packed.data(), packed.size());
@@ -146,87 +446,98 @@ std::string write_vehicles()
 	return body.str();
 }
 
-void read_vehicles(std::istream &Stream)
+void read_vehicles(std::istream &Stream, network::snapshot_mode const Mode, network::snapshot_result &Result)
 {
 	auto const count = sn_utils::ld_uint32(Stream);
-	uint32_t repositioned{0};
-	uint32_t missing{0};
+	double const tolerance = (Mode == network::snapshot_mode::join ? REPOSITION_TOLERANCE_JOIN : REPOSITION_TOLERANCE_CORRECTION);
+
+	std::unordered_map<TDynamicObject *, vehicle_state> states;
+	states.reserve(count);
 
 	for (uint32_t i = 0; i < count; ++i)
 	{
-		auto const name = sn_utils::d_str(Stream);
-		auto const trackname = sn_utils::d_str(Stream);
-		auto const translation = sn_utils::ld_float64(Stream);
-		auto const axlefirst = sn_utils::d_uint8(Stream);
-		auto const direction = sn_utils::d_uint8(Stream);
-		auto const position = sn_utils::d_dvec3(Stream);
+		auto const state = deserialize_vehicle(Stream);
 
-		auto const velocity = sn_utils::ld_float64(Stream);
-		auto const velocitykmh = sn_utils::ld_float64(Stream);
-		auto const diractive = sn_utils::ld_int32(Stream);
-		auto const mainctrl = sn_utils::ld_int32(Stream);
-		auto const scndctrl = sn_utils::ld_int32(Stream);
-		auto const brakectrl = sn_utils::ld_int32(Stream);
-		auto const localbrake = sn_utils::ld_float64(Stream);
-		auto const pipepress = sn_utils::ld_float64(Stream);
-		auto const brakepress = sn_utils::ld_float64(Stream);
-		auto const scndpipepress = sn_utils::ld_float64(Stream);
-		auto const compressor = sn_utils::ld_float64(Stream);
-		auto const compressedvolume = sn_utils::ld_float64(Stream);
-		auto const aiactive = sn_utils::d_bool(Stream);
-
-		TDynamicObject *vehicle = simulation::Vehicles.find(name);
+		TDynamicObject *vehicle = simulation::Vehicles.find(state.name);
 		if (vehicle == nullptr || vehicle->MoverParameters == nullptr)
-		{
-			++missing;
-			continue;
-		}
-
-		auto &mover = *vehicle->MoverParameters;
-
-		mover.V = velocity;
-		mover.Vel = velocitykmh;
-		mover.DirActive = diractive;
-		mover.MainCtrlPos = mainctrl;
-		mover.ScndCtrlPos = scndctrl;
-		mover.BrakeCtrlPos = brakectrl;
-		mover.LocalBrakePosA = localbrake;
-		mover.PipePress = pipepress;
-		mover.BrakePress = brakepress;
-		mover.ScndPipePress = scndpipepress;
-		mover.Compressor = compressor;
-		mover.CompressedVolume = compressedvolume;
-
-		if (vehicle->Mechanik != nullptr && vehicle->Mechanik->AIControllFlag != aiactive)
-		{
-			vehicle->Mechanik->TakeControl(aiactive);
-		}
-
-		if (glm::length(vehicle->GetPosition() - position) <= REPOSITION_THRESHOLD)
-		{
-			// close enough already; leaving it alone avoids shaking a vehicle that is fine
-			continue;
-		}
-
-		TTrack *track = (trackname.empty() ? nullptr : simulation::Paths.find(trackname));
-		if (track == nullptr)
 			continue;
 
-		// place_on_track() takes the distance of the vehicle's nose, while what we recorded
-		// is the offset of its leading bogie. this inverts the arithmetic the placement
-		// itself does, so the two stay in step if that code ever changes
-		double const half = vehicle->fAxleDist * 0.5;
-		double const axleoffset = (axlefirst ? -half : half);
-		double const sign = (direction ? 1.0 : -1.0);
-		double const nose = (translation - axleoffset) * sign + 0.5 * mover.Dim.L;
+		apply_controls(*vehicle, state);
+		states.emplace(vehicle, state);
 
-		vehicle->place_on_track(track, nose, false);
-		++repositioned;
+		Result.worst_position_error = std::max(Result.worst_position_error, glm::length(vehicle->GetPosition() - state.position));
 	}
 
-	WriteLog("net: snapshot restored " + std::to_string(count) + " vehicles, " + std::to_string(repositioned) + " of them put back on the rails" +
-	             (missing > 0 ? ", " + std::to_string(missing) + " unknown here" : ""),
-	         logtype::net);
+	Result.vehicles = (uint32_t)states.size();
+
+	// a coupled set is put back as a whole or not at all: correcting one vehicle of a
+	// consist while its neighbour stays put is what stretches a coupler until it breaks
+	std::unordered_set<TDynamicObject *> visited;
+
+	for (auto const &pair : states)
+	{
+		if (visited.count(pair.first) > 0)
+			continue;
+
+		// the cap is only there so that a malformed consist cannot spin us forever
+		int const CONSIST_LIMIT{256};
+
+		std::vector<TDynamicObject *> group;
+		TDynamicObject *front = pair.first;
+		for (int step = 0; step < CONSIST_LIMIT; ++step)
+		{
+			TDynamicObject *previous = front->Prev();
+			if (previous == nullptr || previous == pair.first || visited.count(previous) > 0)
+				break;
+			front = previous;
+		}
+
+		TDynamicObject *member = front;
+		for (int step = 0; step < CONSIST_LIMIT && member != nullptr; ++step, member = member->Next())
+		{
+			if (visited.count(member) > 0)
+				break;
+			visited.emplace(member);
+			group.emplace_back(member);
+		}
+
+		bool wanted{false};
+		for (TDynamicObject *member : group)
+		{
+			auto const known = states.find(member);
+			if (known == states.end())
+				continue;
+			if (glm::length(member->GetPosition() - known->second.position) > tolerance)
+			{
+				wanted = true;
+				break;
+			}
+		}
+
+		if (!wanted)
+			continue;
+
+		for (TDynamicObject *member : group)
+		{
+			auto const known = states.find(member);
+			if (known == states.end())
+			{
+				// part of the consist is not in this update, so the set cannot be placed
+				// as a whole; leaving it alone beats tearing it in half
+				wanted = false;
+				break;
+			}
+		}
+
+		if (!wanted)
+			continue;
+
+		for (TDynamicObject *member : group)
+		{
+			reposition(*member, states.at(member));
+			++Result.repositioned;
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -234,7 +545,6 @@ void read_vehicles(std::istream &Stream)
 
 std::string write_crews()
 {
-	std::ostringstream body;
 	std::ostringstream entries;
 	uint32_t count{0};
 
@@ -252,6 +562,7 @@ std::string write_crews()
 		++count;
 	}
 
+	std::ostringstream body;
 	sn_utils::ls_uint32(body, count);
 	auto const packed = entries.str();
 	body.write(packed.data(), packed.size());
@@ -277,42 +588,204 @@ void read_crews(std::istream &Stream)
 	}
 }
 
+// ---------------------------------------------------------------------------
+// memory cells - this is what the signalling reads, so without them a client sees
+// semaphores frozen at whatever the scenario started with
+
+std::string write_memcells(bool const Full)
+{
+	std::ostringstream entries;
+	uint32_t count{0};
+
+	for (TMemCell const *cell : simulation::Memory.sequence())
+	{
+		if (cell == nullptr || cell->name().empty())
+			continue;
+
+		std::ostringstream packed;
+		sn_utils::s_str(packed, cell->name());
+		sn_utils::s_str(packed, cell->Text());
+		sn_utils::ls_float64(packed, cell->Value1());
+		sn_utils::ls_float64(packed, cell->Value2());
+		auto const record = packed.str();
+
+		auto const digest = digest_of(record);
+		if (!Full)
+		{
+			auto const previous = g_lastmemcells.find(cell->name());
+			if (previous != g_lastmemcells.end() && previous->second == digest)
+				continue;
+		}
+		g_lastmemcells[cell->name()] = digest;
+
+		entries.write(record.data(), record.size());
+		++count;
+	}
+
+	if (count == 0)
+		return std::string();
+
+	std::ostringstream body;
+	sn_utils::ls_uint32(body, count);
+	auto const packed = entries.str();
+	body.write(packed.data(), packed.size());
+
+	return body.str();
+}
+
+void read_memcells(std::istream &Stream)
+{
+	auto const count = sn_utils::ld_uint32(Stream);
+
+	for (uint32_t i = 0; i < count; ++i)
+	{
+		auto const name = sn_utils::d_str(Stream);
+		auto const text = sn_utils::d_str(Stream);
+		auto const value1 = sn_utils::ld_float64(Stream);
+		auto const value2 = sn_utils::ld_float64(Stream);
+
+		TMemCell *cell = simulation::Memory.find(name);
+		if (cell == nullptr)
+			continue;
+
+		if (cell->Text() == text && cell->Value1() == value1 && cell->Value2() == value2)
+			continue;
+
+		cell->UpdateValues(text, value1, value2, basic_event::flags::text | basic_event::flags::value1 | basic_event::flags::value2);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// switches
+
+std::string write_switches(bool const Full)
+{
+	std::ostringstream entries;
+	uint32_t count{0};
+
+	for (TTrack *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->name().empty())
+			continue;
+
+		int const state = track->GetSwitchState();
+		if (state < 0)
+			continue;
+
+		if (!Full)
+		{
+			auto const previous = g_lastswitches.find(track->name());
+			if (previous != g_lastswitches.end() && previous->second == state)
+				continue;
+		}
+		g_lastswitches[track->name()] = state;
+
+		sn_utils::s_str(entries, track->name());
+		sn_utils::ls_int32(entries, state);
+		++count;
+	}
+
+	if (count == 0)
+		return std::string();
+
+	std::ostringstream body;
+	sn_utils::ls_uint32(body, count);
+	auto const packed = entries.str();
+	body.write(packed.data(), packed.size());
+
+	return body.str();
+}
+
+void read_switches(std::istream &Stream)
+{
+	auto const count = sn_utils::ld_uint32(Stream);
+
+	for (uint32_t i = 0; i < count; ++i)
+	{
+		auto const name = sn_utils::d_str(Stream);
+		auto const state = sn_utils::ld_int32(Stream);
+
+		TTrack *track = simulation::Paths.find(name);
+		if (track == nullptr)
+			continue;
+
+		if (track->GetSwitchState() != state)
+			track->Switch(state);
+	}
+}
+
 } // namespace
 
-std::string network::take_snapshot()
+void network::reset_snapshot_history()
 {
-	std::ostringstream stream;
+	g_lastvehicles.clear();
+	g_lastmemcells.clear();
+	g_lastswitches.clear();
+}
 
+std::string network::take_snapshot(bool const Full)
+{
+	auto const session = write_session(Full);
+	auto const vehicles = write_vehicles(Full);
+	auto const crews = write_crews();
+	auto const memcells = write_memcells(Full);
+	auto const switches = write_switches(Full);
+
+	if (!Full && vehicles.empty() && memcells.empty() && switches.empty())
+	{
+		// nothing moved and nobody touched anything; the clock alone is not worth a packet
+		return std::string();
+	}
+
+	uint32_t chunks{1}; // the session section always goes along
+	if (!vehicles.empty())
+		++chunks;
+	++chunks; // crews
+	if (!memcells.empty())
+		++chunks;
+	if (!switches.empty())
+		++chunks;
+
+	std::ostringstream stream;
 	sn_utils::ls_uint32(stream, SNAPSHOT_MAGIC);
 	sn_utils::ls_uint32(stream, SNAPSHOT_VERSION);
 	sn_utils::ls_uint64(stream, Global.simulation_tick);
-	sn_utils::ls_uint32(stream, 3); // number of chunks that follow
+	sn_utils::ls_uint32(stream, chunks);
 
-	write_chunk(stream, SNAPSHOT_SESSION, write_session());
-	write_chunk(stream, SNAPSHOT_VEHICLES, write_vehicles());
-	write_chunk(stream, SNAPSHOT_CREWS, write_crews());
+	write_chunk(stream, SNAPSHOT_SESSION, session);
+	if (!vehicles.empty())
+		write_chunk(stream, SNAPSHOT_VEHICLES, vehicles);
+	write_chunk(stream, SNAPSHOT_CREWS, crews);
+	if (!memcells.empty())
+		write_chunk(stream, SNAPSHOT_MEMCELLS, memcells);
+	if (!switches.empty())
+		write_chunk(stream, SNAPSHOT_SWITCHES, switches);
 
 	auto const blob = stream.str();
-	WriteLog("net: snapshot taken at tick " + std::to_string(Global.simulation_tick) + ", " + std::to_string(blob.size()) + " bytes", logtype::net);
+
+	if (Full)
+		WriteLog("net: snapshot taken at tick " + std::to_string(Global.simulation_tick) + ", " + std::to_string(blob.size()) + " bytes", logtype::net);
 
 	return blob;
 }
 
-bool network::apply_snapshot(std::string const &Blob)
+network::snapshot_result network::apply_snapshot(std::string const &Blob, snapshot_mode const Mode)
 {
+	snapshot_result result;
+
 	std::istringstream stream(Blob);
 
 	if (sn_utils::ld_uint32(stream) != SNAPSHOT_MAGIC)
 	{
 		ErrorLog("net: snapshot rejected, not a snapshot", logtype::net);
-		return false;
+		return result;
 	}
 
 	auto const version = sn_utils::ld_uint32(stream);
 	if (version != SNAPSHOT_VERSION)
 	{
 		ErrorLog("net: snapshot rejected, version " + std::to_string(version) + " but this build speaks " + std::to_string(SNAPSHOT_VERSION), logtype::net);
-		return false;
+		return result;
 	}
 
 	auto const tick = sn_utils::ld_uint64(stream);
@@ -323,7 +796,7 @@ bool network::apply_snapshot(std::string const &Blob)
 		if (!stream.good())
 		{
 			ErrorLog("net: snapshot truncated", logtype::net);
-			return false;
+			return result;
 		}
 
 		auto const id = sn_utils::ld_uint16(stream);
@@ -337,23 +810,35 @@ bool network::apply_snapshot(std::string const &Blob)
 		switch (id)
 		{
 		case SNAPSHOT_SESSION:
-			read_session(chunk);
+			read_session(chunk, Mode);
 			break;
 		case SNAPSHOT_VEHICLES:
-			read_vehicles(chunk);
+			read_vehicles(chunk, Mode, result);
 			break;
 		case SNAPSHOT_CREWS:
 			read_crews(chunk);
 			break;
+		case SNAPSHOT_MEMCELLS:
+			read_memcells(chunk);
+			break;
+		case SNAPSHOT_SWITCHES:
+			read_switches(chunk);
+			break;
 		default:
 			// a section this build knows nothing about; its length is right there, so it
 			// costs nothing to walk past it
-			WriteLog("net: snapshot section " + std::to_string(id) + " skipped, unknown to this build", logtype::net);
 			break;
 		}
 	}
 
-	WriteLog("net: snapshot applied, now at tick " + std::to_string(tick), logtype::net);
+	result.ok = true;
 
-	return true;
+	if (Mode == snapshot_mode::join)
+	{
+		WriteLog("net: snapshot applied at tick " + std::to_string(tick) + ", " + std::to_string(result.vehicles) + " vehicles, " +
+		             std::to_string(result.repositioned) + " put back on the rails",
+		         logtype::net);
+	}
+
+	return result;
 }

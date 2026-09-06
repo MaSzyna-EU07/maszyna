@@ -86,6 +86,24 @@ command_verdict validate_command(PeerId Peer, user_command Command, uint32_t Rec
 	return command_verdict::unsupported_target;
 }
 
+claim_result claim_by_name(PeerId Peer, std::string const &Vehicle, NetworkEntityId &Entity)
+{
+	Entity = Entities.id_of(Vehicle);
+	if (Entity == ENTITY_NONE)
+		return claim_result::unknown_vehicle;
+
+	auto const previous = Crews.vehicle_of(Peer);
+	auto const result = Crews.claim(Peer, Entity);
+
+	if ((result == claim_result::granted) && (previous != ENTITY_NONE) && (previous != Entity))
+	{
+		// nobody works two vehicles at once
+		Crews.leave(Peer, previous);
+	}
+
+	return result;
+}
+
 void filter_commands(PeerId Peer, command_queue::commands_map &Commands)
 {
 	for (auto it = Commands.begin(); it != Commands.end();)
@@ -94,6 +112,27 @@ void filter_commands(PeerId Peer, command_queue::commands_map &Commands)
 
 		for (auto command = sequence.begin(); command != sequence.end();)
 		{
+			if (command->source == PEER_NONE)
+			{
+				// posted by the authority itself rather than by a person; it is already
+				// the decision, not a request for one
+				++command;
+				continue;
+			}
+
+			if (command->command == user_command::entervehicle)
+			{
+				// the local player walked into a cab. that is a crew request; the cab
+				// itself is built by the authority once the seat is granted
+				NetworkEntityId entity{ENTITY_NONE};
+				auto const result = claim_by_name(Peer, command->payload, entity);
+				if (result != claim_result::granted && result != claim_result::already_member)
+					WriteLog("net: cannot take " + command->payload + ": " + describe(result), logtype::net);
+
+				command = sequence.erase(command);
+				continue;
+			}
+
 			if (validate_command(Peer, command->command, it->first) != command_verdict::accepted)
 			{
 				command = sequence.erase(command);

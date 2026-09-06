@@ -113,6 +113,9 @@ struct snapshot : public message
 	snapshot() : message(SNAPSHOT) {}
 
 	uint64_t tick{ 0 };
+	// 0 - the peer is joining and takes the world as given
+	// 1 - routine correction on top of a simulation that is already running
+	uint8_t mode{ 0 };
 	std::string blob;
 
 	virtual void serialize(std::ostream &stream) const override;

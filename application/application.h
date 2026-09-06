@@ -123,10 +123,9 @@ private:
 // members
 
     bool m_screenshot_queued = false;
-    // consecutive authoritative steps whose state digest did not match ours
+    // consecutive authoritative steps whose state digest did not match ours. purely a
+    // diagnostic: a client runs its own physics, so it is never expected to match exactly
     std::uint64_t m_statemismatches { 0 };
-    // tick at which we last asked the server to put us back in line
-    std::uint64_t m_lastresynctick { 0 };
 
     modeptr_array m_modes { nullptr }; // collection of available application behaviour modes
     mode_stack m_modestack; // current behaviour mode

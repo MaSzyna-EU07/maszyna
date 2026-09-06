@@ -110,6 +110,12 @@ namespace network
 
 		std::queue<frame_info> delta_queue;
 
+		// how far out of place a correction found us, in a row. a full resync is only
+		// worth asking for when the routine stream is not catching up on its own
+		int bad_corrections = 0;
+		static constexpr double RESYNC_POSITION_ERROR = 25.0;
+		static constexpr int RESYNC_BAD_CORRECTIONS = 5;
+
 		float last_target = 20.0f;
 		float jitteriness = 1.0f;
 		float consume_counter = 0.0f;

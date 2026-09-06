@@ -370,6 +370,8 @@ struct global_settings {
 	bool network_snapshot_applied = false;
 	// identity handed out by the server, presented again when reconnecting
 	uint64_t network_session_token = 0;
+	// how far the worst vehicle was out of place when the last correction arrived, metres
+	float network_position_error = 0.0f;
 
 	std::unordered_map<int, std::string> trainset_overrides;
 

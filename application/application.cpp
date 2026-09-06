@@ -463,10 +463,9 @@ void eu07_application::request_vehicle_leave(network::NetworkEntityId const Enti
 
 namespace {
 
-// how many steps in a row may disagree with the authority before we ask to be corrected,
-// and how long to leave the correction alone before asking again
-uint64_t const NETWORK_RESYNC_THRESHOLD = 120;
-uint64_t const NETWORK_RESYNC_COOLDOWN = 600;
+// the state digest is logged when it starts differing and then only this often, so that
+// a persistent difference does not bury the rest of the log
+uint64_t const NETWORK_DIGEST_LOG_INTERVAL = 1800;
 
 } // namespace
 
@@ -581,46 +580,26 @@ int eu07_application::run()
 				// if we're slave
 				if (m_network && m_network->client)
 				{
-					if (authoritative.valid)
+					// the digest is a diagnostic, not a control input: a client runs its
+					// own physics, so the two will never agree bit for bit and demanding
+					// that they do only produces noise. what actually keeps a client in
+					// line is the authoritative state the server streams to it
+					if (authoritative.valid && authoritative.state_hash_version == network::STATE_HASH_VERSION)
 					{
-						if (authoritative.state_hash_version != network::STATE_HASH_VERSION)
-						{
-							// nothing sensible to compare; say so once and stop pretending
-							if (m_statemismatches == 0)
-							{
-								ErrorLog("net: state digest version mismatch, desync detection is off", logtype::net);
-								m_statemismatches = 1;
-							}
-						}
-						else if (statehash != authoritative.state_hash)
+						if (statehash != authoritative.state_hash)
 						{
 							++m_statemismatches;
-							// a drift usually persists, so this is reported when it starts
-							// and then only now and then, instead of every single step
-							if (m_statemismatches == 1 || (m_statemismatches % 300) == 0)
+							if (m_statemismatches == 1 || (m_statemismatches % NETWORK_DIGEST_LOG_INTERVAL) == 0)
 							{
-								WriteLog("net: state mismatch at tick " + std::to_string(authoritative.tick) + " (" + std::to_string(m_statemismatches) +
+								WriteLog("net: state digest differs at tick " + std::to_string(authoritative.tick) + " (" + std::to_string(m_statemismatches) +
 								             " steps): local " + std::to_string(statehash) + ", authoritative " + std::to_string(authoritative.state_hash),
 								         logtype::net);
 							}
-							Global.desync = (float)m_statemismatches;
-
-							// a short disagreement rides itself out; a lasting one will not,
-							// and calls for the authoritative state rather than a restart
-							if ((m_statemismatches >= NETWORK_RESYNC_THRESHOLD) &&
-							    (m_lastresynctick == 0 || authoritative.tick > m_lastresynctick + NETWORK_RESYNC_COOLDOWN))
-							{
-								m_lastresynctick = authoritative.tick;
-								WriteLog("net: resync requested at tick " + std::to_string(authoritative.tick), logtype::net);
-								m_network->request_resync(authoritative.tick, statehash);
-							}
 						}
-						else
+						else if (m_statemismatches != 0)
 						{
-							if (m_statemismatches != 0)
-								WriteLog("net: state back in step with the authority at tick " + std::to_string(authoritative.tick), logtype::net);
+							WriteLog("net: state digest back in step at tick " + std::to_string(authoritative.tick), logtype::net);
 							m_statemismatches = 0;
-							Global.desync = 0.0f;
 						}
 					}
 

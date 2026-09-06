@@ -806,17 +806,37 @@ bool is_vehicle_recipient(uint32_t const Recipient) {
 	return (command_target)(Recipient & ~0xffff) == command_target::vehicle;
 }
 
+// says a thing once instead of once per frame; a command that cannot be addressed keeps
+// failing for as long as the player holds the key
+bool report_once(std::string const &Message) {
+	static std::unordered_set<std::string> reported;
+	if (!reported.emplace(Message).second)
+		return false;
+	ErrorLog(Message, logtype::net);
+	return true;
+}
+
 uint32_t to_network_recipient(uint32_t const Recipient) {
-	if (!is_vehicle_recipient(Recipient) || network::Entities.empty())
+	if (!is_vehicle_recipient(Recipient))
 		return Recipient;
+
+	if (network::Entities.empty()) {
+		if (network::is_multiplayer())
+			report_once("net: no vehicle roster yet, vehicle commands cannot be addressed");
+		return Recipient;
+	}
 
 	TTrain *train = simulation::Trains.find_id((uint16_t)(Recipient & 0xffff));
-	if (train == nullptr || train->Dynamic() == nullptr)
+	if (train == nullptr || train->Dynamic() == nullptr) {
+		report_once("net: no cab behind local id " + std::to_string(Recipient & 0xffff) + ", its commands cannot be addressed");
 		return Recipient;
+	}
 
 	auto const id = network::Entities.id_of(train->Dynamic()->name());
-	if (id == network::ENTITY_NONE || id > 0xffff)
+	if (id == network::ENTITY_NONE || id > 0xffff) {
+		report_once("net: \"" + train->Dynamic()->name() + "\" has no network id, its commands cannot leave this peer");
 		return Recipient;
+	}
 
 	return (uint32_t)command_target::vehicle | id;
 }
@@ -833,8 +853,10 @@ bool from_network_recipient(uint32_t const Recipient, uint32_t &Local) {
 		return true;
 
 	TTrain *train = simulation::Trains.find(name);
-	if (train == nullptr)
+	if (train == nullptr) {
+		report_once("net: \"" + name + "\" has no cab here yet, commands for it are dropped");
 		return false;
+	}
 
 	Local = (uint32_t)command_target::vehicle | train->id();
 	return true;

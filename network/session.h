@@ -138,6 +138,11 @@ std::string describe(command_verdict Verdict);
 // simply holds every right - there is no separate path for the local participant
 command_verdict validate_command(PeerId Peer, user_command Command, uint32_t Recipient);
 
+// walking into a cab with the in-game key is the same request as pressing the button in
+// the lobby, so it goes through the crew registry rather than being treated as a command
+// that reaches the whole world. returns the vehicle it resolved to, if any
+claim_result claim_by_name(PeerId Peer, std::string const &Vehicle, NetworkEntityId &Entity);
+
 // drops everything the peer is not allowed to ask for and stamps the rest with its
 // identity. used for the local participant as well, so that host input goes through the
 // very same authority layer as input arriving over the wire, only without the transport

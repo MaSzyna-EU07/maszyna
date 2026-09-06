@@ -97,6 +97,7 @@ void network::client_ready::deserialize(std::istream &stream)
 void network::snapshot::serialize(std::ostream &stream) const
 {
 	sn_utils::ls_uint64(stream, tick);
+	sn_utils::s_uint8(stream, mode);
 	sn_utils::ls_uint32(stream, (uint32_t)blob.size());
 	stream.write(blob.data(), blob.size());
 }
@@ -104,6 +105,7 @@ void network::snapshot::serialize(std::ostream &stream) const
 void network::snapshot::deserialize(std::istream &stream)
 {
 	tick = sn_utils::ld_uint64(stream);
+	mode = sn_utils::d_uint8(stream);
 
 	uint32_t const size = sn_utils::ld_uint32(stream);
 	blob.assign(size, '\0');

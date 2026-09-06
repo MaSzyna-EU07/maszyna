@@ -54,6 +54,10 @@ driver_ui::driver_ui()
 	m_transcriptspanel.size_min = {435, 85};
 	m_transcriptspanel.size_max = {Global.fb_size.x * 0.95, Global.fb_size.y * 0.95};
 
+	m_multiplayerlobby.title = STR("Multiplayer lobby");
+	m_multiplayerlobby.size_min = {560, 320};
+	m_multiplayerlobby.size_max = {Global.fb_size.x * 0.95f, Global.fb_size.y * 0.95f};
+
 	if (Global.gui_defaultwindows)
 	{
 		m_aidpanel.is_open = true;
@@ -278,11 +282,11 @@ void driver_ui::render_()
 		ImGui::OpenPopup(popupheader);
 	}
 
-	if (Global.desync != 0.0f)
+	if (Global.network_position_error > 1.0f)
 	{
 		ImGui::SetNextWindowSize(ImVec2(-1, -1));
 		if (ImGui::Begin("network", nullptr, ImGuiWindowFlags_NoCollapse))
-			ImGui::Text("out of step with the server for %d ticks (at %llu)", (int)Global.desync, (unsigned long long)Global.simulation_tick);
+			ImGui::Text("%.1f m behind the server (tick %llu)", Global.network_position_error, (unsigned long long)Global.simulation_tick);
 		ImGui::End();
 	}
 }

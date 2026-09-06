@@ -21,6 +21,9 @@ namespace network
 		void publish_vehicle_list();
 		// brings the world in line with the crew roster and announces every change
 		void update_crews();
+		// sends the peers what the world actually looks like. this is what keeps a client
+		// in line - the command stream alone cannot, because a client runs its own physics
+		void publish_state();
 		// crew request coming from the local participant, which needs no transport
 		void apply_local_claim(NetworkEntityId entity_id);
 		void apply_local_leave(NetworkEntityId entity_id);
@@ -29,9 +32,16 @@ namespace network
 		// how many frames may pass between two unconditional broadcasts of the roster
 		static const int PUBLISH_INTERVAL_FRAMES = 120;
 
+		// how often the authoritative state goes out, and how often it goes out whole
+		// rather than as what changed since the last one
+		static const int STATE_INTERVAL_FRAMES = 10;
+		static const int STATE_FULL_EVERY = 60;
+
 		std::vector<vehicle_entry> last_published_list;
 		int publish_countdown = 0;
 		int crew_publish_countdown = 0;
+		int state_countdown = 0;
+		int state_updates = 0;
 	};
 
     class manager

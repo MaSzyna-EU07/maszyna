@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/Globals.h"
 #include "network/statehash.h"
+#include "network/snapshot.h"
 
 network::server_manager::server_manager()
 {
@@ -158,6 +159,30 @@ void network::manager::notify_scenario_loaded()
 		client->send_ready();
 }
 
+void network::server_manager::publish_state()
+{
+	if (--state_countdown > 0)
+		return;
+
+	state_countdown = STATE_INTERVAL_FRAMES;
+
+	// most of the time only what changed goes out; every so often the whole thing does,
+	// so that anything a peer missed heals by itself
+	bool const full = ((state_updates++ % STATE_FULL_EVERY) == 0);
+
+	auto const blob = take_snapshot(full);
+	if (blob.empty())
+		return;
+
+	snapshot msg;
+	msg.tick = Global.simulation_tick;
+	msg.mode = 1; // correction on top of a running simulation
+	msg.blob = blob;
+
+	for (auto srv : servers)
+		srv->push_message(msg);
+}
+
 void network::manager::request_resync(uint64_t tick, uint64_t state_hash)
 {
 	if (client)
@@ -172,6 +197,7 @@ void network::manager::update()
 	if (servers && simulation::is_ready) {
 		servers->update_crews();
 		servers->publish_vehicle_list();
+		servers->publish_state();
 	}
 
 	if (client)

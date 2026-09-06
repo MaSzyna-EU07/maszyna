@@ -24,7 +24,10 @@ http://mozilla.org/MPL/2.0/.
 ui::multiplayer_lobby_panel::multiplayer_lobby_panel()
     : ui_panel(STR_C("Multiplayer lobby"), false)
 {
-	size_min = {520, 280};
+	// both bounds have to be set: ui_panel feeds them straight to imgui, and a maximum
+	// left at its -1 default is smaller than the minimum, which collapses the window
+	size_min = {560, 320};
+	size_max = {1920, 1080};
 }
 
 std::string ui::multiplayer_lobby_panel::describe_crew(network::NetworkEntityId const Entity) const
@@ -62,7 +65,8 @@ void ui::multiplayer_lobby_panel::render_contents()
 	}
 
 	ImGui::Text("%s: %s, peer %u", STR_C("Session"), host ? (client ? "host + client" : "host") : "client", Global.network_peer_id);
-	ImGui::TextUnformatted(Global.SceneryFile.c_str());
+	if (!Global.SceneryFile.empty())
+		ImGui::TextDisabled("%s", Global.SceneryFile.c_str());
 
 	if (!Global.network_lobby_message.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), "%s", Global.network_lobby_message.c_str());
@@ -72,16 +76,22 @@ void ui::multiplayer_lobby_panel::render_contents()
 	auto const &entries = network::Entities.entries();
 	if (entries.empty())
 	{
-		ImGui::TextUnformatted(STR_C("Waiting for the vehicle list from the server..."));
+		ImGui::TextUnformatted(client ? STR_C("Waiting for the vehicle list from the server...") : STR_C("This scenario has no vehicles anybody could drive."));
 		return;
 	}
 
 	network::NetworkEntityId const ownvehicle{network::Crews.vehicle_of(Global.network_peer_id)};
 
+	float const scale = std::max(1.0f, Global.ui_scale);
+	float const crewwidth = 60.0f * scale;
+	float const statewidth = 150.0f * scale;
+	float const actionwidth = 110.0f * scale;
+
 	ImGui::Columns(4, "mp_vehicles", false);
-	ImGui::SetColumnWidth(1, 70.0f * Global.ui_scale);
-	ImGui::SetColumnWidth(2, 200.0f * Global.ui_scale);
-	ImGui::SetColumnWidth(3, 130.0f * Global.ui_scale);
+	ImGui::SetColumnWidth(0, std::max(120.0f * scale, ImGui::GetWindowWidth() - crewwidth - statewidth - actionwidth - 30.0f * scale));
+	ImGui::SetColumnWidth(1, crewwidth);
+	ImGui::SetColumnWidth(2, statewidth);
+	ImGui::SetColumnWidth(3, actionwidth);
 
 	ImGui::TextDisabled("%s", STR_C("Vehicle"));
 	ImGui::NextColumn();
@@ -111,14 +121,14 @@ void ui::multiplayer_lobby_panel::render_contents()
 
 		if (entry.id == ownvehicle)
 		{
-			if (ImGui::Button(STR_C("Leave"), ImVec2(-1, 0)))
+			if (ImGui::Button(STR_C("Leave")))
 				Application.request_vehicle_leave(entry.id);
 		}
 		else if (entry.claimable)
 		{
 			// a vehicle somebody else is already working on can still be joined, that is
 			// what the crew capacity is for
-			if (ImGui::Button(entry.crew_count > 0 ? STR_C("Join crew") : STR_C("Enter"), ImVec2(-1, 0)))
+			if (ImGui::Button(entry.crew_count > 0 ? STR_C("Join crew") : STR_C("Enter")))
 				claim(entry.id, ownvehicle);
 		}
 		else
@@ -131,6 +141,9 @@ void ui::multiplayer_lobby_panel::render_contents()
 	}
 
 	ImGui::Columns(1);
+
+	ImGui::Separator();
+	ImGui::TextDisabled("%s", STR_C("You can also walk up to a vehicle and use the enter-vehicle key."));
 }
 
 void ui::multiplayer_lobby_panel::claim(network::NetworkEntityId const Entity, network::NetworkEntityId const Current)

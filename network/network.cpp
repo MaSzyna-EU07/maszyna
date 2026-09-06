@@ -205,7 +205,8 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 
 		snapshot reply;
 		reply.tick = Global.simulation_tick;
-		reply.blob = take_snapshot();
+		reply.mode = 0; // joining: take the world as it is
+		reply.blob = take_snapshot(true);
 		conn->send_message(reply);
 
 		// from here on the peer receives the live stream; there is no backlog to catch up on
@@ -225,7 +226,8 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 
 		snapshot reply;
 		reply.tick = Global.simulation_tick;
-		reply.blob = take_snapshot();
+		reply.mode = 0;
+		reply.blob = take_snapshot(true);
 		conn->send_message(reply);
 	}
 	else if (msg.type == message::CLAIM_VEHICLE) {
@@ -256,6 +258,29 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 
 		for (auto const &kv : cmd.commands) {
 			for (command_data const &data : kv.second) {
+				if (data.command == user_command::entervehicle) {
+					// the peer walked into a cab; that is a request for a seat, exactly
+					// like the lobby button, and the crew registry is what decides on it
+					NetworkEntityId entity { ENTITY_NONE };
+					auto const result = claim_by_name(conn->peer_id, data.payload, entity);
+
+					if (result == claim_result::granted || result == claim_result::already_member) {
+						claim_granted reply;
+						reply.entity_id = entity;
+						conn->send_message(reply);
+					}
+					else {
+						WriteLog("net: peer " + std::to_string(conn->peer_id) + " cannot take "
+						         + data.payload + ": " + describe(result), logtype::net);
+
+						claim_denied reply;
+						reply.entity_id = entity;
+						reply.reason = describe(result);
+						conn->send_message(reply);
+					}
+					continue;
+				}
+
 				auto const verdict = validate_command(conn->peer_id, data.command, kv.first);
 				if (verdict != command_verdict::accepted) {
 					report_rejected_command(conn->peer_id, data.command, verdict);
@@ -393,6 +418,8 @@ void network::client::send_claim(NetworkEntityId entity_id)
 	claim_vehicle msg;
 	msg.entity_id = entity_id;
 	conn->send_message(msg);
+
+	WriteLog("net: asking for a seat on vehicle " + std::to_string(entity_id) + " (" + Entities.name_of(entity_id) + ")", logtype::net);
 }
 
 void network::client::send_leave(NetworkEntityId entity_id)
@@ -471,8 +498,16 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 	if (msg.type == message::SNAPSHOT) {
 		const auto& cmd = dynamic_cast<const snapshot&>(msg);
 
-		if (apply_snapshot(cmd.blob)) {
+		auto const mode = (cmd.mode == 0 ? snapshot_mode::join : snapshot_mode::correction);
+		auto const result = apply_snapshot(cmd.blob, mode);
+
+		if (!result.ok) {
+			ErrorLog("net: could not apply the state handed to us", logtype::net);
+			Global.network_status = "The server sent a snapshot this build cannot read";
+		}
+		else if (mode == snapshot_mode::join) {
 			Global.network_snapshot_applied = true;
+			Global.network_position_error = (float)result.worst_position_error;
 
 			// the roster may say we are on a crew already - after a reconnect, or because
 			// the claim was granted while we were still loading. walk into that cab
@@ -484,13 +519,30 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 			}
 		}
 		else {
-			ErrorLog("net: could not apply the snapshot handed to us", logtype::net);
-			Global.network_status = "The server sent a snapshot this build cannot read";
+			Global.network_position_error = (float)result.worst_position_error;
+
+			// the routine correction is what keeps us in line; a full resync is only worth
+			// asking for when even that is not catching up
+			if (result.worst_position_error > RESYNC_POSITION_ERROR) {
+				if (++bad_corrections >= RESYNC_BAD_CORRECTIONS) {
+					bad_corrections = 0;
+					WriteLog("net: " + std::to_string((int)result.worst_position_error)
+					         + " m out of place after a correction, asking for a full resync", logtype::net);
+					send_resync_request(Global.simulation_tick, 0);
+				}
+			}
+			else {
+				bad_corrections = 0;
+			}
 		}
 	}
 
 	if (msg.type == message::VEHICLE_LIST) {
 		const auto& cmd = dynamic_cast<const vehicle_list&>(msg);
+
+		if (Entities.empty() && !cmd.vehicles.empty())
+			WriteLog("net: vehicle roster received, " + std::to_string(cmd.vehicles.size()) + " vehicles to choose from", logtype::net);
+
 		Entities.adopt(cmd.vehicles);
 	}
 
