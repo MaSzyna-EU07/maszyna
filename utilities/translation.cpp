@@ -17,58 +17,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "MOVER.h"
 
-// built-in Polish strings for the HUD overlay: the game ships lang/pl.po without the
-// overlay entries, so this table guarantees Polish in pl locales even before the .po
-// file is extended (registry: English msgid -> Polish msgstr)
-static std::map<std::string, std::string> const hud_pl_strings = {
-    { "Speed", "Prędkość" },
-    { "Direction", "Kierunek" },
-    { "Grade", "Nachylenie" },
-    { "Power bar", "Moc" },
-    { "Brake pipe", "Przewód hamulcowy" },
-    { "Main reservoir", "Zbiornik główny" },
-    { "Train brake", "Hamulec pociągu" },
-    { "Dynamic brake", "Hamulec dynamiczny" },
-    { "Independent brake", "Hamulec niezależny" },
-    { "Brake cylinder", "Cylinder hamulcowy" },
-    { "Last car brake cyl", "Cylinder ostatniego wagonu" },
-    { "Worst brake cyl", "Najgorszy cylinder hamulcowy" },
-    { "Notch", "Nastawnik" },
-    { "Shunt", "Manewry" },
-    { "Wheel slip", "Poślizg kół" },
-    { "Wheel slip!", "Poślizg kół!" },
-    { "Cruise control", "Tempomat" },
-    { "Cruise control: OFF", "Tempomat: WYŁ" },
-    { "Signal lamps", "Sygnały" },
-    { "Current limit", "Aktualne ograniczenie prędkości" },
-    { "Next signal limit", "Następne ograniczenie prędkości" },
-    { "Signal distance", "Odległość do sygnału" },
-    { "Signal %.0f m", "Sygnał: %.0f m" },
-    { "Next limit", "Następne ograniczenie" },
-    { "Passenger exchange", "Wymiana pasażerów" },
-    { " Loading/unloading in progress (%d s left)", " Załadunek/rozładunek w toku (pozostało %d s)" },
-    { "CA / SHP alarm", "Alarm CA / SHP" },
-    { "Doors", "Drzwi" },
-    { "Doors: %s %s", "Drzwi: %s %s" },
-    { "Top strip", "Pasek górny" },
-    { "Main panel", "Panel główny" },
-    { "Group switches apply in Custom mode", "Przełączniki grup działają w trybie Custom" },
-    { "HUD stays visible after closing this window; F1 cycles the modes", "HUD pozostaje widoczny po zamknięciu tego okna; F1 zmienia tryby" },
-    { "Current mode: ", "Aktualny tryb: " },
-    { "HUD: ", "HUD: " },
-    { "Standard", "Standard" },
-    { "Custom", "Custom" },
-    { "Off", "Wył." },
-    { "Traction", "Zaciąg" },
-    { "Braking", "Hamowanie" },
-    { "Neutral", "Neutral" },
-    { "Throttle", "Rozpędzanie" },
-    { "Idle", "Bez obciążenia" },
-    { "Parallel", "Równolegle" },
-    { "Series", "Szeregowo" },
-    { "km/h", "km/h" },
-};
-
 void locale::init()
 {
 	std::fstream stream("lang/" + Global.asLang + ".po", std::ios_base::in | std::ios_base::binary);
@@ -100,16 +48,6 @@ const std::string& locale::lookup_s(const std::string &msg, bool constant)
 		return it->second;
 	}
 
-	// built-in Polish overlay strings (before falling back to the untranslated original)
-	if (Global.asLang == "pl") {
-		auto f = hud_pl_strings.find(std::string(msg));
-		if (f != hud_pl_strings.end()) {
-			if (constant)
-				pointer_cache.emplace(&msg, &f->second);
-			return f->second;
-		}
-	}
-
 	if (constant)
 		pointer_cache.emplace(&msg, &msg);
 	return msg;
@@ -128,16 +66,6 @@ const char* locale::lookup_c(const char *msg, bool constant)
 		if (constant)
 			pointer_cache.emplace(msg, it->second.c_str());
 		return it->second.c_str();
-	}
-
-	// built-in Polish overlay strings (before falling back to the untranslated original)
-	if (Global.asLang == "pl") {
-		auto f = hud_pl_strings.find(std::string(msg));
-		if (f != hud_pl_strings.end()) {
-			if (constant)
-				pointer_cache.emplace(msg, f->second.c_str());
-			return f->second.c_str();
-		}
 	}
 
 	if (constant)

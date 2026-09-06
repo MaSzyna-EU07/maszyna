@@ -43,20 +43,6 @@ void global_settings::LoadIniFile(std::string asFileName)
 	ConfigParse(parser);
 }
 
-// mirrors LoadIniFile: dumps the whole current configuration set back to the file.
-// the original engine only ever READ the main ini, so saving on clean exit is what
-// makes the HUD overlay state/positions persist
-void global_settings::SaveIniFile(std::string const &asFileName)
-{
-	std::ofstream stream(asFileName, std::ios::out | std::ios::trunc);
-	if (!stream.is_open())
-	{
-		WriteLog("settings: cannot save ini file: " + asFileName);
-		return;
-	}
-	export_as_text(stream);
-}
-
 template <typename T>
 static void ParseOne(cParser& parser, T& out, int tokenCount = 1, bool convert = false)
 {
@@ -804,72 +790,6 @@ bool global_settings::ConfigParseUI(cParser& Parser, const std::string& token)
     if (token == "gui.trainingdefault")
     {
         ParseOne(Parser, gui_trainingdefault, 1);
-        return true;
-    }
-
-    if (token == "gui.hud.enabled")
-    {
-        ParseOne(Parser, gui_hud.enabled, 1);
-        return true;
-    }
-
-    if (token == "gui.hud.mode")
-    {
-        ParseOne(Parser, gui_hud.mode, 1);
-        gui_hud.mode_saved = true; // user has set the mode before: honour it on next start
-        return true;
-    }
-
-    if (token == "gui.hud.panel")
-    {
-        ParseOne(Parser, gui_hud.panel, 1);
-        return true;
-    }
-
-    if (token == "gui.hud.strip")
-    {
-        ParseOne(Parser, gui_hud.strip, 1);
-        return true;
-    }
-
-    if (token == "gui.hud.speed_panel")
-    {
-        ParseOne(Parser, gui_hud.speed_panel, 1);
-        return true;
-    }
-
-    if (token == "gui.hud.custom")
-    {
-        ParseOne(Parser, gui_hud.custom_items, 1);
-        return true;
-    }
-
-    if (token == "gui.hud.speed_x")
-    {
-        ParseOne(Parser, gui_hud.speed_x, 1);
-        return true;
-    }
-
-    if (token == "gui.hud.speed_y")
-    {
-        ParseOne(Parser, gui_hud.speed_y, 1);
-        return true;
-    }
-
-    // compact position lines: gui.hud.pos <main|strip|speed> x,y,z
-    if (token == "gui.hud.pos")
-    {
-        std::string name;
-        std::string coords;
-        Parser.getTokens(2, false);
-        Parser >> name >> coords;
-        int x = -1, y = -1, z = 0;
-        if (std::sscanf(coords.c_str(), "%d,%d,%d", &x, &y, &z) >= 2)
-        {
-            if (name == "main") { gui_hud.panel_x = x; gui_hud.panel_y = y; }
-            else if (name == "strip") { gui_hud.sig_x = x; gui_hud.sig_y = y; }
-            else if (name == "speed") { gui_hud.speed_x = x; gui_hud.speed_y = y; }
-        }
         return true;
     }
 
@@ -1725,16 +1645,8 @@ global_settings::export_as_text( std::ostream &Output ) const {
         << UITextColor.g * 255 << " "
         << UITextColor.b * 255 << "\n";
     export_as_text( Output, "ui.bg.opacity", UIBgOpacity );
-    // HUD overlay switch, the only HUD key stored in the common configuration (eu07.ini);
-    // the remaining layout/position values are runtime state, not exported
-    export_as_text( Output, "gui.hud.enabled", gui_hud.enabled );
-    export_as_text( Output, "gui.hud.mode", gui_hud.mode );
-    export_as_text( Output, "gui.hud.panel", gui_hud.panel );
-    export_as_text( Output, "gui.hud.strip", gui_hud.strip );
-    export_as_text( Output, "gui.hud.speed_panel", gui_hud.speed_panel );
-    export_as_text( Output, "gui.hud.custom", gui_hud.custom_items );
-    export_as_text( Output, "gui.hud.speed_x", gui_hud.speed_x );
-    export_as_text( Output, "gui.hud.speed_y", gui_hud.speed_y );
+    // HUD overlay settings are NOT stored in eu07.ini - they live in their own hud.ini
+    // (see hudcfg::load_hud / save_hud in driveruipanels.cpp)
     export_as_text( Output, "input.gamepad", InputGamepad );
 #ifdef WITH_UART
     if( uart_conf.enable ) {

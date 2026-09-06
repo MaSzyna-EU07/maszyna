@@ -247,8 +247,7 @@ struct global_settings {
 	bool gui_showtranscripts = true;
     bool gui_trainingdefault = false;
 
-    // HUD overlay layout; only the "gui.hud.enabled" switch is a configuration key in eu07.ini,
-    // the remaining values are runtime (drag/position) state kept in code with defaults
+    // HUD overlay layout; stored in the HUD's own config file (hud.ini), separate from eu07.ini
     struct hud_config {
         bool enabled { true };
         int mode { 0 };              // HUD display mode: 0=Standard 1=Custom 2=Off
@@ -261,7 +260,7 @@ struct global_settings {
         int speed_x { -1 };
         int speed_y { -1 };
         // bottom-right main panel
-        int panel_width { 380 };
+        int panel_width { 258 };
         int panel_height { 374 };
         int margin { 16 };             // distance from screen right/bottom edges
         float speed_size { 110.0f };   // big speed digits size

@@ -677,11 +677,6 @@ void eu07_application::release_python_lock()
 
 void eu07_application::exit()
 {
-	// persist the configuration (incl. HUD overlay mode/positions) - the engine never
-	// wrote eu07.ini on its own; SaveIniFile mirrors the read path used in init_settings
-	auto const iniPath = user_config_path("eu07.ini");
-	Global.SaveIniFile(iniPath.empty() ? std::string("eu07.ini") : iniPath.string());
-
 	Global.applicationQuitOrder = true;
 	for (auto &mode : m_modes)
 		mode.reset();

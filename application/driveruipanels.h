@@ -284,21 +284,6 @@ private:
     bool m_manual_size { false }; // true once the player resizes the panel
 };
 
-// live signal aspect: lamp states of the next semaphore, read from its anim models
-// (same source the minimap signal window uses; flashing aspects reproduce via opacity)
-struct hud_signal_aspect {
-    bool live { false };
-    int  lamps { 0 };
-    std::array<bool, iMaxNumLights> lit {};
-    std::array<glm::vec3, iMaxNumLights> col {};
-    std::array<float, iMaxNumLights> bright {};
-    // signal point data regardless of lamp display distance (drives the next-limit colour)
-    bool        has_signal { false };
-    double      signal_vel { -1.0 };     // next signal point speed (0 = stop)
-    int         signal_flags { 0 };      // signal point type flags (shunt / stop-point / semaphore)
-    glm::vec3   signal_col {};           // its semantic lamp colour
-};
-
 // top-of-screen signal preview + speed limit strip; pops and flashes when the limit changes
 class hud_signal_panel : public ui_panel {
 
@@ -317,19 +302,14 @@ public:
     void render_contents() override;
 
 private:
-    // picks the next signal-grade point from the AI speed table (friend access) and
-    // collects its lamp states; the chosen signal **stays pinned** (frozen display)
-    // until it is passed, then the state resets and a new signal is read
-    hud_signal_aspect scan_aspect( TDynamicObject const *Controlled, TController const *Owner );
-    // content height for the current display state (lamp column / limit rows)
+    // top strip: speed limits / distance / passenger / CA-SHP (AI speed table only)
+    // content height for the current display state (limit rows + banners)
     int base_height() const;
 // members
     int m_prevlimit { -1 };
     float m_flash { 0.0f };
     bool m_manual_size { false }; // true once the player resizes the strip (no auto-height then)
     // signal display lock (object lock: live re-reads until the signal is passed)
-    bool m_pinned { false };
-    std::string m_pinname;        // locked signal scene-group name
 };
 
 // custom HUD configuration window: same style as the other internal windows (draggable,
