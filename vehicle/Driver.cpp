@@ -744,16 +744,6 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
             }
         }
 
-        auto const distancetotrackend{ fCurrentDistance + fTrackLength };
-        // sign of the distance encodes the scanning direction (fLastDir < 0 = towards Point2)
-        if( distancetotrackend > 0.0 // the track still reaches ahead of us
-         && IsOccupiedByAnotherConsist( pTrack, distancetotrackend * ( fLastDir < 0.0 ? 1.0 : -1.0 ) ) ) {
-            // another consist stands here: it owns the signals beyond it, so we scan no further. The track
-            // stays in the table, marked checked - scanning resumes from the last entry, no dup control
-            tLast = pTrack;
-            break;
-        }
-
         fCurrentDistance += fTrackLength; // doliczenie kolejnego odcinka do przeskanowanej długości
         tLast = pTrack; // odhaczenie, że sprawdzony
         fLastVel = pTrack->VelocityGet(); // prędkość na poprzednio sprawdzonym odcinku
