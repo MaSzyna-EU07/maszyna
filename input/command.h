@@ -445,6 +445,12 @@ struct command_data {
 	glm::vec3 location;
 
     std::string payload;
+
+    // network::PeerId of the participant the command came from. kept as a plain integer
+    // so that this header stays independent of the network layer. it matters wherever two
+    // people work the same vehicle: a continuous command held by one of them must not be
+    // cancelled by the other one letting go of the same key
+    uint32_t source { 0 };
 };
 
 // command_queues: collects and holds commands from input sources, for processing by their intended recipients
@@ -487,15 +493,29 @@ private:
 
 	void push_direct( command_data const &Command, uint32_t const Recipient );
 
-	// hash operator for m_active_continuous
-	struct command_set_hash {
-		uint64_t operator() (const std::pair<user_command, uint32_t> &pair) const {
-			return (uint64_t)pair.first << 32 | (uint64_t)pair.second;
-		}
+	// a continuous command is held per source, not just per recipient: with two people in
+	// one cab, the release sent by one of them may only cancel their own hold
+	struct continuous_key {
+		uint32_t source;
+		uint32_t recipient;
+		user_command command;
+
+		bool operator==( continuous_key const &Other ) const {
+			return source == Other.source
+			    && recipient == Other.recipient
+			    && command == Other.command; }
+	};
+
+	struct continuous_key_hash {
+		std::size_t operator() ( continuous_key const &Key ) const {
+			std::size_t hash = (std::size_t)Key.source * 2654435761u;
+			hash ^= (std::size_t)Key.recipient + 0x9e3779b9 + ( hash << 6 ) + ( hash >> 2 );
+			hash ^= (std::size_t)Key.command + 0x9e3779b9 + ( hash << 6 ) + ( hash >> 2 );
+			return hash; }
 	};
 
 	// currently pressed continuous commands
-	std::unordered_set<std::pair<user_command, uint32_t>, command_set_hash> m_active_continuous;
+	std::unordered_set<continuous_key, continuous_key_hash> m_active_continuous;
 };
 
 template<typename A, typename B>

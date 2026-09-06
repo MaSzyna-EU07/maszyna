@@ -42,6 +42,75 @@ std::string describe(claim_result Result)
 	return "unknown";
 }
 
+std::string describe(command_verdict Verdict)
+{
+	switch (Verdict)
+	{
+	case command_verdict::accepted:
+		return "accepted";
+	case command_verdict::not_in_crew:
+		return "not a member of the crew of that vehicle";
+	case command_verdict::privileged:
+		return "reserved for the session host";
+	case command_verdict::unsupported_target:
+		return "command target not allowed over the network";
+	}
+	return "unknown";
+}
+
+command_verdict validate_command(PeerId Peer, user_command Command, uint32_t Recipient)
+{
+	if (Peer == PEER_HOST)
+	{
+		// the host runs the session and holds every right in it
+		return command_verdict::accepted;
+	}
+
+	auto const target = (command_target)(Recipient & ~0xffff);
+
+	if (target == command_target::vehicle)
+	{
+		// a player works the controls of the vehicle they are on, and of no other
+		return Crews.is_member(Peer, (NetworkEntityId)(Recipient & 0xffff)) ? command_verdict::accepted : command_verdict::not_in_crew;
+	}
+
+	if (target == command_target::simulation)
+	{
+		// setweather, setdatetime, spawntrainset, destroytrainset, queueevent, the pause
+		// and the debug commands all reach the whole world, so they stay with the authority.
+		// TODO: open a subset of them once dispatcher and admin roles exist
+		(void)Command;
+		return command_verdict::privileged;
+	}
+
+	return command_verdict::unsupported_target;
+}
+
+void filter_commands(PeerId Peer, command_queue::commands_map &Commands)
+{
+	for (auto it = Commands.begin(); it != Commands.end();)
+	{
+		auto &sequence = it->second;
+
+		for (auto command = sequence.begin(); command != sequence.end();)
+		{
+			if (validate_command(Peer, command->command, it->first) != command_verdict::accepted)
+			{
+				command = sequence.erase(command);
+				continue;
+			}
+
+			command->source = Peer;
+			++command;
+		}
+
+		if (sequence.empty())
+			it = Commands.erase(it);
+		else
+			++it;
+	}
+}
+
 vehicle_crew &crew_registry::entry(NetworkEntityId Id)
 {
 	auto lookup = m_vehicles.find(Id);

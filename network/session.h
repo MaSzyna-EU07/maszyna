@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "network/entities.h"
+#include "input/command.h"
 
 #include <string>
 #include <unordered_map>
@@ -86,5 +87,25 @@ private:
 };
 
 extern crew_registry Crews;
+
+// what a peer is allowed to ask the simulation for
+enum class command_verdict
+{
+	accepted,
+	not_in_crew,
+	privileged,
+	unsupported_target
+};
+
+std::string describe(command_verdict Verdict);
+
+// the whole of the authority check for an incoming command. the host passes it too, it
+// simply holds every right - there is no separate path for the local participant
+command_verdict validate_command(PeerId Peer, user_command Command, uint32_t Recipient);
+
+// drops everything the peer is not allowed to ask for and stamps the rest with its
+// identity. used for the local participant as well, so that host input goes through the
+// very same authority layer as input arriving over the wire, only without the transport
+void filter_commands(PeerId Peer, command_queue::commands_map &Commands);
 
 } // namespace network

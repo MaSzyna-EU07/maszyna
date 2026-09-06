@@ -438,7 +438,9 @@ double eu07_application::generate_sync()
 
 void eu07_application::queue_quit(bool direct)
 {
-	if (direct || !m_modes[m_modestack.top()]->is_command_processor())
+	// a network client leaving is its own business; replicating the request would shut
+	// down everybody else's session as well
+	if (direct || is_client() || !m_modes[m_modestack.top()]->is_command_processor())
 	{
 		glfwSetWindowShouldClose(m_windows[0], GLFW_TRUE);
 		return;
@@ -510,6 +512,10 @@ int eu07_application::run()
 				// if we're the server
 				if (m_network && m_network->servers)
 				{
+					// our own input goes through the same authority layer as everybody
+					// else's, only without the transport in between
+					network::filter_commands(network::PEER_HOST, local_commands);
+
 					// fetch from network layer command requests received from clients
 					command_queue::commands_map remote_commands = m_network->servers->pop_commands();
 

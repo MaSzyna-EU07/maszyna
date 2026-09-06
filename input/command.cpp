@@ -15,6 +15,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "simulation/simulation.h"
 #include "vehicle/Train.h"
+#include "vehicle/DynObj.h"
+#include "network/entities.h"
 
 namespace simulation {
 
@@ -793,13 +795,61 @@ std::unordered_map<std::string, user_command> commandMap = {
 
 } // namespace simulation
 
+namespace {
+
+// vehicle commands are addressed with the session wide vehicle id while they are in the
+// hands of the network layer, because TTrain ids are handed out locally and two peers
+// numbering the same vehicles differently would send each other's commands astray.
+// outside of multiplayer the registry is empty and both directions are a no-op.
+
+bool is_vehicle_recipient(uint32_t const Recipient) {
+	return (command_target)(Recipient & ~0xffff) == command_target::vehicle;
+}
+
+uint32_t to_network_recipient(uint32_t const Recipient) {
+	if (!is_vehicle_recipient(Recipient) || network::Entities.empty())
+		return Recipient;
+
+	TTrain *train = simulation::Trains.find_id((uint16_t)(Recipient & 0xffff));
+	if (train == nullptr || train->Dynamic() == nullptr)
+		return Recipient;
+
+	auto const id = network::Entities.id_of(train->Dynamic()->name());
+	if (id == network::ENTITY_NONE || id > 0xffff)
+		return Recipient;
+
+	return (uint32_t)command_target::vehicle | id;
+}
+
+// returns false when the addressed vehicle has no cab on this peer yet
+bool from_network_recipient(uint32_t const Recipient, uint32_t &Local) {
+	Local = Recipient;
+
+	if (!is_vehicle_recipient(Recipient) || network::Entities.empty())
+		return true;
+
+	auto const name = network::Entities.name_of(Recipient & 0xffff);
+	if (name.empty())
+		return true;
+
+	TTrain *train = simulation::Trains.find(name);
+	if (train == nullptr)
+		return false;
+
+	Local = (uint32_t)command_target::vehicle | train->id();
+	return true;
+}
+
+} // namespace
+
 void command_queue::update()
 {
 	double delta = Timer::GetDeltaTime();
-	for (auto c : m_active_continuous)
+	for (auto const &c : m_active_continuous)
 	{
-		command_data data({c.first, GLFW_REPEAT, 0.0, 0.0, delta, false, glm::vec3()}); // todo: improve
-		auto lookup = m_commands.emplace( c.second, commanddata_sequence() );
+		command_data data({c.command, GLFW_REPEAT, 0.0, 0.0, delta, false, glm::vec3()}); // todo: improve
+		data.source = c.source;
+		auto lookup = m_commands.emplace( c.recipient, commanddata_sequence() );
 		// recipient stack was either located or created, so we can add to it quite safely
 		lookup.first->second.emplace_back( data );
 	}
@@ -809,7 +859,7 @@ void command_queue::update()
 void
 command_queue::push( command_data const &Command, uint32_t const Recipient ) {
 	if (is_network_target(Recipient)) {
-		auto lookup = m_intercept_queue.emplace(Recipient, commanddata_sequence());
+		auto lookup = m_intercept_queue.emplace(to_network_recipient(Recipient), commanddata_sequence());
 		lookup.first->second.emplace_back(Command);
 	} else {
 		push_direct(Command, Recipient);
@@ -820,10 +870,12 @@ void command_queue::push_direct(const command_data &Command, const uint32_t Reci
 	auto const &desc = simulation::Commands_descriptions[ static_cast<std::size_t>( Command.command ) ];
 	if (desc.mode == command_mode::continuous)
 	{
+		continuous_key const key { Command.source, Recipient, Command.command };
+
 		if (Command.action == GLFW_PRESS)
-			m_active_continuous.emplace(std::make_pair(Command.command, Recipient));
+			m_active_continuous.emplace(key);
 		else if (Command.action == GLFW_RELEASE)
-			m_active_continuous.erase(std::make_pair(Command.command, Recipient));
+			m_active_continuous.erase(key);
 		else if (Command.action == GLFW_REPEAT)
 			return;
 	}
@@ -870,9 +922,16 @@ command_queue::commands_map command_queue::pop_intercept_queue() {
 }
 
 void command_queue::push_commands(const commands_map &commands) {
-	for (auto const &kv : commands)
+	for (auto const &kv : commands) {
+		uint32_t recipient;
+		if (!from_network_recipient(kv.first, recipient)) {
+			// the vehicle has no cab on this peer yet; the command has nowhere to go
+			continue;
+		}
+
 		for (command_data const &data : kv.second)
-			push_direct(data, kv.first);
+			push_direct(data, recipient);
+	}
 }
 
 void
@@ -900,6 +959,7 @@ command_relay::post(user_command const Command, double const Param1, double cons
 
 	uint32_t combined_recipient = static_cast<uint32_t>( command.target ) | Recipient;
 	command_data commanddata({Command, Action, Param1, Param2, Timer::GetDeltaTime(), FreeFlyModeFlag, Position });
+	commanddata.source = Global.network_peer_id;
 	if (Payload)
 		commanddata.payload = *Payload;
 

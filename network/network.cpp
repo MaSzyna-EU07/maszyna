@@ -6,6 +6,9 @@
 #include "utilities/Timer.h"
 #include "application/application.h"
 #include "utilities/Globals.h"
+#include "simulation/simulation.h"
+#include <set>
+#include <tuple>
 
 // 2 - legacy lockstep protocol
 // 3 - handshake carries build identification and an explicit rejection message
@@ -96,6 +99,23 @@ network::server::server(std::shared_ptr<std::istream> buf) : backbuffer(buf)
 {
 
 }
+
+namespace {
+
+// keeps the log readable: a peer holding a forbidden key would otherwise produce a line
+// every single frame, so each peer/command/verdict combination is reported once
+void report_rejected_command(network::PeerId Peer, user_command Command, network::command_verdict Verdict)
+{
+	static std::set<std::tuple<network::PeerId, user_command, network::command_verdict>> reported;
+
+	if (!reported.emplace(Peer, Command, Verdict).second)
+		return;
+
+	auto const &description = simulation::Commands_descriptions[static_cast<std::size_t>(Command)];
+	ErrorLog("net: command \"" + description.name + "\" from peer " + std::to_string(Peer) + " rejected: " + network::describe(Verdict), logtype::net);
+}
+
+} // namespace
 
 void network::server::prune_clients()
 {
@@ -217,8 +237,22 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 	else if (msg.type == message::REQUEST_COMMAND) {
 		const auto& cmd = dynamic_cast<const request_command&>(msg);
 
-		for (auto const &kv : cmd.commands)
-			client_commands_queue.emplace(kv);
+		for (auto const &kv : cmd.commands) {
+			for (command_data const &data : kv.second) {
+				auto const verdict = validate_command(conn->peer_id, data.command, kv.first);
+				if (verdict != command_verdict::accepted) {
+					report_rejected_command(conn->peer_id, data.command, verdict);
+					continue;
+				}
+
+				command_data accepted = data;
+				// the source is decided here, never taken from what the peer sent
+				accepted.source = conn->peer_id;
+
+				auto lookup = client_commands_queue.emplace(kv.first, command_queue::commanddata_sequence());
+				lookup.first->second.emplace_back(accepted);
+			}
+		}
 	}
 }
 

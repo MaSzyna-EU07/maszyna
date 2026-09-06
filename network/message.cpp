@@ -160,6 +160,7 @@ void ::network::request_command::serialize(std::ostream &stream) const
 			sn_utils::s_vec3(stream, data.location);
 
 			sn_utils::s_str(stream, data.payload);
+			sn_utils::ls_uint32(stream, data.source);
 		}
 	}
 }
@@ -186,6 +187,7 @@ void network::request_command::deserialize(std::istream &stream)
 			data.location = sn_utils::d_vec3(stream);
 
 			data.payload = sn_utils::d_str(stream);
+			data.source = sn_utils::ld_uint32(stream);
 
 			sequence.emplace_back(data);
 		}
