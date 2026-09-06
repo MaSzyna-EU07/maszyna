@@ -20,7 +20,7 @@ namespace hardware
 
 // protocol version implemented by this build
 constexpr std::uint8_t protocol_version_major = 2;
-constexpr std::uint8_t protocol_version_minor = 0;
+constexpr std::uint8_t protocol_version_minor = 1;
 
 // 'M2', stored little-endian in the frame header
 constexpr std::uint16_t protocol_magic = 0x324D;
@@ -36,6 +36,10 @@ constexpr std::size_t protocol_frame_size_max = 4096;
 constexpr std::size_t protocol_symbol_name_max = 128;
 constexpr std::size_t protocol_string_max = 128;
 constexpr std::size_t protocol_symbols_per_message_max = 64;
+constexpr std::size_t protocol_diagnostic_functions_max = 32;
+constexpr std::size_t protocol_prompt_options_max = 4;
+// device log lines kept per connection for the debug panel
+constexpr std::size_t protocol_log_history = 64;
 
 // message identifiers; the numbering is part of the public protocol and must not be reordered
 enum class message_type : std::uint16_t
@@ -56,6 +60,7 @@ enum class message_type : std::uint16_t
 
 	device_info = 0x0010,
 	device_diagnostics = 0x0011,
+	device_log = 0x0012,
 
 	resolve_symbols = 0x0020,
 	symbols_resolved = 0x0021,
@@ -77,7 +82,14 @@ enum class message_type : std::uint16_t
 
 	property_read = 0x0050,
 	property_value = 0x0051,
-	property_write = 0x0052
+	property_write = 0x0052,
+
+	diagnostic_functions = 0x0060,
+	diagnostic_run = 0x0061,
+	diagnostic_cancel = 0x0062,
+	diagnostic_status = 0x0063,
+	diagnostic_prompt = 0x0064,
+	diagnostic_prompt_result = 0x0065
 };
 
 // header flag bits
@@ -189,8 +201,31 @@ enum capability_flag : std::uint32_t
 	capability_send_controls = 0x00000004,
 	capability_diagnostics = 0x00000008,
 	capability_soft_takeover = 0x00000010,
-	capability_control_leases = 0x00000020
+	capability_control_leases = 0x00000020,
+	// the device offers diagnostic routines which can be started from the debug panel
+	capability_diagnostic_functions = 0x00000040
 };
+
+// severity of a text line sent by the device
+enum class log_severity : std::uint8_t
+{
+	debug = 0,
+	info = 1,
+	warning = 2,
+	error = 3
+};
+
+// progress of a diagnostic routine running on the device
+enum class diagnostic_state : std::uint8_t
+{
+	idle = 0,
+	running = 1,
+	succeeded = 2,
+	failed = 3
+};
+
+// answer index reported when the user closes a prompt without choosing
+constexpr std::uint8_t prompt_dismissed = 0xFF;
 
 // session progress, mirrors the connection lifecycle of the specification
 enum class session_state : std::uint8_t
@@ -216,6 +251,8 @@ char const *to_string( error_code const Code );
 char const *to_string( value_quality const Quality );
 char const *to_string( session_state const State );
 char const *to_string( link_state const State );
+char const *to_string( log_severity const Severity );
+char const *to_string( diagnostic_state const State );
 
 // size of a fixed-width type on the wire, 0 for variable-length ones
 std::size_t value_type_size( value_type const Type );

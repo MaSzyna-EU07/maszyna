@@ -56,6 +56,16 @@ public:
 	// copies the current condition into the debug report
 	void fill_report( link_report &Report ) const;
 
+	// ---- diagnostics offered by the device, driven from the debug panel ----
+	// starts one of the routines the device advertised; false when it isn't available
+	bool start_diagnostic( std::uint8_t const Function );
+	void cancel_diagnostic();
+	// answers the message box the device asked the simulator to show
+	void answer_prompt( std::uint8_t const Option );
+	bool has_prompt() const { return m_prompt.active; }
+	diagnostic_prompt const &prompt() const { return m_prompt; }
+	std::vector<diagnostic_function> const &functions() const { return m_functions; }
+
 	session_state state() const { return m_state; }
 	link_state link_condition() const;
 	protocol_diagnostics const &diagnostics() const { return m_diagnostics; }
@@ -84,6 +94,11 @@ private:
 	void handle_control_set( decoded_packet const &Packet );
 	void handle_device_diagnostics( decoded_packet const &Packet );
 	void handle_heartbeat( decoded_packet const &Packet );
+	void handle_device_log( decoded_packet const &Packet );
+	void handle_diagnostic_functions( decoded_packet const &Packet );
+	void handle_diagnostic_status( decoded_packet const &Packet );
+	void handle_diagnostic_prompt( decoded_packet const &Packet );
+	void handle_device_answer( decoded_packet const &Packet, bool const Positive );
 
 	void send_state_update( std::vector<state_item> const &Items, bool const Snapshot );
 	void send_symbol_context_changed( std::uint32_t const Context );
@@ -109,6 +124,8 @@ private:
 	std::uint32_t m_sessionid = 0;
 	std::uint32_t m_sequence = 0;
 	std::uint32_t m_lastreceivedsequence = 0;
+	// transaction numbering for the few requests the simulator itself makes
+	std::uint32_t m_outgoingtransaction = 0;
 	bool m_sequenceseen = false;
 	std::size_t m_framesize = protocol_frame_size_default;
 	std::uint32_t m_capabilities = 0;
@@ -150,6 +167,10 @@ private:
 
 	protocol_diagnostics m_diagnostics;
 	device_diagnostics m_devicediagnostics;
+	std::vector<diagnostic_function> m_functions;
+	diagnostic_report m_diagnostic;
+	diagnostic_prompt m_prompt;
+	std::deque<device_log_entry> m_log;
 	rate_counter m_rxrate;
 	rate_counter m_txrate;
 };

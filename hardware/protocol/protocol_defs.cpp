@@ -27,6 +27,7 @@ char const *to_string( message_type const Type )
 		case message_type::device_ready: return "DEVICE_READY";
 		case message_type::device_info: return "DEVICE_INFO";
 		case message_type::device_diagnostics: return "DEVICE_DIAGNOSTICS";
+		case message_type::device_log: return "DEVICE_LOG";
 		case message_type::resolve_symbols: return "RESOLVE_SYMBOLS";
 		case message_type::symbols_resolved: return "SYMBOLS_RESOLVED";
 		case message_type::query_symbol: return "QUERY_SYMBOL";
@@ -44,6 +45,12 @@ char const *to_string( message_type const Type )
 		case message_type::property_read: return "PROPERTY_READ";
 		case message_type::property_value: return "PROPERTY_VALUE";
 		case message_type::property_write: return "PROPERTY_WRITE";
+		case message_type::diagnostic_functions: return "DIAGNOSTIC_FUNCTIONS";
+		case message_type::diagnostic_run: return "DIAGNOSTIC_RUN";
+		case message_type::diagnostic_cancel: return "DIAGNOSTIC_CANCEL";
+		case message_type::diagnostic_status: return "DIAGNOSTIC_STATUS";
+		case message_type::diagnostic_prompt: return "DIAGNOSTIC_PROMPT";
+		case message_type::diagnostic_prompt_result: return "DIAGNOSTIC_PROMPT_RESULT";
 		default: return "UNKNOWN";
 	}
 }
@@ -105,6 +112,28 @@ char const *to_string( link_state const State )
 		case link_state::healthy: return "HEALTHY";
 		case link_state::degraded: return "DEGRADED";
 		default: return "ERROR";
+	}
+}
+
+char const *to_string( log_severity const Severity )
+{
+	switch( Severity )
+	{
+		case log_severity::debug: return "debug";
+		case log_severity::info: return "info";
+		case log_severity::warning: return "warning";
+		default: return "error";
+	}
+}
+
+char const *to_string( diagnostic_state const State )
+{
+	switch( State )
+	{
+		case diagnostic_state::idle: return "IDLE";
+		case diagnostic_state::running: return "RUNNING";
+		case diagnostic_state::succeeded: return "SUCCEEDED";
+		default: return "FAILED";
 	}
 }
 

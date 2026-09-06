@@ -94,10 +94,8 @@ bool driver_mode::drivermode_input::init()
 	}
 #endif
 #ifdef WITH_HARDWARE_PROTOCOL_V2
-	if (true == Global.hardware_conf.enable)
-	{
-		hardware = std::make_unique<hardware::hardware_manager>(Global.hardware_conf);
-	}
+	// started even with no links configured, so that a controller can be added from the debug panel
+	hardware = std::make_unique<hardware::hardware_manager>(Global.hardware_conf);
 #endif
 #ifdef WITH_ZMQ
 	if (!Global.zmq_address.empty())

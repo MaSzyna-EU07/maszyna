@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "hardware/protocol/protocol_defs.h"
 
@@ -89,6 +90,39 @@ struct device_diagnostics
 	std::string firmware_build;
 };
 
+// one text line sent by the device
+struct device_log_entry
+{
+	log_severity severity = log_severity::info;
+	std::uint32_t device_uptime_ms = 0;
+	std::string text;
+};
+
+// a diagnostic routine the device offers, listed in the debug panel
+struct diagnostic_function
+{
+	std::uint8_t id = 0;
+	std::string name;
+};
+
+// progress of the routine currently running on the device
+struct diagnostic_report
+{
+	diagnostic_state state = diagnostic_state::idle;
+	std::uint8_t function = 0;
+	std::uint8_t progress = 0;
+	std::string message;
+};
+
+// a message box the device asked the simulator to show
+struct diagnostic_prompt
+{
+	bool active = false;
+	std::uint32_t id = 0;
+	std::string text;
+	std::vector<std::string> options;
+};
+
 // everything the debug panel needs about one connection, copied out once per frame
 struct link_report
 {
@@ -106,9 +140,17 @@ struct link_report
 	std::size_t handles = 0;
 	std::size_t subscriptions = 0;
 	std::size_t frame_size = 0;
+	// false when the link was switched off from the debug panel, which releases the port
+	bool enabled = true;
+	// index of the link, as the manager knows it
+	std::size_t index = 0;
 	transport_diagnostics transport;
 	protocol_diagnostics protocol;
 	device_diagnostics device;
+	std::vector<diagnostic_function> functions;
+	diagnostic_report diagnostic;
+	diagnostic_prompt prompt;
+	std::vector<device_log_entry> log;
 };
 
 } // namespace hardware

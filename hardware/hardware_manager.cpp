@@ -27,6 +27,10 @@ constexpr std::size_t rx_queue_limit = 256;
 // frames waiting to be pushed out by the worker thread
 constexpr std::size_t tx_queue_limit = 512;
 constexpr std::size_t read_chunk_size = 4096;
+// how often the list of serial ports is refreshed for the debug panel
+constexpr float port_scan_interval = 2.0f;
+// the worker has nothing to do when no link is configured
+constexpr int idle_poll_interval_ms = 250;
 
 } // anonymous namespace
 
@@ -40,14 +44,21 @@ hardware_link::hardware_link( std::unique_ptr<hardware_transport> Transport, con
 	m_decoder.set_frame_size_limit( m_config.frame_size );
 	m_lastconnectattempt = std::chrono::steady_clock::now() - std::chrono::seconds( 10 );
 
+	m_endpoint = m_transport->endpoint();
 	m_report.transport_kind = m_transport->kind();
-	m_report.endpoint = m_transport->endpoint();
-	m_transportstatus.endpoint = m_report.endpoint;
+	m_report.endpoint = m_endpoint;
+	m_transportstatus.endpoint = m_endpoint;
 }
 
 hardware_link::~hardware_link()
 {
 	m_transport->disconnect();
+}
+
+void hardware_link::set_enabled( bool const Enabled )
+{
+	m_enabled = Enabled;
+	m_report.enabled = Enabled;
 }
 
 void hardware_link::send_packet( packet_header const &Header, std::vector<std::uint8_t> const &Payload )
@@ -66,6 +77,24 @@ void hardware_link::send_packet( packet_header const &Header, std::vector<std::u
 
 void hardware_link::service()
 {
+	if( false == m_enabled )
+	{
+		// the link was switched off from the debug panel; release the port and stay quiet
+		if( true == m_transport->connected() )
+		{
+			m_transport->disconnect();
+			m_writebuffer.clear();
+			m_decoder.reset();
+			std::lock_guard<std::mutex> lock( m_mutex );
+			m_transportstatus.connected = false;
+			m_transportstatus.last_error.clear();
+			m_transportdropped = true;
+			m_rxqueue.clear();
+			m_txqueue.clear();
+		}
+		return;
+	}
+
 	if( false == m_transport->connected() )
 	{
 		auto const now = std::chrono::steady_clock::now();
@@ -213,7 +242,9 @@ void hardware_link::update( double const Deltatime, state_snapshot const &Snapsh
 	m_session.update( Deltatime, Snapshot );
 
 	m_report.transport = status;
+	m_report.enabled = m_enabled;
 	m_report.state = (
+	    false == m_enabled ? link_state::disconnected :
 	    false == status.connected ? link_state::disconnected :
 	    m_session.link_condition() );
 	m_session.fill_report( m_report );
@@ -221,23 +252,24 @@ void hardware_link::update( double const Deltatime, state_snapshot const &Snapsh
 
 hardware_manager::hardware_manager( config const &Config ) : m_config( Config )
 {
+	debug_flags.log_messages = m_config.debug;
+	debug_flags.log_frames = m_config.debug_frames;
+
+	m_lastportscan = std::chrono::steady_clock::now() - std::chrono::seconds( 10 );
+
 #ifdef WITH_UART
 	for( auto const &link : m_config.serial_links )
 	{
-		m_links.emplace_back( std::make_unique<hardware_link>( std::make_unique<serial_transport>( link.port, link.baud ), m_config ) );
+		m_links.emplace_back( std::make_shared<hardware_link>( std::make_unique<serial_transport>( link.port, link.baud ), m_config ) );
 		WriteLog( "hardware: protocol v2 link on " + link.port + " @ " + std::to_string( link.baud ) );
 	}
 #endif
 
-	debug_flags.log_messages = m_config.debug;
-	debug_flags.log_frames = m_config.debug_frames;
-
 	m_reports.resize( m_links.size() );
 
-	if( false == m_links.empty() )
-	{
-		m_thread = std::thread( &hardware_manager::worker, this );
-	}
+	// the worker also runs with no links at all, so that ports can be scanned and controllers
+	// added from the debug panel while the simulation is running
+	m_thread = std::thread( &hardware_manager::worker, this );
 
 	s_instance = this;
 }
@@ -250,27 +282,146 @@ hardware_manager::~hardware_manager()
 	{
 		m_thread.join();
 	}
+	std::lock_guard<std::mutex> lock( m_linksmutex );
 	m_links.clear();
 }
 
 void hardware_manager::worker()
 {
-	auto const interval = std::chrono::milliseconds( std::max( 1, m_config.poll_interval_ms ) );
-
 	while( false == m_quit )
 	{
-		for( auto &link : m_links )
+		std::vector<std::shared_ptr<hardware_link>> links;
+		{
+			std::lock_guard<std::mutex> lock( m_linksmutex );
+			links = m_links;
+		}
+
+		for( auto &link : links )
 		{
 			link->service();
 		}
+
+#ifdef WITH_UART
+		auto const now = std::chrono::steady_clock::now();
+		if( std::chrono::duration<float>( now - m_lastportscan ).count() > port_scan_interval )
+		{
+			m_lastportscan = now;
+			auto ports = list_serial_ports();
+			std::lock_guard<std::mutex> lock( m_portsmutex );
+			m_ports = std::move( ports );
+		}
+#endif
+
+		auto const interval = std::chrono::milliseconds( links.empty() ? idle_poll_interval_ms : std::max( 1, m_config.poll_interval_ms ) );
 		std::this_thread::sleep_for( interval );
+	}
+}
+
+std::shared_ptr<hardware_link> hardware_manager::link_at( std::size_t const Index ) const
+{
+	std::lock_guard<std::mutex> lock( m_linksmutex );
+	return ( Index < m_links.size() ? m_links[ Index ] : nullptr );
+}
+
+std::vector<std::string> hardware_manager::available_ports() const
+{
+	std::lock_guard<std::mutex> lock( m_portsmutex );
+	return m_ports;
+}
+
+bool hardware_manager::add_serial_link( std::string const &Port, int const Baud )
+{
+#ifdef WITH_UART
+	if( true == Port.empty() )
+	{
+		return false;
+	}
+
+	std::lock_guard<std::mutex> lock( m_linksmutex );
+	for( auto const &link : m_links )
+	{
+		if( link->endpoint().compare( 0, Port.size() + 1, Port + " " ) == 0 )
+		{
+			// the port already has a link, enabled or not
+			return false;
+		}
+	}
+
+	m_links.emplace_back( std::make_shared<hardware_link>( std::make_unique<serial_transport>( Port, Baud ), m_config ) );
+	WriteLog( "hardware: protocol v2 link added on " + Port + " @ " + std::to_string( Baud ) );
+	return true;
+#else
+	( void )Port;
+	( void )Baud;
+	return false;
+#endif
+}
+
+bool hardware_manager::remove_link( std::size_t const Index )
+{
+	std::lock_guard<std::mutex> lock( m_linksmutex );
+	if( Index >= m_links.size() )
+	{
+		return false;
+	}
+	// the worker may still hold a reference for the rest of its pass; the port is released
+	// when that reference goes away
+	m_links[ Index ]->set_enabled( false );
+	WriteLog( "hardware: protocol v2 link on " + m_links[ Index ]->endpoint() + " removed" );
+	m_links.erase( m_links.begin() + Index );
+	return true;
+}
+
+void hardware_manager::set_link_enabled( std::size_t const Index, bool const Enabled )
+{
+	auto const link = link_at( Index );
+	if( link == nullptr )
+	{
+		return;
+	}
+	if( link->enabled() == Enabled )
+	{
+		return;
+	}
+	link->set_enabled( Enabled );
+	WriteLog( "hardware: protocol v2 link on " + link->endpoint() + ( Enabled ? " connected" : " disconnected" ) );
+}
+
+bool hardware_manager::start_diagnostic( std::size_t const Index, std::uint8_t const Function )
+{
+	auto const link = link_at( Index );
+	return ( link != nullptr ? link->session().start_diagnostic( Function ) : false );
+}
+
+void hardware_manager::cancel_diagnostic( std::size_t const Index )
+{
+	auto const link = link_at( Index );
+	if( link != nullptr )
+	{
+		link->session().cancel_diagnostic();
+	}
+}
+
+void hardware_manager::answer_prompt( std::size_t const Index, std::uint8_t const Option )
+{
+	auto const link = link_at( Index );
+	if( link != nullptr )
+	{
+		link->session().answer_prompt( Option );
 	}
 }
 
 void hardware_manager::update()
 {
-	if( true == m_links.empty() )
+	std::vector<std::shared_ptr<hardware_link>> links;
 	{
+		std::lock_guard<std::mutex> lock( m_linksmutex );
+		links = m_links;
+	}
+
+	if( true == links.empty() )
+	{
+		m_reports.clear();
 		return;
 	}
 
@@ -286,10 +437,12 @@ void hardware_manager::update()
 
 	state_registry::capture( m_snapshot );
 
-	for( std::size_t index = 0; index < m_links.size(); ++index )
+	m_reports.resize( links.size() );
+	for( std::size_t index = 0; index < links.size(); ++index )
 	{
-		m_links[ index ]->update( deltatime, m_snapshot );
-		m_reports[ index ] = m_links[ index ]->report();
+		links[ index ]->update( deltatime, m_snapshot );
+		m_reports[ index ] = links[ index ]->report();
+		m_reports[ index ].index = index;
 	}
 }
 

@@ -108,6 +108,7 @@ void protocol_session::reset()
 	m_sequence = 0;
 	m_lastreceivedsequence = 0;
 	m_sequenceseen = false;
+	m_outgoingtransaction = 0;
 	m_framesize = std::clamp<std::size_t>( m_config.frame_size, protocol_frame_size_min, protocol_frame_size_max );
 	m_capabilities = 0;
 	m_peermajor = 0;
@@ -141,6 +142,10 @@ void protocol_session::reset()
 
 	m_diagnostics = protocol_diagnostics {};
 	m_devicediagnostics = device_diagnostics {};
+	m_functions.clear();
+	m_diagnostic = diagnostic_report {};
+	m_prompt = diagnostic_prompt {};
+	m_log.clear();
 }
 
 link_state protocol_session::link_condition() const
@@ -374,6 +379,30 @@ void protocol_session::handle_packet( decoded_packet const &Packet )
 
 		case message_type::device_diagnostics:
 			handle_device_diagnostics( Packet );
+			break;
+
+		case message_type::device_log:
+			handle_device_log( Packet );
+			break;
+
+		case message_type::diagnostic_functions:
+			handle_diagnostic_functions( Packet );
+			break;
+
+		case message_type::diagnostic_status:
+			handle_diagnostic_status( Packet );
+			break;
+
+		case message_type::diagnostic_prompt:
+			handle_diagnostic_prompt( Packet );
+			break;
+
+		case message_type::ack:
+			handle_device_answer( Packet, true );
+			break;
+
+		case message_type::nack:
+			handle_device_answer( Packet, false );
 			break;
 
 		case message_type::resolve_symbols:
@@ -906,6 +935,212 @@ error_code protocol_session::execute_command( std::size_t const SymbolIndex, com
 	return error_code::none;
 }
 
+void protocol_session::handle_device_log( decoded_packet const &Packet )
+{
+	payload_reader reader( Packet.payload );
+	auto const severity = static_cast<log_severity>( reader.read_uint8() );
+	auto const uptime = reader.read_uint32();
+	auto const text = reader.read_string();
+
+	if( ( false == reader.ok() ) || ( true == text.empty() ) )
+	{
+		++m_diagnostics.length_errors;
+		return;
+	}
+
+	device_log_entry entry;
+	entry.severity = ( severity <= log_severity::error ? severity : log_severity::info );
+	entry.device_uptime_ms = uptime;
+	entry.text = text;
+	m_log.emplace_back( std::move( entry ) );
+	while( m_log.size() > protocol_log_history )
+	{
+		m_log.pop_front();
+	}
+
+	// debug chatter stays in the panel, anything the device considers worth reporting
+	// also goes to the simulator log
+	if( ( severity != log_severity::debug ) || ( true == debug_flags.log_messages ) )
+	{
+		auto const line = "hardware: [" + m_devicename + "] " + std::string( to_string( severity ) ) + ": " + text;
+		if( severity == log_severity::error )
+		{
+			ErrorLog( line );
+		}
+		else
+		{
+			WriteLog( line );
+		}
+	}
+}
+
+void protocol_session::handle_diagnostic_functions( decoded_packet const &Packet )
+{
+	payload_reader reader( Packet.payload );
+	auto const count = reader.read_uint8();
+	if( ( false == reader.ok() ) || ( count > protocol_diagnostic_functions_max ) )
+	{
+		send_nack( 0, message_type::diagnostic_functions, error_code::invalid_field );
+		return;
+	}
+
+	std::vector<diagnostic_function> functions;
+	functions.reserve( count );
+	for( std::size_t index = 0; index < count; ++index )
+	{
+		diagnostic_function function;
+		function.id = reader.read_uint8();
+		function.name = reader.read_string();
+		if( false == reader.ok() )
+		{
+			send_nack( 0, message_type::diagnostic_functions, error_code::invalid_length );
+			return;
+		}
+		if( false == function.name.empty() )
+		{
+			functions.emplace_back( std::move( function ) );
+		}
+	}
+
+	m_functions = std::move( functions );
+	if( true == debug_flags.log_messages )
+	{
+		WriteLog( "hardware: device '" + m_devicename + "' offers " + std::to_string( m_functions.size() ) + " diagnostic function(s)" );
+	}
+}
+
+void protocol_session::handle_diagnostic_status( decoded_packet const &Packet )
+{
+	payload_reader reader( Packet.payload );
+	auto const function = reader.read_uint8();
+	auto const state = static_cast<diagnostic_state>( reader.read_uint8() );
+	auto const progress = reader.read_uint8();
+	auto const message = reader.read_string();
+
+	if( ( false == reader.ok() ) || ( state > diagnostic_state::failed ) )
+	{
+		++m_diagnostics.length_errors;
+		return;
+	}
+
+	m_diagnostic.function = function;
+	m_diagnostic.state = state;
+	m_diagnostic.progress = ( progress <= 100 ? progress : 100 );
+	m_diagnostic.message = message;
+
+	if( state != diagnostic_state::running )
+	{
+		// a routine which ended cannot be waiting for an answer any more
+		m_prompt = diagnostic_prompt {};
+		WriteLog( "hardware: device '" + m_devicename + "' diagnostic " + std::to_string( function ) + " " + std::string( to_string( state ) ) + ( message.empty() ? "" : ": " + message ) );
+	}
+}
+
+void protocol_session::handle_diagnostic_prompt( decoded_packet const &Packet )
+{
+	payload_reader reader( Packet.payload );
+	diagnostic_prompt prompt;
+	prompt.id = reader.read_uint32();
+	prompt.text = reader.read_string();
+	auto const options = reader.read_uint8();
+
+	if( ( false == reader.ok() ) || ( options > protocol_prompt_options_max ) )
+	{
+		send_nack( 0, message_type::diagnostic_prompt, error_code::invalid_field );
+		return;
+	}
+
+	for( std::size_t index = 0; index < options; ++index )
+	{
+		auto label = reader.read_string();
+		if( false == reader.ok() )
+		{
+			send_nack( 0, message_type::diagnostic_prompt, error_code::invalid_length );
+			return;
+		}
+		prompt.options.emplace_back( std::move( label ) );
+	}
+
+	if( true == prompt.options.empty() )
+	{
+		prompt.options.emplace_back( "OK" );
+	}
+	prompt.active = true;
+	m_prompt = std::move( prompt );
+}
+
+void protocol_session::handle_device_answer( decoded_packet const &Packet, bool const Positive )
+{
+	payload_reader reader( Packet.payload );
+	reader.read_uint32();
+	auto const message = static_cast<message_type>( reader.read_uint16() );
+	auto const error = ( Positive ? error_code::none : static_cast<error_code>( reader.read_uint16() ) );
+
+	if( false == reader.ok() )
+	{
+		++m_diagnostics.length_errors;
+		return;
+	}
+
+	if( ( message == message_type::diagnostic_run ) && ( false == Positive ) )
+	{
+		m_diagnostic.state = diagnostic_state::failed;
+		m_diagnostic.message = to_string( error );
+		WriteLog( "hardware: device '" + m_devicename + "' refused to start the diagnostic: " + std::string( to_string( error ) ) );
+	}
+}
+
+bool protocol_session::start_diagnostic( std::uint8_t const Function )
+{
+	if( m_state != session_state::ready )
+	{
+		return false;
+	}
+	auto const function = std::find_if( m_functions.begin(), m_functions.end(), [ Function ]( diagnostic_function const &Entry ) { return Entry.id == Function; } );
+	if( function == m_functions.end() )
+	{
+		return false;
+	}
+
+	payload_writer writer;
+	writer.write_uint32( ++m_outgoingtransaction );
+	writer.write_uint8( Function );
+	send( message_type::diagnostic_run, packetflag_ack_required, writer );
+
+	m_prompt = diagnostic_prompt {};
+	m_diagnostic.function = Function;
+	m_diagnostic.state = diagnostic_state::running;
+	m_diagnostic.progress = 0;
+	m_diagnostic.message = "requested";
+	WriteLog( "hardware: device '" + m_devicename + "' asked to run diagnostic '" + function->name + "'" );
+	return true;
+}
+
+void protocol_session::cancel_diagnostic()
+{
+	if( m_state != session_state::ready )
+	{
+		return;
+	}
+	payload_writer writer;
+	writer.write_uint8( m_diagnostic.function );
+	send( message_type::diagnostic_cancel, packetflag_none, writer );
+	m_prompt = diagnostic_prompt {};
+}
+
+void protocol_session::answer_prompt( std::uint8_t const Option )
+{
+	if( false == m_prompt.active )
+	{
+		return;
+	}
+	payload_writer writer;
+	writer.write_uint32( m_prompt.id );
+	writer.write_uint8( Option );
+	send( message_type::diagnostic_prompt_result, packetflag_response, writer );
+	m_prompt = diagnostic_prompt {};
+}
+
 void protocol_session::send_state_update( std::vector<state_item> const &Items, bool const Snapshot )
 {
 	if( true == Items.empty() )
@@ -1052,6 +1287,10 @@ void protocol_session::fill_report( link_report &Report ) const
 	Report.frame_size = m_framesize;
 	Report.protocol = m_diagnostics;
 	Report.device = m_devicediagnostics;
+	Report.functions = m_functions;
+	Report.diagnostic = m_diagnostic;
+	Report.prompt = m_prompt;
+	Report.log.assign( m_log.begin(), m_log.end() );
 }
 
 } // namespace hardware
