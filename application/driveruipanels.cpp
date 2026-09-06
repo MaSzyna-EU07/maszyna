@@ -38,6 +38,10 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/uart.h"
 #endif
 
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+#include "hardware/hardware_manager.h"
+#endif
+
 void
 drivingaid_panel::update() {
 
@@ -544,6 +548,9 @@ void debug_panel::update()
 #ifdef WITH_UART
     m_uartlines.clear();
 #endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+    m_hardwarelines.clear();
+#endif
 
 	update_section_vehicle( m_vehiclelines );
 	update_section_engine( m_enginelines );
@@ -557,10 +564,17 @@ void debug_panel::update()
 #ifdef WITH_UART
     update_section_uart(m_uartlines);
 #endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+    update_section_hardware(m_hardwarelines);
+#endif
 }
 
 void
 debug_panel::render() {
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+    // a controller waiting for an answer must be visible whether the panel is open or not
+    render_hardware_prompt();
+#endif
     if( false == is_open ) { return; }
 
 	ImGui::PushFont(ui_layer::font_mono);
@@ -619,6 +633,11 @@ debug_panel::render() {
             ImGui::Combo("Port", &UartStatus.selected_port_index, avlports, ports_num);
             ImGui::Combo("Baud", &UartStatus.selected_baud_index, uart_baudrates_list, uart_baudrates_list_num);
             ImGui::Checkbox("Enabled", &UartStatus.enabled);
+        }
+#endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+        if( true == ImGui::CollapsingHeader( "Hardware Protocol v2" ) ) {
+            render_section_hardware();
         }
 #endif
         // toggles
@@ -1308,6 +1327,270 @@ debug_panel::update_section_uart( std::vector<text_line> &Output ) {
         ).c_str(),
         Global.UITextColor
     );
+}
+#endif
+
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+
+namespace {
+
+char const *const hardware_baudrates[] = {
+    "9600", "19200", "38400", "57600", "115200", "230400", "250000", "500000", "1000000", "2000000" };
+
+} // anonymous namespace
+
+void
+debug_panel::update_section_hardware( std::vector<text_line> &Output ) {
+
+    auto const *manager = hardware::hardware_manager::instance();
+    if( manager == nullptr ) { return; }
+
+    // one entry per link, in the same order as the reports; render_section_hardware()
+    // interleaves them with the controls of each link
+    for( auto const &report : manager->reports() ) {
+
+        auto const &protocol = report.protocol;
+
+        std::string textline =
+            ( report.device_name.empty() ? std::string( "(waiting for device)" ) : report.device_name )
+            + ( report.device_role.empty() ? "" : " [" + report.device_role + "]" )
+            + ( report.device_id.empty() ? "" : " id: " + report.device_id )
+            + ( report.firmware_version.empty() ? "" : " fw: " + report.firmware_version );
+
+        textline +=
+            "\n" + report.transport_kind + " " + report.endpoint
+            + "  " + ( report.enabled ? hardware::to_string( report.state ) : "OFF" )
+            + " / " + hardware::to_string( report.session );
+
+        if( report.session_id != 0 ) {
+            textline +=
+                "\nprotocol v" + std::to_string( report.protocol_major ) + "." + std::to_string( report.protocol_minor )
+                + "  session " + std::to_string( report.session_id )
+                + "  frame " + std::to_string( report.frame_size ) + " b"
+                + "  handles " + std::to_string( report.handles )
+                + "  subscriptions " + std::to_string( report.subscriptions );
+        }
+
+        textline +=
+            "\nrx " + to_string( protocol.rx_rate, 0 ) + " pkt/s"
+            + "  tx " + to_string( protocol.tx_rate, 0 ) + " pkt/s"
+            + "  rtt " + to_string( protocol.round_trip_time_ms, 1 ) + " ms"
+            + "  last frame " + to_string( protocol.last_rx_age, 2 ) + " s ago";
+
+        textline +=
+            "\nframes rx " + std::to_string( protocol.rx_frames ) + " tx " + std::to_string( protocol.tx_frames )
+            + "  bytes rx " + std::to_string( report.transport.rx_bytes ) + " tx " + std::to_string( report.transport.tx_bytes );
+
+        textline +=
+            "\nprotocol errors: crc " + std::to_string( protocol.crc_errors )
+            + "  frame " + std::to_string( protocol.frame_errors )
+            + "  length " + std::to_string( protocol.length_errors )
+            + "  version " + std::to_string( protocol.version_errors )
+            + "  gaps " + std::to_string( protocol.sequence_gaps );
+
+        textline +=
+            "\nunknown: message " + std::to_string( protocol.unknown_messages )
+            + "  symbol " + std::to_string( protocol.unknown_symbols )
+            + "  handle " + std::to_string( protocol.unknown_handles )
+            + "  duplicates " + std::to_string( protocol.duplicate_commands )
+            + "  rate limited " + std::to_string( protocol.rate_limited );
+
+        textline +=
+            "\nack " + std::to_string( protocol.acks )
+            + "  nack " + std::to_string( protocol.nacks )
+            + "  state updates " + std::to_string( protocol.state_updates )
+            + "  commands " + std::to_string( protocol.commands_executed )
+            + "  controls " + std::to_string( protocol.controls_applied );
+
+        textline +=
+            "\nsession uptime " + to_string( protocol.connection_uptime, 0 ) + " s"
+            + "  transport errors " + std::to_string( report.transport.transport_errors )
+            + "  reconnects " + std::to_string( report.transport.reconnects );
+
+        if( false == report.transport.last_error.empty() ) {
+            textline += "\nlast transport error: " + report.transport.last_error;
+        }
+
+        if( true == report.device.available ) {
+            textline +=
+                "\ndevice: uptime " + std::to_string( report.device.uptime_ms / 1000 ) + " s"
+                + ", supply " + to_string( report.device.supply_voltage, 2 ) + " V"
+                + ", temperature " + to_string( report.device.temperature, 1 ) + " deg C"
+                + ", overflows rx " + std::to_string( report.device.rx_overflows ) + " tx " + std::to_string( report.device.tx_overflows )
+                + ", watchdog resets " + std::to_string( report.device.watchdog_resets );
+            if( false == report.device.firmware_build.empty() ) {
+                textline += ", build " + report.device.firmware_build;
+            }
+        }
+
+        Output.emplace_back( textline, Global.UITextColor );
+    }
+}
+
+void
+debug_panel::render_section_hardware() {
+
+    auto *manager = hardware::hardware_manager::instance();
+    if( manager == nullptr ) {
+        ImGui::TextUnformatted( "(the hardware protocol is not running)" );
+        return;
+    }
+
+    auto const &reports = manager->reports();
+    if( m_hardwarefunction.size() < reports.size() ) {
+        m_hardwarefunction.resize( reports.size(), 0 );
+    }
+
+    for( std::size_t index = 0; index < reports.size(); ++index ) {
+
+        auto const &report = reports[ index ];
+        ImGui::PushID( static_cast<int>( index ) );
+        ImGui::Separator();
+
+        if( index < m_hardwarelines.size() ) {
+            auto const &line = m_hardwarelines[ index ];
+            ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), "%s", line.data.c_str() );
+        }
+
+        // switching a link off closes its port, so the controller can be reprogrammed
+        if( ImGui::Button( report.enabled ? "Disconnect" : "Connect" ) ) {
+            manager->set_link_enabled( index, false == report.enabled );
+        }
+        ImGui::SameLine();
+        if( ImGui::Button( "Remove" ) ) {
+            manager->remove_link( index );
+            ImGui::PopID();
+            break;
+        }
+
+        if( false == report.functions.empty() ) {
+
+            auto &selection = m_hardwarefunction[ index ];
+            if( selection >= static_cast<int>( report.functions.size() ) ) { selection = 0; }
+            if( selection < 0 ) { selection = 0; }
+
+            std::vector<char const *> names;
+            names.reserve( report.functions.size() );
+            for( auto const &function : report.functions ) {
+                names.emplace_back( function.name.c_str() );
+            }
+
+            bool const running = ( report.diagnostic.state == hardware::diagnostic_state::running );
+
+            ImGui::SetNextItemWidth( 260 * Global.ui_scale );
+            ImGui::Combo( "###diagnosticfunction", &selection, names.data(), static_cast<int>( names.size() ) );
+            ImGui::SameLine();
+            if( true == running ) {
+                if( ImGui::Button( "Cancel" ) ) {
+                    manager->cancel_diagnostic( index );
+                }
+            }
+            else {
+                if( ImGui::Button( "Run diagnostic" ) ) {
+                    manager->start_diagnostic( index, report.functions[ selection ].id );
+                }
+            }
+        }
+
+        if( report.diagnostic.state != hardware::diagnostic_state::idle ) {
+            ImGui::Text(
+                "diagnostic %u: %s %u%% %s",
+                static_cast<unsigned>( report.diagnostic.function ),
+                hardware::to_string( report.diagnostic.state ),
+                static_cast<unsigned>( report.diagnostic.progress ),
+                report.diagnostic.message.c_str() );
+        }
+
+        if( false == report.log.empty() ) {
+            if( true == ImGui::TreeNode( "Device log" ) ) {
+                ImGui::BeginChild( "###devicelog", ImVec2S( 0, 140 ), true );
+                for( auto const &entry : report.log ) {
+                    ImGui::Text(
+                        "[%8.3f] %-7s %s",
+                        entry.device_uptime_ms / 1000.0,
+                        hardware::to_string( entry.severity ),
+                        entry.text.c_str() );
+                }
+                ImGui::EndChild();
+                ImGui::TreePop();
+            }
+        }
+
+        ImGui::PopID();
+    }
+
+    // adding a controller which appeared after the simulation started
+    ImGui::Separator();
+    m_hardwareportnames = manager->available_ports();
+    m_hardwareports.clear();
+    for( auto const &name : m_hardwareportnames ) {
+        m_hardwareports.emplace_back( name.c_str() );
+    }
+
+    if( true == m_hardwareports.empty() ) {
+        ImGui::TextUnformatted( "(no serial ports detected)" );
+    }
+    else {
+        if( m_hardwareport >= static_cast<int>( m_hardwareports.size() ) ) { m_hardwareport = -1; }
+        ImGui::SetNextItemWidth( 140 * Global.ui_scale );
+        ImGui::Combo( "###hardwareport", &m_hardwareport, m_hardwareports.data(), static_cast<int>( m_hardwareports.size() ) );
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth( 120 * Global.ui_scale );
+        ImGui::Combo( "###hardwarebaud", &m_hardwarebaud, hardware_baudrates, static_cast<int>( sizeof( hardware_baudrates ) / sizeof( hardware_baudrates[ 0 ] ) ) );
+        ImGui::SameLine();
+        if( ImGui::Button( "Add controller" ) ) {
+            if( ( m_hardwareport >= 0 ) && ( m_hardwareport < static_cast<int>( m_hardwareportnames.size() ) ) ) {
+                manager->add_serial_link( m_hardwareportnames[ m_hardwareport ], std::atoi( hardware_baudrates[ m_hardwarebaud ] ) );
+            }
+        }
+    }
+
+    ImGui::Separator();
+    bool logmessages = hardware::debug_flags.log_messages;
+    if( ImGui::Checkbox( "Log protocol messages", &logmessages ) ) {
+        hardware::debug_flags.log_messages = logmessages;
+    }
+    bool logframes = hardware::debug_flags.log_frames;
+    if( ImGui::Checkbox( "Log every frame", &logframes ) ) {
+        hardware::debug_flags.log_frames = logframes;
+    }
+}
+
+void
+debug_panel::render_hardware_prompt() {
+
+    auto *manager = hardware::hardware_manager::instance();
+    if( manager == nullptr ) { return; }
+
+    for( auto const &report : manager->reports() ) {
+
+        if( false == report.prompt.active ) { continue; }
+
+        auto const title =
+            ( report.device_name.empty() ? std::string( "Controller" ) : report.device_name )
+            + "###hardwareprompt" + std::to_string( report.index );
+
+        bool open = true;
+        ImGui::SetNextWindowSize( ImVec2S( 420, 0 ), ImGuiCond_Appearing );
+        if( true == ImGui::Begin( title.c_str(), &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize ) ) {
+            ImGui::TextWrapped( "%s", report.prompt.text.c_str() );
+            ImGui::Separator();
+            for( std::size_t option = 0; option < report.prompt.options.size(); ++option ) {
+                if( option > 0 ) { ImGui::SameLine(); }
+                ImGui::PushID( static_cast<int>( option ) );
+                if( ImGui::Button( report.prompt.options[ option ].c_str() ) ) {
+                    manager->answer_prompt( report.index, static_cast<std::uint8_t>( option ) );
+                }
+                ImGui::PopID();
+            }
+        }
+        ImGui::End();
+
+        if( false == open ) {
+            // closing the window without choosing tells the controller the user walked away
+            manager->answer_prompt( report.index, hardware::prompt_dismissed );
+        }
+    }
 }
 #endif
 
