@@ -9,6 +9,8 @@ int MaShaderCompiler::Run() {
   ParseOptions();
   Init();
   m_shader_path = m_project_path.parent_path();
+  m_shader_path.make_preferred();
+
   YAML::Node src = YAML::LoadFile((m_project_path).generic_string());
 
   create_directories(m_output_path);
@@ -47,6 +49,7 @@ void MaShaderCompiler::Init() {
   const char *shader_path = getenv("shader_path");
   if (shader_path) {
     m_shader_path = shader_path;
+    m_shader_path.make_preferred();
     std::cout << "shader path: " << m_shader_path.generic_string() << std::endl;
   } else {
     m_shader_path = "";
@@ -62,6 +65,9 @@ YAML::Binary MaShaderCompiler::CompileShaderToBlob(
     std::vector<std::tuple<std::wstring, std::wstring>> defines,
     std::string target, ShaderPlatform platform) {
   file_name.replace_extension(".hlsl");
+  // Convert to native format since the name comes from the project
+  // file with forward slashes
+  file_name.make_preferred();
   static std::unordered_map<std::string, std::wstring> targets{
       {"compute", L"cs_6_0"}, {"vertex", L"vs_6_0"},   {"hull", L"hs_6_0"},
       {"domain", L"ds_6_0"},  {"geometry", L"gs_6_0"}, {"pixel", L"ps_6_0"}};
@@ -74,7 +80,7 @@ YAML::Binary MaShaderCompiler::CompileShaderToBlob(
   }
 
   RefCountPtr<IDxcBlobEncoding> source_blob;
-  if (FAILED(m_dxc_utils->LoadFile(file_name.generic_wstring().c_str(), nullptr,
+  if (FAILED(m_dxc_utils->LoadFile(file_name.wstring().c_str(), nullptr,
                                    &source_blob))) {
     return {};
   }
@@ -84,8 +90,8 @@ YAML::Binary MaShaderCompiler::CompileShaderToBlob(
   Source.Encoding = DXC_CP_ACP;
 
   std::vector<std::wstring> include_paths{
-      m_shader_path.generic_wstring(),
-      file_name.parent_path().generic_wstring()};
+      m_shader_path.wstring(),
+      file_name.parent_path().wstring()};
 
   std::vector<const wchar_t *> args;
 

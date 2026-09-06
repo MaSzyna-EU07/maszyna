@@ -26,6 +26,10 @@ class MaShaderCompiler {
   std::filesystem::path m_output_path;
 
  private:
+  // Stored in the native format, since DXC does not accept forward
+  // slashes in UNC paths. Use wstring() to retrieve it in native
+  // format or generic_wstring() to get the canonical forward slash
+  // format.
   std::filesystem::path m_shader_path;
   bool m_generate_debug = false;
   void ParseOptions();

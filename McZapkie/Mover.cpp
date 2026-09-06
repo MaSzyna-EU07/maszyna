@@ -4497,7 +4497,7 @@ void TMoverParameters::UpdatePipePressure(double dt)
 
 		if (EngineType != TEngineType::ElectricInductionMotor)
 		{
-			double lbpa = LocalBrakePosA;
+			double lbpa = LocHandleTimeTraxx ? eim_localbrake : LocalBrakePosA;
 			if (EIMCtrlType > 0 && UniCtrlIntegratedLocalBrakeCtrl)
 			{
 				lbpa = std::max(0.0, -eimic_real);
@@ -4513,7 +4513,20 @@ void TMoverParameters::UpdatePipePressure(double dt)
 			// in EIM stock the pneumatic local brake is normally driven only by the MED algorithm
 			// (LocalBrakePosAEIM). When SplitEDPneumaticBrake is active the dedicated LocalBrake
 			// lever should apply pneumatic pressure on the locomotive directly, bypassing MED.
-			double lbpa = SplitEDPneumaticBrake ? LocalBrakePosA : 0.0;
+			// LocHandleTimeTraxx also bypasses MED, but has 3 positions (brake-hold-unbrake).
+			double lbpa;
+			if (LocHandleTimeTraxx)
+			{
+				lbpa = eim_localbrake;
+			}
+			else if (SplitEDPneumaticBrake) // When LocHandleTimeTraxx and SplitEDPneumaticBrake are both active, lbpa is taken from LocHandleTimeTraxx, which is the desired behavior.
+			{
+				lbpa = LocalBrakePosA;
+			}
+			else
+			{
+				lbpa = 0.0;
+			}
 			dpLocalValve = LocHandle->GetPF(std::max(lbpa, LocalBrakePosAEIM), Hamulec->GetBCP(), ScndPipePress, dt, 0);
 		}
 
@@ -7466,17 +7479,17 @@ void TMoverParameters::CheckEIMIC(double dt)
 	}
 	if (LocHandleTimeTraxx)
 	{
-		if (LocalBrakeRatio() < 0.05) // pozycja 0
+		if (LocalBrakeRatio() < 0.4) // pozycja 0, odhamowywanie
 		{
-			eim_localbrake -= dt * 0.17; // zmniejszanie
+			eim_localbrake -= dt * 0.17;
 		}
 
-		if (LocalBrakeRatio() > 0.15) // pozycja 2
+		if (LocalBrakeRatio() > 0.6) // pozycja 2, zahamowywanie
 		{
-			eim_localbrake += dt * 0.17; // wzrastanie
+			eim_localbrake += dt * 0.17;
 			eim_localbrake = std::max(eim_localbrake, BrakePress / MaxBrakePress[0]);
 		}
-		else
+		else // pozycja 1, utrzymanie cisnienia
 		{
 			if (eim_localbrake < Hamulec->GetEDBCP() / MaxBrakePress[0])
 				eim_localbrake = 0;

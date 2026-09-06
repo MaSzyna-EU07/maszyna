@@ -133,7 +133,7 @@ struct global_settings {
 	float ShakingMultiplierRL {1.f}; // mnożnik bujania kamera lewo/prawo
 	float ShakingMultiplierUD {1.f}; // mnożnik bujania kamera gora/dol
     float fDistanceFactor{ 1.f }; // baza do przeliczania odległości dla LoD
-    float targetfps{ 0.0f };
+    float targetfps{ 60.0f };
     bool bFullScreen{ false };
     bool VSync{ false };
     bool bWireFrame{ false };
@@ -224,7 +224,8 @@ struct global_settings {
         {"train", &uart_conf.trainenable},
         {"local", &uart_conf.localenable},
         {"radiovolume", &uart_conf.radiovolumeenable},
-        {"radiochannel", &uart_conf.radiochannelenable}
+        {"radiochannel", &uart_conf.radiochannelenable},
+        {"dynamicbrake", &uart_conf.dynamicenable},
     };
 #endif
 #ifdef WITH_ZMQ

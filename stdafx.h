@@ -99,7 +99,6 @@
 #define GLM_FORCE_CTOR_INIT
 #ifdef _MSC_VER
 #define GLM_FORCE_INLINE
-#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 #endif
 #define GLM_FORCE_INTRINSICS
 #include <glm/glm.hpp>

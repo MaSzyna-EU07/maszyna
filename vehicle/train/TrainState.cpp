@@ -694,6 +694,7 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState(dictionary_source const
 	dict->insert("mainctrl_pos_count", mvControlled->MainCtrlPosNo);
 	dict->insert("main_ctrl_actual_pos", mvControlled->MainCtrlActualPos);
 	dict->insert("scndctrl_pos", mvControlled->ScndCtrlPos);
+	dict->insert("dynamicbrake_pos", mvControlled->DynamicBrakeCtrlPos);
 	dict->insert("scnd_ctrl_actual_pos", mvControlled->ScndCtrlActualPos);
 	dict->insert("brakectrl_pos", mvControlled->fBrakeCtrlPos);
 	dict->insert("localbrake_pos", mvControlled->LocalBrakePosA);

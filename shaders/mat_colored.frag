@@ -9,9 +9,9 @@ in vec4 f_clip_future_pos;
 
 #param (color, 0, 0, 4, diffuse)
 #param (diffuse, 1, 0, 1, diffuse)
-#param (specular, 1, 1, 1, specular)
-#param (reflection, 1, 2, 1, zero)
-#param (glossiness, 1, 3, 1, glossiness)
+#param (specular, 0.2, 0.2, 0.2, specular)
+#param (reflection, 0.5, 0.5, 0.5, zero)
+#param (glossiness, 0.5, 0.5, 0.5, glossiness)
 
 layout(location = 0) out vec4 out_color;
 #if MOTIONBLUR_ENABLED

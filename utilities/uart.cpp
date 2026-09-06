@@ -506,6 +506,19 @@ void uart_input::poll()
                 0
             );
         }
+		if (true == conf.dynamicenable)
+		{
+			// dynamic brake 8 bit
+			double const position{(float)(buffer[13] - conf.dynamicbrakemin) / (conf.dynamicbrakemax - conf.dynamicbrakemin)};
+
+			relay.post(
+                user_command::dynamicbrakecontrollerset,
+                position,
+                0,
+                GLFW_PRESS,
+                0
+            );
+		}
 
         old_packet = buffer;
     }

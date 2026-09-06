@@ -71,7 +71,6 @@ target_compile_definitions(${LIBMANUL_NAME} PRIVATE
         GLM_FORCE_SWIZZLE
         GLM_FORCE_CTOR_INIT
         GLM_FORCE_INLINE
-        GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
         GLM_FORCE_INTRINSICS)
 
 target_compile_definitions(${LIBMANUL_NAME} PRIVATE
