@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "network/network.h"
+#include "network/snapshot.h"
 #include "network/message.h"
 #include "utilities/Logs.h"
 #include "scene/sn_utils.h"
@@ -56,42 +57,9 @@ void network::connection::connected()
 	}
 }
 
-void network::connection::catch_up()
-{
-	backbuffer->seekg(backbuffer_pos);
-
-	std::vector<std::shared_ptr<message>> messages;
-
-	for (int i = 0; i < CATCHUP_PACKETS; i++) {
-		if (backbuffer->peek() == EOF) {
-			send_messages(messages);
-			state = ACTIVE;
-			backbuffer->seekg(0, std::ios_base::end);
-			return;
-		}
-
-		auto msg = deserialize_message(*backbuffer.get());
-
-		if (packet_counter) {
-			packet_counter--;
-			i--; // TODO: it would be better to skip frames in chunks
-			continue;
-		}
-
-		messages.push_back(msg);
-	}
-
-	backbuffer_pos = backbuffer->tellg();
-	backbuffer->seekg(0, std::ios_base::end);
-
-	send_messages(messages);
-}
-
 void network::connection::send_complete(std::shared_ptr<std::string> buf)
 {
-	if (!is_client && state == CATCHING_UP) {
-		catch_up();
-	}
+	// the shared buffer had to stay alive until asio finished writing it out; now it can go
 }
 
 // --------------
@@ -203,15 +171,43 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 		reply.app_version = Global.asVersion;
 		reply.peer_id = allocate_peer_id();
 		conn->peer_id = reply.peer_id;
-		conn->state = connection::CATCHING_UP;
-		conn->backbuffer = backbuffer;
-		conn->backbuffer_pos = 0;
+		// the peer now goes and loads the scenario. it gets the state of the world as a
+		// snapshot when it reports back, instead of replaying the session frame by frame
+		conn->state = connection::AWAITING_READY;
 		conn->packet_counter = cmd.start_packet;
 
 		conn->send_message(reply);
 
 		WriteLog("net: peer " + std::to_string(conn->peer_id) + " connected, build \"" + cmd.app_version
 		         + "\", scenario \"" + Global.SceneryFile + "\"", logtype::net);
+	}
+	else if (msg.type == message::CLIENT_READY) {
+		const auto& cmd = dynamic_cast<const client_ready&>(msg);
+
+		if (cmd.scenario != Global.SceneryFile) {
+			WriteLog("net: peer " + std::to_string(conn->peer_id) + " loaded \"" + cmd.scenario
+			         + "\" but the session runs \"" + Global.SceneryFile + "\"", logtype::net);
+
+			server_reject reply;
+			reply.reason = "scenario mismatch: the session runs \"" + Global.SceneryFile + "\"";
+			conn->send_message(reply);
+			conn->disconnect();
+			return;
+		}
+
+		snapshot reply;
+		reply.tick = Global.simulation_tick;
+		reply.blob = take_snapshot();
+		conn->send_message(reply);
+
+		// from here on the peer receives the live stream; there is no backlog to catch up on
+		conn->state = connection::ACTIVE;
+
+		WriteLog("net: snapshot sent to peer " + std::to_string(conn->peer_id) + " at tick "
+		         + std::to_string(reply.tick), logtype::net);
+
+		// and it still has to learn who is where
+		Crews.mark_all_pending();
 	}
 	else if (msg.type == message::CLAIM_VEHICLE) {
 		const auto& cmd = dynamic_cast<const claim_vehicle&>(msg);
@@ -347,6 +343,18 @@ void network::client::send_commands(command_queue::commands_map commands)
 	conn->send_message(msg);
 }
 
+void network::client::send_ready()
+{
+	if (!conn || conn->state == connection::DEAD)
+		return;
+
+	client_ready msg;
+	msg.scenario = Global.SceneryFile;
+	conn->send_message(msg);
+
+	WriteLog("net: scenario loaded, asking the server for a snapshot", logtype::net);
+}
+
 void network::client::send_claim(NetworkEntityId entity_id)
 {
 	if (!conn || conn->state != connection::ACTIVE)
@@ -389,6 +397,8 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 		const auto& cmd = dynamic_cast<const server_hello&>(msg);
 		conn->state = connection::ACTIVE;
 
+		bool const firsthandshake { !Global.ready_to_load };
+
 		if (!Global.ready_to_load) {
 			Global.random_seed = cmd.seed;
 			Global.random_engine.seed(Global.random_seed);
@@ -412,10 +422,28 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 		Global.network_status.clear();
 
 		WriteLog("net: accept received", logtype::net);
+
+		if (!firsthandshake && simulation::is_ready) {
+			// we are coming back to a session we already have loaded, so there is nobody
+			// to wait for: ask for a fresh snapshot straight away
+			send_ready();
+		}
 	}
 
 	if (conn->state != connection::ACTIVE)
 		return;
+
+	if (msg.type == message::SNAPSHOT) {
+		const auto& cmd = dynamic_cast<const snapshot&>(msg);
+
+		if (apply_snapshot(cmd.blob)) {
+			Global.network_snapshot_applied = true;
+		}
+		else {
+			ErrorLog("net: could not apply the snapshot handed to us", logtype::net);
+			Global.network_status = "The server sent a snapshot this build cannot read";
+		}
+	}
 
 	if (msg.type == message::VEHICLE_LIST) {
 		const auto& cmd = dynamic_cast<const vehicle_list&>(msg);

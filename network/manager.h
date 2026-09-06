@@ -50,5 +50,9 @@ namespace network
 		// registry when we are the server, over the wire when we are a client
 		void request_claim(NetworkEntityId entity_id);
 		void request_leave(NetworkEntityId entity_id);
+
+		// the local scenario is loaded; a client asks the server for a snapshot of the
+		// world as it stands right now
+		void notify_scenario_loaded();
 	};
 }

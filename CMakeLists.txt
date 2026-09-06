@@ -196,6 +196,7 @@ set(SOURCES
 "network/entities.cpp"
 "network/session.cpp"
 "network/statehash.cpp"
+"network/snapshot.cpp"
 "network/backend/asio.cpp"
 
 "widgets/vehiclelist.cpp"

@@ -10,7 +10,8 @@
 namespace network::tcp
 {
     const uint32_t NETWORK_MAGIC = 0x37305545;
-	const uint32_t MAX_MSG_SIZE = 100000;
+	// a snapshot of a busy scenario is comfortably larger than a command frame
+	const uint32_t MAX_MSG_SIZE = 8 * 1024 * 1024;
 
 	class connection : public network::connection
 	{

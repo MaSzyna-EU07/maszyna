@@ -366,6 +366,8 @@ struct global_settings {
 	// authoritative frame it is executing; the network timeline hangs off this, not off
 	// the number of frames the renderer happened to draw
 	uint64_t simulation_tick = 0;
+	// set once a joining client has taken over the state of the world from the server
+	bool network_snapshot_applied = false;
 
 	std::unordered_map<int, std::string> trainset_overrides;
 

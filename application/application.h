@@ -95,6 +95,9 @@ public:
         request_vehicle_claim( network::NetworkEntityId const Entity );
     void
         request_vehicle_leave( network::NetworkEntityId const Entity );
+    // tells the network layer the scenario finished loading
+    void
+        network_scenario_loaded();
 
 private:
 // types

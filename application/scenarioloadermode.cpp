@@ -67,6 +67,10 @@ bool scenarioloader_mode::update() {
 		network::Entities.build();
 	}
 
+	// a client can take the state of the world over now; the server answers with a
+	// snapshot instead of making us replay the session from its first frame
+	Application.network_scenario_loaded();
+
 	WriteLog( "Scenario loading time: " + std::to_string( std::chrono::duration_cast<std::chrono::seconds>( std::chrono::system_clock::now() - timestart ).count() ) + " seconds" );
 	// TODO: implement and use next mode cue
 

@@ -461,6 +461,12 @@ void eu07_application::request_vehicle_leave(network::NetworkEntityId const Enti
 		m_network->request_leave(Entity);
 }
 
+void eu07_application::network_scenario_loaded()
+{
+	if (m_network)
+		m_network->notify_scenario_loaded();
+}
+
 int eu07_application::run()
 {
 	auto frame{0};

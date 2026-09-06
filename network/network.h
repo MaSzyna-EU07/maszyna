@@ -18,17 +18,13 @@ namespace network
 		friend class client;
 
 	private:
-		const int CATCHUP_PACKETS = 300;
-
 		bool is_client;
 
 	protected:
-		std::shared_ptr<std::istream> backbuffer;
-		size_t backbuffer_pos;
 		size_t packet_counter;
 
+		// exists only to keep the send buffer alive until asio is done with it
 		void send_complete(std::shared_ptr<std::string> buf);
-		void catch_up();
 
 	public:
 		std::function<void(const message &msg)> message_handler;
@@ -44,7 +40,9 @@ namespace network
 
 		enum peer_state {
 			AWAITING_HELLO,
-			CATCHING_UP,
+			// handshake done, the peer is loading the scenario; it gets a snapshot and
+			// goes live the moment it says it is ready
+			AWAITING_READY,
 			ACTIVE,
 			DEAD
 		};
@@ -57,6 +55,8 @@ namespace network
 	class server
 	{
 	private:
+		// the session log is still written out, it is handy when picking a desync apart,
+		// but joining no longer means replaying it
 		std::shared_ptr<std::istream> backbuffer;
 
 	protected:
@@ -122,6 +122,8 @@ namespace network
 		void update();
 		frame_delta get_next_delta(int counter);
 		void send_commands(command_queue::commands_map commands);
+		// tells the server the scenario is loaded and a snapshot can be applied
+		void send_ready();
 		// lobby requests; the server is the one that decides
 		void send_claim(NetworkEntityId entity_id);
 		void send_leave(NetworkEntityId entity_id);

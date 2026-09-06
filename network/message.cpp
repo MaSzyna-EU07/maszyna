@@ -80,6 +80,32 @@ void network::vehicle_list::deserialize(std::istream &stream)
 	}
 }
 
+void network::client_ready::serialize(std::ostream &stream) const
+{
+	sn_utils::s_str(stream, scenario);
+}
+
+void network::client_ready::deserialize(std::istream &stream)
+{
+	scenario = sn_utils::d_str(stream);
+}
+
+void network::snapshot::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint64(stream, tick);
+	sn_utils::ls_uint32(stream, (uint32_t)blob.size());
+	stream.write(blob.data(), blob.size());
+}
+
+void network::snapshot::deserialize(std::istream &stream)
+{
+	tick = sn_utils::ld_uint64(stream);
+
+	uint32_t const size = sn_utils::ld_uint32(stream);
+	blob.assign(size, '\0');
+	stream.read(blob.data(), size);
+}
+
 void network::claim_vehicle::serialize(std::ostream &stream) const
 {
 	sn_utils::ls_uint32(stream, entity_id);
@@ -247,6 +273,10 @@ std::shared_ptr<network::message> network::deserialize_message(std::istream &str
 		msg = std::make_shared<leave_vehicle>();
 	else if (type == message::CREW_UPDATE)
 		msg = std::make_shared<crew_update>();
+	else if (type == message::CLIENT_READY)
+		msg = std::make_shared<client_ready>();
+	else if (type == message::SNAPSHOT)
+		msg = std::make_shared<snapshot>();
 
 	if (!msg) {
 		// unknown message type; hand back a marker the peer handlers treat as a protocol error

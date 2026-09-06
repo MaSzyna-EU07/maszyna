@@ -151,6 +151,12 @@ void network::manager::request_leave(NetworkEntityId entity_id)
 		servers->apply_local_leave(entity_id);
 }
 
+void network::manager::notify_scenario_loaded()
+{
+	if (client)
+		client->send_ready();
+}
+
 void network::manager::update()
 {
 	for (auto &backend : backend_list())

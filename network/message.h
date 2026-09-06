@@ -21,6 +21,8 @@ struct message
 		CLAIM_DENIED,
 		LEAVE_VEHICLE,
 		CREW_UPDATE,
+		CLIENT_READY,
+		SNAPSHOT,
 		TYPE_MAX
 	};
 
@@ -80,6 +82,30 @@ struct vehicle_list : public message
 	vehicle_list() : message(VEHICLE_LIST) {}
 
 	std::vector<vehicle_entry> vehicles;
+
+	virtual void serialize(std::ostream &stream) const override;
+	virtual void deserialize(std::istream &stream) override;
+};
+
+// sent once the joining peer has the scenario loaded and can take a snapshot
+struct client_ready : public message
+{
+	client_ready() : message(CLIENT_READY) {}
+
+	std::string scenario;
+
+	virtual void serialize(std::ostream &stream) const override;
+	virtual void deserialize(std::istream &stream) override;
+};
+
+// the state of the world as of one particular tick, handed to a peer that is joining.
+// this is what replaces replaying the whole session from its first frame
+struct snapshot : public message
+{
+	snapshot() : message(SNAPSHOT) {}
+
+	uint64_t tick{ 0 };
+	std::string blob;
 
 	virtual void serialize(std::ostream &stream) const override;
 	virtual void deserialize(std::istream &stream) override;
