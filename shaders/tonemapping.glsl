@@ -44,7 +44,7 @@ vec3 filmic(vec3 x)
 // AgX tonemapping based on nxrighthere / Missing Deadlines implementation.
 // 0: Default, 1: Golden, 2: Punchy
 #ifndef AGX_LOOK
-#define AGX_LOOK 2
+#define AGX_LOOK 0
 #endif
 
 vec3 AgxDefaultContrastApprox(vec3 x)
@@ -109,8 +109,8 @@ vec3 AgxLook(vec3 val)
 
     vec3 offset = vec3(0.0);
     vec3 slope = vec3(1.0);
-    vec3 power = vec3(1.0);
-    float sat = 1.0;
+    vec3 power = vec3(1.6);
+    float sat = 0.9;
 
 #if AGX_LOOK == 1
     // Golden
