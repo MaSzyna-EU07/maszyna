@@ -1999,6 +1999,19 @@ void TController::CloseLog()
 
 TController::~TController()
 { // wykopanie mechanika z roboty
+    // ctOwner is refreshed only by CheckVehicles(), so a vehicle left pointing at a deleted driver
+    // keeps being dereferenced every frame until some other one claims it. Disown them here, as
+    // MoveTo() and ~TDynamicObject() both delete a controller out from under a live consist.
+    // nullptr is expected by the readers, which fall back on Mechanik or skip the block outright
+    if( simulation::is_ready
+     && false == Global.applicationQuitOrder ) {
+        for( auto *vehicle : simulation::Vehicles.sequence() ) {
+            if( vehicle != nullptr
+             && vehicle->ctOwner == this ) {
+                vehicle->ctOwner = nullptr;
+            }
+        }
+    }
     CloseLog();
 };
 
