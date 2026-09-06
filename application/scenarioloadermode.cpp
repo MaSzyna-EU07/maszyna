@@ -62,6 +62,10 @@ bool scenarioloader_mode::update() {
 		Application.pop_mode();
 	}
 
+	// the world exists from here on. this is what the network housekeeping waits for;
+	// simulation::is_ready means something else, namely that the player has a cab
+	Global.simulation_loaded = true;
+
 	if( Application.is_server() ) {
 		// the server owns the vehicle numbering for the whole session and publishes it
 		network::Entities.build();

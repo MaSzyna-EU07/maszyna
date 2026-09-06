@@ -120,10 +120,12 @@ void filter_commands(PeerId Peer, command_queue::commands_map &Commands)
 				continue;
 			}
 
-			if (command->command == user_command::entervehicle)
+			if ((command->command == user_command::entervehicle) && (Entities.id_of(command->payload) != ENTITY_NONE))
 			{
 				// the local player walked into a cab. that is a crew request; the cab
-				// itself is built by the authority once the seat is granted
+				// itself is built by the authority once the seat is granted.
+				// a vehicle the session does not list falls through to the ordinary path,
+				// so a scenario that starts its host in something unusual still works
 				NetworkEntityId entity{ENTITY_NONE};
 				auto const result = claim_by_name(Peer, command->payload, entity);
 				if (result != claim_result::granted && result != claim_result::already_member)

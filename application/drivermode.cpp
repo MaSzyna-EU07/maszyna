@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
+#include "network/entities.h"
 /*
 namespace input {
 
@@ -454,7 +455,11 @@ bool driver_mode::update()
 
 	GfxRenderer->Update(deltarealtime);
 
-	simulation::is_ready = simulation::is_ready || (simulation::Train != nullptr && simulation::Train->is_cab_initialized) || Global.local_start_vehicle == "ghostview";
+	simulation::is_ready = simulation::is_ready || (simulation::Train != nullptr && simulation::Train->is_cab_initialized) || Global.local_start_vehicle == "ghostview"
+	                       // in a session a player with no cab is an observer waiting in the
+	                       // lobby, not a game still loading: the world has to be drawn for
+	                       // them, or they are left staring at a black screen
+	                       || (network::is_multiplayer() && simulation::Train == nullptr);
 
 	return true;
 }

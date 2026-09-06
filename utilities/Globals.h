@@ -372,6 +372,9 @@ struct global_settings {
 	uint64_t network_session_token = 0;
 	// how far the worst vehicle was out of place when the last correction arrived, metres
 	float network_position_error = 0.0f;
+	// the scenario has finished loading and the world can be worked with. this is not the
+	// same as simulation::is_ready, which only goes up once the player has a cab
+	bool simulation_loaded = false;
 
 	std::unordered_map<int, std::string> trainset_overrides;
 

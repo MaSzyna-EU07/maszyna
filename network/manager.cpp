@@ -194,7 +194,10 @@ void network::manager::update()
 	for (auto &backend : backend_list())
 		backend.second->update();
 
-	if (servers && simulation::is_ready) {
+	if (servers && Global.simulation_loaded) {
+		// note: not simulation::is_ready. that one waits for the local player's cab, and
+		// the cab of a claimed vehicle is built by update_crews() - waiting for it here
+		// would leave the two waiting on each other
 		servers->update_crews();
 		servers->publish_vehicle_list();
 		servers->publish_state();
