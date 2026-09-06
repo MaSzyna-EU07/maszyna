@@ -266,6 +266,14 @@ bool driver_mode::update()
 
 		// variable step simulation time routines
 
+		if (change_train.empty() && !Global.network_pending_vehicle.empty())
+		{
+			// vehicle picked in the multiplayer lobby; the cab itself is built by the
+			// replicated entervehicle command, we only have to move in once it exists
+			change_train = Global.network_pending_vehicle;
+			Global.network_pending_vehicle.clear();
+		}
+
 		if (!change_train.empty())
 		{
 			TTrain *train = simulation::Trains.find(change_train);
@@ -450,6 +458,15 @@ void driver_mode::enter()
 	{
 		Global.local_start_vehicle = "ghostview";
 		Error("Bad scenario: failed to locate player train, \"" + Global.local_start_vehicle + "\"");
+	}
+
+	if (Application.is_server() || Application.is_client())
+	{
+		// in a multiplayer session nobody is dropped into a random vehicle: the roster
+		// published by the server is offered instead, and stays available for later switches
+		auto ui = std::dynamic_pointer_cast<driver_ui>(m_userinterface);
+		if (ui != nullptr)
+			ui->show_multiplayer_lobby(nPlayerTrain == nullptr);
 	}
 
 	// if (!Global.bMultiplayer) //na razie włączone

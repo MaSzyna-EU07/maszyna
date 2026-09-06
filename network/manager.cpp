@@ -59,10 +59,36 @@ network::manager::manager()
 {
 }
 
+void network::server_manager::publish_vehicle_list()
+{
+	if (Entities.empty())
+		return;
+
+	Entities.refresh();
+
+	// resend on every change, and once in a while regardless, so that a peer which has
+	// just finished catching up does not have to wait for somebody to move
+	bool const changed = (Entities.entries() != last_published_list);
+	if (!changed && --publish_countdown > 0)
+		return;
+
+	last_published_list = Entities.entries();
+	publish_countdown = PUBLISH_INTERVAL_FRAMES;
+
+	vehicle_list msg;
+	msg.vehicles = last_published_list;
+
+	for (auto srv : servers)
+		srv->push_message(msg);
+}
+
 void network::manager::update()
 {
 	for (auto &backend : backend_list())
 		backend.second->update();
+
+	if (servers && simulation::is_ready)
+		servers->publish_vehicle_list();
 
 	if (client)
 		client->update();

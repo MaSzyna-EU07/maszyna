@@ -354,6 +354,10 @@ struct global_settings {
 	std::string network_status;
 	// set when the server refused us; keeps the reason for the ui and stops reconnect attempts
 	std::string network_reject_reason;
+	// identity of this participant within the session; the host keeps network::PEER_HOST
+	uint32_t network_peer_id = 0;
+	// vehicle the local player asked to enter from the multiplayer lobby
+	std::string network_pending_vehicle;
 
 	std::unordered_map<int, std::string> trainset_overrides;
 

@@ -193,9 +193,11 @@ set(SOURCES
 "network/network.cpp"
 "network/message.cpp"
 "network/manager.cpp"
+"network/entities.cpp"
 "network/backend/asio.cpp"
 
 "widgets/vehiclelist.cpp"
+"widgets/multiplayer_lobby.cpp"
 "widgets/map.cpp"
 "widgets/map_objects.cpp"
 "widgets/popup.cpp"

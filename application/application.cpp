@@ -1517,6 +1517,11 @@ bool eu07_application::init_network()
 	{
 		// create network manager
 		m_network.emplace();
+
+		// the host takes part in the session like any other peer, with an identity of its
+		// own, so that crew and permission handling needs no special case for it
+		if (!Global.network_client)
+			Global.network_peer_id = network::PEER_HOST;
 	}
 
 	for (auto const &pair : Global.network_servers)
@@ -1526,14 +1531,15 @@ bool eu07_application::init_network()
 		m_network->create_server(pair.first, pair.second);
 	}
 
+	if (!Global.local_start_vehicle_override && (Global.network_client || !Global.network_servers.empty()))
+	{
+		// in a multiplayer session the vehicle is picked in the lobby, so both the host
+		// and the joining clients start out as observers rather than in a random cab
+		Global.local_start_vehicle = "ghostview";
+	}
+
 	if (Global.network_client)
 	{
-		if (!Global.local_start_vehicle_override)
-		{
-			// in a multiplayer session the vehicle is assigned by the server;
-			// until the lobby exists the client simply starts out as an observer
-			Global.local_start_vehicle = "ghostview";
-		}
 
 		Global.network_status = "Connecting to " + Global.network_client->second + "...";
 		WriteLog("net: connecting to " + Global.network_client->second + " (" + Global.network_client->first + ")", logtype::net);

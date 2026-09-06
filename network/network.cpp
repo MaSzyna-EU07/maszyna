@@ -112,6 +112,14 @@ void network::server::push_delta(const frame_info &msg)
 	}
 }
 
+void network::server::push_message(const message &msg)
+{
+	for (auto const &client : clients) {
+		if (client->state == connection::ACTIVE)
+			client->send_message(msg);
+	}
+}
+
 command_queue::commands_map network::server::pop_commands()
 {
 	command_queue::commands_map map(client_commands_queue);
@@ -157,6 +165,8 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
         reply.config = 0; // TODO: pass bitfield with state of relevant setting switches
         reply.scenario = Global.SceneryFile;
 		reply.app_version = Global.asVersion;
+		reply.peer_id = allocate_peer_id();
+		conn->peer_id = reply.peer_id;
 		conn->state = connection::CATCHING_UP;
 		conn->backbuffer = backbuffer;
 		conn->backbuffer_pos = 0;
@@ -164,7 +174,8 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 
 		conn->send_message(reply);
 
-		WriteLog("net: peer connected, build \"" + cmd.app_version + "\", scenario \"" + Global.SceneryFile + "\"", logtype::net);
+		WriteLog("net: peer " + std::to_string(conn->peer_id) + " connected, build \"" + cmd.app_version
+		         + "\", scenario \"" + Global.SceneryFile + "\"", logtype::net);
 	}
 	else if (msg.type == message::REQUEST_COMMAND) {
 		const auto& cmd = dynamic_cast<const request_command&>(msg);
@@ -293,6 +304,11 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 			return;
 		}
 
+		if (cmd.peer_id != PEER_NONE) {
+			Global.network_peer_id = cmd.peer_id;
+			WriteLog("net: assigned peer id " + std::to_string(cmd.peer_id), logtype::net);
+		}
+
 		Global.network_status.clear();
 
 		WriteLog("net: accept received", logtype::net);
@@ -300,6 +316,11 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 
 	if (conn->state != connection::ACTIVE)
 		return;
+
+	if (msg.type == message::VEHICLE_LIST) {
+		const auto& cmd = dynamic_cast<const vehicle_list&>(msg);
+		Entities.adopt(cmd.vehicles);
+	}
 
 	if (msg.type == message::FRAME_INFO) {
 		resume_frame_counter++;

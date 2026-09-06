@@ -37,6 +37,7 @@ driver_ui::driver_ui()
 	add_external_panel(&m_logpanel);
 	add_external_panel(&m_perfgraphpanel);
 	add_external_panel(&m_cameraviewpanel);
+	add_external_panel(&m_multiplayerlobby);
 	m_logpanel.is_open = false;
 
 	m_aidpanel.title = STR("Driving Aid");
@@ -87,8 +88,16 @@ void driver_ui::render_menu_contents()
 		if (ImGui::MenuItem(m_timepanel.name().c_str()))
 			m_timepanel.open();
 
+		if (Application.is_server() || Application.is_client())
+			ImGui::MenuItem(m_multiplayerlobby.name().c_str(), nullptr, &m_multiplayerlobby.is_open);
+
 		ImGui::EndMenu();
 	}
+}
+
+void driver_ui::show_multiplayer_lobby(bool const Show)
+{
+	m_multiplayerlobby.is_open = Show;
 }
 
 void driver_ui::showDebugUI()

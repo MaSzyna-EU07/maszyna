@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
 #include "utilities/translation.h"
+#include "network/entities.h"
 
 scenarioloader_mode::scenarioloader_mode() {
     m_userinterface = std::make_shared<scenarioloader_ui>();
@@ -59,6 +60,11 @@ bool scenarioloader_mode::update() {
 	catch (invalid_scenery_exception &e) {
 		ErrorLog( "Bad init: scenario loading failed" );
 		Application.pop_mode();
+	}
+
+	if( Application.is_server() ) {
+		// the server owns the vehicle numbering for the whole session and publishes it
+		network::Entities.build();
 	}
 
 	WriteLog( "Scenario loading time: " + std::to_string( std::chrono::duration_cast<std::chrono::seconds>( std::chrono::system_clock::now() - timestart ).count() ) + " seconds" );

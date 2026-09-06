@@ -1,5 +1,6 @@
 #pragma once
 #include "network/message.h"
+#include "network/entities.h"
 #include "input/command.h"
 #include <queue>
 
@@ -14,6 +15,7 @@ struct message
 		FRAME_INFO,
 		REQUEST_COMMAND,
 		SERVER_REJECT,
+		VEHICLE_LIST,
 		TYPE_MAX
 	};
 
@@ -59,6 +61,20 @@ struct server_hello : public message
     std::string scenario;
 	// build identification of the server, informational only
 	std::string app_version;
+	// identity assigned to the joining peer for the rest of the session
+	uint32_t peer_id{ PEER_NONE };
+
+	virtual void serialize(std::ostream &stream) const override;
+	virtual void deserialize(std::istream &stream) override;
+};
+
+// authoritative roster of the vehicles a player may take over, broadcast by the server
+// whenever it changes (and periodically, so that a peer which just went active gets one)
+struct vehicle_list : public message
+{
+	vehicle_list() : message(VEHICLE_LIST) {}
+
+	std::vector<vehicle_entry> vehicles;
 
 	virtual void serialize(std::ostream &stream) const override;
 	virtual void deserialize(std::istream &stream) override;

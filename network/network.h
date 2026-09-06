@@ -5,6 +5,7 @@
 #include <queue>
 #include <chrono>
 #include "network/message.h"
+#include "network/entities.h"
 #include "input/command.h"
 
 namespace network
@@ -47,6 +48,9 @@ namespace network
 			DEAD
 		};
 		peer_state state;
+
+		// session identity of the peer on the other side of this connection
+		PeerId peer_id { PEER_NONE };
 	};
 
 	class server
@@ -64,6 +68,9 @@ namespace network
 	public:
 		server(std::shared_ptr<std::istream> buf);
 		void push_delta(const frame_info &msg);
+		// sends an out of band message to every active peer. unlike push_delta this is not
+		// written to the backbuffer, so it does not become part of the replayed history
+		void push_message(const message &msg);
 		command_queue::commands_map pop_commands();
 	};
 

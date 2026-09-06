@@ -33,6 +33,7 @@ void network::server_hello::serialize(std::ostream &stream) const
     sn_utils::ls_int64(stream, config);
     sn_utils::s_str(stream, scenario);
 	sn_utils::s_str(stream, app_version);
+	sn_utils::ls_uint32(stream, peer_id);
 }
 
 void network::server_hello::deserialize(std::istream &stream)
@@ -42,6 +43,41 @@ void network::server_hello::deserialize(std::istream &stream)
     config = sn_utils::ld_int64(stream);
     scenario = sn_utils::d_str(stream);
 	app_version = sn_utils::d_str(stream);
+	peer_id = sn_utils::ld_uint32(stream);
+}
+
+void network::vehicle_list::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint32(stream, (uint32_t)vehicles.size());
+	for (auto const &entry : vehicles)
+	{
+		sn_utils::ls_uint32(stream, entry.id);
+		sn_utils::s_str(stream, entry.name);
+		sn_utils::s_uint8(stream, entry.crew_count);
+		sn_utils::s_uint8(stream, entry.crew_capacity);
+		sn_utils::s_uint8(stream, (uint8_t)((entry.ai_active ? 1 : 0) | (entry.claimable ? 2 : 0)));
+	}
+}
+
+void network::vehicle_list::deserialize(std::istream &stream)
+{
+	vehicles.clear();
+
+	uint32_t const count = sn_utils::ld_uint32(stream);
+	vehicles.reserve(count);
+
+	for (uint32_t i = 0; i < count; i++)
+	{
+		vehicle_entry entry;
+		entry.id = sn_utils::ld_uint32(stream);
+		entry.name = sn_utils::d_str(stream);
+		entry.crew_count = sn_utils::d_uint8(stream);
+		entry.crew_capacity = sn_utils::d_uint8(stream);
+		uint8_t const flags = sn_utils::d_uint8(stream);
+		entry.ai_active = (flags & 1) != 0;
+		entry.claimable = (flags & 2) != 0;
+		vehicles.emplace_back(entry);
+	}
 }
 
 void ::network::request_command::serialize(std::ostream &stream) const
@@ -131,6 +167,8 @@ std::shared_ptr<network::message> network::deserialize_message(std::istream &str
 		msg = std::make_shared<request_command>();
 	else if (type == message::SERVER_REJECT)
 		msg = std::make_shared<server_reject>();
+	else if (type == message::VEHICLE_LIST)
+		msg = std::make_shared<vehicle_list>();
 
 	if (!msg) {
 		// unknown message type; hand back a marker the peer handlers treat as a protocol error
