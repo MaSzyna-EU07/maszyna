@@ -21,6 +21,14 @@ http://mozilla.org/MPL/2.0/.
 #include "scripting/lua.h"
 #endif
 
+// where a request to put an event in the queue came from. in a session only the
+// authority evaluates conditions; everybody, the authority included, runs the event when
+// it comes back as a replicated queueevent, so it fires exactly once on every peer
+enum class event_launch {
+    evaluation, // somebody's local condition check
+    authority   // decided by the session authority, or by deterministic scenario init
+};
+
 // common event interface
 class basic_event {
 
@@ -98,6 +106,7 @@ public:
     double m_delay { 0.0 };
     double m_delayrandom { 0.0 }; // zakres dodatkowego opóźnienia // standardowo nie będzie dodatkowego losowego opóźnienia
     double m_delaydeparture { std::numeric_limits<double>::quiet_NaN() }; // departure-based event delay
+    double m_replicationtime { -1.0 }; // when the authority last handed this one to the session
 
 protected:
 // types
@@ -683,7 +692,8 @@ public:
 	}
     // legacy method, inserts specified event in the event query
     bool
-        AddToQuery( basic_event *Event, TDynamicObject const *Owner, double delay = 0.0 );
+        AddToQuery( basic_event *Event, TDynamicObject const *Owner, double delay = 0.0,
+                    event_launch const Source = event_launch::evaluation );
     // legacy method, executes queued events
     bool
         CheckQuery();
@@ -719,6 +729,11 @@ private:
     basic_table<TEventLauncher> m_radiodrivenlaunchers;
     eventlauncher_sequence m_launcherqueue;
 	command_relay m_relay;
+// methods
+    // hands a locally evaluated launch over to the session, so that it reaches every peer
+    // through the ordinary queueevent command instead of firing here alone
+    bool
+        defer_to_authority( basic_event *Event, TDynamicObject const *Owner, double delay );
 };
 
 

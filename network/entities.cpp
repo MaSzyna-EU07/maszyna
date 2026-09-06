@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Driver.h"
 #include "vehicle/Train.h"
 #include "utilities/Logs.h"
+#include "utilities/Globals.h"
 
 namespace network
 {
@@ -26,6 +27,16 @@ PeerId allocate_peer_id()
 {
 	static PeerId next = PEER_FIRST_REMOTE;
 	return next++;
+}
+
+bool is_multiplayer()
+{
+	return Global.network_client.has_value() || !Global.network_servers.empty();
+}
+
+bool is_authority()
+{
+	return !Global.network_client.has_value();
 }
 
 bool is_drivable(TDynamicObject const *Vehicle)

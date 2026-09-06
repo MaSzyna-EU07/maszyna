@@ -295,16 +295,26 @@ void state_manager::process_commands() {
 
 			std::string event_name;
 			std::string vehicle_name;
+			std::string delay_text;
 			std::getline(ss, event_name, '%');
 			std::getline(ss, vehicle_name, '%');
+			std::getline(ss, delay_text, '%');
 
 			basic_event *ev = Events.FindEvent(event_name);
 			TDynamicObject *vehicle = nullptr;
 			if (!vehicle_name.empty())
 				vehicle = simulation::Vehicles.find(vehicle_name);
 
+			double delay = 0.0;
+			if (!delay_text.empty()) {
+				try { delay = std::stod(delay_text); }
+				catch (std::exception const &) { delay = 0.0; }
+			}
+
+			// this is the authority speaking, whether it reached us over the wire or came
+			// straight from our own event manager
 			if (ev)
-				Events.AddToQuery(ev, vehicle);
+				Events.AddToQuery(ev, vehicle, delay, event_launch::authority);
 		}
 
 		if (commanddata.command == user_command::setlight) {

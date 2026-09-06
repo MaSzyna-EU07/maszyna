@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/sn_utils.h"
 #include "rendering/renderer.h"
 #include "widgets/map_objects.h"
+#include "network/entities.h"
 
 namespace scene {
 
@@ -121,20 +122,20 @@ basic_cell::update_traction( TDynamicObject *Vehicle, int const Pantographindex 
 
 // legacy method, updates sounds and polls event launchers within radius around specified point
 void
-basic_cell::update_events() {
+basic_cell::update_events( event_poll_point const &Point ) {
 
     // event launchers
     for( auto *launcher : m_eventlaunchers ) {
-        glm::dvec3 campos = Global.pCamera.Pos;
+        glm::dvec3 referencepoint = Point.location;
         double radius = launcher->dRadius;
-        if (launcher->train_triggered && simulation::Train) {
-            campos = simulation::Train->Dynamic()->HeadPosition();
-            radius *= Timer::GetDeltaTime() * simulation::Train->Dynamic()->GetVelocity() * 0.277;
+        if( launcher->train_triggered && Point.vehicle != nullptr ) {
+            referencepoint = Point.vehicle->HeadPosition();
+            radius *= Timer::GetDeltaTime() * Point.vehicle->GetVelocity() * 0.277;
         }
 
         if( launcher->check_conditions()
             && ( radius < 0.0
-                || glm::distance2( launcher->location(), campos ) < launcher->dRadius ) ) {
+                || glm::distance2( launcher->location(), referencepoint ) < launcher->dRadius ) ) {
             if( launcher->check_activation() )
                 launch_event( launcher, true );
             if( launcher->check_activation_key() )
@@ -728,13 +729,17 @@ basic_section::update_traction( TDynamicObject *Vehicle, int const Pantographind
 
 // legacy method, polls event launchers within radius around specified point
 void
-basic_section::update_events( glm::dvec3 const &Location, float const Radius ) {
+basic_section::update_events( std::vector<event_poll_point> const &Points, float const Radius ) {
 
     for( auto &cell : m_cells ) {
 
-        if( glm::length2( cell.area().center - Location ) < sq(cell.area().radius + Radius) ) {
-            // we reject cells which aren't within our area of interest
-            cell.update_events();
+        for( auto const &point : Points ) {
+            if( glm::length2( cell.area().center - point.location ) < sq(cell.area().radius + Radius) ) {
+                cell.update_events( point );
+                // a cell is polled at most once per frame, no matter how many players are
+                // standing near it - launcher activation counters are stateful
+                break;
+            }
         }
     }
 }
@@ -1053,11 +1058,42 @@ basic_region::update_events() {
 
     if( false == simulation::is_ready ) { return; }
 
-    // render events and sounds from sectors near enough to the viewer
+    if( false == network::is_authority() ) {
+        // a client does not decide what fires; it carries out what the server sends it
+        return;
+    }
+
     auto const range = EU07_SECTIONSIZE; // arbitrary range
-    auto const &sectionlist = sections( Global.pCamera.Pos, range );
+
+    std::vector<event_poll_point> points;
+    points.emplace_back( event_poll_point{
+        Global.pCamera.Pos,
+        ( simulation::Train != nullptr ? simulation::Train->Dynamic() : nullptr ) } );
+
+    if( true == network::is_multiplayer() ) {
+        // gameplay may not hang on where the host happens to be looking, so the launchers
+        // are polled around every vehicle somebody is actually working
+        for( auto const &entry : network::Entities.entries() ) {
+            if( entry.crew_count == 0 ) { continue; }
+            auto const *vehicle { simulation::Vehicles.find( entry.name ) };
+            if( vehicle == nullptr ) { continue; }
+            if( simulation::Train != nullptr && simulation::Train->Dynamic() == vehicle ) { continue; }
+
+            points.emplace_back( event_poll_point{ vehicle->HeadPosition(), vehicle } );
+        }
+    }
+
+    // sections() hands back a scratchpad it reuses, so the union has to be collected first
+    std::vector<basic_section *> sectionlist;
+    for( auto const &point : points ) {
+        auto const &nearby = sections( point.location, range );
+        sectionlist.insert( sectionlist.end(), nearby.begin(), nearby.end() );
+    }
+    std::sort( sectionlist.begin(), sectionlist.end() );
+    sectionlist.erase( std::unique( sectionlist.begin(), sectionlist.end() ), sectionlist.end() );
+
     for( auto *section : sectionlist ) {
-        section->update_events( Global.pCamera.Pos, range );
+        section->update_events( points, range );
     }
 }
 

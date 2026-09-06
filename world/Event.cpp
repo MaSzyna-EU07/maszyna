@@ -33,6 +33,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
 #include "widgets/map_objects.h"
+#include "network/entities.h"
 
 void
 basic_event::event_conditions::bind( basic_event::node_sequence *Nodes ) {
@@ -1306,13 +1307,15 @@ multi_event::run_() {
             if( std::get<bool>( childwrapper ) != conditiontest ) { continue; }
 
             if( childevent != this ) {
-                // normalnie dodać
-                simulation::Events.AddToQuery( childevent, m_activator );
+                // normalnie dodać.
+                // the parent already ran on every peer, so its children are not a local
+                // decision any more and must not be sent around a second time
+                simulation::Events.AddToQuery( childevent, m_activator, 0.0, event_launch::authority );
             }
             else {
                 // jeśli ma być rekurencja to musi mieć sensowny okres powtarzania
                 if( m_delay >= 5.0 ) {
-                    simulation::Events.AddToQuery( this, m_activator );
+                    simulation::Events.AddToQuery( this, m_activator, 0.0, event_launch::authority );
                 }
             }
         }
@@ -2288,8 +2291,15 @@ event_manager::queue_receivers( radio_message const Message, glm::dvec3 const &L
 void
 event_manager::update() {
 
-    // process currently queued events
+    // process currently queued events. this runs on every peer: a client still has a
+    // queue to service, with its delays and its execution
     CheckQuery();
+
+    if( false == network::is_authority() ) {
+        // evaluating the conditions, however, is the authority's job alone
+        return;
+    }
+
     // test list of global events for possible new additions to the queue
     for( auto *launcher : m_launcherqueue ) {
 		if (launcher->check_conditions() && launcher->Event1) {
@@ -2357,8 +2367,9 @@ event_manager::insert( basic_event *Event ) {
         m_eventmap.emplace( Event->m_name, m_events.size() - 1 );
         if( Event->m_ignored != true
          && contains(Event->m_name, "onstart") ) {
-            // event uruchamiany automatycznie po starcie
-            AddToQuery( Event, nullptr );
+            // event uruchamiany automatycznie po starcie.
+            // scenario init runs identically on every peer, so it needs no replication
+            AddToQuery( Event, nullptr, 0.0, event_launch::authority );
         }
     }
 
@@ -2393,9 +2404,58 @@ event_manager::FindEvent( std::string const &Name )
 	return FindEventById(GetEventId(Name));
 }
 
+// how long a request handed to the session is considered still on its way. it only has to
+// outlast the round trip through the command queue; the ceiling keeps a request that got
+// lost somewhere from silencing its event for good
+double const REPLICATION_TIMEOUT { 5.0 };
+
+// hands a locally evaluated launch over to the session authority
+bool
+event_manager::defer_to_authority( basic_event *Event, TDynamicObject const *Owner, double delay ) {
+
+    if( Event->m_passive )     { return false; }
+    if( Event->m_inqueue > 0 ) { return false; }
+
+    // an event whose request is still travelling must not be requested again, or a
+    // condition that stays true would flood the session. instant events are exempt: they
+    // are edge driven and every single one of their additions has to get through
+    if( ( false == Event->is_instant() )
+     && ( Event->m_replicationtime >= 0.0 )
+     && ( Timer::GetTime() - Event->m_replicationtime < REPLICATION_TIMEOUT ) ) {
+        return false;
+    }
+
+    Event->m_replicationtime = Timer::GetTime();
+
+    // the very same command a scenario or a script would use; it comes back through the
+    // command queue and is carried out by every peer, this one included
+    auto const payload {
+        Event->m_name
+        + "%" + ( Owner != nullptr ? Owner->name() : std::string() )
+        + "%" + std::to_string( delay ) };
+
+    m_relay.post( user_command::queueevent, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3( 0.0f ), &payload );
+
+    WriteLog( "net: event replicated: " + Event->m_name + ( Owner != nullptr ? " (by " + Owner->name() + ")" : "" ), logtype::net );
+
+    return true;
+}
+
 // legacy method, inserts specified event in the event query
 bool
-event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, double delay ) {
+event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, double delay, event_launch const Source ) {
+
+    if( Event == nullptr )     { return false; }
+
+    if( ( Source == event_launch::evaluation )
+     && ( true == network::is_multiplayer() ) ) {
+        // the world does not decide on its own what happens in a session: the authority
+        // evaluates the condition and hands the outcome to everybody
+        if( false == network::is_authority() ) { return false; }
+        return defer_to_authority( Event, Owner, delay );
+    }
+
+    Event->m_replicationtime = -1.0;
 
     if( Event->m_passive )     { return false; } // jeśli może być dodany do kolejki (nie używany w skanowaniu)
     if( Event->m_inqueue > 0 ) { return false; } // jeśli nie dodany jeszcze do kolejki
@@ -2512,7 +2572,8 @@ event_manager::InitEvents() {
     //łączenie eventów z pozostałymi obiektami
     for( auto *event : m_events ) {
         event->init();
-        if( event->m_delay < 0 ) { AddToQuery( event, nullptr ); }
+        // scenario init runs identically on every peer, so it needs no replication
+        if( event->m_delay < 0 ) { AddToQuery( event, nullptr, 0.0, event_launch::authority ); }
     }
 }
 

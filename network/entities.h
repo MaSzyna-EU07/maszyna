@@ -92,6 +92,12 @@ extern entity_registry Entities;
 // hands out ids for connecting peers; PEER_HOST is reserved for the local participant
 PeerId allocate_peer_id();
 
+// true when this run takes part in a session at all, as host or as client
+bool is_multiplayer();
+// true when this peer decides what happens in the world. a standalone game and the host
+// of a session do; a client does not, it only carries out what the server hands it
+bool is_authority();
+
 // true for vehicles a player can take over
 bool is_drivable(TDynamicObject const *Vehicle);
 
