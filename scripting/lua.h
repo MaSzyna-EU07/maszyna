@@ -27,6 +27,7 @@ class lua
 	static int scriptapi_isolated_isoccupied_n(lua_State *L);
 	static int scriptapi_train_getname(lua_State *L);
 	static int scriptapi_dynobj_putvalues(lua_State *L);
+	static int scriptapi_spawn_trainset(lua_State *L);
 	static int scriptapi_memcell_find(lua_State *L);
 	static int scriptapi_memcell_read(lua_State *L);
 	static int scriptapi_memcell_read_n(lua_State *L);

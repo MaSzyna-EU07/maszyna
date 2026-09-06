@@ -43,6 +43,8 @@ public:
 	// create eventlauncher from node string
 	TEventLauncher *
 	    create_eventlauncher(const std::string &src, const std::string &name, const glm::dvec3 &position);
+	// create trainset from trainset string
+	void create_trainset(const std::string &src);
 	// delete TAnimModel instance
 	void
 	    delete_model(TAnimModel *model);
