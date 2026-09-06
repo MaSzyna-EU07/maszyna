@@ -79,6 +79,18 @@ namespace network
 		command_queue::commands_map pop_commands();
 	};
 
+	// one authoritative simulation step handed to the client
+	struct frame_delta
+	{
+		double dt { 0.0 };
+		uint64_t tick { 0 };
+		uint64_t state_hash { 0 };
+		uint32_t state_hash_version { 0 };
+		command_queue::commands_map commands;
+		// false when there was nothing ready to consume in this pass
+		bool valid { false };
+	};
+
 	class client
 	{
 	protected:
@@ -108,7 +120,7 @@ namespace network
 
 	public:
 		void update();
-		std::tuple<double, double, command_queue::commands_map> get_next_delta(int counter);
+		frame_delta get_next_delta(int counter);
 		void send_commands(command_queue::commands_map commands);
 		// lobby requests; the server is the one that decides
 		void send_claim(NetworkEntityId entity_id);

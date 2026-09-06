@@ -362,6 +362,10 @@ struct global_settings {
 	bool network_leave_pending = false;
 	// last answer of the server to a lobby request, shown in the lobby
 	std::string network_lobby_message;
+	// logical simulation step. the authority counts it up, a client takes it from the
+	// authoritative frame it is executing; the network timeline hangs off this, not off
+	// the number of frames the renderer happened to draw
+	uint64_t simulation_tick = 0;
 
 	std::unordered_map<int, std::string> trainset_overrides;
 

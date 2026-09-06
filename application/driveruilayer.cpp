@@ -282,7 +282,7 @@ void driver_ui::render_()
 	{
 		ImGui::SetNextWindowSize(ImVec2(-1, -1));
 		if (ImGui::Begin("network", nullptr, ImGuiWindowFlags_NoCollapse))
-			ImGui::Text("desync: %0.2f", Global.desync);
+			ImGui::Text("out of step with the server for %d ticks (at %llu)", (int)Global.desync, (unsigned long long)Global.simulation_tick);
 		ImGui::End();
 	}
 }

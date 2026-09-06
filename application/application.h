@@ -84,9 +84,6 @@ public:
         window( int const Windowindex = 0, bool visible = false, int width = 1, int height = 1, GLFWmonitor *monitor = nullptr, bool keep_ownership = true, bool share_ctx = true );
     GLFWmonitor * find_monitor( const std::string &str ) const;
     std::string describe_monitor( GLFWmonitor *monitor ) const;
-	// generate network sync verification number
-	double
-	    generate_sync();
 	void
         queue_quit(bool direct);
     bool
@@ -123,6 +120,8 @@ private:
 // members
 
     bool m_screenshot_queued = false;
+    // consecutive authoritative steps whose state digest did not match ours
+    std::uint64_t m_statemismatches { 0 };
 
     modeptr_array m_modes { nullptr }; // collection of available application behaviour modes
     mode_stack m_modestack; // current behaviour mode

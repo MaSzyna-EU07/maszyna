@@ -12,7 +12,9 @@
 
 // 2 - legacy lockstep protocol
 // 3 - handshake carries build identification and an explicit rejection message
-std::uint32_t const EU07_NETWORK_VERSION = 3;
+// 4 - peer identity, vehicle roster and crew handshake, command source,
+//     logical simulation tick and a versioned state digest instead of the position sum
+std::uint32_t const EU07_NETWORK_VERSION = 4;
 
 namespace network {
 
@@ -279,7 +281,7 @@ void network::client::update()
 }
 
 // client
-std::tuple<double, double, command_queue::commands_map> network::client::get_next_delta(int counter)
+network::frame_delta network::client::get_next_delta(int counter)
 {
 	auto now = std::chrono::high_resolution_clock::now();
 	if (counter == 1) {
@@ -289,8 +291,7 @@ std::tuple<double, double, command_queue::commands_map> network::client::get_nex
 
 	if (delta_queue.empty()) {
 		// buffer underflow
-		return std::tuple<double, double,
-		        command_queue::commands_map>(0.0, 0.0, command_queue::commands_map());
+		return frame_delta();
 	}
 
 
@@ -316,13 +317,20 @@ std::tuple<double, double, command_queue::commands_map> network::client::get_nex
 			consume_counter = std::clamp(consume_counter - mult, -MAX_BUFFER_SIZE, MAX_BUFFER_SIZE);
 		}
 
+		frame_delta delta;
+		delta.dt = entry.dt;
+		delta.tick = entry.tick;
+		delta.state_hash = entry.state_hash;
+		delta.state_hash_version = entry.state_hash_version;
+		delta.commands = entry.commands;
+		delta.valid = true;
+
 		delta_queue.pop();
 
-		return std::make_tuple(entry.dt, entry.sync, entry.commands);
+		return delta;
 	} else {
 		// nothing to push
-		return std::tuple<double, double,
-		        command_queue::commands_map>(0.0, 0.0, command_queue::commands_map());
+		return frame_delta();
 	}
 }
 
@@ -333,6 +341,7 @@ void network::client::send_commands(command_queue::commands_map commands)
 	// eh, maybe queue lost messages
 
 	request_command msg;
+	msg.tick = Global.simulation_tick;
 	msg.commands = commands;
 
 	conn->send_message(msg);

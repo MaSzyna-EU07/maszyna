@@ -14,7 +14,7 @@ namespace network
 	public:
 		server_manager();
 
-		void push_delta(double render_dt, double dt, double sync, const command_queue::commands_map &commands);
+		void push_delta(double render_dt, double dt, uint64_t tick, uint64_t state_hash, const command_queue::commands_map &commands);
 		command_queue::commands_map pop_commands();
 		void create_server(const std::string &backend, const std::string &conf);
 		// refreshes the authoritative vehicle roster and publishes it when it changed

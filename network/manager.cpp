@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "utilities/Logs.h"
 #include "utilities/Globals.h"
+#include "network/statehash.h"
 
 network::server_manager::server_manager()
 {
@@ -28,7 +29,7 @@ command_queue::commands_map network::server_manager::pop_commands()
 	return map;
 }
 
-void network::server_manager::push_delta(double render_dt, double dt, double sync, const command_queue::commands_map &commands)
+void network::server_manager::push_delta(double render_dt, double dt, uint64_t tick, uint64_t state_hash, const command_queue::commands_map &commands)
 {
 	if (dt == 0.0 && commands.empty())
 		return;
@@ -36,7 +37,9 @@ void network::server_manager::push_delta(double render_dt, double dt, double syn
 	frame_info msg;
 	msg.render_dt = render_dt;
 	msg.dt = dt;
-	msg.sync = sync;
+	msg.tick = tick;
+	msg.state_hash = state_hash;
+	msg.state_hash_version = STATE_HASH_VERSION;
 	msg.commands = commands;
 
 	for (auto srv : servers)

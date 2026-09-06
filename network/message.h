@@ -148,6 +148,9 @@ struct request_command : public message
 	request_command() : message(REQUEST_COMMAND) {}
 
 	command_queue::commands_map commands;
+	// logical step the sender was on when it produced these. the protocol is anchored to
+	// this counter rather than to whatever frame the renderer happened to be drawing
+	uint64_t tick{ 0 };
 
 	virtual void serialize(std::ostream &stream) const override;
 	virtual void deserialize(std::istream &stream) override;
@@ -159,7 +162,9 @@ struct frame_info : public request_command
 
 	double render_dt;
 	double dt;
-	double sync;
+	// digest of the authoritative world after this step; a client compares its own
+	uint64_t state_hash{ 0 };
+	uint32_t state_hash_version{ 0 };
 
 	virtual void serialize(std::ostream &stream) const override;
 	virtual void deserialize(std::istream &stream) override;

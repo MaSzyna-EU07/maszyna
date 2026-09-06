@@ -30,6 +30,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "utilities/dictionary.h"
 #include "version_info.h"
+#include "network/statehash.h"
 #include <chrono>
 #include "utilities/translation.h"
 
@@ -422,20 +423,6 @@ int eu07_application::init(int Argc, char *Argv[])
 	return result;
 }
 
-double eu07_application::generate_sync()
-{
-	if (Timer::GetDeltaTime() == 0.0)
-		return 0.0;
-	double sync = 0.0;
-	for (const TDynamicObject *vehicle : simulation::Vehicles.sequence())
-	{
-		auto const pos{vehicle->GetPosition()};
-		sync += pos.x + pos.y + pos.z;
-	}
-	sync += Random(1.0, 100.0);
-	return sync;
-}
-
 void eu07_application::queue_quit(bool direct)
 {
 	// a network client leaving is its own business; replicating the request would shut
@@ -507,7 +494,7 @@ int eu07_application::run()
 			{
 				command_queue::commands_map commands_to_exec;
 				command_queue::commands_map local_commands = simulation::Commands.pop_intercept_queue();
-				double slave_sync;
+				network::frame_delta authoritative;
 
 				// if we're the server
 				if (m_network && m_network->servers)
@@ -527,18 +514,20 @@ int eu07_application::run()
 				if (m_network && m_network->client)
 				{
 					// fetch frame info from network layer,
-					auto frame_info = m_network->client->get_next_delta(MAX_NETWORK_PER_FRAME - loop_remaining);
+					authoritative = m_network->client->get_next_delta(MAX_NETWORK_PER_FRAME - loop_remaining);
 
 					// use delta and commands received from master
-					double delta = std::get<0>(frame_info);
-					Timer::set_delta_override(delta);
-					slave_sync = std::get<1>(frame_info);
-					add_to_dequemap(commands_to_exec, std::get<2>(frame_info));
+					Timer::set_delta_override(authoritative.dt);
+					add_to_dequemap(commands_to_exec, authoritative.commands);
+
+					// the authority owns the timeline, so we take its step number as ours
+					if (authoritative.valid)
+						Global.simulation_tick = authoritative.tick;
 
 					// and send our local commands to master
 					m_network->client->send_commands(local_commands);
 
-					if (delta == 0.0)
+					if (!authoritative.valid)
 						loop_remaining = -1;
 				}
 				// if we're master
@@ -546,6 +535,9 @@ int eu07_application::run()
 				{
 					// just push local commands to execution
 					add_to_dequemap(commands_to_exec, local_commands);
+
+					// we are the one counting the steps of this world
+					++Global.simulation_tick;
 
 					loop_remaining = -1;
 				}
@@ -560,26 +552,51 @@ int eu07_application::run()
 				// update continuous commands
 				simulation::Commands.update();
 
-				double sync = generate_sync();
+				auto const statehash = (m_network ? network::state_hash() : 0);
 
 				// if we're the server
 				if (m_network && m_network->servers)
 				{
-					// send delta, sync, and commands we just executed to clients
+					// send delta, state digest, and commands we just executed to clients
 					double delta = Timer::GetDeltaTime();
 					double render = Timer::GetDeltaRenderTime();
-					m_network->servers->push_delta(render, delta, sync, commands_to_exec);
+					m_network->servers->push_delta(render, delta, Global.simulation_tick, statehash, commands_to_exec);
 				}
 
 				// if we're slave
 				if (m_network && m_network->client)
 				{
-					// verify sync
-					if (sync != slave_sync)
+					if (authoritative.valid)
 					{
-						WriteLog("net: desync! calculated: " + std::to_string(sync) + ", received: " + std::to_string(slave_sync), logtype::net);
-
-						Global.desync = slave_sync - sync;
+						if (authoritative.state_hash_version != network::STATE_HASH_VERSION)
+						{
+							// nothing sensible to compare; say so once and stop pretending
+							if (m_statemismatches == 0)
+							{
+								ErrorLog("net: state digest version mismatch, desync detection is off", logtype::net);
+								m_statemismatches = 1;
+							}
+						}
+						else if (statehash != authoritative.state_hash)
+						{
+							++m_statemismatches;
+							// a drift usually persists, so this is reported when it starts
+							// and then only now and then, instead of every single step
+							if (m_statemismatches == 1 || (m_statemismatches % 300) == 0)
+							{
+								WriteLog("net: state mismatch at tick " + std::to_string(authoritative.tick) + " (" + std::to_string(m_statemismatches) +
+								             " steps): local " + std::to_string(statehash) + ", authoritative " + std::to_string(authoritative.state_hash),
+								         logtype::net);
+							}
+							Global.desync = (float)m_statemismatches;
+						}
+						else
+						{
+							if (m_statemismatches != 0)
+								WriteLog("net: state back in step with the authority at tick " + std::to_string(authoritative.tick), logtype::net);
+							m_statemismatches = 0;
+							Global.desync = 0.0f;
+						}
 					}
 
 					// set total delta for rendering code

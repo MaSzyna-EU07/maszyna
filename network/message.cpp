@@ -143,6 +143,7 @@ void network::crew_update::deserialize(std::istream &stream)
 
 void ::network::request_command::serialize(std::ostream &stream) const
 {
+	sn_utils::ls_uint64(stream, tick);
 	sn_utils::ls_uint32(stream, commands.size());
 	for (auto const &kv : commands)
 	{
@@ -167,6 +168,8 @@ void ::network::request_command::serialize(std::ostream &stream) const
 
 void network::request_command::deserialize(std::istream &stream)
 {
+	tick = sn_utils::ld_uint64(stream);
+
 	uint32_t commands_size = sn_utils::ld_uint32(stream);
 	for (uint32_t i = 0; i < commands_size; i++)
 	{
@@ -200,7 +203,8 @@ void network::frame_info::serialize(std::ostream &stream) const
 {
 	sn_utils::ls_float64(stream, render_dt);
 	sn_utils::ls_float64(stream, dt);
-	sn_utils::ls_float64(stream, sync);
+	sn_utils::ls_uint64(stream, state_hash);
+	sn_utils::ls_uint32(stream, state_hash_version);
 
 	request_command::serialize(stream);
 }
@@ -209,7 +213,8 @@ void network::frame_info::deserialize(std::istream &stream)
 {
 	render_dt = sn_utils::ld_float64(stream);
 	dt = sn_utils::ld_float64(stream);
-	sync = sn_utils::ld_float64(stream);
+	state_hash = sn_utils::ld_uint64(stream);
+	state_hash_version = sn_utils::ld_uint32(stream);
 
 	request_command::deserialize(stream);
 }
