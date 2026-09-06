@@ -34,6 +34,9 @@ struct vehicle_crew
 	// keeps reconcile() from re-posting the same request every single frame while the
 	// previous one is still on its way through the command queue
 	int action_cooldown{0};
+	// how many times we have asked the AI to hand this vehicle over. if it will not, that
+	// is worth saying once rather than asking forever
+	int ai_attempts{0};
 };
 
 enum class claim_result
@@ -74,6 +77,9 @@ public:
 
 	// client side: takes over the crew of one vehicle as published by the server
 	void mirror(NetworkEntityId Id, std::vector<PeerId> const &Crew);
+	// puts a peer on a vehicle without asking about capacity; used when somebody walks to
+	// another car of the train they are already working
+	void take_seat(PeerId Peer, NetworkEntityId Id);
 
 	// server side: brings the world in line with the crew roster - creates the cab of a
 	// claimed vehicle, hands the vehicle over from the AI and hands it back when the last
@@ -137,6 +143,10 @@ std::string describe(command_verdict Verdict);
 // the whole of the authority check for an incoming command. the host passes it too, it
 // simply holds every right - there is no separate path for the local participant
 command_verdict validate_command(PeerId Peer, user_command Command, uint32_t Recipient);
+
+// a player works a train, not a single car: they may operate anything coupled into the
+// set they are sitting in, which is what makes the cab switches of a multiple unit work
+bool may_control(PeerId Peer, NetworkEntityId Entity);
 
 // walking into a cab with the in-game key is the same request as pressing the button in
 // the lobby, so it goes through the crew registry rather than being treated as a command

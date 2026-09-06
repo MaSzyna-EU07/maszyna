@@ -38,6 +38,45 @@ double const REPOSITION_TOLERANCE_CORRECTION{2.5};
 // ---------------------------------------------------------------------------
 // what the authority last sent, so that a routine correction only carries changes
 
+// most tracks in a scenery carry no name at all, so a name is useless as an identity.
+// their order in the path table comes straight from the scenery file and is therefore the
+// same on every peer, which makes the index a usable one
+std::vector<TTrack *> g_trackindex;
+std::unordered_map<TTrack const *, uint32_t> g_trackids;
+
+void refresh_track_index()
+{
+	auto const &paths = simulation::Paths.sequence();
+	if (g_trackindex.size() == paths.size())
+		return;
+
+	g_trackindex.assign(paths.begin(), paths.end());
+	g_trackids.clear();
+	for (uint32_t i = 0; i < g_trackindex.size(); ++i)
+	{
+		if (g_trackindex[i] != nullptr)
+			g_trackids.emplace(g_trackindex[i], i);
+	}
+}
+
+uint32_t track_id_of(TTrack const *Track)
+{
+	if (Track == nullptr)
+		return 0xffffffff;
+
+	refresh_track_index();
+
+	auto const lookup = g_trackids.find(Track);
+	return lookup != g_trackids.end() ? lookup->second : 0xffffffff;
+}
+
+TTrack *track_by_id(uint32_t const Id)
+{
+	refresh_track_index();
+
+	return (Id < g_trackindex.size() ? g_trackindex[Id] : nullptr);
+}
+
 std::unordered_map<std::string, uint64_t> g_lastvehicles;
 std::unordered_map<std::string, uint64_t> g_lastmemcells;
 std::unordered_map<std::string, int> g_lastswitches;
@@ -137,7 +176,7 @@ void read_session(std::istream &Stream, network::snapshot_mode const Mode)
 struct vehicle_state
 {
 	std::string name;
-	std::string track;
+	uint32_t track{0xffffffff};
 	double translation{0.0};
 	uint8_t axlefirst{0};
 	uint8_t direction{0};
@@ -164,8 +203,6 @@ struct vehicle_state
 	bool battery{false};
 	bool converterallow{false};
 	bool compressorallow{false};
-	int32_t cabactive{0};
-	int32_t caboccupied{0};
 	std::array<bool, 2> pantenabled{{false, false}};
 	std::array<bool, 2> pantdisabled{{false, false}};
 	std::array<bool, 2> pantactive{{false, false}};
@@ -179,7 +216,7 @@ struct vehicle_state
 void serialize_vehicle(std::ostream &Stream, vehicle_state const &State)
 {
 	sn_utils::s_str(Stream, State.name);
-	sn_utils::s_str(Stream, State.track);
+	sn_utils::ls_uint32(Stream, State.track);
 	sn_utils::ls_float64(Stream, State.translation);
 	sn_utils::s_uint8(Stream, State.axlefirst);
 	sn_utils::s_uint8(Stream, State.direction);
@@ -204,8 +241,6 @@ void serialize_vehicle(std::ostream &Stream, vehicle_state const &State)
 	sn_utils::s_bool(Stream, State.battery);
 	sn_utils::s_bool(Stream, State.converterallow);
 	sn_utils::s_bool(Stream, State.compressorallow);
-	sn_utils::ls_int32(Stream, State.cabactive);
-	sn_utils::ls_int32(Stream, State.caboccupied);
 	for (int i = 0; i < 2; ++i)
 	{
 		sn_utils::s_bool(Stream, State.pantenabled[i]);
@@ -227,7 +262,7 @@ vehicle_state deserialize_vehicle(std::istream &Stream)
 	vehicle_state state;
 
 	state.name = sn_utils::d_str(Stream);
-	state.track = sn_utils::d_str(Stream);
+	state.track = sn_utils::ld_uint32(Stream);
 	state.translation = sn_utils::ld_float64(Stream);
 	state.axlefirst = sn_utils::d_uint8(Stream);
 	state.direction = sn_utils::d_uint8(Stream);
@@ -252,8 +287,6 @@ vehicle_state deserialize_vehicle(std::istream &Stream)
 	state.battery = sn_utils::d_bool(Stream);
 	state.converterallow = sn_utils::d_bool(Stream);
 	state.compressorallow = sn_utils::d_bool(Stream);
-	state.cabactive = sn_utils::ld_int32(Stream);
-	state.caboccupied = sn_utils::ld_int32(Stream);
 	for (int i = 0; i < 2; ++i)
 	{
 		state.pantenabled[i] = sn_utils::d_bool(Stream);
@@ -279,7 +312,7 @@ vehicle_state read_from(TDynamicObject const &Vehicle)
 
 	vehicle_state state;
 	state.name = Vehicle.name();
-	state.track = (track != nullptr ? track->name() : std::string());
+	state.track = track_id_of(track);
 	state.translation = Vehicle.RaTranslationGet();
 	state.axlefirst = (uint8_t)(Vehicle.iAxleFirst ? 1 : 0);
 	state.direction = (uint8_t)(Vehicle.iDirection ? 1 : 0);
@@ -304,8 +337,6 @@ vehicle_state read_from(TDynamicObject const &Vehicle)
 	state.battery = mover.Battery;
 	state.converterallow = mover.ConverterAllow;
 	state.compressorallow = mover.CompressorAllow;
-	state.cabactive = mover.CabActive;
-	state.caboccupied = mover.CabOccupied;
 	for (int i = 0; i < 2; ++i)
 	{
 		state.pantenabled[i] = mover.Pantographs[i].valve.is_enabled;
@@ -324,19 +355,41 @@ vehicle_state read_from(TDynamicObject const &Vehicle)
 	return state;
 }
 
+// true for the train the local player is working. its controls are driven by the commands
+// its crew issue, which every peer already receives, so the correction must keep its hands
+// off them - otherwise it keeps snapping a lever back a fraction of a second after the
+// player moved it, and the control looks broken
+bool is_own_train(std::string const &Name)
+{
+	auto const seat = network::Crews.vehicle_of(Global.network_peer_id);
+	if (seat == network::ENTITY_NONE)
+		return false;
+
+	auto const train = network::Entities.consist_of(network::Entities.id_of(Name));
+	return (train != network::ENTITY_NONE) && (network::Entities.consist_of(seat) == train);
+}
+
 // applies everything except where the vehicle is; position is dealt with per consist,
 // because moving one vehicle of a coupled set on its own tears the couplers apart
 void apply_controls(TDynamicObject &Vehicle, vehicle_state const &State)
 {
 	auto &mover = *Vehicle.MoverParameters;
 
+	// what the physics produced is always taken from the authority; what a person set is
+	// not, on the train that person is working
+	bool const ours = is_own_train(State.name);
+
 	mover.V = State.velocity;
 	mover.Vel = State.velocitykmh;
-	mover.DirActive = State.diractive;
-	mover.MainCtrlPos = State.mainctrl;
-	mover.ScndCtrlPos = State.scndctrl;
-	mover.BrakeCtrlPos = State.brakectrl;
-	mover.LocalBrakePosA = State.localbrake;
+
+	if (!ours)
+	{
+		mover.DirActive = State.diractive;
+		mover.MainCtrlPos = State.mainctrl;
+		mover.ScndCtrlPos = State.scndctrl;
+		mover.BrakeCtrlPos = State.brakectrl;
+		mover.LocalBrakePosA = State.localbrake;
+	}
 
 	mover.PipePress = State.pipepress;
 	mover.BrakePress = State.brakepress;
@@ -344,6 +397,14 @@ void apply_controls(TDynamicObject &Vehicle, vehicle_state const &State)
 	mover.EqvtPipePress = State.eqvtpipepress;
 	mover.Compressor = State.compressor;
 	mover.CompressedVolume = State.compressedvolume;
+
+	if (ours)
+	{
+		// the rest of it is what the crew set, and their commands reach us on their own
+		if (Vehicle.Mechanik != nullptr && Vehicle.Mechanik->AIControllFlag != State.aiactive)
+			Vehicle.Mechanik->TakeControl(State.aiactive);
+		return;
+	}
 
 	// the appliances go through the vehicle's own switches wherever it has them, so that
 	// whatever they drag along stays consistent. range local: every vehicle carries its
@@ -357,8 +418,9 @@ void apply_controls(TDynamicObject &Vehicle, vehicle_state const &State)
 	if (mover.CompressorAllow != State.compressorallow)
 		mover.CompressorSwitch(State.compressorallow, range_t::local);
 
-	mover.CabActive = State.cabactive;
-	mover.CabOccupied = State.caboccupied;
+	// CabActive and CabOccupied are deliberately not replicated: which cab a player is
+	// sitting in is theirs alone, and two people sharing a vehicle each have their own.
+	// forcing the server's value on them is what made the camera jump in and out
 
 	for (int i = 0; i < 2; ++i)
 	{
@@ -388,9 +450,17 @@ void apply_controls(TDynamicObject &Vehicle, vehicle_state const &State)
 // its leading bogie; this inverts the arithmetic that function itself does
 void reposition(TDynamicObject &Vehicle, vehicle_state const &State)
 {
-	TTrack *track = (State.track.empty() ? nullptr : simulation::Paths.find(State.track));
+	TTrack *track = track_by_id(State.track);
 	if (track == nullptr)
+	{
+		static bool reported{false};
+		if (!reported)
+		{
+			reported = true;
+			ErrorLog("net: cannot place " + Vehicle.name() + ", track " + std::to_string(State.track) + " is unknown here", logtype::net);
+		}
 		return;
+	}
 
 	double const half = Vehicle.fAxleDist * 0.5;
 	double const axleoffset = (State.axlefirst ? -half : half);

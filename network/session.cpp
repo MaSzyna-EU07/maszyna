@@ -70,8 +70,7 @@ command_verdict validate_command(PeerId Peer, user_command Command, uint32_t Rec
 
 	if (target == command_target::vehicle)
 	{
-		// a player works the controls of the vehicle they are on, and of no other
-		return Crews.is_member(Peer, (NetworkEntityId)(Recipient & 0xffff)) ? command_verdict::accepted : command_verdict::not_in_crew;
+		return may_control(Peer, (NetworkEntityId)(Recipient & 0xffff)) ? command_verdict::accepted : command_verdict::not_in_crew;
 	}
 
 	if (target == command_target::simulation)
@@ -93,11 +92,24 @@ claim_result claim_by_name(PeerId Peer, std::string const &Vehicle, NetworkEntit
 		return claim_result::unknown_vehicle;
 
 	auto const previous = Crews.vehicle_of(Peer);
+	if (previous == Entity)
+		return claim_result::already_member;
+
+	if ((previous != ENTITY_NONE) && (Entities.consist_of(previous) == Entities.consist_of(Entity)))
+	{
+		// walking to another car of the train you are already working is not a new claim,
+		// so it asks nothing of the capacity. the seat still moves, because which car a
+		// player sits in decides which half they keep when the train comes apart
+		Crews.leave(Peer, previous);
+		Crews.take_seat(Peer, Entity);
+		return claim_result::granted;
+	}
+
 	auto const result = Crews.claim(Peer, Entity);
 
-	if ((result == claim_result::granted) && (previous != ENTITY_NONE) && (previous != Entity))
+	if ((result == claim_result::granted) && (previous != ENTITY_NONE))
 	{
-		// nobody works two vehicles at once
+		// nobody works two trains at once
 		Crews.leave(Peer, previous);
 	}
 
@@ -152,6 +164,21 @@ void filter_commands(PeerId Peer, command_queue::commands_map &Commands)
 	}
 }
 
+bool may_control(PeerId Peer, NetworkEntityId Entity)
+{
+	auto const seat = Crews.vehicle_of(Peer);
+	if (seat == ENTITY_NONE)
+		return false;
+
+	auto const train = Entities.consist_of(Entity);
+	if (train == ENTITY_NONE)
+		return false;
+
+	// the whole set the player is sitting in, so that the desk of a driving trailer works
+	// on the motor cars behind it and the cab switches of a multiple unit go through
+	return Entities.consist_of(seat) == train;
+}
+
 vehicle_crew &crew_registry::entry(NetworkEntityId Id)
 {
 	auto lookup = m_vehicles.find(Id);
@@ -178,7 +205,8 @@ claim_result crew_registry::claim(PeerId Peer, NetworkEntityId Id)
 	if (std::find(vehicle.crew.begin(), vehicle.crew.end(), Peer) != vehicle.crew.end())
 		return claim_result::already_member;
 
-	if (vehicle.crew.size() >= published->crew_capacity)
+	// capacity counts the people on the whole train, not on this one car
+	if (published->crew_count >= published->crew_capacity)
 		return claim_result::crew_full;
 
 	if (vehicle.crew.empty())
@@ -373,6 +401,23 @@ void crew_registry::mirror(NetworkEntityId Id, std::vector<PeerId> const &Crew)
 	entry(Id).crew = Crew;
 }
 
+void crew_registry::take_seat(PeerId Peer, NetworkEntityId Id)
+{
+	auto &vehicle = entry(Id);
+	if (std::find(vehicle.crew.begin(), vehicle.crew.end(), Peer) != vehicle.crew.end())
+		return;
+
+	if (vehicle.crew.empty())
+	{
+		TDynamicObject const *dynamic = Entities.resolve(Id);
+		vehicle.ai_before_claim = (dynamic != nullptr && dynamic->Mechanik != nullptr && dynamic->Mechanik->AIControllFlag);
+		vehicle.ai_restore_pending = false;
+	}
+
+	vehicle.crew.emplace_back(Peer);
+	m_pending.emplace_back(Id);
+}
+
 std::vector<NetworkEntityId> crew_registry::take_pending_updates()
 {
 	std::vector<NetworkEntityId> pending;
@@ -425,6 +470,8 @@ void post_authority_command(user_command Command, uint32_t Recipient, glm::vec3 
 
 // frames to wait before repeating an authority request that has not taken effect yet
 static int const ACTION_COOLDOWN_FRAMES = 30;
+// how many times to ask a vehicle's AI driver to step aside before giving up on it
+static int const AI_HANDOVER_ATTEMPTS = 5;
 
 void crew_registry::reconcile()
 {
@@ -457,10 +504,26 @@ void crew_registry::reconcile()
 
 			if (dynamic->Mechanik != nullptr && dynamic->Mechanik->AIControllFlag)
 			{
-				// first human on board takes over from the AI
-				WriteLog("net: " + dynamic->name() + " taken over from the AI driver", logtype::net);
-				post_authority_command(user_command::aidriverdisable, (uint32_t)command_target::vehicle | train->id(), dynamic->GetPosition(), std::string());
-				vehicle.action_cooldown = ACTION_COOLDOWN_FRAMES;
+				if (vehicle.ai_attempts < AI_HANDOVER_ATTEMPTS)
+				{
+					// first human on board takes over from the AI
+					if (vehicle.ai_attempts == 0)
+						WriteLog("net: " + dynamic->name() + " taken over from the AI driver", logtype::net);
+
+					++vehicle.ai_attempts;
+					post_authority_command(user_command::aidriverdisable, (uint32_t)command_target::vehicle | train->id(), dynamic->GetPosition(), std::string());
+					vehicle.action_cooldown = ACTION_COOLDOWN_FRAMES;
+				}
+				else if (vehicle.ai_attempts == AI_HANDOVER_ATTEMPTS)
+				{
+					// asking again would only fill the log; say so once and leave it
+					++vehicle.ai_attempts;
+					ErrorLog("net: " + dynamic->name() + " will not let go of its AI driver", logtype::net);
+				}
+			}
+			else
+			{
+				vehicle.ai_attempts = 0;
 			}
 			continue;
 		}

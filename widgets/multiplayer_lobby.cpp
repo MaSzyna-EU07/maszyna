@@ -32,7 +32,14 @@ ui::multiplayer_lobby_panel::multiplayer_lobby_panel()
 
 std::string ui::multiplayer_lobby_panel::describe_crew(network::NetworkEntityId const Entity) const
 {
-	auto const crew = network::Crews.crew_of(Entity);
+	// the people on the whole train, wherever in it they happen to be sitting
+	std::vector<network::PeerId> crew;
+	for (auto const member : network::Entities.consist_members(network::Entities.consist_of(Entity)))
+	{
+		for (auto const peer : network::Crews.crew_of(member))
+			crew.emplace_back(peer);
+	}
+
 	if (crew.empty())
 		return std::string();
 
@@ -93,7 +100,7 @@ void ui::multiplayer_lobby_panel::render_contents()
 	ImGui::SetColumnWidth(2, statewidth);
 	ImGui::SetColumnWidth(3, actionwidth);
 
-	ImGui::TextDisabled("%s", STR_C("Vehicle"));
+	ImGui::TextDisabled("%s", STR_C("Train"));
 	ImGui::NextColumn();
 	ImGui::TextDisabled("%s", STR_C("Crew"));
 	ImGui::NextColumn();
@@ -102,11 +109,21 @@ void ui::multiplayer_lobby_panel::render_contents()
 	ImGui::NextColumn();
 	ImGui::Separator();
 
+	network::NetworkEntityId const owntrain{network::Entities.consist_of(ownvehicle)};
+
 	for (auto const &entry : entries)
 	{
+		// one row per train. a player takes the whole set, not a single car, and moves
+		// between its cars freely once they are on it
+		if (!entry.consist_lead)
+			continue;
+
 		ImGui::PushID(static_cast<int>(entry.id));
 
-		ImGui::TextUnformatted(entry.name.c_str());
+		if (entry.consist_size > 1)
+			ImGui::Text("%s +%u", entry.name.c_str(), (unsigned)(entry.consist_size - 1));
+		else
+			ImGui::TextUnformatted(entry.name.c_str());
 		ImGui::NextColumn();
 
 		ImGui::Text("%u/%u", (unsigned)entry.crew_count, (unsigned)entry.crew_capacity);
@@ -119,10 +136,10 @@ void ui::multiplayer_lobby_panel::render_contents()
 			ImGui::TextDisabled("%s", entry.ai_active ? STR_C("AI") : STR_C("free"));
 		ImGui::NextColumn();
 
-		if (entry.id == ownvehicle)
+		if (owntrain != network::ENTITY_NONE && entry.consist_id == owntrain)
 		{
 			if (ImGui::Button(STR_C("Leave")))
-				Application.request_vehicle_leave(entry.id);
+				Application.request_vehicle_leave(ownvehicle);
 		}
 		else if (entry.claimable)
 		{
@@ -143,7 +160,7 @@ void ui::multiplayer_lobby_panel::render_contents()
 	ImGui::Columns(1);
 
 	ImGui::Separator();
-	ImGui::TextDisabled("%s", STR_C("You can also walk up to a vehicle and use the enter-vehicle key."));
+	ImGui::TextDisabled("%s", STR_C("You can also walk up to a train and use the enter-vehicle key."));
 }
 
 void ui::multiplayer_lobby_panel::claim(network::NetworkEntityId const Entity, network::NetworkEntityId const Current)

@@ -57,9 +57,11 @@ void network::vehicle_list::serialize(std::ostream &stream) const
 	{
 		sn_utils::ls_uint32(stream, entry.id);
 		sn_utils::s_str(stream, entry.name);
+		sn_utils::ls_uint32(stream, entry.consist_id);
+		sn_utils::s_uint8(stream, entry.consist_size);
 		sn_utils::s_uint8(stream, entry.crew_count);
 		sn_utils::s_uint8(stream, entry.crew_capacity);
-		sn_utils::s_uint8(stream, (uint8_t)((entry.ai_active ? 1 : 0) | (entry.claimable ? 2 : 0)));
+		sn_utils::s_uint8(stream, (uint8_t)((entry.ai_active ? 1 : 0) | (entry.claimable ? 2 : 0) | (entry.drivable ? 4 : 0) | (entry.consist_lead ? 8 : 0)));
 	}
 }
 
@@ -75,11 +77,15 @@ void network::vehicle_list::deserialize(std::istream &stream)
 		vehicle_entry entry;
 		entry.id = sn_utils::ld_uint32(stream);
 		entry.name = sn_utils::d_str(stream);
+		entry.consist_id = sn_utils::ld_uint32(stream);
+		entry.consist_size = sn_utils::d_uint8(stream);
 		entry.crew_count = sn_utils::d_uint8(stream);
 		entry.crew_capacity = sn_utils::d_uint8(stream);
 		uint8_t const flags = sn_utils::d_uint8(stream);
 		entry.ai_active = (flags & 1) != 0;
 		entry.claimable = (flags & 2) != 0;
+		entry.drivable = (flags & 4) != 0;
+		entry.consist_lead = (flags & 8) != 0;
 		vehicles.emplace_back(entry);
 	}
 }

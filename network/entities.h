@@ -36,20 +36,35 @@ constexpr NetworkEntityId ENTITY_NONE = 0;
 // so raising this number does not call for a structural change
 constexpr uint8_t CREW_CAPACITY = 2;
 
-// authoritative description of a single drivable vehicle, as published by the server
+// authoritative description of a single vehicle, as published by the server.
+// every vehicle is listed, not only the ones worth driving: commands are addressed by
+// this id, and a player may walk into any member of the train they are working
 struct vehicle_entry
 {
 	NetworkEntityId id{ENTITY_NONE};
 	std::string name;
+	// the train this vehicle is currently coupled into, named by the lowest id in the set.
+	// a player belongs to a train, not to a single car, so this is what the crew, the
+	// permissions and the lobby all work with. it is recomputed as vehicles couple and
+	// uncouple, which is what splits a crew between the halves of a train that came apart
+	NetworkEntityId consist_id{ENTITY_NONE};
+	// how many vehicles that train has, and whether this entry is the one that stands for
+	// it in the lobby
+	uint8_t consist_size{1};
+	bool consist_lead{false};
+	// crew of the whole train, not of this vehicle alone
 	uint8_t crew_count{0};
 	uint8_t crew_capacity{CREW_CAPACITY};
 	bool ai_active{false};
 	bool claimable{false};
+	// has a driving position of its own
+	bool drivable{false};
 
 	bool operator==(vehicle_entry const &Other) const
 	{
-		return id == Other.id && name == Other.name && crew_count == Other.crew_count && crew_capacity == Other.crew_capacity && ai_active == Other.ai_active &&
-		       claimable == Other.claimable;
+		return id == Other.id && name == Other.name && consist_id == Other.consist_id && consist_size == Other.consist_size && consist_lead == Other.consist_lead &&
+		       crew_count == Other.crew_count && crew_capacity == Other.crew_capacity && ai_active == Other.ai_active && claimable == Other.claimable &&
+		       drivable == Other.drivable;
 	}
 	bool operator!=(vehicle_entry const &Other) const { return !(*this == Other); }
 };
@@ -74,6 +89,9 @@ public:
 
 	NetworkEntityId id_of(std::string const &Name) const;
 	NetworkEntityId id_of(TDynamicObject const *Vehicle) const;
+	// the train a vehicle belongs to, and everything coupled into it
+	NetworkEntityId consist_of(NetworkEntityId Id) const;
+	std::vector<NetworkEntityId> consist_members(NetworkEntityId Consist) const;
 	std::string name_of(NetworkEntityId Id) const;
 	TDynamicObject *resolve(NetworkEntityId Id) const;
 	vehicle_entry const *find(NetworkEntityId Id) const;
@@ -98,7 +116,8 @@ bool is_multiplayer();
 // of a session do; a client does not, it only carries out what the server hands it
 bool is_authority();
 
-// true for vehicles a player can take over
+// true for vehicles that carry a driving position of their own. note that a driving
+// trailer has one without having an engine, and without the scenario putting a driver in
 bool is_drivable(TDynamicObject const *Vehicle);
 
 } // namespace network

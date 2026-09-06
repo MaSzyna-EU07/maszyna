@@ -524,8 +524,12 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 			// the routine correction is what keeps us in line; a full resync is only worth
 			// asking for when even that is not catching up
 			if (result.worst_position_error > RESYNC_POSITION_ERROR) {
-				if (++bad_corrections >= RESYNC_BAD_CORRECTIONS) {
+				++bad_corrections;
+
+				if ((bad_corrections >= RESYNC_BAD_CORRECTIONS)
+				 && (last_resync_tick == 0 || Global.simulation_tick > last_resync_tick + RESYNC_COOLDOWN_TICKS)) {
 					bad_corrections = 0;
+					last_resync_tick = Global.simulation_tick;
 					WriteLog("net: " + std::to_string((int)result.worst_position_error)
 					         + " m out of place after a correction, asking for a full resync", logtype::net);
 					send_resync_request(Global.simulation_tick, 0);

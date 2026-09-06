@@ -101,9 +101,12 @@ namespace network
 		size_t reconnect_delay = 0;
 
 		const size_t RECONNECT_DELAY_FRAMES = 60;
-		const float MAX_BUFFER_SIZE = 60.0f;
+		// the queue of authoritative frames waiting to be played out. every frame sitting
+		// in here is a frame of delay between pressing a key and seeing it happen, so it
+		// is kept as short as the connection allows rather than a comfortable second deep
+		const float MAX_BUFFER_SIZE = 12.0f;
 		const float JITTERINESS_MIX = 0.998f;
-		const float TARGET_MIN = 2.0f;
+		const float TARGET_MIN = 1.0f;
 		const float TARGET_MIX = 0.98f;
 		const float JITTERINESS_MULTIPIER = 2.0f;
 		const float CONSUME_MULTIPIER = 0.05f;
@@ -113,10 +116,13 @@ namespace network
 		// how far out of place a correction found us, in a row. a full resync is only
 		// worth asking for when the routine stream is not catching up on its own
 		int bad_corrections = 0;
+		uint64_t last_resync_tick = 0;
 		static constexpr double RESYNC_POSITION_ERROR = 25.0;
 		static constexpr int RESYNC_BAD_CORRECTIONS = 5;
+		// a correction needs time to take hold; asking again before it has is pointless
+		static constexpr uint64_t RESYNC_COOLDOWN_TICKS = 600;
 
-		float last_target = 20.0f;
+		float last_target = 2.0f;
 		float jitteriness = 1.0f;
 		float consume_counter = 0.0f;
 

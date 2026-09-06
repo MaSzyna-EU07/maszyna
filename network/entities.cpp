@@ -44,10 +44,11 @@ bool is_drivable(TDynamicObject const *Vehicle)
 	if (Vehicle == nullptr || Vehicle->MoverParameters == nullptr)
 		return false;
 
-	// anything with its own drive, plus anything the scenario already put a driver in
-	// (this covers driving trailers of multiple units, which carry no engine of their own)
-	// TODO: a cab count exposed by TMoverParameters would be a more precise test
-	return Vehicle->MoverParameters->EngineType != TEngineType::None || Vehicle->Mechanik != nullptr;
+	auto const &mover = *Vehicle->MoverParameters;
+
+	// a driving position is what counts, not an engine: the driving trailer of a multiple
+	// unit has a full desk and no traction of its own, and the scenario puts nobody in it
+	return mover.EngineType != TEngineType::None || Vehicle->Mechanik != nullptr || mover.MainCtrlPosNo > 0 || mover.BrakeCtrlPosNo > 0;
 }
 
 void entity_registry::clear()
@@ -61,10 +62,12 @@ void entity_registry::build()
 {
 	clear();
 
+	// every vehicle gets an id, not only the ones worth driving. commands are addressed by
+	// it, and a player working a train may walk into any of its cars
 	std::vector<std::string> names;
 	for (TDynamicObject *vehicle : simulation::Vehicles.sequence())
 	{
-		if (!is_drivable(vehicle))
+		if (vehicle == nullptr)
 			continue;
 		names.emplace_back(vehicle->name());
 	}
@@ -88,10 +91,22 @@ void entity_registry::build()
 		m_byname.emplace(name, entry.id);
 	}
 
+	if (m_entries.size() > 0xffff)
+	{
+		// the command channel packs the recipient into sixteen bits
+		ErrorLog("net: scenario holds more vehicles than the command channel can address", logtype::net);
+	}
+
 	reindex();
 	refresh();
 
-	WriteLog("net: assigned network ids to " + std::to_string(m_entries.size()) + " drivable vehicles", logtype::net);
+	uint32_t drivable{0};
+	for (auto const &entry : m_entries)
+		if (entry.drivable)
+			++drivable;
+
+	WriteLog("net: assigned network ids to " + std::to_string(m_entries.size()) + " vehicles, " + std::to_string(drivable) + " of them with a driving position",
+	         logtype::net);
 }
 
 void entity_registry::adopt(std::vector<vehicle_entry> const &Entries)
@@ -112,15 +127,110 @@ void entity_registry::reindex()
 
 void entity_registry::refresh()
 {
+	// only there so that a malformed consist cannot spin us forever
+	int const CONSIST_LIMIT{256};
+
 	for (auto &entry : m_entries)
 	{
 		TDynamicObject const *vehicle = resolve(entry.id);
 
+		entry.consist_id = entry.id;
+		entry.consist_size = 1;
+		entry.consist_lead = false;
+		entry.drivable = is_drivable(vehicle);
 		entry.ai_active = (vehicle != nullptr && vehicle->Mechanik != nullptr && vehicle->Mechanik->AIControllFlag);
-		entry.crew_count = Crews.count(entry.id);
 		entry.crew_capacity = CREW_CAPACITY;
-		entry.claimable = (vehicle != nullptr && entry.crew_count < entry.crew_capacity);
 	}
+
+	// group the vehicles into the trains they are currently coupled into. this is redone
+	// every time, so a train that comes apart turns into two trains here, and the crews
+	// follow whichever half each player happens to be sitting in
+	std::unordered_set<TDynamicObject const *> visited;
+
+	for (auto const &entry : m_entries)
+	{
+		TDynamicObject *vehicle = resolve(entry.id);
+		if (vehicle == nullptr || visited.count(vehicle) > 0)
+			continue;
+
+		TDynamicObject *front = vehicle;
+		for (int step = 0; step < CONSIST_LIMIT; ++step)
+		{
+			TDynamicObject *previous = front->Prev();
+			if (previous == nullptr || previous == vehicle || visited.count(previous) > 0)
+				break;
+			front = previous;
+		}
+
+		std::vector<NetworkEntityId> members;
+		TDynamicObject *member = front;
+		for (int step = 0; step < CONSIST_LIMIT && member != nullptr; ++step, member = member->Next())
+		{
+			if (visited.count(member) > 0)
+				break;
+			visited.emplace(member);
+
+			auto const id = id_of(member->name());
+			if (id != ENTITY_NONE)
+				members.emplace_back(id);
+		}
+
+		if (members.empty())
+			continue;
+
+		// the lowest id in the set names the train, and the lowest one that can actually
+		// be driven stands for it in the lobby
+		NetworkEntityId consist{members.front()};
+		NetworkEntityId lead{ENTITY_NONE};
+		uint8_t crew{0};
+
+		for (auto const id : members)
+		{
+			consist = std::min(consist, id);
+			crew = (uint8_t)std::min<int>(255, crew + Crews.count(id));
+
+			auto const *candidate = find(id);
+			if (candidate != nullptr && candidate->drivable && (lead == ENTITY_NONE || id < lead))
+				lead = id;
+		}
+		if (lead == ENTITY_NONE)
+			lead = consist;
+
+		for (auto const id : members)
+		{
+			auto const lookup = m_byid.find(id);
+			if (lookup == m_byid.end())
+				continue;
+
+			auto &target = m_entries[lookup->second];
+			target.consist_id = consist;
+			target.consist_size = (uint8_t)std::min<size_t>(255, members.size());
+			target.consist_lead = (id == lead);
+			target.crew_count = crew;
+			target.claimable = (crew < target.crew_capacity);
+		}
+	}
+}
+
+NetworkEntityId entity_registry::consist_of(NetworkEntityId Id) const
+{
+	auto const *entry = find(Id);
+	return entry != nullptr ? entry->consist_id : ENTITY_NONE;
+}
+
+std::vector<NetworkEntityId> entity_registry::consist_members(NetworkEntityId Consist) const
+{
+	std::vector<NetworkEntityId> members;
+	if (Consist == ENTITY_NONE)
+		return members;
+
+	for (auto const &entry : m_entries)
+	{
+		if (entry.consist_id == Consist)
+			members.emplace_back(entry.id);
+	}
+
+	return members;
 }
 
 NetworkEntityId entity_registry::id_of(std::string const &Name) const
