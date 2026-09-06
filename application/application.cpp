@@ -681,6 +681,10 @@ void eu07_application::exit()
 	for (auto &mode : m_modes)
 		mode.reset();
 
+	// workers hold hidden windows from window(-1), kept in m_windows and sharing the main GL
+	// context - join them before Shutdown() and glfwDestroyWindow() destroy those contexts
+	m_taskqueue.exit();
+
 	GfxRenderer->Shutdown();
 	m_network.reset();
 
@@ -693,7 +697,6 @@ void eu07_application::exit()
 	{
 		glfwDestroyWindow(window);
 	}
-	m_taskqueue.exit();
 	glfwPollEvents(); // TODO: This fixes a segfault on Wayland when closing. Remove after updating glfw to 3.5.
 	glfwTerminate();
 

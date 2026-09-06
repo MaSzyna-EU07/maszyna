@@ -831,59 +831,83 @@ state_serializer::deserialize_editorterrain(cParser &Input, scene::scratch_data 
 	}
 }
 
+namespace {
+
+using trainset_data = scene::scratch_data::trainset_data;
+
+void couple_trainset( trainset_data &trainset )
+{ // couple before picking the primary - reassign sees uncoupled members as separate consists
+    for( std::size_t i = 1; i < trainset.vehicles.size(); ++i ) {
+        trainset.vehicles[ i - 1 ]->AttachNext(
+            trainset.vehicles[ i ],
+            trainset.couplings[ i - 1 ] );
+    }
+}
+
+TDynamicObject *select_trainset_driver( trainset_data &trainset )
+{ // picks the primary after coupling and hands it its orders, if any
+    trainset.vehicles.front()->ReassignConsistPrimary();
+
+    for( auto *vehicle : trainset.vehicles ) {
+        if( vehicle->Mechanik == nullptr || !vehicle->Mechanik->primary() ) {
+            continue;
+        }
+        auto const lookup { trainset.assignment.find( Global.asLang ) };
+        if( lookup != trainset.assignment.end() ) {
+            vehicle->Mechanik->assignment() = lookup->second;
+        }
+        return vehicle;
+    }
+    return nullptr;
+}
+
+void init_trainset_driver( trainset_data const &trainset )
+{
+    if( trainset.driver == nullptr || trainset.driver->Mechanik == nullptr ) {
+        return;
+    }
+    auto *controller { trainset.driver->Mechanik };
+    controller->DirectionInitial();
+    controller->PutCommand(
+        "Timetable:" + trainset.name,
+        trainset.velocity,
+        0,
+        nullptr );
+}
+
+void apply_trainset_end_signals( trainset_data const &trainset )
+{
+    // coupler 0 on the last vehicle: plate end signals (the AI fixes them once it starts)
+    if( trainset.couplings.back() != coupling::faux ) {
+        return;
+    }
+    // with a driver: markers + plates; without one: plates only (the AI corrects it on startup)
+    auto const rearlights {
+        trainset.driver != nullptr
+            ? light::redmarker_left | light::redmarker_right | light::rearendsignals
+            : light::rearendsignals };
+    trainset.vehicles.back()->RaLightsSet( -1, rearlights );
+}
+
+}
+
 void
 state_serializer::deserialize_endtrainset( cParser &Input, scene::scratch_data &Scratchpad ) {
 
-    if( false == Scratchpad.trainset.is_open
-     || true == Scratchpad.trainset.vehicles.empty() ) {
-        // not bloody likely but we better check for it just the same
+    if( !Scratchpad.trainset.is_open || Scratchpad.trainset.vehicles.empty() ) {
         ErrorLog( "Bad trainset: empty trainset defined in file \"" + Input.Name() + "\" (line " + std::to_string( Input.Line() - 1 ) + ")" );
         Scratchpad.trainset.is_open = false;
         return;
     }
 
-    std::size_t vehicleindex { 0 };
-    for( auto *vehicle : Scratchpad.trainset.vehicles ) {
-        // go through list of vehicles in the trainset, coupling them together and checking for potential driver
-        if( vehicle->Mechanik != nullptr
-         && vehicle->Mechanik->primary() ) {
-            // primary driver will receive the timetable for this trainset
-            Scratchpad.trainset.driver = vehicle;
-            // they'll also receive assignment data if there's any
-            auto const lookup { Scratchpad.trainset.assignment.find( Global.asLang ) };
-            if( lookup != Scratchpad.trainset.assignment.end() ) {
-                vehicle->Mechanik->assignment() = lookup->second;
-            }
-        }
-        if( vehicleindex > 0 ) {
-            // from second vehicle on couple it with the previous one
-            Scratchpad.trainset.vehicles[ vehicleindex - 1 ]->AttachNext(
-                vehicle,
-                Scratchpad.trainset.couplings[ vehicleindex - 1 ] );
-        }
-        ++vehicleindex;
-    }
+    auto &trainset { Scratchpad.trainset };
 
-    if( Scratchpad.trainset.driver != nullptr ) {
-        // if present, send timetable to the driver
-        // wysłanie komendy "Timetable" ustawia odpowiedni tryb jazdy
-        auto *controller = Scratchpad.trainset.driver->Mechanik;
-            controller->DirectionInitial();
-            controller->PutCommand(
-                "Timetable:" + Scratchpad.trainset.name,
-                Scratchpad.trainset.velocity,
-                0,
-                nullptr );
-    }
-    if( Scratchpad.trainset.couplings.back() == coupling::faux ) {
-        // jeśli ostatni pojazd ma sprzęg 0 to założymy mu końcówki blaszane (jak AI się odpali, to sobie poprawi)
-        // place end signals only on trains without a driver, activate markers otherwise
-        Scratchpad.trainset.vehicles.back()->RaLightsSet(
-            -1,
-            Scratchpad.trainset.driver != nullptr ? light::redmarker_left | light::redmarker_right | light::rearendsignals : light::rearendsignals );
-    }
-    // all done
-    Scratchpad.trainset.is_open = false;
+    couple_trainset( trainset );
+    trainset.driver = select_trainset_driver( trainset );
+    init_trainset_driver( trainset );
+    apply_trainset_end_signals( trainset );
+
+    trainset.is_open = false;
 }
 
 // creates path and its wrapper, restoring class data from provided stream
