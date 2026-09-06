@@ -7,7 +7,9 @@
 #include "application/application.h"
 #include "utilities/Globals.h"
 
-std::uint32_t const EU07_NETWORK_VERSION = 2;
+// 2 - legacy lockstep protocol
+// 3 - handshake carries build identification and an explicit rejection message
+std::uint32_t const EU07_NETWORK_VERSION = 3;
 
 namespace network {
 
@@ -44,6 +46,7 @@ void network::connection::connected()
 		client_hello msg;
 		msg.version = EU07_NETWORK_VERSION;
 		msg.start_packet = packet_counter;
+		msg.app_version = Global.asVersion;
 		send_message(msg);
 	}
 }
@@ -127,8 +130,23 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 	if (msg.type == message::CLIENT_HELLO) {
 		const auto& cmd = dynamic_cast<const client_hello&>(msg);
 
-		if (cmd.version != EU07_NETWORK_VERSION // wrong version
-		        || !Global.ready_to_load) { // not ready yet
+		std::string rejection;
+		if (cmd.version != (int32_t)EU07_NETWORK_VERSION) {
+			rejection = "incompatible protocol version: server speaks "
+			        + std::to_string(EU07_NETWORK_VERSION)
+			        + ", client speaks " + std::to_string(cmd.version);
+		}
+		else if (!Global.ready_to_load || Global.SceneryFile.empty()) {
+			// the host has not picked a scenario yet, there is nothing to join
+			rejection = "the server has no scenario running yet";
+		}
+
+		if (!rejection.empty()) {
+			WriteLog("net: rejecting peer: " + rejection, logtype::net);
+
+			server_reject reply;
+			reply.reason = rejection;
+			conn->send_message(reply);
 			conn->disconnect();
 			return;
 		}
@@ -138,6 +156,7 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 		reply.timestamp = Global.starting_timestamp;
         reply.config = 0; // TODO: pass bitfield with state of relevant setting switches
         reply.scenario = Global.SceneryFile;
+		reply.app_version = Global.asVersion;
 		conn->state = connection::CATCHING_UP;
 		conn->backbuffer = backbuffer;
 		conn->backbuffer_pos = 0;
@@ -145,7 +164,7 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 
 		conn->send_message(reply);
 
-		WriteLog("net: client accepted", logtype::net);
+		WriteLog("net: peer connected, build \"" + cmd.app_version + "\", scenario \"" + Global.SceneryFile + "\"", logtype::net);
 	}
 	else if (msg.type == message::REQUEST_COMMAND) {
 		const auto& cmd = dynamic_cast<const request_command&>(msg);
@@ -161,6 +180,11 @@ void network::client::update()
 {
 	if (conn && conn->state == connection::DEAD) {
 		conn.reset();
+	}
+
+	if (!Global.network_reject_reason.empty()) {
+		// the server explicitly refused us; retrying would only spam it
+		return;
 	}
 
 	if (!conn) {
@@ -240,6 +264,16 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 		return;
 	}
 
+	if (msg.type == message::SERVER_REJECT) {
+		const auto& cmd = dynamic_cast<const server_reject&>(msg);
+
+		ErrorLog("net: connection refused by the server: " + cmd.reason, logtype::net);
+		Global.network_reject_reason = cmd.reason;
+		Global.network_status = "Connection refused: " + cmd.reason;
+		conn->disconnect();
+		return;
+	}
+
 	if (msg.type == message::SERVER_HELLO) {
 		const auto& cmd = dynamic_cast<const server_hello&>(msg);
 		conn->state = connection::ACTIVE;
@@ -251,11 +285,15 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
             // TODO: configure simulation settings according to received cmd.config
             Global.SceneryFile = cmd.scenario;
 			Global.ready_to_load = true;
+
+			WriteLog("net: scenario handshake: \"" + cmd.scenario + "\", server build \"" + cmd.app_version + "\"", logtype::net);
 		} else if (Global.random_seed != cmd.seed) {
 			ErrorLog("net: seed mismatch", logtype::net);
 			conn->disconnect();
 			return;
 		}
+
+		Global.network_status.clear();
 
 		WriteLog("net: accept received", logtype::net);
 	}

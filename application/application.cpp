@@ -1105,6 +1105,49 @@ void eu07_application::init_files()
 }
 namespace fs = std::filesystem;
 
+namespace {
+
+// port used when the user did not spell one out in --host / --connect
+uint32_t const EU07_DEFAULT_NETWORK_PORT = 7420;
+
+// completes a user supplied endpoint into the "address:port" form expected by the tcp backend.
+// note: only the plain ipv4/hostname form is split, anything with more colons is passed through
+std::string network_endpoint(std::string const &Argument, std::string const &Defaultaddress)
+{
+	auto address{Argument};
+	std::string port;
+
+	if (std::count(address.begin(), address.end(), ':') == 1)
+	{
+		auto const separator{address.find(':')};
+		port = address.substr(separator + 1);
+		address = address.substr(0, separator);
+	}
+
+	if (address.empty())
+		address = Defaultaddress;
+	if (port.empty())
+		port = std::to_string(EU07_DEFAULT_NETWORK_PORT);
+
+	return address + ":" + port;
+}
+
+void print_usage(std::string const &Executable)
+{
+	std::cout
+	    << "usage: " << Executable << " [options]\n"
+	    << "  -s, --scenario <path>        scenario file to load\n"
+	    << "  -v, --vehicle <name>         vehicle to start in\n"
+	    << "      --host [address:port]    host a multiplayer session (default 0.0.0.0:"
+	    << EU07_DEFAULT_NETWORK_PORT << ")\n"
+	    << "      --connect <address:port> join a multiplayer session (default port "
+	    << EU07_DEFAULT_NETWORK_PORT << ")\n"
+	    << "  -h, --help                   this message"
+	    << std::endl;
+}
+
+} // namespace
+
 int eu07_application::init_settings(int Argc, char *Argv[])
 {
 	Global.asVersion = VERSION_INFO;
@@ -1126,24 +1169,48 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 
 		std::string token{Argv[i]};
 
-		if (token == "-s")
+		if (token == "-s" || token == "--scenario")
 		{
 			if (i + 1 < Argc)
 			{
 				Global.SceneryFile = ToLower(Argv[++i]);
 			}
 		}
-		else if (token == "-v")
+		else if (token == "-v" || token == "--vehicle")
 		{
 			if (i + 1 < Argc)
 			{
 				Global.local_start_vehicle = ToLower(Argv[++i]);
+				Global.local_start_vehicle_override = true;
 			}
+		}
+		else if (token == "--host")
+		{
+			// the address is optional, so that a bare --host just listens on every interface
+			std::string endpoint{std::string("0.0.0.0:") + std::to_string(EU07_DEFAULT_NETWORK_PORT)};
+			if (i + 1 < Argc && Argv[i + 1][0] != '-')
+			{
+				endpoint = network_endpoint(Argv[++i], "0.0.0.0");
+			}
+			Global.network_servers.emplace_back("tcp", endpoint);
+		}
+		else if (token == "--connect")
+		{
+			if (i + 1 >= Argc)
+			{
+				std::cout << "--connect requires a server address" << std::endl;
+				return -1;
+			}
+			Global.network_client.emplace("tcp", network_endpoint(Argv[++i], "127.0.0.1"));
+		}
+		else if (token == "-h" || token == "--help")
+		{
+			print_usage(Argv[0]);
+			return -1;
 		}
 		else
 		{
-			std::cout << "usage: " << std::string(Argv[0]) << " [-s sceneryfilepath]"
-			          << " [-v vehiclename]" << std::endl;
+			print_usage(Argv[0]);
 			return -1;
 		}
 	}
@@ -1423,17 +1490,23 @@ int eu07_application::init_modes()
 {
 	Global.local_random_engine.seed(std::random_device{}());
 
-	if ((!Global.network_servers.empty() || Global.network_client) && Global.SceneryFile.empty())
-	{
-		ErrorLog("launcher mode is currently not supported in network mode");
-		return -1;
-	}
-
 	// activate the default mode
-	if (Global.SceneryFile.empty())
-		push_mode(mode::launcher);
-	else
+	if (Global.network_client)
+	{
+		// a multiplayer client learns the scenario name from the server handshake,
+		// so it goes straight to the loader and waits there for Global.ready_to_load
 		push_mode(mode::scenarioloader);
+	}
+	else if (Global.SceneryFile.empty())
+	{
+		// no scenario given: let the user pick one (a listening server simply
+		// refuses joins until the scenario is up)
+		push_mode(mode::launcher);
+	}
+	else
+	{
+		push_mode(mode::scenarioloader);
+	}
 
 	return 0;
 }
@@ -1449,11 +1522,22 @@ bool eu07_application::init_network()
 	for (auto const &pair : Global.network_servers)
 	{
 		// create all servers
+		WriteLog("net: hosting session on " + pair.second + " (" + pair.first + ")", logtype::net);
 		m_network->create_server(pair.first, pair.second);
 	}
 
 	if (Global.network_client)
 	{
+		if (!Global.local_start_vehicle_override)
+		{
+			// in a multiplayer session the vehicle is assigned by the server;
+			// until the lobby exists the client simply starts out as an observer
+			Global.local_start_vehicle = "ghostview";
+		}
+
+		Global.network_status = "Connecting to " + Global.network_client->second + "...";
+		WriteLog("net: connecting to " + Global.network_client->second + " (" + Global.network_client->first + ")", logtype::net);
+
 		// create client
 		m_network->connect(Global.network_client->first, Global.network_client->second);
 	}

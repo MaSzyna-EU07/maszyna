@@ -32,9 +32,14 @@ bool scenarioloader_mode::init() {
 
 // mode-specific update of simulation data. returns: false on error, true otherwise
 bool scenarioloader_mode::update() {
-	if (!Global.ready_to_load)
-		// waiting for network connection
+	if (!Global.ready_to_load) {
+		// waiting for the network handshake to tell us which scenario to load
+		m_userinterface->set_progress(
+		    Global.network_status.empty()
+		        ? STR("Connecting to server")
+		        : Global.network_status);
 		return true;
+	}
 
 	if (!state) {
 		WriteLog("using simulation seed: " + std::to_string(Global.random_seed), logtype::generic);
@@ -76,8 +81,15 @@ void scenarioloader_mode::enter() {
 
     simulation::is_ready = false;
 
-    Application.set_title( Global.AppName + " (" + Global.SceneryFile + ")" );
-	m_userinterface->set_progress(STR("Loading scenery"));
+    if( Global.SceneryFile.empty() ) {
+        // multiplayer client: the scenario is not known until the server answers
+        Application.set_title( Global.AppName );
+        m_userinterface->set_progress( STR( "Connecting to server" ) );
+    }
+    else {
+        Application.set_title( Global.AppName + " (" + Global.SceneryFile + ")" );
+        m_userinterface->set_progress(STR("Loading scenery"));
+    }
 }
 
 // maintenance method, called when the mode is deactivated

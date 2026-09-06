@@ -81,6 +81,9 @@ struct global_settings {
     std::string szDefaultExt{ szTexturesDDS };
 	std::string SceneryFile;
     std::string local_start_vehicle{ "EU07-424" };
+    // set when the starting vehicle was explicitly requested (command line -v),
+    // so multiplayer clients can tell an intentional choice from the built-in default
+    bool local_start_vehicle_override{ false };
     int iConvertModels{ 0 }; // tworzenie plików binarnych
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan
     bool file_binary_terrain{ true }; // enable binary terrain (de)serialization
@@ -347,6 +350,10 @@ struct global_settings {
 	std::vector<std::pair<std::string, std::string>> network_servers;
 	std::optional<std::pair<std::string, std::string>> network_client;
 	float desync = 0.0f;
+	// human readable state of the network session, presented on the connecting/loading screen
+	std::string network_status;
+	// set when the server refused us; keeps the reason for the ui and stops reconnect attempts
+	std::string network_reject_reason;
 
 	std::unordered_map<int, std::string> trainset_overrides;
 

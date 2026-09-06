@@ -13,6 +13,7 @@ struct message
 		SERVER_HELLO,
 		FRAME_INFO,
 		REQUEST_COMMAND,
+		SERVER_REJECT,
 		TYPE_MAX
 	};
 
@@ -32,6 +33,20 @@ struct client_hello : public message
 
 	int32_t version;
 	uint32_t start_packet;
+	// build identification of the connecting simulator, informational only
+	std::string app_version;
+};
+
+// sent by the server instead of SERVER_HELLO when the client cannot join;
+// carries a human readable reason so the player learns what went wrong
+struct server_reject : public message
+{
+	server_reject() : message(SERVER_REJECT) {}
+
+	std::string reason;
+
+	virtual void serialize(std::ostream &stream) const override;
+	virtual void deserialize(std::istream &stream) override;
 };
 
 struct server_hello : public message
@@ -42,6 +57,8 @@ struct server_hello : public message
 	int64_t timestamp;
     int64_t config;
     std::string scenario;
+	// build identification of the server, informational only
+	std::string app_version;
 
 	virtual void serialize(std::ostream &stream) const override;
 	virtual void deserialize(std::istream &stream) override;

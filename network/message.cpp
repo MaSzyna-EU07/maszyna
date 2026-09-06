@@ -6,12 +6,24 @@ void network::client_hello::serialize(std::ostream &stream) const
 {
 	sn_utils::ls_int32(stream, version);
 	sn_utils::ls_uint32(stream, start_packet);
+	sn_utils::s_str(stream, app_version);
 }
 
 void network::client_hello::deserialize(std::istream &stream)
 {
 	version = sn_utils::ld_int32(stream);
 	start_packet = sn_utils::ld_uint32(stream);
+	app_version = sn_utils::d_str(stream);
+}
+
+void network::server_reject::serialize(std::ostream &stream) const
+{
+	sn_utils::s_str(stream, reason);
+}
+
+void network::server_reject::deserialize(std::istream &stream)
+{
+	reason = sn_utils::d_str(stream);
 }
 
 void network::server_hello::serialize(std::ostream &stream) const
@@ -20,6 +32,7 @@ void network::server_hello::serialize(std::ostream &stream) const
 	sn_utils::ls_int64(stream, timestamp);
     sn_utils::ls_int64(stream, config);
     sn_utils::s_str(stream, scenario);
+	sn_utils::s_str(stream, app_version);
 }
 
 void network::server_hello::deserialize(std::istream &stream)
@@ -28,6 +41,7 @@ void network::server_hello::deserialize(std::istream &stream)
 	timestamp = sn_utils::ld_int64(stream);
     config = sn_utils::ld_int64(stream);
     scenario = sn_utils::d_str(stream);
+	app_version = sn_utils::d_str(stream);
 }
 
 void ::network::request_command::serialize(std::ostream &stream) const
@@ -115,6 +129,13 @@ std::shared_ptr<network::message> network::deserialize_message(std::istream &str
 		msg = std::make_shared<frame_info>();
 	else if (type == message::REQUEST_COMMAND)
 		msg = std::make_shared<request_command>();
+	else if (type == message::SERVER_REJECT)
+		msg = std::make_shared<server_reject>();
+
+	if (!msg) {
+		// unknown message type; hand back a marker the peer handlers treat as a protocol error
+		return std::make_shared<message>(message::TYPE_MAX);
+	}
 
 	msg->deserialize(stream);
 
