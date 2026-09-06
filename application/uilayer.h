@@ -1,4 +1,4 @@
-﻿/*
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include <string>
 #include "model/Texture.h"
 #include "widgets/popup.h"
+
 
 // GuiLayer -- basic user interface class. draws requested information on top of openGL screen
 
@@ -83,6 +84,8 @@ public:
     static void set_unit( GLint const Textureunit ) { m_textureunit = GL_TEXTURE0 + Textureunit; }
     static void shutdown();
 	virtual void showDebugUI() {};
+    // cycles the old driving aid panel (Shift+F1); default no-op outside driver mode
+    virtual void toggle_driving_aid() {};
     // potentially processes provided input key. returns: true if the input was processed, false otherwise
     virtual bool on_key( int Key, int Action );
     // potentially processes provided mouse movement. returns: true if the input was processed, false otherwise
@@ -122,6 +125,7 @@ public:
 	static ImFont *font_default;
 	static ImFont *font_mono;
 	static ImFont *font_loading;
+	static ImFont *font_hud;
 
 protected:
 // members

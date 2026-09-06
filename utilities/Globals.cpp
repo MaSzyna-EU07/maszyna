@@ -1651,6 +1651,8 @@ global_settings::export_as_text( std::ostream &Output ) const {
         << UITextColor.g * 255 << " "
         << UITextColor.b * 255 << "\n";
     export_as_text( Output, "ui.bg.opacity", UIBgOpacity );
+    // HUD overlay settings are NOT stored in eu07.ini - they live in their own hud.ini
+    // (see hudcfg::load_hud / save_hud in driveruipanels.cpp)
     export_as_text( Output, "input.gamepad", InputGamepad );
 #ifdef WITH_UART
     if( uart_conf.enable ) {

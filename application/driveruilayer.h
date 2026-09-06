@@ -1,4 +1,4 @@
-﻿/*
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -28,6 +28,9 @@ public:
     driver_ui();
 // methods
 	void showDebugUI() override;
+    // cycles the old driving aid panel (Shift+F1): closed -> compact -> expanded -> closed
+    void
+        toggle_driving_aid() override;
     // potentially processes provided input key. returns: true if the input was processed, false otherwise
     bool
         on_key( int const Key, int const Action ) override;
@@ -69,4 +72,8 @@ private:
 	ui::map_panel m_mappanel;
 	ui::time_panel m_timepanel;
 	ui::cameraview_panel m_cameraviewpanel;
+	hud_panel m_hudpanel { "HUD", true };
+	hud_speed_panel m_hudspeedpanel { "HUDSpeed", true };
+	hud_signal_panel m_hudsignalpanel { "HUDSignal", true };
+	hud_custom_panel m_hudcustompanel { "HUD customisation", false };
 };
