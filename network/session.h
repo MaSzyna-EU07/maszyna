@@ -102,6 +102,21 @@ extern crew_registry Crews;
 // how long a disconnected peer keeps its place in the crew
 constexpr double RECONNECT_GRACE_SECONDS = 60.0;
 
+// settings the server imposes on everybody, carried in the handshake. only things that
+// change how the physics comes out belong here - looks and comfort stay with the player
+enum session_config_flags : int64_t
+{
+	CONFIG_FULLPHYSICS = 1 << 0,
+	CONFIG_REALISTICCONTROL = 1 << 1
+};
+
+// packs the settings this machine is running, for the server to hand out
+int64_t pack_session_config();
+// takes on the settings the server handed us
+void apply_session_config(int64_t Config);
+// settings a session needs regardless of who set what, applied on every peer
+void enforce_session_settings();
+
 // resolves the identity of a connecting peer. an unknown or empty token means somebody
 // new and gets a fresh peer id together with a token of their own; a token this server
 // handed out before brings back the peer id that went with it, and with it the seat in

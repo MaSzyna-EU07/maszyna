@@ -69,6 +69,7 @@ struct server_hello : public message
 
 	uint32_t seed;
 	int64_t timestamp;
+    // settings the server imposes on the whole session, see network/session.h
     int64_t config;
     std::string scenario;
 	// build identification of the server, informational only

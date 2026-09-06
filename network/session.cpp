@@ -184,6 +184,43 @@ bool crew_registry::leave(PeerId Peer, NetworkEntityId Id)
 	return true;
 }
 
+int64_t pack_session_config()
+{
+	int64_t config{0};
+
+	if (Global.FullPhysics)
+		config |= CONFIG_FULLPHYSICS;
+	if (Global.RealisticControlMode)
+		config |= CONFIG_REALISTICCONTROL;
+
+	return config;
+}
+
+void apply_session_config(int64_t Config)
+{
+	bool const fullphysics{(Config & CONFIG_FULLPHYSICS) != 0};
+	bool const realisticcontrol{(Config & CONFIG_REALISTICCONTROL) != 0};
+
+	if (Global.FullPhysics != fullphysics)
+		WriteLog(std::string("net: the session runs with full physics ") + (fullphysics ? "on" : "off"), logtype::net);
+	if (Global.RealisticControlMode != realisticcontrol)
+		WriteLog(std::string("net: the session runs with realistic control ") + (realisticcontrol ? "on" : "off"), logtype::net);
+
+	Global.FullPhysics = fullphysics;
+	Global.RealisticControlMode = realisticcontrol;
+}
+
+void enforce_session_settings()
+{
+	if (Global.trainThreads != 0)
+	{
+		// the order vehicles are stepped in must not depend on how threads happen to be
+		// scheduled; a session cannot afford that kind of drift
+		WriteLog("net: multiplayer session, running the vehicle physics on one thread", logtype::net);
+		Global.trainThreads = 0;
+	}
+}
+
 PeerId resolve_peer_identity(uint64_t &Token)
 {
 	static std::unordered_map<uint64_t, PeerId> known;

@@ -1578,6 +1578,9 @@ bool eu07_application::init_network()
 		// create network manager
 		m_network.emplace();
 
+		// settings a session cannot run without, whichever side we are on
+		network::enforce_session_settings();
+
 		// the host takes part in the session like any other peer, with an identity of its
 		// own, so that crew and permission handling needs no special case for it
 		if (!Global.network_client)

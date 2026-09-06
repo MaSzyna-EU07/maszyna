@@ -168,7 +168,7 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 		server_hello reply;
 		reply.seed = Global.random_seed;
 		reply.timestamp = Global.starting_timestamp;
-        reply.config = 0; // TODO: pass bitfield with state of relevant setting switches
+        reply.config = pack_session_config();
         reply.scenario = Global.SceneryFile;
 		reply.app_version = Global.asVersion;
 		reply.session_token = cmd.session_token;
@@ -433,7 +433,7 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 			Global.random_seed = cmd.seed;
 			Global.random_engine.seed(Global.random_seed);
 			Global.starting_timestamp = cmd.timestamp;
-            // TODO: configure simulation settings according to received cmd.config
+            apply_session_config(cmd.config);
             Global.SceneryFile = cmd.scenario;
 			Global.ready_to_load = true;
 
