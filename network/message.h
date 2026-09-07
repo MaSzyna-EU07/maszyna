@@ -78,6 +78,11 @@ struct server_hello : public message
 	uint32_t peer_id{ PEER_NONE };
 	// hand this back on a later connection to be recognised as the same participant
 	uint64_t session_token{ 0 };
+	// how far a train may drift from the session's idea of where it is before it is put
+	// back: while it rolls, and once it has stopped. the client takes these over from the
+	// server, so everybody in a session works to the same margins
+	double sync_running{ 1.5 };
+	double sync_stop{ 0.2 };
 
 	virtual void serialize(std::ostream &stream) const override;
 	virtual void deserialize(std::istream &stream) override;

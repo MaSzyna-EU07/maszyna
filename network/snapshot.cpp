@@ -29,11 +29,26 @@ namespace
 
 uint32_t const SNAPSHOT_MAGIC{0x4e535545}; // 'EUSN'
 
-// how far a vehicle may sit from where the authority says it is before it gets put back.
-// a joining peer is placed exactly; a running one is left to its own physics for small
-// errors, because nudging a vehicle every fraction of a second is worse than the error
-double const REPOSITION_TOLERANCE_JOIN{0.5};
-double const REPOSITION_TOLERANCE_CORRECTION{1.5};
+// how far a train may sit from where the session says it is before it gets put back.
+// two margins, both settable as multiplayer.sync.running / multiplayer.sync.stop and both
+// handed to every client by the server on connect: a generous one while it rolls, because
+// nudging a moving vehicle several times a second is worse than the error itself, and a
+// tight one for the moment it comes to a stand, applied once and then left alone
+double running_tolerance()
+{
+	return std::max(0.05, (double)Global.multiplayer_sync_running);
+}
+
+double stop_tolerance()
+{
+	return std::max(0.01, (double)Global.multiplayer_sync_stop);
+}
+
+// anything slower than this counts as standing still
+double const STANDSTILL_VELOCITY{0.05};
+
+// consists that have had their one precise correction since they last moved
+std::unordered_set<std::string> g_settled;
 
 // ---------------------------------------------------------------------------
 // what the authority last sent, so that a routine correction only carries changes
@@ -618,6 +633,197 @@ void correct_position(TDynamicObject &Vehicle, vehicle_state const &State, bool 
 	Vehicle.Move(delta * Vehicle.RaDirectionGet());
 }
 
+// ---------------------------------------------------------------------------
+// how the trains are made up.
+//
+// every peer loads its own copy of the scenery, which is the only reason joining a
+// session takes seconds rather than minutes - but the copy on disk is not the session.
+// The host may have shunted a set apart, put one together, or simply be running a
+// scenery whose trainsets were edited since. So the composition travels: which coupler
+// of which vehicle is joined to which coupler of which other vehicle, and with what.
+// The vehicles themselves do not - a peer that is missing one cannot be sent a model
+// over the wire, and says so in the log instead
+
+struct coupling_end
+{
+	int32_t flag{0};
+	std::string other;
+	uint8_t otherend{0};
+};
+
+struct consist_entry
+{
+	std::string name;
+	coupling_end ends[2];
+};
+
+std::string write_consists()
+{
+	std::ostringstream entries;
+	uint32_t count{0};
+
+	for (TDynamicObject const *vehicle : simulation::Vehicles.sequence())
+	{
+		if (vehicle == nullptr || vehicle->MoverParameters == nullptr)
+			continue;
+
+		sn_utils::s_str(entries, vehicle->name());
+
+		for (int end = 0; end < 2; ++end)
+		{
+			auto const &coupler = vehicle->MoverParameters->Couplers[end];
+			bool const linked = (coupler.Connected != nullptr) && (coupler.CouplingFlag != coupling::faux) && (coupler.ConnectedNr >= 0) && (coupler.ConnectedNr < 2);
+
+			sn_utils::ls_int32(entries, linked ? (int32_t)coupler.CouplingFlag : 0);
+			sn_utils::s_str(entries, linked ? coupler.Connected->Name : std::string());
+			sn_utils::s_uint8(entries, linked ? (uint8_t)coupler.ConnectedNr : (uint8_t)0);
+		}
+
+		++count;
+	}
+
+	if (count == 0)
+		return std::string();
+
+	std::ostringstream body;
+	sn_utils::ls_uint32(body, count);
+	auto const packed = entries.str();
+	body.write(packed.data(), packed.size());
+
+	return body.str();
+}
+
+// breaks a coupling whatever state the buffers are in. TDynamicObject::Dettach() leaves
+// the mechanical coupler in place unless the vehicles are pressed together, which is the
+// right thing for a player pulling a lever and the wrong thing for putting a peer's world
+// in order
+void force_detach(TDynamicObject &Vehicle, int const End)
+{
+	auto &coupler = Vehicle.MoverParameters->Couplers[End];
+
+	if (coupler.Connected == nullptr)
+	{
+		coupler.CouplingFlag = coupling::faux;
+		coupler.ConnectedNr = -1;
+		return;
+	}
+
+	// hands the consist's driver back, among other housekeeping
+	Vehicle.Dettach(End);
+
+	if ((coupler.Connected != nullptr) && (coupler.ConnectedNr >= 0) && (coupler.ConnectedNr < 2))
+	{
+		auto &othercoupler = coupler.Connected->Couplers[coupler.ConnectedNr];
+		othercoupler.Connected = nullptr;
+		othercoupler.ConnectedNr = -1;
+		othercoupler.CouplingFlag = coupling::faux;
+	}
+
+	coupler.Connected = nullptr;
+	coupler.ConnectedNr = -1;
+	coupler.CouplingFlag = coupling::faux;
+}
+
+void read_consists(std::istream &Stream)
+{
+	auto const count = sn_utils::ld_uint32(Stream);
+
+	std::vector<consist_entry> manifest;
+	manifest.reserve(count);
+
+	for (uint32_t i = 0; i < count; ++i)
+	{
+		consist_entry entry;
+		entry.name = sn_utils::d_str(Stream);
+		for (int end = 0; end < 2; ++end)
+		{
+			entry.ends[end].flag = sn_utils::ld_int32(Stream);
+			entry.ends[end].other = sn_utils::d_str(Stream);
+			entry.ends[end].otherend = sn_utils::d_uint8(Stream);
+		}
+		manifest.emplace_back(std::move(entry));
+	}
+
+	int detached{0};
+	int attached{0};
+	int missing{0};
+
+	// first everything that is coupled here and should not be, or is coupled to the wrong
+	// vehicle. doing this before making the new connections keeps a coupler from being
+	// claimed twice
+	for (auto const &entry : manifest)
+	{
+		TDynamicObject *vehicle = simulation::Vehicles.find(entry.name);
+		if (vehicle == nullptr || vehicle->MoverParameters == nullptr)
+		{
+			++missing;
+			continue;
+		}
+
+		for (int end = 0; end < 2; ++end)
+		{
+			auto const &coupler = vehicle->MoverParameters->Couplers[end];
+			if (coupler.Connected == nullptr)
+				continue;
+
+			auto const &wanted = entry.ends[end];
+			bool const same = (!wanted.other.empty()) && (coupler.Connected->Name == wanted.other) && (coupler.ConnectedNr == (int)wanted.otherend);
+
+			if (same)
+				continue;
+
+			force_detach(*vehicle, end);
+			++detached;
+		}
+	}
+
+	// then everything that should be coupled and is not, or is coupled with the wrong set
+	// of hoses and cables
+	for (auto const &entry : manifest)
+	{
+		TDynamicObject *vehicle = simulation::Vehicles.find(entry.name);
+		if (vehicle == nullptr || vehicle->MoverParameters == nullptr)
+			continue;
+
+		for (int end = 0; end < 2; ++end)
+		{
+			auto const &wanted = entry.ends[end];
+			if (wanted.other.empty() || wanted.flag == coupling::faux)
+				continue;
+
+			TDynamicObject *other = simulation::Vehicles.find(wanted.other);
+			if (other == nullptr || other->MoverParameters == nullptr)
+			{
+				++missing;
+				continue;
+			}
+
+			auto const &coupler = vehicle->MoverParameters->Couplers[end];
+			if ((coupler.Connected == other->MoverParameters) && (coupler.ConnectedNr == (int)wanted.otherend) && (coupler.CouplingFlag == wanted.flag))
+				continue;
+
+			// Enforce, because the two may not be pressed together yet on this peer - the
+			// positions in the same snapshot are what will settle that. Silent, because
+			// nobody here pulled a lever
+			if (false == vehicle->MoverParameters->Attach(end, (int)wanted.otherend, other->MoverParameters, wanted.flag, true, false))
+				continue;
+
+			vehicle->update_neighbours();
+			other->update_neighbours();
+			++attached;
+		}
+	}
+
+	if (detached != 0 || attached != 0)
+	{
+		WriteLog("net: trainsets reconciled with the session: " + std::to_string(detached) + " uncoupled, " + std::to_string(attached) + " coupled", logtype::net);
+	}
+	if (missing != 0)
+	{
+		ErrorLog("net: " + std::to_string(missing) + " vehicle(s) the session runs are not in the scenery loaded here", logtype::net);
+	}
+}
+
 std::string write_vehicles(bool const Full, bool const OwnedOnly)
 {
 	std::ostringstream entries;
@@ -674,7 +880,6 @@ std::string write_vehicles(bool const Full, bool const OwnedOnly)
 void read_vehicles(std::istream &Stream, network::snapshot_mode const Mode, network::PeerId const Owner, network::snapshot_result &Result)
 {
 	auto const count = sn_utils::ld_uint32(Stream);
-	double const tolerance = (Mode == network::snapshot_mode::join ? REPOSITION_TOLERANCE_JOIN : REPOSITION_TOLERANCE_CORRECTION);
 
 	std::unordered_map<TDynamicObject *, vehicle_state> states;
 	states.reserve(count);
@@ -741,41 +946,87 @@ void read_vehicles(std::istream &Stream, network::snapshot_mode const Mode, netw
 			group.emplace_back(member);
 		}
 
-		bool wanted{false};
+		// a rolling train and a standing one are held to different margins. the moving one
+		// is left to its own physics unless it is well out; the standing one is worth
+		// getting right to the centimetre, and is put right once rather than on every
+		// update that arrives while it sits there
+		bool moving{false};
 		for (TDynamicObject *member : group)
 		{
 			auto const known = states.find(member);
-			if (known == states.end())
-				continue;
-			if (glm::length(member->GetPosition() - known->second.position) > tolerance)
+			if ((known != states.end()) && (std::abs(known->second.velocity) > STANDSTILL_VELOCITY))
+			{
+				moving = true;
+				break;
+			}
+		}
+
+		double tolerance{stop_tolerance()};
+
+		if (Mode != network::snapshot_mode::join)
+		{
+			if (moving)
+			{
+				// on the move again: the next stand earns another precise correction
+				for (TDynamicObject *member : group)
+					g_settled.erase(member->name());
+				tolerance = running_tolerance();
+			}
+			else
+			{
+				bool settled{true};
+				for (TDynamicObject *member : group)
+				{
+					if (g_settled.count(member->name()) == 0)
+					{
+						settled = false;
+						break;
+					}
+				}
+				if (settled)
+					continue;
+			}
+		}
+
+		bool complete{true};
+		for (TDynamicObject *member : group)
+		{
+			if (states.find(member) == states.end())
+			{
+				// part of the consist is not in this update, so the set cannot be placed
+				// as a whole; leaving it alone beats tearing it in half
+				complete = false;
+				break;
+			}
+		}
+
+		if (!complete)
+			continue;
+
+		bool wanted{false};
+		for (TDynamicObject *member : group)
+		{
+			if (glm::length(member->GetPosition() - states.at(member).position) > tolerance)
 			{
 				wanted = true;
 				break;
 			}
 		}
 
-		if (!wanted)
-			continue;
-
-		for (TDynamicObject *member : group)
+		if (wanted)
 		{
-			auto const known = states.find(member);
-			if (known == states.end())
+			for (TDynamicObject *member : group)
 			{
-				// part of the consist is not in this update, so the set cannot be placed
-				// as a whole; leaving it alone beats tearing it in half
-				wanted = false;
-				break;
+				correct_position(*member, states.at(member), Mode == network::snapshot_mode::join);
+				++Result.repositioned;
 			}
 		}
 
-		if (!wanted)
-			continue;
-
-		for (TDynamicObject *member : group)
+		if (!moving && (Mode != network::snapshot_mode::join))
 		{
-			correct_position(*member, states.at(member), Mode == network::snapshot_mode::join);
-			++Result.repositioned;
+			// dealt with; nothing more happens to this train until it moves again
+			for (TDynamicObject *member : group)
+				g_settled.emplace(member->name());
 		}
 	}
 }
@@ -1004,6 +1255,7 @@ void network::reset_snapshot_history()
 	g_brakesoundevents.clear();
 	g_brakesoundseen.clear();
 	g_remotestate.clear();
+	g_settled.clear();
 	g_lastvehicles.clear();
 	g_lastmemcells.clear();
 	g_lastswitches.clear();
@@ -1031,6 +1283,9 @@ std::string network::take_snapshot(bool const Full, bool const OwnedOnly)
 	}
 
 	auto const session = write_session(Full);
+	// the make-up of the trains only travels with a full snapshot: it is what a joining
+	// peer needs, and after that it is a slow-moving thing that costs nothing to repeat
+	auto const consists = (Full ? write_consists() : std::string());
 	auto const crews = write_crews();
 	auto const memcells = write_memcells(Full);
 	auto const switches = write_switches(Full);
@@ -1042,6 +1297,8 @@ std::string network::take_snapshot(bool const Full, bool const OwnedOnly)
 	}
 
 	uint32_t chunks{1}; // the session section always goes along
+	if (!consists.empty())
+		++chunks;
 	if (!vehicles.empty())
 		++chunks;
 	++chunks; // crews
@@ -1057,6 +1314,10 @@ std::string network::take_snapshot(bool const Full, bool const OwnedOnly)
 	sn_utils::ls_uint32(stream, chunks);
 
 	write_chunk(stream, SNAPSHOT_SESSION, session);
+	// before the positions: how the trains are made up decides which vehicles get put
+	// back on the rails together
+	if (!consists.empty())
+		write_chunk(stream, SNAPSHOT_CONSISTS, consists);
 	if (!vehicles.empty())
 		write_chunk(stream, SNAPSHOT_VEHICLES, vehicles);
 	write_chunk(stream, SNAPSHOT_CREWS, crews);
@@ -1116,6 +1377,12 @@ network::snapshot_result network::apply_snapshot(std::string const &Blob, snapsh
 		case SNAPSHOT_SESSION:
 			if (Owner == PEER_NONE)
 				read_session(chunk, Mode);
+			break;
+		case SNAPSHOT_CONSISTS:
+			// only the authority says what is coupled to what; an update coming the other
+			// way is one peer talking about its own trains
+			if (Owner == PEER_NONE)
+				read_consists(chunk);
 			break;
 		case SNAPSHOT_VEHICLES:
 			read_vehicles(chunk, Mode, Owner, result);

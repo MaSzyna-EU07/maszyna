@@ -18,7 +18,7 @@ namespace network
 {
 
 // layout of the snapshot container. a reader refuses a blob it does not understand
-constexpr uint32_t SNAPSHOT_VERSION = 5;
+constexpr uint32_t SNAPSHOT_VERSION = 6;
 
 // the sections a snapshot is built from. a reader skips over any id it does not know,
 // which is what makes the format extensible: a peer built before a section existed can
@@ -35,7 +35,10 @@ enum snapshot_chunk : uint16_t
 	// contents of the memory cells - this is what signalling reads
 	SNAPSHOT_MEMCELLS = 4,
 	// which way the switches are thrown
-	SNAPSHOT_SWITCHES = 5
+	SNAPSHOT_SWITCHES = 5,
+	// what is coupled to what. the session, not the copy of the scenery a peer happens to
+	// have on disk, decides how the trains are made up
+	SNAPSHOT_CONSISTS = 6
 };
 
 // what a peer is meant to do with the blob it received

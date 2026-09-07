@@ -372,6 +372,14 @@ struct global_settings {
 	uint64_t network_session_token = 0;
 	// how far the worst vehicle was out of place when the last correction arrived, metres
 	float network_position_error = 0.0f;
+	// how far a train may be from where the session says it is before it gets put back,
+	// in metres. the first applies while it is rolling, where nudging it too eagerly is
+	// worse than the error itself; the second once it has come to a stand, where it is
+	// worth getting exactly right and is done once rather than every update.
+	// the server hands its own values to every client on connect, so a session is
+	// consistent whatever each player has in their ini
+	float multiplayer_sync_running = 1.5f;
+	float multiplayer_sync_stop = 0.2f;
 	// the scenario has finished loading and the world can be worked with. this is not the
 	// same as simulation::is_ready, which only goes up once the player has a cab
 	bool simulation_loaded = false;

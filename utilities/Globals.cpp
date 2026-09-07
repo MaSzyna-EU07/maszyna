@@ -902,6 +902,18 @@ bool global_settings::ConfigParseNetwork(cParser& Parser, const std::string& tok
         return true;
     }
 
+    if (token == "multiplayer.sync.running")
+    {
+        ParseOneClamped(Parser, multiplayer_sync_running, 0.05f, 100.0f, 1, false);
+        return true;
+    }
+
+    if (token == "multiplayer.sync.stop")
+    {
+        ParseOneClamped(Parser, multiplayer_sync_stop, 0.01f, 100.0f, 1, false);
+        return true;
+    }
+
     return false;
 }
 
@@ -1815,6 +1827,8 @@ global_settings::export_as_text( std::ostream &Output ) const {
             << "network.client "
             << network_client->first << " " << network_client->second << "\n";
     }
+    export_as_text( Output, "multiplayer.sync.running", multiplayer_sync_running );
+    export_as_text( Output, "multiplayer.sync.stop", multiplayer_sync_stop );
     export_as_text( Output, "execonexit", exec_on_exit );
 }
 

@@ -7,6 +7,7 @@
 #include "utilities/Timer.h"
 #include "application/application.h"
 #include "utilities/Globals.h"
+#include "utilities/utilities.h"
 #include "simulation/simulation.h"
 #include <set>
 #include <tuple>
@@ -15,7 +16,7 @@
 // 3 - handshake carries build identification and an explicit rejection message
 // 4 - peer identity, vehicle roster and crew handshake, command source,
 //     logical simulation tick and a versioned state digest instead of the position sum
-std::uint32_t const EU07_NETWORK_VERSION = 4;
+std::uint32_t const EU07_NETWORK_VERSION = 5;
 
 namespace network {
 
@@ -195,6 +196,8 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 		reply.seed = Global.random_seed;
 		reply.timestamp = Global.starting_timestamp;
         reply.config = pack_session_config();
+        reply.sync_running = Global.multiplayer_sync_running;
+        reply.sync_stop = Global.multiplayer_sync_stop;
         reply.scenario = Global.SceneryFile;
 		reply.app_version = Global.asVersion;
 		reply.session_token = cmd.session_token;
@@ -508,6 +511,17 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 			ErrorLog("net: seed mismatch", logtype::net);
 			conn->disconnect();
 			return;
+		}
+
+		// the session decides how tightly it is kept in step, not the machine that joined it
+		if ((cmd.sync_running > 0.0) && (cmd.sync_stop > 0.0)) {
+			if ((std::abs(Global.multiplayer_sync_running - (float)cmd.sync_running) > 0.001f)
+			 || (std::abs(Global.multiplayer_sync_stop - (float)cmd.sync_stop) > 0.001f)) {
+				WriteLog("net: the session syncs to " + to_string(cmd.sync_running, 2) + " m while running and "
+				         + to_string(cmd.sync_stop, 2) + " m at a stand", logtype::net);
+			}
+			Global.multiplayer_sync_running = (float)cmd.sync_running;
+			Global.multiplayer_sync_stop = (float)cmd.sync_stop;
 		}
 
 		if (cmd.peer_id != PEER_NONE) {

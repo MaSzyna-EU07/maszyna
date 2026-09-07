@@ -37,6 +37,8 @@ void network::server_hello::serialize(std::ostream &stream) const
 	sn_utils::s_str(stream, app_version);
 	sn_utils::ls_uint32(stream, peer_id);
 	sn_utils::ls_uint64(stream, session_token);
+	sn_utils::ls_float64(stream, sync_running);
+	sn_utils::ls_float64(stream, sync_stop);
 }
 
 void network::server_hello::deserialize(std::istream &stream)
@@ -48,6 +50,8 @@ void network::server_hello::deserialize(std::istream &stream)
 	app_version = sn_utils::d_str(stream);
 	peer_id = sn_utils::ld_uint32(stream);
 	session_token = sn_utils::ld_uint64(stream);
+	sync_running = sn_utils::ld_float64(stream);
+	sync_stop = sn_utils::ld_float64(stream);
 }
 
 void network::vehicle_list::serialize(std::ostream &stream) const
