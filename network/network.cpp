@@ -19,6 +19,32 @@ std::uint32_t const EU07_NETWORK_VERSION = 4;
 
 namespace network {
 
+traffic_counters Traffic;
+
+void traffic_counters::update()
+{
+	auto const now = Timer::GetTime();
+
+	if (rate_time_mark < 0.0)
+	{
+		rate_time_mark = now;
+		rate_sent_mark = sent_bytes;
+		rate_received_mark = received_bytes;
+		return;
+	}
+
+	auto const elapsed = now - rate_time_mark;
+	if (elapsed < 1.0)
+		return;
+
+	sent_rate = (double)(sent_bytes - rate_sent_mark) / elapsed;
+	received_rate = (double)(received_bytes - rate_received_mark) / elapsed;
+
+	rate_time_mark = now;
+	rate_sent_mark = sent_bytes;
+	rate_received_mark = received_bytes;
+}
+
 backend_list_t& backend_list() {
     // HACK: static initialization order fiasco fix
     // NOTE: potential static deinitialization order fiasco

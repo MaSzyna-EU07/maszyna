@@ -375,6 +375,8 @@ struct global_settings {
 	// the scenario has finished loading and the world can be worked with. this is not the
 	// same as simulation::is_ready, which only goes up once the player has a cab
 	bool simulation_loaded = false;
+	// consecutive steps whose state digest disagreed with the server's; diagnostics only
+	uint64_t network_digest_mismatches = 0;
 
 	std::unordered_map<int, std::string> trainset_overrides;
 

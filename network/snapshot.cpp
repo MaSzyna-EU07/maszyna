@@ -416,29 +416,54 @@ void apply_controls(TDynamicObject &Vehicle, vehicle_state const &State)
 		Vehicle.Mechanik->TakeControl(State.aiactive);
 }
 
-// puts a vehicle back where the authority says it is. place_on_track() wants the distance
-// of the vehicle's nose along the track, while what travels in the update is the offset of
-// its leading bogie; this inverts the arithmetic that function itself does
-void reposition(TDynamicObject &Vehicle, vehicle_state const &State)
+// puts a vehicle where the authority says it is.
+//
+// there are two ways to do that and they are not interchangeable. place_on_track() sets
+// the axles from scratch, which is right for a peer that is joining and has nothing to go
+// on - but doing it to a running train turns the whole set around, because the placement
+// works from the vehicle's own idea of which way it faces and that is not what a moving
+// consist looks like from outside. So a routine correction slides the vehicle along the
+// track it is already on, by the difference between the two bogie offsets. That is the
+// very same operation the physics performs on every step, so nothing gets reoriented and
+// nothing ends up beside the rails
+void correct_position(TDynamicObject &Vehicle, vehicle_state const &State, bool const Absolute)
 {
-	TTrack *track = track_by_id(State.track);
-	if (track == nullptr)
+	if (Absolute)
 	{
-		static bool reported{false};
-		if (!reported)
+		TTrack *track = track_by_id(State.track);
+		if (track == nullptr)
 		{
-			reported = true;
-			ErrorLog("net: cannot place " + Vehicle.name() + ", track " + std::to_string(State.track) + " is unknown here", logtype::net);
+			static bool reported{false};
+			if (!reported)
+			{
+				reported = true;
+				ErrorLog("net: cannot place " + Vehicle.name() + ", track " + std::to_string(State.track) + " is unknown here", logtype::net);
+			}
+			return;
 		}
+
+		double const half = Vehicle.fAxleDist * 0.5;
+		double const axleoffset = (State.axlefirst ? -half : half);
+		double const sign = (State.direction ? 1.0 : -1.0);
+		double const nose = (State.translation - axleoffset) * sign + 0.5 * Vehicle.MoverParameters->Dim.L;
+
+		Vehicle.place_on_track(track, nose, false);
 		return;
 	}
 
-	double const half = Vehicle.fAxleDist * 0.5;
-	double const axleoffset = (State.axlefirst ? -half : half);
-	double const sign = (State.direction ? 1.0 : -1.0);
-	double const nose = (State.translation - axleoffset) * sign + 0.5 * Vehicle.MoverParameters->Dim.L;
+	// both sides have to be talking about the same piece of track for the difference of
+	// the offsets to mean anything. when they are not, the vehicle is left alone until it
+	// gets there - a wrong guess here is what puts a locomotive next to the rails
+	if (track_id_of(Vehicle.RaTrackGet()) != State.track)
+		return;
 
-	Vehicle.place_on_track(track, nose, false);
+	double const delta = State.translation - Vehicle.RaTranslationGet();
+	if (std::abs(delta) < 0.01)
+		return;
+
+	// the offset runs from the track's first point, the move runs along the vehicle, and
+	// the axle's own sense of direction is what converts between the two
+	Vehicle.Move(delta * Vehicle.RaDirectionGet());
 }
 
 std::string write_vehicles(bool const Full, bool const OwnedOnly)
@@ -590,7 +615,7 @@ void read_vehicles(std::istream &Stream, network::snapshot_mode const Mode, netw
 
 		for (TDynamicObject *member : group)
 		{
-			reposition(*member, states.at(member));
+			correct_position(*member, states.at(member), Mode == network::snapshot_mode::join);
 			++Result.repositioned;
 		}
 	}

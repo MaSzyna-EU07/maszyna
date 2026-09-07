@@ -89,6 +89,7 @@ private:
     void update_section_powergrid( std::vector<text_line> &Output );
     void update_section_camera( std::vector<text_line> &Output );
     void update_section_renderer( std::vector<text_line> &Output );
+    void update_section_network( std::vector<text_line> &Output );
 #ifdef WITH_UART
     void update_section_uart( std::vector<text_line> &Output );
 #endif
@@ -123,6 +124,7 @@ private:
         m_eventqueuelines,
         m_powergridlines,
         m_rendererlines,
+        m_networklines,
         m_uartlines,
         m_hardwarelines;
 
@@ -149,6 +151,9 @@ private:
 	};
 	graph_data AccN_jerk_graph;
 	graph_data AccN_acc_graph;
+	// kilobytes per second in and out, so the cost of a session can be read off a chart
+	graph_data net_sent_graph;
+	graph_data net_received_graph;
 	float last_AccN;
 
 	std::array<char, 128> queue_event_buf = { 0 };

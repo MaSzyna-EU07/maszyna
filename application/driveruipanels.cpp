@@ -545,6 +545,7 @@ void debug_panel::update()
 	m_powergridlines.clear();
 	m_cameralines.clear();
 	m_rendererlines.clear();
+	m_networklines.clear();
 #ifdef WITH_UART
     m_uartlines.clear();
 #endif
@@ -561,6 +562,11 @@ void debug_panel::update()
 	update_section_powergrid( m_powergridlines );
 	update_section_camera( m_cameralines );
 	update_section_renderer( m_rendererlines );
+	if( Application.is_server() || Application.is_client() ) {
+		update_section_network( m_networklines );
+		net_sent_graph.update( (float)( network::Traffic.sent_rate / 1024.0 ) );
+		net_received_graph.update( (float)( network::Traffic.received_rate / 1024.0 ) );
+	}
 #ifdef WITH_UART
     update_section_uart(m_uartlines);
 #endif
@@ -621,6 +627,13 @@ debug_panel::render() {
         }
         render_section( "Camera", m_cameralines );
         render_section( "Gfx Renderer / Statistics", m_rendererlines );
+        if( ( Application.is_server() || Application.is_client() )
+         && ( true == render_section( "Network", m_networklines ) ) ) {
+            ImGui::TextUnformatted( "sent kB/s" );
+            net_sent_graph.render();
+            ImGui::TextUnformatted( "received kB/s" );
+            net_received_graph.render();
+        }
         render_section_settings();
 		render_section_developer(); // Developer tools
 #ifdef WITH_UART
@@ -1023,6 +1036,70 @@ void debug_panel::graph_data::render() {
 	ImGui::SliderFloat(STR_C("##Range"), &range, 0.5f, 60.0f, "%.1f");
 	ImGui::PlotLines("##plot", data.data(), data.size(), pos, nullptr, 0.0f, range, ImVec2(0, 100));
 	ImGui::PopID();
+}
+
+namespace {
+
+std::string format_bytes( uint64_t const Bytes ) {
+
+    if( Bytes < 1024ull )              { return std::to_string( Bytes ) + " B"; }
+    if( Bytes < 1024ull * 1024ull )    { return to_string( Bytes / 1024.0, 1 ) + " kB"; }
+    if( Bytes < 1024ull * 1024ull * 1024ull ) { return to_string( Bytes / ( 1024.0 * 1024.0 ), 2 ) + " MB"; }
+    return to_string( Bytes / ( 1024.0 * 1024.0 * 1024.0 ), 2 ) + " GB";
+}
+
+} // namespace
+
+void
+debug_panel::update_section_network( std::vector<text_line> &Output ) {
+
+    auto const host { Application.is_server() };
+    auto const client { Application.is_client() };
+
+    Output.emplace_back(
+        "role: " + std::string( host ? ( client ? "host + client" : "host" ) : "client" )
+        + ", peer " + std::to_string( Global.network_peer_id )
+        + ", tick " + std::to_string( Global.simulation_tick ),
+        Global.UITextColor );
+
+    auto const &traffic { network::Traffic };
+
+    Output.emplace_back(
+        "sent: " + format_bytes( traffic.sent_bytes ) + " in " + std::to_string( traffic.sent_messages ) + " messages"
+        + " (" + to_string( traffic.sent_rate / 1024.0, 2 ) + " kB/s)",
+        Global.UITextColor );
+
+    Output.emplace_back(
+        "received: " + format_bytes( traffic.received_bytes ) + " in " + std::to_string( traffic.received_messages ) + " messages"
+        + " (" + to_string( traffic.received_rate / 1024.0, 2 ) + " kB/s)",
+        Global.UITextColor );
+
+    Output.emplace_back(
+        "total: " + format_bytes( traffic.sent_bytes + traffic.received_bytes )
+        + " (" + to_string( ( traffic.sent_rate + traffic.received_rate ) / 1024.0, 2 ) + " kB/s)",
+        Global.UITextColor );
+
+    if( client ) {
+        Output.emplace_back(
+            "worst vehicle out of place: " + to_string( Global.network_position_error, 2 ) + " m",
+            ( Global.network_position_error > 5.0f ?
+                glm::vec4( 1.f, 0.6f, 0.3f, 1.f ) :
+                Global.UITextColor ) );
+
+        Output.emplace_back(
+            "state digest: " + std::string(
+                Global.network_digest_mismatches == 0 ?
+                    "in step with the server" :
+                    "differing for " + std::to_string( Global.network_digest_mismatches ) + " steps" ),
+            Global.UITextColor );
+    }
+
+    if( !Global.network_lobby_message.empty() ) {
+        Output.emplace_back( "lobby: " + Global.network_lobby_message, glm::vec4( 1.f, 0.6f, 0.3f, 1.f ) );
+    }
+    if( !Global.network_reject_reason.empty() ) {
+        Output.emplace_back( "refused: " + Global.network_reject_reason, glm::vec4( 1.f, 0.4f, 0.3f, 1.f ) );
+    }
 }
 
 std::string

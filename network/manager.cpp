@@ -199,6 +199,8 @@ void network::manager::request_resync(uint64_t tick, uint64_t state_hash)
 
 void network::manager::update()
 {
+	Traffic.update();
+
 	for (auto &backend : backend_list())
 		backend.second->update();
 

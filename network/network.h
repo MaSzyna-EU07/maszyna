@@ -11,6 +11,31 @@
 
 namespace network
 {
+	// what has gone over the wire so far, and how fast it is going now. the transport
+	// layer feeds it; the debug panel reads it
+	struct traffic_counters
+	{
+		uint64_t sent_bytes { 0 };
+		uint64_t received_bytes { 0 };
+		uint64_t sent_messages { 0 };
+		uint64_t received_messages { 0 };
+		// bytes per second, averaged over the last second
+		double sent_rate { 0.0 };
+		double received_rate { 0.0 };
+
+		void sent(size_t Bytes) { sent_bytes += Bytes; ++sent_messages; }
+		void received(size_t Bytes) { received_bytes += Bytes; ++received_messages; }
+		// recomputes the rates; called once per frame
+		void update();
+
+	private:
+		uint64_t rate_sent_mark { 0 };
+		uint64_t rate_received_mark { 0 };
+		double rate_time_mark { -1.0 };
+	};
+
+	extern traffic_counters Traffic;
+
     //m7todo: separate client/server connection class?
     class connection
 	{

@@ -282,11 +282,4 @@ void driver_ui::render_()
 		ImGui::OpenPopup(popupheader);
 	}
 
-	if (Global.network_position_error > 0.5f)
-	{
-		ImGui::SetNextWindowSize(ImVec2(-1, -1));
-		if (ImGui::Begin("network", nullptr, ImGuiWindowFlags_NoCollapse))
-			ImGui::Text("%.1f m behind the server (tick %llu)", Global.network_position_error, (unsigned long long)Global.simulation_tick);
-		ImGui::End();
-	}
 }

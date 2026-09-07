@@ -594,6 +594,7 @@ int eu07_application::run()
 						if (statehash != authoritative.state_hash)
 						{
 							++m_statemismatches;
+							Global.network_digest_mismatches = m_statemismatches;
 							if (m_statemismatches == 1 || (m_statemismatches % NETWORK_DIGEST_LOG_INTERVAL) == 0)
 							{
 								WriteLog("net: state digest differs at tick " + std::to_string(authoritative.tick) + " (" + std::to_string(m_statemismatches) +
@@ -605,6 +606,7 @@ int eu07_application::run()
 						{
 							WriteLog("net: state digest back in step at tick " + std::to_string(authoritative.tick), logtype::net);
 							m_statemismatches = 0;
+							Global.network_digest_mismatches = 0;
 						}
 					}
 
