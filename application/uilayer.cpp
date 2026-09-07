@@ -112,6 +112,11 @@ bool ui_layer::key_callback(int key, int scancode, int action, int mods)
 	return m_imguiio->WantCaptureKeyboard;
 }
 
+bool ui_layer::wants_keyboard()
+{
+	return (m_imguiio != nullptr) && m_imguiio->WantCaptureKeyboard;
+}
+
 bool ui_layer::char_callback(unsigned int c)
 {
 	ImGui_ImplGlfw_CharCallback(m_window, c);
@@ -473,7 +478,9 @@ void ui_layer::render_hierarchy(){
  
 void ui_layer::set_cursor(int const Mode)
 {
-	glfwSetInputMode(m_window, GLFW_CURSOR, Mode);
+	// no window, no cursor to hide
+	if (m_window != nullptr)
+		glfwSetInputMode(m_window, GLFW_CURSOR, Mode);
 	m_cursorvisible = Mode != GLFW_CURSOR_DISABLED;
 }
 

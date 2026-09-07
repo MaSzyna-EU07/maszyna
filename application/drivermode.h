@@ -20,6 +20,9 @@ http://mozilla.org/MPL/2.0/.
 #ifdef WITH_UART
 #include "utilities/uart.h"
 #endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+#include "hardware/hardware_manager.h"
+#endif
 #ifdef WITH_ZMQ
 #include "input/zmq_input.h"
 #endif
@@ -46,6 +49,8 @@ public:
     void on_scroll( double Xoffset, double Yoffset ) override;
 	void on_window_resize( int w, int h ) override { ; }
     void on_event_poll() override;
+    // opens or closes the session chat
+    bool toggle_chat() override;
     bool is_command_processor() const override;
 
 private:
@@ -75,6 +80,9 @@ private:
 #endif
 #ifdef WITH_UART
         std::unique_ptr<uart_input> uart;
+#endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+        std::unique_ptr<hardware::hardware_manager> hardware;
 #endif
 #ifdef WITH_ZMQ
         std::unique_ptr<zmq_input> zmq;

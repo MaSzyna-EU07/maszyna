@@ -31,6 +31,14 @@ class opengl33_renderer;
 
 namespace scene {
 
+// a place the event launchers are polled around. in a single player game there is just
+// one of these - the camera - but a session has to look at every crewed vehicle, because
+// gameplay may not depend on where any single player happens to be pointing their camera
+struct event_poll_point {
+    glm::dvec3 location;
+    TDynamicObject const *vehicle { nullptr };
+};
+
 int constexpr EU07_CELLSIZE = 250;
 int constexpr EU07_SECTIONSIZE = 1000;
 int constexpr EU07_REGIONSIDESECTIONCOUNT = 500; // number of sections along a side of square region
@@ -93,7 +101,7 @@ public:
         update_traction( TDynamicObject *Vehicle, int const Pantographindex );
     // legacy method, polls event launchers within radius around specified point
     void
-        update_events();
+        update_events( event_poll_point const &Point );
     // legacy method, updates sounds within radius around specified point
     void
         update_sounds();
@@ -264,7 +272,7 @@ public:
         update_traction( TDynamicObject *Vehicle, int const Pantographindex );
     // legacy method, updates sounds and polls event launchers within radius around specified point
     void
-        update_events( glm::dvec3 const &Location, float const Radius );
+        update_events( std::vector<event_poll_point> const &Points, float const Radius );
     // legacy method, updates sounds and polls event launchers within radius around specified point
     void
         update_sounds( glm::dvec3 const &Location, float const Radius );

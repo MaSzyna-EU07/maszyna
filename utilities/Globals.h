@@ -20,6 +20,9 @@ http://mozilla.org/MPL/2.0/.
 #ifdef WITH_UART
 #include "utilities/uart.h"
 #endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+#include "hardware/hardware_config.h"
+#endif
 #ifdef WITH_ZMQ
 #include "input/zmq_input.h"
 #endif
@@ -78,6 +81,9 @@ struct global_settings {
     std::string szDefaultExt{ szTexturesDDS };
 	std::string SceneryFile;
     std::string local_start_vehicle{ "EU07-424" };
+    // set when the starting vehicle was explicitly requested (command line -v),
+    // so multiplayer clients can tell an intentional choice from the built-in default
+    bool local_start_vehicle_override{ false };
     int iConvertModels{ 0 }; // tworzenie plików binarnych
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan
     bool file_binary_terrain{ true }; // enable binary terrain (de)serialization
@@ -228,6 +234,10 @@ struct global_settings {
         {"dynamicbrake", &uart_conf.dynamicenable},
     };
 #endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+    // hardware protocol v2; independent of the legacy uart link above, both may run at the same time
+    hardware::config hardware_conf;
+#endif
 #ifdef WITH_ZMQ
     std::string zmq_address;
 #endif
@@ -340,6 +350,46 @@ struct global_settings {
 	std::vector<std::pair<std::string, std::string>> network_servers;
 	std::optional<std::pair<std::string, std::string>> network_client;
 	float desync = 0.0f;
+	// human readable state of the network session, presented on the connecting/loading screen
+	std::string network_status;
+	// set when the server refused us; keeps the reason for the ui and stops reconnect attempts
+	std::string network_reject_reason;
+	// identity of this participant within the session; the host keeps network::PEER_HOST
+	uint32_t network_peer_id = 0;
+	// vehicle the local player asked to enter from the multiplayer lobby
+	std::string network_pending_vehicle;
+	// set when the local player left the crew and should go back to observing
+	bool network_leave_pending = false;
+	// last answer of the server to a lobby request, shown in the lobby
+	std::string network_lobby_message;
+	// logical simulation step. the authority counts it up, a client takes it from the
+	// authoritative frame it is executing; the network timeline hangs off this, not off
+	// the number of frames the renderer happened to draw
+	uint64_t simulation_tick = 0;
+	// set once a joining client has taken over the state of the world from the server
+	bool network_snapshot_applied = false;
+	// identity handed out by the server, presented again when reconnecting
+	uint64_t network_session_token = 0;
+	// how far the worst vehicle was out of place when the last correction arrived, metres
+	float network_position_error = 0.0f;
+	// how far a train may be from where the session says it is before it gets put back,
+	// in metres. the first applies while it is rolling, where nudging it too eagerly is
+	// worse than the error itself; the second once it has come to a stand, where it is
+	// worth getting exactly right and is done once rather than every update.
+	// the server hands its own values to every client on connect, so a session is
+	// consistent whatever each player has in their ini
+	float multiplayer_sync_running = 1.5f;
+	float multiplayer_sync_stop = 0.2f;
+	// what this player would like to be called in a session. empty falls back to the
+	// account name, and failing that to "player <n>"
+	std::string multiplayer_nickname;
+	// no window, no renderer and nobody in a cab: the executable as a dedicated server
+	bool headless = false;
+	// the scenario has finished loading and the world can be worked with. this is not the
+	// same as simulation::is_ready, which only goes up once the player has a cab
+	bool simulation_loaded = false;
+	// consecutive steps whose state digest disagreed with the server's; diagnostics only
+	uint64_t network_digest_mismatches = 0;
 
 	std::unordered_map<int, std::string> trainset_overrides;
 

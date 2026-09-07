@@ -89,8 +89,16 @@ private:
     void update_section_powergrid( std::vector<text_line> &Output );
     void update_section_camera( std::vector<text_line> &Output );
     void update_section_renderer( std::vector<text_line> &Output );
+    void update_section_network( std::vector<text_line> &Output );
 #ifdef WITH_UART
     void update_section_uart( std::vector<text_line> &Output );
+#endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+    void update_section_hardware( std::vector<text_line> &Output );
+    // interactive part of the hardware section: connect, disconnect, diagnostics
+    void render_section_hardware();
+    // message box a controller asked the simulator to show; rendered as its own window
+    void render_hardware_prompt();
 #endif
     // section update helpers
     std::string update_vehicle_coupler( int const Side );
@@ -116,7 +124,18 @@ private:
         m_eventqueuelines,
         m_powergridlines,
         m_rendererlines,
-        m_uartlines;
+        m_networklines,
+        m_uartlines,
+        m_hardwarelines;
+
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+    // debug panel state for the hardware protocol section
+    std::vector<int> m_hardwarefunction; // selected diagnostic function, per link
+    std::vector<char const *> m_hardwareports; // port names for the combo, valid for one frame
+    std::vector<std::string> m_hardwareportnames;
+    int m_hardwareport { -1 };
+    int m_hardwarebaud { 4 }; // 115200
+#endif
 
 	double last_time = std::numeric_limits<double>::quiet_NaN();
 
@@ -132,6 +151,9 @@ private:
 	};
 	graph_data AccN_jerk_graph;
 	graph_data AccN_acc_graph;
+	// kilobytes per second in and out, so the cost of a session can be read off a chart
+	graph_data net_sent_graph;
+	graph_data net_received_graph;
 	float last_AccN;
 
 	std::array<char, 128> queue_event_buf = { 0 };

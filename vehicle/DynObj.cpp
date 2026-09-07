@@ -23,6 +23,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
+#include "network/entities.h"
+#include "network/snapshot.h"
 #include "utilities/glmHelpers.h"
 #include "Console.h"
 #include "world/Traction.h"
@@ -4624,6 +4626,12 @@ void TDynamicObject::RenderSounds() {
     }
 
     // yB: przyspieszacz (moze zadziala, ale dzwiek juz jest)
+    if( ( true == network::is_multiplayer() )
+     && ( MoverParameters->Hamulec != nullptr ) ) {
+        // peeked rather than read: reading the brake unit's flags is what clears them,
+        // and they belong to the vehicle, not to us
+        network::note_brake_sound_events( name(), MoverParameters->Hamulec->PeekSoundFlag() );
+    }
     if( true == bBrakeAcc ) {
         if( true == TestFlag( MoverParameters->Hamulec->GetSoundFlag(), sf_Acc ) ) {
             sBrakeAcc.play( sound_flags::exclusive );
@@ -5114,6 +5122,12 @@ void TDynamicObject::RenderSounds() {
 
         ++couplerindex;
         coupler.sounds = 0;
+    }
+
+    if( true == network::is_multiplayer() ) {
+        // relays clicking and air hissing are set and cleared inside a single frame, so
+        // they have to be picked up here to have any chance of reaching the other peers
+        network::note_sound_events( name(), MoverParameters->SoundFlag );
     }
 
     MoverParameters->SoundFlag = 0;

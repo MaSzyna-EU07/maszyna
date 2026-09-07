@@ -30,6 +30,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "utilities/dictionary.h"
 #include "version_info.h"
+#include "network/statehash.h"
 #include <chrono>
 #include "utilities/translation.h"
 
@@ -219,7 +220,7 @@ void eu07_application::DiscordRPCService()
 	discord_rpc.largeImageText = "MaSzyna";
 
 	// run loop
-	while (!glfwWindowShouldClose(m_windows.front()) && !m_modestack.empty() && !Global.applicationQuitOrder)
+	while (!should_close() && !m_modestack.empty() && !Global.applicationQuitOrder)
 	{
 		auto currentMode = m_modestack.top();
 		if (currentMode == mode::launcher)
@@ -362,7 +363,7 @@ int eu07_application::init(int Argc, char *Argv[])
 		return result;
 	}
 
-	if (crashreport_is_pending())
+	if (crashreport_is_pending() && !Global.headless)
 	{ // run crashgui as early as possible
 		if ((result = run_crashgui()) != 0)
 		{
@@ -422,25 +423,16 @@ int eu07_application::init(int Argc, char *Argv[])
 	return result;
 }
 
-double eu07_application::generate_sync()
-{
-	if (Timer::GetDeltaTime() == 0.0)
-		return 0.0;
-	double sync = 0.0;
-	for (const TDynamicObject *vehicle : simulation::Vehicles.sequence())
-	{
-		auto const pos{vehicle->GetPosition()};
-		sync += pos.x + pos.y + pos.z;
-	}
-	sync += Random(1.0, 100.0);
-	return sync;
-}
-
 void eu07_application::queue_quit(bool direct)
 {
-	if (direct || !m_modes[m_modestack.top()]->is_command_processor())
+	// a network client leaving is its own business; replicating the request would shut
+	// down everybody else's session as well
+	if (direct || is_client() || !m_modes[m_modestack.top()]->is_command_processor())
 	{
-		glfwSetWindowShouldClose(m_windows[0], GLFW_TRUE);
+		if (Global.headless)
+			Global.applicationQuitOrder = true;
+		else
+			glfwSetWindowShouldClose(m_windows[0], GLFW_TRUE);
 		return;
 	}
 
@@ -460,14 +452,47 @@ bool eu07_application::is_client() const
 	return m_network && m_network->client;
 }
 
+void eu07_application::request_vehicle_claim(network::NetworkEntityId const Entity)
+{
+	if (m_network)
+		m_network->request_claim(Entity);
+}
+
+void eu07_application::request_vehicle_leave(network::NetworkEntityId const Entity)
+{
+	if (m_network)
+		m_network->request_leave(Entity);
+}
+
+namespace {
+
+// the state digest is logged when it starts differing and then only this often, so that
+// a persistent difference does not bury the rest of the log
+uint64_t const NETWORK_DIGEST_LOG_INTERVAL = 1800;
+
+} // namespace
+
+void eu07_application::network_scenario_loaded()
+{
+	if (m_network)
+		m_network->notify_scenario_loaded();
+}
+
+void eu07_application::say(std::string const &Text)
+{
+	if (m_network)
+		m_network->say(Text);
+}
+
 int eu07_application::run()
 {
 	auto frame{0};
 	// main application loop
-	while (!glfwWindowShouldClose(m_windows.front()) && !m_modestack.empty())
+	while (!should_close() && !m_modestack.empty())
 	{
 		Timer::subsystem.mainloop_total.start();
-		glfwPollEvents();
+		if (!Global.headless)
+			glfwPollEvents();
 
 		if (m_headtrack)
 			m_headtrack->update();
@@ -483,8 +508,6 @@ int eu07_application::run()
 		//
 		// trivia: being client and server is possible
 
-		double frameStartTime = Timer::GetTime();
-
 		if (m_modes[m_modestack.top()]->is_command_processor())
 		{
 			// active mode is doing real calculations (e.g. drivermode)
@@ -493,11 +516,15 @@ int eu07_application::run()
 			{
 				command_queue::commands_map commands_to_exec;
 				command_queue::commands_map local_commands = simulation::Commands.pop_intercept_queue();
-				double slave_sync;
+				network::frame_delta authoritative;
 
 				// if we're the server
 				if (m_network && m_network->servers)
 				{
+					// our own input goes through the same authority layer as everybody
+					// else's, only without the transport in between
+					network::filter_commands(network::PEER_HOST, local_commands);
+
 					// fetch from network layer command requests received from clients
 					command_queue::commands_map remote_commands = m_network->servers->pop_commands();
 
@@ -508,26 +535,38 @@ int eu07_application::run()
 				// if we're slave
 				if (m_network && m_network->client)
 				{
-					// fetch frame info from network layer,
-					auto frame_info = m_network->client->get_next_delta(MAX_NETWORK_PER_FRAME - loop_remaining);
+					// take everything the authority has sent since the last frame. the
+					// commands are carried out at once; the world itself runs on our own
+					// clock rather than replaying the server's frame times, which is what
+					// made it run at the wrong speed whenever the two machines drew at
+					// different rates, and put every buffered frame between the player and
+					// their own controls
+					authoritative = m_network->client->take_pending(commands_to_exec);
 
-					// use delta and commands received from master
-					double delta = std::get<0>(frame_info);
-					Timer::set_delta_override(delta);
-					slave_sync = std::get<1>(frame_info);
-					add_to_dequemap(commands_to_exec, std::get<2>(frame_info));
+					// the authority owns the timeline, so we take its step number as ours
+					if (authoritative.valid)
+						Global.simulation_tick = authoritative.tick;
+
+					// what we do to the train we run ourselves happens now, not after a
+					// round trip. it still goes to the server, so that everybody else sees
+					// it; the echo of it is dropped when it comes back
+					command_queue::commands_map predicted;
+					network::collect_predictable(local_commands, predicted);
+					add_to_dequemap(commands_to_exec, predicted);
 
 					// and send our local commands to master
 					m_network->client->send_commands(local_commands);
 
-					if (delta == 0.0)
-						loop_remaining = -1;
+					loop_remaining = -1;
 				}
 				// if we're master
 				else
 				{
 					// just push local commands to execution
 					add_to_dequemap(commands_to_exec, local_commands);
+
+					// we are the one counting the steps of this world
+					++Global.simulation_tick;
 
 					loop_remaining = -1;
 				}
@@ -542,47 +581,49 @@ int eu07_application::run()
 				// update continuous commands
 				simulation::Commands.update();
 
-				double sync = generate_sync();
+				auto const statehash = (m_network ? network::state_hash() : 0);
 
 				// if we're the server
 				if (m_network && m_network->servers)
 				{
-					// send delta, sync, and commands we just executed to clients
+					// send delta, state digest, and commands we just executed to clients
 					double delta = Timer::GetDeltaTime();
 					double render = Timer::GetDeltaRenderTime();
-					m_network->servers->push_delta(render, delta, sync, commands_to_exec);
+					m_network->servers->push_delta(render, delta, Global.simulation_tick, statehash, commands_to_exec);
 				}
 
 				// if we're slave
 				if (m_network && m_network->client)
 				{
-					// verify sync
-					if (sync != slave_sync)
+					// the digest is a diagnostic, not a control input: a client runs its
+					// own physics, so the two will never agree bit for bit and demanding
+					// that they do only produces noise. what actually keeps a client in
+					// line is the authoritative state the server streams to it
+					if (authoritative.valid && authoritative.state_hash_version == network::STATE_HASH_VERSION)
 					{
-						WriteLog("net: desync! calculated: " + std::to_string(sync) + ", received: " + std::to_string(slave_sync), logtype::net);
-
-						Global.desync = slave_sync - sync;
+						if (statehash != authoritative.state_hash)
+						{
+							++m_statemismatches;
+							Global.network_digest_mismatches = m_statemismatches;
+							if (m_statemismatches == 1 || (m_statemismatches % NETWORK_DIGEST_LOG_INTERVAL) == 0)
+							{
+								WriteLog("net: state digest differs at tick " + std::to_string(authoritative.tick) + " (" + std::to_string(m_statemismatches) +
+								             " steps): local " + std::to_string(statehash) + ", authoritative " + std::to_string(authoritative.state_hash),
+								         logtype::net);
+							}
+						}
+						else if (m_statemismatches != 0)
+						{
+							WriteLog("net: state digest back in step at tick " + std::to_string(authoritative.tick), logtype::net);
+							m_statemismatches = 0;
+							Global.network_digest_mismatches = 0;
+						}
 					}
 
-					// set total delta for rendering code
-					double totalDelta = Timer::GetTime() - frameStartTime;
-					Timer::set_delta_override(totalDelta);
 				}
 			}
 
-			if (!loop_remaining)
-			{
-				// loop break forced by counter
-				float received = m_network->client->get_frame_counter();
-				float awaiting = m_network->client->get_awaiting_frames();
-
-				// TODO: don't meddle with mode progresbar
-				m_modes[m_modestack.top()]->set_progress(100.0f * (received - awaiting) / received);
-			}
-			else
-			{
-				m_modes[m_modestack.top()]->set_progress(0.0f, 0.0f);
-			}
+			m_modes[m_modestack.top()]->set_progress(0.0f, 0.0f);
 		}
 		else
 		{
@@ -614,7 +655,9 @@ int eu07_application::run()
 		if (m_modestack.empty())
 			break;
 
-		m_modes[m_modestack.top()]->on_event_poll();
+		// there is no keyboard, mouse or gamepad to ask when there is no window
+		if (!Global.headless)
+			m_modes[m_modestack.top()]->on_event_poll();
 
 		if (m_screenshot_queued)
 		{
@@ -687,15 +730,21 @@ void eu07_application::exit()
 	//    SafeDelete( simulation::Train );
 	SafeDelete(simulation::Region);
 
-	ui_layer::shutdown();
-
-	for (auto *window : m_windows)
+	if (!Global.headless)
 	{
-		glfwDestroyWindow(window);
+		ui_layer::shutdown();
+
+		for (auto *window : m_windows)
+		{
+			glfwDestroyWindow(window);
+		}
 	}
 	m_taskqueue.exit();
-	glfwPollEvents(); // TODO: This fixes a segfault on Wayland when closing. Remove after updating glfw to 3.5.
-	glfwTerminate();
+	if (!Global.headless)
+	{
+		glfwPollEvents(); // TODO: This fixes a segfault on Wayland when closing. Remove after updating glfw to 3.5.
+		glfwTerminate();
+	}
 
 	if (!Global.exec_on_exit.empty())
 		system(Global.exec_on_exit.c_str());
@@ -719,6 +768,11 @@ void eu07_application::exit()
 
 void eu07_application::render_ui()
 {
+	if (Global.headless)
+	{
+		return;
+	}
+
 
 	if (m_modestack.empty())
 	{
@@ -730,6 +784,11 @@ void eu07_application::render_ui()
 
 void eu07_application::begin_ui_frame()
 {
+	// there is no imgui context without a window, and nothing would look at its output
+	if (Global.headless)
+	{
+		return;
+	}
 
 	if (m_modestack.empty())
 	{
@@ -780,6 +839,8 @@ bool eu07_application::push_mode(mode const Mode)
 
 void eu07_application::set_title(std::string const &Title)
 {
+	if (m_windows.empty())
+		return;
 
 	glfwSetWindowTitle(m_windows.front(), Title.c_str());
 }
@@ -814,6 +875,8 @@ void eu07_application::set_cursor(int const Mode)
 
 void eu07_application::set_cursor_pos(double const Horizontal, double const Vertical)
 {
+	if (m_windows.empty())
+		return;
 
 	glfwSetCursorPos(m_windows.front(), Horizontal, Vertical);
 }
@@ -831,6 +894,17 @@ eu07_application::get_input_hint( user_command const Command ) const {
 
 void eu07_application::on_key(int const Key, int const Scancode, int const Action, int const Mods)
 {
+	// the session chat opens on the key left of 1, and it is checked before imgui gets a
+	// look at the input: a lobby or any other window that happens to have the keyboard
+	// would otherwise swallow the key and the chat could never be opened at all. the one
+	// case where imgui does get it is when something is already taking typed text - the
+	// chat box itself, most of the time, which closes on escape instead
+	if ((Key == GLFW_KEY_GRAVE_ACCENT) && (Action == GLFW_PRESS) && (Mods == 0) && !m_modestack.empty() && network::is_multiplayer() &&
+	    !ui_layer::wants_keyboard())
+	{
+		if (m_modes[m_modestack.top()]->toggle_chat())
+			return;
+	}
 
 	if (ui_layer::key_callback(Key, Scancode, Action, Mods))
 		return;
@@ -975,7 +1049,17 @@ std::string eu07_application::describe_monitor(GLFWmonitor *monitor) const
 
 bool eu07_application::needs_ogl() const
 {
-	return !Global.NvRenderer;
+	return !Global.NvRenderer && !Global.headless;
+}
+
+// there is no window to be closed when running without one, so the only way out is being
+// asked to leave
+bool eu07_application::should_close() const
+{
+	if (Global.headless)
+		return Global.applicationQuitOrder;
+
+	return m_windows.empty() || glfwWindowShouldClose(m_windows.front());
 }
 
 void eu07_application::init_debug()
@@ -1105,6 +1189,52 @@ void eu07_application::init_files()
 }
 namespace fs = std::filesystem;
 
+namespace {
+
+// port used when the user did not spell one out in --host / --connect
+uint32_t const EU07_DEFAULT_NETWORK_PORT = 7420;
+
+// completes a user supplied endpoint into the "address:port" form expected by the tcp backend.
+// note: only the plain ipv4/hostname form is split, anything with more colons is passed through
+std::string network_endpoint(std::string const &Argument, std::string const &Defaultaddress)
+{
+	auto address{Argument};
+	std::string port;
+
+	if (std::count(address.begin(), address.end(), ':') == 1)
+	{
+		auto const separator{address.find(':')};
+		port = address.substr(separator + 1);
+		address = address.substr(0, separator);
+	}
+
+	if (address.empty())
+		address = Defaultaddress;
+	if (port.empty())
+		port = std::to_string(EU07_DEFAULT_NETWORK_PORT);
+
+	return address + ":" + port;
+}
+
+void print_usage(std::string const &Executable)
+{
+	std::cout
+	    << "usage: " << Executable << " [options]\n"
+	    << "  -s, --scenario <path>        scenario file to load\n"
+	    << "  -v, --vehicle <name>         vehicle to start in\n"
+	    << "      --host [address:port]    host a multiplayer session (default 0.0.0.0:"
+	    << EU07_DEFAULT_NETWORK_PORT << ")\n"
+	    << "      --connect <address:port> join a multiplayer session (default port "
+	    << EU07_DEFAULT_NETWORK_PORT << ")\n"
+	    << "      --nick <name>            name to be known by in the session\n"
+	    << "      --nogui                  no window, no renderer, no cab: a dedicated\n"
+	    << "                               server that leaves the scenario to the AI\n"
+	    << "  -h, --help                   this message"
+	    << std::endl;
+}
+
+} // namespace
+
 int eu07_application::init_settings(int Argc, char *Argv[])
 {
 	Global.asVersion = VERSION_INFO;
@@ -1126,24 +1256,75 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 
 		std::string token{Argv[i]};
 
-		if (token == "-s")
+		if (token == "-s" || token == "--scenario")
 		{
 			if (i + 1 < Argc)
 			{
 				Global.SceneryFile = ToLower(Argv[++i]);
 			}
 		}
-		else if (token == "-v")
+		else if (token == "-v" || token == "--vehicle")
 		{
 			if (i + 1 < Argc)
 			{
 				Global.local_start_vehicle = ToLower(Argv[++i]);
+				Global.local_start_vehicle_override = true;
 			}
+		}
+		else if (token == "--host")
+		{
+			// the address is optional, so that a bare --host just listens on every interface
+			std::string endpoint{std::string("0.0.0.0:") + std::to_string(EU07_DEFAULT_NETWORK_PORT)};
+			if (i + 1 < Argc && Argv[i + 1][0] != '-')
+			{
+				endpoint = network_endpoint(Argv[++i], "0.0.0.0");
+			}
+			Global.network_servers.emplace_back("tcp", endpoint);
+		}
+		else if (token == "--connect")
+		{
+			if (i + 1 >= Argc)
+			{
+				std::cout << "--connect requires a server address" << std::endl;
+				return -1;
+			}
+			Global.network_client.emplace("tcp", network_endpoint(Argv[++i], "127.0.0.1"));
+		}
+		else if (token == "--nick")
+		{
+			if (i + 1 >= Argc)
+			{
+				std::cout << "--nick requires a name" << std::endl;
+				return -1;
+			}
+			Global.multiplayer_nickname = Argv[++i];
+		}
+		else if (token == "--nogui")
+		{
+			// no window, no renderer, no player. the log goes to the console it was
+			// started from, because there is nothing else to read it in
+			Global.headless = true;
+			Global.GfxRenderer = "null";
+			// nothing is waiting on a swapchain, so without this the loop would spin a
+			// core flat out for no benefit. fifty steps a second is more than the
+			// authoritative stream needs
+			Global.minframetime = std::chrono::duration<float>(1.0f / 50.0f);
+			Global.iWriteLogEnabled = 2;
+			Global.ShowSystemConsole = true;
+			Global.bSoundEnabled = false;
+			// the scenario is left to its own drivers: this process is a referee, not a
+			// participant, and it never walks into a cab
+			Global.local_start_vehicle = "ghostview";
+			Global.local_start_vehicle_override = true;
+		}
+		else if (token == "-h" || token == "--help")
+		{
+			print_usage(Argv[0]);
+			return -1;
 		}
 		else
 		{
-			std::cout << "usage: " << std::string(Argv[0]) << " [-s sceneryfilepath]"
-			          << " [-v vehiclename]" << std::endl;
+			print_usage(Argv[0]);
 			return -1;
 		}
 	}
@@ -1161,6 +1342,14 @@ int eu07_application::init_locale()
 
 int eu07_application::init_glfw()
 {
+	if (Global.headless)
+	{
+		// no window system at all. everything downstream is guarded on an empty window
+		// list, which is what tells the rest of the application there is nothing to draw on
+		WriteLog("running without a window; this process is a dedicated server");
+		return 0;
+	}
+
 	{
 		int glfw_major, glfw_minor, glfw_rev;
 		glfwGetVersion(&glfw_major, &glfw_minor, &glfw_rev);
@@ -1342,6 +1531,9 @@ int eu07_application::init_ogl()
 
 int eu07_application::init_ui()
 {
+	if (Global.headless)
+		return 0;
+
 	if (false == ui_layer::init(m_windows.front()))
 	{
 		return -1;
@@ -1353,7 +1545,13 @@ int eu07_application::init_ui()
 int eu07_application::init_gfx()
 {
 
-	if (Global.GfxRenderer == "default")
+	if (Global.headless)
+	{
+		// draws nothing, allocates nothing, and lets the rest of the simulation run
+		// exactly as it otherwise would
+		GfxRenderer = gfx_renderer_factory::get_instance()->create("null");
+	}
+	else if (Global.GfxRenderer == "default")
 	{
 		// default render path
 		GfxRenderer = gfx_renderer_factory::get_instance()->create("modern");
@@ -1375,7 +1573,7 @@ int eu07_application::init_gfx()
 		return -1;
 	}
 
-	if (false == GfxRenderer->Init(m_windows.front()))
+	if (false == GfxRenderer->Init(m_windows.empty() ? nullptr : m_windows.front()))
 	{
 		return -1;
 	}
@@ -1423,17 +1621,23 @@ int eu07_application::init_modes()
 {
 	Global.local_random_engine.seed(std::random_device{}());
 
-	if ((!Global.network_servers.empty() || Global.network_client) && Global.SceneryFile.empty())
-	{
-		ErrorLog("launcher mode is currently not supported in network mode");
-		return -1;
-	}
-
 	// activate the default mode
-	if (Global.SceneryFile.empty())
-		push_mode(mode::launcher);
-	else
+	if (Global.network_client)
+	{
+		// a multiplayer client learns the scenario name from the server handshake,
+		// so it goes straight to the loader and waits there for Global.ready_to_load
 		push_mode(mode::scenarioloader);
+	}
+	else if (Global.SceneryFile.empty())
+	{
+		// no scenario given: let the user pick one (a listening server simply
+		// refuses joins until the scenario is up)
+		push_mode(mode::launcher);
+	}
+	else
+	{
+		push_mode(mode::scenarioloader);
+	}
 
 	return 0;
 }
@@ -1444,16 +1648,40 @@ bool eu07_application::init_network()
 	{
 		// create network manager
 		m_network.emplace();
+
+		// settings a session cannot run without, whichever side we are on
+		network::enforce_session_settings();
+
+		// the host takes part in the session like any other peer, with an identity of its
+		// own, so that crew and permission handling needs no special case for it
+		if (!Global.network_client)
+		{
+			Global.network_peer_id = network::PEER_HOST;
+			auto const name = network::Peers.assign(network::PEER_HOST, network::local_nickname());
+			WriteLog("net: hosting as \"" + name + "\"", logtype::net);
+		}
 	}
 
 	for (auto const &pair : Global.network_servers)
 	{
 		// create all servers
+		WriteLog("net: hosting session on " + pair.second + " (" + pair.first + ")", logtype::net);
 		m_network->create_server(pair.first, pair.second);
+	}
+
+	if (!Global.local_start_vehicle_override && (Global.network_client || !Global.network_servers.empty()))
+	{
+		// in a multiplayer session the vehicle is picked in the lobby, so both the host
+		// and the joining clients start out as observers rather than in a random cab
+		Global.local_start_vehicle = "ghostview";
 	}
 
 	if (Global.network_client)
 	{
+
+		Global.network_status = "Connecting to " + Global.network_client->second + "...";
+		WriteLog("net: connecting to " + Global.network_client->second + " (" + Global.network_client->first + ")", logtype::net);
+
 		// create client
 		m_network->connect(Global.network_client->first, Global.network_client->second);
 	}

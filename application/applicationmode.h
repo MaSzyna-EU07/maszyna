@@ -51,6 +51,8 @@ public:
     virtual void on_scroll( double Xoffset, double Yoffset ) = 0;
     virtual void on_window_resize( int w, int h ) = 0;
     virtual void on_event_poll() = 0;
+    // opens or closes the session chat; true when this mode has one to open
+    virtual bool toggle_chat() { return false; }
     virtual bool is_command_processor() const = 0;
 
 protected:

@@ -37,6 +37,8 @@ driver_ui::driver_ui()
 	add_external_panel(&m_logpanel);
 	add_external_panel(&m_perfgraphpanel);
 	add_external_panel(&m_cameraviewpanel);
+	add_external_panel(&m_multiplayerlobby);
+	add_external_panel(&m_chatpanel);
 	m_logpanel.is_open = false;
 
 	m_aidpanel.title = STR("Driving Aid");
@@ -52,6 +54,12 @@ driver_ui::driver_ui()
 	m_transcriptspanel.title = STR("Transcripts");
 	m_transcriptspanel.size_min = {435, 85};
 	m_transcriptspanel.size_max = {Global.fb_size.x * 0.95, Global.fb_size.y * 0.95};
+
+	m_chatpanel.title = STR("Chat");
+
+	m_multiplayerlobby.title = STR("Multiplayer lobby");
+	m_multiplayerlobby.size_min = {560, 320};
+	m_multiplayerlobby.size_max = {Global.fb_size.x * 0.95f, Global.fb_size.y * 0.95f};
 
 	if (Global.gui_defaultwindows)
 	{
@@ -87,8 +95,26 @@ void driver_ui::render_menu_contents()
 		if (ImGui::MenuItem(m_timepanel.name().c_str()))
 			m_timepanel.open();
 
+		if (Application.is_server() || Application.is_client())
+		{
+			ImGui::MenuItem(m_multiplayerlobby.name().c_str(), nullptr, &m_multiplayerlobby.is_open);
+			ImGui::MenuItem(m_chatpanel.name().c_str(), "`", &m_chatpanel.is_open);
+		}
+
 		ImGui::EndMenu();
 	}
+}
+
+void driver_ui::show_multiplayer_lobby(bool const Show)
+{
+	m_multiplayerlobby.is_open = Show;
+}
+
+void driver_ui::toggle_chat()
+{
+	m_chatpanel.is_open = !m_chatpanel.is_open;
+	if (m_chatpanel.is_open)
+		m_chatpanel.focus_input();
 }
 
 void driver_ui::showDebugUI()
@@ -269,11 +295,4 @@ void driver_ui::render_()
 		ImGui::OpenPopup(popupheader);
 	}
 
-	if (Global.desync != 0.0f)
-	{
-		ImGui::SetNextWindowSize(ImVec2(-1, -1));
-		if (ImGui::Begin("network", nullptr, ImGuiWindowFlags_NoCollapse))
-			ImGui::Text("desync: %0.2f", Global.desync);
-		ImGui::End();
-	}
 }

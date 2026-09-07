@@ -20,6 +20,8 @@ http://mozilla.org/MPL/2.0/.
 #include "widgets/trainingcard.h"
 #include "widgets/perfgraphs.h"
 #include "widgets/cameraview_extcam.h"
+#include "widgets/multiplayer_lobby.h"
+#include "widgets/chat_panel.h"
 
 class driver_ui : public ui_layer {
 
@@ -40,6 +42,12 @@ public:
     // updates state of UI elements
     void
         update() override;
+    // opens or closes the multiplayer lobby
+    void
+        show_multiplayer_lobby( bool const Show );
+    // opens or closes the session chat, putting the cursor in the box when it opens
+    void
+        toggle_chat();
 
 protected:
     void render_menu_contents() override;
@@ -69,4 +77,6 @@ private:
 	ui::map_panel m_mappanel;
 	ui::time_panel m_timepanel;
 	ui::cameraview_panel m_cameraviewpanel;
+	ui::multiplayer_lobby_panel m_multiplayerlobby;
+	ui::chat_panel m_chatpanel;
 };

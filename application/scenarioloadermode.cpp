@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
 #include "utilities/translation.h"
+#include "network/entities.h"
 
 scenarioloader_mode::scenarioloader_mode() {
     m_userinterface = std::make_shared<scenarioloader_ui>();
@@ -32,9 +33,14 @@ bool scenarioloader_mode::init() {
 
 // mode-specific update of simulation data. returns: false on error, true otherwise
 bool scenarioloader_mode::update() {
-	if (!Global.ready_to_load)
-		// waiting for network connection
+	if (!Global.ready_to_load) {
+		// waiting for the network handshake to tell us which scenario to load
+		m_userinterface->set_progress(
+		    Global.network_status.empty()
+		        ? STR("Connecting to server")
+		        : Global.network_status);
 		return true;
+	}
 
 	if (!state) {
 		WriteLog("using simulation seed: " + std::to_string(Global.random_seed), logtype::generic);
@@ -56,6 +62,19 @@ bool scenarioloader_mode::update() {
 		Application.pop_mode();
 	}
 
+	// the world exists from here on. this is what the network housekeeping waits for;
+	// simulation::is_ready means something else, namely that the player has a cab
+	Global.simulation_loaded = true;
+
+	if( Application.is_server() ) {
+		// the server owns the vehicle numbering for the whole session and publishes it
+		network::Entities.build();
+	}
+
+	// a client can take the state of the world over now; the server answers with a
+	// snapshot instead of making us replay the session from its first frame
+	Application.network_scenario_loaded();
+
 	WriteLog( "Scenario loading time: " + std::to_string( std::chrono::duration_cast<std::chrono::seconds>( std::chrono::system_clock::now() - timestart ).count() ) + " seconds" );
 	// TODO: implement and use next mode cue
 
@@ -76,8 +95,15 @@ void scenarioloader_mode::enter() {
 
     simulation::is_ready = false;
 
-    Application.set_title( Global.AppName + " (" + Global.SceneryFile + ")" );
-	m_userinterface->set_progress(STR("Loading scenery"));
+    if( Global.SceneryFile.empty() ) {
+        // multiplayer client: the scenario is not known until the server answers
+        Application.set_title( Global.AppName );
+        m_userinterface->set_progress( STR( "Connecting to server" ) );
+    }
+    else {
+        Application.set_title( Global.AppName + " (" + Global.SceneryFile + ")" );
+        m_userinterface->set_progress(STR("Loading scenery"));
+    }
 }
 
 // maintenance method, called when the mode is deactivated

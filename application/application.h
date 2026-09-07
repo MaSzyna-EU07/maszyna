@@ -84,15 +84,23 @@ public:
         window( int const Windowindex = 0, bool visible = false, int width = 1, int height = 1, GLFWmonitor *monitor = nullptr, bool keep_ownership = true, bool share_ctx = true );
     GLFWmonitor * find_monitor( const std::string &str ) const;
     std::string describe_monitor( GLFWmonitor *monitor ) const;
-	// generate network sync verification number
-	double
-	    generate_sync();
 	void
         queue_quit(bool direct);
     bool
         is_server() const;
     bool
         is_client() const;
+    // asks the session authority to put us on the crew of given vehicle, or take us off it
+    void
+        request_vehicle_claim( network::NetworkEntityId const Entity );
+    void
+        request_vehicle_leave( network::NetworkEntityId const Entity );
+    // tells the network layer the scenario finished loading
+    void
+        network_scenario_loaded();
+    // says something to the rest of the session
+    void
+        say( std::string const &Text );
 
 private:
 // types
@@ -100,6 +108,9 @@ private:
     using mode_stack = std::stack<mode>;
 // methods
 	  bool needs_ogl() const;
+    // true when the run is over: the window was closed, or, with no window, we were asked
+    // to stop
+    bool should_close() const;
     void init_debug();
     void init_console();
     void init_files();
@@ -118,6 +129,9 @@ private:
 // members
 
     bool m_screenshot_queued = false;
+    // consecutive authoritative steps whose state digest did not match ours. purely a
+    // diagnostic: a client runs its own physics, so it is never expected to match exactly
+    std::uint64_t m_statemismatches { 0 };
 
     modeptr_array m_modes { nullptr }; // collection of available application behaviour modes
     mode_stack m_modestack; // current behaviour mode

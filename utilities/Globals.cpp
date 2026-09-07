@@ -902,6 +902,25 @@ bool global_settings::ConfigParseNetwork(cParser& Parser, const std::string& tok
         return true;
     }
 
+    if (token == "multiplayer.sync.running")
+    {
+        ParseOneClamped(Parser, multiplayer_sync_running, 0.05f, 100.0f, 1, false);
+        return true;
+    }
+
+    if (token == "multiplayer.sync.stop")
+    {
+        ParseOneClamped(Parser, multiplayer_sync_stop, 0.01f, 100.0f, 1, false);
+        return true;
+    }
+
+    if (token == "multiplayer.nickname")
+    {
+        Parser.getTokens(1, false);
+        Parser >> multiplayer_nickname;
+        return true;
+    }
+
     return false;
 }
 
@@ -1036,6 +1055,77 @@ bool global_settings::ConfigParseHardware(cParser& Parser, const std::string& to
     if (token == "uartmainpercentage")
     {
         ParseOne(Parser, uart_conf.mainpercentage, 1);
+        return true;
+    }
+#endif
+
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+    // hardware protocol v2 (uart v2). the legacy uart entries above keep working unchanged, both
+    // protocols may be used at the same time as long as they don't share a port
+    if (token == "uart2")
+    {
+        Parser.getTokens(2, false);
+        hardware::serial_link_config link;
+        Parser >> link.port
+               >> link.baud;
+        if (false == link.port.empty())
+        {
+            hardware_conf.serial_links.emplace_back(link);
+            hardware_conf.enable = true;
+        }
+        return true;
+    }
+
+    if (token == "uart2framesize")
+    {
+        int framesize = static_cast<int>(hardware_conf.frame_size);
+        ParseOneClamped(Parser, framesize, static_cast<int>(hardware::protocol_frame_size_min), static_cast<int>(hardware::protocol_frame_size_max));
+        hardware_conf.frame_size = static_cast<std::size_t>(framesize);
+        return true;
+    }
+
+    if (token == "uart2heartbeat")
+    {
+        ParseOneClamped(Parser, hardware_conf.heartbeat_interval_ms, 50, 10000);
+        return true;
+    }
+
+    if (token == "uart2timeout")
+    {
+        ParseOneClamped(Parser, hardware_conf.heartbeat_timeout_count, 2, 100);
+        return true;
+    }
+
+    if (token == "uart2ratelimit")
+    {
+        Parser.getTokens(3);
+        Parser >> hardware_conf.max_frames_per_second
+               >> hardware_conf.max_payload_bytes_per_second
+               >> hardware_conf.max_commands_per_second;
+        return true;
+    }
+
+    if (token == "uart2pollinterval")
+    {
+        ParseOneClamped(Parser, hardware_conf.poll_interval_ms, 1, 100);
+        return true;
+    }
+
+    if (token == "uart2reconnect")
+    {
+        ParseOneClamped(Parser, hardware_conf.reconnect_interval, 0.1f, 60.0f);
+        return true;
+    }
+
+    if (token == "uart2debug")
+    {
+        ParseOne(Parser, hardware_conf.debug, 1);
+        return true;
+    }
+
+    if (token == "uart2debugframes")
+    {
+        ParseOne(Parser, hardware_conf.debug_frames, 1);
         return true;
     }
 #endif
@@ -1744,6 +1834,9 @@ global_settings::export_as_text( std::ostream &Output ) const {
             << "network.client "
             << network_client->first << " " << network_client->second << "\n";
     }
+    export_as_text( Output, "multiplayer.sync.running", multiplayer_sync_running );
+    export_as_text( Output, "multiplayer.sync.stop", multiplayer_sync_stop );
+    export_as_text( Output, "multiplayer.nickname", multiplayer_nickname );
     export_as_text( Output, "execonexit", exec_on_exit );
 }
 

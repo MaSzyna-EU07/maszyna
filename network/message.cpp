@@ -6,12 +6,64 @@ void network::client_hello::serialize(std::ostream &stream) const
 {
 	sn_utils::ls_int32(stream, version);
 	sn_utils::ls_uint32(stream, start_packet);
+	sn_utils::s_str(stream, app_version);
+	sn_utils::ls_uint64(stream, session_token);
+	sn_utils::s_str(stream, nickname);
 }
 
 void network::client_hello::deserialize(std::istream &stream)
 {
 	version = sn_utils::ld_int32(stream);
 	start_packet = sn_utils::ld_uint32(stream);
+	app_version = sn_utils::d_str(stream);
+	session_token = sn_utils::ld_uint64(stream);
+	nickname = sn_utils::d_str(stream);
+}
+
+void network::peer_roster::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint32(stream, (uint32_t)peers.size());
+	for (auto const &entry : peers)
+	{
+		sn_utils::ls_uint32(stream, entry.id);
+		sn_utils::s_str(stream, entry.name);
+	}
+}
+
+void network::peer_roster::deserialize(std::istream &stream)
+{
+	auto const count = sn_utils::ld_uint32(stream);
+	peers.clear();
+	peers.reserve(count);
+	for (uint32_t i = 0; i < count; ++i)
+	{
+		peer_entry entry;
+		entry.id = sn_utils::ld_uint32(stream);
+		entry.name = sn_utils::d_str(stream);
+		peers.emplace_back(std::move(entry));
+	}
+}
+
+void network::chat_message::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint32(stream, peer);
+	sn_utils::s_str(stream, text);
+}
+
+void network::chat_message::deserialize(std::istream &stream)
+{
+	peer = sn_utils::ld_uint32(stream);
+	text = sn_utils::d_str(stream);
+}
+
+void network::server_reject::serialize(std::ostream &stream) const
+{
+	sn_utils::s_str(stream, reason);
+}
+
+void network::server_reject::deserialize(std::istream &stream)
+{
+	reason = sn_utils::d_str(stream);
 }
 
 void network::server_hello::serialize(std::ostream &stream) const
@@ -20,6 +72,11 @@ void network::server_hello::serialize(std::ostream &stream) const
 	sn_utils::ls_int64(stream, timestamp);
     sn_utils::ls_int64(stream, config);
     sn_utils::s_str(stream, scenario);
+	sn_utils::s_str(stream, app_version);
+	sn_utils::ls_uint32(stream, peer_id);
+	sn_utils::ls_uint64(stream, session_token);
+	sn_utils::ls_float64(stream, sync_running);
+	sn_utils::ls_float64(stream, sync_stop);
 }
 
 void network::server_hello::deserialize(std::istream &stream)
@@ -28,10 +85,166 @@ void network::server_hello::deserialize(std::istream &stream)
 	timestamp = sn_utils::ld_int64(stream);
     config = sn_utils::ld_int64(stream);
     scenario = sn_utils::d_str(stream);
+	app_version = sn_utils::d_str(stream);
+	peer_id = sn_utils::ld_uint32(stream);
+	session_token = sn_utils::ld_uint64(stream);
+	sync_running = sn_utils::ld_float64(stream);
+	sync_stop = sn_utils::ld_float64(stream);
+}
+
+void network::vehicle_list::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint32(stream, (uint32_t)vehicles.size());
+	for (auto const &entry : vehicles)
+	{
+		sn_utils::ls_uint32(stream, entry.id);
+		sn_utils::s_str(stream, entry.name);
+		sn_utils::ls_uint32(stream, entry.consist_id);
+		sn_utils::s_uint8(stream, entry.consist_size);
+		sn_utils::s_uint8(stream, entry.crew_count);
+		sn_utils::s_uint8(stream, entry.crew_capacity);
+		sn_utils::s_uint8(stream, (uint8_t)((entry.ai_active ? 1 : 0) | (entry.claimable ? 2 : 0) | (entry.drivable ? 4 : 0) | (entry.consist_lead ? 8 : 0)));
+	}
+}
+
+void network::vehicle_list::deserialize(std::istream &stream)
+{
+	vehicles.clear();
+
+	uint32_t const count = sn_utils::ld_uint32(stream);
+	vehicles.reserve(count);
+
+	for (uint32_t i = 0; i < count; i++)
+	{
+		vehicle_entry entry;
+		entry.id = sn_utils::ld_uint32(stream);
+		entry.name = sn_utils::d_str(stream);
+		entry.consist_id = sn_utils::ld_uint32(stream);
+		entry.consist_size = sn_utils::d_uint8(stream);
+		entry.crew_count = sn_utils::d_uint8(stream);
+		entry.crew_capacity = sn_utils::d_uint8(stream);
+		uint8_t const flags = sn_utils::d_uint8(stream);
+		entry.ai_active = (flags & 1) != 0;
+		entry.claimable = (flags & 2) != 0;
+		entry.drivable = (flags & 4) != 0;
+		entry.consist_lead = (flags & 8) != 0;
+		vehicles.emplace_back(entry);
+	}
+}
+
+void network::client_ready::serialize(std::ostream &stream) const
+{
+	sn_utils::s_str(stream, scenario);
+}
+
+void network::client_ready::deserialize(std::istream &stream)
+{
+	scenario = sn_utils::d_str(stream);
+}
+
+void network::snapshot::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint64(stream, tick);
+	sn_utils::s_uint8(stream, mode);
+	sn_utils::ls_uint32(stream, (uint32_t)blob.size());
+	stream.write(blob.data(), blob.size());
+}
+
+void network::snapshot::deserialize(std::istream &stream)
+{
+	tick = sn_utils::ld_uint64(stream);
+	mode = sn_utils::d_uint8(stream);
+
+	uint32_t const size = sn_utils::ld_uint32(stream);
+	blob.assign(size, '\0');
+	stream.read(blob.data(), size);
+}
+
+void network::request_resync::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint64(stream, tick);
+	sn_utils::ls_uint64(stream, state_hash);
+}
+
+void network::request_resync::deserialize(std::istream &stream)
+{
+	tick = sn_utils::ld_uint64(stream);
+	state_hash = sn_utils::ld_uint64(stream);
+}
+
+void network::claim_vehicle::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint32(stream, entity_id);
+}
+
+void network::claim_vehicle::deserialize(std::istream &stream)
+{
+	entity_id = sn_utils::ld_uint32(stream);
+}
+
+void network::claim_granted::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint32(stream, entity_id);
+}
+
+void network::claim_granted::deserialize(std::istream &stream)
+{
+	entity_id = sn_utils::ld_uint32(stream);
+}
+
+void network::claim_denied::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint32(stream, entity_id);
+	sn_utils::s_str(stream, reason);
+}
+
+void network::claim_denied::deserialize(std::istream &stream)
+{
+	entity_id = sn_utils::ld_uint32(stream);
+	reason = sn_utils::d_str(stream);
+}
+
+void network::leave_vehicle::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint32(stream, entity_id);
+}
+
+void network::leave_vehicle::deserialize(std::istream &stream)
+{
+	entity_id = sn_utils::ld_uint32(stream);
+}
+
+void network::crew_update::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint32(stream, entity_id);
+	sn_utils::ls_uint32(stream, (uint32_t)crew.size());
+	for (PeerId const peer : crew)
+		sn_utils::ls_uint32(stream, peer);
+	sn_utils::ls_uint32(stream, (uint32_t)since.size());
+	for (uint64_t const stamp : since)
+		sn_utils::ls_uint64(stream, stamp);
+}
+
+void network::crew_update::deserialize(std::istream &stream)
+{
+	entity_id = sn_utils::ld_uint32(stream);
+
+	crew.clear();
+	uint32_t const count = sn_utils::ld_uint32(stream);
+	crew.reserve(count);
+	for (uint32_t i = 0; i < count; i++)
+		crew.emplace_back(sn_utils::ld_uint32(stream));
+
+	since.clear();
+	uint32_t const stamps = sn_utils::ld_uint32(stream);
+	since.reserve(stamps);
+	for (uint32_t i = 0; i < stamps; i++)
+		since.emplace_back(sn_utils::ld_uint64(stream));
 }
 
 void ::network::request_command::serialize(std::ostream &stream) const
 {
+	sn_utils::ls_uint64(stream, tick);
 	sn_utils::ls_uint32(stream, commands.size());
 	for (auto const &kv : commands)
 	{
@@ -49,12 +262,15 @@ void ::network::request_command::serialize(std::ostream &stream) const
 			sn_utils::s_vec3(stream, data.location);
 
 			sn_utils::s_str(stream, data.payload);
+			sn_utils::ls_uint32(stream, data.source);
 		}
 	}
 }
 
 void network::request_command::deserialize(std::istream &stream)
 {
+	tick = sn_utils::ld_uint64(stream);
+
 	uint32_t commands_size = sn_utils::ld_uint32(stream);
 	for (uint32_t i = 0; i < commands_size; i++)
 	{
@@ -75,6 +291,7 @@ void network::request_command::deserialize(std::istream &stream)
 			data.location = sn_utils::d_vec3(stream);
 
 			data.payload = sn_utils::d_str(stream);
+			data.source = sn_utils::ld_uint32(stream);
 
 			sequence.emplace_back(data);
 		}
@@ -87,7 +304,8 @@ void network::frame_info::serialize(std::ostream &stream) const
 {
 	sn_utils::ls_float64(stream, render_dt);
 	sn_utils::ls_float64(stream, dt);
-	sn_utils::ls_float64(stream, sync);
+	sn_utils::ls_uint64(stream, state_hash);
+	sn_utils::ls_uint32(stream, state_hash_version);
 
 	request_command::serialize(stream);
 }
@@ -96,7 +314,8 @@ void network::frame_info::deserialize(std::istream &stream)
 {
 	render_dt = sn_utils::ld_float64(stream);
 	dt = sn_utils::ld_float64(stream);
-	sync = sn_utils::ld_float64(stream);
+	state_hash = sn_utils::ld_uint64(stream);
+	state_hash_version = sn_utils::ld_uint32(stream);
 
 	request_command::deserialize(stream);
 }
@@ -115,6 +334,35 @@ std::shared_ptr<network::message> network::deserialize_message(std::istream &str
 		msg = std::make_shared<frame_info>();
 	else if (type == message::REQUEST_COMMAND)
 		msg = std::make_shared<request_command>();
+	else if (type == message::SERVER_REJECT)
+		msg = std::make_shared<server_reject>();
+	else if (type == message::VEHICLE_LIST)
+		msg = std::make_shared<vehicle_list>();
+	else if (type == message::CLAIM_VEHICLE)
+		msg = std::make_shared<claim_vehicle>();
+	else if (type == message::CLAIM_GRANTED)
+		msg = std::make_shared<claim_granted>();
+	else if (type == message::CLAIM_DENIED)
+		msg = std::make_shared<claim_denied>();
+	else if (type == message::LEAVE_VEHICLE)
+		msg = std::make_shared<leave_vehicle>();
+	else if (type == message::CREW_UPDATE)
+		msg = std::make_shared<crew_update>();
+	else if (type == message::CLIENT_READY)
+		msg = std::make_shared<client_ready>();
+	else if (type == message::SNAPSHOT)
+		msg = std::make_shared<snapshot>();
+	else if (type == message::REQUEST_RESYNC)
+		msg = std::make_shared<request_resync>();
+	else if (type == message::PEER_ROSTER)
+		msg = std::make_shared<peer_roster>();
+	else if (type == message::CHAT)
+		msg = std::make_shared<chat_message>();
+
+	if (!msg) {
+		// unknown message type; hand back a marker the peer handlers treat as a protocol error
+		return std::make_shared<message>(message::TYPE_MAX);
+	}
 
 	msg->deserialize(stream);
 

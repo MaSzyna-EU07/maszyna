@@ -29,6 +29,9 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
+#include "network/entities.h"
+#include "network/snapshot.h"
+#include "network/session.h"
 /*
 namespace input {
 
@@ -53,6 +56,13 @@ void driver_mode::drivermode_input::poll()
 	if (uart != nullptr)
 	{
 		uart->poll();
+	}
+#endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+	if (hardware != nullptr)
+	{
+		// exchanges frames already gathered by the hardware worker thread, never touches the port itself
+		hardware->update();
 	}
 #endif
 #ifdef WITH_ZMQ
@@ -85,6 +95,10 @@ bool driver_mode::drivermode_input::init()
 		uart = std::make_unique<uart_input>();
 		uart->init();
 	}
+#endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+	// started even with no links configured, so that a controller can be added from the debug panel
+	hardware = std::make_unique<hardware::hardware_manager>(Global.hardware_conf);
 #endif
 #ifdef WITH_ZMQ
 	if (!Global.zmq_address.empty())
@@ -171,6 +185,65 @@ bool driver_mode::update()
 	simulation::State.update_scripting_interface();
 	simulation::Environment.update();
 
+	// taking a seat has to work whether the world is running or not: a player sitting
+	// in the lobby with the game paused still expects the button to put them in the cab
+	if (Global.network_leave_pending)
+	{
+		// we were taken off the crew (by our own request or by the server), so the
+		// camera goes back to observing. the cab instance itself stays put, it may
+		// still be occupied by somebody else or handed back to the AI
+		Global.network_leave_pending = false;
+		if (simulation::Train != nullptr)
+		{
+			if (!FreeFlyModeFlag)
+				InOutKey();
+			simulation::Train = nullptr;
+			Camera.m_owner = nullptr;
+			Global.local_start_vehicle = "ghostview";
+		}
+	}
+
+	if (change_train.empty() && !Global.network_pending_vehicle.empty())
+	{
+		// vehicle picked in the multiplayer lobby; the cab itself is built by the
+		// replicated entervehicle command, we only have to move in once it exists
+		change_train = Global.network_pending_vehicle;
+		Global.network_pending_vehicle.clear();
+	}
+
+	if (!change_train.empty())
+	{
+		TTrain *train = simulation::Trains.find(change_train);
+
+		if ((train == nullptr) && network::is_multiplayer())
+		{
+			// a cab belongs to the peer it is on: each player has their own, with their own
+			// camera and their own view of it. waiting for a replicated command to build it
+			// only ever worked for the first person aboard a train - the second finds the
+			// cab already standing on the peer that got there first, so nothing is posted
+			// and the lobby button appears to do nothing at all
+			train = network::ensure_local_cab(simulation::Vehicles.find(change_train));
+		}
+
+		if (train)
+		{
+			Global.local_start_vehicle = change_train;
+			simulation::Train = train;
+			InOutKey();
+			if (!Application.is_server() && !Application.is_client())
+			{
+				// in a multiplayer session the AI handover belongs to the server, which
+				// also knows whether the vehicle had an AI driver in the first place
+				m_relay.post(user_command::aidriverdisable, 0.0, 0.0, GLFW_PRESS, 0);
+			}
+			change_train.clear();
+
+			auto ui = std::dynamic_pointer_cast<driver_ui>(m_userinterface);
+			if (ui != nullptr)
+				ui->show_multiplayer_lobby(false);
+		}
+	}
+
 	if (deltatime != 0.0 || false == simulation::is_ready)
 	{
 		// jak pauza, to nie ma po co tego przeliczać
@@ -254,19 +327,6 @@ bool driver_mode::update()
 		}
 
 		// variable step simulation time routines
-
-		if (!change_train.empty())
-		{
-			TTrain *train = simulation::Trains.find(change_train);
-			if (train)
-			{
-				Global.local_start_vehicle = change_train;
-				simulation::Train = train;
-				InOutKey();
-				m_relay.post(user_command::aidriverdisable, 0.0, 0.0, GLFW_PRESS, 0);
-				change_train.clear();
-			}
-		}
 
 		if (simulation::Train == nullptr && false == FreeFlyModeFlag)
 		{
@@ -402,6 +462,11 @@ bool driver_mode::update()
 
 	Timer::subsystem.sim_total.stop();
 
+	// what the other peers' trains are doing is theirs to decide, and the local physics
+	// has spent this frame disagreeing about it. put their readings back before anything
+	// is heard or drawn from them
+	network::hold_remote_state();
+
 	simulation::Region->update_sounds();
 	audio::renderer.update(Global.iPause ? 0.0 : deltarealtime);
 
@@ -410,7 +475,11 @@ bool driver_mode::update()
 
 	GfxRenderer->Update(deltarealtime);
 
-	simulation::is_ready = simulation::is_ready || (simulation::Train != nullptr && simulation::Train->is_cab_initialized) || Global.local_start_vehicle == "ghostview";
+	simulation::is_ready = simulation::is_ready || (simulation::Train != nullptr && simulation::Train->is_cab_initialized) || Global.local_start_vehicle == "ghostview"
+	                       // in a session a player with no cab is an observer waiting in the
+	                       // lobby, not a game still loading: the world has to be drawn for
+	                       // them, or they are left staring at a black screen
+	                       || (network::is_multiplayer() && simulation::Train == nullptr);
 
 	return true;
 }
@@ -439,6 +508,15 @@ void driver_mode::enter()
 	{
 		Global.local_start_vehicle = "ghostview";
 		Error("Bad scenario: failed to locate player train, \"" + Global.local_start_vehicle + "\"");
+	}
+
+	if (Application.is_server() || Application.is_client())
+	{
+		// in a multiplayer session nobody is dropped into a random vehicle: the roster
+		// published by the server is offered instead, and stays available for later switches
+		auto ui = std::dynamic_pointer_cast<driver_ui>(m_userinterface);
+		if (ui != nullptr)
+			ui->show_multiplayer_lobby(nPlayerTrain == nullptr);
 	}
 
 	// if (!Global.bMultiplayer) //na razie włączone
@@ -547,6 +625,16 @@ void driver_mode::on_event_poll()
 {
 
 	m_input.poll();
+}
+
+bool driver_mode::toggle_chat()
+{
+	auto ui = std::dynamic_pointer_cast<driver_ui>(m_userinterface);
+	if (ui == nullptr)
+		return false;
+
+	ui->toggle_chat();
+	return true;
 }
 
 bool driver_mode::is_command_processor() const

@@ -71,6 +71,7 @@ option(WITH_OPENGL_MODERN "Compile with OpenGL modern renderer" ON)
 option(WITH_OPENGL_LEGACY "Compile with OpenGL legacy renderer" ON)
 option(WITH_PYTHON "Python 3.14 embedded scripting" ON)
 option(WITH_UART "Compile with libserialport" ON)
+option(WITH_HARDWARE_PROTOCOL_V2 "Compile with MaSzyna Hardware Protocol v2 (UART v2)" ON)
 option(WITH_LUA "Compile with lua scripting support" ON)
 option(WITH_OPENVR "Compile with OpenVR" OFF)
 option(WITH_ZMQ "Compile with cppzmq" OFF)
@@ -192,9 +193,16 @@ set(SOURCES
 "network/network.cpp"
 "network/message.cpp"
 "network/manager.cpp"
+"network/entities.cpp"
+"network/session.cpp"
+"network/statehash.cpp"
+"network/snapshot.cpp"
+"network/chat.cpp"
 "network/backend/asio.cpp"
 
 "widgets/vehiclelist.cpp"
+"widgets/multiplayer_lobby.cpp"
+"widgets/chat_panel.cpp"
 "widgets/map.cpp"
 "widgets/map_objects.cpp"
 "widgets/popup.cpp"
@@ -265,6 +273,28 @@ endif()
 if (WITH_UART)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_UART")
 	set(SOURCES ${SOURCES} "utilities/uart.cpp")
+endif()
+
+if (WITH_HARDWARE_PROTOCOL_V2 OR WITH_ZMQ)
+	# shared TrainState registry, used both by the hardware protocol and by the zmq interface
+	set(SOURCES ${SOURCES} "hardware/registry/state_registry.cpp")
+endif()
+
+if (WITH_HARDWARE_PROTOCOL_V2)
+	set(DEFINITIONS ${DEFINITIONS} "WITH_HARDWARE_PROTOCOL_V2")
+	set(SOURCES ${SOURCES}
+		"hardware/hardware_manager.cpp"
+		"hardware/diagnostics/hardware_diagnostics.cpp"
+		"hardware/protocol/protocol_codec.cpp"
+		"hardware/protocol/protocol_defs.cpp"
+		"hardware/protocol/protocol_session.cpp"
+		"hardware/registry/command_registry.cpp"
+		"hardware/registry/hardware_symbol_registry.cpp"
+		"hardware/subscriptions/subscription_manager.cpp")
+	if (WITH_UART)
+		# the serial transport is the only one which needs libserialport
+		set(SOURCES ${SOURCES} "hardware/transport/serial_transport.cpp")
+	endif()
 endif()
 
 if (WITH_ZMQ)

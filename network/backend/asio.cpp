@@ -23,6 +23,8 @@ void network::tcp::connection::disconnect()
 
 void network::tcp::connection::send_data(std::shared_ptr<std::string> buffer)
 {
+	Traffic.sent(buffer->size());
+
 	asio::async_write(m_socket, asio::buffer(*buffer.get()), std::bind(&connection::send_complete, this, buffer));
 }
 
@@ -52,6 +54,8 @@ void network::tcp::connection::handle_header(const asio::error_code &err, size_t
 		return;
 	}
 
+	Traffic.received(bytes_transferred);
+
 	uint32_t sig = sn_utils::ld_uint32(header);
 	if (sig != NETWORK_MAGIC) {
 		disconnect();
@@ -80,6 +84,8 @@ void network::tcp::connection::handle_data(const asio::error_code &err, size_t b
 		disconnect();
 		return;
 	}
+
+	Traffic.received(bytes_transferred);
 
 	std::istringstream stream(m_body_buffer);
 	std::shared_ptr<message> msg = deserialize_message(stream);

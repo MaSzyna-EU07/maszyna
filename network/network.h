@@ -5,10 +5,37 @@
 #include <queue>
 #include <chrono>
 #include "network/message.h"
+#include "network/entities.h"
+#include "network/session.h"
 #include "input/command.h"
 
 namespace network
 {
+	// what has gone over the wire so far, and how fast it is going now. the transport
+	// layer feeds it; the debug panel reads it
+	struct traffic_counters
+	{
+		uint64_t sent_bytes { 0 };
+		uint64_t received_bytes { 0 };
+		uint64_t sent_messages { 0 };
+		uint64_t received_messages { 0 };
+		// bytes per second, averaged over the last second
+		double sent_rate { 0.0 };
+		double received_rate { 0.0 };
+
+		void sent(size_t Bytes) { sent_bytes += Bytes; ++sent_messages; }
+		void received(size_t Bytes) { received_bytes += Bytes; ++received_messages; }
+		// recomputes the rates; called once per frame
+		void update();
+
+	private:
+		uint64_t rate_sent_mark { 0 };
+		uint64_t rate_received_mark { 0 };
+		double rate_time_mark { -1.0 };
+	};
+
+	extern traffic_counters Traffic;
+
     //m7todo: separate client/server connection class?
     class connection
 	{
@@ -16,17 +43,13 @@ namespace network
 		friend class client;
 
 	private:
-		const int CATCHUP_PACKETS = 300;
-
 		bool is_client;
 
 	protected:
-		std::shared_ptr<std::istream> backbuffer;
-		size_t backbuffer_pos;
 		size_t packet_counter;
 
+		// exists only to keep the send buffer alive until asio is done with it
 		void send_complete(std::shared_ptr<std::string> buf);
-		void catch_up();
 
 	public:
 		std::function<void(const message &msg)> message_handler;
@@ -42,16 +65,23 @@ namespace network
 
 		enum peer_state {
 			AWAITING_HELLO,
-			CATCHING_UP,
+			// handshake done, the peer is loading the scenario; it gets a snapshot and
+			// goes live the moment it says it is ready
+			AWAITING_READY,
 			ACTIVE,
 			DEAD
 		};
 		peer_state state;
+
+		// session identity of the peer on the other side of this connection
+		PeerId peer_id { PEER_NONE };
 	};
 
 	class server
 	{
 	private:
+		// the session log is still written out, it is handy when picking a desync apart,
+		// but joining no longer means replaying it
 		std::shared_ptr<std::istream> backbuffer;
 
 	protected:
@@ -61,10 +91,31 @@ namespace network
 
 		command_queue::commands_map client_commands_queue;
 
+	protected:
+		// drops peers whose socket is gone, together with their crew memberships
+		void prune_clients();
+
 	public:
 		server(std::shared_ptr<std::istream> buf);
 		void push_delta(const frame_info &msg);
+		// sends an out of band message to every active peer. unlike push_delta this is not
+		// written to the backbuffer, so it does not become part of the replayed history
+		void push_message(const message &msg);
+		// tells every peer who is taking part and what each of them is called
+		void publish_roster();
 		command_queue::commands_map pop_commands();
+	};
+
+	// one authoritative simulation step handed to the client
+	struct frame_delta
+	{
+		double dt { 0.0 };
+		uint64_t tick { 0 };
+		uint64_t state_hash { 0 };
+		uint32_t state_hash_version { 0 };
+		command_queue::commands_map commands;
+		// false when there was nothing ready to consume in this pass
+		bool valid { false };
 	};
 
 	class client
@@ -77,27 +128,46 @@ namespace network
 		size_t reconnect_delay = 0;
 
 		const size_t RECONNECT_DELAY_FRAMES = 60;
-		const float MAX_BUFFER_SIZE = 60.0f;
-		const float JITTERINESS_MIX = 0.998f;
-		const float TARGET_MIN = 2.0f;
-		const float TARGET_MIX = 0.98f;
-		const float JITTERINESS_MULTIPIER = 2.0f;
-		const float CONSUME_MULTIPIER = 0.05f;
 
+		// authoritative frames that have arrived and not been handed to the simulation yet.
+		// they are taken in full every render: nothing is held back on purpose. the old
+		// design played them out one per frame at the server's pace, which meant the world
+		// ran at the wrong speed whenever the two machines drew at different rates, and
+		// every frame kept in reserve was a frame of delay on the player's own controls
 		std::queue<frame_info> delta_queue;
 
-		float last_target = 20.0f;
-		float jitteriness = 1.0f;
-		float consume_counter = 0.0f;
+		// how far out of place a correction found us, in a row. a full resync is only
+		// worth asking for when the routine stream is not catching up on its own
+		int bad_corrections = 0;
+		uint64_t last_resync_tick = 0;
+		int state_countdown = 0;
+		int state_updates = 0;
+		static constexpr int STATE_INTERVAL_FRAMES = 6;
+		static constexpr int STATE_FULL_EVERY = 100;
+		static constexpr double RESYNC_POSITION_ERROR = 25.0;
+		static constexpr int RESYNC_BAD_CORRECTIONS = 5;
+		// a correction needs time to take hold; asking again before it has is pointless
+		static constexpr uint64_t RESYNC_COOLDOWN_TICKS = 600;
 
 		std::chrono::high_resolution_clock::time_point last_rcv;
-		std::chrono::high_resolution_clock::time_point last_frame;
-		std::chrono::high_resolution_clock::duration frame_time;
 
 	public:
 		void update();
-		std::tuple<double, double, command_queue::commands_map> get_next_delta(int counter);
+		// hands over everything the authority has sent since the last call, merging the
+		// commands into the map. returns what the newest of those frames said about itself
+		frame_delta take_pending(command_queue::commands_map &commands);
 		void send_commands(command_queue::commands_map commands);
+		// tells the server the scenario is loaded and a snapshot can be applied
+		void send_ready();
+		// publishes what our own trains are doing, so that the rest of the session can see
+		// them. we run their physics, so this is the authority on them
+		void publish_state();
+		// our world has drifted too far to carry on; ask to be put back in line
+		void send_resync_request(uint64_t tick, uint64_t state_hash);
+		// lobby requests; the server is the one that decides
+		void send_claim(NetworkEntityId entity_id);
+		void send_leave(NetworkEntityId entity_id);
+		void send_chat(const std::string &text);
 		int get_frame_counter() {
 			return resume_frame_counter;
 		}

@@ -11,6 +11,10 @@ http://mozilla.org/MPL/2.0/.
 #include "network/manager.h"
 #include "simulation/simulation.h"
 #include "utilities/Logs.h"
+#include "utilities/Globals.h"
+#include "network/statehash.h"
+#include "network/snapshot.h"
+#include "network/chat.h"
 
 network::server_manager::server_manager()
 {
@@ -27,15 +31,25 @@ command_queue::commands_map network::server_manager::pop_commands()
 	return map;
 }
 
-void network::server_manager::push_delta(double render_dt, double dt, double sync, const command_queue::commands_map &commands)
+void network::server_manager::push_delta(double render_dt, double dt, uint64_t tick, uint64_t state_hash, const command_queue::commands_map &commands)
 {
-	if (dt == 0.0 && commands.empty())
+	if (dt == 0.0)
 		return;
+
+	// a client no longer replays these frame by frame, so an empty one is only worth
+	// sending now and then, to carry the tick and the digest
+	if (commands.empty() && (--heartbeat_countdown > 0))
+		return;
+
+	if (commands.empty())
+		heartbeat_countdown = HEARTBEAT_INTERVAL_FRAMES;
 
 	frame_info msg;
 	msg.render_dt = render_dt;
 	msg.dt = dt;
-	msg.sync = sync;
+	msg.tick = tick;
+	msg.state_hash = state_hash;
+	msg.state_hash_version = STATE_HASH_VERSION;
 	msg.commands = commands;
 
 	for (auto srv : servers)
@@ -59,13 +73,193 @@ network::manager::manager()
 {
 }
 
+void network::server_manager::publish_vehicle_list()
+{
+	if (Entities.empty())
+		return;
+
+	Entities.refresh();
+
+	// resend on every change, and once in a while regardless, so that a peer which has
+	// just finished catching up does not have to wait for somebody to move
+	bool const changed = (Entities.entries() != last_published_list);
+	if (!changed && --publish_countdown > 0)
+		return;
+
+	last_published_list = Entities.entries();
+	publish_countdown = PUBLISH_INTERVAL_FRAMES;
+
+	vehicle_list msg;
+	msg.vehicles = last_published_list;
+
+	for (auto srv : servers)
+		srv->push_message(msg);
+}
+
+void network::server_manager::update_crews()
+{
+	Crews.expire_absences();
+	Crews.reconcile();
+
+	if (--crew_publish_countdown <= 0) {
+		// peers that joined after somebody took a vehicle over have to learn about it too
+		crew_publish_countdown = PUBLISH_INTERVAL_FRAMES;
+		Crews.mark_all_pending();
+	}
+
+	auto const changed = Crews.take_pending_updates();
+	for (NetworkEntityId const id : changed) {
+		crew_update msg;
+		msg.entity_id = id;
+		msg.crew = Crews.crew_of(id);
+		msg.since = Crews.crew_since_of(id);
+
+		for (auto srv : servers)
+			srv->push_message(msg);
+	}
+}
+
+void network::server_manager::apply_local_claim(NetworkEntityId entity_id)
+{
+	auto const result = Crews.claim(PEER_HOST, entity_id);
+
+	if (result == claim_result::granted || result == claim_result::already_member) {
+		Global.network_lobby_message.clear();
+		Global.network_pending_vehicle = Entities.name_of(entity_id);
+	}
+	else {
+		WriteLog("net: refused local claim of vehicle " + std::to_string(entity_id) + ": " + describe(result), logtype::net);
+		Global.network_lobby_message = describe(result);
+	}
+}
+
+void network::server_manager::apply_local_leave(NetworkEntityId entity_id)
+{
+	if (Crews.leave(PEER_HOST, entity_id))
+		Global.network_leave_pending = true;
+}
+
+void network::manager::request_claim(NetworkEntityId entity_id)
+{
+	if (client) {
+		client->send_claim(entity_id);
+		return;
+	}
+
+	if (servers)
+		servers->apply_local_claim(entity_id);
+}
+
+void network::manager::request_leave(NetworkEntityId entity_id)
+{
+	if (client) {
+		client->send_leave(entity_id);
+		// the server owns the roster, but stepping out of our own cab is a local matter
+		Global.network_leave_pending = true;
+		return;
+	}
+
+	if (servers)
+		servers->apply_local_leave(entity_id);
+}
+
+void network::manager::notify_scenario_loaded()
+{
+	if (client)
+		client->send_ready();
+}
+
+void network::server_manager::publish_state()
+{
+	if (--state_countdown > 0)
+		return;
+
+	state_countdown = STATE_INTERVAL_FRAMES;
+
+	// most of the time only what changed goes out; every so often the whole thing does,
+	// so that anything a peer missed heals by itself
+	bool const full = ((state_updates++ % STATE_FULL_EVERY) == 0);
+
+	auto const blob = take_snapshot(full);
+	if (blob.empty())
+		return;
+
+	snapshot msg;
+	msg.tick = Global.simulation_tick;
+	msg.mode = 1; // correction on top of a running simulation
+	msg.blob = blob;
+
+	for (auto srv : servers)
+		srv->push_message(msg);
+}
+
+void network::server_manager::broadcast_chat(PeerId const author, const std::string &text)
+{
+	chat_message msg;
+	msg.peer = author;
+	msg.text = text;
+
+	for (auto srv : servers)
+		srv->push_message(msg);
+}
+
+void network::server_manager::publish_roster()
+{
+	for (auto srv : servers)
+		srv->publish_roster();
+}
+
+void network::manager::say(const std::string &text)
+{
+	auto const line = tidy_chat(text);
+	if (line.empty())
+		return;
+
+	if (servers)
+	{
+		// the host is the one who decides what was said, so it says it and passes it on
+		note_chat(Global.network_peer_id, line);
+		servers->broadcast_chat(Global.network_peer_id, line);
+		return;
+	}
+
+	if (client)
+	{
+		// a client waits to hear itself back from the server, so that everybody sees the
+		// conversation in the same order
+		WriteLog("net: saying \"" + line + "\"", logtype::net);
+		client->send_chat(line);
+	}
+}
+
+void network::manager::request_resync(uint64_t tick, uint64_t state_hash)
+{
+	if (client)
+		client->send_resync_request(tick, state_hash);
+}
+
 void network::manager::update()
 {
+	Traffic.update();
+
 	for (auto &backend : backend_list())
 		backend.second->update();
 
-	if (client)
+	if (servers && Global.simulation_loaded) {
+		// note: not simulation::is_ready. that one waits for the local player's cab, and
+		// the cab of a claimed vehicle is built by update_crews() - waiting for it here
+		// would leave the two waiting on each other
+		servers->update_crews();
+		servers->publish_vehicle_list();
+		servers->publish_state();
+	}
+
+	if (client) {
 		client->update();
+
+		if (Global.simulation_loaded)
+			client->publish_state();
+	}
 }
 
 void network::manager::create_server(const std::string &backend, const std::string &conf)
