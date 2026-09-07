@@ -77,6 +77,9 @@ TTrack *track_by_id(uint32_t const Id)
 	return (Id < g_trackindex.size() ? g_trackindex[Id] : nullptr);
 }
 
+// one-shot sound events seen since the last update went out, per vehicle
+std::unordered_map<std::string, int> g_soundevents;
+
 std::unordered_map<std::string, uint64_t> g_lastvehicles;
 std::unordered_map<std::string, uint64_t> g_lastmemcells;
 std::unordered_map<std::string, int> g_lastswitches;
@@ -210,6 +213,14 @@ struct vehicle_state
 	// what the vehicle is heard and seen doing. a peer that is not in this cab has no
 	// TTrain for it, so the commands that set these never reach it - only the result does
 	int32_t warningsignal{0};
+	// devices whose sound runs for as long as they do, and the one-shot events - relays
+	// clicking, air hissing - that happen too fast for an update to catch by sampling
+	bool converterrunning{false};
+	bool compressorrunning{false};
+	bool pantcompressorrunning{false};
+	bool compressorlock{false};
+	bool releaser{false};
+	int32_t soundevents{0};
 	int32_t emergencywarningsignal{0};
 	bool alarmchain{false};
 	double wheelrevolutions{0.0};
@@ -256,6 +267,12 @@ void serialize_vehicle(std::ostream &Stream, vehicle_state const &State)
 	}
 	sn_utils::ls_int32(Stream, State.lights[0]);
 	sn_utils::ls_int32(Stream, State.lights[1]);
+	sn_utils::s_bool(Stream, State.converterrunning);
+	sn_utils::s_bool(Stream, State.compressorrunning);
+	sn_utils::s_bool(Stream, State.pantcompressorrunning);
+	sn_utils::s_bool(Stream, State.compressorlock);
+	sn_utils::s_bool(Stream, State.releaser);
+	sn_utils::ls_int32(Stream, State.soundevents);
 	sn_utils::ls_int32(Stream, State.warningsignal);
 	sn_utils::ls_int32(Stream, State.emergencywarningsignal);
 	sn_utils::s_bool(Stream, State.alarmchain);
@@ -307,6 +324,12 @@ vehicle_state deserialize_vehicle(std::istream &Stream)
 	}
 	state.lights[0] = sn_utils::ld_int32(Stream);
 	state.lights[1] = sn_utils::ld_int32(Stream);
+	state.converterrunning = sn_utils::d_bool(Stream);
+	state.compressorrunning = sn_utils::d_bool(Stream);
+	state.pantcompressorrunning = sn_utils::d_bool(Stream);
+	state.compressorlock = sn_utils::d_bool(Stream);
+	state.releaser = sn_utils::d_bool(Stream);
+	state.soundevents = sn_utils::ld_int32(Stream);
 	state.warningsignal = sn_utils::ld_int32(Stream);
 	state.emergencywarningsignal = sn_utils::ld_int32(Stream);
 	state.alarmchain = sn_utils::d_bool(Stream);
@@ -362,6 +385,15 @@ vehicle_state read_from(TDynamicObject const &Vehicle)
 	}
 	state.lights[0] = mover.iLights[0];
 	state.lights[1] = mover.iLights[1];
+	state.converterrunning = mover.ConverterFlag;
+	state.compressorrunning = mover.CompressorFlag;
+	state.pantcompressorrunning = mover.PantCompFlag;
+	state.compressorlock = mover.CompressorGovernorLock;
+	state.releaser = (mover.Hamulec != nullptr && mover.Hamulec->Releaser());
+
+	auto const events = g_soundevents.find(Vehicle.name());
+	state.soundevents = (events != g_soundevents.end() ? events->second : 0);
+
 	state.warningsignal = mover.WarningSignal;
 	state.emergencywarningsignal = mover.EmergencyBrakeWarningSignal;
 	state.alarmchain = mover.AlarmChainFlag;
@@ -427,6 +459,18 @@ void apply_controls(TDynamicObject &Vehicle, vehicle_state const &State)
 
 	// the horn, the wheels and the engine note. these are set from a cab this peer does
 	// not have, so nothing but the result of them ever reaches it
+	mover.ConverterFlag = State.converterrunning;
+	mover.CompressorFlag = State.compressorrunning;
+	mover.PantCompFlag = State.pantcompressorrunning;
+	mover.CompressorGovernorLock = State.compressorlock;
+
+	if (mover.Hamulec != nullptr && mover.Hamulec->Releaser() != State.releaser)
+		mover.Hamulec->Releaser(State.releaser ? 1 : 0);
+
+	// the one-shot events are added to whatever this peer's own physics produced; the
+	// vehicle's sound handling plays them once and wipes the lot, as it always does
+	mover.SoundFlag |= State.soundevents;
+
 	mover.WarningSignal = State.warningsignal;
 	mover.EmergencyBrakeWarningSignal = State.emergencywarningsignal;
 	mover.AlarmChainFlag = State.alarmchain;
@@ -532,6 +576,9 @@ std::string write_vehicles(bool const Full, bool const OwnedOnly)
 
 		entries.write(record.data(), record.size());
 		++count;
+
+		// the one-shot events have been handed over; they must not go out twice
+		g_soundevents.erase(state.name);
 	}
 
 	if (count == 0)
@@ -827,8 +874,17 @@ void read_switches(std::istream &Stream)
 
 } // namespace
 
+void network::note_sound_events(std::string const &Vehicle, int const Events)
+{
+	if (Events == 0)
+		return;
+
+	g_soundevents[Vehicle] |= Events;
+}
+
 void network::reset_snapshot_history()
 {
+	g_soundevents.clear();
 	g_lastvehicles.clear();
 	g_lastmemcells.clear();
 	g_lastswitches.clear();

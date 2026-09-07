@@ -18,7 +18,7 @@ namespace network
 {
 
 // layout of the snapshot container. a reader refuses a blob it does not understand
-constexpr uint32_t SNAPSHOT_VERSION = 3;
+constexpr uint32_t SNAPSHOT_VERSION = 4;
 
 // the sections a snapshot is built from. a reader skips over any id it does not know,
 // which is what makes the format extensible: a peer built before a section existed can
@@ -71,5 +71,10 @@ snapshot_result apply_snapshot(std::string const &Blob, snapshot_mode Mode, Peer
 
 // forgets what was last sent, so that the next delta comes out complete
 void reset_snapshot_history();
+
+// remembers the one-shot sound events a vehicle produced. they are set and cleared inside
+// a single frame, so by the time an update is put together they would be long gone; this
+// is called from the vehicle's own sound handling, just before it wipes them
+void note_sound_events(std::string const &Vehicle, int Events);
 
 } // namespace network

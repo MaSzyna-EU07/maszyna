@@ -23,6 +23,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
+#include "network/entities.h"
+#include "network/snapshot.h"
 #include "utilities/glmHelpers.h"
 #include "Console.h"
 #include "world/Traction.h"
@@ -5114,6 +5116,12 @@ void TDynamicObject::RenderSounds() {
 
         ++couplerindex;
         coupler.sounds = 0;
+    }
+
+    if( true == network::is_multiplayer() ) {
+        // relays clicking and air hissing are set and cleared inside a single frame, so
+        // they have to be picked up here to have any chance of reaching the other peers
+        network::note_sound_events( name(), MoverParameters->SoundFlag );
     }
 
     MoverParameters->SoundFlag = 0;
