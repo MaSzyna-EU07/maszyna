@@ -27,6 +27,10 @@ namespace network
 		// crew request coming from the local participant, which needs no transport
 		void apply_local_claim(NetworkEntityId entity_id);
 		void apply_local_leave(NetworkEntityId entity_id);
+		// hands a line of chat to every peer
+		void broadcast_chat(PeerId author, const std::string &text);
+		// tells the peers who is taking part
+		void publish_roster();
 
 	private:
 		// how many frames may pass between two unconditional broadcasts of the roster
@@ -73,5 +77,9 @@ namespace network
 
 		// our world drifted away from the authoritative one; ask to be corrected
 		void request_resync(uint64_t tick, uint64_t state_hash);
+
+		// something the local participant said. the host says it to everybody at once, a
+		// client hands it to the host to say on its behalf
+		void say(const std::string &text);
 	};
 }

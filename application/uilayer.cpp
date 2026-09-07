@@ -473,7 +473,9 @@ void ui_layer::render_hierarchy(){
  
 void ui_layer::set_cursor(int const Mode)
 {
-	glfwSetInputMode(m_window, GLFW_CURSOR, Mode);
+	// no window, no cursor to hide
+	if (m_window != nullptr)
+		glfwSetInputMode(m_window, GLFW_CURSOR, Mode);
 	m_cursorvisible = Mode != GLFW_CURSOR_DISABLED;
 }
 

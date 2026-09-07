@@ -380,6 +380,11 @@ struct global_settings {
 	// consistent whatever each player has in their ini
 	float multiplayer_sync_running = 1.5f;
 	float multiplayer_sync_stop = 0.2f;
+	// what this player would like to be called in a session. empty falls back to the
+	// account name, and failing that to "player <n>"
+	std::string multiplayer_nickname;
+	// no window, no renderer and nobody in a cab: the executable as a dedicated server
+	bool headless = false;
 	// the scenario has finished loading and the world can be worked with. this is not the
 	// same as simulation::is_ready, which only goes up once the player has a cab
 	bool simulation_loaded = false;

@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "network/network.h"
 #include "network/snapshot.h"
+#include "network/chat.h"
 #include "network/message.h"
 #include "utilities/Logs.h"
 #include "scene/sn_utils.h"
@@ -81,6 +82,7 @@ void network::connection::connected()
 		msg.start_packet = packet_counter;
 		msg.app_version = Global.asVersion;
 		msg.session_token = Global.network_session_token;
+		msg.nickname = local_nickname();
 		send_message(msg);
 	}
 }
@@ -117,19 +119,34 @@ void report_rejected_command(network::PeerId Peer, user_command Command, network
 
 void network::server::prune_clients()
 {
+	bool dropped{false};
+
 	for (auto it = clients.begin(); it != clients.end(); ) {
 		if ((*it)->state == connection::DEAD) {
 			if ((*it)->peer_id != PEER_NONE) {
-				WriteLog("net: peer " + std::to_string((*it)->peer_id) + " disconnected", logtype::net);
+				WriteLog("net: " + Peers.name_of((*it)->peer_id) + " (peer " + std::to_string((*it)->peer_id) + ") disconnected", logtype::net);
 				// the seat is held for a while in case the peer comes straight back. a
 				// vehicle keeps running for whoever is left on board either way; it only
 				// falls back to the AI once the crew really is empty
 				Crews.suspend_peer((*it)->peer_id);
+				Peers.forget((*it)->peer_id);
+				dropped = true;
 			}
 			it = clients.erase(it);
 			continue;
 		}
 		it++;
+	}
+
+	if (dropped) {
+		// whoever is left learns who is left. sent from here rather than through
+		// push_message, which is what called us
+		peer_roster msg;
+		msg.peers = Peers.roster();
+		for (auto const &client : clients) {
+			if (client->state == connection::ACTIVE)
+				client->send_message(msg);
+		}
 	}
 }
 
@@ -151,6 +168,13 @@ void network::server::push_message(const message &msg)
 		if (client->state == connection::ACTIVE)
 			client->send_message(msg);
 	}
+}
+
+void network::server::publish_roster()
+{
+	peer_roster msg;
+	msg.peers = Peers.roster();
+	push_message(msg);
 }
 
 command_queue::commands_map network::server::pop_commands()
@@ -203,6 +227,8 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 		reply.session_token = cmd.session_token;
 		reply.peer_id = resolve_peer_identity(reply.session_token);
 		conn->peer_id = reply.peer_id;
+		// what the player asked to be called, tidied up and made unique within the session
+		auto const name = Peers.assign(conn->peer_id, cmd.nickname);
 		// the peer now goes and loads the scenario. it gets the state of the world as a
 		// snapshot when it reports back, instead of replaying the session frame by frame
 		conn->state = connection::AWAITING_READY;
@@ -210,7 +236,7 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 
 		conn->send_message(reply);
 
-		WriteLog("net: peer " + std::to_string(conn->peer_id) + " connected, build \"" + cmd.app_version
+		WriteLog("net: peer " + std::to_string(conn->peer_id) + " connected as \"" + name + "\", build \"" + cmd.app_version
 		         + "\", scenario \"" + Global.SceneryFile + "\"", logtype::net);
 	}
 	else if (msg.type == message::CLIENT_READY) {
@@ -227,6 +253,11 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 			return;
 		}
 
+		// who is taking part, so that the crew section of the snapshot has names to show
+		peer_roster people;
+		people.peers = Peers.roster();
+		conn->send_message(people);
+
 		// the roster first, so that the crew section of the snapshot resolves to names
 		vehicle_list roster;
 		roster.vehicles = Entities.entries();
@@ -241,11 +272,30 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 		// from here on the peer receives the live stream; there is no backlog to catch up on
 		conn->state = connection::ACTIVE;
 
+		// and everybody already in the session learns who just walked in
+		publish_roster();
+
 		WriteLog("net: snapshot sent to peer " + std::to_string(conn->peer_id) + " at tick "
 		         + std::to_string(reply.tick), logtype::net);
 
 		// and it still has to learn who is where
 		Crews.mark_all_pending();
+	}
+	else if (msg.type == message::CHAT) {
+		const auto& cmd = dynamic_cast<const chat_message&>(msg);
+
+		// the sender is the connection this arrived on, never the field in the packet:
+		// otherwise anybody could put words in anybody's mouth
+		auto const text = tidy_chat(cmd.text);
+		if (text.empty())
+			return;
+
+		chat_message relay;
+		relay.peer = conn->peer_id;
+		relay.text = text;
+
+		note_chat(relay.peer, relay.text);
+		push_message(relay);
 	}
 	else if (msg.type == message::SNAPSHOT) {
 		const auto& cmd = dynamic_cast<const snapshot&>(msg);
@@ -471,6 +521,19 @@ void network::client::send_leave(NetworkEntityId entity_id)
 
 	leave_vehicle msg;
 	msg.entity_id = entity_id;
+	conn->send_message(msg);
+}
+
+void network::client::send_chat(const std::string &text)
+{
+	if (!conn || conn->state != connection::ACTIVE)
+		return;
+
+	chat_message msg;
+	// the peer field is filled in by the server from the connection; whatever we put here
+	// is ignored, which is the point
+	msg.peer = Global.network_peer_id;
+	msg.text = text;
 	conn->send_message(msg);
 }
 

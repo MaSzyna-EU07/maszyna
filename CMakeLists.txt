@@ -197,10 +197,12 @@ set(SOURCES
 "network/session.cpp"
 "network/statehash.cpp"
 "network/snapshot.cpp"
+"network/chat.cpp"
 "network/backend/asio.cpp"
 
 "widgets/vehiclelist.cpp"
 "widgets/multiplayer_lobby.cpp"
+"widgets/chat_panel.cpp"
 "widgets/map.cpp"
 "widgets/map_objects.cpp"
 "widgets/popup.cpp"

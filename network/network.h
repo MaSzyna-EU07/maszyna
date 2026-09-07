@@ -101,6 +101,8 @@ namespace network
 		// sends an out of band message to every active peer. unlike push_delta this is not
 		// written to the backbuffer, so it does not become part of the replayed history
 		void push_message(const message &msg);
+		// tells every peer who is taking part and what each of them is called
+		void publish_roster();
 		command_queue::commands_map pop_commands();
 	};
 
@@ -165,6 +167,7 @@ namespace network
 		// lobby requests; the server is the one that decides
 		void send_claim(NetworkEntityId entity_id);
 		void send_leave(NetworkEntityId entity_id);
+		void send_chat(const std::string &text);
 		int get_frame_counter() {
 			return resume_frame_counter;
 		}

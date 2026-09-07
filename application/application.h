@@ -98,6 +98,9 @@ public:
     // tells the network layer the scenario finished loading
     void
         network_scenario_loaded();
+    // says something to the rest of the session
+    void
+        say( std::string const &Text );
 
 private:
 // types
@@ -105,6 +108,9 @@ private:
     using mode_stack = std::stack<mode>;
 // methods
 	  bool needs_ogl() const;
+    // true when the run is over: the window was closed, or, with no window, we were asked
+    // to stop
+    bool should_close() const;
     void init_debug();
     void init_console();
     void init_files();

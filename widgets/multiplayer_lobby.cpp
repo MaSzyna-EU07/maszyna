@@ -51,10 +51,8 @@ std::string ui::multiplayer_lobby_panel::describe_crew(network::NetworkEntityId 
 
 		if (peer == Global.network_peer_id)
 			description += STR("you");
-		else if (peer == network::PEER_HOST)
-			description += STR("host");
 		else
-			description += STR("player") + " " + std::to_string(peer);
+			description += network::Peers.name_of(peer);
 	}
 
 	return description;
@@ -71,7 +69,24 @@ void ui::multiplayer_lobby_panel::render_contents()
 		return;
 	}
 
-	ImGui::Text("%s: %s, peer %u", STR_C("Session"), host ? (client ? "host + client" : "host") : "client", Global.network_peer_id);
+	ImGui::Text("%s: %s, %s (peer %u)", STR_C("Session"), host ? (client ? "host + client" : "host") : "client",
+	            network::Peers.name_of(Global.network_peer_id).c_str(), Global.network_peer_id);
+
+	auto const roster = network::Peers.roster();
+	if (roster.size() > 1)
+	{
+		std::string others;
+		for (auto const &entry : roster)
+		{
+			if (entry.id == Global.network_peer_id)
+				continue;
+			if (!others.empty())
+				others += ", ";
+			others += entry.name;
+		}
+		if (!others.empty())
+			ImGui::TextDisabled("%s: %s", STR_C("Also here"), others.c_str());
+	}
 	if (!Global.SceneryFile.empty())
 		ImGui::TextDisabled("%s", Global.SceneryFile.c_str());
 

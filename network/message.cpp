@@ -8,6 +8,7 @@ void network::client_hello::serialize(std::ostream &stream) const
 	sn_utils::ls_uint32(stream, start_packet);
 	sn_utils::s_str(stream, app_version);
 	sn_utils::ls_uint64(stream, session_token);
+	sn_utils::s_str(stream, nickname);
 }
 
 void network::client_hello::deserialize(std::istream &stream)
@@ -16,6 +17,43 @@ void network::client_hello::deserialize(std::istream &stream)
 	start_packet = sn_utils::ld_uint32(stream);
 	app_version = sn_utils::d_str(stream);
 	session_token = sn_utils::ld_uint64(stream);
+	nickname = sn_utils::d_str(stream);
+}
+
+void network::peer_roster::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint32(stream, (uint32_t)peers.size());
+	for (auto const &entry : peers)
+	{
+		sn_utils::ls_uint32(stream, entry.id);
+		sn_utils::s_str(stream, entry.name);
+	}
+}
+
+void network::peer_roster::deserialize(std::istream &stream)
+{
+	auto const count = sn_utils::ld_uint32(stream);
+	peers.clear();
+	peers.reserve(count);
+	for (uint32_t i = 0; i < count; ++i)
+	{
+		peer_entry entry;
+		entry.id = sn_utils::ld_uint32(stream);
+		entry.name = sn_utils::d_str(stream);
+		peers.emplace_back(std::move(entry));
+	}
+}
+
+void network::chat_message::serialize(std::ostream &stream) const
+{
+	sn_utils::ls_uint32(stream, peer);
+	sn_utils::s_str(stream, text);
+}
+
+void network::chat_message::deserialize(std::istream &stream)
+{
+	peer = sn_utils::ld_uint32(stream);
+	text = sn_utils::d_str(stream);
 }
 
 void network::server_reject::serialize(std::ostream &stream) const
@@ -307,6 +345,10 @@ std::shared_ptr<network::message> network::deserialize_message(std::istream &str
 		msg = std::make_shared<snapshot>();
 	else if (type == message::REQUEST_RESYNC)
 		msg = std::make_shared<request_resync>();
+	else if (type == message::PEER_ROSTER)
+		msg = std::make_shared<peer_roster>();
+	else if (type == message::CHAT)
+		msg = std::make_shared<chat_message>();
 
 	if (!msg) {
 		// unknown message type; hand back a marker the peer handlers treat as a protocol error

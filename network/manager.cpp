@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "network/statehash.h"
 #include "network/snapshot.h"
+#include "network/chat.h"
 
 network::server_manager::server_manager()
 {
@@ -189,6 +190,44 @@ void network::server_manager::publish_state()
 
 	for (auto srv : servers)
 		srv->push_message(msg);
+}
+
+void network::server_manager::broadcast_chat(PeerId const author, const std::string &text)
+{
+	chat_message msg;
+	msg.peer = author;
+	msg.text = text;
+
+	for (auto srv : servers)
+		srv->push_message(msg);
+}
+
+void network::server_manager::publish_roster()
+{
+	for (auto srv : servers)
+		srv->publish_roster();
+}
+
+void network::manager::say(const std::string &text)
+{
+	auto const line = tidy_chat(text);
+	if (line.empty())
+		return;
+
+	if (servers)
+	{
+		// the host is the one who decides what was said, so it says it and passes it on
+		note_chat(Global.network_peer_id, line);
+		servers->broadcast_chat(Global.network_peer_id, line);
+		return;
+	}
+
+	if (client)
+	{
+		// a client waits to hear itself back from the server, so that everybody sees the
+		// conversation in the same order
+		client->send_chat(line);
+	}
 }
 
 void network::manager::request_resync(uint64_t tick, uint64_t state_hash)

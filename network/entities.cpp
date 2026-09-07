@@ -22,6 +22,146 @@ namespace network
 {
 
 entity_registry Entities;
+peer_registry Peers;
+
+namespace
+{
+
+// long enough for a name worth having, short enough not to wreck a lobby column
+constexpr size_t NICKNAME_LIMIT = 24;
+
+std::string tidy_name(std::string const &Raw)
+{
+	std::string name;
+	name.reserve(Raw.size());
+
+	bool space{false};
+	for (char const character : Raw)
+	{
+		// control characters and tabs have no business in a name that goes on somebody
+		// else's screen, and a run of spaces is one space
+		unsigned char const value = (unsigned char)character;
+		if (value < 0x20 || value == 0x7f)
+			continue;
+
+		if (character == ' ')
+		{
+			space = !name.empty();
+			continue;
+		}
+
+		if (space)
+		{
+			name += ' ';
+			space = false;
+		}
+
+		name += character;
+		if (name.size() >= NICKNAME_LIMIT)
+			break;
+	}
+
+	return name;
+}
+
+} // namespace
+
+std::string local_nickname()
+{
+	auto name = tidy_name(Global.multiplayer_nickname);
+	if (!name.empty())
+		return name;
+
+	// nothing configured: whoever is logged in will do, and failing that nothing at all -
+	// the registry has a stand-in for that case
+	for (char const *variable : {"EU07_NICKNAME", "USERNAME", "USER", "LOGNAME"})
+	{
+		char const *value = std::getenv(variable);
+		if (value == nullptr)
+			continue;
+		name = tidy_name(value);
+		if (!name.empty())
+			return name;
+	}
+
+	return std::string();
+}
+
+bool peer_registry::taken(std::string const &Name, PeerId const Except) const
+{
+	for (auto const &entry : m_names)
+	{
+		if (entry.first == Except)
+			continue;
+		if (entry.second == Name)
+			return true;
+	}
+	return false;
+}
+
+std::string peer_registry::assign(PeerId const Peer, std::string const &Requested)
+{
+	std::string name = tidy_name(Requested);
+
+	if (name.empty())
+		name = (Peer == PEER_HOST ? std::string("host") : "player " + std::to_string(Peer));
+
+	// two people called Marcin are two people, and the lobby has to say which is which
+	if (taken(name, Peer))
+	{
+		std::string const base = name;
+		for (int suffix = 2; suffix < 100; ++suffix)
+		{
+			name = base + " (" + std::to_string(suffix) + ")";
+			if (!taken(name, Peer))
+				break;
+		}
+	}
+
+	m_names[Peer] = name;
+
+	return name;
+}
+
+void peer_registry::forget(PeerId const Peer)
+{
+	m_names.erase(Peer);
+}
+
+void peer_registry::adopt(std::vector<peer_entry> const &Roster)
+{
+	m_names.clear();
+	for (auto const &entry : Roster)
+		m_names[entry.id] = entry.name;
+}
+
+std::string peer_registry::name_of(PeerId const Peer) const
+{
+	auto const lookup = m_names.find(Peer);
+	if (lookup != m_names.end())
+		return lookup->second;
+
+	if (Peer == PEER_HOST)
+		return "host";
+	if (Peer == PEER_NONE)
+		return "nobody";
+
+	return "player " + std::to_string(Peer);
+}
+
+std::vector<peer_entry> peer_registry::roster() const
+{
+	std::vector<peer_entry> entries;
+	entries.reserve(m_names.size());
+	for (auto const &entry : m_names)
+		entries.emplace_back(peer_entry{entry.first, entry.second});
+	return entries;
+}
+
+void peer_registry::clear()
+{
+	m_names.clear();
+}
 
 PeerId allocate_peer_id()
 {

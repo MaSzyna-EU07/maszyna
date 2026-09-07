@@ -540,6 +540,20 @@ void driver_mode::on_key(int const Key, int const Scancode, int const Action, in
 
 	bool anyModifier = Mods & (GLFW_MOD_SHIFT | GLFW_MOD_CONTROL | GLFW_MOD_ALT);
 
+	// the key left of 1 opens and closes the session chat. it is only bound in a session,
+	// so single player keeps it for whatever else may want it later. while the chat has
+	// the keyboard this is never reached: imgui swallows the input before it gets here,
+	// which is exactly what stops typed letters from working the cab
+	if ((Key == GLFW_KEY_GRAVE_ACCENT) && (Action == GLFW_PRESS) && !anyModifier && network::is_multiplayer())
+	{
+		auto ui = std::dynamic_pointer_cast<driver_ui>(m_userinterface);
+		if (ui != nullptr)
+		{
+			ui->toggle_chat();
+			return;
+		}
+	}
+
 	// give the ui first shot at the input processing...
 	if (!anyModifier && true == m_userinterface->on_key(Key, Action))
 	{

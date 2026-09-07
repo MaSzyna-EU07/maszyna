@@ -914,6 +914,13 @@ bool global_settings::ConfigParseNetwork(cParser& Parser, const std::string& tok
         return true;
     }
 
+    if (token == "multiplayer.nickname")
+    {
+        Parser.getTokens(1, false);
+        Parser >> multiplayer_nickname;
+        return true;
+    }
+
     return false;
 }
 
@@ -1829,6 +1836,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     }
     export_as_text( Output, "multiplayer.sync.running", multiplayer_sync_running );
     export_as_text( Output, "multiplayer.sync.stop", multiplayer_sync_stop );
+    export_as_text( Output, "multiplayer.nickname", multiplayer_nickname );
     export_as_text( Output, "execonexit", exec_on_exit );
 }
 

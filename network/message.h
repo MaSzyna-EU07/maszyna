@@ -24,6 +24,8 @@ struct message
 		CLIENT_READY,
 		SNAPSHOT,
 		REQUEST_RESYNC,
+		PEER_ROSTER,
+		CHAT,
 		TYPE_MAX
 	};
 
@@ -49,6 +51,9 @@ struct client_hello : public message
 	// player who dropped out gets their seat and their peer id back. it is a reconnect
 	// token, not a credential - it says "this is the same session", nothing more
 	uint64_t session_token{ 0 };
+	// what the player would like to be called. a request, not a fact: the server tidies
+	// it up, makes it unique and hands back what it settled on
+	std::string nickname;
 };
 
 // sent by the server instead of SERVER_HELLO when the client cannot join;
@@ -135,6 +140,31 @@ struct request_resync : public message
 
 	uint64_t tick{ 0 };
 	uint64_t state_hash{ 0 };
+
+	virtual void serialize(std::ostream &stream) const override;
+	virtual void deserialize(std::istream &stream) override;
+};
+
+// who is taking part, and what each of them is called. rebroadcast whenever somebody
+// joins or leaves, so that no peer has to guess at a name
+struct peer_roster : public message
+{
+	peer_roster() : message(PEER_ROSTER) {}
+
+	std::vector<peer_entry> peers;
+
+	virtual void serialize(std::ostream &stream) const override;
+	virtual void deserialize(std::istream &stream) override;
+};
+
+// something a participant said. going up it carries only the text - who said it is
+// decided by the connection it arrived on, never by what the sender put in the field
+struct chat_message : public message
+{
+	chat_message() : message(CHAT) {}
+
+	uint32_t peer{ PEER_NONE };
+	std::string text;
 
 	virtual void serialize(std::ostream &stream) const override;
 	virtual void deserialize(std::istream &stream) override;

@@ -220,7 +220,7 @@ void eu07_application::DiscordRPCService()
 	discord_rpc.largeImageText = "MaSzyna";
 
 	// run loop
-	while (!glfwWindowShouldClose(m_windows.front()) && !m_modestack.empty() && !Global.applicationQuitOrder)
+	while (!should_close() && !m_modestack.empty() && !Global.applicationQuitOrder)
 	{
 		auto currentMode = m_modestack.top();
 		if (currentMode == mode::launcher)
@@ -363,7 +363,7 @@ int eu07_application::init(int Argc, char *Argv[])
 		return result;
 	}
 
-	if (crashreport_is_pending())
+	if (crashreport_is_pending() && !Global.headless)
 	{ // run crashgui as early as possible
 		if ((result = run_crashgui()) != 0)
 		{
@@ -429,7 +429,10 @@ void eu07_application::queue_quit(bool direct)
 	// down everybody else's session as well
 	if (direct || is_client() || !m_modes[m_modestack.top()]->is_command_processor())
 	{
-		glfwSetWindowShouldClose(m_windows[0], GLFW_TRUE);
+		if (Global.headless)
+			Global.applicationQuitOrder = true;
+		else
+			glfwSetWindowShouldClose(m_windows[0], GLFW_TRUE);
 		return;
 	}
 
@@ -475,14 +478,21 @@ void eu07_application::network_scenario_loaded()
 		m_network->notify_scenario_loaded();
 }
 
+void eu07_application::say(std::string const &Text)
+{
+	if (m_network)
+		m_network->say(Text);
+}
+
 int eu07_application::run()
 {
 	auto frame{0};
 	// main application loop
-	while (!glfwWindowShouldClose(m_windows.front()) && !m_modestack.empty())
+	while (!should_close() && !m_modestack.empty())
 	{
 		Timer::subsystem.mainloop_total.start();
-		glfwPollEvents();
+		if (!Global.headless)
+			glfwPollEvents();
 
 		if (m_headtrack)
 			m_headtrack->update();
@@ -645,7 +655,9 @@ int eu07_application::run()
 		if (m_modestack.empty())
 			break;
 
-		m_modes[m_modestack.top()]->on_event_poll();
+		// there is no keyboard, mouse or gamepad to ask when there is no window
+		if (!Global.headless)
+			m_modes[m_modestack.top()]->on_event_poll();
 
 		if (m_screenshot_queued)
 		{
@@ -718,15 +730,21 @@ void eu07_application::exit()
 	//    SafeDelete( simulation::Train );
 	SafeDelete(simulation::Region);
 
-	ui_layer::shutdown();
-
-	for (auto *window : m_windows)
+	if (!Global.headless)
 	{
-		glfwDestroyWindow(window);
+		ui_layer::shutdown();
+
+		for (auto *window : m_windows)
+		{
+			glfwDestroyWindow(window);
+		}
 	}
 	m_taskqueue.exit();
-	glfwPollEvents(); // TODO: This fixes a segfault on Wayland when closing. Remove after updating glfw to 3.5.
-	glfwTerminate();
+	if (!Global.headless)
+	{
+		glfwPollEvents(); // TODO: This fixes a segfault on Wayland when closing. Remove after updating glfw to 3.5.
+		glfwTerminate();
+	}
 
 	if (!Global.exec_on_exit.empty())
 		system(Global.exec_on_exit.c_str());
@@ -750,6 +768,11 @@ void eu07_application::exit()
 
 void eu07_application::render_ui()
 {
+	if (Global.headless)
+	{
+		return;
+	}
+
 
 	if (m_modestack.empty())
 	{
@@ -761,6 +784,11 @@ void eu07_application::render_ui()
 
 void eu07_application::begin_ui_frame()
 {
+	// there is no imgui context without a window, and nothing would look at its output
+	if (Global.headless)
+	{
+		return;
+	}
 
 	if (m_modestack.empty())
 	{
@@ -811,6 +839,8 @@ bool eu07_application::push_mode(mode const Mode)
 
 void eu07_application::set_title(std::string const &Title)
 {
+	if (m_windows.empty())
+		return;
 
 	glfwSetWindowTitle(m_windows.front(), Title.c_str());
 }
@@ -845,6 +875,8 @@ void eu07_application::set_cursor(int const Mode)
 
 void eu07_application::set_cursor_pos(double const Horizontal, double const Vertical)
 {
+	if (m_windows.empty())
+		return;
 
 	glfwSetCursorPos(m_windows.front(), Horizontal, Vertical);
 }
@@ -1006,7 +1038,17 @@ std::string eu07_application::describe_monitor(GLFWmonitor *monitor) const
 
 bool eu07_application::needs_ogl() const
 {
-	return !Global.NvRenderer;
+	return !Global.NvRenderer && !Global.headless;
+}
+
+// there is no window to be closed when running without one, so the only way out is being
+// asked to leave
+bool eu07_application::should_close() const
+{
+	if (Global.headless)
+		return Global.applicationQuitOrder;
+
+	return m_windows.empty() || glfwWindowShouldClose(m_windows.front());
 }
 
 void eu07_application::init_debug()
@@ -1173,6 +1215,9 @@ void print_usage(std::string const &Executable)
 	    << EU07_DEFAULT_NETWORK_PORT << ")\n"
 	    << "      --connect <address:port> join a multiplayer session (default port "
 	    << EU07_DEFAULT_NETWORK_PORT << ")\n"
+	    << "      --nick <name>            name to be known by in the session\n"
+	    << "      --nogui                  no window, no renderer, no cab: a dedicated\n"
+	    << "                               server that leaves the scenario to the AI\n"
 	    << "  -h, --help                   this message"
 	    << std::endl;
 }
@@ -1234,6 +1279,33 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			}
 			Global.network_client.emplace("tcp", network_endpoint(Argv[++i], "127.0.0.1"));
 		}
+		else if (token == "--nick")
+		{
+			if (i + 1 >= Argc)
+			{
+				std::cout << "--nick requires a name" << std::endl;
+				return -1;
+			}
+			Global.multiplayer_nickname = Argv[++i];
+		}
+		else if (token == "--nogui")
+		{
+			// no window, no renderer, no player. the log goes to the console it was
+			// started from, because there is nothing else to read it in
+			Global.headless = true;
+			Global.GfxRenderer = "null";
+			// nothing is waiting on a swapchain, so without this the loop would spin a
+			// core flat out for no benefit. fifty steps a second is more than the
+			// authoritative stream needs
+			Global.minframetime = std::chrono::duration<float>(1.0f / 50.0f);
+			Global.iWriteLogEnabled = 2;
+			Global.ShowSystemConsole = true;
+			Global.bSoundEnabled = false;
+			// the scenario is left to its own drivers: this process is a referee, not a
+			// participant, and it never walks into a cab
+			Global.local_start_vehicle = "ghostview";
+			Global.local_start_vehicle_override = true;
+		}
 		else if (token == "-h" || token == "--help")
 		{
 			print_usage(Argv[0]);
@@ -1259,6 +1331,14 @@ int eu07_application::init_locale()
 
 int eu07_application::init_glfw()
 {
+	if (Global.headless)
+	{
+		// no window system at all. everything downstream is guarded on an empty window
+		// list, which is what tells the rest of the application there is nothing to draw on
+		WriteLog("running without a window; this process is a dedicated server");
+		return 0;
+	}
+
 	{
 		int glfw_major, glfw_minor, glfw_rev;
 		glfwGetVersion(&glfw_major, &glfw_minor, &glfw_rev);
@@ -1440,6 +1520,9 @@ int eu07_application::init_ogl()
 
 int eu07_application::init_ui()
 {
+	if (Global.headless)
+		return 0;
+
 	if (false == ui_layer::init(m_windows.front()))
 	{
 		return -1;
@@ -1451,7 +1534,13 @@ int eu07_application::init_ui()
 int eu07_application::init_gfx()
 {
 
-	if (Global.GfxRenderer == "default")
+	if (Global.headless)
+	{
+		// draws nothing, allocates nothing, and lets the rest of the simulation run
+		// exactly as it otherwise would
+		GfxRenderer = gfx_renderer_factory::get_instance()->create("null");
+	}
+	else if (Global.GfxRenderer == "default")
 	{
 		// default render path
 		GfxRenderer = gfx_renderer_factory::get_instance()->create("modern");
@@ -1473,7 +1562,7 @@ int eu07_application::init_gfx()
 		return -1;
 	}
 
-	if (false == GfxRenderer->Init(m_windows.front()))
+	if (false == GfxRenderer->Init(m_windows.empty() ? nullptr : m_windows.front()))
 	{
 		return -1;
 	}
@@ -1555,7 +1644,11 @@ bool eu07_application::init_network()
 		// the host takes part in the session like any other peer, with an identity of its
 		// own, so that crew and permission handling needs no special case for it
 		if (!Global.network_client)
+		{
 			Global.network_peer_id = network::PEER_HOST;
+			auto const name = network::Peers.assign(network::PEER_HOST, network::local_nickname());
+			WriteLog("net: hosting as \"" + name + "\"", logtype::net);
+		}
 	}
 
 	for (auto const &pair : Global.network_servers)

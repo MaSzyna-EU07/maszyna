@@ -107,6 +107,40 @@ private:
 // session wide vehicle registry. stays empty outside of multiplayer
 extern entity_registry Entities;
 
+// what a participant is called. a peer id is what the protocol addresses, but "player 4"
+// is no use to anybody reading a lobby or a chat line
+struct peer_entry
+{
+	PeerId id{PEER_NONE};
+	std::string name;
+};
+
+class peer_registry
+{
+  public:
+	// takes a name a peer asked for and makes it fit to show: trimmed, control characters
+	// out, capped in length, and made unique within the session
+	std::string assign(PeerId Peer, std::string const &Requested);
+	void forget(PeerId Peer);
+	// a client replaces its whole idea of who is in the session with what the server sent
+	void adopt(std::vector<peer_entry> const &Roster);
+	// the name, or a readable stand-in for a peer nobody has told us about yet
+	std::string name_of(PeerId Peer) const;
+	std::vector<peer_entry> roster() const;
+	void clear();
+
+  private:
+	bool taken(std::string const &Name, PeerId Except) const;
+
+	std::unordered_map<PeerId, std::string> m_names;
+};
+
+// who is in the session. the host keeps the authoritative copy and hands it to everybody
+extern peer_registry Peers;
+
+// the name this peer would like to be known by, cleaned up but not yet made unique
+std::string local_nickname();
+
 // hands out ids for connecting peers; PEER_HOST is reserved for the local participant
 PeerId allocate_peer_id();
 
