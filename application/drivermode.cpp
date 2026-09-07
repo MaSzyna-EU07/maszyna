@@ -30,6 +30,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
 #include "network/entities.h"
+#include "network/snapshot.h"
 /*
 namespace input {
 
@@ -448,6 +449,11 @@ bool driver_mode::update()
 	simulation::Environment.update_precipitation(); // has to be launched after camera step to work properly
 
 	Timer::subsystem.sim_total.stop();
+
+	// what the other peers' trains are doing is theirs to decide, and the local physics
+	// has spent this frame disagreeing about it. put their readings back before anything
+	// is heard or drawn from them
+	network::hold_remote_state();
 
 	simulation::Region->update_sounds();
 	audio::renderer.update(Global.iPause ? 0.0 : deltarealtime);

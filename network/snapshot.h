@@ -18,7 +18,7 @@ namespace network
 {
 
 // layout of the snapshot container. a reader refuses a blob it does not understand
-constexpr uint32_t SNAPSHOT_VERSION = 4;
+constexpr uint32_t SNAPSHOT_VERSION = 5;
 
 // the sections a snapshot is built from. a reader skips over any id it does not know,
 // which is what makes the format extensible: a peer built before a section existed can
@@ -76,5 +76,16 @@ void reset_snapshot_history();
 // a single frame, so by the time an update is put together they would be long gone; this
 // is called from the vehicle's own sound handling, just before it wipes them
 void note_sound_events(std::string const &Vehicle, int Events);
+
+// same, for the events the brake unit raises. those are only cleared when the vehicle
+// happens to have an accelerator sound to play, so what is passed here is peeked rather
+// than consumed and only the flags that have just appeared are taken
+void note_brake_sound_events(std::string const &Vehicle, int Events);
+
+// re-asserts, on every frame, the physics outputs of the vehicles somebody else is
+// running. an update arrives ten times a second; between them the local physics carries
+// on computing its own speed and brake force for a train it has no business simulating,
+// and the sawtooth that produces is what the brake and squeal sounds were chasing
+void hold_remote_state();
 
 } // namespace network

@@ -79,6 +79,11 @@ TTrack *track_by_id(uint32_t const Id)
 
 // one-shot sound events seen since the last update went out, per vehicle
 std::unordered_map<std::string, int> g_soundevents;
+// the same for the brake unit's own events, plus what was on its bitfield the last time
+// we looked - the flags are only cleared when the vehicle has an accelerator sound to
+// play, so a bit that stays lit is one event, not one per frame
+std::unordered_map<std::string, int> g_brakesoundevents;
+std::unordered_map<std::string, int> g_brakesoundseen;
 
 std::unordered_map<std::string, uint64_t> g_lastvehicles;
 std::unordered_map<std::string, uint64_t> g_lastmemcells;
@@ -221,6 +226,19 @@ struct vehicle_state
 	bool compressorlock{false};
 	bool releaser{false};
 	int32_t soundevents{0};
+	// the brake unit keeps its own event bitfield, and it drives the accelerator and the
+	// cylinder venting
+	int32_t brakesoundevents{0};
+	// outputs of the physics, not settings. a peer that does not run this train computes
+	// its own and gets them wrong, so the authority's values are what it is told to use:
+	// these are what the braking, squealing and relay sounds are built from
+	double unitbrakeforce{0.0};
+	int32_t mainctrlactual{0};
+	int32_t scndctrlactual{0};
+	bool linecontactors{false};
+	bool slippingwheels{false};
+	bool sanddose{false};
+	double enginepower{0.0};
 	int32_t emergencywarningsignal{0};
 	bool alarmchain{false};
 	double wheelrevolutions{0.0};
@@ -230,6 +248,10 @@ struct vehicle_state
 	std::array<bool, 2> doorpermit{{false, false}};
 	bool aiactive{false};
 };
+
+// the authoritative reading for every train somebody else runs, held so that it can be
+// put back after each local physics step
+std::unordered_map<std::string, vehicle_state> g_remotestate;
 
 void serialize_vehicle(std::ostream &Stream, vehicle_state const &State)
 {
@@ -273,6 +295,14 @@ void serialize_vehicle(std::ostream &Stream, vehicle_state const &State)
 	sn_utils::s_bool(Stream, State.compressorlock);
 	sn_utils::s_bool(Stream, State.releaser);
 	sn_utils::ls_int32(Stream, State.soundevents);
+	sn_utils::ls_int32(Stream, State.brakesoundevents);
+	sn_utils::ls_float64(Stream, State.unitbrakeforce);
+	sn_utils::ls_int32(Stream, State.mainctrlactual);
+	sn_utils::ls_int32(Stream, State.scndctrlactual);
+	sn_utils::s_bool(Stream, State.linecontactors);
+	sn_utils::s_bool(Stream, State.slippingwheels);
+	sn_utils::s_bool(Stream, State.sanddose);
+	sn_utils::ls_float64(Stream, State.enginepower);
 	sn_utils::ls_int32(Stream, State.warningsignal);
 	sn_utils::ls_int32(Stream, State.emergencywarningsignal);
 	sn_utils::s_bool(Stream, State.alarmchain);
@@ -330,6 +360,14 @@ vehicle_state deserialize_vehicle(std::istream &Stream)
 	state.compressorlock = sn_utils::d_bool(Stream);
 	state.releaser = sn_utils::d_bool(Stream);
 	state.soundevents = sn_utils::ld_int32(Stream);
+	state.brakesoundevents = sn_utils::ld_int32(Stream);
+	state.unitbrakeforce = sn_utils::ld_float64(Stream);
+	state.mainctrlactual = sn_utils::ld_int32(Stream);
+	state.scndctrlactual = sn_utils::ld_int32(Stream);
+	state.linecontactors = sn_utils::d_bool(Stream);
+	state.slippingwheels = sn_utils::d_bool(Stream);
+	state.sanddose = sn_utils::d_bool(Stream);
+	state.enginepower = sn_utils::ld_float64(Stream);
 	state.warningsignal = sn_utils::ld_int32(Stream);
 	state.emergencywarningsignal = sn_utils::ld_int32(Stream);
 	state.alarmchain = sn_utils::d_bool(Stream);
@@ -393,6 +431,16 @@ vehicle_state read_from(TDynamicObject const &Vehicle)
 
 	auto const events = g_soundevents.find(Vehicle.name());
 	state.soundevents = (events != g_soundevents.end() ? events->second : 0);
+	auto const brakeevents = g_brakesoundevents.find(Vehicle.name());
+	state.brakesoundevents = (brakeevents != g_brakesoundevents.end() ? brakeevents->second : 0);
+
+	state.unitbrakeforce = mover.UnitBrakeForce;
+	state.mainctrlactual = mover.MainCtrlActualPos;
+	state.scndctrlactual = mover.ScndCtrlActualPos;
+	state.linecontactors = mover.StLinFlag;
+	state.slippingwheels = mover.SlippingWheels;
+	state.sanddose = mover.SandDose;
+	state.enginepower = mover.EnginePower;
 
 	state.warningsignal = mover.WarningSignal;
 	state.emergencywarningsignal = mover.EmergencyBrakeWarningSignal;
@@ -407,6 +455,41 @@ vehicle_state read_from(TDynamicObject const &Vehicle)
 	state.aiactive = (Vehicle.Mechanik != nullptr && Vehicle.Mechanik->AIControllFlag);
 
 	return state;
+}
+
+// the readings the sound is built from. these are results of a physics step, and a peer
+// that is not running this train produces its own, wrong, version of them every frame -
+// which is exactly what made the brakes and the squeal come out in shreds, the pitch
+// chasing a speed that fell away between updates and snapped back on the next one.
+// so they are taken from the authority and put back after every local step
+void apply_outputs(TDynamicObject &Vehicle, vehicle_state const &State)
+{
+	auto &mover = *Vehicle.MoverParameters;
+
+	mover.V = State.velocity;
+	mover.Vel = State.velocitykmh;
+	mover.UnitBrakeForce = State.unitbrakeforce;
+	mover.nrot = State.wheelrevolutions;
+	mover.enrot = State.enginerevolutions;
+	mover.EnginePower = State.enginepower;
+	mover.SlippingWheels = State.slippingwheels;
+	mover.SandDose = State.sanddose;
+
+	// the notch the resistors are actually on, as opposed to the one the handle is at.
+	// with this coming from the authority the local automatic notching stays out of it,
+	// and every relay that clicks here is one that clicked over there
+	mover.MainCtrlActualPos = State.mainctrlactual;
+	mover.ScndCtrlActualPos = State.scndctrlactual;
+	mover.StLinFlag = State.linecontactors;
+
+	// the machinery whose sound runs for as long as it does. left to itself the local
+	// physics keeps switching these off, because the conditions it evaluates are not the
+	// ones the owner of the train is evaluating
+	mover.ConverterFlag = State.converterrunning;
+	mover.CompressorFlag = State.compressorrunning;
+	mover.PantCompFlag = State.pantcompressorrunning;
+	mover.CompressorGovernorLock = State.compressorlock;
+	mover.WarningSignal = State.warningsignal;
 }
 
 // applies everything except where the vehicle is; position is dealt with per consist,
@@ -457,25 +540,20 @@ void apply_controls(TDynamicObject &Vehicle, vehicle_state const &State)
 	mover.iLights[0] = State.lights[0];
 	mover.iLights[1] = State.lights[1];
 
-	// the horn, the wheels and the engine note. these are set from a cab this peer does
-	// not have, so nothing but the result of them ever reaches it
-	mover.ConverterFlag = State.converterrunning;
-	mover.CompressorFlag = State.compressorrunning;
-	mover.PantCompFlag = State.pantcompressorrunning;
-	mover.CompressorGovernorLock = State.compressorlock;
-
 	if (mover.Hamulec != nullptr && mover.Hamulec->Releaser() != State.releaser)
 		mover.Hamulec->Releaser(State.releaser ? 1 : 0);
 
 	// the one-shot events are added to whatever this peer's own physics produced; the
 	// vehicle's sound handling plays them once and wipes the lot, as it always does
 	mover.SoundFlag |= State.soundevents;
+	if (mover.Hamulec != nullptr)
+		mover.Hamulec->RaiseSoundFlag(State.brakesoundevents);
 
-	mover.WarningSignal = State.warningsignal;
+	// and the physics outputs the sounds are shaped from
+	apply_outputs(Vehicle, State);
+
 	mover.EmergencyBrakeWarningSignal = State.emergencywarningsignal;
 	mover.AlarmChainFlag = State.alarmchain;
-	mover.nrot = State.wheelrevolutions;
-	mover.enrot = State.enginerevolutions;
 
 	for (int i = 0; i < 2; ++i)
 	{
@@ -579,6 +657,7 @@ std::string write_vehicles(bool const Full, bool const OwnedOnly)
 
 		// the one-shot events have been handed over; they must not go out twice
 		g_soundevents.erase(state.name);
+		g_brakesoundevents.erase(state.name);
 	}
 
 	if (count == 0)
@@ -622,6 +701,9 @@ void read_vehicles(std::istream &Stream, network::snapshot_mode const Mode, netw
 
 		apply_controls(*vehicle, state);
 		states.emplace(vehicle, state);
+		// kept so that the local physics can be overruled again on every frame until the
+		// next update arrives, not only on the frame it lands
+		g_remotestate[state.name] = state;
 
 		Result.worst_position_error = std::max(Result.worst_position_error, glm::length(vehicle->GetPosition() - state.position));
 	}
@@ -882,9 +964,46 @@ void network::note_sound_events(std::string const &Vehicle, int const Events)
 	g_soundevents[Vehicle] |= Events;
 }
 
+void network::note_brake_sound_events(std::string const &Vehicle, int const Events)
+{
+	// what comes in here was peeked, not consumed, so a flag the vehicle never gets round
+	// to clearing would otherwise be reported over and over. only what has just come up
+	// counts as an event
+	auto &seen = g_brakesoundseen[Vehicle];
+	int const fresh = Events & ~seen;
+	seen = Events;
+
+	if (fresh == 0)
+		return;
+
+	g_brakesoundevents[Vehicle] |= fresh;
+}
+
+void network::hold_remote_state()
+{
+	if (g_remotestate.empty())
+		return;
+
+	for (auto &entry : g_remotestate)
+	{
+		TDynamicObject *vehicle = simulation::Vehicles.find(entry.first);
+		if (vehicle == nullptr || vehicle->MoverParameters == nullptr)
+			continue;
+
+		// a train that has come under this peer's own control runs its own physics again
+		if (network::is_locally_simulated(network::Entities.id_of(entry.first)))
+			continue;
+
+		apply_outputs(*vehicle, entry.second);
+	}
+}
+
 void network::reset_snapshot_history()
 {
 	g_soundevents.clear();
+	g_brakesoundevents.clear();
+	g_brakesoundseen.clear();
+	g_remotestate.clear();
 	g_lastvehicles.clear();
 	g_lastmemcells.clear();
 	g_lastswitches.clear();

@@ -588,6 +588,21 @@ int TBrake::GetSoundFlag()
 	return result;
 }
 
+/// Returns the accumulated SoundFlag bitfield and leaves it alone. Reading the flags is
+/// what clears them, so anything that only watches - the network layer, for one - has to
+/// look this way or it steals the sound from the vehicle it is watching.
+int TBrake::PeekSoundFlag() const
+{
+	return SoundFlag;
+}
+
+/// Adds events to the pending bitfield. Used to hand a vehicle the brake sounds its
+/// physics did not produce here because somebody else is running it.
+void TBrake::RaiseSoundFlag(int const Flags)
+{
+	SoundFlag |= Flags;
+}
+
 /// <summary>Sets the anti-slip brake target pressure.</summary>
 /// <param name="Press">Pressure [bar].</param>
 void TBrake::SetASBP(double const Press)

@@ -4626,6 +4626,12 @@ void TDynamicObject::RenderSounds() {
     }
 
     // yB: przyspieszacz (moze zadziala, ale dzwiek juz jest)
+    if( ( true == network::is_multiplayer() )
+     && ( MoverParameters->Hamulec != nullptr ) ) {
+        // peeked rather than read: reading the brake unit's flags is what clears them,
+        // and they belong to the vehicle, not to us
+        network::note_brake_sound_events( name(), MoverParameters->Hamulec->PeekSoundFlag() );
+    }
     if( true == bBrakeAcc ) {
         if( true == TestFlag( MoverParameters->Hamulec->GetSoundFlag(), sf_Acc ) ) {
             sBrakeAcc.play( sound_flags::exclusive );

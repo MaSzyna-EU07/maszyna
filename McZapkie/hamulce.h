@@ -481,6 +481,12 @@ class TBrake
 	virtual void ForceLeak(double const Amount);
 	/// <summary>Returns and clears the accumulated SoundFlag bitfield.</summary>
 	int GetSoundFlag();
+	/// <summary>Returns the accumulated SoundFlag bitfield without clearing it, for an
+	/// observer that must not consume what the vehicle itself is about to play.</summary>
+	int PeekSoundFlag() const;
+	/// <summary>Adds events to the pending SoundFlag bitfield, so that what happened on
+	/// another peer is heard here as well.</summary>
+	void RaiseSoundFlag(int const Flags);
 	/// <summary>Returns the current brake status flags.</summary>
 	int GetBrakeStatus() const
 	{
