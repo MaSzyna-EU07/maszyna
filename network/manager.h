@@ -34,7 +34,9 @@ namespace network
 
 		// how often the authoritative state goes out, and how often it goes out whole
 		// rather than as what changed since the last one
-		static const int STATE_INTERVAL_FRAMES = 10;
+		// a horn can be pressed and let go inside a couple of frames, so the state does not
+		// wait long before it goes out
+		static const int STATE_INTERVAL_FRAMES = 6;
 		static const int STATE_FULL_EVERY = 60;
 
 		std::vector<vehicle_entry> last_published_list;

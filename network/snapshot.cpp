@@ -207,6 +207,13 @@ struct vehicle_state
 	std::array<bool, 2> pantdisabled{{false, false}};
 	std::array<bool, 2> pantactive{{false, false}};
 	int32_t lights[2]{0, 0};
+	// what the vehicle is heard and seen doing. a peer that is not in this cab has no
+	// TTrain for it, so the commands that set these never reach it - only the result does
+	int32_t warningsignal{0};
+	int32_t emergencywarningsignal{0};
+	bool alarmchain{false};
+	double wheelrevolutions{0.0};
+	double enginerevolutions{0.0};
 	// door open/close intent, one entry per side; the local model derives the rest
 	std::array<bool, 2> dooropen{{false, false}};
 	std::array<bool, 2> doorpermit{{false, false}};
@@ -249,6 +256,11 @@ void serialize_vehicle(std::ostream &Stream, vehicle_state const &State)
 	}
 	sn_utils::ls_int32(Stream, State.lights[0]);
 	sn_utils::ls_int32(Stream, State.lights[1]);
+	sn_utils::ls_int32(Stream, State.warningsignal);
+	sn_utils::ls_int32(Stream, State.emergencywarningsignal);
+	sn_utils::s_bool(Stream, State.alarmchain);
+	sn_utils::ls_float64(Stream, State.wheelrevolutions);
+	sn_utils::ls_float64(Stream, State.enginerevolutions);
 	for (int i = 0; i < 2; ++i)
 	{
 		sn_utils::s_bool(Stream, State.dooropen[i]);
@@ -295,6 +307,11 @@ vehicle_state deserialize_vehicle(std::istream &Stream)
 	}
 	state.lights[0] = sn_utils::ld_int32(Stream);
 	state.lights[1] = sn_utils::ld_int32(Stream);
+	state.warningsignal = sn_utils::ld_int32(Stream);
+	state.emergencywarningsignal = sn_utils::ld_int32(Stream);
+	state.alarmchain = sn_utils::d_bool(Stream);
+	state.wheelrevolutions = sn_utils::ld_float64(Stream);
+	state.enginerevolutions = sn_utils::ld_float64(Stream);
 	for (int i = 0; i < 2; ++i)
 	{
 		state.dooropen[i] = sn_utils::d_bool(Stream);
@@ -345,6 +362,11 @@ vehicle_state read_from(TDynamicObject const &Vehicle)
 	}
 	state.lights[0] = mover.iLights[0];
 	state.lights[1] = mover.iLights[1];
+	state.warningsignal = mover.WarningSignal;
+	state.emergencywarningsignal = mover.EmergencyBrakeWarningSignal;
+	state.alarmchain = mover.AlarmChainFlag;
+	state.wheelrevolutions = mover.nrot;
+	state.enginerevolutions = mover.enrot;
 	for (int i = 0; i < 2; ++i)
 	{
 		state.dooropen[i] = mover.Doors.instances[i].is_open;
@@ -402,6 +424,14 @@ void apply_controls(TDynamicObject &Vehicle, vehicle_state const &State)
 
 	mover.iLights[0] = State.lights[0];
 	mover.iLights[1] = State.lights[1];
+
+	// the horn, the wheels and the engine note. these are set from a cab this peer does
+	// not have, so nothing but the result of them ever reaches it
+	mover.WarningSignal = State.warningsignal;
+	mover.EmergencyBrakeWarningSignal = State.emergencywarningsignal;
+	mover.AlarmChainFlag = State.alarmchain;
+	mover.nrot = State.wheelrevolutions;
+	mover.enrot = State.enginerevolutions;
 
 	for (int i = 0; i < 2; ++i)
 	{
