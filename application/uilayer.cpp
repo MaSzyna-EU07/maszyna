@@ -112,6 +112,11 @@ bool ui_layer::key_callback(int key, int scancode, int action, int mods)
 	return m_imguiio->WantCaptureKeyboard;
 }
 
+bool ui_layer::wants_keyboard()
+{
+	return (m_imguiio != nullptr) && m_imguiio->WantCaptureKeyboard;
+}
+
 bool ui_layer::char_callback(unsigned int c)
 {
 	ImGui_ImplGlfw_CharCallback(m_window, c);

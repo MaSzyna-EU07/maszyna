@@ -1045,10 +1045,15 @@ std::string write_crews()
 		if (crew.empty())
 			continue;
 
+		auto since = network::Crews.crew_since_of(entry.id);
+		since.resize(crew.size(), 0);
+
 		sn_utils::ls_uint32(entries, entry.id);
 		sn_utils::ls_uint32(entries, (uint32_t)crew.size());
 		for (network::PeerId const peer : crew)
 			sn_utils::ls_uint32(entries, peer);
+		for (uint64_t const stamp : since)
+			sn_utils::ls_uint64(entries, stamp);
 
 		++count;
 	}
@@ -1075,7 +1080,12 @@ void read_crews(std::istream &Stream)
 		for (uint32_t p = 0; p < size; ++p)
 			crew.emplace_back(sn_utils::ld_uint32(Stream));
 
-		network::Crews.mirror(id, crew);
+		std::vector<uint64_t> since;
+		since.reserve(size);
+		for (uint32_t p = 0; p < size; ++p)
+			since.emplace_back(sn_utils::ld_uint64(Stream));
+
+		network::Crews.mirror(id, crew, since);
 	}
 }
 

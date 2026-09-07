@@ -18,7 +18,7 @@ namespace network
 {
 
 // layout of the snapshot container. a reader refuses a blob it does not understand
-constexpr uint32_t SNAPSHOT_VERSION = 6;
+constexpr uint32_t SNAPSHOT_VERSION = 7;
 
 // the sections a snapshot is built from. a reader skips over any id it does not know,
 // which is what makes the format extensible: a peer built before a section existed can

@@ -220,6 +220,9 @@ void network::crew_update::serialize(std::ostream &stream) const
 	sn_utils::ls_uint32(stream, (uint32_t)crew.size());
 	for (PeerId const peer : crew)
 		sn_utils::ls_uint32(stream, peer);
+	sn_utils::ls_uint32(stream, (uint32_t)since.size());
+	for (uint64_t const stamp : since)
+		sn_utils::ls_uint64(stream, stamp);
 }
 
 void network::crew_update::deserialize(std::istream &stream)
@@ -231,6 +234,12 @@ void network::crew_update::deserialize(std::istream &stream)
 	crew.reserve(count);
 	for (uint32_t i = 0; i < count; i++)
 		crew.emplace_back(sn_utils::ld_uint32(stream));
+
+	since.clear();
+	uint32_t const stamps = sn_utils::ld_uint32(stream);
+	since.reserve(stamps);
+	for (uint32_t i = 0; i < stamps; i++)
+		since.emplace_back(sn_utils::ld_uint64(stream));
 }
 
 void ::network::request_command::serialize(std::ostream &stream) const

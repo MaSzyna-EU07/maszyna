@@ -115,6 +115,9 @@ public:
     // callback functions for imgui input
     // returns true if input is consumed
     static bool key_callback(int key, int scancode, int action, int mods);
+    // true when something on screen is taking typed input and the game must keep its
+    // hands off the keyboard
+    static bool wants_keyboard();
     static bool char_callback(unsigned int c);
     static bool scroll_callback(double xoffset, double yoffset);
     static bool mouse_button_callback(int button, int action, int mods);

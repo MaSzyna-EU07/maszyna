@@ -31,6 +31,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "network/entities.h"
 #include "network/snapshot.h"
+#include "network/session.h"
 /*
 namespace input {
 
@@ -213,6 +214,17 @@ bool driver_mode::update()
 	if (!change_train.empty())
 	{
 		TTrain *train = simulation::Trains.find(change_train);
+
+		if ((train == nullptr) && network::is_multiplayer())
+		{
+			// a cab belongs to the peer it is on: each player has their own, with their own
+			// camera and their own view of it. waiting for a replicated command to build it
+			// only ever worked for the first person aboard a train - the second finds the
+			// cab already standing on the peer that got there first, so nothing is posted
+			// and the lobby button appears to do nothing at all
+			train = network::ensure_local_cab(simulation::Vehicles.find(change_train));
+		}
+
 		if (train)
 		{
 			Global.local_start_vehicle = change_train;
@@ -540,20 +552,6 @@ void driver_mode::on_key(int const Key, int const Scancode, int const Action, in
 
 	bool anyModifier = Mods & (GLFW_MOD_SHIFT | GLFW_MOD_CONTROL | GLFW_MOD_ALT);
 
-	// the key left of 1 opens and closes the session chat. it is only bound in a session,
-	// so single player keeps it for whatever else may want it later. while the chat has
-	// the keyboard this is never reached: imgui swallows the input before it gets here,
-	// which is exactly what stops typed letters from working the cab
-	if ((Key == GLFW_KEY_GRAVE_ACCENT) && (Action == GLFW_PRESS) && !anyModifier && network::is_multiplayer())
-	{
-		auto ui = std::dynamic_pointer_cast<driver_ui>(m_userinterface);
-		if (ui != nullptr)
-		{
-			ui->toggle_chat();
-			return;
-		}
-	}
-
 	// give the ui first shot at the input processing...
 	if (!anyModifier && true == m_userinterface->on_key(Key, Action))
 	{
@@ -627,6 +625,16 @@ void driver_mode::on_event_poll()
 {
 
 	m_input.poll();
+}
+
+bool driver_mode::toggle_chat()
+{
+	auto ui = std::dynamic_pointer_cast<driver_ui>(m_userinterface);
+	if (ui == nullptr)
+		return false;
+
+	ui->toggle_chat();
+	return true;
 }
 
 bool driver_mode::is_command_processor() const

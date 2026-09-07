@@ -112,6 +112,7 @@ void network::server_manager::update_crews()
 		crew_update msg;
 		msg.entity_id = id;
 		msg.crew = Crews.crew_of(id);
+		msg.since = Crews.crew_since_of(id);
 
 		for (auto srv : servers)
 			srv->push_message(msg);
@@ -226,6 +227,7 @@ void network::manager::say(const std::string &text)
 	{
 		// a client waits to hear itself back from the server, so that everybody sees the
 		// conversation in the same order
+		WriteLog("net: saying \"" + line + "\"", logtype::net);
 		client->send_chat(line);
 	}
 }

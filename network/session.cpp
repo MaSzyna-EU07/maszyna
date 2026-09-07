@@ -24,6 +24,19 @@ namespace network
 
 crew_registry Crews;
 
+namespace
+{
+
+// counts up for as long as the session lasts; the number a crew member is stamped with is
+// the whole of their claim to running the train
+uint64_t next_join_stamp()
+{
+	static uint64_t stamp{0};
+	return ++stamp;
+}
+
+} // namespace
+
 std::string describe(claim_result Result)
 {
 	switch (Result)
@@ -185,21 +198,29 @@ PeerId simulation_owner(NetworkEntityId Entity)
 	if (train == ENTITY_NONE)
 		return PEER_HOST;
 
-	// the crew of the lowest numbered car decides, so that every peer works it out the
-	// same way without having to be told
+	// whoever boarded this train first runs it. not the lowest numbered car, not the
+	// newest arrival: the physics has to stay with one person for as long as they are
+	// aboard, because every handover is a stutter in somebody's ride - and the person
+	// who has been driving is the one who would notice it
 	PeerId owner{PEER_NONE};
-	NetworkEntityId lowest{ENTITY_NONE};
+	uint64_t earliest{0};
 
 	for (auto const id : Entities.consist_members(train))
 	{
 		auto const crew = Crews.crew_of(id);
-		if (crew.empty())
-			continue;
+		auto const since = Crews.crew_since_of(id);
 
-		if (lowest == ENTITY_NONE || id < lowest)
+		for (size_t i = 0; i < crew.size(); ++i)
 		{
-			lowest = id;
-			owner = crew.front();
+			// a stamp of zero is a crew we were told about by an older peer, or one that
+			// somehow lost its order; it sorts behind anything stamped properly
+			uint64_t const stamp = (i < since.size() && since[i] != 0 ? since[i] : ~0ull - crew[i]);
+
+			if (owner == PEER_NONE || stamp < earliest)
+			{
+				earliest = stamp;
+				owner = crew[i];
+			}
 		}
 	}
 
@@ -274,6 +295,7 @@ claim_result crew_registry::claim(PeerId Peer, NetworkEntityId Id)
 	}
 
 	vehicle.crew.emplace_back(Peer);
+	vehicle.crew_since.emplace_back(next_join_stamp());
 	m_pending.emplace_back(Id);
 
 	WriteLog("net: peer " + std::to_string(Peer) + " joined the crew of " + published->name + " (" + std::to_string(vehicle.crew.size()) + "/" +
@@ -294,7 +316,10 @@ bool crew_registry::leave(PeerId Peer, NetworkEntityId Id)
 	if (member == crew.end())
 		return false;
 
+	auto const index = (size_t)std::distance(crew.begin(), member);
 	crew.erase(member);
+	if (index < lookup->second.crew_since.size())
+		lookup->second.crew_since.erase(lookup->second.crew_since.begin() + index);
 	m_pending.emplace_back(Id);
 
 	WriteLog("net: peer " + std::to_string(Peer) + " left the crew of " + Entities.name_of(Id) + " (" + std::to_string(crew.size()) + " left)", logtype::net);
@@ -332,6 +357,28 @@ void apply_session_config(int64_t Config)
 
 	Global.FullPhysics = fullphysics;
 	Global.RealisticControlMode = realisticcontrol;
+}
+
+TTrain *ensure_local_cab(TDynamicObject *Vehicle)
+{
+	if (Vehicle == nullptr)
+		return nullptr;
+
+	TTrain *train = simulation::Trains.find(Vehicle->name());
+	if (train != nullptr)
+		return train;
+
+	train = new TTrain();
+	if (false == train->Init(Vehicle))
+	{
+		delete train;
+		ErrorLog("net: could not build a cab for " + Vehicle->name(), logtype::net);
+		return nullptr;
+	}
+
+	simulation::Trains.insert(train);
+
+	return train;
 }
 
 void enforce_session_settings()
@@ -451,9 +498,18 @@ NetworkEntityId crew_registry::vehicle_of(PeerId Peer) const
 	return ENTITY_NONE;
 }
 
-void crew_registry::mirror(NetworkEntityId Id, std::vector<PeerId> const &Crew)
+void crew_registry::mirror(NetworkEntityId Id, std::vector<PeerId> const &Crew, std::vector<uint64_t> const &Since)
 {
-	entry(Id).crew = Crew;
+	auto &vehicle = entry(Id);
+	vehicle.crew = Crew;
+	vehicle.crew_since = Since;
+	vehicle.crew_since.resize(Crew.size(), 0);
+}
+
+std::vector<uint64_t> crew_registry::crew_since_of(NetworkEntityId Id) const
+{
+	auto const lookup = m_vehicles.find(Id);
+	return lookup != m_vehicles.end() ? lookup->second.crew_since : std::vector<uint64_t>();
 }
 
 void crew_registry::take_seat(PeerId Peer, NetworkEntityId Id)
@@ -470,6 +526,7 @@ void crew_registry::take_seat(PeerId Peer, NetworkEntityId Id)
 	}
 
 	vehicle.crew.emplace_back(Peer);
+	vehicle.crew_since.emplace_back(next_join_stamp());
 	m_pending.emplace_back(Id);
 }
 
@@ -550,11 +607,15 @@ void crew_registry::reconcile()
 		{
 			if (train == nullptr)
 			{
-				// the cab has to exist on every peer, so the authority asks for it with the
-				// ordinary replicated command instead of building it locally
-				post_authority_command(user_command::entervehicle, (uint32_t)command_target::simulation, dynamic->GetPosition(), dynamic->name());
-				vehicle.action_cooldown = ACTION_COOLDOWN_FRAMES;
-				continue;
+				// the authority needs a cab of its own to address the AI commands to. it
+				// is built here and not replicated: a cab belongs to the peer it is on,
+				// and every peer that is actually aboard builds its own
+				train = ensure_local_cab(dynamic);
+				if (train == nullptr)
+				{
+					vehicle.action_cooldown = ACTION_COOLDOWN_FRAMES;
+					continue;
+				}
 			}
 
 			if (dynamic->Mechanik != nullptr && dynamic->Mechanik->AIControllFlag)

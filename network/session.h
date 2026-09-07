@@ -16,6 +16,9 @@ http://mozilla.org/MPL/2.0/.
 #include <unordered_map>
 #include <vector>
 
+class TDynamicObject;
+class TTrain;
+
 namespace network
 {
 
@@ -26,6 +29,11 @@ struct vehicle_crew
 {
 	NetworkEntityId entity_id{ENTITY_NONE};
 	std::vector<PeerId> crew;
+	// when each of them sat down, on a counter that runs across the whole session. this
+	// is what settles who runs the physics of a shared train: the one who got there first
+	// keeps it, so their ride stays smooth and nobody's authority changes under them when
+	// somebody else joins or the consist is renumbered
+	std::vector<uint64_t> crew_since;
 	// whether the AI was actually driving before the first human arrived. a vehicle that
 	// nobody was driving must not suddenly acquire an AI driver when its crew leaves
 	bool ai_before_claim{false};
@@ -76,7 +84,9 @@ public:
 	NetworkEntityId vehicle_of(PeerId Peer) const;
 
 	// client side: takes over the crew of one vehicle as published by the server
-	void mirror(NetworkEntityId Id, std::vector<PeerId> const &Crew);
+	void mirror(NetworkEntityId Id, std::vector<PeerId> const &Crew, std::vector<uint64_t> const &Since);
+	// the join stamps of a crew, in the same order as crew_of()
+	std::vector<uint64_t> crew_since_of(NetworkEntityId Id) const;
 	// puts a peer on a vehicle without asking about capacity; used when somebody walks to
 	// another car of the train they are already working
 	void take_seat(PeerId Peer, NetworkEntityId Id);
@@ -170,5 +180,12 @@ claim_result claim_by_name(PeerId Peer, std::string const &Vehicle, NetworkEntit
 // identity. used for the local participant as well, so that host input goes through the
 // very same authority layer as input arriving over the wire, only without the transport
 void filter_commands(PeerId Peer, command_queue::commands_map &Commands);
+
+// makes sure this peer has a cab instance for a vehicle, building one if it has none.
+// the cab is a local object - each participant has their own, with their own camera and
+// their own view - so it is never replicated: the second person to board a train finds
+// the cab already built on the peer that got there first and would otherwise wait for a
+// command that is never coming
+TTrain *ensure_local_cab(TDynamicObject *Vehicle);
 
 } // namespace network

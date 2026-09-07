@@ -17,7 +17,7 @@
 // 3 - handshake carries build identification and an explicit rejection message
 // 4 - peer identity, vehicle roster and crew handshake, command source,
 //     logical simulation tick and a versioned state digest instead of the position sum
-std::uint32_t const EU07_NETWORK_VERSION = 5;
+std::uint32_t const EU07_NETWORK_VERSION = 6;
 
 namespace network {
 
@@ -668,7 +668,7 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 
 	if (msg.type == message::CREW_UPDATE) {
 		const auto& cmd = dynamic_cast<const crew_update&>(msg);
-		Crews.mirror(cmd.entity_id, cmd.crew);
+		Crews.mirror(cmd.entity_id, cmd.crew, cmd.since);
 	}
 
 	if (msg.type == message::CLAIM_GRANTED) {
@@ -676,8 +676,7 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 
 		WriteLog("net: claim of vehicle " + std::to_string(cmd.entity_id) + " granted", logtype::net);
 		Global.network_lobby_message.clear();
-		// the cab itself is built by the replicated entervehicle the server posts;
-		// we only have to walk into it once it shows up
+		// the driver mode builds this peer's own cab for the vehicle and moves in
 		Global.network_pending_vehicle = Entities.name_of(cmd.entity_id);
 	}
 

@@ -894,6 +894,17 @@ eu07_application::get_input_hint( user_command const Command ) const {
 
 void eu07_application::on_key(int const Key, int const Scancode, int const Action, int const Mods)
 {
+	// the session chat opens on the key left of 1, and it is checked before imgui gets a
+	// look at the input: a lobby or any other window that happens to have the keyboard
+	// would otherwise swallow the key and the chat could never be opened at all. the one
+	// case where imgui does get it is when something is already taking typed text - the
+	// chat box itself, most of the time, which closes on escape instead
+	if ((Key == GLFW_KEY_GRAVE_ACCENT) && (Action == GLFW_PRESS) && (Mods == 0) && !m_modestack.empty() && network::is_multiplayer() &&
+	    !ui_layer::wants_keyboard())
+	{
+		if (m_modes[m_modestack.top()]->toggle_chat())
+			return;
+	}
 
 	if (ui_layer::key_callback(Key, Scancode, Action, Mods))
 		return;

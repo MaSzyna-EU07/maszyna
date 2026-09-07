@@ -49,6 +49,8 @@ public:
     void on_scroll( double Xoffset, double Yoffset ) override;
 	void on_window_resize( int w, int h ) override { ; }
     void on_event_poll() override;
+    // opens or closes the session chat
+    bool toggle_chat() override;
     bool is_command_processor() const override;
 
 private:

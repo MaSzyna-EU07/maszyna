@@ -222,6 +222,9 @@ struct crew_update : public message
 
 	uint32_t entity_id{ ENTITY_NONE };
 	std::vector<PeerId> crew;
+	// when each of them boarded, on a session-wide counter. it decides which peer runs the
+	// train's physics, so it has to travel with the crew rather than be guessed at
+	std::vector<uint64_t> since;
 
 	virtual void serialize(std::ostream &stream) const override;
 	virtual void deserialize(std::istream &stream) override;
