@@ -101,41 +101,40 @@ namespace network
 		size_t reconnect_delay = 0;
 
 		const size_t RECONNECT_DELAY_FRAMES = 60;
-		// the queue of authoritative frames waiting to be played out. every frame sitting
-		// in here is a frame of delay between pressing a key and seeing it happen, so it
-		// is kept as short as the connection allows rather than a comfortable second deep
-		const float MAX_BUFFER_SIZE = 12.0f;
-		const float JITTERINESS_MIX = 0.998f;
-		const float TARGET_MIN = 1.0f;
-		const float TARGET_MIX = 0.98f;
-		const float JITTERINESS_MULTIPIER = 2.0f;
-		const float CONSUME_MULTIPIER = 0.05f;
 
+		// authoritative frames that have arrived and not been handed to the simulation yet.
+		// they are taken in full every render: nothing is held back on purpose. the old
+		// design played them out one per frame at the server's pace, which meant the world
+		// ran at the wrong speed whenever the two machines drew at different rates, and
+		// every frame kept in reserve was a frame of delay on the player's own controls
 		std::queue<frame_info> delta_queue;
 
 		// how far out of place a correction found us, in a row. a full resync is only
 		// worth asking for when the routine stream is not catching up on its own
 		int bad_corrections = 0;
 		uint64_t last_resync_tick = 0;
+		int state_countdown = 0;
+		int state_updates = 0;
+		static constexpr int STATE_INTERVAL_FRAMES = 6;
+		static constexpr int STATE_FULL_EVERY = 100;
 		static constexpr double RESYNC_POSITION_ERROR = 25.0;
 		static constexpr int RESYNC_BAD_CORRECTIONS = 5;
 		// a correction needs time to take hold; asking again before it has is pointless
 		static constexpr uint64_t RESYNC_COOLDOWN_TICKS = 600;
 
-		float last_target = 2.0f;
-		float jitteriness = 1.0f;
-		float consume_counter = 0.0f;
-
 		std::chrono::high_resolution_clock::time_point last_rcv;
-		std::chrono::high_resolution_clock::time_point last_frame;
-		std::chrono::high_resolution_clock::duration frame_time;
 
 	public:
 		void update();
-		frame_delta get_next_delta(int counter);
+		// hands over everything the authority has sent since the last call, merging the
+		// commands into the map. returns what the newest of those frames said about itself
+		frame_delta take_pending(command_queue::commands_map &commands);
 		void send_commands(command_queue::commands_map commands);
 		// tells the server the scenario is loaded and a snapshot can be applied
 		void send_ready();
+		// publishes what our own trains are doing, so that the rest of the session can see
+		// them. we run their physics, so this is the authority on them
+		void publish_state();
 		// our world has drifted too far to carry on; ask to be put back in line
 		void send_resync_request(uint64_t tick, uint64_t state_hash);
 		// lobby requests; the server is the one that decides

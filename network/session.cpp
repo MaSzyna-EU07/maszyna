@@ -179,6 +179,61 @@ bool may_control(PeerId Peer, NetworkEntityId Entity)
 	return Entities.consist_of(seat) == train;
 }
 
+PeerId simulation_owner(NetworkEntityId Entity)
+{
+	auto const train = Entities.consist_of(Entity);
+	if (train == ENTITY_NONE)
+		return PEER_HOST;
+
+	// the crew of the lowest numbered car decides, so that every peer works it out the
+	// same way without having to be told
+	PeerId owner{PEER_NONE};
+	NetworkEntityId lowest{ENTITY_NONE};
+
+	for (auto const id : Entities.consist_members(train))
+	{
+		auto const crew = Crews.crew_of(id);
+		if (crew.empty())
+			continue;
+
+		if (lowest == ENTITY_NONE || id < lowest)
+		{
+			lowest = id;
+			owner = crew.front();
+		}
+	}
+
+	return owner != PEER_NONE ? owner : PEER_HOST;
+}
+
+bool is_locally_simulated(NetworkEntityId Entity)
+{
+	auto const self = (Global.network_peer_id != PEER_NONE ? Global.network_peer_id : PEER_HOST);
+	return simulation_owner(Entity) == self;
+}
+
+bool is_predictable(uint32_t Recipient)
+{
+	if ((command_target)(Recipient & ~0xffff) != command_target::vehicle)
+		return false;
+
+	auto const entity = (NetworkEntityId)(Recipient & 0xffff);
+	return is_locally_simulated(entity) && may_control(Global.network_peer_id, entity);
+}
+
+void collect_predictable(command_queue::commands_map const &Commands, command_queue::commands_map &Predicted)
+{
+	for (auto const &kv : Commands)
+	{
+		if (!is_predictable(kv.first))
+			continue;
+
+		auto lookup = Predicted.emplace(kv.first, command_queue::commanddata_sequence());
+		for (auto const &data : kv.second)
+			lookup.first->second.emplace_back(data);
+	}
+}
+
 vehicle_crew &crew_registry::entry(NetworkEntityId Id)
 {
 	auto lookup = m_vehicles.find(Id);

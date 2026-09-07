@@ -148,6 +148,19 @@ command_verdict validate_command(PeerId Peer, user_command Command, uint32_t Rec
 // set they are sitting in, which is what makes the cab switches of a multiple unit work
 bool may_control(PeerId Peer, NetworkEntityId Entity);
 
+// whose machine actually runs the physics of a given train. the first person aboard does,
+// so their own train moves smoothly for them and only its result travels to the others;
+// a train with nobody in it is run by the host
+PeerId simulation_owner(NetworkEntityId Entity);
+// true when this peer is the one running it, and therefore must not have it corrected
+bool is_locally_simulated(NetworkEntityId Entity);
+// true for a command this peer may carry out at once instead of waiting for the round
+// trip: it addresses a train this peer both runs and is allowed to work
+bool is_predictable(uint32_t Recipient);
+// copies out of Commands everything that qualifies, leaving the original alone - it still
+// has to reach the server so that everybody else sees it
+void collect_predictable(command_queue::commands_map const &Commands, command_queue::commands_map &Predicted);
+
 // walking into a cab with the in-game key is the same request as pressing the button in
 // the lobby, so it goes through the crew registry rather than being treated as a command
 // that reaches the whole world. returns the vehicle it resolved to, if any

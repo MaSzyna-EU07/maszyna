@@ -12,6 +12,8 @@ http://mozilla.org/MPL/2.0/.
 #include <cstdint>
 #include <string>
 
+#include "network/entities.h"
+
 namespace network
 {
 
@@ -58,10 +60,14 @@ struct snapshot_result
 // a full snapshot carries everything and is what a joining peer gets; otherwise only what
 // has changed since the last one goes out, which is what keeps the routine correction
 // stream small
-std::string take_snapshot(bool Full);
+// OwnedOnly limits it to the trains this peer runs itself and leaves out everything that
+// is not a vehicle; that is what a client sends upstream about its own train
+std::string take_snapshot(bool Full, bool OwnedOnly = false);
 
-// restores state handed to us by the authority
-snapshot_result apply_snapshot(std::string const &Blob, snapshot_mode Mode);
+// restores state handed to us. vehicles this peer runs itself are never touched - their
+// physics is the authority, not the other way round. Owner, when given, limits the update
+// to the trains that peer is entitled to move, so a client cannot shove anybody else's
+snapshot_result apply_snapshot(std::string const &Blob, snapshot_mode Mode, PeerId Owner = PEER_NONE);
 
 // forgets what was last sent, so that the next delta comes out complete
 void reset_snapshot_history();

@@ -33,7 +33,7 @@ uint32_t const SNAPSHOT_MAGIC{0x4e535545}; // 'EUSN'
 // a joining peer is placed exactly; a running one is left to its own physics for small
 // errors, because nudging a vehicle every fraction of a second is worse than the error
 double const REPOSITION_TOLERANCE_JOIN{0.5};
-double const REPOSITION_TOLERANCE_CORRECTION{2.5};
+double const REPOSITION_TOLERANCE_CORRECTION{1.5};
 
 // ---------------------------------------------------------------------------
 // what the authority last sent, so that a routine correction only carries changes
@@ -355,41 +355,20 @@ vehicle_state read_from(TDynamicObject const &Vehicle)
 	return state;
 }
 
-// true for the train the local player is working. its controls are driven by the commands
-// its crew issue, which every peer already receives, so the correction must keep its hands
-// off them - otherwise it keeps snapping a lever back a fraction of a second after the
-// player moved it, and the control looks broken
-bool is_own_train(std::string const &Name)
-{
-	auto const seat = network::Crews.vehicle_of(Global.network_peer_id);
-	if (seat == network::ENTITY_NONE)
-		return false;
-
-	auto const train = network::Entities.consist_of(network::Entities.id_of(Name));
-	return (train != network::ENTITY_NONE) && (network::Entities.consist_of(seat) == train);
-}
-
 // applies everything except where the vehicle is; position is dealt with per consist,
-// because moving one vehicle of a coupled set on its own tears the couplers apart
+// because moving one vehicle of a coupled set on its own tears the couplers apart.
+// only ever called for vehicles somebody else is running
 void apply_controls(TDynamicObject &Vehicle, vehicle_state const &State)
 {
 	auto &mover = *Vehicle.MoverParameters;
 
-	// what the physics produced is always taken from the authority; what a person set is
-	// not, on the train that person is working
-	bool const ours = is_own_train(State.name);
-
 	mover.V = State.velocity;
 	mover.Vel = State.velocitykmh;
-
-	if (!ours)
-	{
-		mover.DirActive = State.diractive;
-		mover.MainCtrlPos = State.mainctrl;
-		mover.ScndCtrlPos = State.scndctrl;
-		mover.BrakeCtrlPos = State.brakectrl;
-		mover.LocalBrakePosA = State.localbrake;
-	}
+	mover.DirActive = State.diractive;
+	mover.MainCtrlPos = State.mainctrl;
+	mover.ScndCtrlPos = State.scndctrl;
+	mover.BrakeCtrlPos = State.brakectrl;
+	mover.LocalBrakePosA = State.localbrake;
 
 	mover.PipePress = State.pipepress;
 	mover.BrakePress = State.brakepress;
@@ -397,14 +376,6 @@ void apply_controls(TDynamicObject &Vehicle, vehicle_state const &State)
 	mover.EqvtPipePress = State.eqvtpipepress;
 	mover.Compressor = State.compressor;
 	mover.CompressedVolume = State.compressedvolume;
-
-	if (ours)
-	{
-		// the rest of it is what the crew set, and their commands reach us on their own
-		if (Vehicle.Mechanik != nullptr && Vehicle.Mechanik->AIControllFlag != State.aiactive)
-			Vehicle.Mechanik->TakeControl(State.aiactive);
-		return;
-	}
 
 	// the appliances go through the vehicle's own switches wherever it has them, so that
 	// whatever they drag along stays consistent. range local: every vehicle carries its
@@ -470,7 +441,7 @@ void reposition(TDynamicObject &Vehicle, vehicle_state const &State)
 	Vehicle.place_on_track(track, nose, false);
 }
 
-std::string write_vehicles(bool const Full)
+std::string write_vehicles(bool const Full, bool const OwnedOnly)
 {
 	std::ostringstream entries;
 	uint32_t count{0};
@@ -478,6 +449,9 @@ std::string write_vehicles(bool const Full)
 	for (TDynamicObject const *vehicle : simulation::Vehicles.sequence())
 	{
 		if (vehicle == nullptr || vehicle->MoverParameters == nullptr)
+			continue;
+
+		if (OwnedOnly && !network::is_locally_simulated(network::Entities.id_of(vehicle->name())))
 			continue;
 
 		auto const state = read_from(*vehicle);
@@ -516,7 +490,7 @@ std::string write_vehicles(bool const Full)
 	return body.str();
 }
 
-void read_vehicles(std::istream &Stream, network::snapshot_mode const Mode, network::snapshot_result &Result)
+void read_vehicles(std::istream &Stream, network::snapshot_mode const Mode, network::PeerId const Owner, network::snapshot_result &Result)
 {
 	auto const count = sn_utils::ld_uint32(Stream);
 	double const tolerance = (Mode == network::snapshot_mode::join ? REPOSITION_TOLERANCE_JOIN : REPOSITION_TOLERANCE_CORRECTION);
@@ -530,6 +504,18 @@ void read_vehicles(std::istream &Stream, network::snapshot_mode const Mode, netw
 
 		TDynamicObject *vehicle = simulation::Vehicles.find(state.name);
 		if (vehicle == nullptr || vehicle->MoverParameters == nullptr)
+			continue;
+
+		auto const entity = network::Entities.id_of(state.name);
+
+		// a train this peer runs is not corrected by anybody: its own physics is what the
+		// rest of the session is being told about, and overwriting it would be the thing
+		// that makes the owner's ride stutter
+		if ((Mode == network::snapshot_mode::correction) && network::is_locally_simulated(entity))
+			continue;
+
+		// and a peer may only move what it is entitled to move
+		if ((Owner != network::PEER_NONE) && (network::simulation_owner(entity) != Owner))
 			continue;
 
 		apply_controls(*vehicle, state);
@@ -793,10 +779,28 @@ void network::reset_snapshot_history()
 	g_lastswitches.clear();
 }
 
-std::string network::take_snapshot(bool const Full)
+std::string network::take_snapshot(bool const Full, bool const OwnedOnly)
 {
+	auto const vehicles = write_vehicles(Full, OwnedOnly);
+
+	if (OwnedOnly)
+	{
+		// what a peer says about its own trains, and nothing else: the clock, the crews,
+		// the memory cells and the switches all belong to the authority
+		if (vehicles.empty())
+			return std::string();
+
+		std::ostringstream owned;
+		sn_utils::ls_uint32(owned, SNAPSHOT_MAGIC);
+		sn_utils::ls_uint32(owned, SNAPSHOT_VERSION);
+		sn_utils::ls_uint64(owned, Global.simulation_tick);
+		sn_utils::ls_uint32(owned, 1);
+		write_chunk(owned, SNAPSHOT_VEHICLES, vehicles);
+
+		return owned.str();
+	}
+
 	auto const session = write_session(Full);
-	auto const vehicles = write_vehicles(Full);
 	auto const crews = write_crews();
 	auto const memcells = write_memcells(Full);
 	auto const switches = write_switches(Full);
@@ -839,7 +843,7 @@ std::string network::take_snapshot(bool const Full)
 	return blob;
 }
 
-network::snapshot_result network::apply_snapshot(std::string const &Blob, snapshot_mode const Mode)
+network::snapshot_result network::apply_snapshot(std::string const &Blob, snapshot_mode const Mode, PeerId const Owner)
 {
 	snapshot_result result;
 
@@ -880,19 +884,23 @@ network::snapshot_result network::apply_snapshot(std::string const &Blob, snapsh
 		switch (id)
 		{
 		case SNAPSHOT_SESSION:
-			read_session(chunk, Mode);
+			if (Owner == PEER_NONE)
+				read_session(chunk, Mode);
 			break;
 		case SNAPSHOT_VEHICLES:
-			read_vehicles(chunk, Mode, result);
+			read_vehicles(chunk, Mode, Owner, result);
 			break;
 		case SNAPSHOT_CREWS:
-			read_crews(chunk);
+			if (Owner == PEER_NONE)
+				read_crews(chunk);
 			break;
 		case SNAPSHOT_MEMCELLS:
-			read_memcells(chunk);
+			if (Owner == PEER_NONE)
+				read_memcells(chunk);
 			break;
 		case SNAPSHOT_SWITCHES:
-			read_switches(chunk);
+			if (Owner == PEER_NONE)
+				read_switches(chunk);
 			break;
 		default:
 			// a section this build knows nothing about; its length is right there, so it

@@ -218,6 +218,13 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 		// and it still has to learn who is where
 		Crews.mark_all_pending();
 	}
+	else if (msg.type == message::SNAPSHOT) {
+		const auto& cmd = dynamic_cast<const snapshot&>(msg);
+
+		// a peer telling us what its own trains are doing. the filter is what keeps it to
+		// its own: it cannot shove anybody else's stock around
+		apply_snapshot(cmd.blob, snapshot_mode::correction, conn->peer_id);
+	}
 	else if (msg.type == message::REQUEST_RESYNC) {
 		const auto& cmd = dynamic_cast<const request_resync&>(msg);
 
@@ -321,57 +328,39 @@ void network::client::update()
 }
 
 // client
-network::frame_delta network::client::get_next_delta(int counter)
+network::frame_delta network::client::take_pending(command_queue::commands_map &commands)
 {
-	auto now = std::chrono::high_resolution_clock::now();
-	if (counter == 1) {
-		frame_time = now - last_frame;
-		last_frame = now;
-	}
+	frame_delta delta;
 
-	if (delta_queue.empty()) {
-		// buffer underflow
-		return frame_delta();
-	}
+	while (!delta_queue.empty()) {
+		auto const &entry = delta_queue.front();
 
+		for (auto const &kv : entry.commands) {
+			auto lookup = commands.end();
 
-	float size = delta_queue.size() - consume_counter;
-	const auto& entry = delta_queue.front();
-	float mult = entry.render_dt / std::chrono::duration_cast<std::chrono::duration<float>>(frame_time).count();
+			for (auto const &data : kv.second) {
+				// our own commands for a train we run ourselves were carried out the
+				// moment we issued them; applying the echo would do it a second time
+				if ((data.source == Global.network_peer_id) && is_predictable(kv.first))
+					continue;
 
-	if (counter == 1 && size < MAX_BUFFER_SIZE * 2.0f) {
-		last_target = last_target * TARGET_MIX +
-		        (std::min(TARGET_MIN + jitteriness * JITTERINESS_MULTIPIER, MAX_BUFFER_SIZE)) * (1.0f - TARGET_MIX);
-		float diff = size - last_target;
-		jitteriness = std::max(jitteriness * JITTERINESS_MIX, std::abs(diff));
+				if (lookup == commands.end())
+					lookup = commands.emplace(kv.first, command_queue::commanddata_sequence()).first;
 
-		float speed = 1.0f + diff * CONSUME_MULTIPIER;
-
-		consume_counter += speed;
-	}
-
-	float last_rcv_diff = std::chrono::duration_cast<std::chrono::duration<float>>(now - last_rcv).count();
-
-	if (size > MAX_BUFFER_SIZE || consume_counter > mult || last_rcv_diff > 1.0f) {
-		if (consume_counter > mult) {
-			consume_counter = std::clamp(consume_counter - mult, -MAX_BUFFER_SIZE, MAX_BUFFER_SIZE);
+				lookup->second.emplace_back(data);
+			}
 		}
 
-		frame_delta delta;
 		delta.dt = entry.dt;
 		delta.tick = entry.tick;
 		delta.state_hash = entry.state_hash;
 		delta.state_hash_version = entry.state_hash_version;
-		delta.commands = entry.commands;
 		delta.valid = true;
 
 		delta_queue.pop();
-
-		return delta;
-	} else {
-		// nothing to push
-		return frame_delta();
 	}
+
+	return delta;
 }
 
 void network::client::send_commands(command_queue::commands_map commands)
@@ -397,6 +386,30 @@ void network::client::send_ready()
 	conn->send_message(msg);
 
 	WriteLog("net: scenario loaded, asking the server for a snapshot", logtype::net);
+}
+
+void network::client::publish_state()
+{
+	if (!conn || conn->state != connection::ACTIVE)
+		return;
+
+	if (--state_countdown > 0)
+		return;
+
+	state_countdown = STATE_INTERVAL_FRAMES;
+
+	bool const full = ((state_updates++ % STATE_FULL_EVERY) == 0);
+
+	auto const blob = take_snapshot(full, true);
+	if (blob.empty())
+		return;
+
+	snapshot msg;
+	msg.tick = Global.simulation_tick;
+	msg.mode = 1; // a correction, on top of what the receiver is already running
+	msg.blob = blob;
+
+	conn->send_message(msg);
 }
 
 void network::client::send_resync_request(uint64_t tick, uint64_t state_hash)

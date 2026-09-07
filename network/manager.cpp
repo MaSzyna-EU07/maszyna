@@ -32,8 +32,16 @@ command_queue::commands_map network::server_manager::pop_commands()
 
 void network::server_manager::push_delta(double render_dt, double dt, uint64_t tick, uint64_t state_hash, const command_queue::commands_map &commands)
 {
-	if (dt == 0.0 && commands.empty())
+	if (dt == 0.0)
 		return;
+
+	// a client no longer replays these frame by frame, so an empty one is only worth
+	// sending now and then, to carry the tick and the digest
+	if (commands.empty() && (--heartbeat_countdown > 0))
+		return;
+
+	if (commands.empty())
+		heartbeat_countdown = HEARTBEAT_INTERVAL_FRAMES;
 
 	frame_info msg;
 	msg.render_dt = render_dt;
@@ -203,8 +211,12 @@ void network::manager::update()
 		servers->publish_state();
 	}
 
-	if (client)
+	if (client) {
 		client->update();
+
+		if (Global.simulation_loaded)
+			client->publish_state();
+	}
 }
 
 void network::manager::create_server(const std::string &backend, const std::string &conf)

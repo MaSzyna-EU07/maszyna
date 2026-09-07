@@ -42,6 +42,10 @@ namespace network
 		int crew_publish_countdown = 0;
 		int state_countdown = 0;
 		int state_updates = 0;
+		int heartbeat_countdown = 0;
+
+		// how many frames with nothing in them may pass before one is sent anyway
+		static const int HEARTBEAT_INTERVAL_FRAMES = 10;
 	};
 
     class manager

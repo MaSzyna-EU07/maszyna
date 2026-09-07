@@ -498,8 +498,6 @@ int eu07_application::run()
 		//
 		// trivia: being client and server is possible
 
-		double frameStartTime = Timer::GetTime();
-
 		if (m_modes[m_modestack.top()]->is_command_processor())
 		{
 			// active mode is doing real calculations (e.g. drivermode)
@@ -527,22 +525,29 @@ int eu07_application::run()
 				// if we're slave
 				if (m_network && m_network->client)
 				{
-					// fetch frame info from network layer,
-					authoritative = m_network->client->get_next_delta(MAX_NETWORK_PER_FRAME - loop_remaining);
-
-					// use delta and commands received from master
-					Timer::set_delta_override(authoritative.dt);
-					add_to_dequemap(commands_to_exec, authoritative.commands);
+					// take everything the authority has sent since the last frame. the
+					// commands are carried out at once; the world itself runs on our own
+					// clock rather than replaying the server's frame times, which is what
+					// made it run at the wrong speed whenever the two machines drew at
+					// different rates, and put every buffered frame between the player and
+					// their own controls
+					authoritative = m_network->client->take_pending(commands_to_exec);
 
 					// the authority owns the timeline, so we take its step number as ours
 					if (authoritative.valid)
 						Global.simulation_tick = authoritative.tick;
 
+					// what we do to the train we run ourselves happens now, not after a
+					// round trip. it still goes to the server, so that everybody else sees
+					// it; the echo of it is dropped when it comes back
+					command_queue::commands_map predicted;
+					network::collect_predictable(local_commands, predicted);
+					add_to_dequemap(commands_to_exec, predicted);
+
 					// and send our local commands to master
 					m_network->client->send_commands(local_commands);
 
-					if (!authoritative.valid)
-						loop_remaining = -1;
+					loop_remaining = -1;
 				}
 				// if we're master
 				else
@@ -603,25 +608,10 @@ int eu07_application::run()
 						}
 					}
 
-					// set total delta for rendering code
-					double totalDelta = Timer::GetTime() - frameStartTime;
-					Timer::set_delta_override(totalDelta);
 				}
 			}
 
-			if (!loop_remaining)
-			{
-				// loop break forced by counter
-				float received = m_network->client->get_frame_counter();
-				float awaiting = m_network->client->get_awaiting_frames();
-
-				// TODO: don't meddle with mode progresbar
-				m_modes[m_modestack.top()]->set_progress(100.0f * (received - awaiting) / received);
-			}
-			else
-			{
-				m_modes[m_modestack.top()]->set_progress(0.0f, 0.0f);
-			}
+			m_modes[m_modestack.top()]->set_progress(0.0f, 0.0f);
 		}
 		else
 		{
