@@ -23,6 +23,7 @@ auto const EU07_AI_ACCELERATION = 0.05;
 auto const EU07_AI_NOACCELERATION = -0.05;
 auto const EU07_AI_BRAKINGTESTACCELERATION = -0.06;
 auto const EU07_AI_NOMOVEMENT = 0.05; // standstill velocity threshold
+auto const EU07_AI_OVERCHARGETIME = 3.0; // [s]
 auto const EU07_AI_MOVEMENT = 1.0; // deliberate movement velocity threshold
 auto const EU07_AI_SECONDARYSCANINTERVAL = 5.0; // s - a secondary scans for a wake-up less often than the primary
 auto const EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE = 10000.0;
@@ -652,6 +653,7 @@ private:
     bool IsCargoTrain{ false };
     bool IsHeavyCargoTrain{ false };
     double fReady = 0.0; // poziom odhamowania wagonów
+    bool IsAnyPipeOvercharged { false };
     bool Ready = false; // ABu: stan gotowosci do odjazdu - sprawdzenie odhamowania wagonow
     bool IsConsistBraked { false };
     double ConsistShade{ 1.0 }; // averaged amount of sunlight received by the consist

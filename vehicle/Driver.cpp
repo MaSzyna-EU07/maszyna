@@ -6250,6 +6250,7 @@ TController::determine_consist_state() {
 	                                                                                                       mvOccupied->PipePress < std::max(3.9, mvOccupied->BrakePressureActual.PipePressureVal) + 0.1;
     fAccGravity = 0.0; // przyspieszenie wynikające z pochylenia
     IsAnyCouplerStretched = false;
+    IsAnyPipeOvercharged = false;
     IsAnyDoorOnlyOpen[ side::right ] = IsAnyDoorOnlyOpen[ side::left ] = false;
 	IsAnyDoorOpen[ side::right ] = IsAnyDoorOpen[ side::left ] = false;
     IsAnyDoorPermitActive[ side::right ] = IsAnyDoorPermitActive[ side::left ] = false;
@@ -6267,29 +6268,30 @@ TController::determine_consist_state() {
 			                                                                                           vehicle->Fb * 0.001 > 10.0 ) ) { // once in motion we can make a more lenient check
                 Ready = false;
             }
-            // Ra: odluźnianie przeładowanych lokomotyw, ciągniętych na zimno - prowizorka...
-            if( bp >= 0.4 ) { // wg UIC określone sztywno na 0.04
-                if( AIControllFlag || (Global.AITrainman && mvOccupied->Vel < EU07_AI_NOMOVEMENT  && !is_emu() && !is_dmu())) {
-                    if( BrakeCtrlPosition == gbh_RP // jest pozycja jazdy
-                     && false == TestFlag(vehicle->Hamulec->GetBrakeStatus(), b_dmg) // brake isn't broken
-                     && vehicle->PipePress - mvOccupied->Handle->GetRP() > -0.1 // jeśli ciśnienie jak dla jazdy
-                     && vehicle->Hamulec->GetCRP() > vehicle->PipePress + 0.12 ) { // za dużo w zbiorniku
-                        // indywidualne luzowanko
-                        vehicle->BrakeReleaser( 1 );
-                    }
+        // Ra: odluźnianie przeładowanych lokomotyw, ciągniętych na zimno - prowizorka...
+        if( bp >= 0.4 ) { // wg UIC określone sztywno na 0.04
+            if( AIControllFlag || (Global.AITrainman && mvOccupied->Vel < EU07_AI_NOMOVEMENT  && !is_emu() && !is_dmu())) {
+                if( BrakeCtrlPosition == gbh_RP // jest pozycja jazdy
+                 && false == TestFlag(vehicle->Hamulec->GetBrakeStatus(), b_dmg) // brake isn't broken
+                 && vehicle->PipePress - mvOccupied->Handle->GetRP() > -0.1 // jeśli ciśnienie jak dla jazdy
+                 && vehicle->Hamulec->GetCRP() > vehicle->PipePress + 0.12 ) { // za dużo w zbiorniku
+                    // indywidualne luzowanko
+                    vehicle->BrakeReleaser( 1 );
                 }
             }
-			if (bp < 0.1) {
-				if ( AIControllFlag || Global.AITrainman ) {
-					if (false == TestFlag(vehicle->Hamulec->GetBrakeStatus(), b_dmg) // brake isn't broken
-						&& vehicle->Hamulec->GetCRP() < vehicle->PipePress - 0.1 ) { // już nie jest za dużo w zbiorniku
-						   // koniec indywidualnego luzowanka
-						vehicle->BrakeReleaser( 0 );
+        }
+		if (bp < 0.1) {
+			if ( AIControllFlag || Global.AITrainman ) {
+				if (false == TestFlag(vehicle->Hamulec->GetBrakeStatus(), b_dmg) // brake isn't broken
+					&& vehicle->Hamulec->GetCRP() < vehicle->PipePress - 0.1 ) { // już nie jest za dużo w zbiorniku
+					   // koniec indywidualnego luzowanka
+					vehicle->BrakeReleaser( 0 );
 					}
 				}
 			}
         }
         fReady = std::max( bp, fReady ); // szukanie najbardziej zahamowanego
+        IsAnyPipeOvercharged |= vehicle->PipeOverchargeTime > EU07_AI_OVERCHARGETIME;
         if( ( dy = p->VectorFront().y ) != 0.0 ) {
             // istotne tylko dla pojazdów na pochyleniu
             // ciężar razy składowa styczna grawitacji
@@ -8507,7 +8509,8 @@ void TController::control_main_pipe() {
 
         if( mvOccupied->Compressor < 5.0
          || ( BrakeCtrlPosition < gbh_RP
-           && mvOccupied->EqvtPipePress > (fReady < 0.25 ? 5.1 : 5.2) ) ) {
+           && ( mvOccupied->EqvtPipePress > (fReady < 0.25 ? 5.1 : 5.2)
+             || IsAnyPipeOvercharged ) ) ) {
             cue_action( driver_hint::trainbrakerelease );
         }
     }
