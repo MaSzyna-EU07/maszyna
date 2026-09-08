@@ -1648,6 +1648,7 @@ class TMoverParameters
 	double Handle_OverloadPressureDecrease = 0.002; // predkosc spadku cisnienia przy asymilacji
 	/*max. cisnienie w cyl. ham., stala proporcjonalnosci p-K*/
 	double HighPipePress = 0.0;
+	double PipeOverchargeTime = 0.0; // [s]
 	double LowPipePress = 0.0;
 	double DeltaPipePress = 0.0;
 	/*max. i min. robocze cisnienie w przewodzie glownym oraz roznica miedzy nimi*/
@@ -2028,6 +2029,7 @@ class TMoverParameters
 
 	int BrakeCtrlPos = -2; /*nastawa hamulca zespolonego*/
 	double BrakeCtrlPosR = 0.0; /*nastawa hamulca zespolonego - plynna dla FV4a*/
+	bool BrakeValveActive{true}; // only a driver with the Primary flag drives the brake pipe
 	double BrakeCtrlPos2 = 0.0; /*nastawa hamulca zespolonego - kapturek dla FV4a*/
 	int ManualBrakePos = 0; /*nastawa hamulca recznego*/
 	double LocalBrakePosA = 0.0; /*nastawa hamulca pomocniczego*/
@@ -2408,6 +2410,7 @@ class TMoverParameters
 	void UpdateBrakePressure(double dt);
 	void UpdatePipePressure(double dt);
 	void CompressorCheck(double dt); /*wlacza, wylacza kompresor, laduje zbiornik*/
+	double GetDPMainValve(double dt, double hp) const; // flow through the driver's brake valve
 	void UpdatePantVolume(double dt); // Ra
 	void UpdateScndPipePressure(double dt);
 	void UpdateSpringBrake(double dt);

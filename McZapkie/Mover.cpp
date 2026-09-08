@@ -2901,7 +2901,9 @@ bool TMoverParameters::CabActivisation(bool const Enforce)
 		CabMaster = true;
 		SecuritySystem.set_enabled(true); // activate the alerter TODO: make it part of control based cab selection
 		SendCtrlToNext("CabActivisation", 1, CabActive);
-		SendCtrlToNext("Direction", DirAbsolute, CabActive);
+		// the handler assigns the value straight to DirActive, so send that and not DirAbsolute -
+		// the two differ in sign in a rear cab, which left the rest of the consist pulling the other way
+		SendCtrlToNext("Direction", DirActive, CabActive);
 		if (InactiveCabFlag & activation::springbrakeoff)
 		{
 			SpringBrakeActivate(false);
@@ -4468,6 +4470,54 @@ void TMoverParameters::CompressorCheck(double dt)
 	}
 }
 
+double TMoverParameters::GetDPMainValve(double dt, double hp) const
+{
+	if (!BrakeValveActive)
+	{
+		return 0.0;
+	}
+
+	auto const caboccupied{CabOccupied != 0};
+
+	auto const use_handle{
+	    (BrakeOpModes & bom_PS) == 0
+	    || (caboccupied && BrakeOpModeFlag != bom_PS)};
+
+	if (!use_handle)
+	{
+		if (BrakeCtrlPos == Handle->GetPos(bh_EB))
+		{
+			return Handle->GetPF(BrakeCtrlPosR, PipePress, hp, dt, EqvtPipePress);
+		}
+		return 0.0;
+	}
+
+	auto const mhzepidle{
+	    BrakeOpModeFlag >= bom_EP
+	    && BrakeCtrlPosR <= Handle->GetPos(bh_EB) - 0.5
+	    && (BrakeHandle == TBrakeHandle::MHZ_EN57 || BrakeHandle == TBrakeHandle::MHZ_K8P)};
+
+	if (mhzepidle)
+	{
+		return Handle->GetPF(0, PipePress, hp, dt, EqvtPipePress);
+	}
+
+	double pos{BrakeCtrlPosR};
+	if (SpeedCtrlUnit.IsActive
+	    && SpeedCtrlUnit.BrakeIntervention
+	    && !SpeedCtrlUnit.Standby
+	    && BrakeCtrlPos != Handle->GetPos(bh_EB))
+	{
+		pos = Handle->GetPos(bh_NP);
+		if (SpeedCtrlUnit.BrakeInterventionBraking)
+			pos = Handle->GetPos(bh_FB);
+		if (SpeedCtrlUnit.BrakeInterventionUnbraking)
+			pos = Handle->GetPos(bh_RP);
+	}
+
+	return Handle->GetPF(pos, PipePress, hp, dt, EqvtPipePress);
+}
+
 // *************************************************************************************************
 // Q: 20160712
 // aktualizacja ciśnienia w przewodzie głównym
@@ -4484,7 +4534,7 @@ void TMoverParameters::UpdatePipePressure(double dt)
 	const double kL = 0.5;
 	// double dV;
 	// TMoverParameters *c; // T_MoverParameters
-	double temp;
+	double hp{0.0};
 	// int b;
 
 	PipePress = Pipe->P();
@@ -4537,39 +4587,15 @@ void TMoverParameters::UpdatePipePressure(double dt)
 
 		if (lock_old || lock_new)
 		{
-			temp = PipePress + 0.00001;
+			hp = PipePress + 0.00001;
 		}
 		else
 		{
-			temp = ScndPipePress;
+			hp = ScndPipePress;
 		}
 		Handle->SetReductor(BrakeCtrlPos2);
 
-		if ((BrakeOpModes & bom_PS) == 0 || (CabOccupied != 0 && BrakeOpModeFlag != bom_PS))
-		{
-
-			if (BrakeOpModeFlag < bom_EP || Handle->GetPos(bh_EB) - 0.5 < BrakeCtrlPosR || (BrakeHandle != TBrakeHandle::MHZ_EN57 && BrakeHandle != TBrakeHandle::MHZ_K8P))
-			{
-				double pos = BrakeCtrlPosR;
-				if (SpeedCtrlUnit.IsActive && SpeedCtrlUnit.BrakeIntervention && !SpeedCtrlUnit.Standby && BrakeCtrlPos != Handle->GetPos(bh_EB))
-				{
-					pos = Handle->GetPos(bh_NP);
-					if (SpeedCtrlUnit.BrakeInterventionBraking)
-						pos = Handle->GetPos(bh_FB);
-					if (SpeedCtrlUnit.BrakeInterventionUnbraking)
-						pos = Handle->GetPos(bh_RP);
-				}
-				dpMainValve = Handle->GetPF(pos, PipePress, temp, dt, EqvtPipePress);
-			}
-			else
-			{
-				dpMainValve = Handle->GetPF(0, PipePress, temp, dt, EqvtPipePress);
-			}
-		}
-		else if (BrakeCtrlPos == Handle->GetPos(bh_EB))
-		{
-			dpMainValve = Handle->GetPF(BrakeCtrlPosR, PipePress, temp, dt, EqvtPipePress);
-		}
+		dpMainValve = GetDPMainValve(dt, hp);
 
 		if (dpMainValve < 0) // && (PipePressureVal > 0.01)           //50
 			if (Compressor > ScndPipePress)
@@ -4740,11 +4766,9 @@ void TMoverParameters::UpdatePipePressure(double dt)
 
 	Pipe->Act();
 	PipePress = Pipe->P();
-	if ((Hamulec->GetBrakeStatus() & b_dmg) == b_dmg) // jesli hamulec wyłączony
-		temp = 0.0; // odetnij
-	else
-		temp = 1.0; // połącz
-	Pipe->Flow(temp * Hamulec->GetPF(temp * PipePress, dt, Vel) + GetDVc(dt));
+	// a damaged distributor cuts the car off from the pipe (as temp=0/1 used to)
+	auto const distributor_open{(Hamulec->GetBrakeStatus() & b_dmg) != b_dmg ? 1.0 : 0.0};
+	Pipe->Flow(distributor_open * Hamulec->GetPF(distributor_open * PipePress, dt, Vel) + GetDVc(dt));
 
 	if (ASBType == 128)
 		Hamulec->ASB(int(SlippingWheels && Vel > 1) * (1 + 2 * int(nrot_eps < -0.01)));
@@ -4766,6 +4790,8 @@ void TMoverParameters::UpdatePipePressure(double dt)
 
 	if (CompressedVolume < 0.0)
 		CompressedVolume = 0.0;
+
+	PipeOverchargeTime = ( PipePress > HighPipePress + 0.2 ? PipeOverchargeTime + dt : 0.0 );
 }
 
 // *************************************************************************************************
