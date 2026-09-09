@@ -2,12 +2,12 @@
 
 #include <nvrenderer/nvrenderer.h>
 #include <nvrhi/nvrhi.h>
-import eu07.glm;
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
 
+import eu07.glm;
 struct GbufferLighting : public MaResourceRegistry {
   GbufferLighting(NvRenderer* renderer)
       : MaResourceRegistry(renderer), m_renderer(renderer) {}

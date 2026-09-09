@@ -7,8 +7,8 @@
 #include <unordered_map>
 
 #include <string>
-import eu07.glm;
 
+import eu07.glm;
 struct MaterialAdapterInternal {
   virtual ~MaterialAdapterInternal() = default;
   virtual std::string_view GetTexturePathForEntry(

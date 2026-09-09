@@ -3,21 +3,21 @@
 #include "nvrenderer/nvrenderer.h"
 
 #include "utilities/Globals_macros.h"
-import eu07.utilities.globals;
-import eu07.utilities.logs;
-#include <fmt/format.h>
-import eu07.model.material;
-import eu07.utilities.parser;
-#include "utilities/utilities_macros.h"
-import eu07.utilities.utilities;
-#include <yaml-cpp/yaml.h>
-#include <string>
-#include <filesystem>
 #include <memory>
 #include <optional>
 #include <sstream>
 #include <utility>
+#include <fmt/format.h>
+#include "utilities/utilities_macros.h"
+#include <yaml-cpp/yaml.h>
+#include <string>
+#include <filesystem>
 
+import eu07.utilities.globals;
+import eu07.utilities.logs;
+import eu07.model.material;
+import eu07.utilities.parser;
+import eu07.utilities.utilities;
 std::string_view MaterialAdapter::GetTexturePathForEntry(
     std::string_view key) const {
   if (m_material_internal) {

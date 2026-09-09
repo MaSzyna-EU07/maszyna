@@ -24,20 +24,6 @@
 // EU07 includes. This header is consumed by translation units that include
 // nothing else, so everything it names has to be imported here rather than
 // relied on to arrive from the including file.
-import eu07.utilities.classes;
-import eu07.utilities.globals;
-import eu07.simcore;
-import eu07.rendering.geometrybank;
-import eu07.global_include.interfaces.imaterial;
-import eu07.global_include.interfaces.itexture;
-import eu07.gl.shader;
-
-#include "nvrenderer_enums.h"
-#include "quadtree.h"
-import eu07.rendering.renderer;
-#include "resource_registry.h"
-import eu07.environment.sky;
-import eu07.glm;
 #include <array>
 #include <condition_variable>
 #include <cstddef>
@@ -50,6 +36,20 @@ import eu07.glm;
 #include <utility>
 #include <vector>
 
+#include "nvrenderer_enums.h"
+#include "quadtree.h"
+#include "resource_registry.h"
+
+import eu07.utilities.classes;
+import eu07.utilities.globals;
+import eu07.simcore;
+import eu07.rendering.geometrybank;
+import eu07.global_include.interfaces.imaterial;
+import eu07.global_include.interfaces.itexture;
+import eu07.gl.shader;
+import eu07.rendering.renderer;
+import eu07.environment.sky;
+import eu07.glm;
 namespace Rt {
 struct IRtModel;
 }

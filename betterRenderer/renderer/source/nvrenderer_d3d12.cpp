@@ -3,8 +3,10 @@
 #include <fmt/format.h>
 
 #include "utilities/Globals_macros.h"
-import eu07.utilities.globals;
-import eu07.utilities.logs;
+#include <fstream>
+#include <ios>
+#include <memory>
+#include <string>
 #include "config.h"
 #include "nvrenderer/nvrenderer.h"
 
@@ -14,12 +16,10 @@ import eu07.utilities.logs;
 #include <nvrhi/validation.h>
 
 #include "nvrendererbackend.h"
-#include <fstream>
-#include <ios>
-#include <memory>
-#include <string>
 
 #define HR_RETURN(op)                                      \
+import eu07.utilities.globals;
+import eu07.utilities.logs;
   hr = (HRESULT)(op);                                      \
   if (FAILED(hr)) {                                        \
     ErrorLog(fmt::format(#op " returned HRESULT={}", hr)); \

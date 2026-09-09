@@ -1,9 +1,9 @@
 #pragma once
 
 #include <nvrhi/nvrhi.h>
-import eu07.glm;
 #include <cstdint>
 
+import eu07.glm;
 struct MaContactShadows {
   MaContactShadows(class NvRenderer* renderer, class NvGbuffer* gbuffer);
   void Init();

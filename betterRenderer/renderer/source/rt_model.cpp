@@ -9,7 +9,6 @@
 
 #include <vector>
 
-import eu07.simcore;
 #include <array>
 #include <cstddef>
 #include <limits>
@@ -17,6 +16,7 @@ import eu07.simcore;
 #include <tuple>
 #include <unordered_map>
 
+import eu07.simcore;
 namespace Rt {
 
 using Bbox = bvh::v2::BBox<float, 3>;

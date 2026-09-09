@@ -8,15 +8,15 @@
 #include "nvrenderer/nvrenderer.h"
 #include "nvrendererbackend.h"
 #include "nvtexture.h"
-import eu07.simulation.simulationenvironment;
-#include "sky.h"
 #include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
 #include <utility>
+#include "sky.h"
 
+import eu07.simulation.simulationenvironment;
 int MaEnvironment::GetCurrentSetIndex() {
   if (m_locked_set_index >= 0 && IsReady()) {
     m_current_set_index = std::exchange(m_locked_set_index, -1);

@@ -3,10 +3,10 @@
 #include <ffx-fsr2-api/ffx_fsr2.h>
 
 #include "nvrendererbackend.h"
-import eu07.glm;
 #include <cstddef>
 #include <string>
 
+import eu07.glm;
 struct NvFSR {
   NvFSR(class NvRenderer* renderer);
   void Init();

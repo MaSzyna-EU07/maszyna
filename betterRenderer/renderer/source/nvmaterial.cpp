@@ -4,7 +4,12 @@
 #include <fmt/format.h>
 #include <nvrhi/utils.h>
 
-import eu07.utilities.logs;
+#include <array>
+#include <cstddef>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
 #include "csm.h"
 #include "environment.h"
 #include "gbuffer.h"
@@ -12,13 +17,8 @@ import eu07.utilities.logs;
 #include "nvrendererbackend.h"
 #include "nvtexture.h"
 #include "sky.h"
-#include <array>
-#include <cstddef>
-#include <memory>
-#include <string>
-#include <unordered_map>
-#include <vector>
 
+import eu07.utilities.logs;
 bool NvRenderer::MaterialTemplate::CreateBindingSet(size_t pipeline_index,
                                                     MaterialCache &cache) {
   // for (size_t i = 0; i < cache.m_pipelines.size(); ++i) {

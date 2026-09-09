@@ -1,15 +1,15 @@
 #include "nvrenderer/resource_registry.h"
 
-import eu07.utilities.logs;
-#include "fmt/compile.h"
-#include "nvtexture.h"
-#include "nvrenderer/nvrenderer.h"
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include "fmt/compile.h"
+#include "nvtexture.h"
+#include "nvrenderer/nvrenderer.h"
 
+import eu07.utilities.logs;
 MaResourceMappingSet& MaResourceMappingSet::Add(
     const MaResourceMapping& mapping) {
   m_mappings.push_back(mapping);

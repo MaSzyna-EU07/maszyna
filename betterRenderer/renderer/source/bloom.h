@@ -1,9 +1,9 @@
 #pragma once
 
 #include <nvrhi/nvrhi.h>
-import eu07.glm;
 #include <vector>
 
+import eu07.glm;
 struct Bloom {
   struct BloomConstants {
     glm::vec4 m_prefilter_vector;

@@ -7,9 +7,9 @@
 #include "nvrendererbackend.h"
 #include "ssao.h"
 #include "config.h"
-import eu07.glm;
 #include <cstdint>
 
+import eu07.glm;
 void GbufferLighting::Init() {
   auto fb_info = m_renderer->m_gbuffer->m_framebuffer->getFramebufferInfo();
   m_width = fb_info.width;

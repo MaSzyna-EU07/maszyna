@@ -31,8 +31,8 @@
 
 #include <cmath>
 #include "imgui/imgui.h"
-import eu07.glm;
 
+import eu07.glm;
 namespace XeGTAO
 {
 

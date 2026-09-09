@@ -4,6 +4,8 @@
 
 #include "nvrenderer/nvrenderer.h"
 #include "nvrendererbackend.h"
+#include <string>
+#include <vector>
 
 #if LIBMANUL_WITH_D3D12
 
@@ -11,8 +13,6 @@
 #include <dxgi1_6.h>
 #include <dxgidebug.h>
 #include <nvrhi/d3d12.h>
-#include <string>
-#include <vector>
 
 class NvRendererBackend_D3D12 : public NvRendererBackend {
   friend class NvRenderer;

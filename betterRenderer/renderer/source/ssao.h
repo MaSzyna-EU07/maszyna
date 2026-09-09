@@ -5,10 +5,10 @@
 #include <memory>
 
 #include "XeGTAO.h"
-import eu07.glm;
 #include <array>
 #include <cstddef>
 
+import eu07.glm;
 struct NvSsao {
   NvSsao(class NvRenderer* renderer);
   void Init();

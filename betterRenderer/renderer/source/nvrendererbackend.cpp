@@ -1,11 +1,11 @@
 #include "nvrendererbackend.h"
 
-import eu07.utilities.logs;
-#include <fmt/format.h>
 #include <cstddef>
 #include <string>
 #include <unordered_map>
+#include <fmt/format.h>
 
+import eu07.utilities.logs;
 void NvRendererMessageCallback::message(nvrhi::MessageSeverity severity,
                                         const char *messageText) {
   switch (severity) {

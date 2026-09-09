@@ -4,6 +4,10 @@
 
 #include "nvrenderer/nvrenderer.h"
 #include "nvrendererbackend.h"
+#include <cstdint>
+#include <string>
+#include <unordered_set>
+#include <vector>
 
 #if LIBMANUL_WITH_VULKAN
 
@@ -12,10 +16,6 @@
 
 #include <vulkan/vulkan.hpp>
 #include <queue>
-#include <cstdint>
-#include <string>
-#include <unordered_set>
-#include <vector>
 
 class NvRendererBackend_Vulkan : public NvRendererBackend {
   friend class NvRenderer;

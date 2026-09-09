@@ -1,7 +1,7 @@
-import eu07.utilities.logs;
-#include "nvrenderer/nvrenderer.h"
 #include <memory>
+#include "nvrenderer/nvrenderer.h"
 
+import eu07.utilities.logs;
 namespace {
 std::unique_ptr<gfx_renderer> create_nvrenderer_for_d3d12() {
   return std::make_unique<NvRenderer>(NvRenderer::Api::D3D12);

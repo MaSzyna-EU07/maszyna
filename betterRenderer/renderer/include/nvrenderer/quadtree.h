@@ -3,11 +3,11 @@
 #include <array>
 #include <memory>
 #include <vector>
-import eu07.glm;
-#include <cstdint>
 #include <cstddef>
 #include <limits>
+#include <cstdint>
 
+import eu07.glm;
 struct QuadTreeLeave {
   QuadTreeLeave(const glm::dvec3& origin, const glm::dvec3& extent,
                 uint32_t index)

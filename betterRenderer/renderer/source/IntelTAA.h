@@ -1,3 +1,4 @@
+#include <cstdint>
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Copyright (C) 2016-2021, Intel Corporation 
 // 
@@ -19,7 +20,6 @@
 #ifdef __cplusplus
 
 #include <cmath>
-#include <cstdint>
 
 namespace IntelTAA
 {

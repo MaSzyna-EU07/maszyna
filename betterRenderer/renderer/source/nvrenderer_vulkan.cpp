@@ -4,19 +4,6 @@
 #include <fmt/format.h>
 
 #include "utilities/Globals_macros.h"
-import eu07.utilities.globals;
-import eu07.utilities.logs;
-#include "config.h"
-#include "nvrenderer/nvrenderer.h"
-
-#if LIBMANUL_WITH_VULKAN
-
-#include <nvrhi/validation.h>
-
-VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
-
-#include "nvrendererbackend.h"
-#include <queue>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -27,6 +14,19 @@ VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include "config.h"
+#include "nvrenderer/nvrenderer.h"
+
+#if LIBMANUL_WITH_VULKAN
+
+#include <nvrhi/validation.h>
+
+import eu07.utilities.globals;
+import eu07.utilities.logs;
+VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
+
+#include "nvrendererbackend.h"
+#include <queue>
 
 #define MA_ERROR_LOG(fmt_str, ...) ErrorLog(fmt::format(fmt_str, __VA_ARGS__))
 #define MA_INFO_LOG(fmt_str, ...) WriteLog(fmt::format(fmt_str, __VA_ARGS__))

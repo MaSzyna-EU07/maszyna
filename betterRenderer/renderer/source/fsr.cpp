@@ -14,12 +14,12 @@
 #endif
 
 #include "utilities/Globals_macros.h"
-import eu07.utilities.globals;
 #include "gbuffer.h"
 #include "gbufferblitpass.h"
-import eu07.glm;
 #include <queue>
 
+import eu07.utilities.globals;
+import eu07.glm;
 NvFSR::NvFSR(NvRenderer* renderer)
     : m_backend(renderer->m_backend.get()),
       m_inputpass(renderer->m_gbuffer_blit.get()),

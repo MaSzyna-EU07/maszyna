@@ -1,5 +1,16 @@
 ﻿#include "nvrenderer/nvrenderer.h"
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <limits>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 import eu07.simcore;
 import eu07.utilities.logs;
 import eu07.utilities.timer;
@@ -41,20 +52,6 @@ import eu07.simulation.simulation;
 import eu07.glm;
 #include "utilities/utilities_macros.h"
 import eu07.utilities.utilities;
-#include <array>
-#include <cstddef>
-#include <cstdint>
-#include <functional>
-#include <limits>
-#include <memory>
-#include <mutex>
-#include <optional>
-#include <string>
-#include <utility>
-#include <vector>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
 
 bool NvRenderer::Init(GLFWwindow *Window) {
   m_message_callback = std::make_shared<NvRendererMessageCallback>();

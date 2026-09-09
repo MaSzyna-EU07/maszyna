@@ -6,15 +6,15 @@
 #include <nvrhi/nvrhi.h>
 
 #include "global_include/interfaces/ITexture_macros.h"
-import eu07.global_include.interfaces.itexture;
-#include "nvrenderer/nvrenderer_enums.h"
-import eu07.glm;
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
+#include "nvrenderer/nvrenderer_enums.h"
 
+import eu07.global_include.interfaces.itexture;
+import eu07.glm;
 enum MaTextureTraits {
   MaTextureTraits_Sharpen,
   MaTextureTraits_ClampS,

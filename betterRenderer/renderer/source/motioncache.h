@@ -2,11 +2,11 @@
 
 #include <cstdint>
 #include <functional>
-import eu07.glm;
-#include <cassert>
 #include <cstddef>
 #include <unordered_map>
+#include <cassert>
 
+import eu07.glm;
 struct MotionCacheId {
   union {
     struct {
