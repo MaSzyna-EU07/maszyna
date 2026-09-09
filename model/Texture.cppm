@@ -7,6 +7,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <chrono>
 #include <cstdint>
 #include <array>
 #include <atomic>

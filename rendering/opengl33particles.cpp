@@ -1,4 +1,8 @@
 module;
+#include <limits>
+#include <ostream>
+#include <string>
+#include <unordered_map>
 #include <optional>
 #include <utility>
 #include <memory>

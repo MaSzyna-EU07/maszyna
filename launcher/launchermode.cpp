@@ -1,4 +1,6 @@
 module;
+#include <ostream>
+#include <string>
 #include <GLFW/glfw3.h>
 #include <memory>
 #include "utilities/Globals_macros.h"

@@ -1,4 +1,5 @@
 module;
+#include <ostream>
 #include <functional>
 #include <optional>
 #include "glad/glad.h"

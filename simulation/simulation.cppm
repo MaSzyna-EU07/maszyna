@@ -1,4 +1,7 @@
 module;
+#include <limits>
+#include <unordered_map>
+#include <vector>
 #include <cstdint>
 #include <memory>
 #include <string>

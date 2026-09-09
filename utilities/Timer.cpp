@@ -1,4 +1,6 @@
 module;
+#include <ostream>
+#include <string>
 #include <cstdint>
 #include <chrono>
 #include <ctime>

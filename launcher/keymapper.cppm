@@ -1,4 +1,6 @@
 module;
+#include <deque>
+#include <unordered_map>
 #include <string>
 
 export module eu07.launcher.keymapper;

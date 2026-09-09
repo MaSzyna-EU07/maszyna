@@ -1,4 +1,6 @@
 module;
+#include <deque>
+#include <unordered_map>
 #include <queue>
 #include <cstdint>
 #include <istream>

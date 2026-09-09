@@ -1,4 +1,9 @@
 module;
+#include <chrono>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
 #include <array>
 #include <string>
 #include <algorithm>

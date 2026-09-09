@@ -1,4 +1,6 @@
 module;
+#include <cstddef>
+#include <ostream>
 #include <ios>
 #include <sstream>
 #include <unordered_map>

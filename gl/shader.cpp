@@ -1,4 +1,5 @@
 module;
+#include <ostream>
 #include <cstddef>
 #include <stdexcept>
 #include <string>

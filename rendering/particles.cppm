@@ -1,4 +1,5 @@
 module;
+#include <sstream>
 #include <cstddef>
 #include <limits>
 #include <string>

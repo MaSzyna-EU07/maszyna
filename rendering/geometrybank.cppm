@@ -1,4 +1,6 @@
 module;
+#include <chrono>
+#include <string>
 #include <cstddef>
 #include <cstdint>
 #include <deque>

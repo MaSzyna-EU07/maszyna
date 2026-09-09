@@ -1,4 +1,7 @@
 module;
+#include <chrono>
+#include <mutex>
+#include <type_traits>
 #include <sstream>
 #include "glad/glad.h"
 #include <algorithm>

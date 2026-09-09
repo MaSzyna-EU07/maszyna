@@ -1,4 +1,9 @@
 module;
+#include <chrono>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <type_traits>
 #include <cstring>
 #include <cstddef>
 #include <iterator>

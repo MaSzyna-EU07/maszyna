@@ -1,4 +1,9 @@
 module;
+#include <chrono>
+#include <limits>
+#include <mutex>
+#include <sstream>
+#include <type_traits>
 #include <cmath>
 #include <istream>
 #include <map>

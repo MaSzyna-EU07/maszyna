@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 // radio-transmitted event launch messages
 module;
+#include <sstream>
 #include <istream>
 #include <ostream>
 #include <string>

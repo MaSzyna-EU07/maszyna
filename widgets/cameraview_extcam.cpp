@@ -1,4 +1,5 @@
 module;
+#include <ostream>
 #include <cstring>
 #include <cstddef>
 #include <cstdint>

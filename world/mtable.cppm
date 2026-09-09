@@ -7,6 +7,8 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <utility>
+#include <vector>
 #include <string>
 
 export module eu07.world.mtable;

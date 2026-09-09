@@ -7,6 +7,8 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <deque>
+#include <sstream>
 #include <functional>
 #include <tuple>
 #include <string>

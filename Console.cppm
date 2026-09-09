@@ -9,6 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 //---------------------------------------------------------------------------
 module;
+#include <ostream>
+#include <string>
 #include "utilities/Globals_macros.h"
 #include <GLFW/glfw3.h>
 

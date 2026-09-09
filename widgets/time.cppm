@@ -1,4 +1,6 @@
 module;
+#include <deque>
+#include <unordered_map>
 #include "utilities/translation_macros.h"
 
 export module eu07.widgets.time;

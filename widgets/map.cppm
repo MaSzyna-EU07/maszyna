@@ -1,4 +1,7 @@
 module;
+#include <cstddef>
+#include <deque>
+#include <unordered_map>
 #include <string>
 #include <utility>
 #include <array>

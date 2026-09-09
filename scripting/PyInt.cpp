@@ -1,4 +1,6 @@
 module;
+#include <ostream>
+#include <utility>
 #include <cstddef>
 #include <cstdint>
 #include <array>

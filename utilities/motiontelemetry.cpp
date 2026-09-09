@@ -1,4 +1,5 @@
 module;
+#include <ostream>
 #include <string>
 #include <chrono>
 #include <cmath>

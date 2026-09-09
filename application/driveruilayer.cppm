@@ -1,4 +1,6 @@
 module;
+#include <deque>
+#include <unordered_map>
 
 export module eu07.application.driveruilayer;
 import eu07.application.uilayer;

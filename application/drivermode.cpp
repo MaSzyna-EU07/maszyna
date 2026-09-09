@@ -1,4 +1,11 @@
 module;
+#include <chrono>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
+#include <vector>
 #include <array>
 #include <GLFW/glfw3.h>
 #include <algorithm>

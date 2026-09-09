@@ -1,4 +1,5 @@
 module;
+#include <ostream>
 #include <cstdint>
 #include <limits>
 #include <type_traits>

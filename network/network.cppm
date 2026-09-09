@@ -1,4 +1,5 @@
 module;
+#include <deque>
 #include <cstddef>
 #include <string>
 #include <tuple>

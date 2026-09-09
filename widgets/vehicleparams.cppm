@@ -1,4 +1,6 @@
 module;
+#include <deque>
+#include <unordered_map>
 #include <string>
 #include "utilities/translation_macros.h"
 #include "imgui/imgui.h"

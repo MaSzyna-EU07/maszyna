@@ -1,4 +1,6 @@
 module;
+#include <ostream>
+#include <string>
 #include "utilities/Globals_macros.h"
 #include "utilities/translation_macros.h"
 #include "imgui/imgui.h"

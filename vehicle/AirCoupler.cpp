@@ -1,4 +1,5 @@
 module;
+#include <sstream>
 #include <string>
 
 module eu07.simcore;

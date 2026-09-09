@@ -1,4 +1,5 @@
 module;
+#include <sstream>
 #include <string>
 #include <istream>
 #include <ostream>

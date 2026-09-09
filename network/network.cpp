@@ -1,4 +1,5 @@
 module;
+#include <ostream>
 #include <unordered_map>
 #include <fstream>
 #include <istream>

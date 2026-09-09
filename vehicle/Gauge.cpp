@@ -1,4 +1,5 @@
 module;
+#include <sstream>
 #include <algorithm>
 #include <array>
 #include <cctype>

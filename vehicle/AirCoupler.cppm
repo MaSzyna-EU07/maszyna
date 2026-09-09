@@ -7,6 +7,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <sstream>
 #include <string>
 
 export module eu07.simcore:aircoupler;

@@ -1,4 +1,6 @@
 module;
+#include <cstddef>
+#include <sstream>
 #include <memory>
 #include <string>
 #include <utility>

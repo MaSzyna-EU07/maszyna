@@ -1,4 +1,11 @@
 module;
+#include <chrono>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <type_traits>
+#include <unordered_map>
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cmath>

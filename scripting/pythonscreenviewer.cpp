@@ -1,4 +1,5 @@
 module;
+#include <ostream>
 #include <atomic>
 #include <functional>
 #include <string>

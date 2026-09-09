@@ -1,4 +1,8 @@
 module;
+#include <limits>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
 #include <cstdio>
 #include <chrono>
 #include <fstream>

@@ -1,4 +1,5 @@
 module;
+#include <deque>
 #include <cstdint>
 #include <zmq_addon.hpp>
 #include <chrono>

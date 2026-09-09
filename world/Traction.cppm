@@ -7,6 +7,8 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <deque>
+#include <unordered_map>
 #include <cstddef>
 #include <istream>
 #include <ostream>

@@ -1,4 +1,5 @@
 module;
+#include <ostream>
 #include <cstddef>
 #include <string>
 #include "utilities/Globals_macros.h"

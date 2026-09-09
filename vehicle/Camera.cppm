@@ -11,6 +11,8 @@ http://mozilla.org/MPL/2.0/.
 
 //---------------------------------------------------------------------------
 module;
+#include <deque>
+#include <unordered_map>
 #include "vehicle/DynObj_macros.h"
 
 export module eu07.vehicle.camera;

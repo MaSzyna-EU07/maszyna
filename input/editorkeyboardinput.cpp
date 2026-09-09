@@ -1,4 +1,6 @@
 module;
+#include <deque>
+#include <unordered_map>
 #include <GLFW/glfw3.h>
 
 module eu07.input.editorkeyboardinput;

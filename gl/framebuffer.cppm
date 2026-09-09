@@ -1,4 +1,5 @@
 module;
+#include <cstddef>
 #include "glad/glad.h"
 
 export module eu07.gl.framebuffer;

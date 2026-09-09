@@ -1,4 +1,8 @@
 module;
+#include <limits>
+#include <ostream>
+#include <string>
+#include <unordered_map>
 #include <utility>
 #include <cstdint>
 #include "glad/glad.h"

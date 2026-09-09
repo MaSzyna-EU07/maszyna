@@ -1,4 +1,9 @@
 module;
+#include <chrono>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
 #include <AL/alext.h>
 #include <cmath>
 #include <AL/al.h>

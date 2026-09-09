@@ -1,4 +1,9 @@
 module;
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>

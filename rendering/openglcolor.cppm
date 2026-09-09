@@ -11,6 +11,8 @@ http://mozilla.org/MPL/2.0/.
 
 // encapsulation of the fixed pipeline opengl color
 module;
+#include <ostream>
+#include <string>
 #include <glad/glad.h>
 #include "utilities/Globals_macros.h"
 

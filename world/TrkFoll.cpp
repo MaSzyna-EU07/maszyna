@@ -1,4 +1,5 @@
 module;
+#include <ostream>
 #include <memory>
 #include <string>
 #include <cmath>

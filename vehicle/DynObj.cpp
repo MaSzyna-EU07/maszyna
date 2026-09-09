@@ -1,4 +1,5 @@
 module;
+#include <ostream>
 #include <array>
 #include <cstddef>
 #include <deque>

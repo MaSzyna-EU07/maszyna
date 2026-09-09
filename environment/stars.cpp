@@ -1,4 +1,6 @@
 module;
+#include <ostream>
+#include <string>
 #include "utilities/Globals_macros.h"
 
 module eu07.environment.stars;

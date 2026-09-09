@@ -1,4 +1,10 @@
 module;
+#include <chrono>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
 #include <fstream>
 #include <string>
 #include "utilities/Globals_macros.h"

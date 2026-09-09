@@ -1,4 +1,6 @@
 module;
+#include <ostream>
+#include <string>
 #include <cstdint>
 #include "glad/glad.h"
 #include <optional>

@@ -1,4 +1,5 @@
 module;
+#include <cstddef>
 #include "glad/glad.h"
 #include <string>
 #include "global_include/interfaces/ITexture_macros.h"

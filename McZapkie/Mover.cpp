@@ -1,4 +1,6 @@
 module;
+#include <ostream>
+#include <sstream>
 #include <array>
 #include <fstream>
 #include <memory>

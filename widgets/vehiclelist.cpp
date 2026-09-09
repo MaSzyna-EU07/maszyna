@@ -1,4 +1,10 @@
 module;
+#include <chrono>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
 #include "imgui/imgui.h"
 #include "utilities/translation_macros.h"
 #include <string>

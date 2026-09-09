@@ -1,4 +1,10 @@
 module;
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <type_traits>
+#include <unordered_map>
 #include <cstring>
 #include <cstdint>
 #include <array>

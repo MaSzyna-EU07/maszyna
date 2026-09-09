@@ -1,4 +1,5 @@
 module;
+#include <vector>
 
 export module eu07.simulation.simulationenvironment;
 import eu07.audio.sound;
