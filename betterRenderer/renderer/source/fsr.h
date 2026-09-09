@@ -1,9 +1,9 @@
 #pragma once
 
 #include <ffx-fsr2-api/ffx_fsr2.h>
-#include <glm/glm.hpp>
 
 #include "nvrendererbackend.h"
+import eu07.glm;
 
 struct NvFSR {
   NvFSR(class NvRenderer* renderer);

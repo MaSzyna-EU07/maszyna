@@ -8,7 +8,6 @@ import eu07.application.application;
 import eu07.simulation.simulation;
 
 #include <future>
-#include <glm/gtx/transform.hpp>
 
 #include "auto_exposure.h"
 #include "bloom.h"
@@ -39,6 +38,9 @@ import eu07.simulation.simulation;
 #include "rt_model.h"
 #include "tinyexr.h"
 #include "windshield_rain.h"
+import eu07.glm;
+#include "utilities/utilities_macros.h"
+import eu07.utilities.utilities;
 
 bool NvRenderer::Init(GLFWwindow *Window) {
   m_message_callback = std::make_shared<NvRendererMessageCallback>();

@@ -2,10 +2,10 @@
 
 #include <nvrhi/nvrhi.h>
 
-#include <glm/glm.hpp>
 #include <memory>
 
 #include "XeGTAO.h"
+import eu07.glm;
 
 struct NvSsao {
   NvSsao(class NvRenderer* renderer);

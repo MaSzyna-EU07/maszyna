@@ -11,6 +11,7 @@ import eu07.utilities.timer;
 #include "nvrendererbackend.h"
 #include "sky.h"
 #include "ssao.h"
+import eu07.glm;
 
 GbufferBlitPass::GbufferBlitPass(NvRenderer* renderer, NvGbuffer* gbuffer,
                                  NvGbuffer* gbuffer_shadow, NvSsao* ssao,

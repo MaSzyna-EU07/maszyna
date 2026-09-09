@@ -1,7 +1,7 @@
 #pragma once
 
 #include <nvrhi/nvrhi.h>
-#include <glm/glm.hpp>
+import eu07.glm;
 
 struct MaContactShadows {
   MaContactShadows(class NvRenderer* renderer, class NvGbuffer* gbuffer);

@@ -1,10 +1,10 @@
 #pragma once
 
 #include <array>
-#include <glm/glm.hpp>
-#include <glm/gtx/component_wise.hpp>
 #include <memory>
 #include <vector>
+import eu07.glm;
+#include <cstdint>
 
 struct QuadTreeLeave {
   QuadTreeLeave(const glm::dvec3& origin, const glm::dvec3& extent,

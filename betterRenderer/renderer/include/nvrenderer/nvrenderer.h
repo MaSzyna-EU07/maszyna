@@ -9,10 +9,10 @@
 
 // OpenGL includes required by EU07 includes
 #include <glad/glad.h> // for GLuint, GLint
+#include <GLFW/glfw3.h> // for GLFWwindow
+#include "utilities/Globals_macros.h"
 
 // Div. includes required by EU07 includes
-#include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
 
 #include <nvrhi/nvrhi.h>
 #include <yaml-cpp/yaml.h>
@@ -21,15 +21,23 @@
 #include <future>
 #include <mutex>
 
-// EU07 includes
+// EU07 includes. This header is consumed by translation units that include
+// nothing else, so everything it names has to be imported here rather than
+// relied on to arrive from the including file.
 import eu07.utilities.classes;
+import eu07.utilities.globals;
 import eu07.simcore;
+import eu07.rendering.geometrybank;
+import eu07.global_include.interfaces.imaterial;
+import eu07.global_include.interfaces.itexture;
+import eu07.gl.shader;
 
 #include "nvrenderer_enums.h"
 #include "quadtree.h"
 import eu07.rendering.renderer;
 #include "resource_registry.h"
 import eu07.environment.sky;
+import eu07.glm;
 
 namespace Rt {
 struct IRtModel;

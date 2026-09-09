@@ -2,7 +2,8 @@
 
 #include <cstdint>
 #include <functional>
-#include <glm/glm.hpp>
+import eu07.glm;
+#include <cassert>
 
 struct MotionCacheId {
   union {

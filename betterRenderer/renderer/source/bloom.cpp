@@ -3,6 +3,7 @@
 #include <nvrhi/utils.h>
 
 #include "nvrendererbackend.h"
+#include "imgui/imgui.h"
 
 void Bloom::UpdateConstants(nvrhi::ICommandList* command_list) {
   BloomConstants constants{};

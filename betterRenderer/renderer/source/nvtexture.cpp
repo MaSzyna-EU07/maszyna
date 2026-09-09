@@ -16,6 +16,7 @@ import eu07.utilities.logs;
 #include "stbi/stb_image.h"
 #define STB_IMAGE_RESIZE2_IMPLEMENTATION
 #include "stbi/stb_image_resize2.h"
+import eu07.model.texture;
 #undef STB_IMAGE_RESIZE2_IMPLEMENTATION
 
 uint64_t NvTexture::s_change_counter = 0;

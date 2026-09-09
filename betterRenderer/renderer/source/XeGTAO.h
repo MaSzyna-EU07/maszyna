@@ -30,6 +30,8 @@
 #ifdef __cplusplus
 
 #include <cmath>
+#include "imgui/imgui.h"
+import eu07.glm;
 
 namespace XeGTAO
 {

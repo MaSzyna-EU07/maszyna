@@ -7,6 +7,10 @@
 import eu07.utilities.timer;
 import eu07.simcore;
 import eu07.simulation.simulation;
+import eu07.glm;
+#include "utilities/utilities_macros.h"
+import eu07.utilities.utilities;
+import eu07.utilities.float3d;
 
 namespace BatchingUtils {
 

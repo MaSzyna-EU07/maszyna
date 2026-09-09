@@ -1,6 +1,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include "nvrenderer_vulkan.h"
+#include <queue>
 
 #if LIBMANUL_WITH_VULKAN
 

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <glm/glm.hpp>
 #include <nvrhi/nvrhi.h>
+import eu07.glm;
 
 struct Bloom {
   struct BloomConstants {

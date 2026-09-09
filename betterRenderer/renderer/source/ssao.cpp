@@ -3,12 +3,13 @@
 #include <nvrhi/nvrhi.h>
 #include <nvrhi/utils.h>
 
-#include <glm/glm.hpp>
 
 #include "XeGTAO.h"
 #include "gbuffer.h"
 #include "nvrenderer/nvrenderer.h"
 #include "nvrendererbackend.h"
+#include "imgui/imgui.h"
+import eu07.glm;
 
 NvSsao::NvSsao(NvRenderer* renderer)
     : m_backend(renderer->m_backend.get()),

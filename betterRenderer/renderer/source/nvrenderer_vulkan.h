@@ -11,6 +11,7 @@
 #include <nvrhi/vulkan.h>
 
 #include <vulkan/vulkan.hpp>
+#include <queue>
 
 class NvRendererBackend_Vulkan : public NvRendererBackend {
   friend class NvRenderer;

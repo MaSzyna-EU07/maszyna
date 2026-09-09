@@ -6,8 +6,8 @@
 #include <optional>
 #include <unordered_map>
 
-#include <glm/glm.hpp>
 #include <string>
+import eu07.glm;
 
 struct MaterialAdapterInternal {
   virtual ~MaterialAdapterInternal() = default;

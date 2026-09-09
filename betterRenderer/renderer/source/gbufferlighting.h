@@ -2,8 +2,8 @@
 
 #include <nvrenderer/nvrenderer.h>
 #include <nvrhi/nvrhi.h>
+import eu07.glm;
 
-#include <glm/glm.hpp>
 
 struct GbufferLighting : public MaResourceRegistry {
   GbufferLighting(NvRenderer* renderer)

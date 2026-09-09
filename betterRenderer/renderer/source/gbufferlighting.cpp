@@ -2,12 +2,12 @@
 
 #include <nvrhi/utils.h>
 
-#include <glm/gtc/packing.hpp>
 
 #include "gbuffer.h"
 #include "nvrendererbackend.h"
 #include "ssao.h"
 #include "config.h"
+import eu07.glm;
 
 void GbufferLighting::Init() {
   auto fb_info = m_renderer->m_gbuffer->m_framebuffer->getFramebufferInfo();

@@ -5,10 +5,10 @@
 #include <unordered_map>
 #include <nvrhi/nvrhi.h>
 
-#include <glm/glm.hpp>
 #include "global_include/interfaces/ITexture_macros.h"
 import eu07.global_include.interfaces.itexture;
 #include "nvrenderer/nvrenderer_enums.h"
+import eu07.glm;
 
 enum MaTextureTraits {
   MaTextureTraits_Sharpen,

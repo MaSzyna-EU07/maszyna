@@ -95,9 +95,18 @@ option(ENABLE_AVX2 "Enable AVX2 instruction set (requires AVX2-capable CPU, Hasw
 option(ADD_VERSION_SUFFIX "Add date and commit hash to the executable name" ON)
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
-# vcpkg init
+# vcpkg init. The triplet has to follow the host, or a non-Windows build looks
+# for its packages (DXC, used by the betterRenderer shader compiler) in a
+# directory that only ever exists on Windows.
 set(VCPKG_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/ref/vcpkg")
-set(VCPKG_INSTALLED_PATH "${VCPKG_ROOT}/installed/x64-windows")
+if (WIN32)
+	set(VCPKG_TRIPLET "x64-windows")
+elseif (APPLE)
+	set(VCPKG_TRIPLET "x64-osx")
+else()
+	set(VCPKG_TRIPLET "x64-linux")
+endif()
+set(VCPKG_INSTALLED_PATH "${VCPKG_ROOT}/installed/${VCPKG_TRIPLET}")
 list(APPEND CMAKE_PREFIX_PATH "${VCPKG_INSTALLED_PATH}")
 list(APPEND CMAKE_MODULE_PATH "${VCPKG_INSTALLED_PATH}/share")
 

@@ -3,7 +3,7 @@
 #include <nvrhi/nvrhi.h>
 
 #include <entt/entt.hpp>
-#include <glm/glm.hpp>
+import eu07.glm;
 
 class NvTextureManager;
 class MaResourceRegistry;

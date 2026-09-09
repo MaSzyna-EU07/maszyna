@@ -17,6 +17,8 @@
 import eu07.utilities.globals;
 #include "gbuffer.h"
 #include "gbufferblitpass.h"
+import eu07.glm;
+#include <queue>
 
 NvFSR::NvFSR(NvRenderer* renderer)
     : m_backend(renderer->m_backend.get()),
