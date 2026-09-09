@@ -12,6 +12,8 @@ http://mozilla.org/MPL/2.0/.
 
 // radio-transmitted event launch messages
 module;
+#include <istream>
+#include <ostream>
 #include <string>
 
 export module eu07.simcore:evlaunch;

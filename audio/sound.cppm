@@ -1,4 +1,7 @@
 module;
+#include <array>
+#include <ostream>
+#include <utility>
 #include <AL/al.h>
 #include <AL/alc.h>
 #include <AL/alext.h>

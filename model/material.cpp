@@ -1,4 +1,7 @@
 module;
+#include <array>
+#include <optional>
+#include <unordered_map>
 #include <vector>
 #include "glad/glad.h"
 #include <cmath>

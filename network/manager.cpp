@@ -1,4 +1,8 @@
 module;
+#include <memory>
+#include <optional>
+#include <unordered_map>
+#include <vector>
 #include <fstream>
 #include <ios>
 #include <string>

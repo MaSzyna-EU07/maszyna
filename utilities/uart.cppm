@@ -1,4 +1,8 @@
 module;
+#include <array>
+#include <cstddef>
+#include <tuple>
+#include <vector>
 #include <libserialport.h>
 #include <chrono>
 #include <cstdint>

@@ -1,4 +1,8 @@
 module;
+#include <fstream>
+#include <ios>
+#include <string>
+#include <vector>
 #include "glad/glad.h"
 #include "imgui/imgui.h"
 #include "utilities/Globals_macros.h"

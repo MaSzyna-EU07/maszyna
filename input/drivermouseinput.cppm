@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 // virtual slider; value determined by position of the mouse
 module;
+#include <utility>
 #include <unordered_map>
 #include <GLFW/glfw3.h>
 #include <string>

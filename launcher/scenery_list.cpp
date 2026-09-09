@@ -1,4 +1,8 @@
 module;
+#include <array>
+#include <cstddef>
+#include <memory>
+#include <string>
 #include "utilities/Globals_macros.h"
 #include <vector>
 #include "global_include/interfaces/ITexture_macros.h"

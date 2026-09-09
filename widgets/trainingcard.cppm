@@ -1,4 +1,5 @@
 module;
+#include <string>
 #include <atomic>
 #include <optional>
 #include <thread>

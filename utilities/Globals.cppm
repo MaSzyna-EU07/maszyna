@@ -7,6 +7,13 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <array>
+#include <chrono>
+#include <limits>
+#include <ostream>
+#include <string>
+#include <utility>
+#include <vector>
 #include <optional>
 #include <unordered_map>
 #include "utilities/Globals_macros.h"

@@ -7,6 +7,10 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <string>
 #ifdef _POSIX_C_SOURCE
 #undef _POSIX_C_SOURCE
 #endif

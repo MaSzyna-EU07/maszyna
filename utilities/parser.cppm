@@ -12,6 +12,8 @@ http://mozilla.org/MPL/2.0/.
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 // cParser -- generic class for parsing text data, either from file or provided string
 module;
+#include <cstddef>
+#include <istream>
 #include <string>
 #include <sstream>
 #include <fstream>

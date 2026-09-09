@@ -1,4 +1,7 @@
 module;
+#include <deque>
+#include <iterator>
+#include <unordered_map>
 #include <memory>
 #include "glad/glad.h"
 #include <algorithm>

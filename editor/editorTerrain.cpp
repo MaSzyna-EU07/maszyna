@@ -1,4 +1,6 @@
 module;
+#include <cstddef>
+#include <functional>
 #include <string>
 #include <vector>
 #include "global_include/interfaces/ITexture_macros.h"

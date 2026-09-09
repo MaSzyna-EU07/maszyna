@@ -7,6 +7,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <istream>
 #include "utilities/translation_macros.h"
 #include <string>
 #include <unordered_map>

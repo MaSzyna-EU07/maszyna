@@ -7,6 +7,9 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <deque>
+#include <utility>
+#include <vector>
 #include <unordered_map>
 #include <queue>
 #include <unordered_set>

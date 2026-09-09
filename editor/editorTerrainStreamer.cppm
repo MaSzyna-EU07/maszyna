@@ -17,6 +17,8 @@ http://mozilla.org/MPL/2.0/.
 // geometry GC reclaims their GPU memory). Heights are flat + a gentle procedural roll so streaming
 // is observable. Phase 2 will add 16-bit on-disk chunk paging, per-chunk flag bits and persistence.
 module;
+#include <cstddef>
+#include <utility>
 #include <cstdint>
 #include <map>
 #include <memory>

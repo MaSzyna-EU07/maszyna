@@ -1,4 +1,6 @@
 module;
+#include <optional>
+#include <vector>
 #include <new>
 #include "glad/glad.h"
 #include <cstddef>

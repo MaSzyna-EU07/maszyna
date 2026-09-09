@@ -1,4 +1,6 @@
 module;
+#include <cstddef>
+#include <utility>
 #include <vector>
 #include <memory>
 #include <optional>

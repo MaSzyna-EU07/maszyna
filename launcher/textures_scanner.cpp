@@ -1,4 +1,10 @@
 module;
+#include <utility>
+#include <ios>
+#include <map>
+#include <set>
+#include <sstream>
+#include <vector>
 #include <algorithm>
 #include <unordered_map>
 #include <filesystem>

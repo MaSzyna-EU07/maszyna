@@ -1,4 +1,5 @@
 module;
+#include <deque>
 #include <string>
 #include "utilities/Globals_macros.h"
 #include "utilities/utilities_macros.h"

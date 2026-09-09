@@ -1,4 +1,5 @@
 module;
+#include <string>
 #include <thread>
 #include <atomic>
 #include <chrono>

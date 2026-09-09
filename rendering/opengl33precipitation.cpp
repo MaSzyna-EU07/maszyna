@@ -1,4 +1,6 @@
 module;
+#include <functional>
+#include <optional>
 #include "glad/glad.h"
 #include <cmath>
 #include <cstdint>

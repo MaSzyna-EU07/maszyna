@@ -1,4 +1,5 @@
 module;
+#include <vector>
 #include <cmath>
 #include "vehicle/DynObj_macros.h"
 #include <algorithm>

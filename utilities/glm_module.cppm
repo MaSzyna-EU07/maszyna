@@ -40,6 +40,12 @@ export module eu07.glm;
 // merge when the same glm declarations arrive from several different modules
 // ("conflicting imported declaration" on glm::detail::storage), so glm has to be
 // compiled into exactly one module.
+// Clang warns that including inside the purview attaches the declarations to
+// this module. That is exactly the point here, so silence it for this block.
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Winclude-angled-in-module-purview"
+#endif
 export {
 #include <glm/glm.hpp>
 #include <glm/fwd.hpp>
@@ -62,6 +68,9 @@ export {
 // call sites of glm::to_string include it in their own module fragment.
 #include <glm/gtx/transform.hpp>
 }
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 export {
 // 12-byte vec3 that stays packed regardless of GLM_FORCE_DEFAULT_ALIGNED_GENTYPES.

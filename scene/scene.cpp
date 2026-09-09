@@ -1,4 +1,11 @@
 module;
+#include <functional>
+#include <array>
+#include <fstream>
+#include <ios>
+#include <stack>
+#include <unordered_map>
+#include <unordered_set>
 #include "utilities/utilities_macros.h"
 #include "glad/glad.h"
 #include <GLFW/glfw3.h>

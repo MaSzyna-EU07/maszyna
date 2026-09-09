@@ -1,4 +1,7 @@
 module;
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include "glad/glad.h"
 #include <algorithm>
 #include <array>

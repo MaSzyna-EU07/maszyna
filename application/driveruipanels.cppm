@@ -1,4 +1,6 @@
 module;
+#include <array>
+#include <limits>
 #include <string>
 #include <vector>
 

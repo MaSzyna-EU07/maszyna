@@ -1,4 +1,6 @@
 module;
+#include <stack>
+#include <vector>
 #include <algorithm>
 #include "utilities/Globals_macros.h"
 #include <cstddef>

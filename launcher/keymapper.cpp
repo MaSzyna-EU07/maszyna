@@ -1,4 +1,5 @@
 module;
+#include <cstddef>
 #include "utilities/translation_macros.h"
 #include <string>
 #include <tuple>

@@ -1,4 +1,5 @@
 module;
+#include <cstdint>
 #include "glad/glad.h"
 #include <optional>
 #include "utilities/Globals_macros.h"

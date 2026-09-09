@@ -1,4 +1,8 @@
 module;
+#include <cstddef>
+#include <tuple>
+#include <unordered_map>
+#include <vector>
 #include <filesystem>
 #include <cmath>
 #include <cstdlib>

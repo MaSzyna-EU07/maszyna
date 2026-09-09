@@ -1,4 +1,5 @@
 module;
+#include <array>
 #include <GLFW/glfw3.h>
 
 module eu07.input.editormouseinput;

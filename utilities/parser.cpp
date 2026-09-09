@@ -1,4 +1,9 @@
 module;
+#include <istream>
+#include <deque>
+#include <fstream>
+#include <map>
+#include <sstream>
 #include <memory>
 #include "utilities/Globals_macros.h"
 #include <cstring>

@@ -1,4 +1,8 @@
 module;
+#include <fstream>
+#include <ostream>
+#include <unordered_map>
+#include <utility>
 #include <chrono>
 #include <functional>
 #include <vector>

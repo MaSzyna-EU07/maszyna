@@ -1,4 +1,6 @@
 module;
+#include <ios>
+#include <sstream>
 #include <unordered_map>
 #include <fstream>
 #include <istream>

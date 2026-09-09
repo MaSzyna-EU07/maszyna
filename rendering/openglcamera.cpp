@@ -1,4 +1,5 @@
 module;
+#include <vector>
 #include <iterator>
 #include "glad/glad.h"
 #include "vehicle/DynObj_macros.h"

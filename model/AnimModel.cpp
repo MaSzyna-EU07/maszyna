@@ -1,4 +1,8 @@
 module;
+#include <array>
+#include <istream>
+#include <ostream>
+#include <tuple>
 #include <iomanip>
 #include <algorithm>
 #include <cmath>

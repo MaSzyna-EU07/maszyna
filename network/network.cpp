@@ -1,4 +1,9 @@
 module;
+#include <unordered_map>
+#include <fstream>
+#include <istream>
+#include <optional>
+#include <queue>
 #include <algorithm>
 #include <chrono>
 #include <cstddef>

@@ -1,4 +1,7 @@
 module;
+#include <deque>
+#include <stack>
+#include <vector>
 #include "rendering/openglmatrixstack_macros.h"
 
 module eu07.rendering.openglmatrixstack;

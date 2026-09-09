@@ -1,4 +1,10 @@
 module;
+#include <fstream>
+#include <tuple>
+#include <utility>
+#include <functional>
+#include <list>
+#include <optional>
 #include <sys/stat.h>
 #include <cstdint>
 #include <algorithm>

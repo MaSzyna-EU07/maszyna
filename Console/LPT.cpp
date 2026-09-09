@@ -1,4 +1,5 @@
 module;
+#include <string>
 
 module eu07.console.lpt;
 /*

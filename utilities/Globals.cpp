@@ -1,4 +1,14 @@
 module;
+#include <array>
+#include <limits>
+#include <utility>
+#include <map>
+#include <optional>
+#include <ostream>
+#include <random>
+#include <sstream>
+#include <thread>
+#include <unordered_map>
 #include <cmath>
 #include "glad/glad.h"
 #include <chrono>

@@ -1,4 +1,9 @@
 module;
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <optional>
+#include <string>
 #include "glad/glad.h"
 #include "stb/stb_image.h"
 #include "utilities/Globals_macros.h"

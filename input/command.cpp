@@ -1,4 +1,10 @@
 module;
+#include <deque>
+#include <vector>
+#include <cstddef>
+#include <queue>
+#include <unordered_set>
+#include <utility>
 #include <GLFW/glfw3.h>
 #include <cstdint>
 #include <string>

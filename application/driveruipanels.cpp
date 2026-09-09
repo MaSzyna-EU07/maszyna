@@ -1,4 +1,7 @@
 module;
+#include <array>
+#include <cstddef>
+#include <utility>
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cmath>

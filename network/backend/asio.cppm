@@ -1,4 +1,7 @@
 module;
+#include <fstream>
+#include <ios>
+#include <istream>
 #define ASIO_DISABLE_VISIBILITY
 #include <asio.hpp>
 #include <cstdint>

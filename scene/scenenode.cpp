@@ -1,4 +1,5 @@
 module;
+#include <sstream>
 #include "glad/glad.h"
 #include <algorithm>
 #include <cmath>

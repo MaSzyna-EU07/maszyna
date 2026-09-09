@@ -1,4 +1,5 @@
 module;
+#include <memory>
 #include <string>
 #include <cmath>
 #include "utilities/Globals_macros.h"

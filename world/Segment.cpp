@@ -1,4 +1,5 @@
 module;
+#include <array>
 #include <string>
 #include <algorithm>
 #include <cmath>

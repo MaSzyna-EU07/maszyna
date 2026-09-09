@@ -1,4 +1,8 @@
 module;
+#include <array>
+#include <map>
+#include <string>
+#include <vector>
 #include <memory>
 #include "vehicle/DynObj_macros.h"
 

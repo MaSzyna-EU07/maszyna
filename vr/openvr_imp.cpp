@@ -1,4 +1,7 @@
 module;
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include "global_include/interfaces/ITexture_macros.h"
 #include "utilities/Globals_macros.h"
 #include <filesystem>

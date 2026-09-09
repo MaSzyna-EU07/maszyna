@@ -1,4 +1,10 @@
 module;
+#include <array>
+#include <chrono>
+#include <deque>
+#include <fstream>
+#include <string>
+#include <unordered_map>
 #include <thread>
 #include <format>
 #include "Python.h"

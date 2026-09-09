@@ -1,4 +1,5 @@
 module;
+#include <array>
 #include <filesystem>
 #include <GLFW/glfw3.h>
 #include <algorithm>

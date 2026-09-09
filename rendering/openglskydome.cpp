@@ -1,4 +1,5 @@
 module;
+#include <cstddef>
 #include "glad/glad.h"
 
 module eu07.rendering.openglskydome;

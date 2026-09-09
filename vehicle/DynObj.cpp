@@ -1,4 +1,12 @@
 module;
+#include <array>
+#include <cstddef>
+#include <deque>
+#include <fstream>
+#include <ios>
+#include <optional>
+#include <tuple>
+#include <utility>
 #include <functional>
 #include <unordered_map>
 #include <algorithm>

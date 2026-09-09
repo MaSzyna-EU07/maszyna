@@ -1,4 +1,6 @@
 module;
+#include <limits>
+#include <string>
 #include <cstdint>
 #include <istream>
 #include <ostream>

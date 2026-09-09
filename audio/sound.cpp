@@ -1,4 +1,11 @@
 module;
+#include <utility>
+#include <atomic>
+#include <cstddef>
+#include <list>
+#include <optional>
+#include <ostream>
+#include <stack>
 #include <AL/al.h>
 #include <AL/alc.h>
 #include <cmath>

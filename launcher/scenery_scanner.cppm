@@ -1,4 +1,7 @@
 module;
+#include <memory>
+#include <string>
+#include <utility>
 #include <map>
 #include <vector>
 #include <filesystem>

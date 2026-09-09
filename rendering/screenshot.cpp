@@ -1,4 +1,5 @@
 module;
+#include <string>
 #include "utilities/Globals_macros.h"
 #include <png.h>
 #include "glad/glad.h"

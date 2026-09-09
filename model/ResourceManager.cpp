@@ -1,4 +1,9 @@
 module;
+#include <utility>
+#include <chrono>
+#include <cstddef>
+#include <sstream>
+#include <string>
 
 module eu07.model.resourcemanager;
 /*

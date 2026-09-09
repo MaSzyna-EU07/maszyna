@@ -1,4 +1,6 @@
 module;
+#include <cstddef>
+#include <limits>
 #include "global_include/interfaces/ITexture_macros.h"
 #include <istream>
 #include <ostream>

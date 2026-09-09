@@ -1,4 +1,10 @@
 module;
+#include <cstddef>
+#include <string>
+#include <functional>
+#include <optional>
+#include <stdexcept>
+#include <vector>
 #include <memory>
 
 module eu07.rendering.nullrenderer;

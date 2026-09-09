@@ -7,6 +7,9 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <cstddef>
+#include <istream>
+#include <ostream>
 #include <vector>
 #include <string>
 

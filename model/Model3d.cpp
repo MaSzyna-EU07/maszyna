@@ -1,4 +1,11 @@
 module;
+#include <fstream>
+#include <ios>
+#include <istream>
+#include <iterator>
+#include <limits>
+#include <memory>
+#include <ostream>
 #include "utilities/utilities_macros.h"
 #include <algorithm>
 #include <stdexcept>

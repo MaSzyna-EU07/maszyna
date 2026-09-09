@@ -1,4 +1,8 @@
 module;
+#include <map>
+#include <memory>
+#include <sstream>
+#include <vector>
 #include <client/crash_report_database.h>
 #include <client/settings.h>
 #include <client/crashpad_client.h>

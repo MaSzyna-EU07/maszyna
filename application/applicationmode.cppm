@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 // component implementing specific mode of application behaviour
 // base interface
 module;
+#include <string>
 #include <memory>
 
 export module eu07.application.applicationmode;

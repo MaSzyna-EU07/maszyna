@@ -1,4 +1,14 @@
 module;
+#include <array>
+#include <cstddef>
+#include <ios>
+#include <memory>
+#include <optional>
+#include <sstream>
+#include <stack>
+#include <string>
+#include <utility>
+#include <vector>
 #include <filesystem>
 #include "glad/glad.h"
 #include <GLFW/glfw3.h>

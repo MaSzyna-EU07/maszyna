@@ -1,4 +1,6 @@
 module;
+#include <cstdint>
+#include <vector>
 #include <variant>
 #include <map>
 #include "utilities/utilities_macros.h"

@@ -1,4 +1,5 @@
 module;
+#include <string>
 #include "global_include/interfaces/ITexture_macros.h"
 #include <cstddef>
 #include <cstdint>

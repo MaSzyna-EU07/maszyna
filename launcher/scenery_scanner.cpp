@@ -1,4 +1,9 @@
 module;
+#include <fstream>
+#include <ios>
+#include <map>
+#include <utility>
+#include <vector>
 #include <algorithm>
 #include <cstddef>
 #include <filesystem>

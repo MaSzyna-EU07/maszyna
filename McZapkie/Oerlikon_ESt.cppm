@@ -39,6 +39,7 @@ Co brakuje:
 - PZZ dla dodatkowego
 */
 module;
+#include <string>
 #include <array>
 #include <memory>
 

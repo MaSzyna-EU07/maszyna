@@ -1,4 +1,8 @@
 module;
+#include <cstddef>
+#include <stdexcept>
+#include <unordered_map>
+#include <vector>
 #include <AL/al.h>
 #include <AL/alc.h>
 #include <cmath>

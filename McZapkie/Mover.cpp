@@ -1,4 +1,6 @@
 module;
+#include <array>
+#include <fstream>
 #include <memory>
 #include <cassert>
 #include <typeinfo>

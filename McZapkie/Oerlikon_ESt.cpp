@@ -1,4 +1,5 @@
 module;
+#include <array>
 #include <memory>
 #include <typeinfo>
 #include <algorithm>

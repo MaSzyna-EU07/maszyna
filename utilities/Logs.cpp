@@ -1,4 +1,9 @@
 module;
+#include <chrono>
+#include <fstream>
+#include <ios>
+#include <string>
+#include <utility>
 #include <format>
 #include "utilities/Globals_macros.h"
 #include "winheaders.h"

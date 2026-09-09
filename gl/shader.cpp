@@ -1,4 +1,7 @@
 module;
+#include <stdexcept>
+#include <string>
+#include <utility>
 #include "utilities/Globals_macros.h"
 #include "glad/glad.h"
 #include <algorithm>

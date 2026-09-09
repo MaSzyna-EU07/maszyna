@@ -1,4 +1,6 @@
 module;
+#include <utility>
+#include <vector>
 #include <string>
 #include <sstream>
 #include "vehicle/DynObj_macros.h"

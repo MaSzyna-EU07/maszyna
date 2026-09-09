@@ -1,4 +1,7 @@
 module;
+#include <atomic>
+#include <functional>
+#include <string>
 #include "utilities/Globals_macros.h"
 #include <GLFW/glfw3.h>
 #include <chrono>

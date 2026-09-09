@@ -1,4 +1,6 @@
 module;
+#include <tuple>
+#include <vector>
 #include <libserialport.h>
 #include "winheaders.h"
 #include <filesystem>

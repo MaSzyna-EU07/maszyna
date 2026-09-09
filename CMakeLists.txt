@@ -17,6 +17,16 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/CMake_modules/")
 set(DEPS_DIR ${DEPS_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/ref")
 project("eu07")
 
+# Clang is the only compiler this project is built and tested with on Linux
+# (Clang 22 in CI); MSVC covers Windows. GCC is not supported: its lazy loading
+# of module interfaces is broken here, and working around it costs roughly twice
+# the memory per compiler process.
+if (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|MSVC")
+	message(FATAL_ERROR
+		"Unsupported compiler: ${CMAKE_CXX_COMPILER_ID}. "
+		"Build with Clang (CI uses 22) or MSVC.")
+endif()
+
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fsanitize=undefined")
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fsanitize=undefined -Wformat")
 #set(CMAKE_LD_FLAGS "${CMAKE_LD_FLAGS} -fsanitize=address -fsanitize=undefined")
@@ -428,8 +438,6 @@ configure_file(${CMAKE_SOURCE_DIR}/eu07.rc.in
 if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
     set(SOURCES ${SOURCES} ${CMAKE_BINARY_DIR}/eu07.rc)
     set(SOURCES ${SOURCES} eu07.ico)
-    set(SOURCES ${SOURCES} eu07.ico
-			editor/editorSettings.hpp)
     add_compile_options("/utf-8")
 endif()
 
@@ -483,24 +491,6 @@ target_sources(${PROJECT_NAME}
 
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 
-# Clang is the compiler this project is built and tested with (Clang 22 in CI);
-# it needs none of the workarounds below. GCC 16 still builds the tree, but only
-# with eager module loading: its lazy loading is broken here, reading
-# eu07.simcore:dynobj gives "Bad file data" and eu07.glm gives "recursive lazy
-# load" / "failed to load pendings for glm::vec". Eager loading costs roughly
-# twice the memory per compiler process. Drop this and the job pool below once
-# the compiler bug is fixed.
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-	target_compile_options(${PROJECT_NAME} PRIVATE -fno-module-lazy)
-
-	# Eager loading makes each compiler process hold ~1 GB, so a plain -j16 needs
-	# far more RAM than most machines have. This pool caps how many compilations
-	# run at once no matter what -j the caller passes; raise it if you have memory
-	# to spare. Ninja only.
-	set(MODULE_COMPILE_JOBS "6" CACHE STRING "Concurrent compiles (bounds peak RAM; see -fno-module-lazy above)")
-	set_property(GLOBAL APPEND PROPERTY JOB_POOLS module_compile=${MODULE_COMPILE_JOBS})
-	set_property(TARGET ${PROJECT_NAME} PROPERTY JOB_POOL_COMPILE module_compile)
-endif()
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE ${DEFINITIONS})
 

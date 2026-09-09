@@ -1,4 +1,9 @@
 module;
+#include <utility>
+#include <cstddef>
+#include <ios>
+#include <map>
+#include <memory>
 #include <vector>
 #include <algorithm>
 #include <cmath>

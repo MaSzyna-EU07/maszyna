@@ -1,4 +1,5 @@
 module;
+#include <deque>
 #include "rendering/openglmatrixstack_macros.h"
 #include <stack>
 #include <vector>

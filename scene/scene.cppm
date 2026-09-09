@@ -1,4 +1,10 @@
 module;
+#include <cstddef>
+#include <functional>
+#include <istream>
+#include <ostream>
+#include <string>
+#include <tuple>
 #include <iosfwd>
 #include <cmath>
 #include <vector>

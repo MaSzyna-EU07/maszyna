@@ -1,4 +1,7 @@
 module;
+#include <istream>
+#include <queue>
+#include <string>
 #include <cstdint>
 #include <memory>
 #include <ostream>

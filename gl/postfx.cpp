@@ -1,4 +1,5 @@
 module;
+#include <string>
 #include "glad/glad.h"
 #include <vector>
 #include <memory>

@@ -1,4 +1,6 @@
 module;
+#include <array>
+#include <vector>
 #include <string>
 #include "utilities/translation_macros.h"
 #include "imgui/imgui.h"

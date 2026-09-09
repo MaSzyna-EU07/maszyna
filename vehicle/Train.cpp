@@ -1,4 +1,8 @@
 module;
+#include <cstddef>
+#include <cstdint>
+#include <deque>
+#include <utility>
 #include <GLFW/glfw3.h>
 #include <array>
 #include <functional>

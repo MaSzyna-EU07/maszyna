@@ -7,6 +7,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <tuple>
 #include <unordered_map>
 #include <array>
 #include <GLFW/glfw3.h>

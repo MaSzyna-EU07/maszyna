@@ -1,4 +1,6 @@
 module;
+#include <array>
+#include <unordered_map>
 #include "imgui/imgui.h"
 #include <random>
 #include <GLFW/glfw3.h>

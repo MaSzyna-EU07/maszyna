@@ -7,6 +7,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <cstddef>
 #include <vector>
 
 export module eu07.rendering.frustum;

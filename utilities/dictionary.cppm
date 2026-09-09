@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 // collection of keyword-value pairs
 // NOTE: since our python dictionary operates on a few types, most of the class was hardcoded for simplicity
 module;
+#include <utility>
 #include <string>
 #include <vector>
 

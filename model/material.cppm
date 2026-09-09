@@ -1,4 +1,8 @@
 module;
+#include <array>
+#include <cstddef>
+#include <string>
+#include <utility>
 #include "global_include/interfaces/ITexture_macros.h"
 #include <optional>
 #include <unordered_map>

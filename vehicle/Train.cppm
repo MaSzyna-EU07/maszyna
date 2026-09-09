@@ -7,6 +7,8 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <tuple>
+#include <utility>
 #include "utilities/Globals_macros.h"
 #include <cstdint>
 #include <memory>

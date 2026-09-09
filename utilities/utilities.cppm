@@ -12,6 +12,13 @@ http://mozilla.org/MPL/2.0/.
 /*rozne takie duperele do operacji na stringach w paszczalu, pewnie w delfi sa lepsze*/
 /*konwersja zmiennych na stringi, funkcje matematyczne, logiczne, lancuchowe, I/O etc*/
 module;
+#include <cstddef>
+#include <limits>
+#include <sstream>
+#include <string>
+#include <type_traits>
+#include <utility>
+#include <vector>
 #include "utilities/utilities_macros.h"
 #include <algorithm>
 #include <chrono>

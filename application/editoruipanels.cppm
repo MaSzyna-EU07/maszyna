@@ -1,4 +1,6 @@
 module;
+#include <string>
+#include <utility>
 #include "global_include/interfaces/ITexture_macros.h"
 #include <memory>
 #include <vector>

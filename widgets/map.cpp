@@ -1,4 +1,5 @@
 module;
+#include <iterator>
 #include "utilities/translation_macros.h"
 #include "glad/glad.h"
 #include <GLFW/glfw3.h>

@@ -1,4 +1,7 @@
 module;
+#include <array>
+#include <map>
+#include <sstream>
 #include "glad/glad.h"
 #include "imgui/imgui.h"
 #include <algorithm>

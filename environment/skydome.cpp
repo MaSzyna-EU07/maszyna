@@ -1,4 +1,5 @@
 module;
+#include <vector>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>

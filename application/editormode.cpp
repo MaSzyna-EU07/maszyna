@@ -1,4 +1,7 @@
 module;
+#include <cstddef>
+#include <map>
+#include <utility>
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <memory>

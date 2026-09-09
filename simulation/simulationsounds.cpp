@@ -1,4 +1,6 @@
 module;
+#include <string>
+#include <unordered_map>
 
 module eu07.simulation.simulationsounds;
 /*

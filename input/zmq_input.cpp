@@ -1,4 +1,8 @@
 module;
+#include <chrono>
+#include <map>
+#include <optional>
+#include <vector>
 #include "utilities/Globals_macros.h"
 #include <cstddef>
 #include <sstream>

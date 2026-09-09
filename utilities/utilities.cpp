@@ -1,4 +1,16 @@
 module;
+#include <limits>
+#include <type_traits>
+#include <array>
+#include <condition_variable>
+#include <cstddef>
+#include <iomanip>
+#include <iterator>
+#include <mutex>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
 #include <algorithm>
 #include <chrono>
 #include <unordered_map>

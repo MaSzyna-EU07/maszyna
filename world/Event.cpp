@@ -1,4 +1,10 @@
 module;
+#include <array>
+#include <cstddef>
+#include <tuple>
+#include <deque>
+#include <list>
+#include <unordered_map>
 #include <GLFW/glfw3.h>
 #include <lua.hpp>
 #include <algorithm>

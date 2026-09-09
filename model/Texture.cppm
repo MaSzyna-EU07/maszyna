@@ -7,6 +7,10 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <array>
+#include <atomic>
+#include <cstddef>
+#include <utility>
 #include "glad/glad.h"
 #include <istream>
 #include "winheaders.h"

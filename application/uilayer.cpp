@@ -1,4 +1,8 @@
 module;
+#include <deque>
+#include <iterator>
+#include <list>
+#include <vector>
 #include "glad/glad.h"
 #include <GLFW/glfw3.h>
 #include <memory>

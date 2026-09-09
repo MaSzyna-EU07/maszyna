@@ -7,6 +7,8 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <functional>
+#include <tuple>
 #include <string>
 #include <unordered_map>
 #include <vector>

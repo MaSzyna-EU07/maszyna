@@ -1,4 +1,6 @@
 module;
+#include <cstddef>
+#include <vector>
 #include <cmath>
 #include "glad/glad.h"
 #include "rendering/openglmatrixstack_macros.h"
