@@ -5,6 +5,8 @@
 #include <vector>
 import eu07.glm;
 #include <cstdint>
+#include <cstddef>
+#include <limits>
 
 struct QuadTreeLeave {
   QuadTreeLeave(const glm::dvec3& origin, const glm::dvec3& extent,

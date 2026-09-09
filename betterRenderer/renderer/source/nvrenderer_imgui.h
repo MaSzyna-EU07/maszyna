@@ -2,6 +2,7 @@
 
 #include "imgui_nvrhi.h"
 #include "nvrenderer/nvrenderer.h"
+#include <memory>
 
 class NvImguiRenderer : public imgui_renderer {
   virtual bool Init() override;

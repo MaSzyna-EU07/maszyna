@@ -13,6 +13,10 @@ import eu07.utilities.utilities;
 #include <yaml-cpp/yaml.h>
 #include <string>
 #include <filesystem>
+#include <memory>
+#include <optional>
+#include <sstream>
+#include <utility>
 
 std::string_view MaterialAdapter::GetTexturePathForEntry(
     std::string_view key) const {

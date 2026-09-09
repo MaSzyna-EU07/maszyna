@@ -1,4 +1,5 @@
 module;
+#include <cstring>
 #include <map>
 #include <memory>
 #include <sstream>

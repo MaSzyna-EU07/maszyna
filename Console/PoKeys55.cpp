@@ -1,4 +1,5 @@
 module;
+#include <cstdlib>
 #include <string>
 #include <setupapi.h>
 #include "utilities/utilities_macros.h"

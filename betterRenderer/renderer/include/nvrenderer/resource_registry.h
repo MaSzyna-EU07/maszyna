@@ -4,6 +4,9 @@
 
 #include <entt/entt.hpp>
 import eu07.glm;
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 
 class NvTextureManager;
 class MaResourceRegistry;

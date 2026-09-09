@@ -10,6 +10,8 @@
 #include "nvrendererbackend.h"
 #include "imgui/imgui.h"
 import eu07.glm;
+#include <array>
+#include <cstddef>
 
 NvSsao::NvSsao(NvRenderer* renderer)
     : m_backend(renderer->m_backend.get()),

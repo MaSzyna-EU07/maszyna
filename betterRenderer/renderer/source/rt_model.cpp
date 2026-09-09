@@ -10,6 +10,12 @@
 #include <vector>
 
 import eu07.simcore;
+#include <array>
+#include <cstddef>
+#include <limits>
+#include <memory>
+#include <tuple>
+#include <unordered_map>
 
 namespace Rt {
 

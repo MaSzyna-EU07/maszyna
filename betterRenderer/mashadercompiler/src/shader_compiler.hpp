@@ -11,6 +11,9 @@
 #include <Windows.h>
 #endif
 #include <dxcapi.h>
+#include <string>
+#include <tuple>
+#include <vector>
 
 template <typename T>
 using RefCountPtr = nvrhi::RefCountPtr<T>;

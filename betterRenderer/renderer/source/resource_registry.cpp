@@ -4,6 +4,11 @@ import eu07.utilities.logs;
 #include "fmt/compile.h"
 #include "nvtexture.h"
 #include "nvrenderer/nvrenderer.h"
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <stdexcept>
+#include <string>
 
 MaResourceMappingSet& MaResourceMappingSet::Add(
     const MaResourceMapping& mapping) {

@@ -2,6 +2,7 @@
 
 #include <nvrhi/nvrhi.h>
 import eu07.glm;
+#include <vector>
 
 struct Bloom {
   struct BloomConstants {

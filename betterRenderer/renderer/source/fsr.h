@@ -4,6 +4,8 @@
 
 #include "nvrendererbackend.h"
 import eu07.glm;
+#include <cstddef>
+#include <string>
 
 struct NvFSR {
   NvFSR(class NvRenderer* renderer);

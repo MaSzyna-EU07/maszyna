@@ -8,6 +8,9 @@ import eu07.simulation.simulationenvironment;
 import eu07.simulation.simulationtime;
 #include "imgui/imgui.h"
 import eu07.glm;
+#include <array>
+#include <limits>
+#include <memory>
 
 namespace {
 static const float PI = 3.14159265358979323846f;

@@ -12,6 +12,12 @@ import eu07.utilities.logs;
 #include "nvrendererbackend.h"
 #include "nvtexture.h"
 #include "sky.h"
+#include <array>
+#include <cstddef>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 bool NvRenderer::MaterialTemplate::CreateBindingSet(size_t pipeline_index,
                                                     MaterialCache &cache) {

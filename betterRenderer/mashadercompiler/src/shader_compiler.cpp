@@ -4,6 +4,12 @@
 #include <iostream>
 
 #include "utils.hpp"
+#include <cstdint>
+#include <filesystem>
+#include <string>
+#include <tuple>
+#include <unordered_map>
+#include <vector>
 
 int MaShaderCompiler::Run() {
   ParseOptions();

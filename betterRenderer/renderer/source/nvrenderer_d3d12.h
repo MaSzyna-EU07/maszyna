@@ -11,6 +11,8 @@
 #include <dxgi1_6.h>
 #include <dxgidebug.h>
 #include <nvrhi/d3d12.h>
+#include <string>
+#include <vector>
 
 class NvRendererBackend_D3D12 : public NvRendererBackend {
   friend class NvRenderer;

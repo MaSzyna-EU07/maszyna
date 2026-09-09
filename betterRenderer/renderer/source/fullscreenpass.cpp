@@ -3,6 +3,7 @@
 #include "fullscreenpass.h"
 
 #include "nvrendererbackend.h"
+#include <cstring>
 
 FullScreenPass::FullScreenPass(NvRendererBackend* backend)
     : m_backend(backend) {}

@@ -1,4 +1,5 @@
 module;
+#include <cstdio>
 #include <tuple>
 #include <vector>
 #include <libserialport.h>

@@ -19,6 +19,7 @@
 #ifdef __cplusplus
 
 #include <cmath>
+#include <cstdint>
 
 namespace IntelTAA
 {

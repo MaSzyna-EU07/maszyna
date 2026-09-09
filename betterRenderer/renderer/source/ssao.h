@@ -6,6 +6,8 @@
 
 #include "XeGTAO.h"
 import eu07.glm;
+#include <array>
+#include <cstddef>
 
 struct NvSsao {
   NvSsao(class NvRenderer* renderer);

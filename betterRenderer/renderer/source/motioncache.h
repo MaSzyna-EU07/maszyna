@@ -4,6 +4,8 @@
 #include <functional>
 import eu07.glm;
 #include <cassert>
+#include <cstddef>
+#include <unordered_map>
 
 struct MotionCacheId {
   union {

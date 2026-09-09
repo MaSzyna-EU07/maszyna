@@ -1,6 +1,9 @@
 #pragma once
 
 #include "nvrenderer/nvrenderer.h"
+#include <cstddef>
+#include <cstdint>
+#include <unordered_map>
 
 struct WindshieldRain {
   void Init(NvRenderer *in_renderer);

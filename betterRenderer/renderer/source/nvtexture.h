@@ -9,6 +9,11 @@
 import eu07.global_include.interfaces.itexture;
 #include "nvrenderer/nvrenderer_enums.h"
 import eu07.glm;
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <utility>
+#include <vector>
 
 enum MaTextureTraits {
   MaTextureTraits_Sharpen,

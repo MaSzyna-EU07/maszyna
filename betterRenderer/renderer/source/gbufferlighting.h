@@ -3,6 +3,9 @@
 #include <nvrenderer/nvrenderer.h>
 #include <nvrhi/nvrhi.h>
 import eu07.glm;
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
 
 struct GbufferLighting : public MaResourceRegistry {

@@ -3,6 +3,7 @@
 #include "nvrenderer/resource_registry.h"
 
 #include <nvrhi/nvrhi.h>
+#include <cstdint>
 
 class NvRenderer;
 class NvRendererBackend;

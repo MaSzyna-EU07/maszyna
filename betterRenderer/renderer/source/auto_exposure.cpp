@@ -5,6 +5,7 @@
 #include "config.h"
 #include "nvrenderer/nvrenderer.h"
 #include "nvrendererbackend.h"
+#include <cstdint>
 
 MaAutoExposure::MaAutoExposure(NvRenderer *renderer)
     : MaResourceRegistry(renderer), m_backend(renderer->GetBackend()) {}

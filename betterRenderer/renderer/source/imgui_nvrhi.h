@@ -55,6 +55,7 @@ SOFTWARE.
 
 #include <imgui/imgui.h>
 #include "nvtexture.h"
+#include <cstddef>
 
 struct ImGui_NVRHI
 {

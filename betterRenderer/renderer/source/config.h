@@ -3,6 +3,9 @@
 #include <yaml-cpp/yaml.h>
 
 #include <filesystem>
+#include <array>
+#include <string>
+#include <vector>
 
 struct MaConfig {
   enum MaTonemapType { Default_Srgb = 0, Linear_Rec2020 };

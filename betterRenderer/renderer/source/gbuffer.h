@@ -1,6 +1,8 @@
 #pragma once
 
 #include <nvrhi/nvrhi.h>
+#include <cstdint>
+#include <vector>
 
 struct NvGbuffer {
   NvGbuffer(class NvRenderer* renderer);

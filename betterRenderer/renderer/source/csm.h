@@ -3,6 +3,8 @@
 #include <nvrhi/nvrhi.h>
 
 #include "nvrenderer/resource_registry.h"
+#include <array>
+#include <vector>
 
 struct MaShadowMap : public MaResourceRegistry {
   MaShadowMap(class NvRenderer* renderer);

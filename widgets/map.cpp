@@ -1,4 +1,5 @@
 module;
+#include <cstring>
 #include <cstddef>
 #include <iterator>
 #include "utilities/translation_macros.h"

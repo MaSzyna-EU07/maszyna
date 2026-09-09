@@ -1,4 +1,5 @@
 module;
+#include <cstring>
 #include <cstddef>
 #include <functional>
 #include <memory>

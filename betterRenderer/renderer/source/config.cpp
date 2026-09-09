@@ -2,6 +2,9 @@
 
 #include "nvrenderer/nvrenderer.h"
 #include "nvrendererbackend.h"
+#include <filesystem>
+#include <string>
+#include <vector>
 
 void MaConfig::Init(const std::filesystem::path& config_file) {
   Init(YAML::LoadFile(config_file.generic_string()));

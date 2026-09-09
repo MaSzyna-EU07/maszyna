@@ -2,6 +2,10 @@
 #include "nvtexture.h"
 
 #include <sstream>
+#include <cstddef>
+#include <cstdint>
+#include <ios>
+#include <string>
 
 bool NvTexture::LoadDDS(std::string &data, int size_bias) {
   ddspp::Descriptor desc{};

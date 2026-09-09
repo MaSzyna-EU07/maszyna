@@ -53,6 +53,9 @@ SOFTWARE.
 #include "imgui_nvrhi.h"
 #include "nvrendererbackend.h"
 #include "config.h"
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 
 struct VERTEX_CONSTANT_BUFFER
 {

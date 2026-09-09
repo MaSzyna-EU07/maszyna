@@ -38,6 +38,17 @@ import eu07.rendering.renderer;
 #include "resource_registry.h"
 import eu07.environment.sky;
 import eu07.glm;
+#include <array>
+#include <condition_variable>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 namespace Rt {
 struct IRtModel;

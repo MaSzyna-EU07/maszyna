@@ -1,4 +1,5 @@
 module;
+#include <cstring>
 #include "winheaders.h"
 #include "utilities/utilities_macros.h"
 #include <typeinfo>

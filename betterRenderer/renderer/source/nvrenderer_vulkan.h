@@ -12,6 +12,10 @@
 
 #include <vulkan/vulkan.hpp>
 #include <queue>
+#include <cstdint>
+#include <string>
+#include <unordered_set>
+#include <vector>
 
 class NvRendererBackend_Vulkan : public NvRendererBackend {
   friend class NvRenderer;

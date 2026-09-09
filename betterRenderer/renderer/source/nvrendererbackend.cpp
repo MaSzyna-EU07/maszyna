@@ -2,6 +2,9 @@
 
 import eu07.utilities.logs;
 #include <fmt/format.h>
+#include <cstddef>
+#include <string>
+#include <unordered_map>
 
 void NvRendererMessageCallback::message(nvrhi::MessageSeverity severity,
                                         const char *messageText) {

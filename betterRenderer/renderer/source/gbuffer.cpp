@@ -4,6 +4,7 @@
 
 #include "nvrenderer/nvrenderer.h"
 #include "nvrendererbackend.h"
+#include <cstdint>
 
 NvGbuffer::NvGbuffer(NvRenderer* renderer)
     : m_backend(renderer->m_backend.get()) {}

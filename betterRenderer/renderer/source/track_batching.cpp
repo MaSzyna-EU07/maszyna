@@ -11,6 +11,15 @@ import eu07.glm;
 #include "utilities/utilities_macros.h"
 import eu07.utilities.utilities;
 import eu07.utilities.float3d;
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <limits>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace BatchingUtils {
 

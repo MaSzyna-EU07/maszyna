@@ -1,4 +1,5 @@
 module;
+#include <cstring>
 #include <array>
 #include <unordered_map>
 #include "imgui/imgui.h"

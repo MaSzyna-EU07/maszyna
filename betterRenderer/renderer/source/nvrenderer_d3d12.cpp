@@ -14,6 +14,10 @@ import eu07.utilities.logs;
 #include <nvrhi/validation.h>
 
 #include "nvrendererbackend.h"
+#include <fstream>
+#include <ios>
+#include <memory>
+#include <string>
 
 #define HR_RETURN(op)                                      \
   hr = (HRESULT)(op);                                      \

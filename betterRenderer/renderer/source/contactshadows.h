@@ -2,6 +2,7 @@
 
 #include <nvrhi/nvrhi.h>
 import eu07.glm;
+#include <cstdint>
 
 struct MaContactShadows {
   MaContactShadows(class NvRenderer* renderer, class NvGbuffer* gbuffer);

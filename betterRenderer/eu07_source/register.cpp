@@ -1,5 +1,6 @@
 import eu07.utilities.logs;
 #include "nvrenderer/nvrenderer.h"
+#include <memory>
 
 namespace {
 std::unique_ptr<gfx_renderer> create_nvrenderer_for_d3d12() {

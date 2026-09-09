@@ -1,6 +1,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include "nvrenderer_d3d12.h"
+#include <string>
 
 #if LIBMANUL_WITH_D3D12
 

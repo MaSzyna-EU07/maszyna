@@ -17,6 +17,16 @@ VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
 #include "nvrendererbackend.h"
 #include <queue>
+#include <cstddef>
+#include <cstdint>
+#include <iostream>
+#include <limits>
+#include <memory>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <unordered_set>
+#include <vector>
 
 #define MA_ERROR_LOG(fmt_str, ...) ErrorLog(fmt::format(fmt_str, __VA_ARGS__))
 #define MA_INFO_LOG(fmt_str, ...) WriteLog(fmt::format(fmt_str, __VA_ARGS__))

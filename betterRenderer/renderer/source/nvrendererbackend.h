@@ -3,6 +3,10 @@
 #include <nvrhi/nvrhi.h>
 
 #include "nvrenderer/nvrenderer.h"
+#include <array>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 struct ShaderDefine {
   std::string m_name;

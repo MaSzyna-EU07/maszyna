@@ -3,6 +3,10 @@
 #include "fullscreenpass.h"
 #include "nvrenderer/resource_registry.h"
 #include "nvrhi/nvrhi.h"
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <string>
 
 struct MaEnvironment : public MaResourceRegistry {
   nvrhi::TextureHandle m_skybox;

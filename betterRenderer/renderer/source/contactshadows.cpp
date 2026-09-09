@@ -5,6 +5,7 @@
 #include "gbuffer.h"
 #include "nvrenderer/nvrenderer.h"
 #include "nvrendererbackend.h"
+#include <cstdint>
 
 MaContactShadows::MaContactShadows(NvRenderer* renderer, NvGbuffer* gbuffer)
     : m_backend(renderer->GetBackend()),
