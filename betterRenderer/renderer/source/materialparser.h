@@ -1,12 +1,11 @@
 #pragma once
 
 #include <memory>
-#include <string>
-#include <string_view>
 #include <optional>
-#include <unordered_map>
-
 #include <string>
+#include <unordered_map>
+#include <string_view>
+
 
 import eu07.glm;
 struct MaterialAdapterInternal {

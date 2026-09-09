@@ -1,10 +1,4 @@
-﻿#include "config.h"
-#include "gbufferblitpass.h"
-#include "motioncache.h"
-#include "nvrenderer/nvrenderer.h"
-#include "nvrendererbackend.h"
-
-#include <cstddef>
+﻿#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -13,6 +7,12 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include "config.h"
+#include "gbufferblitpass.h"
+#include "motioncache.h"
+#include "nvrenderer/nvrenderer.h"
+#include "nvrendererbackend.h"
+
 #include "utilities/utilities_macros.h"
 import eu07.utilities.timer;
 import eu07.simcore;

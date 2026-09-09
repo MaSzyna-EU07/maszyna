@@ -1,3 +1,9 @@
+#include <cstddef>
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <string>
+#include <utility>
 #include "environment.h"
 
 #include <fmt/format.h>
@@ -8,12 +14,6 @@
 #include "nvrenderer/nvrenderer.h"
 #include "nvrendererbackend.h"
 #include "nvtexture.h"
-#include <cstddef>
-#include <cstdint>
-#include <map>
-#include <memory>
-#include <string>
-#include <utility>
 #include "sky.h"
 
 import eu07.simulation.simulationenvironment;

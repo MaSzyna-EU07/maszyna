@@ -1,10 +1,10 @@
 #pragma once
 
+#include <cstddef>
+#include <string>
 #include <ffx-fsr2-api/ffx_fsr2.h>
 
 #include "nvrendererbackend.h"
-#include <cstddef>
-#include <string>
 
 import eu07.glm;
 struct NvFSR {

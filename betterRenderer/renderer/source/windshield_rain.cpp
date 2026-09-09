@@ -1,3 +1,4 @@
+#include <cstddef>
 #include "windshield_rain.h"
 
 #include "gbuffer.h"
@@ -5,7 +6,6 @@
 #include "nvrendererbackend.h"
 #include "nvrhi/utils.h"
 #include "nvtexture.h"
-#include <cstddef>
 
 void WindshieldRain::Init(NvRenderer* in_renderer) {
   renderer = in_renderer;

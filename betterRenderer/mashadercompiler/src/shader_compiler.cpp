@@ -1,15 +1,15 @@
-#include "shader_compiler.hpp"
-
-#include <fstream>
-#include <iostream>
-
-#include "utils.hpp"
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <iostream>
 #include <string>
 #include <tuple>
 #include <unordered_map>
 #include <vector>
+#include "shader_compiler.hpp"
+
+
+#include "utils.hpp"
 
 int MaShaderCompiler::Run() {
   ParseOptions();

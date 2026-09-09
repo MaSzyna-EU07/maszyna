@@ -1,3 +1,4 @@
+#include <queue>
 #include "fsr.h"
 
 #if LIBMANUL_WITH_D3D12
@@ -16,7 +17,6 @@
 #include "utilities/Globals_macros.h"
 #include "gbuffer.h"
 #include "gbufferblitpass.h"
-#include <queue>
 
 import eu07.utilities.globals;
 import eu07.glm;

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <nvrhi/nvrhi.h>
 #include <cstdint>
+#include <nvrhi/nvrhi.h>
 
 import eu07.glm;
 struct MaContactShadows {

@@ -1,12 +1,12 @@
 #pragma once
 
-#include "fullscreenpass.h"
-#include "nvrenderer/resource_registry.h"
-#include "nvrhi/nvrhi.h"
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include "fullscreenpass.h"
+#include "nvrenderer/resource_registry.h"
+#include "nvrhi/nvrhi.h"
 
 struct MaEnvironment : public MaResourceRegistry {
   nvrhi::TextureHandle m_skybox;

@@ -1,3 +1,4 @@
+#include <cstdint>
 #include "gbufferlighting.h"
 
 #include <nvrhi/utils.h>
@@ -7,7 +8,6 @@
 #include "nvrendererbackend.h"
 #include "ssao.h"
 #include "config.h"
-#include <cstdint>
 
 import eu07.glm;
 void GbufferLighting::Init() {

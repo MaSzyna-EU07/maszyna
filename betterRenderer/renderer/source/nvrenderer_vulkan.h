@@ -1,13 +1,13 @@
 #pragma once
 
-#include <nvrhi/nvrhi.h>
-
-#include "nvrenderer/nvrenderer.h"
-#include "nvrendererbackend.h"
 #include <cstdint>
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include <nvrhi/nvrhi.h>
+
+#include "nvrenderer/nvrenderer.h"
+#include "nvrendererbackend.h"
 
 #if LIBMANUL_WITH_VULKAN
 

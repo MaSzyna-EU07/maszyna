@@ -1,8 +1,4 @@
-﻿#include "nvtexture.h"
-#include "nvrenderer/nvrenderer.h"
-
-#include "utilities/Globals_macros.h"
-#include <array>
+﻿#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -11,6 +7,10 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include "nvtexture.h"
+#include "nvrenderer/nvrenderer.h"
+
+#include "utilities/Globals_macros.h"
 #include <fmt/format.h>
 #include "utilities/utilities_macros.h"
 #include "nvrendererbackend.h"

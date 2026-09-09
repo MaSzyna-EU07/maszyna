@@ -1,3 +1,5 @@
+#include <limits>
+#include <vector>
 #include "csm.h"
 
 #include <nvrhi/utils.h>
@@ -5,8 +7,6 @@
 #include "config.h"
 #include "nvrenderer/nvrenderer.h"
 #include "nvrendererbackend.h"
-#include <limits>
-#include <vector>
 
 MaShadowMap::MaShadowMap(NvRenderer* renderer)
     : MaResourceRegistry(renderer), m_backend(renderer->m_backend.get()) {}

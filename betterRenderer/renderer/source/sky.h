@@ -1,8 +1,8 @@
 #pragma once
 
+#include <memory>
 #include "fullscreenpass.h"
 #include "nvrenderer/resource_registry.h"
-#include <memory>
 
 struct Sky : public MaResourceRegistry {
   Sky(class NvRenderer* renderer, struct MaEnvironment *environment);

@@ -1,17 +1,17 @@
+#include <filesystem>
+#include <memory>
+#include <optional>
+#include <sstream>
+#include <string>
+#include <utility>
 #include "materialparser.h"
 
 #include "nvrenderer/nvrenderer.h"
 
 #include "utilities/Globals_macros.h"
-#include <memory>
-#include <optional>
-#include <sstream>
-#include <utility>
 #include <fmt/format.h>
 #include "utilities/utilities_macros.h"
 #include <yaml-cpp/yaml.h>
-#include <string>
-#include <filesystem>
 
 import eu07.utilities.globals;
 import eu07.utilities.logs;

@@ -1,12 +1,12 @@
 #pragma once
 
-#include <nvrhi/nvrhi.h>
-
-#include <memory>
-
-#include "XeGTAO.h"
 #include <array>
 #include <cstddef>
+#include <memory>
+#include <nvrhi/nvrhi.h>
+
+
+#include "XeGTAO.h"
 
 import eu07.glm;
 struct NvSsao {

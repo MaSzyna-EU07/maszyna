@@ -1,16 +1,16 @@
 #pragma once
 
 #include <bitset>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 #include <nvrhi/nvrhi.h>
 
 #include "global_include/interfaces/ITexture_macros.h"
-#include <cstddef>
-#include <cstdint>
-#include <string>
-#include <utility>
-#include <vector>
 #include "nvrenderer/nvrenderer_enums.h"
 
 import eu07.global_include.interfaces.itexture;

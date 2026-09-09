@@ -46,16 +46,16 @@ SOFTWARE.
 
 #pragma once
 
+#include <cstddef>
 #include <memory>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 #include <stdint.h>
 
 #include <nvrhi/nvrhi.h>
 
 #include <imgui/imgui.h>
 #include "nvtexture.h"
-#include <cstddef>
 
 struct ImGui_NVRHI
 {

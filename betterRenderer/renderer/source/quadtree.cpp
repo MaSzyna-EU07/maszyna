@@ -1,7 +1,7 @@
-#include "nvrenderer/quadtree.h"
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include "nvrenderer/quadtree.h"
 
 void QuadTreeBuilder::Node::Insert(uint32_t index, glm::dvec3 min_,
                                    glm::dvec3 max_, int level) {

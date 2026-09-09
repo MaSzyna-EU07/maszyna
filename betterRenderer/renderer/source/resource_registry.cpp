@@ -1,10 +1,10 @@
-#include "nvrenderer/resource_registry.h"
-
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include "nvrenderer/resource_registry.h"
+
 #include "fmt/compile.h"
 #include "nvtexture.h"
 #include "nvrenderer/nvrenderer.h"

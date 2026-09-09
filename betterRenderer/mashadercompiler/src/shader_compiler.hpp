@@ -1,9 +1,12 @@
 #pragma once
 
+#include <filesystem>
+#include <string>
+#include <tuple>
+#include <vector>
 #include <nvrhi/nvrhi.h>
 #include <yaml-cpp/yaml.h>
 
-#include <filesystem>
 
 #ifndef _WIN32
 #include <WinAdapter.h>
@@ -11,9 +14,6 @@
 #include <Windows.h>
 #endif
 #include <dxcapi.h>
-#include <string>
-#include <tuple>
-#include <vector>
 
 template <typename T>
 using RefCountPtr = nvrhi::RefCountPtr<T>;

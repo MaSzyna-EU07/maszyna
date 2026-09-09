@@ -1,11 +1,11 @@
 #pragma once
 
-#include <yaml-cpp/yaml.h>
-
-#include <filesystem>
 #include <array>
+#include <filesystem>
 #include <string>
 #include <vector>
+#include <yaml-cpp/yaml.h>
+
 
 struct MaConfig {
   enum MaTonemapType { Default_Srgb = 0, Linear_Rec2020 };

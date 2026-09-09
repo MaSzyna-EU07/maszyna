@@ -1,11 +1,11 @@
 #pragma once
 
+#include <string>
+#include <vector>
 #include <nvrhi/nvrhi.h>
 
 #include "nvrenderer/nvrenderer.h"
 #include "nvrendererbackend.h"
-#include <string>
-#include <vector>
 
 #if LIBMANUL_WITH_D3D12
 

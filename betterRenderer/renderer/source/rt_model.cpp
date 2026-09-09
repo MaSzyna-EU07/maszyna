@@ -1,3 +1,10 @@
+#include <array>
+#include <cstddef>
+#include <limits>
+#include <memory>
+#include <tuple>
+#include <unordered_map>
+#include <vector>
 #include "rt_model.h"
 
 #include <bvh/v2/bvh.h>
@@ -7,14 +14,7 @@
 #include <bvh/v2/thread_pool.h>
 #include <bvh/v2/tri.h>
 
-#include <vector>
 
-#include <array>
-#include <cstddef>
-#include <limits>
-#include <memory>
-#include <tuple>
-#include <unordered_map>
 
 import eu07.simcore;
 namespace Rt {

@@ -1,12 +1,12 @@
 #pragma once
 
-#include <nvrhi/nvrhi.h>
-
-#include "nvrenderer/nvrenderer.h"
 #include <array>
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <nvrhi/nvrhi.h>
+
+#include "nvrenderer/nvrenderer.h"
 
 struct ShaderDefine {
   std::string m_name;

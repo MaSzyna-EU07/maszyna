@@ -1,9 +1,3 @@
-#include "nvrenderer_vulkan.h"
-
-#include <GLFW/glfw3.h>
-#include <fmt/format.h>
-
-#include "utilities/Globals_macros.h"
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -14,6 +8,12 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include "nvrenderer_vulkan.h"
+
+#include <GLFW/glfw3.h>
+#include <fmt/format.h>
+
+#include "utilities/Globals_macros.h"
 #include "config.h"
 #include "nvrenderer/nvrenderer.h"
 

@@ -1,9 +1,9 @@
 #pragma once
 
+#include <cstdint>
+#include <string>
 #include <yaml-cpp/yaml.h>
 
-#include <string>
-#include <cstdint>
 
 inline std::wstring ToWide(const std::string& str) {
   std::wstring wstr{};

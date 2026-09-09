@@ -1,3 +1,5 @@
+#include <array>
+#include <cstddef>
 #include "ssao.h"
 
 #include <nvrhi/nvrhi.h>
@@ -9,8 +11,6 @@
 #include "nvrenderer/nvrenderer.h"
 #include "nvrendererbackend.h"
 #include "imgui/imgui.h"
-#include <array>
-#include <cstddef>
 
 import eu07.glm;
 NvSsao::NvSsao(NvRenderer* renderer)

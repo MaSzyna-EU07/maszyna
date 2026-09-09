@@ -1,11 +1,11 @@
 #pragma once
 
-#include <nvrhi/nvrhi.h>
-
-#include <entt/entt.hpp>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <nvrhi/nvrhi.h>
+
+#include <entt/entt.hpp>
 
 import eu07.glm;
 class NvTextureManager;

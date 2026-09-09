@@ -1,9 +1,8 @@
-﻿#include "nvrenderer/nvrenderer.h"
-
-#include <array>
+﻿#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <future>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -11,8 +10,9 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "nvrenderer/nvrenderer.h"
+
 #include <nvrhi/utils.h>
-#include <future>
 #include "auto_exposure.h"
 #include "bloom.h"
 #include "config.h"

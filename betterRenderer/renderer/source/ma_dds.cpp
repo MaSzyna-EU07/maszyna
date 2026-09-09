@@ -1,11 +1,11 @@
-#include "ddspp/ddspp.h"
-#include "nvtexture.h"
-
-#include <sstream>
 #include <cstddef>
 #include <cstdint>
 #include <ios>
+#include <sstream>
 #include <string>
+#include "ddspp/ddspp.h"
+#include "nvtexture.h"
+
 
 bool NvTexture::LoadDDS(std::string &data, int size_bias) {
   ddspp::Descriptor desc{};

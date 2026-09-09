@@ -1,12 +1,12 @@
+#include <fstream>
+#include <ios>
+#include <memory>
+#include <string>
 #include "nvrenderer_d3d12.h"
 
 #include <fmt/format.h>
 
 #include "utilities/Globals_macros.h"
-#include <fstream>
-#include <ios>
-#include <memory>
-#include <string>
 #include "config.h"
 #include "nvrenderer/nvrenderer.h"
 

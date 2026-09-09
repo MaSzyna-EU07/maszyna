@@ -44,6 +44,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+#include <cstdint>
 #include <stddef.h>
 
 #include <imgui.h>
@@ -53,7 +54,6 @@ SOFTWARE.
 #include "imgui_nvrhi.h"
 #include "nvrendererbackend.h"
 #include "config.h"
-#include <cstdint>
 
 struct VERTEX_CONSTANT_BUFFER
 {

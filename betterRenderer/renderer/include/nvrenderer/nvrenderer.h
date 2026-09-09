@@ -1,10 +1,23 @@
 #pragma once
 
 //STL includes required by EU07 includes
+#include <array>
+#include <condition_variable>
+#include <cstddef>
+#include <cstdint>
 #include <deque>
-#include <stdexcept>
+#include <functional>
+#include <future>
 #include <memory>
+#include <mutex>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <variant>
+#include <vector>
 #include <math.h>
 
 // OpenGL includes required by EU07 includes
@@ -18,23 +31,10 @@
 #include <yaml-cpp/yaml.h>
 
 #include <entt/container/dense_map.hpp>
-#include <future>
-#include <mutex>
 
 // EU07 includes. This header is consumed by translation units that include
 // nothing else, so everything it names has to be imported here rather than
 // relied on to arrive from the including file.
-#include <array>
-#include <condition_variable>
-#include <cstddef>
-#include <cstdint>
-#include <functional>
-#include <optional>
-#include <string>
-#include <unordered_map>
-#include <unordered_set>
-#include <utility>
-#include <vector>
 
 #include "nvrenderer_enums.h"
 #include "quadtree.h"

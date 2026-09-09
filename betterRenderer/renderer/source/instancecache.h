@@ -1,11 +1,11 @@
 #pragma once
 
-#include "nvrenderer/nvrenderer.h"
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <unordered_map>
 #include <vector>
+#include "nvrenderer/nvrenderer.h"
 
 struct InstanceCacheId {
   gfx::geometry_handle m_geometry;
