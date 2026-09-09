@@ -1,14 +1,16 @@
 ﻿#include "nvtexture.h"
 #include "nvrenderer/nvrenderer.h"
 
-#include <utilities/Globals.h>
-#include <scripting/PyInt.h>
-#include <application/application.h>
-#include <utilities/dictionary.h>
+#include "utilities/Globals_macros.h"
+import eu07.utilities.globals;
+import eu07.scripting.pyint;
+import eu07.application.application;
+import eu07.utilities.dictionary;
 #include <fmt/format.h>
-#include <utilities/utilities.h>
+#include "utilities/utilities_macros.h"
+import eu07.utilities.utilities;
 
-#include "utilities/Logs.h"
+import eu07.utilities.logs;
 // #include "Texture.h"
 #include "nvrendererbackend.h"
 #include "stbi/stb_image.h"

@@ -484,11 +484,6 @@ if (NOT WITH_OPENVR)
 	list(REMOVE_ITEM MODULE_INTERFACES "${CMAKE_CURRENT_SOURCE_DIR}/vr/openvr_imp.cppm")
 endif()
 
-target_sources(${PROJECT_NAME}
-	PUBLIC FILE_SET CXX_MODULES
-	BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
-	FILES ${MODULE_INTERFACES})
-
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 
 
@@ -663,6 +658,35 @@ if(WIN32 AND WITH_PYTHON)
 		COMMAND ${CMAKE_COMMAND} -E copy_directory "${EU07_PY_DLLSDIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/python64/DLLs"
 	)
 endif()
+
+# The module interface units live in their own library so that other targets --
+# betterRenderer, which is a separate add_library -- can import them. A target
+# can only consume C++20 modules by linking the target that owns the file set,
+# and the executable's own modules are not reachable that way.
+#
+# The interfaces need exactly the flags the executable was given, so they are
+# copied off it rather than restated; this has to happen after all the
+# third-party wiring above and before betterRenderer is added, or the mirrored
+# link list would point back at betterRenderer and make the dependency circular.
+add_library(eu07_modules STATIC)
+
+get_target_property(EU07_INCLUDES ${PROJECT_NAME} INCLUDE_DIRECTORIES)
+get_target_property(EU07_DEFINITIONS ${PROJECT_NAME} COMPILE_DEFINITIONS)
+get_target_property(EU07_LINKS ${PROJECT_NAME} LINK_LIBRARIES)
+
+target_sources(eu07_modules
+	PUBLIC FILE_SET CXX_MODULES
+	BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+	FILES ${MODULE_INTERFACES})
+
+target_include_directories(eu07_modules PUBLIC ${EU07_INCLUDES})
+target_compile_definitions(eu07_modules PUBLIC ${EU07_DEFINITIONS})
+target_link_libraries(eu07_modules PUBLIC ${EU07_LINKS})
+set_target_properties(eu07_modules PROPERTIES
+	CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF
+	POSITION_INDEPENDENT_CODE ON)
+
+target_link_libraries(${PROJECT_NAME} eu07_modules)
 
 if (WITH_BETTER_RENDERER)
     add_subdirectory("betterRenderer")

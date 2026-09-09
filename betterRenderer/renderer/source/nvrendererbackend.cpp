@@ -1,6 +1,6 @@
 #include "nvrendererbackend.h"
 
-#include "utilities/Logs.h"
+import eu07.utilities.logs;
 #include <fmt/format.h>
 
 void NvRendererMessageCallback::message(nvrhi::MessageSeverity severity,

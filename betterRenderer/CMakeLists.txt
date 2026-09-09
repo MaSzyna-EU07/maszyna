@@ -36,6 +36,14 @@ file(GLOB_RECURSE src
 
 add_library(${LIBMANUL_NAME} ${src})
 
+# The project's own types reach this renderer as C++20 modules; linking the
+# target that owns the module file set is what makes them importable.
+target_link_libraries(${LIBMANUL_NAME} eu07_modules)
+# CXX_EXTENSIONS must match eu07_modules: a BMI built with -std=c++20 is
+# refused by a translation unit compiled with -std=gnu++20.
+set_target_properties(${LIBMANUL_NAME} PROPERTIES
+	CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+
 target_include_directories(${LIBMANUL_NAME} PUBLIC
         "renderer/include")
 

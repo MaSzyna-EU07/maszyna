@@ -2,12 +2,14 @@
 
 #include "nvrenderer/nvrenderer.h"
 
-#include <utilities/Globals.h>
-#include <utilities/Logs.h>
+#include "utilities/Globals_macros.h"
+import eu07.utilities.globals;
+import eu07.utilities.logs;
 #include <fmt/format.h>
-#include <model/material.h>
+import eu07.model.material;
 #include <parser.h>
-#include <utilities/utilities.h>
+#include "utilities/utilities_macros.h"
+import eu07.utilities.utilities;
 #include <yaml-cpp/yaml.h>
 #include <string>
 

@@ -6,7 +6,8 @@
 #include <nvrhi/nvrhi.h>
 
 #include <glm/glm.hpp>
-#include "interfaces/ITexture.h"
+#include "global_include/interfaces/ITexture_macros.h"
+import eu07.global_include.interfaces.itexture;
 #include "nvrenderer/nvrenderer_enums.h"
 
 enum MaTextureTraits {

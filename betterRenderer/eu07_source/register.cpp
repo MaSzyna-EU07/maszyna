@@ -1,4 +1,4 @@
-#include "utilities/Logs.h"
+import eu07.utilities.logs;
 #include "nvrenderer/nvrenderer.h"
 
 namespace {

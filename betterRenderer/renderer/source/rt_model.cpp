@@ -9,7 +9,7 @@
 
 #include <vector>
 
-#include "model/Model3d.h"
+import eu07.simcore;
 
 namespace Rt {
 

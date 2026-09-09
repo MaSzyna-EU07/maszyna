@@ -4,9 +4,9 @@
 #include "nvrenderer/nvrenderer.h"
 #include "nvrendererbackend.h"
 
-#include <utilities/Timer.h>
-#include <model/AnimModel.h>
-#include <simulation/simulation.h>
+import eu07.utilities.timer;
+import eu07.simcore;
+import eu07.simulation.simulation;
 
 namespace BatchingUtils {
 

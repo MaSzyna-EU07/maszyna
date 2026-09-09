@@ -4,8 +4,8 @@
 
 #include "environment.h"
 #include "nvrendererbackend.h"
-#include "simulation/simulationenvironment.h"
-#include "simulation/simulationtime.h"
+import eu07.simulation.simulationenvironment;
+import eu07.simulation.simulationtime;
 
 namespace {
 static const float PI = 3.14159265358979323846f;

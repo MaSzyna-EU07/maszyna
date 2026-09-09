@@ -1,12 +1,11 @@
 ﻿#include "nvrenderer/nvrenderer.h"
 
-#include <model/AnimModel.h>
-#include <utilities/Logs.h>
-#include <model/Model3d.h>
-#include <utilities/Timer.h>
-#include <application/application.h>
+import eu07.simcore;
+import eu07.utilities.logs;
+import eu07.utilities.timer;
+import eu07.application.application;
 #include <nvrhi/utils.h>
-#include <simulation/simulation.h>
+import eu07.simulation.simulation;
 
 #include <future>
 #include <glm/gtx/transform.hpp>

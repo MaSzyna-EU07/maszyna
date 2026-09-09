@@ -4,7 +4,7 @@
 #include <fmt/format.h>
 #include <nvrhi/utils.h>
 
-#include "utilities/Logs.h"
+import eu07.utilities.logs;
 #include "csm.h"
 #include "environment.h"
 #include "gbuffer.h"

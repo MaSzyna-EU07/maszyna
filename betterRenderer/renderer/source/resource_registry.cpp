@@ -1,6 +1,6 @@
 #include "nvrenderer/resource_registry.h"
 
-#include "utilities/Logs.h"
+import eu07.utilities.logs;
 #include "fmt/compile.h"
 #include "nvtexture.h"
 #include "nvrenderer/nvrenderer.h"

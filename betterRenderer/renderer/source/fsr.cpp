@@ -13,7 +13,8 @@
 #include "nvrenderer_vulkan.h"
 #endif
 
-#include "utilities/Globals.h"
+#include "utilities/Globals_macros.h"
+import eu07.utilities.globals;
 #include "gbuffer.h"
 #include "gbufferblitpass.h"
 

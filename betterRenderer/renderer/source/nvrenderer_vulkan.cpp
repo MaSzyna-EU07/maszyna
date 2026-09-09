@@ -3,8 +3,9 @@
 #include <GLFW/glfw3.h>
 #include <fmt/format.h>
 
-#include "utilities/Globals.h"
-#include "utilities/Logs.h"
+#include "utilities/Globals_macros.h"
+import eu07.utilities.globals;
+import eu07.utilities.logs;
 #include "config.h"
 #include "nvrenderer/nvrenderer.h"
 
