@@ -1,4 +1,10 @@
-﻿/*
+module;
+#include "glad/glad.h"
+#include <algorithm>
+
+module eu07.rendering.opengllight;
+import eu07.glm;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,9 +13,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
 
-#include "rendering/opengllight.h"
 
 void
 opengl_light::apply_intensity( float const Factor ) {

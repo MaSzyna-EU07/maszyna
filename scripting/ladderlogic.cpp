@@ -1,4 +1,14 @@
-﻿/*
+module;
+#include <map>
+#include "utilities/utilities_macros.h"
+#include <cmath>
+#include <string>
+
+module eu07.scripting.ladderlogic;
+import eu07.utilities.parser;
+import eu07.utilities.utilities;
+import eu07.utilities.logs;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,12 +17,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "scripting/ladderlogic.h"
 
-#include "utilities/parser.h"
-#include "utilities/utilities.h"
-#include "utilities/Logs.h"
 
 namespace plc {
 

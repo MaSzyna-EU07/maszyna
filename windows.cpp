@@ -1,6 +1,6 @@
-#include "stdafx.h"
-#include "input/messaging.h"
-#include "utilities/utilities.h"
+#include "utilities/utilities_macros.h"
+import eu07.input.messaging;
+import eu07.utilities.utilities;
 
 #pragma warning (disable: 4091)
 

@@ -1,3 +1,20 @@
+module;
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <iterator>
+#include <string>
+#include <unordered_map>
+#include "utilities/Globals_macros.h"
+
+module eu07.rendering.particles;
+import eu07.glm;
+import eu07.simcore;
+import eu07.utilities.utilities;
+import eu07.utilities.timer;
+import eu07.utilities.globals;
+import eu07.simulation.simulationenvironment;
+import eu07.utilities.logs;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,14 +24,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "rendering/particles.h"
 
-#include "utilities/Timer.h"
-#include "utilities/Globals.h"
-#include "model/AnimModel.h"
-#include "simulation/simulationenvironment.h"
-#include "utilities/Logs.h"
 
 
 void

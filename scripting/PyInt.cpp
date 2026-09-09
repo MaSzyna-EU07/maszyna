@@ -1,3 +1,31 @@
+module;
+#include <thread>
+#include <format>
+#include "Python.h"
+#include <iterator>
+#include <memory>
+#include "glad/glad.h"
+#include <GLFW/glfw3.h>
+#include <atomic>
+#include <functional>
+#include <list>
+#include <tuple>
+#include <vector>
+#include "scripting/PyInt_macros.h"
+#include "utilities/Globals_macros.h"
+#include "utilities/crashreporter_macros.h"
+#include <cstring>
+#include <mutex>
+
+module eu07.scripting.pyint;
+import eu07.application.application;
+import eu07.input.command;
+import eu07.glm;
+import eu07.utilities.globals;
+import eu07.utilities.logs;
+import eu07.utilities.dictionary;
+import eu07.simulation.simulation;
+import eu07.utilities.crashreporter;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,18 +35,11 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "scripting/PyInt.h"
-#include "stdafx.h"
 
-#include "application/application.h"
-#include "utilities/Globals.h"
-#include "utilities/Logs.h"
-#include "utilities/dictionary.h"
 
 #ifdef __GNUC__
 #pragma GCC diagnostic ignored "-Wwrite-strings"
 #endif
-#include <simulation/simulation.h>
 
 void render_task::run()
 {
@@ -92,7 +113,7 @@ void render_task::run()
 		for (size_t i = 0; i < datapair.second.size(); i++)
 		{
 			auto const &vec = datapair.second[i];
-			WriteLog("passing " + glm::to_string(vec));
+			WriteLog("passing (" + std::to_string(vec.x) + ", " + std::to_string(vec.y) + ")");
 
 			PyObject *tuple = PyTuple_New(2);
 			PyTuple_SetItem(tuple, 0, PyGetFloat(vec.x)); // steals ref

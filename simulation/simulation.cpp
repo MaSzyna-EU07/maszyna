@@ -1,4 +1,26 @@
-﻿/*
+module;
+#include <GLFW/glfw3.h>
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <memory>
+#include <sstream>
+#include <string>
+#include "utilities/Globals_macros.h"
+#include "vehicle/DynObj_macros.h"
+
+module eu07.simulation.simulation;
+import eu07.utilities.logs;
+import eu07.application.application;
+import eu07.input.command;
+import eu07.utilities.utilities;
+import eu07.utilities.globals;
+import eu07.simulation.simulationtime;
+import eu07.simulation.simulationenvironment;
+import eu07.simcore;
+import eu07.rendering.lightarray;
+import eu07.vehicle.train;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,27 +29,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "simulation/simulation.h"
-#include "simulation/simulationtime.h"
-#include "simulation/simulationenvironment.h"
 
-#include "utilities/Globals.h"
-#include "world/Event.h"
-#include "world/MemCell.h"
-#include "world/Track.h"
-#include "world/Traction.h"
-#include "world/TractionPower.h"
-#include "audio/sound.h"
-#include "model/AnimModel.h"
-#include "vehicle/DynObj.h"
-#include "rendering/lightarray.h"
-#include "rendering/particles.h"
-#include "scene/scene.h"
-#include "vehicle/Train.h"
-#include "application/application.h"
-#include "utilities/Logs.h"
-#include "vehicle/Driver.h"
 
 namespace simulation {
 

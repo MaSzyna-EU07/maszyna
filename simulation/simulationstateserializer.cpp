@@ -1,4 +1,37 @@
-﻿/*
+module;
+#include <chrono>
+#include <functional>
+#include <vector>
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdlib>
+#include <memory>
+#include <string>
+#include "global_include/interfaces/ITexture_macros.h"
+#include "utilities/Globals_macros.h"
+#include "vehicle/DynObj_macros.h"
+#include "utilities/crashreporter_macros.h"
+
+module eu07.simulation.simulationstateserializer;
+import eu07.utilities.utilities;
+import eu07.utilities.classes;
+import eu07.glm;
+import eu07.utilities.globals;
+import eu07.simulation.simulation;
+import eu07.simulation.simulationtime;
+import eu07.simulation.simulationsounds;
+import eu07.simulation.simulationenvironment;
+import eu07.scene.scenenodegroups;
+import eu07.rendering.particles;
+import eu07.simcore;
+import eu07.rendering.lightarray;
+import eu07.application.application;
+import eu07.rendering.renderer;
+import eu07.utilities.logs;
+import eu07.editor.editorterrainstreamer;
+import eu07.utilities.crashreporter;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,27 +40,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "simulation/simulationstateserializer.h"
 
-#include "utilities/Globals.h"
-#include "simulation/simulation.h"
-#include "simulation/simulationtime.h"
-#include "simulation/simulationsounds.h"
-#include "simulation/simulationenvironment.h"
-#include "scene/scenenodegroups.h"
-#include "rendering/particles.h"
-#include "world/Event.h"
-#include "world/MemCell.h"
-#include "vehicle/Driver.h"
-#include "vehicle/DynObj.h"
-#include "model/AnimModel.h"
-#include "rendering/lightarray.h"
-#include "world/TractionPower.h"
-#include "application/application.h"
-#include "rendering/renderer.h"
-#include "utilities/Logs.h"
-#include "editor/editorTerrainStreamer.hpp"
 
 namespace simulation {
 

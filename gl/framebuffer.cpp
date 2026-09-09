@@ -1,8 +1,13 @@
-#include "stdafx.h"
-#include "framebuffer.h"
+module;
+#include <string>
+#include "glad/glad.h"
+#include <algorithm>
+#include "utilities/utilities_macros.h"
 
-#include "utilities/Logs.h"
-#include "utilities/utilities.h"
+module eu07.gl.framebuffer;
+import eu07.utilities.logs;
+import eu07.utilities.utilities;
+
 
 gl::framebuffer::framebuffer()
 {

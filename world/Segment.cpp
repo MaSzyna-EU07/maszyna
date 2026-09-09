@@ -1,3 +1,20 @@
+module;
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <limits>
+#include <utility>
+#include <vector>
+#include "utilities/Globals_macros.h"
+#include "utilities/utilities_macros.h"
+
+module eu07.simcore;
+import eu07.utilities.globals;
+import eu07.simulation.simulation;
+import eu07.utilities.logs;
+import eu07.utilities.parser;
+import eu07.utilities.utilities;
+import eu07.rendering.renderer;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,15 +24,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "world/Segment.h"
 
-#include "utilities/Globals.h"
-#include "utilities/Logs.h"
-#include "utilities/parser.h"
-#include "utilities/utilities.h"
-#include "world/Track.h"
-#include "rendering/renderer.h"
 
 void
 segment_data::deserialize( cParser &Input, glm::dvec3 const &Offset ) {

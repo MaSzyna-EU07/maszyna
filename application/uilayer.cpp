@@ -1,4 +1,31 @@
-﻿/*
+module;
+#include "glad/glad.h"
+#include <GLFW/glfw3.h>
+#include <memory>
+#include <optional>
+#include <string>
+#include "global_include/interfaces/ITexture_macros.h"
+#include <utility>
+#include "utilities/Globals_macros.h"
+#include "utilities/translation_macros.h"
+#include "imgui/imgui.h"
+#include "imgui/imgui_impl_glfw.h"
+#include "imgui/imgui.h"
+#include "widgets/imgui_scale.h"
+
+module eu07.application.uilayer;
+import eu07.simcore;
+import eu07.application.application;
+import eu07.application.editormode;
+import eu07.input.command;
+import eu07.utilities.utilities;
+import eu07.vehicle.camera;
+import eu07.utilities.globals;
+import eu07.rendering.renderer;
+import eu07.utilities.logs;
+import eu07.simulation.simulation;
+import eu07.utilities.translation;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,20 +34,9 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "application/uilayer.h"
 
-#include <utility>
 
-#include "utilities/Globals.h"
-#include "rendering/renderer.h"
-#include "utilities/Logs.h"
-#include "simulation/simulation.h"
-#include "utilities/translation.h"
-#include "application/application.h"
-#include "application/editormode.h"
 
-#include "imgui/imgui_impl_glfw.h"
 
 GLFWwindow *ui_layer::m_window{nullptr};
 ImGuiIO *ui_layer::m_imguiio{nullptr};

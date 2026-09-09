@@ -1,13 +1,20 @@
+module;
+#include "glad/glad.h"
+#include "stb/stb_image.h"
+#include "utilities/Globals_macros.h"
+#include "utilities/translation_macros.h"
+#include "imgui/imgui.h"
+#include <mutex>
+#include <thread>
+
+module eu07.widgets.cameraview_extcam;
+import eu07.utilities.globals;
+import eu07.utilities.translation;
+import eu07.extras.piped_proc;
 /* This Source Code Form is subject to the terms of the Mozilla Public
 * License, v. 2.0. If a copy of the MPL was not distributed with this
 * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "stdafx.h"
-#include "widgets/cameraview_extcam.h"
-#include "stb/stb_image.h"
-#include "utilities/Globals.h"
-#include "utilities/translation.h"
-#include "extras/piped_proc.h"
 
 ui::cameraview_panel::cameraview_panel()
     : ui_panel(STR_C("Camera preview"), false)

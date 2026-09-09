@@ -1,3 +1,12 @@
+module;
+#include "utilities/utilities_macros.h"
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+
+module eu07.editor.editorsettings;
+import eu07.utilities.logs;
+import eu07.utilities.utilities;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,14 +16,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "editor/editorSettings.hpp"
-#include "utilities/Logs.h"
-#include "utilities/utilities.h"
 
-#include <cstdlib>
-#include <filesystem>
-#include <fstream>
 
 editorSettings EditorSettings;
 

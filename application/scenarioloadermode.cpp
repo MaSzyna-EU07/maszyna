@@ -1,3 +1,22 @@
+module;
+#include <GLFW/glfw3.h>
+#include <chrono>
+#include <string>
+#include <typeinfo>
+#include "utilities/Globals_macros.h"
+#include "utilities/translation_macros.h"
+
+module eu07.application.scenarioloadermode;
+import eu07.utilities.classes;
+import eu07.utilities.globals;
+import eu07.simulation.simulation;
+import eu07.simulation.simulationtime;
+import eu07.simulation.simulationenvironment;
+import eu07.application.application;
+import eu07.application.scenarioloaderuilayer;
+import eu07.rendering.renderer;
+import eu07.utilities.logs;
+import eu07.utilities.translation;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,18 +26,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "application/scenarioloadermode.h"
 
-#include "utilities/Globals.h"
-#include "simulation/simulation.h"
-#include "simulation/simulationtime.h"
-#include "simulation/simulationenvironment.h"
-#include "application/application.h"
-#include "application/scenarioloaderuilayer.h"
-#include "rendering/renderer.h"
-#include "utilities/Logs.h"
-#include "utilities/translation.h"
 
 scenarioloader_mode::scenarioloader_mode() {
     m_userinterface = std::make_shared<scenarioloader_ui>();

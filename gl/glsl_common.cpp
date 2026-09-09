@@ -1,5 +1,10 @@
-#include "stdafx.h"
-#include "glsl_common.h"
+module;
+#include "utilities/Globals_macros.h"
+#include <string>
+
+module eu07.gl.glsl_common;
+import eu07.utilities.globals;
+import eu07.utilities.utilities;
 
 std::string gl::glsl_common;
 

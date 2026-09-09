@@ -1,4 +1,64 @@
-﻿/*
+module;
+#include <filesystem>
+#include "glad/glad.h"
+#include <GLFW/glfw3.h>
+#include <random>
+#include <thread>
+#include "utilities/Globals_macros.h"
+#include "utilities/utilities_macros.h"
+#include "utilities/translation_macros.h"
+#include "version_info.h"
+#include <chrono>
+#include "utilities/translation_macros.h"
+#if WITH_DISCORD_RPC
+#include "ref/discord-rpc/include/discord_rpc.h"
+#endif
+#if WITH_DISCORD_RPC
+#include <discord_rpc.h>
+#endif
+#include <chrono>
+#include "utilities/translation_macros.h"
+#include "imgui/imgui.h"
+#include "utilities/crashreporter_macros.h"
+#include "widgets/imgui_scale.h"
+#include <iostream>
+#ifdef _WIN32
+#include <windows.h>
+#endif
+#ifdef __unix__
+#include <unistd.h>
+#endif
+#ifdef __unix__
+#include <sys/stat.h>
+#endif
+
+module eu07.application.application;
+import eu07.rendering.screenshot;
+import eu07.utilities.parser;
+import eu07.audio.sound;
+import eu07.glm;
+import eu07.application.drivermode;
+import eu07.application.editormode;
+import eu07.application.scenarioloadermode;
+import eu07.editor.editorterrainstreamer;
+import eu07.input.command;
+import eu07.launcher.launchermode;
+import eu07.model.texture;
+import eu07.simcore;
+import eu07.utilities.globals;
+import eu07.utilities.utilities;
+import eu07.simulation.simulation;
+import eu07.simulation.simulationsounds;
+import eu07.vehicle.train;
+import eu07.utilities.dictionary;
+import eu07.scene.sceneeditor;
+import eu07.rendering.renderer;
+import eu07.application.uilayer;
+import eu07.utilities.logs;
+import eu07.utilities.translation;
+import eu07.utilities.timer;
+import eu07.utilities.crashreporter;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,39 +67,14 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "application/application.h"
-#include "application/drivermode.h"
-#include "application/editormode.h"
-#include "application/scenarioloadermode.h"
-#include "launcher/launchermode.h"
 
-#include "utilities/Globals.h"
-#include "utilities/utilities.h"
-#include "simulation/simulation.h"
-#include "simulation/simulationsounds.h"
-#include "vehicle/Train.h"
-#include "utilities/dictionary.h"
-#include "scene/sceneeditor.h"
-#include "rendering/renderer.h"
-#include "application/uilayer.h"
-#include "utilities/Logs.h"
-#include "rendering/screenshot.h"
-#include "utilities/translation.h"
-#include "vehicle/Train.h"
-#include "utilities/Timer.h"
-#include "utilities/dictionary.h"
-#include "version_info.h"
-#include <chrono>
-#include "utilities/translation.h"
 
 #if WITH_DISCORD_RPC
-#include "ref/discord-rpc/include/discord_rpc.h"
-#include <discord_rpc.h>
 #endif
 
-#include <chrono>
-#include "utilities/translation.h"
+
+#ifdef _WIN32
+#endif
 
 #ifdef _WIN32
 #pragma comment(lib, "dsound.lib")
@@ -50,8 +85,6 @@ http://mozilla.org/MPL/2.0/.
 #endif
 
 #ifdef __unix__
-#include <unistd.h>
-#include <sys/stat.h>
 #endif
 
 eu07_application Application;

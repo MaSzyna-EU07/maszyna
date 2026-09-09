@@ -1,4 +1,20 @@
-﻿/*
+module;
+#include <algorithm>
+#include <chrono>
+#include <unordered_map>
+#include <ranges>
+#include "utilities/utilities_macros.h"
+#include "utilities/Globals_macros.h"
+#include "utilities/U8_macros.h"
+#include <filesystem>
+#include <random>
+#include <sys/stat.h>
+
+module eu07.utilities.utilities;
+import eu07.utilities.globals;
+import eu07.utilities.parser;
+import eu07.utilities.u8;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -11,11 +27,9 @@ MaSzyna EU07 - SPKS
 Brakes.
 Copyright (C) 2007-2014 Maciej Cierniak
 */
-//#include "stdafx.h"
 //
 //#include <sys/types.h>
 //#include <sys/stat.h>
-#include <ranges>
 //#ifndef WIN32
 //#include <unistd.h>
 //#endif
@@ -24,10 +38,6 @@ Copyright (C) 2007-2014 Maciej Cierniak
 //#define stat _stat
 //#endif
 
-#include "utilities/utilities.h"
-#include "utilities/Globals.h"
-#include "utilities/parser.h"
-#include "utilities/U8.h"
 
 
 //#include "utilities/Logs.h"

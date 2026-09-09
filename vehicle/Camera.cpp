@@ -1,3 +1,19 @@
+module;
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdlib>
+#include "utilities/Globals_macros.h"
+#include "utilities/utilities_macros.h"
+#include "vehicle/DynObj_macros.h"
+#include "McZapkie/MOVER_macros.h"
+
+module eu07.vehicle.camera;
+import eu07.utilities.globals;
+import eu07.utilities.utilities;
+import eu07.utilities.glmhelpers;
+import eu07.utilities.timer;
+import eu07.simcore;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,17 +23,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "vehicle/Camera.h"
 
-#include "utilities/Globals.h"
-#include "utilities/utilities.h"
-#include "utilities/glmHelpers.h"
-#include "Console.h"
-#include "utilities/Timer.h"
-#include "vehicle/Driver.h"
-#include "vehicle/DynObj.h"
-#include "MOVER.h"
 
 //---------------------------------------------------------------------------
 

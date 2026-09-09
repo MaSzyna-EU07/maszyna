@@ -1,4 +1,10 @@
-﻿/*
+module;
+#include <memory>
+#include <string>
+
+module eu07.rendering.renderer;
+import eu07.utilities.logs;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,9 +13,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "rendering/renderer.h"
-#include "utilities/Logs.h"
 
 std::unique_ptr<gfx_renderer> GfxRenderer;
 

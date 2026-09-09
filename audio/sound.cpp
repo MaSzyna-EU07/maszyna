@@ -1,4 +1,35 @@
-﻿/*
+module;
+#include <AL/al.h>
+#include <AL/alc.h>
+#include <cmath>
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <map>
+#include <string>
+#include <vector>
+#include "global_include/interfaces/ITexture_macros.h"
+#include "utilities/Globals_macros.h"
+#include "vehicle/DynObj_macros.h"
+
+module eu07.audio.sound;
+import eu07.utilities.logs;
+import eu07.utilities.utilities;
+import eu07.utilities.parser;
+import eu07.utilities.globals;
+import eu07.vehicle.camera;
+import eu07.vehicle.train;
+import eu07.simcore;
+import eu07.simulation.simulation;
+
+namespace {
+// sound_source stores its owner as an opaque pointer to keep TDynamicObject out of
+// the module interface; this puts the type back on where the implementation needs it.
+inline TDynamicObject const *as_vehicle( void const *Owner ) {
+    return static_cast<TDynamicObject const *>( Owner );
+}
+} // namespace
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,15 +38,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
 
-#include "audio/sound.h"
-#include "utilities/parser.h"
-#include "utilities/Globals.h"
-#include "vehicle/Camera.h"
-#include "vehicle/Train.h"
-#include "vehicle/DynObj.h"
-#include "simulation/simulation.h"
 #include "audio/audiorenderer_extra.h"
 
 // constructors
@@ -517,7 +540,7 @@ void
 sound_source::update( audio::openal_source &Source ) {
 
     if( m_owner != nullptr
-     && false == m_owner->bEnabled ) {
+     && false == as_vehicle( m_owner )->bEnabled ) {
         // terminate the sound if the owner is gone
         // TBD, TODO: replace with a listener pattern to receive vehicle removal and cab change events and such?
         m_stop = true;
@@ -914,10 +937,10 @@ sound_source::location() const {
     }
     // otherwise combine offset with the location of the carrier
     return {
-        m_owner->GetPosition()
-        + m_owner->VectorLeft() * (double)m_offset.x
-        + m_owner->VectorUp() * (double)m_offset.y
-        + m_owner->VectorFront() * (double)m_offset.z };
+        as_vehicle( m_owner )->GetPosition()
+        + as_vehicle( m_owner )->VectorLeft() * (double)m_offset.x
+        + as_vehicle( m_owner )->VectorUp() * (double)m_offset.y
+        + as_vehicle( m_owner )->VectorFront() * (double)m_offset.z };
 }
 
 void
@@ -994,7 +1017,7 @@ sound_source::update_soundproofing() {
                     occupiedcab ) };
             m_properties.soundproofing = m_soundproofing ? // custom soundproofing has higher priority than that of the owner
 			                                 m_soundproofing.value()[listenerlocation + 1] : // cab indices start from -1 so we have to account for this
-			                                 m_owner->soundproofing(static_cast<int>(placement), listenerlocation);
+			                                 as_vehicle( m_owner )->soundproofing(static_cast<int>(placement), listenerlocation);
         }
         if( listenervehicle && listenervehicle != m_owner ) {
             // if the listener is located in another vehicle, calculate additional proofing of the sound coming from outside

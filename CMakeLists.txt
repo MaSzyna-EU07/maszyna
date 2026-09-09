@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.26)
+cmake_minimum_required(VERSION 3.28)  # 3.28+: FILE_SET CXX_MODULES
 if(POLICY CMP0058)
 	cmake_policy(SET CMP0058 NEW)
 endif()
@@ -145,7 +145,6 @@ set(SOURCES
 "input/drivermouseinput.cpp"
 "utilities/translation.cpp"
 "model/material.cpp"
-"stdafx.cpp"
 "input/messaging.cpp"
 "scene/scene.cpp"
 "scene/scenenode.cpp"
@@ -192,7 +191,6 @@ set(SOURCES
 "network/network.cpp"
 "network/message.cpp"
 "network/manager.cpp"
-"network/backend/asio.cpp"
 
 "widgets/vehiclelist.cpp"
 "widgets/map.cpp"
@@ -240,10 +238,44 @@ set(SOURCES
 )
 
 set(DEFINITIONS)
+
+# Definitions that used to live at the top of stdafx.h. They must be identical in
+# every translation unit (glm is header-only and its GLM_FORCE_* switches change
+# type layout), so they are set on the target rather than in a header that a file
+# could forget to include first.
+set(DEFINITIONS ${DEFINITIONS}
+	"_USE_MATH_DEFINES"
+	"NOMINMAX"
+	"GLFW_INCLUDE_NONE"
+	"GLM_FORCE_SWIZZLE"
+	"GLM_ENABLE_EXPERIMENTAL"
+	"GLM_FORCE_CTOR_INIT"
+	# empty value, not 1: glm/simd/platform.h defines this itself as a bare
+	# #define, and a differing definition would warn on every translation unit
+	"GLM_FORCE_INTRINSICS=")
+
+if (WIN32)
+	# _WIN32_WINNT came from targetver.h, which only ever existed to be pulled in
+	# by stdafx.h; keep the same Windows 7 API level now that both are gone
+	set(DEFINITIONS ${DEFINITIONS} "WIN32_LEAN_AND_MEAN" "_WIN32_WINNT=0x0601")
+endif()
+
+if (APPLE)
+	# parts of the codebase gate posix-only code on __unix__, which Apple does not define
+	set(DEFINITIONS ${DEFINITIONS} "__unix__=1")
+endif()
+
+if (MSVC)
+	set(DEFINITIONS ${DEFINITIONS} "GLM_FORCE_INLINE" "_CRTDBG_MAP_ALLOC")
+endif()
+
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
+	set(DEFINITIONS ${DEFINITIONS} "GLM_FORCE_NEON")
+elseif (ENABLE_AVX2)
+	set(DEFINITIONS ${DEFINITIONS} "GLM_FORCE_AVX2")
+endif()
 set(SOURCES ${SOURCES} "imgui/imgui_impl_opengl3.cpp")
 set(SOURCES ${SOURCES} "imgui/imgui_impl_opengl2.cpp")
-set_source_files_properties("imgui/imgui_impl_opengl3.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
-set_source_files_properties("imgui/imgui_impl_opengl2.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
 
 if (WITH_CRASHPAD)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_CRASHPAD")
@@ -403,6 +435,74 @@ endif()
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
+# C++20 module interface units. They must be declared through a CXX_MODULES file
+# set so CMake runs the dependency scanner and orders the build; the matching
+# .cpp implementation units stay ordinary sources in ${SOURCES}.
+file(GLOB MODULE_INTERFACES CONFIGURE_DEPENDS "*.cppm"
+"Console/*.cppm"
+"McZapkie/*.cppm"
+"gl/*.cppm"
+"network/*.cppm"
+"vr/*.cppm"
+"network/backend/*.cppm"
+"widgets/*.cppm"
+"launcher/*.cppm"
+"extras/*.cppm"
+"global_include/*.cppm"
+"global_include/interfaces/*.cppm"
+"simulation/*.cppm"
+"scene/*.cppm"
+"rendering/*.cppm"
+"audio/*.cppm"
+"environment/*.cppm"
+"application/*.cppm"
+"input/*.cppm"
+"scripting/*.cppm"
+"model/*.cppm"
+"utilities/*.cppm"
+"world/*.cppm"
+"editor/*.cppm"
+"vehicle/*.cppm"
+"simcore/*.cppm")
+
+# Unlike ordinary sources, every interface unit in the file set is scanned even
+# when the feature that owns it is switched off, so the optional ones have to be
+# dropped explicitly or the scan fails on their missing SDK headers.
+list(REMOVE_ITEM MODULE_INTERFACES "${CMAKE_CURRENT_SOURCE_DIR}/world/Curve.cppm")
+if (NOT WITH_ZMQ)
+	list(REMOVE_ITEM MODULE_INTERFACES "${CMAKE_CURRENT_SOURCE_DIR}/input/zmq_input.cppm")
+endif()
+if (NOT WITH_OPENVR)
+	list(REMOVE_ITEM MODULE_INTERFACES "${CMAKE_CURRENT_SOURCE_DIR}/vr/openvr_imp.cppm")
+endif()
+
+target_sources(${PROJECT_NAME}
+	PUBLIC FILE_SET CXX_MODULES
+	BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+	FILES ${MODULE_INTERFACES})
+
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+
+# GCC's lazy loading of module interfaces trips over the simulation-core partition
+# ("failed to load pendings" / "Bad file data" while reading eu07.simcore:dynobj).
+# Loading eagerly avoids it; drop this once the compiler bug is fixed.
+# GCC 16's lazy loading of module interfaces is broken for this project: reading
+# eu07.simcore:dynobj gives "Bad file data", and eu07.glm gives "recursive lazy
+# load" / "failed to load pendings for glm::vec". Eager loading is the only way
+# through, and it costs roughly twice the memory per compiler process.
+# Drop both this and the job pool below once the compiler bug is fixed.
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+	target_compile_options(${PROJECT_NAME} PRIVATE -fno-module-lazy)
+
+	# Eager loading makes each compiler process hold ~1 GB, so a plain -j16 needs
+	# far more RAM than most machines have. This pool caps how many compilations
+	# run at once no matter what -j the caller passes; raise it if you have memory
+	# to spare. Ninja only.
+	set(MODULE_COMPILE_JOBS "6" CACHE STRING "Concurrent compiles (bounds peak RAM; see -fno-module-lazy above)")
+	set_property(GLOBAL APPEND PROPERTY JOB_POOLS module_compile=${MODULE_COMPILE_JOBS})
+	set_property(TARGET ${PROJECT_NAME} PROPERTY JOB_POOL_COMPILE module_compile)
+endif()
+
 target_compile_definitions(${PROJECT_NAME} PRIVATE ${DEFINITIONS})
 
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -442,17 +542,6 @@ set_target_properties( ${PROJECT_NAME}
 check_cxx_symbol_exists(__GNUC__ "" COMPILER_HAVE_GNUC)
 if (COMPILER_HAVE_GNUC)
 	set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_FLAGS "-fvisibility=hidden")
-endif()
-
-if(NOT ${CMAKE_VERSION} VERSION_LESS "3.16.0")
-	option(USE_PCH "Use precompiled header" ON)
-
-	if (USE_PCH)
-		target_precompile_headers(${PROJECT_NAME} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/stdafx.h>")
-		set_source_files_properties("/glad/src/glad.c" "ref/dds-ktx/src/dds-ktx.c" "stb/stb_image.c"
-			"imgui/imgui.cpp" "imgui/imgui_demo.cpp" "imgui/imgui_draw.cpp" "imgui/imgui_widgets.cpp" "imgui/imgui_impl_glfw.cpp" "imgui/ImGuizmo.cpp"
-			PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
-	endif()
 endif()
 
 if (USE_LTO)

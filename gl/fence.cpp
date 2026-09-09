@@ -1,5 +1,7 @@
-#include "stdafx.h"
-#include "fence.h"
+module;
+#include "glad/glad.h"
+
+module eu07.gl.fence;
 
 gl::fence::fence()
 {

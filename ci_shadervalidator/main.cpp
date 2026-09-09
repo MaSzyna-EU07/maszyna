@@ -1,4 +1,3 @@
-#include "stdafx.h"
 #include "../gl/shader.h"
 #include "../gl/glsl_common.h"
 #include "Globals.h"

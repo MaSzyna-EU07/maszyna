@@ -1,4 +1,37 @@
-﻿/*
+module;
+#include <GLFW/glfw3.h>
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include "utilities/Globals_macros.h"
+#include "utilities/translation_macros.h"
+#include "vehicle/DynObj_macros.h"
+
+module eu07.application.drivermode;
+import eu07.application.uitranscripts;
+import eu07.application.uilayer;
+import eu07.audio.sound;
+import eu07.utilities.utilities;
+import eu07.application.driveruilayer;
+import eu07.utilities.globals;
+import eu07.application.application;
+import eu07.utilities.translation;
+import eu07.simulation.simulation;
+import eu07.simulation.simulationtime;
+import eu07.simulation.simulationenvironment;
+import eu07.simcore;
+import eu07.rendering.lightarray;
+import eu07.rendering.particles;
+import eu07.vehicle.train;
+import eu07.input.messaging;
+import eu07.utilities.timer;
+import eu07.rendering.renderer;
+import eu07.utilities.logs;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,28 +40,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "application/drivermode.h"
-#include "application/driveruilayer.h"
 
-#include "utilities/Globals.h"
-#include "application/application.h"
-#include "utilities/translation.h"
-#include "simulation/simulation.h"
-#include "simulation/simulationtime.h"
-#include "simulation/simulationenvironment.h"
-#include "scene/scene.h"
-#include "rendering/lightarray.h"
-#include "rendering/particles.h"
-#include "vehicle/Train.h"
-#include "vehicle/Driver.h"
-#include "vehicle/DynObj.h"
-#include "model/Model3d.h"
-#include "world/Event.h"
-#include "input/messaging.h"
-#include "utilities/Timer.h"
-#include "rendering/renderer.h"
-#include "utilities/Logs.h"
 /*
 namespace input {
 

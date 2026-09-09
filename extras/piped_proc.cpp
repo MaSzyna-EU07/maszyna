@@ -1,10 +1,14 @@
+module;
+#include <cstdio>
+#include <cstddef>
+#include <string>
+
+module eu07.extras.piped_proc;
+import eu07.utilities.logs;
 /* This Source Code Form is subject to the terms of the Mozilla Public
 * License, v. 2.0. If a copy of the MPL was not distributed with this
 * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "stdafx.h"
-#include "piped_proc.h"
-#include "utilities/Logs.h"
 
 #ifdef __unix__
 piped_proc::piped_proc(std::string cmd, bool write)

@@ -1,7 +1,19 @@
-#include "stdafx.h"
-#include "launcher/vehicle_picker.h"
-#include "rendering/renderer.h"
-#include "utilities/translation.h"
+module;
+#include "glad/glad.h"
+#include "imgui/imgui.h"
+#include <algorithm>
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <string>
+#include <vector>
+#include "utilities/translation_macros.h"
+
+module eu07.launcher.vehicle_picker;
+import eu07.utilities.utilities;
+import eu07.glm;
+import eu07.rendering.renderer;
+import eu07.utilities.translation;
 
 ui::vehiclepicker_panel::vehiclepicker_panel()
     : ui_panel(STR("Select vehicle"), false), placeholder_mini("textures/mini/other")

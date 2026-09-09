@@ -1,3 +1,12 @@
+module;
+#include <typeinfo>
+#include <algorithm>
+#include <cstdlib>
+#include <string>
+#include "utilities/utilities_macros.h"
+
+module eu07.mczapkie.oerlikon_est;
+import eu07.utilities.utilities;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -12,9 +21,6 @@ Brakes. Oerlikon ESt.
 Copyright (C) 2007-2014 Maciej Cierniak
 */
 
-#include "stdafx.h"
-#include "Oerlikon_ESt.h"
-#include "utilities/utilities.h"
 
 double d2A( double const d )
 {

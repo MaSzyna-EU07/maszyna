@@ -1,3 +1,20 @@
+module;
+#include <cmath>
+#include <istream>
+#include <map>
+#include <ostream>
+#include <string>
+#include "utilities/Globals_macros.h"
+#include <GLFW/glfw3.h>
+
+module eu07.simcore;
+import eu07.console;
+import eu07.utilities.utilities;
+import eu07.widgets.map_objects;
+import eu07.utilities.globals;
+import eu07.utilities.timer;
+import eu07.utilities.parser;
+import eu07.simulation.simulationtime;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -13,17 +30,7 @@ http://mozilla.org/MPL/2.0/.
 
 */
 
-#include "stdafx.h"
-#include "world/EvLaunch.h"
 
-#include "utilities/Globals.h"
-#include "utilities/Logs.h"
-#include "world/Event.h"
-#include "world/MemCell.h"
-#include "utilities/Timer.h"
-#include "utilities/parser.h"
-#include "Console.h"
-#include "simulation/simulationtime.h"
 
 //---------------------------------------------------------------------------
 

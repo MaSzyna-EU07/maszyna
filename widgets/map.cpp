@@ -1,13 +1,33 @@
-#include "stdafx.h"
-#include "widgets/map.h"
-#include "widgets/map_objects.h"
-#include "utilities/Logs.h"
-#include "vehicle/Train.h"
-#include "vehicle/Camera.h"
-#include "simulation/simulation.h"
-#include "vehicle/Driver.h"
-#include "model/AnimModel.h"
-#include "application/application.h"
+module;
+#include "utilities/translation_macros.h"
+#include "glad/glad.h"
+#include <GLFW/glfw3.h>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <fstream>
+#include <ios>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
+#include "utilities/Globals_macros.h"
+#include "global_include/interfaces/ITexture_macros.h"
+#include "imgui/imgui.h"
+
+module eu07.widgets.map;
+import eu07.utilities.translation;
+import eu07.rendering.renderer;
+import eu07.utilities.utilities;
+import eu07.utilities.globals;
+import eu07.widgets.map_objects;
+import eu07.utilities.logs;
+import eu07.vehicle.train;
+import eu07.vehicle.camera;
+import eu07.simulation.simulation;
+import eu07.simcore;
+import eu07.application.application;
 
 ui::map_panel::map_panel() : ui_panel(STR_C("Map"), false)
 {

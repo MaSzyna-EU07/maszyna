@@ -1,3 +1,14 @@
+module;
+#include <algorithm>
+#include <cmath>
+#include "utilities/Globals_macros.h"
+
+module eu07.rendering.precipitation;
+import eu07.utilities.utilities;
+import eu07.utilities.globals;
+import eu07.utilities.timer;
+import eu07.simulation.simulation;
+import eu07.vehicle.train;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,13 +18,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "rendering/precipitation.h"
 
-#include "utilities/Globals.h"
-#include "utilities/Timer.h"
-#include "simulation/simulation.h"
-#include "vehicle/Train.h"
 
 basic_precipitation::~basic_precipitation() {
     // TODO: release allocated resources

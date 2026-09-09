@@ -1,4 +1,47 @@
-﻿/*
+module;
+#include <GLFW/glfw3.h>
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <string>
+#include <vector>
+#include "utilities/Globals_macros.h"
+#include "utilities/translation_macros.h"
+#include "vehicle/DynObj_macros.h"
+#include "utilities/U8_macros.h"
+#include "application/driverhints_texts.h"
+#include "widgets/imgui_scale.h"
+
+module eu07.application.driveruipanels;
+import eu07.mczapkie.hamulce;
+import eu07.audio.sound;
+import eu07.utilities.color;
+import eu07.glm;
+import eu07.application.uilayer;
+import eu07.application.uitranscripts;
+import eu07.input.command;
+import eu07.utilities.utilities;
+import eu07.utilities.globals;
+import eu07.application.application;
+import eu07.utilities.translation;
+import eu07.simulation.simulation;
+import eu07.simulation.simulationtime;
+import eu07.simulation.simulationenvironment;
+import eu07.utilities.timer;
+import eu07.simcore;
+import eu07.vehicle.camera;
+import eu07.world.mtable;
+import eu07.vehicle.train;
+import eu07.rendering.renderer;
+import eu07.utilities.logs;
+import eu07.widgets.vehicleparams;
+import eu07.utilities.u8;
+import eu07.application.driverhints;
+#ifdef WITH_UART
+import eu07.utilities.uart;
+using namespace Mtable;
+#endif
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,35 +50,10 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "application/driveruipanels.h"
 
-#include "utilities/Globals.h"
-#include "application/application.h"
-#include "utilities/translation.h"
-#include "simulation/simulation.h"
-#include "simulation/simulationtime.h"
-#include "simulation/simulationenvironment.h"
-#include "utilities/Timer.h"
-#include "world/Event.h"
-#include "world/TractionPower.h"
-#include "vehicle/Camera.h"
-#include "world/mtable.h"
-#include "vehicle/Train.h"
-#include "vehicle/Driver.h"
-#include "model/AnimModel.h"
-#include "vehicle/DynObj.h"
-#include "model/Model3d.h"
-#include "rendering/renderer.h"
-#include "utilities/Logs.h"
-#include "widgets/vehicleparams.h"
-#include "utilities/U8.h"
 
-#define DRIVER_HINT_CONTENT
-#include "application/driverhints.h"
 
 #ifdef WITH_UART
-#include "utilities/uart.h"
 #endif
 
 void

@@ -1,3 +1,18 @@
+module;
+#include <filesystem>
+#include <cmath>
+#include <cstdlib>
+#include <string>
+#include "utilities/utilities_macros.h"
+#include <GLFW/glfw3.h>
+#include <functional>
+
+module eu07.input.gamepadinput;
+import eu07.glm;
+import eu07.utilities.logs;
+import eu07.utilities.timer;
+import eu07.utilities.utilities;
+import eu07.utilities.parser;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,12 +22,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "input/gamepadinput.h"
-#include "utilities/Logs.h"
-#include "utilities/Timer.h"
-#include "utilities/utilities.h"
-#include "utilities/parser.h"
 
 glm::vec2 circle_to_square( glm::vec2 const &Point, int const Roundness = 0 ) {
 

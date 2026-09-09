@@ -1,5 +1,9 @@
-#include "stdafx.h"
-#include "ubo.h"
+module;
+#include "glad/glad.h"
+#include <cstdint>
+#include <cstddef>
+
+module eu07.gl.ubo;
 
 gl::ubo::ubo(size_t size, int idx, GLenum hint)
 {

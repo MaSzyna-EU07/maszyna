@@ -1,3 +1,8 @@
+module;
+#include <setupapi.h>
+#include "utilities/utilities_macros.h"
+
+module eu07.console.pokeys55;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,10 +12,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "PoKeys55.h"
-#include <setupapi.h>
-#include "utilities/utilities.h"
 
 //---------------------------------------------------------------------------
 // HIDscaner: http://forum.simflight.com/topic/68257-latest-lua-package-for-fsuipc-and-wideclient/

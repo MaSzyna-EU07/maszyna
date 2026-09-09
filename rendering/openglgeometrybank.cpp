@@ -1,4 +1,15 @@
-﻿/*
+module;
+#include "rendering/openglcolor_macros.h"
+#include "glad/glad.h"
+#include <cstddef>
+#include <typeinfo>
+#include <vector>
+
+module eu07.rendering.openglgeometrybank;
+import eu07.rendering.openglcolor;
+import eu07.glm;
+import eu07.utilities.logs;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,11 +18,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "rendering/openglgeometrybank.h"
-#include "rendering/openglcolor.h"
 
-#include "utilities/Logs.h"
 
 namespace gfx {
 

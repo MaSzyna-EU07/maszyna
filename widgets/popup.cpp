@@ -1,5 +1,8 @@
-#include "stdafx.h"
-#include "widgets/popup.h"
+module;
+#include "imgui/imgui.h"
+#include <string>
+
+module eu07.application.uilayer;
 
 ui::popup::popup(ui_panel &panel) : m_parent(panel) {}
 

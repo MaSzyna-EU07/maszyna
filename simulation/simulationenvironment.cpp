@@ -1,4 +1,20 @@
-﻿/*
+module;
+#include <algorithm>
+#include <cmath>
+#include <iterator>
+#include <string>
+#include <utility>
+#include <vector>
+#include "utilities/Globals_macros.h"
+
+module eu07.simulation.simulationenvironment;
+import eu07.simcore;
+import eu07.utilities.color;
+import eu07.utilities.utilities;
+import eu07.utilities.globals;
+import eu07.simulation.simulationsounds;
+import eu07.utilities.timer;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,12 +23,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "simulation/simulationenvironment.h"
 
-#include "simulation/simulationsounds.h"
-#include "utilities/Globals.h"
-#include "utilities/Timer.h"
 
 namespace simulation {
 

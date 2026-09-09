@@ -1,6 +1,11 @@
-#include "stdafx.h"
+module;
+#include "glad/glad.h"
+#include <vector>
+#include <memory>
 
-#include "postfx.h"
+module eu07.gl.postfx;
+import eu07.gl.framebuffer;
+
 
 std::shared_ptr<gl::shader> gl::postfx::vertex;
 std::shared_ptr<gl::vao> gl::postfx::vao;

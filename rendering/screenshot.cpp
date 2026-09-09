@@ -1,8 +1,19 @@
-#include "stdafx.h"
-#include "rendering/screenshot.h"
-#include "utilities/Globals.h"
-#include "utilities/Logs.h"
+module;
+#include "utilities/Globals_macros.h"
 #include <png.h>
+#include "glad/glad.h"
+#include <cstring>
+#include <thread>
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+module eu07.rendering.screenshot;
+import eu07.utilities.globals;
+import eu07.utilities.logs;
+
+#ifdef _WIN32
+#endif
 
 void screenshot_manager::screenshot_save_thread( char *img, int w, int h )
 {

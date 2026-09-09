@@ -1,4 +1,14 @@
-﻿/*
+module;
+#include <algorithm>
+#include <string>
+#include "utilities/utilities_macros.h"
+#include "vehicle/DynObj_macros.h"
+
+module eu07.world.station;
+import eu07.utilities.utilities;
+import eu07.simcore;
+import eu07.world.mtable;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,12 +17,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "world/station.h"
 
-#include "utilities/utilities.h"
-#include "vehicle/DynObj.h"
-#include "world/mtable.h"
 
 namespace simulation {
 

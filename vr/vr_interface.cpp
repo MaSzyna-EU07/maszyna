@@ -1,6 +1,9 @@
-#include "stdafx.h"
-#include "vr_interface.h"
-#include "utilities/Logs.h"
+module;
+#include <memory>
+#include <string>
+
+module eu07.vr.vr_interface;
+import eu07.utilities.logs;
 
 vr_interface::~vr_interface() {}
 

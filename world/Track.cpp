@@ -1,3 +1,28 @@
+module;
+#include "glad/glad.h"
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdlib>
+#include <istream>
+#include <limits>
+#include <ostream>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
+#include "global_include/interfaces/ITexture_macros.h"
+#include "utilities/Globals_macros.h"
+#include "vehicle/DynObj_macros.h"
+
+module eu07.simcore;
+import eu07.simulation.simulation;
+import eu07.rendering.renderer;
+import eu07.input.messaging;
+import eu07.model.mdlmngr;
+import eu07.utilities.utilities;
+import eu07.utilities.globals;
+import eu07.utilities.timer;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -12,22 +37,7 @@ http://mozilla.org/MPL/2.0/.
 
 */
 
-#include "stdafx.h"
 
-#include "world/Track.h"
-#include "simulation/simulation.h"
-#include "utilities/Globals.h"
-#include "world/Event.h"
-#include "world/MemCell.h"
-#include "input/messaging.h"
-#include "vehicle/DynObj.h"
-#include "vehicle/Driver.h"
-#include "model/AnimModel.h"
-#include "model/MdlMngr.h"
-#include "model/Model3d.h"
-#include "utilities/Timer.h"
-#include "utilities/Logs.h"
-#include "rendering/renderer.h"
 
 // 101206 Ra: trapezoidalne drogi i tory
 // 110720 Ra: rozprucie zwrotnicy i odcinki izolowane

@@ -1,3 +1,19 @@
+module;
+#include "utilities/Globals_macros.h"
+#include <cstring>
+#include <array>
+#include <cctype>
+#include <cstddef>
+#include <ios>
+#include <string>
+#include <vector>
+
+module eu07.utilities.parser;
+import eu07.scene.scenenodegroups;
+import eu07.utilities.globals;
+import eu07.utilities.logs;
+import eu07.utilities.utilities;
+import eu07.simcore;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,11 +23,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "utilities/parser.h"
-#include "utilities/Logs.h"
 
-#include "scene/scenenodegroups.h"
 
 /*
     MaSzyna EU07 locomotive simulator parser

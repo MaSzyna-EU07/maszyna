@@ -1,4 +1,35 @@
-﻿/*
+module;
+#include <GLFW/glfw3.h>
+#include <algorithm>
+#include <memory>
+#include <string>
+#include "utilities/Globals_macros.h"
+#include "imgui/imgui.h"
+#include "imgui/ImGuizmo.h"
+#include <array>
+#include <cmath>
+#include <functional>
+#include <limits>
+#include <vector>
+
+module eu07.application.editormode;
+import eu07.audio.sound;
+import eu07.rendering.geometrybank;
+import eu07.editor.editorsettings;
+import eu07.utilities.utilities;
+import eu07.glm;
+import eu07.application.application;
+import eu07.utilities.globals;
+import eu07.simulation.simulation;
+import eu07.simulation.simulationtime;
+import eu07.simulation.simulationenvironment;
+import eu07.utilities.timer;
+import eu07.console;
+import eu07.rendering.renderer;
+import eu07.utilities.float3d;
+import eu07.simcore;
+import eu07.utilities.logs;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,35 +38,9 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "application/editormode.h"
-#include "application/editoruilayer.h"
-
-#include "application/application.h"
-#include "editor/editorSettings.hpp"
-#include "utilities/Globals.h"
-#include "simulation/simulation.h"
-#include "simulation/simulationtime.h"
-#include "simulation/simulationenvironment.h"
-#include "utilities/Timer.h"
-#include "Console.h"
-#include "rendering/renderer.h"
-#include "model/AnimModel.h"
-#include "model/Model3d.h"
-#include "utilities/Float3d.h"
-#include "scene/scene.h"
 
 
-#include "imgui/imgui.h"
-#include "imgui/ImGuizmo.h"
-#include "utilities/Logs.h"
-#include <glm/gtc/type_ptr.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <array>
-#include <cmath>
-#include <functional>
-#include <limits>
-#include <vector>
+
 
 // Static member initialization
 TCamera editor_mode::Camera;

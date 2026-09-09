@@ -1,3 +1,22 @@
+module;
+#include <filesystem>
+#include <array>
+#include <cstddef>
+#include <fstream>
+#include <string>
+#include <tuple>
+#include <unordered_map>
+#include <utility>
+#include "utilities/Globals_macros.h"
+#include "utilities/utilities_macros.h"
+#include <GLFW/glfw3.h>
+
+module eu07.input.keyboardinput;
+import eu07.rendering.geometrybank;
+import eu07.utilities.globals;
+import eu07.utilities.logs;
+import eu07.utilities.parser;
+import eu07.utilities.utilities;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,12 +26,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "input/keyboardinput.h"
-#include "utilities/Globals.h"
-#include "utilities/Logs.h"
-#include "utilities/parser.h"
-#include "utilities/utilities.h"
 
 namespace input {
 

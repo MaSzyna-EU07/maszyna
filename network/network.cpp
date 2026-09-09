@@ -1,11 +1,23 @@
-#include "stdafx.h"
-#include "network/network.h"
-#include "network/message.h"
-#include "utilities/Logs.h"
-#include "scene/sn_utils.h"
-#include "utilities/Timer.h"
-#include "application/application.h"
-#include "utilities/Globals.h"
+module;
+#include <algorithm>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <ios>
+#include <memory>
+#include <string>
+#include <tuple>
+#include <vector>
+#include "utilities/Globals_macros.h"
+
+module eu07.network.network;
+import eu07.network.message;
+import eu07.utilities.logs;
+import eu07.scene.sn_utils;
+import eu07.utilities.timer;
+import eu07.application.application;
+import eu07.utilities.globals;
 
 std::uint32_t const EU07_NETWORK_VERSION = 2;
 

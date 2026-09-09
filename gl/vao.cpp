@@ -1,5 +1,8 @@
-#include "stdafx.h"
-#include "vao.h"
+module;
+#include "glad/glad.h"
+#include <cstddef>
+
+module eu07.gl.vao;
 
 bool gl::vao::use_vao = true;
 

@@ -1,3 +1,23 @@
+module;
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <cmath>
+#include <cstdlib>
+#include <map>
+#include <optional>
+#include <string>
+#include <vector>
+#include "vehicle/DynObj_macros.h"
+
+module eu07.vehicle.gauge;
+import eu07.utilities.float3d;
+import eu07.widgets.map_objects;
+import eu07.utilities.parser;
+import eu07.simcore;
+import eu07.utilities.timer;
+import eu07.utilities.logs;
+import eu07.rendering.renderer;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -13,14 +33,6 @@ http://mozilla.org/MPL/2.0/.
 
 */
 
-#include "stdafx.h"
-#include "vehicle/Gauge.h"
-#include "utilities/parser.h"
-#include "model/Model3d.h"
-#include "vehicle/DynObj.h"
-#include "utilities/Timer.h"
-#include "utilities/Logs.h"
-#include "rendering/renderer.h"
 
 TGauge::TGauge( sound_source const &Soundtemplate ) :
     m_soundtemplate( Soundtemplate )

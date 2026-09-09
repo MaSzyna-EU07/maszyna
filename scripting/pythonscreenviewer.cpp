@@ -1,9 +1,23 @@
-#include "stdafx.h"
-#include "scripting/pythonscreenviewer.h"
-#include "application/application.h"
-#include "gl/shader.h"
-#include "gl/vao.h"
-#include "utilities/Logs.h"
+module;
+#include "utilities/Globals_macros.h"
+#include <GLFW/glfw3.h>
+#include <chrono>
+#include <cstddef>
+#include <cstring>
+#include <memory>
+#include <mutex>
+#include <thread>
+#include <vector>
+#include "glad/glad.h"
+
+module eu07.scripting.pythonscreenviewer;
+import eu07.utilities.globals;
+import eu07.gl.buffer;
+import eu07.glm;
+import eu07.application.application;
+import eu07.gl.shader;
+import eu07.gl.vao;
+import eu07.utilities.logs;
 
 void texture_window_resize(GLFWwindow *win, int w, int h)
 {

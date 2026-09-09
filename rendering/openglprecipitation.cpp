@@ -1,3 +1,16 @@
+module;
+#include "glad/glad.h"
+#include <cmath>
+#include <cstdint>
+#include <string>
+#include <vector>
+#include "global_include/interfaces/ITexture_macros.h"
+#include "utilities/Globals_macros.h"
+
+module eu07.rendering.openglprecipitation;
+import eu07.utilities.globals;
+import eu07.rendering.renderer;
+import eu07.simulation.simulationenvironment;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,12 +20,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "rendering/openglprecipitation.h"
 
-#include "utilities/Globals.h"
-#include "rendering/renderer.h"
-#include "simulation/simulationenvironment.h"
 
 opengl_precipitation::~opengl_precipitation() {
 

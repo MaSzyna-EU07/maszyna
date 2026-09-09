@@ -1,3 +1,17 @@
+module;
+#include <algorithm>
+#include <cmath>
+#include <iterator>
+#include <typeinfo>
+#include "utilities/Globals_macros.h"
+
+module eu07.scene.sceneeditor;
+import eu07.scene.scenenodegroups;
+import eu07.utilities.utilities;
+import eu07.simulation.simulation;
+import eu07.simcore;
+import eu07.utilities.globals;
+import eu07.glm;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,17 +21,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "scene/sceneeditor.h"
-#include "scene/scenenodegroups.h"
 
-#include "utilities/Globals.h"
-#include "application/application.h"
-#include "simulation/simulation.h"
-#include "world/MemCell.h"
-#include "vehicle/Camera.h"
-#include "model/AnimModel.h"
-#include "rendering/renderer.h"
 
 namespace scene {
 

@@ -1,21 +1,46 @@
-#include "stdafx.h"
-#include "utilities/motiontelemetry.h"
-#include "utilities/Globals.h"
-#include "utilities/Logs.h"
-#include "vehicle/Train.h"
-#include "utilities/Timer.h"
-#include "vehicle/Driver.h"
-#include "simulation/simulation.h"
-
+module;
+#include <chrono>
+#include <cmath>
+#include <cstring>
+#include <stdexcept>
+#include "utilities/Globals_macros.h"
 #ifdef _WIN32
 #include <winsock2.h>
+#endif
+#ifdef _WIN32
 #include <ws2tcpip.h>
+#endif
+#ifdef _WIN32
 #else
 #include <sys/types.h>
+#endif
+#ifdef _WIN32
+#else
 #include <sys/socket.h>
+#endif
+#ifdef _WIN32
+#else
 #include <netdb.h>
+#endif
+#ifdef _WIN32
+#else
 #include <arpa/inet.h>
+#endif
+#ifdef _WIN32
+#else
 #include <netinet/in.h>
+#endif
+
+module eu07.utilities.motiontelemetry;
+import eu07.utilities.globals;
+import eu07.utilities.logs;
+import eu07.vehicle.train;
+import eu07.utilities.timer;
+import eu07.simcore;
+import eu07.simulation.simulation;
+
+#ifdef _WIN32
+#else
 #endif
 
 motiontelemetry::motiontelemetry()

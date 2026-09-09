@@ -1,3 +1,36 @@
+module;
+#include <GLFW/glfw3.h>
+#include <array>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <string>
+#include <tuple>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+#include "utilities/Globals_macros.h"
+#include "vehicle/DynObj_macros.h"
+#include <future>
+#include <cmath>
+#include <algorithm>
+#include <future>
+#include <algorithm>
+
+module eu07.vehicle.train;
+import eu07.global_include.interfaces.itexture;
+import eu07.model.mdlmngr;
+import eu07.rendering.renderer;
+import eu07.utilities.logs;
+import eu07.utilities.globals;
+import eu07.simulation.simulation;
+import eu07.application.application;
+import eu07.utilities.utilities;
+import eu07.mczapkie.hamulce;
+import eu07.simcore;
+import eu07.simulation.simulationtime;
+import eu07.utilities.timer;
+import eu07.world.mtable;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -12,27 +45,7 @@ http://mozilla.org/MPL/2.0/.
 
 */
 
-#include "stdafx.h"
-#include "vehicle/Train.h"
 
-#include "utilities/Globals.h"
-#include "simulation/simulation.h"
-#include "world/Event.h"
-#include "simulation/simulationtime.h"
-#include "vehicle/Camera.h"
-#include "utilities/Logs.h"
-#include "model/MdlMngr.h"
-#include "model/Model3d.h"
-#include "utilities/Timer.h"
-#include "vehicle/Driver.h"
-#include "vehicle/DynObj.h"
-#include "world/mtable.h"
-#include "Console.h"
-#include "application/application.h"
-#include "rendering/renderer.h"
-#include <future>
-#include <cmath>
-#include <algorithm>
 /*
 namespace input {
 
@@ -12398,8 +12411,6 @@ uint16_t TTrain::id()
 	return vid;
 }
 
-#include <future>
-#include <algorithm>
 
 void train_table::updateAsync(double dt)
 {

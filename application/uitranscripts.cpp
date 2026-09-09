@@ -1,9 +1,14 @@
-#include "stdafx.h"
-#include "application/uitranscripts.h"
+module;
+#include <string>
+#include "utilities/Globals_macros.h"
+#include "utilities/utilities_macros.h"
+#include <algorithm>
 
-#include "utilities/Globals.h"
-#include "utilities/parser.h"
-#include "utilities/utilities.h"
+module eu07.application.uitranscripts;
+import eu07.utilities.globals;
+import eu07.utilities.parser;
+import eu07.utilities.utilities;
+
 
 namespace ui {
 

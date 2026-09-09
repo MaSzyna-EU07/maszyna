@@ -1,8 +1,9 @@
-#include "stdafx.h"
+#include "utilities/Globals_macros.h"
+#include <string>
+import eu07.simcore;
+import eu07.utilities.globals;
+import eu07.rendering.renderer;
 
-#include "model/Model3d.h"
-#include "utilities/Globals.h"
-#include "rendering/renderer.h"
 
 void export_e3d_standalone(std::string in, std::string out, int flags, bool dynamic)
 {

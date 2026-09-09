@@ -1,3 +1,16 @@
+module;
+#include <string>
+#include <vector>
+#include "global_include/interfaces/ITexture_macros.h"
+#include <glad/glad.h>
+#include <algorithm>
+#include <cmath>
+
+module eu07.editor.editorterrain;
+import eu07.simcore;
+import eu07.simulation.simulation;
+import eu07.rendering.renderer;
+import eu07.model.vertex;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,18 +20,8 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "editor/editorTerrain.hpp"
 
-#include "scene/scene.h"
-#include "scene/scenenode.h"
-#include "simulation/simulation.h"
-#include "rendering/renderer.h"
-#include "model/vertex.h"
 
-#include <glad/glad.h>
-#include <algorithm>
-#include <cmath>
 
 namespace
 {

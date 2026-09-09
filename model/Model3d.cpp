@@ -1,3 +1,32 @@
+module;
+#include "utilities/utilities_macros.h"
+#include <algorithm>
+#include <stdexcept>
+#include "glad/glad.h"
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <optional>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
+#include "global_include/interfaces/ITexture_macros.h"
+#include "utilities/Globals_macros.h"
+#include "rendering/openglmatrixstack_macros.h"
+
+module eu07.simcore;
+import eu07.glm;
+import eu07.utilities.globals;
+import eu07.utilities.logs;
+import eu07.rendering.renderer;
+import eu07.utilities.timer;
+import eu07.simulation.simulation;
+import eu07.simulation.simulationtime;
+import eu07.world.mtable;
+import eu07.scene.sn_utils;
+import eu07.rendering.openglmatrixstack;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -12,17 +41,7 @@ Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 
 */
 
-#include "stdafx.h"
-#include "model/Model3d.h"
 
-#include "utilities/Globals.h"
-#include "utilities/Logs.h"
-#include "rendering/renderer.h"
-#include "utilities/Timer.h"
-#include "simulation/simulation.h"
-#include "simulation/simulationtime.h"
-#include "world/mtable.h"
-#include "scene/sn_utils.h"
 
 //---------------------------------------------------------------------------
 
@@ -1081,7 +1100,7 @@ void TSubModel::SetRotateIK1(float3 vNewAngles)
 	iAnimOwner = iInstance; // zapamiętanie czyja jest animacja
 }
 
-struct ToLower
+struct to_lower_char
 {
 	char operator()(char input)
 	{
@@ -1092,7 +1111,7 @@ struct ToLower
 TSubModel *TSubModel::GetFromName(std::string const &search, bool i)
 {
 	TSubModel *result;
-	// std::transform(search.begin(),search.end(),search.begin(),ToLower());
+	// std::transform(search.begin(),search.end(),search.begin(),to_lower_char());
 	// search=search.LowerCase();
 	// AnsiString name=AnsiString();
 	std::string search_lc = search;

@@ -1,5 +1,7 @@
-#include "stdafx.h"
-#include "rendering/nullrenderer.h"
+module;
+#include <memory>
+
+module eu07.rendering.nullrenderer;
 
 std::unique_ptr<gfx_renderer> null_renderer::create_func()
 {

@@ -1,4 +1,25 @@
-﻿/*
+module;
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <istream>
+#include <iterator>
+#include <memory>
+#include <ostream>
+#include <vector>
+#include "global_include/interfaces/ITexture_macros.h"
+#include "utilities/Globals_macros.h"
+#include "glad/glad.h"
+#include <numeric>
+
+module eu07.rendering.geometrybank;
+import eu07.simcore;
+import eu07.glm;
+import eu07.model.vertex;
+import eu07.scene.sn_utils;
+import eu07.utilities.logs;
+import eu07.utilities.globals;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,13 +28,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "rendering/geometrybank.h"
-#include "model/vertex.h"
 
-#include "scene/sn_utils.h"
-#include "utilities/Logs.h"
-#include "utilities/Globals.h"
 
 namespace gfx {
 

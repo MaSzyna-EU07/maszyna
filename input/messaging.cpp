@@ -1,4 +1,27 @@
-﻿/*
+module;
+#include "winheaders.h"
+#include "utilities/utilities_macros.h"
+#include <typeinfo>
+#include <GLFW/glfw3.h>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include "utilities/Globals_macros.h"
+#include "vehicle/DynObj_macros.h"
+
+module eu07.input.messaging;
+import eu07.utilities.utilities;
+import eu07.glm;
+import eu07.input.command;
+import eu07.utilities.globals;
+import eu07.application.application;
+import eu07.simulation.simulation;
+import eu07.simulation.simulationtime;
+import eu07.simcore;
+import eu07.world.mtable;
+import eu07.utilities.logs;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,18 +30,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "input/messaging.h"
 
-#include "utilities/Globals.h"
-#include "application/application.h"
-#include "simulation/simulation.h"
-#include "simulation/simulationtime.h"
-#include "world/Event.h"
-#include "vehicle/DynObj.h"
-#include "vehicle/Driver.h"
-#include "world/mtable.h"
-#include "utilities/Logs.h"
 
 #ifdef _WIN32
 extern "C"

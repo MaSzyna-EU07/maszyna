@@ -1,6 +1,15 @@
-#include "stdafx.h"
-#include "textures_scanner.h"
-#include "utilities/utilities.h"
+module;
+#include <algorithm>
+#include <unordered_map>
+#include <filesystem>
+#include <fstream>
+#include <memory>
+#include <string>
+#include "utilities/utilities_macros.h"
+
+module eu07.launcher.textures_scanner;
+import eu07.rendering.geometrybank;
+import eu07.utilities.utilities;
 
 void ui::vehicles_bank::scan_textures()
 {

@@ -37,7 +37,7 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y \
-            build-essential \
+            build-essential gcc-14 g++-14 ninja-build \
             libgl1-mesa-dev libglew-dev libglfw3-dev \
             libpng-dev libopenal-dev libluajit-5.1-dev \
             libserialport-dev libsndfile1-dev \
@@ -64,8 +64,12 @@ jobs:
         uses: SonarSource/sonarqube-scan-action/install-build-wrapper@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
 
       - name: Configure (CMake)
+        env:
+          # C++20 named modules need GCC 14+; noble's default build-essential is GCC 13
+          CC: gcc-14
+          CXX: g++-14
         run: |
-          cmake -S . -B build \
+          cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DWITH_BETTER_RENDERER=OFF \
             -DWITH_ZMQ=OFF -DWITH_OPENVR=OFF -DUSE_LTO=OFF \

@@ -149,7 +149,7 @@ jobs:
           sudo apt-get update
 
           sudo apt-get install -y \
-            build-essential \
+            build-essential gcc-14 g++-14 ninja-build \
             libgl1-mesa-dev \
             libglew-dev \
             libglfw3-dev \
@@ -193,16 +193,22 @@ jobs:
 
       - name: Show environment
         run: |
-          gcc --version
-          g++ --version
+          gcc-14 --version
+          g++-14 --version
+          ninja --version
           cmake --version
           python --version
 
       - name: Configure
+        env:
+          # C++20 named modules need GCC 14+; noble's default build-essential is GCC 13
+          CC: gcc-14
+          CXX: g++-14
         run: |
           cmake \
             -S . \
             -B build \
+            -G Ninja \
             -DCMAKE_BUILD_TYPE="${CONFIG_LINUX}" \
             -DWITH_BETTER_RENDERER=OFF \
             -DWITH_ZMQ=OFF \

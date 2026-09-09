@@ -1,4 +1,27 @@
-﻿/*
+module;
+#include <AL/alext.h>
+#include <cmath>
+#include <AL/al.h>
+#include <AL/alc.h>
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <limits>
+#include <string>
+#include <vector>
+#include "audio/audiorenderer_macros.h"
+#include "utilities/Globals_macros.h"
+#include "utilities/crashreporter_macros.h"
+
+module eu07.audio.sound;
+import eu07.utilities.utilities;
+import eu07.utilities.globals;
+import eu07.vehicle.camera;
+import eu07.utilities.logs;
+import eu07.simulation.simulation;
+import eu07.vehicle.train;
+import eu07.utilities.crashreporter;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,15 +30,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "audio/audiorenderer.h"
 
-#include "audio/sound.h"
-#include "utilities/Globals.h"
-#include "vehicle/Camera.h"
-#include "utilities/Logs.h"
-#include "simulation/simulation.h"
-#include "vehicle/Train.h"
 
 namespace audio {
 

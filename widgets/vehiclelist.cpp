@@ -1,8 +1,16 @@
-#include "stdafx.h"
-#include "widgets/vehiclelist.h"
-#include "simulation/simulation.h"
-#include "vehicle/Driver.h"
-#include "widgets/vehicleparams.h"
+module;
+#include "imgui/imgui.h"
+#include "utilities/translation_macros.h"
+#include <string>
+#include "utilities/Globals_macros.h"
+
+module eu07.widgets.vehiclelist;
+import eu07.utilities.utilities;
+import eu07.utilities.translation;
+import eu07.utilities.globals;
+import eu07.simulation.simulation;
+import eu07.simcore;
+import eu07.widgets.vehicleparams;
 
 ui::vehiclelist_panel::vehiclelist_panel(ui_layer &parent)
     : ui_panel(STR_C("Vehicle list"), false), m_parent(parent)

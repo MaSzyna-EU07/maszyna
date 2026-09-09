@@ -1,11 +1,20 @@
-#include "stdafx.h"
-
+module;
+#include "utilities/Globals_macros.h"
+#include "glad/glad.h"
+#include <algorithm>
+#include <functional>
+#include <vector>
+#include <unordered_map>
 #include <fstream>
 #include <sstream>
 #include <cstring>
-#include "shader.h"
-#include "glsl_common.h"
-#include "utilities/Logs.h"
+
+module eu07.gl.shader;
+import eu07.gl.ubo;
+import eu07.utilities.globals;
+import eu07.gl.glsl_common;
+import eu07.utilities.logs;
+
 
 inline bool strcend(std::string const &value, std::string const &ending)
 {

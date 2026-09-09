@@ -1,9 +1,14 @@
+module;
+#include <cstdint>
+#include <istream>
+#include <ostream>
+
+module eu07.scene.sn_utils;
+import eu07.glm;
 /* This Source Code Form is subject to the terms of the Mozilla Public
 * License, v. 2.0. If a copy of the MPL was not distributed with this
 * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "stdafx.h"
-#include "scene/sn_utils.h"
 
 // sanity checks
 static_assert(std::numeric_limits<double>::is_iec559, "IEEE754 required");

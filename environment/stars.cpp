@@ -1,7 +1,9 @@
-#include "stdafx.h"
-#include "environment/stars.h"
-#include "utilities/Globals.h"
-#include "model/MdlMngr.h"
+module;
+#include "utilities/Globals_macros.h"
+
+module eu07.environment.stars;
+import eu07.utilities.globals;
+import eu07.model.mdlmngr;
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // cStars -- simple starfield model, simulating appearance of starry sky

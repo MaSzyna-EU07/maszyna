@@ -1,4 +1,24 @@
-﻿/*
+module;
+#include "glad/glad.h"
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdlib>
+#include <istream>
+#include <iterator>
+#include <limits>
+#include <ostream>
+#include <string>
+#include <vector>
+#include "global_include/interfaces/ITexture_macros.h"
+
+module eu07.simcore;
+import eu07.rendering.renderer;
+import :mover;
+import eu07.utilities.utilities;
+import eu07.utilities.parser;
+import eu07.scene.sn_utils;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,14 +27,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "scene/scenenode.h"
 
-#include "model/Model3d.h"
-#include "rendering/renderer.h"
-#include "utilities/parser.h"
-#include "utilities/Logs.h"
-#include "scene/sn_utils.h"
 
 // stores content of the struct in provided output stream
 void

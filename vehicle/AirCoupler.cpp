@@ -1,3 +1,8 @@
+module;
+#include <string>
+
+module eu07.simcore;
+import eu07.utilities.parser;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,11 +12,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "vehicle/AirCoupler.h"
 
-#include "model/Model3d.h"
-#include "utilities/parser.h"
 
 AirCoupler::AirCoupler()
 {

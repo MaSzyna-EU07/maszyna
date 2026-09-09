@@ -1,3 +1,26 @@
+#include <cstdlib>
+#ifdef WITHDUMPGEN
+#ifdef _WIN32
+#include <Windows.h>
+#endif
+#endif
+#ifdef WITHDUMPGEN
+#ifdef _WIN32
+#include <DbgHelp.h>
+#endif
+#endif
+#include <ctime>
+#include <string>
+#include <sstream>
+#include <iomanip>
+#include "utilities/Globals_macros.h"
+#include <chrono>
+#ifdef _WIN32
+#include <windows.h>
+#endif
+import eu07.application.application;
+import eu07.utilities.logs;
+import eu07.utilities.globals;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -16,15 +39,9 @@ MarcinW, McZapkie, Shaxbee, ABu, nbmx, youBy, Ra, winger, mamut, Q424,
 Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 */
 
-#include "stdafx.h"
 
-#include "application/application.h"
-#include "utilities/Logs.h"
-#include <cstdlib>
 #ifdef WITHDUMPGEN
 #ifdef _WIN32
-#include <Windows.h>
-#include <DbgHelp.h>
 #endif
 #endif
 
@@ -34,11 +51,9 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 
 void export_e3d_standalone(std::string in, std::string out, int flags, bool dynamic);
 
-#include <ctime>
-#include <string>
-#include <sstream>
-#include <iomanip>
-#include <utilities/Globals.h>
+
+#ifdef _WIN32
+#endif
 
 #ifdef _WIN32
 #pragma comment(lib, "Dbghelp.lib")

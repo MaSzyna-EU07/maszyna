@@ -1,3 +1,10 @@
+module;
+#include <string>
+#include "utilities/Globals_macros.h"
+
+module eu07.environment.sky;
+import eu07.utilities.globals;
+import eu07.model.mdlmngr;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,10 +14,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "environment/sky.h"
-#include "utilities/Globals.h"
-#include "model/MdlMngr.h"
 
 //---------------------------------------------------------------------------
 //GLfloat lightPos[4] = {0.0f, 0.0f, 0.0f, 1.0f};

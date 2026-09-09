@@ -1,3 +1,9 @@
+module;
+#include <cmath>
+#include "vehicle/DynObj_macros.h"
+#include <algorithm>
+
+module eu07.rendering.lightarray;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -13,9 +19,6 @@ http://mozilla.org/MPL/2.0/.
 
 */
 
-#include "stdafx.h"
-#include "rendering/lightarray.h"
-#include "vehicle/DynObj.h"
 
 void
 light_array::insert( TDynamicObject const *Owner ) {

@@ -1,4 +1,29 @@
-﻿/*
+module;
+#include <vector>
+#include "glad/glad.h"
+#include <cmath>
+#include <cstddef>
+#include <limits>
+#include <map>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <unordered_set>
+#include <utility>
+#include "global_include/interfaces/ITexture_macros.h"
+#include "utilities/utilities_macros.h"
+#include "utilities/Globals_macros.h"
+
+module eu07.model.material;
+import eu07.rendering.geometrybank;
+import eu07.widgets.map_objects;
+import eu07.rendering.renderer;
+import eu07.utilities.parser;
+import eu07.utilities.utilities;
+import eu07.utilities.logs;
+import eu07.scene.sn_utils;
+import eu07.utilities.globals;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,15 +32,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
 
-#include "model/material.h"
-#include "rendering/renderer.h"
-#include "utilities/parser.h"
-#include "utilities/utilities.h"
-#include "utilities/Logs.h"
-#include "scene/sn_utils.h"
-#include "utilities/Globals.h"
 
 opengl_material::path_data opengl_material::paths;
 

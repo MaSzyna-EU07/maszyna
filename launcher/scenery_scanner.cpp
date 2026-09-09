@@ -1,6 +1,14 @@
-#include "stdafx.h"
-#include "scenery_scanner.h"
-#include "utilities/Logs.h"
+module;
+#include <algorithm>
+#include <cstddef>
+#include <filesystem>
+#include <memory>
+#include <sstream>
+#include <string>
+
+module eu07.launcher.scenery_scanner;
+import eu07.utilities.utilities;
+import eu07.utilities.logs;
 
 scenery_scanner::scenery_scanner(ui::vehicles_bank &bank)
     : bank(bank)

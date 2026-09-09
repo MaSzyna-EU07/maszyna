@@ -1,3 +1,7 @@
+module;
+#include <cmath>
+
+module eu07.mczapkie.friction;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -12,8 +16,6 @@ Friction coefficient.
 Copyright (C) 2007-2013 Maciej Cierniak
 */
 
-#include "stdafx.h"
-#include "friction.h"
 
 double TFricMat::GetFC(double N, double Vel)
 {

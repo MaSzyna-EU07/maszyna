@@ -1,3 +1,17 @@
+module;
+#include "glad/glad.h"
+#include "imgui/imgui.h"
+#include "utilities/Globals_macros.h"
+#include "utilities/translation_macros.h"
+#include <nlohmann/json.hpp>
+#include <sstream>
+
+module eu07.application.scenarioloaderuilayer;
+import eu07.glm;
+import eu07.utilities.utilities;
+import eu07.utilities.globals;
+import eu07.utilities.translation;
+import eu07.utilities.logs;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,13 +21,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "application/scenarioloaderuilayer.h"
 
-#include "utilities/Globals.h"
-#include "utilities/translation.h"
-#include <nlohmann/json.hpp>
-#include "utilities/Logs.h"
-#include <sstream>
 
 using json = nlohmann::json;
 

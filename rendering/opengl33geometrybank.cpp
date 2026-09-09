@@ -1,4 +1,11 @@
-﻿/*
+module;
+#include <new>
+#include "glad/glad.h"
+#include <cstddef>
+
+module eu07.rendering.opengl33geometrybank;
+import eu07.utilities.logs;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,10 +14,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "rendering/opengl33geometrybank.h"
 
-#include "utilities/Logs.h"
 
 namespace gfx {
 

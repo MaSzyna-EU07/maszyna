@@ -1,7 +1,10 @@
-#include "stdafx.h"
-#include "query.h"
-#include "utilities/Globals.h"
+module;
+#include "glad/glad.h"
+#include <optional>
+#include "utilities/Globals_macros.h"
 
+module eu07.gl.query;
+import eu07.utilities.globals;
 gl::query::query(targets target)
     : target(target)
 {

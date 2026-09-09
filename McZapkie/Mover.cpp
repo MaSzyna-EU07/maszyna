@@ -1,4 +1,27 @@
-﻿/*
+module;
+#include <cassert>
+#include <typeinfo>
+#include <unordered_map>
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <limits>
+#include <map>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
+#include "McZapkie/MOVER_macros.h"
+#include "vehicle/DynObj_macros.h"
+#include "utilities/Globals_macros.h"
+
+module eu07.simcore;
+import eu07.mczapkie.oerlikon_est;
+import eu07.utilities.globals;
+import eu07.utilities.logs;
+import eu07.utilities.parser;
+import eu07.simulation.simulation;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,15 +30,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "MOVER.h"
 
-#include "vehicle/DynObj.h"
-#include "Oerlikon_ESt.h"
-#include "utilities/Globals.h"
-#include "utilities/Logs.h"
-#include "utilities/parser.h"
-#include "simulation/simulation.h"
 //---------------------------------------------------------------------------
 
 // Ra: tu należy przenosić funcje z mover.pas, które nie są z niego wywoływane.

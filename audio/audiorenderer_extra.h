@@ -1,5 +1,6 @@
 // separate file because of include dependecies mess
 
+#include <cmath>
 namespace audio {
 template <class Iterator_>
 openal_source &

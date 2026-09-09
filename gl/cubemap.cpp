@@ -1,5 +1,7 @@
-#include "stdafx.h"
-#include "cubemap.h"
+module;
+#include "glad/glad.h"
+
+module eu07.gl.cubemap;
 
 gl::cubemap::cubemap()
 {

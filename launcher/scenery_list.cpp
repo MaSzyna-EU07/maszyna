@@ -1,13 +1,22 @@
-#include "stdafx.h"
-#include "scenery_list.h"
+module;
+#include "utilities/Globals_macros.h"
+#include <vector>
+#include "global_include/interfaces/ITexture_macros.h"
 #include "imgui/imgui.h"
-#include "utilities/utilities.h"
-#include "rendering/renderer.h"
-#include "application/application.h"
-#include "utilities/Logs.h"
-#include "utilities/translation.h"
-
+#include "utilities/utilities_macros.h"
+#include "utilities/translation_macros.h"
 #include <filesystem>
+
+module eu07.launcher.scenery_list;
+import eu07.utilities.globals;
+import eu07.glm;
+import eu07.launcher.textures_scanner;
+import eu07.utilities.utilities;
+import eu07.rendering.renderer;
+import eu07.application.application;
+import eu07.utilities.logs;
+import eu07.utilities.translation;
+
 
 ui::scenerylist_panel::scenerylist_panel(scenery_scanner &scanner)
     : ui_panel(STR("Scenario list"), false), scanner(scanner), placeholder_mini("textures/mini/other")

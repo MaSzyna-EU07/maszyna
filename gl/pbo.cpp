@@ -1,5 +1,9 @@
-#include "stdafx.h"
-#include "pbo.h"
+module;
+#include <optional>
+#include "glad/glad.h"
+
+module eu07.gl.pbo;
+import eu07.gl.fence;
 
 void gl::pbo::request_read(int x, int y, int lx, int ly, int pixsize, GLenum format, GLenum type)
 {

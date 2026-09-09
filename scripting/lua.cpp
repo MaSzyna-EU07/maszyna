@@ -1,10 +1,13 @@
-#include "stdafx.h"
-#include "scripting/lua.h"
-#include "world/Event.h"
-#include "utilities/Logs.h"
-#include "world/MemCell.h"
-#include "vehicle/Driver.h"
-#include "simulation/simulation.h"
+module;
+#include <lua.hpp>
+#include <stdexcept>
+#include <string>
+
+module eu07.scripting.lua;
+import eu07.utilities.utilities;
+import eu07.simcore;
+import eu07.utilities.logs;
+import eu07.simulation.simulation;
 
 lua::lua()
 {

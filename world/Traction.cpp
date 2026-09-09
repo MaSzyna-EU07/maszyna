@@ -1,3 +1,21 @@
+module;
+#include "glad/glad.h"
+#include <cmath>
+#include <cstddef>
+#include <istream>
+#include <ostream>
+#include <string>
+#include <tuple>
+#include <vector>
+#include "global_include/interfaces/ITexture_macros.h"
+#include "utilities/Globals_macros.h"
+#include "utilities/utilities_macros.h"
+
+module eu07.simcore;
+import eu07.rendering.renderer;
+import eu07.simulation.simulation;
+import eu07.utilities.globals;
+import eu07.utilities.utilities;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -12,15 +30,7 @@ http://mozilla.org/MPL/2.0/.
 
 */
 
-#include "stdafx.h"
-#include "world/Traction.h"
 
-#include "simulation/simulation.h"
-#include "utilities/Globals.h"
-#include "world/TractionPower.h"
-#include "utilities/Logs.h"
-#include "rendering/renderer.h"
-#include "utilities/utilities.h"
 
 //---------------------------------------------------------------------------
 /*

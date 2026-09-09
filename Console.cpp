@@ -1,3 +1,14 @@
+module;
+#include "utilities/Globals_macros.h"
+#include "utilities/utilities_macros.h"
+
+module eu07.console;
+import eu07.utilities.globals;
+import eu07.application.application;
+import eu07.console.lpt;
+import eu07.utilities.logs;
+import eu07.console.pokeys55;
+import eu07.utilities.utilities;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,14 +18,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "Console.h"
-#include "utilities/Globals.h"
-#include "application/application.h"
-#include "LPT.h"
-#include "utilities/Logs.h"
-#include "PoKeys55.h"
-#include "utilities/utilities.h"
 
 //---------------------------------------------------------------------------
 // Ra: klasa statyczna gromadząca sygnały sterujące oraz informacje zwrotne

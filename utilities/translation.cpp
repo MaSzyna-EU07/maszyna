@@ -1,3 +1,19 @@
+module;
+#include <unordered_map>
+#include <fstream>
+#include <istream>
+#include <string>
+#include "utilities/translation_macros.h"
+#include "utilities/Globals_macros.h"
+#include "McZapkie/MOVER_macros.h"
+#include "utilities/crashreporter_macros.h"
+
+module eu07.utilities.translation;
+import eu07.utilities.logs;
+import eu07.utilities.globals;
+import eu07.simcore;
+import eu07.rendering.geometrybank;
+import eu07.utilities.crashreporter;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -11,11 +27,6 @@ http://mozilla.org/MPL/2.0/.
     Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 */
 
-#include "stdafx.h"
-#include "utilities/translation.h"
-#include "utilities/Logs.h"
-#include "utilities/Globals.h"
-#include "MOVER.h"
 
 void locale::init()
 {

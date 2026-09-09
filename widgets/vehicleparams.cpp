@@ -1,9 +1,24 @@
-#include "stdafx.h"
-#include "widgets/vehicleparams.h"
-#include "simulation/simulation.h"
-#include "application/driveruipanels.h"
-#include "vehicle/Driver.h"
-#include "vehicle/Train.h"
+module;
+#include "utilities/translation_macros.h"
+#include <GLFW/glfw3.h>
+#include <array>
+#include <cmath>
+#include <string>
+#include <utility>
+#include <vector>
+#include "utilities/Globals_macros.h"
+#include "global_include/interfaces/ITexture_macros.h"
+#include "imgui/imgui.h"
+
+module eu07.widgets.vehicleparams;
+import eu07.mczapkie.hamulce;
+import eu07.utilities.utilities;
+import eu07.gl.buffer;
+import eu07.utilities.globals;
+import eu07.glm;
+import eu07.simulation.simulation;
+import eu07.simcore;
+import eu07.vehicle.train;
 
 ui::vehicleparams_panel::vehicleparams_panel(const std::string &vehicle) : ui_panel(std::string(STR("Vehicle parameters")) + ": " + vehicle, false), m_vehicle_name(vehicle)
 {

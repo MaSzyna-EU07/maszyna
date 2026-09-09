@@ -1,10 +1,18 @@
-#include "stdafx.h"
-#include "input/zmq_input.h"
-#include "utilities/Globals.h"
-#include "utilities/Logs.h"
-#include "simulation/simulation.h"
-#include "simulation/simulationtime.h"
-#include "vehicle/Train.h"
+module;
+#include "utilities/Globals_macros.h"
+#include <cstddef>
+#include <sstream>
+#include <string>
+#include <tuple>
+#include <unordered_map>
+#include <utility>
+
+module eu07.input.zmq_input;
+import eu07.utilities.globals;
+import eu07.utilities.logs;
+import eu07.simulation.simulation;
+import eu07.simulation.simulationtime;
+import eu07.vehicle.train;
 
 zmq_input::zmq_input()
 {

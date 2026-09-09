@@ -1,3 +1,33 @@
+module;
+#include <sys/stat.h>
+#include <cstdint>
+#include <algorithm>
+#include <array>
+#include <cassert>
+#include <cmath>
+#include <cstddef>
+#include <cstdlib>
+#include <iomanip>
+#include <ios>
+#include <limits>
+#include <string>
+#include <typeinfo>
+#include <unordered_map>
+#include <vector>
+#include "utilities/Globals_macros.h"
+#include "utilities/translation_macros.h"
+#include "vehicle/DynObj_macros.h"
+
+module eu07.simcore;
+import eu07.utilities.translation;
+import eu07.simulation.simulation;
+import eu07.world.station;
+import :evlaunch;
+import eu07.utilities.utilities;
+import eu07.utilities.globals;
+import eu07.world.mtable;
+import eu07.simulation.simulationtime;
+using namespace Mtable;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -12,22 +42,7 @@ http://mozilla.org/MPL/2.0/.
 
 */
 
-#include "stdafx.h"
-#include "vehicle/Driver.h"
 
-#include "utilities/Globals.h"
-#include "utilities/translation.h"
-#include "utilities/Logs.h"
-#include "vehicle/Train.h"
-#include "world/mtable.h"
-#include "vehicle/DynObj.h"
-#include "world/Event.h"
-#include "world/MemCell.h"
-#include "simulation/simulation.h"
-#include "simulation/simulationtime.h"
-#include "world/Track.h"
-#include "world/station.h"
-#include "input/keyboardinput.h"
 
 #define LOGVELOCITY 0
 #define LOGORDERS 1
@@ -1865,7 +1880,7 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
     // if (TrainParams)
     // asNextStop=TrainParams.NextStop();
     // else
-    TrainParams = TTrainParameters("none"); // rozkład jazdy
+    TrainParams = Mtable::TTrainParameters("none"); // rozkład jazdy
     // OrderCommand="";
     // OrderValue=0;
     OrdersClear();
@@ -4421,7 +4436,7 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
 #if LOGSTOPS
         WriteLog("New timetable for " + pVehicle->asName + ": " + NewCommand); // informacja
 #endif
-        TrainParams = TTrainParameters(NewCommand); // rozkład jazdy
+        TrainParams = Mtable::TTrainParameters(NewCommand); // rozkład jazdy
         tsGuardSignal = sound_source { sound_placement::internal, 2 * EU07_SOUND_CABCONTROLSCUTOFFRANGE }; // wywalenie kierownika
         m_lastexchangestop.clear();
         if (NewCommand != "none")

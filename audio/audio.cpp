@@ -1,4 +1,20 @@
-﻿/*
+module;
+#include <AL/al.h>
+#include <AL/alc.h>
+#include <cmath>
+#include <fstream>
+#include <string>
+#include "global_include/interfaces/ITexture_macros.h"
+#include <sndfile.h>
+#include "utilities/Globals_macros.h"
+#include "utilities/utilities_macros.h"
+
+module eu07.audio.audio;
+import eu07.utilities.globals;
+import eu07.utilities.logs;
+import eu07.model.resourcemanager;
+import eu07.utilities.utilities;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,15 +23,8 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
 
-#include <sndfile.h>
 
-#include "audio/audio.h"
-#include "utilities/Globals.h"
-#include "utilities/Logs.h"
-#include "model/ResourceManager.h"
-#include "utilities/utilities.h"
 
 namespace audio {
 

@@ -1,3 +1,34 @@
+module;
+#include <filesystem>
+#include <GLFW/glfw3.h>
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <functional>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+#include "utilities/Globals_macros.h"
+#include "utilities/Globals_macros.h"
+#include "utilities/utilities_macros.h"
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+module eu07.input.drivermouseinput;
+import eu07.utilities.parser;
+import eu07.mczapkie.hamulce;
+import eu07.utilities.globals;
+import eu07.application.application;
+import eu07.utilities.timer;
+import eu07.simulation.simulation;
+import eu07.vehicle.train;
+import eu07.simcore;
+import eu07.rendering.renderer;
+import eu07.application.uilayer;
+import eu07.utilities.logs;
+import eu07.utilities.utilities;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,20 +38,10 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "input/drivermouseinput.h"
 
-#include "utilities/Globals.h"
-#include "application/application.h"
-#include "utilities/Globals.h"
-#include "utilities/Timer.h"
-#include "simulation/simulation.h"
-#include "vehicle/Train.h"
-#include "model/AnimModel.h"
-#include "rendering/renderer.h"
-#include "application/uilayer.h"
-#include "utilities/Logs.h"
-#include "utilities/utilities.h"
+
+#ifdef _WIN32
+#endif
 
 auto const EU07_CONTROLLER_MOUSESLIDERSIZE{ 0.6 };
 

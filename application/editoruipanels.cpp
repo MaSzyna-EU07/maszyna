@@ -1,4 +1,23 @@
-﻿/*
+module;
+#include <random>
+#include <algorithm>
+#include <fstream>
+#include <ios>
+#include <string>
+#include <typeinfo>
+#include <utility>
+#include <vector>
+#include "global_include/interfaces/ITexture_macros.h"
+#include "utilities/Globals_macros.h"
+#include "widgets/imgui_scale.h"
+
+module eu07.simcore;
+import eu07.utilities.utilities;
+import eu07.scene.scenenodegroups;
+import eu07.utilities.globals;
+import eu07.vehicle.camera;
+import eu07.rendering.renderer;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,18 +26,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "application/editoruipanels.h"
-#include "scene/scenenodegroups.h"
 
-#include "utilities/Globals.h"
-#include "vehicle/Camera.h"
-#include "model/AnimModel.h"
-#include "world/Track.h"
-#include "world/Event.h"
-#include "world/MemCell.h"
-#include "application/editoruilayer.h"
-#include "rendering/renderer.h"
 
 void itemproperties_panel::update(scene::basic_node *Node)
 {

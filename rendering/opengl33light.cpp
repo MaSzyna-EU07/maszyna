@@ -1,4 +1,7 @@
-﻿/*
+module;
+
+module eu07.rendering.opengl33light;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,9 +10,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
 
-#include "rendering/opengl33light.h"
 
 void opengl33_light::apply_intensity(float const Factor) {
 

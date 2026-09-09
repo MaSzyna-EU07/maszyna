@@ -1,6 +1,17 @@
-#include "stdafx.h"
-#include "keymapper.h"
-#include "simulation/simulation.h"
+module;
+#include "utilities/translation_macros.h"
+#include <string>
+#include <tuple>
+#include <utility>
+#include "utilities/Globals_macros.h"
+#include "imgui/imgui.h"
+
+module eu07.launcher.keymapper;
+import eu07.utilities.utilities;
+import eu07.utilities.translation;
+import eu07.input.keyboardinput;
+import eu07.utilities.globals;
+import eu07.simulation.simulation;
 
 ui::keymapper_panel::keymapper_panel()
     : ui_panel(STR("Keymapper"), false)

@@ -1,3 +1,10 @@
+module;
+#include <istream>
+#include <ostream>
+#include <string>
+
+module eu07.simcore;
+import eu07.simulation.simulation;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -13,13 +20,7 @@ http://mozilla.org/MPL/2.0/.
 
 */
 
-#include "stdafx.h"
-#include "world/MemCell.h"
 
-#include "simulation/simulation.h"
-#include "vehicle/Driver.h"
-#include "world/Event.h"
-#include "utilities/Logs.h"
 
 //---------------------------------------------------------------------------
 

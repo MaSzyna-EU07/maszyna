@@ -1,3 +1,7 @@
+module;
+#include "rendering/openglmatrixstack_macros.h"
+
+module eu07.rendering.openglmatrixstack;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,6 +11,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
+
 
 opengl_matrices OpenGLMatrices;

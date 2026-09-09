@@ -1,7 +1,13 @@
-#include "stdafx.h"
-#include "launcher/launcheruilayer.h"
-#include "application/application.h"
-#include "utilities/translation.h"
+module;
+#include "utilities/Globals_macros.h"
+#include "utilities/translation_macros.h"
+#include "imgui/imgui.h"
+
+module eu07.launcher.launcheruilayer;
+import eu07.utilities.globals;
+import eu07.glm;
+import eu07.application.application;
+import eu07.utilities.translation;
 
 launcher_ui::launcher_ui() : m_scenery_scanner(m_vehicles_bank), m_scenerylist_panel(m_scenery_scanner)
 {

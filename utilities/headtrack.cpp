@@ -1,7 +1,11 @@
-#include "stdafx.h"
-#include "utilities/headtrack.h"
-#include "utilities/Globals.h"
+module;
+#include <string>
+#include "utilities/Globals_macros.h"
+#include <GLFW/glfw3.h>
 
+module eu07.utilities.headtrack;
+import eu07.utilities.globals;
+import eu07.glm;
 headtrack::headtrack()
 {
 

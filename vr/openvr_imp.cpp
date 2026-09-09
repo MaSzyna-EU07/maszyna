@@ -1,10 +1,19 @@
-#include "stdafx.h"
-#include "openvr_imp.h"
-#include "utilities/Logs.h"
-#include "utilities/Globals.h"
-#include "rendering/renderer.h"
-#include "simulation/simulation.h"
-#include "application/application.h"
+module;
+#include "global_include/interfaces/ITexture_macros.h"
+#include "utilities/Globals_macros.h"
+#include <filesystem>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+module eu07.vr.openvr_imp;
+import eu07.utilities.logs;
+import eu07.utilities.globals;
+import eu07.rendering.renderer;
+import eu07.simulation.simulation;
+import eu07.application.application;
 
 vr_openvr::vr_openvr()
 {

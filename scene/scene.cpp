@@ -1,4 +1,35 @@
-﻿/*
+module;
+#include "utilities/utilities_macros.h"
+#include "glad/glad.h"
+#include <GLFW/glfw3.h>
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <deque>
+#include <istream>
+#include <iterator>
+#include <limits>
+#include <map>
+#include <ostream>
+#include <string>
+#include <tuple>
+#include <vector>
+#include "global_include/interfaces/ITexture_macros.h"
+#include "utilities/Globals_macros.h"
+
+module eu07.simcore;
+import eu07.simulation.simulation;
+import eu07.rendering.renderer;
+import :mover;
+import eu07.utilities.globals;
+import eu07.glm;
+import eu07.utilities.timer;
+import eu07.scene.sn_utils;
+import eu07.widgets.map_objects;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,20 +38,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "scene/scene.h"
 
-#include "simulation/simulation.h"
-#include "utilities/Globals.h"
-#include "vehicle/Camera.h"
-#include "model/AnimModel.h"
-#include "world/Event.h"
-#include "world/EvLaunch.h"
-#include "utilities/Timer.h"
-#include "utilities/Logs.h"
-#include "scene/sn_utils.h"
-#include "rendering/renderer.h"
-#include "widgets/map_objects.h"
 
 namespace scene {
 

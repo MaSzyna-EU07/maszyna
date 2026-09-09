@@ -1,3 +1,11 @@
+module;
+#include <cmath>
+#include "glad/glad.h"
+#include "rendering/openglmatrixstack_macros.h"
+
+module eu07.rendering.frustum;
+import eu07.glm;
+import eu07.rendering.openglmatrixstack;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,8 +15,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "rendering/frustum.h"
 
 void
 cFrustum::calculate() {

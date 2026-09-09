@@ -1,3 +1,9 @@
+module;
+#include <istream>
+#include <ostream>
+
+module eu07.simcore;
+import eu07.utilities.parser;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -13,11 +19,7 @@ http://mozilla.org/MPL/2.0/.
 
 */
 
-#include "stdafx.h"
-#include "world/TractionPower.h"
 
-#include "utilities/parser.h"
-#include "utilities/Logs.h"
 
 //---------------------------------------------------------------------------
 

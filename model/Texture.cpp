@@ -1,3 +1,36 @@
+module;
+#include "glad/glad.h"
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cstring>
+#include <fstream>
+#include <ios>
+#include <istream>
+#include <iterator>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+#include "global_include/interfaces/ITexture_macros.h"
+#include "utilities/Globals_macros.h"
+#include "utilities/utilities_macros.h"
+#include "stb/stb_image.h"
+#include "dds-ktx/dds-ktx.h"
+#include "winheaders.h"
+
+module eu07.model.texture;
+import eu07.application.application;
+import eu07.glm;
+import eu07.simcore;
+import eu07.scripting.pyint;
+import eu07.utilities.dictionary;
+import eu07.utilities.globals;
+import eu07.utilities.logs;
+import eu07.utilities.utilities;
+import eu07.scene.sn_utils;
+import eu07.rendering.flip_s3tc;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -13,20 +46,8 @@ http://mozilla.org/MPL/2.0/.
 
 */
 
-#include "stdafx.h"
-#include "model/Texture.h"
 
-#include "application/application.h"
-#include "utilities/dictionary.h"
-#include "utilities/Globals.h"
-#include "utilities/Logs.h"
-#include "utilities/utilities.h"
-#include "scene/sn_utils.h"
-#include "rendering/flip-s3tc.h"
-#include "stb/stb_image.h"
 //#include <png.h>
-#include "dds-ktx/dds-ktx.h"
-#include "winheaders.h"
 
 #define EU07_DEFERRED_TEXTURE_UPLOAD
 

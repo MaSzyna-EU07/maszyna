@@ -1,3 +1,23 @@
+module;
+#include <iomanip>
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <list>
+#include <memory>
+#include <optional>
+#include <string>
+#include "global_include/interfaces/ITexture_macros.h"
+#include "utilities/Globals_macros.h"
+
+module eu07.simcore;
+import eu07.model.mdlmngr;
+import eu07.rendering.renderer;
+import eu07.simulation.simulation;
+import eu07.simulation.simulationtime;
+import eu07.utilities.globals;
+import eu07.utilities.timer;
+import eu07.utilities.logs;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -12,18 +32,7 @@ http://mozilla.org/MPL/2.0/.
 
 */
 
-#include "stdafx.h"
-#include "model/AnimModel.h"
 
-#include "rendering/renderer.h"
-#include "model/MdlMngr.h"
-#include "simulation/simulation.h"
-#include "simulation/simulationtime.h"
-#include "world/Event.h"
-#include "utilities/Globals.h"
-#include "utilities/Timer.h"
-#include "utilities/Logs.h"
-#include "rendering/renderer.h"
 
 std::list<std::weak_ptr<TAnimContainer>> TAnimModel::acAnimList;
 

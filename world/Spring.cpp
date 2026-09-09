@@ -1,3 +1,7 @@
+module;
+
+module eu07.world.spring;
+import eu07.glm;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,8 +11,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "world/Spring.h"
 
 void TSpring::Init(double nKs, double nKd) {
     Ks = nKs;

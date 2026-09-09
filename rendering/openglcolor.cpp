@@ -1,3 +1,7 @@
+module;
+#include "rendering/openglcolor_macros.h"
+
+module eu07.rendering.openglcolor;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,8 +11,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "rendering/openglcolor.h"
 
 opengl_color OpenGLColor;
 

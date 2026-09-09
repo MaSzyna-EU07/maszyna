@@ -1,3 +1,9 @@
+module;
+#include <GLFW/glfw3.h>
+
+module eu07.input.editorkeyboardinput;
+import eu07.input.command;
+import eu07.editor.editorsettings;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,9 +13,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "input/editorkeyboardinput.h"
-#include "editor/editorSettings.hpp"
 
 bool
 editorkeyboard_input::init() {

@@ -1,3 +1,4 @@
+module;
 #include <client/crash_report_database.h>
 #include <client/settings.h>
 #include <client/crashpad_client.h>
@@ -7,6 +8,8 @@
 #include <filesystem>
 #include <iostream>
 #include "version_info.h"
+
+module eu07.utilities.crashreporter;
 
 #if defined __has_attribute
 #  if __has_attribute (init_priority)

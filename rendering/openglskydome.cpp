@@ -1,3 +1,9 @@
+module;
+#include "glad/glad.h"
+
+module eu07.rendering.openglskydome;
+import eu07.glm;
+import eu07.simulation.simulationenvironment;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,10 +13,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "rendering/openglskydome.h"
 
-#include "simulation/simulationenvironment.h"
 
 opengl_skydome::~opengl_skydome() {
 

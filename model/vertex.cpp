@@ -1,4 +1,10 @@
-﻿/*
+module;
+#include <istream>
+#include <ostream>
+
+module eu07.model.vertex;
+import eu07.scene.sn_utils;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,9 +13,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "model/vertex.h"
-#include "scene/sn_utils.h"
 
 void
 world_vertex::serialize( std::ostream &s ) const {

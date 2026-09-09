@@ -1,5 +1,9 @@
-#include "stdafx.h"
-#include "buffer.h"
+module;
+#include "glad/glad.h"
+#include <cstddef>
+#include <cstring>
+
+module eu07.gl.buffer;
 
 GLenum gl::buffer::glenum_target(gl::buffer::targets target)
 {

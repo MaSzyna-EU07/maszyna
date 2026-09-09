@@ -1,4 +1,20 @@
-﻿/*
+module;
+#include "imgui/imgui.h"
+#include <GLFW/glfw3.h>
+#include <string>
+#include "utilities/Globals_macros.h"
+#include "utilities/translation_macros.h"
+
+module eu07.application.driveruilayer;
+import eu07.utilities.utilities;
+import eu07.utilities.globals;
+import eu07.application.application;
+import eu07.utilities.translation;
+import eu07.simulation.simulation;
+import eu07.vehicle.train;
+import eu07.simcore;
+import eu07.rendering.renderer;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,16 +23,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "application/driveruilayer.h"
 
-#include "utilities/Globals.h"
-#include "application/application.h"
-#include "utilities/translation.h"
-#include "simulation/simulation.h"
-#include "vehicle/Train.h"
-#include "model/AnimModel.h"
-#include "rendering/renderer.h"
 
 driver_ui::driver_ui()
 {

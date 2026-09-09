@@ -1,6 +1,10 @@
-#include "stdafx.h"
-#include "network/message.h"
-#include "scene/sn_utils.h"
+module;
+#include <cstdint>
+#include <memory>
+#include <ostream>
+
+module eu07.network.message;
+import eu07.scene.sn_utils;
 
 void network::client_hello::serialize(std::ostream &stream) const
 {

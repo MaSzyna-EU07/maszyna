@@ -1,9 +1,18 @@
-#include "stdafx.h"
-#include "environment/moon.h"
-#include "utilities/Globals.h"
-#include "world/mtable.h"
-#include "utilities/utilities.h"
-#include "simulation/simulationtime.h"
+module;
+#include <ctime>
+#include "winheaders.h"
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include "utilities/Globals_macros.h"
+#include "utilities/utilities_macros.h"
+
+module eu07.environment.moon;
+import eu07.glm;
+import eu07.utilities.globals;
+import eu07.world.mtable;
+import eu07.utilities.utilities;
+import eu07.simulation.simulationtime;
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // cSun -- class responsible for dynamic calculation of position and intensity of the Sun,

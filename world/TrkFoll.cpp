@@ -1,3 +1,12 @@
+module;
+#include <cmath>
+#include "utilities/Globals_macros.h"
+#include "vehicle/DynObj_macros.h"
+
+module eu07.simcore;
+import eu07.simulation.simulation;
+import eu07.utilities.globals;
+import eu07.utilities.logs;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -13,14 +22,7 @@ http://mozilla.org/MPL/2.0/.
 
 */
 
-#include "stdafx.h"
-#include "world/TrkFoll.h"
 
-#include "simulation/simulation.h"
-#include "utilities/Globals.h"
-#include "vehicle/DynObj.h"
-#include "vehicle/Driver.h"
-#include "utilities/Logs.h"
 
 TTrackFollower::~TTrackFollower()
 {

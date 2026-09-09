@@ -1,3 +1,10 @@
+module;
+#include "glad/glad.h"
+#include <vector>
+
+module eu07.rendering.opengl33skydome;
+import eu07.glm;
+import eu07.simulation.simulationenvironment;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,10 +14,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "rendering/opengl33skydome.h"
 
-#include "simulation/simulationenvironment.h"
 
 void opengl33_skydome::update() {
 

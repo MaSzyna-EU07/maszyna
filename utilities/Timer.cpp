@@ -1,3 +1,10 @@
+module;
+#include <ctime>
+#include "utilities/Globals_macros.h"
+#include "winheaders.h"
+
+module eu07.utilities.timer;
+import eu07.utilities.globals;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,10 +14,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "utilities/Timer.h"
-#include "utilities/Globals.h"
-#include "winheaders.h"
 
 namespace Timer {
 

@@ -1,3 +1,34 @@
+module;
+#include <GLFW/glfw3.h>
+#include <lua.hpp>
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <fstream>
+#include <ios>
+#include <limits>
+#include <memory>
+#include <ostream>
+#include <string>
+#include <vector>
+#include "global_include/interfaces/ITexture_macros.h"
+#include "utilities/Globals_macros.h"
+#include "vehicle/DynObj_macros.h"
+
+module eu07.simcore;
+import eu07.input.messaging;
+import eu07.simulation.simulation;
+import eu07.rendering.renderer;
+import eu07.scripting.lua;
+import eu07.utilities.utilities;
+import :evlaunch;
+import eu07.utilities.globals;
+import eu07.simulation.simulationtime;
+import eu07.simulation.simulationsounds;
+import eu07.utilities.timer;
+import eu07.widgets.map_objects;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -13,26 +44,7 @@ http://mozilla.org/MPL/2.0/.
 
 */
 
-#include "stdafx.h"
-#include "world/Event.h"
 
-#include "simulation/simulation.h"
-#include "simulation/simulationtime.h"
-#include "simulation/simulationsounds.h"
-#include "input/messaging.h"
-#include "utilities/Globals.h"
-#include "world/MemCell.h"
-#include "world/Track.h"
-#include "world/Traction.h"
-#include "world/TractionPower.h"
-#include "audio/sound.h"
-#include "model/AnimModel.h"
-#include "vehicle/DynObj.h"
-#include "vehicle/Driver.h"
-#include "rendering/renderer.h"
-#include "utilities/Timer.h"
-#include "utilities/Logs.h"
-#include "widgets/map_objects.h"
 
 void
 basic_event::event_conditions::bind( basic_event::node_sequence *Nodes ) {

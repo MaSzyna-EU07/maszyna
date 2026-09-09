@@ -1,4 +1,49 @@
-﻿/*
+module;
+#include "imgui/imgui.h"
+#include <random>
+#include <GLFW/glfw3.h>
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <iterator>
+#include <limits>
+#include <list>
+#include <memory>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
+#include "global_include/interfaces/ITexture_macros.h"
+#include "utilities/Globals_macros.h"
+#include <imgui/imgui_impl_opengl3.h>
+#include "gl/gldebug.h"
+#include "glad/glad.h"
+#include "utilities/crashreporter_macros.h"
+#include "widgets/imgui_scale.h"
+#include "rendering/openglmatrixstack_macros.h"
+
+module eu07.rendering.opengl33renderer;
+import eu07.gl.buffer;
+import eu07.rendering.particles;
+import eu07.utilities.utilities;
+import eu07.glm;
+import eu07.utilities.color;
+import eu07.utilities.globals;
+import eu07.utilities.timer;
+import eu07.vehicle.train;
+import eu07.vehicle.camera;
+import eu07.simulation.simulation;
+import eu07.utilities.logs;
+import eu07.simulation.simulationtime;
+import eu07.application.application;
+import eu07.simcore;
+import eu07.rendering.opengl33geometrybank;
+import eu07.rendering.screenshot;
+import eu07.utilities.crashreporter;
+import eu07.rendering.openglmatrixstack;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,21 +52,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "rendering/opengl33renderer.h"
-#include "utilities/color.h"
-#include "utilities/Globals.h"
-#include "utilities/Timer.h"
-#include "vehicle/Train.h"
-#include "vehicle/Camera.h"
-#include "simulation/simulation.h"
-#include "utilities/Logs.h"
-#include "simulation/simulationtime.h"
-#include "application/application.h"
-#include "model/AnimModel.h"
-#include "rendering/opengl33geometrybank.h"
-#include "rendering/screenshot.h"
-#include <imgui/imgui_impl_opengl3.h>
 
 //#define EU07_DEBUG_OPENGL
 
@@ -218,7 +248,7 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 
     if (vr) {
         glm::ivec2 target_size = vr->get_target_size();
-        WriteLog("using vr rendertarget: " + glm::to_string(target_size));
+        WriteLog("using vr rendertarget: " + std::to_string(target_size.x) + "x" + std::to_string(target_size.y));
 
         // hijack main window for left eye
         default_viewport.width = target_size.x;

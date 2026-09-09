@@ -1,3 +1,5 @@
+#include "scripting/PyInt_macros.h"
+import eu07.scripting.pyint;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,8 +9,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "scripting/PyInt.h"
 
 bool python_taskqueue::init()
 {

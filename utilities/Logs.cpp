@@ -1,3 +1,15 @@
+module;
+#include <format>
+#include "utilities/Globals_macros.h"
+#include "winheaders.h"
+#include "utilities/utilities_macros.h"
+#include <deque>
+#include <mutex>
+#include <thread>
+
+module eu07.utilities.logs;
+import eu07.utilities.globals;
+import eu07.utilities.utilities;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,14 +19,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "utilities/Logs.h"
 
-#include "utilities/Globals.h"
-#include "winheaders.h"
-#include "utilities/utilities.h"
-#include "application/uilayer.h"
-#include <deque>
 
 std::ofstream output; // standardowy "log.txt", można go wyłączyć
 std::ofstream errors; // lista błędów "errors.txt", zawsze działa

@@ -1,3 +1,6 @@
+module;
+
+module eu07.model.resourcemanager;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,11 +10,8 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
 
 /*
-#include "model/ResourceManager.h"
-#include "utilities/Logs.h"
 
 ResourceManager::Resources ResourceManager::_resources;
 double ResourceManager::_expiry = 5.0f;

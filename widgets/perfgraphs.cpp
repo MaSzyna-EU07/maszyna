@@ -1,7 +1,11 @@
-#include "stdafx.h"
-#include "widgets/perfgraphs.h"
-#include "utilities/Timer.h"
-#include "utilities/translation.h"
+module;
+#include <string>
+#include "utilities/translation_macros.h"
+#include "imgui/imgui.h"
+
+module eu07.widgets.perfgraphs;
+import eu07.utilities.timer;
+import eu07.utilities.translation;
 
 perfgraph_panel::perfgraph_panel() : ui_panel(STR("Performance"), false) {}
 

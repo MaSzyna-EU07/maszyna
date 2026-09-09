@@ -1,3 +1,9 @@
+module;
+#include <istream>
+#include <ostream>
+
+module eu07.utilities.float3d;
+import eu07.scene.sn_utils;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,9 +13,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "utilities/Float3d.h"
-#include "scene/sn_utils.h"
 
 //---------------------------------------------------------------------------
 

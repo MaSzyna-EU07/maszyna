@@ -1,4 +1,11 @@
-﻿/*
+module;
+#include <iterator>
+#include "glad/glad.h"
+#include "vehicle/DynObj_macros.h"
+
+module eu07.rendering.openglcamera;
+import eu07.simcore;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,10 +14,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "rendering/openglcamera.h"
 
-#include "vehicle/DynObj.h"
 
 void
 opengl_camera::update_frustum( glm::mat4 const &Projection, glm::mat4 const &Modelview ) {

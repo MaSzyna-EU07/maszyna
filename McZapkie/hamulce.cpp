@@ -1,3 +1,14 @@
+module;
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <typeinfo>
+#include "McZapkie/MOVER_macros.h"
+#include "utilities/utilities_macros.h"
+
+module eu07.mczapkie.hamulce;
+import eu07.simcore;
+import eu07.utilities.utilities;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -12,11 +23,6 @@ Brakes. Oerlikon ESt.
 Copyright (C) 2007-2014 Maciej Cierniak
 */
 
-#include "stdafx.h"
-#include "hamulce.h"
-#include <typeinfo>
-#include "MOVER.h"
-#include "utilities/utilities.h"
 
 //---FUNKCJE OGOLNE---
 
@@ -1315,7 +1321,7 @@ void TEStEP1::EPCalc(double dt)
 	double temp = EPS - std::floor(EPS); // część ułamkowa jest hamulcem EP
 	double LBPLim = std::min(MaxBP * LoadC * temp, BrakeRes->P()); // do czego dążymy
 	double S = 10 * std::clamp(LBPLim - LBP, -0.1, 0.1); // przymykanie zaworku
-	double dv = PF(S > 0 ? BrakeRes->P() : 0, LBP, abs(S) * (0.00053 + 0.00060 * int(S < 0))) * dt; // przepływ
+	double dv = PF(S > 0 ? BrakeRes->P() : 0, LBP, std::abs(S) * (0.00053 + 0.00060 * int(S < 0))) * dt; // przepływ
 	LBP = LBP - dv;
 }
 
@@ -2975,7 +2981,7 @@ double TFV4a::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 		//            if(cp+0.03<5.4)then
 		if (RP + 0.03 < 5.4 || CP + 0.03 < 5.4) // fala
 			dpMainValve = PF(std::min(HP, 17.1), PP, ActFlowSpeed / LBDelay) * dt;
-		//              dpMainValve:=20*std::min(abs(ep-7.1),0.05)*PF(HP,pp,ActFlowSpeed/LBDelay)*dt;
+		//              dpMainValve:=20*std::min(std::abs(ep-7.1),0.05)*PF(HP,pp,ActFlowSpeed/LBDelay)*dt;
 		else
 		{
 			RP = 5.45;
@@ -3314,9 +3320,9 @@ double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep
 		pom = std::min(CP, HP);
 
 	if (LimPP > CP) // podwyzszanie szybkie
-		CP = CP + 60 * std::min(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy;
+		CP = CP + 60 * std::min(std::abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy;
 	else
-		CP = CP + 13 * std::min(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
+		CP = CP + 13 * std::min(std::abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
 
 	LimPP = pom; // cp
 	// if (EQ(i_bcp, -1))
@@ -3517,9 +3523,9 @@ double TMHZ_K5P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	ActFlowSpeed = 4;
 
 	if (LimCP > CP) // podwyzszanie szybkie
-		CP = CP + 9 * std::min(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy;
+		CP = CP + 9 * std::min(std::abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy;
 	else
-		CP = CP + 9 * std::min(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy
+		CP = CP + 9 * std::min(std::abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy
 
 	double uop = UnbrakeOverPressure; // unbrake over pressure in actual state
 	ManualOvrldActive = UniversalFlag & TUniversalBrake::ub_HighPressure; // button is pressed
@@ -3700,9 +3706,9 @@ double TMHZ_6P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	ActFlowSpeed = 4;
 
 	if (LimCP > CP) // podwyzszanie szybkie
-		CP = CP + 9 * std::min(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy;
+		CP = CP + 9 * std::min(std::abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy;
 	else
-		CP = CP + 9 * std::min(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy
+		CP = CP + 9 * std::min(std::abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy
 
 	dpPipe = std::min(HP, CP + TP + RedAdj);
 
@@ -3864,13 +3870,13 @@ double TM394::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 		LimPP = LimPP + RedAdj;
 	if (BCP != 2)
 		if (CP < LimPP)
-			CP = CP + 4 * std::min(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
-		//      cp:=cp+6*(2+int(bcp<0))*std::min(abs(Limpp-cp),0.05)*PR(cp,Limpp)*dt //zbiornik
+			CP = CP + 4 * std::min(std::abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
+		//      cp:=cp+6*(2+int(bcp<0))*std::min(std::abs(Limpp-cp),0.05)*PR(cp,Limpp)*dt //zbiornik
 		//      sterujacy;
 		else if (BCP == 0)
 			CP = CP - 0.2 * dt / 100;
 		else
-			CP = CP + 4 * (1 + int(BCP != 3) + int(BCP > 4)) * std::min(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
+			CP = CP + 4 * (1 + int(BCP != 3) + int(BCP > 4)) * std::min(std::abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
 
 	LimPP = CP;
 	dpPipe = std::min(HP, LimPP);
@@ -4060,7 +4066,7 @@ double TSt113::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 		LimPP = CP;
 	ActFlowSpeed = BPT_K[BCP + 1][0];
 
-	CP = CP + 6 * std::min(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
+	CP = CP + 6 * std::min(std::abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
 
 	dpMainValve = 0;
 
@@ -4140,7 +4146,7 @@ double Ttest::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	if (i_bcp == -1)
 		LimPP = 7;
 
-	CP = CP + 20 * std::min(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt / 1;
+	CP = CP + 20 * std::min(std::abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt / 1;
 
 	LimPP = CP;
 	dpPipe = std::min(HP, LimPP);

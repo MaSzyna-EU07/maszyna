@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 enum class logtype : unsigned int {
 	shader
 };

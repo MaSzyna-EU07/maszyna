@@ -1,9 +1,13 @@
-#include "stdafx.h"
-#include "launcher/launchermode.h"
-#include "launcher/launcheruilayer.h"
-#include "application/application.h"
-#include "simulation/simulation.h"
-#include "utilities/Globals.h"
+module;
+#include <GLFW/glfw3.h>
+#include <memory>
+#include "utilities/Globals_macros.h"
+
+module eu07.launcher.launchermode;
+import eu07.launcher.launcheruilayer;
+import eu07.application.application;
+import eu07.simulation.simulation;
+import eu07.utilities.globals;
 
 launcher_mode::launcher_mode()
 {

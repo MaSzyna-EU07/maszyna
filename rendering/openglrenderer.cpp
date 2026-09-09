@@ -1,4 +1,49 @@
-﻿/*
+module;
+#include "imgui/imgui.h"
+#include <GLFW/glfw3.h>
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <functional>
+#include <iterator>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+#include "global_include/interfaces/ITexture_macros.h"
+#include "rendering/openglrenderer_macros.h"
+#include "utilities/Globals_macros.h"
+#include "vehicle/DynObj_macros.h"
+#include "rendering/openglcolor_macros.h"
+#include <imgui/imgui_impl_opengl2.h>
+#include "glad/glad.h"
+#include "utilities/crashreporter_macros.h"
+#include "rendering/openglmatrixstack_macros.h"
+
+module eu07.rendering.openglrenderer;
+import eu07.gl.buffer;
+import eu07.application.uilayer;
+import eu07.rendering.particles;
+import eu07.utilities.utilities;
+import eu07.glm;
+import eu07.utilities.color;
+import eu07.utilities.globals;
+import eu07.vehicle.camera;
+import eu07.utilities.timer;
+import eu07.simulation.simulation;
+import eu07.simulation.simulationtime;
+import eu07.vehicle.train;
+import eu07.simcore;
+import eu07.application.application;
+import eu07.utilities.logs;
+import eu07.rendering.openglgeometrybank;
+import eu07.rendering.openglcolor;
+import eu07.rendering.screenshot;
+import eu07.utilities.crashreporter;
+import eu07.rendering.openglmatrixstack;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,25 +52,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "rendering/openglrenderer.h"
 
-#include "utilities/color.h"
-#include "utilities/Globals.h"
-#include "vehicle/Camera.h"
-#include "utilities/Timer.h"
-#include "simulation/simulation.h"
-#include "simulation/simulationtime.h"
-#include "vehicle/Train.h"
-#include "vehicle/DynObj.h"
-#include "model/AnimModel.h"
-#include "world/Traction.h"
-#include "application/application.h"
-#include "utilities/Logs.h"
-#include "rendering/openglgeometrybank.h"
-#include "rendering/openglcolor.h"
-#include "rendering/screenshot.h"
-#include <imgui/imgui_impl_opengl2.h>
 
 int constexpr EU07_PICKBUFFERSIZE { 1024 }; // size of (square) textures bound with the pick framebuffer
 int constexpr EU07_ENVIRONMENTBUFFERSIZE { 256 }; // size of (square) environmental cube map texture

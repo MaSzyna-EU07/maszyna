@@ -1,9 +1,15 @@
+module;
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include "utilities/Globals_macros.h"
 
-#include "stdafx.h"
-#include "environment/skydome.h"
-#include "utilities/color.h"
-#include "simulation/simulationenvironment.h"
-#include "utilities/Globals.h"
+module eu07.environment.skydome;
+import eu07.utilities.color;
+import eu07.simulation.simulationenvironment;
+import eu07.utilities.globals;
+
 
 // sky gradient based on "A practical analytic model for daylight" 
 // by A. J. Preetham Peter Shirley Brian Smits (University of Utah)

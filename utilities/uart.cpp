@@ -1,15 +1,26 @@
-#include "stdafx.h"
-#include "utilities/uart.h"
+module;
+#include <libserialport.h>
+#include "winheaders.h"
+#include <filesystem>
+#include <cstring>
+#include <GLFW/glfw3.h>
+#include <array>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <unordered_map>
+#include "utilities/Globals_macros.h"
+#include "utilities/utilities_macros.h"
 
-#include "utilities/Globals.h"
-#include "simulation/simulation.h"
-#include "vehicle/Train.h"
-#include "utilities/parser.h"
-#include "utilities/Logs.h"
-#include "utilities/utilities.h"
-#include "simulation/simulationtime.h"
-#include "application/application.h"
-
+module eu07.utilities.uart;
+import eu07.utilities.globals;
+import eu07.simulation.simulation;
+import eu07.utilities.logs;
+import eu07.gl.buffer;
+import eu07.utilities.parser;
+import eu07.utilities.utilities;
+import eu07.simulation.simulationtime;
 const char* uart_baudrates_list[] = {
     "300",
     "1200",

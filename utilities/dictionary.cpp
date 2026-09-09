@@ -1,3 +1,13 @@
+module;
+#include <string>
+#include <sstream>
+#include "vehicle/DynObj_macros.h"
+
+module eu07.utilities.dictionary;
+import eu07.utilities.utilities;
+import eu07.simulation.simulation;
+import eu07.simcore;
+import eu07.world.mtable;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,13 +17,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "utilities/dictionary.h"
 
-#include "simulation/simulation.h"
-#include "vehicle/DynObj.h"
-#include "vehicle/Driver.h"
-#include "world/mtable.h"
 
 dictionary_source::dictionary_source( std::string const &Input ) {
 

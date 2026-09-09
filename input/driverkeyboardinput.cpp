@@ -1,3 +1,8 @@
+module;
+#include <GLFW/glfw3.h>
+
+module eu07.input.driverkeyboardinput;
+import eu07.input.command;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,8 +12,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "input/driverkeyboardinput.h"
 
 bool
 driverkeyboard_input::init() {

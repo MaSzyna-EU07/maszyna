@@ -1,7 +1,12 @@
-#include "stdafx.h"
-#include "widgets/time.h"
-#include "simulation/simulationtime.h"
-#include "utilities/Globals.h"
+module;
+#include "utilities/Globals_macros.h"
+#include "imgui/imgui.h"
+#include "utilities/translation_macros.h"
+
+module eu07.widgets.time;
+import eu07.simulation.simulationtime;
+import eu07.utilities.translation;
+import eu07.utilities.globals;
 
 ui::time_panel::time_panel() : ui_panel(STR_C("Time and environment"), false)
 {

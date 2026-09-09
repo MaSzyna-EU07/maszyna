@@ -1,3 +1,12 @@
+module;
+#include <fstream>
+#include <ios>
+#include <string>
+
+module eu07.network.manager;
+import eu07.network.message;
+import eu07.simulation.simulation;
+import eu07.utilities.logs;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,10 +16,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "network/manager.h"
-#include "simulation/simulation.h"
-#include "utilities/Logs.h"
 
 network::server_manager::server_manager()
 {

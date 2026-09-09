@@ -1,4 +1,20 @@
-﻿/*
+module;
+#include <memory>
+#include "glad/glad.h"
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <map>
+#include <vector>
+#include "utilities/Globals_macros.h"
+
+module eu07.rendering.opengl33particles;
+import eu07.utilities.globals;
+import eu07.rendering.particles;
+import eu07.rendering.openglcamera;
+import eu07.simulation.simulation;
+import eu07.simulation.simulationenvironment;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -7,13 +23,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "rendering/opengl33particles.h"
 
-#include "rendering/particles.h"
-#include "rendering/openglcamera.h"
-#include "simulation/simulation.h"
-#include "simulation/simulationenvironment.h"
 
 std::vector<std::pair<glm::vec3, glm::vec2>> const billboard_vertices {
 

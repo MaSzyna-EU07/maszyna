@@ -1,10 +1,21 @@
-#include "stdafx.h"
-#include "widgets/trainingcard.h"
-#include "simulation/simulation.h"
-
+module;
+#include "imgui/imgui.h"
+#include <cmath>
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <thread>
 #ifdef __linux__
 #include <unistd.h>
+#endif
+#ifdef __linux__
 #include <sys/stat.h>
+#endif
+
+module eu07.widgets.trainingcard;
+import eu07.simulation.simulation;
+
+#ifdef __linux__
 #endif
 
 trainingcard_panel::trainingcard_panel() : ui_panel("Raport szkolenia", false)

@@ -1,3 +1,17 @@
+module;
+#include <GLFW/glfw3.h>
+#include <cstdint>
+#include <string>
+#include <unordered_map>
+#include "utilities/Globals_macros.h"
+
+module eu07.input.command;
+import eu07.utilities.utilities;
+import eu07.utilities.globals;
+import eu07.utilities.logs;
+import eu07.utilities.timer;
+import eu07.simulation.simulation;
+import eu07.vehicle.train;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,14 +21,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "input/command.h"
 
-#include "utilities/Globals.h"
-#include "utilities/Logs.h"
-#include "utilities/Timer.h"
-#include "simulation/simulation.h"
-#include "vehicle/Train.h"
 
 namespace simulation {
 

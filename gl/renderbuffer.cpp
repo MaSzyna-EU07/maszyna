@@ -1,6 +1,8 @@
-#include "stdafx.h"
+module;
+#include "glad/glad.h"
 
-#include "renderbuffer.h"
+module eu07.gl.renderbuffer;
+
 
 gl::renderbuffer::renderbuffer()
 {

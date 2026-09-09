@@ -1,8 +1,9 @@
-#include "stdafx.h"
-#include "widgets/map_objects.h"
-#include "simulation/simulation.h"
-#include "vehicle/DynObj.h"
+module;
+#include <memory>
+#include "vehicle/DynObj_macros.h"
 
+module eu07.widgets.map_objects;
+import eu07.simulation.simulation;
 map::objects map::Objects;
 
 map::sorted_object_list map::objects::find_in_range(glm::vec3 from, float distance)

@@ -1,4 +1,29 @@
-﻿/*
+module;
+#include <functional>
+#include <unordered_map>
+#include <algorithm>
+#include <cmath>
+#include <memory>
+#include <string>
+#include <vector>
+#include "global_include/interfaces/ITexture_macros.h"
+#include "vehicle/DynObj_macros.h"
+#include "utilities/Globals_macros.h"
+
+module eu07.simcore;
+import eu07.input.messaging;
+import eu07.rendering.renderer;
+import eu07.utilities.globals;
+import eu07.simulation.simulation;
+import eu07.model.mdlmngr;
+import eu07.glm;
+import eu07.rendering.lightarray;
+import eu07.vehicle.camera;
+import eu07.vehicle.train;
+import eu07.utilities.timer;
+import eu07.utilities.glmhelpers;
+import eu07.application.uitranscripts;
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -12,27 +37,7 @@ http://mozilla.org/MPL/2.0/.
 
 */
 
-#include "stdafx.h"
-#include "vehicle/DynObj.h"
 
-#include "simulation/simulation.h"
-#include "rendering/lightarray.h"
-#include "vehicle/Camera.h"
-#include "vehicle/Train.h"
-#include "vehicle/Driver.h"
-#include "utilities/Globals.h"
-#include "utilities/Timer.h"
-#include "utilities/Logs.h"
-#include "utilities/glmHelpers.h"
-#include "Console.h"
-#include "world/Traction.h"
-#include "audio/sound.h"
-#include "model/MdlMngr.h"
-#include "model/Model3d.h"
-#include "rendering/renderer.h"
-#include "application/uitranscripts.h"
-#include "input/messaging.h"
-#include "vehicle/Driver.h"
 
 // Ra: taki zapis funkcjonuje lepiej, ale może nie jest optymalny
 #define vWorldFront glm::vec3(0, 0, 1)

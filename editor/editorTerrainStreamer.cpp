@@ -1,3 +1,13 @@
+module;
+#include <vector>
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <string>
+
+module eu07.editor.editorterrainstreamer;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -7,15 +17,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
-#include "editor/editorTerrainStreamer.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
-#include <filesystem>
-#include <fstream>
-#include <string>
 
 // simulation-level streamer instance (see header)
 terrain_streamer EditorTerrain;

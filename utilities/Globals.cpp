@@ -1,3 +1,21 @@
+module;
+#include <cmath>
+#include "glad/glad.h"
+#include <chrono>
+#include <vector>
+#include <GLFW/glfw3.h>
+#include <algorithm>
+#include <string>
+#include "utilities/Globals_macros.h"
+#include "scripting/PyInt_macros.h"
+
+module eu07.utilities.globals;
+import eu07.simulation.simulation;
+import eu07.simulation.simulationenvironment;
+import eu07.simcore;
+import eu07.utilities.logs;
+import eu07.utilities.timer;
+import eu07.gl.vao;
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
@@ -11,17 +29,7 @@ http://mozilla.org/MPL/2.0/.
     Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 
 */
-#include "stdafx.h"
-#include "utilities/Globals.h"
 
-#include "simulation/simulation.h"
-#include "simulation/simulationenvironment.h"
-#include "vehicle/Driver.h"
-#include "utilities/Logs.h"
-#include "Console.h"
-#include "scripting/PyInt.h"
-#include "utilities/Timer.h"
-#include "vao.h"
 
 void global_settings::LoadIniFile(std::string asFileName)
 {
