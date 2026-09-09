@@ -1,4 +1,5 @@
 module;
+#include <cstddef>
 #include <string>
 #include "utilities/Globals_macros.h"
 #include <GLFW/glfw3.h>

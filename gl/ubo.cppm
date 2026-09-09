@@ -1,4 +1,5 @@
 module;
+#include <cstdint>
 #include <cstddef>
 #include "glad/glad.h"
 

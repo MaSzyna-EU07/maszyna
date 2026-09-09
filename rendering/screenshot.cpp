@@ -1,4 +1,5 @@
 module;
+#include <cstdint>
 #include <string>
 #include "utilities/Globals_macros.h"
 #include <png.h>

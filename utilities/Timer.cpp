@@ -1,4 +1,5 @@
 module;
+#include <cstdint>
 #include <chrono>
 #include <ctime>
 #include "utilities/Globals_macros.h"

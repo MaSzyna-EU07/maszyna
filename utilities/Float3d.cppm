@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 //---------------------------------------------------------------------------
 module;
+#include <cstddef>
 #include <cmath>
 #include <istream>
 #include <ostream>

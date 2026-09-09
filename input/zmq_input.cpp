@@ -1,4 +1,5 @@
 module;
+#include <cstdint>
 #include <chrono>
 #include <map>
 #include <optional>

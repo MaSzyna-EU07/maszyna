@@ -1,4 +1,6 @@
 module;
+#include <cstddef>
+#include <cstdint>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>

@@ -46,6 +46,10 @@ export module eu07.glm;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Winclude-angled-in-module-purview"
 #endif
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 5244)
+#endif
 export {
 #include <glm/glm.hpp>
 #include <glm/fwd.hpp>
@@ -70,6 +74,9 @@ export {
 }
 #ifdef __clang__
 #pragma clang diagnostic pop
+#endif
+#ifdef _MSC_VER
+#pragma warning(pop)
 #endif
 
 export {

@@ -1,4 +1,5 @@
 module;
+#include <cstdint>
 #include <array>
 #include <cstddef>
 #include <memory>

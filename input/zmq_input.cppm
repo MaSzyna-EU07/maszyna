@@ -1,4 +1,5 @@
 module;
+#include <cstdint>
 #include <zmq_addon.hpp>
 #include <chrono>
 #include <map>

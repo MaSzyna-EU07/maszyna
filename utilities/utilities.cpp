@@ -1,4 +1,5 @@
 module;
+#include <cstdint>
 #include <limits>
 #include <type_traits>
 #include <array>

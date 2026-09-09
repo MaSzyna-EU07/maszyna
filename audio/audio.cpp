@@ -1,4 +1,5 @@
 module;
+#include <cstdint>
 #include <cstddef>
 #include <stdexcept>
 #include <unordered_map>

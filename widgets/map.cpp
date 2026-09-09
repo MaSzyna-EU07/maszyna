@@ -1,4 +1,5 @@
 module;
+#include <cstddef>
 #include <iterator>
 #include "utilities/translation_macros.h"
 #include "glad/glad.h"
