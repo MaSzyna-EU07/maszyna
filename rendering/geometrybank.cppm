@@ -1,4 +1,10 @@
 module;
+#include <array>
+#include <limits>
+#include <mutex>
+#include <sstream>
+#include <type_traits>
+#include <unordered_map>
 #include <chrono>
 #include <string>
 #include <cstddef>

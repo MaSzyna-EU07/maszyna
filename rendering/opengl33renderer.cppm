@@ -1,4 +1,10 @@
 module;
+#include <chrono>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <sstream>
+#include <type_traits>
 #include <ostream>
 #include "glad/glad.h"
 #include <GLFW/glfw3.h>

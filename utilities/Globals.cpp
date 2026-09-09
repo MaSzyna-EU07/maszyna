@@ -1,4 +1,8 @@
 module;
+#include <cstddef>
+#include <deque>
+#include <mutex>
+#include <type_traits>
 #include <cstdint>
 #include <array>
 #include <limits>
@@ -21,6 +25,7 @@ module;
 #include "scripting/PyInt_macros.h"
 
 module eu07.utilities.globals;
+import eu07.console;   // Console:: is used under _WIN32
 import eu07.simulation.simulation;
 import eu07.simulation.simulationenvironment;
 import eu07.simcore;

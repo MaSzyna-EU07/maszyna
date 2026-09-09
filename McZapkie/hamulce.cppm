@@ -35,6 +35,19 @@ Knorr/West EP - żeby był
 
 /// <summary>Number of positions of the local (auxiliary/manual) brake handle.</summary>
 module;
+#include <array>
+#include <chrono>
+#include <cstddef>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 #include <cstring>
 #include <memory>
 

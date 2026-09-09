@@ -1,4 +1,13 @@
 module;
+#include <array>
+#include <chrono>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <sstream>
+#include <type_traits>
+#include <utility>
+#include <vector>
 #include <ostream>
 #include "glad/glad.h"
 #include <cstddef>

@@ -1,4 +1,7 @@
 module;
+#include <limits>
+#include <sstream>
+#include <type_traits>
 #include <ostream>
 #include <utility>
 #include <cstddef>

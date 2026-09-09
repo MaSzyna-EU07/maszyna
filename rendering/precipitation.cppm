@@ -12,6 +12,19 @@ http://mozilla.org/MPL/2.0/.
 // based on "Rendering Falling Rain and Snow"
 // by Niniane Wang, Bretton Wade
 module;
+#include <array>
+#include <chrono>
+#include <cstddef>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 export module eu07.rendering.precipitation;
 import eu07.glm;

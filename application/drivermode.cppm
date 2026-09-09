@@ -1,4 +1,12 @@
 module;
+#include <chrono>
+#include <cstddef>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
+#include <vector>
 #include <deque>
 #include <unordered_map>
 #include <array>

@@ -2,6 +2,19 @@
 
 // TODO: sun and moon share code as celestial bodies, we could make a base class out of it
 module;
+#include <array>
+#include <chrono>
+#include <cstddef>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 #include "winheaders.h"
 
 export module eu07.environment.moon;

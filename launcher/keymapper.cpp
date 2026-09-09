@@ -1,4 +1,8 @@
 module;
+#include <array>
+#include <deque>
+#include <unordered_map>
+#include <vector>
 #include <chrono>
 #include <limits>
 #include <mutex>

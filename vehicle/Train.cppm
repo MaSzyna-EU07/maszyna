@@ -7,6 +7,10 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <chrono>
+#include <limits>
+#include <mutex>
+#include <type_traits>
 #include <cstddef>
 #include <ostream>
 #include <sstream>

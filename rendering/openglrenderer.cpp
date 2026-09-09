@@ -1,4 +1,6 @@
 module;
+#include <array>
+#include <deque>
 #include <chrono>
 #include <limits>
 #include <mutex>

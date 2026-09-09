@@ -1,4 +1,7 @@
 module;
+#include <deque>
+#include <unordered_map>
+#include <utility>
 #include <chrono>
 #include <limits>
 #include <mutex>

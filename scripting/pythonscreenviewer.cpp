@@ -1,4 +1,11 @@
 module;
+#include <array>
+#include <deque>
+#include <limits>
+#include <sstream>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
 #include <ostream>
 #include <atomic>
 #include <functional>

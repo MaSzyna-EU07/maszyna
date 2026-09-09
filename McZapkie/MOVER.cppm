@@ -76,6 +76,14 @@ zwiekszenie nacisku przy duzych predkosciach w hamulcach Oerlikona
 
 /// <summary>Global counter incremented when a string-to-numeric conversion fails during config parsing.</summary>
 module;
+#include <chrono>
+#include <cstddef>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
 #include <utility>
 #include "McZapkie/MOVER_macros.h"
 #include <map>

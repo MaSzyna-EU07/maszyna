@@ -11,6 +11,17 @@ http://mozilla.org/MPL/2.0/.
 
 //---------------------------------------------------------------------------
 module;
+#include <array>
+#include <chrono>
+#include <cstddef>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <string>
+#include <type_traits>
+#include <utility>
+#include <vector>
 #include <deque>
 #include <unordered_map>
 #include "vehicle/DynObj_macros.h"

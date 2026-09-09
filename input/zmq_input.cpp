@@ -1,4 +1,9 @@
 module;
+#include <array>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <type_traits>
 #include <ostream>
 #include <cstdint>
 #include <chrono>

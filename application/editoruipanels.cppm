@@ -1,4 +1,14 @@
 module;
+#include <array>
+#include <chrono>
+#include <cstddef>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
+#include <unordered_map>
 #include <string>
 #include <utility>
 #include "global_include/interfaces/ITexture_macros.h"

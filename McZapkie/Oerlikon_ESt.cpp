@@ -1,4 +1,10 @@
 module;
+#include <cstddef>
+#include <deque>
+#include <ostream>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 #include <chrono>
 #include <limits>
 #include <mutex>

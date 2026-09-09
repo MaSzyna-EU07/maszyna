@@ -28,6 +28,7 @@ module;
 #include <algorithm>
 
 module eu07.vehicle.train;
+import eu07.console;   // Console:: is used under _WIN32 below
 import eu07.global_include.interfaces.itexture;
 import eu07.model.mdlmngr;
 import eu07.rendering.renderer;

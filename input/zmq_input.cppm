@@ -1,4 +1,12 @@
 module;
+#include <array>
+#include <cstddef>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
+#include <utility>
 #include <deque>
 #include <cstdint>
 #include <zmq_addon.hpp>

@@ -1,4 +1,11 @@
 module;
+#include <array>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <sstream>
+#include <type_traits>
+#include <utility>
 #include <ostream>
 #include <unordered_map>
 #include <fstream>

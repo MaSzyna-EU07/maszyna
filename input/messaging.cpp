@@ -1,4 +1,7 @@
 module;
+#include <array>
+#include <utility>
+#include <vector>
 #include <chrono>
 #include <deque>
 #include <limits>

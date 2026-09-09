@@ -1,4 +1,6 @@
 module;
+#include <cstddef>
+#include <deque>
 #include <chrono>
 #include <limits>
 #include <mutex>
@@ -20,6 +22,7 @@ module;
 #include "vehicle/DynObj_macros.h"
 
 module eu07.application.drivermode;
+import eu07.console;   // Console:: is used under _WIN32
 import eu07.application.uitranscripts;
 import eu07.application.uilayer;
 import eu07.audio.sound;

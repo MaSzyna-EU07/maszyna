@@ -16,6 +16,21 @@ http://mozilla.org/MPL/2.0/.
 // utilities/Classes.h, except the declarations now attach to the same module as
 // the definitions.
 
+module;
+#include <array>
+#include <chrono>
+#include <cstddef>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
 export module eu07.simcore:fwd;
 
 export {

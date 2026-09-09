@@ -1,4 +1,7 @@
 module;
+#include <limits>
+#include <mutex>
+#include <type_traits>
 #include <chrono>
 #include <cstddef>
 #include <deque>

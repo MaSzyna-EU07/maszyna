@@ -1,4 +1,12 @@
 module;
+#include <array>
+#include <deque>
+#include <limits>
+#include <sstream>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 #include <ostream>
 #include <cstring>
 #include <cstddef>

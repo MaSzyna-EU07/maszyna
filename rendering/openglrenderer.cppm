@@ -1,4 +1,12 @@
 module;
+#include <array>
+#include <chrono>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <sstream>
+#include <type_traits>
+#include <unordered_map>
 #include <ostream>
 #include "glad/glad.h"
 #include <GLFW/glfw3.h>

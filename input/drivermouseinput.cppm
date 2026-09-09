@@ -11,6 +11,14 @@ http://mozilla.org/MPL/2.0/.
 
 // virtual slider; value determined by position of the mouse
 module;
+#include <chrono>
+#include <cstddef>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
+#include <vector>
 #include <deque>
 #include <utility>
 #include <unordered_map>

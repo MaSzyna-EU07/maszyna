@@ -1,4 +1,11 @@
 module;
+#include <chrono>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
 #include <openvr/openvr.h>
 #include <array>
 #include <cstddef>

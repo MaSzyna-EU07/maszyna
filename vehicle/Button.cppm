@@ -11,6 +11,16 @@ http://mozilla.org/MPL/2.0/.
 
 // animacja dwustanowa, włącza jeden z dwóch submodeli (jednego z nich może nie być)
 module;
+#include <array>
+#include <chrono>
+#include <cstddef>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
 #include <sstream>
 #include <vector>
 #include <cstdint>

@@ -1,4 +1,6 @@
 module;
+#include <array>
+#include <deque>
 #include <limits>
 #include <mutex>
 #include <sstream>

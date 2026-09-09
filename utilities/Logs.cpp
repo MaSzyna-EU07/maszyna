@@ -1,4 +1,8 @@
 module;
+#include <array>
+#include <cstddef>
+#include <unordered_map>
+#include <vector>
 #include <limits>
 #include <ostream>
 #include <sstream>

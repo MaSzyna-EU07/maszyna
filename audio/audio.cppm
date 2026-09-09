@@ -1,4 +1,13 @@
 module;
+#include <array>
+#include <chrono>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
+#include <utility>
 #include "global_include/interfaces/ITexture_macros.h"
 #if defined(__APPLE__) && !__has_include(<AL/al.h>)
 #include <OpenAL/al.h>

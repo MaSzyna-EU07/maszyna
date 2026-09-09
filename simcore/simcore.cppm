@@ -12,6 +12,21 @@ http://mozilla.org/MPL/2.0/.
 // These pieces reference each other in both directions, so C++20 modules require
 // them to share a module -- see :fwd for why.
 
+module;
+#include <array>
+#include <chrono>
+#include <cstddef>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
 export module eu07.simcore;
 
 export import :fwd;

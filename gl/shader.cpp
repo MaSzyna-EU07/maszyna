@@ -1,4 +1,10 @@
 module;
+#include <array>
+#include <chrono>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <type_traits>
 #include <ostream>
 #include <cstddef>
 #include <stdexcept>

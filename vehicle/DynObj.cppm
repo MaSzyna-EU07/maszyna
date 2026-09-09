@@ -16,6 +16,12 @@ http://mozilla.org/MPL/2.0/.
 //---------------------------------------------------------------------------
 //---------------------------------------------------------------------------
 module;
+#include <chrono>
+#include <cstddef>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <type_traits>
 #include <sstream>
 #include <array>
 #include <tuple>

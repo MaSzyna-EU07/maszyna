@@ -1,4 +1,6 @@
 module;
+#include <deque>
+#include <utility>
 #include <limits>
 #include <mutex>
 #include <ostream>

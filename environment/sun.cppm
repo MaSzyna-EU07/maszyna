@@ -4,6 +4,19 @@
 // cSun -- class responsible for dynamic calculation of position and intensity of the Sun,
 //         given current weather, time and geographic location.
 module;
+#include <array>
+#include <chrono>
+#include <cstddef>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 #include "winheaders.h"
 
 export module eu07.environment.sun;

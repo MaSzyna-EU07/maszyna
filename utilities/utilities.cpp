@@ -1,4 +1,5 @@
 module;
+#include <deque>
 #include <ostream>
 #include <cstdint>
 #include <limits>
