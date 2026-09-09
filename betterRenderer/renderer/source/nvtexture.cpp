@@ -11,20 +11,20 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <fmt/format.h>
+#include "utilities/utilities_macros.h"
+#include "nvrendererbackend.h"
+#include "stbi/stb_image.h"
+#include "stbi/stb_image_resize2.h"
 import eu07.utilities.globals;
 import eu07.scripting.pyint;
 import eu07.application.application;
 import eu07.utilities.dictionary;
-#include <fmt/format.h>
-#include "utilities/utilities_macros.h"
 import eu07.utilities.utilities;
 
 import eu07.utilities.logs;
 // #include "Texture.h"
-#include "nvrendererbackend.h"
-#include "stbi/stb_image.h"
 #define STB_IMAGE_RESIZE2_IMPLEMENTATION
-#include "stbi/stb_image_resize2.h"
 import eu07.model.texture;
 #undef STB_IMAGE_RESIZE2_IMPLEMENTATION
 

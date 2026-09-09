@@ -11,15 +11,8 @@
 #include <string>
 #include <utility>
 #include <vector>
-import eu07.simcore;
-import eu07.utilities.logs;
-import eu07.utilities.timer;
-import eu07.application.application;
 #include <nvrhi/utils.h>
-import eu07.simulation.simulation;
-
 #include <future>
-
 #include "auto_exposure.h"
 #include "bloom.h"
 #include "config.h"
@@ -39,18 +32,25 @@ import eu07.simulation.simulation;
 #include "sky.h"
 #include "ssao.h"
 #include "tonemap.h"
+#include <fmt/chrono.h>
+#include <fmt/format.h>
+#include "rt_model.h"
+#include "tinyexr.h"
+#include "windshield_rain.h"
+#include "utilities/utilities_macros.h"
+import eu07.simcore;
+import eu07.utilities.logs;
+import eu07.utilities.timer;
+import eu07.application.application;
+import eu07.simulation.simulation;
+
+
 
 #define TINYEXR_USE_MINIZ 0
 #define TINYEXR_USE_STB_ZLIB 1
 #define TINYEXR_IMPLEMENTATION
-#include <fmt/chrono.h>
-#include <fmt/format.h>
 
-#include "rt_model.h"
-#include "tinyexr.h"
-#include "windshield_rain.h"
 import eu07.glm;
-#include "utilities/utilities_macros.h"
 import eu07.utilities.utilities;
 
 bool NvRenderer::Init(GLFWwindow *Window) {

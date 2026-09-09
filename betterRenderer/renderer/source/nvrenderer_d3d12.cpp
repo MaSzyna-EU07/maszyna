@@ -17,9 +17,10 @@
 
 #include "nvrendererbackend.h"
 
-#define HR_RETURN(op)                                      \
 import eu07.utilities.globals;
 import eu07.utilities.logs;
+
+#define HR_RETURN(op)                                      \
   hr = (HRESULT)(op);                                      \
   if (FAILED(hr)) {                                        \
     ErrorLog(fmt::format(#op " returned HRESULT={}", hr)); \
