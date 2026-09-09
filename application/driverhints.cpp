@@ -1,4 +1,7 @@
 module;
+#include <tuple>
+#include <utility>
+#include <memory>
 #include <typeinfo>
 #include <cstdlib>
 #include "utilities/Globals_macros.h"

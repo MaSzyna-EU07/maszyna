@@ -121,7 +121,7 @@ export inline float Dot(const float4 &q1, const float4 &q2);
 export inline float4 &operator*=(float4 &v1, float const d);
 export inline float4 Slerp(const float4 &q0, const float4 &q1, float t);
 export inline float3 operator*(const float4x4 &m, const float3 &v);
-inline glm::vec3 operator*(const float4x4 &m, const glm::vec3 &v);
+export inline glm::vec3 operator*(const float4x4 &m, const glm::vec3 &v);
 export inline float4x4 operator*(const float4x4 &m1, const float4x4 &m2);
 export inline float Det2x2(float a, float b, float c, float d);
 export inline float Det3x3(float a1, float a2, float a3, float b1, float b2, float b3, float c1, float c2, float c3);
@@ -302,7 +302,7 @@ export inline float3 operator*(const float4x4 &m, const float3 &v) {
                   v.x * m[0][2] + v.y * m[1][2] + v.z * m[2][2] + m[3][2]);
 }
 
-inline glm::vec3 operator*(const float4x4 &m, const glm::vec3 &v) {
+export inline glm::vec3 operator*(const float4x4 &m, const glm::vec3 &v) {
     return glm::vec3(
         v.x * m[0][0] + v.y * m[1][0] + v.z * m[2][0] + m[3][0],
         v.x * m[0][1] + v.y * m[1][1] + v.z * m[2][1] + m[3][1],

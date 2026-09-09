@@ -12,6 +12,7 @@ module;
 #include "global_include/interfaces/ITexture_macros.h"
 
 module eu07.scene.scenenodegroups;
+import eu07.glm;
 import eu07.simulation.simulation;
 import eu07.utilities.globals;
 import eu07.simcore;

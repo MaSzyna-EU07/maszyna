@@ -385,6 +385,8 @@ struct global_settings {
         export_as_text( std::ostream &Output, std::string const Key, Type_ const &Value ) const;
 };
 
+}  // export -- out-of-line member definitions are not namespace-scope
+// declarations, so they cannot carry `export`; the class itself is exported.
 template <typename Type_>
 void
 global_settings::export_as_text( std::ostream &Output, std::string const Key, Type_ const &Value ) const {
@@ -392,9 +394,6 @@ global_settings::export_as_text( std::ostream &Output, std::string const Key, Ty
     Output << Key << " " << Value << "\n";
 }
 
-}  // export -- out-of-line member definitions and explicit
-// specialisations are not namespace-scope declarations, so they cannot
-// carry `export`; the class itself is exported and that is what counts.
 template <>
 void
 global_settings::export_as_text( std::ostream &Output, std::string const Key, std::string const &Value ) const;

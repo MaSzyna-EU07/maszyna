@@ -1,4 +1,5 @@
 module;
+#include <string>
 #include <cmath>
 #include "utilities/Globals_macros.h"
 #include "vehicle/DynObj_macros.h"

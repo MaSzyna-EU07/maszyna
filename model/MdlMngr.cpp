@@ -1,4 +1,5 @@
 module;
+#include <memory>
 #include <typeinfo>
 #include <vector>
 #include <string>

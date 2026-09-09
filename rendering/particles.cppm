@@ -213,6 +213,8 @@ private:
 
 
 
+}  // export -- out-of-line member definitions are not namespace-scope
+// declarations, so they cannot carry `export`; the class itself is exported.
 template <typename Type_>
 void
 fixedstep_modifier<Type_>::update( Type_ &Variable, double const Timedelta ) const {
@@ -251,4 +253,5 @@ fixedstep_modifier<Type_>::deserialize( cParser &Input ) {
     }
 }
 
+export {
 }  // export

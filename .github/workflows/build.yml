@@ -37,11 +37,20 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y \
-            build-essential gcc-14 g++-14 ninja-build \
+            build-essential ninja-build wget lsb-release software-properties-common gnupg \
             libgl1-mesa-dev libglew-dev libglfw3-dev \
             libpng-dev libopenal-dev libluajit-5.1-dev \
             libserialport-dev libsndfile1-dev \
             xorg-dev libxkbcommon-dev libwayland-dev wayland-protocols
+
+      - name: Install LLVM/Clang 22
+        run: |
+          # Noble ships Clang 18, whose C++20 module support is not good enough
+          # for this tree; apt.llvm.org has current releases.
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh 22
+          sudo apt-get install -y clang-tools-22   # clang-scan-deps, needed to scan modules
 
       - name: Build current OpenAL Soft
         run: |
@@ -52,28 +61,19 @@ jobs:
           sudo cmake --install /tmp/openal-soft/build
           sudo ldconfig
 
-      # A little bit of magic for unbreaking GCC. Not an issue for Clang and MSVC.
-      # Fix for specific hard-errors for a combo of: varargs and always_inline
-      - name: Patch GLM for GCC
-        run: |
-          sed -i 's/GLM_FUNC_QUALIFIER std::string format(const char\* message, \.\.\.)/inline std::string format(const char* message, ...)/' \
-            ref/glm/glm/gtx/string_cast.inl
-          grep -n "std::string format(const char\* message" ref/glm/glm/gtx/string_cast.inl
-
       - name: Install SonarQube Cloud Build Wrapper
         uses: SonarSource/sonarqube-scan-action/install-build-wrapper@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
 
       - name: Configure (CMake)
         env:
-          # C++20 named modules need GCC 14+; noble's default build-essential is GCC 13
-          CC: gcc-14
-          CXX: g++-14
+          CC: clang-22
+          CXX: clang++-22
         run: |
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DWITH_BETTER_RENDERER=OFF \
             -DWITH_ZMQ=OFF -DWITH_OPENVR=OFF -DUSE_LTO=OFF \
-            -DCMAKE_CXX_FLAGS="-Wno-attributes -fno-inline-functions-called-once" \
+            -DCMAKE_CXX_FLAGS="-Wno-attributes" \
             -DPython3_EXECUTABLE="$(which python3)"
 
       - name: Build under Build Wrapper

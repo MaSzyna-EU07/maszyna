@@ -1,4 +1,5 @@
 module;
+#include <memory>
 #include "glad/glad.h"
 #include <algorithm>
 #include <cmath>

@@ -1,4 +1,5 @@
 module;
+#include <memory>
 #include <random>
 #include <algorithm>
 #include <fstream>

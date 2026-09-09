@@ -659,6 +659,9 @@ public:
     std::string OwnerName() const;
 };
 
+}  // export -- out-of-line member definitions are not namespace-scope
+// declarations, so they cannot carry `export`; the class itself is exported.
+
 inline TOrders TController::OrderCurrentGet() const {
     return OrderList[ OrderPos ];
 }
@@ -667,4 +670,5 @@ inline TOrders TController::OrderNextGet() const {
     return OrderList[ OrderPos + 1 ];
 }
 
+export {
 }  // export

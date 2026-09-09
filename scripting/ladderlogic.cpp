@@ -1,4 +1,5 @@
 module;
+#include <variant>
 #include <map>
 #include "utilities/utilities_macros.h"
 #include <cmath>

@@ -483,14 +483,13 @@ target_sources(${PROJECT_NAME}
 
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 
-# GCC's lazy loading of module interfaces trips over the simulation-core partition
-# ("failed to load pendings" / "Bad file data" while reading eu07.simcore:dynobj).
-# Loading eagerly avoids it; drop this once the compiler bug is fixed.
-# GCC 16's lazy loading of module interfaces is broken for this project: reading
-# eu07.simcore:dynobj gives "Bad file data", and eu07.glm gives "recursive lazy
-# load" / "failed to load pendings for glm::vec". Eager loading is the only way
-# through, and it costs roughly twice the memory per compiler process.
-# Drop both this and the job pool below once the compiler bug is fixed.
+# Clang is the compiler this project is built and tested with (Clang 22 in CI);
+# it needs none of the workarounds below. GCC 16 still builds the tree, but only
+# with eager module loading: its lazy loading is broken here, reading
+# eu07.simcore:dynobj gives "Bad file data" and eu07.glm gives "recursive lazy
+# load" / "failed to load pendings for glm::vec". Eager loading costs roughly
+# twice the memory per compiler process. Drop this and the job pool below once
+# the compiler bug is fixed.
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 	target_compile_options(${PROJECT_NAME} PRIVATE -fno-module-lazy)
 

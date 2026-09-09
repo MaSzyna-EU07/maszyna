@@ -736,6 +736,8 @@ private:
 
 
 
+}  // export -- out-of-line member definitions are not namespace-scope
+// declarations, so they cannot carry `export`; the class itself is exported.
 inline
 void
 basic_event::group( scene::group_handle Group ) {
@@ -762,6 +764,7 @@ basic_event::init_targets( TableType_ &Repository, std::string const &Targettype
     }
 }
 
+export {
 //---------------------------------------------------------------------------
 
 }  // export
