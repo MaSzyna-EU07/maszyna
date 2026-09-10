@@ -13,7 +13,7 @@ layout(location = 1) out vec4 out_motion;
 
 void main()
 {
-	vec4 tex_color = texture(tex1, f_coord);
+	vec4 tex_color = texture(tex1, f_coord) * 2.0f;
 #if POSTFX_ENABLED
 	out_color = tex_color * param[0];
 #else

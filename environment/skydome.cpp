@@ -9,7 +9,7 @@
 // by A. J. Preetham Peter Shirley Brian Smits (University of Utah)
 
 float CSkyDome::m_distributionluminance[ 5 ][ 2 ] = {	// Perez distributions
-		{  0.17872f , -1.66303f },		// a = darkening or brightening of the horizon
+		{  0.17872f , -1.46303f },		// a = darkening or brightening of the horizon
 		{ -0.35540f ,  0.42750f },		// b = luminance gradient near the horizon,
 		{ -0.02266f ,  5.32505f },		// c = relative intensity of the circumsolar region
 		{  0.12064f , -2.57705f },		// d = width of the circumsolar region
@@ -185,7 +185,7 @@ float CSkyDome::PerezFunctionO2( float Perezcoeffs[ 5 ], const float Icostheta, 
 void CSkyDome::RebuildColors() {
 
     float twilightfactor = std::clamp( -simulation::Environment.sun().getAngle(), 0.0f, 18.0f ) / 18.0f;
-    auto gammacorrection = glm::mix( glm::vec3( 1.0f ), glm::vec3( 0.45f ), twilightfactor );
+    auto gammacorrection = std::lerp( 1.0f, 0.6f, twilightfactor );
 
 	// get zenith luminance
 	float const chi = ( 4.0f / 9.0f - m_turbidity / 120.0f ) * ( M_PI - 2.0f * m_thetasun );
@@ -258,7 +258,7 @@ void CSkyDome::RebuildColors() {
 			colorconverter.z = 1.0f - std::exp( -m_expfactor * colorconverter.z );  
 		}
 
-        colorconverter.z = std::pow( std::max( colorconverter.z, 0.0f ), gammacorrection.x );
+        colorconverter.z = std::pow( std::max( colorconverter.z, 0.0f ), gammacorrection );
 
         colorconverter.y = std::clamp( colorconverter.y * Global.m_skysaturationcorrection, 0.0f, 1.0f );
         // desaturate sky colour, based on overcast level
@@ -275,29 +275,32 @@ void CSkyDome::RebuildColors() {
         // this height-based factor is reduced the farther the sun is up in the sky
         float const shiftfactor = std::clamp( std::lerp(heightbasedphase, sunbasedphase, sunbasedphase), 0.0f, 1.0f );
         // h = 210 makes for 'typical' sky tone
-        glm::vec3 const skytonecolor = colors::HSVtoRGB( glm::vec3( 210.0f, 0.5f, colorconverter.z ) );
+        glm::vec3 const skytonecolor = colors::HSVtoRGB( glm::vec3( 210.0f, std::max(0.5f, colorconverter.y), colorconverter.z ) );
 
         color = colors::HSVtoRGB( colorconverter );
         color = glm::mix( color, skytonecolor, shiftfactor * Global.m_skyhuecorrection );
 
+        // not correct at all, but creates quite pleasing colors so let's keep that
+        color = glm::pow ( color, glm::vec3( 2.2f ) );
+
         // crude correction for the times where the model breaks (late night)
         // TODO: use proper night sky calculation for these times instead
-        if( color.x <= 0.05f
-         && color.y <= 0.05f ) {
+        if( color.x <= 0.02f
+         && color.y <= 0.02f ) {
             // darken the sky as the sun goes deeper below the horizon
             // 15:50:75 is picture-based night sky colour. it may not be accurate but looks 'right enough'
             color.z = 0.75f * std::max( color.z + m_sundirection.y, 0.075f );
             color.x = 0.20f * color.z; 
             color.y = 0.65f * color.z;
+            color *= m_overcast;
+            color *= 1.0f + simulation::Environment.moon().getIntensity() / 0.12;
         }
         // simple gradient, darkening towards the top
         color *= std::clamp( 1.0f - vertex.y * 0.75f, 0.0f, 1.f );
 
-        float const horizonboost = 1.5f + m_overcast;
         float const horizonbandwidth = 0.2f; // boost tapers to 0 by ~11.5 degrees elevation
         float const horizonband = std::clamp( 1.0f - vertex.y / horizonbandwidth, 0.0f, 1.0f );
-
-        color *= std::lerp( 1.0, horizonboost, horizonband );
+        color *= glm::vec3( std::lerp( 1.0, 2.0, horizonband ) );
 
         //color *= ( 0.25f - vertex.y );
         m_colours[ i ] = color;

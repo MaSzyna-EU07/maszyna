@@ -18,7 +18,7 @@ public:
 	// returns current elevation above horizon
 	float getAngle() const;
 	// returns current intensity of the sun
-	float getIntensity();
+	float getIntensity() const;
     // returns current phase of the moon
     float getPhase() const { return m_phase; }
     // sets current time, overriding one acquired from the system clock
