@@ -12,6 +12,9 @@ module;
 #include <list>
 #include <optional>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <windows.h>   // CreateDirectory, in the _WIN32 branch of the log setup
+#endif
 #include <cstdint>
 #include <algorithm>
 #include <array>
