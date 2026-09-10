@@ -6,6 +6,7 @@ module;
 #include "utilities/utilities_macros.h"
 
 module eu07.console.pokeys55;
+import eu07.utilities.utilities;   // ToLower, contains
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.

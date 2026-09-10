@@ -3,6 +3,7 @@ module;
 #include <string>
 
 module eu07.console.lpt;
+import eu07.utilities.logs;   // WriteLog
 /*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
