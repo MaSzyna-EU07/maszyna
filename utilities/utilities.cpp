@@ -137,10 +137,33 @@ int Random(int min, int max)
 	return dist(Global.random_engine);
 }
 
+std::uint32_t entropy_seed(bool *Degenerate)
+{
+	std::uint32_t hardware[2]{};
+	auto failed{false};
+	try
+	{
+		std::random_device device;
+		hardware[0] = device();
+		hardware[1] = device();
+	}
+	catch (std::exception const &)
+	{
+		failed = true;
+	}
+	if (Degenerate)
+		*Degenerate = failed || hardware[0] == hardware[1];
+
+	auto const clock = static_cast<std::uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+	std::seed_seq sequence{hardware[0], hardware[1], static_cast<std::uint32_t>(clock), static_cast<std::uint32_t>(clock >> 32)};
+	std::uint32_t seed;
+	sequence.generate(&seed, &seed + 1);
+	return seed;
+}
+
 std::string generate_uuid_v4()
 {
-	std::random_device rd;
-	std::mt19937 gen(rd());
+	std::mt19937 gen(entropy_seed());
 	std::uniform_int_distribution<int> dist(0, 255);
 
 	std::array<uint8_t, 16> bytes;

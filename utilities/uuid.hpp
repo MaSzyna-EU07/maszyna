@@ -6,6 +6,7 @@
 #include <string>
 #include <algorithm>
 #include <cstdint>
+#include "utilities/utilities.h"
 
 class UID {
 public:
@@ -13,7 +14,7 @@ public:
 
 
     static UID random() {
-        static thread_local std::mt19937_64 gen(std::random_device{}());
+        static thread_local std::mt19937_64 gen(entropy_seed());
         UID u;
         uint64_t a = gen();
         uint64_t b = gen();

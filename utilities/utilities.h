@@ -62,6 +62,10 @@ inline long Round(double const f)
 
 double Random(double a, double b);
 int Random(int min, int max);
+// seed for the random engines: std::random_device mixed with the high-resolution clock, so a hardware
+// entropy source stuck on one value (e.g. AMD RDRAND returning 0xFFFFFFFF) can't pin every run to the same seed.
+// Degenerate, if provided, is set when std::random_device looks broken (throws or repeats itself)
+std::uint32_t entropy_seed(bool *Degenerate = nullptr);
 std::string generate_uuid_v4();
 double LocalRandom(double a, double b);
 

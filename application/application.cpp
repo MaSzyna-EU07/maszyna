@@ -320,8 +320,9 @@ int eu07_application::init(int Argc, char *Argv[])
 		return result;
 	}
 
+	auto isEntropyDegenerated{false};
 	if (!Global.random_seed)
-		Global.random_seed = std::random_device{}();
+		Global.random_seed = entropy_seed(&isEntropyDegenerated);
 	Global.random_engine.seed(Global.random_seed);
 
 	// configure the OS console according to Globals.ShowSystemConsole.
@@ -344,6 +345,9 @@ int eu07_application::init(int Argc, char *Argv[])
 		Global.export_as_text(settingspipe);
 		WriteLog(settingspipe.str());
 	}
+
+	if (isEntropyDegenerated)
+		ErrorLog("std::random_device is broken on this machine (faulty RDRAND?), random seed falls back to the clock");
 
 	// cruel way to prevent crashes because of threaded upload from python
 	if (Global.NvRenderer)
@@ -1421,7 +1425,7 @@ int eu07_application::init_data()
 
 int eu07_application::init_modes()
 {
-	Global.local_random_engine.seed(std::random_device{}());
+	Global.local_random_engine.seed(entropy_seed());
 
 	if ((!Global.network_servers.empty() || Global.network_client) && Global.SceneryFile.empty())
 	{
