@@ -1,4 +1,7 @@
 #pragma once
+#ifdef _WIN32
+#include <windows.h>   // before any import: its guard must be set here
+#endif
 
 //STL includes required by EU07 includes
 #include <array>

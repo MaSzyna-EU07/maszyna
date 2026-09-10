@@ -1,4 +1,7 @@
-﻿#include <array>
+﻿#ifdef _WIN32
+#include <windows.h>   // before any import: its guard must be set here
+#endif
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
