@@ -111,10 +111,12 @@ else ()
     target_compile_definitions(${LIBMANUL_NAME} PUBLIC "LIBMANUL_WITH_VULKAN=0")
 endif ()
 
+# Which spelling to use follows the compiler driver, not the platform: the
+# Windows build runs clang's GNU driver, which reads /arch:AVX2 as a file name.
 if(ENABLE_AVX2)
-    if (WIN32)
+    if (MSVC)
         target_compile_options(${LIBMANUL_NAME} PRIVATE "/arch:AVX2")
-    elseif (UNIX)
+    else ()
         target_compile_options(${LIBMANUL_NAME} PRIVATE "-mavx2")
     endif ()
 endif()
