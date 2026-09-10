@@ -125,6 +125,10 @@ state_registry::state_registry()
 	add( "hv_current_1", value_type::float32, "A", -5000.0, 5000.0, []( state_snapshot const &s ) { return make_value( s, value_type::float32, s.train.hv_current[ 0 ], s.electric ); } );
 	add( "hv_current_2", value_type::float32, "A", -5000.0, 5000.0, []( state_snapshot const &s ) { return make_value( s, value_type::float32, s.train.hv_current[ 1 ], s.electric ); } );
 	add( "hv_current_3", value_type::float32, "A", -5000.0, 5000.0, []( state_snapshot const &s ) { return make_value( s, value_type::float32, s.train.hv_current[ 2 ], s.electric ); } );
+	// what the cab's engine voltage gauge shows: the supply voltage less the drop on the starting
+	// resistor, divided between the motor branches - and a current derived reading while the
+	// dynamic brake is applied, exactly as the needle in the cab behaves
+	add( "engine_voltage", value_type::float32, "V", 0.0, 40000.0, []( state_snapshot const &s ) { return make_value( s, value_type::float32, s.train.engine_voltage, s.electric ); } );
 	add( "lv_voltage", value_type::float32, "V", 0.0, 200.0, []( state_snapshot const &s ) { return make_value( s, value_type::float32, s.train.lv_voltage ); } );
 	add( "distance", value_type::float64, "m", {}, {}, []( state_snapshot const &s ) { return make_value( s, value_type::float64, s.train.distance ); } );
 
