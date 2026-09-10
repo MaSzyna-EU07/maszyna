@@ -70,17 +70,22 @@ void opengl_material::finalize(bool Loadnow)
 
     if (parse_info)
     {
-        for (auto it : parse_info->tex_mapping)
+        // texture bindings which come with a pool of alternatives, gathered while resolving regular bindings
+        std::vector<std::pair<size_t, std::vector<std::string> const *>> variantbindings;
+
+        for (auto const &it : parse_info->tex_mapping)
         {
             std::string key = it.first;
             std::string value = it.second.name;
+            // slot the binding resolves to, or -1 if it can't be resolved
+            int slot { -1 };
 
             if (key.size() > 0 && key[0] != '_')
             {
                 key.erase( key.find_first_not_of( "-1234567890" ) );
                 size_t num = std::stoi(key) - 1;
                 if (num < gl::MAX_TEXTURES) {
-                    textures[num] = GfxRenderer->Fetch_Texture(value, Loadnow);
+                    slot = static_cast<int>( num );
                 }
                 else {
                     log_error("invalid texture binding: " + std::to_string(num));
@@ -93,11 +98,11 @@ void opengl_material::finalize(bool Loadnow)
                 key.pop_back();
                 std::map<std::string, int>::iterator lookup;
                 if( shader && shader->texture_conf.find( key ) != shader->texture_conf.end() ) {
-                    textures[ shader->texture_conf[ key ].id ] = GfxRenderer->Fetch_Texture( value, Loadnow );
+                    slot = shader->texture_conf[ key ].id;
                 }
                 else if( shader == nullptr
                       && ( lookup = texture_bindings.find( key ) ) != texture_bindings.end() ) {
-                    textures[ lookup->second ] = GfxRenderer->Fetch_Texture( value, Loadnow );
+                    slot = lookup->second;
                 }
                 else {
                     // ignore unrecognized texture bindings in legacy render mode, it's most likely data for more advanced shaders
@@ -110,6 +115,35 @@ void opengl_material::finalize(bool Loadnow)
             else {
                 log_error("unrecognized texture binding: " + key);
                 is_good = false;
+            }
+
+            if( slot >= 0 ) {
+                textures[ slot ] = GfxRenderer->Fetch_Texture( value, Loadnow );
+                if( it.second.variants.size() > 1 ) {
+                    variantbindings.emplace_back( static_cast<size_t>( slot ), &( it.second.variants ) );
+                }
+            }
+        }
+
+        if( false == variantbindings.empty() ) {
+            // build a texture set for each entry of the largest of the declared pools.
+            // pools of different size can be combined, shorter ones simply repeat from the start
+            size_t variantcount { 0 };
+            for( auto const &binding : variantbindings ) {
+                variantcount = std::max( variantcount, binding.second->size() );
+            }
+            texture_variants.resize( variantcount, textures );
+            for( auto const &binding : variantbindings ) {
+                auto const &pool { *( binding.second ) };
+                for( size_t variantindex = 0; variantindex < variantcount; ++variantindex ) {
+                    auto const texturehandle { GfxRenderer->Fetch_Texture( pool[ variantindex % pool.size() ], Loadnow ) };
+                    if( texturehandle == null_handle ) {
+                        // a single bad entry shouldn't take down the whole material, fall back to the basic texture
+                        log_error( "missing texture variant: " + pool[ variantindex % pool.size() ] );
+                        continue;
+                    }
+                    texture_variants[ variantindex ][ binding.first ] = texturehandle;
+                }
             }
         }
 
@@ -325,15 +359,42 @@ opengl_material::deserialize_mapping( cParser &Input, int const Priority, bool c
         else if (key.compare(0, 7, "texture") == 0) {
             key.erase(0, 7);
 
-            auto value { deserialize_random_set( Input ) };
-            replace_slashes( value );
+            // a texture binding can be provided as a pool of alternatives, "textureN_variants: [ a b c ]".
+            // unlike a regular random set, which is resolved once when the material is loaded and thus shared
+            // by everything using it, such pool is preserved whole and one entry is picked per model instance
+            auto const variantmarker { key.find( "_variants" ) };
+            auto const isvariantset { variantmarker != std::string::npos };
+            if( isvariantset ) {
+                // reduce the key to its plain form, "N_variants:" becomes "N:"
+                key.erase( variantmarker, std::string( "_variants" ).size() );
+            }
+
+            std::vector<std::string> variants;
+            std::string value;
+            if( false == isvariantset ) {
+                value = deserialize_random_set( Input );
+                replace_slashes( value );
+            }
+            else {
+                variants = deserialize_set( Input );
+                for( auto &variant : variants ) {
+                    replace_slashes( variant );
+                }
+                if( true == variants.empty() ) {
+                    log_error( "empty texture variant pool: " + key );
+                    return true;
+                }
+                // first entry doubles as the regular, variant-agnostic texture of the material
+                value = variants.front();
+            }
+
             auto it = parse_info->tex_mapping.find(key);
             if (it == parse_info->tex_mapping.end())
-                parse_info->tex_mapping.emplace(std::make_pair(key, parse_info_s::tex_def({ value, Priority })));
+                parse_info->tex_mapping.emplace(std::make_pair(key, parse_info_s::tex_def({ value, Priority, variants })));
             else if (Priority > it->second.priority)
             {
                 parse_info->tex_mapping.erase(it);
-                parse_info->tex_mapping.emplace(std::make_pair(key, parse_info_s::tex_def({ value, Priority })));
+                parse_info->tex_mapping.emplace(std::make_pair(key, parse_info_s::tex_def({ value, Priority, variants })));
             }
         }
         else if (key.compare(0, 5, "param") == 0) {

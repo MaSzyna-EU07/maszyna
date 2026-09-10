@@ -187,6 +187,14 @@ bool MaterialAdapterLegacyMatFile::ParseLevel(cParser& parser, int priority) {
     else if (key.compare(0, 7, "texture") == 0) {
       key.erase(0, 7);
 
+      // "textureN_variants:" declares a pool of textures picked per model instance. this renderer
+      // doesn't support per instance variants yet, so the pool is reduced to a single entry drawn
+      // when the material is loaded, which is how such texture used to be picked before variants
+      if (auto const variantmarker{key.find("_variants")};
+          variantmarker != std::string::npos) {
+        key.erase(variantmarker, std::string("_variants").size());
+      }
+
       auto value{deserialize_random_set(parser)};
       replace_slashes(value);
       auto& [tex_priority, texture] = m_texture_mapping[key];

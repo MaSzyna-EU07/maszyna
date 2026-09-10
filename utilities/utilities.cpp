@@ -491,3 +491,41 @@ std::string deserialize_random_set(cParser &Input, char const *Break)
 		return "";
 	}
 }
+
+// returns hash of provided string, combined with provided seed
+std::uint32_t hash_string(std::string const &String, std::uint32_t const Seed)
+{
+	// FNV-1a, 32 bit, with the seed mixed into the standard offset basis
+	std::uint32_t hash{2166136261u ^ Seed};
+	for (auto const character : String)
+	{
+		hash ^= static_cast<std::uint32_t>(static_cast<unsigned char>(character));
+		hash *= 16777619u;
+	}
+	return hash;
+}
+
+// extracts a group of tokens from provided data stream, returns all of them
+std::vector<std::string> deserialize_set(cParser &Input, char const *Break)
+{
+
+	std::vector<std::string> tokens;
+
+	auto token{Input.getToken<std::string>(true, Break)};
+	std::replace(token.begin(), token.end(), '\\', '/');
+	if (token != "[")
+	{
+		// simple case, single token
+		if (false == token.empty())
+		{
+			tokens.emplace_back(token);
+		}
+		return tokens;
+	}
+	// '[' marks a beginning of a set, retrieve all entries until it's closed
+	while ((token = deserialize_random_set(Input, Break)) != "" && token != "]")
+	{
+		tokens.emplace_back(token);
+	}
+	return tokens;
+}

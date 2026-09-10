@@ -1934,6 +1934,10 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     iDirection = Reversed ? 0 : 1; // Ra: 0, jeśli ma być wstawiony jako obrócony tyłem
     asBaseDir = paths::dynamic + BaseDir + "/"; // McZapkie-310302
     asName = Name;
+    // derived from the name and the seed of the simulation rather than drawn at random, so that the vehicle
+    // keeps the same look for the whole session and looks the same for everyone in a multiplayer game, while
+    // another run of the same scenario, with another seed, dresses it differently
+    m_variantseed = hash_string( asName, Global.random_seed );
     std::string asAnimName; // zmienna robocza do wyszukiwania osi i wózków
     // Ra: zmieniamy znaczenie obsady na jednoliterowe, żeby dosadzić kierownika
     if (DriverType == "headdriver")

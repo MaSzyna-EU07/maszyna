@@ -18,7 +18,13 @@ http://mozilla.org/MPL/2.0/.
 // a collection of parameters for the rendering setup.
 // for modern opengl this translates to set of attributes for shaders
 struct opengl_material : public IMaterial {
-    std::array<texture_handle, gl::MAX_TEXTURES> textures = { null_handle };
+    typedef std::array<texture_handle, gl::MAX_TEXTURES> texture_set;
+
+    texture_set textures = { null_handle };
+    // alternative texture sets, defined with "textureN_variants:" key.
+    // one of them is picked per rendered model instance, empty when the material declares no variants.
+    // NOTE: all variants share the remaining material properties, opacity and translucency included
+    std::vector<texture_set> texture_variants;
     std::array<glm::vec4, gl::MAX_PARAMS> params;
     std::vector<gl::shader::param_entry> params_state;
 
@@ -60,6 +66,14 @@ struct opengl_material : public IMaterial {
 	  {
 		  return textures[slot];
 	  }
+	  // returns texture set to use for model instance identified by provided variant id
+	  texture_set const &GetTextures(std::uint32_t const Variant) const
+	  {
+		  return (
+			  texture_variants.empty() ?
+				  textures :
+				  texture_variants[Variant % texture_variants.size()]);
+	  }
 	// members
     static struct path_data {
         std::unordered_map<std::string, int> index_map;
@@ -90,6 +104,9 @@ private:
         {
             std::string name;
             int priority;
+            // optional pool of alternative textures for the same binding, one picked per model instance.
+            // empty for regular, single texture bindings
+            std::vector<std::string> variants;
         };
         struct param_def
         {
