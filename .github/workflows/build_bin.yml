@@ -88,14 +88,18 @@ jobs:
         run: |
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VSPATH=%%i
           call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat"
-          for %%p in ("${{ steps.python.outputs.python-path }}") do set PYROOT=%%~dpp
+          for %%p in ("${{ steps.python.outputs.python-path }}") do set "PYROOT=%%~dpp"
+          rem CMake writes these paths verbatim into its own .cmake files, where a
+          rem backslash starts an escape: "C:\Program Files" would be read as \P.
+          set "LLVMBIN=%ProgramFiles:\=/%/LLVM/bin"
+          set "PYROOT=%PYROOT:\=/%"
           cmake -S . -B build ^
             -G Ninja ^
             -DCMAKE_BUILD_TYPE=%CONFIG_WIN% ^
-            -DCMAKE_C_COMPILER="%ProgramFiles%/LLVM/bin/clang.exe" ^
-            -DCMAKE_CXX_COMPILER="%ProgramFiles%/LLVM/bin/clang++.exe" ^
-            -DCMAKE_RC_COMPILER="%ProgramFiles%/LLVM/bin/llvm-rc.exe" ^
-            -DPython3_ROOT_DIR=%PYROOT%
+            -DCMAKE_C_COMPILER="%LLVMBIN%/clang.exe" ^
+            -DCMAKE_CXX_COMPILER="%LLVMBIN%/clang++.exe" ^
+            -DCMAKE_RC_COMPILER="%LLVMBIN%/llvm-rc.exe" ^
+            -DPython3_ROOT_DIR="%PYROOT%"
 
       - name: Build
         shell: cmd
