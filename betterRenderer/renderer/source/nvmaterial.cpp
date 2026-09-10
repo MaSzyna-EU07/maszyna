@@ -18,6 +18,14 @@
 #include "nvtexture.h"
 #include "sky.h"
 
+#include <chrono>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
+#include <utility>
 import eu07.utilities.logs;
 bool NvRenderer::MaterialTemplate::CreateBindingSet(size_t pipeline_index,
                                                     MaterialCache &cache) {

@@ -5,6 +5,16 @@
 
 #include <fmt/format.h>
 
+#include <array>
+#include <chrono>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
+#include <utility>
+#include <vector>
 import eu07.utilities.logs;
 void NvRendererMessageCallback::message(nvrhi::MessageSeverity severity,
                                         const char *messageText) {

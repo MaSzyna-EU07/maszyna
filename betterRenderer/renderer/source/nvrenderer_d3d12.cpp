@@ -9,6 +9,18 @@
 #include "utilities/Globals_macros.h"
 #include "config.h"
 #include "nvrenderer/nvrenderer.h"
+#include <array>
+#include <chrono>
+#include <cstddef>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 #if LIBMANUL_WITH_D3D12
 

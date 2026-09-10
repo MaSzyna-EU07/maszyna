@@ -18,6 +18,17 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
+#include <array>
+#include <cstddef>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <stdexcept>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 import eu07.application.application;
 import eu07.utilities.logs;
 import eu07.utilities.globals;

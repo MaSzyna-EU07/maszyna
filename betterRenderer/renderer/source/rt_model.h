@@ -7,6 +7,19 @@
 // TSubModel/TModel3d are owned by the simulation core; a forward
 // declaration here would be a second, conflicting declaration.
 
+#include <array>
+#include <chrono>
+#include <cstddef>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 import eu07.simcore;
 import eu07.glm;
 namespace Rt {

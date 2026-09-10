@@ -9,6 +9,17 @@
 #include "nvrendererbackend.h"
 #include "imgui/imgui.h"
 
+#include <chrono>
+#include <cstddef>
+#include <deque>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 import eu07.simulation.simulationenvironment;
 import eu07.simulation.simulationtime;
 import eu07.glm;

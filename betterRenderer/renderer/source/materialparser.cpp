@@ -13,6 +13,16 @@
 #include "utilities/utilities_macros.h"
 #include <yaml-cpp/yaml.h>
 
+#include <array>
+#include <chrono>
+#include <cstddef>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <type_traits>
+#include <unordered_map>
+#include <vector>
 import eu07.utilities.globals;
 import eu07.utilities.logs;
 import eu07.model.material;

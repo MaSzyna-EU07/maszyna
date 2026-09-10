@@ -11,6 +11,18 @@
 #include "sky.h"
 #include "ssao.h"
 
+#include <array>
+#include <cstddef>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 import eu07.utilities.timer;
 import eu07.glm;
 GbufferBlitPass::GbufferBlitPass(NvRenderer* renderer, NvGbuffer* gbuffer,

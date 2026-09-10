@@ -38,6 +38,12 @@
 #include "tinyexr.h"
 #include "windshield_rain.h"
 #include "utilities/utilities_macros.h"
+#include <chrono>
+#include <deque>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
+#include <unordered_map>
 import eu07.simcore;
 import eu07.utilities.logs;
 import eu07.utilities.timer;

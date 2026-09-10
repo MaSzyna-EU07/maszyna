@@ -40,6 +40,11 @@
 #include "quadtree.h"
 #include "resource_registry.h"
 
+#include <chrono>
+#include <limits>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
 import eu07.utilities.classes;
 import eu07.utilities.globals;
 import eu07.simcore;

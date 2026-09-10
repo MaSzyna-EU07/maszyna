@@ -14,6 +14,13 @@
 #include "nvrendererbackend.h"
 
 #include "utilities/utilities_macros.h"
+#include <array>
+#include <chrono>
+#include <deque>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <type_traits>
 import eu07.utilities.timer;
 import eu07.simcore;
 import eu07.simulation.simulation;

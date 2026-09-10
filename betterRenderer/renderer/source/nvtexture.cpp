@@ -16,6 +16,14 @@
 #include "nvrendererbackend.h"
 #include "stbi/stb_image.h"
 #include "stbi/stb_image_resize2.h"
+#include <chrono>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <type_traits>
+#include <unordered_map>
+#include <vector>
 import eu07.utilities.globals;
 import eu07.scripting.pyint;
 import eu07.application.application;

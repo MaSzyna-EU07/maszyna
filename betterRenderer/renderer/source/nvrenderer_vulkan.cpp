@@ -16,6 +16,14 @@
 #include "utilities/Globals_macros.h"
 #include "config.h"
 #include "nvrenderer/nvrenderer.h"
+#include <array>
+#include <chrono>
+#include <deque>
+#include <mutex>
+#include <ostream>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
 
 #if LIBMANUL_WITH_VULKAN
 

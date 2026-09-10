@@ -18,6 +18,19 @@
 #include "gbuffer.h"
 #include "gbufferblitpass.h"
 
+#include <array>
+#include <chrono>
+#include <cstddef>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 import eu07.utilities.globals;
 import eu07.glm;
 NvFSR::NvFSR(NvRenderer* renderer)
