@@ -28,6 +28,15 @@ if (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|MSVC")
 		"Build with Clang (CI uses 22) or MSVC.")
 endif()
 
+# Only Platform/Windows-MSVC.cmake passes /DWIN32; the GNU-driver platform files
+# do not. Plenty of third-party code tests the unprefixed WIN32 rather than
+# _WIN32 - asio and AMD's FSR2 among it, the latter swapping in POSIX shims for
+# wcscpy_s and _countof that then collide with the real CRT. Define it here,
+# before any add_subdirectory, so every target sees what an MSVC build saw.
+if (WIN32 AND NOT MSVC)
+	add_compile_definitions(WIN32)
+endif()
+
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fsanitize=undefined")
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fsanitize=undefined -Wformat")
 #set(CMAKE_LD_FLAGS "${CMAKE_LD_FLAGS} -fsanitize=address -fsanitize=undefined")
