@@ -108,7 +108,7 @@ class TTrain {
         float pantograph_pressure;
         float hv_voltage;
         std::array<float, 3> hv_current;
-    	std::uint32_t enginevoltage;
+    	double enginevoltage;
         float lv_voltage;
 		double distance;
 		std::uint8_t radio_channel;
