@@ -82,12 +82,16 @@ jobs:
           call setup.bat
 
       # Ninja, not MSBuild: CMake's module dependency scanning is best supported
-      # there, and vcvars64 supplies the SDK and library paths clang needs.
+      # there.
+      #
+      # Deliberately not inside vcvars64. clang finds the MSVC toolchain and the
+      # Windows SDK by itself; letting vcvars also put them in INCLUDE gives the
+      # same directory two spellings, one of them with doubled separators, and
+      # #pragma once then fails to recognise the file - the SDK headers get
+      # parsed twice and every COM interface looks like a uuid mismatch.
       - name: Configure
         shell: cmd
         run: |
-          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VSPATH=%%i
-          call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat"
           for %%p in ("${{ steps.python.outputs.python-path }}") do set "PYROOT=%%~dpp"
           rem CMake writes these paths verbatim into its own .cmake files, where a
           rem backslash starts an escape: "C:\Program Files" would be read as \P.
@@ -104,8 +108,6 @@ jobs:
       - name: Build
         shell: cmd
         run: |
-          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VSPATH=%%i
-          call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat"
           cmake --build build --parallel
 
       - name: Copy shaders
