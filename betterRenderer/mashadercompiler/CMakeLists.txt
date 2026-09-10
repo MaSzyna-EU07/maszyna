@@ -16,7 +16,9 @@ target_link_libraries(MaSzynaShaderCompiler nvrhi yaml-cpp Microsoft::DirectXSha
 
 if (WIN32)
     target_link_libraries(MaSzynaShaderCompiler delayimp)
-    target_link_options(MaSzynaShaderCompiler PRIVATE "/DELAYLOAD:dxcompiler.dll")
+    # LINKER: lets CMake spell this for whichever driver is in use - passed
+    # straight through, clang's GNU driver reads /DELAYLOAD as a file name.
+    target_link_options(MaSzynaShaderCompiler PRIVATE "LINKER:/DELAYLOAD:dxcompiler.dll")
 endif ()
 
 # We later pass the DXIL.dll parent directory as first argument to MaSzynaShaderCompiler so that it can sign DX12 shaders
