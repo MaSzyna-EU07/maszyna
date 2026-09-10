@@ -1,4 +1,7 @@
 module;
+#ifdef _WIN32
+#include "winheaders.h"   // the interface has this in its own fragment, which does not cross
+#endif
 #include <array>
 #include <chrono>
 #include <deque>

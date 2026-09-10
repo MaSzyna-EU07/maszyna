@@ -1,4 +1,5 @@
 module;
+#include "winheaders.h"   // HANDLE; setupapi.h happens to pull it in, but say so
 #include <cstdlib>
 #include <string>
 #include <setupapi.h>

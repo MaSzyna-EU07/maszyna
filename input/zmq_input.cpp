@@ -1,4 +1,5 @@
 module;
+#include "winheaders.h"   // SYSTEMTIME
 #include <array>
 #include <deque>
 #include <limits>

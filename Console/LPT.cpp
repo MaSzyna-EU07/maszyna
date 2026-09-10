@@ -1,4 +1,5 @@
 module;
+#include "winheaders.h"   // HINSTANCE
 #include <string>
 
 module eu07.console.lpt;
