@@ -17,9 +17,10 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/CMake_modules/")
 set(DEPS_DIR ${DEPS_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/ref")
 project("eu07")
 
-# Clang is the only compiler this project is built and tested with on Linux
-# (Clang 22 in CI); MSVC covers Windows. GCC is not supported: its lazy loading
-# of module interfaces is broken here, and working around it costs roughly twice
+# Clang is the compiler this project is built and tested with: clang on Linux,
+# clang-cl on Windows, both pinned to 22 in CI. MSVC still configures and is not
+# rejected, but nothing verifies it. GCC is not supported: its lazy loading of
+# module interfaces is broken here, and working around it costs roughly twice
 # the memory per compiler process.
 if (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|MSVC")
 	message(FATAL_ERROR
@@ -444,7 +445,12 @@ set(GLM_INCLUDE_DIR ${GLM_INCLUDE_DIR} "${DEPS_DIR}/glm/")
 configure_file(${CMAKE_SOURCE_DIR}/eu07.rc.in
                ${CMAKE_BINARY_DIR}/eu07.rc @ONLY)
 
-if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
+# MSVC is true for clang-cl as well - it targets the same ABI and takes the same
+# command line. Testing CMAKE_CXX_COMPILER_ID instead would silently drop the
+# version resource and the icon from a clang-cl build.
+if (MSVC)
+    # the Visual Studio generators enable RC on their own; Ninja does not
+    enable_language(RC)
     set(SOURCES ${SOURCES} ${CMAKE_BINARY_DIR}/eu07.rc)
     set(SOURCES ${SOURCES} eu07.ico)
     add_compile_options("/utf-8")
@@ -508,18 +514,23 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 	"${CMAKE_BINARY_DIR}/geninc"
 	"${GLOBAL_INCLUDE_DIR}")
 
-if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
+if (MSVC)
 	# override cmake defaults
 	set(CMAKE_CXX_FLAGS_RELWITHDEBINFO " /MD /Zi /O2 /DNDEBUG")
 	set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO " /DEBUG /INCREMENTAL:NO /OPT:REF /OPT:ICF")
-
-	target_link_options(${PROJECT_NAME} PRIVATE "/MAP")
 
 	# /wd4996: disable "deprecation" warnings
 	# /wd4244: disable warnings for conversion with possible loss of data
 	# /wd5033: disable because it is all over Python headers
 	set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_FLAGS "/wd4996 /wd4244 /wd5033")
 	set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "/LARGEADDRESSAWARE")
+
+	# /MAP is a link.exe option; lld-link, which clang-cl usually drives, spells
+	# it differently. The map only feeds the debug-symbols artifact, whose upload
+	# tolerates it being absent.
+	if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+		target_link_options(${PROJECT_NAME} PRIVATE "/MAP")
+	endif()
 endif()
 
 set_target_properties( ${PROJECT_NAME}
@@ -724,7 +735,9 @@ if(GENERATE_PDB)
     endif()
 endif()
 
-if(ENABLE_MCC AND MSVC)
+# /MP is an MSVC-only option; clang-cl rejects it, and under Ninja the generator
+# already runs one compiler process per core.
+if(ENABLE_MCC AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND NOT CMAKE_GENERATOR MATCHES "Ninja")
     message(STATUS "Enabling multi-processor compilation for MSVC.")
 	add_compile_options(/MP)
 endif()

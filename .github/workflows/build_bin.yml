@@ -24,11 +24,11 @@ env:
 jobs:
 
   # ============================================================
-  # Windows / MSVC
+  # Windows / Clang (clang-cl)
   # ============================================================
 
   windows:
-    name: Windows x64 / MSVC
+    name: Windows x64 / Clang
     runs-on: windows-2022
 
     steps:
@@ -45,16 +45,27 @@ jobs:
           python-version: "3.14"
           architecture: "x64"
 
+      # clang-cl rather than plain clang: it keeps the MSVC ABI, so it links
+      # against the same Windows SDK, vcpkg packages and D3D12 libraries, and
+      # only the front end changes. Pinned to the version the Linux job uses.
+      - name: Install LLVM and Ninja
+        shell: pwsh
+        run: |
+          choco install llvm --version=22.1.8 -y --no-progress
+          choco install ninja -y --no-progress
+
       - name: Show environment
         shell: pwsh
         run: |
           python --version
           cmake --version
+          ninja --version
+          & "$env:ProgramFiles\LLVM\bin\clang-cl.exe" --version
 
           Write-Host "Python:"
           Get-Command python
 
-          Write-Host "MSVC:"
+          Write-Host "Visual Studio (for the SDK and the MSVC STL):"
           & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
             -latest `
             -products * `
@@ -67,30 +78,32 @@ jobs:
         run: |
           call setup.bat
 
+      # Ninja, not MSBuild: CMake's module dependency scanning is best supported
+      # there, and vcvars64 supplies the SDK and library paths clang-cl needs.
       - name: Configure
-        shell: pwsh
+        shell: cmd
         run: |
-          $pythonExe = "${{ steps.python.outputs.python-path }}"
-          $pythonRoot = Split-Path $pythonExe
-
-          Write-Host "Python root: $pythonRoot"
-
-          cmake -S . -B build `
-            -G "Visual Studio 17 2022" `
-            -A x64 `
-            "-DPython3_ROOT_DIR=$pythonRoot"
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VSPATH=%%i
+          call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat"
+          for %%p in ("${{ steps.python.outputs.python-path }}") do set PYROOT=%%~dpp
+          cmake -S . -B build ^
+            -G Ninja ^
+            -DCMAKE_BUILD_TYPE=%CONFIG_WIN% ^
+            -DCMAKE_C_COMPILER="%ProgramFiles%/LLVM/bin/clang-cl.exe" ^
+            -DCMAKE_CXX_COMPILER="%ProgramFiles%/LLVM/bin/clang-cl.exe" ^
+            -DPython3_ROOT_DIR=%PYROOT%
 
       - name: Build
-        shell: pwsh
+        shell: cmd
         run: |
-          cmake --build build `
-            --config $env:CONFIG_WIN `
-            --parallel
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VSPATH=%%i
+          call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat"
+          cmake --build build --parallel
 
       - name: Copy shaders
         shell: pwsh
         run: |
-          $output = "build/bin/$env:CONFIG_WIN"
+          $output = "build/bin"
 
           New-Item `
             -ItemType Directory `
@@ -108,7 +121,7 @@ jobs:
         with:
           name: maszyna-windows-x64-${{ env.CONFIG_WIN }}
           path: |
-            build/bin/${{ env.CONFIG_WIN }}/
+            build/bin/
           if-no-files-found: error
           retention-days: 14
 
@@ -117,18 +130,18 @@ jobs:
         with:
           name: maszyna-windows-x64-symbols-${{ env.CONFIG_WIN }}
           path: |
-            build/pdb/${{ env.CONFIG_WIN }}/*.pdb
-            build/bin/${{ env.CONFIG_WIN }}/*.map
+            build/pdb/*.pdb
+            build/bin/*.map
           if-no-files-found: warn
           retention-days: 14
 
 
   # ============================================================
-  # Linux / GCC
+  # Linux / Clang
   # ============================================================
 
   linux:
-    name: Linux x64 / GCC
+    name: Linux x64 / Clang
     runs-on: ubuntu-24.04
 
     steps:
