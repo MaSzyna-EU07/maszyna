@@ -9,6 +9,19 @@ http://mozilla.org/MPL/2.0/.
 
 //---------------------------------------------------------------------------
 module;
+#include <array>
+#include <chrono>
+#include <cstddef>
+#include <deque>
+#include <limits>
+#include <mutex>
+#include <ostream>
+#include <sstream>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 export module eu07.console.lpt;
 

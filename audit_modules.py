@@ -151,7 +151,26 @@ def template_bodies(purview):
     return out
 
 
-def insert_point(src):
+def insert_includes(src):
+    """Where a new #include belongs.
+
+    In a module unit that is the global module fragment - after `module;` and
+    before the module declaration. Putting it after the declaration would place
+    the include in the purview, attaching those declarations to the module.
+    In an ordinary translation unit it is the top level of the preprocessor,
+    before the first import, never inside a #define's continuation.
+    """
+    decl = MODULE_DECL.search(src)
+    if decl:
+        g = re.search(r'^module;[ \t]*\n', src, re.M)
+        if g:
+            return src[:g.end()], src[g.end():]
+        return src[:decl.start()] + 'module;\n', '\n' + src[decl.start():]
+    lines, at = _plain_insert_point(src)
+    return '\n'.join(lines[:at]) + ('\n' if at else ''), '\n'.join(lines[at:])
+
+
+def _plain_insert_point(src):
     """Top level of the preprocessor, before the first import, never inside a
     #define's continuation."""
     depth, last_include, first_import, i = 0, None, None, 0
@@ -325,17 +344,19 @@ def main():
             print('                  ... i %d wiecej' % (len(v) - 12))
 
     if fix and edits:
+        touched = 0
         for p, (need, bom) in edits.items():
             src, _ = read(p)
-            lines, at = insert_point(src)
             gmf = split_unit(src)[0]
-            add = ['#include <%s>' % h for h in need if '<%s>' % h not in gmf]
+            add = ''.join('#include <%s>\n' % h for h in need
+                          if '<%s>' % h not in gmf)
             if not add:
                 continue
-            lines[at:at] = add
+            head, tail = insert_includes(src)
             open(p, 'w', encoding='utf-8').write(
-                ('﻿' if bom else '') + '\n'.join(lines))
-        print('\nnaprawiono %d plikow' % len(edits))
+                ('﻿' if bom else '') + head + add + tail)
+            touched += 1
+        print('\nnaprawiono %d plikow' % touched)
 
 
 main()
