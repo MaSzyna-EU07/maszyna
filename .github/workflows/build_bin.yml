@@ -24,7 +24,7 @@ env:
 jobs:
 
   # ============================================================
-  # Windows / Clang (clang-cl)
+  # Windows / Clang (GNU driver, MSVC ABI)
   # ============================================================
 
   windows:
@@ -45,9 +45,11 @@ jobs:
           python-version: "3.14"
           architecture: "x64"
 
-      # clang-cl rather than plain clang: it keeps the MSVC ABI, so it links
-      # against the same Windows SDK, vcpkg packages and D3D12 libraries, and
-      # only the front end changes. Pinned to the version the Linux job uses.
+      # clang++ with its GNU driver, not clang-cl: CMake only wires up C++20
+      # module scanning for the GNU frontend variant, and refuses to generate
+      # otherwise. The default target on Windows is still x86_64-pc-windows-msvc,
+      # so the ABI, the Windows SDK, the vcpkg packages and D3D12 are unchanged.
+      # Pinned to the version the Linux job uses.
       - name: Install LLVM and Ninja
         shell: pwsh
         run: |
@@ -60,7 +62,8 @@ jobs:
           python --version
           cmake --version
           ninja --version
-          & "$env:ProgramFiles\LLVM\bin\clang-cl.exe" --version
+          & "$env:ProgramFiles\LLVM\bin\clang++.exe" --version
+          & "$env:ProgramFiles\LLVM\bin\clang-scan-deps.exe" --version
 
           Write-Host "Python:"
           Get-Command python
@@ -79,7 +82,7 @@ jobs:
           call setup.bat
 
       # Ninja, not MSBuild: CMake's module dependency scanning is best supported
-      # there, and vcvars64 supplies the SDK and library paths clang-cl needs.
+      # there, and vcvars64 supplies the SDK and library paths clang needs.
       - name: Configure
         shell: cmd
         run: |
@@ -89,8 +92,9 @@ jobs:
           cmake -S . -B build ^
             -G Ninja ^
             -DCMAKE_BUILD_TYPE=%CONFIG_WIN% ^
-            -DCMAKE_C_COMPILER="%ProgramFiles%/LLVM/bin/clang-cl.exe" ^
-            -DCMAKE_CXX_COMPILER="%ProgramFiles%/LLVM/bin/clang-cl.exe" ^
+            -DCMAKE_C_COMPILER="%ProgramFiles%/LLVM/bin/clang.exe" ^
+            -DCMAKE_CXX_COMPILER="%ProgramFiles%/LLVM/bin/clang++.exe" ^
+            -DCMAKE_RC_COMPILER="%ProgramFiles%/LLVM/bin/llvm-rc.exe" ^
             -DPython3_ROOT_DIR=%PYROOT%
 
       - name: Build

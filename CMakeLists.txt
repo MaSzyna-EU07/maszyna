@@ -445,15 +445,17 @@ set(GLM_INCLUDE_DIR ${GLM_INCLUDE_DIR} "${DEPS_DIR}/glm/")
 configure_file(${CMAKE_SOURCE_DIR}/eu07.rc.in
                ${CMAKE_BINARY_DIR}/eu07.rc @ONLY)
 
-# MSVC is true for clang-cl as well - it targets the same ABI and takes the same
-# command line. Testing CMAKE_CXX_COMPILER_ID instead would silently drop the
-# version resource and the icon from a clang-cl build.
-if (MSVC)
+# Gated on WIN32, not MSVC: CMake only sets MSVC for the MSVC-style driver, and
+# the Windows build uses clang's GNU driver, which needs the version resource
+# and the icon just the same.
+if (WIN32)
     # the Visual Studio generators enable RC on their own; Ninja does not
     enable_language(RC)
     set(SOURCES ${SOURCES} ${CMAKE_BINARY_DIR}/eu07.rc)
     set(SOURCES ${SOURCES} eu07.ico)
-    add_compile_options("/utf-8")
+    if (MSVC)
+        add_compile_options("/utf-8")   # clang's GNU driver already reads UTF-8
+    endif()
 endif()
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
