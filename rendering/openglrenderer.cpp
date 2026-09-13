@@ -2877,7 +2877,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                         // material configuration:
                         // textures...
                         if( Submodel->m_material < 0 ) { // zmienialne skóry
-                            Bind_Material( Submodel->ReplacableSkinId[ -Submodel->m_material ], Submodel );
+                            Bind_Material( TSubModel::ReplacableSkinId[ -Submodel->m_material ], Submodel );
                         }
                         else {
                             // również 0
@@ -2895,7 +2895,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                         ::glColor3fv( glm::value_ptr( pick_color( m_pickcontrolsitems.size() ) ) );
                         // textures...
                         if( Submodel->m_material < 0 ) { // zmienialne skóry
-                            Bind_Material( Submodel->ReplacableSkinId[ -Submodel->m_material ], Submodel );
+                            Bind_Material( TSubModel::ReplacableSkinId[ -Submodel->m_material ], Submodel );
                         }
                         else {
                             // również 0
@@ -3921,7 +3921,7 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
                         // material configuration:
                         // textures...
                         if( Submodel->m_material < 0 ) { // zmienialne skóry
-                            Bind_Material( Submodel->ReplacableSkinId[ -Submodel->m_material ], Submodel );
+                            Bind_Material( TSubModel::ReplacableSkinId[ -Submodel->m_material ], Submodel );
                         }
                         else {
                             // również 0

@@ -2494,8 +2494,8 @@ void accumulate_mesh_bounds(TSubModel const *Submodel, glm::vec3 &Minimum, glm::
 {
 	while (Submodel != nullptr)
 	{
-		auto const &vertices{(Submodel->m_geometry.handle != null_handle ? GfxRenderer->Vertices(Submodel->m_geometry.handle) : Submodel->Vertices)};
-		if (false == vertices.empty())
+		if (auto const &vertices{(Submodel->m_geometry.handle != null_handle ? GfxRenderer->Vertices(Submodel->m_geometry.handle) : Submodel->Vertices)};
+		    false == vertices.empty())
 		{
 			// the transformation chain can still hold a rotation, so the vertices go through it
 			// rather than get taken at their face value
@@ -2551,7 +2551,7 @@ void TModel3d::assign_variant_groups()
   // separate branches drawn in disjoint distance ranges, and grouping them by position is what keeps the
   // object on the same variant no matter which of them is currently on screen
 	std::vector<glm::vec3> grouppositions; // position of each group, indexed by its id
-	auto const groupid = [&grouppositions](TSubModel const *Branch) -> int {
+	auto const groupid = [&grouppositions](TSubModel const *Branch) {
 		auto const position{branch_position(Branch)};
 		for (std::size_t index = 0; index < grouppositions.size(); ++index)
 		{

@@ -512,7 +512,7 @@ std::vector<std::string> deserialize_set(cParser &Input, char const *Break)
 	std::vector<std::string> tokens;
 
 	auto token{Input.getToken<std::string>(true, Break)};
-	std::replace(token.begin(), token.end(), '\\', '/');
+	std::ranges::replace(token, '\\', '/');
 	if (token != "[")
 	{
 		// simple case, single token
