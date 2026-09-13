@@ -16,6 +16,8 @@ namespace simulation {
 
 struct deserializer_state {
 	std::string scenariofile;
+	// the named scenery has no file on disk: the world is empty, so there's nothing to compile to SBT
+	bool blank{ false };
 	cParser input;
 	scene::scratch_data scratchpad;
 	using deserializefunctionbind = std::function<void()>;

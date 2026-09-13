@@ -76,8 +76,16 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
     }
     scene::Groups.create();
 
-	if( false == state->input.ok() )
-		throw invalid_scenery_exception();
+	if( false == state->input.ok() ) {
+		if( false == Global.editor_startup ) {
+			throw invalid_scenery_exception();
+		}
+		// the editor is allowed to work on ground that has no scenery file yet: starting with -editor,
+		// or beginning a new map, names a file which will only exist once it gets saved. an unreadable
+		// scenery means an empty world here, not a failed load
+		WriteLog( "Scenery \"" + Scenariofile + "\" not found, the editor starts on empty ground" );
+		state->blank = true;
+	}
 
 	// prepare deserialization function table
 	// since all methods use the same objects, we can have simple, hard-coded binds or lambdas for the task
@@ -164,6 +172,7 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 
 	if( true == Global.file_binary_terrain
      && false == state->scratchpad.binary.terrain
+	 && false == state->blank
 	 && state->scenariofile != "$.scn" ) {
 		// if we didn't find usable binary version of the scenario files, create them now for future use
 		// as long as the scenario file wasn't rainsted-created base file override
