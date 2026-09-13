@@ -2,9 +2,9 @@ module;
 #include <cmath>
 #include <string>
 #include <vector>
-#include "maj0sted/domain/geometry/turnout.hpp"
 
 module eu07.editor.turnouts;
+import eu07.editor.plan_turnout_geometry;
 
 /*
 This Source Code Form is subject to the
@@ -47,8 +47,8 @@ turnout_preset curved_tangent(std::string name, double crossing_n, double radius
 	auto const alfa{std::atan(1.0 / crossing_n)};
 	auto const tangent{radius * std::tan(0.5 * alfa)};
 	auto const b{back_tangent > 0.0 ? back_tangent : tangent};
-	auto const lead{maj0sted::domain::blade_run_to_offset(radius, 0.0, tip_thickness) - nose};
-	auto const blade{maj0sted::domain::blade_run_to_offset(radius, 0.0, heel_offset) - lead};
+	auto const lead{editor::plan::blade_run_to_offset(radius, 0.0, tip_thickness) - nose};
+	auto const blade{editor::plan::blade_run_to_offset(radius, 0.0, heel_offset) - lead};
 
 	turnout_preset preset{std::move(name), crossing_n, tangent + b, tip_thickness, nose, railtop_width, {}};
 	preset.pieces.push_back({0, lead, radius, radius, 0.0});

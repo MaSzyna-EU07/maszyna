@@ -19,7 +19,7 @@ namespace editor
 {
 
 // one piece of a preset's diverging path, in catalogue order from PR. mirrors
-// maj0sted::editor::TurnoutPieceSpec so this header stays free of the library
+// editor::plan::TurnoutPieceSpec so this header stays free of the library
 struct turnout_preset_piece
 {
 	int part;            // 0 przediglicowy, 1 iglica, 2 luk, 3 krzyzownicowa

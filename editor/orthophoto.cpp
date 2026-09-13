@@ -14,7 +14,6 @@ module;
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include "maj0sted/editor/tile_cache.hpp"
 #include <glad/glad.h>
 #include "stb/stb_image.h"
 #ifdef _WIN32
@@ -26,6 +25,7 @@ module;
 #endif
 
 module eu07.editor.orthophoto;
+import eu07.editor.plan_tilecache;
 import eu07.utilities.logs;
 
 /*
@@ -209,9 +209,9 @@ bool http_get(std::string const &Url, std::vector<std::uint8_t> &Bytes, std::str
 
 } // namespace
 
-orthophoto_source::orthophoto_source(maj0sted::editor::WmsConfig Config, int const Gridzoom, std::string Cachesubdir)
+orthophoto_source::orthophoto_source(editor::plan::WmsConfig Config, int const Gridzoom, std::string Cachesubdir)
     : m_service([&] {
-	      if (Gridzoom >= maj0sted::editor::TileGrid::kCellZoomMin)
+	      if (Gridzoom >= editor::plan::TileGrid::kCellZoomMin)
 	      {
 		      Config.tile_pixels = 512; // coarse cells do not need orto's 1024 px
 	      }
@@ -221,7 +221,7 @@ orthophoto_source::orthophoto_source(maj0sted::editor::WmsConfig Config, int con
 {
 	// the library asks for a URL and expects the answer whenever it arrives; the transfer is queued
 	// here and handed back on the thread that drains it, so the service stays single threaded
-	m_service.set_fetcher([this](std::string const &Url, maj0sted::editor::TileService::DoneFn Done) {
+	m_service.set_fetcher([this](std::string const &Url, editor::plan::TileService::DoneFn Done) {
 		{
 			std::lock_guard<std::mutex> lock(m_mutex);
 			m_queued.push_back({Url, std::move(Done), false, {}, {}});
@@ -291,7 +291,7 @@ void orthophoto_source::worker()
 	}
 }
 
-std::vector<orthophoto_source::ready_tile> orthophoto_source::collect(maj0sted::editor::TileBBox const &View, int const Maxtiles)
+std::vector<orthophoto_source::ready_tile> orthophoto_source::collect(editor::plan::TileBBox const &View, int const Maxtiles)
 {
 	// hand finished transfers to the library here, on the caller's thread
 	std::deque<transfer> arrived;
@@ -311,7 +311,7 @@ std::vector<orthophoto_source::ready_tile> orthophoto_source::collect(maj0sted::
 	// fetch only what fits the budget for the current view. the window is recentred when the
 	// view is larger than the cap, and zoom-to-cursor moves the camera, so the set of keys asked
 	// for changes from frame to frame - that must not decide what is drawn
-	for (auto const &key : maj0sted::editor::TileGrid::tiles_for_view(View, m_gridzoom, Maxtiles))
+	for (auto const &key : editor::plan::TileGrid::tiles_for_view(View, m_gridzoom, Maxtiles))
 	{
 		// a tile kept from an earlier session seeds the cache, so no request goes out for it at all
 		if (false == m_service.has(key))
@@ -320,13 +320,13 @@ std::vector<orthophoto_source::ready_tile> orthophoto_source::collect(maj0sted::
 		}
 
 		auto const status = m_service.request(key);
-		if (status == maj0sted::editor::TileStatus::Failed)
+		if (status == editor::plan::TileStatus::Failed)
 		{
 			// counted once per tile, not once per frame it stays unavailable
 			m_failedkeys.insert(key);
 			continue;
 		}
-		if (status != maj0sted::editor::TileStatus::Ready)
+		if (status != editor::plan::TileStatus::Ready)
 		{
 			continue;
 		}
@@ -342,7 +342,7 @@ std::vector<orthophoto_source::ready_tile> orthophoto_source::collect(maj0sted::
 	// draw every texture we already hold that still covers the view. returning only the fetch
 	// window made tiles blink out during zoom as soon as they fell outside the cap, then blink
 	// back in once the window moved over them again
-	auto const overlaps = [](maj0sted::editor::TileBBox const &Left, maj0sted::editor::TileBBox const &Right) {
+	auto const overlaps = [](editor::plan::TileBBox const &Left, editor::plan::TileBBox const &Right) {
 		return Left.min_x < Right.max_x && Left.max_x > Right.min_x && Left.min_y < Right.max_y && Left.max_y > Right.min_y;
 	};
 
@@ -354,7 +354,7 @@ std::vector<orthophoto_source::ready_tile> orthophoto_source::collect(maj0sted::
 		{
 			continue;
 		}
-		auto const box = maj0sted::editor::TileGrid::bbox(key);
+		auto const box = editor::plan::TileGrid::bbox(key);
 		if (overlaps(box, View))
 		{
 			tiles.push_back({box, texture});
@@ -364,7 +364,7 @@ std::vector<orthophoto_source::ready_tile> orthophoto_source::collect(maj0sted::
 	return tiles;
 }
 
-unsigned int orthophoto_source::upload(maj0sted::editor::TileKey const &Key)
+unsigned int orthophoto_source::upload(editor::plan::TileKey const &Key)
 {
 	auto const *image = m_service.peek(Key);
 	if (image == nullptr || image->bytes.empty())
@@ -397,12 +397,12 @@ unsigned int orthophoto_source::upload(maj0sted::editor::TileKey const &Key)
 	return texture;
 }
 
-std::string orthophoto_source::tile_path(maj0sted::editor::TileKey const &Key) const
+std::string orthophoto_source::tile_path(editor::plan::TileKey const &Key) const
 {
 	return "editor/cache/" + m_cachesubdir + "/" + std::to_string(Key.zoom) + "_" + std::to_string(Key.x) + "_" + std::to_string(Key.y) + ".img";
 }
 
-bool orthophoto_source::load_from_disk(maj0sted::editor::TileKey const &Key)
+bool orthophoto_source::load_from_disk(editor::plan::TileKey const &Key)
 {
 	std::ifstream file(tile_path(Key), std::ios::binary);
 	if (false == file.is_open())
@@ -421,7 +421,7 @@ bool orthophoto_source::load_from_disk(maj0sted::editor::TileKey const &Key)
 	return true;
 }
 
-void orthophoto_source::save_to_disk(maj0sted::editor::TileKey const &Key)
+void orthophoto_source::save_to_disk(editor::plan::TileKey const &Key)
 {
 	auto const *image = m_service.peek(Key);
 	if (image == nullptr || image->bytes.empty())
@@ -484,7 +484,7 @@ unsigned int upload_image(std::vector<std::uint8_t> const &Bytes)
 	return texture;
 }
 
-bool same_box(maj0sted::editor::TileBBox const &Left, maj0sted::editor::TileBBox const &Right)
+bool same_box(editor::plan::TileBBox const &Left, editor::plan::TileBBox const &Right)
 {
 	auto const close = [](double const A, double const B) { return std::abs(A - B) < 1.0; };
 	return close(Left.min_x, Right.min_x) && close(Left.min_y, Right.min_y) && close(Left.max_x, Right.max_x) && close(Left.max_y, Right.max_y);
@@ -492,7 +492,7 @@ bool same_box(maj0sted::editor::TileBBox const &Left, maj0sted::editor::TileBBox
 
 } // namespace
 
-wms_image::wms_image(maj0sted::editor::WmsConfig Config) : m_config(std::move(Config))
+wms_image::wms_image(editor::plan::WmsConfig Config) : m_config(std::move(Config))
 {
 	m_worker = std::thread([this]() { worker(); });
 }
@@ -547,7 +547,7 @@ void wms_image::worker()
 	}
 }
 
-unsigned int wms_image::texture_for(maj0sted::editor::TileBBox const &Box, int const Pixels)
+unsigned int wms_image::texture_for(editor::plan::TileBBox const &Box, int const Pixels)
 {
 	// a finished download becomes the texture on this thread, where the graphics API is safe to touch
 	{
@@ -583,7 +583,7 @@ unsigned int wms_image::texture_for(maj0sted::editor::TileBBox const &Box, int c
 		config.tile_pixels = Pixels;
 		{
 			std::lock_guard<std::mutex> lock(m_mutex);
-			m_url = maj0sted::editor::wms_getmap_url(config, Box);
+			m_url = editor::plan::wms_getmap_url(config, Box);
 			m_haswork = true;
 		}
 		m_loading = true;

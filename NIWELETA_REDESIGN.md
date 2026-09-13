@@ -63,7 +63,7 @@ osobnym, jawnym polem.** Kernel do tego już mamy: `geometry::layout_segment`.
 
 ## 3. Model docelowy
 
-Płasko, w `maj0sted::editor`, Id jako mocne typy.
+Płasko, w `editor::plan`, Id jako mocne typy.
 
 ### 3.1. Odcinek jest bytem
 

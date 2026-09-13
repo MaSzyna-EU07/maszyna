@@ -8,16 +8,17 @@ http://mozilla.org/MPL/2.0/.
 */
 module;
 #include <string>
+#include <variant>
 #include <vector>
 #include "imgui/imgui.h"
-#include "maj0sted/editor/tile_cache.hpp"
-#include "maj0sted/editor/layout.hpp"
-#include "maj0sted/editor/model.hpp"
-#include "maj0sted/editor/render.hpp"
-#include "maj0sted/editor/solution.hpp"
-#include "maj0sted/io/scn_export.hpp"
 
 export module eu07.application.planpanel;
+import eu07.editor.plan_tilecache;
+import eu07.editor.plan_layout;
+import eu07.editor.plan_model;
+import eu07.editor.plan_render;
+import eu07.editor.plan_solution;
+import eu07.editor.plan_scn_export;
 import eu07.application.uilayer;
 import eu07.editor.orthophoto;
 
@@ -25,7 +26,7 @@ export {
 
 // track layout tool. the drawing happens in the viewport, which the tool puts into a top-down
 // orthographic plan view; the panel holds only the controls. none of the geometry is computed here:
-// maj0sted solves the whole document and the panel paints what comes back.
+// the plan library solves the whole document and the panel paints what comes back.
 //
 // a track is a chain of elements, and every one of them says outright what it is: prosta of so many
 // metres, luk of radius R turning so far, krzywa przejsciowa easing to R over so many metres. there
@@ -45,13 +46,13 @@ class plan_panel : public ui_panel
 	void render_contents() override;
 
   private:
-	using Document = maj0sted::editor::Document;
-	using Element = maj0sted::editor::Element;
-	using ElementId = maj0sted::editor::ElementId;
-	using Solution = maj0sted::editor::Solution;
-	using Track = maj0sted::editor::Track;
-	using TrackId = maj0sted::editor::TrackId;
-	using TurnoutId = maj0sted::editor::TurnoutId;
+	using Document = editor::plan::Document;
+	using Element = editor::plan::Element;
+	using ElementId = editor::plan::ElementId;
+	using Solution = editor::plan::Solution;
+	using Track = editor::plan::Track;
+	using TrackId = editor::plan::TrackId;
+	using TurnoutId = editor::plan::TurnoutId;
 
 	// panels
 	void render_toolbar();
@@ -60,7 +61,7 @@ class plan_panel : public ui_panel
 	// joining two tracks into one: the radius a join may bend at, and the button that starts
 	// pointing at the ends to join. everything else about it happens on the map
 	void render_join();
-	void render_turnout_type(maj0sted::editor::TurnoutType &Type_);
+	void render_turnout_type(editor::plan::TurnoutType &Type_);
 	// the catalogue drawing of the chosen type, in its own window: the diverging path piece by
 	// piece, both tracks' rails, and the points a drawing is dimensioned from
 	void render_template_window();
@@ -94,7 +95,7 @@ class plan_panel : public ui_panel
 	// taken off the straight before it - which leaves the track ending on the click before
 	void drop_last_vertex();
 	// appends one element to the end of the current track, exactly as asked for
-	void append_element(maj0sted::editor::Kind const Kind);
+	void append_element(editor::plan::Kind const Kind);
 	void drop_last_element();
 	void delete_selected_element();
 	void place_turnout_at(TrackId const On, double const Wx, double const Wy);
@@ -117,10 +118,10 @@ class plan_panel : public ui_panel
 	bool hit_track_end(ImVec2 const &Mouse, float const Tolerance, TrackId &OutTrack, int &OutEnd) const;
 	// whether that end is loose at all: one that already stands on another track's end is joined
 	// to it, and there is nothing to join twice
-	bool loose_end(maj0sted::editor::SolvedTrack const &Track_, int const End_) const;
+	bool loose_end(editor::plan::SolvedTrack const &Track_, int const End_) const;
 	// how an end reads for a join laid out of it or into it: one facing the wrong way for that
 	// is taken backwards, which is what turning the track round would do to it anyway
-	static maj0sted::domain::geometry::Pose join_pose(maj0sted::editor::SolvedTrack const &Track_, int const End_, bool const Leaving_);
+	static editor::plan::geometry::Pose join_pose(editor::plan::SolvedTrack const &Track_, int const End_, bool const Leaving_);
 	// lays the join and leaves one track, saying what it cost
 	void join_ends(TrackId const A, int const Aend, TrackId const B, int const Bend);
 	// nearest station along a solved track's axis, for placing and sliding turnouts
@@ -130,7 +131,7 @@ class plan_panel : public ui_panel
 	// members
 	Document m_document;
 	Solution m_solution;
-	std::vector<maj0sted::editor::PlanPolyline> m_rails;
+	std::vector<editor::plan::PlanPolyline> m_rails;
 
 	TrackId m_track{};
 	ElementId m_sel_element{};
@@ -210,10 +211,10 @@ class plan_panel : public ui_panel
 	double m_mapviewy{0.0};
 	double m_mapscale{0.0};
 
-	editor::wms_image m_topomap{maj0sted::editor::WmsConfig::geoportal_topo()};
+	editor::wms_image m_topomap{editor::plan::WmsConfig::geoportal_topo()};
 	editor::orthophoto_source m_ortho;
 	// 1 km topo cells for views wider than a kilometre (orto's 100 m grid is too dense there)
-	editor::orthophoto_source m_topo{maj0sted::editor::WmsConfig::geoportal_topo(), 1000, "topo"};
+	editor::orthophoto_source m_topo{editor::plan::WmsConfig::geoportal_topo(), 1000, "topo"};
 	bool m_showortho{true};
 };
 

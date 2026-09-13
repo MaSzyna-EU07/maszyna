@@ -1176,6 +1176,13 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 
 		std::string token{Argv[i]};
 
+		// a switch may be written with one dash or two: both spellings are common on the command
+		// line and neither says anything different, so the second dash is simply dropped here
+		if (token.size() > 2 && token.compare(0, 2, "--") == 0)
+		{
+			token.erase(0, 1);
+		}
+
 		if (token == "-s")
 		{
 			if (i + 1 < Argc)
@@ -1199,7 +1206,8 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		{
 			std::cout << "usage: " << std::string(Argv[0]) << " [-s sceneryfilepath]"
 			          << " [-v vehiclename]"
-			          << " [-editor]" << std::endl;
+			          << " [-editor]"
+			          << "  (every switch also takes a double dash: --editor)" << std::endl;
 			return -1;
 		}
 	}

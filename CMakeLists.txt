@@ -199,6 +199,18 @@ set(SOURCES
 "editor/polandmap.cpp"
 "editor/turnouts.cpp"
 "editor/orthophoto.cpp"
+"editor/plan_chain.cpp"
+"editor/plan_document_io.cpp"
+"editor/plan_join.cpp"
+"editor/plan_layout.cpp"
+"editor/plan_model.cpp"
+"editor/plan_rail_renderer.cpp"
+"editor/plan_render.cpp"
+"editor/plan_scn_export.cpp"
+"editor/plan_sketch.cpp"
+"editor/plan_solution.cpp"
+"editor/plan_tilecache.cpp"
+"editor/plan_turnout_geometry.cpp"
 "editor/editorTerrain.cpp"
 "editor/editorTerrainStreamer.cpp"
 "application/editormode.cpp"
@@ -633,9 +645,6 @@ target_link_libraries(${PROJECT_NAME} nlohmann_json::nlohmann_json)
 target_include_directories(${PROJECT_NAME} PRIVATE ${NLOHMANN_JSON_INCLUDE_INSTALL_DIR})
 
 # track layout domain model used by the editor; plain C++20, no dependencies of its own
-add_subdirectory(maj0sted)
-set_target_properties(maj0sted PROPERTIES FOLDER "libraries")
-target_link_libraries(${PROJECT_NAME} maj0sted::maj0sted)
 
 
 
@@ -716,6 +725,8 @@ endif()
 # copied off it rather than restated; this has to happen after all the
 # third-party wiring above and before betterRenderer is added, or the mirrored
 # link list would point back at betterRenderer and make the dependency circular.
+add_subdirectory(editor/tests)
+
 add_library(eu07_modules STATIC)
 
 get_target_property(EU07_INCLUDES ${PROJECT_NAME} INCLUDE_DIRECTORIES)

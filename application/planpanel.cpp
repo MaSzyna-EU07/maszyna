@@ -6,24 +6,25 @@ module;
 #include <limits>
 #include <numbers>
 #include <string>
+#include <variant>
 #include <vector>
 #include "imgui/imgui.h"
 #include "utilities/Globals_macros.h"
-#include "maj0sted/editor/layout.hpp"
-#include "maj0sted/editor/model.hpp"
-#include "maj0sted/editor/render.hpp"
-#include "maj0sted/editor/solution.hpp"
-#include "maj0sted/editor/tile_cache.hpp"
-#include "maj0sted/io/scn_export.hpp"
-#include "maj0sted/editor/join.hpp"
-#include "maj0sted/editor/sketch.hpp"
-#include "maj0sted/io/document_io.hpp"
 #if !defined(_WIN32)
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
 
 module eu07.application.planpanel;
+import eu07.editor.plan_layout;
+import eu07.editor.plan_model;
+import eu07.editor.plan_render;
+import eu07.editor.plan_solution;
+import eu07.editor.plan_tilecache;
+import eu07.editor.plan_scn_export;
+import eu07.editor.plan_join;
+import eu07.editor.plan_sketch;
+import eu07.editor.plan_document_io;
 import eu07.glm;
 import eu07.utilities.globals;
 import eu07.utilities.utilities;
@@ -44,13 +45,13 @@ http://mozilla.org/MPL/2.0/.
 namespace
 {
 
-using maj0sted::editor::Element;
-using maj0sted::editor::ElementId;
-using maj0sted::editor::Free;
-using maj0sted::editor::Kind;
-using maj0sted::editor::Parallel;
-using maj0sted::editor::TrackId;
-using maj0sted::editor::TurnoutId;
+using editor::plan::Element;
+using editor::plan::ElementId;
+using editor::plan::Free;
+using editor::plan::Kind;
+using editor::plan::Parallel;
+using editor::plan::TrackId;
+using editor::plan::TurnoutId;
 
 // the plan works in EPSG:2180, the scenery in the engine's world space around its own zero. the
 // georeference says which point of the projection that zero stands for; a fictional scenery leaves
@@ -286,7 +287,7 @@ editor::turnout_preset const *find_preset(std::string const &Name_)
 // the catalogue figure written onto a document's own type. a document keeps its own copy of the
 // catalogue - that is what lets an instance name its type and nothing more - so this is the one
 // place the preset's numbers cross over, and it has to carry all of them
-void adopt_preset(editor::turnout_preset const &Preset_, maj0sted::editor::TurnoutType &Type_)
+void adopt_preset(editor::turnout_preset const &Preset_, editor::plan::TurnoutType &Type_)
 {
 	Type_.name = Preset_.name;
 	Type_.crossing_n = Preset_.crossing_n;
@@ -298,7 +299,7 @@ void adopt_preset(editor::turnout_preset const &Preset_, maj0sted::editor::Turno
 	for (auto const &piece : Preset_.pieces)
 	{
 		Type_.pieces.push_back(
-		    maj0sted::editor::TurnoutPieceSpec{piece.part, piece.length, piece.radius_start, piece.radius_end, piece.turn_in});
+		    editor::plan::TurnoutPieceSpec{piece.part, piece.length, piece.radius_start, piece.radius_end, piece.turn_in});
 	}
 }
 
@@ -436,7 +437,7 @@ void plan_panel::seed_catalogue()
 		                           [&](auto const &Type_) { return Type_.name == preset.name; })};
 		if (existing == m_document.turnout_types.end())
 		{
-			maj0sted::editor::TurnoutType type;
+			editor::plan::TurnoutType type;
 			adopt_preset(preset, type);
 			m_document.turnout_types.push_back(std::move(type));
 			continue;
@@ -460,24 +461,24 @@ void plan_panel::seed_catalogue()
 
 void plan_panel::solve()
 {
-	m_solution = maj0sted::editor::solve(m_document);
-	m_rails = maj0sted::editor::render_rails(m_solution);
+	m_solution = editor::plan::solve(m_document);
+	m_rails = editor::plan::render_rails(m_solution);
 }
 
 plan_panel::Track *plan_panel::current_track()
 {
-	return maj0sted::editor::find_track(m_document, m_track);
+	return editor::plan::find_track(m_document, m_track);
 }
 
 plan_panel::Track const *plan_panel::current_track() const
 {
-	return maj0sted::editor::find_track(m_document, m_track);
+	return editor::plan::find_track(m_document, m_track);
 }
 
 void plan_panel::new_track()
 {
 	Track track;
-	track.id = maj0sted::editor::mint_track(m_document);
+	track.id = editor::plan::mint_track(m_document);
 	track.name = "tor " + std::to_string(m_document.tracks.size() + 1);
 	m_document.tracks.push_back(track);
 	m_track = track.id;
@@ -548,8 +549,8 @@ void plan_panel::append_point_to(double const X, double const Y)
 			m_status = "za krotka prosta";
 			return;
 		}
-		track->anchor = maj0sted::editor::AtPose{m_startx, m_starty, std::atan2(dx, dy)};
-		track->elements.push_back(maj0sted::editor::make_line(m_document, length));
+		track->anchor = editor::plan::AtPose{m_startx, m_starty, std::atan2(dx, dy)};
+		track->elements.push_back(editor::plan::make_line(m_document, length));
 		m_pending = false;
 		solve();
 		m_status.clear();
@@ -557,7 +558,7 @@ void plan_panel::append_point_to(double const X, double const Y)
 	}
 
 	// the track ends on the last click, so that end is the corner this one turns at
-	auto const *solved{maj0sted::editor::find_track(m_solution, track->id)};
+	auto const *solved{editor::plan::find_track(m_solution, track->id)};
 	if (solved == nullptr || solved->elements.empty())
 	{
 		m_status = "tor nie jest polozony - popraw najpierw to, co nie wyszlo";
@@ -574,7 +575,7 @@ void plan_panel::append_point_to(double const X, double const Y)
 		return;
 	}
 
-	auto const corner{maj0sted::editor::fit_corner(corner_pose.hx, corner_pose.hy, dx / reach, dy / reach, m_corner_radius)};
+	auto const corner{editor::plan::fit_corner(corner_pose.hx, corner_pose.hy, dx / reach, dy / reach, m_corner_radius)};
 	if (false == corner.ok)
 	{
 		// straight on: nothing to round. two straights end to end are one straight, so the one
@@ -601,8 +602,8 @@ void plan_panel::append_point_to(double const X, double const Y)
 	}
 
 	previous.length -= corner.tangent;
-	track->elements.push_back(maj0sted::editor::make_arc(m_document, m_corner_radius, corner.hand, corner.arc_length));
-	track->elements.push_back(maj0sted::editor::make_line(m_document, reach - corner.tangent));
+	track->elements.push_back(editor::plan::make_arc(m_document, m_corner_radius, corner.hand, corner.arc_length));
+	track->elements.push_back(editor::plan::make_line(m_document, reach - corner.tangent));
 	solve();
 	m_status.clear();
 }
@@ -659,7 +660,7 @@ void plan_panel::append_element(Kind const Kind_)
 	}
 
 	Element element;
-	element.id = maj0sted::editor::mint_element(m_document);
+	element.id = editor::plan::mint_element(m_document);
 	element.kind = Kind_;
 	element.radius = Kind_ == Kind::Line ? 0.0 : m_new_radius;
 	element.hand = Kind_ == Kind::Line ? 0 : m_new_hand;
@@ -739,33 +740,33 @@ bool plan_panel::refit_current_track(std::string &Why)
 	auto *track{current_track()};
 	// the solution still holds the geometry from before the change, which is exactly what the
 	// straights are supposed to go on standing on
-	auto const *solved{maj0sted::editor::find_track(m_solution, m_track)};
+	auto const *solved{editor::plan::find_track(m_solution, m_track)};
 	if (track == nullptr || solved == nullptr)
 	{
 		Why = "tor nie jest polozony";
 		return false;
 	}
 
-	maj0sted::editor::Skeleton skeleton;
-	if (false == maj0sted::editor::skeleton_of(*track, *solved, skeleton, Why))
+	editor::plan::Skeleton skeleton;
+	if (false == editor::plan::skeleton_of(*track, *solved, skeleton, Why))
 	{
 		return false;
 	}
-	return maj0sted::editor::lay_along_skeleton(*track, skeleton, Why);
+	return editor::plan::lay_along_skeleton(*track, skeleton, Why);
 }
 
 void plan_panel::drag_straight_to(double const X, double const Y)
 {
 	auto *track{current_track()};
-	auto const *solved{maj0sted::editor::find_track(m_solution, m_track)};
+	auto const *solved{editor::plan::find_track(m_solution, m_track)};
 	if (track == nullptr || solved == nullptr || m_drag_index >= track->elements.size())
 	{
 		return;
 	}
 
-	maj0sted::editor::Skeleton skeleton;
+	editor::plan::Skeleton skeleton;
 	std::string why;
-	if (false == maj0sted::editor::skeleton_of(*track, *solved, skeleton, why))
+	if (false == editor::plan::skeleton_of(*track, *solved, skeleton, why))
 	{
 		m_status = why;
 		return;
@@ -818,18 +819,18 @@ void plan_panel::drag_straight_to(double const X, double const Y)
 
 	// nothing is written until the whole chain works out, so a bad drag leaves the track alone
 	Track candidate{*track};
-	if (false == maj0sted::editor::lay_along_skeleton(candidate, skeleton, why))
+	if (false == editor::plan::lay_along_skeleton(candidate, skeleton, why))
 	{
 		m_status = why;
 		return;
 	}
 	// the chain laying out is not enough: shortening a straight can pull it out from under a rozjazd
 	// standing on it, and a rozjazd half on an arc is not a rozjazd. the drag stops at that instead
-	auto const off_straight{[](maj0sted::editor::Solution const &Solution_) {
+	auto const off_straight{[](editor::plan::Solution const &Solution_) {
 		std::size_t count{0};
 		for (auto const &diagnostic : Solution_.diagnostics)
 		{
-			count += diagnostic.code == maj0sted::editor::Code::StationOffTrack ? 1 : 0;
+			count += diagnostic.code == editor::plan::Code::StationOffTrack ? 1 : 0;
 		}
 		return count;
 	}};
@@ -842,7 +843,7 @@ void plan_panel::drag_straight_to(double const X, double const Y)
 	{
 		for (auto const &diagnostic : m_solution.diagnostics)
 		{
-			if (diagnostic.code == maj0sted::editor::Code::StationOffTrack)
+			if (diagnostic.code == editor::plan::Code::StationOffTrack)
 			{
 				m_status = "dalej nie: " + diagnostic.text;
 				break;
@@ -870,8 +871,8 @@ void plan_panel::place_turnout_at(TrackId const On, double const Wx, double cons
 	}
 	auto const type{static_cast<std::size_t>(std::clamp(m_turnout_type, 0, static_cast<int>(m_document.turnout_types.size()) - 1))};
 
-	maj0sted::editor::TurnoutPlacement placement;
-	placement.id = maj0sted::editor::mint_turnout(m_document);
+	editor::plan::TurnoutPlacement placement;
+	placement.id = editor::plan::mint_turnout(m_document);
 	placement.type = m_document.turnout_types[type].name;
 	placement.on = On;
 	placement.station = station;
@@ -880,9 +881,9 @@ void plan_panel::place_turnout_at(TrackId const On, double const Wx, double cons
 
 	// a switch is worth nothing without somewhere for the branch to go, so one starts at its frog
 	Track branch;
-	branch.id = maj0sted::editor::mint_track(m_document);
+	branch.id = editor::plan::mint_track(m_document);
 	branch.name = "odnoga " + std::to_string(m_document.tracks.size() + 1);
-	branch.anchor = maj0sted::editor::AtPort{placement.id, maj0sted::editor::Port::Frog};
+	branch.anchor = editor::plan::AtPort{placement.id, editor::plan::Port::Frog};
 	m_document.tracks.push_back(branch);
 
 	m_track = branch.id;
@@ -899,7 +900,7 @@ void plan_panel::place_turnout_at(TrackId const On, double const Wx, double cons
 
 bool plan_panel::hit_straight_end(ImVec2 const &Mouse, std::size_t &OutIndex, int &OutEnd) const
 {
-	auto const *solved{maj0sted::editor::find_track(m_solution, m_track)};
+	auto const *solved{editor::plan::find_track(m_solution, m_track)};
 	auto const *track{current_track()};
 	if (solved == nullptr || track == nullptr)
 	{
@@ -916,7 +917,7 @@ bool plan_panel::hit_straight_end(ImVec2 const &Mouse, std::size_t &OutIndex, in
 			continue;
 		}
 		// a branch starts on its turnout's frog and cannot be pulled off it
-		auto const pinned{i == 0 && false == std::holds_alternative<maj0sted::editor::AtPose>(track->anchor)};
+		auto const pinned{i == 0 && false == std::holds_alternative<editor::plan::AtPose>(track->anchor)};
 		for (int end = 0; end < 2; ++end)
 		{
 			if (end == 0 && pinned)
@@ -1007,7 +1008,7 @@ bool plan_panel::hit_turnout(ImVec2 const &Mouse, TurnoutId &OutTurnout) const
 
 bool plan_panel::station_on(TrackId const Track_, double const Wx, double const Wy, double &OutStation) const
 {
-	auto const *track{maj0sted::editor::find_track(m_solution, Track_)};
+	auto const *track{editor::plan::find_track(m_solution, Track_)};
 	if (track == nullptr || track->centreline.size() < 2)
 	{
 		return false;
@@ -1171,7 +1172,7 @@ void plan_panel::handle_scene()
 		int end{0};
 		if (hit_straight_end(mouse, index, end))
 		{
-			auto const *solved{maj0sted::editor::find_track(m_solution, m_track)};
+			auto const *solved{editor::plan::find_track(m_solution, m_track)};
 			auto const *track{current_track()};
 			if (solved != nullptr && index < solved->elements.size())
 			{
@@ -1183,7 +1184,7 @@ void plan_panel::handle_scene()
 				m_drag_end = end;
 				m_dragging_straight = true;
 				m_sel_element = track->elements[index].id;
-				if (track != nullptr && std::holds_alternative<maj0sted::editor::Parallel>(track->elements[index].hold))
+				if (track != nullptr && std::holds_alternative<editor::plan::Parallel>(track->elements[index].hold))
 				{
 					m_status = "ten odcinek trzyma rownoleglosc - po puszczeniu tor i tak zostanie przystawiony";
 				}
@@ -1223,7 +1224,7 @@ void plan_panel::handle_scene()
 		{
 			m_sel_element = element;
 			m_track = track;
-			auto const *chosen{maj0sted::editor::find_track(m_document, track)};
+			auto const *chosen{editor::plan::find_track(m_document, track)};
 			if (chosen != nullptr)
 			{
 				std::snprintf(m_namebuf, sizeof(m_namebuf), "%s", chosen->name.c_str());
@@ -1243,7 +1244,7 @@ void plan_panel::handle_scene()
 
 	if (ImGui::IsMouseDown(0) && m_dragging_turnout && m_sel_turnout != TurnoutId::none)
 	{
-		auto *placement{maj0sted::editor::find_turnout(m_document, m_sel_turnout)};
+		auto *placement{editor::plan::find_turnout(m_document, m_sel_turnout)};
 		if (placement != nullptr)
 		{
 			double station{0.0};
@@ -1267,7 +1268,7 @@ void plan_panel::handle_scene()
 		if (track != TrackId::none)
 		{
 			m_track = track;
-			auto const *chosen{maj0sted::editor::find_track(m_document, track)};
+			auto const *chosen{editor::plan::find_track(m_document, track)};
 			if (chosen != nullptr)
 			{
 				std::snprintf(m_namebuf, sizeof(m_namebuf), "%s", chosen->name.c_str());
@@ -1295,9 +1296,9 @@ void plan_panel::draw_on_scene()
 		auto const display{ImGui::GetIO().DisplaySize};
 		auto const halfheight{static_cast<double>(Global.editor_ortho_extent)};
 		auto const halfwidth{halfheight * std::max(1.0f, display.x) / std::max(1.0f, display.y)};
-		maj0sted::editor::TileBBox const view{planx - halfwidth, plany - halfheight, planx + halfwidth, plany + halfheight};
+		editor::plan::TileBBox const view{planx - halfwidth, plany - halfheight, planx + halfwidth, plany + halfheight};
 
-		auto const draw_box = [&](maj0sted::editor::TileBBox const &Box, unsigned int const Texture) {
+		auto const draw_box = [&](editor::plan::TileBBox const &Box, unsigned int const Texture) {
 			ImVec2 corners[4];
 			auto const ok = world_to_screen(plan_to_world(Box.min_x, Box.max_y), corners[0]) && world_to_screen(plan_to_world(Box.max_x, Box.max_y), corners[1]) &&
 			                world_to_screen(plan_to_world(Box.max_x, Box.min_y), corners[2]) && world_to_screen(plan_to_world(Box.min_x, Box.min_y), corners[3]);
@@ -1399,7 +1400,7 @@ void plan_panel::draw_on_scene()
 		// the points that sit on the straight - PR, the blade tip and the koniec rozjazdu -
 		// are drawn the way a catalogue drawing marks them: a tick across the track, not a
 		// dot lost among the rails the turnout runs along
-		auto const tick{[&](maj0sted::editor::TurnoutMark const &Mark_, ImU32 const Colour_, float const Half_) {
+		auto const tick{[&](editor::plan::TurnoutMark const &Mark_, ImU32 const Colour_, float const Half_) {
 			ImVec2 centre;
 			if (false == world_to_screen(plan_to_world(Mark_.x, Mark_.y), centre))
 			{
@@ -1536,7 +1537,7 @@ void plan_panel::draw_on_scene()
 	// the ends of the edited track's straights, while ctrl says they are what you are after
 	if (ImGui::GetIO().KeyCtrl)
 	{
-		auto const *solved{maj0sted::editor::find_track(m_solution, m_track)};
+		auto const *solved{editor::plan::find_track(m_solution, m_track)};
 		auto const *track{current_track()};
 		if (solved != nullptr && track != nullptr)
 		{
@@ -1546,7 +1547,7 @@ void plan_panel::draw_on_scene()
 				{
 					continue;
 				}
-				auto const pinned{i == 0 && false == std::holds_alternative<maj0sted::editor::AtPose>(track->anchor)};
+				auto const pinned{i == 0 && false == std::holds_alternative<editor::plan::AtPose>(track->anchor)};
 				for (int end = 0; end < 2; ++end)
 				{
 					if (end == 0 && pinned)
@@ -1643,25 +1644,25 @@ void plan_panel::draw_on_scene()
 		// left the way it came, and the arriving end reads the other way about
 		if (m_pick_join == 2 && over && hovered != m_join_first)
 		{
-			auto const *head{maj0sted::editor::find_track(m_solution, m_join_first)};
-			auto const *tail{maj0sted::editor::find_track(m_solution, hovered)};
+			auto const *head{editor::plan::find_track(m_solution, m_join_first)};
+			auto const *tail{editor::plan::find_track(m_solution, hovered)};
 			if (head != nullptr && tail != nullptr)
 			{
 				auto const leaving{join_pose(*head, m_join_first_end, true)};
 				auto const arriving{join_pose(*tail, hovered_end, false)};
-				maj0sted::editor::JoinSettings settings;
+				editor::plan::JoinSettings settings;
 				settings.radius = m_join_radius;
-				auto const plan{maj0sted::editor::plan_join(leaving, arriving, settings)};
+				auto const plan{editor::plan::plan_join(leaving, arriving, settings)};
 
 				std::string label;
 				if (plan.ok)
 				{
-					std::vector<maj0sted::domain::geometry::XY> points;
+					std::vector<editor::plan::geometry::XY> points;
 					auto walker{leaving};
 					for (auto const &element : plan.elements)
 					{
 						auto const k{element.kind == Kind::Line || element.radius <= 0.0 ? 0.0 : element.hand / element.radius};
-						walker = maj0sted::domain::geometry::layout_segment(k, k, element.length, walker, &points);
+						walker = editor::plan::geometry::layout_segment(k, k, element.length, walker, &points);
 					}
 					std::vector<ImVec2> line;
 					line.reserve(points.size());
@@ -1677,7 +1678,7 @@ void plan_panel::draw_on_scene()
 					{
 						dashed_polyline(drawlist, line, IM_COL32(120, 255, 160, 235), 2.5f);
 					}
-					label = maj0sted::editor::join_kind_name(plan.kind);
+					label = editor::plan::join_kind_name(plan.kind);
 					auto laid{0.0};
 					for (auto const &element : plan.elements)
 					{
@@ -1872,10 +1873,10 @@ void plan_panel::render_join()
 
 void plan_panel::join_ends(TrackId const A, int const Aend, TrackId const B, int const Bend)
 {
-	maj0sted::editor::JoinSettings settings;
+	editor::plan::JoinSettings settings;
 	settings.radius = m_join_radius;
 
-	auto const report{maj0sted::editor::join_ends(m_document, m_solution, A, Aend, B, Bend, settings)};
+	auto const report{editor::plan::join_ends(m_document, m_solution, A, Aend, B, Bend, settings)};
 	if (false == report.ok)
 	{
 		m_status = report.why;
@@ -1884,16 +1885,16 @@ void plan_panel::join_ends(TrackId const A, int const Aend, TrackId const B, int
 
 	// whichever track was left standing is the one to select afterwards, and it is not
 	// always the first clicked - the other one may have been the only one that could turn
-	auto const survivor{maj0sted::editor::find_track(m_document, A) != nullptr ? A : B};
+	auto const survivor{editor::plan::find_track(m_document, A) != nullptr ? A : B};
 
 	char status[256];
-	std::snprintf(status, sizeof(status), "polaczone: %s, %d odcinkow zlanych w jeden, %d rozjazdow przeniesionych%s", maj0sted::editor::join_kind_name(report.join.kind), report.fused,
+	std::snprintf(status, sizeof(status), "polaczone: %s, %d odcinkow zlanych w jeden, %d rozjazdow przeniesionych%s", editor::plan::join_kind_name(report.join.kind), report.fused,
 	              report.turnouts, report.reversed ? ", jeden tor czytany od drugiego konca" : "");
 	m_status = status;
 	m_track = survivor;
 	m_pick_join = 0;
 	m_join_first = TrackId::none;
-	auto const *joined{maj0sted::editor::find_track(m_document, survivor)};
+	auto const *joined{editor::plan::find_track(m_document, survivor)};
 	if (joined != nullptr)
 	{
 		std::snprintf(m_namebuf, sizeof(m_namebuf), "%s", joined->name.c_str());
@@ -1902,7 +1903,7 @@ void plan_panel::join_ends(TrackId const A, int const Aend, TrackId const B, int
 	solve();
 }
 
-maj0sted::domain::geometry::Pose plan_panel::join_pose(maj0sted::editor::SolvedTrack const &Track_, int const End_, bool const Leaving_)
+editor::plan::geometry::Pose plan_panel::join_pose(editor::plan::SolvedTrack const &Track_, int const End_, bool const Leaving_)
 {
 	auto pose{End_ == 1 ? Track_.end : Track_.start};
 	// what is laid runs out of one end and into the other, so an end that points the
@@ -1916,7 +1917,7 @@ maj0sted::domain::geometry::Pose plan_panel::join_pose(maj0sted::editor::SolvedT
 	return pose;
 }
 
-bool plan_panel::loose_end(maj0sted::editor::SolvedTrack const &Track_, int const End_) const
+bool plan_panel::loose_end(editor::plan::SolvedTrack const &Track_, int const End_) const
 {
 	if (Track_.elements.empty())
 	{
@@ -1925,8 +1926,8 @@ bool plan_panel::loose_end(maj0sted::editor::SolvedTrack const &Track_, int cons
 	if (End_ == 0)
 	{
 		// a track hanging on a turnout's port starts on the frog, and that is not a loose end
-		auto const *authored{maj0sted::editor::find_track(m_document, Track_.id)};
-		if (authored == nullptr || false == std::holds_alternative<maj0sted::editor::AtPose>(authored->anchor))
+		auto const *authored{editor::plan::find_track(m_document, Track_.id)};
+		if (authored == nullptr || false == std::holds_alternative<editor::plan::AtPose>(authored->anchor))
 		{
 			return false;
 		}
@@ -2050,7 +2051,7 @@ void plan_panel::render_elements()
 	// and to nothing else, so the track is re-laid along the lines its straights already stood on.
 	// a change of length is what it says it is: the element gets longer, and what follows moves
 	auto refit{false};
-	auto const *solved{maj0sted::editor::find_track(m_solution, track->id)};
+	auto const *solved{editor::plan::find_track(m_solution, track->id)};
 
 	for (std::size_t i = 0; i < track->elements.size(); ++i)
 	{
@@ -2111,7 +2112,7 @@ void plan_panel::render_elements()
 				ImGui::SetNextItemWidth(120.0f);
 				if (ImGui::InputDouble(element.kind == Kind::Clothoid ? "R na koncu [m]" : "promien [m]", &element.radius, 10.0, 100.0, "%.2f"))
 				{
-					maj0sted::editor::sync_joint(*track, i);
+					editor::plan::sync_joint(*track, i);
 					dirty = true;
 					refit = true;
 				}
@@ -2124,7 +2125,7 @@ void plan_panel::render_elements()
 				if (ImGui::Combo("skret", &hand, "w lewo\0w prawo\0"))
 				{
 					element.hand = hand == 0 ? 1 : -1;
-					maj0sted::editor::sync_joint(*track, i);
+					editor::plan::sync_joint(*track, i);
 					dirty = true;
 					refit = true;
 				}
@@ -2191,7 +2192,7 @@ void plan_panel::render_elements()
 // prosta krzyzownicowa, in the order they are laid from PR. every length is the catalogue's -
 // nothing here is fitted, so the skos and the catalogue length are checked against what the list
 // works out to and the difference is said out loud
-void plan_panel::render_turnout_type(maj0sted::editor::TurnoutType &Type_)
+void plan_panel::render_turnout_type(editor::plan::TurnoutType &Type_)
 {
 	auto dirty{false};
 
@@ -2290,7 +2291,7 @@ void plan_panel::render_turnout_type(maj0sted::editor::TurnoutType &Type_)
 	}
 	if (ImGui::SmallButton("dodaj odcinek"))
 	{
-		Type_.pieces.push_back(maj0sted::editor::TurnoutPieceSpec{2, 1.0, 0.0, 0.0, 0.0});
+		Type_.pieces.push_back(editor::plan::TurnoutPieceSpec{2, 1.0, 0.0, 0.0, 0.0});
 		m_sel_piece = static_cast<int>(Type_.pieces.size()) - 1;
 		dirty = true;
 	}
@@ -2319,7 +2320,7 @@ void plan_panel::render_turnout_type(maj0sted::editor::TurnoutType &Type_)
 		dirty = true;
 	}
 
-	auto const laid{maj0sted::domain::lay_turnout(maj0sted::domain::geometry::Pose{0.0, 0.0, 1.0, 0.0}, maj0sted::editor::to_domain(Type_, 1))};
+	auto const laid{editor::plan::lay_turnout(editor::plan::geometry::Pose{0.0, 0.0, 1.0, 0.0}, editor::plan::to_domain(Type_, 1))};
 	if (false == laid.valid)
 	{
 		ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.55f, 1.0f), "lista nie da sie polozyc: dlugosci > 0, promienie >= 0");
@@ -2370,9 +2371,9 @@ void plan_panel::render_template_window()
 
 	m_turnout_type = std::clamp(m_turnout_type, 0, static_cast<int>(m_document.turnout_types.size()) - 1);
 	auto const &type{m_document.turnout_types[static_cast<std::size_t>(m_turnout_type)]};
-	auto const start{maj0sted::domain::geometry::Pose{0.0, 0.0, 1.0, 0.0}};
+	auto const start{editor::plan::geometry::Pose{0.0, 0.0, 1.0, 0.0}};
 	auto const bend{m_tpl_bend_radius > 1.0 ? (m_tpl_bend_hand == 0 ? 1.0 : -1.0) / m_tpl_bend_radius : 0.0};
-	auto const laid{maj0sted::domain::lay_turnout(start, maj0sted::editor::to_domain(type, 1), bend)};
+	auto const laid{editor::plan::lay_turnout(start, editor::plan::to_domain(type, 1), bend)};
 	if (false == laid.valid)
 	{
 		ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.55f, 1.0f), bend != 0.0 ? "typu \"%s\" nie da sie wygiac na taki luk" : "typ \"%s\" nie da sie polozyc",
@@ -2469,11 +2470,11 @@ void plan_panel::render_template_window()
 	drawlist->PushClipRect(origin, ImVec2(origin.x + w, origin.y + h), true);
 	drawlist->AddRectFilled(origin, ImVec2(origin.x + w, origin.y + h), IM_COL32(16, 20, 26, 255));
 
-	auto const half{maj0sted::domain::kHalfGauge};
+	auto const half{editor::plan::kHalfGauge};
 
 	// the tor zasadniczy, and the opornica the blade lies against. bent, it is an arc like any other,
 	// so it is walked rather than ruled
-	auto const through_at{[&](double const Station_) { return maj0sted::domain::geometry::layout_segment(bend, bend, Station_, start, nullptr); }};
+	auto const through_at{[&](double const Station_) { return editor::plan::geometry::layout_segment(bend, bend, Station_, start, nullptr); }};
 	auto const through_line{[&](double const From_, double const To_, double const Offset_) {
 		auto const steps{bend == 0.0 ? 1 : 96};
 		std::vector<ImVec2> line;
@@ -2505,7 +2506,7 @@ void plan_panel::render_template_window()
 	// dziob, not the arc. from A on the blade lies on the arc and the line goes solid
 	static ImU32 const part_colour[]{IM_COL32(150, 175, 210, 255), IM_COL32(120, 235, 255, 255), IM_COL32(240, 240, 240, 255), IM_COL32(255, 200, 110, 255)};
 	auto const hand{laid.frog.y >= 0.0 ? 1 : -1};
-	auto const rail_line{[&](std::vector<maj0sted::domain::geometry::XY> const &Points_, int const Side_) {
+	auto const rail_line{[&](std::vector<editor::plan::geometry::XY> const &Points_, int const Side_) {
 		std::vector<ImVec2> rail;
 		rail.reserve(Points_.size());
 		for (std::size_t i = 0; i < Points_.size(); ++i)
@@ -2526,8 +2527,8 @@ void plan_panel::render_template_window()
 
 	// the sampling step is metres and the dziob is centimetres, so the two stretches have to part on
 	// the exact distance rather than on whichever sample happens to fall nearest it
-	auto const cut_at{[](std::vector<maj0sted::domain::geometry::XY> const &Points_, double const Distance_,
-	                     std::vector<maj0sted::domain::geometry::XY> &Head_, std::vector<maj0sted::domain::geometry::XY> &Tail_) {
+	auto const cut_at{[](std::vector<editor::plan::geometry::XY> const &Points_, double const Distance_,
+	                     std::vector<editor::plan::geometry::XY> &Head_, std::vector<editor::plan::geometry::XY> &Tail_) {
 		auto travelled{0.0};
 		for (std::size_t i = 0; i < Points_.size(); ++i)
 		{
@@ -2542,7 +2543,7 @@ void plan_panel::render_template_window()
 			{
 				auto const &back{Points_[i - 1]};
 				auto const share{(Distance_ - (travelled - step)) / step};
-				maj0sted::domain::geometry::XY const meeting{back.x + (Points_[i].x - back.x) * share, back.y + (Points_[i].y - back.y) * share};
+				editor::plan::geometry::XY const meeting{back.x + (Points_[i].x - back.x) * share, back.y + (Points_[i].y - back.y) * share};
 				Head_.push_back(meeting);
 				Tail_.push_back(meeting);
 			}
@@ -2550,7 +2551,7 @@ void plan_panel::render_template_window()
 		}
 	}};
 
-	auto const draw_run{[&](std::vector<maj0sted::domain::geometry::XY> const &Points_, ImU32 const Colour_, bool const Theoretical_) {
+	auto const draw_run{[&](std::vector<editor::plan::geometry::XY> const &Points_, ImU32 const Colour_, bool const Theoretical_) {
 		if (Points_.size() < 2)
 		{
 			return;
@@ -2603,11 +2604,11 @@ void plan_panel::render_template_window()
 			auto const s{std::sin(segment.turn_in)};
 			walker = {walker.x, walker.y, walker.hx * c - walker.hy * s, walker.hx * s + walker.hy * c};
 		}
-		std::vector<maj0sted::domain::geometry::XY> points;
-		walker = maj0sted::domain::geometry::layout_segment(segment.k0, segment.k1, segment.length, walker, &points);
+		std::vector<editor::plan::geometry::XY> points;
+		walker = editor::plan::geometry::layout_segment(segment.k0, segment.k1, segment.length, walker, &points);
 		auto const from{station};
 		station += segment.length;
-		if (segment.part == maj0sted::domain::TurnoutPart::Blade)
+		if (segment.part == editor::plan::TurnoutPart::Blade)
 		{
 			heel = station;
 		}
@@ -2625,8 +2626,8 @@ void plan_panel::render_template_window()
 			draw_run(points, colour, false);
 			continue;
 		}
-		std::vector<maj0sted::domain::geometry::XY> ahead;
-		std::vector<maj0sted::domain::geometry::XY> behind;
+		std::vector<editor::plan::geometry::XY> ahead;
+		std::vector<editor::plan::geometry::XY> behind;
 		cut_at(points, upto, behind, ahead);
 		draw_run(behind, colour, true);
 		draw_run(ahead, colour, false);
@@ -2680,7 +2681,7 @@ void plan_panel::render_template_window()
 	// the construction points, from the very list the solver reports for a placement
 	if (m_tpl_marks)
 	{
-		auto marks{maj0sted::editor::turnout_marks(laid, start)};
+		auto marks{editor::plan::turnout_marks(laid, start)};
 		std::sort(marks.begin(), marks.end(), [](auto const &Left_, auto const &Right_) { return Left_.station < Right_.station; });
 
 		auto level{0};
@@ -2820,8 +2821,8 @@ void plan_panel::render_turnouts()
 		auto &placement{m_document.turnouts[i]};
 		ImGui::PushID(static_cast<int>(1000 + i));
 
-		auto const *solved{maj0sted::editor::find_turnout(m_solution, placement.id)};
-		auto const *on{maj0sted::editor::find_track(m_document, placement.on)};
+		auto const *solved{editor::plan::find_turnout(m_solution, placement.id)};
+		auto const *on{editor::plan::find_track(m_document, placement.on)};
 		char label[200];
 		std::snprintf(label, sizeof(label), "%s na %s, km %.1f%s", placement.type.c_str(), on != nullptr ? on->name.c_str() : "?", placement.station,
 		              (solved != nullptr && solved->valid) ? "" : "  (nie da sie zlozyc)");
@@ -2891,11 +2892,11 @@ void plan_panel::render_turnouts()
 			// mean guessing kilometres by hand: the nearest element long enough to hold it, whole
 			if (solved != nullptr && solved->valid)
 			{
-				auto const *through{maj0sted::editor::find_track(m_solution, placement.on)};
+				auto const *through{editor::plan::find_track(m_solution, placement.on)};
 				double curvature{0.0};
 				double behind{0.0};
 				double ahead{0.0};
-				auto const room{through != nullptr && maj0sted::editor::steady_room(*through, placement.station, curvature, behind, ahead)
+				auto const room{through != nullptr && editor::plan::steady_room(*through, placement.station, curvature, behind, ahead)
 				                    ? (placement.facing ? ahead : behind)
 				                    : -1.0};
 				if (through != nullptr && room < solved->through_length - 1e-6)
@@ -2975,7 +2976,7 @@ void plan_panel::render_diagnostics()
 		auto const &diagnostic{m_solution.diagnostics[i]};
 		ImGui::PushID(static_cast<int>(2000 + i));
 		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.60f, 0.55f, 1.0f));
-		auto const *track{maj0sted::editor::find_track(m_document, diagnostic.track)};
+		auto const *track{editor::plan::find_track(m_document, diagnostic.track)};
 		if (ImGui::Selectable(diagnostic.text.c_str()))
 		{
 			if (diagnostic.track != TrackId::none)
@@ -3019,12 +3020,12 @@ void plan_panel::render_storage()
 		m_document.georeferenced = Global.scenery_georeferenced;
 		m_document.origin_x = Global.scenery_origin.x;
 		m_document.origin_y = Global.scenery_origin.y;
-		m_status = maj0sted::io::save(m_document, m_path) ? "saved to " + std::string(m_path) : "could not write " + std::string(m_path);
+		m_status = editor::plan::io::save(m_document, m_path) ? "saved to " + std::string(m_path) : "could not write " + std::string(m_path);
 	}
 	ImGui::SameLine();
 	if (ImGui::Button("Load"))
 	{
-		auto const loaded{maj0sted::io::load(m_path)};
+		auto const loaded{editor::plan::io::load(m_path)};
 		if (loaded)
 		{
 			m_document = *loaded;
@@ -3110,7 +3111,7 @@ void plan_panel::export_scn(bool const Run_)
 	// where a plan exports to belongs to the plan: say it once and it is there the next time the
 	// project is opened, whichever MaSzyna it was drawn for
 	m_document.scn_path = m_scn_path;
-	maj0sted::io::ScnExportOptions opt;
+	editor::plan::io::ScnExportOptions opt;
 	opt.origin_east = Global.scenery_origin.x;
 	opt.origin_north = Global.scenery_origin.y;
 	opt.trainset = m_scn_trainset;
@@ -3120,7 +3121,7 @@ void plan_panel::export_scn(bool const Run_)
 		m_status = "could not write " + std::string(m_scn_path);
 		return;
 	}
-	auto const result{maj0sted::io::export_scn(m_document, m_solution, opt, out)};
+	auto const result{editor::plan::io::export_scn(m_document, m_solution, opt, out)};
 	out.flush();
 	if (false == out.good())
 	{

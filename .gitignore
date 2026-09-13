@@ -8,6 +8,7 @@ ci_shadervalidator/validateshaders
 
 # CMake build output
 build/
+build-*/
 bin/
 
 #Visual Studio [Code] folders
