@@ -1,0 +1,24 @@
+# Build output
+/build/
+/out/
+/cmake-build-*/
+
+# Compiled objects / archives
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+.cache/
+compile_commands.json
+
+# WASM / web build artifacts (produced by web/build.sh)
+web/maj0sted.js
+web/maj0sted.wasm
+web/serve

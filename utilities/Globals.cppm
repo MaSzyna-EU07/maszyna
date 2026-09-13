@@ -106,6 +106,18 @@ struct global_settings {
     std::string szTexturesDDS{ ".dds" }; // lista tekstur od DDS
     std::string szDefaultExt{ szTexturesDDS };
 	std::string SceneryFile;
+    // uruchomienie prosto do edytora, z pominięciem symulacji; edytor jest wtedy trybem podstawowym
+    bool editor_startup{ false };
+    // rzut z góry bez perspektywy, do kreślenia planu torowiska na tle wczytanej scenerii
+    bool editor_ortho{ false };
+    float editor_ortho_extent{ 250.f }; // połowa wysokości widoku w metrach, czyli zoom rzutu
+    // punkt EPSG:2180 odpowiadający zeru scenerii. Bez tego sceneria jest fikcyjna i jej współrzędne
+    // nie znaczą nic poza nią samą
+    bool scenery_georeferenced{ false };
+    glm::dvec2 scenery_origin{ 0.0, 0.0 };
+    // prośba o zrzucenie wczytanej scenerii i zaczęcie na pustym terenie; obsługiwana na początku
+    // klatki, bo zmiana trybu w środku rysowania panelu wyrwałaby grunt spod niego samego
+    bool editor_reset_scenery{ false };
     std::string local_start_vehicle{ "EU07-424" };
     int iConvertModels{ 0 }; // tworzenie plików binarnych
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan

@@ -624,6 +624,20 @@ void editor_mode::redo_last()
 
 bool editor_mode::update()
 {
+    if (Global.editor_reset_scenery)
+    {
+        // starting a new map: drop whatever scenery is loaded and come back on empty ground. done
+        // here rather than where it was asked for, because taking the editor off the mode stack in
+        // the middle of drawing its own panels would pull the ground out from under them
+        Global.editor_reset_scenery = false;
+        Global.editor_startup = true; // the editor is the base mode from here on, whatever started it
+        Global.SceneryFile = "pusta.scn";
+        simulation::is_ready = false;
+        Application.pop_mode();
+        Application.push_mode(eu07_application::mode::scenarioloader);
+        return true;
+    }
+
     Timer::UpdateTimers(true);
 
     simulation::State.update_clocks();
@@ -1322,9 +1336,63 @@ void editor_mode::render_gizmo()
     }
 }
 
+void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
+{
+    if (false == Global.editor_ortho)
+    {
+        return;
+    }
+
+    // the wheel decides how much ground fits on screen. shift the camera so the point under the
+    // cursor stays put - same idea as zooming a map, rather than scaling around the view centre
+    auto const oldextent = Global.editor_ortho_extent;
+    auto const newextent = std::clamp(oldextent * std::pow(0.85f, static_cast<float>(Yoffset)), 5.0f, 20000.0f);
+    if (newextent == oldextent)
+    {
+        return;
+    }
+
+    auto const width = std::max(1, Global.window_size.x);
+    auto const height = std::max(1, Global.window_size.y);
+    auto const ndcx = (static_cast<double>(Global.cursor_pos.x) / width) * 2.0 - 1.0;
+    auto const ndcy = 1.0 - (static_cast<double>(Global.cursor_pos.y) / height) * 2.0;
+    auto const halfheight = static_cast<double>(oldextent);
+    auto const halfwidth = halfheight * static_cast<double>(width) / static_cast<double>(height);
+    auto const scale = static_cast<double>(newextent) / static_cast<double>(oldextent);
+
+    // top-down with yaw pinned to north: view x follows world x, view y follows -world z
+    Camera.Pos.x += ndcx * halfwidth * (1.0 - scale);
+    Camera.Pos.z -= ndcy * halfheight * (1.0 - scale);
+
+    Global.editor_ortho_extent = newextent;
+}
+
 void editor_mode::update_camera(double const Deltatime)
 {
     Camera.Update();
+
+    // the plan view looks straight down. the camera keeps its ground position, so panning works just
+    // as it does in the perspective view, but the orientation is pinned and handed back on the way out
+    if (Global.editor_ortho)
+    {
+        if (false == m_orthoactive)
+        {
+            m_orthoangle = Camera.Angle;
+            m_orthoactive = true;
+        }
+        Camera.Angle.x = glm::radians(-90.0f);
+        Camera.Angle.z = 0.0f;
+        // a plan is read with north up. the editor's own camera starts turned around, which left the
+        // whole view - scenery, imagery and drawing alike - standing on its head
+        Camera.Angle.y = 0.0f;
+        // high enough to clear anything the scenery may have under the cursor
+        Camera.Pos.y = std::max(Camera.Pos.y, 500.0);
+    }
+    else if (m_orthoactive)
+    {
+        Camera.Angle = m_orthoangle;
+        m_orthoactive = false;
+    }
 
     // focus animation runs after Camera.Update() so it overrides any residual velocity/rotation;
     // it smoothly drives both position and orientation toward the framed object
@@ -1362,6 +1430,20 @@ void editor_mode::update_camera(double const Deltatime)
 
 void editor_mode::enter()
 {
+    if (Global.editor_startup)
+    {
+        // the scenery camera is set up by the driver mode, which never runs when we start straight in
+        // the editor; without this we'd copy an untouched global camera below and render a black view
+        auto const scenerycamera = Global.FreeCameraInit[0] != glm::dvec3(0.0);
+        // a scenery doesn't have to name a camera; fall back on the editor's own view above the origin
+        Camera.Init(scenerycamera ? Global.FreeCameraInit[0] : glm::dvec3{0.0, 15.0, 0.0},
+                    scenerycamera ? Global.FreeCameraInitAngle[0] : glm::vec3{glm::radians(-30.0f), glm::radians(180.0f), 0.0f}, nullptr);
+        Global.pCamera = Camera;
+        Global.pDebugCamera = Camera;
+        FreeFlyModeFlag = true;
+        Timer::ResetTimers(); // keep the scenery loading time out of the first frame's delta
+    }
+
     m_statebackup = {Global.pCamera, FreeFlyModeFlag, Global.ControlPicking};
 
     Camera = Global.pCamera;
@@ -1377,8 +1459,10 @@ void editor_mode::enter()
             Camera.m_owner = nullptr;
             Camera.LookAt = vehicle->GetPosition();
             Camera.RaLook(); // single camera reposition
-            FreeFlyModeFlag = true;
         }
+        // the editor always works with a free camera. starting straight in it there's no vehicle to
+        // step out of, but the flag still has to go up or the camera stays in cab mode without a cab
+        FreeFlyModeFlag = true;
     }
 
     Global.ControlPicking = true;
@@ -1390,6 +1474,7 @@ void editor_mode::enter()
 void editor_mode::exit()
 {
     EditorModeFlag = false;
+    Global.editor_ortho = false; // the plan view must not follow us out of the editor
     Global.ControlPicking = m_statebackup.picking;
     FreeFlyModeFlag = m_statebackup.freefly;
     Global.pCamera = m_statebackup.camera;
@@ -1470,7 +1555,12 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
 
         if (!Global.ctrlState && !Global.shiftState)
         {
-            Application.pop_mode();
+            // when started straight in the editor there's no mode to fall back to, and popping the last
+            // one would leave the rest of the frame reading an empty stack
+            if (Global.editor_startup)
+                Application.queue_quit(true);
+            else
+                Application.pop_mode();
         }
         else if (Global.ctrlState && Global.shiftState)
         {
@@ -1548,6 +1638,14 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
 {
     // UI first
     if (m_userinterface->on_mouse_button(Button, Action))
+    {
+        m_input.mouse.button(Button, Action);
+        return;
+    }
+
+    // while the plan tool is up the left button belongs to it: it lays and moves the points of the
+    // track layout, so it must not also pick or place scenery nodes
+    if (Global.editor_ortho && Button == GLFW_MOUSE_BUTTON_LEFT)
     {
         m_input.mouse.button(Button, Action);
         return;

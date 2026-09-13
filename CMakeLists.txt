@@ -195,12 +195,17 @@ set(SOURCES
 "application/driveruipanels.cpp"
 "input/editorkeyboardinput.cpp"
 "editor/editorSettings.cpp"
+"editor/puwg1992.cpp"
+"editor/polandmap.cpp"
+"editor/turnouts.cpp"
+"editor/orthophoto.cpp"
 "editor/editorTerrain.cpp"
 "editor/editorTerrainStreamer.cpp"
 "application/editormode.cpp"
 "input/editormouseinput.cpp"
 "application/editoruilayer.cpp"
 "application/editoruipanels.cpp"
+"application/planpanel.cpp"
 "application/scenarioloadermode.cpp"
 "application/scenarioloaderuilayer.cpp"
 "scene/scenenodegroups.cpp"
@@ -612,6 +617,13 @@ endif()
 find_package(Threads REQUIRED)
 target_link_libraries(${PROJECT_NAME} Threads::Threads)
 
+# the editor's map imagery talks to a WMS over https. windows has WinHttp in the platform sdk;
+# everywhere else libcurl is the transport (see editor/orthophoto.cpp)
+if (NOT WIN32)
+	find_package(CURL REQUIRED)
+	target_link_libraries(${PROJECT_NAME} CURL::libcurl)
+endif()
+
 find_package(GLM REQUIRED)
 target_include_directories(${PROJECT_NAME} PRIVATE ${GLM_INCLUDE_DIR})
 
@@ -619,6 +631,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${GLM_INCLUDE_DIR})
 add_subdirectory(ref/json)
 target_link_libraries(${PROJECT_NAME} nlohmann_json::nlohmann_json)
 target_include_directories(${PROJECT_NAME} PRIVATE ${NLOHMANN_JSON_INCLUDE_INSTALL_DIR})
+
+# track layout domain model used by the editor; plain C++20, no dependencies of its own
+add_subdirectory(maj0sted)
+set_target_properties(maj0sted PROPERTIES FOLDER "libraries")
+target_link_libraries(${PROJECT_NAME} maj0sted::maj0sted)
 
 
 
