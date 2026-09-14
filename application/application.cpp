@@ -321,7 +321,7 @@ int eu07_application::init(int Argc, char *Argv[])
 	}
 
 	if (!Global.random_seed)
-		Global.random_seed = clock_seed();
+		Global.random_seed = true_random_seed();
 	Global.random_engine.seed(Global.random_seed);
 
 	// configure the OS console according to Globals.ShowSystemConsole.
@@ -1432,7 +1432,7 @@ int eu07_application::init_data()
 
 int eu07_application::init_modes()
 {
-	Global.local_random_engine.seed(clock_seed());
+	Global.local_random_engine.seed(true_random_seed());
 
 	if ((!Global.network_servers.empty() || Global.network_client) && Global.SceneryFile.empty())
 	{

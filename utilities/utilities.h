@@ -63,9 +63,10 @@ inline long Round(double const f)
 double Random(double a, double b);
 int Random(int min, int max);
 
-// Seed for the random engines: the clock, plus a counter so two engines seeded in
-// the same second do not come out the same.
-std::uint32_t clock_seed();
+/// @author lxvia
+/// @brief Returns a random seed from the system's entropy source, if available. Otherwise, falls back to a clock-based seed.
+/// @return A random seed as 64 bit unsigned integer
+std::uint64_t true_random_seed();
 
 // The seed a word stands for. A number is taken as it is written; anything else is
 // hashed the way Java's String.hashCode does it, so the same word gives the same

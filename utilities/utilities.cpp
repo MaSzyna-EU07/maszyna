@@ -138,10 +138,20 @@ int Random(int min, int max)
 	return dist(Global.random_engine);
 }
 
-std::uint32_t clock_seed()
+std::uint64_t true_random_seed()
 {
-	static std::atomic<std::uint32_t> nth{0};
-	return static_cast<std::uint32_t>(std::time({})) + nth.fetch_add(1, std::memory_order_relaxed);
+	try
+	{
+		std::random_device rd;
+		if (rd.entropy()  > 0.0)
+		{
+			std::uint32_t high = rd();
+			std::uint32_t low = rd();
+			return (high << 32) | low;
+		}
+	}
+	catch (...) {}
+	return static_cast<std::uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
 }
 
 std::uint32_t seed_of(std::string const &Text)
@@ -161,12 +171,11 @@ std::uint32_t seed_of(std::string const &Text)
 
 std::string generate_uuid_v4()
 {
-	static thread_local std::mt19937 generator{clock_seed()};
 	std::uniform_int_distribution<int> dist(0, 255);
 
 	std::array<uint8_t, 16> bytes;
 	for (auto &b : bytes)
-		b = static_cast<uint8_t>(dist(generator));
+		b = static_cast<uint8_t>(dist(Global.random_engine));
 
 	// UUID v4 (RFC 4122)
 	bytes[6] = bytes[6] & 0x0F | 0x40;
