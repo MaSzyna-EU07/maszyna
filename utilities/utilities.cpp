@@ -16,7 +16,6 @@ Copyright (C) 2007-2014 Maciej Cierniak
 //#include <sys/types.h>
 //#include <sys/stat.h>
 #include <charconv>
-#include <ctime>
 #include <ranges>
 //#ifndef WIN32
 //#include <unistd.h>

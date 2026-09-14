@@ -320,9 +320,11 @@ int eu07_application::init(int Argc, char *Argv[])
 		return result;
 	}
 
+	// the run's seed, settled once and kept in Globals: the engines come out of it
 	if (!Global.random_seed)
 		Global.random_seed = true_random_seed();
 	Global.random_engine.seed(Global.random_seed);
+	Global.local_random_engine.seed(Global.random_seed);
 
 	// configure the OS console according to Globals.ShowSystemConsole.
 	// must run AFTER init_settings (so the ini-loaded value is honoured) and
