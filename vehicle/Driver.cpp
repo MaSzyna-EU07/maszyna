@@ -7524,6 +7524,7 @@ TController::pick_optimal_speed( double const Range ) {
 
     // if we're idling bail out early
     if( false == is_active() ) {
+        check_cell_ahead();
         VelDesired = 0.0;
         VelNext = 0.0;
         AccDesired = std::min( AccDesired, EU07_AI_NOACCELERATION );
@@ -8548,6 +8549,17 @@ TController::check_route_ahead( double const Range ) {
         break;
     }
     }
+}
+
+void
+TController::check_cell_ahead() {
+    // shut down, so no signal is acted upon; a command cell is the only way to reach us
+    if( false == AIControllFlag ) { return; }
+    if( ( OrderCurrentGet() & ~( Shunt | Loose_shunt | Obey_train | Bank ) ) != 0 ) { return; }
+    if( mvOccupied->Vel >= 0.1 ) { return; }
+    if( TableUpdate( VelDesired, ActualProximityDist, VelNext, AccDesired ) != TCommandType::cm_Command ) { return; }
+    if( eSignNext == nullptr ) { return; }
+    eSignNext->send_command( *this );
 }
 
 void

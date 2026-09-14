@@ -387,6 +387,7 @@ private:
     void control_braking_force();
     void apply_independent_brake_only();
     void check_route_ahead( double const Range );
+    void check_cell_ahead(); // shut down driver: only a command cell can reach it
     // false when the permission at the nearest signal was given to another consist
     bool SignalPermissionIsOurs( bool const Signalgivesgo ) const;
     bool OtherConsistAtSignal() const; // another consist in front of the signal = the addressee of the permission
