@@ -14,7 +14,7 @@ public:
 
 
     static UID random() {
-        static thread_local std::mt19937_64 gen{clock_seed()};
+        static thread_local std::mt19937_64 gen{std::random_device{}()};
         UID u;
         uint64_t a = gen();
         uint64_t b = gen();

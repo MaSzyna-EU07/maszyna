@@ -16,7 +16,6 @@ Copyright (C) 2007-2014 Maciej Cierniak
 //#include <sys/types.h>
 //#include <sys/stat.h>
 #include <charconv>
-#include <ctime>
 #include <ranges>
 //#ifndef WIN32
 //#include <unistd.h>
@@ -138,12 +137,6 @@ int Random(int min, int max)
 	return dist(Global.random_engine);
 }
 
-std::uint32_t clock_seed()
-{
-	static std::atomic<std::uint32_t> nth{0};
-	return static_cast<std::uint32_t>(std::time({})) + nth.fetch_add(1, std::memory_order_relaxed);
-}
-
 std::uint32_t seed_of(std::string const &Text)
 {
 	std::uint32_t number{};
@@ -161,7 +154,7 @@ std::uint32_t seed_of(std::string const &Text)
 
 std::string generate_uuid_v4()
 {
-	static thread_local std::mt19937 generator{clock_seed()};
+	static thread_local std::mt19937 generator{std::random_device{}()};
 	std::uniform_int_distribution<int> dist(0, 255);
 
 	std::array<uint8_t, 16> bytes;
