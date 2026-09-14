@@ -403,10 +403,9 @@ std::string *brush_object_list::GetRandomObject()
 	if (Objects.empty())
 		return &empty;
 
-	static std::mt19937 rng{std::random_device{}()};
 	std::uniform_int_distribution<size_t> dist(0, Objects.size() - 1);
 
-	return &Objects[dist(rng)];
+	return &Objects[dist(Global.local_random_engine)];
 }
 
 void brush_object_list::render()

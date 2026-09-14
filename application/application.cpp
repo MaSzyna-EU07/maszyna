@@ -321,7 +321,7 @@ int eu07_application::init(int Argc, char *Argv[])
 	}
 
 	if (!Global.random_seed)
-		Global.random_seed = std::random_device{}();
+		Global.random_seed = clock_seed();
 	Global.random_engine.seed(Global.random_seed);
 
 	// configure the OS console according to Globals.ShowSystemConsole.
@@ -1140,10 +1140,21 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 				Global.local_start_vehicle = ToLower(Argv[++i]);
 			}
 		}
+		else if (token == "-seed")
+		{
+			// a number is the seed; anything else is a word that stands for one. said in the
+			// log as it was given, because that is what gets passed on to somebody else
+			if (i + 1 < Argc)
+			{
+				Global.random_seed = seed_of(Argv[++i]);
+				WriteLog("seed given on the command line: " + std::string(Argv[i]) + " -> " + std::to_string(Global.random_seed));
+			}
+		}
 		else
 		{
 			std::cout << "usage: " << std::string(Argv[0]) << " [-s sceneryfilepath]"
-			          << " [-v vehiclename]" << std::endl;
+			          << " [-v vehiclename]"
+			          << " [-seed number|word]" << std::endl;
 			return -1;
 		}
 	}
@@ -1421,7 +1432,7 @@ int eu07_application::init_data()
 
 int eu07_application::init_modes()
 {
-	Global.local_random_engine.seed(std::random_device{}());
+	Global.local_random_engine.seed(clock_seed());
 
 	if ((!Global.network_servers.empty() || Global.network_client) && Global.SceneryFile.empty())
 	{

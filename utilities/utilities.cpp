@@ -15,6 +15,8 @@ Copyright (C) 2007-2014 Maciej Cierniak
 //
 //#include <sys/types.h>
 //#include <sys/stat.h>
+#include <charconv>
+#include <ctime>
 #include <ranges>
 //#ifndef WIN32
 //#include <unistd.h>
@@ -30,7 +32,6 @@ Copyright (C) 2007-2014 Maciej Cierniak
 #include "utilities/U8.h"
 
 
-//#include "utilities/Logs.h"
 
 // TODO: This shouldn't be in Globals?
 bool DebugModeFlag = false;
@@ -137,15 +138,35 @@ int Random(int min, int max)
 	return dist(Global.random_engine);
 }
 
+std::uint32_t clock_seed()
+{
+	static std::atomic<std::uint32_t> nth{0};
+	return static_cast<std::uint32_t>(std::time({})) + nth.fetch_add(1, std::memory_order_relaxed);
+}
+
+std::uint32_t seed_of(std::string const &Text)
+{
+	std::uint32_t number{};
+	if (std::from_chars(Text.data(), Text.data() + Text.size(), number).ec == std::errc{})
+	{
+		return number;
+	}
+	std::uint32_t hash{};
+	for (auto const character : Text)
+	{
+		hash = hash * 31u + static_cast<std::uint32_t>(static_cast<unsigned char>(character));
+	}
+	return hash;
+}
+
 std::string generate_uuid_v4()
 {
-	std::random_device rd;
-	std::mt19937 gen(rd());
+	static thread_local std::mt19937 generator{clock_seed()};
 	std::uniform_int_distribution<int> dist(0, 255);
 
 	std::array<uint8_t, 16> bytes;
 	for (auto &b : bytes)
-		b = static_cast<uint8_t>(dist(gen));
+		b = static_cast<uint8_t>(dist(generator));
 
 	// UUID v4 (RFC 4122)
 	bytes[6] = bytes[6] & 0x0F | 0x40;

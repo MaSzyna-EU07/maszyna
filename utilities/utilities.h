@@ -62,6 +62,17 @@ inline long Round(double const f)
 
 double Random(double a, double b);
 int Random(int min, int max);
+
+// Seed for the random engines: the clock, plus a counter so two engines seeded in
+// the same second do not come out the same.
+std::uint32_t clock_seed();
+
+// The seed a word stands for. A number is taken as it is written; anything else is
+// hashed the way Java's String.hashCode does it, so the same word gives the same
+// world on every platform and every build - which is the whole point of telling
+// somebody a seed.
+std::uint32_t seed_of(std::string const &Text);
+
 std::string generate_uuid_v4();
 double LocalRandom(double a, double b);
 
