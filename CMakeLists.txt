@@ -630,10 +630,18 @@ find_package(Threads REQUIRED)
 target_link_libraries(${PROJECT_NAME} Threads::Threads)
 
 # the editor's map imagery talks to a WMS over https. windows has WinHttp in the platform sdk;
-# everywhere else libcurl is the transport (see editor/orthophoto.cpp)
+# everywhere else libcurl is the transport (see editor/orthophoto.cpp). it is not required: a tree
+# without it builds an editor that draws and exports as usual, only with no imagery behind the plan
 if (NOT WIN32)
-	find_package(CURL REQUIRED)
-	target_link_libraries(${PROJECT_NAME} CURL::libcurl)
+	find_package(CURL)
+	if (CURL_FOUND)
+		target_link_libraries(${PROJECT_NAME} CURL::libcurl)
+		target_compile_definitions(${PROJECT_NAME} PRIVATE WITH_CURL)
+	else()
+		message(WARNING
+			"libcurl not found: the editor will have no map imagery. "
+			"Install libcurl4-openssl-dev (Debian/Ubuntu) or libcurl-devel (Fedora) to get it back.")
+	endif()
 endif()
 
 find_package(GLM REQUIRED)

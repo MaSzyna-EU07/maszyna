@@ -368,7 +368,10 @@ void opengl_texture::load_PNG()
 void opengl_texture::load_STBI()
 {
 	int x, y, n;
-	stbi_set_flip_vertically_on_load(1);
+	// per thread, not for the whole program: there is one stb_image.c in the build, so the global
+	// flag reaches every other decoder too - which is how the editor's WMS tiles ended up upside
+	// down as soon as any model texture had been loaded through this path
+	stbi_set_flip_vertically_on_load_thread(1);
 	uint8_t *image = stbi_load((name + type).c_str(), &x, &y, &n, 4);
 
 	if (!image) {

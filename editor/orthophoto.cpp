@@ -20,7 +20,7 @@ module;
 #include <windows.h>
 #include <winhttp.h>
 #pragma comment(lib, "winhttp.lib")
-#else
+#elif defined(WITH_CURL)
 #include <curl/curl.h>
 #endif
 
@@ -36,6 +36,21 @@ distributed with this file, You can
 obtain one at
 http://mozilla.org/MPL/2.0/.
 */
+
+namespace
+{
+
+// stb keeps one flip flag for the whole program - there is a single stb_image.c in the build - and
+// the model texture loader turns it on for its own sake (models want the bottom row first). A WMS
+// tile is the other way about: its first row is its northern edge, which is what the drawing code
+// takes v=0 to be. So the orientation is stated per thread, where nobody else can reach it, rather
+// than left to whoever decoded an image last
+void decode_top_down()
+{
+	stbi_set_flip_vertically_on_load_thread(0);
+}
+
+} // namespace
 
 namespace editor
 {
@@ -143,7 +158,7 @@ bool http_get(std::string const &Url, std::vector<std::uint8_t> &Bytes, std::str
 	return ok;
 }
 
-#else
+#elif defined(WITH_CURL)
 
 // libcurl's write callback: appends one chunk of the body to the caller's buffer
 std::size_t append_body(char const *Data, std::size_t const Size, std::size_t const Count, void *Userdata)
@@ -203,6 +218,22 @@ bool http_get(std::string const &Url, std::vector<std::uint8_t> &Bytes, std::str
 	curl_easy_cleanup(handle);
 
 	return ok;
+}
+
+#else
+
+// built without a transport: libcurl was not there when this was configured. the editor draws and
+// exports as usual - there is simply nothing to put behind the plan, and saying so once is better
+// than a silent grey screen
+bool http_get(std::string const &, std::vector<std::uint8_t> &, std::string &Contenttype)
+{
+	Contenttype.clear();
+	static auto const said = []() {
+		ErrorLog("Editor: built without libcurl, so there is no map imagery");
+		return true;
+	}();
+	(void)said;
+	return false;
 }
 
 #endif
@@ -375,6 +406,7 @@ unsigned int orthophoto_source::upload(editor::plan::TileKey const &Key)
 	int width = 0;
 	int height = 0;
 	int channels = 0;
+	decode_top_down();
 	auto *pixels = stbi_load_from_memory(image->bytes.data(), static_cast<int>(image->bytes.size()), &width, &height, &channels, 3);
 	if (pixels == nullptr)
 	{
@@ -463,6 +495,7 @@ unsigned int upload_image(std::vector<std::uint8_t> const &Bytes)
 	int width = 0;
 	int height = 0;
 	int channels = 0;
+	decode_top_down();
 	auto *pixels = stbi_load_from_memory(Bytes.data(), static_cast<int>(Bytes.size()), &width, &height, &channels, 3);
 	if (pixels == nullptr)
 	{

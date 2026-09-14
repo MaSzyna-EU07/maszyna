@@ -181,6 +181,7 @@ jobs:
             libluajit-5.1-dev \
             libserialport-dev \
             libsndfile1-dev \
+            libcurl4-openssl-dev \
             xorg-dev \
             libxkbcommon-dev \
             libwayland-dev \

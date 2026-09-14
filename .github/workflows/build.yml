@@ -40,7 +40,7 @@ jobs:
             build-essential ninja-build wget lsb-release software-properties-common gnupg \
             libgl1-mesa-dev libglew-dev libglfw3-dev \
             libpng-dev libopenal-dev libluajit-5.1-dev \
-            libserialport-dev libsndfile1-dev \
+            libserialport-dev libsndfile1-dev libcurl4-openssl-dev \
             xorg-dev libxkbcommon-dev libwayland-dev wayland-protocols
 
       - name: Install LLVM/Clang 22
