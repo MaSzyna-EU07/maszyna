@@ -248,6 +248,40 @@ struct global_settings {
 	bool gui_showtranscripts = true;
     bool gui_trainingdefault = false;
 
+    // HUD overlay layout; stored in the HUD's own config file (hud.ini), separate from eu07.ini
+    struct hud_config {
+        bool enabled { true };
+        int mode { 0 };              // HUD display mode: 0=Standard 1=Custom 2=Off
+        bool mode_saved { false };   // internal: whether the user has selected a mode yet (ini)
+        bool panel { true };         // main panel group switch (Custom mode only)
+        bool strip { true };         // top signal strip group switch (Custom mode only)
+        bool speed_panel { true };   // speed panel group switch (Custom mode only)
+        std::string custom_items;    // csv of enabled item ids in Custom mode (empty = all on)
+        // split speed panel (speed/direction/grade), free position (default -1 = auto below)
+        int speed_x { -1 };
+        int speed_y { -1 };
+        // bottom-right main panel
+        int panel_width { 258 };
+        int panel_height { 374 };
+        int margin { 16 };             // distance from screen right/bottom edges
+        float speed_size { 110.0f };   // big speed digits size
+        int panel_x { -1 };            // free-position override; -1 = corner anchored
+        int panel_y { -1 };
+        // top signal strip
+        int sig_width { 320 };
+        int sig_height { 66 };
+        int sig_top { 6 };                 // distance from screen top
+        float sig_digit_size { 58.0f };    // limit number size
+        float sig_digit_left { 56.0f };    // limit number left offset
+        float sig_square_margin { 10.0f }; // signal colour block offset from window edge
+        float sig_square_size { 34.0f };   // signal colour block side length
+        float sig_text_left { 170.0f };    // right-hand info text column
+        float sig_text_top { 16.0f };
+        int sig_x { -1 };              // free-position override; -1 = top-centred
+        int sig_y { -1 };
+    };
+    hud_config gui_hud;
+
 	std::string extcam_cmd;
 	std::string extcam_rec;
 	glm::ivec2 extcam_res{800, 600};
@@ -348,6 +382,9 @@ struct global_settings {
 
 	// methods
 	void LoadIniFile( std::string asFileName );
+	// writes the full configuration back to the file (used on clean exit; the original
+	// engine only read the ini - export_as_text previously fed just the startup log)
+	void SaveIniFile( std::string const &asFileName );
 	void FinalizeConfig();
 	void ConfigParse(cParser &parser);
 	bool ConfigParseGeneral(cParser& Parser, const std::string& token);
