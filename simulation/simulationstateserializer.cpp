@@ -852,8 +852,8 @@ TDynamicObject *select_trainset_driver( trainset_data &trainset )
         if( vehicle->Mechanik == nullptr || !vehicle->Mechanik->primary() ) {
             continue;
         }
-        auto const lookup { trainset.assignment.find( Global.asLang ) };
-        if( lookup != trainset.assignment.end() ) {
+        if( auto const lookup { trainset.assignment.find( Global.asLang ) };
+            lookup != trainset.assignment.end() ) {
             vehicle->Mechanik->assignment() = lookup->second;
         }
         return vehicle;

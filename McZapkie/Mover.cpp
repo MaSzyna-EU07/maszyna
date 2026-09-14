@@ -4479,11 +4479,10 @@ double TMoverParameters::GetDPMainValve(double dt, double hp) const
 
 	auto const caboccupied{CabOccupied != 0};
 
-	auto const use_handle{
-	    (BrakeOpModes & bom_PS) == 0
-	    || (caboccupied && BrakeOpModeFlag != bom_PS)};
-
-	if (!use_handle)
+	if (auto const use_handle{
+	        (BrakeOpModes & bom_PS) == 0
+	        || (caboccupied && BrakeOpModeFlag != bom_PS)};
+	    !use_handle)
 	{
 		if (BrakeCtrlPos == Handle->GetPos(bh_EB))
 		{
@@ -4492,12 +4491,11 @@ double TMoverParameters::GetDPMainValve(double dt, double hp) const
 		return 0.0;
 	}
 
-	auto const mhzepidle{
-	    BrakeOpModeFlag >= bom_EP
-	    && BrakeCtrlPosR <= Handle->GetPos(bh_EB) - 0.5
-	    && (BrakeHandle == TBrakeHandle::MHZ_EN57 || BrakeHandle == TBrakeHandle::MHZ_K8P)};
-
-	if (mhzepidle)
+	if (auto const mhzepidle{
+	        BrakeOpModeFlag >= bom_EP
+	        && BrakeCtrlPosR <= Handle->GetPos(bh_EB) - 0.5
+	        && (BrakeHandle == TBrakeHandle::MHZ_EN57 || BrakeHandle == TBrakeHandle::MHZ_K8P)};
+	    mhzepidle)
 	{
 		return Handle->GetPF(0, PipePress, hp, dt, EqvtPipePress);
 	}

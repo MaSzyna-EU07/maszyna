@@ -1646,11 +1646,11 @@ void TDynamicObject::ReassignConsistPrimary()
     int primarycount = 0;
     // walk from the front; Next()/Prev() are not enough, reversed members need the coupler side flipped
     int side { end::front };
-    auto *front { FirstFind( side ) };
-    if( front == nullptr ) { front = this; }
+    auto *headvehicle { FirstFind( side ) };
+    if( headvehicle == nullptr ) { headvehicle = this; }
     auto dir { 1 - side };
-    auto *farend { front };
-    for( auto *d = front; d != nullptr; d = d->Neighbour( dir ) )
+    auto *farend { headvehicle };
+    for( auto *d = headvehicle; d != nullptr; d = d->Neighbour( dir ) )
     {
         if( d->Mechanik != nullptr )
         {
@@ -1664,17 +1664,14 @@ void TDynamicObject::ReassignConsistPrimary()
     }
     if( drivers.empty() ) { return; }
     // a human-driven cab takes priority, so the AI does not take the consist from them
-    TController *humandriver = nullptr;
-    for( auto *drv : drivers ) {
-        if( false == drv->AIControllFlag ) { humandriver = drv; break; }
-    }
+    auto const human { std::ranges::find_if(
+        drivers, []( TController const *drv ) { return false == drv->AIControllFlag; } ) };
     // with a single primary it stays; otherwise: the human, the end vehicles, the first on the list
-    TController *newprimary =
-        ( primarycount == 1 )           ? existingprimary :
-        ( humandriver != nullptr )      ? humandriver :
-        ( front->Mechanik != nullptr )  ? front->Mechanik :
-        ( farend->Mechanik != nullptr ) ? farend->Mechanik :
-                                          drivers.front();
+    TController *newprimary { drivers.front() };
+    if( primarycount == 1 )                     { newprimary = existingprimary; }
+    else if( human != drivers.end() )           { newprimary = *human; }
+    else if( headvehicle->Mechanik != nullptr ) { newprimary = headvehicle->Mechanik; }
+    else if( farend->Mechanik != nullptr )      { newprimary = farend->Mechanik; }
     newprimary->ClaimConsistPrimary();
 }
 

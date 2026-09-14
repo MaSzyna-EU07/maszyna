@@ -25,7 +25,6 @@ auto const EU07_AI_BRAKINGTESTACCELERATION = -0.06;
 auto const EU07_AI_NOMOVEMENT = 0.05; // standstill velocity threshold
 auto const EU07_AI_OVERCHARGETIME = 3.0; // [s]
 auto const EU07_AI_MOVEMENT = 1.0; // deliberate movement velocity threshold
-auto const EU07_AI_SECONDARYSCANINTERVAL = 5.0; // s - a secondary scans for a wake-up less often than the primary
 auto const EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE = 10000.0;
 
 enum TOrders
@@ -147,7 +146,6 @@ enum TSpeedPosFlag
     spRoadVel = 0x8000, // zadanie prędkości drogowej
     spSectionVel = 0x20000, // odcinek z ograniczeniem
     spProximityVelocity = 0x40000, // odcinek z ograniczeniem i podaną jego długościa
-    spNotOurShuntSignal = 0x80000 // shunting signal a dormant driver found already permitting - not for us
 //    spDontApplySpeedLimit = 0x10000 // this point won't apply its speed limit. potentially set by the scanning vehicle
 };
 
@@ -157,7 +155,7 @@ struct TSpeedPosFlagDescription {
     char const *name;
 };
 
-inline constexpr TSpeedPosFlagDescription SpeedPosFlagDescriptions[] {
+inline constexpr std::array<TSpeedPosFlagDescription, 16> SpeedPosFlagDescriptions {{
     { spSemaphor, "semaphore" },
     { spShuntSemaphor, "shunt" },
     { spPassengerStopPoint, "W4" },
@@ -174,7 +172,7 @@ inline constexpr TSpeedPosFlagDescription SpeedPosFlagDescriptions[] {
     { spReverse, "reverse" },
     { spElapsed, "passed" },
     { spCommandSent, "sent" },
-    { spNotOurShuntSignal, "not-ours" } };
+}};
 
 class TSpeedPos
 { // pozycja tabeli prędkości dla AI
@@ -209,8 +207,6 @@ class TSpeedPos
     std::string TableText() const;
     std::string GetName() const;
     bool IsProperSemaphor(TOrders order = Wait_for_orders);
-    // signal ahead permits - wakes a dormant AI without waiting for the next change
-    bool AllowsDeparture() const;
 };
 
 //----------------------------------------------------------------------------
@@ -349,11 +345,10 @@ private:
     void determine_braking_distance();
     void determine_proximity_ranges();
     void scan_route( double const Range );
-    void ScanForWakeup( double const Range ); // dormant/secondary AI: checks the signal ahead for a wake-up
     // front/rear/fLength per CheckDirection, CabOccupied fallback; no CheckVehicles side effects
     void OrientScanToCab();
     void scan_obstacles( double const Range );
-    void UpdateSecondary( double const Awarenessrange ); // scans for a wake-up, does not drive
+    void UpdateSecondary(); // a secondary does not drive, it only settles its own vehicle
     void SettleSecondaryAI(); // drops force and brake, keeps vigilance quiet
     void control_wheelslip();
     void control_pantographs();
@@ -392,10 +387,6 @@ private:
     void control_braking_force();
     void apply_independent_brake_only();
     void check_route_ahead( double const Range );
-    // the driver at the front (scanning direction) - the signal hands the lead to them
-    TController *DepartureDriver() const;
-    // engines down: primary for the front; running: the order goes to the current primary
-    void WakeForDeparture( std::string const &Command, double const Value1, double const Value2 );
     // false when the permission at the nearest signal was given to another consist
     bool SignalPermissionIsOurs( bool const Signalgivesgo ) const;
     bool OtherConsistAtSignal() const; // another consist in front of the signal = the addressee of the permission
@@ -572,9 +563,9 @@ private:
     void TableClear();
     int TableDirection() { return iTableDirection; }
     // Ra: stare funkcje skanujące, używane do szukania sygnalizatora z tyłu
-    bool IsOccupiedByAnotherConsist( TTrack *Track, double const Distance = 0.0 ) const;
+    bool IsOccupiedByAnotherConsist( TTrack const *Track, double const Distance = 0.0 ) const;
     // distance to the nearest vehicle of another consist ahead on the track; -1.0 when there is none
-    double DistanceToAnotherConsist( TTrack *Track, double const Distance ) const;
+    double DistanceToAnotherConsist( TTrack const *Track, double const Distance ) const;
     bool BelongsToConsist( TDynamicObject const *Vehicle ) const; // whether the vehicle is part of our consist
     basic_event *CheckTrackEventBackward( double fDirection, TTrack *Track, TDynamicObject *Vehicle, int const Eventdirection = 1, end const End = end::rear );
     TTrack *BackwardTraceRoute( double &fDistance, double &fDirection, TDynamicObject *Vehicle, basic_event *&Event, int const Eventdirection = 1, end const End = end::rear, bool const Untiloccupied = true );

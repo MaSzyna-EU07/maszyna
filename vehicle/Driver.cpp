@@ -339,9 +339,6 @@ bool TSpeedPos::Update()
             // odczyt komórki pamięci najlepiej by było zrobić jako notyfikację,
             // czyli zmiana komórki wywoła jakąś podaną funkcję
             CommandCheck(); // sprawdzenie typu komendy w evencie i określenie prędkości
-            if( fVelNext == 0.0 ) {
-                iFlags &= ~spNotOurShuntSignal; // saw "stop" - the next permission will light up with us here
-            }
         }
     }
     return false;
@@ -399,14 +396,6 @@ bool TSpeedPos::IsProperSemaphor(TOrders order)
 	return false; // true gdy zatrzymanie, wtedy nie ma po co skanować dalej
 }
 
-bool TSpeedPos::AllowsDeparture() const
-{ // signal ahead permits - a dormant AI may start without waiting for a change
-    if( fDist <= 0.0 ) { return false; }
-    if( ( iFlags & spEnabled ) == 0 ) { return false; }
-    if( ( iFlags & ( spSemaphor | spShuntSemaphor ) ) == 0 ) { return false; }
-    return fVelNext < 0.0 || fVelNext >= 1.0;
-}
-
 bool TSpeedPos::Set(basic_event *event, double dist, double length, TOrders order)
 { // zapamiętanie zdarzenia
     fDist = dist;
@@ -420,11 +409,6 @@ bool TSpeedPos::Set(basic_event *event, double dist, double length, TOrders orde
     }
     iFlags |= spEnabled;
     CommandCheck(); // sprawdzenie typu komendy w evencie i określenie prędkości
-    if( ( iFlags & spShuntSemaphor ) != 0
-     && fVelNext != 0.0 ) {
-        // a shunting signal addresses nobody in particular; a semaphore sets a route for us
-        iFlags |= spNotOurShuntSignal; // permission found already lit - we did not see who it was given to
-    }
 	// zależnie od trybu sprawdzenie czy jest tutaj gdzieś semafor lub tarcza manewrowa
 	// jeśli wskazuje stop wtedy wystawiamy true jako koniec sprawdzania
 	// WriteLog("EventSet: Vel=" + AnsiString(fVelNext) + " iFlags=" + AnsiString(iFlags) + " order="+AnsiString(order));
@@ -532,9 +516,8 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
     double fLastDir{ 0.0 };
 
     // with no direction set (dormant AI) we scan by the occupied cab
-    int const scandirection{ iDirection != 0 ? iDirection : mvOccupied->CabOccupied };
-
-    if (iTableDirection != scandirection ) {
+    if( int const scandirection{ iDirection != 0 ? iDirection : mvOccupied->CabOccupied };
+        iTableDirection != scandirection ) {
         // jeśli zmiana kierunku, zaczynamy od toru ze wskazanym pojazdem
         TableClear();
 /*
@@ -674,10 +657,6 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
                                     + (SemNextIndex != -1 ? sSpeedTable[SemNextIndex].GetName() : "unknown semaphor")
                                     + ")");
                             }
-                        }
-                        if( iEngineActive ) {
-                            // only a dormant driver acts on it, so do not tag it for anybody else
-                            newspeedpoint.iFlags &= ~spNotOurShuntSignal;
                         }
                     }
                 }
@@ -1593,29 +1572,12 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
                 if( isforsomeoneelse ) {
                     VelSignalNext = 0.0;
                     Velocity = 0.0;
-                    // it permits, but for the vehicle standing in front of us. Record that now -
-                    // once it pulls away the signal alone no longer says whose permission it was
-                    if( false == iEngineActive
-                     && ( Point.iFlags & spShuntSemaphor )
-                     && Point.fVelNext != 0.0 ) {
-                        Point.iFlags |= spNotOurShuntSignal;
-                    }
                 }
                 else {
                     VelSignalNext = Point.fVelNext;
                     if( Velocity < 0 ) {
                         Velocity = fVelMax;
                         VelSignal = fVelMax;
-                    }
-                    if( Command == TCommandType::cm_Unknown && Point.AllowsDeparture() ) {
-                        // already permitting as it entered the FOV - wake up without waiting for a change
-                        Command = ( Point.iFlags & spShuntSemaphor ) != 0 ?
-                            TCommandType::cm_ShuntVelocity :
-                            TCommandType::cm_SetVelocity;
-                        SemPermitIndex = Pointindex;
-                        if( std::fabs( VelSignal ) < 1.0 ) {
-                            VelSignal = Point.fVelNext < 0.0 ? -1.0 : Point.fVelNext;
-                        }
                     }
                 }
             }
@@ -2459,23 +2421,22 @@ bool TController::CheckVehicles(TOrders user)
     // Ra 2014-09: ustawić moveMultiControl, jeśli wszystkie są w ukrotnieniu (i skrajne mają kabinę?)
     while (p)
     { // sprawdzanie, czy jest głównym sterującym, żeby nie było konfliktu
+        // a tamten ma priorytet
+        // TODO: take into account drivers' operating modes, one or more of them might be on banking duty
         if( p->Mechanik // jeśli ma obsadę
-         && p->Mechanik != this ) { // ale chodzi o inny pojazd, niż aktualnie sprawdzający
-            if( p->Mechanik->primary() ) {
-                // a tamten ma priorytet
-                // TODO: take into account drivers' operating modes, one or more of them might be on banking duty
-                if( primary()
-                 && mvOccupied->DirAbsolute
-                 && mvOccupied->BrakeCtrlPos >= -1 ) {
-                    // jeśli rządzi i ma kierunek
-                    p->Mechanik->primary( false );
-                    p->Mechanik->ZeroLocalBrake();
-                    p->MoverParameters->BrakeLevelSet( p->MoverParameters->Handle->GetPos( bh_NP ) ); // odcięcie na zaworze maszynisty
-                    p->Mechanik->BrakeLevelSet( p->MoverParameters->BrakeCtrlPos ); //ustawienie zmiennej GBH
-                }
-                else {
-                    main = false; // nici z rządzenia
-                }
+         && p->Mechanik != this // ale chodzi o inny pojazd, niż aktualnie sprawdzający
+         && p->Mechanik->primary() ) {
+            if( primary()
+             && mvOccupied->DirAbsolute
+             && mvOccupied->BrakeCtrlPos >= -1 ) {
+                // jeśli rządzi i ma kierunek
+                p->Mechanik->primary( false );
+                p->Mechanik->ZeroLocalBrake();
+                p->MoverParameters->BrakeLevelSet( p->MoverParameters->Handle->GetPos( bh_NP ) ); // odcięcie na zaworze maszynisty
+                p->Mechanik->BrakeLevelSet( p->MoverParameters->BrakeCtrlPos ); //ustawienie zmiennej GBH
+            }
+            else {
+                main = false; // nici z rządzenia
             }
         }
         ++iVehicles; // jest jeden pojazd więcej
@@ -2662,13 +2623,15 @@ void TController::DirectionInitial()
     mvOccupied->CabActivisationAuto();
     if( mvOccupied->Vel >= EU07_AI_MOVEMENT ) {
         // actually moving - direction from the sign of V
-        iDirection = iDirectionOrder = mvOccupied->V > 0 ? 1 : -1;
+        iDirection = mvOccupied->V > 0 ? 1 : -1;
+        iDirectionOrder = iDirection;
         DirectionForward( mvOccupied->V * mvOccupied->CabActive >= 0.0 );
     }
     else {
         // standing: reverser forward relative to the cab, not from the sign of a micro V
         DirectionForward( true );
-        iDirection = iDirectionOrder = CheckDirection();
+        iDirection = CheckDirection();
+        iDirectionOrder = iDirection;
     }
     CheckVehicles();
 };
@@ -4489,14 +4452,11 @@ void TController::PutCommand(std::string NewCommand, double NewValue1, double Ne
 bool TController::CommandClaimsPrimary( std::string const &Command, double const Value )
 { // a driving/startup order wakes a secondary crew up to lead, otherwise nobody moves the consist
     auto const isdrivingorder = [&Command]( std::initializer_list<char const *> const names ) {
-        for( auto const *name : names ) {
-            if( Command == name ) { return true; }
-        }
-        return false;
+        return std::ranges::any_of(
+            names, [&Command]( char const *name ) { return Command == name; } );
     };
     return
         Command.compare( 0, 10, "Timetable:" ) == 0
-     || ( Command == "SetVelocity" && Value != 0.0 )
      || isdrivingorder( { "Prepare_engine", "ShuntVelocity", "Obey_train", "Bank", "Shunt", "Loose_shunt" } );
 }
 
@@ -4549,11 +4509,11 @@ TController::ActiveEnginePrimary() const {
     ForEachInConsist(
         pVehicle,
         [&active]( TDynamicObject *Vehicle ) {
-            auto *driver { Vehicle->Mechanik };
-            if( driver != nullptr
-             && driver->primary()
-             && driver->iEngineActive ) {
-                active = driver;
+            if( auto *vehicledriver { Vehicle->Mechanik };
+                vehicledriver != nullptr
+             && vehicledriver->primary()
+             && vehicledriver->iEngineActive ) {
+                active = vehicledriver;
                 return false;
             }
             return true;
@@ -4563,12 +4523,13 @@ TController::ActiveEnginePrimary() const {
 
 bool TController::PutCommand( std::string NewCommand, double NewValue1, double NewValue2, glm::dvec3 const *NewLocation, TStopReason reason )
 { // analiza komendy
-    auto const shouldtakeprimary{
-        AIControllFlag
-     && !primary()
-     && CommandClaimsPrimary( NewCommand, NewValue1 )
-     && ActiveEnginePrimary() == nullptr }; // steal only while the engines are down
-    if( shouldtakeprimary ) {
+    // steal only while the engines are down
+    if( auto const shouldtakeprimary{
+            AIControllFlag
+         && !primary()
+         && CommandClaimsPrimary( NewCommand, NewValue1 )
+         && ActiveEnginePrimary() == nullptr };
+        shouldtakeprimary ) {
         ClaimConsistPrimary();
         if( mvOccupied->CabActive == 0 ) {
             mvOccupied->CabActivisationAuto();
@@ -4648,7 +4609,6 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
                 asNextStop = TrainParams.NextStop();
                 m_lastannouncement = announcement_t::idle;
                 primary( true );
-//                NewCommand = Global.asCurrentSceneryPath + NewCommand;
                 auto lookup =
                     FileExists(
                         { Global.asCurrentSceneryPath + NewCommand, paths::sounds + NewCommand },
@@ -5088,36 +5048,14 @@ TController::SettleSecondaryAI() {
 }
 
 void
-TController::UpdateSecondary( double const Awarenessrange ) {
-    // does not drive; scans while the consist is shut down (wake-up / taking over on a signal)
+TController::UpdateSecondary() {
+    // does not drive; only keeps its own vehicle settled while the consist is shut down
     if( AIControllFlag ) {
         SettleSecondaryAI();
     }
     else {
         // a human sits in the cab - they handle it themselves
         mvOccupied->BrakeValveActive = true;
-    }
-    if( pVehicle->ctOwner != nullptr
-     && pVehicle->ctOwner != this
-     && pVehicle->ctOwner->iEngineActive ) {
-        return; // the consist runs under an active primary - do not duplicate the scan
-    }
-    // a secondary needs no responsiveness - scans rarely, cheap with many shut down consists
-    auto const scaninterval{ std::max( ReactionTime, EU07_AI_SECONDARYSCANINTERVAL ) };
-    if( LastReactionTime < scaninterval ) { return; }
-    LastReactionTime -= scaninterval;
-    OrientScanToCab();
-    scan_route( Awarenessrange );
-    // no obstacles - a dormant driver only waits for a signal; the primary computes them later
-    ScanForWakeup( Awarenessrange );
-}
-
-void
-TController::ScanForWakeup( double const Range ) {
-    // a permission may wake a dormant AI up (Prepare_engine in the mask)
-    if( AIControllFlag
-     && ( OrderCurrentGet() & ~( Shunt | Loose_shunt | Obey_train | Bank | Prepare_engine ) ) == 0 ) {
-        check_route_ahead( Range );
     }
 }
 
@@ -5136,7 +5074,7 @@ TController::Update( double const Timedelta ) {
                 30.0 * fDriverDist ) };
 
     if( !primary() ) {
-        UpdateSecondary( awarenessrange );
+        UpdateSecondary();
         return;
     }
 
@@ -5522,11 +5460,11 @@ bool TController::BelongsToConsist( TDynamicObject const *Vehicle ) const
     return pVehicle->is_connected( Vehicle ); // with no owner settled, the coupling is all that is left
 }
 
-double TController::DistanceToAnotherConsist( TTrack *Track, double const Distance ) const
+double TController::DistanceToAnotherConsist( TTrack const *Track, double const Distance ) const
 { // Distance is signed by the scan direction and reaches the far end of the track
     auto nearest { -1.0 };
     auto const scandirection { Distance > 0 ? 1 : -1 }; // positive value means scan towards point2 end of the track
-    for( auto *dynamic : Track->Dynamics ) {
+    for( auto const *dynamic : Track->Dynamics ) {
         if( BelongsToConsist( dynamic ) ) { continue; }
         // how far the foreign vehicle sits from that same far end
         auto const obstaclelocation { scandirection > 0 ? Track->Length() - dynamic->RaTranslationGet() : dynamic->RaTranslationGet() };
@@ -5541,15 +5479,14 @@ double TController::DistanceToAnotherConsist( TTrack *Track, double const Distan
     return nearest;
 }
 
-bool TController::IsOccupiedByAnotherConsist( TTrack *Track, double const Distance ) const
+bool TController::IsOccupiedByAnotherConsist( TTrack const *Track, double const Distance ) const
 { // whether the track carries vehicles of another consist
     if( Track->Dynamics.empty() ) { return false; }
     if( Distance == 0.0 ) {
         // no scan reference given - any foreign vehicle on the track counts
-        for( auto *dynamic : Track->Dynamics ) {
-            if( false == BelongsToConsist( dynamic ) ) { return true; }
-        }
-        return false;
+        return std::ranges::any_of(
+            Track->Dynamics,
+            [this]( TDynamicObject const *dynamic ) { return false == BelongsToConsist( dynamic ); } );
     }
     return DistanceToAnotherConsist( Track, Distance ) >= 0.0;
 };
@@ -6867,18 +6804,19 @@ TController::scan_obstacles( double const Range ) {
     // members for an obstacle and missing the consist standing ahead
     auto const scandirection { iDirection != 0 ? iDirection : mvOccupied->CabOccupied };
 
-    int routescandirection;
     // for moving vehicle determine heading from velocity; for standing fall back on the set direction
-    if( std::abs(frontvehicle->MoverParameters->V) > 0.5 ? // ignore potential micro-stutters in oposite direction during "almost stop"
-	        frontvehicle->MoverParameters->V > 0.0 :
-	        pVehicle->DirectionGet() == frontvehicle->DirectionGet() ? scandirection >= 0 : scandirection <= 0 ) {
-        // towards coupler 0
-        routescandirection = end::front;
+    bool towardcoupler0;
+    if( std::abs( frontvehicle->MoverParameters->V ) > 0.5 ) {
+        // ignore potential micro-stutters in oposite direction during "almost stop"
+        towardcoupler0 = frontvehicle->MoverParameters->V > 0.0;
+    }
+    else if( pVehicle->DirectionGet() == frontvehicle->DirectionGet() ) {
+        towardcoupler0 = scandirection >= 0;
     }
     else {
-        // towards coupler 1
-        routescandirection = end::rear;
+        towardcoupler0 = scandirection <= 0;
     }
+    int const routescandirection { towardcoupler0 ? end::front : end::rear };
 /*
     if( pVehicle->MoverParameters->CabOccupied < 0 ) {
         // flip the scan direction in the rear cab
@@ -7584,8 +7522,8 @@ TController::pick_optimal_speed( double const Range ) {
     SwitchClearDist = -1;
     ActualProximityDist = Range; // funkcja Update() może pozostawić wartości bez zmian
 
+    // if we're idling bail out early
     if( false == is_active() ) {
-        ScanForWakeup( Range );
         VelDesired = 0.0;
         VelNext = 0.0;
         AccDesired = std::min( AccDesired, EU07_AI_NOACCELERATION );
@@ -8546,48 +8484,9 @@ bool
 TController::SignalPermissionIsOurs( bool const Signalgivesgo ) const {
     // the permission belongs to the consist standing closest to the signal
     if( false == Signalgivesgo ) { return true; }
-    // a shunting permission found already lit was handed to whoever stood here before us; it only
-    // keeps a dormant driver from waking up, and drops as soon as the signal shows stop
-    if( false == iEngineActive
-     && SemPermitIndex < sSpeedTable.size() // std::size_t( -1 ) never is
-     && ( sSpeedTable[ SemPermitIndex ].iFlags & spNotOurShuntSignal ) ) {
-        return false;
-    }
     // the addressee usually cuts the scan short and the signal never makes it into the table;
     // this closes the case where it did, with the addressee still standing in front of it
     return false == OtherConsistAtSignal();
-}
-
-TController *
-TController::DepartureDriver() const {
-    // after OrientScanToCab / CheckVehicles the front of the consist is pVehicles[front]
-    if( pVehicles[ end::front ] != nullptr
-     && pVehicles[ end::front ]->Mechanik != nullptr ) {
-        return pVehicles[ end::front ]->Mechanik;
-    }
-    return const_cast<TController *>( this );
-}
-
-void
-TController::WakeForDeparture( std::string const &Command, double const Value1, double const Value2 ) {
-    // the primary already has the engine running - we do not steal, we just pass the order on
-    if( auto *active { ActiveEnginePrimary() } ) {
-        active->PutCommand( Command, Value1, Value2, nullptr );
-        return;
-    }
-    // engines down - the lead goes to the driver at the front (scanning direction)
-    auto *target { primary() ? this : DepartureDriver() };
-    if( target == nullptr ) {
-        target = this;
-    }
-    if( target != this ) {
-        if( false == target->primary() ) {
-            target->ClaimConsistPrimary();
-        }
-        target->PutCommand( Command, Value1, Value2, nullptr );
-        return;
-    }
-    PutCommand( Command, Value1, Value2, nullptr );
 }
 
 void
@@ -8595,16 +8494,9 @@ TController::check_route_ahead( double const Range ) {
 
     auto const comm { TableUpdate( VelDesired, ActualProximityDist, VelNext, AccDesired ) };
 
-    auto const signalpermits { comm == TCommandType::cm_SetVelocity || comm == TCommandType::cm_ShuntVelocity };
-    if( false == SignalPermissionIsOurs( signalpermits ) ) {
-        // the permission was given to another consist, we wait for our own. Remember it on the
-        // entry, so the addressee pulling away does not hand the signal over to us; the flag is
-        // dropped when it shows stop, and only a dormant driver ever carries one
-        if( false == iEngineActive
-         && SemPermitIndex < sSpeedTable.size()
-         && ( sSpeedTable[ SemPermitIndex ].iFlags & spShuntSemaphor ) ) {
-            sSpeedTable[ SemPermitIndex ].iFlags |= spNotOurShuntSignal;
-        }
+    if( auto const signalpermits { comm == TCommandType::cm_SetVelocity || comm == TCommandType::cm_ShuntVelocity };
+        false == SignalPermissionIsOurs( signalpermits ) ) {
+        // the permission was given to another consist, we wait for our own
         return;
     }
 
@@ -8622,17 +8514,17 @@ TController::check_route_ahead( double const Range ) {
         }
         break;
     }
-    case TCommandType::cm_SetVelocity: {
-        if( ( OrderCurrentGet() & ~( Shunt | Loose_shunt | Obey_train | Bank | Prepare_engine ) ) == 0 ) {
+    case TCommandType::cm_SetVelocity: { // od wersji 357 semafor nie budzi wyłączonej lokomotywy
+        if( ( OrderCurrentGet() & ~( Shunt | Loose_shunt | Obey_train | Bank ) ) == 0 ) {
             if( std::fabs( VelSignal ) >= 1.0 ) { // 0.1 nie wysyła się do samochodow, bo potem nie ruszą
-                WakeForDeparture( "SetVelocity", VelSignal, VelNext );
+                PutCommand( "SetVelocity", VelSignal, VelNext, nullptr ); // komenda robi dodatkowe operacje
             }
         }
         break;
     }
-    case TCommandType::cm_ShuntVelocity: {
-        if( ( OrderCurrentGet() & ~( Shunt | Loose_shunt | Obey_train | Bank | Prepare_engine ) ) == 0 ) {
-            WakeForDeparture( "ShuntVelocity", VelSignal, VelNext );
+    case TCommandType::cm_ShuntVelocity: { // od wersji 357 Tm nie budzi wyłączonej lokomotywy
+        if( ( OrderCurrentGet() & ~( Shunt | Loose_shunt | Obey_train | Bank ) ) == 0 ) {
+            PutCommand( "ShuntVelocity", VelSignal, VelNext, nullptr );
         }
         else if( iCoupler ) { // jeśli jedzie w celu połączenia
             SetVelocity( VelSignal, VelNext );
@@ -8640,7 +8532,7 @@ TController::check_route_ahead( double const Range ) {
         break;
     }
     case TCommandType::cm_Command: { // komenda z komórki
-        if( ( OrderCurrentGet() & ~( Shunt | Loose_shunt | Obey_train | Bank | Prepare_engine ) ) == 0 ) {
+        if( ( OrderCurrentGet() & ~( Shunt | Loose_shunt | Obey_train | Bank ) ) == 0 ) {
             if( mvOccupied->Vel < 0.1 ) {
                 // dopiero jak stanie
 /*
