@@ -137,6 +137,9 @@ public:
     TSubModel *Child { nullptr };
 public:
     material_handle m_material { null_handle }; // numer tekstury, -1 wymienna, 0 brak
+    // index of the top level branch of the model this submodel belongs to. submodels sharing a branch
+    // also share the texture variant picked for them, so a multi-mesh load chunk stays consistent
+    int m_variantgroup { 0 };
     bool bWire { false }; // nie używane, ale wczytywane
     float Opacity { 1.0f };
     float f_Angle { 0.0f };
@@ -168,6 +171,9 @@ public:
 
 public:
 	static size_t iInstance; // identyfikator egzemplarza, który aktualnie renderuje model
+	// seed of the currently rendered model instance, combined with m_variantgroup it picks
+	// texture variants for materials which declare them. 0 for instances without own seed
+	static std::uint32_t iVariantSeed;
 	static material_handle const *ReplacableSkinId;
 	static int iAlpha; // maska bitowa dla danego przebiegu
 	static float fSquareDist;
@@ -211,6 +217,8 @@ public:
 	static void ReplacableSet(material_handle const *r, int a) {
 		ReplacableSkinId = r;
 		iAlpha = a; };
+	// returns id of texture variant to use for provided submodel of the currently rendered instance
+	static std::uint32_t VariantId(TSubModel const *Submodel);
 	void Name_Material( std::string const &Name );
 	void Name( std::string const &Name );
 	// Ra: funkcje do budowania terenu z E3D
@@ -291,6 +299,8 @@ public:
 	void SaveToBinFile(std::string const &FileName);
 	uint32_t Flags() const { return iFlags; };
 	void Init();
+	// assigns each top level branch of the model, and everything below it, its own variant group id
+	void assign_variant_groups();
 	std::string NameGet() const { return m_filename; };
     nameoffset_sequence const & smoke_sources() const {
         return m_smokesources; }
