@@ -31,6 +31,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/dictionary.h"
 #include "version_info.h"
 #include <chrono>
+#include <format>
 #include "utilities/translation.h"
 
 #if WITH_DISCORD_RPC
@@ -320,9 +321,11 @@ int eu07_application::init(int Argc, char *Argv[])
 		return result;
 	}
 
-	// the run's seed, settled once and kept in Globals: the engines come out of it
+	// the run's seed, settled once and kept in Globals: the engines come out of it.
+	// narrowed on purpose - mt19937 and seed_of() both work on 32 bits, and that is
+	// the seed somebody can write down and pass on
 	if (!Global.random_seed)
-		Global.random_seed = true_random_seed();
+		Global.random_seed = static_cast<std::uint32_t>(true_random_seed());
 	Global.random_engine.seed(Global.random_seed);
 	Global.local_random_engine.seed(Global.random_seed);
 
@@ -1149,7 +1152,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			if (i + 1 < Argc)
 			{
 				Global.random_seed = seed_of(Argv[++i]);
-				WriteLog("seed given on the command line: " + std::string(Argv[i]) + " -> " + std::to_string(Global.random_seed));
+				WriteLog(std::format("seed given on the command line: {} -> {}", Argv[i], Global.random_seed));
 			}
 		}
 		else
@@ -1434,7 +1437,7 @@ int eu07_application::init_data()
 
 int eu07_application::init_modes()
 {
-	Global.local_random_engine.seed(true_random_seed());
+	Global.local_random_engine.seed(static_cast<std::mt19937::result_type>(true_random_seed()));
 
 	if ((!Global.network_servers.empty() || Global.network_client) && Global.SceneryFile.empty())
 	{

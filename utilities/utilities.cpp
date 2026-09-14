@@ -29,6 +29,7 @@ Copyright (C) 2007-2014 Maciej Cierniak
 #include "utilities/Globals.h"
 #include "utilities/parser.h"
 #include "utilities/U8.h"
+#include "utilities/Logs.h"
 
 
 
@@ -142,21 +143,28 @@ std::uint64_t true_random_seed()
 	try
 	{
 		std::random_device rd;
-		if (rd.entropy()  > 0.0)
+		if (rd.entropy() > 0.0)
 		{
-			std::uint32_t high = rd();
-			std::uint32_t low = rd();
+			// NOTE: both halves have to be 64 bit wide before the shift - shifting a std::uint32_t
+			// by 32 is undefined behaviour, and drops the high half of the seed
+			std::uint64_t const high{rd()};
+			std::uint64_t const low{rd()};
 			return (high << 32) | low;
 		}
 	}
-	catch (...) {}
+	catch (std::exception const &Error)
+	{
+		// std::random_device throws when the machine has no usable hardware entropy source;
+		// the clock below stands in for it, which is worth saying out loud since it is a
+		// weaker seed than the caller asked for
+		WriteLog(std::format("random: no hardware entropy source ({}), seeding from the clock instead", Error.what()));
+	}
 	return static_cast<std::uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
 }
 
 std::uint32_t seed_of(std::string const &Text)
 {
-	std::uint32_t number{};
-	if (std::from_chars(Text.data(), Text.data() + Text.size(), number).ec == std::errc{})
+	if (std::uint32_t number{}; std::from_chars(Text.data(), Text.data() + Text.size(), number).ec == std::errc{})
 	{
 		return number;
 	}
