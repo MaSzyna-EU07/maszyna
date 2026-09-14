@@ -77,6 +77,11 @@ void editor_ui::render_menu_contents()
 	}
 }
 
+bool editor_ui::plan_takes_history() const
+{
+	return m_planpanel.takes_history_shortcuts();
+}
+
 void editor_ui::toggleBrushSettings(bool isVisible)
 {
 	if (m_brushobjects.is_open != isVisible)

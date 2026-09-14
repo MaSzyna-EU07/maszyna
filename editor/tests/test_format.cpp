@@ -9,6 +9,10 @@ http://mozilla.org/MPL/2.0/.
 #include <variant>
 
 #include <cmath>
+#include <filesystem>
+#include <sstream>
+#include <fstream>
+#include <algorithm>
 #include <string>
 #include "check.hpp"
 import eu07.editor.plan_layout;
@@ -217,7 +221,34 @@ void a_file_from_before_lukowanie_still_opens() {
     CHECK(document->turnouts[0].station == 100.0);
     CHECK(document->turnouts[0].bend_from_track);
     CHECK(document->turnouts[0].bend == 0.0);
-    CHECK(editor::plan::io::serialize(*document).find("m0s 7") != std::string::npos);
+    CHECK(editor::plan::io::serialize(*document).find("m0s 9") != std::string::npos);
+}
+
+/// The header says which frame the numbers are in and what they are, so a reader
+/// never has to assume it — and a plan that claims another frame is not opened by
+/// guesswork.
+void the_header_states_the_frame_and_the_units() {
+    Document document;
+    Track track;
+    track.id = mint_track(document);
+    track.name = "tor";
+    track.anchor = AtPose{0.0, 0.0, 0.0};
+    track.elements = {Element{mint_element(document), Kind::Line, 0.0, 0, 250.0, Free{}}};
+    document.tracks.push_back(track);
+
+    const std::string text = editor::plan::io::serialize(document);
+    CHECK(text.find("crs 2180") != std::string::npos);
+    CHECK(text.find("units m rad 1/m") != std::string::npos);
+
+    const auto reread = editor::plan::io::deserialize(text);
+    CHECK(reread.has_value());
+    CHECK(reread && reread->tracks.size() == 1);
+
+    // another frame, and there is nothing sensible to do with it
+    std::string foreign = text;
+    const std::size_t at = foreign.find("crs 2180");
+    foreign.replace(at, std::string("crs 2180").size(), "crs 4326");
+    CHECK(!editor::plan::io::deserialize(foreign).has_value());
 }
 
 void a_file_from_before_the_export_path_still_opens() {
@@ -225,8 +256,8 @@ void a_file_from_before_the_export_path_still_opens() {
     // nothing said and the host falls back on its own answer.
     const std::string version_6 =
         "m0s 6\nnext 3\nview 0 0 0\norigin 0 0 0 0\ntypes 0\nturnouts 0\n"
-        "tracks 1\ntrack 1\ntkname tor\nanchor pose 0 0 0\nelements 1\n"
-        "element 2 line 0 0 250\n";
+        "tracks 1\ntrack 1\ntkname tor\nanchor pose 0 0 0\nelems 1\n"
+        "elem 2 line 0 0 250\n";
     const auto document = editor::plan::io::deserialize(version_6);
     CHECK(document.has_value());
     if (!document) {
@@ -234,7 +265,7 @@ void a_file_from_before_the_export_path_still_opens() {
     }
     CHECK(document->scn_path.empty());
     CHECK(document->tracks.size() == 1);
-    CHECK(editor::plan::io::serialize(*document).find("m0s 7") != std::string::npos);
+    CHECK(editor::plan::io::serialize(*document).find("m0s 9") != std::string::npos);
 }
 
 void a_file_from_before_the_nose_still_opens() {
@@ -257,7 +288,7 @@ void a_file_from_before_the_nose_still_opens() {
     CHECK(document->turnout_types[0].pieces.size() == 1);
 
     // and it is written back in the new form, with a place for the nose
-    CHECK(editor::plan::io::serialize(*document).find("m0s 7") != std::string::npos);
+    CHECK(editor::plan::io::serialize(*document).find("m0s 9") != std::string::npos);
 }
 
 void an_old_file_upgrades_to_the_piece_list() {
@@ -291,6 +322,136 @@ void an_old_file_upgrades_to_the_piece_list() {
     CHECK(editor::plan::io::serialize(*document).find("tseg ") != std::string::npos);
 }
 
+/// Plans live in one place: the editor's own directory inside the data the
+/// simulator runs on. A bare name goes there; a path that names a directory is
+/// taken as it stands.
+void a_plan_lands_where_plans_live() {
+    CHECK(editor::plan::io::default_project_path() == "editor/plan.m0s");
+    CHECK(editor::plan::io::project_file("moja_stacja.m0s") == "editor/moja_stacja.m0s");
+    CHECK(editor::plan::io::project_file("") == "editor/plan.m0s");
+    // said with a directory, it is left alone - including the default itself
+    CHECK(editor::plan::io::project_file("editor/plan.m0s") == "editor/plan.m0s");
+    CHECK(editor::plan::io::project_file("scenery/wycinek.m0s") == "scenery/wycinek.m0s");
+}
+
+/// Saving makes the directory it saves into: a fresh install of the game has no
+/// editor/ until something puts one there, and a plan is not the thing to fail on
+/// that.
+void saving_makes_the_directory() {
+    const std::filesystem::path file{"editor/test_saving_makes_the_directory.m0s"};
+    std::error_code ignored;
+    std::filesystem::remove(file, ignored);
+    std::filesystem::remove("editor", ignored);  // only succeeds when it is empty
+
+    CHECK(editor::plan::io::save(sample(), file.filename().generic_string()));
+    CHECK(std::filesystem::exists(file));
+    const auto reread = editor::plan::io::load(file.filename().generic_string());
+    CHECK(reread.has_value());
+    CHECK(reread && editor::plan::io::serialize(*reread) == editor::plan::io::serialize(sample()));
+
+    std::filesystem::remove(file, ignored);
+}
+
+/// The sample plan in editor/samples opens, and everything in it stands up: the
+/// straights, the transitions, the arcs, the międzytorze held against another
+/// track, the branches pinned to turnout frogs, and a turnout bent onto the curve
+/// it stands in. It is the file a new user is handed, so it has to lay clean - and
+/// when the format changes, this is what says the sample was left behind.
+void the_sample_plan_opens_and_lays_clean() {
+    std::ifstream file{std::filesystem::path{EU07_PLAN_SAMPLES_DIR} / "demo.m0s", std::ios::binary};
+    CHECK(file.good());
+    std::ostringstream text;
+    text << file.rdbuf();
+
+    const auto document = editor::plan::io::deserialize(text.str());
+    CHECK(document.has_value());
+    if (!document) {
+        return;
+    }
+    CHECK(document->georeferenced && document->origin_set);
+    CHECK(document->tracks.size() == 4);
+    CHECK(document->turnouts.size() == 4);
+    CHECK(document->turnout_types.size() == 1);
+    CHECK(!document->scn_path.empty());
+
+    // what makes it a demo: every shape, a hold, a pinned branch, a trailing turnout
+    int lines = 0;
+    int arcs = 0;
+    int transitions = 0;
+    int holds = 0;
+    int pinned = 0;
+    for (const Track& track : document->tracks) {
+        pinned += std::holds_alternative<AtPort>(track.anchor) ? 1 : 0;
+        for (const Element& element : track.elements) {
+            lines += element.kind == Kind::Line ? 1 : 0;
+            arcs += element.kind == Kind::Arc ? 1 : 0;
+            transitions += element.kind == Kind::Clothoid ? 1 : 0;
+            holds += std::holds_alternative<Parallel>(element.hold) ? 1 : 0;
+        }
+    }
+    CHECK(lines == 4);
+    CHECK(arcs == 0);
+    CHECK(transitions == 0);
+    CHECK(holds == 1);
+    CHECK(pinned == 2);
+    CHECK(std::any_of(document->turnouts.begin(), document->turnouts.end(),
+                      [](const TurnoutPlacement& placement) { return !placement.facing; }));
+
+    const Solution solution = solve(*document);
+    for (const Diagnostic& diagnostic : solution.diagnostics) {
+        std::printf("  [demo] %s: %s\n", code_name(diagnostic.code), diagnostic.text.c_str());
+    }
+    CHECK(solution.diagnostics.empty());
+    CHECK(solution.tracks.size() == document->tracks.size());
+    for (const SolvedTrack& track : solution.tracks) {
+        CHECK(track.complete);
+        CHECK(track.length > 0.0);
+    }
+    CHECK(solution.turnouts.size() == document->turnouts.size());
+    for (const SolvedTurnout& turnout : solution.turnouts) {
+        CHECK(turnout.valid);
+    }
+    // the trapez has to close: every wstawka is a track pinned to one turnout's frog, and its far
+    // end is meant to stand on another turnout's frog. if the arithmetic behind the sample is off,
+    // the two ends drift apart and this is what says so
+    // the leads off the heads have to land on the tracks they lead to, and the trapez has to
+    // close: every one of them is a track pinned to a turnout's frog, so if the arithmetic behind
+    // the sample drifts, it shows up here as a gap on the ground rather than in a drawing nobody
+    // measured
+    int wstawki = 0;
+    for (const Track& authored : document->tracks) {
+        if (authored.name.find("trapez") == std::string::npos) {
+            continue;
+        }
+        ++wstawki;
+        const SolvedTrack* laid = find_track(solution, authored.id);
+        CHECK(laid != nullptr);
+        if (laid == nullptr) {
+            continue;
+        }
+        double nearest = 1e9;
+        for (const SolvedTurnout& turnout : solution.turnouts) {
+            nearest = std::min(nearest, std::hypot(turnout.frog.x - laid->end.x,
+                                                   turnout.frog.y - laid->end.y));
+        }
+        if (nearest >= 0.05) {
+            std::printf("  [demo] %s konczy sie %.3f m od najblizszej iglicy\n",
+                        authored.name.c_str(), nearest);
+        }
+        CHECK(nearest < 0.05);
+    }
+    CHECK(wstawki == 2);
+
+    // and the two tracks it all stands on are held exactly at międzytorze
+    const SolvedTrack& first = solution.tracks.front();
+    const SolvedTrack& second = solution.tracks[1];
+    CHECK(std::abs(std::abs(second.start.y - first.start.y) - 4.75) < 1e-6);
+
+    // and it says the same thing when written back out
+    CHECK(editor::plan::io::serialize(*document) ==
+          editor::plan::io::serialize(*editor::plan::io::deserialize(editor::plan::io::serialize(*document))));
+}
+
 void a_truncated_file_is_refused() {
     const std::string text = editor::plan::io::serialize(sample());
     // Cut off half way: the counts no longer match what follows.
@@ -303,9 +464,16 @@ int main() {
     RUN(round_trip_is_byte_identical);
     RUN(every_field_survives);
     RUN(an_older_file_is_refused);
+    RUN(the_header_states_the_frame_and_the_units);
+    // defined all along but never run: a version-6 file opening is exactly the sort of thing that
+    // has to keep being checked
+    RUN(a_file_from_before_the_export_path_still_opens);
     RUN(an_old_file_upgrades_to_the_piece_list);
     RUN(a_file_from_before_the_nose_still_opens);
     RUN(a_file_from_before_lukowanie_still_opens);
+    RUN(the_sample_plan_opens_and_lays_clean);
+    RUN(a_plan_lands_where_plans_live);
+    RUN(saving_makes_the_directory);
     RUN(a_truncated_file_is_refused);
     return REPORT();
 }

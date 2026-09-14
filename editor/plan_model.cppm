@@ -188,6 +188,15 @@ struct TurnoutPlacement {
     /// bend works out to is the solver's business and is never written back here.
     bool bend_from_track{true};
     double bend{0.0};
+
+    /// Przejście rozjazdowe. This turnout stands against another one, on the track that
+    /// other one's branch runs into: the two of them are one piece of trackwork, so where
+    /// this one stands is not authored here at all — it is worked out from the other's
+    /// frog. Move either of them and the other follows.
+    ///
+    /// @c station is left as it was found, so unpairing puts the turnout back where it
+    /// stood rather than at the plan's zero.
+    TurnoutId opposite{TurnoutId::none};
 };
 
 // ---------------------------------------------------------------------------

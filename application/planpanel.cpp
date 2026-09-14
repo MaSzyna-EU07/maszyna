@@ -1,7 +1,13 @@
 module;
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <deque>
+#include <unordered_map>
+#include <utility>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <numbers>
@@ -9,6 +15,7 @@ module;
 #include <variant>
 #include <vector>
 #include "imgui/imgui.h"
+#include <GLFW/glfw3.h>
 #include "utilities/Globals_macros.h"
 #if !defined(_WIN32)
 #include <sys/wait.h>
@@ -356,6 +363,15 @@ ImU32 element_colour(Kind const Kind_, bool const Active)
 	}
 }
 
+/// Pikietaz, the way a railway says a distance: kilometres and metres, "1+234.56".
+std::string chainage(double const Metres)
+{
+	char buffer[64];
+	auto const kilometres{static_cast<long long>(std::floor(Metres / 1000.0))};
+	std::snprintf(buffer, sizeof(buffer), "%lld+%06.2f", kilometres, Metres - static_cast<double>(kilometres) * 1000.0);
+	return buffer;
+}
+
 char const *kind_name(Kind const Kind_)
 {
 	switch (Kind_)
@@ -407,6 +423,38 @@ void plan_panel::update()
 
 void plan_panel::render_contents()
 {
+	m_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+
+	// Ctrl+Z / Ctrl+Y, unless a field is being typed into - there they belong to the text
+	auto const &io{ImGui::GetIO()};
+	auto const &keymap{io.KeyMap};
+	if (io.KeyCtrl && false == io.WantTextInput)
+	{
+		if (io.KeyShift)
+		{
+			if (keymap[ImGuiKey_Z] >= 0 && ImGui::IsKeyPressed(keymap[ImGuiKey_Z], false))
+			{
+				redo();
+			}
+		}
+		else if (keymap[ImGuiKey_Z] >= 0 && ImGui::IsKeyPressed(keymap[ImGuiKey_Z], false))
+		{
+			undo();
+		}
+		else if (keymap[ImGuiKey_Y] >= 0 && ImGui::IsKeyPressed(keymap[ImGuiKey_Y], false))
+		{
+			redo();
+		}
+	}
+
+	// layer keys. this ImGui indexes IsKeyPressed by the backend's own key codes, and the backend is
+	// GLFW, so the key is its code
+	if (false == io.WantTextInput && false == io.KeyCtrl && ImGui::IsKeyPressed(GLFW_KEY_1, false))
+	{
+		m_showortho = !m_showortho;
+		m_status = m_showortho ? "podklad wlaczony" : "podklad wylaczony";
+	}
+
 	handle_scene();
 	draw_on_scene();
 
@@ -418,6 +466,223 @@ void plan_panel::render_contents()
 	render_newmap_dialog();
 	render_location_dialog();
 	render_template_window();
+	render_curvature_strip();
+
+	watch_history();
+}
+
+bool plan_panel::takes_history_shortcuts() const
+{
+	return is_open && m_focused;
+}
+
+// ---------------------------------------------------------------------------
+// cofanie
+// ---------------------------------------------------------------------------
+
+namespace
+{
+// how many steps back the drawing remembers. a step is a copy of the document, which is a few
+// hundred numbers per track - deep history costs nothing worth counting here
+constexpr std::size_t kHistoryDepth{64};
+
+void mix(std::uint64_t &Print, std::uint64_t const Value)
+{
+	Print = (Print ^ Value) * 1099511628211ull;
+}
+void mix(std::uint64_t &Print, double const Value)
+{
+	std::uint64_t bits{0};
+	static_assert(sizeof(bits) == sizeof(Value));
+	std::memcpy(&bits, &Value, sizeof(bits));
+	mix(Print, bits);
+}
+void mix(std::uint64_t &Print, std::string const &Value)
+{
+	for (auto const character : Value)
+	{
+		mix(Print, static_cast<std::uint64_t>(static_cast<unsigned char>(character)));
+	}
+	mix(Print, Value.size());
+}
+} // namespace
+
+std::uint64_t plan_panel::document_print() const
+{
+	// everything a drawing is: the tracks, the turnouts standing on them, and the catalogue they
+	// are instances of. the view and the export path are not part of the drawing, so saving does
+	// not make a step
+	std::uint64_t print{14695981039346656037ull};
+	for (auto const &track : m_document.tracks)
+	{
+		mix(print, static_cast<std::uint64_t>(track.id));
+		mix(print, track.name);
+		if (auto const *pose{std::get_if<editor::plan::AtPose>(&track.anchor)}; pose != nullptr)
+		{
+			mix(print, pose->x);
+			mix(print, pose->y);
+			mix(print, pose->az);
+		}
+		else if (auto const *port{std::get_if<editor::plan::AtPort>(&track.anchor)}; port != nullptr)
+		{
+			mix(print, static_cast<std::uint64_t>(port->turnout));
+			mix(print, static_cast<std::uint64_t>(port->port));
+		}
+		for (auto const &element : track.elements)
+		{
+			mix(print, static_cast<std::uint64_t>(element.id));
+			mix(print, static_cast<std::uint64_t>(element.kind));
+			mix(print, element.radius);
+			mix(print, static_cast<std::uint64_t>(element.hand + 2));
+			mix(print, element.length);
+			if (auto const *parallel{std::get_if<editor::plan::Parallel>(&element.hold)}; parallel != nullptr)
+			{
+				mix(print, static_cast<std::uint64_t>(parallel->ref));
+				mix(print, parallel->offset);
+			}
+		}
+	}
+	for (auto const &turnout : m_document.turnouts)
+	{
+		mix(print, static_cast<std::uint64_t>(turnout.id));
+		mix(print, turnout.type);
+		mix(print, static_cast<std::uint64_t>(turnout.on));
+		mix(print, turnout.station);
+		mix(print, static_cast<std::uint64_t>(turnout.hand + 2));
+		mix(print, static_cast<std::uint64_t>(turnout.facing ? 1 : 0));
+		mix(print, static_cast<std::uint64_t>(turnout.bend_from_track ? 1 : 0));
+		mix(print, turnout.bend);
+	}
+	for (auto const &type : m_document.turnout_types)
+	{
+		mix(print, type.name);
+		mix(print, type.crossing_n);
+		mix(print, type.length);
+		mix(print, type.blade.tip_thickness);
+		mix(print, type.blade.nose);
+		mix(print, type.blade.railtop_width);
+		for (auto const &piece : type.pieces)
+		{
+			mix(print, static_cast<std::uint64_t>(piece.part));
+			mix(print, piece.length);
+			mix(print, piece.radius_start);
+			mix(print, piece.radius_end);
+			mix(print, piece.turn_in);
+		}
+	}
+	return print;
+}
+
+void plan_panel::watch_history()
+{
+	auto const print{document_print()};
+	if (print != m_print)
+	{
+		if (false == m_step_open)
+		{
+			// the state to come back to is the one from before this change, which is the last
+			// settled one - not the document as it stands now
+			m_undo.push_back(m_settled);
+			if (m_undo.size() > kHistoryDepth)
+			{
+				m_undo.pop_front();
+			}
+			m_redo.clear();
+			m_step_open = true;
+		}
+		m_print = print;
+		return;
+	}
+	// nothing changed this frame: once nothing is being dragged and no field is being typed into,
+	// the step is finished and whatever comes next is a step of its own
+	if (m_step_open && false == ImGui::IsAnyItemActive() && false == ImGui::IsMouseDown(0))
+	{
+		m_settled = m_document;
+		m_step_open = false;
+	}
+}
+
+void plan_panel::undo()
+{
+	if (m_undo.empty())
+	{
+		m_status = "nie ma czego cofnac";
+		return;
+	}
+	m_redo.push_back(m_document);
+	if (m_redo.size() > kHistoryDepth)
+	{
+		m_redo.pop_front();
+	}
+	m_document = std::move(m_undo.back());
+	m_undo.pop_back();
+	settle_after_history();
+	m_status = "cofnieto (" + std::to_string(m_undo.size()) + " krokow wstecz zostalo)";
+}
+
+void plan_panel::redo()
+{
+	if (m_redo.empty())
+	{
+		m_status = "nie ma czego powtorzyc";
+		return;
+	}
+	m_undo.push_back(m_document);
+	m_document = std::move(m_redo.back());
+	m_redo.pop_back();
+	settle_after_history();
+	m_status = "powtorzono (" + std::to_string(m_redo.size()) + " krokow w przod zostalo)";
+}
+
+void plan_panel::settle_after_history()
+{
+	// the step is closed on the state we landed on, and the watcher must not read the jump itself
+	// as an edit worth remembering
+	m_settled = m_document;
+	m_step_open = false;
+	m_print = document_print();
+
+	// the traces belonged to the state that was undone, and there is no undoing them: they are
+	// what the user pointed at, not something the document remembers
+	m_trace.clear();
+
+	// every transient errand belonged to the state that was undone
+	m_pending = false;
+	m_pick_turnout = 0;
+	m_pick_parallel = 0;
+	m_pick_join = 0;
+	m_pick_split = 0;
+	m_pick_cut = 0;
+	m_pick_start = 0;
+	m_pick_draw = 0;
+	m_pick_pair = 0;
+	m_join_first = TrackId::none;
+	m_dragging_turnout = false;
+	m_dragging_straight = false;
+
+	if (editor::plan::find_track(m_document, m_track) == nullptr)
+	{
+		m_track = m_document.tracks.empty() ? TrackId::none : m_document.tracks.front().id;
+	}
+	if (auto const *track{current_track()}; track != nullptr)
+	{
+		std::snprintf(m_namebuf, sizeof(m_namebuf), "%s", track->name.c_str());
+	}
+	if (editor::plan::find_element(m_document, m_sel_element) == nullptr)
+	{
+		m_sel_element = ElementId::none;
+	}
+	if (editor::plan::find_turnout(m_document, m_sel_turnout) == nullptr)
+	{
+		m_sel_turnout = TurnoutId::none;
+	}
+	if (m_turnout_type >= static_cast<int>(m_document.turnout_types.size()))
+	{
+		m_turnout_type = 0;
+	}
+	m_sel_piece = -1;
+
+	solve();
 }
 
 void plan_panel::seed_catalogue()
@@ -463,6 +728,86 @@ void plan_panel::solve()
 {
 	m_solution = editor::plan::solve(m_document);
 	m_rails = editor::plan::render_rails(m_solution);
+	measure_trace();
+}
+
+void plan_panel::measure_trace()
+{
+	m_deviation.clear();
+	m_track_deviation.clear();
+	m_jumps.clear();
+
+	for (auto const &track : m_solution.tracks)
+	{
+		// joints where the curvature jumps: an arc taken without a transition curve. that is
+		// ordinary on a line that was built that way, so it is counted, not complained about
+		auto jumps{0};
+		for (std::size_t i = 1; i < track.elements.size(); ++i)
+		{
+			if (std::abs(track.elements[i].k0 - track.elements[i - 1].k1) > 1e-9)
+			{
+				++jumps;
+			}
+		}
+		m_jumps[static_cast<std::uint32_t>(track.id)] = jumps;
+
+		auto const trace{m_trace.find(static_cast<std::uint32_t>(track.id))};
+		if (trace == m_trace.end() || trace->second.size() < 2 || track.elements.empty())
+		{
+			continue;
+		}
+
+		// every clicked point belongs to whichever element runs closest to it, and that is the
+		// element whose fit it has something to say about
+		std::unordered_map<std::uint32_t, std::pair<double, int>> sums;  // sum of squares, count
+		auto worst_of_track{0.0};
+		auto sum_of_track{0.0};
+		auto counted{0};
+		for (auto const &point : trace->second)
+		{
+			auto best{std::numeric_limits<double>::max()};
+			auto owner{editor::plan::ElementId::none};
+			for (auto const &element : track.elements)
+			{
+				for (std::size_t i = 1; i < element.points.size(); ++i)
+				{
+					auto const &a{element.points[i - 1]};
+					auto const &b{element.points[i]};
+					auto const dx{b.x - a.x};
+					auto const dy{b.y - a.y};
+					auto const len2{dx * dx + dy * dy};
+					auto t{len2 > 0.0 ? ((point.x - a.x) * dx + (point.y - a.y) * dy) / len2 : 0.0};
+					t = std::clamp(t, 0.0, 1.0);
+					auto const distance{std::hypot(point.x - (a.x + dx * t), point.y - (a.y + dy * t))};
+					if (distance < best)
+					{
+						best = distance;
+						owner = element.id;
+					}
+				}
+			}
+			if (owner == editor::plan::ElementId::none)
+			{
+				continue;
+			}
+			auto &sum{sums[static_cast<std::uint32_t>(owner)]};
+			sum.first += best * best;
+			sum.second += 1;
+			auto &deviation{m_deviation[static_cast<std::uint32_t>(owner)]};
+			deviation.first = std::max(deviation.first, best);
+			worst_of_track = std::max(worst_of_track, best);
+			sum_of_track += best * best;
+			++counted;
+		}
+		for (auto const &sum : sums)
+		{
+			m_deviation[sum.first].second = std::sqrt(sum.second.first / static_cast<double>(sum.second.second));
+		}
+		if (counted > 0)
+		{
+			m_track_deviation[static_cast<std::uint32_t>(track.id)] = {worst_of_track, std::sqrt(sum_of_track / static_cast<double>(counted))};
+		}
+	}
 }
 
 plan_panel::Track *plan_panel::current_track()
@@ -538,6 +883,7 @@ void plan_panel::append_point_to(double const X, double const Y)
 			m_pending = true;
 			m_startx = X;
 			m_starty = Y;
+			m_trace[static_cast<std::uint32_t>(track->id)] = {editor::plan::PlanPoint{X, Y}};
 			m_status = "kliknij drugi raz, zeby polozyc pierwsza prosta";
 			return;
 		}
@@ -551,9 +897,17 @@ void plan_panel::append_point_to(double const X, double const Y)
 		}
 		track->anchor = editor::plan::AtPose{m_startx, m_starty, std::atan2(dx, dy)};
 		track->elements.push_back(editor::plan::make_line(m_document, length));
+		m_trace[static_cast<std::uint32_t>(track->id)].push_back(editor::plan::PlanPoint{X, Y});
 		m_pending = false;
 		solve();
 		m_status.clear();
+		return;
+	}
+
+	std::string why;
+	if (false == can_grow(why))
+	{
+		m_status = why;
 		return;
 	}
 
@@ -581,6 +935,7 @@ void plan_panel::append_point_to(double const X, double const Y)
 		// straight on: nothing to round. two straights end to end are one straight, so the one
 		// already there simply gets longer
 		track->elements.back().length += reach;
+		m_trace[static_cast<std::uint32_t>(track->id)].push_back(editor::plan::PlanPoint{X, Y});
 		solve();
 		m_status = "prosto dalej: przedluzona ostatnia prosta do " + to_string(track->elements.back().length, 1) + " m";
 		return;
@@ -604,12 +959,18 @@ void plan_panel::append_point_to(double const X, double const Y)
 	previous.length -= corner.tangent;
 	track->elements.push_back(editor::plan::make_arc(m_document, m_corner_radius, corner.hand, corner.arc_length));
 	track->elements.push_back(editor::plan::make_line(m_document, reach - corner.tangent));
+	m_trace[static_cast<std::uint32_t>(track->id)].push_back(editor::plan::PlanPoint{X, Y});
 	solve();
 	m_status.clear();
 }
 
 void plan_panel::drop_last_vertex()
 {
+	if (auto trace{m_trace.find(static_cast<std::uint32_t>(m_track))};
+	    trace != m_trace.end() && false == trace->second.empty())
+	{
+		trace->second.pop_back();
+	}
 	auto *track{current_track()};
 	if (track == nullptr || track->elements.empty())
 	{
@@ -640,11 +1001,80 @@ void plan_panel::drop_last_vertex()
 	solve();
 }
 
+bool plan_panel::can_grow(std::string &Why) const
+{
+	auto const *track{current_track()};
+	if (track == nullptr)
+	{
+		Why = "nie ma edytowanego toru";
+		return false;
+	}
+	if (track->elements.empty())
+	{
+		// an empty track has no end to grow from yet; where it begins is said with the mouse
+		return true;
+	}
+	auto const *solved{editor::plan::find_track(m_solution, track->id)};
+	if (solved == nullptr || solved->elements.empty())
+	{
+		Why = "tor nie jest polozony - popraw najpierw to, co nie wyszlo";
+		return false;
+	}
+	if (false == solved->complete)
+	{
+		Why = "tor jest polozony tylko do miejsca, w ktorym sie nie udal - popraw to najpierw";
+		return false;
+	}
+	// the chain grows at its far end, so that end has to be free. the near one being free is no
+	// help: nothing here prepends, and turning the track round is a different thing to ask for
+	if (false == loose_end(*solved, 1))
+	{
+		Why = loose_end(*solved, 0) ? "koniec toru jest do czegos podlaczony - wolny jest tylko jego poczatek"
+		                            : "oba konce toru sa podlaczone: nie ma gdzie dolozyc odcinka";
+		return false;
+	}
+	return true;
+}
+
+bool plan_panel::growth_pose(editor::plan::geometry::Pose &Out) const
+{
+	auto const *track{current_track()};
+	if (track == nullptr || track->elements.empty())
+	{
+		return false;
+	}
+	auto const *solved{editor::plan::find_track(m_solution, track->id)};
+	if (solved == nullptr || solved->elements.empty())
+	{
+		return false;
+	}
+	Out = solved->end;
+	return true;
+}
+
 void plan_panel::append_element(Kind const Kind_)
 {
 	auto *track{current_track()};
 	if (track == nullptr)
 	{
+		return;
+	}
+
+	std::string why;
+	if (false == can_grow(why))
+	{
+		m_status = why;
+		return;
+	}
+
+	// an empty track begins where the mouse says it begins, not at the plan's zero: the first click
+	// puts it down, the second says which way it runs
+	if (track->elements.empty())
+	{
+		m_pick_start = 1;
+		m_start_kind = Kind_;
+		m_pending = false;
+		m_status = std::string{"kliknij, gdzie tor ma sie zaczynac - potem wskaz kierunek ("} + kind_name(Kind_) + ")";
 		return;
 	}
 
@@ -1094,6 +1524,11 @@ void plan_panel::handle_scene()
 		m_pick_turnout = 0;
 		m_pick_parallel = 0;
 		m_pick_join = 0;
+		m_pick_split = 0;
+		m_pick_cut = 0;
+		m_pick_start = 0;
+		m_pick_draw = 0;
+		m_pick_pair = 0;
 		m_join_first = TrackId::none;
 		m_pending = false;
 		clear_selection();
@@ -1162,6 +1597,117 @@ void plan_panel::handle_scene()
 		join_ends(m_join_first, m_join_first_end, which, end);
 		return;
 	}
+	if (m_pick_pair != 0 && ImGui::IsMouseClicked(0))
+	{
+		TurnoutId against{TurnoutId::none};
+		auto *placement{editor::plan::find_turnout(m_document, m_sel_turnout)};
+		if (placement == nullptr)
+		{
+			m_pick_pair = 0;
+			return;
+		}
+		if (false == hit_turnout(mouse, against))
+		{
+			m_status = "kliknij rozjazd, naprzeciw ktorego ten ma stanac";
+			return;
+		}
+		if (against == placement->id)
+		{
+			m_status = "rozjazd nie stanie naprzeciw samego siebie";
+			return;
+		}
+		auto const *other{editor::plan::find_turnout(m_document, against)};
+		if (other != nullptr && other->opposite == placement->id)
+		{
+			m_status = "tamten juz stoi naprzeciw tego - jeden z pary wystarczy";
+			return;
+		}
+		if (other != nullptr && other->on == placement->on)
+		{
+			m_status = "oba rozjazdy stoja na tym samym torze - przejscie laczy dwa rozne";
+			return;
+		}
+		placement->opposite = against;
+		m_pick_pair = 0;
+		solve();
+		m_status = "sparowane w przejscie rozjazdowe: km wynika teraz z drugiej iglicy";
+		return;
+	}
+	if (m_pick_start != 0 && ImGui::IsMouseClicked(0))
+	{
+		auto *track{current_track()};
+		if (track == nullptr || false == track->elements.empty())
+		{
+			m_pick_start = 0;
+			return;
+		}
+		if (m_pick_start == 1)
+		{
+			m_startx = wx;
+			m_starty = wy;
+			m_pick_start = 2;
+			m_status = "teraz wskaz kierunek, w ktorym tor ma iesc";
+			return;
+		}
+		auto const dx{wx - m_startx};
+		auto const dy{wy - m_starty};
+		auto const reach{std::hypot(dx, dy)};
+		if (reach < 1.0)
+		{
+			m_status = "za blisko poczatku - kierunku nie da sie z tego odczytac";
+			return;
+		}
+		track->anchor = editor::plan::AtPose{m_startx, m_starty, std::atan2(dx, dy)};
+		// a straight is as long as the two clicks say; a curve's length is its own, because the
+		// distance between two clicks says nothing about how far an arc runs
+		auto const kind{m_start_kind};
+		auto const length{kind == Kind::Line ? reach : m_new_length};
+		Element element;
+		element.id = editor::plan::mint_element(m_document);
+		element.kind = kind;
+		element.radius = kind == Kind::Line ? 0.0 : m_new_radius;
+		element.hand = kind == Kind::Line ? 0 : m_new_hand;
+		element.length = length;
+		track->elements.push_back(element);
+		m_sel_element = element.id;
+		m_trace[static_cast<std::uint32_t>(track->id)] = {editor::plan::PlanPoint{m_startx, m_starty}, editor::plan::PlanPoint{wx, wy}};
+		m_pick_start = 0;
+		solve();
+		m_status = std::string{"tor zaczyna sie na klikietym punkcie: "} + kind_name(kind) + " " + to_string(length, 1) + " m";
+		return;
+	}
+	if ((m_pick_split != 0 || m_pick_cut != 0) && ImGui::IsMouseClicked(0))
+	{
+		auto const on{nearest_track_axis(mouse, 14.0f)};
+		double station{0.0};
+		if (on == TrackId::none || false == station_on(on, wx, wy, station))
+		{
+			m_status = "kliknij w os toru - tam, gdzie ma przejsc ciecie";
+			return;
+		}
+		if (m_pick_split != 0)
+		{
+			split_at(on, station);
+			m_pick_split = 0;
+			return;
+		}
+		if (m_pick_cut == 1)
+		{
+			m_cut_track = on;
+			m_cut_from = station;
+			m_pick_cut = 2;
+			m_status = "teraz drugi koniec wycinanego odcinka";
+			return;
+		}
+		if (on != m_cut_track)
+		{
+			m_status = "oba konce musza lezec na tym samym torze";
+			return;
+		}
+		cut_between(m_cut_track, m_cut_from, station);
+		m_pick_cut = 0;
+		return;
+	}
 
 	// --- ctrl: grabbing a straight by one of its ends ---------------------
 	// this is the one thing a modifier is needed for: the ends of a straight sit on the track, so
@@ -1215,7 +1761,12 @@ void plan_panel::handle_scene()
 		ElementId element{ElementId::none};
 		TrackId track{TrackId::none};
 
-		if (hit_turnout(mouse, turnout))
+		if (m_pick_draw != 0)
+		{
+			// the drawing tool has the ground: a click carries the track on, wherever it lands
+			append_point_to(wx, wy);
+		}
+		else if (hit_turnout(mouse, turnout))
 		{
 			m_sel_turnout = turnout;
 			m_dragging_turnout = true;
@@ -1232,12 +1783,12 @@ void plan_panel::handle_scene()
 		}
 		else
 		{
-			append_point_to(wx, wy);
+			clear_selection();
 		}
 	}
 
-	// right-click takes back the last click, which is the only thing it does
-	if (ImGui::IsMouseClicked(1))
+	// right-click takes back the last click - only while there is a run of clicks to take back
+	if (m_pick_draw != 0 && ImGui::IsMouseClicked(1))
 	{
 		drop_last_vertex();
 	}
@@ -1245,6 +1796,12 @@ void plan_panel::handle_scene()
 	if (ImGui::IsMouseDown(0) && m_dragging_turnout && m_sel_turnout != TurnoutId::none)
 	{
 		auto *placement{editor::plan::find_turnout(m_document, m_sel_turnout)};
+		// a turnout standing against another one has no station of its own to drag: grabbing it
+		// drags the one it stands against, so the whole przejscie slides as one
+		if (placement != nullptr && placement->opposite != TurnoutId::none)
+		{
+			placement = editor::plan::find_turnout(m_document, placement->opposite);
+		}
 		if (placement != nullptr)
 		{
 			double station{0.0};
@@ -1570,7 +2127,7 @@ void plan_panel::draw_on_scene()
 	}
 
 	// where the run of clicks starts, before there is any track to show for it
-	if (m_pending)
+	if (m_pending || m_pick_start == 2)
 	{
 		ImVec2 screen;
 		if (world_to_screen(plan_to_world(m_startx, m_starty), screen))
@@ -1578,6 +2135,8 @@ void plan_panel::draw_on_scene()
 			drawlist->AddCircle(screen, 6.0f, IM_COL32(255, 240, 140, 230), 0, 2.0f);
 		}
 	}
+
+	draw_growth_cursor();
 
 	// scalanie: every end a join could be made from or to, and what would be laid between the one
 	// already picked and whichever the cursor is over
@@ -1707,6 +2266,160 @@ void plan_panel::draw_on_scene()
 	}
 }
 
+void plan_panel::draw_growth_cursor()
+{
+	// the cursor says what the drawing tool would do, so it is drawn when that tool is in hand
+	if (m_pick_draw == 0 && m_pick_start == 0)
+	{
+		return;
+	}
+
+	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto const &io{ImGui::GetIO()};
+	auto const over_ground{false == io.WantCaptureMouse};
+	double wx{0.0};
+	double wy{0.0};
+	world_to_plan(ortho_cursor_world(), wx, wy);
+
+	auto const label_at = [&](ImVec2 const &At, char const *Text, ImU32 const Colour) {
+		auto const size{ImGui::CalcTextSize(Text)};
+		ImVec2 const corner(At.x + 14.0f, At.y + 14.0f);
+		drawlist->AddRectFilled(ImVec2(corner.x - 4.0f, corner.y - 3.0f), ImVec2(corner.x + size.x + 4.0f, corner.y + size.y + 3.0f), IM_COL32(15, 20, 30, 215), 3.0f);
+		drawlist->AddText(corner, Colour, Text);
+	};
+
+	// an empty track: the cursor is the direction the first element will run in
+	if (m_pick_start != 0)
+	{
+		ImVec2 from;
+		ImVec2 to;
+		if (m_pick_start == 2 && over_ground && world_to_screen(plan_to_world(m_startx, m_starty), from) && world_to_screen(plan_to_world(wx, wy), to))
+		{
+			dashed_polyline(drawlist, {from, to}, IM_COL32(255, 240, 140, 220), 2.0f);
+			auto const reach{std::hypot(wx - m_startx, wy - m_starty)};
+			auto const text{std::string{kind_name(m_start_kind)} + (m_start_kind == Kind::Line ? "  " + to_string(reach, 1) + " m" : "  R=" + to_string(m_new_radius, 0) + ", " + to_string(m_new_length, 1) + " m")};
+			label_at(to, text.c_str(), IM_COL32(255, 240, 140, 245));
+		}
+		else if (over_ground && world_to_screen(plan_to_world(wx, wy), to))
+		{
+			label_at(to, "tu zacznie sie tor", IM_COL32(255, 240, 140, 245));
+		}
+		return;
+	}
+
+	editor::plan::geometry::Pose end{};
+	if (false == growth_pose(end))
+	{
+		return;
+	}
+
+	ImVec2 at;
+	if (false == world_to_screen(plan_to_world(end.x, end.y), at))
+	{
+		return;
+	}
+
+	std::string why;
+	auto const may{can_grow(why)};
+	auto const colour{may ? IM_COL32(120, 255, 160, 245) : IM_COL32(255, 120, 120, 245)};
+
+	// the growing end, and which way the chain is heading there: a chevron, because a circle alone
+	// does not say which of the two ends this is
+	ImVec2 ahead;
+	if (world_to_screen(plan_to_world(end.x + end.hx, end.y + end.hy), ahead))
+	{
+		auto dx{ahead.x - at.x};
+		auto dy{ahead.y - at.y};
+		auto const len{std::sqrt(dx * dx + dy * dy)};
+		if (len > 1e-3f)
+		{
+			dx /= len;
+			dy /= len;
+			ImVec2 const tip(at.x + dx * 15.0f, at.y + dy * 15.0f);
+			drawlist->AddLine(at, tip, colour, 2.5f);
+			drawlist->AddLine(tip, ImVec2(tip.x - dx * 7.0f - dy * 5.0f, tip.y - dy * 7.0f + dx * 5.0f), colour, 2.5f);
+			drawlist->AddLine(tip, ImVec2(tip.x - dx * 7.0f + dy * 5.0f, tip.y - dy * 7.0f - dx * 5.0f), colour, 2.5f);
+		}
+	}
+	drawlist->AddCircle(at, 7.0f, colour, 0, 2.5f);
+
+	if (false == may)
+	{
+		label_at(at, why.c_str(), IM_COL32(255, 170, 120, 245));
+		return;
+	}
+	if (false == over_ground)
+	{
+		return;
+	}
+
+	// what a click would lay from here: the corner it turns at and the straight running out to the
+	// cursor, exactly as append_point_to works it out - so what is drawn is what will happen
+	auto const dx{wx - end.x};
+	auto const dy{wy - end.y};
+	auto const reach{std::hypot(dx, dy)};
+	if (reach < 1.0)
+	{
+		return;
+	}
+	auto const corner{editor::plan::fit_corner(end.hx, end.hy, dx / reach, dy / reach, m_corner_radius)};
+	auto const *track{current_track()};
+	auto const *tail{track != nullptr && false == track->elements.empty() ? &track->elements.back() : nullptr};
+
+	std::vector<editor::plan::geometry::XY> points;
+	std::string text;
+	auto ok{true};
+	if (false == corner.ok)
+	{
+		// straight on: the straight already there simply gets longer
+		editor::plan::geometry::layout_segment(0.0, 0.0, reach, end, &points);
+		text = "prosto dalej, +" + to_string(reach, 1) + " m";
+	}
+	else if (tail == nullptr || tail->kind != Kind::Line || tail->length <= corner.tangent + 0.5)
+	{
+		ok = false;
+		text = "naroznik za ostry na R=" + to_string(m_corner_radius, 0) + " m: potrzeba " + to_string(corner.tangent, 1) + " m stycznej";
+	}
+	else if (reach <= corner.tangent + 0.5)
+	{
+		ok = false;
+		text = "za blisko naroznika: potrzeba " + to_string(corner.tangent, 1) + " m stycznej";
+	}
+	else
+	{
+		// the arc starts a tangent back from the end, so the ghost starts there too
+		auto const back{editor::plan::geometry::layout_segment(0.0, 0.0, -corner.tangent, end, nullptr)};
+		auto const k{corner.hand / m_corner_radius};
+		auto const after{editor::plan::geometry::layout_segment(k, k, corner.arc_length, back, &points)};
+		editor::plan::geometry::layout_segment(0.0, 0.0, reach - corner.tangent, after, &points);
+		text = "luk R=" + to_string(m_corner_radius, 0) + " (" + to_string(corner.arc_length, 1) + " m) + prosta " + to_string(reach - corner.tangent, 1) + " m";
+	}
+
+	if (ok && points.size() > 1)
+	{
+		std::vector<ImVec2> line;
+		line.reserve(points.size());
+		for (auto const &point : points)
+		{
+			ImVec2 screen;
+			if (world_to_screen(plan_to_world(point.x, point.y), screen))
+			{
+				line.push_back(screen);
+			}
+		}
+		if (line.size() > 1)
+		{
+			dashed_polyline(drawlist, line, IM_COL32(120, 255, 160, 215), 2.0f);
+		}
+	}
+
+	ImVec2 cursor;
+	if (world_to_screen(plan_to_world(wx, wy), cursor))
+	{
+		label_at(cursor, text.c_str(), ok ? IM_COL32(160, 255, 190, 245) : IM_COL32(255, 190, 110, 245));
+	}
+}
+
 void plan_panel::go_to_plan()
 {
 	auto minx{std::numeric_limits<double>::max()};
@@ -1746,7 +2459,36 @@ void plan_panel::go_to_plan()
 void plan_panel::render_toolbar()
 {
 	ImGui::Text("widok z gory, %.0f m w poprzek", Global.editor_ortho_extent * 2.0f);
-	ImGui::TextDisabled("klik w teren prowadzi tor, klik w odcinek go wybiera, dwuklik zmienia edytowany tor");
+
+	// what the drawing amounts to, and what it costs: the counts, how far the laid axis runs from
+	// the clicks it was drawn from, and the joints taken without a transition curve
+	{
+		std::size_t elements{0};
+		for (auto const &track : m_document.tracks)
+		{
+			elements += track.elements.size();
+		}
+		std::string line{std::to_string(m_document.tracks.size()) + " torow, " + std::to_string(elements) + " odcinkow, " +
+		                 std::to_string(m_document.turnouts.size()) + " rozjazdow"};
+		if (false == m_solution.diagnostics.empty())
+		{
+			line += ", " + std::to_string(m_solution.diagnostics.size()) + " uwag";
+		}
+		if (auto const *solved{editor::plan::find_track(m_solution, m_track)}; solved != nullptr && solved->length > 0.0)
+		{
+			line += "   |   edytowany: km " + chainage(0.0) + " ... " + chainage(solved->length);
+			if (auto const jumps{m_jumps.find(static_cast<std::uint32_t>(m_track))}; jumps != m_jumps.end() && jumps->second > 0)
+			{
+				line += ", " + std::to_string(jumps->second) + " zlacz bez krzywej przejsciowej";
+			}
+			if (auto const deviation{m_track_deviation.find(static_cast<std::uint32_t>(m_track))}; deviation != m_track_deviation.end())
+			{
+				line += ", od sladu max " + to_string(deviation->second.first, 2) + " m / rms " + to_string(deviation->second.second, 2) + " m";
+			}
+		}
+		ImGui::TextDisabled("%s", line.c_str());
+	}
+	ImGui::TextDisabled("klik wybiera to, co pod nim lezy; zeby prowadzic tor po terenie, wlacz Rysuj");
 	ImGui::TextDisabled("Ctrl + LPM na krancu prostej: przeciagniecie; luki obok dopasuja sie same");
 	if (Global.scenery_georeferenced)
 	{
@@ -1755,6 +2497,34 @@ void plan_panel::render_toolbar()
 	else
 	{
 		ImGui::TextDisabled("mapa fikcyjna, bez georeferencji");
+	}
+
+	// history. this ImGui has no BeginDisabled, so a step that cannot be taken is said in words
+	// rather than shown as a dead button
+	if (m_undo.empty())
+	{
+		ImGui::TextDisabled("nic do cofniecia");
+	}
+	else if (ImGui::Button("Cofnij"))
+	{
+		undo();
+	}
+	else if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("Ctrl+Z; %d krokow wstecz", static_cast<int>(m_undo.size()));
+	}
+	ImGui::SameLine();
+	if (false == m_redo.empty())
+	{
+		if (ImGui::Button("Powtorz"))
+		{
+			redo();
+		}
+		else if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("Ctrl+Y albo Ctrl+Shift+Z; %d krokow w przod", static_cast<int>(m_redo.size()));
+		}
+		ImGui::SameLine();
 	}
 
 	if (ImGui::Button("Nowa mapa"))
@@ -1770,6 +2540,10 @@ void plan_panel::render_toolbar()
 	{
 		ImGui::SameLine();
 		ImGui::Checkbox("Ortofoto", &m_showortho);
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("klawisz 1 przelacza podklad: ortofoto z bliska, mapa topograficzna z daleka");
+		}
 		if (m_showortho)
 		{
 			auto const pending{static_cast<int>(m_ortho.pending() + m_topo.pending())};
@@ -1839,7 +2613,25 @@ void plan_panel::render_toolbar()
 		go_to_plan();
 	}
 
+	if (ImGui::Button(m_pick_draw != 0 ? "Rysuje... (Esc)" : "Rysuj"))
+	{
+		m_pick_draw = m_pick_draw != 0 ? 0 : 1;
+		m_pick_turnout = 0;
+		m_pick_parallel = 0;
+		m_pick_join = 0;
+		m_pick_split = 0;
+		m_pick_cut = 0;
+		m_status = m_pick_draw != 0 ? "klikaj po terenie - kazdy klik prowadzi tor dalej; prawy klik cofa ostatni" : "";
+	}
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("prowadzenie toru klikaniem po terenie. dopoki to nie jest wlaczone,\n"
+		                  "klik w teren niczego nie rysuje - wybiera to, co pod nim lezy.\n"
+		                  "kursor na koncu toru pokazuje, co dolozy nastepny klik");
+	}
+
 	render_join();
+	render_cutting();
 
 	ImGui::Separator();
 }
@@ -1854,6 +2646,7 @@ void plan_panel::render_join()
 	if (ImGui::Button(m_pick_join != 0 ? "Lacze... (Esc)" : "Polacz"))
 	{
 		m_pick_join = m_pick_join != 0 ? 0 : 1;
+		m_pick_draw = 0;
 		m_join_first = TrackId::none;
 		m_status = m_pick_join != 0 ? "wskaz dwa wolne konce torow; podglad pokaze, co miedzy nimi stanie" : "";
 	}
@@ -1871,6 +2664,81 @@ void plan_panel::render_join()
 	}
 }
 
+void plan_panel::render_cutting()
+{
+	ImGui::SameLine();
+	if (ImGui::Button(m_pick_split != 0 ? "Dziele... (Esc)" : "Podziel"))
+	{
+		m_pick_split = m_pick_split != 0 ? 0 : 1;
+		m_pick_cut = 0;
+		m_pick_draw = 0;
+		m_status = m_pick_split != 0 ? "kliknij w os toru tam, gdzie ma go przeciac" : "";
+	}
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("wstawia zlacze w klikietym miejscu: odcinek pod kursorem dzieli sie na dwa,\n"
+		                  "a tor zostaje jednym torem - dopasowanie czyta go dalej tak samo.\n"
+		                  "w terenie nic sie nie rusza: obie polowy maja ten sam kształt.\n"
+		                  "na prostej nie ma sensu (dwie proste to jedna prosta), pod rozjazdem sie nie da");
+	}
+
+	ImGui::SameLine();
+	if (ImGui::Button(m_pick_cut != 0 ? "Wycinam... (Esc)" : "Wytnij"))
+	{
+		m_pick_cut = m_pick_cut != 0 ? 0 : 1;
+		m_pick_split = 0;
+		m_pick_draw = 0;
+		m_cut_track = TrackId::none;
+		m_status = m_pick_cut != 0 ? "wskaz dwa punkty na jednym torze - to, co miedzy nimi, zniknie" : "";
+	}
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("usuwa odcinek miedzy dwoma klikietymi punktami jednego toru.\n"
+		                  "zostaja dwa tory, a miedzy nimi goly grunt - tu nie ma \"toru z dziura\".\n"
+		                  "rozjazd w wycinanym odcinku wstrzymuje ciecie: usun go najpierw");
+	}
+}
+
+void plan_panel::split_at(TrackId const Track_, double const Station)
+{
+	// the track stays one track: a joint divides the element it lands in, and the chain goes on
+	// reading the way the fit needs it to
+	auto const outcome{editor::plan::insert_joint(m_document, m_solution, Track_, Station)};
+	if (false == outcome.ok)
+	{
+		m_status = outcome.why;
+		return;
+	}
+	m_track = Track_;
+	if (auto const *track{current_track()}; track != nullptr)
+	{
+		std::snprintf(m_namebuf, sizeof(m_namebuf), "%s", track->name.c_str());
+	}
+	m_sel_element = outcome.added;
+	m_sel_turnout = TurnoutId::none;
+	solve();
+	m_status = "zlacze na km " + chainage(Station) + "; dalsza polowa to osobny odcinek tego samego toru";
+}
+
+void plan_panel::cut_between(TrackId const Track_, double const From, double const To)
+{
+	auto const outcome{editor::plan::cut_track(m_document, m_solution, Track_, From, To)};
+	if (false == outcome.ok)
+	{
+		m_status = outcome.why;
+		return;
+	}
+	m_trace.erase(static_cast<std::uint32_t>(Track_));
+	m_track = outcome.second;
+	if (auto const *track{current_track()}; track != nullptr)
+	{
+		std::snprintf(m_namebuf, sizeof(m_namebuf), "%s", track->name.c_str());
+	}
+	clear_selection();
+	solve();
+	m_status = "wyciete " + to_string(std::abs(To - From), 2) + " m miedzy km " + chainage(std::min(From, To)) + " i km " + chainage(std::max(From, To)) + "; zostaly dwa tory";
+}
+
 void plan_panel::join_ends(TrackId const A, int const Aend, TrackId const B, int const Bend)
 {
 	editor::plan::JoinSettings settings;
@@ -1886,6 +2754,8 @@ void plan_panel::join_ends(TrackId const A, int const Aend, TrackId const B, int
 	// whichever track was left standing is the one to select afterwards, and it is not
 	// always the first clicked - the other one may have been the only one that could turn
 	auto const survivor{editor::plan::find_track(m_document, A) != nullptr ? A : B};
+	m_trace.erase(static_cast<std::uint32_t>(A));
+	m_trace.erase(static_cast<std::uint32_t>(B));
 
 	char status[256];
 	std::snprintf(status, sizeof(status), "polaczone: %s, %d odcinkow zlanych w jeden, %d rozjazdow przeniesionych%s", editor::plan::join_kind_name(report.join.kind), report.fused,
@@ -2053,6 +2923,8 @@ void plan_panel::render_elements()
 	auto refit{false};
 	auto const *solved{editor::plan::find_track(m_solution, track->id)};
 
+	// where each element begins along the axis, so a row can say its pikietaz
+	auto station{0.0};
 	for (std::size_t i = 0; i < track->elements.size(); ++i)
 	{
 		auto &element{track->elements[i]};
@@ -2061,6 +2933,8 @@ void plan_panel::render_elements()
 		auto const selected{element.id == m_sel_element};
 		auto const *solved_element{solved != nullptr && i < solved->elements.size() ? &solved->elements[i] : nullptr};
 		auto const held{std::holds_alternative<Parallel>(element.hold)};
+		auto const starts{station};
+		station += solved_element != nullptr ? solved_element->length : element.length;
 
 		// the row says the whole element: what it is, how long, and how it turns. a held one says
 		// so too, because its shape is not its own
@@ -2152,6 +3026,15 @@ void plan_panel::render_elements()
 			{
 				ImGui::TextDisabled("polozony: %.2f m, R %.1f -> %.1f", solved_element->length, std::abs(solved_element->k0) > 1e-9 ? 1.0 / std::abs(solved_element->k0) : 0.0,
 				                    std::abs(solved_element->k1) > 1e-9 ? 1.0 / std::abs(solved_element->k1) : 0.0);
+				ImGui::TextDisabled("km %s ... %s", chainage(starts).c_str(), chainage(starts + solved_element->length).c_str());
+				if (auto const deviation{m_deviation.find(static_cast<std::uint32_t>(element.id))}; deviation != m_deviation.end())
+				{
+					ImGui::TextDisabled("od sladu: max %.2f m, rms %.2f m", deviation->second.first, deviation->second.second);
+					if (ImGui::IsItemHovered())
+					{
+						ImGui::SetTooltip("odleglosc klikietych punktow od polozonej osi.\nliczona tylko dla toru rysowanego w tej sesji - slad nie jest zapisywany");
+					}
+				}
 			}
 
 			if (ImGui::SmallButton("usun odcinek"))
@@ -2835,10 +3718,49 @@ void plan_panel::render_turnouts()
 		{
 			ImGui::Indent();
 			auto dirty{false};
-			ImGui::SetNextItemWidth(130.0f);
-			if (ImGui::InputDouble("km", &placement.station, 1.0, 10.0, "%.2f"))
+			// przejscie rozjazdowe: while this one stands against another, where it stands is
+			// worked out from that one's frog and there is nothing here to type
+			auto const paired{placement.opposite != TurnoutId::none};
+			if (paired)
 			{
-				dirty = true;
+				auto const *against{editor::plan::find_turnout(m_document, placement.opposite)};
+				ImGui::TextDisabled("stoi naprzeciw: %s, km %.2f (wyliczone)", against != nullptr ? against->type.c_str() : "rozjazdu, ktorego nie ma",
+				                    (solved != nullptr && solved->valid) ? solved->station : placement.station);
+				if (ImGui::IsItemHovered())
+				{
+					ImGui::SetTooltip("dwa rozjazdy jednego przejscia trzymaja sie razem:\nprzesun ktorykolwiek, a drugi idzie za nim");
+				}
+				if (ImGui::SmallButton("odepnij"))
+				{
+					// left standing where it came to stand, not where it was authored years ago
+					if (solved != nullptr && solved->valid)
+					{
+						placement.station = solved->station;
+					}
+					placement.opposite = TurnoutId::none;
+					dirty = true;
+				}
+			}
+			else
+			{
+				ImGui::SetNextItemWidth(130.0f);
+				if (ImGui::InputDouble("km", &placement.station, 1.0, 10.0, "%.2f"))
+				{
+					dirty = true;
+				}
+				ImGui::SameLine();
+				if (ImGui::SmallButton(m_pick_pair != 0 ? "wskaz drugi... (Esc)" : "sparuj"))
+				{
+					m_pick_pair = m_pick_pair != 0 ? 0 : 1;
+					m_pick_draw = 0;
+					m_status = m_pick_pair != 0 ? "kliknij rozjazd, naprzeciw ktorego ten ma stanac" : "";
+				}
+				if (ImGui::IsItemHovered())
+				{
+					ImGui::SetTooltip("przejscie rozjazdowe: ten rozjazd stanie naprzeciw wskazanego,\n"
+					                  "na torze, w ktory tamten wchodzi. od tej pory jego km wynika\n"
+					                  "z tamtej iglicy - przesuniecie jednego przesuwa oba");
+				}
 			}
 			int hand{placement.hand >= 0 ? 0 : 1};
 			ImGui::SetNextItemWidth(130.0f);
@@ -2955,6 +3877,124 @@ void plan_panel::render_turnouts()
 	}
 }
 
+void plan_panel::render_curvature_strip()
+{
+	auto const *solved{editor::plan::find_track(m_solution, m_track)};
+	if (solved == nullptr || solved->elements.empty() || solved->length <= 0.0)
+	{
+		return;
+	}
+
+	ImGui::Separator();
+	ImGui::TextUnformatted("krzywizna po pikietazu");
+	ImGui::SameLine();
+	ImGui::TextDisabled("(prosta na osi, luk to stopien, krzywa przejsciowa to skos; sciana to zlacze bez krzywej)");
+
+	auto const width{std::max(120.0f, ImGui::GetContentRegionAvailWidth())};
+	auto const height{92.0f};
+	auto const origin{ImGui::GetCursorScreenPos()};
+	ImGui::InvisibleButton("##kappa", ImVec2(width, height));
+	auto const hovered{ImGui::IsItemHovered()};
+	auto *drawlist{ImGui::GetWindowDrawList()};
+
+	drawlist->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + height), IM_COL32(16, 20, 26, 235), 3.0f);
+
+	// the scale is the tightest curvature on the track, so the picture always fills the strip; a
+	// straight track has nothing to scale to and is drawn as the axis it is
+	auto peak{0.0};
+	for (auto const &element : solved->elements)
+	{
+		peak = std::max({peak, std::abs(element.k0), std::abs(element.k1)});
+	}
+	auto const axis{origin.y + height * 0.5f};
+	auto const scale{peak > 1e-9 ? (height * 0.5f - 10.0f) / static_cast<float>(peak) : 0.0f};
+	auto const x_of{[&](double const Station) { return origin.x + static_cast<float>(Station / solved->length) * width; }};
+	auto const y_of{[&](double const Curvature) { return axis - static_cast<float>(Curvature) * scale; }};
+
+	drawlist->AddLine(ImVec2(origin.x, axis), ImVec2(origin.x + width, axis), IM_COL32(120, 130, 145, 180), 1.0f);
+
+	// every element as the ramp its curvature runs along, in the colour it is drawn on the map with
+	auto station{0.0};
+	for (auto const &element : solved->elements)
+	{
+		auto const from{x_of(station)};
+		auto const to{x_of(station + element.length)};
+		auto const selected{element.id == m_sel_element};
+		auto const colour{element_colour(element.kind, selected)};
+		ImVec2 const a(from, y_of(element.k0));
+		ImVec2 const b(to, y_of(element.k1));
+		// the area under it, so a left turn reads as up from the axis and a right one as down
+		drawlist->AddQuadFilled(ImVec2(from, axis), a, b, ImVec2(to, axis), (colour & 0x00ffffffu) | (selected ? 0x66000000u : 0x33000000u));
+		drawlist->AddLine(a, b, colour, selected ? 3.0f : 2.0f);
+		if (station > 0.0)
+		{
+			drawlist->AddLine(ImVec2(from, origin.y + 4.0f), ImVec2(from, origin.y + height - 4.0f), IM_COL32(90, 100, 115, 150), 1.0f);
+		}
+		station += element.length;
+	}
+
+	// a joint where the curvature jumps: the wall between the two ends
+	station = 0.0;
+	for (std::size_t i = 0; i < solved->elements.size(); ++i)
+	{
+		station += solved->elements[i].length;
+		if (i + 1 >= solved->elements.size())
+		{
+			break;
+		}
+		auto const before{solved->elements[i].k1};
+		auto const after{solved->elements[i + 1].k0};
+		if (std::abs(after - before) > 1e-9)
+		{
+			drawlist->AddLine(ImVec2(x_of(station), y_of(before)), ImVec2(x_of(station), y_of(after)), IM_COL32(255, 120, 120, 230), 2.0f);
+		}
+	}
+
+	// the turnouts standing on this track, where they stand
+	for (auto const &placement : m_document.turnouts)
+	{
+		if (placement.on != m_track || placement.station < 0.0 || placement.station > solved->length)
+		{
+			continue;
+		}
+		auto const at{x_of(placement.station)};
+		drawlist->AddLine(ImVec2(at, axis - 6.0f), ImVec2(at, axis + 6.0f), IM_COL32(255, 210, 90, 235), 2.0f);
+	}
+
+	// what the cursor is over, in the terms the strip is drawn in
+	if (hovered)
+	{
+		auto const mouse{ImGui::GetIO().MousePos};
+		auto const at{std::clamp(static_cast<double>((mouse.x - origin.x) / width), 0.0, 1.0) * solved->length};
+		drawlist->AddLine(ImVec2(x_of(at), origin.y + 2.0f), ImVec2(x_of(at), origin.y + height - 2.0f), IM_COL32(235, 240, 250, 120), 1.0f);
+
+		auto walked{0.0};
+		for (auto const &element : solved->elements)
+		{
+			if (at <= walked + element.length || &element == &solved->elements.back())
+			{
+				auto const into{std::clamp(at - walked, 0.0, element.length)};
+				auto const k{element.length > 0.0 ? element.k0 + (element.k1 - element.k0) * (into / element.length) : element.k0};
+				ImGui::BeginTooltip();
+				ImGui::Text("km %s", chainage(at).c_str());
+				ImGui::Text("%s, R %s", kind_name(element.kind), std::abs(k) > 1e-9 ? to_string(1.0 / std::abs(k), 0).c_str() : "prosta");
+				ImGui::EndTooltip();
+				// a click on the strip picks the element under it, the same as clicking the map
+				if (ImGui::IsMouseClicked(0))
+				{
+					m_sel_element = element.id;
+				}
+				break;
+			}
+			walked += element.length;
+		}
+	}
+
+	// the ends, and how tight it ever gets
+	ImGui::TextDisabled("km %s ... %s, dlugosc %.2f m%s", chainage(0.0).c_str(), chainage(solved->length).c_str(), solved->length,
+	                    peak > 1e-9 ? ("   najciasniej R=" + to_string(1.0 / peak, 0) + " m").c_str() : "");
+}
+
 void plan_panel::render_diagnostics()
 {
 	if (m_solution.diagnostics.empty())
@@ -3005,22 +4045,57 @@ void plan_panel::render_diagnostics()
 void plan_panel::render_storage()
 {
 	ImGui::Separator();
+
+	// the plan is chosen from what is in the directory - there is nothing to type. a name is only
+	// needed for a plan that does not exist yet, and that is what "Zapisz jako" is for
+	auto const current{editor::plan::io::project_file(m_path)};
+	auto folder{std::filesystem::path{current}.parent_path()};
+	if (folder.empty())
+	{
+		folder = std::filesystem::path{"."};
+	}
+
 	ImGui::SetNextItemWidth(240.0f);
-	ImGui::InputText("##path", m_path, sizeof(m_path));
+	if (ImGui::BeginCombo("##plany", std::filesystem::path{current}.filename().generic_string().c_str()))
+	{
+		std::error_code failed;
+		auto found{0};
+		for (auto const &entry : std::filesystem::directory_iterator{folder, failed})
+		{
+			if (false == entry.is_regular_file(failed) || entry.path().extension() != ".m0s")
+			{
+				continue;
+			}
+			++found;
+			auto const path{(folder / entry.path().filename()).generic_string()};
+			if (ImGui::Selectable(entry.path().filename().generic_string().c_str(), path == current))
+			{
+				std::snprintf(m_path, sizeof(m_path), "%s", path.c_str());
+				m_status = "wybrane: " + path;
+			}
+		}
+		if (found == 0)
+		{
+			ImGui::TextDisabled("nie ma tu zadnego .m0s");
+		}
+		ImGui::EndCombo();
+	}
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("plany z %s. wybor tylko wskazuje plik - wczytuje go Load", folder.generic_string().c_str());
+	}
+
 	ImGui::SameLine();
 	if (ImGui::Button("Save"))
 	{
-		double planx{0.0};
-		double plany{0.0};
-		world_to_plan(editor_mode::get_camera().Pos, planx, plany);
-		m_document.view_x = planx;
-		m_document.view_y = plany;
-		m_document.view_extent = static_cast<double>(Global.editor_ortho_extent);
-		m_document.origin_set = true;
-		m_document.georeferenced = Global.scenery_georeferenced;
-		m_document.origin_x = Global.scenery_origin.x;
-		m_document.origin_y = Global.scenery_origin.y;
-		m_status = editor::plan::io::save(m_document, m_path) ? "saved to " + std::string(m_path) : "could not write " + std::string(m_path);
+		save_plan();
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Zapisz jako"))
+	{
+		// the name of the plan on screen is the obvious starting point for the next one
+		std::snprintf(m_saveas, sizeof(m_saveas), "%s", std::filesystem::path{current}.filename().generic_string().c_str());
+		ImGui::OpenPopup("Save as");
 	}
 	ImGui::SameLine();
 	if (ImGui::Button("Load"))
@@ -3069,12 +4144,12 @@ void plan_panel::render_storage()
 			{
 				std::snprintf(m_scn_path, sizeof(m_scn_path), "%s", m_document.scn_path.c_str());
 			}
-			m_status = "loaded " + std::string(m_path);
+			m_status = "wczytane: " + editor::plan::io::project_file(m_path);
 		}
 		else
 		{
 			// version 1 files are not read: they described a different model
-			m_status = "could not read " + std::string(m_path) + " (potrzebny format m0s 2)";
+			m_status = "nie da sie odczytac " + editor::plan::io::project_file(m_path);
 		}
 	}
 	ImGui::SetNextItemWidth(240.0f);
@@ -3101,6 +4176,43 @@ void plan_panel::render_storage()
 	for (auto const &warning : m_scn_warnings)
 	{
 		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", warning.c_str());
+	}
+
+	if (ImGui::BeginPopupModal("Save as", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		ImGui::TextDisabled("plan wyladuje w %s", folder.generic_string().c_str());
+		ImGui::SetNextItemWidth(280.0f);
+		ImGui::InputText("nazwa", m_saveas, sizeof(m_saveas));
+		auto const write{ImGui::Button("Zapisz")};
+		ImGui::SameLine();
+		if (ImGui::Button("Anuluj"))
+		{
+			ImGui::CloseCurrentPopup();
+		}
+		if (write)
+		{
+			std::string name{m_saveas};
+			while (false == name.empty() && name.back() == ' ')
+			{
+				name.pop_back();
+			}
+			if (name.empty())
+			{
+				m_status = "plan musi miec nazwe";
+			}
+			else
+			{
+				// the extension is the format's, not the user's business
+				if (name.size() < 4 || name.substr(name.size() - 4) != ".m0s")
+				{
+					name += ".m0s";
+				}
+				std::snprintf(m_path, sizeof(m_path), "%s", (folder / name).generic_string().c_str());
+				save_plan();
+				ImGui::CloseCurrentPopup();
+			}
+		}
+		ImGui::EndPopup();
 	}
 }
 
@@ -3171,11 +4283,31 @@ void plan_panel::run_scn()
 	{
 		m_status += "; nie udało się uruchomić symulatora";
 	}
+
 }
 
 // ---------------------------------------------------------------------------
 // map dialogs
 // ---------------------------------------------------------------------------
+
+void plan_panel::save_plan()
+{
+	// where the camera stands and what the scenery's zero means go into the file with the drawing:
+	// opening the plan again puts the view back where the work was left
+	double planx{0.0};
+	double plany{0.0};
+	world_to_plan(editor_mode::get_camera().Pos, planx, plany);
+	m_document.view_x = planx;
+	m_document.view_y = plany;
+	m_document.view_extent = static_cast<double>(Global.editor_ortho_extent);
+	m_document.origin_set = true;
+	m_document.georeferenced = Global.scenery_georeferenced;
+	m_document.origin_x = Global.scenery_origin.x;
+	m_document.origin_y = Global.scenery_origin.y;
+
+	auto const file{editor::plan::io::project_file(m_path)};
+	m_status = editor::plan::io::save(m_document, m_path) ? "zapisane: " + file : "nie da sie zapisac " + file;
+}
 
 void plan_panel::render_newmap_dialog()
 {

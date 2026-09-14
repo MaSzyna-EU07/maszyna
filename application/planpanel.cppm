@@ -7,6 +7,9 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <cstdint>
+#include <deque>
+#include <unordered_map>
 #include <string>
 #include <variant>
 #include <vector>
@@ -44,6 +47,9 @@ class plan_panel : public ui_panel
 
 	void update() override;
 	void render_contents() override;
+	// whether Ctrl+Z / Ctrl+Y belong to the plan while this panel has the keyboard. the editor's
+	// scene undo listens for the same keys, and cofniecie ma dotyczyc tego, na co sie patrzy
+	[[nodiscard]] bool takes_history_shortcuts() const;
 
   private:
 	using Document = editor::plan::Document;
@@ -61,12 +67,26 @@ class plan_panel : public ui_panel
 	// joining two tracks into one: the radius a join may bend at, and the button that starts
 	// pointing at the ends to join. everything else about it happens on the map
 	void render_join();
+	// dzielenie i wycinanie: the buttons that start pointing at the ground. what a cut costs is
+	// worked out by the plan library, so there is nothing here but the errand and its answer
+	void render_cutting();
+	void split_at(TrackId const Track_, double const Station);
+	void cut_between(TrackId const Track_, double const From, double const To);
 	void render_turnout_type(editor::plan::TurnoutType &Type_);
 	// the catalogue drawing of the chosen type, in its own window: the diverging path piece by
 	// piece, both tracks' rails, and the points a drawing is dimensioned from
 	void render_template_window();
 	void render_diagnostics();
+	// krzywizna po pikietazu: the strip under the lists. it is the one picture that shows a chain's
+	// structure at a glance - a straight is on the axis, an arc is a step, a transition is a ramp,
+	// and a joint where the curvature jumps is a wall
+	void render_curvature_strip();
+	// how far the laid axis runs from the points that were clicked for it. only for a track that is
+	// being drawn: the trace is the intent behind it, and it is not part of the document
+	void measure_trace();
 	void render_storage();
+	// stamps the view and the georeference into the document and writes it where m_path points
+	void save_plan();
 	void export_scn(bool Run_);
 	void run_scn();
 	void seed_catalogue();
@@ -77,6 +97,18 @@ class plan_panel : public ui_panel
 	void handle_scene();
 	void draw_on_scene();
 	void go_to_plan();
+
+	// cofanie. the document is plain data, so one step is a copy of it. what counts as a step is
+	// decided by watching the document rather than by dressing every edit with a call: a frame that
+	// changes anything opens a step, and the step closes when the drawing settles - which is what
+	// makes a drag, or a number typed digit by digit, one step and not thirty
+	void watch_history();
+	[[nodiscard]] std::uint64_t document_print() const;
+	void undo();
+	void redo();
+	// after stepping through history: the selection may name something that is no longer there,
+	// and every transient errand belongs to the state that was undone
+	void settle_after_history();
 
 	// document
 	void solve();
@@ -96,6 +128,15 @@ class plan_panel : public ui_panel
 	void drop_last_vertex();
 	// appends one element to the end of the current track, exactly as asked for
 	void append_element(editor::plan::Kind const Kind);
+	// whether the chain may grow at all, and why not. a chain grows at its far end, so that end has
+	// to be loose: pushing it into a track it already stands on, or off a turnout's frog, would move
+	// what is already connected
+	bool can_grow(std::string &Why) const;
+	// where the next element will go, and which way it will run. false when the track is empty or
+	// not laid - there is no growing end then
+	bool growth_pose(editor::plan::geometry::Pose &Out) const;
+	// the element the buttons would append right now, laid from the growing end, as a dashed ghost
+	void draw_growth_cursor();
 	void drop_last_element();
 	void delete_selected_element();
 	void place_turnout_at(TrackId const On, double const Wx, double const Wy);
@@ -131,7 +172,25 @@ class plan_panel : public ui_panel
 	// members
 	Document m_document;
 	Solution m_solution;
+	// history: the states to go back to, the states to come forward to, the document as of the last
+	// step boundary, and the fingerprint that says whether anything has changed since
+	std::deque<Document> m_undo;
+	std::deque<Document> m_redo;
+	Document m_settled;
+	std::uint64_t m_print{0};
+	bool m_step_open{false};
+	bool m_focused{false};
 	std::vector<editor::plan::PlanPolyline> m_rails;
+
+	// the clicks a track was drawn from, per track, and what the laid geometry cost against them:
+	// the worst and the root-mean-square distance, per element and per track. none of it is saved -
+	// a trace is what the user pointed at, not what the document says
+	std::unordered_map<std::uint32_t, std::vector<editor::plan::PlanPoint>> m_trace;
+	std::unordered_map<std::uint32_t, std::pair<double, double>> m_deviation;
+	std::unordered_map<std::uint32_t, std::pair<double, double>> m_track_deviation;
+	// joints where the curvature jumps - an arc taken without a transition curve. normal on a
+	// drawing of an existing line, worth counting rather than warning about one by one
+	std::unordered_map<std::uint32_t, int> m_jumps;
 
 	TrackId m_track{};
 	ElementId m_sel_element{};
@@ -166,6 +225,27 @@ class plan_panel : public ui_panel
 	int m_pick_join{0};
 	TrackId m_join_first{};
 	int m_join_first_end{0};
+	// dzielenie i wycinanie: 0 idle, 1 waiting for a click on a track's axis; the cut wants two of
+	// them, so it also remembers the first and which track it belongs to
+	// rysowanie po terenie is a tool of its own, not what a click happens to do: off, a click in the
+	// ground selects what is under it and nothing more. on, every click carries the edited track on
+	// - which is why it has to be asked for and why Esc leaves it
+	int m_pick_draw{0};
+
+	// putting down the first element of an empty track: 0 idle, 1 waiting for the point it starts
+	// on, 2 for the direction. what it will be is remembered from the button that started it -
+	// a track has to begin somewhere on the ground, and 0,0 is not an answer
+	int m_pick_start{0};
+	editor::plan::Kind m_start_kind{editor::plan::Kind::Line};
+
+	// sparowanie rozjazdow w przejscie rozjazdowe: 0 idle, 1 waiting for the turnout the selected
+	// one is to stand against
+	int m_pick_pair{0};
+
+	int m_pick_split{0};
+	int m_pick_cut{0};
+	TrackId m_cut_track{};
+	double m_cut_from{0.0};
 
 	// what the next appended element is made of
 	double m_new_radius{300.0};
@@ -196,7 +276,10 @@ class plan_panel : public ui_panel
 
 	char m_namebuf[128]{};
 	std::string m_status;
+	// the plan on screen, and the name being typed for a new one. the path is not typed any more:
+	// it is picked from what is in the directory
 	char m_path[256]{"editor/plan.m0s"};
+	char m_saveas[128]{};
 	char m_scn_path[256]{"scenery/plan_export.scn"};
 	std::vector<std::string> m_scn_warnings;
 	// the exported scenery is opened in the editor by default: it stands up without a locomotive,

@@ -1534,7 +1534,13 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
     if (Action == GLFW_RELEASE)
         return;
 
-    // shortcuts: undo/redo
+    // shortcuts: undo/redo. the plan tool keeps its own history of the drawing, so while it has the
+    // keyboard these keys are its own: undoing a node move behind a panel nobody is looking at is
+    // not what the user asked for
+    if (Global.ctrlState && (Key == GLFW_KEY_Z || Key == GLFW_KEY_Y) && ui()->plan_takes_history())
+    {
+        return;
+    }
     if (Global.ctrlState && Key == GLFW_KEY_Z && is_press(Action))
     {
         undo_last();

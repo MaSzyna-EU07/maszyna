@@ -33,7 +33,14 @@ namespace editor::plan::io {
 /// Returns nothing when @p text is not a version 3 document or is malformed.
 [[nodiscard]] std::optional<plan::Document> deserialize(const std::string& text);
 
+/// Where plans live: `editor/plan.m0s`, relative to the working directory — which
+/// for the simulator is its own data directory, beside `scenery` and `dynamic`.
 [[nodiscard]] std::string default_project_path();
+
+/// The file a name means. A name with no directory in it is a plan, so it belongs
+/// where plans live; anything else is taken as given. Use it to say where a plan
+/// went, or came from, without guessing.
+[[nodiscard]] std::string project_file(const std::string& path);
 bool save(const plan::Document& document, const std::string& path = default_project_path());
 [[nodiscard]] std::optional<plan::Document> load(
     const std::string& path = default_project_path());

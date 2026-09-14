@@ -39,12 +39,15 @@ set_target_properties(editor_plan PROPERTIES
 	CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF
 	POSITION_INDEPENDENT_CODE ON FOLDER "editor")
 
-foreach(name chain hold lines graph format turnout tile_cache)
+foreach(name chain hold lines graph format turnout tile_cache split)
 	add_executable(editor_plan_test_${name} test_${name}.cpp)
 	target_link_libraries(editor_plan_test_${name} PRIVATE editor_plan)
 	target_include_directories(editor_plan_test_${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 	set_target_properties(editor_plan_test_${name} PROPERTIES
 		CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF FOLDER "editor")
+	# the sample plan is a fixture: the format test opens the very file the editor ships
+	target_compile_definitions(editor_plan_test_${name}
+		PRIVATE EU07_PLAN_SAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../samples")
 	add_test(NAME plan_${name} COMMAND editor_plan_test_${name})
 endforeach()
 

@@ -132,6 +132,61 @@ struct Skeleton {
 [[nodiscard]] bool lay_along_skeleton(Track& track, const Skeleton& skeleton,
                                       std::string& why);
 
+
+// ---------------------------------------------------------------------------
+// Putting a joint into a chain, and taking a piece out of one
+// ---------------------------------------------------------------------------
+
+/// What putting a joint in worked out to.
+struct JointOutcome {
+    bool ok{false};
+    /// Why it could not be put there, ready to show; empty when it was. Nothing is
+    /// written to the document unless the whole thing works out.
+    std::string why;
+    /// The element that took the far half. It is a new element with a new id; the
+    /// near half keeps the id the whole element had.
+    ElementId added{ElementId::none};
+};
+
+/// Divides whichever element of @p track the station lands in, leaving one chain
+/// of one more element and exactly the same geometry on the ground.
+///
+/// The chain is relative — every element starts where the one before it ends — so
+/// there is nothing to recompute: the two halves carry the lengths they were given
+/// and the shape they always had. A transition curve divided in half eases to the
+/// radius it had reached, and the far half goes on to the radius it was always
+/// going to; the curvature at the new joint is the one that was there all along, so
+/// the fit still reads the chain the same way.
+///
+/// Refused on a straight: two straights end to end are one straight, which is what
+/// the chain would then be saying twice, and the skeleton the fit works from will
+/// not read it. Refused inside a turnout too — a turnout is one piece of geometry
+/// on one element.
+[[nodiscard]] JointOutcome insert_joint(Document& document, const Solution& solution,
+                                        TrackId track, double station);
+
+/// What taking a piece out worked out to.
+struct CutOutcome {
+    bool ok{false};
+    std::string why;
+    /// The track carrying what was beyond the piece. It keeps the elements it took,
+    /// ids and all, so a hold pointing at one of them still resolves; a turnout
+    /// standing past the cut goes with it, its station measured from the new start.
+    TrackId second{TrackId::none};
+};
+
+/// Takes the piece between @p from and @p to out of @p track, leaving the two ends
+/// standing where they stood. What was between them is gone, and the gap is simply
+/// the ground between two tracks — there is no such thing here as a chain with a
+/// hole in it, which is why this one does make a second track and @c insert_joint
+/// does not.
+///
+/// Refused when a turnout stands in the piece, or when either end would land in the
+/// middle of a transition curve: a chain always begins running straight, and there
+/// is nowhere in the document to say otherwise.
+[[nodiscard]] CutOutcome cut_track(Document& document, const Solution& solution, TrackId track,
+                                   double from, double to);
+
 }  // namespace editor::plan
 
 }  // export

@@ -7,6 +7,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 module;
+#include <algorithm>
 #include <cmath>
 #include <variant>
 #include <cstdio>
@@ -500,6 +501,318 @@ bool lay_along_skeleton(Track& track, const Skeleton& skeleton, std::string& why
         }
     }
     return true;
+}
+
+
+// ---------------------------------------------------------------------------
+// Cutting a chain in two
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The shortest piece worth leaving behind. A cut closer than this to a joint is
+/// taken to be that joint, and one this close to either end of the track is not a
+/// cut at all.
+constexpr double kMinPiece = 0.05;
+
+/// Where a station falls in a chain: the element it lands in, and how far into
+/// it. @c local == 0 means it landed on the joint in front of @c index, so that
+/// element and everything after it moves whole and nothing is divided.
+struct Cut {
+    std::size_t index{0};
+    double local{0.0};
+    double station{0.0};
+};
+
+/// The stations a turnout standing on its through track covers, PR to KR. A
+/// facing one eats the room ahead of its station, a trailing one the room behind.
+void turnout_span(const Document& document, const Solution& solution,
+                  const TurnoutPlacement& placement, double& lo, double& hi) {
+    double through = 0.0;
+    if (const SolvedTurnout* solved = find_turnout(solution, placement.id);
+        solved != nullptr && solved->valid) {
+        through = solved->through_length;
+    } else if (const TurnoutType* type = find_type(document, placement.type); type != nullptr) {
+        through = type->length;
+    }
+    lo = placement.facing ? placement.station : placement.station - through;
+    hi = placement.facing ? placement.station + through : placement.station;
+}
+
+[[nodiscard]] bool locate_cut(const Track& track, const SolvedTrack& solved,
+                             const Document& document, const Solution& solution,
+                             double station, Cut& out, std::string& why) {
+    if (solved.elements.empty()) {
+        why = "tor jest pusty";
+        return false;
+    }
+    if (!solved.complete) {
+        why = "tor nie jest złożony do końca — najpierw popraw to, co mówią diagnostyki";
+        return false;
+    }
+    if (station <= kMinPiece || station >= solved.length - kMinPiece) {
+        why = "przeciąć można tor, nie jego koniec: wskaż punkt między początkiem a końcem";
+        return false;
+    }
+
+    for (const TurnoutPlacement& placement : document.turnouts) {
+        if (placement.on != track.id) {
+            continue;
+        }
+        double lo = 0.0;
+        double hi = 0.0;
+        turnout_span(document, solution, placement, lo, hi);
+        if (station > lo + kMinPiece && station < hi - kMinPiece) {
+            why = "w tym miejscu stoi rozjazd „" + placement.type +
+                  "”: rozjazd jest jedną geometrią na jednym elemencie, więc jego połowa nie "
+                  "jest rozjazdem";
+            return false;
+        }
+    }
+
+    double walked = 0.0;
+    std::size_t index = solved.elements.size() - 1;
+    double local = solved.elements.back().length;
+    for (std::size_t i = 0; i < solved.elements.size(); ++i) {
+        const double length = solved.elements[i].length;
+        if (station < walked + length) {
+            index = i;
+            local = station - walked;
+            break;
+        }
+        walked += length;
+    }
+    // a cut all but on a joint is that joint: dividing an element into a piece
+    // nobody can see is how a chain fills up with elements of zero length
+    if (local <= kMinPiece) {
+        local = 0.0;
+    } else if (solved.elements[index].length - local <= kMinPiece) {
+        ++index;
+        local = 0.0;
+    }
+
+    // a chain always begins running straight — there is nowhere in the document to
+    // say otherwise — so the far side may not start in the middle of a transition
+    const bool starts_on_transition =
+        local > 0.0 ? solved.elements[index].kind == Kind::Clothoid
+                    : index < solved.elements.size() &&
+                          solved.elements[index].kind == Kind::Clothoid &&
+                          std::abs(solved.elements[index].k0) > kEps;
+    if (starts_on_transition) {
+        why = "tor nie umie zacząć się w środku krzywej przejściowej — przeciąć go można na "
+              "prostej albo na łuku";
+        return false;
+    }
+
+    out.index = index;
+    out.local = local;
+    out.station = station;
+    return true;
+}
+
+/// Carries out a located cut. Everything past it lands in a new track, which is
+/// put straight after the one it came off.
+TrackId apply_cut(Document& document, const SolvedTrack& solved, TrackId track, const Cut& cut) {
+    Track* authored = find_track(document, track);
+
+    // the pose the far side starts from is laid, not read off the drawn polyline:
+    // sampled points sit on chords, and a chord is a tenth of a millimetre short of
+    // the arc it stands for — enough to leave a visible kink at the cut
+    const SolvedElement& divided = solved.elements[std::min(cut.index, solved.elements.size() - 1)];
+    Pose at = divided.start;
+    if (cut.local > 0.0) {
+        const double k_at_cut =
+            divided.k0 + (divided.k1 - divided.k0) * (cut.local / divided.length);
+        at = geometry::layout_segment(divided.k0, k_at_cut, cut.local, divided.start, nullptr);
+    }
+
+    Track second;
+    second.id = mint_track(document);
+    second.name = authored->name + "-2";
+    second.anchor = AtPose{at.x, at.y, std::atan2(at.hx, at.hy)};
+
+    if (cut.local > 0.0) {
+        // the element the cut lands in gives up its tail to a copy of itself. an
+        // arc and a straight are the same shape however long they are, and a
+        // transition was refused, so there is nothing else to work out
+        Element tail = authored->elements[cut.index];
+        tail.id = mint_element(document);
+        tail.length = authored->elements[cut.index].length - cut.local;
+        second.elements.push_back(tail);
+    }
+    for (std::size_t i = cut.index + (cut.local > 0.0 ? 1 : 0); i < authored->elements.size(); ++i) {
+        second.elements.push_back(authored->elements[i]);
+    }
+
+    if (cut.local > 0.0) {
+        authored->elements[cut.index].length = cut.local;
+        authored->elements.resize(cut.index + 1);
+    } else {
+        authored->elements.resize(cut.index);
+    }
+
+    // a turnout past the cut stands on the new track now, at the same place on the
+    // ground: its station is measured from the new beginning
+    const TrackId second_id = second.id;
+    for (TurnoutPlacement& placement : document.turnouts) {
+        if (placement.on == track && placement.station > cut.station) {
+            placement.on = second_id;
+            placement.station -= cut.station;
+        }
+    }
+
+    const auto after = std::find_if(document.tracks.begin(), document.tracks.end(),
+                                    [track](const Track& candidate) {
+                                        return candidate.id == track;
+                                    });
+    document.tracks.insert(after + 1, std::move(second));
+    return second_id;
+}
+
+}  // namespace
+
+JointOutcome insert_joint(Document& document, const Solution& solution, TrackId track,
+                         double station) {
+    JointOutcome outcome;
+    Track* authored = find_track(document, track);
+    const SolvedTrack* solved = find_track(solution, track);
+    if (authored == nullptr || solved == nullptr) {
+        outcome.why = "nie ma takiego toru";
+        return outcome;
+    }
+    if (solved->elements.empty()) {
+        outcome.why = "tor jest pusty";
+        return outcome;
+    }
+    if (!solved->complete) {
+        outcome.why = "tor nie jest złożony do końca — najpierw popraw to, co mówią diagnostyki";
+        return outcome;
+    }
+    if (station <= kMinPiece || station >= solved->length - kMinPiece) {
+        outcome.why = "złącze idzie w tor, nie w jego koniec: wskaż punkt między początkiem a końcem";
+        return outcome;
+    }
+
+    // a turnout is one piece of geometry laid on one element, so a joint under it would
+    // leave it standing on two
+    for (const TurnoutPlacement& placement : document.turnouts) {
+        if (placement.on != track) {
+            continue;
+        }
+        double lo = 0.0;
+        double hi = 0.0;
+        turnout_span(document, solution, placement, lo, hi);
+        if (station > lo + kMinPiece && station < hi - kMinPiece) {
+            outcome.why = "w tym miejscu stoi rozjazd „" + placement.type +
+                          "”: leży na jednym odcinku i złącze pod nim rozcięłoby go na dwa";
+            return outcome;
+        }
+    }
+
+    double walked = 0.0;
+    std::size_t index = 0;
+    double local = 0.0;
+    for (std::size_t i = 0; i < solved->elements.size(); ++i) {
+        const double length = solved->elements[i].length;
+        if (station < walked + length) {
+            index = i;
+            local = station - walked;
+            break;
+        }
+        walked += length;
+    }
+    if (local <= kMinPiece || solved->elements[index].length - local <= kMinPiece) {
+        outcome.why = "tu już jest złącze";
+        return outcome;
+    }
+    if (index >= authored->elements.size()) {
+        outcome.why = "tego odcinka nie ma w dokumencie";
+        return outcome;
+    }
+
+    Element& near = authored->elements[index];
+    if (near.kind == Kind::Line) {
+        outcome.why = "dwie proste stykające się ze sobą to jedna prosta — złącze na prostej nic "
+                      "nie mówi, a dopasowanie takiego łańcucha nie przeczyta";
+        return outcome;
+    }
+
+    const SolvedElement& laid = solved->elements[index];
+    Element far = near;
+    far.id = mint_element(document);
+    far.length = near.length - local;
+    near.length = local;
+    if (near.kind == Kind::Clothoid) {
+        // a transition's radius is the radius it ends on: the near half now ends at the
+        // curvature the curve had reached here, and the far half goes on to where the
+        // whole one was going. the curvature at the new joint is the one that was
+        // always there, so nothing on the ground moves
+        const double k_at_joint = laid.k0 + (laid.k1 - laid.k0) * (local / laid.length);
+        near.radius = std::abs(k_at_joint) > kEps ? 1.0 / std::abs(k_at_joint) : 0.0;
+        near.hand = k_at_joint > kEps ? 1 : (k_at_joint < -kEps ? -1 : 0);
+    }
+    // a hold belongs to the element that was authored with it, and it is the near half
+    // that keeps that element's id; the far half is new and stands free
+    far.hold = Free{};
+    authored->elements.insert(authored->elements.begin() + static_cast<std::ptrdiff_t>(index) + 1,
+                              far);
+
+    outcome.added = far.id;
+    outcome.ok = true;
+    return outcome;
+}
+
+CutOutcome cut_track(Document& document, const Solution& solution, TrackId track, double from,
+                       double to) {
+    CutOutcome outcome;
+    const Track* authored = find_track(document, track);
+    const SolvedTrack* solved = find_track(solution, track);
+    if (authored == nullptr || solved == nullptr) {
+        outcome.why = "nie ma takiego toru";
+        return outcome;
+    }
+    if (from > to) {
+        std::swap(from, to);
+    }
+    if (to - from <= kMinPiece) {
+        outcome.why = "wycinany odcinek nie ma długości: wskaż dwa różne punkty";
+        return outcome;
+    }
+
+    // both cuts are checked before either is made, so a refusal leaves the drawing
+    // exactly as it was
+    Cut far;
+    Cut near;
+    if (!locate_cut(*authored, *solved, document, solution, to, far, outcome.why) ||
+        !locate_cut(*authored, *solved, document, solution, from, near, outcome.why)) {
+        return outcome;
+    }
+    for (const TurnoutPlacement& placement : document.turnouts) {
+        if (placement.on != track) {
+            continue;
+        }
+        double lo = 0.0;
+        double hi = 0.0;
+        turnout_span(document, solution, placement, lo, hi);
+        if (hi > from && lo < to) {
+            outcome.why = "w wycinanym odcinku stoi rozjazd „" + placement.type +
+                          "”: usuń go najpierw, sam z niczego nie zniknie";
+            return outcome;
+        }
+    }
+
+    // the far cut first: the near one is measured from the same beginning, and the
+    // geometry in front of it does not move, so its place in the chain still holds
+    const TrackId beyond = apply_cut(document, *solved, track, far);
+    const TrackId middle = apply_cut(document, *solved, track, near);
+    document.tracks.erase(std::find_if(document.tracks.begin(), document.tracks.end(),
+                                       [middle](const Track& candidate) {
+                                           return candidate.id == middle;
+                                       }));
+
+    outcome.second = beyond;
+    outcome.ok = true;
+    return outcome;
 }
 
 }  // namespace editor::plan

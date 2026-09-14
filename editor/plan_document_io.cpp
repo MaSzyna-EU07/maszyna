@@ -13,6 +13,7 @@ module;
 #include <charconv>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string_view>
@@ -26,7 +27,9 @@ namespace {
 
 using namespace editor::plan;
 
-constexpr int kVersion = 7;
+constexpr int kVersion = 9;
+constexpr int kNoPairing = 8;             // before a turnout could stand against another one
+constexpr int kNoCrs = 7;                 // before the header said which frame and which units
 constexpr int kNoExportPath = 6;          // before a plan remembered where it exports to
 constexpr int kStraightOnly = 5;          // before a placement could be bent onto a łuk
 constexpr int kNoseless = 4;              // the piece list, but before the blade carried its nose
@@ -251,6 +254,10 @@ bool read_legacy_type(Reader& reader, TurnoutType& type) {
 std::string serialize(const Document& document) {
     std::string out;
     out += "m0s " + std::to_string(kVersion) + "\n";
+    // which frame the numbers are in, and what they are. everything in here is metres,
+    // radians and 1/m in PUWG 1992 — said out loud so a reader never has to assume it
+    out += "crs 2180\n";
+    out += "units m rad 1/m\n";
     out += "next " + num(document.next_id) + "\n";
     out += "view " + num(document.view_x) + " " + num(document.view_y) + " " +
            num(document.view_extent) + "\n";
@@ -281,7 +288,7 @@ std::string serialize(const Document& document) {
                " " + std::to_string(turnout.hand) + " " +
                std::string(turnout.facing ? "1" : "0") + " " +
                std::string(turnout.bend_from_track ? "1" : "0") + " " + num(turnout.bend) +
-               "\n";
+               " " + num(static_cast<std::uint32_t>(turnout.opposite)) + "\n";
         out += "tutype " + turnout.type + "\n";
     }
 
@@ -324,8 +331,23 @@ std::optional<Document> deserialize(const std::string& text) {
     {
         const std::optional<Line> header = reader.next("m0s", 2);
         if (!header || !to_int(header->tokens[1], version) ||
-            (version != kVersion && version != kNoExportPath && version != kStraightOnly &&
-             version != kNoseless && version != kLegacyTurnoutVersion)) {
+            (version != kVersion && version != kNoPairing && version != kNoCrs &&
+             version != kNoExportPath && version != kStraightOnly && version != kNoseless &&
+             version != kLegacyTurnoutVersion)) {
+            return std::nullopt;
+        }
+    }
+    if (version > kNoCrs) {
+        // the only frame the editor can draw in is PUWG 1992: a plan that says it is in
+        // another one is not something to place by guesswork
+        const std::optional<Line> crs = reader.next("crs", 2);
+        int epsg = 0;
+        if (!crs || !to_int(crs->tokens[1], epsg) || epsg != 2180) {
+            return std::nullopt;
+        }
+        // units are the same for every plan there is; the line is there to be read by
+        // whatever comes next, not to be chosen
+        if (!reader.next("units", 4)) {
             return std::nullopt;
         }
     }
@@ -427,7 +449,9 @@ std::optional<Document> deserialize(const std::string& text) {
         // łukowanie came late: before it every placement stood on the track as it
         // found it, which is what taking the bend from the track means anyway
         const bool has_bend = version > kStraightOnly;
-        const std::optional<Line> line = reader.next("turnout", has_bend ? 8 : 6);
+        const bool has_pairing = version > kNoPairing;
+        const std::optional<Line> line =
+            reader.next("turnout", has_pairing ? 9 : (has_bend ? 8 : 6));
         TurnoutPlacement placement;
         std::uint32_t id = 0;
         std::uint32_t on = 0;
@@ -444,6 +468,14 @@ std::optional<Document> deserialize(const std::string& text) {
             if (!to_double(line->tokens[7], placement.bend)) {
                 return std::nullopt;
             }
+        }
+        if (has_pairing) {
+            // przejście rozjazdowe: which turnout this one stands against, 0 for none
+            std::uint32_t opposite = 0;
+            if (!to_uint(line->tokens[8], opposite)) {
+                return std::nullopt;
+            }
+            placement.opposite = static_cast<TurnoutId>(opposite);
         }
         const std::optional<Line> type = reader.next("tutype", 1);
         if (!type) {
@@ -545,8 +577,24 @@ std::optional<Document> deserialize(const std::string& text) {
 
 std::string default_project_path() { return "editor/plan.m0s"; }
 
+std::string project_file(const std::string& path) {
+    std::filesystem::path file{path.empty() ? default_project_path() : path};
+    if (!file.has_parent_path()) {
+        // a bare name is a plan, and plans live together in one place rather than
+        // wherever the program happened to be started from
+        file = std::filesystem::path{"editor"} / file;
+    }
+    return file.generic_string();
+}
+
 bool save(const Document& document, const std::string& path) {
-    std::ofstream file{path, std::ios::binary | std::ios::trunc};
+    const std::filesystem::path file_path{project_file(path)};
+    // the directory is part of where plans live, so it is made rather than demanded
+    if (file_path.has_parent_path()) {
+        std::error_code ignored;
+        std::filesystem::create_directories(file_path.parent_path(), ignored);
+    }
+    std::ofstream file{file_path, std::ios::binary | std::ios::trunc};
     if (!file) {
         return false;
     }
@@ -556,7 +604,7 @@ bool save(const Document& document, const std::string& path) {
 }
 
 std::optional<Document> load(const std::string& path) {
-    std::ifstream file{path, std::ios::binary};
+    std::ifstream file{std::filesystem::path{project_file(path)}, std::ios::binary};
     if (!file) {
         return std::nullopt;
     }

@@ -1,0 +1,45 @@
+m0s 9
+crs 2180
+units m rad 1/m
+next 63
+view 644000.0 493100.0 260
+origin 1 1 643640.5594274866 493212.77532093093
+scn scenery/plan_demo.scn
+types 1
+type 9 27.138 0.005 0.07 0 4
+tseg 0 3.3108 0 0 0
+tseg 1 7.188 190 190 0
+tseg 2 13.836872023040172 190 190 0
+tseg 3 2.7808 0 0 0
+tname Rz 1:9 R190
+turnouts 4
+turnout 5 2 400.0 1 1 1 0.0 0
+tutype Rz 1:9 R190
+turnout 6 4 470.4179524922183 1 0 1 0.0 5
+tutype Rz 1:9 R190
+turnout 9 4 600.0 -1 1 1 0.0 0
+tutype Rz 1:9 R190
+turnout 10 2 670.4179524922184 -1 0 1 0.0 9
+tutype Rz 1:9 R190
+tracks 4
+track 2
+tkname tor 1
+anchor pose 643400.0 493100.0 1.5707963267948966
+elems 1
+elem 1 line 0.0 0 1200.0
+track 4
+tkname tor 2
+anchor pose 643400.0 493104.75 1.5707963267948966
+elems 1
+elem 3 line 0.0 0 1200.0
+epar 1 4.75
+track 8
+tkname trapez 1-2 (wstawka)
+anchor port 5 frog
+elems 1
+elem 7 line 0.0 0 16.405126913934424
+track 12
+tkname trapez 3-4 (wstawka)
+anchor port 9 frog
+elems 1
+elem 11 line 0.0 0 16.405126913934424

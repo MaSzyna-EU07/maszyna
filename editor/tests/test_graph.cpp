@@ -7,6 +7,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 #include <cmath>
+#include <numbers>
 #include "check.hpp"
 import eu07.editor.plan_layout;
 
@@ -222,6 +223,88 @@ void solving_leaves_the_document_alone() {
     }
 }
 
+/// Przejście rozjazdowe: a turnout standing against another one is placed by that
+/// one's frog, not by a station somebody typed. Move the near one and the far one
+/// goes with it, which is what makes the two of them one piece of trackwork.
+void a_paired_turnout_follows_the_one_it_stands_against() {
+    Document document;
+    add_catalogue(document);
+    const double spacing = 4.75;
+    const TrackId first = add_straight_track(document, "tor 1", 0.0, 0.0, std::numbers::pi / 2.0, 1000.0);
+    const TrackId second = add_straight_track(document, "tor 2", 0.0, spacing, std::numbers::pi / 2.0, 1000.0);
+
+    // the near one opens toward the other track; the far one is trailing and stands
+    // against it, so where it stands is not authored at all
+    const TurnoutId near_id = add_turnout(document, first, 400.0, 1);
+    TurnoutPlacement against;
+    against.id = mint_turnout(document);
+    against.type = "Rz 1:9 R190";
+    against.on = second;
+    against.station = 0.0;  // never used while it is paired
+    against.hand = 1;       // a trailing turnout is laid reversed: the same side, the other hand
+    against.facing = false;
+    against.opposite = near_id;
+    document.turnouts.push_back(against);
+
+    Solution solution = solve(document);
+    CHECK(solution.diagnostics.empty());
+    const SolvedTurnout* laid_near = find_turnout(solution, near_id);
+    const SolvedTurnout* laid_far = find_turnout(solution, against.id);
+    CHECK(laid_near != nullptr && laid_near->valid);
+    CHECK(laid_far != nullptr && laid_far->valid);
+    if (laid_near == nullptr || laid_far == nullptr || !laid_far->valid) {
+        return;
+    }
+    // the two frogs face each other across the międzytorze, with the wstawka between them:
+    // 1,811 m of it left over after the two turnouts, which at 1:9 is 16,405 m of straight
+    const double gap = std::hypot(laid_far->frog.x - laid_near->frog.x,
+                                  laid_far->frog.y - laid_near->frog.y);
+    CHECK(near(gap, 16.405, 0.01));
+    const double station_before = laid_far->station;
+    CHECK(station_before > 0.0);
+
+    // slide the near one a hundred metres along its track
+    find_turnout(document, near_id)->station = 500.0;
+    solution = solve(document);
+    CHECK(solution.diagnostics.empty());
+    laid_near = find_turnout(solution, near_id);
+    laid_far = find_turnout(solution, against.id);
+    CHECK(laid_far != nullptr && laid_far->valid);
+    if (laid_far == nullptr || !laid_far->valid) {
+        return;
+    }
+    CHECK(near(laid_far->station, station_before + 100.0, 1e-3));
+    CHECK(near(std::hypot(laid_far->frog.x - laid_near->frog.x,
+                          laid_far->frog.y - laid_near->frog.y),
+               gap, 1e-6));
+
+    // unpaired, it stands where it was authored to stand and stays there
+    find_turnout(document, against.id)->opposite = TurnoutId::none;
+    find_turnout(document, against.id)->station = 700.0;
+    solution = solve(document);
+    CHECK(near(find_turnout(solution, against.id)->station, 700.0));
+}
+
+/// Standing against a turnout that is not there is said, not guessed at.
+void a_turnout_against_nothing_is_reported() {
+    Document document;
+    add_catalogue(document);
+    const TrackId only = add_straight_track(document, "tor 1", 0.0, 0.0, std::numbers::pi / 2.0, 800.0);
+    TurnoutPlacement placement;
+    placement.id = mint_turnout(document);
+    placement.type = "Rz 1:9 R190";
+    placement.on = only;
+    placement.station = 200.0;
+    placement.hand = 1;
+    placement.opposite = static_cast<TurnoutId>(9999);
+    document.turnouts.push_back(placement);
+
+    const Solution solution = solve(document);
+    CHECK(has(solution, Code::UnknownReference));
+    CHECK(solution.turnouts.size() == 1);
+    CHECK(!solution.turnouts.front().valid);
+}
+
 }  // namespace
 
 int main() {
@@ -229,6 +312,8 @@ int main() {
     RUN(a_turnout_on_a_branch_of_a_turnout);
     RUN(a_cycle_is_reported);
     RUN(a_missing_type_is_reported);
+    RUN(a_paired_turnout_follows_the_one_it_stands_against);
+    RUN(a_turnout_against_nothing_is_reported);
     RUN(solving_leaves_the_document_alone);
     return REPORT();
 }

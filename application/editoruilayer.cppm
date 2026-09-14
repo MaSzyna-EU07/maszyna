@@ -57,6 +57,9 @@ class editor_ui : public ui_layer
 	nodebank_panel::edit_mode mode();
 	float getSpacing();
 	void toggleBrushSettings(bool isVisible);
+	// whether the plan tool has the keyboard and so owns Ctrl+Z / Ctrl+Y. the scene editor listens
+	// for the same keys, and cofniecie ma dotyczyc tego, na co uzytkownik patrzy
+	bool plan_takes_history() const;
 
   protected:
 	void render_menu_contents() override;

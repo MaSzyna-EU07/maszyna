@@ -83,6 +83,10 @@ struct TurnoutMark {
 struct SolvedTurnout {
     TurnoutId id{TurnoutId::none};
     bool valid{false};
+    /// Where PR ended up along the through track. The same as the placement's station,
+    /// unless the turnout is paired with another one — then it is worked out from that
+    /// one's frog and this is where it actually came to stand.
+    double station{0.0};
     geometry::Pose start{};  ///< PR, on the through track
     geometry::Pose frog{};   ///< KR, where a branch anchors
     double tangent_front{0.0}, tangent_back{0.0};

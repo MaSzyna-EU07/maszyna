@@ -80,6 +80,43 @@ void track_dependencies(const Document& document, const Track& track,
     }
 }
 
+/// Where the line leaving @p from meets @p track's centreline, as a station along it.
+/// False when it never does — two tracks that do not converge have no przejście between
+/// them, and saying so is better than putting the turnout somewhere plausible.
+[[nodiscard]] bool meets_track(const SolvedTrack& track, const geometry::Pose& from,
+                               double& station) {
+    double walked = 0.0;
+    double best = -1.0;
+    double best_station = 0.0;
+    for (std::size_t i = 1; i < track.centreline.size(); ++i) {
+        const PlanPoint& a = track.centreline[i - 1];
+        const PlanPoint& b = track.centreline[i];
+        const double ex = b.x - a.x;
+        const double ey = b.y - a.y;
+        const double step = std::hypot(ex, ey);
+        if (step <= kEps) {
+            continue;
+        }
+        // from.x + t*from.hx == a.x + u*ex, same in y: solve for t along the ray and u
+        // along this piece of the centreline
+        const double denominator = from.hx * ey - from.hy * ex;
+        if (std::abs(denominator) > 1e-12) {
+            const double t = ((a.x - from.x) * ey - (a.y - from.y) * ex) / denominator;
+            const double u = (from.hx * (a.y - from.y) - from.hy * (a.x - from.x)) / -denominator;
+            if (t > kEps && u >= -1e-9 && u <= 1.0 + 1e-9 && (best < 0.0 || t < best)) {
+                best = t;
+                best_station = walked + step * std::clamp(u, 0.0, 1.0);
+            }
+        }
+        walked += step;
+    }
+    if (best < 0.0) {
+        return false;
+    }
+    station = best_station;
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Holds: parallelism between elements
 // ---------------------------------------------------------------------------
@@ -315,6 +352,16 @@ Solution solve(const Document& document) {
                 break;
             }
         }
+        // a turnout standing against another one is laid after it: where it stands comes
+        // off that one's frog
+        if (document.turnouts[i].opposite != TurnoutId::none) {
+            for (std::size_t k = 0; k < turnout_count; ++k) {
+                if (document.turnouts[k].id == document.turnouts[i].opposite) {
+                    nodes[turnout_node[i]].depends_on.push_back(turnout_node[k]);
+                    break;
+                }
+            }
+        }
     }
     for (std::size_t i = 0; i < track_count; ++i) {
         track_dependencies(document, document.tracks[i], turnout_node, track_node,
@@ -390,8 +437,105 @@ Solution solve(const Document& document) {
                 }
 
                 const SolvedTrack* through = find_track(solution, placement.on);
+
+                // where it stands: what was authored, unless it stands against another
+                // turnout - then it is worked out from that one's frog, so the two of them
+                // move as the one piece of trackwork they are
+                double station = placement.station;
+                if (placement.opposite != TurnoutId::none) {
+                    const SolvedTurnout* against = find_turnout(solution, placement.opposite);
+                    double meeting = 0.0;
+                    if (against == nullptr || !against->valid) {
+                        Diagnostic diagnostic;
+                        diagnostic.code = Code::UnknownReference;
+                        diagnostic.turnout = placement.id;
+                        diagnostic.text =
+                            against == nullptr
+                                ? "rozjazd stoi naprzeciw rozjazdu, którego nie ma"
+                                : "rozjazd stoi naprzeciw rozjazdu, którego nie dało się położyć";
+                        solution.diagnostics.push_back(std::move(diagnostic));
+                        solution.turnouts.push_back(std::move(solved));
+                        break;
+                    }
+                    if (through == nullptr || !meets_track(*through, against->frog, meeting)) {
+                        Diagnostic diagnostic;
+                        diagnostic.code = Code::StationOffTrack;
+                        diagnostic.turnout = placement.id;
+                        diagnostic.track = placement.on;
+                        diagnostic.text =
+                            "to, co wychodzi z iglicy naprzeciwka, nie spotyka tego toru: "
+                            "przejście rozjazdowe nie ma gdzie stanąć";
+                        solution.diagnostics.push_back(std::move(diagnostic));
+                        solution.turnouts.push_back(std::move(solved));
+                        break;
+                    }
+                    // the two frogs face each other across the międzytorze: this one has to
+                    // stand where the line leaving the other one's frog passes, and its own
+                    // frog sits off its track by as much as the other's does. so the station
+                    // is settled by laying it and moving it along until its frog is on that
+                    // line - which is one step on straight track and a few on a curve
+                    const auto lay_at = [&](double where, plan::TurnoutGeometry& out, Pose& pr) {
+                        if (!pose_at(*through, where, pr)) {
+                            return false;
+                        }
+                        double here = 0.0;
+                        double behind_here = 0.0;
+                        double ahead_here = 0.0;
+                        const bool steady_here = steady_room(*through, where, here, behind_here,
+                                                             ahead_here);
+                        double trial_bend = placement.bend_from_track
+                                                ? (steady_here ? here : 0.0)
+                                                : placement.bend;
+                        Pose trial_at = pr;
+                        if (!placement.facing) {
+                            trial_at = Pose{trial_at.x, trial_at.y, -trial_at.hx, -trial_at.hy};
+                            trial_bend = -trial_bend;
+                        }
+                        out = plan::lay_turnout(trial_at, to_domain(*type, placement.hand),
+                                                trial_bend);
+                        return out.valid;
+                    };
+
+                    plan::TurnoutGeometry trial;
+                    Pose pr{};
+                    if (!lay_at(meeting, trial, pr)) {
+                        Diagnostic diagnostic;
+                        diagnostic.code = Code::TurnoutInvalid;
+                        diagnostic.turnout = placement.id;
+                        diagnostic.text = "typ „" + type->name +
+                                          "” nie daje się złożyć naprzeciw drugiego rozjazdu";
+                        solution.diagnostics.push_back(std::move(diagnostic));
+                        solution.turnouts.push_back(std::move(solved));
+                        break;
+                    }
+                    // the first guess puts PR where the line crosses the track; from there the
+                    // frog is walked onto the line itself
+                    station = placement.facing ? meeting - trial.through_length
+                                               : meeting + trial.through_length;
+                    for (int pass = 0; pass < 6; ++pass) {
+                        if (!lay_at(station, trial, pr)) {
+                            break;
+                        }
+                        // how far the frog sits off the line leaving the other one's frog
+                        const double off = (trial.frog.x - against->frog.x) * against->frog.hy -
+                                           (trial.frog.y - against->frog.y) * against->frog.hx;
+                        // and how much of that one metre along this track takes away
+                        const double per_metre = pr.hx * against->frog.hy - pr.hy * against->frog.hx;
+                        if (std::abs(per_metre) < 1e-9) {
+                            break;
+                        }
+                        // its frog runs along the track whichever way the turnout opens, so
+                        // the correction does not care about that either
+                        const double step = off / per_metre;
+                        station -= step;
+                        if (std::abs(step) < 1e-9) {
+                            break;
+                        }
+                    }
+                }
+
                 Pose at{};
-                if (through == nullptr || !pose_at(*through, placement.station, at)) {
+                if (through == nullptr || !pose_at(*through, station, at)) {
                     Diagnostic diagnostic;
                     diagnostic.code = Code::StationOffTrack;
                     diagnostic.turnout = placement.id;
@@ -407,7 +551,7 @@ Solution solve(const Document& document) {
                 double curvature = 0.0;
                 double behind = 0.0;
                 double ahead = 0.0;
-                const bool steady = steady_room(*through, placement.station, curvature, behind,
+                const bool steady = steady_room(*through, station, curvature, behind,
                                                 ahead);
                 double bend = placement.bend_from_track ? (steady ? curvature : 0.0)
                                                         : placement.bend;
@@ -446,8 +590,8 @@ Solution solve(const Document& document) {
                     diagnostic.turnout = placement.id;
                     diagnostic.track = placement.on;
                     diagnostic.text =
-                        through->length > 0.0 && placement.station > through->length + 1e-6
-                            ? "rozjazd stoi " + num(placement.station - through->length) +
+                        through->length > 0.0 && station > through->length + 1e-6
+                            ? "rozjazd stoi " + num(station - through->length) +
                                   " m za końcem toru zasadniczego"
                             : "rozjazd stoi na krzywej przejściowej: nie ma jednego promienia, "
                               "na który dałoby się go wygiąć";
@@ -465,6 +609,7 @@ Solution solve(const Document& document) {
                 }
 
                 solved.valid = true;
+                solved.station = station;
                 solved.bend = geometry.bend;
                 solved.diverging_curvature = geometry.diverging_curvature;
                 solved.bend_angle = geometry.bend_angle;
