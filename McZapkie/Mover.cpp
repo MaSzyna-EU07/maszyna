@@ -4789,7 +4789,7 @@ void TMoverParameters::UpdatePipePressure(double dt)
 	if (CompressedVolume < 0.0)
 		CompressedVolume = 0.0;
 
-	PipeOverchargeTime = ( PipePress > HighPipePress + 0.2 ? PipeOverchargeTime + dt : 0.0 );
+	PipeOverchargeTime = ( PipePress > HighPipePress + PipeOverchargeMargin ? PipeOverchargeTime + dt : 0.0 );
 }
 
 // *************************************************************************************************

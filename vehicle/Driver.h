@@ -26,6 +26,10 @@ auto const EU07_AI_NOMOVEMENT = 0.05; // standstill velocity threshold
 auto const EU07_AI_OVERCHARGETIME = 3.0; // [s]
 auto const EU07_AI_MOVEMENT = 1.0; // deliberate movement velocity threshold
 auto const EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE = 10000.0;
+auto const EU07_AI_READYBRAKEPRESSURE = 0.25; // [bar] powyżej tego skład liczy się jako zahamowany
+auto const EU07_AI_CHARGECUTOFFPRESSURE = 5.2; // [bar] koniec napełniania uderzeniowego
+auto const EU07_AI_CHARGECUTOFFPRESSURERELEASED = 5.1; // [bar] to samo, gdy skład jest odhamowany
+auto const EU07_AI_COMPRESSORLOWPRESSURE = 5.0; // [bar] poniżej tego zbiornik główny nie wystarcza na napełnianie
 
 enum TOrders
 { // rozkazy dla AI

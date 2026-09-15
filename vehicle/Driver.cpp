@@ -2621,17 +2621,11 @@ void TController::Lights(int head, int rear)
 void TController::DirectionInitial()
 { // sets the direction after a trainset is loaded
     mvOccupied->CabActivisationAuto();
-    if( mvOccupied->Vel >= EU07_AI_MOVEMENT ) {
+    if( mvOccupied->Vel > EU07_AI_NOMOVEMENT ) {
         // actually moving - direction from the sign of V
         iDirection = mvOccupied->V > 0 ? 1 : -1;
         iDirectionOrder = iDirection;
         DirectionForward( mvOccupied->V * mvOccupied->CabActive >= 0.0 );
-    }
-    else {
-        // standing: reverser forward relative to the cab, not from the sign of a micro V
-        DirectionForward( true );
-        iDirection = CheckDirection();
-        iDirectionOrder = iDirection;
     }
     CheckVehicles();
 };
@@ -5199,8 +5193,7 @@ TController::PrepareDirection() {
 
     if( iDirection == 0 ) {
         // jeśli nie ma ustalonego kierunku
-        // as in DirectionInitial / TakeControl: below 1 km/h counts as standing
-        if( mvOccupied->Vel < EU07_AI_MOVEMENT ) { // determine the direction while standing
+        if( mvOccupied->Vel < EU07_AI_NOMOVEMENT ) { // ustalenie kierunku, gdy stoi
             iDirection = mvOccupied->CabActive; // wg wybranej kabiny
             if( iDirection == 0 ) {
                 iDirection = mvOccupied->CabOccupied;
@@ -8446,9 +8439,11 @@ void TController::control_main_pipe() {
             }
         }
 
-        if( mvOccupied->Compressor < 5.0
+        if( mvOccupied->Compressor < EU07_AI_COMPRESSORLOWPRESSURE
          || ( BrakeCtrlPosition < gbh_RP
-           && ( mvOccupied->EqvtPipePress > (fReady < 0.25 ? 5.1 : 5.2)
+           && ( mvOccupied->EqvtPipePress > ( fReady < EU07_AI_READYBRAKEPRESSURE ?
+                    EU07_AI_CHARGECUTOFFPRESSURERELEASED :
+                    EU07_AI_CHARGECUTOFFPRESSURE )
              || IsAnyPipeOvercharged ) ) ) {
             cue_action( driver_hint::trainbrakerelease );
         }
@@ -8556,7 +8551,7 @@ TController::check_cell_ahead() {
     // shut down, so no signal is acted upon; a command cell is the only way to reach us
     if( false == AIControllFlag ) { return; }
     if( ( OrderCurrentGet() & ~( Shunt | Loose_shunt | Obey_train | Bank ) ) != 0 ) { return; }
-    if( mvOccupied->Vel >= 0.1 ) { return; }
+    if( mvOccupied->Vel >= EU07_AI_NOMOVEMENT ) { return; }
     if( TableUpdate( VelDesired, ActualProximityDist, VelNext, AccDesired ) != TCommandType::cm_Command ) { return; }
     if( eSignNext == nullptr ) { return; }
     eSignNext->send_command( *this );
