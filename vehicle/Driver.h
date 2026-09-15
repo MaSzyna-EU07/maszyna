@@ -23,8 +23,13 @@ auto const EU07_AI_ACCELERATION = 0.05;
 auto const EU07_AI_NOACCELERATION = -0.05;
 auto const EU07_AI_BRAKINGTESTACCELERATION = -0.06;
 auto const EU07_AI_NOMOVEMENT = 0.05; // standstill velocity threshold
+auto const EU07_AI_OVERCHARGETIME = 3.0; // [s]
 auto const EU07_AI_MOVEMENT = 1.0; // deliberate movement velocity threshold
 auto const EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE = 10000.0;
+auto const EU07_AI_READYBRAKEPRESSURE = 0.25; // [bar] above this the consist counts as braked
+auto const EU07_AI_CHARGECUTOFFPRESSURE = 5.2; // [bar] ends the high pressure filling stroke
+auto const EU07_AI_CHARGECUTOFFPRESSURERELEASED = 5.1; // [bar] the same, with the consist released
+auto const EU07_AI_COMPRESSORLOWPRESSURE = 5.0; // [bar] below this the main tank cannot feed the stroke
 
 enum TOrders
 { // rozkazy dla AI
@@ -144,9 +149,34 @@ enum TSpeedPosFlag
     spSemaphor = 0x4000, // semafor pociągowy
     spRoadVel = 0x8000, // zadanie prędkości drogowej
     spSectionVel = 0x20000, // odcinek z ograniczeniem
-    spProximityVelocity = 0x40000 // odcinek z ograniczeniem i podaną jego długościa
+    spProximityVelocity = 0x40000, // odcinek z ograniczeniem i podaną jego długościa
 //    spDontApplySpeedLimit = 0x10000 // this point won't apply its speed limit. potentially set by the scanning vehicle
 };
+
+// names of speed table entry flags, for the debug panel; spEnabled is skipped, every visible entry has it
+struct TSpeedPosFlagDescription {
+    int flag;
+    char const *name;
+};
+
+inline constexpr std::array<TSpeedPosFlagDescription, 16> SpeedPosFlagDescriptions {{
+    { spSemaphor, "semaphore" },
+    { spShuntSemaphor, "shunt" },
+    { spPassengerStopPoint, "W4" },
+    { spOutsideStation, "W5" },
+    { spSwitch, "switch" },
+    { spSwitchStatus, "diverging" },
+    { spTrack, "track" },
+    { spCurve, "curve" },
+    { spEnd, "end" },
+    { spSectionVel, "section" },
+    { spProximityVelocity, "proximity" },
+    { spRoadVel, "road" },
+    { spStopOnSBL, "SBL" },
+    { spReverse, "reverse" },
+    { spElapsed, "passed" },
+    { spCommandSent, "sent" },
+}};
 
 class TSpeedPos
 { // pozycja tabeli prędkości dla AI
@@ -222,13 +252,15 @@ public:
     void Update( double dt ); // uruchamiac przynajmniej raz na sekundę
     void MoveTo( TDynamicObject *to );
     void TakeControl( bool const Aidriver, bool const Forcevehiclecheck = false );
-    inline
-    bool primary( bool const Primary ) {
-        SetFlag( iDrivigFlags, Primary ? movePrimary : -movePrimary );
-        return primary(); }
+    void ReleaseTransientControls(); // clears the warning signal and the sandbox on a change of primary
+    bool primary( bool const Primary );
     inline
     bool primary() const {
         return (iDrivigFlags & movePrimary) != 0; };
+    // drops primary from the others in the consist and takes the lead (valve / scan table)
+    void ClaimConsistPrimary();
+    // a primary with iEngineActive in the consist; nullptr = free to take the lead
+    TController *ActiveEnginePrimary() const;
     inline
     TMoverParameters const *Controlling() const {
         return mvControlling; }
@@ -317,7 +349,11 @@ private:
     void determine_braking_distance();
     void determine_proximity_ranges();
     void scan_route( double const Range );
+    // front/rear/fLength per CheckDirection, CabOccupied fallback; no CheckVehicles side effects
+    void OrientScanToCab();
     void scan_obstacles( double const Range );
+    void UpdateSecondary(); // a secondary does not drive, it only settles its own vehicle
+    void SettleSecondaryAI(); // drops force and brake, keeps vigilance quiet
     void control_wheelslip();
     void control_pantographs();
     void control_horns( double const Timedelta );
@@ -355,6 +391,10 @@ private:
     void control_braking_force();
     void apply_independent_brake_only();
     void check_route_ahead( double const Range );
+    void check_cell_ahead(); // shut down driver: only a command cell can reach it
+    // false when the permission at the nearest signal was given to another consist
+    bool SignalPermissionIsOurs( bool const Signalgivesgo ) const;
+    bool OtherConsistAtSignal() const; // another consist in front of the signal = the addressee of the permission
     void check_route_behind( double const Range );
     void UpdateBrakingHelper();
     void hint( driver_hint const Value, hintpredicate const Predicate, float const Predicateparameter = 0.f );
@@ -477,6 +517,8 @@ public:
     std::string OrderCurrent() const;
 private:
     void RecognizeCommand(); // odczytuje komende przekazana lokomotywie
+    // whether the command wakes a secondary crew up to lead (a driving or startup order)
+    static bool CommandClaimsPrimary( std::string const &Command );
     void JumpToNextOrder( bool const Skipmergedchangedirection = false );
     void JumpToFirstOrder();
     void OrderPush( TOrders NewOrder );
@@ -526,12 +568,18 @@ private:
     void TableClear();
     int TableDirection() { return iTableDirection; }
     // Ra: stare funkcje skanujące, używane do szukania sygnalizatora z tyłu
-    bool IsOccupiedByAnotherConsist( TTrack *Track, double const Distance );
+    bool IsOccupiedByAnotherConsist( TTrack const *Track, double const Distance = 0.0 ) const;
+    // distance to the nearest vehicle of another consist ahead on the track; -1.0 when there is none
+    double DistanceToAnotherConsist( TTrack const *Track, double const Distance ) const;
+    bool BelongsToConsist( TDynamicObject const *Vehicle ) const; // whether the vehicle is part of our consist
     basic_event *CheckTrackEventBackward( double fDirection, TTrack *Track, TDynamicObject *Vehicle, int const Eventdirection = 1, end const End = end::rear );
     TTrack *BackwardTraceRoute( double &fDistance, double &fDirection, TDynamicObject *Vehicle, basic_event *&Event, int const Eventdirection = 1, end const End = end::rear, bool const Untiloccupied = true );
     void SetProximityVelocity( double dist, double vel, glm::dvec3 const *pos );
     TCommandType BackwardScan( double const Range );
     std::string TableText( std::size_t const Index ) const;
+    double TableDistance( std::size_t const Index ) const; // distance of the entry; max when out of range
+    // scan table row describing the nearest vehicle on the route; empty when the way is clear
+    std::string ObstacleText() const;
 /*
     void RouteSwitch(int d);
 */
@@ -544,6 +592,8 @@ private:
     basic_event *eSignSkip = nullptr; // można pominąć ten SBL po zatrzymaniu
     std::size_t SemNextIndex{ std::size_t( -1 ) };
     std::size_t SemNextStopIndex{ std::size_t( -1 ) };
+    // entry that produced the permitting command; SemNextIndex can point at a different one
+    std::size_t SemPermitIndex{ std::size_t( -1 ) };
     double dMoveLen = 0.0; // odległość przejechana od ostatniego sprawdzenia tabelki
     basic_event *eSignNext = nullptr; // sygnał zmieniający prędkość, do pokazania na [F2]
     neighbour_data Obstacle; // nearest vehicle detected ahead on current route
@@ -599,6 +649,7 @@ private:
     bool IsCargoTrain{ false };
     bool IsHeavyCargoTrain{ false };
     double fReady = 0.0; // poziom odhamowania wagonów
+    bool IsAnyPipeOvercharged { false };
     bool Ready = false; // ABu: stan gotowosci do odjazdu - sprawdzenie odhamowania wagonow
     bool IsConsistBraked { false };
     double ConsistShade{ 1.0 }; // averaged amount of sunlight received by the consist
@@ -645,9 +696,10 @@ private:
 };
 
 inline TOrders TController::OrderCurrentGet() const {
-    return OrderList[ OrderPos ];
+    return OrderList[ std::clamp( OrderPos, 0, maxorders - 1 ) ];
 }
 
 inline TOrders TController::OrderNextGet() const {
-    return OrderList[ OrderPos + 1 ];
+    // the last slot has no successor; OrderNext() wraps to zero there anyway
+    return ( OrderPos + 1 < maxorders ? OrderList[ OrderPos + 1 ] : Wait_for_orders );
 }

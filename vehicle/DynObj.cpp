@@ -1616,6 +1616,8 @@ int TDynamicObject::Dettach(int dir)
             d = d->Next(); // i w drugą stronę
         }
     }
+    // the neighbour before uncoupling - afterwards Neighbours no longer points at it
+    auto *const severedneighbour { MoverParameters->Neighbours[ dir ].vehicle };
     if( MoverParameters->Couplers[ dir ].CouplingFlag ) {
         // odczepianie, o ile coś podłączone
         MoverParameters->Dettach( dir );
@@ -1628,8 +1630,49 @@ int TDynamicObject::Dettach(int dir)
         };
 */
     }
+    // after uncoupling every part of the consist must have at most one primary
+    ReassignConsistPrimary();
+    if( severedneighbour != nullptr ) {
+        severedneighbour->ReassignConsistPrimary();
+    }
     // sprzęg po rozłączaniu (czego się nie da odpiąć
     return MoverParameters->Couplers[dir].CouplingFlag;
+}
+
+void TDynamicObject::ReassignConsistPrimary()
+{ // picks the primary; ClaimConsistPrimary does the actual primary / valve / table change
+    std::vector<TController *> drivers;
+    TController *existingprimary = nullptr;
+    int primarycount = 0;
+    // walk from the front; Next()/Prev() are not enough, reversed members need the coupler side flipped
+    int side { end::front };
+    auto *headvehicle { FirstFind( side ) };
+    if( headvehicle == nullptr ) { headvehicle = this; }
+    auto dir { 1 - side };
+    auto *farend { headvehicle };
+    for( auto *d = headvehicle; d != nullptr; d = d->Neighbour( dir ) )
+    {
+        if( d->Mechanik != nullptr )
+        {
+            drivers.emplace_back( d->Mechanik );
+            if( d->Mechanik->primary() ) {
+                ++primarycount;
+                existingprimary = d->Mechanik;
+            }
+        }
+        farend = d;
+    }
+    if( drivers.empty() ) { return; }
+    // a human-driven cab takes priority, so the AI does not take the consist from them
+    auto const human { std::ranges::find_if(
+        drivers, []( TController const *drv ) { return false == drv->AIControllFlag; } ) };
+    // with a single primary it stays; otherwise: the human, the end vehicles, the first on the list
+    TController *newprimary { drivers.front() };
+    if( primarycount == 1 )                     { newprimary = existingprimary; }
+    else if( human != drivers.end() )           { newprimary = *human; }
+    else if( headvehicle->Mechanik != nullptr ) { newprimary = headvehicle->Mechanik; }
+    else if( farend->Mechanik != nullptr )      { newprimary = farend->Mechanik; }
+    newprimary->ClaimConsistPrimary();
 }
 
 void
@@ -1653,6 +1696,7 @@ TDynamicObject::couple( int const Side ) {
                     Side, neighbour.vehicle_end,
                     othervehicleparams,
                     coupling::coupler ) ) {
+                ReassignConsistPrimary(); // coupled consists are one consist, with one primary
                 // one coupling type per key press
                 return;
             }
@@ -3118,6 +3162,7 @@ bool TDynamicObject::Update(double dt, double dt1)
         MoverParameters->InsideConsist = false;
     }
     if( TestFlag( MoverParameters->AIFlag, sound::attachcoupler ) ) {
+        ReassignConsistPrimary(); // coupled consists are one consist, with one primary
         auto *driver{ ctOwner ? ctOwner : Mechanik };
         if( driver != nullptr ) {
             driver->CheckVehicles( Connect );

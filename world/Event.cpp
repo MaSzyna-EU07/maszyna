@@ -415,6 +415,13 @@ basic_event::is_command() const {
     return false;
 };
 
+// returns: true for a data cell whose command has already been delivered
+bool
+basic_event::is_command_spent() const {
+
+    return false;
+};
+
 std::string
 basic_event::input_text() const {
     // odczytanie komendy z eventu
@@ -648,6 +655,13 @@ bool
 getvalues_event::is_command() const {
     // info o komendzie z komórki
     return m_input.data_cell()->StopCommand();
+}
+
+// returns: true for a data cell whose command has already been delivered
+bool
+getvalues_event::is_command_spent() const {
+    // the cell keeps its text after the command was sent, only the pending flag is dropped
+    return false == m_input.data_cell()->StopCommand();
 }
 
 // input data access
