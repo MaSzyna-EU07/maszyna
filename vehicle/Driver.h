@@ -518,7 +518,7 @@ public:
 private:
     void RecognizeCommand(); // odczytuje komende przekazana lokomotywie
     // whether the command wakes a secondary crew up to lead (a driving or startup order)
-    static bool CommandClaimsPrimary( std::string const &Command, double const Value );
+    static bool CommandClaimsPrimary( std::string const &Command );
     void JumpToNextOrder( bool const Skipmergedchangedirection = false );
     void JumpToFirstOrder();
     void OrderPush( TOrders NewOrder );

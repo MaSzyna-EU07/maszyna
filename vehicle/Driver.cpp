@@ -274,13 +274,9 @@ void TSpeedPos::CommandCheck()
         // inna komenda w evencie skanowanym powoduje zatrzymanie i wysłanie tej komendy
         // nie manewrowa, nie przystanek, nie zatrzymać na SBL
         // jak nieznana komenda w komórce sygnałowej, to zatrzymujemy
-        fVelNext = 0.0;
-/*
-        fVelNext = (
-            evEvent->is_command() ? 0.0 : // ask for a stop if we have a command for the vehicle
-            ( iFlags & ( spSemaphor | spShuntSemaphor )) != 0 ? fVelNext : // don't change semafor velocity
-            -1.0 ); // otherwise don't be a bother
-*/
+        // a cell keeps its text after the command has been delivered - going on standing in
+        // front of it would make every command cell a permanent stop point
+        fVelNext = ( ( iFlags & spCommandSent ) != 0 ? -1.0 : 0.0 );
         // TODO: check whether clearing spShuntSemaphor flag doesn't cause problems
         // potentially it can invalidate shunt semaphor used to transmit timetable or similar command
         iFlags &= ~(spShuntSemaphor | spPassengerStopPoint | spStopOnSBL);
@@ -4443,7 +4439,7 @@ void TController::PutCommand(std::string NewCommand, double NewValue1, double Ne
         mvOccupied->PutCommand(NewCommand, NewValue1, NewValue2, NewLocation);
 }
 
-bool TController::CommandClaimsPrimary( std::string const &Command, double const Value )
+bool TController::CommandClaimsPrimary( std::string const &Command )
 { // a driving/startup order wakes a secondary crew up to lead, otherwise nobody moves the consist
     auto const isdrivingorder = [&Command]( std::initializer_list<char const *> const names ) {
         return std::ranges::any_of(
@@ -4521,7 +4517,7 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
     if( auto const shouldtakeprimary{
             AIControllFlag
          && !primary()
-         && CommandClaimsPrimary( NewCommand, NewValue1 )
+         && CommandClaimsPrimary( NewCommand )
          && ActiveEnginePrimary() == nullptr };
         shouldtakeprimary ) {
         ClaimConsistPrimary();
@@ -5099,7 +5095,7 @@ TController::Update( double const Timedelta ) {
     determine_braking_distance();
     determine_proximity_ranges();
 
-    // we scan while dormant too, to see a permission and wake up
+    // a dormant driver scans too, so a command cell put in front of it lands in the table
     scan_route( awarenessrange );
     scan_obstacles( awarenessrange );
     // generic actions
@@ -6199,23 +6195,23 @@ TController::determine_consist_state() {
                 Ready = false;
             }
         // Ra: odluźnianie przeładowanych lokomotyw, ciągniętych na zimno - prowizorka...
-        if( bp >= 0.4 ) { // wg UIC określone sztywno na 0.04
-            if( AIControllFlag || (Global.AITrainman && mvOccupied->Vel < EU07_AI_NOMOVEMENT  && !is_emu() && !is_dmu())) {
-                if( BrakeCtrlPosition == gbh_RP // jest pozycja jazdy
-                 && false == TestFlag(vehicle->Hamulec->GetBrakeStatus(), b_dmg) // brake isn't broken
-                 && vehicle->PipePress - mvOccupied->Handle->GetRP() > -0.1 // jeśli ciśnienie jak dla jazdy
-                 && vehicle->Hamulec->GetCRP() > vehicle->PipePress + 0.12 ) { // za dużo w zbiorniku
-                    // indywidualne luzowanko
-                    vehicle->BrakeReleaser( 1 );
+            if( bp >= 0.4 ) { // wg UIC określone sztywno na 0.04
+                if( AIControllFlag || (Global.AITrainman && mvOccupied->Vel < EU07_AI_NOMOVEMENT  && !is_emu() && !is_dmu())) {
+                    if( BrakeCtrlPosition == gbh_RP // jest pozycja jazdy
+                     && false == TestFlag(vehicle->Hamulec->GetBrakeStatus(), b_dmg) // brake isn't broken
+                     && vehicle->PipePress - mvOccupied->Handle->GetRP() > -0.1 // jeśli ciśnienie jak dla jazdy
+                     && vehicle->Hamulec->GetCRP() > vehicle->PipePress + 0.12 ) { // za dużo w zbiorniku
+                        // indywidualne luzowanko
+                        vehicle->BrakeReleaser( 1 );
+                    }
                 }
             }
-        }
-		if (bp < 0.1) {
-			if ( AIControllFlag || Global.AITrainman ) {
-				if (false == TestFlag(vehicle->Hamulec->GetBrakeStatus(), b_dmg) // brake isn't broken
-					&& vehicle->Hamulec->GetCRP() < vehicle->PipePress - 0.1 ) { // już nie jest za dużo w zbiorniku
-					   // koniec indywidualnego luzowanka
-					vehicle->BrakeReleaser( 0 );
+			if (bp < 0.1) {
+				if ( AIControllFlag || Global.AITrainman ) {
+					if (false == TestFlag(vehicle->Hamulec->GetBrakeStatus(), b_dmg) // brake isn't broken
+						&& vehicle->Hamulec->GetCRP() < vehicle->PipePress - 0.1 ) { // już nie jest za dużo w zbiorniku
+						   // koniec indywidualnego luzowanka
+						vehicle->BrakeReleaser( 0 );
 					}
 				}
 			}
@@ -7376,21 +7372,14 @@ TController::UpdateDisconnect() {
 
 void
 TController::handle_engine() {
+    // HACK: activate route scanning if an idling vehicle is activated by a human user.
+    // AI is left out on purpose - a battery is on in every vehicle the scenery starts with,
+    // so this would start any shut down AI the moment it ends up alone in a consist
     if( OrderCurrentGet() == Wait_for_orders
-     && false == iEngineActive ) {
-        // scanning is geometric: the driver sees a signal also with the battery off
-        iDrivigFlags |= moveActive;
-        if( AIControllFlag
-         && primary()
-         && mvOccupied->DirActive == 0
-         && SemNextIndex != -1 ) {
-            // there is a signal ahead and no direction set yet - set it, so the scan runs forwards
-            if( mvOccupied->CabActive == 0 ) {
-                mvOccupied->CabActivisationAuto();
-            }
-            DirectionForward( true );
-            DirectionChange();
-        }
+     && false == iEngineActive
+     && false == AIControllFlag
+     && true == mvOccupied->Power24vIsAvailable ) {
+        OrderNext( Prepare_engine );
     }
     // basic engine preparation
     if( OrderCurrentGet() == Prepare_engine ) {
@@ -8536,6 +8525,9 @@ TController::check_route_ahead( double const Range ) {
                 eSignNext->StopCommandSent(); // się wykonało już
 */                      // replacement of the above
                 eSignNext->send_command( *this );
+                for( auto &point : sSpeedTable ) {
+                    if( point.evEvent == eSignNext ) { point.iFlags |= spCommandSent; }
+                }
             }
         }
         break;
