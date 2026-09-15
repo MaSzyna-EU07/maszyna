@@ -1650,7 +1650,7 @@ class TMoverParameters
 	double Handle_OverloadPressureDecrease = 0.002; // predkosc spadku cisnienia przy asymilacji
 	/*max. cisnienie w cyl. ham., stala proporcjonalnosci p-K*/
 	double HighPipePress = 0.0;
-	double PipeOverchargeTime = 0.0; // czas ponad ciśnieniem nominalnym w PG [s]
+	double PipeOverchargeTime = 0.0; // time spent above the nominal brake pipe pressure [s]
 	double LowPipePress = 0.0;
 	double DeltaPipePress = 0.0;
 	/*max. i min. robocze cisnienie w przewodzie glownym oraz roznica miedzy nimi*/
