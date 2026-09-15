@@ -78,6 +78,10 @@ public:
     virtual
     bool
         is_command() const;
+    // returns: true for a data cell whose command has already been delivered
+    virtual
+    bool
+        is_command_spent() const;
     // input data access
     virtual std::string input_text() const;
     virtual TCommandType input_command() const;
@@ -236,6 +240,8 @@ public:
     void send_command( TController &Controller ) override;
     // returns: true if associated data cell contains a command for vehicle controller
     bool is_command() const override;
+    // returns: true for a data cell whose command has already been delivered
+    bool is_command_spent() const override;
     // input data access
     std::string input_text() const override;
     TCommandType input_command() const override;

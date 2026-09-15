@@ -696,9 +696,10 @@ private:
 };
 
 inline TOrders TController::OrderCurrentGet() const {
-    return OrderList[ OrderPos ];
+    return OrderList[ std::clamp( OrderPos, 0, maxorders - 1 ) ];
 }
 
 inline TOrders TController::OrderNextGet() const {
-    return OrderList[ OrderPos + 1 ];
+    // the last slot has no successor; OrderNext() wraps to zero there anyway
+    return ( OrderPos + 1 < maxorders ? OrderList[ OrderPos + 1 ] : Wait_for_orders );
 }

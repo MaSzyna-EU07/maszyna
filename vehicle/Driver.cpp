@@ -274,9 +274,10 @@ void TSpeedPos::CommandCheck()
         // inna komenda w evencie skanowanym powoduje zatrzymanie i wysłanie tej komendy
         // nie manewrowa, nie przystanek, nie zatrzymać na SBL
         // jak nieznana komenda w komórce sygnałowej, to zatrzymujemy
-        // a cell keeps its text after the command has been delivered - going on standing in
-        // front of it would make every command cell a permanent stop point
-        fVelNext = ( ( iFlags & spCommandSent ) != 0 ? -1.0 : 0.0 );
+        // a cell keeps its text after the command has been delivered, so asking the driver to
+        // stand in front of it any longer would make every command cell a permanent stop point
+        fVelNext = ( evEvent != nullptr && evEvent->is_command_spent() ? -1.0 : 0.0 );
+        if( fVelNext < 0.0 ) { iFlags |= spCommandSent; }
         // TODO: check whether clearing spShuntSemaphor flag doesn't cause problems
         // potentially it can invalidate shunt semaphor used to transmit timetable or similar command
         iFlags &= ~(spShuntSemaphor | spPassengerStopPoint | spStopOnSBL);
@@ -8525,9 +8526,6 @@ TController::check_route_ahead( double const Range ) {
                 eSignNext->StopCommandSent(); // się wykonało już
 */                      // replacement of the above
                 eSignNext->send_command( *this );
-                for( auto &point : sSpeedTable ) {
-                    if( point.evEvent == eSignNext ) { point.iFlags |= spCommandSent; }
-                }
             }
         }
         break;
