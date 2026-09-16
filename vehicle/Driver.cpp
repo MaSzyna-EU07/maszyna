@@ -540,8 +540,7 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
     }
     else {
         if( iTableDirection == 0 ) { return; }
-        // NOTE: provisory fix for BUG: sempahor indices no longer matching table size
-        // TODO: find and really fix the reason it happens
+        // NOTE: belt and braces; TablePurger() used to leave these pointing past the end of the table
         if( SemNextIndex != -1
          && SemNextIndex >= sSpeedTable.size() ) {
             SemNextIndex = -1;
@@ -799,6 +798,15 @@ void TController::TableCheck(double fDistance)
                     { // usuwamy wszystko dopóki nie trafimy na tą zwrotnicę
                         sSpeedTable.pop_back();
                         --iLast;
+                    }
+                    // a semaphor recorded beyond the switch went away with the discarded entries
+                    if( SemNextIndex != -1
+                     && SemNextIndex >= sSpeedTable.size() ) {
+                        SemNextIndex = -1;
+                    }
+                    if( SemNextStopIndex != -1
+                     && SemNextStopIndex >= sSpeedTable.size() ) {
+                        SemNextStopIndex = -1;
                     }
                     tLast = sSpeedTable[ i ].trTrack;
                     TableTraceRoute( fDistance, pVehicles[ end::rear ] );
@@ -1739,14 +1747,16 @@ void TController::TablePurger()
         return;
     }
     // simplest approach should be good enough for start -- just copy whatever is still relevant, then swap
+    auto const isexpendable = []( TSpeedPos const &Speedpoint ) {
+        return
+            0 == ( Speedpoint.iFlags & spEnabled )
+         || ( ( Speedpoint.iFlags & ( spElapsed | spTrack | spCurve | spSwitch ) ) == ( spElapsed | spTrack | spCurve )
+           && Speedpoint.fVelNext < 0.0 ); };
     // do a trial run first, to see if we need to bother at all
     std::size_t trimcount{ 0 };
     for( std::size_t idx = 0; idx < sSpeedTable.size() - 1; ++idx ) {
-        auto const &speedpoint = sSpeedTable[ idx ];
-        if( 0 == (speedpoint.iFlags & spEnabled)
-         || ( (speedpoint.iFlags & (spElapsed | spTrack | spCurve | spSwitch)) == (spElapsed | spTrack | spCurve)
-           && speedpoint.fVelNext < 0.0 ) ) {
-            // NOTE: we could break out early here, but running through entire thing gives us exact size needed for new table
+        // NOTE: we could break out early here, but running through entire thing gives us exact size needed for new table
+        if( isexpendable( sSpeedTable[ idx ] ) ) {
             ++trimcount;
         }
     }
@@ -1755,33 +1765,33 @@ void TController::TablePurger()
         return;
     }
     std::vector<TSpeedPos> trimmedtable; trimmedtable.reserve( sSpeedTable.size() - trimcount );
-    // we can only update pointers safely after new table is finalized, so record their indices until then
+    // the indices are only valid for the old table, so the new placements are recorded separately
+    // and assigned once the new table is complete
+    auto semnextindex { std::size_t( -1 ) };
+    auto semnextstopindex { std::size_t( -1 ) };
+    auto const trackplacement = [&]( std::size_t const Index, bool const Kept ) {
+        // a trimmed point leaves the index invalid, a kept one lands where the new table ends
+        if( Index == SemNextIndex ) {
+            semnextindex = ( Kept ? trimmedtable.size() : std::size_t( -1 ) );
+        }
+        if( Index == SemNextStopIndex ) {
+            semnextstopindex = ( Kept ? trimmedtable.size() : std::size_t( -1 ) );
+        } };
+
     for( std::size_t idx = 0; idx < sSpeedTable.size() - 1; ++idx ) {
-        // cache placement of semaphors in the new table, if we encounter them
-        if( idx == SemNextIndex ) {
-            SemNextIndex = trimmedtable.size();
-        }
-        if( idx == SemNextStopIndex ) {
-            SemNextStopIndex = trimmedtable.size();
-        }
         auto const &speedpoint = sSpeedTable[ idx ];
-        if( 0 == (speedpoint.iFlags & spEnabled)
-         || ( (speedpoint.iFlags & (spElapsed | spTrack | spCurve | spSwitch)) == (spElapsed | spTrack | spCurve)
-           && speedpoint.fVelNext < 0.0 ) ) {
-            // if the trimmed point happens to be currently active semaphor we need to invalidate their placements
-            if( idx == SemNextIndex ) {
-                SemNextIndex = -1;
-            }
-            if( idx == SemNextStopIndex ) {
-                SemNextStopIndex = -1;
-            }
-            continue;
-        }
+        auto const kept { false == isexpendable( speedpoint ) };
+        trackplacement( idx, kept );
+        if( false == kept ) { continue; }
         // we're left with useful speed point record we should copy
         trimmedtable.emplace_back( speedpoint );
     }
-    // always copy the last entry
+    // always copy the last entry; an index pointing at it has to follow it as well
+    trackplacement( sSpeedTable.size() - 1, true );
     trimmedtable.emplace_back( sSpeedTable.back() );
+
+    SemNextIndex = semnextindex;
+    SemNextStopIndex = semnextstopindex;
 
     if( Global.iWriteLogEnabled & 8 ) {
         WriteLog( "Speed table garbage collection for " + OwnerName() + " cut away " + std::to_string( trimcount ) + ( trimcount == 1 ? " record" : " records" ) );
