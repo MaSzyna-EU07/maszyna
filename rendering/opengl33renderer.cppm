@@ -36,6 +36,8 @@ import eu07.rendering.openglcamera;
 import eu07.rendering.opengl33light;
 import eu07.rendering.opengl33particles;
 import eu07.rendering.opengl33skydome;
+import eu07.rendering.terrainclipmap;
+import eu07.rendering.terrainstatus;
 import eu07.rendering.opengl33precipitation;
 import eu07.simulation.simulationenvironment;
 import eu07.simcore;
@@ -46,6 +48,7 @@ import eu07.gl.framebuffer;
 import eu07.gl.renderbuffer;
 import eu07.gl.postfx;
 import eu07.gl.shader;
+import eu07.rendering.terrainclipmap;
 import eu07.gl.cubemap;
 import eu07.gl.glsl_common;
 import eu07.gl.pbo;
@@ -301,6 +304,8 @@ class opengl33_renderer : public gfx_renderer {
     void setup_sunlight_intensity( float const Factor = 1.f);
 	// runs jobs needed to generate graphics for specified render pass
 	void Render_pass(viewport_config &vp, rendermode const Mode);
+	// draws the cooked terrain heightfield, if one is open
+	void Render_terrain();
 	// creates dynamic environment cubemap
 	bool Render_reflections(viewport_config &vp);
 	bool Render(world_environment *Environment);
@@ -379,6 +384,10 @@ class opengl33_renderer : public gfx_renderer {
 	double m_environmentupdatetime{0}; // time of the most recent environment map update
 	glm::dvec3 m_environmentupdatelocation; // coordinates of most recent environment map update
     opengl33_skydome m_skydomerenderer;
+    // cooked terrain heightfields, ordered finest first. a scenery carries a coarse
+    // regional model and a fine corridor per line, and they overlap
+    std::vector<std::unique_ptr<terrain_clipmap>> m_terrain;
+    bool m_terrainattempted { false };
     opengl33_precipitation m_precipitationrenderer;
     opengl33_particles m_particlerenderer; // particle visualization subsystem
 

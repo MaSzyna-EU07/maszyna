@@ -66,6 +66,8 @@ import eu07.simcore;
 import eu07.utilities.globals;
 import eu07.utilities.utilities;
 import eu07.simulation.simulation;
+import eu07.simulation.loadprofile;
+import eu07.application.shotrunner;
 import eu07.simulation.simulationsounds;
 import eu07.vehicle.train;
 import eu07.utilities.dictionary;
@@ -1171,6 +1173,9 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 
 	// process command line arguments
 	auto scenerywasasked = false;
+	std::vector<shot_runner::shot> shots;
+	auto shotsettle = 3.0;
+	auto shotquit = true;
 	for (int i = 1; i < Argc; ++i)
 	{
 
@@ -1202,14 +1207,89 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		{
 			Global.editor_startup = true;
 		}
+		else if (token == "-terrain")
+		{
+			if (i + 1 < Argc)
+			{
+				// cooked heightfield produced by tools/terraincook; may be repeated
+				Global.terrain_heightfields.push_back(Argv[++i]);
+			}
+		}
+		else if (token == "-shot")
+		{
+			// unattended screenshot: "x,y,z[,yaw[,pitch]]", repeatable for a sequence
+			if (i + 1 < Argc)
+			{
+				shot_runner::shot shot;
+				if (shot_runner::parse(Argv[++i], shot))
+				{
+					shots.push_back(shot);
+				}
+				else
+				{
+					std::cout << "bad -shot viewpoint: " << Argv[i] << std::endl;
+					return -1;
+				}
+			}
+		}
+		else if (token == "-shotsettle")
+		{
+			// seconds to wait at each viewpoint before saving, so terrain tiles and
+			// models have time to stream in
+			if (i + 1 < Argc)
+			{
+				shotsettle = std::atof(Argv[++i]);
+			}
+		}
+		else if (token == "-shotstay")
+		{
+			// leave the simulation running once the sequence is done
+			shotquit = false;
+		}
+		else if (token == "-loadprofile")
+		{
+			// scenery load profiling: where the load time goes, what the scenery holds,
+			// what it costs in memory. writes to the log and to loadprofile.txt
+			loadprofile::enable(true);
+		}
+		else if (token == "-cooklogic")
+		{
+			// cook the scenery's LOGIC container once it has loaded, then read it back and
+			// check it against the events in memory
+			Global.cook_logic = true;
+		}
+		else if (token == "-nobaketerrain")
+		{
+			// load the scenery's terrain triangles as written, without baking or using a
+			// heightfield baked beside it. the way to see the original for comparison
+			Global.bake_terrain = false;
+		}
+		else if (token == "-verifylogic")
+		{
+			// read the LOGIC container that is already on disk and check it against the
+			// scenery, writing nothing
+			Global.verify_logic = true;
+		}
 		else
 		{
 			std::cout << "usage: " << std::string(Argv[0]) << " [-s sceneryfilepath]"
 			          << " [-v vehiclename]"
 			          << " [-editor]"
+			          << " [-terrain terrain.ehf]"
+			          << " [-shot x,y,z[,yaw[,pitch]]]"
+			          << " [-shotsettle seconds] [-shotstay]"
+			          << " [-loadprofile]"
+			          << " [-cooklogic]"
+			          << " [-verifylogic]"
+			          << " [-nobaketerrain]"
 			          << "  (every switch also takes a double dash: --editor)" << std::endl;
 			return -1;
 		}
+	}
+
+	if (false == shots.empty())
+	{
+		Shots.configure(shots, shotsettle, shotquit);
 	}
 
 	if (Global.editor_startup && false == scenerywasasked)

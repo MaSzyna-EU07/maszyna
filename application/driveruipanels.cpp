@@ -47,6 +47,7 @@ import eu07.utilities.logs;
 import eu07.widgets.vehicleparams;
 import eu07.utilities.u8;
 import eu07.application.driverhints;
+import eu07.rendering.terrainstatus;
 #ifdef WITH_UART
 import eu07.utilities.uart;
 using namespace Mtable;
@@ -765,6 +766,14 @@ debug_panel::render_section_scenario() {
 				Global.BaseDrawRange = std::clamp(std::exp(drawrange), 100.0f, 50000.0f);
 			}
 		}
+		// terrain streaming range slider, separate from the draw range
+		{
+			auto terrainrange = std::log(Global.TerrainRange);
+			if (ImGui::SliderFloat(
+				(to_string(std::exp(terrainrange), 0, 5) + " m###terrainrange").c_str(), &terrainrange, std::log(500.0f), std::log(100000.0f), "Terrain range")) {
+				Global.TerrainRange = std::clamp(std::exp(terrainrange), 500.0f, 100000.0f);
+			}
+		}
     }
 
     return true;
@@ -1368,28 +1377,33 @@ debug_panel::update_section_eventqueue( std::vector<text_line> &Output ) {
 
     // current event queue
     auto const time { Timer::GetTime() };
-    auto const *event { simulation::Events.begin() };
     auto const searchfilter { std::string( m_eventsearch.data() ) };
+    // a copy in running order; when and by whom an event was queued belongs to the
+    // queue entry now, not to the event
+    auto const queue { simulation::Events.queue_snapshot() };
 
 	Output.emplace_back( "Delay:   Event:", Global.UITextColor );
 
-	while( event != nullptr
-	    && Output.size() < 30 ) {
+	for( auto const &entry : queue ) {
+
+        if( Output.size() >= 30 ) { break; }
+
+        auto const *event { simulation::Events.event_at( entry.index ) };
+        if( event == nullptr ) { continue; }
 
 		if( false == event->m_ignored
 		 && false == event->m_passive
 		 && ( false == m_eventqueueactivevehicleonly
-		   || event->m_activator == m_input.vehicle ) ) {
+		   || entry.activator == m_input.vehicle ) ) {
 
-            auto const label { event->m_name + ( event->m_activator ? " (by: " + event->m_activator->asName + ")" : "" ) };
+            auto const label { event->m_name + ( entry.activator ? " (by: " + entry.activator->asName + ")" : "" ) };
 
             if( false == searchfilter.empty()
              && false == contains(label, searchfilter) ) {
-                event = event->m_next;
                 continue;
             }
 
-            auto const delay { "   " + to_string( std::max( 0.0, event->m_launchtime - time ), 1 ) };
+            auto const delay { "   " + to_string( std::max( 0.0, entry.launchtime - time ), 1 ) };
             textline =
                 delay.substr( delay.length() - 6 )
                 + "   "
@@ -1397,11 +1411,10 @@ debug_panel::update_section_eventqueue( std::vector<text_line> &Output ) {
 
             Output.emplace_back( textline, Global.UITextColor );
         }
-        event = event->m_next;
     }
     if( Output.size() == 1 ) {
         // event queue can be empty either because no event got through active filters, or because it is genuinely empty
-        Output.front().data = simulation::Events.begin() == nullptr ? "(no queued events)" : "(no matching events)";
+        Output.front().data = simulation::Events.queue_empty() ? "(no queued events)" : "(no matching events)";
     }
 }
 
@@ -1489,6 +1502,36 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) {
             }
 
             Output.emplace_back( textline, Global.UITextColor );
+
+            // terrain streaming: how far tiles are loaded, how many are held, and how far
+            // behind the camera the loader is
+            for( auto const &field : TerrainStatus ) {
+                auto const &stats { field.stats };
+                auto const slash { field.path.find_last_of( "/\\" ) };
+                Output.emplace_back(
+                    "Terrain: " + ( slash == std::string::npos ? field.path : field.path.substr( slash + 1 ) )
+                    + ", grid " + to_string( field.gridstep, 1 ) + " m, tile " + to_string( field.tilesize, 0 ) + " m"
+                    + ", loaded out to " + to_string( field.range, 0 ) + " m",
+                    Global.UITextColor );
+                Output.emplace_back(
+                    "  tiles: " + std::to_string( stats.inview ) + " in view, "
+                    + std::to_string( stats.resident ) + " on gpu (" + std::to_string( stats.texturebytes / 1048576 ) + " MB), "
+                    + std::to_string( stats.wanted ) + " wanted, " + std::to_string( field.backlog ) + " in loader, "
+                    + std::to_string( stats.uploaded ) + " uploaded, " + std::to_string( stats.dropped ) + " dropped stale",
+                    Global.UITextColor );
+                std::string levels { "  levels:" };
+                for( std::uint32_t level = 0; ( level < field.levels ) && ( level < stats.perlevel.size() ); ++level ) {
+                    auto const last { level + 1 == field.levels };
+                    levels +=
+                        " L" + std::to_string( level )
+                        + ( last ? " beyond " + to_string( terrain_level_distance( level > 0 ? level - 1 : 0 ), 0 )
+                                 : " <" + to_string( terrain_level_distance( level ), 0 ) )
+                        + " m (" + to_string( field.gridstep * static_cast<float>( 1u << level ), 0 ) + " m grid): "
+                        + std::to_string( stats.perlevel[ level ] );
+                    if( false == last ) { levels += " |"; }
+                }
+                Output.emplace_back( levels, Global.UITextColor );
+            }
 
             textline += "\nRendering mode: ";
 

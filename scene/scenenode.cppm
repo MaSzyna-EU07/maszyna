@@ -167,6 +167,19 @@ public:
     // data access
     shapenode_data const &
         data() const;
+    // keeps only the triangles a predicate accepts, by their position in the vertex list.
+    // used to leave out what a baked heightfield already shows
+    template <typename Predicate_>
+    void
+        keep_triangles( Predicate_ &&Keep ) {
+            std::vector<world_vertex> kept;
+            kept.reserve( m_data.vertices.size() );
+            for( std::size_t index = 0; index + 2 < m_data.vertices.size(); index += 3 ) {
+                if( true == Keep( index / 3 ) ) {
+                    kept.insert( kept.end(), m_data.vertices.begin() + index, m_data.vertices.begin() + index + 3 );
+                }
+            }
+            m_data.vertices = std::move( kept ); }
 	// get bounding radius
     // NOTE: use this method instead of direct access to the data member, due to lazy radius evaluation
 	float radius();

@@ -371,6 +371,15 @@ public:
 };
 
 // top-level of scene spatial structure, holds collection of sections
+// whether a material belongs to the old hand-made switch trackbeds, which the engine
+// replaces with generated ones when CreateSwitchTrackbeds is on
+bool is_switch_trackbed( std::string const &Materialname );
+
+// moves shape vertices from the coordinates they were written in to world space, applying the
+// rotate and origin in force where the node stood. the one place this happens, so that anything
+// else looking at a shape - the terrain bake - sees it where it is drawn
+void place_in_world( std::vector<world_vertex> &Vertices, scratch_data const &Scratchpad );
+
 class basic_region {
 public:
 // constructors

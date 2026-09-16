@@ -34,6 +34,7 @@ module;
 
 module eu07.simcore;
 import eu07.simulation.simulation;
+import eu07.simulation.loadprofile;
 import eu07.rendering.renderer;
 import :mover;
 import eu07.utilities.globals;
@@ -1306,17 +1307,50 @@ std::vector<std::string> switchtrackbedtextures {
     "zwrotl65r1200pods-new",
     "zwrotp65r1200pods-new" };
 
+bool
+is_switch_trackbed( std::string const &Materialname ) {
+
+    for( auto const &switchtrackbedtexture : switchtrackbedtextures ) {
+        if( contains( Materialname, switchtrackbedtexture ) ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void
+place_in_world( std::vector<world_vertex> &Vertices, scratch_data const &Scratchpad ) {
+
+    if( Scratchpad.location.rotation != glm::vec3( 0, 0, 0 ) ) {
+        // rotate...
+        auto const rotation = glm::radians( Scratchpad.location.rotation );
+        for( auto &vertex : Vertices ) {
+            vertex.position = glm::rotateZ<double>( vertex.position, rotation.z );
+            vertex.position = glm::rotateX<double>( vertex.position, rotation.x );
+            vertex.position = glm::rotateY<double>( vertex.position, rotation.y );
+            vertex.normal = glm::rotateZ( vertex.normal, rotation.z );
+            vertex.normal = glm::rotateX( vertex.normal, rotation.x );
+            vertex.normal = glm::rotateY( vertex.normal, rotation.y );
+        }
+    }
+    if( false == Scratchpad.location.offset.empty()
+     && Scratchpad.location.offset.top() != glm::dvec3( 0, 0, 0 ) ) {
+        // ...and move
+        auto const &offset = Scratchpad.location.offset.top();
+        for( auto &vertex : Vertices ) {
+            vertex.position += offset;
+        }
+    }
+}
+
 void
 basic_region::insert( shape_node Shape, scratch_data &Scratchpad, bool const Transform ) {
 
     if( Global.CreateSwitchTrackbeds ) {
 
-        auto const materialname{GfxRenderer->Material(Shape.data().material)->GetName()};
-        for( auto const &switchtrackbedtexture : switchtrackbedtextures ) {
-            if( contains( materialname, switchtrackbedtexture ) ) {
-                // geometry with blacklisted texture, part of old switch trackbed; ignore it
-                return;
-            }
+        if( true == is_switch_trackbed( GfxRenderer->Material( Shape.data().material )->GetName() ) ) {
+            // geometry with blacklisted texture, part of old switch trackbed; ignore it
+            return;
         }
     }
     // shape might need to be split into smaller pieces, so we create list of nodes instead of just single one
@@ -1328,36 +1362,23 @@ basic_region::insert( shape_node Shape, scratch_data &Scratchpad, bool const Tra
     // adjust input if necessary:
     if( true == Transform ) {
         // shapes generated from legacy terrain come with world space coordinates and don't need processing
-        if( Scratchpad.location.rotation != glm::vec3( 0, 0, 0 ) ) {
-            // rotate...
-            auto const rotation = glm::radians( Scratchpad.location.rotation );
-            for( auto &vertex : shape.m_data.vertices ) {
-                vertex.position = glm::rotateZ<double>( vertex.position, rotation.z );
-                vertex.position = glm::rotateX<double>( vertex.position, rotation.x );
-                vertex.position = glm::rotateY<double>( vertex.position, rotation.y );
-                vertex.normal = glm::rotateZ( vertex.normal, rotation.z );
-                vertex.normal = glm::rotateX( vertex.normal, rotation.x );
-                vertex.normal = glm::rotateY( vertex.normal, rotation.y );
-            }
-        }
-        if( false == Scratchpad.location.offset.empty()
-         && Scratchpad.location.offset.top() != glm::dvec3(0, 0, 0) ) {
-            // ...and move
-            auto const& offset = Scratchpad.location.offset.top();
-            for( auto &vertex : shape.m_data.vertices ) {
-                vertex.position += offset;
-            }
-        }
+        place_in_world( shape.m_data.vertices, Scratchpad );
         // calculate bounding area
         for( auto const &vertex : shape.m_data.vertices ) {
             shape.m_data.area.center += vertex.position;
         }
         shape.m_data.area.center /= shape.m_data.vertices.size();
         // trim the shape if needed. trimmed parts will be added to list as separate nodes
-        for( std::size_t index = 0; index < shapes.size(); ++index ) {
-            while( true == RaTriangleDivider( shapes[ index ], shapes ) ) {
-                ; // all work is done during expression check
+        {
+            loadprofile::scoped_timer const dividetime { loadprofile::stage::shape_divide };
+            for( std::size_t index = 0; index < shapes.size(); ++index ) {
+                while( true == RaTriangleDivider( shapes[ index ], shapes ) ) {
+                    ; // all work is done during expression check
+                }
             }
+        }
+        if( shapes.size() > 1 ) {
+            loadprofile::add_split( shapes.size() - 1 );
         }
     }
     // move the data into appropriate section(s)

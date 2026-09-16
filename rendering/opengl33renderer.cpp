@@ -1627,7 +1627,15 @@ void opengl33_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
         Config.draw_range = std::max( 2000.f, Config.draw_range );
 
 		// projection
-		auto const zfar  = ( Zfar  > 1.f ? Zfar : Config.draw_range * Zfar );
+		auto zfar  = ( Zfar  > 1.f ? Zfar : Config.draw_range * Zfar );
+		if ((false == Ignoredebug) && (Zfar == 1.f))
+		{
+			// the far plane of an ordinary view reaches as far as the terrain is streamed, which
+			// is its own setting rather than the draw range. only the projection moves: what
+			// else gets drawn is still decided by draw_range. reverse z on a float depth
+			// buffer keeps the precision this costs negligible
+			zfar = std::max(zfar, Global.TerrainRange);
+		}
 		auto const znear = ( Znear > 1.f ? Znear : Znear > 0.f ? Znear * zfar : 0.1f * Global.ZoomFactor);
 
 		// the editor's top-down plan view drops the perspective, so distances read the same wherever
@@ -2467,6 +2475,7 @@ void opengl33_renderer::Render(scene::basic_region *Region)
 	{
 	case rendermode::color:
 	{
+		Render_terrain();
 		Render(std::begin(m_sectionqueue), std::end(m_sectionqueue));
 		// draw queue is filled while rendering sections
 		if (EditorModeFlag && m_current_viewport->main)
@@ -2849,6 +2858,84 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 		Render_Instanced( bucket.first.pModel, bucket.second );
 	}
 	m_frame_instance_buckets.clear();
+}
+
+// The heightfield draws itself; what it needs from here is the state every other draw in
+// this pass gets - the camera-relative modelview in the model block - and the viewpoint
+// the world is being rendered around, so it can place its tiles relative to it.
+void opengl33_renderer::Render_terrain()
+{
+	// opened on first use rather than at init: a scenery names its heightfields in
+	// terrain directives, which are not read until the scenario is parsed, long after the
+	// renderer starts. attempted once either way, so a bad path does not retry per frame
+	if (false == m_terrainattempted)
+	{
+		m_terrainattempted = true;
+		for (auto const &path : Global.terrain_heightfields)
+		{
+			auto field{std::make_unique<terrain_clipmap>()};
+			if (true == field->open(path))
+			{
+				m_terrain.emplace_back(std::move(field));
+			}
+		}
+		// finest first: drawn in this order, the depth test keeps the better surface
+		// where two fields describe the same ground
+		std::sort(std::begin(m_terrain), std::end(m_terrain),
+		          [](auto const &Left, auto const &Right) { return Left->gridstep() < Right->gridstep(); });
+		for (std::size_t index = 0; index < m_terrain.size(); ++index)
+		{
+			// every field sits a little under the triangles, so where a baked heightfield and
+			// the geometry it was baked from are both drawn, the geometry is what shows. a
+			// coarser field is sunk further still, far enough that rounding cannot let it
+			// through, and little enough to be invisible at the spacing it is drawn at
+			m_terrain[index]->depthbias(index == 0 ? 0.02f : 0.1f);
+		}
+	}
+
+	if (true == m_terrain.empty())
+	{
+		return;
+	}
+
+	glm::dvec3 const viewpoint{m_renderpass.pass_camera.position()};
+
+	model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
+	model_ubo->update(model_ubs);
+
+	for (auto const &field : m_terrain)
+	{
+		// what stays on the gpu is decided by the main view alone. any other colour pass
+		// draws what is there: letting a second viewport with its own camera and range
+		// steer residency would evict what the main view is looking at
+		if (m_current_viewport->main)
+		{
+			// the terrain has a range of its own, not the pass draw range
+			field->range(Global.TerrainRange);
+			field->update(viewpoint);
+		}
+		field->render(viewpoint);
+	}
+
+	if (m_current_viewport->main)
+	{
+		TerrainStatus.resize(m_terrain.size());
+		for (std::size_t index = 0; index < m_terrain.size(); ++index)
+		{
+			auto const &field{*m_terrain[index]};
+			auto &status{TerrainStatus[index]};
+			if (status.path.empty())
+			{
+				status.path = field.path();
+				status.gridstep = field.gridstep();
+				status.tilesize = field.tilesize();
+				status.levels = field.levels();
+			}
+			status.range = field.range();
+			status.backlog = field.backlog();
+			status.stats = field.stats();
+		}
+	}
 }
 
 void opengl33_renderer::Draw_Geometry(std::vector<gfx::geometrybank_handle>::iterator begin, std::vector<gfx::geometrybank_handle>::iterator end)

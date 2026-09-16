@@ -122,6 +122,19 @@ struct global_settings {
     int iConvertModels{ 0 }; // tworzenie plików binarnych
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan
     bool file_binary_terrain{ true }; // enable binary terrain (de)serialization
+    // -cooklogic: write the scenery's LOGIC container once it has loaded, then read it back
+    // and check it against what was loaded
+    bool cook_logic{ false };
+    // -verifylogic: read the container that is already there and check it against the
+    // scenery, without writing anything. this is how a stale container gets caught
+    bool verify_logic{ false };
+    // bake a heightfield for a scenery that has none, the first time it is opened, and use
+    // it from then on. -nobaketerrain turns it off
+    bool bake_terrain{ true };
+    // cooked heightfields drawn in place of the legacy terrain geometry, coarsest first
+    // once sorted. a scenery needs several: a regional elevation model sampled every
+    // hundred metres, and a corridor of its own for each line, sampled every two
+    std::vector<std::string> terrain_heightfields;
 	bool file_binary_terrain_state{true};
     // logs
 	bool priorityLoadText3D{false}; // ladowanie T3D priorytetowo
@@ -180,6 +193,9 @@ struct global_settings {
     bool bWireFrame{ false };
     bool bAdjustScreenFreq{ true };
     float BaseDrawRange{ 2500.f };
+    // how far terrain tiles are streamed and drawn, independent of BaseDrawRange: a baked
+    // heightfield is cheap far out, and seeing it to the horizon is the point of having it
+    float TerrainRange{ 20000.f };
     int DynamicLightCount{ 7 };
     bool ScaleSpecularValues{ true };
     std::string GfxRenderer{ "default" };

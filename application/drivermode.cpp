@@ -22,6 +22,7 @@ module;
 #include "vehicle/DynObj_macros.h"
 
 module eu07.application.drivermode;
+import eu07.application.shotrunner;
 import eu07.console;   // Console:: is used under _WIN32
 import eu07.application.uitranscripts;
 import eu07.application.uilayer;
@@ -193,6 +194,40 @@ bool driver_mode::update()
 	simulation::State.update_clocks();
 	simulation::State.update_scripting_interface();
 	simulation::Environment.update();
+
+	// unattended screenshot sequence, when one was asked for on the command line
+	if (true == Shots.active())
+	{
+		switch (Shots.update(Timer::GetDeltaTime()))
+		{
+		case shot_runner::action::place:
+		{
+			Camera.Init(Shots.current().position, Shots.current().angle, nullptr);
+			Global.pCamera = Camera;
+			FreeFlyModeFlag = true;
+			break;
+		}
+		case shot_runner::action::capture:
+		{
+			// where the lens actually is, which need not be where it was put: anything
+			// that moves the camera between placing and capturing would otherwise make
+			// the sequence quietly unrepeatable
+			WriteLog(
+				"Shot: camera at " + to_string(Camera.Pos)
+				+ " looking " + to_string(glm::dvec3{Camera.Angle} * 180.0 / M_PI)
+				+ (FreeFlyModeFlag ? " (free)" : " (attached)"));
+			Application.queue_screenshot();
+			break;
+		}
+		case shot_runner::action::finish:
+		{
+			Application.queue_quit(false);
+			break;
+		}
+		case shot_runner::action::none:
+			break;
+		}
+	}
 
 	if (deltatime != 0.0 || false == simulation::is_ready)
 	{

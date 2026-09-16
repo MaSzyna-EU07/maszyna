@@ -309,6 +309,17 @@ basic_event::~basic_event() {
     m_sibling = nullptr; // nie usuwać podczepionych tutaj
 }
 
+std::vector<std::string>
+basic_event::target_names() const {
+
+    std::vector<std::string> names;
+    names.reserve( m_targets.size() );
+    for( auto const &target : m_targets ) {
+        names.emplace_back( std::get<std::string>( target ) );
+    }
+    return names;
+}
+
 void
 basic_event::deserialize( cParser &Input, scene::scratch_data &Scratchpad ) {
 
@@ -356,10 +367,10 @@ basic_event::deserialize_targets( std::string const &Input ) {
 }
 
 void
-basic_event::run() {
+basic_event::run( TDynamicObject const *Activator ) {
 
-    WriteLog( "EVENT LAUNCHED" + ( m_activator ? " by " + m_activator->asName : "" ) + ": " + m_name );
-    run_();
+    WriteLog( "EVENT LAUNCHED" + ( Activator ? " by " + Activator->asName : "" ) + ": " + m_name );
+    run_( Activator );
 }
 
 // sends basic content of the class in legacy (text) format to provided stream
@@ -537,7 +548,7 @@ updatevalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpa
 // run() subclass details
 // TODO: update and copy values run_ methods are largely identical, refactor to a single helper
 void
-updatevalues_event::run_() {
+updatevalues_event::run_( TDynamicObject const *Activator ) {
 
     if( false == m_conditions.test() ) { return; }
 
@@ -631,7 +642,7 @@ getvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
 
 // run() subclass details
 void
-getvalues_event::run_() {
+getvalues_event::run_( TDynamicObject const *Activator ) {
 
     auto const *cell { m_input.data_cell() };
 
@@ -641,15 +652,15 @@ getvalues_event::run_() {
         + to_string( cell->Value1(), 2 ) + "] ["
         + to_string( cell->Value2(), 2 ) + "]" );
 
-    if( m_activator == nullptr ) { return; }
+    if( Activator == nullptr ) { return; }
 
     cell->PutCommand(
-        m_activator->Mechanik,
+        Activator->Mechanik,
         &cell->location() );
 
     // potwierdzenie wykonania dla serwera (odczyt semafora już tak nie działa)
     if( Global.iMultiplayer ) {
-        multiplayer::WyslijEvent( m_name, m_activator->name() );
+        multiplayer::WyslijEvent( m_name, Activator->name() );
     }
 }
 
@@ -787,7 +798,7 @@ putvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
 
 // run() subclass details
 void
-putvalues_event::run_() {
+putvalues_event::run_( TDynamicObject const *Activator ) {
 
     WriteLog(
         "Type: PutValues - ["
@@ -795,7 +806,7 @@ putvalues_event::run_() {
         + to_string( m_input.data_value_1, 2 ) + "] ["
         + to_string( m_input.data_value_2, 2 ) + "]" );
 
-    if( m_activator == nullptr ) { return; }
+    if( Activator == nullptr ) { return; }
     // zamiana, bo fizyka ma inaczej niż sceneria
     // NOTE: y & z swap, negative x
     TLocation const loc {
@@ -803,22 +814,22 @@ putvalues_event::run_() {
          m_input.location.z,
          m_input.location.y };
 
-    if( m_activator->Mechanik ) {
+    if( Activator->Mechanik ) {
         // przekazanie rozkazu do AI
-        WriteLog( " Vehicle: [" + m_activator->Mechanik->Vehicle()->name() + "]" );
-        m_activator->Mechanik->PutCommand(
+        WriteLog( " Vehicle: [" + Activator->Mechanik->Vehicle()->name() + "]" );
+        Activator->Mechanik->PutCommand(
             m_input.data_text,
             m_input.data_value_1,
             m_input.data_value_2,
             loc );
     }
-    else if( m_activator->ctOwner
+    else if( Activator->ctOwner
           && is_command_for_owner(m_input) ) {
         // send the command to consist owner,
         // we're acting on presumption there's hardly ever need to issue command to unmanned vehicle
         // and the intended recipient moved between vehicles after the event was queued
-        WriteLog( " Vehicle: [" + m_activator->ctOwner->Vehicle()->name() + "]" );
-        m_activator->ctOwner->PutCommand(
+        WriteLog( " Vehicle: [" + Activator->ctOwner->Vehicle()->name() + "]" );
+        Activator->ctOwner->PutCommand(
             m_input.data_text,
             m_input.data_value_1,
             m_input.data_value_2,
@@ -826,8 +837,8 @@ putvalues_event::run_() {
     }
     else {
         // przekazanie do pojazdu
-        WriteLog( " Vehicle: [" + m_activator->name() +"]" );
-        m_activator->MoverParameters->PutCommand(
+        WriteLog( " Vehicle: [" + Activator->name() +"]" );
+        Activator->MoverParameters->PutCommand(
             m_input.data_text,
             m_input.data_value_1,
             m_input.data_value_2,
@@ -943,7 +954,7 @@ copyvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad 
 // run() subclass details
 // TODO: update and copy values run_ methods are largely identical, refactor to a single helper
 void
-copyvalues_event::run_() {
+copyvalues_event::run_( TDynamicObject const *Activator ) {
     // skopiowanie wartości z innej komórki
     auto const *datasource { static_cast<TMemCell *>( std::get<scene::basic_node *>( m_input.data_source ) ) };
     m_input.data_text = datasource->Text();
@@ -1035,9 +1046,9 @@ whois_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
 
 // run() subclass details
 void
-whois_event::run_() {
+whois_event::run_( TDynamicObject const *Activator ) {
 
-    if( m_activator == nullptr ) {
+    if( Activator == nullptr ) {
         // no triggering vehicle to report on - most likely whois was launched from a
         // scenery event chain rather than a track/isolation crossing
         WriteLog( "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - no activator, event ignored" );
@@ -1059,9 +1070,9 @@ whois_event::run_() {
             // next station name
             if( m_input.flags & flags::mode_alt ) {
                 auto const *owner { (
-                    m_activator->Mechanik != nullptr && m_activator->Mechanik->primary() ?
-                        m_activator->Mechanik :
-                        m_activator->ctOwner ) };
+                    Activator->Mechanik != nullptr && Activator->Mechanik->primary() ?
+                        Activator->Mechanik :
+                        Activator->ctOwner ) };
                 auto const nextstop { (
                     owner != nullptr ?
                         owner->TrainTimetable().NextStop() :
@@ -1086,14 +1097,14 @@ whois_event::run_() {
             // vehicle name
             else {
                 targetcell->UpdateValues(
-                    m_activator->asName, // vehicle name
+                    Activator->asName, // vehicle name
                     0, // unused
                     0, // unused
                     m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
 
                 WriteLog(
                     "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
-                    + "[name: " + m_activator->asName + "], "
+                    + "[name: " + Activator->asName + "], "
                     + "[X], "
                     + "[X]" );
             }
@@ -1105,9 +1116,9 @@ whois_event::run_() {
                 // jeśli typ pojazdu
                 // TODO: define and recognize individual request types
                 auto const owner { (
-                    m_activator->Mechanik != nullptr && m_activator->Mechanik->primary() ?
-                        m_activator->Mechanik :
-                        m_activator->ctOwner ) };
+                    Activator->Mechanik != nullptr && Activator->Mechanik->primary() ?
+                        Activator->Mechanik :
+                        Activator->ctOwner ) };
                 auto const consistbrakelevel { (
                     owner != nullptr ?
                         owner->fReady :
@@ -1118,45 +1129,45 @@ whois_event::run_() {
                         -1.0 ) };
 
                 targetcell->UpdateValues(
-                    m_activator->MoverParameters->TypeName, // typ pojazdu
+                    Activator->MoverParameters->TypeName, // typ pojazdu
                     consistbrakelevel,
                     collisiondistance,
                     m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
 
                 WriteLog(
                     "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
-                    + "[type: " + m_activator->MoverParameters->TypeName + "], "
+                    + "[type: " + Activator->MoverParameters->TypeName + "], "
                     + "[consist brake level: " + to_string( consistbrakelevel, 2 ) + "], "
                     + "[obstacle distance: " + to_string( collisiondistance, 2 ) + " m]" );
             }
             else {
                 // jeśli parametry ładunku
                 targetcell->UpdateValues(
-                    m_activator->MoverParameters->LoadType.name, // nazwa ładunku
-                    m_activator->MoverParameters->LoadAmount, // aktualna ilość
-                    m_activator->MoverParameters->MaxLoad, // maksymalna ilość
+                    Activator->MoverParameters->LoadType.name, // nazwa ładunku
+                    Activator->MoverParameters->LoadAmount, // aktualna ilość
+                    Activator->MoverParameters->MaxLoad, // maksymalna ilość
                     m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
 
                 WriteLog(
                     "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
-                    + "[load type: " + m_activator->MoverParameters->LoadType.name + "], "
-                    + "[current load: " + to_string( m_activator->MoverParameters->LoadAmount, 2 ) + "], "
-                    + "[max load: " + to_string( m_activator->MoverParameters->MaxLoad, 2 ) + "]" );
+                    + "[load type: " + Activator->MoverParameters->LoadType.name + "], "
+                    + "[current load: " + to_string( Activator->MoverParameters->LoadAmount, 2 ) + "], "
+                    + "[max load: " + to_string( Activator->MoverParameters->MaxLoad, 2 ) + "]" );
             }
         }
         // +8
         else if( m_input.flags & flags::mode_alt ) { // jeśli miejsce docelowe pojazdu
             targetcell->UpdateValues(
-                m_activator->asDestination, // adres docelowy
-                m_activator->DirectionGet(), // kierunek pojazdu względem czoła składu (1=zgodny,-1=przeciwny)
-                m_activator->MoverParameters->Power, // moc pojazdu silnikowego: 0 dla wagonu
+                Activator->asDestination, // adres docelowy
+                Activator->DirectionGet(), // kierunek pojazdu względem czoła składu (1=zgodny,-1=przeciwny)
+                Activator->MoverParameters->Power, // moc pojazdu silnikowego: 0 dla wagonu
                 m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
 
             WriteLog(
                 "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
-                + "[destination: " + m_activator->asDestination + "], "
-                + "[direction: " + std::to_string( m_activator->DirectionGet() ) + "], "
-                + "[engine power: " + to_string( m_activator->MoverParameters->Power, 2 ) + "]" );
+                + "[destination: " + Activator->asDestination + "], "
+                + "[direction: " + std::to_string( Activator->DirectionGet() ) + "], "
+                + "[engine power: " + to_string( Activator->MoverParameters->Power, 2 ) + "]" );
         }
         // +0
         else {
@@ -1165,9 +1176,9 @@ whois_event::run_() {
             // triggered the event ahead of its locomotive) - +0 used to require the activator's
             // own Mechanik and silently produce nothing for a wagon-triggered whois
             auto const *owner { (
-                m_activator->Mechanik != nullptr && m_activator->Mechanik->primary() ?
-                    m_activator->Mechanik :
-                    m_activator->ctOwner ) };
+                Activator->Mechanik != nullptr && Activator->Mechanik->primary() ?
+                    Activator->Mechanik :
+                    Activator->ctOwner ) };
             if( owner != nullptr ) {
                 targetcell->UpdateValues(
                     owner->TrainName(),
@@ -1218,7 +1229,7 @@ logvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
 
 // run() subclass details
 void
-logvalues_event::run_() {
+logvalues_event::run_( TDynamicObject const *Activator ) {
     // zapisanie zawartości komórki pamięci do logu
     if( m_targets.empty() ) {
         // lista wszystkich
@@ -1316,7 +1327,7 @@ multi_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
 
 // run() subclass details
 void
-multi_event::run_() {
+multi_event::run_( TDynamicObject const *Activator ) {
 
     auto const conditiontest { m_conditions.test() };
     if( conditiontest
@@ -1330,12 +1341,12 @@ multi_event::run_() {
 
             if( childevent != this ) {
                 // normalnie dodać
-                simulation::Events.AddToQuery( childevent, m_activator );
+                simulation::Events.AddToQuery( childevent, Activator );
             }
             else {
                 // jeśli ma być rekurencja to musi mieć sensowny okres powtarzania
                 if( m_delay >= 5.0 ) {
-                    simulation::Events.AddToQuery( this, m_activator );
+                    simulation::Events.AddToQuery( this, Activator );
                 }
             }
         }
@@ -1343,8 +1354,8 @@ multi_event::run_() {
             // dajemy znać do serwera o wykonaniu
             if( false == m_conditions.has_else ) {
                 // jednoznaczne tylko, gdy nie było else
-                if( m_activator ) {
-                    multiplayer::WyslijEvent( m_name, m_activator->name() );
+                if( Activator ) {
+                    multiplayer::WyslijEvent( m_name, Activator->name() );
                 }
                 else {
                     multiplayer::WyslijEvent( m_name, "" );
@@ -1425,7 +1436,7 @@ sound_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
 
 // run() subclass details
 void
-sound_event::run_() {
+sound_event::run_( TDynamicObject const *Activator ) {
 
     WriteLog(
         "Type: Sound - [" + std::string( m_soundmode == 1 ? "play" : m_soundmode == -1 ? "loop" : "stop" ) + "]"
@@ -1549,7 +1560,7 @@ texture_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
 
 // run() subclass details
 void
-texture_event::run_() {
+texture_event::run_( TDynamicObject const *Activator ) {
 
     material_handle material { null_handle };
 
@@ -1717,7 +1728,7 @@ animation_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
 
 // run() subclass details
 void
-animation_event::run_() {
+animation_event::run_( TDynamicObject const *Activator ) {
 
     WriteLog( "Type: Animation" );
 	// animation modes target specific submodels
@@ -1816,7 +1827,7 @@ lights_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
 
 // run() subclass details
 void
-lights_event::run_() {
+lights_event::run_( TDynamicObject const *Activator ) {
 
     for( auto &target : m_targets ) {
         auto *targetmodel = static_cast<TAnimModel *>( std::get<scene::basic_node *>( target ) );
@@ -1908,7 +1919,7 @@ switch_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
 
 // run() subclass details
 void
-switch_event::run_() {
+switch_event::run_( TDynamicObject const *Activator ) {
 
     for( auto &target : m_targets ) {
         auto *targettrack { static_cast<TTrack *>( std::get<scene::basic_node *>( target ) ) };
@@ -1975,7 +1986,7 @@ track_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
 
 // run() subclass details
 void
-track_event::run_() {
+track_event::run_( TDynamicObject const *Activator ) {
 
     WriteLog( "Type: TrackVel - [" + to_string( m_velocity, 2 ) + "]" );
     for( auto &target : m_targets ) {
@@ -2024,7 +2035,7 @@ voltage_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
 
 // run() subclass details
 void
-voltage_event::run_() {
+voltage_event::run_( TDynamicObject const *Activator ) {
     // zmiana napięcia w zasilaczu (TractionPowerSource)
     WriteLog( "Type: Voltage [" + to_string( m_voltage, 2 ) + "]" );
     for( auto &target : m_targets ) {
@@ -2087,7 +2098,7 @@ visible_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
 
 // run() subclass details
 void
-visible_event::run_() {
+visible_event::run_( TDynamicObject const *Activator ) {
 
     for( auto &target : m_targets ) {
         auto *targetnode = std::get<scene::basic_node *>( target );
@@ -2131,7 +2142,7 @@ friction_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) 
 
 // run() subclass details
 void
-friction_event::run_() {
+friction_event::run_( TDynamicObject const *Activator ) {
     // zmiana tarcia na scenerii
     WriteLog( "Type: Friction" );
     Global.fFriction = m_friction;
@@ -2171,10 +2182,10 @@ void lua_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) 
 }
 
 // run() subclass details
-void lua_event::run_() {
+void lua_event::run_( TDynamicObject const *Activator ) {
 	try {
 		if (lua_func != LUA_NOREF)
-			lua::dispatch_event(lua_state, lua_func, this, m_activator);
+			lua::dispatch_event(lua_state, lua_func, this, Activator);
 	} catch (...) {
 		ErrorLog("lua: Runtime error: " + simulation::Lua.get_error());
 	}
@@ -2217,7 +2228,7 @@ message_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
 
 // run() subclass details
 void
-message_event::run_() {
+message_event::run_( TDynamicObject const *Activator ) {
     // TODO: implement
 }
 
@@ -2374,6 +2385,8 @@ event_manager::insert( basic_event *Event ) {
         }
     }
 
+    // the event's identity, fixed for its lifetime; the queue refers to it by this
+    Event->m_index = static_cast<std::uint32_t>( m_events.size() );
     m_events.emplace_back( Event );
     if( lookup == m_eventmap.end() ) {
         // if it's first event with such name, it's potential candidate for the execution queue
@@ -2420,118 +2433,131 @@ event_manager::FindEvent( std::string const &Name )
 bool
 event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, double delay ) {
 
-    if( Event->m_passive )     { return false; } // jeśli może być dodany do kolejki (nie używany w skanowaniu)
-    if( Event->m_inqueue > 0 ) { return false; } // jeśli nie dodany jeszcze do kolejki
+    if( Event->m_passive ) { return false; }          // not queued at all: scanning uses it in place
+    if( true == pending( Event ) ) { return false; }  // already waiting its turn
 
-    // kolejka eventów jest posortowana względem (fStartTime)
-    Event->m_activator = Owner;
     if( Event->is_instant() ) {
-        // eventy AddValues trzeba wykonywać natychmiastowo, inaczej kolejka może zgubić jakieś dodawanie
+        // AddValues and its kind have to run on the spot, or the queue loses additions
         if( false == Event->m_ignored ) {
-            Event->run();
+            Event->run( Owner );
         }
-        // jeśli jest kolejny o takiej samej nazwie, to idzie do kolejki (and if there's no joint event it'll be set to null and processing will end here)
+        // an event sharing its name goes to the queue instead; skip the ones that cannot
         do {
             Event = Event->m_sibling;
-            // NOTE: we could've received a new event from joint event above, so we need to check conditions just in case and discard the bad events
-            // TODO: refactor this arrangement, it's hardly optimal
-        } while( Event != nullptr
-              && ( Event->m_passive
-                || Event->m_inqueue > 0 ) );
-    }
-    if( Event != nullptr
-     && false == Event->m_ignored ) {
-        // standardowe dodanie do kolejki
-        ++Event->m_inqueue; // zabezpieczenie przed podwójnym dodaniem do kolejki
-        WriteLog( "EVENT ADDED TO QUEUE" + ( Owner ? " by " + Owner->asName : "" ) + ": " + Event->m_name );
-        Event->m_launchtime = delay + std::abs( Event->m_delay ) + Timer::GetTime(); // czas od uruchomienia scenerii
-        if( Event->m_delayrandom > 0.0 ) {
-            // doliczenie losowego czasu opóźnienia
-            Event->m_launchtime += Event->m_delayrandom * Random();
-        }
-        if( Owner != nullptr
-         && false == std::isnan(Event->m_delaydeparture) ) {
-            auto const *timetableowner { (
-                Owner->Mechanik != nullptr && Owner->Mechanik->primary() ?
-                    Owner->Mechanik :
-                    Owner->ctOwner ) };
-            if( timetableowner != nullptr ) {
-                auto const &timetable { timetableowner->TrainTimetable() };
-                auto const &time { simulation::Time.data() };
-                Event->m_launchtime +=
-                    timetable.seconds_until_departure( time.wHour, time.wMinute + time.wSecond * 0.0167 )
-                    + Event->m_delaydeparture;
-            }
-        }
-        // NOTE: sanity check, as departure-based delay math can potentially produce negative overall delay
-        Event->m_launchtime = std::max( Event->m_launchtime, 0.0 );
-        if( QueryRootEvent != nullptr ) {
-            basic_event *target { QueryRootEvent };
-            basic_event *previous { nullptr };
-            while( Event->m_launchtime >= target->m_launchtime
-                && target->m_next != nullptr ) {
-                previous = target;
-                target = target->m_next;
-            }
-            // the new event will be either before or after the one we located
-            if( Event->m_launchtime >= target->m_launchtime ) {
-                assert( target->m_next == nullptr );
-                target->m_next = Event;
-                // if we have resurrected event land at the end of list, the link from previous run could potentially "add" unwanted events to the queue
-                Event->m_next = nullptr;
-            }
-            else {
-                if( previous != nullptr ) {
-                    previous->m_next = Event;
-                    Event->m_next = target;
-                }
-                else {
-                    // special case, we're inserting our event at the very start
-                    Event->m_next = QueryRootEvent;
-                    QueryRootEvent = Event;
-                }
-            }
-        }
-        else {
-            QueryRootEvent = Event;
-            QueryRootEvent->m_next = nullptr;
-        }
+        } while( ( Event != nullptr )
+              && ( Event->m_passive || pending( Event ) ) );
     }
 
+    if( ( Event == nullptr ) || ( true == Event->m_ignored ) ) { return true; }
+
+    WriteLog( "EVENT ADDED TO QUEUE" + ( Owner ? " by " + Owner->asName : "" ) + ": " + Event->m_name );
+
+    auto launchtime { delay + std::abs( Event->m_delay ) + Timer::GetTime() };
+    if( Event->m_delayrandom > 0.0 ) {
+        launchtime += Event->m_delayrandom * Random();
+    }
+    if( ( Owner != nullptr ) && ( false == std::isnan( Event->m_delaydeparture ) ) ) {
+        auto const *timetableowner { (
+            Owner->Mechanik != nullptr && Owner->Mechanik->primary() ?
+                Owner->Mechanik :
+                Owner->ctOwner ) };
+        if( timetableowner != nullptr ) {
+            auto const &timetable { timetableowner->TrainTimetable() };
+            auto const &time { simulation::Time.data() };
+            launchtime +=
+                timetable.seconds_until_departure( time.wHour, time.wMinute + time.wSecond * 0.0167 )
+                + Event->m_delaydeparture;
+        }
+    }
+    // departure-based delays can work out negative overall
+    launchtime = std::max( launchtime, 0.0 );
+
+    push( { launchtime, Event->m_index, Owner } );
     return true;
 }
 
-// legacy method, executes queued events
+// orders the queue: soonest first, and among events due at the same instant the one that
+// appears first in the scenery. ties broken by index rather than by insertion order, so
+// the same scenario runs the same way twice
+bool
+event_manager::later( queued_event const &Left, queued_event const &Right ) {
+
+    if( Left.launchtime != Right.launchtime ) { return Left.launchtime > Right.launchtime; }
+    return Left.index > Right.index;
+}
+
+bool
+event_manager::pending( basic_event const *Event ) const {
+
+    return ( Event->m_index < m_queued.size() ) && ( m_queued[ Event->m_index ] != 0 );
+}
+
+void
+event_manager::push( queued_event const &Entry ) {
+
+    if( Entry.index >= m_queued.size() ) { m_queued.resize( Entry.index + 1, 0 ); }
+    m_queued[ Entry.index ] = 1;
+    m_queue.emplace_back( Entry );
+    std::push_heap( std::begin( m_queue ), std::end( m_queue ), later );
+}
+
+std::uint32_t
+event_manager::sibling_of( std::uint32_t const Index ) const {
+
+    // every event knows its own position, so following the sibling chain costs a pointer
+    // hop rather than a search
+    auto const *event { event_at( Index ) };
+    if( ( event == nullptr ) || ( event->m_sibling == nullptr ) ) {
+        return static_cast<std::uint32_t>( m_events.size() );
+    }
+    return event->m_sibling->m_index;
+}
+
+std::vector<event_manager::queued_event>
+event_manager::queue_snapshot() const {
+
+    auto ordered { m_queue };
+    std::sort( std::begin( ordered ), std::end( ordered ),
+        []( queued_event const &Left, queued_event const &Right ) { return later( Right, Left ); } );
+    return ordered;
+}
+
 bool
 event_manager::CheckQuery() {
 
-    while( QueryRootEvent != nullptr
-        && QueryRootEvent->m_launchtime < Timer::GetTime() )
-    { // eventy są posortowana wg czasu wykonania
-        m_workevent = QueryRootEvent; // wyjęcie eventu z kolejki
-        if (QueryRootEvent->m_sibling) // jeśli jest kolejny o takiej samej nazwie
-        { // to teraz on będzie następny do wykonania
-            QueryRootEvent = QueryRootEvent->m_sibling; // następny będzie ten doczepiony
-            QueryRootEvent->m_next = m_workevent->m_next; // pamiętając o następnym z kolejki
-            QueryRootEvent->m_launchtime = m_workevent->m_launchtime; // czas musi być ten sam, bo nie jest aktualizowany
-            QueryRootEvent->m_activator = m_workevent->m_activator; // pojazd aktywujący
-            QueryRootEvent->m_inqueue = 1;
-            // w sumie można by go dodać normalnie do kolejki, ale trzeba te połączone posortować wg czasu wykonania
+    while( ( false == m_queue.empty() )
+        && ( m_queue.front().launchtime < Timer::GetTime() ) ) {
+
+        std::pop_heap( std::begin( m_queue ), std::end( m_queue ), later );
+        auto const entry { m_queue.back() };
+        m_queue.pop_back();
+        m_queued[ entry.index ] = 0;
+
+        m_workevent = event_at( entry.index );
+        if( m_workevent == nullptr ) { continue; }
+
+        // an event sharing this one's name follows it at the same instant. it goes
+        // through the queue like any other, rather than being spliced into the list head
+        auto const *sibling { m_workevent->m_sibling };
+        if( ( sibling != nullptr ) && ( false == sibling->m_passive ) && ( false == pending( sibling ) ) ) {
+            push( { entry.launchtime, sibling->m_index, entry.activator } );
         }
-        else // a jak nazwa jest unikalna, to kolejka idzie dalej
-            QueryRootEvent = QueryRootEvent->m_next; // NULL w skrajnym przypadku
-        if( false == m_workevent->m_ignored && false == m_workevent->m_passive ) {
-            // w zasadzie te wyłączone są skanowane i nie powinny się nigdy w kolejce znaleźć
-            --m_workevent->m_inqueue; // teraz moze być ponownie dodany do kolejki
-            m_workevent->run();
-        } // if (tmpEvent->bEnabled)
-    } // while
+
+        if( ( false == m_workevent->m_ignored ) && ( false == m_workevent->m_passive ) ) {
+            m_workevent->run( entry.activator );
+        }
+    }
     return true;
 }
 
 // legacy method, initializes events after deserialization from scenario file
 void
 event_manager::InitEvents() {
+
+    // how many events a scenery carries, which is worth knowing: they are not written by
+    // hand but expanded from parameterised includes, a dozen or more per signal
+    WriteLog( "Events: " + std::to_string( m_events.size() ) + " defined" );
+
     //łączenie eventów z pozostałymi obiektami
     for( auto *event : m_events ) {
         event->init();

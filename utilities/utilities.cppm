@@ -232,6 +232,14 @@ std::time_t last_modified(std::string const &Filename);
 // potentially erases file extension from provided file name. returns: true if extension was removed, false otherwise
 bool erase_extension(std::string &Filename);
 
+// where a scenery file lives: a bare name is looked up in the scenery directory
+std::string scenery_file(std::string const &Sceneryfile);
+
+// a file cooked for a scenery and kept beside it, with the given extension in place of the
+// scenery's. named after the scenario rather than the $-prefixed copy of it the launcher
+// writes on every start, so the launcher and a direct start share one
+std::string scenery_sidecar(std::string const &Sceneryfile, std::string const &Extension);
+
 // potentially erase leading slashes from provided file path
 void erase_leading_slashes(std::string &Filename);
 

@@ -79,10 +79,10 @@ public:
     virtual
     void
         init() = 0;
-    // executes event
+    // executes the event on behalf of the vehicle that triggered it, if any
     virtual
     void
-        run();
+        run( TDynamicObject const *Activator );
     // sends basic content of the class in legacy (text) format to provided stream
     virtual
     void
@@ -110,15 +110,20 @@ public:
     void group( scene::group_handle Group );
     scene::group_handle group() const;
 	std::string const &name() const { return m_name; }
+    // what this event calls itself in a scenery, for anything that has to write it back out
+    std::string type_name() const { return type(); }
+    // the names this event was written to act on, in the order it was written with them
+    std::vector<std::string> target_names() const;
 // members
-    basic_event *m_next { nullptr }; // następny w kolejce // TODO: replace with event list in the manager
     basic_event *m_sibling { nullptr }; // kolejny event z tą samą nazwą - od wersji 378
     std::string m_name;
     bool m_ignored { false }; // replacement for tp_ignored
     bool m_passive { false }; // false gdy ma nie być dodawany do kolejki (skanowanie sygnałów)
-    int m_inqueue { 0 }; // ile razy dodany do kolejki
-    TDynamicObject const *m_activator { nullptr };
-    double m_launchtime { 0.0 };
+    // position in the manager's collection, assigned once when the event is inserted.
+    // it is the event's identity, not its state: the queue keys on it, so that two
+    // events due at the same instant run in an order that does not depend on the order
+    // they happened to be queued in
+    std::uint32_t m_index { 0 };
     double m_delay { 0.0 };
     double m_delayrandom { 0.0 }; // zakres dodatkowego opóźnienia // standardowo nie będzie dodatkowego losowego opóźnienia
     double m_delaydeparture { std::numeric_limits<double>::quiet_NaN() }; // departure-based event delay
@@ -168,7 +173,7 @@ private:
     // deserialize() subclass details
     virtual void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) = 0;
     // run() subclass details
-    virtual void run_() = 0;
+    virtual void run_( TDynamicObject const *Activator ) = 0;
     // export_as_text() subclass details
     virtual void export_as_text_( std::ostream &Output ) const = 0;
 // members
@@ -220,7 +225,7 @@ private:
     // deserialize() subclass details
     void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
     // run() subclass details
-    void run_() override;
+    void run_( TDynamicObject const *Activator ) override;
     // export_as_text() subclass details
     void export_as_text_( std::ostream &Output ) const override;
 // members
@@ -243,7 +248,7 @@ private:
     // deserialize() subclass details
     void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
     // run() subclass details
-    void run_() override;
+    void run_( TDynamicObject const *Activator ) override;
     // export_as_text() subclass details
     void export_as_text_( std::ostream &Output ) const override;
 };
@@ -273,7 +278,7 @@ private:
     // deserialize() subclass details
     void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
     // run() subclass details
-    void run_() override;
+    void run_( TDynamicObject const *Activator ) override;
     // export_as_text() subclass details
     void export_as_text_( std::ostream &Output ) const override;
 };
@@ -299,7 +304,7 @@ private:
     // deserialize() subclass details
     void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
     // run() subclass details
-    void run_() override;
+    void run_( TDynamicObject const *Activator ) override;
     // export_as_text() subclass details
     void export_as_text_( std::ostream &Output ) const override;
     //determines whether provided input should be passed to consist owner
@@ -322,7 +327,7 @@ private:
     // deserialize() subclass details
     void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
     // run() subclass details
-    void run_() override;
+    void run_( TDynamicObject const *Activator ) override;
     // export_as_text() subclass details
     void export_as_text_( std::ostream &Output ) const override;
 };
@@ -343,7 +348,7 @@ private:
     // deserialize() subclass details
     void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
     // run() subclass details
-    void run_() override;
+    void run_( TDynamicObject const *Activator ) override;
     // export_as_text() subclass details
     void export_as_text_( std::ostream &Output ) const override;
 };
@@ -369,7 +374,7 @@ private:
     // deserialize() subclass details
     void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
     // run() subclass details
-    void run_() override;
+    void run_( TDynamicObject const *Activator ) override;
     // export_as_text() subclass details
     void export_as_text_( std::ostream &Output ) const override;
 // members
@@ -398,7 +403,7 @@ private:
     // deserialize() subclass details
     void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
     // run() subclass details
-    void run_() override;
+    void run_( TDynamicObject const *Activator ) override;
     // export_as_text() subclass details
     void export_as_text_( std::ostream &Output ) const override;
 // members
@@ -432,7 +437,7 @@ private:
     // deserialize() subclass details
     void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
     // run() subclass details
-    void run_() override;
+    void run_( TDynamicObject const *Activator ) override;
     // export_as_text() subclass details
     void export_as_text_( std::ostream &Output ) const override;
 // members
@@ -459,7 +464,7 @@ private:
     // deserialize() subclass details
     void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
     // run() subclass details
-    void run_() override;
+    void run_( TDynamicObject const *Activator ) override;
     // export_as_text() subclass details
     void export_as_text_( std::ostream &Output ) const override;
 // members
@@ -488,7 +493,7 @@ private:
     // deserialize() subclass details
     void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
     // run() subclass details
-    void run_() override;
+    void run_( TDynamicObject const *Activator ) override;
     // export_as_text() subclass details
     void export_as_text_( std::ostream &Output ) const override;
 // members
@@ -511,7 +516,7 @@ private:
     // deserialize() subclass details
     void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
     // run() subclass details
-    void run_() override;
+    void run_( TDynamicObject const *Activator ) override;
     // export_as_text() subclass details
     void export_as_text_( std::ostream &Output ) const override;
 // members
@@ -536,7 +541,7 @@ private:
     // deserialize() subclass details
     void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
     // run() subclass details
-    void run_() override;
+    void run_( TDynamicObject const *Activator ) override;
     // export_as_text() subclass details
     void export_as_text_( std::ostream &Output ) const override;
 // members
@@ -559,7 +564,7 @@ private:
     // deserialize() subclass details
     void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
     // run() subclass details
-    void run_() override;
+    void run_( TDynamicObject const *Activator ) override;
     // export_as_text() subclass details
     void export_as_text_( std::ostream &Output ) const override;
 // members
@@ -582,7 +587,7 @@ private:
     // deserialize() subclass details
     void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
     // run() subclass details
-    void run_() override;
+    void run_( TDynamicObject const *Activator ) override;
     // export_as_text() subclass details
     void export_as_text_( std::ostream &Output ) const override;
 // members
@@ -605,7 +610,7 @@ private:
     // deserialize() subclass details
     void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
     // run() subclass details
-    void run_() override;
+    void run_( TDynamicObject const *Activator ) override;
     // export_as_text() subclass details
     void export_as_text_( std::ostream &Output ) const override;
 // members
@@ -622,7 +627,7 @@ public:
 private:
 	std::string type() const override;
 	void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
-	void run_() override;
+	void run_( TDynamicObject const *Activator ) override;
 	void export_as_text_( std::ostream &Output ) const override;
 	bool is_instant() const override;
 
@@ -645,7 +650,7 @@ private:
     // deserialize() subclass details
     void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
     // run() subclass details
-    void run_() override;
+    void run_( TDynamicObject const *Activator ) override;
     // export_as_text() subclass details
     void export_as_text_( std::ostream &Output ) const override;
 // members
@@ -687,11 +692,39 @@ public:
     inline void purge (TEventLauncher *Launcher) {
 		m_radiodrivenlaunchers.purge(Launcher);
 		m_inputdrivenlaunchers.purge(Launcher); }
-    // returns first event in the queue
-    inline
+    // one entry of the pending queue. the event itself holds none of this: when it runs
+    // and what asked for it are properties of this request, not of the event
+    struct queued_event {
+        double launchtime { 0.0 };
+        std::uint32_t index { 0 };
+        TDynamicObject const *activator { nullptr };
+    };
+
+    // the queue in the order it will run, for anything that wants to look at it.
+    // returned by value: this is for display and debugging, not for the hot path
+    std::vector<queued_event>
+        queue_snapshot() const;
+    // the event an entry refers to, or null if the index is stale
     basic_event *
-        begin() {
-            return QueryRootEvent; }
+        event_at( std::uint32_t const Index ) const {
+            return Index < m_events.size() ? m_events[ Index ] : nullptr; }
+    bool
+        queue_empty() const { return m_queue.empty(); }
+    // how many events the manager holds. with event_at() this is the whole read-only view
+    // of the collection, which is all a cooker needs
+    std::uint32_t
+        event_count() const { return static_cast<std::uint32_t>( m_events.size() ); }
+    // the index of an event's next sibling - the next event registered under the same name
+    // - or an out of range value when it has none
+    std::uint32_t
+        sibling_of( std::uint32_t const Index ) const;
+
+private:
+    static bool later( queued_event const &Left, queued_event const &Right );
+    bool pending( basic_event const *Event ) const;
+    void push( queued_event const &Entry );
+
+public:
 
 	basic_event*
 	    FindEventById(uint32_t id);
@@ -735,8 +768,14 @@ private:
     // NOTE: disabled until event class refactoring
     event_sequence m_eventqueue;
 */
-    // legacy version of the above
-    basic_event *QueryRootEvent { nullptr };
+    // pending events, kept as a binary heap ordered by launch time and then by event
+    // index. a sorted linked list threaded through the events themselves cost a linear
+    // walk on every insertion, put queue state inside the event definition, and left the
+    // order of events due at the same instant depending on insertion history
+    std::vector<queued_event> m_queue;
+    // whether an event is already pending, indexed by event index. guards against an
+    // event being queued twice over
+    std::vector<std::uint8_t> m_queued;
     basic_event *m_workevent { nullptr };
     event_map m_eventmap;
     basic_table<TEventLauncher> m_inputdrivenlaunchers;

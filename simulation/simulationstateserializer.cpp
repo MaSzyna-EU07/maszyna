@@ -17,6 +17,7 @@ module;
 #include <cstddef>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <string>
 #include "global_include/interfaces/ITexture_macros.h"
 #include "utilities/Globals_macros.h"
@@ -29,6 +30,7 @@ import eu07.utilities.classes;
 import eu07.glm;
 import eu07.utilities.globals;
 import eu07.simulation.simulation;
+import eu07.simulation.loadprofile;
 import eu07.simulation.simulationtime;
 import eu07.simulation.simulationsounds;
 import eu07.simulation.simulationenvironment;
@@ -80,6 +82,7 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
     // TODO: check first for presence of serialized binary files
     // if this fails, fall back on the legacy text format
 	state->scratchpad.name = Scenariofile;
+    loadprofile::reset();
     if( true == Global.file_binary_terrain
      && Scenariofile != "$.scn" ) {
         // compilation to binary file isn't supported for rainsted-created overrides
@@ -98,6 +101,11 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 		WriteLog("Default SBT absent");
     }
     scene::Groups.create();
+
+    // before a token is read: pick up a heightfield baked on an earlier run, or arm the
+    // bake when there is none. it has to happen here because the decision to skip terrain
+    // triangles is taken per node while parsing
+    terrainbake::begin( Scenariofile );
 
 	if( false == state->input.ok() ) {
 		if( false == Global.editor_startup ) {
@@ -131,6 +139,7 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 	            { "endgroup",    &state_serializer::deserialize_endgroup },
 	            { "light",       &state_serializer::deserialize_light },
 	            { "node",        &state_serializer::deserialize_node },
+	            { "prefab",      &state_serializer::deserialize_prefab },
 	            { "origin",      &state_serializer::deserialize_origin },
 	            { "endorigin",   &state_serializer::deserialize_endorigin },
 	            { "scale",       &state_serializer::deserialize_scale },
@@ -177,11 +186,14 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 		auto timenow = std::chrono::steady_clock::now();
         if( std::chrono::duration_cast<std::chrono::milliseconds>( timenow - timelast ).count() >= 200 ) {
             Application.set_progress( Input.getProgress(), Input.getFullProgress() );
+            loadprofile::add_total( std::chrono::duration<double>( timenow - timelast ).count() );
 			return true;
         }
 
         token = Input.getToken<std::string>();
     }
+    loadprofile::add_total(
+        std::chrono::duration<double>( std::chrono::steady_clock::now() - timelast ).count() );
 
     if( false == Scratchpad.initialized ) {
         // manually perform scenario initialization
@@ -201,6 +213,22 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 		// as long as the scenario file wasn't rainsted-created base file override
 		Region->serialize( state->scenariofile );
 	}
+
+    terrainbake::finish( state->scenariofile );
+
+    loadprofile::report( state->scenariofile );
+
+    if( true == Global.verify_logic ) {
+        verify_logic( state->scenariofile );
+    }
+    else if( ( true == Global.cook_logic )
+          || ( true == logic_stale( state->scenariofile ) ) ) {
+        // cooked from the loaded state rather than from the text, and immediately read back,
+        // so a container that disagrees with what it was cooked from says so on the spot
+        if( true == cook_logic( state->scenariofile ) ) {
+            verify_logic( state->scenariofile );
+        }
+    }
 
 	return false;
 }
@@ -458,6 +486,40 @@ state_serializer::deserialize_light( cParser &Input, scene::scratch_data &Scratc
 }
 
 void
+state_serializer::deserialize_prefab( cParser &Input, scene::scratch_data &Scratchpad ) {
+
+    // prefab <definition> <name> <x> <y> <z> <yaw> [<texture>] endprefab
+    scene::prefab_placement placement;
+    Input.getTokens( 1, false );
+    std::string definition; Input >> definition;
+    Input.getTokens( 1, false );
+    Input >> placement.name;
+    Input.getTokens( 4 );
+    Input
+        >> placement.x
+        >> placement.y
+        >> placement.z
+        >> placement.yaw;
+
+    auto token { Input.getToken<std::string>( false ) };
+    if( ( false == token.empty() ) && ( token != "endprefab" ) ) {
+        placement.texture = token;
+        token = Input.getToken<std::string>( false );
+    }
+    if( token != "endprefab" ) {
+        ErrorLog( "Bad scenario: prefab \"" + placement.name + "\" is missing its endprefab, found \"" + token + "\" instead" );
+    }
+
+    auto const scenery { Prefabs.expand( definition, placement ) };
+    if( true == scenery.empty() ) {
+        ErrorLog( "Bad scenario: prefab \"" + placement.name + "\" of unknown type \"" + definition + "\" was skipped" );
+        return;
+    }
+    // the expansion is ordinary scenery text, and goes in as an include would
+    Input.injectString( scenery );
+}
+
+void
 state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratchpad ) {
 
     auto const inputline = Input.Line(); // cache in case we need to report error
@@ -471,6 +533,19 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         >> nodedata.name
         >> nodedata.type;
     if( nodedata.name == "none" ) { nodedata.name.clear(); }
+    // the triangle family is timed in its own branch below; everything else is timed
+    // against the kind of node it is, since "not a triangle" covers models, tracks,
+    // traction and vehicles alike and they cost very different amounts
+    std::optional<loadprofile::scoped_timer<loadprofile::stage>> profiledstage;
+    std::optional<loadprofile::scoped_timer<loadprofile::kind>> profiledkindtime;
+    if( true == loadprofile::enabled() ) {
+        auto const profiledkind { loadprofile::kind_of( nodedata.type ) };
+        loadprofile::add_node( profiledkind );
+        if( profiledkind != loadprofile::kind::triangles ) {
+            profiledstage.emplace( loadprofile::stage::other_nodes );
+            profiledkindtime.emplace( profiledkind );
+        }
+    }
     // type-based deserialization. not elegant but it'll do
     if( nodedata.type == "dynamic" ) {
 
@@ -604,25 +679,71 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
           || nodedata.type == "triangle_strip"
           || nodedata.type == "triangle_fan" ) {
 
+        auto const file { Input.Name() };
+        auto const switchtrackbedfile {
+            // crude way to detect fixed switch trackbed geometry
+            true == Global.CreateSwitchTrackbeds
+         && file.size() >= 15
+         && file.starts_with( "scenery/zwr" )
+         && file.ends_with( ".inc" ) };
+
+        auto const offset {
+            Scratchpad.location.offset.empty() ? glm::dvec3( 0.0 ) : Scratchpad.location.offset.top() };
+        auto const worldspace {
+            ( offset == glm::dvec3( 0.0 ) ) && ( Scratchpad.location.rotation == glm::vec3( 0.0f ) ) };
+
+        // whether a heightfield stands in for this node, and whether a bake wants it
+        auto const decision {
+            ( ( true == Scratchpad.binary.terrain ) || ( true == switchtrackbedfile ) )
+                ? terrainbake::node_decision{}
+                : terrainbake::examine(
+                    file, Input.Line(), Input.Parameters(), nodedata.type,
+                    offset, Scratchpad.location.rotation, worldspace ) };
+
         auto const skip {
             // all shapes will be loaded from the binary version of the file
-            true == Scratchpad.binary.terrain
-            // crude way to detect fixed switch trackbed geometry
-         || ( true == Global.CreateSwitchTrackbeds
-           && Input.Name().size() >= 15
-           && Input.Name().starts_with("scenery/zwr")
-           && Input.Name().ends_with(".inc") ) };
+            ( true == Scratchpad.binary.terrain )
+            // old trackbed geometry the engine replaces
+         || ( true == switchtrackbedfile )
+         || ( true == decision.skip ) };
 
-        if( false == skip ) {
-
-            simulation::Region->insert(
-                scene::shape_node().import(
-                    Input, nodedata ),
-                Scratchpad,
-                true );
+        if( true == skip ) {
+            skip_until( Input, "endtri" );
         }
         else {
-            skip_until( Input, "endtri" );
+            auto shape { [&]() {
+                loadprofile::scoped_timer const importtime { loadprofile::stage::shape_import };
+                return scene::shape_node().import( Input, nodedata ); }() };
+            loadprofile::add_vertices( shape.data().vertices.size() );
+
+            if( true == decision.bake ) {
+                // the bake sees the node exactly where it is drawn. placing is done on a copy:
+                // the region applies the same placement to the shape itself when inserting it
+                auto const &data { shape.data() };
+                auto const material {
+                    data.material != null_handle
+                        ? GfxRenderer->Material( data.material )->GetName()
+                        : "none" };
+                // the old switch trackbeds are dropped from the scenery when generated ones
+                // replace them, so they are no part of the ground either
+                if( false == ( Global.CreateSwitchTrackbeds && scene::is_switch_trackbed( material ) ) ) {
+                    auto placed { data.vertices };
+                    scene::place_in_world( placed, Scratchpad );
+                    terrainbake::add( decision.key, placed, material );
+                }
+            }
+            if( decision.plan.what == terrainbake::verdict::filter ) {
+                auto const &drawn { decision.plan.drawn };
+                shape.keep_triangles(
+                    [ &drawn ]( std::size_t const Triangle ) {
+                        return ( Triangle >= drawn.size() ) || drawn[ Triangle ]; } );
+            }
+
+            loadprofile::scoped_timer const inserttime { loadprofile::stage::shape_insert };
+            simulation::Region->insert(
+                std::move( shape ),
+                Scratchpad,
+                true );
         }
     }
     else if( nodedata.type == "lines"
@@ -827,7 +948,14 @@ state_serializer::deserialize_terrain(cParser &Input, scene::scratch_data &Scrat
 	std::string line;
 	Input.getTokens(1);
 	Input >> line;
-	if (Global.file_binary_terrain && line.ends_with(".sbt"))
+	if (line.ends_with(".ehf"))
+	{
+		// a cooked heightfield. the renderer opens it and the scenery carries no terrain
+		// geometry at all, which is the point: the text it replaces is most of the file
+		Global.terrain_heightfields.push_back(line);
+		WriteLog("Terrain heightfield: " + line);
+	}
+	else if (Global.file_binary_terrain && line.ends_with(".sbt"))
 	{  
         Scratchpad.binary.terrain = Region->is_scene(line);
 		Global.file_binary_terrain_state = true;

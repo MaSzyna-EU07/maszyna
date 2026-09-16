@@ -176,6 +176,8 @@ set(SOURCES
 "model/material.cpp"
 "input/messaging.cpp"
 "scene/scene.cpp"
+"scene/logiccontainer.cpp"
+"scene/prefab.cpp"
 "scene/scenenode.cpp"
 "simulation/simulation.cpp"
 "model/vertex.cpp"
@@ -186,6 +188,12 @@ set(SOURCES
 "application/uitranscripts.cpp"
 "world/station.cpp"
 "application/application.cpp"
+"application/shotrunner.cpp"
+"rendering/terrainclipmap.cpp"
+"rendering/terraintileloader.cpp"
+"simulation/loadprofile.cpp"
+"simulation/logiccook.cpp"
+"simulation/terrainbake.cpp"
 "simulation/simulationtime.cpp"
 "scene/sceneeditor.cpp"
 "rendering/screenshot.cpp"
@@ -598,6 +606,8 @@ if (WITH_CRASHPAD)
 endif()
 
 target_link_libraries(${PROJECT_NAME} glfw)
+# the cooked terrain heightfield stores its tiles compressed
+target_link_libraries(${PROJECT_NAME} zstd::libzstd)
 
 if(WITH_PYTHON)
 	find_package(Python3 3.14 REQUIRED COMPONENTS Development)
@@ -624,6 +634,13 @@ if (NOT WIN32)
 else()
 	include_directories(${PNG_INCLUDE_DIRS})
 	target_link_libraries(${PROJECT_NAME} ${PNG_LIBRARIES})
+endif()
+
+find_package(zstd CONFIG QUIET)
+if(NOT zstd_FOUND)
+	find_package(PkgConfig REQUIRED)
+	pkg_check_modules(ZSTD REQUIRED IMPORTED_TARGET libzstd)
+	add_library(zstd::libzstd ALIAS PkgConfig::ZSTD)
 endif()
 
 find_package(Threads REQUIRED)

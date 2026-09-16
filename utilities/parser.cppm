@@ -109,6 +109,8 @@ class cParser //: public std::stringstream
     std::string Name() const;
     // returns number of currently processed line
     std::size_t Line() const;
+    // parameters of the innermost file being read, the (pN) values its include line gave
+    std::vector<std::string> const & Parameters() const;
 	// returns number of currently processed line in main file, -1 if inside include
 	int LineMain() const;
 	bool expandIncludes = true;

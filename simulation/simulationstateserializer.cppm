@@ -28,6 +28,9 @@ import eu07.glm;
 import eu07.audio.sound;
 import eu07.utilities.parser;
 import eu07.simcore;
+import eu07.scene.prefab;
+import eu07.simulation.logiccook;
+import eu07.simulation.terrainbake;
 
 export {
 
@@ -86,6 +89,8 @@ private:
     void deserialize_endgroup( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_light( cParser &Input, scene::scratch_data &Scratchpad );
 	void deserialize_node( cParser &Input, scene::scratch_data &Scratchpad );
+    void deserialize_prefab( cParser &Input, scene::scratch_data &Scratchpad );
+
     void deserialize_origin( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_endorigin( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_scale( cParser &Input, scene::scratch_data &Scratchpad );

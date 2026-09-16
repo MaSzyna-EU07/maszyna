@@ -622,6 +622,11 @@ std::size_t cParser::Line() const
 	}
 }
 
+std::vector<std::string> const & cParser::Parameters() const
+{
+	return mIncludeParser ? mIncludeParser->Parameters() : parameters;
+}
+
 int cParser::LineMain() const
 {
 	return mIncludeParser ? -1 : mLine;

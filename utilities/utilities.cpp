@@ -415,6 +415,24 @@ std::time_t last_modified(std::string const &Filename)
 }
 
 // potentially erases file extension from provided file name. returns: true if extension was removed, false otherwise
+std::string scenery_file(std::string const &Sceneryfile)
+{
+	return Sceneryfile.find_first_of("/\\") == std::string::npos ? Global.asCurrentSceneryPath + Sceneryfile : Sceneryfile;
+}
+
+std::string scenery_sidecar(std::string const &Sceneryfile, std::string const &Extension)
+{
+	auto path{scenery_file(Sceneryfile)};
+	auto const slash{path.find_last_of("/\\")};
+	auto const namestart{slash == std::string::npos ? 0 : slash + 1};
+	if ((namestart < path.size()) && (path[namestart] == '$'))
+	{
+		path.erase(namestart, 1);
+	}
+	erase_extension(path);
+	return path + Extension;
+}
+
 bool erase_extension(std::string &Filename)
 {
 
