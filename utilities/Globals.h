@@ -81,7 +81,7 @@ struct global_settings {
     int iConvertModels{ 0 }; // tworzenie plików binarnych
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan
     bool file_binary_terrain{ true }; // enable binary terrain (de)serialization
-	bool file_binary_terrain_state{true};
+	bool file_binary_terrain_state{true}; // binary terrain (de)serialization is enabled and the current scenery supports it
     // logs
 	bool priorityLoadText3D{false}; // ladowanie T3D priorytetowo
     int iWriteLogEnabled{ 3 }; // maska bitowa: 1-zapis do pliku, 2-okienko, 4-nazwy torów
