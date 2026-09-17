@@ -208,9 +208,8 @@ terrain_clipmap::build_palette() {
 std::uint32_t
 terrain_clipmap::level_for( double const Distance ) const {
 
-    auto const finest { terrain_level_distance( 0, m_reader.tilesize() ) };
-    if( Distance <= finest ) { return 0; }
-    auto const steps { static_cast<std::uint32_t>( std::log2( Distance / finest ) ) + 1 };
+    if( Distance <= m_finest ) { return 0; }
+    auto const steps { static_cast<std::uint32_t>( std::log2( Distance / m_finest ) ) + 1 };
     return std::min( steps, m_reader.levels() - 1 );
 }
 
@@ -266,10 +265,17 @@ terrain_clipmap::retire( resident_tile &Tile ) {
 }
 
 void
+terrain_clipmap::detail( double const Pixelsperunit, double const Pixels ) {
+
+    m_finestwanted = terrain_finest_range( m_reader.gridstep(), m_reader.tilesize(), Pixelsperunit, Pixels );
+}
+
+void
 terrain_clipmap::scan( glm::dvec3 const &Viewpoint ) {
 
     m_scanpoint = Viewpoint;
     m_scanrange = m_range;
+    m_finest = ( m_finestwanted > 0.0 ? m_finestwanted : terrain_finest_tiles * m_reader.tilesize() );
     m_inrange.clear();
     m_wantedlevel.clear();
 
@@ -324,7 +330,12 @@ terrain_clipmap::update( glm::dvec3 const &Viewpoint ) {
 
     auto const moved {
         glm::length( glm::dvec2 { Viewpoint.x - m_scanpoint.x, Viewpoint.z - m_scanpoint.z } ) };
+    // a zoom or a resized window changes the levels; a change under a percent is not worth
+    // redoing the scan for
+    auto const detailchanged {
+        ( m_finestwanted > 0.0 ) && ( std::abs( m_finestwanted - m_finest ) > 0.01 * m_finest ) };
     if( ( m_range != m_scanrange )
+     || ( true == detailchanged )
      || ( moved > m_reader.tilesize() * terrain_rescan_tiles ) ) {
         scan( Viewpoint );
     }
@@ -446,7 +457,8 @@ terrain_clipmap::report_residency() {
     WriteLog(
         "Terrain: " + std::to_string( m_stats.resident ) + " tiles resident, "
         + std::to_string( m_stats.texturebytes / 1048576 ) + " MB of samples, "
-        + std::to_string( m_stats.uploaded ) + " uploads so far" );
+        + std::to_string( m_stats.uploaded ) + " uploads so far, finest level out to "
+        + std::to_string( static_cast<int>( m_finest ) ) + " m" );
 }
 
 void
@@ -487,8 +499,8 @@ terrain_clipmap::render( glm::dvec3 const &Viewpoint ) {
         if( tile.level + 1 < m_reader.levels() ) {
             ::glUniform2f(
                 m_uniforms.morph,
-                static_cast<float>( terrain_morph_begin( tile.level, tilesize ) ),
-                static_cast<float>( terrain_morph_end( tile.level, tilesize ) ) );
+                static_cast<float>( terrain_morph_begin( tile.level, m_finest, tilesize ) ),
+                static_cast<float>( terrain_morph_end( tile.level, m_finest, tilesize ) ) );
         }
         else {
             // far enough to never be reached, with a band that does not divide by zero

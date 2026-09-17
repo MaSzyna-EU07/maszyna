@@ -2912,6 +2912,11 @@ void opengl33_renderer::Render_terrain()
 		{
 			// the terrain has a range of its own, not the pass draw range
 			field->range(Global.TerrainRange);
+			// how far each level reaches follows from what the view can resolve
+			auto const fovy{glm::radians(Global.FieldOfView / Global.ZoomFactor)};
+			field->detail(
+			    static_cast<double>(m_current_viewport->height) / (2.0 * std::tan(fovy * 0.5)),
+			    Global.TerrainDetail);
 			field->update(viewpoint);
 		}
 		field->render(viewpoint);
@@ -2932,6 +2937,7 @@ void opengl33_renderer::Render_terrain()
 				status.levels = field.levels();
 			}
 			status.range = field.range();
+			status.finest = field.finest();
 			status.backlog = field.backlog();
 			status.stats = field.stats();
 		}

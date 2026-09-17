@@ -16,14 +16,16 @@ import math
 import random
 import sys
 
-FINEST_TILES = 4.0   # terrain_finest_tiles
+# finest ranges tried, in tile sides: terrain_finest_tiles is the minimum, and the screen
+# can push it further (terrain_finest_range)
+FINEST_TILES = (4.0, 5.7, 11.3)
 RESCAN_TILES = 0.25  # terrain_rescan_tiles
 MORPH_BAND = 0.2     # terrain_morph_band
 LEVELS = 6
 
 
-def check(tilesize, step, trials, reach):
-    finest = FINEST_TILES * tilesize
+def check(tilesize, step, trials, reach, finest_tiles):
+    finest = finest_tiles * tilesize
 
     def level_range(level):
         return finest * 2 ** level
@@ -84,10 +86,12 @@ def check(tilesize, step, trials, reach):
 def main():
     random.seed(1)
     failed = False
-    for tilesize, step, trials, reach in ((128, 1.0, 300, 40), (256, 2.0, 300, 40), (12800, 100.0, 60, 6)):
-        gaps, example = check(tilesize, step, trials, reach)
-        print(f"tile {tilesize} m, grid {step} m: {gaps} gaps" + (f" (e.g. {example})" if gaps else ""))
-        failed = failed or gaps > 0
+    for finest_tiles in FINEST_TILES:
+        for tilesize, step, trials, reach in ((128, 1.0, 150, 60), (256, 2.0, 150, 60), (12800, 100.0, 30, 8)):
+            gaps, example = check(tilesize, step, trials, reach, finest_tiles)
+            print(f"finest {finest_tiles} tiles, tile {tilesize} m, grid {step} m: {gaps} gaps"
+                  + (f" (e.g. {example})" if gaps else ""))
+            failed = failed or gaps > 0
     return 1 if failed else 0
 
 

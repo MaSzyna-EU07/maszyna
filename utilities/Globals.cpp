@@ -271,6 +271,12 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
         return true;
     }
 
+    if (token == "terraindetail")
+    {
+        ParseOne(Parser, TerrainDetail, 1);
+        return true;
+    }
+
     if (token == "vsync")
     {
         ParseOne(Parser, VSync);
@@ -1540,6 +1546,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "targetfps", targetfps );
     export_as_text( Output, "basedrawrange", BaseDrawRange );
     export_as_text( Output, "terrainrange", TerrainRange );
+    export_as_text( Output, "terraindetail", TerrainDetail );
     export_as_text( Output, "fullscreen", bFullScreen );
     export_as_text( Output, "fullscreenmonitor", fullscreen_monitor );
     export_as_text( Output, "fullscreenwindowed", fullscreen_windowed );

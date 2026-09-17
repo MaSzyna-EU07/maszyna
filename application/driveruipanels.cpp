@@ -773,6 +773,8 @@ debug_panel::render_section_scenario() {
 				(to_string(std::exp(terrainrange), 0, 5) + " m###terrainrange").c_str(), &terrainrange, std::log(500.0f), std::log(100000.0f), "Terrain range")) {
 				Global.TerrainRange = std::clamp(std::exp(terrainrange), 500.0f, 100000.0f);
 			}
+			// pixels a terrain sample may cover before a finer level takes over
+			ImGui::SliderFloat("###terraindetail", &Global.TerrainDetail, 1.0f, 8.0f, "Terrain detail: %.1f px per sample");
 		}
     }
 
@@ -1524,8 +1526,8 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) {
                     auto const last { level + 1 == field.levels };
                     levels +=
                         " L" + std::to_string( level )
-                        + ( last ? " beyond " + to_string( terrain_level_distance( level > 0 ? level - 1 : 0, field.tilesize ), 0 )
-                                 : " <" + to_string( terrain_level_distance( level, field.tilesize ), 0 ) )
+                        + ( last ? " beyond " + to_string( terrain_level_distance( level > 0 ? level - 1 : 0, field.finest ), 0 )
+                                 : " <" + to_string( terrain_level_distance( level, field.finest ), 0 ) )
                         + " m (" + to_string( field.gridstep * static_cast<float>( 1u << level ), 0 ) + " m grid): "
                         + std::to_string( stats.perlevel[ level ] );
                     if( false == last ) { levels += " |"; }

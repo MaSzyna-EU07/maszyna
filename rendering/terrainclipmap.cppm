@@ -71,6 +71,11 @@ public:
     // how far from the viewpoint terrain is drawn, in metres
     void range( float const Range ) { m_range = Range; }
     float range() const { return m_range; }
+    // what the screen can resolve: the viewport's pixels per unit of size over distance, and
+    // how many pixels a sample spacing may cover. decides how far each level reaches
+    void detail( double const Pixelsperunit, double const Pixels );
+    // the finest level's range the tiles in range were last worked out with
+    float finest() const { return static_cast<float>( m_finest ); }
 
     // metres between samples at the finest level; a scenery's fields are drawn from the
     // finest to the coarsest so that the depth test keeps the better surface
@@ -135,6 +140,10 @@ private:
     std::unordered_map<std::int64_t, std::uint32_t> m_wantedlevel;
     glm::dvec3 m_scanpoint { 0.0 };
     float m_scanrange { -1.f };
+    // the finest level's range the screen asks for, and the one the last scan used. levels and
+    // morphing both follow the scanned one, so they always agree
+    double m_finestwanted { 0.0 };
+    double m_finest { 0.0 };
     std::unordered_map<std::int64_t, resident_tile> m_tiles;
     // one index buffer per mip level, over a grid of that level's sample count. vertices
     // are computed in the shader from gl_VertexID, so there is no vertex buffer at all.

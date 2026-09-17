@@ -196,6 +196,9 @@ struct global_settings {
     // how far terrain tiles are streamed and drawn, independent of BaseDrawRange: a baked
     // heightfield is cheap far out, and seeing it to the horizon is the point of having it
     float TerrainRange{ 20000.f };
+    // pixels one terrain sample spacing may cover on screen before a finer level takes over.
+    // smaller is sharper and costs more tiles at their finest
+    float TerrainDetail{ 3.f };
     int DynamicLightCount{ 7 };
     bool ScaleSpecularValues{ true };
     std::string GfxRenderer{ "default" };
