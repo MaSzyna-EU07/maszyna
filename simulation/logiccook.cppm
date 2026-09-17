@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 module;
 #include <string>
+#include <vector>
 
 export module eu07.simulation.logiccook;
 
@@ -24,18 +25,16 @@ export {
 // determinism the plan asks for comes from the writer, not from where it is called.
 namespace simulation {
 
-// writes the container next to the scenery. returns false and logs on failure
-bool cook_logic( std::string const &Sceneryfile );
+// writes the container next to the scenery, with the manifest of the Sources it was made
+// from. returns false and logs on failure
+bool cook_logic( std::string const &Sceneryfile, std::vector<std::string> const &Sources );
 // reads a cooked container back and checks it against the events currently loaded. logs
 // every disagreement and returns true only when there are none
 bool verify_logic( std::string const &Sceneryfile );
-// whether the container next to this scenery needs cooking: there is none, this build
-// cannot read the one that is there, or the scenery has been edited since.
-//
-// Edits to an .inc the scenery pulls in do NOT make it stale - only the .scn's own
-// timestamp is compared, because the list of files that went into a load is not kept. Cook
-// by hand with -cooklogic after editing an include.
-bool logic_stale( std::string const &Sceneryfile );
+// whether the container next to this scenery needs cooking: there is none, this build cannot
+// read the one that is there, a file it was made from has changed, or the scenery now reads
+// a different set of files than Sources says it was made from
+bool logic_stale( std::string const &Sceneryfile, std::vector<std::string> const &Sources );
 
 } // namespace simulation
 

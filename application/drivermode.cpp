@@ -195,6 +195,18 @@ bool driver_mode::update()
 	simulation::State.update_scripting_interface();
 	simulation::Environment.update();
 
+	// a cooking run is over once the scenery has loaded: whatever was stale was cooked on the
+	// way in
+	if (true == Global.cook_only)
+	{
+		// closed directly: there is no simulation to wind down, and a quit command would wait
+		// in the queue for one
+		WriteLog("Cooking finished, quitting");
+		Global.cook_only = false;
+		Application.queue_quit(true);
+		return true;
+	}
+
 	// unattended screenshot sequence, when one was asked for on the command line
 	if (true == Shots.active())
 	{

@@ -131,6 +131,9 @@ struct global_settings {
     // bake a heightfield for a scenery that has none, the first time it is opened, and use
     // it from then on. -nobaketerrain turns it off
     bool bake_terrain{ true };
+    // -cook: load the scenery, bring what is cooked from it up to date, and quit. the step that
+    // prepares a scenery's data ahead of play, so that the game never has to bake on its own
+    bool cook_only{ false };
     // cooked heightfields drawn in place of the legacy terrain geometry, coarsest first
     // once sorted. a scenery needs several: a regional elevation model sampled every
     // hundred metres, and a corridor of its own for each line, sampled every two

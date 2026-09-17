@@ -194,6 +194,7 @@ set(SOURCES
 "rendering/terraintilepool.cpp"
 "rendering/terrainground.cpp"
 "simulation/loadprofile.cpp"
+"simulation/cookdeps.cpp"
 "simulation/logiccook.cpp"
 "simulation/terrainbake.cpp"
 "simulation/simulationtime.cpp"

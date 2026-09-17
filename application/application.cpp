@@ -1258,6 +1258,13 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			// check it against the events in memory
 			Global.cook_logic = true;
 		}
+		else if (token == "-cook")
+		{
+			// prepare the scenery's cooked data - heightfields and logic - wherever it is missing
+			// or out of date, then quit without starting the simulation
+			Global.cook_only = true;
+			Global.bake_terrain = true;
+		}
 		else if (token == "-nobaketerrain")
 		{
 			// load the scenery's terrain triangles as written, without baking or using a
@@ -1281,7 +1288,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			          << " [-loadprofile]"
 			          << " [-cooklogic]"
 			          << " [-verifylogic]"
-			          << " [-nobaketerrain]"
+			          << " [-nobaketerrain] [-cook]"
 			          << "  (every switch also takes a double dash: --editor)" << std::endl;
 			return -1;
 		}

@@ -43,6 +43,9 @@ struct deserializer_state {
 	// the named scenery has no file on disk: the world is empty, so there's nothing to compile to SBT
 	bool blank{ false };
 	cParser input;
+	// every file the scenery includes, as it is read: what anything cooked from this load
+	// depends on
+	std::shared_ptr<std::vector<std::string>> included { std::make_shared<std::vector<std::string>>() };
 	scene::scratch_data scratchpad;
 	using deserializefunctionbind = std::function<void()>;
 	std::unordered_map<

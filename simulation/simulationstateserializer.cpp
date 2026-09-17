@@ -101,6 +101,7 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 		WriteLog("Default SBT absent");
     }
     scene::Groups.create();
+    state->input.track_includes( state->included );
 
     // before a token is read: pick up a heightfield baked on an earlier run, or arm the
     // bake when there is none. it has to happen here because the decision to skip terrain
@@ -214,18 +215,22 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 		Region->serialize( state->scenariofile );
 	}
 
-    terrainbake::finish( state->scenariofile );
+    terrainbake::finish( state->scenariofile, *state->included );
 
     loadprofile::report( state->scenariofile );
 
+    // the logic depends on the scenario file itself as well as on what it includes: events
+    // can be written in either
+    auto sources { *state->included };
+    sources.push_back( scenery_file( state->scenariofile ) );
     if( true == Global.verify_logic ) {
         verify_logic( state->scenariofile );
     }
     else if( ( true == Global.cook_logic )
-          || ( true == logic_stale( state->scenariofile ) ) ) {
+          || ( true == logic_stale( state->scenariofile, sources ) ) ) {
         // cooked from the loaded state rather than from the text, and immediately read back,
         // so a container that disagrees with what it was cooked from says so on the spot
-        if( true == cook_logic( state->scenariofile ) ) {
+        if( true == cook_logic( state->scenariofile, sources ) ) {
             verify_logic( state->scenariofile );
         }
     }

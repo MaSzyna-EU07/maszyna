@@ -35,11 +35,11 @@ export {
 // triangles the heightfield really shows stop being drawn on their own, so nothing can vanish
 // from the scenery - the worst a bad bake can do is draw something twice.
 //
-// A triangle node is recognised by the file and line it is written at - with that file's size
-// and modification time - the parameters its include was given, and the origin and rotation in
-// force, not by its position in the load. An edited file changes the keys of everything in it,
-// and those nodes are then simply drawn again instead of the wrong ones being dropped. Hashing
-// the node's text instead would cost a second parse of every triangle node in the scenery.
+// A bake is used only while every file the scenery included when it was made still has the
+// content it had (cookdeps): the scenario file itself is not among them, since the launcher
+// rewrites it on every start and the terrain lives in what it includes. Within a bake that
+// holds, a triangle node is recognised by the file and line it is written at, the parameters
+// its include was given, and the origin and rotation in force.
 //
 // The rasterising is scene/terraincooker.h, the same code the tool uses.
 namespace simulation::terrainbake {
@@ -77,8 +77,10 @@ node_decision examine(
     std::string_view const Type, glm::dvec3 const &Offset, glm::vec3 const &Rotation, bool const Worldspace );
 // one triangle node, in world space, as it is about to be drawn
 void add( std::uint64_t const Key, std::vector<world_vertex> const &Vertices, std::string_view const Material );
-// called once the scenery has been parsed. writes the heightfield and its node table
-void finish( std::string const &Sceneryfile );
+// called once the scenery has been parsed, with every file it included. writes the
+// heightfields, their node table and the manifest of what they were made from; or, when a
+// bake was used, checks the scenery still includes what that bake was made from
+void finish( std::string const &Sceneryfile, std::vector<std::string> const &Included );
 
 } // namespace simulation::terrainbake
 

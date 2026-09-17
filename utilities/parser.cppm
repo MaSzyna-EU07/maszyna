@@ -111,6 +111,9 @@ class cParser //: public std::stringstream
     std::size_t Line() const;
     // parameters of the innermost file being read, the (pN) values its include line gave
     std::vector<std::string> const & Parameters() const;
+    // collects into Into the path of every file this parser includes, and every file those
+    // include in turn. what a cooked artifact of a scenery depends on is exactly this list
+    void track_includes( std::shared_ptr<std::vector<std::string>> Into ) { mIncluded = std::move( Into ); }
 	// returns number of currently processed line in main file, -1 if inside include
 	int LineMain() const;
 	bool expandIncludes = true;
@@ -130,6 +133,7 @@ class cParser //: public std::stringstream
     std::size_t count();
     // members:
     bool m_autoclear { true }; // unretrieved tokens are discarded when another read command is issued (legacy behaviour)
+    std::shared_ptr<std::vector<std::string>> mIncluded; // where included files are recorded, if anywhere
     bool LoadTraction { true }; // load traction?
     std::shared_ptr<std::istream> mStream; // relevant kind of buffer is attached on creation.
     std::string mFile; // name of the open file, if any

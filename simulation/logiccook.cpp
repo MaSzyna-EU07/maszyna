@@ -26,6 +26,7 @@ import eu07.simulation.simulationsounds;
 import eu07.utilities.logs;
 import eu07.utilities.globals;
 import eu07.utilities.utilities;
+import eu07.simulation.cookdeps;
 
 namespace simulation {
 
@@ -130,7 +131,7 @@ targets_of( basic_event const &Event, scene::logic::event_kind const Kind, scene
 } // anonymous namespace
 
 bool
-cook_logic( std::string const &Sceneryfile ) {
+cook_logic( std::string const &Sceneryfile, std::vector<std::string> const &Sources ) {
 
     scene::logic::container_writer writer;
     auto const count { simulation::Events.event_count() };
@@ -158,19 +159,22 @@ cook_logic( std::string const &Sceneryfile ) {
         ErrorLog( "Logic container: " + std::to_string( unknown ) + " events of a kind this build cannot cook" );
     }
 
-    return writer.write( scene::logic::container_path( Sceneryfile ) );
+    auto const path { scene::logic::container_path( Sceneryfile ) };
+    return ( true == writer.write( path ) )
+        && ( true == cookdeps::write( path + ".deps", Sources ) );
 }
 
 bool
-logic_stale( std::string const &Sceneryfile ) {
+logic_stale( std::string const &Sceneryfile, std::vector<std::string> const &Sources ) {
 
     auto const path { scene::logic::container_path( Sceneryfile ) };
 
     if( false == FileExists( path ) ) {
         return true;
     }
-    if( last_modified( scenery_file( Sceneryfile ) ) > last_modified( path ) ) {
-        WriteLog( "Logic container: \"" + path + "\" is older than the scenery, recooking" );
+    if( ( false == cookdeps::current( path + ".deps" ) )
+     || ( false == cookdeps::lists( path + ".deps", Sources ) ) ) {
+        WriteLog( "Logic container: \"" + path + "\" was made from files that have changed since, recooking" );
         return true;
     }
     // the header says whether this build can read it at all, which covers a container

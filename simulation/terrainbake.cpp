@@ -32,6 +32,7 @@ import eu07.utilities.logs;
 import eu07.utilities.globals;
 import eu07.utilities.utilities;
 import eu07.simulation.loadprofile;
+import eu07.simulation.cookdeps;
 
 namespace simulation::terrainbake {
 
@@ -77,11 +78,6 @@ struct table_record {
     std::uint32_t mask;
 };
 
-struct file_stamp {
-    std::uint64_t size { 0 };
-    std::int64_t time { 0 };
-};
-
 // one triangle as it waits in the spill file for the passes: its corners in world space with
 // their texture coordinates, the node it came from, which holds its material, and its number
 struct spilled {
@@ -115,8 +111,6 @@ struct {
     std::unordered_map<std::uint64_t, table_record> table;
     std::vector<std::uint8_t> masks;
     std::size_t skipped { 0 }, filtered { 0 }, drawn { 0 };
-    // size and modification time of every file a key was taken in, looked up once per load
-    std::unordered_map<std::string, file_stamp> files;
 } state;
 
 // where a field is written: the finest beside the scenery as <scenario>.ehf, coarser ones as
@@ -131,6 +125,24 @@ std::string
 table_path( std::string const &Heightfield ) {
 
     return Heightfield + ".nodes";
+}
+
+std::string
+manifest_path( std::string const &Heightfield ) {
+
+    return Heightfield + ".deps";
+}
+
+// throws away every file of a bake, so the next start makes a new one
+void
+discard( std::string const &Sceneryfile ) {
+
+    std::error_code error;
+    for( std::uint32_t field = 0; field < fieldcount; ++field ) {
+        std::filesystem::remove( heightfield_path( Sceneryfile, field ), error );
+    }
+    std::filesystem::remove( table_path( heightfield_path( Sceneryfile ) ), error );
+    std::filesystem::remove( manifest_path( heightfield_path( Sceneryfile ) ), error );
 }
 
 bool
@@ -301,21 +313,8 @@ node_key(
             mix( Text.data(), Text.size() );
             mix( "\n", 1 ); } };
 
-    // what the file is now: an edit anywhere in it changes every key it holds
-    auto lookup { state.files.find( File ) };
-    if( lookup == state.files.end() ) {
-        std::error_code error;
-        file_stamp stamp {};
-        auto const size { std::filesystem::file_size( File, error ) };
-        stamp.size = ( error ? 0 : static_cast<std::uint64_t>( size ) );
-        auto const time { std::filesystem::last_write_time( File, error ) };
-        stamp.time = ( error ? 0 : static_cast<std::int64_t>( time.time_since_epoch().count() ) );
-        lookup = state.files.emplace( File, stamp ).first;
-    }
-
+    // the file's content is vouched for by the bake's manifest, so its name is enough here
     text( File );
-    mix( &lookup->second.size, sizeof( lookup->second.size ) );
-    mix( &lookup->second.time, sizeof( lookup->second.time ) );
     auto const line { static_cast<std::uint64_t>( Line ) };
     mix( &line, sizeof( line ) );
     for( auto const &parameter : Parameters ) { text( parameter ); }
@@ -348,7 +347,9 @@ begin( std::string const &Sceneryfile ) {
         // what counts as terrain, or one missing a part, is thrown away and baked again
         // rather than used
         std::vector<std::string> baked;
-        auto usable { true == load_table( table_path( path ) ) };
+        auto usable {
+            ( true == cookdeps::current( manifest_path( path ) ) )
+         && ( true == load_table( table_path( path ) ) ) };
         for( std::uint32_t field = 0; ( field < fieldcount ) && ( true == usable ); ++field ) {
             auto const fieldpath { heightfield_path( Sceneryfile, field ) };
             if( false == FileExists( fieldpath ) ) { continue; }
@@ -365,13 +366,10 @@ begin( std::string const &Sceneryfile ) {
                 + std::to_string( state.table.size() ) + " triangle nodes replaced by them" );
             return;
         }
-        WriteLog( "Terrain bake: the heightfields beside this scenery were baked under different rules, baking them again" );
+        WriteLog( "Terrain bake: the heightfields beside this scenery are out of date, baking them again" );
         state.table.clear();
         state.masks.clear();
-        for( std::uint32_t field = 0; field < fieldcount; ++field ) {
-            std::filesystem::remove( heightfield_path( Sceneryfile, field ), error );
-        }
-        std::filesystem::remove( table_path( path ), error );
+        discard( Sceneryfile );
     }
 
     // the triangles wait on disk beside the heightfield rather than in memory: a large scenery
@@ -483,12 +481,18 @@ add( std::uint64_t const Key, std::vector<world_vertex> const &Vertices, std::st
 }
 
 void
-finish( std::string const &Sceneryfile ) {
+finish( std::string const &Sceneryfile, std::vector<std::string> const &Included ) {
 
     if( true == planning() ) {
         WriteLog(
             "Terrain bake: " + std::to_string( state.skipped ) + " triangle nodes left to the heightfield, "
             + std::to_string( state.filtered ) + " drawn in part, " + std::to_string( state.drawn ) + " drawn as written" );
+        // an include added or taken away since the bake: nodes of a new file were drawn as
+        // geometry this time, as none of their keys is known, but the next start bakes again
+        if( false == cookdeps::lists( manifest_path( heightfield_path( Sceneryfile ) ), Included ) ) {
+            WriteLog( "Terrain bake: the scenery includes different files than when it was baked; baking again on the next start" );
+            discard( Sceneryfile );
+        }
     }
     if( false == state.collecting ) { return; }
 
@@ -581,6 +585,7 @@ finish( std::string const &Sceneryfile ) {
             + std::to_string( step * std::pow( fieldstride, field ) ) + " m";
     }
     write_table( table_path( heightfield_path( Sceneryfile ) ) );
+    cookdeps::write( manifest_path( heightfield_path( Sceneryfile ) ), Included );
 
     auto const seconds {
         std::chrono::duration<double>( std::chrono::steady_clock::now() - state.started ).count() };

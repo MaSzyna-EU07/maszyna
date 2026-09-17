@@ -376,6 +376,10 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
 	);
 	mIncludeParser->allowRandomIncludes = allowRandomIncludes;
 	mIncludeParser->autoclear(m_autoclear);
+	if (mIncluded) {
+		mIncluded->push_back(mPath + includefile);
+		mIncludeParser->mIncluded = mIncluded;
+	}
 
 	if (mIncludeParser->mSize <= 0) {
 		ErrorLog("Bad include: can't open file \"" + includefile + "\"");
@@ -549,6 +553,8 @@ void cParser::injectString(const std::string &str)
 	{
 		mIncludeParser = std::make_shared<cParser>(str, buffer_TEXT, "", LoadTraction, std::vector<std::string>(), allowRandomIncludes);
 		mIncludeParser->autoclear(m_autoclear);
+		// text put into the input can include files of its own
+		mIncludeParser->mIncluded = mIncluded;
 	}
 }
 
