@@ -13,11 +13,19 @@ if(NOT zstd_FOUND)
 	add_library(zstd::libzstd ALIAS PkgConfig::ZSTD)
 endif()
 
-add_executable(terraincook main.cpp)
+find_package(CDT CONFIG REQUIRED)
+
+add_executable(terraincook 
+	main.cpp
+	../scene/terraincooker_tin.cpp
+)
 
 # the on-disk format lives with the engine, so the tool and the reader cannot drift apart
 target_include_directories(terraincook PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../..")
-target_link_libraries(terraincook PRIVATE zstd::libzstd)
+target_link_libraries(terraincook PRIVATE 
+	zstd::libzstd
+	CDT::CDT
+)
 
 if(NOT MSVC)
 	target_compile_options(terraincook PRIVATE -O2 -Wall)

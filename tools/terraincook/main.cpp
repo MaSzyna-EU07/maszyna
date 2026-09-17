@@ -33,6 +33,8 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/heightfieldformat.h"
 #include "scene/heightfieldreader.h"
 #include "scene/terraincooker.h"
+#include "scene/terraincooker_tin.h"
+#include "scene/quantizedmeshformat.h"
 
 namespace {
 
@@ -522,15 +524,15 @@ main( int argc, char *argv[] ) {
         std::cout
             << "usage: terraincook <terrain .scm files or directory>\n"
             << "         [-step <metres>] [-tracks <dir>] [-out <directory>]\n"
-            << "         [-cook] [-cookstep <metres>]\n"
+            << "         [-cook] [-tilesize <metres>] [-lodlevels <n>]\n"
             << "  analyses the terrain: grid detection, heightfield/overlay split, sampling\n"
             << "  density against distance from the nearest track, coverage by cell size\n"
-            << "  -cook additionally rasterises it into a tiled heightfield (terrain.ehf)\n"
+            << "  -cook generates TIN tiles (terrain_*.qm) with adaptive triangulation\n"
             << "  -raw leaves the cooked tiles uncompressed\n"
-            << "usage: terraincook -verify <terrain.ehf>\n"
-            << "  reads a cooked file back and checks its tiles and shared edges\n"
-            << "usage: terraincook -probe <terrain.ehf> <x,z,dirx,dirz,count>\n"
-            << "  prints cooked heights along a line, for looking at a cross section\n";
+            << "usage: terraincook -verify <terrain_dir>\n"
+            << "  verifies TIN tiles in directory\n"
+            << "usage: terraincook -probe <terrain_dir> <x,z,lod>\n"
+            << "  dumps tile data for inspection\n";
         return 1;
     }
 
@@ -567,8 +569,9 @@ main( int argc, char *argv[] ) {
     std::vector<std::filesystem::path> trackinputs;
     std::filesystem::path outputdirectory { "." };
     double step { 0.0 };
-    double cookstep { 2.0 };
     bool cooking { false };
+    double tin_tilesize { 256.0 };
+    std::uint32_t tin_lodlevels { 4 };
     bool compress { true };
 
     for( auto index { 1 }; index < argc; ++index ) {
@@ -576,8 +579,9 @@ main( int argc, char *argv[] ) {
         if( argument == "-step" && index + 1 < argc ) { step = std::strtod( argv[ ++index ], nullptr ); continue; }
         if( argument == "-out" && index + 1 < argc ) { outputdirectory = argv[ ++index ]; continue; }
         if( argument == "-cook" ) { cooking = true; continue; }
+        if( argument == "-tilesize" && index + 1 < argc ) { tin_tilesize = std::strtod( argv[ ++index ], nullptr ); continue; }
+        if( argument == "-lodlevels" && index + 1 < argc ) { tin_lodlevels = static_cast<std::uint32_t>( std::strtoul( argv[ ++index ], nullptr, 10 ) ); continue; }
         if( argument == "-raw" ) { compress = false; continue; }
-        if( argument == "-cookstep" && index + 1 < argc ) { cookstep = std::strtod( argv[ ++index ], nullptr ); cooking = true; continue; }
         if( argument == "-tracks" && index + 1 < argc ) {
             std::filesystem::path const trackpath { argv[ ++index ] };
             if( std::filesystem::is_directory( trackpath ) ) {
@@ -635,8 +639,12 @@ main( int argc, char *argv[] ) {
     std::array<double, bandcount> bandedgesum {};
     std::array<std::size_t, bandcount> bandfine {};
 
-    terrain::cooker cooker;
-    cooker.configure( cookstep, compress );
+    terrain::tin_cooker tin_cooker;
+    if( cooking ) {
+        tin_cooker.configure( tin_tilesize, tin_lodlevels );
+        std::printf( "TIN cooking enabled: tile size %.0f m, %u LOD levels\n", 
+            tin_tilesize, tin_lodlevels );
+    }
 
     statistics stats;
     std::vector<std::unordered_map<std::int64_t, char>> coverage( coveragescalecount );
@@ -655,7 +663,7 @@ main( int argc, char *argv[] ) {
 
         parse( content, [ & ]( vertex const &A, vertex const &B, vertex const &C, std::string_view Material ) {
 
-            if( true == cooking ) { cooker.rasterize( A, B, C, Material ); }
+            if( cooking ) { tin_cooker.rasterize( A, B, C, Material ); }
             ++stats.triangles;
             stats.vertices += 3;
             vertex const points[ 3 ] { A, B, C };
@@ -867,9 +875,32 @@ main( int argc, char *argv[] ) {
     }
     writepreview( outputdirectory / "overlay.pgm", overlaypreview, previewwidth, previewheight, -1.0f );
 
-    if( true == cooking ) {
+    if( cooking ) {
         std::filesystem::create_directories( outputdirectory );
-        cooker.finish( outputdirectory / "terrain.ehf", outputdirectory / "cooked.pgm" );
+        std::printf( "\n-- generating TIN tiles\n" );
+        
+        auto tiles = tin_cooker.finish();
+        
+        std::printf( "Writing %zu tiles...\n", tiles.size() );
+        std::size_t written = 0;
+        
+        for( auto const &tile : tiles ) {
+            for( std::uint32_t lod = 0; lod < tile.lods.size(); ++lod ) {
+                char filename[ 256 ];
+                std::snprintf( filename, sizeof( filename ), "terrain_%d_%d_lod%u.qm", 
+                    tile.x, tile.z, lod );
+                
+                std::filesystem::path const filepath = outputdirectory / filename;
+                
+                if( terrain::tin_cooker::write_tile( tile, lod, filepath.string(), compress ) ) {
+                    ++written;
+                } else {
+                    std::fprintf( stderr, "Failed to write %s\n", filename );
+                }
+            }
+        }
+        
+        std::printf( "Wrote %zu quantized mesh files to %s\n", written, outputdirectory.string().c_str() );
     }
 
     std::printf( "\n   previews written to %s (%zux%zu, 1 px = %.0f m)\n",

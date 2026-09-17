@@ -17,22 +17,19 @@ module;
 #include <string>
 #include <thread>
 #include <vector>
-#include "scene/heightfieldreader.h"
+#include "scene/quantizedmeshreader.h"
 
 export module eu07.rendering.terraintileloader;
 
 export {
 
-// Reads and decodes heightfield tiles on a thread of its own.
+// Reads and decodes TIN (Quantized Mesh) terrain tiles on a thread of its own.
 //
-// Reading a tile means a seek, a read and a zstd decode, which is too much to do on the render
-// thread for the dozens of tiles a moving camera asks for at once. This does that part and
-// nothing else: it knows no gl, keeps its own file handle, and hands back plain sample arrays
-// for the renderer to upload at a pace it chooses.
+// Reads .qm tile files, dequantizes vertices, and hands back ready-to-upload vertex/index
+// data. Does the I/O and decompression off the render thread. The renderer uploads at its own
+// pace, and the loader prioritizes nearest tiles first.
 //
-// The renderer says each frame what it wants, nearest first, and that list replaces whatever
-// was asked for before and has not been started. A tile the camera has already left is never
-// read, and the nearest tile is always the next one read.
+// Replaces heightfield tile loading entirely - TIN is the only terrain format now.
 class terrain_tile_loader {
 
 public:
@@ -46,8 +43,29 @@ public:
     struct payload {
         request tile;
         bool valid { false };
-        std::vector<std::uint16_t> heights;
+        
+        // Vertex data (dequantized, ready for GPU)
+        std::vector<double> positions_x;
+        std::vector<double> positions_y;
+        std::vector<double> positions_z;
+        std::vector<float> uvs_u;
+        std::vector<float> uvs_v;
         std::vector<std::uint8_t> materials;
+        
+        // Index data
+        std::vector<std::uint32_t> indices;
+        
+        // Edge indices for seamless LOD stitching
+        std::vector<std::uint16_t> north_edge;
+        std::vector<std::uint16_t> south_edge;
+        std::vector<std::uint16_t> west_edge;
+        std::vector<std::uint16_t> east_edge;
+        
+        // Tile bounds (for placement)
+        double center_x, center_y, center_z;
+        double min_x, min_y, min_z;
+        double max_x, max_y, max_z;
+        double geometric_error;
     };
 
     terrain_tile_loader() = default;
@@ -73,7 +91,7 @@ private:
     // whether the tile is being read or waits to be collected. caller holds the lock
     bool underway( request const &Tile ) const;
 
-    heightfield::reader m_reader;
+    quantizedmesh::reader m_reader;
     std::thread m_thread;
     mutable std::mutex m_mutex;
     std::condition_variable m_wake;

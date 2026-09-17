@@ -15,7 +15,7 @@ module;
 #include <thread>
 #include <utility>
 #include <vector>
-#include "scene/heightfieldreader.h"
+#include "scene/quantizedmeshreader.h"
 
 module eu07.rendering.terraintileloader;
 
@@ -120,7 +120,36 @@ terrain_tile_loader::work() {
         // wish list while a tile is being decoded
         payload result;
         result.tile = tile;
-        result.valid = m_reader.read_level( tile.x, tile.z, tile.level, result.heights, result.materials );
+        
+        quantizedmesh::reader::tile_data data;
+        result.valid = m_reader.read_tile( tile.x, tile.z, tile.level, data );
+        
+        if( result.valid ) {
+            // Copy data to payload
+            result.positions_x = std::move( data.positions_x );
+            result.positions_y = std::move( data.positions_y );
+            result.positions_z = std::move( data.positions_z );
+            result.uvs_u = std::move( data.uvs_u );
+            result.uvs_v = std::move( data.uvs_v );
+            result.materials = std::move( data.materials );
+            result.indices = std::move( data.indices );
+            
+            result.north_edge = std::move( data.north_edge );
+            result.south_edge = std::move( data.south_edge );
+            result.west_edge = std::move( data.west_edge );
+            result.east_edge = std::move( data.east_edge );
+            
+            result.center_x = data.center_x;
+            result.center_y = data.center_y;
+            result.center_z = data.center_z;
+            result.min_x = data.min_x;
+            result.min_y = data.min_y;
+            result.min_z = data.min_z;
+            result.max_x = data.max_x;
+            result.max_y = data.max_y;
+            result.max_z = data.max_z;
+            result.geometric_error = data.geometric_error;
+        }
 
         std::lock_guard<std::mutex> lock( m_mutex );
         m_running.reset();
