@@ -393,7 +393,7 @@ terrain_clipmap::render( glm::dvec3 const &Viewpoint, visibility const &Visible 
         m_instances[ tile.level ].insert(
             m_instances[ tile.level ].end(),
             { static_cast<float>( tile.x * tilesize - Viewpoint.x ),
-              static_cast<float>( -Viewpoint.y ) - m_depthbias,
+              static_cast<float>( -Viewpoint.y ),
               static_cast<float>( tile.z * tilesize - Viewpoint.z ),
               static_cast<float>( tile.slot ),
               static_cast<float>( tile.x * tilesize ),
@@ -403,6 +403,9 @@ terrain_clipmap::render( glm::dvec3 const &Viewpoint, visibility const &Visible 
 
     m_shader->bind();
     m_vao->bind();
+    // the depth buffer is reversed - nearer is greater - so pushing back is a negative offset
+    ::glEnable( GL_POLYGON_OFFSET_FILL );
+    ::glPolygonOffset( -1.f - 2.f * static_cast<float>( m_depthrank ), -2.f - 4.f * static_cast<float>( m_depthrank ) );
 
     ::glUniform1f( m_uniforms.heightbias, m_reader.height( 0 ) );
     ::glUniform1f( m_uniforms.heightscale, m_reader.height( 1 ) - m_reader.height( 0 ) );
@@ -462,6 +465,7 @@ terrain_clipmap::render( glm::dvec3 const &Viewpoint, visibility const &Visible 
     }
     m_stats.drawn = drawn;
 
+    ::glDisable( GL_POLYGON_OFFSET_FILL );
     gl::buffer::unbind( gl::buffer::TEXTURE_BUFFER );
     ::glActiveTexture( GL_TEXTURE0 );
     opengl_texture::reset_unit_cache();

@@ -2885,11 +2885,9 @@ void opengl33_renderer::Render_terrain()
 		          [](auto const &Left, auto const &Right) { return Left->gridstep() < Right->gridstep(); });
 		for (std::size_t index = 0; index < m_terrain.size(); ++index)
 		{
-			// every field sits a little under the triangles, so where a baked heightfield and
-			// the geometry it was baked from are both drawn, the geometry is what shows. a
-			// coarser field is sunk further still, far enough that rounding cannot let it
-			// through, and little enough to be invisible at the spacing it is drawn at
-			m_terrain[index]->depthbias(index == 0 ? 0.02f : 0.1f);
+			// every field loses the depth test to geometry lying on it, and a coarser field
+			// to a finer one
+			m_terrain[index]->depthrank(static_cast<unsigned>(index));
 		}
 	}
 

@@ -38,7 +38,9 @@ inline constexpr std::uint32_t version { 5 };
 //   2 - every triangle as drawn; a triangle stays drawn unless the heightfield shows it, and a
 //       triangle bordering a hole always stays drawn
 //   3 - as 2, with a hole checked for diagonally and at the coarser levels too
-inline constexpr std::uint32_t selection_rules { 3 };
+//   4 - the heightfield holds only the triangles it shows, and their supports
+//   5 - no triangle refused for its size; each goes to a field with a step suited to it
+inline constexpr std::uint32_t selection_rules { 5 };
 
 // height value reserved to mean "this sample carries no terrain"; a cooked map is a
 // ribbon inside a much larger rectangle, so most edge tiles are partly empty

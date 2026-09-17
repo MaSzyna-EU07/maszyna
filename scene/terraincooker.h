@@ -112,12 +112,14 @@ public:
     static constexpr std::uint32_t tilestride { heightfield::samples_at_level( tilesamples, 0 ) };
     // mip chain down to a 5 sample side, which is where a tile stops being worth its entry
     static constexpr std::uint32_t miplevels { heightfield::level_count( tilesamples, 5 ) };
-    // triangles larger than this are not terrain: the water plane spans the whole map
-    static constexpr double maxedge { 200.0 };
     // two surfaces closer than this are the same ground, one laid over the other, rather
     // than a deck carried above it. a kerb or a slab stands centimetres proud; a viaduct
     // stands metres
     static constexpr double surfaceepsilon { 0.5 };
+
+    // whether nothing has been laid, so there is nothing to write
+    bool
+        empty() const { return m_tiles.empty(); }
 
     // stop printing the cooking report. the tool wants the tables; the engine, baking on
     // a first run, wants one line in its own log instead
@@ -144,23 +146,19 @@ public:
                     m_triangleclaimed.resize( size, 0u );
                     m_trianglekept.resize( size, 0u );
                     m_trianglerejected.resize( size, 0u );
+                    m_trianglelaid.resize( size, 0u );
                 }
+                m_trianglelaid[ Triangle ] = 1u;
             }
 
             vertex const points[ 3 ] { A, B, C };
 
-            for( auto index { 0u }; index < 3u; ++index ) {
-                if( planar_length( points[ index ], points[ ( index + 1 ) % 3 ] ) > maxedge ) {
-                    ++m_oversized;
-                    reject();
-                    return;
-                }
-            }
-
-            // barycentric setup in the horizontal plane; a triangle standing on its edge
-            // covers no samples and would divide by zero
+            // barycentric setup in the horizontal plane. a triangle standing on its edge covers
+            // no samples and would divide by zero; it is a wall, a tree or a fence, never ground,
+            // and it is the only kind of triangle refused outright - a long one is laid like any
+            // other, however large
             auto const area { ( B.x - A.x ) * ( C.z - A.z ) - ( C.x - A.x ) * ( B.z - A.z ) };
-            if( std::abs( area ) < 1e-9 ) { ++m_degenerate; reject(); return; }
+            if( std::abs( area ) < 1e-9 ) { ++m_degenerate; reject( refusal::upright ); return; }
             auto const inversearea { 1.0 / area };
             // a palette slot is taken only by a material that reaches this far, so triangles
             // standing on their edge do not fill the palette
@@ -207,8 +205,9 @@ public:
         }
 
     // whether the heightfield shows this triangle well enough for it not to be drawn on its
-    // own: it was laid at all, it reached at least one sample, and it still holds nearly
-    // every sample it wanted once everything else has been laid. valid after finish()
+    // own: it was laid at all, it reached at least one sample, it still holds nearly every
+    // sample it wanted once everything else has been laid, and the ground around it is drawn.
+    // valid after settle()
     bool
         represented( std::uint32_t const Triangle ) const {
             if( Triangle >= m_triangleclaimed.size() ) { return false; }
@@ -217,12 +216,51 @@ public:
             if( claimed == 0 ) { return false; }
             return static_cast<double>( m_trianglekept[ Triangle ] ) >= representedshare * static_cast<double>( claimed ); }
 
+    // marks in Support every triangle that owns a corner sample of a cell around a sample of a
+    // represented triangle. those samples have to stay in the heightfield for the represented
+    // triangles to be drawn whole, even though their own triangles are drawn as geometry.
+    // valid after settle()
     void
-        finish( std::filesystem::path const &Path, std::filesystem::path const &Previewpath ) {
+        mark_support( std::vector<std::uint8_t> &Support ) const {
+            for( auto const & [ key, entry ] : m_tiles ) {
+                for( std::uint32_t row = 0; row < tilesamples; ++row ) {
+                    for( std::uint32_t column = 0; column < tilesamples; ++column ) {
+                        auto const owner { entry.owner[ row * tilestride + column ] };
+                        if( false == represented( owner ) ) { continue; }
+                        auto const globalcolumn { static_cast<std::int64_t>( entry.x ) * tilesamples + column };
+                        auto const globalrow { static_cast<std::int64_t>( entry.z ) * tilesamples + row };
+                        for_each_corner( globalcolumn, globalrow, [ & ]( std::int64_t const Cornercolumn, std::int64_t const Cornerrow ) {
+                            auto const corner { owner_at( Cornercolumn, Cornerrow ) };
+                            if( corner < Support.size() ) { Support[ corner ] = 1u; } } );
+                    }
+                }
+            } }
 
-            if( true == m_tiles.empty() ) {
-                report( "   nothing to cook\n" );
-                return; }
+    // why the triangles the heightfield does not show are not shown, counted by settle()
+    struct refusals {
+        std::size_t upright { 0 };    // standing on its edge: a wall, a tree, a fence
+        std::size_t unreached { 0 };  // smaller than the gap between samples
+        std::size_t outvoted { 0 };   // lost too many samples to other surfaces
+        std::size_t bordering { 0 };  // next to ground the heightfield does not draw
+    };
+    refusals const &refused() const { return m_refused; }
+    // why one laid triangle is not shown: it counts one in the member of Refusals naming the
+    // reason, or in none of them when it is shown. valid after settle()
+    void
+        refusal_of( std::uint32_t const Triangle, refusals &Refusals ) const {
+            if( ( Triangle >= m_trianglelaid.size() ) || ( m_trianglelaid[ Triangle ] == 0 ) ) { return; }
+            auto const reason { m_trianglerejected[ Triangle ] };
+            if( reason == refusal::upright ) { ++Refusals.upright; }
+            else if( m_triangleclaimed[ Triangle ] == 0 ) { ++Refusals.unreached; }
+            else if( static_cast<double>( m_trianglekept[ Triangle ] ) < representedshare * static_cast<double>( m_triangleclaimed[ Triangle ] ) ) { ++Refusals.outvoted; }
+            else if( reason == refusal::bordering ) { ++Refusals.bordering; } }
+
+    // works out, once every triangle has been laid, which of them the heightfield shows
+    void
+        settle() {
+
+            if( true == m_settled ) { return; }
+            m_settled = true;
 
             // every sample counted once, in the tile that owns it rather than in the
             // neighbours carrying a copy of the shared edge
@@ -239,11 +277,29 @@ public:
                         auto const globalrow { static_cast<std::int64_t>( entry.z ) * tilesamples + row };
                         if( m_trianglerejected[ owner ] != 0 ) { continue; }
                         if( false == drawn_around( globalcolumn, globalrow ) ) {
-                            m_trianglerejected[ owner ] = 1u;
+                            m_trianglerejected[ owner ] = refusal::bordering;
                         }
                     }
                 }
             }
+
+            // a caller spreading its triangles over several cookers numbers them across all of
+            // them; only the ones laid here are counted, which refusal_of sees to
+            m_refused = {};
+            for( std::size_t triangle = 0; triangle < m_triangleclaimed.size(); ++triangle ) {
+                refusal_of( static_cast<std::uint32_t>( triangle ), m_refused );
+            }
+        }
+
+    // writes the heightfield, and a greyscale preview of it when a path for one is given
+    void
+        finish( std::filesystem::path const &Path, std::filesystem::path const &Previewpath ) {
+
+            if( true == m_tiles.empty() ) {
+                report( "   nothing to cook\n" );
+                return; }
+
+            settle();
 
             auto const scale { std::max( 1.0, m_maxheight - m_minheight ) / heightfield::heightrange };
 
@@ -579,8 +635,7 @@ private:
                     m_materials[ index ].c_str(), material_scale( index ), 100.0 * scale_spread( index ),
                     ( index < m_scalecounts.size() ) && ( m_scalecounts[ index ] > 0 ) ? "" : "  (assumed)" );
             }
-            report( "   oversized skipped    %12zu  (edges over %.0f m, the water plane)\n", m_oversized, maxedge );
-            report( "   degenerate skipped   %12zu\n", m_degenerate );
+            report( "   upright skipped      %12zu  (standing on an edge: walls, trees, fences)\n", m_degenerate );
             report( "   stacked samples      %12zu  (surfaces more than %.2f m apart)\n", m_stacked, conflictepsilon );
             if( true == m_compress ) {
                 report( "   payload              %12.1f MB from %.1f MB  (%.2fx, zstd level %d)\n",
@@ -687,7 +742,7 @@ private:
         std::size_t operator()( std::string_view const Name ) const { return std::hash<std::string_view>{}( Name ); } };
     std::unordered_map<std::string, std::uint8_t, name_hash, std::equal_to<>> m_materialindex;
     double m_minheight { 1e30 }, m_maxheight { -1e30 };
-    std::size_t m_covered { 0 }, m_stacked { 0 }, m_oversized { 0 }, m_degenerate { 0 };
+    std::size_t m_covered { 0 }, m_stacked { 0 }, m_degenerate { 0 };
     std::size_t m_materialoverflow { 0 };
 
     // whether the sample at a grid position carries ground, wherever it is stored. the last
@@ -713,6 +768,16 @@ private:
     // hole further out. corners are checked on every cell touching the sample, diagonals too
     bool
         drawn_around( std::int64_t const Column, std::int64_t const Row ) const {
+            auto drawn { true };
+            for_each_corner( Column, Row, [ & ]( std::int64_t const Cornercolumn, std::int64_t const Cornerrow ) {
+                if( false == covered_at( Cornercolumn, Cornerrow ) ) { drawn = false; } } );
+            return drawn; }
+
+    // calls Visit with every sample that is a corner of a cell touching the given sample, at
+    // every level a triangle node of the terrain is likely to be seen at
+    template <typename Visit_>
+    void
+        for_each_corner( std::int64_t const Column, std::int64_t const Row, Visit_ &&Visit ) const {
             for( std::uint32_t level = 0; level < checkedlevels; ++level ) {
                 auto const stride { static_cast<std::int64_t>( 1 ) << level };
                 auto const basecolumn { heightfield::floor_div( Column, stride ) * stride };
@@ -722,15 +787,32 @@ private:
                 auto const firstrow { baserow == Row ? baserow - stride : baserow };
                 for( auto row { firstrow }; row <= baserow + stride; row += stride ) {
                     for( auto column { firstcolumn }; column <= basecolumn + stride; column += stride ) {
-                        if( false == covered_at( column, row ) ) { return false; }
+                        Visit( column, row );
                     }
                 }
-            }
-            return true; }
+            } }
+
+    // the triangle a sample came from, or notriangle
+    std::uint32_t
+        owner_at( std::int64_t const Column, std::int64_t const Row ) const {
+            auto const tilex { static_cast<std::int32_t>( heightfield::floor_div( Column, tilesamples ) ) };
+            auto const tilez { static_cast<std::int32_t>( heightfield::floor_div( Row, tilesamples ) ) };
+            auto const lookup { m_tiles.find( heightfield::tile_key( tilex, tilez ) ) };
+            if( lookup == m_tiles.end() ) { return notriangle; }
+            auto const column { static_cast<std::size_t>( Column - static_cast<std::int64_t>( tilex ) * tilesamples ) };
+            auto const row { static_cast<std::size_t>( Row - static_cast<std::int64_t>( tilez ) * tilesamples ) };
+            return lookup->second.owner[ row * tilestride + column ]; }
+
+    // why a triangle was refused, as held per triangle
+    enum refusal : std::uint8_t {
+        accepted = 0,
+        upright = 1,
+        bordering = 2
+    };
 
     void
-        reject() {
-            if( m_current != notriangle ) { m_trianglerejected[ m_current ] = 1u; } }
+        reject( refusal const Reason ) {
+            if( m_current != notriangle ) { m_trianglerejected[ m_current ] = Reason; } }
 
     // levels up to 2048 m, the farthest a triangle node of the terrain is normally drawn
     static constexpr std::uint32_t checkedlevels { 3 };
@@ -743,8 +825,11 @@ private:
     static constexpr double representedshare { 0.9 };
 
     std::uint32_t m_current { notriangle };
+    bool m_settled { false };
+    refusals m_refused;
     std::vector<std::uint32_t> m_triangleclaimed, m_trianglekept;
     std::vector<std::uint8_t> m_trianglerejected;
+    std::vector<std::uint8_t> m_trianglelaid;
     std::vector<std::size_t> m_materialclaimed, m_materialmissed;
     struct place { double x { 0.0 }, z { 0.0 }; bool seen { false }; };
     std::vector<place> m_materialwhere;

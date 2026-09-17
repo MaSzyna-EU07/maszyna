@@ -88,9 +88,10 @@ public:
     // metres between samples at the finest level; a scenery's fields are drawn from the
     // finest to the coarsest so that the depth test keeps the better surface
     float gridstep() const { return m_reader.gridstep(); }
-    // sinks this field by the given amount, so a coarse field cannot win fragments from
-    // a finer one describing the same ground
-    void depthbias( float const Metres ) { m_depthbias = Metres; }
+    // pushes this field back in depth by the given rank, so that geometry lying on it wins the
+    // depth test, and a coarser field loses to a finer one describing the same ground. the
+    // offset is in depth, scaled by slope, so it holds at any distance and on any incline
+    void depthrank( unsigned const Rank ) { m_depthrank = Rank; }
 
     terrain_statistics const &stats() const { return m_stats; }
     std::string const &path() const { return m_path; }
@@ -173,7 +174,7 @@ private:
     std::size_t m_reportedresidency { 0 };
     bool m_reported { false };
     float m_range { 6000.f };
-    float m_depthbias { 0.f };
+    unsigned m_depthrank { 0 };
     // tiles allowed to stay resident; at 129 samples a tile costs about 50 kB of texture
     std::size_t m_budget { 2048 };
     // tiles put on the gpu per frame. a tile is about 50 kB of texture, so this is not about
