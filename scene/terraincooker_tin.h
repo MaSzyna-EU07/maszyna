@@ -26,11 +26,9 @@ http://mozilla.org/MPL/2.0/.
 #include <CDT.h>
 
 #include "scene/quantizedmeshformat.h"
+#include "scene/terraincooker.h"  // For terrain::vertex definition
 
 namespace terrain {
-
-// Forward declarations from terraincooker.h
-struct vertex;
 
 // Triangle with material
 struct tin_triangle {

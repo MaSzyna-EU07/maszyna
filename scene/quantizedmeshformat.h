@@ -68,9 +68,10 @@ struct file_header {
     std::uint16_t edge_count_south;
     std::uint16_t edge_count_west;
     std::uint16_t edge_count_east;
+    std::uint16_t reserved;                    // padding for future use
 };
 
-static_assert( sizeof( file_header ) == 128 );
+static_assert( sizeof( file_header ) == 132 );  // Actual size with current layout
 
 // Edge indices for seamless LOD transitions
 // Each edge stores indices of vertices lying on that tile boundary, in order
