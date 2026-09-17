@@ -1807,25 +1807,35 @@ void TController::TableSort() {
         // we skip last slot and no point in checking if there's only one other entry
         return;
     }
-    TSpeedPos sp_temp = TSpeedPos(); // uzywany do przenoszenia
-    for( int i = 0; i < iLast - 1; ++i ) {
-        // pętla tylko do dwóch pozycji od końca bo ostatniej nie modyfikujemy
-        if (sSpeedTable[i].fDist > sSpeedTable[i + 1].fDist)
-        { // jesli pozycja wcześniejsza jest dalej to źle
-            sp_temp = sSpeedTable[i + 1];
-            sSpeedTable[i + 1] = sSpeedTable[i]; // zamiana
-            sSpeedTable[i] = sp_temp;
-            // jeszcze sprawdzenie czy pozycja nie była indeksowana dla eventów
-            if (SemNextIndex == i)
-                ++SemNextIndex;
-            else if (SemNextIndex == i + 1)
-                --SemNextIndex;
-            if (SemNextStopIndex == i)
-                ++SemNextStopIndex;
-            else if (SemNextStopIndex == i + 1)
-                --SemNextStopIndex;
-        }
-    }
+    // the last slot holds the track the scan stopped at and stays where it is.
+    // a single bubble pass is not enough: TableTraceRoute() adds the events of a track before the
+    // track itself, so a track with k scanned events lands k places too far and needs k passes
+    auto const sortedcount { static_cast<std::size_t>( iLast ) };
+    auto const inrange = [&]( std::size_t const Index ) {
+        return Index < sortedcount; };
+    // the placements point at semaphor entries; remember which ones, the sort moves them around
+    auto const *semnextevent { inrange( SemNextIndex ) ? sSpeedTable[ SemNextIndex ].evEvent : nullptr };
+    auto const *semnextstopevent { inrange( SemNextStopIndex ) ? sSpeedTable[ SemNextStopIndex ].evEvent : nullptr };
+
+    std::stable_sort(
+        std::begin( sSpeedTable ), std::begin( sSpeedTable ) + sortedcount,
+        []( TSpeedPos const &Left, TSpeedPos const &Right ) {
+            return Left.fDist < Right.fDist; } );
+
+    auto const relocate = [&]( basic_event const *Event, std::size_t &Index ) {
+        if( Event == nullptr ) { return; }
+        auto const lookup {
+            std::find_if(
+                std::begin( sSpeedTable ), std::begin( sSpeedTable ) + sortedcount,
+                [Event]( TSpeedPos const &Point ) {
+                    return Point.evEvent == Event; } ) };
+        Index = (
+            lookup != std::begin( sSpeedTable ) + sortedcount ?
+                static_cast<std::size_t>( std::distance( std::begin( sSpeedTable ), lookup ) ) :
+                std::size_t( -1 ) );
+    };
+    relocate( semnextevent, SemNextIndex );
+    relocate( semnextstopevent, SemNextStopIndex );
 }
 
 //---------------------------------------------------------------------------
