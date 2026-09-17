@@ -133,7 +133,7 @@ struct global_settings {
 	float ShakingMultiplierRL {1.f}; // mnożnik bujania kamera lewo/prawo
 	float ShakingMultiplierUD {1.f}; // mnożnik bujania kamera gora/dol
     float fDistanceFactor{ 1.f }; // baza do przeliczania odległości dla LoD
-    float targetfps{ 60.0f };
+    float targetfps{ 0.0f };
     bool bFullScreen{ false };
     bool VSync{ false };
     bool bWireFrame{ false };
@@ -224,8 +224,7 @@ struct global_settings {
         {"train", &uart_conf.trainenable},
         {"local", &uart_conf.localenable},
         {"radiovolume", &uart_conf.radiovolumeenable},
-        {"radiochannel", &uart_conf.radiochannelenable},
-        {"dynamicbrake", &uart_conf.dynamicenable},
+        {"radiochannel", &uart_conf.radiochannelenable}
     };
 #endif
 #ifdef WITH_ZMQ
@@ -247,6 +246,35 @@ struct global_settings {
 	bool gui_defaultwindows = true;
 	bool gui_showtranscripts = true;
     bool gui_trainingdefault = false;
+
+    // HUD overlay layout; stored in the HUD's own config file (hud.ini), separate from eu07.ini
+    struct hud_config {
+        bool enabled { true };
+        int mode { 0 };              // HUD display mode: 0=Standard 1=Custom 2=Off
+        bool mode_saved { false };   // internal: whether the user has selected a mode yet (ini)
+        bool panel { true };         // main panel group switch (Custom mode only)
+        bool strip { true };         // top signal strip group switch (Custom mode only)
+        bool speed_panel { true };   // speed panel group switch (Custom mode only)
+        std::string custom_items;    // csv of enabled item ids in Custom mode (empty = all on)
+        // split speed panel (speed/direction/grade), free position (default -1 = auto below)
+        int speed_x { -1 };
+        int speed_y { -1 };
+        // bottom-right main panel
+        int panel_width { 258 };
+        int margin { 16 };             // distance from screen right/bottom edges
+        float speed_size { 110.0f };   // big speed digits size
+        int panel_x { -1 };            // free-position override; -1 = corner anchored
+        int panel_y { -1 };
+        // top signal strip
+        int sig_width { 320 };
+        int sig_height { 66 };
+        int sig_top { 6 };                 // distance from screen top
+        float sig_text_left { 170.0f };    // right-hand info text column
+        float sig_text_top { 16.0f };
+        int sig_x { -1 };              // free-position override; -1 = top-centred
+        int sig_y { -1 };
+    };
+    hud_config gui_hud;
 
 	std::string extcam_cmd;
 	std::string extcam_rec;
