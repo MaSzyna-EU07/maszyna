@@ -486,13 +486,29 @@ void protocol_session::handle_hello( decoded_packet const &Packet )
 		return;
 	}
 
-	// a fresh hello always starts a new session, invalidating whatever the previous one held
-	m_handles.clear();
-	m_handlelookup.clear();
-	m_subscriptions.clear();
-	m_controlsequence.clear();
-	m_transactions.clear();
-	m_transactionorder.clear();
+	// a hello retry has to be idempotent. a device which didn't hear the welcome repeats its
+	// greeting, and minting a fresh session for every repeat leaves both ends chasing each
+	// other's session ids: the device answers with the id it was given, the simulator has
+	// already moved on and rejects it, the device restarts the handshake, forever. the same
+	// greeting arriving on a session which hasn't been used yet is answered with that session
+	bool const rehandshake = (
+	    ( m_sessionid != 0 )
+	 && ( m_state == session_state::established )
+	 && ( true == m_handles.empty() )
+	 && ( name == m_devicename )
+	 && ( role == m_devicerole )
+	 && ( deviceid == m_deviceid ) );
+
+	if( false == rehandshake )
+	{
+		// a genuinely new session invalidates whatever the previous one held
+		m_handles.clear();
+		m_handlelookup.clear();
+		m_subscriptions.clear();
+		m_controlsequence.clear();
+		m_transactions.clear();
+		m_transactionorder.clear();
+	}
 
 	m_peermajor = major;
 	m_peerminor = minor;
@@ -506,7 +522,14 @@ void protocol_session::handle_hello( decoded_packet const &Packet )
 	auto const requested = ( framesize > 0 ? static_cast<std::size_t>( framesize ) : protocol_frame_size_default );
 	m_framesize = std::clamp<std::size_t>( std::min( requested, m_config.frame_size ), protocol_frame_size_min, protocol_frame_size_max );
 
-	m_sessionid = generate_session_id();
+	if( false == rehandshake )
+	{
+		m_sessionid = generate_session_id();
+	}
+	else
+	{
+		++m_diagnostics.handshakes;
+	}
 	m_state = session_state::established;
 	m_heartbeattimer = 0.0;
 	m_pingtimer = 0.0;
@@ -522,7 +545,15 @@ void protocol_session::handle_hello( decoded_packet const &Packet )
 	writer.write_string( Global.asVersion );
 	send( message_type::welcome, packetflag_response, writer );
 
-	WriteLog( "hardware: session " + std::to_string( m_sessionid ) + " established with '" + m_devicename + "' (" + m_devicerole + ")" );
+	if( false == rehandshake )
+	{
+		WriteLog( "hardware: session " + std::to_string( m_sessionid ) + " established with '" + m_devicename + "' (" + m_devicerole + ")" );
+	}
+	else if( true == debug_flags.log_messages )
+	{
+		// repeated greetings say the welcome isn't getting through; the panel counts them
+		WriteLog( "hardware: device '" + m_devicename + "' repeated its greeting, session " + std::to_string( m_sessionid ) + " kept" );
+	}
 }
 
 void protocol_session::handle_heartbeat( decoded_packet const &Packet )

@@ -65,6 +65,8 @@ struct protocol_diagnostics
 	std::uint64_t acks = 0;
 	std::uint64_t nacks = 0;
 	std::uint64_t rate_limited = 0;
+	// powitania powtorzone przez urzadzenie, ktore nie uslyszalo WELCOME
+	std::uint64_t handshakes = 0;
 	std::uint64_t state_updates = 0;
 	std::uint64_t commands_executed = 0;
 	std::uint64_t controls_applied = 0;

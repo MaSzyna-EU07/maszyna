@@ -1393,7 +1393,8 @@ debug_panel::update_section_hardware( std::vector<text_line> &Output ) {
             + "  symbol " + std::to_string( protocol.unknown_symbols )
             + "  handle " + std::to_string( protocol.unknown_handles )
             + "  duplicates " + std::to_string( protocol.duplicate_commands )
-            + "  rate limited " + std::to_string( protocol.rate_limited );
+            + "  rate limited " + std::to_string( protocol.rate_limited )
+            + "  handshakes " + std::to_string( protocol.handshakes );
 
         textline +=
             "\nack " + std::to_string( protocol.acks )
