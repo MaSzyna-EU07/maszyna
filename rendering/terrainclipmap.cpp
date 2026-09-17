@@ -22,37 +22,13 @@ module;
 #include "glad/glad.h"
 
 #include "scene/heightfieldformat.h"
-#include "global_include/interfaces/ITexture_macros.h"
 #include "scene/heightfieldreader.h"
 
 module eu07.rendering.terrainclipmap;
 import eu07.glm;
 import eu07.utilities.logs;
-import eu07.rendering.renderer;
-import eu07.model.material;
+import eu07.model.texture;
 
-namespace {
-
-
-// NOTE: glTexImage2D rather than glTexStorage2D. Immutable storage arrives with OpenGL
-// 4.2 and this renderer holds a 3.3 context, where the entry point is simply not there -
-// calling it jumps through a null pointer instead of failing in any visible way
-GLuint
-create_texture( GLenum const Internalformat, GLenum const Type, GLsizei const Side, void const *Data ) {
-
-    GLuint texture { 0 };
-    ::glGenTextures( 1, &texture );
-    ::glBindTexture( GL_TEXTURE_2D, texture );
-    // integer samples carry the cooker's values, no-data included, so nothing may filter them
-    ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
-    ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
-    ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
-    ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
-    ::glTexImage2D( GL_TEXTURE_2D, 0, Internalformat, Side, Side, 0, GL_RED_INTEGER, Type, Data );
-    return texture;
-}
-
-} // namespace
 
 terrain_clipmap::~terrain_clipmap() {
     close();
@@ -72,8 +48,6 @@ terrain_clipmap::open( std::string const &Path ) {
 
     m_path = Path;
     build_indices();
-    build_palette();
-    resolve_materials();
 
     try {
         gl::shader vertex( "terrainclipmap.vert" );
@@ -85,6 +59,18 @@ terrain_clipmap::open( std::string const &Path ) {
         close();
         return false;
     }
+    if( false == m_ground.create( m_reader.materials(), m_reader.material_scales() ) ) {
+        close();
+        return false;
+    }
+
+    for( std::uint32_t level = 0; level < m_reader.levels(); ++level ) {
+        m_pools.emplace_back( std::make_unique<terrain_tile_pool>( m_reader.samples_per_side( level ) ) );
+    }
+    m_instances.resize( m_reader.levels() );
+    m_instancebuffer.emplace();
+    ::glGenTextures( 1, &m_instancetexture );
+    opengl_texture::reset_unit_cache();
 
     m_vao.emplace();
     resolve_uniforms();
@@ -98,28 +84,23 @@ terrain_clipmap::open( std::string const &Path ) {
     return true;
 }
 
-// uniform locations do not change once the program is linked, so they are looked up
-// here rather than per tile per frame
+// uniform locations do not change once the program is linked, so they are looked up here
+// rather than per draw
 void
 terrain_clipmap::resolve_uniforms() {
 
     auto const program { static_cast<GLuint>( *m_shader ) };
-    m_uniforms.tileorigin = ::glGetUniformLocation( program, "tileorigin" );
     m_uniforms.samplestep = ::glGetUniformLocation( program, "samplestep" );
+    m_uniforms.side = ::glGetUniformLocation( program, "side" );
+    m_uniforms.morph = ::glGetUniformLocation( program, "morph" );
     m_uniforms.heightbias = ::glGetUniformLocation( program, "heightbias" );
     m_uniforms.heightscale = ::glGetUniformLocation( program, "heightscale" );
     m_uniforms.nodata = ::glGetUniformLocation( program, "nodata" );
-    m_uniforms.side = ::glGetUniformLocation( program, "side" );
-    m_uniforms.morph = ::glGetUniformLocation( program, "morph" );
     m_uniforms.heights = ::glGetUniformLocation( program, "heights" );
     m_uniforms.materials = ::glGetUniformLocation( program, "materials" );
-    m_uniforms.palette = ::glGetUniformLocation( program, "palette" );
-    m_uniforms.groundtexture = ::glGetUniformLocation( program, "ground" );
-    m_uniforms.groundscale = ::glGetUniformLocation( program, "groundscale" );
-    m_uniforms.drawnmaterial = ::glGetUniformLocation( program, "drawnmaterial" );
-    m_uniforms.tileworld = ::glGetUniformLocation( program, "tileworld" );
-    m_uniforms.hastexture = ::glGetUniformLocation( program, "hastexture" );
-    m_uniforms.fallback = ::glGetUniformLocation( program, "fallback" );
+    m_uniforms.instances = ::glGetUniformLocation( program, "instances" );
+    m_uniforms.ground = ::glGetUniformLocation( program, "ground" );
+    m_uniforms.materialtable = ::glGetUniformLocation( program, "materialtable" );
 }
 
 void
@@ -132,13 +113,16 @@ terrain_clipmap::close() {
     m_inrange.clear();
     m_wantedlevel.clear();
     m_scanrange = -1.f;
-    for( auto & [ tilekey, tile ] : m_tiles ) { retire( tile ); }
     m_tiles.clear();
+    m_pools.clear();
     m_indices.clear();
     m_indexcounts.clear();
+    m_instances.clear();
+    m_instancebuffer.reset();
+    if( m_instancetexture != 0 ) { ::glDeleteTextures( 1, &m_instancetexture ); m_instancetexture = 0; }
+    m_ground.destroy();
     m_vao.reset();
     m_shader.reset();
-    m_palette.clear();
     m_reader.close();
     m_stats = {};
     m_ready = false;
@@ -180,30 +164,6 @@ terrain_clipmap::build_indices() {
     }
 }
 
-// placeholder colours, one per cooked material, so that the shape of the terrain and the
-// division into surfaces can be judged before the real materials are wired in
-void
-terrain_clipmap::build_palette() {
-
-    m_palette.clear();
-    m_palette.reserve( std::max<std::size_t>( 1, m_reader.materials().size() ) );
-    for( std::size_t index = 0; index < m_reader.materials().size(); ++index ) {
-        auto const hue { static_cast<float>( index ) * 0.61803399f };
-        auto const phase { ( hue - std::floor( hue ) ) * 6.f };
-        auto const rising { phase - std::floor( phase ) };
-        glm::vec3 colour { 0.45f, 0.5f, 0.4f };
-        switch( static_cast<int>( phase ) ) {
-            case 0: colour = { 0.55f, 0.45f + 0.2f * rising, 0.3f }; break;
-            case 1: colour = { 0.55f - 0.2f * rising, 0.6f, 0.3f }; break;
-            case 2: colour = { 0.35f, 0.6f, 0.3f + 0.2f * rising }; break;
-            case 3: colour = { 0.35f, 0.6f - 0.15f * rising, 0.5f }; break;
-            case 4: colour = { 0.35f + 0.2f * rising, 0.45f, 0.5f }; break;
-            default: colour = { 0.55f, 0.45f, 0.5f - 0.15f * rising }; break;
-        }
-        m_palette.push_back( colour );
-    }
-    if( true == m_palette.empty() ) { m_palette.push_back( { 0.45f, 0.5f, 0.4f } ); }
-}
 
 std::uint32_t
 terrain_clipmap::level_for( double const Distance ) const {
@@ -217,51 +177,35 @@ void
 terrain_clipmap::upload( terrain_tile_loader::payload const &Tile ) {
 
     auto const tilekey { key( Tile.tile.x, Tile.tile.z ) };
-    auto const side { m_reader.samples_per_side( Tile.tile.level ) };
-
     auto const existing { m_tiles.find( tilekey ) };
     if( existing != m_tiles.end() ) {
-        // a level change means new textures: the sample count differs
+        // a level change moves the tile to another pool
         retire( existing->second );
         m_tiles.erase( existing );
     }
 
+    auto &pool { *m_pools[ Tile.tile.level ] };
     resident_tile tile;
     tile.x = Tile.tile.x;
     tile.z = Tile.tile.z;
     tile.level = Tile.tile.level;
-    tile.side = side;
+    tile.slot = pool.acquire();
     tile.lastused = m_frame;
-    tile.heighttexture = create_texture(
-        GL_R16UI, GL_UNSIGNED_SHORT, static_cast<GLsizei>( side ), Tile.heights.data() );
-    tile.materialtexture = create_texture(
-        GL_R8UI, GL_UNSIGNED_BYTE, static_cast<GLsizei>( side ), Tile.materials.data() );
-
-    // the tile is drawn once per material it contains, so the set is worked out here
-    // rather than rescanned every frame
-    std::array<bool, 256> present {};
-    for( auto const material : Tile.materials ) { present[ material ] = true; }
-    for( std::size_t material = 0; material < present.size(); ++material ) {
-        if( true == present[ material ] ) { tile.materials.push_back( static_cast<std::uint8_t>( material ) ); }
-    }
+    pool.upload( tile.slot, Tile.heights.data(), Tile.materials.data() );
 
     if( auto const *description { m_reader.find( Tile.tile.x, Tile.tile.z ) } ) {
         tile.minheight = description->minheight;
         tile.maxheight = description->maxheight;
     }
 
-    m_stats.texturebytes += static_cast<std::size_t>( side ) * side * 3u;
     ++m_stats.uploaded;
-    m_tiles.emplace( tilekey, std::move( tile ) );
+    m_tiles.emplace( tilekey, tile );
 }
 
 void
-terrain_clipmap::retire( resident_tile &Tile ) {
+terrain_clipmap::retire( resident_tile const &Tile ) {
 
-    if( Tile.heighttexture != 0 ) { ::glDeleteTextures( 1, &Tile.heighttexture ); Tile.heighttexture = 0; }
-    if( Tile.materialtexture != 0 ) { ::glDeleteTextures( 1, &Tile.materialtexture ); Tile.materialtexture = 0; }
-    auto const bytes { static_cast<std::size_t>( Tile.side ) * Tile.side * 3u };
-    m_stats.texturebytes -= std::min( m_stats.texturebytes, bytes );
+    m_pools[ Tile.level ]->release( Tile.slot );
 }
 
 void
@@ -395,50 +339,11 @@ terrain_clipmap::update( glm::dvec3 const &Viewpoint ) {
     }
 
     m_stats.resident = m_tiles.size();
+    m_stats.texturebytes = 0;
+    for( auto const &pool : m_pools ) { m_stats.texturebytes += pool->bytes(); }
     report_residency();
 }
 
-// the cooked material names are the ones the scenery used, so the engine resolves them
-// exactly as it does for any other geometry. only the diffuse texture is taken: the
-// terrain has its own shader and none of the rest of a material applies to it
-void
-terrain_clipmap::resolve_materials() {
-
-    m_materials.clear();
-    auto const &names { m_reader.materials() };
-    auto const &scales { m_reader.material_scales() };
-    m_materials.reserve( names.size() );
-
-    std::size_t resolved { 0 };
-    std::string unresolved;
-    for( std::size_t index = 0; index < names.size(); ++index ) {
-
-        material_binding binding;
-        binding.scale = ( index < scales.size() ? scales[ index ] : 4.f );
-        if( binding.scale < 0.01f ) { binding.scale = 4.f; }
-
-        auto const material { GfxRenderer->Fetch_Material( names[ index ] ) };
-        if( material != null_handle ) {
-            binding.texture = GfxRenderer->Material( material )->GetTexture( 0 );
-        }
-        if( binding.texture != null_handle ) {
-            ++resolved;
-        }
-        else {
-            // drawn in its placeholder colour instead, so a missing texture shows up as
-            // an obvious flat patch rather than as black ground
-            unresolved += ( unresolved.empty() ? "" : ", " ) + names[ index ];
-        }
-        m_materials.push_back( binding );
-    }
-
-    WriteLog(
-        "Terrain: " + std::to_string( resolved ) + " of " + std::to_string( names.size() )
-        + " materials resolved to textures" );
-    if( false == unresolved.empty() ) {
-        WriteLog( "Terrain: no texture for " + unresolved );
-    }
-}
 
 // residency settles within a second of the camera stopping and then barely moves, so a
 // line is written when it shifts by a noticeable amount rather than every frame. that
@@ -457,14 +362,44 @@ terrain_clipmap::report_residency() {
     WriteLog(
         "Terrain: " + std::to_string( m_stats.resident ) + " tiles resident, "
         + std::to_string( m_stats.texturebytes / 1048576 ) + " MB of samples, "
-        + std::to_string( m_stats.uploaded ) + " uploads so far, finest level out to "
+        + std::to_string( m_stats.uploaded ) + " uploads so far, "
+        + std::to_string( m_stats.drawn ) + " of " + std::to_string( m_stats.inview ) + " in range drawn, finest level out to "
         + std::to_string( static_cast<int>( m_finest ) ) + " m" );
 }
 
 void
-terrain_clipmap::render( glm::dvec3 const &Viewpoint ) {
+terrain_clipmap::render( glm::dvec3 const &Viewpoint, visibility const &Visible ) {
 
     if( ( false == m_ready ) || ( true == m_tiles.empty() ) ) { return; }
+
+    // textures that finished loading since the last frame go into the ground array first
+    m_ground.update();
+
+    // what each level draws: the tiles touched by the last update, and seen. a tile's bounding
+    // sphere holds the whole tile, morphing included, since morphing only moves vertices
+    // towards samples of the same tile
+    auto const tilesize { static_cast<double>( m_reader.tilesize() ) };
+    for( auto &instances : m_instances ) { instances.clear(); }
+    for( auto const & [ tilekey, tile ] : m_tiles ) {
+        if( tile.lastused != m_frame ) { continue; }
+        auto const halfheight { 0.5 * ( tile.maxheight - tile.minheight ) };
+        glm::dvec3 const centre {
+            ( tile.x + 0.5 ) * tilesize, 0.5 * ( tile.minheight + tile.maxheight ), ( tile.z + 0.5 ) * tilesize };
+        auto const radius {
+            static_cast<float>( std::sqrt( 0.5 * tilesize * tilesize + halfheight * halfheight ) ) };
+        if( false == Visible( centre, radius ) ) { continue; }
+        // relative to the viewpoint, so that the shader never sees a coordinate large enough
+        // for single precision to matter
+        m_instances[ tile.level ].insert(
+            m_instances[ tile.level ].end(),
+            { static_cast<float>( tile.x * tilesize - Viewpoint.x ),
+              static_cast<float>( -Viewpoint.y ) - m_depthbias,
+              static_cast<float>( tile.z * tilesize - Viewpoint.z ),
+              static_cast<float>( tile.slot ),
+              static_cast<float>( tile.x * tilesize ),
+              static_cast<float>( tile.z * tilesize ),
+              0.f, 0.f } );
+    }
 
     m_shader->bind();
     m_vao->bind();
@@ -474,69 +409,62 @@ terrain_clipmap::render( glm::dvec3 const &Viewpoint ) {
     ::glUniform1ui( m_uniforms.nodata, heightfield::nodata );
     ::glUniform1i( m_uniforms.heights, 0 );
     ::glUniform1i( m_uniforms.materials, 1 );
-    ::glUniform1i( m_uniforms.groundtexture, 2 );
-    ::glUniform3fv(
-        m_uniforms.palette, static_cast<GLsizei>( m_palette.size() ), &m_palette.front().x );
+    ::glUniform1i( m_uniforms.ground, 2 );
+    ::glUniform1i( m_uniforms.materialtable, 3 );
+    ::glUniform1i( m_uniforms.instances, 4 );
 
-    auto const tilesize { static_cast<double>( m_reader.tilesize() ) };
+    ::glActiveTexture( GL_TEXTURE2 );
+    ::glBindTexture( GL_TEXTURE_2D_ARRAY, m_ground.textures() );
+    ::glActiveTexture( GL_TEXTURE3 );
+    ::glBindTexture( GL_TEXTURE_2D, m_ground.table() );
+
+    std::size_t drawn { 0 };
     auto const gridstep { m_reader.gridstep() };
+    for( std::uint32_t level = 0; level < m_instances.size(); ++level ) {
 
-    for( auto const & [ tilekey, tile ] : m_tiles ) {
+        auto const &instances { m_instances[ level ] };
+        if( true == instances.empty() ) { continue; }
+        auto const count { instances.size() / 8 };
+        drawn += count;
 
-        if( tile.lastused != m_frame ) { continue; }
+        m_instancebuffer->allocate(
+            gl::buffer::TEXTURE_BUFFER, static_cast<GLsizeiptr>( instances.size() * sizeof( float ) ), GL_STREAM_DRAW );
+        m_instancebuffer->upload(
+            gl::buffer::TEXTURE_BUFFER, instances.data(), 0, static_cast<GLsizeiptr>( instances.size() * sizeof( float ) ) );
+        ::glActiveTexture( GL_TEXTURE4 );
+        ::glBindTexture( GL_TEXTURE_BUFFER, m_instancetexture );
+        ::glTexBuffer( GL_TEXTURE_BUFFER, GL_RGBA32F, static_cast<GLuint>( *m_instancebuffer ) );
 
-        // tile position relative to the viewpoint, so that the shader never sees a
-        // coordinate large enough for single precision to matter
-        glm::vec3 const origin {
-            static_cast<float>( tile.x * tilesize - Viewpoint.x ),
-            static_cast<float>( -Viewpoint.y ) - m_depthbias,
-            static_cast<float>( tile.z * tilesize - Viewpoint.z ) };
-        ::glUniform3fv( m_uniforms.tileorigin, 1, &origin.x );
-        ::glUniform1f( m_uniforms.samplestep, gridstep * static_cast<float>( 1u << tile.level ) );
-        ::glUniform1i( m_uniforms.side, static_cast<GLint>( tile.side ) );
-        // the band over which this level turns into the next. the coarsest level has no
-        // next one, so it never morphs
-        if( tile.level + 1 < m_reader.levels() ) {
+        auto const &pool { *m_pools[ level ] };
+        ::glActiveTexture( GL_TEXTURE0 );
+        ::glBindTexture( GL_TEXTURE_2D_ARRAY, pool.heights() );
+        ::glActiveTexture( GL_TEXTURE1 );
+        ::glBindTexture( GL_TEXTURE_2D_ARRAY, pool.materials() );
+
+        ::glUniform1f( m_uniforms.samplestep, gridstep * static_cast<float>( 1u << level ) );
+        ::glUniform1i( m_uniforms.side, static_cast<GLint>( pool.side() ) );
+        // the band over which this level turns into the next. the coarsest level has no next
+        // one, so its band lies beyond anything that is ever drawn
+        if( level + 1 < m_reader.levels() ) {
             ::glUniform2f(
                 m_uniforms.morph,
-                static_cast<float>( terrain_morph_begin( tile.level, m_finest, tilesize ) ),
-                static_cast<float>( terrain_morph_end( tile.level, m_finest, tilesize ) ) );
+                static_cast<float>( terrain_morph_begin( level, m_finest, tilesize ) ),
+                static_cast<float>( terrain_morph_end( level, m_finest, tilesize ) ) );
         }
         else {
-            // far enough to never be reached, with a band that does not divide by zero
             ::glUniform2f( m_uniforms.morph, 1e30f, 2e30f );
         }
-        ::glUniform2f(
-            m_uniforms.tileworld,
-            static_cast<float>( tile.x * tilesize ), static_cast<float>( tile.z * tilesize ) );
 
-        ::glActiveTexture( GL_TEXTURE0 );
-        ::glBindTexture( GL_TEXTURE_2D, tile.heighttexture );
-        ::glActiveTexture( GL_TEXTURE1 );
-        ::glBindTexture( GL_TEXTURE_2D, tile.materialtexture );
-
-        m_indices[ tile.level ]->bind( gl::buffer::ELEMENT_ARRAY_BUFFER );
-
-        // one pass per material in the tile: each wants a different texture bound, and
-        // a fragment belonging to any other material is dropped
-        for( auto const material : tile.materials ) {
-
-            auto const &binding {
-                material < m_materials.size() ? m_materials[ material ] : material_binding {} };
-            GfxRenderer->Bind_Texture( 2, binding.texture );
-            ::glUniform1f( m_uniforms.groundscale, binding.scale );
-            ::glUniform1ui( m_uniforms.drawnmaterial, material );
-            ::glUniform1i( m_uniforms.hastexture, binding.texture != null_handle ? 1 : 0 );
-            auto const &fallback {
-                m_palette[ std::min<std::size_t>( material, m_palette.size() - 1 ) ] };
-            ::glUniform3fv( m_uniforms.fallback, 1, &fallback.x );
-
-            ::glDrawElements(
-                GL_TRIANGLES, static_cast<GLsizei>( m_indexcounts[ tile.level ] ), GL_UNSIGNED_INT, nullptr );
-        }
+        m_indices[ level ]->bind( gl::buffer::ELEMENT_ARRAY_BUFFER );
+        ::glDrawElementsInstanced(
+            GL_TRIANGLES, static_cast<GLsizei>( m_indexcounts[ level ] ), GL_UNSIGNED_INT, nullptr,
+            static_cast<GLsizei>( count ) );
     }
+    m_stats.drawn = drawn;
 
+    gl::buffer::unbind( gl::buffer::TEXTURE_BUFFER );
     ::glActiveTexture( GL_TEXTURE0 );
+    opengl_texture::reset_unit_cache();
     m_vao->unbind();
     gl::program::bind( 0 );
 }

@@ -1516,7 +1516,8 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) {
                     + ", loaded out to " + to_string( field.range, 0 ) + " m",
                     Global.UITextColor );
                 Output.emplace_back(
-                    "  tiles: " + std::to_string( stats.inview ) + " in view, "
+                    "  tiles: " + std::to_string( stats.inview ) + " in range, "
+                    + std::to_string( stats.drawn ) + " drawn, "
                     + std::to_string( stats.resident ) + " on gpu (" + std::to_string( stats.texturebytes / 1048576 ) + " MB), "
                     + std::to_string( stats.wanted ) + " wanted, " + std::to_string( field.backlog ) + " in loader, "
                     + std::to_string( stats.uploaded ) + " uploaded, " + std::to_string( stats.dropped ) + " dropped stale",

@@ -191,6 +191,8 @@ set(SOURCES
 "application/shotrunner.cpp"
 "rendering/terrainclipmap.cpp"
 "rendering/terraintileloader.cpp"
+"rendering/terraintilepool.cpp"
+"rendering/terrainground.cpp"
 "simulation/loadprofile.cpp"
 "simulation/logiccook.cpp"
 "simulation/terrainbake.cpp"

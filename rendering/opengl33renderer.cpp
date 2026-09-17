@@ -2919,7 +2919,9 @@ void opengl33_renderer::Render_terrain()
 			    Global.TerrainDetail);
 			field->update(viewpoint);
 		}
-		field->render(viewpoint);
+		field->render(viewpoint, [this](glm::dvec3 const &Centre, float const Radius) {
+			return m_renderpass.pass_camera.visible(scene::bounding_area(Centre, Radius));
+		});
 	}
 
 	if (m_current_viewport->main)

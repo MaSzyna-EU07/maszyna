@@ -72,6 +72,7 @@ terrain_morph_begin( std::uint32_t const Level, double const Finest, double cons
 struct terrain_statistics {
     std::size_t resident { 0 };     // tiles holding gl textures
     std::size_t inview { 0 };       // resident tiles within range in the last update
+    std::size_t drawn { 0 };        // of those, the ones inside the frustum in the last draw
     std::size_t wanted { 0 };       // tiles in range missing, or at the wrong level
     std::size_t uploaded { 0 };     // uploads since opening
     std::size_t dropped { 0 };      // arrivals discarded as stale since opening
