@@ -1,4 +1,4 @@
-/*
+﻿/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -11,7 +11,6 @@ http://mozilla.org/MPL/2.0/.
 #include "application/driveruipanels.h"
 
 #include "utilities/Globals.h"
-#include "utilities/utilities.h"
 #include "application/application.h"
 #include "utilities/translation.h"
 #include "simulation/simulation.h"
@@ -32,7 +31,6 @@ http://mozilla.org/MPL/2.0/.
 #ifdef WITH_OPENGL_MODERN
 #include "rendering/opengl33renderer.h"
 #endif
-#include "widgets/map_objects.h"
 #include "utilities/Logs.h"
 #include "widgets/vehicleparams.h"
 #include "utilities/U8.h"
@@ -1679,7 +1677,7 @@ float res_scale()
 }
 
 // effective row height at the current resolution (rows scale with the screen)
-float row_h( float const Rs = res_scale() )
+float row_h( float const Rs )
 {
     return ROW_H * res_scale();
 }
@@ -1715,9 +1713,6 @@ static constexpr hud_item items[] = {
     { "doors",     "Doors",                  1, false }, // door state line (EMU/DMU)
 };
 static int const ITEM_COUNT { static_cast<int>( sizeof( items ) / sizeof( items[ 0 ] ) ) };
-int const group_main = 0;
-int const group_strip = 1;
-int const group_speed = 2;
 
 static ui_panel *g_panel { nullptr };
 static ui_panel *g_signalpanel { nullptr };
@@ -1950,12 +1945,6 @@ void update_toast( float const DeltaTime )
         g_toast -= DeltaTime;
 }
 
-hud_item const *item( char const *Id )
-{
-    int const i { item_index( Id ) };
-    return i >= 0 ? &items[ i ] : nullptr;
-}
-
 int item_count()
 {
     return ITEM_COUNT;
@@ -2063,8 +2052,8 @@ settings const &get()
     return Global.gui_hud;
 }
 
-// HUD settings live in their OWN hud.ini (NOT eu07.ini) - the engine's main configuration
-// stays untouched. reading mirrors the eu07.ini hud keys, saving uses save_hud_settings().
+// HUD settings live in their own hud.ini (in the game directory) - the engine's main
+// configuration file eu07.ini is left untouched; saving writes only the HUD keys.
 static void load_hud_settings()
 {
     std::ifstream f( "hud.ini" );
@@ -2121,16 +2110,6 @@ void set_visible( bool const Show )
 {
     g_visible = Show;
     apply_visibility();
-}
-
-bool visible()
-{
-    return g_visible;
-}
-
-void toggle()
-{
-    set_visible( !g_visible );
 }
 
 bool dragging()
@@ -2281,21 +2260,20 @@ hud_panel::render_contents()
 
     // draggable module: the whole window is a drag zone (position stored in the common settings)
     {
-        static bool dragging { false };
         auto const wsize { ImGui::GetWindowSize() };
         ImGui::SetCursorPos( ImVec2( 0.0f, 0.0f ) );
         ImGui::InvisibleButton( "##hud_drag", wsize );
         if ( ImGui::IsItemActive() )
         {
-            dragging = true;
+            m_dragging = true;
             hudcfg::set_dragging( true );
             auto const delta { ImGui::GetIO().MouseDelta };
             winpos = ImVec2( winpos.x + delta.x, winpos.y + delta.y );
             ImGui::SetWindowPos( winpos );
         }
-        if ( dragging && ImGui::IsMouseReleased( 0 ) )
+        if ( m_dragging && ImGui::IsMouseReleased( 0 ) )
         {
-            dragging = false;
+            m_dragging = false;
             hudcfg::set_dragging( false );
             winpos = ImGui::GetWindowPos();
             hudcfg::set_panel_pos( static_cast<int>( winpos.x ), static_cast<int>( winpos.y ) );
@@ -2349,7 +2327,7 @@ hud_panel::render_contents()
     // branch ammeters only exist when the current scheme has parallel circuits (Bn>=2),
     // exactly like the sim's own ShowCurrentP: Bn < AmpN returns 0
     bool const dc_series { enginetype == TEngineType::ElectricSeriesMotor };
-    bool const parallel_branches { dc_series && ctrlv->MainCtrlActualPos > 0 && ctrlv->MainCtrlActualPos <= ctrlv->MainCtrlPosNo && ctrlv->RList[ctrlv->MainCtrlActualPos].Bn >= 2 };
+    bool const parallel_branches { dc_series && ctrlv->MainCtrlActualPos > 0 && ctrlv->MainCtrlActualPos <= ctrlv->RlistSize && ctrlv->RList[ctrlv->MainCtrlActualPos].Bn >= 2 };
     bool const two_groups { is_electric && ( parallel_branches || ( !dc_series && ( std::abs( cur1 ) > 0.01f || std::abs( cur2 ) > 0.01f ) ) ) };
     // electro-dynamic brake: current flows back (shown negative, red), brake handle becomes ED position.
     // composite (integrated drive+brake) handle vehicles are excluded: their wheel already shows
@@ -2376,15 +2354,15 @@ hud_panel::render_contents()
         float const frac { Vmax > 0.0f ? std::clamp( Value / Vmax, 0.0f, 1.0f ) : 0.0f };
         // caption on its own line (left), value right-aligned to the bar's right edge,
         // bar underneath at full width: safe for long translations (caption never overlaps)
-        dl->AddText( ui_layer::font_default, 15.0f * rs, ImVec2( x0, Y ), IM_COL32( 255, 255, 255, 190 ), Label );
-        float const valuew { ui_layer::font_default->CalcTextSizeA( 15.0f * rs, std::numeric_limits<float>::max(), 0.0f, ValueText ).x };
-        dl->AddText( ui_layer::font_default, 15.0f * rs, ImVec2( x0 + w - valuew, Y ), IM_COL32( 255, 255, 255, 240 ), ValueText );
+        dl->AddText( ui_layer::font_mono, 15.0f * rs, ImVec2( x0, Y ), IM_COL32( 255, 255, 255, 190 ), Label );
+        float const valuew { ui_layer::font_mono->CalcTextSizeA( 15.0f * rs, std::numeric_limits<float>::max(), 0.0f, ValueText ).x };
+        dl->AddText( ui_layer::font_mono, 15.0f * rs, ImVec2( x0 + w - valuew, Y ), IM_COL32( 255, 255, 255, 240 ), ValueText );
         dl->AddRectFilled( ImVec2( x0, Y + 20.0f * rs ), ImVec2( x0 + w, Y + 30.0f * rs ), IM_COL32( 255, 255, 255, 30 ), 4.0f );
         if ( frac > 0.005f )
             dl->AddRectFilled( ImVec2( x0, Y + 20.0f * rs ), ImVec2( x0 + w * frac, Y + 30.0f * rs ), ColOverride != 0 ? ColOverride : bar_col( frac ), 4.0f );
     };
 
-    float barY { winpos.y + 6.0f };
+    float barY { winpos.y + 6.0f * rs };
     if ( hudcfg::item_visible( "power" ) )
     {
     if ( is_diesel )
@@ -2504,11 +2482,11 @@ hud_panel::render_contents()
         if ( mover->SpeedCtrlValue > 0.5 )
         {
             std::snprintf( buf, sizeof( buf ), "%s: %.0f km/h", STR_C("Cruise control"), mover->SpeedCtrlValue );
-            dl->AddText( ui_layer::font_default, 15.0f, ImVec2( winpos.x + 8.0f, barY ),
+            dl->AddText( ui_layer::font_mono, 15.0f, ImVec2( winpos.x + 8.0f, barY ),
                 mover->SpeedCtrlUnit.IsActive ? IM_COL32( 90, 220, 120, 245 ) : IM_COL32( 190, 200, 215, 220 ), buf );
         }
         else
-            dl->AddText( ui_layer::font_default, 15.0f, ImVec2( winpos.x + 8.0f, barY ), IM_COL32( 140, 150, 165, 180 ), STR_C("Cruise control: OFF") );
+            dl->AddText( ui_layer::font_mono, 15.0f, ImVec2( winpos.x + 8.0f, barY ), IM_COL32( 140, 150, 165, 180 ), STR_C("Cruise control: OFF") );
         barY += hudcfg::row_h( rs );
     }
     // wheel slip warning moved to the top strip's banner area (same place as the CA/SHP alarm)
@@ -2554,7 +2532,8 @@ hud_panel::render_contents()
             if ( notchpos > 0 || ctrlv->ScndCtrlPos > 0 )
             {
                 if ( ctrlv->ScndCtrlPos > 0 ) std::snprintf( zone, sizeof( zone ), "%s", STR_C("Shunt") );
-                else
+                // guard the scheme lookup: RList is a fixed array whose valid length is RlistSize
+                else if ( ctrlv->MainCtrlActualPos > 0 && ctrlv->MainCtrlActualPos <= ctrlv->RlistSize )
                 {
                     auto const &scheme { ctrlv->RList[ctrlv->MainCtrlActualPos] };
                     if ( scheme.ScndAct > 0 ) std::snprintf( zone, sizeof( zone ), "%s", STR_C("Shunt") );
@@ -2562,6 +2541,8 @@ hud_panel::render_contents()
                     else if ( scheme.Mn > 1 ) std::snprintf( zone, sizeof( zone ), "%s", STR_C("Series") );
                     else std::snprintf( zone, sizeof( zone ), "%s", STR_C("Traction") );
                 }
+                else
+                    std::snprintf( zone, sizeof( zone ), "%s", STR_C("Traction") );
             }
             else
                 std::snprintf( zone, sizeof( zone ), "%s", STR_C("Idle") );
@@ -2580,14 +2561,14 @@ hud_panel::render_contents()
     float const sw { barW };
     // reviewer layout: caption left, value right-aligned to the bar's right edge, bar below
     auto const rightalign = [&]( float const TextY, char const *Text, ImU32 const Col ) {
-        float const vw { ui_layer::font_default->CalcTextSizeA( 15.0f * rs, std::numeric_limits<float>::max(), 0.0f, Text ).x };
-        dl->AddText( ui_layer::font_default, 15.0f * rs, ImVec2( x0 + sw - vw, TextY ), Col, Text );
+        float const vw { ui_layer::font_mono->CalcTextSizeA( 15.0f * rs, std::numeric_limits<float>::max(), 0.0f, Text ).x };
+        dl->AddText( ui_layer::font_mono, 15.0f * rs, ImVec2( x0 + sw - vw, TextY ), Col, Text );
     };
-    char notchvalue[ 64 ]; // shared by the notch strip and the shunt strip below
+    char notchvalue[ 128 ]; // shared by the notch strip and the shunt strip below (room for translations)
     if ( hudcfg::item_visible( "notch" ) )
     {
-    dl->AddText( ui_layer::font_default, 15.0f * rs, ImVec2( x0, nstripy ), IM_COL32( 255, 255, 255, 190 ), STR_C("Notch") );
-    // value text: position + zone name, e.g. "9/16 并联"  (right-aligned to the bar edge)
+    dl->AddText( ui_layer::font_mono, 15.0f * rs, ImVec2( x0, nstripy ), IM_COL32( 255, 255, 255, 190 ), STR_C("Notch") );
+    // value text: position + zone name, e.g. "9/16 parallel" (right-aligned to the bar edge)
     std::snprintf( notchvalue, sizeof( notchvalue ), "%s%s%s", notchtext.c_str(), notchtext.empty() ? "" : " ", zone );
     rightalign( nstripy, notchvalue, IM_COL32( 255, 255, 255, 240 ) );
     dl->AddRectFilled( ImVec2( x0, nstripy + 20.0f * rs ), ImVec2( x0 + sw, nstripy + 30.0f * rs ), IM_COL32( 255, 255, 255, 30 ), 4.0f );
@@ -2621,12 +2602,12 @@ hud_panel::render_contents()
     float nstripy2 { nstripy }; // starts below the notch row (which advanced it if visible)
     if ( has_ed && hudcfg::item_visible( "edbrake" ) )
     {
-        // dedicated ED handle position (0..1 → notch count), same style as the shunt strip
+        // dedicated ED handle position (0..1 -> notch count), same style as the shunt strip
         char dbval[ 32 ];
         float const dbno { mover->DynamicBrakeCtrlPosNo > 0 ? static_cast<float>( mover->DynamicBrakeCtrlPosNo ) : 10.0f };
         float const dbfrac { static_cast<float>( mover->DynamicBrakeCtrlPos ) };
         std::snprintf( dbval, sizeof( dbval ), "%.0f/%.0f", std::floor( dbfrac * dbno + 0.5f ), dbno );
-        dl->AddText( ui_layer::font_default, 15.0f * rs, ImVec2( x0, nstripy2 ), IM_COL32( 255, 255, 255, 190 ), STR_C("Dynamic brake") );
+        dl->AddText( ui_layer::font_mono, 15.0f * rs, ImVec2( x0, nstripy2 ), IM_COL32( 255, 255, 255, 190 ), STR_C("Dynamic brake") );
         rightalign( nstripy2, dbval, IM_COL32( 255, 255, 255, 240 ) );
         dl->AddRectFilled( ImVec2( x0, nstripy2 + 20.0f * rs ), ImVec2( x0 + sw, nstripy2 + 30.0f * rs ), IM_COL32( 255, 255, 255, 30 ), 4.0f );
         if ( dbfrac > 0.005f )
@@ -2638,7 +2619,7 @@ hud_panel::render_contents()
     if ( has_shunt && hudcfg::item_visible( "shunt" ) )
     {
         float const shfrac { std::clamp( static_cast<float>( ctrlv->ScndCtrlPos ) / ctrlv->ScndCtrlPosNo, 0.0f, 1.0f ) };
-        dl->AddText( ui_layer::font_default, 15.0f * rs, ImVec2( x0, nstripy2 ), IM_COL32( 255, 255, 255, 190 ), STR_C("Shunt") );
+        dl->AddText( ui_layer::font_mono, 15.0f * rs, ImVec2( x0, nstripy2 ), IM_COL32( 255, 255, 255, 190 ), STR_C("Shunt") );
         std::snprintf( notchvalue, sizeof( notchvalue ), "%d/%d", ctrlv->ScndCtrlPos, ctrlv->ScndCtrlPosNo );
         rightalign( nstripy2, notchvalue, IM_COL32( 255, 255, 255, 240 ) );
         dl->AddRectFilled( ImVec2( x0, nstripy2 + 20.0f * rs ), ImVec2( x0 + sw, nstripy2 + 30.0f * rs ), IM_COL32( 255, 255, 255, 30 ), 4.0f );
@@ -2655,7 +2636,7 @@ hud_panel::render_contents()
         // assets translation update lands (per jakubg1 that is handled later)
         std::string const toastmsg { std::string( STR_C("HUD: ") ) + STR_C( hudcfg::mode_name( hudcfg::mode() ) ) };
         int const toastalpha { static_cast<int>( std::clamp( hudcfg::toast() / 0.5f, 0.0f, 1.0f ) * 255.0f ) };
-        dl->AddText( ui_layer::font_default, 17.0f, ImVec2( winpos.x + 12.0f, winpos.y + 12.0f ), IM_COL32( 255, 255, 255, toastalpha ), toastmsg.c_str() );
+        dl->AddText( ui_layer::font_mono, 17.0f, ImVec2( winpos.x + 12.0f, winpos.y + 12.0f ), IM_COL32( 255, 255, 255, toastalpha ), toastmsg.c_str() );
     }
 }
 
@@ -2725,21 +2706,20 @@ hud_speed_panel::render_contents()
 
     // draggable module: the whole window is a drag zone (position stored in the common settings)
     {
-        static bool dragging { false };
         auto const wsize { ImGui::GetWindowSize() };
         ImGui::SetCursorPos( ImVec2( 0.0f, 0.0f ) );
         ImGui::InvisibleButton( "##hud_speed_drag", wsize );
         if ( ImGui::IsItemActive() )
         {
-            dragging = true;
+            m_dragging = true;
             hudcfg::set_dragging( true );
             auto const delta { ImGui::GetIO().MouseDelta };
             winpos = ImVec2( winpos.x + delta.x, winpos.y + delta.y );
             ImGui::SetWindowPos( winpos );
         }
-        if ( dragging && ImGui::IsMouseReleased( 0 ) )
+        if ( m_dragging && ImGui::IsMouseReleased( 0 ) )
         {
-            dragging = false;
+            m_dragging = false;
             hudcfg::set_dragging( false );
             winpos = ImGui::GetWindowPos();
             hudcfg::set_speed_pos( static_cast<int>( winpos.x ), static_cast<int>( winpos.y ) );
@@ -2788,7 +2768,7 @@ hud_speed_panel::render_contents()
     ImU32 const col { ImGui::ColorConvertFloat4ToU32( ImVec4( m_speedcolor.x, m_speedcolor.y, m_speedcolor.z, alpha ) ) };
     dl->AddText( font, fontsize, ImVec2( dpos.x + 3.0f * scale, dpos.y + 3.0f * scale ), IM_COL32( 0, 0, 0, 150 ), buf );
     dl->AddText( font, fontsize, dpos, col, buf );
-    dl->AddText( ui_layer::font_default, 15.0f * scale, ImVec2( dpos.x + textsize.x + 5.0f * scale, dpos.y + textsize.y - 6.0f * scale ), IM_COL32( 255, 255, 255, 180 ), STR_C("km/h") );
+    dl->AddText( ui_layer::font_mono, 15.0f * scale, ImVec2( dpos.x + textsize.x + 5.0f * scale, dpos.y + textsize.y - 6.0f * scale ), IM_COL32( 255, 255, 255, 180 ), STR_C("km/h") );
 
     // --- direction arrows -------------------------------------------------------
     if ( hudcfg::item_visible( "direction" ) )
@@ -2828,12 +2808,12 @@ hud_speed_panel::render_contents()
         if ( grade_pm > 2.5 ) // uphill
         {
             dl->AddTriangleFilled( ImVec2( sx - 16.0f * scale, dpos.y + 40.0f * scale ), ImVec2( sx + 16.0f * scale, dpos.y + 40.0f * scale ), ImVec2( sx, dpos.y + 4.0f * scale ), slope_col );
-            dl->AddText( ui_layer::font_default, 11.0f * scale, ImVec2( winpos.x + contentw - 78.0f * scale, dpos.y + 44.0f * scale ), snumcol, gbuf );
+            dl->AddText( ui_layer::font_mono, 11.0f * scale, ImVec2( winpos.x + contentw - 78.0f * scale, dpos.y + 44.0f * scale ), snumcol, gbuf );
         }
         else // downhill
         {
             dl->AddTriangleFilled( ImVec2( sx - 16.0f * scale, dpos.y + 52.0f * scale ), ImVec2( sx + 16.0f * scale, dpos.y + 52.0f * scale ), ImVec2( sx, dpos.y + 88.0f * scale ), slope_col );
-            dl->AddText( ui_layer::font_default, 11.0f * scale, ImVec2( winpos.x + contentw - 78.0f * scale, dpos.y + 94.0f * scale ), snumcol, gbuf );
+            dl->AddText( ui_layer::font_mono, 11.0f * scale, ImVec2( winpos.x + contentw - 78.0f * scale, dpos.y + 94.0f * scale ), snumcol, gbuf );
         }
     }
 }
@@ -2903,8 +2883,7 @@ hud_signal_panel::update()
         mover->SecuritySystem.is_cabsignal_blinking() ) };
     // wheel slip banner: top strip, same spot as the CA/SHP alarm (below it when both show)
     bool const slip { mover != nullptr && hudcfg::item_visible( "slip" ) && mover->SlippingWheels };
-    // strip height: base, or taller when alarm/slip banners need more room
-    // strip height: base, or taller when limit rows need more room;
+    // strip height: base, or taller when the limit rows / alarm / slip banners need more room
         size = { static_cast<int>( cfg.sig_width * hudcfg::res_scale() ), base_height() + ( alarm ? static_cast<int>( 40.0f * hudcfg::res_scale() ) : 0 ) + ( slip ? static_cast<int>( 34.0f * hudcfg::res_scale() ) : 0 ) };
     if ( hudcfg::dragging() )
     {
@@ -2926,21 +2905,20 @@ hud_signal_panel::render_contents()
 
     // draggable module: the whole window is a drag zone (position stored in the common settings)
     {
-        static bool dragging { false };
         auto const wsize { ImGui::GetWindowSize() };
         ImGui::SetCursorPos( ImVec2( 0.0f, 0.0f ) );
         ImGui::InvisibleButton( "##hud_sig_drag", wsize );
         if ( ImGui::IsItemActive() )
         {
-            dragging = true;
+            m_dragging = true;
             hudcfg::set_dragging( true );
             auto const delta { ImGui::GetIO().MouseDelta };
             winpos = ImVec2( winpos.x + delta.x, winpos.y + delta.y );
             ImGui::SetWindowPos( winpos );
         }
-        if ( dragging && ImGui::IsMouseReleased( 0 ) )
+        if ( m_dragging && ImGui::IsMouseReleased( 0 ) )
         {
-            dragging = false;
+            m_dragging = false;
             hudcfg::set_dragging( false );
             winpos = ImGui::GetWindowPos();
             hudcfg::set_signal_pos( static_cast<int>( winpos.x ), static_cast<int>( winpos.y ) );
@@ -2953,7 +2931,7 @@ hud_signal_panel::render_contents()
     if ( controlled == nullptr || owner == nullptr )
         return;
 
-    auto const *mover { controlled->MoverParameters };
+    auto const *mover { controlled ? controlled->MoverParameters : nullptr };
 
     // --- limit data: same sources and same logic as the game's own driving aid -------------
     // (drivingaid_panel::update() expanded "Speed" block; NOT the raw VelNext/ActualProximityDist)
@@ -2963,7 +2941,7 @@ hud_signal_panel::render_contents()
     double nextspeedlimitdistance { std::numeric_limits<double>::max() };
     if ( speedlimit != 0 ) // if we aren't allowed to move then any next speed limit is irrelevant
     {
-        // nie przekraczać rozkladowej
+        // do not exceed the timetable speed limit
         auto const schedulespeedlimit { (
             ( owner->OrderCurrentGet() & ( Obey_train | Bank ) ) != 0 && owner->TrainParams.TTVmax > 0.0 ? static_cast<int>( owner->TrainParams.TTVmax ) :
             ( owner->OrderCurrentGet() & ( Obey_train | Bank ) ) == 0 ? static_cast<int>( owner->fShuntVelocity ) :
@@ -3032,7 +3010,7 @@ hud_signal_panel::render_contents()
     {
         // next speed limit: STRICTLY the driving-aid data (reported only when it differs
         // from the current limit; otherwise "--"). plain digits, no signal colouring
-        dl->AddText( ui_layer::font_default, 13.0f * rs, ImVec2( winpos.x + 44.0f * rs, winpos.y + 10.0f * rs ), IM_COL32( 255, 255, 255, 180 ), STR_C("Next signal limit") );
+        dl->AddText( ui_layer::font_mono, 13.0f * rs, ImVec2( winpos.x + 44.0f * rs, winpos.y + 10.0f * rs ), IM_COL32( 255, 255, 255, 180 ), STR_C("Next signal limit") );
         if ( nextspeedlimit != speedlimit )
         {
             if ( nextspeedlimit > 0 )
@@ -3042,12 +3020,12 @@ hud_signal_panel::render_contents()
         }
         else
             std::snprintf( buf, sizeof( buf ), "--" );
-        dl->AddText( ui_layer::font_default, 20.0f * rs, ImVec2( winpos.x + 44.0f * rs, winpos.y + 27.0f * rs ), IM_COL32( 255, 255, 255, 235 ), buf );
+        dl->AddText( ui_layer::font_mono, 20.0f * rs, ImVec2( winpos.x + 44.0f * rs, winpos.y + 27.0f * rs ), IM_COL32( 255, 255, 255, 235 ), buf );
     }
     if ( hudcfg::item_visible( "limit" ) )
     {
         // current limit: plain white digits, no signal colouring by design
-        dl->AddText( ui_layer::font_default, 13.0f * rs, ImVec2( winpos.x + 44.0f * rs, winpos.y + 60.0f * rs ), IM_COL32( 255, 255, 255, 180 ), STR_C("Current limit") );
+        dl->AddText( ui_layer::font_mono, 13.0f * rs, ImVec2( winpos.x + 44.0f * rs, winpos.y + 60.0f * rs ), IM_COL32( 255, 255, 255, 180 ), STR_C("Current limit") );
         std::snprintf( buf, sizeof( buf ), "%d", speedlimit );
         dl->AddText( ui_layer::font_hud, 40.0f * rs, ImVec2( winpos.x + 44.0f * rs, winpos.y + 76.0f * rs ), IM_COL32( 255, 255, 255, 245 ), buf );
     }
@@ -3060,7 +3038,7 @@ hud_signal_panel::render_contents()
     if ( sigdist < 5000.0 )
     {
         std::snprintf( buf, sizeof( buf ), STR_C("Signal %.0f m"), sigdist );
-        dl->AddText( ui_layer::font_default, 13.0f * rs, ImVec2( winpos.x + cfg.sig_text_left * rs, winpos.y + cfg.sig_text_top * rs ), IM_COL32( 255, 255, 255, 200 ), buf );
+        dl->AddText( ui_layer::font_mono, 13.0f * rs, ImVec2( winpos.x + cfg.sig_text_left * rs, winpos.y + cfg.sig_text_top * rs ), IM_COL32( 255, 255, 255, 200 ), buf );
     }
     } // item sigdist
 
@@ -3071,20 +3049,20 @@ hud_signal_panel::render_contents()
         std::snprintf( buf, sizeof( buf ), STR_C(" Loading/unloading in progress (%d s left)"), static_cast<int>( std::ceil( owner->ExchangeTime ) ) );
         // keep the line inside the panel: if the translated text is wider than the remaining
         // column, shift its start left just enough so the full string stays visible
-        float const textwidth { ui_layer::font_default->CalcTextSizeA( 13.0f * rs, std::numeric_limits<float>::max(), 0.0f, buf ).x };
+        float const textwidth { ui_layer::font_mono->CalcTextSizeA( 13.0f * rs, std::numeric_limits<float>::max(), 0.0f, buf ).x };
         float const textx { std::max( winpos.x + cfg.sig_text_left * rs, winpos.x + cfg.sig_width * rs - 12.0f * rs - textwidth ) };
-        dl->AddText( ui_layer::font_default, 13.0f * rs, ImVec2( textx, winpos.y + cfg.sig_text_top * rs + 18.0f * rs ), IM_COL32( 140, 235, 160, 230 ), buf );
+        dl->AddText( ui_layer::font_mono, 13.0f * rs, ImVec2( textx, winpos.y + cfg.sig_text_top * rs + 18.0f * rs ), IM_COL32( 140, 235, 160, 230 ), buf );
     }
 
     // door state line (EMU/DMU); only shown while any door is opening/open
-    if ( hudcfg::item_visible( "doors" ) )
+    if ( mover != nullptr && hudcfg::item_visible( "doors" ) )
     {
         bool const doorl { mover->Doors.instances[ 1 ].is_open || mover->Doors.instances[ 1 ].is_opening };
         bool const doorr { mover->Doors.instances[ 0 ].is_open || mover->Doors.instances[ 0 ].is_opening };
         if ( doorl || doorr )
         {
             std::snprintf( buf, sizeof( buf ), STR_C("Doors: %s %s"), doorl ? "L" : "-", doorr ? "R" : "-" );
-            dl->AddText( ui_layer::font_default, 13.0f * rs, ImVec2( winpos.x + cfg.sig_text_left * rs, winpos.y + cfg.sig_text_top * rs + 36.0f * rs ), IM_COL32( 140, 235, 160, 230 ), buf );
+            dl->AddText( ui_layer::font_mono, 13.0f * rs, ImVec2( winpos.x + cfg.sig_text_left * rs, winpos.y + cfg.sig_text_top * rs + 36.0f * rs ), IM_COL32( 140, 235, 160, 230 ), buf );
         }
     }
 
@@ -3096,9 +3074,9 @@ hud_signal_panel::render_contents()
     if ( hudcfg::item_visible( "limit" ) || hudcfg::item_visible( "nextsiglimit" ) )
         base = std::max( base, static_cast<int>( 124.0f * rs ) );
 
-    auto const &sec { mover->SecuritySystem };
-    bool const cabflash { sec.is_cabsignal_blinking() };
-    bool const vflash { !cabflash && sec.is_vigilance_blinking() && ( train != nullptr ? train->fBlinkTimer > 0 : true ) };
+    // the SecuritySystem is owned by the vehicle, so both flags need a valid MoverParameters
+    bool const cabflash { mover != nullptr && mover->SecuritySystem.is_cabsignal_blinking() };
+    bool const vflash { mover != nullptr && mover->SecuritySystem.is_vigilance_blinking() && ( train != nullptr ? train->fBlinkTimer > 0 : true ) };
     if ( hudcfg::item_visible( "alarm" ) && ( cabflash || vflash ) )
     {
         std::string alarmtext;
@@ -3106,25 +3084,26 @@ hud_signal_panel::render_contents()
             alarmtext += STR("!ALERTER! ");
         if ( cabflash )
             alarmtext += STR("!SHP!");
-        int r, g, b;
-        if ( cabflash ) { r = 240; g = 60; b = 45; }
-        else { r = 250; g = 195; b = 40; }
+        // cab signal (SHP) in red, alerter (CA) in amber
+        int const r { cabflash ? 240 : 250 };
+        int const g { cabflash ? 60 : 195 };
+        int const b { cabflash ? 45 : 40 };
         float const pulse { 0.5f + 0.5f * std::sin( static_cast<float>( ImGui::GetTime() ) * 10.0f ) };
         float const y { winpos.y + static_cast<float>( base ) + 4.0f * rs };
         // pulse the container background, keep the text at full brightness
         dl->AddRectFilled( ImVec2( winpos.x + 8.0f * rs, y ), ImVec2( winpos.x + 312.0f * rs, y + 30.0f * rs ), IM_COL32( 12, 12, 12, 150 ), 6.0f );
         dl->AddRectFilled( ImVec2( winpos.x + 8.0f * rs, y ), ImVec2( winpos.x + 312.0f * rs, y + 30.0f * rs ), IM_COL32( r, g, b, static_cast<int>( 70.0f + 90.0f * pulse ) ), 6.0f );
-        dl->AddText( ui_layer::font_default, 19.0f * rs, ImVec2( winpos.x + 22.0f * rs, y + 6.0f * rs ), IM_COL32( r, g, b, 255 ), alarmtext.c_str() );
+        dl->AddText( ui_layer::font_mono, 19.0f * rs, ImVec2( winpos.x + 22.0f * rs, y + 6.0f * rs ), IM_COL32( r, g, b, 255 ), alarmtext.c_str() );
     }
 
     // wheel slip banner: same place as the CA/SHP alarm, right below it when both are active
-    if ( hudcfg::item_visible( "slip" ) && mover->SlippingWheels )
+    if ( mover != nullptr && hudcfg::item_visible( "slip" ) && mover->SlippingWheels )
     {
         float const y { winpos.y + static_cast<float>( base ) + 4.0f * rs + ( ( cabflash || vflash ) ? 34.0f * rs : 0.0f ) };
         float const pulse { 0.5f + 0.5f * std::sin( static_cast<float>( ImGui::GetTime() ) * 10.0f ) };
         dl->AddRectFilled( ImVec2( winpos.x + 8.0f * rs, y ), ImVec2( winpos.x + 312.0f * rs, y + 30.0f * rs ), IM_COL32( 12, 12, 12, 150 ), 6.0f );
         dl->AddRectFilled( ImVec2( winpos.x + 8.0f * rs, y ), ImVec2( winpos.x + 312.0f * rs, y + 30.0f * rs ), IM_COL32( 90, 190, 220, static_cast<int>( 70.0f + 90.0f * pulse ) ), 6.0f );
-        dl->AddText( ui_layer::font_default, 19.0f * rs, ImVec2( winpos.x + 22.0f * rs, y + 6.0f * rs ), IM_COL32( 90, 190, 220, 255 ), STR_C("Wheel slip!") );
+        dl->AddText( ui_layer::font_mono, 19.0f * rs, ImVec2( winpos.x + 22.0f * rs, y + 6.0f * rs ), IM_COL32( 90, 190, 220, 255 ), STR_C("Wheel slip!") );
     }
 }
 

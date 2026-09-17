@@ -1,4 +1,4 @@
-/*
+﻿/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -12,14 +12,12 @@ http://mozilla.org/MPL/2.0/.
 #include "application/uilayer.h"
 #include "utilities/Classes.h"
 #include "utilities/Globals.h"
-#include "model/AnimModel.h"
 
 class TDynamicObject;
 class TController;
 
-// HUD overlay configuration; the layout values live in Global.gui_hud (in-code defaults,
-// updated at runtime while dragging), while the "gui.hud.enabled" switch alone is read
-// from the existing config file (eu07.ini) by the common config parser
+// HUD overlay configuration; the layout values live in Global.gui_hud and are persisted in
+// the HUD's own config file (hud.ini) by hudcfg::load_hud_settings/save_hud_settings
 namespace hudcfg {
 
 using settings = global_settings::hud_config;
@@ -41,7 +39,7 @@ struct vehicle_caps {
 };
 
 // registry of every displayable HUD data item. stable string ids are used for persistence
-// (eu07.ini) and as the extension point for future developers: adding a row here makes the
+// (hud.ini) and as the extension point for future developers: adding a row here makes the
 // datum appear in the customisation window and become togglable - nothing else is needed
 struct hud_item {
     char const *id;        // stable key; persisted as gui.hud.custom "<id>,<id>,..."
@@ -55,9 +53,7 @@ settings const &get();
 void set_panels( ui_panel *Panel, ui_panel *SignalPanel, ui_panel *SpeedPanel );
 // the customisation window; F1 entering the Custom mode opens it automatically
 void set_custom_window( ui_panel *Panel );
-bool visible();
 void set_visible( bool Show );
-void toggle();
 // display modes; F1 cycles, persisted as gui.hud.mode
 int mode();
 int mode_count();
@@ -75,7 +71,6 @@ void set_speed_group( bool On );
 float toast();
 void update_toast( float DeltaTime );
 // item registry lookup / effective visibility for the current mode
-hud_item const *item( char const *Id );
 int item_count();
 hud_item const &item_by_index( int Index );
 bool item_visible( char const *Id );
@@ -257,6 +252,7 @@ private:
 // members
     glm::vec4 m_speedcolor { 0.70f, 0.88f, 1.00f, 1.00f };
     bool m_manual_size { false }; // true once the player resizes the panel (no auto-height then)
+    bool m_dragging { false };    // true while the player drags the panel (per instance)
 };
 
 // split-out speed panel: big speed digits + direction arrows + gradient triangles
@@ -282,6 +278,7 @@ private:
 // members
     glm::vec4 m_speedcolor { 0.70f, 0.88f, 1.00f, 1.00f };
     bool m_manual_size { false }; // true once the player resizes the panel
+    bool m_dragging { false };    // true while the player drags the panel (per instance)
 };
 
 // top-of-screen signal preview + speed limit strip; pops and flashes when the limit changes
@@ -309,6 +306,7 @@ private:
     int m_prevlimit { -1 };
     float m_flash { 0.0f };
     bool m_manual_size { false }; // true once the player resizes the strip (no auto-height then)
+    bool m_dragging { false };    // true while the player drags the strip (per instance)
     // signal display lock (object lock: live re-reads until the signal is passed)
 };
 

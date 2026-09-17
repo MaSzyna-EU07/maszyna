@@ -1,4 +1,4 @@
-/*
+﻿/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -12,7 +12,6 @@ http://mozilla.org/MPL/2.0/.
 #include <string>
 #include "model/Texture.h"
 #include "widgets/popup.h"
-
 
 // GuiLayer -- basic user interface class. draws requested information on top of openGL screen
 

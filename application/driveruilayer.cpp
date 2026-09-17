@@ -1,4 +1,4 @@
-/*
+﻿/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -20,7 +20,7 @@ http://mozilla.org/MPL/2.0/.
 
 driver_ui::driver_ui()
 {
-	// HUD layout settings are read by the common config parser from the existing config file (eu07.ini)
+	// HUD layout settings are read from the HUD's own config file (hud.ini)
 
 	clear_panels();
 	// bind the panels with ui object. maybe not the best place for this but, eh

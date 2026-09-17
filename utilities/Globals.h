@@ -133,7 +133,7 @@ struct global_settings {
 	float ShakingMultiplierRL {1.f}; // mnożnik bujania kamera lewo/prawo
 	float ShakingMultiplierUD {1.f}; // mnożnik bujania kamera gora/dol
     float fDistanceFactor{ 1.f }; // baza do przeliczania odległości dla LoD
-    float targetfps{ 60.0f };
+    float targetfps{ 0.0f };
     bool bFullScreen{ false };
     bool VSync{ false };
     bool bWireFrame{ false };
@@ -224,8 +224,7 @@ struct global_settings {
         {"train", &uart_conf.trainenable},
         {"local", &uart_conf.localenable},
         {"radiovolume", &uart_conf.radiovolumeenable},
-        {"radiochannel", &uart_conf.radiochannelenable},
-        {"dynamicbrake", &uart_conf.dynamicenable},
+        {"radiochannel", &uart_conf.radiochannelenable}
     };
 #endif
 #ifdef WITH_ZMQ
@@ -262,7 +261,6 @@ struct global_settings {
         int speed_y { -1 };
         // bottom-right main panel
         int panel_width { 258 };
-        int panel_height { 374 };
         int margin { 16 };             // distance from screen right/bottom edges
         float speed_size { 110.0f };   // big speed digits size
         int panel_x { -1 };            // free-position override; -1 = corner anchored
@@ -271,10 +269,6 @@ struct global_settings {
         int sig_width { 320 };
         int sig_height { 66 };
         int sig_top { 6 };                 // distance from screen top
-        float sig_digit_size { 58.0f };    // limit number size
-        float sig_digit_left { 56.0f };    // limit number left offset
-        float sig_square_margin { 10.0f }; // signal colour block offset from window edge
-        float sig_square_size { 34.0f };   // signal colour block side length
         float sig_text_left { 170.0f };    // right-hand info text column
         float sig_text_top { 16.0f };
         int sig_x { -1 };              // free-position override; -1 = top-centred
@@ -382,9 +376,6 @@ struct global_settings {
 
 	// methods
 	void LoadIniFile( std::string asFileName );
-	// writes the full configuration back to the file (used on clean exit; the original
-	// engine only read the ini - export_as_text previously fed just the startup log)
-	void SaveIniFile( std::string const &asFileName );
 	void FinalizeConfig();
 	void ConfigParse(cParser &parser);
 	bool ConfigParseGeneral(cParser& Parser, const std::string& token);

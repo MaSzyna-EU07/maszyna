@@ -1,5 +1,4 @@
-
-/*
+﻿/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -258,13 +257,8 @@ bool ui_layer::init(GLFWwindow *Window)
 			}
 		}
 	}
-	// HUD: optional seven-segment style font for the big speed readout.
-	// fallback chain: DSEG7 (seven-segment) -> lcdd (LCD) -> font_default (scaled)
-	if (FileExists("fonts/DSEG7Classic-Bold.ttf")) {
-		ImFontConfig hud_config;
-		font_hud = m_imguiio->Fonts->AddFontFromFileTTF("fonts/DSEG7Classic-Bold.ttf", Global.ui_fontsize * 5.0f, &hud_config, &ranges[0]);
-	}
-	else if (FileExists("fonts/lcdd.ttf")) {
+	// HUD: LCD font for the big speed readout (lcdd.ttf); falls back to font_default
+	if (FileExists("fonts/lcdd.ttf")) {
 		ImFontConfig hud_config;
 		font_hud = m_imguiio->Fonts->AddFontFromFileTTF("fonts/lcdd.ttf", Global.ui_fontsize * 5.0f, &hud_config, &ranges[0]);
 	}
