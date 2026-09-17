@@ -19,14 +19,42 @@ export module eu07.rendering.terrainstatus;
 
 export {
 
-// distance out to which a terrain tile is drawn at its finest level; each further level
-// doubles it
-inline constexpr double terrain_finest_range { 512.0 };
+// distance out to which a terrain tile is drawn at its finest level, in tile sides; each
+// further level doubles it. four sides is 512 m for the usual 128 m tile. the ranges are
+// measured in tiles rather than metres because the morphing below only closes the seams
+// when a level's range is several tiles long, whatever the tile size
+inline constexpr double terrain_finest_tiles { 4.0 };
 
-// the distance up to which a level is used
+// how far the camera may move before the tiles in range and their levels are worked out
+// again, in tile sides
+inline constexpr double terrain_rescan_tiles { 0.25 };
+
+// the distance up to which a level is used, for tiles of the given side
 inline double
-terrain_level_distance( std::uint32_t const Level ) {
-    return terrain_finest_range * std::pow( 2.0, Level );
+terrain_level_distance( std::uint32_t const Level, double const Tilesize ) {
+    return terrain_finest_tiles * Tilesize * std::pow( 2.0, Level );
+}
+
+// A tile morphs into the next level over a band at the far end of its level's range. Two
+// neighbours at levels L and L+1 then meet exactly when, all along their shared edge, the
+// finer tile has finished morphing and the coarser one has not started. The band ends a
+// rescan's worth of travel short of the range, because levels are chosen where the camera
+// was at the last rescan while the morph follows the camera every frame; and it is a fifth
+// of the range wide, which keeps the coarser tile's band, a whole range further out, clear of
+// any edge a finer tile can reach. Both were settled by a geometric test over random camera
+// positions and three tile sizes, which finds no gap with these values and finds them at
+// every level boundary with a band ending at the range itself.
+inline constexpr double terrain_morph_band { 0.2 };
+
+// the distances, from the camera, over which a level L tile morphs into level L+1
+inline double
+terrain_morph_end( std::uint32_t const Level, double const Tilesize ) {
+    return terrain_level_distance( Level, Tilesize ) - terrain_rescan_tiles * Tilesize;
+}
+
+inline double
+terrain_morph_begin( std::uint32_t const Level, double const Tilesize ) {
+    return terrain_morph_end( Level, Tilesize ) - terrain_morph_band * terrain_level_distance( Level, Tilesize );
 }
 
 // what one terrain field's streamer is doing, kept by the field and read by the debug panel

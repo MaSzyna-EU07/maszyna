@@ -1524,8 +1524,8 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) {
                     auto const last { level + 1 == field.levels };
                     levels +=
                         " L" + std::to_string( level )
-                        + ( last ? " beyond " + to_string( terrain_level_distance( level > 0 ? level - 1 : 0 ), 0 )
-                                 : " <" + to_string( terrain_level_distance( level ), 0 ) )
+                        + ( last ? " beyond " + to_string( terrain_level_distance( level > 0 ? level - 1 : 0, field.tilesize ), 0 )
+                                 : " <" + to_string( terrain_level_distance( level, field.tilesize ), 0 ) )
                         + " m (" + to_string( field.gridstep * static_cast<float>( 1u << level ), 0 ) + " m grid): "
                         + std::to_string( stats.perlevel[ level ] );
                     if( false == last ) { levels += " |"; }

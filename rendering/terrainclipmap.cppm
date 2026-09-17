@@ -146,7 +146,7 @@ private:
     // resolved once at link time; -1 for a uniform the compiler dropped, which gl ignores
     struct uniform_locations {
         int tileorigin { -1 }, samplestep { -1 };
-        int heightbias { -1 }, heightscale { -1 }, nodata { -1 }, side { -1 };
+        int heightbias { -1 }, heightscale { -1 }, nodata { -1 }, side { -1 }, morph { -1 };
         int heights { -1 }, materials { -1 }, palette { -1 };
         int groundtexture { -1 }, groundscale { -1 }, drawnmaterial { -1 }, tileworld { -1 };
         int hastexture { -1 }, fallback { -1 };

@@ -485,8 +485,9 @@ private:
     // lays the mip chain of one tile into the buffer, finest level first.
     // coarse levels are point sampled rather than averaged, deliberately: every level
     // keeps the samples that sit on the tile boundary exactly as its neighbour has them,
-    // so the seam between two tiles stays identical at every level instead of needing
-    // skirts to hide a mismatch. the cost is aliasing on distant terrain
+    // so two tiles at the same level meet exactly, and a level's even samples are the next
+    // level's samples, which is what lets the renderer morph one level into the next from
+    // a single texture. the cost is aliasing on distant terrain
     void
         encode( tile const &Tile, double const Scale, std::vector<std::uint8_t> &Buffer ) const {
 

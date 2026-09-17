@@ -3,6 +3,12 @@
 // There is no vertex buffer: the grid exists only as an index buffer, and a sample's
 // row and column come from gl_VertexID. Heights are read as unsigned integers so that
 // the cooker's no-data value survives unchanged instead of being normalised into a float.
+//
+// Levels meet without cracks and change without popping because each vertex morphs into the
+// next coarser level as its distance nears the end of its level's range (CDLOD). The mip
+// chain is point sampled, so the next level's grid is this level's even samples: an odd
+// vertex slides onto its even neighbour and takes its height, and by the end of the range
+// the tile is, vertex for vertex, the coarser tile that lies beyond it.
 
 #include <common>
 
@@ -16,6 +22,7 @@ uniform float heightbias;   // world height of stored value 0
 uniform float heightscale;  // metres per stored unit
 uniform uint nodata;
 uniform int side;           // samples along a tile side at this level
+uniform vec2 morph;         // distance at which morphing into the next level starts, and where it is complete
 uniform vec2 tileworld;     // tile origin in world space, for texture coordinates
 
 out vec4 f_pos;
@@ -71,6 +78,17 @@ void main()
 	}
 	vec3 local = tileorigin + vec3( float( column ) * samplestep, height, float( row ) * samplestep );
 
+	// the viewpoint is at the horizontal origin, so the distance is the length of local.xz,
+	// measured as the renderer measures it when choosing the level
+	float morphing = clamp( ( length( local.xz ) - morph.x ) / ( morph.y - morph.x ), 0.0, 1.0 );
+	if( morphing > 0.0 ) {
+		ivec2 coarse = texel - ( texel % 2 );
+		uint coarseraw = texelFetch( heights, coarse, 0 ).r;
+		float coarseheight = ( coarseraw == nodata ) ? borrowed_height( coarse ) : heightbias + float( coarseraw ) * heightscale;
+		vec2 grid = mix( vec2( texel ), vec2( coarse ), morphing );
+		local = tileorigin + vec3( grid.x * samplestep, mix( height, coarseheight, morphing ), grid.y * samplestep );
+	}
+
 	// central differences over the neighbouring samples; at a tile edge the clamp repeats
 	// the border sample, which is what the neighbouring tile holds there as well
 	float west = sample_height( texel - ivec2( 1, 0 ), height );
@@ -81,7 +99,7 @@ void main()
 
 	// world coordinates, so the ground texture stays put as the camera moves and as the
 	// tile changes mip level
-	f_ground = tileworld + vec2( float( column ), float( row ) ) * samplestep;
+	f_ground = tileworld + ( local.xz - tileorigin.xz );
 
 	f_pos = modelview * vec4( local, 1.0 );
 	f_normal = normalize( modelviewnormal * normal );

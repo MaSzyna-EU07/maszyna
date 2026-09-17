@@ -110,6 +110,7 @@ terrain_clipmap::resolve_uniforms() {
     m_uniforms.heightscale = ::glGetUniformLocation( program, "heightscale" );
     m_uniforms.nodata = ::glGetUniformLocation( program, "nodata" );
     m_uniforms.side = ::glGetUniformLocation( program, "side" );
+    m_uniforms.morph = ::glGetUniformLocation( program, "morph" );
     m_uniforms.heights = ::glGetUniformLocation( program, "heights" );
     m_uniforms.materials = ::glGetUniformLocation( program, "materials" );
     m_uniforms.palette = ::glGetUniformLocation( program, "palette" );
@@ -207,8 +208,9 @@ terrain_clipmap::build_palette() {
 std::uint32_t
 terrain_clipmap::level_for( double const Distance ) const {
 
-    if( Distance <= terrain_finest_range ) { return 0; }
-    auto const steps { static_cast<std::uint32_t>( std::log2( Distance / terrain_finest_range ) ) + 1 };
+    auto const finest { terrain_level_distance( 0, m_reader.tilesize() ) };
+    if( Distance <= finest ) { return 0; }
+    auto const steps { static_cast<std::uint32_t>( std::log2( Distance / finest ) ) + 1 };
     return std::min( steps, m_reader.levels() - 1 );
 }
 
@@ -323,7 +325,7 @@ terrain_clipmap::update( glm::dvec3 const &Viewpoint ) {
     auto const moved {
         glm::length( glm::dvec2 { Viewpoint.x - m_scanpoint.x, Viewpoint.z - m_scanpoint.z } ) };
     if( ( m_range != m_scanrange )
-     || ( moved > m_reader.tilesize() * 0.25 ) ) {
+     || ( moved > m_reader.tilesize() * terrain_rescan_tiles ) ) {
         scan( Viewpoint );
     }
 
@@ -480,6 +482,18 @@ terrain_clipmap::render( glm::dvec3 const &Viewpoint ) {
         ::glUniform3fv( m_uniforms.tileorigin, 1, &origin.x );
         ::glUniform1f( m_uniforms.samplestep, gridstep * static_cast<float>( 1u << tile.level ) );
         ::glUniform1i( m_uniforms.side, static_cast<GLint>( tile.side ) );
+        // the band over which this level turns into the next. the coarsest level has no
+        // next one, so it never morphs
+        if( tile.level + 1 < m_reader.levels() ) {
+            ::glUniform2f(
+                m_uniforms.morph,
+                static_cast<float>( terrain_morph_begin( tile.level, tilesize ) ),
+                static_cast<float>( terrain_morph_end( tile.level, tilesize ) ) );
+        }
+        else {
+            // far enough to never be reached, with a band that does not divide by zero
+            ::glUniform2f( m_uniforms.morph, 1e30f, 2e30f );
+        }
         ::glUniform2f(
             m_uniforms.tileworld,
             static_cast<float>( tile.x * tilesize ), static_cast<float>( tile.z * tilesize ) );
