@@ -41,7 +41,7 @@ void main()
 	//float specularity = (tex_color.r + tex_color.g + tex_color.b) * 0.5;
 	glossiness = abs(param[1].w);
 	
-	fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, reflectivity, 0, shadow_tone);
+	fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, reflectivity, 0.0, shadow_tone);
 	vec4 color = vec4(apply_fog(fragcolor), tex_color.a * alpha_mult);
 /*
 	float distance = dot(f_pos.xyz, f_pos.xyz);
