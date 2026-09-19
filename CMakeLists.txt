@@ -358,10 +358,18 @@ if (GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
 	  OUTPUT_VARIABLE SRC_SHORT_DATE
 	  OUTPUT_STRIP_TRAILING_WHITESPACE
 	)
+
+	execute_process(
+	  COMMAND ${GIT_EXECUTABLE} rev-parse --abbrev-ref HEAD
+	  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+	  OUTPUT_VARIABLE GIT_BRANCH
+	  OUTPUT_STRIP_TRAILING_WHITESPACE
+	)
 else()
 	string(TIMESTAMP SRC_SHORT_DATE %Y-%m-%d UTC)
 	string(TIMESTAMP SRC_DATE UTC)
 	set(GIT_HASH "(unknown)")
+	set(GIT_BRANCH "(unknown)")
 endif()
 
 configure_file("${CMAKE_SOURCE_DIR}/version_info.h.in" "${CMAKE_BINARY_DIR}/geninc/version_info.h")
