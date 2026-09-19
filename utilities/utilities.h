@@ -62,6 +62,18 @@ inline long Round(double const f)
 
 double Random(double a, double b);
 int Random(int min, int max);
+
+/// @author lxvia
+/// @brief Returns a random seed from the system's entropy source, if available. Otherwise, falls back to a clock-based seed.
+/// @return A random seed as 64 bit unsigned integer
+std::uint64_t true_random_seed();
+
+// The seed a word stands for. A number is taken as it is written; anything else is
+// hashed the way Java's String.hashCode does it, so the same word gives the same
+// world on every platform and every build - which is the whole point of telling
+// somebody a seed.
+std::uint32_t seed_of(std::string const &Text);
+
 std::string generate_uuid_v4();
 double LocalRandom(double a, double b);
 

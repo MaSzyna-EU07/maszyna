@@ -726,7 +726,9 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
 
     if (token == "randomseed")
     {
-        ParseOne(Parser, Global.random_seed, 1);
+        std::string text;
+        ParseOne(Parser, text);
+        Global.random_seed = seed_of(text);
         return true;
     }
 

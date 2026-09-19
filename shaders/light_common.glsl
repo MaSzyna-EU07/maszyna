@@ -45,7 +45,20 @@ float calc_shadow()
 		if (distance <= cascade_end[cascade])
 			break;
 	float dist_casc = distance / cascade_end[cascade];
-	vec3 coords = f_light_pos[cascade].xyz / f_light_pos[cascade].w;
+	// Normal offset: sample the shadow map from a point pushed along the surface normal
+	// by a fraction of the cascade's texel footprint. A constant depth bias can't keep up
+	// with large texels (far cascades, small shadow maps) on surfaces at a grazing angle
+	// to the sun, which then show shadow acne stripes. lightview maps view space metres
+	// to [0,1] shadow map coordinates, so its x/y row lengths give texels per metre.
+	vec3 shadownormal = normalize(f_normal);
+	float shadowNdotL = clamp(dot(shadownormal, normalize(-lights[0].dir)), 0.0, 1.0);
+	mat4 shadowview = lightview[cascade];
+	float texelspermetre = min(length(vec3(shadowview[0][0], shadowview[1][0], shadowview[2][0])),
+	                            length(vec3(shadowview[0][1], shadowview[1][1], shadowview[2][1]))) * float(textureSize(shadowmap, 0).x);
+	float texelsize = 1.0 / texelspermetre;
+	vec3 shadowpos = f_pos.xyz + shadownormal * (texelsize * 1.5 * (1.0 - shadowNdotL));
+	vec4 lightpos = shadowview * vec4(shadowpos, 1.0);
+	vec3 coords = lightpos.xyz / lightpos.w;
 	if (coords.z < 0.0)
 		return 0.0f;
 		
@@ -64,29 +77,28 @@ float calc_shadow()
 		radius = 0.5;
 
 #if defined(GL_ARB_gpu_shader5) || defined(GL_EXT_gpu_shader5) || __VERSION__ >= 400
-	// Fast path -- replace the original 4x4 grid of individual hardware-PCF
-	// lookups with 4 textureGather() calls. Each gather returns the 4 raw
-	// shadow comparisons of a 2x2 texel footprint, so 4 gathers laid out at
-	// (+-1, +-1) * radius * texel from the sample center cover the same 4x4
-	// sample area as the original kernel; summing all 16 comparisons and
-	// dividing by 16 reproduces the original loop's averaging. The cost on
-	// the TMUs drops from 16 hardware-PCF samples to 4 gathers (the gather
-	// path returns 4 values per fetch where the original needed 4 fetches),
-	// roughly a 4x reduction in shadow-sample work. The only thing dropped
-	// vs. the hardware-PCF path is the implicit bilinear blending inside
-	// each 2x2 footprint -- effectively turning a tent-weighted kernel into
-	// a box-weighted one of the same extent, which is imperceptible in
-	// motion. calc_shadow() is by far the heaviest piece of the lighting
-	// shader, so this is a measurable GPU saving on every shaded fragment.
+	// Fast path: 4 textureGather() calls cover a 4x4 texel block. Raw gathered
+	// comparisons must be weighted by the sub-texel position (bilinear weights),
+	// otherwise the result is constant across each shadow map texel and shadow
+	// edges turn into texel-sized stair steps. With per-axis weights
+	// (1-f, 1, 1, f) this equals a 3x3 grid of hardware bilinear PCF taps.
+	vec2 size = vec2(textureSize(shadowmap, 0).xy);
+	vec2 uv = coords.xy * size - 0.5;
+	vec2 base = floor(uv);
+	vec2 f = uv - base;
 	float refz = coords.z + bias;
 	float layer = float(cascade);
-	vec2 off = radius * texel;
-	vec4 g0 = textureGather(shadowmap, vec3(coords.xy + vec2(-off.x, -off.y), layer), refz);
-	vec4 g1 = textureGather(shadowmap, vec3(coords.xy + vec2( off.x, -off.y), layer), refz);
-	vec4 g2 = textureGather(shadowmap, vec3(coords.xy + vec2(-off.x,  off.y), layer), refz);
-	vec4 g3 = textureGather(shadowmap, vec3(coords.xy + vec2( off.x,  off.y), layer), refz);
-	float shadow = dot(g0 + g1 + g2 + g3, vec4(1.0 / 16.0));
-	return shadow;
+	// sampling at texel corners selects blocks with lower-left texel base-1 and base+1
+	vec4 g00 = textureGather(shadowmap, vec3((base + vec2(0.0, 0.0)) / size, layer), refz);
+	vec4 g10 = textureGather(shadowmap, vec3((base + vec2(2.0, 0.0)) / size, layer), refz);
+	vec4 g01 = textureGather(shadowmap, vec3((base + vec2(0.0, 2.0)) / size, layer), refz);
+	vec4 g11 = textureGather(shadowmap, vec3((base + vec2(2.0, 2.0)) / size, layer), refz);
+	// gather component order: x=(0,1) y=(1,1) z=(1,0) w=(0,0)
+	float shadow = dot(g00, vec4(1.0 - f.x, 1.0, 1.0 - f.y, (1.0 - f.x) * (1.0 - f.y)))
+	             + dot(g10, vec4(1.0, f.x, f.x * (1.0 - f.y), 1.0 - f.y))
+	             + dot(g01, vec4((1.0 - f.x) * f.y, f.y, 1.0, 1.0 - f.x))
+	             + dot(g11, vec4(f.y, f.x * f.y, f.x, 1.0));
+	return shadow / 9.0;
 #else
 	// Fallback for drivers without textureGather on shadow samplers
 	// (notably GLES 3.0 and any 3.3 desktop driver that doesn't expose
@@ -256,17 +268,29 @@ vec3 EnvBRDFApprox(vec3 F0, float roughness, float NoV)
     return F0 * AB.x + AB.y;
 }
 
+// Diffuse colour of the submodel (t3d/e3d) or shape, used as the albedo multiplier:
+// untextured materials take it as their colour, textured ones multiply the base texture by it
+// (same as the legacy renderer's GL_MODULATE). param[0].rgb holds the authored sRGB colour,
+// param[1].x its intensity (HSV value unless a material overrides it).
+vec3 material_diffuse()
+{
+    vec3 diffusecolor = pow(max(param[0].rgb, vec3(0.0)), vec3(2.2));
+    float value = max(param[0].r, max(param[0].g, param[0].b));
+    return (value > 0.0 ? diffusecolor * (param[1].x / value) : vec3(0.0));
+}
+
 // [0] - diffuse, [1] - specular
 // do magic here
 vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float reflectivity, float specularity, float shadowtone)
 {
-    vec3 basecolor = param[0].rgb;
-    // Scale ambient before it gets tinted by basecolor / texture.
+    // Diffuse colour is applied once, to the albedo; the light terms below are not scaled by it again
+    texturecolor *= material_diffuse();
+    // Scale ambient before it gets tinted by the texture.
     // Sun, headlights and emission are added afterwards so they are NOT
     // attenuated by AMBIENT_SCALE - this only dims the indirect term.
-    fragcolor *= basecolor * AMBIENT_SCALE;
+    fragcolor *= AMBIENT_SCALE;
 
-    vec3 emissioncolor = basecolor * emission;
+    vec3 emissioncolor = vec3(emission);
 
     vec3 view_dir = normalize(-f_pos.xyz);
     float NdotV = max(dot(fragnormal, view_dir), 0.0);
@@ -302,7 +326,7 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     // panels, vehicle bodies and terrain reads as a clear edge rather
     // than a soft Lambertian ramp. Tunable via SUN_NDOTL_SHARPNESS.
     float sun_NdotL = pow(sunlight.x, SUN_NDOTL_SHARPNESS);
-    float diffuseamount = sun_NdotL * param[1].x * lights[0].intensity;
+    float diffuseamount = sun_NdotL * lights[0].intensity;
 
     float shadow1 = 0.0;
     if (shadowtone < 1.0)
@@ -317,7 +341,7 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     {
         light_s light = lights[i];
         vec2 part = calc_headlights(light, fragnormal);
-        fragcolor += light.color * (part.x * param[1].x + part.y * param[1].y) * light.intensity;
+        fragcolor += light.color * (part.x + part.y * param[1].y) * light.intensity;
     }
 
     float specularamount = sunlight.y * param[1].y * specularity * lights[0].intensity
