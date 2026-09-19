@@ -256,17 +256,29 @@ vec3 EnvBRDFApprox(vec3 F0, float roughness, float NoV)
     return F0 * AB.x + AB.y;
 }
 
+// Diffuse colour of the submodel (t3d/e3d) or shape, used as the albedo multiplier:
+// untextured materials take it as their colour, textured ones multiply the base texture by it
+// (same as the legacy renderer's GL_MODULATE). param[0].rgb holds the authored sRGB colour,
+// param[1].x its intensity (HSV value unless a material overrides it).
+vec3 material_diffuse()
+{
+    vec3 diffusecolor = pow(max(param[0].rgb, vec3(0.0)), vec3(2.2));
+    float value = max(param[0].r, max(param[0].g, param[0].b));
+    return (value > 0.0 ? diffusecolor * (param[1].x / value) : vec3(0.0));
+}
+
 // [0] - diffuse, [1] - specular
 // do magic here
 vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float reflectivity, float specularity, float shadowtone)
 {
-    vec3 basecolor = param[0].rgb;
-    // Scale ambient before it gets tinted by basecolor / texture.
+    // Diffuse colour is applied once, to the albedo; the light terms below are not scaled by it again
+    texturecolor *= material_diffuse();
+    // Scale ambient before it gets tinted by the texture.
     // Sun, headlights and emission are added afterwards so they are NOT
     // attenuated by AMBIENT_SCALE - this only dims the indirect term.
-    fragcolor *= basecolor * AMBIENT_SCALE;
+    fragcolor *= AMBIENT_SCALE;
 
-    vec3 emissioncolor = basecolor * emission;
+    vec3 emissioncolor = vec3(emission);
 
     vec3 view_dir = normalize(-f_pos.xyz);
     float NdotV = max(dot(fragnormal, view_dir), 0.0);
@@ -302,7 +314,7 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     // panels, vehicle bodies and terrain reads as a clear edge rather
     // than a soft Lambertian ramp. Tunable via SUN_NDOTL_SHARPNESS.
     float sun_NdotL = pow(sunlight.x, SUN_NDOTL_SHARPNESS);
-    float diffuseamount = sun_NdotL * param[1].x * lights[0].intensity;
+    float diffuseamount = sun_NdotL * lights[0].intensity;
 
     float shadow1 = 0.0;
     if (shadowtone < 1.0)
@@ -317,7 +329,7 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     {
         light_s light = lights[i];
         vec2 part = calc_headlights(light, fragnormal);
-        fragcolor += light.color * (part.x * param[1].x + part.y * param[1].y) * light.intensity;
+        fragcolor += light.color * (part.x + part.y * param[1].y) * light.intensity;
     }
 
     float specularamount = sunlight.y * param[1].y * specularity * lights[0].intensity
