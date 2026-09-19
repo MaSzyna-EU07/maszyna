@@ -64,29 +64,28 @@ float calc_shadow()
 		radius = 0.5;
 
 #if defined(GL_ARB_gpu_shader5) || defined(GL_EXT_gpu_shader5) || __VERSION__ >= 400
-	// Fast path -- replace the original 4x4 grid of individual hardware-PCF
-	// lookups with 4 textureGather() calls. Each gather returns the 4 raw
-	// shadow comparisons of a 2x2 texel footprint, so 4 gathers laid out at
-	// (+-1, +-1) * radius * texel from the sample center cover the same 4x4
-	// sample area as the original kernel; summing all 16 comparisons and
-	// dividing by 16 reproduces the original loop's averaging. The cost on
-	// the TMUs drops from 16 hardware-PCF samples to 4 gathers (the gather
-	// path returns 4 values per fetch where the original needed 4 fetches),
-	// roughly a 4x reduction in shadow-sample work. The only thing dropped
-	// vs. the hardware-PCF path is the implicit bilinear blending inside
-	// each 2x2 footprint -- effectively turning a tent-weighted kernel into
-	// a box-weighted one of the same extent, which is imperceptible in
-	// motion. calc_shadow() is by far the heaviest piece of the lighting
-	// shader, so this is a measurable GPU saving on every shaded fragment.
+	// Fast path: 4 textureGather() calls cover a 4x4 texel block. Raw gathered
+	// comparisons must be weighted by the sub-texel position (bilinear weights),
+	// otherwise the result is constant across each shadow map texel and shadow
+	// edges turn into texel-sized stair steps. With per-axis weights
+	// (1-f, 1, 1, f) this equals a 3x3 grid of hardware bilinear PCF taps.
+	vec2 size = vec2(textureSize(shadowmap, 0).xy);
+	vec2 uv = coords.xy * size - 0.5;
+	vec2 base = floor(uv);
+	vec2 f = uv - base;
 	float refz = coords.z + bias;
 	float layer = float(cascade);
-	vec2 off = radius * texel;
-	vec4 g0 = textureGather(shadowmap, vec3(coords.xy + vec2(-off.x, -off.y), layer), refz);
-	vec4 g1 = textureGather(shadowmap, vec3(coords.xy + vec2( off.x, -off.y), layer), refz);
-	vec4 g2 = textureGather(shadowmap, vec3(coords.xy + vec2(-off.x,  off.y), layer), refz);
-	vec4 g3 = textureGather(shadowmap, vec3(coords.xy + vec2( off.x,  off.y), layer), refz);
-	float shadow = dot(g0 + g1 + g2 + g3, vec4(1.0 / 16.0));
-	return shadow;
+	// sampling at texel corners selects blocks with lower-left texel base-1 and base+1
+	vec4 g00 = textureGather(shadowmap, vec3((base + vec2(0.0, 0.0)) / size, layer), refz);
+	vec4 g10 = textureGather(shadowmap, vec3((base + vec2(2.0, 0.0)) / size, layer), refz);
+	vec4 g01 = textureGather(shadowmap, vec3((base + vec2(0.0, 2.0)) / size, layer), refz);
+	vec4 g11 = textureGather(shadowmap, vec3((base + vec2(2.0, 2.0)) / size, layer), refz);
+	// gather component order: x=(0,1) y=(1,1) z=(1,0) w=(0,0)
+	float shadow = dot(g00, vec4(1.0 - f.x, 1.0, 1.0 - f.y, (1.0 - f.x) * (1.0 - f.y)))
+	             + dot(g10, vec4(1.0, f.x, f.x * (1.0 - f.y), 1.0 - f.y))
+	             + dot(g01, vec4((1.0 - f.x) * f.y, f.y, 1.0, 1.0 - f.x))
+	             + dot(g11, vec4(f.y, f.x * f.y, f.x, 1.0));
+	return shadow / 9.0;
 #else
 	// Fallback for drivers without textureGather on shadow samplers
 	// (notably GLES 3.0 and any 3.3 desktop driver that doesn't expose
