@@ -24,7 +24,8 @@ layout(location = 1) out vec4 out_motion;
 
 void main()
 {
-	vec4 tex_color = vec4(pow(param[0].rgb, vec3(2.2)), param[0].a);
+	// no texture: the diffuse colour alone makes the albedo, apply_lights() applies it to the white base
+	vec4 tex_color = vec4(1.0, 1.0, 1.0, param[0].a);
 
 //	if (tex_color.a < opacity)
 //		discard;
@@ -32,7 +33,7 @@ void main()
 	vec3 fragcolor = ambient;
 	vec3 fragnormal = normalize(f_normal);
 	float reflectivity = param[1].z;
-	float specularity = (tex_color.r + tex_color.g + tex_color.b) * 0.5;
+	float specularity = dot(pow(param[0].rgb, vec3(2.2)), vec3(0.5));
 	glossiness = abs(param[1].w);
 	
 	fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, reflectivity, specularity, shadow_tone);
