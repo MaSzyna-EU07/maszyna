@@ -45,7 +45,20 @@ float calc_shadow()
 		if (distance <= cascade_end[cascade])
 			break;
 	float dist_casc = distance / cascade_end[cascade];
-	vec3 coords = f_light_pos[cascade].xyz / f_light_pos[cascade].w;
+	// Normal offset: sample the shadow map from a point pushed along the surface normal
+	// by a fraction of the cascade's texel footprint. A constant depth bias can't keep up
+	// with large texels (far cascades, small shadow maps) on surfaces at a grazing angle
+	// to the sun, which then show shadow acne stripes. lightview maps view space metres
+	// to [0,1] shadow map coordinates, so its x/y row lengths give texels per metre.
+	vec3 shadownormal = normalize(f_normal);
+	float shadowNdotL = clamp(dot(shadownormal, normalize(-lights[0].dir)), 0.0, 1.0);
+	mat4 shadowview = lightview[cascade];
+	float texelspermetre = min(length(vec3(shadowview[0][0], shadowview[1][0], shadowview[2][0])),
+	                            length(vec3(shadowview[0][1], shadowview[1][1], shadowview[2][1]))) * float(textureSize(shadowmap, 0).x);
+	float texelsize = 1.0 / texelspermetre;
+	vec3 shadowpos = f_pos.xyz + shadownormal * (texelsize * 1.5 * (1.0 - shadowNdotL));
+	vec4 lightpos = shadowview * vec4(shadowpos, 1.0);
+	vec3 coords = lightpos.xyz / lightpos.w;
 	if (coords.z < 0.0)
 		return 0.0f;
 		
