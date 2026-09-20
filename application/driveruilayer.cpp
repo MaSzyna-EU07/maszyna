@@ -39,8 +39,7 @@ driver_ui::driver_ui()
 	add_external_panel(&m_perfgraphpanel);
 	add_external_panel(&m_cameraviewpanel);
 	add_external_panel(&m_hudpanel);
-	add_external_panel(&m_hudspeedpanel);
-	add_external_panel(&m_hudsignalpanel);
+	// (no speed panel and no separate signal strip - both are part of the main HUD panel)
 	add_external_panel(&m_hudcustompanel);
 	// F1 switching to the Custom mode automatically opens the customisation window
 	hudcfg::set_custom_window( &m_hudcustompanel );
@@ -76,10 +75,9 @@ driver_ui::driver_ui()
 	if (false == hudcfg::get().enabled)
 	{
 		m_hudpanel.is_open = false;
-		m_hudsignalpanel.is_open = false;
 	}
 
-	hudcfg::set_panels( &m_hudpanel, &m_hudsignalpanel, &m_hudspeedpanel );
+	hudcfg::set_panels( &m_hudpanel );
 	// visibility is driven entirely by hudcfg (mode + group switches):
 	// fresh installs start OFF, F1 brings the HUD up; do NOT force is_open here
 }

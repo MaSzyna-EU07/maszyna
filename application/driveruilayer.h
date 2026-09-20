@@ -73,7 +73,6 @@ private:
 	ui::time_panel m_timepanel;
 	ui::cameraview_panel m_cameraviewpanel;
 	hud_panel m_hudpanel { "HUD", true };
-	hud_speed_panel m_hudspeedpanel { "HUDSpeed", true };
-	hud_signal_panel m_hudsignalpanel { "HUDSignal", true };
+	// the signal strip is gone too: its readouts live inside the main panel now
 	hud_custom_panel m_hudcustompanel { "HUD customisation", false };
 };

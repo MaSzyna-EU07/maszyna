@@ -22,8 +22,8 @@ namespace hudcfg {
 
 using settings = global_settings::hud_config;
 
-// HUD display modes (F1 cycles): 0 = Standard (default set), 1 = Custom (per-item checkboxes),
-// 2 = Off. Both panels can also be switched on/off as groups, but only in Custom mode
+// HUD display modes (F1 cycles): 0 = Standard (read-only rendering of whatever Custom was
+// configured to show), 1 = Custom (draggable, resizable, per-item checkboxes), 2 = Off
 enum hud_mode : int {
     standard = 0,
     custom = 1,
@@ -44,13 +44,13 @@ struct vehicle_caps {
 struct hud_item {
     char const *id;        // stable key; persisted as gui.hud.custom "<id>,<id>,..."
     char const *name;      // display name; STR_C() translation key (falls back to the literal)
-    int         group;     // 0 = main panel, 1 = top signal strip, 2 = speed panel
+    int         group;     // 0 = main panel (the only group left; kept for future panels)
     bool        default_on;
 };
 
 settings const &get();
 // shared live visibility (used by the key binding, the menu entry and the HUD panels)
-void set_panels( ui_panel *Panel, ui_panel *SignalPanel, ui_panel *SpeedPanel );
+void set_panels( ui_panel *Panel );
 // the customisation window; F1 entering the Custom mode opens it automatically
 void set_custom_window( ui_panel *Panel );
 void set_visible( bool Show );
@@ -60,13 +60,9 @@ int mode_count();
 void set_mode( int Mode );
 void cycle_mode();
 char const *mode_name( int Mode );
-// top strip / main panel / speed panel group switches (only effective in Custom mode)
+// main panel group switch (only effective in Custom mode)
 bool panel_group();
-bool strip_group();
-bool speed_group();
 void set_panel_group( bool On );
-void set_strip_group( bool On );
-void set_speed_group( bool On );
 // mode-name feedback toast in seconds (drawn on the HUD panel while > 0)
 float toast();
 void update_toast( float DeltaTime );
@@ -80,15 +76,14 @@ bool item_available( char const *Id, vehicle_caps const &Caps );
 // Custom-mode checkbox state; writes back to gui.hud.custom
 bool custom_checked( char const *Id );
 void set_custom_item( char const *Id, bool Checked );
-// effective main-panel height, stretched by the amount of visible data (min = speed zone only)
+// effective main-panel size (both scale with res_scale(); height stretches with the visible data)
+int main_panel_width();
 int main_panel_height();
 // drag state: while dragging the update() anchor is suspended
 bool dragging();
 void set_dragging( bool Drag );
 // free positioning (called by the drag handles)
 void set_panel_pos( int X, int Y );
-void set_signal_pos( int X, int Y );
-void set_speed_pos( int X, int Y );
 
 }
 
@@ -253,61 +248,9 @@ private:
     glm::vec4 m_speedcolor { 0.70f, 0.88f, 1.00f, 1.00f };
     bool m_manual_size { false }; // true once the player resizes the panel (no auto-height then)
     bool m_dragging { false };    // true while the player drags the panel (per instance)
-};
-
-// split-out speed panel: big speed digits + direction arrows + gradient triangles
-// (kept at the position where the speed zone used to sit, below the data panel);
-// resizable via the bottom-right grip, contents scale with the window size
-class hud_speed_panel : public ui_panel {
-
-public:
-    hud_speed_panel( std::string const &Name, bool const Isopen )
-        : ui_panel( Name, Isopen )
-    {
-        no_title_bar = true;
-        window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar
-                     | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing;
-    }
-
-    // custom render: auto-sized until the player grabs the resize grip
-    void render() override;
-    void update() override;
-    void render_contents() override;
-
-private:
-// members
-    glm::vec4 m_speedcolor { 0.70f, 0.88f, 1.00f, 1.00f };
-    bool m_manual_size { false }; // true once the player resizes the panel
-    bool m_dragging { false };    // true while the player drags the panel (per instance)
-};
-
-// top-of-screen signal preview + speed limit strip; pops and flashes when the limit changes
-class hud_signal_panel : public ui_panel {
-
-public:
-    hud_signal_panel( std::string const &Name, bool const Isopen )
-        : ui_panel( Name, Isopen )
-    {
-        no_title_bar = true;
-        window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar
-                     | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing;
-    }
-
-    // custom render: auto-sized by content until the player grabs the resize grip
-    void render() override;
-    void update() override;
-    void render_contents() override;
-
-private:
-    // top strip: speed limits / distance / passenger / CA-SHP (AI speed table only)
-    // content height for the current display state (limit rows + banners)
-    int base_height() const;
-// members
-    int m_prevlimit { -1 };
-    float m_flash { 0.0f };
-    bool m_manual_size { false }; // true once the player resizes the strip (no auto-height then)
-    bool m_dragging { false };    // true while the player drags the strip (per instance)
-    // signal display lock (object lock: live re-reads until the signal is passed)
+    // display size (Global.fb_size) seen by the last update(); a change of it is the only event
+    // that re-fits a stored position to the screen. (-1,-1) means "not seen yet" -> first frame
+    glm::vec2 m_last_fb { -1.0f, -1.0f };
 };
 
 // custom HUD configuration window: same style as the other internal windows (draggable,
