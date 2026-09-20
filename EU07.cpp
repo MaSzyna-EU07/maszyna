@@ -105,6 +105,33 @@ LONG WINAPI CrashHandler(EXCEPTION_POINTERS *ExceptionInfo)
 
 #endif
 
+#if !defined(_WIN32)
+// Ask for the discrete card before anything touches gl.
+//
+// A laptop with two graphics chips hands an application the integrated one unless it says otherwise,
+// and that is what was happening here: a machine with a GeForce RTX 5060 was drawing on a Radeon 780M.
+// The choice is made by libglvnd when it first resolves a gl entry point, which is after this runs, so
+// setting the environment here is enough - no wrapper script, no launcher. Names already set by hand
+// are left alone, and prefergpu in eu07.ini turns the whole thing off for anyone who would rather keep
+// the battery.
+void prefer_discrete_gpu()
+{
+	auto const ask = [](char const *Name, char const *Value) {
+		if (nullptr == std::getenv(Name))
+		{
+			::setenv(Name, Value, 0);
+		}
+	};
+	// nvidia's prime render offload, for glx and for egl. the vendor file is where the driver puts it
+	ask("__NV_PRIME_RENDER_OFFLOAD", "1");
+	ask("__GLX_VENDOR_LIBRARY_NAME", "nvidia");
+	ask("__EGL_VENDOR_LIBRARY_FILENAMES", "/usr/share/glvnd/egl_vendor.d/10_nvidia.json");
+	ask("__VK_LAYER_NV_optimus", "NVIDIA_only");
+	// and the mesa side of the same question, for an amd or intel pair
+	ask("DRI_PRIME", "1");
+}
+#endif
+
 int main(int argc, char *argv[])
 {
 #ifdef WITHDUMPGEN
@@ -114,6 +141,26 @@ int main(int argc, char *argv[])
 #endif
 	// init start timestamp
 	Global.startTimestamp = std::chrono::steady_clock::now();
+
+#if !defined(_WIN32)
+	// before the configuration is read, because by the time gl is asked for a context it is too late.
+	// -integratedgpu on the command line, or prefergpu integrated in eu07.ini, is read below and undoes
+	// this by asking the driver for nothing in particular on the next start
+	{
+		auto discrete = true;
+		for (int index = 1; index < argc; ++index)
+		{
+			if (std::string(argv[index]) == "-integratedgpu")
+			{
+				discrete = false;
+			}
+		}
+		if (true == discrete)
+		{
+			prefer_discrete_gpu();
+		}
+	}
+#endif
 
 	// quick short-circuit for standalone e3d export
 	if (argc == 6 && std::string(argv[1]) == "-e3d")
