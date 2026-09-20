@@ -57,7 +57,7 @@ terrain_clipmap::open( std::string const &Path ) {
         close();
         return false;
     }
-    if( false == m_arena.create() ) {
+    if( ( false == m_arena.create( false ) ) || ( false == m_widearena.create( true ) ) ) {
         ErrorLog( "Terrain: cannot allocate the terrain buffers" );
         close();
         return false;
@@ -65,8 +65,10 @@ terrain_clipmap::open( std::string const &Path ) {
 
     try {
         gl::shader vertex( "terrainmesh.vert" );
+        gl::shader geometry( "terrainmesh.geom" );
         gl::shader fragment( "terrainmesh.frag" );
-        m_shader.emplace( std::vector<std::reference_wrapper<gl::shader const>>( { vertex, fragment } ) );
+        m_shader.emplace(
+            std::vector<std::reference_wrapper<gl::shader const>>( { vertex, geometry, fragment } ) );
     }
     catch( gl::shader_exception const &error ) {
         ErrorLog( std::string( "Terrain: shader failed, " ) + error.what() );
@@ -96,7 +98,7 @@ terrain_clipmap::open( std::string const &Path ) {
         "Terrain: " + Path + ", " + std::to_string( m_levels ) + " levels, finest tile "
         + std::to_string( static_cast<int>( m_finesttile ) ) + " m over "
         + std::to_string( static_cast<int>( m_table.side ) ) + " m, "
-        + std::to_string( m_reader.present().size() ) + " tiles, "
+        + std::to_string( m_reader.tilecount() ) + " tiles, "
         + std::to_string( m_table.materials.size() ) + " ground materials" );
     return true;
 }
@@ -124,8 +126,9 @@ terrain_clipmap::close() {
     m_wanted.clear();
     m_arrived.clear();
     m_asked.clear();
-    m_readiness.clear();
+    m_maydescend.clear();
     m_arena.destroy();
+    m_widearena.destroy();
     m_ground.destroy();
     m_shader.reset();
     m_reader.close();
@@ -149,6 +152,12 @@ terrain_clipmap::levelerror( std::uint32_t const Level ) const {
     return m_table.error( Level );
 }
 
+float
+terrain_clipmap::leveledge( std::uint32_t const Level ) const {
+
+    return m_table.edge( Level );
+}
+
 void
 terrain_clipmap::detail( double const Pixelsperunit, double const Pixels ) {
 
@@ -164,8 +173,15 @@ terrain_clipmap::square( quantizedmesh::tile_address const &Tile, double &West, 
     North = m_table.north + Tile.z * Side;
 }
 
-// the distance to the nearest point of the tile's square, not to its centre: a coarse tile is
-// kilometres across, and the one the camera stands on has its centre far outside any draw range
+// The distance to the nearest point of the tile's box, not to its centre: a coarse tile is
+// kilometres across, and the one the camera stands on has its centre far outside any draw range.
+//
+// The height counts as much as the other two. Measuring on the ground plane alone makes the tile
+// underfoot nought metres away from a camera a kilometre above it, and nought metres asks for the
+// finest level there is - so a view from the air drew the whole ground at full detail, which is
+// more tiles than the buffers hold, and what would not fit came out as holes. The tile's own height
+// range is not known until it is read, so the terrain's is used for all of them: too near rather
+// than too far, which errs towards detail.
 double
 terrain_clipmap::distance_to( quantizedmesh::tile_address const &Tile, glm::dvec3 const &Viewpoint ) const {
 
@@ -173,35 +189,47 @@ terrain_clipmap::distance_to( quantizedmesh::tile_address const &Tile, glm::dvec
     square( Tile, west, north, side );
     auto const nearestx { std::clamp( Viewpoint.x, west, west + side ) };
     auto const nearestz { std::clamp( Viewpoint.z, north, north + side ) };
-    return glm::length( glm::dvec2 { nearestx - Viewpoint.x, nearestz - Viewpoint.z } );
+    auto const nearesty { std::clamp( Viewpoint.y, m_table.lowest, m_table.highest ) };
+    return glm::length( glm::dvec3 {
+        nearestx - Viewpoint.x, nearesty - Viewpoint.y, nearestz - Viewpoint.z } );
 }
 
 bool
 terrain_clipmap::present( quantizedmesh::tile_address const &Tile ) const {
 
-    return m_reader.present().contains( quantizedmesh::tile_key( Tile ) );
+    return m_reader.contains( Tile );
 }
 
 // Whether the ground a tile stands for is close enough to the real thing. The tile's error, at its
 // distance, covers so many pixels; while that is fewer than the detail asks for there is nothing to
 // be had by splitting it. The tile the camera stands on is always split, whatever its error, so that
 // what is underfoot is the ground as the scenery drew it.
+//
+// What is asked is the tile's own error and its own triangles, out of the archive's index, not the
+// worst in its level. The two are far apart: a level's figure is set by whichever tile in it holds
+// the steepest ground, and with that one figure standing for all of them a flat field twenty
+// kilometres out was split as finely as the valley wall that set it.
 bool
 terrain_clipmap::good_enough( quantizedmesh::tile_address const &Tile, double const Distance ) const {
 
     if( Tile.level + 1 >= m_levels ) { return true; }
     if( Distance <= 0.0 ) { return false; }
-    return terrain_level_enough( m_table.error( Tile.level ), Distance, m_pixelsperunit, m_detail );
+    auto const measure { m_reader.measure( Tile ) };
+    return terrain_level_enough(
+        measure.error, measure.edge, Distance, m_pixelsperunit, m_detail );
 }
 
 // Walks down to the levels the screen wants and asks the loader for whatever of them is not on the
-// card, deepest tile of the wanted cut included - not only the tiles one level down. Asking one level
-// at a time is what a first attempt at this did, and it stops dead: a tile whose children are all
-// resident asks for nothing, while what it is waiting for is their children.
+// card - every tile on the way down, not only the deepest. Asking one level at a time is what a first
+// attempt at this did, and it stops dead: a tile whose children are all resident asks for nothing,
+// while what it is waiting for is their children. And a level fetched only once its children turn out
+// to be late is fetched too late to cover anything.
 //
-// Returns whether the cut under this tile, and the tile itself where the cut ends at it, is there. A
-// tile whose subtree is not ready yet is asked for as well, so that something coarse covers the
-// ground rather than a hole while the rest is read.
+// Returns whether this tile's ground can be drawn at all: either everything below it is there, or the
+// tile itself is, and then it stands in for the lot. That distinction is the whole point. Answering
+// only "is the subtree complete" makes one missing tile twenty kilometres away answer no for its
+// parent, and so for its parent's parent, all the way to the root - and then the entire terrain is
+// drawn as the root tile until it arrives. Which is what flickering while the camera moved was.
 bool
 terrain_clipmap::need( quantizedmesh::tile_address const &Tile, glm::dvec3 const &Viewpoint ) {
 
@@ -212,23 +240,22 @@ terrain_clipmap::need( quantizedmesh::tile_address const &Tile, glm::dvec3 const
 
     auto const key { quantizedmesh::tile_key( Tile ) };
     auto const resident { m_tiles.contains( key ) };
+    if( false == resident ) { ask_for( Tile, distance ); }
 
     if( true == good_enough( Tile, distance ) ) {
-        if( false == resident ) { ask_for( Tile, distance ); }
-        m_readiness.emplace( key, resident );
+        m_maydescend.emplace( key, false );
         return resident;
     }
 
-    auto ready { true };
+    auto descend { true };
     for( std::int32_t stepz = 0; stepz < 2; ++stepz ) {
         for( std::int32_t stepx = 0; stepx < 2; ++stepx ) {
             // every child is asked, so the whole cut is queued at once rather than a level a frame
-            ready = need( { Tile.level + 1, Tile.x * 2 + stepx, Tile.z * 2 + stepz }, Viewpoint ) && ready;
+            descend = need( { Tile.level + 1, Tile.x * 2 + stepx, Tile.z * 2 + stepz }, Viewpoint ) && descend;
         }
     }
-    if( ( false == ready ) && ( false == resident ) ) { ask_for( Tile, distance ); }
-    m_readiness.emplace( key, ready );
-    return ready;
+    m_maydescend.emplace( key, descend );
+    return descend || resident;
 }
 
 void
@@ -240,10 +267,12 @@ terrain_clipmap::choose( quantizedmesh::tile_address const &Tile, glm::dvec3 con
     if( distance > m_range ) { return; }
 
     auto const key { quantizedmesh::tile_key( Tile ) };
-    auto const ready { m_readiness.find( key ) };
-    if( ( ready != m_readiness.end() ) && ( true == ready->second )
+    auto const descend { m_maydescend.find( key ) };
+    if( ( descend != m_maydescend.end() ) && ( true == descend->second )
      && ( false == good_enough( Tile, distance ) ) ) {
-        // the whole cut under this tile is on the card: draw that instead
+        // the whole cut under this tile is on the card: draw that instead, and hold on to this one,
+        // which is what covers this ground again as soon as the camera moves
+        m_kept.push_back( key );
         for( std::int32_t stepz = 0; stepz < 2; ++stepz ) {
             for( std::int32_t stepx = 0; stepx < 2; ++stepx ) {
                 choose( { Tile.level + 1, Tile.x * 2 + stepx, Tile.z * 2 + stepz }, Viewpoint );
@@ -271,21 +300,40 @@ terrain_clipmap::walk( glm::dvec3 const &Viewpoint ) {
     m_walkdetail = m_detail;
     m_walked = true;
     m_chosen.clear();
+    m_kept.clear();
     m_wishes.clear();
     m_asked.clear();
-    m_readiness.clear();
+    m_maydescend.clear();
 
     need( { 0, 0, 0 }, Viewpoint );
     choose( { 0, 0, 0 }, Viewpoint );
 
-    // nearest first, so the ground under the camera is never waiting behind the horizon
+    // Coarsest first, and within a level nearest first. What covers ground has to arrive before what
+    // refines it: a fine tile read ahead of the level standing in for it leaves a hole for as long as
+    // the queue takes, and the ground under the camera is still first among equals.
     std::sort( m_wishes.begin(), m_wishes.end(),
-        []( auto const &Left, auto const &Right ) { return Left.first < Right.first; } );
+        []( auto const &Left, auto const &Right ) {
+            if( Left.second.level != Right.second.level ) { return Left.second.level < Right.second.level; }
+            return Left.first < Right.first; } );
     m_wanted.clear();
     m_wanted.reserve( m_wishes.size() );
     for( auto const &wish : m_wishes ) { m_wanted.push_back( wish.second ); }
     m_loader.want( m_wanted );
 
+    // A walk that settles on a handful of tiles where the one before had a hundred is the ground going
+    // coarse for a frame: somewhere a tile is missing and every level between it and the root is
+    // missing too, so the root is the only thing left to stand in. Rare, and worth knowing about, so it
+    // says which tiles it was waiting for.
+    if( ( m_stats.chosen > 8 ) && ( m_chosen.size() * 4 < m_stats.chosen ) && ( false == m_wishes.empty() ) ) {
+        std::string waiting;
+        for( std::size_t index = 0; ( index < m_wishes.size() ) && ( index < 6 ); ++index ) {
+            auto const &tile { m_wishes[ index ].second };
+            waiting += " " + std::to_string( tile.level ) + "/" + std::to_string( tile.x ) + "/"
+                + std::to_string( tile.z ) + " at " + std::to_string( static_cast<int>( m_wishes[ index ].first ) ) + " m";
+        }
+        WriteLog( "Terrain: the walk fell from " + std::to_string( m_stats.chosen ) + " tiles to "
+            + std::to_string( m_chosen.size() ) + ", waiting for" + waiting );
+    }
     m_stats.chosen = m_chosen.size();
     m_stats.wanted = m_wanted.size();
 }
@@ -301,11 +349,14 @@ terrain_clipmap::put_in( terrain_tile_loader::payload const &Tile ) {
         return;
     }
 
-    auto piece { m_arena.put( Tile.data ) };
+    // the narrow arena first; only what will not fit in it costs four bytes an index
+    auto const wide { Tile.data.vertices.size() > m_arena.vertexlimit() };
+    auto piece { wide ? m_widearena.put( Tile.data ) : m_arena.put( Tile.data ) };
     if( false == piece.held() ) { return; }
 
     resident_tile tile;
     tile.piece = piece;
+    tile.wide = wide;
     tile.centre = glm::dvec3 { Tile.data.centrex, Tile.data.centrey, Tile.data.centrez };
     tile.radius = static_cast<float>( Tile.data.radius );
     tile.level = Tile.data.tile.level;
@@ -321,7 +372,12 @@ terrain_clipmap::put_in( terrain_tile_loader::payload const &Tile ) {
 void
 terrain_clipmap::retire_unused() {
 
-    if( m_arena.bytes() <= m_budget ) { return; }
+    // Measured against what the tiles take up, not against what the buffers were allocated at. The
+    // allocation only ever grows - gl cannot hand a buffer back in pieces - so gating on it means
+    // nothing is let go until the buffers reach the cap, and from then on everything is let go every
+    // frame and read again. That is how three thousand tiles came to be held for a working set of
+    // forty, and why it stopped exactly at the cap.
+    if( m_arena.usedbytes() + m_widearena.usedbytes() <= m_budget ) { return; }
 
     std::vector<std::pair<std::uint64_t, std::int64_t>> aged;
     aged.reserve( m_tiles.size() );
@@ -331,13 +387,23 @@ terrain_clipmap::retire_unused() {
     if( true == aged.empty() ) { return; }
     std::sort( aged.begin(), aged.end() );
 
-    // a fifth of what is held, so that this does not run every frame
-    auto const letgo { std::max<std::size_t>( 1, m_tiles.size() / 5 ) };
-    for( std::size_t index = 0; ( index < letgo ) && ( index < aged.size() ); ++index ) {
-        auto const found { m_tiles.find( aged[ index ].second ) };
+    // down to well under the cap rather than just under it, so that this settles instead of running
+    // every frame
+    auto const target { m_budget * 3 / 4 };
+    std::size_t letgo { 0 };
+    for( auto const &[ when, key ] : aged ) {
+        if( m_arena.usedbytes() + m_widearena.usedbytes() <= target ) { break; }
+        auto const found { m_tiles.find( key ) };
         if( found == m_tiles.end() ) { continue; }
-        m_arena.take( found->second.piece );
+        if( true == found->second.wide ) { m_widearena.take( found->second.piece ); }
+        else                             { m_arena.take( found->second.piece ); }
         m_tiles.erase( found );
+        ++letgo;
+    }
+    if( letgo > 0 ) {
+        WriteLog( "Terrain: over budget, let go of " + std::to_string( letgo ) + " tiles, now holding "
+            + std::to_string( ( m_arena.usedbytes() + m_widearena.usedbytes() ) / 1048576 ) + " MB in "
+            + std::to_string( ( m_arena.roombytes() + m_widearena.roombytes() ) / 1048576 ) + " MB of buffers" );
     }
 }
 
@@ -368,18 +434,22 @@ terrain_clipmap::update( glm::dvec3 const &Viewpoint ) {
         walk( Viewpoint );
     }
 
-    // what the walk settled on is wanted now, and is what eviction spares
-    m_stats.perlevel.fill( 0 );
+    // what the walk settled on is wanted now, and is what eviction spares. how many of them end up
+    // drawn at each level is counted by the draw itself, which is the one that knows
     for( auto const key : m_chosen ) {
         auto const found { m_tiles.find( key ) };
         if( found == m_tiles.end() ) { continue; }
         found->second.lastused = m_frame;
-        ++m_stats.perlevel[ std::min<std::size_t>( found->second.level, m_stats.perlevel.size() - 1 ) ];
+    }
+    // the levels above what is drawn are wanted too, as the cover for wherever the camera turns next
+    for( auto const key : m_kept ) {
+        auto const found { m_tiles.find( key ) };
+        if( found != m_tiles.end() ) { found->second.lastused = m_frame; }
     }
 
     retire_unused();
     m_stats.resident = m_tiles.size();
-    m_stats.gpubytes = m_arena.bytes();
+    m_stats.gpubytes = m_arena.usedbytes() + m_widearena.usedbytes();
     report_residency();
 }
 
@@ -408,7 +478,8 @@ terrain_clipmap::report_residency() {
         + std::to_string( m_stats.gpubytes / 1048576 ) + " MB of mesh, "
         + std::to_string( m_stats.uploaded ) + " put in so far, "
         + std::to_string( m_stats.drawn ) + " of " + std::to_string( m_stats.chosen ) + " chosen drawn, "
-        + std::to_string( m_stats.triangles / 1000 ) + "k triangles, levels "
+        + std::to_string( m_stats.triangles / 1000 ) + "k triangles out to "
+        + std::to_string( static_cast<int>( m_stats.furthest ) ) + " m, levels "
         + [ this ]() {
             std::string counts;
             for( std::uint32_t level = 0; level < m_levels; ++level ) {
@@ -418,32 +489,47 @@ terrain_clipmap::report_residency() {
 }
 
 void
-terrain_clipmap::render( glm::dvec3 const &Viewpoint, visibility const &Visible ) {
+terrain_clipmap::render( glm::dvec3 const &Viewpoint, visibility const &Visible, bool const Mainview ) {
 
     if( ( false == m_ready ) || ( true == m_chosen.empty() ) ) { return; }
 
     // the ground textures the engine has finished loading since the last frame
     m_ground.update();
 
-    m_counts.clear();
-    m_offsets.clear();
-    m_bases.clear();
+    for( auto &list : m_counts ) { list.clear(); }
+    for( auto &list : m_offsets ) { list.clear(); }
+    for( auto &list : m_bases ) { list.clear(); }
     std::size_t triangles { 0 };
+    std::array<std::size_t, terrain_maxlevels> pertile {};
+    std::array<std::size_t, terrain_maxlevels> pertriangle {};
+    auto furthest { 0.0 };
     for( auto const key : m_chosen ) {
         auto const found { m_tiles.find( key ) };
         if( found == m_tiles.end() ) { continue; }
         auto const &tile { found->second };
         if( false == Visible( tile.centre, tile.radius ) ) { continue; }
-        m_counts.push_back( static_cast<std::int32_t>( tile.piece.indices ) );
-        m_offsets.push_back(
-            reinterpret_cast<void const *>(
-                static_cast<std::uintptr_t>( tile.piece.firstindex ) * sizeof( std::uint32_t ) ) );
-        m_bases.push_back( static_cast<std::int32_t>( tile.piece.firstvertex ) );
+        auto const level { std::min<std::size_t>( tile.level, terrain_maxlevels - 1 ) };
+        ++pertile[ level ];
+        pertriangle[ level ] += tile.piece.indices / 3;
+        furthest = std::max(
+            furthest,
+            glm::length( glm::dvec2 { tile.centre.x - Viewpoint.x, tile.centre.z - Viewpoint.z } ) );
+        auto const which { tile.wide ? 1 : 0 };
+        auto const width { tile.wide ? sizeof( std::uint32_t ) : sizeof( std::uint16_t ) };
+        m_counts[ which ].push_back( static_cast<std::int32_t>( tile.piece.indices ) );
+        m_offsets[ which ].push_back(
+            reinterpret_cast<void const *>( static_cast<std::uintptr_t>( tile.piece.firstindex ) * width ) );
+        m_bases[ which ].push_back( static_cast<std::int32_t>( tile.piece.firstvertex ) );
         triangles += tile.piece.indices / 3;
     }
-    m_stats.drawn = m_counts.size();
-    m_stats.triangles = triangles;
-    if( true == m_counts.empty() ) { return; }
+    if( true == Mainview ) {
+        m_stats.drawn = m_counts[ 0 ].size() + m_counts[ 1 ].size();
+        m_stats.triangles = triangles;
+        m_stats.perlevel = pertile;
+        m_stats.trianglesperlevel = pertriangle;
+        m_stats.furthest = furthest;
+    }
+    if( ( true == m_counts[ 0 ].empty() ) && ( true == m_counts[ 1 ].empty() ) ) { return; }
 
     m_shader->bind();
     glm::vec3 const origin {
@@ -468,12 +554,22 @@ terrain_clipmap::render( glm::dvec3 const &Viewpoint, visibility const &Visible 
         -1.f - 2.f * static_cast<float>( m_depthrank ),
         -2.f - 4.f * static_cast<float>( m_depthrank ) );
 
-    ::glBindVertexArray( m_arena.vertexarray() );
-    ::glMultiDrawElementsBaseVertex(
-        GL_TRIANGLES, m_counts.data(), GL_UNSIGNED_INT,
-        const_cast<void const **>( m_offsets.data() ),
-        static_cast<GLsizei>( m_counts.size() ), m_bases.data() );
-    ::glBindVertexArray( 0 );
+    if( false == m_counts[ 0 ].empty() ) {
+        m_arena.bind();
+        ::glMultiDrawElementsBaseVertex(
+            GL_TRIANGLES, m_counts[ 0 ].data(), GL_UNSIGNED_SHORT,
+            const_cast<void const **>( m_offsets[ 0 ].data() ),
+            static_cast<GLsizei>( m_counts[ 0 ].size() ), m_bases[ 0 ].data() );
+        m_arena.unbind();
+    }
+    if( false == m_counts[ 1 ].empty() ) {
+        m_widearena.bind();
+        ::glMultiDrawElementsBaseVertex(
+            GL_TRIANGLES, m_counts[ 1 ].data(), GL_UNSIGNED_INT,
+            const_cast<void const **>( m_offsets[ 1 ].data() ),
+            static_cast<GLsizei>( m_counts[ 1 ].size() ), m_bases[ 1 ].data() );
+        m_widearena.unbind();
+    }
 
     ::glDisable( GL_POLYGON_OFFSET_FILL );
     ::glActiveTexture( GL_TEXTURE1 );

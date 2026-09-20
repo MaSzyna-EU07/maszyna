@@ -23,22 +23,22 @@ http://mozilla.org/MPL/2.0/.
 #include <filesystem>
 #include <fstream>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
-#include "scene/pakformat.h"
+#include "scene/quantizedmesharchive.h"
 #include "scene/quantizedmeshformat.h"
 
 namespace quantizedmesh {
 
 // one vertex as the renderer wants it: measured from the terrain's origin, so that the whole
 // terrain fits in floats and every tile of it can go into one vertex buffer. there are no texture
-// coordinates - the ground tiles in world space, so the shader works them out from the position
+// coordinates - the ground tiles in world space, so the shader works them out from the position -
+// and the normal stays octahedron-encoded, which the shader unfolds. sixteen bytes either way
 #pragma pack( push, 1 )
 struct render_vertex {
     float x, y, z;
     std::uint16_t material;
-    std::uint16_t padding;
+    std::uint8_t normal0, normal1;
 };
 #pragma pack( pop )
 
@@ -76,20 +76,26 @@ public:
     // that every tile can go into the same vertex buffer and be drawn in one call
     bool read_tile( tile_address const &Tile, tile_data &Out,
         double Originx, double Originy, double Originz );
-    // the tiles the source holds, by tile_key. a tile the cook found nothing for is not there
-    std::unordered_set<std::int64_t> const &present() const { return m_present; }
-    bool contains( tile_address const &Tile ) const { return m_present.contains( tile_key( Tile ) ); }
+    // whether the source holds this tile. a tile the cook found no ground for is not there, and most
+    // of a quadtree is like that, so this is the commonest question the renderer asks
+    bool contains( tile_address const &Tile ) const;
+    // What this tile's ground asks for. An archive carries it per tile; a directory of loose tiles
+    // has nowhere to keep it, so there the level's figure stands in, which is what the whole terrain
+    // used before the index carried anything better
+    tile_measure measure( tile_address const &Tile ) const;
+    std::size_t tilecount() const;
 
 private:
-    bool entry( std::string const &Name, std::vector<std::uint8_t> &Out );
+    bool loose_file( std::string const &Name, std::vector<std::uint8_t> &Out ) const;
     bool read_table();
-    void find_tiles();
+    void find_loose_tiles();
 
     std::string m_path;
-    bool m_archive { false };
-    pak::reader m_pak;
+    bool m_isarchive { false };
+    archive_reader m_archive;
     terrain_table m_table;
-    std::unordered_set<std::int64_t> m_present;
+    // only for a directory of loose tiles; an archive is its own index
+    std::vector<std::int64_t> m_loose;
     bool m_ready { false };
     std::vector<std::uint8_t> m_buffer;
 };
@@ -103,18 +109,18 @@ reader::open( std::string const &Path ) {
     m_path = Path;
     std::error_code error;
     if( true == std::filesystem::is_directory( Path, error ) ) {
-        m_archive = false;
+        m_isarchive = false;
     }
     else if( true == std::filesystem::is_regular_file( Path, error ) ) {
-        m_archive = true;
-        if( false == m_pak.open( Path ) ) { close(); return false; }
+        m_isarchive = true;
+        if( false == m_archive.open( Path, cook_rules ) ) { close(); return false; }
     }
     else {
         close();
         return false;
     }
     if( false == read_table() ) { close(); return false; }
-    find_tiles();
+    if( false == m_isarchive ) { find_loose_tiles(); }
     m_ready = true;
     return true;
 }
@@ -122,18 +128,38 @@ reader::open( std::string const &Path ) {
 inline void
 reader::close() {
 
-    m_pak.close();
+    m_archive.close();
     m_table = {};
-    m_present.clear();
+    m_loose.clear();
+    m_loose.shrink_to_fit();
     m_path.clear();
-    m_archive = false;
+    m_isarchive = false;
     m_ready = false;
 }
 
 inline bool
-reader::entry( std::string const &Name, std::vector<std::uint8_t> &Out ) {
+reader::contains( tile_address const &Tile ) const {
 
-    if( true == m_archive ) { return m_pak.read( Name, Out ); }
+    if( true == m_isarchive ) { return m_archive.contains( Tile ); }
+    return std::binary_search( m_loose.begin(), m_loose.end(), tile_key( Tile ) );
+}
+
+inline tile_measure
+reader::measure( tile_address const &Tile ) const {
+
+    tile_measure measure { m_table.error( Tile.level ), m_table.edge( Tile.level ) };
+    if( true == m_isarchive ) { m_archive.measure( Tile, measure ); }
+    return measure;
+}
+
+inline std::size_t
+reader::tilecount() const {
+
+    return m_isarchive ? m_archive.tilecount() : m_loose.size();
+}
+
+inline bool
+reader::loose_file( std::string const &Name, std::vector<std::uint8_t> &Out ) const {
 
     std::ifstream file( std::filesystem::path( m_path ) / Name, std::ios::binary );
     if( false == file.good() ) { return false; }
@@ -147,13 +173,37 @@ reader::entry( std::string const &Name, std::vector<std::uint8_t> &Out ) {
     return static_cast<std::size_t>( file.gcount() ) == size;
 }
 
+// Which tiles a directory holds is worked out once. Asking the filesystem for a tile that is not there
+// is the commonest thing the renderer does - most of a quadtree is empty - and it must not cost a
+// system call.
+inline void
+reader::find_loose_tiles() {
+
+    std::error_code error;
+    auto const base { std::filesystem::path( m_path ) };
+    for( auto const &found : std::filesystem::recursive_directory_iterator( base, error ) ) {
+        if( false == found.is_regular_file( error ) ) { continue; }
+        auto const relative { std::filesystem::relative( found.path(), base, error ) };
+        if( error ) { continue; }
+        auto const name { relative.generic_string() };
+        if( false == name.ends_with( ".terrain" ) ) { continue; }
+        tile_address tile {};
+        if( 3 != std::sscanf( name.c_str(), "%u/%d/%d.terrain", &tile.level, &tile.x, &tile.z ) ) { continue; }
+        if( name != tile_name( tile ) ) { continue; }
+        m_loose.push_back( tile_key( tile ) );
+    }
+    std::sort( m_loose.begin(), m_loose.end() );
+}
+
 // the table is text: a terrain outlives the build that cooked it, and a line of it should be
 // readable without a tool
 inline bool
 reader::read_table() {
 
     std::vector<std::uint8_t> bytes;
-    if( false == entry( tablename, bytes ) ) { return false; }
+    auto const got {
+        m_isarchive ? m_archive.read_table( bytes ) : loose_file( tablename, bytes ) };
+    if( false == got ) { return false; }
     std::string const text( bytes.begin(), bytes.end() );
 
     auto found { false };
@@ -190,6 +240,13 @@ reader::read_table() {
                     { rest.substr( 0, gap ), static_cast<float>( std::strtod( rest.c_str() + gap + 1, nullptr ) ) } );
             }
         }
+        else if( what == "edge" ) {
+            char const *cursor { rest.c_str() };
+            auto const level { std::strtoul( cursor, const_cast<char **>( &cursor ), 10 ) };
+            auto const metres { std::strtod( cursor, const_cast<char **>( &cursor ) ) };
+            if( m_table.edges.size() <= level ) { m_table.edges.resize( level + 1, 0.f ); }
+            m_table.edges[ level ] = static_cast<float>( metres );
+        }
         else if( what == "error" ) {
             char const *cursor { rest.c_str() };
             auto const level { std::strtoul( cursor, const_cast<char **>( &cursor ), 10 ) };
@@ -204,40 +261,15 @@ reader::read_table() {
         && ( m_table.levels >= 1 );
 }
 
-// Which tiles there are is worked out once. Asking the filesystem, or even the archive's index,
-// for a tile that is not there is the commonest thing the renderer does - most of a quadtree is
-// empty - and it must not cost anything.
-inline void
-reader::find_tiles() {
-
-    auto const remember = [ this ]( std::string const &Name ) {
-        if( false == Name.ends_with( ".terrain" ) ) { return; }
-        tile_address tile {};
-        if( 3 != std::sscanf( Name.c_str(), "%u/%d/%d.terrain", &tile.level, &tile.x, &tile.z ) ) { return; }
-        if( Name != tile_name( tile ) ) { return; }
-        m_present.insert( tile_key( tile ) ); };
-
-    if( true == m_archive ) {
-        for( auto const &name : m_pak.names() ) { remember( name ); }
-        return;
-    }
-    std::error_code error;
-    auto const base { std::filesystem::path( m_path ) };
-    for( auto const &found : std::filesystem::recursive_directory_iterator( base, error ) ) {
-        if( false == found.is_regular_file( error ) ) { continue; }
-        auto const relative { std::filesystem::relative( found.path(), base, error ) };
-        if( error ) { continue; }
-        remember( relative.generic_string() );
-    }
-}
-
 inline bool
 reader::read_tile( tile_address const &Tile, tile_data &Out,
     double const Originx, double const Originy, double const Originz ) {
 
     if( false == m_ready ) { return false; }
     if( Tile.level >= m_table.levels ) { return false; }
-    if( false == entry( tile_name( Tile ), m_buffer ) ) { return false; }
+    auto const got {
+        m_isarchive ? m_archive.read_tile( Tile, m_buffer ) : loose_file( tile_name( Tile ), m_buffer ) };
+    if( false == got ) { return false; }
 
     auto const *cursor { m_buffer.data() };
     auto const *end { cursor + m_buffer.size() };
@@ -307,8 +339,9 @@ reader::read_tile( tile_address const &Tile, tile_data &Out,
         cursor += count * indexsize;
     }
 
-    // which material each vertex belongs to, from the extension the cook writes
+    // the normals the format carries, and which material each vertex belongs to, which is ours
     std::vector<std::uint16_t> ground;
+    std::vector<std::uint8_t> normals;
     while( cursor < end ) {
         std::uint8_t id { 0 };
         std::uint32_t length { 0 };
@@ -318,6 +351,10 @@ reader::read_tile( tile_address const &Tile, tile_data &Out,
         if( ( id == ext_ground ) && ( length == vertexcount * sizeof( std::uint16_t ) ) ) {
             ground.resize( vertexcount );
             std::memcpy( ground.data(), cursor, length );
+        }
+        else if( ( id == ext_normals ) && ( length == vertexcount * 2u ) ) {
+            normals.resize( length );
+            std::memcpy( normals.data(), cursor, length );
         }
         cursor += length;
     }
@@ -346,7 +383,10 @@ reader::read_tile( tile_address const &Tile, tile_data &Out,
         vertex.y = static_cast<float>( dequantize( quantized[ 2 ][ index ], header.lowest, heightspan ) - Out.originy );
         vertex.z = static_cast<float>( dequantize( quantized[ 1 ][ index ], north, side ) - Out.originz );
         vertex.material = ground[ index ];
-        vertex.padding = 0;
+        // a tile without the normals extension - one made by another tool - is lit as if the ground
+        // were level, which is wrong but is not a reason to refuse it
+        vertex.normal0 = ( normals.size() == vertexcount * 2u ) ? normals[ index * 2 + 0 ] : 128;
+        vertex.normal1 = ( normals.size() == vertexcount * 2u ) ? normals[ index * 2 + 1 ] : 128;
     }
     return true;
 }
@@ -367,6 +407,9 @@ write_table( terrain_table const &Table ) {
     text += "levels " + std::to_string( Table.levels ) + "\n";
     for( std::size_t level = 0; level < Table.errors.size(); ++level ) {
         text += "error " + std::to_string( level ) + " " + number( Table.errors[ level ] ) + "\n";
+    }
+    for( std::size_t level = 0; level < Table.edges.size(); ++level ) {
+        text += "edge " + std::to_string( level ) + " " + number( Table.edges[ level ] ) + "\n";
     }
     for( auto const &material : Table.materials ) {
         text += "material " + material.name + " " + number( material.repeat ) + "\n";

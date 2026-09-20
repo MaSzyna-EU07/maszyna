@@ -61,8 +61,10 @@ public:
     // not been wanted for a while. safe to call every frame: the reading happens on the loader's
     // thread
     void update( glm::dvec3 const &Viewpoint );
-    // draws the tiles the walk settled on that the test says can be seen
-    void render( glm::dvec3 const &Viewpoint, visibility const &Visible );
+    // draws the tiles the walk settled on that the test says can be seen. Mainview says whether this
+    // is the view residency is decided by, and so whether what it drew is worth counting: a shadow
+    // pass sees the same tiles through a frustum of its own
+    void render( glm::dvec3 const &Viewpoint, visibility const &Visible, bool Mainview );
 
     // how far from the viewpoint terrain is drawn, in metres
     void range( float const Range ) { m_range = Range; }
@@ -86,11 +88,13 @@ public:
     // side of a tile at each level, and how far that level's ground is off, for the debug panel
     float leveltile( std::uint32_t const Level ) const;
     float levelerror( std::uint32_t const Level ) const;
+    float leveledge( std::uint32_t const Level ) const;
 
 private:
     // one tile held in the buffers
     struct resident_tile {
         terrain_mesh_arena::piece piece;
+        bool wide { false };   // which of the two arenas it is in
         // for culling, in world space
         glm::dvec3 centre { 0.0 };
         float radius { 0.f };
@@ -101,7 +105,7 @@ private:
     // the tiles the walk settled on, in the order they will be drawn
     void walk( glm::dvec3 const &Viewpoint );
     // asks the loader for every tile the wanted cut of the quadtree is missing, and says whether this
-    // tile and everything under it is already there
+    // tile's ground can be drawn at all - at the level wanted, or by the tile itself standing in
     bool need( quantizedmesh::tile_address const &Tile, glm::dvec3 const &Viewpoint );
     // whether the level this tile stands for is close enough to the ground below it
     bool good_enough( quantizedmesh::tile_address const &Tile, double Distance ) const;
@@ -118,7 +122,11 @@ private:
 
     quantizedmesh::reader m_reader;      // the table and which tiles there are; reading is the loader's
     terrain_tile_loader m_loader;
+    // Nearly every tile fits two-byte indices and lives in the first; a tile of more than sixty-five
+    // thousand vertices - a patch of survey data, usually - goes in the second, which pays four bytes
+    // for them. One draw call each, and the second is empty on most sceneries.
     terrain_mesh_arena m_arena;
+    terrain_mesh_arena m_widearena;
     terrain_ground m_ground;
 
     quantizedmesh::terrain_table m_table;
@@ -128,17 +136,24 @@ private:
 
     std::unordered_map<std::int64_t, resident_tile> m_tiles;
     std::vector<std::int64_t> m_chosen;
+    // the tiles the walk passed through on its way down. They are not drawn - what is below them is -
+    // but they are held all the same, because the moment the camera turns towards ground whose fine
+    // tiles have not arrived, one of them is what covers it. Without them that ground is a hole until
+    // the fine tiles come, which is what flickering while the camera moves was.
+    std::vector<std::int64_t> m_kept;
     std::vector<std::pair<double, quantizedmesh::tile_address>> m_wishes;
     std::vector<quantizedmesh::tile_address> m_wanted;
     std::vector<terrain_tile_loader::payload> m_arrived;
     std::unordered_set<std::int64_t> m_asked;    // what the last walk asked the loader for
-    // whether a subtree could be drawn, worked out once per walk
-    std::unordered_map<std::int64_t, bool> m_readiness;
+    // per tile of the last walk, whether all four of its children can be drawn, and so whether the
+    // walk may go past it. Worked out once and read again when the tiles to draw are picked
+    std::unordered_map<std::int64_t, bool> m_maydescend;
 
-    // what the draw hands to gl, kept between frames so that a frame allocates nothing
-    std::vector<std::int32_t> m_counts;
-    std::vector<void const *> m_offsets;
-    std::vector<std::int32_t> m_bases;
+    // what the draw hands to gl, kept between frames so that a frame allocates nothing. one set for
+    // each arena
+    std::vector<std::int32_t> m_counts[ 2 ];
+    std::vector<void const *> m_offsets[ 2 ];
+    std::vector<std::int32_t> m_bases[ 2 ];
 
     glm::dvec3 m_walkpoint { 0.0 };
     bool m_walked { false };
@@ -165,7 +180,10 @@ private:
     unsigned m_depthrank { 0 };
     // what the buffers may hold before tiles nobody asked for lately are let go
     std::size_t m_budget { 192u << 20 };
-    std::size_t m_putsperframe { 16 };
+    // Tiles put on the card in one frame. Generous on purpose: what is being absorbed is a read that
+    // has already happened, and the sooner the levels between a new tile and the root are all there,
+    // the shorter the window in which the ground has to be drawn coarse
+    std::size_t m_putsperframe { 64 };
     bool m_ready { false };
     std::string m_path;
 };

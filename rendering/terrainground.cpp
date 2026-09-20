@@ -225,16 +225,24 @@ terrain_ground::update() {
             entry.copied = true;
             --m_pending;
             ++copied;
+            // rare, and it changes gl state for a moment: worth a line, so that anything odd seen on
+            // screen can be told apart from what the streamer is doing
+            WriteLog( "Terrain: ground texture " + std::to_string( index ) + " copied into the array, "
+                + std::to_string( m_pending ) + " still waiting" );
         }
 
         gl::vao::unbind();
         gl::program::bind( 0 );
     }
-    opengl_texture::reset_unit_cache();
 
     if( copied > 0 ) {
         ::glBindTexture( GL_TEXTURE_2D_ARRAY, m_array );
         ::glGenerateMipmap( GL_TEXTURE_2D_ARRAY );
+        ::glBindTexture( GL_TEXTURE_2D_ARRAY, 0 );
         upload_table();
     }
+    // last of all, and after the mipmaps rather than before them: the engine remembers what it last
+    // put on each texture unit and skips a bind it believes is already in place, so leaving a bind of
+    // ours behind its back costs it a frame drawn with the wrong texture
+    opengl_texture::reset_unit_cache();
 }

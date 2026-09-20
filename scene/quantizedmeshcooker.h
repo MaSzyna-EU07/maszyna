@@ -46,8 +46,9 @@ public:
         float u, v;
     };
 
-    // one finished tile, handed over as the bytes of its file
-    using sink = std::function<void( tile_address const &, std::vector<std::uint8_t> const & )>;
+    // one finished tile, handed over as the bytes of its file and what its ground asks for
+    using sink = std::function<
+        void( tile_address const &, std::vector<std::uint8_t> const &, tile_measure const & )>;
 
     cooker() = default;
     ~cooker();
@@ -91,6 +92,12 @@ public:
     // a vertex of a tile's mesh while it is being worked on, in metres
     struct meshvertex {
         double x, y, z;
+        // The ground's normal here, taken from the scenery's own triangles before they were cut, and
+        // kept unnormalised: what is stored is the sum of the faces meeting here weighted by their
+        // area, so the length carries the weight. When a vertex is collapsed away its sum is added to
+        // the survivor's, which makes a coarse level's normals the average of the fine surface they
+        // stand for rather than a sample of it. It is normalised on the way out.
+        double nx { 0.0 }, ny { 1.0 }, nz { 0.0 };
         std::uint16_t material;
         // which of the tile's four sides it sits on, one bit each. a vertex on a side is shared
         // with the tile beyond it, so it survives into every level; and an edge whose two ends
@@ -130,8 +137,10 @@ private:
     // the four tiles below this one, welded into one mesh
     mesh merge( tile_address const &Tile, sink const &Sink );
     // collapses edges until the mesh fits the budget, or until the ground would move further than
-    // Allowed, whichever comes first. locked vertices are left where they are
-    void simplify( mesh &Mesh, std::size_t Budget, double Allowed );
+    // Allowed, whichever comes first. locked vertices are left where they are; a collapse touching a
+    // boundary between materials may not reach further than Boundaryreach; and one that moves the edge
+    // of the ground itself may not reach further than Outlinereach, which at zero forbids it outright
+    void simplify( mesh &Mesh, std::size_t Budget, double Allowed, double Boundaryreach, double Outlinereach );
     // the bytes of a tile's file
     void encode( tile_address const &Tile, mesh const &Mesh, std::vector<std::uint8_t> &Out ) const;
     // where a tile's square lies
@@ -144,8 +153,10 @@ private:
 
     double m_finesttile { 256.0 };
     std::size_t m_tilebudget { 8192 };
-    // a sample of how long a triangle's edges are in the plan, which decides the finest tile
-    std::vector<double> m_edges;
+    // how long a triangle's edges are in the plan, averaged over the ground and weighted by how much
+    // of it each triangle covers. that is what decides the finest tile
+    double m_edgesum { 0.0 };
+    double m_areasum { 0.0 };
 
     std::vector<std::string> m_materials;
     std::unordered_map<std::string, std::uint16_t> m_materiallookup;
@@ -168,8 +179,10 @@ private:
     std::vector<std::pair<std::int64_t, std::uint32_t>> m_placement;
 
     std::vector<std::uint32_t> m_refusals;
-    // the worst error any tile of each level came out with
+    // the worst error any tile of each level came out with, and how much ground its triangles cover
     std::vector<double> m_errors;
+    std::vector<double> m_levelarea;
+    std::vector<std::size_t> m_leveltriangles;
     report m_report;
 };
 

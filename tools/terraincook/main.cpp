@@ -33,6 +33,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/heightfieldformat.h"
 #include "scene/heightfieldreader.h"
 #include "scene/terraincooker.h"
+#include "scene/quantizedmesharchive.h"
 #include "scene/quantizedmeshcooker.h"
 #include "scene/quantizedmeshreader.h"
 
@@ -885,9 +886,9 @@ main( int argc, char *argv[] ) {
     if( cooking ) {
         std::printf( "\n-- cooking terrain mesh tiles\n" );
 
-        pak::writer writer;
+        quantizedmesh::archive_writer writer;
         auto const archivepath { ( outputdirectory / archive ).string() };
-        if( false == writer.open( archivepath ) ) {
+        if( false == writer.open( archivepath, quantizedmesh::cook_rules ) ) {
             std::cerr << "cannot write " << archivepath << "\n";
             return 1;
         }
@@ -895,13 +896,14 @@ main( int argc, char *argv[] ) {
         quantizedmesh::terrain_table table;
         auto const sink {
             [ &writer, &written ](
-                quantizedmesh::tile_address const &Tile, std::vector<std::uint8_t> const &Bytes ) {
-                written = writer.add( quantizedmesh::tile_name( Tile ), Bytes ) && written; } };
+                quantizedmesh::tile_address const &Tile, std::vector<std::uint8_t> const &Bytes,
+                quantizedmesh::tile_measure const &Measure ) {
+                written = writer.add( Tile, Bytes, Measure ) && written; } };
         if( ( false == cooker.finish( sink, table ) ) || ( false == written ) ) {
             std::cerr << "cooking failed\n";
             return 1;
         }
-        written = writer.add( quantizedmesh::tablename, quantizedmesh::write_table( table ) ) && written;
+        written = writer.table( quantizedmesh::write_table( table ) ) && written;
         if( ( false == writer.close() ) || ( false == written ) ) {
             std::cerr << "cannot finish " << archivepath << "\n";
             return 1;

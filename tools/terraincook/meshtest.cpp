@@ -8,12 +8,14 @@
 #include <cstdio>
 #include <filesystem>
 #include <set>
+#include <cstdlib>
 #include <system_error>
 #include <map>
 #include <tuple>
 #include <set>
 #include <vector>
 
+#include "scene/quantizedmesharchive.h"
 #include "scene/quantizedmeshcooker.h"
 #include "scene/quantizedmeshreader.h"
 
@@ -66,18 +68,19 @@ int main() {
     // one big triangle spanning many tiles, as 3ds Max terrain has
     cooker.add( { -600.0, -5.0, 700.0, 0.f, 0.f }, { 600.0, -5.0, 700.0, 24.f, 0.f }, { 0.0, -5.0, 1100.0, 12.f, 16.f }, "grass" );
 
-    pak::writer writer;
-    check( writer.open( archive ), "pak open" );
+    qm::archive_writer writer;
+    check( writer.open( archive, qm::cook_rules ), "archive opened for writing" );
     qm::terrain_table table;
     std::map<std::int64_t, qm::tile_address> written;
-    auto const sink = [&]( qm::tile_address const &tile, std::vector<std::uint8_t> const &bytes ) {
+    auto const sink = [&]( qm::tile_address const &tile, std::vector<std::uint8_t> const &bytes,
+        qm::tile_measure const &measure ) {
         written.emplace( qm::tile_key( tile ), tile );
-        check( writer.add( qm::tile_name( tile ), bytes ), "pak add" );
+        check( writer.add( tile, bytes, measure ), "tile written" );
     };
     check( cooker.finish( sink, table ), "finish" );
     auto const tabletext = qm::write_table( table );
-    check( writer.add( qm::tablename, tabletext ), "table add" );
-    check( writer.close(), "pak close" );
+    check( writer.table( tabletext ), "table written" );
+    check( writer.close(), "archive closed" );
 
     auto const &report = cooker.result();
     std::printf( "added %zu, laid %zu triangles in %zu tiles, %u levels, %zu vertices, %zu kB, refused %zu\n",
@@ -100,8 +103,23 @@ int main() {
         std::printf( "  level %u error %.3f m, tile %.0f m\n", level,
             reader.table().error( level ), reader.table().tilesize( level ) );
     }
-    check( reader.table().error( reader.table().levels - 1 ) == 0.f, "the finest level is the ground as drawn" );
-    check( reader.table().error( 0 ) > reader.table().error( reader.table().levels - 2 ), "a coarser level is further off" );
+    // the finest level is let go of only where it says the same thing twice, so it is off by
+    // centimetres rather than by nothing
+    check( reader.table().error( reader.table().levels - 1 ) < 0.05f, "the finest level is off by centimetres" );
+    // every level is at least as far off as the one below it, and the coarsest is further off than
+    // the finest - which is what makes the ladder worth walking down
+    for( std::uint32_t level = 0; level + 1 < reader.table().levels; ++level ) {
+        check( reader.table().error( level ) >= reader.table().error( level + 1 ) - 1e-4f,
+            "a coarser level is at least as far off as the one below it" );
+    }
+    check( reader.table().error( 0 ) > reader.table().error( reader.table().levels - 1 ),
+        "the coarsest level is further off than the finest" );
+
+    // A coordinate is quantized to fifteen bits across its tile, so how closely a position comes back
+    // follows the tile's size: a thousand-metre tile holds it to a few centimetres. Everything below
+    // compares against that rather than against a fixed figure.
+    auto const quantum = [ & ]( std::uint32_t level ) { return reader.table().tilesize( level ) / 32767.0; };
+
 
     // every tile reads back, and its vertices lie inside its own square
     // per level and border point, the heights each tile put there. with walls in the mesh one
@@ -121,12 +139,14 @@ int main() {
         auto const north = reader.table().north + tile.z * side;
         for( auto const &v : data.vertices ) {
             double const x = data.originx + v.x, z = data.originz + v.z, y = data.originy + v.y;
-            check( x >= west - 0.01 && x <= west + side + 0.01, "vertex inside its tile in x" );
-            check( z >= north - 0.01 && z <= north + side + 0.01, "vertex inside its tile in z" );
-            check( y >= data.lowest - 0.01 && y <= data.highest + 0.01, "vertex inside its height range" );
+            auto const slack = 2.0 * quantum( tile.level );
+            check( x >= west - slack && x <= west + side + slack, "vertex inside its tile in x" );
+            check( z >= north - slack && z <= north + side + slack, "vertex inside its tile in z" );
+            check( y >= data.lowest - slack && y <= data.highest + slack, "vertex inside its height range" );
             // remember heights on tile borders, to compare with the neighbour later
-            auto const onborder = std::abs( x - west ) < 0.01 || std::abs( x - west - side ) < 0.01
-                               || std::abs( z - north ) < 0.01 || std::abs( z - north - side ) < 0.01;
+            auto const close = 2.0 * quantum( tile.level );
+            auto const onborder = std::abs( x - west ) < close || std::abs( x - west - side ) < close
+                               || std::abs( z - north ) < close || std::abs( z - north - side ) < close;
             if( onborder ) {
                 auto const gx = static_cast<long long>( std::llround( x * 100.0 ) );
                 auto const gz = static_cast<long long>( std::llround( z * 100.0 ) );
@@ -156,8 +176,10 @@ int main() {
     }
     std::printf( "%zu of %zu shared border points carry more than one surface\n", manysurfaced, shared );
     std::printf( "%zu border points shared by two tiles\n", shared );
-    std::printf( "worst height disagreement on a shared border: %.4f mm\n", worst * 1000.0 );
-    check( worst < 0.01, "shared border vertices agree within a centimetre" );
+    std::printf( "worst height disagreement on a shared border: %.1f mm\n", worst * 1000.0 );
+    // heights are quantized against each tile's own range, as the format has it, so two tiles round a
+    // shared vertex a fraction of a quantum apart
+    check( worst < 2.0 * quantum( reader.table().levels - 1 ), "shared border vertices agree to a quantum" );
 
     // the coarse levels must actually be coarser
     if( perlevel.size() >= 2 ) {
@@ -166,7 +188,7 @@ int main() {
         check( next < finest, "a coarser level has fewer triangles" );
     }
 
-    // the wall along the tile border must be there, and exactly once: 8 triangles, not 16
+    // the wall along the tile border must be there, and exactly once
     {
         std::size_t wallpieces = 0;
         std::set<std::pair<long long,long long>> wallcentres;
@@ -178,7 +200,7 @@ int main() {
                 bool wall = true;
                 for( int c = 0; c < 3; ++c ) {
                     auto const &v = data.vertices[ data.indices[ i + c ] ];
-                    if( std::abs( data.originz + v.z + 512.0 ) > 0.01 ) { wall = false; }
+                    if( std::abs( data.originz + v.z + 512.0 ) > 2.0 * quantum( tile.level ) ) { wall = false; }
                 }
                 if( wall ) {
                     ++wallpieces;
@@ -215,7 +237,7 @@ int main() {
     std::printf( "triangles inside the hole: %zu\n", inhole );
     check( inhole == 0, "the hole was not filled in" );
 
-    std::filesystem::remove_all( directory, ignored );
+    if( nullptr == getenv( "KEEP" ) ) { std::filesystem::remove_all( directory, ignored ); }
     std::printf( failures ? "\n%d checks failed\n" : "\nall checks passed\n", failures );
     return failures ? 1 : 0;
 }

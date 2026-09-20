@@ -36,23 +36,50 @@ constexpr double weldepsilon { 1e-4 };
 constexpr std::uint32_t maxlevels { 13 };
 // The finest tile is this many typical triangle edges across, and never outside these bounds. A tile
 // has to be large against the triangles in it: a triangle crossing a border is cut, and the pieces
-// cost vertices neither side had. It also has to stay small enough to be worth loading and culling
-// on its own, which is what the bounds are for.
+// cost vertices neither side had. It also has to stay small enough to be worth loading and culling on
+// its own, which is what the bounds are for.
+//
+// The typical edge is averaged over the ground weighted by how much of it each triangle covers, not
+// over the triangles counted one each. A scenery holds both kinds of ground - a dense patch from a
+// survey by the track, and big triangles drawn by hand for the rest - and counting triangles one each
+// lets a patch of a few hundred metres decide the tile for forty kilometres. What the cut costs
+// depends on how much ground the large triangles cover, which is what this measures.
 constexpr double tileedges { 16.0 };
 constexpr double smallesttileside { 128.0 };
 constexpr double largesttileside { 1024.0 };
-// how many edge lengths are kept to find the typical one. the first hundred thousand triangles say
-// as much about a scenery as all of them
-constexpr std::size_t edgesample { 100000 };
 // a tile is never collapsed below this, however far away it is drawn: past a point the triangles
 // saved are not worth the ground losing its shape
 constexpr std::size_t smallesttile { 64 };
-// A level may move the ground by this share of its tile's side, and no further. A level is used from
-// about twice its tile's side away, where a share this small is well under a pixel; letting it go
-// further would buy triangles that no distance is far enough to use. Ground already so coarse that a
-// level cannot be thinned within it simply comes out nearly a copy of the level below, which is the
-// right answer: there was nothing there to save.
-constexpr double errorshare { 128.0 };
+// A level may move the ground by this share of its tile's side, and no further.
+//
+// The number decides how far away a level has to be before it may be used, and so how long the level
+// below it has to be drawn. Too generous and the finest mesh - which is the whole of the scenery's
+// ground - is drawn out to several kilometres, and only three or four levels are ever in view at once.
+// A third of what it was buys coarse levels faithful enough to be used three times closer, which is
+// both fewer triangles in the end and more of the ladder visible at any moment.
+constexpr double errorshare { 384.0 };
+// How far the finest level may move the ground, in metres. Not a share of the tile like the levels
+// above: this is the one that is stood on, so what it may lose is set by what the eye can catch from
+// there rather than by how large the tile happens to be. Three centimetres of ground twenty metres
+// ahead covers about a pixel and a half.
+//
+// What it takes off is redundancy rather than detail - a field drawn as a grid a metre across is a
+// grid a metre across even where it is flat, and survey data is mostly flat. Nothing else in the
+// pyramid can remove it, because every level above is built from this one.
+constexpr double finesterror { 0.03 };
+// How wide the ground may change over where two materials meet, as a share of the tile's side.
+//
+// The fragment stage blends the three materials of a triangle by how near the fragment is to each
+// corner, so a transition is one triangle wide - and a triangle is exactly what a coarser level makes
+// larger. Left alone the ground would fade over four metres near to and over sixty far away, and the
+// change would be seen as the level changed.
+//
+// Tying it to the tile rather than to a fixed number of metres holds it steady where it counts, which
+// is on screen: a level is drawn from about as far away as its tiles are wide, so a share of the tile
+// is a roughly constant number of pixels. It also lets material detail finer than this merge away at
+// the levels where it could not be seen anyway - without that, ground drawn in stripes a few metres
+// across can never be simplified at all, because every edge in it crosses a boundary.
+constexpr double blendshare { 64.0 };
 
 // the area of a triangle in space, whichever way it faces
 double
@@ -111,6 +138,7 @@ sides_of( double const X, double const Z, double const West, double const North,
 // a vertex of a polygon being cut along the tile grid
 struct clipvertex {
     double x, y, z;
+    double nx, ny, nz;
 };
 
 clipvertex
@@ -118,7 +146,10 @@ between( clipvertex const &From, clipvertex const &To, double const Share ) {
     return {
         From.x + ( To.x - From.x ) * Share,
         From.y + ( To.y - From.y ) * Share,
-        From.z + ( To.z - From.z ) * Share };
+        From.z + ( To.z - From.z ) * Share,
+        From.nx + ( To.nx - From.nx ) * Share,
+        From.ny + ( To.ny - From.ny ) * Share,
+        From.nz + ( To.nz - From.nz ) * Share };
 }
 
 // Sutherland and Hodgman against one side of the tile's square. Axis 0 is x and 1 is z; the
@@ -224,14 +255,19 @@ cooker::add( corner const &A, corner const &B, corner const &C, std::string_view
     }
 
     corner const corners[ 3 ] { A, B, C };
-    if( m_edges.size() < edgesample ) {
+    {
+        auto edges { 0.0 };
         for( std::size_t index = 0; index < 3; ++index ) {
             auto const &from { corners[ index ] };
             auto const &to { corners[ ( index + 1 ) % 3 ] };
-            auto const length {
-                std::sqrt( ( to.x - from.x ) * ( to.x - from.x ) + ( to.z - from.z ) * ( to.z - from.z ) ) };
-            if( length > 0.0 ) { m_edges.push_back( length ); }
+            edges += std::sqrt(
+                ( to.x - from.x ) * ( to.x - from.x ) + ( to.z - from.z ) * ( to.z - from.z ) );
         }
+        auto const plan {
+            0.5 * std::abs(
+                ( B.x - A.x ) * ( C.z - A.z ) - ( C.x - A.x ) * ( B.z - A.z ) ) };
+        m_edgesum += plan * edges / 3.0;
+        m_areasum += plan;
     }
     spilled record {};
     record.material = material_index( Material );
@@ -263,16 +299,13 @@ cooker::add( corner const &A, corner const &B, corner const &C, std::string_view
 void
 cooker::measure() {
 
-    // the middle edge length of the sample, and the tile that suits it, rounded to a power of two so
-    // that the same scenery always comes out the same way
-    if( false == m_edges.empty() ) {
-        auto const middle { m_edges.begin() + m_edges.size() / 2 };
-        std::nth_element( m_edges.begin(), middle, m_edges.end() );
-        auto const wanted { std::clamp( tileedges * *middle, smallesttileside, largesttileside ) };
-        m_finesttile = std::exp2( std::round( std::log2( wanted ) ) );
-        m_finesttile = std::clamp( m_finesttile, smallesttileside, largesttileside );
-        m_edges.clear();
-        m_edges.shrink_to_fit();
+    // the typical edge and the tile that suits it, rounded to a power of two so that the same scenery
+    // always comes out the same way
+    if( m_areasum > 0.0 ) {
+        auto const typical { m_edgesum / m_areasum };
+        auto const wanted { std::clamp( tileedges * typical, smallesttileside, largesttileside ) };
+        m_finesttile = std::clamp(
+            std::exp2( std::round( std::log2( wanted ) ) ), smallesttileside, largesttileside );
     }
 
     m_west = std::floor( m_minx / m_finesttile ) * m_finesttile;
@@ -326,10 +359,13 @@ cooker::finish( sink const &Sink, terrain_table &Table ) {
         }
         auto const first = [ this ]( double const Value, double const Origin ) {
             return static_cast<std::int32_t>( std::floor( ( Value - Origin ) / m_finesttile ) ); };
-        auto const fromx { std::clamp( first( minx, m_west ), 0, acrossfinest - 1 ) };
-        auto const tox { std::clamp( first( maxx, m_west ), 0, acrossfinest - 1 ) };
-        auto const fromz { std::clamp( first( minz, m_north ), 0, acrossfinest - 1 ) };
-        auto const toz { std::clamp( first( maxz, m_north ), 0, acrossfinest - 1 ) };
+        // a hair past the triangle either way: one that merely touches a border belongs to the tile
+        // beyond it as well, and that is what lets two tiles agree on the normal of a vertex they
+        // share. it contributes nothing to that tile's own triangles - there is nothing of it inside
+        auto const fromx { std::clamp( first( minx - weldepsilon, m_west ), 0, acrossfinest - 1 ) };
+        auto const tox { std::clamp( first( maxx + weldepsilon, m_west ), 0, acrossfinest - 1 ) };
+        auto const fromz { std::clamp( first( minz - weldepsilon, m_north ), 0, acrossfinest - 1 ) };
+        auto const toz { std::clamp( first( maxz + weldepsilon, m_north ), 0, acrossfinest - 1 ) };
         for( auto x = fromx; x <= tox; ++x ) {
             for( auto z = fromz; z <= toz; ++z ) {
                 m_placement.emplace_back(
@@ -340,6 +376,8 @@ cooker::finish( sink const &Sink, terrain_table &Table ) {
     std::sort( m_placement.begin(), m_placement.end() );
 
     m_errors.assign( m_levels, 0.0 );
+    m_levelarea.assign( m_levels, 0.0 );
+    m_leveltriangles.assign( m_levels, 0 );
     cook( { 0, 0, 0 }, Sink );
     m_report.levels = m_levels;
 
@@ -351,6 +389,14 @@ cooker::finish( sink const &Sink, terrain_table &Table ) {
     Table.highest = m_highest;
     Table.levels = m_levels;
     Table.errors.assign( m_errors.begin(), m_errors.end() );
+    // the side of the square a triangle of this level covers on average: what it is worth on screen
+    Table.edges.clear();
+    for( std::uint32_t level = 0; level < m_levels; ++level ) {
+        auto const triangles { m_leveltriangles[ level ] };
+        auto const typical {
+            triangles > 0 ? std::sqrt( 2.0 * m_levelarea[ level ] / static_cast<double>( triangles ) ) : 0.0 };
+        Table.edges.push_back( static_cast<float>( typical ) );
+    }
     Table.materials.clear();
     for( std::size_t index = 0; index < m_materials.size(); ++index ) {
         // a material the measurement never caught falls back to something plausible rather than
@@ -375,23 +421,55 @@ cooker::cook( tile_address const &Tile, sink const &Sink ) {
         ( Tile.level + 1 == m_levels ) ? lay( Tile ) : merge( Tile, Sink ) };
     if( true == result.empty() ) { return result; }
 
-    if( Tile.level + 1 < m_levels ) {
-        // The finest level is the ground as the scenery drew it and is left alone. A level above it
-        // holds what four tiles below it held, and is collapsed back to what one of them held: the
-        // cost of a level is then a quarter of the level below, and the whole pyramid costs a third
-        // more than the finest alone. A count fixed in advance cannot do that - a tile that never
-        // reaches it would be copied rather than simplified - so it only serves as a ceiling.
+    {
         double west { 0.0 }, north { 0.0 }, side { 0.0 };
         square( Tile, west, north, side );
         auto const merged { result.indices.size() / 3 };
-        simplify( result, std::clamp( merged / 4, smallesttile, m_tilebudget ), side / errorshare );
+        if( Tile.level + 1 < m_levels ) {
+            // A level holds what four tiles below it held, and is collapsed back to what one of them
+            // held: the cost of a level is then a quarter of the level below, and the whole pyramid
+            // costs a third more than the finest alone. A count fixed in advance cannot do that - a
+            // tile that never reaches it would be copied rather than simplified - so it only serves
+            // as a ceiling.
+            simplify(
+                result, std::clamp( merged / 4, smallesttile, m_tilebudget ),
+                side / errorshare, side / blendshare, side / blendshare );
+        }
+        else {
+            // the finest level keeps its shape to within a fraction of nothing, and is let go of
+            // only where it says the same thing twice
+            // Its outline is left exactly where the scenery put it. Ground drawn in separate patches
+            // meets at T-junctions - a vertex of one lying partway along an edge of the other - and the
+            // two outlines there are not the same set of vertices, so moving one and not the other opens
+            // a crack. Far away that is a fraction of a pixel and worth the triangles; on the ground the
+            // camera stands on it is a line of sky through the field.
+            simplify( result, smallesttile, finesterror, side / blendshare, 0.0 );
+        }
     }
 
     m_errors[ Tile.level ] = std::max( m_errors[ Tile.level ], result.error );
+    // the ground this tile covers and how many triangles it spends on it, from which the side of the
+    // square one of them covers on average - what a triangle of this tile is worth on screen
+    double area { 0.0 };
+    std::size_t triangles { 0 };
+    for( std::size_t index = 0; index + 2 < result.indices.size(); index += 3 ) {
+        auto const &a { result.vertices[ result.indices[ index + 0 ] ] };
+        auto const &b { result.vertices[ result.indices[ index + 1 ] ] };
+        auto const &c { result.vertices[ result.indices[ index + 2 ] ] };
+        area += 0.5 * std::abs( ( b.x - a.x ) * ( c.z - a.z ) - ( c.x - a.x ) * ( b.z - a.z ) );
+        ++triangles;
+    }
+    m_levelarea[ Tile.level ] += area;
+    m_leveltriangles[ Tile.level ] += triangles;
+
+    tile_measure measure {};
+    measure.error = static_cast<float>( result.error );
+    measure.edge = static_cast<float>(
+        triangles > 0 ? std::sqrt( 2.0 * area / static_cast<double>( triangles ) ) : 0.0 );
 
     std::vector<std::uint8_t> bytes;
     encode( Tile, result, bytes );
-    Sink( Tile, bytes );
+    Sink( Tile, bytes, measure );
 
     ++m_report.tiles;
     m_report.triangles += result.indices.size() / 3;
@@ -406,9 +484,14 @@ cooker::cook( tile_address const &Tile, sink const &Sink ) {
 
 namespace {
 
-// Welds vertices that land in the same place and belong to the same material. Everything the cut
-// produces is either a vertex of the source or a point on a tile border worked out the same way
-// from both sides, so the tolerance only has to cover the last bits of the arithmetic.
+// Welds vertices that land in the same place, whatever material the triangle bringing them there is
+// drawn with. That is what lets one triangle have a different material at each corner, which is what
+// the fragment stage blends across: keeping a vertex per material instead would put a hard edge along
+// every boundary, on the triangle's own edges. The vertex keeps the material of whichever triangle
+// reached it first, and a boundary therefore moves by at most half a triangle.
+//
+// Everything the cut produces is either a vertex of the source or a point on a tile border worked out
+// the same way from both sides, so the tolerance only has to cover the last bits of the arithmetic.
 class welder {
 
 public:
@@ -427,7 +510,6 @@ public:
 private:
     struct key {
         std::int64_t x, y, z;
-        std::uint16_t material;
         bool operator==( key const & ) const = default;
     };
     struct keyhash {
@@ -437,7 +519,6 @@ private:
                 hash ^= static_cast<std::size_t>( Value );
                 hash *= 1099511628211ull; };
             mix( Key.x ); mix( Key.y ); mix( Key.z );
-            mix( Key.material );
             return hash;
         }
     };
@@ -445,7 +526,7 @@ private:
     static key make_key( cooker::meshvertex const &Vertex ) {
         auto const grid = []( double const Value ) {
             return static_cast<std::int64_t>( std::llround( Value / weldepsilon ) ); };
-        return { grid( Vertex.x ), grid( Vertex.y ), grid( Vertex.z ), Vertex.material };
+        return { grid( Vertex.x ), grid( Vertex.y ), grid( Vertex.z ) };
     }
 
     std::vector<cooker::meshvertex> &m_vertices;
@@ -470,19 +551,68 @@ cooker::lay( tile_address const &Tile ) {
             std::pair<std::int64_t, std::uint32_t> { wanted, std::numeric_limits<std::uint32_t>::max() } ) };
     if( from == to ) { return result; }
 
-    welder weld { result.vertices };
-    std::vector<clipvertex> polygon;
+    // read once into memory: the triangles are walked twice, first for the normals and then for the
+    // cutting, and a tile holds few enough of them for that to be cheaper than seeking again
+    std::vector<spilled> records;
+    records.reserve( static_cast<std::size_t>( to - from ) );
     for( auto entry = from; entry != to; ++entry ) {
-
         m_scratch.seekg( static_cast<std::streamoff>( entry->second ) * sizeof( spilled ) );
         spilled record {};
         m_scratch.read( reinterpret_cast<char *>( &record ), sizeof( record ) );
         if( false == m_scratch.good() ) { m_scratch.clear(); continue; }
+        records.push_back( record );
+    }
+    if( true == records.empty() ) { return result; }
+
+    // The normal at a vertex is the area-weighted sum of the faces meeting there, taken from the
+    // scenery's triangles as they were written rather than from the pieces the cut leaves. Both tiles
+    // sharing a border read the same triangles around a vertex on it, so both work out the same
+    // normal and the light runs across the border without a line.
+    std::unordered_map<std::int64_t, std::array<double, 3>> normals;
+    auto const place_key = []( double const X, double const Y, double const Z ) {
+        auto const grid = []( double const Value ) {
+            return static_cast<std::int64_t>( std::llround( Value / weldepsilon ) ); };
+        std::int64_t hash { 1469598103934665603ll };
+        for( auto const value : { grid( X ), grid( Y ), grid( Z ) } ) {
+            hash ^= value;
+            hash *= 1099511628211ll;
+        }
+        return hash; };
+    for( auto const &record : records ) {
+        auto const &corners { record.corners };
+        double const ax { corners[ 0 ] }, ay { corners[ 1 ] }, az { corners[ 2 ] };
+        double const bx { corners[ 3 ] }, by { corners[ 4 ] }, bz { corners[ 5 ] };
+        double const cx { corners[ 6 ] }, cy { corners[ 7 ] }, cz { corners[ 8 ] };
+        // twice the area times the unit normal, which is the weighting wanted
+        std::array<double, 3> const face {
+            ( by - ay ) * ( cz - az ) - ( bz - az ) * ( cy - ay ),
+            ( bz - az ) * ( cx - ax ) - ( bx - ax ) * ( cz - az ),
+            ( bx - ax ) * ( cy - ay ) - ( by - ay ) * ( cx - ax ) };
+        for( std::size_t corner = 0; corner < 3; ++corner ) {
+            auto &sum {
+                normals[ place_key(
+                    corners[ corner * 3 + 0 ], corners[ corner * 3 + 1 ], corners[ corner * 3 + 2 ] ) ] };
+            sum[ 0 ] += face[ 0 ]; sum[ 1 ] += face[ 1 ]; sum[ 2 ] += face[ 2 ];
+        }
+    }
+    // the sum as it stands, not a unit vector: its length is the surface behind it, and that is what
+    // makes adding two of them an average rather than a guess
+    auto const normal_at = [ & ]( double const X, double const Y, double const Z ) {
+        auto const found { normals.find( place_key( X, Y, Z ) ) };
+        if( found == normals.end() ) { return std::array<double, 3> { 0.0, 1.0, 0.0 }; }
+        return found->second; };
+
+    welder weld { result.vertices };
+    std::vector<clipvertex> polygon;
+    for( auto const &record : records ) {
 
         polygon.clear();
         for( std::size_t at = 0; at < 3; ++at ) {
-            polygon.push_back(
-                { record.corners[ at * 3 + 0 ], record.corners[ at * 3 + 1 ], record.corners[ at * 3 + 2 ] } );
+            auto const x { record.corners[ at * 3 + 0 ] };
+            auto const y { record.corners[ at * 3 + 1 ] };
+            auto const z { record.corners[ at * 3 + 2 ] };
+            auto const normal { normal_at( x, y, z ) };
+            polygon.push_back( { x, y, z, normal[ 0 ], normal[ 1 ], normal[ 2 ] } );
         }
         clip_side( polygon, 0, west, true );
         clip_side( polygon, 0, west + side, false );
@@ -491,8 +621,8 @@ cooker::lay( tile_address const &Tile ) {
         if( polygon.size() < 3 ) { continue; }
 
         // A wall lying along a tile border is inside both tiles: the cut keeps it whole on either
-        // side, since it has nothing to cut. Whichever border it sits on, the tile past it is the
-        // one that keeps it, so that it is laid exactly once.
+        // side, since it has nothing to cut. Whichever border it sits on, the tile past it is the one
+        // that keeps it, so that it is laid exactly once.
         {
             auto onborderonly { false };
             for( int axis = 0; axis < 2; ++axis ) {
@@ -511,8 +641,8 @@ cooker::lay( tile_address const &Tile ) {
         }
 
         auto const place = [ & ]( clipvertex const &Vertex ) {
-            return weld( { Vertex.x, Vertex.y, Vertex.z, record.material,
-                           sides_of( Vertex.x, Vertex.z, west, north, side ) } ); };
+            return weld( { Vertex.x, Vertex.y, Vertex.z, Vertex.nx, Vertex.ny, Vertex.nz,
+                           record.material, sides_of( Vertex.x, Vertex.z, west, north, side ) } ); };
 
         auto const first { place( polygon[ 0 ] ) };
         for( std::size_t corner = 1; corner + 1 < polygon.size(); ++corner ) {
@@ -520,6 +650,16 @@ cooker::lay( tile_address const &Tile ) {
             auto const second { place( polygon[ corner ] ) };
             auto const third { place( polygon[ corner + 1 ] ) };
             if( ( first == second ) || ( second == third ) || ( third == first ) ) { continue; }
+            // a triangle that only touched this tile leaves nothing of itself inside it
+            auto const &a { result.vertices[ first ] };
+            auto const &b { result.vertices[ second ] };
+            auto const &c { result.vertices[ third ] };
+            auto const twicearea {
+                std::sqrt(
+                    std::pow( ( b.y - a.y ) * ( c.z - a.z ) - ( b.z - a.z ) * ( c.y - a.y ), 2.0 )
+                  + std::pow( ( b.z - a.z ) * ( c.x - a.x ) - ( b.x - a.x ) * ( c.z - a.z ), 2.0 )
+                  + std::pow( ( b.x - a.x ) * ( c.y - a.y ) - ( b.y - a.y ) * ( c.x - a.x ), 2.0 ) ) };
+            if( 0.5 * twicearea < nullarea ) { continue; }
             result.indices.push_back( first );
             result.indices.push_back( second );
             result.indices.push_back( third );
@@ -565,7 +705,9 @@ cooker::merge( tile_address const &Tile, sink const &Sink ) {
 // tile shares it, simply is never the one that goes. That is the whole of the crack handling:
 // levels meet because the border is literally the same set of vertices in both.
 void
-cooker::simplify( mesh &Mesh, std::size_t const Budget, double const Allowed ) {
+cooker::simplify(
+    mesh &Mesh, std::size_t const Budget, double const Allowed,
+    double const Boundaryreach, double const Outlinereach ) {
 
     auto triangles { Mesh.indices.size() / 3 };
     if( triangles <= Budget ) { return; }
@@ -624,12 +766,14 @@ cooker::simplify( mesh &Mesh, std::size_t const Budget, double const Allowed ) {
         }
     }
 
-    // Where the ground ends - the outline of a hole the scenery left, or the edge of the terrain -
-    // only one triangle meets the edge. Nothing in the quadrics above holds such an edge in
-    // place, so a plane standing on it, weighted heavily, is added to both its ends: the outline
-    // then survives into the coarse levels instead of being eaten away.
+    // Where the ground ends - the outline of a hole the scenery left, the edge of the terrain, or the
+    // seam between two patches drawn at different densities - only one triangle meets the edge. Those
+    // edges are what the rules below protect, and a plane standing on each of them, weighted heavily,
+    // is added to both its ends so that the outline is expensive to disturb as well as forbidden to
+    // break.
+    std::map<std::pair<std::uint32_t, std::uint32_t>, std::size_t> uses;
+    std::vector<bool> onmeshedge( vertices.size(), false );
     {
-        std::map<std::pair<std::uint32_t, std::uint32_t>, std::size_t> uses;
         for( std::size_t triangle = 0; triangle < triangles; ++triangle ) {
             for( std::size_t corner = 0; corner < 3; ++corner ) {
                 auto const from { cornerof( triangle, corner ) };
@@ -668,7 +812,13 @@ cooker::simplify( mesh &Mesh, std::size_t const Budget, double const Allowed ) {
                 quadrics[ to ].add_plane( px, py, pz, offset, weight );
             }
         }
+        for( auto const &[ edge, count ] : uses ) {
+            if( count != 1 ) { continue; }
+            onmeshedge[ edge.first ] = true;
+            onmeshedge[ edge.second ] = true;
+        }
     }
+
 
     struct candidate {
         double cost;
@@ -720,13 +870,47 @@ cooker::simplify( mesh &Mesh, std::size_t const Budget, double const Allowed ) {
         // nothing in the plan at all. what changes there is the height where the vertex went
         return std::abs( was[ 1 ] - local[ To ][ 1 ] ); };
 
+    // vertices with a neighbour of another material: the ground changes colour around them, and how
+    // large the triangles there are is how wide that change looks
+    std::vector<bool> onboundary( vertices.size(), false );
+    for( std::size_t triangle = 0; triangle < triangles; ++triangle ) {
+        for( std::size_t corner = 0; corner < 3; ++corner ) {
+            auto const here { cornerof( triangle, corner ) };
+            auto const next { cornerof( triangle, ( corner + 1 ) % 3 ) };
+            if( vertices[ here ].material != vertices[ next ].material ) {
+                onboundary[ here ] = true;
+                onboundary[ next ] = true;
+            }
+        }
+    }
+
+    auto const meshedge = [ &uses ]( std::uint32_t const From, std::uint32_t const To ) {
+        auto const found { uses.find( { std::min( From, To ), std::max( From, To ) } ) };
+        return ( found != uses.end() ) && ( found->second == 1 ); };
+
     auto const allowed = [ & ]( std::uint32_t const From, std::uint32_t const To ) {
         if( ( true == removed[ From ] ) || ( true == removed[ To ] ) ) { return false; }
         // a vertex a neighbouring tile shares stays where it is
         if( true == vertices[ From ].locked() ) { return false; }
-        // and a material boundary stays where it is too, or the ground would change colour by
-        // level
-        if( vertices[ From ].material != vertices[ To ].material ) { return false; }
+        // Where the ground ends, a vertex may only travel along that end, onto another vertex of it, and
+        // no further than this level reaches. What is lost then is the thin wedge between the old
+        // outline and the new one. Letting it collapse inward instead takes whole triangles with it and
+        // leaves holes the size of them - and since the height barely changes there, nothing in the
+        // error measure objects: forty per cent of the ground went that way before this rule. Forbidding
+        // it outright is no good either, since a narrow strip of terrain is almost all outline, and then
+        // no level above the finest can be thinned at all
+        if( true == onmeshedge[ From ] ) {
+            if( Outlinereach <= 0.0 ) { return false; }
+            if( false == meshedge( From, To ) ) { return false; }
+            auto const &from { local[ From ] };
+            auto const &to { local[ To ] };
+            auto const reach {
+                std::sqrt( ( from[ 0 ] - to[ 0 ] ) * ( from[ 0 ] - to[ 0 ] )
+                         + ( from[ 1 ] - to[ 1 ] ) * ( from[ 1 ] - to[ 1 ] )
+                         + ( from[ 2 ] - to[ 2 ] ) * ( from[ 2 ] - to[ 2 ] ) ) };
+            if( reach > Outlinereach ) { return false; }
+        }
+
         // nothing that turns a triangle over or squashes it flat
         for( auto const triangle : incident[ From ] ) {
             if( true == gone[ triangle ] ) { continue; }
@@ -738,7 +922,10 @@ cooker::simplify( mesh &Mesh, std::size_t const Budget, double const Allowed ) {
                 // that can be one is between To and the third corner
                 for( auto const third : corners ) {
                     if( ( third == From ) || ( third == To ) ) { continue; }
+                    // a piece of a tile's border, or of the ground's own edge: either way this triangle
+                    // is the only thing holding it, and it is about to go
                     if( ( vertices[ To ].sides & vertices[ third ].sides ) != 0 ) { return false; }
+                    if( true == meshedge( To, third ) ) { return false; }
                 }
                 continue;
             }
@@ -765,6 +952,20 @@ cooker::simplify( mesh &Mesh, std::size_t const Budget, double const Allowed ) {
         }
         // and nothing that moves the ground further than this level is allowed to
         if( drop_of( From, To ) > Allowed ) { return false; }
+        // Anything touching a boundary between materials - crossing it, or standing next to it - may
+        // only reach so far. Short of that the boundary is left where the scenery drew it and the
+        // change stays narrow; past it there is nothing worth defending, since at the distance this
+        // level is drawn from the whole thing is a pixel or two wide.
+        if( ( true == onboundary[ From ] ) || ( true == onboundary[ To ] )
+         || ( vertices[ From ].material != vertices[ To ].material ) ) {
+            auto const &from { local[ From ] };
+            auto const &to { local[ To ] };
+            auto const reach {
+                std::sqrt( ( from[ 0 ] - to[ 0 ] ) * ( from[ 0 ] - to[ 0 ] )
+                         + ( from[ 1 ] - to[ 1 ] ) * ( from[ 1 ] - to[ 1 ] )
+                         + ( from[ 2 ] - to[ 2 ] ) * ( from[ 2 ] - to[ 2 ] ) ) };
+            if( reach > Boundaryreach ) { return false; }
+        }
         return true; };
 
     auto const offer = [ & ]( std::uint32_t const Vertex ) {
@@ -797,6 +998,11 @@ cooker::simplify( mesh &Mesh, std::size_t const Budget, double const Allowed ) {
 
         removed[ best.from ] = true;
         quadrics[ best.to ] += quadrics[ best.from ];
+        // the survivor now stands for both, and its normal has to say so, or a coarse level ends up
+        // lit by whichever slope happened to keep its vertex
+        vertices[ best.to ].nx += vertices[ best.from ].nx;
+        vertices[ best.to ].ny += vertices[ best.from ].ny;
+        vertices[ best.to ].nz += vertices[ best.from ].nz;
 
         for( auto const triangle : incident[ best.from ] ) {
             if( true == gone[ triangle ] ) { continue; }
@@ -923,7 +1129,7 @@ cooker::encode( tile_address const &Tile, mesh const &Mesh, std::vector<std::uin
     header.horizon_x = header.horizon_y = header.horizon_z = 0.0;
 
     Out.clear();
-    Out.reserve( order.size() * 8 + indices.size() * 2 + sizeof( header ) + 64 );
+    Out.reserve( order.size() * 10 + indices.size() * 2 + sizeof( header ) + 64 );
     append( Out, header );
     append( Out, static_cast<std::uint32_t>( order.size() ) );
 
@@ -968,6 +1174,17 @@ cooker::encode( tile_address const &Tile, mesh const &Mesh, std::vector<std::uin
     for( auto const &edge : edges ) {
         if( true == wide ) { append_edge<std::uint32_t>( Out, edge ); }
         else               { append_edge<std::uint16_t>( Out, edge ); }
+    }
+
+    // the format's own: a normal per vertex, two bytes each
+    append( Out, static_cast<std::uint8_t>( ext_normals ) );
+    append( Out, static_cast<std::uint32_t>( order.size() * 2 ) );
+    for( auto const index : order ) {
+        auto const &vertex { Mesh.vertices[ index ] };
+        std::uint8_t first { 128 }, second { 128 };
+        encode_normal( vertex.nx, vertex.ny, vertex.nz, first, second );
+        append( Out, first );
+        append( Out, second );
     }
 
     // ours: which ground material each vertex belongs to. the format has nowhere for it

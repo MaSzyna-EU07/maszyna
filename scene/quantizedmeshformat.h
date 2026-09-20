@@ -40,6 +40,7 @@ http://mozilla.org/MPL/2.0/.
 //    the gzip the format expects from an HTTP layer. The bytes of a tile are the format's.
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -52,7 +53,17 @@ inline constexpr std::uint16_t quantum_max { 32767 };
 
 // what the cook counted as ground, and how it cut and simplified it. tiles cooked under other
 // rules are baked again rather than read
-inline constexpr std::uint32_t cook_rules { 2 };
+inline constexpr std::uint32_t cook_rules { 3 };
+
+// What one tile's ground asks for, measured when it was cooked: how far it departs from the finest
+// mesh, and how long its triangles are. Which level to draw follows from these two, and they belong
+// to the tile rather than to its level. The level's figure is the worst tile in it, so a single
+// steep corner made the whole pyramid ask to be drawn from as far away as a mountain - and flat
+// ground twenty kilometres out was split as finely as a valley wall underfoot.
+struct tile_measure {
+    float error { 0.f };
+    float edge { 0.f };
+};
 
 #pragma pack( push, 1 )
 
@@ -71,6 +82,7 @@ static_assert( sizeof( file_header ) == 88 );
 
 // extension ids. 1, 2 and 4 are taken by the format for normals, the water mask and metadata
 enum extension_id : std::uint8_t {
+    // the format's own: one normal per vertex, octahedron-encoded into two bytes
     ext_normals = 1,
     ext_watermask = 2,
     ext_metadata = 4,
@@ -87,6 +99,34 @@ zigzag_encode( std::int32_t const Value ) {
 inline std::int32_t
 zigzag_decode( std::uint16_t const Stored ) {
     return ( Stored >> 1 ) ^ -static_cast<std::int32_t>( Stored & 1 );
+}
+
+// A unit vector into two bytes, as the format's normals extension has it: the sphere folded onto an
+// octahedron, unfolded into a square, and the square's coordinates stored as unsigned bytes. Two bytes
+// hold a normal to well under a degree, which is what the lighting needs and no more.
+//
+// Normals are stored rather than worked out while drawing. A normal taken from how the position
+// changes across a triangle is that triangle's own, so the ground reads as facets, and - worse - a
+// coarser level's facets face differently from the ones they stand for, so the light over a hillside
+// changes as the level does. A normal carried on the vertex comes from the ground as the scenery drew
+// it and stays the same at every level.
+inline void
+encode_normal( double const X, double const Y, double const Z, std::uint8_t &Out0, std::uint8_t &Out1 ) {
+
+    auto const length { std::abs( X ) + std::abs( Y ) + std::abs( Z ) };
+    if( length < 1e-12 ) { Out0 = Out1 = 128; return; }
+    auto first { X / length };
+    auto second { Z / length };
+    if( Y < 0.0 ) {
+        auto const was { first };
+        first = ( 1.0 - std::abs( second ) ) * ( was >= 0.0 ? 1.0 : -1.0 );
+        second = ( 1.0 - std::abs( was ) ) * ( second >= 0.0 ? 1.0 : -1.0 );
+    }
+    auto const tobyte = []( double const Value ) {
+        return static_cast<std::uint8_t>(
+            std::clamp( std::round( ( Value + 1.0 ) * 0.5 * 255.0 ), 0.0, 255.0 ) ); };
+    Out0 = tobyte( first );
+    Out1 = tobyte( second );
 }
 
 // a quantized coordinate back to metres, against the range it was quantized in
@@ -175,9 +215,13 @@ struct terrain_table {
     double lowest { 0.0 }, highest { 0.0 };
     // levels cooked, root included: addresses run from 0 to levels - 1
     std::uint32_t levels { 1 };
-    // metres the ground of a tile at each level departs from the finest one. what decides which
-    // level to draw: a level is good enough while its error covers few enough pixels
+    // metres the ground of a tile at each level departs from the finest one, and how long a triangle
+    // of it typically is. Between them they decide which level to draw. The error alone cannot: it is
+    // the worst departure anywhere in the tile and is inherited by every level above, so one steep
+    // corner sets it for the whole pyramid and the levels become indistinguishable. What actually
+    // tells a level of sixty triangles from one of fifteen thousand is how large the triangles are.
     std::vector<float> errors;
+    std::vector<float> edges;
     // one ground texture: its name, and how many metres of ground one repeat of it covers, as
     // measured from the texture coordinates the scenery drew it with
     struct material {
@@ -193,6 +237,9 @@ struct terrain_table {
     }
     float error( std::uint32_t const Level ) const {
         return Level < errors.size() ? errors[ Level ] : 0.f;
+    }
+    float edge( std::uint32_t const Level ) const {
+        return Level < edges.size() ? edges[ Level ] : 0.f;
     }
 };
 

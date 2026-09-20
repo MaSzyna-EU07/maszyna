@@ -21,7 +21,7 @@ module;
 #include <unordered_map>
 #include <vector>
 #include "utilities/Globals_macros.h"
-#include "scene/pakformat.h"
+#include "scene/quantizedmesharchive.h"
 #include "scene/quantizedmeshcooker.h"
 #include "scene/quantizedmeshreader.h"
 
@@ -374,6 +374,14 @@ void
 finish( std::string const &Sceneryfile, std::vector<std::string> const &Included ) {
 
     if( true == planning() ) {
+        // let the note go: it is only wanted while the scenery is being read, and on a large map it is
+        // hundreds of megabytes - galicja's is two hundred and seventy
+        auto const letgo {
+            []() {
+                decltype( state.note ) empty;
+                state.note.swap( empty );
+                std::vector<std::uint8_t> nomasks;
+                state.masks.swap( nomasks ); } };
         WriteLog(
             "Terrain cook: " + std::to_string( state.skipped ) + " triangle nodes left to the tiles, "
             + std::to_string( state.filtered ) + " drawn in part, " + std::to_string( state.drawn )
@@ -384,6 +392,7 @@ finish( std::string const &Sceneryfile, std::vector<std::string> const &Included
             WriteLog( "Terrain cook: the scenery includes different files than when it was cooked; cooking again on the next start" );
             discard( Sceneryfile );
         }
+        letgo();
         return;
     }
     if( false == state.collecting ) { return; }
@@ -401,8 +410,8 @@ finish( std::string const &Sceneryfile, std::vector<std::string> const &Included
     // the cook itself, apart from the load that fed it: what a second start saves is the cook
     auto const cookstarted { std::chrono::steady_clock::now() };
     auto const archive { archive_path( Sceneryfile ) };
-    pak::writer writer;
-    if( false == writer.open( archive ) ) {
+    quantizedmesh::archive_writer writer;
+    if( false == writer.open( archive, quantizedmesh::cook_rules ) ) {
         ErrorLog( "Terrain cook: cannot write \"" + archive + "\"" );
         return;
     }
@@ -410,8 +419,9 @@ finish( std::string const &Sceneryfile, std::vector<std::string> const &Included
     auto written { true };
     quantizedmesh::terrain_table table;
     auto const sink {
-        [ &writer, &written ]( quantizedmesh::tile_address const &Tile, std::vector<std::uint8_t> const &Bytes ) {
-            written = writer.add( quantizedmesh::tile_name( Tile ), Bytes ) && written; } };
+        [ &writer, &written ]( quantizedmesh::tile_address const &Tile, std::vector<std::uint8_t> const &Bytes,
+            quantizedmesh::tile_measure const &Measure ) {
+            written = writer.add( Tile, Bytes, Measure ) && written; } };
 
     if( ( false == state.cooker.finish( sink, table ) ) || ( false == written ) ) {
         ErrorLog( "Terrain cook: cooking failed, no tiles written" );
@@ -419,7 +429,7 @@ finish( std::string const &Sceneryfile, std::vector<std::string> const &Included
         discard( Sceneryfile );
         return;
     }
-    if( false == writer.add( quantizedmesh::tablename, quantizedmesh::write_table( table ) ) ) {
+    if( false == writer.table( quantizedmesh::write_table( table ) ) ) {
         written = false;
     }
     if( ( false == writer.close() ) || ( false == written ) ) {

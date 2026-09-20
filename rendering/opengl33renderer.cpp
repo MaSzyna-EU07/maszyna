@@ -2917,9 +2917,12 @@ void opengl33_renderer::Render_terrain()
 			    Global.TerrainDetail);
 			field->update(viewpoint);
 		}
-		field->render(viewpoint, [this](glm::dvec3 const &Centre, float const Radius) {
-			return m_renderpass.pass_camera.visible(scene::bounding_area(Centre, Radius));
-		});
+		field->render(
+		    viewpoint,
+		    [this](glm::dvec3 const &Centre, float const Radius) {
+			    return m_renderpass.pass_camera.visible(scene::bounding_area(Centre, Radius));
+		    },
+		    m_current_viewport->main);
 	}
 
 	if (m_current_viewport->main)
@@ -2938,10 +2941,14 @@ void opengl33_renderer::Render_terrain()
 				{
 					status.leveltile[level] = field.leveltile(level);
 					status.levelerror[level] = field.levelerror(level);
+					status.leveledge[level] = field.leveledge(level);
 				}
 			}
 			status.range = field.range();
 			status.detail = field.detailpixels();
+			status.pixelsperunit =
+			    static_cast<float>(m_current_viewport->height) /
+			    (2.f * std::tan(glm::radians(Global.FieldOfView / Global.ZoomFactor) * 0.5f));
 			status.backlog = field.backlog();
 			status.stats = field.stats();
 		}

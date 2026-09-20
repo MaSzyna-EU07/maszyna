@@ -12,21 +12,29 @@ module;
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <memory>
+#include <optional>
 #include <vector>
 #include <glad/glad.h>
 #include "scene/quantizedmeshreader.h"
 
 module eu07.rendering.terrainmesharena;
+import eu07.gl.buffer;
 import eu07.utilities.logs;
+import eu07.gl.vao;
 
 namespace {
 
-// what the buffers start at, in vertices and indices, and the most they may reach. a vertex is 24
-// bytes and an index 4, so the ceiling is about 400 MB of terrain on the card
+// what the buffers start at, in vertices and indices, and the most they may reach. a vertex is 16
+// bytes and an index 4, so the ceiling is about 500 MB of terrain on the card
 constexpr std::uint32_t firstvertices { 1u << 19 };
 constexpr std::uint32_t firstindices { 1u << 21 };
 constexpr std::uint32_t mostvertices { 1u << 24 };
 constexpr std::uint32_t mostindices { 1u << 26 };
+
+constexpr int attribute_position { 0 };
+constexpr int attribute_material { 1 };
+constexpr int attribute_normal { 2 };
 
 } // anonymous namespace
 
@@ -72,33 +80,44 @@ terrain_mesh_arena::~terrain_mesh_arena() {
     destroy();
 }
 
+// The material is handed over as an integer that the vertex stage takes as a float: gl::vao sets
+// attributes up one way, and going around it to ask for an integer attribute would put the engine's
+// idea of what is bound out of step with what is.
+void
+terrain_mesh_arena::describe_vertices() {
+
+    auto const stride { static_cast<int>( sizeof( quantizedmesh::render_vertex ) ) };
+    m_vao->setup_attrib(
+        *m_vertexbuffer, attribute_position, 3, GL_FLOAT, stride,
+        static_cast<int>( offsetof( quantizedmesh::render_vertex, x ) ) );
+    m_vao->setup_attrib(
+        *m_vertexbuffer, attribute_material, 1, GL_UNSIGNED_SHORT, stride,
+        static_cast<int>( offsetof( quantizedmesh::render_vertex, material ) ) );
+    // the normal, still folded onto its octahedron; the vertex stage unfolds it
+    m_vao->setup_attrib(
+        *m_vertexbuffer, attribute_normal, 2, GL_UNSIGNED_BYTE, stride,
+        static_cast<int>( offsetof( quantizedmesh::render_vertex, normal0 ) ) );
+}
+
 bool
-terrain_mesh_arena::create() {
+terrain_mesh_arena::create( bool const Wideindices ) {
 
     destroy();
-    ::glGenVertexArrays( 1, &m_vao );
-    ::glGenBuffers( 1, &m_vertexbuffer );
-    ::glGenBuffers( 1, &m_indexbuffer );
-    if( ( m_vao == 0 ) || ( m_vertexbuffer == 0 ) || ( m_indexbuffer == 0 ) ) { destroy(); return false; }
+    m_wideindices = Wideindices;
+    m_vao.emplace();
+    m_vertexbuffer = std::make_unique<gl::buffer>();
+    m_indexbuffer = std::make_unique<gl::buffer>();
 
-    ::glBindVertexArray( m_vao );
-    ::glBindBuffer( GL_ARRAY_BUFFER, m_vertexbuffer );
-    ::glBufferData( GL_ARRAY_BUFFER,
-        static_cast<GLsizeiptr>( firstvertices ) * sizeof( quantizedmesh::render_vertex ), nullptr, GL_DYNAMIC_DRAW );
-    ::glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, m_indexbuffer );
-    ::glBufferData( GL_ELEMENT_ARRAY_BUFFER,
-        static_cast<GLsizeiptr>( firstindices ) * sizeof( std::uint32_t ), nullptr, GL_DYNAMIC_DRAW );
-
-    auto const stride { static_cast<GLsizei>( sizeof( quantizedmesh::render_vertex ) ) };
-    ::glEnableVertexAttribArray( 0 );
-    ::glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, stride,
-        reinterpret_cast<void const *>( offsetof( quantizedmesh::render_vertex, x ) ) );
-    ::glEnableVertexAttribArray( 1 );
-    ::glVertexAttribIPointer( 1, 1, GL_UNSIGNED_SHORT, stride,
-        reinterpret_cast<void const *>( offsetof( quantizedmesh::render_vertex, material ) ) );
-    ::glBindVertexArray( 0 );
-    ::glBindBuffer( GL_ARRAY_BUFFER, 0 );
-    ::glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, 0 );
+    m_vao->bind();
+    m_vertexbuffer->allocate(
+        gl::buffer::ARRAY_BUFFER,
+        static_cast<GLsizeiptr>( firstvertices ) * sizeof( quantizedmesh::render_vertex ), GL_DYNAMIC_DRAW );
+    m_indexbuffer->allocate(
+        gl::buffer::ELEMENT_ARRAY_BUFFER,
+        static_cast<GLsizeiptr>( firstindices ) * indexwidth(), GL_DYNAMIC_DRAW );
+    describe_vertices();
+    m_vao->setup_ebo( *m_indexbuffer );
+    unbind();
 
     m_vertexroom = firstvertices;
     m_indexroom = firstindices;
@@ -113,17 +132,37 @@ terrain_mesh_arena::create() {
 void
 terrain_mesh_arena::destroy() {
 
-    if( m_vao != 0 ) { ::glDeleteVertexArrays( 1, &m_vao ); m_vao = 0; }
-    if( m_vertexbuffer != 0 ) { ::glDeleteBuffers( 1, &m_vertexbuffer ); m_vertexbuffer = 0; }
-    if( m_indexbuffer != 0 ) { ::glDeleteBuffers( 1, &m_indexbuffer ); m_indexbuffer = 0; }
+    if( true == m_vao.has_value() ) { m_vao->unbind(); }
+    gl::buffer::unbind( gl::buffer::ARRAY_BUFFER );
+    gl::buffer::unbind( gl::buffer::ELEMENT_ARRAY_BUFFER );
+    m_vao.reset();
+    m_vertexbuffer.reset();
+    m_indexbuffer.reset();
     m_vertexroom = m_indexroom = 0;
     m_freevertices.clear();
     m_freeindices.clear();
     m_verticesheld = 0;
+    m_indicesheld = 0;
+}
+
+void
+terrain_mesh_arena::bind() {
+
+    if( false == m_vao.has_value() ) { return; }
+    m_vao->bind();
+}
+
+void
+terrain_mesh_arena::unbind() {
+
+    if( true == m_vao.has_value() ) { m_vao->unbind(); }
+    gl::buffer::unbind( gl::buffer::ARRAY_BUFFER );
+    gl::buffer::unbind( gl::buffer::COPY_READ_BUFFER );
+    gl::buffer::unbind( gl::buffer::COPY_WRITE_BUFFER );
 }
 
 // Growing copies what is there into a larger buffer on the card: the pieces keep their places, so
-// nothing has to be read back or re-uploaded.
+// nothing has to be read back or sent again.
 bool
 terrain_mesh_arena::grow_vertices( std::uint32_t const Wanted ) {
 
@@ -131,32 +170,27 @@ terrain_mesh_arena::grow_vertices( std::uint32_t const Wanted ) {
     while( ( room < m_vertexroom + Wanted ) && ( room < mostvertices ) ) { room *= 2; }
     if( room <= m_vertexroom ) { return false; }
 
-    std::uint32_t grown { 0 };
-    ::glGenBuffers( 1, &grown );
-    if( grown == 0 ) { return false; }
-    ::glBindBuffer( GL_ARRAY_BUFFER, grown );
-    ::glBufferData( GL_ARRAY_BUFFER,
-        static_cast<GLsizeiptr>( room ) * sizeof( quantizedmesh::render_vertex ), nullptr, GL_DYNAMIC_DRAW );
-    ::glBindBuffer( GL_COPY_READ_BUFFER, m_vertexbuffer );
-    ::glBindBuffer( GL_COPY_WRITE_BUFFER, grown );
+    auto grown { std::make_unique<gl::buffer>() };
+    grown->allocate(
+        gl::buffer::COPY_WRITE_BUFFER,
+        static_cast<GLsizeiptr>( room ) * sizeof( quantizedmesh::render_vertex ), GL_DYNAMIC_DRAW );
+    m_vertexbuffer->bind( gl::buffer::COPY_READ_BUFFER );
     ::glCopyBufferSubData( GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0,
         static_cast<GLsizeiptr>( m_vertexroom ) * sizeof( quantizedmesh::render_vertex ) );
-    ::glBindBuffer( GL_COPY_READ_BUFFER, 0 );
-    ::glBindBuffer( GL_COPY_WRITE_BUFFER, 0 );
-    ::glDeleteBuffers( 1, &m_vertexbuffer );
-    m_vertexbuffer = grown;
+    gl::buffer::unbind( gl::buffer::COPY_READ_BUFFER );
+    gl::buffer::unbind( gl::buffer::COPY_WRITE_BUFFER );
 
-    ::glBindVertexArray( m_vao );
-    ::glBindBuffer( GL_ARRAY_BUFFER, m_vertexbuffer );
-    auto const stride { static_cast<GLsizei>( sizeof( quantizedmesh::render_vertex ) ) };
-    ::glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, stride,
-        reinterpret_cast<void const *>( offsetof( quantizedmesh::render_vertex, x ) ) );
-    ::glVertexAttribIPointer( 1, 1, GL_UNSIGNED_SHORT, stride,
-        reinterpret_cast<void const *>( offsetof( quantizedmesh::render_vertex, material ) ) );
-    ::glBindVertexArray( 0 );
-    ::glBindBuffer( GL_ARRAY_BUFFER, 0 );
+    // the tracker has to forget the buffer before it is destroyed: gl reuses the name of a deleted
+    // buffer, so the next one can come back with the same number, and a bind of it would be skipped as
+    // already in place while nothing is actually bound
+    gl::buffer::unbind( gl::buffer::ARRAY_BUFFER );
+    m_vertexbuffer = std::move( grown );
+    m_vao->bind();
+    describe_vertices();
 
     m_freevertices.give( m_vertexroom, room - m_vertexroom );
+    WriteLog( "Terrain: vertex buffer grown from " + std::to_string( m_vertexroom ) + " to "
+        + std::to_string( room ) + " vertices" );
     m_vertexroom = room;
     return true;
 }
@@ -168,27 +202,24 @@ terrain_mesh_arena::grow_indices( std::uint32_t const Wanted ) {
     while( ( room < m_indexroom + Wanted ) && ( room < mostindices ) ) { room *= 2; }
     if( room <= m_indexroom ) { return false; }
 
-    std::uint32_t grown { 0 };
-    ::glGenBuffers( 1, &grown );
-    if( grown == 0 ) { return false; }
-    ::glBindBuffer( GL_ARRAY_BUFFER, grown );
-    ::glBufferData( GL_ARRAY_BUFFER,
-        static_cast<GLsizeiptr>( room ) * sizeof( std::uint32_t ), nullptr, GL_DYNAMIC_DRAW );
-    ::glBindBuffer( GL_COPY_READ_BUFFER, m_indexbuffer );
-    ::glBindBuffer( GL_COPY_WRITE_BUFFER, grown );
+    auto grown { std::make_unique<gl::buffer>() };
+    grown->allocate(
+        gl::buffer::COPY_WRITE_BUFFER,
+        static_cast<GLsizeiptr>( room ) * indexwidth(), GL_DYNAMIC_DRAW );
+    m_indexbuffer->bind( gl::buffer::COPY_READ_BUFFER );
     ::glCopyBufferSubData( GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0,
-        static_cast<GLsizeiptr>( m_indexroom ) * sizeof( std::uint32_t ) );
-    ::glBindBuffer( GL_COPY_READ_BUFFER, 0 );
-    ::glBindBuffer( GL_COPY_WRITE_BUFFER, 0 );
-    ::glDeleteBuffers( 1, &m_indexbuffer );
-    m_indexbuffer = grown;
+        static_cast<GLsizeiptr>( m_indexroom ) * indexwidth() );
+    gl::buffer::unbind( gl::buffer::COPY_READ_BUFFER );
+    gl::buffer::unbind( gl::buffer::COPY_WRITE_BUFFER );
 
-    ::glBindVertexArray( m_vao );
-    ::glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, m_indexbuffer );
-    ::glBindVertexArray( 0 );
-    ::glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, 0 );
+    gl::buffer::unbind( gl::buffer::ELEMENT_ARRAY_BUFFER );
+    m_indexbuffer = std::move( grown );
+    m_vao->bind();
+    m_vao->setup_ebo( *m_indexbuffer );
 
     m_freeindices.give( m_indexroom, room - m_indexroom );
+    WriteLog( "Terrain: index buffer grown from " + std::to_string( m_indexroom ) + " to "
+        + std::to_string( room ) + " indices" );
     m_indexroom = room;
     return true;
 }
@@ -197,9 +228,10 @@ terrain_mesh_arena::piece
 terrain_mesh_arena::put( quantizedmesh::reader::tile_data const &Tile ) {
 
     piece where;
-    if( ( m_vao == 0 ) || ( true == Tile.vertices.empty() ) || ( true == Tile.indices.empty() ) ) {
+    if( ( false == m_vao.has_value() ) || ( nullptr == m_vertexbuffer ) || ( true == Tile.vertices.empty() ) || ( true == Tile.indices.empty() ) ) {
         return where;
     }
+    if( Tile.vertices.size() > vertexlimit() ) { return where; }
     auto const vertices { static_cast<std::uint32_t>( Tile.vertices.size() ) };
     auto const indices { static_cast<std::uint32_t>( Tile.indices.size() ) };
 
@@ -220,27 +252,36 @@ terrain_mesh_arena::put( quantizedmesh::reader::tile_data const &Tile ) {
         }
     }
 
-    ::glBindBuffer( GL_ARRAY_BUFFER, m_vertexbuffer );
-    ::glBufferSubData( GL_ARRAY_BUFFER,
-        static_cast<GLintptr>( atvertex ) * sizeof( quantizedmesh::render_vertex ),
-        static_cast<GLsizeiptr>( vertices ) * sizeof( quantizedmesh::render_vertex ),
-        Tile.vertices.data() );
-    ::glBindBuffer( GL_ARRAY_BUFFER, 0 );
-
-    // the indices are stored as the tile had them, counted from its own first vertex; where the
-    // tile sits in the buffer is given to the draw as its base vertex
-    ::glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, m_indexbuffer );
-    ::glBufferSubData( GL_ELEMENT_ARRAY_BUFFER,
-        static_cast<GLintptr>( atindex ) * sizeof( std::uint32_t ),
-        static_cast<GLsizeiptr>( indices ) * sizeof( std::uint32_t ),
-        Tile.indices.data() );
-    ::glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, 0 );
+    // this vertex array first: which element buffer is bound belongs to it, and writing indices
+    // with the scenery's array bound would take its own indices away
+    m_vao->bind();
+    m_vertexbuffer->upload(
+        gl::buffer::ARRAY_BUFFER, Tile.vertices.data(),
+        static_cast<int>( atvertex * sizeof( quantizedmesh::render_vertex ) ),
+        static_cast<GLsizeiptr>( vertices ) * sizeof( quantizedmesh::render_vertex ) );
+    // the indices are stored as the tile had them, counted from its own first vertex; where the tile
+    // sits in the buffer is given to the draw as its base vertex
+    if( true == m_wideindices ) {
+        m_indexbuffer->upload(
+            gl::buffer::ELEMENT_ARRAY_BUFFER, Tile.indices.data(),
+            static_cast<int>( atindex * sizeof( std::uint32_t ) ),
+            static_cast<GLsizeiptr>( indices ) * sizeof( std::uint32_t ) );
+    }
+    else {
+        m_narrow.assign( Tile.indices.begin(), Tile.indices.end() );
+        m_indexbuffer->upload(
+            gl::buffer::ELEMENT_ARRAY_BUFFER, m_narrow.data(),
+            static_cast<int>( atindex * sizeof( std::uint16_t ) ),
+            static_cast<GLsizeiptr>( indices ) * sizeof( std::uint16_t ) );
+    }
+    unbind();
 
     where.firstvertex = atvertex;
     where.vertices = vertices;
     where.firstindex = atindex;
     where.indices = indices;
     m_verticesheld += vertices;
+    m_indicesheld += indices;
     return where;
 }
 
@@ -251,5 +292,6 @@ terrain_mesh_arena::take( piece &Piece ) {
     m_freevertices.give( Piece.firstvertex, Piece.vertices );
     m_freeindices.give( Piece.firstindex, Piece.indices );
     m_verticesheld -= Piece.vertices;
+    m_indicesheld -= Piece.indices;
     Piece = piece {};
 }

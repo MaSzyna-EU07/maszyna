@@ -1,16 +1,21 @@
 // Terrain mesh, fragment stage.
 //
-// One triangle carries one material: the cook only welds vertices that share it, so nothing has to
-// be blended here and a material boundary follows the edges the scenery drew it with. The texture
-// coordinate is the world position over the material's tiling, so the ground keeps the scale it was
-// authored at whatever level the tile is drawn at.
+// The texture coordinate is the world position over the material's tiling, so the ground keeps the
+// scale it was authored at whatever level the tile is drawn at. Where a triangle has one material at
+// every corner - which is nearly all of them - that is one texture sample; where it crosses a boundary
+// the three are blended by how near the fragment is to each corner, so the ground changes over a
+// triangle rather than along its edge.
 //
-// The mesh carries no normals - that would be four more bytes on every vertex - so the surface
-// normal comes from how the view position changes across the triangle, which is its face normal.
+// The normal comes from the vertex, not from how the view position changes across the triangle. A
+// normal worked out here would be the triangle's own, so the ground would read as facets, and a coarser
+// level's facets face differently from the ones they stand for - which shows as the light over a
+// hillside changing when the level does.
 
 in vec4 f_pos;
+in vec3 f_normal;
 in vec2 f_ground;
-flat in uint f_material;
+in vec3 f_weights;
+flat in uvec3 f_materials;
 
 #include <common>
 #include <apply_fog.glsl>
@@ -26,16 +31,59 @@ layout(location = 0) out vec4 out_color;
 layout(location = 1) out vec4 out_motion;
 #endif
 
+// Value noise from the world position: the same everywhere the ground is, at any level, and costing
+// nothing to store. Two octaves are enough for what it is for.
+float ground_hash( vec2 Cell )
+{
+	return fract( sin( dot( Cell, vec2( 127.1, 311.7 ) ) ) * 43758.5453 );
+}
+
+float ground_noise( vec2 Where )
+{
+	vec2 cell = floor( Where );
+	vec2 part = fract( Where );
+	part = part * part * ( 3.0 - 2.0 * part );
+	return mix(
+		mix( ground_hash( cell ), ground_hash( cell + vec2( 1.0, 0.0 ) ), part.x ),
+		mix( ground_hash( cell + vec2( 0.0, 1.0 ) ), ground_hash( cell + vec2( 1.0, 1.0 ) ), part.x ),
+		part.y );
+}
+
+vec3 material_colour( uint Material )
+{
+	vec4 entry = texelFetch( materialtable, ivec2( int( Material ), 0 ), 0 );
+	if( entry.a < 0.0 ) { return entry.rgb; }
+	return texture( ground, vec3( f_ground / max( entry.a, 0.01 ), float( Material ) ) ).rgb;
+}
+
 void main()
 {
-	vec4 entry = texelFetch( materialtable, ivec2( int( f_material ), 0 ), 0 );
-	vec3 albedo =
-		( entry.a < 0.0 )
-			? entry.rgb
-			: texture( ground, vec3( f_ground / max( entry.a, 0.01 ), float( f_material ) ) ).rgb;
+	vec3 albedo;
+	if( ( f_materials.x == f_materials.y ) && ( f_materials.x == f_materials.z ) ) {
+		// the common case: one kind of ground across the whole triangle, one texture sample
+		albedo = material_colour( f_materials.x );
+	}
+	else {
+		// The weights say how near the fragment is to each corner, so left alone the ground would fade
+		// along a straight line across the triangle and the mesh would be visible in the texturing.
+		// Disturbing them with noise taken from the world position makes the two grounds interlock
+		// instead, which is what a boundary between them looks like - and since the noise is a function
+		// of where the fragment is, it does not change with the level the tile is drawn at.
+		float grain = ground_noise( f_ground * 0.6 ) * 0.62
+		            + ground_noise( f_ground * 2.9 ) * 0.28
+		            + ground_noise( f_ground * 11.0 ) * 0.10;
+		vec3 weights = max( f_weights + ( grain - 0.5 ) * 0.55, vec3( 0.0 ) );
+		// and sharpened a little, so the interlocking reads as one ground over the other rather than as
+		// a wash of both
+		weights = weights * weights;
+		weights /= max( weights.x + weights.y + weights.z, 1e-4 );
+		albedo = weights.x * material_colour( f_materials.x )
+		       + weights.y * material_colour( f_materials.y )
+		       + weights.z * material_colour( f_materials.z );
+	}
 
-	vec3 normal = normalize( cross( dFdx( f_pos.xyz ), dFdy( f_pos.xyz ) ) );
-	// towards the camera, whichever way the derivatives came out
+	vec3 normal = normalize( f_normal );
+	// a wall is drawn from either side, so the normal follows whichever way it is seen from
 	if( dot( normal, -f_pos.xyz ) < 0.0 ) { normal = -normal; }
 
 	// a plain lambert term against the first directional light, so that relief reads

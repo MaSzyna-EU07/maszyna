@@ -770,11 +770,13 @@ debug_panel::render_section_scenario() {
 		{
 			auto terrainrange = std::log(Global.TerrainRange);
 			if (ImGui::SliderFloat(
-				(to_string(std::exp(terrainrange), 0, 5) + " m###terrainrange").c_str(), &terrainrange, std::log(500.0f), std::log(100000.0f), "Terrain range")) {
-				Global.TerrainRange = std::clamp(std::exp(terrainrange), 500.0f, 100000.0f);
+				(to_string(std::exp(terrainrange), 0, 5) + " m###terrainrange").c_str(), &terrainrange, std::log(500.0f), std::log(250000.0f), "Terrain loaded out to")) {
+				Global.TerrainRange = std::clamp(std::exp(terrainrange), 500.0f, 250000.0f);
 			}
 			// pixels a terrain sample may cover before a finer level takes over
-			ImGui::SliderFloat("###terraindetail", &Global.TerrainDetail, 1.0f, 8.0f, "Terrain detail: %.1f px per sample");
+			// how many pixels a level's departure from the finest mesh may cover before the finer one
+			// is used. lower is more detail, and the panel above says what it comes to in metres
+			ImGui::SliderFloat("###terraindetail", &Global.TerrainDetail, 0.5f, 16.0f, "Terrain detail: %.1f px of error allowed");
 		}
     }
 
@@ -1505,33 +1507,52 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) {
 
             Output.emplace_back( textline, Global.UITextColor );
 
-            // terrain streaming: how far tiles are loaded, how many are held, and how far
-            // behind the camera the loader is
+            // terrain streaming, as a table: a header, a line per level, and nothing said twice
             for( auto const &field : TerrainStatus ) {
                 auto const &stats { field.stats };
                 auto const slash { field.path.find_last_of( "/\\" ) };
+                auto const metres = []( double const Value ) {
+                    return ( Value >= 10000.0 )
+                        ? to_string( Value / 1000.0, 0 ) + " km"
+                        : to_string( Value, 0 ) + " m"; };
+
                 Output.emplace_back(
-                    "Terrain: " + ( slash == std::string::npos ? field.path : field.path.substr( slash + 1 ) )
-                    + ", finest tile " + to_string( field.tilesize, 0 ) + " m, " + std::to_string( field.levels ) + " levels"
-                    + ", loaded out to " + to_string( field.range, 0 ) + " m, detail " + to_string( field.detail, 1 ) + " px",
+                    "Terrain " + ( slash == std::string::npos ? field.path : field.path.substr( slash + 1 ) )
+                    + "  tile " + metres( field.tilesize )
+                    + "  " + std::to_string( field.levels ) + " levels"
+                    + "  range " + metres( field.range )
+                    + "  detail " + to_string( field.detail, 1 ) + " px",
                     Global.UITextColor );
                 Output.emplace_back(
-                    "  tiles: " + std::to_string( stats.chosen ) + " chosen, "
-                    + std::to_string( stats.drawn ) + " drawn (" + std::to_string( stats.triangles / 1000 ) + "k triangles), "
-                    + std::to_string( stats.resident ) + " on gpu (" + std::to_string( stats.gpubytes / 1048576 ) + " MB), "
-                    + std::to_string( stats.wanted ) + " wanted, " + std::to_string( field.backlog ) + " in loader, "
-                    + std::to_string( stats.uploaded ) + " uploaded, " + std::to_string( stats.dropped ) + " dropped stale",
+                    "  drawn " + std::to_string( stats.drawn ) + "/" + std::to_string( stats.chosen )
+                    + "  " + std::to_string( stats.triangles / 1000 ) + "k tris"
+                    + "  reach " + metres( stats.furthest )
+                    + "   gpu " + std::to_string( stats.resident ) + " tiles "
+                    + std::to_string( stats.gpubytes / 1048576 ) + " MB"
+                    + "   queue " + std::to_string( stats.wanted ) + " wanted "
+                    + std::to_string( field.backlog ) + " reading"
+                    + "   " + std::to_string( stats.uploaded ) + " up "
+                    + std::to_string( stats.dropped ) + " dropped",
                     Global.UITextColor );
-                std::string levels { "  levels:" };
+                Output.emplace_back( "  lvl     tile      off      tri     from    tiles     tris", Global.UITextColor );
                 for( std::uint32_t level = 0; ( level < field.levels ) && ( level < stats.perlevel.size() ); ++level ) {
-                    levels +=
-                        " L" + std::to_string( level )
-                        + " (" + to_string( field.leveltile[ level ], 0 ) + " m tile, "
-                        + to_string( field.levelerror[ level ], 2 ) + " m off): "
-                        + std::to_string( stats.perlevel[ level ] );
-                    if( level + 1 < field.levels ) { levels += " |"; }
+                    auto const finest { level + 1 == field.levels };
+                    auto const from {
+                        finest ? 0.0 : terrain_level_from(
+                            field.levelerror[ level ], field.leveledge[ level ], field.pixelsperunit, field.detail ) };
+                    auto const column = []( std::string Text, std::size_t const Width ) {
+                        while( Text.size() < Width ) { Text = " " + Text; }
+                        return Text; };
+                    Output.emplace_back(
+                        "  " + column( std::to_string( level ), 3 )
+                        + column( metres( field.leveltile[ level ] ), 9 )
+                        + column( to_string( field.levelerror[ level ], 1 ) + " m", 9 )
+                        + column( to_string( field.leveledge[ level ], 0 ) + " m", 9 )
+                        + column( metres( from ), 9 )
+                        + column( std::to_string( stats.perlevel[ level ] ), 9 )
+                        + column( std::to_string( stats.trianglesperlevel[ level ] / 1000 ) + "k", 9 ),
+                        Global.UITextColor );
                 }
-                Output.emplace_back( levels, Global.UITextColor );
             }
 
             textline += "\nRendering mode: ";
