@@ -28,8 +28,19 @@ jobs:
   # ============================================================
 
   windows:
-    name: Windows x64 / MSVC
+    name: Windows x64 / MSVC / ${{ matrix.variant.name }}
     runs-on: windows-2022
+
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - name: "AVX2"
+            suffix: "avx2"
+            cmake_flags: ""
+          - name: "No AVX2"
+            suffix: "noavx2"
+            cmake_flags: "-DENABLE_AVX2=OFF"
 
     steps:
       - name: Checkout repository
@@ -74,11 +85,13 @@ jobs:
           $pythonRoot = Split-Path $pythonExe
 
           Write-Host "Python root: $pythonRoot"
+          Write-Host "Extra CMake flags: ${{ matrix.variant.cmake_flags }}"
 
           cmake -S . -B build `
             -G "Visual Studio 17 2022" `
             -A x64 `
-            "-DPython3_ROOT_DIR=$pythonRoot"
+            "-DPython3_ROOT_DIR=$pythonRoot" `
+            ${{ matrix.variant.cmake_flags }}
 
       - name: Build
         shell: pwsh
@@ -106,7 +119,7 @@ jobs:
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
-          name: maszyna-windows-x64-${{ env.CONFIG_WIN }}
+          name: maszyna-windows-x64-${{ matrix.variant.suffix }}-${{ env.CONFIG_WIN }}
           path: |
             build/bin/${{ env.CONFIG_WIN }}/
           if-no-files-found: error
@@ -115,7 +128,7 @@ jobs:
       - name: Upload Windows debug symbols
         uses: actions/upload-artifact@v4
         with:
-          name: maszyna-windows-x64-symbols-${{ env.CONFIG_WIN }}
+          name: maszyna-windows-x64-symbols-${{ matrix.variant.suffix }}-${{ env.CONFIG_WIN }}
           path: |
             build/pdb/${{ env.CONFIG_WIN }}/*.pdb
             build/bin/${{ env.CONFIG_WIN }}/*.map
