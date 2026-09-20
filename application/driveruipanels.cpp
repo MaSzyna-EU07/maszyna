@@ -1512,26 +1512,24 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) {
                 auto const slash { field.path.find_last_of( "/\\" ) };
                 Output.emplace_back(
                     "Terrain: " + ( slash == std::string::npos ? field.path : field.path.substr( slash + 1 ) )
-                    + ", grid " + to_string( field.gridstep, 1 ) + " m, tile " + to_string( field.tilesize, 0 ) + " m"
-                    + ", loaded out to " + to_string( field.range, 0 ) + " m",
+                    + ", finest tile " + to_string( field.tilesize, 0 ) + " m, " + std::to_string( field.levels ) + " levels"
+                    + ", loaded out to " + to_string( field.range, 0 ) + " m, detail " + to_string( field.detail, 1 ) + " px",
                     Global.UITextColor );
                 Output.emplace_back(
-                    "  tiles: " + std::to_string( stats.inview ) + " in range, "
-                    + std::to_string( stats.drawn ) + " drawn, "
-                    + std::to_string( stats.resident ) + " on gpu (" + std::to_string( stats.texturebytes / 1048576 ) + " MB), "
+                    "  tiles: " + std::to_string( stats.chosen ) + " chosen, "
+                    + std::to_string( stats.drawn ) + " drawn (" + std::to_string( stats.triangles / 1000 ) + "k triangles), "
+                    + std::to_string( stats.resident ) + " on gpu (" + std::to_string( stats.gpubytes / 1048576 ) + " MB), "
                     + std::to_string( stats.wanted ) + " wanted, " + std::to_string( field.backlog ) + " in loader, "
                     + std::to_string( stats.uploaded ) + " uploaded, " + std::to_string( stats.dropped ) + " dropped stale",
                     Global.UITextColor );
                 std::string levels { "  levels:" };
                 for( std::uint32_t level = 0; ( level < field.levels ) && ( level < stats.perlevel.size() ); ++level ) {
-                    auto const last { level + 1 == field.levels };
                     levels +=
                         " L" + std::to_string( level )
-                        + ( last ? " beyond " + to_string( terrain_level_distance( level > 0 ? level - 1 : 0, field.finest ), 0 )
-                                 : " <" + to_string( terrain_level_distance( level, field.finest ), 0 ) )
-                        + " m (" + to_string( field.gridstep * static_cast<float>( 1u << level ), 0 ) + " m grid): "
+                        + " (" + to_string( field.leveltile[ level ], 0 ) + " m tile, "
+                        + to_string( field.levelerror[ level ], 2 ) + " m off): "
                         + std::to_string( stats.perlevel[ level ] );
-                    if( false == last ) { levels += " |"; }
+                    if( level + 1 < field.levels ) { levels += " |"; }
                 }
                 Output.emplace_back( levels, Global.UITextColor );
             }

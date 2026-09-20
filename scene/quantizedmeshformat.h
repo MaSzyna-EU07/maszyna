@@ -9,155 +9,191 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-// Cesium Quantized Mesh format - TIN-based terrain tiles with LOD.
-// Replaces regular heightfield with adaptive triangulation.
+// Cesium Quantized Mesh, as the terrain tiles are written.
+// https://github.com/CesiumGS/quantized-mesh
 //
-// Format: https://github.com/CesiumGS/quantized-mesh
-// 
-// File layout:
-//   header (88 bytes)
-//   vertex data (positions, uvs, indices)
-//   edge indices (for seamless LOD stitching)
-//   extensions (optional metadata)
+// The ground in a MaSzyna scenery is already an irregular mesh: fine along the track where it
+// came from a survey, coarse in the open where it was drawn by hand. The cook keeps that mesh
+// rather than resampling it - it cuts it into tiles, welds the vertices and builds coarser
+// levels of it - so there is nothing to interpolate, nothing to fill in where the ground has
+// holes, and no grid step to pick.
 //
-// Advantages over heightfield:
-// - Variable density: fine detail where needed (track corridor), coarse elsewhere
-// - ~50% fewer vertices for same visual quality on mixed-detail terrain
-// - Built-in LOD with proper edge constraints (no T-junctions)
-// - Industry-standard format, tooling available
+// Tiles form a quadtree, as the format intends: one tile at the root covers the whole terrain,
+// and each level splits every tile into four. A distant tile is therefore a large one, and the
+// horizon costs tens of tiles rather than thousands. Every vertex on a tile's border survives
+// into all of its coarser levels, so two neighbours drawn at different levels share their
+// border exactly, and nothing has to be stitched or morphed at draw time.
 //
-// Disadvantages:
-// - More complex to generate (requires constrained triangulation)
-// - Slightly larger per-tile overhead (index buffer)
+// Where this departs from the specification, and why:
+//
+//  - the header's fields are geodetic (ECEF centre, bounding sphere, horizon occlusion point).
+//    A scenery has a local metric frame and no geographic reference to convert from, so those
+//    fields carry scenery metres. The geometry reads back correctly anywhere; a Cesium client
+//    would place the tile wrongly on the globe, which is a trade for something we do not want.
+//  - the format has no texture coordinates and no materials: its u and v are the vertex's
+//    horizontal position within the tile. A vertex of ours carries which ground material it
+//    belongs to, in extension ext_ground below, which is what the extension mechanism is for.
+//    Texture coordinates are not stored at all: ground textures tile in world space, so the
+//    coordinate follows from where the vertex is and how many metres one repeat of its material
+//    covers, which is measured from the scenery once and kept in the terrain's table.
+//  - tiles are stored inside the scenery's archive, one zstd-compressed entry each, in place of
+//    the gzip the format expects from an HTTP layer. The bytes of a tile are the format's.
 
+#include <algorithm>
 #include <cstdint>
-#include <cmath>
+#include <cstring>
+#include <string>
+#include <vector>
 
 namespace quantizedmesh {
 
-// "EU07QMSH" - distinguishes from other formats
-inline constexpr char magic[ 8 ] { 'E', 'U', '0', '7', 'Q', 'M', 'S', 'H' };
-inline constexpr std::uint32_t version { 1 };
+// u, v and height are quantized to this, not to 65535: the format says so
+inline constexpr std::uint16_t quantum_max { 32767 };
+
+// what the cook counted as ground, and how it cut and simplified it. tiles cooked under other
+// rules are baked again rather than read
+inline constexpr std::uint32_t cook_rules { 2 };
 
 #pragma pack( push, 1 )
 
+// the format's header, unchanged. 88 bytes
 struct file_header {
-    char magic[ 8 ];
-    std::uint32_t version;
-    
-    // Tile bounds in world space (metres)
-    double center_x, center_y, center_z;       // tile centre
-    double min_x, min_y, min_z;                // bounding box min
-    double max_x, max_y, max_z;                // bounding box max
-    
-    // Quantization ranges - vertices stored as uint16, decoded to this range
-    double horizont_error;                     // maximum geometric error for this LOD
-    
-    std::uint32_t vertex_count;
-    std::uint32_t triangle_count;
-    
-    // Offsets into file (all after this header)
-    std::uint32_t vertex_data_offset;          // packed uint16[3] positions
-    std::uint32_t uv_data_offset;              // packed uint16[2] texture coords  
-    std::uint32_t index_data_offset;           // uint16 indices (or uint32 if >65535 verts)
-    std::uint32_t edge_indices_offset;         // seamless stitching data
-    std::uint32_t extension_offset;            // optional metadata
-    
-    std::uint16_t index_size;                  // 2 (uint16) or 4 (uint32)
-    std::uint16_t edge_count_north;
-    std::uint16_t edge_count_south;
-    std::uint16_t edge_count_west;
-    std::uint16_t edge_count_east;
-    std::uint16_t reserved;                    // padding for future use
+    double centre_x, centre_y, centre_z;
+    float lowest, highest;                  // the tile's height range, in metres
+    double sphere_x, sphere_y, sphere_z;     // bounding sphere, for culling
+    double sphere_radius;
+    double horizon_x, horizon_y, horizon_z;  // horizon occlusion point; unused here
 };
 
-static_assert( sizeof( file_header ) == 132 );  // Actual size with current layout
-
-// Edge indices for seamless LOD transitions
-// Each edge stores indices of vertices lying on that tile boundary, in order
-// Parent LOD uses these to stitch to child tiles without gaps
-struct edge_indices {
-    std::uint16_t count;
-    std::uint16_t indices[];  // variable length
-};
-
-// Optional extensions (material splat, metadata, etc.)
-struct extension_header {
-    std::uint32_t extension_id;
-    std::uint32_t extension_size;
-};
-
-// Extension IDs
-enum extension_id : std::uint32_t {
-    ext_material_splat = 1,    // RGBA8 per-vertex material weights
-    ext_metadata = 2,           // JSON metadata
-    ext_meshlet = 3,            // Meshlet data for mesh shading
-};
+static_assert( sizeof( file_header ) == 88 );
 
 #pragma pack( pop )
 
-// Helper functions
+// extension ids. 1, 2 and 4 are taken by the format for normals, the water mask and metadata
+enum extension_id : std::uint8_t {
+    ext_normals = 1,
+    ext_watermask = 2,
+    ext_metadata = 4,
+    // ours: one uint16 per vertex, its material's place in the terrain's table
+    ext_ground = 64,
+};
 
-// Quantize position to uint16
-inline std::uint16_t quantize( double value, double min, double max ) {
-    if( max <= min ) return 0;
-    double const normalized = std::clamp( ( value - min ) / ( max - min ), 0.0, 1.0 );
-    return static_cast<std::uint16_t>( normalized * 65535.0 + 0.5 );
+// zigzag, as the format uses it on the deltas between consecutive vertices
+inline std::uint16_t
+zigzag_encode( std::int32_t const Value ) {
+    return static_cast<std::uint16_t>( ( Value << 1 ) ^ ( Value >> 31 ) );
 }
 
-// Dequantize uint16 to position
-inline double dequantize( std::uint16_t encoded, double min, double max ) {
-    double const normalized = static_cast<double>( encoded ) / 65535.0;
-    return min + normalized * ( max - min );
+inline std::int32_t
+zigzag_decode( std::uint16_t const Stored ) {
+    return ( Stored >> 1 ) ^ -static_cast<std::int32_t>( Stored & 1 );
 }
 
-// ZigZag encode for delta-compression of indices
-inline std::uint32_t zigzag_encode( std::int32_t value ) {
-    return ( value << 1 ) ^ ( value >> 31 );
+// a quantized coordinate back to metres, against the range it was quantized in
+inline double
+dequantize( std::uint16_t const Stored, double const Low, double const Span ) {
+    return Low + ( static_cast<double>( Stored ) / quantum_max ) * Span;
 }
 
-inline std::int32_t zigzag_decode( std::uint32_t value ) {
-    return ( value >> 1 ) ^ -static_cast<std::int32_t>( value & 1 );
+inline std::uint16_t
+quantize( double const Value, double const Low, double const Span ) {
+    if( Span <= 0.0 ) { return 0; }
+    auto const share { std::clamp( ( Value - Low ) / Span, 0.0, 1.0 ) };
+    return static_cast<std::uint16_t>( share * quantum_max + 0.5 );
 }
 
-// Octahedral encoding for normals (optional, saves space)
-inline void encode_oct( float nx, float ny, float nz, std::int16_t &out_x, std::int16_t &out_y ) {
-    float const l1norm = std::abs(nx) + std::abs(ny) + std::abs(nz);
-    float px = nx / l1norm;
-    float py = ny / l1norm;
-    
-    if( nz < 0.0f ) {
-        float const old_x = px;
-        px = ( 1.0f - std::abs(py) ) * ( old_x >= 0.0f ? 1.0f : -1.0f );
-        py = ( 1.0f - std::abs(old_x) ) * ( py >= 0.0f ? 1.0f : -1.0f );
+// Indices are stored high-water-mark encoded: a code of zero means the next index never used
+// before, and anything else counts back from the highest index used so far. The run of codes is
+// small numbers whatever the mesh looks like, which is what makes the tile compress.
+template <typename Index_>
+void
+highwater_encode( std::vector<Index_> const &Indices, std::vector<Index_> &Out ) {
+
+    Out.clear();
+    Out.reserve( Indices.size() );
+    std::int64_t highest { 0 };
+    for( auto const index : Indices ) {
+        Out.push_back( static_cast<Index_>( highest - static_cast<std::int64_t>( index ) ) );
+        if( static_cast<std::int64_t>( index ) == highest ) { ++highest; }
     }
-    
-    out_x = static_cast<std::int16_t>( std::clamp( px * 32767.0f, -32767.0f, 32767.0f ) );
-    out_y = static_cast<std::int16_t>( std::clamp( py * 32767.0f, -32767.0f, 32767.0f ) );
 }
 
-inline void decode_oct( std::int16_t enc_x, std::int16_t enc_y, float &nx, float &ny, float &nz ) {
-    float px = static_cast<float>( enc_x ) / 32767.0f;
-    float py = static_cast<float>( enc_y ) / 32767.0f;
-    
-    nz = 1.0f - std::abs(px) - std::abs(py);
-    
-    if( nz < 0.0f ) {
-        float const old_x = px;
-        px = ( 1.0f - std::abs(py) ) * ( old_x >= 0.0f ? 1.0f : -1.0f );
-        py = ( 1.0f - std::abs(old_x) ) * ( py >= 0.0f ? 1.0f : -1.0f );
+// returns false when a code points past what has been used, which a corrupted tile can do
+template <typename Index_>
+bool
+highwater_decode( std::vector<Index_> const &Codes, std::vector<std::uint32_t> &Out ) {
+
+    Out.clear();
+    Out.reserve( Codes.size() );
+    std::int64_t highest { 0 };
+    for( auto const code : Codes ) {
+        auto const index { highest - static_cast<std::int64_t>( code ) };
+        if( ( index < 0 ) || ( index > highest ) ) { return false; }
+        Out.push_back( static_cast<std::uint32_t>( index ) );
+        if( index == highest ) { ++highest; }
     }
-    
-    float const len = std::sqrt( px*px + py*py + nz*nz );
-    nx = px / len;
-    ny = py / len;
-    nz = nz / len;
+    return true;
 }
 
-// Tile key - same as heightfield for compatibility
+// A tile's place in the quadtree. Level 0 is the root, covering the whole terrain; each level
+// splits every tile into four. X grows east, Z grows with the scenery's z, so a tile's square
+// follows from the terrain's extent and the level alone.
+struct tile_address {
+    std::uint32_t level { 0 };
+    std::int32_t x { 0 }, z { 0 };
+
+    bool operator==( tile_address const & ) const = default;
+};
+
 constexpr std::int64_t
-tile_key( std::int32_t const X, std::int32_t const Z ) {
-    return ( static_cast<std::int64_t>( X ) << 32 ) ^ static_cast<std::uint32_t>( Z );
+tile_key( tile_address const &Tile ) {
+    // a level fits in six bits for any terrain worth cooking, and the coordinates cannot exceed
+    // the level, so this is unique
+    return ( static_cast<std::int64_t>( Tile.level ) << 58 )
+         ^ ( static_cast<std::int64_t>( Tile.x ) << 29 )
+         ^ static_cast<std::int64_t>( Tile.z );
 }
+
+// where a tile's file sits in the archive, following the format's own layout of level, column
+// and row
+inline std::string
+tile_name( tile_address const &Tile ) {
+    return std::to_string( Tile.level ) + "/" + std::to_string( Tile.x ) + "/"
+         + std::to_string( Tile.z ) + ".terrain";
+}
+
+// the terrain's extent, height range, depth and material table are the same for every tile, so
+// they are written once beside them, under this name. the format keeps the same thing in
+// layer.json
+inline constexpr char const *tablename { "terrain.table" };
+
+// what that file says
+struct terrain_table {
+    std::uint32_t rules { 0 };
+    // the square the root tile covers. always square, so that a tile at any level is too
+    double west { 0.0 }, north { 0.0 }, side { 0.0 };
+    double lowest { 0.0 }, highest { 0.0 };
+    // levels cooked, root included: addresses run from 0 to levels - 1
+    std::uint32_t levels { 1 };
+    // metres the ground of a tile at each level departs from the finest one. what decides which
+    // level to draw: a level is good enough while its error covers few enough pixels
+    std::vector<float> errors;
+    // one ground texture: its name, and how many metres of ground one repeat of it covers, as
+    // measured from the texture coordinates the scenery drew it with
+    struct material {
+        std::string name;
+        float repeat { 4.f };
+    };
+    // in the order the vertices' material indices count
+    std::vector<material> materials;
+
+    // metres along the side of a tile at this level
+    double tilesize( std::uint32_t const Level ) const {
+        return side / static_cast<double>( 1u << Level );
+    }
+    float error( std::uint32_t const Level ) const {
+        return Level < errors.size() ? errors[ Level ] : 0.f;
+    }
+};
 
 } // namespace quantizedmesh

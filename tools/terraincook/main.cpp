@@ -33,8 +33,8 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/heightfieldformat.h"
 #include "scene/heightfieldreader.h"
 #include "scene/terraincooker.h"
-#include "scene/terraincooker_tin.h"
-#include "scene/quantizedmeshformat.h"
+#include "scene/quantizedmeshcooker.h"
+#include "scene/quantizedmeshreader.h"
 
 namespace {
 
@@ -570,18 +570,14 @@ main( int argc, char *argv[] ) {
     std::filesystem::path outputdirectory { "." };
     double step { 0.0 };
     bool cooking { false };
-    double tin_tilesize { 256.0 };
-    std::uint32_t tin_lodlevels { 4 };
-    bool compress { true };
+    std::filesystem::path archive { "terrain.pak" };
 
     for( auto index { 1 }; index < argc; ++index ) {
         std::string const argument { argv[ index ] };
         if( argument == "-step" && index + 1 < argc ) { step = std::strtod( argv[ ++index ], nullptr ); continue; }
         if( argument == "-out" && index + 1 < argc ) { outputdirectory = argv[ ++index ]; continue; }
         if( argument == "-cook" ) { cooking = true; continue; }
-        if( argument == "-tilesize" && index + 1 < argc ) { tin_tilesize = std::strtod( argv[ ++index ], nullptr ); continue; }
-        if( argument == "-lodlevels" && index + 1 < argc ) { tin_lodlevels = static_cast<std::uint32_t>( std::strtoul( argv[ ++index ], nullptr, 10 ) ); continue; }
-        if( argument == "-raw" ) { compress = false; continue; }
+        if( argument == "-archive" && index + 1 < argc ) { archive = argv[ ++index ]; continue; }
         if( argument == "-tracks" && index + 1 < argc ) {
             std::filesystem::path const trackpath { argv[ ++index ] };
             if( std::filesystem::is_directory( trackpath ) ) {
@@ -639,11 +635,16 @@ main( int argc, char *argv[] ) {
     std::array<double, bandcount> bandedgesum {};
     std::array<std::size_t, bandcount> bandfine {};
 
-    terrain::tin_cooker tin_cooker;
+    // the same cooker the engine's first-run cook uses, so the two cannot drift apart
+    quantizedmesh::cooker cooker;
     if( cooking ) {
-        tin_cooker.configure( tin_tilesize, tin_lodlevels );
-        std::printf( "TIN cooking enabled: tile size %.0f m, %u LOD levels\n", 
-            tin_tilesize, tin_lodlevels );
+        auto const scratch { ( outputdirectory / "terrain.cook" ).string() };
+        std::filesystem::create_directories( outputdirectory );
+        if( false == cooker.begin( scratch ) ) {
+            std::cerr << "cannot write " << scratch << "\n";
+            return 1;
+        }
+        std::printf( "cooking terrain mesh tiles into %s\n", ( outputdirectory / archive ).string().c_str() );
     }
 
     statistics stats;
@@ -663,7 +664,13 @@ main( int argc, char *argv[] ) {
 
         parse( content, [ & ]( vertex const &A, vertex const &B, vertex const &C, std::string_view Material ) {
 
-            if( cooking ) { tin_cooker.rasterize( A, B, C, Material ); }
+            if( cooking ) {
+                auto const corner = []( vertex const &Vertex ) {
+                    return quantizedmesh::cooker::corner {
+                        Vertex.x, Vertex.y, Vertex.z,
+                        static_cast<float>( Vertex.u ), static_cast<float>( Vertex.v ) }; };
+                cooker.add( corner( A ), corner( B ), corner( C ), Material );
+            }
             ++stats.triangles;
             stats.vertices += 3;
             vertex const points[ 3 ] { A, B, C };
@@ -876,31 +883,42 @@ main( int argc, char *argv[] ) {
     writepreview( outputdirectory / "overlay.pgm", overlaypreview, previewwidth, previewheight, -1.0f );
 
     if( cooking ) {
-        std::filesystem::create_directories( outputdirectory );
-        std::printf( "\n-- generating TIN tiles\n" );
-        
-        auto tiles = tin_cooker.finish();
-        
-        std::printf( "Writing %zu tiles...\n", tiles.size() );
-        std::size_t written = 0;
-        
-        for( auto const &tile : tiles ) {
-            for( std::uint32_t lod = 0; lod < tile.lods.size(); ++lod ) {
-                char filename[ 256 ];
-                std::snprintf( filename, sizeof( filename ), "terrain_%d_%d_lod%u.qm", 
-                    tile.x, tile.z, lod );
-                
-                std::filesystem::path const filepath = outputdirectory / filename;
-                
-                if( terrain::tin_cooker::write_tile( tile, lod, filepath.string(), compress ) ) {
-                    ++written;
-                } else {
-                    std::fprintf( stderr, "Failed to write %s\n", filename );
-                }
-            }
+        std::printf( "\n-- cooking terrain mesh tiles\n" );
+
+        pak::writer writer;
+        auto const archivepath { ( outputdirectory / archive ).string() };
+        if( false == writer.open( archivepath ) ) {
+            std::cerr << "cannot write " << archivepath << "\n";
+            return 1;
         }
-        
-        std::printf( "Wrote %zu quantized mesh files to %s\n", written, outputdirectory.string().c_str() );
+        auto written { true };
+        quantizedmesh::terrain_table table;
+        auto const sink {
+            [ &writer, &written ](
+                quantizedmesh::tile_address const &Tile, std::vector<std::uint8_t> const &Bytes ) {
+                written = writer.add( quantizedmesh::tile_name( Tile ), Bytes ) && written; } };
+        if( ( false == cooker.finish( sink, table ) ) || ( false == written ) ) {
+            std::cerr << "cooking failed\n";
+            return 1;
+        }
+        written = writer.add( quantizedmesh::tablename, quantizedmesh::write_table( table ) ) && written;
+        if( ( false == writer.close() ) || ( false == written ) ) {
+            std::cerr << "cannot finish " << archivepath << "\n";
+            return 1;
+        }
+
+        auto const &report { cooker.result() };
+        std::printf( "   %zu triangles laid in %zu tiles of %.0f m over %u levels\n",
+            report.triangles, report.tiles, cooker.finesttile(), report.levels );
+        std::printf( "   %zu vertices, %llu kB, %zu triangles refused\n",
+            report.vertices, static_cast<unsigned long long>( writer.bytes() / 1024 ), report.refused );
+        for( std::uint32_t level = 0; level < table.levels; ++level ) {
+            std::printf( "   level %u: tile %.0f m, off by %.3f m\n",
+                level, table.tilesize( level ), table.error( level ) );
+        }
+        for( auto const &material : table.materials ) {
+            std::printf( "   material %-40s one repeat every %6.2f m\n", material.name.c_str(), material.repeat );
+        }
     }
 
     std::printf( "\n   previews written to %s (%zux%zu, 1 px = %.0f m)\n",

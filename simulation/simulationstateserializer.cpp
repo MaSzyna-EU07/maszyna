@@ -725,16 +725,17 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
                 // the bake sees the node exactly where it is drawn. placing is done on a copy:
                 // the region applies the same placement to the shape itself when inserting it
                 auto const &data { shape.data() };
-                auto const material {
-                    data.material != null_handle
-                        ? GfxRenderer->Material( data.material )->GetName()
-                        : "none" };
+                auto const *entry {
+                    data.material != null_handle ? GfxRenderer->Material( data.material ) : nullptr };
+                auto const material { entry != nullptr ? entry->GetName() : "none" };
+                // a texture with an alpha channel is not ground; the bake wants to know
+                auto const translucent { ( entry != nullptr ) && entry->is_translucent() };
                 // the old switch trackbeds are dropped from the scenery when generated ones
                 // replace them, so they are no part of the ground either
                 if( false == ( Global.CreateSwitchTrackbeds && scene::is_switch_trackbed( material ) ) ) {
                     auto placed { data.vertices };
                     scene::place_in_world( placed, Scratchpad );
-                    terrainbake::add( decision.key, placed, material );
+                    terrainbake::add( decision.key, placed, material, translucent );
                 }
             }
             if( decision.plan.what == terrainbake::verdict::filter ) {

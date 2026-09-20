@@ -94,10 +94,13 @@ write( std::string const &Path, std::vector<std::string> const &Files ) {
         entry item;
         item.path = file;
         if( false == hash_of( file, item.size, item.hash ) ) {
-            // a file that was read a moment ago and cannot be now; the artifact is recorded as
-            // depending on its absence, which any later read will contradict
+            // a file the scenery names and that is not there. all zeroes records that it was not
+            // there, so that a later read agrees with the manifest instead of forcing a recook
             item.size = 0;
             item.hash = 0;
+            item.time = 0;
+            text << item.size << ' ' << item.time << ' ' << std::hex << item.hash << std::dec << ' ' << item.path << '\n';
+            continue;
         }
         item.time = static_cast<std::int64_t>( last_modified( file ) );
         text << item.size << ' ' << item.time << ' ' << std::hex << item.hash << std::dec << ' ' << item.path << '\n';
@@ -127,7 +130,16 @@ current( std::string const &Path ) {
         }
         std::uintmax_t size { 0 };
         std::uint64_t hash { 0 };
-        if( ( false == hash_of( item.path, size, hash ) ) || ( size != item.size ) || ( hash != item.hash ) ) {
+        if( false == hash_of( item.path, size, hash ) ) {
+            // not there now. a scenery may name an include that does not exist, and if it did not
+            // exist when the manifest was written either then nothing has changed. an empty file
+            // that does exist hashes to the starting value rather than to zero, so the two cannot
+            // be confused
+            if( ( item.size == 0 ) && ( item.hash == 0 ) && ( item.time == 0 ) ) { continue; }
+            WriteLog( "Cooked data: \"" + item.path + "\" is gone since \"" + Path + "\" was written" );
+            return false;
+        }
+        if( ( size != item.size ) || ( hash != item.hash ) ) {
             WriteLog( "Cooked data: \"" + item.path + "\" has changed since \"" + Path + "\" was written" );
             return false;
         }

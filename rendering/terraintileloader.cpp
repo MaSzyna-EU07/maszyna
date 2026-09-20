@@ -25,10 +25,14 @@ terrain_tile_loader::~terrain_tile_loader() {
 }
 
 bool
-terrain_tile_loader::open( std::string const &Path ) {
+terrain_tile_loader::open(
+    std::string const &Path, double const Originx, double const Originy, double const Originz ) {
 
     close();
     if( false == m_reader.open( Path ) ) { return false; }
+    m_originx = Originx;
+    m_originy = Originy;
+    m_originz = Originz;
     m_stop = false;
     m_thread = std::thread( &terrain_tile_loader::work, this );
     return true;
@@ -53,24 +57,22 @@ terrain_tile_loader::close() {
 }
 
 bool
-terrain_tile_loader::underway( request const &Tile ) const {
+terrain_tile_loader::underway( quantizedmesh::tile_address const &Tile ) const {
 
     if( ( m_running.has_value() ) && ( *m_running == Tile ) ) { return true; }
     return std::any_of(
         m_done.begin(), m_done.end(),
-        [ &Tile ]( payload const &Done ) { return Done.tile == Tile; } );
+        [ &Tile ]( payload const &Done ) { return Done.data.tile == Tile; } );
 }
 
 void
-terrain_tile_loader::want( std::vector<request> const &Requests ) {
+terrain_tile_loader::want( std::vector<quantizedmesh::tile_address> const &Requests ) {
 
     {
         std::lock_guard<std::mutex> lock( m_mutex );
         m_pending.clear();
         for( auto const &tile : Requests ) {
-            if( false == underway( tile ) ) {
-                m_pending.push_back( tile );
-            }
+            if( false == underway( tile ) ) { m_pending.push_back( tile ); }
         }
     }
     m_wake.notify_one();
@@ -105,7 +107,7 @@ void
 terrain_tile_loader::work() {
 
     while( true ) {
-        request tile;
+        quantizedmesh::tile_address tile;
         {
             std::unique_lock<std::mutex> lock( m_mutex );
             m_wake.wait( lock, [ this ]() {
@@ -116,40 +118,11 @@ terrain_tile_loader::work() {
             m_running = tile;
         }
 
-        // the read itself happens outside the lock, so the render thread can replace the
-        // wish list while a tile is being decoded
+        // the read itself happens outside the lock, so the render thread can replace the wish
+        // list while a tile is being decoded
         payload result;
-        result.tile = tile;
-        
-        quantizedmesh::reader::tile_data data;
-        result.valid = m_reader.read_tile( tile.x, tile.z, tile.level, data );
-        
-        if( result.valid ) {
-            // Copy data to payload
-            result.positions_x = std::move( data.positions_x );
-            result.positions_y = std::move( data.positions_y );
-            result.positions_z = std::move( data.positions_z );
-            result.uvs_u = std::move( data.uvs_u );
-            result.uvs_v = std::move( data.uvs_v );
-            result.materials = std::move( data.materials );
-            result.indices = std::move( data.indices );
-            
-            result.north_edge = std::move( data.north_edge );
-            result.south_edge = std::move( data.south_edge );
-            result.west_edge = std::move( data.west_edge );
-            result.east_edge = std::move( data.east_edge );
-            
-            result.center_x = data.center_x;
-            result.center_y = data.center_y;
-            result.center_z = data.center_z;
-            result.min_x = data.min_x;
-            result.min_y = data.min_y;
-            result.min_z = data.min_z;
-            result.max_x = data.max_x;
-            result.max_y = data.max_y;
-            result.max_z = data.max_z;
-            result.geometric_error = data.geometric_error;
-        }
+        result.data.tile = tile;
+        result.valid = m_reader.read_tile( tile, result.data, m_originx, m_originy, m_originz );
 
         std::lock_guard<std::mutex> lock( m_mutex );
         m_running.reset();

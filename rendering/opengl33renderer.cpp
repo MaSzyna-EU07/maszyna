@@ -2932,12 +2932,16 @@ void opengl33_renderer::Render_terrain()
 			if (status.path.empty())
 			{
 				status.path = field.path();
-				status.gridstep = field.gridstep();
 				status.tilesize = field.tilesize();
 				status.levels = field.levels();
+				for (std::uint32_t level = 0; level < field.levels() && level < status.leveltile.size(); ++level)
+				{
+					status.leveltile[level] = field.leveltile(level);
+					status.levelerror[level] = field.levelerror(level);
+				}
 			}
 			status.range = field.range();
-			status.finest = field.finest();
+			status.detail = field.detailpixels();
 			status.backlog = field.backlog();
 			status.stats = field.stats();
 		}

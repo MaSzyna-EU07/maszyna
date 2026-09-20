@@ -20,76 +20,50 @@ export module eu07.rendering.terrainstatus;
 
 export {
 
-// Which level a tile is drawn at follows from what its samples look like on screen: a level is
-// used out to the distance where one of its sample spacings covers the detail setting in
-// pixels. Each level doubles the spacing, so each doubles that distance too. Pixelsperunit is
-// the viewport height over twice the tangent of half the vertical field of view - what a
-// metre at a metre's distance spans - so zooming in or a taller window pushes detail further.
+// Which level of the quadtree a tile is drawn at follows from what the coarser mesh would cost in
+// pixels. Every tile says how far its ground departs from the finest mesh, in metres; that error,
+// at the tile's distance, covers a number of pixels, and while it covers fewer than the detail
+// setting asks for there is nothing to gain by going finer. Pixelsperunit is the viewport height
+// over twice the tangent of half the vertical field of view - what a metre at a metre's distance
+// spans - so zooming in or a taller window pushes detail further out on its own.
 //
-// The finest range never drops below four tile sides, whatever the screen: the morphing below
-// only closes the seams when a level's range is several tiles long.
-inline constexpr double terrain_finest_tiles { 4.0 };
+// This is the format's own rule, and the reason a tile carries its error at all.
+inline constexpr std::size_t terrain_maxlevels { 16 };
 
-inline double
-terrain_finest_range( double const Gridstep, double const Tilesize, double const Pixelsperunit, double const Detail ) {
-    return std::max( terrain_finest_tiles * Tilesize, Gridstep * Pixelsperunit / std::max( 0.1, Detail ) );
+inline bool
+terrain_level_enough(
+    double const Error, double const Distance, double const Pixelsperunit, double const Detail ) {
+    return Error * Pixelsperunit <= std::max( 0.1, Detail ) * std::max( 1.0, Distance );
 }
 
-// how far the camera may move before the tiles in range and their levels are worked out
-// again, in tile sides
+// how far the camera may move before which tiles are wanted is worked out again, as a share of the
+// finest tile's side
 inline constexpr double terrain_rescan_tiles { 0.25 };
 
-// the distance up to which a level is used, given the finest level's range
-inline double
-terrain_level_distance( std::uint32_t const Level, double const Finest ) {
-    return Finest * std::pow( 2.0, Level );
-}
-
-// A tile morphs into the next level over a band at the far end of its level's range. Two
-// neighbours at levels L and L+1 then meet exactly when, all along their shared edge, the
-// finer tile has finished morphing and the coarser one has not started. The band ends a
-// rescan's worth of travel short of the range, because levels are chosen where the camera
-// was at the last rescan while the morph follows the camera every frame; and it is a fifth
-// of the range wide, which keeps the coarser tile's band, a whole range further out, clear of
-// any edge a finer tile can reach. Both were settled by a geometric test over random camera
-// positions, three tile sizes and several finest ranges (tools/terraincook/seamcheck.py),
-// which finds no gap with these values and finds them at every level boundary with a band
-// ending at the range itself.
-inline constexpr double terrain_morph_band { 0.2 };
-
-// the distances, from the camera, over which a level L tile morphs into level L+1
-inline double
-terrain_morph_end( std::uint32_t const Level, double const Finest, double const Tilesize ) {
-    return terrain_level_distance( Level, Finest ) - terrain_rescan_tiles * Tilesize;
-}
-
-inline double
-terrain_morph_begin( std::uint32_t const Level, double const Finest, double const Tilesize ) {
-    return terrain_morph_end( Level, Finest, Tilesize ) - terrain_morph_band * terrain_level_distance( Level, Finest );
-}
-
-// what one terrain field's streamer is doing, kept by the field and read by the debug panel
+// what one terrain's streamer is doing, kept by it and read by the debug panel
 struct terrain_statistics {
-    std::size_t resident { 0 };     // tiles holding gl textures
-    std::size_t inview { 0 };       // resident tiles within range in the last update
+    std::size_t resident { 0 };     // tiles held in the vertex and index buffers
+    std::size_t chosen { 0 };       // tiles the last walk of the quadtree settled on drawing
     std::size_t drawn { 0 };        // of those, the ones inside the frustum in the last draw
-    std::size_t wanted { 0 };       // tiles in range missing, or at the wrong level
-    std::size_t uploaded { 0 };     // uploads since opening
-    std::size_t dropped { 0 };      // arrivals discarded as stale since opening
-    std::size_t texturebytes { 0 };
-    std::array<std::size_t, 8> perlevel {}; // tiles in view at each level
+    std::size_t triangles { 0 };    // triangles in the last draw
+    std::size_t wanted { 0 };       // tiles the walk asked for and did not have
+    std::size_t uploaded { 0 };     // tiles put in the buffers since opening
+    std::size_t dropped { 0 };      // arrivals discarded as no longer wanted
+    std::size_t gpubytes { 0 };     // what the two buffers hold
+    std::array<std::size_t, terrain_maxlevels> perlevel {}; // tiles drawn at each level
 };
 
-// one field as the debug panel shows it. the renderer writes it once a frame from the main
-// view, the panel reads it; neither needs to know the other's types
+// one terrain as the debug panel shows it. the renderer writes it once a frame from the main view,
+// the panel reads it; neither needs to know the other's types
 struct terrain_field_status {
     std::string path;
-    float gridstep { 0.f };
-    float tilesize { 0.f };
+    float tilesize { 0.f };         // side of a tile at the finest level, in metres
     float range { 0.f };
-    float finest { 0.f };           // range of the finest level, from the screen
+    float detail { 0.f };           // pixels an error may cover before a finer level is used
     std::uint32_t levels { 0 };
     std::size_t backlog { 0 };      // tiles the loader has queued or finished and not handed over
+    std::array<float, terrain_maxlevels> leveltile {};   // tile side at each level
+    std::array<float, terrain_maxlevels> levelerror {};  // metres a level departs from the finest
     terrain_statistics stats;
 };
 

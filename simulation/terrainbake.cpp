@@ -9,14 +9,11 @@ http://mozilla.org/MPL/2.0/.
 
 module;
 #include <algorithm>
-#include <array>
-#include <cmath>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
-#include <memory>
 #include <fstream>
 #include <string>
 #include <string_view>
@@ -24,286 +21,176 @@ module;
 #include <unordered_map>
 #include <vector>
 #include "utilities/Globals_macros.h"
-#include "scene/terraincooker.h"
-#include "scene/heightfieldreader.h"
+#include "scene/pakformat.h"
+#include "scene/quantizedmeshcooker.h"
+#include "scene/quantizedmeshreader.h"
 
 module eu07.simulation.terrainbake;
 import eu07.utilities.logs;
 import eu07.utilities.globals;
 import eu07.utilities.utilities;
-import eu07.simulation.loadprofile;
+import eu07.model.vertex;
 import eu07.simulation.cookdeps;
 
 namespace simulation::terrainbake {
 
 namespace {
 
-// vertices kept from the start of the scenery to tell the grid step from
-constexpr std::size_t samplegoal { 200000 };
+// the most triangles a tile of any level is allowed. the finest level is the ground as the scenery
+// drew it and is not cut down, so this is a ceiling for the coarser ones rather than a target
+constexpr std::size_t tilebudget { 8192 };
 
-// Terrain comes in two kinds: modelled by hand with triangles hundreds of metres long, or taken
-// from an elevation model with small triangles along the line. One grid step for both either
-// loses the detail or samples a field of large triangles every metre. So a bake writes several
-// heightfields at steps a factor apart. A triangle's own field is the coarsest that still puts
-// samplesperedge samples along its longest edge, and it is laid into that field and every
-// coarser one: the coarsest field then holds all the ground, as the layers of a level of
-// detail scheme do, and a triangle at the edge of a finer field - next to ground that field
-// does not hold - can still be replaced by a coarser one lying under it. Where two fields
-// hold the same ground the finer one wins the depth test. A flat triangle sampled coarsely is
-// the same plane; what a coarser step gives up is the exact line of the creases between
-// triangles, which a hand modelled terrain does not have to spare anyway.
-constexpr std::uint32_t fieldcount { 3 };
-constexpr double fieldstride { 4.0 };
-constexpr double samplesperedge { 16.0 };
-
-// the node table written beside a baked heightfield
-constexpr char tablemagic[ 8 ] { 'E', 'U', '0', '7', 'H', 'F', 'N', 'D' };
-// 2: nodes keyed by file, line, include parameters and placement rather than by their text
-constexpr std::uint32_t tableversion { 2 };
+// the note written beside the tiles: which nodes they stand for
+constexpr char notemagic[ 8 ] { 'E', 'U', '0', '7', 'T', 'N', 'O', 'D' };
+constexpr std::uint32_t noteversion { 1 };
+// a node with no mask: the tiles stand for every triangle of it
 constexpr std::uint32_t allshown { 0xffffffffu };
 
-struct table_header {
+struct note_header {
     char magic[ 8 ];
     std::uint32_t version;
-    std::uint32_t selection;
+    std::uint32_t rules;
     std::uint64_t count;
     std::uint64_t maskbytes;
 };
 
-struct table_record {
+struct note_record {
     std::uint64_t key;
     std::uint32_t triangles;
-    // offset into the mask blob, one bit per triangle set where it is still drawn; allshown
-    // when the heightfield shows every triangle and there is no mask
+    // where this node's bits start in the mask blob, one per triangle, set where the scenery
+    // still draws it. allshown when none of them is drawn any more
     std::uint32_t mask;
 };
 
-// one triangle as it waits in the spill file for the passes: its corners in world space with
-// their texture coordinates, the node it came from, which holds its material, and its number
-struct spilled {
-    double corners[ 15 ];
-    std::uint32_t node;
-    std::uint32_t id;
-};
-
-// one node as baked: where its triangles sit in the cooker's numbering
+// one node as it went into the cook: where its triangles sit in the cook's numbering
 struct baked_node {
-    std::uint64_t key;
-    std::uint32_t first;
-    std::uint32_t count;
-    // kept once per node rather than once per spilled triangle
-    std::string material;
+    std::uint64_t key { 0 };
+    std::uint32_t first { 0 };
+    std::uint32_t count { 0 };
 };
 
 struct {
-    // baking. triangles go to a spill file as the scenery is parsed; the heightfield is made
-    // from it once everything is in
+    // cooking
     bool collecting { false };
-    std::ofstream spill;
-    std::string spillpath;
-    std::vector<terrain::vertex> sample;
+    quantizedmesh::cooker cooker;
     std::vector<baked_node> nodes;
     std::uint32_t triangles { 0 };
-    // per triangle, once baked: whether the heightfield shows it
-    std::vector<std::uint8_t> shown;
+    std::size_t objects { 0 };
+    std::size_t objecttriangles { 0 };
     std::chrono::steady_clock::time_point started;
-    // planning
-    std::unordered_map<std::uint64_t, table_record> table;
+    // reading a cook from an earlier run
+    std::unordered_map<std::uint64_t, note_record> note;
     std::vector<std::uint8_t> masks;
     std::size_t skipped { 0 }, filtered { 0 }, drawn { 0 };
 } state;
 
-// where a field is written: the finest beside the scenery as <scenario>.ehf, coarser ones as
-// <scenario>.<field>.ehf
-std::string
-heightfield_path( std::string const &Sceneryfile, std::uint32_t const Field = 0 ) {
+// beside the scenery, under its name: the same place the heightfield used to be cooked to
+std::string archive_path( std::string const &Sceneryfile )  { return scenery_sidecar( Sceneryfile, "_terrain.pak" ); }
+std::string note_path( std::string const &Sceneryfile )     { return scenery_sidecar( Sceneryfile, "_terrain.nodes" ); }
+std::string manifest_path( std::string const &Sceneryfile ) { return scenery_sidecar( Sceneryfile, "_terrain.deps" ); }
+std::string scratch_path( std::string const &Sceneryfile )  { return scenery_sidecar( Sceneryfile, "_terrain.cook" ); }
 
-    return scenery_sidecar( Sceneryfile, Field == 0 ? std::string( ".ehf" ) : "." + std::to_string( Field ) + ".ehf" );
-}
-
-std::string
-table_path( std::string const &Heightfield ) {
-
-    return Heightfield + ".nodes";
-}
-
-std::string
-manifest_path( std::string const &Heightfield ) {
-
-    return Heightfield + ".deps";
-}
-
-// throws away every file of a bake, so the next start makes a new one
 void
 discard( std::string const &Sceneryfile ) {
 
     std::error_code error;
-    for( std::uint32_t field = 0; field < fieldcount; ++field ) {
-        std::filesystem::remove( heightfield_path( Sceneryfile, field ), error );
+    for( auto const &path : {
+            archive_path( Sceneryfile ), note_path( Sceneryfile ),
+            manifest_path( Sceneryfile ), scratch_path( Sceneryfile ) } ) {
+        std::filesystem::remove( path, error );
     }
-    std::filesystem::remove( table_path( heightfield_path( Sceneryfile ) ), error );
-    std::filesystem::remove( manifest_path( heightfield_path( Sceneryfile ) ), error );
 }
 
 bool
-load_table( std::string const &Path ) {
+load_note( std::string const &Path ) {
 
-    std::ifstream input( Path, std::ios::binary );
-    if( false == input.good() ) { return false; }
+    std::ifstream file( Path, std::ios::binary );
+    if( false == file.good() ) { return false; }
+    note_header header {};
+    file.read( reinterpret_cast<char *>( &header ), sizeof( header ) );
+    if( false == file.good() ) { return false; }
+    if( 0 != std::memcmp( header.magic, notemagic, sizeof( notemagic ) ) ) { return false; }
+    if( header.version != noteversion ) { return false; }
+    if( header.rules != quantizedmesh::cook_rules ) { return false; }
 
-    table_header header {};
-    input.read( reinterpret_cast<char *>( &header ), sizeof( header ) );
-    if( ( false == static_cast<bool>( input ) )
-     || ( 0 != std::memcmp( header.magic, tablemagic, sizeof( tablemagic ) ) )
-     || ( header.version != tableversion )
-     || ( header.selection != heightfield::selection_rules ) ) {
-        return false;
+    state.note.reserve( header.count );
+    for( std::uint64_t index = 0; index < header.count; ++index ) {
+        note_record record {};
+        file.read( reinterpret_cast<char *>( &record ), sizeof( record ) );
+        if( false == file.good() ) { state.note.clear(); return false; }
+        state.note.emplace( record.key, record );
     }
-
-    std::vector<table_record> records( header.count );
-    input.read( reinterpret_cast<char *>( records.data() ), static_cast<std::streamsize>( header.count * sizeof( table_record ) ) );
     state.masks.resize( header.maskbytes );
-    input.read( reinterpret_cast<char *>( state.masks.data() ), static_cast<std::streamsize>( header.maskbytes ) );
-    if( false == static_cast<bool>( input ) ) { return false; }
-
-    state.table.reserve( records.size() );
-    for( auto const &record : records ) {
-        state.table.emplace( record.key, record );
+    if( header.maskbytes > 0 ) {
+        file.read( reinterpret_cast<char *>( state.masks.data() ), static_cast<std::streamsize>( header.maskbytes ) );
     }
+    if( false == file.good() ) { state.note.clear(); state.masks.clear(); return false; }
     return true;
 }
 
-void
-write_table( std::string const &Path ) {
+bool
+save_note( std::string const &Path, std::vector<std::uint32_t> const &Refusals ) {
 
-    // a key met more than once is the same line of the same file, included with the same
-    // parameters at the same place - the same surface: a triangle counts as shown if any of
-    // the copies is
-    std::unordered_map<std::uint64_t, std::vector<bool>> shown;
-    for( auto const &node : state.nodes ) {
-        auto &entry { shown[ node.key ] };
-        entry.resize( node.count, false );
-        for( std::uint32_t index = 0; index < node.count; ++index ) {
-            if( state.shown[ node.first + index ] != 0 ) { entry[ index ] = true; }
-        }
-    }
-
-    std::vector<table_record> records;
+    // the cook refuses a triangle that has no ground in it - a wall - and the scenery goes on
+    // drawing that one. the note says so per node, as a bit each
+    std::vector<note_record> records;
     std::vector<std::uint8_t> masks;
+    records.reserve( state.nodes.size() );
+
+    auto refusal { Refusals.begin() };
     for( auto const &node : state.nodes ) {
-        auto const lookup { shown.find( node.key ) };
-        if( lookup == shown.end() ) { continue; } // written already
-        auto const &entry { lookup->second };
-        std::uint32_t count { 0 };
-        for( auto const flag : entry ) { count += ( flag ? 1 : 0 ); }
-        if( count > 0 ) {
-            table_record record { node.key, node.count, allshown };
-            if( count < node.count ) {
-                record.mask = static_cast<std::uint32_t>( masks.size() );
-                auto const bytes { ( node.count + 7u ) / 8u };
-                masks.resize( masks.size() + bytes, 0u );
-                for( std::uint32_t index = 0; index < node.count; ++index ) {
-                    if( false == entry[ index ] ) {
-                        masks[ record.mask + index / 8u ] |= static_cast<std::uint8_t>( 1u << ( index % 8u ) );
-                    }
-                }
-            }
-            records.emplace_back( record );
+        while( ( refusal != Refusals.end() ) && ( *refusal < node.first ) ) { ++refusal; }
+        auto const last { node.first + node.count };
+        auto const firstrefusal { refusal };
+        std::size_t refused { 0 };
+        for( auto walk = refusal; ( walk != Refusals.end() ) && ( *walk < last ); ++walk ) { ++refused; }
+        if( refused == 0 ) {
+            records.push_back( { node.key, node.count, allshown } );
+            continue;
         }
-        shown.erase( lookup );
+        if( refused == node.count ) {
+            // nothing of this node is in the tiles: it is drawn as written, and a node the note
+            // says nothing about is exactly that
+            continue;
+        }
+        auto const at { static_cast<std::uint32_t>( masks.size() ) };
+        masks.resize( masks.size() + ( node.count + 7 ) / 8, 0 );
+        for( auto walk = firstrefusal; ( walk != Refusals.end() ) && ( *walk < last ); ++walk ) {
+            auto const bit { *walk - node.first };
+            masks[ at + bit / 8 ] |= static_cast<std::uint8_t>( 1u << ( bit % 8 ) );
+        }
+        records.push_back( { node.key, node.count, at } );
     }
 
-    table_header header {};
-    std::memcpy( header.magic, tablemagic, sizeof( tablemagic ) );
-    header.version = tableversion;
-    header.selection = heightfield::selection_rules;
+    std::ofstream file( Path, std::ios::binary | std::ios::trunc );
+    if( false == file.good() ) { return false; }
+    note_header header {};
+    std::memcpy( header.magic, notemagic, sizeof( notemagic ) );
+    header.version = noteversion;
+    header.rules = quantizedmesh::cook_rules;
     header.count = records.size();
     header.maskbytes = masks.size();
-
-    std::ofstream output( Path, std::ios::binary | std::ios::trunc );
-    output.write( reinterpret_cast<char const *>( &header ), sizeof( header ) );
-    output.write( reinterpret_cast<char const *>( records.data() ), static_cast<std::streamsize>( records.size() * sizeof( table_record ) ) );
-    output.write( reinterpret_cast<char const *>( masks.data() ), static_cast<std::streamsize>( masks.size() ) );
-
-    std::size_t full { 0 };
-    for( auto const &record : records ) { full += ( record.mask == allshown ? 1 : 0 ); }
-    WriteLog(
-        "Terrain bake: " + std::to_string( records.size() ) + " of " + std::to_string( state.nodes.size() )
-        + " triangle nodes are shown by the heightfield, " + std::to_string( full ) + " of them entirely" );
+    file.write( reinterpret_cast<char const *>( &header ), sizeof( header ) );
+    for( auto const &record : records ) {
+        file.write( reinterpret_cast<char const *>( &record ), sizeof( record ) );
+    }
+    if( false == masks.empty() ) {
+        file.write( reinterpret_cast<char const *>( masks.data() ), static_cast<std::streamsize>( masks.size() ) );
+    }
+    return file.good();
 }
 
-// the field a triangle belongs to, given the finest step
-std::uint32_t
-field_of( terrain::vertex const &A, terrain::vertex const &B, terrain::vertex const &C, double const Basestep ) {
-
-    auto const longest { std::max( { terrain::planar_length( A, B ), terrain::planar_length( B, C ), terrain::planar_length( C, A ) } ) };
-    std::uint32_t field { 0 };
-    auto step { Basestep };
-    while( ( field + 1 < fieldcount ) && ( longest / ( step * fieldstride ) >= samplesperedge ) ) {
-        step *= fieldstride;
-        ++field;
-    }
-    return field;
-}
-
-using fields = std::array<std::unique_ptr<terrain::cooker>, fieldcount>;
-
-// one pass over the spill file: lays every triangle into fresh cookers for its own field and
-// the coarser ones, wherever Keep has the bit of that field set
-fields
-lay( std::string const &Spillpath, double const Basestep, std::vector<std::uint8_t> const &Keep,
-     std::vector<std::uint8_t> *Ownfield = nullptr ) {
-
-    fields result;
-    auto step { Basestep };
-    for( auto &cooker : result ) {
-        cooker = std::make_unique<terrain::cooker>();
-        if( false == loadprofile::enabled() ) {
-            // the per-material survival table is what a bad bake is diagnosed from, so it is
-            // printed when the load is being measured anyway
-            cooker->quiet();
-        }
-        cooker->configure( step, true );
-        step *= fieldstride;
-    }
-
-    std::ifstream input( Spillpath, std::ios::binary );
-    std::vector<spilled> chunk( 4096 );
-    while( input ) {
-        input.read( reinterpret_cast<char *>( chunk.data() ), static_cast<std::streamsize>( chunk.size() * sizeof( spilled ) ) );
-        auto const count { static_cast<std::size_t>( input.gcount() ) / sizeof( spilled ) };
-        for( std::size_t index = 0; index < count; ++index ) {
-            auto const &triangle { chunk[ index ] };
-            if( Keep[ triangle.id ] == 0 ) { continue; }
-            auto const corner = [ &triangle ]( std::size_t const Corner ) {
-                auto const *values { triangle.corners + Corner * 5 };
-                return terrain::vertex { values[ 0 ], values[ 1 ], values[ 2 ], values[ 3 ], values[ 4 ] }; };
-            auto const a { corner( 0 ) }, b { corner( 1 ) }, c { corner( 2 ) };
-            auto const own { field_of( a, b, c, Basestep ) };
-            if( Ownfield != nullptr ) { ( *Ownfield )[ triangle.id ] = static_cast<std::uint8_t>( own ); }
-            for( auto field { own }; field < fieldcount; ++field ) {
-                if( ( Keep[ triangle.id ] & ( 1u << field ) ) == 0 ) { continue; }
-                result[ field ]->rasterize( a, b, c, state.nodes[ triangle.node ].material, triangle.id );
-            }
-        }
-    }
-    return result;
-}
-
-} // anonymous namespace
-
-namespace {
-
+// the key a node is known by. what it is made of, where it stands, and where it is written: the
+// manifest vouches for the content of the file, so its name is enough here
 std::uint64_t
 node_key(
     std::string const &File, std::size_t const Line, std::vector<std::string> const &Parameters,
     std::string_view const Type, glm::dvec3 const &Offset, glm::vec3 const &Rotation ) {
 
-    // fnv-1a. stable across runs and builds, which a std::hash is not required to be
     std::uint64_t hash { 0xcbf29ce484222325ull };
     auto const mix {
         [ &hash ]( void const *Data, std::size_t const Size ) {
-            auto const *bytes { static_cast<unsigned char const *>( Data ) };
+            auto const *bytes { static_cast<std::uint8_t const *>( Data ) };
             for( std::size_t index = 0; index < Size; ++index ) {
                 hash ^= bytes[ index ];
                 hash *= 0x100000001b3ull;
@@ -313,7 +200,6 @@ node_key(
             mix( Text.data(), Text.size() );
             mix( "\n", 1 ); } };
 
-    // the file's content is vouched for by the bake's manifest, so its name is enough here
     text( File );
     auto const line { static_cast<std::uint64_t>( Line ) };
     mix( &line, sizeof( line ) );
@@ -324,81 +210,16 @@ node_key(
     return hash;
 }
 
-} // anonymous namespace
-
-void
-begin( std::string const &Sceneryfile ) {
-
-    state = {};
-
-    if( false == Global.terrain_heightfields.empty() ) {
-        // the scenery names its own, which always wins over anything baked beside it
-        return;
-    }
-    if( false == Global.bake_terrain ) {
-        // neither bake nor pick one up: the triangles as written
-        return;
-    }
-
-    auto const path { heightfield_path( Sceneryfile ) };
-    std::error_code error;
-    if( true == FileExists( table_path( path ) ) ) {
-        // a bake is a cache: one this build cannot read, one cooked under older rules about
-        // what counts as terrain, or one missing a part, is thrown away and baked again
-        // rather than used
-        std::vector<std::string> baked;
-        auto usable {
-            ( true == cookdeps::current( manifest_path( path ) ) )
-         && ( true == load_table( table_path( path ) ) ) };
-        for( std::uint32_t field = 0; ( field < fieldcount ) && ( true == usable ); ++field ) {
-            auto const fieldpath { heightfield_path( Sceneryfile, field ) };
-            if( false == FileExists( fieldpath ) ) { continue; }
-            heightfield::reader probe;
-            usable = ( true == probe.open( fieldpath ) ) && ( probe.selection() == heightfield::selection_rules );
-            baked.push_back( fieldpath );
-        }
-        if( ( true == usable ) && ( false == baked.empty() ) ) {
-            for( auto const &fieldpath : baked ) {
-                Global.terrain_heightfields.push_back( fieldpath );
-            }
-            WriteLog(
-                "Terrain bake: using " + std::to_string( baked.size() ) + " heightfields baked earlier, "
-                + std::to_string( state.table.size() ) + " triangle nodes replaced by them" );
-            return;
-        }
-        WriteLog( "Terrain bake: the heightfields beside this scenery are out of date, baking them again" );
-        state.table.clear();
-        state.masks.clear();
-        discard( Sceneryfile );
-    }
-
-    // the triangles wait on disk beside the heightfield rather than in memory: a large scenery
-    // holds millions of them, and the bake reads them several times
-    state.spillpath = path + ".bake";
-    state.spill.open( state.spillpath, std::ios::binary | std::ios::trunc );
-    if( false == state.spill.good() ) {
-        ErrorLog( "Terrain bake: cannot write \"" + state.spillpath + "\", not baking" );
-        return;
-    }
-    WriteLog( "Terrain bake: no heightfield for this scenery, baking one. This load will be slow; the next will not" );
-    state.collecting = true;
-    state.started = std::chrono::steady_clock::now();
-}
-
-namespace {
-
-bool
-planning() {
-
-    return false == state.table.empty();
-}
+bool planning() { return false == state.note.empty(); }
+// collecting, and not overruled by a terrain the scenery named part way in
+bool baking()   { return state.collecting && Global.terrain_heightfields.empty(); }
 
 node_plan
 plan( std::uint64_t const Key ) {
 
     node_plan result;
-    auto const lookup { state.table.find( Key ) };
-    if( lookup == state.table.end() ) {
+    auto const lookup { state.note.find( Key ) };
+    if( lookup == state.note.end() ) {
         ++state.drawn;
         return result;
     }
@@ -413,19 +234,74 @@ plan( std::uint64_t const Key ) {
     result.drawn.resize( record.triangles, false );
     for( std::uint32_t index = 0; index < record.triangles; ++index ) {
         auto const byte { record.mask + index / 8u };
-        result.drawn[ index ] = ( byte < state.masks.size() ) && ( ( state.masks[ byte ] >> ( index % 8u ) ) & 1u ) != 0;
+        result.drawn[ index ] =
+            ( byte < state.masks.size() ) && ( ( ( state.masks[ byte ] >> ( index % 8u ) ) & 1u ) != 0 );
     }
     return result;
 }
 
-// collecting for a bake, and not overruled by a heightfield the scenery named part way in
-bool
-baking() {
+} // anonymous namespace
 
-    return state.collecting && Global.terrain_heightfields.empty();
+void
+begin( std::string const &Sceneryfile ) {
+
+    state.collecting = false;
+    state.nodes.clear();
+    state.triangles = 0;
+    state.objects = 0;
+    state.objecttriangles = 0;
+    state.note.clear();
+    state.masks.clear();
+    state.skipped = state.filtered = state.drawn = 0;
+
+    if( false == Global.terrain_heightfields.empty() ) {
+        // the scenery names a terrain of its own, which wins over anything cooked beside it
+        return;
+    }
+    if( false == Global.bake_terrain ) {
+        // neither cook nor pick one up: the triangles as written
+        return;
+    }
+
+    auto const archive { archive_path( Sceneryfile ) };
+    if( true == FileExists( note_path( Sceneryfile ) ) ) {
+        // a cook is a cache. one this build cannot read, one made under other rules about what
+        // counts as ground, or one made from a scenery that has changed since, is thrown away
+        // and cooked again rather than used
+        quantizedmesh::reader probe;
+        auto const usable {
+            ( true == cookdeps::current( manifest_path( Sceneryfile ) ) )
+         && ( true == probe.open( archive ) )
+         && ( true == load_note( note_path( Sceneryfile ) ) ) };
+        if( true == usable ) {
+            Global.terrain_heightfields.push_back( archive );
+            WriteLog(
+                "Terrain cook: using tiles cooked earlier, " + std::to_string( probe.table().levels )
+                + " levels over " + std::to_string( static_cast<int>( probe.table().side ) ) + " m, "
+                + std::to_string( state.note.size() ) + " triangle nodes stood for" );
+            return;
+        }
+        WriteLog( "Terrain cook: the tiles beside this scenery are out of date, cooking them again" );
+        state.note.clear();
+        state.masks.clear();
+        discard( Sceneryfile );
+    }
+
+    if( false == state.cooker.begin( scratch_path( Sceneryfile ), tilebudget ) ) {
+        ErrorLog( "Terrain cook: cannot write \"" + scratch_path( Sceneryfile ) + "\", not cooking" );
+        return;
+    }
+    state.cooker.quiet();
+    WriteLog( "Terrain cook: no tiles for this scenery, cooking them. This load will be slow; the next will not" );
+    state.collecting = true;
+    state.started = std::chrono::steady_clock::now();
 }
 
-} // anonymous namespace
+bool
+collecting() {
+
+    return state.collecting;
+}
 
 node_decision
 examine(
@@ -435,47 +311,61 @@ examine(
     node_decision decision;
     if( ( true == baking() ) || ( true == planning() ) ) {
         decision.key = node_key( File, Line, Parameters, Type, Offset, Rotation );
-        decision.bake = baking();
+        // only what the scenery drew in world space: a node under origin, rotate or scale is an
+        // object standing on the ground rather than the ground itself
+        decision.bake = baking() && Worldspace;
         if( false == decision.bake ) {
             decision.plan = plan( decision.key );
             decision.skip = ( decision.plan.what == verdict::skip );
         }
         return decision;
     }
-    // a heightfield the scenery names itself, cooked by hand, replaces the world space
-    // triangles outright, as it always has
+    // a terrain the scenery names itself replaces the world space triangles outright, as it
+    // always has
     decision.skip = ( true == Worldspace ) && ( false == Global.terrain_heightfields.empty() );
     return decision;
 }
 
+// What is ground and what merely stands on it.
+//
+// The cook lays a triangle whichever way it faces: the side of an embankment or a cutting stands
+// upright and is ground all the same, and leaving those out is what opens a hole along every bank.
+// So orientation cannot be the test. Two things the scenery says about a node serve instead.
+//
+// A node under origin, rotate or scale is an object the scenery placed, not ground it drew, and
+// examine() keeps those out. And a material with an alpha channel is a tree, a bush, a fence or a
+// catenary mast: the ground is opaque. That matters twice over - the terrain is drawn without an
+// alpha test, so a billboard would come out as a full sheet, and every level above the finest is one
+// simplified surface, which cannot be fitted through the ground and through what stands on it at
+// once.
 void
-add( std::uint64_t const Key, std::vector<world_vertex> const &Vertices, std::string_view const Material ) {
+add(
+    std::uint64_t const Key, std::vector<world_vertex> const &Vertices, std::string_view const Material,
+    bool const Translucent ) {
 
     if( false == state.collecting ) { return; }
 
     auto const count { static_cast<std::uint32_t>( Vertices.size() / 3 ) };
-    auto const node { static_cast<std::uint32_t>( state.nodes.size() ) };
-    state.nodes.push_back( { Key, state.triangles, count, std::string { Material } } );
+    if( count == 0 ) { return; }
+    if( true == Translucent ) {
+        // no record of it, and a node the note says nothing about is one the scenery draws as written
+        ++state.objects;
+        state.objecttriangles += count;
+        return;
+    }
+    state.nodes.push_back( { Key, state.triangles, count } );
 
-    spilled triangle {};
-    triangle.node = node;
+    auto const corner {
+        []( world_vertex const &Vertex ) {
+            return quantizedmesh::cooker::corner {
+                Vertex.position.x, Vertex.position.y, Vertex.position.z,
+                Vertex.texture.x, Vertex.texture.y }; } };
     for( std::uint32_t index = 0; index < count; ++index ) {
-        for( std::size_t corner = 0; corner < 3; ++corner ) {
-            auto const &source { Vertices[ index * 3u + corner ] };
-            auto *values { triangle.corners + corner * 5 };
-            values[ 0 ] = source.position.x;
-            values[ 1 ] = source.position.y;
-            values[ 2 ] = source.position.z;
-            values[ 3 ] = source.texture.x;
-            values[ 4 ] = source.texture.y;
-            // the grid step is a property of the whole terrain; the first vertices that turn up
-            // are enough to tell it
-            if( state.sample.size() < samplegoal ) {
-                state.sample.push_back( { values[ 0 ], values[ 1 ], values[ 2 ], values[ 3 ], values[ 4 ] } );
-            }
-        }
-        triangle.id = state.triangles + index;
-        state.spill.write( reinterpret_cast<char const *>( &triangle ), sizeof( triangle ) );
+        state.cooker.add(
+            corner( Vertices[ index * 3u + 0 ] ),
+            corner( Vertices[ index * 3u + 1 ] ),
+            corner( Vertices[ index * 3u + 2 ] ),
+            Material );
     }
     state.triangles += count;
 }
@@ -485,117 +375,86 @@ finish( std::string const &Sceneryfile, std::vector<std::string> const &Included
 
     if( true == planning() ) {
         WriteLog(
-            "Terrain bake: " + std::to_string( state.skipped ) + " triangle nodes left to the heightfield, "
-            + std::to_string( state.filtered ) + " drawn in part, " + std::to_string( state.drawn ) + " drawn as written" );
-        // an include added or taken away since the bake: nodes of a new file were drawn as
-        // geometry this time, as none of their keys is known, but the next start bakes again
-        if( false == cookdeps::lists( manifest_path( heightfield_path( Sceneryfile ) ), Included ) ) {
-            WriteLog( "Terrain bake: the scenery includes different files than when it was baked; baking again on the next start" );
+            "Terrain cook: " + std::to_string( state.skipped ) + " triangle nodes left to the tiles, "
+            + std::to_string( state.filtered ) + " drawn in part, " + std::to_string( state.drawn )
+            + " drawn as written" );
+        // an include added or taken away since the cook: the nodes of a new file were drawn as
+        // geometry this time, since none of their keys is known, but the next start cooks again
+        if( false == cookdeps::lists( manifest_path( Sceneryfile ), Included ) ) {
+            WriteLog( "Terrain cook: the scenery includes different files than when it was cooked; cooking again on the next start" );
             discard( Sceneryfile );
         }
+        return;
     }
     if( false == state.collecting ) { return; }
+    state.collecting = false;
 
     if( false == Global.terrain_heightfields.empty() ) {
-        // the scenery named its own heightfield part way through, and that one wins
-        WriteLog( "Terrain bake: the scenery names its own heightfield, nothing baked" );
-        state.spill.close();
-        std::error_code error;
-        std::filesystem::remove( state.spillpath, error );
-        state = {};
+        WriteLog( "Terrain cook: the scenery names a terrain of its own, nothing cooked" );
         return;
     }
-
-    state.spill.close();
-    auto const cleanup = []() {
-        std::error_code error;
-        std::filesystem::remove( state.spillpath, error );
-        state = {};
-    };
     if( state.triangles == 0 ) {
-        WriteLog( "Terrain bake: the scenery holds no triangles, nothing baked" );
-        cleanup();
+        WriteLog( "Terrain cook: no ground in this scenery, nothing cooked" );
         return;
     }
 
-    auto const step { terrain::detect_step( state.sample ) };
-    WriteLog( "Terrain bake: grid step " + std::to_string( step ) + " m, from " + std::to_string( state.sample.size() ) + " sampled vertices" );
+    // the cook itself, apart from the load that fed it: what a second start saves is the cook
+    auto const cookstarted { std::chrono::steady_clock::now() };
+    auto const archive { archive_path( Sceneryfile ) };
+    pak::writer writer;
+    if( false == writer.open( archive ) ) {
+        ErrorLog( "Terrain cook: cannot write \"" + archive + "\"" );
+        return;
+    }
 
-    // The heightfield should hold the triangles it replaces and nothing else: anything it
-    // holds that is also drawn as geometry is drawn twice, and a roof or a bridge deck left in
-    // it bends the ground. But a replaced triangle is only drawn whole if every cell around it
-    // is, and those cells have corners owned by neighbours that are not replaced - the edge of
-    // the ground, a slope too steep, a patch too small. So the first pass lays everything and
-    // decides what is replaced; the second lays the replaced triangles together with the
-    // neighbours that support them, and that is what gets written. The replaced triangles
-    // stay replaced in it: their supports are all there, and they have fewer rivals than
-    // before. The supports are drawn both ways, and the depth offset lets the geometry win.
-    std::vector<std::uint8_t> ownfield( state.triangles, 0u );
-    auto first { lay( state.spillpath, step, std::vector<std::uint8_t>( state.triangles, 0xffu ), &ownfield ) };
-    // per triangle, the fields it goes into on the second pass: those that show it, and those
-    // where it supports a triangle they show
-    std::vector<std::uint8_t> keep( state.triangles, 0u );
-    state.shown.assign( state.triangles, 0u );
-    for( std::uint32_t field = 0; field < fieldcount; ++field ) {
-        first[ field ]->settle();
-        for( std::uint32_t id = 0; id < state.triangles; ++id ) {
-            if( true == first[ field ]->represented( id ) ) {
-                state.shown[ id ] = 1u;
-                keep[ id ] |= static_cast<std::uint8_t>( 1u << field );
-            }
-        }
+    auto written { true };
+    quantizedmesh::terrain_table table;
+    auto const sink {
+        [ &writer, &written ]( quantizedmesh::tile_address const &Tile, std::vector<std::uint8_t> const &Bytes ) {
+            written = writer.add( quantizedmesh::tile_name( Tile ), Bytes ) && written; } };
+
+    if( ( false == state.cooker.finish( sink, table ) ) || ( false == written ) ) {
+        ErrorLog( "Terrain cook: cooking failed, no tiles written" );
+        writer.close();
+        discard( Sceneryfile );
+        return;
     }
-    // a triangle no field shows, counted by the reason its own field gives
-    terrain::cooker::refusals refused;
-    for( std::uint32_t id = 0; id < state.triangles; ++id ) {
-        if( state.shown[ id ] == 0 ) { first[ ownfield[ id ] ]->refusal_of( id, refused ); }
+    if( false == writer.add( quantizedmesh::tablename, quantizedmesh::write_table( table ) ) ) {
+        written = false;
     }
+    if( ( false == writer.close() ) || ( false == written ) ) {
+        ErrorLog( "Terrain cook: writing \"" + archive + "\" failed" );
+        discard( Sceneryfile );
+        return;
+    }
+
+    auto const &report { state.cooker.result() };
+    if( false == save_note( note_path( Sceneryfile ), state.cooker.refusals() ) ) {
+        ErrorLog( "Terrain cook: cannot write \"" + note_path( Sceneryfile ) + "\"" );
+        discard( Sceneryfile );
+        return;
+    }
+    if( false == cookdeps::write( manifest_path( Sceneryfile ), Included ) ) {
+        discard( Sceneryfile );
+        return;
+    }
+
+    auto const now { std::chrono::steady_clock::now() };
+    auto const cooking { std::chrono::duration<double>( now - cookstarted ).count() };
+    auto const collecting { std::chrono::duration<double>( now - state.started ).count() };
     WriteLog(
-        "Terrain bake: not replaced - " + std::to_string( refused.upright ) + " standing on edge, "
-        + std::to_string( refused.unreached ) + " too small, " + std::to_string( refused.outvoted ) + " under other surfaces, "
-        + std::to_string( refused.bordering ) + " next to a hole" );
-    std::vector<std::uint8_t> support( state.triangles, 0u );
-    for( std::uint32_t field = 0; field < fieldcount; ++field ) {
-        std::fill( support.begin(), support.end(), 0u );
-        first[ field ]->mark_support( support );
-        first[ field ].reset();
-        for( std::uint32_t id = 0; id < state.triangles; ++id ) {
-            if( support[ id ] != 0 ) { keep[ id ] |= static_cast<std::uint8_t>( 1u << field ); }
-        }
-    }
-    auto const shown { static_cast<std::size_t>( std::count( state.shown.begin(), state.shown.end(), 1u ) ) };
-    std::size_t supports { 0 };
-    for( std::uint32_t id = 0; id < state.triangles; ++id ) {
-        if( ( keep[ id ] != 0 ) && ( state.shown[ id ] == 0 ) ) { ++supports; }
-    }
+        "Terrain cook: " + std::to_string( state.triangles ) + " triangles of ground in "
+        + std::to_string( state.nodes.size() ) + " nodes, " + std::to_string( state.objecttriangles )
+        + " triangles in " + std::to_string( state.objects ) + " nodes left standing on it, into "
+        + std::to_string( report.tiles ) + " tiles of " + std::to_string( static_cast<int>( state.cooker.finesttile() ) )
+        + " m over " + std::to_string( report.levels ) + " levels, "
+        + std::to_string( report.triangles ) + " triangles and " + std::to_string( report.vertices )
+        + " vertices written, " + std::to_string( report.refused ) + " triangles left to the scenery, "
+        + std::to_string( writer.bytes() / 1024 ) + " kB, cooked in "
+        + std::to_string( static_cast<int>( cooking ) ) + " s of a "
+        + std::to_string( static_cast<int>( collecting ) ) + " s load" );
 
-    auto const second { lay( state.spillpath, step, keep ) };
-    std::string written;
-    std::error_code error;
-    std::uintmax_t bytes { 0 };
-    for( std::uint32_t field = 0; field < fieldcount; ++field ) {
-        auto const path { heightfield_path( Sceneryfile, field ) };
-        std::filesystem::remove( path, error );
-        if( true == second[ field ]->empty() ) { continue; }
-        second[ field ]->finish( path, {} );
-        auto const size { std::filesystem::file_size( path, error ) };
-        bytes += ( error ? 0 : size );
-        written +=
-            ( written.empty() ? "" : ", " ) + ( "\"" + path + "\" at " )
-            + std::to_string( step * std::pow( fieldstride, field ) ) + " m";
-    }
-    write_table( table_path( heightfield_path( Sceneryfile ) ) );
-    cookdeps::write( manifest_path( heightfield_path( Sceneryfile ) ), Included );
-
-    auto const seconds {
-        std::chrono::duration<double>( std::chrono::steady_clock::now() - state.started ).count() };
-    WriteLog(
-        "Terrain bake: wrote " + written + "; " + std::to_string( shown ) + " of " + std::to_string( state.triangles )
-        + " triangles replaced and " + std::to_string( supports ) + " more supporting them, "
-        + std::to_string( seconds ) + " s, " + std::to_string( bytes / 1048576 ) + " MB" );
-
-    // the triangles of this load were all drawn; the table applies from the next one
-    cleanup();
+    Global.terrain_heightfields.push_back( archive );
 }
 
 } // namespace simulation::terrainbake

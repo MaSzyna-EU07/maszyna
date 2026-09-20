@@ -20,66 +20,54 @@ import eu07.model.vertex;
 
 export {
 
-// Baking a scenery's heightfield on its first run, and deciding on every later run which
-// triangles it replaces.
+// Cooking a scenery's terrain into mesh tiles on its first run, and leaving out the triangles
+// the tiles stand for on every run after that.
 //
-// A cooked heightfield is what makes a large scenery affordable - l204 loads in 25 seconds
-// against 219, in 1.9 GB against 9.1 - but until now it had to be produced by hand with the
-// terraincook tool and named in the scenery text. This bakes it the first time the scenery is
-// opened and picks it up by itself afterwards.
-//
-// Nothing here guesses what terrain is. Every triangle the scenery draws is laid into the
-// heightfield where it is drawn, and afterwards each one is asked whether the heightfield still
-// shows it. A tree, a wall or a gantry stands on its edge and never reaches a sample; a bridge
-// deck loses its samples to the ground beneath; those are drawn as they always were. Only
-// triangles the heightfield really shows stop being drawn on their own, so nothing can vanish
-// from the scenery - the worst a bad bake can do is draw something twice.
-//
-// A bake is used only while every file the scenery included when it was made still has the
-// content it had (cookdeps): the scenario file itself is not among them, since the launcher
-// rewrites it on every start and the terrain lives in what it includes. Within a bake that
-// holds, a triangle node is recognised by the file and line it is written at, the parameters
-// its include was given, and the origin and rotation in force.
-//
-// The rasterising is scene/terraincooker.h, the same code the tool uses.
+// The first load lays every triangle of ground into the cook and writes the tiles beside the
+// scenery, along with a note of which nodes went into them and of what the scenery looked like
+// at the time. Later loads read that note: a node the tiles stand for is not built at all, one
+// the tiles stand for in part is built without those triangles, and if anything the scenery is
+// made of has changed since, the lot is cooked again.
 namespace simulation::terrainbake {
 
-// what to do with one triangle node
 enum class verdict {
-    draw,   // the heightfield does not show it: import and draw it as written
-    skip,   // the heightfield shows all of it: do not even import it
-    filter  // the heightfield shows some of it: import it and draw only the rest
+    draw,     // the tiles do not stand for this node: build it as written
+    skip,     // the tiles stand for all of it
+    filter    // the tiles stand for part of it; build the rest
 };
 
 struct node_plan {
     verdict what { verdict::draw };
-    // for filter: one entry per triangle in import order, true where it is still drawn
+    // per triangle of the node, whether the scenery still draws it. only for verdict::filter
     std::vector<bool> drawn;
 };
 
-
-// called before the scenery is parsed. picks up a heightfield baked earlier together with its
-// node table, or arms the bake when there is none
-void begin( std::string const &Sceneryfile );
-// what the load is to do with one triangle node, decided in one place: whether it is read at
-// all, whether it goes into a bake, and which of its triangles are still drawn
 struct node_decision {
-    bool skip { false };      // step over it without importing
-    bool bake { false };      // hand it to add() once imported
+    bool skip { false };
+    bool bake { false };
     std::uint64_t key { 0 };
     node_plan plan;
 };
 
-// Worldspace says whether the node stands in world coordinates, which is all that decides it
-// when the scenery names a hand-cooked heightfield of its own
+// picks up tiles cooked earlier, or arms the cook when there are none
+void begin( std::string const &Sceneryfile );
+// whether triangles are being collected for a cook
+bool collecting();
+
+// what to do with one triangle node of the scenery
 node_decision examine(
     std::string const &File, std::size_t const Line, std::vector<std::string> const &Parameters,
     std::string_view const Type, glm::dvec3 const &Offset, glm::vec3 const &Rotation, bool const Worldspace );
-// one triangle node, in world space, as it is about to be drawn
-void add( std::uint64_t const Key, std::vector<world_vertex> const &Vertices, std::string_view const Material );
-// called once the scenery has been parsed, with every file it included. writes the
-// heightfields, their node table and the manifest of what they were made from; or, when a
-// bake was used, checks the scenery still includes what that bake was made from
+
+// hands a node's triangles to the cook, where they are placed in the world. a material with an
+// alpha channel is not ground - it is a tree, a bush, a fence or a catenary mast - and is left to
+// the scenery to draw
+void add(
+    std::uint64_t const Key, std::vector<world_vertex> const &Vertices, std::string_view const Material,
+    bool const Translucent );
+
+// writes the tiles, or reports on what the tiles cooked earlier stood for. Included is every
+// file the scenery read, which is what tells a later load whether it is still the same scenery
 void finish( std::string const &Sceneryfile, std::vector<std::string> const &Included );
 
 } // namespace simulation::terrainbake
