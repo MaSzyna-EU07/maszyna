@@ -67,6 +67,9 @@ private:
 		setup_userdata(size_t offset = 0);
     void
         delete_buffer();
+    // debug: true if the currently bound vao has our index buffer attached
+    bool
+        check_ebo( char const *Where ) const;
 
 // members:
 	std::optional<gl::buffer> m_vertexbuffer; // vertex buffer data on the opengl end

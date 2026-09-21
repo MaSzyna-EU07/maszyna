@@ -84,6 +84,14 @@ void opengl33_vaogeometrybank::setup_buffer()
             throw std::bad_alloc();
         }
         m_vao->setup_ebo( *m_indexbuffer );
+        // debug: verify the index buffer really got attached to the vao
+        if( gl::vao::use_vao ) {
+            GLint boundebo { 0 };
+            ::glGetIntegerv( GL_ELEMENT_ARRAY_BUFFER_BINDING, &boundebo );
+            if( boundebo != static_cast<GLint>( static_cast<GLuint>( *m_indexbuffer ) ) ) {
+                ErrorLog( "EBO check: vao has index buffer " + std::to_string( boundebo ) + ", expected " + std::to_string( static_cast<GLuint>( *m_indexbuffer ) ) );
+            }
+        }
     }
     else {
         gl::buffer::unbind( gl::buffer::ELEMENT_ARRAY_BUFFER );
@@ -150,6 +158,7 @@ opengl33_vaogeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stre
     if( chunkrecord.index_count > 0 ) {
         if (glDrawRangeElementsBaseVertex) {
             m_vao->bind();
+            if( false == check_ebo( "draw" ) ) { return 0; }
             ::glDrawRangeElementsBaseVertex(
                 chunk.type,
                 0, chunkrecord.vertex_count,
@@ -158,6 +167,7 @@ opengl33_vaogeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stre
         }
         else if (glDrawElementsBaseVertexOES) {
             m_vao->bind();
+            if( false == check_ebo( "draw" ) ) { return 0; }
             ::glDrawElementsBaseVertexOES(
                 chunk.type,
                 chunkrecord.index_count, GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
@@ -216,6 +226,7 @@ opengl33_vaogeometrybank::draw_instanced_( gfx::geometry_handle const &Geometry,
 
     if( chunkrecord.index_count > 0 ) {
         m_vao->bind();
+        if( false == check_ebo( "draw_instanced" ) ) { return 0; }
         ::glDrawElementsInstancedBaseVertex(
             chunk.type,
             chunkrecord.index_count, GL_UNSIGNED_INT,
@@ -243,6 +254,23 @@ void
 opengl33_vaogeometrybank::release_() {
 
     delete_buffer();
+}
+
+bool
+opengl33_vaogeometrybank::check_ebo( char const *Where ) const {
+
+    if( false == gl::vao::use_vao ) { return true; }
+
+    GLint boundebo { 0 };
+    ::glGetIntegerv( GL_ELEMENT_ARRAY_BUFFER_BINDING, &boundebo );
+    if( boundebo == static_cast<GLint>( static_cast<GLuint>( *m_indexbuffer ) ) ) { return true; }
+    // skip the draw rather than let the driver read indices from a null client pointer
+    static int reportcount { 0 };
+    if( reportcount < 50 ) {
+        ++reportcount;
+        ErrorLog( std::string( "EBO check (" ) + Where + "): vao has index buffer " + std::to_string( boundebo ) + ", expected " + std::to_string( static_cast<GLuint>( *m_indexbuffer ) ) + ", draw skipped" );
+    }
+    return false;
 }
 
 void
