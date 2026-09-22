@@ -64,54 +64,95 @@ std::map<std::string, int> texture_bindings {
     { "normalmap", 1 }
 };
 
+int opengl_material::texture_slot( std::string const &Key )
+{
+    auto key { Key };
+
+    if( ( key.size() > 0 ) && ( key[ 0 ] != '_' ) )
+    {
+        // numbered binding, "textureN:" fills the slot N-1
+        key.erase( key.find_first_not_of( "-1234567890" ) );
+        size_t const num = std::stoi( key ) - 1;
+        if( num < gl::MAX_TEXTURES ) {
+            return static_cast<int>( num );
+        }
+        log_error( "invalid texture binding: " + std::to_string( num ) );
+        is_good = false;
+        return -1;
+    }
+
+    if( key.size() > 2 )
+    {
+        // named binding, the slot it fills is up to the shader
+        key.erase( 0, 1 );
+        key.pop_back();
+        if( shader && ( shader->texture_conf.find( key ) != shader->texture_conf.end() ) ) {
+            return static_cast<int>( shader->texture_conf[ key ].id );
+        }
+        auto const lookup { texture_bindings.find( key ) };
+        if( ( shader == nullptr ) && ( lookup != texture_bindings.end() ) ) {
+            return lookup->second;
+        }
+        // ignore unrecognized texture bindings in legacy render mode, it's most likely data for more advanced shaders
+        if( Global.GfxRenderer == "default" ) {
+            log_error( "unknown texture binding: " + key );
+            is_good = false;
+        }
+        return -1;
+    }
+
+    log_error( "unrecognized texture binding: " + key );
+    is_good = false;
+    return -1;
+}
+
+void opengl_material::build_texture_variants( std::vector<variant_binding> const &Bindings, bool const Loadnow )
+{
+    if( true == Bindings.empty() ) { return; }
+
+    // build a texture set for each entry of the largest of the declared pools.
+    // pools of different size can be combined, shorter ones simply repeat from the start
+    std::size_t variantcount { 0 };
+    for( auto const &[ slot, pool ] : Bindings ) {
+        variantcount = std::max( variantcount, pool->size() );
+    }
+    texture_variants.resize( variantcount, textures );
+
+    for( auto const &[ slot, pool ] : Bindings ) {
+        for( std::size_t variantindex = 0; variantindex < variantcount; ++variantindex ) {
+            auto const &texturename { ( *pool )[ variantindex % pool->size() ] };
+            auto const texturehandle { GfxRenderer->Fetch_Texture( texturename, Loadnow ) };
+            if( texturehandle == null_handle ) {
+                // a single bad entry shouldn't take down the whole material, fall back to the basic texture
+                log_error( "missing texture variant: " + texturename );
+                continue;
+            }
+            texture_variants[ variantindex ][ slot ] = texturehandle;
+        }
+    }
+}
+
 void opengl_material::finalize(bool Loadnow)
 {
     is_good = true;
 
     if (parse_info)
     {
-        for (auto it : parse_info->tex_mapping)
-        {
-            std::string key = it.first;
-            std::string value = it.second.name;
+        // texture bindings which come with a pool of alternatives, gathered while resolving regular bindings
+        std::vector<variant_binding> variantbindings;
 
-            if (key.size() > 0 && key[0] != '_')
-            {
-                key.erase( key.find_first_not_of( "-1234567890" ) );
-                size_t num = std::stoi(key) - 1;
-                if (num < gl::MAX_TEXTURES) {
-                    textures[num] = GfxRenderer->Fetch_Texture(value, Loadnow);
-                }
-                else {
-                    log_error("invalid texture binding: " + std::to_string(num));
-                    is_good = false;
-                }
-            }
-            else if (key.size() > 2)
-            {
-                key.erase(0, 1);
-                key.pop_back();
-                std::map<std::string, int>::iterator lookup;
-                if( shader && shader->texture_conf.find( key ) != shader->texture_conf.end() ) {
-                    textures[ shader->texture_conf[ key ].id ] = GfxRenderer->Fetch_Texture( value, Loadnow );
-                }
-                else if( shader == nullptr
-                      && ( lookup = texture_bindings.find( key ) ) != texture_bindings.end() ) {
-                    textures[ lookup->second ] = GfxRenderer->Fetch_Texture( value, Loadnow );
-                }
-                else {
-                    // ignore unrecognized texture bindings in legacy render mode, it's most likely data for more advanced shaders
-                    if( Global.GfxRenderer == "default" ) {
-                        log_error( "unknown texture binding: " + key );
-                        is_good = false;
-                    }
-                }
-            }
-            else {
-                log_error("unrecognized texture binding: " + key);
-                is_good = false;
+        for( auto const &[ bindingkey, binding ] : parse_info->tex_mapping )
+        {
+            auto const slot { texture_slot( bindingkey ) };
+            if( slot < 0 ) { continue; }
+
+            textures[ slot ] = GfxRenderer->Fetch_Texture( binding.name, Loadnow );
+            if( binding.variants.size() > 1 ) {
+                variantbindings.emplace_back( static_cast<std::size_t>( slot ), &( binding.variants ) );
             }
         }
+
+        build_texture_variants( variantbindings, Loadnow );
 
         if (!shader)
         {
@@ -289,6 +330,44 @@ bool is_weather( std::string const &String ) {
 }
 
 // imports member data pair from the config file
+void opengl_material::deserialize_texture_mapping( cParser &Input, std::string const &Key, int const Priority ) {
+
+    // a texture binding can be provided as a pool of alternatives, "textureN_variants: [ a b c ]".
+    // unlike a regular random set, which is resolved once when the material is loaded and thus shared
+    // by everything using it, such pool is preserved whole and one entry is picked per model instance
+    auto key { Key };
+    auto const variantmarker { key.find( "_variants" ) };
+    auto const isvariantset { variantmarker != std::string::npos };
+    if( true == isvariantset ) {
+        // reduce the key to its plain form, "N_variants:" becomes "N:"
+        key.erase( variantmarker, std::string( "_variants" ).size() );
+    }
+
+    std::vector<std::string> variants;
+    std::string value;
+    if( false == isvariantset ) {
+        value = deserialize_random_set( Input );
+        replace_slashes( value );
+    }
+    else {
+        variants = deserialize_set( Input );
+        for( auto &variant : variants ) {
+            replace_slashes( variant );
+        }
+        if( true == variants.empty() ) {
+            log_error( "empty texture variant pool: " + key );
+            return;
+        }
+        // first entry doubles as the regular, variant-agnostic texture of the material
+        value = variants.front();
+    }
+
+    auto const [ it, inserted ] { parse_info->tex_mapping.try_emplace( key, parse_info_s::tex_def{ value, Priority, variants } ) };
+    if( ( false == inserted ) && ( Priority > it->second.priority ) ) {
+        it->second = parse_info_s::tex_def{ value, Priority, variants };
+    }
+}
+
 bool
 opengl_material::deserialize_mapping( cParser &Input, int const Priority, bool const Loadnow ) {
 
@@ -324,17 +403,7 @@ opengl_material::deserialize_mapping( cParser &Input, int const Priority, bool c
 
         else if (key.compare(0, 7, "texture") == 0) {
             key.erase(0, 7);
-
-            auto value { deserialize_random_set( Input ) };
-            replace_slashes( value );
-            auto it = parse_info->tex_mapping.find(key);
-            if (it == parse_info->tex_mapping.end())
-                parse_info->tex_mapping.emplace(std::make_pair(key, parse_info_s::tex_def({ value, Priority })));
-            else if (Priority > it->second.priority)
-            {
-                parse_info->tex_mapping.erase(it);
-                parse_info->tex_mapping.emplace(std::make_pair(key, parse_info_s::tex_def({ value, Priority })));
-            }
+            deserialize_texture_mapping( Input, key, Priority );
         }
         else if (key.compare(0, 5, "param") == 0) {
             key.erase(0, 5);

@@ -30,6 +30,7 @@ using namespace Mtable;
 
 float TSubModel::fSquareDist = 0.f;
 std::uintptr_t TSubModel::iInstance; // numer renderowanego egzemplarza obiektu
+std::uint32_t TSubModel::iVariantSeed = 0; // ziarno losowania wariantów tekstur renderowanego egzemplarza
 texture_handle const *TSubModel::ReplacableSkinId = nullptr;
 int TSubModel::iAlpha = 0x30300030; // maska do testowania flag tekstur wymiennych
 TModel3d *TSubModel::pRoot; // Ra: tymczasowo wskaźnik na model widoczny z submodelu
@@ -2460,6 +2461,120 @@ void TModel3d::LoadFromTextFile(std::string const &FileName, bool dynamic)
 	}
 }
 
+std::uint32_t TSubModel::VariantId(TSubModel const *Submodel)
+{ // the seed is already well scattered, so the group is merely added to it. this way branches of one model
+  // are guaranteed to land on different variants, as long as the pool holds at least as many entries as
+  // the model has branches -- two containers carried by the same wagon won't come up with the same number
+	return iVariantSeed + static_cast<std::uint32_t>(Submodel != nullptr ? Submodel->m_variantgroup : 0);
+}
+
+namespace
+{
+// two branches sitting no farther than this from each other are treated as one object.
+// generous, a simplified lod mesh doesn't have to sit exactly where the detailed one does
+float const variantgrouptolerance{0.25f};
+
+// assigns provided variant group id to the submodel and all of its children
+void mark_variant_group(TSubModel *Submodel, int const Group, bool const Includesiblings)
+{
+	while (Submodel != nullptr)
+	{
+		Submodel->m_variantgroup = Group;
+		mark_variant_group(Submodel->ChildGet(), Group, true);
+		if (false == Includesiblings)
+		{
+			break;
+		}
+		Submodel = Submodel->NextGet();
+	}
+}
+
+// expands provided bounding area to cover geometry carried by the submodel and all of its children
+void accumulate_mesh_bounds(TSubModel const *Submodel, glm::vec3 &Minimum, glm::vec3 &Maximum, bool &Isempty, bool const Includesiblings)
+{
+	while (Submodel != nullptr)
+	{
+		if (auto const &vertices{(Submodel->m_geometry.handle != null_handle ? GfxRenderer->Vertices(Submodel->m_geometry.handle) : Submodel->Vertices)};
+		    false == vertices.empty())
+		{
+			// the transformation chain can still hold a rotation, so the vertices go through it
+			// rather than get taken at their face value
+			float4x4 parentmatrix;
+			Submodel->ParentMatrix(&parentmatrix);
+			auto const transformationmatrix{glm::make_mat4(parentmatrix.readArray())};
+			for (auto const &vertex : vertices)
+			{
+				auto const position{glm::vec3{transformationmatrix * glm::vec4{vertex.position, 1}}};
+				Minimum = glm::min(Minimum, position);
+				Maximum = glm::max(Maximum, position);
+			}
+			Isempty = false;
+		}
+		accumulate_mesh_bounds(Submodel->Child, Minimum, Maximum, Isempty, true);
+		if (false == Includesiblings)
+		{
+			break;
+		}
+		Submodel = Submodel->Next;
+	}
+}
+
+// returns position of provided branch of the model, relative to the model root
+glm::vec3 branch_position(TSubModel const *Branch)
+{
+	// the transformation chain is the cheap way to get there, as it doesn't touch the geometry,
+	// which keeps this affordable even for models made of thousands of branches...
+	auto const offset{Branch->offset()};
+	if (glm::length2(offset) > variantgrouptolerance * variantgrouptolerance)
+	{
+		return offset;
+	}
+	// ...but it only tells us anything for branches which actually carry a transform. models loaded from
+	// text format can have theirs baked into the vertices instead, which leaves the whole model piled up
+	// at the origin and, without the fallback below, all of its branches in a single variant group.
+	// NOTE: it's the centre of the bounding area we're after, and not the average vertex position offset()
+	// would give us -- the latter drifts with vertex density, which puts each lod mesh of one object in
+	// a group of its own and has the object change its texture variant as the lods get swapped
+	glm::vec3 minimum{std::numeric_limits<float>::max()};
+	glm::vec3 maximum{std::numeric_limits<float>::lowest()};
+	bool isempty{true};
+	accumulate_mesh_bounds(Branch, minimum, maximum, isempty, false);
+	return (false == isempty ? (minimum + maximum) * 0.5f : offset);
+}
+} // namespace
+
+void TModel3d::assign_variant_groups()
+{ // each top level branch of the model gets a group id, which it passes down to all of its children.
+  // for load models a branch is a single load chunk, and the group id is what makes two chunks of the same
+  // model pick different texture variants, while keeping all parts of one chunk on the same variant.
+  // the id comes from the position of the branch, not from its ordinal: lod variants of one object are
+  // separate branches drawn in disjoint distance ranges, and grouping them by position is what keeps the
+  // object on the same variant no matter which of them is currently on screen
+	std::vector<glm::vec3> grouppositions; // position of each group, indexed by its id
+	auto const groupid = [&grouppositions](TSubModel const *Branch) {
+		auto const position{branch_position(Branch)};
+		for (std::size_t index = 0; index < grouppositions.size(); ++index)
+		{
+			if (glm::length2(grouppositions[index] - position) < variantgrouptolerance * variantgrouptolerance)
+			{
+				return static_cast<int>(index);
+			}
+		}
+		grouppositions.emplace_back(position);
+		return static_cast<int>(grouppositions.size() - 1);
+	};
+
+	for (auto *trunk = Root; trunk != nullptr; trunk = trunk->NextGet())
+	{
+		// root level submodels are usually mere containers, but can carry geometry of their own
+		trunk->m_variantgroup = groupid(trunk);
+		for (auto *branch = trunk->ChildGet(); branch != nullptr; branch = branch->NextGet())
+		{
+			mark_variant_group(branch, groupid(branch), false);
+		}
+	}
+}
+
 void TModel3d::Init()
 { // obrócenie początkowe układu współrzędnych, dla
   // pojazdów wykonywane po analizie animacji
@@ -2491,6 +2606,8 @@ void TModel3d::Init()
 		{
 			Root->m_boundingradius = std::max(Root->m_boundingradius, root->m_boundingradius);
 		}
+
+		assign_variant_groups();
 
 		if (Global.iConvertModels & 1 && false == asBinary.empty())
 		{

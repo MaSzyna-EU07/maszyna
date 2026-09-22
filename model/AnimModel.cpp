@@ -627,6 +627,10 @@ void TAnimModel::RaPrepare()
         }
     }
     TSubModel::iInstance = reinterpret_cast<std::uintptr_t>( this ); //żeby nie robić cudzych animacji
+    // NOTE: scenery models don't pick texture variants of their own, so we clear the seed left by the
+    // last rendered vehicle. instanced draws share a single material bind anyway, which would make
+    // per instance variants inconsistent between batched and individually drawn models
+    TSubModel::iVariantSeed = 0;
     TSubModel::pasText = &asText; // przekazanie tekstu do wyświetlacza (!!!! do przemyślenia)
 
 	for (auto entry : m_animlist) {
