@@ -492,6 +492,10 @@ TEventLauncher * state_manager::create_eventlauncher(const std::string &src, con
 	return m_serializer.create_eventlauncher(src, name, position);
 }
 
+void state_manager::create_trainset(const std::string &src) {
+	return m_serializer.create_trainset(src);
+}
+
 void state_manager::delete_model(TAnimModel *model) {
 	Region->erase(model);
 	Instances.purge(model);

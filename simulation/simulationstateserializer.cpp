@@ -31,21 +31,8 @@ http://mozilla.org/MPL/2.0/.
 
 namespace simulation {
 
-std::shared_ptr<deserializer_state>
-state_serializer::deserialize_begin( std::string const &Scenariofile ) {
-
-    crashreport_add_info("scenario", Scenariofile);
-
-    // drop any streamed editor terrain from a previously loaded scenery before the old region (and
-    // its sections, which those chunks referenced) is destroyed below
-    EditorTerrain.reset();
-
-    // TODO: move initialization to separate routine so we can reuse it
-    SafeDelete( Region );
-    Region = new scene::basic_region();
-
-    simulation::State.init_scripting_interface();
-
+std::shared_ptr<deserializer_state> state_serializer::make_deserializer_state(std::string const &Scenariofile)
+{
 	// NOTE: for the time being import from text format is a given, since we don't have full binary serialization
 	std::shared_ptr<deserializer_state> state =
 	        std::make_shared<deserializer_state>(Scenariofile, cParser::buffer_FILE, Global.asCurrentSceneryPath, Global.bLoadTraction);
@@ -53,26 +40,18 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
     // TODO: check first for presence of serialized binary files
     // if this fails, fall back on the legacy text format
 	state->scratchpad.name = Scenariofile;
-    if( true == Global.file_binary_terrain
-     && Scenariofile != "$.scn" ) {
+    if (Global.file_binary_terrain && Scenariofile != "$.scn") {
         // compilation to binary file isn't supported for rainsted-created overrides
         // NOTE: we postpone actual loading of the scene until we process time, season and weather data
-		state->scratchpad.binary.terrain = Region->is_scene( Scenariofile ) ;
+		state->scratchpad.binary.terrain = Region->is_scene(Scenariofile);
     }
 
-	if (false != state->scratchpad.binary.terrain)
-	{
-		Global.file_binary_terrain_state = true;
+	if (state->scratchpad.binary.terrain)
 		WriteLog("Default SBT present");
-    }
 	else
-	{
-		Global.file_binary_terrain_state = false;
 		WriteLog("Default SBT absent");
-    }
-    scene::Groups.create();
 
-	if( false == state->input.ok() )
+	if( !state->input.ok() )
 		throw invalid_scenery_exception();
 
 	// prepare deserialization function table
@@ -112,6 +91,30 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 	for( auto &function : functionlist ) {
 		state->functionmap.emplace( function.first, std::bind( function.second, this, std::ref( state->input ), std::ref( state->scratchpad ) ) );
 	}
+
+	return state;
+}
+
+std::shared_ptr<deserializer_state>
+state_serializer::deserialize_begin( std::string const &Scenariofile ) {
+
+    crashreport_add_info("scenario", Scenariofile);
+
+    // drop any streamed editor terrain from a previously loaded scenery before the old region (and
+    // its sections, which those chunks referenced) is destroyed below
+    EditorTerrain.reset();
+
+    // TODO: move initialization to separate routine so we can reuse it
+    SafeDelete( Region );
+    Region = new scene::basic_region();
+
+    State.init_scripting_interface();
+
+	// NOTE: for the time being import from text format is a given, since we don't have full binary serialization
+	std::shared_ptr<deserializer_state> state = make_deserializer_state(Scenariofile);
+
+	Global.file_binary_terrain_state = state->scratchpad.binary.terrain;
+    scene::Groups.create();
 
     if (!Global.prepend_scn.empty()) {
         state->input.injectString(Global.prepend_scn);
@@ -437,31 +440,12 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     if( nodedata.name == "none" ) { nodedata.name.clear(); }
     // type-based deserialization. not elegant but it'll do
     if( nodedata.type == "dynamic" ) {
-
         auto *vehicle { deserialize_dynamic( Input, Scratchpad, nodedata ) };
         // vehicle import can potentially fail
-        if( vehicle == nullptr ) { return; }
-
-        //
-        if( vehicle->mdModel != nullptr ) {
-            for( auto const &smokesource : vehicle->mdModel->smoke_sources() ) {
-                Particles.insert(
-                    smokesource.first,
-                    vehicle,
-                    smokesource.second );
-            }
-        }
-
-        if( false == simulation::Vehicles.insert( vehicle ) ) {
-
+        if (!vehicle)
+        	return;
+        if (!Vehicles.insert(vehicle))
             ErrorLog( "Bad scenario: duplicate vehicle name \"" + vehicle->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
-        }
-
-        if( vehicle->MoverParameters->CategoryFlag == 1 // trains only
-         && ( (vehicle->LightList(end::front) & (light::headlight_left | light::headlight_right | light::headlight_upper)) != 0
-           || (vehicle->LightList(end::rear) & (light::headlight_left | light::headlight_right | light::headlight_upper)) != 0 ) ) {
-            simulation::Lights.insert( vehicle );
-        }
     }
     else if( nodedata.type == "track" ) {
 
@@ -1368,6 +1352,31 @@ TEventLauncher *state_serializer::create_eventlauncher(const std::string &src, c
 	simulation::Region->insert(launcher);
 
 	return launcher;
+}
+
+void state_serializer::create_trainset(const std::string &src) {
+	cParser parser(src);
+	parser.getTokens(); // "trainset"
+
+	scene::scratch_data scratch;
+
+	deserialize_trainset(parser, scratch);
+
+	// deserialize content from the provided input
+	auto token = parser.getToken<std::string>();
+	while (!token.empty()) {
+		if (token == "node")
+			deserialize_node(parser, scratch);
+		else if (token == "endtrainset")
+			deserialize_endtrainset(parser, scratch);
+		else {
+			deserialize_endtrainset(parser, scratch);
+			ErrorLog( std::format(R"(Bad scenario: encountered invalid token "{}" in file "{}" (line {}))", token, parser.Name(), std::to_string(parser.Line())));
+			break;
+		}
+
+		token = parser.getToken<std::string>();
+	}
 }
 
 } // simulation
