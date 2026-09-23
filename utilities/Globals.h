@@ -20,6 +20,9 @@ http://mozilla.org/MPL/2.0/.
 #ifdef WITH_UART
 #include "utilities/uart.h"
 #endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+#include "hardware/hardware_config.h"
+#endif
 #ifdef WITH_ZMQ
 #include "input/zmq_input.h"
 #endif
@@ -227,6 +230,10 @@ struct global_settings {
         {"radiochannel", &uart_conf.radiochannelenable},
         {"dynamicbrake", &uart_conf.dynamicenable},
     };
+#endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+    // hardware protocol v2; independent of the legacy uart link above, both may run at the same time
+    hardware::config hardware_conf;
 #endif
 #ifdef WITH_ZMQ
     std::string zmq_address;

@@ -92,6 +92,13 @@ private:
 #ifdef WITH_UART
     void update_section_uart( std::vector<text_line> &Output );
 #endif
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+    void update_section_hardware( std::vector<text_line> &Output );
+    // interactive part of the hardware section: connect, disconnect, diagnostics
+    void render_section_hardware();
+    // message box a controller asked the simulator to show; rendered as its own window
+    void render_hardware_prompt();
+#endif
     // section update helpers
     std::string update_vehicle_coupler( int const Side );
     std::string update_vehicle_brake() const;
@@ -116,7 +123,17 @@ private:
         m_eventqueuelines,
         m_powergridlines,
         m_rendererlines,
-        m_uartlines;
+        m_uartlines,
+        m_hardwarelines;
+
+#ifdef WITH_HARDWARE_PROTOCOL_V2
+    // debug panel state for the hardware protocol section
+    std::vector<int> m_hardwarefunction; // selected diagnostic function, per link
+    std::vector<char const *> m_hardwareports; // port names for the combo, valid for one frame
+    std::vector<std::string> m_hardwareportnames;
+    int m_hardwareport { -1 };
+    int m_hardwarebaud { 4 }; // 115200
+#endif
 
 	double last_time = std::numeric_limits<double>::quiet_NaN();
 
