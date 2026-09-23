@@ -791,6 +791,8 @@ private:
         return iDirection + iDirection - 1; };
     int DettachStatus(int dir);
     int Dettach(int dir);
+    // after uncoupling/crewing picks one primary in the consist - two of them fight over the brake
+    void ReassignConsistPrimary();
     TDynamicObject * Neighbour(int &dir);
     // updates potential collision sources
     void update_neighbours();

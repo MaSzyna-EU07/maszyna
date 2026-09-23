@@ -89,6 +89,8 @@ const double g = 9.81; // przyspieszenie ziemskie
 const double SandSpeed = 0.1; // ile kg/s}
 /// <summary>2*pi shortcut.</summary>
 const double Pirazy2 = 6.2831853071794f;
+/// <summary>Brake pipe pressure above nominal that counts as an overcharge [bar].</summary>
+const double PipeOverchargeMargin = 0.2;
 
 //-- var, const, procedure ---------------------------------------------------
 /// <summary>Truthy alias used by CheckLocomotiveParameters() to ignore a check failure.</summary>
@@ -1648,6 +1650,7 @@ class TMoverParameters
 	double Handle_OverloadPressureDecrease = 0.002; // predkosc spadku cisnienia przy asymilacji
 	/*max. cisnienie w cyl. ham., stala proporcjonalnosci p-K*/
 	double HighPipePress = 0.0;
+	double PipeOverchargeTime = 0.0; // time spent above the nominal brake pipe pressure [s]
 	double LowPipePress = 0.0;
 	double DeltaPipePress = 0.0;
 	/*max. i min. robocze cisnienie w przewodzie glownym oraz roznica miedzy nimi*/
@@ -2028,6 +2031,7 @@ class TMoverParameters
 
 	int BrakeCtrlPos = -2; /*nastawa hamulca zespolonego*/
 	double BrakeCtrlPosR = 0.0; /*nastawa hamulca zespolonego - plynna dla FV4a*/
+	bool BrakeValveActive{true}; // only a driver with the Primary flag drives the brake pipe
 	double BrakeCtrlPos2 = 0.0; /*nastawa hamulca zespolonego - kapturek dla FV4a*/
 	int ManualBrakePos = 0; /*nastawa hamulca recznego*/
 	double LocalBrakePosA = 0.0; /*nastawa hamulca pomocniczego*/
@@ -2408,6 +2412,7 @@ class TMoverParameters
 	void UpdateBrakePressure(double dt);
 	void UpdatePipePressure(double dt);
 	void CompressorCheck(double dt); /*wlacza, wylacza kompresor, laduje zbiornik*/
+	double GetDPMainValve(double dt, double hp) const; // flow through the driver's brake valve
 	void UpdatePantVolume(double dt); // Ra
 	void UpdateScndPipePressure(double dt);
 	void UpdateSpringBrake(double dt);
