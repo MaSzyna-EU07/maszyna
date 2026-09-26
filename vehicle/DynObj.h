@@ -634,6 +634,10 @@ private:
     std::string asName;
 	const std::string &name() const {
 		return asName; }
+    // seed for texture variants of materials used by this vehicle and its load
+    std::uint32_t m_variantseed { 0 };
+    std::uint32_t variant_seed() const {
+        return m_variantseed; }
     std::string asBaseDir;
 
     //    std::ofstream PneuLogFile; //zapis parametrow pneumatycznych

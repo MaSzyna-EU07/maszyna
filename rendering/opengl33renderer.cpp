@@ -1286,6 +1286,7 @@ bool opengl33_renderer::Render_lowpoly( TDynamicObject *Dynamic, float const Squ
     if( Setup ) {
 
         TSubModel::iInstance = reinterpret_cast<std::uintptr_t>( Dynamic ); //żeby nie robić cudzych animacji
+        TSubModel::iVariantSeed = Dynamic->variant_seed();
         glm::dvec3 const originoffset{ Dynamic->vPosition - m_renderpass.pass_camera.position() };
 
         Dynamic->ABuLittleUpdate( Squaredistance ); // ustawianie zmiennych submodeli dla wspólnego modelu
@@ -2262,14 +2263,21 @@ void opengl33_renderer::Bind_Material( material_handle const Material, TSubModel
 		else
 			model_ubs.alpha_mult = 1.0f;
 
+		// materials which declare texture variants provide a different texture set per model instance,
+		// picked from the seed of the rendered instance and the variant group of the submodel
+		auto const &materialtextures{
+			material.texture_variants.empty() ?
+		        material.textures :
+		        material.GetTextures(TSubModel::VariantId(sm))};
+
 		if (GLAD_GL_ARB_multi_bind)
 		{
 			GLuint lastdiff = 0;
 			size_t i;
 			for (i = 0; i < gl::MAX_TEXTURES; i++)
-				if (material.textures[i] != null_handle)
+				if (materialtextures[i] != null_handle)
 				{
-					opengl_texture &tex = m_textures.mark_as_used(material.textures[i]);
+					opengl_texture &tex = m_textures.mark_as_used(materialtextures[i]);
 					tex.create();
 					if (opengl_texture::units[i] != tex.id)
 					{
@@ -2286,7 +2294,7 @@ void opengl33_renderer::Bind_Material( material_handle const Material, TSubModel
 		else
 		{
 			size_t unit = 0;
-			for (auto &tex : material.textures)
+			for (auto &tex : materialtextures)
 			{
 				if (tex == null_handle)
 					break;
@@ -3351,6 +3359,7 @@ bool opengl33_renderer::Render(TDynamicObject *Dynamic)
 
 	// setup
 	TSubModel::iInstance = reinterpret_cast<std::uintptr_t>(Dynamic); //żeby nie robić cudzych animacji
+	TSubModel::iVariantSeed = Dynamic->variant_seed();
 	glm::dvec3 const originoffset = Dynamic->vPosition - m_renderpass.pass_camera.position();
 	// lod visibility ranges are defined for base (x 1.0) viewing distance. for render we adjust them for actual range multiplier and zoom
 	float squaredistance;
@@ -3518,10 +3527,12 @@ bool opengl33_renderer::Render_cab(TDynamicObject const *Dynamic, float const Li
 	{
 
 		TSubModel::iInstance = 0;
+		TSubModel::iVariantSeed = 0;
 		return false;
 	}
 
 	TSubModel::iInstance = reinterpret_cast<std::uintptr_t>(Dynamic);
+	TSubModel::iVariantSeed = Dynamic->variant_seed();
 
 	if ((true == FreeFlyModeFlag) || (false == Dynamic->bDisplayCab) || (Dynamic->mdKabina == Dynamic->mdModel))
 	{
@@ -4445,6 +4456,7 @@ bool opengl33_renderer::Render_Alpha(TDynamicObject *Dynamic)
 
 	// setup
 	TSubModel::iInstance = (size_t)Dynamic; //żeby nie robić cudzych animacji
+	TSubModel::iVariantSeed = Dynamic->variant_seed();
 	glm::dvec3 const originoffset = Dynamic->vPosition - m_renderpass.pass_camera.position();
 	// lod visibility ranges are defined for base (x 1.0) viewing distance. for render we adjust them for actual range multiplier and zoom
 	float squaredistance;

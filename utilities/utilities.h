@@ -377,6 +377,14 @@ glm::dvec3 LoadPoint(class cParser &Input);
 // extracts a group of tokens from provided data stream
 std::string deserialize_random_set(cParser &Input, char const *Break = "\n\r\t ;");
 
+// extracts a group of tokens from provided data stream, returns all of them.
+// a single token, not enclosed in "[]", is returned as one element sequence
+std::vector<std::string> deserialize_set(cParser &Input, char const *Break = "\n\r\t ;");
+
+// returns hash of provided string, combined with provided seed. FNV-1a, picked for having
+// identical result regardless of platform and standard library, unlike std::hash
+std::uint32_t hash_string(std::string const &String, std::uint32_t const Seed = 0);
+
 // extracts a group of <key, value> pairs from provided data stream
 // NOTE: expects no more than single pair per line
 template <typename MapType_> void deserialize_map(MapType_ &Map, cParser &Input)
