@@ -18,8 +18,8 @@ http://mozilla.org/MPL/2.0/.
 // IEEE-1284 Controller
 
 HINSTANCE hDLL;
-typedef USHORT(__stdcall *InPortType)(USHORT BasePort);
-typedef void(__stdcall *OutPortType)(USHORT BasePort, USHORT value);
+using InPortType = USHORT(__stdcall *)(USHORT BasePort);
+using OutPortType = void(__stdcall *)(USHORT BasePort, USHORT value);
 InPortType InPort;
 OutPortType OutPort;
 

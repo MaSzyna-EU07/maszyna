@@ -165,13 +165,13 @@ public:
 
 private:
 // types:
-    typedef std::pair<
+    using texturetimepoint_pair = std::pair<
         opengl_texture *,
-        resource_timestamp > texturetimepoint_pair;
+        resource_timestamp >;
 
-    typedef std::vector< texturetimepoint_pair > texturetimepointpair_sequence;
+    using texturetimepointpair_sequence = std::vector< texturetimepoint_pair >;
 
-    typedef std::unordered_map<std::string, std::size_t> index_map;
+    using index_map = std::unordered_map<std::string, std::size_t>;
 
 // methods:
     // checks whether specified texture is in the texture bank. returns texture id, or npos.

@@ -121,7 +121,7 @@ void python_screen_viewer::threadfunc()
 			int format, components, width, height;
 
 			if (!Global.python_sharectx) {
-				std::lock_guard<std::mutex> guard(m_rt->mutex);
+				std::scoped_lock guard(m_rt->mutex);
 
 				if (window->timestamp == m_rt->timestamp)
 					continue;

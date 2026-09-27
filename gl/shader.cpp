@@ -313,7 +313,7 @@ gl::shader::shader(const std::string &filename)
     const GLchar *cstr = source.second.c_str();
 
     **this = glCreateShader(source.first);
-    glShaderSource(*this, 1, &cstr, 0);
+    glShaderSource(*this, 1, &cstr, nullptr);
     glCompileShader(*this);
 
     GLint status;
@@ -321,7 +321,7 @@ gl::shader::shader(const std::string &filename)
     if (!status)
     {
         GLchar info[512];
-        glGetShaderInfoLog(*this, 512, 0, info);
+        glGetShaderInfoLog(*this, 512, nullptr, info);
         log_error(std::string(info));
 
         throw shader_exception("failed to compile " + filename + ": " + std::string(info));
@@ -395,7 +395,7 @@ void gl::program::link()
     if (!status)
     {
         GLchar info[512];
-        glGetProgramInfoLog(*this, 512, 0, info);
+        glGetProgramInfoLog(*this, 512, nullptr, info);
         throw shader_exception("failed to link program: " + std::string(info));
     }
 

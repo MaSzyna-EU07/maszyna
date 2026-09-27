@@ -59,7 +59,7 @@ private:
 };
 
 class control_mapper {
-    typedef std::unordered_map< TSubModel const *, std::string> submodelstring_map;
+    using submodelstring_map = std::unordered_map< TSubModel const *, std::string>;
     submodelstring_map m_controlnames;
     using stringset = std::unordered_set<std::string>;
     stringset m_names; // names of registered controls
@@ -142,7 +142,7 @@ class TTrain {
         bool deserialize_mapping( cParser &Input );
     };
 
-	typedef std::vector<screen_entry> screenentry_sequence;
+	using screenentry_sequence = std::vector<screen_entry>;
 
 // methods
     bool CabChange(int iDirection);
@@ -181,8 +181,8 @@ class TTrain {
 
   private:
 // types
-    typedef void( *command_handler )( TTrain *Train, command_data const &Command );
-    typedef std::unordered_map<user_command, command_handler> commandhandler_map;
+    using command_handler = void (*)( TTrain *Train, command_data const &Command );
+    using commandhandler_map = std::unordered_map<user_command, command_handler>;
 // methods
     // clears state of all cabin controls
     void clear_cab_controls();

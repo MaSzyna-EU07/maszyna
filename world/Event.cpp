@@ -2520,7 +2520,7 @@ event_manager::InitEvents() {
 void
 event_manager::InitLaunchers() {
 
-    std::vector<basic_table<TEventLauncher> *> launchertables {
+    std::vector launchertables {
         &m_inputdrivenlaunchers,
         &m_radiodrivenlaunchers
     };

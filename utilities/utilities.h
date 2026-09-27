@@ -419,12 +419,12 @@ class condition_variable
 	// methods
 	void wait()
 	{
-		std::unique_lock<std::mutex> lock(m_mutex);
+		std::unique_lock lock(m_mutex);
 		m_condition.wait(lock, [this]() { return m_spurious == false; });
 	}
 	template <class Rep_, class Period_> void wait_for(const std::chrono::duration<Rep_, Period_> &Time)
 	{
-		std::unique_lock<std::mutex> lock(m_mutex);
+		std::unique_lock lock(m_mutex);
 		m_condition.wait_for(lock, Time, [this]() { return m_spurious == false; });
 	}
 	void notify_one()
@@ -439,7 +439,7 @@ class condition_variable
 	}
 	void spurious(bool const Spurious)
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::scoped_lock lock(m_mutex);
 		m_spurious = Spurious;
 	}
 

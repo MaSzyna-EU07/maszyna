@@ -152,8 +152,8 @@ public:
 
 private:
 // types
-    typedef std::vector<opengl_material> material_sequence;
-    typedef std::unordered_map<std::string, std::size_t> index_map;
+    using material_sequence = std::vector<opengl_material>;
+    using index_map = std::unordered_map<std::string, std::size_t>;
 // methods:
     // checks whether specified texture is in the texture bank. returns texture id, or npos.
     material_handle

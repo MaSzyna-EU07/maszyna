@@ -87,7 +87,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::batteryoff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->BatteryStart != start_t::manual || mvOccupied->Power24vIsAvailable == true; } );
             break;
         }
@@ -98,7 +98,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::batteryon );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->BatteryStart != start_t::manual || mvOccupied->Power24vIsAvailable == false; } );
             break;
         }
@@ -111,7 +111,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
 			remove_hint( driver_hint::cabdeactivation );
 			hint(
 				Action,
-				[this](float const Parameter) -> bool {
+				[this](float const Parameter) {
 				return mvOccupied->AutomaticCabActivation || mvOccupied->IsCabMaster(); } );
 			break;
 		}
@@ -122,7 +122,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
 			remove_hint( driver_hint::cabactivation );
 			hint(
 				Action,
-				[this](float const Parameter) -> bool {
+				[this](float const Parameter) {
 				return mvOccupied->AutomaticCabActivation || (mvOccupied->CabMaster == false && mvOccupied->CabActive == 0); } );
 			break;
 		}
@@ -134,7 +134,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::radiooff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->Radio == true; } );
             break;
         }
@@ -144,7 +144,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             }
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return iRadioChannel == static_cast<int>(Parameter); },
                 Actionparameter );
             break;
@@ -156,7 +156,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::radioon );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->Radio == false; } );
             break;
         }
@@ -168,7 +168,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::oilpumpoff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const &device { mvOccupied->OilPump };
                     return device.start_type != start_t::manual || device.is_enabled == true || device.is_active == true || mvOccupied->Mains; } );
             break;
@@ -180,7 +180,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::oilpumpon );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const &device { mvOccupied->OilPump };
                     return device.start_type != start_t::manual || (device.is_enabled == false && device.is_active == false); } );
             break;
@@ -193,7 +193,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::fuelpumpoff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const &device { mvOccupied->FuelPump };
                     return device.start_type != start_t::manual || device.is_enabled == true || device.is_active == true; } );
             break;
@@ -205,7 +205,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::fuelpumpon );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const &device { mvOccupied->FuelPump };
                     return device.start_type != start_t::manual || (device.is_enabled == false && device.is_active == false); } );
             break;
@@ -218,7 +218,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::pantographairsourcesetauxiliary );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvPantographUnit->bPantKurek3 == true; } );
             break;
         }
@@ -229,7 +229,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::pantographcompressoron );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvPantographUnit->bPantKurek3 == false; } );
             break;
         }
@@ -240,7 +240,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::pantographcompressoroff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvPantographUnit->PantCompFlag == true; } );
             break;
         }
@@ -251,7 +251,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::pantographcompressoron );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvPantographUnit->PantCompFlag == false; } );
             break;
         }
@@ -262,7 +262,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::pantographsvalveoff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvPantographUnit->PantsValve.is_active == true; } );
             break;
         }
@@ -273,7 +273,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::frontpantographvalveoff );
             hint(
                 Action,
-                [ this ]( float const Parameter ) -> bool {
+                [ this ]( float const Parameter ) {
                     return mvPantographUnit->Pantographs[end::front].valve.is_active == true || (Parameter > 0 && mvOccupied->Vel > Parameter); },
                 Actionparameter );
             break;
@@ -285,7 +285,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::frontpantographvalveon );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvPantographUnit->Pantographs[end::front].valve.is_active == false; } );
             break;
         }
@@ -296,7 +296,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::rearpantographvalveoff );
             hint(
                 Action,
-                [ this ]( float const Parameter ) -> bool {
+                [ this ]( float const Parameter ) {
                     return mvPantographUnit->Pantographs[end::rear].valve.is_active == true || (Parameter > 0 && mvOccupied->Vel > Parameter); },
                 Actionparameter );
             break;
@@ -308,7 +308,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::rearpantographvalveon );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvPantographUnit->Pantographs[end::rear].valve.is_active == false; } );
             break;
         }
@@ -320,7 +320,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::converteroff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return IsAnyConverterEnabled == true; } );
             break;
         }
@@ -331,7 +331,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::converteron );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return IsAnyConverterExplicitlyEnabled == false; } );
             break;
         }
@@ -342,7 +342,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             }
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->ConverterOverloadRelayStart != start_t::manual || mvOccupied->ConvOvldFlag == false; } );
             break;
         }
@@ -352,7 +352,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             }
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->GroundRelayStart != start_t::manual || mvOccupied->GroundRelay == true; } );
             break;
         }
@@ -362,7 +362,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             }
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->FuseFlag == false; } );
             break;
         }
@@ -374,7 +374,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::linebreakeropen );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return IsAnyLineBreakerOpen == false; } );
             break;
         }
@@ -385,7 +385,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::linebreakerclose );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     // TBD, TODO: replace with consist-wide flag set true if any line breaker is closed?
                     return mvControlling->Mains == false; } );
             break;
@@ -398,7 +398,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::compressoroff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return IsAnyCompressorEnabled == true; } );
             break;
         }
@@ -409,7 +409,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::compressoron );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return IsAnyCompressorExplicitlyEnabled == false; } );
             break;
         }
@@ -421,7 +421,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::frontmotorblowersoff );
             hint(
                 Action,
-                [this]( float const Parameter ) -> bool {
+                [this]( float const Parameter ) {
                     auto const &device { mvOccupied->MotorBlowers[ end::front ] };
                     return device.start_type != start_t::manual || (device.is_enabled == true && device.is_disabled == false); } );
             break;
@@ -434,7 +434,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::rearmotorblowersoff );
             hint(
                 Action,
-                [this]( float const Parameter ) -> bool {
+                [this]( float const Parameter ) {
                     auto const &device { mvOccupied->MotorBlowers[ end::rear ] };
                     return device.start_type != start_t::manual || (device.is_enabled == true && device.is_disabled == false); } );
             break;
@@ -447,7 +447,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::springbrakeoff );
             hint(
                 Action,
-                [this]( float const Parameter ) -> bool {
+                [this]( float const Parameter ) {
                     return mvOccupied->SpringBrake.Activate == true; } );
             break;
         }
@@ -458,7 +458,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::springbrakeon );
             hint(
                 Action,
-                [this]( float const Parameter ) -> bool {
+                [this]( float const Parameter ) {
                     return mvOccupied->SpringBrake.Activate == false; } );
             break;
         }
@@ -470,7 +470,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::manualbrakoff );
             hint(
                 Action,
-                [this]( float const Parameter ) -> bool {
+                [this]( float const Parameter ) {
                     return mvOccupied->LocalBrake != TLocalBrake::ManualBrake || mvOccupied->MBrake == false || mvOccupied->ManualBrakePos == ManualBrakePosNo; } );
             break;
         }
@@ -481,7 +481,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::manualbrakon );
             hint(
                 Action,
-                [this]( float const Parameter ) -> bool {
+                [this]( float const Parameter ) {
                     return mvOccupied->LocalBrake != TLocalBrake::ManualBrake || mvOccupied->MBrake == false || mvOccupied->ManualBrakePos == 0; } );
             break;
         }
@@ -496,7 +496,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_master_controller_hints();
             hint(
                 Action,
-                [this]( float const Parameter ) -> bool {
+                [this]( float const Parameter ) {
                     return mvControlling->RList[mvControlling->MainCtrlPos].Mn > 0; } );
             break;
         }
@@ -516,7 +516,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_master_controller_hints();
             hint(
                 Action,
-                [this]( float const Parameter ) -> bool {
+                [this]( float const Parameter ) {
                     return mvControlling->RList[mvControlling->MainCtrlPos].Bn < 2; } );
             break;
         }
@@ -527,7 +527,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_master_controller_hints();
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvControlling->IsMainCtrlNoPowerPos() && mvControlling->IsScndCtrlNoPowerPos(); } );
             break;
         }
@@ -541,7 +541,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_master_controller_hints();
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvControlling->EIMDirectionChangeAllow(); },
                 mvControlling->MainCtrlMaxDirChangePos );
             break;
@@ -553,7 +553,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_master_controller_hints();
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return std::abs(mvControlling->Ft) <= Parameter; },
                 std::min(
                     0.0,
@@ -575,7 +575,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             }
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return AccDesired <= EU07_AI_NOACCELERATION || (false == Ready && false == mvOccupied->ShuntMode) || AccDesired - AbsAccS <= 0.05 ||
 			                (mvOccupied->EIMCtrlType > 0 ? mvControlling->eimic_real >= 1.0 : mvControlling->IsScndCtrlMaxPowerPos() && mvControlling->IsMainCtrlMaxPowerPos()); } );
             break;
@@ -589,7 +589,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_master_controller_hints();
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return std::abs(mvControlling->Ft) > 30.0 || (OrderCurrentGet() & Disconnect) == 0; } );
             break;
         }
@@ -601,7 +601,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_master_controller_hints();
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvControlling->IsScndCtrlNoPowerPos(); } );
             break;
         }
@@ -613,7 +613,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::waterpumpoff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const &device { mvControlling->WaterPump };
                     return device.start_type != start_t::manual || (device.is_enabled == true && device.is_disabled == false) || device.is_active == true; } );
             break;
@@ -625,7 +625,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::waterpumpon );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const &device { mvControlling->WaterPump };
                     return device.start_type != start_t::manual || (device.is_enabled == false && device.is_active == false); } );
             break;
@@ -637,7 +637,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::waterpumpbreakeroff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const &device { mvControlling->WaterPump };
                     return device.breaker == true; } );
             break;
@@ -649,7 +649,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::waterpumpbreakeron );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const &device { mvControlling->WaterPump };
                     return device.breaker == false; } );
             break;
@@ -661,7 +661,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::waterheateroff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const &device { mvControlling->WaterHeater };
                     return device.is_enabled == true; } );
             break;
@@ -673,7 +673,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::waterheateron );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const &device { mvControlling->WaterHeater };
                     return device.is_enabled == false; } );
             break;
@@ -685,7 +685,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::waterheaterbreakeroff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const &device { mvControlling->WaterHeater };
                     return device.breaker == true; } );
             break;
@@ -697,7 +697,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::waterheaterbreakeron );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const &device { mvControlling->WaterHeater };
                     return device.breaker == false; } );
             break;
@@ -709,7 +709,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::watercircuitslinkoff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvControlling->dizel_heat.auxiliary_water_circuit == false || mvControlling->WaterCircuitsLink == true; } );
             break;
         }
@@ -720,7 +720,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::watercircuitslinkon );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvControlling->dizel_heat.auxiliary_water_circuit == false || mvControlling->WaterCircuitsLink == false; } );
             break;
         }
@@ -728,7 +728,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             // NOTE: this action doesn't have AI component
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return false == IsHeatingTemperatureTooLow; } );
             break;
         }
@@ -736,7 +736,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             // NOTE: this action doesn't have AI component
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvControlling->ScndPipePress > 4.5 || mvControlling->VeselVolume == 0.0; } );
             break;
         }
@@ -744,7 +744,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             // NOTE: this action doesn't have AI component
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvPantographUnit->PantPress >= (is_emu() ? (mvPantographUnit->PantPressLockActive ? 4.6 : 2.6) : 4.2); } );
             break;
         }
@@ -752,7 +752,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             // NOTE: this action doesn't have AI component
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return ExchangeTime <= 0; } );
             break;
         }
@@ -760,7 +760,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             // NOTE: this action doesn't have AI component
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return IsAtPassengerStop == false; } );
             break;
         }
@@ -785,7 +785,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_train_brake_hints();
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->HandleUnlock == -3 || BrakeCtrlPosition == mvOccupied->HandleUnlock; } );
             break;
         }
@@ -797,7 +797,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_train_brake_hints();
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return is_equal(mvOccupied->fBrakeCtrlPos, mvOccupied->Handle->GetPos(bh_RP), 0.2) || (mvOccupied->Handle->Time && mvOccupied->Handle->GetCP() > mvOccupied->HighPipePress - 0.05); } );
 //                    return ( BrakeCtrlPosition == gbh_RP ); } );
             break;
@@ -815,7 +815,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_train_brake_hints();
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return IsConsistBraked /*|| ( ( OrderCurrentGet() & Disconnect ) == 0 ) */; } );
             break;
         }
@@ -830,7 +830,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_train_brake_hints();
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return std::abs(mvControlling->Fb) <= Parameter; },
                 std::min( 0.0, 0.95 * std::abs( mvControlling->Fb ) ) ); // keep hint until 5% decrease
             break;
@@ -846,7 +846,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_train_brake_hints();
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return std::abs(mvControlling->Fb) > Parameter || is_equal(mvOccupied->fBrakeCtrlPos, mvOccupied->Handle->GetPos(bh_EB), 0.2); },
                 std::max(
                     0.0,
@@ -862,7 +862,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_train_brake_hints();
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return Ready && fReady < 0.4 && is_equal(mvOccupied->fBrakeCtrlPos, mvOccupied->Handle->GetPos(bh_RP), 0.2); } );
             break;
         }
@@ -888,7 +888,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::independentbrakerelease );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->LocalBrakePosA >= Parameter; },
                 ( LocalBrakePosNo - ( mvOccupied->EIMCtrlEmergency ? 1 : 0 ) ) / LocalBrakePosNo );
             break;
@@ -900,7 +900,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::independentbrakeapply );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->LocalBrakePosA < 0.05; } );
             break;
         }
@@ -912,7 +912,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_reverser_hints();
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->DirActive * mvOccupied->CabActive > 0; } );
             break;
         }
@@ -923,7 +923,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_reverser_hints();
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->DirActive * mvOccupied->CabActive < 0; } );
             break;
         }
@@ -936,7 +936,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_reverser_hints();
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return iDirection == iDirectionOrder; } );
             break;
         }
@@ -947,7 +947,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_reverser_hints();
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->DirActive == 0; } );
             break;
         }
@@ -959,7 +959,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::sandingoff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvControlling->Sand == 0 || mvControlling->SandDose == true || mvControlling->SlippingWheels == false; } );
             break;
         }
@@ -970,7 +970,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::sandingon );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvControlling->Sand == 0 || mvControlling->SandDose == false; } );
             break;
         }
@@ -980,7 +980,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             }
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvControlling->ASBType != 1 || (mvControlling->Hamulec->GetBrakeStatus() & b_asb) != 0 || mvControlling->SlippingWheels == false; } );
             break;
         }
@@ -992,7 +992,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::hornoff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     // NOTE: we provide slightly larger horn activation window for human driver
                     return fWarningDuration + 5.0 < 0.05 || mvOccupied->WarningSignal != 0; } );
             break;
@@ -1019,7 +1019,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             // TODO: remove other door lock hints
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->Doors.has_lock == false || mvOccupied->Doors.lock_enabled == true; } );
             break;
         }
@@ -1031,7 +1031,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::departuresignaloff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->Doors.has_warning == false || mvOccupied->Doors.has_autowarning == true || mvOccupied->DepartureSignal == true || mvOccupied->Vel > 5.0; } );
             break;
         }
@@ -1042,7 +1042,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::departuresignalon );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->Doors.has_warning == false || mvOccupied->Doors.has_autowarning == true || mvOccupied->DepartureSignal == false; } );
             break;
         }
@@ -1055,7 +1055,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::doorrightclose );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return IsAnyDoorOpen[side::right] == true; } );
             break;
         }
@@ -1067,7 +1067,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::doorrightopen );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return IsAnyDoorOpen[side::right] == false; } );
             break;
         }
@@ -1079,7 +1079,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::doorleftclose );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return IsAnyDoorOpen[side::left] == true; } );
             break;
         }
@@ -1091,7 +1091,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::doorleftopen );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return IsAnyDoorOpen[side::left] == false; } );
             break;
         }
@@ -1102,7 +1102,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::doorrightpermitoff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return IsAnyDoorPermitActive[side::right] == true; } );
             break;
         }
@@ -1113,7 +1113,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::doorrightpermiton );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return IsAnyDoorPermitActive[side::right] == false; } );
             break;
         }
@@ -1124,7 +1124,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::doorleftpermitoff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return IsAnyDoorPermitActive[side::left] == true; } );
             break;
         }
@@ -1135,7 +1135,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::doorleftpermiton );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return IsAnyDoorPermitActive[side::left] == false; } );
             break;
         }
@@ -1148,7 +1148,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::consistlightsoff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const &device { mvOccupied->CompartmentLights };
                     return Global.fLuminance * ConsistShade > 0.40 || device.start_type != start_t::manual || (device.is_enabled == true && device.is_disabled == false) || device.is_active == true; } );
             break;
@@ -1161,7 +1161,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::consistlightson );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const &device { mvOccupied->CompartmentLights };
                     return Global.fLuminance * ConsistShade < 0.35 || device.start_type != start_t::manual || (device.is_enabled == false && device.is_active == false); } );
             break;
@@ -1174,7 +1174,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::consistheatingoff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->HeatingAllow == true; } );
             break;
         }
@@ -1185,7 +1185,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::consistheatingon );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return mvOccupied->HeatingAllow == false; } );
             break;
         }
@@ -1197,7 +1197,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             }
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return !mvOccupied->SecuritySystem.is_vigilance_blinking(); } );
             break;
         }
@@ -1208,7 +1208,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             }
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return !mvOccupied->SecuritySystem.is_cabsignal_blinking(); } );
             break;
         }
@@ -1219,7 +1219,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             }
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const &device { pVehicles[ end::front ]->MoverParameters->Couplers[ static_cast<int>( Parameter ) ] };
                     return device.type() == TCouplerType::Automatic; } );
             break;
@@ -1230,7 +1230,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             }
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const &device { pVehicles[ end::front ]->MoverParameters->Couplers[ static_cast<int>( Parameter ) ] };
                     return false == device.has_adapter(); } );
             break;
@@ -1245,7 +1245,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::lightsoff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return pVehicles[end::front]->has_signal_pc1_on(); } );
             break;
         }
@@ -1258,7 +1258,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::lightsoff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return pVehicles[end::front]->has_signal_pc2_on(); } );
             break;
         }
@@ -1275,7 +1275,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::lightsoff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const activeend { mvOccupied->CabActive >= 0 ? end::front : end::rear };
                     auto const consistfront { mvOccupied->DirActive >= 0 ? end::front : end::rear };
                     return pVehicles[consistfront]->has_signal_on(activeend, light::headlight_right) && pVehicles[1 - consistfront]->has_signal_on(1 - activeend, light::headlight_left); } );
@@ -1290,7 +1290,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::lightsoff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return pVehicles[end::rear]->has_signal_pc5_on(); } );
             break;
         }
@@ -1304,7 +1304,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::headcodetb1 );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     auto const activeend { mvOccupied->CabActive >= 0 ? end::front : end::rear };
                     auto const consistfront { mvOccupied->DirActive >= 0 ? end::front : end::rear };
                     return pVehicles[consistfront]->has_signal_on(activeend, 0) && pVehicles[1 - consistfront]->has_signal_on(1 - activeend, 0); } );
@@ -1318,7 +1318,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::releaseroff );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return true == mvOccupied->Hamulec->Releaser(); } );
             break;
         }
@@ -1329,7 +1329,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             remove_hint( driver_hint::releaseron );
             hint(
                 Action,
-                [this](float const Parameter) -> bool {
+                [this](float const Parameter) {
                     return false == mvOccupied->Hamulec->Releaser(); } );
             break;
         }

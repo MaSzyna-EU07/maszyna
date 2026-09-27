@@ -119,7 +119,7 @@ class cParser //: public std::stringstream
     std::size_t mLine { 0 }; // currently processed line
     bool mIncFile { false }; // the parser is processing an *.inc file
     bool mFirstToken { true }; // processing first token in the current file; helper used when checking for utf bom
-    typedef std::map<std::string, std::string> commentmap;
+    using commentmap = std::map<std::string, std::string>;
     commentmap mComments {
         commentmap::value_type( "/*", "*/" ),
         commentmap::value_type( "//", "\n" ) };

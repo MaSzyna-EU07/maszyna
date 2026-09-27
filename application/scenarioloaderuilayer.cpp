@@ -103,7 +103,7 @@ std::vector<std::string> scenarioloader_ui::get_random_trivia()
 	}
 
 	// Find byte position corresponding to character count
-	auto get_byte_pos_for_char_count = [&](const std::string& str, size_t char_count) -> size_t {
+	auto get_byte_pos_for_char_count = [&](const std::string& str, size_t char_count) {
 		size_t byte_pos = 0;
 		size_t current_chars = 0;
 		for (size_t i = 0; i < str.length() && current_chars < char_count; )

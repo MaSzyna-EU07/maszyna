@@ -128,7 +128,7 @@ opengl_renderer::Init( GLFWwindow *Window ) {
         // texture
         ::glGenTextures( 1, &m_picktexture );
         ::glBindTexture( GL_TEXTURE_2D, m_picktexture );
-        ::glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA8, EU07_PICKBUFFERSIZE, EU07_PICKBUFFERSIZE, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL );
+        ::glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA8, EU07_PICKBUFFERSIZE, EU07_PICKBUFFERSIZE, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr );
         ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
         ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
         ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
@@ -163,7 +163,7 @@ opengl_renderer::Init( GLFWwindow *Window ) {
             ::glGenTextures( 1, &m_shadowtexture );
             ::glBindTexture( GL_TEXTURE_2D, m_shadowtexture );
             // allocate memory
-            ::glTexImage2D( GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, m_shadowbuffersize, m_shadowbuffersize, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, NULL );
+            ::glTexImage2D( GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, m_shadowbuffersize, m_shadowbuffersize, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, nullptr );
             // setup parameters
             ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
             ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
@@ -178,7 +178,7 @@ opengl_renderer::Init( GLFWwindow *Window ) {
             ::glGenTextures( 1, &m_shadowdebugtexture );
             ::glBindTexture( GL_TEXTURE_2D, m_shadowdebugtexture );
             // allocate memory
-            ::glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA8, m_shadowbuffersize, m_shadowbuffersize, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL );
+            ::glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA8, m_shadowbuffersize, m_shadowbuffersize, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr );
             // setup parameters
             ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
             ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
@@ -216,7 +216,7 @@ opengl_renderer::Init( GLFWwindow *Window ) {
             ::glGenTextures( 1, &m_cabshadowtexture );
             ::glBindTexture( GL_TEXTURE_2D, m_cabshadowtexture );
             // allocate memory
-            ::glTexImage2D( GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, m_shadowbuffersize / 2, m_shadowbuffersize / 2, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, NULL );
+            ::glTexImage2D( GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, m_shadowbuffersize / 2, m_shadowbuffersize / 2, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, nullptr );
             // setup parameters
             ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
             ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
@@ -231,7 +231,7 @@ opengl_renderer::Init( GLFWwindow *Window ) {
             ::glGenTextures( 1, &m_cabshadowdebugtexture );
             ::glBindTexture( GL_TEXTURE_2D, m_cabshadowdebugtexture );
             // allocate memory
-            ::glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA8, m_shadowbuffersize / 2, m_shadowbuffersize / 2, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL );
+            ::glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA8, m_shadowbuffersize / 2, m_shadowbuffersize / 2, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr );
             // setup parameters
             ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
             ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
@@ -270,7 +270,7 @@ opengl_renderer::Init( GLFWwindow *Window ) {
         ::glBindTexture( GL_TEXTURE_CUBE_MAP, m_environmentcubetexture );
         // allocate space
         for( GLuint faceindex = GL_TEXTURE_CUBE_MAP_POSITIVE_X; faceindex < GL_TEXTURE_CUBE_MAP_POSITIVE_X + 6; ++faceindex ) {
-            ::glTexImage2D( faceindex, 0, GL_RGBA8, EU07_ENVIRONMENTBUFFERSIZE, EU07_ENVIRONMENTBUFFERSIZE, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL );
+            ::glTexImage2D( faceindex, 0, GL_RGBA8, EU07_ENVIRONMENTBUFFERSIZE, EU07_ENVIRONMENTBUFFERSIZE, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr );
         }
         // setup parameters
         ::glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR );

@@ -90,7 +90,7 @@ void ui::cameraview_panel::render_contents()
 	texture->bind(0);
 
 	{
-		std::lock_guard<std::mutex> lock(mutex);
+		std::scoped_lock lock(mutex);
 		if (image_ptr) {
 
 			glActiveTexture(GL_TEXTURE0);
@@ -142,7 +142,7 @@ void ui::cameraview_panel::capture_func()
 
 		bufpos = 0;
 
-		std::lock_guard<std::mutex> lock(mutex);
+		std::scoped_lock lock(mutex);
 		image_ptr = read_buffer;
 		read_buffer = active_buffer;
 		active_buffer = image_ptr;
@@ -151,7 +151,7 @@ void ui::cameraview_panel::capture_func()
 		notify_var.notify_one();
 	}
 
-	std::lock_guard<std::mutex> lock(mutex);
+	std::scoped_lock lock(mutex);
 	image_ptr = nullptr;
 	delete[] read_buffer;
 	delete[] active_buffer;
@@ -181,7 +181,7 @@ void ui::cameraview_panel::record_func()
 	while (record_state == RUNNING) {
 		if (bufpos == frame_size)
 		{
-			std::unique_lock<std::mutex> lock(mutex);
+			std::unique_lock lock(mutex);
 			auto r = notify_var.wait_for(lock, std::chrono::milliseconds(50), [this, last_cnt]{return last_cnt != frame_cnt;});
 			last_cnt = frame_cnt;
 			if (!image_ptr || !r)

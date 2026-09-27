@@ -41,7 +41,7 @@ private:
         bool is_good{ false }; // true if local content of the chunk matches the data on the opengl end
     };
 
-    typedef std::vector<chunk_record> chunkrecord_sequence;
+    using chunkrecord_sequence = std::vector<chunk_record>;
 
 // methods:
     // create() subclass details

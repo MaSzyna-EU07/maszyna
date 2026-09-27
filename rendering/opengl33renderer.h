@@ -252,7 +252,7 @@ class opengl33_renderer : public gfx_renderer {
 
 	viewport_config *m_current_viewport = nullptr;
 
-	typedef std::vector<opengl33_light> opengllight_array;
+	using opengllight_array = std::vector<opengl33_light>;
 
 	// methods
     std::unique_ptr<gl::program> make_shader(std::string v, std::string f);

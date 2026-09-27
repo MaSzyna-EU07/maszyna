@@ -154,7 +154,7 @@ void terrain_streamer::update(glm::dvec3 const &CameraPos)
 			int const cells = m_cells;
 			float const cs = m_cellsize;
 			editor_terrain::height_sampler sampler =
-			    [&loaded, x0, z0, cells, cs](double X, double Z, double &OutY) -> bool {
+			    [&loaded, x0, z0, cells, cs](double X, double Z, double &OutY) {
 				int ix = static_cast<int>(std::lround((X - x0) / cs));
 				int iz = static_cast<int>(std::lround((Z - z0) / cs));
 				ix = std::clamp(ix, 0, cells);

@@ -764,7 +764,7 @@ enum class TLocalBrake
 	HydraulicBrake
 };
 /// <summary>Brake delay parameter table (apply/release for passenger and freight).</summary>
-typedef double TBrakeDelayTable[4];
+using TBrakeDelayTable = double[4];
 
 /// <summary>One row of the brake pressure / pipe pressure / flow-speed table for a brake handle position.</summary>
 struct TBrakePressure
@@ -780,7 +780,7 @@ struct TBrakePressure
 };
 
 /// <summary>Brake pressure table indexed by handle position.</summary>
-typedef std::map<int, TBrakePressure> TBrakePressureTable;
+using TBrakePressureTable = std::map<int, TBrakePressure>;
 
 /// <summary>Engine / drive type.</summary>
 enum class TEngineType
@@ -1048,7 +1048,7 @@ struct TScheme
 	bool AutoSwitch = false; /*czy dana pozycja nastawniana jest recznie czy autom.*/
 	int ScndAct = 0; /*jesli ma bocznik w nastawniku, to ktory bocznik na ktorej pozycji*/
 };
-typedef TScheme TSchemeTable[ResArraySize + 1]; /*tablica rezystorow rozr.*/
+using TSchemeTable = TScheme[ResArraySize + 1]; /*tablica rezystorow rozr.*/
 struct TDEScheme
 {
 	double RPM = 0.0; /*obroty diesla*/
@@ -1056,13 +1056,13 @@ struct TDEScheme
 	double Umax = 0.0; /*napiecie maksymalne*/
 	double Imax = 0.0; /*prad maksymalny*/
 };
-typedef TDEScheme TDESchemeTable[33]; /*tablica WWList dla silnikow spalinowych*/
+using TDESchemeTable = TDEScheme[33]; /*tablica WWList dla silnikow spalinowych*/
 struct TFFScheme
 {
 	double v = 0.0; // parametr wejsciowy
 	double freq = 0.0; // wyjscie: czestotliwosc falownika
 };
-typedef TFFScheme TFFSchemeTable[33];
+using TFFSchemeTable = TFFScheme[33];
 
 struct TWiperScheme
 {
@@ -1071,7 +1071,7 @@ struct TWiperScheme
 	double interval = 0.0; // interwal pracy wycieraczki
 	double outBackDelay = 0.0; // czas po jakim wycieraczka zacznie wracac z konca do poczatku
 };
-typedef TWiperScheme TWiperSchemeTable[16];
+using TWiperSchemeTable = TWiperScheme[16];
 
 struct TShuntScheme
 {
@@ -1080,13 +1080,13 @@ struct TShuntScheme
 	double Pmin = 0.0;
 	double Pmax = 0.0;
 };
-typedef TShuntScheme TShuntSchemeTable[33];
+using TShuntSchemeTable = TShuntScheme[33];
 struct TMPTRelay
 { /*lista przekaznikow bocznikowania*/
 	double Iup = 0.0;
 	double Idown = 0.0;
 };
-typedef TMPTRelay TMPTRelayTable[8];
+using TMPTRelayTable = TMPTRelay[8];
 
 struct TMotorParameters
 {

@@ -352,7 +352,7 @@ bool TAnimModel::Load(cParser *parser, bool ter)
 
                 if( i < iNumLights
                  && token != "-1" ) { // -1 leaves the default color intact
-                    auto const lightcolor { std::stoi( token, 0, 16 ) };
+                    auto const lightcolor { std::stoi( token, nullptr, 16 ) };
                     m_lightcolors[i] = {
                         ( lightcolor >> 16 & 0xff ) / 255.f,
                         ( lightcolor >> 8  & 0xff ) / 255.f,
@@ -655,7 +655,7 @@ int TAnimModel::TerrainCount()
 
 TSubModel * TAnimModel::TerrainSquare(int n)
 { // pobieranie wskaźników do pierwszego submodelu
-    return pModel ? pModel->TerrainSquare(n) : 0;
+    return pModel ? pModel->TerrainSquare(n) : nullptr;
 }
 
 //---------------------------------------------------------------------------

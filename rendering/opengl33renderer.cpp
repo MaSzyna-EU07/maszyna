@@ -61,7 +61,7 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
         glEnable( GL_DEBUG_OUTPUT_SYNCHRONOUS );
         glDebugMessageControl( GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, nullptr, GL_FALSE );
         glDebugMessageControl( GL_DONT_CARE, GL_DEBUG_TYPE_PERFORMANCE, GL_DONT_CARE, 0, nullptr, GL_FALSE );
-        glDebugMessageCallback( ErrorCallback, 0 );
+        glDebugMessageCallback( ErrorCallback, nullptr );
     }
 
 	if (!Init_caps())

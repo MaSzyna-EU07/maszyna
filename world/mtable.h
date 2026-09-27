@@ -42,7 +42,7 @@ struct TMTableLine
     sound_source name_sound{ sound_placement::engine };
 };
 
-typedef TMTableLine TMTable[MaxTTableSize + 1];
+using TMTable = TMTableLine[MaxTTableSize + 1];
 
 // typedef TTrainParameters *PTrainParameters;
 

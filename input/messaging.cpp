@@ -66,7 +66,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
                 if( event != nullptr ) {
                     if( typeid(*event) == typeid(multi_event)
                      || typeid(*event) == typeid(lights_event)
-                     || event->m_sibling != 0 ) {
+                     || event->m_sibling != nullptr ) {
                         // tylko jawne albo niejawne Multiple
 						command_relay relay;
 						relay.post(user_command::queueevent, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &event->name());

@@ -184,7 +184,7 @@ private:
         bool reflections { false };
     };
 
-    typedef std::vector<opengl_light> opengllight_array;
+    using opengllight_array = std::vector<opengl_light>;
 
 // methods
     void

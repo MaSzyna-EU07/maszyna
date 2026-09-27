@@ -1131,7 +1131,7 @@ void editor_mode::capture_terrain()
     float const cellsize = static_cast<float>(std::max(0.1, extent / cells));
 
     // sampler: highest captured triangle at (x,z)
-    auto const sampler = [&tris](double X, double Z, double &OutY) -> bool {
+    auto const sampler = [&tris](double X, double Z, double &OutY) {
         double best = -std::numeric_limits<double>::max();
         bool found = false;
         for (auto const &t : tris)

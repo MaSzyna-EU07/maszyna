@@ -99,7 +99,7 @@ crash_reporter::crash_reporter()
 
     database = crashpad::CrashReportDatabase::Initialize(db);
 
-	if (database == nullptr || database->GetSettings() == NULL)
+	if (database == nullptr || database->GetSettings() == nullptr)
         return;
 
     std::vector<crashpad::CrashReportDatabase::Report> reports;

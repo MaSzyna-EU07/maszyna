@@ -7036,7 +7036,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
     m_powertrainsounds.position( enginelocation );
     // other engine compartment sounds
     auto const nullvector { glm::vec3() };
-    std::vector<sound_source *> enginesounds = {
+    std::vector enginesounds = {
         &sConverter, &sBRVent, &sCompressor, &sCompressorIdle, &sSmallCompressor, &sHeater, &m_batterysound
     };
     for( auto sound : enginesounds ) {
@@ -8054,7 +8054,7 @@ void
 TDynamicObject::powertrain_sounds::position( glm::vec3 const Location ) {
 
     auto const nullvector { glm::vec3() };
-    std::vector<sound_source *> enginesounds = {
+    std::vector enginesounds = {
         &inverter,
         &motor_relay, &dsbWejscie_na_bezoporow, &motor_parallel, &motor_shuntfield, &rsWentylator,
         &engine, &engine_ignition, &engine_shutdown, &engine_revving, &engine_turbo, &oil_pump, &fuel_pump, &water_pump, &water_heater, &radiator_fan, &radiator_fan_aux,

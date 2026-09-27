@@ -84,7 +84,7 @@ private:
         user_command down;
     };
 
-    typedef std::unordered_map<std::string, button_bindings> buttonbindings_map;
+    using buttonbindings_map = std::unordered_map<std::string, button_bindings>;
 
 // methods
     void

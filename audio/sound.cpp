@@ -400,7 +400,7 @@ sound_source::play_basic() {
         // dispatch appropriate sound
         if( true == m_playbeginning
          && sound(sound_id::begin).buffer != null_handle) {
-            std::vector<sound_id> sounds { sound_id::begin, sound_id::main };
+            std::vector sounds { sound_id::begin, sound_id::main };
             insert( std::begin( sounds ), std::end( sounds ) );
             m_playbeginning = false;
         }
@@ -1016,7 +1016,7 @@ sound_source::update_soundproofing() {
 void
 sound_source::insert( sound_handle const Sound ) {
 
-    std::vector<sound_handle> sounds { Sound };
+    std::vector sounds { Sound };
     return insert( std::begin( sounds ), std::end( sounds ) );
 }
 

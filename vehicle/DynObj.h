@@ -43,7 +43,7 @@ int const ANIM_TYPES = 10; // Ra: ilość typów animacji
 
 class TAnim;
 //typedef void(__closure *TUpdate)(TAnim *pAnim); // typ funkcji aktualizującej położenie submodeli
-typedef std::function<void(TAnim *)> TUpdate; // __closure is Borland-specific extension
+using TUpdate = std::function<void(TAnim *)>; // __closure is Borland-specific extension
 
 // McZapkie-250202
 int const MaxAxles = 16; // ABu 280105: zmienione z 8 na 16
