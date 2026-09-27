@@ -38,8 +38,14 @@ struct global_settings {
     bool shiftState{ false }; //m7todo: brzydko
     bool ctrlState{ false };
     bool altState{ false };
-    std::mt19937 random_engine;
-    std::mt19937 local_random_engine;
+    // Simulation randomness, never used for anything security related: no keys, tokens or
+    // credentials come out of these. Reproducibility is a requirement here, which is why both
+    // are plain mt19937 -- the run's seed can be written down and passed on, and it travels in
+    // server_hello so that every client in a session replays the same sequence. A generator
+    // that cannot be seeded to a known state would break both of those.
+    std::mt19937 random_engine; // shared run seed, kept in sync across the network
+    std::mt19937 local_random_engine; // re-seeded from a true random source in init_modes, drives
+                                      // purely local cosmetics (sound pitch, editor placement)
     bool ready_to_load{ false };
     std::time_t starting_timestamp = 0; // starting time, in local timezone
     uint32_t random_seed = 0;
