@@ -70,7 +70,9 @@ jobs:
       pull-requests: read # verify PR head sha via the API
     env:
       BUILD_WRAPPER_OUT_DIR: bw-output
-      SONAR_EXCLUSIONS: betterRenderer/**,ref/**,imgui/**,stb/**,build/**,bw-output/**
+      # .trusted/ holds the checkout of master used to restore the scanner config;
+      # it is not part of the analysed change.
+      SONAR_EXCLUSIONS: betterRenderer/**,ref/**,imgui/**,stb/**,build/**,bw-output/**,.trusted/**
       SONAR_SCANNER_JAVA_OPTS: -Xmx5g
     steps:
       - name: Post pending status
