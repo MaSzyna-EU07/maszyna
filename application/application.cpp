@@ -1105,7 +1105,7 @@ void eu07_application::init_files()
 #elif __unix__
 	unlink("log.txt");
 	unlink("errors.txt");
-	mkdir("logs", 0755);
+	mkdir("logs", 0750);
 #endif
 }
 namespace fs = std::filesystem;
