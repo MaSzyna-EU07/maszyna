@@ -270,7 +270,7 @@ bool ui::vehiclepicker_panel::selectable_image(const char *desc, bool selected, 
 	}
 
 	GLuint tex = image->get();
-	if (tex != -1) {
+	if (tex != (GLuint)-1) {
 		glm::ivec2 size = image->size();
 		float width = 30.0f / size.y * size.x;
 		ImGui::SameLine(ImGui::GetContentRegionAvail().x - width);

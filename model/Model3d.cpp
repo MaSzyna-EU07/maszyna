@@ -24,6 +24,8 @@ Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 #include "world/mtable.h"
 #include "scene/sn_utils.h"
 
+#include <bit>
+
 //---------------------------------------------------------------------------
 
 using namespace Mtable;
@@ -224,16 +226,13 @@ inline void readMatrix(cParser &parser, float4x4 &matrix)
 
 template <typename T> void UserdataParse(cParser &parser, gfx::vertex_userdata &vertex)
 {
+	static_assert(sizeof(T) == sizeof(float), "userdata is stored as raw 32-bit values");
 	parser.getTokens(4);
-	union
-	{
-		T InType;
-		float FloatType;
-	} buf{};
 	for (int i = 0; i < 4; ++i)
 	{
-		parser >> buf.InType;
-		vertex.data[i] = buf.FloatType;
+		T value{};
+		parser >> value;
+		vertex.data[i] = std::bit_cast<float>(value);
 	}
 }
 

@@ -542,8 +542,9 @@ private:
     double fLastVel = 0.0; // prędkość na poprzednio sprawdzonym torze
     TTrack *tLast = nullptr; // ostatni analizowany tor
     basic_event *eSignSkip = nullptr; // można pominąć ten SBL po zatrzymaniu
-    std::size_t SemNextIndex{ std::size_t( -1 ) };
-    std::size_t SemNextStopIndex{ std::size_t( -1 ) };
+    static constexpr std::size_t npos{ std::size_t( -1 ) };
+    std::size_t SemNextIndex{ npos };
+    std::size_t SemNextStopIndex{ npos };
     double dMoveLen = 0.0; // odległość przejechana od ostatniego sprawdzenia tabelki
     basic_event *eSignNext = nullptr; // sygnał zmieniający prędkość, do pokazania na [F2]
     neighbour_data Obstacle; // nearest vehicle detected ahead on current route
@@ -622,7 +623,6 @@ private:
 // logs
 // methods
     void PhysicsLog();
-    void CloseLog();
 // members
     std::ofstream LogFile; // zapis parametrow fizycznych
     double LastUpdatedTime = 0.0; // czas od ostatniego logu

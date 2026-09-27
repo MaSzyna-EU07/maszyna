@@ -449,8 +449,8 @@ void TController::TableClear()
     iTableDirection = 0; // nieznany
     tLast = nullptr;
     fLastVel = -1.0;
-    SemNextIndex = -1;
-    SemNextStopIndex = -1;
+    SemNextIndex = npos;
+    SemNextStopIndex = npos;
     eSignSkip = nullptr; // nic nie pomijamy
 };
 
@@ -512,8 +512,8 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
         sSpeedTable.clear();
         iLast = -1;
         tLast = nullptr; //żaden nie sprawdzony
-        SemNextIndex = -1;
-        SemNextStopIndex = -1;
+        SemNextIndex = npos;
+        SemNextStopIndex = npos;
 */
         if( VelSignalLast == 0.0 ) {
             // don't allow potential red light overrun keep us from reversing
@@ -541,16 +541,16 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
     else {
         if( iTableDirection == 0 ) { return; }
         // NOTE: belt and braces; TablePurger() used to leave these pointing past the end of the table
-        if( SemNextIndex != -1
+        if( SemNextIndex != npos
          && SemNextIndex >= sSpeedTable.size() ) {
-            SemNextIndex = -1;
+            SemNextIndex = npos;
         }
-        if( SemNextStopIndex != -1
+        if( SemNextStopIndex != npos
          && SemNextStopIndex >= sSpeedTable.size() ) {
-            SemNextStopIndex = -1;
+            SemNextStopIndex = npos;
         }
         // kontynuacja skanowania od ostatnio sprawdzonego toru (w ostatniej pozycji zawsze jest tor)
-        if( SemNextStopIndex != -1
+        if( SemNextStopIndex != npos
          && sSpeedTable[SemNextStopIndex].fVelNext == 0.0 ) {
             // znaleziono semafor lub tarczę lub tor z prędkością zero, trzeba sprawdzić czy to nadał semafor
             // jeśli jest następny semafor to sprawdzamy czy to on nadał zero
@@ -614,23 +614,23 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
 
                             fDistance = newspeedpoint.fDist; // jeśli sygnał stop, to nie ma potrzeby dalej skanować
                             SemNextStopIndex = iLast;
-                            if (SemNextIndex == -1) {
+                            if (SemNextIndex == npos) {
                                 SemNextIndex = iLast;
                             }
                             if (Global.iWriteLogEnabled & 8) {
                                 WriteLog("(stop signal from "
-                                    + (SemNextStopIndex != -1 ? sSpeedTable[SemNextStopIndex].GetName() : "unknown semaphor")
+                                    + (SemNextStopIndex != npos ? sSpeedTable[SemNextStopIndex].GetName() : "unknown semaphor")
                                     + ")");
                             }
                         }
                         else {
                             if( true == newspeedpoint.IsProperSemaphor(OrderCurrentGet())
-                             && SemNextIndex == -1 ) {
+                             && SemNextIndex == npos ) {
                                 SemNextIndex = iLast; // sprawdzamy czy pierwszy na drodze
                             }
                             if (Global.iWriteLogEnabled & 8) {
                                 WriteLog("(forward signal for "
-                                    + (SemNextIndex != -1 ? sSpeedTable[SemNextIndex].GetName() : "unknown semaphor")
+                                    + (SemNextIndex != npos ? sSpeedTable[SemNextIndex].GetName() : "unknown semaphor")
                                     + ")");
                             }
                         }
@@ -800,13 +800,13 @@ void TController::TableCheck(double fDistance)
                         --iLast;
                     }
                     // a semaphor recorded beyond the switch went away with the discarded entries
-                    if( SemNextIndex != -1
+                    if( SemNextIndex != npos
                      && SemNextIndex >= sSpeedTable.size() ) {
-                        SemNextIndex = -1;
+                        SemNextIndex = npos;
                     }
-                    if( SemNextStopIndex != -1
+                    if( SemNextStopIndex != npos
                      && SemNextStopIndex >= sSpeedTable.size() ) {
-                        SemNextStopIndex = -1;
+                        SemNextStopIndex = npos;
                     }
                     tLast = sSpeedTable[ i ].trTrack;
                     TableTraceRoute( fDistance, pVehicles[ end::rear ] );
@@ -1387,13 +1387,13 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
             if( Global.iWriteLogEnabled & 8 ) {
                 WriteLog( "Speed table update for " + OwnerName() + ", passed semaphor " + sSpeedTable[ SemNextIndex ].GetName() );
             }
-            SemNextIndex = -1; // jeśli minęliśmy semafor od ograniczenia to go kasujemy ze zmiennej sprawdzającej dla skanowania w przód
+            SemNextIndex = npos; // jeśli minęliśmy semafor od ograniczenia to go kasujemy ze zmiennej sprawdzającej dla skanowania w przód
         }
         if( SemNextStopIndex == Pointindex ) {
             if( Global.iWriteLogEnabled & 8 ) {
                 WriteLog( "Speed table update for " + OwnerName() + ", passed semaphor " + sSpeedTable[ SemNextStopIndex ].GetName() );
             }
-            SemNextStopIndex = -1; // jeśli minęliśmy semafor od ograniczenia to go kasujemy ze zmiennej sprawdzającej dla skanowania w przód
+            SemNextStopIndex = npos; // jeśli minęliśmy semafor od ograniczenia to go kasujemy ze zmiennej sprawdzającej dla skanowania w przód
         }
         switch( Point.evEvent->input_command() ) {
             // TBD, TODO: expand emergency_brake handling to a more generic security system signal
@@ -1461,13 +1461,13 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
             }
             // jeśli jest mienięty poprzedni semafor a wcześniej
             // byl nowy to go dorzucamy do zmiennej, żeby cały czas widział najbliższy
-            if( SemNextIndex == -1 ) {
+            if( SemNextIndex == npos ) {
                 SemNextIndex = Pointindex;
                 if( Global.iWriteLogEnabled & 8 ) {
                     WriteLog( "Speed table update for " + OwnerName() + ", next semaphor is " + sSpeedTable[ SemNextIndex ].GetName() );
                 }
             }
-            if( SemNextStopIndex == -1
+            if( SemNextStopIndex == npos
              || ( sSpeedTable[SemNextStopIndex].fVelNext != 0
                && Point.fVelNext == 0 ) ) {
                 SemNextStopIndex = Pointindex;
@@ -1926,17 +1926,9 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
     fActionTime = -5.0;
 };
 
-void TController::CloseLog()
-{
-    if (WriteLogFlag)
-    {
-        LogFile.close();
-    }
-};
-
 TController::~TController()
 { // wykopanie mechanika z roboty
-    CloseLog();
+    // LogFile is closed by its own destructor
 };
 
 // zamiana kodu rozkazu na opis

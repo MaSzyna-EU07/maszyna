@@ -32,7 +32,8 @@ scenario_time::init(std::time_t timestamp) {
     auto const requestedminute { requestedtime % 60 };
     // cache requested elements, if any
 
-	std::tm *tms = std::gmtime(&timestamp);
+	std::tm const tm = utc_tm(timestamp);
+	std::tm const *tms = &tm;
 	m_time.wYear = tms->tm_year + 1900;
 	m_time.wMonth = tms->tm_mon + 1;
 	m_time.wDayOfWeek = tms->tm_wday;

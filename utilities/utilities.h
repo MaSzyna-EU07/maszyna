@@ -220,6 +220,10 @@ std::pair<std::string, std::string> FileExists(std::vector<std::string> const &N
 // returns time of last modification for specified file
 std::time_t last_modified(std::string const &Filename);
 
+// thread-safe replacements for std::localtime and std::gmtime, which hand out a pointer to shared static storage
+std::tm local_tm(std::time_t Time);
+std::tm utc_tm(std::time_t Time);
+
 // potentially erases file extension from provided file name. returns: true if extension was removed, false otherwise
 bool erase_extension(std::string &Filename);
 
