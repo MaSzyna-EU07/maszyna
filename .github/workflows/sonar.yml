@@ -102,12 +102,26 @@ jobs:
       - name: Unpack analysis input
         run: |
           set -euo pipefail
+          # The archive holds the whole PR workspace and is unpacked over this one,
+          # .trusted/ included. Move the trusted config out of reach first, or a PR
+          # carrying its own .trusted/sonar-project.properties would have it planted
+          # here and restored below as if it came from master.
+          if [ -f "$GITHUB_WORKSPACE/.trusted/sonar-project.properties" ]; then
+            cp "$GITHUB_WORKSPACE/.trusted/sonar-project.properties" /tmp/trusted-sonar-project.properties
+          fi
+          # Nothing may be written outside the workspace: reject absolute members and
+          # any member reaching through a parent directory before unpacking anything.
+          tar -tzf /tmp/sonar-input/workspace.tar.gz > /tmp/archive-members.txt
+          if grep -qE '^/|(^|/)[.][.](/|$)' /tmp/archive-members.txt; then
+            echo "::error::archive contains paths outside the workspace"
+            exit 1
+          fi
           tar -xzf /tmp/sonar-input/workspace.tar.gz -C "$GITHUB_WORKSPACE"
           # Strip PR-controlled scanner configuration, restore the trusted one.
           rm -f "$GITHUB_WORKSPACE/sonar-project.properties" \
                 "$GITHUB_WORKSPACE/.sonarcloud.properties"
-          if [ -f "$GITHUB_WORKSPACE/.trusted/sonar-project.properties" ]; then
-            cp "$GITHUB_WORKSPACE/.trusted/sonar-project.properties" "$GITHUB_WORKSPACE/"
+          if [ -f /tmp/trusted-sonar-project.properties ]; then
+            cp /tmp/trusted-sonar-project.properties "$GITHUB_WORKSPACE/sonar-project.properties"
           fi
 
       - name: Resolve and verify PR metadata
