@@ -1901,7 +1901,7 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
 #ifdef _WIN32
 		CreateDirectory( "physicslog", nullptr);
 #elif __unix__
-		mkdir( "physicslog", 0744 );
+		mkdir( "physicslog", 0740 );
 #endif
         LogFile.open( std::string( "physicslog/" + VehicleName + ".dat" ),
             std::ios::in | std::ios::out | std::ios::trunc );
