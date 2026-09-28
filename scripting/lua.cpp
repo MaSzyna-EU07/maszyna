@@ -30,6 +30,7 @@ lua::lua()
 		{"isolated_isoccupied_n", scriptapi_isolated_isoccupied_n},
 		{"train_getname", scriptapi_train_getname},
 		{"dynobj_putvalues", scriptapi_dynobj_putvalues},
+		{"spawn_trainset", scriptapi_spawn_trainset},
 		{"memcell_find", scriptapi_memcell_find},
 		{"memcell_read", scriptapi_memcell_read},
 		{"memcell_read_n", scriptapi_memcell_read_n},
@@ -293,6 +294,13 @@ int lua::scriptapi_dynobj_putvalues(lua_State *L)
 		dyn->Mechanik->PutCommand(str, num1, num2, loc);
 	else
 		dyn->MoverParameters->PutCommand(str, num1, num2, loc);
+	return 0;
+}
+
+int lua::scriptapi_spawn_trainset(lua_State *L)
+{
+	std::string trainset = lua_tostring(L, 1);
+	simulation::State.create_trainset(trainset);
 	return 0;
 }
 

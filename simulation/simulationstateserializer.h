@@ -41,13 +41,16 @@ public:
     // stores class data in specified file, in legacy (text) format
     void
         export_as_text( std::string const &Scenariofile ) const;
-	// create new model from node stirng
+	// create new model from node string
 	TAnimModel * create_model(std::string const &src, std::string const &name, const glm::dvec3 &position);
-	// create new eventlauncher from node stirng
+	// create new eventlauncher from node string
 	TEventLauncher * create_eventlauncher(std::string const &src, std::string const &name, const glm::dvec3 &position);
+	// create new trainset from trainset string
+	void create_trainset(std::string const &src);
 
 private:
 // methods
+	std::shared_ptr<deserializer_state> make_deserializer_state(std::string const &Scenariofile);
     // restores class data from provided stream
     void deserialize_area( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_isolated( cParser &Input, scene::scratch_data &Scratchpad );
