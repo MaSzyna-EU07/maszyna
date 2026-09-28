@@ -7483,6 +7483,25 @@ TController::adjust_desired_speed_for_limits() {
     }
 }
 
+// how long the present acceleration of a consist lasts whatever is done with the handle now: half the time
+// its pneumatic brake takes to apply (while speeding up) or to release (while slowing down), which in G
+// is tens of seconds; never shorter than the look-ahead the AI has always used
+static double
+brake_response_horizon( TMoverParameters const *Vehicle, TBrakeSystem const Brakesystem, double const Acceleration, double const Brakea0 ) {
+
+    auto horizon { ( 1.0 - Brakea0 ) * 30.0 / 3.6 };
+    if( Brakesystem == TBrakeSystem::Pneumatic ) {
+        auto const isrelease { Acceleration < 0.0 };
+        horizon = std::max(
+            horizon,
+            0.5 * (
+                Vehicle->BrakeDelayFlag > bdelay_G ?
+                    Vehicle->BrakeDelay[ isrelease ? 0 : 1 ] :
+                    Vehicle->BrakeDelay[ isrelease ? 2 : 3 ] ) );
+    }
+    return horizon;
+}
+
 void
 TController::adjust_desired_speed_for_target_speed( double const Range ) {
     // ustalanie zadanego przyspieszenia
@@ -7496,6 +7515,7 @@ TController::adjust_desired_speed_for_target_speed( double const Range ) {
     // gdy jedzie wolniej niż potrzeba, albo nie ma przeszkód na drodze
     // normalna jazda
     AccDesired = VelDesired != 0.0 ? AccPreferred : -0.01;
+    fAccDesiredGravity = 0.0;
 
     auto const vel { DirectionalVel() };
 
@@ -7654,35 +7674,57 @@ TController::adjust_desired_speed_for_current_speed() {
         if( fAccGravity > 0.025 ) {
             // going sharply downhill we may need to start braking sooner than usual
             // try to estimate increase of current velocity before engaged brakes start working
-            auto const speedestimate = vel + ( 1.0 - fBrake_a0[ 0 ] ) * 30.0 * AbsAccS;
-            if( speedestimate > VelDesired ) {
-                // jesli jedzie za szybko do AKTUALNEGO
-                if( VelDesired == 0.0 ) {
-                    // jesli stoj, to hamuj, ale i tak juz za pozno :)
-                    AccDesired = std::min( AccDesired, -0.85 ); // hamuj solidnie
-                }
-                else {
-                    // if it looks like we'll exceed maximum speed start thinking about slight slowing down
-                    AccDesired = std::min( AccDesired, -0.05 + fAccThreshold );
-                    // HACK: for cargo trains with high braking threshold ensure we cross that threshold
-                    if( true == IsCargoTrain
-                     && fBrake_a0[0] > 0.2 ) {
-                        AccDesired -= std::clamp( fBrake_a0[ 0 ] - 0.2, 0.0, 0.15 );
-                    }
-                }
+            // look ahead for as long as the brake takes to respond, since that is how long the
+            // present acceleration will last whatever is done with the handle now; a pneumatic
+            // brake applies and releases on its own time scale, which in G is tens of seconds
+            auto const horizon { brake_response_horizon( mvOccupied, BrakeSystem, AbsAccS, fBrake_a0[ 0 ] ) };
+            auto const speedestimate = vel + 3.6 * horizon * AbsAccS;
+            // already below a lower limit ahead, the train has no business speeding up towards it
+            auto holdlimit { VelDesired };
+            if( ( VelNext > 0.0 )
+             && ( VelNext < holdlimit )
+             && ( vel <= VelNext + fVelPlus )
+             && ( ActualProximityDist < std::max( 2.0 * fBrakeDist, 500.0 ) ) ) {
+                holdlimit = VelNext;
+            }
+            // hold a band just below the limit; the steeper the descent the harder the train pulls
+            // away once the brake eases, so the band widens with the gradient (about 3 km/h at 20 per mille)
+            // an electro-pneumatic or electric brake responds at once and needs far less room
+            auto const holdspeed { holdlimit - (
+                BrakeSystem == TBrakeSystem::Pneumatic ?
+                    std::clamp( fAccGravity * 15.0, 1.0, 3.0 ) :
+                    std::clamp( fAccGravity * 7.5, 1.0, 1.5 ) ) };
+            if( ( speedestimate > VelDesired )
+             && ( VelDesired == 0.0 ) ) {
+                // jesli stoj, to hamuj, ale i tak juz za pozno :)
+                AccDesired = std::min( AccDesired, -0.85 ); // hamuj solidnie
             }
             else {
-                // stop accelerating when close enough to target speed
+                // one continuous law on both sides of the target, proportional to the predicted
+                // difference: a demand that jumps to the braking threshold above the target and to
+                // full acceleration below it alternates, with a brake that responds in seconds,
+                // between a hard application and a full release
                 AccDesired = std::min(
                     AccDesired, // but don't override decceleration for VelNext
-                    std::lerp( // ease off as you close to the target velocity
-                        EU07_AI_NOACCELERATION, AccPreferred,
-                        std::clamp( VelDesired - speedestimate, 0.0, fVelMinus ) / fVelMinus ) );
+                    std::clamp(
+                        EU07_AI_NOACCELERATION - 0.04 * ( speedestimate - holdspeed ),
+                        -0.05 + fAccThreshold,
+                        std::max( EU07_AI_NOACCELERATION, AccPreferred ) ) );
+                // HACK: for cargo trains with high braking threshold ensure we cross that threshold
+                if( true == IsCargoTrain
+                 && fBrake_a0[0] > 0.2
+                 && speedestimate > holdlimit ) {
+                    AccDesired -= std::clamp( fBrake_a0[ 0 ] - 0.2, 0.0, 0.15 );
+                }
             }
             // final tweaks
             if( vel > EU07_AI_NOMOVEMENT ) {
                 // going downhill also take into account impact of gravity
                 AccDesired -= fAccGravity;
+                // from here on AccDesired is what the brake alone has to deliver, which is what
+                // IncBrake() sizes the handle position for; AbsAccS already contains the gravity,
+                // so the comparisons with it have to add this part back
+                fAccDesiredGravity = fAccGravity;
                 // HACK: if the max allowed speed was exceeded something went wrong; brake harder
                 AccDesired -= 0.15 * std::clamp( vel - VelDesired, 0.0, 5.0 );
             }
@@ -7773,6 +7815,7 @@ TController::adjust_desired_speed_for_braking_test() {
         }
         case 1: {
             AccDesired = EU07_AI_BRAKINGTESTACCELERATION;
+            fAccDesiredGravity = 0.0;
             VelDesired = DBT_VelocityBrake;
             if( ElapsedTime - DBT_BrakingTime > 1 ) {
                 ForcePNBrake = true;
@@ -7783,6 +7826,7 @@ TController::adjust_desired_speed_for_braking_test() {
         }
         case 2: {
             AccDesired = EU07_AI_BRAKINGTESTACCELERATION;
+            fAccDesiredGravity = 0.0;
             VelDesired = DBT_VelocityBrake;
             if( ElapsedTime - DBT_BrakingTime > 2 ) {
                 DBT_BrakingTime = ElapsedTime;
@@ -7794,6 +7838,7 @@ TController::adjust_desired_speed_for_braking_test() {
         }
         case 3: {
             AccDesired = safe_clamp( -AbsAccS, fAccThreshold * 1.01, fAccThreshold * 1.21 );
+            fAccDesiredGravity = 0.0;
             VelDesired = DBT_VelocityBrake;
             if( vel <= DBT_VelocityRelease ) {
                 DynamicBrakeTest = 4;
@@ -7980,6 +8025,10 @@ void TController::control_braking_force() {
         }
     }
 
+    // AbsAccS is the resultant acceleration, gravity included, so it is compared with the
+    // resultant the AI asks for, not with the brake-only demand AccDesired holds on a descent
+    auto const accdesiredresultant { AccDesired + fAccDesiredGravity };
+
     if( is_emu() && !ForcePNBrake ) {
         // właściwie, to warunek powinien być na działający EP
         // Ra: to dobrze hamuje EP w EZT
@@ -7991,13 +8040,13 @@ void TController::control_braking_force() {
 		auto const accmargin = AccMax > 1.1 * AccDesired && fAccGravity < 0.025 ?
 							0.05 : 0.0;
         if( AccDesired < accthreshold // jeśli hamować - u góry ustawia się hamowanie na fAccThreshold
-         && ( AbsAccS > AccDesired + accmargin
+         && ( AbsAccS > accdesiredresultant + accmargin
            || BrakeCtrlPosition < 0 ) ) {
             // hamować bardziej, gdy aktualne opóźnienie hamowania mniejsze niż (AccDesired)
             cue_action( driver_hint::brakingforceincrease );
         }
         else if( OrderCurrentGet() != Disconnect ) { // przy odłączaniu nie zwalniamy tu hamulca
-            if( AbsAccS < AccDesired - 0.05 ) {
+            if( AbsAccS < accdesiredresultant - 0.05 ) {
                 // jeśli opóźnienie większe od wymaganego (z histerezą) luzowanie, gdy za dużo
                 // TBD: check if the condition isn't redundant with the DecBrake() code
                 if( BrakeCtrlPosition >= 0 ) {
@@ -8013,10 +8062,12 @@ void TController::control_braking_force() {
     } // type & dt_ezt
     else {
         // a stara wersja w miarę dobrze działa na składy wagonowe
-        if( ( AccDesired < fAccGravity - 0.1 && AbsAccS > AccDesired + fBrake_a1[0] ) // regular braking
+        if( ( accdesiredresultant < fAccGravity - 0.1 && AbsAccS > accdesiredresultant + fBrake_a1[0] ) // regular braking
          || ( fAccGravity < -0.05 && velocity < -0.1 ) ) { // also brake if uphill and slipping back
             // u góry ustawia się hamowanie na fAccThreshold
             if( fBrakeTime < 0.0
+             // the size of the brake demand decides whether to skip the reaction time, so the brake-only part
+             // (on a descent a heavy train needs its brake built up at once, the gravity does not help it slow)
              || AccDesired < fAccGravity - 0.5
              || BrakeCtrlPosition <= 0 ) {
                 // jeśli upłynął czas reakcji hamulca, chyba że nagłe albo luzował
@@ -8033,8 +8084,8 @@ void TController::control_braking_force() {
                     * 0.5 ); // Ra: tymczasowo, bo przeżyna S1
             }
         }
-        if ( AccDesired < fAccGravity - 0.05
-        && AccDesired - fBrake_a1[0] * 0.51 - AbsAccS > 0.05 ) {
+        if ( accdesiredresultant < fAccGravity - 0.05
+        && accdesiredresultant - fBrake_a1[0] * 0.51 - AbsAccS > 0.05 ) {
             // jak hamuje, to nie tykaj kranu za często
             // yB: luzuje hamulec dopiero przy różnicy opóźnień rzędu 0.2
             if( OrderCurrentGet() != Disconnect ) { // przy odłączaniu nie zwalniamy tu hamulca

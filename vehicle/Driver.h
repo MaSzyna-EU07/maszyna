@@ -387,6 +387,7 @@ private:
     double AccDesired = 0.0; // przyspieszenie, jakie ma utrzymywać (<0:nie przyspieszaj,<-0.1:hamuj)
     double VelDesired = 0.0; // predkość, z jaką ma jechać, wynikająca z analizy tableki; <=VelSignal
     double fAccDesiredAv = 0.0; // uśrednione przyspieszenie z kolejnych przebłysków świadomości, żeby ograniczyć migotanie
+    double fAccDesiredGravity = 0.0; // część AccDesired odjęta na spadku jako kompensacja pochylenia; AbsAccS zawiera ją już sam
     double VelforDriver = -1.0; // prędkość, używana przy zmianie kierunku (ograniczenie przy nieznajmości szlaku?)
     double VelSignal = 0.0; // ograniczenie prędkości z kompilacji znaków i sygnałów // normalnie na początku ma stać, no chyba że jedzie
     double VelLimit = -1.0; // predkość zadawana przez event jednokierunkowego ograniczenia prędkości // -1: brak ograniczenia prędkości
