@@ -3730,7 +3730,9 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 				case rendermode::shadows:
 				{
                     // skip if the shadow caster rank is too low for currently set threshold
-                    if( Material( Submodel ).shadow_rank > Global.gfx_shadow_rank_cutoff )
+                    // or if the submodel is hidden (colour pass only fades it out, e.g. inactive seasonal variant)
+                    if( ( Material( Submodel ).shadow_rank > Global.gfx_shadow_rank_cutoff )
+                     || ( Submodel->fVisible <= 0.f ) )
                     {
                         --m_renderpass.draw_stats.submodels;
                         --m_renderpass.draw_stats.drawcalls;
@@ -4630,7 +4632,9 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 				case rendermode::shadows:
 				{
                     // skip if the shadow caster rank is too low for currently set threshold
-                    if( Material( Submodel ).shadow_rank > Global.gfx_shadow_rank_cutoff )
+                    // or if the submodel is hidden (colour pass only fades it out, e.g. inactive seasonal variant)
+                    if( ( Material( Submodel ).shadow_rank > Global.gfx_shadow_rank_cutoff )
+                     || ( Submodel->fVisible <= 0.f ) )
                     {
                         --m_renderpass.draw_stats.submodels;
                         --m_renderpass.draw_stats.drawcalls;
