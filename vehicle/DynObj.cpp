@@ -3024,7 +3024,8 @@ TDynamicObject::update_load_offset() {
 void
 TDynamicObject::shuffle_load_order() {
 
-    std::shuffle( std::begin( SectionLoadOrder ), std::end( SectionLoadOrder ), Global.random_engine );
+    // order of visible load chunks, nothing security related -- see the engines in Globals.h
+    std::shuffle( std::begin( SectionLoadOrder ), std::end( SectionLoadOrder ), Global.random_engine ); // NOSONAR
     // shift chunks assigned to corridors to the end of the list, so they show up last
     std::stable_partition(
         std::begin( SectionLoadOrder ), std::end( SectionLoadOrder ),
