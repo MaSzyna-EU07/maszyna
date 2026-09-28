@@ -27,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/application.h"
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 #include "editor/editorTerrainStreamer.hpp"
 
 namespace simulation {
@@ -393,8 +394,8 @@ void state_serializer::init_time() {
 	auto &time = simulation::Time.data();
 	if( true == Global.ScenarioTimeCurrent ) {
 		// calculate time shift required to match scenario time with local clock
-		auto const *localtime = std::gmtime( &Global.starting_timestamp );
-		Global.ScenarioTimeOffset = ( localtime->tm_hour * 60 + localtime->tm_min - ( time.wHour * 60 + time.wMinute ) ) / 60.f;
+		auto const localtime = utc_tm( Global.starting_timestamp );
+		Global.ScenarioTimeOffset = ( localtime.tm_hour * 60 + localtime.tm_min - ( time.wHour * 60 + time.wMinute ) ) / 60.f;
 	}
 	else if( false == std::isnan( Global.ScenarioTimeOverride ) ) {
 		// scenario time override takes precedence over scenario time offset

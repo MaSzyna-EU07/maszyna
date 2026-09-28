@@ -426,6 +426,28 @@ std::time_t last_modified(std::string const &Filename)
 		return 0;
 }
 
+std::tm local_tm(std::time_t Time)
+{
+	std::tm tm{};
+#ifdef _WIN32
+	localtime_s(&tm, &Time);
+#else
+	localtime_r(&Time, &tm);
+#endif
+	return tm;
+}
+
+std::tm utc_tm(std::time_t Time)
+{
+	std::tm tm{};
+#ifdef _WIN32
+	gmtime_s(&tm, &Time);
+#else
+	gmtime_r(&Time, &tm);
+#endif
+	return tm;
+}
+
 // potentially erases file extension from provided file name. returns: true if extension was removed, false otherwise
 bool erase_extension(std::string &Filename)
 {
