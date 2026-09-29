@@ -6672,7 +6672,7 @@ TController::determine_proximity_ranges() {
         // na jaka odleglosc i z jaka predkoscia ma podjechac do przeszkody
         // jeśli pociąg
         if( is_train() ) {
-            if( true == IsAtPassengerStop ) {
+            if( IsAtPassengerStop ) {
                 // a stop point keeps the margins its W4 parameters (head or middle of the consist,
                 // platform length) were set up against
                 fMinProximityDist = std::clamp(  5 + iVehicles, 10, 15 );
@@ -7342,7 +7342,7 @@ TController::pick_optimal_speed( double const Range ) {
             is_car() ? -2.0 : -0.9,
             is_car() ? 2.0 : 0.9 );
 
-    if( ( true == is_train() )
+    if( is_train()
      && ( ( OrderCurrentGet() & Obey_train ) != 0 )
      && ( VelNext == 0.0 )
      && ( ActualProximityDist <= fMaxProximityDist )
@@ -7872,7 +7872,7 @@ TController::adjust_desired_speed_for_current_speed() {
                         -0.05 + fAccThreshold,
                         std::max( EU07_AI_NOACCELERATION, AccPreferred ) ) );
                 // HACK: for cargo trains with high braking threshold ensure we cross that threshold
-                if( true == IsCargoTrain
+                if( IsCargoTrain
                  && fBrake_a0[0] > 0.2
                  && speedestimate > holdlimit ) {
                     AccDesired -= std::clamp( fBrake_a0[ 0 ] - 0.2, 0.0, 0.15 );

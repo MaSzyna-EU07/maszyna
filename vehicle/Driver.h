@@ -356,7 +356,7 @@ private:
     // how far short of a stop the AI aims: in train running the middle of the 8-15 m window before a signal,
     // otherwise (a W4 stop point, shunting, coupling) half the minimum proximity distance, as before
     double stopping_margin() const {
-        return ( ( OrderCurrentGet() & Obey_train ) != 0 ) && ( false == IsAtPassengerStop ) ?
+        return ( ( OrderCurrentGet() & Obey_train ) != 0 ) && !IsAtPassengerStop ?
             fMinProximityDist + 3.5 :
             0.5 * fMinProximityDist; }
     void apply_independent_brake_only();

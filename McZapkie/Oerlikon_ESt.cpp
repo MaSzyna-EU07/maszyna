@@ -327,7 +327,7 @@ void TNESt3::Init( double const PP, double const HPP, double const LPP, double c
 double TNESt3::GetRapidRatio(double const Vel) const
 {
     // ESt3 has no rapid relay, and with disc brakes the rapid step stays engaged at all speeds
-    if( ( PrzekRapid == nullptr ) || ( true == RapidStaly ) ) {
+    if( ( PrzekRapid == nullptr ) || RapidStaly ) {
         return 1.0;
     }
     // a braking vehicle comes from above, so the step is still engaged down to the speed
