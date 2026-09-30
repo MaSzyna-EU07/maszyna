@@ -2,8 +2,10 @@
   "description": "EU07 on td.scn, AI driver on the td/rozklad timetable: starts from Stacja1, keeps to the speed limit, brakes to a stop at Przystanek.",
   "base_scenery": "td.scn",
   "time": "10:34",
-  "fragment": "eu07_td_timetable.scn",
-  "vehicle": "autotest_eu07",
+  "fragment": "td_timetable.scn",
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic"
+  },
   "duration": 240,
   "timeout": 600,
   "checks": [
