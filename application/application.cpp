@@ -1195,12 +1195,22 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 				WriteLog(std::format("seed given on the command line: {} -> {}", Argv[i], Global.random_seed));
 			}
 		}
+		else if (token == "-ini")
+		{
+			// extra settings file read on top of eu07.ini, so a run can override a few keys
+			// (window size, physicslog...) without touching the user's own config
+			if (i + 1 < Argc)
+			{
+				Global.LoadIniFile(Argv[++i]);
+			}
+		}
 		else
 		{
 			std::cout << "usage: " << std::string(Argv[0]) << " [-s sceneryfilepath]"
 			          << " [-v vehiclename]"
 			          << " [-edit [sceneryfilepath]]"
-			          << " [-seed number|word]" << std::endl;
+			          << " [-seed number|word]"
+			          << " [-ini settingsfile]" << std::endl;
 			return -1;
 		}
 	}
