@@ -2901,7 +2901,7 @@ bool TMoverParameters::CabActivisation(bool const Enforce)
 		CabMaster = true;
 		SecuritySystem.set_enabled(true); // activate the alerter TODO: make it part of control based cab selection
 		SendCtrlToNext("CabActivisation", 1, CabActive);
-		SendCtrlToNext("Direction", DirAbsolute, CabActive);
+		SendCtrlToNext("Direction", DirActive, CabActive);
 		if (InactiveCabFlag & activation::springbrakeoff)
 		{
 			SpringBrakeActivate(false);
