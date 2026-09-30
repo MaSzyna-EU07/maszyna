@@ -149,7 +149,7 @@ def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog
     last_report = 0.0
     try:
         while True:
-            time.sleep(1.0)
+            time.sleep(0.25)  # at timespeed 20 that is 5 s of simulation
             result.rows = read_physicslog(physicslog)
             sim_t = result.rows[-1][COL_TIME] if result.rows else 0.0
             wall = time.monotonic() - started
@@ -308,7 +308,10 @@ def main() -> int:
     ap.add_argument("--game-dir", default=os.environ.get("EU07_GAME_DIR"),
                     help="game install with scenery/ and dynamic/ (or EU07_GAME_DIR)")
     ap.add_argument("--exe", help="simulator executable (default: newest cmake-build-*/bin/Release/eu07*.exe)")
-    ap.add_argument("--timespeed", type=float, default=1.0, help="simulation time multiplier")
+    # 20 gave the same speed profile as 1 within a few km/h and seconds on eu07_td_timetable,
+    # in 20 s instead of 4 min; 1 is for watching a run
+    ap.add_argument("--timespeed", type=float, default=20.0,
+                    help="simulation time multiplier, the simulator offers 1, 5, 20 and 60 (default 20)")
     args = ap.parse_args()
 
     if not args.game_dir:

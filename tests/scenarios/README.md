@@ -18,7 +18,10 @@ Python 3.10+, no extra packages. Options:
 - `--exe path/to/eu07.exe` picks the build to test; the default is the newest
   `cmake-build-*/bin/Release/eu07*.exe`. The build needs the `-ini` command line option.
 - name one or more cases to run only those, e.g. `run.py ... eu07_td_timetable`.
-- `--timespeed 4` runs the simulation faster than real time.
+- `--timespeed N` sets the simulation time multiplier, default 20: a 4-minute case runs in
+  about 20 s. Physics still steps finely (the physicslog keeps its 0.05 s rows) and the speed
+  profile at 20 and 60 matched a real-time run within a few km/h and seconds. Use
+  `--timespeed 1` to watch a run.
 
 Exit code is 0 when every case passed. Logs of each run (`log.txt`, `errors.txt`,
 the vehicle's physicslog) land in `tests/scenarios/out/<case>/`.
