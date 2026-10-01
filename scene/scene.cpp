@@ -442,22 +442,18 @@ basic_cell::erase( TAnimModel *Instance ) {
                 [=]( TAnimModel *instance ) {
                     return instance == Instance; } ),
             std::end( m_instancesopaque ) );
-        // also remove from the per-(pModel, skins) instance bucket if present
-        if( Instance->m_instanceable && Instance->Model() != nullptr ) {
-            instance_bucket_key key;
-            key.pModel = Instance->Model();
-            auto const *mat = Instance->Material();
-            if( mat != nullptr ) {
-                for( int i = 0; i < 5; ++i ) { key.skins[i] = mat->replacable_skins[i]; }
+        // also remove from the per-(pModel, skins) instance bucket if present.
+        // NOTE: searched by pointer rather than by key: the instance may have lost its instanceable
+        // status or changed its skins since it was inserted, which would leave a dangling pointer behind
+        for( auto bucket = m_instancebuckets_opaque.begin(); bucket != m_instancebuckets_opaque.end(); ) {
+            bucket->second.erase(
+                std::remove( std::begin( bucket->second ), std::end( bucket->second ), Instance ),
+                std::end( bucket->second ) );
+            if( bucket->second.empty() ) {
+                bucket = m_instancebuckets_opaque.erase( bucket );
             }
-            auto bucket = m_instancebuckets_opaque.find( key );
-            if( bucket != m_instancebuckets_opaque.end() ) {
-                bucket->second.erase(
-                    std::remove( std::begin( bucket->second ), std::end( bucket->second ), Instance ),
-                    std::end( bucket->second ) );
-                if( bucket->second.empty() ) {
-                    m_instancebuckets_opaque.erase( bucket );
-                }
+            else {
+                ++bucket;
             }
         }
     }
