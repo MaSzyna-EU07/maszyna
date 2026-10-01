@@ -86,6 +86,10 @@ bool editorSettings::load()
 			parse(value, m_orthophoto.year);
 		else if (key == "ortho_4k")
 			m_orthophoto.hires = (value == "1");
+		else if (key == "ortho_drape")
+			m_orthophoto.drape = (value == "1");
+		else if (key == "ortho_in_scene")
+			m_orthophoto.in_scene = (value == "1");
 		else if (key.rfind(origin_prefix, 0) == 0)
 		{
 			// northing;easting
@@ -121,6 +125,8 @@ bool editorSettings::save()
 	stream << "ortho_opacity " << m_orthophoto.opacity << "\n";
 	stream << "ortho_year " << m_orthophoto.year << "\n";
 	stream << "ortho_4k " << (m_orthophoto.hires ? 1 : 0) << "\n";
+	stream << "ortho_drape " << (m_orthophoto.drape ? 1 : 0) << "\n";
+	stream << "ortho_in_scene " << (m_orthophoto.in_scene ? 1 : 0) << "\n";
 	stream << std::fixed << std::setprecision(3);
 	for (auto const &origin : m_orthophoto_origins)
 		stream << origin.first << " " << origin.second.first << ";" << origin.second.second << "\n";

@@ -11,6 +11,9 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorOrthophoto.hpp"
 
 #include "rendering/renderer.h"
+#include "scene/scene.h"
+#include "simulation/simulation.h"
+#include "model/vertex.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
 #include "imgui/imgui.h"
@@ -30,7 +33,9 @@ http://mozilla.org/MPL/2.0/.
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <limits>
 #include <sstream>
+#include <glad/glad.h>
 
 namespace
 {
@@ -544,12 +549,88 @@ template <typename Distance_> int clip_polygon(clip_vertex const *In, int Count,
 	}
 	return count;
 }
+
+// ---------------------------------------------------------------------------------------------
+// ground fit and in-scene geometry
+
+constexpr int ground_grid{32};          // ground samples per tile side (8 m) for the draped overlay
+constexpr double surface_offset{0.05};  // lift of the in-scene imagery above the ground it covers, against z-fighting
+constexpr double steepest_ground{0.3};  // minimal normal.y of ground triangles receiving the imagery
+constexpr float no_height{-std::numeric_limits<float>::max()};
+
+gfx::geometrybank_handle scene_bank{0, 0}; // created on first use, shared by every tile
+
+std::string slot_name(int Index)
+{
+	// script-style generated resource: no file behind it, the content is supplied through update_from_memory()
+	return "internal_src:editor_orthophoto_" + std::to_string(Index);
+}
+
+// clips a polygon in the XZ plane against Point[Axis] <= Limit (Below) or Point[Axis] >= Limit
+int clip_xz(glm::dvec3 const *In, int Count, glm::dvec3 *Out, int Axis, double Limit, bool Below)
+{
+	auto const inside = [&](glm::dvec3 const &Point) { return Below ? Point[Axis] <= Limit : Point[Axis] >= Limit; };
+	int count{0};
+	for (int i = 0; i < Count; ++i)
+	{
+		glm::dvec3 const &a = In[i];
+		glm::dvec3 const &b = In[(i + 1) % Count];
+		bool const ina = inside(a);
+		if (ina)
+			Out[count++] = a;
+		if (ina != inside(b))
+			Out[count++] = a + (b - a) * ((Limit - a[Axis]) / (b[Axis] - a[Axis]));
+	}
+	return count;
+}
+
+// height of triangle abc above (X,Z), if the vertical line through it hits the triangle
+bool triangle_height(glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C, double X, double Z, double &Out)
+{
+	double const ux = B.x - A.x, uz = B.z - A.z;
+	double const vx = C.x - A.x, vz = C.z - A.z;
+	double const den = ux * vz - vx * uz;
+	if (std::abs(den) < 1e-9)
+		return false;
+	double const wx = X - A.x, wz = Z - A.z;
+	double const s = (wx * vz - vx * wz) / den;
+	double const t = (ux * wz - wx * uz) / den;
+	double constexpr epsilon{1e-9};
+	if (s < -epsilon || t < -epsilon || s + t > 1.0 + epsilon)
+		return false;
+	Out = A.y + s * (B.y - A.y) + t * (C.y - A.y);
+	return true;
+}
+
+// bilinear lookup in a tile heightfield; U runs west->east, V north->south, both 0..1
+double sample_heights(std::vector<float> const &Heights, double U, double V)
+{
+	double const fx = std::clamp(U, 0.0, 1.0) * ground_grid;
+	double const fy = std::clamp(V, 0.0, 1.0) * ground_grid;
+	int const ix = std::min(static_cast<int>(fx), ground_grid - 1);
+	int const iy = std::min(static_cast<int>(fy), ground_grid - 1);
+	double const tx = fx - ix, ty = fy - iy;
+	auto const at = [&](int X, int Y) { return static_cast<double>(Heights[static_cast<std::size_t>(Y) * (ground_grid + 1) + X]); };
+	double const top = at(ix, iy) + (at(ix + 1, iy) - at(ix, iy)) * tx;
+	double const bottom = at(ix, iy + 1) + (at(ix + 1, iy + 1) - at(ix, iy + 1)) * tx;
+	return top + (bottom - top) * ty;
+}
+
+// smooth normal from the heightfield (u grows towards -x, v towards -z)
+glm::vec3 heights_normal(std::vector<float> const &Heights, double U, double V)
+{
+	double constexpr delta{1.0 / ground_grid};
+	double const dhdu = (sample_heights(Heights, U + delta, V) - sample_heights(Heights, U - delta, V)) / (2.0 * delta * editor_orthophoto::tile_size);
+	double const dhdv = (sample_heights(Heights, U, V + delta) - sample_heights(Heights, U, V - delta)) / (2.0 * delta * editor_orthophoto::tile_size);
+	return glm::normalize(glm::vec3(static_cast<float>(dhdu), 1.0f, static_cast<float>(dhdv)));
+}
 } // namespace
 
 // ---------------------------------------------------------------------------------------------
 
 editor_orthophoto::~editor_orthophoto()
 {
+	// the scene geometry is left alone: on shutdown the region may already be gone
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		m_stop = true;
@@ -576,6 +657,11 @@ std::string editor_orthophoto::cache_directory()
 	return std::string(path.begin(), path.end());
 }
 
+bool editor_orthophoto::owns(gfx::geometry_handle const &Geometry)
+{
+	return scene_bank.bank != 0 && Geometry.bank == scene_bank.bank;
+}
+
 void editor_orthophoto::enabled(bool State)
 {
 	if (State == m_enabled)
@@ -598,9 +684,13 @@ void editor_orthophoto::enabled(bool State)
 void editor_orthophoto::settings(config const &Config)
 {
 	bool const sourcechanged = (Config.year != m_config.year || Config.hires != m_config.hires);
+	bool const shapechanged = (Config.height != m_config.height || Config.drape != m_config.drape || Config.in_scene != m_config.in_scene);
 	m_config = Config;
 	m_config.radius = std::clamp(m_config.radius, 0, max_radius);
 	m_config.opacity = std::clamp(m_config.opacity, 0.0f, 1.0f);
+	if (shapechanged)
+		for (auto &entry : m_tiles)
+			entry.second.scene_dirty = true;
 	if (!sourcechanged)
 		return;
 	cancel_pending();
@@ -608,6 +698,22 @@ void editor_orthophoto::settings(config const &Config)
 		release_tile(entry.second);
 	m_tiles.clear();
 	++m_generation;
+}
+
+void editor_orthophoto::refit()
+{
+	// the current shapes stay until their tile is sampled again, so nothing blinks
+	for (auto &entry : m_tiles)
+		entry.second.grounded = false;
+}
+
+void editor_orthophoto::detach_scene()
+{
+	for (auto &entry : m_tiles)
+	{
+		remove_shape(entry.second);
+		release_geometry(entry.second);
+	}
 }
 
 void editor_orthophoto::cancel_pending()
@@ -636,7 +742,7 @@ editor_orthophoto::statistics editor_orthophoto::stats() const
 	for (auto const &entry : m_tiles)
 	{
 		tile const &t = entry.second;
-		if (t.level > 0 && !t.empty && t.texture != null_handle)
+		if (t.level > 0 && !t.empty && t.slot.texture != null_handle)
 			++out.resident;
 		if (t.requested != 0)
 			++out.loading;
@@ -665,6 +771,12 @@ editor_orthophoto::tile_key editor_orthophoto::camera_tile(glm::dvec3 const &Cam
 	return {static_cast<int>(std::floor(east / tile_size)), static_cast<int>(std::floor(north / tile_size))};
 }
 
+glm::dvec2 editor_orthophoto::tile_corner(tile_key const &Key) const
+{
+	// image u runs west->east (towards -x), v north->south (towards -z)
+	return {m_config.east - Key.first * tile_size, (Key.second + 1) * tile_size - m_config.north};
+}
+
 void editor_orthophoto::start_workers()
 {
 	if (!m_workers.empty())
@@ -673,27 +785,31 @@ void editor_orthophoto::start_workers()
 		m_workers.emplace_back(&editor_orthophoto::worker, this);
 }
 
-texture_handle editor_orthophoto::acquire_texture()
+editor_orthophoto::texture_slot editor_orthophoto::acquire_slot()
 {
-	if (!m_free_textures.empty())
+	if (!m_free_slots.empty())
 	{
-		texture_handle const handle = m_free_textures.back();
-		m_free_textures.pop_back();
-		return handle;
+		texture_slot const slot = m_free_slots.back();
+		m_free_slots.pop_back();
+		return slot;
 	}
-	// script-style generated texture: no file behind it, the content is supplied through update_from_memory()
-	return GfxRenderer->Fetch_Texture("internal_src:editor_orthophoto_" + std::to_string(m_texture_count++), true);
+	texture_slot slot;
+	slot.index = m_texture_count++;
+	slot.texture = GfxRenderer->Fetch_Texture(slot_name(slot.index), true);
+	return slot;
 }
 
 void editor_orthophoto::release_tile(tile &Tile)
 {
-	if (Tile.texture == null_handle)
+	remove_shape(Tile);
+	release_geometry(Tile);
+	if (Tile.slot.texture == null_handle)
 		return;
 	// shrink to a single texel to give the gpu memory back; the slot is reused by the next tile
 	std::uint8_t const texel[4] = {0, 0, 0, 0};
-	GfxRenderer->Texture(Tile.texture).update_from_memory(1, 1, texel);
-	m_free_textures.push_back(Tile.texture);
-	Tile.texture = null_handle;
+	GfxRenderer->Texture(Tile.slot.texture).update_from_memory(1, 1, texel);
+	m_free_slots.push_back(Tile.slot);
+	Tile.slot = texture_slot{};
 }
 
 void editor_orthophoto::schedule(tile_key const &Key, tile &Tile, int Level)
@@ -737,15 +853,289 @@ std::size_t editor_orthophoto::apply(result &Result, double Now)
 		release_tile(t);
 		return 0;
 	}
-	if (t.texture == null_handle)
-		t.texture = acquire_texture();
-	if (t.texture == null_handle)
+	if (t.slot.texture == null_handle)
+		t.slot = acquire_slot();
+	if (t.slot.texture == null_handle)
 	{
 		t.level = 0;
 		return 0;
 	}
-	GfxRenderer->Texture(t.texture).update_from_memory(Result.width, Result.height, Result.pixels.data());
+	// a shape already in the scene shows the new content right away, it refers to the same texture
+	GfxRenderer->Texture(t.slot.texture).update_from_memory(Result.width, Result.height, Result.pixels.data());
 	return Result.pixels.size();
+}
+
+void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
+{
+	Tile.grounded = true;
+	Tile.scene_dirty = true;
+	Tile.heights.clear();
+	Tile.surface.clear();
+
+	glm::dvec2 const corner = tile_corner(Key);
+	glm::dvec2 const min(corner.x - tile_size, corner.y - tile_size);
+	glm::dvec2 const max(corner.x, corner.y);
+	std::vector<world_triangle> triangles;
+	m_ground(min, max, triangles);
+
+	int constexpr samples{ground_grid + 1};
+	double constexpr step{tile_size / ground_grid};
+	std::vector<float> heights(static_cast<std::size_t>(samples) * samples, no_height);
+
+	for (auto const &triangle : triangles)
+	{
+		glm::dvec3 a = triangle[0], b = triangle[1], c = triangle[2];
+		glm::dvec3 normal = glm::cross(b - a, c - a);
+		if (normal.y < 0.0)
+		{
+			// keep every triangle facing up, with the winding the editor terrain uses
+			std::swap(b, c);
+			normal = -normal;
+		}
+		double const length = glm::length(normal);
+		if (length < 1e-9 || normal.y / length < steepest_ground)
+			continue; // walls and the like don't receive the imagery
+
+		glm::dvec3 polygon[8] = {a, b, c};
+		glm::dvec3 scratch[8];
+		int count = clip_xz(polygon, 3, scratch, 0, max.x, true);
+		count = clip_xz(scratch, count, polygon, 0, min.x, false);
+		count = clip_xz(polygon, count, scratch, 2, max.y, true);
+		count = clip_xz(scratch, count, polygon, 2, min.y, false);
+		for (int k = 1; k + 1 < count; ++k)
+		{
+			Tile.surface.push_back(polygon[0]);
+			Tile.surface.push_back(polygon[k]);
+			Tile.surface.push_back(polygon[k + 1]);
+		}
+
+		// heightfield samples under the (whole) triangle, the highest surface wins
+		double const xlo = std::min({a.x, b.x, c.x}), xhi = std::max({a.x, b.x, c.x});
+		double const zlo = std::min({a.z, b.z, c.z}), zhi = std::max({a.z, b.z, c.z});
+		int const i0 = std::clamp(static_cast<int>(std::ceil((corner.x - xhi) / step)), 0, samples - 1);
+		int const i1 = std::clamp(static_cast<int>(std::floor((corner.x - xlo) / step)), 0, samples - 1);
+		int const j0 = std::clamp(static_cast<int>(std::ceil((corner.y - zhi) / step)), 0, samples - 1);
+		int const j1 = std::clamp(static_cast<int>(std::floor((corner.y - zlo) / step)), 0, samples - 1);
+		for (int j = j0; j <= j1; ++j)
+			for (int i = i0; i <= i1; ++i)
+			{
+				double y;
+				if (triangle_height(a, b, c, corner.x - i * step, corner.y - j * step, y))
+				{
+					float &sample = heights[static_cast<std::size_t>(j) * samples + i];
+					sample = std::max(sample, static_cast<float>(y));
+				}
+			}
+	}
+
+	// holes (places without ground) take the average of their neighbours, spreading inwards
+	std::size_t missing = std::count(heights.begin(), heights.end(), no_height);
+	if (missing == heights.size())
+		return; // no ground at all: the tile stays flat at the layer height
+	while (missing > 0)
+	{
+		std::vector<float> next = heights;
+		for (int j = 0; j < samples; ++j)
+			for (int i = 0; i < samples; ++i)
+			{
+				if (heights[static_cast<std::size_t>(j) * samples + i] != no_height)
+					continue;
+				double sum{0.0};
+				int found{0};
+				int const offsets[4][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+				for (auto const &offset : offsets)
+				{
+					int const x = i + offset[0], y = j + offset[1];
+					if (x < 0 || y < 0 || x >= samples || y >= samples)
+						continue;
+					float const neighbour = heights[static_cast<std::size_t>(y) * samples + x];
+					if (neighbour == no_height)
+						continue;
+					sum += neighbour;
+					++found;
+				}
+				if (found > 0)
+				{
+					next[static_cast<std::size_t>(j) * samples + i] = static_cast<float>(sum / found);
+					--missing;
+				}
+			}
+		heights.swap(next);
+	}
+	Tile.heights = std::move(heights);
+	auto const range = std::minmax_element(Tile.heights.begin(), Tile.heights.end());
+	Tile.height_min = *range.first;
+	Tile.height_max = *range.second;
+}
+
+void editor_orthophoto::remove_shape(tile &Tile)
+{
+	if (Tile.section == nullptr)
+		return;
+	if (m_region == simulation::Region)
+	{
+		auto &shapes = Tile.section->m_shapes;
+		for (auto it = shapes.begin(); it != shapes.end(); ++it)
+		{
+			auto const &geometry = it->data().geometry;
+			if (geometry.bank == Tile.geometry.bank && geometry.chunk == Tile.geometry.chunk)
+			{
+				shapes.erase(it);
+				break;
+			}
+		}
+	}
+	Tile.section = nullptr;
+}
+
+void editor_orthophoto::release_geometry(tile &Tile)
+{
+	// the chunk stays in the bank and is reused by a tile needing the same capacity
+	if (Tile.geometry.chunk != 0)
+		m_free_chunks.emplace(Tile.capacity, Tile.geometry);
+	Tile.geometry = gfx::geometry_handle{0, 0};
+	Tile.capacity = 0;
+}
+
+void editor_orthophoto::build_shape(tile_key const &Key, tile &Tile)
+{
+	remove_shape(Tile);
+	Tile.scene_dirty = false;
+	if (Tile.level == 0 || Tile.empty || Tile.slot.texture == null_handle || simulation::Region == nullptr)
+		return;
+	if (Tile.slot.material == null_handle)
+		Tile.slot.material = GfxRenderer->Fetch_Material(slot_name(Tile.slot.index), true);
+
+	glm::dvec2 const corner = tile_corner(Key);
+	bool const draped = m_config.drape && !Tile.surface.empty();
+	auto const uv_of = [&](glm::dvec3 const &Point) { return glm::vec2((corner.x - Point.x) / tile_size, (corner.y - Point.z) / tile_size); };
+
+	std::vector<world_vertex> vertices;
+	auto const add = [&](glm::dvec3 const &Point, double Lift) {
+		world_vertex vertex;
+		vertex.position = Point + glm::dvec3(0.0, Lift, 0.0);
+		vertex.texture = uv_of(Point);
+		// smooth normals from the heightfield, the clipped triangles alone would look faceted
+		vertex.normal = (draped && !Tile.heights.empty()) ? heights_normal(Tile.heights, vertex.texture.x, vertex.texture.y) : glm::vec3(0.0f, 1.0f, 0.0f);
+		vertices.push_back(vertex);
+	};
+	double ylo, yhi;
+	if (draped)
+	{
+		vertices.reserve(Tile.surface.size());
+		for (auto const &point : Tile.surface)
+			add(point, surface_offset);
+		ylo = Tile.height_min;
+		yhi = Tile.height_max + surface_offset;
+	}
+	else
+	{
+		// flat quad at the layer height, triangles facing up like the draped surface
+		double const y = m_config.height;
+		glm::dvec3 const nw(corner.x, y, corner.y), ne(corner.x - tile_size, y, corner.y);
+		glm::dvec3 const sw(corner.x, y, corner.y - tile_size), se(corner.x - tile_size, y, corner.y - tile_size);
+		for (auto const &point : {nw, sw, ne, se, ne, sw})
+			add(point, 0.0);
+		ylo = yhi = y;
+	}
+
+	glm::dvec3 const centre(corner.x - tile_size * 0.5, (ylo + yhi) * 0.5, corner.y - tile_size * 0.5);
+	scene::basic_section &section = simulation::Region->section(centre);
+	section.create_geometry(); // existing section geometry has to be in place before we add ours (idempotent)
+	glm::dvec3 const origin = section.m_area.center;
+
+	// chunks are padded to a few fixed sizes (whole triangles), so ones freed by other tiles can be refilled in place
+	std::size_t capacity{6};
+	while (capacity < vertices.size())
+		capacity *= 2;
+	gfx::vertex_array gpuvertices;
+	gpuvertices.reserve(capacity);
+	for (auto const &vertex : vertices)
+		gpuvertices.emplace_back(gfx::basic_vertex::convert(vertex, origin));
+	world_vertex padding; // degenerate triangles at the origin
+	padding.position = origin;
+	padding.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+	padding.texture = glm::vec2(0.0f);
+	gpuvertices.resize(capacity, gfx::basic_vertex::convert(padding, origin));
+	gfx::userdata_array userdata;
+
+	if (Tile.geometry.chunk != 0 && Tile.capacity != capacity)
+		release_geometry(Tile);
+	if (Tile.geometry.chunk == 0)
+	{
+		auto const reusable = m_free_chunks.find(capacity);
+		if (reusable != m_free_chunks.end())
+		{
+			Tile.geometry = reusable->second;
+			Tile.capacity = capacity;
+			m_free_chunks.erase(reusable);
+		}
+	}
+	if (Tile.geometry.chunk != 0)
+	{
+		GfxRenderer->Replace(gpuvertices, userdata, Tile.geometry, GL_TRIANGLES);
+	}
+	else
+	{
+		if (scene_bank.bank == 0)
+			scene_bank = GfxRenderer->Create_Bank();
+		Tile.geometry = GfxRenderer->Insert(gpuvertices, userdata, scene_bank, GL_TRIANGLES);
+		Tile.capacity = capacity;
+		if (Tile.geometry.chunk == 0)
+		{
+			Tile.capacity = 0;
+			return;
+		}
+	}
+
+	// the shape gets just two bounding vertices: they give it its area, and leave no triangles behind for
+	// code which reads the source vertices of the section shapes (e.g. snapping nodes to the ground)
+	std::vector<world_vertex> bounds(2, padding);
+	bounds[0].position = glm::dvec3(corner.x - tile_size, ylo, corner.y - tile_size);
+	bounds[1].position = glm::dvec3(corner.x, yhi, corner.y);
+	scene::shape_node shape;
+	shape.make_terrain(Tile.slot.material, std::move(bounds), origin);
+	shape.geometry(Tile.geometry);
+	section.m_shapes.emplace_back(std::move(shape));
+	// extend the section bounds so the tile isn't culled at its edges
+	double const reach = glm::length(glm::dvec3(tile_size * 0.5, (yhi - ylo) * 0.5, tile_size * 0.5));
+	section.m_area.radius = std::max(section.m_area.radius, static_cast<float>(glm::length(section.m_area.center - centre) + reach));
+
+	Tile.section = &section;
+	m_region = simulation::Region;
+}
+
+void editor_orthophoto::update_scene()
+{
+	if (m_region != simulation::Region)
+	{
+		// another scenery was loaded: the sections holding our shapes are gone, forget them without touching
+		for (auto &entry : m_tiles)
+			entry.second.section = nullptr;
+		m_region = simulation::Region;
+	}
+	if (!m_config.in_scene)
+	{
+		detach_scene();
+		return;
+	}
+	if (simulation::Region == nullptr)
+		return;
+
+	int built{0};
+	for (auto &entry : m_tiles)
+	{
+		tile &t = entry.second;
+		if (t.section != nullptr && !t.scene_dirty)
+			continue;
+		if (t.level == 0 || t.empty)
+			continue;
+		if (m_config.drape && !t.grounded && m_ground)
+			continue; // wait for the ground fit; a shape already in place stays until then
+		build_shape(entry.first, t);
+		if (++built >= 8)
+			break; // the rest next frame
+	}
 }
 
 void editor_orthophoto::update(glm::dvec3 const &Camera)
@@ -813,6 +1203,30 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 				continue;
 			schedule(key, t, level);
 		}
+
+	// ground fit, one tile per frame (it walks the scene geometry), nearest first
+	if (m_config.drape && m_ground && simulation::Region != nullptr)
+	{
+		tile *nearest{nullptr};
+		tile_key nearestkey{0, 0};
+		int nearestdistance{INT_MAX};
+		for (auto &entry : m_tiles)
+		{
+			if (entry.second.grounded || entry.second.empty)
+				continue;
+			int const d = distance(entry.first);
+			if (d < nearestdistance)
+			{
+				nearestdistance = d;
+				nearest = &entry.second;
+				nearestkey = entry.first;
+			}
+		}
+		if (nearest != nullptr)
+			sample_ground(nearestkey, *nearest);
+	}
+
+	update_scene();
 }
 
 void editor_orthophoto::worker()
@@ -871,56 +1285,74 @@ void editor_orthophoto::worker()
 
 void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &CameraPos, float ScreenWidth, float ScreenHeight) const
 {
-	if (!m_enabled || m_config.opacity <= 0.0f || ScreenWidth <= 0.0f || ScreenHeight <= 0.0f)
+	if (!m_enabled || m_config.in_scene || m_config.opacity <= 0.0f || ScreenWidth <= 0.0f || ScreenHeight <= 0.0f)
 		return;
 
 	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+	// without vertex offset support in the backend the whole list has to fit 16-bit indices
+	std::size_t const vertexbudget = (ImGui::GetIO().BackendFlags & ImGuiBackendFlags_RendererHasVtxOffset) ? vertex_budget * 8 : vertex_budget;
 	ImU32 const color = IM_COL32(255, 255, 255, static_cast<int>(m_config.opacity * 255.0f + 0.5f));
-	auto const tosceen = [&](glm::vec4 const &Clip) { return ImVec2((Clip.x / Clip.w * 0.5f + 0.5f) * ScreenWidth, (0.5f - Clip.y / Clip.w * 0.5f) * ScreenHeight); };
+	auto const toscreen = [&](glm::vec4 const &Clip) { return ImVec2((Clip.x / Clip.w * 0.5f + 0.5f) * ScreenWidth, (0.5f - Clip.y / Clip.w * 0.5f) * ScreenHeight); };
 	// slightly wider than the view so clipped edges never show on screen
 	float constexpr guard{1.02f};
-	auto const outside = [&](glm::vec4 const *Corners) {
-		auto const all = [&](auto const &Test) { return Test(Corners[0]) && Test(Corners[1]) && Test(Corners[2]) && Test(Corners[3]); };
+	auto const outside = [&](glm::vec4 const *Corners, int Count) {
+		auto const all = [&](auto const &Test) {
+			for (int i = 0; i < Count; ++i)
+				if (!Test(Corners[i]))
+					return false;
+			return true;
+		};
 		return all([](glm::vec4 const &v) { return v.w < near_w; }) || all([&](glm::vec4 const &v) { return v.x > v.w * guard; }) ||
 		       all([&](glm::vec4 const &v) { return v.x < -v.w * guard; }) || all([&](glm::vec4 const &v) { return v.y > v.w * guard; }) ||
 		       all([&](glm::vec4 const &v) { return v.y < -v.w * guard; });
 	};
+	// clip-space change per metre of height
+	glm::vec4 const up = ViewProjection * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
 
-	double const height = static_cast<double>(m_config.height);
 	for (auto const &entry : m_tiles)
 	{
 		tile const &t = entry.second;
-		if (t.level == 0 || t.empty || t.texture == null_handle)
+		if (t.level == 0 || t.empty || t.slot.texture == null_handle)
 			continue;
-		std::size_t const textureid = GfxRenderer->Texture(t.texture).get_id();
+		std::size_t const textureid = GfxRenderer->Texture(t.slot.texture).get_id();
 		if (textureid == 0 || textureid == static_cast<std::size_t>(static_cast<std::uint32_t>(-1)))
 			continue;
 
+		bool const draped = m_config.drape && !t.heights.empty();
+		double const flat = m_config.height;
+		double const ylo = draped ? t.height_min : flat;
+		double const yhi = draped ? t.height_max : flat;
+
 		// world extent of the tile; u runs west->east (-x), v runs north->south (-z), matching the image rows
-		double const westx = m_config.east - entry.first.first * tile_size;
-		double const northz = (entry.first.second + 1) * tile_size - m_config.north;
-		auto const relative = [&](double U, double V) { return glm::vec3(glm::dvec3(westx - U * tile_size, height, northz - V * tile_size) - CameraPos); };
-		// the tile is a parallelogram and the projection is linear before the divide, so clip positions interpolate exactly
+		glm::dvec2 const corner = tile_corner(entry.first);
+		auto const relative = [&](double U, double V) { return glm::vec3(glm::dvec3(corner.x - U * tile_size, 0.0, corner.y - V * tile_size) - CameraPos); };
+		// the projection is linear before the divide, so clip positions interpolate exactly: c = c00 + du*u + dv*v + up*height
 		glm::vec4 const c00 = ViewProjection * glm::vec4(relative(0.0, 0.0), 1.0f);
 		glm::vec4 const du = ViewProjection * glm::vec4(relative(1.0, 0.0), 1.0f) - c00;
 		glm::vec4 const dv = ViewProjection * glm::vec4(relative(0.0, 1.0), 1.0f) - c00;
-		glm::vec4 const corners[4] = {c00, c00 + du, c00 + du + dv, c00 + dv};
-		if (outside(corners))
+		auto const clip = [&](float U, float V, double Height) { return c00 + du * U + dv * V + up * static_cast<float>(Height); };
+		glm::vec4 const box[8] = {clip(0, 0, ylo), clip(1, 0, ylo), clip(1, 1, ylo), clip(0, 1, ylo), clip(0, 0, yhi), clip(1, 0, yhi), clip(1, 1, yhi), clip(0, 1, yhi)};
+		if (outside(box, 8))
 			continue;
 
-		// ImGui interpolates texture coordinates affinely, so subdivide finer where the camera is close
-		double const nearestx = std::clamp(CameraPos.x, westx - tile_size, westx);
-		double const nearestz = std::clamp(CameraPos.z, northz - tile_size, northz);
-		double const distance = glm::length(glm::dvec3(nearestx, height, nearestz) - CameraPos);
+		// ImGui interpolates texture coordinates affinely, so subdivide finer where the camera is close;
+		// draped tiles also need enough segments to follow the ground
+		double const nearestx = std::clamp(CameraPos.x, corner.x - tile_size, corner.x);
+		double const nearestz = std::clamp(CameraPos.z, corner.y - tile_size, corner.y);
+		double const nearesty = std::clamp(CameraPos.y, ylo, yhi);
+		double const distance = glm::length(glm::dvec3(nearestx, nearesty, nearestz) - CameraPos);
 		double const step = std::clamp(distance * 0.2, 4.0, tile_size);
-		int const segments = std::clamp(static_cast<int>(std::ceil(tile_size / step)), 1, 64);
+		int segments = std::clamp(static_cast<int>(std::ceil(tile_size / step)), 1, 64);
+		if (draped)
+			segments = std::max(segments, distance < 300.0 ? ground_grid : distance < 800.0 ? ground_grid / 2 : ground_grid / 4);
 		float const segmentsize = 1.0f / static_cast<float>(segments);
+		auto const height_at = [&](float U, float V) { return draped ? sample_heights(t.heights, U, V) : flat; };
 
 		drawlist->PushTextureID(reinterpret_cast<ImTextureID>(textureid));
 		for (int j = 0; j < segments; ++j)
 			for (int i = 0; i < segments; ++i)
 			{
-				if (static_cast<std::size_t>(drawlist->VtxBuffer.Size) + 16 > vertex_budget)
+				if (static_cast<std::size_t>(drawlist->VtxBuffer.Size) + 16 > vertexbudget)
 				{
 					drawlist->PopTextureID();
 					return;
@@ -928,13 +1360,13 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 				float const u0 = i * segmentsize, u1 = (i + 1) * segmentsize;
 				float const v0 = j * segmentsize, v1 = (j + 1) * segmentsize;
 				clip_vertex quad[4] = {
-				    {c00 + du * u0 + dv * v0, {u0, v0}},
-				    {c00 + du * u1 + dv * v0, {u1, v0}},
-				    {c00 + du * u1 + dv * v1, {u1, v1}},
-				    {c00 + du * u0 + dv * v1, {u0, v1}},
+				    {clip(u0, v0, height_at(u0, v0)), {u0, v0}},
+				    {clip(u1, v0, height_at(u1, v0)), {u1, v0}},
+				    {clip(u1, v1, height_at(u1, v1)), {u1, v1}},
+				    {clip(u0, v1, height_at(u0, v1)), {u0, v1}},
 				};
 				glm::vec4 const positions[4] = {quad[0].position, quad[1].position, quad[2].position, quad[3].position};
-				if (outside(positions))
+				if (outside(positions, 4))
 					continue;
 
 				// clip against the near plane and the (slightly widened) sides of the view
@@ -956,7 +1388,7 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 					drawlist->PrimWriteIdx(static_cast<ImDrawIdx>(base + k + 1));
 				}
 				for (int k = 0; k < count; ++k)
-					drawlist->PrimWriteVtx(tosceen(buffer0[k].position), ImVec2(buffer0[k].uv.x, buffer0[k].uv.y), color);
+					drawlist->PrimWriteVtx(toscreen(buffer0[k].position), ImVec2(buffer0[k].uv.x, buffer0[k].uv.y), color);
 			}
 		drawlist->PopTextureID();
 	}

@@ -30,6 +30,7 @@ http://mozilla.org/MPL/2.0/.
 
 
 #include "imgui/imgui.h"
+#include "imgui/imgui_internal.h"
 #include "imgui/ImGuizmo.h"
 #include "utilities/Logs.h"
 #include <glm/gtc/type_ptr.hpp>
@@ -231,6 +232,8 @@ namespace
     void gather_shape_triangles(scene::shape_node const &Shape, glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out)
     {
         auto const &data = Shape.data();
+        if (editor_orthophoto::owns(data.geometry))
+            return; // the orthophoto laid over the ground isn't ground itself
         if (data.area.radius >= 0.0f)
         {
             double const r = data.area.radius;
@@ -268,6 +271,41 @@ namespace
         }
     }
 
+    // ground triangles overlapping an XZ rectangle (Min/Max are x,z). shapes hold the (legacy) terrain,
+    // model instances at least ModelRadius large (if ModelsAsGround) the terrain tiles
+    void gather_ground_triangles(glm::dvec2 const &Min, glm::dvec2 const &Max, bool const ModelsAsGround, float const ModelRadius, std::vector<world_triangle> &Out)
+    {
+        glm::dvec2 const center = (Min + Max) * 0.5;
+        float const radius = static_cast<float>(glm::length(Max - Min) * 0.5);
+        auto const sections = simulation::Region->sections(glm::dvec3(center.x, 0.0, center.y), radius); // copy, the result is a scratchpad
+        for (auto *section : sections)
+        {
+            for (auto const &shape : section->m_shapes)
+                gather_shape_triangles(shape, Min, Max, Out);
+            for (auto &cell : section->m_cells)
+            {
+                double const r = cell.m_area.radius;
+                if (cell.m_area.center.x + r < Min.x || cell.m_area.center.x - r > Max.x || cell.m_area.center.z + r < Min.y || cell.m_area.center.z - r > Max.y)
+                    continue;
+                for (auto const &shape : cell.m_shapesopaque)
+                    gather_shape_triangles(shape, Min, Max, Out);
+                if (false == ModelsAsGround)
+                    continue;
+                for (auto *instance : cell.m_instancesopaque)
+                {
+                    if (instance == nullptr || instance->Model() == nullptr || instance->radius() < ModelRadius)
+                        continue;
+                    std::vector<world_triangle> modeltriangles;
+                    gather_submodel_triangles(instance->Model()->Root, instance_matrix(*instance), modeltriangles);
+                    for (auto const &t : modeltriangles)
+                        if (std::max({t[0].x, t[1].x, t[2].x}) >= Min.x && std::min({t[0].x, t[1].x, t[2].x}) <= Max.x && std::max({t[0].z, t[1].z, t[2].z}) >= Min.y &&
+                            std::min({t[0].z, t[1].z, t[2].z}) <= Max.y)
+                            Out.push_back(t);
+                }
+            }
+        }
+    }
+
     // scenery file name without path and extension
     std::string scenery_stem()
     {
@@ -298,6 +336,10 @@ editor_mode::editor_mode() {
 	// the area fill settings live in the node bank window, in the tab of the fill mode
 	ui()->set_fill_options([this]() { render_area_fill(); });
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
+	// the orthophoto is fitted onto the same ground as the area fill uses, terrain tile models included
+	m_orthophoto.ground_source([](glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out) {
+		gather_ground_triangles(Min, Max, true, 50.0f, Out);
+	});
  }
 
 editor_ui *editor_mode::ui() const
@@ -1131,6 +1173,8 @@ void editor_mode::load_orthophoto_settings()
     config.opacity = stored.opacity;
     config.year = stored.year;
     config.hires = stored.hires;
+    config.drape = stored.drape;
+    config.in_scene = stored.in_scene;
     config.north = 0.0;
     config.east = 0.0;
     EditorSettings.orthophoto_origin(scenery, config.north, config.east);
@@ -1147,6 +1191,8 @@ void editor_mode::save_orthophoto_settings()
     stored.opacity = config.opacity;
     stored.year = config.year;
     stored.hires = config.hires;
+    stored.drape = config.drape;
+    stored.in_scene = config.in_scene;
     if (config.north != 0.0 || config.east != 0.0)
         EditorSettings.orthophoto_origin(m_orthophoto_scenery, config.north, config.east);
     EditorSettings.save();
@@ -1193,13 +1239,52 @@ void editor_mode::render_orthophoto_ui()
     int const span = static_cast<int>((2 * config.radius + 1) * editor_orthophoto::tile_size);
     ImGui::TextDisabled("%d x %d m", span, span);
 
+    // ImGui 1.73 has no public disabled state yet, the internal item flag does the job
+    auto const begin_disabled = [](bool Disabled) {
+        if (!Disabled)
+            return;
+        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+    };
+    auto const end_disabled = [](bool Disabled) {
+        if (!Disabled)
+            return;
+        ImGui::PopStyleVar();
+        ImGui::PopItemFlag();
+    };
+
+    if (ImGui::Checkbox("Fit to terrain", &config.drape))
+        changed = persist = true;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Lays the imagery onto the ground geometry (terrain shapes, terrain tile models, editor terrain).\n"
+                          "Places without any ground use the height below.");
+    if (config.drape)
+    {
+        ImGui::SameLine();
+        if (ImGui::Button("Refit"))
+            m_orthophoto.refit();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Samples the ground again, after it was edited");
+    }
+
+    begin_disabled(config.drape);
     ImGui::SetNextItemWidth(160.0f);
     changed |= ImGui::DragFloat("Height (m)", &config.height, 0.1f, -1000.0f, 3000.0f, "%.2f");
     persist |= ImGui::IsItemDeactivatedAfterEdit();
+    end_disabled(config.drape);
 
+    if (ImGui::Checkbox("Covered by objects and terrain", &config.in_scene))
+        changed = persist = true;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Draws the imagery as part of the scene, so tracks, models and terrain in front of it hide it.\n"
+                          "It is opaque then and lit like the scene; mouse placement lands on it as on any surface.\n"
+                          "Not available with the Better Renderer, which doesn't pick up geometry added in the editor.");
+
+    begin_disabled(config.in_scene);
     ImGui::SetNextItemWidth(160.0f);
     changed |= ImGui::SliderFloat("Opacity", &config.opacity, 0.0f, 1.0f, "%.2f");
     persist |= ImGui::IsItemDeactivatedAfterEdit();
+    end_disabled(config.in_scene);
 
     // newest imagery, or the newest imagery taken up to the end of the selected year
     int const thisyear = static_cast<int>(std::chrono::year_month_day{std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now())}.year());
@@ -1636,37 +1721,9 @@ void editor_mode::run_area_fill()
         points.push_back(p);
     }
 
-    // ground geometry within the area. shapes hold the (legacy) terrain, large instances the terrain tiles
+    // ground geometry within the area
     std::vector<world_triangle> triangles;
-    glm::dvec2 const center = (bmin + bmax) * 0.5;
-    float const radius = static_cast<float>(glm::length(bmax - bmin) * 0.5);
-    auto const sections = simulation::Region->sections(glm::dvec3(center.x, 0.0, center.y), radius); // copy, the result is a scratchpad
-    for (auto *section : sections)
-    {
-        for (auto const &shape : section->m_shapes)
-            gather_shape_triangles(shape, bmin, bmax, triangles);
-        for (auto &cell : section->m_cells)
-        {
-            double const r = cell.m_area.radius;
-            if (cell.m_area.center.x + r < bmin.x || cell.m_area.center.x - r > bmax.x || cell.m_area.center.z + r < bmin.y || cell.m_area.center.z - r > bmax.y)
-                continue;
-            for (auto const &shape : cell.m_shapesopaque)
-                gather_shape_triangles(shape, bmin, bmax, triangles);
-            if (false == m_fill_models_as_ground)
-                continue;
-            for (auto *instance : cell.m_instancesopaque)
-            {
-                if (instance == nullptr || instance->Model() == nullptr || instance->radius() < terrain_model_radius)
-                    continue;
-                std::vector<world_triangle> modeltriangles;
-                gather_submodel_triangles(instance->Model()->Root, instance_matrix(*instance), modeltriangles);
-                for (auto const &t : modeltriangles)
-                    if (std::max({t[0].x, t[1].x, t[2].x}) >= bmin.x && std::min({t[0].x, t[1].x, t[2].x}) <= bmax.x && std::max({t[0].z, t[1].z, t[2].z}) >= bmin.y &&
-                        std::min({t[0].z, t[1].z, t[2].z}) <= bmax.y)
-                        triangles.push_back(t);
-            }
-        }
-    }
+    gather_ground_triangles(bmin, bmax, m_fill_models_as_ground, terrain_model_radius, triangles);
     triangle_grid const ground(std::move(triangles), bmin, bmax);
     auto const terrains = active_terrains();
 
@@ -2055,6 +2112,7 @@ void editor_mode::exit()
     m_history.clear();
     m_fill_last.clear();
     m_orthophoto.cancel_pending();
+    m_orthophoto.detach_scene(); // the layer is an editor aid, keep it out of the other modes
 
     // drop selection so a stale/dangling node pointer isn't used on the next editor session
     m_node = nullptr;

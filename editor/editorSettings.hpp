@@ -30,6 +30,8 @@ public:
 		float opacity{0.6f};
 		int year{0};
 		bool hires{false};
+		bool drape{true};
+		bool in_scene{false};
 	};
 	orthophoto_settings &orthophoto() { return m_orthophoto; }
 	// PUWG 1992 northing/easting of the scenery's (0,0,0) point; false when none was stored

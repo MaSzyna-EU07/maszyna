@@ -9,10 +9,12 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <string>
@@ -21,19 +23,28 @@ http://mozilla.org/MPL/2.0/.
 #include <vector>
 #include <glm/glm.hpp>
 
-#include "interfaces/ITexture.h" // texture_handle
+#include "interfaces/ITexture.h"    // texture_handle
+#include "utilities/Classes.h"      // material_handle
+#include "rendering/geometrybank.h" // gfx::geometry_handle
 
-// Editor aid: aerial orthophoto tiles from geoportal.gov.pl (GUGiK WMS), drawn as a translucent
-// horizontal layer around the camera.
+namespace scene
+{
+class basic_region;
+class basic_section;
+} // namespace scene
+
+// Editor aid: aerial orthophoto tiles from geoportal.gov.pl (GUGiK WMS), shown around the camera either
+// on a horizontal plane or fitted onto the terrain.
 //
 // Tiles are aligned to an absolute 256 m grid in PUWG 1992 (EPSG:2180), so the disk cache is shared
 // between sceneries. The scenery is placed on that grid through the PUWG coordinates of its (0,0,0)
 // point; MaSzyna's +Z points north and +X points west, hence easting = E0 - x, northing = N0 + z.
 //
 // Downloading, cache I/O and image decoding run on worker threads; the main thread only uploads
-// finished images (a bounded amount per frame) and emits the overlay geometry. The overlay goes into
-// the ImGui background draw list, like the other editor viewport overlays, so it works with every
-// renderer backend, but it isn't depth-tested against the scene.
+// finished images (a bounded amount per frame) and emits the geometry. By default the layer goes into
+// the ImGui background draw list, like the other editor viewport overlays: translucent and drawn over
+// everything. Optionally it is put into the scene instead (opaque shapes in the region sections, like the
+// editor terrain), so tracks, models and terrain in front of it cover it.
 class editor_orthophoto
 {
   public:
@@ -42,11 +53,17 @@ class editor_orthophoto
 		double north{0.0};      // PUWG 1992 X (northing) of the scenery origin
 		double east{0.0};       // PUWG 1992 Y (easting) of the scenery origin
 		int radius{2};          // tiles loaded around the camera tile (Chebyshev distance)
-		float height{0.0f};     // world Y of the layer
-		float opacity{0.6f};    // 0..1
+		float height{0.0f};     // world Y of the layer (with drape: only where no ground was found)
+		float opacity{0.6f};    // 0..1, overlay only
 		int year{0};            // 0 = newest available imagery, otherwise newest imagery taken up to the end of that year
 		bool hires{false};      // 4096 px tiles from the high-resolution product next to the camera, where it exists
+		bool drape{true};       // fit the imagery onto the ground geometry instead of a flat plane
+		bool in_scene{false};   // render as opaque scene geometry, covered by whatever is in front of it
 	};
+
+	using world_triangle = std::array<glm::dvec3, 3>;
+	// supplies the ground triangles overlapping an XZ rectangle (Min/Max are x,z); used to drape the imagery
+	using ground_query = std::function<void(glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out)>;
 
 	struct statistics
 	{
@@ -70,6 +87,13 @@ class editor_orthophoto
 	config const &settings() const { return m_config; }
 	// changes of year / resolution invalidate resident tiles, the rest applies immediately
 	void settings(config const &Config);
+	void ground_source(ground_query Query) { m_ground = std::move(Query); }
+	// samples the ground again (after it was edited); tiles are refitted progressively
+	void refit();
+	// takes the scene geometry out of the region (e.g. when the editor is left); it's re-created on the next update
+	void detach_scene();
+	// true for geometry created by the layer, so ground queries can skip it
+	static bool owns(gfx::geometry_handle const &Geometry);
 
 	// main thread, once per frame: schedules tiles around the camera and uploads finished ones
 	void update(glm::dvec3 const &Camera);
@@ -115,22 +139,46 @@ class editor_orthophoto
 		std::vector<std::uint8_t> pixels; // RGBA8, first row = north edge
 	};
 
+	struct texture_slot
+	{
+		int index{-1}; // names the texture and its material
+		texture_handle texture{null_handle};
+		material_handle material{null_handle}; // created on first use by the scene geometry
+	};
+
 	struct tile
 	{
-		texture_handle texture{null_handle};
+		texture_slot slot;
 		int level{0};     // size of the imagery currently held (0 = nothing yet)
 		int requested{0}; // level of the job scheduled for this tile (0 = none)
 		bool empty{false};
 		int failures{0};
 		double retry_at{0.0}; // steady clock seconds
+		// ground fit
+		bool grounded{false};             // ground was sampled
+		std::vector<float> heights;       // (ground_grid+1)^2 world Y, rows north->south, columns west->east; empty if no ground
+		float height_min{0.0f};
+		float height_max{0.0f};
+		std::vector<glm::dvec3> surface;  // upward facing ground triangles clipped to the tile (3 vertices each)
+		// scene geometry
+		scene::basic_section *section{nullptr}; // section holding the shape (nullptr = not in the scene)
+		gfx::geometry_handle geometry{0, 0};
+		std::size_t capacity{0};                // vertex count of the geometry chunk
+		bool scene_dirty{true};                 // the shape needs to be rebuilt
 	};
 
 	static int level_for(int Distance, bool Hires);
 	tile_key camera_tile(glm::dvec3 const &Camera) const;
+	glm::dvec2 tile_corner(tile_key const &Key) const; // world (x,z) of the north-west corner
 	void schedule(tile_key const &Key, tile &Tile, int Level);
 	std::size_t apply(result &Result, double Now); // returns bytes uploaded
 	void release_tile(tile &Tile);
-	texture_handle acquire_texture();
+	texture_slot acquire_slot();
+	void sample_ground(tile_key const &Key, tile &Tile);
+	void build_shape(tile_key const &Key, tile &Tile);
+	void remove_shape(tile &Tile);
+	void release_geometry(tile &Tile);
+	void update_scene();
 	void start_workers();
 	void worker();
 
@@ -138,8 +186,11 @@ class editor_orthophoto
 	bool m_enabled{false};
 	std::map<tile_key, tile> m_tiles; // main thread only
 	tile_key m_camera_tile{0, 0};
-	std::vector<texture_handle> m_free_textures; // pool of texture slots, reused between tiles
+	std::vector<texture_slot> m_free_slots; // pool of textures, reused between tiles
 	int m_texture_count{0};
+	ground_query m_ground;
+	scene::basic_region *m_region{nullptr};                  // region the scene geometry was put into
+	std::multimap<std::size_t, gfx::geometry_handle> m_free_chunks; // geometry chunks by capacity, reused between tiles
 
 	// shared with the workers, guarded by m_mutex
 	mutable std::mutex m_mutex;
