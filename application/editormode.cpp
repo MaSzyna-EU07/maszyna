@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/application.h"
 #include "editor/editorSettings.hpp"
+#include "editor/editorModelSets.hpp"
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
@@ -164,19 +165,6 @@ namespace
         return std::abs(sum) * 0.5;
     }
 
-    // short readable name of a node template (model file and texture), like the node bank shows it
-    std::string template_label(std::string const &Template)
-    {
-        cParser tokenizer(Template);
-        tokenizer.getTokens(9, false); // node, ranges, name, type, position, rotation
-        auto model{tokenizer.getToken<std::string>(false)};
-        auto texture{tokenizer.getToken<std::string>(false)};
-        replace_slashes(model);
-        erase_extension(model);
-        replace_slashes(texture);
-        return texture == "none" || texture.empty() ? model : model + " (" + texture + ")";
-    }
-
     // world triangles bucketed on a uniform XZ grid, for many ground height queries over one area
     class triangle_grid
     {
@@ -293,6 +281,9 @@ void editor_mode::editormode_input::poll()
 
 editor_mode::editor_mode() {
 	m_userinterface = std::make_shared<editor_ui>();
+	// the area fill settings live in the node bank window, in the tab of the fill mode
+	ui()->set_fill_options([this]() { render_area_fill(); });
+	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
  }
 
 editor_ui *editor_mode::ui() const
@@ -303,6 +294,7 @@ editor_ui *editor_mode::ui() const
 bool editor_mode::init()
 {
     EditorSettings.load();
+    EditorModelSets.load();
     Camera.Init({0, 15, 0}, {glm::radians(-30.0), glm::radians(180.0), 0}, nullptr);
     return m_input.init();
 }
@@ -473,16 +465,17 @@ void editor_mode::handle_brush_mouse_hold(int Action, int Button)
             if (!mouseHold || !viewport_click())
                 return;
 
+            // spacing is measured in world space: the mouse offset is camera-relative and the camera may move mid-stroke
+            glm::dvec3 const newPos = Camera.Pos + clamp_mouse_offset_to_max(GfxRenderer->Mouse_Position());
+            if (m_brush_has_last && glm::distance(newPos, oldPos) < ui()->getSpacing())
+                return;
+
+            // picked only when a placement is due, so a random pick from a set isn't drawn every tick
             const std::string *src = ui()->get_active_node_template();
             if (!src)
                 return;
 
             std::string name = "editor_";
-
-            // spacing is measured in world space: the mouse offset is camera-relative and the camera may move mid-stroke
-            glm::dvec3 const newPos = Camera.Pos + clamp_mouse_offset_to_max(GfxRenderer->Mouse_Position());
-            if (m_brush_has_last && glm::distance(newPos, oldPos) < ui()->getSpacing())
-                return;
 
             TAnimModel *cloned = simulation::State.create_model(*src, name, newPos);
             oldPos = newPos;
@@ -819,9 +812,6 @@ bool editor_mode::update()
 #endif
         m_userinterface->update();
 
-        // update brush settings visibility depending on panel mode
-        ui()->toggleBrushSettings(ui()->mode() == nodebank_panel::BRUSH);
-
         if (mouseHold)
         {
             // process continuous brush placement
@@ -892,12 +882,9 @@ bool editor_mode::update()
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
     render_gizmo();
 
-    // --- area fill: outline overlay and settings, while the mode is active ---
+    // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
     if (ui()->mode() == nodebank_panel::FILL)
-    {
         draw_area_fill_outline();
-        render_area_fill();
-    }
 
     // --- ImGui: Editor Settings & History windows ---
     if(m_settings_open)
@@ -914,31 +901,39 @@ void editor_mode::render_settings()
 {
     ImGui::Begin("Editor Settings", &m_settings_open, ImGuiWindowFlags_AlwaysAutoResize);
 
-    ImGui::TextUnformatted("Camera movement");
-
-    const char *schemes[] = {"WSAD (new)", "Arrows (legacy)"};
-    int current = EditorSettings.movement() == editorSettings::movement_scheme::legacy ? 1 : 0;
-    if (ImGui::Combo("##movement_scheme", &current, schemes, IM_ARRAYSIZE(schemes)))
+    if (ImGui::BeginTabBar("##editorsettings"))
     {
-        EditorSettings.movement(current == 1 ? editorSettings::movement_scheme::legacy
-                                             : editorSettings::movement_scheme::wsad);
-        m_input.keyboard.apply_scheme();
-        EditorSettings.save();
+        if (ImGui::BeginTabItem("General"))
+        {
+            ImGui::TextUnformatted("Camera movement");
+
+            const char *schemes[] = {"WSAD (new)", "Arrows (legacy)"};
+            int current = EditorSettings.movement() == editorSettings::movement_scheme::legacy ? 1 : 0;
+            if (ImGui::Combo("##movement_scheme", &current, schemes, IM_ARRAYSIZE(schemes)))
+            {
+                EditorSettings.movement(current == 1 ? editorSettings::movement_scheme::legacy
+                                                     : editorSettings::movement_scheme::wsad);
+                m_input.keyboard.apply_scheme();
+                EditorSettings.save();
+            }
+
+            ImGui::Separator();
+            ImGui::Checkbox("Transform gizmo (ImGuizmo)", &m_gizmo_enabled);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Terrain"))
+        {
+            render_terrain_ui();
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
     }
-
-    ImGui::Separator();
-    ImGui::Checkbox("Transform gizmo (ImGuizmo)", &m_gizmo_enabled);
-
-    render_terrain_ui();
 
     ImGui::End();
 }
 
 void editor_mode::render_terrain_ui()
 {
-    ImGui::Separator();
-    ImGui::TextUnformatted("Terrain");
-
     ImGui::SetNextItemWidth(120.0f);
     ImGui::InputInt("Grid cells", &m_terrain_cells);
     m_terrain_cells = std::clamp(m_terrain_cells, 1, 512);
@@ -1406,10 +1401,11 @@ void editor_mode::run_area_fill()
 
     // model package
     std::vector<std::string> package;
-    if (m_fill_package == 0)
+    if (m_fill_source.kind == model_set_ref::source::manual)
         package = m_fill_custom;
     else
-        package = ui()->nodebank_group_templates(static_cast<std::size_t>(m_fill_package - 1));
+        for (auto const *entry : ui()->nodebank().set_entries(m_fill_source))
+            package.push_back(*entry);
     package.erase(std::remove_if(package.begin(), package.end(), [](std::string const &Template) { return Template.empty(); }), package.end());
     if (package.empty())
     {
@@ -1621,9 +1617,7 @@ void editor_mode::draw_area_fill_outline() const
 
 void editor_mode::render_area_fill()
 {
-    ImGui::Begin("Area fill", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing);
-
-    ImGui::TextUnformatted("LMB: add outline point, Backspace: remove last point");
+    ImGui::TextDisabled("LMB: add outline point   Backspace: remove last point");
     double const area = polygon_area_xz(m_fill_points);
     ImGui::Text("Points: %zu   Area: %.0f m2 (%.2f ha)", m_fill_points.size(), area, area / 10000.0);
     if (ImGui::Button("Remove last point") && !m_fill_points.empty())
@@ -1634,58 +1628,13 @@ void editor_mode::render_area_fill()
 
     ImGui::Separator();
 
-    // model package: a node bank group, or a custom set assembled from node bank templates
-    auto const groups = ui()->nodebank_groups();
-    m_fill_package = std::clamp(m_fill_package, 0, static_cast<int>(groups.size()));
-    std::string const current = m_fill_package == 0 ? std::string("Custom set") : groups[m_fill_package - 1];
-    ImGui::SetNextItemWidth(250.0f);
-    if (ImGui::BeginCombo("Model package", current.c_str()))
-    {
-        if (ImGui::Selectable("Custom set", m_fill_package == 0))
-            m_fill_package = 0;
-        for (int i = 0; i < static_cast<int>(groups.size()); ++i)
-        {
-            auto const label = groups[i] + "##fillgroup" + std::to_string(i);
-            if (ImGui::Selectable(label.c_str(), m_fill_package == i + 1))
-                m_fill_package = i + 1;
-        }
-        ImGui::EndCombo();
-    }
-
-    if (m_fill_package == 0)
-    {
-        ImGui::BeginChild("fill_custom_set", ImVec2(350.0f, 110.0f), true);
-        for (int i = 0; i < static_cast<int>(m_fill_custom.size()); ++i)
-        {
-            auto const label = template_label(m_fill_custom[i]) + "##fillcustom" + std::to_string(i);
-            if (ImGui::Selectable(label.c_str(), m_fill_custom_idx == i))
-                m_fill_custom_idx = i;
-        }
-        ImGui::EndChild();
-        if (ImGui::Button("Add selected template"))
-        {
-            // the node bank selection, not a random pick from the brush set
-            auto const *src = ui()->get_active_node_template(true);
-            if (src && !src->empty())
-                m_fill_custom.push_back(*src);
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Remove") && m_fill_custom_idx >= 0 && m_fill_custom_idx < static_cast<int>(m_fill_custom.size()))
-        {
-            m_fill_custom.erase(m_fill_custom.begin() + m_fill_custom_idx);
-            m_fill_custom_idx = -1;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Clear set"))
-        {
-            m_fill_custom.clear();
-            m_fill_custom_idx = -1;
-        }
-    }
+    // model package: a hand-assembled list, a user-defined set or a node bank group
+    auto &bank = ui()->nodebank();
+    bank.set_combo("Model set", m_fill_source, "Custom list");
+    if (m_fill_source.kind == model_set_ref::source::manual)
+        bank.manual_list("fillset", m_fill_custom, m_fill_custom_idx);
     else
-    {
-        ImGui::Text("Templates in group: %zu", ui()->nodebank_group_templates(static_cast<std::size_t>(m_fill_package - 1)).size());
-    }
+        ImGui::TextDisabled("%zu templates in set", bank.set_entries(m_fill_source).size());
 
     ImGui::Separator();
 
@@ -1697,7 +1646,9 @@ void editor_mode::render_area_fill()
     m_fill_min_spacing = std::max(0.0f, m_fill_min_spacing);
     ImGui::SetNextItemWidth(200.0f);
     ImGui::DragFloatRange2("Scale", &m_fill_scale_min, &m_fill_scale_max, 0.01f, 0.1f, 5.0f, "min %.2f", "max %.2f");
-    ImGui::Checkbox("Random rotation (off: Functions panel setting)", &m_fill_random_rotation);
+    ImGui::Checkbox("Random rotation", &m_fill_random_rotation);
+    if (!m_fill_random_rotation)
+        ui()->render_rotation_controls();
     ImGui::Checkbox("Large models count as ground (terrain tiles)", &m_fill_models_as_ground);
 
     ImGui::Text("Estimated objects: %.0f", std::round(area / 10000.0 * m_fill_density));
@@ -1711,21 +1662,20 @@ void editor_mode::render_area_fill()
 
     if (!m_fill_status.empty())
         ImGui::TextUnformatted(m_fill_status.c_str());
-
-    ImGui::End();
 }
 
-void editor_mode::render_gizmo()
+void editor_mode::render_gizmo_options()
 {
-    // the transform gizmo is suppressed while editing terrain, so the brush/chunk tool owns the mouse
-    if (!m_gizmo_enabled || m_terrain_sculpt || m_chunk_edit)
+    ImGui::Checkbox("Enabled", &m_gizmo_enabled);
+    if (!m_gizmo_enabled)
+        return;
+    if (m_terrain_sculpt || m_chunk_edit)
     {
-        m_gizmo_using = false;
+        ImGui::TextDisabled("Suspended while editing terrain");
         return;
     }
 
-    // compact control window: lets the user pick the transform mode without keyboard shortcuts
-    ImGui::Begin("Gizmo", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing);
+    // lets the user pick the transform mode without keyboard shortcuts
     int op = static_cast<int>(m_gizmo_op);
     ImGui::RadioButton("Translate (Q)", &op, static_cast<int>(gizmo_operation::translate));
     ImGui::SameLine();
@@ -1745,7 +1695,16 @@ void editor_mode::render_gizmo()
     }
     if (!m_node)
         ImGui::TextDisabled("No node selected");
-    ImGui::End();
+}
+
+void editor_mode::render_gizmo()
+{
+    // the transform gizmo is suppressed while editing terrain, so the brush/chunk tool owns the mouse
+    if (!m_gizmo_enabled || m_terrain_sculpt || m_chunk_edit)
+    {
+        m_gizmo_using = false;
+        return;
+    }
 
     if (!m_node)
     {

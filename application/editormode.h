@@ -1,4 +1,4 @@
-/*
+﻿/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "application/applicationmode.h"
+#include "application/editoruipanels.h"
 #include "input/editormouseinput.h"
 #include "input/editorkeyboardinput.h"
 #include "vehicle/Camera.h"
@@ -211,7 +212,7 @@ class editor_mode : public application_mode
 	std::vector<TAnimModel *> m_fill_last; // instances created by the most recent fill, for "Undo last fill"
 	std::vector<std::string> m_fill_custom; // user-assembled package of node templates
 	int m_fill_custom_idx{-1};
-	int m_fill_package{0}; // 0 = custom set, N = nodebank group N-1
+	model_set_ref m_fill_source; // manual = m_fill_custom, otherwise a user set or node bank group
 	float m_fill_density{200.0f}; // objects per hectare
 	float m_fill_min_spacing{2.0f}; // minimal distance between placed objects (m)
 	bool m_fill_random_rotation{true}; // random yaw; otherwise the Functions panel rotation settings apply
@@ -223,6 +224,8 @@ class editor_mode : public application_mode
 	// ImGuizmo-based transform gizmo for the selected node
 	enum class gizmo_operation { translate, rotate, scale };
 	void render_gizmo();
+	// gizmo settings, drawn in the toolset window
+	void render_gizmo_options();
 	bool m_gizmo_enabled{true};                                  // master switch for the in-viewport gizmo
 	bool m_gizmo_using{false};                                   // tracks an ongoing drag, so a single undo snapshot is taken per drag
 	bool m_gizmo_local{false};                                   // manipulate in the object's local space instead of world space

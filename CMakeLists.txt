@@ -167,6 +167,7 @@ set(SOURCES
 "application/driveruipanels.cpp"
 "input/editorkeyboardinput.cpp"
 "editor/editorSettings.cpp"
+"editor/editorModelSets.cpp"
 "editor/editorTerrain.cpp"
 "editor/editorTerrainStreamer.cpp"
 "application/editormode.cpp"
