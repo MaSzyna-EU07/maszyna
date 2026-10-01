@@ -16,10 +16,12 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
+#include "utilities/parser.h"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <sstream>
 
 namespace
 {
@@ -52,6 +54,74 @@ void add_unique(std::vector<TTrack *> &Tracks, TTrack *Track)
 {
 	if (Track != nullptr && std::find(Tracks.begin(), Tracks.end(), Track) == Tracks.end())
 		Tracks.emplace_back(Track);
+}
+
+// first derivative of the path curve at its start or end, in the direction from the start to the end
+glm::dvec3 path_tangent(segment_data const &Path, bool const Atend)
+{
+	auto const &start{Path.points[segment_data::point::start]};
+	auto const &end{Path.points[segment_data::point::end]};
+	auto const &control1{Path.points[segment_data::point::control1]};
+	auto const &control2{Path.points[segment_data::point::control2]};
+	if (false == Atend)
+		return control1 != glm::dvec3{} ? control1 : (end + control2) - start;
+	return control2 != glm::dvec3{} ? -control2 : end - (start + control1);
+}
+
+// plan radius of the path curve at specified parameter, 0 if it's straight there
+double path_radius(segment_data const &Path, double const T)
+{
+	auto const &p0{Path.points[segment_data::point::start]};
+	auto const &p3{Path.points[segment_data::point::end]};
+	auto const &control1{Path.points[segment_data::point::control1]};
+	auto const &control2{Path.points[segment_data::point::control2]};
+	if (control1 == glm::dvec3{} && control2 == glm::dvec3{})
+		return 0.0;
+	auto const p1{p0 + control1};
+	auto const p2{p3 + control2};
+	auto const u{1.0 - T};
+	auto const first{3.0 * u * u * (p1 - p0) + 6.0 * u * T * (p2 - p1) + 3.0 * T * T * (p3 - p2)};
+	auto const second{6.0 * u * (p2 - 2.0 * p1 + p0) + 6.0 * T * (p3 - 2.0 * p2 + p1)};
+	auto const speed{std::hypot(first.x, first.z)};
+	auto const curvature{std::abs(first.x * second.z - first.z * second.x) / (speed * speed * speed)};
+	return curvature > 1e-7 ? 1.0 / curvature : 0.0;
+}
+
+// the same path run in the opposite direction
+segment_data reversed(segment_data const &Path)
+{
+	segment_data result{Path};
+	result.points[segment_data::point::start] = Path.points[segment_data::point::end];
+	result.points[segment_data::point::end] = Path.points[segment_data::point::start];
+	result.points[segment_data::point::control1] = Path.points[segment_data::point::control2];
+	result.points[segment_data::point::control2] = Path.points[segment_data::point::control1];
+	// roll follows the direction of the curve, which flips along with the direction of travel
+	result.rolls = {-Path.rolls[1], -Path.rolls[0]};
+	return result;
+}
+
+// direction of travel and plan radius at the joint of a chain with an adjoining path.
+// Leaving: the chain continues into the adjoining path (its end), otherwise it comes from it (its start)
+bool adjoining_direction(TTrack const *Neighbour, glm::dvec3 const &Joint, bool const Leaving, glm::dvec3 &Direction, double &Radius)
+{
+	if (Neighbour == nullptr)
+		return false;
+	for (auto const &path : Neighbour->m_paths)
+	{
+		for (auto const atend : {false, true})
+		{
+			auto const &point{path.points[atend ? segment_data::point::end : segment_data::point::start]};
+			if (glm::distance(point, Joint) > kSamePoint)
+				continue;
+			// the tangent runs from the start of the neighbour to its end; it's the direction of travel when
+			// entering the neighbour at its start, or arriving from it through its end
+			auto const tangent{glm::normalize(path_tangent(path, atend))};
+			Direction = (Leaving != atend) ? tangent : -tangent;
+			Radius = path_radius(path, atend ? 1.0 : 0.0);
+			return true;
+		}
+	}
+	return false;
 }
 
 } // namespace
@@ -635,6 +705,181 @@ void editor_track::store_switch_path(TTrack &Switch, int const Path)
 		extension.pPrevs[path ^ 1] = Switch.trPrev;
 		extension.iPrevDirection[path ^ 1] = Switch.iPrevDirection;
 	}
+}
+
+bool editor_track::find_chain(TTrack *From, TTrack *To, chain &Chain, std::string &Error)
+{
+	Chain = {};
+	if (From == nullptr || To == nullptr)
+	{
+		Error = "Select the first and the last path of the fragment";
+		return false;
+	}
+	auto const regular = [](TTrack const *Track) { return Track->eType == tt_Normal && is_supported(*Track); };
+	if (false == regular(From) || false == regular(To))
+	{
+		Error = "The fragment has to consist of regular paths, without switches";
+		return false;
+	}
+
+	Chain.tracks = {From};
+	Chain.forward = {true};
+	if (From != To)
+	{
+		bool found{false};
+		// try to reach the last path leaving the first one through its end, then through its start
+		for (auto const throughend : {true, false})
+		{
+			Chain.tracks = {From};
+			Chain.forward = {throughend};
+			TTrack *previous{From};
+			TTrack *current{throughend ? From->trNext : From->trPrev};
+			while (current != nullptr && current != From && Chain.tracks.size() < 10000 && regular(current))
+			{
+				auto const entersatstart{current->trPrev == previous};
+				Chain.tracks.push_back(current);
+				Chain.forward.push_back(entersatstart);
+				if (current == To)
+				{
+					found = true;
+					break;
+				}
+				previous = current;
+				current = entersatstart ? current->trNext : current->trPrev;
+			}
+			if (found)
+				break;
+		}
+		if (false == found)
+		{
+			Chain = {};
+			Error = "The selected paths aren't connected by a chain of regular paths (switches end the chain)";
+			return false;
+		}
+	}
+
+	auto const category{From->iCategoryFlag & 15};
+	for (auto const *track : Chain.tracks)
+	{
+		if ((track->iCategoryFlag & 15) != category)
+		{
+			Error = "The fragment mixes different kinds of paths";
+			Chain = {};
+			return false;
+		}
+		if (false == track->Dynamics.empty())
+		{
+			Error = "There are vehicles placed on path " + track->name();
+			Chain = {};
+			return false;
+		}
+		Chain.length += track->Length();
+		Chain.velocity = std::max(Chain.velocity, velocity(*track));
+		auto const radius{path_radius(track->m_paths.front(), 0.5)};
+		if (radius > 0.0 && (Chain.radius == 0.0 || radius < Chain.radius))
+			Chain.radius = radius;
+	}
+
+	// fixed ends, with directions taken from the adjoining paths when there are any
+	auto const &first{From->m_paths.front()};
+	auto const firstforward{Chain.forward.front()};
+	Chain.start = first.points[firstforward ? segment_data::point::start : segment_data::point::end];
+	Chain.start_direction = firstforward ? path_tangent(first, false) : -path_tangent(first, true);
+	adjoining_direction(firstforward ? From->trPrev : From->trNext, Chain.start, false, Chain.start_direction, Chain.start_radius);
+	Chain.start_direction = glm::normalize(Chain.start_direction);
+
+	auto const &last{To->m_paths.front()};
+	auto const lastforward{Chain.forward.back()};
+	Chain.end = last.points[lastforward ? segment_data::point::end : segment_data::point::start];
+	Chain.end_direction = lastforward ? path_tangent(last, true) : -path_tangent(last, false);
+	adjoining_direction(lastforward ? To->trNext : To->trPrev, Chain.end, true, Chain.end_direction, Chain.end_radius);
+	Chain.end_direction = glm::normalize(Chain.end_direction);
+
+	Error.clear();
+	return true;
+}
+
+std::vector<TTrack *> editor_track::relay(chain const &Chain, std::vector<segment_data> const &Pieces)
+{
+	std::vector<TTrack *> created;
+	auto const count{Chain.tracks.size()};
+	if (count == 0 || Pieces.size() < count)
+		return created;
+
+	// existing paths are spread evenly over the pieces, added paths fill the gaps between them
+	std::vector<TTrack *> tracks;
+	std::size_t previous{count};
+	for (std::size_t i = 0; i < Pieces.size(); ++i)
+	{
+		auto const index{i * count / Pieces.size()};
+		TTrack *track;
+		bool forward;
+		if (index != previous)
+		{
+			track = Chain.tracks[index];
+			forward = Chain.forward[index];
+		}
+		else
+		{
+			track = clone(*Chain.tracks[index]);
+			created.push_back(track);
+			forward = true;
+		}
+		previous = index;
+		track->m_paths.resize(1);
+		track->m_paths.front() = forward ? Pieces[i] : reversed(Pieces[i]);
+		tracks.push_back(track);
+	}
+	commit(tracks);
+	return created;
+}
+
+TTrack *editor_track::clone(TTrack const &Template)
+{
+	std::ostringstream text;
+	Template.export_as_text_(text);
+	cParser parser(text.str(), cParser::buffer_TEXT);
+	parser.getTokens();
+	std::string token;
+	parser >> token; // node type, consumed before the path is loaded
+
+	scene::node_data data;
+	data.type = "track";
+	if (false == Template.name().empty() && Template.name() != "none")
+	{
+		for (int i = 1; data.name.empty() || simulation::Paths.find(data.name) != nullptr; ++i)
+			data.name = Template.name() + "_" + std::to_string(i);
+	}
+	auto *track = new TTrack(data);
+	track->m_rangesquaredmin = Template.m_rangesquaredmin;
+	track->m_rangesquaredmax = Template.m_rangesquaredmax;
+	track->Load(&parser, glm::dvec3{});
+	// events stay with the original path only
+	for (auto *events : {&track->m_events0, &track->m_events1, &track->m_events2, &track->m_events0all, &track->m_events1all, &track->m_events2all})
+		events->clear();
+	track->m_events = false;
+	track->m_friction = Template.m_friction;
+	simulation::Paths.insert(track);
+	return track;
+}
+
+void editor_track::retire(TTrack &Track)
+{
+	auto const adjoining{neighbours(Track)};
+	disconnect(Track);
+	simulation::Region->erase_and_unregister(&Track);
+	Track.m_editorremoved = true;
+	for (auto *neighbour : adjoining)
+	{
+		update_transition(*neighbour);
+		rebuild_geometry(*neighbour);
+	}
+}
+
+void editor_track::revive(TTrack &Track)
+{
+	Track.m_editorremoved = false;
+	commit({&Track});
 }
 
 void editor_track::rebuild_geometry(TTrack &Track)

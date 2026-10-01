@@ -1362,6 +1362,9 @@ state_serializer::export_nodes_to_stream(std::ostream &scmfile, bool Dirty) cons
 	// tracks
 	scmfile << "// paths\n";
 	for( auto const *path : Paths.sequence() ) {
+		if( path == nullptr || path->m_editorremoved ) {
+			continue;
+		}
 		if( path->dirty() == Dirty && path->group() == null_handle ) {
 			path->export_as_text( scmfile );
 		}

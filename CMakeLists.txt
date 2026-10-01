@@ -171,6 +171,7 @@ set(SOURCES
 "editor/editorIncludeInfo.cpp"
 "editor/editorTerrain.cpp"
 "editor/editorTrack.cpp"
+"editor/editorAlignment.cpp"
 "editor/editorTerrainStreamer.cpp"
 "editor/editorOrthophoto.cpp"
 "application/editormode.cpp"

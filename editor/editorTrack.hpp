@@ -108,6 +108,30 @@ class editor_track
 	// places the point at the target and optionally aligns the control vector with the target path
 	static void snap_point(TTrack &Track, point_ref const &Point, snap_target const &Target, bool const Aligntangent);
 
+	// sequence of regular paths connected end to end
+	struct chain
+	{
+		std::vector<TTrack *> tracks;
+		std::vector<bool> forward; // the path runs in the direction of the chain (its start is closer to the chain start)
+		glm::dvec3 start{0.0};     // outer end of the first path
+		glm::dvec3 end{0.0};       // outer end of the last path
+		glm::dvec3 start_direction{0.0}; // direction of travel along the chain at its ends, from the adjoining paths if there are any
+		glm::dvec3 end_direction{0.0};
+		double start_radius{0.0}; // plan radius of the adjoining paths at the joints, 0 for straight
+		double end_radius{0.0};
+		double length{0.0};
+		double velocity{-1.0}; // highest speed limit of the paths in the chain
+		double radius{0.0};    // smallest radius of the paths in the chain, 0 if all are straight
+	};
+	// collects regular paths connected between provided paths, both included. returns: true on success
+	static bool find_chain(TTrack *From, TTrack *To, chain &Chain, std::string &Error);
+	// lays the paths of the chain along provided pieces, in the order of the chain. if there are more pieces than paths,
+	// additional paths are made as copies of their neighbours. returns: the added paths
+	static std::vector<TTrack *> relay(chain const &Chain, std::vector<segment_data> const &Pieces);
+	// takes a path added by the editor out of the scene, or puts it back
+	static void retire(TTrack &Track);
+	static void revive(TTrack &Track);
+
 	// names of the materials used by the path; "none" for missing ones
 	static std::string material_name(material_handle const Material);
 	static material_handle fetch_material(std::string const &Name);
@@ -133,4 +157,6 @@ class editor_track
 	static void store_switch_path(TTrack &Switch, int const Path);
 	// rebuilds render geometry of the path in the bank of the section it's placed in
 	static void rebuild_geometry(TTrack &Track);
+	// makes a new path with the parameters of provided path (without its events) and registers it in the path table
+	static TTrack *clone(TTrack const &Template);
 };

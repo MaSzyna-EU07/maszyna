@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorTerrainStreamer.hpp"
 #include "editor/editorOrthophoto.hpp"
 #include "editor/editorTrack.hpp"
+#include "editor/editorAlignment.hpp"
 
 #include <array>
 #include <chrono>
@@ -104,6 +105,7 @@ class editor_mode : public application_mode
 		scene::instance_handle instance{0}; // include of a scenery template which was placed or removed, instead of a node
 		// TrackEdit: state of all paths modified by the change (the edited path and neighbours dragged along)
 		std::vector<std::pair<TTrack *, editor_track::state>> tracks;
+		std::vector<TTrack *> created; // TrackEdit: paths added by the change
 
 	};
 	void push_snapshot(scene::basic_node *node, EditorSnapshot::Action Action = EditorSnapshot::Action::Move, std::string const &Serialized = std::string());
@@ -279,6 +281,8 @@ class editor_mode : public application_mode
 	TTrack *selected_track() const;
 	// settings and parameters of the selected path, drawn in the node bank tab of the track mode
 	void render_track_ui();
+	// parameters and points of the selected path
+	void render_path_ui();
 	// curve and point handles of the selected path
 	void draw_track_overlay() const;
 	// selects the point handle of the selected path located under the cursor. returns: true if a handle was hit
@@ -289,10 +293,10 @@ class editor_mode : public application_mode
 	void render_track_gizmo();
 	// rebuilds paths modified by the ongoing drag; unless forced, at most a few times per second
 	void commit_track_drag(bool const Force);
-	// records provided state of paths in the undo history
-	void push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States);
+	// records provided state of paths in the undo history, along with paths added by the change
+	void push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created = {});
 	// restores state of paths stored in the history, moving their current state to the opposite stack
-	void restore_track_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite);
+	void restore_track_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo);
 	editor_track::point_ref m_track_point;                                         // selected point handle of the selected path
 	std::vector<TTrack *> m_track_drag;                                            // paths modified by the ongoing gizmo drag
 	std::vector<std::pair<TTrack *, editor_track::point_ref>> m_track_drag_points; // end points of neighbours dragged along
@@ -304,6 +308,35 @@ class editor_mode : public application_mode
 	std::chrono::steady_clock::time_point m_track_last_commit;
 	editor_track::state m_track_field_before; // state of the path before the ongoing field edit
 	std::array<std::array<char, 256>, 3> m_track_materials{}; // material names being edited
+	// route design: re-lays a chain of paths along an alignment designed with intersection points
+	struct route_design
+	{
+		TTrack *from{nullptr}; // first and last path of the re-laid fragment
+		TTrack *to{nullptr};
+		editor_track::chain chain;
+		std::string error;
+		std::string status; // outcome of the last application
+		alignment::design design;
+		alignment::result result;
+		int vertex{-1}; // selected vertex
+	};
+	void render_route_ui();
+	// finds the chain between the selected fragment ends and proposes an initial design for it
+	void route_reset();
+	void route_update() { m_route.result = alignment::compute(m_route.design); }
+	void route_apply();
+	// sets recommended cant, transitions and vertical curve for the vertex
+	void route_recommend(alignment::vertex &Vertex) const;
+	void draw_route_overlay() const;
+	bool pick_route_vertex();
+	void render_route_gizmo();
+	// 3d position of the vertex handle
+	glm::dvec3 route_vertex_position(int const Vertex) const;
+	bool route_active() const;
+	route_design m_route;
+	bool m_route_tab{true}; // route design tab of the track mode is shown
+	bool m_route_gizmo_using{false};
+	glm::mat4 m_route_gizmo{1.0f};
 	float m_track_snap_radius{1.0f};
 	bool m_track_align_tangent{true};
 	bool m_track_drag_connected{true};

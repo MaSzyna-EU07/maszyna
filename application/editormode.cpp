@@ -683,7 +683,7 @@ void editor_mode::undo_last()
 
     if (snap.action == EditorSnapshot::Action::TrackEdit)
     {
-        restore_track_snapshot(snap, g_redo);
+        restore_track_snapshot(snap, g_redo, true);
         return;
     }
 
@@ -778,7 +778,7 @@ void editor_mode::redo_last()
 
     if (snap.action == EditorSnapshot::Action::TrackEdit)
     {
-        restore_track_snapshot(snap, m_history);
+        restore_track_snapshot(snap, m_history, false);
         return;
     }
 
@@ -1009,9 +1009,11 @@ bool editor_mode::update()
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
     render_gizmo();
 
-    // --- path editing: course and point handles of the selected path ---
+    // --- path editing: course and point handles of the selected path, designed route ---
     if (selected_track())
         draw_track_overlay();
+    if (route_active())
+        draw_route_overlay();
 
     // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
     if (ui()->mode() == nodebank_panel::FILL)
@@ -2243,6 +2245,13 @@ void editor_mode::render_gizmo()
         return;
     }
 
+    // route design: the gizmo moves the selected vertex of the designed alignment
+    if (route_active())
+    {
+        render_route_gizmo();
+        return;
+    }
+
     if (!m_node && m_instance == 0)
     {
         m_gizmo_using = false;
@@ -2534,6 +2543,8 @@ void editor_mode::exit()
     m_track_drag_points.clear();
     m_track_snap = {};
     m_track_point = {};
+    m_route = {};
+    m_route_gizmo_using = false;
 
     g_redo.clear();
     m_history.clear();
@@ -2681,7 +2692,10 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
     case GLFW_KEY_ESCAPE:
         // track mode: release the selected point handle, so the gizmo moves the whole path again
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK)
+        {
             m_track_point = {};
+            m_route.vertex = -1;
+        }
         break;
 
     case GLFW_KEY_BACKSPACE:
@@ -2775,7 +2789,7 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
             // in track mode the left button selects a point handle of the selected path, or another path
             if (mode == nodebank_panel::TRACK)
             {
-                if (false == ImGuizmo::IsOver() && false == pick_track_handle())
+                if (false == ImGuizmo::IsOver() && false == pick_route_vertex() && false == pick_track_handle())
                 {
                     GfxRenderer->Pick_Node_Callback([this](scene::basic_node *node) {
                         if (viewport_click())

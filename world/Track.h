@@ -185,6 +185,7 @@ public:
     geometryhandle_sequence Geometry2; // geometry chunks textured with texture 2
 
     std::vector<segment_data> m_paths; // source data for owned paths
+    bool m_editorremoved { false }; // taken out of the scene by the editor, kept alive for its undo history
 	int iterate_stamp = 0;
 
     // sleepermodel optional parameter -------------------------------------------------
