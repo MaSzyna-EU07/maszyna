@@ -1174,6 +1174,7 @@ void editor_mode::load_orthophoto_settings()
     config.year = stored.year;
     config.hires = stored.hires;
     config.drape = stored.drape;
+    config.lift = stored.lift;
     config.in_scene = stored.in_scene;
     config.north = 0.0;
     config.east = 0.0;
@@ -1192,6 +1193,7 @@ void editor_mode::save_orthophoto_settings()
     stored.year = config.year;
     stored.hires = config.hires;
     stored.drape = config.drape;
+    stored.lift = config.lift;
     stored.in_scene = config.in_scene;
     if (config.north != 0.0 || config.east != 0.0)
         EditorSettings.orthophoto_origin(m_orthophoto_scenery, config.north, config.east);
@@ -1267,6 +1269,15 @@ void editor_mode::render_orthophoto_ui()
             ImGui::SetTooltip("Samples the ground again, after it was edited");
     }
 
+    begin_disabled(!config.drape);
+    ImGui::SetNextItemWidth(160.0f);
+    changed |= ImGui::DragFloat("Lift above ground (m)", &config.lift, 0.01f, 0.0f, 50.0f, "%.2f");
+    persist |= ImGui::IsItemDeactivatedAfterEdit();
+    end_disabled(!config.drape);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Raises the fitted imagery above the ground. Keep it below the objects you want to see:\n"
+                          "in the scene everything lower than this ends up under the imagery.");
+
     begin_disabled(config.drape);
     ImGui::SetNextItemWidth(160.0f);
     changed |= ImGui::DragFloat("Height (m)", &config.height, 0.1f, -1000.0f, 3000.0f, "%.2f");
@@ -1277,14 +1288,16 @@ void editor_mode::render_orthophoto_ui()
         changed = persist = true;
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Draws the imagery as part of the scene, so tracks, models and terrain in front of it hide it.\n"
-                          "It is opaque then and lit like the scene; mouse placement lands on it as on any surface.\n"
+                          "It is lit like the scene. Fully opaque, mouse placement lands on it as on any surface;\n"
+                          "translucent, it doesn't catch the mouse.\n"
                           "Not available with the Better Renderer, which doesn't pick up geometry added in the editor.");
 
-    begin_disabled(config.in_scene);
     ImGui::SetNextItemWidth(160.0f);
     changed |= ImGui::SliderFloat("Opacity", &config.opacity, 0.0f, 1.0f, "%.2f");
     persist |= ImGui::IsItemDeactivatedAfterEdit();
-    end_disabled(config.in_scene);
+    if (config.in_scene && ImGui::IsItemHovered())
+        ImGui::SetTooltip("In the scene the opacity is part of the textures: the tiles are read again from the cache\n"
+                          "shortly after the slider stops, which takes a moment.");
 
     // newest imagery, or the newest imagery taken up to the end of the selected year
     int const thisyear = static_cast<int>(std::chrono::year_month_day{std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now())}.year());

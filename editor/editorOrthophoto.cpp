@@ -554,7 +554,6 @@ template <typename Distance_> int clip_polygon(clip_vertex const *In, int Count,
 // ground fit and in-scene geometry
 
 constexpr int ground_grid{32};          // ground samples per tile side (8 m) for the draped overlay
-constexpr double surface_offset{0.05};  // lift of the in-scene imagery above the ground it covers, against z-fighting
 constexpr double steepest_ground{0.3};  // minimal normal.y of ground triangles receiving the imagery
 constexpr float no_height{-std::numeric_limits<float>::max()};
 
@@ -684,8 +683,9 @@ void editor_orthophoto::enabled(bool State)
 void editor_orthophoto::settings(config const &Config)
 {
 	bool const sourcechanged = (Config.year != m_config.year || Config.hires != m_config.hires);
-	bool const shapechanged = (Config.height != m_config.height || Config.drape != m_config.drape || Config.in_scene != m_config.in_scene);
+	bool const shapechanged = (Config.height != m_config.height || Config.drape != m_config.drape || Config.in_scene != m_config.in_scene || Config.lift != m_config.lift);
 	m_config = Config;
+	m_config.lift = std::clamp(m_config.lift, 0.0f, 50.0f);
 	m_config.radius = std::clamp(m_config.radius, 0, max_radius);
 	m_config.opacity = std::clamp(m_config.opacity, 0.0f, 1.0f);
 	if (shapechanged)
@@ -812,15 +812,22 @@ void editor_orthophoto::release_tile(tile &Tile)
 	Tile.slot = texture_slot{};
 }
 
-void editor_orthophoto::schedule(tile_key const &Key, tile &Tile, int Level)
+void editor_orthophoto::schedule(tile_key const &Key, tile &Tile, int Level, std::uint8_t Alpha)
 {
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(), [&](job const &Job) { return Job.key == Key; }), m_queue.end());
-		m_queue.push_back(job{Key, Level, source{m_config.year, m_config.hires}, m_generation.load()});
+		m_queue.push_back(job{Key, Level, Alpha, source{m_config.year, m_config.hires}, m_generation.load()});
 	}
 	Tile.requested = Level;
+	Tile.requested_alpha = Alpha;
 	m_wakeup.notify_one();
+}
+
+std::uint8_t editor_orthophoto::texture_alpha() const
+{
+	// the overlay applies its opacity when drawing, the scene shapes can only take it from the texture
+	return m_config.in_scene ? static_cast<std::uint8_t>(std::lround(m_config.opacity * 255.0f)) : 255;
 }
 
 std::size_t editor_orthophoto::apply(result &Result, double Now)
@@ -831,7 +838,7 @@ std::size_t editor_orthophoto::apply(result &Result, double Now)
 	if (lookup == m_tiles.end())
 		return 0; // left the area in the meantime; the imagery stays in the disk cache
 	tile &t = lookup->second;
-	bool const current = (t.requested == Result.level);
+	bool const current = (t.requested == Result.level && t.requested_alpha == Result.alpha);
 	if (current)
 		t.requested = 0;
 
@@ -847,6 +854,9 @@ std::size_t editor_orthophoto::apply(result &Result, double Now)
 
 	t.failures = 0;
 	t.level = Result.level;
+	if ((t.alpha < 255) != (Result.alpha < 255))
+		t.scene_dirty = true; // the shape moves between the opaque and the translucent pass
+	t.alpha = Result.alpha;
 	t.empty = Result.empty;
 	if (Result.empty)
 	{
@@ -974,7 +984,7 @@ void editor_orthophoto::remove_shape(tile &Tile)
 		return;
 	if (m_region == simulation::Region)
 	{
-		auto &shapes = Tile.section->m_shapes;
+		auto &shapes = (Tile.cell != nullptr ? Tile.cell->m_shapestranslucent : Tile.section->m_shapes);
 		for (auto it = shapes.begin(); it != shapes.end(); ++it)
 		{
 			auto const &geometry = it->data().geometry;
@@ -986,6 +996,7 @@ void editor_orthophoto::remove_shape(tile &Tile)
 		}
 	}
 	Tile.section = nullptr;
+	Tile.cell = nullptr;
 }
 
 void editor_orthophoto::release_geometry(tile &Tile)
@@ -1024,9 +1035,9 @@ void editor_orthophoto::build_shape(tile_key const &Key, tile &Tile)
 	{
 		vertices.reserve(Tile.surface.size());
 		for (auto const &point : Tile.surface)
-			add(point, surface_offset);
+			add(point, m_config.lift);
 		ylo = Tile.height_min;
-		yhi = Tile.height_max + surface_offset;
+		yhi = Tile.height_max + m_config.lift;
 	}
 	else
 	{
@@ -1042,7 +1053,11 @@ void editor_orthophoto::build_shape(tile_key const &Key, tile &Tile)
 	glm::dvec3 const centre(corner.x - tile_size * 0.5, (ylo + yhi) * 0.5, corner.y - tile_size * 0.5);
 	scene::basic_section &section = simulation::Region->section(centre);
 	section.create_geometry(); // existing section geometry has to be in place before we add ours (idempotent)
-	glm::dvec3 const origin = section.m_area.center;
+	// opaque imagery goes with the section geometry; translucent one has to be drawn in the translucent pass,
+	// which only covers the cells. shapes are drawn relative to the centre of their container
+	bool const translucent = (Tile.alpha < 255);
+	scene::basic_cell *cell = translucent ? &section.cell(centre) : nullptr;
+	glm::dvec3 const origin = translucent ? cell->m_area.center : section.m_area.center;
 
 	// chunks are padded to a few fixed sizes (whole triangles), so ones freed by other tiles can be refilled in place
 	std::size_t capacity{6};
@@ -1096,12 +1111,22 @@ void editor_orthophoto::build_shape(tile_key const &Key, tile &Tile)
 	scene::shape_node shape;
 	shape.make_terrain(Tile.slot.material, std::move(bounds), origin);
 	shape.geometry(Tile.geometry);
-	section.m_shapes.emplace_back(std::move(shape));
-	// extend the section bounds so the tile isn't culled at its edges
+	// extend the bounds of the containers so the tile isn't culled at its edges
 	double const reach = glm::length(glm::dvec3(tile_size * 0.5, (yhi - ylo) * 0.5, tile_size * 0.5));
 	section.m_area.radius = std::max(section.m_area.radius, static_cast<float>(glm::length(section.m_area.center - centre) + reach));
+	if (cell != nullptr)
+	{
+		cell->m_shapestranslucent.emplace_back(std::move(shape));
+		cell->m_area.radius = std::max(cell->m_area.radius, static_cast<float>(glm::length(cell->m_area.center - centre) + reach));
+		cell->m_active = true; // the renderer skips cells which held nothing so far
+	}
+	else
+	{
+		section.m_shapes.emplace_back(std::move(shape));
+	}
 
 	Tile.section = &section;
+	Tile.cell = cell;
 	m_region = simulation::Region;
 }
 
@@ -1171,6 +1196,16 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 	int const radius = m_config.radius;
 	auto const distance = [&](tile_key const &Key) { return std::max(std::abs(Key.first - centre.first), std::abs(Key.second - centre.second)); };
 
+	// opacity of the scene shapes: the tiles are read again with the new alpha once the slider stops moving
+	std::uint8_t const alpha = texture_alpha();
+	if (alpha != m_alpha_pending)
+	{
+		m_alpha_pending = alpha;
+		m_alpha_changed = now;
+	}
+	if (m_alpha != m_alpha_pending && now - m_alpha_changed > 0.3)
+		m_alpha = m_alpha_pending;
+
 	// tiles which left the area
 	bool evicted{false};
 	for (auto it = m_tiles.begin(); it != m_tiles.end();)
@@ -1199,9 +1234,9 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 			if (!in_service_area(key.first, key.second))
 				t.empty = true;
 			int const level = level_for(std::max(std::abs(dx), std::abs(dy)), m_config.hires);
-			if (t.empty || t.level == level || t.requested == level || now < t.retry_at)
+			if (t.empty || (t.level == level && t.alpha == m_alpha) || (t.requested == level && t.requested_alpha == m_alpha) || now < t.retry_at)
 				continue;
-			schedule(key, t, level);
+			schedule(key, t, level, m_alpha);
 		}
 
 	// ground fit, one tile per frame (it walks the scene geometry), nearest first
@@ -1265,6 +1300,7 @@ void editor_orthophoto::worker()
 		out.key = current.key;
 		out.level = current.level;
 		out.generation = current.generation;
+		out.alpha = current.alpha;
 
 		image picture;
 		std::string error;
@@ -1274,6 +1310,9 @@ void editor_orthophoto::worker()
 			return;
 		if (!out.ok)
 			ErrorLog("Editor orthophoto: tile " + std::to_string(current.key.second) + "_" + std::to_string(current.key.first) + " failed: " + error);
+		if (out.ok && current.alpha < 255)
+			for (std::size_t i = 3; i < picture.rgba.size(); i += 4)
+				picture.rgba[i] = static_cast<std::uint8_t>((picture.rgba[i] * current.alpha + 127u) / 255u);
 		out.width = picture.width;
 		out.height = picture.height;
 		out.pixels = std::move(picture.rgba);
@@ -1320,8 +1359,9 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 
 		bool const draped = m_config.drape && !t.heights.empty();
 		double const flat = m_config.height;
-		double const ylo = draped ? t.height_min : flat;
-		double const yhi = draped ? t.height_max : flat;
+		double const lift = m_config.lift;
+		double const ylo = draped ? t.height_min + lift : flat;
+		double const yhi = draped ? t.height_max + lift : flat;
 
 		// world extent of the tile; u runs west->east (-x), v runs north->south (-z), matching the image rows
 		glm::dvec2 const corner = tile_corner(entry.first);
@@ -1346,7 +1386,7 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 		if (draped)
 			segments = std::max(segments, distance < 300.0 ? ground_grid : distance < 800.0 ? ground_grid / 2 : ground_grid / 4);
 		float const segmentsize = 1.0f / static_cast<float>(segments);
-		auto const height_at = [&](float U, float V) { return draped ? sample_heights(t.heights, U, V) : flat; };
+		auto const height_at = [&](float U, float V) { return draped ? sample_heights(t.heights, U, V) + lift : flat; };
 
 		drawlist->PushTextureID(reinterpret_cast<ImTextureID>(textureid));
 		for (int j = 0; j < segments; ++j)

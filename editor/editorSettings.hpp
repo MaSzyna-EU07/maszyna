@@ -31,6 +31,7 @@ public:
 		int year{0};
 		bool hires{false};
 		bool drape{true};
+		float lift{0.05f};
 		bool in_scene{false};
 	};
 	orthophoto_settings &orthophoto() { return m_orthophoto; }
