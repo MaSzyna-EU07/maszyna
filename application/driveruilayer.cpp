@@ -14,7 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/application.h"
 #include "utilities/translation.h"
 #include "simulation/simulation.h"
-#include "vehicle/Train.h"
+#include "../vehicle/train/Train.h"
 #include "model/AnimModel.h"
 #include "rendering/renderer.h"
 

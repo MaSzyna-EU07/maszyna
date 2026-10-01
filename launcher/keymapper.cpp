@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "keymapper.h"
 #include "simulation/simulation.h"
+#include "utilities/translation.h"
 
 ui::keymapper_panel::keymapper_panel()
     : ui_panel(STR("Keymapper"), false)

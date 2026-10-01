@@ -16,7 +16,6 @@ http://mozilla.org/MPL/2.0/.
 #include "audio/sound.h"
 #include "vehicle/DynObj.h"
 #include "world/mtable.h"
-#include "utilities/translation.h"
 #include "application/driverhints.h"
 
 auto const EU07_AI_ACCELERATION = 0.05;

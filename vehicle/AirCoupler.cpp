@@ -7,7 +7,6 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-#include "stdafx.h"
 #include "vehicle/AirCoupler.h"
 
 #include "model/Model3d.h"

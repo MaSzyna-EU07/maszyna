@@ -13,7 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Timer.h"
 #include "simulation/simulation.h"
-#include "vehicle/Train.h"
+#include "../vehicle/train/Train.h"
 
 basic_precipitation::~basic_precipitation() {
     // TODO: release allocated resources

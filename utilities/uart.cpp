@@ -3,7 +3,7 @@
 
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
-#include "vehicle/Train.h"
+#include "../vehicle/train/Train.h"
 #include "utilities/parser.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"

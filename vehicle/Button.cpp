@@ -14,7 +14,6 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/DynObj.h"
 #include "Console.h"
 #include "utilities/Logs.h"
-#include "rendering/renderer.h"
 
 void TButton::Clear(int i)
 {

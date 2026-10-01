@@ -21,7 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/TractionPower.h"
 #include "vehicle/Camera.h"
 #include "world/mtable.h"
-#include "vehicle/Train.h"
+#include "../vehicle/train/Train.h"
 #include "vehicle/Driver.h"
 #include "model/AnimModel.h"
 #include "vehicle/DynObj.h"
