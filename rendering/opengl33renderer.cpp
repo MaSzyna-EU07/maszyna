@@ -2382,8 +2382,11 @@ void opengl33_renderer::Render(scene::basic_region *Region)
 
 	m_sectionqueue.clear();
 	m_cellqueue.clear();
-	// discard last pass's accumulated instance buckets before this pass starts
-	m_frame_instance_buckets.clear();
+	// discard last pass's accumulated instance buckets before this pass starts.
+	// the vectors themselves are kept, so their allocations get reused by the following passes
+	for( auto &bucket : m_frame_instance_buckets ) {
+		bucket.second.clear();
+	}
 	// build a list of region sections to render
 	glm::vec3 const cameraposition{m_renderpass.pass_camera.position()};
 	auto const camerax = static_cast<int>(std::floor(cameraposition.x / scene::EU07_SECTIONSIZE + scene::EU07_REGIONSIDESECTIONCOUNT / 2));
@@ -2802,10 +2805,11 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 	// still happens inside Render_Instanced(), so correctness is unchanged -- only
 	// the number of calls and glBufferSubData round-trips drops sharply.
 	// (For pickscenery/pickcontrols modes the map stays empty, so this is a no-op.)
-	for( auto const &bucket : m_frame_instance_buckets ) {
+	for( auto &bucket : m_frame_instance_buckets ) {
+		if( bucket.second.empty() ) { continue; }
 		Render_Instanced( bucket.first.pModel, bucket.second );
+		bucket.second.clear();
 	}
-	m_frame_instance_buckets.clear();
 }
 
 void opengl33_renderer::Draw_Geometry(std::vector<gfx::geometrybank_handle>::iterator begin, std::vector<gfx::geometrybank_handle>::iterator end)
@@ -3024,13 +3028,13 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 
 	// 1. Visibility / distance cull. Build parallel arrays of surviving
 	// instances and their precomputed camera-space root modelview matrices.
-	// m_instance_modelviews is a persistent member reused across every
-	// Render_Instanced() call: clear() drops the contents but keeps the
+	// m_instance_survivors (and m_instance_modelviews below) are persistent members
+	// reused across every Render_Instanced() call: clear() drops the contents but keeps the
 	// allocated capacity, so after the first few frames this stops calling
 	// malloc/free entirely (the reserve() below becomes a no-op once the
 	// buffer has grown to the largest batch encountered).
-	m_instance_modelviews.clear();
-	m_instance_modelviews.reserve( Instances.size() );
+	m_instance_survivors.clear();
+	m_instance_survivors.reserve( Instances.size() );
 
 	// Pull the current pass camera/view transform once. We use the current GL
 	// modelview matrix as the view matrix because at the point Render_Instanced
@@ -3040,10 +3044,14 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 
 	bool prepared_shared_state = false; // RaPrepare() runs once per bucket
 	float closest_distancesquared = std::numeric_limits<float>::max();
+	float farthest_distancesquared = 0.f;
 	material_data const *batch_material { nullptr };
 
 	for( auto *Instance : Instances ) {
 		if( Instance == nullptr ) { continue; }
+		// instances which lost their instanceable status after being bucketed (animation or skin
+		// assigned by an event) are drawn by the per-node path
+		if( false == Instance->m_instanceable ) { continue; }
 		if( false == Instance->m_visible ) { continue; }
 		if( false == m_renderpass.pass_camera.visible( Instance->m_area ) ) { continue; }
 
@@ -3077,6 +3085,7 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 		}
 		Instance->m_framestamp = m_framestamp;
 		closest_distancesquared = std::min<float>( closest_distancesquared, static_cast<float>(distancesquared) );
+		farthest_distancesquared = std::max<float>( farthest_distancesquared, static_cast<float>(distancesquared) );
 
 		// Build the camera-relative root modelview for this instance:
 		//   mv = view * translate(instance_pos - camera_pos) * rotate(instance_angles) * scale(m_scale)
@@ -3095,55 +3104,106 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 		if( scale.x != 1.0f || scale.y != 1.0f || scale.z != 1.0f ) {
 			mv = glm::scale( mv, scale );
 		}
-		m_instance_modelviews.emplace_back( mv );
+		m_instance_survivors.emplace_back( static_cast<float>( distancesquared ), mv );
 	}
 
-	if( m_instance_modelviews.empty() ) { return; }
+	if( m_instance_survivors.empty() ) { return; }
+
+	// LOD: a submodel is drawn only while fSquareDist lies inside its [fSquareMinDist, fSquareMaxDist)
+	// range, so the distinct range bounds split distance into bands with constant LOD. The bucket
+	// collects instances from every visible cell, so a single fSquareDist for all of them would draw
+	// far instances at the LOD of the nearest one. When some bound falls inside the distance span of
+	// the survivors they're sorted near-to-far and drawn one band at a time, like Render_Sleepers().
+	m_instance_lodbounds.clear();
+	m_instance_lodpending.clear();
+	m_instance_lodpending.push_back( Model->Root );
+	while( false == m_instance_lodpending.empty() ) {
+		auto const *submodel = m_instance_lodpending.back();
+		m_instance_lodpending.pop_back();
+		if( submodel == nullptr ) { continue; }
+		if( ( submodel->fSquareMinDist > closest_distancesquared ) && ( submodel->fSquareMinDist <= farthest_distancesquared ) ) {
+			m_instance_lodbounds.emplace_back( submodel->fSquareMinDist );
+		}
+		if( ( submodel->fSquareMaxDist > closest_distancesquared ) && ( submodel->fSquareMaxDist <= farthest_distancesquared ) ) {
+			m_instance_lodbounds.emplace_back( submodel->fSquareMaxDist );
+		}
+		m_instance_lodpending.push_back( submodel->Child );
+		m_instance_lodpending.push_back( submodel->Next );
+	}
+	if( false == m_instance_lodbounds.empty() ) {
+		std::sort( m_instance_lodbounds.begin(), m_instance_lodbounds.end() );
+		m_instance_lodbounds.erase( std::unique( m_instance_lodbounds.begin(), m_instance_lodbounds.end() ), m_instance_lodbounds.end() );
+		std::sort( m_instance_survivors.begin(), m_instance_survivors.end(),
+			[]( std::pair<float, glm::mat4> const &Left, std::pair<float, glm::mat4> const &Right ) {
+				return Left.first < Right.first; } );
+	}
+	// contiguous copy of the (sorted) modelview matrices, for the UBO upload
+	m_instance_modelviews.clear();
+	m_instance_modelviews.reserve( m_instance_survivors.size() );
+	for( auto const &survivor : m_instance_survivors ) {
+		m_instance_modelviews.emplace_back( survivor.second );
+	}
+
+	auto alpha = ( batch_material != nullptr ? batch_material->textures_alpha : 0x30300030 );
+	alpha ^= 0x0F0F000F;
 
 	// 2. Walk the submodel tree once per sub-batch. The submodel-local matrix
 	// stack starts at identity; the per-instance camera transform comes from
 	// instance_modelview[gl_InstanceID] in the shader.
 	std::size_t const total = m_instance_modelviews.size();
-	std::size_t offset_idx = 0;
-	while( offset_idx < total ) {
-		std::size_t const this_batch = std::min<std::size_t>( total - offset_idx, gl::MAX_INSTANCES_PER_BATCH );
-
-		// 2a. Upload N modelviews to instance_ubo[0..N-1].
-		instance_ubo->update(
-			reinterpret_cast<uint8_t const *>( m_instance_modelviews.data() + offset_idx ),
-			0,
-			static_cast<int>( this_batch * sizeof( glm::mat4 ) ) );
-
-		// 2b. Push identity onto the matrix stack so submodel transforms
-		// accumulate from identity, not from camera/instance space.
-		::glPushMatrix();
-		::glLoadIdentity();
-
-		// 2c. Configure the existing TModel3d/TSubModel render path. Setting
-		// m_current_instance_count routes draw(handle) calls to draw_instanced.
-		m_current_instance_count = this_batch;
-
-		Model->Root->fSquareDist = closest_distancesquared; // shared global, used by submodel LOD
-		auto alpha = ( batch_material != nullptr ? batch_material->textures_alpha : 0x30300030 );
-		alpha ^= 0x0F0F000F;
-		Model->Root->ReplacableSet( ( batch_material != nullptr ? batch_material->replacable_skins : nullptr ), alpha );
-		Model->Root->pRoot = Model;
-
-		Render( Model->Root );
-
-		m_current_instance_count = 0;
-
-		::glPopMatrix();
-
-		// 2d. Restore instance_modelview[0] to identity so subsequent
-		// non-instanced draws continue to compute identity * modelview.
-		{
-			glm::mat4 const identity( 1.0f );
-			instance_ubo->update( reinterpret_cast<uint8_t const *>( &identity ), 0, sizeof( identity ) );
+	std::size_t band_start = 0;
+	while( band_start < total ) {
+		// the band ends at the first instance distance which reaches the next lod bound
+		// (without bounds inside the distance span the whole set forms a single band)
+		auto const upperbound = std::upper_bound( m_instance_lodbounds.begin(), m_instance_lodbounds.end(), m_instance_survivors[ band_start ].first );
+		float const band_limit = ( upperbound == m_instance_lodbounds.end() ? std::numeric_limits<float>::max() : *upperbound );
+		std::size_t band_end = band_start;
+		while( ( band_end < total ) && ( m_instance_survivors[ band_end ].first < band_limit ) ) {
+			++band_end;
 		}
+		// every distance in the band selects the same lod; the nearest one represents the band
+		float const band_distancesquared = ( m_instance_lodbounds.empty() ? closest_distancesquared : m_instance_survivors[ band_start ].first );
 
-		offset_idx += this_batch;
-		++m_renderpass.draw_stats.instanced_drawcalls;
+		std::size_t offset_idx = band_start;
+		while( offset_idx < band_end ) {
+			std::size_t const this_batch = std::min<std::size_t>( band_end - offset_idx, gl::MAX_INSTANCES_PER_BATCH );
+
+			// 2a. Upload N modelviews to instance_ubo[0..N-1].
+			instance_ubo->update(
+				reinterpret_cast<uint8_t const *>( m_instance_modelviews.data() + offset_idx ),
+				0,
+				static_cast<int>( this_batch * sizeof( glm::mat4 ) ) );
+
+			// 2b. Push identity onto the matrix stack so submodel transforms
+			// accumulate from identity, not from camera/instance space.
+			::glPushMatrix();
+			::glLoadIdentity();
+
+			// 2c. Configure the existing TModel3d/TSubModel render path. Setting
+			// m_current_instance_count routes draw(handle) calls to draw_instanced.
+			m_current_instance_count = this_batch;
+
+			Model->Root->fSquareDist = band_distancesquared; // shared global, used by submodel LOD
+			Model->Root->ReplacableSet( ( batch_material != nullptr ? batch_material->replacable_skins : nullptr ), alpha );
+			Model->Root->pRoot = Model;
+
+			Render( Model->Root );
+
+			m_current_instance_count = 0;
+
+			::glPopMatrix();
+
+			// 2d. Restore instance_modelview[0] to identity so subsequent
+			// non-instanced draws continue to compute identity * modelview.
+			{
+				glm::mat4 const identity( 1.0f );
+				instance_ubo->update( reinterpret_cast<uint8_t const *>( &identity ), 0, sizeof( identity ) );
+			}
+
+			offset_idx += this_batch;
+			++m_renderpass.draw_stats.instanced_drawcalls;
+		}
+		band_start = band_end;
 	}
 
 	m_renderpass.draw_stats.instances += static_cast<int>( total );
