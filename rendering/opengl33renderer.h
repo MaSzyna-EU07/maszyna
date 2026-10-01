@@ -428,9 +428,18 @@ class opengl33_renderer : public gfx_renderer {
 	std::vector<glm::mat4> m_instance_modelviews;
 	// further persistent scratch buffers for Render_Instanced(): culled instances paired with their
 	// squared distance, and the lod bounds of the drawn model which split them into lod bands
-	std::vector<std::pair<float, glm::mat4>> m_instance_survivors;
+	struct instance_survivor {
+		glm::mat4 modelview;
+		float distancesquared;
+		std::uint32_t band;
+	};
+	std::vector<instance_survivor> m_instance_survivors;
 	std::vector<float> m_instance_lodbounds;
 	std::vector<TSubModel const *> m_instance_lodpending;
+	// per lod band: first index in m_instance_modelviews (with end sentinel), fill cursor, nearest distance
+	std::vector<std::size_t> m_instance_bandstarts;
+	std::vector<std::size_t> m_instance_bandcursors;
+	std::vector<float> m_instance_banddistances;
 	gl::scene_ubs scene_ubs;
 	gl::model_ubs model_ubs;
 	gl::light_ubs light_ubs;

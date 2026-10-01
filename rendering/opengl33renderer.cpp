@@ -3026,13 +3026,33 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 	if( Model == nullptr ) { return; }
 	if( Instances.empty() ) { return; }
 
-	// 1. Visibility / distance cull. Build parallel arrays of surviving
-	// instances and their precomputed camera-space root modelview matrices.
-	// m_instance_survivors (and m_instance_modelviews below) are persistent members
-	// reused across every Render_Instanced() call: clear() drops the contents but keeps the
-	// allocated capacity, so after the first few frames this stops calling
-	// malloc/free entirely (the reserve() below becomes a no-op once the
-	// buffer has grown to the largest batch encountered).
+	// LOD: a submodel is drawn only while fSquareDist lies inside its [fSquareMinDist, fSquareMaxDist)
+	// range, so the distinct range bounds split distance into bands with constant LOD. The bucket
+	// collects instances from every visible cell, so a single fSquareDist for all of them would draw
+	// far instances at the LOD of the nearest one. Each instance is assigned to its band and every
+	// band is drawn with its own fSquareDist, like in Render_Sleepers(). The grouping is a counting
+	// sort, linear in the instance count.
+	m_instance_lodbounds.clear();
+	m_instance_lodpending.clear();
+	m_instance_lodpending.push_back( Model->Root );
+	while( false == m_instance_lodpending.empty() ) {
+		auto const *submodel = m_instance_lodpending.back();
+		m_instance_lodpending.pop_back();
+		if( submodel == nullptr ) { continue; }
+		if( submodel->fSquareMinDist > 0.f ) { m_instance_lodbounds.emplace_back( submodel->fSquareMinDist ); }
+		if( submodel->fSquareMaxDist < std::numeric_limits<float>::max() ) { m_instance_lodbounds.emplace_back( submodel->fSquareMaxDist ); }
+		m_instance_lodpending.push_back( submodel->Child );
+		m_instance_lodpending.push_back( submodel->Next );
+	}
+	std::sort( m_instance_lodbounds.begin(), m_instance_lodbounds.end() );
+	m_instance_lodbounds.erase( std::unique( m_instance_lodbounds.begin(), m_instance_lodbounds.end() ), m_instance_lodbounds.end() );
+	auto const bandcount { m_instance_lodbounds.size() + 1 };
+
+	// 1. Visibility / distance cull. Collect surviving instances with their precomputed
+	// camera-space root modelview matrices and lod bands. m_instance_survivors and the other
+	// scratch vectors are persistent members reused across every Render_Instanced() call:
+	// clear() drops the contents but keeps the allocated capacity, so after the first few
+	// frames this stops calling malloc/free entirely.
 	m_instance_survivors.clear();
 	m_instance_survivors.reserve( Instances.size() );
 
@@ -3043,8 +3063,6 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 	glm::mat4 const view_matrix = OpenGLMatrices.data( GL_MODELVIEW );
 
 	bool prepared_shared_state = false; // RaPrepare() runs once per bucket
-	float closest_distancesquared = std::numeric_limits<float>::max();
-	float farthest_distancesquared = 0.f;
 	material_data const *batch_material { nullptr };
 
 	for( auto *Instance : Instances ) {
@@ -3084,64 +3102,39 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 			batch_material = Instance->Material();
 		}
 		Instance->m_framestamp = m_framestamp;
-		closest_distancesquared = std::min<float>( closest_distancesquared, static_cast<float>(distancesquared) );
-		farthest_distancesquared = std::max<float>( farthest_distancesquared, static_cast<float>(distancesquared) );
 
 		// Build the camera-relative root modelview for this instance:
 		//   mv = view * translate(instance_pos - camera_pos) * rotate(instance_angles) * scale(m_scale)
-		// The scale is folded in here so the GPU-instanced path produces visually
-		// identical output to the regular per-instance path: each instance gets
-		// its own (translate × rotate × scale) baked into instance_modelview[i],
-		// which the shader applies via effective_modelview = instance_mv * model_local.
-		glm::dvec3 const offset = Instance->location() - m_renderpass.pass_camera.position();
-		glm::mat4 mv = view_matrix;
-		mv = glm::translate( mv, glm::vec3( offset ) );
-		auto const &angle = Instance->vAngle;
-		if( angle.y != 0.0f ) { mv = glm::rotate( mv, glm::radians( angle.y ), glm::vec3( 0.f, 1.f, 0.f ) ); }
-		if( angle.x != 0.0f ) { mv = glm::rotate( mv, glm::radians( angle.x ), glm::vec3( 1.f, 0.f, 0.f ) ); }
-		if( angle.z != 0.0f ) { mv = glm::rotate( mv, glm::radians( angle.z ), glm::vec3( 0.f, 0.f, 1.f ) ); }
-		auto const &scale = Instance->Scale();
-		if( scale.x != 1.0f || scale.y != 1.0f || scale.z != 1.0f ) {
-			mv = glm::scale( mv, scale );
-		}
-		m_instance_survivors.emplace_back( static_cast<float>( distancesquared ), mv );
+		// The rotation and scale part is cached by the instance, the translation goes into its last
+		// column. The scale is folded in so the GPU-instanced path produces visually identical output
+		// to the regular per-instance path; the shader applies it via effective_modelview = instance_mv * model_local.
+		glm::mat4 root { Instance->rotation_scale() };
+		root[ 3 ] = glm::vec4( glm::vec3( Instance->location() - m_renderpass.pass_camera.position() ), 1.f );
+
+		auto const distance { static_cast<float>( distancesquared ) };
+		m_instance_survivors.push_back( {
+			view_matrix * root,
+			distance,
+			static_cast<std::uint32_t>( std::upper_bound( m_instance_lodbounds.begin(), m_instance_lodbounds.end(), distance ) - m_instance_lodbounds.begin() ) } );
 	}
 
 	if( m_instance_survivors.empty() ) { return; }
 
-	// LOD: a submodel is drawn only while fSquareDist lies inside its [fSquareMinDist, fSquareMaxDist)
-	// range, so the distinct range bounds split distance into bands with constant LOD. The bucket
-	// collects instances from every visible cell, so a single fSquareDist for all of them would draw
-	// far instances at the LOD of the nearest one. When some bound falls inside the distance span of
-	// the survivors they're sorted near-to-far and drawn one band at a time, like Render_Sleepers().
-	m_instance_lodbounds.clear();
-	m_instance_lodpending.clear();
-	m_instance_lodpending.push_back( Model->Root );
-	while( false == m_instance_lodpending.empty() ) {
-		auto const *submodel = m_instance_lodpending.back();
-		m_instance_lodpending.pop_back();
-		if( submodel == nullptr ) { continue; }
-		if( ( submodel->fSquareMinDist > closest_distancesquared ) && ( submodel->fSquareMinDist <= farthest_distancesquared ) ) {
-			m_instance_lodbounds.emplace_back( submodel->fSquareMinDist );
-		}
-		if( ( submodel->fSquareMaxDist > closest_distancesquared ) && ( submodel->fSquareMaxDist <= farthest_distancesquared ) ) {
-			m_instance_lodbounds.emplace_back( submodel->fSquareMaxDist );
-		}
-		m_instance_lodpending.push_back( submodel->Child );
-		m_instance_lodpending.push_back( submodel->Next );
-	}
-	if( false == m_instance_lodbounds.empty() ) {
-		std::sort( m_instance_lodbounds.begin(), m_instance_lodbounds.end() );
-		m_instance_lodbounds.erase( std::unique( m_instance_lodbounds.begin(), m_instance_lodbounds.end() ), m_instance_lodbounds.end() );
-		std::sort( m_instance_survivors.begin(), m_instance_survivors.end(),
-			[]( std::pair<float, glm::mat4> const &Left, std::pair<float, glm::mat4> const &Right ) {
-				return Left.first < Right.first; } );
-	}
-	// contiguous copy of the (sorted) modelview matrices, for the UBO upload
-	m_instance_modelviews.clear();
-	m_instance_modelviews.reserve( m_instance_survivors.size() );
+	// group the modelviews by lod band (counting sort) into a contiguous array, for the UBO upload.
+	// every distance in a band selects the same lod; the nearest one represents the band
+	m_instance_bandstarts.assign( bandcount + 1, 0 );
+	m_instance_banddistances.assign( bandcount, std::numeric_limits<float>::max() );
 	for( auto const &survivor : m_instance_survivors ) {
-		m_instance_modelviews.emplace_back( survivor.second );
+		++m_instance_bandstarts[ survivor.band + 1 ];
+		m_instance_banddistances[ survivor.band ] = std::min( m_instance_banddistances[ survivor.band ], survivor.distancesquared );
+	}
+	for( std::size_t band = 1; band <= bandcount; ++band ) {
+		m_instance_bandstarts[ band ] += m_instance_bandstarts[ band - 1 ];
+	}
+	m_instance_bandcursors.assign( m_instance_bandstarts.begin(), m_instance_bandstarts.end() - 1 );
+	m_instance_modelviews.resize( m_instance_survivors.size() );
+	for( auto const &survivor : m_instance_survivors ) {
+		m_instance_modelviews[ m_instance_bandcursors[ survivor.band ]++ ] = survivor.modelview;
 	}
 
 	auto alpha = ( batch_material != nullptr ? batch_material->textures_alpha : 0x30300030 );
@@ -3150,21 +3143,10 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 	// 2. Walk the submodel tree once per sub-batch. The submodel-local matrix
 	// stack starts at identity; the per-instance camera transform comes from
 	// instance_modelview[gl_InstanceID] in the shader.
-	std::size_t const total = m_instance_modelviews.size();
-	std::size_t band_start = 0;
-	while( band_start < total ) {
-		// the band ends at the first instance distance which reaches the next lod bound
-		// (without bounds inside the distance span the whole set forms a single band)
-		auto const upperbound = std::upper_bound( m_instance_lodbounds.begin(), m_instance_lodbounds.end(), m_instance_survivors[ band_start ].first );
-		float const band_limit = ( upperbound == m_instance_lodbounds.end() ? std::numeric_limits<float>::max() : *upperbound );
-		std::size_t band_end = band_start;
-		while( ( band_end < total ) && ( m_instance_survivors[ band_end ].first < band_limit ) ) {
-			++band_end;
-		}
-		// every distance in the band selects the same lod; the nearest one represents the band
-		float const band_distancesquared = ( m_instance_lodbounds.empty() ? closest_distancesquared : m_instance_survivors[ band_start ].first );
+	for( std::size_t band = 0; band < bandcount; ++band ) {
 
-		std::size_t offset_idx = band_start;
+		std::size_t offset_idx = m_instance_bandstarts[ band ];
+		std::size_t const band_end = m_instance_bandstarts[ band + 1 ];
 		while( offset_idx < band_end ) {
 			std::size_t const this_batch = std::min<std::size_t>( band_end - offset_idx, gl::MAX_INSTANCES_PER_BATCH );
 
@@ -3183,7 +3165,7 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 			// m_current_instance_count routes draw(handle) calls to draw_instanced.
 			m_current_instance_count = this_batch;
 
-			Model->Root->fSquareDist = band_distancesquared; // shared global, used by submodel LOD
+			Model->Root->fSquareDist = m_instance_banddistances[ band ]; // shared global, used by submodel LOD
 			Model->Root->ReplacableSet( ( batch_material != nullptr ? batch_material->replacable_skins : nullptr ), alpha );
 			Model->Root->pRoot = Model;
 
@@ -3203,11 +3185,10 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 			offset_idx += this_batch;
 			++m_renderpass.draw_stats.instanced_drawcalls;
 		}
-		band_start = band_end;
 	}
 
-	m_renderpass.draw_stats.instances += static_cast<int>( total );
-	m_renderpass.draw_stats.models += static_cast<int>( total );
+	m_renderpass.draw_stats.instances += static_cast<int>( m_instance_survivors.size() );
+	m_renderpass.draw_stats.models += static_cast<int>( m_instance_survivors.size() );
 }
 
 // Renders the per-track sleeper instances (TTrack::m_sleeper_local_transforms) using the

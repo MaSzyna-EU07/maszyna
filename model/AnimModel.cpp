@@ -664,6 +664,23 @@ void TAnimModel::RaPrepare()
 	}
 }
 
+glm::mat4 const &TAnimModel::rotation_scale() {
+
+    if( ( false == m_rotationscalevalid ) || ( vAngle != m_rotationscaleangles ) || ( m_scale != m_rotationscalescale ) ) {
+        // same order as the per-instance render path
+        glm::mat4 transform( 1.0f );
+        if( vAngle.y != 0.0f ) { transform = glm::rotate( transform, glm::radians( vAngle.y ), glm::vec3( 0.f, 1.f, 0.f ) ); }
+        if( vAngle.x != 0.0f ) { transform = glm::rotate( transform, glm::radians( vAngle.x ), glm::vec3( 1.f, 0.f, 0.f ) ); }
+        if( vAngle.z != 0.0f ) { transform = glm::rotate( transform, glm::radians( vAngle.z ), glm::vec3( 0.f, 0.f, 1.f ) ); }
+        if( m_scale != glm::vec3( 1.0f ) ) { transform = glm::scale( transform, m_scale ); }
+        m_rotationscale = transform;
+        m_rotationscaleangles = vAngle;
+        m_rotationscalescale = m_scale;
+        m_rotationscalevalid = true;
+    }
+    return m_rotationscale;
+}
+
 int TAnimModel::Flags()
 { // informacja dla TGround, czy ma być w Render, RenderAlpha, czy RenderMixed
     int i = pModel ? pModel->Flags() : 0; // pobranie flag całego modelu
