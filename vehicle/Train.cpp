@@ -922,6 +922,35 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState(dictionary_source const
 	return dict;
 }
 
+// youBy - napiecie na silnikach
+// liczone tutaj, a nie przy samym mierniku, zeby ten sam odczyt trafial rowniez do protokolu
+// sprzetowego, takze w pojezdzie, ktorego model kabiny woltomierza silnikowego nie ma
+double TTrain::get_engine_voltage() const
+{
+	if (mvControlled == nullptr)
+	{
+		return 0.0;
+	}
+
+	if (true == mvControlled->DynamicBrakeFlag)
+	{
+		// przy hamowaniu oporowym ten sam miernik pokazuje prad silnikow, a nie napiecie
+		return std::abs(mvControlled->Im * 5);
+	}
+
+	auto const &circuit = mvControlled->RList[mvControlled->MainCtrlActualPos];
+	if ((circuit.Mn <= 0) || (std::abs(mvControlled->Im) <= 0))
+	{
+		// bez pradu w obwodzie nie ma czego wskazywac
+		return 0.0;
+	}
+
+	int const x = ((mvControlled->TrainType == dt_ET42) && (mvControlled->Imax == mvControlled->ImaxHi) ? 1 : 2);
+
+	// napiecie zasilania pomniejszone o spadek na rozruszniku, rozlozone na galezie silnikow
+	return x * (std::abs(mvControlled->EngineVoltage) - circuit.R * std::abs(mvControlled->Im)) / circuit.Mn;
+}
+
 TTrain::state_t TTrain::get_state() const
 {
 
@@ -953,6 +982,7 @@ TTrain::state_t TTrain::get_state() const
 	    static_cast<float>(mvPantographUnit->PantPress),
 	    fHVoltage,
 	    {fHCurrent[mvControlled->TrainType & dt_EZT ? 0 : 1], fHCurrent[2], fHCurrent[3]},
+	    static_cast<float>(get_engine_voltage()),
 	    ggLVoltage.GetValue(),
 	    mvOccupied->DistCounter,
 	    static_cast<std::uint8_t>(RadioChannel()),
@@ -8913,27 +8943,7 @@ bool TTrain::Update(double const Deltatime)
 	// youBy - napiecie na silnikach
 	if (ggEngineVoltage.SubModel)
 	{
-		if (mvControlled->DynamicBrakeFlag)
-		{
-			ggEngineVoltage.UpdateValue(std::abs(mvControlled->Im * 5));
-		}
-		else
-		{
-			int x;
-			if (mvControlled->TrainType == dt_ET42 && mvControlled->Imax == mvControlled->ImaxHi)
-				x = 1;
-			else
-				x = 2;
-			if (mvControlled->RList[mvControlled->MainCtrlActualPos].Mn > 0 && std::abs(mvControlled->Im) > 0)
-			{
-				ggEngineVoltage.UpdateValue(x * (std::abs(mvControlled->EngineVoltage) - mvControlled->RList[mvControlled->MainCtrlActualPos].R * std::abs(mvControlled->Im)) /
-				                            mvControlled->RList[mvControlled->MainCtrlActualPos].Mn);
-			}
-			else
-			{
-				ggEngineVoltage.UpdateValue(0);
-			}
-		}
+		ggEngineVoltage.UpdateValue(get_engine_voltage());
 		ggEngineVoltage.Update();
 	}
 

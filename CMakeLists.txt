@@ -71,6 +71,7 @@ option(WITH_OPENGL_MODERN "Compile with OpenGL modern renderer" ON)
 option(WITH_OPENGL_LEGACY "Compile with OpenGL legacy renderer" ON)
 option(WITH_PYTHON "Python 3.14 embedded scripting" ON)
 option(WITH_UART "Compile with libserialport" ON)
+option(WITH_HARDWARE_PROTOCOL_V2 "Compile with MaSzyna Hardware Protocol v2 (UART v2)" ON)
 option(WITH_LUA "Compile with lua scripting support" ON)
 option(WITH_OPENVR "Compile with OpenVR" OFF)
 option(WITH_ZMQ "Compile with cppzmq" OFF)
@@ -267,6 +268,28 @@ if (WITH_UART)
 	set(SOURCES ${SOURCES} "utilities/uart.cpp")
 endif()
 
+if (WITH_HARDWARE_PROTOCOL_V2 OR WITH_ZMQ)
+	# shared TrainState registry, used both by the hardware protocol and by the zmq interface
+	set(SOURCES ${SOURCES} "hardware/registry/state_registry.cpp")
+endif()
+
+if (WITH_HARDWARE_PROTOCOL_V2)
+	set(DEFINITIONS ${DEFINITIONS} "WITH_HARDWARE_PROTOCOL_V2")
+	set(SOURCES ${SOURCES}
+		"hardware/hardware_manager.cpp"
+		"hardware/diagnostics/hardware_diagnostics.cpp"
+		"hardware/protocol/protocol_codec.cpp"
+		"hardware/protocol/protocol_defs.cpp"
+		"hardware/protocol/protocol_session.cpp"
+		"hardware/registry/command_registry.cpp"
+		"hardware/registry/hardware_symbol_registry.cpp"
+		"hardware/subscriptions/subscription_manager.cpp")
+	if (WITH_UART)
+		# the serial transport is the only one which needs libserialport
+		set(SOURCES ${SOURCES} "hardware/transport/serial_transport.cpp")
+	endif()
+endif()
+
 if (WITH_ZMQ)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_ZMQ")
 	set(SOURCES ${SOURCES} "input/zmq_input.cpp")
@@ -335,10 +358,18 @@ if (GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
 	  OUTPUT_VARIABLE SRC_SHORT_DATE
 	  OUTPUT_STRIP_TRAILING_WHITESPACE
 	)
+
+	execute_process(
+	  COMMAND ${GIT_EXECUTABLE} rev-parse --abbrev-ref HEAD
+	  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+	  OUTPUT_VARIABLE GIT_BRANCH
+	  OUTPUT_STRIP_TRAILING_WHITESPACE
+	)
 else()
 	string(TIMESTAMP SRC_SHORT_DATE %Y-%m-%d UTC)
 	string(TIMESTAMP SRC_DATE UTC)
 	set(GIT_HASH "(unknown)")
+	set(GIT_BRANCH "(unknown)")
 endif()
 
 configure_file("${CMAKE_SOURCE_DIR}/version_info.h.in" "${CMAKE_BINARY_DIR}/geninc/version_info.h")
