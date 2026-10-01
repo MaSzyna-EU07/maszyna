@@ -3032,6 +3032,12 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 	// far instances at the LOD of the nearest one. Each instance is assigned to its band and every
 	// band is drawn with its own fSquareDist, like in Render_Sleepers(). The grouping is a counting
 	// sort, linear in the instance count.
+	// the same walk also checks whether any piece of the model can get into the shadow map. Models
+	// whose materials are all excluded by the shadow rank cutoff (e.g. grass) would otherwise go through
+	// the whole per-instance culling and the batched draws in every shadow pass, only for every submodel
+	// to be skipped in Render(TSubModel*)
+	auto const *skins { Instances.front() != nullptr && Instances.front()->Material() != nullptr ? Instances.front()->Material()->replacable_skins : nullptr };
+	bool castsshadow { m_renderpass.draw_mode != rendermode::shadows };
 	m_instance_lodbounds.clear();
 	m_instance_lodpending.clear();
 	m_instance_lodpending.push_back( Model->Root );
@@ -3041,9 +3047,14 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 		if( submodel == nullptr ) { continue; }
 		if( submodel->fSquareMinDist > 0.f ) { m_instance_lodbounds.emplace_back( submodel->fSquareMinDist ); }
 		if( submodel->fSquareMaxDist < std::numeric_limits<float>::max() ) { m_instance_lodbounds.emplace_back( submodel->fSquareMaxDist ); }
+		if( ( false == castsshadow ) && ( submodel->eType < TP_ROTATOR ) ) {
+			auto const material { submodel->m_material >= 0 ? submodel->m_material : ( skins != nullptr ? skins[ -submodel->m_material ] : null_handle ) };
+			castsshadow = ( Material( material ).shadow_rank <= Global.gfx_shadow_rank_cutoff );
+		}
 		m_instance_lodpending.push_back( submodel->Child );
 		m_instance_lodpending.push_back( submodel->Next );
 	}
+	if( false == castsshadow ) { return; }
 	std::sort( m_instance_lodbounds.begin(), m_instance_lodbounds.end() );
 	m_instance_lodbounds.erase( std::unique( m_instance_lodbounds.begin(), m_instance_lodbounds.end() ), m_instance_lodbounds.end() );
 	auto const bandcount { m_instance_lodbounds.size() + 1 };
@@ -3064,6 +3075,7 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 
 	bool prepared_shared_state = false; // RaPrepare() runs once per bucket
 	material_data const *batch_material { nullptr };
+	float farthest_distancesquared { 0.f };
 
 	for( auto *Instance : Instances ) {
 		if( Instance == nullptr ) { continue; }
@@ -3112,6 +3124,7 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 		root[ 3 ] = glm::vec4( glm::vec3( Instance->location() - m_renderpass.pass_camera.position() ), 1.f );
 
 		auto const distance { static_cast<float>( distancesquared ) };
+		farthest_distancesquared = std::max( farthest_distancesquared, distance );
 		m_instance_survivors.push_back( {
 			view_matrix * root,
 			distance,
@@ -3120,16 +3133,25 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 
 	if( m_instance_survivors.empty() ) { return; }
 
-	// group the modelviews by lod band (counting sort) into a contiguous array, for the UBO upload.
-	// every distance in a band selects the same lod; the nearest one represents the band
-	m_instance_bandstarts.assign( bandcount + 1, 0 );
+	// group the modelviews by lod band into a contiguous array, for the UBO upload. every distance in
+	// a band selects the same lod; the nearest one represents the band.
+	// within a band the instances are additionally ordered roughly near-to-far, in distance slots. dense
+	// alpha tested foliage then gets the most out of the early depth test, as the nearest instances fill
+	// the depth buffer first and hide the fragments of those behind them before they get shaded.
+	// both levels are done with a single counting sort, linear in the instance count
+	auto const distanceslots { 16 };
+	auto const keycount { bandcount * distanceslots };
+	auto const slotscale { distanceslots / std::sqrt( std::max( farthest_distancesquared, 1.f ) ) };
+	m_instance_bandstarts.assign( keycount + 1, 0 );
 	m_instance_banddistances.assign( bandcount, std::numeric_limits<float>::max() );
-	for( auto const &survivor : m_instance_survivors ) {
-		++m_instance_bandstarts[ survivor.band + 1 ];
+	for( auto &survivor : m_instance_survivors ) {
 		m_instance_banddistances[ survivor.band ] = std::min( m_instance_banddistances[ survivor.band ], survivor.distancesquared );
+		auto const slot { std::min( distanceslots - 1, static_cast<int>( std::sqrt( survivor.distancesquared ) * slotscale ) ) };
+		survivor.band = static_cast<std::uint32_t>( survivor.band * distanceslots + slot ); // from now on it's the sort key
+		++m_instance_bandstarts[ survivor.band + 1 ];
 	}
-	for( std::size_t band = 1; band <= bandcount; ++band ) {
-		m_instance_bandstarts[ band ] += m_instance_bandstarts[ band - 1 ];
+	for( std::size_t key = 1; key <= keycount; ++key ) {
+		m_instance_bandstarts[ key ] += m_instance_bandstarts[ key - 1 ];
 	}
 	m_instance_bandcursors.assign( m_instance_bandstarts.begin(), m_instance_bandstarts.end() - 1 );
 	m_instance_modelviews.resize( m_instance_survivors.size() );
@@ -3145,8 +3167,8 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 	// instance_modelview[gl_InstanceID] in the shader.
 	for( std::size_t band = 0; band < bandcount; ++band ) {
 
-		std::size_t offset_idx = m_instance_bandstarts[ band ];
-		std::size_t const band_end = m_instance_bandstarts[ band + 1 ];
+		std::size_t offset_idx = m_instance_bandstarts[ band * distanceslots ];
+		std::size_t const band_end = m_instance_bandstarts[ ( band + 1 ) * distanceslots ];
 		while( offset_idx < band_end ) {
 			std::size_t const this_batch = std::min<std::size_t>( band_end - offset_idx, gl::MAX_INSTANCES_PER_BATCH );
 

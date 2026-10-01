@@ -436,7 +436,8 @@ class opengl33_renderer : public gfx_renderer {
 	std::vector<instance_survivor> m_instance_survivors;
 	std::vector<float> m_instance_lodbounds;
 	std::vector<TSubModel const *> m_instance_lodpending;
-	// per lod band: first index in m_instance_modelviews (with end sentinel), fill cursor, nearest distance
+	// per sort key (lod band and distance slot): first index in m_instance_modelviews (with end sentinel)
+	// and fill cursor; per lod band: nearest distance
 	std::vector<std::size_t> m_instance_bandstarts;
 	std::vector<std::size_t> m_instance_bandcursors;
 	std::vector<float> m_instance_banddistances;
