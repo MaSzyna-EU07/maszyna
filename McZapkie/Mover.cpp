@@ -2408,7 +2408,7 @@ bool TMoverParameters::IncMainCtrl(int CtrlSpeed)
 			{
 				++MainCtrlPos;
 				OK = true;
-				if (EIMCtrlType == 0 && SpeedCtrlAutoTurnOffFlag & 1 == 1 && MainCtrlActualPos != MainCtrlPos)
+				if (EIMCtrlType == 0 && ( SpeedCtrlAutoTurnOffFlag & 1 ) == 1 && MainCtrlActualPos != MainCtrlPos)
 				{
 					DecScndCtrl(2);
 					SpeedCtrlUnit.IsActive = false;
@@ -2591,7 +2591,7 @@ bool TMoverParameters::DecMainCtrl(int CtrlSpeed)
 						{
 							MainCtrlPos--;
 							OK = true;
-							if (EIMCtrlType == 0 && SpeedCtrlAutoTurnOffFlag & 1 == 1 && MainCtrlActualPos != MainCtrlPos)
+							if (EIMCtrlType == 0 && (SpeedCtrlAutoTurnOffFlag & 1) == 1 && MainCtrlActualPos != MainCtrlPos)
 							{
 								DecScndCtrl(2);
 								SpeedCtrlUnit.IsActive = false;
@@ -2780,7 +2780,7 @@ bool TMoverParameters::IncScndCtrl(int CtrlSpeed)
 	if (OK && EngineType == TEngineType::ElectricInductionMotor && ScndCtrlPosNo == 1 && MainCtrlPos > 0)
 	{
 		SpeedCtrlValue = Vel;
-		if (EIMCtrlType == 0 && SpeedCtrlAutoTurnOffFlag & 1 == 1)
+		if (EIMCtrlType == 0 && (SpeedCtrlAutoTurnOffFlag & 1) == 1)
 		{
 			MainCtrlActualPos = MainCtrlPos;
 		}
@@ -2901,7 +2901,7 @@ bool TMoverParameters::CabActivisation(bool const Enforce)
 		CabMaster = true;
 		SecuritySystem.set_enabled(true); // activate the alerter TODO: make it part of control based cab selection
 		SendCtrlToNext("CabActivisation", 1, CabActive);
-		SendCtrlToNext("Direction", DirAbsolute, CabActive);
+		SendCtrlToNext("Direction", DirActive, CabActive);
 		if (InactiveCabFlag & activation::springbrakeoff)
 		{
 			SpringBrakeActivate(false);
@@ -4586,14 +4586,11 @@ void TMoverParameters::UpdatePipePressure(double dt)
 
 	auto const lowvoltagepower{Power24vIsAvailable || Power110vIsAvailable};
 
-	if (true == RadioStopFlag || true == AlarmChainFlag || (true == EIMCtrlEmergency && LocalBrakePosA >= 1.0) || SecuritySystem.is_braking() ||
-	    (SpringBrakeDriveEmergencyVel >= 0 && Vel > SpringBrakeDriveEmergencyVel && SpringBrake.IsActive)
-	    /*
-	        // NOTE: disabled because 32 is 'load destroyed' flag, what does this have to do with emergency brake?
-	        // (if it's supposed to be broken coupler, such event sets alarmchainflag instead when appropriate)
-	         || ( true == TestFlag( EngDmgFlag, 32 ) )
-	    */
-	    || (0 == CabActive && InactiveCabFlag & activation::emergencybrake) || (SpringBrakeDriveEmergencyVel >= 0 && Vel > SpringBrakeDriveEmergencyVel && SpringBrake.IsActive))
+	// EngDmgFlag 32 (load destroyed) used to trigger this too; dropped, it has nothing to do with
+	// the emergency brake (a broken coupler sets AlarmChainFlag instead)
+	if (RadioStopFlag || AlarmChainFlag || (EIMCtrlEmergency && LocalBrakePosA >= 1.0) || SecuritySystem.is_braking() ||
+		(SpringBrakeDriveEmergencyVel >= 0 && Vel > SpringBrakeDriveEmergencyVel && SpringBrake.IsActive) ||
+		(0 == CabActive && (InactiveCabFlag & activation::emergencybrake) != 0))
 	{
 		EmergencyValveFlow = PF(0, PipePress, 0.15) * dt;
 	}
