@@ -2857,10 +2857,7 @@ bool TController::PrepareEngine()
                && false == IsAnyLineBreakerOpen
                && ( false == IsAnyConverterPresent || true == IsAnyConverterEnabled )
                && ( false == IsAnyCompressorPresent || true == IsAnyCompressorEnabled )
-               && ( mvControlling->ScndPipePress > 4.5 || mvControlling->VeselVolume == 0.0 )
-               && ( static_cast<int>(mvOccupied->fBrakeCtrlPos) == static_cast<int>(mvOccupied->Handle->GetPos(bh_RP))
-                 || static_cast<int>(mvOccupied->fBrakeCtrlPos) != static_cast<int>(mvOccupied->Handle->GetPos(bh_NP))
-                 || mvOccupied->BrakeHandle == TBrakeHandle::NoHandle );
+               && ( mvControlling->ScndPipePress > 4.5 || mvControlling->VeselVolume == 0.0 );
     }
 
     if( true == isready ) {
