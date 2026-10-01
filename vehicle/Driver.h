@@ -450,6 +450,13 @@ private:
     double ReactionTime = 0.0; // czas reakcji Ra: czego i na co? świadomości AI
     double fBrakeTime = 0.0; // wpisana wartość jest zmniejszana do 0, gdy ujemna należy zmienić nastawę hamulca
     double BrakeChargingCooldown{}; // prevents the ai from trying to charge the train brake too frequently
+    double fBrakeChargeLogTimer = 0.0;
+    double fBrakeChargeFSStart = -1.0;
+    double fConsistMaxCRP = 0.0;
+    double fConsistMinCRP = 0.0;
+    int fConsistBrakedCount = 0;
+    int fConsistReleaserCount = 0;
+    double fDepartBlockStart = -1.0;
     TBrakeSystem BrakeSystem = TBrakeSystem::Individual; //type of main brake
     bool ForcePNBrake = false; //is it necessary to use PN brake instead of EP brake
     int DynamicBrakeTest = 0; //is it necessary to make brake test while driving
