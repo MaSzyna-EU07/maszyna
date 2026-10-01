@@ -215,13 +215,34 @@ opengl33_vaogeometrybank::draw_instanced_( gfx::geometry_handle const &Geometry,
     GLsizei const inst_count = static_cast<GLsizei>(InstanceCount);
 
     if( chunkrecord.index_count > 0 ) {
-        m_vao->bind();
-        ::glDrawElementsInstancedBaseVertex(
-            chunk.type,
-            chunkrecord.index_count, GL_UNSIGNED_INT,
-            reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
-            inst_count,
-            chunkrecord.vertex_offset );
+        // GLES 3.0 context doesn't provide the base vertex variant, same fallbacks as in draw_()
+        if( glDrawElementsInstancedBaseVertex ) {
+            m_vao->bind();
+            ::glDrawElementsInstancedBaseVertex(
+                chunk.type,
+                chunkrecord.index_count, GL_UNSIGNED_INT,
+                reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
+                inst_count,
+                chunkrecord.vertex_offset );
+        }
+        else if( glDrawElementsInstancedBaseVertexOES ) {
+            m_vao->bind();
+            ::glDrawElementsInstancedBaseVertexOES(
+                chunk.type,
+                chunkrecord.index_count, GL_UNSIGNED_INT,
+                reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
+                inst_count,
+                chunkrecord.vertex_offset );
+        }
+        else {
+            setup_attrib( chunkrecord.vertex_offset );
+            m_vao->bind();
+            ::glDrawElementsInstanced(
+                chunk.type,
+                chunkrecord.index_count, GL_UNSIGNED_INT,
+                reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
+                inst_count );
+        }
     }
     else {
         m_vao->bind();

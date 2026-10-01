@@ -355,7 +355,7 @@ double TMoverParameters::Current(double n, double U)
 	if (DynamicBrakeFlag && !FuseFlag && DynamicBrakeType == dbrake_automatic && Power110vIsAvailable && Mains) // hamowanie EP09   //TUHEX
 	{
 		// TODO: zrobic bardziej uniwersalne nie tylko dla EP09
-		MotorCurrent = -std::max(MotorParam[0].fi * (Vadd / (Vadd + MotorParam[0].Isat) - MotorParam[0].fi0), 0.) * n * 2.0 / DynamicBrakeRes;
+		MotorCurrent = -std::max(motor_param(0).fi * (Vadd / (Vadd + motor_param(0).Isat) - motor_param(0).fi0), 0.) * n * 2.0 / DynamicBrakeRes;
 	}
 	else if (RList[MainCtrlActualPos].Bn == 0 || false == StLinFlag)
 	{
@@ -390,7 +390,7 @@ double TMoverParameters::Current(double n, double U)
 					if (DynamicBrakeType == dbrake_switch && TrainType == dt_ET42)
 					{ // z Megapacka
 						Rz = WindingRes + R;
-						MotorCurrent = -MotorParam[SP].fi * n / Rz; //{hamowanie silnikiem na oporach rozruchowych}
+						MotorCurrent = -motor_param(SP).fi * n / Rz; //{hamowanie silnikiem na oporach rozruchowych}
 					}
 				}
 				else
@@ -398,13 +398,13 @@ double TMoverParameters::Current(double n, double U)
 			}
 			else
 			{
-				U1 = U + Mn * n * MotorParam[SP].fi0 * MotorParam[SP].fi;
+				U1 = U + Mn * n * motor_param(SP).fi0 * motor_param(SP).fi;
 				//          writepaslog("U1             ", FloatToStr(U1));
 				//          writepaslog("Isat           ", FloatToStr(MotorParam[SP].Isat));
 				//          writepaslog("fi             ", FloatToStr(MotorParam[SP].fi));
-				Isf = Sign(U1) * MotorParam[SP].Isat;
+				Isf = Sign(U1) * motor_param(SP).Isat;
 				//          writepaslog("Isf            ", FloatToStr(Isf));
-				Delta = square(Isf * Rz + Mn * MotorParam[SP].fi * n - U1) + 4.0 * U1 * Isf * Rz; // 105 * 1.67 + Mn * 140.9 * 20.532 - U1
+				Delta = square(Isf * Rz + Mn * motor_param(SP).fi * n - U1) + 4.0 * U1 * Isf * Rz; // 105 * 1.67 + Mn * 140.9 * 20.532 - U1
 				//          DeltaQ = Isf * Rz + Mn * MotorParam[SP].fi * n - U1 + 4 * U1 * Isf * Rz;
 				//          writepaslog("Delta          ", FloatToStr(Delta));
 				//          writepaslog("DeltaQ         ", FloatToStr(DeltaQ));
@@ -412,9 +412,9 @@ double TMoverParameters::Current(double n, double U)
 				if (Mains)
 				{
 					if (U > 0)
-						MotorCurrent = (U1 - Isf * Rz - Mn * MotorParam[SP].fi * n + std::sqrt(Delta)) / (2.0 * Rz);
+						MotorCurrent = (U1 - Isf * Rz - Mn * motor_param(SP).fi * n + std::sqrt(Delta)) / (2.0 * Rz);
 					else
-						MotorCurrent = (U1 - Isf * Rz - Mn * MotorParam[SP].fi * n - std::sqrt(Delta)) / (2.0 * Rz);
+						MotorCurrent = (U1 - Isf * Rz - Mn * motor_param(SP).fi * n - std::sqrt(Delta)) / (2.0 * Rz);
 				}
 				else
 					MotorCurrent = 0;
@@ -5534,9 +5534,9 @@ double TMoverParameters::TractionForce(double dt)
 	case TEngineType::DieselEngine:
 	{
 		if (ShuntMode) // dodatkowa przekładnia np. dla 2Ls150
-			dtrans = AnPos * Transmision.Ratio * MotorParam[ScndCtrlActualPos].mIsat;
+			dtrans = AnPos * Transmision.Ratio * motor_param(ScndCtrlActualPos).mIsat;
 		else
-			dtrans = Transmision.Ratio * MotorParam[ScndCtrlActualPos].mIsat;
+			dtrans = Transmision.Ratio * motor_param(ScndCtrlActualPos).mIsat;
 
 		dmoment = dizel_Momentum(dizel_fill, dtrans * nrot * DirActive, dt); // oblicza tez enrot
 		break;
@@ -5981,10 +5981,10 @@ double TMoverParameters::TractionForce(double dt)
 			Mm = Mw / Transmision.Ratio; // moment silnika trakcyjnego
 
 			// with MotorParam[ScndCtrlPos] do
-			if (abs(Mm) > MotorParam[ScndCtrlPos].fi)
-				Im = NPoweredAxles * abs(abs(Mm) / MotorParam[ScndCtrlPos].mfi + MotorParam[ScndCtrlPos].mIsat);
+			if (abs(Mm) > motor_param(ScndCtrlPos).fi)
+				Im = NPoweredAxles * abs(abs(Mm) / motor_param(ScndCtrlPos).mfi + motor_param(ScndCtrlPos).mIsat);
 			else
-				Im = NPoweredAxles * sqrt(abs(Mm * MotorParam[ScndCtrlPos].Isat));
+				Im = NPoweredAxles * sqrt(abs(Mm * motor_param(ScndCtrlPos).Isat));
 
 			if (ShuntMode)
 			{
@@ -6762,7 +6762,7 @@ double TMoverParameters::Momentum(double I)
 			SP = RList[MainCtrlActualPos].ScndAct;
 
 	//     Momentum:=mfi*I*(1-1.0/(Abs(I)/mIsat+1));
-	return MotorParam[SP].mfi * I * (abs(I) / (abs(I) + MotorParam[SP].mIsat) - MotorParam[SP].mfi0);
+	return motor_param(SP).mfi * I * (abs(I) / (abs(I) + motor_param(SP).mIsat) - motor_param(SP).mfi0);
 }
 
 // *************************************************************************************************
@@ -6773,7 +6773,7 @@ double TMoverParameters::MomentumF(double I, double Iw, int SCP)
 {
 	// umozliwia dokladne sterowanie wzbudzeniem
 
-	return MotorParam[SCP].mfi * I * std::max(abs(Iw) / (abs(Iw) + MotorParam[SCP].mIsat) - MotorParam[SCP].mfi0, 0.);
+	return motor_param(SCP).mfi * I * std::max(abs(Iw) / (abs(Iw) + motor_param(SCP).mIsat) - motor_param(SCP).mfi0, 0.);
 }
 
 // *************************************************************************************************
@@ -6906,7 +6906,7 @@ bool TMoverParameters::AutoRelayCheck(void)
 	}
 
 	// sprawdzenie wszystkich warunkow (AutoRelayFlag, AutoSwitch, Im<Imin)
-	auto const ARFASI2{(false == AutoRelayFlag || (MotorParam[ScndCtrlActualPos].AutoSwitch && abs(Im) < Imin))};
+	auto const ARFASI2{(false == AutoRelayFlag || (motor_param(ScndCtrlActualPos).AutoSwitch && abs(Im) < Imin))};
 	auto const ARFASI{
 	    (false == AutoRelayFlag || (RList[MainCtrlActualPos].AutoSwitch && abs(Im) < Imin) || (!RList[MainCtrlActualPos].AutoSwitch && RList[MainCtrlActualPos].Relay < MainCtrlPos))};
 	// brak PSR                   na tej pozycji działa PSR i prąd poniżej progu
@@ -7729,13 +7729,13 @@ bool TMoverParameters::dizel_AutoGearCheck(void)
 {
 	auto OK{false};
 
-	auto const VelUp{(MotorParam[ScndCtrlActualPos].mfi0 != 0.0 ?
-	                      MotorParam[ScndCtrlActualPos].mfi0 + (MotorParam[ScndCtrlActualPos].mfi - MotorParam[ScndCtrlActualPos].mfi0) * std::max(0.0, eimic_real) :
-	                      MotorParam[ScndCtrlActualPos].mfi)};
+	auto const VelUp{(motor_param(ScndCtrlActualPos).mfi0 != 0.0 ?
+	                      motor_param(ScndCtrlActualPos).mfi0 + (motor_param(ScndCtrlActualPos).mfi - motor_param(ScndCtrlActualPos).mfi0) * std::max(0.0, eimic_real) :
+	                      motor_param(ScndCtrlActualPos).mfi)};
 
-	auto const VelDown{(MotorParam[ScndCtrlActualPos].fi0 != 0.0 && eimic_real <= 0.0 ? MotorParam[ScndCtrlActualPos].fi0 : MotorParam[ScndCtrlActualPos].fi)};
+	auto const VelDown{(motor_param(ScndCtrlActualPos).fi0 != 0.0 && eimic_real <= 0.0 ? motor_param(ScndCtrlActualPos).fi0 : motor_param(ScndCtrlActualPos).fi)};
 
-	if (MotorParam[ScndCtrlActualPos].AutoSwitch && Mains)
+	if (motor_param(ScndCtrlActualPos).AutoSwitch && Mains)
 	{
 		if (RList[MainCtrlPos].Mn == 0 && !hydro_TC)
 		{
@@ -7746,7 +7746,7 @@ bool TMoverParameters::dizel_AutoGearCheck(void)
 		}
 		else
 		{
-			if (MotorParam[ScndCtrlActualPos].AutoSwitch && dizel_automaticgearstatus == 0) // sprawdz czy zmienic biegi
+			if (motor_param(ScndCtrlActualPos).AutoSwitch && dizel_automaticgearstatus == 0) // sprawdz czy zmienic biegi
 			{
 				if (Vel > VelUp)
 				{
@@ -7831,7 +7831,7 @@ bool TMoverParameters::dizel_AutoGearCheck(void)
 			}
 		else
 			dizel_EngageSwitch(0.0);
-		if (!(MotorParam[ScndCtrlActualPos].mIsat > 0))
+		if (!(motor_param(ScndCtrlActualPos).mIsat > 0))
 			dizel_EngageSwitch(0.0); // wylacz sprzeglo na pozycjach neutralnych
 		if (!AutoRelayFlag)
 			ScndCtrlActualPos = ScndCtrlPos;
@@ -7953,7 +7953,7 @@ double TMoverParameters::dizel_fillcheck(int mcp, double dt)
 			// napelnienie zalezne od MainCtrlPos
 			if (EIMCtrlType > 0)
 			{
-				realfill = std::max(0.0, std::min(eimic_real, 1 - MotorParam[ScndCtrlActualPos].Isat));
+				realfill = std::max(0.0, std::min(eimic_real, 1 - motor_param(ScndCtrlActualPos).Isat));
 				if (eimic_real > 0.005 && !hydro_TC_Lockup)
 				{
 					dizel_nreg_min = std::min(dizel_nreg_min + 2.5 * dt, dizel_nmin_hdrive + eimic_real * dizel_nmin_hdrive_factor);
@@ -8041,7 +8041,7 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 	double Moment = 0, enMoment = 0, gearMoment = 0, eps = 0, newn = 0, friction = 0, neps = 0;
 	double TorqueH = 0, TorqueL = 0, TorqueC = 0;
 	n = n * CabActive;
-	if (MotorParam[ScndCtrlActualPos].mIsat < 0.001 || DirActive == 0)
+	if (motor_param(ScndCtrlActualPos).mIsat < 0.001 || DirActive == 0)
 		n = enrot;
 	friction = dizel_engagefriction;
 	hydro_TC_nIn = enrot; // wal wejsciowy przetwornika momentu
@@ -9076,6 +9076,17 @@ int s2NNW(std::string s)
 // Q: 20160717
 // *************************************************************************************************
 // parsowanie Motor Param Table
+// checks a motor parameter table position read from the .fiz file against the table size
+static bool is_valid_mpt_index(int const Index)
+{
+	if (Index >= 0 && Index <= MotorParametersArraySize)
+	{
+		return true;
+	}
+	WriteLog("Read MPT: position " + std::to_string(Index) + " out of range 0-" + std::to_string(MotorParametersArraySize) + " in line " + std::to_string(LISTLINE));
+	return false;
+}
+
 bool TMoverParameters::readMPT0(std::string const &line)
 {
 
@@ -9088,6 +9099,10 @@ bool TMoverParameters::readMPT0(std::string const &line)
 	}
 	int idx = 0; // numer pozycji
 	parser >> idx;
+	if (false == is_valid_mpt_index(idx))
+	{
+		return false;
+	}
 	switch (EngineType)
 	{
 	case TEngineType::DieselEngine:
@@ -9152,6 +9167,10 @@ bool TMoverParameters::readMPTElectricSeries(std::string const &line)
 	}
 	int idx = 0; // numer pozycji
 	parser >> idx;
+	if (false == is_valid_mpt_index(idx))
+	{
+		return false;
+	}
 	parser >> MotorParam[idx].mfi >> MotorParam[idx].mIsat >> MotorParam[idx].fi >> MotorParam[idx].Isat;
 	if (true == parser.getTokens(1, false))
 	{
@@ -9177,6 +9196,10 @@ bool TMoverParameters::readMPTDieselElectric(std::string const &line)
 	}
 	int idx = 0; // numer pozycji
 	parser >> idx;
+	if (false == is_valid_mpt_index(idx))
+	{
+		return false;
+	}
 	parser >> MotorParam[idx].mfi >> MotorParam[idx].mIsat >> MotorParam[idx].fi >> MotorParam[idx].Isat >> MPTRelay[idx].Iup >> MPTRelay[idx].Idown;
 
 	return true;
@@ -9193,6 +9216,10 @@ bool TMoverParameters::readMPTDieselEngine(std::string const &line)
 	}
 	int idx = 0; // numer pozycji
 	parser >> idx;
+	if (false == is_valid_mpt_index(idx))
+	{
+		return false;
+	}
 	parser >> MotorParam[idx].mIsat >> MotorParam[idx].fi >> MotorParam[idx].mfi;
 	if (true == parser.getTokens(1, false))
 	{
@@ -11735,6 +11762,14 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int Dir)
 	if (CompressorPower == 0 && (EngineType == TEngineType::DieselEngine || EngineType == TEngineType::DieselElectric))
 	{
 		CompressorPower = 3;
+	}
+
+	// for these engine types secondary controller positions index MotorParam table
+	if ((EngineType == TEngineType::ElectricSeriesMotor || EngineType == TEngineType::DieselEngine || EngineType == TEngineType::DieselElectric) &&
+	    ScndCtrlPosNo > MotorParametersArraySize)
+	{
+		WriteLog("SCPN=" + std::to_string(ScndCtrlPosNo) + " exceeds motor parameter table size, limited to " + std::to_string(MotorParametersArraySize));
+		ScndCtrlPosNo = MotorParametersArraySize;
 	}
 
 	// WriteLog("aa = " + AxleArangement + " " + std::string( Pos("o", AxleArangement)) );
