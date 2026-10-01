@@ -50,6 +50,11 @@ class editor_ui : public ui_layer
 	{
 		m_filloptions = std::move(Renderer);
 	}
+	// draws the path editing settings in its node bank tab (the editing state lives in the editor mode)
+	void set_track_options(std::function<void()> Renderer)
+	{
+		m_trackoptions = std::move(Renderer);
+	}
 	// draws the gizmo settings in the toolset window (the gizmo state lives in the editor mode)
 	void set_gizmo_options(std::function<void()> Renderer)
 	{
@@ -77,6 +82,7 @@ class editor_ui : public ui_layer
 	bool m_insertrandom{false}; // insert mode picks a random template from m_insertset
 	model_set_ref m_insertset;
 	std::function<void()> m_filloptions;
+	std::function<void()> m_trackoptions;
 	std::function<void()> m_gizmooptions;
 	scene::basic_node *m_node{nullptr}; // currently bound scene node, if any
 };

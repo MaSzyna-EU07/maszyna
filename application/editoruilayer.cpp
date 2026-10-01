@@ -85,6 +85,10 @@ void editor_ui::render_mode_options(nodebank_panel::edit_mode const Mode)
 		if (m_filloptions)
 			m_filloptions();
 		break;
+	case nodebank_panel::TRACK:
+		if (m_trackoptions)
+			m_trackoptions();
+		break;
 	default:
 		break;
 	}

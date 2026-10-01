@@ -122,7 +122,8 @@ class nodebank_panel : public ui_panel
 		COPY,
 		ADD,
 		BRUSH,
-		FILL
+		FILL,
+		TRACK
 	};
 	edit_mode mode = MODIFY;
 

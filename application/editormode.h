@@ -19,12 +19,16 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorTerrain.hpp"
 #include "editor/editorTerrainStreamer.hpp"
 #include "editor/editorOrthophoto.hpp"
+#include "editor/editorTrack.hpp"
 
+#include <array>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
 
 class TAnimModel;
+class TTrack;
 
 class editor_mode : public application_mode
 {
@@ -85,7 +89,7 @@ class editor_mode : public application_mode
 
 	struct EditorSnapshot
 	{
-		enum class Action { Move, Rotate, Scale, Add, Delete, Other };
+		enum class Action { Move, Rotate, Scale, Add, Delete, TrackEdit, Other };
 
 		Action action{Action::Other};
 		std::string node_name;          // node identifier (basic_node::name())
@@ -98,6 +102,8 @@ class editor_mode : public application_mode
 		UID uuid; // node UUID for reference, used as fallback lookup for deleted/recreated nodes
 		scene::layer_handle layer{null_handle}; // scenery layer of the node, so a recreated node returns to it
 		scene::instance_handle instance{0}; // include of a scenery template which was placed or removed, instead of a node
+		// TrackEdit: state of all paths modified by the change (the edited path and neighbours dragged along)
+		std::vector<std::pair<TTrack *, editor_track::state>> tracks;
 
 	};
 	void push_snapshot(scene::basic_node *node, EditorSnapshot::Action Action = EditorSnapshot::Action::Move, std::string const &Serialized = std::string());
@@ -268,4 +274,37 @@ class editor_mode : public application_mode
 	bool m_gizmo_local{false};                                   // manipulate in the object's local space instead of world space
 	gizmo_operation m_gizmo_op{gizmo_operation::translate};      // current transform mode (translate/rotate/scale)
 	float m_gizmo_snap{1.0f};                                    // translation snap step (metres) applied while Ctrl is held
+
+	// path (track) editing, implemented in editormodetrack.cpp
+	TTrack *selected_track() const;
+	// settings and parameters of the selected path, drawn in the node bank tab of the track mode
+	void render_track_ui();
+	// curve and point handles of the selected path
+	void draw_track_overlay() const;
+	// selects the point handle of the selected path located under the cursor. returns: true if a handle was hit
+	bool pick_track_handle();
+	// selects the path picked in the viewport
+	void select_track(scene::basic_node *Node);
+	// gizmo for the selected path: moves the selected point handle, or the whole path
+	void render_track_gizmo();
+	// rebuilds paths modified by the ongoing drag; unless forced, at most a few times per second
+	void commit_track_drag(bool const Force);
+	// records provided state of paths in the undo history
+	void push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States);
+	// restores state of paths stored in the history, moving their current state to the opposite stack
+	void restore_track_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite);
+	editor_track::point_ref m_track_point;                                         // selected point handle of the selected path
+	std::vector<TTrack *> m_track_drag;                                            // paths modified by the ongoing gizmo drag
+	std::vector<std::pair<TTrack *, editor_track::point_ref>> m_track_drag_points; // end points of neighbours dragged along
+	editor_track::snap_target m_track_snap;                                        // connection made at the end of the ongoing drag
+	glm::dvec3 m_track_pivot{0.0};                                                 // rotation pivot of the ongoing drag
+	glm::mat4 m_track_gizmo{1.0f};                                                 // gizmo matrix, kept for the duration of a drag
+	bool m_track_gizmo_using{false};
+	bool m_track_dirty{false}; // drag changes waiting for rebuild
+	std::chrono::steady_clock::time_point m_track_last_commit;
+	editor_track::state m_track_field_before; // state of the path before the ongoing field edit
+	std::array<std::array<char, 256>, 3> m_track_materials{}; // material names being edited
+	float m_track_snap_radius{1.0f};
+	bool m_track_align_tangent{true};
+	bool m_track_drag_connected{true};
 };

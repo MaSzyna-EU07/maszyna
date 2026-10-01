@@ -339,6 +339,7 @@ editor_mode::editor_mode() {
 	ui()->set_fill_options([this]() { render_area_fill(); });
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
 	ui()->set_file_actions([this]() { save(); }, [this]() { export_scenery(); });
+	ui()->set_track_options([this]() { render_track_ui(); });
 	// the orthophoto is fitted onto the same ground as the area fill uses, terrain tile models included
 	m_orthophoto.ground_source([](glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out) {
 		gather_ground_triangles(Min, Max, true, 50.0f, Out);
@@ -680,6 +681,12 @@ void editor_mode::undo_last()
         return;
     }
 
+    if (snap.action == EditorSnapshot::Action::TrackEdit)
+    {
+        restore_track_snapshot(snap, g_redo);
+        return;
+    }
+
     if (snap.action == EditorSnapshot::Action::Delete)
     {
         // undo delete -> recreate model
@@ -766,6 +773,12 @@ void editor_mode::redo_last()
     {
         restore_include(snap);
         m_history.push_back(std::move(snap));
+        return;
+    }
+
+    if (snap.action == EditorSnapshot::Action::TrackEdit)
+    {
+        restore_track_snapshot(snap, m_history);
         return;
     }
 
@@ -995,6 +1008,10 @@ bool editor_mode::update()
 
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
     render_gizmo();
+
+    // --- path editing: course and point handles of the selected path ---
+    if (selected_track())
+        draw_track_overlay();
 
     // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
     if (ui()->mode() == nodebank_panel::FILL)
@@ -2232,6 +2249,13 @@ void editor_mode::render_gizmo()
         return;
     }
 
+    // paths aren't transformed as a whole node, they're edited through their source data
+    if (selected_track())
+    {
+        render_track_gizmo();
+        return;
+    }
+
     ImGuizmo::BeginFrame();
     ImGuizmo::SetOrthographic(false);
 
@@ -2504,6 +2528,13 @@ void editor_mode::exit()
     FreeFlyModeFlag = m_statebackup.freefly;
     Global.pCamera = m_statebackup.camera;
 
+    commit_track_drag(true);
+    m_track_gizmo_using = false;
+    m_track_drag.clear();
+    m_track_drag_points.clear();
+    m_track_snap = {};
+    m_track_point = {};
+
     g_redo.clear();
     m_history.clear();
     m_fill_last.clear();
@@ -2647,6 +2678,12 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         }
         break;
 
+    case GLFW_KEY_ESCAPE:
+        // track mode: release the selected point handle, so the gizmo moves the whole path again
+        if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK)
+            m_track_point = {};
+        break;
+
     case GLFW_KEY_BACKSPACE:
         // area fill: remove the last outline point
         if (is_press(Action) && ui()->mode() == nodebank_panel::FILL && !m_fill_points.empty())
@@ -2731,6 +2768,20 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                     if (viewport_click())
                         add_area_fill_point();
                 });
+                m_input.mouse.button(Button, Action);
+                return;
+            }
+
+            // in track mode the left button selects a point handle of the selected path, or another path
+            if (mode == nodebank_panel::TRACK)
+            {
+                if (false == ImGuizmo::IsOver() && false == pick_track_handle())
+                {
+                    GfxRenderer->Pick_Node_Callback([this](scene::basic_node *node) {
+                        if (viewport_click())
+                            select_track(node);
+                    });
+                }
                 m_input.mouse.button(Button, Action);
                 return;
             }
@@ -2879,7 +2930,8 @@ void editor_mode::render_change_history(){
                         s.action == EditorSnapshot::Action::Delete ? "DEL" :
                         s.action == EditorSnapshot::Action::Move ? "MOV" :
                         s.action == EditorSnapshot::Action::Rotate ? "ROT" :
-                        s.action == EditorSnapshot::Action::Scale ? "SCA" : "OTH",
+                        s.action == EditorSnapshot::Action::Scale ? "SCA" :
+                        s.action == EditorSnapshot::Action::TrackEdit ? "TRK" : "OTH",
                         s.node_name.empty() ? "(noname)" : s.node_name.c_str(),
                         s.position.x, s.position.y, s.position.z);
 

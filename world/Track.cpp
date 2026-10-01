@@ -709,6 +709,8 @@ void TTrack::init_segments( bool const Initial ) {
     // so repeated initialization doesn't accumulate it
     fTexHeight1 -= fTexHeightOffset;
     fTexHeightOffset = 0.f;
+    // the roll flag is re-evaluated below, the transition flag is set again when the path gets connected
+    iTrapezoid = 0;
 
     switch (eType) {
         // Ra: łuki segmentowane co 5m albo 314-kątem foremnym
@@ -1355,9 +1357,8 @@ glm::vec3 TTrack::get_nearest_point(const glm::dvec3 &point) const
 // wypełnianie tablic VBO
 // discards references to current render geometry and generates it anew in specified bank
 // NOTE: geometry banks can't release chunks, so the old data stays in the bank, unused
+// with null bank the geometry is only discarded, to be created later along with the rest of the owning section
 void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
-
-    if( Bank == null_handle ) { return; }
 
     Geometry1.clear();
     Geometry2.clear();
@@ -1365,6 +1366,8 @@ void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
         SwitchExtension->Geometry3 = gfx::geometry_handle{};
     }
     m_sleeper_local_transforms.clear();
+
+    if( Bank == null_handle ) { return; }
 
     create_geometry( Bank );
 }

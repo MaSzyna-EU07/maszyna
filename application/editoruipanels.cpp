@@ -542,7 +542,7 @@ void nodebank_panel::render()
 		}
 
 		// edit modes as tabs, each with its own settings
-		std::pair<char const *, edit_mode> const modes[] = {{"Select", MODIFY}, {"Insert", ADD}, {"Brush", BRUSH}, {"Area fill", FILL}, {"Copy to bank", COPY}};
+		std::pair<char const *, edit_mode> const modes[] = {{"Select", MODIFY}, {"Track", TRACK}, {"Insert", ADD}, {"Brush", BRUSH}, {"Area fill", FILL}, {"Copy to bank", COPY}};
 		if (ImGui::BeginTabBar("##editmodes", ImGuiTabBarFlags_FittingPolicyResizeDown))
 		{
 			for (auto const &tab : modes)
