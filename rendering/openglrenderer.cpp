@@ -88,9 +88,9 @@ opengl_renderer::Init( GLFWwindow *Window ) {
     ::glEnable( opengl_renderer::sunlight );
 
     // rgb value for 5780 kelvin
-    Global.DayLight.diffuse[ 0 ] = 255.0f / 255.0f;
-    Global.DayLight.diffuse[ 1 ] = 242.0f / 255.0f;
-    Global.DayLight.diffuse[ 2 ] = 231.0f / 255.0f;
+	Global.DayLight.diffuse[0] = 1.0f;        // 255 / 255
+	Global.DayLight.diffuse[1] = 0.9490196f;  // 242 / 255
+	Global.DayLight.diffuse[2] = 0.9058824f;  // 231 / 255
     Global.DayLight.is_directional = true;
     m_sunlight.id = opengl_renderer::sunlight;
     //    ::glLightf( opengl_renderer::sunlight, GL_SPOT_CUTOFF, 90.0f );
@@ -1603,7 +1603,7 @@ opengl_renderer::Render( world_environment *Environment ) {
     if (!m_isATI)
     {
         Bind_Texture( m_moontexture );
-        glm::vec3 mooncolor( 255.0f / 255.0f, 242.0f / 255.0f, 231.0f / 255.0f );
+    	glm::vec3 mooncolor(1.0f, 0.9490196f, 0.9058824f);
         ::glColor4f(
             mooncolor.r, mooncolor.g, mooncolor.b,
             // fade the moon if it's near the sun in the sky, especially during the day
