@@ -140,7 +140,7 @@ world_environment::update() {
         m_lightintensity = moonlightlevel;
         // if the moon is up, it overrides the twilight
         twilightfactor = 0.0f;
-        keylightcolor = glm::vec3( 1.0f, 0.9490196f, 0.7921569f );
+        keylightcolor = glm::vec3( 255.0f / 255.0f, 242.0f / 255.0f, 202.0f / 255.0f );
     }
     else {
         // regular situation with sun as the key light
@@ -152,8 +152,8 @@ world_environment::update() {
         // include 'golden hour' effect in twilight lighting
         float const duskfactor = 1.25f - std::clamp( Global.SunAngle, 0.0f, 18.0f ) / 18.0f;
 		keylightcolor = glm::mix(
-            glm::vec3( 1.0f, 0.9490196f, 0.9058824f ), // 255, 242, 231 / 255
-            glm::vec3( 0.9215686f, 0.4705882f, 0.1411765f ), // 235, 120, 36 / 255
+            glm::vec3( 255.0f / 255.0f, 242.0f / 255.0f, 231.0f / 255.0f ),
+            glm::vec3( 235.0f / 255.0f, 120.0f / 255.0f, 36.0f / 255.0f ),
             duskfactor );
     }
     // ...retrieve current sky colour and brightness...

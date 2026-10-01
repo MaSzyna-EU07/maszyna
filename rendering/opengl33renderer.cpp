@@ -81,9 +81,9 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 	}
 
 	// rgb value for 5780 kelvin
-	Global.DayLight.diffuse[0] = 1.0f;        // 255 / 255
-	Global.DayLight.diffuse[1] = 0.9490196f;  // 242 / 255
-	Global.DayLight.diffuse[2] = 0.9058824f;  // 231 / 255
+	Global.DayLight.diffuse[0] = 255.0f / 255.0f;
+	Global.DayLight.diffuse[1] = 242.0f / 255.0f;
+	Global.DayLight.diffuse[2] = 231.0f / 255.0f;
 	Global.DayLight.is_directional = true;
 	m_sunlight.id = opengl33_renderer::sunlight;
 
@@ -1956,7 +1956,7 @@ bool opengl33_renderer::Render(world_environment *Environment)
 	// moon
 	{
 		Bind_Texture(0, m_moontexture);
-    	glm::vec3 mooncolor(1.0f, 0.9490196f, 0.9058824f);
+		glm::vec3 mooncolor(255.0f / 255.0f, 242.0f / 255.0f, 231.0f / 255.0f);
 		glm::vec4 color(mooncolor.r, mooncolor.g, mooncolor.b,
 		                // fade the moon if it's near the sun in the sky, especially during the day
 		                std::max<float>(0.f, 1.0 - 0.5 * Global.fLuminance - 0.65 * std::max(0.f, glm::dot(Environment->m_sun.getDirection(), Environment->m_moon.getDirection()))) * fogfactor);
