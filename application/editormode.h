@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenenode.h"
 #include "editor/editorTerrain.hpp"
 #include "editor/editorTerrainStreamer.hpp"
+#include "editor/editorOrthophoto.hpp"
 
 #include <memory>
 #include <string>
@@ -190,6 +191,16 @@ class editor_mode : public application_mode
 	terrain_streamer &m_streamer{EditorTerrain};
 	int m_stream_radius{2};
 	bool m_stream_persist{true}; // save edited chunks to disk and load them back
+
+	// geoportal orthophoto layer drawn under the other viewport overlays
+	void render_orthophoto_ui();
+	void draw_orthophoto();
+	// picks up the stored settings and the origin of the current scenery
+	void load_orthophoto_settings();
+	void save_orthophoto_settings();
+	editor_orthophoto m_orthophoto;
+	std::string m_orthophoto_scenery;            // scenery whose origin is loaded
+	glm::dvec2 m_orthophoto_origin_edit{0.0};    // origin being typed in (northing, easting); applied when editing ends
 
 	// hierarchy management
 	void add_to_hierarchy(scene::basic_node *node);

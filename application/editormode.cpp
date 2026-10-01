@@ -35,6 +35,7 @@ http://mozilla.org/MPL/2.0/.
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -265,6 +266,19 @@ namespace
             for (std::size_t i = 0; i + 2 < verts.size(); i += 3)
                 add(to_world(verts[i]), to_world(verts[i + 1]), to_world(verts[i + 2]));
         }
+    }
+
+    // scenery file name without path and extension
+    std::string scenery_stem()
+    {
+        std::string scenery = Global.SceneryFile;
+        auto const slash = scenery.find_last_of("/\\");
+        if (slash != std::string::npos)
+            scenery = scenery.substr(slash + 1);
+        auto const dot = scenery.find_last_of('.');
+        if (dot != std::string::npos)
+            scenery = scenery.substr(0, dot);
+        return scenery.empty() ? "default" : scenery;
     }
 
 } 
@@ -879,6 +893,10 @@ bool editor_mode::update()
         }
     }
 
+    // --- geoportal orthophoto: streamed around the camera, drawn beneath the other overlays ---
+    m_orthophoto.update(Camera.Pos);
+    draw_orthophoto();
+
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
     render_gizmo();
 
@@ -924,6 +942,11 @@ void editor_mode::render_settings()
         if (ImGui::BeginTabItem("Terrain"))
         {
             render_terrain_ui();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Orthophoto"))
+        {
+            render_orthophoto_ui();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -1092,6 +1115,153 @@ void editor_mode::render_terrain_ui()
         }
         ImGui::Text("Triangles: %zu / %zu", tris, full);
     }
+}
+
+void editor_mode::load_orthophoto_settings()
+{
+    std::string const scenery = scenery_stem();
+    if (scenery == m_orthophoto_scenery)
+        return;
+    m_orthophoto_scenery = scenery;
+
+    auto const &stored = EditorSettings.orthophoto();
+    editor_orthophoto::config config = m_orthophoto.settings();
+    config.radius = stored.radius;
+    config.height = stored.height;
+    config.opacity = stored.opacity;
+    config.year = stored.year;
+    config.hires = stored.hires;
+    config.north = 0.0;
+    config.east = 0.0;
+    EditorSettings.orthophoto_origin(scenery, config.north, config.east);
+    m_orthophoto.settings(config);
+    m_orthophoto_origin_edit = {config.north, config.east};
+}
+
+void editor_mode::save_orthophoto_settings()
+{
+    editor_orthophoto::config const &config = m_orthophoto.settings();
+    auto &stored = EditorSettings.orthophoto();
+    stored.radius = config.radius;
+    stored.height = config.height;
+    stored.opacity = config.opacity;
+    stored.year = config.year;
+    stored.hires = config.hires;
+    if (config.north != 0.0 || config.east != 0.0)
+        EditorSettings.orthophoto_origin(m_orthophoto_scenery, config.north, config.east);
+    EditorSettings.save();
+}
+
+void editor_mode::render_orthophoto_ui()
+{
+    load_orthophoto_settings();
+
+    editor_orthophoto::config config = m_orthophoto.settings();
+    bool changed = false; // apply to the layer
+    bool persist = false; // and store in the editor settings
+
+    bool enabled = m_orthophoto.enabled();
+    if (ImGui::Checkbox("Show orthophoto (geoportal.gov.pl)", &enabled))
+        m_orthophoto.enabled(enabled);
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Scenery origin (0,0,0) in PUWG 1992 / EPSG:2180");
+    // geodetic convention, as displayed by geoportal.gov.pl: X grows north, Y grows east.
+    // applied once editing ends, so half-typed numbers don't trigger downloads
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::InputDouble("X (northing, m)", &m_orthophoto_origin_edit.x, 0.0, 0.0, "%.2f");
+    bool const northedited = ImGui::IsItemDeactivatedAfterEdit();
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::InputDouble("Y (easting, m)", &m_orthophoto_origin_edit.y, 0.0, 0.0, "%.2f");
+    bool const eastedited = ImGui::IsItemDeactivatedAfterEdit();
+    if (northedited || eastedited)
+    {
+        config.north = m_orthophoto_origin_edit.x;
+        config.east = m_orthophoto_origin_edit.y;
+        changed = persist = true;
+    }
+    if (config.north == 0.0 && config.east == 0.0)
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "Enter the origin of this scenery first");
+    else
+        ImGui::TextDisabled("Camera at X %.1f  Y %.1f", config.north + Camera.Pos.z, config.east - Camera.Pos.x);
+
+    ImGui::Separator();
+    ImGui::SetNextItemWidth(160.0f);
+    changed |= ImGui::SliderInt("Distance (tiles)", &config.radius, 0, editor_orthophoto::max_radius);
+    persist |= ImGui::IsItemDeactivatedAfterEdit();
+    ImGui::SameLine();
+    int const span = static_cast<int>((2 * config.radius + 1) * editor_orthophoto::tile_size);
+    ImGui::TextDisabled("%d x %d m", span, span);
+
+    ImGui::SetNextItemWidth(160.0f);
+    changed |= ImGui::DragFloat("Height (m)", &config.height, 0.1f, -1000.0f, 3000.0f, "%.2f");
+    persist |= ImGui::IsItemDeactivatedAfterEdit();
+
+    ImGui::SetNextItemWidth(160.0f);
+    changed |= ImGui::SliderFloat("Opacity", &config.opacity, 0.0f, 1.0f, "%.2f");
+    persist |= ImGui::IsItemDeactivatedAfterEdit();
+
+    // newest imagery, or the newest imagery taken up to the end of the selected year
+    int const thisyear = static_cast<int>(std::chrono::year_month_day{std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now())}.year());
+    std::string const yearlabel = config.year ? std::to_string(config.year) : std::string("Newest");
+    ImGui::SetNextItemWidth(160.0f);
+    if (ImGui::BeginCombo("Photo year", yearlabel.c_str()))
+    {
+        if (ImGui::Selectable("Newest", config.year == 0))
+        {
+            config.year = 0;
+            changed = persist = true;
+        }
+        for (int year = thisyear; year >= editor_orthophoto::oldest_year; --year)
+        {
+            if (ImGui::Selectable(std::to_string(year).c_str(), config.year == year))
+            {
+                config.year = year;
+                changed = persist = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    if (ImGui::Checkbox("4K tiles where available", &config.hires))
+        changed = persist = true;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("4096 px tiles (~6 cm/px) from the high-resolution orthophoto, for the tiles around the camera.\n"
+                          "Areas it doesn't cover use the standard imagery. Each 4K tile takes ~85 MB of video memory.");
+
+    if (changed)
+        m_orthophoto.settings(config);
+    if (persist)
+        save_orthophoto_settings();
+
+    ImGui::Separator();
+    auto const stats = m_orthophoto.stats();
+    ImGui::Text("Tiles: %d shown, %d loading, %d failed", stats.resident, stats.loading, stats.failed);
+    if (stats.failed > 0)
+    {
+        ImGui::SameLine();
+        if (ImGui::Button("Retry"))
+            m_orthophoto.retry_failed();
+    }
+    if (!editor_orthophoto::can_download())
+        ImGui::TextDisabled("This build has no HTTP client, only cached tiles are shown");
+    ImGui::TextDisabled("Cache: %s", editor_orthophoto::cache_directory().c_str());
+    ImGui::TextDisabled("Imagery: GUGiK, geoportal.gov.pl");
+}
+
+void editor_mode::draw_orthophoto()
+{
+    if (!m_orthophoto.enabled())
+        return;
+    // the camera was just published to the renderer (update_camera), so build the view from it rather than
+    // from the renderer's previous frame; camera-relative rotation, same projection as the other overlays
+    glm::dmat4 viewmatrix{1.0};
+    Camera.SetMatrix(viewmatrix);
+    glm::mat4 const view = glm::mat4(glm::mat3(viewmatrix));
+    ImGuiIO const &io = ImGui::GetIO();
+    float const fovy = glm::radians(Global.FieldOfView / Global.ZoomFactor);
+    float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
+    m_orthophoto.draw(glm::perspective(fovy, aspect, 0.1f, 10000.0f) * view, Camera.Pos, io.DisplaySize.x, io.DisplaySize.y);
 }
 
 editor_terrain *editor_mode::terrain_at(double X, double Z)
@@ -1869,6 +2039,8 @@ void editor_mode::enter()
     Global.ControlPicking = true;
     EditorModeFlag = true;
 
+    load_orthophoto_settings();
+
     Application.set_cursor(GLFW_CURSOR_NORMAL);
 }
 
@@ -1882,6 +2054,7 @@ void editor_mode::exit()
     g_redo.clear();
     m_history.clear();
     m_fill_last.clear();
+    m_orthophoto.cancel_pending();
 
     // drop selection so a stale/dangling node pointer isn't used on the next editor session
     m_node = nullptr;
