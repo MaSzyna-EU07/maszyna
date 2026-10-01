@@ -145,6 +145,12 @@ public:
     // registers provided traction piece in the lookup directory of the cell
     void
         register_end( TTraction *Traction );
+    // removes provided path from the cell
+    void
+        erase( TTrack *Path );
+    // removes provided path from the lookup directory of the cell
+    void
+        unregister_end( TTrack *Path );
     // removes provided model instance from the cell
     void
         erase( TAnimModel *Instance );
@@ -308,6 +314,11 @@ public:
     void
         register_node( Type_ *Node, glm::dvec3 const &Point ) {
             cell( Point ).register_end( Node ); }
+    // removes provided node from the lookup directory of the section enclosing specified point
+    template <class Type_>
+    void
+        unregister_node( Type_ *Node, glm::dvec3 const &Point ) {
+            cell( Point ).unregister_end( Node ); }
     // find a vehicle located nearest to specified point, within specified radius. reurns: located vehicle and distance
     std::tuple<TDynamicObject *, float>
         find( glm::dvec3 const &Point, float const Radius, bool const Onlycontrolled, bool const Findbycoupler );
@@ -435,6 +446,14 @@ public:
             auto const location{ Node->location() };
             if( point_inside( location ) ) {
                 section( location ).erase( Node ); } }
+    // removes specified node from the region and from the lookup directories of its ends
+    template <class Type_>
+    void
+        erase_and_unregister( Type_ *Node ) {
+            for( auto const &point : Node->endpoints() ) {
+                if( point_inside( point ) ) {
+                    section( point ).unregister_node( Node, point ); } }
+            erase( Node ); }
     // find a vehicle located nearest to specified point, within specified radius. reurns: located vehicle and distance
     std::tuple<TDynamicObject *, float>
         find_vehicle( glm::dvec3 const &Point, float const Radius, bool const Onlycontrolled, bool const Findbycoupler );

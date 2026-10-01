@@ -154,6 +154,7 @@ class TTrack : public scene::basic_node
     friend opengl33_renderer;
     // NOTE: temporary arrangement
     friend itemproperties_panel;
+    friend class editor_track;
 
 public:
     std::vector<TIsolated*> Isolated; // obwód izolowany obsługujący zajęcia/zwolnienia grupy torów
@@ -278,6 +279,10 @@ public:
         RouteCount() const {
         return SwitchExtension != nullptr ? SwitchExtension->iRoads - 1 : 1; }
     void Load(cParser *parser, glm::dvec3 const &pOrigin);
+    // (re)creates path segments from the source path data in m_paths
+    void init_segments( bool const Initial );
+    // calculates path location from the current segment
+    void update_location();
     bool AssignEvents();
     bool AssignForcedEvents(basic_event *NewEventPlus, basic_event *NewEventMinus);
     void QueueEvents( event_sequence const &Events, TDynamicObject const *Owner );
@@ -300,6 +305,8 @@ public:
 	double ActiveLength();
 
 	void create_geometry( gfx::geometrybank_handle const &Bank ); // wypełnianie VBO
+	// discards current render geometry and generates it anew in specified bank
+	void rebuild_geometry( gfx::geometrybank_handle const &Bank );
 	void create_map_geometry(std::vector<gfx::basic_vertex> &Bank, const gfx::geometrybank_handle Extra);
 	void get_map_active_paths(map_colored_paths &handles);
     void get_map_paths_for_state(map_colored_paths &handles, int state);

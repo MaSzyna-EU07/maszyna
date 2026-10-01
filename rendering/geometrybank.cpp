@@ -300,8 +300,8 @@ geometry_bank::replace( gfx::vertex_array &Vertices, userdata_array &Userdata, g
         // TBD: we could bail out with an error instead if such request occurs
         chunk.vertices.resize( Offset + Vertices.size(), gfx::basic_vertex() );
 		chunk.userdata.resize( Offset + Userdata.size(), gfx::vertex_userdata() );
-        chunk.vertices.insert( std::end( chunk.vertices ), std::begin( Vertices ), std::end( Vertices ) );
-		chunk.userdata.insert( std::end( chunk.userdata ), std::begin( Userdata ), std::end( Userdata ) );
+        std::copy( std::begin( Vertices ), std::end( Vertices ), std::begin( chunk.vertices ) + Offset );
+		std::copy( std::begin( Userdata ), std::end( Userdata ), std::begin( chunk.userdata ) + Offset );
     }
     // template method implementation
     replace_( Geometry );
