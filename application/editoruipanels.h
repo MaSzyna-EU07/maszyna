@@ -81,7 +81,8 @@ class nodebank_panel : public ui_panel
 		MODIFY,
 		COPY,
 		ADD,
-		BRUSH
+		BRUSH,
+		FILL
 	};
 	edit_mode mode = MODIFY;
 
@@ -90,6 +91,10 @@ class nodebank_panel : public ui_panel
 	void render() override;
 	void add_template(const std::string &desc);
 	const std::string *get_active_template();
+	// nodebank groups (collapsing headers), in file order; entries listed before the first header form an unnamed group
+	std::vector<std::string> group_names() const;
+	// node templates of the group with specified index (as returned by group_names())
+	std::vector<std::string> group_templates(std::size_t const Group) const;
 
   private:
 	// methods:

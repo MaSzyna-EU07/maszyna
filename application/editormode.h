@@ -19,6 +19,10 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorTerrainStreamer.hpp"
 
 #include <memory>
+#include <string>
+#include <vector>
+
+class TAnimModel;
 
 class editor_mode : public application_mode
 {
@@ -122,7 +126,8 @@ class editor_mode : public application_mode
 	scene::basic_node *m_node{nullptr}; // currently selected scene node
 	bool m_takesnapshot{true}; // helper, hints whether snapshot of selected node(s) should be taken before modification
 	bool m_dragging = false;
-	glm::dvec3 oldPos;
+	glm::dvec3 oldPos; // world position of the last brush placement
+	bool m_brush_has_last{false}; // false at the start of a brush stroke, so the first placement ignores spacing
 	bool mouseHold{false};
 	float kMaxPlacementDistance = 200.0f;
 	static bool m_change_history;
@@ -195,6 +200,25 @@ class editor_mode : public application_mode
 	void nullify_history_pointers(scene::basic_node *node);
 	void render_change_history();
 	void render_settings();
+
+	// area fill: scatters models from a package over a polygon outlined in the viewport
+	void render_area_fill();
+	void draw_area_fill_outline() const;
+	void add_area_fill_point();
+	void run_area_fill();
+	void undo_last_area_fill();
+	std::vector<glm::dvec3> m_fill_points; // outline vertices (world space) in click order
+	std::vector<TAnimModel *> m_fill_last; // instances created by the most recent fill, for "Undo last fill"
+	std::vector<std::string> m_fill_custom; // user-assembled package of node templates
+	int m_fill_custom_idx{-1};
+	int m_fill_package{0}; // 0 = custom set, N = nodebank group N-1
+	float m_fill_density{200.0f}; // objects per hectare
+	float m_fill_min_spacing{2.0f}; // minimal distance between placed objects (m)
+	bool m_fill_random_rotation{true}; // random yaw; otherwise the Functions panel rotation settings apply
+	float m_fill_scale_min{1.0f};
+	float m_fill_scale_max{1.0f};
+	bool m_fill_models_as_ground{true}; // large model instances (terrain tiles) count as ground
+	std::string m_fill_status; // result of the last fill, shown in the panel
 
 	// ImGuizmo-based transform gizmo for the selected node
 	enum class gizmo_operation { translate, rotate, scale };

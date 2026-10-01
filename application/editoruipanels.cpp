@@ -434,13 +434,13 @@ void brush_object_list::render()
 			{
 				Objects.erase(Objects.begin() + idx);
 			}
-			if (ImGui::Button("Remove all") && idx >= 0 && idx < Objects.size())
+			if (ImGui::Button("Remove all"))
 			{
 				Objects.clear();
 			}
 		}
-		ImGui::End();
 	}
+	ImGui::End();
 }
 
 nodebank_panel::nodebank_panel(std::string const &Name, bool const Isopen) : ui_panel(Name, Isopen)
@@ -535,6 +535,8 @@ void nodebank_panel::render()
 		ImGui::SameLine();
 		ImGui::RadioButton("Copy to bank", (int *)&mode, COPY);
 		ImGui::SameLine();
+		ImGui::RadioButton("Area fill", (int *)&mode, FILL);
+		ImGui::SameLine();
 		if (ImGui::Button("Reload Nodebank"))
 		{
 			nodebank_reload();
@@ -596,6 +598,43 @@ void nodebank_panel::add_template(const std::string &desc)
 const std::string *nodebank_panel::get_active_template()
 {
 	return m_selectedtemplate.get();
+}
+
+std::vector<std::string> nodebank_panel::group_names() const
+{
+	std::vector<std::string> names;
+	for (auto const &entry : m_nodebank)
+	{
+		if (entry.second->empty())
+			names.emplace_back(entry.first);
+		else if (names.empty())
+			names.emplace_back("(ungrouped)"); // templates listed before the first header
+	}
+	return names;
+}
+
+std::vector<std::string> nodebank_panel::group_templates(std::size_t const Group) const
+{
+	std::vector<std::string> templates;
+	std::size_t group{0};
+	bool started{false};
+	for (auto const &entry : m_nodebank)
+	{
+		if (entry.second->empty())
+		{
+			// header: opens the next group, unless it's the very first entry
+			if (started)
+				++group;
+			started = true;
+			continue;
+		}
+		started = true;
+		if (group == Group)
+			templates.emplace_back(*entry.second);
+		else if (group > Group)
+			break;
+	}
+	return templates;
 }
 
 std::string nodebank_panel::generate_node_label(std::string Input) const

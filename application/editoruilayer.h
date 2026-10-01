@@ -37,6 +37,8 @@ class editor_ui : public ui_layer
 	nodebank_panel::edit_mode mode();
 	float getSpacing();
 	void toggleBrushSettings(bool isVisible);
+	std::vector<std::string> nodebank_groups() const;
+	std::vector<std::string> nodebank_group_templates(std::size_t const Group) const;
 
   private:
 	// members

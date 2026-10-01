@@ -55,6 +55,16 @@ void editor_ui::toggleBrushSettings(bool isVisible)
 		m_brushobjects.is_open = isVisible;
 }
 
+std::vector<std::string> editor_ui::nodebank_groups() const
+{
+	return m_nodebankpanel.group_names();
+}
+
+std::vector<std::string> editor_ui::nodebank_group_templates(std::size_t const Group) const
+{
+	return m_nodebankpanel.group_templates(Group);
+}
+
 void editor_ui::set_node(scene::basic_node *Node)
 {
 	m_node = Node;
