@@ -1145,6 +1145,16 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 				Global.local_start_vehicle = ToLower(Argv[++i]);
 			}
 		}
+		else if (token == "-edit")
+		{
+			// edit session: the scenery is loaded without player vehicle, straight into the editor
+			if (i + 1 < Argc)
+			{
+				Global.SceneryFile = ToLower(Argv[++i]);
+				Global.local_start_vehicle = "ghostview";
+				Global.editor_session = true;
+			}
+		}
 		else if (token == "-seed")
 		{
 			// a number is the seed; anything else is a word that stands for one. said in the
@@ -1159,6 +1169,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		{
 			std::cout << "usage: " << std::string(Argv[0]) << " [-s sceneryfilepath]"
 			          << " [-v vehiclename]"
+			          << " [-edit sceneryfilepath]"
 			          << " [-seed number|word]" << std::endl;
 			return -1;
 		}

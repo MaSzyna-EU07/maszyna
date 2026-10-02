@@ -56,6 +56,7 @@ namespace scene {
 struct node_data;
 class basic_node;
 using group_handle = std::size_t;
+using layer_handle = std::uint16_t;
 }
 
 namespace Mtable

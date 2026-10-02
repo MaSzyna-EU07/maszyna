@@ -25,6 +25,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/Model3d.h"
 #include "utilities/Float3d.h"
 #include "scene/scene.h"
+#include "scene/scenelayers.h"
 #include "utilities/parser.h"
 #include "utilities/utilities.h"
 
@@ -891,6 +892,14 @@ bool editor_mode::update()
     // variable step routines
     update_camera(deltarealtime);
 
+    // drop the selection if its layer was hidden or locked in the meantime
+    if (m_node != nullptr && false == scene::Layers.editable(m_node->layer()))
+    {
+        m_node = nullptr;
+        m_dragging = false;
+        ui()->set_node(nullptr);
+    }
+
     simulation::Region->update_sounds();
     audio::renderer.update(Global.iPause ? 0.0 : deltarealtime);
 
@@ -1522,8 +1531,22 @@ void editor_mode::save_scene_with_terrain()
     m_streamer.flush(); // save resident edited chunks to disk
 
     // export scenery; the exported .scm now carries an `editorterrain` directive (streamer is active)
-    simulation::State.export_as_text(Global.SceneryFile);
+    export_scenery();
     WriteLog("Editor: saved scene + terrain", logtype::generic);
+}
+
+void editor_mode::export_scenery()
+{
+    // hiding a layer clears the visibility flag of its nodes, and the flag is a part of exported node data.
+    // show the hidden layers for the duration of the export, so the files get the visibility defined in the scenery
+    auto const hiddenlayers = scene::Layers.hidden();
+    for (auto const layer : hiddenlayers)
+        scene::Layers.visible(layer, true);
+
+    simulation::State.export_as_text(Global.SceneryFile);
+
+    for (auto const layer : hiddenlayers)
+        scene::Layers.visible(layer, false);
 }
 
 void editor_mode::handle_terrain_sculpt(double Deltatime)
@@ -2126,6 +2149,7 @@ void editor_mode::exit()
     m_fill_last.clear();
     m_orthophoto.cancel_pending();
     m_orthophoto.detach_scene(); // the layer is an editor aid, keep it out of the other modes
+    scene::Layers.show_all(); // likewise for hidden scenery layers, the other modes get the scenery as it was defined
 
     // drop selection so a stale/dangling node pointer isn't used on the next editor session
     m_node = nullptr;
@@ -2204,7 +2228,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         }
         else if (Global.ctrlState && Global.shiftState)
         {
-            simulation::State.export_as_text(Global.SceneryFile);
+            export_scenery();
         }
         break;
 
@@ -2339,6 +2363,10 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                         return;
 
                     m_node = nullptr;
+
+                    // nodes of locked layers can't be selected
+                    if (node && false == scene::Layers.editable(node->layer()))
+                        node = nullptr;
 
                     // ignore picks that are beyond allowed placement distance
                     if (node) {

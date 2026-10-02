@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationsounds.h"
 #include "simulation/simulationenvironment.h"
 #include "scene/scenenodegroups.h"
+#include "scene/scenelayers.h"
 #include "rendering/particles.h"
 #include "world/Event.h"
 #include "world/MemCell.h"
@@ -72,6 +73,14 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 		WriteLog("Default SBT absent");
     }
     scene::Groups.create();
+
+    scene::Layers.clear();
+    if( true == Global.editor_session ) {
+        // scenery opened for editing: keep track of which scenery file defines each node.
+        // the scenario file itself is the root layer, and the default target for nodes created in the editor
+        state->input.sceneryLayers = true;
+        scene::Layers.active( scene::Layers.open( Scenariofile ) );
+    }
 
 	if( false == state->input.ok() )
 		throw invalid_scenery_exception();
@@ -155,6 +164,7 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
     }
 
     scene::Groups.close();
+    scene::Layers.close();
 
 	scene::Groups.update_map();
 	Region->create_map_geometry();
@@ -345,6 +355,7 @@ state_serializer::deserialize_event( cParser &Input, scene::scratch_data &Scratc
 
     if( true == simulation::Events.insert( event ) ) {
         scene::Groups.insert( scene::Groups.handle(), event );
+        scene::Layers.count( scene::Layers.handle(), scene::layer_item::event );
     }
     else {
         delete event;
@@ -436,6 +447,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         >> nodedata.name
         >> nodedata.type;
     if( nodedata.name == "none" ) { nodedata.name.clear(); }
+    nodedata.layer = scene::Layers.handle();
     // type-based deserialization. not elegant but it'll do
     if( nodedata.type == "dynamic" ) {
 
@@ -643,6 +655,34 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         simulation::Region->insert( sound );
     }
 
+    if( nodedata.layer != null_handle ) {
+        // scenery opened for editing: keep count of what the scenery file contains
+        // NOTE: node types which failed to load bail out earlier and aren't counted
+        static std::unordered_map<std::string, scene::layer_item> const itemtypes {
+            { "dynamic", scene::layer_item::vehicle },
+            { "track", scene::layer_item::track },
+            { "traction", scene::layer_item::traction },
+            { "tractionpowersource", scene::layer_item::powersource },
+            { "model", scene::layer_item::model },
+            { "triangles", scene::layer_item::shape },
+            { "triangle_strip", scene::layer_item::shape },
+            { "triangle_fan", scene::layer_item::shape },
+            { "lines", scene::layer_item::lines },
+            { "line_strip", scene::layer_item::lines },
+            { "line_loop", scene::layer_item::lines },
+            { "memcell", scene::layer_item::memcell },
+            { "eventlauncher", scene::layer_item::launcher },
+            { "sound", scene::layer_item::sound } };
+        auto const lookup { itemtypes.find( nodedata.type ) };
+        if( lookup != itemtypes.end() ) {
+            scene::Layers.count(
+                nodedata.layer,
+                // models with negative minimum range are 3d terrain, converted to shapes
+                ( lookup->second == scene::layer_item::model && nodedata.range_min < 0.0 ) ?
+                    scene::layer_item::shape :
+                    lookup->second );
+        }
+    }
 }
 
 void
@@ -1328,6 +1368,7 @@ TAnimModel *state_serializer::create_model(const std::string &src, const std::st
 	parser.getTokens(2); // name, type
 	nodedata.name = name;
 	nodedata.type = "model";
+	nodedata.layer = scene::Layers.active(); // null_handle unless the scenery was opened for editing
 
 	scene::scratch_data scratch;
 
@@ -1340,6 +1381,7 @@ TAnimModel *state_serializer::create_model(const std::string &src, const std::st
 	cloned->location(position);
 	simulation::Instances.insert(cloned);
 	simulation::Region->insert(cloned);
+	scene::Layers.count(cloned->layer(), scene::layer_item::model);
 
 	return cloned;
 }

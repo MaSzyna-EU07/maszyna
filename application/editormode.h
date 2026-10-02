@@ -162,6 +162,8 @@ class editor_mode : public application_mode
 	void handle_chunk_edit_click(bool DeleteMode);
 	// commits authored terrain to disk, enables streaming, and exports the scenery (Ctrl+S)
 	void save_scene_with_terrain();
+	// exports the scenery in legacy (text) format, with layers hidden in the editor left out of the picture
+	void export_scenery();
 	// raises/lowers terrain under the cursor while the left mouse button is held in sculpt mode
 	void handle_terrain_sculpt(double Deltatime);
 	// returns the terrain patch (if any) whose footprint covers the given world point

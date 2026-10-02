@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/editoruipanels.h"
 #include "scene/scenenodegroups.h"
+#include "scene/scenelayers.h"
 
 #include "utilities/Globals.h"
 #include "vehicle/Camera.h"
@@ -78,6 +79,10 @@ void itemproperties_panel::update(scene::basic_node *Node)
 	textline = "name: " + (node->name().empty() ? "(none)" : Bezogonkow(node->name())) + "\ntype: " + node->node_type + "\nlocation: [" + to_string(node->location().x, 2) + ", " + to_string(node->location().y, 2) + ", " +
 	           to_string(node->location().z, 2) + "]" +
 	           " (distance: " + to_string(glm::length(glm::dvec3{node->location().x, 0.0, node->location().z} - glm::dvec3{camera.Pos.x, 0.0, camera.Pos.z}), 1) + " m)" + "\nUUID: " + node->uuid.to_string();
+	if (scene::Layers.valid(node->layer()))
+	{
+		textline += "\nlayer: " + Bezogonkow(scene::Layers.layer(node->layer()).name);
+	}
 	text_lines.emplace_back(textline, Global.UITextColor);
 
 	// subclass-specific data

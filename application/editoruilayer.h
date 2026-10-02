@@ -58,6 +58,8 @@ class editor_ui : public ui_layer
 	// methods
 	void render_mode_options(nodebank_panel::edit_mode const Mode);
 	void render_header_sections();
+	// list of scenery layers: visibility, selection lock and choice of the layer receiving new nodes
+	void render_layers();
 	// members
 	itemproperties_panel m_itempropertiespanel{"Node Properties", true}; // not a window of its own, drawn in the toolset window
 	functions_panel m_functionspanel{"Functions", true}; // not a window of its own, its settings are drawn in the toolset tabs

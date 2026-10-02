@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/lightarray.h"
 #include "rendering/particles.h"
 #include "scene/scene.h"
+#include "scene/scenelayers.h"
 #include "vehicle/Train.h"
 #include "application/application.h"
 #include "utilities/Logs.h"
@@ -493,6 +494,7 @@ TEventLauncher * state_manager::create_eventlauncher(const std::string &src, con
 }
 
 void state_manager::delete_model(TAnimModel *model) {
+	scene::Layers.count(model->layer(), scene::layer_item::model, -1);
 	Region->erase(model);
 	Instances.purge(model);
 }

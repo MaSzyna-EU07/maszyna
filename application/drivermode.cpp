@@ -412,6 +412,14 @@ bool driver_mode::update()
 
 	simulation::is_ready = simulation::is_ready || (simulation::Train != nullptr && simulation::Train->is_cab_initialized) || Global.local_start_vehicle == "ghostview";
 
+	if (m_editorpending)
+	{
+		// edit session starts in the editor. the switch is made after the initial update on purpose, so the
+		// simulation state is set up the same way as when the editor is entered by hand right after the load
+		m_editorpending = false;
+		Application.push_mode(eu07_application::mode::editor);
+	}
+
 	return true;
 }
 
@@ -458,6 +466,8 @@ void driver_mode::enter()
 	Timer::ResetTimers();
 
 	set_picking(!Global.captureonstart);
+
+	m_editorpending = Global.editor_session;
 }
 
 // maintenance method, called when the mode is deactivated

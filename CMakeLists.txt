@@ -178,6 +178,7 @@ set(SOURCES
 "application/scenarioloadermode.cpp"
 "application/scenarioloaderuilayer.cpp"
 "scene/scenenodegroups.cpp"
+"scene/scenelayers.cpp"
 "simulation/simulationenvironment.cpp"
 "simulation/simulationstateserializer.cpp"
 "rendering/precipitation.cpp"

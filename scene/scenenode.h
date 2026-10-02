@@ -70,6 +70,7 @@ struct node_data {
     double range_max { std::numeric_limits<double>::max() };
     std::string name;
     std::string type;
+    layer_handle layer { null_handle }; // scenery layer the node is defined in, if any
 };
 
 // holds unique piece of geometry, covered with single material
@@ -359,6 +360,10 @@ public:
         group( scene::group_handle Group );
     scene::group_handle
         group() const;
+    void
+        layer( scene::layer_handle Layer );
+    scene::layer_handle
+        layer() const;
 	void
 	    mark_dirty() { m_dirty = true; }
 	bool
@@ -375,6 +380,8 @@ public:
     bool m_visible { true }; // visibility flag
     std::string m_name;
 	bool m_dirty { false };
+    bool m_layerhidden { false }; // the node was visible until its scenery layer was hidden
+    scene::layer_handle m_layer { null_handle }; // scenery layer this node belongs to, if any
     UID uuid;
 
 private:
@@ -441,6 +448,18 @@ inline
 scene::group_handle
 basic_node::group() const {
     return m_group;
+}
+
+inline
+void
+basic_node::layer( scene::layer_handle Layer ) {
+    m_layer = Layer;
+}
+
+inline
+scene::layer_handle
+basic_node::layer() const {
+    return m_layer;
 }
 
 } // scene

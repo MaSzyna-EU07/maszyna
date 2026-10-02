@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 
 #include "scene/scenenodegroups.h"
+#include "scene/scenelayers.h"
 
 /*
     MaSzyna EU07 locomotive simulator parser
@@ -117,6 +118,11 @@ cParser::~cParser()
 	{
 		// wrap up the node group holding content of processed file
 		scene::Groups.close();
+	}
+	if (true == mLayerFile)
+	{
+		// content of the processed file ended, following nodes belong to the parent layer again
+		scene::Layers.close();
 	}
 }
 
@@ -336,6 +342,12 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
 	if (isTerrain && true == Global.file_binary_terrain_state) {
 		WriteLog("SBT found, ignoring: " + includefile);
 		readParameters(srcParser); // preserve original side-effect: still consume parameters
+		if (sceneryLayers)
+		{
+			// the file is still a part of the scenery, even though its content comes from the binary terrain file
+			scene::Layers.layer(scene::Layers.open(includefile)).binary = true;
+			scene::Layers.close();
+		}
 		return;
 	}
 
@@ -354,6 +366,18 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
 
 	if (mIncludeParser->mSize <= 0) {
 		ErrorLog("Bad include: can't open file \"" + includefile + "\"");
+	}
+
+	if (sceneryLayers)
+	{
+		mIncludeParser->sceneryLayers = true;
+		// content of an included scenery file forms a layer of its own. *.inc files are node templates
+		// reused all over the scenery, so their content stays in the layer of the file which includes them
+		if (false == mIncludeParser->mIncFile && mIncludeParser->mSize > 0)
+		{
+			scene::Layers.open(includefile);
+			mIncludeParser->mLayerFile = true;
+		}
 	}
 }
 
@@ -524,6 +548,7 @@ void cParser::injectString(const std::string &str)
 	{
 		mIncludeParser = std::make_shared<cParser>(str, buffer_TEXT, "", LoadTraction, std::vector<std::string>(), allowRandomIncludes);
 		mIncludeParser->autoclear(m_autoclear);
+		mIncludeParser->sceneryLayers = sceneryLayers;
 	}
 }
 

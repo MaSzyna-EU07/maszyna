@@ -84,6 +84,7 @@ struct global_settings {
     std::string szDefaultExt{ szTexturesDDS };
 	std::string SceneryFile;
     std::string local_start_vehicle{ "EU07-424" };
+    bool editor_session{ false }; // scenery was opened for editing (-edit): loader keeps track of scenery layers and hands over to the editor
     int iConvertModels{ 0 }; // tworzenie plików binarnych
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan
     bool file_binary_terrain{ true }; // enable binary terrain (de)serialization

@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
 #include "scene/scenenode.h"
+#include "scene/scenelayers.h"
 #include "rendering/renderer.h"
 
 editor_ui::editor_ui()
@@ -98,6 +99,98 @@ void editor_ui::render_header_sections()
 		ImGui::Indent();
 		m_itempropertiespanel.render_body();
 		ImGui::Unindent();
+	}
+	if (ImGui::CollapsingHeader("Layers"))
+	{
+		ImGui::Indent();
+		render_layers();
+		ImGui::Unindent();
+	}
+}
+
+void editor_ui::render_layers()
+{
+	if (scene::Layers.empty())
+	{
+		// layers are established only when the scenery is loaded for editing, regular load skips the bookkeeping
+		ImGui::TextDisabled("Scenery layers are available in an edit session.\nStart the simulator with: -edit <scenery file>");
+		return;
+	}
+
+	ImGui::TextDisabled("visible, locked, layer file (click: make active)");
+
+	std::pair<char const *, scene::layer_item> const itemlabels[] = {{"models", scene::layer_item::model},
+	                                                                 {"tracks", scene::layer_item::track},
+	                                                                 {"traction", scene::layer_item::traction},
+	                                                                 {"power sources", scene::layer_item::powersource},
+	                                                                 {"memory cells", scene::layer_item::memcell},
+	                                                                 {"event launchers", scene::layer_item::launcher},
+	                                                                 {"events", scene::layer_item::event},
+	                                                                 {"vehicles", scene::layer_item::vehicle},
+	                                                                 {"sounds", scene::layer_item::sound},
+	                                                                 {"terrain shapes", scene::layer_item::shape},
+	                                                                 {"lines", scene::layer_item::lines}};
+
+	for (std::size_t idx = 1; idx <= scene::Layers.size(); ++idx)
+	{
+		auto const handle{static_cast<scene::layer_handle>(idx)};
+		auto const &layer{scene::Layers.layer(handle)};
+		auto const isactive{handle == scene::Layers.active()};
+
+		ImGui::PushID(static_cast<int>(idx));
+		// active layer receives new nodes, so it can't be hidden nor locked
+		if (isactive)
+		{
+			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+		}
+		auto visible{layer.visible};
+		if (ImGui::Checkbox("##visible", &visible) && false == isactive)
+		{
+			scene::Layers.visible(handle, visible);
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("%s", isactive ? "Active layer is always visible" : "Show or hide models, tracks and traction of the layer");
+		}
+		ImGui::SameLine();
+		auto locked{layer.locked};
+		if (ImGui::Checkbox("##locked", &locked) && false == isactive)
+		{
+			scene::Layers.locked(handle, locked);
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("%s", isactive ? "Active layer can't be locked" : "Nodes of locked layer can't be selected in the viewport");
+		}
+		if (isactive)
+		{
+			ImGui::PopStyleVar();
+		}
+		ImGui::SameLine();
+		// layers are listed in the order the files were first opened, so indentation alone shows the include tree
+		auto const label{std::string(2 * scene::Layers.depth(handle), ' ') + Bezogonkow(layer.name) + " (" + (layer.binary ? "binary terrain" : std::to_string(layer.item_count())) + ")"};
+		if (ImGui::Selectable(label.c_str(), isactive))
+		{
+			scene::Layers.active(handle);
+		}
+		if (ImGui::IsItemHovered())
+		{
+			std::string content{isactive ? "Active layer, nodes created in the editor are placed here" : "Click to make this the active layer"};
+			if (layer.binary)
+			{
+				content += "\nThe file wasn't parsed, its content was loaded from binary terrain file";
+			}
+			for (auto const &itemlabel : itemlabels)
+			{
+				auto const count{layer.items[static_cast<std::size_t>(itemlabel.second)]};
+				if (count > 0)
+				{
+					content += "\n" + std::string{itemlabel.first} + ": " + std::to_string(count);
+				}
+			}
+			ImGui::SetTooltip("%s", content.c_str());
+		}
+		ImGui::PopID();
 	}
 }
 

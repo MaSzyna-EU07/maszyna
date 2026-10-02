@@ -97,6 +97,7 @@ class cParser //: public std::stringstream
 	bool expandIncludes = true;
 	bool allowRandomIncludes = false;
     bool skipComments = true;
+	bool sceneryLayers = false; // included scenery files are registered as scenery layers (scenery opened for editing)
 
   private:
 	void startIncludeFromParser(cParser &srcParser, bool ToLower, std::string includefile);
@@ -118,6 +119,7 @@ class cParser //: public std::stringstream
     std::streamoff mSize { 0 }; // size of open stream, for progress report.
     std::size_t mLine { 0 }; // currently processed line
     bool mIncFile { false }; // the parser is processing an *.inc file
+    bool mLayerFile { false }; // the parser is processing a file registered as scenery layer
     bool mFirstToken { true }; // processing first token in the current file; helper used when checking for utf bom
     typedef std::map<std::string, std::string> commentmap;
     commentmap mComments {
