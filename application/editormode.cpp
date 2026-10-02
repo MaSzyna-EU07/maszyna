@@ -1015,6 +1015,8 @@ bool editor_mode::update()
         draw_route_overlay();
     if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::straights)
         draw_straights_overlay();
+    if (ui()->mode() == nodebank_panel::TRACK)
+        draw_track_hints();
 
     // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
     if (ui()->mode() == nodebank_panel::FILL)
@@ -2736,6 +2738,10 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
                 ui()->set_node(nullptr);
                 simulation::State.delete_model(model);
             }
+            else if (selected_track() != nullptr)
+            {
+                delete_selected_track();
+            }
         }
         break;
 
@@ -2745,6 +2751,8 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             m_track_point = {};
             m_route.vertex = -1;
             m_straights.handle = -1;
+            m_route.grip = -1;
+            m_straights.tool_placed = false;
         }
         break;
 
@@ -2838,6 +2846,21 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
 
             if (mode == nodebank_panel::TRACK)
             {
+                if ((Mods & GLFW_MOD_ALT) != 0)
+                {
+                    GfxRenderer->Pick_Node_Callback([this](scene::basic_node *node) {
+                        if (viewport_click() && dynamic_cast<TTrack *>(node) != nullptr)
+                            toggle_straight_set(*dynamic_cast<TTrack *>(node));
+                    });
+                    m_input.mouse.button(Button, Action);
+                    return;
+                }
+                if ((Mods & (GLFW_MOD_CONTROL | GLFW_MOD_SHIFT)) != 0 && m_track_tab == track_tab::straights && false == current_straight().tracks.empty())
+                {
+                    start_straight_gesture((Mods & GLFW_MOD_CONTROL) != 0 ? 1 : 2);
+                    m_input.mouse.button(Button, Action);
+                    return;
+                }
                 if (false == ImGuizmo::IsOver() && false == pick_route_vertex() && false == place_straight_tool() && false == pick_straight_handle() && false == pick_track_handle())
                 {
                     GfxRenderer->Pick_Node_Callback([this](scene::basic_node *node) {
@@ -2941,7 +2964,11 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
         else
         {
             if (is_release(Action))
+            {
                 mouseHold = false;
+                if (m_straights.tool_mouse)
+                    finish_straight_gesture();
+            }
 
             m_dragging = false;
         }

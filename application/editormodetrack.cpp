@@ -134,8 +134,18 @@ void editor_mode::select_track(scene::basic_node *Node)
 		m_track_point = {};
 	m_node = track;
 	ui()->set_node(m_node);
-	if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::route && std::find(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), track) == m_route.chain.tracks.end())
-		route_from_curve(*track);
+	if (ui()->mode() != nodebank_panel::TRACK || m_track_tab == track_tab::path)
+		return;
+	if (editor_track::is_straight(*track, m_straights.tolerance))
+	{
+		m_track_tab_request = 0;
+		m_track_tab = track_tab::straights;
+	}
+	else if (std::find(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), track) != m_route.chain.tracks.end() || route_from_curve(*track))
+	{
+		m_track_tab_request = 1;
+		m_track_tab = track_tab::route;
+	}
 }
 
 bool editor_mode::pick_track_handle()
@@ -378,7 +388,7 @@ void editor_mode::push_track_snapshot(std::vector<std::pair<TTrack *, editor_tra
 
 void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo)
 {
-	if (Snapshot.tracks.empty())
+	if (Snapshot.tracks.empty() && Snapshot.created.empty() && Snapshot.removed.empty())
 		return;
 
 	std::vector<TTrack *> tracks;
@@ -397,11 +407,18 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 	{
 		for (auto *track : Snapshot.created)
 			editor_track::retire(*track);
+		for (auto *track : Snapshot.removed)
+		{
+			track->m_editorremoved = false;
+			tracks.push_back(track);
+		}
 	}
 	else
 	{
 		for (auto *track : Snapshot.created)
 			track->m_editorremoved = false;
+		for (auto *track : Snapshot.removed)
+			editor_track::retire(*track);
 	}
 	for (auto const &entry : Snapshot.tracks)
 		editor_track::apply(*entry.first, entry.second);
@@ -414,24 +431,26 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 
 	m_track_snap = {};
 	m_track_dirty = false;
-	if (m_node != tracks.front())
-		m_track_point = {};
-	m_node = tracks.front();
+	m_track_point = {};
+	m_node = tracks.empty() || tracks.front()->m_editorremoved ? nullptr : tracks.front();
 	ui()->set_node(m_node);
+	straight_refresh();
 }
 
 void editor_mode::render_track_ui()
 {
 	if (ImGui::BeginTabBar("##trackediting"))
 	{
-		if (ImGui::BeginTabItem("Straights"))
+		auto const request{m_track_tab_request};
+		m_track_tab_request = -1;
+		if (ImGui::BeginTabItem("Straights", nullptr, request == 0 ? ImGuiTabItemFlags_SetSelected : 0))
 		{
 			m_track_tab = track_tab::straights;
 			m_route_tab = true;
 			render_straights_ui();
 			ImGui::EndTabItem();
 		}
-		if (ImGui::BeginTabItem("Route design"))
+		if (ImGui::BeginTabItem("Route design", nullptr, request == 1 ? ImGuiTabItemFlags_SetSelected : 0))
 		{
 			m_track_tab = track_tab::route;
 			m_route_tab = true;
@@ -661,6 +680,7 @@ void editor_mode::route_reset()
 	route.error.clear();
 	route.status.clear();
 	route.vertex = -1;
+	route.grip = -1;
 	route.result = {};
 	if (route.from == nullptr || route.to == nullptr)
 		return;
@@ -831,9 +851,25 @@ bool editor_mode::pick_route_vertex()
 			hit = i;
 		}
 	}
-	if (hit < 0)
+	int griphit{-1};
+	for (int i = 0; i < static_cast<int>(m_route.result.vertex_chainages.size()) && m_route.result.length > 0.0; ++i)
+	{
+		ImVec2 screen;
+		if (false == projection.project(alignment::evaluate(m_route.result, m_route.result.vertex_chainages[i]).position, screen))
+			continue;
+		float const dx = screen.x - mouse.x;
+		float const dy = screen.y - mouse.y;
+		if (dx * dx + dy * dy < best)
+		{
+			best = dx * dx + dy * dy;
+			griphit = i;
+			hit = -1;
+		}
+	}
+	if (hit < 0 && griphit < 0)
 		return false;
 	m_route.vertex = hit;
+	m_route.grip = griphit;
 	return true;
 }
 
@@ -889,6 +925,15 @@ void editor_mode::draw_route_overlay() const
 		drawlist->AddCircleFilled(screen, 6.0f, IM_COL32(255, 210, 60, 255));
 		if (i == route.vertex)
 			drawlist->AddCircle(screen, 11.0f, IM_COL32(255, 255, 255, 255), 16, 2.5f);
+		if (i < static_cast<int>(result.vertex_chainages.size()) && result.length > 0.0 && projection.project(alignment::evaluate(result, result.vertex_chainages[i]).position, screen))
+		{
+			drawlist->AddCircleFilled(screen, 6.0f, IM_COL32(60, 230, 90, 255), 4);
+			if (i == route.grip)
+				drawlist->AddCircle(screen, 11.0f, IM_COL32(255, 255, 255, 255), 16, 2.5f);
+			char radius[24];
+			std::snprintf(radius, sizeof(radius), "R %.0f", i < static_cast<int>(result.curves.size()) ? result.curves[i].radius : design.vertices[i].radius);
+			drawlist->AddText(ImVec2(screen.x + 9.0f, screen.y + 4.0f), IM_COL32(60, 230, 90, 255), radius);
+		}
 		char label[8];
 		std::snprintf(label, sizeof(label), "W%d", i + 1);
 		drawlist->AddText(ImVec2(screen.x + 9.0f, screen.y - 18.0f), IM_COL32(255, 210, 60, 255), label);
@@ -899,7 +944,8 @@ void editor_mode::render_route_gizmo()
 {
 	auto &route{m_route};
 	auto const count{static_cast<int>(route.design.vertices.size())};
-	if (route.vertex < 0 || route.vertex >= count || false == m_gizmo_enabled)
+	bool const grip{route.grip >= 0 && route.grip < count && route.grip < static_cast<int>(route.result.vertex_chainages.size())};
+	if ((false == grip && (route.vertex < 0 || route.vertex >= count)) || false == m_gizmo_enabled)
 	{
 		m_route_gizmo_using = false;
 		return;
@@ -914,7 +960,7 @@ void editor_mode::render_route_gizmo()
 	float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
 	glm::mat4 const projection = editor_mode::projection_matrix(aspect);
 
-	auto const position{route_vertex_position(route.vertex)};
+	auto const position{grip ? alignment::evaluate(route.result, route.result.vertex_chainages[route.grip]).position : route_vertex_position(route.vertex)};
 	if (false == m_route_gizmo_using)
 		m_route_gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(position - camerapos));
 	glm::vec3 snapvalue(m_gizmo_snap);
@@ -923,11 +969,31 @@ void editor_mode::render_route_gizmo()
 
 	if (false == ImGuizmo::IsUsing())
 	{
-		m_route_gizmo_using = false;
+		if (m_route_gizmo_using)
+		{
+			m_route_gizmo_using = false;
+			route_apply();
+		}
 		return;
 	}
 	m_route_gizmo_using = true;
 	glm::dvec3 const moved{camerapos + glm::dvec3(m_route_gizmo[3])};
+	if (grip)
+	{
+		auto &vertex{route.design.vertices[route.grip]};
+		auto const corner{route_vertex_position(route.grip)};
+		auto const distance{glm::distance(glm::dvec2{moved.x, moved.z}, glm::dvec2{corner.x, corner.z})};
+		for (auto const &curve : route.result.curves)
+		{
+			if (curve.vertex != route.grip || vertex.reverse_turn)
+				continue;
+			auto const secant{1.0 / std::cos(curve.deflection * 0.5) - 1.0};
+			if (secant > 1e-6)
+				vertex.radius = std::max(10.0, std::round(distance / secant));
+		}
+		route_update();
+		return;
+	}
 	auto &vertex{route.design.vertices[route.vertex]};
 	glm::dvec2 const point{moved.x, moved.z};
 	if (count >= 2)
@@ -1564,6 +1630,12 @@ void editor_mode::straights_apply(std::vector<editor_track::straight> const &Lin
 void editor_mode::render_straight_gizmo()
 {
 	auto &state{m_straights};
+	if (state.tool_mouse)
+	{
+		glm::dvec3 const ground{Global.pCamera.Pos + GfxRenderer->Mouse_Position()};
+		state.tool_handle = {ground.x, state.tool_handle.y, ground.z};
+		return;
+	}
 	if (state.tool_placed && m_gizmo_enabled)
 	{
 		render_straight_tool_gizmo();
@@ -1895,4 +1967,83 @@ void editor_mode::apply_straight_tool()
 			radius);
 	}
 	state.tool_placed = false;
+}
+
+void editor_mode::start_straight_gesture(int const Tool)
+{
+	auto &state{m_straights};
+	auto const previous{state.tool};
+	state.tool = Tool;
+	if (false == place_straight_tool())
+	{
+		state.tool = previous;
+		return;
+	}
+	state.tool_mouse = true;
+}
+
+void editor_mode::finish_straight_gesture()
+{
+	auto &state{m_straights};
+	state.tool_mouse = false;
+	apply_straight_tool();
+	state.tool = 0;
+	state.tool_placed = false;
+}
+
+void editor_mode::toggle_straight_set(TTrack &Track)
+{
+	auto &state{m_straights};
+	auto const line{editor_track::find_straight(Track, state.tolerance)};
+	if (line.tracks.empty())
+		return;
+	if (in_straight_set(line))
+		state.set.erase(std::remove_if(state.set.begin(), state.set.end(), [&](editor_track::straight const &Member) { return std::any_of(line.tracks.begin(), line.tracks.end(), [&](TTrack const *Other) { return std::find(Member.tracks.begin(), Member.tracks.end(), Other) != Member.tracks.end(); }); }), state.set.end());
+	else
+		state.set.push_back(line);
+	m_node = &Track;
+	ui()->set_node(m_node);
+	m_track_tab_request = 0;
+	m_track_tab = track_tab::straights;
+}
+
+void editor_mode::delete_selected_track()
+{
+	auto *track{selected_track()};
+	if (track == nullptr || false == track->Dynamics.empty())
+		return;
+	EditorSnapshot snap;
+	snap.action = EditorSnapshot::Action::TrackEdit;
+	snap.node_name = track->name();
+	snap.position = track->location();
+	snap.removed = {track};
+	if (m_max_history_size >= 0 && (int)m_history.size() >= m_max_history_size)
+		m_history.erase(m_history.begin(), m_history.begin() + ((int)m_history.size() - m_max_history_size + 1));
+	m_history.push_back(std::move(snap));
+	g_redo.clear();
+	editor_track::retire(*track);
+	if (std::find(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), track) != m_route.chain.tracks.end())
+		m_route = {};
+	m_node = nullptr;
+	ui()->set_node(nullptr);
+	m_track_point = {};
+	straight_refresh();
+}
+
+void editor_mode::draw_track_hints()
+{
+	std::string hint;
+	if (m_track_tab == track_tab::straights)
+		hint = current_straight().tracks.empty() ? "LMB: select a straight or a curve" : "Drag the ends or the middle of the straight   Ctrl+drag: break   Shift+drag: S-curve   Alt+click: add to the set   Del: delete path";
+	else if (m_track_tab == track_tab::route)
+		hint = m_route.chain.tracks.empty() ? "LMB: select a curve" : "Drag the vertex (yellow) or the radius grip (green), the change is applied on release   Ctrl+Z: undo";
+	else
+		hint = "LMB: select a path or a point handle";
+	hint += "   O: top view";
+	ImGuiIO const &io = ImGui::GetIO();
+	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	ImVec2 const position{12.0f, io.DisplaySize.y - 28.0f};
+	auto const size{ImGui::CalcTextSize(hint.c_str())};
+	drawlist->AddRectFilled(ImVec2(position.x - 6.0f, position.y - 4.0f), ImVec2(position.x + size.x + 6.0f, position.y + size.y + 4.0f), IM_COL32(0, 0, 0, 150), 4.0f);
+	drawlist->AddText(position, IM_COL32(255, 255, 255, 230), hint.c_str());
 }

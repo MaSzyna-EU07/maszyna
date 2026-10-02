@@ -105,6 +105,7 @@ class editor_mode : public application_mode
 		scene::instance_handle instance{0}; // include of a scenery template which was placed or removed, instead of a node
 		std::vector<std::pair<TTrack *, editor_track::state>> tracks;
 		std::vector<TTrack *> created;
+		std::vector<TTrack *> removed;
 
 	};
 	void push_snapshot(scene::basic_node *node, EditorSnapshot::Action Action = EditorSnapshot::Action::Move, std::string const &Serialized = std::string());
@@ -308,6 +309,7 @@ class editor_mode : public application_mode
 		alignment::design design;
 		alignment::result result;
 		int vertex{-1};
+		int grip{-1};
 	};
 	void render_route_ui();
 	void route_reset();
@@ -351,6 +353,7 @@ class editor_mode : public application_mode
 		bool auto_transitions{true};
 		double transition{0.0};
 		int tool{0};
+		bool tool_mouse{false};
 		bool tool_placed{false};
 		bool tool_dragging{false};
 		double tool_at{0.0};
@@ -378,6 +381,12 @@ class editor_mode : public application_mode
 	straights_state m_straights;
 	enum class track_tab { straights, route, path };
 	track_tab m_track_tab{track_tab::straights};
+	int m_track_tab_request{-1};
+	void delete_selected_track();
+	void start_straight_gesture(int const Tool);
+	void finish_straight_gesture();
+	void toggle_straight_set(TTrack &Track);
+	void draw_track_hints();
 	bool m_route_tab{true};
 	bool m_route_gizmo_using{false};
 	glm::mat4 m_route_gizmo{1.0f};
