@@ -1223,10 +1223,9 @@ void editor_mode::render_route_ui()
 		changed = true;
 	}
 	if (ImGui::SliderInt("Paths per transition curve", &design.transition_pieces, 1, 4))
-	{
 		route_update();
+	if (ImGui::IsItemDeactivatedAfterEdit())
 		route_apply();
-	}
 	ImGui::PopItemWidth();
 
 	if (ImGui::TreeNode("Limits"))
