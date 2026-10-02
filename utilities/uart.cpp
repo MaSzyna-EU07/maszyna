@@ -399,7 +399,7 @@ void uart_input::poll()
 			char buf[buffer.size() * 3 + 1];
 			size_t pos = 0;
 			for (uint8_t b : buffer)
-				pos += sprintf(&buf[pos], "%02X ", b);
+				pos += snprintf(&buf[pos], sizeof(buf) - pos, "%02X ", b);
 			WriteLog("uart: rx: " + std::string(buf));
 		}
 
@@ -635,7 +635,7 @@ void uart_input::poll()
             buf[ buffer.size() * 3 ] = 0;
 			size_t pos = 0;
 			for (uint8_t b : buffer)
-				pos += sprintf(&buf[pos], "%02X ", b);
+				pos += snprintf(&buf[pos], sizeof(buf) - pos, "%02X ", b);
 			WriteLog("uart: tx: " + std::string(buf));
 		}
 

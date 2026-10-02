@@ -18,7 +18,13 @@ http://mozilla.org/MPL/2.0/.
 // a collection of parameters for the rendering setup.
 // for modern opengl this translates to set of attributes for shaders
 struct opengl_material : public IMaterial {
-    std::array<texture_handle, gl::MAX_TEXTURES> textures = { null_handle };
+    using texture_set = std::array<texture_handle, gl::MAX_TEXTURES>;
+
+    texture_set textures = { null_handle };
+    // alternative texture sets, defined with "textureN_variants:" key.
+    // one of them is picked per rendered model instance, empty when the material declares no variants.
+    // NOTE: all variants share the remaining material properties, opacity and translucency included
+    std::vector<texture_set> texture_variants;
     std::array<glm::vec4, gl::MAX_PARAMS> params;
     std::vector<gl::shader::param_entry> params_state;
 
@@ -60,6 +66,14 @@ struct opengl_material : public IMaterial {
 	  {
 		  return textures[slot];
 	  }
+	  // returns texture set to use for model instance identified by provided variant id
+	  texture_set const &GetTextures(std::uint32_t const Variant) const
+	  {
+		  return (
+			  texture_variants.empty() ?
+				  textures :
+				  texture_variants[Variant % texture_variants.size()]);
+	  }
 	// members
     static struct path_data {
         std::unordered_map<std::string, int> index_map;
@@ -71,10 +85,23 @@ struct opengl_material : public IMaterial {
     bool update_on_season_change{ false };
 
 private:
+// types
+    // texture binding which comes with a pool of alternatives: slot the binding fills, and the pool itself
+    using variant_binding = std::pair<std::size_t, std::vector<std::string> const *>;
+
 // methods
     // imports member data pair from the config file
     bool
         deserialize_mapping( cParser &Input, int const Priority, bool const Loadnow );
+    // imports texture binding, potentially carrying a pool of alternatives, from the config file
+    void
+        deserialize_texture_mapping( cParser &Input, std::string const &Key, int const Priority );
+    // returns texture slot provided binding key resolves to, or -1 if it doesn't resolve to any
+    int
+        texture_slot( std::string const &Key );
+    // fills the alternative texture sets from provided pools, one set per entry of the longest pool
+    void
+        build_texture_variants( std::vector<variant_binding> const &Bindings, bool const Loadnow );
         void log_error(const std::string &str);
 
 // members
@@ -90,6 +117,9 @@ private:
         {
             std::string name;
             int priority;
+            // optional pool of alternative textures for the same binding, one picked per model instance.
+            // empty for regular, single texture bindings
+            std::vector<std::string> variants;
         };
         struct param_def
         {

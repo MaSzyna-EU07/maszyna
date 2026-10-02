@@ -2,6 +2,7 @@
 #include "rendering/screenshot.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 #include <png.h>
 
 void screenshot_manager::screenshot_save_thread( char *img, int w, int h )
@@ -29,11 +30,8 @@ void screenshot_manager::screenshot_save_thread( char *img, int w, int h )
     }
 
 	char datetime[64];
-	time_t timer;
-	struct tm* tm_info;
-	time(&timer);
-	tm_info = localtime(&timer);
-	strftime(datetime, 64, "%Y-%m-%d_%H-%M-%S", tm_info);
+	std::tm const tm_info = local_tm(std::time(nullptr));
+	strftime(datetime, 64, "%Y-%m-%d_%H-%M-%S", &tm_info);
 
 	uint64_t perf;
 #ifdef _WIN32

@@ -426,6 +426,28 @@ std::time_t last_modified(std::string const &Filename)
 		return 0;
 }
 
+std::tm local_tm(std::time_t Time)
+{
+	std::tm tm{};
+#ifdef _WIN32
+	localtime_s(&tm, &Time);
+#else
+	localtime_r(&Time, &tm);
+#endif
+	return tm;
+}
+
+std::tm utc_tm(std::time_t Time)
+{
+	std::tm tm{};
+#ifdef _WIN32
+	gmtime_s(&tm, &Time);
+#else
+	gmtime_r(&Time, &tm);
+#endif
+	return tm;
+}
+
 // potentially erases file extension from provided file name. returns: true if extension was removed, false otherwise
 bool erase_extension(std::string &Filename)
 {
@@ -527,4 +549,42 @@ std::string deserialize_random_set(cParser &Input, char const *Break)
 		// shouldn't ever get here but, eh
 		return "";
 	}
+}
+
+// returns hash of provided string, combined with provided seed
+std::uint32_t hash_string(std::string const &String, std::uint32_t const Seed)
+{
+	// FNV-1a, 32 bit, with the seed mixed into the standard offset basis
+	std::uint32_t hash{2166136261u ^ Seed};
+	for (auto const character : String)
+	{
+		hash ^= static_cast<std::uint32_t>(static_cast<unsigned char>(character));
+		hash *= 16777619u;
+	}
+	return hash;
+}
+
+// extracts a group of tokens from provided data stream, returns all of them
+std::vector<std::string> deserialize_set(cParser &Input, char const *Break)
+{
+
+	std::vector<std::string> tokens;
+
+	auto token{Input.getToken<std::string>(true, Break)};
+	std::ranges::replace(token, '\\', '/');
+	if (token != "[")
+	{
+		// simple case, single token
+		if (false == token.empty())
+		{
+			tokens.emplace_back(token);
+		}
+		return tokens;
+	}
+	// '[' marks a beginning of a set, retrieve all entries until it's closed
+	while ((token = deserialize_random_set(Input, Break)) != "" && token != "]")
+	{
+		tokens.emplace_back(token);
+	}
+	return tokens;
 }

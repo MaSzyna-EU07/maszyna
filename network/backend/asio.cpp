@@ -12,8 +12,10 @@ network::tcp::connection::connection(asio::io_context &io_ctx, bool client, size
 
 network::tcp::connection::~connection()
 {
-	m_socket.shutdown(m_socket.shutdown_both);
-	m_socket.close();
+	// error_code overloads: the throwing ones would escape the destructor, e.g. when the peer is already gone
+	asio::error_code ec;
+	m_socket.shutdown(m_socket.shutdown_both, ec);
+	m_socket.close(ec);
 }
 
 void network::tcp::connection::disconnect()

@@ -220,6 +220,10 @@ std::pair<std::string, std::string> FileExists(std::vector<std::string> const &N
 // returns time of last modification for specified file
 std::time_t last_modified(std::string const &Filename);
 
+// thread-safe replacements for std::localtime and std::gmtime, which hand out a pointer to shared static storage
+std::tm local_tm(std::time_t Time);
+std::tm utc_tm(std::time_t Time);
+
 // potentially erases file extension from provided file name. returns: true if extension was removed, false otherwise
 bool erase_extension(std::string &Filename);
 
@@ -376,6 +380,14 @@ glm::dvec3 LoadPoint(class cParser &Input);
 
 // extracts a group of tokens from provided data stream
 std::string deserialize_random_set(cParser &Input, char const *Break = "\n\r\t ;");
+
+// extracts a group of tokens from provided data stream, returns all of them.
+// a single token, not enclosed in "[]", is returned as one element sequence
+std::vector<std::string> deserialize_set(cParser &Input, char const *Break = "\n\r\t ;");
+
+// returns hash of provided string, combined with provided seed. FNV-1a, picked for having
+// identical result regardless of platform and standard library, unlike std::hash
+std::uint32_t hash_string(std::string const &String, std::uint32_t const Seed = 0);
 
 // extracts a group of <key, value> pairs from provided data stream
 // NOTE: expects no more than single pair per line

@@ -24,6 +24,8 @@ http://mozilla.org/MPL/2.0/.
 #include "model/Model3d.h"
 #include "utilities/Float3d.h"
 #include "scene/scene.h"
+#include "utilities/parser.h"
+#include "utilities/utilities.h"
 
 
 #include "imgui/imgui.h"
@@ -56,6 +58,14 @@ namespace
     inline bool is_press(int state)
     {
         return state == GLFW_PRESS;
+    }
+
+    // true when the most recent left button press landed in the viewport rather than on an ImGui window.
+    // valid once ImGui has processed the press (i.e. from mode update onwards), so it's also used to
+    // discard deferred pick callbacks of a press that leaked past the application's UI filter
+    inline bool viewport_click()
+    {
+        return false == ImGui::GetIO().MouseDownOwned[0];
     }
 
     // tests whether the vertical line through (Px,Pz) passes over triangle abc; if so returns the
@@ -114,6 +124,158 @@ namespace
 
             if (sub->Child != nullptr)
                 gather_submodel_triangles(sub->Child, mlocal, Out); // children inherit this matrix
+        }
+    }
+
+    // world transform of a model instance, matching the renderer: translate * rotateY * rotateX * rotateZ * scale
+    glm::dmat4 instance_matrix(TAnimModel const &Model)
+    {
+        glm::dmat4 rootm(1.0);
+        rootm = glm::translate(rootm, Model.location());
+        glm::vec3 const angles = Model.Angles();
+        if (angles.y != 0.0f) rootm = glm::rotate(rootm, glm::radians(static_cast<double>(angles.y)), glm::dvec3(0.0, 1.0, 0.0));
+        if (angles.x != 0.0f) rootm = glm::rotate(rootm, glm::radians(static_cast<double>(angles.x)), glm::dvec3(1.0, 0.0, 0.0));
+        if (angles.z != 0.0f) rootm = glm::rotate(rootm, glm::radians(static_cast<double>(angles.z)), glm::dvec3(0.0, 0.0, 1.0));
+        return glm::scale(rootm, glm::dvec3(Model.Scale()));
+    }
+
+    // even-odd test of a point against a polygon outline projected onto the XZ plane
+    bool point_in_polygon_xz(std::vector<glm::dvec3> const &Polygon, double const X, double const Z)
+    {
+        bool inside = false;
+        for (std::size_t i = 0, j = Polygon.size() - 1; i < Polygon.size(); j = i++)
+        {
+            auto const &a = Polygon[i];
+            auto const &b = Polygon[j];
+            if ((a.z > Z) != (b.z > Z) && X < (b.x - a.x) * (Z - a.z) / (b.z - a.z) + a.x)
+                inside = !inside;
+        }
+        return inside;
+    }
+
+    // area of a polygon outline projected onto the XZ plane (shoelace formula)
+    double polygon_area_xz(std::vector<glm::dvec3> const &Polygon)
+    {
+        if (Polygon.size() < 3)
+            return 0.0;
+        double sum = 0.0;
+        for (std::size_t i = 0, j = Polygon.size() - 1; i < Polygon.size(); j = i++)
+            sum += Polygon[j].x * Polygon[i].z - Polygon[i].x * Polygon[j].z;
+        return std::abs(sum) * 0.5;
+    }
+
+    // short readable name of a node template (model file and texture), like the node bank shows it
+    std::string template_label(std::string const &Template)
+    {
+        cParser tokenizer(Template);
+        tokenizer.getTokens(9, false); // node, ranges, name, type, position, rotation
+        auto model{tokenizer.getToken<std::string>(false)};
+        auto texture{tokenizer.getToken<std::string>(false)};
+        replace_slashes(model);
+        erase_extension(model);
+        replace_slashes(texture);
+        return texture == "none" || texture.empty() ? model : model + " (" + texture + ")";
+    }
+
+    // world triangles bucketed on a uniform XZ grid, for many ground height queries over one area
+    class triangle_grid
+    {
+      public:
+        triangle_grid(std::vector<world_triangle> Triangles, glm::dvec2 const &Min, glm::dvec2 const &Max) : m_triangles(std::move(Triangles)), m_min(Min)
+        {
+            glm::dvec2 const extent = glm::max(Max - Min, glm::dvec2(1.0));
+            // ~8 m cells, coarser for big areas so large terrain triangles don't flood the grid
+            m_cellsize = std::max(8.0, std::max(extent.x, extent.y) / 128.0);
+            m_columns = static_cast<int>(std::ceil(extent.x / m_cellsize)) + 1;
+            m_rows = static_cast<int>(std::ceil(extent.y / m_cellsize)) + 1;
+            m_cells.resize(static_cast<std::size_t>(m_columns) * m_rows);
+
+            for (std::uint32_t idx = 0; idx < m_triangles.size(); ++idx)
+            {
+                auto const &t = m_triangles[idx];
+                int const c0 = column(std::min({t[0].x, t[1].x, t[2].x}));
+                int const c1 = column(std::max({t[0].x, t[1].x, t[2].x}));
+                int const r0 = row(std::min({t[0].z, t[1].z, t[2].z}));
+                int const r1 = row(std::max({t[0].z, t[1].z, t[2].z}));
+                for (int r = r0; r <= r1; ++r)
+                    for (int c = c0; c <= c1; ++c)
+                        m_cells[static_cast<std::size_t>(r) * m_columns + c].push_back(idx);
+            }
+        }
+
+        // highest surface at (X,Z) that isn't above Ceiling. returns: true if there is one
+        bool height_at(double const X, double const Z, double const Ceiling, double &OutY) const
+        {
+            bool found = false;
+            for (auto const idx : m_cells[static_cast<std::size_t>(row(Z)) * m_columns + column(X)])
+            {
+                auto const &t = m_triangles[idx];
+                double y;
+                if (triangle_height_at(t[0], t[1], t[2], X, Z, y) && y <= Ceiling && (!found || y > OutY))
+                {
+                    OutY = y;
+                    found = true;
+                }
+            }
+            return found;
+        }
+
+      private:
+        int column(double const X) const
+        {
+            return std::clamp(static_cast<int>(std::floor((X - m_min.x) / m_cellsize)), 0, m_columns - 1);
+        }
+        int row(double const Z) const
+        {
+            return std::clamp(static_cast<int>(std::floor((Z - m_min.y) / m_cellsize)), 0, m_rows - 1);
+        }
+
+        std::vector<world_triangle> m_triangles;
+        std::vector<std::vector<std::uint32_t>> m_cells;
+        glm::dvec2 m_min;
+        double m_cellsize{8.0};
+        int m_columns{1};
+        int m_rows{1};
+    };
+
+    // appends triangles of a shape node which overlap specified XZ rectangle
+    void gather_shape_triangles(scene::shape_node const &Shape, glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out)
+    {
+        auto const &data = Shape.data();
+        if (data.area.radius >= 0.0f)
+        {
+            double const r = data.area.radius;
+            if (data.area.center.x + r < Min.x || data.area.center.x - r > Max.x || data.area.center.z + r < Min.y || data.area.center.z - r > Max.y)
+                return;
+        }
+
+        auto const add = [&](glm::dvec3 const &a, glm::dvec3 const &b, glm::dvec3 const &c) {
+            if (std::max({a.x, b.x, c.x}) < Min.x || std::min({a.x, b.x, c.x}) > Max.x || std::max({a.z, b.z, c.z}) < Min.y || std::min({a.z, b.z, c.z}) > Max.y)
+                return;
+            Out.push_back({a, b, c});
+        };
+
+        if (false == data.vertices.empty())
+        {
+            for (std::size_t i = 0; i + 2 < data.vertices.size(); i += 3)
+                add(data.vertices[i].position, data.vertices[i + 1].position, data.vertices[i + 2].position);
+            return;
+        }
+        // once the shape is uploaded its world-space source is released; the renderer keeps an origin-relative copy
+        if (data.geometry.bank == 0 && data.geometry.chunk == 0)
+            return;
+        auto const &verts = GfxRenderer->Vertices(data.geometry);
+        auto const &indices = GfxRenderer->Indices(data.geometry);
+        auto const to_world = [&](gfx::basic_vertex const &v) { return data.origin + glm::dvec3(v.position); };
+        if (false == indices.empty())
+        {
+            for (std::size_t i = 0; i + 2 < indices.size(); i += 3)
+                add(to_world(verts[indices[i]]), to_world(verts[indices[i + 1]]), to_world(verts[indices[i + 2]]));
+        }
+        else
+        {
+            for (std::size_t i = 0; i + 2 < verts.size(); i += 3)
+                add(to_world(verts[i]), to_world(verts[i + 1]), to_world(verts[i + 2]));
         }
     }
 
@@ -306,32 +468,38 @@ void editor_mode::handle_brush_mouse_hold(int Action, int Button)
     
     GfxRenderer->Pick_Node_Callback(
         [this, mode, rotation_mode, fixed_rotation_value, Action, Button](scene::basic_node * /*node*/) {
+            // picks are resolved a few frames later; drop the ones queued before the button went up,
+            // or for a press that turned out to belong to the UI
+            if (!mouseHold || !viewport_click())
+                return;
+
             const std::string *src = ui()->get_active_node_template();
             if (!src)
                 return;
 
             std::string name = "editor_";
 
-            glm::dvec3 newPos = clamp_mouse_offset_to_max(GfxRenderer->Mouse_Position());
-            double distance = glm::distance(newPos, oldPos);
-            if (distance < ui()->getSpacing())
+            // spacing is measured in world space: the mouse offset is camera-relative and the camera may move mid-stroke
+            glm::dvec3 const newPos = Camera.Pos + clamp_mouse_offset_to_max(GfxRenderer->Mouse_Position());
+            if (m_brush_has_last && glm::distance(newPos, oldPos) < ui()->getSpacing())
                 return;
 
-            TAnimModel *cloned = simulation::State.create_model(*src, name, Camera.Pos + newPos);
+            TAnimModel *cloned = simulation::State.create_model(*src, name, newPos);
             oldPos = newPos;
+            m_brush_has_last = true;
             if (!cloned)
                 return;
 
             std::string new_name = "editor_" + cloned->uuid.to_string();
 
             cloned->m_name = new_name;
-            
+            apply_rotation_for_new_node(cloned, rotation_mode, fixed_rotation_value);
+
             std::string as_text;
             cloned->export_as_text(as_text);
             push_snapshot(cloned, EditorSnapshot::Action::Add, as_text);
 
             m_node = cloned;
-            apply_rotation_for_new_node(m_node, rotation_mode, fixed_rotation_value);
             ui()->set_node(m_node);
         });
 }
@@ -439,6 +607,9 @@ void editor_mode::nullify_history_pointers(scene::basic_node *node)
         if (s.node_ptr == node)
             s.node_ptr = nullptr;
     }
+
+    // deleted nodes also drop out of the "undo last fill" set
+    m_fill_last.erase(std::remove(m_fill_last.begin(), m_fill_last.end(), node), m_fill_last.end());
 }
 
 void editor_mode::undo_last()
@@ -626,6 +797,19 @@ bool editor_mode::update()
         Application.set_cursor(GLFW_CURSOR_NORMAL);
     }
 
+    // same for the left button (brush / sculpt / click placement). the UI filter in the application
+    // uses io.WantCaptureMouse from the previous frame, so a press on a panel the cursor has just
+    // moved onto can leak into the viewport, and its release is then swallowed by the UI; the brush
+    // would keep painting with the button up. by now ImGui has processed this frame's input, so
+    // MouseDown is the real button state and MouseDownOwned tells whether the press hit the UI.
+    // (pick callbacks queued by such a press are discarded separately, see viewport_click())
+    if (mouseHold && (!ImGui::GetIO().MouseDown[0] || !viewport_click()))
+    {
+        mouseHold = false;
+        m_dragging = false;
+        m_input.mouse.button(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE);
+    }
+
     // fixed step render time routines (50 Hz)
     fTime50Hz += deltarealtime; // accumulate even when paused to keep frame reads stable
     while (fTime50Hz >= 1.0 / 50.0)
@@ -707,6 +891,13 @@ bool editor_mode::update()
 
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
     render_gizmo();
+
+    // --- area fill: outline overlay and settings, while the mode is active ---
+    if (ui()->mode() == nodebank_panel::FILL)
+    {
+        draw_area_fill_outline();
+        render_area_fill();
+    }
 
     // --- ImGui: Editor Settings & History windows ---
     if(m_settings_open)
@@ -1097,18 +1288,8 @@ void editor_mode::capture_terrain()
         return;
     }
 
-    // instance world transform, matching the renderer: translate * rotateY * rotateX * rotateZ * scale
-    glm::dmat4 rootm(1.0);
-    rootm = glm::translate(rootm, model->location());
-    glm::vec3 const angles = model->Angles();
-    if (angles.y != 0.0f) rootm = glm::rotate(rootm, glm::radians(static_cast<double>(angles.y)), glm::dvec3(0.0, 1.0, 0.0));
-    if (angles.x != 0.0f) rootm = glm::rotate(rootm, glm::radians(static_cast<double>(angles.x)), glm::dvec3(1.0, 0.0, 0.0));
-    if (angles.z != 0.0f) rootm = glm::rotate(rootm, glm::radians(static_cast<double>(angles.z)), glm::dvec3(0.0, 0.0, 1.0));
-    glm::vec3 const scale = model->Scale();
-    rootm = glm::scale(rootm, glm::dvec3(scale));
-
     std::vector<world_triangle> tris;
-    gather_submodel_triangles(model->pModel->Root, rootm, tris);
+    gather_submodel_triangles(model->pModel->Root, instance_matrix(*model), tris);
     if (tris.empty())
     {
         WriteLog("Editor: selected model has no readable geometry to capture", logtype::generic);
@@ -1172,6 +1353,366 @@ void editor_mode::capture_terrain()
     m_dragging = false;
     ui()->set_node(nullptr);
     simulation::State.delete_model(model);
+}
+
+void editor_mode::add_area_fill_point()
+{
+    // like the other placement tools, the point comes from the depth buffer under the cursor
+    // (ground geometry only), relative to the camera
+    glm::dvec3 const offset = GfxRenderer->Mouse_Position();
+    if (glm::length(offset) < 1e-3)
+        return; // no ground under the cursor (yet)
+
+    m_fill_points.push_back(Camera.Pos + offset);
+}
+
+void editor_mode::undo_last_area_fill()
+{
+    // nullify_history_pointers() removes deleted nodes from m_fill_last, so work on a copy
+    auto const created = std::move(m_fill_last);
+    m_fill_last.clear();
+
+    for (TAnimModel *model : created)
+    {
+        if (model == nullptr)
+            continue;
+        if (m_node == model)
+        {
+            m_node = nullptr;
+            ui()->set_node(nullptr);
+        }
+        nullify_history_pointers(model);
+        remove_from_hierarchy(model);
+        simulation::State.delete_model(model);
+    }
+    m_fill_status = "Removed " + std::to_string(created.size()) + " objects of the last fill";
+}
+
+void editor_mode::run_area_fill()
+{
+    // limits keeping a single click from freezing the editor for too long
+    std::size_t constexpr max_objects = 20000;
+    // large model instances (e.g. terrain tiles) are treated as ground, smaller ones (houses, trees) are not
+    float constexpr terrain_model_radius = 50.0f;
+    // ground is searched up to this far above the height interpolated from the outline points,
+    // so hills inside the outline are found but bridges or roofs high above it are not
+    double constexpr height_tolerance = 50.0;
+
+    if (m_fill_points.size() < 3)
+    {
+        m_fill_status = "Outline needs at least 3 points";
+        return;
+    }
+
+    // model package
+    std::vector<std::string> package;
+    if (m_fill_package == 0)
+        package = m_fill_custom;
+    else
+        package = ui()->nodebank_group_templates(static_cast<std::size_t>(m_fill_package - 1));
+    package.erase(std::remove_if(package.begin(), package.end(), [](std::string const &Template) { return Template.empty(); }), package.end());
+    if (package.empty())
+    {
+        m_fill_status = "Selected model package is empty";
+        return;
+    }
+
+    // area bounds
+    glm::dvec2 bmin(std::numeric_limits<double>::max());
+    glm::dvec2 bmax(-std::numeric_limits<double>::max());
+    for (auto const &p : m_fill_points)
+    {
+        bmin = glm::min(bmin, glm::dvec2(p.x, p.z));
+        bmax = glm::max(bmax, glm::dvec2(p.x, p.z));
+    }
+    double const area = polygon_area_xz(m_fill_points);
+    auto const target = static_cast<std::size_t>(std::min<double>(std::round(area / 10000.0 * std::max(0.0f, m_fill_density)), max_objects));
+    if (target == 0)
+    {
+        m_fill_status = "Density too low for this area, nothing to place";
+        return;
+    }
+
+    // scatter points: random samples inside the outline, rejecting the ones closer than the minimal spacing
+    // to an already accepted point (checked on a hashed grid with cell size == spacing)
+    double const spacing = std::max(0.0f, m_fill_min_spacing);
+    std::unordered_map<std::int64_t, std::vector<std::size_t>> occupancy;
+    auto const cell_key = [](std::int64_t const X, std::int64_t const Z) { return (X << 32) ^ (Z & 0xffffffff); };
+    std::vector<glm::dvec2> points;
+    points.reserve(target);
+    for (std::size_t attempt = 0; attempt < target * 30 && points.size() < target; ++attempt)
+    {
+        glm::dvec2 const p(LocalRandom(bmin.x, bmax.x), LocalRandom(bmin.y, bmax.y));
+        if (false == point_in_polygon_xz(m_fill_points, p.x, p.y))
+            continue;
+        if (spacing > 0.0)
+        {
+            auto const cx = static_cast<std::int64_t>(std::floor(p.x / spacing));
+            auto const cz = static_cast<std::int64_t>(std::floor(p.y / spacing));
+            bool free = true;
+            for (std::int64_t dz = -1; dz <= 1 && free; ++dz)
+                for (std::int64_t dx = -1; dx <= 1 && free; ++dx)
+                {
+                    auto const lookup = occupancy.find(cell_key(cx + dx, cz + dz));
+                    if (lookup == occupancy.end())
+                        continue;
+                    for (auto const idx : lookup->second)
+                        if (glm::distance(points[idx], p) < spacing)
+                        {
+                            free = false;
+                            break;
+                        }
+                }
+            if (!free)
+                continue;
+            occupancy[cell_key(cx, cz)].push_back(points.size());
+        }
+        points.push_back(p);
+    }
+
+    // ground geometry within the area. shapes hold the (legacy) terrain, large instances the terrain tiles
+    std::vector<world_triangle> triangles;
+    glm::dvec2 const center = (bmin + bmax) * 0.5;
+    float const radius = static_cast<float>(glm::length(bmax - bmin) * 0.5);
+    auto const sections = simulation::Region->sections(glm::dvec3(center.x, 0.0, center.y), radius); // copy, the result is a scratchpad
+    for (auto *section : sections)
+    {
+        for (auto const &shape : section->m_shapes)
+            gather_shape_triangles(shape, bmin, bmax, triangles);
+        for (auto &cell : section->m_cells)
+        {
+            double const r = cell.m_area.radius;
+            if (cell.m_area.center.x + r < bmin.x || cell.m_area.center.x - r > bmax.x || cell.m_area.center.z + r < bmin.y || cell.m_area.center.z - r > bmax.y)
+                continue;
+            for (auto const &shape : cell.m_shapesopaque)
+                gather_shape_triangles(shape, bmin, bmax, triangles);
+            if (false == m_fill_models_as_ground)
+                continue;
+            for (auto *instance : cell.m_instancesopaque)
+            {
+                if (instance == nullptr || instance->Model() == nullptr || instance->radius() < terrain_model_radius)
+                    continue;
+                std::vector<world_triangle> modeltriangles;
+                gather_submodel_triangles(instance->Model()->Root, instance_matrix(*instance), modeltriangles);
+                for (auto const &t : modeltriangles)
+                    if (std::max({t[0].x, t[1].x, t[2].x}) >= bmin.x && std::min({t[0].x, t[1].x, t[2].x}) <= bmax.x && std::max({t[0].z, t[1].z, t[2].z}) >= bmin.y &&
+                        std::min({t[0].z, t[1].z, t[2].z}) <= bmax.y)
+                        triangles.push_back(t);
+            }
+        }
+    }
+    triangle_grid const ground(std::move(triangles), bmin, bmax);
+    auto const terrains = active_terrains();
+
+    auto const rotation_mode = m_fill_random_rotation ? functions_panel::RANDOM : ui()->rot_mode();
+    auto const fixed_rotation_value = ui()->rot_val();
+    float const scalemin = std::max(0.01f, std::min(m_fill_scale_min, m_fill_scale_max));
+    float const scalemax = std::max(0.01f, std::max(m_fill_scale_min, m_fill_scale_max));
+
+    std::vector<TAnimModel *> created;
+    created.reserve(points.size());
+    std::size_t unsupported = 0;
+    for (auto const &p : points)
+    {
+        // reference height: the outline points, weighted by inverse squared distance
+        double weights = 0.0, reference = 0.0;
+        for (auto const &v : m_fill_points)
+        {
+            double const w = 1.0 / std::max(1e-6, glm::length2(glm::dvec2(v.x, v.z) - p));
+            weights += w;
+            reference += w * v.y;
+        }
+        reference /= weights;
+        double const ceiling = reference + height_tolerance;
+
+        double y = -std::numeric_limits<double>::max();
+        bool found = ground.height_at(p.x, p.y, ceiling, y);
+        for (editor_terrain *terrain : terrains)
+        {
+            if (!terrain->contains(p.x, p.y))
+                continue;
+            double const h = terrain->height_at(p.x, p.y);
+            if (h <= ceiling && (!found || h > y))
+            {
+                y = h;
+                found = true;
+            }
+        }
+        if (!found)
+        {
+            y = reference;
+            ++unsupported;
+        }
+
+        glm::dvec3 const location(p.x, y, p.y);
+        if (!simulation::Region->point_inside(location))
+            continue;
+
+        auto const &src = package[package.size() > 1 ? std::min(package.size() - 1, static_cast<std::size_t>(LocalRandom(0.0, static_cast<double>(package.size())))) : 0];
+        TAnimModel *cloned = simulation::State.create_model(src, "editor_", location);
+        if (!cloned)
+            continue;
+        cloned->m_name = "editor_" + cloned->uuid.to_string();
+        apply_rotation_for_new_node(cloned, rotation_mode, fixed_rotation_value);
+        if (scalemin != 1.0f || scalemax != 1.0f)
+            cloned->Scale(static_cast<float>(LocalRandom(scalemin, scalemax)));
+        created.push_back(cloned);
+    }
+
+    // a new fill replaces the "last fill" undo set; the previous objects stay in the scene
+    m_fill_last = std::move(created);
+
+    m_fill_status = "Placed " + std::to_string(m_fill_last.size()) + " of " + std::to_string(target) + " objects";
+    if (points.size() < target)
+        m_fill_status += " (limited by min. spacing)";
+    if (unsupported > 0)
+        m_fill_status += ", " + std::to_string(unsupported) + " without ground found (height interpolated)";
+    WriteLog("Editor: area fill - " + m_fill_status, logtype::generic);
+}
+
+void editor_mode::draw_area_fill_outline() const
+{
+    if (m_fill_points.empty())
+        return;
+
+    // same camera-relative view and clean perspective the transform gizmo uses
+    ImGuiIO const &io = ImGui::GetIO();
+    glm::mat4 const view = GfxRenderer->Camera_View_Matrix();
+    glm::dvec3 const camerapos = GfxRenderer->Camera_Position();
+    float const fovy = glm::radians(Global.FieldOfView / Global.ZoomFactor);
+    float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
+    glm::mat4 const viewprojection = glm::perspective(fovy, aspect, 0.1f, 10000.0f) * view;
+
+    auto const to_clip = [&](glm::dvec3 const &Point) { return viewprojection * glm::vec4(glm::vec3(Point - camerapos), 1.0f); };
+    auto const to_screen = [&](glm::vec4 const &Clip) {
+        return ImVec2((Clip.x / Clip.w * 0.5f + 0.5f) * io.DisplaySize.x, (0.5f - Clip.y / Clip.w * 0.5f) * io.DisplaySize.y);
+    };
+    float constexpr nearw = 0.1f;
+
+    ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+    ImU32 const edgecolor = IM_COL32(255, 200, 40, 230);
+    ImU32 const closingcolor = IM_COL32(255, 200, 40, 110);
+
+    std::size_t const count = m_fill_points.size();
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        bool const closing = (i + 1 == count);
+        if (closing && count < 3)
+            break;
+        glm::vec4 a = to_clip(m_fill_points[i]);
+        glm::vec4 b = to_clip(m_fill_points[(i + 1) % count]);
+        // clip the edge against the near plane, so points behind the camera don't flip across the screen
+        if (a.w < nearw && b.w < nearw)
+            continue;
+        if (a.w < nearw)
+            a = glm::mix(a, b, (nearw - a.w) / (b.w - a.w));
+        else if (b.w < nearw)
+            b = glm::mix(b, a, (nearw - b.w) / (a.w - b.w));
+        drawlist->AddLine(to_screen(a), to_screen(b), closing ? closingcolor : edgecolor, 2.0f);
+    }
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        glm::vec4 const c = to_clip(m_fill_points[i]);
+        if (c.w < nearw)
+            continue;
+        drawlist->AddCircleFilled(to_screen(c), i == 0 ? 6.0f : 4.0f, i == 0 ? IM_COL32(255, 90, 40, 255) : edgecolor);
+    }
+}
+
+void editor_mode::render_area_fill()
+{
+    ImGui::Begin("Area fill", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing);
+
+    ImGui::TextUnformatted("LMB: add outline point, Backspace: remove last point");
+    double const area = polygon_area_xz(m_fill_points);
+    ImGui::Text("Points: %zu   Area: %.0f m2 (%.2f ha)", m_fill_points.size(), area, area / 10000.0);
+    if (ImGui::Button("Remove last point") && !m_fill_points.empty())
+        m_fill_points.pop_back();
+    ImGui::SameLine();
+    if (ImGui::Button("Clear outline"))
+        m_fill_points.clear();
+
+    ImGui::Separator();
+
+    // model package: a node bank group, or a custom set assembled from node bank templates
+    auto const groups = ui()->nodebank_groups();
+    m_fill_package = std::clamp(m_fill_package, 0, static_cast<int>(groups.size()));
+    std::string const current = m_fill_package == 0 ? std::string("Custom set") : groups[m_fill_package - 1];
+    ImGui::SetNextItemWidth(250.0f);
+    if (ImGui::BeginCombo("Model package", current.c_str()))
+    {
+        if (ImGui::Selectable("Custom set", m_fill_package == 0))
+            m_fill_package = 0;
+        for (int i = 0; i < static_cast<int>(groups.size()); ++i)
+        {
+            auto const label = groups[i] + "##fillgroup" + std::to_string(i);
+            if (ImGui::Selectable(label.c_str(), m_fill_package == i + 1))
+                m_fill_package = i + 1;
+        }
+        ImGui::EndCombo();
+    }
+
+    if (m_fill_package == 0)
+    {
+        ImGui::BeginChild("fill_custom_set", ImVec2(350.0f, 110.0f), true);
+        for (int i = 0; i < static_cast<int>(m_fill_custom.size()); ++i)
+        {
+            auto const label = template_label(m_fill_custom[i]) + "##fillcustom" + std::to_string(i);
+            if (ImGui::Selectable(label.c_str(), m_fill_custom_idx == i))
+                m_fill_custom_idx = i;
+        }
+        ImGui::EndChild();
+        if (ImGui::Button("Add selected template"))
+        {
+            // the node bank selection, not a random pick from the brush set
+            auto const *src = ui()->get_active_node_template(true);
+            if (src && !src->empty())
+                m_fill_custom.push_back(*src);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Remove") && m_fill_custom_idx >= 0 && m_fill_custom_idx < static_cast<int>(m_fill_custom.size()))
+        {
+            m_fill_custom.erase(m_fill_custom.begin() + m_fill_custom_idx);
+            m_fill_custom_idx = -1;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Clear set"))
+        {
+            m_fill_custom.clear();
+            m_fill_custom_idx = -1;
+        }
+    }
+    else
+    {
+        ImGui::Text("Templates in group: %zu", ui()->nodebank_group_templates(static_cast<std::size_t>(m_fill_package - 1)).size());
+    }
+
+    ImGui::Separator();
+
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::InputFloat("Density (objects/ha)", &m_fill_density, 10.0f, 100.0f, "%.1f");
+    m_fill_density = std::max(0.0f, m_fill_density);
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::InputFloat("Min. spacing (m)", &m_fill_min_spacing, 0.5f, 2.0f, "%.1f");
+    m_fill_min_spacing = std::max(0.0f, m_fill_min_spacing);
+    ImGui::SetNextItemWidth(200.0f);
+    ImGui::DragFloatRange2("Scale", &m_fill_scale_min, &m_fill_scale_max, 0.01f, 0.1f, 5.0f, "min %.2f", "max %.2f");
+    ImGui::Checkbox("Random rotation (off: Functions panel setting)", &m_fill_random_rotation);
+    ImGui::Checkbox("Large models count as ground (terrain tiles)", &m_fill_models_as_ground);
+
+    ImGui::Text("Estimated objects: %.0f", std::round(area / 10000.0 * m_fill_density));
+
+    if (ImGui::Button("Fill area"))
+        run_area_fill();
+    ImGui::SameLine();
+    std::string const undolabel = "Undo last fill (" + std::to_string(m_fill_last.size()) + ")";
+    if (ImGui::Button(undolabel.c_str()) && !m_fill_last.empty())
+        undo_last_area_fill();
+
+    if (!m_fill_status.empty())
+        ImGui::TextUnformatted(m_fill_status.c_str());
+
+    ImGui::End();
 }
 
 void editor_mode::render_gizmo()
@@ -1381,6 +1922,7 @@ void editor_mode::exit()
 
     g_redo.clear();
     m_history.clear();
+    m_fill_last.clear();
 
     // drop selection so a stale/dangling node pointer isn't used on the next editor session
     m_node = nullptr;
@@ -1496,6 +2038,12 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         }
         break;
 
+    case GLFW_KEY_BACKSPACE:
+        // area fill: remove the last outline point
+        if (is_press(Action) && ui()->mode() == nodebank_panel::FILL && !m_fill_points.empty())
+            m_fill_points.pop_back();
+        break;
+
     case GLFW_KEY_F:
         if (is_press(Action))
         {
@@ -1565,11 +2113,30 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
         if (is_press(Action))
         {
             mouseHold = true;
-            m_node = nullptr;
+            m_brush_has_last = false; // every brush stroke starts with a placement
 
-            // delegate node picking behaviour depending on current panel mode
+            // in area fill mode the left button only adds outline points, it doesn't touch the selection
+            if (mode == nodebank_panel::FILL)
+            {
+                GfxRenderer->Pick_Node_Callback([this](scene::basic_node * /*node*/) {
+                    if (viewport_click())
+                        add_area_fill_point();
+                });
+                m_input.mouse.button(Button, Action);
+                return;
+            }
+
+            // delegate node picking behaviour depending on current panel mode.
+            // NOTE: the pick is resolved a few frames later, often after the button was already released,
+            // so the callback mustn't depend on the button still being held
             GfxRenderer->Pick_Node_Callback(
                 [this, mode, rotation_mode, fixed_rotation_value](scene::basic_node *node) {
+                    // the press turned out to be meant for the UI
+                    if (!viewport_click())
+                        return;
+
+                    m_node = nullptr;
+
                     // ignore picks that are beyond allowed placement distance
                     if (node) {
                         double const dist = glm::distance(node->location(), glm::dvec3{Global.pCamera.Pos});
@@ -1578,9 +2145,6 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                     }
                     if (mode == nodebank_panel::MODIFY)
                     {
-                        if (!m_dragging)
-                            return;
-
                         m_node = node;
                         ui()->set_node(m_node);
                     }
@@ -1607,19 +2171,16 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                         if (!cloned)
                             return;
 
-                        // record addition for undo
-                        std::string as_text;
                         std::string new_name = "editor_" + cloned->uuid.to_string();
-
                         cloned->m_name = new_name;
+                        apply_rotation_for_new_node(cloned, rotation_mode, fixed_rotation_value);
+
+                        // record addition for undo (after rotation, so a redo recreates the same thing)
+                        std::string as_text;
                         cloned->export_as_text(as_text);
                         push_snapshot(cloned, EditorSnapshot::Action::Add, as_text);
 
-                        if (!m_dragging)
-                            return;
-
                         m_node = cloned;
-                        apply_rotation_for_new_node(m_node, rotation_mode, fixed_rotation_value);
                         ui()->set_node(m_node);
                     }
                 });
