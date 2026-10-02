@@ -418,6 +418,7 @@ bool save(std::string const &File, include_info const &Info, std::string &Error)
 	if (error)
 	{
 		Error = "can't replace file \"" + File + "\": " + error.message();
+		std::filesystem::remove(filepath + ".tmp", error);
 		return false;
 	}
 	return true;

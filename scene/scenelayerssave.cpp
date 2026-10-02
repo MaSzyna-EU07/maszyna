@@ -862,6 +862,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		}
 		written.emplace_back(output);
 	}
+	std::vector<layer_handle> replaced;
 	for (auto const output : written)
 	{
 		auto const filepath{path(output)};
@@ -873,10 +874,35 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		std::filesystem::rename(filepath + ".tmp", filepath, error);
 		if (error)
 		{
-			return fail("can't replace file \"" + layer(output).name + "\": " + error.message());
+			// e.g. the file is held open by another program. take back what was done so far: the scenery files
+			// have to stay in step with each other, and with what we know about them
+			auto const cause{error.message()};
+			for (auto const restored : replaced)
+			{
+				auto const lookup{state.content.find(restored)};
+				if (lookup != state.content.end())
+				{
+					std::ofstream{path(restored), std::ios_base::binary | std::ios_base::trunc} << lookup->second;
+					stat(restored);
+				}
+				else
+				{
+					std::filesystem::remove(path(restored), error);
+				}
+			}
+			for (auto const leftover : written)
+			{
+				std::filesystem::remove(path(leftover) + ".tmp", error);
+			}
+			result.files.clear();
+			return fail("can't replace file \"" + layer(output).name + "\": " + cause);
 		}
+		replaced.emplace_back(output);
 		result.files.emplace_back(layer(output).name);
-		WriteLog("Scenery save: file \"" + layer(output).name + "\" updated");
+	}
+	for (auto const &file : result.files)
+	{
+		WriteLog("Scenery save: file \"" + file + "\" updated");
 	}
 
 	// the scenery files now match the scene, update the bookkeeping to reflect it

@@ -55,6 +55,9 @@ bool scenarioloader_mode::update() {
 		ErrorLog( "Bad init: scenario loading failed" );
 		Application.pop_mode();
 	}
+	// the loading state holds the scenario file open, which on some systems keeps the file from being replaced
+	// when the scenery is saved in the editor. it'd also get in the way of another load
+	state.reset();
 
 	WriteLog( "Scenario loading time: " + std::to_string( std::chrono::duration_cast<std::chrono::seconds>( std::chrono::system_clock::now() - timestart ).count() ) + " seconds" );
 	// TODO: implement and use next mode cue
