@@ -9,6 +9,7 @@ http:
 
 #pragma once
 
+#include <array>
 #include <functional>
 #include <string>
 #include <utility>
@@ -129,6 +130,22 @@ class editor_track
 		double cant{0.0};
 	};
 	static bool find_curve(TTrack &Track, straight_tolerance const &Tolerance, double const Gauge, curve &Curve);
+	struct switch_template
+	{
+		TTrack *source{nullptr};
+		std::array<segment_data, 2> local;
+		double length{0.0};
+		double ratio{0.0};
+		double radius{0.0};
+		int count{0};
+		std::string label;
+		double a{0.0};
+		double b{0.0};
+	};
+	static std::vector<switch_template> standard_switch_templates();
+	static std::vector<switch_template> find_switch_templates();
+	static std::vector<segment_data> place_switch(switch_template const &Template, glm::dvec3 const &Origin, glm::dvec2 const &Direction, int const Side, double const Grade);
+	static TTrack *create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, TTrack const &Style);
 	static void move_straights(std::vector<straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
 	static std::vector<TTrack *> relay(chain const &Chain, std::vector<segment_data> const &Pieces);
 	static void retire(TTrack &Track);
@@ -152,5 +169,6 @@ class editor_track
 	static void store_switch_path(TTrack &Switch, int const Path);
 	static void rebuild_geometry(TTrack &Track);
 	static TTrack *clone(TTrack const &Template);
+	static TTrack *load_path(std::string const &Text, TTrack const &Template);
 	static void move_straight(straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End, std::function<bool(TTrack const *)> const &Member);
 };

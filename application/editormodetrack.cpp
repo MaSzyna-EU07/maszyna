@@ -15,6 +15,8 @@ http:
 #include "utilities/Globals.h"
 #include "rendering/renderer.h"
 #include "world/Track.h"
+#include "scene/scene.h"
+#include "simulation/simulation.h"
 #include "utilities/Logs.h"
 
 #include "imgui/imgui.h"
@@ -1232,6 +1234,7 @@ editor_track::straight const &editor_mode::current_straight()
 		m_straights.current_for = track;
 		m_straights.handle = -1;
 		m_straights.current = track != nullptr ? editor_track::find_straight(*track, m_straights.tolerance) : editor_track::straight{};
+		find_neighbour_straights();
 	}
 	return m_straights.current;
 }
@@ -1326,18 +1329,117 @@ void editor_mode::draw_straights_overlay() const
 				drawlist->AddCircle(screen, 12.0f, IM_COL32(255, 255, 255, 255), 16, 2.5f);
 		}
 	}
-	draw(m_straights.a, IM_COL32(60, 230, 90, 255), 5.0f);
-	draw(m_straights.b, IM_COL32(255, 60, 255, 255), 5.0f);
-	if (false == m_straights.a.tracks.empty() && false == m_straights.b.tracks.empty())
+	auto const &line{m_straights.current};
+	if (line.tracks.empty() || m_straights.dragging)
+		return;
+	glm::dvec2 const normal{-line.direction.y, line.direction.x};
+	for (auto const &other : m_straights.neighbours)
 	{
-		auto const &a{m_straights.a};
-		for (auto const &point : {m_straights.b.start, m_straights.b.end})
+		auto const along = [&](glm::dvec3 const &Point) { return glm::dot(glm::dvec2{Point.x - line.start.x, Point.z - line.start.z}, line.direction); };
+		auto const across = [&](glm::dvec3 const &Point) { return glm::dot(glm::dvec2{Point.x - line.start.x, Point.z - line.start.z}, normal); };
+		auto const a0{along(other.start)}, a1{along(other.end)};
+		auto const from{std::max(0.0, std::min(a0, a1))};
+		auto const to{std::min(line.length, std::max(a0, a1))};
+		if (to <= from)
+			continue;
+		auto const middle{(from + to) * 0.5};
+		auto const fraction{std::abs(a1 - a0) > 1e-6 ? (middle - a0) / (a1 - a0) : 0.0};
+		auto const lateral{across(other.start) + (across(other.end) - across(other.start)) * fraction};
+		glm::dvec3 const foot{line.start.x + line.direction.x * middle, line.start.y + line.grade * middle, line.start.z + line.direction.y * middle};
+		glm::dvec3 const target{foot.x + normal.x * lateral, foot.y, foot.z + normal.y * lateral};
+		projection.line(drawlist, foot, target, IM_COL32(255, 230, 120, 230), 1.5f);
+		ImVec2 screen;
+		if (projection.project((foot + target) * 0.5, screen))
 		{
-			auto const along{glm::dot(glm::dvec2{point.x - a.start.x, point.z - a.start.z}, a.direction)};
-			auto const foot{a.start + glm::dvec3{a.direction.x, 0.0, a.direction.y} * along + glm::dvec3{0.0, a.grade * along, 0.0}};
-			projection.line(drawlist, foot, point, IM_COL32(255, 210, 60, 220), 1.5f);
+			auto const angle{glm::degrees(std::abs(std::asin(std::clamp(line.direction.x * other.direction.y - line.direction.y * other.direction.x, -1.0, 1.0))))};
+			char label[48];
+			if (angle > 0.001)
+				std::snprintf(label, sizeof(label), "%.3f m  %.3f deg", std::abs(lateral), angle);
+			else
+				std::snprintf(label, sizeof(label), "%.3f m", std::abs(lateral));
+			auto const size{ImGui::CalcTextSize(label)};
+			drawlist->AddRectFilled(ImVec2(screen.x - 3.0f, screen.y - 2.0f), ImVec2(screen.x + size.x + 3.0f, screen.y + size.y + 2.0f), IM_COL32(0, 0, 0, 170), 3.0f);
+			drawlist->AddText(screen, IM_COL32(255, 230, 120, 255), label);
 		}
 	}
+}
+
+void editor_mode::find_neighbour_straights()
+{
+	auto &state{m_straights};
+	state.neighbours.clear();
+	auto const &line{state.current};
+	if (line.tracks.empty())
+		return;
+	glm::dvec2 const normal{-line.direction.y, line.direction.x};
+	auto const middle{(line.start + line.end) * 0.5};
+	std::vector<TTrack const *> visited(line.tracks.begin(), line.tracks.end());
+	auto const sections{simulation::Region->sections(middle, static_cast<float>(line.length * 0.5 + 60.0))};
+	for (auto *section : sections)
+	{
+		for (auto const &cell : section->m_cells)
+		{
+			for (auto *track : cell.m_paths)
+			{
+				if (std::find(visited.begin(), visited.end(), track) != visited.end() || false == editor_track::is_straight(*track, state.tolerance))
+					continue;
+				auto other{editor_track::find_straight(*track, state.tolerance)};
+				visited.insert(visited.end(), other.tracks.begin(), other.tracks.end());
+				if (other.tracks.empty() || std::abs(line.direction.x * other.direction.y - line.direction.y * other.direction.x) > std::sin(glm::radians(10.0)))
+					continue;
+				auto const offset{glm::dvec2{(other.start + other.end).x * 0.5 - line.start.x, (other.start + other.end).z * 0.5 - line.start.z}};
+				if (std::abs(glm::dot(offset, normal)) > 60.0)
+					continue;
+				auto const a0{glm::dot(glm::dvec2{other.start.x - line.start.x, other.start.z - line.start.z}, line.direction)};
+				auto const a1{glm::dot(glm::dvec2{other.end.x - line.start.x, other.end.z - line.start.z}, line.direction)};
+				if (std::max(a0, a1) <= 0.0 || std::min(a0, a1) >= line.length)
+					continue;
+				state.neighbours.push_back(std::move(other));
+			}
+		}
+	}
+}
+
+glm::dvec3 editor_mode::snap_straight_offset(editor_track::straight const &Line, glm::dvec3 const &Offset) const
+{
+	glm::dvec2 const normal{-Line.direction.y, Line.direction.x};
+	auto const middle{(Line.start + Line.end) * 0.5 + Offset};
+	double best{0.2};
+	double correction{0.0};
+	for (auto const &other : m_straights.neighbours)
+	{
+		if (std::abs(Line.direction.x * other.direction.y - Line.direction.y * other.direction.x) > std::sin(glm::radians(0.5)))
+			continue;
+		auto const distance{glm::dot(glm::dvec2{other.start.x - middle.x, other.start.z - middle.z}, normal)};
+		for (auto const spacing : m_straights.spacings)
+		{
+			auto const error{std::abs(distance) - spacing};
+			if (std::abs(error) < best)
+			{
+				best = std::abs(error);
+				correction = distance > 0.0 ? error : -error;
+			}
+		}
+	}
+	return Offset + glm::dvec3{normal.x, 0.0, normal.y} * correction;
+}
+
+glm::dvec3 editor_mode::snap_straight_direction(glm::dvec3 const &Pivot, glm::dvec3 const &Moved) const
+{
+	glm::dvec2 const offset{Moved.x - Pivot.x, Moved.z - Pivot.z};
+	auto const length{glm::length(offset)};
+	if (length < 1e-3)
+		return Moved;
+	auto const direction{offset / length};
+	for (auto const &other : m_straights.neighbours)
+	{
+		auto const sine{direction.x * other.direction.y - direction.y * other.direction.x};
+		if (std::abs(sine) > std::sin(glm::radians(0.5)))
+			continue;
+		auto const aligned{other.direction * (glm::dot(direction, other.direction) < 0.0 ? -1.0 : 1.0)};
+		return {Pivot.x + aligned.x * length, Moved.y, Pivot.z + aligned.y * length};
+	}
+	return Moved;
 }
 
 void editor_mode::render_straights_ui()
@@ -1403,12 +1505,6 @@ void editor_mode::render_straights_ui()
 		ImGui::Text("To   (%.3f, %.3f, %.3f)", line.end.x, line.end.y, line.end.z);
 		ImGui::Text("Paths: %s ... %s", line.tracks.front()->name().c_str(), line.tracks.back()->name().c_str());
 		ImGui::Unindent();
-		if (ImGui::Button("Set as A"))
-			state.a = line;
-		ImGui::SameLine();
-		if (ImGui::Button("Set as B"))
-			state.b = line;
-		ImGui::SameLine();
 		if (in_straight_set(line))
 		{
 			if (ImGui::Button("Remove from the set"))
@@ -1496,48 +1592,11 @@ void editor_mode::render_straights_ui()
 			state.set.clear();
 	}
 
-	ImGui::Separator();
-	auto const &a{state.a};
-	auto const &b{state.b};
-	ImGui::TextColored(ImVec4(0.25f, 0.9f, 0.35f, 1.0f), "A: %s", a.tracks.empty() ? "-" : describe(a).c_str());
-	ImGui::TextColored(ImVec4(1.0f, 0.25f, 1.0f, 1.0f), "B: %s", b.tracks.empty() ? "-" : describe(b).c_str());
-	if (a.tracks.empty() || b.tracks.empty())
-		return;
-
-	auto const cross{a.direction.x * b.direction.y - a.direction.y * b.direction.x};
-	auto const dot{glm::dot(a.direction, b.direction)};
-	auto const between{glm::degrees(std::atan2(std::abs(cross), std::abs(dot)))};
-	auto const offset = [&](glm::dvec3 const &Point) {
-		glm::dvec2 const relative{Point.x - a.start.x, Point.z - a.start.z};
-		return a.direction.x * relative.y - a.direction.y * relative.x;
-	};
-	auto const along = [&](glm::dvec3 const &Point) { return glm::dot(glm::dvec2{Point.x - a.start.x, Point.z - a.start.z}, a.direction); };
-	auto const height = [&](glm::dvec3 const &Point) { return Point.y - (a.start.y + a.grade * along(Point)); };
-	auto const startoffset{offset(b.start)};
-	auto const endoffset{offset(b.end)};
-	auto const from{std::max(0.0, std::min(along(b.start), along(b.end)))};
-	auto const to{std::min(a.length, std::max(along(b.start), along(b.end)))};
-
-	ImGui::Text("Angle between A and B: %.5f deg%s", between, between < 0.001 ? "  (parallel)" : "");
-	ImGui::Text("Distance of B from A: start %.3f m, end %.3f m, change %.3f m", std::abs(startoffset), std::abs(endoffset), std::abs(endoffset - startoffset));
-	ImGui::Text("B lies on the %s of A", (startoffset + endoffset) > 0.0 ? "left" : "right");
-	ImGui::Text("Height of B above A: start %.3f m, end %.3f m", height(b.start), height(b.end));
-	ImGui::Text("Grade difference: %.2f per mille", (b.grade * (dot < 0.0 ? -1.0 : 1.0) - a.grade) * 1000.0);
-	ImGui::Text("Overlap along A: %.2f m", std::max(0.0, to - from));
-
-	ImGui::PushItemWidth(120.0f);
-	ImGui::InputDouble("Distance (m)", &state.distance, 0.0, 0.0, "%.3f");
-	ImGui::PopItemWidth();
-	ImGui::SameLine();
-	if (ImGui::Button("Make B parallel to A at this distance"))
+	if (false == state.neighbours.empty())
 	{
-		auto const side{(startoffset + endoffset) >= 0.0 ? 1.0 : -1.0};
-		glm::dvec2 const direction{a.direction * (dot < 0.0 ? -1.0 : 1.0)};
-		glm::dvec2 const normal{-a.direction.y, a.direction.x};
-		auto const startalong{along(b.start)};
-		auto const start2d{glm::dvec2{a.start.x, a.start.z} + a.direction * startalong + normal * (side * std::abs(state.distance))};
-		auto const end2d{start2d + direction * b.length};
-		straight_apply(b, {start2d.x, b.start.y, start2d.y}, {end2d.x, b.end.y, end2d.y});
+		ImGui::Separator();
+		ImGui::Text("Neighbouring straights: %zu (distances shown in the view)", state.neighbours.size());
+		ImGui::TextDisabled("Dragging the middle snaps the distance to: 3.5, 4.0, 4.5, 4.75, 5.0, 5.5, 6.0 m; dragging an end snaps parallel");
 	}
 }
 
@@ -1580,9 +1639,7 @@ void editor_mode::straight_refresh()
 	auto &state{m_straights};
 	state.current_for = selected_track();
 	state.current = state.current_for != nullptr ? editor_track::find_straight(*state.current_for, state.tolerance) : editor_track::straight{};
-	for (auto *line : {&state.a, &state.b})
-		if (false == line->tracks.empty())
-			*line = editor_track::find_straight(*line->tracks.front(), state.tolerance);
+	find_neighbour_straights();
 	for (auto &line : state.found)
 		if (false == line.tracks.empty())
 			line = editor_track::find_straight(*line.tracks.front(), state.tolerance);
@@ -1696,17 +1753,18 @@ void editor_mode::render_straight_gizmo()
 			m_track_drag = tracks;
 		}
 		auto const &grabbed{state.drag_line};
-		glm::dvec3 const moved{camerapos + glm::dvec3(state.gizmo[3])};
+		glm::dvec3 moved{camerapos + glm::dvec3(state.gizmo[3])};
 		std::function<glm::dvec3(glm::dvec3 const &)> transform;
 		if (state.handle == 2)
 		{
-			auto const offset{moved - (grabbed.start + grabbed.end) * 0.5};
+			auto const offset{snap_straight_offset(grabbed, moved - (grabbed.start + grabbed.end) * 0.5)};
 			transform = [offset](glm::dvec3 const &Point) { return Point + offset; };
 		}
 		else
 		{
 			auto const pivot{state.handle == 0 ? grabbed.end : grabbed.start};
 			auto const original{state.handle == 0 ? grabbed.start : grabbed.end};
+			moved = snap_straight_direction(pivot, moved);
 			glm::dvec2 const before{original.x - pivot.x, original.z - pivot.z};
 			glm::dvec2 const after{moved.x - pivot.x, moved.z - pivot.z};
 			auto const lengthbefore{glm::length(before)};

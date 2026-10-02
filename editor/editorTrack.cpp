@@ -22,6 +22,7 @@ http:
 #include <cmath>
 #include <limits>
 #include <deque>
+#include <map>
 #include <numeric>
 #include <functional>
 #include <sstream>
@@ -1043,6 +1044,176 @@ bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance
 	return true;
 }
 
+std::vector<editor_track::switch_template> editor_track::find_switch_templates()
+{
+	std::vector<switch_template> result;
+	std::map<std::string, std::size_t> lookup;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch || track->m_paths.size() < 2 || (track->iCategoryFlag & 0x80) != 0)
+			continue;
+		auto const &main{track->m_paths[0]};
+		auto const origin{main.points[segment_data::point::start]};
+		auto const chord{plan_of(main.points[segment_data::point::end] - origin)};
+		if (glm::length(chord) < 1.0)
+			continue;
+		auto const axis{glm::normalize(chord)};
+		glm::dvec2 const normal{-axis.y, axis.x};
+		auto const tolocal = [&](glm::dvec3 const &Vector) {
+			auto const planar{plan_of(Vector)};
+			return glm::dvec3{glm::dot(planar, normal), Vector.y, glm::dot(planar, axis)};
+		};
+		switch_template entry;
+		entry.source = track;
+		for (int i = 0; i < 2; ++i)
+		{
+			auto const &path{track->m_paths[i]};
+			auto &local{entry.local[i]};
+			local = path;
+			local.points[segment_data::point::start] = tolocal(path.points[segment_data::point::start] - origin);
+			local.points[segment_data::point::end] = tolocal(path.points[segment_data::point::end] - origin);
+			local.points[segment_data::point::control1] = tolocal(path.points[segment_data::point::control1]);
+			local.points[segment_data::point::control2] = tolocal(path.points[segment_data::point::control2]);
+		}
+		if (glm::length(glm::dvec2{entry.local[1].points[segment_data::point::start].x, entry.local[1].points[segment_data::point::start].z}) > kSamePoint)
+			continue;
+		if (entry.local[1].points[segment_data::point::end].x < 0.0)
+		{
+			for (auto &path : entry.local)
+			{
+				for (auto &point : path.points)
+					point.x = -point.x;
+				path.rolls = {-path.rolls[0], -path.rolls[1]};
+			}
+		}
+		entry.length = entry.local[0].points[segment_data::point::end].z;
+		auto const tangent{path_tangent(entry.local[1], true)};
+		auto const angle{std::atan2(std::abs(tangent.x), tangent.z)};
+		entry.ratio = angle > 1e-6 ? 1.0 / std::tan(angle) : 0.0;
+		entry.radius = path_radius(entry.local[1], 0.25);
+		char key[256];
+		std::snprintf(key, sizeof(key), "%.2f|%.2f|%.2f|%s|%s", entry.length, entry.local[1].points[segment_data::point::end].x, entry.local[1].points[segment_data::point::end].z, material_name(track->m_material1).c_str(), material_name(track->m_material2).c_str());
+		auto const found{lookup.find(key)};
+		if (found != lookup.end())
+		{
+			++result[found->second].count;
+			continue;
+		}
+		entry.count = 1;
+		char label[256];
+		std::snprintf(label, sizeof(label), "L %.2f m  1:%.1f  R %.0f m  %s", entry.length, entry.ratio, entry.radius, material_name(track->m_material1).c_str());
+		entry.label = label;
+		lookup.emplace(key, result.size());
+		result.push_back(entry);
+	}
+	std::sort(result.begin(), result.end(), [](switch_template const &A, switch_template const &B) { return A.count > B.count; });
+	return result;
+}
+
+std::vector<segment_data> editor_track::place_switch(switch_template const &Template, glm::dvec3 const &Origin, glm::dvec2 const &Direction, int const Side, double const Grade)
+{
+	std::vector<segment_data> result;
+	glm::dvec2 const normal{-Direction.y, Direction.x};
+	auto const side{static_cast<double>(Side)};
+	auto const vector = [&](glm::dvec3 const &Local) {
+		auto const planar{Direction * Local.z + normal * (Local.x * side)};
+		return glm::dvec3{planar.x, Local.y + Grade * Local.z, planar.y};
+	};
+	for (auto const &local : Template.local)
+	{
+		segment_data path{local};
+		path.points[segment_data::point::start] = Origin + vector(local.points[segment_data::point::start]);
+		path.points[segment_data::point::end] = Origin + vector(local.points[segment_data::point::end]);
+		path.points[segment_data::point::control1] = vector(local.points[segment_data::point::control1]);
+		path.points[segment_data::point::control2] = vector(local.points[segment_data::point::control2]);
+		if (Side < 0)
+			path.rolls = {-local.rolls[0], -local.rolls[1]};
+		result.push_back(path);
+	}
+	return result;
+}
+
+std::vector<editor_track::switch_template> editor_track::standard_switch_templates()
+{
+	struct definition
+	{
+		char const *name;
+		double radius;
+		double ratio;
+		double a;
+		double b;
+	};
+	definition const definitions[] = {
+		{"Rz 1:9 R190", 190.0, 9.0, 10.523, 16.615},
+		{"Rz 1:9 R300", 300.0, 9.0, 16.615, 16.615},
+		{"Rz 1:12 R500", 500.0, 12.0, 20.797, 0.0},
+		{"Rz 1:14 R760", 760.0, 14.0, 0.0, 0.0},
+		{"Rz 1:18,5 R1200", 1200.0, 18.5, 32.409, 34.943},
+		{"Rz 1:26,5 R2500", 2500.0, 26.5, 0.0, 0.0},
+	};
+	std::vector<switch_template> result;
+	for (auto const &definition : definitions)
+	{
+		auto const angle{std::atan(1.0 / definition.ratio)};
+		auto const a{definition.a > 0.0 ? definition.a : definition.radius * std::tan(angle * 0.5)};
+		auto const estimated{definition.b <= 0.0};
+		auto const b{estimated ? 1.87 * definition.ratio : definition.b};
+		auto const offset{b * std::tan(angle)};
+		switch_template entry;
+		entry.a = a;
+		entry.b = b;
+		entry.length = a + b;
+		entry.ratio = definition.ratio;
+		entry.radius = definition.radius;
+		auto &main{entry.local[0]};
+		main.points[segment_data::point::end] = {0.0, 0.0, a + b};
+		auto &diverging{entry.local[1]};
+		diverging.points[segment_data::point::end] = {offset, 0.0, a + b};
+		diverging.points[segment_data::point::control1] = {0.0, 0.0, a * 2.0 / 3.0};
+		diverging.points[segment_data::point::control2] = {-offset * 2.0 / 3.0, 0.0, -b * 2.0 / 3.0};
+		diverging.radius = static_cast<float>(definition.radius);
+		entry.label = std::string{definition.name} + "  a " + std::to_string(a).substr(0, std::to_string(a).find('.') + 4) + " b " + std::to_string(b).substr(0, std::to_string(b).find('.') + 4) + (estimated ? " (b est.)" : "");
+		result.push_back(entry);
+	}
+	return result;
+}
+
+TTrack *editor_track::create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, TTrack const &Style)
+{
+	if (Paths.size() < 2)
+		return nullptr;
+	TTrack *track{nullptr};
+	if (Template.source != nullptr)
+	{
+		track = clone(*Template.source);
+	}
+	else
+	{
+		char const *environments[] = {"flat", "mountains", "canyon", "tunnel", "bridge", "bank"};
+		auto const environment{Style.eEnvironment >= e_flat && Style.eEnvironment <= e_bank ? environments[Style.eEnvironment] : "flat"};
+		std::ostringstream text;
+		text.precision(std::numeric_limits<double>::digits10);
+		text << "switch " << Template.length << ' ' << Style.fTrackWidth << ' ' << Style.fFriction << ' ' << 10.0 << ' ' << Style.iQualityFlag << ' ' << 0 << ' ' << environment << ' ';
+		if (Style.m_visible)
+			text << "vis " << material_name(Style.m_material1) << ' ' << Style.fTexLength << ' ' << material_name(Style.m_material2) << ' ' << texture_height(Style) << ' ' << Style.fTexWidth << ' ' << Style.fTexSlope << ' ';
+		else
+			text << "unvis ";
+		for (int i = 0; i < 2; ++i)
+		{
+			auto const &path{Paths[i]};
+			auto const &start{path.points[segment_data::point::start]};
+			auto const &control1{path.points[segment_data::point::control1]};
+			auto const &control2{path.points[segment_data::point::control2]};
+			auto const &end{path.points[segment_data::point::end]};
+			text << start.x << ' ' << start.y << ' ' << start.z << ' ' << path.rolls[0] << ' ' << control1.x << ' ' << control1.y << ' ' << control1.z << ' ' << control2.x << ' ' << control2.y << ' ' << control2.z << ' ' << end.x << ' ' << end.y << ' ' << end.z << ' ' << path.rolls[1] << ' ' << path.radius << ' ';
+		}
+		text << "endtrack\n";
+		track = load_path(text.str(), Style);
+	}
+	track->m_paths.assign(Paths.begin(), Paths.begin() + 2);
+	return track;
+}
+
 std::vector<TTrack *> editor_track::straight_affected(std::vector<straight> const &Lines)
 {
 	std::vector<TTrack *> result;
@@ -1252,18 +1423,23 @@ TTrack *editor_track::clone(TTrack const &Template)
 {
 	std::ostringstream text;
 	Template.export_as_text_(text);
-	cParser parser(text.str(), cParser::buffer_TEXT);
-	parser.getTokens();
-	std::string token;
-	parser >> token;
+	auto content{text.str()};
+	auto const type{content.find("track ")};
+	if (type == 0)
+		content.erase(0, 6);
+	auto *track{load_path(content, Template)};
+	track->m_friction = Template.m_friction;
+	return track;
+}
 
+TTrack *editor_track::load_path(std::string const &Text, TTrack const &Template)
+{
+	cParser parser(Text, cParser::buffer_TEXT);
 	scene::node_data data;
 	data.type = "track";
-	if (false == Template.name().empty() && Template.name() != "none")
-	{
-		for (int i = 1; data.name.empty() || simulation::Paths.find(data.name) != nullptr; ++i)
-			data.name = Template.name() + "_" + std::to_string(i);
-	}
+	auto const base{Template.name().empty() || Template.name() == "none" ? std::string{"editor_track"} : Template.name()};
+	for (int i = 1; data.name.empty() || simulation::Paths.find(data.name) != nullptr; ++i)
+		data.name = base + "_" + std::to_string(i);
 	auto *track = new TTrack(data);
 	track->m_rangesquaredmin = Template.m_rangesquaredmin;
 	track->m_rangesquaredmax = Template.m_rangesquaredmax;
@@ -1271,7 +1447,6 @@ TTrack *editor_track::clone(TTrack const &Template)
 	for (auto *events : {&track->m_events0, &track->m_events1, &track->m_events2, &track->m_events0all, &track->m_events1all, &track->m_events2all})
 		events->clear();
 	track->m_events = false;
-	track->m_friction = Template.m_friction;
 	simulation::Paths.insert(track);
 	return track;
 }

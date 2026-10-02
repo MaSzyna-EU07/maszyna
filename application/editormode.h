@@ -332,8 +332,8 @@ class editor_mode : public application_mode
 		int listed{-1};
 		TTrack *current_for{nullptr};
 		editor_track::straight current;
-		editor_track::straight a;
-		editor_track::straight b;
+		std::vector<editor_track::straight> neighbours;
+		std::vector<double> spacings{3.5, 4.0, 4.5, 4.75, 5.0, 5.5, 6.0};
 		char filter[32]{};
 		int handle{-1};
 		bool dragging{false};
@@ -378,6 +378,9 @@ class editor_mode : public application_mode
 	double straight_tool_radius(editor_track::straight const &Line) const;
 	void straight_reshape(editor_track::straight const &Line, double const From, double const To, std::function<glm::dvec3(glm::dvec3 const &)> const &Tail, double const Radius);
 	void straight_refresh();
+	void find_neighbour_straights();
+	glm::dvec3 snap_straight_offset(editor_track::straight const &Line, glm::dvec3 const &Offset) const;
+	glm::dvec3 snap_straight_direction(glm::dvec3 const &Pivot, glm::dvec3 const &Moved) const;
 	straights_state m_straights;
 	enum class track_tab { straights, route, path };
 	track_tab m_track_tab{track_tab::straights};
