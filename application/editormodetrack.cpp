@@ -3670,7 +3670,9 @@ std::vector<segment_data> editor_mode::curved_switch_paths(editor_track::switch_
 		glm::dvec2 const across{glm::dvec2{-along.y, along.x} * static_cast<double>(Side)};
 		Tangent = glm::normalize(along * Localtangent.y + across * Localtangent.x);
 		auto const planar{glm::dvec2{sample.position.x, sample.position.z} + across * Local.x};
-		return glm::dvec3{planar.x, sample.position.y + Local.y, planar.y};
+		auto const cant{glm::radians(static_cast<double>(sample.roll) * Direction)};
+		auto const cone{-Local.x * Side * std::tan(cant)};
+		return glm::dvec3{planar.x, sample.position.y + Local.y + cone, planar.y};
 	};
 	auto const hermite = [](glm::dvec3 const &Start, glm::dvec2 const &Startdirection, glm::dvec3 const &End, glm::dvec2 const &Enddirection) {
 		auto const handle{glm::distance(glm::dvec2{Start.x, Start.z}, glm::dvec2{End.x, End.z}) / 3.0};
