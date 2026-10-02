@@ -374,13 +374,13 @@ void editor_mode::commit_track_drag(bool const Force)
 
 void editor_mode::push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created)
 {
-	if (States.empty())
+	if (States.empty() && Created.empty())
 		return;
 
 	if (m_max_history_size >= 0 && (int)m_history.size() >= m_max_history_size)
 		m_history.erase(m_history.begin(), m_history.begin() + ((int)m_history.size() - m_max_history_size + 1));
 
-	auto *track = States.front().first;
+	auto *track = States.empty() ? Created.front() : States.front().first;
 	EditorSnapshot snap;
 	snap.action = EditorSnapshot::Action::TrackEdit;
 	snap.node_name = track->name();
@@ -547,8 +547,6 @@ void editor_mode::render_turnout_ui()
 	}
 	ImGui::PopItemWidth();
 	auto const replace = [&](editor_track::switch_template const &Template, int const Side) {
-		if (false == track->Dynamics.empty())
-			return;
 		auto const grade{length > 0.0 ? (main.points[segment_data::point::end].y - origin.y) / length : 0.0};
 		auto const paths{editor_track::place_switch(Template, origin, axis, Side, grade)};
 		push_track_snapshot({{track, editor_track::capture(*track)}});
@@ -1846,14 +1844,6 @@ void editor_mode::straights_apply(std::vector<editor_track::straight> const &Lin
 	auto &state{m_straights};
 	state.status.clear();
 	auto const tracks{editor_track::straight_affected(Lines)};
-	for (auto *track : tracks)
-	{
-		if (false == track->Dynamics.empty())
-		{
-			state.status = "There are vehicles placed on path " + track->name();
-			return;
-		}
-	}
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	for (auto *track : tracks)
 		states.emplace_back(track, editor_track::capture(*track));
@@ -1917,11 +1907,6 @@ void editor_mode::render_straight_gizmo()
 				lines.push_back(line);
 			}
 			auto const tracks{editor_track::straight_affected(lines)};
-			if (std::any_of(tracks.begin(), tracks.end(), [](TTrack const *Track) { return false == Track->Dynamics.empty(); }))
-			{
-				state.status = "There are vehicles placed on the straights or the paths attached to them";
-				return;
-			}
 			state.dragging = true;
 			state.drag_line = line;
 			state.drag_lines = lines;
@@ -2024,8 +2009,38 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 			}
 		}
 	};
+	auto const keep_regular = [&]() {
+		if (first < 0)
+			return;
+		auto const centre{(std::max(From, 0.0) + std::min(To, line.length)) * 0.5};
+		int middle{first};
+		for (int i = first; i <= last; ++i)
+			if (spans[i].from <= centre && spans[i].to >= centre)
+				middle = i;
+		if (spans[middle].track->eType != tt_Normal)
+		{
+			int best{-1};
+			for (int i = first; i <= last; ++i)
+				if (spans[i].track->eType == tt_Normal && (best < 0 || std::abs(i - middle) < std::abs(best - middle)))
+					best = i;
+			if (best < 0)
+			{
+				first = last = -1;
+				return;
+			}
+			middle = best;
+		}
+		int low{middle}, high{middle};
+		while (low > first && spans[low - 1].track->eType == tt_Normal)
+			--low;
+		while (high < last && spans[high + 1].track->eType == tt_Normal)
+			++high;
+		first = low;
+		last = high;
+	};
 	collect();
 	select(To);
+	keep_regular();
 	if (first < 0)
 		return;
 
@@ -2035,11 +2050,8 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 	if (last + 1 >= static_cast<int>(spans.size()))
 	{
 		auto const final{spans.back()};
-		if (final.track->eType != tt_Normal || false == final.track->Dynamics.empty())
-		{
-			state.status = "The end of the straight can't be reshaped here";
+		if (final.track->eType != tt_Normal)
 			return;
-		}
 		auto const length{final.to - final.from};
 		auto const cut{To < final.to - 1.0 ? std::max(To, final.from + std::min(1.0, length * 0.5)) : final.from + length * 0.7};
 		splitstates.emplace_back(final.track, editor_track::capture(*final.track));
@@ -2056,6 +2068,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 		collect();
 		end = std::min(To, cut);
 		select(end);
+		keep_regular();
 		if (first < 0 || last + 1 >= static_cast<int>(spans.size()))
 		{
 			for (auto *track : splitcreated)
@@ -2074,15 +2087,6 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 			editor_track::commit({entry.first});
 		}
 	};
-	for (int i = first; i <= last; ++i)
-	{
-		if (spans[i].track->eType != tt_Normal)
-		{
-			undo_split();
-			state.status = "There's a switch in the reshaped part of the straight";
-			return;
-		}
-	}
 
 	editor_track::straight tail;
 	tail.direction = line.direction;
@@ -2103,15 +2107,6 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 	for (auto *track : chainpaths)
 		if (std::find(tracks.begin(), tracks.end(), track) == tracks.end())
 			tracks.push_back(track);
-	for (auto *track : tracks)
-	{
-		if (false == track->Dynamics.empty())
-		{
-			undo_split();
-			state.status = "There are vehicles placed on path " + track->name();
-			return;
-		}
-	}
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	for (auto *track : tracks)
 		states.emplace_back(track, editor_track::capture(*track));
@@ -2187,6 +2182,11 @@ bool editor_mode::place_straight_tool()
 	auto &state{m_straights};
 	if (ui()->mode() != nodebank_panel::TRACK || m_track_tab != track_tab::straights || state.tool == 0)
 		return false;
+	if (state.tool == 2)
+	{
+		add_detour_point();
+		return true;
+	}
 	auto const &line{current_straight()};
 	if (line.tracks.empty())
 		return false;
@@ -2339,14 +2339,16 @@ void editor_mode::delete_selected_track()
 void editor_mode::draw_track_hints()
 {
 	std::string hint;
-	if (m_extend.active)
+	if (false == m_straights.detour.empty())
+		hint = "Shift+click: point " + std::to_string(m_straights.detour.size() + 1) + " of 4 (1: leave the axis, 2: shifted, 3: start back, 4: back on the axis)   Esc: cancel";
+	else if (m_extend.active)
 		hint = "Drag: curve through the cursor, along the end: straight   Ctrl: straight";
 	else if (m_switch.placing)
 		hint = "Drag along the straight to set the direction of the switch, sideways to set its side";
 	else if (m_switch.armed >= 0 && m_track_tab == track_tab::straights)
 		hint = "Press on the selected straight where the switch starts and drag";
 	else if (m_track_tab == track_tab::straights)
-		hint = current_straight().tracks.empty() ? "LMB: select a straight or a curve" : "Drag the ends or the middle   Ctrl+drag: break   Shift+drag: S-curve   Alt+click: add to the set   Drag from a red ring: new path   Del: delete";
+		hint = current_straight().tracks.empty() ? "LMB: select a straight or a curve" : "Drag the ends or the middle   Ctrl+drag: break   Shift+click x4: shift around   Alt+click: add to the set   Drag from a red ring: new path   Del: delete";
 	else if (m_track_tab == track_tab::turnout)
 		hint = "Gizmo: move the switch (W: turn)   Drag from a red ring: new path   Del: delete";
 	else if (m_track_tab == track_tab::route)
@@ -2365,6 +2367,7 @@ void editor_mode::draw_track_hints()
 void editor_mode::update_build_tools()
 {
 	glm::dvec3 const ground{Global.pCamera.Pos + GfxRenderer->Mouse_Position()};
+	m_straights.detour_mouse = ground;
 	if (m_extend.active)
 		m_extend.mouse = ground;
 	if (m_switch.placing)
@@ -2374,7 +2377,7 @@ void editor_mode::update_build_tools()
 bool editor_mode::start_extend()
 {
 	auto *track{selected_track()};
-	if (track == nullptr || (track->eType != tt_Normal && track->eType != tt_Switch) || false == editor_track::is_supported(*track) || false == track->Dynamics.empty())
+	if (track == nullptr || (track->eType != tt_Normal && track->eType != tt_Switch) || false == editor_track::is_supported(*track))
 		return false;
 	screen_projection const projection;
 	ImVec2 const mouse = ImGui::GetIO().MousePos;
@@ -2442,7 +2445,7 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 	auto const radius{chord / (2.0 * std::sin(angle * 0.5))};
 	double const side{lateral > 0.0 ? 1.0 : -1.0};
 	glm::dvec2 const centre{glm::dvec2{tool.point.x, tool.point.z} + glm::dvec2{-direction.y, direction.x} * (side * radius)};
-	auto const count{std::max(1, static_cast<int>(std::ceil(angle / glm::radians(10.0) - 1e-9)))};
+	auto const count{std::max(1, static_cast<int>(std::ceil(angle / glm::radians(90.0) - 1e-9)))};
 	auto const step{angle / count};
 	auto const handle{4.0 / 3.0 * std::tan(step / 4.0) * radius};
 	auto const turn = [&](glm::dvec2 const &Vector, double const Angle) {
@@ -2537,13 +2540,11 @@ void editor_mode::insert_switch(editor_track::straight const &Line, double const
 	auto &state{m_straights};
 	state.status.clear();
 	auto const &shape{m_switch.templates[m_switch.armed]};
-	auto const from{Direction > 0 ? Along : Along - shape.length};
-	auto const to{from + shape.length};
-	if (from < -0.01 || to > Line.length + 0.01)
-	{
-		state.status = "The switch doesn't fit on the straight here";
+	if (shape.length > Line.length - 0.02)
 		return;
-	}
+	auto const from{std::clamp(Direction > 0 ? Along : Along - shape.length, 0.01, Line.length - shape.length - 0.01)};
+	auto const to{from + shape.length};
+	auto const origin{Direction > 0 ? from : to};
 	struct span
 	{
 		TTrack *track;
@@ -2576,11 +2577,8 @@ void editor_mode::insert_switch(editor_track::straight const &Line, double const
 	editor_track::chain chain;
 	for (int i = first; i <= last; ++i)
 	{
-		if (spans[i].track->eType != tt_Normal || false == spans[i].track->Dynamics.empty())
-		{
-			state.status = "The switch would overlap another switch or a path with vehicles";
+		if (spans[i].track->eType != tt_Normal)
 			return;
-		}
 		chain.tracks.push_back(spans[i].track);
 		chain.forward.push_back(spans[i].forward);
 	}
@@ -2588,9 +2586,23 @@ void editor_mode::insert_switch(editor_track::straight const &Line, double const
 	auto const after{std::max(0.0, spans[last].to - to)};
 	bool const hasbefore{before > 0.01};
 	bool const hasafter{after > 0.01};
+	auto const point = [&](double const Distance) { return Line.start + glm::dvec3{Line.direction.x, Line.grade, Line.direction.y} * Distance; };
+	glm::dvec2 const direction{Line.direction * static_cast<double>(Direction)};
 	if (false == hasbefore && false == hasafter)
 	{
-		state.status = "The switch would replace the paths completely, place it so that a piece of the straight remains";
+		for (auto *track : chain.tracks)
+			editor_track::retire(*track);
+		auto const paths{editor_track::place_switch(shape, point(origin), direction, Side, Line.grade * Direction)};
+		auto *track{editor_track::create_switch(shape, paths, *spans[first].track)};
+		std::vector<TTrack *> created;
+		if (track != nullptr)
+		{
+			editor_track::commit({track});
+			created.push_back(track);
+		}
+		push_track_snapshot({}, std::move(created));
+		m_history.back().removed = chain.tracks;
+		straight_refresh();
 		return;
 	}
 	auto const count{std::max<std::size_t>(chain.tracks.size(), (hasbefore ? 1 : 0) + (hasafter ? 1 : 0))};
@@ -2599,7 +2611,6 @@ void editor_mode::insert_switch(editor_track::straight const &Line, double const
 		countbefore = std::clamp<std::size_t>(static_cast<std::size_t>(std::round(count * before / (before + after))), 1, count - 1);
 	else if (hasbefore)
 		countbefore = count;
-	auto const point = [&](double const Distance) { return Line.start + glm::dvec3{Line.direction.x, Line.grade, Line.direction.y} * Distance; };
 	std::vector<segment_data> pieces;
 	auto const straight = [&](double const From, double const To, std::size_t const Count) {
 		for (std::size_t i = 0; i < Count; ++i)
@@ -2619,8 +2630,7 @@ void editor_mode::insert_switch(editor_track::straight const &Line, double const
 	for (auto *track : chain.tracks)
 		states.emplace_back(track, editor_track::capture(*track));
 	auto created{editor_track::relay(chain, pieces)};
-	glm::dvec2 const direction{Line.direction * static_cast<double>(Direction)};
-	auto const paths{editor_track::place_switch(shape, point(Along), direction, Side, Line.grade * Direction)};
+	auto const paths{editor_track::place_switch(shape, point(origin), direction, Side, Line.grade * Direction)};
 	auto *track{editor_track::create_switch(shape, paths, *spans[first].track)};
 	if (track != nullptr)
 	{
@@ -2651,6 +2661,18 @@ void editor_mode::draw_build_overlay() const
 	if (m_switch.placing)
 		for (auto const &piece : switch_preview())
 			drawpath(piece, IM_COL32(255, 210, 60, 255));
+	if (false == m_straights.detour.empty())
+	{
+		auto const outline{detour_outline()};
+		for (std::size_t i = 0; i + 1 < outline.size(); ++i)
+			projection.line(drawlist, outline[i], outline[i + 1], IM_COL32(255, 210, 60, 255), 3.0f);
+		for (std::size_t i = 0; i < outline.size() && i < m_straights.detour.size(); ++i)
+		{
+			ImVec2 screen;
+			if (projection.project(outline[i], screen))
+				drawlist->AddCircleFilled(screen, 6.0f, IM_COL32(255, 60, 60, 255));
+		}
+	}
 	auto const *track{selected_track()};
 	if (track == nullptr || (track->eType != tt_Normal && track->eType != tt_Switch) || m_extend.active)
 		return;
@@ -2696,4 +2718,155 @@ void editor_mode::render_switch_ui()
 		tool.collected = false;
 		tool.armed = -1;
 	}
+}
+
+std::vector<glm::dvec3> editor_mode::detour_outline() const
+{
+	auto const &state{m_straights};
+	std::vector<glm::dvec3> result;
+	if (state.detour.empty())
+		return result;
+	auto const &line{state.detour_line};
+	glm::dvec2 const normal{-line.direction.y, line.direction.x};
+	auto points{state.detour};
+	if (points.size() < 4)
+		points.push_back(state.detour_mouse);
+	auto const along = [&](glm::dvec3 const &Point) { return glm::dot(glm::dvec2{Point.x - line.start.x, Point.z - line.start.z}, line.direction); };
+	auto const offset{points.size() >= 2 ? glm::dot(glm::dvec2{points[1].x - line.start.x, points[1].z - line.start.z}, normal) : 0.0};
+	auto const place = [&](double const Along, double const Lateral) {
+		auto const planar{glm::dvec2{line.start.x, line.start.z} + line.direction * Along + normal * Lateral};
+		return glm::dvec3{planar.x, line.start.y + line.grade * Along, planar.y};
+	};
+	for (std::size_t i = 0; i < points.size(); ++i)
+		result.push_back(place(along(points[i]), (i == 1 || i == 2) ? offset : 0.0));
+	return result;
+}
+
+void editor_mode::add_detour_point()
+{
+	auto &state{m_straights};
+	if (state.detour.empty())
+	{
+		auto const &line{current_straight()};
+		if (line.tracks.empty())
+			return;
+		state.detour_line = line;
+	}
+	state.detour.push_back(Global.pCamera.Pos + GfxRenderer->Mouse_Position());
+	if (state.detour.size() >= 4)
+	{
+		apply_detour();
+		state.detour.clear();
+	}
+}
+
+void editor_mode::apply_detour()
+{
+	auto &state{m_straights};
+	auto line{editor_track::find_straight(*state.detour_line.tracks.front(), state.tolerance)};
+	if (line.tracks.empty())
+		return;
+	glm::dvec2 const normal{-line.direction.y, line.direction.x};
+	auto const along = [&](glm::dvec3 const &Point) { return glm::dot(glm::dvec2{Point.x - line.start.x, Point.z - line.start.z}, line.direction); };
+	auto const offset{glm::dot(glm::dvec2{state.detour[1].x - line.start.x, state.detour[1].z - line.start.z}, normal)};
+	std::array<double, 4> stations{along(state.detour[0]), along(state.detour[1]), along(state.detour[2]), along(state.detour[3])};
+	if (stations[0] > stations[3])
+	{
+		std::swap(stations[0], stations[3]);
+		std::swap(stations[1], stations[2]);
+	}
+	for (auto &station : stations)
+		station = std::clamp(station, 0.0, line.length);
+	stations[1] = std::clamp(stations[1], stations[0] + 1.0, stations[3] - 1.0);
+	stations[2] = std::clamp(stations[2], stations[1], stations[3] - 1.0);
+	if (std::abs(offset) < 0.01 || stations[3] - stations[0] < 3.0)
+		return;
+
+	auto const radius{straight_tool_radius(line)};
+	auto const slope{std::atan(std::abs(offset) / std::max(1.0, std::min(stations[1] - stations[0], stations[3] - stations[2])))};
+	double speed{-1.0};
+	for (auto const *track : line.tracks)
+		speed = std::max(speed, editor_track::velocity(*track));
+	auto const transition{state.auto_transitions ? alignment::recommend(speed > 0.0 ? speed : 100.0, radius, m_route.design.norms).transition : state.transition};
+	auto const reach{radius * std::tan(slope * 0.5) + transition * 0.5 + 5.0};
+	auto const from{std::max(0.0, stations[0] - reach)};
+	auto const to{std::min(line.length, stations[3] + reach)};
+
+	struct span
+	{
+		TTrack *track;
+		double from, to;
+	};
+	std::vector<span> spans;
+	for (std::size_t i = 0; i < line.tracks.size(); ++i)
+	{
+		auto const &path{line.tracks[i]->m_paths[line.paths[i]]};
+		auto const a{along(path.points[segment_data::point::start])};
+		auto const b{along(path.points[segment_data::point::end])};
+		spans.push_back({line.tracks[i], std::min(a, b), std::max(a, b)});
+	}
+	std::sort(spans.begin(), spans.end(), [](span const &A, span const &B) { return A.from < B.from; });
+	int first{-1}, last{-1};
+	for (int i = 0; i < static_cast<int>(spans.size()); ++i)
+	{
+		if (spans[i].to > from && spans[i].from < to && spans[i].track->eType == tt_Normal)
+		{
+			if (first < 0)
+				first = i;
+			last = i;
+		}
+		else if (first >= 0 && spans[i].from < to)
+		{
+			if (spans[i].from > stations[3])
+				break;
+			first = last = -1;
+		}
+	}
+	if (first < 0)
+		return;
+
+	m_route.from = spans[first].track;
+	m_route.to = spans[last].track;
+	route_reset();
+	if (m_route.chain.tracks.empty())
+		return;
+	auto &design{m_route.design};
+	auto const startalong{along(design.start)};
+	auto const endalong{along(design.end)};
+	auto const place = [&](double const Along, double const Lateral) {
+		auto const planar{glm::dvec2{line.start.x, line.start.z} + line.direction * Along + normal * Lateral};
+		return planar;
+	};
+	alignment::vertex vertex;
+	vertex.radius = radius;
+	route_recommend(vertex);
+	if (false == state.auto_transitions)
+		vertex.transition_in = vertex.transition_out = state.transition;
+	design.vertices.clear();
+	auto first_vertex{vertex};
+	first_vertex.offset = std::max(0.1, stations[0] - startalong);
+	design.vertices.push_back(first_vertex);
+	if (stations[2] - stations[1] < 1.0)
+	{
+		auto middle{vertex};
+		middle.position = place((stations[1] + stations[2]) * 0.5, offset);
+		design.vertices.push_back(middle);
+	}
+	else
+	{
+		auto second{vertex};
+		second.position = place(stations[1], offset);
+		auto third{vertex};
+		third.position = place(stations[2], offset);
+		design.vertices.push_back(second);
+		design.vertices.push_back(third);
+	}
+	auto last_vertex{vertex};
+	last_vertex.offset = std::max(0.1, endalong - stations[3]);
+	design.vertices.push_back(last_vertex);
+	route_update();
+	if (false == m_route.result.valid)
+		return;
+	route_apply();
+	straight_refresh();
 }

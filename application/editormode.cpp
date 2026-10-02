@@ -2758,6 +2758,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             m_straights.handle = -1;
             m_route.grip = -1;
             m_straights.tool_placed = false;
+            m_straights.detour.clear();
         }
         break;
 
@@ -2867,7 +2868,10 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                 }
                 if ((Mods & (GLFW_MOD_CONTROL | GLFW_MOD_SHIFT)) != 0 && m_track_tab == track_tab::straights && false == current_straight().tracks.empty())
                 {
-                    start_straight_gesture((Mods & GLFW_MOD_CONTROL) != 0 ? 1 : 2);
+                    if ((Mods & GLFW_MOD_CONTROL) != 0)
+                        start_straight_gesture(1);
+                    else
+                        add_detour_point();
                     m_input.mouse.button(Button, Action);
                     return;
                 }

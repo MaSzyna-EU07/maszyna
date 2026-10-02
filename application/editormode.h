@@ -354,6 +354,9 @@ class editor_mode : public application_mode
 		double transition{0.0};
 		int tool{0};
 		bool tool_mouse{false};
+		std::vector<glm::dvec3> detour;
+		editor_track::straight detour_line;
+		glm::dvec3 detour_mouse{0.0};
 		bool tool_placed{false};
 		bool tool_dragging{false};
 		double tool_at{0.0};
@@ -378,6 +381,9 @@ class editor_mode : public application_mode
 	double straight_tool_radius(editor_track::straight const &Line) const;
 	void straight_reshape(editor_track::straight const &Line, double const From, double const To, std::function<glm::dvec3(glm::dvec3 const &)> const &Tail, double const Radius);
 	void straight_refresh();
+	void add_detour_point();
+	void apply_detour();
+	std::vector<glm::dvec3> detour_outline() const;
 	void find_neighbour_straights();
 	glm::dvec3 snap_straight_offset(editor_track::straight const &Line, glm::dvec3 const &Offset) const;
 	glm::dvec3 snap_straight_direction(glm::dvec3 const &Pivot, glm::dvec3 const &Moved) const;

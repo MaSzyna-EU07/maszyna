@@ -11,6 +11,7 @@ http:
 #include "editor/editorTrack.hpp"
 
 #include "world/Track.h"
+#include "vehicle/DynObj.h"
 #include "scene/scene.h"
 #include "simulation/simulation.h"
 #include "rendering/renderer.h"
@@ -191,11 +192,6 @@ bool editor_track::can_edit_geometry(TTrack const &Track, std::string &Reason)
 		Reason = "Path geometry can't be rebuilt with the experimental renderer";
 		return false;
 	}
-	if (false == Track.Dynamics.empty())
-	{
-		Reason = "There are vehicles placed on this path";
-		return false;
-	}
 	Reason.clear();
 	return true;
 }
@@ -235,6 +231,9 @@ void editor_track::commit(std::vector<TTrack *> const &Tracks)
 		rebuild_geometry(*track);
 	for (auto *track : Tracks)
 		track->mark_dirty();
+	for (auto *track : affected)
+		for (auto *vehicle : track->Dynamics)
+			vehicle->Move(0.000001);
 }
 
 void editor_track::commit_parameters(TTrack &Track)
@@ -742,12 +741,6 @@ bool editor_track::find_chain(TTrack *From, TTrack *To, chain &Chain, std::strin
 		if ((track->iCategoryFlag & 15) != category)
 		{
 			Error = "The fragment mixes different kinds of paths";
-			Chain = {};
-			return false;
-		}
-		if (false == track->Dynamics.empty())
-		{
-			Error = "There are vehicles placed on path " + track->name();
 			Chain = {};
 			return false;
 		}
