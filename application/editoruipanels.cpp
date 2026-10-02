@@ -19,6 +19,21 @@ http://mozilla.org/MPL/2.0/.
 #include "world/MemCell.h"
 #include "application/editoruilayer.h"
 #include "rendering/renderer.h"
+#include "editor/editorModelSets.hpp"
+
+namespace
+{
+// list entry; the selected one is drawn with the accent colour, like selections in the starter
+bool list_item(char const *Label, bool const Selected)
+{
+	if (Selected)
+		ImGui::PushStyleColor(ImGuiCol_Header, ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
+	auto const clicked{ImGui::Selectable(Label, Selected)};
+	if (Selected)
+		ImGui::PopStyleColor();
+	return clicked;
+}
+} // namespace
 
 void itemproperties_panel::update(scene::basic_node *Node)
 {
@@ -285,17 +300,22 @@ void itemproperties_panel::render()
 	auto const panelname{(title.empty() ? m_name : title) + "###" + m_name};
 	if (true == ImGui::Begin(panelname.c_str(), nullptr, flags))
 	{
-		// header section
-		for (auto const &line : text_lines)
-		{
-			ImGui::TextColored(ImVec4(line.color.r, line.color.g, line.color.b, line.color.a), line.data.c_str());
-		}
-		// transform editor (position/rotation/scale) — TAnimModel only
-		render_transform_editor();
-		// group section
-		render_group();
+		render_body();
 	}
 	ImGui::End();
+}
+
+void itemproperties_panel::render_body()
+{
+	// header section
+	for (auto const &line : text_lines)
+	{
+		ImGui::TextColored(ImVec4(line.color.r, line.color.g, line.color.b, line.color.a), line.data.c_str());
+	}
+	// transform editor (position/rotation/scale) — TAnimModel only
+	render_transform_editor();
+	// group section
+	render_group();
 }
 
 // In-place editor for position (double precision), rotation (degrees, 0-360),
@@ -375,27 +395,6 @@ bool itemproperties_panel::render_group()
 	return true;
 }
 
-brush_object_list::brush_object_list(std::string const &Name, bool const Isopen) : ui_panel(Name, Isopen)
-{
-	size_min = {50, 100};
-	size_max = {1000, 500};
-}
-
-bool brush_object_list::VectorGetter(void *data, int idx, const char **out_text)
-{
-	auto *vec = static_cast<std::vector<std::string> *>(data);
-
-	if (idx < 0 || idx >= vec->size())
-		return false;
-
-	*out_text = (*vec)[idx].c_str();
-	return true;
-}
-
-void brush_object_list::update(std::string nodeTemplate)
-{
-	Template = nodeTemplate;
-}
 std::string *brush_object_list::GetRandomObject()
 {
 	static std::string empty; // fallback
@@ -408,39 +407,25 @@ std::string *brush_object_list::GetRandomObject()
 	return &Objects[dist(Global.local_random_engine)];
 }
 
-void brush_object_list::render()
+void brush_object_list::render_options(nodebank_panel &Bank)
 {
-	if (false == is_open)
+	ImGui::SliderFloat("Spacing", &spacing, 0.1f, 20.0f, "%.1f m");
+	ImGui::Checkbox("Random model from set", &useRandom);
+	if (false == useRandom)
 	{
+		ImGui::TextDisabled("Paints the template selected in the node bank");
 		return;
 	}
-
-	auto flags = ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse | (size.x > 0 ? ImGuiWindowFlags_NoResize : 0);
-	if (ImGui::Begin("Brush random set", nullptr, flags))
+	Bank.set_combo("Preset", source, "Manual list");
+	if (source.kind == model_set_ref::source::manual)
 	{
-		ImGui::SliderFloat("Spacing", &spacing, 0.1f, 20.0f, "%.1f m");
-		ImGui::Checkbox("Enable brush random from set", &useRandom);
-		if (useRandom)
-		{
-			ImGui::Text("Set of objects to choose from:");
-			ImGui::ListBox("", &idx, VectorGetter, (void *)&Objects, Objects.size(), 6);
-			if (ImGui::Button("Add"))
-			{
-				if (!Template.empty())
-					Objects.push_back(Template);
-			}
-			ImGui::SameLine();
-			if (ImGui::Button("Remove") && idx >= 0 && idx < Objects.size())
-			{
-				Objects.erase(Objects.begin() + idx);
-			}
-			if (ImGui::Button("Remove all"))
-			{
-				Objects.clear();
-			}
-		}
+		Bank.manual_list("brushset", Objects, idx);
 	}
-	ImGui::End();
+	else
+	{
+		auto const count{Bank.set_entries(source).size()};
+		ImGui::TextDisabled("%zu templates in set%s", count, count == 0 ? ", the node bank selection is used" : "");
+	}
 }
 
 nodebank_panel::nodebank_panel(std::string const &Name, bool const Isopen) : ui_panel(Name, Isopen)
@@ -518,6 +503,11 @@ void nodebank_panel::render()
 	{
 		ImGui::SetNextWindowSize(ImVec2S(size.x, size.y));
 	}
+	else
+	{
+		// mode settings are drawn above the list, so start with a window tall enough for both
+		ImGui::SetNextWindowSize(ImVec2S(440, 640), ImGuiCond_FirstUseEver);
+	}
 	if (size_min.x > 0)
 	{
 		ImGui::SetNextWindowSizeConstraints(ImVec2S(size_min.x, size_min.y), ImVec2S(size_max.x, size_max.y));
@@ -526,30 +516,47 @@ void nodebank_panel::render()
 
 	if (true == ImGui::Begin(panelname.c_str(), nullptr, flags))
 	{
-
-		ImGui::RadioButton("Modify node", (int *)&mode, MODIFY);
-		ImGui::SameLine();
-		ImGui::RadioButton("Insert from bank", (int *)&mode, ADD);
-		ImGui::SameLine();
-		ImGui::RadioButton("Brush mode", (int *)&mode, BRUSH);
-		ImGui::SameLine();
-		ImGui::RadioButton("Copy to bank", (int *)&mode, COPY);
-		ImGui::SameLine();
-		ImGui::RadioButton("Area fill", (int *)&mode, FILL);
-		ImGui::SameLine();
-		if (ImGui::Button("Reload Nodebank"))
+		if (ImGui::Button("Reload node bank"))
 		{
 			nodebank_reload();
 		}
-
-		if (mode == BRUSH)
+		ImGui::SameLine();
+		if (ImGui::Button(m_setsopen ? "Close model sets" : "Model sets..."))
 		{
-			// ImGui::SliderFloat("Spacing", &spacing, 0.1f, 20.0f, "%.1f m");
+			m_setsopen = !m_setsopen;
 		}
 
+		if (header_sections)
+		{
+			header_sections();
+		}
+
+		// edit modes as tabs, each with its own settings
+		std::pair<char const *, edit_mode> const modes[] = {{"Select", MODIFY}, {"Insert", ADD}, {"Brush", BRUSH}, {"Area fill", FILL}, {"Copy to bank", COPY}};
+		if (ImGui::BeginTabBar("##editmodes", ImGuiTabBarFlags_FittingPolicyResizeDown))
+		{
+			for (auto const &tab : modes)
+			{
+				if (false == ImGui::BeginTabItem(tab.first))
+				{
+					continue;
+				}
+				mode = tab.second;
+				if (mode_options)
+				{
+					mode_options(mode);
+				}
+				ImGui::EndTabItem();
+			}
+			ImGui::EndTabBar();
+		}
+
+		ImGui::Separator();
 		ImGui::PushItemWidth(-1);
 		ImGui::InputTextWithHint("Search", "Search node bank", m_nodesearch, IM_ARRAYSIZE(m_nodesearch));
-		if (ImGui::ListBoxHeader("##nodebank", ImVec2(-1, -1)))
+		// the list takes the rest of the window, but keeps a usable height when the sections above are expanded (the window scrolls then)
+		auto const listheight{std::max(ImGui::GetContentRegionAvail().y, ImGui::GetTextLineHeightWithSpacing() * 10.0f)};
+		if (ImGui::ListBoxHeader("##nodebank", ImVec2(-1, listheight)))
 		{
 			auto idx{0};
 			auto isvisible{false};
@@ -572,14 +579,364 @@ void nodebank_panel::render()
 						continue;
 					}
 					auto const label{" " + entry.first + "##" + std::to_string(idx)};
-					if (ImGui::Selectable(label.c_str(), entry.second == m_selectedtemplate))
+					if (list_item(label.c_str(), entry.second == m_selectedtemplate))
 						m_selectedtemplate = entry.second;
 					++idx;
 				}
 			}
 			ImGui::ListBoxFooter();
 		}
+		ImGui::PopItemWidth();
 	}
+
+	ImGui::End();
+
+	if (m_setsopen)
+	{
+		render_sets_window();
+	}
+}
+
+bool nodebank_panel::set_combo(char const *Label, model_set_ref &Ref, char const *Manuallabel)
+{
+	auto changed{false};
+	auto const preview{set_name(Ref, Manuallabel)};
+	if (false == ImGui::BeginCombo(Label, preview.c_str()))
+	{
+		return false;
+	}
+	if (Manuallabel != nullptr)
+	{
+		if (ImGui::Selectable(Manuallabel, Ref.kind == model_set_ref::source::manual))
+		{
+			Ref = model_set_ref{};
+			changed = true;
+		}
+	}
+	ImGui::TextDisabled("User sets");
+	auto const &sets{EditorModelSets.sets()};
+	if (sets.empty())
+	{
+		ImGui::TextDisabled("  (none yet, see Model sets...)");
+	}
+	for (auto const &set : sets)
+	{
+		auto const label{"  " + set.name + " (" + std::to_string(set.templates.size()) + ")##userset" + std::to_string(set.id)};
+		if (ImGui::Selectable(label.c_str(), Ref.kind == model_set_ref::source::user && Ref.id == set.id))
+		{
+			Ref = {model_set_ref::source::user, set.id};
+			changed = true;
+		}
+	}
+	ImGui::TextDisabled("Node bank groups");
+	auto const groups{group_names()};
+	for (int idx = 0; idx < static_cast<int>(groups.size()); ++idx)
+	{
+		auto const label{"  " + groups[idx] + "##bankgroup" + std::to_string(idx)};
+		if (ImGui::Selectable(label.c_str(), Ref.kind == model_set_ref::source::nodebank && Ref.id == idx))
+		{
+			Ref = {model_set_ref::source::nodebank, idx};
+			changed = true;
+		}
+	}
+	ImGui::EndCombo();
+	return changed;
+}
+
+void nodebank_panel::manual_list(char const *Id, std::vector<std::string> &List, int &Selected)
+{
+	ImGui::PushID(Id);
+	if (ImGui::ListBoxHeader("##list", ImVec2(-1, ImGui::GetTextLineHeightWithSpacing() * 6.5f)))
+	{
+		for (int idx = 0; idx < static_cast<int>(List.size()); ++idx)
+		{
+			auto const label{generate_node_label(List[idx]) + "##" + std::to_string(idx)};
+			if (list_item(label.c_str(), Selected == idx))
+				Selected = idx;
+		}
+		if (List.empty())
+		{
+			ImGui::TextDisabled("(empty)");
+		}
+		ImGui::ListBoxFooter();
+	}
+	if (ImGui::Button("Add selected"))
+	{
+		if (m_selectedtemplate && false == m_selectedtemplate->empty())
+			List.push_back(*m_selectedtemplate);
+	}
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("Adds the template selected in the node bank list");
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Remove") && Selected >= 0 && Selected < static_cast<int>(List.size()))
+	{
+		List.erase(List.begin() + Selected);
+		Selected = -1;
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Clear"))
+	{
+		List.clear();
+		Selected = -1;
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Save as set") && false == List.empty())
+	{
+		open_sets_window(EditorModelSets.create("New set", List));
+	}
+	ImGui::PopID();
+}
+
+std::vector<std::string const *> nodebank_panel::set_entries(model_set_ref const &Ref) const
+{
+	std::vector<std::string const *> entries;
+	if (Ref.kind == model_set_ref::source::user)
+	{
+		if (auto const *set = EditorModelSets.find(Ref.id))
+		{
+			for (auto const &entry : set->templates)
+				entries.push_back(&entry);
+		}
+	}
+	else if (Ref.kind == model_set_ref::source::nodebank && Ref.id >= 0)
+	{
+		// same grouping as group_templates(), without copying the templates
+		int group{0};
+		bool started{false};
+		for (auto const &entry : m_nodebank)
+		{
+			if (entry.second->empty())
+			{
+				if (started)
+					++group;
+				started = true;
+				continue;
+			}
+			started = true;
+			if (group == Ref.id)
+				entries.push_back(entry.second.get());
+			else if (group > Ref.id)
+				break;
+		}
+	}
+	return entries;
+}
+
+std::string const *nodebank_panel::random_template(model_set_ref const &Ref) const
+{
+	auto const entries{set_entries(Ref)};
+	if (entries.empty())
+		return nullptr;
+
+	std::uniform_int_distribution<std::size_t> dist(0, entries.size() - 1);
+	return entries[dist(Global.local_random_engine)];
+}
+
+std::string nodebank_panel::set_name(model_set_ref const &Ref, char const *Manuallabel) const
+{
+	switch (Ref.kind)
+	{
+	case model_set_ref::source::user:
+	{
+		auto const *set = EditorModelSets.find(Ref.id);
+		return set != nullptr ? set->name : "(deleted set)";
+	}
+	case model_set_ref::source::nodebank:
+	{
+		auto const groups{group_names()};
+		return Ref.id >= 0 && Ref.id < static_cast<int>(groups.size()) ? "Node bank: " + groups[Ref.id] : "(missing node bank group)";
+	}
+	default:
+		return Manuallabel != nullptr ? Manuallabel : "(none)";
+	}
+}
+
+void nodebank_panel::open_sets_window(int const Setid)
+{
+	m_setsopen = true;
+	if (Setid != 0)
+	{
+		m_setsselected = Setid;
+		m_setsentry = -1;
+	}
+}
+
+void nodebank_panel::render_sets_window()
+{
+	ImGui::SetNextWindowSize(ImVec2S(600, 380), ImGuiCond_FirstUseEver);
+	if (false == ImGui::Begin("Model sets", &m_setsopen, ImGuiWindowFlags_NoCollapse))
+	{
+		ImGui::End();
+		return;
+	}
+
+	auto const &sets{EditorModelSets.sets()};
+	if (EditorModelSets.find(m_setsselected) == nullptr)
+	{
+		m_setsselected = sets.empty() ? 0 : sets.front().id;
+		m_setsentry = -1;
+	}
+
+	// left side: the sets
+	auto const buttonsheight{ImGui::GetFrameHeightWithSpacing()};
+	ImGui::BeginGroup();
+	ImGui::BeginChild("##setlist", ImVec2(190 * Global.ui_scale, -buttonsheight), true);
+	for (auto const &set : sets)
+	{
+		auto const label{set.name + " (" + std::to_string(set.templates.size()) + ")##set" + std::to_string(set.id)};
+		if (list_item(label.c_str(), set.id == m_setsselected))
+		{
+			m_setsselected = set.id;
+			m_setsentry = -1;
+		}
+	}
+	if (sets.empty())
+	{
+		ImGui::TextDisabled("No sets yet");
+	}
+	ImGui::EndChild();
+	if (ImGui::Button("New"))
+	{
+		open_sets_window(EditorModelSets.create("New set"));
+	}
+	auto const *edited{EditorModelSets.find(m_setsselected)};
+	if (edited != nullptr)
+	{
+		ImGui::SameLine();
+		if (ImGui::Button("Duplicate"))
+		{
+			open_sets_window(EditorModelSets.create(edited->name + " copy", edited->templates));
+			edited = EditorModelSets.find(m_setsselected);
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Delete"))
+		{
+			ImGui::OpenPopup("##deleteset");
+		}
+		if (ImGui::BeginPopup("##deleteset"))
+		{
+			ImGui::Text("Delete set \"%s\"?", edited->name.c_str());
+			if (ImGui::Button("Delete##confirm"))
+			{
+				EditorModelSets.remove(edited->id);
+				edited = nullptr;
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Cancel"))
+			{
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
+	}
+	ImGui::EndGroup();
+
+	ImGui::SameLine();
+
+	// right side: content of the selected set
+	ImGui::BeginGroup();
+	if (edited == nullptr)
+	{
+		ImGui::TextDisabled("Create a set with \"New\", or use \"Save as set\" on a brush or area fill list.");
+		ImGui::TextDisabled("Sets can be chosen in Insert (random model), Brush and Area fill.");
+	}
+	else
+	{
+		if (m_setsnameid != edited->id)
+		{
+			// selection changed, load its name into the edit buffer
+			std::snprintf(m_setsname, sizeof(m_setsname), "%s", edited->name.c_str());
+			m_setsnameid = edited->id;
+		}
+		ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("Rename").x - ImGui::GetStyle().FramePadding.x * 2 - ImGui::GetStyle().ItemSpacing.x);
+		auto const entered{ImGui::InputText("##setname", m_setsname, IM_ARRAYSIZE(m_setsname), ImGuiInputTextFlags_EnterReturnsTrue)};
+		ImGui::PopItemWidth();
+		ImGui::SameLine();
+		if (ImGui::Button("Rename") || entered)
+		{
+			EditorModelSets.rename(edited->id, m_setsname);
+			m_setsnameid = 0; // reload, the name could have been adjusted to stay unique
+		}
+
+		ImGui::BeginChild("##setentries", ImVec2(0, -buttonsheight * 2), true);
+		for (int idx = 0; idx < static_cast<int>(edited->labels.size()); ++idx)
+		{
+			auto const label{edited->labels[idx] + "##entry" + std::to_string(idx)};
+			if (list_item(label.c_str(), idx == m_setsentry))
+				m_setsentry = idx;
+		}
+		if (edited->templates.empty())
+		{
+			ImGui::TextDisabled("(empty) select a template in the node bank and press \"Add selected\"");
+		}
+		ImGui::EndChild();
+
+		auto const setid{edited->id};
+		if (ImGui::Button("Add selected"))
+		{
+			if (m_selectedtemplate && false == m_selectedtemplate->empty())
+				EditorModelSets.add(setid, {*m_selectedtemplate});
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("Adds the template selected in the node bank list");
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Remove") && m_setsentry >= 0)
+		{
+			EditorModelSets.erase(setid, static_cast<std::size_t>(m_setsentry));
+			m_setsentry = -1;
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Clear"))
+		{
+			ImGui::OpenPopup("##clearset");
+		}
+		if (ImGui::BeginPopup("##clearset"))
+		{
+			ImGui::TextUnformatted("Remove all templates from this set?");
+			if (ImGui::Button("Clear##confirm"))
+			{
+				EditorModelSets.clear(setid);
+				m_setsentry = -1;
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Cancel"))
+			{
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
+
+		// whole node bank group at once
+		ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("Add group").x - ImGui::GetStyle().FramePadding.x * 2 - ImGui::GetStyle().ItemSpacing.x);
+		auto const groups{group_names()};
+		m_setsgroup.id = groups.empty() ? -1 : std::clamp(m_setsgroup.id, 0, static_cast<int>(groups.size()) - 1);
+		if (ImGui::BeginCombo("##addgroup", m_setsgroup.id >= 0 ? groups[m_setsgroup.id].c_str() : "(no node bank groups)"))
+		{
+			for (int idx = 0; idx < static_cast<int>(groups.size()); ++idx)
+			{
+				auto const label{groups[idx] + "##addgroup" + std::to_string(idx)};
+				if (ImGui::Selectable(label.c_str(), idx == m_setsgroup.id))
+					m_setsgroup.id = idx;
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::PopItemWidth();
+		ImGui::SameLine();
+		if (ImGui::Button("Add group"))
+		{
+			std::vector<std::string> templates;
+			for (auto const *entry : set_entries(m_setsgroup))
+				templates.push_back(*entry);
+			EditorModelSets.add(setid, templates);
+		}
+	}
+	ImGui::EndGroup();
 
 	ImGui::End();
 }
@@ -691,19 +1048,27 @@ void functions_panel::render()
 	if (true == ImGui::Begin(panelname.c_str(), nullptr, flags))
 	{
 		// header section
-
-		ImGui::RadioButton("Random rotation", (int *)&rot_mode, RANDOM);
-		ImGui::RadioButton("Fixed rotation", (int *)&rot_mode, FIXED);
-		if (rot_mode == FIXED)
-		{
-			// ImGui::Checkbox("Get rotation from last object", &rot_from_last);
-			ImGui::SliderFloat("Rotation Value", &rot_value, 0.0f, 360.0f, "%.1f");
-		};
-		ImGui::RadioButton("Default rotation", (int *)&rot_mode, DEFAULT);
+		render_controls();
 		for (auto const &line : text_lines)
 		{
 			ImGui::TextColored(ImVec4(line.color.r, line.color.g, line.color.b, line.color.a), line.data.c_str());
 		}
 	}
 	ImGui::End();
+}
+
+void functions_panel::render_controls()
+{
+	// order matches rotation_mode
+	char const *const modes[] = {"Random", "Fixed", "Default (from template)"};
+	auto current{static_cast<int>(rot_mode)};
+	if (ImGui::Combo("Rotation", &current, modes, IM_ARRAYSIZE(modes)))
+	{
+		rot_mode = static_cast<rotation_mode>(current);
+	}
+	if (rot_mode == FIXED)
+	{
+		// ImGui::Checkbox("Get rotation from last object", &rot_from_last);
+		ImGui::SliderFloat("Rotation value", &rot_value, 0.0f, 360.0f, "%.1f deg");
+	}
 }

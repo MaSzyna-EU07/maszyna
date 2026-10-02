@@ -21,10 +21,10 @@ editor_ui::editor_ui()
 	clear_panels();
 	// bind the panels with ui object. maybe not the best place for this but, eh
 
-	add_external_panel(&m_itempropertiespanel);
 	add_external_panel(&m_nodebankpanel);
-	add_external_panel(&m_functionspanel);
-	add_external_panel(&m_brushobjects);
+
+	m_nodebankpanel.mode_options = [this](nodebank_panel::edit_mode const Mode) { render_mode_options(Mode); };
+	m_nodebankpanel.header_sections = [this]() { render_header_sections(); };
 }
 
 // updates state of UI elements
@@ -43,26 +43,67 @@ void editor_ui::update()
 	ui_layer::update();
 	m_itempropertiespanel.update(m_node);
 	m_functionspanel.update(m_node);
-
-	auto ptr = get_active_node_template(true);
-	if (ptr)
-		m_brushobjects.update(*ptr);
 }
 
-void editor_ui::toggleBrushSettings(bool isVisible)
+void editor_ui::render_mode_options(nodebank_panel::edit_mode const Mode)
 {
-	if (m_brushobjects.is_open != isVisible)
-		m_brushobjects.is_open = isVisible;
+	switch (Mode)
+	{
+	case nodebank_panel::MODIFY:
+		ImGui::TextDisabled("LMB: select node   F: focus   End: drop to ground   Del: delete");
+		break;
+	case nodebank_panel::COPY:
+		ImGui::TextDisabled("LMB: copy the clicked model to the node bank");
+		break;
+	case nodebank_panel::ADD:
+	{
+		ImGui::TextDisabled("LMB: insert a model at the cursor");
+		ImGui::Checkbox("Random model from set", &m_insertrandom);
+		if (m_insertrandom)
+		{
+			m_nodebankpanel.set_combo("Set##insert", m_insertset, nullptr);
+			auto const count{m_nodebankpanel.set_entries(m_insertset).size()};
+			ImGui::TextDisabled("%zu templates in set%s", count, count == 0 ? ", the node bank selection is used" : "");
+		}
+		else
+		{
+			ImGui::TextDisabled("Inserts the template selected in the node bank");
+		}
+		m_functionspanel.render_controls();
+		break;
+	}
+	case nodebank_panel::BRUSH:
+		ImGui::TextDisabled("Hold LMB: paint models along the cursor path");
+		m_brushobjects.render_options(m_nodebankpanel);
+		m_functionspanel.render_controls();
+		break;
+	case nodebank_panel::FILL:
+		if (m_filloptions)
+			m_filloptions();
+		break;
+	default:
+		break;
+	}
 }
 
-std::vector<std::string> editor_ui::nodebank_groups() const
+void editor_ui::render_header_sections()
 {
-	return m_nodebankpanel.group_names();
+	if (ImGui::CollapsingHeader("Gizmo", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		if (m_gizmooptions)
+			m_gizmooptions();
+	}
+	if (ImGui::CollapsingHeader("Node properties", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		ImGui::Indent();
+		m_itempropertiespanel.render_body();
+		ImGui::Unindent();
+	}
 }
 
-std::vector<std::string> editor_ui::nodebank_group_templates(std::size_t const Group) const
+void editor_ui::render_rotation_controls()
 {
-	return m_nodebankpanel.group_templates(Group);
+	m_functionspanel.render_controls();
 }
 
 void editor_ui::set_node(scene::basic_node *Node)
@@ -77,9 +118,23 @@ void editor_ui::add_node_template(const std::string &desc)
 
 std::string const *editor_ui::get_active_node_template(bool bypassRandom)
 {
-	if (!bypassRandom && m_brushobjects.is_open && m_brushobjects.useRandom && m_brushobjects.Objects.size() > 0)
+	if (!bypassRandom)
 	{
-		return m_brushobjects.GetRandomObject();
+		// random pick from the active tool's set; an empty set falls back to the node bank selection
+		std::string const *pick{nullptr};
+		if (m_nodebankpanel.mode == nodebank_panel::BRUSH && m_brushobjects.useRandom)
+		{
+			if (m_brushobjects.source.kind == model_set_ref::source::manual)
+				pick = m_brushobjects.Objects.empty() ? nullptr : m_brushobjects.GetRandomObject();
+			else
+				pick = m_nodebankpanel.random_template(m_brushobjects.source);
+		}
+		else if (m_nodebankpanel.mode == nodebank_panel::ADD && m_insertrandom)
+		{
+			pick = m_nodebankpanel.random_template(m_insertset);
+		}
+		if (pick != nullptr)
+			return pick;
 	}
 	return m_nodebankpanel.get_active_template();
 }

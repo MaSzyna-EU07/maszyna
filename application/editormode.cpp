@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/application.h"
 #include "editor/editorSettings.hpp"
+#include "editor/editorModelSets.hpp"
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
@@ -29,11 +30,13 @@ http://mozilla.org/MPL/2.0/.
 
 
 #include "imgui/imgui.h"
+#include "imgui/imgui_internal.h"
 #include "imgui/ImGuizmo.h"
 #include "utilities/Logs.h"
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -164,19 +167,6 @@ namespace
         return std::abs(sum) * 0.5;
     }
 
-    // short readable name of a node template (model file and texture), like the node bank shows it
-    std::string template_label(std::string const &Template)
-    {
-        cParser tokenizer(Template);
-        tokenizer.getTokens(9, false); // node, ranges, name, type, position, rotation
-        auto model{tokenizer.getToken<std::string>(false)};
-        auto texture{tokenizer.getToken<std::string>(false)};
-        replace_slashes(model);
-        erase_extension(model);
-        replace_slashes(texture);
-        return texture == "none" || texture.empty() ? model : model + " (" + texture + ")";
-    }
-
     // world triangles bucketed on a uniform XZ grid, for many ground height queries over one area
     class triangle_grid
     {
@@ -242,6 +232,8 @@ namespace
     void gather_shape_triangles(scene::shape_node const &Shape, glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out)
     {
         auto const &data = Shape.data();
+        if (editor_orthophoto::owns(data.geometry))
+            return; // the orthophoto laid over the ground isn't ground itself
         if (data.area.radius >= 0.0f)
         {
             double const r = data.area.radius;
@@ -279,6 +271,54 @@ namespace
         }
     }
 
+    // ground triangles overlapping an XZ rectangle (Min/Max are x,z). shapes hold the (legacy) terrain,
+    // model instances at least ModelRadius large (if ModelsAsGround) the terrain tiles
+    void gather_ground_triangles(glm::dvec2 const &Min, glm::dvec2 const &Max, bool const ModelsAsGround, float const ModelRadius, std::vector<world_triangle> &Out)
+    {
+        glm::dvec2 const center = (Min + Max) * 0.5;
+        float const radius = static_cast<float>(glm::length(Max - Min) * 0.5);
+        auto const sections = simulation::Region->sections(glm::dvec3(center.x, 0.0, center.y), radius); // copy, the result is a scratchpad
+        for (auto *section : sections)
+        {
+            for (auto const &shape : section->m_shapes)
+                gather_shape_triangles(shape, Min, Max, Out);
+            for (auto &cell : section->m_cells)
+            {
+                double const r = cell.m_area.radius;
+                if (cell.m_area.center.x + r < Min.x || cell.m_area.center.x - r > Max.x || cell.m_area.center.z + r < Min.y || cell.m_area.center.z - r > Max.y)
+                    continue;
+                for (auto const &shape : cell.m_shapesopaque)
+                    gather_shape_triangles(shape, Min, Max, Out);
+                if (false == ModelsAsGround)
+                    continue;
+                for (auto *instance : cell.m_instancesopaque)
+                {
+                    if (instance == nullptr || instance->Model() == nullptr || instance->radius() < ModelRadius)
+                        continue;
+                    std::vector<world_triangle> modeltriangles;
+                    gather_submodel_triangles(instance->Model()->Root, instance_matrix(*instance), modeltriangles);
+                    for (auto const &t : modeltriangles)
+                        if (std::max({t[0].x, t[1].x, t[2].x}) >= Min.x && std::min({t[0].x, t[1].x, t[2].x}) <= Max.x && std::max({t[0].z, t[1].z, t[2].z}) >= Min.y &&
+                            std::min({t[0].z, t[1].z, t[2].z}) <= Max.y)
+                            Out.push_back(t);
+                }
+            }
+        }
+    }
+
+    // scenery file name without path and extension
+    std::string scenery_stem()
+    {
+        std::string scenery = Global.SceneryFile;
+        auto const slash = scenery.find_last_of("/\\");
+        if (slash != std::string::npos)
+            scenery = scenery.substr(slash + 1);
+        auto const dot = scenery.find_last_of('.');
+        if (dot != std::string::npos)
+            scenery = scenery.substr(0, dot);
+        return scenery.empty() ? "default" : scenery;
+    }
+
 } 
 
 bool editor_mode::editormode_input::init()
@@ -293,6 +333,13 @@ void editor_mode::editormode_input::poll()
 
 editor_mode::editor_mode() {
 	m_userinterface = std::make_shared<editor_ui>();
+	// the area fill settings live in the node bank window, in the tab of the fill mode
+	ui()->set_fill_options([this]() { render_area_fill(); });
+	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
+	// the orthophoto is fitted onto the same ground as the area fill uses, terrain tile models included
+	m_orthophoto.ground_source([](glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out) {
+		gather_ground_triangles(Min, Max, true, 50.0f, Out);
+	});
  }
 
 editor_ui *editor_mode::ui() const
@@ -303,6 +350,7 @@ editor_ui *editor_mode::ui() const
 bool editor_mode::init()
 {
     EditorSettings.load();
+    EditorModelSets.load();
     Camera.Init({0, 15, 0}, {glm::radians(-30.0), glm::radians(180.0), 0}, nullptr);
     return m_input.init();
 }
@@ -473,16 +521,17 @@ void editor_mode::handle_brush_mouse_hold(int Action, int Button)
             if (!mouseHold || !viewport_click())
                 return;
 
+            // spacing is measured in world space: the mouse offset is camera-relative and the camera may move mid-stroke
+            glm::dvec3 const newPos = Camera.Pos + clamp_mouse_offset_to_max(GfxRenderer->Mouse_Position());
+            if (m_brush_has_last && glm::distance(newPos, oldPos) < ui()->getSpacing())
+                return;
+
+            // picked only when a placement is due, so a random pick from a set isn't drawn every tick
             const std::string *src = ui()->get_active_node_template();
             if (!src)
                 return;
 
             std::string name = "editor_";
-
-            // spacing is measured in world space: the mouse offset is camera-relative and the camera may move mid-stroke
-            glm::dvec3 const newPos = Camera.Pos + clamp_mouse_offset_to_max(GfxRenderer->Mouse_Position());
-            if (m_brush_has_last && glm::distance(newPos, oldPos) < ui()->getSpacing())
-                return;
 
             TAnimModel *cloned = simulation::State.create_model(*src, name, newPos);
             oldPos = newPos;
@@ -819,9 +868,6 @@ bool editor_mode::update()
 #endif
         m_userinterface->update();
 
-        // update brush settings visibility depending on panel mode
-        ui()->toggleBrushSettings(ui()->mode() == nodebank_panel::BRUSH);
-
         if (mouseHold)
         {
             // process continuous brush placement
@@ -889,15 +935,16 @@ bool editor_mode::update()
         }
     }
 
+    // --- geoportal orthophoto: streamed around the camera, drawn beneath the other overlays ---
+    m_orthophoto.update(Camera.Pos);
+    draw_orthophoto();
+
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
     render_gizmo();
 
-    // --- area fill: outline overlay and settings, while the mode is active ---
+    // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
     if (ui()->mode() == nodebank_panel::FILL)
-    {
         draw_area_fill_outline();
-        render_area_fill();
-    }
 
     // --- ImGui: Editor Settings & History windows ---
     if(m_settings_open)
@@ -914,31 +961,44 @@ void editor_mode::render_settings()
 {
     ImGui::Begin("Editor Settings", &m_settings_open, ImGuiWindowFlags_AlwaysAutoResize);
 
-    ImGui::TextUnformatted("Camera movement");
-
-    const char *schemes[] = {"WSAD (new)", "Arrows (legacy)"};
-    int current = EditorSettings.movement() == editorSettings::movement_scheme::legacy ? 1 : 0;
-    if (ImGui::Combo("##movement_scheme", &current, schemes, IM_ARRAYSIZE(schemes)))
+    if (ImGui::BeginTabBar("##editorsettings"))
     {
-        EditorSettings.movement(current == 1 ? editorSettings::movement_scheme::legacy
-                                             : editorSettings::movement_scheme::wsad);
-        m_input.keyboard.apply_scheme();
-        EditorSettings.save();
+        if (ImGui::BeginTabItem("General"))
+        {
+            ImGui::TextUnformatted("Camera movement");
+
+            const char *schemes[] = {"WSAD (new)", "Arrows (legacy)"};
+            int current = EditorSettings.movement() == editorSettings::movement_scheme::legacy ? 1 : 0;
+            if (ImGui::Combo("##movement_scheme", &current, schemes, IM_ARRAYSIZE(schemes)))
+            {
+                EditorSettings.movement(current == 1 ? editorSettings::movement_scheme::legacy
+                                                     : editorSettings::movement_scheme::wsad);
+                m_input.keyboard.apply_scheme();
+                EditorSettings.save();
+            }
+
+            ImGui::Separator();
+            ImGui::Checkbox("Transform gizmo (ImGuizmo)", &m_gizmo_enabled);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Terrain"))
+        {
+            render_terrain_ui();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Orthophoto"))
+        {
+            render_orthophoto_ui();
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
     }
-
-    ImGui::Separator();
-    ImGui::Checkbox("Transform gizmo (ImGuizmo)", &m_gizmo_enabled);
-
-    render_terrain_ui();
 
     ImGui::End();
 }
 
 void editor_mode::render_terrain_ui()
 {
-    ImGui::Separator();
-    ImGui::TextUnformatted("Terrain");
-
     ImGui::SetNextItemWidth(120.0f);
     ImGui::InputInt("Grid cells", &m_terrain_cells);
     m_terrain_cells = std::clamp(m_terrain_cells, 1, 512);
@@ -1097,6 +1157,209 @@ void editor_mode::render_terrain_ui()
         }
         ImGui::Text("Triangles: %zu / %zu", tris, full);
     }
+}
+
+void editor_mode::load_orthophoto_settings()
+{
+    std::string const scenery = scenery_stem();
+    if (scenery == m_orthophoto_scenery)
+        return;
+    m_orthophoto_scenery = scenery;
+
+    auto const &stored = EditorSettings.orthophoto();
+    editor_orthophoto::config config = m_orthophoto.settings();
+    config.radius = stored.radius;
+    config.height = stored.height;
+    config.opacity = stored.opacity;
+    config.year = stored.year;
+    config.hires = stored.hires;
+    config.drape = stored.drape;
+    config.lift = stored.lift;
+    config.in_scene = stored.in_scene;
+    config.north = 0.0;
+    config.east = 0.0;
+    EditorSettings.orthophoto_origin(scenery, config.north, config.east);
+    m_orthophoto.settings(config);
+    m_orthophoto_origin_edit = {config.north, config.east};
+}
+
+void editor_mode::save_orthophoto_settings()
+{
+    editor_orthophoto::config const &config = m_orthophoto.settings();
+    auto &stored = EditorSettings.orthophoto();
+    stored.radius = config.radius;
+    stored.height = config.height;
+    stored.opacity = config.opacity;
+    stored.year = config.year;
+    stored.hires = config.hires;
+    stored.drape = config.drape;
+    stored.lift = config.lift;
+    stored.in_scene = config.in_scene;
+    if (config.north != 0.0 || config.east != 0.0)
+        EditorSettings.orthophoto_origin(m_orthophoto_scenery, config.north, config.east);
+    EditorSettings.save();
+}
+
+void editor_mode::render_orthophoto_ui()
+{
+    load_orthophoto_settings();
+
+    editor_orthophoto::config config = m_orthophoto.settings();
+    bool changed = false; // apply to the layer
+    bool persist = false; // and store in the editor settings
+
+    bool enabled = m_orthophoto.enabled();
+    if (ImGui::Checkbox("Show orthophoto (geoportal.gov.pl)", &enabled))
+        m_orthophoto.enabled(enabled);
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Scenery origin (0,0,0) in PUWG 1992 / EPSG:2180");
+    // geodetic convention, as displayed by geoportal.gov.pl: X grows north, Y grows east.
+    // applied once editing ends, so half-typed numbers don't trigger downloads
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::InputDouble("X (northing, m)", &m_orthophoto_origin_edit.x, 0.0, 0.0, "%.2f");
+    bool const northedited = ImGui::IsItemDeactivatedAfterEdit();
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::InputDouble("Y (easting, m)", &m_orthophoto_origin_edit.y, 0.0, 0.0, "%.2f");
+    bool const eastedited = ImGui::IsItemDeactivatedAfterEdit();
+    if (northedited || eastedited)
+    {
+        config.north = m_orthophoto_origin_edit.x;
+        config.east = m_orthophoto_origin_edit.y;
+        changed = persist = true;
+    }
+    if (config.north == 0.0 && config.east == 0.0)
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "Enter the origin of this scenery first");
+    else
+        ImGui::TextDisabled("Camera at X %.1f  Y %.1f", config.north + Camera.Pos.z, config.east - Camera.Pos.x);
+
+    ImGui::Separator();
+    ImGui::SetNextItemWidth(160.0f);
+    changed |= ImGui::SliderInt("Distance (tiles)", &config.radius, 0, editor_orthophoto::max_radius);
+    persist |= ImGui::IsItemDeactivatedAfterEdit();
+    ImGui::SameLine();
+    int const span = static_cast<int>((2 * config.radius + 1) * editor_orthophoto::tile_size);
+    ImGui::TextDisabled("%d x %d m", span, span);
+
+    // ImGui 1.73 has no public disabled state yet, the internal item flag does the job
+    auto const begin_disabled = [](bool Disabled) {
+        if (!Disabled)
+            return;
+        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+    };
+    auto const end_disabled = [](bool Disabled) {
+        if (!Disabled)
+            return;
+        ImGui::PopStyleVar();
+        ImGui::PopItemFlag();
+    };
+
+    if (ImGui::Checkbox("Fit to terrain", &config.drape))
+        changed = persist = true;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Lays the imagery onto the ground geometry (terrain shapes, terrain tile models, editor terrain).\n"
+                          "Places without any ground use the height below.");
+    if (config.drape)
+    {
+        ImGui::SameLine();
+        if (ImGui::Button("Refit"))
+            m_orthophoto.refit();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Samples the ground again, after it was edited");
+    }
+
+    begin_disabled(!config.drape);
+    ImGui::SetNextItemWidth(160.0f);
+    changed |= ImGui::DragFloat("Lift above ground (m)", &config.lift, 0.01f, 0.0f, 50.0f, "%.2f");
+    persist |= ImGui::IsItemDeactivatedAfterEdit();
+    end_disabled(!config.drape);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Raises the fitted imagery above the ground. Keep it below the objects you want to see:\n"
+                          "in the scene everything lower than this ends up under the imagery.");
+
+    begin_disabled(config.drape);
+    ImGui::SetNextItemWidth(160.0f);
+    changed |= ImGui::DragFloat("Height (m)", &config.height, 0.1f, -1000.0f, 3000.0f, "%.2f");
+    persist |= ImGui::IsItemDeactivatedAfterEdit();
+    end_disabled(config.drape);
+
+    if (ImGui::Checkbox("Covered by objects and terrain", &config.in_scene))
+        changed = persist = true;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Draws the imagery as part of the scene, so tracks, models and terrain in front of it hide it.\n"
+                          "It is lit like the scene. Fully opaque, mouse placement lands on it as on any surface;\n"
+                          "translucent, it doesn't catch the mouse.\n"
+                          "Not available with the Better Renderer, which doesn't pick up geometry added in the editor.");
+
+    ImGui::SetNextItemWidth(160.0f);
+    changed |= ImGui::SliderFloat("Opacity", &config.opacity, 0.0f, 1.0f, "%.2f");
+    persist |= ImGui::IsItemDeactivatedAfterEdit();
+    if (config.in_scene && ImGui::IsItemHovered())
+        ImGui::SetTooltip("In the scene the opacity is part of the textures: the tiles are read again from the cache\n"
+                          "shortly after the slider stops, which takes a moment.");
+
+    // newest imagery, or the newest imagery taken up to the end of the selected year
+    int const thisyear = static_cast<int>(std::chrono::year_month_day{std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now())}.year());
+    std::string const yearlabel = config.year ? std::to_string(config.year) : std::string("Newest");
+    ImGui::SetNextItemWidth(160.0f);
+    if (ImGui::BeginCombo("Photo year", yearlabel.c_str()))
+    {
+        if (ImGui::Selectable("Newest", config.year == 0))
+        {
+            config.year = 0;
+            changed = persist = true;
+        }
+        for (int year = thisyear; year >= editor_orthophoto::oldest_year; --year)
+        {
+            if (ImGui::Selectable(std::to_string(year).c_str(), config.year == year))
+            {
+                config.year = year;
+                changed = persist = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    if (ImGui::Checkbox("4K tiles where available", &config.hires))
+        changed = persist = true;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("4096 px tiles (~6 cm/px) from the high-resolution orthophoto, for the tiles around the camera.\n"
+                          "Areas it doesn't cover use the standard imagery. Each 4K tile takes ~85 MB of video memory.");
+
+    if (changed)
+        m_orthophoto.settings(config);
+    if (persist)
+        save_orthophoto_settings();
+
+    ImGui::Separator();
+    auto const stats = m_orthophoto.stats();
+    ImGui::Text("Tiles: %d shown, %d loading, %d failed", stats.resident, stats.loading, stats.failed);
+    if (stats.failed > 0)
+    {
+        ImGui::SameLine();
+        if (ImGui::Button("Retry"))
+            m_orthophoto.retry_failed();
+    }
+    if (!editor_orthophoto::can_download())
+        ImGui::TextDisabled("This build has no HTTP client, only cached tiles are shown");
+    ImGui::TextDisabled("Cache: %s", editor_orthophoto::cache_directory().c_str());
+    ImGui::TextDisabled("Imagery: GUGiK, geoportal.gov.pl");
+}
+
+void editor_mode::draw_orthophoto()
+{
+    if (!m_orthophoto.enabled())
+        return;
+    // the camera was just published to the renderer (update_camera), so build the view from it rather than
+    // from the renderer's previous frame; camera-relative rotation, same projection as the other overlays
+    glm::dmat4 viewmatrix{1.0};
+    Camera.SetMatrix(viewmatrix);
+    glm::mat4 const view = glm::mat4(glm::mat3(viewmatrix));
+    ImGuiIO const &io = ImGui::GetIO();
+    float const fovy = glm::radians(Global.FieldOfView / Global.ZoomFactor);
+    float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
+    m_orthophoto.draw(glm::perspective(fovy, aspect, 0.1f, 10000.0f) * view, Camera.Pos, io.DisplaySize.x, io.DisplaySize.y);
 }
 
 editor_terrain *editor_mode::terrain_at(double X, double Z)
@@ -1406,10 +1669,11 @@ void editor_mode::run_area_fill()
 
     // model package
     std::vector<std::string> package;
-    if (m_fill_package == 0)
+    if (m_fill_source.kind == model_set_ref::source::manual)
         package = m_fill_custom;
     else
-        package = ui()->nodebank_group_templates(static_cast<std::size_t>(m_fill_package - 1));
+        for (auto const *entry : ui()->nodebank().set_entries(m_fill_source))
+            package.push_back(*entry);
     package.erase(std::remove_if(package.begin(), package.end(), [](std::string const &Template) { return Template.empty(); }), package.end());
     if (package.empty())
     {
@@ -1470,37 +1734,9 @@ void editor_mode::run_area_fill()
         points.push_back(p);
     }
 
-    // ground geometry within the area. shapes hold the (legacy) terrain, large instances the terrain tiles
+    // ground geometry within the area
     std::vector<world_triangle> triangles;
-    glm::dvec2 const center = (bmin + bmax) * 0.5;
-    float const radius = static_cast<float>(glm::length(bmax - bmin) * 0.5);
-    auto const sections = simulation::Region->sections(glm::dvec3(center.x, 0.0, center.y), radius); // copy, the result is a scratchpad
-    for (auto *section : sections)
-    {
-        for (auto const &shape : section->m_shapes)
-            gather_shape_triangles(shape, bmin, bmax, triangles);
-        for (auto &cell : section->m_cells)
-        {
-            double const r = cell.m_area.radius;
-            if (cell.m_area.center.x + r < bmin.x || cell.m_area.center.x - r > bmax.x || cell.m_area.center.z + r < bmin.y || cell.m_area.center.z - r > bmax.y)
-                continue;
-            for (auto const &shape : cell.m_shapesopaque)
-                gather_shape_triangles(shape, bmin, bmax, triangles);
-            if (false == m_fill_models_as_ground)
-                continue;
-            for (auto *instance : cell.m_instancesopaque)
-            {
-                if (instance == nullptr || instance->Model() == nullptr || instance->radius() < terrain_model_radius)
-                    continue;
-                std::vector<world_triangle> modeltriangles;
-                gather_submodel_triangles(instance->Model()->Root, instance_matrix(*instance), modeltriangles);
-                for (auto const &t : modeltriangles)
-                    if (std::max({t[0].x, t[1].x, t[2].x}) >= bmin.x && std::min({t[0].x, t[1].x, t[2].x}) <= bmax.x && std::max({t[0].z, t[1].z, t[2].z}) >= bmin.y &&
-                        std::min({t[0].z, t[1].z, t[2].z}) <= bmax.y)
-                        triangles.push_back(t);
-            }
-        }
-    }
+    gather_ground_triangles(bmin, bmax, m_fill_models_as_ground, terrain_model_radius, triangles);
     triangle_grid const ground(std::move(triangles), bmin, bmax);
     auto const terrains = active_terrains();
 
@@ -1621,9 +1857,7 @@ void editor_mode::draw_area_fill_outline() const
 
 void editor_mode::render_area_fill()
 {
-    ImGui::Begin("Area fill", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing);
-
-    ImGui::TextUnformatted("LMB: add outline point, Backspace: remove last point");
+    ImGui::TextDisabled("LMB: add outline point   Backspace: remove last point");
     double const area = polygon_area_xz(m_fill_points);
     ImGui::Text("Points: %zu   Area: %.0f m2 (%.2f ha)", m_fill_points.size(), area, area / 10000.0);
     if (ImGui::Button("Remove last point") && !m_fill_points.empty())
@@ -1634,58 +1868,13 @@ void editor_mode::render_area_fill()
 
     ImGui::Separator();
 
-    // model package: a node bank group, or a custom set assembled from node bank templates
-    auto const groups = ui()->nodebank_groups();
-    m_fill_package = std::clamp(m_fill_package, 0, static_cast<int>(groups.size()));
-    std::string const current = m_fill_package == 0 ? std::string("Custom set") : groups[m_fill_package - 1];
-    ImGui::SetNextItemWidth(250.0f);
-    if (ImGui::BeginCombo("Model package", current.c_str()))
-    {
-        if (ImGui::Selectable("Custom set", m_fill_package == 0))
-            m_fill_package = 0;
-        for (int i = 0; i < static_cast<int>(groups.size()); ++i)
-        {
-            auto const label = groups[i] + "##fillgroup" + std::to_string(i);
-            if (ImGui::Selectable(label.c_str(), m_fill_package == i + 1))
-                m_fill_package = i + 1;
-        }
-        ImGui::EndCombo();
-    }
-
-    if (m_fill_package == 0)
-    {
-        ImGui::BeginChild("fill_custom_set", ImVec2(350.0f, 110.0f), true);
-        for (int i = 0; i < static_cast<int>(m_fill_custom.size()); ++i)
-        {
-            auto const label = template_label(m_fill_custom[i]) + "##fillcustom" + std::to_string(i);
-            if (ImGui::Selectable(label.c_str(), m_fill_custom_idx == i))
-                m_fill_custom_idx = i;
-        }
-        ImGui::EndChild();
-        if (ImGui::Button("Add selected template"))
-        {
-            // the node bank selection, not a random pick from the brush set
-            auto const *src = ui()->get_active_node_template(true);
-            if (src && !src->empty())
-                m_fill_custom.push_back(*src);
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Remove") && m_fill_custom_idx >= 0 && m_fill_custom_idx < static_cast<int>(m_fill_custom.size()))
-        {
-            m_fill_custom.erase(m_fill_custom.begin() + m_fill_custom_idx);
-            m_fill_custom_idx = -1;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Clear set"))
-        {
-            m_fill_custom.clear();
-            m_fill_custom_idx = -1;
-        }
-    }
+    // model package: a hand-assembled list, a user-defined set or a node bank group
+    auto &bank = ui()->nodebank();
+    bank.set_combo("Model set", m_fill_source, "Custom list");
+    if (m_fill_source.kind == model_set_ref::source::manual)
+        bank.manual_list("fillset", m_fill_custom, m_fill_custom_idx);
     else
-    {
-        ImGui::Text("Templates in group: %zu", ui()->nodebank_group_templates(static_cast<std::size_t>(m_fill_package - 1)).size());
-    }
+        ImGui::TextDisabled("%zu templates in set", bank.set_entries(m_fill_source).size());
 
     ImGui::Separator();
 
@@ -1697,7 +1886,9 @@ void editor_mode::render_area_fill()
     m_fill_min_spacing = std::max(0.0f, m_fill_min_spacing);
     ImGui::SetNextItemWidth(200.0f);
     ImGui::DragFloatRange2("Scale", &m_fill_scale_min, &m_fill_scale_max, 0.01f, 0.1f, 5.0f, "min %.2f", "max %.2f");
-    ImGui::Checkbox("Random rotation (off: Functions panel setting)", &m_fill_random_rotation);
+    ImGui::Checkbox("Random rotation", &m_fill_random_rotation);
+    if (!m_fill_random_rotation)
+        ui()->render_rotation_controls();
     ImGui::Checkbox("Large models count as ground (terrain tiles)", &m_fill_models_as_ground);
 
     ImGui::Text("Estimated objects: %.0f", std::round(area / 10000.0 * m_fill_density));
@@ -1711,21 +1902,20 @@ void editor_mode::render_area_fill()
 
     if (!m_fill_status.empty())
         ImGui::TextUnformatted(m_fill_status.c_str());
-
-    ImGui::End();
 }
 
-void editor_mode::render_gizmo()
+void editor_mode::render_gizmo_options()
 {
-    // the transform gizmo is suppressed while editing terrain, so the brush/chunk tool owns the mouse
-    if (!m_gizmo_enabled || m_terrain_sculpt || m_chunk_edit)
+    ImGui::Checkbox("Enabled", &m_gizmo_enabled);
+    if (!m_gizmo_enabled)
+        return;
+    if (m_terrain_sculpt || m_chunk_edit)
     {
-        m_gizmo_using = false;
+        ImGui::TextDisabled("Suspended while editing terrain");
         return;
     }
 
-    // compact control window: lets the user pick the transform mode without keyboard shortcuts
-    ImGui::Begin("Gizmo", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing);
+    // lets the user pick the transform mode without keyboard shortcuts
     int op = static_cast<int>(m_gizmo_op);
     ImGui::RadioButton("Translate (Q)", &op, static_cast<int>(gizmo_operation::translate));
     ImGui::SameLine();
@@ -1745,7 +1935,16 @@ void editor_mode::render_gizmo()
     }
     if (!m_node)
         ImGui::TextDisabled("No node selected");
-    ImGui::End();
+}
+
+void editor_mode::render_gizmo()
+{
+    // the transform gizmo is suppressed while editing terrain, so the brush/chunk tool owns the mouse
+    if (!m_gizmo_enabled || m_terrain_sculpt || m_chunk_edit)
+    {
+        m_gizmo_using = false;
+        return;
+    }
 
     if (!m_node)
     {
@@ -1910,6 +2109,8 @@ void editor_mode::enter()
     Global.ControlPicking = true;
     EditorModeFlag = true;
 
+    load_orthophoto_settings();
+
     Application.set_cursor(GLFW_CURSOR_NORMAL);
 }
 
@@ -1923,6 +2124,8 @@ void editor_mode::exit()
     g_redo.clear();
     m_history.clear();
     m_fill_last.clear();
+    m_orthophoto.cancel_pending();
+    m_orthophoto.detach_scene(); // the layer is an editor aid, keep it out of the other modes
 
     // drop selection so a stale/dangling node pointer isn't used on the next editor session
     m_node = nullptr;

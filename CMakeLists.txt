@@ -167,8 +167,10 @@ set(SOURCES
 "application/driveruipanels.cpp"
 "input/editorkeyboardinput.cpp"
 "editor/editorSettings.cpp"
+"editor/editorModelSets.cpp"
 "editor/editorTerrain.cpp"
 "editor/editorTerrainStreamer.cpp"
+"editor/editorOrthophoto.cpp"
 "application/editormode.cpp"
 "input/editormouseinput.cpp"
 "application/editoruilayer.cpp"
@@ -561,6 +563,19 @@ target_link_libraries(${PROJECT_NAME} asio::asio)
 
 if (WIN32)
 	target_link_libraries(${PROJECT_NAME} ws2_32)
+endif()
+
+# http client of the editor's geoportal orthophoto layer: WinHTTP on Windows, libcurl elsewhere when available
+if (WIN32)
+	target_link_libraries(${PROJECT_NAME} winhttp)
+else()
+	find_package(CURL QUIET)
+	if (CURL_FOUND)
+		target_link_libraries(${PROJECT_NAME} CURL::libcurl)
+		target_compile_definitions(${PROJECT_NAME} PRIVATE EU07_WITH_CURL)
+	else()
+		message(STATUS "libcurl not found: the editor's orthophoto layer will only show cached tiles")
+	endif()
 endif()
 
 if (WITH_ZMQ)
