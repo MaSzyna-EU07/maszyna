@@ -136,7 +136,7 @@ void editor_ui::render_menu_contents()
 	{
 		ImGui::MenuItem(STR_C("Toolset"), nullptr, &m_nodebankpanel.is_open);
 		ImGui::MenuItem(STR_C("Layers"), nullptr, &m_layerspanel.is_open);
-		ImGui::MenuItem(STR_C("Include descriptions"), nullptr, &m_includespanel.is_open);
+		ImGui::MenuItem(STR_C("Include database"), nullptr, &m_includespanel.is_open);
 		ImGui::EndMenu();
 	}
 }

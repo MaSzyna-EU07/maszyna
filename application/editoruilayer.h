@@ -68,7 +68,7 @@ class editor_ui : public ui_layer
 	functions_panel m_functionspanel{"Functions", true}; // not a window of its own, its settings are drawn in the toolset tabs
 	nodebank_panel m_nodebankpanel{"Toolset", true}; // main editor window: gizmo, node properties, edit modes and the node bank
 	layers_panel m_layerspanel{"Layers", true};
-	includes_panel m_includespanel{"Include descriptions", false};
+	includes_panel m_includespanel{"Include database", false};
 	std::function<void()> m_save;
 	std::function<void()> m_export;
 	brush_object_list m_brushobjects;

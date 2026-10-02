@@ -97,6 +97,7 @@ class editor_mode : public application_mode
 		glm::vec3 scale{1.0f, 1.0f, 1.0f};
 		UID uuid; // node UUID for reference, used as fallback lookup for deleted/recreated nodes
 		scene::layer_handle layer{null_handle}; // scenery layer of the node, so a recreated node returns to it
+		scene::instance_handle instance{0}; // include of a scenery template which was placed or removed, instead of a node
 
 	};
 	void push_snapshot(scene::basic_node *node, EditorSnapshot::Action Action = EditorSnapshot::Action::Move, std::string const &Serialized = std::string());
@@ -127,6 +128,7 @@ class editor_mode : public application_mode
 	double fTime50Hz{0.0}; // bufor czasu dla komunikacji z PoKeys
 	scene::basic_editor m_editor;
 	scene::basic_node *m_node{nullptr}; // currently selected scene node
+	scene::instance_handle m_instance{0}; // currently selected include of a scenery template; these are handled as a whole
 	bool m_takesnapshot{true}; // helper, hints whether snapshot of selected node(s) should be taken before modification
 	bool m_dragging = false;
 	glm::dvec3 oldPos; // world position of the last brush placement
@@ -167,6 +169,10 @@ class editor_mode : public application_mode
 	void commit_terrain();
 	// writes the changes to the files of scenery opened for editing (Ctrl+S)
 	void save();
+	// places include of specified scenery template at the cursor, in the active layer
+	void place_include(std::string const &File, int RotationMode, float FixedRotation);
+	// undo and redo of placing or removing an include: brings removed include back, or removes it
+	void toggle_include(scene::instance_handle Instance);
 	// exports the scenery in legacy (text) format, with layers hidden in the editor left out of the picture
 	void export_scenery();
 	// raises/lowers terrain under the cursor while the left mouse button is held in sculpt mode

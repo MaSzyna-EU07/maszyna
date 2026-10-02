@@ -294,9 +294,15 @@ struct node_layers::composition
 		layer_handle layer;
 		source_span span;
 	};
+	struct instance_place
+	{
+		instance_handle instance;
+		source_span span;
+	};
 	std::string text;
 	std::vector<node_place> nodes;
 	std::vector<site_place> sites;
+	std::vector<instance_place> instances;
 
 	// adds another piece of text at the end
 	void append(composition const &Other)
@@ -315,6 +321,12 @@ struct node_layers::composition
 			place.span.end += offset;
 			sites.emplace_back(place);
 		}
+		for (auto place : Other.instances)
+		{
+			place.span.begin += offset;
+			place.span.end += offset;
+			instances.emplace_back(place);
+		}
 	}
 };
 
@@ -324,6 +336,7 @@ struct node_layers::save_state
 	std::map<layer_handle, file_patch> patches;
 	std::map<layer_handle, std::vector<basic_node const *>> nodes; // unchanged nodes defined in each file
 	std::map<layer_handle, std::vector<layer_handle>> includes; // unchanged include directives in each file, by included layer
+	std::map<layer_handle, std::vector<instance_handle>> instances; // unchanged includes of templates in each file
 	std::string eol{"\r\n"};
 	std::string error;
 };
@@ -477,6 +490,13 @@ bool node_layers::compose(save_state &State, layer_handle const Layer, compositi
 			Output.sites.push_back({included, shift(layer(included).sites.front().span)});
 		}
 	}
+	if (auto const lookup{State.instances.find(Layer)}; lookup != State.instances.end())
+	{
+		for (auto const included : lookup->second)
+		{
+			Output.instances.push_back({included, shift(instance(included).span)});
+		}
+	}
 	return true;
 }
 
@@ -608,7 +628,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			state.patches[source.layer].edits.emplace_back(std::move(edit));
 			rewritten.emplace(Node);
 		}
-		else if (Model != nullptr && false == Node->m_template)
+		else if (Model != nullptr && false == Node->from_template())
 		{
 			// created in the editor. the definition is placed at the end of the layer file, with the placement in effect there
 			std::string text;
@@ -652,6 +672,41 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		edit.begin = erased.second.begin;
 		edit.end = erased.second.end;
 		state.patches[erased.first].edits.emplace_back(std::move(edit));
+	}
+
+	// includes of templates
+	std::map<layer_handle, std::vector<instance_handle>> placed; // directives made in the editor, by target layer
+	for (std::size_t idx = 0; idx < m_instances.size(); ++idx)
+	{
+		auto const &included{m_instances[idx]};
+		if (included.dead)
+		{
+			continue;
+		}
+		if (included.span.valid())
+		{
+			if (included.removed)
+			{
+				file_patch::edit edit;
+				edit.begin = included.span.begin;
+				edit.end = included.span.end;
+				state.patches[included.layer].edits.emplace_back(std::move(edit));
+			}
+		}
+		else if (false == included.removed && false == included.directive.empty())
+		{
+			auto const target{resolve(included.layer)};
+			if (false == is_output(target))
+			{
+				continue;
+			}
+			if (false == included.context.matches(layer(target).context_end))
+			{
+				// shouldn't happen, merge of layers is refused when it'd lead to this
+				return fail("include \"" + *included.file + "\" was placed for different origin, rotation or scale than its layer ends with");
+			}
+			placed[target].emplace_back(static_cast<instance_handle>(idx + 1));
+		}
 	}
 
 	// layer changes
@@ -748,7 +803,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		{
 			continue;
 		}
-		if (layer(candidate).created || state.patches.count(candidate) != 0 || appended.count(candidate) != 0 || created.count(candidate) != 0 ||
+		if (layer(candidate).created || state.patches.count(candidate) != 0 || appended.count(candidate) != 0 || created.count(candidate) != 0 || placed.count(candidate) != 0 ||
 		    (candidate == root && false == Rootstatements.empty()))
 		{
 			outputs.emplace_back(candidate);
@@ -781,6 +836,14 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			continue;
 		}
 		state.includes[included.sites.front().parent].emplace_back(candidate);
+	}
+	for (std::size_t idx = 0; idx < m_instances.size(); ++idx)
+	{
+		auto const &included{m_instances[idx]};
+		if (false == included.dead && false == included.removed && included.span.valid() && state.content.count(included.layer) != 0)
+		{
+			state.instances[included.layer].emplace_back(static_cast<instance_handle>(idx + 1));
+		}
 	}
 
 	std::map<layer_handle, composition> texts;
@@ -820,6 +883,17 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 				auto const offset{static_cast<std::streamoff>(text.text.size())};
 				text.nodes.push_back({definition.first, {offset, offset + static_cast<std::streamoff>(definition.second.size())}, true});
 				text.text += definition.second + eol;
+			}
+		}
+		if (auto const lookup{placed.find(output)}; lookup != placed.end())
+		{
+			for (auto const included : lookup->second)
+			{
+				auto const &directive{instance(included).directive};
+				ensure_newline(text.text, eol);
+				auto const offset{static_cast<std::streamoff>(text.text.size())};
+				text.instances.push_back({included, {offset, offset + static_cast<std::streamoff>(directive.size())}});
+				text.text += directive + eol;
 			}
 		}
 		if (output == root)
@@ -927,6 +1001,13 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 				source.scale = (model != nullptr ? model->Scale() : glm::vec3{1.f});
 			}
 		}
+		for (auto const &place : texts[output].instances)
+		{
+			auto &included{m_instances[place.instance - 1]};
+			included.layer = output;
+			included.span = place.span;
+			included.directive.clear();
+		}
 		for (auto const &place : texts[output].sites)
 		{
 			auto &included{layer(place.layer)};
@@ -960,6 +1041,11 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 	for (auto const output : written)
 	{
 		stat(output);
+	}
+	for (auto &included : m_instances)
+	{
+		// removed includes are gone from the files now
+		included.dead = included.dead || included.removed;
 	}
 	m_erased.clear();
 	if (removedterrain)

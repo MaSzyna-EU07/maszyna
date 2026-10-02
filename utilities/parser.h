@@ -131,6 +131,7 @@ class cParser //: public std::stringstream
     std::size_t mLine { 0 }; // currently processed line
     bool mIncFile { false }; // the parser is processing an *.inc file
     bool mLayerFile { false }; // the parser is processing a file registered as scenery layer
+    bool mInstanceFile { false }; // the parser is processing a template whose include is registered with the scenery layers
     std::streamoff mPosition { 0 }; // amount of bytes read from the stream so far
     std::streamoff mTokenBegin { 0 }; // location of the most recently read token
     std::streamoff mTokenEnd { 0 };

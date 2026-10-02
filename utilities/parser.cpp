@@ -124,6 +124,10 @@ cParser::~cParser()
 		// content of the processed file ended, following nodes belong to the parent layer again
 		scene::Layers.close();
 	}
+	if (true == mInstanceFile)
+	{
+		scene::Layers.instance_end();
+	}
 }
 
 template <> glm::vec3 cParser::getToken(bool const ToLower, char const *Break)
@@ -386,6 +390,14 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
 		if (mIncludeParser->mIncFile)
 		{
 			scene::Layers.template_used(includefile);
+			// include of a template made directly by a layer file is handled by the editor as a whole. templates
+			// included by that template are a part of it
+			auto const site{include_site()};
+			if (false == site.fixed && scene::Layers.instance() == 0 && mIncludeParser->mSize > 0)
+			{
+				scene::Layers.instance_begin(includefile, site.span);
+				mIncludeParser->mInstanceFile = true;
+			}
 		}
 		else if (mIncludeParser->mSize > 0)
 		{

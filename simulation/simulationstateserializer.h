@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/parser.h"
 #include "scene/scene.h"
+#include "scene/scenelayers.h"
 
 namespace simulation {
 
@@ -45,6 +46,10 @@ public:
 	TAnimModel * create_model(std::string const &src, std::string const &name, const glm::dvec3 &position);
 	// create new eventlauncher from node stirng
 	TEventLauncher * create_eventlauncher(std::string const &src, std::string const &name, const glm::dvec3 &position);
+	// creates model instances defined by an include directive placed in the scenery editor, to show what was placed.
+	// everything else the included template defines is left out, and takes effect when the saved scenery is loaded.
+	// Context: placement in effect at the location of the directive. returns: number of created models and of skipped statements
+	std::pair<int, int> preview_include(std::string const &Directive, scene::layer_context const &Context, scene::layer_handle Layer, scene::instance_handle Instance);
 
 private:
 // methods

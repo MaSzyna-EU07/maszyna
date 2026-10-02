@@ -441,7 +441,10 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
 
     scene::node_data nodedata;
     nodedata.layer = scene::Layers.handle();
-    nodedata.is_template = ( nodedata.layer != null_handle ) && ( false == Input.InLayerFile() );
+    if( ( nodedata.layer != null_handle ) && ( false == Input.InLayerFile() ) ) {
+        // defined by a template, or by something else which isn't a scenery layer file
+        nodedata.instance = ( scene::Layers.instance() != 0 ? scene::Layers.instance() : scene::untracked_instance );
+    }
     // common data and node type indicator
     Input.getTokens( 4 );
     Input
@@ -1410,6 +1413,78 @@ TAnimModel *state_serializer::create_model(const std::string &src, const std::st
 	scene::Layers.count(cloned->layer(), scene::layer_item::model);
 
 	return cloned;
+}
+
+std::pair<int, int> state_serializer::preview_include(std::string const &Directive, scene::layer_context const &Context, scene::layer_handle Layer, scene::instance_handle Instance) {
+	// statements which take more than a single token, with the tokens ending them
+	static std::unordered_map<std::string, std::string> const nodeends {
+	    { "dynamic", "enddynamic" }, { "track", "endtrack" }, { "traction", "endtraction" }, { "tractionpowersource", "end" }, { "model", "endmodel" },
+	    { "triangles", "endtri" }, { "triangle_strip", "endtri" }, { "triangle_fan", "endtri" }, { "lines", "endline" }, { "line_strip", "endline" }, { "line_loop", "endline" },
+	    { "memcell", "endmemcell" }, { "eventlauncher", "end" }, { "sound", "endsound" } };
+	static std::unordered_map<std::string, std::string> const statementends {
+	    { "event", "endevent" }, { "trainset", "endtrainset" }, { "isolated", "endisolated" }, { "area", "endarea" }, { "assignment", "endassignment" },
+	    { "atmo", "endatmo" }, { "camera", "endcamera" }, { "config", "endconfig" }, { "description", "enddescription" }, { "light", "endlight" },
+	    { "sky", "endsky" }, { "test", "endtest" }, { "time", "endtime" }, { "terrain", "endterrain" }, { "editorterrain", "endeditorterrain" } };
+
+	cParser parser(Directive, cParser::buffer_TEXT, Global.asCurrentSceneryPath, Global.bLoadTraction);
+	// the template is processed with the placement its directive is going to be loaded with
+	scene::scratch_data scratch;
+	scratch.location.offset.emplace(Context.offset);
+	scratch.location.rotation = Context.rotation;
+	scratch.location.scale.emplace(Context.scale);
+
+	auto created { 0 };
+	auto skipped { 0 };
+	auto token { parser.getToken<std::string>() };
+	while (false == token.empty()) {
+		if (token == "origin") { deserialize_origin(parser, scratch); }
+		else if (token == "endorigin") { deserialize_endorigin(parser, scratch); }
+		else if (token == "scale") { deserialize_scale(parser, scratch); }
+		else if (token == "endscale") { deserialize_endscale(parser, scratch); }
+		else if (token == "rotate") { deserialize_rotate(parser, scratch); }
+		else if (token == "node") {
+			scene::node_data nodedata;
+			parser.getTokens(4);
+			parser >> nodedata.range_max >> nodedata.range_min >> nodedata.name >> nodedata.type;
+			if (nodedata.name == "none") { nodedata.name.clear(); }
+			nodedata.layer = Layer;
+			nodedata.instance = Instance;
+			auto *instance { (nodedata.type == "model" && nodedata.range_min >= 0.0) ? deserialize_model(parser, scratch, nodedata) : nullptr };
+			if (instance != nullptr) {
+				// same as for a model loaded with the scenery
+				if (instance->Model() != nullptr) {
+					for (auto const &smokesource : instance->Model()->smoke_sources()) {
+						Particles.insert(smokesource.first, instance, smokesource.second);
+					}
+				}
+				simulation::Instances.insert(instance);
+				simulation::Region->insert(instance);
+				scene::Hierarchy[instance->uuid.to_string()] = instance;
+				scene::Layers.count(Layer, scene::layer_item::model);
+				++created;
+			}
+			else if (nodedata.type != "model" || nodedata.range_min < 0.0) {
+				// NOTE: a model which failed to load is consumed up to its end already
+				auto const lookup { nodeends.find(nodedata.type) };
+				if (lookup != nodeends.end()) { skip_until(parser, lookup->second); }
+				++skipped;
+			}
+		}
+		else if (token == "lua") {
+			parser.getTokens(1, false);
+			++skipped;
+		}
+		else {
+			auto const lookup { statementends.find(token) };
+			if (lookup != statementends.end()) {
+				skip_until(parser, lookup->second);
+				++skipped;
+			}
+			// anything else is a single token with no parameters, or something the loader wouldn't recognize either
+		}
+		token = parser.getToken<std::string>();
+	}
+	return { created, skipped };
 }
 
 TEventLauncher *state_serializer::create_eventlauncher(const std::string &src, const std::string &name, const glm::dvec3 &position) {

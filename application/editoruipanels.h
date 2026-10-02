@@ -136,6 +136,8 @@ class nodebank_panel : public ui_panel
 	// methods:
 	std::string generate_node_label(std::string Input) const;
 	void render_sets_window();
+	// true if the node bank selection is a definition of a node, which the hand-made lists and the model sets can take
+	bool node_selected() const;
 	// members:
 	std::vector<std::pair<std::string, std::shared_ptr<std::string>>> m_nodebank;
 	char m_nodesearch[128];
@@ -178,7 +180,8 @@ class layers_panel : public ui_panel
 	std::string m_popuperror;
 };
 
-// editor of the descriptions of *.inc scenery templates, see editorIncludeInfo.hpp
+// database of the *.inc scenery templates: the templates found in the scenery directory, with the editor of their
+// descriptions (see editorIncludeInfo.hpp). templates whose descriptions are complete are offered by the node bank
 class includes_panel : public ui_panel
 {
 
@@ -190,10 +193,20 @@ class includes_panel : public ui_panel
   private:
 	// methods
 	void open(std::string const &File);
+	void render_list();
+	void render_description();
 	// members
+	// template list
+	char m_filter[128]{};
+	bool m_describedonly{false};
+	bool m_usedonly{false};
+	std::vector<std::size_t> m_listed; // entries of the template bank matching the filter
+	int m_listrevision{-1}; // revision of the template bank the list was made for
+	int m_described{0};
+	// description editor
 	std::string m_file; // template being edited, relative to the scenery directory
-	char m_filename[256]{}; // name of a template typed in by hand
 	include_info m_info;
+	int m_parameters{0}; // number of parameters the template uses
 	bool m_loaded{false};
 	std::string m_status;
 	bool m_statuserror{false};

@@ -9,6 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -55,5 +57,69 @@ bool save(std::string const &File, include_info const &Info, std::string &Error)
 int parameter_count(std::string const &File);
 // sets roles of the parameters whose use in the template makes their meaning clear. roles already set are left alone
 void suggest(std::string const &File, include_info &Info);
+// true if value of a parameter with specified role is supplied by the editor when the template is placed
+bool automatic(std::string const &Role);
+// true if the description has everything it takes to place the template straight from the node bank: a name, and
+// either a default value or a role filled in by the editor for each of specified number of parameters.
+// optionally tells what is missing
+bool complete(include_info const &Info, int Parameters, std::string *Issue = nullptr);
+// builds include directive which places specified template. Location and Yaw are the placement to pass through
+// the parameters with matching roles, in the coordinates of the place the directive goes to; without Yaw the
+// rotation parameters receive their default values
+std::string directive(std::string const &File, include_info const &Info, int Parameters, glm::dvec3 const &Location, std::optional<float> Yaw);
+
+// marks node bank template which stands for a scenery template rather than for definition of a single node
+extern std::string const directive_mark;
 
 } // namespace editor_includes
+
+// *.inc template found in the scenery directory
+struct include_entry
+{
+	std::string file; // name of the template, relative to the scenery directory
+	std::string name; // from the description
+	std::string category;
+	bool described{false};
+	bool complete{false}; // can be placed from the node bank, see editor_includes::complete()
+	std::string issue; // what keeps the template out of the node bank
+	std::shared_ptr<std::string> statement; // node bank template standing for the include
+};
+
+// the scenery templates available to the editor: every *.inc file in the scenery directory. the templates whose
+// descriptions are complete are offered by the node bank
+class editorIncludeBank
+{
+  public:
+	// looks through the scenery directory for the templates, and reads their descriptions
+	void scan();
+	bool scanned() const
+	{
+		return m_scanned;
+	}
+	std::vector<include_entry> const &entries() const
+	{
+		return m_entries;
+	}
+	// indices of the entries offered by the node bank, ordered by category and name
+	std::vector<std::size_t> const &ready() const
+	{
+		return m_ready;
+	}
+	// reads description of specified template again, after it was changed
+	void update(std::string const &File);
+	// changes with each change of the entries
+	int revision() const
+	{
+		return m_revision;
+	}
+
+  private:
+	void index();
+
+	std::vector<include_entry> m_entries; // sorted by file name
+	std::vector<std::size_t> m_ready;
+	bool m_scanned{false};
+	int m_revision{0};
+};
+
+extern editorIncludeBank EditorIncludes;

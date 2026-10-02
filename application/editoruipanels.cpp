@@ -589,6 +589,38 @@ void nodebank_panel::render()
 					++idx;
 				}
 			}
+			// scenery templates. placing one adds an include directive to a scenery file, so they take scenery opened for editing
+			if (Global.editor_session && ImGui::CollapsingHeader("Scenery templates (.inc)"))
+			{
+				if (false == EditorIncludes.scanned())
+				{
+					EditorIncludes.scan();
+				}
+				auto const &templates{EditorIncludes.entries()};
+				std::string const *category{nullptr};
+				auto listed{0};
+				for (auto const entryidx : EditorIncludes.ready())
+				{
+					auto const &entry{templates[entryidx]};
+					if (false == searchfilter.empty() && false == contains(entry.name, searchfilter) && false == contains(entry.file, searchfilter) && false == contains(entry.category, searchfilter))
+					{
+						continue;
+					}
+					if (false == entry.category.empty() && (category == nullptr || *category != entry.category))
+					{
+						ImGui::TextDisabled(" %s", entry.category.c_str());
+					}
+					category = &entry.category;
+					auto const label{(entry.category.empty() ? " " : "   ") + entry.name + "  (" + Bezogonkow(entry.file) + ")##inc" + std::to_string(entryidx)};
+					if (list_item(label.c_str(), entry.statement == m_selectedtemplate))
+						m_selectedtemplate = entry.statement;
+					++listed;
+				}
+				if (listed == 0)
+				{
+					ImGui::TextDisabled(EditorIncludes.ready().empty() ? " (none yet, describe the templates in the Include database window)" : " (no match)");
+				}
+			}
 			ImGui::ListBoxFooter();
 		}
 		ImGui::PopItemWidth();
@@ -667,7 +699,7 @@ void nodebank_panel::manual_list(char const *Id, std::vector<std::string> &List,
 	}
 	if (ImGui::Button("Add selected"))
 	{
-		if (m_selectedtemplate && false == m_selectedtemplate->empty())
+		if (node_selected())
 			List.push_back(*m_selectedtemplate);
 	}
 	if (ImGui::IsItemHovered())
@@ -882,7 +914,7 @@ void nodebank_panel::render_sets_window()
 		auto const setid{edited->id};
 		if (ImGui::Button("Add selected"))
 		{
-			if (m_selectedtemplate && false == m_selectedtemplate->empty())
+			if (node_selected())
 				EditorModelSets.add(setid, {*m_selectedtemplate});
 		}
 		if (ImGui::IsItemHovered())
@@ -960,6 +992,12 @@ void nodebank_panel::add_template(const std::string &desc)
 const std::string *nodebank_panel::get_active_template()
 {
 	return m_selectedtemplate.get();
+}
+
+bool nodebank_panel::node_selected() const
+{
+	// scenery templates are placed with include directives, the tools which scatter nodes have no use for them
+	return m_selectedtemplate && false == m_selectedtemplate->empty() && false == m_selectedtemplate->starts_with(editor_includes::directive_mark);
 }
 
 std::vector<std::string> nodebank_panel::group_names() const
@@ -1504,6 +1542,7 @@ void includes_panel::open(std::string const &File)
 {
 	m_file = File;
 	m_statuserror = false;
+	m_parameters = 0;
 	std::string error;
 	m_loaded = editor_includes::load(File, m_info, error);
 	if (false == m_loaded)
@@ -1512,13 +1551,217 @@ void includes_panel::open(std::string const &File)
 		m_statuserror = true;
 		return;
 	}
+	auto const described{false == m_info.name.empty() || false == m_info.parameters.empty()};
 	// every parameter the template uses gets an entry, described or not
-	auto const count{editor_includes::parameter_count(File)};
-	for (auto id = 1; id <= count; ++id)
+	m_parameters = editor_includes::parameter_count(File);
+	for (auto id = 1; id <= m_parameters; ++id)
 	{
 		m_info.parameter(id);
 	}
-	m_status = "The template uses " + std::to_string(count) + " parameter(s)";
+	m_status = "The template uses " + std::to_string(m_parameters) + " parameter(s).";
+	if (false == described)
+	{
+		// starting point for a new description
+		editor_includes::suggest(File, m_info);
+		m_status += " It has no description yet; the roles are a suggestion based on how the template uses the parameters.";
+	}
+}
+
+void includes_panel::render_list()
+{
+	if (false == EditorIncludes.scanned())
+	{
+		EditorIncludes.scan();
+	}
+	auto const &entries{EditorIncludes.entries()};
+
+	ImGui::PushItemWidth(ImGui::GetFontSize() * 12.0f);
+	auto changed{ImGui::InputTextWithHint("##filter", "Search templates", m_filter, IM_ARRAYSIZE(m_filter))};
+	ImGui::PopItemWidth();
+	ImGui::SameLine();
+	changed |= ImGui::Checkbox("Described", &m_describedonly);
+	if (false == scene::Layers.templates().empty())
+	{
+		// known only for scenery opened for editing
+		ImGui::SameLine();
+		changed |= ImGui::Checkbox("Used by the scenery", &m_usedonly);
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Rescan"))
+	{
+		EditorIncludes.scan();
+	}
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("Looks through the scenery directory again, for the templates added or changed outside of the editor");
+	}
+
+	if (changed || m_listrevision != EditorIncludes.revision())
+	{
+		m_listrevision = EditorIncludes.revision();
+		m_listed.clear();
+		m_described = 0;
+		std::string const filter{m_filter};
+		auto const &used{scene::Layers.templates()};
+		for (std::size_t idx = 0; idx < entries.size(); ++idx)
+		{
+			auto const &entry{entries[idx]};
+			m_described += (entry.described ? 1 : 0);
+			if ((m_describedonly && false == entry.described) || (m_usedonly && false == used.empty() && used.count(entry.file) == 0))
+			{
+				continue;
+			}
+			if (false == filter.empty() && false == contains(entry.file, filter) && false == contains(entry.name, filter) && false == contains(entry.category, filter))
+			{
+				continue;
+			}
+			m_listed.emplace_back(idx);
+		}
+	}
+	ImGui::TextDisabled("%d template(s) in the scenery directory, %d described, %d ready for the node bank", static_cast<int>(entries.size()), m_described,
+	                    static_cast<int>(EditorIncludes.ready().size()));
+
+	ImGui::BeginChild("##templates", ImVec2(0.0f, ImGui::GetTextLineHeightWithSpacing() * 9.0f), true);
+	ImGuiListClipper clipper(static_cast<int>(m_listed.size()));
+	while (clipper.Step())
+	{
+		for (auto row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
+		{
+			auto const &entry{entries[m_listed[row]]};
+			auto const marker{entry.complete ? "[ready]  " : entry.described ? "[incomplete]  " : ""};
+			auto const label{marker + Bezogonkow(entry.file) + (entry.name.empty() ? "" : "  -  " + entry.name) + "##" + std::to_string(m_listed[row])};
+			if (false == entry.described)
+			{
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+			}
+			auto const clicked{list_item(label.c_str(), entry.file == m_file)};
+			if (false == entry.described)
+			{
+				ImGui::PopStyleColor();
+			}
+			if (false == entry.complete && false == entry.issue.empty() && ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("Not in the node bank: %s", Bezogonkow(entry.issue).c_str());
+			}
+			if (clicked)
+			{
+				open(entry.file);
+			}
+		}
+	}
+	if (m_listed.empty())
+	{
+		ImGui::TextDisabled(entries.empty() ? "(no .inc files in the scenery directory)" : "(no match)");
+	}
+	ImGui::EndChild();
+}
+
+void includes_panel::render_description()
+{
+	ImGui::Separator();
+	ImGui::Text("%s", Bezogonkow(m_file).c_str());
+	input_text("Name", m_info.name);
+	input_text("Category", m_info.category);
+	input_text("Description", m_info.description);
+
+	ImGui::Columns(4, "##parameters", false);
+	ImGui::SetColumnWidth(0, ImGui::CalcTextSize("(p000) ").x);
+	ImGui::SetColumnWidth(1, ImGui::CalcTextSize("texture  ").x + ImGui::GetFrameHeight() * 2.0f);
+	ImGui::TextDisabled("param");
+	ImGui::NextColumn();
+	ImGui::TextDisabled("role");
+	ImGui::NextColumn();
+	ImGui::TextDisabled("label");
+	ImGui::NextColumn();
+	ImGui::TextDisabled("default");
+	ImGui::NextColumn();
+	for (auto &parameter : m_info.parameters)
+	{
+		ImGui::PushID(parameter.id);
+		ImGui::AlignTextToFramePadding();
+		// parameters which keep the template out of the node bank stand out
+		if (parameter.id <= m_parameters && parameter.value.empty() && false == editor_includes::automatic(parameter.role))
+		{
+			ImGui::TextColored(status_errorcolor, "(p%d)", parameter.id);
+		}
+		else
+		{
+			ImGui::Text("(p%d)", parameter.id);
+		}
+		ImGui::NextColumn();
+		ImGui::PushItemWidth(-1.0f);
+		if (ImGui::BeginCombo("##role", parameter.role.c_str()))
+		{
+			for (auto const &role : editor_includes::roles)
+			{
+				if (ImGui::Selectable(role.c_str(), role == parameter.role))
+				{
+					parameter.role = role;
+				}
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::PopItemWidth();
+		ImGui::NextColumn();
+		ImGui::PushItemWidth(-1.0f);
+		input_text("##label", parameter.label);
+		ImGui::PopItemWidth();
+		ImGui::NextColumn();
+		ImGui::PushItemWidth(-1.0f);
+		input_text("##default", parameter.value);
+		ImGui::PopItemWidth();
+		ImGui::NextColumn();
+		ImGui::PopID();
+	}
+	ImGui::Columns(1);
+
+	// what the node bank is going to make of the description
+	ImGui::PushTextWrapPos(0.0f);
+	if (std::string issue; editor_includes::complete(m_info, m_parameters, &issue))
+	{
+		ImGui::TextUnformatted("Complete: once saved, the template is offered by the node bank (Insert tab, Scenery templates).");
+	}
+	else
+	{
+		ImGui::TextColored(status_errorcolor, "Not for the node bank yet: %s.", issue.c_str());
+	}
+	ImGui::PopTextWrapPos();
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("A template placed from the node bank gets the cursor location in the pos.* parameters, the rotation set in the\n"
+		                  "Insert tab in rot.y, and a unique name (the default value followed by a random suffix) in the name parameter.\n"
+		                  "The other parameters receive their default values.");
+	}
+
+	if (ImGui::Button("Suggest roles"))
+	{
+		editor_includes::suggest(m_file, m_info);
+	}
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("Sets roles of the parameters still marked as free, where the way the template uses them tells what they are");
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Add parameter"))
+	{
+		m_info.parameter(m_info.parameters.empty() ? 1 : m_info.parameters.back().id + 1);
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Save to file"))
+	{
+		std::string error;
+		m_statuserror = false == editor_includes::save(m_file, m_info, error);
+		m_status = m_statuserror ? error : "Description saved in \"" + m_file + "\"";
+		if (false == m_statuserror)
+		{
+			EditorIncludes.update(m_file);
+		}
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Reload"))
+	{
+		open(m_file);
+	}
 }
 
 void includes_panel::render()
@@ -1528,115 +1771,27 @@ void includes_panel::render()
 		return;
 	}
 
-	ImGui::SetNextWindowPos(ImVec2S(560, 110), ImGuiCond_FirstUseEver);
-	ImGui::SetNextWindowSize(ImVec2S(520, 440), ImGuiCond_FirstUseEver);
+	// next to the layers window where the screen is wide enough for both
+	auto const position{ImVec2S(970, 60)};
+	auto const windowsize{ImVec2S(600, 600)};
+	ImGui::SetNextWindowPos(position.x + windowsize.x <= ImGui::GetIO().DisplaySize.x ? position : ImVec2S(560, 110), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize(windowsize, ImGuiCond_FirstUseEver);
 	auto const panelname{(title.empty() ? m_name : title) + "###" + m_name};
 	if (ImGui::Begin(panelname.c_str(), &is_open, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse))
 	{
 		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-		ImGui::TextWrapped("Describes .inc templates and their parameters. The description is stored in the template file, as //$e comment lines.");
+		ImGui::TextWrapped("The .inc templates of the scenery directory. Describe a template and its parameters to add it to the node bank; "
+		                   "the description is stored in the template file, as //$e comment lines.");
+		if (false == Global.editor_session)
+		{
+			ImGui::TextWrapped("The node bank offers the templates in a scenery opened for editing (-edit).");
+		}
 		ImGui::PopStyleColor();
-		// templates the loaded scenery makes use of; known only for scenery opened for editing
-		auto const &templates{scene::Layers.templates()};
-		if (false == templates.empty())
-		{
-			ImGui::BeginChild("##templates", ImVec2(0.0f, ImGui::GetTextLineHeightWithSpacing() * 6.0f), true);
-			for (auto const &file : templates)
-			{
-				if (ImGui::Selectable(Bezogonkow(file).c_str(), file == m_file))
-				{
-					open(file);
-				}
-			}
-			ImGui::EndChild();
-		}
-		ImGui::PushItemWidth(-ImGui::CalcTextSize(" Open ").x - ImGui::GetStyle().ItemSpacing.x * 2.0f);
-		auto const entered{ImGui::InputTextWithHint("##file", "path of an .inc file in the scenery directory", m_filename, IM_ARRAYSIZE(m_filename), ImGuiInputTextFlags_EnterReturnsTrue)};
-		ImGui::PopItemWidth();
-		ImGui::SameLine();
-		if ((ImGui::Button("Open") || entered) && m_filename[0] != '\0')
-		{
-			std::string file{ToLower(m_filename)};
-			replace_slashes(file);
-			open(file);
-		}
 
+		render_list();
 		if (m_loaded)
 		{
-			ImGui::Separator();
-			ImGui::Text("%s", Bezogonkow(m_file).c_str());
-			input_text("Name", m_info.name);
-			input_text("Category", m_info.category);
-			input_text("Description", m_info.description);
-
-			ImGui::Columns(4, "##parameters", false);
-			ImGui::SetColumnWidth(0, ImGui::CalcTextSize("(p000) ").x);
-			ImGui::SetColumnWidth(1, ImGui::CalcTextSize("texture  ").x + ImGui::GetFrameHeight() * 2.0f);
-			ImGui::TextDisabled("param");
-			ImGui::NextColumn();
-			ImGui::TextDisabled("role");
-			ImGui::NextColumn();
-			ImGui::TextDisabled("label");
-			ImGui::NextColumn();
-			ImGui::TextDisabled("default");
-			ImGui::NextColumn();
-			for (auto &parameter : m_info.parameters)
-			{
-				ImGui::PushID(parameter.id);
-				ImGui::AlignTextToFramePadding();
-				ImGui::Text("(p%d)", parameter.id);
-				ImGui::NextColumn();
-				ImGui::PushItemWidth(-1.0f);
-				if (ImGui::BeginCombo("##role", parameter.role.c_str()))
-				{
-					for (auto const &role : editor_includes::roles)
-					{
-						if (ImGui::Selectable(role.c_str(), role == parameter.role))
-						{
-							parameter.role = role;
-						}
-					}
-					ImGui::EndCombo();
-				}
-				ImGui::PopItemWidth();
-				ImGui::NextColumn();
-				ImGui::PushItemWidth(-1.0f);
-				input_text("##label", parameter.label);
-				ImGui::PopItemWidth();
-				ImGui::NextColumn();
-				ImGui::PushItemWidth(-1.0f);
-				input_text("##default", parameter.value);
-				ImGui::PopItemWidth();
-				ImGui::NextColumn();
-				ImGui::PopID();
-			}
-			ImGui::Columns(1);
-
-			if (ImGui::Button("Suggest roles"))
-			{
-				editor_includes::suggest(m_file, m_info);
-			}
-			if (ImGui::IsItemHovered())
-			{
-				ImGui::SetTooltip("Sets roles of the parameters still marked as free, where the way the template uses them tells what they are");
-			}
-			ImGui::SameLine();
-			if (ImGui::Button("Add parameter"))
-			{
-				m_info.parameter(m_info.parameters.empty() ? 1 : m_info.parameters.back().id + 1);
-			}
-			ImGui::SameLine();
-			if (ImGui::Button("Save to file"))
-			{
-				std::string error;
-				m_statuserror = false == editor_includes::save(m_file, m_info, error);
-				m_status = m_statuserror ? error : "Description saved in \"" + m_file + "\"";
-			}
-			ImGui::SameLine();
-			if (ImGui::Button("Reload"))
-			{
-				open(m_file);
-			}
+			render_description();
 		}
 		if (false == m_status.empty())
 		{

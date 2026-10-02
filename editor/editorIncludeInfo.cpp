@@ -16,7 +16,9 @@ http://mozilla.org/MPL/2.0/.
 #include <yaml-cpp/yaml.h>
 
 #include <filesystem>
+#include <random>
 #include <sstream>
+#include <tuple>
 #include <unordered_map>
 
 namespace
@@ -224,32 +226,11 @@ std::vector<std::string> tokenize(std::string const &Text)
 	return tokens;
 }
 
-} // namespace
-
-include_parameter &include_info::parameter(int const Id)
-{
-	auto lookup{std::find_if(std::begin(parameters), std::end(parameters), [=](include_parameter const &Parameter) { return Parameter.id >= Id; })};
-	if (lookup == std::end(parameters) || lookup->id != Id)
-	{
-		lookup = parameters.emplace(lookup);
-		lookup->id = Id;
-	}
-	return *lookup;
-}
-
-namespace editor_includes
-{
-
-std::vector<std::string> const roles{"free", "name", "pos.x", "pos.y", "pos.z", "rot.x", "rot.y", "rot.z", "track", "memcell", "event", "model", "texture", "number", "text"};
-
-bool load(std::string const &File, include_info &Info, std::string &Error)
+// reads description held by specified template text
+bool parse(template_text const &Text, include_info &Info, std::string &Error)
 {
 	Info = include_info();
-	template_text text;
-	if (false == read_template(File, text, Error))
-	{
-		return false;
-	}
+	auto const &text{Text};
 	try
 	{
 		auto const document{YAML::Load(text.yaml)};
@@ -287,6 +268,48 @@ bool load(std::string const &File, include_info &Info, std::string &Error)
 		return false;
 	}
 	return true;
+}
+
+// highest number of (pN) placeholder used by specified template text
+int count_parameters(template_text const &Text)
+{
+	// the description lines may mention parameters the template doesn't use
+	auto content{Text.content};
+	for (auto line{Text.lines.rbegin()}; line != Text.lines.rend(); ++line)
+	{
+		content.erase(line->first, line->second - line->first);
+	}
+	auto count{0};
+	std::size_t length{0};
+	for (auto location{content.find("(p")}; location != std::string::npos; location = content.find("(p", location + 1))
+	{
+		count = std::max(count, placeholder(content, location, length));
+	}
+	return count;
+}
+
+} // namespace
+
+include_parameter &include_info::parameter(int const Id)
+{
+	auto lookup{std::find_if(std::begin(parameters), std::end(parameters), [=](include_parameter const &Parameter) { return Parameter.id >= Id; })};
+	if (lookup == std::end(parameters) || lookup->id != Id)
+	{
+		lookup = parameters.emplace(lookup);
+		lookup->id = Id;
+	}
+	return *lookup;
+}
+
+namespace editor_includes
+{
+
+std::vector<std::string> const roles{"free", "name", "pos.x", "pos.y", "pos.z", "rot.x", "rot.y", "rot.z", "track", "memcell", "event", "model", "texture", "number", "text"};
+
+bool load(std::string const &File, include_info &Info, std::string &Error)
+{
+	template_text text;
+	return read_template(File, text, Error) && parse(text, Info, Error);
 }
 
 bool save(std::string const &File, include_info const &Info, std::string &Error)
@@ -428,23 +451,7 @@ int parameter_count(std::string const &File)
 {
 	template_text text;
 	std::string error;
-	if (false == read_template(File, text, error))
-	{
-		return 0;
-	}
-	// the description lines may mention parameters the template doesn't use
-	auto content{text.content};
-	for (auto line{text.lines.rbegin()}; line != text.lines.rend(); ++line)
-	{
-		content.erase(line->first, line->second - line->first);
-	}
-	auto count{0};
-	std::size_t length{0};
-	for (auto location{content.find("(p")}; location != std::string::npos; location = content.find("(p", location + 1))
-	{
-		count = std::max(count, placeholder(content, location, length));
-	}
-	return count;
+	return read_template(File, text, error) ? count_parameters(text) : 0;
 }
 
 void suggest(std::string const &File, include_info &Info)
@@ -507,4 +514,198 @@ void suggest(std::string const &File, include_info &Info)
 	}
 }
 
+std::string const directive_mark{"include "};
+
+bool automatic(std::string const &Role)
+{
+	return Role == "name" || Role.starts_with("pos.") || Role.starts_with("rot.");
+}
+
+bool complete(include_info const &Info, int const Parameters, std::string *Issue)
+{
+	std::string issue;
+	if (Info.name.empty())
+	{
+		issue = "the template needs a name";
+	}
+	for (auto id = 1; id <= Parameters && issue.empty(); ++id)
+	{
+		auto const lookup{std::find_if(std::begin(Info.parameters), std::end(Info.parameters), [=](include_parameter const &Parameter) { return Parameter.id == id; })};
+		if (lookup == std::end(Info.parameters) || (false == automatic(lookup->role) && lookup->value.empty()))
+		{
+			issue = "(p" + std::to_string(id) + ") needs a default value, or a role filled in by the editor (name, pos.*, rot.*)";
+		}
+	}
+	if (false == issue.empty() && Issue != nullptr)
+	{
+		*Issue = issue;
+	}
+	return issue.empty();
+}
+
+std::string directive(std::string const &File, include_info const &Info, int const Parameters, glm::dvec3 const &Location, std::optional<float> Yaw)
+{
+	auto const number = [](double const Value) {
+		std::ostringstream converter;
+		converter.imbue(std::locale::classic());
+		converter << std::fixed << std::setprecision(3) << Value;
+		return converter.str();
+	};
+	std::string text{"include " + File};
+	for (auto id = 1; id <= Parameters; ++id)
+	{
+		auto const lookup{std::find_if(std::begin(Info.parameters), std::end(Info.parameters), [=](include_parameter const &Parameter) { return Parameter.id == id; })};
+		auto const role{lookup != std::end(Info.parameters) ? lookup->role : std::string{"free"}};
+		auto value{lookup != std::end(Info.parameters) ? lookup->value : std::string{}};
+		if (role == "pos.x")
+		{
+			value = number(Location.x);
+		}
+		else if (role == "pos.y")
+		{
+			value = number(Location.y);
+		}
+		else if (role == "pos.z")
+		{
+			value = number(Location.z);
+		}
+		else if (role == "rot.y" && Yaw)
+		{
+			value = number(*Yaw);
+		}
+		else if (role.starts_with("rot.") && value.empty())
+		{
+			value = "0";
+		}
+		else if (role == "name")
+		{
+			// names have to be unique in the scenery. the default value, or the name of the template, makes them recognizable
+			static std::mt19937 engine{std::random_device{}()};
+			char suffix[16];
+			std::snprintf(suffix, sizeof(suffix), "_%08x", static_cast<unsigned int>(engine()));
+			value = (value.empty() ? std::filesystem::path(File).stem().string() : value) + suffix;
+		}
+		if (value.empty())
+		{
+			// a parameter can't be left out, as the ones after it would take its place
+			value = "none";
+		}
+		text += ' ' + (value.find_first_of(" \t;") != std::string::npos ? '\"' + value + '\"' : value);
+	}
+	return text + " end";
+}
+
 } // namespace editor_includes
+
+editorIncludeBank EditorIncludes;
+
+namespace
+{
+
+include_entry examine(std::string const &File)
+{
+	include_entry entry;
+	entry.file = File;
+	entry.statement = std::make_shared<std::string>(editor_includes::directive_mark + File);
+	template_text text;
+	if (false == read_template(File, text, entry.issue))
+	{
+		return entry;
+	}
+	entry.described = false == text.lines.empty();
+	if (false == entry.described)
+	{
+		entry.issue = "the template has no description";
+		return entry;
+	}
+	include_info info;
+	if (false == parse(text, info, entry.issue))
+	{
+		return entry;
+	}
+	entry.name = info.name;
+	entry.category = info.category;
+	entry.complete = editor_includes::complete(info, count_parameters(text), &entry.issue);
+	return entry;
+}
+
+} // namespace
+
+void editorIncludeBank::scan()
+{
+	// the node bank may hold one of the templates selected, the statements stay in place across the scans
+	std::unordered_map<std::string, std::shared_ptr<std::string>> statements;
+	for (auto &entry : m_entries)
+	{
+		statements.emplace(entry.file, entry.statement);
+	}
+	m_entries.clear();
+	m_scanned = true;
+	std::error_code error;
+	auto const root{std::filesystem::path(Global.asCurrentSceneryPath)};
+	// NOTE: on an error the iterator turns into the end one
+	for (std::filesystem::recursive_directory_iterator file{root, std::filesystem::directory_options::skip_permission_denied, error}, end; file != end; file.increment(error))
+	{
+		if (false == file->is_regular_file(error))
+		{
+			continue;
+		}
+		// the scenery refers to its files with lower case names, relative to the scenery directory
+		std::string name;
+		try
+		{
+			name = ToLower(file->path().lexically_relative(root).generic_string());
+		}
+		catch (std::exception const &)
+		{
+			// the name can't be expressed in the encoding the scenery files use, so nothing can include the file anyway
+			continue;
+		}
+		if (false == name.ends_with(".inc"))
+		{
+			continue;
+		}
+		m_entries.emplace_back(examine(name));
+		if (auto const lookup{statements.find(name)}; lookup != statements.end())
+		{
+			m_entries.back().statement = lookup->second;
+		}
+	}
+	std::sort(std::begin(m_entries), std::end(m_entries), [](include_entry const &Left, include_entry const &Right) { return Left.file < Right.file; });
+	index();
+}
+
+void editorIncludeBank::index()
+{
+	m_ready.clear();
+	for (std::size_t idx = 0; idx < m_entries.size(); ++idx)
+	{
+		if (m_entries[idx].complete)
+		{
+			m_ready.emplace_back(idx);
+		}
+	}
+	std::sort(std::begin(m_ready), std::end(m_ready), [this](std::size_t const Left, std::size_t const Right) {
+		auto const &left{m_entries[Left]};
+		auto const &right{m_entries[Right]};
+		return std::tie(left.category, left.name, left.file) < std::tie(right.category, right.name, right.file);
+	});
+	++m_revision;
+}
+
+void editorIncludeBank::update(std::string const &File)
+{
+	auto const lookup{std::find_if(std::begin(m_entries), std::end(m_entries), [&](include_entry const &Entry) { return Entry.file == File; })};
+	if (lookup == std::end(m_entries))
+	{
+		m_entries.insert(std::upper_bound(std::begin(m_entries), std::end(m_entries), File, [](std::string const &Name, include_entry const &Entry) { return Name < Entry.file; }), examine(File));
+	}
+	else
+	{
+		// the node bank may hold the template selected, keep its statement
+		auto const statement{lookup->statement};
+		*lookup = examine(File);
+		lookup->statement = statement;
+	}
+	index();
+}

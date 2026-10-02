@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/application.h"
 #include "editor/editorSettings.hpp"
 #include "editor/editorModelSets.hpp"
+#include "editor/editorIncludeInfo.hpp"
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
@@ -530,7 +531,7 @@ void editor_mode::handle_brush_mouse_hold(int Action, int Button)
 
             // picked only when a placement is due, so a random pick from a set isn't drawn every tick
             const std::string *src = ui()->get_active_node_template();
-            if (!src)
+            if (!src || src->starts_with(editor_includes::directive_mark)) // scenery templates are placed one at a time
                 return;
 
             std::string name = "editor_";
@@ -672,6 +673,15 @@ void editor_mode::undo_last()
     EditorSnapshot snap = m_history.back();
     m_history.pop_back();
 
+    if (snap.instance != 0)
+    {
+        // include of a scenery template was placed or removed; either is taken back by flipping its removal
+        toggle_include(snap.instance);
+        g_redo.push_back(std::move(snap));
+        m_instance = 0;
+        return;
+    }
+
     if (snap.action == EditorSnapshot::Action::Delete)
     {
         // undo delete -> recreate model
@@ -753,6 +763,14 @@ void editor_mode::redo_last()
 
     EditorSnapshot snap = g_redo.back();
     g_redo.pop_back();
+
+    if (snap.instance != 0)
+    {
+        toggle_include(snap.instance);
+        m_history.push_back(std::move(snap));
+        m_instance = 0;
+        return;
+    }
 
     // handle delete redo (re-delete) separately
     if (snap.action == EditorSnapshot::Action::Delete)
@@ -905,6 +923,10 @@ bool editor_mode::update()
         m_node = nullptr;
         m_dragging = false;
         ui()->set_node(nullptr);
+    }
+    if (m_instance != 0 && false == scene::Layers.removable(m_instance))
+    {
+        m_instance = 0;
     }
 
     simulation::Region->update_sounds();
@@ -1578,6 +1600,82 @@ void editor_mode::save()
     WriteLog("Editor: " + result.message, logtype::generic);
 }
 
+void editor_mode::toggle_include(scene::instance_handle const Instance)
+{
+    if (false == scene::Layers.tracked(Instance))
+        return;
+    auto const &included = scene::Layers.instance(Instance);
+    if (included.dead)
+    {
+        // its directive is gone from the scenery file, and the place it was at with it
+        ui()->set_status("Include of \"" + *included.file + "\" was removed from the saved scenery, this can't be taken back.", true);
+        return;
+    }
+    scene::Layers.removed(Instance, false == included.removed);
+    ui()->set_status("Include of \"" + *included.file + "\" " + (included.removed ? "removed." : "restored."));
+}
+
+void editor_mode::place_include(std::string const &File, int const RotationMode, float const FixedRotation)
+{
+    if (scene::Layers.empty())
+    {
+        // the directive has to go to a scenery file, and without the sources tracked there's no telling which
+        ui()->set_status("Scenery templates can be placed only in a scenery opened for editing (-edit).", true);
+        WriteLog("Editor: scenery templates can be placed only in a scenery opened for editing (-edit)", logtype::generic);
+        return;
+    }
+    include_info info;
+    std::string issue;
+    auto const parameters = editor_includes::parameter_count(File);
+    if (false == editor_includes::load(File, info, issue) || false == editor_includes::complete(info, parameters, &issue))
+    {
+        ui()->set_status("Template \"" + File + "\" can't be placed: " + issue, true);
+        return;
+    }
+
+    // the directive is written at the end of the file of the active layer, and has to make sense with the placement in effect there
+    auto const layer = scene::Layers.resolve(scene::Layers.active());
+    if (std::string reason; false == scene::Layers.valid(layer) || scene::Layers.layer(layer).removed || false == scene::Layers.writable(layer, &reason))
+    {
+        ui()->set_status("Template \"" + File + "\" can't be placed: " + (reason.empty() ? "there's no active layer to put it in" : "the active layer can't be saved, " + reason), true);
+        return;
+    }
+    auto const context = scene::Layers.layer(layer).context_end;
+    if (context.rotation != glm::vec3{0.f} || context.scale != glm::vec3{1.f})
+    {
+        // a template can pass its parameters to an origin directive, which isn't affected by these, or straight to
+        // the nodes, which are. there's no single set of parameter values which puts both at the cursor
+        ui()->set_status("Template \"" + File + "\" can't be placed: the file of the active layer ends with a rotation or a scale in effect. Pick another layer.", true);
+        return;
+    }
+    glm::dvec3 const location = Camera.Pos + clamp_mouse_offset_to_max(GfxRenderer->Mouse_Position());
+    std::optional<float> yaw;
+    if (RotationMode == functions_panel::RANDOM)
+        yaw = static_cast<float>(LocalRandom(0.0, 360.0));
+    else if (RotationMode == functions_panel::FIXED)
+        yaw = FixedRotation;
+
+    auto const directive = editor_includes::directive(File, info, parameters, context.to_local(location), yaw);
+    auto const instance = scene::Layers.place(layer, File, directive);
+    if (instance == 0)
+    {
+        ui()->set_status("Template \"" + File + "\" can't be placed in the active layer.", true);
+        return;
+    }
+    // show the models of the template right away. the rest of it comes into play when the saved scenery is loaded
+    auto const preview = simulation::State.preview_include(directive, context, layer, instance);
+
+    EditorSnapshot snap;
+    snap.instance = instance;
+    snap.node_name = File;
+    m_history.push_back(std::move(snap));
+    g_redo.clear();
+
+    ui()->set_status(
+        "\"" + info.name + "\" placed in layer \"" + scene::Layers.layer(layer).name + "\": " + std::to_string(preview.first) + " model(s) shown"
+        + (preview.second > 0 ? ", " + std::to_string(preview.second) + " other statement(s) of the template take effect once the scenery is saved and loaded again." : "."));
+}
+
 void editor_mode::export_scenery()
 {
     // hiding a layer clears the visibility flag of its nodes, and the flag is a part of exported node data.
@@ -2196,6 +2294,7 @@ void editor_mode::exit()
 
     // drop selection so a stale/dangling node pointer isn't used on the next editor session
     m_node = nullptr;
+    m_instance = 0;
     m_gizmo_using = false;
     ui()->set_node(nullptr);
 
@@ -2291,6 +2390,19 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         break;
 
     case GLFW_KEY_DELETE:
+        if (is_press(Action) && m_instance != 0)
+        {
+            // include of a scenery template. what it shows goes out of sight, the directive is erased on save
+            scene::Layers.removed(m_instance, true);
+            EditorSnapshot snap;
+            snap.instance = m_instance;
+            snap.node_name = *scene::Layers.instance(m_instance).file;
+            m_history.push_back(std::move(snap));
+            g_redo.clear();
+            ui()->set_status("Include of \"" + *scene::Layers.instance(m_instance).file + "\" removed, Ctrl+Z brings it back. Its directive is erased when the scenery is saved.");
+            m_instance = 0;
+            break;
+        }
         if (is_press(Action))
         {
             TAnimModel *model = dynamic_cast<TAnimModel *>(m_node);
@@ -2414,13 +2526,25 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                         return;
 
                     m_node = nullptr;
+                    m_instance = 0;
 
-                    // in a scenery opened for editing some nodes are off limits: the ones in locked layers,
-                    // and the ones whose definitions can't be rewritten on save
-                    if (std::string reason; node && false == scene::Layers.editable(node, &reason))
+                    // in a scenery opened for editing selection has its limits. nodes of locked layers are off limits.
+                    // nodes defined by a scenery template can't be rewritten one by one on save, so a click on one
+                    // selects the include of the template as a whole
+                    if (node && mode == nodebank_panel::MODIFY)
                     {
-                        ui()->set_status("\"" + (node->name().empty() ? std::string{"(unnamed node)"} : node->name()) + "\" can't be edited: " + reason, true);
-                        node = nullptr;
+                        std::string reason;
+                        if (node->from_template() && scene::Layers.removable(node->m_instance, &reason))
+                        {
+                            m_instance = node->m_instance;
+                            ui()->set_status("Include of \"" + *scene::Layers.instance(m_instance).file + "\" selected. Del removes it from the scenery.");
+                            node = nullptr;
+                        }
+                        else if (node->from_template() || false == scene::Layers.editable(node, &reason))
+                        {
+                            ui()->set_status("\"" + (node->name().empty() ? std::string{"(unnamed node)"} : node->name()) + "\" can't be edited: " + reason, true);
+                            node = nullptr;
+                        }
                     }
 
                     // ignore picks that are beyond allowed placement distance
@@ -2450,6 +2574,13 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                         const std::string *src = ui()->get_active_node_template();
                         if (!src)
                             return;
+
+                        if (src->starts_with(editor_includes::directive_mark))
+                        {
+                            // a scenery template rather than a single node
+                            place_include(src->substr(editor_includes::directive_mark.size()), rotation_mode, fixed_rotation_value);
+                            return;
+                        }
 
                         std::string name = "editor_";
                         glm::dvec3 mouseOffset = clamp_mouse_offset_to_max(GfxRenderer->Mouse_Position());

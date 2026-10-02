@@ -114,6 +114,8 @@ void node_layers::clear()
 	m_sources.clear();
 	m_erased.clear();
 	m_templates.clear();
+	m_instances.clear();
+	m_instance = 0;
 	m_terraindirective = false;
 }
 
@@ -208,7 +210,8 @@ void node_layers::visible(layer_handle Layer, bool const Visible)
 		}
 		if (Visible)
 		{
-			if (Node->m_layerhidden)
+			// nodes of a removed include stay out of sight
+			if (Node->m_layerhidden && (false == tracked(Node->m_instance) || false == instance(Node->m_instance).removed))
 			{
 				Node->visible(true);
 				Node->m_layerhidden = false;
@@ -296,7 +299,7 @@ bool node_layers::editable(basic_node const *Node, std::string *Reason) const
 		return true;
 	}
 	std::string reason;
-	if (Node->m_template)
+	if (Node->from_template())
 	{
 		reason = "it's a part of an include template (.inc)";
 	}
@@ -361,7 +364,7 @@ void node_layers::show_all()
 // stores origin of a node defined directly in a layer file, to allow rewriting its definition on save
 void node_layers::track(basic_node const *Node, source_span const &Span, glm::vec3 const &Angles, glm::vec3 const &Scale)
 {
-	if (Node == nullptr || Node->m_template || false == valid(Node->layer()) || false == Span.valid())
+	if (Node == nullptr || Node->from_template() || false == valid(Node->layer()) || false == Span.valid())
 	{
 		return;
 	}
@@ -606,6 +609,18 @@ bool node_layers::can_merge(layer_handle Source, layer_handle Target, std::strin
 		Reason = "the target layer is included by the merged one";
 		return false;
 	}
+	if (false == source.context_end.matches(target.context_end))
+	{
+		// directives of includes placed in the editor are prepared for the end of their layer file
+		auto const unsaved{std::any_of(std::begin(m_instances), std::end(m_instances), [&](include_instance const &Instance) {
+			return false == Instance.dead && false == Instance.removed && false == Instance.directive.empty() && resolve(Instance.layer) == Source;
+		})};
+		if (unsaved)
+		{
+			Reason = "the merged layer has includes which weren't saved yet, save the scenery first";
+			return false;
+		}
+	}
 	if (source.created)
 	{
 		// nothing but the nodes made in the editor to move
@@ -665,6 +680,115 @@ bool node_layers::merge(layer_handle Source, layer_handle Target)
 bool node_layers::pending() const
 {
 	return std::any_of(std::begin(m_layers), std::end(m_layers), [](basic_layer const &Layer) { return false == Layer.dead && (Layer.created || Layer.removed || Layer.merged != null_handle); });
+}
+
+// indicates start of content of a template, included by directive at specified location of the layer file being loaded
+void node_layers::instance_begin(std::string const &File, source_span const &Span)
+{
+	if (m_instances.size() + 1 >= untracked_instance)
+	{
+		m_instance = untracked_instance;
+		return;
+	}
+	m_instances.emplace_back();
+	auto &included{m_instances.back()};
+	included.layer = handle();
+	included.file = &(*m_templates.emplace(File).first);
+	included.span = Span;
+	m_instance = static_cast<instance_handle>(m_instances.size());
+}
+
+// true if specified include can be removed in the editor. optionally explains why it can't
+bool node_layers::removable(instance_handle Instance, std::string *Reason) const
+{
+	std::string reason;
+	if (false == tracked(Instance) || instance(Instance).dead)
+	{
+		reason = "it's a part of an include template (.inc)";
+	}
+	else
+	{
+		auto const includelayer{resolve(instance(Instance).layer)};
+		if (false == valid(includelayer) || layer(includelayer).removed)
+		{
+			reason = "its layer is no longer a part of the scenery";
+		}
+		else if (false == writable(includelayer, &reason))
+		{
+			// reason was filled by the call
+		}
+		else if (layer(includelayer).locked)
+		{
+			reason = "its layer is locked";
+		}
+	}
+	if (false == reason.empty() && Reason != nullptr)
+	{
+		*Reason = reason;
+	}
+	return reason.empty();
+}
+
+// drops specified include from the scenery, or brings it back
+void node_layers::removed(instance_handle Instance, bool Removed)
+{
+	if (false == tracked(Instance) || m_instances[Instance - 1].dead || m_instances[Instance - 1].removed == Removed)
+	{
+		return;
+	}
+	m_instances[Instance - 1].removed = Removed;
+
+	auto const includelayer{resolve(m_instances[Instance - 1].layer)};
+	auto const layervisible{false == valid(includelayer) || layer(includelayer).visible};
+	auto const update_node = [=, this](basic_node *Node, layer_item const Item) {
+		if (Node == nullptr || Node->m_instance != Instance)
+		{
+			return;
+		}
+		count(Node->layer(), Item, Removed ? -1 : 1);
+		if (Removed)
+		{
+			if (Node->visible())
+			{
+				Node->visible(false);
+				Node->m_layerhidden = true;
+			}
+		}
+		else if (Node->m_layerhidden && layervisible)
+		{
+			Node->visible(true);
+			Node->m_layerhidden = false;
+		}
+	};
+	for (auto *modelinstance : simulation::Instances.sequence())
+	{
+		update_node(modelinstance, layer_item::model);
+	}
+	for (auto *path : simulation::Paths.sequence())
+	{
+		update_node(path, layer_item::track);
+	}
+	for (auto *traction : simulation::Traction.sequence())
+	{
+		update_node(traction, layer_item::traction);
+	}
+}
+
+// registers include directive made in the editor, to be written to the file of specified layer on save
+instance_handle node_layers::place(layer_handle Layer, std::string const &File, std::string const &Directive)
+{
+	Layer = resolve(Layer);
+	if (false == valid(Layer) || m_instances.size() + 1 >= untracked_instance)
+	{
+		return 0;
+	}
+	m_instances.emplace_back();
+	auto &included{m_instances.back()};
+	included.layer = Layer;
+	included.file = &(*m_templates.emplace(File).first);
+	included.directive = Directive;
+	included.context = layer(Layer).context_end;
+	return static_cast<instance_handle>(m_instances.size());
 }
 
 } // namespace scene

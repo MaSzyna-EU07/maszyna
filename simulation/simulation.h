@@ -43,6 +43,9 @@ public:
 	// create eventlauncher from node string
 	TEventLauncher *
 	    create_eventlauncher(const std::string &src, const std::string &name, const glm::dvec3 &position);
+	// creates model instances defined by an include directive placed in the scenery editor
+	std::pair<int, int>
+	    preview_include(std::string const &Directive, scene::layer_context const &Context, scene::layer_handle Layer, scene::instance_handle Instance);
 	// delete TAnimModel instance
 	void
 	    delete_model(TAnimModel *model);

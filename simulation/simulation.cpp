@@ -493,6 +493,10 @@ TEventLauncher * state_manager::create_eventlauncher(const std::string &src, con
 	return m_serializer.create_eventlauncher(src, name, position);
 }
 
+std::pair<int, int> state_manager::preview_include(std::string const &Directive, scene::layer_context const &Context, scene::layer_handle Layer, scene::instance_handle Instance) {
+	return m_serializer.preview_include(Directive, Context, Layer, Instance);
+}
+
 void state_manager::delete_model(TAnimModel *model) {
 	scene::Layers.count(model->layer(), scene::layer_item::model, -1);
 	scene::Layers.forget(model);

@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenenode.h"
 
 #include <filesystem>
+#include <limits>
 #include <set>
 
 namespace scene
@@ -92,6 +93,21 @@ struct basic_layer
 
 	std::size_t item_count() const;
 };
+
+// include directive bringing an *.inc template into a scenery layer file
+struct include_instance
+{
+	layer_handle layer{null_handle}; // layer of the file holding the directive
+	std::string const *file{nullptr}; // name of the included template
+	source_span span; // location of the whole directive in the file; invalid for directive which wasn't saved yet
+	std::string directive; // text of the directive, for include placed in the editor and not saved yet
+	layer_context context; // placement the directive of include placed in the editor was prepared for
+	bool removed{false}; // the include is to be dropped from the scenery
+	bool dead{false}; // removal of the include was saved
+};
+
+// marks nodes defined by a template which was included in a way the editor doesn't keep track of
+instance_handle const untracked_instance{std::numeric_limits<instance_handle>::max()};
 
 // origin of a node defined in a scenery layer file, with the placement it was loaded with
 struct node_source
@@ -197,6 +213,18 @@ class node_layers
 	{
 		return m_templates;
 	}
+	// indicates start of content of a template, included by directive at specified location of the layer file being loaded
+	void instance_begin(std::string const &File, source_span const &Span);
+	// indicates end of content of the template
+	void instance_end()
+	{
+		m_instance = 0;
+	}
+	// include whose template is being loaded, 0 if there's none
+	instance_handle instance() const
+	{
+		return m_instance;
+	}
 	// updates placement in effect for the statements which follow
 	void context(layer_context const &Context)
 	{
@@ -229,6 +257,26 @@ class node_layers
 	bool merge(layer_handle Source, layer_handle Target);
 	// true if there are layer changes awaiting save. NOTE: doesn't account for modified nodes
 	bool pending() const;
+
+	// includes of *.inc templates. the editor handles each as a whole: it can be placed and removed, but not taken apart
+	// true if specified handle stands for an include the editor keeps track of
+	bool tracked(instance_handle const Instance) const
+	{
+		return Instance != 0 && Instance <= m_instances.size();
+	}
+	// grants access to specified include. NOTE: the include has to be tracked
+	include_instance const &instance(instance_handle const Instance) const
+	{
+		return m_instances[Instance - 1];
+	}
+	// true if specified include can be removed in the editor. optionally explains why it can't
+	bool removable(instance_handle Instance, std::string *Reason = nullptr) const;
+	// drops specified include from the scenery, or brings it back. its nodes are hidden right away, the directive
+	// is erased from the layer file on save; what else the template defines stays in the scene until the next load
+	void removed(instance_handle Instance, bool Removed);
+	// registers include directive made in the editor, to be written to the file of specified layer on save.
+	// the directive has to be prepared for the placement in effect at the end of that file. returns: handle to the include
+	instance_handle place(layer_handle Layer, std::string const &File, std::string const &Directive);
 	// true if specified layer is included, directly or not, by the other one
 	bool is_descendant(layer_handle Layer, layer_handle const Ancestor) const;
 
@@ -254,6 +302,8 @@ class node_layers
 	std::unordered_map<basic_node const *, node_source> m_sources; // origins of nodes which can be rewritten on save
 	std::vector<std::pair<layer_handle, source_span>> m_erased; // definitions of nodes deleted since the load or the last save
 	std::set<std::string> m_templates; // *.inc templates used by the scenery
+	std::vector<include_instance> m_instances; // includes of the templates; instance handle is index in the vector + 1
+	instance_handle m_instance{0}; // helper, include whose template is being loaded
 	bool m_terraindirective{false};
 };
 
