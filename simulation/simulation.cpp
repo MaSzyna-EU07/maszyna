@@ -495,6 +495,7 @@ TEventLauncher * state_manager::create_eventlauncher(const std::string &src, con
 
 void state_manager::delete_model(TAnimModel *model) {
 	scene::Layers.count(model->layer(), scene::layer_item::model, -1);
+	scene::Layers.forget(model);
 	Region->erase(model);
 	Instances.purge(model);
 }

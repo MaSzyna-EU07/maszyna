@@ -14,22 +14,44 @@ http://mozilla.org/MPL/2.0/.
 #include "model/AnimModel.h"
 #include "world/Track.h"
 #include "world/Traction.h"
+#include "utilities/Globals.h"
+#include "utilities/utilities.h"
+
+#include <functional>
 
 namespace scene
 {
 
 node_layers Layers;
 
+// converts world space location to the one which produces it when loaded with this context in effect
+glm::dvec3 layer_context::to_local(glm::dvec3 Location) const
+{
+	// reverse of the transformation done by the scenery loader: rotation around the vertical axis, then scale, then offset
+	Location -= offset;
+	Location /= glm::dvec3{scale};
+	if (rotation != glm::vec3{0.f})
+	{
+		Location = glm::rotateY<double>(Location, -glm::radians(static_cast<double>(rotation.y)));
+	}
+	return Location;
+}
+
+bool layer_context::matches(layer_context const &Other) const
+{
+	return glm::all(glm::epsilonEqual(offset, Other.offset, 1e-4)) && glm::all(glm::epsilonEqual(rotation, Other.rotation, 1e-4f)) && glm::all(glm::epsilonEqual(scale, Other.scale, 1e-5f));
+}
+
 std::size_t basic_layer::item_count() const
 {
 	return std::accumulate(std::begin(items), std::end(items), std::size_t{0});
 }
 
-// indicates start of content of specified scenery file. returns: handle to the layer of the file
+// indicates start of content of the scenario file. returns: handle to its layer
 layer_handle node_layers::open(std::string const &Name)
 {
 	// the same file can be included more than once, all its content goes to a single layer then
-	auto const lookup{std::find_if(std::begin(m_layers), std::end(m_layers), [&](basic_layer const &Layer) { return Layer.name == Name; })};
+	auto const lookup{std::find_if(std::begin(m_layers), std::end(m_layers), [&](basic_layer const &Layer) { return Layer.name == Name && false == Layer.dead; })};
 	auto layerhandle{static_cast<layer_handle>(std::distance(std::begin(m_layers), lookup) + 1)};
 	if (lookup == std::end(m_layers))
 	{
@@ -38,6 +60,7 @@ layer_handle node_layers::open(std::string const &Name)
 			m_layers.emplace_back();
 			m_layers.back().name = Name;
 			m_layers.back().parent = handle();
+			stat(layerhandle);
 		}
 		else
 		{
@@ -45,9 +68,25 @@ layer_handle node_layers::open(std::string const &Name)
 			layerhandle = handle();
 		}
 	}
+	if (valid(layerhandle) && layerhandle != handle())
+	{
+		layer(layerhandle).context_begin = m_context;
+	}
 	// NOTE: the stack receives an entry even if the layer wasn't created, to keep it in sync with close() calls
 	m_stack.emplace_back(layerhandle);
 
+	return layerhandle;
+}
+
+// indicates start of content of specified scenery file, included by specified directive. returns: handle to the layer of the file
+layer_handle node_layers::open(std::string const &Name, include_site Site)
+{
+	Site.parent = handle();
+	auto const layerhandle{open(Name)};
+	if (valid(layerhandle) && layerhandle != Site.parent)
+	{
+		layer(layerhandle).sites.emplace_back(Site);
+	}
 	return layerhandle;
 }
 
@@ -56,7 +95,12 @@ layer_handle node_layers::close()
 {
 	if (false == m_stack.empty())
 	{
+		auto const closing{m_stack.back()};
 		m_stack.pop_back();
+		if (valid(closing) && closing != handle())
+		{
+			layer(closing).context_end = m_context;
+		}
 	}
 	return handle();
 }
@@ -66,22 +110,59 @@ void node_layers::clear()
 	m_layers.clear();
 	m_stack.clear();
 	m_active = null_handle;
+	m_context = layer_context();
+	m_sources.clear();
+	m_erased.clear();
+	m_templates.clear();
+	m_terraindirective = false;
+}
+
+// follows layer merges. returns: handle of the layer which currently holds content of specified layer
+layer_handle node_layers::resolve(layer_handle Layer) const
+{
+	// NOTE: merge() rules out cycles, the counter is only a safeguard
+	for (auto hops = 0; hops < 64 && valid(Layer) && layer(Layer).merged != null_handle; ++hops)
+	{
+		Layer = layer(Layer).merged;
+	}
+	return Layer;
 }
 
 int node_layers::depth(layer_handle Layer) const
 {
 	auto depth{0};
-	// NOTE: parent is always created before its children, which rules out cycles
-	while (valid(Layer) && layer(Layer).parent != null_handle && layer(Layer).parent < Layer)
+	Layer = resolve(Layer);
+	while (valid(Layer) && layer(Layer).parent != null_handle && depth < 64)
 	{
-		Layer = layer(Layer).parent;
+		Layer = resolve(layer(Layer).parent);
 		++depth;
 	}
 	return depth;
 }
 
-void node_layers::count(layer_handle const Layer, layer_item const Item, int const Change)
+std::vector<layer_handle> node_layers::tree() const
 {
+	std::vector<layer_handle> order;
+	order.reserve(m_layers.size());
+	// NOTE: the layers are few, plain scans do
+	std::function<void(layer_handle)> const add = [&](layer_handle const Parent) {
+		for (std::size_t idx = 0; idx < m_layers.size(); ++idx)
+		{
+			auto const candidate{static_cast<layer_handle>(idx + 1)};
+			if (listed(candidate) && resolve(layer(candidate).parent) == Parent && order.size() < m_layers.size())
+			{
+				order.emplace_back(candidate);
+				add(candidate);
+			}
+		}
+	};
+	add(null_handle);
+	return order;
+}
+
+void node_layers::count(layer_handle Layer, layer_item const Item, int const Change)
+{
+	Layer = resolve(Layer);
 	if (false == valid(Layer))
 	{
 		return;
@@ -97,9 +178,10 @@ void node_layers::count(layer_handle const Layer, layer_item const Item, int con
 	}
 }
 
-void node_layers::active(layer_handle const Layer)
+void node_layers::active(layer_handle Layer)
 {
-	if (false == valid(Layer))
+	Layer = resolve(Layer);
+	if (false == valid(Layer) || layer(Layer).removed || false == writable(Layer))
 	{
 		return;
 	}
@@ -110,16 +192,17 @@ void node_layers::active(layer_handle const Layer)
 }
 
 // shows or hides nodes of specified layer. visibility defined in the scenery is preserved, hidden layer only overrides it
-void node_layers::visible(layer_handle const Layer, bool const Visible)
+void node_layers::visible(layer_handle Layer, bool const Visible)
 {
+	Layer = resolve(Layer);
 	if (false == valid(Layer) || layer(Layer).visible == Visible)
 	{
 		return;
 	}
 	layer(Layer).visible = Visible;
 
-	auto const update_node = [Layer, Visible](basic_node *Node) {
-		if (Node == nullptr || Node->layer() != Layer)
+	auto const update_node = [this, Layer, Visible](basic_node *Node) {
+		if (Node == nullptr || resolve(Node->layer()) != Layer)
 		{
 			return;
 		}
@@ -153,19 +236,101 @@ void node_layers::visible(layer_handle const Layer, bool const Visible)
 	}
 }
 
-void node_layers::locked(layer_handle const Layer, bool const Locked)
+void node_layers::locked(layer_handle Layer, bool const Locked)
 {
+	Layer = resolve(Layer);
 	if (valid(Layer))
 	{
 		layer(Layer).locked = Locked;
 	}
 }
 
-// true if nodes of specified layer can be selected and modified in the editor
-bool node_layers::editable(layer_handle const Layer) const
+// true if the file of specified layer can be rewritten with changed nodes. optionally explains why it can't
+bool node_layers::writable(layer_handle Layer, std::string *Reason) const
 {
+	Layer = resolve(Layer);
+	if (false == valid(Layer))
+	{
+		return false;
+	}
+	auto const &target{layer(Layer)};
+	char const *reason{nullptr};
+	if (target.binary)
+	{
+		reason = "the file is loaded from binary terrain cache";
+	}
+	else if (target.sites.size() > 1)
+	{
+		// one definition yields several nodes, there's no telling which of them should be written back
+		reason = "the file is included more than once";
+	}
+	else if (false == target.sites.empty() && target.sites.front().parameters)
+	{
+		reason = "the file is included with parameters";
+	}
+	if (reason != nullptr && Reason != nullptr)
+	{
+		*Reason = reason;
+	}
+	return reason == nullptr;
+}
+
+// true if nodes of specified layer can be selected and modified in the editor
+bool node_layers::editable(layer_handle Layer) const
+{
+	Layer = resolve(Layer);
 	// nodes without a layer (regular load, or created by the simulation) aren't restricted
-	return false == valid(Layer) || (layer(Layer).visible && false == layer(Layer).locked);
+	return false == valid(Layer) || (layer(Layer).visible && false == layer(Layer).locked && false == layer(Layer).removed && writable(Layer));
+}
+
+// true if specified node can be selected and modified in the editor. optionally explains why it can't
+bool node_layers::editable(basic_node const *Node, std::string *Reason) const
+{
+	if (Node == nullptr)
+	{
+		return false;
+	}
+	auto const nodelayer{resolve(Node->layer())};
+	if (false == valid(nodelayer))
+	{
+		return true;
+	}
+	std::string reason;
+	if (Node->m_template)
+	{
+		reason = "it's a part of an include template (.inc)";
+	}
+	else if (false == writable(nodelayer, &reason))
+	{
+		// reason was filled by the call
+	}
+	else if (layer(nodelayer).locked)
+	{
+		reason = "its layer is locked";
+	}
+	else if (false == layer(nodelayer).visible || layer(nodelayer).removed)
+	{
+		reason = "its layer is hidden";
+	}
+	if (false == reason.empty() && Reason != nullptr)
+	{
+		*Reason = reason;
+	}
+	return reason.empty();
+}
+
+// moves specified node to specified layer
+void node_layers::move(basic_node *Node, layer_handle Layer)
+{
+	Layer = resolve(Layer);
+	if (Node == nullptr || false == valid(Layer) || resolve(Node->layer()) == Layer)
+	{
+		return;
+	}
+	// NOTE: the only nodes the editor creates and moves between layers are model instances
+	count(Node->layer(), layer_item::model, -1);
+	Node->layer(Layer);
+	count(Layer, layer_item::model, 1);
 }
 
 std::vector<layer_handle> node_layers::hidden() const
@@ -185,8 +350,321 @@ void node_layers::show_all()
 {
 	for (auto const hiddenlayer : hidden())
 	{
-		visible(hiddenlayer, true);
+		// layers dropped from the scenery stay out of sight
+		if (false == layer(hiddenlayer).removed)
+		{
+			visible(hiddenlayer, true);
+		}
 	}
+}
+
+// stores origin of a node defined directly in a layer file, to allow rewriting its definition on save
+void node_layers::track(basic_node const *Node, source_span const &Span, glm::vec3 const &Angles, glm::vec3 const &Scale)
+{
+	if (Node == nullptr || Node->m_template || false == valid(Node->layer()) || false == Span.valid())
+	{
+		return;
+	}
+	m_sources[Node] = {Node->layer(), Span, m_context, Node->location(), Angles, Scale};
+}
+
+// indicates specified node was removed from the scene
+void node_layers::forget(basic_node const *Node)
+{
+	auto const lookup{m_sources.find(Node)};
+	if (lookup == m_sources.end())
+	{
+		return;
+	}
+	m_erased.emplace_back(lookup->second.layer, lookup->second.span);
+	m_sources.erase(lookup);
+}
+
+bool node_layers::is_descendant(layer_handle Layer, layer_handle const Ancestor) const
+{
+	// NOTE: content of a merged layer, includes of other files among it, belongs to the layer it was merged into
+	for (auto hops = 0; hops < 64 && valid(Layer); ++hops)
+	{
+		Layer = resolve(layer(Layer).parent);
+		if (Layer == Ancestor)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+std::string node_layers::path(layer_handle const Layer) const
+{
+	return Global.asCurrentSceneryPath + layer(Layer).name;
+}
+
+// stores current state of the layer file, to detect later whether it was changed behind our back
+void node_layers::stat(layer_handle const Layer)
+{
+	std::error_code error;
+	auto const filepath{std::filesystem::path(path(Layer))};
+	auto const filesize{std::filesystem::file_size(filepath, error)};
+	layer(Layer).filesize = error ? 0 : filesize;
+	auto const filetime{std::filesystem::last_write_time(filepath, error)};
+	layer(Layer).filetime = error ? std::filesystem::file_time_type{} : filetime;
+}
+
+// creates empty layer, included from specified one. returns: handle to the new layer, or null_handle with the explanation in Reason
+layer_handle node_layers::create(std::string Name, layer_handle Parent, std::string &Reason)
+{
+	Parent = resolve(Parent);
+	if (false == valid(Parent) || layer(Parent).removed || layer(Parent).binary)
+	{
+		Reason = "the parent layer can't include other files";
+		return null_handle;
+	}
+	// file names in the scenery are processed in lower case, with forward slashes
+	Name = ToLower(Name);
+	replace_slashes(Name);
+	Name.erase(0, Name.find_first_not_of(" \t"));
+	Name.erase(Name.find_last_not_of(" \t") + 1);
+	if (Name.empty())
+	{
+		Reason = "the layer needs a file name";
+		return null_handle;
+	}
+	if (Name.find_first_of(" \t\";:*?<>|") != std::string::npos || Name.front() == '/' || Name.back() == '/' || contains(Name, ".."))
+	{
+		Reason = "the file name has to be a plain path inside the scenery directory, without spaces";
+		return null_handle;
+	}
+	if (std::filesystem::path(Name).extension().empty())
+	{
+		Name += ".scm";
+	}
+	if (Name.ends_with(".inc"))
+	{
+		Reason = ".inc files are include templates, not layers";
+		return null_handle;
+	}
+	if (m_layers.size() >= static_cast<std::size_t>(std::numeric_limits<layer_handle>::max()))
+	{
+		Reason = "too many layers";
+		return null_handle;
+	}
+	auto const taken{std::any_of(std::begin(m_layers), std::end(m_layers), [&](basic_layer const &Layer) { return Layer.name == Name && false == Layer.dead; })};
+	if (taken || FileExists(Global.asCurrentSceneryPath + Name))
+	{
+		Reason = "the file \"" + Name + "\" already exists";
+		return null_handle;
+	}
+
+	// the include directive goes after the last file included by the parent, so the scenery files stay ahead of
+	// what may follow them in a scenario, like the vehicles
+	auto anchor{null_handle};
+	std::streamoff anchorend{-1};
+	for (std::size_t idx = 0; idx < m_layers.size(); ++idx)
+	{
+		auto const &sibling{m_layers[idx]};
+		if (sibling.dead || sibling.created || sibling.sites.size() != 1)
+		{
+			continue;
+		}
+		auto const &site{sibling.sites.front()};
+		if (site.parent == Parent && false == site.fixed && site.span.end > anchorend)
+		{
+			anchor = static_cast<layer_handle>(idx + 1);
+			anchorend = site.span.end;
+		}
+	}
+
+	m_layers.emplace_back();
+	auto const layerhandle{static_cast<layer_handle>(m_layers.size())};
+	auto &created{m_layers.back()};
+	created.name = Name;
+	created.parent = Parent;
+	created.created = true;
+	created.editormade = true;
+	created.anchor = anchor;
+	// placement the new file is going to be loaded with
+	created.context_begin = valid(anchor) ? layer(anchor).context_end : layer(Parent).context_end;
+	created.context_end = created.context_begin;
+
+	active(layerhandle);
+
+	return layerhandle;
+}
+
+bool node_layers::can_remove(layer_handle Layer, std::string &Reason) const
+{
+	if (false == listed(Layer) || layer(Layer).removed)
+	{
+		Reason = "no such layer";
+		return false;
+	}
+	auto const &target{layer(Layer)};
+	if (target.created)
+	{
+		return true;
+	}
+	if (target.sites.empty())
+	{
+		Reason = "the scenario file can't be removed";
+		return false;
+	}
+	if (target.binary)
+	{
+		Reason = "the file is loaded from binary terrain cache";
+		return false;
+	}
+	if (target.sites.size() > 1)
+	{
+		Reason = "the file is included more than once";
+		return false;
+	}
+	if (target.sites.front().fixed)
+	{
+		Reason = "the file is included by an include template (.inc)";
+		return false;
+	}
+	return true;
+}
+
+// marks specified layer and the layers it includes as dropped from the scenery. their files are left on the disk
+bool node_layers::remove(layer_handle Layer)
+{
+	std::string reason;
+	if (false == can_remove(Layer, reason))
+	{
+		return false;
+	}
+	for (std::size_t idx = 0; idx < m_layers.size(); ++idx)
+	{
+		auto const candidate{static_cast<layer_handle>(idx + 1)};
+		// layers merged elsewhere keep going, their content is no longer a part of the removed file
+		if (false == listed(candidate) || (candidate != Layer && false == is_descendant(candidate, Layer)))
+		{
+			continue;
+		}
+		visible(candidate, false);
+		layer(candidate).removed = true;
+		if (m_active == candidate)
+		{
+			m_active = null_handle;
+		}
+	}
+	if (m_active == null_handle)
+	{
+		// fall back on the scenario file, which is always there
+		active(1);
+	}
+	return true;
+}
+
+// takes back remove() which wasn't saved yet
+void node_layers::restore(layer_handle Layer)
+{
+	if (false == valid(Layer) || false == layer(Layer).removed || layer(Layer).dead)
+	{
+		return;
+	}
+	// a layer can't be brought back without the file which includes it
+	auto const parent{resolve(layer(Layer).parent)};
+	if (valid(parent) && layer(parent).removed)
+	{
+		restore(parent);
+	}
+	for (std::size_t idx = 0; idx < m_layers.size(); ++idx)
+	{
+		auto const candidate{static_cast<layer_handle>(idx + 1)};
+		if (false == listed(candidate) || (candidate != Layer && false == is_descendant(candidate, Layer)))
+		{
+			continue;
+		}
+		layer(candidate).removed = false;
+		visible(candidate, true);
+	}
+}
+
+bool node_layers::can_merge(layer_handle Source, layer_handle Target, std::string &Reason) const
+{
+	if (false == listed(Source) || false == listed(Target) || layer(Source).removed || layer(Target).removed)
+	{
+		Reason = "no such layer";
+		return false;
+	}
+	if (Source == Target)
+	{
+		Reason = "pick another layer to merge into";
+		return false;
+	}
+	auto const &source{layer(Source)};
+	auto const &target{layer(Target)};
+	if (false == writable(Target, &Reason))
+	{
+		return false;
+	}
+	if (is_descendant(Target, Source))
+	{
+		// the merged text would include the file it was put in
+		Reason = "the target layer is included by the merged one";
+		return false;
+	}
+	if (source.created)
+	{
+		// nothing but the nodes made in the editor to move
+		return true;
+	}
+	if (source.sites.empty())
+	{
+		Reason = "the scenario file can't be merged into another layer";
+		return false;
+	}
+	if (false == writable(Source, &Reason))
+	{
+		return false;
+	}
+	if (source.sites.front().fixed)
+	{
+		Reason = "the file is included by an include template (.inc)";
+		return false;
+	}
+	if (resolve(source.sites.front().parent) != Target)
+	{
+		// the text is moved to the end of another file. its statements have to keep their meaning there,
+		// and can't leave anything behind for what used to follow it
+		if (false == source.context_begin.matches(target.context_end) || false == source.context_end.matches(source.context_begin))
+		{
+			Reason = "the layers are loaded with different origin, rotation or scale";
+			return false;
+		}
+	}
+	return true;
+}
+
+// moves content of the source layer to the target layer
+bool node_layers::merge(layer_handle Source, layer_handle Target)
+{
+	std::string reason;
+	if (false == can_merge(Source, Target, reason))
+	{
+		return false;
+	}
+	// start with the same visibility on both sides, as it's kept per node
+	visible(Source, true);
+	visible(Target, true);
+	for (std::size_t idx = 0; idx < layer(Source).items.size(); ++idx)
+	{
+		layer(Target).items[idx] += layer(Source).items[idx];
+	}
+	layer(Source).merged = Target;
+	if (m_active == Source)
+	{
+		active(Target);
+	}
+	return true;
+}
+
+// true if there are layer changes awaiting save. NOTE: doesn't account for modified nodes
+bool node_layers::pending() const
+{
+	return std::any_of(std::begin(m_layers), std::end(m_layers), [](basic_layer const &Layer) { return false == Layer.dead && (Layer.created || Layer.removed || Layer.merged != null_handle); });
 }
 
 } // namespace scene

@@ -437,8 +437,11 @@ void
 state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratchpad ) {
 
     auto const inputline = Input.Line(); // cache in case we need to report error
+    auto const sourcebegin = Input.TokenBegin(); // location of the node definition, for scenery opened for editing
 
     scene::node_data nodedata;
+    nodedata.layer = scene::Layers.handle();
+    nodedata.is_template = ( nodedata.layer != null_handle ) && ( false == Input.InLayerFile() );
     // common data and node type indicator
     Input.getTokens( 4 );
     Input
@@ -447,7 +450,6 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         >> nodedata.name
         >> nodedata.type;
     if( nodedata.name == "none" ) { nodedata.name.clear(); }
-    nodedata.layer = scene::Layers.handle();
     // type-based deserialization. not elegant but it'll do
     if( nodedata.type == "dynamic" ) {
 
@@ -571,6 +573,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
             }
             scene::Groups.insert( scene::Groups.handle(), instance );
             simulation::Region->insert( instance );
+            scene::Layers.track( instance, { sourcebegin, Input.TokenEnd() }, instance->Angles(), instance->Scale() );
             scene::basic_node *hierarchy_node = instance;
             if (hierarchy_node)
             {   scene::Hierarchy[hierarchy_node->uuid.to_string()] = hierarchy_node;
@@ -626,6 +629,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         }
         scene::Groups.insert( scene::Groups.handle(), memorycell );
         simulation::Region->insert( memorycell );
+        scene::Layers.track( memorycell, { sourcebegin, Input.TokenEnd() } );
     }
     else if( nodedata.type == "eventlauncher" ) {
 
@@ -685,6 +689,22 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     }
 }
 
+namespace {
+
+// passes the placement in effect to the layer bookkeeping of scenery opened for editing
+void
+sync_layer_context( scene::scratch_data const &Scratchpad ) {
+
+    if( true == scene::Layers.empty() ) { return; }
+
+    scene::Layers.context( {
+        ( Scratchpad.location.offset.empty() ? glm::dvec3{ 0.0 } : Scratchpad.location.offset.top() ),
+        Scratchpad.location.rotation,
+        ( Scratchpad.location.scale.empty() ? glm::vec3{ 1.f } : Scratchpad.location.scale.top() ) } );
+}
+
+} // namespace
+
 void
 state_serializer::deserialize_origin( cParser &Input, scene::scratch_data &Scratchpad ) {
 
@@ -700,6 +720,7 @@ state_serializer::deserialize_origin( cParser &Input, scene::scratch_data &Scrat
             Scratchpad.location.offset.empty() ?
                 glm::dvec3() :
                 Scratchpad.location.offset.top() ) );
+    sync_layer_context( Scratchpad );
 }
 
 void
@@ -711,6 +732,7 @@ state_serializer::deserialize_endorigin( cParser &Input, scene::scratch_data &Sc
     else {
         ErrorLog( "Bad origin: endorigin instruction with empty origin stack in file \"" + Input.Name() + "\" (line " + std::to_string( Input.Line() - 1 ) + ")" );
     }
+    sync_layer_context( Scratchpad );
 }
 
 void
@@ -734,6 +756,7 @@ state_serializer::deserialize_scale( cParser &Input, scene::scratch_data &Scratc
     // scales compose component-wise, mirroring how origin offsets compose additively.
     glm::vec3 const parent = Scratchpad.location.scale.empty() ? glm::vec3(1.0f) : Scratchpad.location.scale.top();
     Scratchpad.location.scale.emplace( factor * parent );
+    sync_layer_context( Scratchpad );
 }
 
 void
@@ -745,6 +768,7 @@ state_serializer::deserialize_endscale( cParser &Input, scene::scratch_data &Scr
     else {
         ErrorLog( "Bad scale: endscale instruction with empty scale stack in file \"" + Input.Name() + "\" (line " + std::to_string( Input.Line() - 1 ) + ")" );
     }
+    sync_layer_context( Scratchpad );
 }
 
 void
@@ -755,6 +779,7 @@ state_serializer::deserialize_rotate( cParser &Input, scene::scratch_data &Scrat
         >> Scratchpad.location.rotation.x
         >> Scratchpad.location.rotation.y
         >> Scratchpad.location.rotation.z;
+    sync_layer_context( Scratchpad );
 }
 
 void
@@ -860,6 +885,7 @@ state_serializer::deserialize_editorterrain(cParser &Input, scene::scratch_data 
 	Input.getTokens(4);
 	Input >> folder >> cells >> cellsize >> radius;
 	skip_until(Input, "endeditorterrain");
+	scene::Layers.terrain_directive(true);
 
 	if (!folder.empty() && cells > 0 && cellsize > 0.0f)
 	{

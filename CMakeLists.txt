@@ -168,6 +168,7 @@ set(SOURCES
 "input/editorkeyboardinput.cpp"
 "editor/editorSettings.cpp"
 "editor/editorModelSets.cpp"
+"editor/editorIncludeInfo.cpp"
 "editor/editorTerrain.cpp"
 "editor/editorTerrainStreamer.cpp"
 "editor/editorOrthophoto.cpp"
@@ -179,6 +180,7 @@ set(SOURCES
 "application/scenarioloaderuilayer.cpp"
 "scene/scenenodegroups.cpp"
 "scene/scenelayers.cpp"
+"scene/scenelayerssave.cpp"
 "simulation/simulationenvironment.cpp"
 "simulation/simulationstateserializer.cpp"
 "rendering/precipitation.cpp"
@@ -607,6 +609,13 @@ if (WITH_BETTER_RENDERER)
 	set_target_properties(betterRenderer betterRenderer_fsr2 betterRenderer_shaders PROPERTIES FOLDER "renderers")
 	target_link_libraries(${PROJECT_NAME} "betterRenderer")
 endif ()
+
+# yaml-cpp, for the descriptions of scenery templates edited in the scenery editor.
+# the experimental renderer brings in the same copy on its own, when enabled
+if (NOT TARGET yaml-cpp)
+	add_subdirectory("betterRenderer/thirdparty/yaml-cpp" "${CMAKE_CURRENT_BINARY_DIR}/yaml-cpp" EXCLUDE_FROM_ALL)
+endif ()
+target_link_libraries(${PROJECT_NAME} yaml-cpp)
 
 
 # Enable compiling with debug symbols

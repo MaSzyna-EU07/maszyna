@@ -71,6 +71,7 @@ struct node_data {
     std::string name;
     std::string type;
     layer_handle layer { null_handle }; // scenery layer the node is defined in, if any
+    bool is_template { false }; // the node is defined by an *.inc template rather than directly by a scenery layer file
 };
 
 // holds unique piece of geometry, covered with single material
@@ -381,6 +382,7 @@ public:
     std::string m_name;
 	bool m_dirty { false };
     bool m_layerhidden { false }; // the node was visible until its scenery layer was hidden
+    bool m_template { false }; // the node is defined by an *.inc template, which the editor can't rewrite. set only for scenery opened for editing
     scene::layer_handle m_layer { null_handle }; // scenery layer this node belongs to, if any
     UID uuid;
 

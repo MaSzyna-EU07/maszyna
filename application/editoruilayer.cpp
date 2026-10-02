@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenenode.h"
 #include "scene/scenelayers.h"
 #include "rendering/renderer.h"
+#include "utilities/translation.h"
 
 editor_ui::editor_ui()
 {
@@ -23,6 +24,8 @@ editor_ui::editor_ui()
 	// bind the panels with ui object. maybe not the best place for this but, eh
 
 	add_external_panel(&m_nodebankpanel);
+	add_external_panel(&m_layerspanel);
+	add_external_panel(&m_includespanel);
 
 	m_nodebankpanel.mode_options = [this](nodebank_panel::edit_mode const Mode) { render_mode_options(Mode); };
 	m_nodebankpanel.header_sections = [this]() { render_header_sections(); };
@@ -100,98 +103,55 @@ void editor_ui::render_header_sections()
 		m_itempropertiespanel.render_body();
 		ImGui::Unindent();
 	}
-	if (ImGui::CollapsingHeader("Layers"))
+}
+
+void editor_ui::render_menu_contents()
+{
+	if (ImGui::BeginMenu(STR_C("File")))
 	{
-		ImGui::Indent();
-		render_layers();
-		ImGui::Unindent();
+		// changes go to the scenery files only if the scenery was loaded with its sources tracked
+		auto const editsession{false == scene::Layers.empty()};
+		if (ImGui::MenuItem(STR_C("Save"), "Ctrl+S", false, editsession) && m_save)
+		{
+			m_save();
+		}
+		if (false == editsession && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+		{
+			ImGui::SetTooltip("%s", STR_C("Start the simulator with -edit <scenery file> to save changes to the scenery files"));
+		}
+		if (ImGui::MenuItem(STR_C("Export scenery dump"), "Ctrl+Shift+F11") && m_export)
+		{
+			m_export();
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("%s", STR_C("Writes the whole scene to _export files next to the scenario, the scenery files are left as they are"));
+		}
+		ImGui::EndMenu();
+	}
+
+	ui_layer::render_menu_contents();
+
+	if (ImGui::BeginMenu(STR_C("Mode windows")))
+	{
+		ImGui::MenuItem(STR_C("Toolset"), nullptr, &m_nodebankpanel.is_open);
+		ImGui::MenuItem(STR_C("Layers"), nullptr, &m_layerspanel.is_open);
+		ImGui::MenuItem(STR_C("Include descriptions"), nullptr, &m_includespanel.is_open);
+		ImGui::EndMenu();
 	}
 }
 
-void editor_ui::render_layers()
+void editor_ui::set_file_actions(std::function<void()> Save, std::function<void()> Export)
 {
-	if (scene::Layers.empty())
-	{
-		// layers are established only when the scenery is loaded for editing, regular load skips the bookkeeping
-		ImGui::TextDisabled("Scenery layers are available in an edit session.\nStart the simulator with: -edit <scenery file>");
-		return;
-	}
+	m_save = Save;
+	m_export = std::move(Export);
+	m_layerspanel.save = std::move(Save);
+}
 
-	ImGui::TextDisabled("visible, locked, layer file (click: make active)");
-
-	std::pair<char const *, scene::layer_item> const itemlabels[] = {{"models", scene::layer_item::model},
-	                                                                 {"tracks", scene::layer_item::track},
-	                                                                 {"traction", scene::layer_item::traction},
-	                                                                 {"power sources", scene::layer_item::powersource},
-	                                                                 {"memory cells", scene::layer_item::memcell},
-	                                                                 {"event launchers", scene::layer_item::launcher},
-	                                                                 {"events", scene::layer_item::event},
-	                                                                 {"vehicles", scene::layer_item::vehicle},
-	                                                                 {"sounds", scene::layer_item::sound},
-	                                                                 {"terrain shapes", scene::layer_item::shape},
-	                                                                 {"lines", scene::layer_item::lines}};
-
-	for (std::size_t idx = 1; idx <= scene::Layers.size(); ++idx)
-	{
-		auto const handle{static_cast<scene::layer_handle>(idx)};
-		auto const &layer{scene::Layers.layer(handle)};
-		auto const isactive{handle == scene::Layers.active()};
-
-		ImGui::PushID(static_cast<int>(idx));
-		// active layer receives new nodes, so it can't be hidden nor locked
-		if (isactive)
-		{
-			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
-		}
-		auto visible{layer.visible};
-		if (ImGui::Checkbox("##visible", &visible) && false == isactive)
-		{
-			scene::Layers.visible(handle, visible);
-		}
-		if (ImGui::IsItemHovered())
-		{
-			ImGui::SetTooltip("%s", isactive ? "Active layer is always visible" : "Show or hide models, tracks and traction of the layer");
-		}
-		ImGui::SameLine();
-		auto locked{layer.locked};
-		if (ImGui::Checkbox("##locked", &locked) && false == isactive)
-		{
-			scene::Layers.locked(handle, locked);
-		}
-		if (ImGui::IsItemHovered())
-		{
-			ImGui::SetTooltip("%s", isactive ? "Active layer can't be locked" : "Nodes of locked layer can't be selected in the viewport");
-		}
-		if (isactive)
-		{
-			ImGui::PopStyleVar();
-		}
-		ImGui::SameLine();
-		// layers are listed in the order the files were first opened, so indentation alone shows the include tree
-		auto const label{std::string(2 * scene::Layers.depth(handle), ' ') + Bezogonkow(layer.name) + " (" + (layer.binary ? "binary terrain" : std::to_string(layer.item_count())) + ")"};
-		if (ImGui::Selectable(label.c_str(), isactive))
-		{
-			scene::Layers.active(handle);
-		}
-		if (ImGui::IsItemHovered())
-		{
-			std::string content{isactive ? "Active layer, nodes created in the editor are placed here" : "Click to make this the active layer"};
-			if (layer.binary)
-			{
-				content += "\nThe file wasn't parsed, its content was loaded from binary terrain file";
-			}
-			for (auto const &itemlabel : itemlabels)
-			{
-				auto const count{layer.items[static_cast<std::size_t>(itemlabel.second)]};
-				if (count > 0)
-				{
-					content += "\n" + std::string{itemlabel.first} + ": " + std::to_string(count);
-				}
-			}
-			ImGui::SetTooltip("%s", content.c_str());
-		}
-		ImGui::PopID();
-	}
+void editor_ui::set_status(std::string const &Status, bool const Error)
+{
+	m_layerspanel.status = Status;
+	m_layerspanel.status_error = Error;
 }
 
 void editor_ui::render_rotation_controls()

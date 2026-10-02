@@ -237,11 +237,13 @@ std::string cParser::readTokenFromStream(bool ToLower, const char *Break)
 
 	const auto breakTable = makeBreakTable(Break);
 	char c = 0;
+	bool separated = false; // the token was ended by a separator, which isn't a part of it
 
 
 	while (token.empty() && mStream->peek() != EOF) {
 		while (mStream->peek() != EOF) { // idk why but with mStream->get(c) not all cars are loaded
 			c = static_cast<char>(mStream->get());
+			++mPosition;
 			if (c == '\n') {
 				++mLine;
 			}
@@ -249,11 +251,16 @@ std::string cParser::readTokenFromStream(bool ToLower, const char *Break)
 			const unsigned char uc = static_cast<unsigned char>(c);
 			if (breakTable[uc]) {
 				// separator ends token (or continues skipping if token empty)
-				if (!token.empty())
+				if (!token.empty()) {
+					separated = true;
 					break;
+				}
 				continue;
 			}
 
+			if (token.empty()) {
+				mTokenBegin = mPosition - 1;
+			}
 			if (ToLower) c = toLowerChar(c);
 			token.push_back(c);
 
@@ -265,6 +272,8 @@ std::string cParser::readTokenFromStream(bool ToLower, const char *Break)
 			}
 		}
 	}
+	// NOTE: comment glued to the end of a token is counted as a part of it
+	mTokenEnd = separated ? mPosition - 1 : mPosition;
 
 	return token;
 }
@@ -275,6 +284,7 @@ void cParser::stripFirstTokenBOM(std::string& token, bool ToLower, const char* B
 
 	if (startsWithBOM(token)) {
 		token.erase(0, 3);
+		mTokenBegin += 3;
 	}
 
 	// if first "token" was standalone BOM, read the next real token (avoid recursion)
@@ -345,7 +355,7 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
 		if (sceneryLayers)
 		{
 			// the file is still a part of the scenery, even though its content comes from the binary terrain file
-			scene::Layers.layer(scene::Layers.open(includefile)).binary = true;
+			scene::Layers.layer(scene::Layers.open(includefile, include_site())).binary = true;
 			scene::Layers.close();
 		}
 		return;
@@ -373,17 +383,37 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
 		mIncludeParser->sceneryLayers = true;
 		// content of an included scenery file forms a layer of its own. *.inc files are node templates
 		// reused all over the scenery, so their content stays in the layer of the file which includes them
-		if (false == mIncludeParser->mIncFile && mIncludeParser->mSize > 0)
+		if (mIncludeParser->mIncFile)
 		{
-			scene::Layers.open(includefile);
+			scene::Layers.template_used(includefile);
+		}
+		else if (mIncludeParser->mSize > 0)
+		{
+			auto site{include_site()};
+			site.parameters = false == mIncludeParser->parameters.empty();
+			scene::Layers.open(includefile, site);
 			mIncludeParser->mLayerFile = true;
 		}
 	}
 }
 
+// describes the include directive being processed, for the scenery layer bookkeeping
+scene::include_site cParser::include_site() const
+{
+	scene::include_site site;
+	// the directive can be rewritten on scenery save only if we know where it is, and it sits in a layer file
+	site.fixed = mIncludeBegin < 0 || mFile.empty() || mIncFile;
+	if (false == site.fixed)
+	{
+		site.span = {mIncludeBegin, mTokenEnd};
+	}
+	return site;
+}
+
 bool cParser::handleIncludeIfPresent(std::string& token, bool ToLower, const char* Break) {
 	// token-mode include: token == "include"
 	if (expandIncludes && token == "include") {
+		mIncludeBegin = mTokenBegin;
 		std::string includefile;
 		if (allowRandomIncludes)
 			includefile = deserialize_random_set(*this);
@@ -399,6 +429,7 @@ bool cParser::handleIncludeIfPresent(std::string& token, bool ToLower, const cha
 
 	// line-mode HACK: Break == "\n\r" and line begins with "include"
 	if (std::strcmp(Break, "\n\r") == 0 && token.compare(0, 7, "include") == 0) {
+		mIncludeBegin = -1; // the directive is parsed out of a line of text, its exact location isn't known
 		cParser includeparser(token.substr(7));
 		std::string includefile;
 		if (allowRandomIncludes)
@@ -459,6 +490,7 @@ std::string cParser::readQuotes(char const Quote)
 	bool escaped = false;
 	while (mStream->get(c))
 	{ // get all chars until the quote mark
+		++mPosition;
 		if (escaped)
 		{
 			escaped = false;
@@ -489,6 +521,7 @@ void cParser::skipComment(std::string const &Endmark)
 	auto const endmarksize = Endmark.size();
 	while (mStream->get(c))
 	{
+		++mPosition;
 		if (c == '\n')
 		{
 			// update line counter
@@ -625,4 +658,19 @@ std::size_t cParser::Line() const
 int cParser::LineMain() const
 {
 	return mIncludeParser ? -1 : mLine;
+}
+
+std::streamoff cParser::TokenBegin() const
+{
+	return mIncludeParser ? mIncludeParser->TokenBegin() : mTokenBegin;
+}
+
+std::streamoff cParser::TokenEnd() const
+{
+	return mIncludeParser ? mIncludeParser->TokenEnd() : mTokenEnd;
+}
+
+bool cParser::InLayerFile() const
+{
+	return mIncludeParser ? mIncludeParser->InLayerFile() : (false == mFile.empty() && false == mIncFile);
 }

@@ -337,6 +337,7 @@ editor_mode::editor_mode() {
 	// the area fill settings live in the node bank window, in the tab of the fill mode
 	ui()->set_fill_options([this]() { render_area_fill(); });
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
+	ui()->set_file_actions([this]() { save(); }, [this]() { export_scenery(); });
 	// the orthophoto is fitted onto the same ground as the area fill uses, terrain tile models included
 	m_orthophoto.ground_source([](glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out) {
 		gather_ground_triangles(Min, Max, true, 50.0f, Out);
@@ -606,6 +607,7 @@ void editor_mode::push_snapshot(scene::basic_node *node, EditorSnapshot::Action 
     snap.node_name = node->name();
     snap.position = node->location();
     snap.uuid = node->uuid;
+    snap.layer = node->layer();
     
     if (auto *model = dynamic_cast<TAnimModel *>(node))
     {
@@ -679,11 +681,13 @@ void editor_mode::undo_last()
         redoSnap.serialized = snap.serialized;
         redoSnap.position = snap.position;
         redoSnap.node_ptr = nullptr;
+        redoSnap.layer = snap.layer;
         g_redo.push_back(std::move(redoSnap));
 
         TAnimModel *created = simulation::State.create_model(snap.serialized, snap.node_name, snap.position);
         if (created)
         {
+            scene::Layers.move(created, snap.layer); // back to the layer it was deleted from, rather than the active one
             created->location(snap.position);
             created->Angles(snap.rotation);
             m_node = created;
@@ -702,6 +706,7 @@ void editor_mode::undo_last()
     current.action = snap.action;
     current.node_name = snap.node_name;
     current.node_ptr = target;
+    current.layer = target->layer();
     current.position = target->location();
     if (auto *model = dynamic_cast<TAnimModel *>(target))
     {
@@ -758,6 +763,7 @@ void editor_mode::redo_last()
         hist.serialized = snap.serialized;
         hist.position = snap.position;
         hist.uuid = snap.uuid;
+        hist.layer = snap.layer;
         m_history.push_back(std::move(hist));
 
         scene::basic_node *target = simulation::Instances.find(snap.node_name);
@@ -799,6 +805,7 @@ void editor_mode::redo_last()
         TAnimModel *created = simulation::State.create_model(snap.serialized, snap.node_name, snap.position);
         if (created)
         {
+            scene::Layers.move(created, snap.layer);
             created->location(snap.position);
             created->Angles(snap.rotation);
             created->Scale(snap.scale);
@@ -893,7 +900,7 @@ bool editor_mode::update()
     update_camera(deltarealtime);
 
     // drop the selection if its layer was hidden or locked in the meantime
-    if (m_node != nullptr && false == scene::Layers.editable(m_node->layer()))
+    if (m_node != nullptr && false == scene::Layers.editable(m_node))
     {
         m_node = nullptr;
         m_dragging = false;
@@ -1498,6 +1505,15 @@ void editor_mode::create_chunked_terrain()
 
 void editor_mode::save_scene_with_terrain()
 {
+    commit_terrain();
+
+    // export scenery; the exported .scm now carries an `editorterrain` directive (streamer is active)
+    export_scenery();
+    WriteLog("Editor: saved scene + terrain", logtype::generic);
+}
+
+void editor_mode::commit_terrain()
+{
     // commit authored terrain so the scenery streams it on load. if not already streaming, hand the
     // manual grid chunks over to the streamer (same as toggling Stream terrain on)
     if (!m_streamer.active())
@@ -1529,10 +1545,37 @@ void editor_mode::save_scene_with_terrain()
     }
 
     m_streamer.flush(); // save resident edited chunks to disk
+}
 
-    // export scenery; the exported .scm now carries an `editorterrain` directive (streamer is active)
-    export_scenery();
-    WriteLog("Editor: saved scene + terrain", logtype::generic);
+void editor_mode::save()
+{
+    if (scene::Layers.empty())
+    {
+        // without the sources tracked during the load there's no telling where the changes belong
+        ui()->set_status("The scenery wasn't opened for editing. Start the simulator with: -edit <scenery file>", true);
+        return;
+    }
+
+    // terrain made in the editor is kept in files of its own, the scenery only needs the directive which loads it
+    std::vector<std::string> rootstatements;
+    if (m_streamer.active() || false == m_grid_chunks.empty())
+    {
+        commit_terrain();
+        if (false == scene::Layers.terrain_directive())
+        {
+            rootstatements.emplace_back(
+                "editorterrain " + m_streamer.directory() + ' ' + std::to_string(m_streamer.cells()) + ' ' + to_string(m_streamer.cellsize(), 3) + ' '
+                + std::to_string(m_streamer.radius()) + " endeditorterrain");
+        }
+    }
+
+    auto const result = scene::Layers.save(rootstatements);
+    if (result.success && false == rootstatements.empty())
+    {
+        scene::Layers.terrain_directive(true);
+    }
+    ui()->set_status(result.message, false == result.success);
+    WriteLog("Editor: " + result.message, logtype::generic);
 }
 
 void editor_mode::export_scenery()
@@ -2196,6 +2239,14 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             return;
     }
 
+    // save; checked ahead of the camera keys, which have S bound to moving back
+    if (Global.ctrlState && false == Global.shiftState && Key == GLFW_KEY_S)
+    {
+        if (is_press(Action))
+            save();
+        return;
+    }
+
     // then internal input handling
     if (m_input.keyboard.key(Key, Action))
         return;
@@ -2364,9 +2415,13 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
 
                     m_node = nullptr;
 
-                    // nodes of locked layers can't be selected
-                    if (node && false == scene::Layers.editable(node->layer()))
+                    // in a scenery opened for editing some nodes are off limits: the ones in locked layers,
+                    // and the ones whose definitions can't be rewritten on save
+                    if (std::string reason; node && false == scene::Layers.editable(node, &reason))
+                    {
+                        ui()->set_status("\"" + (node->name().empty() ? std::string{"(unnamed node)"} : node->name()) + "\" can't be edited: " + reason, true);
                         node = nullptr;
+                    }
 
                     // ignore picks that are beyond allowed placement distance
                     if (node) {

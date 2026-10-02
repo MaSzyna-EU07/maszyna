@@ -96,6 +96,7 @@ class editor_mode : public application_mode
 		glm::vec3 rotation{0.0f, 0.0f, 0.0f};
 		glm::vec3 scale{1.0f, 1.0f, 1.0f};
 		UID uuid; // node UUID for reference, used as fallback lookup for deleted/recreated nodes
+		scene::layer_handle layer{null_handle}; // scenery layer of the node, so a recreated node returns to it
 
 	};
 	void push_snapshot(scene::basic_node *node, EditorSnapshot::Action Action = EditorSnapshot::Action::Move, std::string const &Serialized = std::string());
@@ -160,8 +161,12 @@ class editor_mode : public application_mode
 	void remove_grid_chunk(int Cx, int Cz);
 	// handles a click in chunk-edit mode (add a neighbour, or Shift = delete the clicked chunk)
 	void handle_chunk_edit_click(bool DeleteMode);
-	// commits authored terrain to disk, enables streaming, and exports the scenery (Ctrl+S)
+	// commits authored terrain to disk, enables streaming, and exports the scenery
 	void save_scene_with_terrain();
+	// commits authored terrain to disk and enables streaming
+	void commit_terrain();
+	// writes the changes to the files of scenery opened for editing (Ctrl+S)
+	void save();
 	// exports the scenery in legacy (text) format, with layers hidden in the editor left out of the picture
 	void export_scenery();
 	// raises/lowers terrain under the cursor while the left mouse button is held in sculpt mode

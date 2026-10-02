@@ -15,6 +15,11 @@ http://mozilla.org/MPL/2.0/.
 #include <vector>
 #include <map>
 
+namespace scene
+{
+struct include_site;
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 // cParser -- generic class for parsing text data, either from file or provided string
 
@@ -94,6 +99,11 @@ class cParser //: public std::stringstream
     std::size_t Line() const;
 	// returns number of currently processed line in main file, -1 if inside include
 	int LineMain() const;
+	// location of the most recently read token in its source file, as byte offsets
+	std::streamoff TokenBegin() const;
+	std::streamoff TokenEnd() const;
+	// true if the most recently read token came straight from a scenery file which isn't an *.inc node template
+	bool InLayerFile() const;
 	bool expandIncludes = true;
 	bool allowRandomIncludes = false;
     bool skipComments = true;
@@ -101,6 +111,7 @@ class cParser //: public std::stringstream
 
   private:
 	void startIncludeFromParser(cParser &srcParser, bool ToLower, std::string includefile);
+	scene::include_site include_site() const;
 	bool handleIncludeIfPresent(std::string &token, bool ToLower, const char *Break);
 	// methods:
     void readToken(std::string& out, bool ToLower = true, const char *Break = "\n\r\t ;");
@@ -120,6 +131,10 @@ class cParser //: public std::stringstream
     std::size_t mLine { 0 }; // currently processed line
     bool mIncFile { false }; // the parser is processing an *.inc file
     bool mLayerFile { false }; // the parser is processing a file registered as scenery layer
+    std::streamoff mPosition { 0 }; // amount of bytes read from the stream so far
+    std::streamoff mTokenBegin { 0 }; // location of the most recently read token
+    std::streamoff mTokenEnd { 0 };
+    std::streamoff mIncludeBegin { -1 }; // location of the include directive being processed, -1 if unknown
     bool mFirstToken { true }; // processing first token in the current file; helper used when checking for utf bom
     typedef std::map<std::string, std::string> commentmap;
     commentmap mComments {

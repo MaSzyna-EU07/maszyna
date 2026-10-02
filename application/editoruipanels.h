@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/uilayer.h"
 #include "utilities/Classes.h"
+#include "editor/editorIncludeInfo.hpp"
 
 #include <functional>
 /*
@@ -146,6 +147,56 @@ class nodebank_panel : public ui_panel
 	int m_setsnameid{0}; // id of the set whose name is held in the edit buffer
 	char m_setsname[128]{};
 	model_set_ref m_setsgroup{model_set_ref::source::nodebank, 0}; // node bank group to append to the edited set
+};
+
+// scenery layers of a scenery opened for editing: their visibility, selection lock, the layer receiving new nodes,
+// and layer management. the changes are applied to the scenery files on save
+class layers_panel : public ui_panel
+{
+
+  public:
+	layers_panel(std::string const &Name, bool const Isopen) : ui_panel(Name, Isopen) {}
+
+	void render() override;
+
+	// saves the scenery; provided by the editor mode
+	std::function<void()> save;
+	// outcome of the most recent operation, shown at the bottom of the window
+	std::string status;
+	bool status_error{false};
+
+  private:
+	// methods
+	void render_list();
+	void render_popups();
+	void report(std::string const &Status, bool const Error = false);
+	// members
+	scene::layer_handle m_selected{null_handle}; // layer the buttons act on
+	char m_newname[128]{}; // file name of the layer being created
+	scene::layer_handle m_newparent{null_handle}; // layer which is going to include it
+	scene::layer_handle m_mergetarget{null_handle};
+	std::string m_popuperror;
+};
+
+// editor of the descriptions of *.inc scenery templates, see editorIncludeInfo.hpp
+class includes_panel : public ui_panel
+{
+
+  public:
+	includes_panel(std::string const &Name, bool const Isopen) : ui_panel(Name, Isopen) {}
+
+	void render() override;
+
+  private:
+	// methods
+	void open(std::string const &File);
+	// members
+	std::string m_file; // template being edited, relative to the scenery directory
+	char m_filename[256]{}; // name of a template typed in by hand
+	include_info m_info;
+	bool m_loaded{false};
+	std::string m_status;
+	bool m_statuserror{false};
 };
 
 class functions_panel : public ui_panel

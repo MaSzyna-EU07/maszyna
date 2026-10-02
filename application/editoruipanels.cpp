@@ -1077,3 +1077,580 @@ void functions_panel::render_controls()
 		ImGui::SliderFloat("Rotation value", &rot_value, 0.0f, 360.0f, "%.1f deg");
 	}
 }
+
+namespace
+{
+
+std::pair<char const *, scene::layer_item> const layer_itemlabels[] = {{"models", scene::layer_item::model},
+                                                                       {"tracks", scene::layer_item::track},
+                                                                       {"traction", scene::layer_item::traction},
+                                                                       {"power sources", scene::layer_item::powersource},
+                                                                       {"memory cells", scene::layer_item::memcell},
+                                                                       {"event launchers", scene::layer_item::launcher},
+                                                                       {"events", scene::layer_item::event},
+                                                                       {"vehicles", scene::layer_item::vehicle},
+                                                                       {"sounds", scene::layer_item::sound},
+                                                                       {"terrain shapes", scene::layer_item::shape},
+                                                                       {"lines", scene::layer_item::lines}};
+
+// what the layer holds, a line per kind of item
+std::string layer_content(scene::basic_layer const &Layer)
+{
+	std::string content;
+	for (auto const &itemlabel : layer_itemlabels)
+	{
+		auto const count{Layer.items[static_cast<std::size_t>(itemlabel.second)]};
+		if (count > 0)
+		{
+			content += (content.empty() ? "" : "\n") + std::string{itemlabel.first} + ": " + std::to_string(count);
+		}
+	}
+	return content;
+}
+
+std::string layer_name(scene::layer_handle const Layer)
+{
+	return scene::Layers.valid(Layer) ? Bezogonkow(scene::Layers.layer(Layer).name) : "(none)";
+}
+
+// button which can be greyed out, with an explanation shown when it's hovered
+bool action_button(char const *Label, bool const Enabled, std::string const &Reason = std::string())
+{
+	if (false == Enabled)
+	{
+		ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+	}
+	auto const clicked{ImGui::Button(Label) && Enabled};
+	if (false == Enabled)
+	{
+		ImGui::PopStyleVar();
+		if (false == Reason.empty() && ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("%s", Reason.c_str());
+		}
+	}
+	return clicked;
+}
+
+// text field bound to a string
+bool input_text(char const *Label, std::string &Value)
+{
+	std::array<char, 256> buffer{};
+	Value.copy(buffer.data(), buffer.size() - 1);
+	if (false == ImGui::InputText(Label, buffer.data(), buffer.size()))
+	{
+		return false;
+	}
+	Value = buffer.data();
+	return true;
+}
+
+ImVec4 const status_errorcolor{1.0f, 0.45f, 0.4f, 1.0f};
+
+} // namespace
+
+void layers_panel::report(std::string const &Status, bool const Error)
+{
+	status = Status;
+	status_error = Error;
+}
+
+void layers_panel::render()
+{
+	if (false == is_open)
+	{
+		return;
+	}
+
+	// initially next to the toolset window
+	ImGui::SetNextWindowPos(ImVec2S(520, 60), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize(ImVec2S(440, 340), ImGuiCond_FirstUseEver);
+	auto const panelname{(title.empty() ? m_name : title) + "###" + m_name};
+	if (ImGui::Begin(panelname.c_str(), &is_open, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse))
+	{
+		if (scene::Layers.empty())
+		{
+			// layers are established only when the scenery is loaded for editing, regular load skips the bookkeeping
+			ImGui::TextDisabled("Scenery layers are available in an edit session.\nStart the simulator with: -edit <scenery file>");
+		}
+		else
+		{
+			if (false == scene::Layers.listed(m_selected))
+			{
+				m_selected = null_handle;
+			}
+			auto const selected{m_selected != null_handle};
+			auto const removed{selected && scene::Layers.layer(m_selected).removed};
+			std::string reason{"Select a layer first"};
+
+			if (ImGui::Button("New..."))
+			{
+				m_newname[0] = '\0';
+				m_newparent = (selected && false == removed && false == scene::Layers.layer(m_selected).binary ? m_selected : scene::layer_handle{1});
+				m_popuperror.clear();
+				ImGui::OpenPopup("New layer");
+			}
+			ImGui::SameLine();
+			if (removed)
+			{
+				if (ImGui::Button("Restore"))
+				{
+					scene::Layers.restore(m_selected);
+					report("Layer \"" + layer_name(m_selected) + "\" restored");
+				}
+			}
+			else if (action_button("Remove...", selected && scene::Layers.can_remove(m_selected, reason), reason))
+			{
+				ImGui::OpenPopup("Remove layer");
+			}
+			ImGui::SameLine();
+			// the scenario file is what holds the scenery together, it stays where it is
+			auto const mergeable{selected && false == removed && (scene::Layers.layer(m_selected).created || false == scene::Layers.layer(m_selected).sites.empty())};
+			if (action_button("Merge into...", mergeable, selected && false == removed ? "The scenario file can't be merged into another layer" : "Select a layer first"))
+			{
+				// the layer which includes the selected one is the most likely target
+				m_mergetarget = scene::Layers.resolve(scene::Layers.layer(m_selected).parent);
+				if (false == scene::Layers.can_merge(m_selected, m_mergetarget, reason))
+				{
+					m_mergetarget = null_handle;
+				}
+				ImGui::OpenPopup("Merge layer");
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Save") && save)
+			{
+				save();
+			}
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("Writes changed nodes and layers to the scenery files (Ctrl+S)");
+			}
+			ImGui::Separator();
+
+			render_list();
+
+			if (false == status.empty())
+			{
+				ImGui::PushTextWrapPos(0.0f);
+				if (status_error)
+				{
+					ImGui::TextColored(status_errorcolor, "%s", status.c_str());
+				}
+				else
+				{
+					ImGui::TextUnformatted(status.c_str());
+				}
+				ImGui::PopTextWrapPos();
+			}
+
+			render_popups();
+		}
+	}
+	ImGui::End();
+}
+
+void layers_panel::render_list()
+{
+	// the list takes the window except for the room left for the status
+	ImGui::BeginChild("##layers", ImVec2(0.0f, -ImGui::GetTextLineHeightWithSpacing() * 2.5f));
+	ImGui::TextDisabled("visible, locked, active, layer file");
+
+	for (auto const handle : scene::Layers.tree())
+	{
+		// NOTE: copies of the flags, as the calls below can change the layer
+		auto const &layer{scene::Layers.layer(handle)};
+		auto const isactive{handle == scene::Layers.active()};
+		auto const isremoved{layer.removed};
+		std::string readonly;
+		auto const iswritable{scene::Layers.writable(handle, &readonly)};
+
+		ImGui::PushID(static_cast<int>(handle));
+		if (isremoved)
+		{
+			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+		}
+		// active layer receives new nodes, so it can't be hidden nor locked. removed layer is out of the picture altogether
+		auto const fixed{isactive || isremoved};
+		auto visible{layer.visible};
+		if (ImGui::Checkbox("##visible", &visible) && false == fixed)
+		{
+			scene::Layers.visible(handle, visible);
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("%s", isactive ? "Active layer is always visible" : "Show or hide models, tracks and traction of the layer");
+		}
+		ImGui::SameLine();
+		auto locked{layer.locked};
+		if (ImGui::Checkbox("##locked", &locked) && false == fixed)
+		{
+			scene::Layers.locked(handle, locked);
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("%s", isactive ? "Active layer can't be locked" : "Nodes of locked layer can't be selected in the viewport");
+		}
+		ImGui::SameLine();
+		if (ImGui::RadioButton("##active", isactive) && false == isactive)
+		{
+			if (isremoved || false == iswritable)
+			{
+				report("Layer \"" + layer_name(handle) + "\" can't take new nodes" + (isremoved ? "" : ": " + readonly), true);
+			}
+			else
+			{
+				scene::Layers.active(handle);
+			}
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("Active layer: nodes created in the editor are placed in it");
+		}
+		ImGui::SameLine();
+		auto label{std::string(2 * scene::Layers.depth(handle), ' ') + layer_name(handle) + " (" + (layer.binary ? "binary terrain" : std::to_string(layer.item_count())) + ")"};
+		if (layer.created)
+		{
+			label += "  [new]";
+		}
+		if (isremoved)
+		{
+			label += "  [removed]";
+		}
+		else if (false == iswritable)
+		{
+			label += "  [read-only]";
+		}
+		if (ImGui::Selectable(label.c_str(), handle == m_selected))
+		{
+			m_selected = handle;
+		}
+		if (ImGui::IsItemHovered())
+		{
+			std::string content{layer.created ? "New layer, its file is created on save" : isremoved ? "Dropped from the scenery on save" : "Scenery file"};
+			if (scene::Layers.valid(layer.parent))
+			{
+				content += "\nincluded by: " + layer_name(scene::Layers.resolve(layer.parent));
+			}
+			if (false == iswritable)
+			{
+				content += "\nread-only: " + readonly;
+			}
+			if (auto const items{layer_content(layer)}; false == items.empty())
+			{
+				content += "\n" + items;
+			}
+			ImGui::SetTooltip("%s", content.c_str());
+		}
+		if (isremoved)
+		{
+			ImGui::PopStyleVar();
+		}
+		ImGui::PopID();
+	}
+	ImGui::EndChild();
+}
+
+void layers_panel::render_popups()
+{
+	if (ImGui::BeginPopupModal("New layer", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		ImGui::TextUnformatted("File of the new layer, in the scenery directory:");
+		ImGui::InputTextWithHint("##name", "name.scm", m_newname, IM_ARRAYSIZE(m_newname));
+		if (ImGui::BeginCombo("Included by", layer_name(m_newparent).c_str()))
+		{
+			for (std::size_t idx = 1; idx <= scene::Layers.size(); ++idx)
+			{
+				auto const handle{static_cast<scene::layer_handle>(idx)};
+				if (false == scene::Layers.listed(handle) || scene::Layers.layer(handle).removed || scene::Layers.layer(handle).binary)
+				{
+					continue;
+				}
+				if (ImGui::Selectable((layer_name(handle) + "##" + std::to_string(idx)).c_str(), handle == m_newparent))
+				{
+					m_newparent = handle;
+				}
+			}
+			ImGui::EndCombo();
+		}
+		if (false == m_popuperror.empty())
+		{
+			ImGui::TextColored(status_errorcolor, "%s", m_popuperror.c_str());
+		}
+		if (ImGui::Button("Create"))
+		{
+			auto const created{scene::Layers.create(m_newname, m_newparent, m_popuperror)};
+			if (created != null_handle)
+			{
+				m_selected = created;
+				report("Layer \"" + layer_name(created) + "\" created and made active. Its file is written on save.");
+				ImGui::CloseCurrentPopup();
+			}
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel"))
+		{
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
+
+	if (ImGui::BeginPopupModal("Remove layer", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		if (false == scene::Layers.listed(m_selected))
+		{
+			ImGui::CloseCurrentPopup();
+		}
+		else
+		{
+			auto const &layer{scene::Layers.layer(m_selected)};
+			auto included{0};
+			for (std::size_t idx = 1; idx <= scene::Layers.size(); ++idx)
+			{
+				auto const handle{static_cast<scene::layer_handle>(idx)};
+				if (handle != m_selected && scene::Layers.listed(handle) && scene::Layers.is_descendant(handle, m_selected))
+				{
+					++included;
+				}
+			}
+			ImGui::Text("Remove layer \"%s\" from the scenery?", layer_name(m_selected).c_str());
+			ImGui::TextUnformatted(layer.created ? "The layer wasn't saved yet, so it leaves no file behind." : "Its include directive is erased on save. The file itself stays on the disk.");
+			if (included > 0)
+			{
+				ImGui::Text("%d layer(s) it includes are removed with it.", included);
+			}
+			if (auto const items{layer_content(layer)}; false == items.empty())
+			{
+				ImGui::Separator();
+				ImGui::TextUnformatted("The layer holds:");
+				ImGui::TextUnformatted(items.c_str());
+				ImGui::TextDisabled("Make sure the rest of the scenery doesn't refer to its tracks, events or memory cells.");
+			}
+			if (ImGui::Button("Remove"))
+			{
+				auto const name{layer_name(m_selected)};
+				if (scene::Layers.remove(m_selected))
+				{
+					report("Layer \"" + name + "\" removed. It can be restored until the scenery is saved.");
+				}
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Cancel"))
+			{
+				ImGui::CloseCurrentPopup();
+			}
+		}
+		ImGui::EndPopup();
+	}
+
+	if (ImGui::BeginPopupModal("Merge layer", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		if (false == scene::Layers.listed(m_selected))
+		{
+			ImGui::CloseCurrentPopup();
+		}
+		else
+		{
+			ImGui::Text("Move content of layer \"%s\" to:", layer_name(m_selected).c_str());
+			std::string reason;
+			auto targets{0};
+			if (ImGui::BeginCombo("##target", layer_name(m_mergetarget).c_str()))
+			{
+				for (std::size_t idx = 1; idx <= scene::Layers.size(); ++idx)
+				{
+					auto const handle{static_cast<scene::layer_handle>(idx)};
+					if (false == scene::Layers.listed(handle) || false == scene::Layers.can_merge(m_selected, handle, reason))
+					{
+						continue;
+					}
+					++targets;
+					if (ImGui::Selectable((layer_name(handle) + "##" + std::to_string(idx)).c_str(), handle == m_mergetarget))
+					{
+						m_mergetarget = handle;
+					}
+				}
+				if (targets == 0)
+				{
+					ImGui::TextDisabled("no layer can take it");
+				}
+				ImGui::EndCombo();
+			}
+			ImGui::TextDisabled("The text of the file is moved on save, the emptied file stays on the disk.\n"
+			                    "Merged into the layer which includes it, the content stays where the include was.\n"
+			                    "Merged into any other layer it's placed at its end, which changes the load order.");
+			auto const possible{m_mergetarget != null_handle && scene::Layers.can_merge(m_selected, m_mergetarget, reason)};
+			if (action_button("Merge", possible, m_mergetarget != null_handle ? reason : "Pick the target layer"))
+			{
+				auto const name{layer_name(m_selected)};
+				auto const target{m_mergetarget};
+				if (scene::Layers.merge(m_selected, target))
+				{
+					report("Layer \"" + name + "\" merged into \"" + layer_name(target) + "\". The files are changed on save.");
+					m_selected = target;
+				}
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Cancel"))
+			{
+				ImGui::CloseCurrentPopup();
+			}
+		}
+		ImGui::EndPopup();
+	}
+}
+
+void includes_panel::open(std::string const &File)
+{
+	m_file = File;
+	m_statuserror = false;
+	std::string error;
+	m_loaded = editor_includes::load(File, m_info, error);
+	if (false == m_loaded)
+	{
+		m_status = error;
+		m_statuserror = true;
+		return;
+	}
+	// every parameter the template uses gets an entry, described or not
+	auto const count{editor_includes::parameter_count(File)};
+	for (auto id = 1; id <= count; ++id)
+	{
+		m_info.parameter(id);
+	}
+	m_status = "The template uses " + std::to_string(count) + " parameter(s)";
+}
+
+void includes_panel::render()
+{
+	if (false == is_open)
+	{
+		return;
+	}
+
+	ImGui::SetNextWindowPos(ImVec2S(560, 110), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize(ImVec2S(520, 440), ImGuiCond_FirstUseEver);
+	auto const panelname{(title.empty() ? m_name : title) + "###" + m_name};
+	if (ImGui::Begin(panelname.c_str(), &is_open, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse))
+	{
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+		ImGui::TextWrapped("Describes .inc templates and their parameters. The description is stored in the template file, as //$e comment lines.");
+		ImGui::PopStyleColor();
+		// templates the loaded scenery makes use of; known only for scenery opened for editing
+		auto const &templates{scene::Layers.templates()};
+		if (false == templates.empty())
+		{
+			ImGui::BeginChild("##templates", ImVec2(0.0f, ImGui::GetTextLineHeightWithSpacing() * 6.0f), true);
+			for (auto const &file : templates)
+			{
+				if (ImGui::Selectable(Bezogonkow(file).c_str(), file == m_file))
+				{
+					open(file);
+				}
+			}
+			ImGui::EndChild();
+		}
+		ImGui::PushItemWidth(-ImGui::CalcTextSize(" Open ").x - ImGui::GetStyle().ItemSpacing.x * 2.0f);
+		auto const entered{ImGui::InputTextWithHint("##file", "path of an .inc file in the scenery directory", m_filename, IM_ARRAYSIZE(m_filename), ImGuiInputTextFlags_EnterReturnsTrue)};
+		ImGui::PopItemWidth();
+		ImGui::SameLine();
+		if ((ImGui::Button("Open") || entered) && m_filename[0] != '\0')
+		{
+			std::string file{ToLower(m_filename)};
+			replace_slashes(file);
+			open(file);
+		}
+
+		if (m_loaded)
+		{
+			ImGui::Separator();
+			ImGui::Text("%s", Bezogonkow(m_file).c_str());
+			input_text("Name", m_info.name);
+			input_text("Category", m_info.category);
+			input_text("Description", m_info.description);
+
+			ImGui::Columns(4, "##parameters", false);
+			ImGui::SetColumnWidth(0, ImGui::CalcTextSize("(p000) ").x);
+			ImGui::SetColumnWidth(1, ImGui::CalcTextSize("texture  ").x + ImGui::GetFrameHeight() * 2.0f);
+			ImGui::TextDisabled("param");
+			ImGui::NextColumn();
+			ImGui::TextDisabled("role");
+			ImGui::NextColumn();
+			ImGui::TextDisabled("label");
+			ImGui::NextColumn();
+			ImGui::TextDisabled("default");
+			ImGui::NextColumn();
+			for (auto &parameter : m_info.parameters)
+			{
+				ImGui::PushID(parameter.id);
+				ImGui::AlignTextToFramePadding();
+				ImGui::Text("(p%d)", parameter.id);
+				ImGui::NextColumn();
+				ImGui::PushItemWidth(-1.0f);
+				if (ImGui::BeginCombo("##role", parameter.role.c_str()))
+				{
+					for (auto const &role : editor_includes::roles)
+					{
+						if (ImGui::Selectable(role.c_str(), role == parameter.role))
+						{
+							parameter.role = role;
+						}
+					}
+					ImGui::EndCombo();
+				}
+				ImGui::PopItemWidth();
+				ImGui::NextColumn();
+				ImGui::PushItemWidth(-1.0f);
+				input_text("##label", parameter.label);
+				ImGui::PopItemWidth();
+				ImGui::NextColumn();
+				ImGui::PushItemWidth(-1.0f);
+				input_text("##default", parameter.value);
+				ImGui::PopItemWidth();
+				ImGui::NextColumn();
+				ImGui::PopID();
+			}
+			ImGui::Columns(1);
+
+			if (ImGui::Button("Suggest roles"))
+			{
+				editor_includes::suggest(m_file, m_info);
+			}
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("Sets roles of the parameters still marked as free, where the way the template uses them tells what they are");
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Add parameter"))
+			{
+				m_info.parameter(m_info.parameters.empty() ? 1 : m_info.parameters.back().id + 1);
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Save to file"))
+			{
+				std::string error;
+				m_statuserror = false == editor_includes::save(m_file, m_info, error);
+				m_status = m_statuserror ? error : "Description saved in \"" + m_file + "\"";
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Reload"))
+			{
+				open(m_file);
+			}
+		}
+		if (false == m_status.empty())
+		{
+			ImGui::PushTextWrapPos(0.0f);
+			if (m_statuserror)
+			{
+				ImGui::TextColored(status_errorcolor, "%s", Bezogonkow(m_status).c_str());
+			}
+			else
+			{
+				ImGui::TextUnformatted(Bezogonkow(m_status).c_str());
+			}
+			ImGui::PopTextWrapPos();
+		}
+	}
+	ImGui::End();
+}

@@ -718,6 +718,7 @@ memory_node::deserialize( cParser &Input, node_data const &Nodedata ) {
 
 basic_node::basic_node( scene::node_data const &Nodedata ) :
     m_name( Nodedata.name ),
+    m_template( Nodedata.is_template ),
     m_layer( Nodedata.layer )
 {
     uuid = UID::random();
