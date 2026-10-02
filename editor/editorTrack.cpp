@@ -1234,8 +1234,10 @@ TTrack *editor_track::create_switch(switch_template const &Template, std::vector
 		std::ostringstream text;
 		text.precision(std::numeric_limits<double>::digits10);
 		text << "switch " << Template.length << ' ' << Style.fTrackWidth << ' ' << Style.fFriction << ' ' << 10.0 << ' ' << Style.iQualityFlag << ' ' << 0 << ' ' << environment << ' ';
+		auto const rails{Style.m_material1};
+		auto const trackbed{Style.eType == tt_Switch ? (Style.SwitchExtension ? Style.SwitchExtension->m_material3 : null_handle) : Style.m_material2};
 		if (Style.m_visible)
-			text << "vis " << material_name(Style.m_material1) << ' ' << Style.fTexLength << ' ' << material_name(Style.m_material2) << ' ' << texture_height(Style) << ' ' << Style.fTexWidth << ' ' << Style.fTexSlope << ' ';
+			text << "vis " << material_name(rails) << ' ' << Style.fTexLength << ' ' << material_name(rails) << ' ' << texture_height(Style) << ' ' << Style.fTexWidth << ' ' << Style.fTexSlope << ' ';
 		else
 			text << "unvis ";
 		for (int i = 0; i < 2; ++i)
@@ -1247,6 +1249,10 @@ TTrack *editor_track::create_switch(switch_template const &Template, std::vector
 			auto const &end{path.points[segment_data::point::end]};
 			text << start.x << ' ' << start.y << ' ' << start.z << ' ' << path.rolls[0] << ' ' << control1.x << ' ' << control1.y << ' ' << control1.z << ' ' << control2.x << ' ' << control2.y << ' ' << control2.z << ' ' << end.x << ' ' << end.y << ' ' << end.z << ' ' << path.rolls[1] << ' ' << path.radius << ' ';
 		}
+		if (trackbed != null_handle)
+			text << "trackbed " << material_name(trackbed) << ' ';
+		if ((Style.iCategoryFlag & 15) == 1 && false == Style.m_profile1.first.empty())
+			text << "railprofile " << Style.m_profile1.first << ' ';
 		text << "endtrack\n";
 		track = load_path(text.str(), Style);
 	}
@@ -1480,8 +1486,9 @@ TTrack *editor_track::create_path(TTrack const &Style, segment_data const &Path)
 	std::ostringstream text;
 	text.precision(std::numeric_limits<double>::digits10);
 	text << (category == 2 ? "road " : category == 4 ? "river " : "normal ") << glm::distance(Path.points[segment_data::point::start], Path.points[segment_data::point::end]) << ' ' << Style.fTrackWidth << ' ' << Style.fFriction << ' ' << Style.fSoundDistance << ' ' << Style.iQualityFlag << ' ' << 0 << ' ' << environment << ' ';
+	auto const ballast{Style.eType == tt_Switch ? (Style.SwitchExtension ? Style.SwitchExtension->m_material3 : null_handle) : Style.m_material2};
 	if (Style.m_visible)
-		text << "vis " << material_name(Style.m_material1) << ' ' << Style.fTexLength << ' ' << material_name(Style.m_material2) << ' ' << texture_height(Style) << ' ' << Style.fTexWidth << ' ' << Style.fTexSlope << ' ';
+		text << "vis " << material_name(Style.m_material1) << ' ' << Style.fTexLength << ' ' << material_name(ballast) << ' ' << texture_height(Style) << ' ' << Style.fTexWidth << ' ' << Style.fTexSlope << ' ';
 	else
 		text << "unvis ";
 	auto const &start{Path.points[segment_data::point::start]};

@@ -136,9 +136,14 @@ void editor_mode::select_track(scene::basic_node *Node)
 		m_track_point = {};
 	m_node = track;
 	ui()->set_node(m_node);
-	if (ui()->mode() != nodebank_panel::TRACK || m_track_tab == track_tab::path)
+	if (ui()->mode() != nodebank_panel::TRACK)
 		return;
-	if (editor_track::is_straight(*track, m_straights.tolerance))
+	m_track_window_open = true;
+	if (track->eType == tt_Switch)
+	{
+		m_track_tab = track_tab::turnout;
+	}
+	else if (editor_track::is_straight(*track, m_straights.tolerance))
 	{
 		m_track_tab_request = 0;
 		m_track_tab = track_tab::straights;
@@ -441,59 +446,145 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 
 void editor_mode::render_track_ui()
 {
-	if (ImGui::BeginTabBar("##trackediting"))
-	{
-		auto const request{m_track_tab_request};
-		m_track_tab_request = -1;
-		if (ImGui::BeginTabItem("Straights", nullptr, request == 0 ? ImGuiTabItemFlags_SetSelected : 0))
-		{
-			m_track_tab = track_tab::straights;
-			m_route_tab = true;
-			render_straights_ui();
-			ImGui::EndTabItem();
-		}
-		if (ImGui::BeginTabItem("Route design", nullptr, request == 1 ? ImGuiTabItemFlags_SetSelected : 0))
-		{
-			m_track_tab = track_tab::route;
-			m_route_tab = true;
-			render_route_ui();
-			ImGui::EndTabItem();
-		}
-		if (ImGui::BeginTabItem("Single path"))
-		{
-			m_track_tab = track_tab::path;
-			m_route_tab = false;
-			render_path_ui();
-			ImGui::EndTabItem();
-		}
-		ImGui::EndTabBar();
-	}
+	ImGui::TextDisabled("LMB on a path opens its editor: straight, curve or switch");
+	if (ImGui::Button("Open the editor window"))
+		m_track_window_open = true;
+	if (ImGui::CollapsingHeader("Straights in the scenery"))
+		render_straights_ui();
+	render_switch_ui();
 }
 
-void editor_mode::render_path_ui()
+void editor_mode::render_track_window()
 {
-	ImGui::TextDisabled("LMB: select path or point handle   Esc: release point\nGizmo moves the selected point, otherwise the whole path (W: turn)");
-	auto *track = selected_track();
-	if (track == nullptr)
+	if (false == m_track_window_open || selected_track() == nullptr)
+		return;
+	char const *title{"Path###trackeditor"};
+	switch (m_track_tab)
 	{
-		ImGui::TextDisabled("No path selected");
+	case track_tab::straights: title = "Straight###trackeditor"; break;
+	case track_tab::route: title = "Curve###trackeditor"; break;
+	case track_tab::turnout: title = "Switch###trackeditor"; break;
+	default: break;
+	}
+	ImGui::SetNextWindowSize(ImVec2(460.0f, 520.0f), ImGuiCond_FirstUseEver);
+	if (false == ImGui::Begin(title, &m_track_window_open))
+	{
+		ImGui::End();
 		return;
 	}
-
-	char const *type = track->eType == tt_Normal ? "normal" : track->eType == tt_Switch ? "switch" : track->eType == tt_Cross ? "cross" : track->eType == tt_Table ? "turntable" : track->eType == tt_Tributary ? "tributary" : "unknown";
-	char const *category = (track->iCategoryFlag & 1) ? "rail" : (track->iCategoryFlag & 2) ? "road" : (track->iCategoryFlag & 4) ? "river" : "other";
-	ImGui::Text("%s  (%s %s, %.2f m)", track->name().empty() ? "(noname)" : track->name().c_str(), category, type, track->Length());
-
-	if (false == editor_track::is_supported(*track))
+	switch (m_track_tab)
 	{
-		ImGui::TextDisabled("Editing of this path type isn't supported");
-		return;
+	case track_tab::straights:
+		m_route_tab = true;
+		render_straight_ui();
+		break;
+	case track_tab::route:
+		m_route_tab = true;
+		render_route_ui();
+		break;
+	case track_tab::turnout:
+		m_route_tab = true;
+		render_turnout_ui();
+		break;
+	default:
+		m_route_tab = false;
+		render_path_ui();
+		break;
 	}
-	std::string reason;
-	bool const geometry = editor_track::can_edit_geometry(*track, reason);
-	if (false == geometry)
-		ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "Geometry locked: %s", reason.c_str());
+	if (m_track_tab != track_tab::path)
+	{
+		ImGui::Separator();
+		if (ImGui::SmallButton("Edit points and parameters of the single path"))
+			m_track_tab = track_tab::path;
+	}
+	ImGui::End();
+}
 
+void editor_mode::render_turnout_ui()
+{
+	auto *track{selected_track()};
+	if (track == nullptr || track->eType != tt_Switch || track->m_paths.size() < 2)
+		return;
+	auto const &main{track->m_paths[0]};
+	auto const &diverging{track->m_paths[1]};
+	auto const origin{main.points[segment_data::point::start]};
+	glm::dvec2 const axis{glm::normalize(glm::dvec2{main.points[segment_data::point::end].x - origin.x, main.points[segment_data::point::end].z - origin.z})};
+	glm::dvec2 const normal{-axis.y, axis.x};
+	auto const length{glm::dot(glm::dvec2{main.points[segment_data::point::end].x - origin.x, main.points[segment_data::point::end].z - origin.z}, axis)};
+	glm::dvec2 const end{diverging.points[segment_data::point::end].x - origin.x, diverging.points[segment_data::point::end].z - origin.z};
+	auto const offset{glm::dot(end, normal)};
+	auto const &control{diverging.points[segment_data::point::control2]};
+	glm::dvec2 const tangent{glm::normalize(glm::dvec2{-control.x, -control.z})};
+	auto const angle{std::atan2(std::abs(tangent.x * axis.y - tangent.y * axis.x), glm::dot(tangent, axis))};
+	ImGui::Text("%s", track->name().empty() ? "(noname)" : track->name().c_str());
+	ImGui::Text("Length %.3f m, diverging %s, end offset %.3f m", length, offset > 0.0 ? "left" : "right", std::abs(offset));
+	if (angle > 1e-6)
+		ImGui::Text("Angle 1:%.2f (%.4f deg), R in the entry %.0f m", 1.0 / std::tan(angle), glm::degrees(angle), diverging.radius);
+	ImGui::TextDisabled("Gizmo moves the whole switch (W: turn), drag from a red ring at a free end to add a path");
+
+	auto &tool{m_switch};
+	if (false == tool.collected)
+	{
+		tool.templates = editor_track::standard_switch_templates();
+		auto const found{editor_track::find_switch_templates()};
+		tool.templates.insert(tool.templates.end(), found.begin(), found.end());
+		tool.collected = true;
+	}
+	if (tool.templates.empty())
+		return;
+	m_turnout_template = std::clamp(m_turnout_template, 0, static_cast<int>(tool.templates.size()) - 1);
+	ImGui::Separator();
+	ImGui::PushItemWidth(-1.0f);
+	if (ImGui::BeginCombo("##turnouttemplate", tool.templates[m_turnout_template].label.c_str()))
+	{
+		for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
+		{
+			auto const label{(tool.templates[i].source != nullptr ? "Scenery: " : "PLK: ") + tool.templates[i].label};
+			if (ImGui::Selectable(label.c_str(), i == m_turnout_template))
+				m_turnout_template = i;
+		}
+		ImGui::EndCombo();
+	}
+	ImGui::PopItemWidth();
+	auto const replace = [&](editor_track::switch_template const &Template, int const Side) {
+		if (false == track->Dynamics.empty())
+			return;
+		auto const grade{length > 0.0 ? (main.points[segment_data::point::end].y - origin.y) / length : 0.0};
+		auto const paths{editor_track::place_switch(Template, origin, axis, Side, grade)};
+		push_track_snapshot({{track, editor_track::capture(*track)}});
+		track->m_paths.assign(paths.begin(), paths.begin() + 2);
+		editor_track::commit({track});
+	};
+	int const side{offset > 0.0 ? 1 : -1};
+	if (ImGui::Button("Replace the geometry with the template"))
+		replace(tool.templates[m_turnout_template], side);
+	ImGui::SameLine();
+	if (ImGui::Button("Flip the side"))
+	{
+		auto const current{editor_track::find_switch_templates()};
+		editor_track::switch_template own;
+		own.source = track;
+		for (int i = 0; i < 2; ++i)
+		{
+			auto &local{own.local[i]};
+			local = track->m_paths[i];
+			auto const tolocal = [&](glm::dvec3 const &Vector) { return glm::dvec3{glm::dot(glm::dvec2{Vector.x, Vector.z}, normal) * side, Vector.y, glm::dot(glm::dvec2{Vector.x, Vector.z}, axis)}; };
+			local.points[segment_data::point::start] = tolocal(track->m_paths[i].points[segment_data::point::start] - origin);
+			local.points[segment_data::point::end] = tolocal(track->m_paths[i].points[segment_data::point::end] - origin);
+			local.points[segment_data::point::control1] = tolocal(track->m_paths[i].points[segment_data::point::control1]);
+			local.points[segment_data::point::control2] = tolocal(track->m_paths[i].points[segment_data::point::control2]);
+			if (side < 0)
+				local.rolls = {-local.rolls[0], -local.rolls[1]};
+		}
+		replace(own, -side);
+	}
+	ImGui::Separator();
+	render_path_parameters(*track);
+}
+
+void editor_mode::render_path_parameters(TTrack &Track)
+{
+	auto *track{&Track};
 	auto const before = editor_track::capture(*track);
 	enum class rebuild { none, parameters, geometry };
 	auto const finish_edit = [&](rebuild const Rebuild) {
@@ -553,7 +644,9 @@ void editor_mode::render_path_ui()
 		if (track->m_visible)
 		{
 			material_handle *materials[] = {&track->m_material1, &track->m_material2, track->SwitchExtension ? &track->SwitchExtension->m_material3 : nullptr};
-			char const *labels[] = {"Texture 1 (rails/surface)", "Texture 2 (trackbed/side)", "Trackbed (switch)"};
+			char const *pathlabels[] = {"Texture 1 (rails/surface)", "Texture 2 (trackbed/side)", "Trackbed (switch)"};
+			char const *switchlabels[] = {"Rails P1-P2", "Rails P3-P4", "Trackbed"};
+			auto const &labels{track->eType == tt_Switch ? switchlabels : pathlabels};
 			if (false == ImGui::IsAnyItemActive())
 			{
 				for (int i = 0; i < 3; ++i)
@@ -592,6 +685,58 @@ void editor_mode::render_path_ui()
 			ImGui::PopItemWidth();
 		}
 	}
+
+}
+
+void editor_mode::render_path_ui()
+{
+	ImGui::TextDisabled("LMB: select path or point handle   Esc: release point\nGizmo moves the selected point, otherwise the whole path (W: turn)");
+	auto *track = selected_track();
+	if (track == nullptr)
+	{
+		ImGui::TextDisabled("No path selected");
+		return;
+	}
+
+	char const *type = track->eType == tt_Normal ? "normal" : track->eType == tt_Switch ? "switch" : track->eType == tt_Cross ? "cross" : track->eType == tt_Table ? "turntable" : track->eType == tt_Tributary ? "tributary" : "unknown";
+	char const *category = (track->iCategoryFlag & 1) ? "rail" : (track->iCategoryFlag & 2) ? "road" : (track->iCategoryFlag & 4) ? "river" : "other";
+	ImGui::Text("%s  (%s %s, %.2f m)", track->name().empty() ? "(noname)" : track->name().c_str(), category, type, track->Length());
+
+	if (false == editor_track::is_supported(*track))
+	{
+		ImGui::TextDisabled("Editing of this path type isn't supported");
+		return;
+	}
+	std::string reason;
+	bool const geometry = editor_track::can_edit_geometry(*track, reason);
+	if (false == geometry)
+		ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "Geometry locked: %s", reason.c_str());
+
+	auto const before = editor_track::capture(*track);
+	enum class rebuild { none, parameters, geometry };
+	auto const finish_edit = [&](rebuild const Rebuild) {
+		if (ImGui::IsItemActivated())
+			m_track_field_before = before;
+		if (ImGui::IsItemDeactivatedAfterEdit())
+		{
+			push_track_snapshot({{track, m_track_field_before}});
+			switch (Rebuild)
+			{
+			case rebuild::geometry: editor_track::commit({track}); break;
+			case rebuild::parameters: editor_track::commit_parameters(*track); break;
+			default: track->mark_dirty(); break;
+			}
+		}
+	};
+	auto const apply_now = [&](rebuild const Rebuild) {
+		push_track_snapshot({{track, before}});
+		if (Rebuild == rebuild::parameters)
+			editor_track::commit_parameters(*track);
+		else
+			track->mark_dirty();
+	};
+
+	render_path_parameters(*track);
 
 	if (ImGui::CollapsingHeader("Path geometry", ImGuiTreeNodeFlags_DefaultOpen))
 	{
@@ -1515,8 +1660,17 @@ void editor_mode::render_straights_ui()
 		ImGui::EndChild();
 	}
 
-	ImGui::Separator();
+}
+
+void editor_mode::render_straight_ui()
+{
+	auto &state{m_straights};
 	auto const &line{current_straight()};
+	auto const describe = [](editor_track::straight const &Line) {
+		char text[160];
+		std::snprintf(text, sizeof(text), "L %.2f m  az %.4f deg  i %.2f per mille  %zu paths", Line.length, Line.azimuth, Line.grade * 1000.0, Line.tracks.size());
+		return std::string{text};
+	};
 	if (line.tracks.empty())
 	{
 		ImGui::TextDisabled(selected_track() != nullptr ? "The selected path isn't straight" : "No path selected");
@@ -1608,7 +1762,6 @@ void editor_mode::render_straights_ui()
 	}
 	if (false == state.status.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", state.status.c_str());
-	render_switch_ui();
 
 	if (false == state.set.empty())
 	{
@@ -2125,6 +2278,8 @@ void editor_mode::draw_track_hints()
 		hint = "Press on the selected straight where the switch starts and drag";
 	else if (m_track_tab == track_tab::straights)
 		hint = current_straight().tracks.empty() ? "LMB: select a straight or a curve" : "Drag the ends or the middle   Ctrl+drag: break   Shift+drag: S-curve   Alt+click: add to the set   Drag from a red ring: new path   Del: delete";
+	else if (m_track_tab == track_tab::turnout)
+		hint = "Gizmo: move the switch (W: turn)   Drag from a red ring: new path   Del: delete";
 	else if (m_track_tab == track_tab::route)
 		hint = m_route.chain.tracks.empty() ? "LMB: select a curve" : "Drag the vertex (yellow) or the radius grip (green), the change is applied on release   Ctrl+Z: undo";
 	else
@@ -2150,41 +2305,44 @@ void editor_mode::update_build_tools()
 bool editor_mode::start_extend()
 {
 	auto *track{selected_track()};
-	if (track == nullptr || track->eType != tt_Normal || false == editor_track::is_supported(*track) || false == track->Dynamics.empty())
+	if (track == nullptr || (track->eType != tt_Normal && track->eType != tt_Switch) || false == editor_track::is_supported(*track) || false == track->Dynamics.empty())
 		return false;
 	screen_projection const projection;
 	ImVec2 const mouse = ImGui::GetIO().MousePos;
-	auto const &path{track->m_paths.front()};
-	for (auto const atend : {false, true})
+	for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
 	{
-		editor_track::point_ref const point{0, atend ? editor_track::point_kind::end : editor_track::point_kind::start};
-		if (editor_track::is_connected(*track, point))
-			continue;
-		auto const position{editor_track::point_position(*track, point)};
-		ImVec2 screen;
-		if (false == projection.project(position, screen))
-			continue;
-		if ((screen.x - mouse.x) * (screen.x - mouse.x) + (screen.y - mouse.y) * (screen.y - mouse.y) > kHandleRadius * kHandleRadius * 1.5f)
-			continue;
-		auto const &start{path.points[segment_data::point::start]};
-		auto const &end{path.points[segment_data::point::end]};
-		auto const &control1{path.points[segment_data::point::control1]};
-		auto const &control2{path.points[segment_data::point::control2]};
-		glm::dvec3 tangent;
-		if (atend)
-			tangent = control2 != glm::dvec3{} ? -control2 : end - (start + control1);
-		else
-			tangent = -(control1 != glm::dvec3{} ? control1 : (end + control2) - start);
-		glm::dvec2 const planar{tangent.x, tangent.z};
-		if (glm::length(planar) < 1e-6)
-			return false;
-		m_extend.active = true;
-		m_extend.track = track;
-		m_extend.point = position;
-		m_extend.direction = glm::normalize(planar);
-		m_extend.grade = tangent.y / glm::length(planar);
-		m_extend.mouse = position;
-		return true;
+		auto const &path{track->m_paths[i]};
+		for (auto const atend : {false, true})
+		{
+			editor_track::point_ref const point{i, atend ? editor_track::point_kind::end : editor_track::point_kind::start};
+			if (editor_track::is_connected(*track, point))
+				continue;
+			auto const position{editor_track::point_position(*track, point)};
+			ImVec2 screen;
+			if (false == projection.project(position, screen))
+				continue;
+			if ((screen.x - mouse.x) * (screen.x - mouse.x) + (screen.y - mouse.y) * (screen.y - mouse.y) > kHandleRadius * kHandleRadius * 1.5f)
+				continue;
+			auto const &start{path.points[segment_data::point::start]};
+			auto const &end{path.points[segment_data::point::end]};
+			auto const &control1{path.points[segment_data::point::control1]};
+			auto const &control2{path.points[segment_data::point::control2]};
+			glm::dvec3 tangent;
+			if (atend)
+				tangent = control2 != glm::dvec3{} ? -control2 : end - (start + control1);
+			else
+				tangent = -(control1 != glm::dvec3{} ? control1 : (end + control2) - start);
+			glm::dvec2 const planar{tangent.x, tangent.z};
+			if (glm::length(planar) < 1e-6)
+				return false;
+			m_extend.active = true;
+			m_extend.track = track;
+			m_extend.point = position;
+			m_extend.direction = glm::normalize(planar);
+			m_extend.grade = tangent.y / glm::length(planar);
+			m_extend.mouse = position;
+			return true;
+		}
 	}
 	return false;
 }
@@ -2425,16 +2583,19 @@ void editor_mode::draw_build_overlay() const
 		for (auto const &piece : switch_preview())
 			drawpath(piece, IM_COL32(255, 210, 60, 255));
 	auto const *track{selected_track()};
-	if (track == nullptr || track->eType != tt_Normal || m_extend.active)
+	if (track == nullptr || (track->eType != tt_Normal && track->eType != tt_Switch) || m_extend.active)
 		return;
-	for (auto const atend : {false, true})
+	for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
 	{
-		editor_track::point_ref const point{0, atend ? editor_track::point_kind::end : editor_track::point_kind::start};
-		if (editor_track::is_connected(*track, point))
-			continue;
-		ImVec2 screen;
-		if (projection.project(editor_track::point_position(*track, point), screen))
-			drawlist->AddCircle(screen, 10.0f, IM_COL32(240, 60, 60, 255), 16, 3.0f);
+		for (auto const atend : {false, true})
+		{
+			editor_track::point_ref const point{i, atend ? editor_track::point_kind::end : editor_track::point_kind::start};
+			if (editor_track::is_connected(*track, point))
+				continue;
+			ImVec2 screen;
+			if (projection.project(editor_track::point_position(*track, point), screen))
+				drawlist->AddCircle(screen, 10.0f, IM_COL32(240, 60, 60, 255), 16, 3.0f);
+		}
 	}
 }
 

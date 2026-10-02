@@ -1020,6 +1020,7 @@ bool editor_mode::update()
         update_build_tools();
         draw_build_overlay();
         draw_track_hints();
+        render_track_window();
     }
 
     // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---

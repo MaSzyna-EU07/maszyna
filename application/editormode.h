@@ -395,6 +395,7 @@ class editor_mode : public application_mode
 		editor_track::straight line;
 	};
 	switch_tool m_switch;
+	int m_turnout_template{0};
 	struct extend_tool
 	{
 		bool active{false};
@@ -415,7 +416,12 @@ class editor_mode : public application_mode
 	std::vector<segment_data> extend_pieces() const;
 	void update_build_tools();
 	void draw_build_overlay() const;
-	enum class track_tab { straights, route, path };
+	enum class track_tab { straights, route, path, turnout };
+	bool m_track_window_open{false};
+	void render_track_window();
+	void render_turnout_ui();
+	void render_path_parameters(TTrack &Track);
+	void render_straight_ui();
 	track_tab m_track_tab{track_tab::straights};
 	int m_track_tab_request{-1};
 	void delete_selected_track();
