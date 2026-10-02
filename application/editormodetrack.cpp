@@ -1380,7 +1380,8 @@ bool editor_mode::pick_straight_handle()
 void editor_mode::straight_refresh()
 {
 	auto &state{m_straights};
-	state.current_for = nullptr;
+	state.current_for = selected_track();
+	state.current = state.current_for != nullptr ? editor_track::find_straight(*state.current_for, state.tolerance) : editor_track::straight{};
 	for (auto *line : {&state.a, &state.b})
 		if (false == line->tracks.empty())
 			*line = editor_track::find_straight(*line->tracks.front(), state.tolerance);
