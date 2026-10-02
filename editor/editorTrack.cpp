@@ -1253,6 +1253,33 @@ TTrack *editor_track::create_switch(switch_template const &Template, std::vector
 	return track;
 }
 
+bool editor_track::touches(TTrack const &Track, glm::dvec3 const &Point)
+{
+	for (auto const &path : Track.m_paths)
+		for (auto const index : {segment_data::point::start, segment_data::point::end})
+			if (glm::distance(path.points[index], Point) <= kSamePoint)
+				return true;
+	return false;
+}
+
+TTrack *editor_track::outside_neighbour(straight const &Line, bool const Atend)
+{
+	auto const &point{Atend ? Line.end : Line.start};
+	for (std::size_t i = 0; i < Line.tracks.size(); ++i)
+	{
+		auto const &path{Line.tracks[i]->m_paths[Line.paths[i]]};
+		for (auto const end : {false, true})
+		{
+			if (glm::distance(path.points[end ? segment_data::point::end : segment_data::point::start], point) > kSamePoint)
+				continue;
+			auto *neighbour{neighbour_at(*Line.tracks[i], Line.paths[i], end)};
+			if (neighbour != nullptr && std::find(Line.tracks.begin(), Line.tracks.end(), neighbour) == Line.tracks.end())
+				return neighbour;
+		}
+	}
+	return nullptr;
+}
+
 std::vector<TTrack *> editor_track::straight_affected(std::vector<straight> const &Lines)
 {
 	std::vector<TTrack *> result;

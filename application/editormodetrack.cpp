@@ -1474,7 +1474,22 @@ void editor_mode::draw_straights_overlay() const
 			projection.line(drawlist, state.tool_point + along * length + shifted, line.end + shifted, IM_COL32(255, 210, 60, 255), 3.0f);
 		}
 	}
-	if (m_straights.dragging)
+	if (m_straights.dragging && m_straights.fitting)
+	{
+		auto const &result{m_route.result};
+		if (result.length > 0.0 && result.profile.size() >= 2)
+		{
+			int const steps{std::clamp(static_cast<int>(result.length / 2.0), 2, 2000)};
+			auto previous{alignment::evaluate(result, 0.0).position};
+			for (int i = 1; i <= steps; ++i)
+			{
+				auto const next{alignment::evaluate(result, result.length * i / steps).position};
+				projection.line(drawlist, previous, next, result.valid ? IM_COL32(255, 210, 60, 255) : IM_COL32(255, 60, 60, 255), 3.0f);
+				previous = next;
+			}
+		}
+	}
+	else if (m_straights.dragging)
 	{
 		for (auto const &member : m_straights.drag_lines)
 		{
@@ -1911,15 +1926,19 @@ void editor_mode::render_straight_gizmo()
 			{
 				lines.push_back(line);
 			}
-			auto const tracks{editor_track::straight_affected(lines)};
+			state.fitting = lines.size() == 1 && start_curve_fit(line);
+			auto const tracks{state.fitting ? std::vector<TTrack *>{} : editor_track::straight_affected(lines)};
 			state.dragging = true;
 			state.drag_line = line;
 			state.drag_lines = lines;
 			state.drag_states.clear();
 			for (auto *track : tracks)
 				state.drag_states.emplace_back(track, editor_track::capture(*track));
-			push_track_snapshot(state.drag_states);
-			m_track_drag = tracks;
+			if (false == state.fitting)
+			{
+				push_track_snapshot(state.drag_states);
+				m_track_drag = tracks;
+			}
 		}
 		auto const &grabbed{state.drag_line};
 		glm::dvec3 moved{camerapos + glm::dvec3(state.gizmo[3])};
@@ -1955,6 +1974,11 @@ void editor_mode::render_straight_gizmo()
 			ends.emplace_back(transform(member.start), transform(member.end));
 		state.preview_start = transform(grabbed.start);
 		state.preview_end = transform(grabbed.end);
+		if (state.fitting)
+		{
+			update_curve_fit(state.preview_start, state.preview_end);
+			return;
+		}
 		for (auto const &entry : state.drag_states)
 			editor_track::apply(*entry.first, entry.second);
 		editor_track::move_straights(state.drag_lines, ends);
@@ -1963,6 +1987,16 @@ void editor_mode::render_straight_gizmo()
 	}
 	else if (state.dragging)
 	{
+		if (state.fitting)
+		{
+			state.fitting = false;
+			state.dragging = false;
+			state.drag_lines.clear();
+			if (m_route.result.valid)
+				route_apply();
+			straight_refresh();
+			return;
+		}
 		commit_track_drag(true);
 		state.dragging = false;
 		m_track_drag.clear();
@@ -2897,4 +2931,63 @@ void editor_mode::apply_detour()
 		return;
 	route_apply();
 	straight_refresh();
+}
+
+bool editor_mode::start_curve_fit(editor_track::straight const &Line)
+{
+	auto &state{m_straights};
+	auto *before{editor_track::outside_neighbour(Line, false)};
+	auto *after{editor_track::outside_neighbour(Line, true)};
+	if (before == nullptr || after == nullptr)
+		return false;
+	if (false == editor_track::find_curve(*before, state.tolerance, m_route.design.norms.gauge, state.fit_before) || false == editor_track::find_curve(*after, state.tolerance, m_route.design.norms.gauge, state.fit_after))
+		return false;
+	if (state.fit_before.reversals != 0 || state.fit_after.reversals != 0)
+		return false;
+	auto const far = [](editor_track::curve const &Curve, glm::dvec3 const &Joint) { return editor_track::touches(*Curve.from, Joint) ? Curve.to : Curve.from; };
+	m_route.from = far(state.fit_before, Line.start);
+	m_route.to = far(state.fit_after, Line.end);
+	route_reset();
+	if (m_route.chain.tracks.empty())
+		return false;
+	return true;
+}
+
+void editor_mode::update_curve_fit(glm::dvec3 const &Start, glm::dvec3 const &End)
+{
+	auto &state{m_straights};
+	auto &design{m_route.design};
+	glm::dvec2 const point{Start.x, Start.z};
+	glm::dvec2 const direction{glm::normalize(glm::dvec2{End.x - Start.x, End.z - Start.z})};
+	auto const cross = [](glm::dvec2 const &A, glm::dvec2 const &B) { return A.x * B.y - A.y * B.x; };
+	glm::dvec2 const start{design.start.x, design.start.z};
+	glm::dvec2 const end{design.end.x, design.end.z};
+	auto const startdirection{glm::normalize(design.start_direction)};
+	auto const enddirection{glm::normalize(design.end_direction)};
+	auto const first{cross(point - start, direction) / cross(startdirection, direction)};
+	auto const last{cross(end - point, direction) / cross(enddirection, direction)};
+	auto const make = [&](editor_track::curve const &Curve, double const Offset) {
+		alignment::vertex vertex;
+		vertex.radius = Curve.radius > 0.0 ? std::round(Curve.radius) : 1000.0;
+		route_recommend(vertex);
+		if (Curve.transition_in > 0.0)
+			vertex.transition_in = std::round(Curve.transition_in);
+		if (Curve.transition_out > 0.0)
+			vertex.transition_out = std::round(Curve.transition_out);
+		if (Curve.cant > 0.0)
+			vertex.cant = std::round(Curve.cant);
+		if (Curve.compound)
+		{
+			vertex.compound = true;
+			vertex.radius2 = std::round(Curve.radius2);
+			vertex.transition_middle = std::round(Curve.transition_middle);
+			vertex.split = Curve.split;
+		}
+		vertex.offset = std::max(0.1, Offset);
+		return vertex;
+	};
+	auto before{make(state.fit_before, first)};
+	auto after{make(state.fit_after, last)};
+	design.vertices = {before, after};
+	route_update();
 }

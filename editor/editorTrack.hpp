@@ -118,6 +118,8 @@ class editor_track
 	static straight find_straight(TTrack &Track, straight_tolerance const &Tolerance);
 	static std::vector<straight> find_straights(double const Minimumlength, straight_tolerance const &Tolerance);
 	static std::vector<TTrack *> straight_affected(std::vector<straight> const &Lines);
+	static TTrack *outside_neighbour(straight const &Line, bool const Atend);
+	static bool touches(TTrack const &Track, glm::dvec3 const &Point);
 	struct curve
 	{
 		TTrack *from{nullptr};

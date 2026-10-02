@@ -340,6 +340,9 @@ class editor_mode : public application_mode
 		editor_track::straight drag_line;
 		std::vector<editor_track::straight> set;
 		std::vector<editor_track::straight> drag_lines;
+		bool fitting{false};
+		editor_track::curve fit_before;
+		editor_track::curve fit_after;
 		std::vector<std::pair<TTrack *, editor_track::state>> drag_states;
 		glm::dvec3 preview_start{0.0};
 		glm::dvec3 preview_end{0.0};
@@ -381,6 +384,8 @@ class editor_mode : public application_mode
 	double straight_tool_radius(editor_track::straight const &Line) const;
 	void straight_reshape(editor_track::straight const &Line, double const From, double const To, std::function<glm::dvec3(glm::dvec3 const &)> const &Tail, double const Radius);
 	void straight_refresh();
+	bool start_curve_fit(editor_track::straight const &Line);
+	void update_curve_fit(glm::dvec3 const &Start, glm::dvec3 const &End);
 	void add_detour_point();
 	void apply_detour();
 	std::vector<glm::dvec3> detour_outline() const;
