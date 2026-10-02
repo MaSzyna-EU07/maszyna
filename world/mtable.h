@@ -70,6 +70,9 @@ class TTrainParameters
     std::string ShowRelation() const;
     double WatchMTable(double DistCounter);
     std::string NextStop() const;
+    // wpis rozkladu Offset pozycji za StationIndex (Offset>=1); poza zakresem 1..StationCount
+    // zwraca techniczny wpis zerowy (TimeTable[0], StationName=="nowhere", Ah==-1)
+    TMTableLine const &TimeTableEntryAhead( int Offset ) const;
     sound_source next_stop_sound() const;
     sound_source last_stop_sound() const;
     bool IsStop() const;
