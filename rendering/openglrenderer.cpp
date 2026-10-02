@@ -4018,20 +4018,9 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
 
         if( Submodel->Child != nullptr ) {
             if( Submodel->eType == TP_TEXT ) { // tekst renderujemy w specjalny sposób, zamiast submodeli z łańcucha Child
-                int i, j = (int)Submodel->pasText->size();
-                TSubModel *p;
-                if( !Submodel->smLetter ) { // jeśli nie ma tablicy, to ją stworzyć; miejsce nieodpowiednie, ale tymczasowo może być
-                    Submodel->smLetter = new TSubModel *[ 256 ]; // tablica wskaźników submodeli dla wyświetlania tekstu
-                    std::memset(Submodel->smLetter, 0, 256 * sizeof( TSubModel * )); // wypełnianie zerami
-                    p = Submodel->Child;
-                    while( p ) {
-                        Submodel->smLetter[ p->pName[ 0 ] ] = p;
-                        p = p->Next; // kolejny znak
-                    }
-                }
-                for( i = 1; i <= j; ++i ) {
-                    p = Submodel->smLetter[ ( *( Submodel->pasText) )[ i ] ]; // znak do wyświetlenia
-                    if( p ) { // na razie tylko jako przezroczyste
+                if( Submodel->pasText != nullptr ) {
+                    // znaki do wyświetlenia; tekst może być zapisany w utf-8 albo w windows-1250
+                    for( auto *p : Submodel->text_letters( *Submodel->pasText ) ) { // na razie tylko jako przezroczyste
                         Render_Alpha( p );
                         if( p->fMatrix )
                             ::glMultMatrixf( p->fMatrix->readArray() ); // przesuwanie widoku
