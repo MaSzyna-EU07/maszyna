@@ -53,6 +53,8 @@ public:
         float lvmax = 150.0f;
         float lvuart = 65535.0f;
 		float tachoscale = 1.0f;
+		float dynamicbrakemin = 0.0f;
+		float dynamicbrakemax = 255.0f;
 
         bool mainenable = true;
         bool scndenable = true;
@@ -60,6 +62,7 @@ public:
         bool localenable = true;
         bool radiovolumeenable = false;
         bool radiochannelenable = false;
+		bool dynamicenable = false;
 
         bool debug = false;
 

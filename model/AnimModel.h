@@ -172,6 +172,8 @@ public:
 public:
 // methods
     void RaPrepare(); // ustawienie animacji egzemplarza na wzorcu
+    // rotation and scale of the instance as a matrix: rotate y * rotate x * rotate z * scale
+    glm::mat4 const &rotation_scale();
     void RaAnimate( unsigned int const Framestamp ); // przeliczenie animacji egzemplarza
 
     // radius() subclass details, calculates node's bounding radius
@@ -190,6 +192,12 @@ public:
     TModel3d *pModel { nullptr };
     glm::vec3 vAngle; // bazowe obroty egzemplarza względem osi
     glm::vec3 m_scale { 1.0f, 1.0f, 1.0f }; // per-axis scale (see Scale() accessors above)
+    // rotation and scale part of the instance transform, cached for the instanced render path.
+    // rebuilt by rotation_scale() whenever the angles or the scale differ from the ones it was built from
+    glm::mat4 m_rotationscale { 1.0f };
+    glm::vec3 m_rotationscaleangles { 0.0f, 0.0f, 0.0f };
+    glm::vec3 m_rotationscalescale { 1.0f, 1.0f, 1.0f };
+    bool m_rotationscalevalid { false };
     material_data m_materialdata;
 
     std::string asText; // tekst dla wyświetlacza znakowego

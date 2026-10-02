@@ -1086,7 +1086,7 @@ struct TMPTRelay
 	double Iup = 0.0;
 	double Idown = 0.0;
 };
-typedef TMPTRelay TMPTRelayTable[8];
+typedef TMPTRelay TMPTRelayTable[MotorParametersArraySize + 1]; // indexed like MotorParam
 
 struct TMotorParameters
 {
@@ -1729,6 +1729,11 @@ class TMoverParameters
 	TMotorParameters MotorParam[MotorParametersArraySize + 1];
 	/*rozne parametry silnika przy bocznikowaniach*/
 	/*dla lokomotywy spalinowej z przekladnia mechaniczna: przelozenia biegow*/
+	// bounds-safe read access to MotorParam
+	TMotorParameters const &motor_param(int const Position) const
+	{
+		return MotorParam[std::clamp(Position, 0, MotorParametersArraySize)];
+	}
 	TTransmision Transmision;
 	// record   {liczba zebow przekladni}
 	//  NToothM, NToothW : byte;

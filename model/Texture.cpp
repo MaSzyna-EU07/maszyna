@@ -394,12 +394,12 @@ opengl_texture::make_from_memory(size_t width, size_t height, const uint8_t *raw
 
 void opengl_texture::update_from_memory(size_t width, size_t height, const uint8_t *raw)
 {
-	if (id != -1 && (width != data_width || height != data_height || GL_SRGB8_ALPHA8 != data_format || GL_RGBA != data_components))
+	if (id != (GLuint)-1 && (width != data_width || height != data_height || GL_SRGB8_ALPHA8 != data_format || GL_RGBA != data_components))
 	{
 		glDeleteTextures(1, &id);
-		id = -1;
+		id = (GLuint)-1;
 	}
-	if (id == -1)
+	if (id == (GLuint)-1)
 	{
 		data_width = width;
 		data_height = height;

@@ -6,6 +6,8 @@
 #include <string>
 #include <algorithm>
 #include <cstdint>
+#include "utilities/utilities.h"
+#include "utilities/Globals.h"
 
 class UID {
 public:
@@ -13,10 +15,9 @@ public:
 
 
     static UID random() {
-        static thread_local std::mt19937_64 gen(std::random_device{}());
         UID u;
-        uint64_t a = gen();
-        uint64_t b = gen();
+        uint64_t a = Global.random_engine();
+        uint64_t b = Global.random_engine();
         for (int i = 0; i < 8; ++i) u.bytes[i] = uint8_t(a >> (i * 8) & 0xFF);
         for (int i = 0; i < 8; ++i) u.bytes[8 + i] = uint8_t(b >> (i * 8) & 0xFF);
 

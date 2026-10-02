@@ -36,12 +36,13 @@ uniform sampler2D specgloss;
 
 vec3 apply_lights_sunless(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float reflectivity, float specularity, float shadowtone)
 {
-    vec3 basecolor = param[0].rgb;
+    // diffuse colour applied once, to the albedo (see material_diffuse() in light_common.glsl)
+    texturecolor *= material_diffuse();
     // Cab interior: dim ambient less than the exterior path - ambient
     // is the dominant indoor illumination, but it was still too bright.
-    fragcolor *= basecolor * 0.80;
+    fragcolor *= 0.80;
 
-    vec3 emissioncolor = basecolor * emission;
+    vec3 emissioncolor = vec3(emission);
 
     vec3 view_dir = normalize(-f_pos.xyz);
     float NdotV = max(dot(fragnormal, view_dir), 0.0);
@@ -71,7 +72,7 @@ vec3 apply_lights_sunless(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, fl
     // Sharpen N.L for stronger contrast between lit and shaded cab
     // surfaces (uses SUN_NDOTL_SHARPNESS from light_common.glsl).
     float sun_NdotL = pow(sunlight.x, SUN_NDOTL_SHARPNESS);
-    float diffuseamount = sun_NdotL * param[1].x * lights[0].intensity;
+    float diffuseamount = sun_NdotL * lights[0].intensity;
 
     float specularamount = sunlight.y * param[1].y * specularity * lights[0].intensity;
 
@@ -79,7 +80,7 @@ vec3 apply_lights_sunless(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, fl
     {
         light_s light = lights[i];
         vec2 part = calc_headlights(light, fragnormal);
-        fragcolor += light.color * (part.x * param[1].x + part.y * param[1].y) * light.intensity;
+        fragcolor += light.color * (part.x + part.y * param[1].y) * light.intensity;
     }
 
     if (shadowtone < 1.0)

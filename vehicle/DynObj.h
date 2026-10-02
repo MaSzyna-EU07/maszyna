@@ -310,6 +310,10 @@ private:
     TSubModel *smWahacze[4]; // wahacze (np. nogi, dźwignia w drezynie)
     TSubModel *smBrakeMode; // Ra 15-01: nastawa hamulca też
     TSubModel *smLoadMode; // Ra 15-01: nastawa próżny/ładowny
+    TSubModel *sm_winter_variant {}; // submodel zimowego wariantu
+    TSubModel *sm_spring_variant {}; // submodel wiosennego wariantu
+    TSubModel *sm_summer_variant {}; // submodel letniego wariantu
+    TSubModel *sm_autumn_variant {}; // submodel jesiennego wariantu
     double fWahaczeAmp;
     // Winger 160204 - pantografy
     double pantspeedfactor;
@@ -462,6 +466,7 @@ private:
     void ABuLittleUpdate(double ObjSqrDist);
     void ABuBogies();
     void ABuModelRoll();
+    void on_season_update();
     void TurnOff();
     // update state of load exchange operation
     void update_exchange( double const Deltatime );
@@ -634,6 +639,10 @@ private:
     std::string asName;
 	const std::string &name() const {
 		return asName; }
+    // seed for texture variants of materials used by this vehicle and its load
+    std::uint32_t m_variantseed { 0 };
+    std::uint32_t variant_seed() const {
+        return m_variantseed; }
     std::string asBaseDir;
 
     //    std::ofstream PneuLogFile; //zapis parametrow pneumatycznych

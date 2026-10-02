@@ -15,6 +15,7 @@ Copyright (C) 2007-2014 Maciej Cierniak
 //
 //#include <sys/types.h>
 //#include <sys/stat.h>
+#include <charconv>
 #include <ranges>
 //#ifndef WIN32
 //#include <unistd.h>
@@ -28,9 +29,9 @@ Copyright (C) 2007-2014 Maciej Cierniak
 #include "utilities/Globals.h"
 #include "utilities/parser.h"
 #include "utilities/U8.h"
+#include "utilities/Logs.h"
 
 
-//#include "utilities/Logs.h"
 
 // TODO: This shouldn't be in Globals?
 bool DebugModeFlag = false;
@@ -137,15 +138,51 @@ int Random(int min, int max)
 	return dist(Global.random_engine);
 }
 
+std::uint64_t true_random_seed()
+{
+	try
+	{
+		std::random_device rd;
+		if (rd.entropy() > 0.0)
+		{
+			// NOTE: both halves have to be 64 bit wide before the shift - shifting a std::uint32_t
+			// by 32 is undefined behaviour, and drops the high half of the seed
+			std::uint64_t const high{rd()};
+			std::uint64_t const low{rd()};
+			return (high << 32) | low;
+		}
+	}
+	catch (std::exception const &Error)
+	{
+		// std::random_device throws when the machine has no usable hardware entropy source;
+		// the clock below stands in for it, which is worth saying out loud since it is a
+		// weaker seed than the caller asked for
+		WriteLog(std::format("random: no hardware entropy source ({}), seeding from the clock instead", Error.what()));
+	}
+	return static_cast<std::uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+}
+
+std::uint32_t seed_of(std::string const &Text)
+{
+	if (std::uint32_t number{}; std::from_chars(Text.data(), Text.data() + Text.size(), number).ec == std::errc{})
+	{
+		return number;
+	}
+	std::uint32_t hash{};
+	for (auto const character : Text)
+	{
+		hash = hash * 31u + static_cast<std::uint32_t>(static_cast<unsigned char>(character));
+	}
+	return hash;
+}
+
 std::string generate_uuid_v4()
 {
-	std::random_device rd;
-	std::mt19937 gen(rd());
 	std::uniform_int_distribution<int> dist(0, 255);
 
 	std::array<uint8_t, 16> bytes;
 	for (auto &b : bytes)
-		b = static_cast<uint8_t>(dist(gen));
+		b = static_cast<uint8_t>(dist(Global.random_engine));
 
 	// UUID v4 (RFC 4122)
 	bytes[6] = bytes[6] & 0x0F | 0x40;
@@ -389,6 +426,28 @@ std::time_t last_modified(std::string const &Filename)
 		return 0;
 }
 
+std::tm local_tm(std::time_t Time)
+{
+	std::tm tm{};
+#ifdef _WIN32
+	localtime_s(&tm, &Time);
+#else
+	localtime_r(&Time, &tm);
+#endif
+	return tm;
+}
+
+std::tm utc_tm(std::time_t Time)
+{
+	std::tm tm{};
+#ifdef _WIN32
+	gmtime_s(&tm, &Time);
+#else
+	gmtime_r(&Time, &tm);
+#endif
+	return tm;
+}
+
 // potentially erases file extension from provided file name. returns: true if extension was removed, false otherwise
 bool erase_extension(std::string &Filename)
 {
@@ -490,4 +549,42 @@ std::string deserialize_random_set(cParser &Input, char const *Break)
 		// shouldn't ever get here but, eh
 		return "";
 	}
+}
+
+// returns hash of provided string, combined with provided seed
+std::uint32_t hash_string(std::string const &String, std::uint32_t const Seed)
+{
+	// FNV-1a, 32 bit, with the seed mixed into the standard offset basis
+	std::uint32_t hash{2166136261u ^ Seed};
+	for (auto const character : String)
+	{
+		hash ^= static_cast<std::uint32_t>(static_cast<unsigned char>(character));
+		hash *= 16777619u;
+	}
+	return hash;
+}
+
+// extracts a group of tokens from provided data stream, returns all of them
+std::vector<std::string> deserialize_set(cParser &Input, char const *Break)
+{
+
+	std::vector<std::string> tokens;
+
+	auto token{Input.getToken<std::string>(true, Break)};
+	std::ranges::replace(token, '\\', '/');
+	if (token != "[")
+	{
+		// simple case, single token
+		if (false == token.empty())
+		{
+			tokens.emplace_back(token);
+		}
+		return tokens;
+	}
+	// '[' marks a beginning of a set, retrieve all entries until it's closed
+	while ((token = deserialize_random_set(Input, Break)) != "" && token != "]")
+	{
+		tokens.emplace_back(token);
+	}
+	return tokens;
 }

@@ -5,6 +5,8 @@
 #include "stdafx.h"
 #include "scene/sn_utils.h"
 
+#include <bit>
+
 // sanity checks
 static_assert(std::numeric_limits<double>::is_iec559, "IEEE754 required");
 static_assert(sizeof(float) == 4, "Float must be 4 bytes");
@@ -17,7 +19,7 @@ uint16_t sn_utils::ld_uint16(std::istream &s)
 	uint8_t buf[2];
 	s.read((char*)buf, 2);
 	uint16_t v = buf[1] << 8 | buf[0];
-	return reinterpret_cast<uint16_t&>(v);
+	return v;
 }
 
 // deserialize little endian uint32
@@ -26,7 +28,7 @@ uint32_t sn_utils::ld_uint32(std::istream &s)
 	uint8_t buf[4];
 	s.read((char*)buf, 4);
 	uint32_t v = buf[3] << 24 | buf[2] << 16 | buf[1] << 8 | buf[0];
-	return reinterpret_cast<uint32_t&>(v);
+	return v;
 }
 
 // deserialize little endian int32
@@ -35,7 +37,7 @@ int32_t sn_utils::ld_int32(std::istream &s)
 	uint8_t buf[4];
 	s.read((char*)buf, 4);
 	uint32_t v = buf[3] << 24 | buf[2] << 16 | buf[1] << 8 | buf[0];
-	return reinterpret_cast<int32_t&>(v);
+	return static_cast<int32_t>(v);
 }
 
 // deserialize little endian uint64
@@ -47,7 +49,7 @@ uint64_t sn_utils::ld_uint64(std::istream &s)
 	             (uint64_t)buf[5] << 40 | (uint64_t)buf[4] << 32 |
 	             (uint64_t)buf[3] << 24 | (uint64_t)buf[2] << 16 |
 	             (uint64_t)buf[1] << 8 | (uint64_t)buf[0];
-	return reinterpret_cast<uint64_t&>(v);
+	return v;
 }
 
 // deserialize little endian int64
@@ -59,7 +61,7 @@ int64_t sn_utils::ld_int64(std::istream &s)
 	             (uint64_t)buf[5] << 40 | (uint64_t)buf[4] << 32 |
 	             (uint64_t)buf[3] << 24 | (uint64_t)buf[2] << 16 |
 	             (uint64_t)buf[1] << 8 | (uint64_t)buf[0];
-	return reinterpret_cast<int64_t&>(v);
+	return static_cast<int64_t>(v);
 }
 
 // deserialize little endian ieee754 float32
@@ -68,7 +70,7 @@ float sn_utils::ld_float32(std::istream &s)
 	uint8_t buf[4];
 	s.read((char*)buf, 4);
 	uint32_t v = buf[3] << 24 | buf[2] << 16 | buf[1] << 8 | buf[0];
-	return reinterpret_cast<float&>(v);
+	return std::bit_cast<float>(v);
 }
 
 // deserialize little endian ieee754 float64
@@ -80,7 +82,7 @@ double sn_utils::ld_float64(std::istream &s)
 		         (uint64_t)buf[5] << 40 | (uint64_t)buf[4] << 32 |
 	             (uint64_t)buf[3] << 24 | (uint64_t)buf[2] << 16 |
 		         (uint64_t)buf[1] << 8 | (uint64_t)buf[0];
-	return reinterpret_cast<double&>(v);
+	return std::bit_cast<double>(v);
 }
 
 // deserialize null-terminated string
@@ -195,7 +197,7 @@ void sn_utils::ls_int64(std::ostream &s, int64_t v)
 
 void sn_utils::ls_float32(std::ostream &s, float t)
 {
-	uint32_t v = reinterpret_cast<uint32_t&>(t);
+	uint32_t v = std::bit_cast<uint32_t>(t);
 	uint8_t buf[4];
 	buf[0] = v;
 	buf[1] = v >> 8;
@@ -206,7 +208,7 @@ void sn_utils::ls_float32(std::ostream &s, float t)
 
 void sn_utils::ls_float64(std::ostream &s, double t)
 {
-	uint64_t v = reinterpret_cast<uint64_t&>(t);
+	uint64_t v = std::bit_cast<uint64_t>(t);
 	uint8_t buf[8];
 	buf[0] = v;
 	buf[1] = v >> 8;

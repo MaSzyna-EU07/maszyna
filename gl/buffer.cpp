@@ -58,6 +58,11 @@ gl::buffer::buffer()
 
 gl::buffer::~buffer()
 {
+    // forget the bindings of this buffer; gl can hand its name to a new buffer,
+    // which the tracker would then treat as already bound and skip the bind
+    for (auto &point : binding_points)
+        if (point == *this)
+            point = 0;
     glDeleteBuffers(1, *this);
 }
 

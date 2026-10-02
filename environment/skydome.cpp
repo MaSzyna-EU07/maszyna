@@ -218,7 +218,10 @@ void CSkyDome::RebuildColors() {
 		vertex = glm::normalize( m_vertices[ i ] );
 
 		// angle between sun and vertex
-		const float gamma = std::acos( glm::dot( vertex, m_sundirection ) );
+		// NOTE: the dot product can exceed the [ -1, 1 ] range by a rounding error,
+		// which would turn the vertex - and, through the averages, the fog and ambient
+		// light - into a NaN, so it gets clamped before feeding it to acos()
+		const float gamma = std::acos( std::clamp( glm::dot( vertex, m_sundirection ), -1.0f, 1.0f ) );
 
 		// warning : major hack!!! .. i had to do something with values under horizon
 		//vertex.y = Clamp<float>( vertex.y, 0.05f, 1.0f );

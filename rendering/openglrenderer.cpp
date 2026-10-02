@@ -88,9 +88,9 @@ opengl_renderer::Init( GLFWwindow *Window ) {
     ::glEnable( opengl_renderer::sunlight );
 
     // rgb value for 5780 kelvin
-    Global.DayLight.diffuse[ 0 ] = 255.0f / 255.0f;
-    Global.DayLight.diffuse[ 1 ] = 242.0f / 255.0f;
-    Global.DayLight.diffuse[ 2 ] = 231.0f / 255.0f;
+	Global.DayLight.diffuse[0] = 1.0f;        // 255 / 255
+	Global.DayLight.diffuse[1] = 0.9490196f;  // 242 / 255
+	Global.DayLight.diffuse[2] = 0.9058824f;  // 231 / 255
     Global.DayLight.is_directional = true;
     m_sunlight.id = opengl_renderer::sunlight;
     //    ::glLightf( opengl_renderer::sunlight, GL_SPOT_CUTOFF, 90.0f );
@@ -801,6 +801,7 @@ bool opengl_renderer::Render_lowpoly( TDynamicObject *Dynamic, float const Squar
     if( Setup ) {
 
         TSubModel::iInstance = reinterpret_cast<std::uintptr_t>( Dynamic ); //żeby nie robić cudzych animacji
+        TSubModel::iVariantSeed = Dynamic->variant_seed();
         Dynamic->ABuLittleUpdate( Squaredistance ); // ustawianie zmiennych submodeli dla wspólnego modelu
         ::glPushMatrix();
 
@@ -1602,7 +1603,7 @@ opengl_renderer::Render( world_environment *Environment ) {
     if (!m_isATI)
     {
         Bind_Texture( m_moontexture );
-        glm::vec3 mooncolor( 255.0f / 255.0f, 242.0f / 255.0f, 231.0f / 255.0f );
+    	glm::vec3 mooncolor(1.0f, 0.9490196f, 0.9058824f);
         ::glColor4f(
             mooncolor.r, mooncolor.g, mooncolor.b,
             // fade the moon if it's near the sun in the sky, especially during the day
@@ -1759,10 +1760,17 @@ opengl_renderer::Bind_Material( material_handle const Material, TSubModel const 
             return;
         }
 
+        // materials which declare texture variants provide a different texture set per model instance,
+        // picked from the seed of the rendered instance and the variant group of the submodel
+        auto const &materialtextures {
+            material.texture_variants.empty() ?
+                material.textures :
+                material.GetTextures( TSubModel::VariantId( sm ) ) };
+
         if( false == Global.BasicRenderer ) {
-            m_textures.bind( m_normaltextureunit, material.textures[1] );
+            m_textures.bind( m_normaltextureunit, materialtextures[1] );
         }
-        m_textures.bind( m_diffusetextureunit, material.textures[0] );
+        m_textures.bind( m_diffusetextureunit, materialtextures[0] );
 	}
     else {
         // null material, unbind all textures
@@ -2475,6 +2483,7 @@ opengl_renderer::Render( TDynamicObject *Dynamic ) {
 
     // setup
     TSubModel::iInstance = reinterpret_cast<std::uintptr_t>( Dynamic ); //żeby nie robić cudzych animacji
+    TSubModel::iVariantSeed = Dynamic->variant_seed();
     Dynamic->ABuLittleUpdate( squaredistance ); // ustawianie zmiennych submodeli dla wspólnego modelu
     ::glPushMatrix();
 
@@ -2574,10 +2583,12 @@ opengl_renderer::Render_cab( TDynamicObject const *Dynamic, float const Lightlev
     if( Dynamic == nullptr ) {
 
         TSubModel::iInstance = 0;
+        TSubModel::iVariantSeed = 0;
         return false;
     }
 
     TSubModel::iInstance = reinterpret_cast<std::uintptr_t>( Dynamic );
+    TSubModel::iVariantSeed = Dynamic->variant_seed();
 
     if( ( true == FreeFlyModeFlag )
      || ( false == Dynamic->bDisplayCab )
@@ -2852,7 +2863,9 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                     }
                     case rendermode::shadows: {
                         // skip if the shadow caster rank is too low for currently set threshold
-                        if( Material( Submodel ).shadow_rank > Global.gfx_shadow_rank_cutoff )
+                        // or if the submodel is hidden (colour pass only fades it out, e.g. inactive seasonal variant)
+                        if( ( Material( Submodel ).shadow_rank > Global.gfx_shadow_rank_cutoff )
+                         || ( Submodel->fVisible <= 0.f ) )
                         {
                             --m_renderpass.draw_stats.submodels;
                             --m_renderpass.draw_stats.drawcalls;
@@ -2866,11 +2879,11 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                         // material configuration:
                         // textures...
                         if( Submodel->m_material < 0 ) { // zmienialne skóry
-                            Bind_Material( Submodel->ReplacableSkinId[ -Submodel->m_material ] );
+                            Bind_Material( TSubModel::ReplacableSkinId[ -Submodel->m_material ], Submodel );
                         }
                         else {
                             // również 0
-                            Bind_Material( Submodel->m_material );
+                            Bind_Material( Submodel->m_material, Submodel );
                         }
                         // main draw call
                         m_geometry.draw( Submodel->m_geometry.handle );
@@ -2884,11 +2897,11 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                         ::glColor3fv( glm::value_ptr( pick_color( m_pickcontrolsitems.size() ) ) );
                         // textures...
                         if( Submodel->m_material < 0 ) { // zmienialne skóry
-                            Bind_Material( Submodel->ReplacableSkinId[ -Submodel->m_material ] );
+                            Bind_Material( TSubModel::ReplacableSkinId[ -Submodel->m_material ], Submodel );
                         }
                         else {
                             // również 0
-                            Bind_Material( Submodel->m_material );
+                            Bind_Material( Submodel->m_material, Submodel );
                         }
                         // main draw call
                         m_geometry.draw( Submodel->m_geometry.handle );
@@ -3657,6 +3670,7 @@ opengl_renderer::Render_Alpha( TDynamicObject *Dynamic ) {
 
     // setup
     TSubModel::iInstance = ( size_t )Dynamic; //żeby nie robić cudzych animacji
+    TSubModel::iVariantSeed = Dynamic->variant_seed();
     glm::dvec3 const originoffset = Dynamic->vPosition - m_renderpass.camera.position();
     // lod visibility ranges are defined for base (x 1.0) viewing distance. for render we adjust them for actual range multiplier and zoom
     float squaredistance;
@@ -3909,11 +3923,11 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
                         // material configuration:
                         // textures...
                         if( Submodel->m_material < 0 ) { // zmienialne skóry
-                            Bind_Material( Submodel->ReplacableSkinId[ -Submodel->m_material ] );
+                            Bind_Material( TSubModel::ReplacableSkinId[ -Submodel->m_material ], Submodel );
                         }
                         else {
                             // również 0
-                            Bind_Material( Submodel->m_material );
+                            Bind_Material( Submodel->m_material, Submodel );
                         }
                         // main draw call
                         m_geometry.draw( Submodel->m_geometry.handle );
