@@ -2621,6 +2621,11 @@ bool editor_mode::start_switch_placement()
 	if (line.tracks.empty())
 		return false;
 	glm::dvec3 const ground{Global.pCamera.Pos + GfxRenderer->Mouse_Position()};
+	if (tool.templates[tool.armed].double_slip)
+	{
+		insert_double_slip(line, ground, tool.templates[tool.armed]);
+		return true;
+	}
 	tool.along = std::clamp(glm::dot(glm::dvec2{ground.x - line.start.x, ground.z - line.start.z}, line.direction), 0.0, line.length);
 	tool.point = line.start + glm::dvec3{line.direction.x, line.grade, line.direction.y} * tool.along;
 	tool.mouse = ground;
@@ -2654,38 +2659,10 @@ void editor_mode::insert_switch(editor_track::straight const &Line, double const
 	straight_refresh();
 }
 
-bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, editor_track::switch_template const &Shape, TTrack const *Style, double const Along, int const Direction, int const Side, bool const Snap, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed)
+bool editor_mode::cut_straight(editor_track::straight const &Line, double const From, double const To, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, TTrack **Style)
 {
-	auto const &shape{Shape};
-	if (shape.length > Line.length - 0.02)
-		return false;
-	auto from{std::clamp(Direction > 0 ? Along : Along - shape.length, 0.0, Line.length - shape.length)};
-	if (Snap)
-	{
-		std::vector<double> joints{0.0, Line.length};
-		for (std::size_t i = 0; i < Line.tracks.size(); ++i)
-		{
-			auto const &path{Line.tracks[i]->m_paths[Line.paths[i]]};
-			for (auto const index : {segment_data::point::start, segment_data::point::end})
-				joints.push_back(glm::dot(glm::dvec2{path.points[index].x - Line.start.x, path.points[index].z - Line.start.z}, Line.direction));
-		}
-		auto const nearest = [&](double const Value) {
-			double best{Value};
-			for (auto const joint : joints)
-				if (std::abs(joint - Value) < std::abs(best - Value) || best == Value)
-					best = std::abs(joint - Value) < 1.0 ? joint : best;
-			return best;
-		};
-		auto const snappedstart{nearest(from)};
-		auto const snappedend{nearest(from + shape.length)};
-		if (snappedstart != from)
-			from = snappedstart;
-		else if (snappedend != from + shape.length)
-			from = snappedend - shape.length;
-		from = std::clamp(from, 0.0, Line.length - shape.length);
-	}
-	auto const to{from + shape.length};
-	auto const origin{Direction > 0 ? from : to};
+	auto const from{From};
+	auto const to{To};
 	struct span
 	{
 		TTrack *track;
@@ -2723,25 +2700,18 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 		chain.tracks.push_back(spans[i].track);
 		chain.forward.push_back(spans[i].forward);
 	}
+	if (Style != nullptr)
+		*Style = spans[first].track;
 	auto const before{std::max(0.0, from - spans[first].from)};
 	auto const after{std::max(0.0, spans[last].to - to)};
 	bool const hasbefore{before > 0.01};
 	bool const hasafter{after > 0.01};
 	auto const point = [&](double const Distance) { return Line.start + glm::dvec3{Line.direction.x, Line.grade, Line.direction.y} * Distance; };
-	glm::dvec2 const direction{Line.direction * static_cast<double>(Direction)};
-	auto const &style{Style != nullptr ? *Style : *spans[first].track};
 	if (false == hasbefore && false == hasafter)
 	{
 		for (auto *track : chain.tracks)
 			editor_track::retire(*track);
 		Removed.insert(Removed.end(), chain.tracks.begin(), chain.tracks.end());
-		auto const paths{editor_track::place_switch(shape, point(origin), direction, Side, Line.grade * Direction)};
-		auto *track{editor_track::create_switch(shape, paths, style)};
-		if (track != nullptr)
-		{
-			editor_track::commit({track});
-			Created.push_back(track);
-		}
 		return true;
 	}
 	auto const count{std::max<std::size_t>(chain.tracks.size(), (hasbefore ? 1 : 0) + (hasafter ? 1 : 0))};
@@ -2751,12 +2721,12 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 	else if (hasbefore)
 		countbefore = count;
 	std::vector<segment_data> pieces;
-	auto const straight = [&](double const From, double const To, std::size_t const Count) {
+	auto const straight = [&](double const Start, double const End, std::size_t const Count) {
 		for (std::size_t i = 0; i < Count; ++i)
 		{
 			segment_data path;
-			path.points[segment_data::point::start] = point(From + (To - From) * i / Count);
-			path.points[segment_data::point::end] = point(From + (To - From) * (i + 1) / Count);
+			path.points[segment_data::point::start] = point(Start + (End - Start) * i / Count);
+			path.points[segment_data::point::end] = point(Start + (End - Start) * (i + 1) / Count);
 			pieces.push_back(path);
 		}
 	};
@@ -2764,13 +2734,52 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 		straight(spans[first].from, from, countbefore);
 	if (hasafter)
 		straight(to, spans[last].to, count - countbefore);
-
 	for (auto *track : chain.tracks)
 		States.emplace_back(track, editor_track::capture(*track));
 	auto const relaid{editor_track::relay(chain, pieces)};
 	Created.insert(Created.end(), relaid.begin(), relaid.end());
+	return true;
+}
+
+bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, editor_track::switch_template const &Shape, TTrack const *Style, double const Along, int const Direction, int const Side, bool const Snap, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed)
+{
+	auto const &shape{Shape};
+	if (shape.length > Line.length - 0.02)
+		return false;
+	auto from{std::clamp(Direction > 0 ? Along : Along - shape.length, 0.0, Line.length - shape.length)};
+	if (Snap)
+	{
+		std::vector<double> joints{0.0, Line.length};
+		for (std::size_t i = 0; i < Line.tracks.size(); ++i)
+		{
+			auto const &path{Line.tracks[i]->m_paths[Line.paths[i]]};
+			for (auto const index : {segment_data::point::start, segment_data::point::end})
+				joints.push_back(glm::dot(glm::dvec2{path.points[index].x - Line.start.x, path.points[index].z - Line.start.z}, Line.direction));
+		}
+		auto const nearest = [&](double const Value) {
+			double best{Value};
+			for (auto const joint : joints)
+				if (std::abs(joint - Value) < std::abs(best - Value) || best == Value)
+					best = std::abs(joint - Value) < 1.0 ? joint : best;
+			return best;
+		};
+		auto const snappedstart{nearest(from)};
+		auto const snappedend{nearest(from + shape.length)};
+		if (snappedstart != from)
+			from = snappedstart;
+		else if (snappedend != from + shape.length)
+			from = snappedend - shape.length;
+		from = std::clamp(from, 0.0, Line.length - shape.length);
+	}
+	auto const to{from + shape.length};
+	auto const origin{Direction > 0 ? from : to};
+	TTrack *first{nullptr};
+	if (false == cut_straight(Line, from, to, States, Created, Removed, &first))
+		return false;
+	auto const point = [&](double const Distance) { return Line.start + glm::dvec3{Line.direction.x, Line.grade, Line.direction.y} * Distance; };
+	glm::dvec2 const direction{Line.direction * static_cast<double>(Direction)};
 	auto const paths{editor_track::place_switch(shape, point(origin), direction, Side, Line.grade * Direction)};
-	auto *track{editor_track::create_switch(shape, paths, style)};
+	auto *track{editor_track::create_switch(shape, paths, Style != nullptr ? *Style : *first)};
 	if (track != nullptr)
 	{
 		editor_track::commit({track});
@@ -3184,5 +3193,169 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 	Plan.insert = segment_data{};
 	Plan.insert.points[segment_data::point::start] = frog;
 	Plan.insert.points[segment_data::point::end] = Plan.paths[1].points[segment_data::point::end];
+	return true;
+}
+
+bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dvec3 const &Point, editor_track::switch_template const &Shape)
+{
+	auto const plan = [](glm::dvec3 const &Vector) { return glm::dvec2{Vector.x, Vector.z}; };
+	auto const cross = [](glm::dvec2 const &A, glm::dvec2 const &B) { return A.x * B.y - A.y * B.x; };
+	TTrack *other{nullptr};
+	glm::dvec2 crossing{0.0};
+	double best{40.0};
+	auto const sections{simulation::Region->sections(Point, 60.f)};
+	for (auto *section : sections)
+	{
+		for (auto const &cell : section->m_cells)
+		{
+			for (auto *track : cell.m_paths)
+			{
+				if (std::find(Line.tracks.begin(), Line.tracks.end(), track) != Line.tracks.end() || track->eType != tt_Normal || track->m_editorremoved || false == editor_track::is_straight(*track, m_straights.tolerance))
+					continue;
+				auto const &path{track->m_paths.front()};
+				auto const a{plan(path.points[segment_data::point::start])};
+				auto const b{plan(path.points[segment_data::point::end])};
+				auto const segment{b - a};
+				auto const determinant{cross(Line.direction, segment)};
+				if (std::abs(determinant) < 1e-9)
+					continue;
+				auto const offset{a - plan(Line.start)};
+				auto const along{cross(offset, segment) / determinant};
+				auto const fraction{cross(offset, Line.direction) / determinant};
+				if (fraction < -0.01 || fraction > 1.01 || along < 0.0 || along > Line.length)
+					continue;
+				auto const position{plan(Line.start) + Line.direction * along};
+				auto const distance{glm::distance(position, plan(Point))};
+				if (distance < best)
+				{
+					best = distance;
+					other = track;
+					crossing = position;
+				}
+			}
+		}
+	}
+	if (other == nullptr)
+		return false;
+	auto const second{editor_track::find_straight(*other, m_straights.tolerance)};
+	if (second.tracks.empty())
+		return false;
+	auto const first{Line.direction};
+	auto direction{second.direction};
+	if (glm::dot(first, direction) < 0.0)
+		direction = -direction;
+	auto const angle{std::atan2(std::abs(cross(first, direction)), glm::dot(first, direction))};
+	if (angle < glm::radians(0.5) || angle > glm::radians(30.0))
+		return false;
+	auto const radius{Shape.radius};
+	auto const half{radius * std::tan(angle * 0.5)};
+	auto const alongfirst{glm::dot(crossing - plan(Line.start), Line.direction)};
+	auto const alongsecond{glm::dot(crossing - plan(second.start), second.direction)};
+	if (alongfirst - half < 0.0 || alongfirst + half > Line.length || alongsecond - half < 0.0 || alongsecond + half > second.length)
+		return false;
+
+	auto const heightfirst = [&](double const Along) { return Line.start.y + Line.grade * Along; };
+	auto const heightsecond = [&](double const Along) { return second.start.y + second.grade * Along; };
+	auto const centreheight{heightfirst(alongfirst)};
+	auto const sign{glm::dot(second.direction, direction) > 0.0 ? 1.0 : -1.0};
+	auto const at = [&](glm::dvec2 const &Planar, double const Height) { return glm::dvec3{Planar.x, Height, Planar.y}; };
+	auto const pointA{at(crossing - first * half, heightfirst(alongfirst - half))};
+	auto const pointB{at(crossing + first * half, heightfirst(alongfirst + half))};
+	auto const pointC{at(crossing - direction * half, heightsecond(alongsecond - sign * half))};
+	auto const pointD{at(crossing + direction * half, heightsecond(alongsecond + sign * half))};
+
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	std::vector<TTrack *> created;
+	std::vector<TTrack *> removed;
+	TTrack *style{nullptr};
+	if (false == cut_straight(Line, alongfirst - half, alongfirst + half, states, created, removed, &style))
+		return false;
+	auto const secondline{editor_track::find_straight(*other, m_straights.tolerance)};
+	auto const secondalong{glm::dot(crossing - plan(secondline.start), secondline.direction)};
+	if (secondline.tracks.empty() || false == cut_straight(secondline, secondalong - half, secondalong + half, states, created, removed, nullptr))
+	{
+		for (auto *track : created)
+			editor_track::retire(*track);
+		for (auto const &entry : states)
+		{
+			editor_track::apply(*entry.first, entry.second);
+			editor_track::commit({entry.first});
+		}
+		for (auto *track : removed)
+		{
+			track->m_editorremoved = false;
+			editor_track::commit({track});
+		}
+		return false;
+	}
+
+	auto const straight = [&](glm::dvec3 const &Start, glm::dvec3 const &End) {
+		segment_data path;
+		path.points[segment_data::point::start] = Start;
+		path.points[segment_data::point::end] = End;
+		return path;
+	};
+	double const gap{0.25};
+	auto const side{cross(first, direction) > 0.0 ? 1.0 : -1.0};
+	auto const turn = [](glm::dvec2 const &Vector, double const Angle) {
+		auto const c{std::cos(Angle)};
+		auto const s{std::sin(Angle)};
+		return glm::dvec2{Vector.x * c - Vector.y * s, Vector.x * s + Vector.y * c};
+	};
+	auto const arc = [&](glm::dvec3 const &Start, glm::dvec2 const &Heading, double const Turn, glm::dvec3 const &Finish, double const From, double const To) {
+		glm::dvec2 const centre{plan(Start) + glm::dvec2{-Heading.y, Heading.x} * (Turn * radius)};
+		auto const radial{plan(Start) - centre};
+		auto const p0{centre + turn(radial, Turn * From)};
+		auto const p3{centre + turn(radial, Turn * To)};
+		auto const d0{turn(Heading, Turn * From)};
+		auto const d3{turn(Heading, Turn * To)};
+		auto const handle{4.0 / 3.0 * std::tan((To - From) / 4.0) * radius};
+		auto const y0{Start.y + (Finish.y - Start.y) * From / angle};
+		auto const y3{Start.y + (Finish.y - Start.y) * To / angle};
+		segment_data path;
+		path.points[segment_data::point::start] = {p0.x, y0, p0.y};
+		path.points[segment_data::point::end] = {p3.x, y3, p3.y};
+		path.points[segment_data::point::control1] = {d0.x * handle, 0.0, d0.y * handle};
+		path.points[segment_data::point::control2] = {-d3.x * handle, 0.0, -d3.y * handle};
+		path.radius = static_cast<float>(radius);
+		return path;
+	};
+	auto const reversed = [](segment_data const &Path) {
+		segment_data result{Path};
+		result.points[segment_data::point::start] = Path.points[segment_data::point::end];
+		result.points[segment_data::point::end] = Path.points[segment_data::point::start];
+		result.points[segment_data::point::control1] = Path.points[segment_data::point::control2];
+		result.points[segment_data::point::control2] = Path.points[segment_data::point::control1];
+		result.rolls = {-Path.rolls[1], -Path.rolls[0]};
+		return result;
+	};
+	auto const middle{angle * 0.5};
+	auto const split{gap / radius};
+	auto const centreA{at(crossing - first * gap, centreheight)};
+	auto const centreB{at(crossing + first * gap, centreheight)};
+	auto const centreC{at(crossing - direction * gap, centreheight)};
+	auto const centreD{at(crossing + direction * gap, centreheight)};
+
+	std::string base;
+	for (int i = 1; base.empty() || simulation::Paths.find(base + "_a") != nullptr; ++i)
+		base = "editor_dks" + std::to_string(i);
+	editor_track::switch_template shape;
+	shape.length = half;
+	auto *slipstyle{style != nullptr ? style : Line.tracks.front()};
+	std::vector<TTrack *> parts;
+	parts.push_back(editor_track::create_switch(shape, {straight(pointA, centreA), arc(pointA, first, side, pointD, 0.0, middle - split)}, *slipstyle, base + "_a"));
+	parts.push_back(editor_track::create_switch(shape, {straight(pointB, centreB), reversed(arc(pointC, direction, -side, pointB, middle + split, angle))}, *slipstyle, base + "_b"));
+	parts.push_back(editor_track::create_switch(shape, {straight(pointC, centreC), arc(pointC, direction, -side, pointB, 0.0, middle - split)}, *slipstyle, base + "_c"));
+	parts.push_back(editor_track::create_switch(shape, {straight(pointD, centreD), reversed(arc(pointA, first, side, pointD, middle + split, angle))}, *slipstyle, base + "_d"));
+	parts.push_back(editor_track::create_path(*slipstyle, straight(centreA, centreB)));
+	parts.push_back(editor_track::create_path(*slipstyle, straight(centreC, centreD)));
+	parts.push_back(editor_track::create_path(*slipstyle, arc(pointA, first, side, pointD, middle - split, middle + split)));
+	parts.push_back(editor_track::create_path(*slipstyle, arc(pointC, direction, -side, pointB, middle - split, middle + split)));
+	parts.erase(std::remove(parts.begin(), parts.end(), nullptr), parts.end());
+	editor_track::commit(parts);
+	created.insert(created.end(), parts.begin(), parts.end());
+	push_track_snapshot(std::move(states), std::move(created));
+	m_history.back().removed = std::move(removed);
+	straight_refresh();
 	return true;
 }

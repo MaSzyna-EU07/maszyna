@@ -436,6 +436,8 @@ class editor_mode : public application_mode
 		std::vector<segment_data> paths;
 	};
 	bool plan_crossover(crossover_plan &Plan) const;
+	bool cut_straight(editor_track::straight const &Line, double const From, double const To, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, TTrack **Style);
+	bool insert_double_slip(editor_track::straight const &Line, glm::dvec3 const &Point, editor_track::switch_template const &Shape);
 	bool start_extend();
 	void finish_extend();
 	std::vector<segment_data> extend_pieces() const;

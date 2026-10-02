@@ -1287,6 +1287,14 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		{"Rz 1:26,5 R2500", 2500.0, 26.5, 0.0, 0.0},
 	};
 	std::vector<switch_template> result;
+	{
+		switch_template slip;
+		slip.double_slip = true;
+		slip.radius = 190.0;
+		slip.ratio = 9.0;
+		slip.label = "Rkpd 1:9 R190 double slip (click at a crossing of two straights)";
+		result.push_back(slip);
+	}
 	for (auto const &definition : definitions)
 	{
 		auto const angle{std::atan(1.0 / definition.ratio)};
@@ -1313,7 +1321,7 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 	return result;
 }
 
-TTrack *editor_track::create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, TTrack const &Style)
+TTrack *editor_track::create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, TTrack const &Style, std::string const &Name)
 {
 	if (Paths.size() < 2)
 		return nullptr;
@@ -1349,7 +1357,7 @@ TTrack *editor_track::create_switch(switch_template const &Template, std::vector
 		if ((Style.iCategoryFlag & 15) == 1 && false == Style.m_profile1.first.empty())
 			text << "railprofile " << Style.m_profile1.first << ' ';
 		text << "endtrack\n";
-		track = load_path(text.str(), Style);
+		track = load_path(text.str(), Style, Name);
 	}
 	track->m_paths.assign(Paths.begin(), Paths.begin() + 2);
 	return track;
@@ -1700,12 +1708,13 @@ TTrack *editor_track::split_path(TTrack &Track, double const T)
 	return created;
 }
 
-TTrack *editor_track::load_path(std::string const &Text, TTrack const &Template)
+TTrack *editor_track::load_path(std::string const &Text, TTrack const &Template, std::string const &Name)
 {
 	cParser parser(Text, cParser::buffer_TEXT);
 	scene::node_data data;
 	data.type = "track";
 	auto const base{Template.name().empty() || Template.name() == "none" ? std::string{"editor_track"} : Template.name()};
+	data.name = Name;
 	for (int i = 1; data.name.empty() || simulation::Paths.find(data.name) != nullptr; ++i)
 		data.name = base + "_" + std::to_string(i);
 	auto *track = new TTrack(data);

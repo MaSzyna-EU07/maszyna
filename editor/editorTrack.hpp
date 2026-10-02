@@ -148,15 +148,16 @@ class editor_track
 		std::string label;
 		double a{0.0};
 		double b{0.0};
+		bool double_slip{false};
 	};
 	static std::vector<switch_template> standard_switch_templates();
 	static std::vector<switch_template> find_switch_templates();
-	static TTrack *load_path(std::string const &Text, TTrack const &Template);
+	static TTrack *load_path(std::string const &Text, TTrack const &Template, std::string const &Name = {});
 	static TTrack *create_path(TTrack const &Style, segment_data const &Path);
 	static TTrack *split_path(TTrack &Track, double const T);
 	static double nearest_parameter(TTrack const &Track, glm::dvec3 const &Point);
 	static std::vector<segment_data> place_switch(switch_template const &Template, glm::dvec3 const &Origin, glm::dvec2 const &Direction, int const Side, double const Grade);
-	static TTrack *create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, TTrack const &Style);
+	static TTrack *create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, TTrack const &Style, std::string const &Name = {});
 	static void move_straights(std::vector<straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
 	static std::vector<TTrack *> relay(chain const &Chain, std::vector<segment_data> const &Pieces);
 	static void retire(TTrack &Track);
