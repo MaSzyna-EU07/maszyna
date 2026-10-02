@@ -1451,12 +1451,9 @@ std::pair<int, int> state_serializer::preview_include(std::string const &Directi
 			nodedata.instance = Instance;
 			auto *instance { (nodedata.type == "model" && nodedata.range_min >= 0.0) ? deserialize_model(parser, scratch, nodedata) : nullptr };
 			if (instance != nullptr) {
-				// same as for a model loaded with the scenery
-				if (instance->Model() != nullptr) {
-					for (auto const &smokesource : instance->Model()->smoke_sources()) {
-						Particles.insert(smokesource.first, instance, smokesource.second);
-					}
-				}
+				// NOTE: unlike for a model loaded with the scenery, smoke sources of the model aren't set up.
+				// they'd be left with a dangling owner when the model is replaced after a change of the include
+				instance->m_preview = true;
 				simulation::Instances.insert(instance);
 				simulation::Region->insert(instance);
 				scene::Hierarchy[instance->uuid.to_string()] = instance;

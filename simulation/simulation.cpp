@@ -497,6 +497,51 @@ std::pair<int, int> state_manager::preview_include(std::string const &Directive,
 	return m_serializer.preview_include(Directive, Context, Layer, Instance);
 }
 
+std::pair<int, int> state_manager::rebuild_include(scene::instance_handle const Instance, std::vector<TAnimModel *> &Retired) {
+	if (false == scene::Layers.tracked(Instance)) {
+		return { 0, 0 };
+	}
+	auto const &included { scene::Layers.instance(Instance) };
+	// the models the include was loaded with don't match it anymore.
+	// NOTE: done ahead of retiring the models made by the editor, which are told from the loaded ones by their preview flag
+	scene::Layers.rebuilt(Instance);
+	for (auto *model : Instances.sequence()) {
+		if (model == nullptr || model->m_instance != Instance || false == model->m_preview) {
+			continue;
+		}
+		if (false == included.removed) {
+			scene::Layers.count(model->layer(), scene::layer_item::model, -1);
+		}
+		Region->erase(model);
+		scene::Hierarchy.erase(model->uuid.to_string());
+		model->visible(false);
+		model->m_preview = false;
+		Retired.emplace_back(model);
+	}
+	if (included.dead) {
+		return { 0, 0 };
+	}
+	auto const layer { scene::Layers.resolve(included.layer) };
+	auto const result { m_serializer.preview_include(scene::Layers.directive(Instance), included.context, layer, Instance) };
+	// what's shown for an include which is out of sight at the moment goes out of sight as well
+	auto const layerhidden { scene::Layers.valid(layer) && false == scene::Layers.layer(layer).visible };
+	if (included.removed || layerhidden) {
+		for (auto *model : Instances.sequence()) {
+			if (model == nullptr || model->m_instance != Instance || false == model->m_preview) {
+				continue;
+			}
+			if (included.removed) {
+				scene::Layers.count(model->layer(), scene::layer_item::model, -1);
+			}
+			if (model->visible()) {
+				model->visible(false);
+				model->m_layerhidden = true;
+			}
+		}
+	}
+	return result;
+}
+
 void state_manager::delete_model(TAnimModel *model) {
 	scene::Layers.count(model->layer(), scene::layer_item::model, -1);
 	scene::Layers.forget(model);

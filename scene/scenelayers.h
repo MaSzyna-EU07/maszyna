@@ -100,10 +100,11 @@ struct include_instance
 	layer_handle layer{null_handle}; // layer of the file holding the directive
 	std::string const *file{nullptr}; // name of the included template
 	source_span span; // location of the whole directive in the file; invalid for directive which wasn't saved yet
-	std::string directive; // text of the directive, for include placed in the editor and not saved yet
-	layer_context context; // placement the directive of include placed in the editor was prepared for
+	std::string directive; // text of the directive, for include placed or changed in the editor and not saved yet
+	layer_context context; // placement in effect at the directive
 	bool removed{false}; // the include is to be dropped from the scenery
 	bool dead{false}; // removal of the include was saved
+	bool rebuilt{false}; // models the include was loaded with gave way to the ones made by the editor
 };
 
 // marks nodes defined by a template which was included in a way the editor doesn't keep track of
@@ -277,6 +278,18 @@ class node_layers
 	// registers include directive made in the editor, to be written to the file of specified layer on save.
 	// the directive has to be prepared for the placement in effect at the end of that file. returns: handle to the include
 	instance_handle place(layer_handle Layer, std::string const &File, std::string const &Directive);
+	// text of the directive of specified include, as changed in the editor or as it stands in the scenery file.
+	// returns: empty text if the directive can't be read
+	std::string directive(instance_handle Instance) const;
+	// replaces the directive of specified include, the scenery file receives it on save. NOTE: the nodes aren't touched
+	bool modify(instance_handle Instance, std::string const &Directive);
+	// takes the models specified include was loaded with out of the scene, once the editor shows its own in their place
+	void rebuilt(instance_handle Instance);
+	// true if specified node was replaced by the editor with a node showing the current state of its include
+	bool stale(basic_node const *Node) const
+	{
+		return tracked(Node->m_instance) && instance(Node->m_instance).rebuilt && false == Node->m_preview;
+	}
 	// true if specified layer is included, directly or not, by the other one
 	bool is_descendant(layer_handle Layer, layer_handle const Ancestor) const;
 

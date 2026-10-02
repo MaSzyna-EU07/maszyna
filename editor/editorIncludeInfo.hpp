@@ -68,6 +68,16 @@ bool complete(include_info const &Info, int Parameters, std::string *Issue = nul
 // rotation parameters receive their default values
 std::string directive(std::string const &File, include_info const &Info, int Parameters, glm::dvec3 const &Location, std::optional<float> Yaw);
 
+// splits include directive into the name of the included file and the values of the parameters, both as they're
+// written. returns: false if the text isn't a complete include directive
+bool parse_directive(std::string const &Directive, std::string &File, std::vector<std::string> &Values);
+// builds include directive out of the name of the included file and the values of the parameters
+std::string compose_directive(std::string const &File, std::vector<std::string> const &Values);
+// text of a number passed as a parameter value
+std::string number(double Value);
+// number of the parameter with specified role, 0 if the description has none
+int parameter_with_role(include_info const &Info, std::string const &Role);
+
 // marks node bank template which stands for a scenery template rather than for definition of a single node
 extern std::string const directive_mark;
 

@@ -29,6 +29,20 @@ struct item_properties {
     changeable<glm::vec3> rotation {};
 };
 */
+// include of a scenery template selected in the editor, with the values its directive passes to the template.
+// owned by the editor mode; the node properties let the user change the values
+struct include_selection
+{
+	scene::instance_handle instance{0};
+	std::string target; // name of the template, the way the directive spells it
+	include_info info; // description of the template
+	std::vector<std::string> values; // value of each parameter in turn
+	bool placement{false}; // the position and rotation parameters can be driven by the gizmo
+	std::string issue; // why the values can't be changed, if they can't
+	bool changed{false}; // set by the UI when a value was changed, cleared by the editor mode once the change is applied
+	bool active{false}; // the UI is in the middle of changing a value
+};
+
 class itemproperties_panel : public ui_panel
 {
 
@@ -39,6 +53,11 @@ class itemproperties_panel : public ui_panel
 	// position/rotation/scale of TAnimModel nodes in place. Other node types
 	// are still treated as read-only.
 	void update(scene::basic_node *Node);
+	// binds include of a scenery template to the panel, shown in place of a node; nullptr unbinds
+	void include(include_selection *Include)
+	{
+		m_include = Include;
+	}
 	void render() override;
 	// panel content without the window, also drawn inside the toolset window
 	void render_body();
@@ -50,9 +69,12 @@ class itemproperties_panel : public ui_panel
 	// renders DragFloat3/DragScalarN widgets for position, rotation and scale
 	// of the currently bound TAnimModel; no-op for other node subclasses.
 	void render_transform_editor();
+	// renders widgets for the parameters of the bound include
+	void render_include();
 
 	// members
 	scene::basic_node *m_node{nullptr}; // scene node bound to the panel
+	include_selection *m_include{nullptr}; // include of a scenery template bound to the panel
 	scene::group_handle m_grouphandle{null_handle}; // scene group bound to the panel
 	std::string m_groupprefix;
 	std::vector<text_line> m_grouplines;

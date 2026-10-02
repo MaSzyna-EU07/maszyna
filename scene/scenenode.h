@@ -385,6 +385,7 @@ public:
     std::string m_name;
 	bool m_dirty { false };
     bool m_layerhidden { false }; // the node was visible until the editor hid its scenery layer, or the include which defines it
+    bool m_preview { false }; // the node was made by the editor to show an include it placed or changed, and is replaced when the include changes
     scene::layer_handle m_layer { null_handle }; // scenery layer this node belongs to, if any
     // include of an *.inc template which defines the node; 0 if the node is defined directly by a scenery layer file.
     // such nodes can't be rewritten one by one on scenery save. set only for scenery opened for editing

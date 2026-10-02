@@ -543,15 +543,99 @@ bool complete(include_info const &Info, int const Parameters, std::string *Issue
 	return issue.empty();
 }
 
+std::string number(double const Value)
+{
+	std::ostringstream converter;
+	converter.imbue(std::locale::classic());
+	converter << std::fixed << std::setprecision(3) << Value;
+	return converter.str();
+}
+
+int parameter_with_role(include_info const &Info, std::string const &Role)
+{
+	auto const lookup{std::find_if(std::begin(Info.parameters), std::end(Info.parameters), [&](include_parameter const &Parameter) { return Parameter.role == Role; })};
+	return lookup != std::end(Info.parameters) ? lookup->id : 0;
+}
+
+bool parse_directive(std::string const &Directive, std::string &File, std::vector<std::string> &Values)
+{
+	// the same rules the scenery parser goes by, except the text is taken as it is written
+	std::vector<std::string> tokens;
+	std::string token;
+	auto const flush = [&]() {
+		if (false == token.empty())
+		{
+			tokens.emplace_back(token);
+			token.clear();
+		}
+	};
+	for (std::size_t idx = 0; idx < Directive.size(); ++idx)
+	{
+		auto const character{Directive[idx]};
+		if (character == '\"')
+		{
+			flush();
+			auto const end{Directive.find('\"', idx + 1)};
+			if (end == std::string::npos)
+			{
+				return false;
+			}
+			tokens.emplace_back(Directive, idx + 1, end - idx - 1);
+			idx = end;
+		}
+		else if (Directive.compare(idx, 2, "//") == 0)
+		{
+			flush();
+			idx = Directive.find('\n', idx);
+			if (idx == std::string::npos)
+			{
+				break;
+			}
+		}
+		else if (Directive.compare(idx, 2, "/*") == 0)
+		{
+			flush();
+			idx = Directive.find("*/", idx + 2);
+			if (idx == std::string::npos)
+			{
+				break;
+			}
+			++idx;
+		}
+		else if (character == ' ' || character == '\t' || character == '\n' || character == '\r' || character == ';')
+		{
+			flush();
+		}
+		else
+		{
+			token += character;
+		}
+	}
+	flush();
+	if (tokens.size() < 3 || ToLower(tokens.front()) != "include" || tokens.back() != "end")
+	{
+		return false;
+	}
+	File = tokens[1];
+	Values.assign(std::begin(tokens) + 2, std::end(tokens) - 1);
+	return true;
+}
+
+std::string compose_directive(std::string const &File, std::vector<std::string> const &Values)
+{
+	auto const quoted = [](std::string const &Text) { return Text.find_first_of(" \t;") != std::string::npos ? '\"' + Text + '\"' : Text; };
+	std::string text{"include " + quoted(File)};
+	for (auto const &value : Values)
+	{
+		// a parameter can't be left out, as the ones after it would take its place
+		text += ' ' + (value.empty() ? std::string{"none"} : quoted(value));
+	}
+	return text + " end";
+}
+
 std::string directive(std::string const &File, include_info const &Info, int const Parameters, glm::dvec3 const &Location, std::optional<float> Yaw)
 {
-	auto const number = [](double const Value) {
-		std::ostringstream converter;
-		converter.imbue(std::locale::classic());
-		converter << std::fixed << std::setprecision(3) << Value;
-		return converter.str();
-	};
-	std::string text{"include " + File};
+	std::vector<std::string> values;
 	for (auto id = 1; id <= Parameters; ++id)
 	{
 		auto const lookup{std::find_if(std::begin(Info.parameters), std::end(Info.parameters), [=](include_parameter const &Parameter) { return Parameter.id == id; })};
@@ -585,14 +669,9 @@ std::string directive(std::string const &File, include_info const &Info, int con
 			std::snprintf(suffix, sizeof(suffix), "_%08x", static_cast<unsigned int>(engine()));
 			value = (value.empty() ? std::filesystem::path(File).stem().string() : value) + suffix;
 		}
-		if (value.empty())
-		{
-			// a parameter can't be left out, as the ones after it would take its place
-			value = "none";
-		}
-		text += ' ' + (value.find_first_of(" \t;") != std::string::npos ? '\"' + value + '\"' : value);
+		values.emplace_back(value);
 	}
-	return text + " end";
+	return compose_directive(File, values);
 }
 
 } // namespace editor_includes

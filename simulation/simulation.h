@@ -46,6 +46,11 @@ public:
 	// creates model instances defined by an include directive placed in the scenery editor
 	std::pair<int, int>
 	    preview_include(std::string const &Directive, scene::layer_context const &Context, scene::layer_handle Layer, scene::instance_handle Instance);
+	// replaces models shown for specified include with the ones defined by its current directive. Retired: receives
+	// the replaced models made by the editor. they're out of the scene already, but the renderer can still hold on
+	// to them for a few frames; pass them to Instances.purge() afterwards
+	std::pair<int, int>
+	    rebuild_include(scene::instance_handle Instance, std::vector<TAnimModel *> &Retired);
 	// delete TAnimModel instance
 	void
 	    delete_model(TAnimModel *model);

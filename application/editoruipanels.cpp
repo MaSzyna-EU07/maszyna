@@ -312,6 +312,11 @@ void itemproperties_panel::render()
 
 void itemproperties_panel::render_body()
 {
+	if (m_include != nullptr)
+	{
+		render_include();
+		return;
+	}
 	// header section
 	for (auto const &line : text_lines)
 	{
@@ -1186,6 +1191,74 @@ bool input_text(char const *Label, std::string &Value)
 ImVec4 const status_errorcolor{1.0f, 0.45f, 0.4f, 1.0f};
 
 } // namespace
+
+void itemproperties_panel::render_include()
+{
+	auto &include{*m_include};
+	include.active = false;
+
+	ImGui::Text("include: %s", Bezogonkow(include.target).c_str());
+	if (false == include.info.name.empty())
+	{
+		ImGui::TextDisabled("%s", include.info.name.c_str());
+	}
+	if (false == include.issue.empty())
+	{
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextColored(status_errorcolor, "%s", Bezogonkow(include.issue).c_str());
+		ImGui::PopTextWrapPos();
+		return;
+	}
+	if (include.values.empty())
+	{
+		ImGui::TextDisabled("The template takes no parameters.");
+		return;
+	}
+
+	ImGui::PushItemWidth(ImGui::GetFontSize() * 14.0f);
+	for (std::size_t idx = 0; idx < include.values.size(); ++idx)
+	{
+		auto const id{static_cast<int>(idx + 1)};
+		auto const lookup{std::find_if(std::begin(include.info.parameters), std::end(include.info.parameters), [=](include_parameter const &Parameter) { return Parameter.id == id; })};
+		auto const described{lookup != std::end(include.info.parameters)};
+		auto const role{described ? lookup->role : std::string{"free"}};
+		// the label from the description, or what the description tells about the parameter
+		auto const label{described && false == lookup->label.empty() ? lookup->label : role != "free" ? role : "(p" + std::to_string(id) + ")"};
+		auto &value{include.values[idx]};
+
+		ImGui::PushID(id);
+		char *end{nullptr};
+		auto number{std::strtod(value.c_str(), &end)};
+		if ((role.starts_with("pos.") || role.starts_with("rot.") || role == "number") && false == value.empty() && *end == '\0')
+		{
+			if (ImGui::DragScalar(label.c_str(), ImGuiDataType_Double, &number, role.starts_with("pos.") ? 0.05f : 0.5f, nullptr, nullptr, "%.3f"))
+			{
+				value = editor_includes::number(number);
+				include.changed = true;
+			}
+		}
+		else
+		{
+			// applied once the field is left, so the template isn't processed with a half-typed value
+			input_text(label.c_str(), value);
+			if (ImGui::IsItemDeactivatedAfterEdit())
+			{
+				include.changed = true;
+			}
+		}
+		include.active |= ImGui::IsItemActive();
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("(p%d), %s", id, role.c_str());
+		}
+		ImGui::PopID();
+	}
+	ImGui::PopItemWidth();
+
+	ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+	ImGui::TextWrapped("Models of the template follow the changes at once, the rest of it once the scenery is saved and loaded again.");
+	ImGui::PopStyleColor();
+}
 
 void layers_panel::report(std::string const &Status, bool const Error)
 {

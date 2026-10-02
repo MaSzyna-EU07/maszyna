@@ -129,6 +129,9 @@ class editor_mode : public application_mode
 	scene::basic_editor m_editor;
 	scene::basic_node *m_node{nullptr}; // currently selected scene node
 	scene::instance_handle m_instance{0}; // currently selected include of a scenery template; these are handled as a whole
+	include_selection m_include; // parameters of the selected include, changed with the gizmo and in the node properties
+	bool m_include_gesture{false}; // a change of the selected include is under way, and has its undo snapshot already
+	std::vector<std::pair<TAnimModel *, int>> m_retired; // models replaced after changes of includes, with the frames left until they're destroyed
 	bool m_takesnapshot{true}; // helper, hints whether snapshot of selected node(s) should be taken before modification
 	bool m_dragging = false;
 	glm::dvec3 oldPos; // world position of the last brush placement
@@ -173,6 +176,16 @@ class editor_mode : public application_mode
 	void place_include(std::string const &File, int RotationMode, float FixedRotation);
 	// undo and redo of placing or removing an include: brings removed include back, or removes it
 	void toggle_include(scene::instance_handle Instance);
+	// makes specified include the selected one, 0 clears the selection
+	void select_include(scene::instance_handle Instance);
+	// writes parameter values of the selected include to its directive, and shows the outcome in the scene
+	void apply_include();
+	// replaces directive of specified include, and the models shown for it
+	void set_include_directive(scene::instance_handle Instance, std::string const &Directive);
+	// undo and redo of an include snapshot
+	void restore_include(EditorSnapshot &Snapshot);
+	// gizmo for the selected include, limited to what the parameters of its template can express
+	void render_include_gizmo(glm::mat4 const &View, glm::mat4 const &Projection, glm::dvec3 const &Camerapos);
 	// exports the scenery in legacy (text) format, with layers hidden in the editor left out of the picture
 	void export_scenery();
 	// raises/lowers terrain under the cursor while the left mouse button is held in sculpt mode

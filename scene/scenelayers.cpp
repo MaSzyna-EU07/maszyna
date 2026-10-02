@@ -210,8 +210,8 @@ void node_layers::visible(layer_handle Layer, bool const Visible)
 		}
 		if (Visible)
 		{
-			// nodes of a removed include stay out of sight
-			if (Node->m_layerhidden && (false == tracked(Node->m_instance) || false == instance(Node->m_instance).removed))
+			// nodes of a removed include stay out of sight, and so do the ones the editor replaced with its own
+			if (Node->m_layerhidden && (false == tracked(Node->m_instance) || (false == instance(Node->m_instance).removed && false == stale(Node))))
 			{
 				Node->visible(true);
 				Node->m_layerhidden = false;
@@ -613,7 +613,7 @@ bool node_layers::can_merge(layer_handle Source, layer_handle Target, std::strin
 	{
 		// directives of includes placed in the editor are prepared for the end of their layer file
 		auto const unsaved{std::any_of(std::begin(m_instances), std::end(m_instances), [&](include_instance const &Instance) {
-			return false == Instance.dead && false == Instance.removed && false == Instance.directive.empty() && resolve(Instance.layer) == Source;
+			return false == Instance.dead && false == Instance.removed && false == Instance.span.valid() && resolve(Instance.layer) == Source;
 		})};
 		if (unsaved)
 		{
@@ -695,6 +695,7 @@ void node_layers::instance_begin(std::string const &File, source_span const &Spa
 	included.layer = handle();
 	included.file = &(*m_templates.emplace(File).first);
 	included.span = Span;
+	included.context = m_context;
 	m_instance = static_cast<instance_handle>(m_instances.size());
 }
 
@@ -741,7 +742,7 @@ void node_layers::removed(instance_handle Instance, bool Removed)
 	auto const includelayer{resolve(m_instances[Instance - 1].layer)};
 	auto const layervisible{false == valid(includelayer) || layer(includelayer).visible};
 	auto const update_node = [=, this](basic_node *Node, layer_item const Item) {
-		if (Node == nullptr || Node->m_instance != Instance)
+		if (Node == nullptr || Node->m_instance != Instance || (Item == layer_item::model && stale(Node)))
 		{
 			return;
 		}
@@ -789,6 +790,67 @@ instance_handle node_layers::place(layer_handle Layer, std::string const &File, 
 	included.directive = Directive;
 	included.context = layer(Layer).context_end;
 	return static_cast<instance_handle>(m_instances.size());
+}
+
+// text of the directive of specified include, as changed in the editor or as it stands in the scenery file
+std::string node_layers::directive(instance_handle const Instance) const
+{
+	if (false == tracked(Instance))
+	{
+		return {};
+	}
+	auto const &included{instance(Instance)};
+	if (false == included.directive.empty() || false == included.span.valid() || false == valid(included.layer))
+	{
+		return included.directive;
+	}
+	std::string text(static_cast<std::size_t>(included.span.end - included.span.begin), '\0');
+	std::ifstream input{path(included.layer), std::ios_base::binary};
+	if (false == input.is_open() || false == input.seekg(included.span.begin).good() || false == input.read(text.data(), static_cast<std::streamsize>(text.size())).good())
+	{
+		return {};
+	}
+	return text;
+}
+
+// replaces the directive of specified include, the scenery file receives it on save
+bool node_layers::modify(instance_handle const Instance, std::string const &Directive)
+{
+	if (false == tracked(Instance) || m_instances[Instance - 1].dead || Directive.empty())
+	{
+		return false;
+	}
+	m_instances[Instance - 1].directive = Directive;
+	return true;
+}
+
+// takes the models specified include was loaded with out of the scene, once the editor shows its own in their place
+void node_layers::rebuilt(instance_handle const Instance)
+{
+	if (false == tracked(Instance) || m_instances[Instance - 1].rebuilt)
+	{
+		return;
+	}
+	auto const removed{m_instances[Instance - 1].removed};
+	for (auto *model : simulation::Instances.sequence())
+	{
+		if (model == nullptr || model->m_instance != Instance || model->m_preview)
+		{
+			continue;
+		}
+		// NOTE: the models themselves are left alone, events of the scenery can refer to them
+		simulation::Region->erase(model);
+		if (false == removed)
+		{
+			count(model->layer(), layer_item::model, -1);
+		}
+		if (model->visible())
+		{
+			model->visible(false);
+			model->m_layerhidden = true;
+		}
+	}
+	m_instances[Instance - 1].rebuilt = true;
 }
 
 } // namespace scene

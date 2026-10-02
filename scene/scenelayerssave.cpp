@@ -275,6 +275,7 @@ struct node_layers::file_patch
 		std::size_t length{0}; // size of that definition
 		basic_node const *node{nullptr}; // node defined by the replacement
 		layer_handle site{null_handle}; // layer included by the directive in the replacement
+		instance_handle instance{0}; // include of a template made by the directive in the replacement
 		layer_handle inlined{null_handle}; // layer whose content replaces the range
 	};
 	std::vector<edit> edits;
@@ -459,6 +460,10 @@ bool node_layers::compose(save_state &State, layer_handle const Layer, compositi
 			if (edit.site != null_handle)
 			{
 				Output.sites.push_back({edit.site, span});
+			}
+			if (edit.instance != 0)
+			{
+				Output.instances.push_back({edit.instance, span});
 			}
 			Output.text.append(edit.text, edit.lead - lead, std::string::npos);
 		}
@@ -692,6 +697,17 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 				edit.end = included.span.end;
 				state.patches[included.layer].edits.emplace_back(std::move(edit));
 			}
+			else if (false == included.directive.empty())
+			{
+				// changed in the editor, the new directive takes the place of the one in the file
+				file_patch::edit edit;
+				edit.begin = included.span.begin;
+				edit.end = included.span.end;
+				edit.length = included.directive.size();
+				edit.text = included.directive;
+				edit.instance = static_cast<instance_handle>(idx + 1);
+				state.patches[included.layer].edits.emplace_back(std::move(edit));
+			}
 		}
 		else if (false == included.removed && false == included.directive.empty())
 		{
@@ -840,7 +856,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 	for (std::size_t idx = 0; idx < m_instances.size(); ++idx)
 	{
 		auto const &included{m_instances[idx]};
-		if (false == included.dead && false == included.removed && included.span.valid() && state.content.count(included.layer) != 0)
+		if (false == included.dead && false == included.removed && included.directive.empty() && included.span.valid() && state.content.count(included.layer) != 0)
 		{
 			state.instances[included.layer].emplace_back(static_cast<instance_handle>(idx + 1));
 		}

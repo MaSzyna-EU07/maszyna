@@ -164,6 +164,11 @@ void editor_ui::set_node(scene::basic_node *Node)
 	m_node = Node;
 }
 
+void editor_ui::set_include(include_selection *Include)
+{
+	m_itempropertiespanel.include(Include);
+}
+
 void editor_ui::add_node_template(const std::string &desc)
 {
 	m_nodebankpanel.add_template(desc);

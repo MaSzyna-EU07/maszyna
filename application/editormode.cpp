@@ -675,10 +675,8 @@ void editor_mode::undo_last()
 
     if (snap.instance != 0)
     {
-        // include of a scenery template was placed or removed; either is taken back by flipping its removal
-        toggle_include(snap.instance);
+        restore_include(snap);
         g_redo.push_back(std::move(snap));
-        m_instance = 0;
         return;
     }
 
@@ -766,9 +764,8 @@ void editor_mode::redo_last()
 
     if (snap.instance != 0)
     {
-        toggle_include(snap.instance);
+        restore_include(snap);
         m_history.push_back(std::move(snap));
-        m_instance = 0;
         return;
     }
 
@@ -926,8 +923,27 @@ bool editor_mode::update()
     }
     if (m_instance != 0 && false == scene::Layers.removable(m_instance))
     {
-        m_instance = 0;
+        select_include(0);
     }
+    if (m_include.changed)
+    {
+        // a parameter of the selected include was changed in the node properties
+        m_include.changed = false;
+        apply_include();
+    }
+    if (false == m_include.active && false == m_gizmo_using)
+    {
+        m_include_gesture = false;
+    }
+    // models replaced after changes of includes are destroyed once the renderer can't have them among its pick candidates
+    for (auto &retired : m_retired)
+    {
+        if (--retired.second <= 0)
+        {
+            simulation::Instances.purge(retired.first);
+        }
+    }
+    m_retired.erase(std::remove_if(m_retired.begin(), m_retired.end(), [](std::pair<TAnimModel *, int> const &Retired) { return Retired.second <= 0; }), m_retired.end());
 
     simulation::Region->update_sounds();
     audio::renderer.update(Global.iPause ? 0.0 : deltarealtime);
@@ -1615,6 +1631,97 @@ void editor_mode::toggle_include(scene::instance_handle const Instance)
     ui()->set_status("Include of \"" + *included.file + "\" " + (included.removed ? "removed." : "restored."));
 }
 
+void editor_mode::restore_include(EditorSnapshot &Snapshot)
+{
+    if (Snapshot.serialized.empty())
+    {
+        // the include was placed or removed; either is taken back by flipping its removal
+        toggle_include(Snapshot.instance);
+        select_include(0);
+        return;
+    }
+    // parameters of the include were changed. the snapshot holds the directive to go back to, and leaves with the current one
+    auto current = scene::Layers.directive(Snapshot.instance);
+    if (current.empty() || scene::Layers.instance(Snapshot.instance).dead)
+    {
+        ui()->set_status("Include of \"" + Snapshot.node_name + "\" is gone from the scenery, the change can't be taken back.", true);
+        return;
+    }
+    set_include_directive(Snapshot.instance, Snapshot.serialized);
+    Snapshot.serialized = std::move(current);
+    select_include(scene::Layers.removable(Snapshot.instance) ? Snapshot.instance : 0);
+}
+
+void editor_mode::select_include(scene::instance_handle const Instance)
+{
+    m_instance = (scene::Layers.tracked(Instance) ? Instance : 0);
+    m_include = include_selection{};
+    m_include_gesture = false;
+    if (m_instance == 0)
+    {
+        ui()->set_include(nullptr);
+        return;
+    }
+    auto const &included = scene::Layers.instance(m_instance);
+    m_include.instance = m_instance;
+    m_include.target = *included.file;
+    // NOTE: a template without a usable description is still presented, with its parameters unnamed
+    std::string error;
+    editor_includes::load(*included.file, m_include.info, error);
+    if (false == editor_includes::parse_directive(scene::Layers.directive(m_instance), m_include.target, m_include.values))
+    {
+        m_include.values.clear();
+        m_include.issue = "The directive of the include can't be read from the scenery file, its parameters can't be changed.";
+    }
+    // with a rotation or a scale in effect the parameters don't translate to a location in the scene in a single way,
+    // see place_include()
+    m_include.placement = (included.context.rotation == glm::vec3{0.f} && included.context.scale == glm::vec3{1.f});
+    ui()->set_include(&m_include);
+}
+
+void editor_mode::set_include_directive(scene::instance_handle const Instance, std::string const &Directive)
+{
+    if (false == scene::Layers.modify(Instance, Directive))
+        return;
+    std::vector<TAnimModel *> retired;
+    simulation::State.rebuild_include(Instance, retired);
+    // the pick of the renderer is resolved a few frames after it's requested, and can still deliver one of these
+    for (auto *model : retired)
+        m_retired.emplace_back(model, 120);
+}
+
+void editor_mode::apply_include()
+{
+    if (m_instance == 0 || false == m_include.issue.empty())
+        return;
+    for (auto const &value : m_include.values)
+    {
+        if (value == "end" || value.find_first_of("\"\r\n") != std::string::npos)
+        {
+            // either would cut the directive short
+            ui()->set_status("A parameter of an include can't be \"end\", or have a quotation mark in it.", true);
+            select_include(m_instance); // back to the values of the directive
+            return;
+        }
+    }
+    auto before = scene::Layers.directive(m_instance);
+    auto const directive = editor_includes::compose_directive(m_include.target, m_include.values);
+    if (directive == before)
+        return;
+    if (false == m_include_gesture)
+    {
+        // a single undo step for the whole drag
+        EditorSnapshot snap;
+        snap.instance = m_instance;
+        snap.node_name = *scene::Layers.instance(m_instance).file;
+        snap.serialized = std::move(before);
+        m_history.push_back(std::move(snap));
+        g_redo.clear();
+        m_include_gesture = true;
+    }
+    set_include_directive(m_instance, directive);
+}
+
 void editor_mode::place_include(std::string const &File, int const RotationMode, float const FixedRotation)
 {
     if (scene::Layers.empty())
@@ -1670,6 +1777,7 @@ void editor_mode::place_include(std::string const &File, int const RotationMode,
     snap.node_name = File;
     m_history.push_back(std::move(snap));
     g_redo.clear();
+    select_include(instance);
 
     ui()->set_status(
         "\"" + info.name + "\" placed in layer \"" + scene::Layers.layer(layer).name + "\": " + std::to_string(preview.first) + " model(s) shown"
@@ -2097,7 +2205,15 @@ void editor_mode::render_gizmo_options()
         if (m_gizmo_snap < 0.0f)
             m_gizmo_snap = 0.0f;
     }
-    if (!m_node)
+    if (m_instance != 0)
+    {
+        auto const located = editor_includes::parameter_with_role(m_include.info, "pos.x") != 0 || editor_includes::parameter_with_role(m_include.info, "pos.y") != 0 ||
+                             editor_includes::parameter_with_role(m_include.info, "pos.z") != 0;
+        ImGui::TextDisabled("%s", false == located             ? "Include selected, no position parameters described" :
+                                  false == m_include.placement ? "Include selected, no gizmo under rotate or scale" :
+                                                                 "Include selected, axes as its template allows");
+    }
+    else if (!m_node)
         ImGui::TextDisabled("No node selected");
 }
 
@@ -2110,7 +2226,7 @@ void editor_mode::render_gizmo()
         return;
     }
 
-    if (!m_node)
+    if (!m_node && m_instance == 0)
     {
         m_gizmo_using = false;
         return;
@@ -2133,6 +2249,12 @@ void editor_mode::render_gizmo()
     float const fovy = glm::radians(Global.FieldOfView / Global.ZoomFactor);
     float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
     glm::mat4 const projection = glm::perspective(fovy, aspect, 0.1f, 10000.0f);
+
+    if (!m_node)
+    {
+        render_include_gizmo(view, projection, camerapos);
+        return;
+    }
 
     // rotation/scale are only meaningful for instanced models; other node types translate only
     TAnimModel *model = dynamic_cast<TAnimModel *>(m_node);
@@ -2209,6 +2331,103 @@ void editor_mode::render_gizmo()
     {
         m_gizmo_using = false;
     }
+}
+
+void editor_mode::render_include_gizmo(glm::mat4 const &View, glm::mat4 const &Projection, glm::dvec3 const &Camerapos)
+{
+    m_gizmo_using = false;
+    if (false == m_include.placement || false == m_include.issue.empty())
+        return;
+
+    // parameters of the template the gizmo can drive, as indices of their values; -1 where the template has none
+    static char const *const positionroles[] = {"pos.x", "pos.y", "pos.z"};
+    static char const *const rotationroles[] = {"rot.x", "rot.y", "rot.z"};
+    auto const numeric_parameter = [this](char const *Role, double &Value) {
+        auto const index = editor_includes::parameter_with_role(m_include.info, Role) - 1;
+        if (index < 0 || index >= static_cast<int>(m_include.values.size()))
+            return -1;
+        auto const &text = m_include.values[index];
+        char *end = nullptr;
+        auto const number = std::strtod(text.c_str(), &end);
+        if (text.empty() || *end != '\0')
+            return -1;
+        Value = number;
+        return index;
+    };
+    int position[3], rotation[3];
+    double location[3] = {0.0, 0.0, 0.0}, angles[3] = {0.0, 0.0, 0.0};
+    auto positions = 0, rotations = 0;
+    for (auto axis = 0; axis < 3; ++axis)
+    {
+        position[axis] = numeric_parameter(positionroles[axis], location[axis]);
+        rotation[axis] = numeric_parameter(rotationroles[axis], angles[axis]);
+        positions += (position[axis] >= 0 ? 1 : 0);
+        rotations += (rotation[axis] >= 0 ? 1 : 0);
+    }
+    if (positions == 0)
+        return; // nothing tells where the include is
+
+    // only the axes the template has parameters for can be manipulated
+    auto operation = 0;
+    for (auto axis = 0; axis < 3; ++axis)
+    {
+        if (m_gizmo_op == gizmo_operation::translate && position[axis] >= 0)
+            operation |= (ImGuizmo::TRANSLATE_X << axis);
+        else if (m_gizmo_op == gizmo_operation::rotate && rotation[axis] >= 0)
+            operation |= (ImGuizmo::ROTATE_X << axis);
+    }
+    if (operation == 0)
+        return;
+    auto const translating = (m_gizmo_op == gizmo_operation::translate);
+
+    // the parameters are relative to the origin in effect at the directive
+    auto const &offset = scene::Layers.instance(m_instance).context.offset;
+    glm::vec3 const relativepos = glm::vec3(offset + glm::dvec3{location[0], location[1], location[2]} - Camerapos);
+    float const translation[3] = {relativepos.x, relativepos.y, relativepos.z};
+    float const rotationangles[3] = {static_cast<float>(angles[0]), static_cast<float>(angles[1]), static_cast<float>(angles[2])};
+    float const scale[3] = {1.0f, 1.0f, 1.0f};
+    glm::mat4 matrix(1.0f);
+    ImGuizmo::RecomposeMatrixFromComponents(translation, rotationangles, scale, glm::value_ptr(matrix));
+
+    // moving along the axes of the include would need all three of them
+    ImGuizmo::MODE const mode = (m_gizmo_local && (false == translating || positions == 3)) ? ImGuizmo::LOCAL : ImGuizmo::WORLD;
+    glm::vec3 const snapvalue(translating ? m_gizmo_snap : 5.0f);
+    float const *snap = Global.ctrlState && snapvalue.x > 0.0f ? glm::value_ptr(snapvalue) : nullptr;
+
+    ImGuizmo::Manipulate(glm::value_ptr(View), glm::value_ptr(Projection), static_cast<ImGuizmo::OPERATION>(operation), mode, glm::value_ptr(matrix), nullptr, snap);
+
+    if (false == ImGuizmo::IsUsing())
+        return;
+    m_gizmo_using = true;
+
+    float newtranslation[3], newrotation[3], newscale[3];
+    ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(matrix), newtranslation, newrotation, newscale);
+    if (translating)
+    {
+        glm::dvec3 const newlocation = Camerapos + glm::dvec3{newtranslation[0], newtranslation[1], newtranslation[2]} - offset;
+        for (auto axis = 0; axis < 3; ++axis)
+        {
+            if (position[axis] >= 0)
+                m_include.values[position[axis]] = editor_includes::number(newlocation[axis]);
+        }
+    }
+    else
+    {
+        if (rotations == 1)
+        {
+            // the decomposition spreads a turn of more than a quarter over all three angles;
+            // with a single axis to turn around the angle is taken straight from the matrix
+            newrotation[0] = glm::degrees(std::atan2(matrix[1][2], matrix[1][1]));
+            newrotation[1] = glm::degrees(std::atan2(-matrix[0][2], matrix[0][0]));
+            newrotation[2] = glm::degrees(std::atan2(matrix[0][1], matrix[0][0]));
+        }
+        for (auto axis = 0; axis < 3; ++axis)
+        {
+            if (rotation[axis] >= 0)
+                m_include.values[rotation[axis]] = editor_includes::number(clamp_circular(newrotation[axis]));
+        }
+    }
+    apply_include();
 }
 
 void editor_mode::update_camera(double const Deltatime)
@@ -2294,7 +2513,7 @@ void editor_mode::exit()
 
     // drop selection so a stale/dangling node pointer isn't used on the next editor session
     m_node = nullptr;
-    m_instance = 0;
+    select_include(0);
     m_gizmo_using = false;
     ui()->set_node(nullptr);
 
@@ -2400,7 +2619,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             m_history.push_back(std::move(snap));
             g_redo.clear();
             ui()->set_status("Include of \"" + *scene::Layers.instance(m_instance).file + "\" removed, Ctrl+Z brings it back. Its directive is erased when the scenery is saved.");
-            m_instance = 0;
+            select_include(0);
             break;
         }
         if (is_press(Action))
@@ -2526,7 +2745,7 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                         return;
 
                     m_node = nullptr;
-                    m_instance = 0;
+                    select_include(0);
 
                     // in a scenery opened for editing selection has its limits. nodes of locked layers are off limits.
                     // nodes defined by a scenery template can't be rewritten one by one on save, so a click on one
@@ -2536,8 +2755,8 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                         std::string reason;
                         if (node->from_template() && scene::Layers.removable(node->m_instance, &reason))
                         {
-                            m_instance = node->m_instance;
-                            ui()->set_status("Include of \"" + *scene::Layers.instance(m_instance).file + "\" selected. Del removes it from the scenery.");
+                            select_include(node->m_instance);
+                            ui()->set_status("Include of \"" + *scene::Layers.instance(m_instance).file + "\" selected. Its parameters are in the node properties, Del removes it from the scenery.");
                             node = nullptr;
                         }
                         else if (node->from_template() || false == scene::Layers.editable(node, &reason))
