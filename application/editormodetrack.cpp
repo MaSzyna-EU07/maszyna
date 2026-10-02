@@ -1124,6 +1124,7 @@ editor_track::straight const &editor_mode::current_straight()
 	if (track != m_straights.current_for)
 	{
 		m_straights.current_for = track;
+		m_straights.handle = -1;
 		m_straights.current = track != nullptr ? editor_track::find_straight(*track, m_straights.tolerance) : editor_track::straight{};
 	}
 	return m_straights.current;
@@ -1158,6 +1159,27 @@ void editor_mode::draw_straights_overlay() const
 			draw(line, i == m_straights.listed ? IM_COL32(40, 220, 255, 255) : IM_COL32(255, 255, 255, 110), i == m_straights.listed ? 4.0f : 2.0f);
 	}
 	draw(m_straights.current, IM_COL32(40, 220, 255, 255), 4.0f);
+	if (m_straights.dragging)
+	{
+		projection.line(drawlist, m_straights.preview_start, m_straights.preview_end, IM_COL32(255, 210, 60, 255), 3.0f);
+	}
+	else if (false == m_straights.current.tracks.empty())
+	{
+		auto const &line{m_straights.current};
+		glm::dvec3 const handles[] = {line.start, line.end, (line.start + line.end) * 0.5};
+		for (int i = 0; i < 3; ++i)
+		{
+			ImVec2 screen;
+			if (false == projection.project(handles[i], screen))
+				continue;
+			if (i < 2)
+				drawlist->AddRectFilled(ImVec2(screen.x - 6.0f, screen.y - 6.0f), ImVec2(screen.x + 6.0f, screen.y + 6.0f), IM_COL32(40, 220, 255, 255));
+			else
+				drawlist->AddCircleFilled(screen, 6.0f, IM_COL32(40, 220, 255, 255), 4);
+			if (i == m_straights.handle)
+				drawlist->AddCircle(screen, 12.0f, IM_COL32(255, 255, 255, 255), 16, 2.5f);
+		}
+	}
 	draw(m_straights.a, IM_COL32(60, 230, 90, 255), 5.0f);
 	draw(m_straights.b, IM_COL32(255, 60, 255, 255), 5.0f);
 	if (false == m_straights.a.tracks.empty() && false == m_straights.b.tracks.empty())
@@ -1240,7 +1262,41 @@ void editor_mode::render_straights_ui()
 		ImGui::SameLine();
 		if (ImGui::Button("Set as B"))
 			state.b = line;
+
+		if (false == ImGui::IsAnyItemActive())
+		{
+			state.edit_start = line.start;
+			state.edit_end = line.end;
+			state.edit_length = line.length;
+			state.edit_azimuth = line.azimuth;
+		}
+		ImGui::TextDisabled("Drag the ends or the middle of the straight with the gizmo, or enter the values");
+		ImGui::PushItemWidth(260.0f);
+		ImGui::InputScalarN("Start (x, y, z)", ImGuiDataType_Double, glm::value_ptr(state.edit_start), 3, nullptr, nullptr, "%.3f");
+		ImGui::InputScalarN("End (x, y, z)", ImGuiDataType_Double, glm::value_ptr(state.edit_end), 3, nullptr, nullptr, "%.3f");
+		ImGui::PopItemWidth();
+		if (ImGui::Button("Apply ends"))
+			straight_apply(line, state.edit_start, state.edit_end);
+		ImGui::PushItemWidth(120.0f);
+		ImGui::InputDouble("Length (m)", &state.edit_length, 0.0, 0.0, "%.3f");
+		ImGui::SameLine();
+		if (ImGui::Button("Set length from the start"))
+		{
+			glm::dvec3 const direction{line.direction.x, line.grade, line.direction.y};
+			straight_apply(line, line.start, line.start + direction * std::max(0.1, state.edit_length));
+		}
+		ImGui::InputDouble("Azimuth (deg)", &state.edit_azimuth, 0.0, 0.0, "%.5f");
+		ImGui::SameLine();
+		if (ImGui::Button("Turn around the start"))
+		{
+			auto const azimuth{glm::radians(state.edit_azimuth)};
+			glm::dvec3 const direction{std::sin(azimuth), line.grade, std::cos(azimuth)};
+			straight_apply(line, line.start, line.start + direction * line.length);
+		}
+		ImGui::PopItemWidth();
 	}
+	if (false == state.status.empty())
+		ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "%s", state.status.c_str());
 
 	ImGui::Separator();
 	auto const &a{state.a};
@@ -1270,4 +1326,164 @@ void editor_mode::render_straights_ui()
 	ImGui::Text("Height of B above A: start %.3f m, end %.3f m", height(b.start), height(b.end));
 	ImGui::Text("Grade difference: %.2f per mille", (b.grade * (dot < 0.0 ? -1.0 : 1.0) - a.grade) * 1000.0);
 	ImGui::Text("Overlap along A: %.2f m", std::max(0.0, to - from));
+
+	ImGui::PushItemWidth(120.0f);
+	ImGui::InputDouble("Distance (m)", &state.distance, 0.0, 0.0, "%.3f");
+	ImGui::PopItemWidth();
+	ImGui::SameLine();
+	if (ImGui::Button("Make B parallel to A at this distance"))
+	{
+		auto const side{(startoffset + endoffset) >= 0.0 ? 1.0 : -1.0};
+		glm::dvec2 const direction{a.direction * (dot < 0.0 ? -1.0 : 1.0)};
+		glm::dvec2 const normal{-a.direction.y, a.direction.x};
+		auto const startalong{along(b.start)};
+		auto const start2d{glm::dvec2{a.start.x, a.start.z} + a.direction * startalong + normal * (side * std::abs(state.distance))};
+		auto const end2d{start2d + direction * b.length};
+		straight_apply(b, {start2d.x, b.start.y, start2d.y}, {end2d.x, b.end.y, end2d.y});
+	}
+}
+
+bool editor_mode::straights_active()
+{
+	return ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::straights && false == current_straight().tracks.empty();
+}
+
+bool editor_mode::pick_straight_handle()
+{
+	if (false == straights_active())
+		return false;
+	auto const &line{current_straight()};
+	glm::dvec3 const handles[] = {line.start, line.end, (line.start + line.end) * 0.5};
+	screen_projection const projection;
+	ImVec2 const mouse = ImGui::GetIO().MousePos;
+	float best = kHandleRadius * kHandleRadius;
+	int hit{-1};
+	for (int i = 0; i < 3; ++i)
+	{
+		ImVec2 screen;
+		if (false == projection.project(handles[i], screen))
+			continue;
+		float const dx = screen.x - mouse.x;
+		float const dy = screen.y - mouse.y;
+		if (dx * dx + dy * dy < best)
+		{
+			best = dx * dx + dy * dy;
+			hit = i;
+		}
+	}
+	if (hit < 0)
+		return false;
+	m_straights.handle = hit;
+	return true;
+}
+
+void editor_mode::straight_refresh()
+{
+	auto &state{m_straights};
+	state.current_for = nullptr;
+	for (auto *line : {&state.a, &state.b})
+		if (false == line->tracks.empty())
+			*line = editor_track::find_straight(*line->tracks.front(), state.tolerance);
+	for (auto &line : state.found)
+		if (false == line.tracks.empty())
+			line = editor_track::find_straight(*line.tracks.front(), state.tolerance);
+}
+
+void editor_mode::straight_apply(editor_track::straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End)
+{
+	auto &state{m_straights};
+	state.status.clear();
+	auto const tracks{editor_track::straight_affected(Line)};
+	for (auto *track : tracks)
+	{
+		if (false == track->Dynamics.empty())
+		{
+			state.status = "There are vehicles placed on path " + track->name();
+			return;
+		}
+	}
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	for (auto *track : tracks)
+		states.emplace_back(track, editor_track::capture(*track));
+	push_track_snapshot(std::move(states));
+	editor_track::move_straight(Line, Start, End);
+	editor_track::commit(tracks);
+	straight_refresh();
+}
+
+void editor_mode::render_straight_gizmo()
+{
+	auto &state{m_straights};
+	auto const &line{state.dragging ? state.drag_line : current_straight()};
+	if (state.handle < 0 || line.tracks.empty() || false == m_gizmo_enabled)
+	{
+		state.dragging = false;
+		return;
+	}
+
+	ImGuizmo::BeginFrame();
+	ImGuizmo::SetOrthographic(Global.EditorOrtho);
+	ImGuiIO const &io = ImGui::GetIO();
+	ImGuizmo::SetRect(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
+	glm::mat4 const view = GfxRenderer->Camera_View_Matrix();
+	glm::dvec3 const camerapos = GfxRenderer->Camera_Position();
+	float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
+	glm::mat4 const projection = editor_mode::projection_matrix(aspect);
+
+	glm::dvec3 const anchors[] = {line.start, line.end, (line.start + line.end) * 0.5};
+	auto const anchor{anchors[state.handle]};
+	if (false == state.dragging)
+		state.gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(anchor - camerapos));
+	glm::vec3 snapvalue(m_gizmo_snap);
+	float const *snap = Global.ctrlState && snapvalue.x > 0.0f ? glm::value_ptr(snapvalue) : nullptr;
+	ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, glm::value_ptr(state.gizmo), nullptr, snap);
+
+	if (ImGuizmo::IsUsing())
+	{
+		if (false == state.dragging)
+		{
+			auto const tracks{editor_track::straight_affected(line)};
+			if (std::any_of(tracks.begin(), tracks.end(), [](TTrack const *Track) { return false == Track->Dynamics.empty(); }))
+			{
+				state.status = "There are vehicles placed on the straight or the paths attached to it";
+				return;
+			}
+			state.dragging = true;
+			state.drag_line = line;
+			state.drag_states.clear();
+			for (auto *track : tracks)
+				state.drag_states.emplace_back(track, editor_track::capture(*track));
+			push_track_snapshot(state.drag_states);
+			m_track_drag = tracks;
+		}
+		auto const &original{state.drag_line};
+		glm::dvec3 const moved{camerapos + glm::dvec3(state.gizmo[3])};
+		auto start{original.start};
+		auto end{original.end};
+		if (state.handle == 0)
+			start = moved;
+		else if (state.handle == 1)
+			end = moved;
+		else
+		{
+			auto const offset{moved - (original.start + original.end) * 0.5};
+			start += offset;
+			end += offset;
+		}
+		state.preview_start = start;
+		state.preview_end = end;
+		for (auto const &entry : state.drag_states)
+			editor_track::apply(*entry.first, entry.second);
+		editor_track::move_straight(original, start, end);
+		m_track_dirty = true;
+		commit_track_drag(false);
+	}
+	else if (state.dragging)
+	{
+		commit_track_drag(true);
+		state.dragging = false;
+		m_track_drag.clear();
+		state.drag_states.clear();
+		straight_refresh();
+	}
 }

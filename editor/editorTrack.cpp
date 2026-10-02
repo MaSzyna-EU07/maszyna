@@ -773,25 +773,89 @@ bool editor_track::find_chain(TTrack *From, TTrack *To, chain &Chain, std::strin
 	return true;
 }
 
-bool editor_track::is_straight(TTrack const &Track, straight_tolerance const &Tolerance)
+namespace
 {
-	if (Track.eType != tt_Normal || false == is_supported(Track) || Track.m_paths.empty())
-		return false;
-	auto const &path{Track.m_paths.front()};
-	glm::dvec2 const start{path.points[segment_data::point::start].x, path.points[segment_data::point::start].z};
-	glm::dvec2 const end{path.points[segment_data::point::end].x, path.points[segment_data::point::end].z};
-	auto const length{glm::distance(start, end)};
+
+glm::dvec2 plan_of(glm::dvec3 const &Point)
+{
+	return {Point.x, Point.z};
+}
+
+glm::dvec2 turned(glm::dvec2 const &Vector, double const Angle)
+{
+	auto const c{std::cos(Angle)};
+	auto const s{std::sin(Angle)};
+	return {Vector.x * c - Vector.y * s, Vector.x * s + Vector.y * c};
+}
+
+double lateral_of(glm::dvec2 const &Direction, glm::dvec2 const &Offset)
+{
+	return Direction.x * Offset.y - Direction.y * Offset.x;
+}
+
+bool plan_straight(segment_data const &Path, double const Tolerance)
+{
+	auto const chord{plan_of(Path.points[segment_data::point::end] - Path.points[segment_data::point::start])};
+	auto const length{glm::length(chord)};
 	if (length < 1e-3)
 		return false;
-	auto const direction{(end - start) / length};
+	auto const direction{chord / length};
 	for (auto const index : {segment_data::point::control1, segment_data::point::control2})
-	{
-		auto const &control{path.points[index]};
-		glm::dvec2 const offset{control.x, control.z};
-		if (std::abs(direction.x * offset.y - direction.y * offset.x) > Tolerance.offset)
+		if (std::abs(lateral_of(direction, plan_of(Path.points[index]))) > Tolerance)
 			return false;
-	}
 	return true;
+}
+
+TTrack *neighbour_at(TTrack const &Track, int const Path, bool const Atend)
+{
+	if (has_switch_paths(Track))
+		return Atend ? Track.SwitchExtension->pNexts[Path & 1] : Track.SwitchExtension->pPrevs[Path & 1];
+	return Atend ? Track.trNext : Track.trPrev;
+}
+
+void rigid_move(TTrack &Track, glm::dvec3 const &Pivot, glm::dvec3 const &Target, double const Angle)
+{
+	for (auto &path : Track.m_paths)
+	{
+		for (auto const index : {segment_data::point::start, segment_data::point::end})
+		{
+			auto &point{path.points[index]};
+			auto const moved{plan_of(Target) + turned(plan_of(point - Pivot), Angle)};
+			point = {moved.x, point.y + Target.y - Pivot.y, moved.y};
+		}
+		for (auto const index : {segment_data::point::control1, segment_data::point::control2})
+		{
+			auto &control{path.points[index]};
+			auto const moved{turned(plan_of(control), Angle)};
+			control = {moved.x, control.y, moved.y};
+		}
+	}
+}
+
+void follow_joint(TTrack &Track, glm::dvec3 const &From, glm::dvec3 const &To, double const Angle)
+{
+	for (auto &path : Track.m_paths)
+	{
+		for (auto const atend : {false, true})
+		{
+			auto &point{path.points[atend ? segment_data::point::end : segment_data::point::start]};
+			if (glm::distance(point, From) > kSamePoint)
+				continue;
+			point = To;
+			auto &control{path.points[atend ? segment_data::point::control2 : segment_data::point::control1]};
+			auto const moved{turned(plan_of(control), Angle)};
+			control = {moved.x, control.y, moved.y};
+		}
+	}
+}
+
+} // namespace
+
+bool editor_track::is_straight(TTrack const &Track, straight_tolerance const &Tolerance)
+{
+	if (false == is_supported(Track) || Track.m_editorremoved)
+		return false;
+	return std::any_of(Track.m_paths.begin(), Track.m_paths.end(), [&](segment_data const &Path) { return plan_straight(Path, Tolerance.offset); });
 }
 
 editor_track::straight editor_track::find_straight(TTrack &Track, straight_tolerance const &Tolerance)
@@ -800,49 +864,70 @@ editor_track::straight editor_track::find_straight(TTrack &Track, straight_toler
 	if (false == is_straight(Track, Tolerance))
 		return result;
 
-	auto const plan = [](glm::dvec3 const &Point) { return glm::dvec2{Point.x, Point.z}; };
-	auto const &first{Track.m_paths.front()};
+	int firstpath{0};
+	while (false == plan_straight(Track.m_paths[firstpath], Tolerance.offset))
+		++firstpath;
+	auto const &first{Track.m_paths[firstpath]};
 	auto const origin{first.points[segment_data::point::start]};
-	auto const direction{glm::normalize(plan(first.points[segment_data::point::end] - origin))};
-	auto const lateral = [&](glm::dvec3 const &Point) {
-		auto const offset{plan(Point - origin)};
-		return std::abs(direction.x * offset.y - direction.y * offset.x);
-	};
-	auto const continues = [&](TTrack const *Other) {
-		if (Other == nullptr || false == is_straight(*Other, Tolerance))
-			return false;
-		auto const &path{Other->m_paths.front()};
-		auto const otherdirection{glm::normalize(plan(path.points[segment_data::point::end] - path.points[segment_data::point::start]))};
-		if (std::abs(direction.x * otherdirection.y - direction.y * otherdirection.x) > Tolerance.angle)
-			return false;
-		return lateral(path.points[segment_data::point::start]) <= Tolerance.offset && lateral(path.points[segment_data::point::end]) <= Tolerance.offset;
+	auto const direction{glm::normalize(plan_of(first.points[segment_data::point::end] - origin))};
+	auto const lateral = [&](glm::dvec3 const &Point) { return std::abs(lateral_of(direction, plan_of(Point - origin))); };
+	auto const accepts = [&](TTrack const *Other, glm::dvec3 const &Joint) {
+		if (Other == nullptr || false == is_supported(*Other) || Other->m_editorremoved)
+			return -1;
+		for (int i = 0; i < static_cast<int>(Other->m_paths.size()); ++i)
+		{
+			auto const &path{Other->m_paths[i]};
+			if (false == plan_straight(path, Tolerance.offset))
+				continue;
+			auto const &start{path.points[segment_data::point::start]};
+			auto const &end{path.points[segment_data::point::end]};
+			if (glm::distance(start, Joint) > kSamePoint && glm::distance(end, Joint) > kSamePoint)
+				continue;
+			auto const otherdirection{glm::normalize(plan_of(end - start))};
+			if (std::abs(lateral_of(direction, otherdirection)) > Tolerance.angle)
+				continue;
+			if (lateral(start) > Tolerance.offset || lateral(end) > Tolerance.offset)
+				continue;
+			return i;
+		}
+		return -1;
 	};
 
-	std::deque<TTrack *> run{&Track};
-	for (auto const throughend : {true, false})
+	std::deque<std::pair<TTrack *, int>> run{{&Track, firstpath}};
+	for (auto const forward : {true, false})
 	{
-		TTrack *previous{&Track};
-		TTrack *current{throughend ? Track.trNext : Track.trPrev};
-		while (continues(current) && std::find(run.begin(), run.end(), current) == run.end())
+		TTrack *current{&Track};
+		int path{firstpath};
+		bool atend{forward};
+		while (true)
 		{
-			if (throughend)
-				run.push_back(current);
+			auto const &exit{current->m_paths[path].points[atend ? segment_data::point::end : segment_data::point::start]};
+			auto *next{neighbour_at(*current, path, atend)};
+			if (std::any_of(run.begin(), run.end(), [&](auto const &Member) { return Member.first == next; }))
+				break;
+			auto const nextpath{accepts(next, exit)};
+			if (nextpath < 0)
+				break;
+			if (forward)
+				run.emplace_back(next, nextpath);
 			else
-				run.push_front(current);
-			auto *next{current->trPrev == previous ? current->trNext : current->trPrev};
-			previous = current;
+				run.emplace_front(next, nextpath);
+			atend = glm::distance(next->m_paths[nextpath].points[segment_data::point::start], exit) <= kSamePoint;
 			current = next;
+			path = nextpath;
 		}
 	}
 
 	double low{0.0}, high{0.0};
 	glm::dvec3 lowpoint{origin}, highpoint{origin};
-	for (auto *track : run)
+	for (auto const &member : run)
 	{
+		result.tracks.push_back(member.first);
+		result.paths.push_back(member.second);
 		for (auto const index : {segment_data::point::start, segment_data::point::end})
 		{
-			auto const &point{track->m_paths.front().points[index]};
-			auto const along{glm::dot(plan(point - origin), direction)};
+			auto const &point{member.first->m_paths[member.second].points[index]};
+			auto const along{glm::dot(plan_of(point - origin), direction)};
 			if (along < low)
 			{
 				low = along;
@@ -855,7 +940,6 @@ editor_track::straight editor_track::find_straight(TTrack &Track, straight_toler
 			}
 		}
 	}
-	result.tracks.assign(run.begin(), run.end());
 	result.start = lowpoint;
 	result.end = highpoint;
 	result.direction = direction;
@@ -874,7 +958,7 @@ std::vector<editor_track::straight> editor_track::find_straights(double const Mi
 	std::unordered_set<TTrack const *> visited;
 	for (auto *track : simulation::Paths.sequence())
 	{
-		if (track == nullptr || track->m_editorremoved || visited.count(track) > 0 || false == is_straight(*track, Tolerance))
+		if (track == nullptr || visited.count(track) > 0 || false == is_straight(*track, Tolerance))
 			continue;
 		auto line{find_straight(*track, Tolerance)};
 		for (auto const *member : line.tracks)
@@ -884,6 +968,162 @@ std::vector<editor_track::straight> editor_track::find_straights(double const Mi
 	}
 	std::sort(result.begin(), result.end(), [](straight const &A, straight const &B) { return A.length > B.length; });
 	return result;
+}
+
+std::vector<TTrack *> editor_track::straight_affected(straight const &Line)
+{
+	std::vector<TTrack *> result(Line.tracks.begin(), Line.tracks.end());
+	auto const member = [&](TTrack const *Track) { return std::find(Line.tracks.begin(), Line.tracks.end(), Track) != Line.tracks.end(); };
+	for (auto *track : Line.tracks)
+	{
+		for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
+		{
+			for (auto const atend : {false, true})
+			{
+				auto *neighbour{neighbour_at(*track, i, atend)};
+				if (neighbour == nullptr || member(neighbour))
+					continue;
+				add_unique(result, neighbour);
+				if (false == has_switch_paths(*neighbour))
+					continue;
+				for (auto *next : neighbours(*neighbour))
+					if (false == member(next))
+						add_unique(result, next);
+			}
+		}
+	}
+	return result;
+}
+
+void editor_track::move_straight(straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End)
+{
+	if (Line.tracks.empty() || Line.length < 1e-6)
+		return;
+	auto const &direction{Line.direction};
+	auto const newplan{plan_of(End - Start)};
+	auto const newlength{glm::length(newplan)};
+	if (newlength < 1e-3)
+		return;
+	auto const newdirection{newplan / newlength};
+	auto const angle{std::atan2(lateral_of(direction, newdirection), glm::dot(direction, newdirection))};
+	auto const along = [&](glm::dvec3 const &Point) { return glm::dot(plan_of(Point - Line.start), direction); };
+
+	struct interval
+	{
+		double from, to;
+		bool rigid;
+	};
+	std::vector<interval> intervals;
+	double rigidlength{0.0};
+	for (std::size_t i = 0; i < Line.tracks.size(); ++i)
+	{
+		auto const &path{Line.tracks[i]->m_paths[Line.paths[i]]};
+		auto const a{along(path.points[segment_data::point::start])};
+		auto const b{along(path.points[segment_data::point::end])};
+		auto const rigid{has_switch_paths(*Line.tracks[i])};
+		intervals.push_back({std::min(a, b), std::max(a, b), rigid});
+		if (rigid)
+			rigidlength += std::abs(b - a);
+	}
+	std::sort(intervals.begin(), intervals.end(), [](interval const &A, interval const &B) { return A.from < B.from; });
+	auto const scale{Line.length - rigidlength > 1e-6 ? (newlength - rigidlength) / (Line.length - rigidlength) : 1.0};
+	auto const remap = [&](double const Along) {
+		double mapped{0.0}, previous{0.0};
+		for (auto const &span : intervals)
+		{
+			if (Along <= span.from)
+				return mapped + (Along - previous) * scale;
+			mapped += (span.from - previous) * scale;
+			previous = span.from;
+			auto const factor{span.rigid ? 1.0 : scale};
+			if (Along <= span.to)
+				return mapped + (Along - previous) * factor;
+			mapped += (span.to - previous) * factor;
+			previous = span.to;
+		}
+		return mapped + (Along - previous) * scale;
+	};
+	auto const transform = [&](glm::dvec3 const &Point) {
+		auto const a{along(Point)};
+		auto const offset{lateral_of(direction, plan_of(Point - Line.start))};
+		auto const mapped{remap(a)};
+		auto const oldheight{Line.start.y + (Line.end.y - Line.start.y) * a / Line.length};
+		auto const newheight{Start.y + (End.y - Start.y) * mapped / newlength};
+		auto const moved{plan_of(Start) + newdirection * mapped + glm::dvec2{-newdirection.y, newdirection.x} * offset};
+		return glm::dvec3{moved.x, Point.y - oldheight + newheight, moved.y};
+	};
+
+	auto const member = [&](TTrack const *Track) { return std::find(Line.tracks.begin(), Line.tracks.end(), Track) != Line.tracks.end(); };
+	std::vector<std::pair<glm::dvec3, glm::dvec3>> joints;
+	for (std::size_t i = 0; i < Line.tracks.size(); ++i)
+	{
+		auto &track{*Line.tracks[i]};
+		auto const before{track.m_paths};
+		if (has_switch_paths(track))
+		{
+			auto const pivot{before[Line.paths[i]].points[segment_data::point::start]};
+			rigid_move(track, pivot, transform(pivot), angle);
+		}
+		else
+		{
+			for (auto &path : track.m_paths)
+			{
+				for (auto const index : {segment_data::point::start, segment_data::point::end})
+					path.points[index] = transform(path.points[index]);
+				for (auto const index : {segment_data::point::control1, segment_data::point::control2})
+				{
+					auto &control{path.points[index]};
+					auto const moved{turned(plan_of(control), angle) * scale};
+					control = {moved.x, control.y * scale, moved.y};
+				}
+			}
+		}
+		for (std::size_t j = 0; j < before.size(); ++j)
+			for (auto const index : {segment_data::point::start, segment_data::point::end})
+				joints.emplace_back(before[j].points[index], track.m_paths[j].points[index]);
+	}
+
+	std::vector<TTrack *> moved;
+	for (auto *track : Line.tracks)
+	{
+		for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
+		{
+			for (auto const atend : {false, true})
+			{
+				auto *neighbour{neighbour_at(*track, i, atend)};
+				if (neighbour == nullptr || member(neighbour) || std::find(moved.begin(), moved.end(), neighbour) != moved.end())
+					continue;
+				moved.push_back(neighbour);
+				for (auto const &joint : joints)
+				{
+					bool touches{false};
+					for (auto const &path : neighbour->m_paths)
+						for (auto const index : {segment_data::point::start, segment_data::point::end})
+							touches |= glm::distance(path.points[index], joint.first) <= kSamePoint;
+					if (false == touches)
+						continue;
+					if (has_switch_paths(*neighbour))
+					{
+						auto const before{neighbour->m_paths};
+						rigid_move(*neighbour, joint.first, joint.second, angle);
+						for (auto *next : neighbours(*neighbour))
+						{
+							if (member(next) || next == neighbour)
+								continue;
+							for (std::size_t j = 0; j < before.size(); ++j)
+								for (auto const index : {segment_data::point::start, segment_data::point::end})
+									follow_joint(*next, before[j].points[index], neighbour->m_paths[j].points[index], angle);
+						}
+					}
+					else
+					{
+						follow_joint(*neighbour, joint.first, joint.second, angle);
+					}
+					break;
+				}
+			}
+		}
+	}
 }
 
 std::vector<TTrack *> editor_track::relay(chain const &Chain, std::vector<segment_data> const &Pieces)

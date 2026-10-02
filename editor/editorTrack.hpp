@@ -99,6 +99,7 @@ class editor_track
 	struct straight
 	{
 		std::vector<TTrack *> tracks;
+		std::vector<int> paths;
 		glm::dvec3 start{0.0};
 		glm::dvec3 end{0.0};
 		glm::dvec2 direction{0.0, 1.0};
@@ -114,6 +115,8 @@ class editor_track
 	static bool is_straight(TTrack const &Track, straight_tolerance const &Tolerance);
 	static straight find_straight(TTrack &Track, straight_tolerance const &Tolerance);
 	static std::vector<straight> find_straights(double const Minimumlength, straight_tolerance const &Tolerance);
+	static std::vector<TTrack *> straight_affected(straight const &Line);
+	static void move_straight(straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End);
 	static std::vector<TTrack *> relay(chain const &Chain, std::vector<segment_data> const &Pieces);
 	static void retire(TTrack &Track);
 	static void revive(TTrack &Track);
