@@ -1500,6 +1500,77 @@ TTrack *editor_track::create_path(TTrack const &Style, segment_data const &Path)
 	return track;
 }
 
+double editor_track::nearest_parameter(TTrack const &Track, glm::dvec3 const &Point)
+{
+	if (Track.m_paths.empty())
+		return 0.5;
+	auto const &path{Track.m_paths.front()};
+	auto const p0{path.points[segment_data::point::start]};
+	auto const p3{path.points[segment_data::point::end]};
+	auto const p1{p0 + path.points[segment_data::point::control1]};
+	auto const p2{p3 + path.points[segment_data::point::control2]};
+	auto const at = [&](double const T) {
+		auto const u{1.0 - T};
+		return u * u * u * p0 + 3.0 * u * u * T * p1 + 3.0 * u * T * T * p2 + T * T * T * p3;
+	};
+	auto const distance = [&](double const T) { auto const q{at(T)}; return glm::distance(glm::dvec2{q.x, q.z}, glm::dvec2{Point.x, Point.z}); };
+	double best{0.5};
+	for (int i = 0; i <= 200; ++i)
+		if (distance(i / 200.0) < distance(best))
+			best = i / 200.0;
+	double step{1.0 / 200.0};
+	for (int i = 0; i < 30; ++i)
+	{
+		step *= 0.5;
+		if (best - step > 0.0 && distance(best - step) < distance(best))
+			best -= step;
+		else if (best + step < 1.0 && distance(best + step) < distance(best))
+			best += step;
+	}
+	return best;
+}
+
+TTrack *editor_track::split_path(TTrack &Track, double const T)
+{
+	if (Track.eType != tt_Normal || Track.m_paths.empty() || T <= 0.001 || T >= 0.999)
+		return nullptr;
+	auto const path{Track.m_paths.front()};
+	auto const p0{path.points[segment_data::point::start]};
+	auto const p3{path.points[segment_data::point::end]};
+	segment_data first{path};
+	segment_data second{path};
+	auto const roll{static_cast<float>(path.rolls[0] + (path.rolls[1] - path.rolls[0]) * T)};
+	if (path.points[segment_data::point::control1] == glm::dvec3{} && path.points[segment_data::point::control2] == glm::dvec3{})
+	{
+		auto const middle{glm::mix(p0, p3, T)};
+		first.points[segment_data::point::end] = middle;
+		second.points[segment_data::point::start] = middle;
+	}
+	else
+	{
+		auto const p1{p0 + path.points[segment_data::point::control1]};
+		auto const p2{p3 + path.points[segment_data::point::control2]};
+		auto const p01{glm::mix(p0, p1, T)};
+		auto const p12{glm::mix(p1, p2, T)};
+		auto const p23{glm::mix(p2, p3, T)};
+		auto const p012{glm::mix(p01, p12, T)};
+		auto const p123{glm::mix(p12, p23, T)};
+		auto const middle{glm::mix(p012, p123, T)};
+		first.points[segment_data::point::control1] = p01 - p0;
+		first.points[segment_data::point::control2] = p012 - middle;
+		first.points[segment_data::point::end] = middle;
+		second.points[segment_data::point::start] = middle;
+		second.points[segment_data::point::control1] = p123 - middle;
+		second.points[segment_data::point::control2] = p23 - p3;
+	}
+	first.rolls[1] = roll;
+	second.rolls[0] = roll;
+	auto *created{create_path(Track, second)};
+	Track.m_paths.front() = first;
+	commit({&Track, created});
+	return created;
+}
+
 TTrack *editor_track::load_path(std::string const &Text, TTrack const &Template)
 {
 	cParser parser(Text, cParser::buffer_TEXT);

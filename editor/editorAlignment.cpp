@@ -217,7 +217,7 @@ glm::dvec2 blossom(std::array<glm::dvec2, 4> const &Points, double const A, doub
 	return glm::mix(s[0], s[1], C);
 }
 
-std::size_t element_pieces(element const &Element, transition_shape const Shape)
+std::size_t element_pieces(element const &Element, transition_shape const Shape, int const Transitions)
 {
 	if (Element.length < 1e-3)
 		return 0;
@@ -227,11 +227,12 @@ std::size_t element_pieces(element const &Element, transition_shape const Shape)
 		return static_cast<std::size_t>(std::max(1.0, std::ceil(Element.length / Element.radius / (10.0 * kPi / 180.0) - 1e-9)));
 	case element_kind::transition_in:
 	case element_kind::transition_out:
-		return Shape == transition_shape::cubic_parabola ? 1 : static_cast<std::size_t>(std::max(1.0, std::ceil(Element.length / 20.0 - 1e-9)));
+		return std::max<std::size_t>(std::max(1, Transitions), Shape == transition_shape::cubic_parabola ? 1 : static_cast<std::size_t>(std::max(1.0, std::ceil(Element.length / 20.0 - 1e-9))));
 	case element_kind::spiral:
 	{
 		auto const turn{(Element.curvature_start + Element.curvature_end) * 0.5 * Element.length};
-		return static_cast<std::size_t>(std::max({1.0, std::ceil(turn / (10.0 * kPi / 180.0) - 1e-9), std::ceil(Element.length / 20.0 - 1e-9)}));
+		auto const count{static_cast<std::size_t>(std::max({1.0, std::ceil(turn / (10.0 * kPi / 180.0) - 1e-9), std::ceil(Element.length / 20.0 - 1e-9)}))};
+		return Element.curvature_start != Element.curvature_end ? std::max<std::size_t>(count, std::max(1, Transitions)) : count;
 	}
 	default:
 		return 1;
@@ -854,7 +855,7 @@ std::size_t minimum_pieces(result const &Result, design const &Design)
 {
 	std::size_t count{0};
 	for (auto const &e : Result.elements)
-		count += element_pieces(e, Design.shape);
+		count += element_pieces(e, Design.shape, Design.transition_pieces);
 	return count;
 }
 
@@ -864,27 +865,98 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 	{
 		std::size_t element;
 		double from, to;
+		bool generic{false};
+		double start{0.0};
+		double end{0.0};
 	};
+	auto const extent = [&](span const &Span) { return Span.generic ? Span.end - Span.start : Span.to - Span.from; };
+	auto const chainage_from = [&](span const &Span) { return Span.generic ? Span.start : Result.elements[Span.element].chainage + Span.from; };
+	auto const chainage_to = [&](span const &Span) { return Span.generic ? Span.end : Result.elements[Span.element].chainage + Span.to; };
 	std::vector<span> spans;
 	for (std::size_t i = 0; i < Result.elements.size(); ++i)
 	{
 		auto const &e{Result.elements[i]};
-		auto const count{element_pieces(e, Design.shape)};
+		auto const count{element_pieces(e, Design.shape, Design.transition_pieces)};
 		for (std::size_t j = 0; j < count; ++j)
 			spans.push_back({i, e.length * j / count, e.length * (j + 1) / count});
 	}
+	double const shortest{1.0};
+	for (std::size_t i = 0; i < spans.size() && spans.size() > 1;)
+	{
+		auto const &e{Result.elements[spans[i].element]};
+		if (e.kind != element_kind::straight || extent(spans[i]) >= shortest)
+		{
+			++i;
+			continue;
+		}
+		auto const start{chainage_from(spans[i])};
+		auto const end{chainage_to(spans[i])};
+		if (i > 0)
+		{
+			auto &previous{spans[i - 1]};
+			previous.start = chainage_from(previous);
+			previous.end = end;
+			previous.generic = true;
+		}
+		else
+		{
+			auto &next{spans[i + 1]};
+			next.end = chainage_to(next);
+			next.start = start;
+			next.generic = true;
+		}
+		spans.erase(spans.begin() + i);
+	}
 	while (false == spans.empty() && spans.size() < Count)
 	{
-		auto longest = std::max_element(spans.begin(), spans.end(), [](span const &A, span const &B) { return A.to - A.from < B.to - B.from; });
-		auto const middle{(longest->from + longest->to) * 0.5};
-		span const second{longest->element, middle, longest->to};
-		longest->to = middle;
+		auto longest = std::max_element(spans.begin(), spans.end(), [&](span const &A, span const &B) { return extent(A) < extent(B); });
+		span second{*longest};
+		if (longest->generic)
+		{
+			auto const middle{(longest->start + longest->end) * 0.5};
+			second.start = middle;
+			longest->end = middle;
+		}
+		else
+		{
+			auto const middle{(longest->from + longest->to) * 0.5};
+			second.from = middle;
+			longest->to = middle;
+		}
 		spans.insert(std::next(longest), second);
 	}
 
 	std::vector<segment_data> result;
 	for (auto const &piece : spans)
 	{
+		if (piece.generic)
+		{
+			auto const first{evaluate(Result, piece.start)};
+			auto const last{evaluate(Result, piece.end)};
+			glm::dvec2 const p0{first.position.x, first.position.z};
+			glm::dvec2 const p3{last.position.x, last.position.z};
+			auto const d0{glm::normalize(glm::dvec2{first.direction.x, first.direction.z})};
+			auto const d3{glm::normalize(glm::dvec2{last.direction.x, last.direction.z})};
+			auto const handle{glm::distance(p0, p3) / 3.0};
+			auto const p1{p0 + d0 * handle};
+			auto const p2{p3 - d3 * handle};
+			auto const y0{first.position.y};
+			auto const y3{last.position.y};
+			auto const y1{y0 + grade(Result, piece.start) * handle};
+			auto const y2{y3 - grade(Result, piece.end) * handle};
+			auto const roll = [&](station const &Station) { return static_cast<float>(Station.turn * glm::degrees(std::asin(std::clamp(Station.cant / Design.norms.gauge, -1.0, 1.0)))); };
+			segment_data path;
+			path.points[segment_data::point::start] = first.position;
+			path.points[segment_data::point::end] = last.position;
+			path.points[segment_data::point::control1] = glm::dvec3{p1.x, y1, p1.y} - first.position;
+			path.points[segment_data::point::control2] = glm::dvec3{p2.x, y2, p2.y} - last.position;
+			path.rolls[0] = roll(first);
+			path.rolls[1] = roll(last);
+			auto const &e{Result.elements[piece.element]};
+			path.radius = e.kind == element_kind::straight ? 0.f : static_cast<float>(e.radius);
+			result.push_back(path);
+			continue;
+		}
 		auto const &e{Result.elements[piece.element]};
 		glm::dvec2 p0, p3, d0, d3;
 		element_point(e, Design.shape, piece.from, p0, d0);

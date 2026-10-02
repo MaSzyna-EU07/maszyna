@@ -68,6 +68,7 @@ struct design
 	std::vector<vertex> vertices;
 	transition_shape shape{transition_shape::cubic_parabola};
 	double speed{100.0};
+	int transition_pieces{1};
 	limits norms;
 };
 

@@ -836,6 +836,7 @@ void editor_mode::route_reset()
 	alignment::design design;
 	design.norms = route.design.norms;
 	design.shape = route.design.shape;
+	design.transition_pieces = route.design.transition_pieces;
 	design.start = chain.start;
 	design.end = chain.end;
 	auto const plan = [](glm::dvec3 const &Direction) { return glm::normalize(glm::dvec2{Direction.x, Direction.z}); };
@@ -1220,6 +1221,11 @@ void editor_mode::render_route_ui()
 	{
 		design.shape = static_cast<alignment::transition_shape>(shape);
 		changed = true;
+	}
+	if (ImGui::SliderInt("Paths per transition curve", &design.transition_pieces, 1, 4))
+	{
+		route_update();
+		route_apply();
 	}
 	ImGui::PopItemWidth();
 
@@ -2355,7 +2361,7 @@ void editor_mode::draw_track_hints()
 		hint = m_route.chain.tracks.empty() ? "LMB: select a curve" : "Drag the vertex (yellow) or the radius grip (green), the change is applied on release   Ctrl+Z: undo";
 	else
 		hint = "LMB: select a path or a point handle";
-	hint += "   O: top view";
+	hint += "   K: split the path under the cursor   O: top view";
 	ImGuiIO const &io = ImGui::GetIO();
 	auto *drawlist{ImGui::GetBackgroundDrawList()};
 	ImVec2 const position{12.0f, io.DisplaySize.y - 28.0f};
@@ -2542,7 +2548,30 @@ void editor_mode::insert_switch(editor_track::straight const &Line, double const
 	auto const &shape{m_switch.templates[m_switch.armed]};
 	if (shape.length > Line.length - 0.02)
 		return;
-	auto const from{std::clamp(Direction > 0 ? Along : Along - shape.length, 0.01, Line.length - shape.length - 0.01)};
+	auto from{std::clamp(Direction > 0 ? Along : Along - shape.length, 0.0, Line.length - shape.length)};
+	{
+		std::vector<double> joints{0.0, Line.length};
+		for (std::size_t i = 0; i < Line.tracks.size(); ++i)
+		{
+			auto const &path{Line.tracks[i]->m_paths[Line.paths[i]]};
+			for (auto const index : {segment_data::point::start, segment_data::point::end})
+				joints.push_back(glm::dot(glm::dvec2{path.points[index].x - Line.start.x, path.points[index].z - Line.start.z}, Line.direction));
+		}
+		auto const nearest = [&](double const Value) {
+			double best{Value};
+			for (auto const joint : joints)
+				if (std::abs(joint - Value) < std::abs(best - Value) || best == Value)
+					best = std::abs(joint - Value) < 1.0 ? joint : best;
+			return best;
+		};
+		auto const snappedstart{nearest(from)};
+		auto const snappedend{nearest(from + shape.length)};
+		if (snappedstart != from)
+			from = snappedstart;
+		else if (snappedend != from + shape.length)
+			from = snappedend - shape.length;
+		from = std::clamp(from, 0.0, Line.length - shape.length);
+	}
 	auto const to{from + shape.length};
 	auto const origin{Direction > 0 ? from : to};
 	struct span

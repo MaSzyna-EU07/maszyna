@@ -2768,6 +2768,20 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             m_fill_points.pop_back();
         break;
 
+    case GLFW_KEY_K:
+        if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && selected_track() != nullptr)
+        {
+            auto *track{selected_track()};
+            auto const parameter{editor_track::nearest_parameter(*track, Global.pCamera.Pos + GfxRenderer->Mouse_Position())};
+            auto const before{editor_track::capture(*track)};
+            if (auto *created{editor_track::split_path(*track, parameter)})
+            {
+                push_track_snapshot({{track, before}}, {created});
+                straight_refresh();
+            }
+        }
+        break;
+
     case GLFW_KEY_F:
         if (is_press(Action))
         {
