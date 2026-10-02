@@ -334,6 +334,8 @@ class editor_mode : public application_mode
 		int handle{-1};
 		bool dragging{false};
 		editor_track::straight drag_line;
+		std::vector<editor_track::straight> set;
+		std::vector<editor_track::straight> drag_lines;
 		std::vector<std::pair<TTrack *, editor_track::state>> drag_states;
 		glm::dvec3 preview_start{0.0};
 		glm::dvec3 preview_end{0.0};
@@ -352,6 +354,8 @@ class editor_mode : public application_mode
 	bool pick_straight_handle();
 	void render_straight_gizmo();
 	void straight_apply(editor_track::straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End);
+	void straights_apply(std::vector<editor_track::straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
+	bool in_straight_set(editor_track::straight const &Line) const;
 	void straight_refresh();
 	straights_state m_straights;
 	enum class track_tab { straights, route, path };

@@ -24,6 +24,7 @@ http:
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <functional>
 
 namespace
 {
@@ -1158,10 +1159,19 @@ void editor_mode::draw_straights_overlay() const
 		if (nearby(line))
 			draw(line, i == m_straights.listed ? IM_COL32(40, 220, 255, 255) : IM_COL32(255, 255, 255, 110), i == m_straights.listed ? 4.0f : 2.0f);
 	}
+	for (auto const &member : m_straights.set)
+		draw(member, IM_COL32(255, 150, 30, 255), 4.0f);
 	draw(m_straights.current, IM_COL32(40, 220, 255, 255), 4.0f);
 	if (m_straights.dragging)
 	{
-		projection.line(drawlist, m_straights.preview_start, m_straights.preview_end, IM_COL32(255, 210, 60, 255), 3.0f);
+		for (auto const &member : m_straights.drag_lines)
+		{
+			for (auto const *track : member.tracks)
+			{
+				auto const &path{track->m_paths.front()};
+				projection.line(drawlist, path.points[segment_data::point::start], path.points[segment_data::point::end], IM_COL32(255, 210, 60, 255), 3.0f);
+			}
+		}
 	}
 	else if (false == m_straights.current.tracks.empty())
 	{
@@ -1262,6 +1272,16 @@ void editor_mode::render_straights_ui()
 		ImGui::SameLine();
 		if (ImGui::Button("Set as B"))
 			state.b = line;
+		ImGui::SameLine();
+		if (in_straight_set(line))
+		{
+			if (ImGui::Button("Remove from the set"))
+				state.set.erase(std::remove_if(state.set.begin(), state.set.end(), [&](editor_track::straight const &Member) { return std::any_of(line.tracks.begin(), line.tracks.end(), [&](TTrack const *Track) { return std::find(Member.tracks.begin(), Member.tracks.end(), Track) != Member.tracks.end(); }); }), state.set.end());
+		}
+		else if (ImGui::Button("Add to the set"))
+		{
+			state.set.push_back(line);
+		}
 
 		if (false == ImGui::IsAnyItemActive())
 		{
@@ -1297,6 +1317,14 @@ void editor_mode::render_straights_ui()
 	}
 	if (false == state.status.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "%s", state.status.c_str());
+
+	if (false == state.set.empty())
+	{
+		ImGui::Text("Set: %zu straights, dragging any of them moves the whole set, keeping it parallel", state.set.size());
+		ImGui::SameLine();
+		if (ImGui::SmallButton("Clear the set"))
+			state.set.clear();
+	}
 
 	ImGui::Separator();
 	auto const &a{state.a};
@@ -1388,13 +1416,30 @@ void editor_mode::straight_refresh()
 	for (auto &line : state.found)
 		if (false == line.tracks.empty())
 			line = editor_track::find_straight(*line.tracks.front(), state.tolerance);
+	for (auto &line : state.set)
+		if (false == line.tracks.empty())
+			line = editor_track::find_straight(*line.tracks.front(), state.tolerance);
+}
+
+bool editor_mode::in_straight_set(editor_track::straight const &Line) const
+{
+	for (auto const &member : m_straights.set)
+		for (auto const *track : Line.tracks)
+			if (std::find(member.tracks.begin(), member.tracks.end(), track) != member.tracks.end())
+				return true;
+	return false;
 }
 
 void editor_mode::straight_apply(editor_track::straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End)
 {
+	straights_apply({Line}, {{Start, End}});
+}
+
+void editor_mode::straights_apply(std::vector<editor_track::straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends)
+{
 	auto &state{m_straights};
 	state.status.clear();
-	auto const tracks{editor_track::straight_affected(Line)};
+	auto const tracks{editor_track::straight_affected(Lines)};
 	for (auto *track : tracks)
 	{
 		if (false == track->Dynamics.empty())
@@ -1407,7 +1452,7 @@ void editor_mode::straight_apply(editor_track::straight const &Line, glm::dvec3 
 	for (auto *track : tracks)
 		states.emplace_back(track, editor_track::capture(*track));
 	push_track_snapshot(std::move(states));
-	editor_track::move_straight(Line, Start, End);
+	editor_track::move_straights(Lines, Ends);
 	editor_track::commit(tracks);
 	straight_refresh();
 }
@@ -1443,39 +1488,68 @@ void editor_mode::render_straight_gizmo()
 	{
 		if (false == state.dragging)
 		{
-			auto const tracks{editor_track::straight_affected(line)};
+			std::vector<editor_track::straight> lines;
+			if (in_straight_set(line))
+			{
+				for (auto const &member : state.set)
+					if (false == member.tracks.empty())
+						lines.push_back(editor_track::find_straight(*member.tracks.front(), state.tolerance));
+			}
+			else
+			{
+				lines.push_back(line);
+			}
+			auto const tracks{editor_track::straight_affected(lines)};
 			if (std::any_of(tracks.begin(), tracks.end(), [](TTrack const *Track) { return false == Track->Dynamics.empty(); }))
 			{
-				state.status = "There are vehicles placed on the straight or the paths attached to it";
+				state.status = "There are vehicles placed on the straights or the paths attached to them";
 				return;
 			}
 			state.dragging = true;
 			state.drag_line = line;
+			state.drag_lines = lines;
 			state.drag_states.clear();
 			for (auto *track : tracks)
 				state.drag_states.emplace_back(track, editor_track::capture(*track));
 			push_track_snapshot(state.drag_states);
 			m_track_drag = tracks;
 		}
-		auto const &original{state.drag_line};
+		auto const &grabbed{state.drag_line};
 		glm::dvec3 const moved{camerapos + glm::dvec3(state.gizmo[3])};
-		auto start{original.start};
-		auto end{original.end};
-		if (state.handle == 0)
-			start = moved;
-		else if (state.handle == 1)
-			end = moved;
+		std::function<glm::dvec3(glm::dvec3 const &)> transform;
+		if (state.handle == 2)
+		{
+			auto const offset{moved - (grabbed.start + grabbed.end) * 0.5};
+			transform = [offset](glm::dvec3 const &Point) { return Point + offset; };
+		}
 		else
 		{
-			auto const offset{moved - (original.start + original.end) * 0.5};
-			start += offset;
-			end += offset;
+			auto const pivot{state.handle == 0 ? grabbed.end : grabbed.start};
+			auto const original{state.handle == 0 ? grabbed.start : grabbed.end};
+			glm::dvec2 const before{original.x - pivot.x, original.z - pivot.z};
+			glm::dvec2 const after{moved.x - pivot.x, moved.z - pivot.z};
+			auto const lengthbefore{glm::length(before)};
+			auto const lengthafter{std::max(0.1, glm::length(after))};
+			auto const axis{before / std::max(1e-9, lengthbefore)};
+			auto const newaxis{after / lengthafter};
+			auto const scale{lengthafter / std::max(1e-9, lengthbefore)};
+			auto const rise{moved.y - original.y};
+			transform = [=](glm::dvec3 const &Point) {
+				glm::dvec2 const offset{Point.x - pivot.x, Point.z - pivot.z};
+				auto const along{glm::dot(offset, axis)};
+				auto const across{axis.x * offset.y - axis.y * offset.x};
+				auto const planar{glm::dvec2{pivot.x, pivot.z} + newaxis * (along * scale) + glm::dvec2{-newaxis.y, newaxis.x} * across};
+				return glm::dvec3{planar.x, Point.y + rise * along / std::max(1e-9, lengthbefore), planar.y};
+			};
 		}
-		state.preview_start = start;
-		state.preview_end = end;
+		std::vector<std::pair<glm::dvec3, glm::dvec3>> ends;
+		for (auto const &member : state.drag_lines)
+			ends.emplace_back(transform(member.start), transform(member.end));
+		state.preview_start = transform(grabbed.start);
+		state.preview_end = transform(grabbed.end);
 		for (auto const &entry : state.drag_states)
 			editor_track::apply(*entry.first, entry.second);
-		editor_track::move_straight(original, start, end);
+		editor_track::move_straights(state.drag_lines, ends);
 		m_track_dirty = true;
 		commit_track_drag(false);
 	}
@@ -1485,6 +1559,7 @@ void editor_mode::render_straight_gizmo()
 		state.dragging = false;
 		m_track_drag.clear();
 		state.drag_states.clear();
+		state.drag_lines.clear();
 		straight_refresh();
 	}
 }

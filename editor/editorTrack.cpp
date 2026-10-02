@@ -22,6 +22,7 @@ http:
 #include <cmath>
 #include <limits>
 #include <deque>
+#include <functional>
 #include <sstream>
 #include <unordered_set>
 
@@ -970,11 +971,15 @@ std::vector<editor_track::straight> editor_track::find_straights(double const Mi
 	return result;
 }
 
-std::vector<TTrack *> editor_track::straight_affected(straight const &Line)
+std::vector<TTrack *> editor_track::straight_affected(std::vector<straight> const &Lines)
 {
-	std::vector<TTrack *> result(Line.tracks.begin(), Line.tracks.end());
-	auto const member = [&](TTrack const *Track) { return std::find(Line.tracks.begin(), Line.tracks.end(), Track) != Line.tracks.end(); };
-	for (auto *track : Line.tracks)
+	std::vector<TTrack *> result;
+	for (auto const &line : Lines)
+		for (auto *track : line.tracks)
+			add_unique(result, track);
+	auto const members{result};
+	auto const member = [&](TTrack const *Track) { return std::find(members.begin(), members.end(), Track) != members.end(); };
+	for (auto *track : members)
 	{
 		for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
 		{
@@ -995,7 +1000,18 @@ std::vector<TTrack *> editor_track::straight_affected(straight const &Line)
 	return result;
 }
 
-void editor_track::move_straight(straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End)
+void editor_track::move_straights(std::vector<straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends)
+{
+	std::vector<TTrack *> members;
+	for (auto const &line : Lines)
+		for (auto *track : line.tracks)
+			add_unique(members, track);
+	auto const member = [&](TTrack const *Track) { return std::find(members.begin(), members.end(), Track) != members.end(); };
+	for (std::size_t i = 0; i < Lines.size() && i < Ends.size(); ++i)
+		move_straight(Lines[i], Ends[i].first, Ends[i].second, member);
+}
+
+void editor_track::move_straight(straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End, std::function<bool(TTrack const *)> const &Member)
 {
 	if (Line.tracks.empty() || Line.length < 1e-6)
 		return;
@@ -1053,7 +1069,7 @@ void editor_track::move_straight(straight const &Line, glm::dvec3 const &Start, 
 		return glm::dvec3{moved.x, Point.y - oldheight + newheight, moved.y};
 	};
 
-	auto const member = [&](TTrack const *Track) { return std::find(Line.tracks.begin(), Line.tracks.end(), Track) != Line.tracks.end(); };
+	auto const &member{Member};
 	std::vector<std::pair<glm::dvec3, glm::dvec3>> joints;
 	for (std::size_t i = 0; i < Line.tracks.size(); ++i)
 	{

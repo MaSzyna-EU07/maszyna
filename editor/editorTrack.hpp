@@ -9,6 +9,7 @@ http:
 
 #pragma once
 
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -115,8 +116,8 @@ class editor_track
 	static bool is_straight(TTrack const &Track, straight_tolerance const &Tolerance);
 	static straight find_straight(TTrack &Track, straight_tolerance const &Tolerance);
 	static std::vector<straight> find_straights(double const Minimumlength, straight_tolerance const &Tolerance);
-	static std::vector<TTrack *> straight_affected(straight const &Line);
-	static void move_straight(straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End);
+	static std::vector<TTrack *> straight_affected(std::vector<straight> const &Lines);
+	static void move_straights(std::vector<straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
 	static std::vector<TTrack *> relay(chain const &Chain, std::vector<segment_data> const &Pieces);
 	static void retire(TTrack &Track);
 	static void revive(TTrack &Track);
@@ -139,4 +140,5 @@ class editor_track
 	static void store_switch_path(TTrack &Switch, int const Path);
 	static void rebuild_geometry(TTrack &Track);
 	static TTrack *clone(TTrack const &Template);
+	static void move_straight(straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End, std::function<bool(TTrack const *)> const &Member);
 };
