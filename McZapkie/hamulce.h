@@ -442,6 +442,11 @@ class TBrake
 	/// <summary>Sets the rapid step ratio. Default no-op; overridden where supported.</summary>
 	/// <param name="RMR">Rapid ratio.</param>
 	virtual void SetRM(double const RMR) {}; // ustalenie przelozenia rapida
+	/// <summary>Share of the full cylinder pressure the distributor delivers at the given speed
+	/// while the vehicle is slowing down through it, for a vehicle set to R. Used only to predict
+	/// the brake force; the default is the approximation BrakeForceR() has always used.</summary>
+	/// <param name="Vel">Vehicle velocity [km/h].</param>
+	virtual double GetRapidRatio(double const Vel) const { return Vel < 40.0 ? 0.5 : 1.0; }
 	/// <summary>Sets the velocity threshold for the rapid step.</summary>
 	/// <param name="RVR">Velocity threshold (same unit as Vel passed to GetPF).</param>
 	virtual void SetRV(double const RVR)

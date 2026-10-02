@@ -3060,6 +3060,17 @@ bool TController::IncBrake()
 							}
 						}
                     }
+                    else if( BrakeCtrlPosition > 0.0
+                          && AccDesired < 0.0 // only while braking is asked for, not when called for a train slipping back while starting
+                          && fBrakeHeldTime > (
+                                mvOccupied->BrakeDelayFlag > bdelay_G ?
+                                    mvOccupied->BrakeDelay[ 1 ] :
+                                    mvOccupied->BrakeDelay[ 3 ] ) ) {
+                        // the table says the present position is enough, but the brake has had its full fill
+                        // time since the handle last moved and the train is still not slowing down as asked:
+                        // believe the train rather than the table
+                        OK = BrakeLevelAdd( BrakingLevelIncrease );
+                    }
                     else
                         OK = false;
                 }
@@ -3706,6 +3717,7 @@ void TController::BrakeLevelSet(double b)
 	if (BrakeCtrlPosition == b)
 		return; // nie przeliczać, jak nie ma zmiany
 	BrakeCtrlPosition = std::clamp(b, (double)gbh_MIN, (double)gbh_MAX);
+	fBrakeHeldTime = 0.0;
 }
 
 bool TController::BrakeLevelAdd(double b)
@@ -5829,6 +5841,7 @@ TController::update_timers( double dt ) {
     ElapsedTime += dt;
     WaitingTime += dt;
     fBrakeTime -= dt; // wpisana wartość jest zmniejszana do 0, gdy ujemna należy zmienić nastawę hamulca
+    fBrakeHeldTime += dt;
     if( mvOccupied->fBrakeCtrlPos != mvOccupied->Handle->GetPos( bh_FS ) ) {
         // brake charging timeout starts after charging ends
         BrakeChargingCooldown += dt;
@@ -6567,12 +6580,27 @@ TController::determine_proximity_ranges() {
         // na jaka odleglosc i z jaka predkoscia ma podjechac do przeszkody
         // jeśli pociąg
         if( is_train() ) {
-            fMinProximityDist = std::clamp(  5 + iVehicles, 10, 15 );
-            fMaxProximityDist = std::clamp( 10 + iVehicles, 15, 40 );
+            if( IsAtPassengerStop ) {
+                // a stop point keeps the margins its W4 parameters (head or middle of the consist,
+                // platform length) were set up against
+                fMinProximityDist = std::clamp(  5 + iVehicles, 10, 15 );
+                fMaxProximityDist = std::clamp( 10 + iVehicles, 15, 40 );
+                if( IsCargoTrain ) {
+                    fMinProximityDist += 10.0;
+                }
+            }
+            else {
+                // a train stops 8-15 m short of the signal whatever its length; closer than the lower
+                // edge it stops at once, the braking aims at the middle of the window, 3.5 m further out
+                fMinProximityDist = 8.0;
+                // the final approach begins far enough out to slow from the coasting speed down to the window,
+                // and at the same distance whether the train is moving or standing, so it does not flip
+                // between creeping closer and holding still when it comes to a stand short of the window
+                fMaxProximityDist = 50.0;
+            }
 
             if( IsCargoTrain ) {
-                // increase distances for cargo trains to take into account slower reaction to brakes
-                fMinProximityDist += 10.0;
+                // start the final approach earlier for cargo trains, their brakes react more slowly
                 fMaxProximityDist += 10.0;
 /*
                 if( IsHeavyCargoTrain ) {
@@ -6591,7 +6619,7 @@ TController::determine_proximity_ranges() {
 
             if( mvOccupied->Vel < 0.1 ) {
                 // jak stanie za daleko, to niech nie dociąga paru metrów
-                fMaxProximityDist = 50.0;
+                fMaxProximityDist = std::max( fMaxProximityDist, 50.0 );
             }
 
             if( iDrivigFlags & moveLate ) {
@@ -7204,6 +7232,26 @@ TController::pick_optimal_speed( double const Range ) {
             is_car() ? -2.0 : -0.9,
             is_car() ? 2.0 : 0.9 );
 
+    if( is_train()
+     && ( ( OrderCurrentGet() & Obey_train ) != 0 )
+     && ( VelNext == 0.0 )
+     && ( ActualProximityDist <= fMaxProximityDist )
+     && ( fAccGravity < -0.025 ) ) {
+        // uphill, the gradient alone brings a slow train to a stand within metres, far sooner than a released
+        // brake applies; so the train brake goes on while the train is coming to a stand, stays on while it
+        // stands, and is applied for real if the train has started to roll back. done last, so that none of
+        // the adjustments above, made for a train moving forward, can undo it
+        auto const vel { DirectionalVel() };
+        if( std::abs( vel ) < EU07_AI_NOMOVEMENT ) {
+            VelDesired = 0.0;
+            AccDesired = std::min( AccDesired, EU07_AI_NOACCELERATION );
+        }
+        else if( ( vel < 0.0 )
+              || ( ( vel < 5.0 ) && ( AccDesired < 0.0 ) ) ) {
+            AccDesired = std::min( AccDesired, fAccGravity - 0.15 );
+        }
+    }
+
     // if the route ahead is blocked we might need to head the other way
     check_route_behind( 1000 ); // NOTE: legacy scan range value
 }
@@ -7369,6 +7417,74 @@ TController::adjust_desired_speed_for_limits() {
     }
 }
 
+// how long the present acceleration of a consist lasts whatever is done with the handle now: half the time
+// its pneumatic brake takes to apply (while speeding up) or to release (while slowing down), which in G
+// is tens of seconds; never shorter than the look-ahead the AI has always used
+static double
+brake_response_horizon( TMoverParameters const *Vehicle, TBrakeSystem const Brakesystem, double const Acceleration, double const Brakea0 ) {
+
+    auto horizon { ( 1.0 - Brakea0 ) * 30.0 / 3.6 };
+    if( Brakesystem == TBrakeSystem::Pneumatic ) {
+        auto const isrelease { Acceleration < 0.0 };
+        horizon = std::max(
+            horizon,
+            0.5 * (
+                Vehicle->BrakeDelayFlag > bdelay_G ?
+                    Vehicle->BrakeDelay[ isrelease ? 0 : 1 ] :
+                    Vehicle->BrakeDelay[ isrelease ? 2 : 3 ] ) );
+    }
+    return horizon;
+}
+
+// distance [m] in which the gradient alone, with no brake and no power, brings a train rolling uphill at Velocity [km/h] to a stand
+static double
+uphill_stopping_distance( double const Velocity, double const Gravity ) {
+    return ( Velocity / 3.6 ) * ( Velocity / 3.6 ) / ( 2.0 * std::max( 0.01, -Gravity ) );
+}
+
+// speed [km/h] from which the gradient alone brings a train rolling uphill to a stand in Distance [m]
+static double
+uphill_coasting_speed( double const Distance, double const Gravity ) {
+    return 3.6 * std::sqrt( 2.0 * std::max( 0.01, -Gravity ) * std::max( 0.0, Distance ) );
+}
+
+// resultant acceleration [m/s2] to ask for now so that a steady application of the pneumatic brake takes the train
+// from Velocity down to Target [km/h] over Distance [m], with the brake force following the speed the way the
+// consist brake table says it does (cast iron blocks grip harder as the train slows)
+static double
+shaped_braking_demand(
+    double const Velocity, double const Target, double const Distance, double const Gravity,
+    double const Vmax, double const *Brakea0, double const *Brakea1, int const Tablesize ) {
+
+    auto const fullbraking = [&]( double const Kmh ) {
+        auto const index { std::clamp( static_cast<int>( Tablesize * Kmh / std::max( 1.0, Vmax ) ), 1, Tablesize ) };
+        return std::max( 0.01, Brakea0[ index ] + 12.0 * Brakea1[ index ] ); };
+    auto const travel = [&]( double const Ratio ) {
+        auto const steps { 24 };
+        auto const step { ( Velocity - Target ) / steps };
+        auto distance { 0.0 };
+        for( auto i { 0 }; i < steps; ++i ) {
+            auto const kmh { Target + ( i + 0.5 ) * step };
+            auto const deceleration { Ratio * fullbraking( kmh ) - Gravity };
+            if( deceleration <= 0.001 ) {
+                return std::numeric_limits<double>::max();
+            }
+            distance += ( kmh / 3.6 ) * ( step / 3.6 ) / deceleration;
+        }
+        return distance; };
+
+    auto low { 0.0 };
+    auto high { 3.0 };
+    if( travel( high ) > Distance ) {
+        return Gravity - high * fullbraking( Velocity );
+    }
+    for( auto i { 0 }; i < 30; ++i ) {
+        auto const middle { 0.5 * ( low + high ) };
+        ( travel( middle ) > Distance ? low : high ) = middle;
+    }
+    return Gravity - high * fullbraking( Velocity );
+}
+
 void
 TController::adjust_desired_speed_for_target_speed( double const Range ) {
     // ustalanie zadanego przyspieszenia
@@ -7382,6 +7498,7 @@ TController::adjust_desired_speed_for_target_speed( double const Range ) {
     // gdy jedzie wolniej niż potrzeba, albo nie ma przeszkód na drodze
     // normalna jazda
     AccDesired = VelDesired != 0.0 ? AccPreferred : -0.01;
+    fAccDesiredGravity = 0.0;
 
     auto const vel { DirectionalVel() };
 
@@ -7418,9 +7535,33 @@ TController::adjust_desired_speed_for_target_speed( double const Range ) {
                             }
                             else {
                                 // hamowanie tak, aby stanąć
-                                VelDesired = VelNext;
-                                AccDesired = ( VelNext * VelNext - vel * vel ) / ( 25.92 * ( ActualProximityDist + 0.1 - 0.5*fMinProximityDist ) );
-                                AccDesired = std::min( AccDesired, fAccThreshold );
+                                if( ( OrderCurrentGet() & Obey_train ) == 0 ) {
+                                    VelDesired = VelNext;
+                                    AccDesired = ( VelNext * VelNext - vel * vel ) / ( 25.92 * ( ActualProximityDist + 0.1 - 0.5*fMinProximityDist ) );
+                                    AccDesired = std::min( AccDesired, fAccThreshold );
+                                }
+                                else {
+                                    // a train keeps its desired speed until the lower edge of the stopping window (a desired
+                                    // speed of 0 here asks for hard braking whatever the distance left), aims at the middle
+                                    // of the window, and asks only for what that takes
+                                    auto const stoppingroom { std::max( 0.5, ActualProximityDist - stopping_margin() ) };
+                                    AccDesired = (
+                                        BrakeSystem == TBrakeSystem::Pneumatic ?
+                                            // cast iron blocks grip harder as the train comes to a stand
+                                            shaped_braking_demand(
+                                                vel, VelNext, stoppingroom, fAccGravity,
+                                                mvOccupied->Vmax, fBrake_a0, fBrake_a1, BrakeAccTableSize ) :
+                                            ( VelNext * VelNext - vel * vel ) / ( 25.92 * stoppingroom ) );
+                                    if( ( fAccGravity < -0.025 )
+                                     && ( AccDesired >= fAccGravity - 0.001 ) // no brake needed at all
+                                     && ( ActualProximityDist - uphill_stopping_distance( vel, fAccGravity ) > stopping_margin() ) ) {
+                                        // uphill the gradient alone would bring the train to a stand short of the
+                                        // middle of the stopping window; keep it rolling at the present speed until that changes,
+                                        // but no faster than the gradient alone can take off by the middle of the window
+                                        AccDesired = std::min( 0.0, AccPreferred );
+                                        VelDesired = min_speed( VelDesired, uphill_coasting_speed( ActualProximityDist - stopping_margin(), fAccGravity ) );
+                                    }
+                                }
                             }
                         }
                         else {
@@ -7444,17 +7585,57 @@ TController::adjust_desired_speed_for_target_speed( double const Range ) {
                         if( brakingdistance + std::max(slowdowndistance, fMaxProximityDist) >= ActualProximityDist - fMaxProximityDist ) {
                             // don't slow down prematurely; as long as we have room to come to a full stop at a safe distance, we're good
                             // ensure some minimal coasting speed, otherwise a vehicle entering this zone at very low speed will be crawling forever
-                            auto const brakingpointoffset = VelNext * braking_distance_multiplier( VelNext );
-                            AccDesired = std::min(
-                                AccDesired,
-                                ( VelNext * VelNext - vel * vel )
-                                / ( 25.92
-                                    * std::max(
-                                        ActualProximityDist - brakingpointoffset,
-                                        std::min(
-                                            ActualProximityDist,
-                                            brakingpointoffset ) )
-                                    + 0.1 ) ); // najpierw hamuje mocniej, potem zluzuje
+                            auto const brakingpointoffset = (
+                                ( VelNext == 0.0 ) && is_train() && ( OrderCurrentGet() & Obey_train ) ?
+                                    stopping_margin() : // the same stopping point as the final approach
+                                    VelNext * braking_distance_multiplier( VelNext ) );
+                            // a pneumatic brake acts on the state the train will be in once it has responded; while the
+                            // train is still speeding up, plan the deceleration from there, so more is asked for at once
+                            auto velocity { vel };
+                            auto distance { ActualProximityDist };
+                            if( ( BrakeSystem == TBrakeSystem::Pneumatic )
+                             && ( AbsAccS > 0.0 ) ) {
+                                auto const horizon { brake_response_horizon( mvOccupied, BrakeSystem, AbsAccS, fBrake_a0[ 0 ] ) };
+                                velocity = vel + 3.6 * horizon * AbsAccS;
+                                distance = std::max( 0.5 * ActualProximityDist, ActualProximityDist - ( vel + velocity ) * 0.5 / 3.6 * horizon );
+                            }
+                            auto const brakingroom {
+                                std::max(
+                                    distance - brakingpointoffset,
+                                    std::min(
+                                        distance,
+                                        brakingpointoffset ) ) };
+                            auto deceleration { ( VelNext * VelNext - velocity * velocity ) / ( 25.92 * brakingroom + 0.1 ) };
+                            if( ( BrakeSystem == TBrakeSystem::Pneumatic ) && ( velocity > VelNext ) ) {
+                                // follow the shape of the consist brake force over speed rather than assume a constant
+                                // deceleration, over the distance left once the brake has had time to fill (while the
+                                // train is still speeding up, the prediction above has taken that off already)
+                                auto room { brakingroom };
+                                if( ( AbsAccS <= 0.0 )
+                                 && ( ( VelNext > 0.0 ) || ( BrakeCtrlPosition <= 0.0 ) ) ) { // for a stop, only while the brake is still to be applied
+                                    room = std::max(
+                                        0.5 * brakingroom,
+                                        brakingroom - vel / 3.6 * brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fBrake_a0[ 0 ] ) );
+                                }
+                                deceleration = shaped_braking_demand(
+                                    velocity, VelNext, room + 0.1 / 25.92, fAccGravity,
+                                    mvOccupied->Vmax, fBrake_a0, fBrake_a1, BrakeAccTableSize );
+                            }
+                            AccDesired = std::min( AccDesired, deceleration ); // najpierw hamuje mocniej, potem zluzuje
+                            if( vel > VelNext ) {
+                                if( deceleration < fAccGravity - 0.001 ) {
+                                    // no power while still above the speed being braked for
+                                    AccDesired = std::min( AccDesired, EU07_AI_NOACCELERATION );
+                                }
+                                else if( ( fAccGravity < -0.025 )
+                                      && ( ( OrderCurrentGet() & Obey_train ) != 0 )
+                                      && ( ActualProximityDist - uphill_stopping_distance( vel, fAccGravity ) > brakingpointoffset ) ) {
+                                    // uphill the gradient alone slows the train down more than it is asked to;
+                                    // keep it rolling at the present speed until that changes
+                                    AccDesired = std::min( 0.0, AccPreferred );
+                                    VelDesired = min_speed( VelDesired, uphill_coasting_speed( ActualProximityDist - brakingpointoffset, fAccGravity ) );
+                                }
+                            }
                         }
                     }
 				}
@@ -7540,35 +7721,57 @@ TController::adjust_desired_speed_for_current_speed() {
         if( fAccGravity > 0.025 ) {
             // going sharply downhill we may need to start braking sooner than usual
             // try to estimate increase of current velocity before engaged brakes start working
-            auto const speedestimate = vel + ( 1.0 - fBrake_a0[ 0 ] ) * 30.0 * AbsAccS;
-            if( speedestimate > VelDesired ) {
-                // jesli jedzie za szybko do AKTUALNEGO
-                if( VelDesired == 0.0 ) {
-                    // jesli stoj, to hamuj, ale i tak juz za pozno :)
-                    AccDesired = std::min( AccDesired, -0.85 ); // hamuj solidnie
-                }
-                else {
-                    // if it looks like we'll exceed maximum speed start thinking about slight slowing down
-                    AccDesired = std::min( AccDesired, -0.05 + fAccThreshold );
-                    // HACK: for cargo trains with high braking threshold ensure we cross that threshold
-                    if( true == IsCargoTrain
-                     && fBrake_a0[0] > 0.2 ) {
-                        AccDesired -= std::clamp( fBrake_a0[ 0 ] - 0.2, 0.0, 0.15 );
-                    }
-                }
+            // look ahead for as long as the brake takes to respond, since that is how long the
+            // present acceleration will last whatever is done with the handle now; a pneumatic
+            // brake applies and releases on its own time scale, which in G is tens of seconds
+            auto const horizon { brake_response_horizon( mvOccupied, BrakeSystem, AbsAccS, fBrake_a0[ 0 ] ) };
+            auto const speedestimate = vel + 3.6 * horizon * AbsAccS;
+            // already below a lower limit ahead, the train has no business speeding up towards it
+            auto holdlimit { VelDesired };
+            if( ( VelNext > 0.0 )
+             && ( VelNext < holdlimit )
+             && ( vel <= VelNext + fVelPlus )
+             && ( ActualProximityDist < std::max( 2.0 * fBrakeDist, 500.0 ) ) ) {
+                holdlimit = VelNext;
+            }
+            // hold a band just below the limit; the steeper the descent the harder the train pulls
+            // away once the brake eases, so the band widens with the gradient (about 3 km/h at 20 per mille)
+            // an electro-pneumatic or electric brake responds at once and needs far less room
+            auto const holdspeed { holdlimit - (
+                BrakeSystem == TBrakeSystem::Pneumatic ?
+                    std::clamp( fAccGravity * 15.0, 1.0, 3.0 ) :
+                    std::clamp( fAccGravity * 7.5, 1.0, 1.5 ) ) };
+            if( ( speedestimate > VelDesired )
+             && ( VelDesired == 0.0 ) ) {
+                // jesli stoj, to hamuj, ale i tak juz za pozno :)
+                AccDesired = std::min( AccDesired, -0.85 ); // hamuj solidnie
             }
             else {
-                // stop accelerating when close enough to target speed
+                // one continuous law on both sides of the target, proportional to the predicted
+                // difference: a demand that jumps to the braking threshold above the target and to
+                // full acceleration below it alternates, with a brake that responds in seconds,
+                // between a hard application and a full release
                 AccDesired = std::min(
                     AccDesired, // but don't override decceleration for VelNext
-                    std::lerp( // ease off as you close to the target velocity
-                        EU07_AI_NOACCELERATION, AccPreferred,
-                        std::clamp( VelDesired - speedestimate, 0.0, fVelMinus ) / fVelMinus ) );
+                    std::clamp(
+                        EU07_AI_NOACCELERATION - 0.04 * ( speedestimate - holdspeed ),
+                        -0.05 + fAccThreshold,
+                        std::max( EU07_AI_NOACCELERATION, AccPreferred ) ) );
+                // HACK: for cargo trains with high braking threshold ensure we cross that threshold
+                if( IsCargoTrain
+                 && fBrake_a0[0] > 0.2
+                 && speedestimate > holdlimit ) {
+                    AccDesired -= std::clamp( fBrake_a0[ 0 ] - 0.2, 0.0, 0.15 );
+                }
             }
             // final tweaks
             if( vel > EU07_AI_NOMOVEMENT ) {
                 // going downhill also take into account impact of gravity
                 AccDesired -= fAccGravity;
+                // from here on AccDesired is what the brake alone has to deliver, which is what
+                // IncBrake() sizes the handle position for; AbsAccS already contains the gravity,
+                // so the comparisons with it have to add this part back
+                fAccDesiredGravity = fAccGravity;
                 // HACK: if the max allowed speed was exceeded something went wrong; brake harder
                 AccDesired -= 0.15 * std::clamp( vel - VelDesired, 0.0, 5.0 );
             }
@@ -7652,6 +7855,7 @@ TController::adjust_desired_speed_for_braking_test() {
         }
         case 1: {
             AccDesired = EU07_AI_BRAKINGTESTACCELERATION;
+            fAccDesiredGravity = 0.0;
             VelDesired = DBT_VelocityBrake;
             if( ElapsedTime - DBT_BrakingTime > 1 ) {
                 ForcePNBrake = true;
@@ -7662,6 +7866,7 @@ TController::adjust_desired_speed_for_braking_test() {
         }
         case 2: {
             AccDesired = EU07_AI_BRAKINGTESTACCELERATION;
+            fAccDesiredGravity = 0.0;
             VelDesired = DBT_VelocityBrake;
             if( ElapsedTime - DBT_BrakingTime > 2 ) {
                 DBT_BrakingTime = ElapsedTime;
@@ -7673,6 +7878,7 @@ TController::adjust_desired_speed_for_braking_test() {
         }
         case 3: {
             AccDesired = safe_clamp( -AbsAccS, fAccThreshold * 1.01, fAccThreshold * 1.21 );
+            fAccDesiredGravity = 0.0;
             VelDesired = DBT_VelocityBrake;
             if( vel <= DBT_VelocityRelease ) {
                 DynamicBrakeTest = 4;
@@ -7786,7 +7992,9 @@ void TController::control_tractive_force() {
 	    (ActualProximityDist > (is_car() ? fMinProximityDist : // cars are allowed to move within min proximity distance
 	                                       fMaxProximityDist) ? // other vehicle types keep wider margin
 	         true :
-	         velocity + 1.0 < VelNext) ) {
+	         velocity + 1.0 < VelNext
+	             // uphill, a train told to hold its speed on the way to a stop needs the power to do it
+	             || VelNext == 0.0 && (OrderCurrentGet() & Obey_train) != 0 && AccDesired >= 0.0 && fAccGravity < -0.025 && ActualProximityDist > fMinProximityDist) ) {
         // ...jeśli prędkość w kierunku czoła jest mniejsza od dozwolonej o margines...
 		// within proximity margin don't exceed next scheduled speed, outside of the margin accelerate as you like
 		// ...to można przyspieszyć
@@ -7850,6 +8058,10 @@ void TController::control_braking_force() {
 		cue_action(driver_hint::brakingforcesetzero);
 	}
 
+    // AbsAccS is the resultant acceleration, gravity included, so it is compared with the
+    // resultant the AI asks for, not with the brake-only demand AccDesired holds on a descent
+    auto const accdesiredresultant { AccDesired + fAccDesiredGravity };
+
     if( is_emu() && !ForcePNBrake ) {
         // właściwie, to warunek powinien być na działający EP
         // Ra: to dobrze hamuje EP w EZT
@@ -7860,14 +8072,15 @@ void TController::control_braking_force() {
 		auto const AccMax{ std::min(fBrake_a0[0] + 12 * fBrake_a1[0], mvOccupied->MED_amax) };
 		auto const accmargin = AccMax > 1.1 * AccDesired && fAccGravity < 0.025 ?
 							0.05 : 0.0;
-        if( AccDesired < accthreshold // jeśli hamować - u góry ustawia się hamowanie na fAccThreshold
-         && ( AbsAccS > AccDesired + accmargin
-           || BrakeCtrlPosition < 0 ) ) {
+        if( ( AccDesired < accthreshold // jeśli hamować - u góry ustawia się hamowanie na fAccThreshold
+           && ( AbsAccS > accdesiredresultant + accmargin
+             || BrakeCtrlPosition < 0 ) )
+         || ( fAccGravity < -0.05 && velocity < -0.1 && AccDesired < 0.0 ) ) { // also brake if uphill and slipping back
             // hamować bardziej, gdy aktualne opóźnienie hamowania mniejsze niż (AccDesired)
             cue_action( driver_hint::brakingforceincrease );
         }
         else if( OrderCurrentGet() != Disconnect ) { // przy odłączaniu nie zwalniamy tu hamulca
-            if( AbsAccS < AccDesired - 0.05 ) {
+            if( AbsAccS < accdesiredresultant - 0.05 ) {
                 // jeśli opóźnienie większe od wymaganego (z histerezą) luzowanie, gdy za dużo
                 // TBD: check if the condition isn't redundant with the DecBrake() code
                 if( BrakeCtrlPosition >= 0 && VelDesired > 0.0 ) {
@@ -7882,9 +8095,12 @@ void TController::control_braking_force() {
     } // type & dt_ezt
     else {
         // a stara wersja w miarę dobrze działa na składy wagonowe
-        if( (AccDesired < fAccGravity - 0.1 && AbsAccS > AccDesired + fBrake_a1[0] // regular braking
-		     || fAccGravity < -0.05 && velocity < -0.1) &&
-		    (fBrakeTime < 0.0 || AccDesired < fAccGravity - 0.5 || BrakeCtrlPosition <= 0) ) { // also brake if uphill and slipping back
+        if( (accdesiredresultant < fAccGravity - 0.1 && AbsAccS > accdesiredresultant + fBrake_a1[0] // regular braking
+		     || fAccGravity < -0.05 && velocity < -0.1) && // also brake if uphill and slipping back
+		    (fBrakeTime < 0.0
+		     // the size of the brake demand decides whether to skip the reaction time, so the brake-only part
+		     // (on a descent a heavy train needs its brake built up at once, the gravity does not help it slow)
+		     || AccDesired < fAccGravity - 0.5 || BrakeCtrlPosition <= 0) ) {
             // u góry ustawia się hamowanie na fAccThreshold
 			// jeśli upłynął czas reakcji hamulca, chyba że nagłe albo luzował
 			// TODO: check whether brake delay variable still has any purpose
@@ -7892,7 +8108,9 @@ void TController::control_braking_force() {
 			           // Ra: ten czas należy zmniejszyć, jeśli czas dojazdu do zatrzymania jest mniejszy
 			           (3.0 + 0.5 * ((mvOccupied->BrakeDelayFlag > bdelay_G ? mvOccupied->BrakeDelay[1] : mvOccupied->BrakeDelay[3]) - 3.0)) * 0.5); // Ra: tymczasowo, bo przeżyna S1
 		}
-        if ( AccDesired < fAccGravity - 0.05 && AccDesired - fBrake_a1[0] * 0.51 - AbsAccS > 0.05 && OrderCurrentGet() != Disconnect && VelDesired > 0.0 ) {
+        if ( (accdesiredresultant < fAccGravity - 0.05
+              || AccDesired >= EU07_AI_NOACCELERATION) // no braking asked for, yet the train is slowing down more than that
+            && accdesiredresultant - fBrake_a1[0] * 0.51 - AbsAccS > 0.05 && OrderCurrentGet() != Disconnect && VelDesired > 0.0 ) {
             // jak hamuje, to nie tykaj kranu za często
             // yB: luzuje hamulec dopiero przy różnicy opóźnień rzędu 0.2
 			// przy odłączaniu nie zwalniamy tu hamulca
