@@ -36,9 +36,8 @@ class screen_projection
 		ImGuiIO const &io = ImGui::GetIO();
 		m_size = io.DisplaySize;
 		m_camera = GfxRenderer->Camera_Position();
-		float const fovy = glm::radians(Global.FieldOfView / Global.ZoomFactor);
 		float const aspect = m_size.y > 0.0f ? m_size.x / m_size.y : 1.0f;
-		m_viewprojection = glm::perspective(fovy, aspect, 0.1f, 10000.0f) * GfxRenderer->Camera_View_Matrix();
+		m_viewprojection = editor_mode::projection_matrix(aspect) * GfxRenderer->Camera_View_Matrix();
 	}
 
 	glm::vec4 clip(glm::dvec3 const &Point) const
@@ -244,15 +243,14 @@ void editor_mode::render_track_gizmo()
 	bool const pointmode = ui()->mode() == nodebank_panel::TRACK && m_track_point.valid() && m_track_point.path < static_cast<int>(track->m_paths.size());
 
 	ImGuizmo::BeginFrame();
-	ImGuizmo::SetOrthographic(false);
+	ImGuizmo::SetOrthographic(Global.EditorOrtho);
 	ImGuiIO const &io = ImGui::GetIO();
 	ImGuizmo::SetRect(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
 
 	glm::mat4 const view = GfxRenderer->Camera_View_Matrix();
 	glm::dvec3 const camerapos = GfxRenderer->Camera_Position();
-	float const fovy = glm::radians(Global.FieldOfView / Global.ZoomFactor);
 	float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
-	glm::mat4 const projection = glm::perspective(fovy, aspect, 0.1f, 10000.0f);
+	glm::mat4 const projection = editor_mode::projection_matrix(aspect);
 
 	ImGuizmo::OPERATION const operation = (false == pointmode && m_gizmo_op == gizmo_operation::rotate) ? ImGuizmo::ROTATE_Y : ImGuizmo::TRANSLATE;
 
@@ -869,14 +867,13 @@ void editor_mode::render_route_gizmo()
 	}
 
 	ImGuizmo::BeginFrame();
-	ImGuizmo::SetOrthographic(false);
+	ImGuizmo::SetOrthographic(Global.EditorOrtho);
 	ImGuiIO const &io = ImGui::GetIO();
 	ImGuizmo::SetRect(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
 	glm::mat4 const view = GfxRenderer->Camera_View_Matrix();
 	glm::dvec3 const camerapos = GfxRenderer->Camera_Position();
-	float const fovy = glm::radians(Global.FieldOfView / Global.ZoomFactor);
 	float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
-	glm::mat4 const projection = glm::perspective(fovy, aspect, 0.1f, 10000.0f);
+	glm::mat4 const projection = editor_mode::projection_matrix(aspect);
 
 	auto const position{route_vertex_position(route.vertex)};
 	if (false == m_route_gizmo_using)

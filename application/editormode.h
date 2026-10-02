@@ -50,10 +50,7 @@ class editor_mode : public application_mode
 	void on_key(int Key, int Scancode, int Action, int Mods) override;
 	void on_cursor_pos(double Horizontal, double Vertical) override;
 	void on_mouse_button(int Button, int Action, int Mods) override;
-	void on_scroll(double const Xoffset, double const Yoffset) override
-	{
-		;
-	}
+	void on_scroll(double const Xoffset, double const Yoffset) override;
 	void on_window_resize(int w, int h) override
 	{
 		;
@@ -64,6 +61,8 @@ class editor_mode : public application_mode
 	static bool focus_active();
 	static void  set_focus_active(bool isActive);
 	static TCamera& get_camera() { return Camera; }
+	static glm::mat4 projection_matrix(float const Aspect);
+	void toggle_ortho();
 	static bool change_history() { return m_change_history; }
 	static void set_change_history(bool enabled) { m_change_history = enabled; }
 	static bool settings_open() { return m_settings_open; }
@@ -148,6 +147,7 @@ class editor_mode : public application_mode
 	static bool m_change_history;
 	static bool m_settings_open;
 
+	double m_ortho_pitch{0.0};
 	// camera fly-mode (right mouse button held); used to flush motion when it's released
 	command_relay m_camera_relay;
 	bool m_camera_flying{false};

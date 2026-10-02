@@ -1431,9 +1431,8 @@ void editor_mode::draw_orthophoto()
     Camera.SetMatrix(viewmatrix);
     glm::mat4 const view = glm::mat4(glm::mat3(viewmatrix));
     ImGuiIO const &io = ImGui::GetIO();
-    float const fovy = glm::radians(Global.FieldOfView / Global.ZoomFactor);
     float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
-    m_orthophoto.draw(glm::perspective(fovy, aspect, 0.1f, 10000.0f) * view, Camera.Pos, io.DisplaySize.x, io.DisplaySize.y);
+    m_orthophoto.draw(editor_mode::projection_matrix(aspect) * view, Camera.Pos, io.DisplaySize.x, io.DisplaySize.y);
 }
 
 editor_terrain *editor_mode::terrain_at(double X, double Z)
@@ -2107,9 +2106,8 @@ void editor_mode::draw_area_fill_outline() const
     ImGuiIO const &io = ImGui::GetIO();
     glm::mat4 const view = GfxRenderer->Camera_View_Matrix();
     glm::dvec3 const camerapos = GfxRenderer->Camera_Position();
-    float const fovy = glm::radians(Global.FieldOfView / Global.ZoomFactor);
     float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
-    glm::mat4 const viewprojection = glm::perspective(fovy, aspect, 0.1f, 10000.0f) * view;
+    glm::mat4 const viewprojection = editor_mode::projection_matrix(aspect) * view;
 
     auto const to_clip = [&](glm::dvec3 const &Point) { return viewprojection * glm::vec4(glm::vec3(Point - camerapos), 1.0f); };
     auto const to_screen = [&](glm::vec4 const &Clip) {
@@ -2198,6 +2196,14 @@ void editor_mode::render_area_fill()
 
 void editor_mode::render_gizmo_options()
 {
+    if (ImGui::Button(Global.EditorOrtho ? "3D view (O)" : "Top view, orthographic (O)"))
+        toggle_ortho();
+    if (Global.EditorOrtho)
+    {
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::SliderFloat("Extent (m), wheel", &Global.EditorOrthoExtent, 5.0f, 5000.0f, "%.0f", 3.0f);
+    }
     ImGui::Checkbox("Enabled", &m_gizmo_enabled);
     if (!m_gizmo_enabled)
         return;
@@ -2265,7 +2271,7 @@ void editor_mode::render_gizmo()
     }
 
     ImGuizmo::BeginFrame();
-    ImGuizmo::SetOrthographic(false);
+    ImGuizmo::SetOrthographic(Global.EditorOrtho);
 
     ImGuiIO const &io = ImGui::GetIO();
     ImGuizmo::SetRect(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
@@ -2278,9 +2284,8 @@ void editor_mode::render_gizmo()
     // the engine's own projection bakes in reverse-Z (and screen orientation), which ImGuizmo
     // doesn't expect; rebuild a clean, standard perspective that matches the rendered view.
     // for the main viewport the engine uses a symmetric frustum with this exact fov/aspect.
-    float const fovy = glm::radians(Global.FieldOfView / Global.ZoomFactor);
     float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
-    glm::mat4 const projection = glm::perspective(fovy, aspect, 0.1f, 10000.0f);
+    glm::mat4 const projection = editor_mode::projection_matrix(aspect);
 
     if (!m_node)
     {
@@ -2462,9 +2467,46 @@ void editor_mode::render_include_gizmo(glm::mat4 const &View, glm::mat4 const &P
     apply_include();
 }
 
+glm::mat4 editor_mode::projection_matrix(float const Aspect)
+{
+    if (Global.EditorOrtho)
+    {
+        auto const height{Global.EditorOrthoExtent};
+        return glm::ortho(-height * Aspect, height * Aspect, -height, height, -10000.0f, 10000.0f);
+    }
+    return glm::perspective(glm::radians(Global.FieldOfView / Global.ZoomFactor), Aspect, 0.1f, 10000.0f);
+}
+
+void editor_mode::toggle_ortho()
+{
+    Global.EditorOrtho = !Global.EditorOrtho;
+    if (Global.EditorOrtho)
+    {
+        m_ortho_pitch = Camera.Angle.x;
+        Camera.Angle.x = -M_PI_2;
+        Camera.Angle.z = 0.0;
+    }
+    else
+    {
+        Camera.Angle.x = m_ortho_pitch;
+    }
+}
+
+void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
+{
+    if (false == Global.EditorOrtho || ImGui::GetIO().WantCaptureMouse)
+        return;
+    Global.EditorOrthoExtent = std::clamp(Global.EditorOrthoExtent * static_cast<float>(std::pow(0.85, Yoffset)), 5.0f, 5000.0f);
+}
+
 void editor_mode::update_camera(double const Deltatime)
 {
     Camera.Update();
+    if (Global.EditorOrtho)
+    {
+        Camera.Angle.x = -M_PI_2;
+        Camera.Angle.z = 0.0;
+    }
 
     // focus animation runs after Camera.Update() so it overrides any residual velocity/rotation;
     // it smoothly drives both position and orientation toward the framed object
@@ -2544,6 +2586,8 @@ void editor_mode::exit()
     m_track_point = {};
     m_route = {};
     m_route_gizmo_using = false;
+    if (Global.EditorOrtho)
+        toggle_ortho();
 
     g_redo.clear();
     m_history.clear();
@@ -2588,6 +2632,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         bool handled = true;
         switch (Key)
         {
+        case GLFW_KEY_O: toggle_ortho(); break;
         case GLFW_KEY_Q: m_gizmo_op = gizmo_operation::translate; break;
         case GLFW_KEY_W: m_gizmo_op = gizmo_operation::rotate; break;
         case GLFW_KEY_E: m_gizmo_op = gizmo_operation::scale; break;

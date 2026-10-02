@@ -168,6 +168,8 @@ struct global_settings {
     bool bUseVBO{ true }; // czy jest VBO w karcie graficznej (czy użyć)
     float AnisotropicFiltering{ 8.f }; // requested level of anisotropic filtering. TODO: move it to renderer object
     float FieldOfView{ 45.f }; // vertical field of view for the camera. TODO: move it to the renderer
+    bool EditorOrtho{ false };
+    float EditorOrthoExtent{ 150.f };
     GLint iMaxTextureSize{ 4096 }; // maksymalny rozmiar tekstury
     GLint iMaxCabTextureSize{ 4096 }; // largest allowed texture in vehicle cab
     int iMultisampling{ 2 }; // tryb antyaliasingu: 0=brak,1=2px,2=4px,3=8px,4=16px
