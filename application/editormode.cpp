@@ -2838,7 +2838,7 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
 
             if (mode == nodebank_panel::TRACK)
             {
-                if (false == ImGuizmo::IsOver() && false == pick_route_vertex() && false == pick_straight_handle() && false == pick_track_handle())
+                if (false == ImGuizmo::IsOver() && false == pick_route_vertex() && false == place_straight_tool() && false == pick_straight_handle() && false == pick_track_handle())
                 {
                     GfxRenderer->Pick_Node_Callback([this](scene::basic_node *node) {
                         if (viewport_click())

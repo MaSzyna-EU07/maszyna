@@ -1201,6 +1201,37 @@ void editor_mode::draw_straights_overlay() const
 	for (auto const &member : m_straights.set)
 		draw(member, IM_COL32(255, 150, 30, 255), 4.0f);
 	draw(m_straights.current, IM_COL32(40, 220, 255, 255), 4.0f);
+	if (m_straights.tool_placed)
+	{
+		auto const &state{m_straights};
+		auto const &line{state.tool_line};
+		ImVec2 screen;
+		if (projection.project(state.tool_point, screen))
+			drawlist->AddCircleFilled(screen, 7.0f, IM_COL32(255, 60, 60, 255));
+		if (projection.project(state.tool_handle, screen))
+			drawlist->AddCircleFilled(screen, 7.0f, IM_COL32(255, 210, 60, 255));
+		if (state.tool == 1)
+		{
+			auto const direction{glm::dvec2{state.tool_handle.x - state.tool_point.x, state.tool_handle.z - state.tool_point.z}};
+			if (glm::length(direction) > 1e-3)
+			{
+				auto const unit{glm::normalize(direction)};
+				auto const rest{std::max(0.0, line.length - state.tool_at)};
+				projection.line(drawlist, state.tool_point, state.tool_point + glm::dvec3{unit.x, line.grade, unit.y} * rest, IM_COL32(255, 210, 60, 255), 3.0f);
+			}
+		}
+		else
+		{
+			glm::dvec2 const normal{-line.direction.y, line.direction.x};
+			auto const offset{glm::dvec2{state.tool_handle.x - state.tool_point.x, state.tool_handle.z - state.tool_point.z}};
+			auto const shift{glm::dot(offset, normal)};
+			auto const length{glm::dot(offset, line.direction)};
+			auto const shifted{glm::dvec3{normal.x, 0.0, normal.y} * shift};
+			auto const along{glm::dvec3{line.direction.x, 0.0, line.direction.y}};
+			projection.line(drawlist, state.tool_point, state.tool_point + along * length + shifted, IM_COL32(255, 210, 60, 160), 2.0f);
+			projection.line(drawlist, state.tool_point + along * length + shifted, line.end + shifted, IM_COL32(255, 210, 60, 255), 3.0f);
+		}
+	}
 	if (m_straights.dragging)
 	{
 		for (auto const &member : m_straights.drag_lines)
@@ -1357,47 +1388,36 @@ void editor_mode::render_straights_ui()
 	if (false == line.tracks.empty())
 	{
 		ImGui::Separator();
-		ImGui::Text("Curves");
+		ImGui::Text("Mouse tools");
+		auto const toolbutton = [&](char const *Label, int const Tool) {
+			bool const active{state.tool == Tool};
+			if (active)
+				ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+			if (ImGui::Button(Label))
+			{
+				state.tool = active ? 0 : Tool;
+				state.tool_placed = false;
+				state.handle = -1;
+			}
+			if (active)
+				ImGui::PopStyleColor();
+		};
+		toolbutton("Break", 1);
+		ImGui::SameLine();
+		toolbutton("S-curve", 2);
+		if (state.tool == 1)
+			ImGui::TextDisabled(state.tool_placed ? "Drag the handle to turn the rest of the straight, release to fit the curve" : "LMB on the straight: place the break point");
+		else if (state.tool == 2)
+			ImGui::TextDisabled(state.tool_placed ? "Drag the handle: sideways sets the shift, along sets its length" : "LMB on the straight: place the start of the shift");
 		ImGui::PushItemWidth(100.0f);
-		ImGui::Checkbox("Transitions from the design speed", &state.auto_transitions);
+		ImGui::InputDouble("Curve R (m, 0: automatic)", &state.curve_radius, 0.0, 0.0, "%.0f");
+		ImGui::Checkbox("Transitions from the line speed", &state.auto_transitions);
 		if (false == state.auto_transitions)
 		{
 			ImGui::SameLine();
 			ImGui::InputDouble("Transition (m)", &state.transition, 0.0, 0.0, "%.1f");
 		}
-		ImGui::TextDisabled("Break: the straight turns at the given distance from its start, the rest of it follows");
-		ImGui::InputDouble("Break at (m from start)", &state.break_at, 0.0, 0.0, "%.2f");
-		ImGui::InputDouble("Angle (deg, +/- side)", &state.break_angle, 0.0, 0.0, "%.4f");
-		ImGui::InputDouble("Radius R (m)##break", &state.break_radius, 0.0, 0.0, "%.1f");
-		if (ImGui::Button("Break the straight"))
-		{
-			auto const pivot2d{glm::dvec2{line.start.x, line.start.z} + line.direction * state.break_at};
-			auto const angle{glm::radians(state.break_angle)};
-			auto const radius{std::max(1.0, state.break_radius)};
-			auto const reach{radius * std::tan(std::abs(angle) * 0.5) + 200.0};
-			straight_reshape(line, state.break_at - reach, state.break_at + reach,
-				[pivot2d, angle](glm::dvec3 const &Point) {
-					glm::dvec2 const offset{Point.x - pivot2d.x, Point.z - pivot2d.y};
-					auto const c{std::cos(angle)};
-					auto const s{std::sin(angle)};
-					return glm::dvec3{pivot2d.x + offset.x * c - offset.y * s, Point.y, pivot2d.y + offset.x * s + offset.y * c};
-				},
-				radius);
-		}
-		ImGui::TextDisabled("S-curve: the straight is shifted sideways by the offset over the given length");
-		ImGui::InputDouble("Shift from (m from start)", &state.shift_at, 0.0, 0.0, "%.2f");
-		ImGui::InputDouble("Over the length (m)", &state.shift_length, 0.0, 0.0, "%.2f");
-		ImGui::InputDouble("Offset (m, +/- side)", &state.shift_offset, 0.0, 0.0, "%.3f");
-		ImGui::InputDouble("Radius R (m)##shift", &state.curve_radius, 0.0, 0.0, "%.1f");
 		ImGui::PopItemWidth();
-		if (ImGui::Button("Shift the straight (S-curve)"))
-		{
-			glm::dvec2 const normal{-line.direction.y, line.direction.x};
-			auto const offset{normal * state.shift_offset};
-			straight_reshape(line, state.shift_at, state.shift_at + std::max(1.0, state.shift_length),
-				[offset](glm::dvec3 const &Point) { return glm::dvec3{Point.x + offset.x, Point.y, Point.z + offset.y}; },
-				state.curve_radius > 0.0 ? state.curve_radius : 100000.0);
-		}
 	}
 	if (false == state.status.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", state.status.c_str());
@@ -1544,6 +1564,11 @@ void editor_mode::straights_apply(std::vector<editor_track::straight> const &Lin
 void editor_mode::render_straight_gizmo()
 {
 	auto &state{m_straights};
+	if (state.tool_placed && m_gizmo_enabled)
+	{
+		render_straight_tool_gizmo();
+		return;
+	}
 	auto const &line{state.dragging ? state.drag_line : current_straight()};
 	if (state.handle < 0 || line.tracks.empty() || false == m_gizmo_enabled)
 	{
@@ -1768,4 +1793,106 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 	editor_track::find_chain(m_route.from, m_route.to, m_route.chain, error);
 	straight_refresh();
 	state.status = "Done, the curves can be adjusted in the Route design tab";
+}
+
+double editor_mode::straight_tool_radius(editor_track::straight const &Line) const
+{
+	if (m_straights.curve_radius > 0.0)
+		return m_straights.curve_radius;
+	double speed{-1.0};
+	for (auto const *track : Line.tracks)
+		speed = std::max(speed, editor_track::velocity(*track));
+	if (speed <= 0.0)
+		speed = 100.0;
+	auto const recommended{alignment::recommend(speed, 1000.0, m_route.design.norms)};
+	return std::max(150.0, std::ceil(recommended.radius_min * 1.5 / 50.0) * 50.0);
+}
+
+bool editor_mode::place_straight_tool()
+{
+	auto &state{m_straights};
+	if (ui()->mode() != nodebank_panel::TRACK || m_track_tab != track_tab::straights || state.tool == 0)
+		return false;
+	auto const &line{current_straight()};
+	if (line.tracks.empty())
+		return false;
+	glm::dvec3 const ground{Global.pCamera.Pos + GfxRenderer->Mouse_Position()};
+	auto const along{std::clamp(glm::dot(glm::dvec2{ground.x - line.start.x, ground.z - line.start.z}, line.direction), 0.0, line.length)};
+	glm::dvec3 const axis{line.direction.x, line.grade, line.direction.y};
+	state.tool_line = line;
+	state.tool_at = along;
+	state.tool_point = line.start + axis * along;
+	auto const reach{std::min(50.0, std::max(1.0, line.length - along))};
+	state.tool_handle = state.tool_point + axis * reach;
+	state.tool_placed = true;
+	state.tool_dragging = false;
+	state.handle = -1;
+	return true;
+}
+
+void editor_mode::render_straight_tool_gizmo()
+{
+	auto &state{m_straights};
+	ImGuizmo::BeginFrame();
+	ImGuizmo::SetOrthographic(Global.EditorOrtho);
+	ImGuiIO const &io = ImGui::GetIO();
+	ImGuizmo::SetRect(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
+	glm::mat4 const view = GfxRenderer->Camera_View_Matrix();
+	glm::dvec3 const camerapos = GfxRenderer->Camera_Position();
+	float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
+	glm::mat4 const projection = editor_mode::projection_matrix(aspect);
+	if (false == state.tool_dragging)
+		state.tool_gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(state.tool_handle - camerapos));
+	ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, glm::value_ptr(state.tool_gizmo), nullptr, nullptr);
+	if (ImGuizmo::IsUsing())
+	{
+		state.tool_dragging = true;
+		auto const moved{camerapos + glm::dvec3(state.tool_gizmo[3])};
+		state.tool_handle = {moved.x, state.tool_handle.y, moved.z};
+	}
+	else if (state.tool_dragging)
+	{
+		state.tool_dragging = false;
+		apply_straight_tool();
+	}
+}
+
+void editor_mode::apply_straight_tool()
+{
+	auto &state{m_straights};
+	auto const line{state.tool_line};
+	auto const offset{glm::dvec2{state.tool_handle.x - state.tool_point.x, state.tool_handle.z - state.tool_point.z}};
+	auto const radius{straight_tool_radius(line)};
+	if (state.tool == 1)
+	{
+		if (glm::length(offset) < 1e-3)
+			return;
+		auto const unit{glm::normalize(offset)};
+		auto const angle{std::atan2(line.direction.x * unit.y - line.direction.y * unit.x, glm::dot(line.direction, unit))};
+		if (std::abs(angle) < 1e-5)
+			return;
+		glm::dvec2 const pivot{state.tool_point.x, state.tool_point.z};
+		auto const reach{radius * std::tan(std::min(std::abs(angle), 3.0) * 0.5) + 200.0};
+		straight_reshape(line, state.tool_at - reach, state.tool_at + reach,
+			[pivot, angle](glm::dvec3 const &Point) {
+				glm::dvec2 const relative{Point.x - pivot.x, Point.z - pivot.y};
+				auto const c{std::cos(angle)};
+				auto const s{std::sin(angle)};
+				return glm::dvec3{pivot.x + relative.x * c - relative.y * s, Point.y, pivot.y + relative.x * s + relative.y * c};
+			},
+			radius);
+	}
+	else
+	{
+		glm::dvec2 const normal{-line.direction.y, line.direction.x};
+		auto const shift{glm::dot(offset, normal)};
+		auto const length{glm::dot(offset, line.direction)};
+		if (std::abs(shift) < 1e-3 || length < 1.0)
+			return;
+		auto const translation{normal * shift};
+		straight_reshape(line, state.tool_at, state.tool_at + length,
+			[translation](glm::dvec3 const &Point) { return glm::dvec3{Point.x + translation.x, Point.y, Point.z + translation.y}; },
+			radius);
+	}
+	state.tool_placed = false;
 }
