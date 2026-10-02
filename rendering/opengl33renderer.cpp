@@ -3872,8 +3872,30 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 			}
 		}
 		if (Submodel->Child != nullptr)
+		{
 			if (Submodel->iAlpha & Submodel->iFlags & 0x001F0000)
-				Render(Submodel->Child);
+			{
+				if (Submodel->eType == TP_TEXT)
+				{
+					// opaque characters of a text display, laid out in a row the same way as the translucent ones
+					if (Submodel->pasText != nullptr)
+					{
+						::glPushMatrix();
+						for (auto *p : Submodel->text_letters(*Submodel->pasText))
+						{
+							Render(p);
+							if (p->fMatrix)
+								::glMultMatrixf(p->fMatrix->readArray()); // przesuwanie widoku
+						}
+						::glPopMatrix();
+					}
+				}
+				else
+				{
+					Render(Submodel->Child);
+				}
+			}
+		}
 
 		if (Submodel->iFlags & 0xC000)
 		{
