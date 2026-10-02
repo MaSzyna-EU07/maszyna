@@ -105,6 +105,9 @@ struct element
 struct curve_report
 {
 	int vertex{-1};
+	double radius{0.0};
+	double transition_in{0.0};
+	double transition_out{0.0};
 	double deflection{0.0};
 	double arc_length{0.0};
 	double tangent_in{0.0};

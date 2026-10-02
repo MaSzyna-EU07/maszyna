@@ -15,6 +15,7 @@ http:
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <functional>
 
 namespace alignment
 {
@@ -281,11 +282,128 @@ result compute(design const &Design)
 		push(straight);
 	};
 
+	struct fitted
+	{
+		double radius{0.0};
+		double transition_in{0.0};
+		double transition_out{0.0};
+		double tangent_in{0.0};
+		double tangent_out{0.0};
+		double deflection{0.0};
+		std::function<void(double, double &, double &)> tangents;
+	};
+	std::vector<fitted> fits(count);
+	for (std::size_t k = 0; k < count; ++k)
+	{
+		auto const &vertex{Design.vertices[k]};
+		auto &fit{fits[k]};
+		fit.radius = std::max(1.0, vertex.radius);
+		fit.transition_in = std::max(0.0, vertex.transition_in);
+		fit.transition_out = std::max(0.0, vertex.transition_out);
+		auto const directionin{glm::normalize(polygon[k + 1] - polygon[k])};
+		auto const directionout{glm::normalize(polygon[k + 2] - polygon[k + 1])};
+		auto const turn{cross(directionin, directionout)};
+		auto const deflection{std::atan2(std::abs(turn), glm::dot(directionin, directionout))};
+		if (deflection < 1e-7)
+			continue;
+		if (deflection > kPi - 1e-3)
+		{
+			r.errors.emplace_back(format("Vertex %zu: the route turns back on itself", k + 1));
+			return r;
+		}
+		auto const angles = [&](double const Factor) {
+			return transition_point(Design.shape, fit.transition_in * Factor, fit.radius, 1.0).angle + transition_point(Design.shape, fit.transition_out * Factor, fit.radius, 1.0).angle;
+		};
+		if (angles(1.0) > deflection)
+		{
+			double low{0.0}, high{1.0};
+			for (int i = 0; i < 50; ++i)
+			{
+				auto const middle{(low + high) * 0.5};
+				(angles(middle) > deflection ? high : low) = middle;
+			}
+			r.warnings.emplace_back(format("Vertex %zu: transition curves shortened to %.1f / %.1f m to fit the deflection angle", k + 1, fit.transition_in * low, fit.transition_out * low));
+			fit.transition_in *= low;
+			fit.transition_out *= low;
+		}
+		fit.deflection = deflection;
+		fit.tangents = [&, k, directionin, directionout, turn](double const Radius, double &Tangentin, double &Tangentout) {
+			int const side{turn > 0.0 ? 1 : -1};
+			auto const endin{transition_point(Design.shape, fits[k].transition_in, Radius, 1.0)};
+			auto const endout{transition_point(Design.shape, fits[k].transition_out, Radius, 1.0)};
+			auto const a{Radius + endin.y - Radius * (1.0 - std::cos(endin.angle))};
+			auto const b{Radius + endout.y - Radius * (1.0 - std::cos(endout.angle))};
+			auto const normalin{perpendicular(directionin) * static_cast<double>(side)};
+			auto const normalout{perpendicular(directionout) * static_cast<double>(side)};
+			auto const determinant{cross(normalin, normalout)};
+			glm::dvec2 const offset{(a * normalout.y - normalin.y * b) / determinant, (normalin.x * b - a * normalout.x) / determinant};
+			auto const curvestart{offset - normalin * a - directionin * (endin.x - Radius * std::sin(endin.angle))};
+			auto const curveend{offset - normalout * b + directionout * (endout.x - Radius * std::sin(endout.angle))};
+			Tangentin = std::max(0.0, -glm::dot(curvestart, directionin));
+			Tangentout = std::max(0.0, glm::dot(curveend, directionout));
+		};
+		fit.tangents(fit.radius, fit.tangent_in, fit.tangent_out);
+	}
+	std::vector<double> scales(count, 1.0);
+	for (std::size_t leg = 0; leg + 1 < polygon.size(); ++leg)
+	{
+		auto const available{glm::distance(polygon[leg], polygon[leg + 1])};
+		auto const required{(leg > 0 ? fits[leg - 1].tangent_out : 0.0) + (leg < count ? fits[leg].tangent_in : 0.0)};
+		if (required <= available)
+			continue;
+		auto const scale{available / required * (1.0 - 1e-9)};
+		if (leg > 0)
+			scales[leg - 1] = std::min(scales[leg - 1], scale);
+		if (leg < count)
+			scales[leg] = std::min(scales[leg], scale);
+	}
+	for (std::size_t k = 0; k < count; ++k)
+	{
+		if (scales[k] >= 1.0)
+			continue;
+		auto &fit{fits[k]};
+		auto const budgetin{fit.tangent_in * scales[k]};
+		auto const budgetout{fit.tangent_out * scales[k]};
+		auto const fits_budget = [&](double const Radius) {
+			if (transition_point(Design.shape, fit.transition_in, Radius, 1.0).angle + transition_point(Design.shape, fit.transition_out, Radius, 1.0).angle > fit.deflection)
+				return false;
+			double tangentin, tangentout;
+			fit.tangents(Radius, tangentin, tangentout);
+			return tangentin <= budgetin && tangentout <= budgetout;
+		};
+		double low{1e-3};
+		double high{fit.radius};
+		for (int i = 0; i < 60; ++i)
+		{
+			auto const middle{(low + high) * 0.5};
+			(transition_point(Design.shape, fit.transition_in, middle, 1.0).angle + transition_point(Design.shape, fit.transition_out, middle, 1.0).angle > fit.deflection ? low : high) = middle;
+		}
+		low = high * (1.0 + 1e-9);
+		high = fit.radius;
+		if (fits_budget(low))
+		{
+			for (int i = 0; i < 60; ++i)
+			{
+				auto const middle{(low + high) * 0.5};
+				(fits_budget(middle) ? low : high) = middle;
+			}
+			fit.radius = low;
+		}
+		else
+		{
+			fit.radius *= scales[k];
+			fit.transition_in *= scales[k];
+			fit.transition_out *= scales[k];
+		}
+		r.warnings.emplace_back(format("Vertex %zu: R reduced from %.1f to %.1f m, transitions to %.1f / %.1f m, to fit between the ends", k + 1, Design.vertices[k].radius, fit.radius, fit.transition_in, fit.transition_out));
+	}
+
 	std::vector<double> vertexchainage(count, 0.0);
 	glm::dvec2 cursor{start};
 	for (std::size_t k = 0; k < count; ++k)
 	{
 		auto const &vertex{Design.vertices[k]};
+		auto const &fit{fits[k]};
 		auto const &position{polygon[k + 1]};
 		auto const directionin{glm::normalize(polygon[k + 1] - polygon[k])};
 		auto const directionout{glm::normalize(polygon[k + 2] - polygon[k + 1])};
@@ -307,16 +425,10 @@ result compute(design const &Design)
 			r.errors.emplace_back(format("Vertex %zu: the route turns back on itself", k + 1));
 			return r;
 		}
-		if (vertex.radius < 1.0)
-		{
-			r.errors.emplace_back(format("Vertex %zu: radius is too small", k + 1));
-			return r;
-		}
-
 		int const side{turn > 0.0 ? 1 : -1};
-		auto const radius{vertex.radius};
-		auto const lengthin{std::max(0.0, vertex.transition_in)};
-		auto const lengthout{std::max(0.0, vertex.transition_out)};
+		auto const radius{fit.radius};
+		auto const lengthin{fit.transition_in};
+		auto const lengthout{fit.transition_out};
 		auto const endin{transition_point(Design.shape, lengthin, radius, 1.0)};
 		auto const endout{transition_point(Design.shape, lengthout, radius, 1.0)};
 		auto const shiftin{endin.y - radius * (1.0 - std::cos(endin.angle))};
@@ -386,6 +498,9 @@ result compute(design const &Design)
 
 		curve_report report;
 		report.vertex = static_cast<int>(k);
+		report.radius = radius;
+		report.transition_in = lengthin;
+		report.transition_out = lengthout;
 		report.deflection = deflection;
 		report.arc_length = radius * std::max(0.0, arcangle);
 		report.tangent_in = glm::distance(position, curvestart);
