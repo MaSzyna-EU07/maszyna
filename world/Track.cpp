@@ -687,7 +687,6 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     // to a stale origin and the renderer would draw sleepers in the wrong place).
 }
 
-// calculates path location from the current segment
 void TTrack::update_location() {
 
     location( (
@@ -697,19 +696,14 @@ void TTrack::update_location() {
         / 3.0 );
 }
 
-// (re)creates path segments from the source path data in m_paths
-// Initial: true when called during deserialization; the editor passes false to keep the current switch state
 void TTrack::init_segments( bool const Initial ) {
 
 	glm::dvec3 p1, p2, cp1, cp2, p3, p4, cp3, cp4; // dodatkowe punkty potrzebne do skrzyżowań
 	double r1, r2, r3, r4;
     double segsize = 5.0; // długość odcinka segmentowania
 
-    // TSegment::Init() raises the trackbed for the roll fix through MovedUp1(); drop the previous adjustment
-    // so repeated initialization doesn't accumulate it
     fTexHeight1 -= fTexHeightOffset;
     fTexHeightOffset = 0.f;
-    // the roll flag is re-evaluated below, the transition flag is set again when the path gets connected
     iTrapezoid = 0;
 
     switch (eType) {
@@ -1355,9 +1349,6 @@ glm::vec3 TTrack::get_nearest_point(const glm::dvec3 &point) const
 }
 
 // wypełnianie tablic VBO
-// discards references to current render geometry and generates it anew in specified bank
-// NOTE: geometry banks can't release chunks, so the old data stays in the bank, unused
-// with null bank the geometry is only discarded, to be created later along with the rest of the owning section
 void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
 
     Geometry1.clear();
@@ -2358,7 +2349,6 @@ TTrack::export_as_text_( std::ostream &Output ) const {
             << fTexSlope << ' ';
     }
     // path data
-    // NOTE: default stream precision would round coordinates to centimetres or worse, breaking path connections
     auto const precision { Output.precision( std::numeric_limits<double>::digits10 ) };
     for( auto const &path : m_paths ) {
         Output

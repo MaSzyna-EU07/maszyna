@@ -4,10 +4,9 @@ terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
 distributed with this file, You can
 obtain one at
-http://mozilla.org/MPL/2.0/.
+http:
 */
 
-// path (track) editing part of the editor mode
 
 #include "stdafx.h"
 #include "application/editormode.h"
@@ -29,7 +28,6 @@ http://mozilla.org/MPL/2.0/.
 namespace
 {
 
-// projects world points onto the screen, with the same camera-relative view and clean perspective the gizmo uses
 class screen_projection
 {
   public:
@@ -51,7 +49,6 @@ class screen_projection
 	{
 		return ImVec2((Clip.x / Clip.w * 0.5f + 0.5f) * m_size.x, (0.5f - Clip.y / Clip.w * 0.5f) * m_size.y);
 	}
-	// returns: true if the point is in front of the camera
 	bool project(glm::dvec3 const &Point, ImVec2 &Screen) const
 	{
 		auto const c = clip(Point);
@@ -60,7 +57,6 @@ class screen_projection
 		Screen = screen(c);
 		return true;
 	}
-	// draws a line, clipped against the near plane so points behind the camera don't flip across the screen
 	void line(ImDrawList *Drawlist, glm::dvec3 const &A, glm::dvec3 const &B, ImU32 const Color, float const Thickness) const
 	{
 		glm::vec4 a = clip(A);
@@ -81,7 +77,6 @@ class screen_projection
 	glm::mat4 m_viewprojection;
 };
 
-// point on the course of a path, matching the curve TSegment builds from the same data
 glm::dvec3 path_point(segment_data const &Path, double const T)
 {
 	auto const &p0 = Path.points[segment_data::point::start];
@@ -114,10 +109,9 @@ bool is_end(editor_track::point_kind const Kind)
 
 editor_track::point_kind const kPointKinds[] = {editor_track::point_kind::start, editor_track::point_kind::control1, editor_track::point_kind::control2, editor_track::point_kind::end};
 
-// screen distance within which a click grabs a point handle
 float const kHandleRadius{10.0f};
 
-} // namespace
+}
 
 TTrack *editor_mode::selected_track() const
 {
@@ -129,11 +123,9 @@ void editor_mode::select_track(scene::basic_node *Node)
 	auto *track = dynamic_cast<TTrack *>(Node);
 	if (track == nullptr)
 	{
-		// a click beside the selected path releases its point handle
 		m_track_point = {};
 		return;
 	}
-	// paths are long, so the distance is measured to the nearest point of the path rather than its centre
 	glm::dvec3 const camera{Global.pCamera.Pos};
 	if (glm::distance(glm::dvec3(track->get_nearest_point(camera)), camera) > static_cast<double>(kMaxPlacementDistance))
 		return;
@@ -164,7 +156,6 @@ bool editor_mode::pick_track_handle()
 				continue;
 			float const dx = screen.x - mouse.x;
 			float const dy = screen.y - mouse.y;
-			// end points take precedence over control points placed at the same spot
 			float const distance = (dx * dx + dy * dy) * (is_end(kind) ? 0.5f : 1.0f);
 			if (distance < best)
 			{
@@ -189,7 +180,6 @@ void editor_mode::draw_track_overlay() const
 	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
 	bool const trackmode = ui()->mode() == nodebank_panel::TRACK;
 
-	// course of the path, from its source data so it follows the edits before the path is rebuilt
 	ImU32 const coursecolor = IM_COL32(40, 220, 255, 220);
 	int constexpr samples{32};
 	for (auto const &path : track->m_paths)
@@ -205,14 +195,12 @@ void editor_mode::draw_track_overlay() const
 	if (false == trackmode || m_route_tab || false == editor_track::is_supported(*track))
 		return;
 
-	// control vectors
 	ImU32 const vectorcolor = IM_COL32(200, 200, 200, 160);
 	for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
 	{
 		projection.line(drawlist, editor_track::point_position(*track, {i, editor_track::point_kind::start}), editor_track::point_position(*track, {i, editor_track::point_kind::control1}), vectorcolor, 1.0f);
 		projection.line(drawlist, editor_track::point_position(*track, {i, editor_track::point_kind::end}), editor_track::point_position(*track, {i, editor_track::point_kind::control2}), vectorcolor, 1.0f);
 	}
-	// handles: end points coloured by connection state (green: connected, red: free), control points as squares
 	for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
 	{
 		for (auto const kind : kPointKinds)
@@ -235,7 +223,6 @@ void editor_mode::draw_track_overlay() const
 				drawlist->AddCircle(screen, 10.0f, IM_COL32(255, 220, 40, 255), 16, 2.5f);
 		}
 	}
-	// connection to be made when the ongoing drag ends
 	if (m_track_snap.track != nullptr)
 	{
 		ImVec2 screen;
@@ -261,14 +248,12 @@ void editor_mode::render_track_gizmo()
 	ImGuiIO const &io = ImGui::GetIO();
 	ImGuizmo::SetRect(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
 
-	// same camera-relative view and clean perspective as the transform gizmo of the other nodes
 	glm::mat4 const view = GfxRenderer->Camera_View_Matrix();
 	glm::dvec3 const camerapos = GfxRenderer->Camera_Position();
 	float const fovy = glm::radians(Global.FieldOfView / Global.ZoomFactor);
 	float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
 	glm::mat4 const projection = glm::perspective(fovy, aspect, 0.1f, 10000.0f);
 
-	// point handles only move; the whole path moves or turns around the vertical axis
 	ImGuizmo::OPERATION const operation = (false == pointmode && m_gizmo_op == gizmo_operation::rotate) ? ImGuizmo::ROTATE_Y : ImGuizmo::TRANSLATE;
 
 	if (false == m_track_gizmo_using)
@@ -286,7 +271,6 @@ void editor_mode::render_track_gizmo()
 	{
 		if (false == m_track_gizmo_using)
 		{
-			// drag start: gather the paths it modifies and record their state for undo
 			m_track_gizmo_using = true;
 			m_track_pivot = editor_track::pivot(*track);
 			m_track_drag = {track};
@@ -326,7 +310,6 @@ void editor_mode::render_track_gizmo()
 			for (auto const &connection : m_track_drag_points)
 				editor_track::move_point(*connection.first, connection.second, position);
 			m_track_dirty = true;
-			// a free end point can be connected with another path; a joint moved as a whole stays as it is
 			if (is_end(m_track_point.kind) && m_track_drag_points.empty())
 			{
 				std::vector<TTrack const *> const exclude(m_track_drag.begin(), m_track_drag.end());
@@ -346,7 +329,6 @@ void editor_mode::render_track_gizmo()
 	}
 	else if (m_track_gizmo_using)
 	{
-		// drag end: make the offered connection and rebuild everything for good
 		if (m_track_snap.track != nullptr && pointmode)
 		{
 			editor_track::snap_point(*track, m_track_point, m_track_snap, m_track_align_tangent);
@@ -364,7 +346,6 @@ void editor_mode::commit_track_drag(bool const Force)
 {
 	if (false == m_track_dirty || m_track_drag.empty())
 		return;
-	// each rebuild re-uploads geometry of the affected sections, so it isn't done on every frame of a drag
 	auto const now = std::chrono::steady_clock::now();
 	if (false == Force && now - m_track_last_commit < std::chrono::milliseconds(100))
 		return;
@@ -399,11 +380,9 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 	if (Snapshot.tracks.empty())
 		return;
 
-	// paths restored by this step; paths added by the change exist only on its redo side
 	std::vector<TTrack *> tracks;
 	for (auto const &entry : Snapshot.tracks)
 		tracks.emplace_back(entry.first);
-	// current state goes to the opposite stack, including paths added by the change when it's being undone
 	EditorSnapshot current{Snapshot};
 	current.tracks.clear();
 	auto involved{tracks};
@@ -426,7 +405,6 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 	for (auto const &entry : Snapshot.tracks)
 		editor_track::apply(*entry.first, entry.second);
 	editor_track::commit(tracks);
-	// the designed route refers to the chain, which might have changed
 	if (false == m_route.chain.tracks.empty())
 	{
 		std::string error;
@@ -486,7 +464,6 @@ void editor_mode::render_path_ui()
 		ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "Geometry locked: %s", reason.c_str());
 
 	auto const before = editor_track::capture(*track);
-	// records undo state when a field edit starts, and rebuilds the path once it's finished
 	enum class rebuild { none, parameters, geometry };
 	auto const finish_edit = [&](rebuild const Rebuild) {
 		if (ImGui::IsItemActivated())
@@ -502,7 +479,6 @@ void editor_mode::render_path_ui()
 			}
 		}
 	};
-	// applies a change made with a widget which reports it at once, like a combo box
 	auto const apply_now = [&](rebuild const Rebuild) {
 		push_track_snapshot({{track, before}});
 		if (Rebuild == rebuild::parameters)
@@ -545,7 +521,6 @@ void editor_mode::render_path_ui()
 
 		if (track->m_visible)
 		{
-			// material names are edited in local buffers, refreshed from the path whenever no field is being edited
 			material_handle *materials[] = {&track->m_material1, &track->m_material2, track->SwitchExtension ? &track->SwitchExtension->m_material3 : nullptr};
 			char const *labels[] = {"Texture 1 (rails/surface)", "Texture 2 (trackbed/side)", "Trackbed (switch)"};
 			if (false == ImGui::IsAnyItemActive())
@@ -602,7 +577,6 @@ void editor_mode::render_path_ui()
 			ImGui::PushID(i);
 			if (track->m_paths.size() > 1)
 				ImGui::Text("Path %d", i + 1);
-			// point selection, same as clicking the handle in the viewport
 			for (auto const kind : kPointKinds)
 			{
 				editor_track::point_ref const point{i, kind};
@@ -623,7 +597,7 @@ void editor_mode::render_path_ui()
 				{
 					auto position = path.points[kind == editor_track::point_kind::start ? segment_data::point::start : segment_data::point::end];
 					if (ImGui::InputScalarN(point_label(kind), ImGuiDataType_Double, glm::value_ptr(position), 3, nullptr, nullptr, "%.3f"))
-						editor_track::move_point(*track, {i, kind}, position); // keeps the common start of a switch together
+						editor_track::move_point(*track, {i, kind}, position);
 					finish_edit(rebuild::geometry);
 				}
 				ImGui::InputScalarN("Control 1 (relative)", ImGuiDataType_Double, glm::value_ptr(path.points[segment_data::point::control1]), 3, nullptr, nullptr, "%.3f");
@@ -655,7 +629,6 @@ void editor_mode::render_path_ui()
 	}
 }
 
-// route design
 
 bool editor_mode::route_active() const
 {
@@ -686,7 +659,6 @@ void editor_mode::route_reset()
 
 	auto const &chain{route.chain};
 	alignment::design design;
-	// limits and the curve type are the user's choice, they carry over to the next fragment
 	design.norms = route.design.norms;
 	design.shape = route.design.shape;
 	design.start = chain.start;
@@ -702,7 +674,6 @@ void editor_mode::route_reset()
 	design.speed = chain.velocity > 0.0 ? chain.velocity : 100.0;
 	route.design = design;
 
-	// initial layout: a straight, a single curve at the intersection of the end tangents, or a pair of curves
 	glm::dvec2 intersection;
 	if (false == alignment::collinear(design))
 	{
@@ -730,7 +701,6 @@ void editor_mode::route_apply()
 	route.status.clear();
 	if (false == route.result.valid || route.chain.tracks.empty())
 		return;
-	// the paths might have changed since the fragment was selected
 	editor_track::chain chain;
 	if (false == editor_track::find_chain(route.from, route.to, chain, route.error))
 		return;
@@ -829,7 +799,6 @@ void editor_mode::draw_route_overlay() const
 	screen_projection const projection;
 	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
 
-	// polygon of tangents
 	std::vector<glm::dvec3> polygon{design.start};
 	for (int i = 0; i < static_cast<int>(design.vertices.size()); ++i)
 		polygon.push_back(route_vertex_position(i));
@@ -837,7 +806,6 @@ void editor_mode::draw_route_overlay() const
 	for (std::size_t i = 0; i + 1 < polygon.size(); ++i)
 		projection.line(drawlist, polygon[i], polygon[i + 1], IM_COL32(255, 210, 60, 150), 1.5f);
 
-	// designed alignment, coloured by element: straight white, transition orange, circular curve green
 	if (result.length > 0.0 && result.profile.size() >= 2)
 	{
 		for (auto const &e : result.elements)
@@ -857,7 +825,6 @@ void editor_mode::draw_route_overlay() const
 		}
 	}
 
-	// fixed ends with their directions, and the vertices
 	for (auto const atend : {false, true})
 	{
 		auto const &point{atend ? design.end : design.start};
@@ -918,7 +885,6 @@ void editor_mode::render_route_gizmo()
 	glm::dvec3 const moved{camerapos + glm::dvec3(m_route_gizmo[3])};
 	auto &vertex{route.design.vertices[route.vertex]};
 	glm::dvec2 const point{moved.x, moved.z};
-	// the first and the last vertex slide along the tangents of the fixed ends; a single vertex stays at their intersection
 	if (count >= 2)
 	{
 		if (route.vertex == 0)
@@ -1010,7 +976,6 @@ void editor_mode::render_route_ui()
 		ImGui::TreePop();
 	}
 
-	// vertices
 	auto &vertices{design.vertices};
 	if (ImGui::Button("Add vertex"))
 	{
@@ -1020,7 +985,6 @@ void editor_mode::render_route_ui()
 		auto const distance{glm::distance(glm::dvec2{design.start.x, design.start.z}, glm::dvec2{design.end.x, design.end.z})};
 		if (vertices.size() == 1)
 		{
-			// a single vertex sits at the intersection of the tangents; two vertices slide along them
 			vertices.front().offset = distance / 3.0;
 			vertex.offset = distance / 3.0;
 			vertices.push_back(vertex);
@@ -1031,12 +995,10 @@ void editor_mode::render_route_ui()
 		}
 		else
 		{
-			// new vertex between the selected one (or the last but one) and the next
 			auto const index{std::clamp(route.vertex, 0, static_cast<int>(vertices.size()) - 2)};
 			auto const a{route_vertex_position(index)};
 			auto const b{route_vertex_position(index + 1)};
 			vertex.position = glm::dvec2{(a.x + b.x) * 0.5, (a.z + b.z) * 0.5};
-			// the moved vertices keep their place, so the former first/last vertex positions become free positions
 			for (int i = 0; i < static_cast<int>(vertices.size()); ++i)
 			{
 				auto const p{route_vertex_position(i)};
@@ -1113,7 +1075,6 @@ void editor_mode::render_route_ui()
 	if (changed)
 		route_update();
 
-	// outcome
 	ImGui::Separator();
 	auto const &result{route.result};
 	if (result.length > 0.0)

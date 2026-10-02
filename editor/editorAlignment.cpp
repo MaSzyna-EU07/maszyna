@@ -4,7 +4,7 @@ terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
 distributed with this file, You can
 obtain one at
-http://mozilla.org/MPL/2.0/.
+http:
 */
 
 #include "stdafx.h"
@@ -30,7 +30,6 @@ double cross(glm::dvec2 const &A, glm::dvec2 const &B)
 	return A.x * B.y - A.y * B.x;
 }
 
-// vector rotated by 90 degrees counter-clockwise
 glm::dvec2 perpendicular(glm::dvec2 const &Vector)
 {
 	return {-Vector.y, Vector.x};
@@ -63,15 +62,13 @@ std::string format(char const *Format, ...)
 	return buffer;
 }
 
-// point of a transition curve in its local frame: x along the tangent at its start, y towards the curve centre
 struct local_point
 {
 	double x{0.0};
 	double y{0.0};
-	double angle{0.0}; // tangent angle relative to the initial tangent
+	double angle{0.0};
 };
 
-// Parameter is the fraction of the transition length, from the straight (0) to the circular curve (1)
 local_point transition_point(transition_shape const Shape, double const Length, double const Radius, double const Parameter)
 {
 	if (Length <= 0.0 || Radius <= 0.0)
@@ -81,7 +78,6 @@ local_point transition_point(transition_shape const Shape, double const Length, 
 		auto const x{Length * Parameter};
 		return {x, x * x * x / (6.0 * Radius * Length), std::atan(x * x / (2.0 * Radius * Length))};
 	}
-	// clothoid, tangent angle grows with the square of the travelled distance
 	auto const distance{Length * Parameter};
 	auto const angle = [&](double const S) { return S * S / (2.0 * Radius * Length); };
 	int const steps{std::max(8, static_cast<int>(std::ceil(distance / 0.5)) * 2)};
@@ -97,7 +93,6 @@ local_point transition_point(transition_shape const Shape, double const Length, 
 	return {x * h / 3.0, y * h / 3.0, angle(distance)};
 }
 
-// plan position and direction of travel at given distance from the start of the element
 void element_point(element const &Element, transition_shape const Shape, double const Distance, glm::dvec2 &Position, glm::dvec2 &Direction)
 {
 	switch (Element.kind)
@@ -147,7 +142,6 @@ element const &element_at(result const &Result, double const Chainage)
 	return lookup == Result.elements.begin() ? Result.elements.front() : *std::prev(lookup);
 }
 
-// polar form of a cubic Bezier curve; control points of the part between parameters a and b are f(a,a,a), f(a,a,b), f(a,b,b), f(b,b,b)
 glm::dvec2 blossom(std::array<glm::dvec2, 4> const &Points, double const A, double const B, double const C)
 {
 	glm::dvec2 r[3], s[2];
@@ -158,7 +152,6 @@ glm::dvec2 blossom(std::array<glm::dvec2, 4> const &Points, double const A, doub
 	return glm::mix(s[0], s[1], C);
 }
 
-// number of cubic pieces needed to represent the element accurately
 std::size_t element_pieces(element const &Element, transition_shape const Shape)
 {
 	if (Element.length < 1e-3)
@@ -166,7 +159,6 @@ std::size_t element_pieces(element const &Element, transition_shape const Shape)
 	switch (Element.kind)
 	{
 	case element_kind::arc:
-		// cubic approximation of a 10 degree arc deviates from the circle by less than 1e-7 of its radius
 		return static_cast<std::size_t>(std::max(1.0, std::ceil(Element.length / Element.radius / (10.0 * kPi / 180.0) - 1e-9)));
 	case element_kind::transition_in:
 	case element_kind::transition_out:
@@ -176,7 +168,7 @@ std::size_t element_pieces(element const &Element, transition_shape const Shape)
 	}
 }
 
-} // namespace
+}
 
 double unbalanced_acceleration(double const Speed, double const Radius, double const Cant, limits const &Limits)
 {
@@ -190,11 +182,9 @@ double transition_length(double const Speed, double const Radius, double const C
 	double length{0.0};
 	if (Cant > 0.0)
 	{
-		// rate of cant change in time, and the inclination of the cant ramp
 		length = std::max(length, Speed * Cant / (3.6 * Limits.cant_rate));
 		length = std::max(length, Cant / 1000.0 * Limits.ramp_factor * Speed);
 	}
-	// rate of change of the unbalanced acceleration
 	auto const unbalanced{std::max(0.0, unbalanced_acceleration(Speed, Radius, Cant, Limits))};
 	length = std::max(length, unbalanced * Speed / (3.6 * Limits.jerk));
 	return length > 0.0 ? ceil_to(length, 5.0) : 0.0;
@@ -203,7 +193,7 @@ double transition_length(double const Speed, double const Radius, double const C
 recommendation recommend(double const Speed, double const Radius, limits const &Limits)
 {
 	recommendation result;
-	auto const factor{Limits.gauge / (kGravity * 12.96)}; // ~11.8 for standard gauge
+	auto const factor{Limits.gauge / (kGravity * 12.96)};
 	auto const allowance{Limits.gauge * Limits.unbalanced / kGravity};
 	result.radius_min = factor * Speed * Speed / (Limits.cant_max + allowance);
 	result.vertical_radius = std::max(Limits.vertical_min, Limits.vertical_factor * Speed * Speed);
@@ -211,7 +201,6 @@ recommendation recommend(double const Speed, double const Radius, limits const &
 		return result;
 	result.cant_equilibrium = factor * Speed * Speed / Radius;
 	result.cant_min = std::max(0.0, result.cant_equilibrium - allowance);
-	// keep a part of the permissible unbalanced acceleration in reserve, but never go below the required minimum
 	result.cant = std::min(Limits.cant_max, ceil_to(std::max(result.cant_min, result.cant_equilibrium * 2.0 / 3.0), 5.0));
 	result.transition = transition_length(Speed, Radius, result.cant, Limits);
 	return result;
@@ -229,7 +218,6 @@ result compute(design const &Design)
 	auto const enddirection{glm::normalize(Design.end_direction)};
 	auto const count{Design.vertices.size()};
 
-	// resolve vertex positions; the first and the last vertex lie on the tangents of the fixed ends
 	r.vertices.resize(count);
 	if (count == 0)
 	{
@@ -307,7 +295,6 @@ result compute(design const &Design)
 		auto const lead{glm::dot(position - cursor, directionin)};
 		if (deflection < 1e-7)
 		{
-			// tangents are collinear, there's no curve to fit
 			if (lead < -1e-4)
 				r.errors.emplace_back(format("Vertex %zu lies inside the curve of the previous vertex", k + 1));
 			push_straight(cursor, directionin, lead);
@@ -332,13 +319,11 @@ result compute(design const &Design)
 		auto const lengthout{std::max(0.0, vertex.transition_out)};
 		auto const endin{transition_point(Design.shape, lengthin, radius, 1.0)};
 		auto const endout{transition_point(Design.shape, lengthout, radius, 1.0)};
-		// shift of the circular curve towards its centre, and position of the shifted curve start along the tangent
 		auto const shiftin{endin.y - radius * (1.0 - std::cos(endin.angle))};
 		auto const shiftout{endout.y - radius * (1.0 - std::cos(endout.angle))};
 		auto const middlein{endin.x - radius * std::sin(endin.angle)};
 		auto const middleout{endout.x - radius * std::sin(endout.angle)};
 
-		// the centre lies at distances R + shift from both tangents
 		auto const normalin{perpendicular(directionin) * static_cast<double>(side)};
 		auto const normalout{perpendicular(directionout) * static_cast<double>(side)};
 		auto const a{radius + shiftin};
@@ -420,7 +405,6 @@ result compute(design const &Design)
 		report.recommended = recommend(Design.speed, radius, Design.norms);
 		r.curves.push_back(report);
 
-		// verification against the limits
 		auto const &norms{Design.norms};
 		if (radius < report.recommended.radius_min - 1e-6)
 			r.warnings.emplace_back(format("Vertex %zu: R %.0f m is below the minimum %.0f m for %.0f km/h", k + 1, radius, report.recommended.radius_min, Design.speed));
@@ -441,7 +425,6 @@ result compute(design const &Design)
 	push_straight(cursor, lastdirection, tail);
 	r.length = chainage;
 
-	// straights between curves, measured as travel time
 	if (Design.norms.tangent_min_time > 0.0)
 	{
 		auto const minimum{Design.norms.tangent_min_time * Design.speed / 3.6};
@@ -453,7 +436,6 @@ result compute(design const &Design)
 		}
 	}
 
-	// vertical profile: grades between the fixed ends and the vertex elevations, joined with vertical curves
 	r.vertex_chainages = vertexchainage;
 	r.profile.push_back({0.0, Design.start.y, 0.0, 0.0});
 	for (std::size_t k = 0; k < count; ++k)
@@ -463,7 +445,7 @@ result compute(design const &Design)
 		r.vertex_elevations.push_back(elevation);
 		auto const radius{vertex.vertical_radius > 0.0 ? vertex.vertical_radius : std::max(Design.norms.vertical_min, Design.norms.vertical_factor * Design.speed * Design.speed)};
 		if (vertexchainage[k] <= r.profile.back().chainage + 1e-3)
-			continue; // vertex without its own place in the profile
+			continue;
 		r.profile.push_back({vertexchainage[k], elevation, radius, 0.0});
 	}
 	r.profile.push_back({r.length, Design.end.y, 0.0, 0.0});
@@ -488,7 +470,6 @@ result compute(design const &Design)
 		if (std::abs(last - Design.end_grade) > 0.0005)
 			r.warnings.emplace_back(format("Grade break at the end: %.1f per mille against %.1f of the adjoining track", last * 1000.0, Design.end_grade * 1000.0));
 	}
-	// curvature continuity with the adjoining tracks; the designed fragment starts and ends on a tangent
 	if (Design.start_radius > 0.0 && Design.start_radius < 10000.0)
 		r.warnings.emplace_back(format("The adjoining track at the start is curved (R %.0f m), the curvature changes abruptly", Design.start_radius));
 	if (Design.end_radius > 0.0 && Design.end_radius < 10000.0)
@@ -615,7 +596,6 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 		for (std::size_t j = 0; j < count; ++j)
 			spans.push_back({i, e.length * j / count, e.length * (j + 1) / count});
 	}
-	// use up the requested number of pieces by dividing the longest ones
 	while (false == spans.empty() && spans.size() < Count)
 	{
 		auto longest = std::max_element(spans.begin(), spans.end(), [](span const &A, span const &B) { return A.to - A.from < B.to - B.from; });
@@ -651,7 +631,6 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 		{
 			if (Design.shape == transition_shape::cubic_parabola)
 			{
-				// exact: part of the cubic which describes the whole transition
 				std::array<glm::dvec2, 4> const local{glm::dvec2{0.0, 0.0}, glm::dvec2{e.transition / 3.0, 0.0}, glm::dvec2{e.transition * 2.0 / 3.0, 0.0}, glm::dvec2{e.transition, e.transition * e.transition / (6.0 * e.radius)}};
 				auto const a{e.kind == element_kind::transition_in ? piece.from / e.transition : 1.0 - piece.from / e.transition};
 				auto const b{e.kind == element_kind::transition_in ? piece.to / e.transition : 1.0 - piece.to / e.transition};
@@ -670,7 +649,6 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 			break;
 		}
 		}
-		// heights follow the profile, with end slopes matching its grade
 		auto const s0{e.chainage + piece.from};
 		auto const s3{e.chainage + piece.to};
 		auto const y0{elevation(Result, s0)};
@@ -693,4 +671,4 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 	return result;
 }
 
-} // namespace alignment
+}

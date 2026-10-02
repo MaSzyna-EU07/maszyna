@@ -4,7 +4,7 @@ terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
 distributed with this file, You can
 obtain one at
-http://mozilla.org/MPL/2.0/.
+http:
 */
 
 #include "stdafx.h"
@@ -26,7 +26,6 @@ http://mozilla.org/MPL/2.0/.
 namespace
 {
 
-// end points closer than this are treated as the same point
 double const kSamePoint{0.05};
 
 segment_data::point point_index(editor_track::point_kind const Kind)
@@ -56,7 +55,6 @@ void add_unique(std::vector<TTrack *> &Tracks, TTrack *Track)
 		Tracks.emplace_back(Track);
 }
 
-// first derivative of the path curve at its start or end, in the direction from the start to the end
 glm::dvec3 path_tangent(segment_data const &Path, bool const Atend)
 {
 	auto const &start{Path.points[segment_data::point::start]};
@@ -68,7 +66,6 @@ glm::dvec3 path_tangent(segment_data const &Path, bool const Atend)
 	return control2 != glm::dvec3{} ? -control2 : end - (start + control1);
 }
 
-// plan radius of the path curve at specified parameter, 0 if it's straight there
 double path_radius(segment_data const &Path, double const T)
 {
 	auto const &p0{Path.points[segment_data::point::start]};
@@ -87,7 +84,6 @@ double path_radius(segment_data const &Path, double const T)
 	return curvature > 1e-7 ? 1.0 / curvature : 0.0;
 }
 
-// the same path run in the opposite direction
 segment_data reversed(segment_data const &Path)
 {
 	segment_data result{Path};
@@ -95,13 +91,10 @@ segment_data reversed(segment_data const &Path)
 	result.points[segment_data::point::end] = Path.points[segment_data::point::start];
 	result.points[segment_data::point::control1] = Path.points[segment_data::point::control2];
 	result.points[segment_data::point::control2] = Path.points[segment_data::point::control1];
-	// roll follows the direction of the curve, which flips along with the direction of travel
 	result.rolls = {-Path.rolls[1], -Path.rolls[0]};
 	return result;
 }
 
-// direction of travel and plan radius at the joint of a chain with an adjoining path.
-// Leaving: the chain continues into the adjoining path (its end), otherwise it comes from it (its start)
 bool adjoining_direction(TTrack const *Neighbour, glm::dvec3 const &Joint, bool const Leaving, glm::dvec3 &Direction, double &Radius)
 {
 	if (Neighbour == nullptr)
@@ -113,8 +106,6 @@ bool adjoining_direction(TTrack const *Neighbour, glm::dvec3 const &Joint, bool 
 			auto const &point{path.points[atend ? segment_data::point::end : segment_data::point::start]};
 			if (glm::distance(point, Joint) > kSamePoint)
 				continue;
-			// the tangent runs from the start of the neighbour to its end; it's the direction of travel when
-			// entering the neighbour at its start, or arriving from it through its end
 			auto const tangent{glm::normalize(path_tangent(path, atend))};
 			Direction = (Leaving != atend) ? tangent : -tangent;
 			Radius = path_radius(path, atend ? 1.0 : 0.0);
@@ -124,7 +115,7 @@ bool adjoining_direction(TTrack const *Neighbour, glm::dvec3 const &Joint, bool 
 	return false;
 }
 
-} // namespace
+}
 
 editor_track::state editor_track::capture(TTrack const &Track)
 {
@@ -175,7 +166,7 @@ void editor_track::apply(TTrack &Track, state const &State)
 bool editor_track::is_supported(TTrack const &Track)
 {
 	if ((Track.iCategoryFlag & 0x80) != 0)
-		return false; // auto-generated helper path
+		return false;
 	if (Track.eType == tt_Normal)
 		return Track.Segment != nullptr;
 	if (Track.eType == tt_Switch)
@@ -209,7 +200,6 @@ void editor_track::commit(std::vector<TTrack *> const &Tracks)
 	if (Tracks.empty())
 		return;
 
-	// paths whose render geometry depends on the modified ones
 	std::vector<TTrack *> affected;
 	for (auto *track : Tracks)
 	{
@@ -217,27 +207,23 @@ void editor_track::commit(std::vector<TTrack *> const &Tracks)
 		for (auto *neighbour : neighbours(*track))
 			add_unique(affected, neighbour);
 	}
-	// take the paths out of the scene while their ends still match the old segments...
 	for (auto *track : Tracks)
 	{
 		disconnect(*track);
 		simulation::Region->erase_and_unregister(track);
 	}
-	// ...rebuild the segments and put the paths back in their new place...
 	for (auto *track : Tracks)
 	{
 		track->init_segments(false);
 		track->update_location();
-		track->m_area.radius = -1.f; // forces radius recalculation
+		track->m_area.radius = -1.f;
 		simulation::Region->insert_and_register(track);
 	}
-	// ...connect them with whatever they touch now...
 	for (auto *track : Tracks)
 		join(*track);
 	for (auto *track : Tracks)
 		for (auto *neighbour : neighbours(*track))
 			add_unique(affected, neighbour);
-	// ...and update the visuals
 	for (auto *track : affected)
 		update_transition(*track);
 	for (auto *track : affected)
@@ -249,7 +235,6 @@ void editor_track::commit(std::vector<TTrack *> const &Tracks)
 void editor_track::commit_parameters(TTrack &Track)
 {
 	Track.fTrackWidth2 = Track.fTrackWidth;
-	// segments are re-created from unchanged data, but road texture proportions and roll fix depend on parameters
 	Track.init_segments(false);
 
 	std::vector<TTrack *> affected{&Track};
@@ -302,8 +287,6 @@ void editor_track::move_point(TTrack &Track, point_ref const &Point, glm::dvec3 
 		auto &point{path.points[point_index(Point.kind)]};
 		auto const oldposition{point};
 		point = Position;
-		// control vectors are relative to their end points, so they follow them automatically.
-		// other paths of the same piece sharing this point (the common start of a switch) follow as well
 		for (auto &otherpath : Track.m_paths)
 		{
 			if (&otherpath == &path)
@@ -406,7 +389,6 @@ editor_track::snap_target editor_track::find_snap_target(TTrack const &Track, gl
 
 	auto const excluded = [&](TTrack const *Other) { return std::find(Exclude.begin(), Exclude.end(), Other) != Exclude.end(); };
 	auto const category{Track.iCategoryFlag & 15};
-	// NOTE: copy, the region returns its scratchpad
 	auto const sections{simulation::Region->sections(Position, static_cast<float>(Radius))};
 	for (auto *section : sections)
 	{
@@ -425,7 +407,6 @@ editor_track::snap_target editor_track::find_snap_target(TTrack const &Track, gl
 						auto const distance{glm::distance(point, Position)};
 						if (distance > Radius || distance >= result.distance)
 							continue;
-						// skip ends already connected with something which stays in place
 						auto const connections{connected_points(*other, point)};
 						if (std::any_of(connections.begin(), connections.end(), [&](auto const &Connection) { return false == excluded(Connection.first); }))
 							continue;
@@ -466,7 +447,6 @@ void editor_track::snap_point(TTrack &Track, point_ref const &Point, snap_target
 	if (false == Aligntangent)
 		return;
 
-	// the path continues the target, so it leaves the shared point in the opposite direction
 	auto &path{Track.m_paths[Point.path]};
 	auto const &start{path.points[segment_data::point::start]};
 	auto const &end{path.points[segment_data::point::end]};
@@ -515,7 +495,6 @@ void editor_track::velocity(TTrack &Track, double const Velocity)
 {
 	if (Track.SwitchExtension && Track.eType == tt_Switch)
 	{
-		// same rules as TTrack::Switch()
 		Track.SwitchExtension->fVelocity = static_cast<float>(Velocity);
 		if (Velocity <= -2.0)
 			Track.fVelocity = Track.SwitchExtension->CurrentIndex ? -Velocity : -1.0;
@@ -594,7 +573,6 @@ void editor_track::join(TTrack &Track)
 	}
 	case tt_Switch:
 	{
-		// like during scenery load, switches are connected from the side of the regular paths
 		for (int i = 0; i < 2; ++i)
 		{
 			auto const &segment{Track.SwitchExtension->Segments[i]};
@@ -638,7 +616,6 @@ void editor_track::connect(TTrack &Track, bool const Prevside, TTrack *Other, in
 	{
 		if (false == has_switch_paths(*Other))
 			break;
-		// same connections as in path_table::InitTracks(), but made without moving the switch blades
 		auto const path{(Endpointid - 2) / 2};
 		auto const atend{((Endpointid - 2) % 2) != 0};
 		bind_switch_path(*Other, path);
@@ -667,7 +644,6 @@ void editor_track::connect(TTrack &Track, bool const Prevside, TTrack *Other, in
 
 void editor_track::update_transition(TTrack &Track)
 {
-	// same rule as TTrack::ConnectNextPrev(): transition is drawn by the path whose end 2 meets start of a different path
 	Track.iTrapezoid &= ~2;
 	auto const *next{Track.trNext};
 	if (next == nullptr || Track.iNextDirection != 0)
@@ -692,7 +668,6 @@ void editor_track::bind_switch_path(TTrack &Switch, int const Path)
 
 void editor_track::store_switch_path(TTrack &Switch, int const Path)
 {
-	// same as TTrack::SetConnections(), without switching back to the base position
 	auto &extension{*Switch.SwitchExtension};
 	auto const path{Path & 1};
 	extension.pNexts[path] = Switch.trNext;
@@ -701,7 +676,6 @@ void editor_track::store_switch_path(TTrack &Switch, int const Path)
 	extension.iPrevDirection[path] = Switch.iPrevDirection;
 	if (Switch.eType == tt_Switch)
 	{
-		// switch paths share their start point, so they share the path connected there as well
 		extension.pPrevs[path ^ 1] = Switch.trPrev;
 		extension.iPrevDirection[path ^ 1] = Switch.iPrevDirection;
 	}
@@ -727,7 +701,6 @@ bool editor_track::find_chain(TTrack *From, TTrack *To, chain &Chain, std::strin
 	if (From != To)
 	{
 		bool found{false};
-		// try to reach the last path leaving the first one through its end, then through its start
 		for (auto const throughend : {true, false})
 		{
 			Chain.tracks = {From};
@@ -780,7 +753,6 @@ bool editor_track::find_chain(TTrack *From, TTrack *To, chain &Chain, std::strin
 			Chain.radius = radius;
 	}
 
-	// fixed ends, with directions taken from the adjoining paths when there are any
 	auto const &first{From->m_paths.front()};
 	auto const firstforward{Chain.forward.front()};
 	Chain.start = first.points[firstforward ? segment_data::point::start : segment_data::point::end];
@@ -806,7 +778,6 @@ std::vector<TTrack *> editor_track::relay(chain const &Chain, std::vector<segmen
 	if (count == 0 || Pieces.size() < count)
 		return created;
 
-	// existing paths are spread evenly over the pieces, added paths fill the gaps between them
 	std::vector<TTrack *> tracks;
 	std::size_t previous{count};
 	for (std::size_t i = 0; i < Pieces.size(); ++i)
@@ -841,7 +812,7 @@ TTrack *editor_track::clone(TTrack const &Template)
 	cParser parser(text.str(), cParser::buffer_TEXT);
 	parser.getTokens();
 	std::string token;
-	parser >> token; // node type, consumed before the path is loaded
+	parser >> token;
 
 	scene::node_data data;
 	data.type = "track";
@@ -854,7 +825,6 @@ TTrack *editor_track::clone(TTrack const &Template)
 	track->m_rangesquaredmin = Template.m_rangesquaredmin;
 	track->m_rangesquaredmax = Template.m_rangesquaredmax;
 	track->Load(&parser, glm::dvec3{});
-	// events stay with the original path only
 	for (auto *events : {&track->m_events0, &track->m_events1, &track->m_events2, &track->m_events0all, &track->m_events1all, &track->m_events2all})
 		events->clear();
 	track->m_events = false;
@@ -885,6 +855,5 @@ void editor_track::revive(TTrack &Track)
 void editor_track::rebuild_geometry(TTrack &Track)
 {
 	auto &section{simulation::Region->section(Track.location())};
-	// sections which weren't displayed yet create geometry of their content on their own
 	Track.rebuild_geometry(section.m_geometrycreated ? section.m_geometrybank : gfx::geometrybank_handle{});
 }

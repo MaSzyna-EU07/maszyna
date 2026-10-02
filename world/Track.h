@@ -185,7 +185,7 @@ public:
     geometryhandle_sequence Geometry2; // geometry chunks textured with texture 2
 
     std::vector<segment_data> m_paths; // source data for owned paths
-    bool m_editorremoved { false }; // taken out of the scene by the editor, kept alive for its undo history
+    bool m_editorremoved { false };
 	int iterate_stamp = 0;
 
     // sleepermodel optional parameter -------------------------------------------------
@@ -280,9 +280,7 @@ public:
         RouteCount() const {
         return SwitchExtension != nullptr ? SwitchExtension->iRoads - 1 : 1; }
     void Load(cParser *parser, glm::dvec3 const &pOrigin);
-    // (re)creates path segments from the source path data in m_paths
     void init_segments( bool const Initial );
-    // calculates path location from the current segment
     void update_location();
     bool AssignEvents();
     bool AssignForcedEvents(basic_event *NewEventPlus, basic_event *NewEventMinus);
@@ -306,7 +304,6 @@ public:
 	double ActiveLength();
 
 	void create_geometry( gfx::geometrybank_handle const &Bank ); // wypełnianie VBO
-	// discards current render geometry and generates it anew in specified bank
 	void rebuild_geometry( gfx::geometrybank_handle const &Bank );
 	void create_map_geometry(std::vector<gfx::basic_vertex> &Bank, const gfx::geometrybank_handle Extra);
 	void get_map_active_paths(map_colored_paths &handles);

@@ -50,7 +50,6 @@ class editor_ui : public ui_layer
 	{
 		m_filloptions = std::move(Renderer);
 	}
-	// draws the path editing settings in its node bank tab (the editing state lives in the editor mode)
 	void set_track_options(std::function<void()> Renderer)
 	{
 		m_trackoptions = std::move(Renderer);

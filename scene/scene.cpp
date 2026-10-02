@@ -416,14 +416,12 @@ basic_cell::insert( TMemCell *Memorycell ) {
     // NOTE: memory cells are virtual 'points' hence they don't ever expand cell range
 }
 
-// removes provided path from the cell
 void
 basic_cell::erase( TTrack *Path ) {
 
     m_paths.erase(
         std::remove( std::begin( m_paths ), std::end( m_paths ), Path ),
         std::end( m_paths ) );
-    // drop the path from the animation list, the cell won't update it anymore
     if( tTrackAnim == Path ) {
         tTrackAnim = Path->SwitchExtension->pNextAnim;
         Path->SwitchExtension->pNextAnim = nullptr;
@@ -441,7 +439,6 @@ basic_cell::erase( TTrack *Path ) {
     // TODO: update cell bounding area
 }
 
-// removes provided path from the lookup directory of the cell
 void
 basic_cell::unregister_end( TTrack *Path ) {
 

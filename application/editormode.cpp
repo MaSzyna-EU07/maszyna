@@ -1009,7 +1009,6 @@ bool editor_mode::update()
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
     render_gizmo();
 
-    // --- path editing: course and point handles of the selected path, designed route ---
     if (selected_track())
         draw_track_overlay();
     if (route_active())
@@ -2245,7 +2244,6 @@ void editor_mode::render_gizmo()
         return;
     }
 
-    // route design: the gizmo moves the selected vertex of the designed alignment
     if (route_active())
     {
         render_route_gizmo();
@@ -2258,7 +2256,6 @@ void editor_mode::render_gizmo()
         return;
     }
 
-    // paths aren't transformed as a whole node, they're edited through their source data
     if (selected_track())
     {
         render_track_gizmo();
@@ -2690,7 +2687,6 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         break;
 
     case GLFW_KEY_ESCAPE:
-        // track mode: release the selected point handle, so the gizmo moves the whole path again
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK)
         {
             m_track_point = {};
@@ -2786,7 +2782,6 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                 return;
             }
 
-            // in track mode the left button selects a point handle of the selected path, or another path
             if (mode == nodebank_panel::TRACK)
             {
                 if (false == ImGuizmo::IsOver() && false == pick_route_vertex() && false == pick_track_handle())
