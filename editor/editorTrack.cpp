@@ -1039,6 +1039,46 @@ bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance
 	if (Curve.transition_in + Curve.transition_out >= std::accumulate(lengths.begin(), lengths.end(), 0.0))
 		Curve.transition_in = Curve.transition_out = 0.0;
 	Curve.radius = smallest;
+	std::vector<std::pair<double, double>> arcs;
+	for (std::size_t i = 0; i < run.size(); ++i)
+	{
+		if (varying[i])
+			continue;
+		auto const radius{path_radius(run[i].first->m_paths.front(), 0.5)};
+		if (radius <= 0.0)
+			continue;
+		if (false == arcs.empty() && std::abs(arcs.back().first - radius) < 0.05 * radius)
+			arcs.back().second += lengths[i];
+		else
+			arcs.emplace_back(radius, lengths[i]);
+	}
+	if (arcs.size() >= 2 && Curve.reversals == 0)
+	{
+		auto const &first{arcs.front()};
+		auto const &last{arcs.back()};
+		if (std::abs(first.first - last.first) > 0.1 * std::min(first.first, last.first))
+		{
+			Curve.compound = true;
+			Curve.radius = first.first;
+			Curve.radius2 = last.first;
+			auto const turnfirst{first.second / first.first};
+			auto const turnlast{last.second / last.first};
+			Curve.split = turnfirst / std::max(1e-9, turnfirst + turnlast);
+			double middle{0.0};
+			bool inside{false};
+			for (std::size_t i = 0; i < run.size(); ++i)
+			{
+				if (false == varying[i])
+				{
+					inside = true;
+					continue;
+				}
+				if (inside && i + 1 < run.size() && std::any_of(varying.begin() + i + 1, varying.end(), [](bool const Varying) { return false == Varying; }))
+					middle += lengths[i];
+			}
+			Curve.transition_middle = middle;
+		}
+	}
 	Curve.from = run.front().first;
 	Curve.to = run.back().first;
 	return true;

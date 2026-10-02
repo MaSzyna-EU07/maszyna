@@ -49,6 +49,10 @@ struct vertex
 	double elevation{0.0};
 	double vertical_radius{0.0};
 	bool reverse_turn{false};
+	bool compound{false};
+	double radius2{600.0};
+	double transition_middle{0.0};
+	double split{0.5};
 };
 
 struct design
@@ -85,7 +89,8 @@ enum class element_kind
 	straight,
 	transition_in,
 	arc,
-	transition_out
+	transition_out,
+	spiral
 };
 
 struct element
@@ -98,6 +103,9 @@ struct element
 	double transition{0.0};
 	int turn{0};
 	double cant{0.0};
+	double curvature_start{0.0};
+	double curvature_end{0.0};
+	double curvature_peak{0.0};
 	glm::dvec2 origin{0.0};
 	glm::dvec2 direction{0.0, 1.0};
 	glm::dvec2 normal{0.0};
@@ -107,6 +115,7 @@ struct curve_report
 {
 	int vertex{-1};
 	double radius{0.0};
+	double radius2{0.0};
 	double transition_in{0.0};
 	double transition_out{0.0};
 	double deflection{0.0};

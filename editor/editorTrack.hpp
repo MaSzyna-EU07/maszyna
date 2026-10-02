@@ -128,6 +128,10 @@ class editor_track
 		double transition_in{0.0};
 		double transition_out{0.0};
 		double cant{0.0};
+		bool compound{false};
+		double radius2{0.0};
+		double transition_middle{0.0};
+		double split{0.5};
 	};
 	static bool find_curve(TTrack &Track, straight_tolerance const &Tolerance, double const Gauge, curve &Curve);
 	struct switch_template

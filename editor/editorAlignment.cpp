@@ -94,6 +94,58 @@ local_point transition_point(transition_shape const Shape, double const Length, 
 	return {x * h / 3.0, y * h / 3.0, angle(distance)};
 }
 
+local_point spiral_point(double const Start, double const End, double const Length, double const Distance)
+{
+	if (Distance <= 0.0)
+		return {};
+	auto const heading = [&](double const S) { return Start * S + (End - Start) * S * S / (2.0 * std::max(Length, 1e-9)); };
+	int const steps{std::max(8, static_cast<int>(std::ceil(Distance / 0.5)) * 2)};
+	double const h{Distance / steps};
+	double x{0.0}, y{0.0};
+	for (int i = 0; i <= steps; ++i)
+	{
+		double const weight = (i == 0 || i == steps) ? 1.0 : (i % 2 ? 4.0 : 2.0);
+		auto const a{heading(i * h)};
+		x += weight * std::cos(a);
+		y += weight * std::sin(a);
+	}
+	return {x * h / 3.0, y * h / 3.0, heading(Distance)};
+}
+
+struct compound_curve
+{
+	std::vector<std::array<double, 3>> segments;
+	local_point end;
+	double shortened{1.0};
+};
+
+compound_curve build_compound(double const Deflection, double const Radius1, double const Radius2, double const Lengthin, double const Lengthmiddle, double const Lengthout, double const Split)
+{
+	compound_curve result;
+	auto const k1{1.0 / Radius1};
+	auto const k2{1.0 / Radius2};
+	auto const transitions{(k1 * Lengthin + (k1 + k2) * Lengthmiddle + k2 * Lengthout) * 0.5};
+	if (transitions > Deflection)
+		result.shortened = Deflection / transitions * (1.0 - 1e-9);
+	auto const f{result.shortened};
+	auto const arcs{std::max(0.0, Deflection - transitions * f)};
+	auto const split{std::clamp(Split, 0.0, 1.0)};
+	std::array<double, 3> const segments[] = {{0.0, k1, Lengthin * f}, {k1, k1, split * arcs / k1}, {k1, k2, Lengthmiddle * f}, {k2, k2, (1.0 - split) * arcs / k2}, {k2, 0.0, Lengthout * f}};
+	double x{0.0}, y{0.0}, heading{0.0};
+	for (auto const &segment : segments)
+	{
+		if (segment[2] < 1e-6)
+			continue;
+		result.segments.push_back(segment);
+		auto const local{spiral_point(segment[0], segment[1], segment[2], segment[2])};
+		x += local.x * std::cos(heading) - local.y * std::sin(heading);
+		y += local.x * std::sin(heading) + local.y * std::cos(heading);
+		heading += local.angle;
+	}
+	result.end = {x, y, heading};
+	return result;
+}
+
 void element_point(element const &Element, transition_shape const Shape, double const Distance, glm::dvec2 &Position, glm::dvec2 &Direction)
 {
 	switch (Element.kind)
@@ -116,6 +168,13 @@ void element_point(element const &Element, transition_shape const Shape, double 
 		Direction = Element.direction * std::cos(local.angle) + Element.normal * std::sin(local.angle);
 		break;
 	}
+	case element_kind::spiral:
+	{
+		auto const local{spiral_point(Element.curvature_start, Element.curvature_end, Element.length, Distance)};
+		Position = Element.origin + Element.direction * local.x + Element.normal * local.y;
+		Direction = Element.direction * std::cos(local.angle) + Element.normal * std::sin(local.angle);
+		break;
+	}
 	case element_kind::transition_out:
 	{
 		auto const local{transition_point(Shape, Element.transition, Element.radius, 1.0 - Distance / Element.transition)};
@@ -133,6 +192,11 @@ double element_cant(element const &Element, double const Distance)
 	case element_kind::transition_in: return Element.cant * Distance / Element.transition;
 	case element_kind::transition_out: return Element.cant * (1.0 - Distance / Element.transition);
 	case element_kind::arc: return Element.cant;
+	case element_kind::spiral:
+	{
+		auto const curvature{Element.curvature_start + (Element.curvature_end - Element.curvature_start) * Distance / std::max(Element.length, 1e-9)};
+		return Element.curvature_peak > 0.0 ? Element.cant * curvature / Element.curvature_peak : 0.0;
+	}
 	default: return 0.0;
 	}
 }
@@ -164,6 +228,11 @@ std::size_t element_pieces(element const &Element, transition_shape const Shape)
 	case element_kind::transition_in:
 	case element_kind::transition_out:
 		return Shape == transition_shape::cubic_parabola ? 1 : static_cast<std::size_t>(std::max(1.0, std::ceil(Element.length / 20.0 - 1e-9)));
+	case element_kind::spiral:
+	{
+		auto const turn{(Element.curvature_start + Element.curvature_end) * 0.5 * Element.length};
+		return static_cast<std::size_t>(std::max({1.0, std::ceil(turn / (10.0 * kPi / 180.0) - 1e-9), std::ceil(Element.length / 20.0 - 1e-9)}));
+	}
 	default:
 		return 1;
 	}
@@ -290,6 +359,9 @@ result compute(design const &Design)
 		double tangent_in{0.0};
 		double tangent_out{0.0};
 		double deflection{0.0};
+		bool compound{false};
+		double radius2{0.0};
+		double transition_middle{0.0};
 		std::function<void(double, double &, double &)> tangents;
 	};
 	std::vector<fitted> fits(count);
@@ -313,6 +385,25 @@ result compute(design const &Design)
 		{
 			r.errors.emplace_back(format("Vertex %zu: a turn of about 180 or 360 degrees needs one more vertex", k + 1));
 			return r;
+		}
+		if (vertex.compound)
+		{
+			fit.compound = true;
+			fit.radius2 = std::max(1.0, vertex.radius2);
+			fit.transition_middle = std::max(0.0, vertex.transition_middle);
+			fit.deflection = deflection;
+			fit.tangents = [&, k, directionin, directionout, side](double const Radius, double &Tangentin, double &Tangentout) {
+				auto const &own{fits[k]};
+				auto const scale{Radius / own.radius};
+				auto const shape{build_compound(own.deflection, Radius, own.radius2 * scale, own.transition_in * scale, own.transition_middle * scale, own.transition_out * scale, Design.vertices[k].split)};
+				auto const normalin{perpendicular(directionin) * static_cast<double>(side)};
+				auto const end{directionin * shape.end.x + normalin * shape.end.y};
+				auto const along{cross(directionout, end) / cross(directionout, directionin)};
+				Tangentin = std::max(0.0, along);
+				Tangentout = std::max(0.0, glm::dot(end - directionin * along, directionout));
+			};
+			fit.tangents(fit.radius, fit.tangent_in, fit.tangent_out);
+			continue;
 		}
 		auto const angles = [&](double const Factor) {
 			return transition_point(Design.shape, fit.transition_in * Factor, fit.radius, 1.0).angle + transition_point(Design.shape, fit.transition_out * Factor, fit.radius, 1.0).angle;
@@ -382,7 +473,7 @@ result compute(design const &Design)
 		}
 		low = high * (1.0 + 1e-9);
 		high = fit.radius;
-		if (fits_budget(low))
+		if (false == fit.compound && fits_budget(low))
 		{
 			for (int i = 0; i < 60; ++i)
 			{
@@ -394,7 +485,9 @@ result compute(design const &Design)
 		else
 		{
 			fit.radius *= scales[k];
+			fit.radius2 *= scales[k];
 			fit.transition_in *= scales[k];
+			fit.transition_middle *= scales[k];
 			fit.transition_out *= scales[k];
 		}
 		r.warnings.emplace_back(format("Vertex %zu: R reduced from %.1f to %.1f m, transitions to %.1f / %.1f m, to fit between the ends", k + 1, Design.vertices[k].radius, fit.radius, fit.transition_in, fit.transition_out));
@@ -429,6 +522,71 @@ result compute(design const &Design)
 		{
 			r.errors.emplace_back(format("Vertex %zu: a turn of about 180 or 360 degrees needs one more vertex", k + 1));
 			return r;
+		}
+		if (fit.compound)
+		{
+			auto const shape{build_compound(deflection, fit.radius, fit.radius2, fit.transition_in, fit.transition_middle, fit.transition_out, vertex.split)};
+			if (shape.shortened < 1.0)
+				r.warnings.emplace_back(format("Vertex %zu: transition curves shortened to fit the deflection angle", k + 1));
+			auto const normalin{perpendicular(directionin) * static_cast<double>(side)};
+			auto const endoffset{directionin * shape.end.x + normalin * shape.end.y};
+			auto const along{cross(directionout, endoffset) / cross(directionout, directionin)};
+			auto const curvestart{position - directionin * along};
+			auto const straight{glm::dot(curvestart - cursor, directionin)};
+			if (straight < -1e-4)
+			{
+				if (k == 0)
+					r.errors.emplace_back(format("Vertex 1: the curve starts %.2f m before the fixed start", -straight));
+				else
+					r.errors.emplace_back(format("Curves of vertices %zu and %zu overlap by %.2f m", k, k + 1, -straight));
+			}
+			push_straight(cursor, directionin, straight);
+			auto const startchainage{chainage};
+			glm::dvec2 origin{curvestart};
+			glm::dvec2 heading{directionin};
+			auto const peak{std::max(1.0 / fit.radius, 1.0 / fit.radius2)};
+			for (auto const &segment : shape.segments)
+			{
+				element piece;
+				piece.kind = element_kind::spiral;
+				piece.vertex = static_cast<int>(k);
+				piece.turn = side;
+				piece.cant = std::max(0.0, vertex.cant);
+				piece.curvature_start = segment[0];
+				piece.curvature_end = segment[1];
+				piece.curvature_peak = peak;
+				piece.radius = std::max(segment[0], segment[1]) > 0.0 ? 1.0 / std::max(segment[0], segment[1]) : 0.0;
+				piece.length = segment[2];
+				piece.origin = origin;
+				piece.direction = heading;
+				piece.normal = perpendicular(heading) * static_cast<double>(side);
+				push(piece);
+				auto const local{spiral_point(segment[0], segment[1], segment[2], segment[2])};
+				origin += heading * local.x + piece.normal * local.y;
+				heading = rotate(heading, side * local.angle);
+			}
+			vertexchainage[k] = (startchainage + chainage) * 0.5;
+			cursor = origin;
+
+			curve_report report;
+			report.vertex = static_cast<int>(k);
+			report.radius = fit.radius;
+			report.radius2 = fit.radius2;
+			report.transition_in = fit.transition_in * shape.shortened;
+			report.transition_out = fit.transition_out * shape.shortened;
+			report.deflection = deflection;
+			report.arc_length = chainage - startchainage;
+			report.tangent_in = glm::distance(position, curvestart);
+			report.tangent_out = glm::distance(position, cursor);
+			auto const sharpest{std::min(fit.radius, fit.radius2)};
+			report.unbalanced = unbalanced_acceleration(Design.speed, sharpest, std::max(0.0, vertex.cant), Design.norms);
+			report.recommended = recommend(Design.speed, sharpest, Design.norms);
+			r.curves.push_back(report);
+			if (sharpest < report.recommended.radius_min - 1e-6)
+				r.warnings.emplace_back(format("Vertex %zu: R %.0f m is below the minimum %.0f m for %.0f km/h", k + 1, sharpest, report.recommended.radius_min, Design.speed));
+			if (report.unbalanced > Design.norms.unbalanced + 1e-6)
+				r.warnings.emplace_back(format("Vertex %zu: unbalanced acceleration %.2f m/s2 exceeds %.2f m/s2", k + 1, report.unbalanced, Design.norms.unbalanced));
+			continue;
 		}
 		auto const radius{fit.radius};
 		auto const lengthin{fit.transition_in};
@@ -748,7 +906,7 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 		}
 		default:
 		{
-			if (Design.shape == transition_shape::cubic_parabola)
+			if (Design.shape == transition_shape::cubic_parabola && e.kind != element_kind::spiral)
 			{
 				std::array<glm::dvec2, 4> const local{glm::dvec2{0.0, 0.0}, glm::dvec2{e.transition / 3.0, 0.0}, glm::dvec2{e.transition * 2.0 / 3.0, 0.0}, glm::dvec2{e.transition, e.transition * e.transition / (6.0 * e.radius)}};
 				auto const a{e.kind == element_kind::transition_in ? piece.from / e.transition : 1.0 - piece.from / e.transition};
@@ -785,6 +943,11 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 		path.rolls[0] = roll(element_cant(e, piece.from));
 		path.rolls[1] = roll(element_cant(e, piece.to));
 		path.radius = e.kind == element_kind::straight ? 0.f : static_cast<float>(e.radius);
+		if (e.kind == element_kind::spiral)
+		{
+			auto const curvature{e.curvature_start + (e.curvature_end - e.curvature_start) * (piece.from + piece.to) * 0.5 / std::max(e.length, 1e-9)};
+			path.radius = curvature > 1e-9 ? static_cast<float>(1.0 / curvature) : 0.f;
+		}
 		result.push_back(path);
 	}
 	return result;

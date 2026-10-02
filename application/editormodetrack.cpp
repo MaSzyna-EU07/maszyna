@@ -750,6 +750,13 @@ bool editor_mode::route_from_curve(TTrack &Track)
 	if (curve.reversals == 0)
 	{
 		vertex.reverse_turn = std::abs(curve.turn) > glm::pi<double>();
+		if (curve.compound)
+		{
+			vertex.compound = true;
+			vertex.radius2 = std::round(curve.radius2);
+			vertex.transition_middle = std::round(curve.transition_middle);
+			vertex.split = curve.split;
+		}
 		design.vertices = {vertex};
 	}
 	else
@@ -932,8 +939,12 @@ void editor_mode::draw_route_overlay() const
 			drawlist->AddCircleFilled(screen, 6.0f, IM_COL32(60, 230, 90, 255), 4);
 			if (i == route.grip)
 				drawlist->AddCircle(screen, 11.0f, IM_COL32(255, 255, 255, 255), 16, 2.5f);
-			char radius[24];
-			std::snprintf(radius, sizeof(radius), "R %.0f", i < static_cast<int>(result.curves.size()) ? result.curves[i].radius : design.vertices[i].radius);
+			char radius[40];
+			auto const *report{i < static_cast<int>(result.curves.size()) ? &result.curves[i] : nullptr};
+			if (report != nullptr && report->radius2 > 0.0)
+				std::snprintf(radius, sizeof(radius), "R %.0f / %.0f", report->radius, report->radius2);
+			else
+				std::snprintf(radius, sizeof(radius), "R %.0f", report != nullptr ? report->radius : design.vertices[i].radius);
 			drawlist->AddText(ImVec2(screen.x + 9.0f, screen.y + 4.0f), IM_COL32(60, 230, 90, 255), radius);
 		}
 		char label[8];
@@ -1153,7 +1164,21 @@ void editor_mode::render_route_ui()
 			changed |= ImGui::InputScalarN("Position (x, z)", ImGuiDataType_Double, glm::value_ptr(vertex.position), 2, nullptr, nullptr, "%.2f");
 			ImGui::PopItemWidth();
 		}
-		changed |= ImGui::InputDouble("Radius R (m)", &vertex.radius, 0.0, 0.0, "%.1f");
+		changed |= ImGui::InputDouble(vertex.compound ? "Radius R1 (m)" : "Radius R (m)", &vertex.radius, 0.0, 0.0, "%.1f");
+		changed |= ImGui::Checkbox("Compound curve (two radii)", &vertex.compound);
+		if (vertex.compound)
+		{
+			changed |= ImGui::InputDouble("Radius R2 (m)", &vertex.radius2, 0.0, 0.0, "%.1f");
+			changed |= ImGui::InputDouble("Transition R1-R2 (m)", &vertex.transition_middle, 0.0, 0.0, "%.1f");
+			float split{static_cast<float>(vertex.split)};
+			if (ImGui::SliderFloat("Share of R1", &split, 0.0f, 1.0f, "%.2f"))
+			{
+				vertex.split = split;
+				changed = true;
+			}
+			vertex.radius2 = std::max(1.0, vertex.radius2);
+			vertex.transition_middle = std::max(0.0, vertex.transition_middle);
+		}
 		changed |= ImGui::InputDouble("Transition in (m)", &vertex.transition_in, 0.0, 0.0, "%.1f");
 		changed |= ImGui::InputDouble("Transition out (m)", &vertex.transition_out, 0.0, 0.0, "%.1f");
 		changed |= ImGui::InputDouble("Cant (mm)", &vertex.cant, 0.0, 0.0, "%.0f");
