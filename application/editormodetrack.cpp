@@ -1640,6 +1640,7 @@ void editor_mode::render_straights_ui()
 	if (ImGui::InputDouble("Angle tolerance (deg)", &angle, 0.0, 0.0, "%.4f"))
 		state.tolerance.angle = glm::radians(std::max(0.0, angle));
 	ImGui::InputDouble("Offset tolerance (m)", &state.tolerance.offset, 0.0, 0.0, "%.3f");
+	ImGui::InputDouble("Treat as straight above R (m)", &state.tolerance.radius, 0.0, 0.0, "%.0f");
 	ImGui::InputDouble("Minimum length (m)", &state.minimum_length, 0.0, 0.0, "%.0f");
 	ImGui::PopItemWidth();
 	if (ImGui::Button("Recognize straights in the scenery"))

@@ -746,7 +746,9 @@ bool editor_track::find_chain(TTrack *From, TTrack *To, chain &Chain, std::strin
 		}
 		Chain.length += track->Length();
 		Chain.velocity = std::max(Chain.velocity, velocity(*track));
-		auto const radius{path_radius(track->m_paths.front(), 0.5)};
+		auto radius{path_radius(track->m_paths.front(), 0.5)};
+		if (radius == 0.0 && track->m_paths.front().radius != 0.f)
+			radius = std::abs(track->m_paths.front().radius);
 		if (radius > 0.0 && (Chain.radius == 0.0 || radius < Chain.radius))
 			Chain.radius = radius;
 	}
@@ -789,17 +791,56 @@ double lateral_of(glm::dvec2 const &Direction, glm::dvec2 const &Offset)
 	return Direction.x * Offset.y - Direction.y * Offset.x;
 }
 
-bool plan_straight(segment_data const &Path, double const Tolerance)
+bool plan_straight(segment_data const &Path, editor_track::straight_tolerance const &Tolerance)
 {
 	auto const chord{plan_of(Path.points[segment_data::point::end] - Path.points[segment_data::point::start])};
 	auto const length{glm::length(chord)};
 	if (length < 1e-3)
 		return false;
+	auto const &control1{Path.points[segment_data::point::control1]};
+	auto const &control2{Path.points[segment_data::point::control2]};
+	if (Path.radius != 0.f && std::abs(Path.radius) < Tolerance.radius)
+		return false;
+	if (control1 == glm::dvec3{} && control2 == glm::dvec3{})
+		return true;
 	auto const direction{chord / length};
 	for (auto const index : {segment_data::point::control1, segment_data::point::control2})
-		if (std::abs(lateral_of(direction, plan_of(Path.points[index]))) > Tolerance)
+		if (std::abs(lateral_of(direction, plan_of(Path.points[index]))) > Tolerance.offset)
 			return false;
-	return true;
+	auto const tangentstart{plan_of(path_tangent(Path, false))};
+	auto const tangentend{plan_of(path_tangent(Path, true))};
+	if (glm::length(tangentstart) < 1e-9 || glm::length(tangentend) < 1e-9)
+		return false;
+	auto const a{glm::normalize(tangentstart)};
+	auto const b{glm::normalize(tangentend)};
+	auto const turn{std::abs(std::atan2(lateral_of(a, b), glm::dot(a, b)))};
+	auto const deviation{std::max(std::abs(lateral_of(direction, a)), std::abs(lateral_of(direction, b)))};
+	return turn * Tolerance.radius <= length && deviation * Tolerance.radius <= length;
+}
+
+glm::dvec2 direction_at(TTrack const &Track, glm::dvec3 const &Joint, bool const Arriving, bool &Found)
+{
+	Found = false;
+	for (auto const &path : Track.m_paths)
+	{
+		for (auto const atend : {false, true})
+		{
+			if (glm::distance(path.points[atend ? segment_data::point::end : segment_data::point::start], Joint) > kSamePoint)
+				continue;
+			auto const tangent{plan_of(path_tangent(path, atend))};
+			if (glm::length(tangent) < 1e-9)
+				continue;
+			Found = true;
+			auto const unit{glm::normalize(tangent)};
+			return (atend == Arriving) ? unit : -unit;
+		}
+	}
+	return {0.0, 1.0};
+}
+
+double signed_angle(glm::dvec2 const &From, glm::dvec2 const &To)
+{
+	return std::atan2(lateral_of(From, To), glm::dot(From, To));
 }
 
 TTrack *neighbour_at(TTrack const &Track, int const Path, bool const Atend)
@@ -851,7 +892,25 @@ bool editor_track::is_straight(TTrack const &Track, straight_tolerance const &To
 {
 	if (false == is_supported(Track) || Track.m_editorremoved)
 		return false;
-	return std::any_of(Track.m_paths.begin(), Track.m_paths.end(), [&](segment_data const &Path) { return plan_straight(Path, Tolerance.offset); });
+	if (false == std::any_of(Track.m_paths.begin(), Track.m_paths.end(), [&](segment_data const &Path) { return plan_straight(Path, Tolerance); }))
+		return false;
+	if (Track.eType != tt_Normal || Track.trPrev == nullptr || Track.trNext == nullptr)
+		return true;
+	auto const &path{Track.m_paths.front()};
+	auto const &start{path.points[segment_data::point::start]};
+	auto const &end{path.points[segment_data::point::end]};
+	auto const length{glm::length(plan_of(end - start))};
+	auto const direction{glm::normalize(plan_of(end - start))};
+	bool foundbefore, foundafter;
+	auto const before{direction_at(*Track.trPrev, start, true, foundbefore)};
+	auto const after{direction_at(*Track.trNext, end, false, foundafter)};
+	if (false == foundbefore || false == foundafter)
+		return true;
+	auto const kinkbefore{signed_angle(before, direction)};
+	auto const kinkafter{signed_angle(direction, after)};
+	if (std::abs(kinkbefore) <= Tolerance.angle || std::abs(kinkafter) <= Tolerance.angle || (kinkbefore > 0.0) != (kinkafter > 0.0))
+		return true;
+	return length / ((std::abs(kinkbefore) + std::abs(kinkafter)) * 0.5) >= Tolerance.radius;
 }
 
 editor_track::straight editor_track::find_straight(TTrack &Track, straight_tolerance const &Tolerance)
@@ -861,7 +920,7 @@ editor_track::straight editor_track::find_straight(TTrack &Track, straight_toler
 		return result;
 
 	int firstpath{0};
-	while (false == plan_straight(Track.m_paths[firstpath], Tolerance.offset))
+	while (false == plan_straight(Track.m_paths[firstpath], Tolerance))
 		++firstpath;
 	auto const &first{Track.m_paths[firstpath]};
 	auto const origin{first.points[segment_data::point::start]};
@@ -873,7 +932,7 @@ editor_track::straight editor_track::find_straight(TTrack &Track, straight_toler
 		for (int i = 0; i < static_cast<int>(Other->m_paths.size()); ++i)
 		{
 			auto const &path{Other->m_paths[i]};
-			if (false == plan_straight(path, Tolerance.offset))
+			if (false == plan_straight(path, Tolerance))
 				continue;
 			auto const &start{path.points[segment_data::point::start]};
 			auto const &end{path.points[segment_data::point::end]};
@@ -993,28 +1052,73 @@ bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance
 	std::vector<double> turns;
 	std::vector<double> lengths;
 	std::vector<bool> varying;
-	double smallest{0.0};
-	for (auto const &member : run)
+	std::vector<double> curvatures;
+	auto const incoming = [&](std::size_t const Index) {
+		auto const &path{run[Index].first->m_paths.front()};
+		auto const tangent{glm::normalize(plan_of(run[Index].second ? path_tangent(path, false) : -path_tangent(path, true)))};
+		return tangent;
+	};
+	auto const outgoing = [&](std::size_t const Index) {
+		auto const &path{run[Index].first->m_paths.front()};
+		auto const tangent{glm::normalize(plan_of(run[Index].second ? path_tangent(path, true) : -path_tangent(path, false)))};
+		return tangent;
+	};
+	auto const joint = [&](std::size_t const Index, bool const Atend) {
+		auto const &path{run[Index].first->m_paths.front()};
+		return path.points[(run[Index].second == Atend) ? segment_data::point::end : segment_data::point::start];
+	};
+	std::vector<double> kinks(run.size() + 1, 0.0);
 	{
-		auto const &path{member.first->m_paths.front()};
-		auto const tangentstart{glm::normalize(plan_of(path_tangent(path, false)))};
-		auto const tangentend{glm::normalize(plan_of(path_tangent(path, true)))};
-		auto turn{std::atan2(lateral_of(tangentstart, tangentend), glm::dot(tangentstart, tangentend))};
-		if (false == member.second)
-			turn = -turn;
-		turns.push_back(turn);
-		lengths.push_back(member.first->Length());
+		auto *before{run.front().second ? run.front().first->trPrev : run.front().first->trNext};
+		bool found{false};
+		if (before != nullptr)
+		{
+			auto const direction{direction_at(*before, joint(0, false), true, found)};
+			if (found)
+				kinks.front() = signed_angle(direction, incoming(0));
+		}
+		auto *after{run.back().second ? run.back().first->trNext : run.back().first->trPrev};
+		if (after != nullptr)
+		{
+			auto const direction{direction_at(*after, joint(run.size() - 1, true), false, found)};
+			if (found)
+				kinks.back() = signed_angle(outgoing(run.size() - 1), direction);
+		}
+		for (std::size_t i = 1; i < run.size(); ++i)
+			kinks[i] = signed_angle(outgoing(i - 1), incoming(i));
+	}
+	for (std::size_t i = 0; i < run.size(); ++i)
+	{
+		auto const &path{run[i].first->m_paths.front()};
+		auto const length{run[i].first->Length()};
+		auto const internal{signed_angle(incoming(i), outgoing(i))};
+		turns.push_back(internal + kinks[i] * 0.5 + kinks[i + 1] * 0.5);
+		lengths.push_back(length);
 		auto const radiusstart{path_radius(path, 0.0)};
 		auto const radiusend{path_radius(path, 1.0)};
 		auto const curvaturestart{radiusstart > 0.0 ? 1.0 / radiusstart : 0.0};
 		auto const curvatureend{radiusend > 0.0 ? 1.0 / radiusend : 0.0};
+		auto const middle{path_radius(path, 0.5)};
+		double curvature{middle > 0.0 ? 1.0 / middle : 0.0};
+		if (curvature == 0.0 && path.radius != 0.f)
+			curvature = 1.0 / std::abs(path.radius);
+		if (curvature == 0.0 && length > 1e-3)
+			curvature = std::abs(turns.back()) / length;
+		curvatures.push_back(curvature);
 		varying.push_back(std::abs(curvaturestart - curvatureend) > 0.1 * std::max(curvaturestart, curvatureend));
-		auto const radius{path_radius(path, 0.5)};
-		if (radius > 0.0 && (smallest == 0.0 || radius < smallest))
-			smallest = radius;
 		for (auto const roll : path.rolls)
 			Curve.cant = std::max(Curve.cant, Gauge * std::sin(std::abs(glm::radians(static_cast<double>(roll)))));
 	}
+	auto const peak{*std::max_element(curvatures.begin(), curvatures.end())};
+	for (std::size_t i = 0; i < run.size(); ++i)
+		if (curvatures[i] < 0.9 * peak)
+			varying[i] = true;
+	double smallest{0.0};
+	for (std::size_t i = 0; i < run.size(); ++i)
+		if (false == varying[i] && curvatures[i] > 0.0 && (smallest == 0.0 || 1.0 / curvatures[i] < smallest))
+			smallest = 1.0 / curvatures[i];
+	if (smallest == 0.0 && peak > 0.0)
+		smallest = 1.0 / peak;
 	int sign{0};
 	for (auto const turn : turns)
 	{
@@ -1035,11 +1139,9 @@ bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance
 	std::vector<std::pair<double, double>> arcs;
 	for (std::size_t i = 0; i < run.size(); ++i)
 	{
-		if (varying[i])
+		if (varying[i] || curvatures[i] <= 0.0)
 			continue;
-		auto const radius{path_radius(run[i].first->m_paths.front(), 0.5)};
-		if (radius <= 0.0)
-			continue;
+		auto const radius{1.0 / curvatures[i]};
 		if (false == arcs.empty() && std::abs(arcs.back().first - radius) < 0.05 * radius)
 			arcs.back().second += lengths[i];
 		else

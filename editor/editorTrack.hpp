@@ -113,6 +113,7 @@ class editor_track
 	{
 		double angle{0.0002};
 		double offset{0.02};
+		double radius{20000.0};
 	};
 	static bool is_straight(TTrack const &Track, straight_tolerance const &Tolerance);
 	static straight find_straight(TTrack &Track, straight_tolerance const &Tolerance);
