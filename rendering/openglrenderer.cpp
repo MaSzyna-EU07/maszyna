@@ -31,6 +31,23 @@ int constexpr EU07_PICKBUFFERSIZE { 1024 }; // size of (square) textures bound w
 int constexpr EU07_ENVIRONMENTBUFFERSIZE { 256 }; // size of (square) environmental cube map texture
 int constexpr EU07_REFLECTIONFIDELITYOFFSET { 250 }; // artificial increase of range for reflection pass detail reduction
 
+namespace {
+
+// returns material assigned to the submodel, resolving replacable skins. null_handle if no skin set is bound
+material_handle
+submodel_material( TSubModel const *Submodel ) {
+
+    if( Submodel->m_material >= 0 ) {
+        return Submodel->m_material;
+    }
+    return (
+        TSubModel::ReplacableSkinId != nullptr ?
+            TSubModel::ReplacableSkinId[ -Submodel->m_material ] :
+            null_handle );
+}
+
+} // namespace
+
 float const EU07_OPACITYDEFAULT { 0.5f };
 
 bool
@@ -1790,8 +1807,7 @@ opengl_renderer::Material( material_handle const Material ) const {
 opengl_material const &
 opengl_renderer::Material( TSubModel const * Submodel ) const {
 
-    auto const material { Submodel->m_material >= 0 ? Submodel->m_material : Submodel->ReplacableSkinId[ -Submodel->m_material ] };
-    return m_materials.material( material );
+    return m_materials.material( submodel_material( Submodel ) );
 }
 
 // shader methods
@@ -2768,10 +2784,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                         }
 #endif
                         // material configuration:
-                        auto const material{ (
-                            Submodel->m_material < 0 ?
-                                Submodel->ReplacableSkinId[ -Submodel->m_material ] : // zmienialne skóry
-                                Submodel->m_material ) }; // również 0
+                        auto const material{ submodel_material( Submodel ) }; // zmienialne skóry, również 0
                         // textures...
                         Bind_Material( material );
                         // ...colors and opacity...
@@ -2877,7 +2890,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                         // material configuration:
                         // textures...
                         if( Submodel->m_material < 0 ) { // zmienialne skóry
-                            Bind_Material( TSubModel::ReplacableSkinId[ -Submodel->m_material ], Submodel );
+                            Bind_Material( submodel_material( Submodel ), Submodel );
                         }
                         else {
                             // również 0
@@ -2895,7 +2908,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                         ::glColor3fv( glm::value_ptr( pick_color( m_pickcontrolsitems.size() ) ) );
                         // textures...
                         if( Submodel->m_material < 0 ) { // zmienialne skóry
-                            Bind_Material( TSubModel::ReplacableSkinId[ -Submodel->m_material ], Submodel );
+                            Bind_Material( submodel_material( Submodel ), Submodel );
                         }
                         else {
                             // również 0
@@ -2969,10 +2982,10 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                             auto const unitstate = m_unitstate;
                             switch_units( m_unitstate.diffuse, false, false );
 
-                            auto const *lightcolor {
+                            glm::vec3 const lightcolor {
                                   Submodel->DiffuseOverride.r < 0.f ? // -1 indicates no override
-                                    glm::value_ptr( Submodel->f4Diffuse ) :
-                                    glm::value_ptr( Submodel->DiffuseOverride ) };
+                                    glm::vec3( Submodel->f4Diffuse ) :
+                                    Submodel->DiffuseOverride };
 
                             // main draw call
                             if( Global.Overcast > 1.f ) {
@@ -2985,9 +2998,9 @@ opengl_renderer::Render( TSubModel *Submodel ) {
 
                                 ::glPointSize( pointsize * fogfactor );
                                 ::glColor4f(
-                                    lightcolor[ 0 ],
-                                    lightcolor[ 1 ],
-                                    lightcolor[ 2 ],
+                                    lightcolor.r,
+                                    lightcolor.g,
+                                    lightcolor.b,
                                     Submodel->fVisible * std::min( 1.f, lightlevel ) * 0.5f );
                                 ::glDepthMask( GL_FALSE );
                                 m_geometry.draw( Submodel->m_geometry.handle );
@@ -2995,9 +3008,9 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                             }
                             ::glPointSize( pointsize );
                             ::glColor4f(
-                                lightcolor[ 0 ],
-                                lightcolor[ 1 ],
-                                lightcolor[ 2 ],
+                                lightcolor.r,
+                                lightcolor.g,
+                                lightcolor.b,
                                 Submodel->fVisible * std::min( 1.f, lightlevel ) );
                             m_geometry.draw( Submodel->m_geometry.handle );
 
@@ -3843,10 +3856,7 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
 #endif
                         // material configuration:
                         // textures...
-                        auto const material { (
-                            Submodel->m_material < 0 ?
-                                Submodel->ReplacableSkinId[ -Submodel->m_material ] : // zmienialne skóry
-                                Submodel->m_material ) }; // również 0
+                        auto const material { submodel_material( Submodel ) }; // zmienialne skóry, również 0
                         // textures...
                         Bind_Material( material );
                         // ...colors and opacity...
@@ -3921,7 +3931,7 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
                         // material configuration:
                         // textures...
                         if( Submodel->m_material < 0 ) { // zmienialne skóry
-                            Bind_Material( TSubModel::ReplacableSkinId[ -Submodel->m_material ], Submodel );
+                            Bind_Material( submodel_material( Submodel ), Submodel );
                         }
                         else {
                             // również 0
@@ -3984,14 +3994,14 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
                         auto const unitstate = m_unitstate;
                         switch_units( unitstate.diffuse, false, false );
 
-                        auto const *lightcolor {
+                        glm::vec3 const lightcolor {
                             Submodel->DiffuseOverride.r < 0.f ? // -1 indicates no override
-                                glm::value_ptr( Submodel->f4Diffuse ) :
-                                glm::value_ptr( Submodel->DiffuseOverride ) };
+                                glm::vec3( Submodel->f4Diffuse ) :
+                                Submodel->DiffuseOverride };
                         ::glColor4f(
-                            lightcolor[ 0 ],
-                            lightcolor[ 1 ],
-                            lightcolor[ 2 ],
+                            lightcolor.r,
+                            lightcolor.g,
+                            lightcolor.b,
                             Submodel->fVisible * glarelevel );
 
                         // main draw call
