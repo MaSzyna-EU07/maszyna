@@ -1991,57 +1991,110 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 		TTrack *track;
 		int path;
 		double from, to;
+		bool forward;
+	};
+	auto line{Line};
+	auto const point = [&](double const Along) {
+		auto const planar{glm::dvec2{line.start.x, line.start.z} + line.direction * Along};
+		return glm::dvec3{planar.x, line.start.y + line.grade * Along, planar.y};
 	};
 	std::vector<span> spans;
-	for (std::size_t i = 0; i < Line.tracks.size(); ++i)
-	{
-		auto const &path{Line.tracks[i]->m_paths[Line.paths[i]]};
-		auto const along = [&](glm::dvec3 const &Point) { return glm::dot(glm::dvec2{Point.x - Line.start.x, Point.z - Line.start.z}, Line.direction); };
-		auto const a{along(path.points[segment_data::point::start])};
-		auto const b{along(path.points[segment_data::point::end])};
-		spans.push_back({Line.tracks[i], Line.paths[i], std::min(a, b), std::max(a, b)});
-	}
-	std::sort(spans.begin(), spans.end(), [](span const &A, span const &B) { return A.from < B.from; });
-
-	int first{-1}, last{-1};
-	for (int i = 0; i < static_cast<int>(spans.size()); ++i)
-	{
-		if (spans[i].to > From && spans[i].from < To)
+	auto const collect = [&]() {
+		spans.clear();
+		for (std::size_t i = 0; i < line.tracks.size(); ++i)
 		{
-			if (first < 0)
-				first = i;
-			last = i;
+			auto const &path{line.tracks[i]->m_paths[line.paths[i]]};
+			auto const along = [&](glm::dvec3 const &Point) { return glm::dot(glm::dvec2{Point.x - line.start.x, Point.z - line.start.z}, line.direction); };
+			auto const a{along(path.points[segment_data::point::start])};
+			auto const b{along(path.points[segment_data::point::end])};
+			spans.push_back({line.tracks[i], line.paths[i], std::min(a, b), std::max(a, b), a < b});
+		}
+		std::sort(spans.begin(), spans.end(), [](span const &A, span const &B) { return A.from < B.from; });
+	};
+	int first{-1}, last{-1};
+	auto const select = [&](double const End) {
+		first = last = -1;
+		for (int i = 0; i < static_cast<int>(spans.size()); ++i)
+		{
+			if (spans[i].to > From && spans[i].from < End)
+			{
+				if (first < 0)
+					first = i;
+				last = i;
+			}
+		}
+	};
+	collect();
+	select(To);
+	if (first < 0)
+		return;
+
+	std::vector<std::pair<TTrack *, editor_track::state>> splitstates;
+	std::vector<TTrack *> splitcreated;
+	auto end{To};
+	if (last + 1 >= static_cast<int>(spans.size()))
+	{
+		auto const final{spans.back()};
+		if (final.track->eType != tt_Normal || false == final.track->Dynamics.empty())
+		{
+			state.status = "The end of the straight can't be reshaped here";
+			return;
+		}
+		auto const length{final.to - final.from};
+		auto const cut{To < final.to - 1.0 ? std::max(To, final.from + std::min(1.0, length * 0.5)) : final.from + length * 0.7};
+		splitstates.emplace_back(final.track, editor_track::capture(*final.track));
+		editor_track::chain split;
+		split.tracks = {final.track};
+		split.forward = {final.forward};
+		std::vector<segment_data> pieces(2);
+		pieces[0].points[segment_data::point::start] = point(final.from);
+		pieces[0].points[segment_data::point::end] = point(cut);
+		pieces[1].points[segment_data::point::start] = point(cut);
+		pieces[1].points[segment_data::point::end] = point(final.to);
+		splitcreated = editor_track::relay(split, pieces);
+		line = editor_track::find_straight(*line.tracks.front(), state.tolerance);
+		collect();
+		end = std::min(To, cut);
+		select(end);
+		if (first < 0 || last + 1 >= static_cast<int>(spans.size()))
+		{
+			for (auto *track : splitcreated)
+				editor_track::retire(*track);
+			editor_track::apply(*splitstates.front().first, splitstates.front().second);
+			editor_track::commit({splitstates.front().first});
+			return;
 		}
 	}
-	if (first < 0 || last + 1 >= static_cast<int>(spans.size()))
-	{
-		state.status = "The reshaped part has to end before the end of the straight";
-		return;
-	}
+	auto const undo_split = [&]() {
+		for (auto *track : splitcreated)
+			editor_track::retire(*track);
+		for (auto const &entry : splitstates)
+		{
+			editor_track::apply(*entry.first, entry.second);
+			editor_track::commit({entry.first});
+		}
+	};
 	for (int i = first; i <= last; ++i)
 	{
 		if (spans[i].track->eType != tt_Normal)
 		{
+			undo_split();
 			state.status = "There's a switch in the reshaped part of the straight";
 			return;
 		}
 	}
 
 	editor_track::straight tail;
-	tail.direction = Line.direction;
+	tail.direction = line.direction;
 	for (int i = last + 1; i < static_cast<int>(spans.size()); ++i)
 	{
 		tail.tracks.push_back(spans[i].track);
 		tail.paths.push_back(spans[i].path);
 	}
-	auto const point = [&](double const Along) {
-		auto const planar{glm::dvec2{Line.start.x, Line.start.z} + Line.direction * Along};
-		return glm::dvec3{planar.x, Line.start.y + Line.grade * Along, planar.y};
-	};
 	tail.start = point(spans[last + 1].from);
-	tail.end = Line.end;
-	tail.length = Line.length - spans[last + 1].from;
-	tail.grade = Line.grade;
+	tail.end = line.end;
+	tail.length = line.length - spans[last + 1].from;
+	tail.grade = line.grade;
 
 	std::vector<TTrack *> chainpaths;
 	for (int i = first; i <= last; ++i)
@@ -2054,6 +2107,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 	{
 		if (false == track->Dynamics.empty())
 		{
+			undo_split();
 			state.status = "There are vehicles placed on path " + track->name();
 			return;
 		}
@@ -2072,6 +2126,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 		for (auto const &entry : states)
 			editor_track::apply(*entry.first, entry.second);
 		editor_track::commit(tracks);
+		undo_split();
 		state.status = m_route.error;
 		return;
 	}
@@ -2091,12 +2146,22 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 		for (auto const &entry : states)
 			editor_track::apply(*entry.first, entry.second);
 		editor_track::commit(tracks);
+		undo_split();
 		state.status = m_route.result.errors.empty() ? "The curve can't be fitted" : m_route.result.errors.front();
 		return;
 	}
 	auto const pieces{alignment::pieces(m_route.result, m_route.design, m_route.chain.tracks.size())};
 	auto created{editor_track::relay(m_route.chain, pieces)};
 	editor_track::commit(tracks);
+	for (auto const &entry : splitstates)
+	{
+		auto const found{std::find_if(states.begin(), states.end(), [&](auto const &State) { return State.first == entry.first; })};
+		if (found != states.end())
+			found->second = entry.second;
+		else
+			states.push_back(entry);
+	}
+	created.insert(created.begin(), splitcreated.begin(), splitcreated.end());
 	push_track_snapshot(std::move(states), std::move(created));
 	std::string error;
 	editor_track::find_chain(m_route.from, m_route.to, m_route.chain, error);
@@ -2181,7 +2246,11 @@ void editor_mode::apply_straight_tool()
 		if (std::abs(angle) < 1e-5)
 			return;
 		glm::dvec2 const pivot{state.tool_point.x, state.tool_point.z};
-		auto const reach{radius * std::tan(std::min(std::abs(angle), 3.0) * 0.5) + 200.0};
+		double speed{-1.0};
+		for (auto const *track : line.tracks)
+			speed = std::max(speed, editor_track::velocity(*track));
+		auto const transition{state.auto_transitions ? alignment::recommend(speed > 0.0 ? speed : 100.0, radius, m_route.design.norms).transition : state.transition};
+		auto const reach{radius * std::tan(std::min(std::abs(angle), 3.0) * 0.5) + transition * 0.5 + 10.0};
 		straight_reshape(line, state.tool_at - reach, state.tool_at + reach,
 			[pivot, angle](glm::dvec3 const &Point) {
 				glm::dvec2 const relative{Point.x - pivot.x, Point.z - pivot.y};
