@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <array>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -345,6 +346,15 @@ class editor_mode : public application_mode
 		double edit_length{0.0};
 		double edit_azimuth{0.0};
 		double distance{4.0};
+		double break_at{100.0};
+		double break_angle{5.0};
+		double break_radius{1000.0};
+		double shift_at{100.0};
+		double shift_length{200.0};
+		double shift_offset{4.0};
+		double curve_radius{0.0};
+		bool auto_transitions{true};
+		double transition{0.0};
 		std::string status;
 	};
 	void render_straights_ui();
@@ -356,6 +366,7 @@ class editor_mode : public application_mode
 	void straight_apply(editor_track::straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End);
 	void straights_apply(std::vector<editor_track::straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
 	bool in_straight_set(editor_track::straight const &Line) const;
+	void straight_reshape(editor_track::straight const &Line, double const From, double const To, std::function<glm::dvec3(glm::dvec3 const &)> const &Tail, double const Radius);
 	void straight_refresh();
 	straights_state m_straights;
 	enum class track_tab { straights, route, path };

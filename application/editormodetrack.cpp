@@ -1315,8 +1315,53 @@ void editor_mode::render_straights_ui()
 		}
 		ImGui::PopItemWidth();
 	}
+	if (false == line.tracks.empty())
+	{
+		ImGui::Separator();
+		ImGui::Text("Curves");
+		ImGui::PushItemWidth(100.0f);
+		ImGui::Checkbox("Transitions from the design speed", &state.auto_transitions);
+		if (false == state.auto_transitions)
+		{
+			ImGui::SameLine();
+			ImGui::InputDouble("Transition (m)", &state.transition, 0.0, 0.0, "%.1f");
+		}
+		ImGui::TextDisabled("Break: the straight turns at the given distance from its start, the rest of it follows");
+		ImGui::InputDouble("Break at (m from start)", &state.break_at, 0.0, 0.0, "%.2f");
+		ImGui::InputDouble("Angle (deg, +/- side)", &state.break_angle, 0.0, 0.0, "%.4f");
+		ImGui::InputDouble("Radius R (m)##break", &state.break_radius, 0.0, 0.0, "%.1f");
+		if (ImGui::Button("Break the straight"))
+		{
+			auto const pivot2d{glm::dvec2{line.start.x, line.start.z} + line.direction * state.break_at};
+			auto const angle{glm::radians(state.break_angle)};
+			auto const radius{std::max(1.0, state.break_radius)};
+			auto const reach{radius * std::tan(std::abs(angle) * 0.5) + 200.0};
+			straight_reshape(line, state.break_at - reach, state.break_at + reach,
+				[pivot2d, angle](glm::dvec3 const &Point) {
+					glm::dvec2 const offset{Point.x - pivot2d.x, Point.z - pivot2d.y};
+					auto const c{std::cos(angle)};
+					auto const s{std::sin(angle)};
+					return glm::dvec3{pivot2d.x + offset.x * c - offset.y * s, Point.y, pivot2d.y + offset.x * s + offset.y * c};
+				},
+				radius);
+		}
+		ImGui::TextDisabled("S-curve: the straight is shifted sideways by the offset over the given length");
+		ImGui::InputDouble("Shift from (m from start)", &state.shift_at, 0.0, 0.0, "%.2f");
+		ImGui::InputDouble("Over the length (m)", &state.shift_length, 0.0, 0.0, "%.2f");
+		ImGui::InputDouble("Offset (m, +/- side)", &state.shift_offset, 0.0, 0.0, "%.3f");
+		ImGui::InputDouble("Radius R (m)##shift", &state.curve_radius, 0.0, 0.0, "%.1f");
+		ImGui::PopItemWidth();
+		if (ImGui::Button("Shift the straight (S-curve)"))
+		{
+			glm::dvec2 const normal{-line.direction.y, line.direction.x};
+			auto const offset{normal * state.shift_offset};
+			straight_reshape(line, state.shift_at, state.shift_at + std::max(1.0, state.shift_length),
+				[offset](glm::dvec3 const &Point) { return glm::dvec3{Point.x + offset.x, Point.y, Point.z + offset.y}; },
+				state.curve_radius > 0.0 ? state.curve_radius : 100000.0);
+		}
+	}
 	if (false == state.status.empty())
-		ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "%s", state.status.c_str());
+		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", state.status.c_str());
 
 	if (false == state.set.empty())
 	{
@@ -1562,4 +1607,126 @@ void editor_mode::render_straight_gizmo()
 		state.drag_lines.clear();
 		straight_refresh();
 	}
+}
+
+void editor_mode::straight_reshape(editor_track::straight const &Line, double const From, double const To, std::function<glm::dvec3(glm::dvec3 const &)> const &Tail, double const Radius)
+{
+	auto &state{m_straights};
+	state.status.clear();
+	struct span
+	{
+		TTrack *track;
+		int path;
+		double from, to;
+	};
+	std::vector<span> spans;
+	for (std::size_t i = 0; i < Line.tracks.size(); ++i)
+	{
+		auto const &path{Line.tracks[i]->m_paths[Line.paths[i]]};
+		auto const along = [&](glm::dvec3 const &Point) { return glm::dot(glm::dvec2{Point.x - Line.start.x, Point.z - Line.start.z}, Line.direction); };
+		auto const a{along(path.points[segment_data::point::start])};
+		auto const b{along(path.points[segment_data::point::end])};
+		spans.push_back({Line.tracks[i], Line.paths[i], std::min(a, b), std::max(a, b)});
+	}
+	std::sort(spans.begin(), spans.end(), [](span const &A, span const &B) { return A.from < B.from; });
+
+	int first{-1}, last{-1};
+	for (int i = 0; i < static_cast<int>(spans.size()); ++i)
+	{
+		if (spans[i].to > From && spans[i].from < To)
+		{
+			if (first < 0)
+				first = i;
+			last = i;
+		}
+	}
+	if (first < 0 || last + 1 >= static_cast<int>(spans.size()))
+	{
+		state.status = "The reshaped part has to end before the end of the straight";
+		return;
+	}
+	for (int i = first; i <= last; ++i)
+	{
+		if (spans[i].track->eType != tt_Normal)
+		{
+			state.status = "There's a switch in the reshaped part of the straight";
+			return;
+		}
+	}
+
+	editor_track::straight tail;
+	tail.direction = Line.direction;
+	for (int i = last + 1; i < static_cast<int>(spans.size()); ++i)
+	{
+		tail.tracks.push_back(spans[i].track);
+		tail.paths.push_back(spans[i].path);
+	}
+	auto const point = [&](double const Along) {
+		auto const planar{glm::dvec2{Line.start.x, Line.start.z} + Line.direction * Along};
+		return glm::dvec3{planar.x, Line.start.y + Line.grade * Along, planar.y};
+	};
+	tail.start = point(spans[last + 1].from);
+	tail.end = Line.end;
+	tail.length = Line.length - spans[last + 1].from;
+	tail.grade = Line.grade;
+
+	std::vector<TTrack *> chainpaths;
+	for (int i = first; i <= last; ++i)
+		chainpaths.push_back(spans[i].track);
+	auto tracks{editor_track::straight_affected({tail})};
+	for (auto *track : chainpaths)
+		if (std::find(tracks.begin(), tracks.end(), track) == tracks.end())
+			tracks.push_back(track);
+	for (auto *track : tracks)
+	{
+		if (false == track->Dynamics.empty())
+		{
+			state.status = "There are vehicles placed on path " + track->name();
+			return;
+		}
+	}
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	for (auto *track : tracks)
+		states.emplace_back(track, editor_track::capture(*track));
+
+	editor_track::move_straights({tail}, {{Tail(tail.start), Tail(tail.end)}});
+
+	m_route.from = spans[first].track;
+	m_route.to = spans[last].track;
+	route_reset();
+	if (m_route.chain.tracks.empty())
+	{
+		for (auto const &entry : states)
+			editor_track::apply(*entry.first, entry.second);
+		editor_track::commit(tracks);
+		state.status = m_route.error;
+		return;
+	}
+	for (auto &vertex : m_route.design.vertices)
+	{
+		vertex.radius = Radius;
+		route_recommend(vertex);
+		if (false == state.auto_transitions)
+		{
+			vertex.transition_in = state.transition;
+			vertex.transition_out = state.transition;
+		}
+	}
+	route_update();
+	if (false == m_route.result.valid)
+	{
+		for (auto const &entry : states)
+			editor_track::apply(*entry.first, entry.second);
+		editor_track::commit(tracks);
+		state.status = m_route.result.errors.empty() ? "The curve can't be fitted" : m_route.result.errors.front();
+		return;
+	}
+	auto const pieces{alignment::pieces(m_route.result, m_route.design, m_route.chain.tracks.size())};
+	auto created{editor_track::relay(m_route.chain, pieces)};
+	editor_track::commit(tracks);
+	push_track_snapshot(std::move(states), std::move(created));
+	std::string error;
+	editor_track::find_chain(m_route.from, m_route.to, m_route.chain, error);
+	straight_refresh();
+	state.status = "Done, the curves can be adjusted in the Route design tab";
 }
