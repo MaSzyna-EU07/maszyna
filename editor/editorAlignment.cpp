@@ -217,21 +217,21 @@ glm::dvec2 blossom(std::array<glm::dvec2, 4> const &Points, double const A, doub
 	return glm::mix(s[0], s[1], C);
 }
 
-std::size_t element_pieces(element const &Element, transition_shape const Shape, int const Transitions)
+std::size_t element_pieces(element const &Element, transition_shape const Shape, int const Transitions, double const Arcangle)
 {
 	if (Element.length < 1e-3)
 		return 0;
 	switch (Element.kind)
 	{
 	case element_kind::arc:
-		return static_cast<std::size_t>(std::max(1.0, std::ceil(Element.length / Element.radius / (10.0 * kPi / 180.0) - 1e-9)));
+		return static_cast<std::size_t>(std::max(1.0, std::ceil(Element.length / Element.radius / (Arcangle * kPi / 180.0) - 1e-9)));
 	case element_kind::transition_in:
 	case element_kind::transition_out:
 		return std::max<std::size_t>(std::max(1, Transitions), Shape == transition_shape::cubic_parabola ? 1 : static_cast<std::size_t>(std::max(1.0, std::ceil(Element.length / 20.0 - 1e-9))));
 	case element_kind::spiral:
 	{
 		auto const turn{(Element.curvature_start + Element.curvature_end) * 0.5 * Element.length};
-		auto const count{static_cast<std::size_t>(std::max({1.0, std::ceil(turn / (10.0 * kPi / 180.0) - 1e-9), std::ceil(Element.length / 20.0 - 1e-9)}))};
+		auto const count{static_cast<std::size_t>(std::max({1.0, std::ceil(turn / (Arcangle * kPi / 180.0) - 1e-9), std::ceil(Element.length / 20.0 - 1e-9)}))};
 		return Element.curvature_start != Element.curvature_end ? std::max<std::size_t>(count, std::max(1, Transitions)) : count;
 	}
 	default:
@@ -855,7 +855,7 @@ std::size_t minimum_pieces(result const &Result, design const &Design)
 {
 	std::size_t count{0};
 	for (auto const &e : Result.elements)
-		count += element_pieces(e, Design.shape, Design.transition_pieces);
+		count += element_pieces(e, Design.shape, Design.transition_pieces, Design.arc_piece_angle);
 	return count;
 }
 
@@ -876,7 +876,7 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 	for (std::size_t i = 0; i < Result.elements.size(); ++i)
 	{
 		auto const &e{Result.elements[i]};
-		auto const count{element_pieces(e, Design.shape, Design.transition_pieces)};
+		auto const count{element_pieces(e, Design.shape, Design.transition_pieces, Design.arc_piece_angle)};
 		for (std::size_t j = 0; j < count; ++j)
 			spans.push_back({i, e.length * j / count, e.length * (j + 1) / count});
 	}

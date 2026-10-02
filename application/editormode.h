@@ -415,6 +415,8 @@ class editor_mode : public application_mode
 		glm::dvec2 direction{0.0, 1.0};
 		double grade{0.0};
 		glm::dvec3 mouse{0.0};
+		int path{0};
+		bool atend{true};
 	};
 	extend_tool m_extend;
 	void render_switch_ui();
@@ -422,9 +424,22 @@ class editor_mode : public application_mode
 	void finish_switch_placement();
 	std::vector<segment_data> switch_preview() const;
 	void insert_switch(editor_track::straight const &Line, double const Along, int const Direction, int const Side);
+	bool place_switch_on_straight(editor_track::straight const &Line, editor_track::switch_template const &Shape, TTrack const *Style, double const Along, int const Direction, int const Side, bool const Snap, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed);
+	struct crossover_plan
+	{
+		editor_track::straight target;
+		editor_track::switch_template shape;
+		double along{0.0};
+		int direction{1};
+		int side{1};
+		segment_data insert;
+		std::vector<segment_data> paths;
+	};
+	bool plan_crossover(crossover_plan &Plan) const;
 	bool start_extend();
 	void finish_extend();
 	std::vector<segment_data> extend_pieces() const;
+	bool extend_snap(editor_track::snap_target &Target) const;
 	void update_build_tools();
 	void draw_build_overlay() const;
 	enum class track_tab { straights, route, path, turnout };
