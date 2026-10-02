@@ -34,7 +34,6 @@ http://mozilla.org/MPL/2.0/.
 #define LOGSTOPS 1
 #define LOGBACKSCAN 0
 #define LOGPRESS 0
-#define LOGBRAKECHARGE 1
 
 // finds point of specified track nearest to specified event. returns: distance to that point from the specified end of the track
 // TODO: move this to file with all generic routines, too easy to forget it's here and it may come useful
@@ -155,6 +154,9 @@ const double HeavyPassengetTrainAcceleration = 0.20;
 const double CargoTrainAcceleration = 0.25;
 const double HeavyCargoTrainAcceleration = 0.10;
 const double PrepareTime = 2.0; //[s] przebłyski świadomości przy odpalaniu
+const double FSOverchargePipePress = 5.2;
+const double FSOverchargeTime = 2.0;
+const double FSMaxTime = 10.0;
 bool WriteLogFlag = false;
 double const deltalog = 0.05; // przyrost czasu
 
@@ -5886,10 +5888,6 @@ TController::determine_consist_state() {
 
     Ready = true; // wstępnie gotowy
     fReady = 0.0; // założenie, że odhamowany
-    fConsistMaxCRP = 0.0;
-    fConsistMinCRP = 99.0;
-    fConsistBrakedCount = 0;
-    fConsistReleaserCount = 0;
     IsConsistBraked = mvOccupied->BrakeSystem == TBrakeSystem::ElectroPneumatic && false == ForcePNBrake ? mvOccupied->BrakePress > 2.0 :
 	                                                                                                       mvOccupied->PipePress < std::max(3.9, mvOccupied->BrakePressureActual.PipePressureVal) + 0.1;
     fAccGravity = 0.0; // przyspieszenie wynikające z pochylenia
@@ -5919,9 +5917,6 @@ TController::determine_consist_state() {
 				// za dużo w zbiorniku
 				// indywidualne luzowanko
 				vehicle->BrakeReleaser(1);
-#if LOGBRAKECHARGE
-				++fConsistReleaserCount;
-#endif
 			}
 			if (bp < 0.1 && (AIControllFlag || Global.AITrainman) && false == TestFlag(vehicle->Hamulec->GetBrakeStatus(), b_dmg) // brake isn't broken
 			    && vehicle->Hamulec->GetCRP() < vehicle->PipePress - 0.1) {
@@ -5931,9 +5926,6 @@ TController::determine_consist_state() {
 			}
         }
         fReady = std::max( bp, fReady ); // szukanie najbardziej zahamowanego
-        fConsistMaxCRP = std::max( fConsistMaxCRP, vehicle->Hamulec->GetCRP() );
-        fConsistMinCRP = std::min( fConsistMinCRP, vehicle->Hamulec->GetCRP() );
-        if( bp > 0.4 ) { ++fConsistBrakedCount; }
         if( ( dy = p->VectorFront().y ) != 0.0 ) {
             // istotne tylko dla pojazdów na pochyleniu
             // ciężar razy składowa styczna grawitacji
@@ -8039,110 +8031,50 @@ void TController::control_main_pipe() {
 			BrakeLevelSet(gbh_FS);
 			// don't charge the brakes too often, or we risk overcharging
 			BrakeChargingCooldown = -1 * std::clamp(iVehicles * 3, 30, 90);
-#if LOGBRAKECHARGE
-			fBrakeChargeFSStart = ElapsedTime;
-			WriteLog( "BRAKECHARGE-FIRE " + OwnerName()
-			    + " t=" + to_string( ElapsedTime, 1 )
-			    + " Vel=" + to_string( mvOccupied->Vel, 1 )
-			    + " VelDes=" + to_string( VelDesired, 1 )
-			    + " VelNext=" + to_string( VelNext, 1 )
-			    + " AccDes=" + to_string( AccDesired, 3 )
-			    + " AbsAccS=" + to_string( AbsAccS, 3 )
-			    + " AccGrav=" + to_string( fAccGravity, 3 )
-			    + " fReady=" + to_string( fReady, 2 )
-			    + " PipeP=" + to_string( mvOccupied->PipePress, 2 )
-			    + " EqPipeP=" + to_string( mvOccupied->EqvtPipePress, 2 )
-			    + " minCRP=" + to_string( fConsistMinCRP, 2 )
-			    + " maxCRP=" + to_string( fConsistMaxCRP, 2 )
-			    + " braked=" + std::to_string( fConsistBrakedCount ) + "/" + std::to_string( iVehicles )
-			    + " releaser=" + std::to_string( fConsistReleaserCount )
-			    + " ProxDist=" + to_string( ActualProximityDist, 1 )
-			    + " nVeh=" + std::to_string( iVehicles )
-			    + " heavyCargo=" + std::to_string( IsHeavyCargoTrain ) );
-#endif
 		}
 
-#if LOGBRAKECHARGE
-		if( fBrakeChargeFSStart >= 0.0
-		 && BrakeCtrlPosition > gbh_FS + 0.5 ) {
-			WriteLog( "BRAKECHARGE-FSEND " + OwnerName()
-			    + " t=" + to_string( ElapsedTime, 1 )
-			    + " durationS=" + to_string( ElapsedTime - fBrakeChargeFSStart, 2 )
-			    + " Vel=" + to_string( mvOccupied->Vel, 1 )
-			    + " AccGrav=" + to_string( fAccGravity, 3 )
-			    + " PipeP=" + to_string( mvOccupied->PipePress, 2 )
-			    + " EqPipeP=" + to_string( mvOccupied->EqvtPipePress, 2 )
-			    + " maxCRP=" + to_string( fConsistMaxCRP, 2 ) );
-			fBrakeChargeFSStart = -1.0;
-		}
-
-		{
-			auto const wantsdepart { mvOccupied->Vel < EU07_AI_NOMOVEMENT && VelDesired > 0.0 };
-			auto const blocked { wantsdepart && ( false == Ready || fReady > 0.4 ) };
-			if( blocked ) {
-				if( fDepartBlockStart < 0.0 ) { fDepartBlockStart = ElapsedTime; }
-				if( ElapsedTime - fBrakeChargeLogTimer >= 2.0 ) {
-					fBrakeChargeLogTimer = ElapsedTime;
-					WriteLog( "BRAKECHARGE-DEPART " + OwnerName()
-					    + " t=" + to_string( ElapsedTime, 1 )
-					    + " blockedS=" + to_string( ElapsedTime - fDepartBlockStart, 1 )
-					    + " Ready=" + std::to_string( Ready )
-					    + " fReady=" + to_string( fReady, 2 )
-					    + " braked=" + std::to_string( fConsistBrakedCount ) + "/" + std::to_string( iVehicles )
-					    + " releaser=" + std::to_string( fConsistReleaserCount )
-					    + " minCRP=" + to_string( fConsistMinCRP, 2 )
-					    + " maxCRP=" + to_string( fConsistMaxCRP, 2 )
-					    + " PipeP=" + to_string( mvOccupied->PipePress, 2 )
-					    + " EqPipeP=" + to_string( mvOccupied->EqvtPipePress, 2 )
-					    + " Compr=" + to_string( mvOccupied->Compressor, 2 )
-					    + " BCP=" + to_string( BrakeCtrlPosition, 2 ) );
-				}
-			}
-			else if( fDepartBlockStart >= 0.0 ) {
-				WriteLog( "BRAKECHARGE-DEPARTOK " + OwnerName()
-				    + " t=" + to_string( ElapsedTime, 1 )
-				    + " blockedTotalS=" + to_string( ElapsedTime - fDepartBlockStart, 1 )
-				    + " fReady=" + to_string( fReady, 2 )
-				    + " maxCRP=" + to_string( fConsistMaxCRP, 2 )
-				    + " PipeP=" + to_string( mvOccupied->PipePress, 2 ) );
-				fDepartBlockStart = -1.0;
-			}
-		}
-#endif
-
-#if LOGBRAKECHARGE
-        if( ( std::abs( fAccGravity ) > 0.01
-           || ( mvOccupied->Vel < 1.0 && fReady > 0.3 ) )
-         && ElapsedTime - fBrakeChargeLogTimer >= 2.0 ) {
-            fBrakeChargeLogTimer = ElapsedTime;
-            WriteLog( "BRAKECHARGE-STATE " + OwnerName()
-                + " t=" + to_string( ElapsedTime, 1 )
-                + " Vel=" + to_string( mvOccupied->Vel, 1 )
-                + " VelDes=" + to_string( VelDesired, 1 )
-                + " VelNext=" + to_string( VelNext, 1 )
-                + " AccDes=" + to_string( AccDesired, 3 )
-                + " AbsAccS=" + to_string( AbsAccS, 3 )
-                + " AccGrav=" + to_string( fAccGravity, 3 )
-                + " fReady=" + to_string( fReady, 2 )
-                + " braked=" + std::to_string( fConsistBrakedCount ) + "/" + std::to_string( iVehicles )
-                + " releaser=" + std::to_string( fConsistReleaserCount )
-                + " minCRP=" + to_string( fConsistMinCRP, 2 )
-                + " maxCRP=" + to_string( fConsistMaxCRP, 2 )
-                + " BCP=" + to_string( BrakeCtrlPosition, 2 )
-                + " PipeP=" + to_string( mvOccupied->PipePress, 2 )
-                + " EqPipeP=" + to_string( mvOccupied->EqvtPipePress, 2 )
-                + " Compr=" + to_string( mvOccupied->Compressor, 2 )
-                + " Cooldown=" + to_string( BrakeChargingCooldown, 1 )
-                + " ProxDist=" + to_string( ActualProximityDist, 1 ) );
-        }
-#endif
+        update_brake_charging();
 
         if( mvOccupied->Compressor < 5.0
          || ( BrakeCtrlPosition < gbh_RP
-           && mvOccupied->EqvtPipePress > (fReady < 0.25 ? 5.1 : 5.2) ) ) {
+           && ( mvOccupied->EqvtPipePress > (fReady < 0.25 ? 5.1 : 5.2) || is_brake_charging_done() ) ) ) {
             cue_action( driver_hint::trainbrakerelease );
         }
     }
+}
+
+void TController::update_brake_charging() {
+
+    if( std::abs( BrakeCtrlPosition - gbh_FS ) >= 0.5 ) {
+        BrakeChargingStart = -1.0;
+        BrakeChargingPipeOverchargeStart.clear();
+        return;
+    }
+    if( BrakeChargingStart < 0.0 ) {
+        BrakeChargingStart = ElapsedTime;
+    }
+    for( auto const *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
+        auto const isovercharged {
+            vehicle->MoverParameters != mvOccupied
+         && vehicle->MoverParameters->PipePress > FSOverchargePipePress };
+        if( isovercharged ) {
+            BrakeChargingPipeOverchargeStart.try_emplace( vehicle, ElapsedTime );
+        }
+        else {
+            BrakeChargingPipeOverchargeStart.erase( vehicle );
+        }
+    }
+}
+
+bool TController::is_brake_charging_done() const {
+
+    if( BrakeChargingStart < 0.0 ) {
+        return false;
+    }
+    return ElapsedTime - BrakeChargingStart > FSMaxTime
+        || std::ranges::any_of(
+            BrakeChargingPipeOverchargeStart,
+            [this]( auto const &Vehicle ) { return ElapsedTime - Vehicle.second > FSOverchargeTime; } );
 }
 
 void
