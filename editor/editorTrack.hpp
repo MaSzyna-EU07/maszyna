@@ -144,6 +144,8 @@ class editor_track
 	};
 	static std::vector<switch_template> standard_switch_templates();
 	static std::vector<switch_template> find_switch_templates();
+	static TTrack *load_path(std::string const &Text, TTrack const &Template);
+	static TTrack *create_path(TTrack const &Style, segment_data const &Path);
 	static std::vector<segment_data> place_switch(switch_template const &Template, glm::dvec3 const &Origin, glm::dvec2 const &Direction, int const Side, double const Grade);
 	static TTrack *create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, TTrack const &Style);
 	static void move_straights(std::vector<straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
@@ -169,6 +171,5 @@ class editor_track
 	static void store_switch_path(TTrack &Switch, int const Path);
 	static void rebuild_geometry(TTrack &Track);
 	static TTrack *clone(TTrack const &Template);
-	static TTrack *load_path(std::string const &Text, TTrack const &Template);
 	static void move_straight(straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End, std::function<bool(TTrack const *)> const &Member);
 };

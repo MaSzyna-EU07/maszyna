@@ -1583,6 +1583,7 @@ void editor_mode::render_straights_ui()
 	}
 	if (false == state.status.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", state.status.c_str());
+	render_switch_ui();
 
 	if (false == state.set.empty())
 	{
@@ -2091,8 +2092,14 @@ void editor_mode::delete_selected_track()
 void editor_mode::draw_track_hints()
 {
 	std::string hint;
-	if (m_track_tab == track_tab::straights)
-		hint = current_straight().tracks.empty() ? "LMB: select a straight or a curve" : "Drag the ends or the middle of the straight   Ctrl+drag: break   Shift+drag: S-curve   Alt+click: add to the set   Del: delete path";
+	if (m_extend.active)
+		hint = "Drag: curve through the cursor, along the end: straight   Ctrl: straight";
+	else if (m_switch.placing)
+		hint = "Drag along the straight to set the direction of the switch, sideways to set its side";
+	else if (m_switch.armed >= 0 && m_track_tab == track_tab::straights)
+		hint = "Press on the selected straight where the switch starts and drag";
+	else if (m_track_tab == track_tab::straights)
+		hint = current_straight().tracks.empty() ? "LMB: select a straight or a curve" : "Drag the ends or the middle   Ctrl+drag: break   Shift+drag: S-curve   Alt+click: add to the set   Drag from a red ring: new path   Del: delete";
 	else if (m_track_tab == track_tab::route)
 		hint = m_route.chain.tracks.empty() ? "LMB: select a curve" : "Drag the vertex (yellow) or the radius grip (green), the change is applied on release   Ctrl+Z: undo";
 	else
@@ -2104,4 +2111,334 @@ void editor_mode::draw_track_hints()
 	auto const size{ImGui::CalcTextSize(hint.c_str())};
 	drawlist->AddRectFilled(ImVec2(position.x - 6.0f, position.y - 4.0f), ImVec2(position.x + size.x + 6.0f, position.y + size.y + 4.0f), IM_COL32(0, 0, 0, 150), 4.0f);
 	drawlist->AddText(position, IM_COL32(255, 255, 255, 230), hint.c_str());
+}
+
+void editor_mode::update_build_tools()
+{
+	glm::dvec3 const ground{Global.pCamera.Pos + GfxRenderer->Mouse_Position()};
+	if (m_extend.active)
+		m_extend.mouse = ground;
+	if (m_switch.placing)
+		m_switch.mouse = ground;
+}
+
+bool editor_mode::start_extend()
+{
+	auto *track{selected_track()};
+	if (track == nullptr || track->eType != tt_Normal || false == editor_track::is_supported(*track) || false == track->Dynamics.empty())
+		return false;
+	screen_projection const projection;
+	ImVec2 const mouse = ImGui::GetIO().MousePos;
+	auto const &path{track->m_paths.front()};
+	for (auto const atend : {false, true})
+	{
+		editor_track::point_ref const point{0, atend ? editor_track::point_kind::end : editor_track::point_kind::start};
+		if (editor_track::is_connected(*track, point))
+			continue;
+		auto const position{editor_track::point_position(*track, point)};
+		ImVec2 screen;
+		if (false == projection.project(position, screen))
+			continue;
+		if ((screen.x - mouse.x) * (screen.x - mouse.x) + (screen.y - mouse.y) * (screen.y - mouse.y) > kHandleRadius * kHandleRadius * 1.5f)
+			continue;
+		auto const &start{path.points[segment_data::point::start]};
+		auto const &end{path.points[segment_data::point::end]};
+		auto const &control1{path.points[segment_data::point::control1]};
+		auto const &control2{path.points[segment_data::point::control2]};
+		glm::dvec3 tangent;
+		if (atend)
+			tangent = control2 != glm::dvec3{} ? -control2 : end - (start + control1);
+		else
+			tangent = -(control1 != glm::dvec3{} ? control1 : (end + control2) - start);
+		glm::dvec2 const planar{tangent.x, tangent.z};
+		if (glm::length(planar) < 1e-6)
+			return false;
+		m_extend.active = true;
+		m_extend.track = track;
+		m_extend.point = position;
+		m_extend.direction = glm::normalize(planar);
+		m_extend.grade = tangent.y / glm::length(planar);
+		m_extend.mouse = position;
+		return true;
+	}
+	return false;
+}
+
+std::vector<segment_data> editor_mode::extend_pieces() const
+{
+	std::vector<segment_data> result;
+	auto const &tool{m_extend};
+	glm::dvec2 const offset{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
+	auto const chord{glm::length(offset)};
+	if (chord < 0.5)
+		return result;
+	auto const &direction{tool.direction};
+	auto const along{glm::dot(offset, direction)};
+	auto const lateral{direction.x * offset.y - direction.y * offset.x};
+	auto const height = [&](double const Distance) { return tool.point.y + tool.grade * Distance; };
+	if (ImGui::GetIO().KeyCtrl || std::abs(lateral) < 0.005 * chord + 0.05)
+	{
+		if (along < 0.5)
+			return result;
+		segment_data path;
+		path.points[segment_data::point::start] = tool.point;
+		path.points[segment_data::point::end] = {tool.point.x + direction.x * along, height(along), tool.point.z + direction.y * along};
+		result.push_back(path);
+		return result;
+	}
+	auto const angle{2.0 * std::atan2(std::abs(lateral), along)};
+	auto const radius{chord / (2.0 * std::sin(angle * 0.5))};
+	double const side{lateral > 0.0 ? 1.0 : -1.0};
+	glm::dvec2 const centre{glm::dvec2{tool.point.x, tool.point.z} + glm::dvec2{-direction.y, direction.x} * (side * radius)};
+	auto const count{std::max(1, static_cast<int>(std::ceil(angle / glm::radians(10.0) - 1e-9)))};
+	auto const step{angle / count};
+	auto const handle{4.0 / 3.0 * std::tan(step / 4.0) * radius};
+	auto const turn = [&](glm::dvec2 const &Vector, double const Angle) {
+		auto const c{std::cos(Angle)};
+		auto const s{std::sin(Angle)};
+		return glm::dvec2{Vector.x * c - Vector.y * s, Vector.x * s + Vector.y * c};
+	};
+	glm::dvec2 const radial{glm::dvec2{tool.point.x, tool.point.z} - centre};
+	for (int i = 0; i < count; ++i)
+	{
+		auto const a0{side * step * i};
+		auto const a1{side * step * (i + 1)};
+		auto const p0{centre + turn(radial, a0)};
+		auto const p3{centre + turn(radial, a1)};
+		auto const d0{turn(direction, a0)};
+		auto const d3{turn(direction, a1)};
+		auto const y0{height(radius * step * i)};
+		auto const y3{height(radius * step * (i + 1))};
+		segment_data path;
+		path.points[segment_data::point::start] = {p0.x, y0, p0.y};
+		path.points[segment_data::point::end] = {p3.x, y3, p3.y};
+		path.points[segment_data::point::control1] = {d0.x * handle, tool.grade * handle, d0.y * handle};
+		path.points[segment_data::point::control2] = {-d3.x * handle, -tool.grade * handle, -d3.y * handle};
+		path.radius = static_cast<float>(radius);
+		result.push_back(path);
+	}
+	return result;
+}
+
+void editor_mode::finish_extend()
+{
+	auto const pieces{extend_pieces()};
+	auto *style{m_extend.track};
+	m_extend.active = false;
+	if (pieces.empty() || style == nullptr)
+		return;
+	std::vector<TTrack *> created;
+	for (auto const &piece : pieces)
+		created.push_back(editor_track::create_path(*style, piece));
+	editor_track::commit(created);
+	push_track_snapshot({}, created);
+	m_node = created.back();
+	ui()->set_node(m_node);
+	straight_refresh();
+}
+
+std::vector<segment_data> editor_mode::switch_preview() const
+{
+	auto const &tool{m_switch};
+	if (false == tool.placing || tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()))
+		return {};
+	auto const &line{tool.line};
+	glm::dvec2 const offset{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
+	auto const forward{glm::dot(offset, line.direction) >= 0.0 ? 1 : -1};
+	glm::dvec2 const direction{line.direction * static_cast<double>(forward)};
+	auto const side{direction.x * offset.y - direction.y * offset.x >= 0.0 ? 1 : -1};
+	return editor_track::place_switch(tool.templates[tool.armed], tool.point, direction, side, line.grade * forward);
+}
+
+bool editor_mode::start_switch_placement()
+{
+	auto &tool{m_switch};
+	if (tool.armed < 0 || m_track_tab != track_tab::straights)
+		return false;
+	auto const &line{current_straight()};
+	if (line.tracks.empty())
+		return false;
+	glm::dvec3 const ground{Global.pCamera.Pos + GfxRenderer->Mouse_Position()};
+	tool.along = std::clamp(glm::dot(glm::dvec2{ground.x - line.start.x, ground.z - line.start.z}, line.direction), 0.0, line.length);
+	tool.point = line.start + glm::dvec3{line.direction.x, line.grade, line.direction.y} * tool.along;
+	tool.mouse = ground;
+	tool.line = line;
+	tool.placing = true;
+	return true;
+}
+
+void editor_mode::finish_switch_placement()
+{
+	auto &tool{m_switch};
+	tool.placing = false;
+	if (tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()))
+		return;
+	glm::dvec2 const offset{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
+	auto const forward{glm::dot(offset, tool.line.direction) >= 0.0 ? 1 : -1};
+	glm::dvec2 const direction{tool.line.direction * static_cast<double>(forward)};
+	auto const side{direction.x * offset.y - direction.y * offset.x >= 0.0 ? 1 : -1};
+	insert_switch(tool.line, tool.along, forward, side);
+}
+
+void editor_mode::insert_switch(editor_track::straight const &Line, double const Along, int const Direction, int const Side)
+{
+	auto &state{m_straights};
+	state.status.clear();
+	auto const &shape{m_switch.templates[m_switch.armed]};
+	auto const from{Direction > 0 ? Along : Along - shape.length};
+	auto const to{from + shape.length};
+	if (from < -0.01 || to > Line.length + 0.01)
+	{
+		state.status = "The switch doesn't fit on the straight here";
+		return;
+	}
+	struct span
+	{
+		TTrack *track;
+		int path;
+		double from, to;
+		bool forward;
+	};
+	auto const along = [&](glm::dvec3 const &Point) { return glm::dot(glm::dvec2{Point.x - Line.start.x, Point.z - Line.start.z}, Line.direction); };
+	std::vector<span> spans;
+	for (std::size_t i = 0; i < Line.tracks.size(); ++i)
+	{
+		auto const &path{Line.tracks[i]->m_paths[Line.paths[i]]};
+		auto const a{along(path.points[segment_data::point::start])};
+		auto const b{along(path.points[segment_data::point::end])};
+		spans.push_back({Line.tracks[i], Line.paths[i], std::min(a, b), std::max(a, b), a < b});
+	}
+	std::sort(spans.begin(), spans.end(), [](span const &A, span const &B) { return A.from < B.from; });
+	int first{-1}, last{-1};
+	for (int i = 0; i < static_cast<int>(spans.size()); ++i)
+	{
+		if (spans[i].to > from + 1e-3 && spans[i].from < to - 1e-3)
+		{
+			if (first < 0)
+				first = i;
+			last = i;
+		}
+	}
+	if (first < 0)
+		return;
+	editor_track::chain chain;
+	for (int i = first; i <= last; ++i)
+	{
+		if (spans[i].track->eType != tt_Normal || false == spans[i].track->Dynamics.empty())
+		{
+			state.status = "The switch would overlap another switch or a path with vehicles";
+			return;
+		}
+		chain.tracks.push_back(spans[i].track);
+		chain.forward.push_back(spans[i].forward);
+	}
+	auto const before{std::max(0.0, from - spans[first].from)};
+	auto const after{std::max(0.0, spans[last].to - to)};
+	bool const hasbefore{before > 0.01};
+	bool const hasafter{after > 0.01};
+	if (false == hasbefore && false == hasafter)
+	{
+		state.status = "The switch would replace the paths completely, place it so that a piece of the straight remains";
+		return;
+	}
+	auto const count{std::max<std::size_t>(chain.tracks.size(), (hasbefore ? 1 : 0) + (hasafter ? 1 : 0))};
+	std::size_t countbefore{0};
+	if (hasbefore && hasafter)
+		countbefore = std::clamp<std::size_t>(static_cast<std::size_t>(std::round(count * before / (before + after))), 1, count - 1);
+	else if (hasbefore)
+		countbefore = count;
+	auto const point = [&](double const Distance) { return Line.start + glm::dvec3{Line.direction.x, Line.grade, Line.direction.y} * Distance; };
+	std::vector<segment_data> pieces;
+	auto const straight = [&](double const From, double const To, std::size_t const Count) {
+		for (std::size_t i = 0; i < Count; ++i)
+		{
+			segment_data path;
+			path.points[segment_data::point::start] = point(From + (To - From) * i / Count);
+			path.points[segment_data::point::end] = point(From + (To - From) * (i + 1) / Count);
+			pieces.push_back(path);
+		}
+	};
+	if (hasbefore)
+		straight(spans[first].from, from, countbefore);
+	if (hasafter)
+		straight(to, spans[last].to, count - countbefore);
+
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	for (auto *track : chain.tracks)
+		states.emplace_back(track, editor_track::capture(*track));
+	auto created{editor_track::relay(chain, pieces)};
+	glm::dvec2 const direction{Line.direction * static_cast<double>(Direction)};
+	auto const paths{editor_track::place_switch(shape, point(Along), direction, Side, Line.grade * Direction)};
+	auto *track{editor_track::create_switch(shape, paths, *spans[first].track)};
+	if (track != nullptr)
+	{
+		editor_track::commit({track});
+		created.push_back(track);
+	}
+	push_track_snapshot(std::move(states), std::move(created));
+	straight_refresh();
+	state.status = "Switch inserted";
+}
+
+void editor_mode::draw_build_overlay() const
+{
+	screen_projection const projection;
+	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+	auto const drawpath = [&](segment_data const &Path, ImU32 const Color) {
+		auto previous{path_point(Path, 0.0)};
+		for (int i = 1; i <= 24; ++i)
+		{
+			auto const next{path_point(Path, i / 24.0)};
+			projection.line(drawlist, previous, next, Color, 3.0f);
+			previous = next;
+		}
+	};
+	if (m_extend.active)
+		for (auto const &piece : extend_pieces())
+			drawpath(piece, IM_COL32(255, 210, 60, 255));
+	if (m_switch.placing)
+		for (auto const &piece : switch_preview())
+			drawpath(piece, IM_COL32(255, 210, 60, 255));
+	auto const *track{selected_track()};
+	if (track == nullptr || track->eType != tt_Normal || m_extend.active)
+		return;
+	for (auto const atend : {false, true})
+	{
+		editor_track::point_ref const point{0, atend ? editor_track::point_kind::end : editor_track::point_kind::start};
+		if (editor_track::is_connected(*track, point))
+			continue;
+		ImVec2 screen;
+		if (projection.project(editor_track::point_position(*track, point), screen))
+			drawlist->AddCircle(screen, 10.0f, IM_COL32(240, 60, 60, 255), 16, 3.0f);
+	}
+}
+
+void editor_mode::render_switch_ui()
+{
+	auto &tool{m_switch};
+	if (false == ImGui::CollapsingHeader("Switches", ImGuiTreeNodeFlags_DefaultOpen))
+		return;
+	if (false == tool.collected)
+	{
+		tool.templates = editor_track::standard_switch_templates();
+		auto const found{editor_track::find_switch_templates()};
+		tool.templates.insert(tool.templates.end(), found.begin(), found.end());
+		tool.collected = true;
+	}
+	ImGui::TextDisabled(tool.armed >= 0 ? "Press on the straight where the switch starts and drag: along sets its direction, sideways its side" : "Click a template, then drag on the selected straight");
+	ImGui::BeginChild("##switchtemplates", ImVec2(0.0f, 150.0f), true);
+	for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
+	{
+		auto const &entry{tool.templates[i]};
+		auto label{entry.source != nullptr ? "Scenery: " + entry.label + "  (" + std::to_string(entry.count) + "x)" : "PLK: " + entry.label};
+		label += "##switch" + std::to_string(i);
+		if (ImGui::Selectable(label.c_str(), tool.armed == i))
+			tool.armed = (tool.armed == i ? -1 : i);
+	}
+	ImGui::EndChild();
+	if (ImGui::SmallButton("Collect again from the scenery"))
+	{
+		tool.collected = false;
+		tool.armed = -1;
+	}
 }

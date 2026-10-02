@@ -382,6 +382,39 @@ class editor_mode : public application_mode
 	glm::dvec3 snap_straight_offset(editor_track::straight const &Line, glm::dvec3 const &Offset) const;
 	glm::dvec3 snap_straight_direction(glm::dvec3 const &Pivot, glm::dvec3 const &Moved) const;
 	straights_state m_straights;
+
+	struct switch_tool
+	{
+		std::vector<editor_track::switch_template> templates;
+		bool collected{false};
+		int armed{-1};
+		bool placing{false};
+		double along{0.0};
+		glm::dvec3 point{0.0};
+		glm::dvec3 mouse{0.0};
+		editor_track::straight line;
+	};
+	switch_tool m_switch;
+	struct extend_tool
+	{
+		bool active{false};
+		TTrack *track{nullptr};
+		glm::dvec3 point{0.0};
+		glm::dvec2 direction{0.0, 1.0};
+		double grade{0.0};
+		glm::dvec3 mouse{0.0};
+	};
+	extend_tool m_extend;
+	void render_switch_ui();
+	bool start_switch_placement();
+	void finish_switch_placement();
+	std::vector<segment_data> switch_preview() const;
+	void insert_switch(editor_track::straight const &Line, double const Along, int const Direction, int const Side);
+	bool start_extend();
+	void finish_extend();
+	std::vector<segment_data> extend_pieces() const;
+	void update_build_tools();
+	void draw_build_overlay() const;
 	enum class track_tab { straights, route, path };
 	track_tab m_track_tab{track_tab::straights};
 	int m_track_tab_request{-1};

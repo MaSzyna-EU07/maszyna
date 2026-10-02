@@ -1432,6 +1432,34 @@ TTrack *editor_track::clone(TTrack const &Template)
 	return track;
 }
 
+TTrack *editor_track::create_path(TTrack const &Style, segment_data const &Path)
+{
+	char const *environments[] = {"flat", "mountains", "canyon", "tunnel", "bridge", "bank"};
+	auto const environment{Style.eEnvironment >= e_flat && Style.eEnvironment <= e_bank ? environments[Style.eEnvironment] : "flat"};
+	auto const category{Style.iCategoryFlag & 15};
+	std::ostringstream text;
+	text.precision(std::numeric_limits<double>::digits10);
+	text << (category == 2 ? "road " : category == 4 ? "river " : "normal ") << glm::distance(Path.points[segment_data::point::start], Path.points[segment_data::point::end]) << ' ' << Style.fTrackWidth << ' ' << Style.fFriction << ' ' << Style.fSoundDistance << ' ' << Style.iQualityFlag << ' ' << 0 << ' ' << environment << ' ';
+	if (Style.m_visible)
+		text << "vis " << material_name(Style.m_material1) << ' ' << Style.fTexLength << ' ' << material_name(Style.m_material2) << ' ' << texture_height(Style) << ' ' << Style.fTexWidth << ' ' << Style.fTexSlope << ' ';
+	else
+		text << "unvis ";
+	auto const &start{Path.points[segment_data::point::start]};
+	auto const &control1{Path.points[segment_data::point::control1]};
+	auto const &control2{Path.points[segment_data::point::control2]};
+	auto const &end{Path.points[segment_data::point::end]};
+	text << start.x << ' ' << start.y << ' ' << start.z << ' ' << Path.rolls[0] << ' ' << control1.x << ' ' << control1.y << ' ' << control1.z << ' ' << control2.x << ' ' << control2.y << ' ' << control2.z << ' ' << end.x << ' ' << end.y << ' ' << end.z << ' ' << Path.rolls[1] << ' ' << Path.radius << ' ';
+	auto const speed{velocity(Style)};
+	if (speed > 0.0)
+		text << "velocity " << speed << ' ';
+	if (category == 1 && false == Style.m_profile1.first.empty())
+		text << "railprofile " << Style.m_profile1.first << ' ';
+	text << "endtrack\n";
+	auto *track{load_path(text.str(), Style)};
+	track->m_paths = {Path};
+	return track;
+}
+
 TTrack *editor_track::load_path(std::string const &Text, TTrack const &Template)
 {
 	cParser parser(Text, cParser::buffer_TEXT);

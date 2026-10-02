@@ -1016,7 +1016,11 @@ bool editor_mode::update()
     if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::straights)
         draw_straights_overlay();
     if (ui()->mode() == nodebank_panel::TRACK)
+    {
+        update_build_tools();
+        draw_build_overlay();
         draw_track_hints();
+    }
 
     // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
     if (ui()->mode() == nodebank_panel::FILL)
@@ -2846,6 +2850,11 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
 
             if (mode == nodebank_panel::TRACK)
             {
+                if (start_extend() || start_switch_placement())
+                {
+                    m_input.mouse.button(Button, Action);
+                    return;
+                }
                 if ((Mods & GLFW_MOD_ALT) != 0)
                 {
                     GfxRenderer->Pick_Node_Callback([this](scene::basic_node *node) {
@@ -2968,6 +2977,10 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                 mouseHold = false;
                 if (m_straights.tool_mouse)
                     finish_straight_gesture();
+                if (m_extend.active)
+                    finish_extend();
+                if (m_switch.placing)
+                    finish_switch_placement();
             }
 
             m_dragging = false;
