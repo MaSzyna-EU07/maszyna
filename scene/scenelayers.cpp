@@ -60,6 +60,7 @@ layer_handle node_layers::open(std::string const &Name)
 			m_layers.emplace_back();
 			m_layers.back().name = Name;
 			m_layers.back().parent = handle();
+			m_layers.back().late = m_initialized;
 			stat(layerhandle);
 		}
 		else
@@ -116,7 +117,81 @@ void node_layers::clear()
 	m_templates.clear();
 	m_instances.clear();
 	m_instance = 0;
+	m_initialized = false;
 	m_terraindirective = false;
+}
+
+// indicates the scenario initialization (FirstInit) is being performed
+void node_layers::initialization(source_span const &Span, bool const Infile)
+{
+	if (m_initialized)
+	{
+		return;
+	}
+	m_initialized = true;
+	if (m_stack.empty() || false == valid(m_stack.back()))
+	{
+		return;
+	}
+	// the layer file being loaded holds the directive, or includes the template which does
+	auto &holder{layer(m_stack.back())};
+	if (Infile)
+	{
+		// NOTE: scenario without the directive is initialized at its end, with nothing in the file to point at
+		std::string text(Span.valid() ? static_cast<std::size_t>(Span.end - Span.begin) : 0, '\0');
+		std::ifstream input{path(m_stack.back()), std::ios_base::binary};
+		if (text.empty() || false == input.is_open() || false == input.seekg(Span.begin).good() || false == input.read(text.data(), static_cast<std::streamsize>(text.size())).good() ||
+		    ToLower(text) != "firstinit")
+		{
+			return;
+		}
+		holder.init = Span;
+	}
+	else if (tracked(m_instance) && instance(m_instance).layer == m_stack.back())
+	{
+		holder.init = instance(m_instance).span;
+	}
+	else
+	{
+		return;
+	}
+	holder.context_init = m_context;
+	// for the files it was included through the initialization takes place at their include directives
+	for (auto level{m_stack.size() - 1}; level > 0; --level)
+	{
+		auto const child{m_stack[level]};
+		auto const parent{m_stack[level - 1]};
+		if (false == valid(parent) || parent == child || layer(child).sites.empty() || layer(child).sites.back().parent != parent || layer(child).sites.back().fixed ||
+		    false == layer(child).sites.back().span.valid())
+		{
+			break;
+		}
+		layer(parent).init = layer(child).sites.back().span;
+		layer(parent).context_init = layer(child).context_begin;
+	}
+}
+
+// true if specified layer can receive content added in the editor
+bool node_layers::accepts(layer_handle Layer, std::string *Reason) const
+{
+	Layer = resolve(Layer);
+	if (false == valid(Layer) || layer(Layer).removed)
+	{
+		return false;
+	}
+	if (false == writable(Layer, Reason))
+	{
+		return false;
+	}
+	if (layer(Layer).late)
+	{
+		if (Reason != nullptr)
+		{
+			*Reason = "the file is loaded after the scenario initialization (FirstInit), which only vehicles should follow";
+		}
+		return false;
+	}
+	return true;
 }
 
 // follows layer merges. returns: handle of the layer which currently holds content of specified layer
@@ -183,7 +258,7 @@ void node_layers::count(layer_handle Layer, layer_item const Item, int const Cha
 void node_layers::active(layer_handle Layer)
 {
 	Layer = resolve(Layer);
-	if (false == valid(Layer) || layer(Layer).removed || false == writable(Layer))
+	if (false == accepts(Layer))
 	{
 		return;
 	}
@@ -422,6 +497,11 @@ layer_handle node_layers::create(std::string Name, layer_handle Parent, std::str
 		Reason = "the parent layer can't include other files";
 		return null_handle;
 	}
+	if (layer(Parent).late)
+	{
+		Reason = "the parent layer is loaded after the scenario initialization (FirstInit), which only vehicles should follow";
+		return null_handle;
+	}
 	// file names in the scenery are processed in lower case, with forward slashes
 	Name = ToLower(Name);
 	replace_slashes(Name);
@@ -458,10 +538,11 @@ layer_handle node_layers::create(std::string Name, layer_handle Parent, std::str
 		return null_handle;
 	}
 
-	// the include directive goes after the last file included by the parent, so the scenery files stay ahead of
-	// what may follow them in a scenario, like the vehicles
+	// the include directive goes after the last file included by the parent ahead of the scenario initialization,
+	// so the scenery files stay ahead of what follows them in a scenario, like the vehicles
 	auto anchor{null_handle};
 	std::streamoff anchorend{-1};
+	auto const &init{layer(Parent).init};
 	for (std::size_t idx = 0; idx < m_layers.size(); ++idx)
 	{
 		auto const &sibling{m_layers[idx]};
@@ -470,7 +551,7 @@ layer_handle node_layers::create(std::string Name, layer_handle Parent, std::str
 			continue;
 		}
 		auto const &site{sibling.sites.front()};
-		if (site.parent == Parent && false == site.fixed && site.span.end > anchorend)
+		if (site.parent == Parent && false == site.fixed && site.span.end > anchorend && (false == init.valid() || site.span.end <= init.begin))
 		{
 			anchor = static_cast<layer_handle>(idx + 1);
 			anchorend = site.span.end;
@@ -486,7 +567,7 @@ layer_handle node_layers::create(std::string Name, layer_handle Parent, std::str
 	created.editormade = true;
 	created.anchor = anchor;
 	// placement the new file is going to be loaded with
-	created.context_begin = valid(anchor) ? layer(anchor).context_end : layer(Parent).context_end;
+	created.context_begin = valid(anchor) ? layer(anchor).context_end : layer(Parent).context_insert();
 	created.context_end = created.context_begin;
 
 	active(layerhandle);
@@ -609,9 +690,16 @@ bool node_layers::can_merge(layer_handle Source, layer_handle Target, std::strin
 		Reason = "the target layer is included by the merged one";
 		return false;
 	}
-	if (false == source.context_end.matches(target.context_end))
+	if (target.late != source.late && (source.created || source.sites.empty() || resolve(source.sites.front().parent) != Target))
 	{
-		// directives of includes placed in the editor are prepared for the end of their layer file
+		// the content would change sides of the scenario initialization
+		Reason = (target.late ? "the target layer is loaded after the scenario initialization (FirstInit), which only vehicles should follow" :
+		                        "the merged layer is loaded after the scenario initialization (FirstInit), its content has to stay there");
+		return false;
+	}
+	if (false == source.context_insert().matches(target.context_insert()))
+	{
+		// directives of includes placed in the editor are prepared for the place their layer file receives them at
 		auto const unsaved{std::any_of(std::begin(m_instances), std::end(m_instances), [&](include_instance const &Instance) {
 			return false == Instance.dead && false == Instance.removed && false == Instance.span.valid() && resolve(Instance.layer) == Source;
 		})};
@@ -642,9 +730,9 @@ bool node_layers::can_merge(layer_handle Source, layer_handle Target, std::strin
 	}
 	if (resolve(source.sites.front().parent) != Target)
 	{
-		// the text is moved to the end of another file. its statements have to keep their meaning there,
+		// the text is moved to another file. its statements have to keep their meaning there,
 		// and can't leave anything behind for what used to follow it
-		if (false == source.context_begin.matches(target.context_end) || false == source.context_end.matches(source.context_begin))
+		if (false == source.context_begin.matches(target.context_insert()) || false == source.context_end.matches(source.context_begin))
 		{
 			Reason = "the layers are loaded with different origin, rotation or scale";
 			return false;
@@ -779,7 +867,7 @@ void node_layers::removed(instance_handle Instance, bool Removed)
 instance_handle node_layers::place(layer_handle Layer, std::string const &File, std::string const &Directive)
 {
 	Layer = resolve(Layer);
-	if (false == valid(Layer) || m_instances.size() + 1 >= untracked_instance)
+	if (false == accepts(Layer) || m_instances.size() + 1 >= untracked_instance)
 	{
 		return 0;
 	}
@@ -788,7 +876,7 @@ instance_handle node_layers::place(layer_handle Layer, std::string const &File, 
 	included.layer = Layer;
 	included.file = &(*m_templates.emplace(File).first);
 	included.directive = Directive;
-	included.context = layer(Layer).context_end;
+	included.context = layer(Layer).context_insert();
 	return static_cast<instance_handle>(m_instances.size());
 }
 

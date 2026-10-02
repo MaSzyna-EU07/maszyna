@@ -81,6 +81,12 @@ struct basic_layer
 	std::vector<include_site> sites; // include directives bringing the file in; empty for the scenario file
 	layer_context context_begin; // placement in effect at the start of the file...
 	layer_context context_end; // ...and right after its end
+	// location in the file of what performs the scenario initialization, if the file takes a part in it: the FirstInit
+	// directive, or the directive including the file which holds it. only vehicles are meant to follow the
+	// initialization, so what the editor adds to the file goes ahead of this point rather than at the end
+	source_span init;
+	layer_context context_init; // placement in effect at that point
+	bool late{false}; // the file is loaded after the scenario initialization
 	std::uintmax_t filesize{0}; // state of the file when it was loaded or saved the last time
 	std::filesystem::file_time_type filetime{};
 	// pending changes, applied by the scenery save
@@ -92,6 +98,11 @@ struct basic_layer
 	bool dead{false}; // removal or merge of the layer was saved, it's no longer a part of the scenery
 
 	std::size_t item_count() const;
+	// placement in effect at the point of the file which receives the content added by the editor
+	layer_context const &context_insert() const
+	{
+		return init.valid() ? context_init : context_end;
+	}
 };
 
 // include directive bringing an *.inc template into a scenery layer file
@@ -235,6 +246,11 @@ class node_layers
 	void track(basic_node const *Node, source_span const &Span, glm::vec3 const &Angles = glm::vec3{0.f}, glm::vec3 const &Scale = glm::vec3{1.f});
 	// indicates specified node was removed from the scene
 	void forget(basic_node const *Node);
+	// indicates the scenario initialization (FirstInit) is being performed. Span: location of the directive.
+	// Infile: the directive comes straight from the layer file being loaded
+	void initialization(source_span const &Span, bool Infile);
+	// true if specified layer can receive content added in the editor. optionally explains why it can't
+	bool accepts(layer_handle Layer, std::string *Reason = nullptr) const;
 	// notes the scenery already holds the directive setting up terrain made in the editor
 	void terrain_directive(bool const Present)
 	{
@@ -317,6 +333,7 @@ class node_layers
 	std::set<std::string> m_templates; // *.inc templates used by the scenery
 	std::vector<include_instance> m_instances; // includes of the templates; instance handle is index in the vector + 1
 	instance_handle m_instance{0}; // helper, include whose template is being loaded
+	bool m_initialized{false}; // helper, the scenario initialization was performed already
 	bool m_terraindirective{false};
 };
 

@@ -379,6 +379,9 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
 
     if( true == Scratchpad.initialized ) { return; }
 
+    // scenery opened for editing: what the editor adds to the scenery files is kept ahead of the initialization
+    scene::Layers.initialization( { Input.TokenBegin(), Input.TokenEnd() }, Input.InLayerFile() );
+
     if( true == Scratchpad.binary.terrain ) {
         // at this stage it should be safe to import terrain from the binary scene file
         // TBD: postpone loading furter and only load required blocks during the simulation?

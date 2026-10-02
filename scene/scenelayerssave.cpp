@@ -304,28 +304,61 @@ struct node_layers::composition
 	std::vector<node_place> nodes;
 	std::vector<site_place> sites;
 	std::vector<instance_place> instances;
+	source_span init; // location of what performs the scenario initialization, see basic_layer::init
 
 	// adds another piece of text at the end
 	void append(composition const &Other)
 	{
-		auto const offset{static_cast<std::streamoff>(text.size())};
-		text += Other.text;
+		insert(static_cast<std::streamoff>(text.size()), Other);
+	}
+	// adds another piece of text at specified location
+	void insert(std::streamoff const Location, composition const &Other)
+	{
+		auto const size{static_cast<std::streamoff>(Other.text.size())};
+		auto const move = [=](source_span &Span) {
+			if (Span.begin >= Location)
+			{
+				Span.begin += size;
+				Span.end += size;
+			}
+		};
+		for (auto &place : nodes)
+		{
+			move(place.span);
+		}
+		for (auto &place : sites)
+		{
+			move(place.span);
+		}
+		for (auto &place : instances)
+		{
+			move(place.span);
+		}
+		if (init.valid())
+		{
+			move(init);
+		}
+		else if (Other.init.valid())
+		{
+			init = {Other.init.begin + Location, Other.init.end + Location};
+		}
+		text.insert(static_cast<std::size_t>(Location), Other.text);
 		for (auto place : Other.nodes)
 		{
-			place.span.begin += offset;
-			place.span.end += offset;
+			place.span.begin += Location;
+			place.span.end += Location;
 			nodes.emplace_back(place);
 		}
 		for (auto place : Other.sites)
 		{
-			place.span.begin += offset;
-			place.span.end += offset;
+			place.span.begin += Location;
+			place.span.end += Location;
 			sites.emplace_back(place);
 		}
 		for (auto place : Other.instances)
 		{
-			place.span.begin += offset;
-			place.span.end += offset;
+			place.span.begin += Location;
+			place.span.end += Location;
 			instances.emplace_back(place);
 		}
 	}
@@ -361,12 +394,32 @@ bool node_layers::compose(save_state &State, layer_handle const Layer, compositi
 	{
 		edits = lookup->second.edits;
 	}
+	// what's added to the file goes ahead of the scenario initialization, if the file takes a part in it
+	auto const &init{layer(Layer).init};
+	auto const hasinit{init.valid() && init.end <= basesize};
+	auto addition{basesize};
+	if (hasinit)
+	{
+		addition = init.begin;
+		// on a line of its own, where the initialization has one
+		auto linebegin{addition};
+		while (linebegin > 0 && (base[linebegin - 1] == ' ' || base[linebegin - 1] == '\t'))
+		{
+			--linebegin;
+		}
+		if (linebegin == 0 || base[linebegin - 1] == '\n')
+		{
+			addition = linebegin;
+		}
+	}
+	auto initedited{false}; // the directive standing for the initialization is replaced or removed
 	for (auto &edit : edits)
 	{
 		if (edit.begin < 0)
 		{
-			edit.begin = edit.end = basesize;
+			edit.begin = edit.end = addition;
 		}
+		initedited |= hasinit && edit.begin == init.begin && edit.end == init.end;
 	}
 	std::stable_sort(std::begin(edits), std::end(edits), [](file_patch::edit const &Left, file_patch::edit const &Right) { return Left.begin < Right.begin; });
 	std::streamoff cursor{0};
@@ -502,6 +555,11 @@ bool node_layers::compose(save_state &State, layer_handle const Layer, compositi
 			Output.instances.push_back({included, shift(instance(included).span)});
 		}
 	}
+	// NOTE: with the file holding the initialization inlined, its own mark was carried over along with its text
+	if (hasinit && false == initedited && false == Output.init.valid())
+	{
+		Output.init = shift(init);
+	}
 	return true;
 }
 
@@ -635,11 +693,11 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		}
 		else if (Model != nullptr && false == Node->from_template())
 		{
-			// created in the editor. the definition is placed at the end of the layer file, with the placement in effect there
+			// created in the editor. the definition is added to the layer file, with the placement in effect at the place it goes to
 			std::string text;
 			Node->export_as_text(text);
 			text.erase(text.find_last_not_of(" \t\r\n") + 1);
-			auto const &context{layer(nodelayer).context_end};
+			auto const &context{layer(nodelayer).context_insert()};
 			if (false == context.matches(layer_context()))
 			{
 				model_placement placement;
@@ -716,10 +774,10 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			{
 				continue;
 			}
-			if (false == included.context.matches(layer(target).context_end))
+			if (false == included.context.matches(layer(target).context_insert()))
 			{
 				// shouldn't happen, merge of layers is refused when it'd lead to this
-				return fail("include \"" + *included.file + "\" was placed for different origin, rotation or scale than its layer ends with");
+				return fail("include \"" + *included.file + "\" was placed for different origin, rotation or scale than its layer file receives it with");
 			}
 			placed[target].emplace_back(static_cast<instance_handle>(idx + 1));
 		}
@@ -790,6 +848,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			}
 			else
 			{
+				// NOTE: negative location stands for the place the file receives additions at
 				edit.begin = edit.end = -1;
 				if (false == layer(parent).created)
 				{
@@ -797,12 +856,9 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 					{
 						return fail(state.error);
 					}
-					auto const &content{state.content[parent]};
-					if (false == content.empty() && content.back() != '\n')
-					{
-						edit.text = state.eol;
-						edit.lead = state.eol.size();
-					}
+					// dropped by compose() if the text ahead ends with a line break already
+					edit.text = state.eol;
+					edit.lead = state.eol.size();
 				}
 				edit.text += directive + state.eol;
 			}
@@ -878,6 +934,8 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			return fail(state.error);
 		}
 		text.append(body);
+		// what the editor adds to the file
+		composition added;
 		if (auto const lookup{appended.find(output)}; lookup != appended.end())
 		{
 			for (auto const merged : lookup->second)
@@ -887,18 +945,18 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 				{
 					return fail(state.error);
 				}
-				ensure_newline(text.text, eol);
-				text.append(mergedtext);
+				ensure_newline(added.text, eol);
+				added.append(mergedtext);
 			}
 		}
 		if (auto const lookup{created.find(output)}; lookup != created.end())
 		{
 			for (auto const &definition : lookup->second)
 			{
-				ensure_newline(text.text, eol);
-				auto const offset{static_cast<std::streamoff>(text.text.size())};
-				text.nodes.push_back({definition.first, {offset, offset + static_cast<std::streamoff>(definition.second.size())}, true});
-				text.text += definition.second + eol;
+				ensure_newline(added.text, eol);
+				auto const offset{static_cast<std::streamoff>(added.text.size())};
+				added.nodes.push_back({definition.first, {offset, offset + static_cast<std::streamoff>(definition.second.size())}, true});
+				added.text += definition.second + eol;
 			}
 		}
 		if (auto const lookup{placed.find(output)}; lookup != placed.end())
@@ -906,19 +964,48 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			for (auto const included : lookup->second)
 			{
 				auto const &directive{instance(included).directive};
-				ensure_newline(text.text, eol);
-				auto const offset{static_cast<std::streamoff>(text.text.size())};
-				text.instances.push_back({included, {offset, offset + static_cast<std::streamoff>(directive.size())}});
-				text.text += directive + eol;
+				ensure_newline(added.text, eol);
+				auto const offset{static_cast<std::streamoff>(added.text.size())};
+				added.instances.push_back({included, {offset, offset + static_cast<std::streamoff>(directive.size())}});
+				added.text += directive + eol;
 			}
 		}
 		if (output == root)
 		{
 			for (auto const &statement : Rootstatements)
 			{
-				ensure_newline(text.text, eol);
-				text.text += statement + eol;
+				ensure_newline(added.text, eol);
+				added.text += statement + eol;
 			}
+		}
+		if (added.text.empty())
+		{
+			continue;
+		}
+		if (false == text.init.valid())
+		{
+			ensure_newline(text.text, eol);
+			text.append(added);
+			continue;
+		}
+		// the scenario initialization is meant to be followed by nothing but the vehicles, so the additions go ahead
+		// of it. they take whole lines, with the initialization left at the start of a line the way it was
+		ensure_newline(added.text, eol);
+		auto location{text.init.begin};
+		while (location > 0 && (text.text[location - 1] == ' ' || text.text[location - 1] == '\t'))
+		{
+			--location;
+		}
+		if (location == 0 || text.text[location - 1] == '\n')
+		{
+			text.insert(location, added);
+		}
+		else
+		{
+			composition separated;
+			separated.text = eol;
+			separated.append(added);
+			text.insert(text.init.begin, separated);
 		}
 	}
 
@@ -1007,7 +1094,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			source.span = place.span;
 			if (isnew)
 			{
-				source.context = layer(output).context_end;
+				source.context = layer(output).context_insert();
 			}
 			if (isnew || place.rewritten)
 			{
@@ -1036,6 +1123,19 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			included.sites.front().span = place.span;
 			included.parent = output;
 		}
+		// the mark of the scenario initialization moved along with the text around it, or came with the text of a merged layer
+		auto &saved{layer(output)};
+		if (false == saved.init.valid() && texts[output].init.valid())
+		{
+			for (std::size_t idx = 0; idx < m_layers.size(); ++idx)
+			{
+				if (m_layers[idx].init.valid() && m_layers[idx].merged != null_handle && resolve(static_cast<layer_handle>(idx + 1)) == output)
+				{
+					saved.context_init = m_layers[idx].context_init;
+				}
+			}
+		}
+		saved.init = texts[output].init;
 	}
 	for (std::size_t idx = 0; idx < m_layers.size(); ++idx)
 	{

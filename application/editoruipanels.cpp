@@ -1404,9 +1404,9 @@ void layers_panel::render_list()
 		ImGui::SameLine();
 		if (ImGui::RadioButton("##active", isactive) && false == isactive)
 		{
-			if (isremoved || false == iswritable)
+			if (std::string reason; false == scene::Layers.accepts(handle, &reason))
 			{
-				report("Layer \"" + layer_name(handle) + "\" can't take new nodes" + (isremoved ? "" : ": " + readonly), true);
+				report("Layer \"" + layer_name(handle) + "\" can't take new nodes" + (reason.empty() ? "" : ": " + reason), true);
 			}
 			else
 			{
@@ -1431,6 +1431,10 @@ void layers_panel::render_list()
 		{
 			label += "  [read-only]";
 		}
+		else if (layer.late)
+		{
+			label += "  [after FirstInit]";
+		}
 		if (ImGui::Selectable(label.c_str(), handle == m_selected))
 		{
 			m_selected = handle;
@@ -1445,6 +1449,10 @@ void layers_panel::render_list()
 			if (false == iswritable)
 			{
 				content += "\nread-only: " + readonly;
+			}
+			if (layer.late)
+			{
+				content += "\nloaded after the scenario initialization (FirstInit): takes no new nodes, only vehicles belong there";
 			}
 			if (auto const items{layer_content(layer)}; false == items.empty())
 			{

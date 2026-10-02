@@ -1740,19 +1740,19 @@ void editor_mode::place_include(std::string const &File, int const RotationMode,
         return;
     }
 
-    // the directive is written at the end of the file of the active layer, and has to make sense with the placement in effect there
+    // the directive is added to the file of the active layer, and has to make sense with the placement in effect where it goes
     auto const layer = scene::Layers.resolve(scene::Layers.active());
-    if (std::string reason; false == scene::Layers.valid(layer) || scene::Layers.layer(layer).removed || false == scene::Layers.writable(layer, &reason))
+    if (std::string reason; false == scene::Layers.accepts(layer, &reason))
     {
-        ui()->set_status("Template \"" + File + "\" can't be placed: " + (reason.empty() ? "there's no active layer to put it in" : "the active layer can't be saved, " + reason), true);
+        ui()->set_status("Template \"" + File + "\" can't be placed: " + (reason.empty() ? "there's no active layer to put it in" : "the active layer can't take it, " + reason), true);
         return;
     }
-    auto const context = scene::Layers.layer(layer).context_end;
+    auto const context = scene::Layers.layer(layer).context_insert();
     if (context.rotation != glm::vec3{0.f} || context.scale != glm::vec3{1.f})
     {
         // a template can pass its parameters to an origin directive, which isn't affected by these, or straight to
         // the nodes, which are. there's no single set of parameter values which puts both at the cursor
-        ui()->set_status("Template \"" + File + "\" can't be placed: the file of the active layer ends with a rotation or a scale in effect. Pick another layer.", true);
+        ui()->set_status("Template \"" + File + "\" can't be placed: the file of the active layer would receive it with a rotation or a scale in effect. Pick another layer.", true);
         return;
     }
     glm::dvec3 const location = Camera.Pos + clamp_mouse_offset_to_max(GfxRenderer->Mouse_Position());
