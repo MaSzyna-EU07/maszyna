@@ -1287,12 +1287,13 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		{"Rz 1:26,5 R2500", 2500.0, 26.5, 0.0, 0.0},
 	};
 	std::vector<switch_template> result;
+	for (auto const radius : {190.0, 300.0})
 	{
 		switch_template slip;
 		slip.double_slip = true;
-		slip.radius = 190.0;
+		slip.radius = radius;
 		slip.ratio = 9.0;
-		slip.label = "Rkpd 1:9 R190 double slip (click at a crossing of two straights)";
+		slip.label = "Rkpd 1:9 R" + std::to_string(static_cast<int>(radius)) + " double slip (click at a crossing of two straights)";
 		result.push_back(slip);
 	}
 	for (auto const &definition : definitions)
