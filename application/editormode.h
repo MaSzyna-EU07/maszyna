@@ -319,6 +319,25 @@ class editor_mode : public application_mode
 	glm::dvec3 route_vertex_position(int const Vertex) const;
 	bool route_active() const;
 	route_design m_route;
+
+	struct straights_state
+	{
+		editor_track::straight_tolerance tolerance;
+		double minimum_length{50.0};
+		std::vector<editor_track::straight> found;
+		int listed{-1};
+		TTrack *current_for{nullptr};
+		editor_track::straight current;
+		editor_track::straight a;
+		editor_track::straight b;
+		char filter[32]{};
+	};
+	void render_straights_ui();
+	void draw_straights_overlay() const;
+	editor_track::straight const &current_straight();
+	straights_state m_straights;
+	enum class track_tab { straights, route, path };
+	track_tab m_track_tab{track_tab::straights};
 	bool m_route_tab{true};
 	bool m_route_gizmo_using{false};
 	glm::mat4 m_route_gizmo{1.0f};

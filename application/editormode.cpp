@@ -1013,6 +1013,8 @@ bool editor_mode::update()
         draw_track_overlay();
     if (route_active())
         draw_route_overlay();
+    if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::straights)
+        draw_straights_overlay();
 
     // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
     if (ui()->mode() == nodebank_panel::FILL)

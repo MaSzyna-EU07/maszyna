@@ -423,14 +423,23 @@ void editor_mode::render_track_ui()
 {
 	if (ImGui::BeginTabBar("##trackediting"))
 	{
+		if (ImGui::BeginTabItem("Straights"))
+		{
+			m_track_tab = track_tab::straights;
+			m_route_tab = true;
+			render_straights_ui();
+			ImGui::EndTabItem();
+		}
 		if (ImGui::BeginTabItem("Route design"))
 		{
+			m_track_tab = track_tab::route;
 			m_route_tab = true;
 			render_route_ui();
 			ImGui::EndTabItem();
 		}
 		if (ImGui::BeginTabItem("Single path"))
 		{
+			m_track_tab = track_tab::path;
 			m_route_tab = false;
 			render_path_ui();
 			ImGui::EndTabItem();
@@ -632,7 +641,7 @@ void editor_mode::render_path_ui()
 
 bool editor_mode::route_active() const
 {
-	return ui()->mode() == nodebank_panel::TRACK && m_route_tab && false == m_route.chain.tracks.empty();
+	return ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::route && false == m_route.chain.tracks.empty();
 }
 
 void editor_mode::route_recommend(alignment::vertex &Vertex) const
@@ -1110,4 +1119,158 @@ void editor_mode::render_route_ui()
 		ImGui::SameLine();
 		ImGui::TextUnformatted(route.status.c_str());
 	}
+}
+
+editor_track::straight const &editor_mode::current_straight()
+{
+	auto *track{selected_track()};
+	if (track != m_straights.current_for)
+	{
+		m_straights.current_for = track;
+		m_straights.current = track != nullptr ? editor_track::find_straight(*track, m_straights.tolerance) : editor_track::straight{};
+	}
+	return m_straights.current;
+}
+
+void editor_mode::draw_straights_overlay() const
+{
+	screen_projection const projection;
+	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+	glm::dvec3 const camera{Global.pCamera.Pos};
+	auto const nearby = [&](editor_track::straight const &Line) {
+		auto const offset{camera - Line.start};
+		auto const along{std::clamp(glm::dot(glm::dvec2{offset.x, offset.z}, Line.direction), 0.0, Line.length)};
+		auto const closest{Line.start + glm::dvec3{Line.direction.x, 0.0, Line.direction.y} * along};
+		return glm::distance(glm::dvec2{closest.x, closest.z}, glm::dvec2{camera.x, camera.z}) < 3000.0;
+	};
+	auto const draw = [&](editor_track::straight const &Line, ImU32 const Color, float const Thickness) {
+		if (Line.tracks.empty())
+			return;
+		projection.line(drawlist, Line.start, Line.end, Color, Thickness);
+		for (auto const &point : {Line.start, Line.end})
+		{
+			ImVec2 screen;
+			if (projection.project(point, screen))
+				drawlist->AddCircleFilled(screen, Thickness + 2.0f, Color);
+		}
+	};
+	for (int i = 0; i < static_cast<int>(m_straights.found.size()); ++i)
+	{
+		auto const &line{m_straights.found[i]};
+		if (nearby(line))
+			draw(line, i == m_straights.listed ? IM_COL32(40, 220, 255, 255) : IM_COL32(255, 255, 255, 110), i == m_straights.listed ? 4.0f : 2.0f);
+	}
+	draw(m_straights.current, IM_COL32(40, 220, 255, 255), 4.0f);
+	draw(m_straights.a, IM_COL32(60, 230, 90, 255), 5.0f);
+	draw(m_straights.b, IM_COL32(255, 60, 255, 255), 5.0f);
+	if (false == m_straights.a.tracks.empty() && false == m_straights.b.tracks.empty())
+	{
+		auto const &a{m_straights.a};
+		for (auto const &point : {m_straights.b.start, m_straights.b.end})
+		{
+			auto const along{glm::dot(glm::dvec2{point.x - a.start.x, point.z - a.start.z}, a.direction)};
+			auto const foot{a.start + glm::dvec3{a.direction.x, 0.0, a.direction.y} * along + glm::dvec3{0.0, a.grade * along, 0.0}};
+			projection.line(drawlist, foot, point, IM_COL32(255, 210, 60, 220), 1.5f);
+		}
+	}
+}
+
+void editor_mode::render_straights_ui()
+{
+	auto &state{m_straights};
+	ImGui::TextDisabled("Straights recognized from chains of collinear straight paths.\nLMB: select a path to see the straight it belongs to");
+
+	ImGui::PushItemWidth(100.0f);
+	double angle{glm::degrees(state.tolerance.angle)};
+	if (ImGui::InputDouble("Angle tolerance (deg)", &angle, 0.0, 0.0, "%.4f"))
+		state.tolerance.angle = glm::radians(std::max(0.0, angle));
+	ImGui::InputDouble("Offset tolerance (m)", &state.tolerance.offset, 0.0, 0.0, "%.3f");
+	ImGui::InputDouble("Minimum length (m)", &state.minimum_length, 0.0, 0.0, "%.0f");
+	ImGui::PopItemWidth();
+	if (ImGui::Button("Recognize straights in the scenery"))
+	{
+		state.found = editor_track::find_straights(state.minimum_length, state.tolerance);
+		state.listed = -1;
+		state.current_for = nullptr;
+	}
+	auto const describe = [](editor_track::straight const &Line) {
+		char text[160];
+		std::snprintf(text, sizeof(text), "L %.2f m  az %.4f deg  i %.2f per mille  %zu paths", Line.length, Line.azimuth, Line.grade * 1000.0, Line.tracks.size());
+		return std::string{text};
+	};
+	if (false == state.found.empty())
+	{
+		ImGui::Text("%zu straights", state.found.size());
+		ImGui::SameLine();
+		ImGui::PushItemWidth(150.0f);
+		ImGui::InputTextWithHint("##straightfilter", "path name", state.filter, sizeof(state.filter));
+		ImGui::PopItemWidth();
+		ImGui::BeginChild("##straights", ImVec2(0.0f, 160.0f), true);
+		for (int i = 0; i < static_cast<int>(state.found.size()); ++i)
+		{
+			auto const &line{state.found[i]};
+			if (state.filter[0] != '\0' && std::none_of(line.tracks.begin(), line.tracks.end(), [&](TTrack const *Track) { return Track->name().find(state.filter) != std::string::npos; }))
+				continue;
+			auto const label{std::to_string(i + 1) + ".  " + describe(line) + "##straight" + std::to_string(i)};
+			if (ImGui::Selectable(label.c_str(), state.listed == i))
+			{
+				state.listed = i;
+				m_node = line.tracks[line.tracks.size() / 2];
+				ui()->set_node(m_node);
+				start_focus(m_node);
+			}
+		}
+		ImGui::EndChild();
+	}
+
+	ImGui::Separator();
+	auto const &line{current_straight()};
+	if (line.tracks.empty())
+	{
+		ImGui::TextDisabled(selected_track() != nullptr ? "The selected path isn't straight" : "No path selected");
+	}
+	else
+	{
+		ImGui::Text("Straight of the selected path");
+		ImGui::Indent();
+		ImGui::TextUnformatted(describe(line).c_str());
+		ImGui::Text("From (%.3f, %.3f, %.3f)", line.start.x, line.start.y, line.start.z);
+		ImGui::Text("To   (%.3f, %.3f, %.3f)", line.end.x, line.end.y, line.end.z);
+		ImGui::Text("Paths: %s ... %s", line.tracks.front()->name().c_str(), line.tracks.back()->name().c_str());
+		ImGui::Unindent();
+		if (ImGui::Button("Set as A"))
+			state.a = line;
+		ImGui::SameLine();
+		if (ImGui::Button("Set as B"))
+			state.b = line;
+	}
+
+	ImGui::Separator();
+	auto const &a{state.a};
+	auto const &b{state.b};
+	ImGui::TextColored(ImVec4(0.25f, 0.9f, 0.35f, 1.0f), "A: %s", a.tracks.empty() ? "-" : describe(a).c_str());
+	ImGui::TextColored(ImVec4(1.0f, 0.25f, 1.0f, 1.0f), "B: %s", b.tracks.empty() ? "-" : describe(b).c_str());
+	if (a.tracks.empty() || b.tracks.empty())
+		return;
+
+	auto const cross{a.direction.x * b.direction.y - a.direction.y * b.direction.x};
+	auto const dot{glm::dot(a.direction, b.direction)};
+	auto const between{glm::degrees(std::atan2(std::abs(cross), std::abs(dot)))};
+	auto const offset = [&](glm::dvec3 const &Point) {
+		glm::dvec2 const relative{Point.x - a.start.x, Point.z - a.start.z};
+		return a.direction.x * relative.y - a.direction.y * relative.x;
+	};
+	auto const along = [&](glm::dvec3 const &Point) { return glm::dot(glm::dvec2{Point.x - a.start.x, Point.z - a.start.z}, a.direction); };
+	auto const height = [&](glm::dvec3 const &Point) { return Point.y - (a.start.y + a.grade * along(Point)); };
+	auto const startoffset{offset(b.start)};
+	auto const endoffset{offset(b.end)};
+	auto const from{std::max(0.0, std::min(along(b.start), along(b.end)))};
+	auto const to{std::min(a.length, std::max(along(b.start), along(b.end)))};
+
+	ImGui::Text("Angle between A and B: %.5f deg%s", between, between < 0.001 ? "  (parallel)" : "");
+	ImGui::Text("Distance of B from A: start %.3f m, end %.3f m, change %.3f m", std::abs(startoffset), std::abs(endoffset), std::abs(endoffset - startoffset));
+	ImGui::Text("B lies on the %s of A", (startoffset + endoffset) > 0.0 ? "left" : "right");
+	ImGui::Text("Height of B above A: start %.3f m, end %.3f m", height(b.start), height(b.end));
+	ImGui::Text("Grade difference: %.2f per mille", (b.grade * (dot < 0.0 ? -1.0 : 1.0) - a.grade) * 1000.0);
+	ImGui::Text("Overlap along A: %.2f m", std::max(0.0, to - from));
 }

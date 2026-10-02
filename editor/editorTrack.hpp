@@ -95,6 +95,25 @@ class editor_track
 		double radius{0.0};
 	};
 	static bool find_chain(TTrack *From, TTrack *To, chain &Chain, std::string &Error);
+
+	struct straight
+	{
+		std::vector<TTrack *> tracks;
+		glm::dvec3 start{0.0};
+		glm::dvec3 end{0.0};
+		glm::dvec2 direction{0.0, 1.0};
+		double length{0.0};
+		double grade{0.0};
+		double azimuth{0.0};
+	};
+	struct straight_tolerance
+	{
+		double angle{0.0002};
+		double offset{0.02};
+	};
+	static bool is_straight(TTrack const &Track, straight_tolerance const &Tolerance);
+	static straight find_straight(TTrack &Track, straight_tolerance const &Tolerance);
+	static std::vector<straight> find_straights(double const Minimumlength, straight_tolerance const &Tolerance);
 	static std::vector<TTrack *> relay(chain const &Chain, std::vector<segment_data> const &Pieces);
 	static void retire(TTrack &Track);
 	static void revive(TTrack &Track);

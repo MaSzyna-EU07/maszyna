@@ -21,7 +21,9 @@ http:
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <deque>
 #include <sstream>
+#include <unordered_set>
 
 namespace
 {
@@ -769,6 +771,119 @@ bool editor_track::find_chain(TTrack *From, TTrack *To, chain &Chain, std::strin
 
 	Error.clear();
 	return true;
+}
+
+bool editor_track::is_straight(TTrack const &Track, straight_tolerance const &Tolerance)
+{
+	if (Track.eType != tt_Normal || false == is_supported(Track) || Track.m_paths.empty())
+		return false;
+	auto const &path{Track.m_paths.front()};
+	glm::dvec2 const start{path.points[segment_data::point::start].x, path.points[segment_data::point::start].z};
+	glm::dvec2 const end{path.points[segment_data::point::end].x, path.points[segment_data::point::end].z};
+	auto const length{glm::distance(start, end)};
+	if (length < 1e-3)
+		return false;
+	auto const direction{(end - start) / length};
+	for (auto const index : {segment_data::point::control1, segment_data::point::control2})
+	{
+		auto const &control{path.points[index]};
+		glm::dvec2 const offset{control.x, control.z};
+		if (std::abs(direction.x * offset.y - direction.y * offset.x) > Tolerance.offset)
+			return false;
+	}
+	return true;
+}
+
+editor_track::straight editor_track::find_straight(TTrack &Track, straight_tolerance const &Tolerance)
+{
+	straight result;
+	if (false == is_straight(Track, Tolerance))
+		return result;
+
+	auto const plan = [](glm::dvec3 const &Point) { return glm::dvec2{Point.x, Point.z}; };
+	auto const &first{Track.m_paths.front()};
+	auto const origin{first.points[segment_data::point::start]};
+	auto const direction{glm::normalize(plan(first.points[segment_data::point::end] - origin))};
+	auto const lateral = [&](glm::dvec3 const &Point) {
+		auto const offset{plan(Point - origin)};
+		return std::abs(direction.x * offset.y - direction.y * offset.x);
+	};
+	auto const continues = [&](TTrack const *Other) {
+		if (Other == nullptr || false == is_straight(*Other, Tolerance))
+			return false;
+		auto const &path{Other->m_paths.front()};
+		auto const otherdirection{glm::normalize(plan(path.points[segment_data::point::end] - path.points[segment_data::point::start]))};
+		if (std::abs(direction.x * otherdirection.y - direction.y * otherdirection.x) > Tolerance.angle)
+			return false;
+		return lateral(path.points[segment_data::point::start]) <= Tolerance.offset && lateral(path.points[segment_data::point::end]) <= Tolerance.offset;
+	};
+
+	std::deque<TTrack *> run{&Track};
+	for (auto const throughend : {true, false})
+	{
+		TTrack *previous{&Track};
+		TTrack *current{throughend ? Track.trNext : Track.trPrev};
+		while (continues(current) && std::find(run.begin(), run.end(), current) == run.end())
+		{
+			if (throughend)
+				run.push_back(current);
+			else
+				run.push_front(current);
+			auto *next{current->trPrev == previous ? current->trNext : current->trPrev};
+			previous = current;
+			current = next;
+		}
+	}
+
+	double low{0.0}, high{0.0};
+	glm::dvec3 lowpoint{origin}, highpoint{origin};
+	for (auto *track : run)
+	{
+		for (auto const index : {segment_data::point::start, segment_data::point::end})
+		{
+			auto const &point{track->m_paths.front().points[index]};
+			auto const along{glm::dot(plan(point - origin), direction)};
+			if (along < low)
+			{
+				low = along;
+				lowpoint = point;
+			}
+			if (along > high)
+			{
+				high = along;
+				highpoint = point;
+			}
+		}
+	}
+	result.tracks.assign(run.begin(), run.end());
+	result.start = lowpoint;
+	result.end = highpoint;
+	result.direction = direction;
+	result.length = high - low;
+	result.grade = result.length > 0.0 ? (highpoint.y - lowpoint.y) / result.length : 0.0;
+	auto azimuth{glm::degrees(std::atan2(direction.x, direction.y))};
+	if (azimuth < 0.0)
+		azimuth += 360.0;
+	result.azimuth = azimuth;
+	return result;
+}
+
+std::vector<editor_track::straight> editor_track::find_straights(double const Minimumlength, straight_tolerance const &Tolerance)
+{
+	std::vector<straight> result;
+	std::unordered_set<TTrack const *> visited;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || visited.count(track) > 0 || false == is_straight(*track, Tolerance))
+			continue;
+		auto line{find_straight(*track, Tolerance)};
+		for (auto const *member : line.tracks)
+			visited.insert(member);
+		if (line.length >= Minimumlength)
+			result.push_back(std::move(line));
+	}
+	std::sort(result.begin(), result.end(), [](straight const &A, straight const &B) { return A.length > B.length; });
+	return result;
 }
 
 std::vector<TTrack *> editor_track::relay(chain const &Chain, std::vector<segment_data> const &Pieces)
