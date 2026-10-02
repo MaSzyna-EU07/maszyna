@@ -3196,10 +3196,89 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 	return true;
 }
 
-bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dvec3 const &Point, editor_track::switch_template const &Shape)
+std::vector<TTrack *> editor_mode::build_double_slip(glm::dvec3 const &PointA, glm::dvec3 const &PointB, glm::dvec3 const &PointC, glm::dvec3 const &PointD, glm::dvec2 const &Crossing, double const Height, glm::dvec2 const &First, glm::dvec2 const &Second, double const Angle, double const Radius, TTrack &Style)
 {
 	auto const plan = [](glm::dvec3 const &Vector) { return glm::dvec2{Vector.x, Vector.z}; };
 	auto const cross = [](glm::dvec2 const &A, glm::dvec2 const &B) { return A.x * B.y - A.y * B.x; };
+	auto const at = [](glm::dvec2 const &Planar, double const Y) { return glm::dvec3{Planar.x, Y, Planar.y}; };
+	auto const straight = [](glm::dvec3 const &Start, glm::dvec3 const &End) {
+		segment_data path;
+		path.points[segment_data::point::start] = Start;
+		path.points[segment_data::point::end] = End;
+		return path;
+	};
+	double const gap{0.25};
+	auto const side{cross(First, Second) > 0.0 ? 1.0 : -1.0};
+	auto const turn = [](glm::dvec2 const &Vector, double const Rotation) {
+		auto const c{std::cos(Rotation)};
+		auto const s{std::sin(Rotation)};
+		return glm::dvec2{Vector.x * c - Vector.y * s, Vector.x * s + Vector.y * c};
+	};
+	auto const arc = [&](glm::dvec3 const &Start, glm::dvec2 const &Heading, double const Turn, glm::dvec3 const &Finish, double const From, double const To) {
+		glm::dvec2 const centre{plan(Start) + glm::dvec2{-Heading.y, Heading.x} * (Turn * Radius)};
+		auto const radial{plan(Start) - centre};
+		auto const p0{centre + turn(radial, Turn * From)};
+		auto const p3{centre + turn(radial, Turn * To)};
+		auto const d0{turn(Heading, Turn * From)};
+		auto const d3{turn(Heading, Turn * To)};
+		auto const handle{4.0 / 3.0 * std::tan((To - From) / 4.0) * Radius};
+		auto const y0{Start.y + (Finish.y - Start.y) * From / Angle};
+		auto const y3{Start.y + (Finish.y - Start.y) * To / Angle};
+		segment_data path;
+		path.points[segment_data::point::start] = {p0.x, y0, p0.y};
+		path.points[segment_data::point::end] = {p3.x, y3, p3.y};
+		path.points[segment_data::point::control1] = {d0.x * handle, 0.0, d0.y * handle};
+		path.points[segment_data::point::control2] = {-d3.x * handle, 0.0, -d3.y * handle};
+		path.radius = static_cast<float>(Radius);
+		return path;
+	};
+	auto const reversed = [](segment_data const &Path) {
+		segment_data result{Path};
+		result.points[segment_data::point::start] = Path.points[segment_data::point::end];
+		result.points[segment_data::point::end] = Path.points[segment_data::point::start];
+		result.points[segment_data::point::control1] = Path.points[segment_data::point::control2];
+		result.points[segment_data::point::control2] = Path.points[segment_data::point::control1];
+		result.rolls = {-Path.rolls[1], -Path.rolls[0]};
+		return result;
+	};
+	auto const middle{Angle * 0.5};
+	auto const split{gap / Radius};
+	auto const centreA{at(Crossing - First * gap, Height)};
+	auto const centreB{at(Crossing + First * gap, Height)};
+	auto const centreC{at(Crossing - Second * gap, Height)};
+	auto const centreD{at(Crossing + Second * gap, Height)};
+	std::string base;
+	for (int i = 1; base.empty() || simulation::Paths.find(base + "_a") != nullptr; ++i)
+		base = "editor_dks" + std::to_string(i);
+	editor_track::switch_template shape;
+	shape.length = glm::distance(plan(PointA), Crossing);
+	std::vector<TTrack *> parts;
+	parts.push_back(editor_track::create_switch(shape, {straight(PointA, centreA), arc(PointA, First, side, PointD, 0.0, middle - split)}, Style, base + "_a"));
+	parts.push_back(editor_track::create_switch(shape, {straight(PointB, centreB), reversed(arc(PointC, Second, -side, PointB, middle + split, Angle))}, Style, base + "_b"));
+	parts.push_back(editor_track::create_switch(shape, {straight(PointC, centreC), arc(PointC, Second, -side, PointB, 0.0, middle - split)}, Style, base + "_c"));
+	parts.push_back(editor_track::create_switch(shape, {straight(PointD, centreD), reversed(arc(PointA, First, side, PointD, middle + split, Angle))}, Style, base + "_d"));
+	parts.push_back(editor_track::create_path(Style, straight(centreA, centreB)));
+	parts.push_back(editor_track::create_path(Style, straight(centreC, centreD)));
+	parts.push_back(editor_track::create_path(Style, arc(PointA, First, side, PointD, middle - split, middle + split)));
+	parts.push_back(editor_track::create_path(Style, arc(PointC, Second, -side, PointB, middle - split, middle + split)));
+	parts.erase(std::remove(parts.begin(), parts.end(), nullptr), parts.end());
+	return parts;
+}
+
+bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dvec3 const &Point, editor_track::switch_template const &Shape)
+{
+	auto &state{m_straights};
+	state.status.clear();
+	auto const plan = [](glm::dvec3 const &Vector) { return glm::dvec2{Vector.x, Vector.z}; };
+	auto const cross = [](glm::dvec2 const &A, glm::dvec2 const &B) { return A.x * B.y - A.y * B.x; };
+	{
+		auto const sections{simulation::Region->sections(Point, 40.f)};
+		for (auto *section : sections)
+			for (auto const &cell : section->m_cells)
+				for (auto *track : cell.m_paths)
+					if (track->eType == tt_Switch && false == track->m_editorremoved && track->DoubleSlip() && glm::distance(plan(track->location()), plan(Point)) < 25.0)
+						return replace_double_slip(*track, Shape);
+	}
 	TTrack *other{nullptr};
 	glm::dvec2 crossing{0.0};
 	double best{40.0};
@@ -3236,7 +3315,10 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 		}
 	}
 	if (other == nullptr)
+	{
+		state.status = "No straight crossing the selected one near the click";
 		return false;
+	}
 	auto const second{editor_track::find_straight(*other, m_straights.tolerance)};
 	if (second.tracks.empty())
 		return false;
@@ -3246,17 +3328,29 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 		direction = -direction;
 	auto const angle{std::atan2(std::abs(cross(first, direction)), glm::dot(first, direction))};
 	if (angle < glm::radians(0.5) || angle > glm::radians(30.0))
+	{
+		state.status = "The straights cross at an angle unsuitable for a double slip";
 		return false;
-	auto const radius{Shape.radius};
-	auto const half{radius * std::tan(angle * 0.5)};
+	}
 	auto const alongfirst{glm::dot(crossing - plan(Line.start), Line.direction)};
 	auto const alongsecond{glm::dot(crossing - plan(second.start), second.direction)};
-	if (alongfirst - half < 0.0 || alongfirst + half > Line.length || alongsecond - half < 0.0 || alongsecond + half > second.length)
-		return false;
+	auto const available{std::min({alongfirst, Line.length - alongfirst, alongsecond, second.length - alongsecond}) - 0.5};
+	auto radius{Shape.radius};
+	auto half{radius * std::tan(angle * 0.5)};
+	if (half > available)
+	{
+		half = available;
+		radius = half / std::tan(angle * 0.5);
+		if (radius < 50.0)
+		{
+			state.status = "Not enough straight track around the crossing";
+			return false;
+		}
+		state.status = "R reduced to " + std::to_string(static_cast<int>(radius)) + " m, the straights end " + std::to_string(static_cast<int>(available)) + " m from the crossing";
+	}
 
 	auto const heightfirst = [&](double const Along) { return Line.start.y + Line.grade * Along; };
 	auto const heightsecond = [&](double const Along) { return second.start.y + second.grade * Along; };
-	auto const centreheight{heightfirst(alongfirst)};
 	auto const sign{glm::dot(second.direction, direction) > 0.0 ? 1.0 : -1.0};
 	auto const at = [&](glm::dvec2 const &Planar, double const Height) { return glm::dvec3{Planar.x, Height, Planar.y}; };
 	auto const pointA{at(crossing - first * half, heightfirst(alongfirst - half))};
@@ -3288,72 +3382,151 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 		}
 		return false;
 	}
-
-	auto const straight = [&](glm::dvec3 const &Start, glm::dvec3 const &End) {
-		segment_data path;
-		path.points[segment_data::point::start] = Start;
-		path.points[segment_data::point::end] = End;
-		return path;
-	};
-	double const gap{0.25};
-	auto const side{cross(first, direction) > 0.0 ? 1.0 : -1.0};
-	auto const turn = [](glm::dvec2 const &Vector, double const Angle) {
-		auto const c{std::cos(Angle)};
-		auto const s{std::sin(Angle)};
-		return glm::dvec2{Vector.x * c - Vector.y * s, Vector.x * s + Vector.y * c};
-	};
-	auto const arc = [&](glm::dvec3 const &Start, glm::dvec2 const &Heading, double const Turn, glm::dvec3 const &Finish, double const From, double const To) {
-		glm::dvec2 const centre{plan(Start) + glm::dvec2{-Heading.y, Heading.x} * (Turn * radius)};
-		auto const radial{plan(Start) - centre};
-		auto const p0{centre + turn(radial, Turn * From)};
-		auto const p3{centre + turn(radial, Turn * To)};
-		auto const d0{turn(Heading, Turn * From)};
-		auto const d3{turn(Heading, Turn * To)};
-		auto const handle{4.0 / 3.0 * std::tan((To - From) / 4.0) * radius};
-		auto const y0{Start.y + (Finish.y - Start.y) * From / angle};
-		auto const y3{Start.y + (Finish.y - Start.y) * To / angle};
-		segment_data path;
-		path.points[segment_data::point::start] = {p0.x, y0, p0.y};
-		path.points[segment_data::point::end] = {p3.x, y3, p3.y};
-		path.points[segment_data::point::control1] = {d0.x * handle, 0.0, d0.y * handle};
-		path.points[segment_data::point::control2] = {-d3.x * handle, 0.0, -d3.y * handle};
-		path.radius = static_cast<float>(radius);
-		return path;
-	};
-	auto const reversed = [](segment_data const &Path) {
-		segment_data result{Path};
-		result.points[segment_data::point::start] = Path.points[segment_data::point::end];
-		result.points[segment_data::point::end] = Path.points[segment_data::point::start];
-		result.points[segment_data::point::control1] = Path.points[segment_data::point::control2];
-		result.points[segment_data::point::control2] = Path.points[segment_data::point::control1];
-		result.rolls = {-Path.rolls[1], -Path.rolls[0]};
-		return result;
-	};
-	auto const middle{angle * 0.5};
-	auto const split{gap / radius};
-	auto const centreA{at(crossing - first * gap, centreheight)};
-	auto const centreB{at(crossing + first * gap, centreheight)};
-	auto const centreC{at(crossing - direction * gap, centreheight)};
-	auto const centreD{at(crossing + direction * gap, centreheight)};
-
-	std::string base;
-	for (int i = 1; base.empty() || simulation::Paths.find(base + "_a") != nullptr; ++i)
-		base = "editor_dks" + std::to_string(i);
-	editor_track::switch_template shape;
-	shape.length = half;
-	auto *slipstyle{style != nullptr ? style : Line.tracks.front()};
-	std::vector<TTrack *> parts;
-	parts.push_back(editor_track::create_switch(shape, {straight(pointA, centreA), arc(pointA, first, side, pointD, 0.0, middle - split)}, *slipstyle, base + "_a"));
-	parts.push_back(editor_track::create_switch(shape, {straight(pointB, centreB), reversed(arc(pointC, direction, -side, pointB, middle + split, angle))}, *slipstyle, base + "_b"));
-	parts.push_back(editor_track::create_switch(shape, {straight(pointC, centreC), arc(pointC, direction, -side, pointB, 0.0, middle - split)}, *slipstyle, base + "_c"));
-	parts.push_back(editor_track::create_switch(shape, {straight(pointD, centreD), reversed(arc(pointA, first, side, pointD, middle + split, angle))}, *slipstyle, base + "_d"));
-	parts.push_back(editor_track::create_path(*slipstyle, straight(centreA, centreB)));
-	parts.push_back(editor_track::create_path(*slipstyle, straight(centreC, centreD)));
-	parts.push_back(editor_track::create_path(*slipstyle, arc(pointA, first, side, pointD, middle - split, middle + split)));
-	parts.push_back(editor_track::create_path(*slipstyle, arc(pointC, direction, -side, pointB, middle - split, middle + split)));
-	parts.erase(std::remove(parts.begin(), parts.end(), nullptr), parts.end());
+	auto const parts{build_double_slip(pointA, pointB, pointC, pointD, crossing, heightfirst(alongfirst), first, direction, angle, radius, style != nullptr ? *style : *Line.tracks.front())};
 	editor_track::commit(parts);
 	created.insert(created.end(), parts.begin(), parts.end());
+	push_track_snapshot(std::move(states), std::move(created));
+	m_history.back().removed = std::move(removed);
+	straight_refresh();
+	return true;
+}
+
+bool editor_mode::replace_double_slip(TTrack &Part, editor_track::switch_template const &Shape)
+{
+	auto &state{m_straights};
+	auto const plan = [](glm::dvec3 const &Vector) { return glm::dvec2{Vector.x, Vector.z}; };
+	auto const cross = [](glm::dvec2 const &A, glm::dvec2 const &B) { return A.x * B.y - A.y * B.x; };
+	auto const base{Part.name().substr(0, Part.name().size() - 2)};
+	std::array<TTrack *, 4> switches{};
+	for (int i = 0; i < 4; ++i)
+	{
+		switches[i] = simulation::Paths.find(base + "_" + static_cast<char>('a' + i));
+		if (switches[i] == nullptr || switches[i]->m_editorremoved || switches[i]->eType != tt_Switch || switches[i]->m_paths.size() < 2)
+		{
+			state.status = "The double slip isn't complete, it can't be replaced";
+			return false;
+		}
+	}
+	struct end
+	{
+		TTrack *track;
+		glm::dvec3 point;
+		glm::dvec2 inward;
+		TTrack *outer;
+	};
+	std::vector<end> ends;
+	std::vector<TTrack *> parts(switches.begin(), switches.end());
+	for (auto *track : switches)
+	{
+		segment_data const *straight{nullptr};
+		for (auto const &path : track->m_paths)
+			if (path.points[segment_data::point::control1] == glm::dvec3{} && path.points[segment_data::point::control2] == glm::dvec3{})
+				straight = &path;
+		if (straight == nullptr)
+			straight = &track->m_paths.front();
+		auto const start{straight->points[segment_data::point::start]};
+		ends.push_back({track, start, glm::normalize(plan(straight->points[segment_data::point::end] - start)), track->SwitchExtension->pPrevs[0]});
+		for (int i = 0; i < 2; ++i)
+		{
+			auto *inner{track->SwitchExtension->pNexts[i]};
+			if (inner != nullptr && inner->eType == tt_Normal && std::find(parts.begin(), parts.end(), inner) == parts.end() && inner->Length() < 5.0)
+				parts.push_back(inner);
+		}
+	}
+	int partner{-1};
+	for (int i = 1; i < 4; ++i)
+		if (glm::dot(ends[0].inward, ends[i].inward) < -0.999)
+			partner = i;
+	if (partner < 0)
+	{
+		state.status = "The double slip geometry isn't recognized";
+		return false;
+	}
+	auto const &a{ends[0]};
+	auto const &b{ends[partner]};
+	std::vector<int> others;
+	for (int i = 1; i < 4; ++i)
+		if (i != partner)
+			others.push_back(i);
+	if (glm::dot(ends[0].inward, ends[others[0]].inward) < 0.0)
+		std::swap(others[0], others[1]);
+	auto const &c{ends[others[0]]};
+	auto const &d{ends[others[1]]};
+	auto const first{a.inward};
+	auto direction{c.inward};
+	auto const determinant{cross(first, direction)};
+	if (std::abs(determinant) < 1e-9)
+		return false;
+	auto const t{cross(plan(c.point) - plan(a.point), direction) / determinant};
+	glm::dvec2 const crossing{plan(a.point) + first * t};
+	auto const angle{std::atan2(std::abs(cross(first, direction)), glm::dot(first, direction))};
+	auto const oldhalf{glm::distance(plan(a.point), crossing)};
+	auto radius{Shape.radius};
+	auto half{radius * std::tan(angle * 0.5)};
+	auto const height{(a.point.y + b.point.y) * 0.5};
+
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	std::vector<TTrack *> created;
+	std::vector<TTrack *> removed;
+	if (half > oldhalf)
+	{
+		for (auto const *e : {&a, &b, &c, &d})
+		{
+			if (e->outer == nullptr || false == editor_track::is_straight(*e->outer, m_straights.tolerance))
+			{
+				half = oldhalf;
+				radius = half / std::tan(angle * 0.5);
+				state.status = "R limited to " + std::to_string(static_cast<int>(radius)) + " m, a neighbouring path isn't straight";
+				break;
+			}
+			auto const line{editor_track::find_straight(*e->outer, m_straights.tolerance)};
+			auto const reach{std::abs(glm::dot(plan(line.end) - crossing, -e->inward))};
+			auto const reachstart{std::abs(glm::dot(plan(line.start) - crossing, -e->inward))};
+			if (std::max(reach, reachstart) - 0.5 < half)
+			{
+				half = std::min(half, std::max(reach, reachstart) - 0.5);
+				radius = half / std::tan(angle * 0.5);
+				state.status = "R reduced to " + std::to_string(static_cast<int>(radius)) + " m to fit the straights";
+			}
+		}
+	}
+	for (auto *track : parts)
+		editor_track::retire(*track);
+	removed.insert(removed.end(), parts.begin(), parts.end());
+	TTrack *style{a.outer != nullptr && a.outer->eType == tt_Normal ? a.outer : switches[0]};
+	std::array<glm::dvec3, 4> points;
+	std::array<end const *, 4> order{&a, &b, &c, &d};
+	for (int i = 0; i < 4; ++i)
+	{
+		auto const &e{*order[i]};
+		auto const outward{-e.inward};
+		auto const target{crossing + outward * half};
+		points[i] = {target.x, e.point.y, target.y};
+		if (half < oldhalf - 0.01)
+		{
+			auto *filler{editor_track::create_path(*style, [&] {
+				segment_data path;
+				path.points[segment_data::point::start] = points[i];
+				path.points[segment_data::point::end] = e.point;
+				return path;
+			}())};
+			created.push_back(filler);
+		}
+		else if (half > oldhalf + 0.01 && e.outer != nullptr)
+		{
+			auto const line{editor_track::find_straight(*e.outer, m_straights.tolerance)};
+			auto const alongold{glm::dot(plan(e.point) - plan(line.start), line.direction)};
+			auto const alongnew{glm::dot(target - plan(line.start), line.direction)};
+			cut_straight(line, std::min(alongold, alongnew), std::max(alongold, alongnew), states, created, removed, nullptr);
+		}
+	}
+	auto const parts2{build_double_slip(points[0], points[1], points[2], points[3], crossing, height, first, direction, angle, radius, *style)};
+	std::vector<TTrack *> commitlist(parts2.begin(), parts2.end());
+	for (auto *track : created)
+		if (std::find(commitlist.begin(), commitlist.end(), track) == commitlist.end())
+			commitlist.push_back(track);
+	editor_track::commit(commitlist);
+	created.insert(created.end(), parts2.begin(), parts2.end());
 	push_track_snapshot(std::move(states), std::move(created));
 	m_history.back().removed = std::move(removed);
 	straight_refresh();
