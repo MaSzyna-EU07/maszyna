@@ -22,6 +22,7 @@ http:
 #include <cmath>
 #include <limits>
 #include <deque>
+#include <numeric>
 #include <functional>
 #include <sstream>
 #include <unordered_set>
@@ -969,6 +970,77 @@ std::vector<editor_track::straight> editor_track::find_straights(double const Mi
 	}
 	std::sort(result.begin(), result.end(), [](straight const &A, straight const &B) { return A.length > B.length; });
 	return result;
+}
+
+bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance, double const Gauge, curve &Curve)
+{
+	Curve = {};
+	auto const curved = [&](TTrack const *Other) { return Other != nullptr && Other->eType == tt_Normal && is_supported(*Other) && false == Other->m_editorremoved && false == is_straight(*Other, Tolerance); };
+	if (false == curved(&Track))
+		return false;
+
+	std::deque<std::pair<TTrack *, bool>> run{{&Track, true}};
+	for (auto const throughend : {true, false})
+	{
+		TTrack *previous{&Track};
+		TTrack *current{throughend ? Track.trNext : Track.trPrev};
+		while (curved(current) && std::none_of(run.begin(), run.end(), [&](auto const &Member) { return Member.first == current; }))
+		{
+			auto const entersatstart{current->trPrev == previous};
+			if (throughend)
+				run.emplace_back(current, entersatstart);
+			else
+				run.emplace_front(current, false == entersatstart);
+			previous = current;
+			current = entersatstart ? current->trNext : current->trPrev;
+		}
+	}
+
+	std::vector<double> turns;
+	std::vector<double> lengths;
+	std::vector<bool> varying;
+	double smallest{0.0};
+	for (auto const &member : run)
+	{
+		auto const &path{member.first->m_paths.front()};
+		auto const tangentstart{glm::normalize(plan_of(path_tangent(path, false)))};
+		auto const tangentend{glm::normalize(plan_of(path_tangent(path, true)))};
+		auto turn{std::atan2(lateral_of(tangentstart, tangentend), glm::dot(tangentstart, tangentend))};
+		if (false == member.second)
+			turn = -turn;
+		turns.push_back(turn);
+		lengths.push_back(member.first->Length());
+		auto const radiusstart{path_radius(path, 0.0)};
+		auto const radiusend{path_radius(path, 1.0)};
+		auto const curvaturestart{radiusstart > 0.0 ? 1.0 / radiusstart : 0.0};
+		auto const curvatureend{radiusend > 0.0 ? 1.0 / radiusend : 0.0};
+		varying.push_back(std::abs(curvaturestart - curvatureend) > 0.1 * std::max(curvaturestart, curvatureend));
+		auto const radius{path_radius(path, 0.5)};
+		if (radius > 0.0 && (smallest == 0.0 || radius < smallest))
+			smallest = radius;
+		for (auto const roll : path.rolls)
+			Curve.cant = std::max(Curve.cant, Gauge * std::sin(std::abs(glm::radians(static_cast<double>(roll)))));
+	}
+	int sign{0};
+	for (auto const turn : turns)
+	{
+		Curve.turn += turn;
+		int const current{turn > 1e-9 ? 1 : turn < -1e-9 ? -1 : 0};
+		if (current != 0 && sign != 0 && current != sign)
+			++Curve.reversals;
+		if (current != 0)
+			sign = current;
+	}
+	for (std::size_t i = 0; i < run.size() && varying[i]; ++i)
+		Curve.transition_in += lengths[i];
+	for (std::size_t i = run.size(); i > 0 && varying[i - 1]; --i)
+		Curve.transition_out += lengths[i - 1];
+	if (Curve.transition_in + Curve.transition_out >= std::accumulate(lengths.begin(), lengths.end(), 0.0))
+		Curve.transition_in = Curve.transition_out = 0.0;
+	Curve.radius = smallest;
+	Curve.from = run.front().first;
+	Curve.to = run.back().first;
+	return true;
 }
 
 std::vector<TTrack *> editor_track::straight_affected(std::vector<straight> const &Lines)

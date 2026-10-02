@@ -238,8 +238,8 @@ result compute(design const &Design)
 		{
 			auto const t{cross(offset, enddirection) / determinant};
 			auto const u{cross(startdirection, offset) / determinant};
-			if (t <= 0.0 || u <= 0.0)
-				r.errors.emplace_back("Tangents of the ends intersect outside of the fragment, use two vertices");
+			if ((t <= 0.0 || u <= 0.0) && false == Design.vertices.front().reverse_turn)
+				r.errors.emplace_back("Tangents of the ends intersect outside of the fragment, turn the longer way or use two vertices");
 			r.vertices[0] = start + startdirection * t;
 		}
 	}
@@ -303,12 +303,15 @@ result compute(design const &Design)
 		auto const directionin{glm::normalize(polygon[k + 1] - polygon[k])};
 		auto const directionout{glm::normalize(polygon[k + 2] - polygon[k + 1])};
 		auto const turn{cross(directionin, directionout)};
-		auto const deflection{std::atan2(std::abs(turn), glm::dot(directionin, directionout))};
+		auto const geometric{std::atan2(std::abs(turn), glm::dot(directionin, directionout))};
+		auto const reverse{Design.vertices[k].reverse_turn};
+		auto const deflection{reverse ? 2.0 * kPi - geometric : geometric};
+		int const side{(turn > 0.0) != reverse ? 1 : -1};
 		if (deflection < 1e-7)
 			continue;
-		if (deflection > kPi - 1e-3)
+		if (geometric > kPi - 1e-3 || (reverse && geometric < 1e-3))
 		{
-			r.errors.emplace_back(format("Vertex %zu: the route turns back on itself", k + 1));
+			r.errors.emplace_back(format("Vertex %zu: a turn of about 180 or 360 degrees needs one more vertex", k + 1));
 			return r;
 		}
 		auto const angles = [&](double const Factor) {
@@ -327,8 +330,7 @@ result compute(design const &Design)
 			fit.transition_out *= low;
 		}
 		fit.deflection = deflection;
-		fit.tangents = [&, k, directionin, directionout, turn](double const Radius, double &Tangentin, double &Tangentout) {
-			int const side{turn > 0.0 ? 1 : -1};
+		fit.tangents = [&, k, directionin, directionout, side](double const Radius, double &Tangentin, double &Tangentout) {
 			auto const endin{transition_point(Design.shape, fits[k].transition_in, Radius, 1.0)};
 			auto const endout{transition_point(Design.shape, fits[k].transition_out, Radius, 1.0)};
 			auto const a{Radius + endin.y - Radius * (1.0 - std::cos(endin.angle))};
@@ -408,7 +410,10 @@ result compute(design const &Design)
 		auto const directionin{glm::normalize(polygon[k + 1] - polygon[k])};
 		auto const directionout{glm::normalize(polygon[k + 2] - polygon[k + 1])};
 		auto const turn{cross(directionin, directionout)};
-		auto const deflection{std::atan2(std::abs(turn), glm::dot(directionin, directionout))};
+		auto const geometric{std::atan2(std::abs(turn), glm::dot(directionin, directionout))};
+		auto const reverse{Design.vertices[k].reverse_turn};
+		auto const deflection{reverse ? 2.0 * kPi - geometric : geometric};
+		int const side{(turn > 0.0) != reverse ? 1 : -1};
 
 		auto const lead{glm::dot(position - cursor, directionin)};
 		if (deflection < 1e-7)
@@ -420,12 +425,11 @@ result compute(design const &Design)
 			cursor = position;
 			continue;
 		}
-		if (deflection > kPi - 1e-3)
+		if (geometric > kPi - 1e-3 || (reverse && geometric < 1e-3))
 		{
-			r.errors.emplace_back(format("Vertex %zu: the route turns back on itself", k + 1));
+			r.errors.emplace_back(format("Vertex %zu: a turn of about 180 or 360 degrees needs one more vertex", k + 1));
 			return r;
 		}
-		int const side{turn > 0.0 ? 1 : -1};
 		auto const radius{fit.radius};
 		auto const lengthin{fit.transition_in};
 		auto const lengthout{fit.transition_out};

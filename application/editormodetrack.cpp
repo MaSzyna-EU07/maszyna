@@ -134,6 +134,8 @@ void editor_mode::select_track(scene::basic_node *Node)
 		m_track_point = {};
 	m_node = track;
 	ui()->set_node(m_node);
+	if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::route && std::find(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), track) == m_route.chain.tracks.end())
+		route_from_curve(*track);
 }
 
 bool editor_mode::pick_track_handle()
@@ -703,6 +705,42 @@ void editor_mode::route_reset()
 	route_update();
 }
 
+bool editor_mode::route_from_curve(TTrack &Track)
+{
+	editor_track::curve curve;
+	if (false == editor_track::find_curve(Track, m_straights.tolerance, m_route.design.norms.gauge, curve))
+		return false;
+	m_route.from = curve.from;
+	m_route.to = curve.to;
+	route_reset();
+	if (m_route.chain.tracks.empty())
+		return false;
+	auto &design{m_route.design};
+	alignment::vertex vertex;
+	vertex.radius = curve.radius > 0.0 ? std::max(10.0, std::round(curve.radius)) : 1000.0;
+	route_recommend(vertex);
+	if (curve.transition_in > 0.0)
+		vertex.transition_in = std::round(curve.transition_in);
+	if (curve.transition_out > 0.0)
+		vertex.transition_out = std::round(curve.transition_out);
+	if (curve.cant > 0.0)
+		vertex.cant = std::round(curve.cant);
+	if (curve.reversals == 0)
+	{
+		vertex.reverse_turn = std::abs(curve.turn) > glm::pi<double>();
+		design.vertices = {vertex};
+	}
+	else
+	{
+		auto const distance{glm::distance(glm::dvec2{design.start.x, design.start.z}, glm::dvec2{design.end.x, design.end.z})};
+		vertex.offset = distance / 3.0;
+		design.vertices = {vertex, vertex};
+	}
+	route_update();
+	m_route.status = "Curve of " + std::to_string(m_route.chain.tracks.size()) + " paths, turning " + std::to_string(static_cast<int>(std::round(glm::degrees(curve.turn)))) + " deg";
+	return true;
+}
+
 void editor_mode::route_apply()
 {
 	auto &route{m_route};
@@ -913,9 +951,9 @@ void editor_mode::render_route_ui()
 {
 	auto &route{m_route};
 	auto &design{route.design};
-	ImGui::TextDisabled("Re-lays a chain of regular paths along an alignment designed with intersection points.\n"
-	                    "The outer ends of the chain and their directions stay fixed.\n"
-	                    "LMB: select a path or a vertex (W1, W2...)   Esc: release the vertex");
+	ImGui::TextDisabled("LMB on a curve: loads the whole curve between the adjoining straights.\n"
+	                    "The ends of the curve and their directions stay fixed.\n"
+	                    "LMB on a vertex (W1, W2...): moves it with the gizmo   Esc: release the vertex");
 
 	auto *track = selected_track();
 	auto const name = [](TTrack const *Track) { return Track == nullptr ? std::string{"-"} : (Track->name().empty() ? std::string{"(noname)"} : Track->name()); };
@@ -1051,6 +1089,7 @@ void editor_mode::render_route_ui()
 		changed |= ImGui::InputDouble("Transition in (m)", &vertex.transition_in, 0.0, 0.0, "%.1f");
 		changed |= ImGui::InputDouble("Transition out (m)", &vertex.transition_out, 0.0, 0.0, "%.1f");
 		changed |= ImGui::InputDouble("Cant (mm)", &vertex.cant, 0.0, 0.0, "%.0f");
+		changed |= ImGui::Checkbox("Turn the longer way (over 180 deg)", &vertex.reverse_turn);
 		changed |= ImGui::Checkbox("Elevation from the ends", &vertex.auto_elevation);
 		if (false == vertex.auto_elevation)
 			changed |= ImGui::InputDouble("Elevation (m)", &vertex.elevation, 0.0, 0.0, "%.3f");

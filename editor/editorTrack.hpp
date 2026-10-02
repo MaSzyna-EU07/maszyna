@@ -117,6 +117,18 @@ class editor_track
 	static straight find_straight(TTrack &Track, straight_tolerance const &Tolerance);
 	static std::vector<straight> find_straights(double const Minimumlength, straight_tolerance const &Tolerance);
 	static std::vector<TTrack *> straight_affected(std::vector<straight> const &Lines);
+	struct curve
+	{
+		TTrack *from{nullptr};
+		TTrack *to{nullptr};
+		double turn{0.0};
+		int reversals{0};
+		double radius{0.0};
+		double transition_in{0.0};
+		double transition_out{0.0};
+		double cant{0.0};
+	};
+	static bool find_curve(TTrack &Track, straight_tolerance const &Tolerance, double const Gauge, curve &Curve);
 	static void move_straights(std::vector<straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
 	static std::vector<TTrack *> relay(chain const &Chain, std::vector<segment_data> const &Pieces);
 	static void retire(TTrack &Track);

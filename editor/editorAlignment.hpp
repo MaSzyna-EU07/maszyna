@@ -48,6 +48,7 @@ struct vertex
 	bool auto_elevation{true};
 	double elevation{0.0};
 	double vertical_radius{0.0};
+	bool reverse_turn{false};
 };
 
 struct design
