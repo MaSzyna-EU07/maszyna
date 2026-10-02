@@ -394,8 +394,19 @@ class editor_mode : public application_mode
 	glm::dvec3 snap_straight_direction(glm::dvec3 const &Pivot, glm::dvec3 const &Moved) const;
 	straights_state m_straights;
 
+	struct curve_sample
+	{
+		double station{0.0};
+		glm::dvec3 position{0.0};
+		glm::dvec2 tangent{0.0, 1.0};
+		float roll{0.f};
+		float radius{0.f};
+	};
 	struct switch_tool
 	{
+		bool curved{false};
+		std::vector<curve_sample> frame;
+		std::vector<TTrack *> frame_tracks;
 		std::vector<editor_track::switch_template> templates;
 		bool collected{false};
 		int armed{-1};
@@ -424,6 +435,11 @@ class editor_mode : public application_mode
 	void finish_switch_placement();
 	std::vector<segment_data> switch_preview() const;
 	void insert_switch(editor_track::straight const &Line, double const Along, int const Direction, int const Side);
+	static std::vector<curve_sample> sample_chain(editor_track::chain const &Chain);
+	static curve_sample sample_at(std::vector<curve_sample> const &Frame, double const Station);
+	static double nearest_station(std::vector<curve_sample> const &Frame, glm::dvec3 const &Point);
+	static std::vector<segment_data> curved_switch_paths(editor_track::switch_template const &Shape, std::vector<curve_sample> const &Frame, double const Station, int const Direction, int const Side);
+	void insert_curved_switch(int const Direction, int const Side);
 	bool place_switch_on_straight(editor_track::straight const &Line, editor_track::switch_template const &Shape, TTrack const *Style, double const Along, int const Direction, int const Side, bool const Snap, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed);
 	struct crossover_plan
 	{

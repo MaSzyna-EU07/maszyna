@@ -2604,6 +2604,15 @@ std::vector<segment_data> editor_mode::switch_preview() const
 	auto const &tool{m_switch};
 	if (false == tool.placing || tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()))
 		return {};
+	if (tool.curved)
+	{
+		auto const sample{sample_at(tool.frame, tool.along)};
+		glm::dvec2 const offset{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
+		auto const forward{glm::dot(offset, sample.tangent) >= 0.0 ? 1 : -1};
+		glm::dvec2 const direction{sample.tangent * static_cast<double>(forward)};
+		auto const side{direction.x * offset.y - direction.y * offset.x >= 0.0 ? 1 : -1};
+		return curved_switch_paths(tool.templates[tool.armed], tool.frame, tool.along, forward, side);
+	}
 	auto const &line{tool.line};
 	glm::dvec2 const offset{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
 	auto const forward{glm::dot(offset, line.direction) >= 0.0 ? 1 : -1};
@@ -2615,12 +2624,34 @@ std::vector<segment_data> editor_mode::switch_preview() const
 bool editor_mode::start_switch_placement()
 {
 	auto &tool{m_switch};
-	if (tool.armed < 0 || m_track_tab != track_tab::straights)
+	if (tool.armed < 0 || (m_track_tab != track_tab::straights && m_track_tab != track_tab::route))
 		return false;
+	glm::dvec3 const ground{Global.pCamera.Pos + GfxRenderer->Mouse_Position()};
+	tool.curved = false;
+	if (m_track_tab == track_tab::route || current_straight().tracks.empty())
+	{
+		auto *track{selected_track()};
+		if (track == nullptr || track->eType != tt_Normal || tool.templates[tool.armed].double_slip)
+			return false;
+		editor_track::curve curve;
+		editor_track::chain chain;
+		std::string error;
+		if (false == editor_track::find_curve(*track, m_straights.tolerance, m_route.design.norms.gauge, curve) || false == editor_track::find_chain(curve.from, curve.to, chain, error))
+			return false;
+		tool.frame = sample_chain(chain);
+		tool.frame_tracks = chain.tracks;
+		if (tool.frame.size() < 2)
+			return false;
+		tool.curved = true;
+		tool.along = nearest_station(tool.frame, ground);
+		tool.point = sample_at(tool.frame, tool.along).position;
+		tool.mouse = ground;
+		tool.placing = true;
+		return true;
+	}
 	auto const &line{current_straight()};
 	if (line.tracks.empty())
 		return false;
-	glm::dvec3 const ground{Global.pCamera.Pos + GfxRenderer->Mouse_Position()};
 	if (tool.templates[tool.armed].double_slip)
 	{
 		insert_double_slip(line, ground, tool.templates[tool.armed]);
@@ -2640,6 +2671,16 @@ void editor_mode::finish_switch_placement()
 	tool.placing = false;
 	if (tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()))
 		return;
+	if (tool.curved)
+	{
+		auto const sample{sample_at(tool.frame, tool.along)};
+		glm::dvec2 const offset{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
+		auto const forward{glm::dot(offset, sample.tangent) >= 0.0 ? 1 : -1};
+		glm::dvec2 const direction{sample.tangent * static_cast<double>(forward)};
+		auto const side{direction.x * offset.y - direction.y * offset.x >= 0.0 ? 1 : -1};
+		insert_curved_switch(forward, side);
+		return;
+	}
 	glm::dvec2 const offset{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
 	auto const forward{glm::dot(offset, tool.line.direction) >= 0.0 ? 1 : -1};
 	glm::dvec2 const direction{tool.line.direction * static_cast<double>(forward)};
@@ -3531,4 +3572,207 @@ bool editor_mode::replace_double_slip(TTrack &Part, editor_track::switch_templat
 	m_history.back().removed = std::move(removed);
 	straight_refresh();
 	return true;
+}
+
+std::vector<editor_mode::curve_sample> editor_mode::sample_chain(editor_track::chain const &Chain)
+{
+	std::vector<curve_sample> result;
+	double station{0.0};
+	for (std::size_t i = 0; i < Chain.tracks.size(); ++i)
+	{
+		auto const &path{Chain.tracks[i]->m_paths.front()};
+		auto const forward{Chain.forward[i]};
+		auto const p0{path.points[segment_data::point::start]};
+		auto const p3{path.points[segment_data::point::end]};
+		auto const p1{p0 + path.points[segment_data::point::control1]};
+		auto const p2{p3 + path.points[segment_data::point::control2]};
+		bool const straight{path.points[segment_data::point::control1] == glm::dvec3{} && path.points[segment_data::point::control2] == glm::dvec3{}};
+		auto const length{glm::distance(p0, p3)};
+		int const steps{std::max(8, static_cast<int>(std::ceil(length / 0.5)))};
+		for (int k = (result.empty() ? 0 : 1); k <= steps; ++k)
+		{
+			auto const t{forward ? static_cast<double>(k) / steps : 1.0 - static_cast<double>(k) / steps};
+			auto const u{1.0 - t};
+			glm::dvec3 position, derivative;
+			if (straight)
+			{
+				position = glm::mix(p0, p3, t);
+				derivative = p3 - p0;
+			}
+			else
+			{
+				position = u * u * u * p0 + 3.0 * u * u * t * p1 + 3.0 * u * t * t * p2 + t * t * t * p3;
+				derivative = 3.0 * u * u * (p1 - p0) + 6.0 * u * t * (p2 - p1) + 3.0 * t * t * (p3 - p2);
+			}
+			if (false == forward)
+				derivative = -derivative;
+			if (false == result.empty())
+				station += glm::length(glm::dvec2{position.x - result.back().position.x, position.z - result.back().position.z});
+			curve_sample sample;
+			sample.station = station;
+			sample.position = position;
+			sample.tangent = glm::normalize(glm::dvec2{derivative.x, derivative.z});
+			auto const roll{path.rolls[0] + (path.rolls[1] - path.rolls[0]) * t};
+			sample.roll = static_cast<float>(forward ? roll : -roll);
+			sample.radius = path.radius;
+			result.push_back(sample);
+		}
+	}
+	return result;
+}
+
+editor_mode::curve_sample editor_mode::sample_at(std::vector<curve_sample> const &Frame, double const Station)
+{
+	if (Frame.empty())
+		return {};
+	if (Station <= Frame.front().station)
+		return Frame.front();
+	if (Station >= Frame.back().station)
+		return Frame.back();
+	auto const next{std::lower_bound(Frame.begin(), Frame.end(), Station, [](curve_sample const &Sample, double const Value) { return Sample.station < Value; })};
+	auto const previous{std::prev(next)};
+	auto const span{std::max(1e-9, next->station - previous->station)};
+	auto const f{(Station - previous->station) / span};
+	curve_sample result;
+	result.station = Station;
+	result.position = glm::mix(previous->position, next->position, f);
+	result.tangent = glm::normalize(glm::mix(previous->tangent, next->tangent, f));
+	result.roll = static_cast<float>(previous->roll + (next->roll - previous->roll) * f);
+	result.radius = previous->radius;
+	return result;
+}
+
+double editor_mode::nearest_station(std::vector<curve_sample> const &Frame, glm::dvec3 const &Point)
+{
+	double best{std::numeric_limits<double>::max()};
+	double station{0.0};
+	for (std::size_t i = 0; i + 1 < Frame.size(); ++i)
+	{
+		glm::dvec2 const a{Frame[i].position.x, Frame[i].position.z};
+		glm::dvec2 const b{Frame[i + 1].position.x, Frame[i + 1].position.z};
+		auto const segment{b - a};
+		auto const t{std::clamp(glm::dot(glm::dvec2{Point.x, Point.z} - a, segment) / std::max(1e-12, glm::dot(segment, segment)), 0.0, 1.0)};
+		auto const distance{glm::distance(glm::dvec2{Point.x, Point.z}, a + segment * t)};
+		if (distance < best)
+		{
+			best = distance;
+			station = Frame[i].station + (Frame[i + 1].station - Frame[i].station) * t;
+		}
+	}
+	return station;
+}
+
+std::vector<segment_data> editor_mode::curved_switch_paths(editor_track::switch_template const &Shape, std::vector<curve_sample> const &Frame, double const Station, int const Direction, int const Side)
+{
+	auto const map = [&](glm::dvec3 const &Local, glm::dvec2 &Tangent, glm::dvec2 const &Localtangent) {
+		auto const sample{sample_at(Frame, Station + Direction * Local.z)};
+		auto const along{sample.tangent * static_cast<double>(Direction)};
+		glm::dvec2 const across{glm::dvec2{-along.y, along.x} * static_cast<double>(Side)};
+		Tangent = glm::normalize(along * Localtangent.y + across * Localtangent.x);
+		auto const planar{glm::dvec2{sample.position.x, sample.position.z} + across * Local.x};
+		return glm::dvec3{planar.x, sample.position.y + Local.y, planar.y};
+	};
+	auto const hermite = [](glm::dvec3 const &Start, glm::dvec2 const &Startdirection, glm::dvec3 const &End, glm::dvec2 const &Enddirection) {
+		auto const handle{glm::distance(glm::dvec2{Start.x, Start.z}, glm::dvec2{End.x, End.z}) / 3.0};
+		segment_data path;
+		path.points[segment_data::point::start] = Start;
+		path.points[segment_data::point::end] = End;
+		path.points[segment_data::point::control1] = {Startdirection.x * handle, (End.y - Start.y) / 3.0, Startdirection.y * handle};
+		path.points[segment_data::point::control2] = {-Enddirection.x * handle, -(End.y - Start.y) / 3.0, -Enddirection.y * handle};
+		return path;
+	};
+	std::vector<segment_data> result;
+	for (auto const &local : Shape.local)
+	{
+		auto const &start{local.points[segment_data::point::start]};
+		auto const &end{local.points[segment_data::point::end]};
+		auto const &control1{local.points[segment_data::point::control1]};
+		auto const &control2{local.points[segment_data::point::control2]};
+		glm::dvec2 const chord{end.x - start.x, end.z - start.z};
+		auto const localstart{glm::normalize(control1 != glm::dvec3{} ? glm::dvec2{control1.x, control1.z} : chord)};
+		auto const localend{glm::normalize(control2 != glm::dvec3{} ? -glm::dvec2{control2.x, control2.z} : chord)};
+		glm::dvec2 startdirection, enddirection;
+		auto const p0{map(start, startdirection, localstart)};
+		auto const p3{map(end, enddirection, localend)};
+		auto path{hermite(p0, startdirection, p3, enddirection)};
+		auto const rollstart{sample_at(Frame, Station + Direction * start.z).roll * Direction};
+		auto const rollend{sample_at(Frame, Station + Direction * end.z).roll * Direction};
+		path.rolls = {static_cast<float>(rollstart), static_cast<float>(rollend)};
+		path.radius = local.radius;
+		result.push_back(path);
+	}
+	if (false == result.empty())
+		result.front().radius = sample_at(Frame, Station).radius;
+	return result;
+}
+
+void editor_mode::insert_curved_switch(int const Direction, int const Side)
+{
+	auto &tool{m_switch};
+	auto const &shape{tool.templates[tool.armed]};
+	auto const total{tool.frame.back().station};
+	auto station{std::clamp(tool.along, Direction > 0 ? 0.0 : shape.length, Direction > 0 ? total - shape.length : total)};
+	if (shape.length > total - 0.02)
+		return;
+	auto const from{Direction > 0 ? station : station - shape.length};
+	auto const to{from + shape.length};
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	std::vector<TTrack *> created;
+	std::vector<TTrack *> removed;
+	std::vector<TTrack *> candidates{tool.frame_tracks};
+	auto const bezier = [](TTrack const &Track, double const T) {
+		auto const &path{Track.m_paths.front()};
+		auto const p0{path.points[segment_data::point::start]};
+		auto const p3{path.points[segment_data::point::end]};
+		auto const p1{p0 + path.points[segment_data::point::control1]};
+		auto const p2{p3 + path.points[segment_data::point::control2]};
+		auto const u{1.0 - T};
+		return u * u * u * p0 + 3.0 * u * u * T * p1 + 3.0 * u * T * T * p2 + T * T * T * p3;
+	};
+	for (auto const cut : {from, to})
+	{
+		auto const point{sample_at(tool.frame, cut).position};
+		for (auto *candidate : std::vector<TTrack *>(candidates))
+		{
+			if (candidate->m_editorremoved || candidate->eType != tt_Normal)
+				continue;
+			auto const t{editor_track::nearest_parameter(*candidate, point)};
+			auto const found{bezier(*candidate, t)};
+			if (glm::distance(glm::dvec2{found.x, found.z}, glm::dvec2{point.x, point.z}) > 0.05)
+				continue;
+			if (t > 0.002 && t < 0.998)
+			{
+				if (std::find(created.begin(), created.end(), candidate) == created.end() && std::none_of(states.begin(), states.end(), [&](auto const &Entry) { return Entry.first == candidate; }))
+					states.emplace_back(candidate, editor_track::capture(*candidate));
+				if (auto *second{editor_track::split_path(*candidate, t)})
+				{
+					created.push_back(second);
+					candidates.push_back(second);
+				}
+			}
+			break;
+		}
+	}
+	for (auto *candidate : candidates)
+	{
+		if (candidate->m_editorremoved)
+			continue;
+		auto const middle{bezier(*candidate, 0.5)};
+		auto const where{nearest_station(tool.frame, middle)};
+		if (where > from + 0.01 && where < to - 0.01)
+		{
+			editor_track::retire(*candidate);
+			removed.push_back(candidate);
+		}
+	}
+	auto const paths{curved_switch_paths(shape, tool.frame, station, Direction, Side)};
+	auto *track{editor_track::create_switch(shape, paths, *tool.frame_tracks.front())};
+	if (track != nullptr)
+	{
+		editor_track::commit({track});
+		created.push_back(track);
+	}
+	push_track_snapshot(std::move(states), std::move(created));
+	m_history.back().removed = std::move(removed);
+	straight_refresh();
 }
