@@ -31,6 +31,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/application.h"
 #include "rendering/renderer.h"
 #include <future>
+#include <thread>
 #include <cmath>
 #include <algorithm>
 /*
@@ -646,9 +647,8 @@ bool TTrain::Init(TDynamicObject *NewDynamicObject, bool e3d)
 	}
 
 	DynamicSet(NewDynamicObject);
-	if (!e3d)
-		if (DynamicObject->Mechanik == nullptr)
-			return false;
+	if (!e3d && DynamicObject->Mechanik == nullptr)
+		return false;
 
 	DynamicObject->MechInside = true;
 
@@ -1435,7 +1435,7 @@ void TTrain::OnCommand_secondcontrollerincrease(TTrain *Train, command_data cons
 		// HACK: potentially animate push or pushtoggle control
 		if (Train->ggScndCtrl.is_push())
 		{
-			auto const activeposition{Train->ggScndCtrl.is_toggle() ? 1.f : 1.f};
+			auto const activeposition{1.f};
 			auto const neutralposition{Train->ggScndCtrl.is_toggle() ? 0.5f : 0.f};
 			Train->ggScndCtrl.UpdateValue(Command.action == GLFW_RELEASE ? neutralposition : activeposition, Train->dsbSwitch);
 		}
@@ -12398,8 +12398,18 @@ uint16_t TTrain::id()
 	return vid;
 }
 
-#include <future>
-#include <algorithm>
+namespace
+{
+// updates trains in range [Start, End)
+void update_trains(std::deque<TTrain *> const &Trains, std::size_t const Start, std::size_t const End, double const Dt)
+{
+	for (std::size_t j = Start; j < End; ++j)
+	{
+		if (Trains[j])
+			Trains[j]->Update(Dt);
+	}
+}
+} // namespace
 
 void train_table::updateAsync(double dt)
 {
@@ -12407,8 +12417,10 @@ void train_table::updateAsync(double dt)
 	const size_t total = m_items.size();
 	const size_t chunkSize = (total + threads - 1) / threads;
 
-	std::vector<std::future<void>> futures;
-	futures.reserve(threads);
+	std::vector<std::jthread> workers;
+	std::vector<std::future<void>> results; // przekazują wyjątki z wątków do głównego wątku
+	workers.reserve(threads);
+	results.reserve(threads);
 
 	for (int i = 0; i < threads; ++i)
 	{
@@ -12418,21 +12430,17 @@ void train_table::updateAsync(double dt)
 		if (start >= end)
 			break; // brak więcej danych
 
-		futures.emplace_back(std::async(std::launch::async,
-		                                [this, start, end, dt]()
-		                                {
-			                                for (size_t j = start; j < end; ++j)
-			                                {
-				                                TTrain *train = m_items[j];
-				                                if (train)
-					                                train->Update(dt);
-			                                }
-		                                }));
+		std::packaged_task<void()> task([this, start, end, dt]() { update_trains(m_items, start, end, dt); });
+		results.emplace_back(task.get_future());
+		workers.emplace_back(std::move(task));
 	}
 
 	// Poczekaj aż wszystkie wątki skończą
-	for (auto &f : futures)
-		f.get();
+	for (auto &worker : workers)
+		worker.join();
+
+	for (auto &result : results)
+		result.get();
 
 	// Teraz kasowanie (tylko w głównym wątku)
 	for (TTrain *train : m_items)

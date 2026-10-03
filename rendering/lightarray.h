@@ -18,7 +18,7 @@ public:
         int index{ -1 }; // 0: front lights, 1: rear lights
         glm::dvec3 position; // position of the light in 3d scene
         glm::vec3 direction; // direction of the light in 3d scene
-        glm::vec3 color{ 255.0f / 255.0f, 241.0f / 255.0f, 224.0f / 255.0f }; // color of the light, default is halogen light
+        glm::vec3 color{ 1.0f, 241.0f / 255.0f, 224.0f / 255.0f }; // color of the light, default is halogen light
         float intensity{ 0.0f }; // (combined) intensity of the light(s)
         int count{ 0 }; // number (or pattern) of active light(s)
         glm::vec3 state{ 0.f }; // state of individual lights

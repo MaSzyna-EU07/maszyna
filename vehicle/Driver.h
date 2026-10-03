@@ -482,6 +482,7 @@ private:
     void OrderPush( TOrders NewOrder );
     void OrderNext( TOrders NewOrder );
     inline TOrders OrderCurrentGet() const;
+    inline void OrderCurrentSet( TOrders const Order );
     inline TOrders OrderNextGet() const;
     void OrderCheck();
     void OrdersInit( double fVel );
@@ -542,7 +543,7 @@ private:
     double fLastVel = 0.0; // prędkość na poprzednio sprawdzonym torze
     TTrack *tLast = nullptr; // ostatni analizowany tor
     basic_event *eSignSkip = nullptr; // można pominąć ten SBL po zatrzymaniu
-    static constexpr std::size_t npos{ std::size_t( -1 ) };
+    static constexpr std::size_t npos{ std::numeric_limits<std::size_t>::max() };
     std::size_t SemNextIndex{ npos };
     std::size_t SemNextStopIndex{ npos };
     double dMoveLen = 0.0; // odległość przejechana od ostatniego sprawdzenia tabelki
@@ -645,9 +646,23 @@ private:
 };
 
 inline TOrders TController::OrderCurrentGet() const {
+    if( OrderPos < 0 || OrderPos >= maxorders ) {
+        return Wait_for_orders;
+    }
     return OrderList[ OrderPos ];
 }
 
+inline void TController::OrderCurrentSet( TOrders const Order ) {
+    if( OrderPos < 0 || OrderPos >= maxorders ) {
+        return;
+    }
+    OrderList[ OrderPos ] = Order;
+}
+
 inline TOrders TController::OrderNextGet() const {
-    return OrderList[ OrderPos + 1 ];
+    if( OrderPos < 0 || OrderPos >= maxorders ) {
+        return Wait_for_orders;
+    }
+    // the order list wraps around, same as in JumpToNextOrder()
+    return OrderList[ ( OrderPos + 1 ) % maxorders ];
 }

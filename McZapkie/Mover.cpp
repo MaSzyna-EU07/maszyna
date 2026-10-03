@@ -1752,6 +1752,11 @@ void TMoverParameters::LowVoltagePowerCheck(double const Deltatime)
 
 void TMoverParameters::PowerCouplersCheck(double const Deltatime, coupling const Coupling)
 {
+	if (Coupling != coupling::highvoltage && Coupling != coupling::power110v && Coupling != coupling::power24v)
+	{
+		// only power couplings carry voltage
+		return;
+	}
 
 	auto localvoltage{0.0};
 
@@ -2403,16 +2408,14 @@ bool TMoverParameters::IncMainCtrl(int CtrlSpeed)
 			if (CtrlSpeed > 1)
 			{
 				OK = IncMainCtrl(1) && IncMainCtrl(CtrlSpeed - 1); // a fail will propagate up the recursion chain. should this be || instead?
+				break;
 			}
-			else
+			++MainCtrlPos;
+			OK = true;
+			if (EIMCtrlType == 0 && ( SpeedCtrlAutoTurnOffFlag & 1 ) == 1 && MainCtrlActualPos != MainCtrlPos)
 			{
-				++MainCtrlPos;
-				OK = true;
-				if (EIMCtrlType == 0 && ( SpeedCtrlAutoTurnOffFlag & 1 ) == 1 && MainCtrlActualPos != MainCtrlPos)
-				{
-					DecScndCtrl(2);
-					SpeedCtrlUnit.IsActive = false;
-				}
+				DecScndCtrl(2);
+				SpeedCtrlUnit.IsActive = false;
 			}
 			break;
 		}
@@ -6392,10 +6395,7 @@ double TMoverParameters::TractionForce(double dt)
 					// PosRatio = 1.0 * (PosRatio * 0 + 1) * PosRatio; // 1 * 1 * PosRatio = PosRatio
 					Hamulec->SetED(0);
 					//           (Hamulec as TLSt).SetLBP(LocBrakePress);
-					if (PosRatio > eimv_pr)
-						tmp = 4;
-					else
-						tmp = 4; // szybkie malenie, powolne wzrastanie
+					tmp = 4; // szybkie malenie, powolne wzrastanie
 				}
 				dmoment = eimv[eimv_Fful];
 				// NOTE: the commands to operate the sandbox are likely to conflict with other similar ai decisions
@@ -8022,8 +8022,6 @@ double TMoverParameters::dizel_fillcheck(int mcp, double dt)
 				}
 			if (enrot > nreg) // nad predkoscia regulatora zeruj dawke
 				realfill = 0;
-			if (enrot < nreg) // pod predkoscia regulatora dawka zadana
-				realfill = realfill;
 			if (enrot < dizel_nreg_min && RList[mcp].R > 0.001) // jesli ponizej biegu jalowego i niezerowa dawka, to dawaj pelna
 				realfill = 1;
 		}
@@ -9118,7 +9116,7 @@ bool TMoverParameters::readMPT0(std::string const &line)
 	}
 	if (true == parser.getTokens(1, false))
 	{
-		int autoswitch;
+		int autoswitch{0};
 		parser >> autoswitch;
 		MotorParam[idx].AutoSwitch = autoswitch == 1;
 	}
@@ -9174,7 +9172,7 @@ bool TMoverParameters::readMPTElectricSeries(std::string const &line)
 	parser >> MotorParam[idx].mfi >> MotorParam[idx].mIsat >> MotorParam[idx].fi >> MotorParam[idx].Isat;
 	if (true == parser.getTokens(1, false))
 	{
-		int autoswitch;
+		int autoswitch{0};
 		parser >> autoswitch;
 		MotorParam[idx].AutoSwitch = autoswitch == 1;
 	}
@@ -9223,7 +9221,7 @@ bool TMoverParameters::readMPTDieselEngine(std::string const &line)
 	parser >> MotorParam[idx].mIsat >> MotorParam[idx].fi >> MotorParam[idx].mfi;
 	if (true == parser.getTokens(1, false))
 	{
-		int autoswitch;
+		int autoswitch{0};
 		parser >> autoswitch;
 		MotorParam[idx].AutoSwitch = autoswitch == 1;
 	}
@@ -11048,7 +11046,7 @@ void TMoverParameters::LoadFIZ_DCEMUED(std::string const &line)
 void TMoverParameters::LoadFIZ_SpringBrake(std::string const &line)
 {
 
-	double vol;
+	double vol{1.0};
 	extract_value(vol, "Volume", line, "1");
 	if (!SpringBrake.Cylinder)
 		SpringBrake.Cylinder = std::make_shared<TReservoir>();
