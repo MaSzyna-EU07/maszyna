@@ -16,14 +16,94 @@ http://mozilla.org/MPL/2.0/.
 namespace gauge
 {
 
+namespace
+{
+
+// the widening runs up ahead of the change: on the inner side from 20 m before it, on the outer side from 26 m
+// to 6 m before it (figures 3 to 5 of the standard)
+double constexpr inner_lead{20.0};
+double constexpr outer_lead{26.0};
+double constexpr outer_full{6.0};
+
+struct side_widening
+{
+	double inner{0.0};
+	double outer{0.0};
+};
+
+// above the lower part the gauge includes the curves of R >= 250 m already
+side_widening upper_widening(double const Radius)
+{
+	if (Radius >= 250.0)
+		return {};
+	return {std::max(0.0, 50.0 / Radius - 0.185), std::max(0.0, 60.0 / Radius - 0.225)};
+}
+
+side_widening lower_widening(double const Radius)
+{
+	if (Radius >= 250.0)
+		return {3.75 / Radius, 3.75 / Radius};
+	return upper_widening(Radius);
+}
+
+// values at the points of a route, read as linear between them and continued past the ends
+class field
+{
+public:
+	field(std::vector<double> const &Chainage, std::vector<double> Values) : m_chainage{Chainage}, m_values{std::move(Values)}, m_integral(m_values.size(), 0.0)
+	{
+		for (std::size_t i = 1; i < m_values.size(); ++i)
+			m_integral[i] = m_integral[i - 1] + 0.5 * (m_values[i - 1] + m_values[i]) * (m_chainage[i] - m_chainage[i - 1]);
+	}
+
+	double mean(double const From, double const To) const
+	{
+		return (integral(To) - integral(From)) / (To - From);
+	}
+
+	// larger of the means over the window placed ahead of the point in both directions
+	double ahead(double const Chainage, double const Near, double const Far) const
+	{
+		return std::max(mean(Chainage + Near, Chainage + Far), mean(Chainage - Far, Chainage - Near));
+	}
+
+private:
+	double integral(double const Chainage) const
+	{
+		if (Chainage <= m_chainage.front())
+			return m_values.front() * (Chainage - m_chainage.front());
+		if (Chainage >= m_chainage.back())
+			return m_integral.back() + m_values.back() * (Chainage - m_chainage.back());
+		auto const next{static_cast<std::size_t>(std::upper_bound(m_chainage.begin(), m_chainage.end(), Chainage) - m_chainage.begin())};
+		auto const i{next - 1};
+		auto const span{m_chainage[next] - m_chainage[i]};
+		auto const offset{Chainage - m_chainage[i]};
+		auto const value{span > 0.0 ? m_values[i] + (m_values[next] - m_values[i]) * offset / span : m_values[i]};
+		return m_integral[i] + 0.5 * (m_values[i] + value) * offset;
+	}
+
+	std::vector<double> const &m_chainage;
+	std::vector<double> m_values;
+	std::vector<double> m_integral;
+};
+
+} // namespace
+
 std::vector<profile> default_profiles()
 {
-	std::vector<profile::point> const lower{{1.645, 0.05}, {1.645, 0.30}, {1.720, 0.30}, {1.720, 1.10}, {2.200, 1.10}, {2.200, 3.85}, {1.900, 4.25}};
-	profile plain{"A (bez sieci)", lower};
-	plain.outline.insert(plain.outline.end(), {{1.400, 4.85}, {0.0, 4.85}});
-	profile electrified{"C (sieć trakcyjna)", lower};
-	electrified.outline.insert(electrified.outline.end(), {{1.700, 4.85}, {1.400, 5.60}, {1.000, 6.00}, {0.0, 6.00}});
-	return {plain, electrified};
+	// limit installation gauge up to 1170 mm, then the outline of the unified gauge
+	std::vector<profile::point> const lower{{1.211, 0.055}, {1.585, 0.380}, {1.675, 0.380}, {1.675, 1.170}, {2.000, 1.170}};
+	std::vector<profile::point> const gpl1{{2.000, 3.050}, {1.900, 3.850}, {1.800, 4.250}, {1.600, 4.500}, {1.450, 4.632}};
+	std::vector<profile::point> const gpl2{{2.000, 3.625}, {1.920, 4.900}};
+	std::vector<profile::point> const pantograph{{1.450, 6.600}, {1.150, 6.900}, {0.0, 6.900}};
+	auto const make{[&](std::string const &Name, std::vector<std::vector<profile::point>> const &Parts) {
+		profile result{Name, lower};
+		for (auto const &part : Parts)
+			result.outline.insert(result.outline.end(), part.begin(), part.end());
+		return result;
+	}};
+	return {make("GPL-1", {gpl1, {{1.260, 4.800}, {1.180, 4.850}, {0.0, 4.850}}}), make("GPL-1 + pantograf", {gpl1, pantograph}),
+	        make("GPL-2", {gpl2, {{0.0, 4.900}}}), make("GPL-2 + pantograf", {gpl2, {{1.450, 4.900}}, pantograph})};
 }
 
 // one outline per line: the name in quotes, then pairs of half-width and height
@@ -59,24 +139,46 @@ void save_profiles(std::string const &File, std::vector<profile> const &Profiles
 	}
 }
 
-double curve_widening(double const Radius)
+std::vector<section> sections(std::vector<double> const &Chainage, std::vector<double> const &Curvature, std::vector<double> const &Cant)
 {
-	// smallest radius of the class and its widening in mm; the radius between the classes takes the larger one
-	static constexpr std::pair<double, double> table[]{{3500, 10},  {2500, 15},  {1800, 20},  {1500, 25},  {1200, 30},  {1000, 35},
-	                                                   {900, 40},   {800, 45},   {700, 50},   {600, 60},   {500, 75},   {450, 80},
-	                                                   {400, 90},   {350, 105},  {300, 120},  {280, 130},  {260, 140},  {250, 145},
-	                                                   {240, 150},  {220, 165},  {200, 180},  {190, 190},  {180, 200}};
-	if (Radius <= 0.0 || Radius >= 4000.0)
-		return 0.0;
-	for (auto const &[radius, widening] : table)
-		if (Radius >= radius)
-			return widening * 0.001;
-	return 36.0 / Radius;
+	auto const count{Chainage.size()};
+	std::vector<section> result(count);
+	if (count == 0)
+		return result;
+	// per side, the parts when it's the inner side of the curve and when it's the outer one
+	for (int side = 0; side < 2; ++side)
+	{
+		std::vector<double> upperinner(count), upperouter(count), lowerinner(count), lowerouter(count), cantinner(count), cantouter(count);
+		for (std::size_t i = 0; i < count; ++i)
+		{
+			if (std::abs(Curvature[i]) < 1e-6)
+				continue;
+			auto const radius{1.0 / std::abs(Curvature[i])};
+			bool const inner{(Curvature[i] > 0.0) == (side == 1)};
+			auto const upper{upper_widening(radius)};
+			auto const lower{lower_widening(radius)};
+			(inner ? upperinner : upperouter)[i] = inner ? upper.inner : upper.outer;
+			(inner ? lowerinner : lowerouter)[i] = inner ? lower.inner : lower.outer;
+			(inner ? cantinner : cantouter)[i] = Cant[i];
+		}
+		field const fields[]{{Chainage, std::move(upperinner)}, {Chainage, std::move(upperouter)}, {Chainage, std::move(lowerinner)},
+		                     {Chainage, std::move(lowerouter)}, {Chainage, std::move(cantinner)},  {Chainage, std::move(cantouter)}};
+		for (std::size_t i = 0; i < count; ++i)
+		{
+			auto const inner{[&](field const &Field) { return Field.ahead(Chainage[i], 0.0, inner_lead); }};
+			auto const outer{[&](field const &Field) { return Field.ahead(Chainage[i], outer_full, outer_lead); }};
+			result[i].upper[side] = inner(fields[0]) + outer(fields[1]);
+			result[i].lower[side] = inner(fields[2]) + outer(fields[3]);
+			result[i].cant[side] = inner(fields[4]) - outer(fields[5]);
+		}
+	}
+	return result;
 }
 
-double cant_widening(double const Cant, double const Height)
+double widening(section const &Section, double const Height, int const Side)
 {
-	return Height * Cant / 1.5;
+	auto const i{Side > 0 ? 1 : 0};
+	return (Height < lower_part ? Section.lower[i] : Section.upper[i]) + Section.cant[i] * Height / 1.5;
 }
 
 double half_width(profile const &Profile, section const &Section, double const Height, int const Side)
@@ -93,10 +195,7 @@ double half_width(profile const &Profile, section const &Section, double const H
 	}
 	if (width < 0.0)
 		return width;
-	width += curve_widening(Section.radius);
-	if (Section.inner != 0 && Side == Section.inner)
-		width += cant_widening(Section.cant, Height);
-	return width;
+	return width + widening(Section, Height, Side);
 }
 
 double intrusion(profile const &Profile, section const &Section, double const Lateral, double const Height)

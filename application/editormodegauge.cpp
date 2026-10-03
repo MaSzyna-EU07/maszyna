@@ -30,7 +30,7 @@ using geometry::plan_of;
 namespace
 {
 
-char const *const gauge_file{"editor_gauges.txt"};
+char const *const gauge_file{"editor_structure_gauges.txt"};
 std::size_t const gauge_triangle_limit{200000};
 
 // samples of the route, found by the position in the plan
@@ -122,16 +122,16 @@ private:
 	std::vector<std::vector<std::size_t>> m_cells;
 };
 
-gauge::section section_of(editor_track::route_sample const &Sample)
+std::vector<gauge::section> sections_of(std::vector<editor_track::route_sample> const &Samples)
 {
-	gauge::section section;
-	if (std::abs(Sample.curvature) > 1e-5)
+	std::vector<double> chainage, curvature, cant;
+	for (auto const &sample : Samples)
 	{
-		section.radius = 1.0 / std::abs(Sample.curvature);
-		section.inner = Sample.curvature > 0.0 ? 1 : -1;
+		chainage.push_back(sample.chainage);
+		curvature.push_back(sample.curvature);
+		cant.push_back(sample.cant);
 	}
-	section.cant = Sample.cant;
-	return section;
+	return gauge::sections(chainage, curvature, cant);
 }
 
 glm::dmat4 placement(TAnimModel const &Instance)
@@ -217,13 +217,12 @@ void editor_mode::scan_gauge(TTrack &Track)
 	if (samples.size() < 2 || profile.outline.size() < 2)
 		return;
 
-	double widest{0.0}, top{0.0};
+	auto const sections{sections_of(samples)};
+	double widest{0.0};
 	for (auto const &point : profile.outline)
-	{
 		widest = std::max(widest, point.half_width);
-		top = std::max(top, point.height);
-	}
-	corridor const space{samples, widest + gauge::curve_widening(150.0) + gauge::cant_widening(0.2, top) + 0.5};
+	// room for the widening in the sharpest curves on the largest cant
+	corridor const space{samples, widest + 1.2};
 	auto const origin{samples.front().position};
 	EditorOverlay.origin = origin;
 	auto const relative{[&](glm::dvec3 const &Point) { return glm::vec3(Point - origin); }};
@@ -233,17 +232,14 @@ void editor_mode::scan_gauge(TTrack &Track)
 	}};
 
 	// outline across the track, from the bottom right up and down to the bottom left
-	auto const ring{[&](editor_track::route_sample const &Sample) {
-		auto const section{section_of(Sample)};
+	auto const ring{[&](std::size_t const Index) {
 		std::vector<glm::vec3> points;
 		for (int side : {-1, 1})
 			for (std::size_t j = 0; j < profile.outline.size(); ++j)
 			{
 				auto const &point{profile.outline[side < 0 ? j : profile.outline.size() - 1 - j]};
-				auto width{point.half_width + gauge::curve_widening(section.radius)};
-				if (side == section.inner)
-					width += gauge::cant_widening(section.cant, point.height);
-				points.push_back(relative(lift(Sample, side * width, point.height)));
+				auto const width{point.half_width + gauge::widening(sections[Index], point.height, side)};
+				points.push_back(relative(lift(samples[Index], side * width, point.height)));
 			}
 		return points;
 	}};
@@ -255,7 +251,7 @@ void editor_mode::scan_gauge(TTrack &Track)
 	double lastring{-1e9};
 	for (std::size_t i = 0; i < samples.size(); i += 2)
 	{
-		auto const current{ring(samples[i])};
+		auto const current{ring(i)};
 		if (false == previous.empty())
 			for (std::size_t j = 1; j < current.size(); ++j)
 			{
@@ -274,7 +270,7 @@ void editor_mode::scan_gauge(TTrack &Track)
 	// triangle enters the gauge when any point of a grid spread over it does
 	auto const inside{[&](glm::dvec3 const &Point) {
 		auto const local{space.locate(Point)};
-		return local && gauge::intrusion(profile, section_of(samples[local->sample]), local->lateral, local->height) > 0.0;
+		return local && gauge::intrusion(profile, sections[local->sample], local->lateral, local->height) > 0.0;
 	}};
 	for (auto *instance : simulation::Instances.sequence())
 	{
@@ -314,13 +310,13 @@ void editor_mode::render_gauge_ui()
 	if (ImGui::Checkbox("Show in the 3D view", &m_gauge.enabled))
 		m_gauge.pending = true;
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("Translucent tunnel of the gauge along the line of the selected path,\nwith the triangles of the models which enter it in red. Widened in curves and on the inner side of a cant.");
+		ImGui::SetTooltip("Translucent tunnel of the gauge along the line of the selected path,\nwith the triangles of the models which enter it in red.\nWidened in the curves under 250 m and tilted on the cant, from 20 m (inner side)\nand 26 m (outer side) ahead of the curve, as in the PKP PLK standard, volume II.");
 	gauge_load();
 	auto const previous{m_gauge.profile};
 	for (int i = 0; i < static_cast<int>(m_gauge.profiles.size()); ++i)
 	{
-		if (i > 0)
-			ImGui::SameLine();
+		if (i % 2 == 1)
+			ImGui::SameLine(160.0f);
 		ImGui::RadioButton(m_gauge.profiles[i].name.c_str(), &m_gauge.profile, i);
 	}
 	bool changed{previous != m_gauge.profile};
@@ -338,7 +334,7 @@ void editor_mode::render_gauge_ui()
 
 	if (ImGui::TreeNode("Outline (right half)"))
 	{
-		ImGui::TextDisabled("Approximate starting points, check against PN-69/K-02057.\nMetres from the track axis and above the rail top, bottom up.");
+		ImGui::TextDisabled("PKP PLK standard, volume II; below 1170 mm the limit installation gauge.\nMetres from the track axis and above the rail top, bottom up.");
 		auto &profile{m_gauge.profiles[m_gauge.profile]};
 		bool edited{false};
 		bool inserted{false};
