@@ -948,6 +948,8 @@ std::unordered_set<std::uint32_t> ownedbanks;
 double const junction_reach{0.25}; // an end of a road this close to an arm is attached to it
 double const junction_fit{0.05}; // a lane has to end this close to where the junction expects it
 int const corner_steps{6}; // pieces a rounded corner is made of
+double const stopline_width{0.5};
+double const stopline_inset{0.2}; // distance of a stop line from the end of its road
 
 // direction on the ground as a vector in space
 glm::dvec3 flat(glm::dvec2 const &Direction)
@@ -1064,6 +1066,9 @@ void junction_node::state::normalize()
 		arm.width = std::max(1.f, arm.width);
 		arm.direction = (glm::length(arm.direction) > 1e-6 ? glm::normalize(arm.direction) : glm::dvec2{0.0, 1.0});
 	}
+	side.width = std::max(0.f, side.width);
+	kerbheight = std::max(0.f, kerbheight);
+	slope = glm::max(slope, glm::vec2{0.f});
 	if (texturelength < 0.01f)
 	{
 		texturelength = 4.f;
@@ -1168,6 +1173,7 @@ void junction_node::import(cParser &Input, glm::dvec3 const &Offset)
 	Input.getTokens(3);
 	Input >> m_state.centre.x >> m_state.centre.y >> m_state.centre.z;
 	m_state.centre += Offset;
+	std::vector<int> stoplines;
 
 	auto token{Input.getToken<std::string>()};
 	while (false == token.empty() && token != "endjunction")
@@ -1200,6 +1206,39 @@ void junction_node::import(cParser &Input, glm::dvec3 const &Offset)
 			auto const colour{Input.getToken<std::string>()};
 			m_state.markings = (colour == "white" ? road_node::marking_colour::white : colour == "orange" ? road_node::marking_colour::orange : road_node::marking_colour::none);
 		}
+		else if (token == "side")
+		{
+			// side <none|shoulder|sidewalk> <width> <material>
+			auto const type{Input.getToken<std::string>()};
+			Input.getTokens();
+			Input >> m_state.side.width;
+			m_state.side.material = Input.getToken<std::string>();
+			replace_slashes(m_state.side.material);
+			m_state.side.type = (type == "shoulder" ? road_node::side_type::shoulder : type == "sidewalk" ? road_node::side_type::sidewalk : road_node::side_type::none);
+			if (type != "shoulder" && type != "sidewalk" && type != "none")
+			{
+				ErrorLog("Bad junction: unknown kind of side \"" + type + "\" defined for " + label);
+			}
+		}
+		else if (token == "kerb")
+		{
+			Input.getTokens();
+			Input >> m_state.kerbheight;
+		}
+		else if (token == "slope")
+		{
+			// slope <width> <drop>
+			Input.getTokens(2);
+			Input >> m_state.slope.x >> m_state.slope.y;
+		}
+		else if (token == "stopline")
+		{
+			// stopline <number of an arm, counted from 1>; the arms it's for may come later, so the numbers wait
+			int number{0};
+			Input.getTokens();
+			Input >> number;
+			stoplines.emplace_back(number);
+		}
 		else if (token == "velocity")
 		{
 			Input.getTokens();
@@ -1219,6 +1258,15 @@ void junction_node::import(cParser &Input, glm::dvec3 const &Offset)
 			ErrorLog("Bad junction: unknown property: \"" + token + "\" defined for " + label);
 		}
 		token = Input.getToken<std::string>();
+	}
+	for (auto const number : stoplines)
+	{
+		if (number < 1 || number > static_cast<int>(m_state.arms.size()))
+		{
+			ErrorLog("Bad junction: " + label + " has no arm " + std::to_string(number) + " to put a stop line at");
+			continue;
+		}
+		m_state.arms[number - 1].stopline = true;
 	}
 	if (m_state.arms.size() < 2 || m_state.arms.size() > 4)
 	{
@@ -1580,6 +1628,87 @@ std::vector<scene::shape_node> junction_node::create_shapes() const
 			shapes.emplace_back(std::move(shape));
 		}
 	}
+	auto const &side{m_state.side};
+	if (side.type != road_node::side_type::none && side.width > 0.f && false == side.material.empty() && side.material != "none")
+	{
+		// the corners are lined the way the sides of a road are, so the shoulders and the sidewalks of the roads carry on around the junction
+		struct corner_point
+		{
+			double offset; // distance from the edge of the surface
+			double height;
+			float texture;
+		};
+		std::vector<corner_point> profile;
+		if (side.type == road_node::side_type::shoulder)
+		{
+			profile.push_back({0.0, 0.0, 1.f});
+			profile.push_back({side.width, 0.0, 0.5f});
+			if (m_state.slope.x > 0.f)
+			{
+				profile.push_back({static_cast<double>(side.width) + m_state.slope.x, -m_state.slope.y, 0.f});
+			}
+		}
+		else
+		{
+			auto const tile{static_cast<double>(texture_ratio(side.material)) * m_state.texturelength};
+			profile.push_back({0.0, 0.0, 0.f});
+			profile.push_back({0.0, m_state.kerbheight, static_cast<float>(m_state.kerbheight / tile)});
+			profile.push_back({side.width, m_state.kerbheight, static_cast<float>((m_state.kerbheight + side.width) / tile)});
+		}
+		auto const order{m_state.arm_order()};
+		std::vector<world_vertex> vertices;
+		for (std::size_t idx = 0; idx < corners.size() && idx < order.size(); ++idx)
+		{
+			auto const &corner{corners[idx]};
+			if (corner.size() < 2)
+			{
+				continue;
+			}
+			// the way out of the surface at each point of the corner. at its ends it's the way across the roads there,
+			// so the side meets what the roads have along their edges
+			std::vector<glm::dvec3> outwards(corner.size());
+			outwards.front() = flat(left_of(m_state.arms[order[idx]].direction));
+			outwards.back() = -flat(left_of(m_state.arms[order[(idx + 1) % order.size()]].direction));
+			for (std::size_t point = 1; point + 1 < corner.size(); ++point)
+			{
+				// going around the junction the surface is on the left, and the way out of it on the right
+				glm::dvec2 const along{corner[point + 1].x - corner[point - 1].x, corner[point + 1].z - corner[point - 1].z};
+				outwards[point] = (glm::length(along) > 1e-9 ? -flat(left_of(glm::normalize(along))) : outwards[point - 1]);
+			}
+			double station{0.0};
+			for (std::size_t point = 0; point + 1 < corner.size(); ++point)
+			{
+				auto const length{glm::distance(corner[point], corner[point + 1])};
+				auto const tangent{corner[point + 1] - corner[point]};
+				auto const texturestart{static_cast<float>(station / m_state.texturelength)};
+				auto const textureend{static_cast<float>((station + length) / m_state.texturelength)};
+				for (std::size_t band = 0; band + 1 < profile.size(); ++band)
+				{
+					auto const &inner{profile[band]};
+					auto const &outer{profile[band + 1]};
+					auto const leftstart{corner[point] + outwards[point] * inner.offset + up * inner.height};
+					auto const rightstart{corner[point] + outwards[point] * outer.offset + up * outer.height};
+					auto const leftend{corner[point + 1] + outwards[point + 1] * inner.offset + up * inner.height};
+					auto const rightend{corner[point + 1] + outwards[point + 1] * outer.offset + up * outer.height};
+					auto facing{glm::cross(tangent, leftstart - rightstart)};
+					glm::vec3 const normal{glm::length2(facing) < 1e-12 ? up : glm::normalize(facing)};
+					vertices.push_back({leftstart, normal, {inner.texture, texturestart}});
+					vertices.push_back({rightstart, normal, {outer.texture, texturestart}});
+					vertices.push_back({leftend, normal, {inner.texture, textureend}});
+					vertices.push_back({rightstart, normal, {outer.texture, texturestart}});
+					vertices.push_back({rightend, normal, {outer.texture, textureend}});
+					vertices.push_back({leftend, normal, {inner.texture, textureend}});
+				}
+				station += length;
+			}
+		}
+		if (false == vertices.empty())
+		{
+			scene::shape_node shape;
+			shape.make_terrain(GfxRenderer->Fetch_Material(side.material), std::move(vertices), glm::dvec3{0.0});
+			shapes.emplace_back(std::move(shape));
+		}
+	}
 	if (m_state.markings != road_node::marking_colour::none)
 	{
 		// edge lines carried around the corners
@@ -1587,6 +1716,29 @@ std::vector<scene::shape_node> junction_node::create_shapes() const
 		glm::dvec3 const lift{0.0, line_lift, 0.0};
 		glm::vec3 const upwards{0.f, 1.f, 0.f};
 		auto const &arms{m_state.arms};
+		for (std::size_t arm = 0; arm < arms.size(); ++arm)
+		{
+			if (false == arms[arm].stopline || arms[arm].incoming < 1)
+			{
+				continue;
+			}
+			// a stop line: across the lanes leading into the junction, right where the road ends
+			auto const across{flat(left_of(arms[arm].direction))};
+			auto const inwards{-flat(arms[arm].direction)};
+			auto const halfwidth{0.5 * m_state.arm_width(arm)};
+			auto const from{arms[arm].position + across * (halfwidth - static_cast<double>(arms[arm].incoming) * arms[arm].width + 0.5 * line_width) + lift};
+			auto const to{arms[arm].position + across * (halfwidth - edge_inset - line_width) + lift};
+			auto const leftstart{from + inwards * (stopline_inset + stopline_width)};
+			auto const rightstart{from + inwards * stopline_inset};
+			auto const leftend{to + inwards * (stopline_inset + stopline_width)};
+			auto const rightend{to + inwards * stopline_inset};
+			vertices.push_back({leftstart, upwards, {0.f, 0.f}});
+			vertices.push_back({rightstart, upwards, {1.f, 0.f}});
+			vertices.push_back({leftend, upwards, {0.f, 1.f}});
+			vertices.push_back({rightstart, upwards, {1.f, 0.f}});
+			vertices.push_back({rightend, upwards, {1.f, 1.f}});
+			vertices.push_back({leftend, upwards, {0.f, 1.f}});
+		}
 		if (arms.size() == 2 && arms[0].incoming > 0 && arms[0].outgoing > 0 && arms[1].incoming > 0 && arms[1].outgoing > 0)
 		{
 			// a junction of two roads is where a road changes its lanes. the double line keeping the directions apart is led through it
@@ -1725,8 +1877,20 @@ void junction_node::export_as_text_(std::ostream &Output) const
 	}
 	Output.precision(precision);
 	Output << "surface " << m_state.surface << ' ' << "texlength " << m_state.texturelength << ' ' << "markings "
-	       << (m_state.markings == road_node::marking_colour::white ? "white" : m_state.markings == road_node::marking_colour::orange ? "orange" : "none") << ' ' << "velocity " << m_state.velocity << ' ' << "friction " << m_state.friction << ' '
-	       << "environment " << m_state.environment << ' ';
+	       << (m_state.markings == road_node::marking_colour::white ? "white" : m_state.markings == road_node::marking_colour::orange ? "orange" : "none") << ' ';
+	if (m_state.side.type != road_node::side_type::none)
+	{
+		Output << "side " << (m_state.side.type == road_node::side_type::shoulder ? "shoulder" : "sidewalk") << ' ' << m_state.side.width << ' ' << (m_state.side.material.empty() ? "none" : m_state.side.material) << ' ' << "kerb " << m_state.kerbheight << ' '
+		       << "slope " << m_state.slope.x << ' ' << m_state.slope.y << ' ';
+	}
+	for (std::size_t arm = 0; arm < m_state.arms.size(); ++arm)
+	{
+		if (m_state.arms[arm].stopline)
+		{
+			Output << "stopline " << arm + 1 << ' ';
+		}
+	}
+	Output << "velocity " << m_state.velocity << ' ' << "friction " << m_state.friction << ' ' << "environment " << m_state.environment << ' ';
 	Output << "endjunction"
 	       << "\n";
 }

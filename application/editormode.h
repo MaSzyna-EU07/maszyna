@@ -534,6 +534,9 @@ class editor_mode : public application_mode
 	void render_road_menu();
 	void render_road_window();
 	bool render_road_layout(road_node::state &State);
+	bool render_road_material(char const *Label, char *Buffer, std::size_t const Size, std::string &Value);
+	void render_junction_layout(junction_node &Junction);
+	void junction_apply(junction_node &Junction, junction_node::state const &State);
 	void draw_road_overlay() const;
 	void update_road_tool();
 	void road_click();

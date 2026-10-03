@@ -284,6 +284,139 @@ void editor_mode::junction_select(junction_node *Junction)
 	tool.status = "Selected: " + Junction->name();
 	if (false == editor_road::can_edit(*Junction, &reason))
 		tool.status += ". It can't be changed: " + reason;
+	// the fields for the names of materials are shared with the roads
+	copy_text(tool.surface, sizeof(tool.surface), Junction->definition().surface);
+	copy_text(tool.sides[0], sizeof(tool.sides[0]), Junction->definition().side.material);
+}
+
+// replaces the definition of a junction, as a step which can be taken back
+void editor_mode::junction_apply(junction_node &Junction, junction_node::state const &State)
+{
+	auto &tool{m_roadtool};
+	std::string reason;
+	if (false == editor_road::can_edit(Junction, &reason))
+	{
+		tool.status = "\"" + Junction.name() + "\" can't be changed: " + reason;
+		// what the window shows goes back to what the junction is like
+		junction_select(&Junction);
+		tool.status = "\"" + Junction.name() + "\" can't be changed: " + reason;
+		return;
+	}
+	editor_road::record record;
+	record.junctions.emplace_back(&Junction, Junction.definition());
+	editor_road::apply(std::vector<std::pair<junction_node *, junction_node::state>>{{&Junction, State}});
+	push_road_snapshot(std::move(record));
+	tool.status = "Changed";
+}
+
+// draws controls for what a junction is like, and makes the changes as they're made
+void editor_mode::render_junction_layout(junction_node &Junction)
+{
+	auto &tool{m_roadtool};
+	auto state{Junction.definition()};
+	bool changed{false};
+	// typed values are taken when confirmed, so the junction isn't made anew with each digit
+	auto const number = [](char const *Label, float &Value, float const Step, char const *Format) {
+		ImGui::SetNextItemWidth(120.0f);
+		return ImGui::InputFloat(Label, &Value, Step, Step * 4.0f, Format, ImGuiInputTextFlags_EnterReturnsTrue);
+	};
+
+	auto limit{state.velocity > 0.f ? state.velocity : 0.f};
+	if (number("Speed limit [km/h], 0: none", limit, 5.0f, "%.0f"))
+	{
+		state.velocity = (limit > 0.f ? limit : -1.f);
+		changed = true;
+	}
+	auto centre{static_cast<float>(state.centre.y)};
+	if (number("Height of the middle [m]", centre, 0.1f, "%.2f"))
+	{
+		state.centre.y = centre;
+		changed = true;
+	}
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", "The surface is spanned between the ends of the roads and this point.\nThe ends of the roads are raised or lowered as points: select the white dot at the end of a road.");
+
+	// appearance
+	ImGui::Separator();
+	char const *colours[]{"none", "white", "orange"};
+	int colour{state.markings == road_node::marking_colour::white ? 1 : state.markings == road_node::marking_colour::orange ? 2 : 0};
+	ImGui::SetNextItemWidth(120.0f);
+	if (ImGui::Combo("Markings", &colour, colours, 3))
+	{
+		state.markings = (colour == 1 ? road_node::marking_colour::white : colour == 2 ? road_node::marking_colour::orange : road_node::marking_colour::none);
+		changed = true;
+	}
+	if (render_road_material("Surface", tool.surface, sizeof(tool.surface), state.surface))
+		changed = true;
+	if (number("Texture length [m]", state.texturelength, 0.5f, "%.2f"))
+	{
+		state.texturelength = std::max(0.1f, state.texturelength);
+		changed = true;
+	}
+	// what the corners between the roads are lined with
+	char const *sidetypes[]{"none", "shoulder", "sidewalk"};
+	int type{state.side.type == road_node::side_type::shoulder ? 1 : state.side.type == road_node::side_type::sidewalk ? 2 : 0};
+	ImGui::SetNextItemWidth(120.0f);
+	if (ImGui::Combo("Sides of the corners", &type, sidetypes, 3))
+	{
+		state.side.type = (type == 1 ? road_node::side_type::shoulder : type == 2 ? road_node::side_type::sidewalk : road_node::side_type::none);
+		if (state.side.type != road_node::side_type::none && state.side.width <= 0.0f)
+			state.side.width = 1.5f;
+		changed = true;
+	}
+	if (state.side.type != road_node::side_type::none)
+	{
+		ImGui::Indent();
+		if (number("Width [m]", state.side.width, 0.25f, "%.2f"))
+		{
+			state.side.width = std::clamp(state.side.width, 0.1f, 20.0f);
+			changed = true;
+		}
+		if (render_road_material("Material", tool.sides[0], sizeof(tool.sides[0]), state.side.material))
+			changed = true;
+		if (state.side.material.empty() || state.side.material == "none")
+			ImGui::TextDisabled("Pick a material to have the sides drawn");
+		if (state.side.type == road_node::side_type::sidewalk)
+		{
+			if (number("Kerb height [m]", state.kerbheight, 0.01f, "%.2f"))
+			{
+				state.kerbheight = std::clamp(state.kerbheight, 0.0f, 1.0f);
+				changed = true;
+			}
+		}
+		else
+		{
+			if (number("Bank width [m]", state.slope.x, 0.25f, "%.2f"))
+			{
+				state.slope.x = std::clamp(state.slope.x, 0.0f, 20.0f);
+				changed = true;
+			}
+			if (number("Bank drop [m]", state.slope.y, 0.1f, "%.2f"))
+			{
+				state.slope.y = std::clamp(state.slope.y, 0.0f, 20.0f);
+				changed = true;
+			}
+		}
+		ImGui::Unindent();
+	}
+
+	// the roads
+	if (ImGui::CollapsingHeader("Roads of the junction", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		ImGui::TextDisabled("The lanes are taken from the roads: change them on the road, the junction follows");
+		for (std::size_t arm = 0; arm < state.arms.size(); ++arm)
+		{
+			ImGui::PushID(static_cast<int>(arm));
+			auto &data{state.arms[arm]};
+			ImGui::Text("%d: %d in, %d out, %.2f m a lane", static_cast<int>(arm) + 1, data.incoming, data.outgoing, data.width);
+			ImGui::SameLine();
+			if (ImGui::Checkbox("Stop line", &data.stopline))
+				changed = true;
+			ImGui::PopID();
+		}
+	}
+	if (changed)
+		junction_apply(Junction, state);
 }
 
 void editor_mode::road_cancel()
@@ -969,8 +1102,62 @@ void editor_mode::restore_road_snapshot(EditorSnapshot const &Snapshot, std::vec
 	road_cancel();
 	if (tool.selected != nullptr)
 		road_select(tool.selected->m_editorremoved ? nullptr : tool.selected);
-	if (tool.junction != nullptr && tool.junction->m_editorremoved)
-		tool.junction = nullptr;
+	if (tool.junction != nullptr)
+		junction_select(tool.junction->m_editorremoved ? nullptr : tool.junction);
+}
+
+// a field for the name of a material, with a list of the ones in the texture folder to pick from. returns: true if the material was changed
+bool editor_mode::render_road_material(char const *Label, char *Buffer, std::size_t const Size, std::string &Value)
+{
+	auto &tool{m_roadtool};
+	bool picked{false};
+	ImGui::PushID(Label);
+	ImGui::SetNextItemWidth(200.0f);
+	if (ImGui::InputText("##name", Buffer, Size, ImGuiInputTextFlags_EnterReturnsTrue) || ImGui::IsItemDeactivatedAfterEdit())
+	{
+		auto const name{lower_case(Buffer)};
+		if (name != Value && name.find(' ') == std::string::npos)
+		{
+			Value = name.empty() ? std::string{"none"} : name;
+			picked = true;
+		}
+		copy_text(Buffer, Size, Value);
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("..."))
+		ImGui::OpenPopup("pick");
+	ImGui::SameLine();
+	ImGui::TextUnformatted(Label);
+	if (ImGui::BeginPopup("pick"))
+	{
+		ImGui::TextDisabled("Materials and images found in the texture folder");
+		ImGui::SetNextItemWidth(200.0f);
+		ImGui::InputText("Filter", tool.filter, sizeof(tool.filter));
+		auto const filter{lower_case(tool.filter)};
+		std::vector<std::string const *> listed;
+		for (auto const &name : editor_road::materials())
+			if (filter.empty() || name.find(filter) != std::string::npos)
+				listed.emplace_back(&name);
+		ImGui::BeginChild("list", ImVec2(340.0f, 280.0f), true);
+		ImGuiListClipper clipper(static_cast<int>(listed.size()));
+		while (clipper.Step())
+		{
+			for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
+			{
+				if (ImGui::Selectable(listed[i]->c_str(), *listed[i] == Value))
+				{
+					Value = *listed[i];
+					copy_text(Buffer, Size, Value);
+					picked = true;
+					ImGui::CloseCurrentPopup();
+				}
+			}
+		}
+		ImGui::EndChild();
+		ImGui::EndPopup();
+	}
+	ImGui::PopID();
+	return picked;
 }
 
 // draws controls for the layout of a road. returns: true if the layout was changed in a way which calls for the road to be made anew
@@ -983,56 +1170,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 		ImGui::SetNextItemWidth(120.0f);
 		return ImGui::InputFloat(Label, &Value, Step, Step * 4.0f, Format, ImGuiInputTextFlags_EnterReturnsTrue);
 	};
-	auto const material = [&tool](char const *Label, char *Buffer, std::size_t const Size, std::string &Value) {
-		bool picked{false};
-		ImGui::PushID(Label);
-		ImGui::SetNextItemWidth(200.0f);
-		if (ImGui::InputText("##name", Buffer, Size, ImGuiInputTextFlags_EnterReturnsTrue) || ImGui::IsItemDeactivatedAfterEdit())
-		{
-			auto const name{lower_case(Buffer)};
-			if (name != Value && name.find(' ') == std::string::npos)
-			{
-				Value = name.empty() ? std::string{"none"} : name;
-				picked = true;
-			}
-			copy_text(Buffer, Size, Value);
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("..."))
-			ImGui::OpenPopup("pick");
-		ImGui::SameLine();
-		ImGui::TextUnformatted(Label);
-		if (ImGui::BeginPopup("pick"))
-		{
-			ImGui::TextDisabled("Materials and images found in the texture folder");
-			ImGui::SetNextItemWidth(200.0f);
-			ImGui::InputText("Filter", tool.filter, sizeof(tool.filter));
-			auto const filter{lower_case(tool.filter)};
-			std::vector<std::string const *> listed;
-			for (auto const &name : editor_road::materials())
-				if (filter.empty() || name.find(filter) != std::string::npos)
-					listed.emplace_back(&name);
-			ImGui::BeginChild("list", ImVec2(340.0f, 280.0f), true);
-			ImGuiListClipper clipper(static_cast<int>(listed.size()));
-			while (clipper.Step())
-			{
-				for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
-				{
-					if (ImGui::Selectable(listed[i]->c_str(), *listed[i] == Value))
-					{
-						Value = *listed[i];
-						copy_text(Buffer, Size, Value);
-						picked = true;
-						ImGui::CloseCurrentPopup();
-					}
-				}
-			}
-			ImGui::EndChild();
-			ImGui::EndPopup();
-		}
-		ImGui::PopID();
-		return picked;
-	};
+	auto const material = [this](char const *Label, char *Buffer, std::size_t const Size, std::string &Value) { return render_road_material(Label, Buffer, Size, Value); };
 
 	// lanes
 	ImGui::SetNextItemWidth(120.0f);
@@ -1200,9 +1338,10 @@ void editor_mode::render_road_window()
 		road_cancel();
 		if (tool.tool != 0)
 		{
-			tool.selected = nullptr;
 			tool.junction = nullptr;
 			tool.points.clear();
+			// the fields for the names of materials show the layout for the roads to be built again
+			road_select(nullptr);
 		}
 	}
 	ImGui::SameLine();
@@ -1296,44 +1435,7 @@ void editor_mode::render_road_window()
 		ImGui::Text("%s, %d roads, %d ways through", junction.name().c_str(), static_cast<int>(junction.definition().arms.size()), static_cast<int>(junction.movements().size()));
 		ImGui::TextDisabled("The ways through are made for the roads attached at the moment.");
 		ImGui::TextDisabled("Build tool, LMB on the junction: lead another road out of it");
-		auto limit{junction.definition().velocity > 0.f ? junction.definition().velocity : 0.f};
-		if (number("Speed limit [km/h], 0: none", limit, 5.0f, "%.0f"))
-		{
-			if (editor_road::can_edit(junction, &reason))
-			{
-				editor_road::record record;
-				record.junctions.emplace_back(&junction, junction.definition());
-				auto state{junction.definition()};
-				state.velocity = (limit > 0.f ? limit : -1.f);
-				editor_road::apply(std::vector<std::pair<junction_node *, junction_node::state>>{{&junction, state}});
-				push_road_snapshot(std::move(record));
-				tool.status = "Changed";
-			}
-			else
-			{
-				tool.status = "\"" + junction.name() + "\" can't be changed: " + reason;
-			}
-		}
-		auto centre{static_cast<float>(junction.definition().centre.y)};
-		if (number("Height of the middle [m]", centre, 0.1f, "%.2f"))
-		{
-			if (editor_road::can_edit(junction, &reason))
-			{
-				editor_road::record record;
-				record.junctions.emplace_back(&junction, junction.definition());
-				auto state{junction.definition()};
-				state.centre.y = centre;
-				editor_road::apply(std::vector<std::pair<junction_node *, junction_node::state>>{{&junction, state}});
-				push_road_snapshot(std::move(record));
-				tool.status = "Changed";
-			}
-			else
-			{
-				tool.status = "\"" + junction.name() + "\" can't be changed: " + reason;
-			}
-		}
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", "The surface is spanned between the ends of the roads and this point.\nThe ends of the roads are raised or lowered as points: select the white dot at the end of a road.");
+		render_junction_layout(junction);
 		if (ImGui::Button("Delete (Del)"))
 			road_delete();
 	}

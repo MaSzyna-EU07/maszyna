@@ -300,6 +300,10 @@ void dress(junction_node::state &Junction, road_node::state const &Road)
 	Junction.surface = Road.surface;
 	Junction.texturelength = Road.texturelength;
 	Junction.markings = Road.markings;
+	// one kind of side goes around the whole junction; the right side of the road is the one facing the corner a road leaves by
+	Junction.side = (Road.sides[1].type != road_node::side_type::none ? Road.sides[1] : Road.sides[0]);
+	Junction.kerbheight = Road.kerbheight;
+	Junction.slope = Road.slope;
 	Junction.friction = Road.friction;
 	Junction.sounddistance = Road.sounddistance;
 	Junction.quality = Road.quality;

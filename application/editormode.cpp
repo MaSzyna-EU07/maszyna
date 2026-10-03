@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorSettings.hpp"
 #include "editor/editorModelSets.hpp"
 #include "editor/editorIncludeInfo.hpp"
+#include "editor/editorGroundMesh.hpp"
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
@@ -230,6 +231,69 @@ namespace
         int m_rows{1};
     };
 
+    // meshes of the shapes and the models asked about as ground. the ground is asked about a tile at a time, by the orthophoto
+    // and by the road tools, and without these every question meant going through every triangle of every terrain model in reach
+    struct ground_record
+    {
+        ground_mesh mesh;
+        // what the mesh was made of, to tell when it has to be made again
+        std::size_t vertices{0};
+        std::size_t indices{0};
+        glm::dvec3 origin{0.0};
+        TModel3d const *model{nullptr};
+        glm::dmat4 matrix{0.0};
+        std::uint64_t used{0}; // number of the last question it served
+    };
+    std::unordered_map<std::uint64_t, ground_record> ground_shapes; // by the geometry of the shape
+    std::unordered_map<TAnimModel const *, ground_record> ground_models;
+    std::uint64_t ground_question{0};
+    std::size_t ground_held{0}; // triangles in the meshes
+    std::size_t constexpr ground_limit = 8000000; // triangles kept; some 400 MB with the grids
+    std::size_t constexpr ground_small = 256; // triangles; anything smaller is quicker to go through than to look up
+
+    // lets go of the meshes left alone the longest, once there's too much of them
+    void trim_ground_meshes()
+    {
+        if (ground_held <= ground_limit)
+            return;
+        std::vector<std::uint64_t> ages;
+        for (auto const &record : ground_shapes)
+            ages.emplace_back(record.second.used);
+        for (auto const &record : ground_models)
+            ages.emplace_back(record.second.used);
+        std::sort(ages.begin(), ages.end());
+        // the older half goes, except for what the current question needed
+        auto const threshold = std::min(ages[ages.size() / 2], ground_question - 1);
+        for (auto record = ground_shapes.begin(); record != ground_shapes.end();)
+        {
+            if (record->second.used <= threshold)
+            {
+                ground_held -= record->second.mesh.size();
+                record = ground_shapes.erase(record);
+            }
+            else
+                ++record;
+        }
+        for (auto record = ground_models.begin(); record != ground_models.end();)
+        {
+            if (record->second.used <= threshold)
+            {
+                ground_held -= record->second.mesh.size();
+                record = ground_models.erase(record);
+            }
+            else
+                ++record;
+        }
+    }
+
+    // forgets the meshes of the shapes, whose geometry can be changed in place (terrain being sculpted)
+    void forget_ground_shapes()
+    {
+        for (auto const &record : ground_shapes)
+            ground_held -= record.second.mesh.size();
+        ground_shapes.clear();
+    }
+
     // appends triangles of a shape node which overlap specified XZ rectangle
     void gather_shape_triangles(scene::shape_node const &Shape, glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out, bool const Skiproads = false)
     {
@@ -262,6 +326,36 @@ namespace
             return;
         auto const &verts = GfxRenderer->Vertices(data.geometry);
         auto const &indices = GfxRenderer->Indices(data.geometry);
+        auto const count = (indices.empty() ? verts.size() : indices.size()) / 3;
+        if (count >= ground_small)
+        {
+            // a large shape is sorted once, and asked for what's in the rectangle from then on
+            auto &record = ground_shapes[(static_cast<std::uint64_t>(data.geometry.bank) << 32) | data.geometry.chunk];
+            if (record.mesh.size() == 0 || record.vertices != verts.size() || record.indices != indices.size() || record.origin != data.origin)
+            {
+                std::vector<ground_mesh::triangle> triangles;
+                triangles.reserve(count);
+                if (false == indices.empty())
+                {
+                    for (std::size_t i = 0; i + 2 < indices.size(); i += 3)
+                        triangles.push_back({verts[indices[i]].position, verts[indices[i + 1]].position, verts[indices[i + 2]].position});
+                }
+                else
+                {
+                    for (std::size_t i = 0; i + 2 < verts.size(); i += 3)
+                        triangles.push_back({verts[i].position, verts[i + 1].position, verts[i + 2].position});
+                }
+                ground_held -= record.mesh.size();
+                record.mesh.assign(std::move(triangles), data.origin);
+                ground_held += record.mesh.size();
+                record.vertices = verts.size();
+                record.indices = indices.size();
+                record.origin = data.origin;
+            }
+            record.used = ground_question;
+            record.mesh.collect(Min, Max, Out);
+            return;
+        }
         auto const to_world = [&](gfx::basic_vertex const &v) { return data.origin + glm::dvec3(v.position); };
         if (false == indices.empty())
         {
@@ -279,6 +373,8 @@ namespace
     // model instances at least ModelRadius large (if ModelsAsGround) the terrain tiles
     void gather_ground_triangles(glm::dvec2 const &Min, glm::dvec2 const &Max, bool const ModelsAsGround, float const ModelRadius, std::vector<world_triangle> &Out, bool const Skiproads = false)
     {
+        auto const started = std::chrono::steady_clock::now();
+        ++ground_question;
         glm::dvec2 const center = (Min + Max) * 0.5;
         float const radius = static_cast<float>(glm::length(Max - Min) * 0.5);
         auto const sections = simulation::Region->sections(glm::dvec3(center.x, 0.0, center.y), radius); // copy, the result is a scratchpad
@@ -303,15 +399,35 @@ namespace
                     double const reach = instance->radius();
                     if (instance->location().x + reach < Min.x || instance->location().x - reach > Max.x || instance->location().z + reach < Min.y || instance->location().z - reach > Max.y)
                         continue;
-                    std::vector<world_triangle> modeltriangles;
-                    gather_submodel_triangles(instance->Model()->Root, instance_matrix(*instance), modeltriangles);
-                    for (auto const &t : modeltriangles)
-                        if (std::max({t[0].x, t[1].x, t[2].x}) >= Min.x && std::min({t[0].x, t[1].x, t[2].x}) <= Max.x && std::max({t[0].z, t[1].z, t[2].z}) >= Min.y &&
-                            std::min({t[0].z, t[1].z, t[2].z}) <= Max.y)
-                            Out.push_back(t);
+                    // the model is gone through once, and asked for what's in the rectangle from then on, for as long as it stays put
+                    auto const matrix = instance_matrix(*instance);
+                    auto &record = ground_models[instance];
+                    if (record.model != instance->Model() || record.matrix != matrix)
+                    {
+                        std::vector<world_triangle> modeltriangles;
+                        gather_submodel_triangles(instance->Model()->Root, matrix, modeltriangles);
+                        glm::dvec3 const origin = instance->location();
+                        std::vector<ground_mesh::triangle> triangles;
+                        triangles.reserve(modeltriangles.size());
+                        for (auto const &t : modeltriangles)
+                            triangles.push_back({glm::vec3(t[0] - origin), glm::vec3(t[1] - origin), glm::vec3(t[2] - origin)});
+                        ground_held -= record.mesh.size();
+                        record.mesh.assign(std::move(triangles), origin);
+                        ground_held += record.mesh.size();
+                        // a model which isn't loaded yet has nothing to show for itself, and is looked at again the next time
+                        record.model = (record.mesh.size() > 0 ? instance->Model() : nullptr);
+                        record.matrix = matrix;
+                    }
+                    record.used = ground_question;
+                    record.mesh.collect(Min, Max, Out);
                 }
             }
         }
+        trim_ground_meshes();
+        // going through the scenery is the one thing here which can take long enough to be felt; when it does it's worth knowing
+        auto const elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+        if (elapsed > 250.0)
+            WriteLog("editor: gathering the ground took " + std::to_string(static_cast<int>(elapsed)) + " ms, for " + std::to_string(Out.size()) + " triangles; " + std::to_string(ground_held) + " are kept for the next time");
     }
 
     // ground kept for the road tools, which ask about the same places frame after frame. it's gathered a tile at a time:
@@ -364,8 +480,9 @@ editor_mode::editor_mode() {
 	m_roadtool.settings.normalize();
 	road_select(nullptr);
 	// the orthophoto is fitted onto the same ground as the area fill uses, terrain tile models included
+	// the roads built in the editor aren't ground: the imagery goes under them
 	m_orthophoto.ground_source([](glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out) {
-		gather_ground_triangles(Min, Max, true, 50.0f, Out);
+		gather_ground_triangles(Min, Max, true, 50.0f, Out, true);
 	});
  }
 
@@ -1452,7 +1569,12 @@ void editor_mode::render_orthophoto_ui()
     {
         ImGui::SameLine();
         if (ImGui::Button("Refit"))
+        {
+            // the ground was edited: what's kept of it has to go as well
+            ground_tiles.clear();
+            forget_ground_shapes();
             m_orthophoto.refit();
+        }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Samples the ground again, after it was edited");
     }
@@ -1947,6 +2069,7 @@ void editor_mode::handle_terrain_sculpt(double Deltatime)
         terrain->sculpt(world.x, world.z, m_terrain_brush_radius, signedrate);
     // what the road tools know about the ground is no longer true
     ground_tiles.clear();
+    forget_ground_shapes();
 }
 
 void editor_mode::capture_terrain()

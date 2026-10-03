@@ -210,6 +210,8 @@ class road_node : public scene::basic_node
 // gets a legacy crossroads path, which is what the vehicles and their drivers already know how to pick a way through.
 // scenery entry:
 // node <max> <min> <name> junction <centre> arm <position> <direction x z> <lanes in> <lanes out> <lane width> ... [<property> <values>]... endjunction
+// properties: surface <material>, texlength <m>, markings <white|orange|none>, side <none|shoulder|sidewalk> <width> <material>, kerb <height>,
+// slope <width> <drop>, stopline <number of an arm, counted from 1>, velocity <km/h>, friction <value>, environment <name>
 // the arms don't have to be level with each other: the surface is spanned between their ends and the centre
 class junction_node : public scene::basic_node
 {
@@ -223,6 +225,7 @@ class junction_node : public scene::basic_node
 		int incoming{1}; // lanes leading into the junction
 		int outgoing{1}; // lanes leading out of it
 		float width{3.5f}; // width of a lane
+		bool stopline{false}; // a line is painted across the lanes leading into the junction
 	};
 	struct state
 	{
@@ -231,6 +234,9 @@ class junction_node : public scene::basic_node
 		std::string surface{"asphaltdark1"};
 		float texturelength{4.f};
 		road_node::marking_colour markings{road_node::marking_colour::white};
+		road_node::side_data side; // what the corners between the roads are lined with, the way the sides of a road are
+		float kerbheight{0.12f};
+		glm::vec2 slope{1.f, 0.4f}; // width and drop of the bank which closes a shoulder
 		float velocity{30.f}; // speed limit on the way through
 		float friction{0.85f};
 		float sounddistance{25.f};
