@@ -1518,6 +1518,17 @@ glm::mat4 opengl33_renderer::ortho_frustumtest_projection(float l, float r, floa
 	return glm::ortho(l, r, b, t, znear, zfar);
 }
 
+// the main viewport of the editor in the orthographic view replaces the perspective projection
+void opengl33_renderer::editor_ortho_projection(viewport_config const &Viewport, float const Zfar, glm::mat4 &Projection, glm::mat4 &Frustum)
+{
+	if (false == (EditorModeFlag && Global.EditorOrtho && Viewport.main))
+		return;
+	auto const height{Global.EditorOrthoExtent};
+	auto const width{height * Global.window_size.x / std::max(1.f, static_cast<float>(Global.window_size.y))};
+	Projection = ortho_projection(-width, width, -height, height, -Zfar, Zfar);
+	Frustum = ortho_frustumtest_projection(-width, width, -height, height, -Zfar, Zfar);
+}
+
 void opengl33_renderer::setup_pass(viewport_config &Viewport, renderpass_config &Config, rendermode const Mode,
                                  float const Znear, float const Zfar, bool const Ignoredebug)
 {
@@ -1593,13 +1604,7 @@ void opengl33_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
 		auto const znear = ( Znear > 1.f ? Znear : Znear > 0.f ? Znear * zfar : 0.1f * Global.ZoomFactor);
 
 		camera.projection() = perspective_projection(Viewport.projection, znear, zfar, frustumtest_proj);
-		if (EditorModeFlag && Global.EditorOrtho && Viewport.main)
-		{
-			auto const height{Global.EditorOrthoExtent};
-			auto const width{height * Global.window_size.x / std::max(1.f, static_cast<float>(Global.window_size.y))};
-			camera.projection() = ortho_projection(-width, width, -height, height, -zfar, zfar);
-			frustumtest_proj = ortho_frustumtest_projection(-width, width, -height, height, -zfar, zfar);
-		}
+		editor_ortho_projection(Viewport, zfar, camera.projection(), frustumtest_proj);
 		break;
 	}
 	case rendermode::shadows:
@@ -1699,13 +1704,7 @@ void opengl33_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
         }
 
         camera.projection() = perspective_projection(proj, znear, zfar, frustumtest_proj);
-		if (EditorModeFlag && Global.EditorOrtho && Viewport.main)
-		{
-			auto const height{Global.EditorOrthoExtent};
-			auto const width{height * Global.window_size.x / std::max(1.f, static_cast<float>(Global.window_size.y))};
-			camera.projection() = ortho_projection(-width, width, -height, height, -zfar, zfar);
-			frustumtest_proj = ortho_frustumtest_projection(-width, width, -height, height, -zfar, zfar);
-		}
+		editor_ortho_projection(Viewport, zfar, camera.projection(), frustumtest_proj);
 		break;
 	}
 	case rendermode::reflections:

@@ -399,6 +399,7 @@ class opengl33_renderer : public gfx_renderer {
 	glm::mat4 perspective_projection(const viewport_proj_config &c, float n, float f, glm::mat4 &frustum);
     glm::mat4 ortho_projection(float left, float right, float bottom, float top, float z_near, float z_far);
     glm::mat4 ortho_frustumtest_projection(float left, float right, float bottom, float top, float z_near, float z_far);
+	void editor_ortho_projection(viewport_config const &Viewport, float const Zfar, glm::mat4 &Projection, glm::mat4 &Frustum);
 
     std::vector<std::function<void(TSubModel const *, glm::vec2)>> m_control_pick_requests;
     std::vector<std::function<void(scene::basic_node *)>> m_node_pick_requests;
