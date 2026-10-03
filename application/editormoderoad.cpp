@@ -159,15 +159,21 @@ ImU32 const kSnapColor{IM_COL32(255, 60, 255, 255)};
 ImU32 const kCrossingColor{IM_COL32(255, 220, 60, 230)};
 ImU32 const kSpawnColor{IM_COL32(90, 230, 120, 230)};
 ImU32 const kDespawnColor{IM_COL32(255, 110, 110, 230)};
+ImU32 const kCrosswalkColor{IM_COL32(235, 235, 235, 230)};
+double const kBankReach{30.0}; // how far from the road the ground is looked for, for a bank to be led to it
+double const kBankStep{0.5};
 
 roadpoint_node::kind_type point_kind(int const Index)
 {
-	return Index == 1 ? roadpoint_node::kind_type::spawn : Index == 2 ? roadpoint_node::kind_type::despawn : roadpoint_node::kind_type::crossing;
+	return Index == 1 ? roadpoint_node::kind_type::spawn : Index == 2 ? roadpoint_node::kind_type::despawn : Index == 3 ? roadpoint_node::kind_type::crosswalk : roadpoint_node::kind_type::crossing;
 }
 
 char const *point_label(roadpoint_node::kind_type const Kind)
 {
-	return Kind == roadpoint_node::kind_type::spawn ? "spawn point" : Kind == roadpoint_node::kind_type::despawn ? "removal point" : "level crossing";
+	return Kind == roadpoint_node::kind_type::spawn     ? "spawn point" :
+	       Kind == roadpoint_node::kind_type::despawn   ? "removal point" :
+	       Kind == roadpoint_node::kind_type::crosswalk ? "pedestrian crossing" :
+	                                                      "level crossing";
 }
 
 // gathers new definitions for the pieces which meet or end at provided points.
@@ -267,6 +273,12 @@ void editor_mode::update_road_tool()
 	}
 	if (tool.tool != 1)
 		return;
+	if (tool.ring)
+	{
+		// a click puts a roundabout around the cursor, there's nothing to lead from a point to another
+		tool.chain = false;
+		return;
+	}
 	if (tool.chain)
 	{
 		// what a click would make at the moment, to be drawn over the view
@@ -304,6 +316,9 @@ void editor_mode::road_select(road_node *Road)
 	copy_text(tool.surface, sizeof(tool.surface), tool.settings.surface);
 	for (int side = 0; side < 2; ++side)
 		copy_text(tool.sides[side], sizeof(tool.sides[side]), tool.settings.sides[side].material);
+	copy_text(tool.kerbtext, sizeof(tool.kerbtext), tool.settings.kerbmaterial);
+	copy_text(tool.mediantext, sizeof(tool.mediantext), tool.settings.median.material);
+	copy_text(tool.banktext, sizeof(tool.banktext), tool.settings.bankmaterial);
 }
 
 void editor_mode::junction_select(junction_node *Junction)
@@ -320,6 +335,7 @@ void editor_mode::junction_select(junction_node *Junction)
 	// the fields for the names of materials are shared with the roads
 	copy_text(tool.surface, sizeof(tool.surface), Junction->definition().surface);
 	copy_text(tool.sides[0], sizeof(tool.sides[0]), Junction->definition().side.material);
+	copy_text(tool.kerbtext, sizeof(tool.kerbtext), Junction->definition().kerbmaterial);
 }
 
 void editor_mode::roadpoint_select(roadpoint_node *Point)
@@ -351,6 +367,21 @@ void editor_mode::roadpoint_aim(bool const Fresh)
 	tool.hastarget = false;
 	tool.targetnote.clear();
 	tool.targetdirection = glm::dvec3{0.0};
+	if (kind == roadpoint_node::kind_type::crosswalk)
+	{
+		auto const *road{editor_road::nearest(tool.mouse, kSideMargin)};
+		if (road == nullptr)
+		{
+			tool.targetnote = "Point at a road";
+			return;
+		}
+		// the stripes go across the road, whichever part of it the cursor is over
+		auto const t{editor_road::nearest_parameter(road->definition(), tool.mouse)};
+		tool.target.position = road->definition().point(t);
+		tool.targetdirection = road->definition().tangent(t);
+		tool.hastarget = true;
+		return;
+	}
 	if (kind == roadpoint_node::kind_type::crossing)
 	{
 		auto const *road{editor_road::nearest(tool.mouse, kSideMargin)};
@@ -418,12 +449,17 @@ void editor_mode::roadpoint_place()
 	case roadpoint_node::kind_type::spawn:
 	{
 		tool.status = (state.vehicles.empty() ? std::string{"Spawn point made, with no vehicles: nothing appears there until it's given some (Select, click the point)."} :
-		                                        "Spawn point made, with " + std::to_string(state.vehicles.size() * state.copies) + " vehicles. They appear while the simulation runs.");
+		                                        "Spawn point made, with up to " + std::to_string(state.count) + " vehicles on the roads at a time. They appear while the simulation runs.");
 		break;
 	}
 	case roadpoint_node::kind_type::despawn:
 	{
 		tool.status = "Removal point made, it takes vehicles from " + std::to_string(point->lanes().size()) + (point->lanes().size() == 1 ? " lane." : " lanes.");
+		break;
+	}
+	case roadpoint_node::kind_type::crosswalk:
+	{
+		tool.status = "Pedestrian crossing painted.";
 		break;
 	}
 	}
@@ -520,12 +556,13 @@ bool editor_mode::render_roadpoint_layout(roadpoint_node::state &State, roadpoin
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", "The speed the vehicles appear with. From there on the drivers go by the speed limits of the lanes.");
 		ImGui::SetNextItemWidth(120.0f);
-		if (ImGui::InputInt("Copies of each vehicle", &State.copies, 1, 1, flags))
+		if (ImGui::InputInt("Vehicles on the roads at a time", &State.count, 1, 5, flags))
 			changed = true;
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", "How many of each vehicle of the set are made. A vehicle can't be in two places at once,\n"
-			                        "so this is how many of a kind can be on the road together. All of them are loaded along with the scenery,\n"
-			                        "and a vehicle taken by a removal point goes back to wait for its next turn.");
+			ImGui::SetTooltip("%s", "How many vehicles of this point can be on the scenery at once. That many are made along with the scenery,\n"
+			                        "drawn from the listed ones in turn; one of those which wait is put on the road each time its turn comes,\n"
+			                        "until all of them are out. A vehicle taken by a removal point goes back to wait for its next turn,\n"
+			                        "and so does one which stood still for 15 seconds, other than at a closed level crossing, or went backwards.");
 		// the set
 		ImGui::Separator();
 		ImGui::Text("Vehicles of the set: %d", static_cast<int>(State.vehicles.size()));
@@ -588,6 +625,14 @@ bool editor_mode::render_roadpoint_layout(roadpoint_node::state &State, roadpoin
 			ImGui::SetTooltip("%s", "Road vehicles on the lanes passing within this distance from the point are taken off the road when they get here,\n"
 			                        "except for the one the user drives. Vehicles which came from a spawn point go back to wait for their next turn.\n"
 			                        "The distance it starts with takes in a single lane.");
+		break;
+	}
+	case roadpoint_node::kind_type::crosswalk:
+	{
+		if (number("Length along the road [m]", State.length, 0.5f, "%.1f"))
+			changed = true;
+		ImGui::TextDisabled("Stripes painted from one edge of the road to the other.");
+		ImGui::TextDisabled("The drivers don't stop for it: there's nobody to cross.");
 		break;
 	}
 	}
@@ -661,6 +706,25 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 		changed = true;
 	}
 	// what the corners between the roads are lined with
+	if (ImGui::Checkbox("Kerb around the corners", &state.kerbs))
+		changed = true;
+	if (state.kerbs)
+	{
+		ImGui::Indent();
+		if (number("Kerb width [m]", state.kerbwidth, 0.05f, "%.2f"))
+		{
+			state.kerbwidth = std::clamp(state.kerbwidth, 0.05f, 2.0f);
+			changed = true;
+		}
+		if (render_road_material("Kerb material", tool.kerbtext, sizeof(tool.kerbtext), state.kerbmaterial))
+			changed = true;
+		if (state.side.type != road_node::side_type::sidewalk && number("Kerb height [m]", state.kerbheight, 0.01f, "%.2f"))
+		{
+			state.kerbheight = std::clamp(state.kerbheight, 0.0f, 1.0f);
+			changed = true;
+		}
+		ImGui::Unindent();
+	}
 	char const *sidetypes[]{"none", "shoulder", "sidewalk"};
 	int type{state.side.type == road_node::side_type::shoulder ? 1 : state.side.type == road_node::side_type::sidewalk ? 2 : 0};
 	ImGui::SetNextItemWidth(120.0f);
@@ -710,7 +774,9 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 	// the roads
 	if (ImGui::CollapsingHeader("Roads of the junction", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		ImGui::TextDisabled("The lanes are taken from the roads: change them on the road, the junction follows");
+		ImGui::TextDisabled("The lanes are taken from the roads: change them on the road, the junction follows.");
+		ImGui::TextDisabled("The roads are numbered in the view. Lanes are counted from the middle of the road;");
+		ImGui::TextDisabled("automatic: the inner lane turns left, the outer one right, all go straight.");
 		for (std::size_t arm = 0; arm < state.arms.size(); ++arm)
 		{
 			ImGui::PushID(static_cast<int>(arm));
@@ -719,6 +785,36 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 			ImGui::SameLine();
 			if (ImGui::Checkbox("Stop line", &data.stopline))
 				changed = true;
+			if (data.incoming > 0 && state.arms.size() > 2)
+			{
+				ImGui::Indent();
+				// the entries are in the order of the stored values
+				char const *priorities[]{"no sign: gives way to the right", "has the right of way", "gives way", "stops, then gives way"};
+				int priority{static_cast<int>(data.priority)};
+				ImGui::SetNextItemWidth(220.0f);
+				if (ImGui::Combo("##priority", &priority, priorities, 4))
+				{
+					data.priority = static_cast<junction_node::right_of_way>(std::clamp(priority, 0, 3));
+					changed = true;
+				}
+				// ways each lane can be left by
+				char const *ways[]{"automatic", "left", "straight", "left, straight", "right", "left, right", "straight, right", "any"};
+				for (int lane = 0; lane < data.incoming; ++lane)
+				{
+					ImGui::PushID(100 + lane);
+					int turns{static_cast<std::size_t>(lane) < data.turns.size() ? data.turns[lane] & 7 : 0};
+					auto const label{"lane " + std::to_string(lane + 1) + " goes"};
+					ImGui::SetNextItemWidth(140.0f);
+					if (ImGui::Combo(label.c_str(), &turns, ways, 8))
+					{
+						data.turns.resize(std::max(data.turns.size(), static_cast<std::size_t>(lane) + 1), 0);
+						data.turns[lane] = turns;
+						changed = true;
+					}
+					ImGui::PopID();
+				}
+				ImGui::Unindent();
+			}
 			ImGui::PopID();
 		}
 	}
@@ -771,14 +867,15 @@ editor_mode::road_plan editor_mode::road_preview(bool const Fresh)
 			plan.snap = {};
 		}
 	}
-	if (plan.snap.junction != nullptr)
+	if (plan.snap.junction != nullptr || plan.snap.half != 0)
 	{
-		// the junction has its ways through made for a set of lanes at each arm
+		// the junction has its ways through made for a set of lanes at each arm; a single roadway of a road takes the lanes it has
 		if (false == evenlanes || arriving != plan.snap.backward || leaving != plan.snap.forward || std::abs(lanewidth - plan.snap.width) > 0.01f)
 		{
 			char width[32];
 			std::snprintf(width, sizeof(width), "%.2f", plan.snap.width);
-			plan.error = "This arm of the junction takes a road with " + std::to_string(plan.snap.backward) + " lane(s) leading into it and " + std::to_string(plan.snap.forward) + " out of it, " + width + " m wide each";
+			plan.error = std::string{plan.snap.junction != nullptr ? "This arm of the junction" : "This roadway"} + " takes a road with ";
+			plan.error += std::to_string(plan.snap.backward) + " lane(s) leading to it and " + std::to_string(plan.snap.forward) + " away from it, " + width + " m wide each";
 			return plan;
 		}
 	}
@@ -992,6 +1089,11 @@ void editor_mode::road_click()
 		tool.status = reason;
 		return;
 	}
+	if (tool.ring)
+	{
+		road_roundabout(ground);
+		return;
+	}
 	if (false == tool.chain)
 	{
 		// first click sets where the road starts
@@ -1015,27 +1117,40 @@ void editor_mode::road_click()
 			tool.hasdirection = true;
 			tool.grade = end.outwards.y / glm::length(outwards);
 			tool.hasgrade = true;
-			if (end.road != nullptr)
+			if (end.road != nullptr && end.half == 0)
 			{
 				// carried on from its start the road keeps the direction of its axis, so the lanes stay what they were
 				tool.reversed = (false == end.atend);
 				tool.settings = end.road->definition();
-				// and it stays as wide as it is at that end
+				// and it stays as wide as it is at that end, with its directions as far apart
 				auto const scale{tool.settings.taper[end.atend ? 1 : 0]};
 				tool.settings.taper = {scale, scale};
+				auto const gap{tool.settings.median.width[end.atend ? 1 : 0]};
+				tool.settings.median.width = {gap, gap};
+				// the banks were made for the ground where they are
+				tool.settings.banks = {};
 				tool.status = "Carrying on \"" + end.road->name() + "\" with its layout";
 			}
 			else
 			{
 				tool.reversed = false;
+				if (end.road != nullptr)
+				{
+					// one of the roadways of a road which keeps its directions apart is carried on as a road of its own, which looks like the road it leaves
+					tool.settings = end.road->definition();
+					tool.settings.sides[end.half > 0 ? 0 : 1] = road_node::side_data{};
+					tool.settings.banks = {};
+				}
 				tool.settings.forward = end.forward;
 				tool.settings.backward = end.backward;
 				tool.settings.lanewidth = end.width;
 				tool.settings.taper = {1.f, 1.f};
+				tool.settings.median.width = {0.f, 0.f};
 				tool.settings.lanes.clear();
 				tool.settings.changes.clear();
 				tool.settings.normalize();
-				tool.status = "Leading a road out of \"" + end.junction->name() + "\", with the lanes the junction has there";
+				tool.status = (end.junction != nullptr ? "Leading a road out of \"" + end.junction->name() + "\", with the lanes the junction has there" :
+				                                         "Carrying on one of the roadways of \"" + end.road->name() + "\" as a one-way road");
 			}
 			road_select(nullptr);
 		}
@@ -1178,6 +1293,12 @@ void editor_mode::road_apply()
 		state.axis = road->definition().axis;
 		// how wide the road is at its points is set at these points, for each piece on its own
 		state.taper = road->definition().taper;
+		if (road != tool.selected)
+		{
+			// and so are the banks, and how far apart the two directions are led
+			state.median.width = road->definition().median.width;
+			state.banks = road->definition().banks;
+		}
 		if (road != tool.selected && road->definition().changes.size() == state.changes.size())
 		{
 			// where the lanes can be changed is set for each piece on its own
@@ -1255,6 +1376,122 @@ bool editor_mode::road_delete()
 	tool.selected = nullptr;
 	tool.status = "\"" + road->name() + "\" deleted, Ctrl+Z brings it back";
 	return true;
+}
+
+// puts a roundabout around specified point
+void editor_mode::road_roundabout(glm::dvec3 const &Ground)
+{
+	auto &tool{m_roadtool};
+	std::string reason;
+	if (false == editor_road::available(&reason))
+	{
+		tool.status = reason;
+		return;
+	}
+	auto const states{editor_road::roundabout(Ground + glm::dvec3{0.0, tool.offset, 0.0}, tool.ringradius, tool.settings, tool.island)};
+	if (states.empty())
+	{
+		tool.status = "The roundabout is too small for its lanes: give it a larger radius";
+		return;
+	}
+	for (auto const &state : states)
+	{
+		for (auto const t : {0.0, 0.5})
+		{
+			if (editor_road::nearest(state.point(t), 0.0) != nullptr || editor_road::nearest_junction(state.point(t)) != nullptr)
+			{
+				tool.status = "There's a road in the way. Make the roundabout next to it, then lead the road into its side";
+				return;
+			}
+		}
+	}
+	auto const created{editor_road::create(states)};
+	if (created.empty())
+	{
+		tool.status = "The roundabout wasn't created";
+		return;
+	}
+	editor_road::record record;
+	record.roads_created = created;
+	push_road_snapshot(std::move(record));
+	tool.status = "Roundabout made. Untick Roundabout and lead roads out of its side, or into it: the traffic joining it gives way to the traffic going around.";
+}
+
+// leads the banks of the selected piece, or of the whole road, to the ground beside it
+void editor_mode::road_bank_to_ground()
+{
+	auto &tool{m_roadtool};
+	if (tool.selected == nullptr)
+		return;
+	auto const pieces{tool.whole ? editor_road::chain(*tool.selected) : std::vector<road_node *>{tool.selected}};
+	std::string reason;
+	for (auto const *road : pieces)
+	{
+		if (false == editor_road::can_edit(*road, &reason))
+		{
+			tool.status = "\"" + road->name() + "\" can't be changed: " + reason;
+			return;
+		}
+	}
+	auto const grade{std::clamp(static_cast<double>(tool.bankgrade), 0.25, 10.0)};
+	auto const steps{static_cast<int>(kBankReach / kBankStep)};
+	std::vector<std::pair<road_node *, road_node::state>> changes;
+	for (auto *road : pieces)
+	{
+		auto state{road->definition()};
+		for (int side = 0; side < 2; ++side)
+		{
+			auto const &data{state.sides[side]};
+			auto const sided{data.type != road_node::side_type::none && data.width > 0.f};
+			for (int end = 0; end < 2; ++end)
+			{
+				auto const t{static_cast<double>(end)};
+				// where the bank starts: past the roadway, the kerb and whatever lies beside it
+				auto const tangent{state.tangent(t)};
+				glm::dvec3 across{tangent.z, 0.0, -tangent.x};
+				if (glm::length(across) < 1e-9)
+					continue;
+				across = glm::normalize(across) * (side == 0 ? 1.0 : -1.0);
+				auto edge{state.point(t) + across * (0.5 * state.span(t) + (state.kerbs[side] ? state.kerbwidth : 0.f) + (sided ? data.width : 0.f))};
+				if (sided && data.type == road_node::side_type::sidewalk)
+					edge.y += state.kerbheight;
+				// the ground further and further from the road, without the roads themselves
+				std::vector<glm::dvec3> probes;
+				for (int step = 1; step <= steps; ++step)
+					probes.emplace_back(edge + across * (step * kBankStep));
+				auto const ground{ground_heights(probes, true)};
+				// the bank ends where a slope of the set grade, going down or up, gets to the ground
+				auto const rising{ground.front() > edge.y};
+				auto width{kBankReach};
+				auto drop{edge.y - ground.back()};
+				for (int step = 1; step <= steps; ++step)
+				{
+					auto const reach{step * kBankStep};
+					auto const height{ground[step - 1]};
+					if (rising ? height <= edge.y + reach / grade : height >= edge.y - reach / grade)
+					{
+						width = reach;
+						drop = edge.y - height;
+						break;
+					}
+				}
+				state.banks[side].set = true;
+				state.banks[side].width[end] = static_cast<float>(width);
+				state.banks[side].drop[end] = static_cast<float>(drop);
+			}
+		}
+		changes.emplace_back(road, state);
+	}
+	editor_road::record record;
+	for (auto const &change : changes)
+		record.roads.emplace_back(change.first, change.first->definition());
+	editor_road::apply(changes);
+	push_road_snapshot(std::move(record));
+	road_select(tool.selected);
+	tool.status = "Banks of " + std::to_string(changes.size()) + (changes.size() == 1 ? " piece" : " pieces") + " led to the ground.";
+	auto const &layout{tool.selected->definition()};
+	if ((layout.sides[0].type != road_node::side_type::shoulder || layout.sides[1].type != road_node::side_type::shoulder) && (layout.bankmaterial.empty() || layout.bankmaterial == "none"))
+		tool.status += " Pick a bank material to have them drawn where the road has no shoulder.";
 }
 
 // takes the selected points out of their roads
@@ -1628,7 +1865,28 @@ bool editor_mode::render_road_layout(road_node::state &State)
 		}
 		ImGui::PopID();
 	}
-	if (State.sides[0].type == road_node::side_type::sidewalk || State.sides[1].type == road_node::side_type::sidewalk)
+	// kerbs
+	if (ImGui::Checkbox("Kerb on the left", &State.kerbs[0]))
+		changed = true;
+	ImGui::SameLine();
+	if (ImGui::Checkbox("on the right", &State.kerbs[1]))
+		changed = true;
+	auto const island{State.divided() && State.median.type == road_node::median_type::island};
+	if (State.kerbs[0] || State.kerbs[1] || island)
+	{
+		ImGui::Indent();
+		if (number("Kerb width [m]", State.kerbwidth, 0.05f, "%.2f"))
+		{
+			State.kerbwidth = std::clamp(State.kerbwidth, 0.05f, 2.0f);
+			changed = true;
+		}
+		if (material("Kerb material", tool.kerbtext, sizeof(tool.kerbtext), State.kerbmaterial))
+			changed = true;
+		if ((State.kerbs[0] || State.kerbs[1]) && (State.kerbmaterial.empty() || State.kerbmaterial == "none"))
+			ImGui::TextDisabled("Pick a material to have the kerbs drawn");
+		ImGui::Unindent();
+	}
+	if (State.kerbs[0] || State.kerbs[1] || island || State.sides[0].type == road_node::side_type::sidewalk || State.sides[1].type == road_node::side_type::sidewalk)
 	{
 		if (number("Kerb height [m]", State.kerbheight, 0.01f, "%.2f"))
 		{
@@ -1643,12 +1901,113 @@ bool editor_mode::render_road_layout(road_node::state &State)
 			State.slope.x = std::clamp(State.slope.x, 0.0f, 20.0f);
 			changed = true;
 		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", "The bank every shoulder of the road is closed with, unless the side has a bank of its own set below.");
 		if (number("Bank drop [m]", State.slope.y, 0.1f, "%.2f"))
 		{
 			State.slope.y = std::clamp(State.slope.y, 0.0f, 20.0f);
 			changed = true;
 		}
 	}
+
+	// banks leading to the ground
+	if (ImGui::CollapsingHeader("Banks to the ground"))
+	{
+		ImGui::TextDisabled("A slope from the edge of the road down, or up, to the ground.");
+		ImGui::TextDisabled("Set for each piece on its own, at its start and at its end.");
+		char const *banknames[]{"Bank on the left", "Bank on the right"};
+		for (int side = 0; side < 2; ++side)
+		{
+			ImGui::PushID(100 + side);
+			auto &bank{State.banks[side]};
+			if (ImGui::Checkbox(banknames[side], &bank.set))
+			{
+				if (bank.set && bank.width[0] <= 0.f && bank.width[1] <= 0.f)
+				{
+					bank.width = {State.slope.x, State.slope.x};
+					bank.drop = {State.slope.y, State.slope.y};
+				}
+				changed = true;
+			}
+			if (bank.set)
+			{
+				ImGui::Indent();
+				if (number("Width at the start [m]", bank.width[0], 0.5f, "%.2f"))
+					changed = true;
+				if (number("Drop at the start [m]", bank.drop[0], 0.25f, "%.2f"))
+					changed = true;
+				if (number("Width at the end [m]", bank.width[1], 0.5f, "%.2f"))
+					changed = true;
+				if (number("Drop at the end [m]", bank.drop[1], 0.25f, "%.2f"))
+					changed = true;
+				ImGui::Unindent();
+			}
+			ImGui::PopID();
+		}
+		if (material("Bank material", tool.banktext, sizeof(tool.banktext), State.bankmaterial))
+			changed = true;
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", "What a bank is covered with next to a sidewalk, a kerb or the bare edge of the road.\nA bank of a shoulder is covered with the material of the shoulder.");
+		if (tool.selected != nullptr)
+		{
+			ImGui::SetNextItemWidth(120.0f);
+			if (ImGui::InputFloat("Run for a metre of drop [m]", &tool.bankgrade, 0.25f, 0.5f, "%.2f"))
+				tool.bankgrade = std::clamp(tool.bankgrade, 0.25f, 10.0f);
+			if (ImGui::Button("Lead the banks to the ground"))
+			{
+				road_bank_to_ground();
+				// the layout shown was replaced with what the road is like now
+				return false;
+			}
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", "Looks for the ground on both sides of the road, at the start and at the end of each piece,\n"
+				                        "and sets the banks to reach it with the slope given above: down where the road is over the ground, up where it's cut into it.\n"
+				                        "Done for the selected piece, or for every piece of the road if the changes go to the whole road.");
+		}
+	}
+
+	// the two directions kept apart
+	if (State.forward > 0 && State.backward > 0 && ImGui::CollapsingHeader("Between the directions"))
+	{
+		char const *mediantypes[]{"nothing, the ground shows", "surface closed to the traffic", "island"};
+		int type{State.median.type == road_node::median_type::gap ? 0 : State.median.type == road_node::median_type::island ? 2 : 1};
+		ImGui::SetNextItemWidth(220.0f);
+		if (ImGui::Combo("##median", &type, mediantypes, 3))
+		{
+			State.median.type = (type == 0 ? road_node::median_type::gap : type == 2 ? road_node::median_type::island : road_node::median_type::painted);
+			changed = true;
+		}
+		if (number("Apart at the start [m]", State.median.width[0], 0.5f, "%.2f"))
+			changed = true;
+		if (number("Apart at the end [m]", State.median.width[1], 0.5f, "%.2f"))
+			changed = true;
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", "How far apart the two directions are led at each end of the piece; 0 at one end and more at the other makes them part along it.\n"
+			                        "Set for each piece on its own. The pieces next to it follow it where they meet, and so do the junctions.\n"
+			                        "A road with its directions apart can be carried on as two one-way roads: start the Build tool\n"
+			                        "on the middle of one of its roadways, at an end of the road with nothing attached.");
+		if (State.median.type == road_node::median_type::island)
+		{
+			if (material("Island material", tool.mediantext, sizeof(tool.mediantext), State.median.material))
+				changed = true;
+			ImGui::TextDisabled("The island is as high as the kerbs; with a kerb material set it gets kerbs of its own.");
+		}
+	}
+
+	// traffic
+	if (number("Traffic share, 100: like any other", State.weight, 10.0f, "%.0f"))
+	{
+		State.weight = std::clamp(State.weight, 0.0f, 10000.0f);
+		changed = true;
+	}
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", "How willing the drivers are to take this road when they leave a junction, next to the other roads they can take there.\n"
+		                        "With 100 for the main road and 20 for a dirt road leaving it, one vehicle in six turns into the dirt road.\n"
+		                        "0: nobody takes it, unless there's no other way.");
+	if (ImGui::Checkbox("Part of a roundabout", &State.roundabout))
+		changed = true;
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", "A junction made on this road gives the right of way to the traffic going along it,\nand tells the traffic of the road joining it to give way.");
 
 	// single lanes, and the rules for changing between them
 	if (ImGui::CollapsingHeader("Lanes and lane changes", ImGuiTreeNodeFlags_DefaultOpen))
@@ -1737,10 +2096,27 @@ void editor_mode::render_road_window()
 	};
 	if (tool.tool == 1)
 	{
-		ImGui::TextDisabled("LMB: start, then each next point. Ctrl: straight ahead. Esc: finish");
-		ImGui::TextDisabled("Start or end on a loose end of a road to join it.");
-		ImGui::TextDisabled("Start or end on the side of a road to make a junction there,");
-		ImGui::TextDisabled("or on a junction to give it another road.");
+		if (ImGui::Checkbox("Roundabout", &tool.ring))
+			road_cancel();
+		if (tool.ring)
+		{
+			ImGui::TextDisabled("LMB: put a roundabout around the cursor. It's a one-way road going around,");
+			ImGui::TextDisabled("with the lanes set below as the lanes along the axis.");
+			ImGui::TextDisabled("Then untick this and lead the roads out of its side, or into it.");
+			ImGui::SetNextItemWidth(120.0f);
+			if (ImGui::InputFloat("Radius of the middle of its road [m]", &tool.ringradius, 1.0f, 5.0f, "%.1f"))
+				tool.ringradius = std::clamp(tool.ringradius, 8.0f, 200.0f);
+			render_road_material("Island in the middle", tool.islandtext, sizeof(tool.islandtext), tool.island);
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", "What the middle is covered with; it's raised on a kerb as high as the kerbs of the road.\nnone: the middle is left as it is.");
+		}
+		else
+		{
+			ImGui::TextDisabled("LMB: start, then each next point. Ctrl: straight ahead. Esc: finish");
+			ImGui::TextDisabled("Start or end on a loose end of a road to join it.");
+			ImGui::TextDisabled("Start or end on the side of a road to make a junction there,");
+			ImGui::TextDisabled("or on a junction to give it another road.");
+		}
 		if (tool.chain)
 		{
 			if (ImGui::Button("Finish (Esc)"))
@@ -1769,7 +2145,8 @@ void editor_mode::render_road_window()
 		ImGui::RadioButton("Spawn point", &tool.placekind, 1);
 		ImGui::SameLine();
 		ImGui::RadioButton("Removal point", &tool.placekind, 2);
-		tool.placekind = std::clamp(tool.placekind, 0, 2);
+		ImGui::RadioButton("Pedestrian crossing", &tool.placekind, 3);
+		tool.placekind = std::clamp(tool.placekind, 0, 3);
 		switch (tool.placekind)
 		{
 		case 0:
@@ -1779,6 +2156,9 @@ void editor_mode::render_road_window()
 		case 1:
 			ImGui::TextDisabled("LMB on a lane. The vehicles of the set appear there one by one");
 			ImGui::TextDisabled("and drive on the way the lane goes.");
+			break;
+		case 3:
+			ImGui::TextDisabled("LMB on a road: stripes are painted across it there.");
 			break;
 		default:
 			ImGui::TextDisabled("LMB on a lane. The vehicles which get there are taken off the road;");
@@ -1986,7 +2366,7 @@ void editor_mode::draw_road_overlay() const
 			glm::dvec3 across{tangent.z, 0.0, -tangent.x};
 			if (glm::length(across) > 1e-6)
 				across = glm::normalize(across);
-			auto const halfwidth{0.5 * State.width() * State.scale(t)};
+			auto const halfwidth{0.5 * State.span(t)};
 			glm::dvec3 const edges[2]{position + across * halfwidth, position - across * halfwidth};
 			if (i > 0)
 			{
@@ -2074,6 +2454,13 @@ void editor_mode::draw_road_overlay() const
 				drawlabel(State.position, Color, "removal");
 			break;
 		}
+		case roadpoint_node::kind_type::crosswalk:
+		{
+			drawpoint(State.position, Color, 11.0f, false);
+			if (labelled)
+				drawlabel(State.position, Color, "pedestrians");
+			break;
+		}
 		}
 	};
 	for (auto const *point : simulation::Roadpoints.sequence())
@@ -2082,7 +2469,11 @@ void editor_mode::draw_road_overlay() const
 			continue;
 		auto const kind{point->definition().kind};
 		drawmarker(point->definition(), point,
-		           point == tool.marker ? kSelectedColor : kind == roadpoint_node::kind_type::spawn ? kSpawnColor : kind == roadpoint_node::kind_type::despawn ? kDespawnColor : kCrossingColor);
+		           point == tool.marker                         ? kSelectedColor :
+		           kind == roadpoint_node::kind_type::spawn     ? kSpawnColor :
+		           kind == roadpoint_node::kind_type::despawn   ? kDespawnColor :
+		           kind == roadpoint_node::kind_type::crosswalk ? kCrosswalkColor :
+		                                                          kCrossingColor);
 		if (point == tool.marker)
 			drawpoint(point->definition().position, kSelectedColor, 15.0f, false);
 	}
@@ -2095,10 +2486,29 @@ void editor_mode::draw_road_overlay() const
 		drawpoint(state.axis.points[segment_data::point::end], kSelectedColor, 6.0f, true);
 	}
 	if (tool.junction != nullptr && false == tool.junction->m_editorremoved)
+	{
 		drawjunction(tool.junction->definition(), kSelectedColor);
+		// the roads are numbered the way the window lists them
+		auto const &arms{tool.junction->definition().arms};
+		for (std::size_t arm = 0; arm < arms.size(); ++arm)
+			drawlabel(arms[arm].position, kSelectedColor, std::to_string(arm + 1).c_str());
+	}
 
 	std::string hint;
-	if (tool.tool == 1)
+	if (tool.tool == 1 && tool.ring)
+	{
+		// the road going around, as wide as its lanes
+		auto layout{tool.settings};
+		layout.backward = 0;
+		layout.forward = std::max(1, layout.forward);
+		layout.lanes.clear();
+		layout.normalize();
+		auto const centre{tool.mouse + glm::dvec3{0.0, tool.offset, 0.0}};
+		drawring(centre, tool.ringradius + 0.5 * layout.width(), kPreviewColor);
+		drawring(centre, std::max(0.0, tool.ringradius - 0.5 * layout.width()), kPreviewColor);
+		hint = "LMB: put a roundabout here";
+	}
+	else if (tool.tool == 1)
 	{
 		if (tool.chain)
 		{

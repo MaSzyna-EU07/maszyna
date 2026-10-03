@@ -201,6 +201,7 @@ public:
     material_data m_materialdata;
 
     std::string asText; // tekst dla wyświetlacza znakowego
+    std::string m_skintoken; // replacable skin the way the definition of the node gave it, kept for the export
     // TODO: wrap into a light state struct, remove fixed element count
     int iNumLights { 0 };
     std::array<TSubModel *, iMaxNumLights> LightsOn {}; // Ra: te wskaźniki powinny być w ramach TModel3d

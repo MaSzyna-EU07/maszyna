@@ -1942,6 +1942,29 @@ bool TTrack::SwitchForced(int i, TDynamicObject *o)
     return true;
 };
 
+// picks one of the routes through a crossroads for a driver heading for it
+int TTrack::RouteDraw() const {
+
+    auto const count { std::min( RouteCount(), static_cast<int>( m_routeweights.size() ) ) };
+    auto total { 0.0 };
+    for( int route = 0; route < count; ++route ) {
+        total += std::max( 0.f, m_routeweights[ route ] );
+    }
+    if( total <= 0.0 ) {
+        // even odds, the way it's always been for the crossroads of the scenery
+        return 1 + static_cast<int>( std::floor( Random( static_cast<double>( RouteCount() ) - 0.001 ) ) );
+    }
+    auto draw { Random( total ) };
+    auto last { 1 };
+    for( int route = 0; route < count; ++route ) {
+        if( m_routeweights[ route ] <= 0.f ) { continue; }
+        last = route + 1;
+        draw -= m_routeweights[ route ];
+        if( draw < 0.0 ) { break; }
+    }
+    return last;
+}
+
 int TTrack::CrossSegment(int from, int into)
 { // ustawienie wskaźnika na segement w pożądanym kierunku (into) od strony (from)
     // zwraca kod segmentu, z kierunkiem jazdy jako znakiem ±

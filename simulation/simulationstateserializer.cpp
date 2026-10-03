@@ -734,6 +734,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
             { "crossing", scene::layer_item::track },
             { "spawn", scene::layer_item::track },
             { "despawn", scene::layer_item::track },
+            { "crosswalk", scene::layer_item::track },
             { "traction", scene::layer_item::traction },
             { "tractionpowersource", scene::layer_item::powersource },
             { "model", scene::layer_item::model },
@@ -1509,7 +1510,7 @@ std::pair<int, int> state_serializer::preview_include(std::string const &Directi
 	// statements which take more than a single token, with the tokens ending them
 	static std::unordered_map<std::string, std::string> const nodeends {
 	    { "dynamic", "enddynamic" }, { "track", "endtrack" }, { "road", "endroad" }, { "junction", "endjunction" }, { "crossing", "endcrossing" }, { "spawn", "endspawn" }, { "despawn", "enddespawn" },
-	    { "traction", "endtraction" }, { "tractionpowersource", "end" }, { "model", "endmodel" },
+	    { "crosswalk", "endcrosswalk" }, { "traction", "endtraction" }, { "tractionpowersource", "end" }, { "model", "endmodel" },
 	    { "triangles", "endtri" }, { "triangle_strip", "endtri" }, { "triangle_fan", "endtri" }, { "lines", "endline" }, { "line_strip", "endline" }, { "line_loop", "endline" },
 	    { "memcell", "endmemcell" }, { "eventlauncher", "end" }, { "sound", "endsound" } };
 	static std::unordered_map<std::string, std::string> const statementends {

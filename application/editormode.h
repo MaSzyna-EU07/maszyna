@@ -160,6 +160,11 @@ class editor_mode : public application_mode
 	int m_max_history_size{200};
 	int m_selected_history_idx{-1};
 	glm::dvec3 clamp_mouse_offset_to_max(const glm::dvec3 &offset);
+	// the ground under a point the cursor landed on, for things which are to stand on the ground
+	glm::dvec3 placement_on_ground(glm::dvec3 Location);
+	// puts every instance of the model the selected node shows on the ground under it
+	void drop_model_instances();
+	void render_object_menu();
 
 	// focus camera smoothly on specified node
 	void start_focus(scene::basic_node *node, double duration = 0.6);
@@ -523,9 +528,13 @@ class editor_mode : public application_mode
 		bool follow{true}; // built roads are led over the ground between the clicked points
 		float crossingspeed{30.f}; // speed limit on the junctions being made
 		float heightstep{0.1f}; // how much the selected points are raised or lowered at a time
+		bool ring{false}; // the build tool makes roundabouts
+		float ringradius{15.f}; // of the middle of the road going around
+		std::string island{"none"}; // what the middle of a roundabout is covered with
+		float bankgrade{1.5f}; // metres a bank led to the ground runs for each metre it drops
 		// level crossings and traffic points
-		int placekind{0}; // what the place tool puts down: 0: level crossing, 1: spawn point, 2: removal point
-		roadpoint_node::state placing[3]; // what the next point of each kind is going to be like
+		int placekind{0}; // what the place tool puts down: 0: level crossing, 1: spawn point, 2: removal point, 3: pedestrian crossing
+		roadpoint_node::state placing[4]; // what the next point of each kind is going to be like
 		float stopmargin{5.f}; // distance from the outermost track of a new crossing to the places the vehicles stop at
 		roadpoint_node::state target; // the point a click of the place tool would make at the moment
 		bool hastarget{false};
@@ -542,6 +551,10 @@ class editor_mode : public application_mode
 		char surface[128]{};
 		char sides[2][128]{};
 		char filter[64]{"asph"};
+		char kerbtext[128]{};
+		char mediantext[128]{};
+		char banktext[128]{};
+		char islandtext[128]{"none"};
 	};
 	void render_road_menu();
 	void render_road_window();
@@ -564,6 +577,10 @@ class editor_mode : public application_mode
 	bool road_points_apply(std::vector<std::pair<road_node *, road_node::state>> const &Changes, std::vector<std::pair<junction_node *, junction_node::state>> const &Junctions);
 	// takes the selected points out of their roads
 	bool road_points_delete();
+	// puts a roundabout around specified point
+	void road_roundabout(glm::dvec3 const &Ground);
+	// leads the banks of the selected piece, or of the whole road, to the ground beside it
+	void road_bank_to_ground();
 	// level crossings and traffic points
 	void roadpoint_select(roadpoint_node *Point);
 	// works out the point a click of the place tool would make. Fresh: even if the cursor is where it was the last time

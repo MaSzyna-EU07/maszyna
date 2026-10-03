@@ -25,6 +25,7 @@ namespace scene
 struct scratch_data;
 class basic_section;
 }
+class road_order;
 
 // geometry a node puts in the scene as shapes of its own, apart from the shapes of the scenery, so it can take it back
 class owned_shapes
@@ -54,6 +55,9 @@ class owned_shapes
 // deal with a road without knowing about it.
 // scenery entry:
 // node <max> <min> <name> road <axis, laid out like a path of a track> [<property> <values>]... endroad
+// properties, past the ones of the lanes and the look: median <gap|painted|island> <width at the start> <width at the end> <material>,
+// kerbs <left|right|both> <width> <material>, bank <left|right|both> <width at the start> <drop at the start> <width at the end> <drop at the end>,
+// bankmaterial <material>, weight <value>, roundabout
 class road_node : public scene::basic_node
 {
 
@@ -90,6 +94,26 @@ class road_node : public scene::basic_node
 		float width{0.f};
 		std::string material;
 	};
+	// what keeps the two directions of a road apart, where they're led away from each other
+	enum class median_type
+	{
+		gap, // nothing: the ground shows between two roadways
+		painted, // the surface carries on, marked as closed to the traffic
+		island // raised on a kerb
+	};
+	struct median_data
+	{
+		median_type type{median_type::painted};
+		std::array<float, 2> width{0.f, 0.f}; // at the start and at the end of the axis
+		std::string material{"none"}; // what an island is covered with
+	};
+	// slope leading from the edge of the road down, or up, to the ground
+	struct bank_data
+	{
+		bool set{false}; // false: a shoulder gets the bank the road gives to all its shoulders, anything else gets none
+		std::array<float, 2> width{0.f, 0.f}; // at the start and at the end of the axis
+		std::array<float, 2> drop{0.f, 0.f}; // how far below the edge of the road it ends; negative if it rises
+	};
 	// everything the scenery says about the road. the lanes go left to right when facing along the axis:
 	// the ones going against it, outermost first, then the ones going along it
 	struct state
@@ -112,6 +136,14 @@ class road_node : public scene::basic_node
 		float sounddistance{25.f};
 		int quality{15};
 		std::string environment{"flat"};
+		float weight{100.f}; // how willing the drivers are to take the road when leaving a junction, next to the other roads they can take there
+		median_data median;
+		std::array<bool, 2> kerbs{false, false}; // left, right: a kerb runs along the edge of the surface, as high as the kerb of a sidewalk
+		float kerbwidth{0.15f};
+		std::string kerbmaterial{"none"};
+		std::array<bank_data, 2> banks; // left, right
+		std::string bankmaterial{"none"}; // what a bank is covered with, other than one of a shoulder, which goes with the shoulder
+		bool roundabout{false}; // the piece is a part of a roundabout: traffic on it goes ahead of the traffic joining it
 
 		// brings the content to a usable form: values within their limits, an entry for each lane and for each pair of neighbours
 		void normalize();
@@ -127,6 +159,14 @@ class road_node : public scene::basic_node
 		double width() const;
 		// what the widths of the lanes are multiplied by at specified value of the curve parameter
 		double scale(double const T) const;
+		// true if the two directions of the road are kept apart anywhere along it
+		bool divided() const;
+		// how far apart the two directions are at specified value of the curve parameter
+		double median_width(double const T) const;
+		// distance from the axis of the line the two directions meet at, on a road which doesn't keep them apart
+		double divide() const;
+		// width of the whole roadway at specified value of the curve parameter: the lanes and what's between the directions
+		double span(double const T) const;
 		// shape of the middle of a lane, laid out in the direction of travel
 		segment_data lane_path(std::size_t const Lane) const;
 		// length of the axis
@@ -211,13 +251,32 @@ class road_node : public scene::basic_node
 // scenery entry:
 // node <max> <min> <name> junction <centre> arm <position> <direction x z> <lanes in> <lanes out> <lane width> ... [<property> <values>]... endjunction
 // properties: surface <material>, texlength <m>, markings <white|orange|none>, side <none|shoulder|sidewalk> <width> <material>, kerb <height>,
-// slope <width> <drop>, stopline <number of an arm, counted from 1>, velocity <km/h>, friction <value>, environment <name>
-// the arms don't have to be level with each other: the surface is spanned between their ends and the centre
+// slope <width> <drop>, stopline <number of an arm, counted from 1>, velocity <km/h>, friction <value>, environment <name>,
+// priority <arm> <none|main|yield|stop>, turns <arm> <lane leading in, counted from the middle of the road> <letters out of l, s, r>,
+// armmedian <arm> <width of what keeps the two directions of the road apart there>, kerbs <width> <material>
+// the arms don't have to be level with each other: the surface is spanned between their ends and the centre.
+// the junction also tells the vehicles when to wait: the ones which have to give way wait for the ones with the right of way,
+// and where neither has it, for the ones coming from their right, or from the opposite side when turning left across their way
 class junction_node : public scene::basic_node
 {
 
   public:
 	// types
+	// what the vehicles coming by a road are to do about the ones coming by the other roads
+	enum class right_of_way
+	{
+		none, // the rule of the right hand
+		priority, // the others give way
+		yield, // gives way
+		stop // stops, then gives way
+	};
+	// ways a lane can be left by
+	enum turn_flags : int
+	{
+		turn_left = 1,
+		turn_straight = 2,
+		turn_right = 4
+	};
 	struct arm_data
 	{
 		glm::dvec3 position{0.0}; // middle of the end of the road
@@ -226,6 +285,46 @@ class junction_node : public scene::basic_node
 		int outgoing{1}; // lanes leading out of it
 		float width{3.5f}; // width of a lane
 		bool stopline{false}; // a line is painted across the lanes leading into the junction
+		float median{0.f}; // how far apart the two directions of the road are there
+		right_of_way priority{right_of_way::none};
+		// ways each lane leading into the junction can be left by, a sum of turn_flags; the lanes are counted from the middle of the road.
+		// a lane with no entry, or with 0, gets what the junction works out: the inner lane takes the left turns, the outer one the right turns
+		std::vector<int> turns;
+	};
+	// a way through the junction from a lane leading into it
+	struct way_data
+	{
+		std::size_t exit{0}; // arm it leaves by
+		int kind{turn_straight}; // one of turn_flags
+		int code{0}; // what a driver calls it, once they picked it
+		TTrack *track{nullptr}; // lane it leads to
+		segment_data path;
+		std::vector<std::pair<std::size_t, std::size_t>> conflicts; // ways it can't be taken along with: lane leading in, and a way from that lane
+	};
+	// a lane leading into the junction, with what its traffic is told
+	struct gate_data
+	{
+		std::size_t arm{0};
+		int lane{1};
+		TTrack *entry{nullptr}; // the lane
+		TTrack *link{nullptr}; // path, or crossroads of paths, leading on from it
+		std::vector<way_data> ways;
+		std::vector<TTrack *> approach; // lanes the vehicles heading for the junction are looked for on, nearest first
+		glm::dvec3 line{0.0}; // where the lane ends
+		road_order *order{nullptr};
+		// what's going on at the moment
+		TDynamicObject *first{nullptr}; // vehicle nearest to the junction
+		double distance{0.0}; // of that vehicle from the end of the lane
+		double speed{0.0};
+		double halflength{0.0};
+		unsigned taken{0}; // ways that vehicle may take, a bit for each
+		unsigned inside{0}; // ways with a vehicle on them
+		bool active{false}; // the vehicle is near enough to matter
+		bool blocked{false}; // it's told to wait
+		bool committed{false}; // it was let through, the others wait for it
+		bool stopped{false}; // it made its stop at the stop sign
+		double waited{0.0}; // how long it's been standing there
+		double idle{0.0}; // how long it's been standing there since it was let through
 	};
 	struct state
 	{
@@ -235,6 +334,9 @@ class junction_node : public scene::basic_node
 		float texturelength{4.f};
 		road_node::marking_colour markings{road_node::marking_colour::white};
 		road_node::side_data side; // what the corners between the roads are lined with, the way the sides of a road are
+		bool kerbs{false}; // a kerb runs around the corners, the way it runs along the edges of a road
+		float kerbwidth{0.15f};
+		std::string kerbmaterial{"none"};
 		float kerbheight{0.12f};
 		glm::vec2 slope{1.f, 0.4f}; // width and drop of the bank which closes a shoulder
 		float velocity{30.f}; // speed limit on the way through
@@ -280,6 +382,13 @@ class junction_node : public scene::basic_node
 	}
 	// true if there's a vehicle on any path of the junction
 	bool occupied() const;
+	// tells the vehicles heading for the junction whether they can drive on. to be called with each step of the simulation
+	void update(double const Deltatime);
+	// lanes leading into the junction, with what their traffic is told at the moment
+	std::vector<gate_data> const &gates() const
+	{
+		return m_gates;
+	}
 	// generates geometry of the surface
 	std::vector<scene::shape_node> create_shapes() const;
 	// puts geometry of the junction in the scene as shapes of its own, or takes it back
@@ -304,10 +413,16 @@ class junction_node : public scene::basic_node
 	void export_as_text_(std::ostream &Output) const override;
 	// creates a path through the junction from provided definition and registers it with the simulation
 	TTrack *create_track(std::string const &Definition, std::size_t const Index);
+	// sets up what the traffic of each lane leading in is told, once the ways through are made
+	void create_gates();
 	// members
 	state m_state;
 	std::vector<TTrack *> m_links;
 	std::vector<segment_data> m_movements;
+	std::vector<gate_data> m_gates;
+	std::vector<road_order *> m_orders; // orders for the drivers, used again each time the gates are made. never freed, as a driver can hold on to one
+	double m_scan{0.0}; // time left to the next look at the traffic
+	bool m_quiet{false}; // there was no traffic the last time
 	bool m_merged{false};
 	owned_shapes m_shapes;
 };
@@ -330,6 +445,8 @@ class junction_table : public basic_table<junction_node>
   public:
 	// legacy style initialization, to be performed when the tracks are joined, ahead of the roads
 	void InitJunctions();
+	// to be called with each step of the simulation
+	void update(double const Deltatime);
 	// generates geometry of the junctions and puts it in the scene
 	void create_geometry(scene::scratch_data &Scratchpad);
 };

@@ -30,7 +30,10 @@ class editor_road
 		bool atend{false}; // of a road: the end of its axis rather than the start
 		glm::dvec3 position{0.0};
 		glm::dvec3 outwards{0.0}; // direction a road would continue in
-		// of a junction arm: lanes of a road leading away from it
+		// of a road which keeps its two directions apart: the roadway of one of them, 1 for the lanes going along the axis, -1 for the ones going against it.
+		// 0: the end of the whole road
+		int half{0};
+		// of a junction arm, or of a single roadway: lanes of a road leading away from it
 		int forward{0};
 		int backward{0};
 		float width{0.f};
@@ -164,6 +167,10 @@ class editor_road
 	static double planar_length(segment_data const &Path);
 	// slope of the path at its end, in the direction it's laid out
 	static double end_grade(segment_data const &Path);
+	// lays out the pieces of a roundabout: a one-way road going around specified point, to the left of the traffic.
+	// Radius: of the axis of that road; Layout: what the road is like. the lanes it has along its axis are the ones the roundabout gets.
+	// Island: what the middle is covered with, "none" to leave the ground showing
+	static std::vector<road_node::state> roundabout(glm::dvec3 const &Centre, double const Radius, road_node::state const &Layout, std::string const &Island);
 	// names of materials and images present in the texture folder, to pick from
 	static std::vector<std::string> const &materials();
 

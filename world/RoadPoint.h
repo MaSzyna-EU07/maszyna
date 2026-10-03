@@ -24,17 +24,20 @@ http://mozilla.org/MPL/2.0/.
 class TDynamicObject;
 class basic_event;
 
-// a place on a road where something happens to the traffic. three kinds of it:
+// a place on a road where something happens to the traffic, or is painted for it:
 // - a level crossing: vehicles are stopped ahead of the rails for as long as a train is near,
 // - a point where vehicles appear, drawn from a set made ready while the scenery is loaded,
-// - a point where vehicles are taken away. the ones which came from a point of the previous kind go back to its set.
+// - a point where vehicles are taken away. the ones which came from a point of the previous kind go back to its set,
+// - a pedestrian crossing: stripes painted across the road.
 // scenery entries:
 // node <max> <min> <name> crossing <position> [clearance <m>] [warning <m>] [stoplines <yes|no>] endcrossing
-// node <max> <min> <name> spawn <position> [interval <s>] [variation <0..1>] [velocity <km/h>] [copies <n>]
+// node <max> <min> <name> spawn <position> [interval <s>] [variation <0..1>] [velocity <km/h>] [count <n>]
 //     [node <max> <min> <name> dynamic <folder> <skin> <type> <path> <offset> <driver> <velocity> <load> [<load type>] enddynamic]... endspawn
 // node <max> <min> <name> despawn <position> [radius <m>] enddespawn
+// node <max> <min> <name> crosswalk <position> [length <m>] endcrosswalk
 // the vehicles of a spawn point are given the way vehicles are put in a scenery; where they're put and how they're driven
-// is up to the point, so the path, the offset, the driver and the velocity of these entries don't matter
+// is up to the point, so the path, the offset, the driver and the velocity of these entries don't matter. the listed vehicles
+// are what the point draws from to have <count> vehicles of its own on the roads; one which gets stuck is taken off the road
 class roadpoint_node : public scene::basic_node
 {
 
@@ -44,7 +47,8 @@ class roadpoint_node : public scene::basic_node
 	{
 		crossing,
 		spawn,
-		despawn
+		despawn,
+		crosswalk
 	};
 	struct vehicle_data
 	{
@@ -71,10 +75,12 @@ class roadpoint_node : public scene::basic_node
 		float interval{20.f}; // seconds from a vehicle to the next
 		float variation{0.5f}; // part of the interval which is drawn at random
 		float velocity{50.f}; // speed the vehicles appear with, and are told to keep, km/h
-		int copies{2}; // number of each vehicle made ready
+		int count{6}; // how many vehicles of the point can be on the roads at a time. that many are made ready, drawn from the listed ones
 		std::vector<vehicle_data> vehicles;
 		// point where vehicles are taken away
 		float radius{2.f}; // vehicles on lanes this close to the point are taken
+		// pedestrian crossing
+		float length{4.f}; // how much of the road the stripes take along it
 
 		// brings the content to a usable form
 		void normalize();
@@ -135,6 +141,8 @@ class roadpoint_node : public scene::basic_node
 		return m_pool.size();
 	}
 	std::size_t waiting() const;
+	// true if specified vehicle stands in the line of vehicles held by the crossing, which is closed
+	bool holds(TDynamicObject const &Vehicle) const;
 	// generates geometry of the stop lines
 	std::vector<scene::shape_node> create_shapes() const;
 	// puts geometry of the point in the scene, or takes it back
@@ -153,6 +161,7 @@ class roadpoint_node : public scene::basic_node
 	{
 		TDynamicObject *vehicle{nullptr};
 		double velocity{0.0}; // what its speed was when it was made, to be given back each time it's put on the road
+		double standing{0.0}; // how long it's been standing still on the road
 	};
 	// methods
 	float radius_() override;
@@ -171,6 +180,7 @@ class roadpoint_node : public scene::basic_node
 	std::vector<stop_data> m_stops;
 	std::vector<basic_event *> m_events; // orders for the drivers, one for each stop. these are never freed, as a driver can hold on to one
 	std::vector<TTrack *> m_rails; // rails a train closes the crossing from
+	std::vector<TTrack *> m_queue; // lanes the vehicles held by the crossing wait on
 	std::map<TDynamicObject const *, double> m_seen; // rail vehicles near, with how far each was the last time
 	bool m_closed{false};
 	double m_hold{0.0}; // time left for the crossing to stay closed after the last train was seen
@@ -182,6 +192,10 @@ class roadpoint_node : public scene::basic_node
 	bool m_prepared{false};
 	int m_made{0}; // number of vehicles made so far, for their names
 	double m_timer{0.0}; // time left to the next vehicle
+	// pedestrian crossing: the road at the point
+	bool m_onroad{false};
+	glm::dvec3 m_along{0.0, 0.0, 1.0}; // the way the road goes
+	double m_halfwidth{0.0}; // of the road
 	owned_shapes m_shapes;
 };
 
@@ -199,6 +213,8 @@ class roadpoint_table : public basic_table<roadpoint_node>
 	void create_geometry();
 	// to be called with each step of the simulation
 	void update(double const Deltatime);
+	// true if specified vehicle stands in the line of vehicles held by a closed level crossing
+	bool holds(TDynamicObject const &Vehicle) const;
 
   private:
 	bool m_geometry{false}; // the scene is ready to take geometry of the points

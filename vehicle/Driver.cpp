@@ -648,7 +648,7 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
                         routewanted = 1 + std::floor( Random( static_cast<double>( pTrack->RouteCount() ) - 0.001 ) );
                     }
 */
-                    auto const routewanted { 1 + std::floor( Random( static_cast<double>( pTrack->RouteCount() ) - 0.001 ) ) };
+                    auto const routewanted { pTrack->RouteDraw() };
                     sSpeedTable[iLast].iFlags |=
                         (pTrack->CrossSegment(fLastDir < 0 ? tLast->iPrevDirection : tLast->iNextDirection,
 					                                                   /*

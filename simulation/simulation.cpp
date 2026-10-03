@@ -119,7 +119,8 @@ state_manager::update( double const Deltatime, int Iterationcount ) {
     TAnimModel::AnimUpdate( totaltime ); // wykonanie zakolejkowanych animacji
 
     simulation::Powergrid.update( totaltime );
-    // level crossings and the points road vehicles appear at; ahead of the vehicles, so the drivers act on what these decide
+    // road junctions, level crossings and the points road vehicles appear at; ahead of the vehicles, so the drivers act on what these decide
+    simulation::Junctions.update( totaltime );
     simulation::Roadpoints.update( totaltime );
     simulation::Vehicles.update( Deltatime, Iterationcount );
 }

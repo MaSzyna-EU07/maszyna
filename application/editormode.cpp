@@ -476,7 +476,10 @@ editor_mode::editor_mode() {
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
 	ui()->set_file_actions([this]() { save(); }, [this]() { export_scenery(); });
 	ui()->set_track_options([this]() { render_track_ui(); });
-	ui()->set_menu_options([this]() { render_road_menu(); });
+	ui()->set_menu_options([this]() {
+		render_object_menu();
+		render_road_menu();
+	});
 	m_roadtool.settings.normalize();
 	road_select(nullptr);
 	// the orthophoto is fitted onto the same ground as the area fill uses, terrain tile models included
@@ -744,7 +747,7 @@ void editor_mode::handle_brush_mouse_hold(int Action, int Button)
 
             std::string name = "editor_";
 
-            TAnimModel *cloned = simulation::State.create_model(*src, name, newPos);
+            TAnimModel *cloned = simulation::State.create_model(*src, name, placement_on_ground(newPos));
             oldPos = newPos;
             m_brush_has_last = true;
             if (!cloned)
@@ -2010,7 +2013,7 @@ void editor_mode::place_include(std::string const &File, int const RotationMode,
         ui()->set_status("Template \"" + File + "\" can't be placed: the file of the active layer would receive it with a rotation or a scale in effect. Pick another layer.", true);
         return;
     }
-    glm::dvec3 const location = Camera.Pos + clamp_mouse_offset_to_max(GfxRenderer->Mouse_Position());
+    glm::dvec3 const location = placement_on_ground(Camera.Pos + clamp_mouse_offset_to_max(GfxRenderer->Mouse_Position()));
     std::optional<float> yaw;
     if (RotationMode == functions_panel::RANDOM)
         yaw = static_cast<float>(LocalRandom(0.0, 360.0));
@@ -2148,6 +2151,119 @@ void editor_mode::capture_terrain()
     simulation::State.delete_model(model);
 }
 
+// the ground under a point the cursor landed on. the orthophoto laid over the ground catches the cursor like any
+// other surface, so the point can hang over the ground by as much as the orthophoto is lifted, or lie on the flat sheet
+// the orthophoto makes where it's not fitted to the ground. what's put in the scenery is to stand on the ground itself
+glm::dvec3 editor_mode::placement_on_ground(glm::dvec3 Location)
+{
+    double constexpr reach = 2.0; // the ground is asked about this far around the point
+    double constexpr slack = 0.5; // a surface this far over the point still is what the cursor landed on
+    double constexpr height_tolerance = 50.0; // with nothing there or lower, how far up the ground is looked for
+    float constexpr terrain_model_radius = 50.0f; // the same models count as ground as for the area fill and the orthophoto
+
+    glm::dvec2 const bmin{Location.x - reach, Location.z - reach};
+    glm::dvec2 const bmax{Location.x + reach, Location.z + reach};
+    std::vector<world_triangle> triangles;
+    gather_ground_triangles(bmin, bmax, true, terrain_model_radius, triangles);
+    triangle_grid const ground(std::move(triangles), bmin, bmax);
+    auto const terrains = active_terrains();
+    for (double const ceiling : {Location.y + slack, Location.y + height_tolerance})
+    {
+        double y = -std::numeric_limits<double>::max();
+        bool found = ground.height_at(Location.x, Location.z, ceiling, y);
+        for (editor_terrain *terrain : terrains)
+        {
+            if (!terrain->contains(Location.x, Location.z))
+                continue;
+            double const h = terrain->height_at(Location.x, Location.z);
+            if (h <= ceiling && (!found || h > y))
+            {
+                y = h;
+                found = true;
+            }
+        }
+        if (found)
+        {
+            Location.y = y;
+            break;
+        }
+    }
+    // with no ground found the point stays where the cursor landed
+    return Location;
+}
+
+// puts every instance of the model the selected node shows on the ground under it
+void editor_mode::drop_model_instances()
+{
+    auto *selected = dynamic_cast<TAnimModel *>(m_node);
+    if (selected == nullptr || selected->Model() == nullptr)
+    {
+        ui()->set_status("Select a model in the scene first", true);
+        return;
+    }
+    if (selected->radius() >= 50.0f)
+    {
+        // it'd be put on top of itself
+        ui()->set_status("\"" + selected->Model()->NameGet() + "\" is large enough to count as ground itself, so there's nothing to put it on", true);
+        return;
+    }
+    std::vector<TAnimModel *> instances;
+    std::vector<glm::dvec3> points;
+    int locked = 0;
+    for (auto *instance : simulation::Instances.sequence())
+    {
+        if (instance == nullptr || instance->Model() != selected->Model())
+            continue;
+        if (instance->from_template() || false == scene::Layers.editable(instance))
+        {
+            // placed by a template, or on a layer which is hidden or locked
+            ++locked;
+            continue;
+        }
+        instances.push_back(instance);
+        points.push_back(instance->location());
+    }
+    // the ground the road tools use: terrain shapes, large models and the terrain made in the editor, without the roads and the orthophoto.
+    // a point with nothing under it comes back with the height it has
+    auto const heights = ground_heights(points, true);
+    int moved = 0;
+    for (std::size_t idx = 0; idx < instances.size(); ++idx)
+    {
+        if (std::abs(heights[idx] - points[idx].y) < 0.001)
+            continue;
+        auto *instance = instances[idx];
+        // one step of the history for each instance
+        push_snapshot(instance, EditorSnapshot::Action::Move);
+        auto location = points[idx];
+        location.y = heights[idx];
+        simulation::Region->erase(instance);
+        instance->location(location);
+        simulation::Region->insert(instance);
+        instance->mark_dirty();
+        ++moved;
+    }
+    std::string status = std::to_string(moved) + " of " + std::to_string(instances.size()) + " instances of \"" + selected->Model()->NameGet() + "\" put on the ground";
+    if (moved > 0)
+        status += "; Ctrl+Z takes them back one at a time";
+    if (locked > 0)
+        status += ". " + std::to_string(locked) + " left alone: placed by a template, or on a layer which can't be edited";
+    ui()->set_status(status);
+}
+
+void editor_mode::render_object_menu()
+{
+    if (ImGui::BeginMenu("Objects"))
+    {
+        auto const *selected = dynamic_cast<TAnimModel const *>(m_node);
+        if (ImGui::MenuItem("Put all instances of the selected model on the ground", nullptr, false, selected != nullptr && selected->Model() != nullptr))
+            drop_model_instances();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("%s", "Select a model in the scene. Every instance of the same model file is moved straight up or down\n"
+                                    "to the ground under it: terrain, large models and terrain made in the editor.");
+        ImGui::EndMenu();
+    }
+}
+
 void editor_mode::add_area_fill_point()
 {
     // like the other placement tools, the point comes from the depth buffer under the cursor
@@ -2156,7 +2272,8 @@ void editor_mode::add_area_fill_point()
     if (glm::length(offset) < 1e-3)
         return; // no ground under the cursor (yet)
 
-    m_fill_points.push_back(Camera.Pos + offset);
+    // the outline gives the fill the height to look for the ground at, and the height of what it finds no ground for
+    m_fill_points.push_back(placement_on_ground(Camera.Pos + offset));
 }
 
 void editor_mode::undo_last_area_fill()
@@ -3227,7 +3344,7 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
 
                         std::string name = "editor_";
                         glm::dvec3 mouseOffset = clamp_mouse_offset_to_max(GfxRenderer->Mouse_Position());
-                        TAnimModel *cloned = simulation::State.create_model(*src, name, Camera.Pos + mouseOffset);
+                        TAnimModel *cloned = simulation::State.create_model(*src, name, placement_on_ground(Camera.Pos + mouseOffset));
                         if (!cloned)
                             return;
 

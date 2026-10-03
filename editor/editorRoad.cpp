@@ -139,6 +139,36 @@ road_node::state part(road_node::state const &State, double const From, double c
 	auto result{State};
 	result.axis = subpath(State.axis, From, To);
 	result.taper = {static_cast<float>(State.scale(From)), static_cast<float>(State.scale(To))};
+	if (State.divided())
+		result.median.width = {static_cast<float>(State.median_width(From)), static_cast<float>(State.median_width(To))};
+	for (std::size_t side = 0; side < result.banks.size(); ++side)
+	{
+		auto const &bank{State.banks[side]};
+		result.banks[side].width = {glm::mix(bank.width[0], bank.width[1], static_cast<float>(From)), glm::mix(bank.width[0], bank.width[1], static_cast<float>(To))};
+		result.banks[side].drop = {glm::mix(bank.drop[0], bank.drop[1], static_cast<float>(From)), glm::mix(bank.drop[0], bank.drop[1], static_cast<float>(To))};
+	}
+	return result;
+}
+
+// points of an end of a road something can be joined to: the end of its axis, and where it keeps its two directions apart,
+// the middle of each of its roadways
+std::vector<glm::dvec3> end_points(road_node::state const &State, bool const Atend)
+{
+	std::vector<glm::dvec3> result{axis_end(State, Atend)};
+	auto const t{Atend ? 1.0 : 0.0};
+	auto const gap{State.median_width(t)};
+	if (gap <= 0.0)
+		return result;
+	auto const tangent{State.tangent(t)};
+	glm::dvec3 left{tangent.z, 0.0, -tangent.x};
+	if (glm::length(left) < 1e-9)
+		return result;
+	left = glm::normalize(left);
+	auto const halfwidth{0.5 * State.width()};
+	auto const divide{State.divide()};
+	// lanes going against the axis are on its left
+	result.emplace_back(result.front() + left * (0.5 * (halfwidth + divide) * State.scale(t) + 0.5 * gap));
+	result.emplace_back(result.front() + left * (0.5 * (divide - halfwidth) * State.scale(t) - 0.5 * gap));
 	return result;
 }
 
@@ -284,6 +314,7 @@ bool cut_arm(road_cut const &Cut, junction_node::arm_data &Arm)
 	// lanes heading for the cut lead into the junction
 	Arm.incoming = (Cut.keepstart ? state.forward : state.backward);
 	Arm.outgoing = (Cut.keepstart ? state.backward : state.forward);
+	Arm.median = static_cast<float>(state.median_width(Cut.t));
 	return editor_road::lane_width(state, Cut.t, Arm.width);
 }
 
@@ -303,6 +334,9 @@ void dress(junction_node::state &Junction, road_node::state const &Road)
 	// one kind of side goes around the whole junction; the right side of the road is the one facing the corner a road leaves by
 	Junction.side = (Road.sides[1].type != road_node::side_type::none ? Road.sides[1] : Road.sides[0]);
 	Junction.kerbheight = Road.kerbheight;
+	Junction.kerbs = (Road.kerbs[0] || Road.kerbs[1]);
+	Junction.kerbwidth = Road.kerbwidth;
+	Junction.kerbmaterial = Road.kerbmaterial;
 	Junction.slope = Road.slope;
 	Junction.friction = Road.friction;
 	Junction.sounddistance = Road.sounddistance;
@@ -374,6 +408,14 @@ road_node::state flipped(road_node::state const &State)
 		change = ((change & road_node::change_toright) != 0 ? road_node::change_toleft : 0) | ((change & road_node::change_toleft) != 0 ? road_node::change_toright : 0);
 	std::swap(result.sides[0], result.sides[1]);
 	std::swap(result.taper[0], result.taper[1]);
+	std::swap(result.median.width[0], result.median.width[1]);
+	std::swap(result.kerbs[0], result.kerbs[1]);
+	std::swap(result.banks[0], result.banks[1]);
+	for (auto &bank : result.banks)
+	{
+		std::swap(bank.width[0], bank.width[1]);
+		std::swap(bank.drop[0], bank.drop[1]);
+	}
 	return result;
 }
 
@@ -516,8 +558,27 @@ std::vector<road_node *> editor_road::neighbours(road_node const &Road)
 	if (Road.m_editorremoved)
 		return result;
 	for (auto const atend : {false, true})
+	{
 		for (auto *road : roads_at(axis_end(Road.definition(), atend), &Road))
 			add_unique(result, road);
+		// a road which keeps its directions apart can have a road joined to each of its roadways, and be one for the road joined
+		auto const points{end_points(Road.definition(), atend)};
+		for (auto *road : simulation::Roads.sequence())
+		{
+			if (road == nullptr || road == &Road || road->m_editorremoved)
+				continue;
+			for (auto const otheratend : {false, true})
+			{
+				auto const otherpoints{end_points(road->definition(), otheratend)};
+				if (points.size() == 1 && otherpoints.size() == 1)
+					continue;
+				for (auto const &point : points)
+					for (auto const &otherpoint : otherpoints)
+						if (glm::distance(point, otherpoint) < kSamePoint)
+							add_unique(result, road);
+			}
+		}
+	}
 	return result;
 }
 
@@ -886,7 +947,7 @@ bool editor_road::nearest_lane(glm::dvec3 const &Point, double const Reach, glm:
 		auto const axis{curve_points(state.axis)};
 		// the axis is no longer than the lines joining its points, which is good enough to tell the road is nowhere near
 		if (glm::distance(road->location(), Point) >
-		    0.5 * (glm::distance(axis[0], axis[1]) + glm::distance(axis[1], axis[2]) + glm::distance(axis[2], axis[3])) + 0.5 * state.width() * std::max(state.taper[0], state.taper[1]) + Reach + 10.0)
+		    0.5 * (glm::distance(axis[0], axis[1]) + glm::distance(axis[1], axis[2]) + glm::distance(axis[2], axis[3])) + 0.5 * std::max(state.span(0.0), state.span(1.0)) + Reach + 10.0)
 			continue;
 		for (auto const *lane : road->tracks())
 		{
@@ -1040,6 +1101,23 @@ bool editor_road::dissolve(glm::dvec3 const &Joint, record &Record, std::string 
 	merged.axis.points[segment_data::point::control2] = control2;
 	// the road is as wide at its far ends as it was
 	merged.taper[1] = static_cast<float>(after.taper[1] * after.width() / before.width());
+	if (after.divided() || before.divided())
+	{
+		if (false == before.divided())
+		{
+			merged.median = after.median;
+			merged.median.width[0] = 0.f;
+		}
+		merged.median.width[1] = (after.divided() ? after.median.width[1] : 0.f);
+	}
+	for (std::size_t side = 0; side < merged.banks.size(); ++side)
+	{
+		if (merged.banks[side].set && after.banks[side].set)
+		{
+			merged.banks[side].width[1] = after.banks[side].width[1];
+			merged.banks[side].drop[1] = after.banks[side].drop[1];
+		}
+	}
 	remember(Record, kept.road);
 	remove(std::vector<road_node *>{dropped.road});
 	Record.roads_removed.emplace_back(dropped.road);
@@ -1086,6 +1164,19 @@ road_node *editor_road::split(road_node &Road, double const T)
 	auto const scale{static_cast<float>(Road.definition().scale(T))};
 	first.taper[1] = scale;
 	second.taper[0] = scale;
+	// and so is what's between its directions, and what leads from it to the ground
+	if (Road.definition().divided())
+	{
+		auto const gap{static_cast<float>(Road.definition().median_width(T))};
+		first.median.width[1] = gap;
+		second.median.width[0] = gap;
+	}
+	for (std::size_t side = 0; side < first.banks.size(); ++side)
+	{
+		auto const &bank{Road.definition().banks[side]};
+		first.banks[side].width[1] = second.banks[side].width[0] = glm::mix(bank.width[0], bank.width[1], static_cast<float>(T));
+		first.banks[side].drop[1] = second.banks[side].drop[0] = glm::mix(bank.drop[0], bank.drop[1], static_cast<float>(T));
+	}
 	apply(std::vector<std::pair<road_node *, road_node::state>>{{&Road, first}});
 	auto const created{create(std::vector<road_node::state>{second})};
 	return created.empty() ? nullptr : created.front();
@@ -1121,7 +1212,7 @@ road_node *editor_road::nearest(glm::dvec3 const &Point, double const Margin)
 		if (road == nullptr || road->m_editorremoved)
 			continue;
 		auto const &state{road->definition()};
-		auto const reach{0.5 * state.width() * std::max(state.taper[0], state.taper[1]) + std::max(state.sides[0].width, state.sides[1].width) + Margin};
+		auto const reach{0.5 * std::max(state.span(0.0), state.span(1.0)) + std::max(state.sides[0].width, state.sides[1].width) + Margin};
 		// the axis is no longer than the lines joining its points, which is good enough to tell the road is nowhere near
 		auto const points{curve_points(state.axis)};
 		if (glm::distance(road->location(), Point) > 0.5 * (glm::distance(points[0], points[1]) + glm::distance(points[1], points[2]) + glm::distance(points[2], points[3])) + reach + 10.0)
@@ -1183,6 +1274,38 @@ editor_road::loose_end editor_road::find_end(glm::dvec3 const &Point, double con
 			result.atend = atend;
 			result.position = position;
 			result.outwards = (atend ? state.tangent(1.0) : -state.tangent(0.0));
+		}
+		// a road which keeps its two directions apart can be carried on as two roads, one for each of its roadways
+		for (auto const atend : {false, true})
+		{
+			auto const points{end_points(state, atend)};
+			float lanewidth{0.f};
+			if (points.size() < 3 || state.median_width(atend ? 1.0 : 0.0) < 0.5 || false == lane_width(state, atend ? 1.0 : 0.0, lanewidth))
+				continue;
+			// the whole end has to be loose
+			if (false == roads_at(points[0], road).empty() || false == junctions_at(points[0]).empty())
+				continue;
+			for (int half = 1; half <= 2; ++half)
+			{
+				auto const &position{points[half]};
+				auto const distance{glm::distance(glm::dvec2{position.x, position.z}, glm::dvec2{Point.x, Point.z})};
+				if (distance > best || std::abs(position.y - Point.y) > 3.0 || false == roads_at(position, road).empty())
+					continue;
+				best = distance;
+				result = loose_end{};
+				result.road = road;
+				result.atend = atend;
+				result.position = position;
+				result.outwards = (atend ? state.tangent(1.0) : -state.tangent(0.0));
+				// the first of the points is the roadway of the lanes going against the axis
+				result.half = (half == 1 ? -1 : 1);
+				auto const lanes{half == 1 ? state.backward : state.forward};
+				// lanes which leave the road there go along the axis of the road carrying them on, the ones which come to it go against that axis
+				auto const leaving{(half == 2) == atend};
+				result.forward = (leaving ? lanes : 0);
+				result.backward = (leaving ? 0 : lanes);
+				result.width = lanewidth;
+			}
 		}
 	}
 	if (false == Junctions)
@@ -1504,6 +1627,7 @@ void editor_road::settle(road_node &Road, record &Record, std::string &Notes)
 		auto const leaving{atend ? layout.backward : layout.forward};
 		float lanewidth{0.f};
 		auto const evenlanes{lane_width(layout, atend ? 1.0 : 0.0, lanewidth)};
+		auto const gap{static_cast<float>(layout.median_width(atend ? 1.0 : 0.0))};
 		char const *unevenlanes{" differ in width, and a junction takes roads with lanes of the same width. "};
 		std::string reason;
 
@@ -1516,7 +1640,7 @@ void editor_road::settle(road_node &Road, record &Record, std::string &Notes)
 				auto *junction{entry.first};
 				auto state{junction->definition()};
 				auto &arm{state.arms[entry.second]};
-				if (arm.incoming == arriving && arm.outgoing == leaving && std::abs(arm.width - lanewidth) < 0.001f)
+				if (arm.incoming == arriving && arm.outgoing == leaving && std::abs(arm.width - lanewidth) < 0.001f && std::abs(arm.median - gap) < 0.001f)
 					continue;
 				if (false == evenlanes)
 				{
@@ -1531,6 +1655,7 @@ void editor_road::settle(road_node &Road, record &Record, std::string &Notes)
 				arm.incoming = arriving;
 				arm.outgoing = leaving;
 				arm.width = lanewidth;
+				arm.median = gap;
 				remember(Record, junction);
 				apply(std::vector<std::pair<junction_node *, junction_node::state>>{{junction, state}});
 			}
@@ -1550,7 +1675,8 @@ void editor_road::settle(road_node &Road, record &Record, std::string &Notes)
 		{
 			// the same lanes: the neighbour is made as wide as the piece where they meet, and gets to that width along its length
 			auto const width{layout.width() * layout.taper[atend ? 1 : 0]};
-			if (std::abs(width - otherlayout.width() * otherlayout.taper[otheratend ? 1 : 0]) < 0.001)
+			auto const othergap{static_cast<float>(otherlayout.median_width(otheratend ? 1.0 : 0.0))};
+			if (std::abs(width - otherlayout.width() * otherlayout.taper[otheratend ? 1 : 0]) < 0.001 && std::abs(gap - othergap) < 0.001f)
 				continue;
 			if (false == can_edit(*other, &reason))
 			{
@@ -1559,6 +1685,17 @@ void editor_road::settle(road_node &Road, record &Record, std::string &Notes)
 			}
 			auto state{otherlayout};
 			state.taper[otheratend ? 1 : 0] = std::clamp(static_cast<float>(width / otherlayout.width()), 0.25f, 4.f);
+			// and it leads its two directions as far apart as the piece has them there
+			if (std::abs(gap - othergap) >= 0.001f)
+			{
+				if (false == otherlayout.divided())
+				{
+					state.median.type = layout.median.type;
+					state.median.material = layout.median.material;
+					state.median.width = {0.f, 0.f};
+				}
+				state.median.width[otheratend ? 1 : 0] = gap;
+			}
 			remember(Record, other);
 			apply(std::vector<std::pair<road_node *, road_node::state>>{{other, state}});
 			continue;
@@ -1618,6 +1755,7 @@ void editor_road::settle(road_node &Road, record &Record, std::string &Notes)
 		arms[1].incoming = arriving;
 		arms[1].outgoing = leaving;
 		arms[1].width = lanewidth;
+		arms[1].median = gap;
 		junction.arms.assign(std::begin(arms), std::end(arms));
 		junction.centre = 0.5 * (arms[0].position + arms[1].position);
 		dress(junction, layout);
@@ -1671,7 +1809,7 @@ bool editor_road::branch_from(road_node &Road, double const T, glm::dvec2 const 
 		Error = "Lanes of \"" + Road.name() + "\" differ in width, and a junction takes roads with lanes of the same width";
 		return false;
 	}
-	auto const halfwidth{0.5 * (layout.forward + layout.backward) * lanewidth};
+	auto const halfwidth{0.5 * (layout.forward + layout.backward) * lanewidth + 0.5 * layout.median_width(T)};
 	auto const branchhalfwidth{0.5 * (Incoming + Outgoing) * Width};
 	auto const reach{edge_reach(halfwidth, branchhalfwidth, angle) + kCornerRoom};
 	auto const branchreach{edge_reach(branchhalfwidth, halfwidth, angle) + kCornerRoom};
@@ -1746,6 +1884,13 @@ bool editor_road::branch_from(road_node &Road, double const T, glm::dvec2 const 
 	junction.arms.emplace_back(arm);
 	Result.arm = junction.arms.size() - 1;
 	dress(junction, layout);
+	if (layout.roundabout)
+	{
+		// the traffic going around goes ahead of the traffic joining it
+		for (auto &entry : junction.arms)
+			entry.priority = junction_node::right_of_way::priority;
+		junction.arms.back().priority = junction_node::right_of_way::yield;
+	}
 	junction.normalize();
 	return true;
 }
@@ -1824,6 +1969,60 @@ junction_node *editor_road::carry_out(branch const &Branch, record &Record)
 		return nullptr;
 	Record.junctions_created.emplace_back(junctions.front());
 	return junctions.front();
+}
+
+std::vector<road_node::state> editor_road::roundabout(glm::dvec3 const &Centre, double const Radius, road_node::state const &Layout, std::string const &Island)
+{
+	std::vector<road_node::state> pieces;
+	auto layout{Layout};
+	// a single direction, going around with the middle on its left
+	if (layout.forward < 1)
+		layout.forward = std::max(1, layout.backward);
+	layout.backward = 0;
+	layout.lanes.clear();
+	layout.changes.clear();
+	layout.taper = {1.f, 1.f};
+	layout.median.width = {0.f, 0.f};
+	layout.roundabout = true;
+	layout.normalize();
+	auto const halfwidth{0.5 * layout.width()};
+	if (Radius - halfwidth < 1.0)
+		return pieces;
+	if (false == Island.empty() && Island != "none")
+	{
+		// the island takes all that's inside the road
+		layout.sides[0].type = road_node::side_type::sidewalk;
+		layout.sides[0].width = static_cast<float>(Radius - halfwidth);
+		layout.sides[0].material = Island;
+	}
+	else
+	{
+		layout.sides[0] = road_node::side_data{};
+	}
+	layout.banks[0] = road_node::bank_data{};
+	// arcs short enough for a curve of this kind to pass for a circle
+	int const count{Radius > 40.0 ? 8 : 4};
+	auto const angle{6.283185307179586 / count};
+	auto const reach{4.0 / 3.0 * std::tan(0.25 * angle) * Radius};
+	auto const point = [&](double const Angle) { return Centre + glm::dvec3{std::cos(Angle), 0.0, std::sin(Angle)} * Radius; };
+	// the way the road goes at a point, with the angles going down
+	auto const heading = [](double const Angle) { return glm::dvec3{std::sin(Angle), 0.0, -std::cos(Angle)}; };
+	for (int index = 0; index < count; ++index)
+	{
+		auto const from{-angle * index};
+		auto const to{-angle * (index + 1)};
+		auto state{layout};
+		state.axis = segment_data{};
+		state.axis.points[segment_data::point::start] = point(from);
+		state.axis.points[segment_data::point::control1] = heading(from) * reach;
+		state.axis.points[segment_data::point::control2] = -heading(to) * reach;
+		state.axis.points[segment_data::point::end] = point(to);
+		state.axis.radius = static_cast<float>(Radius);
+		pieces.emplace_back(state);
+	}
+	// the last piece ends exactly where the first one starts
+	pieces.back().axis.points[segment_data::point::end] = pieces.front().axis.points[segment_data::point::start];
+	return pieces;
 }
 
 std::vector<std::string> const &editor_road::materials()

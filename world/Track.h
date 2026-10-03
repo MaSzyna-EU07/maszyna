@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include <string>
 #include <vector>
 #include <deque>
+#include <array>
 
 #include <glm/glm.hpp>
 #include <glm/mat4x4.hpp>
@@ -187,6 +188,7 @@ public:
     std::vector<segment_data> m_paths; // source data for owned paths
     bool m_editorremoved { false };
     scene::basic_node *m_road { nullptr }; // road or road junction which generated this path. such path is one-way, and isn't saved nor edited on its own
+    std::array<float, 3> m_routeweights { 0.f, 0.f, 0.f }; // odds of each route through a crossroads being picked by a driver, by the number of the route. all zero: even odds
 	int iterate_stamp = 0;
 
     // sleepermodel optional parameter -------------------------------------------------
@@ -280,6 +282,8 @@ public:
     int
         RouteCount() const {
         return SwitchExtension != nullptr ? SwitchExtension->iRoads - 1 : 1; }
+    // picks one of the routes through a crossroads for a driver heading for it. the routes are numbered from 1
+    int RouteDraw() const;
     void Load(cParser *parser, glm::dvec3 const &pOrigin);
     void init_segments( bool const Initial );
     void update_location();

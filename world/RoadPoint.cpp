@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "world/Track.h"
 #include "world/Event.h"
+#include "world/RoadOrder.h"
 #include "vehicle/DynObj.h"
 #include "vehicle/Driver.h"
 #include "vehicle/Train.h"
@@ -37,6 +38,11 @@ constexpr double near_zone{30.0}; // a rail vehicle this close to the stop lines
 constexpr double clear_zone{20.0}; // a vehicle isn't put on the road with another one this close
 constexpr double retry_period{1.0}; // seconds to the next try, when a vehicle can't be put on the road
 constexpr double front_room{2.5}; // half the length a vehicle is presumed to have before it's made
+constexpr double queue_reach{250.0}; // how far back from a closed crossing the vehicles standing on the lanes are taken to wait for it
+constexpr double stuck_time{15.0}; // seconds a vehicle of a spawn point can stand still before it's taken off the road
+constexpr double stuck_speed{0.1}; // m/s, slower than this is standing still
+constexpr double reverse_speed{0.5}; // m/s, a vehicle going backwards faster than this is taken off the road
+constexpr double stripe_width{0.5}; // of a pedestrian crossing; the gaps are as wide
 
 // a path as a curve: points along it, and distances along it
 class path_curve
@@ -154,46 +160,34 @@ bool out_of_reach(segment_data const &Path, glm::dvec3 const &Point, double cons
 	return glm::distance(glm::dvec2{start.x, start.z}, glm::dvec2{Point.x, Point.z}) > span + Reach;
 }
 
-// an order for the drivers heading for a closed crossing; to them it's what a signal showing stop is to the driver of a train.
-// it doesn't go to the event manager and never runs: the drivers find it on the lane they scan, and ask it what speed it allows
-class stop_event : public basic_event
+// an order for the drivers heading for a closed crossing
+using stop_event = road_order;
+
+// the road passing under specified point: the one whose axis is nearest. T: receives the value of the curve parameter of its axis there
+road_node const *road_under(glm::dvec3 const &Point, double &T)
 {
-
-  public:
-	stop_event()
+	road_node const *result{nullptr};
+	auto best{std::numeric_limits<double>::max()};
+	for (auto const *road : simulation::Roads.sequence())
 	{
-		m_passive = true;
+		if (road == nullptr || road->m_editorremoved || out_of_reach(road->definition().axis, Point, 50.0))
+		{
+			continue;
+		}
+		auto const &layout{road->definition()};
+		path_curve const axis{layout.axis};
+		double distance{0.0};
+		auto const t{axis.nearest(Point, distance)};
+		if (distance > 0.5 * layout.span(t) + 1.0 || std::abs(axis.point(t).y - Point.y) > 3.0 || distance >= best)
+		{
+			continue;
+		}
+		best = distance;
+		result = road;
+		T = t;
 	}
-	void init() override {}
-	std::string input_text() const override
-	{
-		return "SetVelocity";
-	}
-	TCommandType input_command() const override
-	{
-		return TCommandType::cm_SetVelocity;
-	}
-	double input_value(int const Index) const override
-	{
-		return m_velocity;
-	}
-	glm::dvec3 input_location() const override
-	{
-		return m_location;
-	}
-	// members
-	double m_velocity{-1.0}; // 0: stop, -1: no limit
-	glm::dvec3 m_location{0.0};
-
-  private:
-	std::string type() const override
-	{
-		return "roadstop";
-	}
-	void deserialize_(cParser &Input, scene::scratch_data &Scratchpad) override {}
-	void run_() override {}
-	void export_as_text_(std::ostream &Output) const override {}
-};
+	return result;
+}
 
 // lane of a road with the point nearest to specified one, within specified distance from it. Station: receives the distance of that point from the start of the lane
 TTrack *nearest_lane(glm::dvec3 const &Point, double const Reach, double &Station)
@@ -242,24 +236,25 @@ void roadpoint_node::state::normalize()
 	interval = std::clamp(interval, 1.f, 3600.f);
 	variation = std::clamp(variation, 0.f, 1.f);
 	velocity = std::clamp(velocity, 5.f, 200.f);
-	copies = std::clamp(copies, 1, 16);
+	count = std::clamp(count, 1, 64);
 	radius = std::clamp(radius, 0.5f, 50.f);
+	length = std::clamp(length, 1.f, 20.f);
 }
 
 roadpoint_node::roadpoint_node(scene::node_data const &Nodedata) : basic_node(Nodedata)
 {
-	m_state.kind = (Nodedata.type == "spawn" ? kind_type::spawn : Nodedata.type == "despawn" ? kind_type::despawn : kind_type::crossing);
+	m_state.kind = (Nodedata.type == "spawn" ? kind_type::spawn : Nodedata.type == "despawn" ? kind_type::despawn : Nodedata.type == "crosswalk" ? kind_type::crosswalk : kind_type::crossing);
 }
 
 // scenery keyword for specified kind of point
 std::string roadpoint_node::keyword(kind_type const Kind)
 {
-	return Kind == kind_type::spawn ? "spawn" : Kind == kind_type::despawn ? "despawn" : "crossing";
+	return Kind == kind_type::spawn ? "spawn" : Kind == kind_type::despawn ? "despawn" : Kind == kind_type::crosswalk ? "crosswalk" : "crossing";
 }
 
 bool roadpoint_node::is_keyword(std::string const &Type)
 {
-	return Type == "crossing" || Type == "spawn" || Type == "despawn";
+	return Type == "crossing" || Type == "spawn" || Type == "despawn" || Type == "crosswalk";
 }
 
 // reads vehicles out of a text
@@ -341,6 +336,8 @@ void roadpoint_node::import(cParser &Input, glm::dvec3 const &Offset)
 	Input.getTokens(3);
 	Input >> m_state.position.x >> m_state.position.y >> m_state.position.z;
 	m_state.position += Offset;
+	int copies{0}; // of each vehicle, the way the first sceneries with spawn points gave the size of the set
+	auto counted{false};
 
 	auto token{Input.getToken<std::string>()};
 	while (false == token.empty() && token != "end" + type)
@@ -374,10 +371,21 @@ void roadpoint_node::import(cParser &Input, glm::dvec3 const &Offset)
 			Input.getTokens();
 			Input >> m_state.velocity;
 		}
+		else if (token == "count")
+		{
+			Input.getTokens();
+			Input >> m_state.count;
+			counted = true;
+		}
 		else if (token == "copies")
 		{
 			Input.getTokens();
-			Input >> m_state.copies;
+			Input >> copies;
+		}
+		else if (token == "length")
+		{
+			Input.getTokens();
+			Input >> m_state.length;
 		}
 		else if (token == "radius")
 		{
@@ -441,6 +449,10 @@ void roadpoint_node::import(cParser &Input, glm::dvec3 const &Offset)
 		}
 		token = Input.getToken<std::string>();
 	}
+	if (false == counted && copies > 0)
+	{
+		m_state.count = copies * static_cast<int>(std::max<std::size_t>(1, m_state.vehicles.size()));
+	}
 	m_state.normalize();
 	location(m_state.position);
 }
@@ -449,10 +461,10 @@ void roadpoint_node::import(cParser &Input, glm::dvec3 const &Offset)
 void roadpoint_node::define(state const &State)
 {
 	auto const vehicles{m_state.vehicles};
-	auto const copies{m_state.copies};
+	auto const count{m_state.count};
 	m_state = State;
 	m_state.normalize();
-	if (m_prepared && (m_state.vehicles != vehicles || m_state.copies != copies))
+	if (m_prepared && (m_state.vehicles != vehicles || m_state.count != count))
 	{
 		// vehicles can't be unmade, there's too much holding on to them. the old ones are left alone:
 		// those which wait stay where they are, those on the road drive on until something takes them away
@@ -492,6 +504,24 @@ void roadpoint_node::bind()
 		}
 		break;
 	}
+	case kind_type::crosswalk:
+	{
+		// the stripes go across the road the point is on
+		double t{0.0};
+		auto const *road{road_under(m_state.position, t)};
+		if (road != nullptr)
+		{
+			auto const &layout{road->definition()};
+			path_curve const axis{layout.axis};
+			m_onroad = true;
+			m_along = axis.direction(t);
+			m_halfwidth = 0.5 * layout.span(t);
+			// the point itself may be off the axis, the stripes aren't
+			auto const centre{axis.point(t)};
+			m_state.position = centre;
+		}
+		break;
+	}
 	case kind_type::despawn:
 	{
 		// the vehicles are taken from every lane which passes close enough
@@ -525,25 +555,8 @@ void roadpoint_node::bind()
 void roadpoint_node::bind_crossing()
 {
 	// the road the crossing is on: the one whose axis passes nearest
-	road_node const *crossed{nullptr};
-	auto best{std::numeric_limits<double>::max()};
-	for (auto const *road : simulation::Roads.sequence())
-	{
-		if (road == nullptr || road->m_editorremoved || out_of_reach(road->definition().axis, m_state.position, 50.0))
-		{
-			continue;
-		}
-		auto const &layout{road->definition()};
-		path_curve const axis{layout.axis};
-		double distance{0.0};
-		auto const t{axis.nearest(m_state.position, distance)};
-		if (distance > 0.5 * layout.width() * layout.scale(t) + 1.0 || std::abs(axis.point(t).y - m_state.position.y) > 3.0 || distance >= best)
-		{
-			continue;
-		}
-		best = distance;
-		crossed = road;
-	}
+	double where{0.0};
+	auto const *crossed{road_under(m_state.position, where)};
 	if (crossed != nullptr)
 	{
 		auto const &lanes{crossed->tracks()};
@@ -659,6 +672,24 @@ void roadpoint_node::bind_crossing()
 	{
 		m_rails.emplace_back(entry.first);
 	}
+	// lanes the vehicles wait on while the crossing is closed: the ones with the stops, and what leads to them
+	for (auto const &stop : m_stops)
+	{
+		auto *lane{stop.track};
+		double reach{0.0};
+		for (int guard = 0; lane != nullptr && guard < 64 && reach < queue_reach; ++guard)
+		{
+			if (std::find(m_queue.begin(), m_queue.end(), lane) == m_queue.end())
+			{
+				m_queue.emplace_back(lane);
+			}
+			if (false == lane->m_paths.empty())
+			{
+				reach += glm::distance(lane->m_paths.front().points[segment_data::point::start], lane->m_paths.front().points[segment_data::point::end]);
+			}
+			lane = lane->trPrev;
+		}
+	}
 	close(m_closed);
 }
 
@@ -683,8 +714,10 @@ void roadpoint_node::unbind()
 	}
 	m_stops.clear();
 	m_rails.clear();
+	m_queue.clear();
 	m_lanes.clear();
 	m_seen.clear();
+	m_onroad = false;
 }
 
 // makes the vehicles of a spawn point
@@ -709,52 +742,59 @@ void roadpoint_node::prepare()
 	// vehicles are known by their names, so a point without one makes something up for them
 	static int nameless{0};
 	auto const basename{m_name.empty() ? "roadspawn" + std::to_string(++nameless) : m_name};
-	for (auto const &definition : m_state.vehicles)
+	// the listed vehicles are gone through as many times as it takes, from a random one on, so the set gets each kind in turn
+	auto const kinds{m_state.vehicles.size()};
+	auto const start{kinds > 0 ? std::min(kinds - 1, static_cast<std::size_t>(LocalRandom(0.0, static_cast<double>(kinds)))) : 0};
+	for (int index = 0; index < m_state.count && kinds > 0; ++index)
 	{
-		for (int copy = 0; copy < m_state.copies; ++copy)
+		auto const &definition{m_state.vehicles[(start + static_cast<std::size_t>(index)) % kinds]};
+		// a vehicle like any other of the scenery, made where the point is and driven at the speed of the point...
+		auto *vehicle{new TDynamicObject()};
+		auto const length{vehicle->Init(basename + ":" + std::to_string(++m_made), definition.folder, definition.skin, definition.type, m_lanes.front(), m_offset + front_room, "headdriver",
+		                                m_state.velocity, "", static_cast<float>(definition.load), definition.loadtype, false, "")};
+		if (length == 0.0)
 		{
-			// a vehicle like any other of the scenery, made where the point is and driven at the speed of the point...
-			auto *vehicle{new TDynamicObject()};
-			auto const length{vehicle->Init(basename + ":" + std::to_string(++m_made), definition.folder, definition.skin, definition.type, m_lanes.front(), m_offset + front_room, "headdriver",
-			                                m_state.velocity, "", static_cast<float>(definition.load), definition.loadtype, false, "")};
-			if (length == 0.0)
-			{
-				ErrorLog("Bad road point: vehicle \"" + definition.folder + "/" + definition.type + "\" of spawn \"" + m_name + "\" couldn't be made");
-				if (vehicle->MyTrack != nullptr)
-				{
-					vehicle->MyTrack->RemoveDynamicObject(vehicle);
-				}
-				delete vehicle;
-				continue;
-			}
-			if (vehicle->mdModel != nullptr)
-			{
-				for (auto const &smokesource : vehicle->mdModel->smoke_sources())
-				{
-					simulation::Particles.insert(smokesource.first, vehicle, smokesource.second);
-				}
-			}
-			if (false == simulation::Vehicles.insert(vehicle))
-			{
-				ErrorLog("Bad road point: vehicle name \"" + vehicle->name() + "\" made for spawn \"" + m_name + "\" is taken already");
-			}
-			pooled_vehicle entry;
-			entry.vehicle = vehicle;
-			entry.velocity = vehicle->MoverParameters->V;
-			m_pool.emplace_back(entry);
-			// ...which is taken off the road right away, the way the vehicles leaving the scenery are, to wait for its turn
+			ErrorLog("Bad road point: vehicle \"" + definition.folder + "/" + definition.type + "\" of spawn \"" + m_name + "\" couldn't be made");
 			if (vehicle->MyTrack != nullptr)
 			{
 				vehicle->MyTrack->RemoveDynamicObject(vehicle);
-				vehicle->MyTrack = nullptr;
 			}
-			vehicle->bEnabled = false;
+			delete vehicle;
+			continue;
 		}
+		if (vehicle->mdModel != nullptr)
+		{
+			for (auto const &smokesource : vehicle->mdModel->smoke_sources())
+			{
+				simulation::Particles.insert(smokesource.first, vehicle, smokesource.second);
+			}
+		}
+		if (false == simulation::Vehicles.insert(vehicle))
+		{
+			ErrorLog("Bad road point: vehicle name \"" + vehicle->name() + "\" made for spawn \"" + m_name + "\" is taken already");
+		}
+		pooled_vehicle entry;
+		entry.vehicle = vehicle;
+		entry.velocity = vehicle->MoverParameters->V;
+		m_pool.emplace_back(entry);
+		// ...which is taken off the road right away, the way the vehicles leaving the scenery are, to wait for its turn
+		if (vehicle->MyTrack != nullptr)
+		{
+			vehicle->MyTrack->RemoveDynamicObject(vehicle);
+			vehicle->MyTrack = nullptr;
+		}
+		vehicle->bEnabled = false;
 	}
 	if (m_pool.empty())
 	{
 		ErrorLog("Bad road point: spawn \"" + m_name + "\" has no vehicles to put on the road");
 	}
+}
+
+// true if specified vehicle stands in the line of vehicles held by the crossing
+bool roadpoint_node::holds(TDynamicObject const &Vehicle) const
+{
+	return m_state.kind == kind_type::crossing && m_closed && false == m_editorremoved && std::find(m_queue.begin(), m_queue.end(), Vehicle.MyTrack) != m_queue.end();
 }
 
 std::size_t roadpoint_node::waiting() const
@@ -788,6 +828,11 @@ void roadpoint_node::update(double const Deltatime)
 	case kind_type::despawn:
 	{
 		update_despawn();
+		break;
+	}
+	case kind_type::crosswalk:
+	{
+		// paint only
 		break;
 	}
 	}
@@ -845,6 +890,36 @@ void roadpoint_node::update_spawn(double const Deltatime)
 	{
 		// the point was made in the editor, or the scenery was loaded for editing
 		prepare();
+	}
+	// vehicles of the point which got stuck are taken off the road, to wait for their next turn: the ones standing still
+	// for too long, unless it's a closed level crossing they wait at, and the ones which started to go backwards
+	for (auto &entry : m_pool)
+	{
+		auto *vehicle{entry.vehicle};
+		if (false == vehicle->bEnabled || vehicle->MyTrack == nullptr || (simulation::Train != nullptr && simulation::Train->Dynamic() == vehicle))
+		{
+			// not on the road, or taken over by the user
+			entry.standing = 0.0;
+			continue;
+		}
+		auto const speed{vehicle->MoverParameters->V};
+		// forward is the way it went when it was put on the road
+		auto const backwards{speed * entry.velocity < 0.0 && std::abs(speed) > reverse_speed};
+		if (std::abs(speed) > stuck_speed || simulation::Roadpoints.holds(*vehicle))
+		{
+			entry.standing = 0.0;
+		}
+		else
+		{
+			entry.standing += Deltatime;
+		}
+		if (backwards || entry.standing > stuck_time)
+		{
+			WriteLog("Road traffic: vehicle \"" + vehicle->name() + "\" taken off the road, " + (backwards ? "it was going backwards" : "it stood still for too long"));
+			entry.standing = 0.0;
+			vehicle->bEnabled = false;
+			TDynamicObject::bDynamicRemove = true;
+		}
 	}
 	if (m_pool.empty() || m_lanes.empty())
 	{
@@ -933,15 +1008,41 @@ void roadpoint_node::update_despawn()
 std::vector<scene::shape_node> roadpoint_node::create_shapes() const
 {
 	std::vector<scene::shape_node> shapes;
-	if (m_state.kind != kind_type::crossing || false == m_state.stoplines || m_stops.empty())
-	{
-		return shapes;
-	}
 	std::vector<world_vertex> vertices;
 	glm::dvec3 const lift{0.0, line_lift, 0.0};
 	glm::vec3 const upwards{0.f, 1.f, 0.f};
+	if (m_state.kind == kind_type::crosswalk && m_onroad)
+	{
+		// stripes laid along the road, side by side from one edge of it to the other
+		glm::dvec3 across{m_along.z, 0.0, -m_along.x};
+		if (glm::length2(across) > 1e-12)
+		{
+			across = glm::normalize(across);
+			auto const reach{m_halfwidth - stopline_inset};
+			auto const stripes{std::max(1, static_cast<int>(std::floor((2.0 * reach + stripe_width) / (2.0 * stripe_width))))};
+			// the stripes are spread evenly over the width, with one at each edge
+			auto const first{-0.5 * (stripes * 2 - 1) * stripe_width};
+			auto const back{-m_along * static_cast<double>(m_state.length)};
+			for (int stripe = 0; stripe < stripes; ++stripe)
+			{
+				auto const offset{first + stripe * 2.0 * stripe_width};
+				auto const right{m_state.position + across * offset + m_along * (0.5 * m_state.length) + lift};
+				auto const left{right + across * stripe_width};
+				vertices.push_back({right + back, upwards, {0.f, 0.f}});
+				vertices.push_back({right, upwards, {1.f, 0.f}});
+				vertices.push_back({left + back, upwards, {0.f, 1.f}});
+				vertices.push_back({right, upwards, {1.f, 0.f}});
+				vertices.push_back({left, upwards, {1.f, 1.f}});
+				vertices.push_back({left + back, upwards, {0.f, 1.f}});
+			}
+		}
+	}
 	for (auto const &stop : m_stops)
 	{
+		if (m_state.kind != kind_type::crossing || false == m_state.stoplines)
+		{
+			break;
+		}
 		// a line across the lane, ending where the vehicles are to stop
 		glm::dvec3 across{stop.direction.z, 0.0, -stop.direction.x};
 		if (glm::length2(across) < 1e-12)
@@ -993,7 +1094,7 @@ void roadpoint_node::hide()
 // radius() subclass details, calculates node's bounding radius
 float roadpoint_node::radius_()
 {
-	return m_state.kind == kind_type::crossing ? m_state.clearance + 5.f : m_state.radius;
+	return m_state.kind == kind_type::crossing ? m_state.clearance + 5.f : m_state.kind == kind_type::crosswalk ? static_cast<float>(m_halfwidth) + m_state.length : m_state.radius;
 }
 
 // serialize() subclass details, sends content of the subclass to provided stream
@@ -1025,7 +1126,7 @@ void roadpoint_node::export_as_text_(std::ostream &Output) const
 	}
 	case kind_type::spawn:
 	{
-		Output << "interval " << m_state.interval << ' ' << "variation " << m_state.variation << ' ' << "velocity " << m_state.velocity << ' ' << "copies " << m_state.copies << ' ';
+		Output << "interval " << m_state.interval << ' ' << "variation " << m_state.variation << ' ' << "velocity " << m_state.velocity << ' ' << "count " << m_state.count << ' ';
 		for (auto const &vehicle : m_state.vehicles)
 		{
 			// the way vehicles are put in a scenery. the path and the offset are there to keep that form, the point doesn't use them
@@ -1041,6 +1142,11 @@ void roadpoint_node::export_as_text_(std::ostream &Output) const
 	case kind_type::despawn:
 	{
 		Output << "radius " << m_state.radius << ' ';
+		break;
+	}
+	case kind_type::crosswalk:
+	{
+		Output << "length " << m_state.length << ' ';
 		break;
 	}
 	}
@@ -1108,6 +1214,12 @@ void roadpoint_table::create_geometry()
 			point->show();
 		}
 	}
+}
+
+// true if specified vehicle stands in the line of vehicles held by a closed level crossing
+bool roadpoint_table::holds(TDynamicObject const &Vehicle) const
+{
+	return std::any_of(m_items.begin(), m_items.end(), [&Vehicle](roadpoint_node const *Point) { return Point != nullptr && Point->holds(Vehicle); });
 }
 
 // to be called with each step of the simulation
