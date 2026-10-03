@@ -286,6 +286,7 @@ class opengl33_renderer : public gfx_renderer {
     bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
 	bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance);
 	void Render(TSubModel *Submodel);
+	void Render_text(TSubModel *Submodel); // opaque characters of a text display
 	void Render(TTrack *Track);
 	void Render(scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last);
 	// renders the per-track sleeper instances (TTrack::m_sleeper_local_transforms) via GPU instancing.
