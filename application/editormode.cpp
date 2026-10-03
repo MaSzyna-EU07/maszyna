@@ -299,6 +299,10 @@ namespace
                 {
                     if (instance == nullptr || instance->Model() == nullptr || instance->radius() < ModelRadius)
                         continue;
+                    // going through the triangles of a model which doesn't reach the rectangle is all cost and no gain
+                    double const reach = instance->radius();
+                    if (instance->location().x + reach < Min.x || instance->location().x - reach > Max.x || instance->location().z + reach < Min.y || instance->location().z - reach > Max.y)
+                        continue;
                     std::vector<world_triangle> modeltriangles;
                     gather_submodel_triangles(instance->Model()->Root, instance_matrix(*instance), modeltriangles);
                     for (auto const &t : modeltriangles)
@@ -309,6 +313,20 @@ namespace
             }
         }
     }
+
+    // ground kept for the road tools, which ask about the same places frame after frame. it's gathered a tile at a time:
+    // gathering is what takes time, so a place asked about for the first time costs a single tile a frame instead of a stall
+    struct ground_tile
+    {
+        std::unique_ptr<triangle_grid> grid;
+        double gathered{0.0}; // when, on the clock of the user interface
+        int used{0}; // frame it was last asked for
+    };
+    double constexpr ground_tile_size = 256.0;
+    double constexpr ground_tile_lifetime = 30.0; // older tiles are gathered again when asked for, to catch up with the scenery
+    std::size_t constexpr ground_tile_limit = 96;
+    std::map<std::pair<int, int>, ground_tile> ground_tiles;
+    int ground_tile_frame{-1}; // frame the last tile was gathered in without being told to
 
     // scenery file name without path and extension
     std::string scenery_stem()
@@ -360,45 +378,36 @@ std::vector<double> editor_mode::ground_heights(std::vector<glm::dvec3> const &P
     if (Points.empty() || simulation::Region == nullptr)
         return heights;
 
-    glm::dvec2 bmin{Points.front().x, Points.front().z};
-    glm::dvec2 bmax{bmin};
-    for (auto const &point : Points)
-    {
-        bmin = glm::min(bmin, glm::dvec2{point.x, point.z});
-        bmax = glm::max(bmax, glm::dvec2{point.x, point.z});
-    }
-    // the road tools ask about the same place frame after frame, so the ground is gathered with room to spare and kept for a moment
-    struct ground_cache
-    {
-        glm::dvec2 min{0.0};
-        glm::dvec2 max{0.0};
-        std::unique_ptr<triangle_grid> grid;
-        double time{0.0};
-    };
-    static ground_cache cache;
-    double constexpr cache_margin = 60.0;
-    double constexpr cache_lifetime = 5.0;
     double const now = ImGui::GetTime();
-    if (Fresh || cache.grid == nullptr || now < cache.time || now - cache.time > cache_lifetime || bmin.x < cache.min.x || bmin.y < cache.min.y || bmax.x > cache.max.x || bmax.y > cache.max.y)
-    {
-        cache.min = bmin - glm::dvec2{cache_margin};
-        cache.max = bmax + glm::dvec2{cache_margin};
-        std::vector<world_triangle> triangles;
-        // the same ground as the area fill uses, terrain tile models included
-        gather_ground_triangles(cache.min, cache.max, true, 50.0f, triangles, true);
-        cache.grid = std::make_unique<triangle_grid>(std::move(triangles), cache.min, cache.max);
-        cache.time = now;
-    }
-
+    int const frame = ImGui::GetFrameCount();
     // surfaces much higher than the point are something it's under, rather than the ground
     double constexpr height_tolerance = 50.0;
     auto const terrains = active_terrains();
     for (std::size_t i = 0; i < Points.size(); ++i)
     {
         auto const &p = Points[i];
+        std::pair<int, int> const key{static_cast<int>(std::floor(p.x / ground_tile_size)), static_cast<int>(std::floor(p.z / ground_tile_size))};
+        auto &tile = ground_tiles[key];
+        bool const missing = (tile.grid == nullptr);
+        bool const stale = missing || now < tile.gathered || now - tile.gathered > ground_tile_lifetime;
+        // told to wait the caller gets every tile it needs, otherwise what's there, with one tile gathered each frame
+        if (stale && (Fresh ? missing : ground_tile_frame != frame))
+        {
+            glm::dvec2 const tilemin{key.first * ground_tile_size, key.second * ground_tile_size};
+            glm::dvec2 const tilemax{tilemin + glm::dvec2{ground_tile_size}};
+            std::vector<world_triangle> triangles;
+            // the same ground as the area fill uses, terrain tile models included
+            gather_ground_triangles(tilemin, tilemax, true, 50.0f, triangles, true);
+            tile.grid = std::make_unique<triangle_grid>(std::move(triangles), tilemin, tilemax);
+            tile.gathered = now;
+            if (false == Fresh)
+                ground_tile_frame = frame;
+        }
+        tile.used = frame;
+
         double const ceiling = p.y + height_tolerance;
         double y = 0.0;
-        bool found = cache.grid->height_at(p.x, p.z, ceiling, y);
+        bool found = (tile.grid != nullptr) && tile.grid->height_at(p.x, p.z, ceiling, y);
         for (editor_terrain *terrain : terrains)
         {
             if (!terrain->contains(p.x, p.z))
@@ -412,6 +421,17 @@ std::vector<double> editor_mode::ground_heights(std::vector<glm::dvec3> const &P
         }
         if (found)
             heights[i] = y;
+    }
+    // the tiles left alone the longest go once there are too many
+    while (ground_tiles.size() > ground_tile_limit)
+    {
+        auto oldest = ground_tiles.begin();
+        for (auto tile = ground_tiles.begin(); tile != ground_tiles.end(); ++tile)
+            if (tile->second.used < oldest->second.used)
+                oldest = tile;
+        if (oldest->second.used == frame)
+            break;
+        ground_tiles.erase(oldest);
     }
     return heights;
 }
@@ -1925,6 +1945,8 @@ void editor_mode::handle_terrain_sculpt(double Deltatime)
     // crossing a chunk boundary edits both and shared-edge vertices stay in sync
     for (editor_terrain *terrain : active_terrains())
         terrain->sculpt(world.x, world.z, m_terrain_brush_radius, signedrate);
+    // what the road tools know about the ground is no longer true
+    ground_tiles.clear();
 }
 
 void editor_mode::capture_terrain()

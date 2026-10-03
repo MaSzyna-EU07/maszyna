@@ -967,6 +967,20 @@ double turn_angle(glm::dvec2 const &From, glm::dvec2 const &To)
 	return std::atan2(glm::dot(To, left_of(From)), glm::dot(To, From));
 }
 
+// slope a lane has at one of its ends, in the direction of travel
+double lane_grade(TTrack const &Lane, bool const Atend)
+{
+	if (Lane.m_paths.empty())
+	{
+		return 0.0;
+	}
+	auto const &path{Lane.m_paths.front()};
+	auto const &control{path.points[Atend ? segment_data::point::control2 : segment_data::point::control1]};
+	auto const direction{control != glm::dvec3{0.0} ? (Atend ? -control : control) : path.points[segment_data::point::end] - path.points[segment_data::point::start]};
+	auto const run{glm::length(glm::dvec2{direction.x, direction.z})};
+	return run > 1e-6 ? direction.y / run : 0.0;
+}
+
 } // namespace
 
 // puts provided shapes in the section of the scene holding specified point
@@ -1389,6 +1403,21 @@ void junction_node::create_links()
 				// the legacy crossroads has the way straight ahead at its second point, the left one at the third and the right one at the fourth
 				std::swap(ways[0], ways[1]);
 			}
+			if (exits.size() == 1 && lane == lanecount)
+			{
+				// where the only road to leave by has more lanes than the one coming in, the road gets wider: the lanes it gains
+				// are entered from the outermost lane. a path has up to three ways out, so that's two lanes gained at most
+				auto const &candidates{lanes[exits[0].arm].outgoing};
+				for (auto extra = static_cast<std::size_t>(lanecount); extra < candidates.size() && ways.size() < 3; ++extra)
+				{
+					if (candidates[extra] != nullptr && candidates[extra] != ways.front().track)
+					{
+						auto way{ways.front()};
+						way.track = candidates[extra];
+						ways.emplace_back(way);
+					}
+				}
+			}
 
 			// shape of the ways: each leaves the lane coming in the way that lane goes, and joins the lane going out the way that one goes
 			glm::dvec3 const start{entry->CurrentSegment()->FastGetPoint_1()};
@@ -1400,10 +1429,11 @@ void junction_node::create_links()
 				glm::dvec3 const end{exit.track->CurrentSegment()->FastGetPoint_0()};
 				auto const span{glm::distance(start, end)};
 				ends.emplace_back(end);
-				endcontrols.emplace_back(-flat(arms[exit.arm].direction) * (0.39 * span));
+				// the slopes of the lanes are carried on, so a junction on a hill doesn't make a step
+				endcontrols.emplace_back(-(flat(arms[exit.arm].direction) + up * lane_grade(*exit.track, false)) * (0.39 * span));
 				reach += 0.39 * span / ways.size();
 			}
-			auto const startcontrol{flat(heading) * reach};
+			auto const startcontrol{(flat(heading) + up * lane_grade(*entry, true)) * reach};
 			for (std::size_t idx = 0; idx < ways.size(); ++idx)
 			{
 				segment_data movement;
@@ -1556,6 +1586,45 @@ std::vector<scene::shape_node> junction_node::create_shapes() const
 		std::vector<world_vertex> vertices;
 		glm::dvec3 const lift{0.0, line_lift, 0.0};
 		glm::vec3 const upwards{0.f, 1.f, 0.f};
+		auto const &arms{m_state.arms};
+		if (arms.size() == 2 && arms[0].incoming > 0 && arms[0].outgoing > 0 && arms[1].incoming > 0 && arms[1].outgoing > 0)
+		{
+			// a junction of two roads is where a road changes its lanes. the double line keeping the directions apart is led through it
+			auto const divide = [&](std::size_t const Arm) { return arms[Arm].position + flat(left_of(arms[Arm].direction)) * (0.5 * m_state.arm_width(Arm) - static_cast<double>(arms[Arm].incoming) * arms[Arm].width); };
+			auto const p0{divide(0)};
+			auto const p3{divide(1)};
+			auto const reach{0.39 * glm::distance(p0, p3)};
+			auto const p1{p0 - flat(arms[0].direction) * reach};
+			auto const p2{p3 - flat(arms[1].direction) * reach};
+			auto const pair{0.5 * (line_width + line_spacing)};
+			int const steps{12};
+			glm::dvec3 previous{p0};
+			glm::dvec3 previousleft{flat(left_of(-arms[0].direction))};
+			for (int step = 1; step <= steps; ++step)
+			{
+				auto const t{static_cast<double>(step) / steps};
+				auto const u{1.0 - t};
+				auto const current{u * u * u * p0 + 3.0 * u * u * t * p1 + 3.0 * u * t * t * p2 + t * t * t * p3};
+				auto const direction{3.0 * u * u * (p1 - p0) + 6.0 * u * t * (p2 - p1) + 3.0 * t * t * (p3 - p2)};
+				glm::dvec2 const heading{direction.x, direction.z};
+				auto const left{glm::length(heading) > 1e-9 ? flat(left_of(glm::normalize(heading))) : previousleft};
+				for (auto const side : {-1.0, 1.0})
+				{
+					auto const leftstart{previous + previousleft * (side * pair + 0.5 * line_width) + lift};
+					auto const rightstart{previous + previousleft * (side * pair - 0.5 * line_width) + lift};
+					auto const leftend{current + left * (side * pair + 0.5 * line_width) + lift};
+					auto const rightend{current + left * (side * pair - 0.5 * line_width) + lift};
+					vertices.push_back({leftstart, upwards, {0.f, 0.f}});
+					vertices.push_back({rightstart, upwards, {1.f, 0.f}});
+					vertices.push_back({leftend, upwards, {0.f, 1.f}});
+					vertices.push_back({rightstart, upwards, {1.f, 0.f}});
+					vertices.push_back({rightend, upwards, {1.f, 1.f}});
+					vertices.push_back({leftend, upwards, {0.f, 1.f}});
+				}
+				previous = current;
+				previousleft = left;
+			}
+		}
 		for (auto const &corner : corners)
 		{
 			for (std::size_t idx = 0; idx + 1 < corner.size(); ++idx)

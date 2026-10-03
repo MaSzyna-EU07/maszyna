@@ -55,8 +55,22 @@ class screen_projection
 		Screen = screen(c);
 		return true;
 	}
+	// true while there's room in the draw list for more. the user interface is drawn with 16 bit indices, so a list
+	// can't hold more than 65536 vertices; past that the lines come out as triangles strewn all over the screen,
+	// which takes the frame rate down with it. the limit doesn't apply if the renderer can deal with larger lists
+	bool room(ImDrawList const *Drawlist) const
+	{
+		return (Drawlist->Flags & ImDrawListFlags_AllowVtxOffset) != 0 || Drawlist->VtxBuffer.Size < limit;
+	}
+	// true if a line between two points on the screen can't be seen
+	bool outside(ImVec2 const &A, ImVec2 const &B) const
+	{
+		return (A.x < 0.0f && B.x < 0.0f) || (A.y < 0.0f && B.y < 0.0f) || (A.x > m_size.x && B.x > m_size.x) || (A.y > m_size.y && B.y > m_size.y);
+	}
 	void line(ImDrawList *Drawlist, glm::dvec3 const &A, glm::dvec3 const &B, ImU32 const Color, float const Thickness) const
 	{
+		if (false == room(Drawlist))
+			return;
 		glm::vec4 a = clip(A);
 		glm::vec4 b = clip(B);
 		if (a.w < kNear && b.w < kNear)
@@ -65,8 +79,17 @@ class screen_projection
 			a = glm::mix(a, b, (kNear - a.w) / (b.w - a.w));
 		else if (b.w < kNear)
 			b = glm::mix(b, a, (kNear - b.w) / (a.w - b.w));
-		Drawlist->AddLine(screen(a), screen(b), Color, Thickness);
+		auto const from{screen(a)};
+		auto const to{screen(b)};
+		if (outside(from, to))
+			return;
+		Drawlist->AddLine(from, to, Color, Thickness);
 	}
+	// members
+	int limit{kVertexLimit}; // vertices the draw list can hold before the drawing stops
+
+	static constexpr int kVertexLimit{56000}; // leaves room for what's drawn after the overlay
+	static constexpr int kLaneVertexLimit{36000}; // the lanes give way to the tools, which are drawn after them
 
   private:
 	static constexpr float kNear{0.1f};
@@ -129,21 +152,15 @@ ImU32 const kPreviewColor{IM_COL32(255, 210, 60, 255)};
 ImU32 const kRefusedColor{IM_COL32(240, 60, 60, 255)};
 ImU32 const kSnapColor{IM_COL32(255, 60, 255, 255)};
 
-// gathers new definitions for the pieces which meet or end at provided points. Change: receives a definition, and which end of it is at the point.
-// Skipped: receives the number of points left out for being at a junction, which is made for the road the way it is
+// gathers new definitions for the pieces which meet or end at provided points.
+// Change: receives a definition, which end of it is at the point, and the number of the point
 template <class Change_>
-std::vector<std::pair<road_node *, road_node::state>> point_changes(std::vector<glm::dvec3> const &Points, std::size_t &Skipped, Change_ Change)
+std::vector<std::pair<road_node *, road_node::state>> point_changes(std::vector<glm::dvec3> const &Points, Change_ Change)
 {
 	std::vector<std::pair<road_node *, road_node::state>> changes;
-	Skipped = 0;
-	for (auto const &point : Points)
+	for (std::size_t index = 0; index < Points.size(); ++index)
 	{
-		if (editor_road::at_junction(point))
-		{
-			++Skipped;
-			continue;
-		}
-		for (auto const &end : editor_road::ends_at(point))
+		for (auto const &end : editor_road::ends_at(Points[index]))
 		{
 			// a piece with both its ends among the points gets both changed
 			auto entry{std::find_if(changes.begin(), changes.end(), [&end](std::pair<road_node *, road_node::state> const &Listed) { return Listed.first == end.road; })};
@@ -152,10 +169,25 @@ std::vector<std::pair<road_node *, road_node::state>> point_changes(std::vector<
 				changes.emplace_back(end.road, end.road->definition());
 				entry = std::prev(changes.end());
 			}
-			Change(entry->second, end.atend);
+			Change(entry->second, end.atend, index);
 		}
 	}
 	return changes;
+}
+
+// direction of a path for specified value of its curve parameter. like path_point() it's cheap enough to be asked for a lot each frame
+glm::dvec3 path_direction(segment_data const &Path, double const T)
+{
+	auto const &p0 = Path.points[segment_data::point::start];
+	auto const &p3 = Path.points[segment_data::point::end];
+	auto const &cp1 = Path.points[segment_data::point::control1];
+	auto const &cp2 = Path.points[segment_data::point::control2];
+	if (cp1 == glm::dvec3{0.0} && cp2 == glm::dvec3{0.0})
+		return p3 - p0;
+	auto const p1 = p0 + cp1;
+	auto const p2 = p3 + cp2;
+	double const u = 1.0 - T;
+	return 3.0 * u * u * (p1 - p0) + 6.0 * u * T * (p2 - p1) + 3.0 * T * T * (p3 - p2);
 }
 
 }
@@ -418,7 +450,6 @@ void editor_mode::road_profile(std::vector<segment_data> &Pieces, double const *
 		return;
 	}
 	auto const planned{Pieces};
-	bool fresh{Fresh};
 	for (auto const step : kProfileSteps)
 	{
 		Pieces = editor_road::refine(planned, step);
@@ -434,8 +465,7 @@ void editor_mode::road_profile(std::vector<segment_data> &Pieces, double const *
 		// the planner leads the road between its ends, which are over the ground already
 		for (auto &point : points)
 			point.y -= tool.offset;
-		auto ground{ground_heights(points, fresh)};
-		fresh = false;
+		auto ground{ground_heights(points, Fresh)};
 		for (auto &height : ground)
 			height += tool.offset;
 		std::vector<double> heights(ground.begin(), ground.begin() + count + 1);
@@ -702,9 +732,19 @@ void editor_mode::road_apply()
 		changes.emplace_back(road, state);
 	}
 	editor_road::apply(changes);
+	// what's next to the changed pieces is fitted to them: junctions take the lanes they have now, the pieces of the road
+	// which stay as they were get wider or narrower towards them, or give up their ends for the lanes to change
+	std::string notes;
+	for (auto *road : pieces)
+		editor_road::settle(*road, record, notes);
+	auto const fitted{record.roads.size() + record.roads_removed.size() + record.junctions.size() + record.junctions_created.size() - pieces.size()};
 	push_road_snapshot(std::move(record));
 	tool.settings = tool.selected->definition();
-	tool.status = (pieces.size() == 1 ? std::string{"Changed"} : "Changed " + std::to_string(pieces.size()) + " pieces");
+	tool.status = (pieces.size() == 1 ? std::string{"Changed."} : "Changed " + std::to_string(pieces.size()) + " pieces.");
+	if (fitted > 0)
+		tool.status += " What's next to it was fitted to it.";
+	if (false == notes.empty())
+		tool.status += " " + notes;
 }
 
 bool editor_mode::road_delete()
@@ -774,19 +814,18 @@ bool editor_mode::road_split()
 }
 
 // makes the changes gathered for the selected points. returns: true if they were made
-bool editor_mode::road_points_apply(std::vector<std::pair<road_node *, road_node::state>> const &Changes, std::size_t const Skipped)
+bool editor_mode::road_points_apply(std::vector<std::pair<road_node *, road_node::state>> const &Changes, std::vector<std::pair<junction_node *, junction_node::state>> const &Junctions)
 {
 	auto &tool{m_roadtool};
-	std::string const leftalone{Skipped > 0 ? " The points at junctions were left alone, as a junction is made for the road the way it is." : ""};
-	if (Changes.empty())
+	if (Changes.empty() && Junctions.empty())
 	{
-		tool.status = "Nothing was changed." + leftalone;
+		tool.status = "There's nothing to change at the selected points";
 		return false;
 	}
 	editor_road::record record;
+	std::string reason;
 	for (auto const &change : Changes)
 	{
-		std::string reason;
 		if (false == editor_road::can_edit(*change.first, &reason))
 		{
 			tool.status = "\"" + change.first->name() + "\" can't be changed: " + reason;
@@ -794,39 +833,67 @@ bool editor_mode::road_points_apply(std::vector<std::pair<road_node *, road_node
 		}
 		record.roads.emplace_back(change.first, change.first->definition());
 	}
+	for (auto const &change : Junctions)
+	{
+		if (false == editor_road::can_edit(*change.first, &reason))
+		{
+			tool.status = "\"" + change.first->name() + "\" can't be changed: " + reason;
+			return false;
+		}
+		record.junctions.emplace_back(change.first, change.first->definition());
+	}
 	editor_road::apply(Changes);
+	editor_road::apply(Junctions);
+	// junctions the changed pieces lead to are made for the roads as they are now
+	std::string notes;
+	for (auto const &change : Changes)
+		editor_road::settle(*change.first, record, notes);
 	push_road_snapshot(std::move(record));
-	tool.status = (Changes.size() == 1 ? std::string{"Changed 1 piece."} : "Changed " + std::to_string(Changes.size()) + " pieces.") + leftalone;
+	tool.status = (Changes.size() == 1 ? std::string{"Changed 1 piece."} : "Changed " + std::to_string(Changes.size()) + " pieces.");
+	if (false == notes.empty())
+		tool.status += " " + notes;
 	return true;
 }
 
 void editor_mode::road_point_width(float const Width)
 {
-	std::size_t skipped{0};
 	// the pieces on both sides of a point get to that width there, and from there go back to their own along their length
-	auto const changes{point_changes(m_roadtool.points, skipped, [Width](road_node::state &State, bool const Atend) {
+	auto const changes{point_changes(m_roadtool.points, [Width](road_node::state &State, bool const Atend, std::size_t const) {
 		auto const width{State.width()};
 		if (width > 0.0)
 			State.taper[Atend ? 1 : 0] = std::clamp(static_cast<float>(Width / width), 0.25f, 4.f);
 	})};
-	road_points_apply(changes, skipped);
+	road_points_apply(changes, {});
 }
 
-void editor_mode::road_point_height(double const Height)
+// Heights: one for each of the selected points
+void editor_mode::road_point_heights(std::vector<double> const &Heights)
 {
 	auto &tool{m_roadtool};
-	std::size_t skipped{0};
-	// the control points are kept relative to the ends, so the slopes the pieces have at the point stay
-	auto const changes{point_changes(tool.points, skipped, [Height](road_node::state &State, bool const Atend) { State.axis.points[Atend ? segment_data::point::end : segment_data::point::start].y = Height; })};
-	// the selection follows what it's made of
-	std::vector<bool> moved;
-	for (auto const &point : tool.points)
-		moved.emplace_back(false == editor_road::at_junction(point));
-	if (false == road_points_apply(changes, skipped))
+	if (Heights.size() != tool.points.size())
 		return;
-	for (std::size_t i = 0; i < tool.points.size(); ++i)
-		if (moved[i])
-			tool.points[i].y = Height;
+	// the control points are kept relative to the ends, so the slopes the pieces have at a point stay what they are
+	auto const changes{point_changes(tool.points, [&Heights](road_node::state &State, bool const Atend, std::size_t const Point) { State.axis.points[Atend ? segment_data::point::end : segment_data::point::start].y = Heights[Point]; })};
+	// an arm of a junction goes up or down with the end of the road it's made for
+	std::vector<std::pair<junction_node *, junction_node::state>> junctions;
+	for (std::size_t index = 0; index < tool.points.size(); ++index)
+	{
+		for (auto const &arm : editor_road::arms_at(tool.points[index]))
+		{
+			auto entry{std::find_if(junctions.begin(), junctions.end(), [&arm](std::pair<junction_node *, junction_node::state> const &Listed) { return Listed.first == arm.first; })};
+			if (entry == junctions.end())
+			{
+				junctions.emplace_back(arm.first, arm.first->definition());
+				entry = std::prev(junctions.end());
+			}
+			entry->second.arms[arm.second].position.y = Heights[index];
+		}
+	}
+	if (false == road_points_apply(changes, junctions))
+		return;
+	// the selection follows what it's made of
+	for (std::size_t index = 0; index < tool.points.size(); ++index)
+		tool.points[index].y = Heights[index];
 }
 
 void editor_mode::push_road_snapshot(editor_road::record Record)
@@ -1187,13 +1254,40 @@ void editor_mode::render_road_window()
 				road_point_width(std::clamp(width, 1.0f, 100.0f));
 			if (ImGui::IsItemHovered())
 				ImGui::SetTooltip("%s", "Combined width of the lanes at this point; each lane takes its share of it.\nThe pieces on both sides get wider or narrower along their length to meet it.\nSelect several points to keep the width over the pieces between them.");
+			// heights: set outright, moved by a step, or taken from the ground
 			auto height{static_cast<float>(tool.points.front().y)};
 			if (number("Height [m]", height, 0.1f, "%.2f"))
-				road_point_height(height);
+				road_point_heights(std::vector<double>(tool.points.size(), height));
 			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s", "Height of the axis of the road at this point. The slopes of the pieces at the point are kept.");
-			if (editor_road::at_junction(tool.points.front()))
-				ImGui::TextDisabled("This point is at a junction, which is made for the road the way it is");
+				ImGui::SetTooltip("%s", "Height of the axis of the road at the point; with several points selected all are put at this height.\nThe slopes of the pieces at the point are kept, so the road stays smooth.");
+			std::vector<double> heights;
+			for (auto const &point : tool.points)
+				heights.emplace_back(point.y);
+			auto const moved{ImGui::Button("Lower") ? -1.0 : 0.0};
+			ImGui::SameLine();
+			auto const raised{ImGui::Button("Raise") ? 1.0 : 0.0};
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(80.0f);
+			if (ImGui::InputFloat("by [m]", &tool.heightstep, 0.0f, 0.0f, "%.2f"))
+				tool.heightstep = std::clamp(tool.heightstep, 0.01f, 50.0f);
+			if (moved + raised != 0.0)
+			{
+				// each point moves from where it is, so the shape of the road between them is kept
+				for (auto &entry : heights)
+					entry += (moved + raised) * tool.heightstep;
+				road_point_heights(heights);
+			}
+			if (ImGui::Button("Put on the ground"))
+			{
+				// a point with nothing under it comes back with the height it has, and is left where it is
+				auto const ground{ground_heights(tool.points, true)};
+				for (std::size_t index = 0; index < heights.size(); ++index)
+					if (ground[index] != tool.points[index].y)
+						heights[index] = ground[index] + tool.offset;
+				road_point_heights(heights);
+			}
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("Puts each point %.2f m over the ground under it; the height above the ground is set in the Build tool.", tool.offset);
 		}
 	}
 	else if (tool.junction != nullptr)
@@ -1220,6 +1314,26 @@ void editor_mode::render_road_window()
 				tool.status = "\"" + junction.name() + "\" can't be changed: " + reason;
 			}
 		}
+		auto centre{static_cast<float>(junction.definition().centre.y)};
+		if (number("Height of the middle [m]", centre, 0.1f, "%.2f"))
+		{
+			if (editor_road::can_edit(junction, &reason))
+			{
+				editor_road::record record;
+				record.junctions.emplace_back(&junction, junction.definition());
+				auto state{junction.definition()};
+				state.centre.y = centre;
+				editor_road::apply(std::vector<std::pair<junction_node *, junction_node::state>>{{&junction, state}});
+				push_road_snapshot(std::move(record));
+				tool.status = "Changed";
+			}
+			else
+			{
+				tool.status = "\"" + junction.name() + "\" can't be changed: " + reason;
+			}
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", "The surface is spanned between the ends of the roads and this point.\nThe ends of the roads are raised or lowered as points: select the white dot at the end of a road.");
 		if (ImGui::Button("Delete (Del)"))
 			road_delete();
 	}
@@ -1233,7 +1347,7 @@ void editor_mode::render_road_window()
 		ImGui::TextDisabled("K: split at the cursor");
 		ImGui::Checkbox("Changes go to the whole road", &tool.whole);
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", "A road is a string of pieces. With this on a change of the layout is made to all of them,\nexcept for the lane change rules, which are always set for the selected piece alone.\nSplit a piece (K) to get a zone with rules of its own.");
+			ImGui::SetTooltip("%s", "A road is a string of pieces. With this on a change of the layout is made to all of them,\nexcept for the lane change rules, which are always set for the selected piece alone.\nWith this off the selected piece alone is changed, and the road next to it is fitted to it:\nmade wider or narrower towards it, or given a stretch where the lanes change if their number differs.\nSplit a piece (K) to get a piece of the length you need.");
 		ImGui::Separator();
 		if (tool.selected != nullptr && render_road_layout(tool.settings))
 			road_apply();
@@ -1256,9 +1370,15 @@ void editor_mode::draw_road_overlay() const
 	if (false == tool.lanes && false == tool.window)
 		return;
 
-	screen_projection const projection;
+	screen_projection projection;
 	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
 	glm::dvec3 const camera{Global.pCamera.Pos};
+	// pieces of a line needed to draw a path: one for a straight, more the longer a bend is and the nearer it is
+	auto const pieces = [&camera](segment_data const &Path, glm::dvec3 const &Location) {
+		auto const range{glm::distance(Location, camera)};
+		auto const length{glm::distance(Path.points[segment_data::point::start], Path.points[segment_data::point::end])};
+		return std::clamp(static_cast<int>(length / (range < 100.0 ? 3.0 : range < 300.0 ? 8.0 : 20.0)), 2, 12);
+	};
 	auto const drawpath = [&](segment_data const &Path, ImU32 const Color, float const Thickness, int const Samples) {
 		auto previous{path_point(Path, 0.0)};
 		for (int i = 1; i <= Samples; ++i)
@@ -1272,14 +1392,16 @@ void editor_mode::draw_road_overlay() const
 	// lanes, as the vehicles see them: a line for each, with an arrow pointing where the traffic goes
 	if (tool.lanes)
 	{
+		projection.limit = screen_projection::kLaneVertexLimit;
 		for (auto const *road : simulation::Roads.sequence())
 		{
 			if (road == nullptr || road->m_editorremoved)
 				continue;
 			auto const range{glm::distance(road->location(), camera)};
-			if (range > kLaneRange + 0.5 * road->definition().length())
+			if (range > kLaneRange + 0.5 * glm::distance(road->definition().axis.points[segment_data::point::start], road->definition().axis.points[segment_data::point::end]))
 				continue;
-			auto const samples{is_curved(road->definition().axis) ? (range < 150.0 ? 12 : 6) : 1};
+			if (false == projection.room(drawlist))
+				break;
 			auto const against{static_cast<std::size_t>(road->definition().backward)};
 			auto const &tracks{road->tracks()};
 			for (std::size_t lane = 0; lane < tracks.size(); ++lane)
@@ -1288,7 +1410,7 @@ void editor_mode::draw_road_overlay() const
 					continue;
 				auto const &path{tracks[lane]->m_paths.front()};
 				auto const color{lane >= against ? kForwardColor : kBackwardColor};
-				drawpath(path, color, 2.0f, samples);
+				drawpath(path, color, 2.0f, is_curved(path) ? pieces(path, road->location()) : 1);
 				if (range > 300.0)
 					continue;
 				auto const middle{path_point(path, 0.5)};
@@ -1303,7 +1425,7 @@ void editor_mode::draw_road_overlay() const
 			}
 			for (auto const *turn : road->turns())
 			{
-				if (turn != nullptr && false == turn->m_paths.empty())
+				if (turn != nullptr && false == turn->m_paths.empty() && range < 300.0)
 					drawpath(turn->m_paths.front(), kTurnColor, 1.5f, 8);
 			}
 		}
@@ -1313,22 +1435,23 @@ void editor_mode::draw_road_overlay() const
 			if (junction == nullptr || junction->m_editorremoved || glm::distance(junction->location(), camera) > kLaneRange)
 				continue;
 			for (auto const &way : junction->movements())
-				drawpath(way, kWayColor, 1.5f, 8);
+				drawpath(way, kWayColor, 1.5f, pieces(way, junction->location()));
 		}
+		projection.limit = screen_projection::kVertexLimit;
 	}
 	if (false == tool.window)
 		return;
 
 	// outline of a road piece: its axis and the edges of its surface
 	auto const drawroad = [&](road_node::state const &State, ImU32 const Color) {
-		auto const samples{is_curved(State.axis) || State.taper[0] != State.taper[1] ? 12 : 1};
+		auto const samples{is_curved(State.axis) || State.taper[0] != State.taper[1] ? pieces(State.axis, State.axis.points[segment_data::point::start]) : 1};
 		drawpath(State.axis, Color, 3.0f, samples);
 		glm::dvec3 previous[2];
 		for (int i = 0; i <= samples; ++i)
 		{
 			auto const t{static_cast<double>(i) / samples};
 			auto const position{path_point(State.axis, t)};
-			auto const tangent{State.tangent(t)};
+			auto const tangent{path_direction(State.axis, t)};
 			glm::dvec3 across{tangent.z, 0.0, -tangent.x};
 			if (glm::length(across) > 1e-6)
 				across = glm::normalize(across);
@@ -1345,7 +1468,7 @@ void editor_mode::draw_road_overlay() const
 	};
 	auto const drawpoint = [&](glm::dvec3 const &Point, ImU32 const Color, float const Radius, bool const Filled) {
 		ImVec2 screen;
-		if (false == projection.project(Point, screen))
+		if (false == projection.room(drawlist) || false == projection.project(Point, screen) || projection.outside(screen, screen))
 			return;
 		if (Filled)
 			drawlist->AddCircleFilled(screen, Radius, Color);

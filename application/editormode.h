@@ -521,6 +521,7 @@ class editor_mode : public application_mode
 		float offset{0.1f}; // height above the ground the roads are built at
 		bool follow{true}; // built roads are led over the ground between the clicked points
 		float crossingspeed{30.f}; // speed limit on the junctions being made
+		float heightstep{0.1f}; // how much the selected points are raised or lowered at a time
 		road_plan plan; // what a click would make at the moment, worked out once a frame for display
 		glm::dvec3 hover{0.0}; // point of a road or a junction under the cursor a road can be led out of
 		bool hashover{false};
@@ -542,11 +543,11 @@ class editor_mode : public application_mode
 	bool road_delete();
 	bool road_split();
 	void road_cancel();
-	// sets the width of the road, or its height, at the selected points
+	// sets the width of the road at the selected points, or the height of each of them
 	void road_point_width(float const Width);
-	void road_point_height(double const Height);
-	bool road_points_apply(std::vector<std::pair<road_node *, road_node::state>> const &Changes, std::size_t const Skipped);
-	// Fresh: the ground is looked up anew instead of going by what was gathered for the previous frames
+	void road_point_heights(std::vector<double> const &Heights);
+	bool road_points_apply(std::vector<std::pair<road_node *, road_node::state>> const &Changes, std::vector<std::pair<junction_node *, junction_node::state>> const &Junctions);
+	// Fresh: the ground which wasn't looked up yet is gathered on the spot, instead of a bit of it each frame
 	road_plan road_preview(bool const Fresh);
 	// Firstgrade, Lastgrade: slopes the road has to start and end with, nullptr for none
 	void road_profile(std::vector<segment_data> &Pieces, double const *Firstgrade, double const *Lastgrade, bool const Fresh);

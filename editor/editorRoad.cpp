@@ -34,6 +34,7 @@ double const kTightestRadius{6.0};
 double const kCornerRoom{4.0}; // length of an arm of a junction past the point where its edge meets the edge of the next one, taken by the rounded corner
 double const kSharpestBranch{glm::radians(30.0)}; // smallest angle between two roads leaving a junction
 double const kWidestCorner{glm::radians(120.0)}; // arms further apart than this don't have to make room for each other
+double const kTransitionLength{30.0}; // length of the road taken by a change of its lanes
 
 void add_unique(std::vector<road_node *> &Roads, road_node *Road)
 {
@@ -141,20 +142,51 @@ road_node::state part(road_node::state const &State, double const From, double c
 	return result;
 }
 
+// points of a path as a bezier curve, and a point of that curve. unlike the methods of a road definition
+// these don't measure the whole axis for each call, which matters for what's done every frame
+std::array<glm::dvec3, 4> curve_points(segment_data const &Path)
+{
+	auto const &p0{Path.points[segment_data::point::start]};
+	auto const &p3{Path.points[segment_data::point::end]};
+	if (Path.points[segment_data::point::control1] == glm::dvec3{0.0} && Path.points[segment_data::point::control2] == glm::dvec3{0.0})
+		return {p0, p0 + (p3 - p0) / 3.0, p3 - (p3 - p0) / 3.0, p3};
+	return {p0, p0 + Path.points[segment_data::point::control1], p3 + Path.points[segment_data::point::control2], p3};
+}
+
+glm::dvec3 curve_point(std::array<glm::dvec3, 4> const &Points, double const T)
+{
+	auto const u{1.0 - T};
+	return u * u * u * Points[0] + 3.0 * u * u * T * Points[1] + 3.0 * u * T * T * Points[2] + T * T * T * Points[3];
+}
+
 int const kStations{64};
 
 // distances along a path for evenly spaced values of its curve parameter
 std::vector<double> stations(road_node::state const &State)
 {
 	std::vector<double> result(kStations + 1, 0.0);
-	auto previous{State.point(0.0)};
+	auto const points{curve_points(State.axis)};
+	auto previous{points[0]};
 	for (int i = 1; i <= kStations; ++i)
 	{
-		auto const current{State.point(static_cast<double>(i) / kStations)};
+		auto const current{curve_point(points, static_cast<double>(i) / kStations)};
 		result[i] = result[i - 1] + glm::distance(previous, current);
 		previous = current;
 	}
 	return result;
+}
+
+// adds to a record what a piece or a junction is like, ahead of changing it. the first entry stays, as it's what taking the lot back has to end with
+void remember(editor_road::record &Record, road_node *Road)
+{
+	if (std::none_of(Record.roads.begin(), Record.roads.end(), [Road](std::pair<road_node *, road_node::state> const &Entry) { return Entry.first == Road; }))
+		Record.roads.emplace_back(Road, Road->definition());
+}
+
+void remember(editor_road::record &Record, junction_node *Junction)
+{
+	if (std::none_of(Record.junctions.begin(), Record.junctions.end(), [Junction](std::pair<junction_node *, junction_node::state> const &Entry) { return Entry.first == Junction; }))
+		Record.junctions.emplace_back(Junction, Junction->definition());
 }
 
 // distance along a path for specified value of its curve parameter, and the other way around
@@ -240,6 +272,19 @@ bool follow(road_node &Road, double const T, bool const Forward, double const Di
 	}
 	Error = "The road is cut into too many pieces here";
 	return false;
+}
+
+// arm of a junction for the part of a road left on one side of it. returns: false if the lanes there differ in width
+bool cut_arm(road_cut const &Cut, junction_node::arm_data &Arm)
+{
+	auto const &state{Cut.road->definition()};
+	Arm.position = state.point(Cut.t);
+	// the way out of the junction is the way the kept part of the piece goes from the cut
+	Arm.direction = planar(state.tangent(Cut.t)) * (Cut.keepstart ? -1.0 : 1.0);
+	// lanes heading for the cut lead into the junction
+	Arm.incoming = (Cut.keepstart ? state.forward : state.backward);
+	Arm.outgoing = (Cut.keepstart ? state.backward : state.forward);
+	return editor_road::lane_width(state, Cut.t, Arm.width);
 }
 
 // how far from the centre of a junction the edges of two of its roads meet, measured along the first one.
@@ -715,8 +760,9 @@ std::vector<road_node *> editor_road::chain(road_node &Road)
 
 double editor_road::nearest_parameter(road_node::state const &State, glm::dvec3 const &Point)
 {
+	auto const points{curve_points(State.axis)};
 	auto const distance = [&](double const T) {
-		auto const position{State.point(T)};
+		auto const position{curve_point(points, T)};
 		return glm::distance(glm::dvec2{position.x, position.z}, glm::dvec2{Point.x, Point.z});
 	};
 	double best{0.0};
@@ -744,10 +790,12 @@ road_node *editor_road::nearest(glm::dvec3 const &Point, double const Margin)
 		if (road == nullptr || road->m_editorremoved)
 			continue;
 		auto const &state{road->definition()};
-		auto const reach{0.5 * state.width() + std::max(state.sides[0].width, state.sides[1].width) + Margin};
-		if (glm::distance(road->location(), Point) > 0.5 * state.length() + reach + 10.0)
+		auto const reach{0.5 * state.width() * std::max(state.taper[0], state.taper[1]) + std::max(state.sides[0].width, state.sides[1].width) + Margin};
+		// the axis is no longer than the lines joining its points, which is good enough to tell the road is nowhere near
+		auto const points{curve_points(state.axis)};
+		if (glm::distance(road->location(), Point) > 0.5 * (glm::distance(points[0], points[1]) + glm::distance(points[1], points[2]) + glm::distance(points[2], points[3])) + reach + 10.0)
 			continue;
-		auto const position{state.point(nearest_parameter(state, Point))};
+		auto const position{curve_point(points, nearest_parameter(state, Point))};
 		auto const distance{glm::distance(glm::dvec2{position.x, position.z}, glm::dvec2{Point.x, Point.z})};
 		// roads passing over or under the point don't count
 		if (distance > reach || std::abs(position.y - Point.y) > 3.0)
@@ -1097,9 +1145,168 @@ std::vector<editor_road::piece_end> editor_road::ends_at(glm::dvec3 const &Point
 	return result;
 }
 
-bool editor_road::at_junction(glm::dvec3 const &Point)
+std::vector<std::pair<junction_node *, std::size_t>> editor_road::arms_at(glm::dvec3 const &Point)
 {
-	return false == junctions_at(Point).empty();
+	std::vector<std::pair<junction_node *, std::size_t>> result;
+	for (auto *junction : simulation::Junctions.sequence())
+	{
+		if (junction == nullptr || junction->m_editorremoved)
+			continue;
+		auto const &arms{junction->definition().arms};
+		for (std::size_t arm = 0; arm < arms.size(); ++arm)
+			if (glm::distance(arms[arm].position, Point) < kSamePoint)
+				result.emplace_back(junction, arm);
+	}
+	return result;
+}
+
+void editor_road::settle(road_node &Road, record &Record, std::string &Notes)
+{
+	for (auto const atend : {false, true})
+	{
+		if (Road.m_editorremoved)
+			return;
+		auto const &layout{Road.definition()};
+		auto const position{axis_end(layout, atend)};
+		// lanes heading for this end of the piece, and the ones leading away from it
+		auto const arriving{atend ? layout.forward : layout.backward};
+		auto const leaving{atend ? layout.backward : layout.forward};
+		float lanewidth{0.f};
+		auto const evenlanes{lane_width(layout, atend ? 1.0 : 0.0, lanewidth)};
+		char const *unevenlanes{" differ in width, and a junction takes roads with lanes of the same width. "};
+		std::string reason;
+
+		auto const junctions{arms_at(position)};
+		if (false == junctions.empty())
+		{
+			// a junction is made for the lanes of the road at each arm
+			for (auto const &entry : junctions)
+			{
+				auto *junction{entry.first};
+				auto state{junction->definition()};
+				auto &arm{state.arms[entry.second]};
+				if (arm.incoming == arriving && arm.outgoing == leaving && std::abs(arm.width - lanewidth) < 0.001f)
+					continue;
+				if (false == evenlanes)
+				{
+					Notes += "Lanes of \"" + Road.name() + "\"" + unevenlanes;
+					continue;
+				}
+				if (false == can_edit(*junction, &reason))
+				{
+					Notes += "\"" + junction->name() + "\" wasn't fitted: " + reason + ". ";
+					continue;
+				}
+				arm.incoming = arriving;
+				arm.outgoing = leaving;
+				arm.width = lanewidth;
+				remember(Record, junction);
+				apply(std::vector<std::pair<junction_node *, junction_node::state>>{{junction, state}});
+			}
+			continue;
+		}
+
+		auto const neighbours{roads_at(position, &Road)};
+		if (neighbours.size() != 1)
+			continue;
+		auto *other{neighbours.front()};
+		auto const otherlayout{other->definition()};
+		auto const otheratend{glm::distance(axis_end(otherlayout, true), position) < kSamePoint};
+		// lanes of the neighbour heading for the place they meet, and the ones leading away from it
+		auto const otherarriving{otheratend ? otherlayout.forward : otherlayout.backward};
+		auto const otherleaving{otheratend ? otherlayout.backward : otherlayout.forward};
+		if (otherarriving == leaving && otherleaving == arriving)
+		{
+			// the same lanes: the neighbour is made as wide as the piece where they meet, and gets to that width along its length
+			auto const width{layout.width() * layout.taper[atend ? 1 : 0]};
+			if (std::abs(width - otherlayout.width() * otherlayout.taper[otheratend ? 1 : 0]) < 0.001)
+				continue;
+			if (false == can_edit(*other, &reason))
+			{
+				Notes += "\"" + other->name() + "\" wasn't fitted: " + reason + ". ";
+				continue;
+			}
+			auto state{otherlayout};
+			state.taper[otheratend ? 1 : 0] = std::clamp(static_cast<float>(width / otherlayout.width()), 0.25f, 4.f);
+			remember(Record, other);
+			apply(std::vector<std::pair<road_node *, road_node::state>>{{other, state}});
+			continue;
+		}
+
+		// other lanes: the end of the neighbour is given up for a junction of the two, where the lanes of one are led to the lanes of the other
+		if (false == evenlanes)
+		{
+			Notes += "Lanes of \"" + Road.name() + "\"" + unevenlanes;
+			continue;
+		}
+		road_cut cut;
+		std::vector<road_node *> consumed;
+		std::string error;
+		bool room{false};
+		for (auto const length : {kTransitionLength, 0.5 * kTransitionLength})
+		{
+			consumed.clear();
+			if (follow(*other, otheratend ? 1.0 : 0.0, false == otheratend, length, cut, consumed, error))
+			{
+				room = true;
+				break;
+			}
+		}
+		if (false == room)
+		{
+			Notes += "There's no room next to \"" + Road.name() + "\" for the lanes to change (" + error + "), so they don't lead on there. ";
+			continue;
+		}
+		if (cut.road == &Road)
+		{
+			Notes += "The road is too short for its lanes to change. ";
+			continue;
+		}
+		std::vector<road_node *> removed{consumed};
+		if (cut.road != other)
+			removed.emplace_back(other);
+		// a cut at the very end the piece is kept from leaves it whole
+		auto const trimmed{cut.keepstart ? cut.t < 0.999 : cut.t > 0.001};
+		bool allowed{false == trimmed || can_edit(*cut.road, &reason)};
+		for (auto const *piece : removed)
+			allowed = allowed && can_edit(*piece, &reason);
+		junction_node::state junction;
+		junction_node::arm_data arms[2];
+		if (false == allowed)
+		{
+			Notes += "The lanes next to \"" + Road.name() + "\" weren't fitted: " + reason + ". ";
+			continue;
+		}
+		if (false == cut_arm(cut, arms[0]))
+		{
+			Notes += "Lanes of \"" + cut.road->name() + "\"" + unevenlanes;
+			continue;
+		}
+		arms[1].position = position;
+		arms[1].direction = planar(layout.tangent(atend ? 1.0 : 0.0)) * (atend ? -1.0 : 1.0);
+		arms[1].incoming = arriving;
+		arms[1].outgoing = leaving;
+		arms[1].width = lanewidth;
+		junction.arms.assign(std::begin(arms), std::end(arms));
+		junction.centre = 0.5 * (arms[0].position + arms[1].position);
+		dress(junction, layout);
+		// it's a stretch of the road, with the speed limit the road has
+		junction.velocity = std::min(layout.velocity > 0.f ? layout.velocity : std::numeric_limits<float>::max(), otherlayout.velocity > 0.f ? otherlayout.velocity : std::numeric_limits<float>::max());
+		if (junction.velocity == std::numeric_limits<float>::max())
+			junction.velocity = -1.f;
+		junction.normalize();
+
+		// room is made first, so nothing gets joined with what's about to go
+		remove(removed);
+		Record.roads_removed.insert(Record.roads_removed.end(), removed.begin(), removed.end());
+		if (trimmed)
+		{
+			remember(Record, cut.road);
+			apply(std::vector<std::pair<road_node *, road_node::state>>{{cut.road, cut.keepstart ? part(cut.road->definition(), 0.0, cut.t) : part(cut.road->definition(), cut.t, 1.0)}});
+		}
+		auto const created{create(std::vector<junction_node::state>{junction})};
+		Record.junctions_created.insert(Record.junctions_created.end(), created.begin(), created.end());
+	}
 }
 
 bool editor_road::lane_width(road_node::state const &State, double const T, float &Width)
@@ -1191,15 +1398,8 @@ bool editor_road::branch_from(road_node &Road, double const T, glm::dvec2 const 
 	junction.centre = centre;
 	for (auto const &cut : cuts)
 	{
-		auto const &state{cut.road->definition()};
 		junction_node::arm_data arm;
-		arm.position = state.point(cut.t);
-		// the way out of the junction is the way the kept part of the piece goes from the cut
-		arm.direction = planar(state.tangent(cut.t)) * (cut.keepstart ? -1.0 : 1.0);
-		// lanes heading for the cut lead into the junction
-		arm.incoming = (cut.keepstart ? state.forward : state.backward);
-		arm.outgoing = (cut.keepstart ? state.backward : state.forward);
-		if (false == lane_width(state, cut.t, arm.width))
+		if (false == cut_arm(cut, arm))
 		{
 			Error = "Lanes of \"" + cut.road->name() + "\" differ in width, and a junction takes roads with lanes of the same width";
 			return false;
@@ -1276,7 +1476,7 @@ junction_node *editor_road::carry_out(branch const &Branch, record &Record)
 {
 	if (Branch.junction != nullptr)
 	{
-		Record.junctions.emplace_back(Branch.junction, Branch.junction->definition());
+		remember(Record, Branch.junction);
 		apply(std::vector<std::pair<junction_node *, junction_node::state>>{{Branch.junction, Branch.layout}});
 		return Branch.junction;
 	}
@@ -1284,7 +1484,7 @@ junction_node *editor_road::carry_out(branch const &Branch, record &Record)
 	remove(Branch.removed);
 	Record.roads_removed.insert(Record.roads_removed.end(), Branch.removed.begin(), Branch.removed.end());
 	for (auto const &change : Branch.changes)
-		Record.roads.emplace_back(change.first, change.first->definition());
+		remember(Record, change.first);
 	apply(Branch.changes);
 	auto const added{create(Branch.added)};
 	Record.roads_created.insert(Record.roads_created.end(), added.begin(), added.end());
