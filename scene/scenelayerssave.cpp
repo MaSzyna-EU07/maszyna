@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "scene/scenelayers.h"
 #include "world/Track.h"
+#include "world/Road.h"
 
 #include "simulation/simulation.h"
 #include "model/AnimModel.h"
@@ -793,6 +794,69 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		state.patches[source.layer].edits.emplace_back(std::move(edit));
 		rewritten.emplace(path);
 	}
+	// roads. the lanes aren't saved, they're generated from the definition of the road
+	std::vector<road_node *> savedroads;
+	std::vector<road_node const *> droppedroads;
+	auto const road_text = [](road_node &Road, glm::dvec3 const &Offset) {
+		auto const definition{Road.definition()};
+		auto local{definition};
+		local.axis.points[segment_data::point::start] -= Offset;
+		local.axis.points[segment_data::point::end] -= Offset;
+		Road.define(local);
+		std::string text;
+		Road.export_as_text(text);
+		Road.define(definition);
+		text.erase(text.find_last_not_of(" \t\r\n") + 1);
+		return text;
+	};
+	for (auto *road : simulation::Roads.sequence())
+	{
+		if (road == nullptr || road->from_template())
+		{
+			continue;
+		}
+		auto const nodelayer{resolve(road->layer())};
+		if (false == is_output(nodelayer))
+		{
+			continue;
+		}
+		auto const lookup{m_sources.find(road)};
+		if (lookup == m_sources.end())
+		{
+			if (road->m_editorremoved || false == road->dirty())
+			{
+				continue;
+			}
+			created[nodelayer].emplace_back(road, road_text(*road, layer(nodelayer).context_insert().offset));
+			savedroads.push_back(road);
+			continue;
+		}
+		auto const &source{lookup->second};
+		if ((false == road->m_editorremoved && false == road->dirty()) || false == writable(source.layer))
+		{
+			continue;
+		}
+		if (false == load(source.layer))
+		{
+			return fail(state.error);
+		}
+		file_patch::edit edit;
+		edit.begin = source.span.begin;
+		edit.end = source.span.end;
+		if (road->m_editorremoved)
+		{
+			droppedroads.push_back(road);
+		}
+		else
+		{
+			edit.text = road_text(*road, source.context.offset);
+			edit.length = edit.text.size();
+			edit.node = road;
+			savedroads.push_back(road);
+		}
+		state.patches[source.layer].edits.emplace_back(std::move(edit));
+		rewritten.emplace(road);
+	}
 	for (auto const &erased : m_erased)
 	{
 		file_patch::edit edit;
@@ -1235,6 +1299,14 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 	for (auto const *path : droppedpaths)
 	{
 		m_sources.erase(path);
+	}
+	for (auto *road : savedroads)
+	{
+		road->m_dirty = false;
+	}
+	for (auto const *road : droppedroads)
+	{
+		m_sources.erase(road);
 	}
 	if (removedterrain)
 	{

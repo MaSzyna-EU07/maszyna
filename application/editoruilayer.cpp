@@ -143,6 +143,9 @@ void editor_ui::render_menu_contents()
 		ImGui::MenuItem(STR_C("Include database"), nullptr, &m_includespanel.is_open);
 		ImGui::EndMenu();
 	}
+
+	if (m_menuoptions)
+		m_menuoptions();
 }
 
 void editor_ui::set_file_actions(std::function<void()> Save, std::function<void()> Export)

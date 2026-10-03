@@ -340,6 +340,9 @@ editor_mode::editor_mode() {
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
 	ui()->set_file_actions([this]() { save(); }, [this]() { export_scenery(); });
 	ui()->set_track_options([this]() { render_track_ui(); });
+	ui()->set_menu_options([this]() { render_road_menu(); });
+	m_roadtool.settings.normalize();
+	road_select(nullptr);
 	// the orthophoto is fitted onto the same ground as the area fill uses, terrain tile models included
 	m_orthophoto.ground_source([](glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out) {
 		gather_ground_triangles(Min, Max, true, 50.0f, Out);
@@ -687,6 +690,12 @@ void editor_mode::undo_last()
         return;
     }
 
+    if (snap.action == EditorSnapshot::Action::RoadEdit)
+    {
+        restore_road_snapshot(snap, g_redo, true);
+        return;
+    }
+
     if (snap.action == EditorSnapshot::Action::Delete)
     {
         // undo delete -> recreate model
@@ -779,6 +788,12 @@ void editor_mode::redo_last()
     if (snap.action == EditorSnapshot::Action::TrackEdit)
     {
         restore_track_snapshot(snap, m_history, false);
+        return;
+    }
+
+    if (snap.action == EditorSnapshot::Action::RoadEdit)
+    {
+        restore_road_snapshot(snap, m_history, false);
         return;
     }
 
@@ -1022,6 +1037,11 @@ bool editor_mode::update()
         draw_track_hints();
         render_track_window();
     }
+
+    // roads: trajectories of the lanes, and the tools of the road window
+    update_road_tool();
+    draw_road_overlay();
+    render_road_window();
 
     // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
     if (ui()->mode() == nodebank_panel::FILL)
@@ -2708,6 +2728,10 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         break;
 
     case GLFW_KEY_DELETE:
+        if (is_press(Action) && road_delete())
+        {
+            break;
+        }
         if (is_press(Action) && m_instance != 0)
         {
             // include of a scenery template. what it shows goes out of sight, the directive is erased on save
@@ -2751,6 +2775,10 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         break;
 
     case GLFW_KEY_ESCAPE:
+        if (is_press(Action))
+        {
+            road_cancel();
+        }
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK)
         {
             m_track_point = {};
@@ -2769,6 +2797,10 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         break;
 
     case GLFW_KEY_K:
+        if (is_press(Action) && road_split())
+        {
+            break;
+        }
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && selected_track() != nullptr)
         {
             auto *track{selected_track()};
@@ -2837,6 +2869,21 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
     if (m_terrain_sculpt && Button == GLFW_MOUSE_BUTTON_LEFT)
     {
         mouseHold = is_press(Action);
+        m_input.mouse.button(Button, Action);
+        return;
+    }
+
+    // with the road window open the left button works its tools, whichever edit mode is on
+    if (m_roadtool.window && Button == GLFW_MOUSE_BUTTON_LEFT)
+    {
+        if (is_press(Action))
+        {
+            // NOTE: the pick is resolved a few frames later, by then it's known whether the press was meant for the UI
+            GfxRenderer->Pick_Node_Callback([this](scene::basic_node * /*node*/) {
+                if (viewport_click())
+                    road_click();
+            });
+        }
         m_input.mouse.button(Button, Action);
         return;
     }
@@ -3053,7 +3100,8 @@ void editor_mode::render_change_history(){
                         s.action == EditorSnapshot::Action::Move ? "MOV" :
                         s.action == EditorSnapshot::Action::Rotate ? "ROT" :
                         s.action == EditorSnapshot::Action::Scale ? "SCA" :
-                        s.action == EditorSnapshot::Action::TrackEdit ? "TRK" : "OTH",
+                        s.action == EditorSnapshot::Action::TrackEdit ? "TRK" :
+                        s.action == EditorSnapshot::Action::RoadEdit ? "ROAD" : "OTH",
                         s.node_name.empty() ? "(noname)" : s.node_name.c_str(),
                         s.position.x, s.position.y, s.position.z);
 

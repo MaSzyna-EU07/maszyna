@@ -54,6 +54,11 @@ class editor_ui : public ui_layer
 	{
 		m_trackoptions = std::move(Renderer);
 	}
+	// draws menus of the editor mode in the menu bar, past the ones of the user interface
+	void set_menu_options(std::function<void()> Renderer)
+	{
+		m_menuoptions = std::move(Renderer);
+	}
 	// draws the gizmo settings in the toolset window (the gizmo state lives in the editor mode)
 	void set_gizmo_options(std::function<void()> Renderer)
 	{
@@ -82,6 +87,7 @@ class editor_ui : public ui_layer
 	model_set_ref m_insertset;
 	std::function<void()> m_filloptions;
 	std::function<void()> m_trackoptions;
+	std::function<void()> m_menuoptions;
 	std::function<void()> m_gizmooptions;
 	scene::basic_node *m_node{nullptr}; // currently bound scene node, if any
 };

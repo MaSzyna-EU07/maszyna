@@ -269,6 +269,182 @@ float texture_ratio(std::string const &Material)
 
 } // namespace
 
+// brings the content to a usable form: values within their limits, an entry for each lane and for each pair of neighbours
+void road_node::state::normalize()
+{
+	forward = std::clamp(forward, 0, 8);
+	backward = std::clamp(backward, 0, 8);
+	if (forward + backward == 0)
+	{
+		forward = 1;
+	}
+	lanewidth = std::max(1.f, lanewidth);
+	if (texturelength < 0.01f)
+	{
+		texturelength = 4.f;
+	}
+	if (surface.empty())
+	{
+		surface = "none";
+	}
+	// the paths of the lanes are loaded from text, so what goes into it has to be something they understand
+	static std::array<std::string, 7> const environments{"flat", "mountains", "mountain", "canyon", "tunnel", "bridge", "bank"};
+	if (std::find(environments.begin(), environments.end(), environment) == environments.end())
+	{
+		environment = "flat";
+	}
+	auto const count{static_cast<std::size_t>(forward + backward)};
+	if (lanes.size() != count)
+	{
+		lane_data fresh;
+		fresh.width = lanewidth;
+		fresh.velocity = velocity;
+		lanes.assign(count, fresh);
+	}
+	for (auto &lane : lanes)
+	{
+		lane.width = std::max(1.f, lane.width);
+	}
+	if (changes.size() != count - 1)
+	{
+		changes.resize(count - 1);
+		for (std::size_t boundary = 0; boundary < changes.size(); ++boundary)
+		{
+			changes[boundary] = default_change(boundary);
+		}
+	}
+	for (auto &change : changes)
+	{
+		change = std::clamp(change, static_cast<int>(change_none), static_cast<int>(change_both));
+	}
+}
+
+// identifier of a lane: f1..fn go along the axis and b1..bn against it, both counted outwards from where the directions meet
+std::string road_node::state::lane_id(std::size_t const Lane) const
+{
+	auto const against{static_cast<std::size_t>(backward)};
+	return Lane < against ? "b" + std::to_string(against - Lane) : "f" + std::to_string(Lane - against + 1);
+}
+
+// number of a lane in the left to right order, -1 if there's no lane with such identifier
+int road_node::state::lane_index(std::string const &Id) const
+{
+	if (Id.size() < 2 || Id.size() > 3 || (Id[0] != 'f' && Id[0] != 'b'))
+	{
+		return -1;
+	}
+	int number{0};
+	for (std::size_t idx = 1; idx < Id.size(); ++idx)
+	{
+		if (Id[idx] < '0' || Id[idx] > '9')
+		{
+			return -1;
+		}
+		number = number * 10 + (Id[idx] - '0');
+	}
+	if (number < 1 || number > (Id[0] == 'f' ? forward : backward))
+	{
+		return -1;
+	}
+	return Id[0] == 'f' ? backward + number - 1 : backward - number;
+}
+
+// permission to change the lane a pair of neighbouring lanes gets if the scenery doesn't say otherwise
+int road_node::state::default_change(std::size_t const Boundary) const
+{
+	auto const opposite{backward > 0 && forward > 0 && Boundary + 1 == static_cast<std::size_t>(backward)};
+	if (false == opposite)
+	{
+		return change_both;
+	}
+	// overtaking across the oncoming lane is left for the simple two lane roads
+	return (forward == 1 && backward == 1) ? change_both : change_none;
+}
+
+// distance of the middle of a lane from the axis, positive to the left when facing along the axis
+double road_node::state::lane_offset(std::size_t const Lane) const
+{
+	auto offset{0.5 * width()};
+	for (std::size_t idx = 0; idx < Lane && idx < lanes.size(); ++idx)
+	{
+		offset -= lanes[idx].width;
+	}
+	return Lane < lanes.size() ? offset - 0.5 * lanes[Lane].width : offset;
+}
+
+// combined width of the lanes
+double road_node::state::width() const
+{
+	double total{0.0};
+	for (auto const &lane : lanes)
+	{
+		total += lane.width;
+	}
+	return total;
+}
+
+// shape of the middle of a lane, laid out in the direction of travel
+segment_data road_node::state::lane_path(std::size_t const Lane) const
+{
+	road_axis const centre{axis};
+	auto const offset{lane_offset(Lane)};
+	auto const begin{centre.frame(0.0)};
+	auto const end{centre.frame(1.0)};
+
+	segment_data path;
+	path.points[segment_data::point::start] = begin.position + begin.left * offset;
+	path.points[segment_data::point::end] = end.position + end.left * offset;
+	if (centre.curved())
+	{
+		// a line running beside a bend is shorter or longer than the bend itself, and so are its control vectors
+		path.points[segment_data::point::control1] = centre.control(0) * std::max(0.05, 1.0 - offset * std::cos(begin.roll) * centre.curvature(0.0));
+		path.points[segment_data::point::control2] = centre.control(1) * std::max(0.05, 1.0 - offset * std::cos(end.roll) * centre.curvature(1.0));
+		// if the roll changes along the road its sides rise or fall relative to the axis
+		auto const climb{offset * (std::sin(end.roll) - std::sin(begin.roll)) / 3.0};
+		path.points[segment_data::point::control1].y += climb;
+		path.points[segment_data::point::control2].y -= climb;
+	}
+	path.rolls = axis.rolls;
+	if (axis.radius != 0.f)
+	{
+		// the lanes on the inner side of the bend have it tighter
+		auto const turn{centre.curvature(0.5) >= 0.0 ? 1.0 : -1.0};
+		path.radius = static_cast<float>(std::max(1.0, std::abs(axis.radius) - turn * offset));
+	}
+	if (Lane < static_cast<std::size_t>(backward))
+	{
+		// the lane goes against the axis
+		std::swap(path.points[segment_data::point::start], path.points[segment_data::point::end]);
+		std::swap(path.points[segment_data::point::control1], path.points[segment_data::point::control2]);
+		path.rolls = {-axis.rolls[1], -axis.rolls[0]};
+	}
+	if (Global.bRollFix)
+	{
+		// with this setting on a rolled path gets raised when it's set up, by an amount fit for a railway track.
+		// the surface of the road stays where it is, so the lane is lowered beforehand to make up for it
+		path.points[segment_data::point::start].y -= std::abs(std::sin(glm::radians(static_cast<double>(path.rolls[0])))) * 0.75;
+		path.points[segment_data::point::end].y -= std::abs(std::sin(glm::radians(static_cast<double>(path.rolls[1])))) * 0.75;
+	}
+	return path;
+}
+
+// length of the axis
+double road_node::state::length() const
+{
+	return road_axis{axis}.length();
+}
+
+// position on the axis and direction of the axis, for specified value of the curve parameter
+glm::dvec3 road_node::state::point(double const T) const
+{
+	return road_axis{axis}.point(T);
+}
+
+glm::dvec3 road_node::state::tangent(double const T) const
+{
+	return road_axis{axis}.frame(T).tangent;
+}
+
 road_node::road_node(scene::node_data const &Nodedata) : basic_node(Nodedata) {}
 
 // restores content of the node from provided input stream; reads up to and including the closing 'endroad'
@@ -276,7 +452,8 @@ void road_node::import(cParser &Input, glm::dvec3 const &Offset)
 {
 	auto const label{m_name.empty() ? std::string{"unnamed road"} : "road \"" + m_name + "\""};
 
-	m_axis.deserialize(Input, Offset);
+	m_state = state{};
+	m_state.axis.deserialize(Input, Offset);
 
 	// properties of the lanes can precede the statement which sets how many of them there are, so they wait until everything is read
 	struct lane_property
@@ -301,17 +478,17 @@ void road_node::import(cParser &Input, glm::dvec3 const &Offset)
 		{
 			// lanes <along the axis> <against the axis>
 			Input.getTokens(2);
-			Input >> m_forward >> m_backward;
+			Input >> m_state.forward >> m_state.backward;
 		}
 		else if (token == "width")
 		{
 			Input.getTokens();
-			Input >> m_lanewidth;
+			Input >> m_state.lanewidth;
 		}
 		else if (token == "velocity")
 		{
 			Input.getTokens();
-			Input >> m_velocity;
+			Input >> m_state.velocity;
 		}
 		else if (token == "lane")
 		{
@@ -335,13 +512,13 @@ void road_node::import(cParser &Input, glm::dvec3 const &Offset)
 		}
 		else if (token == "surface")
 		{
-			m_surface = Input.getToken<std::string>();
-			replace_slashes(m_surface);
+			m_state.surface = Input.getToken<std::string>();
+			replace_slashes(m_state.surface);
 		}
 		else if (token == "texlength")
 		{
 			Input.getTokens();
-			Input >> m_texturelength;
+			Input >> m_state.texturelength;
 		}
 		else if (token == "side")
 		{
@@ -360,11 +537,11 @@ void road_node::import(cParser &Input, glm::dvec3 const &Offset)
 			}
 			if (where == "left" || where == "both")
 			{
-				m_sides[0] = side;
+				m_state.sides[0] = side;
 			}
 			if (where == "right" || where == "both")
 			{
-				m_sides[1] = side;
+				m_state.sides[1] = side;
 			}
 			if (where != "left" && where != "right" && where != "both")
 			{
@@ -374,18 +551,18 @@ void road_node::import(cParser &Input, glm::dvec3 const &Offset)
 		else if (token == "kerb")
 		{
 			Input.getTokens();
-			Input >> m_kerbheight;
+			Input >> m_state.kerbheight;
 		}
 		else if (token == "slope")
 		{
 			// slope <width> <drop>
 			Input.getTokens(2);
-			Input >> m_slope.x >> m_slope.y;
+			Input >> m_state.slope.x >> m_state.slope.y;
 		}
 		else if (token == "markings")
 		{
 			auto const colour{Input.getToken<std::string>()};
-			m_markings = (colour == "white" ? marking_colour::white : colour == "orange" ? marking_colour::orange : marking_colour::none);
+			m_state.markings = (colour == "white" ? marking_colour::white : colour == "orange" ? marking_colour::orange : marking_colour::none);
 			if (colour != "white" && colour != "orange" && colour != "none")
 			{
 				ErrorLog("Bad road: unknown colour of markings \"" + colour + "\" defined for " + label);
@@ -394,11 +571,11 @@ void road_node::import(cParser &Input, glm::dvec3 const &Offset)
 		else if (token == "friction")
 		{
 			Input.getTokens();
-			Input >> m_friction;
+			Input >> m_state.friction;
 		}
 		else if (token == "environment")
 		{
-			m_environment = Input.getToken<std::string>();
+			m_state.environment = Input.getToken<std::string>();
 		}
 		else
 		{
@@ -407,37 +584,20 @@ void road_node::import(cParser &Input, glm::dvec3 const &Offset)
 		token = Input.getToken<std::string>();
 	}
 
-	// the paths of the lanes are loaded from text, so what goes into it has to be something they understand
-	static std::array<std::string, 7> const environments{"flat", "mountains", "mountain", "canyon", "tunnel", "bridge", "bank"};
-	if (std::find(environments.begin(), environments.end(), m_environment) == environments.end())
-	{
-		ErrorLog("Bad road: unknown environment \"" + m_environment + "\" defined for " + label);
-		m_environment = "flat";
-	}
-	m_forward = std::clamp(m_forward, 0, 8);
-	m_backward = std::clamp(m_backward, 0, 8);
-	if (m_forward + m_backward == 0)
+	if (m_state.forward + m_state.backward <= 0)
 	{
 		ErrorLog("Bad road: " + label + " has no lanes, a single one is used instead");
-		m_forward = 1;
 	}
-	m_lanewidth = std::max(1.f, m_lanewidth);
-	if (m_texturelength < 0.01f)
+	auto const environment{m_state.environment};
+	m_state.normalize();
+	if (environment != m_state.environment)
 	{
-		m_texturelength = 4.f;
-	}
-	if (m_surface.empty())
-	{
-		m_surface = "none";
+		ErrorLog("Bad road: unknown environment \"" + environment + "\" defined for " + label);
 	}
 
-	lane_data lanetemplate;
-	lanetemplate.width = m_lanewidth;
-	lanetemplate.velocity = m_velocity;
-	m_lanes.assign(static_cast<std::size_t>(m_forward + m_backward), lanetemplate);
 	for (auto const &property : laneproperties)
 	{
-		auto const lane{lane_index(property.lane)};
+		auto const lane{m_state.lane_index(property.lane)};
 		if (lane < 0)
 		{
 			ErrorLog("Bad road: " + label + " has no lane \"" + property.lane + "\"");
@@ -445,27 +605,21 @@ void road_node::import(cParser &Input, glm::dvec3 const &Offset)
 		}
 		if (property.property == "width")
 		{
-			m_lanes[lane].width = std::max(1.f, property.value);
+			m_state.lanes[lane].width = std::max(1.f, property.value);
 		}
 		else if (property.property == "velocity")
 		{
-			m_lanes[lane].velocity = property.value;
+			m_state.lanes[lane].velocity = property.value;
 		}
 		else
 		{
 			ErrorLog("Bad road: unknown lane property: \"" + property.property + "\" defined for " + label);
 		}
 	}
-
-	m_changes.resize(m_lanes.size() - 1);
-	for (std::size_t boundary = 0; boundary < m_changes.size(); ++boundary)
-	{
-		m_changes[boundary] = default_change(boundary);
-	}
 	for (auto const &property : changeproperties)
 	{
-		auto const first{lane_index(property.first)};
-		auto const second{lane_index(property.second)};
+		auto const first{m_state.lane_index(property.first)};
+		auto const second{m_state.lane_index(property.second)};
 		if (first < 0 || second < 0 || std::abs(first - second) != 1)
 		{
 			ErrorLog("Bad road: lanes \"" + property.first + "\" and \"" + property.second + "\" aren't neighbours on " + label);
@@ -473,7 +627,7 @@ void road_node::import(cParser &Input, glm::dvec3 const &Offset)
 		}
 		// the permissions are stored for the pair taken left to right
 		auto const firstonleft{first < second};
-		auto &change{m_changes[std::min(first, second)]};
+		auto &change{m_state.changes[std::min(first, second)]};
 		if (property.mode == "both")
 		{
 			change = change_both;
@@ -496,15 +650,25 @@ void road_node::import(cParser &Input, glm::dvec3 const &Offset)
 		}
 	}
 
-	location(road_axis{m_axis}.frame(0.5).position);
+	location(m_state.point(0.5));
+}
+
+// replaces what the node knows about the road
+void road_node::define(state const &State)
+{
+	m_state = State;
+	m_state.normalize();
+	location(m_state.point(0.5));
+	m_area.radius = -1.f;
 }
 
 // creates paths of the lanes and hands them over to the simulation
 void road_node::create_lanes()
 {
-	for (std::size_t lane = 0; lane < m_lanes.size(); ++lane)
+	m_tracks.assign(m_state.lanes.size(), nullptr);
+	for (std::size_t lane = 0; lane < m_state.lanes.size(); ++lane)
 	{
-		m_lanes[lane].track = create_track(m_name.empty() ? std::string{} : m_name + ":" + lane_id(lane), lane_path(lane), m_lanes[lane].width, m_lanes[lane].velocity);
+		m_tracks[lane] = create_track(m_name.empty() ? std::string{} : m_name + ":" + m_state.lane_id(lane), m_state.lane_path(lane), m_state.lanes[lane].width, m_state.lanes[lane].velocity);
 	}
 }
 
@@ -512,17 +676,21 @@ void road_node::create_lanes()
 void road_node::close_ends()
 {
 	// NOTE: without the link a vehicle reaching the end would be sent back on the lane it came by, against its direction
-	road_axis const axis{m_axis};
+	if (m_tracks.size() != m_state.lanes.size())
+	{
+		return;
+	}
+	road_axis const axis{m_state.axis};
 	for (int end = 0; end < 2; ++end)
 	{
 		// the lanes going along the axis leave the road at its end, the ones going against it leave at its start
 		auto const outwards{end == 1 ? axis.frame(1.0).tangent : -axis.frame(0.0).tangent};
-		for (int pair = 1; pair <= std::min(m_forward, m_backward); ++pair)
+		for (int pair = 1; pair <= std::min(m_state.forward, m_state.backward); ++pair)
 		{
-			auto const forward{static_cast<std::size_t>(m_backward + pair - 1)};
-			auto const backward{static_cast<std::size_t>(m_backward - pair)};
-			auto *exit{m_lanes[end == 1 ? forward : backward].track};
-			auto *entry{m_lanes[end == 1 ? backward : forward].track};
+			auto const forward{static_cast<std::size_t>(m_state.backward + pair - 1)};
+			auto const backward{static_cast<std::size_t>(m_state.backward - pair)};
+			auto *exit{m_tracks[end == 1 ? forward : backward]};
+			auto *entry{m_tracks[end == 1 ? backward : forward]};
 			if (exit == nullptr || entry == nullptr || exit->trNext != nullptr || entry->trPrev != nullptr)
 			{
 				continue;
@@ -534,12 +702,45 @@ void road_node::close_ends()
 			path.points[segment_data::point::control1] = outwards * std::max(turn_reach, 1.5 * span);
 			path.points[segment_data::point::control2] = outwards * std::max(turn_reach, 1.5 * span);
 			path.radius = static_cast<float>(std::max(2.0, 0.5 * span));
-			auto *turn{create_track(m_name.empty() ? std::string{} : m_name + ":" + (end == 1 ? "endturn" : "startturn") + std::to_string(pair), path, m_lanes[forward].width, turn_velocity)};
+			auto *turn{create_track(m_name.empty() ? std::string{} : m_name + ":" + (end == 1 ? "endturn" : "startturn") + std::to_string(pair), path, m_state.lanes[forward].width, turn_velocity)};
 			exit->ConnectNextPrev(turn, 0);
 			turn->ConnectNextPrev(entry, 0);
 			m_turns.emplace_back(turn);
 		}
 	}
+}
+
+// gives up the paths of the lanes
+std::vector<TTrack *> road_node::release_lanes()
+{
+	std::vector<TTrack *> released;
+	released.swap(m_tracks);
+	released.erase(std::remove(released.begin(), released.end(), nullptr), released.end());
+	return released;
+}
+
+// gives up the paths made to close the loose ends
+std::vector<TTrack *> road_node::release_turns()
+{
+	std::vector<TTrack *> released;
+	released.swap(m_turns);
+	return released;
+}
+
+// true if there's a vehicle on any path of the road
+bool road_node::occupied() const
+{
+	for (auto const *tracks : {&m_tracks, &m_turns})
+	{
+		for (auto const *track : *tracks)
+		{
+			if (track != nullptr && false == track->Dynamics.empty())
+			{
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 // generates geometry of the surface, the sides and the markings
@@ -567,22 +768,24 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 		return batches.back().vertices;
 	};
 
-	road_axis const axis{m_axis};
+	auto const &road{m_state};
+	road_axis const axis{road.axis};
 	auto const length{axis.length()};
 	auto const step{axis.step()};
-	auto const halfwidth{0.5 * width()};
+	auto const halfwidth{0.5 * road.width()};
+	double const texturelength{road.texturelength};
 
 	// surface. the image is centered on the axis, and repeated if the road is wider
-	if (m_surface != "none")
+	if (road.surface != "none")
 	{
-		auto const tile{static_cast<double>(texture_ratio(m_surface) * m_texturelength)};
-		loft(vertices(m_surface, lighting_data{}), axis, {{halfwidth, 0.0, static_cast<float>(0.5 + halfwidth / tile)}, {-halfwidth, 0.0, static_cast<float>(0.5 - halfwidth / tile)}}, 0.0, length, step, m_texturelength);
+		auto const tile{static_cast<double>(texture_ratio(road.surface)) * texturelength};
+		loft(vertices(road.surface, lighting_data{}), axis, {{halfwidth, 0.0, static_cast<float>(0.5 + halfwidth / tile)}, {-halfwidth, 0.0, static_cast<float>(0.5 - halfwidth / tile)}}, 0.0, length, step, texturelength);
 	}
 
 	// sides
 	for (int side = 0; side < 2; ++side)
 	{
-		auto const &data{m_sides[side]};
+		auto const &data{road.sides[side]};
 		if (data.type == side_type::none || data.width <= 0.f || data.material.empty() || data.material == "none")
 		{
 			continue;
@@ -595,37 +798,37 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 			// the image is laid out like the one of the legacy roads: the edge of the surface on its right, the bank on its left half
 			profile.push_back({direction * halfwidth, 0.0, 1.f});
 			profile.push_back({direction * (halfwidth + data.width), 0.0, 0.5f});
-			if (m_slope.x > 0.f)
+			if (road.slope.x > 0.f)
 			{
-				profile.push_back({direction * (halfwidth + data.width + m_slope.x), -m_slope.y, 0.f});
+				profile.push_back({direction * (halfwidth + data.width + road.slope.x), -road.slope.y, 0.f});
 			}
 		}
 		else
 		{
 			// the image starts at the foot of the kerb, and is laid out in its own proportions
-			auto const tile{static_cast<double>(texture_ratio(data.material) * m_texturelength)};
+			auto const tile{static_cast<double>(texture_ratio(data.material)) * texturelength};
 			profile.push_back({direction * halfwidth, 0.0, 0.f});
-			profile.push_back({direction * halfwidth, m_kerbheight, static_cast<float>(m_kerbheight / tile)});
-			profile.push_back({direction * (halfwidth + data.width), m_kerbheight, static_cast<float>((m_kerbheight + data.width) / tile)});
+			profile.push_back({direction * halfwidth, road.kerbheight, static_cast<float>(road.kerbheight / tile)});
+			profile.push_back({direction * (halfwidth + data.width), road.kerbheight, static_cast<float>((road.kerbheight + data.width) / tile)});
 		}
 		if (side == 0)
 		{
 			// the loft takes the corners left to right
 			std::reverse(profile.begin(), profile.end());
 		}
-		loft(vertices(data.material, lighting_data{}), axis, profile, 0.0, length, step, m_texturelength);
+		loft(vertices(data.material, lighting_data{}), axis, profile, 0.0, length, step, texturelength);
 	}
 
 	// markings. these are painted with plain colour instead of an image
-	if (m_markings != marking_colour::none)
+	if (road.markings != marking_colour::none)
 	{
 		lighting_data paint;
-		paint.diffuse = (m_markings == marking_colour::white ? glm::vec4{0.92f, 0.92f, 0.92f, 1.f} : glm::vec4{0.95f, 0.5f, 0.08f, 1.f});
+		paint.diffuse = (road.markings == marking_colour::white ? glm::vec4{0.92f, 0.92f, 0.92f, 1.f} : glm::vec4{0.95f, 0.5f, 0.08f, 1.f});
 		paint.ambient = paint.diffuse;
 		auto &lines{vertices("colored", paint)};
 
 		auto const solid = [&](double const Offset) {
-			loft(lines, axis, {{Offset + 0.5 * line_width, line_lift, 0.f}, {Offset - 0.5 * line_width, line_lift, 1.f}}, 0.0, length, std::min(step, dash_step), m_texturelength);
+			loft(lines, axis, {{Offset + 0.5 * line_width, line_lift, 0.f}, {Offset - 0.5 * line_width, line_lift, 1.f}}, 0.0, length, std::min(step, dash_step), texturelength);
 		};
 		// the dashes are fitted so the gaps at both ends of the road are a half of the regular one, which makes them match the next piece
 		auto const dashed = [&](double const Offset) {
@@ -634,7 +837,7 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 			for (int dash = 0; dash < count; ++dash)
 			{
 				auto const from{(dash + 1.0 / 3.0) * period};
-				loft(lines, axis, {{Offset + 0.5 * line_width, line_lift, 0.f}, {Offset - 0.5 * line_width, line_lift, 1.f}}, from, from + period / 3.0, dash_step, m_texturelength);
+				loft(lines, axis, {{Offset + 0.5 * line_width, line_lift, 0.f}, {Offset - 0.5 * line_width, line_lift, 1.f}}, from, from + period / 3.0, dash_step, texturelength);
 			}
 		};
 
@@ -647,12 +850,12 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 		}
 		// lines between the lanes. a lane can be left across a dashed line, or across a pair of lines if the dashed one is on its side
 		auto offset{halfwidth};
-		for (std::size_t boundary = 0; boundary < m_changes.size(); ++boundary)
+		for (std::size_t boundary = 0; boundary < road.changes.size() && boundary < road.lanes.size(); ++boundary)
 		{
-			offset -= m_lanes[boundary].width;
-			auto const opposite{m_backward > 0 && boundary + 1 == static_cast<std::size_t>(m_backward)};
+			offset -= road.lanes[boundary].width;
+			auto const opposite{road.backward > 0 && boundary + 1 == static_cast<std::size_t>(road.backward)};
 			auto const pair{0.5 * (line_width + line_spacing)};
-			switch (m_changes[boundary])
+			switch (road.changes[boundary])
 			{
 			case change_both:
 			{
@@ -704,113 +907,57 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 	return shapes;
 }
 
-// identifier of a lane: f1..fn go along the axis and b1..bn against it, both counted outwards from where the directions meet
-std::string road_node::lane_id(std::size_t const Lane) const
+// puts geometry of the road in the scene as shapes of its own, which can be taken back
+void road_node::show()
 {
-	auto const backward{static_cast<std::size_t>(m_backward)};
-	return Lane < backward ? "b" + std::to_string(backward - Lane) : "f" + std::to_string(Lane - backward + 1);
+	if (m_section != nullptr || m_merged || simulation::Region == nullptr || false == simulation::Region->point_inside(location()))
+	{
+		return;
+	}
+	auto shapes{create_shapes()};
+	if (shapes.empty())
+	{
+		return;
+	}
+	auto &section{simulation::Region->section(location())};
+	// the rest of the section has to be built by now, or it'd count our shapes as waiting for it too
+	section.create_geometry();
+	if (m_bank.bank == 0 && m_bank.chunk == 0)
+	{
+		m_bank = GfxRenderer->Create_Bank();
+	}
+	for (auto &shape : shapes)
+	{
+		// shapes held by a section are drawn relative to its centre
+		shape.origin(section.m_area.center);
+		auto const centre{shape.data().area.center};
+		auto const radius{shape.radius()};
+		shape.create_geometry(m_bank);
+		m_geometry.emplace_back(shape.data().geometry);
+		section.m_shapes.emplace_back(std::move(shape));
+		// the section may need to reach further to keep the road from being culled at its edges
+		section.m_area.radius = std::max(section.m_area.radius, static_cast<float>(glm::length(section.m_area.center - centre) + radius));
+	}
+	m_section = &section;
 }
 
-// number of a lane in the left to right order, -1 if the road has no lane with such identifier
-int road_node::lane_index(std::string const &Id) const
+// takes back geometry put in the scene by show()
+void road_node::hide()
 {
-	if (Id.size() < 2 || Id.size() > 3 || (Id[0] != 'f' && Id[0] != 'b'))
+	if (m_section == nullptr)
 	{
-		return -1;
+		return;
 	}
-	int number{0};
-	for (std::size_t idx = 1; idx < Id.size(); ++idx)
-	{
-		if (Id[idx] < '0' || Id[idx] > '9')
-		{
-			return -1;
-		}
-		number = number * 10 + (Id[idx] - '0');
-	}
-	if (number < 1 || number > (Id[0] == 'f' ? m_forward : m_backward))
-	{
-		return -1;
-	}
-	return Id[0] == 'f' ? m_backward + number - 1 : m_backward - number;
-}
-
-// permission to change the lane a pair of neighbouring lanes gets if the scenery doesn't say otherwise
-int road_node::default_change(std::size_t const Boundary) const
-{
-	auto const opposite{m_backward > 0 && m_forward > 0 && Boundary + 1 == static_cast<std::size_t>(m_backward)};
-	if (false == opposite)
-	{
-		return change_both;
-	}
-	// overtaking across the oncoming lane is left for the simple two lane roads
-	return (m_forward == 1 && m_backward == 1) ? change_both : change_none;
-}
-
-// distance of the middle of a lane from the axis, positive to the left when facing along the axis
-double road_node::lane_offset(std::size_t const Lane) const
-{
-	auto offset{0.5 * width()};
-	for (std::size_t idx = 0; idx < Lane && idx < m_lanes.size(); ++idx)
-	{
-		offset -= m_lanes[idx].width;
-	}
-	return Lane < m_lanes.size() ? offset - 0.5 * m_lanes[Lane].width : offset;
-}
-
-// combined width of the lanes
-double road_node::width() const
-{
-	double width{0.0};
-	for (auto const &lane : m_lanes)
-	{
-		width += lane.width;
-	}
-	return width;
-}
-
-// shape of the middle of a lane, laid out in the direction of travel
-segment_data road_node::lane_path(std::size_t const Lane) const
-{
-	road_axis const axis{m_axis};
-	auto const offset{lane_offset(Lane)};
-	auto const begin{axis.frame(0.0)};
-	auto const end{axis.frame(1.0)};
-
-	segment_data path;
-	path.points[segment_data::point::start] = begin.position + begin.left * offset;
-	path.points[segment_data::point::end] = end.position + end.left * offset;
-	if (axis.curved())
-	{
-		// a line running beside a bend is shorter or longer than the bend itself, and so are its control vectors
-		path.points[segment_data::point::control1] = axis.control(0) * std::max(0.05, 1.0 - offset * std::cos(begin.roll) * axis.curvature(0.0));
-		path.points[segment_data::point::control2] = axis.control(1) * std::max(0.05, 1.0 - offset * std::cos(end.roll) * axis.curvature(1.0));
-		// if the roll changes along the road its sides rise or fall relative to the axis
-		auto const climb{offset * (std::sin(end.roll) - std::sin(begin.roll)) / 3.0};
-		path.points[segment_data::point::control1].y += climb;
-		path.points[segment_data::point::control2].y -= climb;
-	}
-	path.rolls = m_axis.rolls;
-	if (m_axis.radius != 0.f)
-	{
-		// the lanes on the inner side of the bend have it tighter
-		auto const turn{axis.curvature(0.5) >= 0.0 ? 1.0 : -1.0};
-		path.radius = static_cast<float>(std::max(1.0, std::abs(m_axis.radius) - turn * offset));
-	}
-	if (Lane < static_cast<std::size_t>(m_backward))
-	{
-		// the lane goes against the axis
-		std::swap(path.points[segment_data::point::start], path.points[segment_data::point::end]);
-		std::swap(path.points[segment_data::point::control1], path.points[segment_data::point::control2]);
-		path.rolls = {-m_axis.rolls[1], -m_axis.rolls[0]};
-	}
-	if (Global.bRollFix)
-	{
-		// with this setting on a rolled path gets raised when it's set up, by an amount fit for a railway track.
-		// the surface of the road stays where it is, so the lane is lowered beforehand to make up for it
-		path.points[segment_data::point::start].y -= std::abs(std::sin(glm::radians(static_cast<double>(path.rolls[0])))) * 0.75;
-		path.points[segment_data::point::end].y -= std::abs(std::sin(glm::radians(static_cast<double>(path.rolls[1])))) * 0.75;
-	}
-	return path;
+	// our shapes are told from the others by their geometry. the renderer reclaims the chunks once they're no longer drawn
+	auto &shapes{m_section->m_shapes};
+	shapes.erase(std::remove_if(shapes.begin(), shapes.end(),
+	                            [this](scene::shape_node const &Shape) {
+		                            auto const handle{Shape.data().geometry};
+		                            return std::any_of(m_geometry.begin(), m_geometry.end(), [&handle](gfx::geometry_handle const &Own) { return Own.bank == handle.bank && Own.chunk == handle.chunk; });
+	                            }),
+	             shapes.end());
+	m_geometry.clear();
+	m_section = nullptr;
 }
 
 // creates a path for the vehicles and registers it with the simulation
@@ -823,7 +970,7 @@ TTrack *road_node::create_track(std::string const &Name, segment_data const &Pat
 	// the path is put together the way the scenery defines an invisible road, to have it set up by the code which loads these
 	std::ostringstream text;
 	text.precision(std::numeric_limits<double>::digits10);
-	text << "road " << glm::distance(start, end) << ' ' << Width << ' ' << m_friction << ' ' << m_sounddistance << ' ' << m_quality << " 0 " << m_environment << " unvis " << start.x << ' ' << start.y << ' ' << start.z << ' ' << Path.rolls[0] << ' '
+	text << "road " << glm::distance(start, end) << ' ' << Width << ' ' << m_state.friction << ' ' << m_state.sounddistance << ' ' << m_state.quality << " 0 " << m_state.environment << " unvis " << start.x << ' ' << start.y << ' ' << start.z << ' ' << Path.rolls[0] << ' '
 	     << control1.x << ' ' << control1.y << ' ' << control1.z << ' ' << control2.x << ' ' << control2.y << ' ' << control2.z << ' ' << end.x << ' ' << end.y << ' ' << end.z << ' ' << Path.rolls[1] << ' ' << Path.radius << ' ';
 	if (Velocity > 0.f)
 	{
@@ -841,7 +988,11 @@ TTrack *road_node::create_track(std::string const &Name, segment_data const &Pat
 	track->m_road = this;
 	if (false == simulation::Paths.insert(track))
 	{
-		ErrorLog("Bad scenario: duplicate track name \"" + track->name() + "\" generated for a road");
+		// NOTE: the table points the name at the newest path, which is what a road made anew in the editor needs
+		if (false == m_editorremoved && false == dirty())
+		{
+			ErrorLog("Bad scenario: duplicate track name \"" + track->name() + "\" generated for a road");
+		}
 	}
 	simulation::Region->insert_and_register(track);
 	return track;
@@ -850,7 +1001,7 @@ TTrack *road_node::create_track(std::string const &Name, segment_data const &Pat
 // radius() subclass details, calculates node's bounding radius
 float road_node::radius_()
 {
-	return static_cast<float>(0.5 * road_axis{m_axis}.length() + 0.5 * width() + std::max(m_sides[0].width, m_sides[1].width) + m_slope.x);
+	return static_cast<float>(0.5 * m_state.length() + 0.5 * m_state.width() + std::max(m_state.sides[0].width, m_state.sides[1].width) + m_state.slope.x);
 }
 
 // serialize() subclass details, sends content of the subclass to provided stream
@@ -868,55 +1019,56 @@ void road_node::deserialize_(std::istream &Input)
 // export() subclass details, sends basic content of the class in legacy (text) format to provided stream
 void road_node::export_as_text_(std::ostream &Output) const
 {
+	auto const &road{m_state};
 	Output << "road ";
 	// axis
 	auto const precision{Output.precision(std::numeric_limits<double>::digits10)};
-	Output << m_axis.points[segment_data::point::start].x << ' ' << m_axis.points[segment_data::point::start].y << ' ' << m_axis.points[segment_data::point::start].z << ' ' << m_axis.rolls[0] << ' '
-	       << m_axis.points[segment_data::point::control1].x << ' ' << m_axis.points[segment_data::point::control1].y << ' ' << m_axis.points[segment_data::point::control1].z << ' '
-	       << m_axis.points[segment_data::point::control2].x << ' ' << m_axis.points[segment_data::point::control2].y << ' ' << m_axis.points[segment_data::point::control2].z << ' '
-	       << m_axis.points[segment_data::point::end].x << ' ' << m_axis.points[segment_data::point::end].y << ' ' << m_axis.points[segment_data::point::end].z << ' ' << m_axis.rolls[1] << ' '
-	       << m_axis.radius << ' ';
+	Output << road.axis.points[segment_data::point::start].x << ' ' << road.axis.points[segment_data::point::start].y << ' ' << road.axis.points[segment_data::point::start].z << ' ' << road.axis.rolls[0] << ' '
+	       << road.axis.points[segment_data::point::control1].x << ' ' << road.axis.points[segment_data::point::control1].y << ' ' << road.axis.points[segment_data::point::control1].z << ' '
+	       << road.axis.points[segment_data::point::control2].x << ' ' << road.axis.points[segment_data::point::control2].y << ' ' << road.axis.points[segment_data::point::control2].z << ' '
+	       << road.axis.points[segment_data::point::end].x << ' ' << road.axis.points[segment_data::point::end].y << ' ' << road.axis.points[segment_data::point::end].z << ' ' << road.axis.rolls[1] << ' '
+	       << road.axis.radius << ' ';
 	Output.precision(precision);
 	// lanes
-	Output << "lanes " << m_forward << ' ' << m_backward << ' ' << "width " << m_lanewidth << ' ';
-	if (m_velocity > 0.f)
+	Output << "lanes " << road.forward << ' ' << road.backward << ' ' << "width " << road.lanewidth << ' ';
+	if (road.velocity > 0.f)
 	{
-		Output << "velocity " << m_velocity << ' ';
+		Output << "velocity " << road.velocity << ' ';
 	}
-	for (std::size_t lane = 0; lane < m_lanes.size(); ++lane)
+	for (std::size_t lane = 0; lane < road.lanes.size(); ++lane)
 	{
-		if (m_lanes[lane].width != m_lanewidth)
+		if (road.lanes[lane].width != road.lanewidth)
 		{
-			Output << "lane " << lane_id(lane) << " width " << m_lanes[lane].width << ' ';
+			Output << "lane " << road.lane_id(lane) << " width " << road.lanes[lane].width << ' ';
 		}
-		if (m_lanes[lane].velocity != m_velocity)
+		if (road.lanes[lane].velocity != road.velocity)
 		{
-			Output << "lane " << lane_id(lane) << " velocity " << m_lanes[lane].velocity << ' ';
+			Output << "lane " << road.lane_id(lane) << " velocity " << road.lanes[lane].velocity << ' ';
 		}
 	}
-	for (std::size_t boundary = 0; boundary < m_changes.size(); ++boundary)
+	for (std::size_t boundary = 0; boundary < road.changes.size(); ++boundary)
 	{
-		if (m_changes[boundary] == default_change(boundary))
+		if (road.changes[boundary] == road.default_change(boundary))
 		{
 			continue;
 		}
-		Output << "change " << lane_id(boundary) << ' ' << lane_id(boundary + 1) << ' ' << (m_changes[boundary] == change_both ? "both" : m_changes[boundary] == change_toright ? "ab" : m_changes[boundary] == change_toleft ? "ba" : "none") << ' ';
+		Output << "change " << road.lane_id(boundary) << ' ' << road.lane_id(boundary + 1) << ' ' << (road.changes[boundary] == change_both ? "both" : road.changes[boundary] == change_toright ? "ab" : road.changes[boundary] == change_toleft ? "ba" : "none") << ' ';
 	}
 	// appearance
-	Output << "surface " << m_surface << ' ' << "texlength " << m_texturelength << ' ';
+	Output << "surface " << road.surface << ' ' << "texlength " << road.texturelength << ' ';
 	char const *sidenames[]{"left", "right"};
 	for (int side = 0; side < 2; ++side)
 	{
-		auto const &data{m_sides[side]};
+		auto const &data{road.sides[side]};
 		if (data.type == side_type::none)
 		{
 			continue;
 		}
 		Output << "side " << sidenames[side] << ' ' << (data.type == side_type::shoulder ? "shoulder" : "sidewalk") << ' ' << data.width << ' ' << (data.material.empty() ? "none" : data.material) << ' ';
 	}
-	Output << "kerb " << m_kerbheight << ' ' << "slope " << m_slope.x << ' ' << m_slope.y << ' ' << "markings " << (m_markings == marking_colour::white ? "white" : m_markings == marking_colour::orange ? "orange" : "none") << ' ';
+	Output << "kerb " << road.kerbheight << ' ' << "slope " << road.slope.x << ' ' << road.slope.y << ' ' << "markings " << (road.markings == marking_colour::white ? "white" : road.markings == marking_colour::orange ? "orange" : "none") << ' ';
 	// properties passed on to the lanes
-	Output << "friction " << m_friction << ' ' << "environment " << m_environment << ' ';
+	Output << "friction " << road.friction << ' ' << "environment " << road.environment << ' ';
 	// footer
 	Output << "endroad"
 	       << "\n";
@@ -934,7 +1086,7 @@ void road_table::InitRoads()
 	}
 }
 
-// generates geometry of the roads and inserts it in the region
+// generates geometry of the roads and puts it in the scene
 void road_table::create_geometry(scene::scratch_data &Scratchpad)
 {
 	if (simulation::Region == nullptr)
@@ -947,11 +1099,20 @@ void road_table::create_geometry(scene::scratch_data &Scratchpad)
 		{
 			continue;
 		}
+		if (Global.editor_session && false == Global.NvRenderer)
+		{
+			// scenery opened for editing: the road keeps its geometry apart, so it can be changed later.
+			// NOTE: the experimental renderer draws only what the scenery had when it was loaded
+			road->show();
+			continue;
+		}
+		// otherwise the geometry joins the rest of the scenery, which lets it be drawn along with it at no extra cost
 		for (auto &shape : road->create_shapes())
 		{
-			// the geometry is already where it belongs, so the placement set by the scenery isn't to be applied to it
+			// it's already where it belongs, so the placement set by the scenery isn't to be applied to it
 			simulation::Region->insert(shape, Scratchpad, false);
 		}
+		road->merged(true);
 	}
 }
 

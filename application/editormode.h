@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorOrthophoto.hpp"
 #include "editor/editorTrack.hpp"
 #include "editor/editorAlignment.hpp"
+#include "editor/editorRoad.hpp"
 
 #include <array>
 #include <chrono>
@@ -90,7 +91,7 @@ class editor_mode : public application_mode
 
 	struct EditorSnapshot
 	{
-		enum class Action { Move, Rotate, Scale, Add, Delete, TrackEdit, Other };
+		enum class Action { Move, Rotate, Scale, Add, Delete, TrackEdit, Other, RoadEdit };
 
 		Action action{Action::Other};
 		std::string node_name;          // node identifier (basic_node::name())
@@ -106,6 +107,9 @@ class editor_mode : public application_mode
 		std::vector<std::pair<TTrack *, editor_track::state>> tracks;
 		std::vector<TTrack *> created;
 		std::vector<TTrack *> removed;
+		std::vector<std::pair<road_node *, road_node::state>> roads; // road pieces with what they were like before the change
+		std::vector<road_node *> roads_created;
+		std::vector<road_node *> roads_removed;
 
 	};
 	void push_snapshot(scene::basic_node *node, EditorSnapshot::Action Action = EditorSnapshot::Action::Move, std::string const &Serialized = std::string());
@@ -481,4 +485,40 @@ class editor_mode : public application_mode
 	float m_track_snap_radius{1.0f};
 	bool m_track_align_tangent{true};
 	bool m_track_drag_connected{true};
+
+	// roads: a menu and a window of their own, independent from the edit modes of the toolset
+	struct road_tool
+	{
+		bool window{false}; // the road window is open, the left mouse button belongs to its tools
+		bool lanes{true}; // lanes of the roads are drawn as trajectories
+		int tool{0}; // 0: select, 1: build
+		road_node *selected{nullptr};
+		road_node::state settings; // layout shown in the window: of the selected piece, or of the pieces about to be built
+		bool whole{true}; // layout changes go to every piece of the road the selected one belongs to
+		bool chain{false}; // the point to build from is set
+		glm::dvec3 point{0.0}; // where the next piece starts
+		glm::dvec2 direction{0.0, 1.0}; // the way it has to leave that point
+		bool hasdirection{false};
+		bool reversed{false}; // the pieces are laid from their ends, to carry on a road from its start
+		glm::dvec3 mouse{0.0};
+		std::string status;
+		char surface[128]{};
+		char sides[2][128]{};
+		char filter[64]{"asph"};
+	};
+	void render_road_menu();
+	void render_road_window();
+	bool render_road_layout(road_node::state &State);
+	void draw_road_overlay() const;
+	void update_road_tool();
+	void road_click();
+	void road_select(road_node *Road);
+	void road_apply();
+	bool road_delete();
+	bool road_split();
+	void road_cancel();
+	std::vector<segment_data> road_preview(editor_road::loose_end &Snap, std::string &Error) const;
+	void push_road_snapshot(std::vector<std::pair<road_node *, road_node::state>> States, std::vector<road_node *> Created, std::vector<road_node *> Removed);
+	void restore_road_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo);
+	road_tool m_roadtool;
 };

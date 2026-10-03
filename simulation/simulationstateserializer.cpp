@@ -519,6 +519,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         scene::Groups.insert( scene::Groups.handle(), road );
         // the lanes are regular paths, registered right away so they get joined with their neighbours along with the tracks
         road->create_lanes();
+        scene::Layers.track( road, { sourcebegin, Input.TokenEnd() } );
     }
     else if( nodedata.type == "traction" ) {
 
@@ -693,6 +694,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         static std::unordered_map<std::string, scene::layer_item> const itemtypes {
             { "dynamic", scene::layer_item::vehicle },
             { "track", scene::layer_item::track },
+            { "road", scene::layer_item::track },
             { "traction", scene::layer_item::traction },
             { "tractionpowersource", scene::layer_item::powersource },
             { "model", scene::layer_item::model },
@@ -1398,7 +1400,7 @@ state_serializer::export_nodes_to_stream(std::ostream &scmfile, bool Dirty) cons
 	// roads
 	scmfile << "// roads\n";
 	for( auto const *road : Roads.sequence() ) {
-		if( road != nullptr && road->dirty() == Dirty && road->group() == null_handle ) {
+		if( road != nullptr && false == road->m_editorremoved && road->dirty() == Dirty && road->group() == null_handle ) {
 			road->export_as_text( scmfile );
 		}
 	}
