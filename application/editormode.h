@@ -540,6 +540,9 @@ class editor_mode : public application_mode, private editor_track::observer
 	void profile_open_stored(std::size_t const Index);
 	void profile_edited();
 	void render_profile_window();
+	void render_profile_source();
+	bool render_profile_parameters();
+	void render_profile_issues();
 	void profile_open(TTrack *From, TTrack *To);
 	void profile_open_run(TTrack &Track);
 	void profile_resample();

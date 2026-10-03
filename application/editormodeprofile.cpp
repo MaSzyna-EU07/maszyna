@@ -537,6 +537,48 @@ void editor_mode::render_profile_window()
 		ImGui::End();
 		return;
 	}
+	render_profile_source();
+	if (state.route.spans.empty())
+	{
+		ImGui::TextDisabled("Select a path in the viewport, then build the route along the line, or set its start and end paths (switches are passed through)");
+		if (state.picked_from != nullptr)
+			ImGui::Text("Start: %s", state.picked_from->name().c_str());
+		if (false == state.error.empty())
+			ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "%s", state.error.c_str());
+		ImGui::End();
+		return;
+	}
+	ImGui::Text("Route: %zu paths, %.2f m, %s ... %s", state.route.spans.size(), state.route.length, state.route.spans.front().track->name().c_str(), state.route.spans.back().track->name().c_str());
+	{
+		bool reversed;
+		auto const stored{profile_find(reversed)};
+		if (stored >= 0)
+		{
+			ImGui::TextDisabled("Design kept in %s%s", scene::Layers.layer(m_profiles[stored].layer).name.c_str(), state.changed ? ", changes go there on save" : "");
+			ImGui::SameLine();
+			if (ImGui::SmallButton("Forget the design"))
+				profile_forget();
+		}
+		else if (state.changed)
+			ImGui::TextDisabled("The design goes to the scenery file of the route on save");
+	}
+
+	if (render_profile_parameters())
+		profile_edited();
+
+	render_profile_canvas();
+
+	ImGui::Columns(2, "##profilecolumns", true);
+	render_profile_point();
+	ImGui::NextColumn();
+	render_profile_issues();
+	ImGui::Columns(1);
+	ImGui::End();
+}
+
+void editor_mode::render_profile_source()
+{
+	auto &state{m_profile};
 	auto *selected{selected_track()};
 	if (ImGui::Button("Along the line from the selected path") && selected != nullptr)
 		profile_open_run(*selected);
@@ -566,31 +608,11 @@ void editor_mode::render_profile_window()
 		}
 		ImGui::TreePop();
 	}
-	if (state.route.spans.empty())
-	{
-		ImGui::TextDisabled("Select a path in the viewport, then build the route along the line, or set its start and end paths (switches are passed through)");
-		if (state.picked_from != nullptr)
-			ImGui::Text("Start: %s", state.picked_from->name().c_str());
-		if (false == state.error.empty())
-			ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "%s", state.error.c_str());
-		ImGui::End();
-		return;
-	}
-	ImGui::Text("Route: %zu paths, %.2f m, %s ... %s", state.route.spans.size(), state.route.length, state.route.spans.front().track->name().c_str(), state.route.spans.back().track->name().c_str());
-	{
-		bool reversed;
-		auto const stored{profile_find(reversed)};
-		if (stored >= 0)
-		{
-			ImGui::TextDisabled("Design kept in %s%s", scene::Layers.layer(m_profiles[stored].layer).name.c_str(), state.changed ? ", changes go there on save" : "");
-			ImGui::SameLine();
-			if (ImGui::SmallButton("Forget the design"))
-				profile_forget();
-		}
-		else if (state.changed)
-			ImGui::TextDisabled("The design goes to the scenery file of the route on save");
-	}
+}
 
+bool editor_mode::render_profile_parameters()
+{
+	auto &state{m_profile};
 	auto &line{state.line};
 	bool changed{false};
 	ImGui::PushItemWidth(90.0f);
@@ -648,14 +670,12 @@ void editor_mode::render_profile_window()
 	if ((state.context.start_joined || state.context.end_joined) && ImGui::IsItemHovered())
 		ImGui::SetTooltip("Keeps the elevation of the joint and takes over the grade of the adjoining track,\n"
 		                  "with a vertical curve which starts right at the joint");
-	if (changed)
-		profile_edited();
+	return changed;
+}
 
-	render_profile_canvas();
-
-	ImGui::Columns(2, "##profilecolumns", true);
-	render_profile_point();
-	ImGui::NextColumn();
+void editor_mode::render_profile_issues()
+{
+	auto &state{m_profile};
 	ImGui::Text("Largest departure from the track: %.3f m", state.departure);
 	ImGui::BeginChild("##profileissues", ImVec2(0.0f, 0.0f), false);
 	if (state.issues.empty())
@@ -681,8 +701,6 @@ void editor_mode::render_profile_window()
 	if (false == state.error.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "%s", state.error.c_str());
 	ImGui::EndChild();
-	ImGui::Columns(1);
-	ImGui::End();
 }
 
 void editor_mode::render_profile_point()
