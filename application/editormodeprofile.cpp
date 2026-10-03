@@ -869,6 +869,11 @@ void editor_mode::render_profile_canvas()
 	}
 
 	auto const curves{profile::curves(line)};
+	auto const mouse_distance2 = [&](double Chainage, double Elevation) {
+		auto const dx{x_of(Chainage) - mouse.x};
+		auto const dy{y_of(Elevation) - mouse.y};
+		return dx * dx + dy * dy;
+	};
 	auto const hit_point = [&]() {
 		int hit{-1};
 		float best{64.0f};
@@ -876,11 +881,9 @@ void editor_mode::render_profile_canvas()
 		{
 			if (points[i].joint)
 				continue;
-			auto const dx{x_of(points[i].chainage) - mouse.x};
-			auto const dy{y_of(points[i].elevation) - mouse.y};
-			if (dx * dx + dy * dy < best)
+			if (auto const distance{mouse_distance2(points[i].chainage, points[i].elevation)}; distance < best)
 			{
-				best = dx * dx + dy * dy;
+				best = distance;
 				hit = i;
 			}
 		}
@@ -892,9 +895,7 @@ void editor_mode::render_profile_canvas()
 			if (points[c.point].joint)
 				continue;
 			auto const chainage{points[c.point].chainage};
-			auto const dx{x_of(chainage) - mouse.x};
-			auto const dy{y_of(profile::elevation(line, chainage)) - mouse.y};
-			if (dx * dx + dy * dy < 64.0f)
+			if (mouse_distance2(chainage, profile::elevation(line, chainage)) < 64.0f)
 				return static_cast<int>(c.point);
 		}
 		return -1;

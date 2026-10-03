@@ -11,7 +11,11 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/editormode.h"
 #include "rendering/renderer.h"
+#include "utilities/Globals.h"
 #include "imgui/imgui.h"
+#include "imgui/ImGuizmo.h"
+
+#include <limits>
 
 // world to screen projection of the current camera, for overlays drawn with ImGui
 class screen_projection
@@ -54,10 +58,45 @@ class screen_projection
 			b = glm::mix(b, a, (kNear - b.w) / (a.w - b.w));
 		Drawlist->AddLine(screen(a), screen(b), Color, Thickness);
 	}
+	// squared distance on the screen from the mouse cursor to the point, the largest float for points behind the camera
+	float mouse_distance2(glm::dvec3 const &Point) const
+	{
+		ImVec2 position;
+		if (false == project(Point, position))
+			return std::numeric_limits<float>::max();
+		auto const &mouse{ImGui::GetIO().MousePos};
+		return (position.x - mouse.x) * (position.x - mouse.x) + (position.y - mouse.y) * (position.y - mouse.y);
+	}
 
   private:
 	static constexpr float kNear{0.1f};
 	ImVec2 m_size;
 	glm::dvec3 m_camera;
 	glm::mat4 m_viewprojection;
+};
+
+// starts a gizmo frame over the whole display, the view and the projection are those of the current camera
+struct gizmo_frame
+{
+	glm::mat4 view;
+	glm::mat4 projection;
+	glm::dvec3 camera;
+
+	gizmo_frame()
+	{
+		ImGuizmo::BeginFrame();
+		ImGuizmo::SetOrthographic(Global.EditorOrtho);
+		ImGuiIO const &io = ImGui::GetIO();
+		ImGuizmo::SetRect(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
+		view = GfxRenderer->Camera_View_Matrix();
+		camera = GfxRenderer->Camera_Position();
+		projection = editor_mode::projection_matrix(io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f);
+	}
+	// moves the gizmo, placed at the point given in world space, with snapping to the step when ctrl is held
+	bool manipulate(ImGuizmo::OPERATION const Operation, glm::mat4 &Gizmo, float const Snap, glm::mat4 *Delta = nullptr) const
+	{
+		glm::vec3 snapvalue(Snap);
+		float const *snap = Global.ctrlState && Snap > 0.0f ? &snapvalue.x : nullptr;
+		return ImGuizmo::Manipulate(&view[0][0], &projection[0][0], Operation, ImGuizmo::WORLD, &Gizmo[0][0], Delta != nullptr ? &(*Delta)[0][0] : nullptr, snap);
+	}
 };

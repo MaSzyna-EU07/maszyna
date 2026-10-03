@@ -289,7 +289,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	void select_track(scene::basic_node *Node);
 	void render_track_gizmo();
 	void commit_track_drag(bool const Force);
-	void push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created = {});
+	void push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created = {}, std::vector<TTrack *> Removed = {});
+	void trim_history();
 	void restore_track_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo);
 	editor_track::point_ref m_track_point;
 	std::vector<TTrack *> m_track_drag;

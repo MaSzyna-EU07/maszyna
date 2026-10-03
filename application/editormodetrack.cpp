@@ -108,7 +108,6 @@ bool editor_mode::pick_track_handle()
 		return false;
 
 	screen_projection const projection;
-	ImVec2 const mouse = ImGui::GetIO().MousePos;
 	float best = kHandleRadius * kHandleRadius;
 	editor_track::point_ref hit;
 	for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
@@ -116,12 +115,7 @@ bool editor_mode::pick_track_handle()
 		for (auto const kind : kPointKinds)
 		{
 			editor_track::point_ref const point{i, kind};
-			ImVec2 screen;
-			if (false == projection.project(editor_track::point_position(*track, point), screen))
-				continue;
-			float const dx = screen.x - mouse.x;
-			float const dy = screen.y - mouse.y;
-			float const distance = (dx * dx + dy * dy) * (editor_track::is_end(kind) ? 0.5f : 1.0f);
+			float const distance = projection.mouse_distance2(editor_track::point_position(*track, point)) * (editor_track::is_end(kind) ? 0.5f : 1.0f);
 			if (distance < best)
 			{
 				best = distance;
@@ -208,28 +202,18 @@ void editor_mode::render_track_gizmo()
 	}
 	bool const pointmode = ui()->mode() == nodebank_panel::TRACK && m_track_point.valid() && m_track_point.path < static_cast<int>(track->m_paths.size());
 
-	ImGuizmo::BeginFrame();
-	ImGuizmo::SetOrthographic(Global.EditorOrtho);
-	ImGuiIO const &io = ImGui::GetIO();
-	ImGuizmo::SetRect(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
-
-	glm::mat4 const view = GfxRenderer->Camera_View_Matrix();
-	glm::dvec3 const camerapos = GfxRenderer->Camera_Position();
-	float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
-	glm::mat4 const projection = editor_mode::projection_matrix(aspect);
+	gizmo_frame const frame;
 
 	ImGuizmo::OPERATION const operation = (false == pointmode && m_gizmo_op == gizmo_operation::rotate) ? ImGuizmo::ROTATE_Y : ImGuizmo::TRANSLATE;
 
 	if (false == m_track_gizmo_using)
 	{
 		auto const anchor = pointmode ? editor_track::point_position(*track, m_track_point) : editor_track::pivot(*track);
-		m_track_gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(anchor - camerapos));
+		m_track_gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(anchor - frame.camera));
 	}
 
-	glm::vec3 snapvalue(operation == ImGuizmo::ROTATE_Y ? 5.0f : m_gizmo_snap);
-	float const *snap = Global.ctrlState && snapvalue.x > 0.0f ? glm::value_ptr(snapvalue) : nullptr;
 	glm::mat4 delta(1.0f);
-	ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection), operation, ImGuizmo::WORLD, glm::value_ptr(m_track_gizmo), glm::value_ptr(delta), snap);
+	frame.manipulate(operation, m_track_gizmo, operation == ImGuizmo::ROTATE_Y ? 5.0f : m_gizmo_snap, &delta);
 
 	if (ImGuizmo::IsUsing())
 	{
@@ -269,7 +253,7 @@ void editor_mode::render_track_gizmo()
 		}
 		else if (pointmode)
 		{
-			glm::dvec3 const position = camerapos + glm::dvec3(m_track_gizmo[3]);
+			glm::dvec3 const position = frame.camera + glm::dvec3(m_track_gizmo[3]);
 			editor_track::move_point(*track, m_track_point, position);
 			for (auto const &connection : m_track_drag_points)
 				editor_track::move_point(*connection.first, connection.second, position);
@@ -318,15 +302,19 @@ void editor_mode::commit_track_drag(bool const Force)
 	m_track_last_commit = now;
 }
 
-void editor_mode::push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created)
+void editor_mode::trim_history()
 {
-	if (States.empty() && Created.empty())
-		return;
-
 	if (m_max_history_size >= 0 && (int)m_history.size() >= m_max_history_size)
 		m_history.erase(m_history.begin(), m_history.begin() + ((int)m_history.size() - m_max_history_size + 1));
+}
 
-	auto *track = States.empty() ? Created.front() : States.front().first;
+void editor_mode::push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::vector<TTrack *> Removed)
+{
+	if (States.empty() && Created.empty() && Removed.empty())
+		return;
+
+	trim_history();
+	auto *track = false == States.empty() ? States.front().first : false == Created.empty() ? Created.front() : Removed.front();
 	EditorSnapshot snap;
 	snap.action = EditorSnapshot::Action::TrackEdit;
 	snap.node_name = track->name();
@@ -336,6 +324,7 @@ void editor_mode::push_track_snapshot(std::vector<std::pair<TTrack *, editor_tra
 	snap.tracks = std::move(States);
 	snap.created = std::move(Created);
 	infra_attach(snap);
+	snap.removed = std::move(Removed);
 	m_history.push_back(std::move(snap));
 	g_redo.clear();
 }
@@ -1019,33 +1008,22 @@ bool editor_mode::pick_route_vertex()
 	if (false == route_active())
 		return false;
 	screen_projection const projection;
-	ImVec2 const mouse = ImGui::GetIO().MousePos;
 	float best = kHandleRadius * kHandleRadius;
 	int hit{-1};
 	for (int i = 0; i < static_cast<int>(m_route.design.vertices.size()); ++i)
 	{
-		ImVec2 screen;
-		if (false == projection.project(route_vertex_position(i), screen))
-			continue;
-		float const dx = screen.x - mouse.x;
-		float const dy = screen.y - mouse.y;
-		if (dx * dx + dy * dy < best)
+		if (auto const distance{projection.mouse_distance2(route_vertex_position(i))}; distance < best)
 		{
-			best = dx * dx + dy * dy;
+			best = distance;
 			hit = i;
 		}
 	}
 	int griphit{-1};
 	for (int i = 0; i < static_cast<int>(m_route.result.vertex_chainages.size()) && m_route.result.length > 0.0; ++i)
 	{
-		ImVec2 screen;
-		if (false == projection.project(alignment::evaluate(m_route.result, m_route.result.vertex_chainages[i]).position, screen))
-			continue;
-		float const dx = screen.x - mouse.x;
-		float const dy = screen.y - mouse.y;
-		if (dx * dx + dy * dy < best)
+		if (auto const distance{projection.mouse_distance2(alignment::evaluate(m_route.result, m_route.result.vertex_chainages[i]).position)}; distance < best)
 		{
-			best = dx * dx + dy * dy;
+			best = distance;
 			griphit = i;
 			hit = -1;
 		}
@@ -1135,21 +1113,12 @@ void editor_mode::render_route_gizmo()
 		return;
 	}
 
-	ImGuizmo::BeginFrame();
-	ImGuizmo::SetOrthographic(Global.EditorOrtho);
-	ImGuiIO const &io = ImGui::GetIO();
-	ImGuizmo::SetRect(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
-	glm::mat4 const view = GfxRenderer->Camera_View_Matrix();
-	glm::dvec3 const camerapos = GfxRenderer->Camera_Position();
-	float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
-	glm::mat4 const projection = editor_mode::projection_matrix(aspect);
+	gizmo_frame const frame;
 
 	auto const position{grip ? alignment::evaluate(route.result, route.result.vertex_chainages[route.grip]).position : route_vertex_position(route.vertex)};
 	if (false == m_route_gizmo_using)
-		m_route_gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(position - camerapos));
-	glm::vec3 snapvalue(m_gizmo_snap);
-	float const *snap = Global.ctrlState && snapvalue.x > 0.0f ? glm::value_ptr(snapvalue) : nullptr;
-	ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, glm::value_ptr(m_route_gizmo), nullptr, snap);
+		m_route_gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(position - frame.camera));
+	frame.manipulate(ImGuizmo::TRANSLATE, m_route_gizmo, m_gizmo_snap);
 
 	if (false == ImGuizmo::IsUsing())
 	{
@@ -1161,7 +1130,7 @@ void editor_mode::render_route_gizmo()
 		return;
 	}
 	m_route_gizmo_using = true;
-	glm::dvec3 const moved{camerapos + glm::dvec3(m_route_gizmo[3])};
+	glm::dvec3 const moved{frame.camera + glm::dvec3(m_route_gizmo[3])};
 	if (grip)
 	{
 		auto &vertex{route.design.vertices[route.grip]};
@@ -1812,19 +1781,13 @@ bool editor_mode::pick_straight_handle()
 	auto const &line{current_straight()};
 	glm::dvec3 const handles[] = {line.start, line.end, (line.start + line.end) * 0.5};
 	screen_projection const projection;
-	ImVec2 const mouse = ImGui::GetIO().MousePos;
 	float best = kHandleRadius * kHandleRadius;
 	int hit{-1};
 	for (int i = 0; i < 3; ++i)
 	{
-		ImVec2 screen;
-		if (false == projection.project(handles[i], screen))
-			continue;
-		float const dx = screen.x - mouse.x;
-		float const dy = screen.y - mouse.y;
-		if (dx * dx + dy * dy < best)
+		if (auto const distance{projection.mouse_distance2(handles[i])}; distance < best)
 		{
-			best = dx * dx + dy * dy;
+			best = distance;
 			hit = i;
 		}
 	}
@@ -1897,22 +1860,13 @@ void editor_mode::render_straight_gizmo()
 		return;
 	}
 
-	ImGuizmo::BeginFrame();
-	ImGuizmo::SetOrthographic(Global.EditorOrtho);
-	ImGuiIO const &io = ImGui::GetIO();
-	ImGuizmo::SetRect(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
-	glm::mat4 const view = GfxRenderer->Camera_View_Matrix();
-	glm::dvec3 const camerapos = GfxRenderer->Camera_Position();
-	float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
-	glm::mat4 const projection = editor_mode::projection_matrix(aspect);
+	gizmo_frame const frame;
 
 	glm::dvec3 const anchors[] = {line.start, line.end, (line.start + line.end) * 0.5};
 	auto const anchor{anchors[state.handle]};
 	if (false == state.dragging)
-		state.gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(anchor - camerapos));
-	glm::vec3 snapvalue(m_gizmo_snap);
-	float const *snap = Global.ctrlState && snapvalue.x > 0.0f ? glm::value_ptr(snapvalue) : nullptr;
-	ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, glm::value_ptr(state.gizmo), nullptr, snap);
+		state.gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(anchor - frame.camera));
+	frame.manipulate(ImGuizmo::TRANSLATE, state.gizmo, m_gizmo_snap);
 
 	if (ImGuizmo::IsUsing())
 	{
@@ -1944,7 +1898,7 @@ void editor_mode::render_straight_gizmo()
 			}
 		}
 		auto const &grabbed{state.drag_line};
-		glm::dvec3 moved{camerapos + glm::dvec3(state.gizmo[3])};
+		glm::dvec3 moved{frame.camera + glm::dvec3(state.gizmo[3])};
 		std::function<glm::dvec3(glm::dvec3 const &)> transform;
 		if (state.handle == 2)
 		{
@@ -2250,21 +2204,14 @@ bool editor_mode::place_straight_tool()
 void editor_mode::render_straight_tool_gizmo()
 {
 	auto &state{m_straights};
-	ImGuizmo::BeginFrame();
-	ImGuizmo::SetOrthographic(Global.EditorOrtho);
-	ImGuiIO const &io = ImGui::GetIO();
-	ImGuizmo::SetRect(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
-	glm::mat4 const view = GfxRenderer->Camera_View_Matrix();
-	glm::dvec3 const camerapos = GfxRenderer->Camera_Position();
-	float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
-	glm::mat4 const projection = editor_mode::projection_matrix(aspect);
+	gizmo_frame const frame;
 	if (false == state.tool_dragging)
-		state.tool_gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(state.tool_handle - camerapos));
-	ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, glm::value_ptr(state.tool_gizmo), nullptr, nullptr);
+		state.tool_gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(state.tool_handle - frame.camera));
+	frame.manipulate(ImGuizmo::TRANSLATE, state.tool_gizmo, 0.0f);
 	if (ImGuizmo::IsUsing())
 	{
 		state.tool_dragging = true;
-		auto const moved{camerapos + glm::dvec3(state.tool_gizmo[3])};
+		auto const moved{frame.camera + glm::dvec3(state.tool_gizmo[3])};
 		state.tool_handle = {moved.x, state.tool_handle.y, moved.z};
 	}
 	else if (state.tool_dragging)
@@ -2365,8 +2312,7 @@ void editor_mode::delete_selected_track()
 	snap.node_name = track->name();
 	snap.position = track->location();
 	snap.removed = {track};
-	if (m_max_history_size >= 0 && (int)m_history.size() >= m_max_history_size)
-		m_history.erase(m_history.begin(), m_history.begin() + ((int)m_history.size() - m_max_history_size + 1));
+	trim_history();
 	m_history.push_back(std::move(snap));
 	g_redo.clear();
 	editor_track::retire(*track);
@@ -2422,7 +2368,6 @@ bool editor_mode::start_extend()
 	if (track == nullptr || (track->eType != tt_Normal && track->eType != tt_Switch) || false == editor_track::is_supported(*track))
 		return false;
 	screen_projection const projection;
-	ImVec2 const mouse = ImGui::GetIO().MousePos;
 	for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
 	{
 		auto const &path{track->m_paths[i]};
@@ -2432,10 +2377,7 @@ bool editor_mode::start_extend()
 			if (editor_track::is_connected(*track, point))
 				continue;
 			auto const position{editor_track::point_position(*track, point)};
-			ImVec2 screen;
-			if (false == projection.project(position, screen))
-				continue;
-			if ((screen.x - mouse.x) * (screen.x - mouse.x) + (screen.y - mouse.y) * (screen.y - mouse.y) > kHandleRadius * kHandleRadius * 1.5f)
+			if (projection.mouse_distance2(position) > kHandleRadius * kHandleRadius * 1.5f)
 				continue;
 			auto const &start{path.points[segment_data::point::start]};
 			auto const &end{path.points[segment_data::point::end]};
@@ -2576,8 +2518,7 @@ void editor_mode::finish_extend()
 			editor_track::commit({insert});
 			created.push_back(insert);
 		}
-		push_track_snapshot(std::move(states), std::move(created));
-		m_history.back().removed = std::move(removed);
+		push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 		straight_refresh();
 		return;
 	}
@@ -2692,8 +2633,7 @@ void editor_mode::insert_switch(editor_track::straight const &Line, double const
 	std::vector<TTrack *> removed;
 	if (false == place_switch_on_straight(Line, m_switch.templates[m_switch.armed], nullptr, Along, Direction, Side, true, states, created, removed))
 		return;
-	push_track_snapshot(std::move(states), std::move(created));
-	m_history.back().removed = std::move(removed);
+	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 	straight_refresh();
 }
 
@@ -3408,8 +3348,7 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 	auto const parts{build_double_slip(pointA, pointB, pointC, pointD, crossing, heightfirst(alongfirst), first, direction, angle, radius, style != nullptr ? *style : *Line.tracks.front())};
 	editor_track::commit(parts);
 	created.insert(created.end(), parts.begin(), parts.end());
-	push_track_snapshot(std::move(states), std::move(created));
-	m_history.back().removed = std::move(removed);
+	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 	straight_refresh();
 	return true;
 }
@@ -3548,8 +3487,7 @@ bool editor_mode::replace_double_slip(TTrack &Part, editor_track::switch_templat
 			commitlist.push_back(track);
 	editor_track::commit(commitlist);
 	created.insert(created.end(), parts2.begin(), parts2.end());
-	push_track_snapshot(std::move(states), std::move(created));
-	m_history.back().removed = std::move(removed);
+	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 	straight_refresh();
 	return true;
 }
@@ -3729,7 +3667,6 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 		editor_track::commit({track});
 		created.push_back(track);
 	}
-	push_track_snapshot(std::move(states), std::move(created));
-	m_history.back().removed = std::move(removed);
+	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 	straight_refresh();
 }
