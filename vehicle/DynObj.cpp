@@ -2275,7 +2275,8 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
 
     if (MoverParameters->CategoryFlag & 2) // jeśli samochód
     { // ustawianie samochodow na poboczu albo na środku drogi
-        if( Track->fTrackWidth < 3.5 ) // jeśli droga wąska
+        if( Track->fTrackWidth < 3.5 // jeśli droga wąska
+         || Track->m_road != nullptr ) // a lane of a road node is one-way, the vehicle keeps to its middle
             MoverParameters->OffsetTrackH = 0.0; // to stawiamy na środku, niezależnie od stanu
         // ruchu
         else if( driveractive ) {// od 3.5m do 8.0m jedzie po środku pasa, dla

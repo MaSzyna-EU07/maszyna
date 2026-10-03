@@ -95,6 +95,7 @@ set(SOURCES
 "model/Texture.cpp"
 "utilities/Timer.cpp"
 "world/Track.cpp"
+"world/Road.cpp"
 "world/Traction.cpp"
 "world/TractionPower.cpp"
 "vehicle/Train.cpp"

@@ -173,6 +173,9 @@ bool editor_track::is_supported(TTrack const &Track)
 {
 	if ((Track.iCategoryFlag & 0x80) != 0)
 		return false;
+	// lanes are generated from their road, and change only along with it
+	if (Track.m_road != nullptr)
+		return false;
 	if (Track.eType == tt_Normal)
 		return Track.Segment != nullptr;
 	if (Track.eType == tt_Switch)

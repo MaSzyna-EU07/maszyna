@@ -43,6 +43,8 @@ class vehicle_table;
 class train_table;
 struct light_array;
 class particle_manager;
+class road_node; // kawałek drogi, z którego powstają pasy ruchu
+class road_table;
 struct dictionary_source;
 class trainset_desc;
 class scenery_desc;

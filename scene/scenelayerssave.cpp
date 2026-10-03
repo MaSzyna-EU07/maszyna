@@ -747,7 +747,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 	};
 	for (auto *path : simulation::Paths.sequence())
 	{
-		if (path == nullptr || (path->iCategoryFlag & 0x80) != 0 || path->from_template())
+		if (path == nullptr || (path->iCategoryFlag & 0x80) != 0 || path->m_road != nullptr || path->from_template())
 		{
 			continue;
 		}

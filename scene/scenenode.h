@@ -145,6 +145,9 @@ public:
     // replaces the renderable geometry handle (used by the editor when it re-uploads terrain geometry)
     void
         geometry( gfx::geometry_handle const &Handle );
+    // set lighting (used by generated geometry painted with plain colour)
+    void
+        lighting( lighting_data const &Lighting );
     // data access
     shapenode_data const &
         data() const;
@@ -175,6 +178,12 @@ inline
 void
 shape_node::geometry( gfx::geometry_handle const &Handle ) {
     m_data.geometry = Handle;
+}
+// set lighting
+inline
+void
+shape_node::lighting( lighting_data const &Lighting ) {
+    m_data.lighting = Lighting;
 }
 // data access
 inline

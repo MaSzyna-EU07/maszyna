@@ -25,6 +25,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/AnimModel.h"
 #include "rendering/lightarray.h"
 #include "world/TractionPower.h"
+#include "world/Road.h"
 #include "application/application.h"
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
@@ -176,6 +177,10 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 		// as long as the scenario file wasn't rainsted-created base file override
 		Region->serialize( state->scenariofile );
 	}
+
+	// geometry of the roads is generated on each load instead of being kept in the binary terrain file,
+	// so it's inserted in the region only after that file had its chance to be written
+	simulation::Roads.create_geometry( Scratchpad );
 
 	return false;
 }
@@ -393,6 +398,7 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
     }
 
     simulation::Paths.InitTracks();
+    simulation::Roads.InitRoads();
     simulation::Traction.InitTraction();
     simulation::Events.InitEvents();
     simulation::Events.InitLaunchers();
@@ -498,6 +504,21 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         scene::Groups.insert( scene::Groups.handle(), path );
         simulation::Region->insert_and_register( path );
         scene::Layers.track( path, { sourcebegin, Input.TokenEnd() } );
+    }
+    else if( nodedata.type == "road" ) {
+
+        auto *road { new road_node( nodedata ) };
+        road->import(
+            Input,
+            ( Scratchpad.location.offset.empty() ?
+                glm::dvec3 { 0.0 } :
+                glm::dvec3 { Scratchpad.location.offset.top() } ) );
+        if( false == simulation::Roads.insert( road ) ) {
+            ErrorLog( "Bad scenario: duplicate road name \"" + road->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
+        }
+        scene::Groups.insert( scene::Groups.handle(), road );
+        // the lanes are regular paths, registered right away so they get joined with their neighbours along with the tracks
+        road->create_lanes();
     }
     else if( nodedata.type == "traction" ) {
 
@@ -1366,8 +1387,19 @@ state_serializer::export_nodes_to_stream(std::ostream &scmfile, bool Dirty) cons
 		if( path == nullptr || path->m_editorremoved ) {
 			continue;
 		}
+		if( path->m_road != nullptr ) {
+			// lanes are generated anew from their road
+			continue;
+		}
 		if( path->dirty() == Dirty && path->group() == null_handle ) {
 			path->export_as_text( scmfile );
+		}
+	}
+	// roads
+	scmfile << "// roads\n";
+	for( auto const *road : Roads.sequence() ) {
+		if( road != nullptr && road->dirty() == Dirty && road->group() == null_handle ) {
+			road->export_as_text( scmfile );
 		}
 	}
 	// traction
@@ -1425,7 +1457,7 @@ TAnimModel *state_serializer::create_model(const std::string &src, const std::st
 std::pair<int, int> state_serializer::preview_include(std::string const &Directive, scene::layer_context const &Context, scene::layer_handle Layer, scene::instance_handle Instance) {
 	// statements which take more than a single token, with the tokens ending them
 	static std::unordered_map<std::string, std::string> const nodeends {
-	    { "dynamic", "enddynamic" }, { "track", "endtrack" }, { "traction", "endtraction" }, { "tractionpowersource", "end" }, { "model", "endmodel" },
+	    { "dynamic", "enddynamic" }, { "track", "endtrack" }, { "road", "endroad" }, { "traction", "endtraction" }, { "tractionpowersource", "end" }, { "model", "endmodel" },
 	    { "triangles", "endtri" }, { "triangle_strip", "endtri" }, { "triangle_fan", "endtri" }, { "lines", "endline" }, { "line_strip", "endline" }, { "line_loop", "endline" },
 	    { "memcell", "endmemcell" }, { "eventlauncher", "end" }, { "sound", "endsound" } };
 	static std::unordered_map<std::string, std::string> const statementends {

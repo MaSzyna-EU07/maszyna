@@ -82,6 +82,7 @@ extern state_manager State;
 extern event_manager Events;
 extern memory_table Memory;
 extern path_table Paths;
+extern road_table Roads;
 extern traction_table Traction;
 extern powergridsource_table Powergrid;
 extern instance_table Instances;

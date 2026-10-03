@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Event.h"
 #include "world/MemCell.h"
 #include "world/Track.h"
+#include "world/Road.h"
 #include "world/Traction.h"
 #include "world/TractionPower.h"
 #include "audio/sound.h"
@@ -36,6 +37,7 @@ state_manager State;
 event_manager Events;
 memory_table Memory;
 path_table Paths;
+road_table Roads;
 traction_table Traction;
 powergridsource_table Powergrid;
 instance_table Instances;
