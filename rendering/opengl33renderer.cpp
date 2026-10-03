@@ -4886,7 +4886,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 			{ // tekst renderujemy w specjalny sposób, zamiast submodeli z łańcucha Child
 				if (Submodel->pasText != nullptr)
 				{
-					// znaki do wyświetlenia; tekst może być zapisany w utf-8 albo w windows-1250
+					// characters to draw; the text can be encoded in utf-8 or in windows-1250
 					for (auto *p : Submodel->text_letters(*Submodel->pasText))
 					{ // na razie tylko jako przezroczyste
 						Render_Alpha(p);

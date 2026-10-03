@@ -962,10 +962,12 @@ void decode_win1250(std::string const &Text, std::u32string &Output)
 // encoded either in utf-8 or in windows-1250, so the legacy (ansi) scenery and model files work along the utf-8 ones
 std::vector<TSubModel *> const &TSubModel::text_letters(std::string const &Text)
 {
-	if (m_lettersready && Text == m_text)
+	// the sequence is prepared once for each text the display shows. the texts of the model instances don't change,
+	// so drawing a display afterwards costs a single lookup, however many instances and passes take turns
+	auto const prepared{m_textlayouts.find(Text)};
+	if (prepared != m_textlayouts.end())
 	{
-		// instances of a model tend to be drawn in a row, there's nothing to do if the text didn't change
-		return m_textletters;
+		return prepared->second;
 	}
 
 	std::u32string characters;
@@ -1002,8 +1004,7 @@ std::vector<TSubModel *> const &TSubModel::text_letters(std::string const &Text)
 		characters = ansi;
 	}
 
-	m_text = Text;
-	m_textletters.clear();
+	auto &textletters{m_textlayouts[Text]};
 	// NOTE: the first character of the text isn't displayed. the displays always worked this way, and the existing
 	// content relies on it
 	for (std::size_t idx = 1; idx < characters.size(); ++idx)
@@ -1011,10 +1012,10 @@ std::vector<TSubModel *> const &TSubModel::text_letters(std::string const &Text)
 		auto const lookup{m_letters.find(characters[idx])};
 		if (lookup != m_letters.end())
 		{
-			m_textletters.emplace_back(lookup->second);
+			textletters.emplace_back(lookup->second);
 		}
 	}
-	return m_textletters;
+	return textletters;
 }
 
 void TSubModel::ChildAdd(TSubModel *SubModel)
