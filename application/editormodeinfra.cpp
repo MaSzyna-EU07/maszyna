@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/editormode.h"
 #include "application/editorprojection.h"
+#include "editor/editorFormat.hpp"
+#include "editor/editorGeometry.hpp"
 
 #include "editor/editorIncludeInfo.hpp"
 #include "model/AnimModel.h"
@@ -40,20 +42,10 @@ http://mozilla.org/MPL/2.0/.
 namespace
 {
 
+using geometry::plan_distance;
+using geometry::plan_of;
+
 std::string const kBindingMark{"//$b"};
-
-template <typename... Args>
-std::string format(char const *Format, Args... Arguments)
-{
-	char text[256];
-	std::snprintf(text, sizeof(text), Format, Arguments...);
-	return text;
-}
-
-double plan_distance(glm::dvec3 const &A, glm::dvec3 const &B)
-{
-	return std::hypot(A.x - B.x, A.z - B.z);
-}
 
 template <typename Type_>
 bool contains(std::vector<Type_> const &Items, Type_ const &Item)
@@ -357,7 +349,7 @@ bool beside(infra::station const &Station, glm::dvec3 const &Point, bool const I
 	if (Interior)
 		return true;
 	auto const axis{infra::frame_at(Station)};
-	return std::abs(glm::dot(glm::dvec2{Point.x - axis.point.x, Point.z - axis.point.z}, axis.forward)) <= 0.5;
+	return std::abs(glm::dot(plan_of(Point - axis.point), axis.forward)) <= 0.5;
 }
 
 // nearest point of the tracks, sideways from the axis within the corridor

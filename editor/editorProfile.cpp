@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "editor/editorProfile.hpp"
+#include "editor/editorFormat.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -20,14 +21,6 @@ namespace profile
 
 namespace
 {
-
-template <typename... Args>
-std::string format(char const *Format, Args... Arguments)
-{
-	char text[256];
-	std::snprintf(text, sizeof(text), Format, Arguments...);
-	return text;
-}
 
 double polyline(line const &Line, double const Chainage)
 {

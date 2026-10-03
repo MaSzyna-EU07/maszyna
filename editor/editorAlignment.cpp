@@ -9,11 +9,12 @@ http:
 
 #include "stdafx.h"
 #include "editor/editorAlignment.hpp"
+#include "editor/editorFormat.hpp"
+#include "editor/editorGeometry.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdarg>
 #include <cstdio>
 #include <functional>
 
@@ -26,41 +27,18 @@ namespace
 double const kGravity{9.81};
 double const kPi{3.14159265358979323846};
 
-double cross(glm::dvec2 const &A, glm::dvec2 const &B)
-{
-	return A.x * B.y - A.y * B.x;
-}
+using geometry::cross;
+using geometry::plan_of;
+using geometry::turned;
 
 glm::dvec2 perpendicular(glm::dvec2 const &Vector)
 {
 	return {-Vector.y, Vector.x};
 }
 
-glm::dvec2 rotate(glm::dvec2 const &Vector, double const Angle)
-{
-	auto const c{std::cos(Angle)};
-	auto const s{std::sin(Angle)};
-	return {Vector.x * c - Vector.y * s, Vector.x * s + Vector.y * c};
-}
-
-glm::dvec2 plan(glm::dvec3 const &Point)
-{
-	return {Point.x, Point.z};
-}
-
 double ceil_to(double const Value, double const Step)
 {
 	return std::ceil(Value / Step - 1e-9) * Step;
-}
-
-std::string format(char const *Format, ...)
-{
-	char buffer[512];
-	va_list arguments;
-	va_start(arguments, Format);
-	std::vsnprintf(buffer, sizeof(buffer), Format, arguments);
-	va_end(arguments);
-	return buffer;
 }
 
 struct local_point
@@ -157,8 +135,8 @@ void element_point(element const &Element, transition_shape const Shape, double 
 	case element_kind::arc:
 	{
 		auto const angle{Element.turn * Distance / Element.radius};
-		Position = Element.origin + rotate(Element.normal, angle);
-		Direction = rotate(Element.direction, angle);
+		Position = Element.origin + turned(Element.normal, angle);
+		Direction = turned(Element.direction, angle);
 		break;
 	}
 	case element_kind::transition_in:
@@ -290,8 +268,8 @@ result fit_between(design const &Design)
 	auto const startreserve{std::max(0.0, Design.start_reserve)};
 	auto const endreserve{std::max(0.0, Design.end_reserve)};
 
-	auto const start{plan(Design.start)};
-	auto const end{plan(Design.end)};
+	auto const start{plan_of(Design.start)};
+	auto const end{plan_of(Design.end)};
 	auto const startdirection{glm::normalize(Design.start_direction)};
 	auto const enddirection{glm::normalize(Design.end_direction)};
 	auto const count{Design.vertices.size()};
@@ -578,7 +556,7 @@ result fit_between(design const &Design)
 				push(piece);
 				auto const local{spiral_point(segment[0], segment[1], segment[2], segment[2])};
 				origin += heading * local.x + piece.normal * local.y;
-				heading = rotate(heading, side * local.angle);
+				heading = turned(heading, side * local.angle);
 			}
 			vertexchainage[k] = (startchainage + chainage) * 0.5;
 			cursor = origin;
@@ -655,7 +633,7 @@ result fit_between(design const &Design)
 		curve.length = radius * std::max(0.0, arcangle);
 		curve.origin = centre;
 		curve.normal = arcstart - centre;
-		curve.direction = rotate(directionin, side * endin.angle);
+		curve.direction = turned(directionin, side * endin.angle);
 		vertexchainage[k] = chainage + curve.length * 0.5;
 		if (curve.length > 1e-6)
 			push(curve);
@@ -796,8 +774,8 @@ result compute(design const &Design)
 
 bool tangent_intersection(design const &Design, glm::dvec2 &Point)
 {
-	auto const start{plan(Design.start)};
-	auto const offset{plan(Design.end) - start};
+	auto const start{plan_of(Design.start)};
+	auto const offset{plan_of(Design.end) - start};
 	auto const startdirection{glm::normalize(Design.start_direction)};
 	auto const enddirection{glm::normalize(Design.end_direction)};
 	auto const determinant{cross(startdirection, enddirection)};
@@ -813,7 +791,7 @@ bool tangent_intersection(design const &Design, glm::dvec2 &Point)
 
 bool collinear(design const &Design)
 {
-	auto const offset{plan(Design.end) - plan(Design.start)};
+	auto const offset{plan_of(Design.end) - plan_of(Design.start)};
 	auto const startdirection{glm::normalize(Design.start_direction)};
 	auto const enddirection{glm::normalize(Design.end_direction)};
 	return std::abs(cross(startdirection, offset)) <= 0.01 && glm::dot(startdirection, enddirection) >= std::cos(1e-4) && glm::dot(startdirection, offset) > 0.0;

@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/editormode.h"
 #include "application/editorprojection.h"
+#include "editor/editorFormat.hpp"
+#include "editor/editorGeometry.hpp"
 
 #include "world/Track.h"
 #include "scene/scenelayers.h"
@@ -27,6 +29,8 @@ http://mozilla.org/MPL/2.0/.
 namespace
 {
 
+using geometry::plan_distance;
+
 ImU32 const kGradeLine{IM_COL32(90, 230, 110, 255)};
 ImU32 const kTangents{IM_COL32(255, 210, 60, 130)};
 ImU32 const kTrack{IM_COL32(190, 190, 190, 255)};
@@ -37,14 +41,6 @@ ImU32 const kSwitch{IM_COL32(160, 100, 220, 45)};
 ImU32 const kError{IM_COL32(255, 80, 70, 255)};
 ImU32 const kWarning{IM_COL32(255, 200, 60, 255)};
 
-template <typename... Args>
-std::string format(char const *Format, Args... Arguments)
-{
-	char text[256];
-	std::snprintf(text, sizeof(text), Format, Arguments...);
-	return text;
-}
-
 double nice_step(double const Approximate)
 {
 	auto const power{std::pow(10.0, std::floor(std::log10(std::max(Approximate, 1e-6))))};
@@ -52,18 +48,6 @@ double nice_step(double const Approximate)
 		if (power * factor >= Approximate)
 			return power * factor;
 	return power * 10.0;
-}
-
-glm::dvec3 position_at(std::vector<editor_track::route_sample> const &Samples, double const Chainage)
-{
-	auto const next{std::lower_bound(Samples.begin(), Samples.end(), Chainage, [](editor_track::route_sample const &Sample, double const Value) { return Sample.chainage < Value; })};
-	if (next == Samples.begin())
-		return Samples.front().position;
-	if (next == Samples.end())
-		return Samples.back().position;
-	auto const &before{*std::prev(next)};
-	auto const run{next->chainage - before.chainage};
-	return run > 1e-9 ? glm::mix(before.position, next->position, (Chainage - before.chainage) / run) : before.position;
 }
 
 double route_speed(editor_track::route const &Route)
@@ -75,11 +59,6 @@ double route_speed(editor_track::route const &Route)
 }
 
 std::string const kProfileMark{"//$p"};
-
-double plan_distance(glm::dvec3 const &A, glm::dvec3 const &B)
-{
-	return std::hypot(A.x - B.x, A.z - B.z);
-}
 
 profile::line reversed_line(profile::line Line, double const Length)
 {
@@ -224,7 +203,7 @@ int editor_mode::profile_find(bool &Reversed) const
 		return -1;
 	auto const start{state.samples.front().position};
 	auto const end{state.samples.back().position};
-	auto const middle{position_at(state.samples, state.route.length * 0.5)};
+	auto const middle{editor_track::sampled_position(state.samples, state.route.length * 0.5)};
 	for (std::size_t i = 0; i < m_profiles.size(); ++i)
 	{
 		auto const &entry{m_profiles[i]};
@@ -274,7 +253,7 @@ void editor_mode::profile_store()
 	entry.length = state.route.length;
 	entry.start = state.samples.front().position;
 	entry.end = state.samples.back().position;
-	entry.middle = position_at(state.samples, state.route.length * 0.5);
+	entry.middle = editor_track::sampled_position(state.samples, state.route.length * 0.5);
 	entry.origin = state.origin;
 	entry.line = state.line;
 	auto &points{entry.line.points};
@@ -345,7 +324,7 @@ void editor_mode::profile_open_stored(std::size_t const Index)
 			if (false == editor_track::find_route(from, to, route, error) || std::abs(route.length - entry.length) > 0.5)
 				continue;
 			auto const samples{editor_track::sample_route(route, 1.0)};
-			if (samples.empty() || plan_distance(samples.front().position, entry.start) > 0.1 || plan_distance(position_at(samples, route.length * 0.5), entry.middle) > 0.5)
+			if (samples.empty() || plan_distance(samples.front().position, entry.start) > 0.1 || plan_distance(editor_track::sampled_position(samples, route.length * 0.5), entry.middle) > 0.5)
 				continue;
 			profile_open(from, to);
 			return;
@@ -1172,7 +1151,7 @@ void editor_mode::draw_profile_overlay() const
 	auto const &points{state.line.points};
 	for (int i = 0; i < static_cast<int>(points.size()); ++i)
 	{
-		auto position{position_at(samples, points[i].chainage)};
+		auto position{editor_track::sampled_position(samples, points[i].chainage)};
 		position.y = profile::elevation(state.line, points[i].chainage);
 		ImVec2 screen;
 		if (false == projection.project(position, screen))
@@ -1183,7 +1162,7 @@ void editor_mode::draw_profile_overlay() const
 	if (state.hover >= 0.0 && state.hover <= state.route.length)
 	{
 		ImVec2 screen;
-		if (projection.project(position_at(samples, state.hover), screen))
+		if (projection.project(editor_track::sampled_position(samples, state.hover), screen))
 			drawlist->AddCircle(screen, 12.0f, IM_COL32(255, 255, 255, 230), 16, 2.5f);
 	}
 }

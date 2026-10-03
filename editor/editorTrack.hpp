@@ -25,6 +25,7 @@ class editor_track
 {
   public:
 	enum class point_kind { start, control1, control2, end };
+	static bool is_end(point_kind const Kind) { return Kind == point_kind::start || Kind == point_kind::end; }
 	struct point_ref
 	{
 		int path{-1};
@@ -108,6 +109,8 @@ class editor_track
 		double length{0.0};
 		double grade{0.0};
 		double azimuth{0.0};
+		// distance of the point from the start, measured along the line in the plan
+		double along(glm::dvec3 const &Point) const { return (Point.x - start.x) * direction.x + (Point.z - start.z) * direction.y; }
 	};
 	struct straight_tolerance
 	{
@@ -177,6 +180,7 @@ class editor_track
 	static std::vector<route_sample> sample_route(route &Route, double const Step);
 	static double sampled_elevation(std::vector<route_sample> const &Samples, double const Chainage);
 	static double sampled_grade(std::vector<route_sample> const &Samples, double const Chainage);
+	static glm::dvec3 sampled_position(std::vector<route_sample> const &Samples, double const Chainage);
 	// grade of the path which adjoins the end of the route, positive rising along the route
 	static bool adjoining_grade(route const &Route, bool const Atend, double &Grade);
 	// path off the route whose end no longer meets the adjoining path in height
@@ -211,6 +215,8 @@ class editor_track
 	static TTrack *create_path(TTrack const &Style, segment_data const &Path);
 	static TTrack *split_path(TTrack &Track, double const T);
 	static double nearest_parameter(TTrack const &Track, glm::dvec3 const &Point);
+	// point of the first path at the parameter of nearest_parameter()
+	static glm::dvec3 point_at(TTrack const &Track, double const T);
 	static std::vector<segment_data> place_switch(switch_template const &Template, glm::dvec3 const &Origin, glm::dvec2 const &Direction, int const Side, double const Grade);
 	static TTrack *create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, TTrack const &Style, std::string const &Name = {});
 	static void move_straights(std::vector<straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
