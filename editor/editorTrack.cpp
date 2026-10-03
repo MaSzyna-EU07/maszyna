@@ -2261,12 +2261,6 @@ void editor_track::retire(TTrack &Track)
 		on_retire(Track);
 }
 
-void editor_track::revive(TTrack &Track)
-{
-	Track.m_editorremoved = false;
-	commit({&Track});
-}
-
 void editor_track::rebuild_geometry(TTrack &Track)
 {
 	auto &section{simulation::Region->section(Track.location())};

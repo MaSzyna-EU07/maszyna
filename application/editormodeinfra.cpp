@@ -374,11 +374,6 @@ bool nearest_beside(Areas_ const &Areas, glm::dvec3 const &Point, double const C
 	return best >= 0.0;
 }
 
-bool station_near(std::vector<track_area> const &Areas, glm::dvec3 const &Point, double const Corridor, infra::station &Station)
-{
-	return nearest_beside(Areas, Point, Corridor, Station);
-}
-
 // paths of the whole scenery by cells of the plan, for the lookups reaching up to kReach from the axis
 class track_index
 {
@@ -662,7 +657,6 @@ void editor_mode::infra_store()
 			entry.second.insert(entry.second.begin(), "# objects bound to the paths in the track editor, they follow changes of the track; the simulation skips these lines");
 		scene::Layers.mark(entry.first, kBindingMark, std::move(entry.second));
 	}
-	m_bindings_changed = false;
 }
 
 std::vector<TTrack *> editor_mode::infra_scope() const
@@ -830,8 +824,6 @@ void editor_mode::infra_bind_chosen()
 		candidate.chosen = false;
 		++count;
 	}
-	if (count > 0)
-		m_bindings_changed = true;
 	state.status = format("%d object(s) bound, they follow the changes of the track. The bindings are kept in the scenery files on save", count);
 }
 
@@ -848,8 +840,6 @@ void editor_mode::infra_unbind(std::vector<std::size_t> Indices)
 				candidate.bound = false;
 		m_bindings.erase(m_bindings.begin() + *index);
 	}
-	if (false == Indices.empty())
-		m_bindings_changed = true;
 }
 
 infra::object_state editor_mode::infra_state_of(infra::binding const &Binding) const
@@ -973,7 +963,7 @@ void editor_mode::infra_follow(std::vector<TTrack *> const &Tracks)
 	// paths which took over may have been committed before the old ones were retired
 	std::optional<std::vector<track_area>> everywhere;
 	auto const take_over = [&](glm::dvec3 const &Foot, infra::station &Station) {
-		if (station_near(areas, Foot, 30.0, Station))
+		if (nearest_beside(areas, Foot, 30.0, Station))
 			return true;
 		if (false == everywhere.has_value())
 		{
@@ -983,7 +973,7 @@ void editor_mode::infra_follow(std::vector<TTrack *> const &Tracks)
 					everywhere->push_back(area_of(*track));
 		}
 		// only a path running where the old one did, not the one alongside
-		return station_near(*everywhere, Foot, 1.0, Station);
+		return nearest_beside(*everywhere, Foot, 1.0, Station);
 	};
 	for (auto &binding : m_bindings)
 	{

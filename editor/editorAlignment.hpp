@@ -45,9 +45,6 @@ struct vertex
 	double transition_in{0.0};
 	double transition_out{0.0};
 	double cant{0.0};
-	bool auto_elevation{true};
-	double elevation{0.0};
-	double vertical_radius{0.0};
 	bool reverse_turn{false};
 	bool compound{false};
 	double radius2{600.0};
@@ -83,7 +80,6 @@ struct recommendation
 	double cant{0.0};
 	double radius_min{0.0};
 	double transition{0.0};
-	double vertical_radius{0.0};
 };
 recommendation recommend(double const Speed, double const Radius, limits const &Limits);
 double transition_length(double const Speed, double const Radius, double const Cant, limits const &Limits);

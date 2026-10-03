@@ -472,7 +472,6 @@ class editor_mode : public application_mode
 	void render_path_parameters(TTrack &Track);
 	void render_straight_ui();
 	track_tab m_track_tab{track_tab::straights};
-	int m_track_tab_request{-1};
 	void delete_selected_track();
 	void start_straight_gesture(int const Tool);
 	void finish_straight_gesture();
@@ -575,7 +574,6 @@ class editor_mode : public application_mode
 	std::vector<infra::binding> m_bindings;
 	std::vector<std::pair<scene::layer_handle, std::string>> m_bindings_unresolved; // lines kept as they are
 	bool m_bindings_loaded{false};
-	bool m_bindings_changed{false};
 	std::vector<infra::object_state> m_infra_buffer; // states of the objects before the change in progress
 	bool m_infra_suspended{false};
 	void infra_hooks();

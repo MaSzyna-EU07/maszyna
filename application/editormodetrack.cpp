@@ -93,12 +93,10 @@ void editor_mode::select_track(scene::basic_node *Node)
 	}
 	else if (editor_track::is_straight(*track, m_straights.tolerance))
 	{
-		m_track_tab_request = 0;
 		m_track_tab = track_tab::straights;
 	}
 	else if (std::find(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), track) != m_route.chain.tracks.end() || route_from_curve(*track))
 	{
-		m_track_tab_request = 1;
 		m_track_tab = track_tab::route;
 	}
 }
@@ -803,7 +801,6 @@ void editor_mode::route_recommend(alignment::vertex &Vertex) const
 	Vertex.cant = recommended.cant;
 	Vertex.transition_in = recommended.transition;
 	Vertex.transition_out = recommended.transition;
-	Vertex.vertical_radius = 0.0;
 }
 
 void editor_mode::route_bind_ends()
@@ -1013,13 +1010,7 @@ glm::dvec3 editor_mode::route_vertex_position(int const Vertex) const
 	else
 		position = design.vertices[Vertex].position;
 
-	double height;
-	if (Vertex < static_cast<int>(result.vertex_elevations.size()))
-		height = result.vertex_elevations[Vertex];
-	else if (false == design.vertices[Vertex].auto_elevation)
-		height = design.vertices[Vertex].elevation;
-	else
-		height = design.start.y + (design.end.y - design.start.y) * (Vertex + 1) / (count + 1.0);
+	auto const height{Vertex < static_cast<int>(result.vertex_elevations.size()) ? result.vertex_elevations[Vertex] : design.start.y + (design.end.y - design.start.y) * (Vertex + 1) / (count + 1.0)};
 	return {position.x, height, position.y};
 }
 
@@ -2361,7 +2352,6 @@ void editor_mode::toggle_straight_set(TTrack &Track)
 		state.set.push_back(line);
 	m_node = &Track;
 	ui()->set_node(m_node);
-	m_track_tab_request = 0;
 	m_track_tab = track_tab::straights;
 }
 

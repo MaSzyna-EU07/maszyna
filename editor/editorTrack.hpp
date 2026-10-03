@@ -222,7 +222,6 @@ class editor_track
 	static void move_straights(std::vector<straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
 	static std::vector<TTrack *> relay(chain const &Chain, std::vector<segment_data> const &Pieces);
 	static void retire(TTrack &Track);
-	static void revive(TTrack &Track);
 
 	static std::string material_name(material_handle const Material);
 	static material_handle fetch_material(std::string const &Name);

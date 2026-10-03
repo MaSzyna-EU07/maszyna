@@ -245,7 +245,6 @@ recommendation recommend(double const Speed, double const Radius, limits const &
 	auto const factor{Limits.gauge / (kGravity * 12.96)};
 	auto const allowance{Limits.gauge * Limits.unbalanced / kGravity};
 	result.radius_min = factor * Speed * Speed / (Limits.cant_max + allowance);
-	result.vertical_radius = std::max(Limits.vertical_min, Limits.vertical_factor * Speed * Speed);
 	if (Radius <= 0.0)
 		return result;
 	result.cant_equilibrium = factor * Speed * Speed / Radius;
@@ -712,12 +711,11 @@ result fit_between(design const &Design)
 
 	r.vertex_chainages = vertexchainage;
 	r.profile.push_back({0.0, Design.start.y, 0.0, 0.0});
+	auto const radius{std::max(Design.norms.vertical_min, Design.norms.vertical_factor * Design.speed * Design.speed)};
 	for (std::size_t k = 0; k < count; ++k)
 	{
-		auto const &vertex{Design.vertices[k]};
-		auto const elevation{vertex.auto_elevation ? Design.start.y + (Design.end.y - Design.start.y) * vertexchainage[k] / std::max(r.length, 1e-6) : vertex.elevation};
+		auto const elevation{Design.start.y + (Design.end.y - Design.start.y) * vertexchainage[k] / std::max(r.length, 1e-6)};
 		r.vertex_elevations.push_back(elevation);
-		auto const radius{vertex.vertical_radius > 0.0 ? vertex.vertical_radius : std::max(Design.norms.vertical_min, Design.norms.vertical_factor * Design.speed * Design.speed)};
 		if (vertexchainage[k] <= r.profile.back().chainage + 1e-3)
 			continue;
 		r.profile.push_back({vertexchainage[k], elevation, radius, 0.0});
