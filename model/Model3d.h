@@ -159,8 +159,7 @@ public: // chwilowo
     // text display (TP_TEXT) data, filled on first use
     std::unordered_map<char32_t, TSubModel *> m_letters; // sub-models of the available characters, by unicode code point
     bool m_lettersready { false }; // whether the character lookup was built yet
-    std::string m_text; // text the sequence below was prepared for
-    std::vector<TSubModel *> m_textletters; // sub-models of consecutive characters of that text
+    std::unordered_map<std::string, std::vector<TSubModel *>> m_textlayouts; // sub-models of consecutive characters, for each text shown
     TSubModel *Parent{ nullptr }; // nadrzędny, np. do wymnażania macierzy
     int iVisible { 1 }; // roboczy stan widoczności
     float fVisible { 1.f }; // visibility level
