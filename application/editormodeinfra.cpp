@@ -567,10 +567,7 @@ std::optional<infra::binding> read_binding(std::string const &Text, scene::layer
 			break;
 		}
 		auto const &point{points[std::min<std::size_t>(i, points.size() - 1)]};
-		double s;
-		bool interior;
-		infra::project((*track)->m_paths[path], point, s, interior);
-		binding.anchors.push_back(infra::make_anchor({*track, path, s}, point));
+		binding.anchors.push_back(infra::make_anchor(*track, path, point));
 	}
 	if (false == found || binding.anchors.size() != points.size())
 		return std::nullopt;
@@ -938,10 +935,7 @@ void editor_mode::track_captured(TTrack const &Track)
 				auto placed{anchor};
 				if (glm::distance(infra::place(placed), points[i]) <= 0.01)
 					continue;
-				double s;
-				bool interior;
-				infra::project(path, points[i], s, interior);
-				anchor = infra::make_anchor({anchor.at.track, anchor.at.path, s}, points[i]);
+				anchor = infra::make_anchor(anchor.at.track, anchor.at.path, points[i]);
 			}
 			if (binding.turns && yaw.has_value() && binding.anchors.front().at.track == &Track)
 				binding.yaw = turn_of(binding, *yaw);
@@ -1189,10 +1183,7 @@ void editor_mode::infra_rebase()
 				binding.lost = true;
 				continue;
 			}
-			double s;
-			bool interior;
-			infra::project(anchor.at.track->m_paths[anchor.at.path], points[i], s, interior);
-			anchor = infra::make_anchor({anchor.at.track, anchor.at.path, s}, points[i]);
+			anchor = infra::make_anchor(anchor.at.track, anchor.at.path, points[i]);
 		}
 		if (binding.turns && yaw.has_value())
 			binding.yaw = turn_of(binding, *yaw);

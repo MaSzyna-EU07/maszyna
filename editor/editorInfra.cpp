@@ -222,6 +222,14 @@ double heading(glm::dvec2 const &Forward)
 	return glm::degrees(std::atan2(Forward.x, Forward.y));
 }
 
+anchor make_anchor(TTrack *Track, int const Path, glm::dvec3 const &Point)
+{
+	double s;
+	bool interior;
+	project(Track->m_paths[Path], Point, s, interior);
+	return make_anchor({Track, Path, s}, Point);
+}
+
 anchor make_anchor(station const &At, glm::dvec3 const &Point)
 {
 	anchor result;

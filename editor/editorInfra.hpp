@@ -83,6 +83,8 @@ struct anchor
 	double length{0.0};
 };
 anchor make_anchor(station const &At, glm::dvec3 const &Point);
+// anchor at the place of the path nearest to the point
+anchor make_anchor(TTrack *Track, int const Path, glm::dvec3 const &Point);
 // location for the current geometry of the path
 glm::dvec3 place(anchor &Anchor);
 
