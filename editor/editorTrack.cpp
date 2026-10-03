@@ -1295,6 +1295,486 @@ TTrack *editor_track::take_straight(straight_run const &Run, TTrack *Edge, glm::
 	return edge;
 }
 
+namespace
+{
+
+struct bezier
+{
+	glm::dvec3 p0, p1, p2, p3;
+	explicit bezier(segment_data const &Path)
+	{
+		p0 = Path.points[segment_data::point::start];
+		p3 = Path.points[segment_data::point::end];
+		auto const &control1{Path.points[segment_data::point::control1]};
+		auto const &control2{Path.points[segment_data::point::control2]};
+		if (control1 == glm::dvec3{} && control2 == glm::dvec3{})
+		{
+			p1 = glm::mix(p0, p3, 1.0 / 3.0);
+			p2 = glm::mix(p0, p3, 2.0 / 3.0);
+		}
+		else
+		{
+			p1 = p0 + control1;
+			p2 = p3 + control2;
+		}
+	}
+	glm::dvec3 point(double const T) const
+	{
+		auto const u{1.0 - T};
+		return u * u * u * p0 + 3.0 * u * u * T * p1 + 3.0 * u * T * T * p2 + T * T * T * p3;
+	}
+	glm::dvec3 first(double const T) const
+	{
+		auto const u{1.0 - T};
+		return 3.0 * u * u * (p1 - p0) + 6.0 * u * T * (p2 - p1) + 3.0 * T * T * (p3 - p2);
+	}
+	glm::dvec3 second(double const T) const
+	{
+		return 6.0 * (1.0 - T) * (p2 - 2.0 * p1 + p0) + 6.0 * T * (p3 - 2.0 * p2 + p1);
+	}
+	double plan_length(int const Steps = 32) const
+	{
+		double length{0.0};
+		auto previous{plan_of(point(0.0))};
+		for (int i = 1; i <= Steps; ++i)
+		{
+			auto const next{plan_of(point(static_cast<double>(i) / Steps))};
+			length += glm::distance(previous, next);
+			previous = next;
+		}
+		return length;
+	}
+	// parameter at specified plan distance from the start
+	double parameter(double const Distance) const
+	{
+		int constexpr steps{256};
+		double length{0.0};
+		auto previous{plan_of(point(0.0))};
+		for (int i = 1; i <= steps; ++i)
+		{
+			auto const next{plan_of(point(static_cast<double>(i) / steps))};
+			auto const step{glm::distance(previous, next)};
+			if (length + step >= Distance)
+				return (i - 1 + (step > 1e-12 ? (Distance - length) / step : 0.0)) / steps;
+			length += step;
+			previous = next;
+		}
+		return 1.0;
+	}
+};
+
+using route_node = std::tuple<TTrack *, int, bool>;
+
+std::vector<route_node> route_next(route_node const &Node)
+{
+	std::vector<route_node> result;
+	auto *track{std::get<0>(Node)};
+	auto const path{std::get<1>(Node)};
+	auto const forward{std::get<2>(Node)};
+	auto const &exit{track->m_paths[path].points[forward ? segment_data::point::end : segment_data::point::start]};
+	auto *next{neighbour_at(*track, path, forward)};
+	if (next == nullptr || next == track || next->m_editorremoved || false == editor_track::is_supported(*next) || (next->iCategoryFlag & 15) != (track->iCategoryFlag & 15))
+		return result;
+	for (int i = 0; i < static_cast<int>(next->m_paths.size()); ++i)
+	{
+		auto const &candidate{next->m_paths[i]};
+		if (glm::distance(candidate.points[segment_data::point::start], exit) <= kSamePoint)
+			result.emplace_back(next, i, true);
+		else if (glm::distance(candidate.points[segment_data::point::end], exit) <= kSamePoint)
+			result.emplace_back(next, i, false);
+	}
+	return result;
+}
+
+} // namespace
+
+bool editor_track::find_route(TTrack *From, TTrack *To, route &Route, std::string &Error)
+{
+	Route = {};
+	if (From == nullptr || To == nullptr || false == is_supported(*From) || false == is_supported(*To))
+	{
+		Error = "Select the first and the last path of the route";
+		return false;
+	}
+	if (From == To)
+	{
+		Route.spans.push_back({From, 0, true});
+		Error.clear();
+		return true;
+	}
+	std::vector<route_node> nodes;
+	std::vector<int> parents;
+	std::map<route_node, int> visited;
+	for (int i = 0; i < static_cast<int>(From->m_paths.size()); ++i)
+		for (auto const forward : {true, false})
+		{
+			route_node const node{From, i, forward};
+			visited.emplace(node, static_cast<int>(nodes.size()));
+			nodes.push_back(node);
+			parents.push_back(-1);
+		}
+	int goal{-1};
+	for (std::size_t index = 0; index < nodes.size() && goal < 0 && nodes.size() < 200000; ++index)
+	{
+		for (auto const &next : route_next(nodes[index]))
+		{
+			if (std::get<0>(next) == From || visited.count(next) > 0)
+				continue;
+			visited.emplace(next, static_cast<int>(nodes.size()));
+			nodes.push_back(next);
+			parents.push_back(static_cast<int>(index));
+			if (std::get<0>(next) == To)
+			{
+				goal = static_cast<int>(nodes.size()) - 1;
+				break;
+			}
+		}
+	}
+	if (goal < 0)
+	{
+		Error = "No route connects the selected paths";
+		return false;
+	}
+	for (int index = goal; index >= 0; index = parents[index])
+		Route.spans.push_back({std::get<0>(nodes[index]), std::get<1>(nodes[index]), std::get<2>(nodes[index])});
+	std::reverse(Route.spans.begin(), Route.spans.end());
+	Error.clear();
+	return true;
+}
+
+editor_track::route editor_track::run_route(TTrack &Track, double const Maximum)
+{
+	route result;
+	if (false == is_supported(Track))
+		return result;
+	auto const walk = [&](route_node Node) {
+		std::vector<route_node> nodes;
+		double length{0.0};
+		while (nodes.size() < 5000 && length < Maximum)
+		{
+			auto candidates{route_next(Node)};
+			if (candidates.empty())
+				break;
+			auto chosen{candidates.front()};
+			for (auto const &candidate : candidates)
+				if (std::get<1>(candidate) == 0)
+					chosen = candidate;
+			auto *track{std::get<0>(chosen)};
+			if (track == &Track || std::any_of(nodes.begin(), nodes.end(), [&](route_node const &Other) { return std::get<0>(Other) == track; }))
+				break;
+			nodes.push_back(chosen);
+			length += bezier(track->m_paths[std::get<1>(chosen)]).plan_length(8);
+			Node = chosen;
+		}
+		return nodes;
+	};
+	auto const ahead{walk({&Track, 0, true})};
+	auto const behind{walk({&Track, 0, false})};
+	for (auto node = behind.rbegin(); node != behind.rend(); ++node)
+		if (std::none_of(ahead.begin(), ahead.end(), [&](route_node const &Other) { return std::get<0>(Other) == std::get<0>(*node); }))
+			result.spans.push_back({std::get<0>(*node), std::get<1>(*node), false == std::get<2>(*node)});
+	result.spans.push_back({&Track, 0, true});
+	for (auto const &node : ahead)
+		result.spans.push_back({std::get<0>(node), std::get<1>(node), std::get<2>(node)});
+	return result;
+}
+
+editor_track::route editor_track::route_of(chain const &Chain)
+{
+	route result;
+	for (std::size_t i = 0; i < Chain.tracks.size(); ++i)
+		result.spans.push_back({Chain.tracks[i], 0, Chain.forward[i]});
+	return result;
+}
+
+std::vector<editor_track::route_sample> editor_track::sample_route(route &Route, double const Step)
+{
+	std::vector<route_sample> samples;
+	double chainage{0.0};
+	for (std::size_t i = 0; i < Route.spans.size(); ++i)
+	{
+		auto &span{Route.spans[i]};
+		bezier const curve{span.track->m_paths[span.path]};
+		auto const count{std::max(2, static_cast<int>(std::ceil(curve.plan_length(16) / std::max(0.1, Step))))};
+		span.from = chainage;
+		auto previous{plan_of(curve.point(span.forward ? 0.0 : 1.0))};
+		for (int j = (samples.empty() ? 0 : 1); j <= count; ++j)
+		{
+			auto const t{span.forward ? static_cast<double>(j) / count : 1.0 - static_cast<double>(j) / count};
+			auto const position{curve.point(t)};
+			chainage += glm::distance(previous, plan_of(position));
+			previous = plan_of(position);
+			auto derivative{curve.first(t)};
+			if (false == span.forward)
+				derivative = -derivative;
+			auto const second{curve.second(t)};
+			auto const planar{std::hypot(derivative.x, derivative.z)};
+			route_sample sample;
+			sample.chainage = chainage;
+			sample.position = position;
+			sample.span = i;
+			if (planar > 1e-9)
+			{
+				sample.direction = glm::dvec2{derivative.x, derivative.z} / planar;
+				sample.grade = derivative.y / planar;
+				sample.curvature = (derivative.x * second.z - derivative.z * second.x) / (planar * planar * planar);
+			}
+			samples.push_back(sample);
+		}
+		span.to = chainage;
+	}
+	Route.length = chainage;
+	return samples;
+}
+
+namespace
+{
+
+template <typename Getter>
+double interpolate(std::vector<editor_track::route_sample> const &Samples, double const Chainage, Getter const &Get)
+{
+	if (Samples.empty())
+		return 0.0;
+	auto const next{std::lower_bound(Samples.begin(), Samples.end(), Chainage, [](editor_track::route_sample const &Sample, double const Value) { return Sample.chainage < Value; })};
+	if (next == Samples.begin())
+		return Get(Samples.front());
+	if (next == Samples.end())
+		return Get(Samples.back());
+	auto const &before{*std::prev(next)};
+	auto const run{next->chainage - before.chainage};
+	return run > 1e-9 ? Get(before) + (Get(*next) - Get(before)) * (Chainage - before.chainage) / run : Get(before);
+}
+
+void set_heights(segment_data &Path, double const Startheight, double const Endheight, double const Startgrade, double const Endgrade)
+{
+	auto &start{Path.points[segment_data::point::start]};
+	auto &end{Path.points[segment_data::point::end]};
+	auto &control1{Path.points[segment_data::point::control1]};
+	auto &control2{Path.points[segment_data::point::control2]};
+	if (control1 == glm::dvec3{} && control2 == glm::dvec3{})
+	{
+		control1 = (end - start) / 3.0;
+		control2 = (start - end) / 3.0;
+	}
+	start.y = Startheight;
+	end.y = Endheight;
+	control1.y = Startgrade * std::hypot(control1.x, control1.z);
+	control2.y = -Endgrade * std::hypot(control2.x, control2.z);
+}
+
+// the path lies in the plane through Origin which rises with Grade along Direction (unit, in plan) and is level across it
+void plane_heights(segment_data &Path, glm::dvec3 const &Origin, glm::dvec2 const &Direction, double const Grade)
+{
+	auto &start{Path.points[segment_data::point::start]};
+	auto &end{Path.points[segment_data::point::end]};
+	auto &control1{Path.points[segment_data::point::control1]};
+	auto &control2{Path.points[segment_data::point::control2]};
+	if (control1 == glm::dvec3{} && control2 == glm::dvec3{})
+	{
+		control1 = (end - start) / 3.0;
+		control2 = (start - end) / 3.0;
+	}
+	auto const height = [&](glm::dvec3 const &Point) { return Origin.y + Grade * glm::dot(glm::dvec2{Point.x - Origin.x, Point.z - Origin.z}, Direction); };
+	auto const first{start + control1};
+	auto const second{end + control2};
+	start.y = height(start);
+	end.y = height(end);
+	control1.y = height(first) - start.y;
+	control2.y = height(second) - end.y;
+}
+
+glm::dvec2 start_direction(segment_data const &Path)
+{
+	auto const &start{Path.points[segment_data::point::start]};
+	auto const &control{Path.points[segment_data::point::control1]};
+	glm::dvec2 direction{control.x, control.z};
+	if (glm::length(direction) < 1e-6)
+		direction = {Path.points[segment_data::point::end].x - start.x, Path.points[segment_data::point::end].z - start.z};
+	return glm::length(direction) > 1e-9 ? glm::normalize(direction) : glm::dvec2{1.0, 0.0};
+}
+
+} // namespace
+
+double editor_track::sampled_elevation(std::vector<route_sample> const &Samples, double const Chainage)
+{
+	return interpolate(Samples, Chainage, [](route_sample const &Sample) { return Sample.position.y; });
+}
+
+double editor_track::sampled_grade(std::vector<route_sample> const &Samples, double const Chainage)
+{
+	return interpolate(Samples, Chainage, [](route_sample const &Sample) { return Sample.grade; });
+}
+
+bool editor_track::adjoining_grade(route const &Route, bool const Atend, double &Grade)
+{
+	if (Route.spans.empty())
+		return false;
+	auto const &span{Atend ? Route.spans.back() : Route.spans.front()};
+	auto const outward{Atend ? span.forward : false == span.forward};
+	auto const next{route_next({span.track, span.path, outward})};
+	if (next.empty())
+		return false;
+	auto const &[track, path, forward]{next.front()};
+	auto const tangent{path_tangent(track->m_paths[path], false == forward)};
+	auto const plan{std::hypot(tangent.x, tangent.z)};
+	if (plan < 1e-9)
+		return false;
+	auto const along{(forward ? 1.0 : -1.0) * tangent.y / plan};
+	Grade = Atend ? along : -along;
+	return true;
+}
+
+std::vector<editor_track::height_gap> editor_track::apply_profile(route &Route, std::function<double(double)> const &Elevation, std::function<double(double)> const &Grade, std::vector<double> const &Breaks, std::vector<std::pair<TTrack *, state>> &States, std::vector<TTrack *> &Created)
+{
+	double constexpr margin{0.25};
+	auto const remember = [&](TTrack *Track) {
+		if (std::none_of(States.begin(), States.end(), [&](auto const &Entry) { return Entry.first == Track; }) && std::find(Created.begin(), Created.end(), Track) == Created.end())
+			States.emplace_back(Track, capture(*Track));
+	};
+	sample_route(Route, 1.0);
+	std::vector<route_span> spans;
+	for (auto const &span : Route.spans)
+	{
+		if (span.track->eType != tt_Normal)
+		{
+			spans.push_back(span);
+			continue;
+		}
+		std::vector<double> cuts;
+		for (auto const chainage : Breaks)
+			if (chainage > span.from + margin && chainage < span.to - margin)
+				cuts.push_back(chainage);
+		if (cuts.empty())
+		{
+			spans.push_back(span);
+			continue;
+		}
+		remember(span.track);
+		if (span.forward)
+		{
+			auto *piece{span.track};
+			auto origin{span.from};
+			spans.push_back({piece, 0, true});
+			for (auto const cut : cuts)
+			{
+				auto const t{bezier(piece->m_paths.front()).parameter(cut - origin)};
+				auto *created{split_path(*piece, t)};
+				if (created == nullptr)
+					continue;
+				Created.push_back(created);
+				spans.push_back({created, 0, true});
+				piece = created;
+				origin = cut;
+			}
+		}
+		else
+		{
+			std::vector<TTrack *> order;
+			for (auto cut = cuts.begin(); cut != cuts.end(); ++cut)
+			{
+				auto const t{bezier(span.track->m_paths.front()).parameter(span.to - *cut)};
+				auto *created{split_path(*span.track, t)};
+				if (created == nullptr)
+					continue;
+				Created.push_back(created);
+				order.push_back(created);
+			}
+			for (auto *piece : order)
+				spans.push_back({piece, 0, false});
+			spans.push_back({span.track, 0, false});
+		}
+	}
+	Route.spans = spans;
+	sample_route(Route, 1.0);
+
+	auto const on_route = [&](TTrack const *Track) {
+		return std::any_of(Route.spans.begin(), Route.spans.end(), [&](route_span const &Span) { return Span.track == Track; });
+	};
+	struct joint
+	{
+		TTrack *track;
+		int path;
+		bool atend;
+		TTrack *neighbour;
+	};
+	std::vector<joint> joints;
+	std::vector<TTrack *> changed;
+	for (auto const &span : Route.spans)
+	{
+		remember(span.track);
+		auto const startchainage{span.forward ? span.from : span.to};
+		auto const endchainage{span.forward ? span.to : span.from};
+		auto const sign{span.forward ? 1.0 : -1.0};
+		auto &path{span.track->m_paths[span.path]};
+		set_heights(path, Elevation(startchainage), Elevation(endchainage), Grade(startchainage) * sign, Grade(endchainage) * sign);
+		add_unique(changed, span.track);
+		if (span.track->eType == tt_Normal)
+			continue;
+		auto const grade{Grade((span.from + span.to) * 0.5) * sign};
+		for (int i = 0; i < static_cast<int>(span.track->m_paths.size()); ++i)
+		{
+			for (auto const atend : {false, true})
+			{
+				auto *neighbour{neighbour_at(*span.track, i, atend)};
+				if (neighbour != nullptr && false == on_route(neighbour) && std::none_of(joints.begin(), joints.end(), [&](joint const &Joint) { return Joint.track == span.track && Joint.neighbour == neighbour; }))
+					joints.push_back({span.track, i, atend, neighbour});
+			}
+			if (i != span.path)
+				plane_heights(span.track->m_paths[i], path.points[segment_data::point::start], start_direction(path), grade);
+		}
+	}
+	commit(changed);
+	sample_route(Route, 1.0);
+
+	std::vector<height_gap> gaps;
+	for (auto const &joint : joints)
+	{
+		auto const &end{joint.track->m_paths[joint.path].points[joint.atend ? segment_data::point::end : segment_data::point::start]};
+		double nearest{std::numeric_limits<double>::max()};
+		double gap{0.0};
+		for (auto const &path : joint.neighbour->m_paths)
+			for (auto const index : {segment_data::point::start, segment_data::point::end})
+			{
+				auto const &point{path.points[index]};
+				auto const distance{std::hypot(point.x - end.x, point.z - end.z)};
+				if (distance < nearest)
+				{
+					nearest = distance;
+					gap = point.y - end.y;
+				}
+			}
+		if (nearest <= kSamePoint && std::abs(gap) > 0.001)
+			gaps.push_back({joint.track, joint.neighbour, gap});
+	}
+	return gaps;
+}
+
+void editor_track::keep_heights(chain const &Chain, std::vector<segment_data> &Pieces)
+{
+	auto existing{route_of(Chain)};
+	auto const samples{sample_route(existing, 1.0)};
+	if (samples.empty() || existing.length <= 1e-6)
+		return;
+	std::vector<double> lengths;
+	double total{0.0};
+	for (auto const &piece : Pieces)
+	{
+		lengths.push_back(bezier(piece).plan_length());
+		total += lengths.back();
+	}
+	if (total <= 1e-6)
+		return;
+	auto const scale{existing.length / total};
+	double chainage{0.0};
+	for (std::size_t i = 0; i < Pieces.size(); ++i)
+	{
+		auto const from{chainage * scale};
+		auto const to{(chainage + lengths[i]) * scale};
+		set_heights(Pieces[i], sampled_elevation(samples, from), sampled_elevation(samples, to), sampled_grade(samples, from) * scale, sampled_grade(samples, to) * scale);
+		chainage += lengths[i];
+	}
+}
+
 std::vector<editor_track::switch_template> editor_track::find_switch_templates()
 {
 	std::vector<switch_template> result;

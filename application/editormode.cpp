@@ -1021,6 +1021,8 @@ bool editor_mode::update()
         draw_build_overlay();
         draw_track_hints();
         render_track_window();
+        draw_profile_overlay();
+        render_profile_window();
     }
 
     // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
@@ -1633,6 +1635,8 @@ void editor_mode::save()
         }
     }
 
+    if (m_profile.changed)
+        profile_store();
     auto const result = scene::Layers.save(rootstatements);
     if (result.success && false == rootstatements.empty())
     {

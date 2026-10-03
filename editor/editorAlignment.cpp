@@ -752,20 +752,6 @@ result fit_between(design const &Design)
 		auto const gradeafter{(r.profile[i + 1].elevation - point.elevation) / (r.profile[i + 1].chainage - point.chainage)};
 		point.tangent = point.radius * std::abs(gradeafter - gradebefore) / 2.0;
 	}
-	for (std::size_t i = 0; i + 1 < r.profile.size(); ++i)
-	{
-		if (r.profile[i].tangent + r.profile[i + 1].tangent > r.profile[i + 1].chainage - r.profile[i].chainage + 1e-6)
-			r.warnings.emplace_back(format("Vertical curves overlap between chainage %.0f m and %.0f m", r.profile[i].chainage, r.profile[i + 1].chainage));
-	}
-	if (r.profile.size() >= 2)
-	{
-		auto const first{(r.profile[1].elevation - r.profile[0].elevation) / (r.profile[1].chainage - r.profile[0].chainage)};
-		auto const last{(r.profile.back().elevation - r.profile[r.profile.size() - 2].elevation) / (r.profile.back().chainage - r.profile[r.profile.size() - 2].chainage)};
-		if (std::abs(first - Design.start_grade) > 0.0005)
-			r.warnings.emplace_back(format("Grade break at the start: %.1f per mille against %.1f of the adjoining track", first * 1000.0, Design.start_grade * 1000.0));
-		if (std::abs(last - Design.end_grade) > 0.0005)
-			r.warnings.emplace_back(format("Grade break at the end: %.1f per mille against %.1f of the adjoining track", last * 1000.0, Design.end_grade * 1000.0));
-	}
 	if (Design.start_radius > 0.0 && Design.start_radius < 10000.0)
 		r.warnings.emplace_back(format("The adjoining track at the start is curved (R %.0f m), the curvature changes abruptly", Design.start_radius));
 	if (Design.end_radius > 0.0 && Design.end_radius < 10000.0)

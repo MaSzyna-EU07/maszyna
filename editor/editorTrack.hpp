@@ -147,6 +147,51 @@ class editor_track
 	static straight_run straight_beyond(chain const &Chain, bool const Atend, straight_tolerance const &Tolerance);
 	static double run_reserve(straight_run const &Run);
 	static TTrack *take_straight(straight_run const &Run, TTrack *Edge, glm::dvec3 const &Joint, glm::dvec3 const &Cut, std::vector<std::pair<TTrack *, state>> &States, std::vector<TTrack *> &Created);
+	// sequence of paths, switches included, which a train can run along
+	struct route_span
+	{
+		TTrack *track{nullptr};
+		int path{0};
+		bool forward{true};
+		double from{0.0}; // chainage, measured in the plan
+		double to{0.0};
+	};
+	struct route
+	{
+		std::vector<route_span> spans;
+		double length{0.0};
+	};
+	static bool find_route(TTrack *From, TTrack *To, route &Route, std::string &Error);
+	// continues both ways from the path, through switches along their path 0
+	static route run_route(TTrack &Track, double const Maximum);
+	static route route_of(chain const &Chain);
+	struct route_sample
+	{
+		double chainage{0.0};
+		glm::dvec3 position{0.0};
+		glm::dvec2 direction{0.0, 1.0};
+		double grade{0.0};
+		double curvature{0.0}; // signed, 1/m, positive turning left
+		std::size_t span{0};
+	};
+	static std::vector<route_sample> sample_route(route &Route, double const Step);
+	static double sampled_elevation(std::vector<route_sample> const &Samples, double const Chainage);
+	static double sampled_grade(std::vector<route_sample> const &Samples, double const Chainage);
+	// grade of the path which adjoins the end of the route, positive rising along the route
+	static bool adjoining_grade(route const &Route, bool const Atend, double &Grade);
+	// path off the route whose end no longer meets the adjoining path in height
+	struct height_gap
+	{
+		TTrack *track{nullptr};
+		TTrack *neighbour{nullptr};
+		double gap{0.0}; // neighbour - track
+	};
+	// sets elevations of the paths of the route; regular paths are split at the chainages in Breaks,
+	// switches are tilted as a whole in the plane of their grade, branches included
+	static std::vector<height_gap> apply_profile(route &Route, std::function<double(double)> const &Elevation, std::function<double(double)> const &Grade, std::vector<double> const &Breaks, std::vector<std::pair<TTrack *, state>> &States, std::vector<TTrack *> &Created);
+	// carries elevations of the chain over to the new pieces, in proportion of the length
+	static void keep_heights(chain const &Chain, std::vector<segment_data> &Pieces);
+
 	struct switch_template
 	{
 		TTrack *source{nullptr};

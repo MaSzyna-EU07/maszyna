@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorOrthophoto.hpp"
 #include "editor/editorTrack.hpp"
 #include "editor/editorAlignment.hpp"
+#include "editor/editorProfile.hpp"
 
 #include <array>
 #include <chrono>
@@ -477,6 +478,73 @@ class editor_mode : public application_mode
 	void toggle_straight_set(TTrack &Track);
 	void draw_track_hints();
 	bool m_route_tab{true};
+
+	// vertical profile (grade line) along a route
+	struct profile_state
+	{
+		bool open{false};
+		TTrack *from{nullptr};
+		TTrack *to{nullptr};
+		TTrack *picked_from{nullptr};
+		TTrack *picked_to{nullptr};
+		double run_length{3000.0};
+		editor_track::route route;
+		std::vector<editor_track::route_sample> samples;
+		std::vector<double> terrain; // NaN where there's no terrain
+		profile::line line;
+		profile::context context;
+		std::vector<profile::issue> issues;
+		double origin{0.0}; // chainage of the start of the route
+		double departure{0.0}; // largest difference between the grade line and the track
+		double view_from{0.0};
+		double view_to{100.0};
+		double view_centre{0.0};
+		float exaggeration{20.0f};
+		bool show_terrain{true};
+		bool show_track{true};
+		bool show_plan{true};
+		int selected{-1};
+		int dragging{-1};
+		int curve_grip{-1};
+		bool panning{false};
+		bool changed{false};
+		double hover{-1.0};
+		std::string status;
+		std::string error;
+	};
+	profile_state m_profile;
+	// grade lines designed in the editor, kept in the scenery files as "//$p" comment lines
+	struct stored_profile
+	{
+		scene::layer_handle layer{null_handle};
+		double length{0.0};
+		glm::dvec3 start{0.0}, end{0.0}, middle{0.0}; // of the route, world space
+		double origin{0.0};
+		profile::line line;
+	};
+	std::vector<stored_profile> m_profiles;
+	bool m_profiles_loaded{false};
+	void profile_library_load();
+	void profile_library_mark(std::vector<scene::layer_handle> Layers);
+	int profile_find(bool &Reversed) const;
+	bool profile_restore();
+	void profile_store();
+	void profile_forget();
+	void profile_open_stored(std::size_t const Index);
+	void profile_edited();
+	void render_profile_window();
+	void profile_open(TTrack *From, TTrack *To);
+	void profile_open_run(TTrack &Track);
+	void profile_resample();
+	void profile_recognize();
+	void profile_check();
+	void profile_apply();
+	void profile_fit_view();
+	void profile_after_undo();
+	void render_profile_canvas();
+	void render_profile_point();
+	void draw_profile_overlay() const;
+
 	bool m_route_gizmo_using{false};
 	glm::mat4 m_route_gizmo{1.0f};
 	float m_track_snap_radius{1.0f};

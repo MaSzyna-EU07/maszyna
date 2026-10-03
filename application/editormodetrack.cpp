@@ -11,6 +11,7 @@ http:
 #include "stdafx.h"
 #include "application/editormode.h"
 #include "application/editoruilayer.h"
+#include "application/editorprojection.h"
 
 #include "utilities/Globals.h"
 #include "rendering/renderer.h"
@@ -30,54 +31,6 @@ http:
 
 namespace
 {
-
-class screen_projection
-{
-  public:
-	screen_projection()
-	{
-		ImGuiIO const &io = ImGui::GetIO();
-		m_size = io.DisplaySize;
-		m_camera = GfxRenderer->Camera_Position();
-		float const aspect = m_size.y > 0.0f ? m_size.x / m_size.y : 1.0f;
-		m_viewprojection = editor_mode::projection_matrix(aspect) * GfxRenderer->Camera_View_Matrix();
-	}
-
-	glm::vec4 clip(glm::dvec3 const &Point) const
-	{
-		return m_viewprojection * glm::vec4(glm::vec3(Point - m_camera), 1.0f);
-	}
-	ImVec2 screen(glm::vec4 const &Clip) const
-	{
-		return ImVec2((Clip.x / Clip.w * 0.5f + 0.5f) * m_size.x, (0.5f - Clip.y / Clip.w * 0.5f) * m_size.y);
-	}
-	bool project(glm::dvec3 const &Point, ImVec2 &Screen) const
-	{
-		auto const c = clip(Point);
-		if (c.w < kNear)
-			return false;
-		Screen = screen(c);
-		return true;
-	}
-	void line(ImDrawList *Drawlist, glm::dvec3 const &A, glm::dvec3 const &B, ImU32 const Color, float const Thickness) const
-	{
-		glm::vec4 a = clip(A);
-		glm::vec4 b = clip(B);
-		if (a.w < kNear && b.w < kNear)
-			return;
-		if (a.w < kNear)
-			a = glm::mix(a, b, (kNear - a.w) / (b.w - a.w));
-		else if (b.w < kNear)
-			b = glm::mix(b, a, (kNear - b.w) / (a.w - b.w));
-		Drawlist->AddLine(screen(a), screen(b), Color, Thickness);
-	}
-
-  private:
-	static constexpr float kNear{0.1f};
-	ImVec2 m_size;
-	glm::dvec3 m_camera;
-	glm::mat4 m_viewprojection;
-};
 
 glm::dvec3 path_point(segment_data const &Path, double const T)
 {
@@ -452,6 +405,7 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 	m_node = tracks.empty() || tracks.front()->m_editorremoved ? nullptr : tracks.front();
 	ui()->set_node(m_node);
 	straight_refresh();
+	profile_after_undo();
 }
 
 void editor_mode::render_track_ui()
@@ -459,6 +413,13 @@ void editor_mode::render_track_ui()
 	ImGui::TextDisabled("LMB on a path opens its editor: straight, curve or switch");
 	if (ImGui::Button("Open the editor window"))
 		m_track_window_open = true;
+	ImGui::SameLine();
+	if (ImGui::Button("Vertical profile (grade line)"))
+	{
+		if (auto *track{selected_track()}; track != nullptr && m_profile.route.spans.empty())
+			profile_open_run(*track);
+		m_profile.open = true;
+	}
 	if (ImGui::CollapsingHeader("Straights in the scenery"))
 		render_straights_ui();
 	render_switch_ui();
@@ -507,6 +468,8 @@ void editor_mode::render_track_window()
 		if (ImGui::SmallButton("Edit points and parameters of the single path"))
 			m_track_tab = track_tab::path;
 	}
+	if (ImGui::SmallButton("Vertical profile along this line") && selected_track() != nullptr)
+		profile_open_run(*selected_track());
 	ImGui::End();
 }
 
@@ -990,6 +953,7 @@ void editor_mode::route_apply()
 		if (std::none_of(states.begin(), states.end(), [&](auto const &Entry) { return Entry.first == track; }))
 			states.emplace_back(track, editor_track::capture(*track));
 	auto pieces{alignment::pieces(route.result, route.design, chain.tracks.size())};
+	editor_track::keep_heights(chain, pieces);
 	auto relaid{editor_track::relay(chain, pieces)};
 	auto const added{relaid.size()};
 	created.insert(created.end(), relaid.begin(), relaid.end());
@@ -1232,11 +1196,6 @@ void editor_mode::render_route_gizmo()
 		else
 			vertex.position = point;
 	}
-	if (std::abs(moved.y - position.y) > 1e-3)
-	{
-		vertex.auto_elevation = false;
-		vertex.elevation = moved.y;
-	}
 	route_update();
 }
 
@@ -1308,8 +1267,6 @@ void editor_mode::render_route_ui()
 		changed |= ImGui::InputDouble("Cant change rate (mm/s)", &norms.cant_rate, 0.0, 0.0, "%.0f");
 		changed |= ImGui::InputDouble("Cant ramp 1:(k*V), k", &norms.ramp_factor, 0.0, 0.0, "%.1f");
 		changed |= ImGui::InputDouble("Unbalanced acc. change rate (m/s3)", &norms.jerk, 0.0, 0.0, "%.2f");
-		changed |= ImGui::InputDouble("Vertical curve R >= k*V^2, k", &norms.vertical_factor, 0.0, 0.0, "%.2f");
-		changed |= ImGui::InputDouble("Vertical curve R min (m)", &norms.vertical_min, 0.0, 0.0, "%.0f");
 		changed |= ImGui::InputDouble("Straight between curves (s of travel)", &norms.tangent_min_time, 0.0, 0.0, "%.1f");
 		ImGui::PopItemWidth();
 		norms.gauge = std::max(100.0, norms.gauge);
@@ -1401,16 +1358,11 @@ void editor_mode::render_route_ui()
 		changed |= ImGui::InputDouble("Transition out (m)", &vertex.transition_out, 0.0, 0.0, "%.1f");
 		changed |= ImGui::InputDouble("Cant (mm)", &vertex.cant, 0.0, 0.0, "%.0f");
 		changed |= ImGui::Checkbox("Turn the longer way (over 180 deg)", &vertex.reverse_turn);
-		changed |= ImGui::Checkbox("Elevation from the ends", &vertex.auto_elevation);
-		if (false == vertex.auto_elevation)
-			changed |= ImGui::InputDouble("Elevation (m)", &vertex.elevation, 0.0, 0.0, "%.3f");
-		changed |= ImGui::InputDouble("Vertical curve R (0: min)", &vertex.vertical_radius, 0.0, 0.0, "%.0f");
 		ImGui::PopItemWidth();
 		vertex.radius = std::max(1.0, vertex.radius);
 		vertex.transition_in = std::max(0.0, vertex.transition_in);
 		vertex.transition_out = std::max(0.0, vertex.transition_out);
 		vertex.cant = std::max(0.0, vertex.cant);
-		vertex.vertical_radius = std::max(0.0, vertex.vertical_radius);
 		if (ImGui::SmallButton("Apply recommended for V"))
 		{
 			route_recommend(vertex);
@@ -2260,6 +2212,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 		return;
 	}
 	auto pieces{alignment::pieces(m_route.result, m_route.design, m_route.chain.tracks.size())};
+	editor_track::keep_heights(m_route.chain, pieces);
 	auto created{editor_track::relay(m_route.chain, pieces)};
 	editor_track::commit(tracks);
 	for (auto const &entry : splitstates)

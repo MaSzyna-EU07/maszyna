@@ -801,6 +801,37 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		state.patches[erased.first].edits.emplace_back(std::move(edit));
 	}
 
+	// editor data in the comment lines: the old lines go, the new ones are added to the file like new definitions
+	std::map<layer_handle, std::vector<std::string>> markedtext;
+	for (auto const &marking : m_marking)
+	{
+		auto const markedlayer{marking.first.first};
+		auto const &mark{marking.first.second};
+		if (auto const lookup{m_marked.find(markedlayer)}; lookup != m_marked.end())
+		{
+			for (auto const &line : lookup->second)
+			{
+				if (line.mark != mark)
+				{
+					continue;
+				}
+				file_patch::edit edit;
+				edit.begin = line.span.begin;
+				edit.end = line.span.end;
+				state.patches[markedlayer].edits.emplace_back(std::move(edit));
+			}
+		}
+		auto const target{resolve(markedlayer)};
+		if (marking.second.empty() || false == is_output(target))
+		{
+			continue;
+		}
+		for (auto const &text : marking.second)
+		{
+			markedtext[target].push_back(mark + ' ' + text);
+		}
+	}
+
 	// includes of templates
 	std::map<layer_handle, std::vector<instance_handle>> placed; // directives made in the editor, by target layer
 	for (std::size_t idx = 0; idx < m_instances.size(); ++idx)
@@ -940,7 +971,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			continue;
 		}
 		if (layer(candidate).created || state.patches.count(candidate) != 0 || appended.count(candidate) != 0 || created.count(candidate) != 0 || placed.count(candidate) != 0 ||
-		    (candidate == root && false == Rootstatements.empty()))
+		    markedtext.count(candidate) != 0 || (candidate == root && false == Rootstatements.empty()))
 		{
 			outputs.emplace_back(candidate);
 		}
@@ -1032,6 +1063,14 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 				auto const offset{static_cast<std::streamoff>(added.text.size())};
 				added.instances.push_back({included, {offset, offset + static_cast<std::streamoff>(directive.size())}});
 				added.text += directive + eol;
+			}
+		}
+		if (auto const lookup{markedtext.find(output)}; lookup != markedtext.end())
+		{
+			for (auto const &line : lookup->second)
+			{
+				ensure_newline(added.text, eol);
+				added.text += line + eol;
 			}
 		}
 		if (output == root)
@@ -1221,7 +1260,17 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 	for (auto const output : written)
 	{
 		stat(output);
+		scan(output);
 	}
+	for (auto const &marking : m_marking)
+	{
+		if (resolve(marking.first.first) != marking.first.first)
+		{
+			// the lines of the merged layer are now in the file of its target
+			m_marked.erase(marking.first.first);
+		}
+	}
+	m_marking.clear();
 	for (auto &included : m_instances)
 	{
 		// removed includes are gone from the files now
