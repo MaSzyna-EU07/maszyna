@@ -30,7 +30,7 @@ http://mozilla.org/MPL/2.0/.
 #include "Console.h"
 #include "application/application.h"
 #include "rendering/renderer.h"
-#include <exception>
+#include <future>
 #include <thread>
 #include <cmath>
 #include <algorithm>
@@ -647,9 +647,8 @@ bool TTrain::Init(TDynamicObject *NewDynamicObject, bool e3d)
 	}
 
 	DynamicSet(NewDynamicObject);
-	if (!e3d)
-		if (DynamicObject->Mechanik == nullptr)
-			return false;
+	if (!e3d && DynamicObject->Mechanik == nullptr)
+		return false;
 
 	DynamicObject->MechInside = true;
 
@@ -12401,20 +12400,13 @@ uint16_t TTrain::id()
 
 namespace
 {
-// updates trains in range [Start, End); an exception is stored for the calling thread to rethrow
-void update_trains(std::deque<TTrain *> const &Trains, std::size_t const Start, std::size_t const End, double const Dt, std::exception_ptr &Error)
+// updates trains in range [Start, End)
+void update_trains(std::deque<TTrain *> const &Trains, std::size_t const Start, std::size_t const End, double const Dt)
 {
-	try
+	for (std::size_t j = Start; j < End; ++j)
 	{
-		for (std::size_t j = Start; j < End; ++j)
-		{
-			if (Trains[j])
-				Trains[j]->Update(Dt);
-		}
-	}
-	catch (std::exception const &)
-	{
-		Error = std::current_exception();
+		if (Trains[j])
+			Trains[j]->Update(Dt);
 	}
 }
 } // namespace
@@ -12426,8 +12418,9 @@ void train_table::updateAsync(double dt)
 	const size_t chunkSize = (total + threads - 1) / threads;
 
 	std::vector<std::jthread> workers;
-	std::vector<std::exception_ptr> errors(threads);
+	std::vector<std::future<void>> results; // przekazują wyjątki z wątków do głównego wątku
 	workers.reserve(threads);
+	results.reserve(threads);
 
 	for (int i = 0; i < threads; ++i)
 	{
@@ -12437,19 +12430,17 @@ void train_table::updateAsync(double dt)
 		if (start >= end)
 			break; // brak więcej danych
 
-		// wyjątek przekazywany jest do głównego wątku
-		workers.emplace_back(update_trains, std::cref(m_items), start, end, dt, std::ref(errors[i]));
+		std::packaged_task<void()> task([this, start, end, dt]() { update_trains(m_items, start, end, dt); });
+		results.emplace_back(task.get_future());
+		workers.emplace_back(std::move(task));
 	}
 
 	// Poczekaj aż wszystkie wątki skończą
 	for (auto &worker : workers)
 		worker.join();
 
-	for (auto const &error : errors)
-	{
-		if (error)
-			std::rethrow_exception(error);
-	}
+	for (auto &result : results)
+		result.get();
 
 	// Teraz kasowanie (tylko w głównym wątku)
 	for (TTrain *train : m_items)

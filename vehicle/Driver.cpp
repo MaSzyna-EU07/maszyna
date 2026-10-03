@@ -4987,8 +4987,7 @@ TController::PrepareDirection() {
 
 void TController::JumpToNextOrder( bool const Ignoremergedchangedirection )
 { // wykonanie kolejnej komendy z tablicy rozkazów
-    auto const currentorder { OrderCurrentGet() };
-    if (currentorder != Wait_for_orders)
+    if (auto const currentorder { OrderCurrentGet() }; currentorder != Wait_for_orders)
     {
         if( (currentorder & Change_direction) != 0 // jeśli zmiana kierunku
 		    && currentorder != Change_direction && false == Ignoremergedchangedirection ) { // ale nałożona na coś
@@ -5056,15 +5055,20 @@ void TController::OrderNext(TOrders NewOrder)
     OrderTop = OrderPos; // ale może jest czymś zajęty na razie
     if (NewOrder >= Shunt) // jeśli ma jechać
     { // ale może być zajęty chwilowymi operacjami
-        while (OrderList[OrderTop] != Wait_for_orders && OrderList[OrderTop] < Shunt) // jeśli coś robi
+        while (OrderTop >= 0 && OrderTop < maxorders - 1
+            && OrderList[OrderTop] != Wait_for_orders && OrderList[OrderTop] < Shunt) // jeśli coś robi
             ++OrderTop; // pomijamy wszystkie tymczasowe prace
     }
     else
     { // jeśli ma ustawioną jazdę, to wyłączamy na rzecz operacji
-        while (OrderList[OrderTop] ?
-                   OrderList[OrderTop] < Shunt && OrderList[OrderTop] != NewOrder :
-                   false) // jeśli coś robi
+        while (OrderTop >= 0 && OrderTop < maxorders - 1
+            && OrderList[OrderTop] != Wait_for_orders && OrderList[OrderTop] < Shunt && OrderList[OrderTop] != NewOrder) // jeśli coś robi
             ++OrderTop; // pomijamy wszystkie tymczasowe prace
+    }
+    if (OrderTop < 0 || OrderTop >= maxorders)
+    {
+        ErrorLog("Commands overflow: order \"" + Order2Str(NewOrder) + "\" dropped");
+        return;
     }
     OrderList[OrderTop++] = NewOrder; // dodanie rozkazu jako następnego
 #if LOGORDERS
@@ -5078,11 +5082,13 @@ void TController::OrderPush(TOrders NewOrder)
 	                                                         // ale nie jedzie
 		++OrderTop;
 	// niektóre operacje muszą zostać najpierw dokończone => zapis na kolejnej
+    if (OrderTop < 0 || OrderTop >= maxorders)
+    {
+        ErrorLog("Commands overflow: order \"" + Order2Str(NewOrder) + "\" dropped");
+        return;
+    }
     if (OrderList[OrderTop] != NewOrder) // jeśli jest to samo, to nie dodajemy
         OrderList[OrderTop++] = NewOrder; // dodanie rozkazu na stos
-    // if (OrderTop<OrderPos) OrderTop=OrderPos;
-    if (OrderTop >= maxorders)
-        ErrorLog("Commands overflow: The program will now crash");
 #if LOGORDERS
     OrdersDump( "OrderPush: [" + Order2Str( NewOrder ) + "]" ); // normalnie nie ma po co tego wypisywać
 #endif
@@ -5398,8 +5404,7 @@ TCommandType TController::BackwardScan( double const Range )
         // najpierw sprawdzamy, czy semafor czy inny znak został przejechany
         auto const sl{e->input_location()}; // położenie komórki pamięci
         auto const pos{pVehicles[end::rear]->RearPosition()}; // pozycja tyłu
-        auto const sem{sl - pos}; // wektor do komórki pamięci od końca składu
-        if (dir.x * sem.x + dir.z * sem.z < 0)
+        if (auto const sem{sl - pos}; dir.x * sem.x + dir.z * sem.z < 0) // wektor do komórki pamięci od końca składu
         {
             // jeśli został minięty
             // iloczyn skalarny jest ujemny, gdy sygnał stoi z tyłu
@@ -5411,7 +5416,7 @@ TCommandType TController::BackwardScan( double const Range )
         scanvel = e->input_value(1); // prędkość przy tym semaforze
 #if LOGBACKSCAN
         // przeliczamy odległość od semafora - potrzebne by były współrzędne początku składu
-        scandist = std::max(glm::length(sem) - 2.0, 0.0); // 2m luzu przy manewrach wystarczy, ujemnych nie ma po co wysyłać
+        scandist = std::max(glm::length(sl - pos) - 2.0, 0.0); // 2m luzu przy manewrach wystarczy, ujemnych nie ma po co wysyłać
 #endif
     }
 

@@ -2408,16 +2408,14 @@ bool TMoverParameters::IncMainCtrl(int CtrlSpeed)
 			if (CtrlSpeed > 1)
 			{
 				OK = IncMainCtrl(1) && IncMainCtrl(CtrlSpeed - 1); // a fail will propagate up the recursion chain. should this be || instead?
+				break;
 			}
-			else
+			++MainCtrlPos;
+			OK = true;
+			if (EIMCtrlType == 0 && ( SpeedCtrlAutoTurnOffFlag & 1 ) == 1 && MainCtrlActualPos != MainCtrlPos)
 			{
-				++MainCtrlPos;
-				OK = true;
-				if (EIMCtrlType == 0 && ( SpeedCtrlAutoTurnOffFlag & 1 ) == 1 && MainCtrlActualPos != MainCtrlPos)
-				{
-					DecScndCtrl(2);
-					SpeedCtrlUnit.IsActive = false;
-				}
+				DecScndCtrl(2);
+				SpeedCtrlUnit.IsActive = false;
 			}
 			break;
 		}

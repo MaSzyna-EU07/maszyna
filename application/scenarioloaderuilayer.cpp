@@ -213,7 +213,7 @@ void scenarioloader_ui::render_()
 	const float spacing = 10.0f * scale; // odstęp między ikoną a tekstem
 
 	// Loading icon
-	const deferred_image *img = &m_loading_wheel_frames[38];
+	deferred_image *img = &m_loading_wheel_frames[38];
 	const auto loading_tex = img->get();
 	const auto loading_size = glm::vec2(img->size()) * glm::vec2(scale);
 
