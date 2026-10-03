@@ -699,6 +699,14 @@ public:
 	// returns all eventlaunchers in radius ignoring height
 	std::vector<TEventLauncher *>
 	    find_eventlaunchers(glm::vec2 center, float radius) const;
+	// all event launchers, global ones included
+	std::vector<TEventLauncher *>
+	    launchers() const {
+	        auto const &input { m_inputdrivenlaunchers.sequence() };
+	        auto const &radio { m_radiodrivenlaunchers.sequence() };
+	        std::vector<TEventLauncher *> result( input.begin(), input.end() );
+	        result.insert( result.end(), radio.begin(), radio.end() );
+	        return result; }
 
 private:
 // types

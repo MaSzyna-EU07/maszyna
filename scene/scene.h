@@ -155,6 +155,14 @@ public:
     // removes provided memory cell from the cell
     void
         erase( TMemCell *Memorycell );
+    // removes provided traction piece from the cell
+    void
+        erase( TTraction *Traction );
+    void
+        unregister_end( TTraction *Traction );
+    // removes provided event launcher from the cell
+    void
+        erase( TEventLauncher *Launcher );
     // find a vehicle located nearest to specified point, within specified radius. reurns: located vehicle and distance
     std::tuple<TDynamicObject *, float>
         find( glm::dvec3 const &Point, float const Radius, bool const Onlycontrolled, bool const Findbycoupler ) const;

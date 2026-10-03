@@ -503,6 +503,30 @@ basic_cell::erase( TMemCell *Memorycell ) {
         std::end( m_memorycells ) );
 }
 
+void
+basic_cell::erase( TTraction *Traction ) {
+
+    m_traction.erase(
+        std::remove( std::begin( m_traction ), std::end( m_traction ), Traction ),
+        std::end( m_traction ) );
+}
+
+void
+basic_cell::unregister_end( TTraction *Traction ) {
+
+    m_directories.traction.erase(
+        std::remove( std::begin( m_directories.traction ), std::end( m_directories.traction ), Traction ),
+        std::end( m_directories.traction ) );
+}
+
+void
+basic_cell::erase( TEventLauncher *Launcher ) {
+
+    m_eventlaunchers.erase(
+        std::remove( std::begin( m_eventlaunchers ), std::end( m_eventlaunchers ), Launcher ),
+        std::end( m_eventlaunchers ) );
+}
+
 // registers provided path in the lookup directory of the cell
 void
 basic_cell::register_end( TTrack *Path ) {

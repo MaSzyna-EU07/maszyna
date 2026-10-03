@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorTrack.hpp"
 #include "editor/editorAlignment.hpp"
 #include "editor/editorProfile.hpp"
+#include "editor/editorInfra.hpp"
 
 #include <array>
 #include <chrono>
@@ -107,7 +108,7 @@ class editor_mode : public application_mode
 		std::vector<std::pair<TTrack *, editor_track::state>> tracks;
 		std::vector<TTrack *> created;
 		std::vector<TTrack *> removed;
-
+		std::vector<infra::object_state> infra; // objects which followed the paths
 	};
 	void push_snapshot(scene::basic_node *node, EditorSnapshot::Action Action = EditorSnapshot::Action::Move, std::string const &Serialized = std::string());
 
@@ -544,6 +545,57 @@ class editor_mode : public application_mode
 	void render_profile_canvas();
 	void render_profile_point();
 	void draw_profile_overlay() const;
+
+	// infrastructure along the track: objects bound to the paths follow their changes. bindings are kept in the
+	// scenery files as "//$b" comment lines
+	struct infra_candidate
+	{
+		infra::binding binding;
+		double offset{0.0}; // sideways from the axis
+		std::string reason;
+		bool chosen{false};
+		bool bound{false};
+	};
+	struct infra_window
+	{
+		bool open{false};
+		int scope{1}; // 0: the selected path, 1: the line through it, 2: the route of the vertical profile
+		float reach{1500.0f};
+		float corridor{8.0f};
+		bool follow{true};
+		bool show{true};
+		std::vector<infra::rule> rules{infra::default_rules()};
+		std::vector<TTrack *> tracks; // of the scope
+		std::vector<infra_candidate> candidates;
+		int hovered{-1};
+		std::string status;
+		std::string error;
+	};
+	infra_window m_infra;
+	std::vector<infra::binding> m_bindings;
+	std::vector<std::pair<scene::layer_handle, std::string>> m_bindings_unresolved; // lines kept as they are
+	bool m_bindings_loaded{false};
+	bool m_bindings_changed{false};
+	std::vector<infra::object_state> m_infra_buffer; // states of the objects before the change in progress
+	bool m_infra_suspended{false};
+	void infra_hooks();
+	void infra_load();
+	void infra_store();
+	std::vector<TTrack *> infra_scope() const;
+	void infra_recognize();
+	void infra_bind_chosen();
+	void infra_unbind(std::vector<std::size_t> Indices);
+	infra::binding *infra_find(infra::binding const &Binding);
+	infra::object_state infra_state_of(infra::binding const &Binding) const;
+	void infra_restore_state(infra::object_state const &State);
+	void infra_buffer(infra::binding const &Binding, bool const Refresh);
+	void infra_capture(TTrack const &Track);
+	void infra_follow(std::vector<TTrack *> const &Tracks);
+	void infra_split(TTrack &Original, TTrack &Created, segment_data const &First);
+	void infra_move(infra::binding &Binding);
+	void infra_attach(EditorSnapshot &Snapshot);
+	void render_infra_window();
+	void draw_infra_overlay() const;
 
 	bool m_route_gizmo_using{false};
 	glm::mat4 m_route_gizmo{1.0f};

@@ -344,6 +344,7 @@ editor_mode::editor_mode() {
 	m_orthophoto.ground_source([](glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out) {
 		gather_ground_triangles(Min, Max, true, 50.0f, Out);
 	});
+	infra_hooks();
  }
 
 editor_ui *editor_mode::ui() const
@@ -869,6 +870,9 @@ bool editor_mode::update()
 
     simulation::State.update_clocks();
     simulation::Environment.update();
+    // bindings are matched with the objects by their locations, before anything gets moved
+    if (false == m_bindings_loaded && simulation::is_ready)
+        infra_load();
 
     auto const deltarealtime = Timer::GetDeltaRenderTime();
 
@@ -1023,6 +1027,8 @@ bool editor_mode::update()
         render_track_window();
         draw_profile_overlay();
         render_profile_window();
+        draw_infra_overlay();
+        render_infra_window();
     }
 
     // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
@@ -1637,6 +1643,7 @@ void editor_mode::save()
 
     if (m_profile.changed)
         profile_store();
+    infra_store();
     auto const result = scene::Layers.save(rootstatements);
     if (result.success && false == rootstatements.empty())
     {

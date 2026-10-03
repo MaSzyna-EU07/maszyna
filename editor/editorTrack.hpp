@@ -227,6 +227,13 @@ class editor_track
 	static void velocity(TTrack &Track, double const Velocity);
 	static void damage(TTrack &Track, int const Damage);
 
+	// let the objects which belong to the paths follow their changes
+	static std::function<void(TTrack const &)> on_capture;
+	static std::function<void(std::vector<TTrack *> const &)> on_commit;
+	static std::function<void(TTrack &)> on_retire;
+	// called before the commit; the first argument keeps the beginning of the path, given in the last one
+	static std::function<void(TTrack &, TTrack &, segment_data const &)> on_split;
+
   private:
 	static void disconnect(TTrack &Track);
 	static void join(TTrack &Track);

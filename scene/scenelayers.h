@@ -292,6 +292,11 @@ class node_layers
 	{
 		return Instance != 0 && Instance <= m_instances.size();
 	}
+	// handles of the includes run from 1 up to this number
+	std::size_t instance_count() const
+	{
+		return m_instances.size();
+	}
 	// grants access to specified include. NOTE: the include has to be tracked
 	include_instance const &instance(instance_handle const Instance) const
 	{

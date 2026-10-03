@@ -124,8 +124,15 @@ bool adjoining_direction(TTrack const *Neighbour, glm::dvec3 const &Joint, bool 
 
 }
 
+std::function<void(TTrack const &)> editor_track::on_capture;
+std::function<void(std::vector<TTrack *> const &)> editor_track::on_commit;
+std::function<void(TTrack &)> editor_track::on_retire;
+std::function<void(TTrack &, TTrack &, segment_data const &)> editor_track::on_split;
+
 editor_track::state editor_track::capture(TTrack const &Track)
 {
+	if (on_capture)
+		on_capture(Track);
 	state result;
 	result.paths = Track.m_paths;
 	result.velocity = Track.fVelocity;
@@ -235,6 +242,8 @@ void editor_track::commit(std::vector<TTrack *> const &Tracks)
 	for (auto *track : affected)
 		for (auto *vehicle : track->Dynamics)
 			vehicle->Move(0.000001);
+	if (on_commit)
+		on_commit(Tracks);
 }
 
 void editor_track::commit_parameters(TTrack &Track)
@@ -2300,6 +2309,8 @@ TTrack *editor_track::split_path(TTrack &Track, double const T)
 	second.rolls[0] = roll;
 	auto *created{create_path(Track, second)};
 	Track.m_paths.front() = first;
+	if (on_split)
+		on_split(Track, *created, first);
 	commit({&Track, created});
 	return created;
 }
@@ -2336,6 +2347,8 @@ void editor_track::retire(TTrack &Track)
 		update_transition(*neighbour);
 		rebuild_geometry(*neighbour);
 	}
+	if (on_retire)
+		on_retire(Track);
 }
 
 void editor_track::revive(TTrack &Track)

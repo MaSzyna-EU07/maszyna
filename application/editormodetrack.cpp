@@ -342,6 +342,7 @@ void editor_mode::push_track_snapshot(std::vector<std::pair<TTrack *, editor_tra
 	snap.uuid = track->uuid;
 	snap.tracks = std::move(States);
 	snap.created = std::move(Created);
+	infra_attach(snap);
 	m_history.push_back(std::move(snap));
 	g_redo.clear();
 }
@@ -354,6 +355,7 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 	std::vector<TTrack *> tracks;
 	for (auto const &entry : Snapshot.tracks)
 		tracks.emplace_back(entry.first);
+	m_infra_suspended = true;
 	EditorSnapshot current{Snapshot};
 	current.tracks.clear();
 	auto involved{tracks};
@@ -361,6 +363,10 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		involved.insert(involved.end(), Snapshot.created.begin(), Snapshot.created.end());
 	for (auto *track : involved)
 		current.tracks.emplace_back(track, editor_track::capture(*track));
+	current.infra.clear();
+	for (auto const &entry : Snapshot.infra)
+		if (auto const *binding{infra_find(entry.saved)})
+			current.infra.push_back(infra_state_of(*binding));
 	Opposite.push_back(std::move(current));
 
 	if (Undo)
@@ -383,6 +389,10 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 	for (auto const &entry : Snapshot.tracks)
 		editor_track::apply(*entry.first, entry.second);
 	editor_track::commit(tracks);
+	for (auto const &entry : Snapshot.infra)
+		infra_restore_state(entry);
+	m_infra_buffer.clear();
+	m_infra_suspended = false;
 	if (false == m_route.chain.tracks.empty())
 	{
 		std::string error;
@@ -420,6 +430,9 @@ void editor_mode::render_track_ui()
 			profile_open_run(*track);
 		m_profile.open = true;
 	}
+	ImGui::SameLine();
+	if (ImGui::Button("Infrastructure"))
+		m_infra.open = true;
 	if (ImGui::CollapsingHeader("Straights in the scenery"))
 		render_straights_ui();
 	render_switch_ui();
@@ -470,6 +483,13 @@ void editor_mode::render_track_window()
 	}
 	if (ImGui::SmallButton("Vertical profile along this line") && selected_track() != nullptr)
 		profile_open_run(*selected_track());
+	ImGui::SameLine();
+	if (ImGui::SmallButton("Infrastructure along this line"))
+	{
+		m_infra.open = true;
+		m_infra.scope = 1;
+		infra_recognize();
+	}
 	ImGui::End();
 }
 
