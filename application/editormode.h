@@ -45,6 +45,8 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::string model;
 		glm::dvec3 point{0.0};
 		double depth{0.0}; // m
+		TTrack const *track{nullptr}; // nearest one, may be gone by now
+		int path{0};
 	};
 	// constructors
 	editor_mode();
@@ -316,10 +318,10 @@ class editor_mode : public application_mode, private editor_track::observer
 	// structure gauge along the line of the selected path, shown in the 3d view
 	struct gauge_state
 	{
-		bool enabled{false};
+		bool open{false}; // window
+		bool enabled{true}; // tunnel along the selected path
 		std::vector<gauge::profile> profiles;
 		int profile{0};
-		double reach{500.0}; // m, each way from the path
 		TTrack const *track{nullptr}; // scanned
 		std::size_t history{0};
 		bool pending{false}; // rescan once the edit ends
@@ -338,6 +340,11 @@ class editor_mode : public application_mode, private editor_track::observer
 			std::vector<glm::dvec3> intruding;
 			std::vector<gauge_hit> hits;
 		} map; // whole scenery
+		struct
+		{
+			std::vector<glm::dvec3> surface;
+			std::vector<glm::dvec3> edges;
+		} spot; // tunnel around the hit the camera went to
 		int current{-1}; // hit the camera went to
 		bool published{false}; // overlay up to date
 	} m_gauge;
@@ -348,7 +355,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	void scan_gauge_map();
 	void gauge_publish();
 	void gauge_focus(int Index);
-	void render_gauge_ui();
+	void gauge_spot(gauge_hit const &Hit);
+	void render_gauge_window();
 	void render_gauge_hits();
 	bool render_gauge_outline();
 	struct route_design

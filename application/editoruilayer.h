@@ -59,6 +59,11 @@ class editor_ui : public ui_layer
 	{
 		m_gizmooptions = std::move(Renderer);
 	}
+	// switch of the structure gauge window in the menu bar (the window lives in the editor mode)
+	void set_gauge_window(bool *Open)
+	{
+		m_gaugewindow = Open;
+	}
 	// actions of the file menu, performed by the editor mode
 	void set_file_actions(std::function<void()> Save, std::function<void()> Export);
 	// shows outcome of an operation in the layers window
@@ -84,4 +89,5 @@ class editor_ui : public ui_layer
 	std::function<void()> m_trackoptions;
 	std::function<void()> m_gizmooptions;
 	scene::basic_node *m_node{nullptr}; // currently bound scene node, if any
+	bool *m_gaugewindow{nullptr};
 };

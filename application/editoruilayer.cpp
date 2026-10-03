@@ -143,6 +143,12 @@ void editor_ui::render_menu_contents()
 		ImGui::MenuItem(STR_C("Include database"), nullptr, &m_includespanel.is_open);
 		ImGui::EndMenu();
 	}
+	if (m_gaugewindow != nullptr)
+	{
+		ImGui::MenuItem(STR_C("Structure gauge"), nullptr, m_gaugewindow);
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Checks which models enter the structure gauge of the tracks (skrajnia budowli)"));
+	}
 }
 
 void editor_ui::set_file_actions(std::function<void()> Save, std::function<void()> Export)

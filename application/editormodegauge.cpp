@@ -38,10 +38,14 @@ char const *const gauge_file{"editor_structure_gauges.txt"};
 std::size_t const gauge_triangle_limit{200000};
 // past this distance of the camera from the origin of the overlay it's rebuilt, to keep its float precision
 double const gauge_origin_range{2000.0};
+// length of the line shown each way from the selected path, and around a hit
+double const gauge_reach{500.0};
+double const gauge_spot_reach{60.0};
 
 // sampled line of the tracks with the widening of the gauge along it
 struct gauge_line
 {
+	editor_track::route route;
 	std::vector<editor_track::route_sample> samples;
 	std::vector<gauge::section> sections;
 };
@@ -50,6 +54,7 @@ gauge_line make_line(editor_track::route &Route)
 {
 	gauge_line line;
 	line.samples = editor_track::sample_route(Route, 1.0);
+	line.route = Route;
 	std::vector<double> chainage, curvature, cant;
 	for (auto &sample : line.samples)
 	{
@@ -128,8 +133,13 @@ public:
 		return false;
 	}
 
-	// deepest intrusion of the point into the gauge of the lines nearby, not positive outside of them
-	double intrusion(gauge::profile const &Profile, glm::dvec3 const &Point) const
+	struct hit
+	{
+		double depth{0.0}; // not positive outside of the gauge
+		editor_track::route_span const *span{nullptr}; // of the line the point enters
+	};
+	// deepest intrusion of the point into the gauge of the lines nearby
+	hit intrusion(gauge::profile const &Profile, glm::dvec3 const &Point) const
 	{
 		auto const point{plan_of(Point)};
 		auto const center{index(point, cell)};
@@ -153,7 +163,7 @@ public:
 						*same = {candidate, distance};
 				}
 			}
-		double deepest{0.0};
+		hit deepest;
 		for (auto const &[found, distance] : nearest)
 		{
 			auto const &line{m_lines[found.line]};
@@ -163,7 +173,9 @@ public:
 			if ((found.index == 0 && along < -0.6) || (found.index + 1 == line.samples.size() && along > 0.6))
 				continue;
 			auto const height{Point.y - (sample.position.y + sample.grade * along)};
-			deepest = std::max(deepest, gauge::intrusion(Profile, line.sections[found.index], glm::dot(offset, normal(sample)), height));
+			auto const depth{gauge::intrusion(Profile, line.sections[found.index], glm::dot(offset, normal(sample)), height)};
+			if (depth > deepest.depth)
+				deepest = {depth, &line.route.spans[sample.span]};
 		}
 		return deepest;
 	}
@@ -251,7 +263,7 @@ void scan_models(corridor const &Space, gauge::profile const &Profile, std::vect
 			continue;
 		if (false == Space.near(instance->location(), instance->radius()))
 			continue;
-		editor_mode::gauge_hit hit{instance->name(), instance->location(), 0.0};
+		editor_mode::gauge_hit hit{instance->name(), instance->location()};
 		// the triangle enters the gauge when any point of a grid spread over it does
 		visit_triangles(instance->Model()->GetSMRoot(), placement(*instance), [&](glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C) {
 			auto const edge{std::max({glm::distance(A, B), glm::distance(B, C), glm::distance(C, A)})};
@@ -260,14 +272,16 @@ void scan_models(corridor const &Space, gauge::profile const &Profile, std::vect
 				for (int v = 0; u + v <= steps; ++v)
 				{
 					auto const point{A + (B - A) * (static_cast<double>(u) / steps) + (C - A) * (static_cast<double>(v) / steps)};
-					auto const depth{Space.intrusion(Profile, point)};
-					if (depth <= 0.0)
+					auto const found{Space.intrusion(Profile, point)};
+					if (found.depth <= 0.0)
 						continue;
 					Triangles.insert(Triangles.end(), {A, B, C});
-					if (depth > hit.depth)
+					if (found.depth > hit.depth)
 					{
-						hit.depth = depth;
+						hit.depth = found.depth;
 						hit.point = point;
+						hit.track = found.span->track;
+						hit.path = found.span->path;
 					}
 					return;
 				}
@@ -276,6 +290,46 @@ void scan_models(corridor const &Space, gauge::profile const &Profile, std::vect
 			Hits.push_back(std::move(hit));
 	}
 	std::sort(Hits.begin(), Hits.end(), [](auto const &Left, auto const &Right) { return Left.depth > Right.depth; });
+}
+
+// translucent tunnel of the gauge along the line, with the rings every 10 m and the lines along its corners
+void build_tunnel(gauge_line const &Line, gauge::profile const &Profile, std::vector<glm::dvec3> &Surface, std::vector<glm::dvec3> &Edges)
+{
+	auto const lift{[](editor_track::route_sample const &Sample, double const Lateral, double const Height) {
+		auto const normal{corridor::normal(Sample)};
+		return Sample.position + glm::dvec3(normal.x * Lateral, Height, normal.y * Lateral);
+	}};
+	// outline across the track, from the bottom right up and down to the bottom left
+	auto const ring{[&](std::size_t const Index) {
+		std::vector<glm::dvec3> points;
+		for (int side : {-1, 1})
+			for (std::size_t j = 0; j < Profile.outline.size(); ++j)
+			{
+				auto const &point{Profile.outline[side < 0 ? j : Profile.outline.size() - 1 - j]};
+				auto const width{point.half_width + gauge::widening(Line.sections[Index], point.height, side)};
+				points.push_back(lift(Line.samples[Index], side * width, point.height));
+			}
+		return points;
+	}};
+	std::vector<glm::dvec3> previous;
+	double lastring{-1e9};
+	for (std::size_t i = 0; i < Line.samples.size(); i += 2)
+	{
+		auto const current{ring(i)};
+		if (false == previous.empty())
+			for (std::size_t j = 1; j < current.size(); ++j)
+			{
+				Surface.insert(Surface.end(), {previous[j - 1], previous[j], current[j], previous[j - 1], current[j], current[j - 1]});
+				Edges.insert(Edges.end(), {previous[j], current[j]});
+			}
+		if (Line.samples[i].chainage - lastring >= 10.0 || i + 2 >= Line.samples.size())
+		{
+			lastring = Line.samples[i].chainage;
+			for (std::size_t j = 1; j < current.size(); ++j)
+				Edges.insert(Edges.end(), {current[j - 1], current[j]});
+		}
+		previous = current;
+	}
 }
 
 double widest(gauge::profile const &Profile)
@@ -303,7 +357,7 @@ std::vector<editor_mode::gauge_hit> const &editor_mode::gauge_hits() const
 
 void editor_mode::update_gauge()
 {
-	if (ui()->mode() != nodebank_panel::TRACK)
+	if (false == m_gauge.open)
 	{
 		if (false == EditorOverlay.batches.empty())
 			EditorOverlay.clear();
@@ -340,50 +394,12 @@ void editor_mode::scan_gauge(TTrack &Track)
 	gauge_load();
 	m_gauge.line = {};
 	auto const &profile{m_gauge.profiles[m_gauge.profile]};
-	auto route{editor_track::run_route(Track, m_gauge.reach)};
+	auto route{editor_track::run_route(Track, gauge_reach)};
 	std::vector<gauge_line> const lines{make_line(route)};
-	auto const &line{lines.front()};
-	if (line.samples.size() < 2 || profile.outline.size() < 2)
+	if (lines.front().samples.size() < 2 || profile.outline.size() < 2)
 		return;
 	corridor const space{lines, widest(profile)};
-
-	auto const lift{[](editor_track::route_sample const &Sample, double const Lateral, double const Height) {
-		auto const normal{corridor::normal(Sample)};
-		return Sample.position + glm::dvec3(normal.x * Lateral, Height, normal.y * Lateral);
-	}};
-	// outline across the track, from the bottom right up and down to the bottom left
-	auto const ring{[&](std::size_t const Index) {
-		std::vector<glm::dvec3> points;
-		for (int side : {-1, 1})
-			for (std::size_t j = 0; j < profile.outline.size(); ++j)
-			{
-				auto const &point{profile.outline[side < 0 ? j : profile.outline.size() - 1 - j]};
-				auto const width{point.half_width + gauge::widening(line.sections[Index], point.height, side)};
-				points.push_back(lift(line.samples[Index], side * width, point.height));
-			}
-		return points;
-	}};
-	auto &surface{m_gauge.line.surface};
-	auto &edges{m_gauge.line.edges};
-	std::vector<glm::dvec3> previous;
-	double lastring{-1e9};
-	for (std::size_t i = 0; i < line.samples.size(); i += 2)
-	{
-		auto const current{ring(i)};
-		if (false == previous.empty())
-			for (std::size_t j = 1; j < current.size(); ++j)
-			{
-				surface.insert(surface.end(), {previous[j - 1], previous[j], current[j], previous[j - 1], current[j], current[j - 1]});
-				edges.insert(edges.end(), {previous[j], current[j]});
-			}
-		if (line.samples[i].chainage - lastring >= 10.0 || i + 2 >= line.samples.size())
-		{
-			lastring = line.samples[i].chainage;
-			for (std::size_t j = 1; j < current.size(); ++j)
-				edges.insert(edges.end(), {current[j - 1], current[j]});
-		}
-		previous = current;
-	}
+	build_tunnel(lines.front(), profile, m_gauge.line.surface, m_gauge.line.edges);
 	scan_models(space, profile, m_gauge.line.intruding, m_gauge.line.hits);
 	if (false == m_gauge.map.scanned)
 		m_gauge.current = -1;
@@ -433,7 +449,9 @@ void editor_mode::gauge_publish()
 	                         batch({0.2f, 1.0f, 0.3f, 0.5f}, GL_LINES, false, m_gauge.line.edges),
 	                         batch({1.0f, 0.1f, 0.05f, 0.6f}, GL_TRIANGLES, true, m_gauge.line.intruding),
 	                         batch({1.0f, 0.1f, 0.05f, 0.6f}, GL_TRIANGLES, true, m_gauge.map.intruding),
-	                         batch({1.0f, 0.9f, 0.1f, 1.0f}, GL_LINES, false, marker)};
+	                         batch({1.0f, 0.9f, 0.1f, 1.0f}, GL_LINES, false, marker),
+	                         batch({0.2f, 0.9f, 0.3f, 0.12f}, GL_TRIANGLES, false, m_gauge.spot.surface),
+	                         batch({0.2f, 1.0f, 0.3f, 0.5f}, GL_LINES, false, m_gauge.spot.edges)};
 }
 
 void editor_mode::gauge_focus(int const Index)
@@ -443,6 +461,7 @@ void editor_mode::gauge_focus(int const Index)
 		return;
 	m_gauge.current = (Index % static_cast<int>(hits.size()) + static_cast<int>(hits.size())) % static_cast<int>(hits.size());
 	m_gauge.published = false;
+	gauge_spot(hits[m_gauge.current]);
 	auto const target{hits[m_gauge.current].point};
 	// from the side the camera looks from, a bit above
 	glm::dvec3 away{Camera.Pos.x - target.x, 0.0, Camera.Pos.z - target.z};
@@ -457,14 +476,38 @@ void editor_mode::gauge_focus(int const Index)
 	m_focus_duration = 0.6;
 }
 
-void editor_mode::render_gauge_ui()
+void editor_mode::gauge_spot(gauge_hit const &Hit)
 {
-	if (false == ImGui::CollapsingHeader("Structure gauge"))
+	m_gauge.spot = {};
+	auto const &paths{simulation::Paths.sequence()};
+	// the hit outlives the scan, the path may be gone since
+	if (Hit.track == nullptr || std::find(paths.begin(), paths.end(), Hit.track) == paths.end())
 		return;
+	auto *track{const_cast<TTrack *>(Hit.track)};
+	editor_track::route route;
+	if (Hit.path == 0)
+		route = editor_track::run_route(*track, gauge_spot_reach);
+	else
+		route.spans.push_back({track, Hit.path, true});
+	auto const line{make_line(route)};
+	if (line.samples.size() >= 2)
+		build_tunnel(line, m_gauge.profiles[m_gauge.profile], m_gauge.spot.surface, m_gauge.spot.edges);
+}
+
+void editor_mode::render_gauge_window()
+{
+	if (false == m_gauge.open)
+		return;
+	ImGui::SetNextWindowSize(ImVec2(380.0f, 420.0f), ImGuiCond_FirstUseEver);
+	if (false == ImGui::Begin("Structure gauge", &m_gauge.open))
+	{
+		ImGui::End();
+		return;
+	}
 	if (ImGui::Checkbox("Show along the selected path", &m_gauge.enabled))
 		m_gauge.pending = true;
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("Translucent tunnel of the gauge along the line of the selected path,\nwith the triangles of the models which enter it in red.\nWidened in the curves under 250 m and tilted on the cant, from 20 m (inner side)\nand 26 m (outer side) ahead of the curve, as in the PKP PLK standard, volume II.");
+		ImGui::SetTooltip("Translucent tunnel of the gauge 500 m each way along the line of the selected path,\nwith the triangles of the models which enter it in red.\nWidened in the curves under 250 m and tilted on the cant, from 20 m (inner side)\nand 26 m (outer side) ahead of the curve, as in the PKP PLK standard, volume II.");
 	gauge_load();
 	auto const previous{m_gauge.profile};
 	for (int i = 0; i < static_cast<int>(m_gauge.profiles.size()); ++i)
@@ -474,10 +517,6 @@ void editor_mode::render_gauge_ui()
 		ImGui::RadioButton(m_gauge.profiles[i].name.c_str(), &m_gauge.profile, i);
 	}
 	bool changed{previous != m_gauge.profile};
-	float reach{static_cast<float>(m_gauge.reach)};
-	if (ImGui::SliderFloat("Reach each way (m)", &reach, 50.0f, 2000.0f, "%.0f"))
-		m_gauge.reach = reach;
-	changed |= ImGui::IsItemDeactivatedAfterEdit();
 
 	if (ImGui::Button("Find the violations on the whole map"))
 		scan_gauge_map();
@@ -499,6 +538,7 @@ void editor_mode::render_gauge_ui()
 	changed |= render_gauge_outline();
 	if (changed)
 		m_gauge.pending = true;
+	ImGui::End();
 }
 
 void editor_mode::render_gauge_hits()

@@ -340,6 +340,7 @@ editor_mode::editor_mode() {
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
 	ui()->set_file_actions([this]() { save(); }, [this]() { export_scenery(); });
 	ui()->set_track_options([this]() { render_track_ui(); });
+	ui()->set_gauge_window(&m_gauge.open);
 	// the orthophoto is fitted onto the same ground as the area fill uses, terrain tile models included
 	m_orthophoto.ground_source([](glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out) {
 		gather_ground_triangles(Min, Max, true, 50.0f, Out);
@@ -1036,6 +1037,7 @@ bool editor_mode::update()
         render_infra_window();
     }
     update_gauge();
+    render_gauge_window();
 
     // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
     if (ui()->mode() == nodebank_panel::FILL)
