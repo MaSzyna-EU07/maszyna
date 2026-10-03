@@ -1406,7 +1406,8 @@ std::vector<editor_track::route_sample> editor_track::sample_route(route &Route,
 	for (std::size_t i = 0; i < Route.spans.size(); ++i)
 	{
 		auto &span{Route.spans[i]};
-		bezier const curve{span.track->m_paths[span.path]};
+		auto const &path{span.track->m_paths[span.path]};
+		bezier const curve{path};
 		auto const count{std::max(2, static_cast<int>(std::ceil(curve.plan_length(16) / std::max(0.1, Step))))};
 		span.from = chainage;
 		auto previous{plan_of(curve.point(span.forward ? 0.0 : 1.0))};
@@ -1425,6 +1426,7 @@ std::vector<editor_track::route_sample> editor_track::sample_route(route &Route,
 			sample.chainage = chainage;
 			sample.position = position;
 			sample.span = i;
+			sample.cant = 1.5 * std::sin(std::abs(glm::radians(path.rolls[0] + (path.rolls[1] - path.rolls[0]) * t)));
 			if (planar > 1e-9)
 			{
 				sample.direction = plan_of(derivative) / planar;

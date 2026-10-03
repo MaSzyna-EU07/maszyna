@@ -175,6 +175,7 @@ class editor_track
 		glm::dvec2 direction{0.0, 1.0};
 		double grade{0.0};
 		double curvature{0.0}; // signed, 1/m, positive turning left
+		double cant{0.0}; // m, raise of the outer rail
 		std::size_t span{0};
 	};
 	static std::vector<route_sample> sample_route(route &Route, double const Step);

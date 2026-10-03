@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorAlignment.hpp"
 #include "editor/editorProfile.hpp"
 #include "editor/editorInfra.hpp"
+#include "editor/editorGauge.hpp"
 
 #include <array>
 #include <chrono>
@@ -305,6 +306,23 @@ class editor_mode : public application_mode, private editor_track::observer
 	std::array<std::array<char, 256>, 3> m_track_materials{};
 	std::array<TTrack const *, 3> m_track_material_edited{}; // path whose texture name is being typed
 	std::string m_track_mode_notice;
+	// structure gauge along the line of the selected path, shown in the 3d view
+	struct gauge_state
+	{
+		bool enabled{false};
+		std::vector<gauge::profile> profiles;
+		int profile{0};
+		double reach{500.0}; // m, each way from the path
+		TTrack const *track{nullptr}; // scanned
+		std::size_t history{0};
+		bool pending{false}; // rescan once the edit ends
+		std::size_t models{0};
+		std::size_t intrusions{0}; // triangles
+	} m_gauge;
+	void gauge_load();
+	void update_gauge();
+	void scan_gauge(TTrack &Track);
+	void render_gauge_ui();
 	struct route_design
 	{
 		TTrack *from{nullptr};

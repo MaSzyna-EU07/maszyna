@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/AnimModel.h"
 #include "rendering/opengl33geometrybank.h"
 #include "rendering/screenshot.h"
+#include "rendering/editoroverlay.h"
 #include <imgui/imgui_impl_opengl3.h>
 
 //#define EU07_DEBUG_OPENGL
@@ -933,6 +934,7 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		glDebug("render translucent region");
 		setup_drawing(true);
 		Render_Alpha(simulation::Region);
+		Render_editor_overlay();
 
 		// particles
 		Render_particles();
@@ -4487,6 +4489,61 @@ void opengl33_renderer::Render_Alpha(TTraction *Traction)
 
 	if (m_widelines_supported)
 		glLineWidth(1.0f);
+}
+
+void opengl33_renderer::Render_editor_overlay()
+{
+	if (false == EditorModeFlag || EditorOverlay.batches.empty())
+		return;
+	glDebug("Render_editor_overlay");
+
+	if (m_editor_overlay_revision != EditorOverlay.revision)
+	{
+		m_editor_overlay_revision = EditorOverlay.revision;
+		if (m_editor_overlay_bank == null_handle)
+			m_editor_overlay_bank = Create_Bank();
+		auto const &batches{EditorOverlay.batches};
+		for (std::size_t i = 0; i < batches.size(); ++i)
+		{
+			gfx::vertex_array vertices;
+			vertices.reserve(batches[i].points.size());
+			for (auto const &point : batches[i].points)
+				vertices.emplace_back(point, glm::vec3(0.f, 1.f, 0.f), glm::vec2());
+			gfx::userdata_array userdata;
+			if (i >= m_editor_overlay_geometry.size())
+				m_editor_overlay_geometry.emplace_back();
+			auto &geometry{m_editor_overlay_geometry[i]};
+			if (geometry != null_handle)
+				m_geometry.replace(vertices, userdata, geometry);
+			else if (false == vertices.empty())
+				geometry = m_geometry.create_chunk(vertices, userdata, m_editor_overlay_bank, batches[i].type);
+		}
+	}
+
+	::glPushMatrix();
+	auto const origin{EditorOverlay.origin - m_renderpass.pass_camera.position()};
+	::glTranslated(origin.x, origin.y, origin.z);
+	::glDisable(GL_CULL_FACE);
+	::glDepthMask(GL_FALSE);
+	m_line_shader->bind();
+	auto const &batches{EditorOverlay.batches};
+	for (std::size_t i = 0; i < batches.size() && i < m_editor_overlay_geometry.size(); ++i)
+	{
+		if (batches[i].points.empty() || m_editor_overlay_geometry[i] == null_handle)
+			continue;
+		if (batches[i].offset)
+		{
+			::glEnable(GL_POLYGON_OFFSET_FILL);
+			::glPolygonOffset(-2.f, -2.f);
+		}
+		model_ubs.param[0] = batches[i].color;
+		draw(m_editor_overlay_geometry[i]);
+		::glDisable(GL_POLYGON_OFFSET_FILL);
+		++m_renderpass.draw_stats.drawcalls;
+	}
+	::glDepthMask(GL_TRUE);
+	::glEnable(GL_CULL_FACE);
+	::glPopMatrix();
 }
 
 void opengl33_renderer::Render_Alpha(scene::lines_node const &Lines)

@@ -1035,6 +1035,7 @@ bool editor_mode::update()
         draw_infra_overlay();
         render_infra_window();
     }
+    update_gauge();
 
     // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
     if (ui()->mode() == nodebank_panel::FILL)

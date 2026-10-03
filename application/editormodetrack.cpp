@@ -482,6 +482,7 @@ void editor_mode::render_track_window()
 		m_infra.scope = 1;
 		infra_recognize();
 	}
+	render_gauge_ui();
 	ImGui::End();
 }
 
