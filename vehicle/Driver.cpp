@@ -5901,8 +5901,8 @@ TController::determine_consist_state() {
         auto const bp { std::max( 0.0, vehicle->BrakePress - ( vehicle->SpeedCtrlUnit.Parking ? vehicle->MaxBrakePress[ 0 ] * vehicle->StopBrakeDecc : 0.0 ) ) };
         if (Ready) {
             // bo jak coś nie odhamowane, to dalej nie ma co sprawdzać
-            auto const isbraking { TestFlagAny( vehicle->Hamulec->GetBrakeStatus(), b_hld | b_on ) };
-            if( vehicle->Vel < 1.0 ?
+            if( auto const isbraking { TestFlagAny( vehicle->Hamulec->GetBrakeStatus(), b_hld | b_on ) };
+                vehicle->Vel < 1.0 ?
                     isbraking || bp > 0.4 : // ensure the brakes are sufficiently released when starting to move
                     // once in motion a brake down to 0.4 bar counts as released (UIC), even if its distributor
                     // is still in the lap position while the brake pipe recharges
