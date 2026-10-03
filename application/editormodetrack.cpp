@@ -1056,7 +1056,7 @@ void editor_mode::draw_route_overlay() const
 	{
 		for (auto const &e : result.elements)
 		{
-			ImU32 const color = e.kind == alignment::element_kind::straight ? IM_COL32(255, 255, 255, 230) : e.kind == alignment::element_kind::arc ? IM_COL32(60, 230, 90, 255) : IM_COL32(255, 140, 30, 255);
+			ImU32 const color = e.kind == alignment::element_kind::straight ? IM_COL32(255, 255, 255, 230) : e.kind == alignment::element_kind::arc ? overlay_color::grip : IM_COL32(255, 140, 30, 255);
 			int const steps = std::clamp(static_cast<int>(e.length / 2.0), 1, 400);
 			auto previous{alignment::evaluate(result, e.chainage).position};
 			for (int j = 1; j <= steps; ++j)
@@ -1067,7 +1067,7 @@ void editor_mode::draw_route_overlay() const
 			}
 			ImVec2 screen;
 			if (projection.project(alignment::evaluate(result, e.chainage).position, screen))
-				drawlist->AddCircleFilled(screen, 3.5f, IM_COL32(255, 255, 255, 255));
+				drawlist->AddCircleFilled(screen, 3.5f, overlay_color::highlight);
 		}
 	}
 
@@ -1086,19 +1086,19 @@ void editor_mode::draw_route_overlay() const
 		ImVec2 screen;
 		if (false == projection.project(route_vertex_position(i), screen))
 			continue;
-		drawlist->AddCircleFilled(screen, 6.0f, IM_COL32(255, 210, 60, 255));
+		drawlist->AddCircleFilled(screen, 6.0f, overlay_color::marked);
 		if (i == route.vertex)
-			drawlist->AddCircle(screen, 11.0f, IM_COL32(255, 255, 255, 255), 16, 2.5f);
+			drawlist->AddCircle(screen, 11.0f, overlay_color::highlight, 16, 2.5f);
 		if (i < static_cast<int>(result.vertex_chainages.size()) && result.length > 0.0 && projection.project(alignment::evaluate(result, result.vertex_chainages[i]).position, screen))
 		{
-			drawlist->AddCircleFilled(screen, 6.0f, IM_COL32(60, 230, 90, 255), 4);
+			drawlist->AddCircleFilled(screen, 6.0f, overlay_color::grip, 4);
 			if (i == route.grip)
-				drawlist->AddCircle(screen, 11.0f, IM_COL32(255, 255, 255, 255), 16, 2.5f);
+				drawlist->AddCircle(screen, 11.0f, overlay_color::highlight, 16, 2.5f);
 			auto const *report{i < static_cast<int>(result.curves.size()) ? &result.curves[i] : nullptr};
 			auto const radius{report != nullptr && report->radius2 > 0.0 ? format("R %.0f / %.0f", report->radius, report->radius2) : format("R %.0f", report != nullptr ? report->radius : design.vertices[i].radius)};
-			drawlist->AddText(ImVec2(screen.x + 9.0f, screen.y + 4.0f), IM_COL32(60, 230, 90, 255), radius.c_str());
+			drawlist->AddText(ImVec2(screen.x + 9.0f, screen.y + 4.0f), overlay_color::grip, radius.c_str());
 		}
-		drawlist->AddText(ImVec2(screen.x + 9.0f, screen.y - 18.0f), IM_COL32(255, 210, 60, 255), format("W%d", i + 1).c_str());
+		drawlist->AddText(ImVec2(screen.x + 9.0f, screen.y - 18.0f), overlay_color::marked, format("W%d", i + 1).c_str());
 	}
 }
 
@@ -1423,20 +1423,20 @@ void editor_mode::draw_straights_overlay() const
 	{
 		auto const &line{m_straights.found[i]};
 		if (nearby(line))
-			draw(line, i == m_straights.listed ? IM_COL32(40, 220, 255, 255) : IM_COL32(255, 255, 255, 110), i == m_straights.listed ? 4.0f : 2.0f);
+			draw(line, i == m_straights.listed ? overlay_color::selected : IM_COL32(255, 255, 255, 110), i == m_straights.listed ? 4.0f : 2.0f);
 	}
 	for (auto const &member : m_straights.set)
 		draw(member, IM_COL32(255, 150, 30, 255), 4.0f);
-	draw(m_straights.current, IM_COL32(40, 220, 255, 255), 4.0f);
+	draw(m_straights.current, overlay_color::selected, 4.0f);
 	if (m_straights.tool_placed)
 	{
 		auto const &state{m_straights};
 		auto const &line{state.tool_line};
 		ImVec2 screen;
 		if (projection.project(state.tool_point, screen))
-			drawlist->AddCircleFilled(screen, 7.0f, IM_COL32(255, 60, 60, 255));
+			drawlist->AddCircleFilled(screen, 7.0f, overlay_color::invalid);
 		if (projection.project(state.tool_handle, screen))
-			drawlist->AddCircleFilled(screen, 7.0f, IM_COL32(255, 210, 60, 255));
+			drawlist->AddCircleFilled(screen, 7.0f, overlay_color::marked);
 		if (state.tool == 1)
 		{
 			auto const direction{plan_of(state.tool_handle - state.tool_point)};
@@ -1444,7 +1444,7 @@ void editor_mode::draw_straights_overlay() const
 			{
 				auto const unit{glm::normalize(direction)};
 				auto const rest{std::max(0.0, line.length - state.tool_at)};
-				projection.line(drawlist, state.tool_point, state.tool_point + glm::dvec3{unit.x, line.grade, unit.y} * rest, IM_COL32(255, 210, 60, 255), 3.0f);
+				projection.line(drawlist, state.tool_point, state.tool_point + glm::dvec3{unit.x, line.grade, unit.y} * rest, overlay_color::marked, 3.0f);
 			}
 		}
 		else
@@ -1456,7 +1456,7 @@ void editor_mode::draw_straights_overlay() const
 			auto const shifted{glm::dvec3{normal.x, 0.0, normal.y} * shift};
 			auto const along{glm::dvec3{line.direction.x, 0.0, line.direction.y}};
 			projection.line(drawlist, state.tool_point, state.tool_point + along * length + shifted, IM_COL32(255, 210, 60, 160), 2.0f);
-			projection.line(drawlist, state.tool_point + along * length + shifted, line.end + shifted, IM_COL32(255, 210, 60, 255), 3.0f);
+			projection.line(drawlist, state.tool_point + along * length + shifted, line.end + shifted, overlay_color::marked, 3.0f);
 		}
 	}
 	if (m_straights.dragging && m_straights.fitting)
@@ -1469,7 +1469,7 @@ void editor_mode::draw_straights_overlay() const
 			for (int i = 1; i <= steps; ++i)
 			{
 				auto const next{alignment::evaluate(result, result.length * i / steps).position};
-				projection.line(drawlist, previous, next, result.valid ? IM_COL32(255, 210, 60, 255) : IM_COL32(255, 60, 60, 255), 3.0f);
+				projection.line(drawlist, previous, next, result.valid ? overlay_color::marked : overlay_color::invalid, 3.0f);
 				previous = next;
 			}
 		}
@@ -1481,7 +1481,7 @@ void editor_mode::draw_straights_overlay() const
 			for (auto const *track : member.tracks)
 			{
 				auto const &path{track->m_paths.front()};
-				projection.line(drawlist, path.points[segment_data::point::start], path.points[segment_data::point::end], IM_COL32(255, 210, 60, 255), 3.0f);
+				projection.line(drawlist, path.points[segment_data::point::start], path.points[segment_data::point::end], overlay_color::marked, 3.0f);
 			}
 		}
 	}
@@ -1495,11 +1495,11 @@ void editor_mode::draw_straights_overlay() const
 			if (false == projection.project(handles[i], screen))
 				continue;
 			if (i < 2)
-				drawlist->AddRectFilled(ImVec2(screen.x - 6.0f, screen.y - 6.0f), ImVec2(screen.x + 6.0f, screen.y + 6.0f), IM_COL32(40, 220, 255, 255));
+				drawlist->AddRectFilled(ImVec2(screen.x - 6.0f, screen.y - 6.0f), ImVec2(screen.x + 6.0f, screen.y + 6.0f), overlay_color::selected);
 			else
-				drawlist->AddCircleFilled(screen, 6.0f, IM_COL32(40, 220, 255, 255), 4);
+				drawlist->AddCircleFilled(screen, 6.0f, overlay_color::selected, 4);
 			if (i == m_straights.handle)
-				drawlist->AddCircle(screen, 12.0f, IM_COL32(255, 255, 255, 255), 16, 2.5f);
+				drawlist->AddCircle(screen, 12.0f, overlay_color::highlight, 16, 2.5f);
 		}
 	}
 	auto const &line{m_straights.current};
@@ -2788,33 +2788,33 @@ void editor_mode::draw_build_overlay() const
 			if (projection.project(target.position, screen))
 				drawlist->AddCircle(screen, 14.0f, IM_COL32(255, 60, 255, 255), 20, 3.0f);
 			for (auto const &piece : extend_pieces())
-				drawpath(piece, IM_COL32(255, 210, 60, 255));
+				drawpath(piece, overlay_color::marked);
 		}
 		else if (plan_crossover(plan))
 		{
 			for (auto const &piece : plan.paths)
-				drawpath(piece, IM_COL32(255, 210, 60, 255));
-			drawpath(plan.insert, IM_COL32(60, 230, 90, 255));
+				drawpath(piece, overlay_color::marked);
+			drawpath(plan.insert, overlay_color::grip);
 		}
 		else
 		{
 			for (auto const &piece : extend_pieces())
-				drawpath(piece, IM_COL32(255, 210, 60, 255));
+				drawpath(piece, overlay_color::marked);
 		}
 	}
 	if (m_switch.placing)
 		for (auto const &piece : switch_preview())
-			drawpath(piece, IM_COL32(255, 210, 60, 255));
+			drawpath(piece, overlay_color::marked);
 	if (false == m_straights.detour.empty())
 	{
 		auto const outline{detour_outline()};
 		for (std::size_t i = 0; i + 1 < outline.size(); ++i)
-			projection.line(drawlist, outline[i], outline[i + 1], IM_COL32(255, 210, 60, 255), 3.0f);
+			projection.line(drawlist, outline[i], outline[i + 1], overlay_color::marked, 3.0f);
 		for (std::size_t i = 0; i < outline.size() && i < m_straights.detour.size(); ++i)
 		{
 			ImVec2 screen;
 			if (projection.project(outline[i], screen))
-				drawlist->AddCircleFilled(screen, 6.0f, IM_COL32(255, 60, 60, 255));
+				drawlist->AddCircleFilled(screen, 6.0f, overlay_color::invalid);
 		}
 	}
 	auto const *track{selected_track()};

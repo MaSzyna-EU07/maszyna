@@ -1060,10 +1060,10 @@ void editor_mode::render_profile_canvas()
 		}
 		auto const chainage{points[c.point].chainage};
 		ImVec2 const grip{x_of(chainage), y_of(profile::elevation(line, chainage))};
-		draw->AddCircleFilled(grip, 4.5f, IM_COL32(60, 230, 90, 255), 4);
+		draw->AddCircleFilled(grip, 4.5f, overlay_color::grip, 4);
 		if (static_cast<int>(c.point) == state.curve_grip)
-			draw->AddCircle(grip, 9.0f, IM_COL32(255, 255, 255, 255), 12, 2.0f);
-		draw->AddText(ImVec2(grip.x + 7.0f, grip.y + 4.0f), IM_COL32(60, 230, 90, 255), format("R %.0f", points[c.point].radius).c_str());
+			draw->AddCircle(grip, 9.0f, overlay_color::highlight, 12, 2.0f);
+		draw->AddText(ImVec2(grip.x + 7.0f, grip.y + 4.0f), overlay_color::grip, format("R %.0f", points[c.point].radius).c_str());
 	}
 	for (int i = 0; i < static_cast<int>(points.size()); ++i)
 	{
@@ -1073,10 +1073,10 @@ void editor_mode::render_profile_canvas()
 		else if (points[i].joint)
 			draw->AddQuadFilled(ImVec2(at.x, at.y - 6.0f), ImVec2(at.x + 6.0f, at.y), ImVec2(at.x, at.y + 6.0f), ImVec2(at.x - 6.0f, at.y), IM_COL32(90, 210, 230, 255));
 		else
-			draw->AddCircleFilled(at, 5.5f, IM_COL32(255, 210, 60, 255));
+			draw->AddCircleFilled(at, 5.5f, overlay_color::marked);
 		if (i == state.selected)
-			draw->AddCircle(at, 10.0f, IM_COL32(255, 255, 255, 255), 16, 2.0f);
-		draw->AddText(ImVec2(at.x + 7.0f, at.y - 18.0f), IM_COL32(255, 210, 60, 255), format("%d  %.3f", i + 1, points[i].elevation).c_str());
+			draw->AddCircle(at, 10.0f, overlay_color::highlight, 16, 2.0f);
+		draw->AddText(ImVec2(at.x + 7.0f, at.y - 18.0f), overlay_color::marked, format("%d  %.3f", i + 1, points[i].elevation).c_str());
 	}
 	for (auto const &issue : state.issues)
 	{
@@ -1157,8 +1157,8 @@ void editor_mode::draw_profile_overlay() const
 		ImVec2 screen;
 		if (false == projection.project(position, screen))
 			continue;
-		drawlist->AddCircleFilled(screen, i == state.selected ? 7.0f : 5.0f, IM_COL32(255, 210, 60, 255));
-		drawlist->AddText(ImVec2(screen.x + 8.0f, screen.y - 16.0f), IM_COL32(255, 210, 60, 255), format("%d", i + 1).c_str());
+		drawlist->AddCircleFilled(screen, i == state.selected ? 7.0f : 5.0f, overlay_color::marked);
+		drawlist->AddText(ImVec2(screen.x + 8.0f, screen.y - 16.0f), overlay_color::marked, format("%d", i + 1).c_str());
 	}
 	if (state.hover >= 0.0 && state.hover <= state.route.length)
 	{

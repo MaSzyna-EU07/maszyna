@@ -1358,7 +1358,7 @@ void editor_mode::draw_infra_overlay() const
 			drawlist->AddCircleFilled(screen, Size, Colour);
 	};
 	for (auto const &binding : m_bindings)
-		draw(binding, binding.lost ? IM_COL32(255, 60, 60, 255) : IM_COL32(90, 230, 110, 220), 3.5f);
+		draw(binding, binding.lost ? overlay_color::invalid : IM_COL32(90, 230, 110, 220), 3.5f);
 	for (int i = 0; i < static_cast<int>(state.candidates.size()); ++i)
 	{
 		auto const &candidate{state.candidates[i]};
