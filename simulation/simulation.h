@@ -84,6 +84,7 @@ extern memory_table Memory;
 extern path_table Paths;
 extern road_table Roads;
 extern junction_table Junctions;
+extern roadpoint_table Roadpoints;
 extern traction_table Traction;
 extern powergridsource_table Powergrid;
 extern instance_table Instances;

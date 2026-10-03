@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include <glm/glm.hpp>
 
 #include "world/Road.h"
+#include "world/RoadPoint.h"
 
 // editor operations on the roads. a road in the scenery is a string of pieces joined end to end,
 // each piece being a road node with lanes and geometry of its own; roads meet at junctions
@@ -54,10 +55,14 @@ class editor_road
 		std::vector<std::pair<junction_node *, junction_node::state>> junctions; // junctions with what they were like before
 		std::vector<junction_node *> junctions_created;
 		std::vector<junction_node *> junctions_removed;
+		std::vector<std::pair<roadpoint_node *, roadpoint_node::state>> points; // crossings and traffic points with what they were like before
+		std::vector<roadpoint_node *> points_created;
+		std::vector<roadpoint_node *> points_removed;
 
 		bool empty() const
 		{
-			return roads.empty() && roads_created.empty() && roads_removed.empty() && junctions.empty() && junctions_created.empty() && junctions_removed.empty();
+			return roads.empty() && roads_created.empty() && roads_removed.empty() && junctions.empty() && junctions_created.empty() && junctions_removed.empty() && points.empty() &&
+			       points_created.empty() && points_removed.empty();
 		}
 	};
 	// a road led out of the side of another road, or out of a junction between its arms: the junction this takes,
@@ -91,6 +96,25 @@ class editor_road
 	static std::vector<junction_node *> create(std::vector<junction_node::state> const &States);
 	static void remove(std::vector<junction_node *> const &Junctions);
 	static void revive(std::vector<junction_node *> const &Junctions);
+	// level crossings, and the points the vehicles appear at or are taken away at. these go by the lanes and the rails they find
+	// around them, so unlike the roads they can be changed with vehicles around
+	static bool can_edit(roadpoint_node const &Point, std::string *Reason = nullptr);
+	static std::vector<roadpoint_node *> create(std::vector<roadpoint_node::state> const &States);
+	static void apply(std::vector<std::pair<roadpoint_node *, roadpoint_node::state>> const &Changes);
+	static void remove(std::vector<roadpoint_node *> const &Points);
+	static void revive(std::vector<roadpoint_node *> const &Points);
+	// the crossing or traffic point nearest to specified point, within specified distance from it
+	static roadpoint_node *nearest_point(glm::dvec3 const &Point, double const Radius);
+	// place on the middle of a lane nearest to specified point, within specified distance from it.
+	// Direction: receives the way the traffic goes there. returns: false if there's no lane that close
+	static bool nearest_lane(glm::dvec3 const &Point, double const Reach, glm::dvec3 &Position, glm::dvec3 &Direction);
+	// rails crossing specified piece within specified distance from a point. Middle: receives the point of the axis halfway between
+	// the outermost of them, Halfspan: how far along the road these are from it. returns: false if no rails cross the piece there
+	static bool rails_across(road_node const &Road, glm::dvec3 const &Near, double const Reach, glm::dvec3 &Middle, double &Halfspan);
+	// takes a point out of a road. the two pieces which meet at it are made one, led from the far end of one to the far end
+	// of the other the way these ends go; a point a road ends at takes the last piece of the road with it.
+	// what gets done is added to Record. returns: false if it can't be done, with the reason in Error
+	static bool dissolve(glm::dvec3 const &Joint, record &Record, std::string &Error);
 	// cuts the piece in two at specified point of its axis. returns: the new piece, holding the part past the cut
 	static road_node *split(road_node &Road, double const T);
 	// the pieces which make a single road together with specified one, in no particular order

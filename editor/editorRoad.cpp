@@ -317,6 +317,66 @@ void retire(std::vector<TTrack *> const &Tracks)
 			editor_track::retire(*track);
 }
 
+// value of the curve parameter for the point of a curve nearest to specified point, seen from above
+double nearest_on(std::array<glm::dvec3, 4> const &Points, glm::dvec3 const &Point)
+{
+	auto const distance = [&](double const T) {
+		auto const position{curve_point(Points, T)};
+		return glm::distance(glm::dvec2{position.x, position.z}, glm::dvec2{Point.x, Point.z});
+	};
+	double best{0.0};
+	for (int i = 1; i <= 64; ++i)
+		if (distance(i / 64.0) < distance(best))
+			best = i / 64.0;
+	double step{1.0 / 64.0};
+	for (int i = 0; i < 24; ++i)
+	{
+		step *= 0.5;
+		if (best - step >= 0.0 && distance(best - step) < distance(best))
+			best -= step;
+		else if (best + step <= 1.0 && distance(best + step) < distance(best))
+			best += step;
+	}
+	return best;
+}
+
+double planar_distance(glm::dvec3 const &Left, glm::dvec3 const &Right)
+{
+	return glm::distance(glm::dvec2{Left.x, Left.z}, glm::dvec2{Right.x, Right.z});
+}
+
+// true if two lines cross when seen from above. Along, Otheralong: receive how far along each of them the crossing is, 0 to 1
+bool lines_cross(glm::dvec3 const &Start, glm::dvec3 const &End, glm::dvec3 const &Otherstart, glm::dvec3 const &Otherend, double &Along, double &Otheralong)
+{
+	glm::dvec2 const line{End.x - Start.x, End.z - Start.z};
+	glm::dvec2 const other{Otherend.x - Otherstart.x, Otherend.z - Otherstart.z};
+	auto const denominator{line.x * other.y - line.y * other.x};
+	if (std::abs(denominator) < 1e-12)
+		return false;
+	glm::dvec2 const offset{Otherstart.x - Start.x, Otherstart.z - Start.z};
+	Along = (offset.x * other.y - offset.y * other.x) / denominator;
+	Otheralong = (offset.x * line.y - offset.y * line.x) / denominator;
+	return Along >= 0.0 && Along <= 1.0 && Otheralong >= 0.0 && Otheralong <= 1.0;
+}
+
+// the same piece of a road laid out from its other end: what it looks like and where its lanes lead stays as it was
+road_node::state flipped(road_node::state const &State)
+{
+	auto result{State};
+	std::swap(result.axis.points[segment_data::point::start], result.axis.points[segment_data::point::end]);
+	std::swap(result.axis.points[segment_data::point::control1], result.axis.points[segment_data::point::control2]);
+	result.axis.rolls = {-State.axis.rolls[1], -State.axis.rolls[0]};
+	std::swap(result.forward, result.backward);
+	// the lanes are listed left to right for someone facing along the axis, who's now looking the other way
+	std::reverse(result.lanes.begin(), result.lanes.end());
+	std::reverse(result.changes.begin(), result.changes.end());
+	for (auto &change : result.changes)
+		change = ((change & road_node::change_toright) != 0 ? road_node::change_toleft : 0) | ((change & road_node::change_toleft) != 0 ? road_node::change_toright : 0);
+	std::swap(result.sides[0], result.sides[1]);
+	std::swap(result.taper[0], result.taper[1]);
+	return result;
+}
+
 // smallest radius of the bend made by a bezier curve, seen from above; 0 if the curve is practically straight
 double tightest_radius(segment_data const &Path)
 {
@@ -468,6 +528,8 @@ void editor_road::refresh(std::vector<road_node *> const &Roads, std::vector<jun
 	// this takes down the paths made for the joints, so they can be made again once the change is done
 	std::vector<road_node *> affected;
 	std::vector<junction_node *> crossings;
+	// level crossings and traffic points hold on to the lanes, which are about to be replaced
+	simulation::Roadpoints.unbind();
 	auto const gather = [&]() {
 		std::vector<road_node *> roads{affected};
 		std::vector<junction_node *> junctions{crossings};
@@ -541,6 +603,7 @@ void editor_road::refresh(std::vector<road_node *> const &Roads, std::vector<jun
 	for (auto *road : affected)
 		if (false == road->m_editorremoved)
 			road->close_ends();
+	simulation::Roadpoints.bind();
 }
 
 std::vector<road_node *> editor_road::create(std::vector<road_node::state> const &States)
@@ -702,6 +765,288 @@ void editor_road::revive(std::vector<junction_node *> const &Junctions)
 	});
 }
 
+bool editor_road::can_edit(roadpoint_node const &Point, std::string *Reason)
+{
+	std::string reason;
+	auto editable{true};
+	if (simulation::Region == nullptr)
+	{
+		reason = "No scenery is loaded";
+		editable = false;
+	}
+	else
+	{
+		editable = scene::Layers.editable(&Point, &reason);
+	}
+	if (false == editable && Reason != nullptr)
+		*Reason = reason;
+	return editable;
+}
+
+std::vector<roadpoint_node *> editor_road::create(std::vector<roadpoint_node::state> const &States)
+{
+	static int counter{0};
+	std::vector<roadpoint_node *> created;
+	if (simulation::Region == nullptr)
+		return created;
+	for (auto const &state : States)
+	{
+		scene::node_data data;
+		data.type = roadpoint_node::keyword(state.kind);
+		data.range_max = -1.0;
+		data.layer = scene::Layers.active(); // null_handle unless the scenery was opened for editing
+		// the vehicles of a spawn point are named after it, so each point needs a name of its own
+		do
+		{
+			data.name = data.type + "_" + std::to_string(++counter);
+		} while (simulation::Roadpoints.find(data.name) != nullptr);
+		auto *point{new roadpoint_node(data)};
+		point->define(state);
+		point->mark_dirty();
+		simulation::Roadpoints.insert(point);
+		scene::Layers.count(point->layer(), scene::layer_item::track);
+		point->bind();
+		point->show();
+		created.emplace_back(point);
+	}
+	return created;
+}
+
+void editor_road::apply(std::vector<std::pair<roadpoint_node *, roadpoint_node::state>> const &Changes)
+{
+	for (auto const &change : Changes)
+	{
+		auto *point{change.first};
+		if (point == nullptr)
+			continue;
+		point->hide();
+		point->unbind();
+		point->define(change.second);
+		point->mark_dirty();
+		point->bind();
+		point->show();
+	}
+}
+
+void editor_road::remove(std::vector<roadpoint_node *> const &Points)
+{
+	for (auto *point : Points)
+	{
+		if (point == nullptr || point->m_editorremoved)
+			continue;
+		point->hide();
+		// a crossing which goes lets the vehicles it was holding drive on
+		point->unbind();
+		point->m_editorremoved = true;
+		scene::Layers.count(point->layer(), scene::layer_item::track, -1);
+	}
+}
+
+void editor_road::revive(std::vector<roadpoint_node *> const &Points)
+{
+	for (auto *point : Points)
+	{
+		if (point == nullptr || false == point->m_editorremoved)
+			continue;
+		point->m_editorremoved = false;
+		point->mark_dirty();
+		scene::Layers.count(point->layer(), scene::layer_item::track);
+		point->bind();
+		point->show();
+	}
+}
+
+roadpoint_node *editor_road::nearest_point(glm::dvec3 const &Point, double const Radius)
+{
+	roadpoint_node *result{nullptr};
+	auto best{Radius};
+	for (auto *point : simulation::Roadpoints.sequence())
+	{
+		if (point == nullptr || point->m_editorremoved)
+			continue;
+		auto const &position{point->definition().position};
+		auto const distance{planar_distance(position, Point)};
+		if (distance > best || std::abs(position.y - Point.y) > 3.0)
+			continue;
+		best = distance;
+		result = point;
+	}
+	return result;
+}
+
+bool editor_road::nearest_lane(glm::dvec3 const &Point, double const Reach, glm::dvec3 &Position, glm::dvec3 &Direction)
+{
+	auto best{Reach};
+	auto found{false};
+	for (auto const *road : simulation::Roads.sequence())
+	{
+		if (road == nullptr || road->m_editorremoved)
+			continue;
+		auto const &state{road->definition()};
+		auto const axis{curve_points(state.axis)};
+		// the axis is no longer than the lines joining its points, which is good enough to tell the road is nowhere near
+		if (glm::distance(road->location(), Point) >
+		    0.5 * (glm::distance(axis[0], axis[1]) + glm::distance(axis[1], axis[2]) + glm::distance(axis[2], axis[3])) + 0.5 * state.width() * std::max(state.taper[0], state.taper[1]) + Reach + 10.0)
+			continue;
+		for (auto const *lane : road->tracks())
+		{
+			if (lane == nullptr || lane->m_paths.empty())
+				continue;
+			auto const points{curve_points(lane->m_paths.front())};
+			auto const t{nearest_on(points, Point)};
+			auto const position{curve_point(points, t)};
+			auto const distance{planar_distance(position, Point)};
+			// lanes passing over or under the point don't count
+			if (distance > best || std::abs(position.y - Point.y) > 3.0)
+				continue;
+			best = distance;
+			Position = position;
+			// the lanes are laid out the way the traffic goes
+			Direction = curve_point(points, std::min(1.0, t + 0.01)) - curve_point(points, std::max(0.0, t - 0.01));
+			found = true;
+		}
+	}
+	return found;
+}
+
+bool editor_road::rails_across(road_node const &Road, glm::dvec3 const &Near, double const Reach, glm::dvec3 &Middle, double &Halfspan)
+{
+	int const pieces{32}; // lines the axis is taken for
+	int const railpieces{16}; // and each of the rails
+	auto const axis{curve_points(Road.definition().axis)};
+	std::vector<glm::dvec3> line;
+	for (int i = 0; i <= pieces; ++i)
+		line.emplace_back(curve_point(axis, static_cast<double>(i) / pieces));
+	// values of the curve parameter of the axis the rails cross it at
+	auto first{2.0};
+	auto last{-1.0};
+	for (auto const *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 1) == 0)
+			continue;
+		for (auto const &path : track->m_paths)
+		{
+			auto const rail{curve_points(path)};
+			// the path is no longer than the lines joining its points, which is good enough to tell it's nowhere near
+			if (planar_distance(rail[0], Near) > glm::distance(rail[0], rail[1]) + glm::distance(rail[1], rail[2]) + glm::distance(rail[2], rail[3]) + Reach)
+				continue;
+			auto previous{rail[0]};
+			for (int j = 1; j <= railpieces; ++j)
+			{
+				auto const next{curve_point(rail, static_cast<double>(j) / railpieces)};
+				for (int i = 0; i < pieces; ++i)
+				{
+					double along{0.0};
+					double railalong{0.0};
+					if (false == lines_cross(line[i], line[i + 1], previous, next, along, railalong))
+						continue;
+					auto const point{glm::mix(line[i], line[i + 1], along)};
+					// rails passing over or under the road don't make a level crossing
+					if (planar_distance(point, Near) > Reach || std::abs(glm::mix(previous.y, next.y, railalong) - point.y) > 3.0)
+						continue;
+					auto const t{(i + along) / pieces};
+					first = std::min(first, t);
+					last = std::max(last, t);
+				}
+				previous = next;
+			}
+		}
+	}
+	if (last < first)
+		return false;
+	Middle = curve_point(axis, 0.5 * (first + last));
+	Halfspan = std::max(planar_distance(curve_point(axis, first), Middle), planar_distance(curve_point(axis, last), Middle));
+	return true;
+}
+
+bool editor_road::dissolve(glm::dvec3 const &Joint, record &Record, std::string &Error)
+{
+	if (false == junctions_at(Joint).empty())
+	{
+		Error = "the point is where a road meets a junction. Delete the junction or the road instead";
+		return false;
+	}
+	auto const ends{ends_at(Joint)};
+	if (ends.empty())
+	{
+		Error = "there's no point of a road there";
+		return false;
+	}
+	if (ends.size() > 2 || (ends.size() == 2 && ends[0].road == ends[1].road))
+	{
+		Error = "more than two ends of roads meet at the point";
+		return false;
+	}
+	std::string reason;
+	for (auto const &end : ends)
+	{
+		if (false == can_edit(*end.road, &reason))
+		{
+			Error = "\"" + end.road->name() + "\" can't be changed: " + reason;
+			return false;
+		}
+	}
+	if (ends.size() == 1)
+	{
+		// the point a road ends at: the last piece goes
+		remove(std::vector<road_node *>{ends.front().road});
+		Record.roads_removed.emplace_back(ends.front().road);
+		return true;
+	}
+	// the piece which leads to the point stays, and takes the place of the two
+	auto kept{ends[0]};
+	auto dropped{ends[1]};
+	if (false == kept.atend && dropped.atend)
+		std::swap(kept, dropped);
+	auto before{kept.road->definition()};
+	auto after{dropped.road->definition()};
+	if (false == kept.atend)
+		before = flipped(before);
+	if (dropped.atend)
+		after = flipped(after);
+	if (before.forward != after.forward || before.backward != after.backward)
+	{
+		Error = "the road has other lanes on each side of the point. Give both sides the same lanes first";
+		return false;
+	}
+	auto const lengths{std::make_pair(before.length(), after.length())};
+	auto const whole{lengths.first + lengths.second};
+	if (lengths.first < 0.01 || lengths.second < 0.01 || before.width() <= 0.0)
+	{
+		Error = "the pieces at the point are too short";
+		return false;
+	}
+	auto const start{curve_points(before.axis)};
+	auto const end{curve_points(after.axis)};
+	auto merged{before};
+	merged.axis.points[segment_data::point::end] = end[3];
+	merged.axis.rolls[1] = after.axis.rolls[1];
+	// the far ends keep the way they go, with their control points moved out to make up for the ones which go with the point.
+	// a piece cut in two has the control points at the cut as far from it as the parts of the piece each of the two took,
+	// so going by these brings such a piece back to what it was
+	auto const reach{std::make_pair(glm::distance(start[2], start[3]), glm::distance(end[0], end[1]))};
+	auto const share{std::clamp(reach.first + reach.second > 1e-6 ? reach.first / (reach.first + reach.second) : lengths.first / whole, 0.05, 0.95)};
+	auto control1{(start[1] - start[0]) / share};
+	auto control2{(end[2] - end[3]) / (1.0 - share)};
+	auto const straight{end[3] - start[0]};
+	auto const along = [&straight](glm::dvec3 const &Direction) { return glm::length(glm::cross(glm::normalize(Direction), glm::normalize(straight))) < 1e-4; };
+	if (glm::length(straight) > 0.01 && along(control1) && along(-control2) && glm::dot(control1, straight) > 0.0 && glm::dot(control2, straight) < 0.0)
+	{
+		// two pieces of a straight make a straight
+		control1 = glm::dvec3{0.0};
+		control2 = glm::dvec3{0.0};
+	}
+	merged.axis.points[segment_data::point::control1] = control1;
+	merged.axis.points[segment_data::point::control2] = control2;
+	// the road is as wide at its far ends as it was
+	merged.taper[1] = static_cast<float>(after.taper[1] * after.width() / before.width());
+	remember(Record, kept.road);
+	remove(std::vector<road_node *>{dropped.road});
+	Record.roads_removed.emplace_back(dropped.road);
+	apply(std::vector<std::pair<road_node *, road_node::state>>{{kept.road, merged}});
+	return true;
+}
+
 road_node *editor_road::split(road_node &Road, double const T)
 {
 	if (T <= 0.001 || T >= 0.999)
@@ -764,25 +1109,7 @@ std::vector<road_node *> editor_road::chain(road_node &Road)
 
 double editor_road::nearest_parameter(road_node::state const &State, glm::dvec3 const &Point)
 {
-	auto const points{curve_points(State.axis)};
-	auto const distance = [&](double const T) {
-		auto const position{curve_point(points, T)};
-		return glm::distance(glm::dvec2{position.x, position.z}, glm::dvec2{Point.x, Point.z});
-	};
-	double best{0.0};
-	for (int i = 1; i <= 64; ++i)
-		if (distance(i / 64.0) < distance(best))
-			best = i / 64.0;
-	double step{1.0 / 64.0};
-	for (int i = 0; i < 24; ++i)
-	{
-		step *= 0.5;
-		if (best - step >= 0.0 && distance(best - step) < distance(best))
-			best -= step;
-		else if (best + step <= 1.0 && distance(best + step) < distance(best))
-			best += step;
-	}
-	return best;
+	return nearest_on(curve_points(State.axis), Point);
 }
 
 road_node *editor_road::nearest(glm::dvec3 const &Point, double const Margin)

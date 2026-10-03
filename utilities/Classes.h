@@ -47,6 +47,8 @@ class road_node; // kawałek drogi, z którego powstają pasy ruchu
 class road_table;
 class junction_node;
 class junction_table;
+class roadpoint_node; // przejazd kolejowy albo miejsce, w którym pojazdy drogowe się pojawiają lub znikają
+class roadpoint_table;
 struct dictionary_source;
 class trainset_desc;
 class scenery_desc;

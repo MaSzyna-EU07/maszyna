@@ -500,9 +500,10 @@ class editor_mode : public application_mode
 	{
 		bool window{false}; // the road window is open, the left mouse button belongs to its tools
 		bool lanes{true}; // lanes of the roads are drawn as trajectories
-		int tool{0}; // 0: select, 1: build
+		int tool{0}; // 0: select, 1: build, 2: place
 		road_node *selected{nullptr};
 		junction_node *junction{nullptr}; // selected junction
+		roadpoint_node *marker{nullptr}; // selected level crossing or traffic point
 		std::vector<glm::dvec3> points; // selected points where the pieces meet or end
 		road_node::state settings; // layout shown in the window: of the selected piece, or of the pieces about to be built
 		bool whole{true}; // layout changes go to every piece of the road the selected one belongs to
@@ -522,6 +523,17 @@ class editor_mode : public application_mode
 		bool follow{true}; // built roads are led over the ground between the clicked points
 		float crossingspeed{30.f}; // speed limit on the junctions being made
 		float heightstep{0.1f}; // how much the selected points are raised or lowered at a time
+		// level crossings and traffic points
+		int placekind{0}; // what the place tool puts down: 0: level crossing, 1: spawn point, 2: removal point
+		roadpoint_node::state placing[3]; // what the next point of each kind is going to be like
+		float stopmargin{5.f}; // distance from the outermost track of a new crossing to the places the vehicles stop at
+		roadpoint_node::state target; // the point a click of the place tool would make at the moment
+		bool hastarget{false};
+		glm::dvec3 targetdirection{0.0}; // the way the traffic goes there
+		std::string targetnote; // what's worth knowing about that point, or why there's none
+		glm::dvec3 aimed{0.0}; // where the cursor was when the target was worked out, and for what kind of point
+		int aimedkind{-1};
+		char vehicles[4096]{}; // vehicles to add to the set of a spawn point, written the way they're put in a scenery
 		road_plan plan; // what a click would make at the moment, worked out once a frame for display
 		glm::dvec3 hover{0.0}; // point of a road or a junction under the cursor a road can be led out of
 		bool hashover{false};
@@ -550,6 +562,16 @@ class editor_mode : public application_mode
 	void road_point_width(float const Width);
 	void road_point_heights(std::vector<double> const &Heights);
 	bool road_points_apply(std::vector<std::pair<road_node *, road_node::state>> const &Changes, std::vector<std::pair<junction_node *, junction_node::state>> const &Junctions);
+	// takes the selected points out of their roads
+	bool road_points_delete();
+	// level crossings and traffic points
+	void roadpoint_select(roadpoint_node *Point);
+	// works out the point a click of the place tool would make. Fresh: even if the cursor is where it was the last time
+	void roadpoint_aim(bool const Fresh);
+	void roadpoint_place();
+	void roadpoint_apply(roadpoint_node &Point, roadpoint_node::state const &State);
+	// Point: the point the controls are for, nullptr for the one about to be made
+	bool render_roadpoint_layout(roadpoint_node::state &State, roadpoint_node const *Point);
 	// Fresh: the ground which wasn't looked up yet is gathered on the spot, instead of a bit of it each frame
 	road_plan road_preview(bool const Fresh);
 	// Firstgrade, Lastgrade: slopes the road has to start and end with, nullptr for none

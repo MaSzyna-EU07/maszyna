@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "world/Track.h"
 #include "world/Road.h"
+#include "world/RoadPoint.h"
 #include "simulation/simulation.h"
 
 #include "imgui/imgui.h"
@@ -133,6 +134,10 @@ double const kSnapRadius{4.0}; // an end of a road this close to the cursor is w
 double const kPointRadius{2.5}; // a point where pieces meet this close to the click is what gets selected, instead of the piece
 double const kPointRange{400.0}; // the points are drawn for the roads this close to the camera
 double const kSideMargin{1.0}; // how far past the edge of a road the cursor still counts as being on it
+double const kMarkerRadius{2.0}; // a level crossing or a traffic point this close to the click is what gets selected
+double const kRailReach{40.0}; // rails crossing the road this close to the cursor are taken for a single level crossing
+double const kLaneReach{2.5}; // a lane with its middle this close to the cursor is the one a traffic point is put on
+double const kFullTurn{6.283185307179586};
 double const kJoinClearance{15.0}; // a road isn't led into the side of another this close to the point it's led from
 double const kReach{3000.0}; // clicks landing further than this are taken for misses
 double const kLaneRange{600.0}; // lanes are drawn for the roads this close to the camera
@@ -151,6 +156,19 @@ ImU32 const kSelectedColor{IM_COL32(40, 220, 255, 230)};
 ImU32 const kPreviewColor{IM_COL32(255, 210, 60, 255)};
 ImU32 const kRefusedColor{IM_COL32(240, 60, 60, 255)};
 ImU32 const kSnapColor{IM_COL32(255, 60, 255, 255)};
+ImU32 const kCrossingColor{IM_COL32(255, 220, 60, 230)};
+ImU32 const kSpawnColor{IM_COL32(90, 230, 120, 230)};
+ImU32 const kDespawnColor{IM_COL32(255, 110, 110, 230)};
+
+roadpoint_node::kind_type point_kind(int const Index)
+{
+	return Index == 1 ? roadpoint_node::kind_type::spawn : Index == 2 ? roadpoint_node::kind_type::despawn : roadpoint_node::kind_type::crossing;
+}
+
+char const *point_label(roadpoint_node::kind_type const Kind)
+{
+	return Kind == roadpoint_node::kind_type::spawn ? "spawn point" : Kind == roadpoint_node::kind_type::despawn ? "removal point" : "level crossing";
+}
 
 // gathers new definitions for the pieces which meet or end at provided points.
 // Change: receives a definition, which end of it is at the point, and the number of the point
@@ -209,6 +227,8 @@ void editor_mode::update_road_tool()
 		tool.selected = nullptr;
 	if (tool.junction != nullptr && tool.junction->m_editorremoved)
 		tool.junction = nullptr;
+	if (tool.marker != nullptr && tool.marker->m_editorremoved)
+		tool.marker = nullptr;
 	if ((tool.branchroad != nullptr && tool.branchroad->m_editorremoved) || (tool.branchjunction != nullptr && tool.branchjunction->m_editorremoved))
 	{
 		// what the road was to be led out of is gone
@@ -220,6 +240,11 @@ void editor_mode::update_road_tool()
 	tool.points.erase(std::remove_if(tool.points.begin(), tool.points.end(), [](glm::dvec3 const &Point) { return editor_road::ends_at(Point).empty(); }), tool.points.end());
 	tool.plan = road_plan{};
 	tool.hashover = false;
+	if (false == tool.window || tool.tool != 2)
+	{
+		tool.hastarget = false;
+		tool.aimedkind = -1;
+	}
 	if (false == tool.window)
 	{
 		tool.chain = false;
@@ -230,6 +255,14 @@ void editor_mode::update_road_tool()
 	if (glm::distance(tool.mouse, camera) > kReach)
 	{
 		tool.plan.error = "The cursor isn't over anything near enough";
+		tool.hastarget = false;
+		tool.aimedkind = -1;
+		return;
+	}
+	if (tool.tool == 2)
+	{
+		// the point a click would make at the moment, to be drawn over the view
+		roadpoint_aim(false);
 		return;
 	}
 	if (tool.tool != 1)
@@ -287,6 +320,280 @@ void editor_mode::junction_select(junction_node *Junction)
 	// the fields for the names of materials are shared with the roads
 	copy_text(tool.surface, sizeof(tool.surface), Junction->definition().surface);
 	copy_text(tool.sides[0], sizeof(tool.sides[0]), Junction->definition().side.material);
+}
+
+void editor_mode::roadpoint_select(roadpoint_node *Point)
+{
+	auto &tool{m_roadtool};
+	tool.marker = Point;
+	if (Point == nullptr)
+		return;
+	std::string reason;
+	tool.status = "Selected: " + Point->name();
+	if (false == editor_road::can_edit(*Point, &reason))
+		tool.status += ". It can't be changed: " + reason;
+}
+
+// works out the point a click of the place tool would make with the cursor where it is
+void editor_mode::roadpoint_aim(bool const Fresh)
+{
+	auto &tool{m_roadtool};
+	if (false == Fresh && tool.aimedkind == tool.placekind && glm::distance(tool.aimed, tool.mouse) < 0.1)
+	{
+		// the cursor didn't move, so neither did what it points at
+		return;
+	}
+	tool.aimed = tool.mouse;
+	tool.aimedkind = tool.placekind;
+	auto const kind{point_kind(tool.placekind)};
+	tool.target = tool.placing[tool.placekind];
+	tool.target.kind = kind;
+	tool.hastarget = false;
+	tool.targetnote.clear();
+	tool.targetdirection = glm::dvec3{0.0};
+	if (kind == roadpoint_node::kind_type::crossing)
+	{
+		auto const *road{editor_road::nearest(tool.mouse, kSideMargin)};
+		if (road == nullptr)
+		{
+			tool.targetnote = "Point at the place a road crosses the rails";
+			return;
+		}
+		glm::dvec3 middle{0.0};
+		double halfspan{0.0};
+		if (editor_road::rails_across(*road, tool.mouse, kRailReach, middle, halfspan))
+		{
+			// the crossing goes halfway between the outermost tracks. the distance is rounded up, so it reads well in the scenery file
+			tool.target.position = middle;
+			tool.target.clearance = static_cast<float>(std::ceil((halfspan + tool.stopmargin) * 2.0) * 0.5);
+		}
+		else
+		{
+			tool.target.position = road->definition().point(editor_road::nearest_parameter(road->definition(), tool.mouse));
+			tool.target.clearance = std::max(tool.stopmargin, 2.0f);
+			tool.targetnote = "No rails cross the road here; a crossing put here won't close until some do";
+		}
+		tool.hastarget = true;
+		return;
+	}
+	if (false == editor_road::nearest_lane(tool.mouse, kLaneReach, tool.target.position, tool.targetdirection))
+	{
+		tool.targetnote = "Point at a lane of a road";
+		return;
+	}
+	tool.hastarget = true;
+}
+
+// puts down the point the place tool is set for, as a step which can be taken back
+void editor_mode::roadpoint_place()
+{
+	auto &tool{m_roadtool};
+	roadpoint_aim(true);
+	if (false == tool.hastarget)
+	{
+		tool.status = tool.targetnote;
+		return;
+	}
+	auto const created{editor_road::create(std::vector<roadpoint_node::state>{tool.target})};
+	if (created.empty())
+	{
+		tool.status = "No scenery is loaded";
+		return;
+	}
+	auto const *point{created.front()};
+	auto const &state{point->definition()};
+	editor_road::record record;
+	record.points_created = created;
+	push_road_snapshot(std::move(record));
+	char text[64];
+	switch (state.kind)
+	{
+	case roadpoint_node::kind_type::crossing:
+	{
+		std::snprintf(text, sizeof(text), "%.1f", state.clearance);
+		tool.status = "Level crossing made: " + std::to_string(point->stops().size()) + " lanes stop " + text + " m from its middle, ";
+		tool.status += std::to_string(point->rails()) + " tracks are watched for trains.";
+		break;
+	}
+	case roadpoint_node::kind_type::spawn:
+	{
+		tool.status = (state.vehicles.empty() ? std::string{"Spawn point made, with no vehicles: nothing appears there until it's given some (Select, click the point)."} :
+		                                        "Spawn point made, with " + std::to_string(state.vehicles.size() * state.copies) + " vehicles. They appear while the simulation runs.");
+		break;
+	}
+	case roadpoint_node::kind_type::despawn:
+	{
+		tool.status = "Removal point made, it takes vehicles from " + std::to_string(point->lanes().size()) + (point->lanes().size() == 1 ? " lane." : " lanes.");
+		break;
+	}
+	}
+	if (false == tool.targetnote.empty())
+		tool.status += " " + tool.targetnote + ".";
+}
+
+// replaces the definition of a level crossing or a traffic point, as a step which can be taken back
+void editor_mode::roadpoint_apply(roadpoint_node &Point, roadpoint_node::state const &State)
+{
+	auto &tool{m_roadtool};
+	std::string reason;
+	if (false == editor_road::can_edit(Point, &reason))
+	{
+		tool.status = "\"" + Point.name() + "\" can't be changed: " + reason;
+		return;
+	}
+	editor_road::record record;
+	record.points.emplace_back(&Point, Point.definition());
+	editor_road::apply(std::vector<std::pair<roadpoint_node *, roadpoint_node::state>>{{&Point, State}});
+	push_road_snapshot(std::move(record));
+	tool.status = "Changed";
+}
+
+// draws controls for a level crossing or a traffic point. returns: true if something was changed
+bool editor_mode::render_roadpoint_layout(roadpoint_node::state &State, roadpoint_node const *Point)
+{
+	auto &tool{m_roadtool};
+	bool changed{false};
+	// values typed for a point which is there already are taken when confirmed, so the point isn't made anew with each digit
+	auto const flags{Point != nullptr ? ImGuiInputTextFlags_EnterReturnsTrue : ImGuiInputTextFlags_None};
+	auto const number = [flags](char const *Label, float &Value, float const Step, char const *Format) {
+		ImGui::SetNextItemWidth(120.0f);
+		return ImGui::InputFloat(Label, &Value, Step, Step * 4.0f, Format, flags);
+	};
+	ImVec4 const warning{1.0f, 0.6f, 0.3f, 1.0f};
+	switch (State.kind)
+	{
+	case roadpoint_node::kind_type::crossing:
+	{
+		if (Point != nullptr)
+		{
+			ImGui::Text("%d lanes stop here, %d tracks are watched for trains", static_cast<int>(Point->stops().size()), static_cast<int>(Point->rails()));
+			if (Point->rails() == 0)
+				ImGui::TextColored(warning, "No rails pass through it, so it never closes");
+			// the crossing is tied to what's there when it's made or changed, and when the roads change
+			if (ImGui::Button("Look for the rails again"))
+				changed = true;
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", "For when the tracks were laid or changed after the crossing was made.");
+			if (number("Stop this far from the middle [m]", State.clearance, 0.5f, "%.1f"))
+				changed = true;
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", "Where the vehicles stop, measured along the road from the middle of the crossing.\n"
+				                        "The tracks passing within that distance from the middle are the ones the crossing is closed for.");
+		}
+		else
+		{
+			if (number("Stop this far from the outermost track [m]", tool.stopmargin, 0.5f, "%.1f"))
+				tool.stopmargin = std::clamp(tool.stopmargin, 2.0f, 50.0f);
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", "Where the vehicles stop, measured along the road from the axis of the first track they'd get to.");
+		}
+		if (number("Closes with a train this far away [m]", State.warning, 50.0f, "%.0f"))
+			changed = true;
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", "Measured along the tracks, both ways, with both ways of each switch counted.\n"
+			                        "A rail vehicle within that distance which gets nearer closes the crossing, and so does one right at it.\n"
+			                        "It opens a few seconds after the last one is gone.");
+		if (ImGui::Checkbox("Paint the stop lines", &State.stoplines))
+			changed = true;
+		break;
+	}
+	case roadpoint_node::kind_type::spawn:
+	{
+		if (Point != nullptr)
+		{
+			if (Point->lanes().empty())
+				ImGui::TextColored(warning, "It isn't on a lane, so nothing appears here");
+			else if (Point->vehicles() == 0)
+				ImGui::TextDisabled("The vehicles are made when the simulation runs");
+			else
+				ImGui::Text("%d vehicles made, %d of them wait for their turn", static_cast<int>(Point->vehicles()), static_cast<int>(Point->waiting()));
+		}
+		if (number("A vehicle every [s]", State.interval, 1.0f, "%.0f"))
+			changed = true;
+		if (number("Uneven by [0-1]", State.variation, 0.1f, "%.2f"))
+			changed = true;
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", "Part of the time between vehicles which is drawn at random each time.\n"
+			                        "0: they come like clockwork, 1: anything from one right after another to twice the time.");
+		if (number("Speed [km/h]", State.velocity, 5.0f, "%.0f"))
+			changed = true;
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", "The speed the vehicles appear with. From there on the drivers go by the speed limits of the lanes.");
+		ImGui::SetNextItemWidth(120.0f);
+		if (ImGui::InputInt("Copies of each vehicle", &State.copies, 1, 1, flags))
+			changed = true;
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", "How many of each vehicle of the set are made. A vehicle can't be in two places at once,\n"
+			                        "so this is how many of a kind can be on the road together. All of them are loaded along with the scenery,\n"
+			                        "and a vehicle taken by a removal point goes back to wait for its next turn.");
+		// the set
+		ImGui::Separator();
+		ImGui::Text("Vehicles of the set: %d", static_cast<int>(State.vehicles.size()));
+		int removed{-1};
+		for (std::size_t index = 0; index < State.vehicles.size(); ++index)
+		{
+			auto const &vehicle{State.vehicles[index]};
+			ImGui::PushID(static_cast<int>(index));
+			if (ImGui::SmallButton("x"))
+				removed = static_cast<int>(index);
+			ImGui::SameLine();
+			if (vehicle.load > 0)
+				ImGui::Text("%s / %s, %s, %d %s", vehicle.folder.c_str(), vehicle.type.c_str(), vehicle.skin.c_str(), vehicle.load, vehicle.loadtype.c_str());
+			else
+				ImGui::Text("%s / %s, %s", vehicle.folder.c_str(), vehicle.type.c_str(), vehicle.skin.c_str());
+			ImGui::PopID();
+		}
+		if (removed >= 0)
+		{
+			State.vehicles.erase(State.vehicles.begin() + removed);
+			changed = true;
+		}
+		if (State.vehicles.empty())
+			ImGui::TextColored(warning, "No vehicles, so nothing appears here");
+		ImGui::InputTextMultiline("##vehicles", tool.vehicles, sizeof(tool.vehicles), ImVec2(-1.0f, ImGui::GetTextLineHeight() * 5.0f));
+		if (ImGui::Button("Add to the set"))
+		{
+			auto const parsed{roadpoint_node::parse_vehicles(tool.vehicles)};
+			if (parsed.empty())
+			{
+				tool.status = "No vehicle found in the text";
+			}
+			else
+			{
+				State.vehicles.insert(State.vehicles.end(), parsed.begin(), parsed.end());
+				tool.vehicles[0] = 0;
+				changed = true;
+			}
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Empty the set") && false == State.vehicles.empty())
+		{
+			State.vehicles.clear();
+			changed = true;
+		}
+		ImGui::TextDisabled("Paste the vehicles the way they're put in a scenery:");
+		ImGui::TextDisabled("node -1 0 none dynamic <folder> <skin> <type> <path>");
+		ImGui::TextDisabled("  <offset> <driver> <velocity> <load> enddynamic");
+		ImGui::TextDisabled("or as <folder> <skin> <type>, one vehicle a line.");
+		ImGui::TextDisabled("The path, the offset, the driver and the velocity don't matter.");
+		break;
+	}
+	case roadpoint_node::kind_type::despawn:
+	{
+		if (Point != nullptr)
+			ImGui::Text("Takes vehicles from %d %s", static_cast<int>(Point->lanes().size()), Point->lanes().size() == 1 ? "lane" : "lanes");
+		if (number("Takes vehicles this close [m]", State.radius, 0.5f, "%.1f"))
+			changed = true;
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", "Road vehicles on the lanes passing within this distance from the point are taken off the road when they get here,\n"
+			                        "except for the one the user drives. Vehicles which came from a spawn point go back to wait for their next turn.\n"
+			                        "The distance it starts with takes in a single lane.");
+		break;
+	}
+	}
+	if (changed && Point != nullptr)
+		State.normalize();
+	return changed;
 }
 
 // replaces the definition of a junction, as a step which can be taken back
@@ -636,8 +943,23 @@ void editor_mode::road_click()
 		return;
 	}
 	tool.mouse = ground;
+	if (tool.tool == 2)
+	{
+		roadpoint_place();
+		return;
+	}
 	if (tool.tool == 0)
 	{
+		if (auto *marker{editor_road::nearest_point(ground, kMarkerRadius)}; marker != nullptr)
+		{
+			// a level crossing or a traffic point
+			tool.points.clear();
+			tool.junction = nullptr;
+			road_select(nullptr);
+			roadpoint_select(marker);
+			return;
+		}
+		tool.marker = nullptr;
 		glm::dvec3 joint;
 		if (editor_road::nearest_joint(ground, kPointRadius, joint))
 		{
@@ -883,13 +1205,29 @@ void editor_mode::road_apply()
 bool editor_mode::road_delete()
 {
 	auto &tool{m_roadtool};
-	if (false == tool.window || (tool.selected == nullptr && tool.junction == nullptr))
-	{
-		// with points selected the key isn't meant for whatever else is selected in the editor
-		return tool.window && false == tool.points.empty();
-	}
+	if (false == tool.window)
+		return false;
 	std::string reason;
 	editor_road::record record;
+	if (tool.marker != nullptr)
+	{
+		auto *point{tool.marker};
+		if (false == editor_road::can_edit(*point, &reason))
+		{
+			tool.status = "Can't delete: " + reason;
+			return true;
+		}
+		editor_road::remove(std::vector<roadpoint_node *>{point});
+		record.points_removed.emplace_back(point);
+		push_road_snapshot(std::move(record));
+		tool.marker = nullptr;
+		tool.status = "\"" + point->name() + "\" deleted, Ctrl+Z brings it back";
+		return true;
+	}
+	if (false == tool.points.empty())
+		return road_points_delete();
+	if (tool.selected == nullptr && tool.junction == nullptr)
+		return false;
 	if (tool.junction != nullptr)
 	{
 		auto *junction{tool.junction};
@@ -916,6 +1254,30 @@ bool editor_mode::road_delete()
 	push_road_snapshot(std::move(record));
 	tool.selected = nullptr;
 	tool.status = "\"" + road->name() + "\" deleted, Ctrl+Z brings it back";
+	return true;
+}
+
+// takes the selected points out of their roads
+bool editor_mode::road_points_delete()
+{
+	auto &tool{m_roadtool};
+	editor_road::record record;
+	std::string notes;
+	int taken{0};
+	for (auto const &point : tool.points)
+	{
+		std::string error;
+		if (editor_road::dissolve(point, record, error))
+			++taken;
+		else if (notes.find(error) == std::string::npos)
+			notes += " A point was left: " + error + ".";
+	}
+	push_road_snapshot(std::move(record));
+	// the points which stayed are still selected, so it's clear which ones these are
+	tool.points.erase(std::remove_if(tool.points.begin(), tool.points.end(), [](glm::dvec3 const &Point) { return editor_road::ends_at(Point).empty(); }), tool.points.end());
+	tool.status = (taken == 0 ? std::string{"Nothing deleted."} : taken == 1 ? std::string{"Point deleted, Ctrl+Z brings it back."} :
+	                                                                 std::to_string(taken) + " points deleted, Ctrl+Z brings them back.");
+	tool.status += notes;
 	return true;
 }
 
@@ -1049,8 +1411,14 @@ void editor_mode::push_road_snapshot(editor_road::record Record)
 		node = Record.junctions.front().first;
 	else if (false == Record.junctions_created.empty())
 		node = Record.junctions_created.front();
-	else
+	else if (false == Record.junctions_removed.empty())
 		node = Record.junctions_removed.front();
+	else if (false == Record.points.empty())
+		node = Record.points.front().first;
+	else if (false == Record.points_created.empty())
+		node = Record.points_created.front();
+	else
+		node = Record.points_removed.front();
 	EditorSnapshot snap;
 	snap.action = EditorSnapshot::Action::RoadEdit;
 	snap.node_name = node->name();
@@ -1072,6 +1440,8 @@ void editor_mode::restore_road_snapshot(EditorSnapshot const &Snapshot, std::vec
 		entry.second = entry.first->definition();
 	for (auto &entry : current.roads.junctions)
 		entry.second = entry.first->definition();
+	for (auto &entry : current.roads.points)
+		entry.second = entry.first->definition();
 	Opposite.push_back(std::move(current));
 
 	// things are taken out before the rest is changed and put in after it, so nothing gets joined with what's on its way out
@@ -1079,23 +1449,28 @@ void editor_mode::restore_road_snapshot(EditorSnapshot const &Snapshot, std::vec
 	{
 		editor_road::remove(record.roads_created);
 		editor_road::remove(record.junctions_created);
+		editor_road::remove(record.points_created);
 	}
 	else
 	{
 		editor_road::remove(record.roads_removed);
 		editor_road::remove(record.junctions_removed);
+		editor_road::remove(record.points_removed);
 	}
 	editor_road::apply(record.roads);
 	editor_road::apply(record.junctions);
+	editor_road::apply(record.points);
 	if (Undo)
 	{
 		editor_road::revive(record.roads_removed);
 		editor_road::revive(record.junctions_removed);
+		editor_road::revive(record.points_removed);
 	}
 	else
 	{
 		editor_road::revive(record.roads_created);
 		editor_road::revive(record.junctions_created);
+		editor_road::revive(record.points_created);
 	}
 
 	auto &tool{m_roadtool};
@@ -1104,6 +1479,9 @@ void editor_mode::restore_road_snapshot(EditorSnapshot const &Snapshot, std::vec
 		road_select(tool.selected->m_editorremoved ? nullptr : tool.selected);
 	if (tool.junction != nullptr)
 		junction_select(tool.junction->m_editorremoved ? nullptr : tool.junction);
+	if (tool.marker != nullptr && tool.marker->m_editorremoved)
+		tool.marker = nullptr;
+	tool.aimedkind = -1;
 }
 
 // a field for the name of a material, with a list of the ones in the texture folder to pick from. returns: true if the material was changed
@@ -1333,6 +1711,10 @@ void editor_mode::render_road_window()
 	ImGui::RadioButton("Select", &tool.tool, 0);
 	ImGui::SameLine();
 	ImGui::RadioButton("Build", &tool.tool, 1);
+	ImGui::SameLine();
+	ImGui::RadioButton("Place", &tool.tool, 2);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", "Level crossings, and the points where vehicles appear on the roads or are taken off them");
 	if (tool.tool != previoustool)
 	{
 		road_cancel();
@@ -1340,6 +1722,7 @@ void editor_mode::render_road_window()
 		{
 			tool.junction = nullptr;
 			tool.points.clear();
+			tool.marker = nullptr;
 			// the fields for the names of materials show the layout for the roads to be built again
 			road_select(nullptr);
 		}
@@ -1378,6 +1761,45 @@ void editor_mode::render_road_window()
 		ImGui::Separator();
 		// what's set here is what the next pieces get
 		render_road_layout(tool.settings);
+	}
+	else if (tool.tool == 2)
+	{
+		ImGui::RadioButton("Level crossing", &tool.placekind, 0);
+		ImGui::SameLine();
+		ImGui::RadioButton("Spawn point", &tool.placekind, 1);
+		ImGui::SameLine();
+		ImGui::RadioButton("Removal point", &tool.placekind, 2);
+		tool.placekind = std::clamp(tool.placekind, 0, 2);
+		switch (tool.placekind)
+		{
+		case 0:
+			ImGui::TextDisabled("LMB on a road where the rails cross it. The vehicles stop ahead");
+			ImGui::TextDisabled("of the rails for as long as a train is coming.");
+			break;
+		case 1:
+			ImGui::TextDisabled("LMB on a lane. The vehicles of the set appear there one by one");
+			ImGui::TextDisabled("and drive on the way the lane goes.");
+			break;
+		default:
+			ImGui::TextDisabled("LMB on a lane. The vehicles which get there are taken off the road;");
+			ImGui::TextDisabled("put one where the road leaves the scenery.");
+			break;
+		}
+		ImGui::Separator();
+		// what's set here is what the next points get
+		auto &placing{tool.placing[tool.placekind]};
+		placing.kind = point_kind(tool.placekind);
+		render_roadpoint_layout(placing, nullptr);
+	}
+	else if (tool.marker != nullptr)
+	{
+		auto &point{*tool.marker};
+		auto state{point.definition()};
+		ImGui::Text("%s, %s", point.name().c_str(), point_label(state.kind));
+		if (render_roadpoint_layout(state, &point))
+			roadpoint_apply(point, state);
+		if (ImGui::Button("Delete (Del)"))
+			road_delete();
 	}
 	else if (false == tool.points.empty())
 	{
@@ -1428,6 +1850,12 @@ void editor_mode::render_road_window()
 			if (ImGui::IsItemHovered())
 				ImGui::SetTooltip("Puts each point %.2f m over the ground under it; the height above the ground is set in the Build tool.", tool.offset);
 		}
+		if (ImGui::Button(tool.points.size() == 1 ? "Delete the point (Del)" : "Delete the points (Del)"))
+			road_points_delete();
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", "Takes the point out of the road: the pieces on its two sides become one piece,\n"
+			                        "led from the far end of one to the far end of the other the way the road goes there.\n"
+			                        "A point the road ends at takes the last piece of the road with it.");
 	}
 	else if (tool.junction != nullptr)
 	{
@@ -1456,7 +1884,8 @@ void editor_mode::render_road_window()
 	}
 	else
 	{
-		ImGui::TextDisabled("LMB: select a road piece, a junction, or a point where pieces meet");
+		ImGui::TextDisabled("LMB: select a road piece, a junction, a point where pieces meet,");
+		ImGui::TextDisabled("a level crossing or a traffic point");
 	}
 	if (false == tool.status.empty())
 	{
@@ -1587,6 +2016,77 @@ void editor_mode::draw_road_overlay() const
 			drawpoint(arm.position, Color, 5.0f, true);
 	};
 
+	// a circle lying on the ground
+	auto const drawring = [&](glm::dvec3 const &Centre, double const Radius, ImU32 const Color) {
+		int const pieces{24};
+		glm::dvec3 previous{Centre + glm::dvec3{Radius, 0.0, 0.0}};
+		for (int i = 1; i <= pieces; ++i)
+		{
+			auto const angle{kFullTurn * i / pieces};
+			glm::dvec3 const next{Centre + glm::dvec3{Radius * std::cos(angle), 0.0, Radius * std::sin(angle)}};
+			projection.line(drawlist, previous, next, Color, 2.0f);
+			previous = next;
+		}
+	};
+	auto const drawlabel = [&](glm::dvec3 const &Point, ImU32 const Color, char const *Text) {
+		ImVec2 screen;
+		if (false == projection.room(drawlist) || false == projection.project(Point, screen) || projection.outside(screen, screen))
+			return;
+		drawlist->AddText(ImVec2(screen.x + 14.0f, screen.y - 8.0f), Color, Text);
+	};
+	// a level crossing or a traffic point. Point: the node it's drawn for, nullptr for one which isn't made yet
+	auto const drawmarker = [&](roadpoint_node::state const &State, roadpoint_node const *Point, ImU32 const Color) {
+		drawpoint(State.position, Color, 6.0f, true);
+		auto const labelled{glm::distance(State.position, camera) < 200.0};
+		switch (State.kind)
+		{
+		case roadpoint_node::kind_type::crossing:
+		{
+			// the tracks within the circle are the ones it's closed for, the lines are where the vehicles stop
+			drawring(State.position, State.clearance, Color);
+			auto const closed{Point != nullptr && Point->closed()};
+			if (Point != nullptr)
+			{
+				for (auto const &stop : Point->stops())
+				{
+					glm::dvec3 across{stop.direction.z, 0.0, -stop.direction.x};
+					if (glm::length(across) < 1e-6)
+						continue;
+					across = glm::normalize(across) * (0.5 * stop.width);
+					projection.line(drawlist, stop.position - across, stop.position + across, closed ? kRefusedColor : Color, 4.0f);
+				}
+			}
+			if (labelled)
+				drawlabel(State.position, Color, closed ? "crossing, closed" : "crossing");
+			break;
+		}
+		case roadpoint_node::kind_type::spawn:
+		{
+			drawpoint(State.position, Color, 11.0f, false);
+			if (labelled)
+				drawlabel(State.position, Color, "spawn");
+			break;
+		}
+		case roadpoint_node::kind_type::despawn:
+		{
+			drawring(State.position, State.radius, Color);
+			if (labelled)
+				drawlabel(State.position, Color, "removal");
+			break;
+		}
+		}
+	};
+	for (auto const *point : simulation::Roadpoints.sequence())
+	{
+		if (point == nullptr || point->m_editorremoved || glm::distance(point->location(), camera) > kPointRange)
+			continue;
+		auto const kind{point->definition().kind};
+		drawmarker(point->definition(), point,
+		           point == tool.marker ? kSelectedColor : kind == roadpoint_node::kind_type::spawn ? kSpawnColor : kind == roadpoint_node::kind_type::despawn ? kDespawnColor : kCrossingColor);
+		if (point == tool.marker)
+			drawpoint(point->definition().position, kSelectedColor, 15.0f, false);
+	}
+
 	if (tool.selected != nullptr && false == tool.selected->m_editorremoved)
 	{
 		auto const &state{tool.selected->definition()};
@@ -1649,6 +2149,30 @@ void editor_mode::draw_road_overlay() const
 			}
 		}
 	}
+	else if (tool.tool == 2)
+	{
+		if (tool.hastarget)
+		{
+			drawmarker(tool.target, nullptr, kPreviewColor);
+			if (glm::length(tool.targetdirection) > 1e-6)
+			{
+				// the way the traffic goes on the lane
+				auto const direction{glm::normalize(tool.targetdirection)};
+				glm::dvec3 const across{direction.z, 0.0, -direction.x};
+				auto const tip{tool.target.position + direction * 5.0};
+				projection.line(drawlist, tool.target.position, tip, kPreviewColor, 2.0f);
+				projection.line(drawlist, tip, tip - direction * 1.2 + across * 0.8, kPreviewColor, 2.0f);
+				projection.line(drawlist, tip, tip - direction * 1.2 - across * 0.8, kPreviewColor, 2.0f);
+			}
+			hint = std::string{"LMB: put a "} + point_label(tool.target.kind) + " here";
+			if (false == tool.targetnote.empty())
+				hint += "   " + tool.targetnote;
+		}
+		else
+		{
+			hint = (tool.targetnote.empty() ? std::string{"LMB: put a "} + point_label(point_kind(tool.placekind)) + " on a road" : tool.targetnote);
+		}
+	}
 	else
 	{
 		// points where the pieces meet or end, to pick from
@@ -1664,10 +2188,11 @@ void editor_mode::draw_road_overlay() const
 			drawpoint(point, kSelectedColor, 6.0f, true);
 			drawpoint(point, kSelectedColor, 11.0f, false);
 		}
-		hint = false == tool.points.empty() ? "LMB: select a point   Shift+LMB: add a point or take it out   Ctrl+Z: undo" :
-		       tool.selected != nullptr ? "LMB: select a piece, a junction or a point (white dot)   K: split at the cursor   Del: delete   Ctrl+Z: undo" :
-		       tool.junction != nullptr ? "LMB: select a piece, a junction or a point (white dot)   Del: delete   Ctrl+Z: undo" :
-		                                  "LMB: select a piece, a junction or a point (white dot)";
+		hint = tool.marker != nullptr       ? "LMB: select a piece, a junction, a point or a marker   Del: delete   Ctrl+Z: undo" :
+		       false == tool.points.empty() ? "LMB: select a point   Shift+LMB: add a point or take it out   Del: delete the points   Ctrl+Z: undo" :
+		       tool.selected != nullptr     ? "LMB: select a piece, a junction or a point (white dot)   K: split at the cursor   Del: delete   Ctrl+Z: undo" :
+		       tool.junction != nullptr     ? "LMB: select a piece, a junction or a point (white dot)   Del: delete   Ctrl+Z: undo" :
+		                                      "LMB: select a piece, a junction, a point (white dot) or a marker";
 	}
 	// shown above the place the track tools put their hints at
 	ImGuiIO const &io = ImGui::GetIO();

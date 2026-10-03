@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenelayers.h"
 #include "world/Track.h"
 #include "world/Road.h"
+#include "world/RoadPoint.h"
 
 #include "simulation/simulation.h"
 #include "model/AnimModel.h"
@@ -923,6 +924,68 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		state.patches[source.layer].edits.emplace_back(std::move(edit));
 		rewritten.emplace(junction);
 	}
+	// level crossings and traffic points of the roads
+	std::vector<roadpoint_node *> savedroadpoints;
+	std::vector<roadpoint_node const *> droppedroadpoints;
+	auto const roadpoint_text = [](roadpoint_node &Point, glm::dvec3 const &Offset) {
+		auto const definition{Point.definition()};
+		auto local{definition};
+		local.position -= Offset;
+		Point.define(local);
+		std::string text;
+		Point.export_as_text(text);
+		Point.define(definition);
+		text.erase(text.find_last_not_of(" \t\r\n") + 1);
+		return text;
+	};
+	for (auto *point : simulation::Roadpoints.sequence())
+	{
+		if (point == nullptr || point->from_template())
+		{
+			continue;
+		}
+		auto const nodelayer{resolve(point->layer())};
+		if (false == is_output(nodelayer))
+		{
+			continue;
+		}
+		auto const lookup{m_sources.find(point)};
+		if (lookup == m_sources.end())
+		{
+			if (point->m_editorremoved || false == point->dirty())
+			{
+				continue;
+			}
+			created[nodelayer].emplace_back(point, roadpoint_text(*point, layer(nodelayer).context_insert().offset));
+			savedroadpoints.push_back(point);
+			continue;
+		}
+		auto const &source{lookup->second};
+		if ((false == point->m_editorremoved && false == point->dirty()) || false == writable(source.layer))
+		{
+			continue;
+		}
+		if (false == load(source.layer))
+		{
+			return fail(state.error);
+		}
+		file_patch::edit edit;
+		edit.begin = source.span.begin;
+		edit.end = source.span.end;
+		if (point->m_editorremoved)
+		{
+			droppedroadpoints.push_back(point);
+		}
+		else
+		{
+			edit.text = roadpoint_text(*point, source.context.offset);
+			edit.length = edit.text.size();
+			edit.node = point;
+			savedroadpoints.push_back(point);
+		}
+		state.patches[source.layer].edits.emplace_back(std::move(edit));
+		rewritten.emplace(point);
+	}
 	for (auto const &erased : m_erased)
 	{
 		file_patch::edit edit;
@@ -1381,6 +1444,14 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 	for (auto const *junction : droppedjunctions)
 	{
 		m_sources.erase(junction);
+	}
+	for (auto *point : savedroadpoints)
+	{
+		point->m_dirty = false;
+	}
+	for (auto const *point : droppedroadpoints)
+	{
+		m_sources.erase(point);
 	}
 	if (removedterrain)
 	{

@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/MemCell.h"
 #include "world/Track.h"
 #include "world/Road.h"
+#include "world/RoadPoint.h"
 #include "world/Traction.h"
 #include "world/TractionPower.h"
 #include "audio/sound.h"
@@ -39,6 +40,7 @@ memory_table Memory;
 path_table Paths;
 road_table Roads;
 junction_table Junctions;
+roadpoint_table Roadpoints;
 traction_table Traction;
 powergridsource_table Powergrid;
 instance_table Instances;
@@ -117,6 +119,8 @@ state_manager::update( double const Deltatime, int Iterationcount ) {
     TAnimModel::AnimUpdate( totaltime ); // wykonanie zakolejkowanych animacji
 
     simulation::Powergrid.update( totaltime );
+    // level crossings and the points road vehicles appear at; ahead of the vehicles, so the drivers act on what these decide
+    simulation::Roadpoints.update( totaltime );
     simulation::Vehicles.update( Deltatime, Iterationcount );
 }
 
