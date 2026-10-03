@@ -192,13 +192,24 @@ class road_axis
 // corner of the cross-section of something laid along the road
 struct profile_point
 {
-	double offset; // distance from the axis, positive to the left
+	double offset; // distance from the axis, positive to the left. this part of it follows the taper of the road
 	double height; // above the surface
 	float texture; // texture coordinate across the road
+	double shift{0.0}; // further distance from the axis, which the taper leaves alone
 };
 
+// how far the taper of a road has got at specified part of its length. it starts and ends level, so the pieces of a road
+// meet without a bend in their edges, and it's what a lane running from one width to another comes to on a straight
+double taper_progress(double const Fraction)
+{
+	auto const t{std::clamp(Fraction, 0.0, 1.0)};
+	return t * t * (3.0 - 2.0 * t);
+}
+
 // stretches provided profile along a part of the axis. the profile points go left to right, each two neighbours make a band of triangles.
-void loft(std::vector<world_vertex> &Output, road_axis const &Axis, std::vector<profile_point> const &Profile, double const From, double const To, double const Step, double const Texturelength)
+// Taper: what the offsets of the profile are multiplied by at the start and at the end of the axis
+void loft(std::vector<world_vertex> &Output, road_axis const &Axis, std::vector<profile_point> const &Profile, double const From, double const To, double const Step, double const Texturelength,
+          std::array<float, 2> const &Taper)
 {
 	if (Profile.size() < 2 || To <= From || Step <= 0.0)
 	{
@@ -219,9 +230,10 @@ void loft(std::vector<world_vertex> &Output, road_axis const &Axis, std::vector<
 	{
 		auto const station{From + (To - From) * section / count};
 		auto const frame{Axis.at(station)};
+		auto const scale{Taper[0] == Taper[1] ? static_cast<double>(Taper[0]) : glm::mix(static_cast<double>(Taper[0]), static_cast<double>(Taper[1]), taper_progress(station / Axis.length()))};
 		for (std::size_t idx = 0; idx < pointcount; ++idx)
 		{
-			current[idx] = frame.position + frame.left * Profile[idx].offset + up * Profile[idx].height;
+			current[idx] = frame.position + frame.left * (Profile[idx].offset * scale + Profile[idx].shift) + up * Profile[idx].height;
 		}
 		if (section > 0)
 		{
@@ -279,6 +291,10 @@ void road_node::state::normalize()
 		forward = 1;
 	}
 	lanewidth = std::max(1.f, lanewidth);
+	for (auto &end : taper)
+	{
+		end = std::clamp(end, 0.25f, 4.f);
+	}
 	if (texturelength < 0.01f)
 	{
 		texturelength = 4.f;
@@ -372,7 +388,7 @@ double road_node::state::lane_offset(std::size_t const Lane) const
 	return Lane < lanes.size() ? offset - 0.5 * lanes[Lane].width : offset;
 }
 
-// combined width of the lanes
+// combined width of the lanes, before the taper
 double road_node::state::width() const
 {
 	double total{0.0};
@@ -383,24 +399,33 @@ double road_node::state::width() const
 	return total;
 }
 
+// what the widths of the lanes are multiplied by at specified value of the curve parameter
+double road_node::state::scale(double const T) const
+{
+	return glm::mix(static_cast<double>(taper[0]), static_cast<double>(taper[1]), taper_progress(T));
+}
+
 // shape of the middle of a lane, laid out in the direction of travel
 segment_data road_node::state::lane_path(std::size_t const Lane) const
 {
 	road_axis const centre{axis};
-	auto const offset{lane_offset(Lane)};
+	// on a road which gets wider or narrower the lane moves away from the axis or towards it along the way
+	auto const beginoffset{lane_offset(Lane) * taper[0]};
+	auto const endoffset{lane_offset(Lane) * taper[1]};
 	auto const begin{centre.frame(0.0)};
 	auto const end{centre.frame(1.0)};
 
 	segment_data path;
-	path.points[segment_data::point::start] = begin.position + begin.left * offset;
-	path.points[segment_data::point::end] = end.position + end.left * offset;
-	if (centre.curved())
+	path.points[segment_data::point::start] = begin.position + begin.left * beginoffset;
+	path.points[segment_data::point::end] = end.position + end.left * endoffset;
+	if (centre.curved() || beginoffset != endoffset)
 	{
-		// a line running beside a bend is shorter or longer than the bend itself, and so are its control vectors
-		path.points[segment_data::point::control1] = centre.control(0) * std::max(0.05, 1.0 - offset * std::cos(begin.roll) * centre.curvature(0.0));
-		path.points[segment_data::point::control2] = centre.control(1) * std::max(0.05, 1.0 - offset * std::cos(end.roll) * centre.curvature(1.0));
+		// a line running beside a bend is shorter or longer than the bend itself, and so are its control vectors.
+		// the control vectors go along the axis at both ends, which is what makes the lane meet the next piece without a bend
+		path.points[segment_data::point::control1] = centre.control(0) * std::max(0.05, 1.0 - beginoffset * std::cos(begin.roll) * centre.curvature(0.0));
+		path.points[segment_data::point::control2] = centre.control(1) * std::max(0.05, 1.0 - endoffset * std::cos(end.roll) * centre.curvature(1.0));
 		// if the roll changes along the road its sides rise or fall relative to the axis
-		auto const climb{offset * (std::sin(end.roll) - std::sin(begin.roll)) / 3.0};
+		auto const climb{(endoffset * std::sin(end.roll) - beginoffset * std::sin(begin.roll)) / 3.0};
 		path.points[segment_data::point::control1].y += climb;
 		path.points[segment_data::point::control2].y -= climb;
 	}
@@ -409,7 +434,7 @@ segment_data road_node::state::lane_path(std::size_t const Lane) const
 	{
 		// the lanes on the inner side of the bend have it tighter
 		auto const turn{centre.curvature(0.5) >= 0.0 ? 1.0 : -1.0};
-		path.radius = static_cast<float>(std::max(1.0, std::abs(axis.radius) - turn * offset));
+		path.radius = static_cast<float>(std::max(1.0, std::abs(axis.radius) - turn * 0.5 * (beginoffset + endoffset)));
 	}
 	if (Lane < static_cast<std::size_t>(backward))
 	{
@@ -489,6 +514,12 @@ void road_node::import(cParser &Input, glm::dvec3 const &Offset)
 		{
 			Input.getTokens();
 			Input >> m_state.velocity;
+		}
+		else if (token == "taper")
+		{
+			// taper <at the start> <at the end>
+			Input.getTokens(2);
+			Input >> m_state.taper[0] >> m_state.taper[1];
 		}
 		else if (token == "lane")
 		{
@@ -779,7 +810,7 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 	if (road.surface != "none")
 	{
 		auto const tile{static_cast<double>(texture_ratio(road.surface)) * texturelength};
-		loft(vertices(road.surface, lighting_data{}), axis, {{halfwidth, 0.0, static_cast<float>(0.5 + halfwidth / tile)}, {-halfwidth, 0.0, static_cast<float>(0.5 - halfwidth / tile)}}, 0.0, length, step, texturelength);
+		loft(vertices(road.surface, lighting_data{}), axis, {{halfwidth, 0.0, static_cast<float>(0.5 + halfwidth / tile)}, {-halfwidth, 0.0, static_cast<float>(0.5 - halfwidth / tile)}}, 0.0, length, step, texturelength, road.taper);
 	}
 
 	// sides
@@ -797,10 +828,10 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 		{
 			// the image is laid out like the one of the legacy roads: the edge of the surface on its right, the bank on its left half
 			profile.push_back({direction * halfwidth, 0.0, 1.f});
-			profile.push_back({direction * (halfwidth + data.width), 0.0, 0.5f});
+			profile.push_back({direction * halfwidth, 0.0, 0.5f, direction * data.width});
 			if (road.slope.x > 0.f)
 			{
-				profile.push_back({direction * (halfwidth + data.width + road.slope.x), -road.slope.y, 0.f});
+				profile.push_back({direction * halfwidth, -road.slope.y, 0.f, direction * (data.width + road.slope.x)});
 			}
 		}
 		else
@@ -809,14 +840,14 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 			auto const tile{static_cast<double>(texture_ratio(data.material)) * texturelength};
 			profile.push_back({direction * halfwidth, 0.0, 0.f});
 			profile.push_back({direction * halfwidth, road.kerbheight, static_cast<float>(road.kerbheight / tile)});
-			profile.push_back({direction * (halfwidth + data.width), road.kerbheight, static_cast<float>((road.kerbheight + data.width) / tile)});
+			profile.push_back({direction * halfwidth, road.kerbheight, static_cast<float>((road.kerbheight + data.width) / tile), direction * data.width});
 		}
 		if (side == 0)
 		{
 			// the loft takes the corners left to right
 			std::reverse(profile.begin(), profile.end());
 		}
-		loft(vertices(data.material, lighting_data{}), axis, profile, 0.0, length, step, texturelength);
+		loft(vertices(data.material, lighting_data{}), axis, profile, 0.0, length, step, texturelength, road.taper);
 	}
 
 	// markings. these are painted with plain colour instead of an image
@@ -827,26 +858,27 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 		paint.ambient = paint.diffuse;
 		auto &lines{vertices("colored", paint)};
 
-		auto const solid = [&](double const Offset) {
-			loft(lines, axis, {{Offset + 0.5 * line_width, line_lift, 0.f}, {Offset - 0.5 * line_width, line_lift, 1.f}}, 0.0, length, std::min(step, dash_step), texturelength);
+		// Offset: where the line runs on a road as wide as its lanes say, Shift: how far from there it's kept whatever the width
+		auto const solid = [&](double const Offset, double const Shift) {
+			loft(lines, axis, {{Offset, line_lift, 0.f, Shift + 0.5 * line_width}, {Offset, line_lift, 1.f, Shift - 0.5 * line_width}}, 0.0, length, std::min(step, dash_step), texturelength, road.taper);
 		};
 		// the dashes are fitted so the gaps at both ends of the road are a half of the regular one, which makes them match the next piece
-		auto const dashed = [&](double const Offset) {
+		auto const dashed = [&](double const Offset, double const Shift) {
 			auto const count{std::max(1, static_cast<int>(std::lround(length / dash_period)))};
 			auto const period{length / count};
 			for (int dash = 0; dash < count; ++dash)
 			{
 				auto const from{(dash + 1.0 / 3.0) * period};
-				loft(lines, axis, {{Offset + 0.5 * line_width, line_lift, 0.f}, {Offset - 0.5 * line_width, line_lift, 1.f}}, from, from + period / 3.0, dash_step, texturelength);
+				loft(lines, axis, {{Offset, line_lift, 0.f, Shift + 0.5 * line_width}, {Offset, line_lift, 1.f, Shift - 0.5 * line_width}}, from, from + period / 3.0, dash_step, texturelength, road.taper);
 			}
 		};
 
 		// edges of the surface
-		auto const edge{halfwidth - edge_inset - 0.5 * line_width};
-		if (edge > 0.5)
+		auto const inset{edge_inset + 0.5 * line_width};
+		if (halfwidth * std::min(road.taper[0], road.taper[1]) - inset > 0.5)
 		{
-			solid(edge);
-			solid(-edge);
+			solid(halfwidth, -inset);
+			solid(-halfwidth, inset);
 		}
 		// lines between the lanes. a lane can be left across a dashed line, or across a pair of lines if the dashed one is on its side
 		auto offset{halfwidth};
@@ -859,19 +891,19 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 			{
 			case change_both:
 			{
-				dashed(offset);
+				dashed(offset, 0.0);
 				break;
 			}
 			case change_toright:
 			{
-				dashed(offset + pair);
-				solid(offset - pair);
+				dashed(offset, pair);
+				solid(offset, -pair);
 				break;
 			}
 			case change_toleft:
 			{
-				solid(offset + pair);
-				dashed(offset - pair);
+				solid(offset, pair);
+				dashed(offset, -pair);
 				break;
 			}
 			default:
@@ -879,12 +911,12 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 				if (opposite)
 				{
 					// traffic going opposite ways is kept apart with a double line
-					solid(offset + pair);
-					solid(offset - pair);
+					solid(offset, pair);
+					solid(offset, -pair);
 				}
 				else
 				{
-					solid(offset);
+					solid(offset, 0.0);
 				}
 				break;
 			}
@@ -1671,7 +1703,7 @@ TTrack *road_node::create_track(std::string const &Name, segment_data const &Pat
 // radius() subclass details, calculates node's bounding radius
 float road_node::radius_()
 {
-	return static_cast<float>(0.5 * m_state.length() + 0.5 * m_state.width() + std::max(m_state.sides[0].width, m_state.sides[1].width) + m_state.slope.x);
+	return static_cast<float>(0.5 * m_state.length() + 0.5 * m_state.width() * std::max(m_state.taper[0], m_state.taper[1]) + std::max(m_state.sides[0].width, m_state.sides[1].width) + m_state.slope.x);
 }
 
 // serialize() subclass details, sends content of the subclass to provided stream
@@ -1701,6 +1733,10 @@ void road_node::export_as_text_(std::ostream &Output) const
 	Output.precision(precision);
 	// lanes
 	Output << "lanes " << road.forward << ' ' << road.backward << ' ' << "width " << road.lanewidth << ' ';
+	if (road.taper[0] != 1.f || road.taper[1] != 1.f)
+	{
+		Output << "taper " << road.taper[0] << ' ' << road.taper[1] << ' ';
+	}
 	if (road.velocity > 0.f)
 	{
 		Output << "velocity " << road.velocity << ' ';

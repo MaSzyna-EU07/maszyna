@@ -47,7 +47,8 @@ class owned_shapes
 	scene::basic_section *m_section{nullptr};
 };
 
-// a piece of a road for wheeled traffic: an axis, and a cross-section which stays the same along it.
+// a piece of a road for wheeled traffic: an axis, and a cross-section which stays the same along it, save for getting
+// evenly wider or narrower if it's told to.
 // the node itself is neither driven on nor drawn. it produces the lanes, which are ordinary invisible one-way tracks,
 // and the surface, the sides and the markings, which are ordinary shapes. this way the vehicles, the ai and the renderers
 // deal with a road without knowing about it.
@@ -100,6 +101,7 @@ class road_node : public scene::basic_node
 		float velocity{-1.f};
 		std::vector<lane_data> lanes;
 		std::vector<int> changes; // permissions to change the lane, one for each pair of neighbouring lanes
+		std::array<float, 2> taper{1.f, 1.f}; // what the widths of the lanes are multiplied by at the start and at the end of the axis
 		std::string surface{"asphaltdark1"};
 		float texturelength{4.f};
 		std::array<side_data, 2> sides; // left, right
@@ -121,8 +123,10 @@ class road_node : public scene::basic_node
 		int default_change(std::size_t const Boundary) const;
 		// distance of the middle of a lane from the axis, positive to the left when facing along the axis
 		double lane_offset(std::size_t const Lane) const;
-		// combined width of the lanes
+		// combined width of the lanes, before the taper
 		double width() const;
+		// what the widths of the lanes are multiplied by at specified value of the curve parameter
+		double scale(double const T) const;
 		// shape of the middle of a lane, laid out in the direction of travel
 		segment_data lane_path(std::size_t const Lane) const;
 		// length of the axis
@@ -206,6 +210,7 @@ class road_node : public scene::basic_node
 // gets a legacy crossroads path, which is what the vehicles and their drivers already know how to pick a way through.
 // scenery entry:
 // node <max> <min> <name> junction <centre> arm <position> <direction x z> <lanes in> <lanes out> <lane width> ... [<property> <values>]... endjunction
+// the arms don't have to be level with each other: the surface is spanned between their ends and the centre
 class junction_node : public scene::basic_node
 {
 

@@ -39,12 +39,37 @@ class editor_road
 			return road != nullptr || junction != nullptr;
 		}
 	};
-	enum class junction_kind
+	// an end of a road piece
+	struct piece_end
 	{
-		cross, // four roads
-		tee_sides, // the road ends, with roads to both sides
-		tee_left, // the road goes on, with a road to the left
-		tee_right // the road goes on, with a road to the right
+		road_node *road{nullptr};
+		bool atend{false}; // the end of its axis rather than the start
+	};
+	// what an operation changed, in the form needed to take it back
+	struct record
+	{
+		std::vector<std::pair<road_node *, road_node::state>> roads; // pieces with what they were like before
+		std::vector<road_node *> roads_created;
+		std::vector<road_node *> roads_removed;
+		std::vector<std::pair<junction_node *, junction_node::state>> junctions; // junctions with what they were like before
+		std::vector<junction_node *> junctions_created;
+		std::vector<junction_node *> junctions_removed;
+
+		bool empty() const
+		{
+			return roads.empty() && roads_created.empty() && roads_removed.empty() && junctions.empty() && junctions_created.empty() && junctions_removed.empty();
+		}
+	};
+	// a road led out of the side of another road, or out of a junction between its arms: the junction this takes,
+	// and what has to be done with the roads to make room for it
+	struct branch
+	{
+		junction_node *junction{nullptr}; // the junction which gets another arm, nullptr if a new one is made
+		junction_node::state layout; // the junction as it's going to be
+		std::size_t arm{0}; // the arm of it made for the road
+		std::vector<std::pair<road_node *, road_node::state>> changes; // pieces cut short, with their new definitions
+		std::vector<road_node::state> added; // part of a piece left past the junction, to be made a piece of its own
+		std::vector<road_node *> removed; // pieces which lie within the junction
 	};
 	// true if the roads can be built and changed at all. optionally explains why they can't
 	static bool available(std::string *Reason = nullptr);
@@ -57,6 +82,8 @@ class editor_road
 	static std::vector<road_node *> create(std::vector<road_node::state> const &States);
 	// replaces definitions of the pieces and makes their lanes and geometry anew
 	static void apply(std::vector<std::pair<road_node *, road_node::state>> const &Changes);
+	// replaces definitions of the junctions, and makes their geometry and the ways through them anew
+	static void apply(std::vector<std::pair<junction_node *, junction_node::state>> const &Changes);
 	// takes the pieces out of the scenery. they're kept around, so they can be brought back
 	static void remove(std::vector<road_node *> const &Roads);
 	static void revive(std::vector<road_node *> const &Roads);
@@ -72,6 +99,23 @@ class editor_road
 	static road_node *nearest(glm::dvec3 const &Point, double const Margin);
 	// the junction specified point lies on
 	static junction_node *nearest_junction(glm::dvec3 const &Point);
+	// the point where pieces meet or end which is nearest to specified one, within specified distance from it. returns: false if there's none
+	static bool nearest_joint(glm::dvec3 const &Point, double const Radius, glm::dvec3 &Joint);
+	// ends of the pieces which meet at specified point
+	static std::vector<piece_end> ends_at(glm::dvec3 const &Point);
+	// true if there's an arm of a junction at specified point
+	static bool at_junction(glm::dvec3 const &Point);
+	// width shared by all lanes of the road at specified value of the curve parameter of its axis. returns: false if the lanes differ in width
+	static bool lane_width(road_node::state const &State, double const T, float &Width);
+	// lays out a junction for a road leaving the side of specified piece at specified value of the curve parameter of its axis.
+	// Direction: the way the road leaves; Incoming, Outgoing: lanes of that road leading into the junction and out of it.
+	// nothing is changed until the result is carried out. returns: false if it can't be done, with the reason in Error
+	static bool branch_from(road_node &Road, double const T, glm::dvec2 const &Direction, int const Incoming, int const Outgoing, float const Width, branch &Result, std::string &Error);
+	// the same for a road leaving a junction between its arms, which gives the junction another arm
+	static bool branch_from(junction_node &Junction, glm::dvec2 const &Direction, int const Incoming, int const Outgoing, float const Width, branch &Result, std::string &Error);
+	// makes the junction laid out for a branch, or gives the existing one its new arm, and cuts the roads to fit. what it does is added to Record.
+	// returns: the junction
+	static junction_node *carry_out(branch const &Branch, record &Record);
 	// value of the curve parameter for the point of the axis nearest to specified point
 	static double nearest_parameter(road_node::state const &State, glm::dvec3 const &Point);
 	// end of a road with nothing attached, within specified distance from specified point; optionally arms of junctions too
@@ -91,11 +135,6 @@ class editor_road
 	static double planar_length(segment_data const &Path);
 	// slope of the path at its end, in the direction it's laid out
 	static double end_grade(segment_data const &Path);
-	// distance from the centre of a junction to the ends of the roads it's made for
-	static double junction_reach(int const Lanes, float const Width);
-	// lays out a junction entered by a road. Entry: middle of the end of that road, Heading: the way the road goes there,
-	// Incoming, Outgoing: lanes of that road leading into the junction and out of it
-	static junction_node::state junction(junction_kind const Kind, glm::dvec3 const &Entry, glm::dvec2 const &Heading, int const Incoming, int const Outgoing, float const Width);
 	// names of materials and images present in the texture folder, to pick from
 	static std::vector<std::string> const &materials();
 

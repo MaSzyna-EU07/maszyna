@@ -107,6 +107,10 @@ std::string lower_case(std::string Text)
 }
 
 double const kSnapRadius{4.0}; // an end of a road this close to the cursor is what the click is taken to mean
+double const kPointRadius{2.5}; // a point where pieces meet this close to the click is what gets selected, instead of the piece
+double const kPointRange{400.0}; // the points are drawn for the roads this close to the camera
+double const kSideMargin{1.0}; // how far past the edge of a road the cursor still counts as being on it
+double const kJoinClearance{15.0}; // a road isn't led into the side of another this close to the point it's led from
 double const kReach{3000.0}; // clicks landing further than this are taken for misses
 double const kLaneRange{600.0}; // lanes are drawn for the roads this close to the camera
 double const kLongestStretch{2000.0}; // a single click doesn't lead a road further than this
@@ -119,10 +123,40 @@ ImU32 const kForwardColor{IM_COL32(70, 230, 110, 230)};
 ImU32 const kBackwardColor{IM_COL32(255, 170, 50, 230)};
 ImU32 const kTurnColor{IM_COL32(210, 210, 210, 150)};
 ImU32 const kWayColor{IM_COL32(120, 200, 255, 170)};
+ImU32 const kPointColor{IM_COL32(255, 255, 255, 200)};
 ImU32 const kSelectedColor{IM_COL32(40, 220, 255, 230)};
 ImU32 const kPreviewColor{IM_COL32(255, 210, 60, 255)};
 ImU32 const kRefusedColor{IM_COL32(240, 60, 60, 255)};
 ImU32 const kSnapColor{IM_COL32(255, 60, 255, 255)};
+
+// gathers new definitions for the pieces which meet or end at provided points. Change: receives a definition, and which end of it is at the point.
+// Skipped: receives the number of points left out for being at a junction, which is made for the road the way it is
+template <class Change_>
+std::vector<std::pair<road_node *, road_node::state>> point_changes(std::vector<glm::dvec3> const &Points, std::size_t &Skipped, Change_ Change)
+{
+	std::vector<std::pair<road_node *, road_node::state>> changes;
+	Skipped = 0;
+	for (auto const &point : Points)
+	{
+		if (editor_road::at_junction(point))
+		{
+			++Skipped;
+			continue;
+		}
+		for (auto const &end : editor_road::ends_at(point))
+		{
+			// a piece with both its ends among the points gets both changed
+			auto entry{std::find_if(changes.begin(), changes.end(), [&end](std::pair<road_node *, road_node::state> const &Listed) { return Listed.first == end.road; })};
+			if (entry == changes.end())
+			{
+				changes.emplace_back(end.road, end.road->definition());
+				entry = std::prev(changes.end());
+			}
+			Change(entry->second, end.atend);
+		}
+	}
+	return changes;
+}
 
 }
 
@@ -143,10 +177,17 @@ void editor_mode::update_road_tool()
 		tool.selected = nullptr;
 	if (tool.junction != nullptr && tool.junction->m_editorremoved)
 		tool.junction = nullptr;
-	tool.preview.clear();
-	tool.hasjunction = false;
-	tool.previewsnap = {};
-	tool.previewerror.clear();
+	if ((tool.branchroad != nullptr && tool.branchroad->m_editorremoved) || (tool.branchjunction != nullptr && tool.branchjunction->m_editorremoved))
+	{
+		// what the road was to be led out of is gone
+		tool.branchroad = nullptr;
+		tool.branchjunction = nullptr;
+		tool.chain = false;
+	}
+	// so are the points whose pieces were removed or changed behind the back of the selection
+	tool.points.erase(std::remove_if(tool.points.begin(), tool.points.end(), [](glm::dvec3 const &Point) { return editor_road::ends_at(Point).empty(); }), tool.points.end());
+	tool.plan = road_plan{};
+	tool.hashover = false;
 	if (false == tool.window)
 	{
 		tool.chain = false;
@@ -156,14 +197,30 @@ void editor_mode::update_road_tool()
 	tool.mouse = camera + GfxRenderer->Mouse_Position();
 	if (glm::distance(tool.mouse, camera) > kReach)
 	{
-		tool.previewerror = "The cursor isn't over anything near enough";
+		tool.plan.error = "The cursor isn't over anything near enough";
 		return;
 	}
-	// what a click would make at the moment, to be drawn over the view
-	if (tool.tool == 1 && tool.chain)
-		tool.preview = road_preview(tool.previewsnap, tool.previewerror, false);
-	else if (tool.tool == 2)
-		tool.hasjunction = junction_preview(tool.previewjunction, tool.previewsnap, tool.previewerror);
+	if (tool.tool != 1)
+		return;
+	if (tool.chain)
+	{
+		// what a click would make at the moment, to be drawn over the view
+		tool.plan = road_preview(false);
+		return;
+	}
+	// where a click would lead a road out of the side of a road, or out of a junction
+	if (editor_road::find_end(tool.mouse, kSnapRadius).valid())
+		return;
+	if (auto const *road{editor_road::nearest(tool.mouse, kSideMargin)}; road != nullptr)
+	{
+		tool.hover = road->definition().point(editor_road::nearest_parameter(road->definition(), tool.mouse));
+		tool.hashover = true;
+	}
+	else if (auto const *junction{editor_road::nearest_junction(tool.mouse)}; junction != nullptr)
+	{
+		tool.hover = junction->definition().centre;
+		tool.hashover = true;
+	}
 }
 
 void editor_mode::road_select(road_node *Road)
@@ -194,71 +251,162 @@ void editor_mode::junction_select(junction_node *Junction)
 	std::string reason;
 	tool.status = "Selected: " + Junction->name();
 	if (false == editor_road::can_edit(*Junction, &reason))
-		tool.status += ". It can't be removed: " + reason;
+		tool.status += ". It can't be changed: " + reason;
 }
 
 void editor_mode::road_cancel()
 {
-	m_roadtool.chain = false;
+	auto &tool{m_roadtool};
+	tool.chain = false;
+	tool.branchroad = nullptr;
+	tool.branchjunction = nullptr;
 }
 
-std::vector<segment_data> editor_mode::road_preview(editor_road::loose_end &Snap, std::string &Error, bool const Fresh)
+// works out what a click of the build tool would make with the cursor where it is
+editor_mode::road_plan editor_mode::road_preview(bool const Fresh)
 {
 	auto const &tool{m_roadtool};
-	Snap = editor_road::find_end(tool.mouse, kSnapRadius);
+	auto const &layout{tool.settings};
+	road_plan plan;
+	// lanes of the road being built which lead to its far end, and the ones leading back from there
+	auto const arriving{tool.reversed ? layout.backward : layout.forward};
+	auto const leaving{tool.reversed ? layout.forward : layout.backward};
+	float lanewidth{0.f};
+	auto const evenlanes{editor_road::lane_width(layout, 0.0, lanewidth)};
+	char const *unevenlanes{"Lanes of the road being built differ in width, and a junction takes roads with lanes of the same width"};
+
+	// where the road is led to. a loose end of a road or an arm of a junction near the cursor comes first
+	plan.snap = editor_road::find_end(tool.mouse, kSnapRadius);
 	// the end the road is being drawn from isn't somewhere to lead it to
-	if (Snap.valid() && glm::distance(Snap.position, tool.point) < 0.5)
-		Snap = {};
+	if (plan.snap.valid() && glm::distance(plan.snap.position, tool.point) < 0.5)
+		plan.snap = {};
+	auto target{tool.mouse + glm::dvec3{0.0, tool.offset, 0.0}};
 	glm::dvec2 enddirection{0.0, 1.0};
-	if (Snap.valid())
+	double endgrade{0.0};
+	bool tied{false}; // the road has to arrive at the target in set direction, with set slope
+	if (plan.snap.valid())
 	{
-		glm::dvec2 const outwards{Snap.outwards.x, Snap.outwards.z};
+		glm::dvec2 const outwards{plan.snap.outwards.x, plan.snap.outwards.z};
 		if (glm::length(outwards) > 1e-6)
-			enddirection = -glm::normalize(outwards);
-		else
-			Snap = {};
-	}
-	// in the open the road is put over what's under the cursor
-	auto const target{Snap.valid() ? Snap.position : tool.mouse + glm::dvec3{0.0, tool.offset, 0.0}};
-	if (glm::distance(tool.point, target) > kLongestStretch)
-	{
-		Error = "Too far from the last point";
-		return {};
-	}
-	if (Snap.junction != nullptr)
-	{
-		// the junction has its ways through made for a set of lanes at each arm
-		auto const arriving{tool.reversed ? tool.settings.backward : tool.settings.forward};
-		auto const leaving{tool.reversed ? tool.settings.forward : tool.settings.backward};
-		if (arriving != Snap.backward || leaving != Snap.forward || std::abs(tool.settings.lanewidth - Snap.width) > 0.01f)
 		{
-			char width[32];
-			std::snprintf(width, sizeof(width), "%.2f", Snap.width);
-			Error = "This arm of the junction takes a road with " + std::to_string(Snap.backward) + " lane(s) leading into it and " + std::to_string(Snap.forward) + " out of it, " + width + " m wide each";
-			return {};
+			target = plan.snap.position;
+			enddirection = -glm::normalize(outwards);
+			endgrade = -plan.snap.outwards.y / glm::length(outwards);
+			tied = true;
+		}
+		else
+		{
+			plan.snap = {};
 		}
 	}
-	auto pieces{editor_road::plan(tool.point, tool.hasdirection ? &tool.direction : nullptr, target, Snap.valid() ? &enddirection : nullptr, Global.ctrlState, Error)};
-	road_profile(pieces, Snap, Fresh);
-	return pieces;
+	if (plan.snap.junction != nullptr)
+	{
+		// the junction has its ways through made for a set of lanes at each arm
+		if (false == evenlanes || arriving != plan.snap.backward || leaving != plan.snap.forward || std::abs(lanewidth - plan.snap.width) > 0.01f)
+		{
+			char width[32];
+			std::snprintf(width, sizeof(width), "%.2f", plan.snap.width);
+			plan.error = "This arm of the junction takes a road with " + std::to_string(plan.snap.backward) + " lane(s) leading into it and " + std::to_string(plan.snap.forward) + " out of it, " + width + " m wide each";
+			return plan;
+		}
+	}
+	else if (false == plan.snap.valid() && glm::distance(tool.mouse, tool.point) > kJoinClearance)
+	{
+		// then the side of a road, or a junction between its roads: the road is taken in with a junction made there, or with another arm of the one which is there
+		auto *road{editor_road::nearest(tool.mouse, kSideMargin)};
+		auto *junction{road == nullptr ? editor_road::nearest_junction(tool.mouse) : nullptr};
+		if (road != nullptr && road == tool.branchroad)
+			road = nullptr;
+		if (junction != nullptr && junction == tool.branchjunction)
+			junction = nullptr;
+		if (road != nullptr || junction != nullptr)
+		{
+			if (false == evenlanes)
+			{
+				plan.error = unevenlanes;
+				return plan;
+			}
+			auto const t{road != nullptr ? editor_road::nearest_parameter(road->definition(), tool.mouse) : 0.0};
+			auto const centre{road != nullptr ? road->definition().point(t) : junction->definition().centre};
+			// seen from the junction the road comes from where it's being led from
+			glm::dvec2 const from{tool.point.x - centre.x, tool.point.z - centre.z};
+			if (false == (road != nullptr ? editor_road::branch_from(*road, t, from, arriving, leaving, lanewidth, plan.end, plan.error) : editor_road::branch_from(*junction, from, arriving, leaving, lanewidth, plan.end, plan.error)))
+				return plan;
+			plan.hasend = true;
+			auto const &arm{plan.end.layout.arms[plan.end.arm]};
+			target = arm.position;
+			enddirection = -arm.direction;
+			tied = true;
+		}
+	}
+
+	// where the road starts
+	auto start{tool.point};
+	auto direction{tool.direction};
+	auto hasdirection{tool.hasdirection};
+	auto startgrade{tool.grade};
+	auto hasgrade{tool.hasgrade};
+	if (tool.branchroad != nullptr || tool.branchjunction != nullptr)
+	{
+		// out of the side of a road, or out of a junction, in the direction of where it's led to
+		if (false == evenlanes)
+		{
+			plan.error = unevenlanes;
+			return plan;
+		}
+		glm::dvec2 const away{target.x - tool.point.x, target.z - tool.point.z};
+		if (glm::length(away) < 1.0)
+		{
+			plan.error = "Move the cursor to where the road is to go";
+			return plan;
+		}
+		// the axis of the road goes away from the junction, so the lanes going against it are the ones leading into the junction
+		if (false == (tool.branchroad != nullptr ? editor_road::branch_from(*tool.branchroad, tool.branchat, away, layout.backward, layout.forward, lanewidth, plan.start, plan.error) :
+		                                           editor_road::branch_from(*tool.branchjunction, away, layout.backward, layout.forward, lanewidth, plan.start, plan.error)))
+			return plan;
+		plan.hasstart = true;
+		auto const &arm{plan.start.layout.arms[plan.start.arm]};
+		start = arm.position;
+		direction = arm.direction;
+		hasdirection = true;
+		startgrade = 0.0;
+		hasgrade = true;
+	}
+	if (plan.hasstart && plan.hasend)
+	{
+		// the two junctions are laid out for the roads as they are now, which stops being true for the second once the first is made
+		bool shared{plan.start.junction != nullptr && plan.start.junction == plan.end.junction};
+		auto const touches = [](editor_road::branch const &Branch, road_node const *Road) {
+			return std::any_of(Branch.changes.begin(), Branch.changes.end(), [Road](std::pair<road_node *, road_node::state> const &Change) { return Change.first == Road; }) ||
+			       std::find(Branch.removed.begin(), Branch.removed.end(), Road) != Branch.removed.end();
+		};
+		for (auto const &change : plan.start.changes)
+			shared = shared || touches(plan.end, change.first);
+		for (auto const *road : plan.start.removed)
+			shared = shared || touches(plan.end, road);
+		if (shared)
+		{
+			plan.error = "The junctions at both ends would take the same piece of road; lead the road somewhere else first";
+			return plan;
+		}
+	}
+	if (glm::distance(start, target) > kLongestStretch)
+	{
+		plan.error = "Too far from the last point";
+		return plan;
+	}
+	plan.pieces = editor_road::plan(start, hasdirection ? &direction : nullptr, target, tied ? &enddirection : nullptr, Global.ctrlState, plan.error);
+	road_profile(plan.pieces, hasgrade ? &startgrade : nullptr, tied ? &endgrade : nullptr, Fresh);
+	return plan;
 }
 
 // gives the pieces laid out by the planner their heights: over the ground if the road is to follow it, with the slopes
 // of the pieces matched where they meet, and with what the road is attached to
-void editor_mode::road_profile(std::vector<segment_data> &Pieces, editor_road::loose_end const &Snap, bool const Fresh)
+void editor_mode::road_profile(std::vector<segment_data> &Pieces, double const *Firstgrade, double const *Lastgrade, bool const Fresh)
 {
 	auto const &tool{m_roadtool};
 	if (Pieces.empty())
 		return;
-	// an end of a road or an arm of a junction is reached with the slope it has
-	double endgrade{0.0};
-	if (Snap.valid())
-	{
-		auto const run{glm::length(glm::dvec2{Snap.outwards.x, Snap.outwards.z})};
-		endgrade = (run > 1e-6 ? -Snap.outwards.y / run : 0.0);
-	}
-	auto const *firstgrade{tool.hasgrade ? &tool.grade : nullptr};
-	auto const *lastgrade{Snap.valid() ? &endgrade : nullptr};
 	if (false == tool.follow)
 	{
 		// straight from a point to the next one, the way a ramp or a viaduct goes
@@ -266,7 +414,7 @@ void editor_mode::road_profile(std::vector<segment_data> &Pieces, editor_road::l
 		for (auto const &piece : Pieces)
 			heights.emplace_back(piece.points[segment_data::point::start].y);
 		heights.emplace_back(Pieces.back().points[segment_data::point::end].y);
-		editor_road::profile(Pieces, heights, firstgrade, lastgrade);
+		editor_road::profile(Pieces, heights, Firstgrade, Lastgrade);
 		return;
 	}
 	auto const planned{Pieces};
@@ -294,13 +442,13 @@ void editor_mode::road_profile(std::vector<segment_data> &Pieces, editor_road::l
 		// the ends are where they were put
 		heights.front() = Pieces.front().points[segment_data::point::start].y;
 		heights.back() = Pieces.back().points[segment_data::point::end].y;
-		editor_road::profile(Pieces, heights, firstgrade, lastgrade);
+		editor_road::profile(Pieces, heights, Firstgrade, Lastgrade);
 		// shorter pieces are called for if the ground shows through the road, or the road hangs over it.
 		// the pieces attached to something are let off, as they have to get to its height one way or another
 		bool fits{true};
 		for (std::size_t i = 0; i < count; ++i)
 		{
-			if ((i == 0 && firstgrade != nullptr) || (i + 1 == count && lastgrade != nullptr))
+			if ((i == 0 && Firstgrade != nullptr) || (i + 1 == count && Lastgrade != nullptr))
 				continue;
 			auto const over{path_point(Pieces[i], 0.5).y - ground[count + 1 + i]};
 			if (over < -kSunkTolerance || over > kRaisedTolerance)
@@ -312,110 +460,6 @@ void editor_mode::road_profile(std::vector<segment_data> &Pieces, editor_road::l
 		if (fits)
 			break;
 	}
-}
-
-// lays out the junction a click would make. returns: false if there's none to make, with the reason in Error unless
-// it's a matter of the first click being still ahead
-bool editor_mode::junction_preview(junction_node::state &State, editor_road::loose_end &Snap, std::string &Error) const
-{
-	auto const &tool{m_roadtool};
-	auto const kind{static_cast<editor_road::junction_kind>(std::clamp(tool.kind, 0, 3))};
-	Snap = {};
-	junction_node::state state;
-	// the look goes after the road the junction is made for
-	auto const dress = [&state](road_node::state const &Layout) {
-		state.surface = Layout.surface;
-		state.texturelength = Layout.texturelength;
-		state.markings = Layout.markings;
-		state.friction = Layout.friction;
-		state.sounddistance = Layout.sounddistance;
-		state.quality = Layout.quality;
-		state.environment = Layout.environment;
-	};
-	if (false == tool.chain)
-	{
-		// at a loose end of a road the junction is made for that road, and put right past its end
-		Snap = editor_road::find_end(tool.mouse, kSnapRadius, false);
-		if (Snap.road == nullptr)
-			return false;
-		auto const &layout{Snap.road->definition()};
-		glm::dvec2 const outwards{Snap.outwards.x, Snap.outwards.z};
-		if (glm::length(outwards) < 1e-6 || layout.lanes.empty())
-		{
-			Error = "There's no telling which way this road goes at its end";
-			return false;
-		}
-		// the ways through the junction start and end where the lanes of the road are expected, which takes lanes of the same width
-		auto const width{layout.lanes.front().width};
-		for (auto const &lane : layout.lanes)
-		{
-			if (std::abs(lane.width - width) > 0.01f)
-			{
-				Error = "Lanes of this road differ in width, and a junction takes roads with lanes of the same width";
-				return false;
-			}
-		}
-		state = editor_road::junction(kind, Snap.position, glm::normalize(outwards), Snap.atend ? layout.forward : layout.backward, Snap.atend ? layout.backward : layout.forward, width);
-		dress(layout);
-	}
-	else
-	{
-		// in the open the centre is set already, and the cursor shows where the first road comes from
-		glm::dvec2 const away{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
-		if (glm::length(away) < 1.0)
-		{
-			Error = "Move the cursor away from the centre to turn the junction";
-			return false;
-		}
-		auto const heading{-glm::normalize(away)};
-		auto const &layout{tool.settings};
-		auto const reach{editor_road::junction_reach(layout.forward + layout.backward, layout.lanewidth)};
-		glm::dvec3 const entry{tool.point.x - heading.x * reach, tool.point.y, tool.point.z - heading.y * reach};
-		state = editor_road::junction(kind, entry, heading, layout.forward, layout.backward, layout.lanewidth);
-		dress(layout);
-	}
-	state.velocity = tool.crossingspeed;
-	state.normalize();
-	State = state;
-	return true;
-}
-
-void editor_mode::junction_click()
-{
-	auto &tool{m_roadtool};
-	junction_node::state state;
-	editor_road::loose_end snap;
-	std::string error;
-	if (false == junction_preview(state, snap, error))
-	{
-		if (false == error.empty())
-		{
-			tool.status = "Can't make the junction: " + error;
-		}
-		else if (false == tool.chain)
-		{
-			// away from the roads the first click sets the centre, the second one turns the junction
-			tool.point = tool.mouse + glm::dvec3{0.0, tool.offset, 0.0};
-			tool.chain = true;
-			tool.status = "Centre set";
-		}
-		return;
-	}
-	std::string reason;
-	if (snap.valid() && false == editor_road::can_join(snap, &reason))
-	{
-		tool.status = "Can't make the junction here: " + reason;
-		return;
-	}
-	auto const created{editor_road::create(std::vector<junction_node::state>{state})};
-	if (created.empty())
-	{
-		tool.status = "The junction wasn't created";
-		return;
-	}
-	push_road_snapshot({}, {}, {}, created, {});
-	tool.chain = false;
-	tool.status = "\"" + created.front()->name() + "\" made" + (snap.road != nullptr ? " at the end of \"" + snap.road->name() + "\"" : std::string{}) + ". Lead roads out of its arms with the Build tool";
 }
 
 void editor_mode::road_click()
@@ -431,6 +475,23 @@ void editor_mode::road_click()
 	tool.mouse = ground;
 	if (tool.tool == 0)
 	{
+		glm::dvec3 joint;
+		if (editor_road::nearest_joint(ground, kPointRadius, joint))
+		{
+			// a point where pieces meet or end. with Shift it's added to the selected ones, or taken out of them
+			auto const listed{std::find_if(tool.points.begin(), tool.points.end(), [&joint](glm::dvec3 const &Point) { return glm::distance(Point, joint) < 0.25; })};
+			if (false == Global.shiftState)
+				tool.points.assign(1, joint);
+			else if (listed != tool.points.end())
+				tool.points.erase(listed);
+			else
+				tool.points.emplace_back(joint);
+			tool.selected = nullptr;
+			tool.junction = nullptr;
+			tool.status = std::to_string(tool.points.size()) + (tool.points.size() == 1 ? " point selected" : " points selected");
+			return;
+		}
+		tool.points.clear();
 		auto *road{editor_road::nearest(ground, 1.5)};
 		auto *junction{road == nullptr ? editor_road::nearest_junction(ground) : nullptr};
 		if (road == nullptr && junction == nullptr)
@@ -446,19 +507,19 @@ void editor_mode::road_click()
 		tool.status = reason;
 		return;
 	}
-	if (tool.tool == 2)
-	{
-		junction_click();
-		return;
-	}
 	if (false == tool.chain)
 	{
-		// first click sets where the road starts. started from a loose end of a road it carries that road on,
-		// started from an arm of a junction it's the road the junction is made for there
+		// first click sets where the road starts
+		tool.branchroad = nullptr;
+		tool.branchjunction = nullptr;
+		tool.selected = nullptr;
+		tool.junction = nullptr;
+		tool.points.clear();
 		auto const end{editor_road::find_end(ground, kSnapRadius)};
 		glm::dvec2 const outwards{end.outwards.x, end.outwards.z};
 		if (end.valid() && glm::length(outwards) > 1e-6)
 		{
+			// started from a loose end of a road it carries that road on, started from an arm of a junction it's the road the junction is made for there
 			if (false == editor_road::can_join(end, &reason))
 			{
 				tool.status = "Can't build from here: " + reason;
@@ -469,12 +530,14 @@ void editor_mode::road_click()
 			tool.hasdirection = true;
 			tool.grade = end.outwards.y / glm::length(outwards);
 			tool.hasgrade = true;
-			tool.junction = nullptr;
 			if (end.road != nullptr)
 			{
 				// carried on from its start the road keeps the direction of its axis, so the lanes stay what they were
 				tool.reversed = (false == end.atend);
 				tool.settings = end.road->definition();
+				// and it stays as wide as it is at that end
+				auto const scale{tool.settings.taper[end.atend ? 1 : 0]};
+				tool.settings.taper = {scale, scale};
 				tool.status = "Carrying on \"" + end.road->name() + "\" with its layout";
 			}
 			else
@@ -483,6 +546,7 @@ void editor_mode::road_click()
 				tool.settings.forward = end.forward;
 				tool.settings.backward = end.backward;
 				tool.settings.lanewidth = end.width;
+				tool.settings.taper = {1.f, 1.f};
 				tool.settings.lanes.clear();
 				tool.settings.changes.clear();
 				tool.settings.normalize();
@@ -492,31 +556,52 @@ void editor_mode::road_click()
 		}
 		else
 		{
-			tool.point = ground + glm::dvec3{0.0, tool.offset, 0.0};
 			tool.hasdirection = false;
 			tool.hasgrade = false;
 			tool.reversed = false;
-			tool.selected = nullptr;
-			tool.junction = nullptr;
-			tool.status = "Start set";
+			tool.settings.taper = {1.f, 1.f};
+			if (auto *road{editor_road::nearest(ground, kSideMargin)}; road != nullptr)
+			{
+				// started from the side of a road it leaves that road at a junction, made along with its first piece
+				tool.branchroad = road;
+				tool.branchat = editor_road::nearest_parameter(road->definition(), ground);
+				tool.point = road->definition().point(tool.branchat);
+				tool.status = "Leading a road out of the side of \"" + road->name() + "\": click where it goes";
+			}
+			else if (auto *junction{editor_road::nearest_junction(ground)}; junction != nullptr)
+			{
+				// started from a junction it's another road of that junction
+				if (junction->definition().arms.size() >= 4)
+				{
+					tool.status = "\"" + junction->name() + "\" has four roads already";
+					return;
+				}
+				tool.branchjunction = junction;
+				tool.point = junction->definition().centre;
+				tool.status = "Leading another road out of \"" + junction->name() + "\": click where it goes";
+			}
+			else
+			{
+				tool.point = ground + glm::dvec3{0.0, tool.offset, 0.0};
+				tool.status = "Start set";
+			}
 		}
 		tool.chain = true;
 		return;
 	}
 
-	editor_road::loose_end snap;
-	std::string error;
-	auto pieces{road_preview(snap, error, true)};
-	if (pieces.empty())
+	auto plan{road_preview(true)};
+	if (plan.pieces.empty())
 	{
-		tool.status = "Can't build this: " + error;
+		tool.status = "Can't build this: " + plan.error;
 		return;
 	}
-	if (snap.valid() && false == editor_road::can_join(snap, &reason))
+	if (plan.snap.valid() && false == editor_road::can_join(plan.snap, &reason))
 	{
 		tool.status = "Can't join here: " + reason;
 		return;
 	}
+	auto pieces{plan.pieces};
 	// where the next piece is going to carry on from
 	auto const &last{pieces.back()};
 	auto const endpoint{last.points[segment_data::point::end]};
@@ -531,6 +616,20 @@ void editor_mode::road_click()
 		}
 		std::reverse(pieces.begin(), pieces.end());
 	}
+	// the junctions the road starts or ends with are made first, so the road finds them when it's made
+	editor_road::record record;
+	if (plan.hasstart)
+	{
+		if (plan.start.junction == nullptr)
+			plan.start.layout.velocity = tool.crossingspeed;
+		editor_road::carry_out(plan.start, record);
+	}
+	if (plan.hasend)
+	{
+		if (plan.end.junction == nullptr)
+			plan.end.layout.velocity = tool.crossingspeed;
+		editor_road::carry_out(plan.end, record);
+	}
 	std::vector<road_node::state> states;
 	for (auto const &piece : pieces)
 	{
@@ -539,16 +638,22 @@ void editor_mode::road_click()
 		states.emplace_back(state);
 	}
 	auto const created{editor_road::create(states)};
+	record.roads_created.insert(record.roads_created.end(), created.begin(), created.end());
+	push_road_snapshot(std::move(record));
+	tool.branchroad = nullptr;
+	tool.branchjunction = nullptr;
 	if (created.empty())
 	{
+		tool.chain = false;
 		tool.status = "The road wasn't created";
 		return;
 	}
-	push_road_snapshot({}, created, {});
-	if (snap.valid())
+	if (plan.snap.valid() || plan.hasend)
 	{
 		tool.chain = false;
-		tool.status = "Joined with \"" + (snap.road != nullptr ? snap.road->name() : snap.junction->name()) + "\"";
+		tool.status = (plan.snap.valid() ? "Joined with \"" + (plan.snap.road != nullptr ? plan.snap.road->name() : plan.snap.junction->name()) + "\"" :
+		               plan.end.junction != nullptr ? "Led into \"" + plan.end.junction->name() + "\" as another of its roads" :
+		                                              std::string{"Led into the side of the road, with a junction made there"});
 		return;
 	}
 	glm::dvec2 const planar{tangent.x, tangent.z};
@@ -561,6 +666,8 @@ void editor_mode::road_click()
 	tool.grade = grade;
 	tool.hasgrade = true;
 	tool.status = std::to_string(created.size()) + (created.size() == 1 ? " piece added" : " pieces added");
+	if (plan.hasstart)
+		tool.status += (plan.start.junction != nullptr ? ", as another road of the junction" : ", with a junction where the road leaves");
 }
 
 void editor_mode::road_apply()
@@ -570,14 +677,13 @@ void editor_mode::road_apply()
 		return;
 	tool.settings.normalize();
 	auto const pieces{tool.whole ? editor_road::chain(*tool.selected) : std::vector<road_node *>{tool.selected}};
-	std::vector<std::pair<road_node *, road_node::state>> before;
+	editor_road::record record;
 	std::vector<std::pair<road_node *, road_node::state>> changes;
 	for (auto *road : pieces)
 	{
 		std::string reason;
 		if (false == editor_road::can_edit(*road, &reason))
 		{
-			tool.status = "\"" + road->name() + "\" can't be changed: " + reason;
 			// what the window shows goes back to what the road is like
 			road_select(tool.selected);
 			tool.status = "\"" + road->name() + "\" can't be changed: " + reason;
@@ -585,16 +691,18 @@ void editor_mode::road_apply()
 		}
 		auto state{tool.settings};
 		state.axis = road->definition().axis;
+		// how wide the road is at its points is set at these points, for each piece on its own
+		state.taper = road->definition().taper;
 		if (road != tool.selected && road->definition().changes.size() == state.changes.size())
 		{
 			// where the lanes can be changed is set for each piece on its own
 			state.changes = road->definition().changes;
 		}
-		before.emplace_back(road, road->definition());
+		record.roads.emplace_back(road, road->definition());
 		changes.emplace_back(road, state);
 	}
 	editor_road::apply(changes);
-	push_road_snapshot(before, {}, {});
+	push_road_snapshot(std::move(record));
 	tool.settings = tool.selected->definition();
 	tool.status = (pieces.size() == 1 ? std::string{"Changed"} : "Changed " + std::to_string(pieces.size()) + " pieces");
 }
@@ -603,8 +711,12 @@ bool editor_mode::road_delete()
 {
 	auto &tool{m_roadtool};
 	if (false == tool.window || (tool.selected == nullptr && tool.junction == nullptr))
-		return false;
+	{
+		// with points selected the key isn't meant for whatever else is selected in the editor
+		return tool.window && false == tool.points.empty();
+	}
 	std::string reason;
+	editor_road::record record;
 	if (tool.junction != nullptr)
 	{
 		auto *junction{tool.junction};
@@ -614,7 +726,8 @@ bool editor_mode::road_delete()
 			return true;
 		}
 		editor_road::remove(std::vector<junction_node *>{junction});
-		push_road_snapshot({}, {}, {}, {}, {junction});
+		record.junctions_removed.emplace_back(junction);
+		push_road_snapshot(std::move(record));
 		tool.junction = nullptr;
 		tool.status = "\"" + junction->name() + "\" deleted, Ctrl+Z brings it back";
 		return true;
@@ -626,7 +739,8 @@ bool editor_mode::road_delete()
 		return true;
 	}
 	editor_road::remove(std::vector<road_node *>{road});
-	push_road_snapshot({}, {}, {road});
+	record.roads_removed.emplace_back(road);
+	push_road_snapshot(std::move(record));
 	tool.selected = nullptr;
 	tool.status = "\"" + road->name() + "\" deleted, Ctrl+Z brings it back";
 	return true;
@@ -644,23 +758,80 @@ bool editor_mode::road_split()
 		tool.status = "Can't split: " + reason;
 		return true;
 	}
-	auto const before{road->definition()};
-	auto *created{editor_road::split(*road, editor_road::nearest_parameter(before, tool.mouse))};
+	editor_road::record record;
+	record.roads.emplace_back(road, road->definition());
+	auto *created{editor_road::split(*road, editor_road::nearest_parameter(road->definition(), tool.mouse))};
 	if (created == nullptr)
 	{
 		tool.status = "Can't split this close to the end";
 		return true;
 	}
-	push_road_snapshot({{road, before}}, {created}, {});
+	record.roads_created.emplace_back(created);
+	push_road_snapshot(std::move(record));
 	road_select(road);
-	tool.status = "Split in two: \"" + road->name() + "\" and \"" + created->name() + "\"";
+	tool.status = "Split in two: \"" + road->name() + "\" and \"" + created->name() + "\". Click the point between them to set the width or the height of the road there";
 	return true;
 }
 
-void editor_mode::push_road_snapshot(std::vector<std::pair<road_node *, road_node::state>> States, std::vector<road_node *> Created, std::vector<road_node *> Removed, std::vector<junction_node *> Junctionscreated,
-                                     std::vector<junction_node *> Junctionsremoved)
+// makes the changes gathered for the selected points. returns: true if they were made
+bool editor_mode::road_points_apply(std::vector<std::pair<road_node *, road_node::state>> const &Changes, std::size_t const Skipped)
 {
-	if (States.empty() && Created.empty() && Removed.empty() && Junctionscreated.empty() && Junctionsremoved.empty())
+	auto &tool{m_roadtool};
+	std::string const leftalone{Skipped > 0 ? " The points at junctions were left alone, as a junction is made for the road the way it is." : ""};
+	if (Changes.empty())
+	{
+		tool.status = "Nothing was changed." + leftalone;
+		return false;
+	}
+	editor_road::record record;
+	for (auto const &change : Changes)
+	{
+		std::string reason;
+		if (false == editor_road::can_edit(*change.first, &reason))
+		{
+			tool.status = "\"" + change.first->name() + "\" can't be changed: " + reason;
+			return false;
+		}
+		record.roads.emplace_back(change.first, change.first->definition());
+	}
+	editor_road::apply(Changes);
+	push_road_snapshot(std::move(record));
+	tool.status = (Changes.size() == 1 ? std::string{"Changed 1 piece."} : "Changed " + std::to_string(Changes.size()) + " pieces.") + leftalone;
+	return true;
+}
+
+void editor_mode::road_point_width(float const Width)
+{
+	std::size_t skipped{0};
+	// the pieces on both sides of a point get to that width there, and from there go back to their own along their length
+	auto const changes{point_changes(m_roadtool.points, skipped, [Width](road_node::state &State, bool const Atend) {
+		auto const width{State.width()};
+		if (width > 0.0)
+			State.taper[Atend ? 1 : 0] = std::clamp(static_cast<float>(Width / width), 0.25f, 4.f);
+	})};
+	road_points_apply(changes, skipped);
+}
+
+void editor_mode::road_point_height(double const Height)
+{
+	auto &tool{m_roadtool};
+	std::size_t skipped{0};
+	// the control points are kept relative to the ends, so the slopes the pieces have at the point stay
+	auto const changes{point_changes(tool.points, skipped, [Height](road_node::state &State, bool const Atend) { State.axis.points[Atend ? segment_data::point::end : segment_data::point::start].y = Height; })};
+	// the selection follows what it's made of
+	std::vector<bool> moved;
+	for (auto const &point : tool.points)
+		moved.emplace_back(false == editor_road::at_junction(point));
+	if (false == road_points_apply(changes, skipped))
+		return;
+	for (std::size_t i = 0; i < tool.points.size(); ++i)
+		if (moved[i])
+			tool.points[i].y = Height;
+}
+
+void editor_mode::push_road_snapshot(editor_road::record Record)
+{
+	if (Record.empty())
 		return;
 
 	if (m_max_history_size >= 0 && (int)m_history.size() >= m_max_history_size)
@@ -668,59 +839,67 @@ void editor_mode::push_road_snapshot(std::vector<std::pair<road_node *, road_nod
 
 	// the entry is listed under the name of the first thing it's about
 	scene::basic_node const *node{nullptr};
-	if (false == States.empty())
-		node = States.front().first;
-	else if (false == Created.empty())
-		node = Created.front();
-	else if (false == Removed.empty())
-		node = Removed.front();
-	else if (false == Junctionscreated.empty())
-		node = Junctionscreated.front();
+	if (false == Record.roads.empty())
+		node = Record.roads.front().first;
+	else if (false == Record.roads_created.empty())
+		node = Record.roads_created.front();
+	else if (false == Record.roads_removed.empty())
+		node = Record.roads_removed.front();
+	else if (false == Record.junctions.empty())
+		node = Record.junctions.front().first;
+	else if (false == Record.junctions_created.empty())
+		node = Record.junctions_created.front();
 	else
-		node = Junctionsremoved.front();
+		node = Record.junctions_removed.front();
 	EditorSnapshot snap;
 	snap.action = EditorSnapshot::Action::RoadEdit;
 	snap.node_name = node->name();
 	snap.position = node->location();
-	snap.roads = std::move(States);
-	snap.roads_created = std::move(Created);
-	snap.roads_removed = std::move(Removed);
-	snap.junctions_created = std::move(Junctionscreated);
-	snap.junctions_removed = std::move(Junctionsremoved);
+	snap.roads = std::move(Record);
 	m_history.push_back(std::move(snap));
 	g_redo.clear();
 }
 
 void editor_mode::restore_road_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo)
 {
-	if (Snapshot.roads.empty() && Snapshot.roads_created.empty() && Snapshot.roads_removed.empty() && Snapshot.junctions_created.empty() && Snapshot.junctions_removed.empty())
+	auto const &record{Snapshot.roads};
+	if (record.empty())
 		return;
 
 	// what the roads are like now is what the opposite operation brings back
 	EditorSnapshot current{Snapshot};
-	current.roads.clear();
-	for (auto const &entry : Snapshot.roads)
-		current.roads.emplace_back(entry.first, entry.first->definition());
+	for (auto &entry : current.roads.roads)
+		entry.second = entry.first->definition();
+	for (auto &entry : current.roads.junctions)
+		entry.second = entry.first->definition();
 	Opposite.push_back(std::move(current));
 
+	// things are taken out before the rest is changed and put in after it, so nothing gets joined with what's on its way out
 	if (Undo)
 	{
-		editor_road::remove(Snapshot.roads_created);
-		editor_road::remove(Snapshot.junctions_created);
-		editor_road::revive(Snapshot.junctions_removed);
-		editor_road::revive(Snapshot.roads_removed);
+		editor_road::remove(record.roads_created);
+		editor_road::remove(record.junctions_created);
 	}
 	else
 	{
-		editor_road::revive(Snapshot.roads_created);
-		editor_road::revive(Snapshot.junctions_created);
-		editor_road::remove(Snapshot.junctions_removed);
-		editor_road::remove(Snapshot.roads_removed);
+		editor_road::remove(record.roads_removed);
+		editor_road::remove(record.junctions_removed);
 	}
-	editor_road::apply(Snapshot.roads);
+	editor_road::apply(record.roads);
+	editor_road::apply(record.junctions);
+	if (Undo)
+	{
+		editor_road::revive(record.roads_removed);
+		editor_road::revive(record.junctions_removed);
+	}
+	else
+	{
+		editor_road::revive(record.roads_created);
+		editor_road::revive(record.junctions_created);
+	}
 
 	auto &tool{m_roadtool};
-	tool.chain = false;
+	road_cancel();
 	if (tool.selected != nullptr)
 		road_select(tool.selected->m_editorremoved ? nullptr : tool.selected);
 	if (tool.junction != nullptr && tool.junction->m_editorremoved)
@@ -949,68 +1128,98 @@ void editor_mode::render_road_window()
 	ImGui::RadioButton("Select", &tool.tool, 0);
 	ImGui::SameLine();
 	ImGui::RadioButton("Build", &tool.tool, 1);
-	ImGui::SameLine();
-	ImGui::RadioButton("Junction", &tool.tool, 2);
 	if (tool.tool != previoustool)
 	{
-		tool.chain = false;
+		road_cancel();
 		if (tool.tool != 0)
 		{
 			tool.selected = nullptr;
 			tool.junction = nullptr;
+			tool.points.clear();
 		}
 	}
 	ImGui::SameLine();
 	ImGui::Checkbox("Show lanes", &tool.lanes);
 
-	// how the things being built are put on the ground
-	auto const placement = [&tool](bool const Road) {
+	// typed values are taken when confirmed, so nothing is made anew with each digit
+	auto const number = [](char const *Label, float &Value, float const Step, char const *Format) {
+		ImGui::SetNextItemWidth(120.0f);
+		return ImGui::InputFloat(Label, &Value, Step, Step * 4.0f, Format, ImGuiInputTextFlags_EnterReturnsTrue);
+	};
+	if (tool.tool == 1)
+	{
+		ImGui::TextDisabled("LMB: start, then each next point. Ctrl: straight ahead. Esc: finish");
+		ImGui::TextDisabled("Start or end on a loose end of a road to join it.");
+		ImGui::TextDisabled("Start or end on the side of a road to make a junction there,");
+		ImGui::TextDisabled("or on a junction to give it another road.");
+		if (tool.chain)
+		{
+			if (ImGui::Button("Finish (Esc)"))
+				road_cancel();
+		}
+		// how the road is put on the ground
 		ImGui::SetNextItemWidth(120.0f);
 		if (ImGui::InputFloat("Height above the ground [m]", &tool.offset, 0.05f, 0.25f, "%.2f"))
 			tool.offset = std::clamp(tool.offset, -10.0f, 100.0f);
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", "How far over the ground under the cursor the points are put.\nA few centimetres keep the surface from flickering where it lies on the ground.");
-		if (false == Road)
-			return;
 		ImGui::Checkbox("Follow the ground", &tool.follow);
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", "On: the road is led over the ground between the clicked points, in pieces as short as the ground calls for,\nwith the profile rounded so the slope doesn't change abruptly.\nOff: the road goes straight from a point to the next one, like a ramp or a viaduct.");
-	};
-	if (tool.tool == 1)
-	{
-		ImGui::TextDisabled("LMB: start, then each next point. Ctrl: straight ahead. Esc: finish");
-		ImGui::TextDisabled("Start or end on a loose end of a road or an arm of a junction to join it");
-		if (tool.chain)
-		{
-			if (ImGui::Button("Finish (Esc)"))
-				tool.chain = false;
-		}
-		placement(true);
+		ImGui::SetNextItemWidth(120.0f);
+		if (ImGui::InputFloat("Speed limit on new junctions [km/h]", &tool.crossingspeed, 5.0f, 10.0f, "%.0f"))
+			tool.crossingspeed = std::clamp(tool.crossingspeed, 5.0f, 200.0f);
 		ImGui::Separator();
 		// what's set here is what the next pieces get
 		render_road_layout(tool.settings);
 	}
-	else if (tool.tool == 2)
+	else if (false == tool.points.empty())
 	{
-		ImGui::TextDisabled("LMB on a loose end of a road: junction for that road, right past its end");
-		ImGui::TextDisabled("LMB elsewhere: the centre, then the side the first road comes from. Esc: start over");
-		char const *kinds[]{"Crossroads", "T: the road ends, roads to both sides", "T: the road goes on, a road to the left", "T: the road goes on, a road to the right"};
-		ImGui::SetNextItemWidth(280.0f);
-		ImGui::Combo("Kind", &tool.kind, kinds, 4);
-		ImGui::SetNextItemWidth(120.0f);
-		if (ImGui::InputFloat("Speed limit on the junction [km/h]", &tool.crossingspeed, 5.0f, 10.0f, "%.0f"))
-			tool.crossingspeed = std::clamp(tool.crossingspeed, 5.0f, 200.0f);
-		placement(false);
-		ImGui::Separator();
-		ImGui::TextWrapped("Away from the roads the junction is made for roads with the lanes set in the Build tool: %d + %d, %.2f m wide. Its surface and markings go after the road it's made for.", tool.settings.forward, tool.settings.backward,
-		                   tool.settings.lanewidth);
-		ImGui::TextWrapped("Roads are led out of the arms with the Build tool, and get the lanes the junction has there.");
+		// the road at the selected points
+		ImGui::Text("%d %s selected", static_cast<int>(tool.points.size()), tool.points.size() == 1 ? "point" : "points");
+		ImGui::TextDisabled("Shift+LMB: add a point, or take it out. K on a selected piece: make a point at the cursor");
+		auto const ends{editor_road::ends_at(tool.points.front())};
+		if (false == ends.empty())
+		{
+			auto const &layout{ends.front().road->definition()};
+			auto width{static_cast<float>(layout.width() * layout.taper[ends.front().atend ? 1 : 0])};
+			if (number("Road width here [m]", width, 0.25f, "%.2f"))
+				road_point_width(std::clamp(width, 1.0f, 100.0f));
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", "Combined width of the lanes at this point; each lane takes its share of it.\nThe pieces on both sides get wider or narrower along their length to meet it.\nSelect several points to keep the width over the pieces between them.");
+			auto height{static_cast<float>(tool.points.front().y)};
+			if (number("Height [m]", height, 0.1f, "%.2f"))
+				road_point_height(height);
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", "Height of the axis of the road at this point. The slopes of the pieces at the point are kept.");
+			if (editor_road::at_junction(tool.points.front()))
+				ImGui::TextDisabled("This point is at a junction, which is made for the road the way it is");
+		}
 	}
 	else if (tool.junction != nullptr)
 	{
-		auto const &junction{*tool.junction};
-		ImGui::Text("%s, %d arms, %d ways through", junction.name().c_str(), static_cast<int>(junction.definition().arms.size()), static_cast<int>(junction.movements().size()));
-		ImGui::TextDisabled("Speed limit %.0f km/h. The ways through are made for the roads attached at the moment", junction.definition().velocity);
+		auto &junction{*tool.junction};
+		ImGui::Text("%s, %d roads, %d ways through", junction.name().c_str(), static_cast<int>(junction.definition().arms.size()), static_cast<int>(junction.movements().size()));
+		ImGui::TextDisabled("The ways through are made for the roads attached at the moment.");
+		ImGui::TextDisabled("Build tool, LMB on the junction: lead another road out of it");
+		auto limit{junction.definition().velocity > 0.f ? junction.definition().velocity : 0.f};
+		if (number("Speed limit [km/h], 0: none", limit, 5.0f, "%.0f"))
+		{
+			if (editor_road::can_edit(junction, &reason))
+			{
+				editor_road::record record;
+				record.junctions.emplace_back(&junction, junction.definition());
+				auto state{junction.definition()};
+				state.velocity = (limit > 0.f ? limit : -1.f);
+				editor_road::apply(std::vector<std::pair<junction_node *, junction_node::state>>{{&junction, state}});
+				push_road_snapshot(std::move(record));
+				tool.status = "Changed";
+			}
+			else
+			{
+				tool.status = "\"" + junction.name() + "\" can't be changed: " + reason;
+			}
+		}
 		if (ImGui::Button("Delete (Del)"))
 			road_delete();
 	}
@@ -1031,7 +1240,7 @@ void editor_mode::render_road_window()
 	}
 	else
 	{
-		ImGui::TextDisabled("LMB: select a road piece or a junction");
+		ImGui::TextDisabled("LMB: select a road piece, a junction, or a point where pieces meet");
 	}
 	if (false == tool.status.empty())
 	{
@@ -1112,8 +1321,7 @@ void editor_mode::draw_road_overlay() const
 
 	// outline of a road piece: its axis and the edges of its surface
 	auto const drawroad = [&](road_node::state const &State, ImU32 const Color) {
-		auto const samples{is_curved(State.axis) ? 12 : 1};
-		auto const halfwidth{0.5 * State.width()};
+		auto const samples{is_curved(State.axis) || State.taper[0] != State.taper[1] ? 12 : 1};
 		drawpath(State.axis, Color, 3.0f, samples);
 		glm::dvec3 previous[2];
 		for (int i = 0; i <= samples; ++i)
@@ -1124,6 +1332,7 @@ void editor_mode::draw_road_overlay() const
 			glm::dvec3 across{tangent.z, 0.0, -tangent.x};
 			if (glm::length(across) > 1e-6)
 				across = glm::normalize(across);
+			auto const halfwidth{0.5 * State.width() * State.scale(t)};
 			glm::dvec3 const edges[2]{position + across * halfwidth, position - across * halfwidth};
 			if (i > 0)
 			{
@@ -1168,49 +1377,72 @@ void editor_mode::draw_road_overlay() const
 	{
 		if (tool.chain)
 		{
+			auto const &plan{tool.plan};
 			drawpoint(tool.point, kPreviewColor, 6.0f, true);
-			if (tool.preview.empty())
+			if (plan.pieces.empty())
 			{
 				projection.line(drawlist, tool.point, tool.mouse, kRefusedColor, 2.0f);
-				hint = tool.previewerror + "   ";
+				hint = plan.error + "   ";
 			}
-			for (auto const &piece : tool.preview)
+			else
+			{
+				// junctions the road would start or end with
+				if (plan.hasstart)
+					drawjunction(plan.start.layout, kPreviewColor);
+				if (plan.hasend)
+					drawjunction(plan.end.layout, kPreviewColor);
+			}
+			for (auto const &piece : plan.pieces)
 			{
 				auto state{tool.settings};
 				state.axis = piece;
 				drawroad(state, kPreviewColor);
 			}
-			if (tool.previewsnap.valid())
-				drawpoint(tool.previewsnap.position, kSnapColor, 14.0f, false);
-			hint += "LMB: build up to the cursor   Ctrl: straight ahead   Esc: finish   Ctrl+Z: undo the last piece";
+			if (plan.snap.valid())
+				drawpoint(plan.snap.position, kSnapColor, 14.0f, false);
+			hint += (tool.branchroad != nullptr ? "LMB: lead the road out to the cursor, with a junction where it leaves   Esc: give up" :
+			         tool.branchjunction != nullptr ? "LMB: lead the road out to the cursor, as another road of the junction   Esc: give up" :
+			                                          "LMB: build up to the cursor   Ctrl: straight ahead   Esc: finish   Ctrl+Z: undo the last piece");
 		}
 		else
 		{
 			auto const end{editor_road::find_end(tool.mouse, kSnapRadius)};
 			if (end.valid())
+			{
 				drawpoint(end.position, kSnapColor, 14.0f, false);
-			hint = "LMB: set where the road starts; on a loose end of a road or an arm of a junction (ring) to carry on from there";
+				hint = "LMB: carry on from this end";
+			}
+			else if (tool.hashover)
+			{
+				drawpoint(tool.hover, kSnapColor, 5.0f, true);
+				drawpoint(tool.hover, kSnapColor, 14.0f, false);
+				hint = "LMB: lead a road out of here, with a junction";
+			}
+			else
+			{
+				hint = "LMB: set where the road starts; on a loose end of a road to carry it on, on the side of a road or on a junction to lead a road out of it";
+			}
 		}
-	}
-	else if (tool.tool == 2)
-	{
-		if (tool.chain)
-			drawpoint(tool.point, kPreviewColor, 6.0f, true);
-		if (tool.hasjunction)
-			drawjunction(tool.previewjunction, kPreviewColor);
-		else if (false == tool.previewerror.empty())
-			hint = tool.previewerror + "   ";
-		if (tool.previewsnap.valid())
-			drawpoint(tool.previewsnap.position, kSnapColor, 14.0f, false);
-		hint += (tool.chain ? "LMB: make the junction, with the first road coming from the side of the cursor   Esc: start over" :
-		         tool.previewsnap.valid() ? "LMB: make the junction at the end of this road" :
-		                                    "LMB: on a loose end of a road (ring) to make its junction there; elsewhere to set the centre of one");
 	}
 	else
 	{
-		hint = tool.selected != nullptr ? "LMB: select a road piece or a junction   K: split at the cursor   Del: delete   Ctrl+Z: undo" :
-		       tool.junction != nullptr ? "LMB: select a road piece or a junction   Del: delete   Ctrl+Z: undo" :
-		                                  "LMB: select a road piece or a junction";
+		// points where the pieces meet or end, to pick from
+		for (auto const *road : simulation::Roads.sequence())
+		{
+			if (road == nullptr || road->m_editorremoved || glm::distance(road->location(), camera) > kPointRange)
+				continue;
+			drawpoint(road->definition().axis.points[segment_data::point::start], kPointColor, 3.5f, true);
+			drawpoint(road->definition().axis.points[segment_data::point::end], kPointColor, 3.5f, true);
+		}
+		for (auto const &point : tool.points)
+		{
+			drawpoint(point, kSelectedColor, 6.0f, true);
+			drawpoint(point, kSelectedColor, 11.0f, false);
+		}
+		hint = false == tool.points.empty() ? "LMB: select a point   Shift+LMB: add a point or take it out   Ctrl+Z: undo" :
+		       tool.selected != nullptr ? "LMB: select a piece, a junction or a point (white dot)   K: split at the cursor   Del: delete   Ctrl+Z: undo" :
+		       tool.junction != nullptr ? "LMB: select a piece, a junction or a point (white dot)   Del: delete   Ctrl+Z: undo" :
+		                                  "LMB: select a piece, a junction or a point (white dot)";
 	}
 	// shown above the place the track tools put their hints at
 	ImGuiIO const &io = ImGui::GetIO();
