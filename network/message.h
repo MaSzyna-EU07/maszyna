@@ -25,22 +25,22 @@ struct message
 
 struct client_hello : public message
 {
-	client_hello() : message(CLIENT_HELLO) {}
+	client_hello() : message(CLIENT_HELLO), version(0), start_packet(0) {}
 
 	virtual void serialize(std::ostream &stream) const override;
 	virtual void deserialize(std::istream &stream) override;
 
-	int32_t version{};
-	uint32_t start_packet{};
+	int32_t version;
+	uint32_t start_packet;
 };
 
 struct server_hello : public message
 {
-	server_hello() : message(SERVER_HELLO) {}
+	server_hello() : message(SERVER_HELLO), seed(0), timestamp(0), config(0) {}
 
-	uint32_t seed{};
-	int64_t timestamp{};
-    int64_t config{};
+	uint32_t seed;
+	int64_t timestamp;
+    int64_t config;
     std::string scenario;
 
 	virtual void serialize(std::ostream &stream) const override;
@@ -60,11 +60,11 @@ struct request_command : public message
 
 struct frame_info : public request_command
 {
-	frame_info() : request_command(FRAME_INFO) {}
+	frame_info() : request_command(FRAME_INFO), render_dt(0.0), dt(0.0), sync(0.0) {}
 
-	double render_dt{};
-	double dt{};
-	double sync{};
+	double render_dt;
+	double dt;
+	double sync;
 
 	virtual void serialize(std::ostream &stream) const override;
 	virtual void deserialize(std::istream &stream) override;

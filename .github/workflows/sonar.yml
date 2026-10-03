@@ -92,6 +92,7 @@ jobs:
         with:
           ref: master
           path: .trusted
+          persist-credentials: false
 
       - name: Download analysis input
         uses: actions/download-artifact@v4

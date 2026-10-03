@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <istream>
+#include <limits>
 #include "winheaders.h"
 #include <string>
 #include "model/ResourceManager.h"
@@ -84,7 +85,8 @@ struct opengl_texture : public ITexture {
 	virtual void update_from_memory(size_t width, size_t height, const uint8_t *data) override;
 
 // members
-    GLuint id{ (GLuint)-1 }; // associated GL resource
+    static constexpr GLuint invalid_id { std::numeric_limits<GLuint>::max() }; // id value of texture without GL resource
+    GLuint id{ invalid_id }; // associated GL resource
     bool has_alpha{ false }; // indicates the texture has alpha channel
     bool is_ready{ false }; // indicates the texture was processed and is ready for use
     std::string traits; // requested texture attributes: wrapping modes etc

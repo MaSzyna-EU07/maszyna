@@ -28,6 +28,23 @@ http://mozilla.org/MPL/2.0/.
 int constexpr EU07_PICKBUFFERSIZE{ 1024 }; // size of (square) textures bound with the pick framebuffer
 int constexpr EU07_REFLECTIONFIDELITYOFFSET { 250 }; // artificial increase of range for reflection pass detail reduction
 
+namespace {
+
+// returns material assigned to the submodel, resolving replacable skins. null_handle if no skin set is bound
+material_handle
+submodel_material( TSubModel const *Submodel ) {
+
+    if( Submodel->m_material >= 0 ) {
+        return Submodel->m_material;
+    }
+    return (
+        TSubModel::ReplacableSkinId != nullptr ?
+            TSubModel::ReplacableSkinId[ -Submodel->m_material ] :
+            null_handle );
+}
+
+} // namespace
+
 void GLAPIENTRY
 ErrorCallback( GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam ) {
 /*
@@ -1935,7 +1952,7 @@ bool opengl33_renderer::Render(world_environment *Environment)
 
     auto const fogfactor{std::clamp(Global.fFogEnd / 2000.f, 0.f, 1.f)}; // stronger fog reduces opacity of the celestial bodies
 	float const duskfactor = 1.0f - std::clamp(std::abs(Environment->m_sun.getAngle()), 0.0f, 12.0f) / 12.0f;
-	glm::vec3 suncolor = glm::mix(glm::vec3(255.0f / 255.0f, 242.0f / 255.0f, 231.0f / 255.0f), glm::vec3(235.0f / 255.0f, 140.0f / 255.0f, 36.0f / 255.0f), duskfactor);
+	glm::vec3 suncolor = glm::mix(glm::vec3(1.0f, 242.0f / 255.0f, 231.0f / 255.0f), glm::vec3(235.0f / 255.0f, 140.0f / 255.0f, 36.0f / 255.0f), duskfactor);
 
 	// sun
 	{
@@ -2341,8 +2358,7 @@ opengl_material &opengl33_renderer::Material(material_handle const Material)
 
 opengl_material const & opengl33_renderer::Material( TSubModel const * Submodel ) const {
 
-    auto const material { Submodel->m_material >= 0 ? Submodel->m_material : Submodel->ReplacableSkinId[ -Submodel->m_material ] };
-    return m_materials.material( material );
+    return m_materials.material( submodel_material( Submodel ) );
 }
 
 texture_handle opengl33_renderer::Fetch_Texture(std::string const &Filename, bool const Loadnow, GLint format_hint)
@@ -3767,7 +3783,7 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 					// textures...
 					if (Submodel->m_material < 0)
 					{ // zmienialne skóry
-						Bind_Material(Submodel->ReplacableSkinId[-Submodel->m_material], Submodel);
+						Bind_Material(submodel_material(Submodel), Submodel);
 					}
 					else
 					{
@@ -3804,7 +3820,7 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 
                     if (Submodel->m_material < 0)
 					{ // zmienialne skóry
-						Bind_Material_Shadow(Submodel->ReplacableSkinId[-Submodel->m_material]);
+						Bind_Material_Shadow(submodel_material(Submodel));
 					}
 					else
 					{
@@ -4689,7 +4705,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 					// textures...
 					if (Submodel->m_material < 0)
 					{ // zmienialne skóry
-						Bind_Material(Submodel->ReplacableSkinId[-Submodel->m_material], Submodel);
+						Bind_Material(submodel_material(Submodel), Submodel);
 					}
 					else
 					{
@@ -4721,7 +4737,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 
 					if (Submodel->m_material < 0)
 					{ // zmienialne skóry
-						Bind_Material_Shadow(Submodel->ReplacableSkinId[-Submodel->m_material]);
+						Bind_Material_Shadow(submodel_material(Submodel));
 					}
 					else
 					{

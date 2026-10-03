@@ -2231,7 +2231,7 @@ void TController::AutoRewident()
 
         BrakingInitialLevel = IsHeavyCargoTrain ? 1.25 : IsCargoTrain ? 1.25 : 1.00;
 
-        BrakingLevelIncrease = IsHeavyCargoTrain ? 0.25 : IsCargoTrain ? 0.25 : 0.25;
+        BrakingLevelIncrease = 0.25;
 
         if( is_emu() ) {
             auto ep_factor { ( BrakeSystem == TBrakeSystem::ElectroPneumatic ? 8 : 4 ) };
@@ -2385,7 +2385,7 @@ bool TController::CheckVehicles(TOrders user)
         }
         // with the order established the virtual train manager can do their work
         p = pVehicles[ end::front ];
-        ControlledEnginesCount = p->MoverParameters->Power > 1.0 ? 1 : 0;
+        ControlledEnginesCount = ( p != nullptr && p->MoverParameters->Power > 1.0 ) ? 1 : 0;
         auto hasheaters { false };
         while (p)
         {
@@ -4042,7 +4042,7 @@ void TController::SetTimeControllers()
             }
         }
 
-        if( std::abs( DizelPercentage_Speed - DizelActualPercentage ) > ( DizelPercentage > 1 ? 0 : 0 ) ) {
+        if( std::abs( DizelPercentage_Speed - DizelActualPercentage ) > 0 ) {
 
             if( PosDec > 0
              && ( DizelActualPercentage - DizelPercentage_Speed > 50
@@ -5425,32 +5425,23 @@ TCommandType TController::BackwardScan( double const Range )
         }
         else
         {
+            // jeśli semafor jest daleko, a pojazd jedzie, to informujemy o zmianie prędkości
+            // jeśli jedzie manewrowo, musi dostać SetVelocity, żeby sie na pociągowy przełączył
+            // w przeciwnym razie ustawiamy prędkość tylko wtedy, gdy ma ruszyć, stanąć albo ma stać
+            // ruszać stop trzeba powtarzać, bo inaczej zatrąbi i pojedzie sam
+#if LOGBACKSCAN
             if (scandist > fMinProximityDist &&
                 mvOccupied->Vel > EU07_AI_NOMOVEMENT && (OrderCurrentGet() & (Shunt | Loose_shunt)) == 0)
             {
-                // jeśli semafor jest daleko, a pojazd jedzie, to informujemy o zmianie prędkości
-                // jeśli jedzie manewrowo, musi dostać SetVelocity, żeby sie na pociągowy przełączył
-#if LOGBACKSCAN
-                // WriteLog(edir+"SetProximityVelocity "+AnsiString(scandist) +
-                // AnsiString(scanvel));
                 WriteLog(edir);
-#endif
-                // SetProximityVelocity(scandist,scanvel,&sl);
-                return scanvel > 0 ? TCommandType::cm_SetVelocity : TCommandType::cm_Unknown;
             }
             else
             {
-                // ustawiamy prędkość tylko wtedy, gdy ma ruszyć, stanąć albo ma stać
-                // if ((MoverParameters->Vel==0.0)||(scanvel==0.0)) //jeśli stoi lub ma stanąć/stać
-                // semafor na tym torze albo lokomtywa stoi, a ma ruszyć, albo ma stanąć, albo nie
-                // ruszać stop trzeba powtarzać, bo inaczej zatrąbi i pojedzie sam
-                // PutCommand("SetVelocity",scanvel,e->Params[9].asMemCell->Value2(),&sl,stopSem);
-#if LOGBACKSCAN
                 WriteLog(edir + " - [SetVelocity] [" + to_string(scanvel, 2) + "] [" +
                          to_string(e->input_value(2), 2) + "]");
-#endif
-                return scanvel > 0 ? TCommandType::cm_SetVelocity : TCommandType::cm_Unknown;
             }
+#endif
+            return scanvel > 0 ? TCommandType::cm_SetVelocity : TCommandType::cm_Unknown;
         }
     }
     // reakcja AI w trybie manewrowym dodatkowo na sygnały manewrowe

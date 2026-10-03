@@ -1529,7 +1529,9 @@ void TSubModel::ParentMatrix(float4x4 *m) const
 
 void TSubModel::ReplaceMatrix(const glm::mat4 &mat)
 {
-	*fMatrix = float4x4(glm::value_ptr(mat));
+	for (int column = 0; column < 4; ++column)
+		for (int row = 0; row < 4; ++row)
+			fMatrix->e[column * 4 + row] = mat[column][row];
 }
 
 void TSubModel::ReplaceMaterial(const std::string &name)
@@ -1618,13 +1620,8 @@ TSubModel *TModel3d::GetFromName(std::string const &Name) const
 { // wyszukanie submodelu po nazwie
 	if (Name.empty())
 		return Root; // potrzebne do terenu z E3D
-	if (iFlags & 0x0200) // wczytany z pliku tekstowego, wyszukiwanie rekurencyjne
-		return Root ? Root->GetFromName(Name) : nullptr;
-	else // wczytano z pliku binarnego, można wyszukać iteracyjnie
-	{
-		// for (int i=0;i<iSubModelsCount;++i)
-		return Root ? Root->GetFromName(Name) : nullptr;
-	}
+	// both text and binary models are searched recursively
+	return Root ? Root->GetFromName(Name) : nullptr;
 };
 
 // locates particle source submodels and stores them on internal list

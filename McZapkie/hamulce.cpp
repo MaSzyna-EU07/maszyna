@@ -3516,10 +3516,7 @@ double TMHZ_K5P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	LimCP = std::min(LimCP, HP); // pozycja + czasowy lub zasilanie
 	ActFlowSpeed = 4;
 
-	if (LimCP > CP) // podwyzszanie szybkie
-		CP = CP + 9 * std::min(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy;
-	else
-		CP = CP + 9 * std::min(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy
+	CP = CP + 9 * std::min(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy
 
 	double uop = UnbrakeOverPressure; // unbrake over pressure in actual state
 	ManualOvrldActive = UniversalFlag & TUniversalBrake::ub_HighPressure; // button is pressed
@@ -3699,10 +3696,7 @@ double TMHZ_6P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	LimCP = std::min(LimCP, HP); // pozycja + czasowy lub zasilanie
 	ActFlowSpeed = 4;
 
-	if (LimCP > CP) // podwyzszanie szybkie
-		CP = CP + 9 * std::min(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy;
-	else
-		CP = CP + 9 * std::min(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy
+	CP = CP + 9 * std::min(abs(LimCP - CP), 0.05) * PR(CP, LimCP) * dt; // zbiornik sterujacy
 
 	dpPipe = std::min(HP, CP + TP + RedAdj);
 

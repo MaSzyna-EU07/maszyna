@@ -80,29 +80,20 @@ std::mutex logMutex;
 
 void LogService()
 {
-	// prevent crash if mutex is not initialized
-	while (true)
-	{
-		try
-		{
-			logMutex.lock();
-			break;
-		}
-		catch (...) {}
-	}
-	logMutex.unlock();
-
 	while (!Global.applicationQuitOrder)
 	{
 		{
 			// --- Obsługa InfoStack ---
 			while (!InfoStack.empty())
 			{
-				logMutex.lock();
-				std::string msg = InfoStack.front().first;
-				bool isError = InfoStack.front().second;
-				InfoStack.pop_front();
-				logMutex.unlock();
+				std::string msg;
+				bool isError;
+				{
+					std::lock_guard<std::mutex> lock(logMutex);
+					msg = InfoStack.front().first;
+					isError = InfoStack.front().second;
+					InfoStack.pop_front();
+				}
 
 				// log to file
 				if (Global.iWriteLogEnabled & 1)
@@ -134,10 +125,12 @@ void LogService()
 			// --- Obsługa ErrorStack ---
 			while (!ErrorStack.empty())
 			{
-				logMutex.lock();
-				std::string msg = ErrorStack.front();
-				ErrorStack.pop_front();
-				logMutex.unlock();
+				std::string msg;
+				{
+					std::lock_guard<std::mutex> lock(logMutex);
+					msg = ErrorStack.front();
+					ErrorStack.pop_front();
+				}
 
 				if (!(Global.iWriteLogEnabled & 1))
 					continue;

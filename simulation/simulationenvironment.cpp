@@ -78,7 +78,6 @@ world_environment::compute_weather() {
 	                    Global.Overcast <= 0.70 ? 6 :
 	                    Global.Overcast <= 0.80 ? 7 :
 	                    Global.Overcast <= 0.90 ? 8 :
-	                    Global.Overcast > 0.90  ? 9 :
 	                                              9;
 }
 

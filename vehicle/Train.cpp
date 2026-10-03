@@ -1435,7 +1435,7 @@ void TTrain::OnCommand_secondcontrollerincrease(TTrain *Train, command_data cons
 		// HACK: potentially animate push or pushtoggle control
 		if (Train->ggScndCtrl.is_push())
 		{
-			auto const activeposition{Train->ggScndCtrl.is_toggle() ? 1.f : 1.f};
+			auto const activeposition{1.f};
 			auto const neutralposition{Train->ggScndCtrl.is_toggle() ? 0.5f : 0.f};
 			Train->ggScndCtrl.UpdateValue(Command.action == GLFW_RELEASE ? neutralposition : activeposition, Train->dsbSwitch);
 		}
@@ -12398,7 +12398,8 @@ uint16_t TTrain::id()
 	return vid;
 }
 
-#include <future>
+#include <exception>
+#include <thread>
 #include <algorithm>
 
 void train_table::updateAsync(double dt)
@@ -12407,8 +12408,9 @@ void train_table::updateAsync(double dt)
 	const size_t total = m_items.size();
 	const size_t chunkSize = (total + threads - 1) / threads;
 
-	std::vector<std::future<void>> futures;
-	futures.reserve(threads);
+	std::vector<std::thread> workers;
+	std::vector<std::exception_ptr> errors(threads);
+	workers.reserve(threads);
 
 	for (int i = 0; i < threads; ++i)
 	{
@@ -12418,21 +12420,35 @@ void train_table::updateAsync(double dt)
 		if (start >= end)
 			break; // brak więcej danych
 
-		futures.emplace_back(std::async(std::launch::async,
-		                                [this, start, end, dt]()
-		                                {
-			                                for (size_t j = start; j < end; ++j)
-			                                {
-				                                TTrain *train = m_items[j];
-				                                if (train)
-					                                train->Update(dt);
-			                                }
-		                                }));
+		workers.emplace_back(
+		    [this, start, end, dt, &error = errors[i]]()
+		    {
+			    try
+			    {
+				    for (size_t j = start; j < end; ++j)
+				    {
+					    TTrain *train = m_items[j];
+					    if (train)
+						    train->Update(dt);
+				    }
+			    }
+			    catch (...)
+			    {
+				    // przekaż wyjątek do głównego wątku
+				    error = std::current_exception();
+			    }
+		    });
 	}
 
 	// Poczekaj aż wszystkie wątki skończą
-	for (auto &f : futures)
-		f.get();
+	for (auto &worker : workers)
+		worker.join();
+
+	for (auto const &error : errors)
+	{
+		if (error)
+			std::rethrow_exception(error);
+	}
 
 	// Teraz kasowanie (tylko w głównym wątku)
 	for (TTrain *train : m_items)

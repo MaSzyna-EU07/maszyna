@@ -1588,7 +1588,7 @@ opengl_renderer::Render( world_environment *Environment ) {
     auto const fogfactor { std::clamp( Global.fFogEnd / 2000.f, 0.f, 1.f ) }; // closer/denser fog reduces opacity of the celestial bodies
     float const duskfactor = 1.0f - std::clamp( std::abs( Environment->m_sun.getAngle() ), 0.0f, 12.0f ) / 12.0f;
 	glm::vec3 suncolor = glm::mix(
-        glm::vec3( 255.0f / 255.0f, 242.0f / 255.0f, 231.0f / 255.0f ),
+        glm::vec3( 1.0f, 242.0f / 255.0f, 231.0f / 255.0f ),
         glm::vec3( 235.0f / 255.0f, 140.0f / 255.0f, 36.0f / 255.0f ),
         duskfactor );
     // sun

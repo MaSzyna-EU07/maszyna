@@ -667,7 +667,7 @@ void driver_mode::update_camera(double const Deltatime)
 	// reset window state, it'll be set again if applicable in a check below
 	Global.CabWindowOpen = false;
 
-	if (simulation::Train != nullptr && Camera.m_owner != nullptr && false == DebugCameraFlag)
+	if (simulation::Train != nullptr && controlled != nullptr && Camera.m_owner != nullptr && false == DebugCameraFlag)
 	{
 		// jeśli jazda w kabinie, przeliczyć trzeba parametry kamery
 		/*
