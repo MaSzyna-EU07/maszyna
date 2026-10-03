@@ -5901,9 +5901,12 @@ TController::determine_consist_state() {
         auto const bp { std::max( 0.0, vehicle->BrakePress - ( vehicle->SpeedCtrlUnit.Parking ? vehicle->MaxBrakePress[ 0 ] * vehicle->StopBrakeDecc : 0.0 ) ) };
         if (Ready) {
             // bo jak coś nie odhamowane, to dalej nie ma co sprawdzać
-            if( TestFlagAny(vehicle->Hamulec->GetBrakeStatus(), b_hld | b_on)
-             || ( vehicle->Vel < 1.0 ? bp > 0.4 : // ensure the brakes are sufficiently released when starting to move
-			                                                                                           vehicle->Fb * 0.001 > 10.0 ) ) { // once in motion we can make a more lenient check
+            if( auto const isbraking { TestFlagAny( vehicle->Hamulec->GetBrakeStatus(), b_hld | b_on ) };
+                vehicle->Vel < 1.0 ?
+                    isbraking || bp > 0.4 : // ensure the brakes are sufficiently released when starting to move
+                    // once in motion a brake down to 0.4 bar counts as released (UIC), even if its distributor
+                    // is still in the lap position while the brake pipe recharges
+                    ( isbraking && bp > 0.4 ) || vehicle->Fb * 0.001 > 10.0 ) {
                 Ready = false;
             }
             // Ra: odluźnianie przeładowanych lokomotyw, ciągniętych na zimno - prowizorka...
