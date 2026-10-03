@@ -316,6 +316,11 @@ class editor_mode : public application_mode, private editor_track::observer
 		int grip{-1};
 	};
 	void render_route_ui();
+	void render_route_ends();
+	bool render_route_parameters();
+	bool render_route_vertices();
+	bool render_route_vertex(int const Index);
+	void render_route_result();
 	void route_reset();
 	void route_bind_ends();
 	bool route_from_curve(TTrack &Track);

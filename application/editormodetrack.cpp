@@ -1163,12 +1163,34 @@ void editor_mode::render_route_gizmo()
 
 void editor_mode::render_route_ui()
 {
-	auto &route{m_route};
-	auto &design{route.design};
 	ImGui::TextDisabled("LMB on a curve: loads the whole curve between the adjoining straights.\n"
 	                    "The ends of the curve and their directions stay fixed.\n"
 	                    "LMB on a vertex (W1, W2...): moves it with the gizmo   Esc: release the vertex");
 
+	render_route_ends();
+	auto &route{m_route};
+	if (route.chain.tracks.empty())
+		return;
+
+	ImGui::Text("Fragment: %zu paths, %.2f m", route.chain.tracks.size(), route.chain.length);
+	ImGui::SameLine();
+	if (ImGui::SmallButton("Reset design"))
+	{
+		route_reset();
+		return;
+	}
+	auto changed{render_route_parameters()};
+	changed |= render_route_vertices();
+	if (changed)
+		route_update();
+
+	ImGui::Separator();
+	render_route_result();
+}
+
+void editor_mode::render_route_ends()
+{
+	auto &route{m_route};
 	auto *track = selected_track();
 	auto const name = [](TTrack const *Track) { return Track == nullptr ? std::string{"-"} : (Track->name().empty() ? std::string{"(noname)"} : Track->name()); };
 	ImGui::Text("First path: %s", name(route.from).c_str());
@@ -1191,17 +1213,11 @@ void editor_mode::render_route_ui()
 	}
 	if (false == route.error.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "%s", route.error.c_str());
-	if (route.chain.tracks.empty())
-		return;
+}
 
-	ImGui::Text("Fragment: %zu paths, %.2f m", route.chain.tracks.size(), route.chain.length);
-	ImGui::SameLine();
-	if (ImGui::SmallButton("Reset design"))
-	{
-		route_reset();
-		return;
-	}
-
+bool editor_mode::render_route_parameters()
+{
+	auto &design{m_route.design};
 	bool changed{false};
 	ImGui::PushItemWidth(120.0f);
 	changed |= ImGui::InputDouble("Design speed (km/h)", &design.speed, 0.0, 0.0, "%.0f");
@@ -1236,7 +1252,14 @@ void editor_mode::render_route_ui()
 		norms.jerk = std::max(0.01, norms.jerk);
 		ImGui::TreePop();
 	}
+	return changed;
+}
 
+bool editor_mode::render_route_vertices()
+{
+	auto &route{m_route};
+	auto &design{route.design};
+	bool changed{false};
 	auto &vertices{design.vertices};
 	if (ImGui::Button("Add vertex"))
 	{
@@ -1281,70 +1304,83 @@ void editor_mode::render_route_ui()
 	auto const count{static_cast<int>(vertices.size())};
 	for (int i = 0; i < count; ++i)
 	{
-		auto &vertex{vertices[i]};
 		ImGui::PushID(i);
-		if (ImGui::Selectable(format("Vertex W%d", i + 1).c_str(), route.vertex == i))
-			route.vertex = (route.vertex == i ? -1 : i);
-		ImGui::Indent();
-		ImGui::PushItemWidth(110.0f);
-		if (count == 1)
-			ImGui::TextDisabled("At the intersection of the end tangents");
-		else if (i == 0)
-			changed |= ImGui::InputDouble("Distance from the start (m)", &vertex.offset, 0.0, 0.0, "%.2f");
-		else if (i == count - 1)
-			changed |= ImGui::InputDouble("Distance from the end (m)", &vertex.offset, 0.0, 0.0, "%.2f");
-		else
-		{
-			ImGui::PushItemWidth(220.0f);
-			changed |= ImGui::InputScalarN("Position (x, z)", ImGuiDataType_Double, glm::value_ptr(vertex.position), 2, nullptr, nullptr, "%.2f");
-			ImGui::PopItemWidth();
-		}
-		changed |= ImGui::InputDouble(vertex.compound ? "Radius R1 (m)" : "Radius R (m)", &vertex.radius, 0.0, 0.0, "%.1f");
-		changed |= ImGui::Checkbox("Compound curve (two radii)", &vertex.compound);
-		if (vertex.compound)
-		{
-			changed |= ImGui::InputDouble("Radius R2 (m)", &vertex.radius2, 0.0, 0.0, "%.1f");
-			changed |= ImGui::InputDouble("Transition R1-R2 (m)", &vertex.transition_middle, 0.0, 0.0, "%.1f");
-			float split{static_cast<float>(vertex.split)};
-			if (ImGui::SliderFloat("Share of R1", &split, 0.0f, 1.0f, "%.2f"))
-			{
-				vertex.split = split;
-				changed = true;
-			}
-			vertex.radius2 = std::max(1.0, vertex.radius2);
-			vertex.transition_middle = std::max(0.0, vertex.transition_middle);
-		}
-		changed |= ImGui::InputDouble("Transition in (m)", &vertex.transition_in, 0.0, 0.0, "%.1f");
-		changed |= ImGui::InputDouble("Transition out (m)", &vertex.transition_out, 0.0, 0.0, "%.1f");
-		changed |= ImGui::InputDouble("Cant (mm)", &vertex.cant, 0.0, 0.0, "%.0f");
-		changed |= ImGui::Checkbox("Turn the longer way (over 180 deg)", &vertex.reverse_turn);
-		ImGui::PopItemWidth();
-		vertex.radius = std::max(1.0, vertex.radius);
-		vertex.transition_in = std::max(0.0, vertex.transition_in);
-		vertex.transition_out = std::max(0.0, vertex.transition_out);
-		vertex.cant = std::max(0.0, vertex.cant);
-		if (ImGui::SmallButton("Apply recommended for V"))
-		{
-			route_recommend(vertex);
-			changed = true;
-		}
-
-		auto const recommended{alignment::recommend(design.speed, vertex.radius, design.norms)};
-		ImGui::TextDisabled("For %.0f km/h: R min %.0f m, cant %.0f mm (equilibrium %.0f, min %.0f), transition %.0f m", design.speed, recommended.radius_min, recommended.cant, recommended.cant_equilibrium, recommended.cant_min, recommended.transition);
-		for (auto const &curve : route.result.curves)
-		{
-			if (curve.vertex != i)
-				continue;
-			ImGui::Text("Deflection %.4f deg, tangents %.2f / %.2f m, arc %.2f m", glm::degrees(curve.deflection), curve.tangent_in, curve.tangent_out, curve.arc_length);
-			ImGui::Text("Unbalanced acc. %.3f m/s2, cant rate %.1f / %.1f mm/s, acc. rate %.3f / %.3f m/s3", curve.unbalanced, curve.cant_rate_in, curve.cant_rate_out, curve.jerk_in, curve.jerk_out);
-		}
-		ImGui::Unindent();
+		changed |= render_route_vertex(i);
 		ImGui::PopID();
 	}
-	if (changed)
-		route_update();
+	return changed;
+}
 
-	ImGui::Separator();
+bool editor_mode::render_route_vertex(int const Index)
+{
+	auto &route{m_route};
+	auto &design{route.design};
+	auto &vertex{design.vertices[Index]};
+	auto const count{static_cast<int>(design.vertices.size())};
+	bool changed{false};
+	if (ImGui::Selectable(format("Vertex W%d", Index + 1).c_str(), route.vertex == Index))
+		route.vertex = (route.vertex == Index ? -1 : Index);
+	ImGui::Indent();
+	ImGui::PushItemWidth(110.0f);
+	if (count == 1)
+		ImGui::TextDisabled("At the intersection of the end tangents");
+	else if (Index == 0)
+		changed |= ImGui::InputDouble("Distance from the start (m)", &vertex.offset, 0.0, 0.0, "%.2f");
+	else if (Index == count - 1)
+		changed |= ImGui::InputDouble("Distance from the end (m)", &vertex.offset, 0.0, 0.0, "%.2f");
+	else
+	{
+		ImGui::PushItemWidth(220.0f);
+		changed |= ImGui::InputScalarN("Position (x, z)", ImGuiDataType_Double, glm::value_ptr(vertex.position), 2, nullptr, nullptr, "%.2f");
+		ImGui::PopItemWidth();
+	}
+	changed |= ImGui::InputDouble(vertex.compound ? "Radius R1 (m)" : "Radius R (m)", &vertex.radius, 0.0, 0.0, "%.1f");
+	changed |= ImGui::Checkbox("Compound curve (two radii)", &vertex.compound);
+	if (vertex.compound)
+	{
+		changed |= ImGui::InputDouble("Radius R2 (m)", &vertex.radius2, 0.0, 0.0, "%.1f");
+		changed |= ImGui::InputDouble("Transition R1-R2 (m)", &vertex.transition_middle, 0.0, 0.0, "%.1f");
+		float split{static_cast<float>(vertex.split)};
+		if (ImGui::SliderFloat("Share of R1", &split, 0.0f, 1.0f, "%.2f"))
+		{
+			vertex.split = split;
+			changed = true;
+		}
+		vertex.radius2 = std::max(1.0, vertex.radius2);
+		vertex.transition_middle = std::max(0.0, vertex.transition_middle);
+	}
+	changed |= ImGui::InputDouble("Transition in (m)", &vertex.transition_in, 0.0, 0.0, "%.1f");
+	changed |= ImGui::InputDouble("Transition out (m)", &vertex.transition_out, 0.0, 0.0, "%.1f");
+	changed |= ImGui::InputDouble("Cant (mm)", &vertex.cant, 0.0, 0.0, "%.0f");
+	changed |= ImGui::Checkbox("Turn the longer way (over 180 deg)", &vertex.reverse_turn);
+	ImGui::PopItemWidth();
+	vertex.radius = std::max(1.0, vertex.radius);
+	vertex.transition_in = std::max(0.0, vertex.transition_in);
+	vertex.transition_out = std::max(0.0, vertex.transition_out);
+	vertex.cant = std::max(0.0, vertex.cant);
+	if (ImGui::SmallButton("Apply recommended for V"))
+	{
+		route_recommend(vertex);
+		changed = true;
+	}
+
+	auto const recommended{alignment::recommend(design.speed, vertex.radius, design.norms)};
+	ImGui::TextDisabled("For %.0f km/h: R min %.0f m, cant %.0f mm (equilibrium %.0f, min %.0f), transition %.0f m", design.speed, recommended.radius_min, recommended.cant, recommended.cant_equilibrium, recommended.cant_min, recommended.transition);
+	for (auto const &curve : route.result.curves)
+	{
+		if (curve.vertex != Index)
+			continue;
+		ImGui::Text("Deflection %.4f deg, tangents %.2f / %.2f m, arc %.2f m", glm::degrees(curve.deflection), curve.tangent_in, curve.tangent_out, curve.arc_length);
+		ImGui::Text("Unbalanced acc. %.3f m/s2, cant rate %.1f / %.1f mm/s, acc. rate %.3f / %.3f m/s3", curve.unbalanced, curve.cant_rate_in, curve.cant_rate_out, curve.jerk_in, curve.jerk_out);
+	}
+	ImGui::Unindent();
+	return changed;
+}
+
+void editor_mode::render_route_result()
+{
+	auto const &route{m_route};
+	auto const &design{route.design};
 	auto const &result{route.result};
 	if (result.length > 0.0)
 	{
@@ -1381,8 +1417,7 @@ void editor_mode::render_route_ui()
 	{
 		ImGui::SameLine();
 		ImGui::TextUnformatted(route.status.c_str());
-	}
-}
+	}}
 
 editor_track::straight const &editor_mode::current_straight()
 {
