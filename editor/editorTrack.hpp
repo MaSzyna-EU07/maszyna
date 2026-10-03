@@ -232,14 +232,21 @@ class editor_track
 	static void velocity(TTrack &Track, double const Velocity);
 	static void damage(TTrack &Track, int const Damage);
 
-	// let the objects which belong to the paths follow their changes
-	static std::function<void(TTrack const &)> on_capture;
-	static std::function<void(std::vector<TTrack *> const &)> on_commit;
-	static std::function<void(TTrack &)> on_retire;
-	// called before the commit; the first argument keeps the beginning of the path, given in the last one
-	static std::function<void(TTrack &, TTrack &, segment_data const &)> on_split;
+	// told about the changes of the paths, to let the objects which belong to them follow
+	class observer
+	{
+	  public:
+		virtual ~observer() = default;
+		virtual void track_captured(TTrack const &Track) = 0;
+		virtual void tracks_committed(std::vector<TTrack *> const &Tracks) = 0;
+		virtual void track_retired(TTrack &Track) = 0;
+		// called before the commit; Original keeps the beginning of the path, given in First
+		virtual void track_split(TTrack &Original, TTrack &Created, segment_data const &First) = 0;
+	};
+	static void observe(observer *Observer) { s_observer = Observer; }
 
   private:
+	static observer *s_observer;
 	static void disconnect(TTrack &Track);
 	static void join(TTrack &Track);
 	static void connect(TTrack &Track, bool const Prevside, TTrack *Other, int const Endpointid);

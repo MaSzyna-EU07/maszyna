@@ -461,14 +461,6 @@ double turn_of(infra::binding const &Binding, double const Yaw)
 
 } // namespace
 
-void editor_mode::infra_hooks()
-{
-	editor_track::on_capture = [this](TTrack const &Track) { infra_capture(Track); };
-	editor_track::on_commit = [this](std::vector<TTrack *> const &Tracks) { infra_follow(Tracks); };
-	editor_track::on_retire = [this](TTrack &) { infra_follow({}); };
-	editor_track::on_split = [this](TTrack &Original, TTrack &Created, segment_data const &First) { infra_split(Original, Created, First); };
-}
-
 // format of the lines, coordinates in the space of the file:
 //   <kind> <category> <x y z of the object> <file or name, - if none> <turns 0/1> <anchor count> { <path> <start x y z> <end x y z> }
 // the object is the model, the include (position from its parameters), the traction piece (its first point), the memory
@@ -908,7 +900,7 @@ void editor_mode::infra_buffer(infra::binding const &Binding, bool const Refresh
 	m_infra_buffer.push_back(infra_state_of(Binding));
 }
 
-void editor_mode::infra_capture(TTrack const &Track)
+void editor_mode::track_captured(TTrack const &Track)
 {
 	if (m_infra_suspended || false == m_infra.follow)
 		return;
@@ -948,7 +940,7 @@ void editor_mode::infra_capture(TTrack const &Track)
 	}
 }
 
-void editor_mode::infra_follow(std::vector<TTrack *> const &Tracks)
+void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 {
 	if (m_infra_suspended || false == m_infra.follow)
 		return;
@@ -1027,7 +1019,12 @@ void editor_mode::infra_follow(std::vector<TTrack *> const &Tracks)
 	}
 }
 
-void editor_mode::infra_split(TTrack &Original, TTrack &Created, segment_data const &First)
+void editor_mode::track_retired(TTrack &)
+{
+	tracks_committed({});
+}
+
+void editor_mode::track_split(TTrack &Original, TTrack &Created, segment_data const &First)
 {
 	if (m_infra_suspended || Created.m_paths.empty())
 		return;

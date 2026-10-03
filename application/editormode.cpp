@@ -344,8 +344,13 @@ editor_mode::editor_mode() {
 	m_orthophoto.ground_source([](glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out) {
 		gather_ground_triangles(Min, Max, true, 50.0f, Out);
 	});
-	infra_hooks();
+	editor_track::observe(this);
  }
+
+editor_mode::~editor_mode()
+{
+	editor_track::observe(nullptr);
+}
 
 editor_ui *editor_mode::ui() const
 {

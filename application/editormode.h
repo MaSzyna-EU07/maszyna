@@ -34,12 +34,13 @@ http://mozilla.org/MPL/2.0/.
 class TAnimModel;
 class TTrack;
 
-class editor_mode : public application_mode
+class editor_mode : public application_mode, private editor_track::observer
 {
 
   public:
 	// constructors
 	editor_mode();
+	~editor_mode() override;
 	// methods
 	// initializes internal data structures of the mode. returns: true on success, false otherwise
 	bool init() override;
@@ -576,7 +577,6 @@ class editor_mode : public application_mode
 	bool m_bindings_loaded{false};
 	std::vector<infra::object_state> m_infra_buffer; // states of the objects before the change in progress
 	bool m_infra_suspended{false};
-	void infra_hooks();
 	void infra_load();
 	void infra_store();
 	std::vector<TTrack *> infra_scope() const;
@@ -587,9 +587,11 @@ class editor_mode : public application_mode
 	infra::object_state infra_state_of(infra::binding const &Binding) const;
 	void infra_restore_state(infra::object_state const &State);
 	void infra_buffer(infra::binding const &Binding, bool const Refresh);
-	void infra_capture(TTrack const &Track);
-	void infra_follow(std::vector<TTrack *> const &Tracks);
-	void infra_split(TTrack &Original, TTrack &Created, segment_data const &First);
+	// editor_track::observer
+	void track_captured(TTrack const &Track) override;
+	void tracks_committed(std::vector<TTrack *> const &Tracks) override;
+	void track_retired(TTrack &Track) override;
+	void track_split(TTrack &Original, TTrack &Created, segment_data const &First) override;
 	void infra_move(infra::binding &Binding);
 	void infra_attach(EditorSnapshot &Snapshot);
 	void render_infra_window();
