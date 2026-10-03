@@ -3816,6 +3816,19 @@ opengl_renderer::Render_Alpha( TModel3d *Model, material_data const *Material, f
     return result;
 }
 
+// characters of a text display, laid out in a row. the text can be encoded in utf-8 or in windows-1250
+void
+opengl_renderer::Render_Alpha_text( TSubModel *Submodel ) {
+
+    if( TSubModel::pasText == nullptr ) { return; }
+
+    for( auto *p : Submodel->text_letters( *TSubModel::pasText ) ) { // translucent only, for the time being
+        Render_Alpha( p );
+        if( p->fMatrix )
+            ::glMultMatrixf( p->fMatrix->readArray() ); // move on to the place of the next character
+    }
+}
+
 void
 opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
     // renderowanie przezroczystych przez DL
@@ -4034,14 +4047,7 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
 
         if( Submodel->Child != nullptr ) {
             if( Submodel->eType == TP_TEXT ) { // tekst renderujemy w specjalny sposób, zamiast submodeli z łańcucha Child
-                if( Submodel->pasText != nullptr ) {
-                    // characters to draw; the text can be encoded in utf-8 or in windows-1250
-                    for( auto *p : Submodel->text_letters( *Submodel->pasText ) ) { // na razie tylko jako przezroczyste
-                        Render_Alpha( p );
-                        if( p->fMatrix )
-                            ::glMultMatrixf( p->fMatrix->readArray() ); // przesuwanie widoku
-                    }
-                }
+                Render_Alpha_text( Submodel );
             }
             else if( Submodel->iAlpha & Submodel->iFlags & 0x002F0000 )
                 Render_Alpha( Submodel->Child );
