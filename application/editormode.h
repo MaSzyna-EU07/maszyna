@@ -607,6 +607,10 @@ class editor_mode : public application_mode, private editor_track::observer
 	void infra_move(infra::binding &Binding);
 	void infra_attach(EditorSnapshot &Snapshot);
 	void render_infra_window();
+	void infra_rebase();
+	void render_infra_search();
+	void render_infra_candidates();
+	void render_infra_bound();
 	void draw_infra_overlay() const;
 
 	bool m_route_gizmo_using{false};

@@ -1137,31 +1137,7 @@ void editor_mode::render_infra_window()
 	{
 		state.follow = follow;
 		if (follow)
-		{
-			// what changed in the meantime becomes the new starting point
-			for (auto &binding : m_bindings)
-			{
-				std::vector<glm::dvec3> points;
-				std::optional<double> yaw;
-				if (false == alive(binding) || false == object_points(binding, points, yaw) || points.size() != binding.anchors.size())
-					continue;
-				for (std::size_t i = 0; i < points.size(); ++i)
-				{
-					auto &anchor{binding.anchors[i]};
-					if (anchor.at.track == nullptr || anchor.at.track->m_editorremoved || anchor.at.path >= static_cast<int>(anchor.at.track->m_paths.size()))
-					{
-						binding.lost = true;
-						continue;
-					}
-					double s;
-					bool interior;
-					infra::project(anchor.at.track->m_paths[anchor.at.path], points[i], s, interior);
-					anchor = infra::make_anchor({anchor.at.track, anchor.at.path, s}, points[i]);
-				}
-				if (binding.turns && yaw.has_value())
-					binding.yaw = turn_of(binding, *yaw);
-			}
-		}
+			infra_rebase();
 	}
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("Bound objects keep their chainage along the path, the offset from its axis and the height above the rail top;\n"
@@ -1176,6 +1152,46 @@ void editor_mode::render_infra_window()
 	}
 
 	ImGui::Separator();
+	render_infra_search();
+	render_infra_candidates();
+	render_infra_bound();
+	if (false == state.error.empty())
+		ImGui::TextColored(ImVec4(1.f, 0.4f, 0.35f, 1.f), "%s", state.error.c_str());
+	else if (false == state.status.empty())
+		ImGui::TextWrapped("%s", state.status.c_str());
+	ImGui::End();
+}
+
+// what changed while the bindings did not follow the track becomes their new starting point
+void editor_mode::infra_rebase()
+{
+	for (auto &binding : m_bindings)
+	{
+		std::vector<glm::dvec3> points;
+		std::optional<double> yaw;
+		if (false == alive(binding) || false == object_points(binding, points, yaw) || points.size() != binding.anchors.size())
+			continue;
+		for (std::size_t i = 0; i < points.size(); ++i)
+		{
+			auto &anchor{binding.anchors[i]};
+			if (anchor.at.track == nullptr || anchor.at.track->m_editorremoved || anchor.at.path >= static_cast<int>(anchor.at.track->m_paths.size()))
+			{
+				binding.lost = true;
+				continue;
+			}
+			double s;
+			bool interior;
+			infra::project(anchor.at.track->m_paths[anchor.at.path], points[i], s, interior);
+			anchor = infra::make_anchor({anchor.at.track, anchor.at.path, s}, points[i]);
+		}
+		if (binding.turns && yaw.has_value())
+			binding.yaw = turn_of(binding, *yaw);
+	}
+}
+
+void editor_mode::render_infra_search()
+{
+	auto &state{m_infra};
 	static char const *const scopes[] = {"Selected path", "Line through the selected path", "Route of the vertical profile", "Whole scenery"};
 	ImGui::SetNextItemWidth(260.f);
 	ImGui::Combo("Look along", &state.scope, scopes, IM_ARRAYSIZE(scopes));
@@ -1209,7 +1225,17 @@ void editor_mode::render_infra_window()
 	if (ImGui::Button("Find objects"))
 		infra_recognize();
 
+}
+
+void editor_mode::render_infra_candidates()
+{
+	auto &state{m_infra};
 	auto &candidates{state.candidates};
+	auto const choose = [&](std::optional<infra::category> const Group, bool const Chosen) {
+		for (auto &candidate : candidates)
+			if (false == Group.has_value() || candidate.binding.group == *Group)
+				candidate.chosen = Chosen && false == candidate.bound;
+	};
 	state.hovered = -1;
 	if (false == candidates.empty())
 	{
@@ -1221,12 +1247,10 @@ void editor_mode::render_infra_window()
 			infra_bind_chosen();
 		ImGui::SameLine();
 		if (ImGui::SmallButton("All"))
-			for (auto &candidate : candidates)
-				candidate.chosen = (false == candidate.bound);
+			choose({}, true);
 		ImGui::SameLine();
 		if (ImGui::SmallButton("None"))
-			for (auto &candidate : candidates)
-				candidate.chosen = false;
+			choose({}, false);
 
 		ImGui::BeginChild("##infracandidates", ImVec2(0.f, 260.f), true);
 		for (auto const group : infra::categories())
@@ -1239,14 +1263,10 @@ void editor_mode::render_infra_window()
 			ImGui::PopStyleColor();
 			ImGui::SameLine();
 			if (ImGui::SmallButton((std::string{"all##g"} + infra::name(group)).c_str()))
-				for (auto &candidate : candidates)
-					if (candidate.binding.group == group)
-						candidate.chosen = (false == candidate.bound);
+				choose(group, true);
 			ImGui::SameLine();
 			if (ImGui::SmallButton((std::string{"none##g"} + infra::name(group)).c_str()))
-				for (auto &candidate : candidates)
-					if (candidate.binding.group == group)
-						candidate.chosen = false;
+				choose(group, false);
 			if (false == open)
 				continue;
 			// the candidates are sorted by the category
@@ -1282,7 +1302,10 @@ void editor_mode::render_infra_window()
 		}
 		ImGui::EndChild();
 	}
+}
 
+void editor_mode::render_infra_bound()
+{
 	if (ImGui::TreeNode("Bound objects along the scope"))
 	{
 		auto const scope{infra_scope()};
@@ -1323,12 +1346,6 @@ void editor_mode::render_infra_window()
 			infra_unbind({*unbind});
 		ImGui::TreePop();
 	}
-
-	if (false == state.error.empty())
-		ImGui::TextColored(ImVec4(1.f, 0.4f, 0.35f, 1.f), "%s", state.error.c_str());
-	else if (false == state.status.empty())
-		ImGui::TextWrapped("%s", state.status.c_str());
-	ImGui::End();
 }
 
 void editor_mode::draw_infra_overlay() const
