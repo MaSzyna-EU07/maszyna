@@ -781,6 +781,15 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			return fail(state.error);
 		}
 	}
+	auto const push_edit = [&](layer_handle const Layer, source_span const &Span, std::string Text, basic_node const *Node) {
+		file_patch::edit edit;
+		edit.begin = Span.begin;
+		edit.end = Span.end;
+		edit.length = Text.size();
+		edit.text = std::move(Text);
+		edit.node = Node;
+		state.patches[Layer].edits.emplace_back(std::move(edit));
+	};
 	// traction and event launchers are rewritten when the editor moved them along with the track they belong to
 	std::vector<basic_node *> patchednodes;
 	auto const patch_node = [&](basic_node *Node, auto const &Patch) {
@@ -811,13 +820,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			state.error = error + " of \"" + Node->name() + "\" in file \"" + layer(source.layer).name + "\"";
 			return false;
 		}
-		file_patch::edit edit;
-		edit.begin = source.span.begin;
-		edit.end = source.span.end;
-		edit.length = text.size();
-		edit.text = std::move(text);
-		edit.node = Node;
-		state.patches[source.layer].edits.emplace_back(std::move(edit));
+		push_edit(source.layer, source.span, std::move(text), Node);
 		rewritten.emplace(Node);
 		patchednodes.push_back(Node);
 		return true;
@@ -884,21 +887,16 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		{
 			return fail(state.error);
 		}
-		file_patch::edit edit;
-		edit.begin = source.span.begin;
-		edit.end = source.span.end;
 		if (path->m_editorremoved)
 		{
+			push_edit(source.layer, source.span, {}, nullptr);
 			droppedpaths.push_back(path);
 		}
 		else
 		{
-			edit.text = path_text(*path, source.context.offset);
-			edit.length = edit.text.size();
-			edit.node = path;
+			push_edit(source.layer, source.span, path_text(*path, source.context.offset), path);
 			savedpaths.push_back(path);
 		}
-		state.patches[source.layer].edits.emplace_back(std::move(edit));
 		rewritten.emplace(path);
 	}
 	for (auto const &erased : m_erased)
@@ -919,14 +917,10 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		{
 			for (auto const &line : lookup->second)
 			{
-				if (line.mark != mark)
+				if (line.mark == mark)
 				{
-					continue;
+					push_edit(markedlayer, line.span, {}, nullptr);
 				}
-				file_patch::edit edit;
-				edit.begin = line.span.begin;
-				edit.end = line.span.end;
-				state.patches[markedlayer].edits.emplace_back(std::move(edit));
 			}
 		}
 		auto const target{resolve(markedlayer)};
