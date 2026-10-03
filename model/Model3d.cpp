@@ -17,6 +17,7 @@ Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 #include "rendering/renderer.h"
 #include "utilities/Timer.h"
 #include "simulation/simulation.h"
@@ -55,8 +56,6 @@ TSubModel::~TSubModel()
 		SafeDelete(Child);
 		delete fMatrix; // własny transform trzeba usunąć (zawsze jeden)
 	}
-	delete[] smLetter; // używany tylko roboczo dla TP_TEXT, do przyspieszenia
-	                   // wyświetlania
 };
 
 void TSubModel::Name_Material(std::string const &Name)
@@ -891,6 +890,67 @@ void TSubModel::InitialRotate(bool doit)
 	if (Next)
 		Next->InitialRotate(doit);
 };
+
+// text display (TP_TEXT): returns sub-models of the characters to draw for provided text, in drawing order.
+// a character is matched with the first character of a child sub-model name. both the text and the names can be
+// encoded either in utf-8 or in windows-1250, so the legacy (ansi) scenery and model files work along the utf-8 ones
+std::vector<TSubModel *> const &TSubModel::text_letters(std::string const &Text)
+{
+	// the sequence is prepared once for each text the display shows. the texts of the model instances don't change,
+	// so drawing a display afterwards costs a single lookup, however many instances and passes take turns
+	auto const prepared{m_textlayouts.find(Text)};
+	if (prepared != m_textlayouts.end())
+	{
+		return prepared->second;
+	}
+
+	std::u32string characters;
+	if (false == m_lettersready)
+	{
+		for (auto *letter = Child; letter != nullptr; letter = letter->Next)
+		{
+			if (letter->pName.empty())
+			{
+				continue;
+			}
+			if (false == utf8_to_utf32(letter->pName, characters))
+			{
+				win1250_to_utf32(letter->pName, characters);
+			}
+			if (characters.front() != 0)
+			{
+				m_letters[characters.front()] = letter;
+			}
+		}
+		m_lettersready = true;
+	}
+
+	// the text is taken for utf-8 if it's valid as such, and for windows-1250 otherwise. a short ansi text can pass
+	// for utf-8 by accident (two upper case accented letters in a row are enough for this to happen),
+	// so if both readings are possible the one which finds more of its characters in the model wins
+	auto const known = [this](std::u32string const &Characters) {
+		return std::ranges::count_if(Characters, [this](char32_t const Character) { return m_letters.contains(Character); });
+	};
+	std::u32string ansi;
+	win1250_to_utf32(Text, ansi);
+	if (false == utf8_to_utf32(Text, characters) || known(ansi) > known(characters))
+	{
+		characters = ansi;
+	}
+
+	auto &textletters{m_textlayouts[Text]};
+	// NOTE: the first character of the text isn't displayed. the displays always worked this way, and the existing
+	// content relies on it
+	for (std::size_t idx = 1; idx < characters.size(); ++idx)
+	{
+		auto const lookup{m_letters.find(characters[idx])};
+		if (lookup != m_letters.end())
+		{
+			textletters.emplace_back(lookup->second);
+		}
+	}
+	return textletters;
+}
 
 void TSubModel::ChildAdd(TSubModel *SubModel)
 { // dodanie submodelu potemnego (uzależnionego)

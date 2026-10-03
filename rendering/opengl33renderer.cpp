@@ -4634,6 +4634,21 @@ bool opengl33_renderer::Render_Alpha(TModel3d *Model, material_data const *Mater
 	return result;
 }
 
+// characters of a text display, laid out in a row. the text can be encoded in utf-8 or in windows-1250
+void opengl33_renderer::Render_Alpha_text(TSubModel *Submodel)
+{
+	if (TSubModel::pasText == nullptr)
+	{
+		return;
+	}
+	for (auto *p : Submodel->text_letters(*TSubModel::pasText))
+	{ // translucent only, for the time being
+		Render_Alpha(p);
+		if (p->fMatrix)
+			::glMultMatrixf(p->fMatrix->readArray()); // move on to the place of the next character
+	}
+}
+
 void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 {
 	// renderowanie przezroczystych przez DL
@@ -4862,29 +4877,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 		{
 			if (Submodel->eType == TP_TEXT)
 			{ // tekst renderujemy w specjalny sposób, zamiast submodeli z łańcucha Child
-				int i, j = (int)Submodel->pasText->size();
-				TSubModel *p;
-				if (!Submodel->smLetter)
-				{ // jeśli nie ma tablicy, to ją stworzyć; miejsce nieodpowiednie, ale tymczasowo może być
-					Submodel->smLetter = new TSubModel *[256]; // tablica wskaźników submodeli dla wyświetlania tekstu
-					memset(Submodel->smLetter, 0, 256 * sizeof(TSubModel *)); // wypełnianie zerami
-					p = Submodel->Child;
-					while (p)
-					{
-						Submodel->smLetter[p->pName[0]] = p;
-						p = p->Next; // kolejny znak
-					}
-				}
-				for (i = 1; i <= j; ++i)
-				{
-					p = Submodel->smLetter[(*(Submodel->pasText))[i]]; // znak do wyświetlenia
-					if (p)
-					{ // na razie tylko jako przezroczyste
-						Render_Alpha(p);
-						if (p->fMatrix)
-							::glMultMatrixf(p->fMatrix->readArray()); // przesuwanie widoku
-					}
-				}
+				Render_Alpha_text(Submodel);
 			}
 			else if (Submodel->iAlpha & Submodel->iFlags & 0x002F0000)
 				Render_Alpha(Submodel->Child);
