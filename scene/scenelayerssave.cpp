@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "scene/scenelayers.h"
+#include "world/Track.h"
 
 #include "simulation/simulation.h"
 #include "model/AnimModel.h"
@@ -729,6 +730,69 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			return fail(state.error);
 		}
 	}
+	std::vector<TTrack *> savedpaths;
+	std::vector<TTrack const *> droppedpaths;
+	auto const path_text = [](TTrack &Path, glm::dvec3 const &Offset) {
+		auto const paths{Path.m_paths};
+		for (auto &path : Path.m_paths)
+		{
+			path.points[segment_data::point::start] -= Offset;
+			path.points[segment_data::point::end] -= Offset;
+		}
+		std::string text;
+		Path.export_as_text(text);
+		Path.m_paths = paths;
+		text.erase(text.find_last_not_of(" \t\r\n") + 1);
+		return text;
+	};
+	for (auto *path : simulation::Paths.sequence())
+	{
+		if (path == nullptr || (path->iCategoryFlag & 0x80) != 0 || path->from_template())
+		{
+			continue;
+		}
+		auto const nodelayer{resolve(path->layer())};
+		if (false == is_output(nodelayer))
+		{
+			continue;
+		}
+		auto const lookup{m_sources.find(path)};
+		if (lookup == m_sources.end())
+		{
+			if (path->m_editorremoved || false == path->dirty())
+			{
+				continue;
+			}
+			created[nodelayer].emplace_back(path, path_text(*path, layer(nodelayer).context_insert().offset));
+			savedpaths.push_back(path);
+			continue;
+		}
+		auto const &source{lookup->second};
+		if ((false == path->m_editorremoved && false == path->dirty()) || false == writable(source.layer))
+		{
+			continue;
+		}
+		if (false == load(source.layer))
+		{
+			return fail(state.error);
+		}
+		file_patch::edit edit;
+		edit.begin = source.span.begin;
+		edit.end = source.span.end;
+		if (path->m_editorremoved)
+		{
+			droppedpaths.push_back(path);
+		}
+		else
+		{
+			edit.text = path_text(*path, source.context.offset);
+			edit.length = edit.text.size();
+			edit.node = path;
+			savedpaths.push_back(path);
+		}
+		state.patches[source.layer].edits.emplace_back(std::move(edit));
+		rewritten.emplace(path);
+	}
 	for (auto const &erased : m_erased)
 	{
 		file_patch::edit edit;
@@ -1164,6 +1228,14 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		included.dead = included.dead || included.removed;
 	}
 	m_erased.clear();
+	for (auto *path : savedpaths)
+	{
+		path->m_dirty = false;
+	}
+	for (auto const *path : droppedpaths)
+	{
+		m_sources.erase(path);
+	}
 	if (removedterrain)
 	{
 		// binary terrain file still holds geometry of the dropped layer, have it rebuilt on the next load

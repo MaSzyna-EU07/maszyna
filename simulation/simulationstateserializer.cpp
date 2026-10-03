@@ -497,6 +497,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         }
         scene::Groups.insert( scene::Groups.handle(), path );
         simulation::Region->insert_and_register( path );
+        scene::Layers.track( path, { sourcebegin, Input.TokenEnd() } );
     }
     else if( nodedata.type == "traction" ) {
 

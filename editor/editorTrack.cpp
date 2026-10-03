@@ -1715,6 +1715,7 @@ TTrack *editor_track::load_path(std::string const &Text, TTrack const &Template,
 	data.type = "track";
 	auto const base{Template.name().empty() || Template.name() == "none" ? std::string{"editor_track"} : Template.name()};
 	data.name = Name;
+	data.layer = Template.layer();
 	for (int i = 1; data.name.empty() || simulation::Paths.find(data.name) != nullptr; ++i)
 		data.name = base + "_" + std::to_string(i);
 	auto *track = new TTrack(data);
