@@ -303,7 +303,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	std::chrono::steady_clock::time_point m_track_last_commit;
 	editor_track::state m_track_field_before;
 	std::array<std::array<char, 256>, 3> m_track_materials{};
-	std::array<bool, 3> m_track_material_edited{};
+	std::array<TTrack const *, 3> m_track_material_edited{}; // path whose texture name is being typed
 	std::string m_track_mode_notice;
 	struct route_design
 	{

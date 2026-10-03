@@ -62,6 +62,12 @@ editor_track::point_kind const kPointKinds[] = {editor_track::point_kind::start,
 
 float const kHandleRadius{10.0f};
 
+void item_tooltip(char const *Text)
+{
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", Text);
+}
+
 }
 
 TTrack *editor_mode::selected_track() const
@@ -547,7 +553,6 @@ void editor_mode::render_turnout_ui()
 	ImGui::Text("Length %.3f m, diverging %s, end offset %.3f m", length, offset > 0.0 ? "left" : "right", std::abs(offset));
 	if (angle > 1e-6)
 		ImGui::Text("Angle 1:%.2f (%.4f deg), R in the entry %.0f m", 1.0 / std::tan(angle), glm::degrees(angle), diverging.radius);
-	ImGui::TextDisabled("Gizmo moves the whole switch (W: turn), drag from a red ring at a free end to add a path");
 
 	auto &tool{m_switch};
 	if (false == tool.collected)
@@ -583,6 +588,7 @@ void editor_mode::render_turnout_ui()
 	int const side{offset > 0.0 ? 1 : -1};
 	if (ImGui::Button("Replace the geometry with the template"))
 		replace(tool.templates[m_turnout_template], side);
+	item_tooltip("Keeps the start and the direction of the switch, takes the shape of the chosen template");
 	ImGui::SameLine();
 	if (ImGui::Button("Flip the side"))
 	{
@@ -603,6 +609,7 @@ void editor_mode::render_turnout_ui()
 		}
 		replace(own, -side);
 	}
+	item_tooltip("Mirrors the switch: the diverging track goes to the other side");
 	ImGui::Separator();
 	render_path_parameters(*track);
 }
@@ -640,17 +647,22 @@ void editor_mode::render_path_parameters(TTrack &Track)
 		double velocity = editor_track::velocity(*track);
 		if (ImGui::InputDouble("Velocity (km/h, -1: none)", &velocity, 0.0, 0.0, "%.1f"))
 			editor_track::velocity(*track, velocity);
+		item_tooltip("Speed limit of the path for the AI drivers and the timetable, -1: no limit of its own");
 		finish_edit(rebuild::none);
 		if (ImGui::InputFloat("Friction", &track->fFriction, 0.0f, 0.0f, "%.3f"))
 			track->fFriction = std::max(0.0f, track->fFriction);
+		item_tooltip("Friction coefficient of the rails, 0.15 for the dry rails; lower values make the wheels slip");
 		finish_edit(rebuild::none);
 		ImGui::InputFloat("Sound distance", &track->fSoundDistance, 0.0f, 0.0f, "%.1f");
+		item_tooltip("Distance between the rail joints in metres, sets the rhythm of the wheel clatter; -1: the default");
 		finish_edit(rebuild::none);
 		ImGui::InputInt("Quality", &track->iQualityFlag, 0);
+		item_tooltip("Quality of the track, 20 is the nominal one; lower values give a rougher ride");
 		finish_edit(rebuild::none);
 		int damage = track->iDamageFlag;
 		if (ImGui::InputInt("Damage flags", &damage, 0))
 			editor_track::damage(*track, damage);
+		item_tooltip("0: track in order; any value adds jolts, 128: the vehicles derail on the path");
 		finish_edit(rebuild::none);
 
 		char const *environments[] = {"flat", "mountains", "canyon", "tunnel", "bridge", "bank"};
@@ -660,9 +672,11 @@ void editor_mode::render_path_parameters(TTrack &Track)
 			track->eEnvironment = static_cast<TEnvironmentType>(environment);
 			apply_now(rebuild::none);
 		}
+		item_tooltip("Surroundings of the path, they affect the sound of the passing vehicles");
 
 		if (ImGui::InputFloat("Width", &track->fTrackWidth, 0.0f, 0.0f, "%.3f"))
 			track->fTrackWidth = std::max(0.01f, track->fTrackWidth);
+		item_tooltip("Gauge of the track (1.435 m for the standard gauge), width of the surface for the roads");
 		finish_edit(rebuild::parameters);
 		ImGui::PopItemWidth();
 
@@ -676,6 +690,8 @@ void editor_mode::render_path_parameters(TTrack &Track)
 			{
 				for (int i = 0; i < 3; ++i)
 				{
+					if (m_track_material_edited[i] != nullptr)
+						continue;
 					auto const name = materials[i] ? editor_track::material_name(*materials[i]) : std::string{};
 					std::strncpy(m_track_materials[i].data(), name.c_str(), m_track_materials[i].size() - 1);
 					m_track_materials[i].back() = '\0';
@@ -686,26 +702,37 @@ void editor_mode::render_path_parameters(TTrack &Track)
 				if (materials[i] == nullptr || (i == 2 && track->eType != tt_Switch))
 					continue;
 				ImGui::PushItemWidth(-160.0f);
-				if (ImGui::InputText(labels[i], m_track_materials[i].data(), m_track_materials[i].size(), ImGuiInputTextFlags_EnterReturnsTrue))
+				if (ImGui::InputText(labels[i], m_track_materials[i].data(), m_track_materials[i].size()))
+					m_track_material_edited[i] = track;
+				if (ImGui::IsItemDeactivated() && m_track_material_edited[i] != nullptr)
 				{
-					*materials[i] = editor_track::fetch_material(m_track_materials[i].data());
-					apply_now(rebuild::parameters);
+					auto const *edited{m_track_material_edited[i]};
+					m_track_material_edited[i] = nullptr;
+					if (edited == track && m_track_materials[i].data() != editor_track::material_name(*materials[i]))
+					{
+						*materials[i] = editor_track::fetch_material(m_track_materials[i].data());
+						apply_now(rebuild::parameters);
+					}
 				}
 				ImGui::PopItemWidth();
 			}
-			ImGui::TextDisabled("Enter applies a texture name, \"none\" removes the texture");
+			ImGui::TextDisabled("The texture changes on Enter or leaving the field, \"none\" removes it");
 
 			ImGui::PushItemWidth(120.0f);
 			if (ImGui::InputFloat("Texture length", &track->fTexLength, 0.0f, 0.0f, "%.2f"))
 				track->fTexLength = std::max(0.01f, track->fTexLength);
+			item_tooltip("Length in metres after which the texture of the rails and the trackbed repeats");
 			finish_edit(rebuild::parameters);
 			float height = editor_track::texture_height(*track);
 			if (ImGui::InputFloat("Trackbed height", &height, 0.0f, 0.0f, "%.3f"))
 				editor_track::texture_height(*track, height);
+			item_tooltip("Height of the trackbed edge below the rail top, in metres");
 			finish_edit(rebuild::parameters);
 			ImGui::InputFloat("Trackbed width", &track->fTexWidth, 0.0f, 0.0f, "%.3f");
+			item_tooltip("Width of the trackbed outside of the rail, in metres");
 			finish_edit(rebuild::parameters);
 			ImGui::InputFloat("Trackbed slope", &track->fTexSlope, 0.0f, 0.0f, "%.3f");
+			item_tooltip("Horizontal reach of the slope at the outer edge of the trackbed, in metres");
 			finish_edit(rebuild::parameters);
 			ImGui::PopItemWidth();
 		}
@@ -715,7 +742,6 @@ void editor_mode::render_path_parameters(TTrack &Track)
 
 void editor_mode::render_path_ui()
 {
-	ImGui::TextDisabled("LMB: select path or point handle   Esc: release point\nGizmo moves the selected point, otherwise the whole path (W: turn)");
 	auto *track = selected_track();
 	if (track == nullptr)
 	{
@@ -767,11 +793,14 @@ void editor_mode::render_path_ui()
 	{
 		ImGui::PushItemWidth(120.0f);
 		ImGui::InputFloat("Snap radius (m)", &m_track_snap_radius, 0.0f, 0.0f, "%.2f");
+		item_tooltip("A dragged free end within this distance of another free end joins it on release");
 		m_track_snap_radius = std::max(0.0f, m_track_snap_radius);
 		ImGui::PopItemWidth();
 		ImGui::Checkbox("Align with snapped path", &m_track_align_tangent);
+		item_tooltip("On joining, the end also takes over the direction of the other path, so the joint has no kink");
 		ImGui::SameLine();
 		ImGui::Checkbox("Drag connected ends", &m_track_drag_connected);
+		item_tooltip("Dragging a joined end moves the ends of the neighbouring paths with it");
 
 		for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
 		{
@@ -802,12 +831,16 @@ void editor_mode::render_path_ui()
 					finish_edit(rebuild::geometry);
 				}
 				ImGui::InputScalarN("Control 1 (relative)", ImGuiDataType_Double, glm::value_ptr(path.points[segment_data::point::control1]), 3, nullptr, nullptr, "%.3f");
+				item_tooltip("Control vector of the start, relative to the start point; zero for a straight");
 				finish_edit(rebuild::geometry);
 				ImGui::InputScalarN("Control 2 (relative)", ImGuiDataType_Double, glm::value_ptr(path.points[segment_data::point::control2]), 3, nullptr, nullptr, "%.3f");
+				item_tooltip("Control vector of the end, relative to the end point; zero for a straight");
 				finish_edit(rebuild::geometry);
 				ImGui::InputFloat2("Roll (deg)", path.rolls.data(), "%.2f");
+				item_tooltip("Cant at the start and at the end as the roll angle of the track");
 				finish_edit(rebuild::geometry);
 				ImGui::InputFloat("Radius", &path.radius, 0.0f, 0.0f, "%.1f");
+				item_tooltip("Radius stored with the path in the scenery; the shape itself comes from the control vectors");
 				finish_edit(rebuild::geometry);
 				ImGui::PopItemWidth();
 				if (ImGui::Button("Straighten"))
@@ -818,6 +851,7 @@ void editor_mode::render_path_ui()
 					path.radius = 0.0f;
 					editor_track::commit({track});
 				}
+				item_tooltip("Removes the control vectors and the radius, the path becomes a straight between its ends");
 			}
 			else
 			{
@@ -1273,6 +1307,7 @@ bool editor_mode::render_route_parameters()
 	bool changed{false};
 	ImGui::PushItemWidth(120.0f);
 	changed |= ImGui::InputDouble("Design speed (km/h)", &design.speed, 0.0, 0.0, "%.0f");
+	item_tooltip("Speed the cant, the transitions and the recommended radius are designed for");
 	design.speed = std::max(1.0, design.speed);
 	int shape = static_cast<int>(design.shape);
 	char const *shapes[] = {"Cubic parabola", "Clothoid"};
@@ -1281,8 +1316,10 @@ bool editor_mode::render_route_parameters()
 		design.shape = static_cast<alignment::transition_shape>(shape);
 		changed = true;
 	}
+	item_tooltip("Cubic parabola: the usual one on the Polish lines; clothoid: curvature growing linearly with the length");
 	if (ImGui::SliderInt("Paths per transition curve", &design.transition_pieces, 1, 4))
 		route_update();
+	item_tooltip("More paths follow the transition curve more closely in the scenery");
 	if (ImGui::IsItemDeactivatedAfterEdit())
 		route_apply();
 	ImGui::PopItemWidth();
@@ -1388,6 +1425,7 @@ bool editor_mode::render_route_vertex(int const Index)
 	}
 	changed |= ImGui::InputDouble(vertex.compound ? "Radius R1 (m)" : "Radius R (m)", &vertex.radius, 0.0, 0.0, "%.1f");
 	changed |= ImGui::Checkbox("Compound curve (two radii)", &vertex.compound);
+	item_tooltip("Curve made of two arcs of different radii, joined with a transition");
 	if (vertex.compound)
 	{
 		changed |= ImGui::InputDouble("Radius R2 (m)", &vertex.radius2, 0.0, 0.0, "%.1f");
@@ -1404,7 +1442,9 @@ bool editor_mode::render_route_vertex(int const Index)
 	changed |= ImGui::InputDouble("Transition in (m)", &vertex.transition_in, 0.0, 0.0, "%.1f");
 	changed |= ImGui::InputDouble("Transition out (m)", &vertex.transition_out, 0.0, 0.0, "%.1f");
 	changed |= ImGui::InputDouble("Cant (mm)", &vertex.cant, 0.0, 0.0, "%.0f");
+	item_tooltip("Height of the outer rail above the inner one");
 	changed |= ImGui::Checkbox("Turn the longer way (over 180 deg)", &vertex.reverse_turn);
+	item_tooltip("For the loops: the curve turns by more than a half circle");
 	ImGui::PopItemWidth();
 	vertex.radius = std::max(1.0, vertex.radius);
 	vertex.transition_in = std::max(0.0, vertex.transition_in);
@@ -1415,6 +1455,7 @@ bool editor_mode::render_route_vertex(int const Index)
 		route_recommend(vertex);
 		changed = true;
 	}
+	item_tooltip("Cant and transitions recommended for the design speed and the radius");
 
 	auto const recommended{alignment::recommend(design.speed, vertex.radius, design.norms)};
 	ImGui::TextDisabled("For %.0f km/h: R min %.0f m, cant %.0f mm (equilibrium %.0f, min %.0f), transition %.0f m", design.speed, recommended.radius_min, recommended.cant, recommended.cant_equilibrium, recommended.cant_min, recommended.transition);
@@ -1707,9 +1748,13 @@ void editor_mode::render_straights_ui()
 	double angle{glm::degrees(state.tolerance.angle)};
 	if (ImGui::InputDouble("Angle tolerance (deg)", &angle, 0.0, 0.0, "%.4f"))
 		state.tolerance.angle = glm::radians(std::max(0.0, angle));
+	item_tooltip("Largest change of the direction between the paths of one straight");
 	ImGui::InputDouble("Offset tolerance (m)", &state.tolerance.offset, 0.0, 0.0, "%.3f");
+	item_tooltip("Largest distance of the paths from the common axis of the straight");
 	ImGui::InputDouble("Treat as straight above R (m)", &state.tolerance.radius, 0.0, 0.0, "%.0f");
+	item_tooltip("Curves of a larger radius count as straight");
 	ImGui::InputDouble("Minimum length (m)", &state.minimum_length, 0.0, 0.0, "%.0f");
+	item_tooltip("Shorter straights aren't listed");
 	ImGui::PopItemWidth();
 	if (ImGui::Button("Recognize straights in the scenery"))
 	{
@@ -1829,7 +1874,9 @@ void editor_mode::render_straight_ui()
 			ImGui::TextDisabled(state.tool_placed ? "Drag the handle: sideways sets the shift, along sets its length" : "LMB on the straight: place the start of the shift");
 		ImGui::PushItemWidth(100.0f);
 		ImGui::InputDouble("Curve R (m, 0: automatic)", &state.curve_radius, 0.0, 0.0, "%.0f");
+		item_tooltip("Radius of the curves made by the break and the S-curve; automatic: 1.5 times the minimum radius for the speed of the line");
 		ImGui::Checkbox("Transitions from the line speed", &state.auto_transitions);
+		item_tooltip("Lengths of the transition curves from the speed of the paths and the limits of the curve design");
 		if (false == state.auto_transitions)
 		{
 			ImGui::SameLine();
@@ -2245,7 +2292,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 	std::string error;
 	editor_track::find_chain(m_route.from, m_route.to, m_route.chain, error);
 	straight_refresh();
-	state.status = "Done, the curves can be adjusted in the Route design tab";
+	state.status = "Done, select a curve to adjust it in the Curve mode";
 }
 
 double editor_mode::straight_tool_radius(editor_track::straight const &Line) const
@@ -2489,7 +2536,7 @@ std::string editor_mode::track_readout() const
 			if (glm::length(offset) < 1e-3)
 				return {};
 			auto const turn{glm::degrees(signed_angle(line.direction, glm::normalize(offset)))};
-			return format("turn %+.3f deg", turn) + (state.curve_radius > 0.0 ? format("   R %.0f m", state.curve_radius) : std::string{"   R automatic"});
+			return format("turn %+.3f deg   R %.0f m", turn, straight_tool_radius(line));
 		}
 		glm::dvec2 const normal{-line.direction.y, line.direction.x};
 		return format("shift %+.3f m   over %.2f m", glm::dot(offset, normal), glm::dot(offset, line.direction));
@@ -3120,6 +3167,7 @@ void editor_mode::render_switch_ui()
 		tool.collected = false;
 		tool.armed = -1;
 	}
+	item_tooltip("Looks for the switches of the scenery again, to use their shapes as the templates");
 }
 
 std::vector<glm::dvec3> editor_mode::detour_outline() const
