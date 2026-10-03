@@ -347,14 +347,7 @@ void editor_mode::profile_open(TTrack *From, TTrack *To)
 	editor_track::route route;
 	if (false == editor_track::find_route(From, To, route, state.error))
 		return;
-	state.from = state.picked_from = From;
-	state.to = state.picked_to = To;
-	state.route = std::move(route);
-	state.selected = -1;
-	profile_resample();
-	if (false == profile_restore())
-		profile_recognize();
-	profile_fit_view();
+	profile_take(std::move(route), From, To);
 }
 
 void editor_mode::profile_open_run(TTrack &Track)
@@ -369,9 +362,17 @@ void editor_mode::profile_open_run(TTrack &Track)
 		state.error = "The path can't carry a profile";
 		return;
 	}
-	state.route = std::move(route);
-	state.from = state.picked_from = state.route.spans.front().track;
-	state.to = state.picked_to = state.route.spans.back().track;
+	auto *from{route.spans.front().track};
+	auto *to{route.spans.back().track};
+	profile_take(std::move(route), from, to);
+}
+
+void editor_mode::profile_take(editor_track::route Route, TTrack *From, TTrack *To)
+{
+	auto &state{m_profile};
+	state.from = state.picked_from = From;
+	state.to = state.picked_to = To;
+	state.route = std::move(Route);
 	state.selected = -1;
 	profile_resample();
 	if (false == profile_restore())

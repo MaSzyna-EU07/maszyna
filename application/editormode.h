@@ -545,6 +545,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_profile_issues();
 	void profile_open(TTrack *From, TTrack *To);
 	void profile_open_run(TTrack &Track);
+	void profile_take(editor_track::route Route, TTrack *From, TTrack *To);
 	void profile_resample();
 	void profile_recognize();
 	void profile_check();

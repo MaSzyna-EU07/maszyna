@@ -459,12 +459,130 @@ double turn_of(infra::binding const &Binding, double const Yaw)
 	return clamp_circular(Yaw - infra::heading(axis.forward));
 }
 
-} // namespace
+// the objects which the stored bindings can name, by their locations
+struct bindable_objects
+{
+	point_grid<TTrack *> paths;
+	point_grid<TAnimModel *> models;
+	point_grid<TTraction *> traction;
+	point_grid<scene::basic_node *> logic;
+	point_grid<scene::instance_handle> includes;
+
+	bindable_objects()
+	{
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved)
+				for (auto const &path : track->m_paths)
+					paths.add(path.points[segment_data::point::start], track);
+		for (auto *model : simulation::Instances.sequence())
+			if (model != nullptr && false == model->from_template() && model->Model() != nullptr)
+				models.add(model->location(), model);
+		for (auto *piece : simulation::Traction.sequence())
+			if (piece != nullptr && false == piece->from_template())
+				traction.add(piece->pPoint1, piece);
+		for (auto *memcell : simulation::Memory.sequence())
+			if (memcell != nullptr && false == memcell->from_template())
+				logic.add(memcell->location(), memcell);
+		for (auto *launcher : simulation::Events.launchers())
+			if (launcher != nullptr && false == launcher->from_template())
+				logic.add(launcher->location(), launcher);
+		for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
+		{
+			include_place place;
+			if (include_place_of(handle, place))
+				includes.add(include_location(place), handle);
+		}
+	}
+};
 
 // format of the lines, coordinates in the space of the file:
 //   <kind> <category> <x y z of the object> <file or name, - if none> <turns 0/1> <anchor count> { <path> <start x y z> <end x y z> }
 // the object is the model, the include (position from its parameters), the traction piece (its first point), the memory
 // cell or the event launcher found at the location; the anchors name the paths by their ends
+std::optional<infra::binding> read_binding(std::string const &Text, scene::layer_context const &Context, bindable_objects const &Objects)
+{
+	double const tolerance{0.05};
+	std::istringstream line{Text};
+	std::string kindname, key;
+	int group{0}, turns{0}, count{0};
+	glm::dvec3 location;
+	line >> kindname >> group >> location.x >> location.y >> location.z >> key >> turns >> count;
+	if (line.fail() || count < 1 || count > 4)
+		return std::nullopt;
+	location = Context.to_world(location);
+	infra::binding binding;
+	binding.group = static_cast<infra::category>(std::clamp(group, 0, static_cast<int>(infra::category::other)));
+	binding.turns = (turns != 0);
+	auto found{false};
+	if (kindname == infra::name(infra::kind::model))
+	{
+		binding.type = infra::kind::model;
+		auto const model{Objects.models.find(location, tolerance, [&](TAnimModel *Model) { return Model->Model()->NameGet() == key; })};
+		if ((found = model.has_value()))
+			binding.node = *model;
+	}
+	else if (kindname == infra::name(infra::kind::include))
+	{
+		binding.type = infra::kind::include;
+		auto const handle{Objects.includes.find(location, tolerance, [&](scene::instance_handle Handle) { return *scene::Layers.instance(Handle).file == key; })};
+		if ((found = handle.has_value()))
+			binding.include = *handle;
+	}
+	else if (kindname == infra::name(infra::kind::traction))
+	{
+		binding.type = infra::kind::traction;
+		auto const piece{Objects.traction.find(location, tolerance, [](TTraction *) { return true; })};
+		if ((found = piece.has_value()))
+			binding.node = *piece;
+	}
+	else if (kindname == infra::name(infra::kind::memcell) || kindname == infra::name(infra::kind::launcher))
+	{
+		binding.type = (kindname == infra::name(infra::kind::memcell) ? infra::kind::memcell : infra::kind::launcher);
+		auto const node{Objects.logic.find(location, tolerance, [&](scene::basic_node *Node) {
+			auto const ismemcell{dynamic_cast<TMemCell *>(Node) != nullptr};
+			return ismemcell == (binding.type == infra::kind::memcell) && (key == "-" || Node->name() == key);
+		})};
+		if ((found = node.has_value()))
+			binding.node = *node;
+	}
+	std::vector<glm::dvec3> points;
+	std::optional<double> yaw;
+	if (false == found || false == object_points(binding, points, yaw))
+		return std::nullopt;
+	for (int i = 0; i < count && found; ++i)
+	{
+		int path{0};
+		glm::dvec3 start, end;
+		line >> path >> start.x >> start.y >> start.z >> end.x >> end.y >> end.z;
+		start = Context.to_world(start);
+		end = Context.to_world(end);
+		auto const track{Objects.paths.find(start, tolerance, [&](TTrack *Track) {
+			return path >= 0 && path < static_cast<int>(Track->m_paths.size()) &&
+			       glm::distance(Track->m_paths[path].points[segment_data::point::start], start) <= tolerance &&
+			       glm::distance(Track->m_paths[path].points[segment_data::point::end], end) <= tolerance;
+		})};
+		if (line.fail() || false == track.has_value())
+		{
+			found = false;
+			break;
+		}
+		auto const &point{points[std::min<std::size_t>(i, points.size() - 1)]};
+		double s;
+		bool interior;
+		infra::project((*track)->m_paths[path], point, s, interior);
+		binding.anchors.push_back(infra::make_anchor({*track, path, s}, point));
+	}
+	if (false == found || binding.anchors.size() != points.size())
+		return std::nullopt;
+	binding.turns = binding.turns && yaw.has_value();
+	if (binding.turns)
+		binding.yaw = turn_of(binding, *yaw);
+	binding.label = object_label(binding);
+	return binding;
+}
+
+} // namespace
+
 void editor_mode::infra_load()
 {
 	if (m_bindings_loaded || scene::Layers.empty())
@@ -474,35 +592,7 @@ void editor_mode::infra_load()
 	if (marked.empty())
 		return;
 
-	point_grid<TTrack *> paths;
-	for (auto *track : simulation::Paths.sequence())
-		if (track != nullptr && false == track->m_editorremoved)
-			for (auto const &path : track->m_paths)
-				paths.add(path.points[segment_data::point::start], track);
-	point_grid<TAnimModel *> models;
-	for (auto *model : simulation::Instances.sequence())
-		if (model != nullptr && false == model->from_template() && model->Model() != nullptr)
-			models.add(model->location(), model);
-	point_grid<TTraction *> traction;
-	for (auto *piece : simulation::Traction.sequence())
-		if (piece != nullptr && false == piece->from_template())
-			traction.add(piece->pPoint1, piece);
-	point_grid<scene::basic_node *> logic;
-	for (auto *memcell : simulation::Memory.sequence())
-		if (memcell != nullptr && false == memcell->from_template())
-			logic.add(memcell->location(), memcell);
-	for (auto *launcher : simulation::Events.launchers())
-		if (launcher != nullptr && false == launcher->from_template())
-			logic.add(launcher->location(), launcher);
-	point_grid<scene::instance_handle> includes;
-	for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
-	{
-		include_place place;
-		if (include_place_of(handle, place))
-			includes.add(include_location(place), handle);
-	}
-
-	double const tolerance{0.05};
+	bindable_objects const objects;
 	auto resolved{0};
 	for (auto const layer : marked)
 	{
@@ -511,93 +601,13 @@ void editor_mode::infra_load()
 		{
 			if (text.empty() || text.front() == '#')
 				continue;
-			std::istringstream line{text};
-			std::string kindname, key;
-			int group{0}, turns{0}, count{0};
-			glm::dvec3 location;
-			line >> kindname >> group >> location.x >> location.y >> location.z >> key >> turns >> count;
-			auto const keep = [&]() { m_bindings_unresolved.emplace_back(layer, text); };
-			if (line.fail() || count < 1 || count > 4)
+			auto binding{read_binding(text, context, objects)};
+			if (false == binding.has_value())
 			{
-				keep();
+				m_bindings_unresolved.emplace_back(layer, text);
 				continue;
 			}
-			location = context.to_world(location);
-			infra::binding binding;
-			binding.group = static_cast<infra::category>(std::clamp(group, 0, static_cast<int>(infra::category::other)));
-			binding.turns = (turns != 0);
-			auto found{false};
-			if (kindname == infra::name(infra::kind::model))
-			{
-				binding.type = infra::kind::model;
-				auto const model{models.find(location, tolerance, [&](TAnimModel *Model) { return Model->Model()->NameGet() == key; })};
-				if ((found = model.has_value()))
-					binding.node = *model;
-			}
-			else if (kindname == infra::name(infra::kind::include))
-			{
-				binding.type = infra::kind::include;
-				auto const handle{includes.find(location, tolerance, [&](scene::instance_handle Handle) { return *scene::Layers.instance(Handle).file == key; })};
-				if ((found = handle.has_value()))
-					binding.include = *handle;
-			}
-			else if (kindname == infra::name(infra::kind::traction))
-			{
-				binding.type = infra::kind::traction;
-				auto const piece{traction.find(location, tolerance, [](TTraction *) { return true; })};
-				if ((found = piece.has_value()))
-					binding.node = *piece;
-			}
-			else if (kindname == infra::name(infra::kind::memcell) || kindname == infra::name(infra::kind::launcher))
-			{
-				binding.type = (kindname == infra::name(infra::kind::memcell) ? infra::kind::memcell : infra::kind::launcher);
-				auto const node{logic.find(location, tolerance, [&](scene::basic_node *Node) {
-					auto const ismemcell{dynamic_cast<TMemCell *>(Node) != nullptr};
-					return ismemcell == (binding.type == infra::kind::memcell) && (key == "-" || Node->name() == key);
-				})};
-				if ((found = node.has_value()))
-					binding.node = *node;
-			}
-			std::vector<glm::dvec3> points;
-			std::optional<double> yaw;
-			if (false == found || false == object_points(binding, points, yaw))
-			{
-				keep();
-				continue;
-			}
-			for (int i = 0; i < count && found; ++i)
-			{
-				int path{0};
-				glm::dvec3 start, end;
-				line >> path >> start.x >> start.y >> start.z >> end.x >> end.y >> end.z;
-				start = context.to_world(start);
-				end = context.to_world(end);
-				auto const track{paths.find(start, tolerance, [&](TTrack *Track) {
-					return path >= 0 && path < static_cast<int>(Track->m_paths.size()) &&
-					       glm::distance(Track->m_paths[path].points[segment_data::point::start], start) <= tolerance &&
-					       glm::distance(Track->m_paths[path].points[segment_data::point::end], end) <= tolerance;
-				})};
-				if (line.fail() || false == track.has_value())
-				{
-					found = false;
-					break;
-				}
-				auto const &point{points[std::min<std::size_t>(i, points.size() - 1)]};
-				double s;
-				bool interior;
-				infra::project((*track)->m_paths[path], point, s, interior);
-				binding.anchors.push_back(infra::make_anchor({*track, path, s}, point));
-			}
-			if (false == found || binding.anchors.size() != points.size())
-			{
-				keep();
-				continue;
-			}
-			binding.turns = binding.turns && yaw.has_value();
-			if (binding.turns)
-				binding.yaw = turn_of(binding, *yaw);
-			binding.label = object_label(binding);
-			m_bindings.push_back(std::move(binding));
+			m_bindings.push_back(std::move(*binding));
 			++resolved;
 		}
 	}
