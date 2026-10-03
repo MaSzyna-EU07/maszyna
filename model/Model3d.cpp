@@ -929,7 +929,7 @@ std::vector<TSubModel *> const &TSubModel::text_letters(std::string const &Text)
 	// for utf-8 by accident (two upper case accented letters in a row are enough for this to happen),
 	// so if both readings are possible the one which finds more of its characters in the model wins
 	auto const known = [this](std::u32string const &Characters) {
-		return std::count_if(std::begin(Characters), std::end(Characters), [this](char32_t const Character) { return m_letters.find(Character) != m_letters.end(); });
+		return std::ranges::count_if(Characters, [this](char32_t const Character) { return m_letters.contains(Character); });
 	};
 	std::u32string ansi;
 	win1250_to_utf32(Text, ansi);

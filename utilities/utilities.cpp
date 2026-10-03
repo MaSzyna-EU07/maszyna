@@ -342,7 +342,7 @@ std::string win1250_to_utf8(const std::string &Input)
 namespace
 {
 // unicode code points of the upper half of the windows-1250 code page; 0 marks the unassigned bytes
-char32_t const win1250_upperhalf[128] = {
+std::array<char32_t, 128> const win1250_upperhalf{
     0x20AC, 0x0000, 0x201A, 0x0000, 0x201E, 0x2026, 0x2020, 0x2021, 0x0000, 0x2030, 0x0160, 0x2039, 0x015A, 0x0164, 0x017D, 0x0179,
     0x0000, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x0000, 0x2122, 0x0161, 0x203A, 0x015B, 0x0165, 0x017E, 0x017A,
     0x00A0, 0x02C7, 0x02D8, 0x0141, 0x00A4, 0x0104, 0x00A6, 0x00A7, 0x00A8, 0x00A9, 0x015E, 0x00AB, 0x00AC, 0x00AD, 0x00AE, 0x017B,
@@ -351,38 +351,54 @@ char32_t const win1250_upperhalf[128] = {
     0x0110, 0x0143, 0x0147, 0x00D3, 0x00D4, 0x0150, 0x00D6, 0x00D7, 0x0158, 0x016E, 0x00DA, 0x0170, 0x00DC, 0x00DD, 0x0162, 0x00DF,
     0x0155, 0x00E1, 0x00E2, 0x0103, 0x00E4, 0x013A, 0x0107, 0x00E7, 0x010D, 0x00E9, 0x0119, 0x00EB, 0x011B, 0x00ED, 0x00EE, 0x010F,
     0x0111, 0x0144, 0x0148, 0x00F3, 0x00F4, 0x0151, 0x00F6, 0x00F7, 0x0159, 0x016F, 0x00FA, 0x0171, 0x00FC, 0x00FD, 0x0163, 0x02D9};
+
+// returns number of bytes of the utf-8 sequence started by provided byte, or 0 if it can't start one
+std::size_t utf8_sequence_length(std::byte const Lead)
+{
+	if ((Lead & std::byte{0x80}) == std::byte{0x00})
+	{
+		return 1;
+	}
+	if ((Lead & std::byte{0xE0}) == std::byte{0xC0})
+	{
+		return 2;
+	}
+	if ((Lead & std::byte{0xF0}) == std::byte{0xE0})
+	{
+		return 3;
+	}
+	if ((Lead & std::byte{0xF8}) == std::byte{0xF0})
+	{
+		return 4;
+	}
+	return 0; // a continuation byte, or a lead of a sequence utf-8 doesn't allow
+}
 } // namespace
 
 bool utf8_to_utf32(std::string const &Text, std::u32string &Output)
 {
 	// lowest code point which needs given number of bytes; shorter values are overlong forms
-	static char32_t const minimum[] = {0, 0, 0x80, 0x800, 0x10000};
+	static std::array<char32_t, 5> const minimum{0, 0, 0x80, 0x800, 0x10000};
 
 	Output.clear();
 	auto const size{Text.size()};
 	for (std::size_t idx = 0; idx < size;)
 	{
-		auto const lead{static_cast<unsigned char>(Text[idx])};
-		if (lead < 0x80)
-		{
-			Output += static_cast<char32_t>(lead);
-			++idx;
-			continue;
-		}
-		std::size_t const length{(lead & 0xE0) == 0xC0 ? 2u : (lead & 0xF0) == 0xE0 ? 3u : (lead & 0xF8) == 0xF0 ? 4u : 0u};
+		auto const lead{static_cast<std::byte>(Text[idx])};
+		auto const length{utf8_sequence_length(lead)};
 		if (length == 0 || idx + length > size)
 		{
 			return false;
 		}
-		auto codepoint{static_cast<char32_t>(lead & (0xFF >> (length + 1)))};
+		auto codepoint{std::to_integer<char32_t>(lead & (std::byte{0xFF} >> (length > 1 ? length + 1 : 1)))};
 		for (std::size_t offset = 1; offset < length; ++offset)
 		{
-			auto const next{static_cast<unsigned char>(Text[idx + offset])};
-			if ((next & 0xC0) != 0x80)
+			auto const next{static_cast<std::byte>(Text[idx + offset])};
+			if ((next & std::byte{0xC0}) != std::byte{0x80})
 			{
 				return false;
 			}
-			codepoint = (codepoint << 6) | (next & 0x3F);
+			codepoint = (codepoint << 6) | std::to_integer<char32_t>(next & std::byte{0x3F});
 		}
 		if (codepoint < minimum[length] || codepoint > 0x10FFFF || (codepoint >= 0xD800 && codepoint <= 0xDFFF))
 		{
@@ -399,8 +415,8 @@ void win1250_to_utf32(std::string const &Text, std::u32string &Output)
 	Output.clear();
 	for (auto const character : Text)
 	{
-		auto const byte{static_cast<unsigned char>(character)};
-		Output += (byte < 0x80 ? static_cast<char32_t>(byte) : win1250_upperhalf[byte - 0x80]);
+		auto const value{std::to_integer<std::size_t>(static_cast<std::byte>(character))};
+		Output += (value < 0x80 ? static_cast<char32_t>(value) : win1250_upperhalf[value - 0x80]);
 	}
 }
 

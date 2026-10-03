@@ -270,6 +270,9 @@ private:
         Render_Alpha( TModel3d *Model, material_data const *Material, float const Squaredistance );
     void
         Render_Alpha( TSubModel *Submodel );
+    // characters of a text display
+    void
+        Render_Alpha_text( TSubModel *Submodel );
     void
         Update_Lights( light_array &Lights );
     bool
