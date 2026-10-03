@@ -543,7 +543,13 @@ class editor_mode : public application_mode, private editor_track::observer
 	void profile_apply();
 	void profile_fit_view();
 	void profile_after_undo();
+	struct profile_view;
 	void render_profile_canvas();
+	void profile_fit_exaggeration(profile_view const &View);
+	void profile_navigate(profile_view const &View, bool const Hovered);
+	bool profile_canvas_edit(profile_view const &View, bool const Hovered);
+	void draw_profile_canvas(profile_view const &View, ImDrawList &Draw) const;
+	void profile_canvas_tooltip() const;
 	void render_profile_point();
 	void draw_profile_overlay() const;
 

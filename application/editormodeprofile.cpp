@@ -796,84 +796,130 @@ void editor_mode::render_profile_point()
 		profile_edited();
 }
 
+// screen mapping of the profile canvas, chainage across and elevation upwards
+struct editor_mode::profile_view
+{
+	ImVec2 corner;
+	ImVec2 size;
+	float strip;
+	float top;
+	float height;
+	double across;
+	double vertical;
+	double from;
+	double centre;
+
+	profile_view(profile_state const &State, ImVec2 const Corner, ImVec2 const Size) :
+	    corner{Corner}, size{Size}, strip{State.show_plan ? 44.0f : 0.0f}, top{18.0f}, height{Size.y - strip - top},
+	    across{std::max(1.0, State.view_to - State.view_from) / Size.x}, vertical{across / State.exaggeration}, from{State.view_from}, centre{State.view_centre}
+	{
+	}
+	float x_of(double const Chainage) const { return corner.x + static_cast<float>((Chainage - from) / across); }
+	float y_of(double const Height) const { return corner.y + top + height * 0.5f - static_cast<float>((Height - centre) / vertical); }
+	double chainage_of(float const X) const { return from + (X - corner.x) * across; }
+	double height_of(float const Y) const { return centre - (Y - corner.y - top - height * 0.5f) * vertical; }
+	float plot_top() const { return corner.y + top; }
+	float plot_bottom() const { return corner.y + top + height; }
+	ImVec2 bottom_right() const { return {corner.x + size.x, corner.y + size.y}; }
+	float mouse_distance2(double const Chainage, double const Height) const
+	{
+		auto const &mouse{ImGui::GetIO().MousePos};
+		auto const dx{x_of(Chainage) - mouse.x};
+		auto const dy{y_of(Height) - mouse.y};
+		return dx * dx + dy * dy;
+	}
+};
+
 void editor_mode::render_profile_canvas()
 {
 	auto &state{m_profile};
-	auto &line{state.line};
-	auto &points{line.points};
-	auto const &samples{state.samples};
-	ImGuiIO const &io{ImGui::GetIO()};
-
 	auto const available{ImGui::GetContentRegionAvail()};
 	ImVec2 const size{std::max(200.0f, available.x), std::max(240.0f, available.y * 0.6f)};
 	ImVec2 const corner{ImGui::GetCursorScreenPos()};
 	ImGui::InvisibleButton("##profilecanvas", size);
 	bool const hovered{ImGui::IsItemHovered()};
-	ImDrawList *draw{ImGui::GetWindowDrawList()};
 
-	float const strip{state.show_plan ? 44.0f : 0.0f};
-	float const top{18.0f};
-	float const height{size.y - strip - top};
-	auto const width{std::max(1.0, state.view_to - state.view_from)};
-	auto const across{width / size.x};
 	if (state.exaggeration <= 0.0f)
-	{
-		double low{std::numeric_limits<double>::max()}, high{std::numeric_limits<double>::lowest()};
-		for (auto const &sample : samples)
-		{
-			low = std::min(low, sample.position.y);
-			high = std::max(high, sample.position.y);
-		}
-		for (auto const &point : points)
-		{
-			low = std::min(low, point.elevation);
-			high = std::max(high, point.elevation);
-		}
-		if (low > high)
-			low = high = 0.0;
-		auto const range{std::max(1.0, (high - low) * 1.3)};
-		state.exaggeration = static_cast<float>(std::clamp(across / (range / height), 1.0, 500.0));
-		state.view_centre = (low + high) * 0.5;
-	}
-	auto const vertical{across / state.exaggeration};
-	auto const x_of = [&](double const Chainage) { return corner.x + static_cast<float>((Chainage - state.view_from) / across); };
-	auto const y_of = [&](double const Height) { return corner.y + top + height * 0.5f - static_cast<float>((Height - state.view_centre) / vertical); };
-	auto const chainage_of = [&](float const X) { return state.view_from + (X - corner.x) * across; };
-	auto const height_of = [&](float const Y) { return state.view_centre - (Y - corner.y - top - height * 0.5f) * vertical; };
-	ImVec2 const mouse{io.MousePos};
+		profile_fit_exaggeration(profile_view{state, corner, size});
+	profile_navigate(profile_view{state, corner, size}, hovered);
+	profile_view const view{state, corner, size};
+	if (profile_canvas_edit(view, hovered))
+		profile_edited();
+	state.hover = hovered ? view.chainage_of(ImGui::GetIO().MousePos.x) : -1.0;
 
-	if (hovered && io.MouseWheel != 0.0f)
+	auto *draw{ImGui::GetWindowDrawList()};
+	draw->AddRectFilled(corner, view.bottom_right(), IM_COL32(22, 24, 28, 255));
+	draw->PushClipRect(corner, view.bottom_right(), true);
+	draw_profile_canvas(view, *draw);
+	if (hovered && state.hover >= 0.0 && state.hover <= state.route.length && false == state.samples.empty())
+	{
+		auto const x{view.x_of(state.hover)};
+		draw->AddLine(ImVec2(x, view.plot_top()), ImVec2(x, view.bottom_right().y), IM_COL32(255, 255, 255, 90));
+		profile_canvas_tooltip();
+	}
+	draw->PopClipRect();
+}
+
+void editor_mode::profile_fit_exaggeration(profile_view const &View)
+{
+	auto &state{m_profile};
+	double low{std::numeric_limits<double>::max()}, high{std::numeric_limits<double>::lowest()};
+	for (auto const &sample : state.samples)
+	{
+		low = std::min(low, sample.position.y);
+		high = std::max(high, sample.position.y);
+	}
+	for (auto const &point : state.line.points)
+	{
+		low = std::min(low, point.elevation);
+		high = std::max(high, point.elevation);
+	}
+	if (low > high)
+		low = high = 0.0;
+	auto const range{std::max(1.0, (high - low) * 1.3)};
+	state.exaggeration = static_cast<float>(std::clamp(View.across / (range / View.height), 1.0, 500.0));
+	state.view_centre = (low + high) * 0.5;
+}
+
+void editor_mode::profile_navigate(profile_view const &View, bool const Hovered)
+{
+	auto &state{m_profile};
+	ImGuiIO const &io{ImGui::GetIO()};
+	if (Hovered && io.MouseWheel != 0.0f)
 	{
 		if (io.KeyCtrl)
 			state.exaggeration = std::clamp(state.exaggeration * std::pow(1.2f, io.MouseWheel), 1.0f, 500.0f);
 		else
 		{
-			auto const anchor{chainage_of(mouse.x)};
+			auto const anchor{View.chainage_of(io.MousePos.x)};
 			auto const factor{std::pow(0.8, static_cast<double>(io.MouseWheel))};
 			state.view_from = anchor - (anchor - state.view_from) * factor;
 			state.view_to = anchor + (state.view_to - anchor) * factor;
 		}
 	}
-	if (hovered && (ImGui::IsMouseClicked(1) || ImGui::IsMouseClicked(2)))
+	if (Hovered && (ImGui::IsMouseClicked(1) || ImGui::IsMouseClicked(2)))
 		state.panning = true;
 	if (state.panning)
 	{
 		if (ImGui::IsMouseDown(1) || ImGui::IsMouseDown(2))
 		{
-			state.view_from -= io.MouseDelta.x * across;
-			state.view_to -= io.MouseDelta.x * across;
-			state.view_centre += io.MouseDelta.y * vertical;
+			state.view_from -= io.MouseDelta.x * View.across;
+			state.view_to -= io.MouseDelta.x * View.across;
+			state.view_centre += io.MouseDelta.y * View.vertical;
 		}
 		else
 			state.panning = false;
 	}
+}
 
-	auto const curves{profile::curves(line)};
-	auto const mouse_distance2 = [&](double Chainage, double Elevation) {
-		auto const dx{x_of(Chainage) - mouse.x};
-		auto const dy{y_of(Elevation) - mouse.y};
-		return dx * dx + dy * dy;
-	};
+bool editor_mode::profile_canvas_edit(profile_view const &View, bool const Hovered)
+{
+	auto &state{m_profile};
+	auto &line{state.line};
+	auto &points{line.points};
+	ImGuiIO const &io{ImGui::GetIO()};
+	ImVec2 const mouse{io.MousePos};
+
 	auto const hit_point = [&]() {
 		int hit{-1};
 		float best{64.0f};
@@ -881,7 +927,7 @@ void editor_mode::render_profile_canvas()
 		{
 			if (points[i].joint)
 				continue;
-			if (auto const distance{mouse_distance2(points[i].chainage, points[i].elevation)}; distance < best)
+			if (auto const distance{View.mouse_distance2(points[i].chainage, points[i].elevation)}; distance < best)
 			{
 				best = distance;
 				hit = i;
@@ -890,18 +936,18 @@ void editor_mode::render_profile_canvas()
 		return hit;
 	};
 	auto const hit_grip = [&]() {
-		for (auto const &c : curves)
+		for (auto const &c : profile::curves(line))
 		{
 			if (points[c.point].joint)
 				continue;
 			auto const chainage{points[c.point].chainage};
-			if (mouse_distance2(chainage, profile::elevation(line, chainage)) < 64.0f)
+			if (View.mouse_distance2(chainage, profile::elevation(line, chainage)) < 64.0f)
 				return static_cast<int>(c.point);
 		}
 		return -1;
 	};
 	bool changed{false};
-	if (hovered && ImGui::IsMouseClicked(0))
+	if (Hovered && ImGui::IsMouseClicked(0))
 	{
 		auto const point{hit_point()};
 		auto const grip{point < 0 ? hit_grip() : -1};
@@ -912,10 +958,10 @@ void editor_mode::render_profile_canvas()
 		else
 			state.selected = -1;
 	}
-	if (hovered && ImGui::IsMouseDoubleClicked(0) && state.dragging < 0 && state.curve_grip < 0 && points.size() >= 2)
+	if (Hovered && ImGui::IsMouseDoubleClicked(0) && state.dragging < 0 && state.curve_grip < 0 && points.size() >= 2)
 	{
-		auto const chainage{chainage_of(mouse.x)};
-		if (chainage > points.front().chainage + 0.5 && chainage < points.back().chainage - 0.5 && std::abs(y_of(profile::elevation(line, chainage)) - mouse.y) < 12.0f)
+		auto const chainage{View.chainage_of(mouse.x)};
+		if (chainage > points.front().chainage + 0.5 && chainage < points.back().chainage - 0.5 && std::abs(View.y_of(profile::elevation(line, chainage)) - mouse.y) < 12.0f)
 		{
 			std::size_t index{0};
 			while (index + 2 < points.size() && points[index + 1].chainage < chainage)
@@ -937,13 +983,13 @@ void editor_mode::render_profile_canvas()
 			bool const end{index == 0 || index + 1 == static_cast<int>(points.size())};
 			auto const incoming{index > 0 ? profile::grade_after(line, index - 1) : 0.0};
 			if (false == end && false == io.KeyCtrl)
-				point.chainage = std::clamp(std::round(chainage_of(mouse.x) * 100.0) / 100.0, points[index - 1].chainage + 0.5, points[index + 1].chainage - 0.5);
+				point.chainage = std::clamp(std::round(View.chainage_of(mouse.x) * 100.0) / 100.0, points[index - 1].chainage + 0.5, points[index + 1].chainage - 0.5);
 			if (end_locked(line, state.context, index))
 				;
 			else if (io.KeyShift && index > 0)
 				point.elevation = points[index - 1].elevation + incoming * (point.chainage - points[index - 1].chainage);
 			else
-				point.elevation = std::round(height_of(mouse.y) * 1000.0) / 1000.0;
+				point.elevation = std::round(View.height_of(mouse.y) * 1000.0) / 1000.0;
 			changed = true;
 		}
 		else
@@ -955,7 +1001,7 @@ void editor_mode::render_profile_canvas()
 	{
 		if (ImGui::IsMouseDown(0))
 		{
-			auto const sagitta{height_of(mouse.y) - points[state.curve_grip].elevation};
+			auto const sagitta{View.height_of(mouse.y) - points[state.curve_grip].elevation};
 			points[state.curve_grip].radius = std::max(10.0, std::round(profile::radius_for_sagitta(line, state.curve_grip, sagitta) / 10.0) * 10.0);
 			points[state.curve_grip].automatic = false;
 			changed = true;
@@ -965,39 +1011,43 @@ void editor_mode::render_profile_canvas()
 	}
 	else
 		state.curve_grip = -1;
-	if ((hovered || ImGui::IsWindowFocused()) && state.selected > 0 && state.selected + 1 < static_cast<int>(points.size()) && false == points[state.selected].joint && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete)))
+	if ((Hovered || ImGui::IsWindowFocused()) && state.selected > 0 && state.selected + 1 < static_cast<int>(points.size()) && false == points[state.selected].joint && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete)))
 	{
 		points.erase(points.begin() + state.selected);
 		state.selected = -1;
 		changed = true;
 	}
-	if (changed)
-		profile_edited();
-	state.hover = hovered ? chainage_of(mouse.x) : -1.0;
+	return changed;
+}
 
-	ImVec2 const bottomright{corner.x + size.x, corner.y + size.y};
-	draw->AddRectFilled(corner, bottomright, IM_COL32(22, 24, 28, 255));
-	draw->PushClipRect(corner, bottomright, true);
-	auto const plotbottom{corner.y + top + height};
+void editor_mode::draw_profile_canvas(profile_view const &View, ImDrawList &Draw) const
+{
+	auto const &state{m_profile};
+	auto const &line{state.line};
+	auto const &points{line.points};
+	auto const &samples{state.samples};
+	auto const bottomright{View.bottom_right()};
+	auto const plottop{View.plot_top()};
+	auto const plotbottom{View.plot_bottom()};
 
-	auto const step{nice_step(across * 110.0)};
+	auto const step{nice_step(View.across * 110.0)};
 	for (auto s = std::ceil((state.view_from + state.origin) / step) * step - state.origin; s <= state.view_to; s += step)
 	{
-		auto const x{x_of(s)};
-		draw->AddLine(ImVec2(x, corner.y + top), ImVec2(x, plotbottom), kGrid);
-		draw->AddText(ImVec2(x + 2.0f, corner.y + 2.0f), kLabel, profile::format_chainage(s + state.origin).c_str());
+		auto const x{View.x_of(s)};
+		Draw.AddLine(ImVec2(x, plottop), ImVec2(x, plotbottom), kGrid);
+		Draw.AddText(ImVec2(x + 2.0f, View.corner.y + 2.0f), kLabel, profile::format_chainage(s + state.origin).c_str());
 	}
-	auto const heightstep{nice_step(vertical * 45.0)};
-	for (auto h = std::floor(height_of(plotbottom) / heightstep) * heightstep; h <= height_of(corner.y + top); h += heightstep)
+	auto const heightstep{nice_step(View.vertical * 45.0)};
+	for (auto h = std::floor(View.height_of(plotbottom) / heightstep) * heightstep; h <= View.height_of(plottop); h += heightstep)
 	{
-		auto const y{y_of(h)};
-		draw->AddLine(ImVec2(corner.x, y), ImVec2(bottomright.x, y), kGrid);
-		draw->AddText(ImVec2(corner.x + 2.0f, y - 14.0f), kLabel, format("%.1f", h).c_str());
+		auto const y{View.y_of(h)};
+		Draw.AddLine(ImVec2(View.corner.x, y), ImVec2(bottomright.x, y), kGrid);
+		Draw.AddText(ImVec2(View.corner.x + 2.0f, y - 14.0f), kLabel, format("%.1f", h).c_str());
 	}
 	for (auto const &zone : state.context.switches)
 	{
-		draw->AddRectFilled(ImVec2(x_of(zone.from), corner.y + top), ImVec2(std::max(x_of(zone.to), x_of(zone.from) + 2.0f), plotbottom), kSwitch);
-		draw->AddText(ImVec2(x_of(zone.from) + 2.0f, corner.y + top + 2.0f), IM_COL32(200, 160, 255, 220), zone.name.c_str());
+		Draw.AddRectFilled(ImVec2(View.x_of(zone.from), plottop), ImVec2(std::max(View.x_of(zone.to), View.x_of(zone.from) + 2.0f), plotbottom), kSwitch);
+		Draw.AddText(ImVec2(View.x_of(zone.from) + 2.0f, plottop + 2.0f), IM_COL32(200, 160, 255, 220), zone.name.c_str());
 	}
 
 	auto const polyline = [&](auto const &Height, ImU32 const Colour, float const Thickness) {
@@ -1006,18 +1056,18 @@ void editor_mode::render_profile_canvas()
 		float lastx{-1e9f};
 		for (std::size_t i = 0; i < samples.size(); ++i)
 		{
-			auto const x{x_of(samples[i].chainage)};
+			auto const x{View.x_of(samples[i].chainage)};
 			auto const h{Height(i)};
-			if (std::isnan(h) || x < corner.x - 50.0f || x > bottomright.x + 50.0f)
+			if (std::isnan(h) || x < View.corner.x - 50.0f || x > bottomright.x + 50.0f)
 			{
 				open = false;
 				continue;
 			}
 			if (open && x - lastx < 1.0f && i + 1 < samples.size())
 				continue;
-			ImVec2 const next{x, y_of(h)};
+			ImVec2 const next{x, View.y_of(h)};
 			if (open)
-				draw->AddLine(previous, next, Colour, Thickness);
+				Draw.AddLine(previous, next, Colour, Thickness);
 			previous = next;
 			lastx = x;
 			open = true;
@@ -1029,102 +1079,101 @@ void editor_mode::render_profile_canvas()
 		polyline([&](std::size_t const I) { return samples[I].position.y; }, kTrack, 1.5f);
 
 	for (std::size_t i = 0; i + 1 < points.size(); ++i)
-		draw->AddLine(ImVec2(x_of(points[i].chainage), y_of(points[i].elevation)), ImVec2(x_of(points[i + 1].chainage), y_of(points[i + 1].elevation)), kTangents, 1.0f);
+		Draw.AddLine(ImVec2(View.x_of(points[i].chainage), View.y_of(points[i].elevation)), ImVec2(View.x_of(points[i + 1].chainage), View.y_of(points[i + 1].elevation)), kTangents, 1.0f);
 	{
-		auto const from{std::max(points.front().chainage, chainage_of(corner.x))};
-		auto const to{std::min(points.back().chainage, chainage_of(bottomright.x))};
-		ImVec2 previous{x_of(from), y_of(profile::elevation(line, from))};
-		for (auto x = previous.x + 2.0f; x <= x_of(to) + 2.0f; x += 2.0f)
+		auto const from{std::max(points.front().chainage, View.chainage_of(View.corner.x))};
+		auto const to{std::min(points.back().chainage, View.chainage_of(bottomright.x))};
+		ImVec2 previous{View.x_of(from), View.y_of(profile::elevation(line, from))};
+		for (auto x = previous.x + 2.0f; x <= View.x_of(to) + 2.0f; x += 2.0f)
 		{
-			auto const chainage{std::min(to, chainage_of(x))};
-			ImVec2 const next{x_of(chainage), y_of(profile::elevation(line, chainage))};
-			draw->AddLine(previous, next, kGradeLine, 2.5f);
+			auto const chainage{std::min(to, View.chainage_of(x))};
+			ImVec2 const next{View.x_of(chainage), View.y_of(profile::elevation(line, chainage))};
+			Draw.AddLine(previous, next, kGradeLine, 2.5f);
 			previous = next;
 		}
 	}
 	for (std::size_t i = 0; i + 1 < points.size(); ++i)
 	{
 		auto const middle{(points[i].chainage + points[i + 1].chainage) * 0.5};
-		auto const x{x_of(middle)};
-		if (x_of(points[i + 1].chainage) - x_of(points[i].chainage) < 70.0f)
+		auto const x{View.x_of(middle)};
+		if (View.x_of(points[i + 1].chainage) - View.x_of(points[i].chainage) < 70.0f)
 			continue;
 		auto const text{format("%+.2f o/oo  L %.1f", profile::grade_after(line, i) * 1000.0, points[i + 1].chainage - points[i].chainage)};
-		draw->AddText(ImVec2(x - 40.0f, y_of(profile::elevation(line, middle)) - 30.0f), kGradeLine, text.c_str());
+		Draw.AddText(ImVec2(x - 40.0f, View.y_of(profile::elevation(line, middle)) - 30.0f), kGradeLine, text.c_str());
 	}
-	for (auto const &c : curves)
+	for (auto const &c : profile::curves(line))
 	{
 		for (auto const at : {c.start, c.end})
 		{
-			auto const y{y_of(profile::elevation(line, at))};
-			draw->AddLine(ImVec2(x_of(at), y - 7.0f), ImVec2(x_of(at), y + 7.0f), kGradeLine, 1.5f);
+			auto const y{View.y_of(profile::elevation(line, at))};
+			Draw.AddLine(ImVec2(View.x_of(at), y - 7.0f), ImVec2(View.x_of(at), y + 7.0f), kGradeLine, 1.5f);
 		}
 		auto const chainage{points[c.point].chainage};
-		ImVec2 const grip{x_of(chainage), y_of(profile::elevation(line, chainage))};
-		draw->AddCircleFilled(grip, 4.5f, overlay_color::grip, 4);
+		ImVec2 const grip{View.x_of(chainage), View.y_of(profile::elevation(line, chainage))};
+		Draw.AddCircleFilled(grip, 4.5f, overlay_color::grip, 4);
 		if (static_cast<int>(c.point) == state.curve_grip)
-			draw->AddCircle(grip, 9.0f, overlay_color::highlight, 12, 2.0f);
-		draw->AddText(ImVec2(grip.x + 7.0f, grip.y + 4.0f), overlay_color::grip, format("R %.0f", points[c.point].radius).c_str());
+			Draw.AddCircle(grip, 9.0f, overlay_color::highlight, 12, 2.0f);
+		Draw.AddText(ImVec2(grip.x + 7.0f, grip.y + 4.0f), overlay_color::grip, format("R %.0f", points[c.point].radius).c_str());
 	}
 	for (int i = 0; i < static_cast<int>(points.size()); ++i)
 	{
-		ImVec2 const at{x_of(points[i].chainage), y_of(points[i].elevation)};
+		ImVec2 const at{View.x_of(points[i].chainage), View.y_of(points[i].elevation)};
 		if (i == 0 || i + 1 == static_cast<int>(points.size()))
-			draw->AddRectFilled(ImVec2(at.x - 5.0f, at.y - 5.0f), ImVec2(at.x + 5.0f, at.y + 5.0f), IM_COL32(70, 140, 255, 255));
+			Draw.AddRectFilled(ImVec2(at.x - 5.0f, at.y - 5.0f), ImVec2(at.x + 5.0f, at.y + 5.0f), IM_COL32(70, 140, 255, 255));
 		else if (points[i].joint)
-			draw->AddQuadFilled(ImVec2(at.x, at.y - 6.0f), ImVec2(at.x + 6.0f, at.y), ImVec2(at.x, at.y + 6.0f), ImVec2(at.x - 6.0f, at.y), IM_COL32(90, 210, 230, 255));
+			Draw.AddQuadFilled(ImVec2(at.x, at.y - 6.0f), ImVec2(at.x + 6.0f, at.y), ImVec2(at.x, at.y + 6.0f), ImVec2(at.x - 6.0f, at.y), IM_COL32(90, 210, 230, 255));
 		else
-			draw->AddCircleFilled(at, 5.5f, overlay_color::marked);
+			Draw.AddCircleFilled(at, 5.5f, overlay_color::marked);
 		if (i == state.selected)
-			draw->AddCircle(at, 10.0f, overlay_color::highlight, 16, 2.0f);
-		draw->AddText(ImVec2(at.x + 7.0f, at.y - 18.0f), overlay_color::marked, format("%d  %.3f", i + 1, points[i].elevation).c_str());
+			Draw.AddCircle(at, 10.0f, overlay_color::highlight, 16, 2.0f);
+		Draw.AddText(ImVec2(at.x + 7.0f, at.y - 18.0f), overlay_color::marked, format("%d  %.3f", i + 1, points[i].elevation).c_str());
 	}
 	for (auto const &issue : state.issues)
 	{
-		auto const x{x_of(issue.chainage)};
-		auto const colour{issue.error ? kError : kWarning};
-		draw->AddTriangleFilled(ImVec2(x - 5.0f, corner.y + top), ImVec2(x + 5.0f, corner.y + top), ImVec2(x, corner.y + top + 8.0f), colour);
+		auto const x{View.x_of(issue.chainage)};
+		Draw.AddTriangleFilled(ImVec2(x - 5.0f, plottop), ImVec2(x + 5.0f, plottop), ImVec2(x, plottop + 8.0f), issue.error ? kError : kWarning);
 	}
 	if (state.show_plan && false == samples.empty())
 	{
-		auto const middle{plotbottom + strip * 0.5f};
-		draw->AddLine(ImVec2(corner.x, plotbottom), ImVec2(bottomright.x, plotbottom), IM_COL32(255, 255, 255, 60));
-		draw->AddLine(ImVec2(corner.x, middle), ImVec2(bottomright.x, middle), IM_COL32(255, 255, 255, 40));
+		auto const middle{plotbottom + View.strip * 0.5f};
+		Draw.AddLine(ImVec2(View.corner.x, plotbottom), ImVec2(bottomright.x, plotbottom), IM_COL32(255, 255, 255, 60));
+		Draw.AddLine(ImVec2(View.corner.x, middle), ImVec2(bottomright.x, middle), IM_COL32(255, 255, 255, 40));
 		ImVec2 previous{};
 		bool open{false};
 		float lastx{-1e9f};
 		for (std::size_t i = 0; i < samples.size(); ++i)
 		{
-			auto const x{x_of(samples[i].chainage)};
-			if (x < corner.x - 50.0f || x > bottomright.x + 50.0f || (open && x - lastx < 1.0f))
+			auto const x{View.x_of(samples[i].chainage)};
+			if (x < View.corner.x - 50.0f || x > bottomright.x + 50.0f || (open && x - lastx < 1.0f))
 				continue;
-			ImVec2 const next{x, middle - std::clamp(static_cast<float>(samples[i].curvature * 300.0 * strip * 0.4), -strip * 0.45f, strip * 0.45f)};
+			ImVec2 const next{x, middle - std::clamp(static_cast<float>(samples[i].curvature * 300.0 * View.strip * 0.4), -View.strip * 0.45f, View.strip * 0.45f)};
 			if (open)
-				draw->AddLine(previous, next, IM_COL32(120, 190, 255, 255), 1.5f);
+				Draw.AddLine(previous, next, IM_COL32(120, 190, 255, 255), 1.5f);
 			previous = next;
 			lastx = x;
 			open = true;
 		}
-		draw->AddText(ImVec2(corner.x + 2.0f, plotbottom + 1.0f), kLabel, "plan: curvature (up: left)");
+		Draw.AddText(ImVec2(View.corner.x + 2.0f, plotbottom + 1.0f), kLabel, "plan: curvature (up: left)");
 	}
-	if (hovered && state.hover >= 0.0 && state.hover <= state.route.length && false == samples.empty())
-	{
-		auto const x{x_of(state.hover)};
-		draw->AddLine(ImVec2(x, corner.y + top), ImVec2(x, bottomright.y), IM_COL32(255, 255, 255, 90));
-		auto const designed{profile::elevation(line, state.hover)};
-		auto const existing{editor_track::sampled_elevation(samples, state.hover)};
-		ImGui::BeginTooltip();
-		ImGui::Text("km %s", profile::format_chainage(state.hover + state.origin).c_str());
-		ImGui::Text("Grade line %.3f m, %+.2f per mille", designed, profile::grade(line, state.hover) * 1000.0);
-		ImGui::Text("Track %.3f m (%+.3f), %+.2f per mille", existing, existing - designed, editor_track::sampled_grade(samples, state.hover) * 1000.0);
-		auto const next{std::lower_bound(samples.begin(), samples.end(), state.hover, [](editor_track::route_sample const &Sample, double const Value) { return Sample.chainage < Value; })};
-		auto const index{static_cast<std::size_t>(std::distance(samples.begin(), std::min(next, std::prev(samples.end()))))};
-		if (index < state.terrain.size() && false == std::isnan(state.terrain[index]))
-			ImGui::Text("Terrain %.3f m, %s %.2f m", state.terrain[index], designed > state.terrain[index] ? "fill" : "cut", std::abs(designed - state.terrain[index]));
-		auto const &span{state.route.spans[samples[index].span]};
-		ImGui::TextDisabled("%s%s", span.track->name().c_str(), span.track->eType != tt_Normal ? " (switch, tilted as a whole with its branch)" : "");
-		ImGui::EndTooltip();
-	}
-	draw->PopClipRect();
+}
+
+void editor_mode::profile_canvas_tooltip() const
+{
+	auto const &state{m_profile};
+	auto const &samples{state.samples};
+	auto const designed{profile::elevation(state.line, state.hover)};
+	auto const existing{editor_track::sampled_elevation(samples, state.hover)};
+	ImGui::BeginTooltip();
+	ImGui::Text("km %s", profile::format_chainage(state.hover + state.origin).c_str());
+	ImGui::Text("Grade line %.3f m, %+.2f per mille", designed, profile::grade(state.line, state.hover) * 1000.0);
+	ImGui::Text("Track %.3f m (%+.3f), %+.2f per mille", existing, existing - designed, editor_track::sampled_grade(samples, state.hover) * 1000.0);
+	auto const next{std::lower_bound(samples.begin(), samples.end(), state.hover, [](editor_track::route_sample const &Sample, double const Value) { return Sample.chainage < Value; })};
+	auto const index{static_cast<std::size_t>(std::distance(samples.begin(), std::min(next, std::prev(samples.end()))))};
+	if (index < state.terrain.size() && false == std::isnan(state.terrain[index]))
+		ImGui::Text("Terrain %.3f m, %s %.2f m", state.terrain[index], designed > state.terrain[index] ? "fill" : "cut", std::abs(designed - state.terrain[index]));
+	auto const &span{state.route.spans[samples[index].span]};
+	ImGui::TextDisabled("%s%s", span.track->name().c_str(), span.track->eType != tt_Normal ? " (switch, tilted as a whole with its branch)" : "");
+	ImGui::EndTooltip();
 }
 
 void editor_mode::draw_profile_overlay() const
