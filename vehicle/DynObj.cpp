@@ -800,6 +800,19 @@ TDynamicObject::set_cab_lights( int const Cab, float const Level ) {
     }
 }
 
+// aktualizujemy submodele w zaleznosci od aktualnej pory roku
+void TDynamicObject::on_season_update()
+{
+    if (sm_winter_variant != nullptr) // pokazujemy wariant zimowy
+        sm_winter_variant->SetVisibilityLevel(Global.Season == "winter:" ? 1 : 0, true, false);
+    if (sm_spring_variant != nullptr) // pokazujemy wariant wiosenny
+        sm_spring_variant->SetVisibilityLevel(Global.Season == "spring:" ? 1 : 0, true, false);
+    if (sm_summer_variant != nullptr) // pokazujemy wariant letni
+        sm_summer_variant->SetVisibilityLevel(Global.Season == "summer:" ? 1 : 0, true, false);
+    if (sm_autumn_variant != nullptr) // pokazujemy wariant jesienny
+        sm_autumn_variant->SetVisibilityLevel(Global.Season == "autumn:" ? 1 : 0, true, false);
+}
+
 // ABu 29.01.05 przeklejone z render i renderalpha: *********************
 void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
 { // ABu290105: pozbierane i uporzadkowane powtarzajace
@@ -813,6 +826,10 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
     if (mdLoad) // tymczasowo ładunek na poziom podłogi
         if (vFloor.z > 0.0)
             mdLoad->GetSMRoot()->SetTranslate(modelShake + vFloor);
+
+    // model jest współdzielony przez pojazdy, a pora roku może się zmienić w trakcie symulacji
+    if (Global.UpdateMaterials)
+        on_season_update();
 
     if (ObjSqrDist < 400 * 400 ) // gdy bliżej niż 400m
     {
@@ -2493,6 +2510,10 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
             smBogie[0]->WillBeAnimated();
         if (smBogie[1])
             smBogie[1]->WillBeAnimated();
+        sm_winter_variant = mdModel->GetFromName("winter_variant");
+        sm_spring_variant = mdModel->GetFromName("spring_variant");
+        sm_summer_variant = mdModel->GetFromName("summer_variant");
+        sm_autumn_variant = mdModel->GetFromName("autumn_variant");
     }
     // ABu: zainicjowanie zmiennej, zeby nic sie nie ruszylo w pierwszej klatce,
     // potem juz liczona prawidlowa wartosc masy
@@ -3024,7 +3045,8 @@ TDynamicObject::update_load_offset() {
 void
 TDynamicObject::shuffle_load_order() {
 
-    std::shuffle( std::begin( SectionLoadOrder ), std::end( SectionLoadOrder ), Global.random_engine );
+    // order of visible load chunks, nothing security related -- see the engines in Globals.h
+    std::shuffle( std::begin( SectionLoadOrder ), std::end( SectionLoadOrder ), Global.random_engine ); // NOSONAR
     // shift chunks assigned to corridors to the end of the list, so they show up last
     std::stable_partition(
         std::begin( SectionLoadOrder ), std::end( SectionLoadOrder ),

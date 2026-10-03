@@ -166,6 +166,10 @@ void win1250_to_ascii(std::string &Input);
 std::string Bezogonkow(std::string Input, bool const Underscorestospaces = false);
 
 std::string win1250_to_utf8(const std::string &input);
+// decodes utf-8 encoded text into unicode code points. returns false if the text isn't valid utf-8
+bool utf8_to_utf32(std::string const &Text, std::u32string &Output);
+// decodes windows-1250 (ansi) encoded text into unicode code points
+void win1250_to_utf32(std::string const &Text, std::u32string &Output);
 
 inline std::string extract_value(std::string const &Key, std::string const &Input)
 {
@@ -219,6 +223,10 @@ std::pair<std::string, std::string> FileExists(std::vector<std::string> const &N
 
 // returns time of last modification for specified file
 std::time_t last_modified(std::string const &Filename);
+
+// thread-safe replacements for std::localtime and std::gmtime, which hand out a pointer to shared static storage
+std::tm local_tm(std::time_t Time);
+std::tm utc_tm(std::time_t Time);
 
 // potentially erases file extension from provided file name. returns: true if extension was removed, false otherwise
 bool erase_extension(std::string &Filename);

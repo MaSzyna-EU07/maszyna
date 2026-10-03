@@ -403,8 +403,8 @@ namespace {
 // TSubModel tree, which would make batched rendering unsafe. Most animations
 // loaded from .t3d files are global functions of time (clocks, wind, sky) and
 // only transform the local modelview matrix — those are safe to share. Camera-
-// relative billboards also operate purely on the local matrix using whatever
-// modelview the caller pushed, which is exactly per-instance behaviour.
+// relative billboards are not: they're computed on the cpu from the modelview of
+// the drawn instance, which in a batch is only the submodel-local chain.
 // The runtime SetRotate/SetTranslate animations (at_Rotate / at_RotateXYZ /
 // at_Translate) are tied to per-instance iAnimOwner and are unsafe to share.
 // at_Undefined is the type assigned to .t3d submodels declared with `anim: true`
@@ -425,17 +425,40 @@ bool anim_type_unsafe_for_instancing( TAnimType a ) {
     }
 }
 
+// returns true if this animation type depends only on global state (simulation
+// time, wind, sky) and so gives every instance of the model the same local
+// transform. The batch evaluates it once and the per-instance placement comes
+// from the instance matrix, the result is the same as with per-instance drawing.
+bool anim_type_shared_by_instances( TAnimType a ) {
+    switch( a ) {
+    case TAnimType::at_SecondsJump:
+    case TAnimType::at_MinutesJump:
+    case TAnimType::at_HoursJump:
+    case TAnimType::at_Hours24Jump:
+    case TAnimType::at_Seconds:
+    case TAnimType::at_Minutes:
+    case TAnimType::at_Hours:
+    case TAnimType::at_Hours24:
+    case TAnimType::at_Wind:
+    case TAnimType::at_Sky:
+        return true;
+    default:
+        return false;
+    }
+}
+
 // recursively walks a submodel tree and returns true if any submodel declares
 // an animation type that's unsafe to batch, OR carries the runtime "needs
-// animation matrix" flag (iFlags bit 0x4000), which is set whenever the
-// submodel was tagged as animatable in the .t3d file or had WillBeAnimated()
-// called on it during model load. Either signal means the submodel may receive
+// animation matrix" flag (iFlags bit 0x4000) for anything else than an animation
+// shared by all instances. The flag is set whenever the submodel was tagged as
+// animatable in the .t3d file (any `anim:` other than `false`) or had
+// WillBeAnimated() called on it during model load. Such a submodel may receive
 // per-instance event-driven animation commands at runtime, which the GPU-
 // instanced path (one shared submodel tree across all instances) cannot serve.
 bool submodel_tree_blocks_instancing( TSubModel const *Sub ) {
     if( Sub == nullptr ) { return false; }
     if( anim_type_unsafe_for_instancing( Sub->b_Anim ) ) { return true; }
-    if( ( Sub->iFlags & 0x4000 ) != 0 ) { return true; }
+    if( ( ( Sub->iFlags & 0x4000 ) != 0 ) && ( false == anim_type_shared_by_instances( Sub->b_Anim ) ) ) { return true; }
     if( submodel_tree_blocks_instancing( Sub->Child ) ) { return true; }
     if( submodel_tree_blocks_instancing( Sub->Next ) ) { return true; }
     return false;
@@ -478,6 +501,9 @@ std::shared_ptr<TAnimContainer> TAnimModel::AddContainer(std::string const &Name
 		auto tmp = std::make_shared<TAnimContainer>();
         tmp->Init(tsb);
 		m_animlist.push_back(tmp);
+		// containers are added by events after the instance was loaded and bucketed;
+		// the instanced path skips RaAnimate(), so this instance has to be drawn on its own
+		m_instanceable = false;
 		return tmp;
     }
 	return nullptr;
@@ -638,6 +664,23 @@ void TAnimModel::RaPrepare()
 	}
 }
 
+glm::mat4 const &TAnimModel::rotation_scale() {
+
+    if( ( false == m_rotationscalevalid ) || ( vAngle != m_rotationscaleangles ) || ( m_scale != m_rotationscalescale ) ) {
+        // same order as the per-instance render path
+        glm::mat4 transform( 1.0f );
+        if( vAngle.y != 0.0f ) { transform = glm::rotate( transform, glm::radians( vAngle.y ), glm::vec3( 0.f, 1.f, 0.f ) ); }
+        if( vAngle.x != 0.0f ) { transform = glm::rotate( transform, glm::radians( vAngle.x ), glm::vec3( 1.f, 0.f, 0.f ) ); }
+        if( vAngle.z != 0.0f ) { transform = glm::rotate( transform, glm::radians( vAngle.z ), glm::vec3( 0.f, 0.f, 1.f ) ); }
+        if( m_scale != glm::vec3( 1.0f ) ) { transform = glm::scale( transform, m_scale ); }
+        m_rotationscale = transform;
+        m_rotationscaleangles = vAngle;
+        m_rotationscalescale = m_scale;
+        m_rotationscalevalid = true;
+    }
+    return m_rotationscale;
+}
+
 int TAnimModel::Flags()
 { // informacja dla TGround, czy ma być w Render, RenderAlpha, czy RenderMixed
     int i = pModel ? pModel->Flags() : 0; // pobranie flag całego modelu
@@ -688,6 +731,8 @@ std::optional<std::tuple<float, float, std::optional<glm::vec3>> > TAnimModel::L
 void TAnimModel::SkinSet( int const Index, material_handle const Material ) {
 
     m_materialdata.replacable_skins[ std::clamp( Index, 1, 4 ) ] = Material;
+    // the instance stays in the bucket of its old skin set, where it would get the textures of the batch
+    m_instanceable = false;
 }
 
 void TAnimModel::AnimUpdate(double dt)

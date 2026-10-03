@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationenvironment.h"
 #include "vehicle/Driver.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 #include "Console.h"
 #include "scripting/PyInt.h"
 #include "utilities/Timer.h"
@@ -26,15 +27,7 @@ http://mozilla.org/MPL/2.0/.
 void global_settings::LoadIniFile(std::string asFileName)
 {
 	// initialize season data in case the main config file doesn't
-	std::time_t timenow = std::time(nullptr);
-
-	std::tm tm{};
-
-#ifdef _WIN32
-	localtime_s(&tm, &timenow);
-#else
-	localtime_r(&timenow, &tm);
-#endif
+	std::tm const tm = local_tm(std::time(nullptr));
 
 	fMoveLight = tm.tm_yday + 1; // numer bieżącego dnia w roku
 	simulation::Environment.compute_season(fMoveLight);
@@ -513,14 +506,7 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
 
         if (fMoveLight == 0.f)
         {
-            std::time_t timenow = std::time(nullptr);
-            std::tm tm{};
-
-#ifdef _WIN32
-            localtime_s(&tm, &timenow);
-#else
-            localtime_r(&timenow, &tm);
-#endif
+            std::tm const tm = local_tm(std::time(nullptr));
 
             fMoveLight = tm.tm_yday + 1;
         }

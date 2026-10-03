@@ -31,7 +31,8 @@ std::string filename_date() {
 #ifdef __unix__
     timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    tm *tms = localtime(&ts.tv_sec);
+    std::tm const tm = local_tm(ts.tv_sec);
+    std::tm const *tms = &tm;
     st.wYear = tms->tm_year;
     st.wMonth = tms->tm_mon;
     st.wDayOfWeek = tms->tm_wday;

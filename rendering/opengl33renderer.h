@@ -310,6 +310,7 @@ class opengl33_renderer : public gfx_renderer {
 	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
 	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance);
 	void Render_Alpha(TSubModel *Submodel);
+	void Render_Alpha_text(TSubModel *Submodel); // characters of a text display
 	void Update_Lights(light_array &Lights);
 	glm::vec3 pick_color(std::size_t const Index);
 	std::size_t pick_index(glm::ivec3 const &Color);
@@ -376,7 +377,7 @@ class opengl33_renderer : public gfx_renderer {
 	// cell's buckets are merged here keyed by (TModel3d*, skins), so that
 	// Render_Instanced() runs once per unique model across the whole pass instead
 	// of once per cell -- collapsing many tiny instanced draws into a few large
-	// batches. Reused every pass; cleared at the top of Render(scene::basic_region*).
+	// batches. Reused every pass; the vectors are emptied (not freed) at the top of Render(scene::basic_region*).
 	scene::basic_cell::instance_bucket_map m_frame_instance_buckets;
   renderpass_config m_colorpass; // parametrs of most recent color pass
 	std::array<renderpass_config, 3> m_shadowpass; // parametrs of most recent shadowmap pass for each of csm stages
@@ -426,6 +427,21 @@ class opengl33_renderer : public gfx_renderer {
 	// reused across calls -- clear() retains capacity, so once it has grown to
 	// the largest batch seen, steady-state frames perform no allocation here.
 	std::vector<glm::mat4> m_instance_modelviews;
+	// further persistent scratch buffers for Render_Instanced(): culled instances paired with their
+	// squared distance, and the lod bounds of the drawn model which split them into lod bands
+	struct instance_survivor {
+		glm::mat4 modelview;
+		float distancesquared;
+		std::uint32_t band;
+	};
+	std::vector<instance_survivor> m_instance_survivors;
+	std::vector<float> m_instance_lodbounds;
+	std::vector<TSubModel const *> m_instance_lodpending;
+	// per sort key (lod band and distance slot): first index in m_instance_modelviews (with end sentinel)
+	// and fill cursor; per lod band: nearest distance
+	std::vector<std::size_t> m_instance_bandstarts;
+	std::vector<std::size_t> m_instance_bandcursors;
+	std::vector<float> m_instance_banddistances;
 	gl::scene_ubs scene_ubs;
 	gl::model_ubs model_ubs;
 	gl::light_ubs light_ubs;

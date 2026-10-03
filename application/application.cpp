@@ -1105,7 +1105,7 @@ void eu07_application::init_files()
 #elif __unix__
 	unlink("log.txt");
 	unlink("errors.txt");
-	mkdir("logs", 0755);
+	mkdir("logs", 0750);
 #endif
 }
 namespace fs = std::filesystem;
@@ -1479,11 +1479,8 @@ bool eu07_application::init_network()
 		// TODO: sort out this timezone mess
 		std::time_t utc_now = std::time(nullptr);
 
-		tm tm_local, tm_utc;
-		tm *tmp = std::localtime(&utc_now);
-		memcpy(&tm_local, tmp, sizeof(tm));
-		tmp = std::gmtime(&utc_now);
-		memcpy(&tm_utc, tmp, sizeof(tm));
+		std::tm const tm_local = local_tm(utc_now);
+		std::tm const tm_utc = utc_tm(utc_now);
 
 		int64_t offset = tm_local.tm_hour * 3600 + tm_local.tm_min * 60 + tm_local.tm_sec - (tm_utc.tm_hour * 3600 + tm_utc.tm_min * 60 + tm_utc.tm_sec);
 
