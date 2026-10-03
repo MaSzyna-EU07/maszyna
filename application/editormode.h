@@ -39,6 +39,13 @@ class editor_mode : public application_mode, private editor_track::observer
 {
 
   public:
+	// model entering the structure gauge, at its deepest place
+	struct gauge_hit
+	{
+		std::string model;
+		glm::dvec3 point{0.0};
+		double depth{0.0}; // m
+	};
 	// constructors
 	editor_mode();
 	~editor_mode() override;
@@ -316,13 +323,34 @@ class editor_mode : public application_mode, private editor_track::observer
 		TTrack const *track{nullptr}; // scanned
 		std::size_t history{0};
 		bool pending{false}; // rescan once the edit ends
-		std::size_t models{0};
-		std::size_t intrusions{0}; // triangles
+		struct
+		{
+			std::vector<glm::dvec3> surface; // triangles of the tunnel
+			std::vector<glm::dvec3> edges; // lines
+			std::vector<glm::dvec3> intruding; // triangles of the models
+			std::vector<gauge_hit> hits;
+		} line; // along the selected path
+		struct
+		{
+			bool scanned{false};
+			std::size_t history{0};
+			std::string profile;
+			std::vector<glm::dvec3> intruding;
+			std::vector<gauge_hit> hits;
+		} map; // whole scenery
+		int current{-1}; // hit the camera went to
+		bool published{false}; // overlay up to date
 	} m_gauge;
 	void gauge_load();
+	std::vector<gauge_hit> const &gauge_hits() const;
 	void update_gauge();
 	void scan_gauge(TTrack &Track);
+	void scan_gauge_map();
+	void gauge_publish();
+	void gauge_focus(int Index);
 	void render_gauge_ui();
+	void render_gauge_hits();
+	bool render_gauge_outline();
 	struct route_design
 	{
 		TTrack *from{nullptr};

@@ -17,13 +17,17 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/editoroverlay.h"
 #include "rendering/renderer.h"
 #include "simulation/simulation.h"
+#include "utilities/Logs.h"
 #include "world/Track.h"
 #include "imgui/imgui.h"
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
-#include <optional>
+#include <cstdint>
+#include <unordered_map>
+#include <unordered_set>
 
 using geometry::plan_of;
 
@@ -32,33 +36,76 @@ namespace
 
 char const *const gauge_file{"editor_structure_gauges.txt"};
 std::size_t const gauge_triangle_limit{200000};
+// past this distance of the camera from the origin of the overlay it's rebuilt, to keep its float precision
+double const gauge_origin_range{2000.0};
 
-// samples of the route, found by the position in the plan
+// sampled line of the tracks with the widening of the gauge along it
+struct gauge_line
+{
+	std::vector<editor_track::route_sample> samples;
+	std::vector<gauge::section> sections;
+};
+
+gauge_line make_line(editor_track::route &Route)
+{
+	gauge_line line;
+	line.samples = editor_track::sample_route(Route, 1.0);
+	std::vector<double> chainage, curvature, cant;
+	for (auto const &sample : line.samples)
+	{
+		chainage.push_back(sample.chainage);
+		curvature.push_back(sample.curvature);
+		cant.push_back(sample.cant);
+	}
+	line.sections = gauge::sections(chainage, curvature, cant);
+	return line;
+}
+
+// lines through all paths of the scenery, each path in one of them at least
+std::vector<gauge_line> scenery_lines()
+{
+	std::vector<gauge_line> lines;
+	std::unordered_set<TTrack const *> visited;
+	auto const seen{[&](editor_track::route_span const &Span) { return visited.count(Span.track) > 0; }};
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || visited.count(track) > 0 || false == editor_track::is_supported(*track))
+			continue;
+		auto route{editor_track::run_route(*track, 1e7)};
+		// the line may run on over the paths already covered, one of them is enough for the widening ahead of a curve
+		auto &spans{route.spans};
+		while (spans.size() > 2 && seen(spans[0]) && seen(spans[1]))
+			spans.erase(spans.begin());
+		while (spans.size() > 2 && seen(spans[spans.size() - 1]) && seen(spans[spans.size() - 2]))
+			spans.pop_back();
+		for (auto const &span : spans)
+			visited.insert(span.track);
+		lines.push_back(make_line(route));
+	}
+	// diverging paths of the switches
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && track->eType == tt_Switch && editor_track::is_supported(*track))
+		{
+			editor_track::route route;
+			route.spans.push_back({track, 1, true});
+			lines.push_back(make_line(route));
+		}
+	return lines;
+}
+
+// samples of the lines, found by the position in the plan
 class corridor
 {
 public:
-	struct local
+	corridor(std::vector<gauge_line> const &Lines, double const Margin) : m_lines{Lines}, m_margin{Margin}
 	{
-		std::size_t sample;
-		double lateral; // positive to the left
-		double height; // above the rail top
-	};
-
-	corridor(std::vector<editor_track::route_sample> const &Samples, double const Margin) : m_samples{Samples}, m_margin{Margin}
-	{
-		m_min = m_max = plan_of(Samples.front().position);
-		for (auto const &sample : Samples)
-		{
-			m_min = glm::min(m_min, plan_of(sample.position));
-			m_max = glm::max(m_max, plan_of(sample.position));
-		}
-		m_min -= glm::dvec2(Margin + cell);
-		m_max += glm::dvec2(Margin + cell);
-		m_columns = static_cast<int>((m_max.x - m_min.x) / cell) + 1;
-		m_rows = static_cast<int>((m_max.y - m_min.y) / cell) + 1;
-		m_cells.resize(static_cast<std::size_t>(m_columns) * m_rows);
-		for (std::size_t i = 0; i < Samples.size(); ++i)
-			m_cells[index(cell_of(plan_of(Samples[i].position)))].push_back(i);
+		for (std::uint32_t line = 0; line < Lines.size(); ++line)
+			for (std::uint32_t i = 0; i < Lines[line].samples.size(); ++i)
+			{
+				auto const point{plan_of(Lines[line].samples[i].position)};
+				m_cells[key(point, cell)].push_back({line, i});
+				m_regions.insert(key(point, region));
+			}
 	}
 
 	static glm::dvec2 normal(editor_track::route_sample const &Sample)
@@ -70,69 +117,89 @@ public:
 	bool near(glm::dvec3 const &Center, double const Radius) const
 	{
 		auto const center{plan_of(Center)};
-		if (center.x + Radius < m_min.x || center.x - Radius > m_max.x || center.y + Radius < m_min.y || center.y - Radius > m_max.y)
-			return false;
-		auto const reach{(Radius + m_margin) * (Radius + m_margin)};
-		return std::any_of(m_samples.begin(), m_samples.end(), [&](editor_track::route_sample const &Sample) { return glm::length2(plan_of(Sample.position) - center) <= reach; });
+		auto const reach{Radius + m_margin + region};
+		auto const from{index(center - reach, region)};
+		auto const to{index(center + reach, region)};
+		for (auto x = from.x; x <= to.x; ++x)
+			for (auto y = from.y; y <= to.y; ++y)
+				if (m_regions.count(key(x, y)) > 0)
+					return true;
+		return false;
 	}
 
-	std::optional<local> locate(glm::dvec3 const &Point) const
+	// deepest intrusion of the point into the gauge of the lines nearby, not positive outside of them
+	double intrusion(gauge::profile const &Profile, glm::dvec3 const &Point) const
 	{
 		auto const point{plan_of(Point)};
-		auto const cell{cell_of(point)};
-		std::size_t nearest{m_samples.size()};
-		double best{m_margin * m_margin};
-		for (int row = std::max(0, cell.y - 1); row <= std::min(m_rows - 1, cell.y + 1); ++row)
-			for (int column = std::max(0, cell.x - 1); column <= std::min(m_columns - 1, cell.x + 1); ++column)
-				for (auto const i : m_cells[index({column, row})])
+		auto const center{index(point, cell)};
+		// nearest sample of every line around
+		std::vector<std::pair<entry, double>> nearest;
+		for (auto x = center.x - 1; x <= center.x + 1; ++x)
+			for (auto y = center.y - 1; y <= center.y + 1; ++y)
+			{
+				auto const found{m_cells.find(key(x, y))};
+				if (found == m_cells.end())
+					continue;
+				for (auto const &candidate : found->second)
 				{
-					auto const distance{glm::length2(plan_of(m_samples[i].position) - point)};
-					if (distance < best)
-					{
-						best = distance;
-						nearest = i;
-					}
+					auto const distance{glm::length2(plan_of(sample(candidate).position) - point)};
+					if (distance > m_margin * m_margin)
+						continue;
+					auto const same{std::find_if(nearest.begin(), nearest.end(), [&](auto const &Other) { return Other.first.line == candidate.line; })};
+					if (same == nearest.end())
+						nearest.push_back({candidate, distance});
+					else if (distance < same->second)
+						*same = {candidate, distance};
 				}
-		if (nearest == m_samples.size())
-			return std::nullopt;
-		auto const &sample{m_samples[nearest]};
-		auto const offset{point - plan_of(sample.position)};
-		auto const along{glm::dot(offset, sample.direction)};
-		if ((nearest == 0 && along < -0.6) || (nearest + 1 == m_samples.size() && along > 0.6))
-			return std::nullopt;
-		return local{nearest, glm::dot(offset, normal(sample)), Point.y - (sample.position.y + sample.grade * along)};
+			}
+		double deepest{0.0};
+		for (auto const &[found, distance] : nearest)
+		{
+			auto const &line{m_lines[found.line]};
+			auto const &sample{line.samples[found.index]};
+			auto const offset{point - plan_of(sample.position)};
+			auto const along{glm::dot(offset, sample.direction)};
+			if ((found.index == 0 && along < -0.6) || (found.index + 1 == line.samples.size() && along > 0.6))
+				continue;
+			auto const height{Point.y - (sample.position.y + sample.grade * along)};
+			deepest = std::max(deepest, gauge::intrusion(Profile, line.sections[found.index], glm::dot(offset, normal(sample)), height));
+		}
+		return deepest;
 	}
 
 private:
 	static constexpr double cell{8.0};
+	static constexpr double region{64.0};
 
-	glm::ivec2 cell_of(glm::dvec2 const &Point) const
+	struct entry
 	{
-		return {std::clamp(static_cast<int>((Point.x - m_min.x) / cell), 0, m_columns - 1), std::clamp(static_cast<int>((Point.y - m_min.y) / cell), 0, m_rows - 1)};
+		std::uint32_t line;
+		std::uint32_t index;
+	};
+
+	static glm::i64vec2 index(glm::dvec2 const &Point, double const Size)
+	{
+		return {static_cast<std::int64_t>(std::floor(Point.x / Size)), static_cast<std::int64_t>(std::floor(Point.y / Size))};
 	}
-	std::size_t index(glm::ivec2 const &Cell) const
+	static std::uint64_t key(std::int64_t const X, std::int64_t const Y)
 	{
-		return static_cast<std::size_t>(Cell.y) * m_columns + Cell.x;
+		return (static_cast<std::uint64_t>(X) << 32) ^ static_cast<std::uint32_t>(Y);
+	}
+	static std::uint64_t key(glm::dvec2 const &Point, double const Size)
+	{
+		auto const cell{index(Point, Size)};
+		return key(cell.x, cell.y);
+	}
+	editor_track::route_sample const &sample(entry const &Entry) const
+	{
+		return m_lines[Entry.line].samples[Entry.index];
 	}
 
-	std::vector<editor_track::route_sample> const &m_samples;
+	std::vector<gauge_line> const &m_lines;
 	double m_margin;
-	glm::dvec2 m_min, m_max;
-	int m_columns{1}, m_rows{1};
-	std::vector<std::vector<std::size_t>> m_cells;
+	std::unordered_map<std::uint64_t, std::vector<entry>> m_cells;
+	std::unordered_set<std::uint64_t> m_regions;
 };
-
-std::vector<gauge::section> sections_of(std::vector<editor_track::route_sample> const &Samples)
-{
-	std::vector<double> chainage, curvature, cant;
-	for (auto const &sample : Samples)
-	{
-		chainage.push_back(sample.chainage);
-		curvature.push_back(sample.curvature);
-		cant.push_back(sample.cant);
-	}
-	return gauge::sections(chainage, curvature, cant);
-}
 
 glm::dmat4 placement(TAnimModel const &Instance)
 {
@@ -172,6 +239,53 @@ template <typename Visitor> void visit_triangles(TSubModel *Submodel, glm::dmat4
 	}
 }
 
+// triangles of the models entering the gauge, and the deepest place of each model, the deepest models first
+void scan_models(corridor const &Space, gauge::profile const &Profile, std::vector<glm::dvec3> &Triangles, std::vector<editor_mode::gauge_hit> &Hits)
+{
+	for (auto *instance : simulation::Instances.sequence())
+	{
+		if (Triangles.size() >= 3 * gauge_triangle_limit)
+			break;
+		if (instance == nullptr || false == instance->visible() || instance->Model() == nullptr || instance->Model()->GetSMRoot() == nullptr)
+			continue;
+		if (false == Space.near(instance->location(), instance->radius()))
+			continue;
+		editor_mode::gauge_hit hit{instance->name(), instance->location(), 0.0};
+		// the triangle enters the gauge when any point of a grid spread over it does
+		visit_triangles(instance->Model()->GetSMRoot(), placement(*instance), [&](glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C) {
+			auto const edge{std::max({glm::distance(A, B), glm::distance(B, C), glm::distance(C, A)})};
+			auto const steps{std::clamp(static_cast<int>(std::ceil(edge / 0.5)), 1, 24)};
+			for (int u = 0; u <= steps; ++u)
+				for (int v = 0; u + v <= steps; ++v)
+				{
+					auto const point{A + (B - A) * (static_cast<double>(u) / steps) + (C - A) * (static_cast<double>(v) / steps)};
+					auto const depth{Space.intrusion(Profile, point)};
+					if (depth <= 0.0)
+						continue;
+					Triangles.insert(Triangles.end(), {A, B, C});
+					if (depth > hit.depth)
+					{
+						hit.depth = depth;
+						hit.point = point;
+					}
+					return;
+				}
+		});
+		if (hit.depth > 0.0)
+			Hits.push_back(std::move(hit));
+	}
+	std::sort(Hits.begin(), Hits.end(), [](auto const &Left, auto const &Right) { return Left.depth > Right.depth; });
+}
+
+double widest(gauge::profile const &Profile)
+{
+	double result{0.0};
+	for (auto const &point : Profile.outline)
+		result = std::max(result, point.half_width);
+	// with the room for the widening in the sharpest curves on the largest cant
+	return result + 1.2;
+}
+
 } // namespace
 
 void editor_mode::gauge_load()
@@ -181,133 +295,172 @@ void editor_mode::gauge_load()
 	m_gauge.profile = std::clamp(m_gauge.profile, 0, static_cast<int>(m_gauge.profiles.size()) - 1);
 }
 
+std::vector<editor_mode::gauge_hit> const &editor_mode::gauge_hits() const
+{
+	return m_gauge.map.scanned ? m_gauge.map.hits : m_gauge.line.hits;
+}
+
 void editor_mode::update_gauge()
 {
-	auto *track{m_gauge.enabled && ui()->mode() == nodebank_panel::TRACK ? selected_track() : nullptr};
-	if (track == nullptr)
+	if (ui()->mode() != nodebank_panel::TRACK)
 	{
 		if (false == EditorOverlay.batches.empty())
 			EditorOverlay.clear();
-		m_gauge.track = nullptr;
+		m_gauge.published = false;
 		return;
 	}
+	auto *track{m_gauge.enabled ? selected_track() : nullptr};
 	// the geometry is rescanned once the edit ends
 	if (ImGui::IsMouseDown(0) || m_track_gizmo_using || m_dragging)
-	{
 		m_gauge.pending = true;
-		return;
+	else if (track == nullptr)
+	{
+		if (m_gauge.track != nullptr)
+		{
+			m_gauge.line = {};
+			m_gauge.track = nullptr;
+			m_gauge.published = false;
+		}
 	}
-	if (track == m_gauge.track && m_history.size() == m_gauge.history && false == m_gauge.pending)
-		return;
-	m_gauge.track = track;
-	m_gauge.history = m_history.size();
-	m_gauge.pending = false;
-	scan_gauge(*track);
+	else if (track != m_gauge.track || m_history.size() != m_gauge.history || m_gauge.pending)
+	{
+		m_gauge.track = track;
+		m_gauge.history = m_history.size();
+		m_gauge.pending = false;
+		scan_gauge(*track);
+		m_gauge.published = false;
+	}
+	if (false == m_gauge.published || glm::distance(Camera.Pos, EditorOverlay.origin) > gauge_origin_range)
+		gauge_publish();
 }
 
 void editor_mode::scan_gauge(TTrack &Track)
 {
 	gauge_load();
-	EditorOverlay.clear();
-	m_gauge.intrusions = 0;
-	m_gauge.models = 0;
-	auto route{editor_track::run_route(Track, m_gauge.reach)};
-	auto const samples{editor_track::sample_route(route, 1.0)};
+	m_gauge.line = {};
 	auto const &profile{m_gauge.profiles[m_gauge.profile]};
-	if (samples.size() < 2 || profile.outline.size() < 2)
+	auto route{editor_track::run_route(Track, m_gauge.reach)};
+	std::vector<gauge_line> const lines{make_line(route)};
+	auto const &line{lines.front()};
+	if (line.samples.size() < 2 || profile.outline.size() < 2)
 		return;
+	corridor const space{lines, widest(profile)};
 
-	auto const sections{sections_of(samples)};
-	double widest{0.0};
-	for (auto const &point : profile.outline)
-		widest = std::max(widest, point.half_width);
-	// room for the widening in the sharpest curves on the largest cant
-	corridor const space{samples, widest + 1.2};
-	auto const origin{samples.front().position};
-	EditorOverlay.origin = origin;
-	auto const relative{[&](glm::dvec3 const &Point) { return glm::vec3(Point - origin); }};
 	auto const lift{[](editor_track::route_sample const &Sample, double const Lateral, double const Height) {
 		auto const normal{corridor::normal(Sample)};
 		return Sample.position + glm::dvec3(normal.x * Lateral, Height, normal.y * Lateral);
 	}};
-
 	// outline across the track, from the bottom right up and down to the bottom left
 	auto const ring{[&](std::size_t const Index) {
-		std::vector<glm::vec3> points;
+		std::vector<glm::dvec3> points;
 		for (int side : {-1, 1})
 			for (std::size_t j = 0; j < profile.outline.size(); ++j)
 			{
 				auto const &point{profile.outline[side < 0 ? j : profile.outline.size() - 1 - j]};
-				auto const width{point.half_width + gauge::widening(sections[Index], point.height, side)};
-				points.push_back(relative(lift(samples[Index], side * width, point.height)));
+				auto const width{point.half_width + gauge::widening(line.sections[Index], point.height, side)};
+				points.push_back(lift(line.samples[Index], side * width, point.height));
 			}
 		return points;
 	}};
-
-	gfx::editor_overlay::batch surface{{0.2f, 0.9f, 0.3f, 0.12f}, GL_TRIANGLES};
-	gfx::editor_overlay::batch lines{{0.2f, 1.0f, 0.3f, 0.5f}, GL_LINES};
-	gfx::editor_overlay::batch intruding{{1.0f, 0.1f, 0.05f, 0.6f}, GL_TRIANGLES, true};
-	std::vector<glm::vec3> previous;
+	auto &surface{m_gauge.line.surface};
+	auto &edges{m_gauge.line.edges};
+	std::vector<glm::dvec3> previous;
 	double lastring{-1e9};
-	for (std::size_t i = 0; i < samples.size(); i += 2)
+	for (std::size_t i = 0; i < line.samples.size(); i += 2)
 	{
 		auto const current{ring(i)};
 		if (false == previous.empty())
 			for (std::size_t j = 1; j < current.size(); ++j)
 			{
-				surface.points.insert(surface.points.end(), {previous[j - 1], previous[j], current[j], previous[j - 1], current[j], current[j - 1]});
-				lines.points.insert(lines.points.end(), {previous[j], current[j]});
+				surface.insert(surface.end(), {previous[j - 1], previous[j], current[j], previous[j - 1], current[j], current[j - 1]});
+				edges.insert(edges.end(), {previous[j], current[j]});
 			}
-		if (samples[i].chainage - lastring >= 10.0 || i + 2 >= samples.size())
+		if (line.samples[i].chainage - lastring >= 10.0 || i + 2 >= line.samples.size())
 		{
-			lastring = samples[i].chainage;
+			lastring = line.samples[i].chainage;
 			for (std::size_t j = 1; j < current.size(); ++j)
-				lines.points.insert(lines.points.end(), {current[j - 1], current[j]});
+				edges.insert(edges.end(), {current[j - 1], current[j]});
 		}
 		previous = current;
 	}
+	scan_models(space, profile, m_gauge.line.intruding, m_gauge.line.hits);
+	if (false == m_gauge.map.scanned)
+		m_gauge.current = -1;
+}
 
-	// triangle enters the gauge when any point of a grid spread over it does
-	auto const inside{[&](glm::dvec3 const &Point) {
-		auto const local{space.locate(Point)};
-		return local && gauge::intrusion(profile, sections[local->sample], local->lateral, local->height) > 0.0;
+void editor_mode::scan_gauge_map()
+{
+	gauge_load();
+	auto const started{std::chrono::steady_clock::now()};
+	m_gauge.map = {};
+	auto const &profile{m_gauge.profiles[m_gauge.profile]};
+	auto const lines{scenery_lines()};
+	corridor const space{lines, widest(profile)};
+	scan_models(space, profile, m_gauge.map.intruding, m_gauge.map.hits);
+	m_gauge.map.scanned = true;
+	m_gauge.map.history = m_history.size();
+	m_gauge.map.profile = profile.name;
+	m_gauge.current = -1;
+	m_gauge.published = false;
+	WriteLog("Structure gauge (" + profile.name + "): " + std::to_string(m_gauge.map.hits.size()) + " models enter it along " + std::to_string(lines.size()) + " lines, scanned in " +
+	         std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count()) + " ms");
+	if (false == m_gauge.map.hits.empty())
+		gauge_focus(0);
+}
+
+void editor_mode::gauge_publish()
+{
+	m_gauge.published = true;
+	EditorOverlay.clear();
+	EditorOverlay.origin = Camera.Pos;
+	auto const batch{[](glm::vec4 const &Color, unsigned int const Type, bool const Offset, std::vector<glm::dvec3> const &Points) {
+		gfx::editor_overlay::batch result{Color, Type, Offset};
+		result.points.reserve(Points.size());
+		for (auto const &point : Points)
+			result.points.emplace_back(point - EditorOverlay.origin);
+		return result;
 	}};
-	for (auto *instance : simulation::Instances.sequence())
+	std::vector<glm::dvec3> marker;
+	auto const &hits{gauge_hits()};
+	if (m_gauge.current >= 0 && m_gauge.current < static_cast<int>(hits.size()))
 	{
-		if (intruding.points.size() >= 3 * gauge_triangle_limit)
-			break;
-		if (instance == nullptr || false == instance->visible() || instance->Model() == nullptr || instance->Model()->GetSMRoot() == nullptr)
-			continue;
-		if (false == space.near(instance->location(), instance->radius()))
-			continue;
-		auto const before{intruding.points.size()};
-		visit_triangles(instance->Model()->GetSMRoot(), placement(*instance), [&](glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C) {
-			auto const edge{std::max({glm::distance(A, B), glm::distance(B, C), glm::distance(C, A)})};
-			auto const steps{std::clamp(static_cast<int>(std::ceil(edge / 0.5)), 1, 24)};
-			for (int u = 0; u <= steps; ++u)
-				for (int v = 0; u + v <= steps; ++v)
-				{
-					auto const a{static_cast<double>(u) / steps};
-					auto const b{static_cast<double>(v) / steps};
-					if (inside(A + (B - A) * a + (C - A) * b))
-					{
-						intruding.points.insert(intruding.points.end(), {relative(A), relative(B), relative(C)});
-						return;
-					}
-				}
-		});
-		if (intruding.points.size() > before)
-			++m_gauge.models;
+		auto const point{hits[m_gauge.current].point};
+		marker = {point - glm::dvec3(0.0, 3.0, 0.0), point + glm::dvec3(0.0, 3.0, 0.0), point - glm::dvec3(1.0, 0.0, 0.0), point + glm::dvec3(1.0, 0.0, 0.0),
+		          point - glm::dvec3(0.0, 0.0, 1.0), point + glm::dvec3(0.0, 0.0, 1.0)};
 	}
-	m_gauge.intrusions = intruding.points.size() / 3;
-	EditorOverlay.batches = {std::move(surface), std::move(lines), std::move(intruding)};
+	EditorOverlay.batches = {batch({0.2f, 0.9f, 0.3f, 0.12f}, GL_TRIANGLES, false, m_gauge.line.surface),
+	                         batch({0.2f, 1.0f, 0.3f, 0.5f}, GL_LINES, false, m_gauge.line.edges),
+	                         batch({1.0f, 0.1f, 0.05f, 0.6f}, GL_TRIANGLES, true, m_gauge.line.intruding),
+	                         batch({1.0f, 0.1f, 0.05f, 0.6f}, GL_TRIANGLES, true, m_gauge.map.intruding),
+	                         batch({1.0f, 0.9f, 0.1f, 1.0f}, GL_LINES, false, marker)};
+}
+
+void editor_mode::gauge_focus(int const Index)
+{
+	auto const &hits{gauge_hits()};
+	if (hits.empty())
+		return;
+	m_gauge.current = (Index % static_cast<int>(hits.size()) + static_cast<int>(hits.size())) % static_cast<int>(hits.size());
+	m_gauge.published = false;
+	auto const target{hits[m_gauge.current].point};
+	// from the side the camera looks from, a bit above
+	glm::dvec3 away{Camera.Pos.x - target.x, 0.0, Camera.Pos.z - target.z};
+	away = glm::length(away) > 1e-3 ? glm::normalize(away) : glm::dvec3(1.0, 0.0, 0.0);
+	m_focus_start_pos = Camera.Pos;
+	m_focus_start_angle = Camera.Angle;
+	m_focus_target_pos = target + away * 12.0 + glm::dvec3(0.0, 4.0, 0.0);
+	auto const look{glm::normalize(target - m_focus_target_pos)};
+	m_focus_target_angle = glm::vec3(static_cast<float>(std::asin(std::clamp(look.y, -1.0, 1.0))), static_cast<float>(std::atan2(-look.x, -look.z)), 0.0f);
+	m_focus_active = true;
+	m_focus_time = 0.0;
+	m_focus_duration = 0.6;
 }
 
 void editor_mode::render_gauge_ui()
 {
 	if (false == ImGui::CollapsingHeader("Structure gauge"))
 		return;
-	if (ImGui::Checkbox("Show in the 3D view", &m_gauge.enabled))
+	if (ImGui::Checkbox("Show along the selected path", &m_gauge.enabled))
 		m_gauge.pending = true;
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("Translucent tunnel of the gauge along the line of the selected path,\nwith the triangles of the models which enter it in red.\nWidened in the curves under 250 m and tilted on the cant, from 20 m (inner side)\nand 26 m (outer side) ahead of the curve, as in the PKP PLK standard, volume II.");
@@ -324,75 +477,118 @@ void editor_mode::render_gauge_ui()
 	if (ImGui::SliderFloat("Reach each way (m)", &reach, 50.0f, 2000.0f, "%.0f"))
 		m_gauge.reach = reach;
 	changed |= ImGui::IsItemDeactivatedAfterEdit();
-	if (m_gauge.enabled)
-	{
-		if (m_gauge.models > 0)
-			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "%zu models enter the gauge (%zu triangles)", m_gauge.models, m_gauge.intrusions);
-		else
-			ImGui::TextDisabled("The gauge is clear");
-	}
 
-	if (ImGui::TreeNode("Outline (right half)"))
+	if (ImGui::Button("Find the violations on the whole map"))
+		scan_gauge_map();
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("Checks the models along all tracks of the scenery against the chosen gauge,\nmarks them in red and lists them, the deepest first");
+	if (m_gauge.map.scanned)
 	{
-		ImGui::TextDisabled("PKP PLK standard, volume II; below 1170 mm the limit installation gauge.\nMetres from the track axis and above the rail top, bottom up.");
-		auto &profile{m_gauge.profiles[m_gauge.profile]};
-		bool edited{false};
-		bool inserted{false};
-		int remove{-1};
-		ImGui::Columns(3, "gaugeoutline", false);
-		ImGui::SetColumnWidth(0, 110.0f);
-		ImGui::SetColumnWidth(1, 110.0f);
-		ImGui::TextDisabled("Half-width");
-		ImGui::NextColumn();
-		ImGui::TextDisabled("Height");
-		ImGui::NextColumn();
-		ImGui::NextColumn();
-		for (int i = 0; i < static_cast<int>(profile.outline.size()); ++i)
+		ImGui::SameLine();
+		if (ImGui::SmallButton("Clear"))
 		{
-			ImGui::PushID(i);
-			auto &point{profile.outline[i]};
-			ImGui::SetNextItemWidth(-1.0f);
-			ImGui::InputDouble("##width", &point.half_width, 0.0, 0.0, "%.3f");
-			edited |= ImGui::IsItemDeactivatedAfterEdit();
-			ImGui::NextColumn();
-			ImGui::SetNextItemWidth(-1.0f);
-			ImGui::InputDouble("##height", &point.height, 0.0, 0.0, "%.3f");
-			edited |= ImGui::IsItemDeactivatedAfterEdit();
-			ImGui::NextColumn();
-			if (ImGui::SmallButton("+"))
-			{
-				auto const &next{profile.outline[std::min<std::size_t>(i + 1, profile.outline.size() - 1)]};
-				profile.outline.insert(profile.outline.begin() + i + 1, {0.5 * (point.half_width + next.half_width), 0.5 * (point.height + next.height)});
-				inserted = edited = true;
-			}
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("Insert a point after this one");
-			ImGui::SameLine();
-			if (profile.outline.size() > 2 && ImGui::SmallButton("x"))
-				remove = i;
-			ImGui::NextColumn();
-			ImGui::PopID();
-			if (inserted)
-				break;
+			m_gauge.map = {};
+			m_gauge.current = -1;
+			m_gauge.published = false;
 		}
-		ImGui::Columns(1);
-		if (remove >= 0)
-		{
-			profile.outline.erase(profile.outline.begin() + remove);
-			edited = true;
-		}
-		if (ImGui::SmallButton("Restore the starting outlines"))
-		{
-			m_gauge.profiles = gauge::default_profiles();
-			edited = true;
-		}
-		if (edited)
-		{
-			gauge::save_profiles(gauge_file, m_gauge.profiles);
-			changed = true;
-		}
-		ImGui::TreePop();
+		else if (m_gauge.map.history != m_history.size())
+			ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "The scenery changed since the scan (%s)", m_gauge.map.profile.c_str());
 	}
+	render_gauge_hits();
+	changed |= render_gauge_outline();
 	if (changed)
 		m_gauge.pending = true;
+}
+
+void editor_mode::render_gauge_hits()
+{
+	auto const &hits{gauge_hits()};
+	if (false == m_gauge.map.scanned && (false == m_gauge.enabled || m_gauge.track == nullptr))
+		return;
+	if (hits.empty())
+	{
+		ImGui::TextDisabled(m_gauge.map.scanned ? "No model enters the gauge on the map" : "The gauge is clear along this line");
+		return;
+	}
+	ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "%zu models enter the gauge%s", hits.size(), m_gauge.map.scanned ? " on the map" : "");
+	if (ImGui::ArrowButton("##gaugeprevious", ImGuiDir_Left))
+		gauge_focus(m_gauge.current - 1);
+	ImGui::SameLine();
+	if (ImGui::ArrowButton("##gaugenext", ImGuiDir_Right))
+		gauge_focus(m_gauge.current + 1);
+	ImGui::SameLine();
+	ImGui::Text("%d / %zu", m_gauge.current + 1, hits.size());
+	ImGui::BeginChild("gaugehits", ImVec2(0.0f, std::min(160.0f, ImGui::GetTextLineHeightWithSpacing() * hits.size() + 8.0f)), true);
+	ImGuiListClipper clipper(static_cast<int>(hits.size()));
+	while (clipper.Step())
+		for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
+		{
+			auto const &hit{hits[i]};
+			auto const label{(hit.model.empty() ? std::string{"(unnamed)"} : hit.model) + "  " + std::to_string(static_cast<int>(std::lround(hit.depth * 100.0))) + " cm##" + std::to_string(i)};
+			if (ImGui::Selectable(label.c_str(), m_gauge.current == i))
+				gauge_focus(i);
+		}
+	ImGui::EndChild();
+}
+
+bool editor_mode::render_gauge_outline()
+{
+	if (false == ImGui::TreeNode("Outline (right half)"))
+		return false;
+	ImGui::TextDisabled("PKP PLK standard, volume II; below 1170 mm the limit installation gauge.\nMetres from the track axis and above the rail top, bottom up.");
+	auto &profile{m_gauge.profiles[m_gauge.profile]};
+	bool edited{false};
+	bool inserted{false};
+	int remove{-1};
+	ImGui::Columns(3, "gaugeoutline", false);
+	ImGui::SetColumnWidth(0, 110.0f);
+	ImGui::SetColumnWidth(1, 110.0f);
+	ImGui::TextDisabled("Half-width");
+	ImGui::NextColumn();
+	ImGui::TextDisabled("Height");
+	ImGui::NextColumn();
+	ImGui::NextColumn();
+	for (int i = 0; i < static_cast<int>(profile.outline.size()); ++i)
+	{
+		ImGui::PushID(i);
+		auto &point{profile.outline[i]};
+		ImGui::SetNextItemWidth(-1.0f);
+		ImGui::InputDouble("##width", &point.half_width, 0.0, 0.0, "%.3f");
+		edited |= ImGui::IsItemDeactivatedAfterEdit();
+		ImGui::NextColumn();
+		ImGui::SetNextItemWidth(-1.0f);
+		ImGui::InputDouble("##height", &point.height, 0.0, 0.0, "%.3f");
+		edited |= ImGui::IsItemDeactivatedAfterEdit();
+		ImGui::NextColumn();
+		if (ImGui::SmallButton("+"))
+		{
+			auto const &next{profile.outline[std::min<std::size_t>(i + 1, profile.outline.size() - 1)]};
+			profile.outline.insert(profile.outline.begin() + i + 1, {0.5 * (point.half_width + next.half_width), 0.5 * (point.height + next.height)});
+			inserted = edited = true;
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("Insert a point after this one");
+		ImGui::SameLine();
+		if (profile.outline.size() > 2 && ImGui::SmallButton("x"))
+			remove = i;
+		ImGui::NextColumn();
+		ImGui::PopID();
+		if (inserted)
+			break;
+	}
+	ImGui::Columns(1);
+	if (remove >= 0)
+	{
+		profile.outline.erase(profile.outline.begin() + remove);
+		edited = true;
+	}
+	if (ImGui::SmallButton("Restore the starting outlines"))
+	{
+		m_gauge.profiles = gauge::default_profiles();
+		edited = true;
+	}
+	if (edited)
+		gauge::save_profiles(gauge_file, m_gauge.profiles);
+	ImGui::TreePop();
+	return edited;
 }
