@@ -313,6 +313,7 @@ class editor_mode : public application_mode
 	};
 	void render_route_ui();
 	void route_reset();
+	void route_bind_ends();
 	bool route_from_curve(TTrack &Track);
 	void route_update() { m_route.result = alignment::compute(m_route.design); }
 	void route_apply();

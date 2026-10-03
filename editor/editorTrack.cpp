@@ -27,6 +27,7 @@ http:
 #include <numeric>
 #include <functional>
 #include <sstream>
+#include <tuple>
 #include <unordered_set>
 
 namespace
@@ -1177,6 +1178,121 @@ bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance
 	Curve.from = run.front().first;
 	Curve.to = run.back().first;
 	return true;
+}
+
+namespace
+{
+
+// shorter remainders of a straight path are absorbed by moving the joint instead of splitting the path
+double split_margin(double const Length)
+{
+	return std::max(0.5, 0.002 * Length);
+}
+
+double plan_length(segment_data const &Path)
+{
+	return glm::length(plan_of(Path.points[segment_data::point::end] - Path.points[segment_data::point::start]));
+}
+
+} // namespace
+
+editor_track::straight_run editor_track::straight_beyond(chain const &Chain, bool const Atend, straight_tolerance const &Tolerance)
+{
+	straight_run run;
+	if (Chain.tracks.empty())
+		return run;
+	auto *edge{Atend ? Chain.tracks.back() : Chain.tracks.front()};
+	bool const forward{Atend ? Chain.forward.back() : Chain.forward.front()};
+	TTrack *current{forward == Atend ? edge->trNext : edge->trPrev};
+	auto joint{Atend ? Chain.end : Chain.start};
+	auto const origin{plan_of(joint)};
+	auto direction{glm::normalize(plan_of(Atend ? Chain.end_direction : -Chain.start_direction))};
+	while (current != nullptr && run.tracks.size() < 1000)
+	{
+		std::string reason;
+		if (current->eType != tt_Normal || current->m_editorremoved || false == can_edit_geometry(*current, reason))
+			break;
+		if (std::find(Chain.tracks.begin(), Chain.tracks.end(), current) != Chain.tracks.end() || std::find(run.tracks.begin(), run.tracks.end(), current) != run.tracks.end())
+			break;
+		auto const &path{current->m_paths.front()};
+		if (false == plan_straight(path, Tolerance))
+			break;
+		bool outward;
+		if (glm::distance(path.points[segment_data::point::start], joint) <= kSamePoint)
+			outward = true;
+		else if (glm::distance(path.points[segment_data::point::end], joint) <= kSamePoint)
+			outward = false;
+		else
+			break;
+		auto const &far{path.points[outward ? segment_data::point::end : segment_data::point::start]};
+		if (run.tracks.empty())
+		{
+			auto const own{glm::normalize(plan_of(far - joint))};
+			if (std::abs(lateral_of(direction, own)) > 0.01 || glm::dot(direction, own) <= 0.0)
+				break;
+			direction = own;
+		}
+		auto const offset{plan_of(far) - origin};
+		auto const along{glm::dot(offset, direction)};
+		if (along <= run.length + 1e-3 || std::abs(lateral_of(direction, offset)) > Tolerance.offset)
+			break;
+		run.tracks.push_back(current);
+		run.outward.push_back(outward);
+		run.length = along;
+		joint = far;
+		current = outward ? current->trNext : current->trPrev;
+	}
+	return run;
+}
+
+double editor_track::run_reserve(straight_run const &Run)
+{
+	if (Run.tracks.empty())
+		return 0.0;
+	return std::max(0.0, Run.length - split_margin(plan_length(Run.tracks.back()->m_paths.front())) - 0.01);
+}
+
+TTrack *editor_track::take_straight(straight_run const &Run, TTrack *Edge, glm::dvec3 const &Joint, glm::dvec3 const &Cut, std::vector<std::pair<TTrack *, state>> &States, std::vector<TTrack *> &Created)
+{
+	auto const length{glm::length(plan_of(Cut - Joint))};
+	auto *edge{Edge};
+	double covered{0.0};
+	for (std::size_t i = 0; i < Run.tracks.size(); ++i)
+	{
+		auto *track{Run.tracks[i]};
+		auto const outward{Run.outward[i]};
+		auto const &path{track->m_paths.front()};
+		auto const pathlength{plan_length(path)};
+		auto const margin{split_margin(pathlength)};
+		auto const remaining{length - covered};
+		if (remaining <= margin)
+		{
+			if (std::abs(remaining) > 1e-4)
+			{
+				States.emplace_back(track, capture(*track));
+				move_point(*track, {0, outward ? point_kind::start : point_kind::end}, Cut);
+				commit({track});
+			}
+			break;
+		}
+		if (remaining < pathlength - margin)
+		{
+			auto const &nearpoint{path.points[outward ? segment_data::point::start : segment_data::point::end]};
+			auto const &farpoint{path.points[outward ? segment_data::point::end : segment_data::point::start]};
+			auto const t{nearest_parameter(*track, nearpoint + (farpoint - nearpoint) * (remaining / pathlength))};
+			auto const before{capture(*track)};
+			auto *created{split_path(*track, t)};
+			if (created == nullptr)
+				break;
+			States.emplace_back(track, before);
+			Created.push_back(created);
+			edge = outward ? track : created;
+			break;
+		}
+		edge = track;
+		covered += pathlength;
+	}
+	return edge;
 }
 
 std::vector<editor_track::switch_template> editor_track::find_switch_templates()

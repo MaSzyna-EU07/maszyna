@@ -433,7 +433,17 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 	if (false == m_route.chain.tracks.empty())
 	{
 		std::string error;
-		editor_track::find_chain(m_route.from, m_route.to, m_route.chain, error);
+		if (m_route.from->m_editorremoved || m_route.to->m_editorremoved || false == editor_track::find_chain(m_route.from, m_route.to, m_route.chain, error))
+		{
+			m_route.chain = {};
+			m_route.result = {};
+			m_route.vertex = m_route.grip = -1;
+		}
+		else
+		{
+			route_bind_ends();
+			route_update();
+		}
 	}
 
 	m_track_snap = {};
@@ -818,6 +828,24 @@ void editor_mode::route_recommend(alignment::vertex &Vertex) const
 	Vertex.vertical_radius = 0.0;
 }
 
+void editor_mode::route_bind_ends()
+{
+	auto const &chain{m_route.chain};
+	auto &design{m_route.design};
+	auto const plan = [](glm::dvec3 const &Direction) { return glm::normalize(glm::dvec2{Direction.x, Direction.z}); };
+	auto const slope = [](glm::dvec3 const &Direction) { return Direction.y / std::max(1e-9, std::hypot(Direction.x, Direction.z)); };
+	design.start = chain.start;
+	design.end = chain.end;
+	design.start_direction = plan(chain.start_direction);
+	design.end_direction = plan(chain.end_direction);
+	design.start_grade = slope(chain.start_direction);
+	design.end_grade = slope(chain.end_direction);
+	design.start_radius = chain.start_radius;
+	design.end_radius = chain.end_radius;
+	design.start_reserve = editor_track::run_reserve(editor_track::straight_beyond(chain, false, m_straights.tolerance));
+	design.end_reserve = editor_track::run_reserve(editor_track::straight_beyond(chain, true, m_straights.tolerance));
+}
+
 void editor_mode::route_reset()
 {
 	auto &route{m_route};
@@ -837,18 +865,10 @@ void editor_mode::route_reset()
 	design.norms = route.design.norms;
 	design.shape = route.design.shape;
 	design.transition_pieces = route.design.transition_pieces;
-	design.start = chain.start;
-	design.end = chain.end;
-	auto const plan = [](glm::dvec3 const &Direction) { return glm::normalize(glm::dvec2{Direction.x, Direction.z}); };
-	auto const slope = [](glm::dvec3 const &Direction) { return Direction.y / std::max(1e-9, std::hypot(Direction.x, Direction.z)); };
-	design.start_direction = plan(chain.start_direction);
-	design.end_direction = plan(chain.end_direction);
-	design.start_grade = slope(chain.start_direction);
-	design.end_grade = slope(chain.end_direction);
-	design.start_radius = chain.start_radius;
-	design.end_radius = chain.end_radius;
 	design.speed = chain.velocity > 0.0 ? chain.velocity : 100.0;
 	route.design = design;
+	route_bind_ends();
+	design = route.design;
 
 	glm::dvec2 intersection;
 	if (false == alignment::collinear(design))
@@ -938,16 +958,64 @@ void editor_mode::route_apply()
 		}
 	}
 
-	auto const pieces{alignment::pieces(route.result, route.design, chain.tracks.size())};
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	std::vector<TTrack *> created;
+	auto *from{route.from};
+	auto *to{route.to};
+	auto const startextension{route.result.start_extension};
+	auto const endextension{route.result.end_extension};
+	if (startextension > 0.0 || endextension > 0.0)
+	{
+		auto const before{chain};
+		if (startextension > 0.0)
+			from = editor_track::take_straight(editor_track::straight_beyond(before, false, m_straights.tolerance), from, before.start, route.result.start, states, created);
+		if (endextension > 0.0)
+			to = editor_track::take_straight(editor_track::straight_beyond(before, true, m_straights.tolerance), to, before.end, route.result.end, states, created);
+		auto const plandistance = [](glm::dvec3 const &A, glm::dvec3 const &B) { return glm::distance(glm::dvec2{A.x, A.z}, glm::dvec2{B.x, B.z}); };
+		std::string error;
+		if (false == editor_track::find_chain(from, to, chain, error) || plandistance(chain.start, route.result.start) > 5.0 || plandistance(chain.end, route.result.end) > 5.0)
+		{
+			for (auto *track : created)
+				editor_track::retire(*track);
+			for (auto entry = states.rbegin(); entry != states.rend(); ++entry)
+			{
+				editor_track::apply(*entry->first, entry->second);
+				editor_track::commit({entry->first});
+			}
+			route.error = error.empty() ? "The adjoining straights can't be cut at the ends of the curve" : error;
+			return;
+		}
+	}
 	for (auto *track : chain.tracks)
-		states.emplace_back(track, editor_track::capture(*track));
-	auto created{editor_track::relay(chain, pieces)};
-	auto const added{created.size()};
+		if (std::none_of(states.begin(), states.end(), [&](auto const &Entry) { return Entry.first == track; }))
+			states.emplace_back(track, editor_track::capture(*track));
+	auto pieces{alignment::pieces(route.result, route.design, chain.tracks.size())};
+	auto relaid{editor_track::relay(chain, pieces)};
+	auto const added{relaid.size()};
+	created.insert(created.end(), relaid.begin(), relaid.end());
 	push_track_snapshot(std::move(states), std::move(created));
 
+	route.from = from;
+	route.to = to;
 	editor_track::find_chain(route.from, route.to, route.chain, route.error);
+	if (startextension > 0.0 || endextension > 0.0)
+	{
+		route_bind_ends();
+		auto &vertices{route.design.vertices};
+		if (vertices.size() >= 2)
+		{
+			vertices.front().offset += startextension;
+			vertices.back().offset += endextension;
+		}
+		route_update();
+	}
 	route.status = "Re-laid " + std::to_string(chain.tracks.size()) + " paths" + (added > 0 ? ", added " + std::to_string(added) : std::string{});
+	if (startextension > 0.0 || endextension > 0.0)
+	{
+		char text[96];
+		std::snprintf(text, sizeof(text), ", the curve took over %.2f / %.2f m of the adjoining straights", startextension, endextension);
+		route.status += text;
+	}
 	WriteLog("Editor: route design - " + route.status, logtype::generic);
 }
 
@@ -1033,11 +1101,13 @@ void editor_mode::draw_route_overlay() const
 	auto const &result{route.result};
 	screen_projection const projection;
 	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+	auto const &start{result.valid ? result.start : design.start};
+	auto const &end{result.valid ? result.end : design.end};
 
-	std::vector<glm::dvec3> polygon{design.start};
+	std::vector<glm::dvec3> polygon{start};
 	for (int i = 0; i < static_cast<int>(design.vertices.size()); ++i)
 		polygon.push_back(route_vertex_position(i));
-	polygon.push_back(design.end);
+	polygon.push_back(end);
 	for (std::size_t i = 0; i + 1 < polygon.size(); ++i)
 		projection.line(drawlist, polygon[i], polygon[i + 1], IM_COL32(255, 210, 60, 150), 1.5f);
 
@@ -1062,7 +1132,7 @@ void editor_mode::draw_route_overlay() const
 
 	for (auto const atend : {false, true})
 	{
-		auto const &point{atend ? design.end : design.start};
+		auto const &point{atend ? end : start};
 		auto const direction{atend ? design.end_direction : design.start_direction};
 		ImVec2 screen;
 		if (projection.project(point, screen))
@@ -1369,7 +1439,10 @@ void editor_mode::render_route_ui()
 		auto const pieces{alignment::minimum_pieces(result, design)};
 		ImGui::Text("Length %.2f m (now %.2f m), %zu elements", result.length, route.chain.length, result.elements.size());
 		ImGui::TextDisabled("Paths: %zu in the fragment, %zu needed%s", route.chain.tracks.size(), pieces, pieces > route.chain.tracks.size() ? " (copies of the neighbours will be added)" : "");
+		if (result.start_extension > 0.0 || result.end_extension > 0.0)
+			ImGui::Text("Takes over %.2f m of the straight at the start, %.2f m at the end", result.start_extension, result.end_extension);
 	}
+	ImGui::TextDisabled("Straight available beyond the ends: %.2f / %.2f m", design.start_reserve, design.end_reserve);
 	for (auto const &error : result.errors)
 		ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "%s", error.c_str());
 	for (auto const &warning : result.warnings)
@@ -2165,6 +2238,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 		state.status = m_route.error;
 		return;
 	}
+	m_route.design.start_reserve = m_route.design.end_reserve = 0.0;
 	for (auto &vertex : m_route.design.vertices)
 	{
 		vertex.radius = Radius;
@@ -2185,7 +2259,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 		state.status = m_route.result.errors.empty() ? "The curve can't be fitted" : m_route.result.errors.front();
 		return;
 	}
-	auto const pieces{alignment::pieces(m_route.result, m_route.design, m_route.chain.tracks.size())};
+	auto pieces{alignment::pieces(m_route.result, m_route.design, m_route.chain.tracks.size())};
 	auto created{editor_track::relay(m_route.chain, pieces)};
 	editor_track::commit(tracks);
 	for (auto const &entry : splitstates)

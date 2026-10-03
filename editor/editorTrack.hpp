@@ -137,6 +137,16 @@ class editor_track
 		double split{0.5};
 	};
 	static bool find_curve(TTrack &Track, straight_tolerance const &Tolerance, double const Gauge, curve &Curve);
+	// regular straight paths continuing a chain end in line, which the chain can take over
+	struct straight_run
+	{
+		std::vector<TTrack *> tracks;
+		std::vector<bool> outward;
+		double length{0.0};
+	};
+	static straight_run straight_beyond(chain const &Chain, bool const Atend, straight_tolerance const &Tolerance);
+	static double run_reserve(straight_run const &Run);
+	static TTrack *take_straight(straight_run const &Run, TTrack *Edge, glm::dvec3 const &Joint, glm::dvec3 const &Cut, std::vector<std::pair<TTrack *, state>> &States, std::vector<TTrack *> &Created);
 	struct switch_template
 	{
 		TTrack *source{nullptr};

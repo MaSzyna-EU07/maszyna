@@ -277,11 +277,18 @@ recommendation recommend(double const Speed, double const Radius, limits const &
 	return result;
 }
 
-result compute(design const &Design)
+namespace
+{
+
+result fit_between(design const &Design)
 {
 	result r;
 	r.shape = Design.shape;
 	r.gauge = Design.norms.gauge;
+	r.start = Design.start;
+	r.end = Design.end;
+	auto const startreserve{std::max(0.0, Design.start_reserve)};
+	auto const endreserve{std::max(0.0, Design.end_reserve)};
 
 	auto const start{plan(Design.start)};
 	auto const end{plan(Design.end)};
@@ -350,6 +357,16 @@ result compute(design const &Design)
 		straight.direction = Direction;
 		straight.length = Length;
 		push(straight);
+	};
+	auto const starts_early = [&](double const Straight) {
+		if (Straight < 0.0)
+			r.start_extension = -Straight;
+		if (Straight >= -1e-4 || -Straight <= startreserve + 1e-4)
+			return;
+		if (startreserve > 0.0)
+			r.errors.emplace_back(format("Vertex 1: the curve starts %.2f m before the adjoining straight", -Straight - startreserve));
+		else
+			r.errors.emplace_back(format("Vertex 1: the curve starts %.2f m before the fixed start", -Straight));
 	};
 
 	struct fitted
@@ -441,9 +458,9 @@ result compute(design const &Design)
 	std::vector<double> scales(count, 1.0);
 	for (std::size_t leg = 0; leg + 1 < polygon.size(); ++leg)
 	{
-		auto const available{glm::distance(polygon[leg], polygon[leg + 1])};
+		auto const available{glm::distance(polygon[leg], polygon[leg + 1]) + (leg == 0 ? startreserve : 0.0) + (leg == count ? endreserve : 0.0)};
 		auto const required{(leg > 0 ? fits[leg - 1].tangent_out : 0.0) + (leg < count ? fits[leg].tangent_in : 0.0)};
-		if (required <= available)
+		if (required <= available + 1e-6)
 			continue;
 		auto const scale{available / required * (1.0 - 1e-9)};
 		if (leg > 0)
@@ -534,13 +551,10 @@ result compute(design const &Design)
 			auto const along{cross(directionout, endoffset) / cross(directionout, directionin)};
 			auto const curvestart{position - directionin * along};
 			auto const straight{glm::dot(curvestart - cursor, directionin)};
-			if (straight < -1e-4)
-			{
-				if (k == 0)
-					r.errors.emplace_back(format("Vertex 1: the curve starts %.2f m before the fixed start", -straight));
-				else
-					r.errors.emplace_back(format("Curves of vertices %zu and %zu overlap by %.2f m", k, k + 1, -straight));
-			}
+			if (k == 0)
+				starts_early(straight);
+			else if (straight < -1e-4)
+				r.errors.emplace_back(format("Curves of vertices %zu and %zu overlap by %.2f m", k, k + 1, -straight));
 			push_straight(cursor, directionin, straight);
 			auto const startchainage{chainage};
 			glm::dvec2 origin{curvestart};
@@ -615,13 +629,10 @@ result compute(design const &Design)
 		}
 
 		auto const straight{glm::dot(curvestart - cursor, directionin)};
-		if (straight < -1e-4)
-		{
-			if (k == 0)
-				r.errors.emplace_back(format("Vertex 1: the curve starts %.2f m before the fixed start", -straight));
-			else
-				r.errors.emplace_back(format("Curves of vertices %zu and %zu overlap by %.2f m", k, k + 1, -straight));
-		}
+		if (k == 0)
+			starts_early(straight);
+		else if (straight < -1e-4)
+			r.errors.emplace_back(format("Curves of vertices %zu and %zu overlap by %.2f m", k, k + 1, -straight));
 		push_straight(cursor, directionin, straight);
 
 		element curve;
@@ -698,8 +709,15 @@ result compute(design const &Design)
 	}
 	auto const lastdirection{glm::normalize(polygon.back() - polygon[polygon.size() - 2])};
 	auto const tail{glm::dot(end - cursor, lastdirection)};
-	if (tail < -1e-4)
-		r.errors.emplace_back(format("Vertex %zu: the curve ends %.2f m past the fixed end", count, -tail));
+	if (tail < 0.0)
+		r.end_extension = -tail;
+	if (tail < -1e-4 && -tail > endreserve + 1e-4)
+	{
+		if (endreserve > 0.0)
+			r.errors.emplace_back(format("Vertex %zu: the curve ends %.2f m past the adjoining straight", count, -tail - endreserve));
+		else
+			r.errors.emplace_back(format("Vertex %zu: the curve ends %.2f m past the fixed end", count, -tail));
+	}
 	push_straight(cursor, lastdirection, tail);
 	r.length = chainage;
 
@@ -754,6 +772,39 @@ result compute(design const &Design)
 		r.warnings.emplace_back(format("The adjoining track at the end is curved (R %.0f m), the curvature changes abruptly", Design.end_radius));
 
 	r.valid = r.errors.empty() && r.length > 1e-3;
+	return r;
+}
+
+glm::dvec3 along_end(glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, double const Distance)
+{
+	auto const direction{glm::normalize(Direction)};
+	return {Point.x + direction.x * Distance, Point.y + Grade * Distance, Point.z + direction.y * Distance};
+}
+
+} // namespace
+
+result compute(design const &Design)
+{
+	auto first{fit_between(Design)};
+	auto const startextension{first.start_extension > 1e-4 ? first.start_extension : 0.0};
+	auto const endextension{first.end_extension > 1e-4 ? first.end_extension : 0.0};
+	if (false == first.errors.empty() || (startextension == 0.0 && endextension == 0.0))
+	{
+		first.start_extension = first.end_extension = 0.0;
+		return first;
+	}
+	auto extended{Design};
+	extended.start = along_end(Design.start, Design.start_direction, Design.start_grade, -startextension);
+	extended.end = along_end(Design.end, Design.end_direction, Design.end_grade, endextension);
+	extended.start_reserve = extended.end_reserve = 0.0;
+	if (extended.vertices.size() >= 2)
+	{
+		extended.vertices.front().offset += startextension;
+		extended.vertices.back().offset += endextension;
+	}
+	auto r{fit_between(extended)};
+	r.start_extension = startextension;
+	r.end_extension = endextension;
 	return r;
 }
 

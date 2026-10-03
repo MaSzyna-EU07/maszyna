@@ -65,6 +65,9 @@ struct design
 	double end_grade{0.0};
 	double start_radius{0.0};
 	double end_radius{0.0};
+	// length of the straight beyond the start and the end, which the curves can take over
+	double start_reserve{0.0};
+	double end_reserve{0.0};
 	std::vector<vertex> vertices;
 	transition_shape shape{transition_shape::cubic_parabola};
 	double speed{100.0};
@@ -152,6 +155,10 @@ struct result
 	std::vector<curve_report> curves;
 	std::vector<profile_point> profile;
 	double length{0.0};
+	glm::dvec3 start{0.0};
+	glm::dvec3 end{0.0};
+	double start_extension{0.0};
+	double end_extension{0.0};
 };
 
 result compute(design const &Design);
