@@ -89,7 +89,7 @@ void LogService()
 				std::string msg;
 				bool isError;
 				{
-					std::lock_guard<std::mutex> lock(logMutex);
+					std::scoped_lock lock(logMutex);
 					msg = InfoStack.front().first;
 					isError = InfoStack.front().second;
 					InfoStack.pop_front();
@@ -127,7 +127,7 @@ void LogService()
 			{
 				std::string msg;
 				{
-					std::lock_guard<std::mutex> lock(logMutex);
+					std::scoped_lock lock(logMutex);
 					msg = ErrorStack.front();
 					ErrorStack.pop_front();
 				}

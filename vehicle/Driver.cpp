@@ -2320,7 +2320,8 @@ bool TController::CheckVehicles(TOrders user)
     p = pVehicle->FirstFind(d); // pojazd na czele składu
     if (!p)
         p = pVehicle;
-    pVehicles[end::front] = p;
+    auto *const frontvehicle { p }; // stays the consist head for the rest of this check
+    pVehicles[end::front] = frontvehicle;
     // liczenie pojazdów w składzie i ustalenie parametrów
     auto dir = d = 1 - d; // a dalej będziemy zliczać od czoła do tyłu
     fLength = 0.0; // długość składu do badania wyjechania za ograniczenie
@@ -2369,7 +2370,7 @@ bool TController::CheckVehicles(TOrders user)
     if (iDrivigFlags & movePrimary)
     { // jeśli jest aktywnie prowadzącym pojazd, może zrobić własny porządek
         auto pantmask = 1;
-        p = pVehicles[end::front];
+        p = frontvehicle;
         // establish ownership and vehicle order
         while (p)
         {
@@ -2384,8 +2385,8 @@ bool TController::CheckVehicles(TOrders user)
             p = p->Next(); // pojazd podłączony od tyłu (licząc od czoła)
         }
         // with the order established the virtual train manager can do their work
-        p = pVehicles[ end::front ];
-        ControlledEnginesCount = ( p != nullptr && p->MoverParameters->Power > 1.0 ) ? 1 : 0;
+        p = frontvehicle;
+        ControlledEnginesCount = p->MoverParameters->Power > 1.0 ? 1 : 0;
         auto hasheaters { false };
         while (p)
         {
@@ -2457,7 +2458,7 @@ bool TController::CheckVehicles(TOrders user)
         }
 
         // detect push-pull train configurations and mark them accordingly
-        if( pVehicles[ end::front ]->is_connected( pVehicles[ end::rear ], coupling::control ) ) {
+        if( frontvehicle->is_connected( pVehicles[ end::rear ], coupling::control ) ) {
             // zmiana czoła przez zmianę kabiny
             iDrivigFlags |= movePushPull;
         }
@@ -2482,7 +2483,7 @@ bool TController::CheckVehicles(TOrders user)
 				}
 				else
 				{ // jak dociska
-					pVehicles[end::front]->RaLightsSet(0, -1);
+					frontvehicle->RaLightsSet(0, -1);
 				}
 			}
             // enable door locks
@@ -2493,7 +2494,7 @@ bool TController::CheckVehicles(TOrders user)
                 // TODO: replace connection test with connection check between last engine and first car, specifically
                 auto const isheatingcouplingactive { (
                     ControlledEnginesCount == 1 ?
-                        pVehicles[ end::front ]->is_connected( pVehicles[ end::rear ], coupling::heating ) :
+                        frontvehicle->is_connected( pVehicles[ end::rear ], coupling::heating ) :
                         true ) };
                 auto const isheatingneeded {
                     (is_emu() || is_dmu() ? true :
@@ -4544,7 +4545,7 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
         if (NewValue1 > 0.0 ? NewValue1 > fStopTime : false)
             fStopTime = NewValue1; // Ra: włączenie czekania bez zmiany komendy
         else
-            OrderList[OrderPos] = Wait_for_orders; // czekanie na komendę (albo dać OrderPos=0)
+            OrderCurrentSet( Wait_for_orders ); // czekanie na komendę (albo dać OrderPos=0)
 
         return true;
     }
@@ -4986,13 +4987,14 @@ TController::PrepareDirection() {
 
 void TController::JumpToNextOrder( bool const Ignoremergedchangedirection )
 { // wykonanie kolejnej komendy z tablicy rozkazów
-    if (OrderList[OrderPos] != Wait_for_orders)
+    auto const currentorder { OrderCurrentGet() };
+    if (currentorder != Wait_for_orders)
     {
-        if( (OrderList[OrderPos] & Change_direction) != 0 // jeśli zmiana kierunku
-		    && OrderList[OrderPos] != Change_direction && false == Ignoremergedchangedirection ) { // ale nałożona na coś
+        if( (currentorder & Change_direction) != 0 // jeśli zmiana kierunku
+		    && currentorder != Change_direction && false == Ignoremergedchangedirection ) { // ale nałożona na coś
 
 			// usunięcie zmiany kierunku z innej komendy
-			OrderList[OrderPos] = TOrders(OrderList[OrderPos] & ~Change_direction);
+			OrderCurrentSet( TOrders(currentorder & ~Change_direction) );
 			OrderCheck();
 			return;
 		}
@@ -5032,21 +5034,22 @@ void TController::OrderCheck()
         // HACK: ensure consist doors will be closed on departure
         iDrivigFlags |= moveDoorOpened;
     }
-    if (OrderList[OrderPos] & Change_direction) // może być nałożona na inną i wtedy ma priorytet
+    auto const currentorder { OrderCurrentGet() };
+    if (currentorder & Change_direction) // może być nałożona na inną i wtedy ma priorytet
         iDirectionOrder = -iDirection; // trzeba zmienić jawnie, bo się nie domyśli
-    else if (OrderList[OrderPos] == Obey_train)
+    else if (currentorder == Obey_train)
         iDrivigFlags |= moveStopPoint; // W4 są widziane
-    else if (OrderList[OrderPos] == Disconnect)
+    else if (currentorder == Disconnect)
         iVehicleCount = iVehicleCount < 0 ? 0 : iVehicleCount; // odczepianie lokomotywy
-    else if (OrderList[OrderPos] == Connect)
+    else if (currentorder == Connect)
         iDrivigFlags &= ~moveStopPoint; // podczas jazdy na połączenie nie zwracać uwagi na W4
-    else if (OrderList[OrderPos] == Wait_for_orders)
+    else if (currentorder == Wait_for_orders)
         OrdersClear(); // czyszczenie rozkazów i przeskok do zerowej pozycji
 }
 
 void TController::OrderNext(TOrders NewOrder)
 { // ustawienie rozkazu do wykonania jako następny
-    if (OrderList[OrderPos] == NewOrder)
+    if (OrderCurrentGet() == NewOrder)
         return; // jeśli robi to, co trzeba, to koniec
     if (!OrderPos)
         OrderPos = 1; // na pozycji zerowej pozostaje czekanie
@@ -5071,7 +5074,7 @@ void TController::OrderNext(TOrders NewOrder)
 
 void TController::OrderPush(TOrders NewOrder)
 { // zapisanie na stosie kolejnego rozkazu do wykonania
-    if (OrderPos == OrderTop && OrderList[OrderPos] < Shunt) // jeśli miałby być zapis na aktalnej pozycji
+    if (OrderPos == OrderTop && OrderCurrentGet() < Shunt) // jeśli miałby być zapis na aktalnej pozycji
 	                                                         // ale nie jedzie
 		++OrderTop;
 	// niektóre operacje muszą zostać najpierw dokończone => zapis na kolejnej
@@ -5406,13 +5409,10 @@ TCommandType TController::BackwardScan( double const Range )
             return TCommandType::cm_Unknown; // nic
         }
         scanvel = e->input_value(1); // prędkość przy tym semaforze
+#if LOGBACKSCAN
         // przeliczamy odległość od semafora - potrzebne by były współrzędne początku składu
-        scandist = glm::length(sem) - 2; // 2m luzu przy manewrach wystarczy
-        if (scandist < 0)
-        {
-            // ujemnych nie ma po co wysyłać
-            scandist = 0;
-        }
+        scandist = std::max(glm::length(sem) - 2.0, 0.0); // 2m luzu przy manewrach wystarczy, ujemnych nie ma po co wysyłać
+#endif
     }
 
     auto move{false}; // czy AI w trybie manewerowym ma dociągnąć pod S1
@@ -8109,7 +8109,7 @@ TController::check_route_behind( double const Range ) {
             }
             iDirectionOrder = -iDirection; // zmiana kierunku jazdy
             // zmiana kierunku bez psucia kolejnych komend
-            OrderList[ OrderPos ] = TOrders( OrderCurrentGet() | Change_direction );
+            OrderCurrentSet( TOrders( OrderCurrentGet() | Change_direction ) );
         }
     }
 }

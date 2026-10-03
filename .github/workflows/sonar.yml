@@ -64,15 +64,13 @@ jobs:
     if: github.event.action == 'completed' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     permissions:
-      contents: read      # checkout trusted config
+      contents: read      # fetch trusted config
       actions: read       # download artifact from the Build run
       statuses: write     # post the commit status
       pull-requests: read # verify PR head sha via the API
     env:
       BUILD_WRAPPER_OUT_DIR: bw-output
-      # .trusted/ holds the checkout of master used to restore the scanner config;
-      # it is not part of the analysed change.
-      SONAR_EXCLUSIONS: betterRenderer/**,ref/**,imgui/**,stb/**,build/**,bw-output/**,.trusted/**
+      SONAR_EXCLUSIONS: betterRenderer/**,ref/**,imgui/**,stb/**,build/**,bw-output/**
       SONAR_SCANNER_JAVA_OPTS: -Xmx5g
     steps:
       - name: Post pending status
@@ -85,17 +83,23 @@ jobs:
             -f description="Analysis in progress" \
             -f target_url="$RUN_URL"
 
-      # Trusted copy of the repo config, used to overwrite anything the PR
-      # might have tampered with (sonar-project.properties etc).
-      - name: Checkout trusted config from master
-        uses: actions/checkout@v5
-        with:
-          ref: master
-          path: .trusted
-          persist-credentials: false
+      # Trusted copy of the scanner config, used to overwrite anything the PR
+      # might have tampered with. Fetched as a single file through the API rather
+      # than with actions/checkout: nothing gets checked out in this privileged
+      # context. Kept outside the workspace, so the archive can't overwrite it.
+      - name: Fetch trusted config from master
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          url="repos/${{ github.repository }}/contents/sonar-project.properties?ref=master"
+          if ! gh api -H "Accept: application/vnd.github.raw" "$url" > /tmp/trusted-sonar-project.properties; then
+            echo "::warning::no sonar-project.properties on master"
+            rm -f /tmp/trusted-sonar-project.properties
+          fi
 
       - name: Download analysis input
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: sonar-input
           path: /tmp/sonar-input
@@ -105,13 +109,7 @@ jobs:
       - name: Unpack analysis input
         run: |
           set -euo pipefail
-          # The archive holds the whole PR workspace and is unpacked over this one,
-          # .trusted/ included. Move the trusted config out of reach first, or a PR
-          # carrying its own .trusted/sonar-project.properties would have it planted
-          # here and restored below as if it came from master.
-          if [ -f "$GITHUB_WORKSPACE/.trusted/sonar-project.properties" ]; then
-            cp "$GITHUB_WORKSPACE/.trusted/sonar-project.properties" /tmp/trusted-sonar-project.properties
-          fi
+          # The archive holds the whole PR workspace and is unpacked over this one.
           # Nothing may be written outside the workspace: reject absolute members and
           # any member reaching through a parent directory before unpacking anything.
           tar -tzf /tmp/sonar-input/workspace.tar.gz > /tmp/archive-members.txt

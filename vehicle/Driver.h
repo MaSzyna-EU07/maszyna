@@ -482,6 +482,7 @@ private:
     void OrderPush( TOrders NewOrder );
     void OrderNext( TOrders NewOrder );
     inline TOrders OrderCurrentGet() const;
+    inline void OrderCurrentSet( TOrders const Order );
     inline TOrders OrderNextGet() const;
     void OrderCheck();
     void OrdersInit( double fVel );
@@ -649,6 +650,13 @@ inline TOrders TController::OrderCurrentGet() const {
         return Wait_for_orders;
     }
     return OrderList[ OrderPos ];
+}
+
+inline void TController::OrderCurrentSet( TOrders const Order ) {
+    if( OrderPos < 0 || OrderPos >= maxorders ) {
+        return;
+    }
+    OrderList[ OrderPos ] = Order;
 }
 
 inline TOrders TController::OrderNextGet() const {

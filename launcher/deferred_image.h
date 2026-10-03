@@ -14,12 +14,8 @@ public:
 	deferred_image() = default;
 	deferred_image(const std::string &p) : path(p) { }
 	deferred_image(const deferred_image&) = delete;
-	deferred_image(deferred_image &&other) noexcept
-	{
-		std::lock_guard<std::mutex> lock(other.mutex);
-		path = std::move(other.path);
-		image = other.image;
-	}
+	deferred_image(deferred_image &&other) noexcept : deferred_image(std::move(other), std::scoped_lock(other.mutex)) { }
+	~deferred_image() = default;
 	deferred_image &operator=(deferred_image &&other) noexcept
 	{
 		if (this != &other) {
@@ -31,13 +27,13 @@ public:
 	}
 	operator bool() const
 	{
-		std::lock_guard<std::mutex> lock(mutex);
+		std::scoped_lock lock(mutex);
 		return image != null_handle || !path.empty();
 	}
 
 	GLuint get() const
 	{
-		std::lock_guard<std::mutex> lock(mutex);
+		std::scoped_lock lock(mutex);
 		if (!path.empty()) {
             image = GfxRenderer->Fetch_Texture(path, true);
 			path.clear();
@@ -56,7 +52,7 @@ public:
 
 	glm::ivec2 size() const
 	{
-		std::lock_guard<std::mutex> lock(mutex);
+		std::scoped_lock lock(mutex);
 		if (image != null_handle) {
             auto &tex = GfxRenderer->Texture(image);
 			return glm::ivec2(tex.get_width(), tex.get_height());
@@ -65,6 +61,9 @@ public:
 	}
 
 private:
+	// moves content of the other image, while the caller holds its lock
+	deferred_image(deferred_image &&other, std::scoped_lock<std::mutex> const &) noexcept : path(std::move(other.path)), image(other.image) { }
+
 	// guards lazy loading performed by the const accessors
 	mutable std::mutex mutex;
 	mutable std::string path;

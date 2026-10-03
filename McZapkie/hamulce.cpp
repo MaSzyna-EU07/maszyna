@@ -3543,10 +3543,9 @@ double TMHZ_K5P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	else
 		dpMainValve = PFVd(PP, 0, ActFlowSpeed / LBDelay, dpPipe, 0.4);
 
-	if ((EQ(i_bcp, -1) && AutoOvrld) || (i_bcp < 0.5 && UniversalFlag & TUniversalBrake::ub_Overload))
+	if (((EQ(i_bcp, -1) && AutoOvrld) || (i_bcp < 0.5 && UniversalFlag & TUniversalBrake::ub_Overload)) && TP < OverloadMaxPressure)
 	{
-		if (TP < OverloadMaxPressure)
-			TP = TP + 0.03 * dt;
+		TP = TP + 0.03 * dt;
 	}
 
 	if (EQ(i_bcp, 3))
@@ -3723,10 +3722,9 @@ double TMHZ_6P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	else
 		dpMainValve = PFVd(PP, 0, ActFlowSpeed / LBDelay, dpPipe, 0.4);
 
-	if ((EQ(i_bcp, -1) && AutoOvrld) || (i_bcp < 0.5 && UniversalFlag & TUniversalBrake::ub_Overload))
+	if (((EQ(i_bcp, -1) && AutoOvrld) || (i_bcp < 0.5 && UniversalFlag & TUniversalBrake::ub_Overload)) && TP < OverloadMaxPressure)
 	{
-		if (TP < OverloadMaxPressure)
-			TP = TP + 0.03 * dt;
+		TP = TP + 0.03 * dt;
 	}
 
 	if (EQ(i_bcp, 4))

@@ -30,7 +30,8 @@ http://mozilla.org/MPL/2.0/.
 #include "Console.h"
 #include "application/application.h"
 #include "rendering/renderer.h"
-#include <future>
+#include <exception>
+#include <thread>
 #include <cmath>
 #include <algorithm>
 /*
@@ -12398,9 +12399,25 @@ uint16_t TTrain::id()
 	return vid;
 }
 
-#include <exception>
-#include <thread>
-#include <algorithm>
+namespace
+{
+// updates trains in range [Start, End); an exception is stored for the calling thread to rethrow
+void update_trains(std::deque<TTrain *> const &Trains, std::size_t const Start, std::size_t const End, double const Dt, std::exception_ptr &Error)
+{
+	try
+	{
+		for (std::size_t j = Start; j < End; ++j)
+		{
+			if (Trains[j])
+				Trains[j]->Update(Dt);
+		}
+	}
+	catch (std::exception const &)
+	{
+		Error = std::current_exception();
+	}
+}
+} // namespace
 
 void train_table::updateAsync(double dt)
 {
@@ -12408,7 +12425,7 @@ void train_table::updateAsync(double dt)
 	const size_t total = m_items.size();
 	const size_t chunkSize = (total + threads - 1) / threads;
 
-	std::vector<std::thread> workers;
+	std::vector<std::jthread> workers;
 	std::vector<std::exception_ptr> errors(threads);
 	workers.reserve(threads);
 
@@ -12420,24 +12437,8 @@ void train_table::updateAsync(double dt)
 		if (start >= end)
 			break; // brak więcej danych
 
-		workers.emplace_back(
-		    [this, start, end, dt, &error = errors[i]]()
-		    {
-			    try
-			    {
-				    for (size_t j = start; j < end; ++j)
-				    {
-					    TTrain *train = m_items[j];
-					    if (train)
-						    train->Update(dt);
-				    }
-			    }
-			    catch (...)
-			    {
-				    // przekaż wyjątek do głównego wątku
-				    error = std::current_exception();
-			    }
-		    });
+		// wyjątek przekazywany jest do głównego wątku
+		workers.emplace_back(update_trains, std::cref(m_items), start, end, dt, std::ref(errors[i]));
 	}
 
 	// Poczekaj aż wszystkie wątki skończą
