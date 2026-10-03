@@ -39,6 +39,7 @@ using geometry::cross;
 using geometry::grade_of;
 using geometry::plan_distance;
 using geometry::plan_of;
+using geometry::signed_angle;
 using geometry::turned;
 
 std::string describe(editor_track::straight const &Line)
@@ -81,7 +82,10 @@ void editor_mode::select_track(scene::basic_node *Node)
 		return;
 
 	if (track != m_node)
+	{
 		m_track_point = {};
+		m_track_mode_notice.clear();
+	}
 	m_node = track;
 	ui()->set_node(m_node);
 	if (ui()->mode() != nodebank_panel::TRACK)
@@ -98,6 +102,10 @@ void editor_mode::select_track(scene::basic_node *Node)
 	else if (std::find(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), track) != m_route.chain.tracks.end() || route_from_curve(*track))
 	{
 		m_track_tab = track_tab::route;
+	}
+	else
+	{
+		m_track_tab = track_tab::path;
 	}
 }
 
@@ -438,6 +446,7 @@ void editor_mode::render_track_window()
 		ImGui::End();
 		return;
 	}
+	render_track_modes(*selected_track());
 	switch (m_track_tab)
 	{
 	case track_tab::straights:
@@ -457,12 +466,7 @@ void editor_mode::render_track_window()
 		render_path_ui();
 		break;
 	}
-	if (m_track_tab != track_tab::path)
-	{
-		ImGui::Separator();
-		if (ImGui::SmallButton("Edit points and parameters of the single path"))
-			m_track_tab = track_tab::path;
-	}
+	ImGui::Separator();
 	if (ImGui::SmallButton("Vertical profile along this line") && selected_track() != nullptr)
 		profile_open_run(*selected_track());
 	ImGui::SameLine();
@@ -473,6 +477,54 @@ void editor_mode::render_track_window()
 		infra_recognize();
 	}
 	ImGui::End();
+}
+
+void editor_mode::render_track_modes(TTrack &Track)
+{
+	bool const isswitch{Track.eType == tt_Switch};
+	bool const straight{false == isswitch && editor_track::is_straight(Track, m_straights.tolerance)};
+	bool const curve{Track.eType == tt_Normal && false == straight && editor_track::is_supported(Track)};
+	struct mode
+	{
+		char const *label;
+		track_tab tab;
+		bool available;
+		char const *tooltip;
+		char const *unavailable;
+	};
+	mode const modes[] = {
+	    {"Path", track_tab::path, true, "Points, control vectors and parameters of the selected path", ""},
+	    {"Straight", track_tab::straights, straight, "The whole straight through the selected path: drag its ends or the middle, break it, shift it", "The selected path isn't straight"},
+	    {"Curve", track_tab::route, curve, "The curve between the adjoining straights: radius, transitions, cant", "The selected path isn't a curve"},
+	    {"Switch", track_tab::turnout, isswitch, "Geometry of the switch from a template, side of the diverging track", "The selected path isn't a switch"},
+	};
+	for (auto const &entry : modes)
+	{
+		if (&entry != &modes[0])
+			ImGui::SameLine();
+		bool const active{m_track_tab == entry.tab};
+		if (active)
+			ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+		if (false == entry.available)
+			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.4f);
+		if (ImGui::Button(entry.label, ImVec2(80.0f, 0.0f)) && entry.available && false == active)
+		{
+			m_track_mode_notice.clear();
+			if (entry.tab != track_tab::route || std::find(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), &Track) != m_route.chain.tracks.end() || route_from_curve(Track))
+				m_track_tab = entry.tab;
+			else
+				m_track_mode_notice = "No straights found at both ends of the curve, edit it as a single path";
+		}
+		if (false == entry.available)
+			ImGui::PopStyleVar();
+		if (active)
+			ImGui::PopStyleColor();
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", entry.available ? entry.tooltip : entry.unavailable);
+	}
+	if (false == m_track_mode_notice.empty())
+		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", m_track_mode_notice.c_str());
+	ImGui::Separator();
 }
 
 void editor_mode::render_turnout_ui()
@@ -2359,32 +2411,203 @@ void editor_mode::delete_selected_track()
 	straight_refresh();
 }
 
+std::vector<editor_mode::key_hint> editor_mode::track_key_hints() const
+{
+	std::vector<key_hint> hints;
+	bool gizmo{false};
+	if (false == m_straights.detour.empty())
+	{
+		char const *const steps[] = {"leave the axis", "shifted", "start back", "back on the axis"};
+		auto const step{std::min<std::size_t>(m_straights.detour.size(), 3)};
+		hints = {{"Shift+click", format("point %zu of 4: %s", step + 1, steps[step])}, {"Esc", "cancel"}};
+	}
+	else if (m_extend.active)
+		hints = {{"Drag", "curve through the cursor, along the end: straight"}, {"Ctrl", "straight"}, {"Release", "build"}};
+	else if (m_switch.placing)
+		hints = {{"Drag along", "direction of the switch"}, {"Drag sideways", "side of the diverging track"}};
+	else if (m_switch.armed >= 0 && m_track_tab == track_tab::straights)
+		hints = {{"Press+drag", "on the selected straight where the switch starts"}};
+	else if (m_track_tab == track_tab::straights && m_straights.current.tracks.empty())
+		hints = {{"LMB", "select a straight or a curve"}};
+	else if (m_track_tab == track_tab::straights)
+	{
+		hints = {{"Drag", "the ends or the middle"}, {"Ctrl+drag", "break"}, {"Shift+click x4", "shift around"}, {"Alt+click", "add to the set"}, {"Drag red ring", "new path"}, {"Del", "delete"}};
+		gizmo = true;
+	}
+	else if (m_track_tab == track_tab::turnout)
+	{
+		hints = {{"Gizmo", "move the switch"}, {"W", "turn"}, {"Drag red ring", "new path"}, {"Del", "delete"}};
+		gizmo = true;
+	}
+	else if (m_track_tab == track_tab::route && m_route.chain.tracks.empty())
+		hints = {{"LMB", "select a curve"}};
+	else if (m_track_tab == track_tab::route)
+		hints = {{"Drag yellow", "vertex"}, {"Drag green", "radius"}, {"Release", "apply"}, {"Esc", "release the vertex"}};
+	else
+	{
+		hints = {{"LMB", "select a path or a point handle"}, {"Esc", "release the point"}, {"W", "turn"}, {"Drag red ring", "new path"}};
+		gizmo = true;
+	}
+	if (gizmo && m_gizmo_snap > 0.0f)
+		hints.push_back({"Ctrl", format("gizmo snaps by %.2f m", m_gizmo_snap)});
+	hints.push_back({"K", "split the path under the cursor"});
+	hints.push_back({"O", "top view"});
+	hints.push_back({"Ctrl+Z", "undo"});
+	return hints;
+}
+
+// values of the change in progress, shown next to the cursor
+std::string editor_mode::track_readout() const
+{
+	auto const name = [](TTrack const *Track) { return Track->name().empty() ? std::string{"(noname)"} : Track->name(); };
+	auto const azimuth = [](glm::dvec3 const &From, glm::dvec3 const &To) {
+		auto const degrees{glm::degrees(std::atan2(To.x - From.x, To.z - From.z))};
+		return degrees < 0.0 ? degrees + 360.0 : degrees;
+	};
+	if (m_extend.active)
+	{
+		double length{0.0}, radius{0.0};
+		for (auto const &piece : extend_pieces())
+		{
+			length += bezier{piece}.plan_length();
+			if (piece.radius != 0.0f && (radius == 0.0 || std::abs(piece.radius) < radius))
+				radius = std::abs(piece.radius);
+		}
+		auto text{radius > 0.0 ? format("L %.2f m   R %.0f m", length, radius) : format("L %.2f m   straight", length)};
+		editor_track::snap_target target;
+		if (extend_snap(target) && target.track != nullptr)
+			text += "\njoins " + name(target.track);
+		return text;
+	}
+	auto const &state{m_straights};
+	if (state.tool_placed && state.tool_dragging)
+	{
+		auto const &line{state.tool_line};
+		auto const offset{plan_of(state.tool_handle - state.tool_point)};
+		if (state.tool == 1)
+		{
+			if (glm::length(offset) < 1e-3)
+				return {};
+			auto const turn{glm::degrees(signed_angle(line.direction, glm::normalize(offset)))};
+			return format("turn %+.3f deg", turn) + (state.curve_radius > 0.0 ? format("   R %.0f m", state.curve_radius) : std::string{"   R automatic"});
+		}
+		glm::dvec2 const normal{-line.direction.y, line.direction.x};
+		return format("shift %+.3f m   over %.2f m", glm::dot(offset, normal), glm::dot(offset, line.direction));
+	}
+	if (state.dragging && state.fitting)
+	{
+		auto const &result{m_route.result};
+		if (false == result.valid)
+			return result.errors.empty() ? std::string{"no curve fits"} : result.errors.front();
+		auto text{format("curve L %.2f m", result.length)};
+		for (auto const &curve : result.curves)
+			text += format("   deflection %.3f deg", glm::degrees(curve.deflection));
+		return text;
+	}
+	if (state.dragging)
+	{
+		auto const &grabbed{state.drag_line};
+		if (state.handle == 2)
+		{
+			glm::dvec2 const normal{-grabbed.direction.y, grabbed.direction.x};
+			return format("shift %+.3f m", glm::dot(plan_of(state.preview_start - grabbed.start), normal));
+		}
+		return format("L %.3f m (%+.3f)   azimuth %.4f deg", plan_distance(state.preview_start, state.preview_end), plan_distance(state.preview_start, state.preview_end) - grabbed.length,
+		              azimuth(state.preview_start, state.preview_end));
+	}
+	auto const *track{selected_track()};
+	if (m_track_gizmo_using && track != nullptr)
+	{
+		if (m_track_point.valid() && m_track_point.path < static_cast<int>(track->m_paths.size()))
+		{
+			auto const &path{track->m_paths[m_track_point.path]};
+			auto text{format("L %.3f m", bezier{path}.plan_length())};
+			if (path.radius != 0.0f)
+				text += format("   R %.1f m", std::abs(path.radius));
+			if (m_track_snap.track != nullptr)
+				text += "\njoins " + name(m_track_snap.track);
+			return text;
+		}
+		if (m_gizmo_op != gizmo_operation::rotate)
+			return format("moved %.3f m", glm::distance(editor_track::pivot(*track), m_track_pivot));
+	}
+	return {};
+}
+
 void editor_mode::draw_track_hints()
 {
-	std::string hint;
-	if (false == m_straights.detour.empty())
-		hint = "Shift+click: point " + std::to_string(m_straights.detour.size() + 1) + " of 4 (1: leave the axis, 2: shifted, 3: start back, 4: back on the axis)   Esc: cancel";
-	else if (m_extend.active)
-		hint = "Drag: curve through the cursor, along the end: straight   Ctrl: straight";
-	else if (m_switch.placing)
-		hint = "Drag along the straight to set the direction of the switch, sideways to set its side";
-	else if (m_switch.armed >= 0 && m_track_tab == track_tab::straights)
-		hint = "Press on the selected straight where the switch starts and drag";
-	else if (m_track_tab == track_tab::straights)
-		hint = current_straight().tracks.empty() ? "LMB: select a straight or a curve" : "Drag the ends or the middle   Ctrl+drag: break   Shift+click x4: shift around   Alt+click: add to the set   Drag from a red ring: new path   Del: delete";
-	else if (m_track_tab == track_tab::turnout)
-		hint = "Gizmo: move the switch (W: turn)   Drag from a red ring: new path   Del: delete";
-	else if (m_track_tab == track_tab::route)
-		hint = m_route.chain.tracks.empty() ? "LMB: select a curve" : "Drag the vertex (yellow) or the radius grip (green), the change is applied on release   Ctrl+Z: undo";
-	else
-		hint = "LMB: select a path or a point handle";
-	hint += "   K: split the path under the cursor   O: top view";
 	ImGuiIO const &io = ImGui::GetIO();
 	auto *drawlist{ImGui::GetBackgroundDrawList()};
-	ImVec2 const position{12.0f, io.DisplaySize.y - 28.0f};
-	auto const size{ImGui::CalcTextSize(hint.c_str())};
-	drawlist->AddRectFilled(ImVec2(position.x - 6.0f, position.y - 4.0f), ImVec2(position.x + size.x + 6.0f, position.y + size.y + 4.0f), IM_COL32(0, 0, 0, 150), 4.0f);
-	drawlist->AddText(position, IM_COL32(255, 255, 255, 230), hint.c_str());
+	float const margin{12.0f};
+	float const gap{14.0f};
+	float const pad{4.0f};
+	float const lineheight{ImGui::GetTextLineHeight() + 2.0f * pad + 4.0f};
+	auto const chip = [&](ImVec2 const At, char const *Text, ImU32 const Background, ImU32 const Foreground) {
+		auto const size{ImGui::CalcTextSize(Text)};
+		drawlist->AddRectFilled(ImVec2(At.x, At.y - 2.0f), ImVec2(At.x + size.x + 2.0f * pad, At.y + size.y + 2.0f), Background, 3.0f);
+		drawlist->AddText(ImVec2(At.x + pad, At.y), Foreground, Text);
+		return size.x + 2.0f * pad;
+	};
+	auto const width_of = [&](key_hint const &Hint) { return ImGui::CalcTextSize(Hint.key).x + 2.0f * pad + 5.0f + ImGui::CalcTextSize(Hint.action.c_str()).x; };
+
+	char const *const modifiers[] = {"Ctrl", "Shift", "Alt"};
+	bool const held[] = {io.KeyCtrl, io.KeyShift, io.KeyAlt};
+	float modifierswidth{0.0f};
+	for (auto const *modifier : modifiers)
+		modifierswidth += ImGui::CalcTextSize(modifier).x + 2.0f * pad + 4.0f;
+
+	auto const hints{track_key_hints()};
+	auto const available{io.DisplaySize.x - 2.0f * margin - modifierswidth - gap};
+	std::vector<std::vector<key_hint const *>> lines(1);
+	float used{0.0f};
+	for (auto const &hint : hints)
+	{
+		auto const width{width_of(hint)};
+		if (false == lines.back().empty() && used + gap + width > available)
+		{
+			lines.emplace_back();
+			used = 0.0f;
+		}
+		used += (lines.back().empty() ? 0.0f : gap) + width;
+		lines.back().push_back(&hint);
+	}
+	auto y{io.DisplaySize.y - margin - lineheight * static_cast<float>(lines.size()) + pad};
+	for (std::size_t i = 0; i < lines.size(); ++i, y += lineheight)
+	{
+		float width{0.0f};
+		for (auto const *hint : lines[i])
+			width += (width > 0.0f ? gap : 0.0f) + width_of(*hint);
+		if (i + 1 == lines.size())
+			width += gap + modifierswidth;
+		drawlist->AddRectFilled(ImVec2(margin - 6.0f, y - pad - 2.0f), ImVec2(margin + width + 6.0f, y + lineheight - pad - 2.0f), IM_COL32(0, 0, 0, 160), 4.0f);
+		auto x{margin};
+		for (auto const *hint : lines[i])
+		{
+			if (x > margin)
+				x += gap;
+			x += chip(ImVec2(x, y), hint->key, IM_COL32(255, 210, 60, 220), IM_COL32(20, 20, 20, 255)) + 5.0f;
+			drawlist->AddText(ImVec2(x, y), IM_COL32(255, 255, 255, 230), hint->action.c_str());
+			x += ImGui::CalcTextSize(hint->action.c_str()).x;
+		}
+		if (i + 1 == lines.size())
+		{
+			x += gap;
+			for (int m = 0; m < 3; ++m)
+				x += chip(ImVec2(x, y), modifiers[m], held[m] ? overlay_color::selected : IM_COL32(255, 255, 255, 40), held[m] ? IM_COL32(20, 20, 20, 255) : IM_COL32(255, 255, 255, 120)) + 4.0f;
+		}
+	}
+
+	auto const readout{track_readout()};
+	if (readout.empty() || ImGui::GetIO().WantCaptureMouse)
+		return;
+	auto *foreground{ImGui::GetForegroundDrawList()};
+	auto const size{ImGui::CalcTextSize(readout.c_str())};
+	ImVec2 at{io.MousePos.x + 20.0f, io.MousePos.y + 20.0f};
+	at.x = std::min(at.x, io.DisplaySize.x - size.x - 10.0f);
+	at.y = std::min(at.y, io.DisplaySize.y - size.y - 10.0f);
+	foreground->AddRectFilled(ImVec2(at.x - 6.0f, at.y - 4.0f), ImVec2(at.x + size.x + 6.0f, at.y + size.y + 4.0f), IM_COL32(0, 0, 0, 190), 4.0f);
+	foreground->AddRect(ImVec2(at.x - 6.0f, at.y - 4.0f), ImVec2(at.x + size.x + 6.0f, at.y + size.y + 4.0f), overlay_color::marked, 4.0f);
+	foreground->AddText(at, IM_COL32(255, 255, 255, 255), readout.c_str());
 }
 
 void editor_mode::update_build_tools()

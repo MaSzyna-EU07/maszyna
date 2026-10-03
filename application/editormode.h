@@ -303,6 +303,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	std::chrono::steady_clock::time_point m_track_last_commit;
 	editor_track::state m_track_field_before;
 	std::array<std::array<char, 256>, 3> m_track_materials{};
+	std::array<bool, 3> m_track_material_edited{};
+	std::string m_track_mode_notice;
 	struct route_design
 	{
 		TTrack *from{nullptr};
@@ -475,6 +477,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	enum class track_tab { straights, route, path, turnout };
 	bool m_track_window_open{false};
 	void render_track_window();
+	void render_track_modes(TTrack &Track);
 	void render_turnout_ui();
 	void render_path_parameters(TTrack &Track);
 	void render_straight_ui();
@@ -483,6 +486,13 @@ class editor_mode : public application_mode, private editor_track::observer
 	void start_straight_gesture(int const Tool);
 	void finish_straight_gesture();
 	void toggle_straight_set(TTrack &Track);
+	struct key_hint
+	{
+		char const *key;
+		std::string action;
+	};
+	std::vector<key_hint> track_key_hints() const;
+	std::string track_readout() const;
 	void draw_track_hints();
 	bool m_route_tab{true};
 
