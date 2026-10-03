@@ -51,8 +51,9 @@ gauge_line make_line(editor_track::route &Route)
 	gauge_line line;
 	line.samples = editor_track::sample_route(Route, 1.0);
 	std::vector<double> chainage, curvature, cant;
-	for (auto const &sample : line.samples)
+	for (auto &sample : line.samples)
 	{
+		sample.position.y += gauge::rail_height;
 		chainage.push_back(sample.chainage);
 		curvature.push_back(sample.curvature);
 		cant.push_back(sample.cant);

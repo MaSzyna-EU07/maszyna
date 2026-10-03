@@ -37,6 +37,9 @@ std::vector<profile> default_profiles();
 std::vector<profile> load_profiles(std::string const &File);
 void save_profiles(std::string const &File, std::vector<profile> const &Profiles);
 
+// the points of the paths in the scenery lie at the rail foot, the gauge is measured from the rail head
+double constexpr rail_height{0.18};
+
 // below this height the outline is the limit installation gauge, which leaves the room for the platforms
 double constexpr lower_part{1.17};
 
