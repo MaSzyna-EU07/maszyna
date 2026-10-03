@@ -3090,9 +3090,9 @@ bool editor_mode::start_curve_fit(editor_track::straight const &Line)
 		return false;
 	if (state.fit_before.reversals != 0 || state.fit_after.reversals != 0)
 		return false;
-	auto const far = [](editor_track::curve const &Curve, glm::dvec3 const &Joint) { return editor_track::touches(*Curve.from, Joint) ? Curve.to : Curve.from; };
-	m_route.from = far(state.fit_before, Line.start);
-	m_route.to = far(state.fit_after, Line.end);
+	auto const far_end = [](editor_track::curve const &Curve, glm::dvec3 const &Joint) { return editor_track::touches(*Curve.from, Joint) ? Curve.to : Curve.from; };
+	m_route.from = far_end(state.fit_before, Line.start);
+	m_route.to = far_end(state.fit_after, Line.end);
 	route_reset();
 	if (m_route.chain.tracks.empty())
 		return false;
