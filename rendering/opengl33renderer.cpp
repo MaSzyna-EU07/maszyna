@@ -3888,7 +3888,7 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 			}
 			}
 		}
-		if (Submodel->Child != nullptr && (Submodel->iAlpha & Submodel->iFlags & 0x001F0000))
+		if (Submodel->Child != nullptr && (TSubModel::iAlpha & Submodel->iFlags & 0x001F0000))
 		{
 			if (Submodel->eType == TP_TEXT)
 			{
