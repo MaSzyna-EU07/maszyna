@@ -1831,6 +1831,44 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 	return result;
 }
 
+namespace
+{
+
+// definition of a path in the scenery text, up to its points: type, length, parameters, environment and textures
+void write_header(std::ostream &Text, char const *Type, double const Length, double const Sound, TTrack const &Style, material_handle const Second)
+{
+	char const *environments[] = {"flat", "mountains", "canyon", "tunnel", "bridge", "bank"};
+	auto const environment{Style.eEnvironment >= e_flat && Style.eEnvironment <= e_bank ? environments[Style.eEnvironment] : "flat"};
+	Text << Type << ' ' << Length << ' ' << Style.fTrackWidth << ' ' << Style.fFriction << ' ' << Sound << ' ' << Style.iQualityFlag << ' ' << 0 << ' ' << environment << ' ';
+	if (Style.m_visible)
+		Text << "vis " << editor_track::material_name(Style.m_material1) << ' ' << Style.fTexLength << ' ' << editor_track::material_name(Second) << ' ' << editor_track::texture_height(Style) << ' ' << Style.fTexWidth << ' ' << Style.fTexSlope << ' ';
+	else
+		Text << "unvis ";
+}
+
+void write_points(std::ostream &Text, segment_data const &Path)
+{
+	auto const &start{Path.points[segment_data::point::start]};
+	auto const &control1{Path.points[segment_data::point::control1]};
+	auto const &control2{Path.points[segment_data::point::control2]};
+	auto const &end{Path.points[segment_data::point::end]};
+	Text << start.x << ' ' << start.y << ' ' << start.z << ' ' << Path.rolls[0] << ' ' << control1.x << ' ' << control1.y << ' ' << control1.z << ' ' << control2.x << ' ' << control2.y << ' ' << control2.z << ' ' << end.x << ' ' << end.y << ' ' << end.z << ' ' << Path.rolls[1] << ' ' << Path.radius << ' ';
+}
+
+void write_ending(std::ostream &Text, TTrack const &Style)
+{
+	if ((Style.iCategoryFlag & 15) == 1 && false == Style.m_profile1.first.empty())
+		Text << "railprofile " << Style.m_profile1.first << ' ';
+	Text << "endtrack\n";
+}
+
+material_handle ballast_of(TTrack const &Style)
+{
+	return Style.eType == tt_Switch ? (Style.SwitchExtension ? Style.SwitchExtension->m_material3 : null_handle) : Style.m_material2;
+}
+
+} // namespace
+
 TTrack *editor_track::create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, TTrack const &Style, std::string const &Name)
 {
 	if (Paths.size() < 2)
@@ -1842,31 +1880,14 @@ TTrack *editor_track::create_switch(switch_template const &Template, std::vector
 	}
 	else
 	{
-		char const *environments[] = {"flat", "mountains", "canyon", "tunnel", "bridge", "bank"};
-		auto const environment{Style.eEnvironment >= e_flat && Style.eEnvironment <= e_bank ? environments[Style.eEnvironment] : "flat"};
 		std::ostringstream text;
 		text.precision(std::numeric_limits<double>::digits10);
-		text << "switch " << Template.length << ' ' << Style.fTrackWidth << ' ' << Style.fFriction << ' ' << 10.0 << ' ' << Style.iQualityFlag << ' ' << 0 << ' ' << environment << ' ';
-		auto const rails{Style.m_material1};
-		auto const trackbed{Style.eType == tt_Switch ? (Style.SwitchExtension ? Style.SwitchExtension->m_material3 : null_handle) : Style.m_material2};
-		if (Style.m_visible)
-			text << "vis " << material_name(rails) << ' ' << Style.fTexLength << ' ' << material_name(rails) << ' ' << texture_height(Style) << ' ' << Style.fTexWidth << ' ' << Style.fTexSlope << ' ';
-		else
-			text << "unvis ";
-		for (int i = 0; i < 2; ++i)
-		{
-			auto const &path{Paths[i]};
-			auto const &start{path.points[segment_data::point::start]};
-			auto const &control1{path.points[segment_data::point::control1]};
-			auto const &control2{path.points[segment_data::point::control2]};
-			auto const &end{path.points[segment_data::point::end]};
-			text << start.x << ' ' << start.y << ' ' << start.z << ' ' << path.rolls[0] << ' ' << control1.x << ' ' << control1.y << ' ' << control1.z << ' ' << control2.x << ' ' << control2.y << ' ' << control2.z << ' ' << end.x << ' ' << end.y << ' ' << end.z << ' ' << path.rolls[1] << ' ' << path.radius << ' ';
-		}
-		if (trackbed != null_handle)
+		write_header(text, "switch", Template.length, 10.0, Style, Style.m_material1);
+		write_points(text, Paths[0]);
+		write_points(text, Paths[1]);
+		if (auto const trackbed{ballast_of(Style)}; trackbed != null_handle)
 			text << "trackbed " << material_name(trackbed) << ' ';
-		if ((Style.iCategoryFlag & 15) == 1 && false == Style.m_profile1.first.empty())
-			text << "railprofile " << Style.m_profile1.first << ' ';
-		text << "endtrack\n";
+		write_ending(text, Style);
 		track = load_path(text.str(), Style, Name);
 	}
 	track->m_paths.assign(Paths.begin(), Paths.begin() + 2);
@@ -2120,28 +2141,14 @@ TTrack *editor_track::clone(TTrack const &Template)
 
 TTrack *editor_track::create_path(TTrack const &Style, segment_data const &Path)
 {
-	char const *environments[] = {"flat", "mountains", "canyon", "tunnel", "bridge", "bank"};
-	auto const environment{Style.eEnvironment >= e_flat && Style.eEnvironment <= e_bank ? environments[Style.eEnvironment] : "flat"};
 	auto const category{Style.iCategoryFlag & 15};
 	std::ostringstream text;
 	text.precision(std::numeric_limits<double>::digits10);
-	text << (category == 2 ? "road " : category == 4 ? "river " : "normal ") << glm::distance(Path.points[segment_data::point::start], Path.points[segment_data::point::end]) << ' ' << Style.fTrackWidth << ' ' << Style.fFriction << ' ' << Style.fSoundDistance << ' ' << Style.iQualityFlag << ' ' << 0 << ' ' << environment << ' ';
-	auto const ballast{Style.eType == tt_Switch ? (Style.SwitchExtension ? Style.SwitchExtension->m_material3 : null_handle) : Style.m_material2};
-	if (Style.m_visible)
-		text << "vis " << material_name(Style.m_material1) << ' ' << Style.fTexLength << ' ' << material_name(ballast) << ' ' << texture_height(Style) << ' ' << Style.fTexWidth << ' ' << Style.fTexSlope << ' ';
-	else
-		text << "unvis ";
-	auto const &start{Path.points[segment_data::point::start]};
-	auto const &control1{Path.points[segment_data::point::control1]};
-	auto const &control2{Path.points[segment_data::point::control2]};
-	auto const &end{Path.points[segment_data::point::end]};
-	text << start.x << ' ' << start.y << ' ' << start.z << ' ' << Path.rolls[0] << ' ' << control1.x << ' ' << control1.y << ' ' << control1.z << ' ' << control2.x << ' ' << control2.y << ' ' << control2.z << ' ' << end.x << ' ' << end.y << ' ' << end.z << ' ' << Path.rolls[1] << ' ' << Path.radius << ' ';
-	auto const speed{velocity(Style)};
-	if (speed > 0.0)
+	write_header(text, category == 2 ? "road" : category == 4 ? "river" : "normal", glm::distance(Path.points[segment_data::point::start], Path.points[segment_data::point::end]), Style.fSoundDistance, Style, ballast_of(Style));
+	write_points(text, Path);
+	if (auto const speed{velocity(Style)}; speed > 0.0)
 		text << "velocity " << speed << ' ';
-	if (category == 1 && false == Style.m_profile1.first.empty())
-		text << "railprofile " << Style.m_profile1.first << ' ';
-	text << "endtrack\n";
+	write_ending(text, Style);
 	auto *track{load_path(text.str(), Style)};
 	track->m_paths = {Path};
 	return track;
