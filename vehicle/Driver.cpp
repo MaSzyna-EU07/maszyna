@@ -154,6 +154,9 @@ const double HeavyPassengetTrainAcceleration = 0.20;
 const double CargoTrainAcceleration = 0.25;
 const double HeavyCargoTrainAcceleration = 0.10;
 const double PrepareTime = 2.0; //[s] przebłyski świadomości przy odpalaniu
+const double FSOverchargePipePress = 5.2;
+const double FSOverchargeTime = 2.0;
+const double FSMaxTime = 10.0;
 bool WriteLogFlag = false;
 double const deltalog = 0.05; // przyrost czasu
 
@@ -8030,12 +8033,48 @@ void TController::control_main_pipe() {
 			BrakeChargingCooldown = -1 * std::clamp(iVehicles * 3, 30, 90);
 		}
 
+        update_brake_charging();
+
         if( mvOccupied->Compressor < 5.0
          || ( BrakeCtrlPosition < gbh_RP
-           && mvOccupied->EqvtPipePress > (fReady < 0.25 ? 5.1 : 5.2) ) ) {
+           && ( mvOccupied->EqvtPipePress > (fReady < 0.25 ? 5.1 : 5.2) || is_brake_charging_done() ) ) ) {
             cue_action( driver_hint::trainbrakerelease );
         }
     }
+}
+
+void TController::update_brake_charging() {
+
+    if( std::abs( BrakeCtrlPosition - gbh_FS ) >= 0.5 ) {
+        BrakeChargingStart = -1.0;
+        BrakeChargingPipeOverchargeStart.clear();
+        return;
+    }
+    if( BrakeChargingStart < 0.0 ) {
+        BrakeChargingStart = ElapsedTime;
+    }
+    for( auto const *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
+        auto const isovercharged {
+            vehicle->MoverParameters != mvOccupied
+         && vehicle->MoverParameters->PipePress > FSOverchargePipePress };
+        if( isovercharged ) {
+            BrakeChargingPipeOverchargeStart.try_emplace( vehicle, ElapsedTime );
+        }
+        else {
+            BrakeChargingPipeOverchargeStart.erase( vehicle );
+        }
+    }
+}
+
+bool TController::is_brake_charging_done() const {
+
+    if( BrakeChargingStart < 0.0 ) {
+        return false;
+    }
+    return ElapsedTime - BrakeChargingStart > FSMaxTime
+        || std::ranges::any_of(
+            BrakeChargingPipeOverchargeStart,
+            [this]( auto const &Vehicle ) { return ElapsedTime - Vehicle.second > FSOverchargeTime; } );
 }
 
 void
