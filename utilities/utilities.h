@@ -166,6 +166,10 @@ void win1250_to_ascii(std::string &Input);
 std::string Bezogonkow(std::string Input, bool const Underscorestospaces = false);
 
 std::string win1250_to_utf8(const std::string &input);
+// decodes utf-8 encoded text into unicode code points. returns false if the text isn't valid utf-8
+bool utf8_to_utf32(std::string const &Text, std::u32string &Output);
+// decodes windows-1250 (ansi) encoded text into unicode code points
+void win1250_to_utf32(std::string const &Text, std::u32string &Output);
 
 inline std::string extract_value(std::string const &Key, std::string const &Input)
 {
