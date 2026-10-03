@@ -231,11 +231,13 @@ namespace
     };
 
     // appends triangles of a shape node which overlap specified XZ rectangle
-    void gather_shape_triangles(scene::shape_node const &Shape, glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out)
+    void gather_shape_triangles(scene::shape_node const &Shape, glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out, bool const Skiproads = false)
     {
         auto const &data = Shape.data();
         if (editor_orthophoto::owns(data.geometry))
             return; // the orthophoto laid over the ground isn't ground itself
+        if (Skiproads && owned_shapes::owns(data.geometry))
+            return; // neither are the roads, for the ones which ask where to put a road
         if (data.area.radius >= 0.0f)
         {
             double const r = data.area.radius;
@@ -275,7 +277,7 @@ namespace
 
     // ground triangles overlapping an XZ rectangle (Min/Max are x,z). shapes hold the (legacy) terrain,
     // model instances at least ModelRadius large (if ModelsAsGround) the terrain tiles
-    void gather_ground_triangles(glm::dvec2 const &Min, glm::dvec2 const &Max, bool const ModelsAsGround, float const ModelRadius, std::vector<world_triangle> &Out)
+    void gather_ground_triangles(glm::dvec2 const &Min, glm::dvec2 const &Max, bool const ModelsAsGround, float const ModelRadius, std::vector<world_triangle> &Out, bool const Skiproads = false)
     {
         glm::dvec2 const center = (Min + Max) * 0.5;
         float const radius = static_cast<float>(glm::length(Max - Min) * 0.5);
@@ -283,7 +285,7 @@ namespace
         for (auto *section : sections)
         {
             for (auto const &shape : section->m_shapes)
-                gather_shape_triangles(shape, Min, Max, Out);
+                gather_shape_triangles(shape, Min, Max, Out, Skiproads);
             for (auto &cell : section->m_cells)
             {
                 double const r = cell.m_area.radius;
@@ -348,6 +350,71 @@ editor_mode::editor_mode() {
 		gather_ground_triangles(Min, Max, true, 50.0f, Out);
 	});
  }
+
+std::vector<double> editor_mode::ground_heights(std::vector<glm::dvec3> const &Points, bool const Fresh)
+{
+    std::vector<double> heights;
+    heights.reserve(Points.size());
+    for (auto const &point : Points)
+        heights.push_back(point.y);
+    if (Points.empty() || simulation::Region == nullptr)
+        return heights;
+
+    glm::dvec2 bmin{Points.front().x, Points.front().z};
+    glm::dvec2 bmax{bmin};
+    for (auto const &point : Points)
+    {
+        bmin = glm::min(bmin, glm::dvec2{point.x, point.z});
+        bmax = glm::max(bmax, glm::dvec2{point.x, point.z});
+    }
+    // the road tools ask about the same place frame after frame, so the ground is gathered with room to spare and kept for a moment
+    struct ground_cache
+    {
+        glm::dvec2 min{0.0};
+        glm::dvec2 max{0.0};
+        std::unique_ptr<triangle_grid> grid;
+        double time{0.0};
+    };
+    static ground_cache cache;
+    double constexpr cache_margin = 60.0;
+    double constexpr cache_lifetime = 5.0;
+    double const now = ImGui::GetTime();
+    if (Fresh || cache.grid == nullptr || now < cache.time || now - cache.time > cache_lifetime || bmin.x < cache.min.x || bmin.y < cache.min.y || bmax.x > cache.max.x || bmax.y > cache.max.y)
+    {
+        cache.min = bmin - glm::dvec2{cache_margin};
+        cache.max = bmax + glm::dvec2{cache_margin};
+        std::vector<world_triangle> triangles;
+        // the same ground as the area fill uses, terrain tile models included
+        gather_ground_triangles(cache.min, cache.max, true, 50.0f, triangles, true);
+        cache.grid = std::make_unique<triangle_grid>(std::move(triangles), cache.min, cache.max);
+        cache.time = now;
+    }
+
+    // surfaces much higher than the point are something it's under, rather than the ground
+    double constexpr height_tolerance = 50.0;
+    auto const terrains = active_terrains();
+    for (std::size_t i = 0; i < Points.size(); ++i)
+    {
+        auto const &p = Points[i];
+        double const ceiling = p.y + height_tolerance;
+        double y = 0.0;
+        bool found = cache.grid->height_at(p.x, p.z, ceiling, y);
+        for (editor_terrain *terrain : terrains)
+        {
+            if (!terrain->contains(p.x, p.z))
+                continue;
+            double const h = terrain->height_at(p.x, p.z);
+            if (h <= ceiling && (!found || h > y))
+            {
+                y = h;
+                found = true;
+            }
+        }
+        if (found)
+            heights[i] = y;
+    }
+    return heights;
+}
 
 editor_ui *editor_mode::ui() const
 {

@@ -907,26 +907,52 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 	return shapes;
 }
 
-// puts geometry of the road in the scene as shapes of its own, which can be taken back
-void road_node::show()
+namespace
 {
-	if (m_section != nullptr || m_merged || simulation::Region == nullptr || false == simulation::Region->point_inside(location()))
+
+// banks holding geometry put in the scene by the owned shapes
+std::unordered_set<std::uint32_t> ownedbanks;
+
+double const junction_reach{0.25}; // an end of a road this close to an arm is attached to it
+double const junction_fit{0.05}; // a lane has to end this close to where the junction expects it
+int const corner_steps{6}; // pieces a rounded corner is made of
+
+// direction on the ground as a vector in space
+glm::dvec3 flat(glm::dvec2 const &Direction)
+{
+	return glm::dvec3{Direction.x, 0.0, Direction.y};
+}
+
+// direction to the left of the provided one, on the ground
+glm::dvec2 left_of(glm::dvec2 const &Direction)
+{
+	return glm::dvec2{Direction.y, -Direction.x};
+}
+
+// angle of the turn from one direction to another, positive to the left
+double turn_angle(glm::dvec2 const &From, glm::dvec2 const &To)
+{
+	return std::atan2(glm::dot(To, left_of(From)), glm::dot(To, From));
+}
+
+} // namespace
+
+// puts provided shapes in the section of the scene holding specified point
+void owned_shapes::show(std::vector<scene::shape_node> Shapes, glm::dvec3 const &Location)
+{
+	if (m_section != nullptr || Shapes.empty() || simulation::Region == nullptr || false == simulation::Region->point_inside(Location))
 	{
 		return;
 	}
-	auto shapes{create_shapes()};
-	if (shapes.empty())
-	{
-		return;
-	}
-	auto &section{simulation::Region->section(location())};
+	auto &section{simulation::Region->section(Location)};
 	// the rest of the section has to be built by now, or it'd count our shapes as waiting for it too
 	section.create_geometry();
 	if (m_bank.bank == 0 && m_bank.chunk == 0)
 	{
 		m_bank = GfxRenderer->Create_Bank();
+		ownedbanks.emplace(m_bank.bank);
 	}
-	for (auto &shape : shapes)
+	for (auto &shape : Shapes)
 	{
 		// shapes held by a section are drawn relative to its centre
 		shape.origin(section.m_area.center);
@@ -935,14 +961,14 @@ void road_node::show()
 		shape.create_geometry(m_bank);
 		m_geometry.emplace_back(shape.data().geometry);
 		section.m_shapes.emplace_back(std::move(shape));
-		// the section may need to reach further to keep the road from being culled at its edges
+		// the section may need to reach further to keep the shape from being culled at its edges
 		section.m_area.radius = std::max(section.m_area.radius, static_cast<float>(glm::length(section.m_area.center - centre) + radius));
 	}
 	m_section = &section;
 }
 
-// takes back geometry put in the scene by show()
-void road_node::hide()
+// takes the shapes back
+void owned_shapes::hide()
 {
 	if (m_section == nullptr)
 	{
@@ -958,6 +984,650 @@ void road_node::hide()
 	             shapes.end());
 	m_geometry.clear();
 	m_section = nullptr;
+}
+
+// true if specified geometry was put in the scene by any object of this class
+bool owned_shapes::owns(gfx::geometry_handle const &Geometry)
+{
+	return Geometry.bank != 0 && ownedbanks.count(Geometry.bank) != 0;
+}
+
+// puts geometry of the road in the scene as shapes of its own, which can be taken back
+void road_node::show()
+{
+	if (m_merged || m_shapes.shown())
+	{
+		return;
+	}
+	m_shapes.show(create_shapes(), location());
+}
+
+// takes back geometry put in the scene by show()
+void road_node::hide()
+{
+	m_shapes.hide();
+}
+
+// brings the content to a usable form
+void junction_node::state::normalize()
+{
+	for (auto &arm : arms)
+	{
+		arm.incoming = std::clamp(arm.incoming, 0, 8);
+		arm.outgoing = std::clamp(arm.outgoing, 0, 8);
+		arm.width = std::max(1.f, arm.width);
+		arm.direction = (glm::length(arm.direction) > 1e-6 ? glm::normalize(arm.direction) : glm::dvec2{0.0, 1.0});
+	}
+	if (texturelength < 0.01f)
+	{
+		texturelength = 4.f;
+	}
+	if (surface.empty())
+	{
+		surface = "none";
+	}
+	static std::array<std::string, 7> const environments{"flat", "mountains", "mountain", "canyon", "tunnel", "bridge", "bank"};
+	if (std::find(environments.begin(), environments.end(), environment) == environments.end())
+	{
+		environment = "flat";
+	}
+}
+
+// width of the road at specified arm
+double junction_node::state::arm_width(std::size_t const Arm) const
+{
+	return Arm < arms.size() ? static_cast<double>(arms[Arm].incoming + arms[Arm].outgoing) * arms[Arm].width : 0.0;
+}
+
+// where a lane of an arm meets the junction; the lanes of each kind are counted from the middle of the road, starting with 1
+glm::dvec3 junction_node::state::lane_point(std::size_t const Arm, bool const Incoming, int const Lane) const
+{
+	auto const &arm{arms[Arm]};
+	// seen from the junction the traffic coming in is on the left side of the road, and the one going out on the right
+	auto const divide{0.5 * arm_width(Arm) - static_cast<double>(arm.incoming) * arm.width};
+	auto const offset{Incoming ? divide + (Lane - 0.5) * arm.width : divide - (Lane - 0.5) * arm.width};
+	return arm.position + flat(left_of(arm.direction)) * offset;
+}
+
+// arms in the order they're met going around the junction
+std::vector<std::size_t> junction_node::state::arm_order() const
+{
+	std::vector<std::size_t> order(arms.size());
+	for (std::size_t idx = 0; idx < order.size(); ++idx)
+	{
+		order[idx] = idx;
+	}
+	// the order goes from the z axis towards the x axis, which makes triangles spanned from the centre face up
+	std::sort(order.begin(), order.end(), [this](std::size_t const Left, std::size_t const Right) { return std::atan2(arms[Left].direction.x, arms[Left].direction.y) < std::atan2(arms[Right].direction.x, arms[Right].direction.y); });
+	return order;
+}
+
+// edge of the surface: ends of the arms joined with rounded corners, going around the junction
+std::vector<glm::dvec3> junction_node::state::outline(std::vector<std::vector<glm::dvec3>> *Corners) const
+{
+	std::vector<glm::dvec3> points;
+	auto const order{arm_order()};
+	for (std::size_t idx = 0; idx < order.size(); ++idx)
+	{
+		auto const &arm{arms[order[idx]]};
+		auto const &next{arms[order[(idx + 1) % order.size()]]};
+		auto const halfwidth{0.5 * arm_width(order[idx])};
+		auto const nexthalfwidth{0.5 * arm_width(order[(idx + 1) % order.size()])};
+		// the end of the arm, then the corner leading to the next one
+		auto const right{arm.position - flat(left_of(arm.direction)) * halfwidth};
+		auto const left{arm.position + flat(left_of(arm.direction)) * halfwidth};
+		auto const nextright{next.position - flat(left_of(next.direction)) * nexthalfwidth};
+		points.emplace_back(right);
+		points.emplace_back(left);
+		// the corner is bent towards the point where the edges of both roads would meet, if there's a reasonable one
+		auto control{0.5 * (left + nextright)};
+		auto const cross{arm.direction.x * next.direction.y - arm.direction.y * next.direction.x};
+		if (std::abs(cross) > 0.05)
+		{
+			// left - arm.direction * t == nextright - next.direction * s
+			glm::dvec2 const delta{nextright.x - left.x, nextright.z - left.z};
+			auto const t{-(delta.x * next.direction.y - delta.y * next.direction.x) / cross};
+			auto const s{-(delta.x * arm.direction.y - delta.y * arm.direction.x) / cross};
+			if (t > 0.0 && s > 0.0 && t < 100.0 && s < 100.0)
+			{
+				control = left - flat(arm.direction) * t;
+				control.y = 0.5 * (left.y + nextright.y);
+			}
+		}
+		std::vector<glm::dvec3> corner{left};
+		for (int step = 1; step < corner_steps; ++step)
+		{
+			auto const t{static_cast<double>(step) / corner_steps};
+			auto const point{(1.0 - t) * (1.0 - t) * left + 2.0 * (1.0 - t) * t * control + t * t * nextright};
+			points.emplace_back(point);
+			corner.emplace_back(point);
+		}
+		corner.emplace_back(nextright);
+		if (Corners != nullptr)
+		{
+			Corners->emplace_back(std::move(corner));
+		}
+	}
+	return points;
+}
+
+junction_node::junction_node(scene::node_data const &Nodedata) : basic_node(Nodedata) {}
+
+// restores content of the node from provided input stream; reads up to and including the closing 'endjunction'
+void junction_node::import(cParser &Input, glm::dvec3 const &Offset)
+{
+	auto const label{m_name.empty() ? std::string{"unnamed junction"} : "junction \"" + m_name + "\""};
+
+	m_state = state{};
+	Input.getTokens(3);
+	Input >> m_state.centre.x >> m_state.centre.y >> m_state.centre.z;
+	m_state.centre += Offset;
+
+	auto token{Input.getToken<std::string>()};
+	while (false == token.empty() && token != "endjunction")
+	{
+		if (token == "arm")
+		{
+			// arm <position> <direction x z> <lanes in> <lanes out> <lane width>
+			arm_data arm;
+			Input.getTokens(3);
+			Input >> arm.position.x >> arm.position.y >> arm.position.z;
+			arm.position += Offset;
+			Input.getTokens(2);
+			Input >> arm.direction.x >> arm.direction.y;
+			Input.getTokens(3);
+			Input >> arm.incoming >> arm.outgoing >> arm.width;
+			m_state.arms.emplace_back(arm);
+		}
+		else if (token == "surface")
+		{
+			m_state.surface = Input.getToken<std::string>();
+			replace_slashes(m_state.surface);
+		}
+		else if (token == "texlength")
+		{
+			Input.getTokens();
+			Input >> m_state.texturelength;
+		}
+		else if (token == "markings")
+		{
+			auto const colour{Input.getToken<std::string>()};
+			m_state.markings = (colour == "white" ? road_node::marking_colour::white : colour == "orange" ? road_node::marking_colour::orange : road_node::marking_colour::none);
+		}
+		else if (token == "velocity")
+		{
+			Input.getTokens();
+			Input >> m_state.velocity;
+		}
+		else if (token == "friction")
+		{
+			Input.getTokens();
+			Input >> m_state.friction;
+		}
+		else if (token == "environment")
+		{
+			m_state.environment = Input.getToken<std::string>();
+		}
+		else
+		{
+			ErrorLog("Bad junction: unknown property: \"" + token + "\" defined for " + label);
+		}
+		token = Input.getToken<std::string>();
+	}
+	if (m_state.arms.size() < 2 || m_state.arms.size() > 4)
+	{
+		ErrorLog("Bad junction: " + label + " has " + std::to_string(m_state.arms.size()) + " arms, it takes 2 to 4");
+		if (m_state.arms.size() > 4)
+		{
+			m_state.arms.resize(4);
+		}
+	}
+	m_state.normalize();
+	location(m_state.centre);
+}
+
+void junction_node::define(state const &State)
+{
+	m_state = State;
+	m_state.normalize();
+	location(m_state.centre);
+	m_area.radius = -1.f;
+}
+
+// makes paths leading through the junction, between the lanes of the roads attached to it at the moment
+void junction_node::create_links()
+{
+	m_movements.clear();
+	auto const &arms{m_state.arms};
+	// lanes of the roads attached to the arms; a road is attached if one of its ends is where the arm is
+	struct arm_lanes
+	{
+		std::vector<TTrack *> incoming;
+		std::vector<TTrack *> outgoing;
+	};
+	std::vector<arm_lanes> lanes(arms.size());
+	for (std::size_t arm = 0; arm < arms.size(); ++arm)
+	{
+		lanes[arm].incoming.assign(static_cast<std::size_t>(arms[arm].incoming), nullptr);
+		lanes[arm].outgoing.assign(static_cast<std::size_t>(arms[arm].outgoing), nullptr);
+		for (auto const *road : simulation::Roads.sequence())
+		{
+			if (road == nullptr || road->m_editorremoved || road->tracks().size() != road->definition().lanes.size())
+			{
+				continue;
+			}
+			auto const &layout{road->definition()};
+			for (auto const atend : {false, true})
+			{
+				if (glm::distance(layout.axis.points[atend ? segment_data::point::end : segment_data::point::start], arms[arm].position) > junction_reach)
+				{
+					continue;
+				}
+				// the lanes heading for this end of the road lead into the junction, the others lead out of it
+				for (int lane = 1; lane <= arms[arm].incoming; ++lane)
+				{
+					auto const index{layout.lane_index((atend ? "f" : "b") + std::to_string(lane))};
+					if (index >= 0 && road->tracks()[index] != nullptr && glm::distance(glm::dvec3{road->tracks()[index]->CurrentSegment()->FastGetPoint_1()}, m_state.lane_point(arm, true, lane)) < junction_fit)
+					{
+						lanes[arm].incoming[lane - 1] = road->tracks()[index];
+					}
+				}
+				for (int lane = 1; lane <= arms[arm].outgoing; ++lane)
+				{
+					auto const index{layout.lane_index((atend ? "b" : "f") + std::to_string(lane))};
+					if (index >= 0 && road->tracks()[index] != nullptr && glm::distance(glm::dvec3{road->tracks()[index]->CurrentSegment()->FastGetPoint_0()}, m_state.lane_point(arm, false, lane)) < junction_fit)
+					{
+						lanes[arm].outgoing[lane - 1] = road->tracks()[index];
+					}
+				}
+			}
+		}
+	}
+
+	enum class way
+	{
+		left,
+		straight,
+		right
+	};
+	struct exit_data
+	{
+		std::size_t arm;
+		double turn;
+		way kind;
+		TTrack *track;
+	};
+	std::ostringstream text;
+	text.precision(std::numeric_limits<double>::digits10);
+	auto const write_point = [&text](glm::dvec3 const &Point) { text << Point.x << ' ' << Point.y << ' ' << Point.z << ' '; };
+
+	for (std::size_t arm = 0; arm < arms.size(); ++arm)
+	{
+		auto const heading{-arms[arm].direction};
+		// the other arms with a road to leave by, from the leftmost to the rightmost
+		std::vector<exit_data> exits;
+		for (std::size_t other = 0; other < arms.size(); ++other)
+		{
+			if (other == arm || std::all_of(lanes[other].outgoing.begin(), lanes[other].outgoing.end(), [](TTrack const *Track) { return Track == nullptr; }))
+			{
+				continue;
+			}
+			exits.push_back({other, turn_angle(heading, arms[other].direction), way::straight, nullptr});
+		}
+		std::sort(exits.begin(), exits.end(), [](exit_data const &Left, exit_data const &Right) { return Left.turn > Right.turn; });
+		if (exits.size() == 3)
+		{
+			exits[0].kind = way::left;
+			exits[2].kind = way::right;
+		}
+		else
+		{
+			auto const sideways{glm::radians(50.0)};
+			for (auto &exit : exits)
+			{
+				exit.kind = (exit.turn > sideways ? way::left : exit.turn < -sideways ? way::right : way::straight);
+			}
+			if (exits.size() == 2 && exits[0].kind == exits[1].kind)
+			{
+				// two ways of the same kind are told apart by which one is more to the left
+				if (exits[0].kind == way::right)
+				{
+					exits[0].kind = way::straight;
+				}
+				else if (exits[0].kind == way::left)
+				{
+					exits[1].kind = way::straight;
+				}
+				else
+				{
+					exits[0].kind = way::left;
+					exits[1].kind = way::right;
+				}
+			}
+		}
+		auto const lanecount{static_cast<int>(lanes[arm].incoming.size())};
+		for (int lane = 1; lane <= lanecount; ++lane)
+		{
+			auto *entry{lanes[arm].incoming[lane - 1]};
+			if (entry == nullptr)
+			{
+				continue;
+			}
+			// with more lanes than one the inner lane takes the left turns, the outer one the right turns, and all go straight
+			std::vector<exit_data> ways;
+			for (auto const &exit : exits)
+			{
+				auto const allowed{lanecount == 1 || exit.kind == way::straight || (exit.kind == way::left && lane == 1) || (exit.kind == way::right && lane == lanecount)};
+				if (allowed)
+				{
+					ways.emplace_back(exit);
+				}
+			}
+			if (ways.empty())
+			{
+				ways = exits;
+			}
+			for (auto &exit : ways)
+			{
+				// the lane of the same number on the road to leave by, or the nearest one there is
+				auto const &candidates{lanes[exit.arm].outgoing};
+				for (int shift = 0; shift < static_cast<int>(candidates.size()) && exit.track == nullptr; ++shift)
+				{
+					for (auto const index : {lane - 1 - shift, lane - 1 + shift})
+					{
+						if (index >= 0 && index < static_cast<int>(candidates.size()) && candidates[index] != nullptr)
+						{
+							exit.track = candidates[index];
+							break;
+						}
+					}
+				}
+				if (exit.track == nullptr)
+				{
+					exit.track = candidates.back();
+				}
+			}
+			ways.erase(std::remove_if(ways.begin(), ways.end(), [](exit_data const &Exit) { return Exit.track == nullptr; }), ways.end());
+			if (ways.empty())
+			{
+				continue;
+			}
+			if (ways.size() == 3)
+			{
+				// the legacy crossroads has the way straight ahead at its second point, the left one at the third and the right one at the fourth
+				std::swap(ways[0], ways[1]);
+			}
+
+			// shape of the ways: each leaves the lane coming in the way that lane goes, and joins the lane going out the way that one goes
+			glm::dvec3 const start{entry->CurrentSegment()->FastGetPoint_1()};
+			std::vector<glm::dvec3> ends;
+			std::vector<glm::dvec3> endcontrols;
+			double reach{0.0};
+			for (auto const &exit : ways)
+			{
+				glm::dvec3 const end{exit.track->CurrentSegment()->FastGetPoint_0()};
+				auto const span{glm::distance(start, end)};
+				ends.emplace_back(end);
+				endcontrols.emplace_back(-flat(arms[exit.arm].direction) * (0.39 * span));
+				reach += 0.39 * span / ways.size();
+			}
+			auto const startcontrol{flat(heading) * reach};
+			for (std::size_t idx = 0; idx < ways.size(); ++idx)
+			{
+				segment_data movement;
+				movement.points[segment_data::point::start] = start;
+				movement.points[segment_data::point::control1] = startcontrol;
+				movement.points[segment_data::point::control2] = endcontrols[idx];
+				movement.points[segment_data::point::end] = ends[idx];
+				m_movements.emplace_back(movement);
+			}
+
+			text.str("");
+			text << (ways.size() == 1 ? "road " : "cross ") << glm::distance(start, ends[0]) << ' ' << arms[arm].width << ' ' << m_state.friction << ' ' << m_state.sounddistance << ' ' << m_state.quality << " 0 " << m_state.environment << " unvis ";
+			// first path: from the lane coming in to the first way out
+			write_point(start);
+			text << "0 ";
+			write_point(startcontrol);
+			write_point(endcontrols[0]);
+			write_point(ends[0]);
+			text << "0 0 ";
+			if (ways.size() == 2)
+			{
+				// second path of a crossroads of three roads starts where the first one does
+				write_point(start);
+				text << "0 ";
+				write_point(startcontrol);
+				write_point(endcontrols[1]);
+				write_point(ends[1]);
+				text << "0 0 ";
+			}
+			else if (ways.size() == 3)
+			{
+				// second path of a crossroads of four roads runs between its third and fourth point
+				write_point(ends[1]);
+				text << "0 ";
+				write_point(endcontrols[1]);
+				write_point(endcontrols[2]);
+				write_point(ends[2]);
+				text << "0 0 ";
+			}
+			if (m_state.velocity > 0.f)
+			{
+				text << "velocity " << m_state.velocity << ' ';
+			}
+			text << "endtrack";
+			auto *link{create_track(text.str(), m_links.size())};
+
+			// the path is tied to the lanes by hand: the lanes going out are shared by the paths from all the other arms,
+			// which is more than the automatic joining of path ends can express
+			if (ways.size() == 1)
+			{
+				entry->ConnectNextPrev(link, 0);
+				link->trNext = ways[0].track;
+				link->iNextDirection = 0;
+				if (ways[0].track->trPrev == nullptr)
+				{
+					ways[0].track->trPrev = link;
+					ways[0].track->iPrevDirection = 1;
+				}
+			}
+			else if (link->SwitchExtension != nullptr)
+			{
+				auto &extension{*link->SwitchExtension};
+				// the points of the crossroads are stored as: first, second, fourth, third
+				extension.pPrevs[0] = entry;
+				extension.iPrevDirection[0] = 1;
+				extension.pNexts[0] = ways[0].track;
+				extension.iNextDirection[0] = 0;
+				extension.pPrevs[1] = (ways.size() == 3 ? ways[2].track : ways[1].track);
+				extension.iPrevDirection[1] = 0;
+				extension.pNexts[1] = (ways.size() == 3 ? ways[1].track : nullptr);
+				extension.iNextDirection[1] = 0;
+				link->Switch(0);
+				entry->trNext = link;
+				entry->iNextDirection = 0;
+				// the lanes going out get to know one of the paths leading to them, for whatever goes backwards
+				int const ends2[]{1, 2};
+				int const ends3[]{1, 3, 2};
+				for (std::size_t idx = 0; idx < ways.size(); ++idx)
+				{
+					if (ways[idx].track->trPrev == nullptr)
+					{
+						ways[idx].track->trPrev = link;
+						ways[idx].track->iPrevDirection = (ways.size() == 3 ? ends3[idx] : ends2[idx]);
+					}
+				}
+			}
+			m_links.emplace_back(link);
+		}
+	}
+}
+
+// gives up the paths leading through the junction
+std::vector<TTrack *> junction_node::release_links()
+{
+	std::vector<TTrack *> released;
+	released.swap(m_links);
+	m_movements.clear();
+	return released;
+}
+
+// true if there's a vehicle on any path of the junction
+bool junction_node::occupied() const
+{
+	return std::any_of(m_links.begin(), m_links.end(), [](TTrack const *Track) { return Track != nullptr && false == Track->Dynamics.empty(); });
+}
+
+// generates geometry of the surface
+std::vector<scene::shape_node> junction_node::create_shapes() const
+{
+	std::vector<scene::shape_node> shapes;
+	std::vector<std::vector<glm::dvec3>> corners;
+	auto const points{m_state.outline(&corners)};
+	if (points.size() < 3)
+	{
+		return shapes;
+	}
+	auto const &centre{m_state.centre};
+	if (m_state.surface != "none")
+	{
+		// a fan of triangles spanned from the centre, with the image laid out flat over the ground
+		auto const tile{static_cast<double>(texture_ratio(m_state.surface)) * m_state.texturelength};
+		auto const vertex = [&](glm::dvec3 const &Point, glm::vec3 const &Normal) {
+			return world_vertex{Point, Normal, {static_cast<float>(0.5 + (Point.x - centre.x) / tile), static_cast<float>(0.5 + (Point.z - centre.z) / m_state.texturelength)}};
+		};
+		std::vector<world_vertex> vertices;
+		for (std::size_t idx = 0; idx < points.size(); ++idx)
+		{
+			auto const &current{points[idx]};
+			auto const &next{points[(idx + 1) % points.size()]};
+			auto normal{glm::cross(current - centre, next - centre)};
+			if (glm::length2(normal) < 1e-12)
+			{
+				continue;
+			}
+			glm::vec3 const facing{glm::normalize(normal)};
+			vertices.emplace_back(vertex(centre, facing));
+			vertices.emplace_back(vertex(current, facing));
+			vertices.emplace_back(vertex(next, facing));
+		}
+		if (false == vertices.empty())
+		{
+			scene::shape_node shape;
+			shape.make_terrain(GfxRenderer->Fetch_Material(m_state.surface), std::move(vertices), glm::dvec3{0.0});
+			shapes.emplace_back(std::move(shape));
+		}
+	}
+	if (m_state.markings != road_node::marking_colour::none)
+	{
+		// edge lines carried around the corners
+		std::vector<world_vertex> vertices;
+		glm::dvec3 const lift{0.0, line_lift, 0.0};
+		glm::vec3 const upwards{0.f, 1.f, 0.f};
+		for (auto const &corner : corners)
+		{
+			for (std::size_t idx = 0; idx + 1 < corner.size(); ++idx)
+			{
+				// the line keeps its distance from the edge, on the side of the centre
+				auto const inwards = [&](glm::dvec3 const &Point) {
+					auto direction{centre - Point};
+					direction.y = 0.0;
+					return glm::length2(direction) > 1e-12 ? glm::normalize(direction) : glm::dvec3{0.0};
+				};
+				auto const outer0{corner[idx] + inwards(corner[idx]) * edge_inset + lift};
+				auto const inner0{corner[idx] + inwards(corner[idx]) * (edge_inset + line_width) + lift};
+				auto const outer1{corner[idx + 1] + inwards(corner[idx + 1]) * edge_inset + lift};
+				auto const inner1{corner[idx + 1] + inwards(corner[idx + 1]) * (edge_inset + line_width) + lift};
+				// the corners are listed going around the junction the way which makes these face up
+				vertices.push_back({inner0, upwards, {0.f, 0.f}});
+				vertices.push_back({outer0, upwards, {1.f, 0.f}});
+				vertices.push_back({outer1, upwards, {1.f, 1.f}});
+				vertices.push_back({inner0, upwards, {0.f, 0.f}});
+				vertices.push_back({outer1, upwards, {1.f, 1.f}});
+				vertices.push_back({inner1, upwards, {0.f, 1.f}});
+			}
+		}
+		if (false == vertices.empty())
+		{
+			lighting_data paint;
+			paint.diffuse = (m_state.markings == road_node::marking_colour::white ? glm::vec4{0.92f, 0.92f, 0.92f, 1.f} : glm::vec4{0.95f, 0.5f, 0.08f, 1.f});
+			paint.ambient = paint.diffuse;
+			scene::shape_node shape;
+			shape.make_terrain(GfxRenderer->Fetch_Material("colored"), std::move(vertices), glm::dvec3{0.0});
+			shape.lighting(paint);
+			shapes.emplace_back(std::move(shape));
+		}
+	}
+	return shapes;
+}
+
+void junction_node::show()
+{
+	if (m_merged || m_shapes.shown())
+	{
+		return;
+	}
+	m_shapes.show(create_shapes(), location());
+}
+
+void junction_node::hide()
+{
+	m_shapes.hide();
+}
+
+// creates a path through the junction from provided definition and registers it with the simulation
+TTrack *junction_node::create_track(std::string const &Definition, std::size_t const Index)
+{
+	cParser parser(Definition, cParser::buffer_TEXT);
+	scene::node_data nodedata;
+	nodedata.range_max = -1.0;
+	nodedata.name = (m_name.empty() ? std::string{} : m_name + ":way" + std::to_string(Index + 1));
+	nodedata.type = "track";
+	auto *track{new TTrack(nodedata)};
+	track->Load(&parser, glm::dvec3{0.0});
+	track->m_road = this;
+	// NOTE: the table points the name at the newest path, which is what a junction made anew in the editor needs
+	simulation::Paths.insert(track);
+	simulation::Region->insert_and_register(track);
+	return track;
+}
+
+float junction_node::radius_()
+{
+	float radius{0.f};
+	for (std::size_t arm = 0; arm < m_state.arms.size(); ++arm)
+	{
+		radius = std::max(radius, static_cast<float>(glm::distance(m_state.arms[arm].position, m_state.centre) + 0.5 * m_state.arm_width(arm)));
+	}
+	return radius;
+}
+
+void junction_node::serialize_(std::ostream &Output) const
+{
+	// TODO: implement
+}
+
+void junction_node::deserialize_(std::istream &Input)
+{
+	// TODO: implement
+}
+
+// export() subclass details, sends basic content of the class in legacy (text) format to provided stream
+void junction_node::export_as_text_(std::ostream &Output) const
+{
+	Output << "junction ";
+	auto const precision{Output.precision(std::numeric_limits<double>::digits10)};
+	Output << m_state.centre.x << ' ' << m_state.centre.y << ' ' << m_state.centre.z << ' ';
+	for (auto const &arm : m_state.arms)
+	{
+		Output << "arm " << arm.position.x << ' ' << arm.position.y << ' ' << arm.position.z << ' ' << arm.direction.x << ' ' << arm.direction.y << ' ' << arm.incoming << ' ' << arm.outgoing << ' ' << arm.width << ' ';
+	}
+	Output.precision(precision);
+	Output << "surface " << m_state.surface << ' ' << "texlength " << m_state.texturelength << ' ' << "markings "
+	       << (m_state.markings == road_node::marking_colour::white ? "white" : m_state.markings == road_node::marking_colour::orange ? "orange" : "none") << ' ' << "velocity " << m_state.velocity << ' ' << "friction " << m_state.friction << ' '
+	       << "environment " << m_state.environment << ' ';
+	Output << "endjunction"
+	       << "\n";
 }
 
 // creates a path for the vehicles and registers it with the simulation
@@ -1113,6 +1783,44 @@ void road_table::create_geometry(scene::scratch_data &Scratchpad)
 			simulation::Region->insert(shape, Scratchpad, false);
 		}
 		road->merged(true);
+	}
+}
+
+// legacy style initialization, to be performed when the tracks are joined, ahead of the roads
+void junction_table::InitJunctions()
+{
+	for (auto *junction : m_items)
+	{
+		if (junction != nullptr)
+		{
+			junction->create_links();
+		}
+	}
+}
+
+// generates geometry of the junctions and puts it in the scene
+void junction_table::create_geometry(scene::scratch_data &Scratchpad)
+{
+	if (simulation::Region == nullptr)
+	{
+		return;
+	}
+	for (auto *junction : m_items)
+	{
+		if (junction == nullptr)
+		{
+			continue;
+		}
+		if (Global.editor_session && false == Global.NvRenderer)
+		{
+			junction->show();
+			continue;
+		}
+		for (auto &shape : junction->create_shapes())
+		{
+			simulation::Region->insert(shape, Scratchpad, false);
+		}
+		junction->merged(true);
 	}
 }
 

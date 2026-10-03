@@ -110,6 +110,8 @@ class editor_mode : public application_mode
 		std::vector<std::pair<road_node *, road_node::state>> roads; // road pieces with what they were like before the change
 		std::vector<road_node *> roads_created;
 		std::vector<road_node *> roads_removed;
+		std::vector<junction_node *> junctions_created;
+		std::vector<junction_node *> junctions_removed;
 
 	};
 	void push_snapshot(scene::basic_node *node, EditorSnapshot::Action Action = EditorSnapshot::Action::Move, std::string const &Serialized = std::string());
@@ -491,8 +493,9 @@ class editor_mode : public application_mode
 	{
 		bool window{false}; // the road window is open, the left mouse button belongs to its tools
 		bool lanes{true}; // lanes of the roads are drawn as trajectories
-		int tool{0}; // 0: select, 1: build
+		int tool{0}; // 0: select, 1: build, 2: junction
 		road_node *selected{nullptr};
+		junction_node *junction{nullptr}; // selected junction
 		road_node::state settings; // layout shown in the window: of the selected piece, or of the pieces about to be built
 		bool whole{true}; // layout changes go to every piece of the road the selected one belongs to
 		bool chain{false}; // the point to build from is set
@@ -500,6 +503,18 @@ class editor_mode : public application_mode
 		glm::dvec2 direction{0.0, 1.0}; // the way it has to leave that point
 		bool hasdirection{false};
 		bool reversed{false}; // the pieces are laid from their ends, to carry on a road from its start
+		double grade{0.0}; // slope the next piece has to start with, to carry on what it's attached to
+		bool hasgrade{false};
+		float offset{0.1f}; // height above the ground the roads and junctions are built at
+		bool follow{true}; // built roads are led over the ground between the clicked points
+		int kind{0}; // kind of the junctions being placed, an editor_road::junction_kind
+		float crossingspeed{30.f}; // speed limit on the junctions being placed
+		// what a click would make at the moment, worked out once a frame for display
+		std::vector<segment_data> preview;
+		junction_node::state previewjunction;
+		bool hasjunction{false};
+		editor_road::loose_end previewsnap;
+		std::string previewerror;
 		glm::dvec3 mouse{0.0};
 		std::string status;
 		char surface[128]{};
@@ -513,12 +528,20 @@ class editor_mode : public application_mode
 	void update_road_tool();
 	void road_click();
 	void road_select(road_node *Road);
+	void junction_select(junction_node *Junction);
+	void junction_click();
+	bool junction_preview(junction_node::state &State, editor_road::loose_end &Snap, std::string &Error) const;
 	void road_apply();
 	bool road_delete();
 	bool road_split();
 	void road_cancel();
-	std::vector<segment_data> road_preview(editor_road::loose_end &Snap, std::string &Error) const;
-	void push_road_snapshot(std::vector<std::pair<road_node *, road_node::state>> States, std::vector<road_node *> Created, std::vector<road_node *> Removed);
+	// Fresh: the ground is looked up anew instead of going by what was gathered for the previous frames
+	std::vector<segment_data> road_preview(editor_road::loose_end &Snap, std::string &Error, bool const Fresh);
+	void road_profile(std::vector<segment_data> &Pieces, editor_road::loose_end const &Snap, bool const Fresh);
+	// height of the ground under each of the points, with the roads not taken for the ground. a point with nothing under it keeps its height
+	std::vector<double> ground_heights(std::vector<glm::dvec3> const &Points, bool const Fresh);
+	void push_road_snapshot(std::vector<std::pair<road_node *, road_node::state>> States, std::vector<road_node *> Created, std::vector<road_node *> Removed, std::vector<junction_node *> Junctionscreated = {},
+	                        std::vector<junction_node *> Junctionsremoved = {});
 	void restore_road_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo);
 	road_tool m_roadtool;
 };

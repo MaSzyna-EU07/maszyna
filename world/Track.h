@@ -186,7 +186,7 @@ public:
 
     std::vector<segment_data> m_paths; // source data for owned paths
     bool m_editorremoved { false };
-    road_node *m_road { nullptr }; // road which generated this path as one of its lanes. such path is one-way, and isn't saved nor edited on its own
+    scene::basic_node *m_road { nullptr }; // road or road junction which generated this path. such path is one-way, and isn't saved nor edited on its own
 	int iterate_stamp = 0;
 
     // sleepermodel optional parameter -------------------------------------------------

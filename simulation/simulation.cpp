@@ -38,6 +38,7 @@ event_manager Events;
 memory_table Memory;
 path_table Paths;
 road_table Roads;
+junction_table Junctions;
 traction_table Traction;
 powergridsource_table Powergrid;
 instance_table Instances;

@@ -45,6 +45,8 @@ struct light_array;
 class particle_manager;
 class road_node; // kawałek drogi, z którego powstają pasy ruchu
 class road_table;
+class junction_node;
+class junction_table;
 struct dictionary_source;
 class trainset_desc;
 class scenery_desc;

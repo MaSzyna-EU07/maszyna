@@ -26,6 +26,27 @@ struct scratch_data;
 class basic_section;
 }
 
+// geometry a node puts in the scene as shapes of its own, apart from the shapes of the scenery, so it can take it back
+class owned_shapes
+{
+  public:
+	// puts provided shapes in the section of the scene holding specified point
+	void show(std::vector<scene::shape_node> Shapes, glm::dvec3 const &Location);
+	// takes the shapes back
+	void hide();
+	bool shown() const
+	{
+		return m_section != nullptr;
+	}
+	// true if specified geometry was put in the scene by any object of this class
+	static bool owns(gfx::geometry_handle const &Geometry);
+
+  private:
+	gfx::geometrybank_handle m_bank{0, 0};
+	std::vector<gfx::geometry_handle> m_geometry;
+	scene::basic_section *m_section{nullptr};
+};
+
 // a piece of a road for wheeled traffic: an axis, and a cross-section which stays the same along it.
 // the node itself is neither driven on nor drawn. it produces the lanes, which are ordinary invisible one-way tracks,
 // and the surface, the sides and the markings, which are ordinary shapes. this way the vehicles, the ai and the renderers
@@ -176,10 +197,108 @@ class road_node : public scene::basic_node
 	std::vector<TTrack *> m_tracks;
 	std::vector<TTrack *> m_turns;
 	bool m_merged{false};
-	// geometry put in the scene by show()
-	gfx::geometrybank_handle m_bank{0, 0};
-	std::vector<gfx::geometry_handle> m_geometry;
-	scene::basic_section *m_section{nullptr};
+	owned_shapes m_shapes; // geometry put in the scene by show()
+};
+
+// a place where roads meet. each arm of the junction is where a road ends: a point in the middle of that end, the way
+// the road leaves, and the lanes it has there. the junction produces the surface between the arms, and paths leading
+// the vehicles from each lane coming in to the lanes going out of the other arms. a lane with more than one way out
+// gets a legacy crossroads path, which is what the vehicles and their drivers already know how to pick a way through.
+// scenery entry:
+// node <max> <min> <name> junction <centre> arm <position> <direction x z> <lanes in> <lanes out> <lane width> ... [<property> <values>]... endjunction
+class junction_node : public scene::basic_node
+{
+
+  public:
+	// types
+	struct arm_data
+	{
+		glm::dvec3 position{0.0}; // middle of the end of the road
+		glm::dvec2 direction{0.0, 1.0}; // the way out of the junction, seen from above (x, z)
+		int incoming{1}; // lanes leading into the junction
+		int outgoing{1}; // lanes leading out of it
+		float width{3.5f}; // width of a lane
+	};
+	struct state
+	{
+		glm::dvec3 centre{0.0};
+		std::vector<arm_data> arms;
+		std::string surface{"asphaltdark1"};
+		float texturelength{4.f};
+		road_node::marking_colour markings{road_node::marking_colour::white};
+		float velocity{30.f}; // speed limit on the way through
+		float friction{0.85f};
+		float sounddistance{25.f};
+		int quality{15};
+		std::string environment{"flat"};
+
+		// brings the content to a usable form
+		void normalize();
+		// width of the road at specified arm
+		double arm_width(std::size_t const Arm) const;
+		// where a lane of an arm meets the junction; the lanes of each kind are counted from the middle of the road, starting with 1
+		glm::dvec3 lane_point(std::size_t const Arm, bool const Incoming, int const Lane) const;
+		// arms in the order they're met going around the junction
+		std::vector<std::size_t> arm_order() const;
+		// edge of the surface: ends of the arms joined with rounded corners, going around the junction.
+		// Corners, if provided, receives the points of each corner apart
+		std::vector<glm::dvec3> outline(std::vector<std::vector<glm::dvec3>> *Corners = nullptr) const;
+	};
+	// constructors
+	explicit junction_node(scene::node_data const &Nodedata);
+	// methods
+	// restores content of the node from provided input stream; reads up to and including the closing 'endjunction'
+	void import(cParser &Input, glm::dvec3 const &Offset);
+	state const &definition() const
+	{
+		return m_state;
+	}
+	void define(state const &State);
+	// makes paths leading through the junction, between the lanes of the roads attached to it at the moment
+	void create_links();
+	// gives up the paths leading through the junction; the caller is expected to take them out of use
+	std::vector<TTrack *> release_links();
+	std::vector<TTrack *> const &links() const
+	{
+		return m_links;
+	}
+	// shapes of the ways through the junction, for display
+	std::vector<segment_data> const &movements() const
+	{
+		return m_movements;
+	}
+	// true if there's a vehicle on any path of the junction
+	bool occupied() const;
+	// generates geometry of the surface
+	std::vector<scene::shape_node> create_shapes() const;
+	// puts geometry of the junction in the scene as shapes of its own, or takes it back
+	void show();
+	void hide();
+	void merged(bool const Merged)
+	{
+		m_merged = Merged;
+	}
+	bool merged() const
+	{
+		return m_merged;
+	}
+	// members
+	bool m_editorremoved{false};
+
+  private:
+	// methods
+	float radius_() override;
+	void serialize_(std::ostream &Output) const override;
+	void deserialize_(std::istream &Input) override;
+	void export_as_text_(std::ostream &Output) const override;
+	// creates a path through the junction from provided definition and registers it with the simulation
+	TTrack *create_track(std::string const &Definition, std::size_t const Index);
+	// members
+	state m_state;
+	std::vector<TTrack *> m_links;
+	std::vector<segment_data> m_movements;
+	bool m_merged{false};
+	owned_shapes m_shapes;
 };
 
 // collection of roads present in the scene
@@ -190,6 +309,17 @@ class road_table : public basic_table<road_node>
 	// legacy style initialization, to be performed when the tracks are already joined
 	void InitRoads();
 	// generates geometry of the roads and puts it in the scene
+	void create_geometry(scene::scratch_data &Scratchpad);
+};
+
+// collection of road junctions present in the scene
+class junction_table : public basic_table<junction_node>
+{
+
+  public:
+	// legacy style initialization, to be performed when the tracks are joined, ahead of the roads
+	void InitJunctions();
+	// generates geometry of the junctions and puts it in the scene
 	void create_geometry(scene::scratch_data &Scratchpad);
 };
 

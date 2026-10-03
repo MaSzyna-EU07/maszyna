@@ -857,6 +857,72 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		state.patches[source.layer].edits.emplace_back(std::move(edit));
 		rewritten.emplace(road);
 	}
+	// road junctions, likewise
+	std::vector<junction_node *> savedjunctions;
+	std::vector<junction_node const *> droppedjunctions;
+	auto const junction_text = [](junction_node &Junction, glm::dvec3 const &Offset) {
+		auto const definition{Junction.definition()};
+		auto local{definition};
+		local.centre -= Offset;
+		for (auto &arm : local.arms)
+		{
+			arm.position -= Offset;
+		}
+		Junction.define(local);
+		std::string text;
+		Junction.export_as_text(text);
+		Junction.define(definition);
+		text.erase(text.find_last_not_of(" \t\r\n") + 1);
+		return text;
+	};
+	for (auto *junction : simulation::Junctions.sequence())
+	{
+		if (junction == nullptr || junction->from_template())
+		{
+			continue;
+		}
+		auto const nodelayer{resolve(junction->layer())};
+		if (false == is_output(nodelayer))
+		{
+			continue;
+		}
+		auto const lookup{m_sources.find(junction)};
+		if (lookup == m_sources.end())
+		{
+			if (junction->m_editorremoved || false == junction->dirty())
+			{
+				continue;
+			}
+			created[nodelayer].emplace_back(junction, junction_text(*junction, layer(nodelayer).context_insert().offset));
+			savedjunctions.push_back(junction);
+			continue;
+		}
+		auto const &source{lookup->second};
+		if ((false == junction->m_editorremoved && false == junction->dirty()) || false == writable(source.layer))
+		{
+			continue;
+		}
+		if (false == load(source.layer))
+		{
+			return fail(state.error);
+		}
+		file_patch::edit edit;
+		edit.begin = source.span.begin;
+		edit.end = source.span.end;
+		if (junction->m_editorremoved)
+		{
+			droppedjunctions.push_back(junction);
+		}
+		else
+		{
+			edit.text = junction_text(*junction, source.context.offset);
+			edit.length = edit.text.size();
+			edit.node = junction;
+			savedjunctions.push_back(junction);
+		}
+		state.patches[source.layer].edits.emplace_back(std::move(edit));
+		rewritten.emplace(junction);
+	}
 	for (auto const &erased : m_erased)
 	{
 		file_patch::edit edit;
@@ -1307,6 +1373,14 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 	for (auto const *road : droppedroads)
 	{
 		m_sources.erase(road);
+	}
+	for (auto *junction : savedjunctions)
+	{
+		junction->m_dirty = false;
+	}
+	for (auto const *junction : droppedjunctions)
+	{
+		m_sources.erase(junction);
 	}
 	if (removedterrain)
 	{

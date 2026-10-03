@@ -181,6 +181,7 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 	// geometry of the roads is generated on each load instead of being kept in the binary terrain file,
 	// so it's inserted in the region only after that file had its chance to be written
 	simulation::Roads.create_geometry( Scratchpad );
+	simulation::Junctions.create_geometry( Scratchpad );
 
 	return false;
 }
@@ -398,6 +399,8 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
     }
 
     simulation::Paths.InitTracks();
+    // the junctions tie the lanes of the roads together, what's left loose after that gets closed by the roads
+    simulation::Junctions.InitJunctions();
     simulation::Roads.InitRoads();
     simulation::Traction.InitTraction();
     simulation::Events.InitEvents();
@@ -520,6 +523,20 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         // the lanes are regular paths, registered right away so they get joined with their neighbours along with the tracks
         road->create_lanes();
         scene::Layers.track( road, { sourcebegin, Input.TokenEnd() } );
+    }
+    else if( nodedata.type == "junction" ) {
+
+        auto *junction { new junction_node( nodedata ) };
+        junction->import(
+            Input,
+            ( Scratchpad.location.offset.empty() ?
+                glm::dvec3 { 0.0 } :
+                glm::dvec3 { Scratchpad.location.offset.top() } ) );
+        if( false == simulation::Junctions.insert( junction ) ) {
+            ErrorLog( "Bad scenario: duplicate junction name \"" + junction->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
+        }
+        scene::Groups.insert( scene::Groups.handle(), junction );
+        scene::Layers.track( junction, { sourcebegin, Input.TokenEnd() } );
     }
     else if( nodedata.type == "traction" ) {
 
@@ -695,6 +712,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
             { "dynamic", scene::layer_item::vehicle },
             { "track", scene::layer_item::track },
             { "road", scene::layer_item::track },
+            { "junction", scene::layer_item::track },
             { "traction", scene::layer_item::traction },
             { "tractionpowersource", scene::layer_item::powersource },
             { "model", scene::layer_item::model },
@@ -1404,6 +1422,11 @@ state_serializer::export_nodes_to_stream(std::ostream &scmfile, bool Dirty) cons
 			road->export_as_text( scmfile );
 		}
 	}
+	for( auto const *junction : Junctions.sequence() ) {
+		if( junction != nullptr && false == junction->m_editorremoved && junction->dirty() == Dirty && junction->group() == null_handle ) {
+			junction->export_as_text( scmfile );
+		}
+	}
 	// traction
 	scmfile << "// traction\n";
 	for( auto const *traction : Traction.sequence() ) {
@@ -1459,7 +1482,7 @@ TAnimModel *state_serializer::create_model(const std::string &src, const std::st
 std::pair<int, int> state_serializer::preview_include(std::string const &Directive, scene::layer_context const &Context, scene::layer_handle Layer, scene::instance_handle Instance) {
 	// statements which take more than a single token, with the tokens ending them
 	static std::unordered_map<std::string, std::string> const nodeends {
-	    { "dynamic", "enddynamic" }, { "track", "endtrack" }, { "road", "endroad" }, { "traction", "endtraction" }, { "tractionpowersource", "end" }, { "model", "endmodel" },
+	    { "dynamic", "enddynamic" }, { "track", "endtrack" }, { "road", "endroad" }, { "junction", "endjunction" }, { "traction", "endtraction" }, { "tractionpowersource", "end" }, { "model", "endmodel" },
 	    { "triangles", "endtri" }, { "triangle_strip", "endtri" }, { "triangle_fan", "endtri" }, { "lines", "endline" }, { "line_strip", "endline" }, { "line_loop", "endline" },
 	    { "memcell", "endmemcell" }, { "eventlauncher", "end" }, { "sound", "endsound" } };
 	static std::unordered_map<std::string, std::string> const statementends {
