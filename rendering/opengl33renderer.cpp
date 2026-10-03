@@ -3721,6 +3721,23 @@ bool opengl33_renderer::Render(TModel3d *Model, material_data const *Material, f
 	return result;
 }
 
+// opaque characters of a text display, laid out in a row the same way as the translucent ones
+void opengl33_renderer::Render_text(TSubModel *Submodel)
+{
+	if (TSubModel::pasText == nullptr)
+	{
+		return;
+	}
+	::glPushMatrix();
+	for (auto *p : Submodel->text_letters(*TSubModel::pasText))
+	{
+		Render(p);
+		if (p->fMatrix)
+			::glMultMatrixf(p->fMatrix->readArray()); // move on to the place of the next character
+	}
+	::glPopMatrix();
+}
+
 void opengl33_renderer::Render(TSubModel *Submodel)
 {
 	glDebug("Render TSubModel");
@@ -3871,29 +3888,15 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 			}
 			}
 		}
-		if (Submodel->Child != nullptr)
+		if (Submodel->Child != nullptr && (Submodel->iAlpha & Submodel->iFlags & 0x001F0000))
 		{
-			if (Submodel->iAlpha & Submodel->iFlags & 0x001F0000)
+			if (Submodel->eType == TP_TEXT)
 			{
-				if (Submodel->eType == TP_TEXT)
-				{
-					// opaque characters of a text display, laid out in a row the same way as the translucent ones
-					if (Submodel->pasText != nullptr)
-					{
-						::glPushMatrix();
-						for (auto *p : Submodel->text_letters(*Submodel->pasText))
-						{
-							Render(p);
-							if (p->fMatrix)
-								::glMultMatrixf(p->fMatrix->readArray()); // przesuwanie widoku
-						}
-						::glPopMatrix();
-					}
-				}
-				else
-				{
-					Render(Submodel->Child);
-				}
+				Render_text(Submodel);
+			}
+			else
+			{
+				Render(Submodel->Child);
 			}
 		}
 
