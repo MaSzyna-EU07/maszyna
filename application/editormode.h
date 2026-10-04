@@ -47,6 +47,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		double depth{0.0}; // m
 		TTrack const *track{nullptr}; // nearest one, may be gone by now
 		int path{0};
+		glm::dvec2 direction{0.0, 1.0}; // of the track there, in the plan
 	};
 	// constructors
 	editor_mode();

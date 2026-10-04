@@ -42,6 +42,8 @@ double const gauge_origin_range{2000.0};
 // length of the line shown each way from the selected path, and around a hit
 double const gauge_reach{500.0};
 double const gauge_spot_reach{60.0};
+// distance of the camera from the place of a hit, along the track
+double const gauge_view_distance{4.0};
 
 // sampled line of the tracks with the widening of the gauge along it
 struct gauge_line
@@ -171,6 +173,7 @@ public:
 	{
 		double depth{0.0}; // not positive outside of the gauge
 		editor_track::route_span const *span{nullptr}; // of the line the point enters
+		glm::dvec2 direction{0.0}; // of the line there, in the plan
 	};
 	// deepest intrusion of the point into the gauge of the lines nearby
 	hit intrusion(glm::dvec3 const &Point) const
@@ -209,7 +212,7 @@ public:
 			gauge::ring(*line.profile, line.sections[found.index], m_ring);
 			auto const depth{gauge::intrusion(m_ring, {glm::dot(offset, normal(sample)), Point.y - (sample.position.y + sample.grade * along)})};
 			if (depth > deepest.depth)
-				deepest = {depth, &line.route.spans[sample.span]};
+				deepest = {depth, &line.route.spans[sample.span], sample.direction};
 		}
 		return deepest;
 	}
@@ -317,6 +320,7 @@ void scan_models(corridor const &Space, std::vector<glm::dvec3> &Triangles, std:
 						hit.point = point;
 						hit.track = found.span->track;
 						hit.path = found.span->path;
+						hit.direction = found.direction;
 					}
 					return;
 				}
@@ -551,14 +555,15 @@ void editor_mode::gauge_focus(int const Index)
 	m_gauge.current = (Index % static_cast<int>(hits.size()) + static_cast<int>(hits.size())) % static_cast<int>(hits.size());
 	m_gauge.published = false;
 	gauge_spot(hits[m_gauge.current]);
-	auto const target{hits[m_gauge.current].point};
-	// from the side the camera looks from, a bit above
-	glm::dvec3 away{Camera.Pos.x - target.x, 0.0, Camera.Pos.z - target.z};
-	away = glm::length(away) > 1e-3 ? glm::normalize(away) : glm::dvec3(1.0, 0.0, 0.0);
+	auto const &hit{hits[m_gauge.current]};
+	// along the track, tangent to the gauge at the height of the place, from the end nearer to the camera
+	glm::dvec3 look{hit.direction.x, 0.0, hit.direction.y};
+	look = glm::length(look) > 1e-6 ? glm::normalize(look) : glm::dvec3(0.0, 0.0, 1.0);
+	if (glm::dot(Camera.Pos - hit.point, look) > 0.0)
+		look = -look;
 	m_focus_start_pos = Camera.Pos;
 	m_focus_start_angle = Camera.Angle;
-	m_focus_target_pos = target + away * 12.0 + glm::dvec3(0.0, 4.0, 0.0);
-	auto const look{glm::normalize(target - m_focus_target_pos)};
+	m_focus_target_pos = hit.point - look * gauge_view_distance;
 	m_focus_target_angle = glm::vec3(static_cast<float>(std::asin(std::clamp(look.y, -1.0, 1.0))), static_cast<float>(std::atan2(-look.x, -look.z)), 0.0f);
 	m_focus_active = true;
 	m_focus_time = 0.0;
