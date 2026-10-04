@@ -1732,7 +1732,11 @@ class TMoverParameters
 	// bounds-safe read access to MotorParam
 	TMotorParameters const &motor_param(int const Position) const
 	{
-		return MotorParam[std::clamp(Position, 0, MotorParametersArraySize)];
+		if (Position < 0)
+			return MotorParam[0];
+		if (Position > MotorParametersArraySize)
+			return MotorParam[MotorParametersArraySize];
+		return MotorParam[Position];
 	}
 	TTransmision Transmision;
 	// record   {liczba zebow przekladni}

@@ -598,11 +598,11 @@ void TAnimModel::on_season_update() {
 
 void TAnimModel::RaPrepare()
 { // ustawia światła i animacje we wzorcu modelu przed renderowaniem egzemplarza
-    bool state; // stan światła
 	if (Global.UpdateMaterials)
 	    on_season_update();
     for (int i = 0; i < iNumLights; ++i)
     {
+        bool state{ false }; // stan światła
         auto const lightmode { static_cast<int>( std::abs( lsLights[ i ] ) ) };
         switch( lightmode ) {
             case ls_On:

@@ -294,7 +294,7 @@ TSegment::find_nearest_point( glm::dvec3 const &Point ) const {
     else {
         // for curves iterate through segment chunks, and find the one which gives us the least distance to the specified point
         double distance = std::numeric_limits<double>::max();
-        double nearest;
+        double nearest { 0.0 };
         // NOTE: we're reusing already created segment chunks, which are created based on splinefidelity setting
         // this means depending on splinefidelity the results can be potentially slightly different
         for( int segmentidx = 0; segmentidx < iSegCount; ++segmentidx ) {

@@ -42,7 +42,7 @@ TTranscripts::Add( std::string const &txt, bool backgorund ) {
     cParser parser( asciitext );
     while( true == parser.getTokens( 3, false, "[]\n" ) ) {
 
-        float begin, end;
+        float begin{ 0.f }, end{ 0.f };
         std::string transcript;
         parser
             >> begin

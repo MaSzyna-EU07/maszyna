@@ -563,15 +563,12 @@ openal_renderer::init_caps() {
     if( ::alcIsExtensionPresent( nullptr, "ALC_ENUMERATION_EXT" ) == AL_TRUE ) {
         // enumeration supported
         WriteLog( "available audio devices:" );
-        auto const *devices { ::alcGetString( nullptr, ALC_DEVICE_SPECIFIER ) };
-        auto const
-            *device { devices },
-            *next { devices + 1 };
-        while( device && *device != '\0' && next && *next != '\0' ) {
-            WriteLog( { device } );
-            auto const len { std::strlen( device ) };
-            device += len + 1;
-            next += len + 2;
+        // device list is a sequence of null-terminated names, ending with an empty name
+        auto const *device { ::alcGetString( nullptr, ALC_DEVICE_SPECIFIER ) };
+        while( device != nullptr && *device != '\0' ) {
+            std::string const devicename { device };
+            WriteLog( devicename );
+            device += devicename.size() + 1;
         }
     }
 
