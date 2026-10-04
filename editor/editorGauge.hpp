@@ -73,14 +73,11 @@ struct place
 // The widening begins and ends ahead of the changes of the curvature and cant, as the vehicles enter a curve
 std::vector<section> sections(kind Kind, std::vector<double> const &Chainage, std::vector<double> const &Curvature, std::vector<double> const &Cant);
 
-// widening of the side (+1 left, -1 right) at the height; the cant shifts only the part above the lower one,
-// the lower part turns with the plane of the rail heads instead
-double widening(section const &Section, double Height, int Side);
-// point of the outline on the side at the section, with the widening and the turn of the lower part
+// point of the outline on the side (+1 left, -1 right) at the section, with the widening: the cant shifts the part
+// above the lower one, the lower part turns with the plane of the rail heads instead
 place outline_point(profile const &Profile, section const &Section, std::size_t Index, int Side);
-// half-width of the gauge at the height on the side, negative above or below the outline
-double half_width(profile const &Profile, section const &Section, double Height, int Side);
-// depth of the point inside the gauge, metres, not positive outside of it. Lateral positive to the left
+// distance of the point from the outline in any direction, metres, positive inside and negative outside.
+// Lateral positive to the left
 double intrusion(profile const &Profile, section const &Section, double Lateral, double Height);
 
 } // namespace gauge

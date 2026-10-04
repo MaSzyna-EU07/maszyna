@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <sstream>
 
 namespace gauge
@@ -100,13 +101,25 @@ place turn(section const &Section, place const &Point, double const Sine)
 	return {pivot + lateral * cosine - Point.height * Sine, lateral * Sine + Point.height * cosine};
 }
 
+// lower part common to all gauges, from the axis between the rails: the wheel zone at the running edge (717.5 mm
+// from the axis) with the flangeway of the dimension "b" 58 mm wide and 38 mm deep, the dimension "a" of 150 mm
+// at the rail top outside of it, then the limit installation gauge up to 380 mm
+std::vector<profile::point> const common_lower{{0.6595, 0.055}, {0.6595, -0.038}, {0.7175, -0.038}, {0.7175, 0.0}, {0.8675, 0.0},
+                                               {0.8675, 0.055}, {1.211, 0.055},   {1.585, 0.380},   {1.675, 0.380}};
+
+// the wheel zone follows the rails, without the widening in the curves
+bool wheel_zone(profile::point const &Point)
+{
+	return Point.height <= 0.055 + 1e-9 && Point.half_width < 1.0;
+}
+
 // names of the kinds in the file
 char const *const kind_names[]{"unified", "installation", "road"};
 
 // outline from the points listed top down, in millimetres, as in the tables of the standard, over the lower part
 profile installation(std::string const &Name, std::vector<std::pair<int, int>> const &Points)
 {
-	profile result{Name, kind::installation, {{1.211, 0.055}, {1.585, 0.380}, {1.675, 0.380}}};
+	profile result{Name, kind::installation, common_lower};
 	for (auto point = Points.rbegin(); point != Points.rend(); ++point)
 		result.outline.push_back({point->second * 0.001, point->first * 0.001});
 	return result;
@@ -117,7 +130,8 @@ profile installation(std::string const &Name, std::vector<std::pair<int, int>> c
 std::vector<profile> default_profiles()
 {
 	// limit installation gauge up to 1170 mm, then the outline of the unified gauge
-	std::vector<profile::point> const lower{{1.211, 0.055}, {1.585, 0.380}, {1.675, 0.380}, {1.675, 1.170}, {2.000, 1.170}};
+	auto lower{common_lower};
+	lower.insert(lower.end(), {{1.675, 1.170}, {2.000, 1.170}});
 	std::vector<profile::point> const gpl1{{2.000, 3.050}, {1.900, 3.850}, {1.800, 4.250}, {1.600, 4.500}, {1.450, 4.632}};
 	std::vector<profile::point> const gpl2{{2.000, 3.625}, {1.920, 4.900}};
 	std::vector<profile::point> const pantograph{{1.450, 6.600}, {1.150, 6.900}, {0.0, 6.900}};
@@ -220,50 +234,43 @@ std::vector<section> sections(kind const Kind, std::vector<double> const &Chaina
 	return result;
 }
 
-double widening(section const &Section, double const Height, int const Side)
-{
-	auto const i{Side > 0 ? 1 : 0};
-	return Height < lower_part ? Section.lower[i] : Section.upper[i] + Section.cant[i] * Height / 1.5;
-}
-
 place outline_point(profile const &Profile, section const &Section, std::size_t const Index, int const Side)
 {
 	auto const &point{Profile.outline[Index]};
 	// the step at the top of the lower part belongs to it from below
 	bool const lower{point.height < lower_part - 1e-9 || (point.height < lower_part + 1e-9 && Index > 0 && Profile.outline[Index - 1].height < lower_part - 1e-9)};
 	auto const i{Side > 0 ? 1 : 0};
-	auto const width{Section.base + point.half_width + (lower ? Section.lower[i] : Section.upper[i] + Section.cant[i] * point.height / 1.5)};
+	auto const widening{wheel_zone(point) ? 0.0 : lower ? Section.lower[i] : Section.upper[i] + Section.cant[i] * point.height / 1.5};
+	auto const width{Section.base + point.half_width + widening};
 	place const result{Side * width, point.height};
 	return lower && Section.tilt != 0.0 ? turn(Section, result, Section.tilt) : result;
 }
 
-double half_width(profile const &Profile, section const &Section, double const Height, int const Side)
-{
-	double width{-1.0};
-	for (std::size_t i = 1; i < Profile.outline.size(); ++i)
-	{
-		auto const &a{Profile.outline[i - 1]};
-		auto const &b{Profile.outline[i]};
-		if (Height < std::min(a.height, b.height) || Height > std::max(a.height, b.height))
-			continue;
-		auto const span{b.height - a.height};
-		width = std::max(width, std::abs(span) < 1e-9 ? std::max(a.half_width, b.half_width) : a.half_width + (b.half_width - a.half_width) * (Height - a.height) / span);
-	}
-	if (width < 0.0)
-		return width;
-	return Section.base + width + widening(Section, Height, Side);
-}
-
 double intrusion(profile const &Profile, section const &Section, double const Lateral, double const Height)
 {
-	// the point in the plane of the rail heads, for the lower part
-	auto const local{Section.tilt != 0.0 ? turn(Section, {Lateral, Height}, -Section.tilt) : place{Lateral, Height}};
-	auto const lower{local.height < lower_part};
-	auto const point{lower ? local : place{Lateral, std::max(Height, lower_part)}};
-	auto const width{half_width(Profile, Section, point.height, point.lateral >= 0.0 ? 1 : -1)};
-	if (width < 0.0)
+	auto const count{Profile.outline.size()};
+	if (count < 2)
 		return 0.0;
-	return width - std::abs(point.lateral);
+	// the outline from the bottom right up and down to the bottom left, closed across the bottom
+	auto const vertex{[&](std::size_t const Index) {
+		return Index < count ? outline_point(Profile, Section, Index, -1) : outline_point(Profile, Section, 2 * count - 1 - Index, 1);
+	}};
+	bool inside{false};
+	auto nearest{std::numeric_limits<double>::max()};
+	auto previous{vertex(2 * count - 1)};
+	for (std::size_t i = 0; i < 2 * count; ++i)
+	{
+		auto const current{vertex(i)};
+		auto const lateral{current.lateral - previous.lateral};
+		auto const height{current.height - previous.height};
+		if ((current.height > Height) != (previous.height > Height) && Lateral < previous.lateral + lateral * (Height - previous.height) / height)
+			inside = false == inside;
+		auto const length{lateral * lateral + height * height};
+		auto const t{length > 0.0 ? std::clamp(((Lateral - previous.lateral) * lateral + (Height - previous.height) * height) / length, 0.0, 1.0) : 0.0};
+		nearest = std::min(nearest, std::hypot(Lateral - previous.lateral - lateral * t, Height - previous.height - height * t));
+		previous = current;
+	}
+	return inside ? nearest : -nearest;
 }
 
 } // namespace gauge
