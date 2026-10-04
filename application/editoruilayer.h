@@ -37,6 +37,7 @@ class editor_ui : public ui_layer
 	functions_panel::rotation_mode rot_mode();
 	const std::string *get_active_node_template(bool bypassRandom = false);
 	nodebank_panel::edit_mode mode();
+	void set_mode(nodebank_panel::edit_mode const Mode);
 	float getSpacing();
 	// node bank and model set access (set selection widgets, set contents)
 	nodebank_panel &nodebank()
@@ -50,9 +51,10 @@ class editor_ui : public ui_layer
 	{
 		m_filloptions = std::move(Renderer);
 	}
-	void set_track_options(std::function<void()> Renderer)
+	// the open track window takes the mouse over, whichever toolset tab is chosen
+	void set_track(bool const Track)
 	{
-		m_trackoptions = std::move(Renderer);
+		m_track = Track;
 	}
 	// draws menus of the editor mode in the menu bar, past the ones of the user interface
 	void set_menu_options(std::function<void()> Renderer)
@@ -63,11 +65,6 @@ class editor_ui : public ui_layer
 	void set_gizmo_options(std::function<void()> Renderer)
 	{
 		m_gizmooptions = std::move(Renderer);
-	}
-	// switch of the structure gauge window in the menu bar (the window lives in the editor mode)
-	void set_gauge_window(bool *Open)
-	{
-		m_gaugewindow = Open;
 	}
 	// actions of the file menu, performed by the editor mode
 	void set_file_actions(std::function<void()> Save, std::function<void()> Export);
@@ -91,9 +88,8 @@ class editor_ui : public ui_layer
 	bool m_insertrandom{false}; // insert mode picks a random template from m_insertset
 	model_set_ref m_insertset;
 	std::function<void()> m_filloptions;
-	std::function<void()> m_trackoptions;
 	std::function<void()> m_menuoptions;
 	std::function<void()> m_gizmooptions;
 	scene::basic_node *m_node{nullptr}; // currently bound scene node, if any
-	bool *m_gaugewindow{nullptr};
+	bool m_track{false};
 };

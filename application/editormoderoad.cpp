@@ -220,7 +220,8 @@ void editor_mode::render_road_menu()
 {
 	if (ImGui::BeginMenu("Roads"))
 	{
-		ImGui::MenuItem("Road editor", nullptr, &m_roadtool.window);
+		if (ImGui::MenuItem("Road editor", nullptr, &m_roadtool.window) && m_roadtool.window)
+			m_track_window_open = false;
 		ImGui::MenuItem("Show lanes", nullptr, &m_roadtool.lanes);
 		ImGui::EndMenu();
 	}

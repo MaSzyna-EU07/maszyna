@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "world/Track.h"
 #include "imgui/imgui.h"
+#include "utilities/translation.h"
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
@@ -414,12 +415,12 @@ bool edit_points(std::vector<gauge::profile::point> &Points)
 	bool edited{false};
 	bool inserted{false};
 	int remove{-1};
-	ImGui::Columns(3, "gaugeoutline", false);
+	ImGui::Columns(3, STR_C("gaugeoutline"), false);
 	ImGui::SetColumnWidth(0, 110.0f);
 	ImGui::SetColumnWidth(1, 110.0f);
-	ImGui::TextDisabled("Half-width");
+	ImGui::TextDisabled(STR_C("Half-width"));
 	ImGui::NextColumn();
-	ImGui::TextDisabled("Height");
+	ImGui::TextDisabled(STR_C("Height"));
 	ImGui::NextColumn();
 	ImGui::NextColumn();
 	for (int i = 0; i < static_cast<int>(Points.size()); ++i)
@@ -441,7 +442,7 @@ bool edit_points(std::vector<gauge::profile::point> &Points)
 			inserted = edited = true;
 		}
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("Insert a point after this one");
+			ImGui::SetTooltip(STR_C("Insert a point after this one"));
 		ImGui::SameLine();
 		if (Points.size() > 2 && ImGui::SmallButton("x"))
 			remove = i;
@@ -676,48 +677,48 @@ void editor_mode::render_gauge_window()
 	if (false == m_gauge.open)
 		return;
 	ImGui::SetNextWindowSize(ImVec2(380.0f, 420.0f), ImGuiCond_FirstUseEver);
-	if (false == ImGui::Begin("Structure gauge", &m_gauge.open))
+	if (false == ImGui::Begin(STR_C("Structure gauge"), &m_gauge.open))
 	{
 		ImGui::End();
 		return;
 	}
-	if (ImGui::Checkbox("Show along the selected path", &m_gauge.enabled))
+	if (ImGui::Checkbox(STR_C("Show along the selected path"), &m_gauge.enabled))
 		m_gauge.pending = true;
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("Translucent tunnel of the gauge 500 m each way along the line of the selected path.\nWidened in the curves under 250 m and tilted on the cant, from 20 m (inner side)\nand 26 m (outer side) ahead of the curve, as in the PKP PLK standard, volume II.");
+		ImGui::SetTooltip(STR_C("Translucent tunnel of the gauge 500 m each way along the line of the selected path.\nWidened in the curves under 250 m and tilted on the cant, from 20 m (inner side)\nand 26 m (outer side) ahead of the curve, as in the PKP PLK standard, volume II."));
 	gauge_load();
 	bool changed{render_gauge_choice("Railway", m_gauge.profile, false)};
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("GPL: unified structure gauge, widened only in the curves under 250 m.\nG1, G2, GA, GB, GC: limit (GSZ) and nominal (NSZ) installation gauges, widened by 3750/R in all curves.");
+		ImGui::SetTooltip(STR_C("GPL: unified structure gauge, widened only in the curves under 250 m.\nG1, G2, GA, GB, GC: limit (GSZ) and nominal (NSZ) installation gauges, widened by 3750/R in all curves."));
 	changed |= render_gauge_choice("Road", m_gauge.road, true);
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("Clearance over the roads, from 0.5 m beyond the edges of the carriageway");
+		ImGui::SetTooltip(STR_C("Clearance over the roads, from 0.5 m beyond the edges of the carriageway"));
 
 	if (m_gauge.scan)
 	{
 		auto const label{format("Scanning the map %.0f%%, %zu found", m_gauge.scan->progress * 100.f, m_gauge.map.hits.size())};
 		ImGui::ProgressBar(m_gauge.scan->progress, ImVec2(-70.0f, 0.0f), label.c_str());
 		ImGui::SameLine();
-		if (ImGui::SmallButton("Cancel"))
+		if (ImGui::SmallButton(STR_C("Cancel")))
 			finish_gauge_map();
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("Stops the scan and keeps the models found so far");
+			ImGui::SetTooltip(STR_C("Stops the scan and keeps the models found so far"));
 	}
-	else if (ImGui::Button("Find the violations on the whole map"))
+	else if (ImGui::Button(STR_C("Find the violations on the whole map")))
 		scan_gauge_map();
 	else if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("Checks the models along all tracks of the scenery against the chosen gauge\nand lists them, the deepest first.\nRuns in the background, the list fills up as it goes");
+		ImGui::SetTooltip(STR_C("Checks the models along all tracks of the scenery against the chosen gauge\nand lists them, the deepest first.\nRuns in the background, the list fills up as it goes"));
 	if (m_gauge.map.scanned && false == static_cast<bool>(m_gauge.scan))
 	{
 		ImGui::SameLine();
-		if (ImGui::SmallButton("Clear"))
+		if (ImGui::SmallButton(STR_C("Clear")))
 		{
 			m_gauge.map = {};
 			m_gauge.current = -1;
 			m_gauge.published = false;
 		}
 		else if (m_gauge.map.history != m_history.size())
-			ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "The scenery changed since the scan (%s)", m_gauge.map.profile.c_str());
+			ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), STR_C("The scenery changed since the scan (%s)"), m_gauge.map.profile.c_str());
 	}
 	render_gauge_hits();
 	changed |= render_gauge_outline(m_gauge.profile);
@@ -734,10 +735,10 @@ void editor_mode::render_gauge_hits()
 		return;
 	if (hits.empty())
 	{
-		ImGui::TextDisabled(m_gauge.map.scanned ? "No model enters the gauge on the map" : "The gauge is clear along this line");
+		ImGui::TextDisabled(m_gauge.map.scanned ? STR_C("No model enters the gauge on the map") : STR_C("The gauge is clear along this line"));
 		return;
 	}
-	ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "%zu models enter the gauge%s", hits.size(), m_gauge.map.scanned ? " on the map" : "");
+	ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), STR_C("%zu models enter the gauge%s"), hits.size(), m_gauge.map.scanned ? STR_C(" on the map") : "");
 	if (ImGui::ArrowButton("##gaugeprevious", ImGuiDir_Left))
 		gauge_focus(m_gauge.current - 1);
 	ImGui::SameLine();
@@ -762,7 +763,7 @@ bool editor_mode::render_gauge_choice(char const *Label, int &Index, bool const 
 {
 	bool changed{false};
 	ImGui::SetNextItemWidth(-60.0f);
-	if (ImGui::BeginCombo(Label, Index >= 0 ? m_gauge.profiles[Index].name.c_str() : "none"))
+	if (ImGui::BeginCombo(Label, Index >= 0 ? m_gauge.profiles[Index].name.c_str() : STR_C("none")))
 	{
 		for (int i = 0; i < static_cast<int>(m_gauge.profiles.size()); ++i)
 			if ((m_gauge.profiles[i].kind == gauge::kind::road) == Road && ImGui::Selectable(m_gauge.profiles[i].name.c_str(), i == Index))
@@ -780,12 +781,12 @@ bool editor_mode::render_gauge_outline(int const Index)
 	if (Index < 0)
 		return false;
 	auto &profile{m_gauge.profiles[Index]};
-	if (false == ImGui::TreeNode(&profile, "Outline of %s (right half)", profile.name.c_str()))
+	if (false == ImGui::TreeNode(&profile, STR_C("Outline of %s (right half)"), profile.name.c_str()))
 		return false;
-	ImGui::TextDisabled(profile.kind == gauge::kind::road ? "Metres from the edge of the carriageway and above the road, bottom up."
+	ImGui::TextDisabled(profile.kind == gauge::kind::road ? STR_C("Metres from the edge of the carriageway and above the road, bottom up.")
 	                                                      : "PKP PLK standard, volume II; below 1170 mm the limit installation gauge.\nMetres from the track axis and above the rail top, bottom up.");
 	bool edited{edit_points(profile.outline)};
-	if (ImGui::SmallButton("Restore the starting outlines"))
+	if (ImGui::SmallButton(STR_C("Restore the starting outlines")))
 	{
 		m_gauge.profiles = gauge::default_profiles();
 		gauge_load();

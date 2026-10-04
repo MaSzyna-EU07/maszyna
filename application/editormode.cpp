@@ -475,10 +475,9 @@ editor_mode::editor_mode() {
 	ui()->set_fill_options([this]() { render_area_fill(); });
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
 	ui()->set_file_actions([this]() { save(); }, [this]() { export_scenery(); });
-	ui()->set_track_options([this]() { render_track_ui(); });
-	ui()->set_gauge_window(&m_gauge.open);
 	ui()->set_menu_options([this]() {
 		render_object_menu();
+		render_track_menu();
 		render_road_menu();
 	});
 	m_roadtool.settings.normalize();
@@ -496,10 +495,12 @@ editor_mode::~editor_mode()
 	editor_track::observe(nullptr);
 }
 
-std::vector<double> editor_mode::ground_heights(std::vector<glm::dvec3> const &Points, bool const Fresh)
+std::vector<double> editor_mode::ground_heights(std::vector<glm::dvec3> const &Points, bool const Fresh, std::vector<char> *Found)
 {
     std::vector<double> heights;
     heights.reserve(Points.size());
+    if (Found != nullptr)
+        Found->assign(Points.size(), 0);
     for (auto const &point : Points)
         heights.push_back(point.y);
     if (Points.empty() || simulation::Region == nullptr)
@@ -548,6 +549,8 @@ std::vector<double> editor_mode::ground_heights(std::vector<glm::dvec3> const &P
         }
         if (found)
             heights[i] = y;
+        if (Found != nullptr)
+            (*Found)[i] = found ? 1 : 0;
     }
     // the tiles left alone the longest go once there are too many
     while (ground_tiles.size() > ground_tile_limit)
@@ -1241,6 +1244,7 @@ bool editor_mode::update()
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
     render_gizmo();
 
+    render_track_inspector();
     if (selected_track())
         draw_track_overlay();
     if (route_active())
@@ -1251,12 +1255,11 @@ bool editor_mode::update()
     {
         update_build_tools();
         draw_build_overlay();
+        speed_step();
         draw_track_hints();
-        render_track_window();
         draw_profile_overlay();
-        render_profile_window();
         draw_infra_overlay();
-        render_infra_window();
+        draw_speed_overlay();
     }
     update_gauge();
     render_gauge_window();
@@ -2647,7 +2650,11 @@ void editor_mode::render_gizmo()
 
     if (selected_track())
     {
-        render_track_gizmo();
+        // in the track modes the whole path is moved only while selecting, or the switch in its mode
+        if (ui()->mode() != nodebank_panel::TRACK || m_track_tab == track_tab::path || m_track_tab == track_tab::turnout)
+            render_track_gizmo();
+        else
+            m_track_gizmo_using = false;
         return;
     }
 
@@ -3010,6 +3017,8 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
     if (!anyModifier && is_press(Action)
         && m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) != GLFW_PRESS)
     {
+        if (ui()->mode() == nodebank_panel::TRACK && false == m_track_gizmo_using && false == m_straights.dragging && false == m_switch.placing && track_shortcut(Key))
+            return;
         bool handled = true;
         switch (Key)
         {
@@ -3039,7 +3048,9 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
     if (Action == GLFW_RELEASE)
         return;
 
-    // shortcuts: undo/redo
+    // shortcuts: undo/redo. not in the middle of a drag, it would go on from the state which was undone
+    if (Global.ctrlState && (Key == GLFW_KEY_Z || Key == GLFW_KEY_Y) && is_press(Action) && (m_track_gizmo_using || m_straights.dragging || m_extend.active || m_switch.placing))
+        return;
     if (Global.ctrlState && Key == GLFW_KEY_Z && is_press(Action))
     {
         undo_last();
@@ -3127,14 +3138,18 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         {
             road_cancel();
         }
+        // the first Esc drops what is going on in the track mode, the next one goes back to the selection
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK)
         {
-            m_track_point = {};
-            m_route.vertex = -1;
-            m_straights.handle = -1;
-            m_route.grip = -1;
-            m_straights.tool_placed = false;
-            m_straights.detour.clear();
+            if (m_lay.active && false == m_lay.points.empty())
+                lay_cancel();
+            else if (track_busy())
+            {
+                cancel_track_tools();
+                m_straights.tool = 0;
+            }
+            else
+                show_track_tab(track_tab::path);
         }
         break;
 
@@ -3142,6 +3157,18 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         // area fill: remove the last outline point
         if (is_press(Action) && ui()->mode() == nodebank_panel::FILL && !m_fill_points.empty())
             m_fill_points.pop_back();
+        if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && m_lay.active && !m_lay.points.empty())
+        {
+            m_lay.points.pop_back();
+            if (m_lay.points.empty())
+                m_lay.start = {};
+        }
+        break;
+
+    case GLFW_KEY_ENTER:
+    case GLFW_KEY_KP_ENTER:
+        if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && m_lay.active)
+            lay_finish({});
         break;
 
     case GLFW_KEY_K:
@@ -3221,8 +3248,8 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
         return;
     }
 
-    // with the road window open the left button works its tools, whichever edit mode is on
-    if (m_roadtool.window && Button == GLFW_MOUSE_BUTTON_LEFT)
+    // with the road window open the left button works its tools, whichever edit mode is on but the track one
+    if (m_roadtool.window && Button == GLFW_MOUSE_BUTTON_LEFT && ui()->mode() != nodebank_panel::TRACK)
     {
         if (is_press(Action))
         {
@@ -3261,12 +3288,21 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
 
             if (mode == nodebank_panel::TRACK)
             {
+                if (m_lay.active)
+                {
+                    GfxRenderer->Pick_Node_Callback([this](scene::basic_node * /*node*/) {
+                        if (viewport_click())
+                            lay_click();
+                    });
+                    m_input.mouse.button(Button, Action);
+                    return;
+                }
                 if (start_extend() || start_switch_placement())
                 {
                     m_input.mouse.button(Button, Action);
                     return;
                 }
-                if ((Mods & GLFW_MOD_ALT) != 0)
+                if ((Mods & GLFW_MOD_ALT) != 0 && m_track_tab == track_tab::straights)
                 {
                     GfxRenderer->Pick_Node_Callback([this](scene::basic_node *node) {
                         if (viewport_click() && dynamic_cast<TTrack *>(node) != nullptr)

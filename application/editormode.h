@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorOrthophoto.hpp"
 #include "editor/editorTrack.hpp"
 #include "editor/editorAlignment.hpp"
+#include "editor/editorSpeed.hpp"
 #include "editor/editorRoad.hpp"
 #include "editor/editorProfile.hpp"
 #include "editor/editorInfra.hpp"
@@ -103,6 +104,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		bool picking;
 	};
 
+	struct stored_profile;
 	struct EditorSnapshot
 	{
 		enum class Action { Move, Rotate, Scale, Add, Delete, TrackEdit, Other, RoadEdit };
@@ -123,6 +125,8 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::vector<TTrack *> removed;
 		editor_road::record roads; // what a change of the roads comes to
 		std::vector<infra::object_state> infra; // objects which followed the paths
+		bool profiles{false}; // the stored grade line designs changed too, these were the ones before
+		std::vector<stored_profile> profile_library;
 	};
 	void push_snapshot(scene::basic_node *node, EditorSnapshot::Action Action = EditorSnapshot::Action::Move, std::string const &Serialized = std::string());
 
@@ -300,19 +304,22 @@ class editor_mode : public application_mode, private editor_track::observer
 	float m_gizmo_snap{1.0f};                                    // translation snap step (metres) applied while Ctrl is held
 
 	TTrack *selected_track() const;
-	void render_track_ui();
 	void render_path_ui();
 	void draw_track_overlay() const;
 	bool pick_track_handle();
 	void select_track(scene::basic_node *Node);
 	void render_track_gizmo();
 	void commit_track_drag(bool const Force);
+	void cancel_track_tools();
 	void push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created = {}, std::vector<TTrack *> Removed = {});
+	// false, with the reason, when one of the paths can't be changed, its file not taking the changes back
+	static bool tracks_editable(std::vector<TTrack *> const &Tracks, std::string &Reason);
 	void trim_history();
 	void restore_track_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo);
 	editor_track::point_ref m_track_point;
 	std::vector<TTrack *> m_track_drag;
 	std::vector<std::pair<TTrack *, editor_track::point_ref>> m_track_drag_points;
+	std::vector<editor_track::joint> m_track_joints; // of the neighbours, following the whole track dragged
 	editor_track::snap_target m_track_snap;
 	glm::dvec3 m_track_pivot{0.0};
 	glm::mat4 m_track_gizmo{1.0f};
@@ -322,6 +329,15 @@ class editor_mode : public application_mode, private editor_track::observer
 	editor_track::state m_track_field_before;
 	std::array<std::array<char, 256>, 3> m_track_materials{};
 	std::array<TTrack const *, 3> m_track_material_edited{}; // path whose texture name is being typed
+	// typed names of the track circuits, the sleeper model and its skin, and the event to add, for the path
+	TTrack const *m_track_names_for{nullptr};
+	std::array<char, 256> m_track_isolated{};
+	std::array<char, 256> m_track_sleeper_model{};
+	std::array<char, 256> m_track_sleeper_skin{};
+	std::array<char, 128> m_track_event{};
+	int m_track_event_list{0};
+	std::string m_track_events_missing;
+	void render_path_circuits(TTrack &Track);
 	std::string m_track_mode_notice;
 	// structure gauge along the line of the selected path, shown in the 3d view
 	struct gauge_state
@@ -383,9 +399,9 @@ class editor_mode : public application_mode, private editor_track::observer
 		alignment::result result;
 		int vertex{-1};
 		int grip{-1};
+		bool single{true}; // one curve between its straights, instead of the whole line
 	};
 	void render_route_ui();
-	void render_route_ends();
 	bool render_route_parameters();
 	bool render_route_vertices();
 	bool render_route_vertex(int const Index);
@@ -393,8 +409,12 @@ class editor_mode : public application_mode, private editor_track::observer
 	void route_reset();
 	void route_bind_ends();
 	bool route_from_curve(TTrack &Track);
+	bool route_from_line(TTrack &Track);
+	alignment::vertex route_vertex_of(editor_track::curve const &Curve) const;
+	bool route_load(TTrack &Track) { return m_route.single ? route_from_curve(Track) : route_from_line(Track); }
 	void route_update() { m_route.result = alignment::compute(m_route.design); }
 	void route_apply();
+	bool route_relay_through_switches(editor_track::chain const &Chain, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created);
 	void route_recommend(alignment::vertex &Vertex) const;
 	void draw_route_overlay() const;
 	bool pick_route_vertex();
@@ -489,11 +509,13 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::vector<editor_track::switch_template> templates;
 		bool collected{false};
 		int armed{-1};
+		int last{0}; // template armed the last time
 		bool placing{false};
 		double along{0.0};
 		glm::dvec3 point{0.0};
 		glm::dvec3 mouse{0.0};
 		editor_track::straight line;
+		std::string status;
 	};
 	switch_tool m_switch;
 	int m_turnout_template{0};
@@ -509,6 +531,31 @@ class editor_mode : public application_mode, private editor_track::observer
 		bool atend{true};
 	};
 	extend_tool m_extend;
+	// lays new track through the clicked points, with no path needed to start from
+	struct lay_tool
+	{
+		bool active{false};
+		std::vector<glm::dvec3> points;
+		editor_track::snap_target start; // free end the track starts from, if any
+		glm::dvec3 mouse{0.0};
+		editor_track::snap_target mouse_snap;
+		std::vector<segment_data> preview;
+		std::string preview_error;
+		double preview_length{0.0};
+		double radius{500.0};
+		bool transitions{true};
+		double piece_length{100.0};
+		bool copy_selected{false};
+		editor_track::path_style style;
+		std::string status;
+	};
+	lay_tool m_lay;
+	void render_lay_ui();
+	void render_lay_status();
+	void lay_click();
+	void lay_finish(editor_track::snap_target const &End);
+	void lay_cancel();
+	std::vector<segment_data> lay_pieces(std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, double &Length, std::string &Error) const;
 	void render_switch_ui();
 	bool start_switch_placement();
 	void finish_switch_placement();
@@ -538,17 +585,44 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool start_extend();
 	void finish_extend();
 	std::vector<segment_data> extend_pieces() const;
+	// the free end of the path as the start of a new track; false if it isn't free or has no direction
+	static bool free_end(TTrack &Track, int const Path, bool const Atend, extend_tool &Tool);
+	// the free end new pieces are added at: the selected point if it's one, else the end, else the start
+	bool chosen_free_end(extend_tool &Tool);
+	// adds a straight (Side 0) or a curve to the left (1) or the right (-1) at the free end of the selected track
+	void extend_add(int const Side);
+	void render_extend_ui();
+	bool m_extend_freehand{false}; // dragging the ring of a free end draws a curve through the cursor, not a straight
+	double m_extend_length{25.0};
+	double m_extend_radius{300.0};
 	bool extend_snap(editor_track::snap_target &Target) const;
 	void update_build_tools();
 	void draw_build_overlay() const;
-	enum class track_tab { straights, route, path, turnout };
+	// modes of the track editor, one at a time: path is the plain selection
+	enum class track_tab { straights, route, path, turnout, profile, speed, infra, lay };
+	struct track_mode
+	{
+		char const *label;
+		char const *key;
+		track_tab tab;
+		char const *tooltip;
+	};
+	static std::array<track_mode, 8> const &track_modes();
+	void render_track_menu();
+	void arm_switch();
 	bool m_track_window_open{false};
-	void render_track_window();
-	void render_track_modes(TTrack &Track);
+	// the inspector is pinned to the right edge of the screen, the profile strip to the bottom one, both resized from the inner edge
+	void render_track_inspector();
+	void render_track_modes(TTrack *Track);
+	void show_track_tab(track_tab const Tab);
+	bool track_analysis_tab() const { return m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::infra; }
+	bool track_shortcut(int const Key);
+	bool track_busy() const; // something going on in the mode, which Esc drops before it leaves the mode
+	std::string track_mode_name() const;
 	void render_turnout_ui();
 	void render_path_parameters(TTrack &Track);
 	void render_straight_ui();
-	track_tab m_track_tab{track_tab::straights};
+	track_tab m_track_tab{track_tab::path};
 	void delete_selected_track();
 	void start_straight_gesture(int const Tool);
 	void finish_straight_gesture();
@@ -558,7 +632,8 @@ class editor_mode : public application_mode, private editor_track::observer
 		char const *key;
 		std::string action;
 	};
-	std::vector<key_hint> track_key_hints() const;
+	std::vector<key_hint> track_key_hints(bool const All) const;
+	void render_track_guide();
 	std::string track_readout() const;
 	void draw_track_hints();
 	bool m_route_tab{true};
@@ -593,6 +668,11 @@ class editor_mode : public application_mode, private editor_track::observer
 		bool panning{false};
 		bool changed{false};
 		double hover{-1.0};
+		// under the cursor in the strip
+		int hover_point{-1};
+		int hover_grip{-1};
+		bool hover_line{false};
+		int shown{-2}; // point in the side panel
 		std::string status;
 		std::string error;
 	};
@@ -616,7 +696,10 @@ class editor_mode : public application_mode, private editor_track::observer
 	void profile_forget();
 	void profile_open_stored(std::size_t const Index);
 	void profile_edited();
-	void render_profile_window();
+	void render_profile_body();
+	void render_profile_strip();
+	void render_profile_toolbar();
+	void render_profile_points();
 	void render_profile_source();
 	bool render_profile_parameters();
 	void render_profile_issues();
@@ -630,7 +713,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void profile_fit_view();
 	void profile_after_undo();
 	struct profile_view;
-	void render_profile_canvas();
+	void render_profile_canvas(float const Height);
 	void profile_fit_exaggeration(profile_view const &View);
 	void profile_navigate(profile_view const &View, bool const Hovered);
 	bool profile_canvas_edit(profile_view const &View, bool const Hovered);
@@ -687,7 +770,32 @@ class editor_mode : public application_mode, private editor_track::observer
 	void track_split(TTrack &Original, TTrack &Created, segment_data const &First) override;
 	void infra_move(infra::binding &Binding);
 	void infra_attach(EditorSnapshot &Snapshot);
-	void render_infra_window();
+	void render_infra_body();
+
+	// speed limits of the paths checked against what their geometry allows
+	struct speed_state
+	{
+		bool open{false};
+		int scope{0}; // 0: the line through the selected path, 1: the whole scenery
+		speed_check::options options;
+		std::vector<std::pair<TTrack *, int>> queue;
+		std::size_t next{0};
+		std::vector<speed_check::verdict> results;
+		bool show_all{false};
+		int limits{0}; // 0: all the paths, 1: only those with a speed limit set, 2: only those without
+		int selected{-1};
+		std::size_t history{0}; // size of the undo history at the check
+		std::string status;
+	};
+	speed_state m_speed;
+	void render_speed_body();
+	void speed_start();
+	void speed_step();
+	void speed_focus(int const Index);
+	// with Branches the limits of the switch branches count too, otherwise they're only warnings
+	void speed_apply(std::vector<int> const &Indices, bool const Branches);
+	std::vector<int> speed_listed() const;
+	void draw_speed_overlay() const;
 	void infra_rebase();
 	void render_infra_search();
 	void render_infra_candidates();
@@ -811,7 +919,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	// Firstgrade, Lastgrade: slopes the road has to start and end with, nullptr for none
 	void road_profile(std::vector<segment_data> &Pieces, double const *Firstgrade, double const *Lastgrade, bool const Fresh);
 	// height of the ground under each of the points, with the roads not taken for the ground. a point with nothing under it keeps its height
-	std::vector<double> ground_heights(std::vector<glm::dvec3> const &Points, bool const Fresh);
+	// Found: set for the points which have the ground under them
+	std::vector<double> ground_heights(std::vector<glm::dvec3> const &Points, bool const Fresh, std::vector<char> *Found = nullptr);
 	void push_road_snapshot(editor_road::record Record);
 	void restore_road_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo);
 	road_tool m_roadtool;

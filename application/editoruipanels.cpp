@@ -542,12 +542,12 @@ void nodebank_panel::render()
 		}
 
 		// edit modes as tabs, each with its own settings
-		std::pair<char const *, edit_mode> const modes[] = {{"Select", MODIFY}, {"Track", TRACK}, {"Insert", ADD}, {"Brush", BRUSH}, {"Area fill", FILL}, {"Copy to bank", COPY}};
+		std::pair<char const *, edit_mode> const modes[] = {{"Select", MODIFY}, {"Insert", ADD}, {"Brush", BRUSH}, {"Area fill", FILL}, {"Copy to bank", COPY}};
 		if (ImGui::BeginTabBar("##editmodes", ImGuiTabBarFlags_FittingPolicyResizeDown))
 		{
 			for (auto const &tab : modes)
 			{
-				if (false == ImGui::BeginTabItem(tab.first))
+				if (false == ImGui::BeginTabItem(tab.first, nullptr, requested_mode == tab.second ? ImGuiTabItemFlags_SetSelected : 0))
 				{
 					continue;
 				}
@@ -559,6 +559,7 @@ void nodebank_panel::render()
 				ImGui::EndTabItem();
 			}
 			ImGui::EndTabBar();
+			requested_mode = -1;
 		}
 
 		ImGui::Separator();

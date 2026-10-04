@@ -27,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Traction.h"
 
 #include "imgui/imgui.h"
+#include "utilities/translation.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -707,7 +708,7 @@ void editor_mode::infra_recognize()
 	state.tracks = infra_scope();
 	if (state.tracks.empty())
 	{
-		state.error = (state.scope == 2 ? "Open the vertical profile of a route first" : state.scope == 3 ? "The scenery has no paths the editor can handle" : "Select a path first");
+		state.error = (state.scope == 2 ? STR_C("Open the vertical profile of a route first") : state.scope == 3 ? STR_C("The scenery has no paths the editor can handle") : STR_C("Select a path first"));
 		return;
 	}
 	track_index index;
@@ -803,7 +804,7 @@ void editor_mode::infra_recognize()
 		add(binding, "nearby", corridor);
 	}
 	std::stable_sort(state.candidates.begin(), state.candidates.end(), [](infra_candidate const &A, infra_candidate const &B) { return A.binding.group < B.binding.group; });
-	state.status = format("%d object(s) found along %d path(s)", static_cast<int>(state.candidates.size()), static_cast<int>(state.tracks.size()));
+	state.status = format(STR_C("%d object(s) found along %d path(s)"), static_cast<int>(state.candidates.size()), static_cast<int>(state.tracks.size()));
 }
 
 void editor_mode::infra_bind_chosen()
@@ -823,7 +824,7 @@ void editor_mode::infra_bind_chosen()
 		candidate.chosen = false;
 		++count;
 	}
-	state.status = format("%d object(s) bound, they follow the changes of the track. The bindings are kept in the scenery files on save", count);
+	state.status = format(STR_C("%d object(s) bound, they follow the changes of the track. The bindings are kept in the scenery files on save"), count);
 }
 
 void editor_mode::infra_unbind(std::vector<std::size_t> Indices)
@@ -1108,7 +1109,7 @@ void editor_mode::infra_attach(EditorSnapshot &Snapshot)
 			return true;
 		for (auto const &anchor : State.saved.anchors)
 		{
-			if (contains(Snapshot.created, anchor.at.track))
+			if (contains(Snapshot.created, anchor.at.track) || contains(Snapshot.removed, anchor.at.track))
 				return true;
 			for (auto const &entry : Snapshot.tracks)
 				if (entry.first == anchor.at.track)
@@ -1122,37 +1123,29 @@ void editor_mode::infra_attach(EditorSnapshot &Snapshot)
 	m_infra_buffer.clear();
 }
 
-void editor_mode::render_infra_window()
+void editor_mode::render_infra_body()
 {
 	auto &state{m_infra};
-	if (false == state.open)
-		return;
-	ImGui::SetNextWindowSize(ImVec2(560, 620), ImGuiCond_FirstUseEver);
-	if (false == ImGui::Begin("Infrastructure along the track###trackinfra", &state.open))
-	{
-		ImGui::End();
-		return;
-	}
 	infra_load();
 	Live.refresh();
 
 	auto follow{state.follow};
-	if (ImGui::Checkbox("Bound objects follow the changes of the track", &follow))
+	if (ImGui::Checkbox(STR_C("Bound objects follow the changes of the track"), &follow))
 	{
 		state.follow = follow;
 		if (follow)
 			infra_rebase();
 	}
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("Bound objects keep their chainage along the path, the offset from its axis and the height above the rail top;\n"
-		                  "models and includes turn with the path and stay upright. The move is a part of the undo step of the change.");
+		ImGui::SetTooltip(STR_C("Bound objects keep their chainage along the path, the offset from its axis and the height above the rail top;\n"
+		                  "models and includes turn with the path and stay upright. The move is a part of the undo step of the change."));
 	ImGui::SameLine();
-	ImGui::Checkbox("Show in 3D", &state.show);
-	ImGui::Text("Objects bound in the scenery: %d", static_cast<int>(m_bindings.size()));
+	ImGui::Checkbox(STR_C("Show in 3D"), &state.show);
+	ImGui::Text(STR_C("Objects bound in the scenery: %d"), static_cast<int>(m_bindings.size()));
 	if (false == m_bindings_unresolved.empty())
 	{
 		ImGui::SameLine();
-		ImGui::TextColored(ImVec4(1.f, 0.8f, 0.3f, 1.f), "(%d stored binding(s) not found, kept as they are)", static_cast<int>(m_bindings_unresolved.size()));
+		ImGui::TextColored(ImVec4(1.f, 0.8f, 0.3f, 1.f), STR_C("(%d stored binding(s) not found, kept as they are)"), static_cast<int>(m_bindings_unresolved.size()));
 	}
 
 	ImGui::Separator();
@@ -1163,7 +1156,6 @@ void editor_mode::render_infra_window()
 		ImGui::TextColored(ImVec4(1.f, 0.4f, 0.35f, 1.f), "%s", state.error.c_str());
 	else if (false == state.status.empty())
 		ImGui::TextWrapped("%s", state.status.c_str());
-	ImGui::End();
 }
 
 // what changed while the bindings did not follow the track becomes their new starting point
@@ -1199,15 +1191,15 @@ void editor_mode::render_infra_search()
 	if (state.scope == 1)
 	{
 		ImGui::SetNextItemWidth(120.f);
-		ImGui::InputFloat("Reach each way, m", &state.reach, 100.f, 500.f, "%.0f");
+		ImGui::InputFloat(STR_C("Reach each way, m"), &state.reach, 100.f, 500.f, "%.0f");
 		state.reach = std::clamp(state.reach, 10.f, 20000.f);
 	}
 	ImGui::SetNextItemWidth(120.f);
-	ImGui::InputFloat("Corridor each side of the axis, m", &state.corridor, 0.5f, 2.f, "%.1f");
+	ImGui::InputFloat(STR_C("Corridor each side of the axis, m"), &state.corridor, 0.5f, 2.f, "%.1f");
 	state.corridor = std::clamp(state.corridor, 0.5f, 50.f);
-	if (ImGui::TreeNode("Rules for names of the files"))
+	if (ImGui::TreeNode(STR_C("Rules for names of the files")))
 	{
-		ImGui::TextDisabled("Parts of the names, separated by spaces; the first rule which matches decides");
+		ImGui::TextDisabled(STR_C("Parts of the names, separated by spaces; the first rule which matches decides"));
 		for (std::size_t i = 0; i < state.rules.size(); ++i)
 		{
 			auto &rule{state.rules[i]};
@@ -1217,13 +1209,13 @@ void editor_mode::render_infra_search()
 			if (ImGui::InputText((std::string{infra::name(rule.group)} + "##rule" + std::to_string(i)).c_str(), buffer, sizeof(buffer)))
 				rule.keywords = buffer;
 		}
-		if (ImGui::SmallButton("Default rules"))
+		if (ImGui::SmallButton(STR_C("Default rules")))
 			state.rules = infra::default_rules();
-		ImGui::TextDisabled("Includes are matched by the template name and its //$e description, models by the file and node name;\n"
-		                    "traction is always the catenary, memory cells and event launchers the logic");
+		ImGui::TextDisabled(STR_C("Includes are matched by the template name and its //$e description, models by the file and node name;\n"
+		                    "traction is always the catenary, memory cells and event launchers the logic"));
 		ImGui::TreePop();
 	}
-	if (ImGui::Button("Find objects"))
+	if (ImGui::Button(STR_C("Find objects")))
 		infra_recognize();
 
 }
@@ -1244,13 +1236,13 @@ void editor_mode::render_infra_candidates()
 		for (auto const &candidate : candidates)
 			chosen += candidate.chosen ? 1 : 0;
 		ImGui::SameLine();
-		if (ImGui::Button(format("Bind the chosen (%d)", chosen).c_str()))
+		if (ImGui::Button(format(STR_C("Bind the chosen (%d)"), chosen).c_str()))
 			infra_bind_chosen();
 		ImGui::SameLine();
-		if (ImGui::SmallButton("All"))
+		if (ImGui::SmallButton(STR_C("All")))
 			choose({}, true);
 		ImGui::SameLine();
-		if (ImGui::SmallButton("None"))
+		if (ImGui::SmallButton(STR_C("None")))
 			choose({}, false);
 
 		ImGui::BeginChild("##infracandidates", ImVec2(0.f, 260.f), true);
@@ -1263,10 +1255,10 @@ void editor_mode::render_infra_candidates()
 			auto const open{ImGui::TreeNodeEx(format("%s (%d)", infra::name(group), static_cast<int>(count)).c_str(), group == infra::category::other ? 0 : ImGuiTreeNodeFlags_DefaultOpen)};
 			ImGui::PopStyleColor();
 			ImGui::SameLine();
-			if (ImGui::SmallButton((std::string{"all##g"} + infra::name(group)).c_str()))
+			if (ImGui::SmallButton((std::string{STR_C("all##g")} + infra::name(group)).c_str()))
 				choose(group, true);
 			ImGui::SameLine();
-			if (ImGui::SmallButton((std::string{"none##g"} + infra::name(group)).c_str()))
+			if (ImGui::SmallButton((std::string{STR_C("none##g")} + infra::name(group)).c_str()))
 				choose(group, false);
 			if (false == open)
 				continue;
@@ -1281,7 +1273,7 @@ void editor_mode::render_infra_candidates()
 				ImGui::PushID(static_cast<int>(i));
 				if (candidate.bound)
 				{
-					ImGui::TextDisabled("[bound]");
+					ImGui::TextDisabled(STR_C("[bound]"));
 				}
 				else
 				{
@@ -1292,7 +1284,7 @@ void editor_mode::render_infra_candidates()
 				if (ImGui::IsItemHovered())
 				{
 					state.hovered = static_cast<int>(i);
-					ImGui::SetTooltip("%s, %s\n%.2f m %s of the axis, %.2f m above the rail top\n%s", infra::name(candidate.binding.type), candidate.binding.anchors.front().at.track->name().c_str(),
+					ImGui::SetTooltip(STR_C("%s, %s\n%.2f m %s of the axis, %.2f m above the rail top\n%s"), infra::name(candidate.binding.type), candidate.binding.anchors.front().at.track->name().c_str(),
 					                  std::abs(candidate.offset), candidate.offset >= 0.0 ? "right" : "left", candidate.binding.anchors.front().height, candidate.reason.c_str());
 				}
 				ImGui::SameLine();
@@ -1307,7 +1299,7 @@ void editor_mode::render_infra_candidates()
 
 void editor_mode::render_infra_bound()
 {
-	if (ImGui::TreeNode("Bound objects along the scope"))
+	if (ImGui::TreeNode(STR_C("Bound objects along the scope")))
 	{
 		auto const scope{infra_scope()};
 		std::unordered_set<TTrack const *> const tracks(scope.begin(), scope.end());
@@ -1315,11 +1307,11 @@ void editor_mode::render_infra_bound()
 		for (std::size_t i = 0; i < m_bindings.size(); ++i)
 			if (std::any_of(m_bindings[i].anchors.begin(), m_bindings[i].anchors.end(), [&](infra::anchor const &Anchor) { return tracks.count(Anchor.at.track) > 0; }))
 				along.push_back(i);
-		ImGui::Text("%d of %d", static_cast<int>(along.size()), static_cast<int>(m_bindings.size()));
+		ImGui::Text(STR_C("%d of %d"), static_cast<int>(along.size()), static_cast<int>(m_bindings.size()));
 		if (false == along.empty())
 		{
 			ImGui::SameLine();
-			if (ImGui::SmallButton("Unbind all of these"))
+			if (ImGui::SmallButton(STR_C("Unbind all of these")))
 			{
 				infra_unbind(along);
 				along.clear();
@@ -1334,11 +1326,11 @@ void editor_mode::render_infra_bound()
 			auto const index{along[row]};
 			auto const &binding{m_bindings[index]};
 			ImGui::PushID(static_cast<int>(index));
-			if (ImGui::SmallButton("unbind"))
+			if (ImGui::SmallButton(STR_C("unbind")))
 				unbind = index;
 			ImGui::SameLine();
 			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(binding.lost ? IM_COL32(255, 80, 70, 255) : colour(binding.group)));
-			ImGui::Text("%s%s", binding.label.c_str(), binding.lost ? "  (no path to follow)" : "");
+			ImGui::Text("%s%s", binding.label.c_str(), binding.lost ? STR_C("  (no path to follow)") : "");
 			ImGui::PopStyleColor();
 			ImGui::PopID();
 		}

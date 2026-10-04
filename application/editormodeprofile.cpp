@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenelayers.h"
 #include "simulation/simulation.h"
 #include "utilities/Logs.h"
+#include "utilities/translation.h"
 
 #include "imgui/imgui.h"
 #include <algorithm>
@@ -40,6 +41,17 @@ ImU32 const kLabel{IM_COL32(200, 200, 200, 200)};
 ImU32 const kSwitch{IM_COL32(160, 100, 220, 45)};
 ImU32 const kError{IM_COL32(255, 80, 70, 255)};
 ImU32 const kWarning{IM_COL32(255, 200, 60, 255)};
+ImU32 const kPlan{IM_COL32(120, 190, 255, 255)};
+ImU32 const kSwitchLabel{IM_COL32(200, 160, 255, 220)};
+ImU32 const kChip{IM_COL32(14, 15, 19, 210)};
+
+// text on a dark plate, readable over the lines of the plot
+void plot_label(ImDrawList &Draw, ImVec2 const At, ImU32 const Colour, std::string const &Text)
+{
+	auto const size{ImGui::CalcTextSize(Text.c_str())};
+	Draw.AddRectFilled(ImVec2(At.x - 3.0f, At.y - 1.0f), ImVec2(At.x + size.x + 3.0f, At.y + size.y + 1.0f), kChip, 3.0f);
+	Draw.AddText(At, Colour, Text.c_str());
+}
 
 double nice_step(double const Approximate)
 {
@@ -234,7 +246,7 @@ bool editor_mode::profile_restore()
 	state.selected = -1;
 	state.changed = false;
 	profile_check();
-	state.status = "Design read from the scenery file " + scene::Layers.layer(entry.layer).name + format(", largest departure from the track %.3f m", state.departure);
+	state.status = STR_C("Design read from the scenery file ") + scene::Layers.layer(entry.layer).name + format(STR_C(", largest departure from the track %.3f m"), state.departure);
 	return true;
 }
 
@@ -245,7 +257,7 @@ void editor_mode::profile_store()
 		return;
 	if (scene::Layers.empty())
 	{
-		state.error = "The scenery wasn't opened for editing, the design can't be kept in its files";
+		state.error = STR_C("The scenery wasn't opened for editing, the design can't be kept in its files");
 		return;
 	}
 	profile_library_load();
@@ -291,7 +303,7 @@ void editor_mode::profile_forget()
 	auto const layer{m_profiles[index].layer};
 	m_profiles.erase(m_profiles.begin() + index);
 	profile_library_mark({layer});
-	state.status = "The design will be removed from " + scene::Layers.layer(layer).name + " on save";
+	state.status = STR_C("The design will be removed from ") + scene::Layers.layer(layer).name + STR_C(" on save");
 }
 
 void editor_mode::profile_open_stored(std::size_t const Index)
@@ -330,7 +342,7 @@ void editor_mode::profile_open_stored(std::size_t const Index)
 			return;
 		}
 	state.open = true;
-	state.error = "The route of the stored design isn't in the scenery any more (paths moved or removed)";
+	state.error = STR_C("The route of the stored design isn't in the scenery any more (paths moved or removed)");
 }
 
 void editor_mode::profile_edited()
@@ -359,7 +371,7 @@ void editor_mode::profile_open_run(TTrack &Track)
 	auto route{editor_track::run_route(Track, state.run_length)};
 	if (route.spans.empty())
 	{
-		state.error = "The path can't carry a profile";
+		state.error = STR_C("The path can't carry a profile");
 		return;
 	}
 	auto *from{route.spans.front().track};
@@ -386,13 +398,15 @@ void editor_mode::profile_resample()
 	state.samples = editor_track::sample_route(state.route, 1.0);
 	auto const &samples{state.samples};
 	state.terrain.assign(samples.size(), std::numeric_limits<double>::quiet_NaN());
+	std::vector<glm::dvec3> points;
+	points.reserve(samples.size());
+	for (auto const &sample : samples)
+		points.push_back(sample.position);
+	std::vector<char> found;
+	auto const heights{ground_heights(points, true, &found)};
 	for (std::size_t i = 0; i < samples.size(); ++i)
-	{
-		auto const &position{samples[i].position};
-		auto *patch{terrain_at(position.x, position.z)};
-		if (patch != nullptr && patch->contains(position.x, position.z))
-			state.terrain[i] = patch->height_at(position.x, position.z);
-	}
+		if (found[i] != 0)
+			state.terrain[i] = heights[i];
 
 	auto &context{state.context};
 	context = {};
@@ -425,7 +439,7 @@ void editor_mode::profile_recognize()
 	state.line.speed = route_speed(state.route);
 	state.selected = -1;
 	profile_check();
-	state.status = format("Grade line recognized from the track: %zu points, largest departure %.3f m", state.line.points.size(), state.departure);
+	state.status = format(STR_C("Grade line recognized from the track: %zu points, largest departure %.3f m"), state.line.points.size(), state.departure);
 }
 
 void editor_mode::profile_check()
@@ -480,7 +494,15 @@ void editor_mode::profile_apply()
 		return;
 	if (has_errors(state.issues))
 	{
-		state.error = "Correct the errors to apply the grade line";
+		state.error = STR_C("Correct the errors to apply the grade line");
+		return;
+	}
+	std::vector<TTrack *> tracks;
+	for (auto const &span : state.route.spans)
+		tracks.push_back(span.track);
+	if (false == tracks_editable(tracks, state.error))
+	{
+		state.error = STR_C("The grade line can't be applied, ") + state.error;
 		return;
 	}
 	auto const line{state.line};
@@ -490,18 +512,35 @@ void editor_mode::profile_apply()
 	    state.route, [&](double const Chainage) { return profile::elevation(line, Chainage); }, [&](double const Chainage) { return profile::grade(line, Chainage); }, profile::breaks(line), states, created)};
 	auto const changed{states.size()};
 	auto const added{created.size()};
+	// the stored design changes with the paths, an undo takes both back
+	profile_library_load();
+	auto library{m_profiles};
+	bool const pushed{false == states.empty() || false == created.empty()};
 	push_track_snapshot(std::move(states), std::move(created));
+	if (pushed)
+	{
+		m_history.back().profiles = true;
+		m_history.back().profile_library = std::move(library);
+	}
 	state.from = state.route.spans.front().track;
 	state.to = state.route.spans.back().track;
 	profile_resample();
 	profile_store();
-	state.status = format("Grade line applied: %zu paths changed, %zu added, largest departure %.3f m", changed, added, state.departure);
+	state.status = format(STR_C("Grade line applied: %zu paths changed, %zu added, largest departure %.3f m"), changed, added, state.departure);
 	if (false == scene::Layers.empty())
 		state.status += "\nThe paths and the design (//$p lines) go to the scenery files on save";
-	if (false == gaps.empty())
-		state.status += "\nSwitch ends off the adjoining paths, to be corrected:";
+	auto const name = [](TTrack const *Track) { return Track->name().empty() ? std::string{"(noname)"} : Track->name(); };
+	auto const closed{std::count_if(gaps.begin(), gaps.end(), [](auto const &Gap) { return Gap.closed; })};
+	if (closed > 0)
+		state.status += "\nPaths off the route brought to the height of the switches:";
 	for (auto const &gap : gaps)
-		state.status += format("\n  %s -> %s: %+.3f m", gap.track->name().c_str(), gap.neighbour->name().c_str(), gap.gap);
+		if (gap.closed)
+			state.status += format("\n  %s at %s: %+.3f m", name(gap.neighbour).c_str(), name(gap.track).c_str(), -gap.gap);
+	if (closed < static_cast<long>(gaps.size()))
+		state.status += "\nSwitch ends off the adjoining paths, which can't be changed here:";
+	for (auto const &gap : gaps)
+		if (false == gap.closed)
+			state.status += format("\n  %s -> %s: %+.3f m", name(gap.track).c_str(), name(gap.neighbour).c_str(), gap.gap);
 	WriteLog("Editor: vertical profile - " + state.status, logtype::generic);
 }
 
@@ -527,53 +566,87 @@ void editor_mode::profile_after_undo()
 	profile_resample();
 }
 
-void editor_mode::render_profile_window()
+void editor_mode::render_profile_body()
 {
 	auto &state{m_profile};
-	if (false == state.open)
-		return;
-	ImGui::SetNextWindowSize(ImVec2(960.0f, 640.0f), ImGuiCond_FirstUseEver);
-	if (false == ImGui::Begin("Vertical profile###trackprofile", &state.open))
-	{
-		ImGui::End();
-		return;
-	}
 	render_profile_source();
 	if (state.route.spans.empty())
 	{
-		ImGui::TextDisabled("Select a path in the viewport, then build the route along the line, or set its start and end paths (switches are passed through)");
+		ImGui::TextWrapped("%s", STR_C("Select a path in the view, then build the route along the line, or set its start and end paths (switches are passed through)"));
 		if (state.picked_from != nullptr)
-			ImGui::Text("Start: %s", state.picked_from->name().c_str());
+			ImGui::Text(STR_C("Start: %s"), state.picked_from->name().c_str());
 		if (false == state.error.empty())
 			ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "%s", state.error.c_str());
-		ImGui::End();
 		return;
 	}
-	ImGui::Text("Route: %zu paths, %.2f m, %s ... %s", state.route.spans.size(), state.route.length, state.route.spans.front().track->name().c_str(), state.route.spans.back().track->name().c_str());
+	ImGui::Separator();
+	ImGui::TextWrapped(STR_C("Route: %zu paths, %.2f m, %s ... %s"), state.route.spans.size(), state.route.length, state.route.spans.front().track->name().c_str(), state.route.spans.back().track->name().c_str());
 	{
 		bool reversed;
 		auto const stored{profile_find(reversed)};
 		if (stored >= 0)
 		{
-			ImGui::TextDisabled("Design kept in %s%s", scene::Layers.layer(m_profiles[stored].layer).name.c_str(), state.changed ? ", changes go there on save" : "");
+			ImGui::TextDisabled(STR_C("Design kept in %s%s"), scene::Layers.layer(m_profiles[stored].layer).name.c_str(), state.changed ? STR_C(", changes go there on save") : "");
 			ImGui::SameLine();
-			if (ImGui::SmallButton("Forget the design"))
+			if (ImGui::SmallButton(STR_C("Forget the design")))
 				profile_forget();
 		}
 		else if (state.changed)
-			ImGui::TextDisabled("The design goes to the scenery file of the route on save");
+			ImGui::TextDisabled(STR_C("The design goes to the scenery file of the route on save"));
 	}
 
 	if (render_profile_parameters())
 		profile_edited();
+}
 
-	render_profile_canvas();
-
-	ImGui::Columns(2, "##profilecolumns", true);
-	render_profile_point();
-	ImGui::NextColumn();
-	render_profile_issues();
-	ImGui::Columns(1);
+void editor_mode::render_profile_strip()
+{
+	auto &state{m_profile};
+	auto const &io{ImGui::GetIO()};
+	ImGui::SetNextWindowPos(ImVec2(8.0f, io.DisplaySize.y - 360.0f), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize(ImVec2(std::max(600.0f, io.DisplaySize.x - 500.0f), 320.0f), ImGuiCond_FirstUseEver);
+	auto const title{std::string{STR_C("Vertical profile")} + format("  %.2f m###profilestrip", state.route.length)};
+	if (ImGui::Begin(title.c_str(), nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+	{
+		auto const side{std::clamp(ImGui::GetContentRegionAvail().x * 0.28f, 280.0f, 420.0f)};
+		ImGui::BeginChild("##profileplot", ImVec2(-side, 0.0f), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+		render_profile_toolbar();
+		render_profile_canvas(ImGui::GetContentRegionAvail().y);
+		ImGui::EndChild();
+		ImGui::SameLine();
+		ImGui::BeginChild("##profileside", ImVec2(0.0f, 0.0f), false);
+		if (ImGui::BeginTabBar("##profiletabs"))
+		{
+			// a click on a point in the plot brings its tab forward
+			bool const picked{state.selected >= 0 && state.selected != state.shown};
+			state.shown = state.selected;
+			if (ImGui::BeginTabItem(STR_C("Point"), nullptr, picked ? ImGuiTabItemFlags_SetSelected : 0))
+			{
+				render_profile_point();
+				ImGui::EndTabItem();
+			}
+			if (ImGui::BeginTabItem(format("%s (%zu)###profilepoints", STR_C("Points"), state.line.points.size()).c_str()))
+			{
+				ImGui::BeginChild("##profilepointlist");
+				render_profile_points();
+				ImGui::EndChild();
+				ImGui::EndTabItem();
+			}
+			bool const errors{has_errors(state.issues)};
+			if (false == state.issues.empty())
+				ImGui::PushStyleColor(ImGuiCol_Text, errors ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f) : ImVec4(1.0f, 0.8f, 0.3f, 1.0f));
+			bool const remarks{ImGui::BeginTabItem(format("%s (%zu)###profileremarks", STR_C("Remarks"), state.issues.size()).c_str())};
+			if (false == state.issues.empty())
+				ImGui::PopStyleColor();
+			if (remarks)
+			{
+				render_profile_issues();
+				ImGui::EndTabItem();
+			}
+			ImGui::EndTabBar();
+		}
+		ImGui::EndChild();
+	}
 	ImGui::End();
 }
 
@@ -581,30 +654,29 @@ void editor_mode::render_profile_source()
 {
 	auto &state{m_profile};
 	auto *selected{selected_track()};
-	if (ImGui::Button("Along the line from the selected path") && selected != nullptr)
+	if (ImGui::Button(STR_C("Along the line from the selected path")) && selected != nullptr)
 		profile_open_run(*selected);
 	ImGui::SameLine();
 	ImGui::PushItemWidth(70.0f);
-	ImGui::InputDouble("m each way##profilerun", &state.run_length, 0.0, 0.0, "%.0f");
+	ImGui::DragScalar(STR_C("m each way"), ImGuiDataType_Double, &state.run_length, 10.0f, nullptr, nullptr, "%.0f");
 	ImGui::PopItemWidth();
 	state.run_length = std::clamp(state.run_length, 10.0, 50000.0);
-	ImGui::SameLine();
-	if (ImGui::Button("Start: selected path") && selected != nullptr)
+	if (ImGui::Button(STR_C("Start: selected path")) && selected != nullptr)
 		state.picked_from = selected;
 	ImGui::SameLine();
-	if (ImGui::Button("End: selected path") && selected != nullptr && state.picked_from != nullptr)
+	if (ImGui::Button(STR_C("End: selected path")) && selected != nullptr && state.picked_from != nullptr)
 		profile_open(state.picked_from, selected);
 	profile_library_load();
-	if (false == m_profiles.empty() && ImGui::TreeNode("##profilestored", "Designs kept in the scenery (%zu)", m_profiles.size()))
+	if (false == m_profiles.empty() && ImGui::TreeNode("##profilestored", STR_C("Designs kept in the scenery (%zu)"), m_profiles.size()))
 	{
 		for (std::size_t i = 0; i < m_profiles.size(); ++i)
 		{
 			auto const &entry{m_profiles[i]};
 			ImGui::PushID(static_cast<int>(i));
-			if (ImGui::SmallButton("Open"))
+			if (ImGui::SmallButton(STR_C("Open")))
 				profile_open_stored(i);
 			ImGui::SameLine();
-			ImGui::Text("%s  %.1f m, %zu points, from (%.1f, %.1f) to (%.1f, %.1f)", scene::Layers.layer(entry.layer).name.c_str(), entry.length, entry.line.points.size(), entry.start.x, entry.start.z, entry.end.x, entry.end.z);
+			ImGui::Text(STR_C("%s  %.1f m, %zu points, from (%.1f, %.1f) to (%.1f, %.1f)"), scene::Layers.layer(entry.layer).name.c_str(), entry.length, entry.line.points.size(), entry.start.x, entry.start.z, entry.end.x, entry.end.z);
 			ImGui::PopID();
 		}
 		ImGui::TreePop();
@@ -616,77 +688,91 @@ bool editor_mode::render_profile_parameters()
 	auto &state{m_profile};
 	auto &line{state.line};
 	bool changed{false};
-	ImGui::PushItemWidth(90.0f);
-	ImGui::InputDouble("Chainage of the start (m)", &state.origin, 0.0, 0.0, "%.2f");
-	ImGui::SameLine();
-	changed |= ImGui::InputDouble("Design speed (km/h)", &line.speed, 0.0, 0.0, "%.0f");
-	ImGui::SameLine();
-	ImGui::SliderFloat("Exaggeration##profile", &state.exaggeration, 1.0f, 500.0f, "1:%.0f", 2.0f);
+	auto const drag = [](char const *Label, double &Value, float const Speed, char const *Format) { return ImGui::DragScalar(STR_C(Label), ImGuiDataType_Double, &Value, Speed, nullptr, nullptr, Format); };
+	ImGui::PushItemWidth(120.0f);
+	drag("Chainage of the start (m)", state.origin, 1.0f, "%.2f");
+	changed |= drag("Design speed (km/h)", line.speed, 1.0f, "%.0f");
 	ImGui::PopItemWidth();
 	line.speed = std::max(1.0, line.speed);
-	ImGui::Checkbox("Track", &state.show_track);
-	ImGui::SameLine();
-	ImGui::Checkbox("Terrain", &state.show_terrain);
-	ImGui::SameLine();
-	ImGui::Checkbox("Plan curvature", &state.show_plan);
-	ImGui::SameLine();
-	if (ImGui::Button("Fit the view"))
-		profile_fit_view();
-	ImGui::SameLine();
-	if (ImGui::Button("Recognize from the track"))
+	auto const join_tooltip = [] {
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Keeps the elevation of the joint and takes over the grade of the adjoining track,\nwith a vertical curve which starts right at the joint"));
+	};
+	if (state.context.start_joined)
 	{
-		profile_recognize();
-		state.changed = true;
+		changed |= ImGui::Checkbox(STR_C("Join the adjoining track at the start"), &line.join_start);
+		join_tooltip();
 	}
-	ImGui::SameLine();
-	if (ImGui::Button("Apply to the scenery"))
-		profile_apply();
-	if (ImGui::TreeNode("Limits##profile"))
+	if (state.context.end_joined)
+	{
+		changed |= ImGui::Checkbox(STR_C("Join the adjoining track at the end"), &line.join_end);
+		join_tooltip();
+	}
+	if (ImGui::TreeNode(STR_C("Limits")))
 	{
 		auto &norms{line.norms};
 		ImGui::PushItemWidth(90.0f);
-		changed |= ImGui::InputDouble("Maximum grade (per mille)", &norms.grade_max, 0.0, 0.0, "%.2f");
-		changed |= ImGui::InputDouble("Maximum grade over switches (per mille)", &norms.grade_switch_max, 0.0, 0.0, "%.2f");
-		changed |= ImGui::InputDouble("Vertical curve R >= k*V^2, k", &norms.radius_factor, 0.0, 0.0, "%.2f");
-		changed |= ImGui::InputDouble("Vertical curve R min (m)", &norms.radius_min, 0.0, 0.0, "%.0f");
-		changed |= ImGui::InputDouble("Vertical curve needed above a change of (per mille)", &norms.curve_threshold, 0.0, 0.0, "%.2f");
-		changed |= ImGui::InputDouble("Constant grade between curves at least (m)", &norms.element_min, 0.0, 0.0, "%.0f");
-		changed |= ImGui::InputDouble("Tolerance at fixed points (m)", &norms.fixed_tolerance, 0.0, 0.0, "%.3f");
+		changed |= drag("Maximum grade (per mille)", norms.grade_max, 0.1f, "%.2f");
+		changed |= drag("Maximum grade over switches (per mille)", norms.grade_switch_max, 0.1f, "%.2f");
+		changed |= drag("Vertical curve R >= k*V^2, k", norms.radius_factor, 0.01f, "%.2f");
+		changed |= drag("Vertical curve R min (m)", norms.radius_min, 10.0f, "%.0f");
+		changed |= drag("Vertical curve needed above a change of (per mille)", norms.curve_threshold, 0.1f, "%.2f");
+		changed |= drag("Constant grade between curves at least (m)", norms.element_min, 1.0f, "%.0f");
+		changed |= drag("Tolerance at fixed points (m)", norms.fixed_tolerance, 0.001f, "%.3f");
 		ImGui::PopItemWidth();
-		if (ImGui::SmallButton("Automatic R at all points"))
+		if (ImGui::SmallButton(STR_C("Automatic R at all points")))
 		{
 			for (auto &point : line.points)
 				point.automatic = true;
 			changed = true;
 		}
-		ImGui::TextDisabled("Required R for %.0f km/h: %.0f m", line.speed, profile::required_radius(line));
+		ImGui::TextDisabled(STR_C("Required R for %.0f km/h: %.0f m"), line.speed, profile::required_radius(line));
 		ImGui::TreePop();
 	}
-	if (state.context.start_joined)
-		changed |= ImGui::Checkbox("Join the adjoining track at the start", &line.join_start);
-	if (state.context.start_joined && state.context.end_joined)
-		ImGui::SameLine();
-	if (state.context.end_joined)
-		changed |= ImGui::Checkbox("Join the adjoining track at the end", &line.join_end);
-	if ((state.context.start_joined || state.context.end_joined) && ImGui::IsItemHovered())
-		ImGui::SetTooltip("Keeps the elevation of the joint and takes over the grade of the adjoining track,\n"
-		                  "with a vertical curve which starts right at the joint");
+
+	ImGui::Separator();
+	auto const errors{std::count_if(state.issues.begin(), state.issues.end(), [](profile::issue const &Issue) { return Issue.error; })};
+	auto const warnings{static_cast<std::ptrdiff_t>(state.issues.size()) - errors};
+	if (errors > 0)
+		ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), STR_C("%d errors, %d warnings: see the Remarks in the strip"), static_cast<int>(errors), static_cast<int>(warnings));
+	else if (warnings > 0)
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), STR_C("%d warnings: see the Remarks in the strip"), static_cast<int>(warnings));
+	else
+		ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "%s", STR_C("The grade line meets the limits"));
+	ImGui::TextDisabled(STR_C("Largest departure from the track: %.3f m"), state.departure);
+	if (ImGui::Button(STR_C("Recognize from the track")))
+	{
+		profile_recognize();
+		state.changed = true;
+	}
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Sets the points of the grade line from the existing track"));
+	ImGui::SameLine();
+	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.55f, 0.25f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.68f, 0.3f, 1.0f));
+	if (ImGui::Button(STR_C("Apply to the scenery"), ImVec2(-1.0f, 0.0f)))
+		profile_apply();
+	ImGui::PopStyleColor(2);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Sets the heights of the track along the route to the grade line, Ctrl+Z takes it back"));
 	return changed;
 }
 
 void editor_mode::render_profile_issues()
 {
 	auto &state{m_profile};
-	ImGui::Text("Largest departure from the track: %.3f m", state.departure);
 	ImGui::BeginChild("##profileissues", ImVec2(0.0f, 0.0f), false);
 	if (state.issues.empty())
-		ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "The grade line meets the limits");
+		ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "%s", STR_C("The grade line meets the limits"));
+	else
+		ImGui::TextDisabled("%s", STR_C("LMB on a remark shows its place"));
 	for (std::size_t i = 0; i < state.issues.size(); ++i)
 	{
 		auto const &issue{state.issues[i]};
 		ImGui::PushID(static_cast<int>(i));
 		ImGui::PushStyleColor(ImGuiCol_Text, issue.error ? ImVec4(1.0f, 0.4f, 0.3f, 1.0f) : ImVec4(1.0f, 0.8f, 0.3f, 1.0f));
-		if (ImGui::Selectable(issue.text.c_str()))
+		auto const text{format("%s  km %s  %s", issue.error ? "x" : "!", profile::format_chainage(issue.chainage + state.origin).c_str(), issue.text.c_str())};
+		if (ImGui::Selectable(text.c_str()))
 		{
 			if (issue.point >= 0)
 				state.selected = issue.point;
@@ -712,21 +798,21 @@ void editor_mode::render_profile_point()
 	auto const count{static_cast<int>(points.size())};
 	if (state.selected >= count)
 		state.selected = -1;
+	auto const drag = [](char const *Label, double &Value, float const Speed, char const *Format) { return ImGui::DragScalar(STR_C(Label), ImGuiDataType_Double, &Value, Speed, nullptr, nullptr, Format); };
+	auto const kind_of = [](double const Change) { return Change > 0.0 ? STR_C("sag") : STR_C("crest"); };
 	if (state.selected < 0)
 	{
-		ImGui::TextDisabled("LMB: select and drag a point (Ctrl: height only, Shift: keep the grade before)\n"
-		                    "Green grip on a curve: drag to set R   Double click on the line: insert a point\n"
-		                    "Del: remove the point   Wheel: zoom   Ctrl+wheel: exaggeration   RMB/MMB: pan");
+		ImGui::TextWrapped("%s", STR_C("No point selected. Click a point of the grade line in the plot, or double click the line to add one."));
 	}
 	else if (points[state.selected].joint)
 	{
 		auto const index{state.selected};
 		auto const &point{points[index]};
 		auto const change{(profile::grade_after(state.line, index) - profile::grade_after(state.line, index - 1)) * 1000.0};
-		ImGui::Text("Point %d: joint with the adjoining track (placed automatically)", index + 1);
-		ImGui::Text("km %s  H %.3f  R %.0f", profile::format_chainage(point.chainage + state.origin).c_str(), point.elevation, point.radius);
-		ImGui::Text("Grade %+.3f -> %+.3f per mille (%s)", profile::grade_after(state.line, index - 1) * 1000.0, profile::grade_after(state.line, index) * 1000.0, change > 0.0 ? "sag" : "crest");
-		ImGui::TextDisabled("Moves with the neighbouring point; untick the joining to edit the end freely");
+		ImGui::Text(STR_C("Point %d: joint with the adjoining track"), index + 1);
+		ImGui::Text(STR_C("km %s   H %.3f m   R %.0f m"), profile::format_chainage(point.chainage + state.origin).c_str(), point.elevation, point.radius);
+		ImGui::Text(STR_C("Grade %+.2f -> %+.2f per mille (%s)"), profile::grade_after(state.line, index - 1) * 1000.0, profile::grade_after(state.line, index) * 1000.0, kind_of(change));
+		ImGui::TextWrapped("%s", STR_C("Placed automatically, moves with the neighbouring point; untick the joining in the inspector to edit the end freely"));
 	}
 	else
 	{
@@ -734,21 +820,24 @@ void editor_mode::render_profile_point()
 		auto &point{points[index]};
 		bool const end{index == 0 || index == count - 1};
 		bool const locked{end_locked(state.line, state.context, index)};
-		ImGui::Text("Point %d%s", index + 1, locked ? " (end, joined to the adjoining track)" : end ? " (end of the route)" : "");
-		ImGui::PushItemWidth(110.0f);
+		ImGui::Text(STR_C("Point %d"), index + 1);
+		ImGui::SameLine();
+		ImGui::TextDisabled(STR_C("km %s%s"), profile::format_chainage(point.chainage + state.origin).c_str(), locked ? STR_C(", joined to the adjoining track") : end ? STR_C(", end of the route") : "");
+		ImGui::PushItemWidth(std::max(90.0f, ImGui::GetContentRegionAvail().x * 0.4f));
 		auto chainage{point.chainage + state.origin};
-		if (ImGui::InputDouble("Chainage (m)", &chainage, 0.0, 0.0, "%.2f") && false == end)
+		if (false == end && drag("Chainage (m)", chainage, 0.5f, "%.2f"))
 		{
 			point.chainage = std::clamp(chainage - state.origin, points[index - 1].chainage + 0.5, points[index + 1].chainage - 0.5);
 			changed = true;
 		}
-		ImGui::SameLine();
-		ImGui::TextDisabled("km %s", profile::format_chainage(point.chainage + state.origin).c_str());
-		changed |= ImGui::InputDouble("Elevation (m)", &point.elevation, 0.0, 0.0, "%.3f", locked ? ImGuiInputTextFlags_ReadOnly : 0);
+		if (locked)
+			ImGui::Text(STR_C("Elevation %.3f m"), point.elevation);
+		else
+			changed |= drag("Elevation (m)", point.elevation, 0.01f, "%.3f");
 		if (index > 0 && false == locked)
 		{
 			auto grade{profile::grade_after(state.line, index - 1) * 1000.0};
-			if (ImGui::InputDouble("Grade from the previous (per mille)", &grade, 0.0, 0.0, "%.3f"))
+			if (drag("Grade before (per mille)", grade, 0.05f, "%+.2f"))
 			{
 				point.elevation = points[index - 1].elevation + grade / 1000.0 * (point.chainage - points[index - 1].chainage);
 				changed = true;
@@ -757,7 +846,7 @@ void editor_mode::render_profile_point()
 		if (index + 1 < count)
 		{
 			auto grade{profile::grade_after(state.line, index) * 1000.0};
-			if (ImGui::InputDouble("Grade to the next (per mille)", &grade, 0.0, 0.0, "%.3f"))
+			if (drag("Grade after (per mille)", grade, 0.05f, "%+.2f"))
 			{
 				points[index + 1].elevation = point.elevation + grade / 1000.0 * (points[index + 1].chainage - point.chainage);
 				changed = true;
@@ -765,24 +854,24 @@ void editor_mode::render_profile_point()
 		}
 		if (false == end)
 		{
-			if (ImGui::InputDouble("Vertical curve R (m, 0: none)", &point.radius, 0.0, 0.0, "%.0f"))
+			if (drag("Vertical curve R (m)", point.radius, 10.0f, "%.0f"))
 			{
 				point.automatic = false;
 				changed = true;
 			}
 			point.radius = std::max(0.0, point.radius);
 			ImGui::SameLine();
-			changed |= ImGui::Checkbox("Auto", &point.automatic);
+			changed |= ImGui::Checkbox(STR_C("auto"), &point.automatic);
 			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("R follows the limits: the required radius where the change of grade needs a curve");
+				ImGui::SetTooltip("%s", STR_C("R follows the limits: the required radius where the change of grade needs a curve; 0: no curve"));
 			auto const change{(profile::grade_after(state.line, index) - profile::grade_after(state.line, index - 1)) * 1000.0};
 			auto const tangent{point.radius * std::abs(change) / 2000.0};
-			ImGui::Text("Change of grade %+.3f per mille, %s", change, change > 0.0 ? "sag" : "crest");
+			ImGui::TextDisabled(STR_C("Change of grade %+.2f per mille, %s"), change, kind_of(change));
 			if (point.radius > 0.0)
-				ImGui::Text("Tangent T %.2f m, sagitta f %.3f m", tangent, tangent * tangent / (2.0 * point.radius));
+				ImGui::TextDisabled(STR_C("Tangent T %.2f m, sagitta f %.3f m"), tangent, tangent * tangent / (2.0 * point.radius));
 		}
 		ImGui::PopItemWidth();
-		if (index + 1 < count && ImGui::SmallButton("Insert a point halfway to the next"))
+		if (index + 1 < count && ImGui::Button(STR_C("Add a point after")))
 		{
 			profile::pvi inserted;
 			inserted.chainage = (point.chainage + points[index + 1].chainage) * 0.5;
@@ -794,7 +883,7 @@ void editor_mode::render_profile_point()
 		if (false == end)
 		{
 			ImGui::SameLine();
-			if (ImGui::SmallButton("Remove the point"))
+			if (ImGui::Button(STR_C("Remove  Del")))
 			{
 				points.erase(points.begin() + index);
 				state.selected = -1;
@@ -802,17 +891,46 @@ void editor_mode::render_profile_point()
 			}
 		}
 	}
-	ImGui::BeginChild("##profilepoints", ImVec2(0.0f, 0.0f), true);
+	if (changed)
+		profile_edited();
+}
+
+void editor_mode::render_profile_points()
+{
+	auto &state{m_profile};
+	auto const &points{state.line.points};
+	ImGui::Columns(4, "##profilepointcolumns", false);
+	for (auto const *header : {"#", "km", "H (m)", "R (m)"})
+	{
+		ImGui::TextDisabled("%s", header);
+		ImGui::NextColumn();
+	}
+	ImGui::Separator();
 	for (int i = 0; i < static_cast<int>(points.size()); ++i)
 	{
 		auto const &point{points[i]};
-		auto const label{format("%2d  km %s  H %.3f  %s##point%d", i + 1, profile::format_chainage(point.chainage + state.origin).c_str(), point.elevation, point.radius > 0.0 ? format("R %.0f%s", point.radius, point.joint ? " joint" : point.automatic ? " auto" : "").c_str() : "", i)};
-		if (ImGui::Selectable(label.c_str(), state.selected == i))
-			state.selected = (state.selected == i ? -1 : i);
+		if (ImGui::Selectable(format("%d##point%d", i + 1, i).c_str(), state.selected == i, ImGuiSelectableFlags_SpanAllColumns))
+		{
+			state.selected = i;
+			auto const half{(state.view_to - state.view_from) * 0.5};
+			if (point.chainage < state.view_from || point.chainage > state.view_to)
+			{
+				state.view_from = point.chainage - half;
+				state.view_to = point.chainage + half;
+			}
+		}
+		ImGui::NextColumn();
+		ImGui::TextUnformatted(profile::format_chainage(point.chainage + state.origin).c_str());
+		ImGui::NextColumn();
+		ImGui::Text("%.3f", point.elevation);
+		ImGui::NextColumn();
+		if (point.radius > 0.0)
+			ImGui::Text("%.0f%s", point.radius, point.joint ? STR_C(" joint") : point.automatic ? STR_C(" auto") : "");
+		else
+			ImGui::TextDisabled("-");
+		ImGui::NextColumn();
 	}
-	ImGui::EndChild();
-	if (changed)
-		profile_edited();
+	ImGui::Columns(1);
 }
 
 // screen mapping of the profile canvas, chainage across and elevation upwards
@@ -849,11 +967,50 @@ struct editor_mode::profile_view
 	}
 };
 
-void editor_mode::render_profile_canvas()
+void editor_mode::render_profile_toolbar()
+{
+	auto &state{m_profile};
+	auto *draw{ImGui::GetWindowDrawList()};
+	auto const swatch = [&](ImU32 const Colour) {
+		auto const at{ImGui::GetCursorScreenPos()};
+		auto const height{ImGui::GetFrameHeight()};
+		draw->AddLine(ImVec2(at.x, at.y + height * 0.5f), ImVec2(at.x + 16.0f, at.y + height * 0.5f), Colour, 3.0f);
+		ImGui::Dummy(ImVec2(16.0f, height));
+		ImGui::SameLine(0.0f, 4.0f);
+	};
+	auto const legend = [&](ImU32 const Colour, char const *Label) {
+		swatch(Colour);
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextUnformatted(STR_C(Label));
+		ImGui::SameLine(0.0f, 14.0f);
+	};
+	auto const toggle = [&](ImU32 const Colour, char const *Label, bool &Value) {
+		swatch(Colour);
+		ImGui::Checkbox(STR_C(Label), &Value);
+		ImGui::SameLine(0.0f, 14.0f);
+	};
+	legend(kGradeLine, "Grade line");
+	legend(kTangents, "Tangents");
+	toggle(kTrack, STR_C("Track"), state.show_track);
+	toggle(kTerrain, STR_C("Terrain"), state.show_terrain);
+	toggle(kPlan, STR_C("Plan curvature"), state.show_plan);
+	legend(kSwitchLabel, "Switches");
+	ImGui::SetNextItemWidth(130.0f);
+	ImGui::SliderFloat("##exaggeration", &state.exaggeration, 1.0f, 500.0f, STR_C("heights x%.0f"), 2.0f);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Exaggeration of the heights against the lengths, also Ctrl+wheel over the plot"));
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Fit")))
+		profile_fit_view();
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Shows the whole route"));
+}
+
+void editor_mode::render_profile_canvas(float const Height)
 {
 	auto &state{m_profile};
 	auto const available{ImGui::GetContentRegionAvail()};
-	ImVec2 const size{std::max(200.0f, available.x), std::max(240.0f, available.y * 0.6f)};
+	ImVec2 const size{std::max(200.0f, available.x), std::max(100.0f, Height)};
 	ImVec2 const corner{ImGui::GetCursorScreenPos()};
 	ImGui::InvisibleButton("##profilecanvas", size);
 	bool const hovered{ImGui::IsItemHovered()};
@@ -874,9 +1031,47 @@ void editor_mode::render_profile_canvas()
 	{
 		auto const x{view.x_of(state.hover)};
 		draw->AddLine(ImVec2(x, view.plot_top()), ImVec2(x, view.bottom_right().y), IM_COL32(255, 255, 255, 90));
-		profile_canvas_tooltip();
+		if (state.hover_point < 0 && state.hover_grip < 0 && state.curve_grip < 0)
+			profile_canvas_tooltip();
+	}
+
+	// what the mouse does over the thing under it
+	char const *hint{"wheel: zoom   Ctrl+wheel: heights   RMB/MMB drag: pan   double click on the line: add a point"};
+	if (state.dragging >= 0)
+		hint = "Ctrl: only the height   Shift: keep the grade before";
+	else if (state.curve_grip >= 0 || state.hover_grip >= 0)
+		hint = "drag up or down: radius of the vertical curve";
+	else if (state.hover_point >= 0)
+		hint = "drag: move the point   Ctrl+drag: only the height   Shift+drag: keep the grade before   Del: remove";
+	else if (state.hover_line)
+		hint = "double click: add a point here";
+	if (hovered || state.dragging >= 0 || state.curve_grip >= 0)
+	{
+		auto const text{std::string{STR_C(hint)}};
+		auto const size{ImGui::CalcTextSize(text.c_str())};
+		plot_label(*draw, ImVec2(view.bottom_right().x - size.x - 8.0f, view.plot_bottom() - size.y - 6.0f), IM_COL32(255, 255, 255, 230), text);
 	}
 	draw->PopClipRect();
+
+	auto const &points{state.line.points};
+	if (state.dragging >= 0 && state.dragging < static_cast<int>(points.size()))
+	{
+		auto const index{state.dragging};
+		ImGui::BeginTooltip();
+		ImGui::Text(STR_C("Point %d"), index + 1);
+		ImGui::Text(STR_C("km %s   H %.3f m"), profile::format_chainage(points[index].chainage + state.origin).c_str(), points[index].elevation);
+		if (index > 0)
+			ImGui::Text(STR_C("before %+.2f per mille"), profile::grade_after(state.line, index - 1) * 1000.0);
+		if (index + 1 < static_cast<int>(points.size()))
+			ImGui::Text(STR_C("after %+.2f per mille"), profile::grade_after(state.line, index) * 1000.0);
+		ImGui::EndTooltip();
+	}
+	else if (state.curve_grip > 0 && state.curve_grip < static_cast<int>(points.size()))
+	{
+		ImGui::BeginTooltip();
+		ImGui::Text("R %.0f m", points[state.curve_grip].radius);
+		ImGui::EndTooltip();
+	}
 }
 
 void editor_mode::profile_fit_exaggeration(profile_view const &View)
@@ -966,6 +1161,21 @@ bool editor_mode::profile_canvas_edit(profile_view const &View, bool const Hover
 		return -1;
 	};
 	bool changed{false};
+	bool const busy{state.dragging >= 0 || state.curve_grip >= 0 || state.panning};
+	state.hover_point = Hovered && false == busy ? hit_point() : -1;
+	state.hover_grip = Hovered && false == busy && state.hover_point < 0 ? hit_grip() : -1;
+	state.hover_line = false;
+	if (Hovered && false == busy && state.hover_point < 0 && state.hover_grip < 0 && points.size() >= 2)
+	{
+		auto const chainage{View.chainage_of(mouse.x)};
+		state.hover_line = chainage > points.front().chainage && chainage < points.back().chainage && std::abs(View.y_of(profile::elevation(line, chainage)) - mouse.y) < 12.0f;
+	}
+	if (state.dragging >= 0 || state.panning)
+		ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+	else if (state.curve_grip >= 0 || state.hover_grip >= 0)
+		ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+	else if (state.hover_point >= 0 || state.hover_line)
+		ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
 	if (Hovered && ImGui::IsMouseClicked(0))
 	{
 		auto const point{hit_point()};
@@ -1054,19 +1264,19 @@ void editor_mode::draw_profile_canvas(profile_view const &View, ImDrawList &Draw
 	{
 		auto const x{View.x_of(s)};
 		Draw.AddLine(ImVec2(x, plottop), ImVec2(x, plotbottom), kGrid);
-		Draw.AddText(ImVec2(x + 2.0f, View.corner.y + 2.0f), kLabel, profile::format_chainage(s + state.origin).c_str());
+		Draw.AddText(ImVec2(x + 3.0f, View.corner.y + 2.0f), kLabel, profile::format_chainage(s + state.origin).c_str());
 	}
 	auto const heightstep{nice_step(View.vertical * 45.0)};
 	for (auto h = std::floor(View.height_of(plotbottom) / heightstep) * heightstep; h <= View.height_of(plottop); h += heightstep)
 	{
 		auto const y{View.y_of(h)};
 		Draw.AddLine(ImVec2(View.corner.x, y), ImVec2(bottomright.x, y), kGrid);
-		Draw.AddText(ImVec2(View.corner.x + 2.0f, y - 14.0f), kLabel, format("%.1f", h).c_str());
 	}
 	for (auto const &zone : state.context.switches)
 	{
 		Draw.AddRectFilled(ImVec2(View.x_of(zone.from), plottop), ImVec2(std::max(View.x_of(zone.to), View.x_of(zone.from) + 2.0f), plotbottom), kSwitch);
-		Draw.AddText(ImVec2(View.x_of(zone.from) + 2.0f, plottop + 2.0f), IM_COL32(200, 160, 255, 220), zone.name.c_str());
+		if (View.x_of(zone.to) - View.x_of(zone.from) > 20.0f || View.across < 0.5)
+			Draw.AddText(ImVec2(View.x_of(zone.from) + 2.0f, plotbottom - 16.0f), kSwitchLabel, zone.name.c_str());
 	}
 
 	auto const polyline = [&](auto const &Height, ImU32 const Colour, float const Thickness) {
@@ -1093,7 +1303,31 @@ void editor_mode::draw_profile_canvas(profile_view const &View, ImDrawList &Draw
 		}
 	};
 	if (state.show_terrain)
+	{
+		auto const fill{(kTerrain & 0x00FFFFFFu) | 0x30000000u};
+		float lastx{-1e9f};
+		ImVec2 previous{};
+		bool open{false};
+		for (std::size_t i = 0; i < samples.size(); ++i)
+		{
+			auto const x{View.x_of(samples[i].chainage)};
+			auto const h{state.terrain[i]};
+			if (std::isnan(h) || x < View.corner.x - 50.0f || x > bottomright.x + 50.0f)
+			{
+				open = false;
+				continue;
+			}
+			if (open && x - lastx < 2.0f && i + 1 < samples.size())
+				continue;
+			ImVec2 const next{x, std::min(View.y_of(h), plotbottom)};
+			if (open)
+				Draw.AddQuadFilled(previous, next, ImVec2(next.x, plotbottom), ImVec2(previous.x, plotbottom), fill);
+			previous = next;
+			lastx = x;
+			open = true;
+		}
 		polyline([&](std::size_t const I) { return state.terrain[I]; }, kTerrain, 1.5f);
+	}
 	if (state.show_track)
 		polyline([&](std::size_t const I) { return samples[I].position.y; }, kTrack, 1.5f);
 
@@ -1117,8 +1351,11 @@ void editor_mode::draw_profile_canvas(profile_view const &View, ImDrawList &Draw
 		auto const x{View.x_of(middle)};
 		if (View.x_of(points[i + 1].chainage) - View.x_of(points[i].chainage) < 70.0f)
 			continue;
-		auto const text{format("%+.2f o/oo  L %.1f", profile::grade_after(line, i) * 1000.0, points[i + 1].chainage - points[i].chainage)};
-		Draw.AddText(ImVec2(x - 40.0f, View.y_of(profile::elevation(line, middle)) - 30.0f), kGradeLine, text.c_str());
+		auto const text{format("%+.2f o/oo   L %.0f m", profile::grade_after(line, i) * 1000.0, points[i + 1].chainage - points[i].chainage)};
+		auto const size{ImGui::CalcTextSize(text.c_str())};
+		if (View.x_of(points[i + 1].chainage) - View.x_of(points[i].chainage) < size.x + 30.0f)
+			continue;
+		plot_label(Draw, ImVec2(x - size.x * 0.5f, View.y_of(profile::elevation(line, middle)) - size.y - 10.0f), kGradeLine, text);
 	}
 	for (auto const &c : profile::curves(line))
 	{
@@ -1129,24 +1366,34 @@ void editor_mode::draw_profile_canvas(profile_view const &View, ImDrawList &Draw
 		}
 		auto const chainage{points[c.point].chainage};
 		ImVec2 const grip{View.x_of(chainage), View.y_of(profile::elevation(line, chainage))};
-		Draw.AddCircleFilled(grip, 4.5f, overlay_color::grip, 4);
-		if (static_cast<int>(c.point) == state.curve_grip)
-			Draw.AddCircle(grip, 9.0f, overlay_color::highlight, 12, 2.0f);
-		Draw.AddText(ImVec2(grip.x + 7.0f, grip.y + 4.0f), overlay_color::grip, format("R %.0f", points[c.point].radius).c_str());
+		bool const lit{static_cast<int>(c.point) == state.curve_grip || static_cast<int>(c.point) == state.hover_grip};
+		Draw.AddCircleFilled(grip, lit ? 6.5f : 4.5f, overlay_color::grip, 4);
+		if (lit)
+			Draw.AddCircle(grip, 10.0f, overlay_color::highlight, 12, 2.0f);
+		plot_label(Draw, ImVec2(grip.x + 8.0f, grip.y + 6.0f), overlay_color::grip, format("R %.0f", points[c.point].radius));
 	}
 	for (int i = 0; i < static_cast<int>(points.size()); ++i)
 	{
 		ImVec2 const at{View.x_of(points[i].chainage), View.y_of(points[i].elevation)};
+		bool const lit{i == state.hover_point || i == state.dragging};
+		auto const radius{lit ? 7.0f : 5.5f};
 		if (i == 0 || i + 1 == static_cast<int>(points.size()))
-			Draw.AddRectFilled(ImVec2(at.x - 5.0f, at.y - 5.0f), ImVec2(at.x + 5.0f, at.y + 5.0f), IM_COL32(70, 140, 255, 255));
+			Draw.AddRectFilled(ImVec2(at.x - radius, at.y - radius), ImVec2(at.x + radius, at.y + radius), IM_COL32(70, 140, 255, 255));
 		else if (points[i].joint)
-			Draw.AddQuadFilled(ImVec2(at.x, at.y - 6.0f), ImVec2(at.x + 6.0f, at.y), ImVec2(at.x, at.y + 6.0f), ImVec2(at.x - 6.0f, at.y), IM_COL32(90, 210, 230, 255));
+			Draw.AddQuadFilled(ImVec2(at.x, at.y - radius), ImVec2(at.x + radius, at.y), ImVec2(at.x, at.y + radius), ImVec2(at.x - radius, at.y), IM_COL32(90, 210, 230, 255));
 		else
-			Draw.AddCircleFilled(at, 5.5f, overlay_color::marked);
+			Draw.AddCircleFilled(at, radius, overlay_color::marked);
 		if (i == state.selected)
-			Draw.AddCircle(at, 10.0f, overlay_color::highlight, 16, 2.0f);
-		Draw.AddText(ImVec2(at.x + 7.0f, at.y - 18.0f), overlay_color::marked, format("%d  %.3f", i + 1, points[i].elevation).c_str());
+			Draw.AddCircle(at, 11.0f, overlay_color::highlight, 16, 2.5f);
+		else if (lit)
+			Draw.AddCircle(at, 11.0f, IM_COL32(255, 255, 255, 160), 16, 1.5f);
+		// the heights only where they're asked for, the numbers of the points always
+		auto const text{i == state.selected || lit ? format("%d   H %.3f", i + 1, points[i].elevation) : std::to_string(i + 1)};
+		plot_label(Draw, ImVec2(at.x + 8.0f, at.y - 22.0f), overlay_color::marked, text);
 	}
+	// heights along the left edge, over everything else
+	for (auto h = std::floor(View.height_of(plotbottom) / heightstep) * heightstep; h <= View.height_of(plottop); h += heightstep)
+		plot_label(Draw, ImVec2(View.corner.x + 4.0f, View.y_of(h) - 8.0f), kLabel, format("%.1f", h));
 	for (auto const &issue : state.issues)
 	{
 		auto const x{View.x_of(issue.chainage)};
@@ -1172,7 +1419,7 @@ void editor_mode::draw_profile_canvas(profile_view const &View, ImDrawList &Draw
 			lastx = x;
 			open = true;
 		}
-		Draw.AddText(ImVec2(View.corner.x + 2.0f, plotbottom + 1.0f), kLabel, "plan: curvature (up: left)");
+		Draw.AddText(ImVec2(View.corner.x + 4.0f, plotbottom + 1.0f), kLabel, STR_C("plan: curvature (up: left)"));
 	}
 }
 
@@ -1183,15 +1430,15 @@ void editor_mode::profile_canvas_tooltip() const
 	auto const designed{profile::elevation(state.line, state.hover)};
 	auto const existing{editor_track::sampled_elevation(samples, state.hover)};
 	ImGui::BeginTooltip();
-	ImGui::Text("km %s", profile::format_chainage(state.hover + state.origin).c_str());
-	ImGui::Text("Grade line %.3f m, %+.2f per mille", designed, profile::grade(state.line, state.hover) * 1000.0);
-	ImGui::Text("Track %.3f m (%+.3f), %+.2f per mille", existing, existing - designed, editor_track::sampled_grade(samples, state.hover) * 1000.0);
+	ImGui::Text(STR_C("km %s"), profile::format_chainage(state.hover + state.origin).c_str());
+	ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(kGradeLine), STR_C("Grade line %.3f m, %+.2f per mille"), designed, profile::grade(state.line, state.hover) * 1000.0);
+	ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(kTrack), STR_C("Track %.3f m (%+.3f), %+.2f per mille"), existing, existing - designed, editor_track::sampled_grade(samples, state.hover) * 1000.0);
 	auto const next{std::lower_bound(samples.begin(), samples.end(), state.hover, [](editor_track::route_sample const &Sample, double const Value) { return Sample.chainage < Value; })};
 	auto const index{static_cast<std::size_t>(std::distance(samples.begin(), std::min(next, std::prev(samples.end()))))};
 	if (index < state.terrain.size() && false == std::isnan(state.terrain[index]))
-		ImGui::Text("Terrain %.3f m, %s %.2f m", state.terrain[index], designed > state.terrain[index] ? "fill" : "cut", std::abs(designed - state.terrain[index]));
+		ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(kTerrain), STR_C("Terrain %.3f m, %s %.2f m"), state.terrain[index], designed > state.terrain[index] ? STR_C("fill") : STR_C("cut"), std::abs(designed - state.terrain[index]));
 	auto const &span{state.route.spans[samples[index].span]};
-	ImGui::TextDisabled("%s%s", span.track->name().c_str(), span.track->eType != tt_Normal ? " (switch, tilted as a whole with its branch)" : "");
+	ImGui::TextDisabled("%s%s", span.track->name().c_str(), span.track->eType != tt_Normal ? STR_C(" (switch, tilted as a whole with its branch)") : "");
 	ImGui::EndTooltip();
 }
 

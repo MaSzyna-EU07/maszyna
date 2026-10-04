@@ -85,22 +85,6 @@ void editor_ui::render_mode_options(nodebank_panel::edit_mode const Mode)
 		if (m_filloptions)
 			m_filloptions();
 		break;
-	case nodebank_panel::TRACK:
-		if (m_gaugewindow != nullptr)
-		{
-			auto const open{*m_gaugewindow};
-			if (open)
-				ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-			if (ImGui::Button(STR_C("Structure gauge"), ImVec2(-1.0f, 0.0f)))
-				*m_gaugewindow = false == *m_gaugewindow;
-			if (open)
-				ImGui::PopStyleColor();
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s", STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"));
-		}
-		if (m_trackoptions)
-			m_trackoptions();
-		break;
 	default:
 		break;
 	}
@@ -218,7 +202,13 @@ std::string const *editor_ui::get_active_node_template(bool bypassRandom)
 
 nodebank_panel::edit_mode editor_ui::mode()
 {
-	return m_nodebankpanel.mode;
+	return m_track ? nodebank_panel::TRACK : m_nodebankpanel.mode;
+}
+void editor_ui::set_mode(nodebank_panel::edit_mode const Mode)
+{
+	m_nodebankpanel.requested_mode = Mode;
+	m_nodebankpanel.mode = Mode;
+	m_nodebankpanel.is_open = true;
 }
 float editor_ui::getSpacing()
 {

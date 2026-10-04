@@ -126,6 +126,7 @@ class nodebank_panel : public ui_panel
 		TRACK
 	};
 	edit_mode mode = MODIFY;
+	int requested_mode{-1}; // tab brought forward on the next frame
 
 	nodebank_panel(std::string const &Name, bool const Isopen);
 	void nodebank_reload();
