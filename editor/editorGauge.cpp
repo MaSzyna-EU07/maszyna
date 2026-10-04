@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "editor/editorGauge.hpp"
 
+#include <cmath>
 #include <fstream>
 #include <sstream>
 
@@ -86,6 +87,18 @@ private:
 	std::vector<double> m_values;
 	std::vector<double> m_integral;
 };
+
+// half of the distance between the heads of the rails
+double constexpr rail_spread{0.75};
+
+// the point turned by the angle of the sine about the head of the lower rail
+place turn(section const &Section, place const &Point, double const Sine)
+{
+	auto const pivot{Section.tilt > 0.0 ? -rail_spread : rail_spread};
+	auto const cosine{std::sqrt(std::max(0.0, 1.0 - Sine * Sine))};
+	auto const lateral{Point.lateral - pivot};
+	return {pivot + lateral * cosine - Point.height * Sine, lateral * Sine + Point.height * cosine};
+}
 
 // names of the kinds in the file
 char const *const kind_names[]{"unified", "installation", "road"};
@@ -210,7 +223,18 @@ std::vector<section> sections(kind const Kind, std::vector<double> const &Chaina
 double widening(section const &Section, double const Height, int const Side)
 {
 	auto const i{Side > 0 ? 1 : 0};
-	return (Height < lower_part ? Section.lower[i] : Section.upper[i]) + Section.cant[i] * Height / 1.5;
+	return Height < lower_part ? Section.lower[i] : Section.upper[i] + Section.cant[i] * Height / 1.5;
+}
+
+place outline_point(profile const &Profile, section const &Section, std::size_t const Index, int const Side)
+{
+	auto const &point{Profile.outline[Index]};
+	// the step at the top of the lower part belongs to it from below
+	bool const lower{point.height < lower_part - 1e-9 || (point.height < lower_part + 1e-9 && Index > 0 && Profile.outline[Index - 1].height < lower_part - 1e-9)};
+	auto const i{Side > 0 ? 1 : 0};
+	auto const width{Section.base + point.half_width + (lower ? Section.lower[i] : Section.upper[i] + Section.cant[i] * point.height / 1.5)};
+	place const result{Side * width, point.height};
+	return lower && Section.tilt != 0.0 ? turn(Section, result, Section.tilt) : result;
 }
 
 double half_width(profile const &Profile, section const &Section, double const Height, int const Side)
@@ -232,10 +256,14 @@ double half_width(profile const &Profile, section const &Section, double const H
 
 double intrusion(profile const &Profile, section const &Section, double const Lateral, double const Height)
 {
-	auto const width{half_width(Profile, Section, Height, Lateral >= 0.0 ? 1 : -1)};
+	// the point in the plane of the rail heads, for the lower part
+	auto const local{Section.tilt != 0.0 ? turn(Section, {Lateral, Height}, -Section.tilt) : place{Lateral, Height}};
+	auto const lower{local.height < lower_part};
+	auto const point{lower ? local : place{Lateral, std::max(Height, lower_part)}};
+	auto const width{half_width(Profile, Section, point.height, point.lateral >= 0.0 ? 1 : -1)};
 	if (width < 0.0)
 		return 0.0;
-	return width - std::abs(Lateral);
+	return width - std::abs(point.lateral);
 }
 
 } // namespace gauge

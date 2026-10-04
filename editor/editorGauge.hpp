@@ -61,13 +61,23 @@ struct section
 	std::array<double, 2> upper{}; // from the radius, above the lower part
 	std::array<double, 2> lower{}; // from the radius, in the lower part
 	std::array<double, 2> cant{}; // cant in metres, positive on the inner side of the curve and negative on the outer one
+	double tilt{0.0}; // sine of the slope of the plane of the rail heads, positive with the left rail raised
+};
+// point of the cross-section, metres: lateral positive to the left, height above the rail top
+struct place
+{
+	double lateral{0.0};
+	double height{0.0};
 };
 // sections at the points of a route, from their chainage, curvature (1/m, positive turning left) and cant (m).
 // The widening begins and ends ahead of the changes of the curvature and cant, as the vehicles enter a curve
 std::vector<section> sections(kind Kind, std::vector<double> const &Chainage, std::vector<double> const &Curvature, std::vector<double> const &Cant);
 
-// widening of the side (+1 left, -1 right) at the height
+// widening of the side (+1 left, -1 right) at the height; the cant shifts only the part above the lower one,
+// the lower part turns with the plane of the rail heads instead
 double widening(section const &Section, double Height, int Side);
+// point of the outline on the side at the section, with the widening and the turn of the lower part
+place outline_point(profile const &Profile, section const &Section, std::size_t Index, int Side);
 // half-width of the gauge at the height on the side, negative above or below the outline
 double half_width(profile const &Profile, section const &Section, double Height, int Side);
 // depth of the point inside the gauge, metres, not positive outside of it. Lateral positive to the left

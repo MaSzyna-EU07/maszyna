@@ -95,6 +95,24 @@ gauge_line make_line(editor_track::route &Route, gauge::profile const &Profile)
 		cant.push_back(sample.cant);
 	}
 	line.sections = gauge::sections(Profile.kind, chainage, curvature, cant);
+	if (false == road)
+	{
+		// the outer rail is raised: the side from the nearest curve along the line
+		std::vector<double> sides(curvature.size(), 0.0);
+		double side{0.0};
+		for (std::size_t i = 0; i < curvature.size(); ++i)
+			sides[i] = side = std::abs(curvature[i]) > 1e-6 ? (curvature[i] > 0.0 ? 1.0 : -1.0) : side;
+		side = 0.0;
+		for (std::size_t i = curvature.size(); i-- > 0;)
+		{
+			if (std::abs(curvature[i]) > 1e-6)
+				side = curvature[i] > 0.0 ? 1.0 : -1.0;
+			else if (sides[i] == 0.0)
+				sides[i] = side;
+		}
+		for (std::size_t i = 0; i < curvature.size(); ++i)
+			line.sections[i].tilt = -sides[i] * std::min(1.0, cant[i] / 1.5);
+	}
 	if (road)
 		for (std::size_t i = 0; i < line.samples.size(); ++i)
 			line.sections[i].base = carriageway(line.route.spans[line.samples[i].span], line.samples[i].chainage);
@@ -350,9 +368,8 @@ void build_tunnel(gauge_line const &Line, std::vector<glm::dvec3> &Surface, std:
 		for (int side : {-1, 1})
 			for (std::size_t j = 0; j < profile.outline.size(); ++j)
 			{
-				auto const &point{profile.outline[side < 0 ? j : profile.outline.size() - 1 - j]};
-				auto const width{Line.sections[Index].base + point.half_width + gauge::widening(Line.sections[Index], point.height, side)};
-				points.push_back(lift(Line.samples[Index], side * width, point.height));
+				auto const point{gauge::outline_point(profile, Line.sections[Index], side < 0 ? j : profile.outline.size() - 1 - j, side)};
+				points.push_back(lift(Line.samples[Index], point.lateral, point.height));
 			}
 		return points;
 	}};
