@@ -25,6 +25,7 @@ class editor_track
 {
   public:
 	enum class point_kind { start, control1, control2, end };
+	static bool is_end(point_kind const Kind) { return Kind == point_kind::start || Kind == point_kind::end; }
 	struct point_ref
 	{
 		int path{-1};
@@ -108,6 +109,8 @@ class editor_track
 		double length{0.0};
 		double grade{0.0};
 		double azimuth{0.0};
+		// distance of the point from the start, measured along the line in the plan
+		double along(glm::dvec3 const &Point) const { return (Point.x - start.x) * direction.x + (Point.z - start.z) * direction.y; }
 	};
 	struct straight_tolerance
 	{
@@ -137,6 +140,63 @@ class editor_track
 		double split{0.5};
 	};
 	static bool find_curve(TTrack &Track, straight_tolerance const &Tolerance, double const Gauge, curve &Curve);
+	// regular straight paths continuing a chain end in line, which the chain can take over
+	struct straight_run
+	{
+		std::vector<TTrack *> tracks;
+		std::vector<bool> outward;
+		double length{0.0};
+	};
+	static straight_run straight_beyond(chain const &Chain, bool const Atend, straight_tolerance const &Tolerance);
+	static double run_reserve(straight_run const &Run);
+	static TTrack *take_straight(straight_run const &Run, TTrack *Edge, glm::dvec3 const &Joint, glm::dvec3 const &Cut, std::vector<std::pair<TTrack *, state>> &States, std::vector<TTrack *> &Created);
+	// sequence of paths, switches included, which a train can run along
+	struct route_span
+	{
+		TTrack *track{nullptr};
+		int path{0};
+		bool forward{true};
+		double from{0.0}; // chainage, measured in the plan
+		double to{0.0};
+	};
+	struct route
+	{
+		std::vector<route_span> spans;
+		double length{0.0};
+	};
+	static bool find_route(TTrack *From, TTrack *To, route &Route, std::string &Error);
+	// continues both ways from the path, through switches along their path 0
+	static route run_route(TTrack &Track, double const Maximum);
+	static route route_of(chain const &Chain);
+	struct route_sample
+	{
+		double chainage{0.0};
+		glm::dvec3 position{0.0};
+		glm::dvec2 direction{0.0, 1.0};
+		double grade{0.0};
+		double curvature{0.0}; // signed, 1/m, positive turning left
+		double cant{0.0}; // m, raise of the outer rail
+		std::size_t span{0};
+	};
+	static std::vector<route_sample> sample_route(route &Route, double const Step);
+	static double sampled_elevation(std::vector<route_sample> const &Samples, double const Chainage);
+	static double sampled_grade(std::vector<route_sample> const &Samples, double const Chainage);
+	static glm::dvec3 sampled_position(std::vector<route_sample> const &Samples, double const Chainage);
+	// grade of the path which adjoins the end of the route, positive rising along the route
+	static bool adjoining_grade(route const &Route, bool const Atend, double &Grade);
+	// path off the route whose end no longer meets the adjoining path in height
+	struct height_gap
+	{
+		TTrack *track{nullptr};
+		TTrack *neighbour{nullptr};
+		double gap{0.0}; // neighbour - track
+	};
+	// sets elevations of the paths of the route; regular paths are split at the chainages in Breaks,
+	// switches are tilted as a whole in the plane of their grade, branches included
+	static std::vector<height_gap> apply_profile(route &Route, std::function<double(double)> const &Elevation, std::function<double(double)> const &Grade, std::vector<double> const &Breaks, std::vector<std::pair<TTrack *, state>> &States, std::vector<TTrack *> &Created);
+	// carries elevations of the chain over to the new pieces, in proportion of the length
+	static void keep_heights(chain const &Chain, std::vector<segment_data> &Pieces);
+
 	struct switch_template
 	{
 		TTrack *source{nullptr};
@@ -156,12 +216,13 @@ class editor_track
 	static TTrack *create_path(TTrack const &Style, segment_data const &Path);
 	static TTrack *split_path(TTrack &Track, double const T);
 	static double nearest_parameter(TTrack const &Track, glm::dvec3 const &Point);
+	// point of the first path at the parameter of nearest_parameter()
+	static glm::dvec3 point_at(TTrack const &Track, double const T);
 	static std::vector<segment_data> place_switch(switch_template const &Template, glm::dvec3 const &Origin, glm::dvec2 const &Direction, int const Side, double const Grade);
 	static TTrack *create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, TTrack const &Style, std::string const &Name = {});
 	static void move_straights(std::vector<straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
 	static std::vector<TTrack *> relay(chain const &Chain, std::vector<segment_data> const &Pieces);
 	static void retire(TTrack &Track);
-	static void revive(TTrack &Track);
 
 	static std::string material_name(material_handle const Material);
 	static material_handle fetch_material(std::string const &Name);
@@ -172,7 +233,21 @@ class editor_track
 	static void velocity(TTrack &Track, double const Velocity);
 	static void damage(TTrack &Track, int const Damage);
 
+	// told about the changes of the paths, to let the objects which belong to them follow
+	class observer
+	{
+	  public:
+		virtual ~observer() = default;
+		virtual void track_captured(TTrack const &Track) = 0;
+		virtual void tracks_committed(std::vector<TTrack *> const &Tracks) = 0;
+		virtual void track_retired(TTrack &Track) = 0;
+		// called before the commit; Original keeps the beginning of the path, given in First
+		virtual void track_split(TTrack &Original, TTrack &Created, segment_data const &First) = 0;
+	};
+	static void observe(observer *Observer) { s_observer = Observer; }
+
   private:
+	static observer *s_observer;
 	static void disconnect(TTrack &Track);
 	static void join(TTrack &Track);
 	static void connect(TTrack &Track, bool const Prevside, TTrack *Other, int const Endpointid);

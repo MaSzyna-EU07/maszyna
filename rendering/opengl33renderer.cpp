@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/AnimModel.h"
 #include "rendering/opengl33geometrybank.h"
 #include "rendering/screenshot.h"
+#include "rendering/editoroverlay.h"
 #include <imgui/imgui_impl_opengl3.h>
 
 //#define EU07_DEBUG_OPENGL
@@ -933,6 +934,7 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		glDebug("render translucent region");
 		setup_drawing(true);
 		Render_Alpha(simulation::Region);
+		Render_editor_overlay();
 
 		// particles
 		Render_particles();
@@ -1518,6 +1520,17 @@ glm::mat4 opengl33_renderer::ortho_frustumtest_projection(float l, float r, floa
 	return glm::ortho(l, r, b, t, znear, zfar);
 }
 
+// the main viewport of the editor in the orthographic view replaces the perspective projection
+void opengl33_renderer::editor_ortho_projection(viewport_config const &Viewport, float const Zfar, glm::mat4 &Projection, glm::mat4 &Frustum)
+{
+	if (false == (EditorModeFlag && Global.EditorOrtho && Viewport.main))
+		return;
+	auto const height{Global.EditorOrthoExtent};
+	auto const width{height * Global.window_size.x / std::max(1.f, static_cast<float>(Global.window_size.y))};
+	Projection = ortho_projection(-width, width, -height, height, -Zfar, Zfar);
+	Frustum = ortho_frustumtest_projection(-width, width, -height, height, -Zfar, Zfar);
+}
+
 void opengl33_renderer::setup_pass(viewport_config &Viewport, renderpass_config &Config, rendermode const Mode,
                                  float const Znear, float const Zfar, bool const Ignoredebug)
 {
@@ -1593,13 +1606,7 @@ void opengl33_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
 		auto const znear = ( Znear > 1.f ? Znear : Znear > 0.f ? Znear * zfar : 0.1f * Global.ZoomFactor);
 
 		camera.projection() = perspective_projection(Viewport.projection, znear, zfar, frustumtest_proj);
-		if (EditorModeFlag && Global.EditorOrtho && Viewport.main)
-		{
-			auto const height{Global.EditorOrthoExtent};
-			auto const width{height * Global.window_size.x / std::max(1.f, static_cast<float>(Global.window_size.y))};
-			camera.projection() = ortho_projection(-width, width, -height, height, -zfar, zfar);
-			frustumtest_proj = ortho_frustumtest_projection(-width, width, -height, height, -zfar, zfar);
-		}
+		editor_ortho_projection(Viewport, zfar, camera.projection(), frustumtest_proj);
 		break;
 	}
 	case rendermode::shadows:
@@ -1699,13 +1706,7 @@ void opengl33_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
         }
 
         camera.projection() = perspective_projection(proj, znear, zfar, frustumtest_proj);
-		if (EditorModeFlag && Global.EditorOrtho && Viewport.main)
-		{
-			auto const height{Global.EditorOrthoExtent};
-			auto const width{height * Global.window_size.x / std::max(1.f, static_cast<float>(Global.window_size.y))};
-			camera.projection() = ortho_projection(-width, width, -height, height, -zfar, zfar);
-			frustumtest_proj = ortho_frustumtest_projection(-width, width, -height, height, -zfar, zfar);
-		}
+		editor_ortho_projection(Viewport, zfar, camera.projection(), frustumtest_proj);
 		break;
 	}
 	case rendermode::reflections:
@@ -4488,6 +4489,55 @@ void opengl33_renderer::Render_Alpha(TTraction *Traction)
 
 	if (m_widelines_supported)
 		glLineWidth(1.0f);
+}
+
+void opengl33_renderer::Render_editor_overlay()
+{
+	if (false == EditorModeFlag || EditorOverlay.batches.empty())
+		return;
+	glDebug("Render_editor_overlay");
+
+	if (m_editor_overlay_revision != EditorOverlay.revision)
+	{
+		m_editor_overlay_revision = EditorOverlay.revision;
+		if (m_editor_overlay_bank == null_handle)
+			m_editor_overlay_bank = Create_Bank();
+		auto const &batches{EditorOverlay.batches};
+		for (std::size_t i = 0; i < batches.size(); ++i)
+		{
+			gfx::vertex_array vertices;
+			vertices.reserve(batches[i].points.size());
+			for (auto const &point : batches[i].points)
+				vertices.emplace_back(point, glm::vec3(0.f, 1.f, 0.f), glm::vec2());
+			gfx::userdata_array userdata;
+			if (i >= m_editor_overlay_geometry.size())
+				m_editor_overlay_geometry.emplace_back();
+			auto &geometry{m_editor_overlay_geometry[i]};
+			if (geometry != null_handle)
+				m_geometry.replace(vertices, userdata, geometry);
+			else if (false == vertices.empty())
+				geometry = m_geometry.create_chunk(vertices, userdata, m_editor_overlay_bank, batches[i].type);
+		}
+	}
+
+	::glPushMatrix();
+	auto const origin{EditorOverlay.origin - m_renderpass.pass_camera.position()};
+	::glTranslated(origin.x, origin.y, origin.z);
+	::glDisable(GL_CULL_FACE);
+	::glDepthMask(GL_FALSE);
+	m_line_shader->bind();
+	auto const &batches{EditorOverlay.batches};
+	for (std::size_t i = 0; i < batches.size() && i < m_editor_overlay_geometry.size(); ++i)
+	{
+		if (batches[i].points.empty() || m_editor_overlay_geometry[i] == null_handle)
+			continue;
+		model_ubs.param[0] = batches[i].color;
+		draw(m_editor_overlay_geometry[i]);
+		++m_renderpass.draw_stats.drawcalls;
+	}
+	::glDepthMask(GL_TRUE);
+	::glEnable(GL_CULL_FACE);
+	::glPopMatrix();
 }
 
 void opengl33_renderer::Render_Alpha(scene::lines_node const &Lines)

@@ -16,6 +16,9 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "model/AnimModel.h"
 #include "world/MemCell.h"
+#include "world/Traction.h"
+#include "world/EvLaunch.h"
+#include "world/Event.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
@@ -229,6 +232,54 @@ bool patch_memcell(std::string &Text, glm::dvec3 const &Location, std::string &E
 	if (tokens.size() < 13 || tokens[0].text != "node" || tokens[4].text != "memcell" || tokens.back().text != "endmemcell")
 	{
 		Error = "unexpected layout of memory cell definition";
+		return false;
+	}
+	apply(Text, {{tokens[5].begin, tokens[5].end, number(Location.x)}, {tokens[6].begin, tokens[6].end, number(Location.y)}, {tokens[7].begin, tokens[7].end, number(Location.z)}});
+	return true;
+}
+
+// definition layout: node <max> <min> <name> traction <supply> <voltage> <current> <resistivity> <material> <thickness> <damage>
+//   <point 1> <point 2> <point 3> <point 4> <minimal height> <segment length> <wires> <offset> <vis> [parallel <name>] endtraction
+bool patch_traction(std::string &Text, TTraction const &Traction, glm::dvec3 const &Offset, std::string &Error)
+{
+	auto const tokens{tokenize(Text)};
+	if (tokens.size() < 30 || tokens[0].text != "node" || tokens[4].text != "traction" || tokens.back().text != "endtraction")
+	{
+		Error = "unexpected layout of traction definition";
+		return false;
+	}
+	std::vector<text_change> changes;
+	std::size_t index{12};
+	for (auto const &point : {Traction.pPoint1, Traction.pPoint2, Traction.pPoint3, Traction.pPoint4})
+	{
+		auto const local{point - Offset};
+		for (auto const value : {local.x, local.y, local.z})
+		{
+			changes.push_back({tokens[index].begin, tokens[index].end, number(value)});
+			++index;
+		}
+	}
+	auto const &p1{Traction.pPoint1};
+	auto const &p2{Traction.pPoint2};
+	auto const &p3{Traction.pPoint3};
+	auto const &p4{Traction.pPoint4};
+	changes.push_back({tokens[24].begin, tokens[24].end, number((p3.y - p1.y + p4.y - p2.y) * 0.5 - Traction.fHeightDifference)});
+	if (Traction.iNumSections > 0)
+	{
+		// the load truncates length / segment length, the margin keeps the rounding of the number from losing a section
+		changes.push_back({tokens[25].begin, tokens[25].end, number(glm::length(p1 - p2) / (Traction.iNumSections + 0.001))});
+	}
+	apply(Text, changes);
+	return true;
+}
+
+// definition layout: node <max> <min> <name> eventlauncher <x> <y> <z> <radius> ... end
+bool patch_launcher(std::string &Text, glm::dvec3 const &Location, std::string &Error)
+{
+	auto const tokens{tokenize(Text)};
+	if (tokens.size() < 9 || tokens[0].text != "node" || tokens[4].text != "eventlauncher")
+	{
+		Error = "unexpected layout of event launcher definition";
 		return false;
 	}
 	apply(Text, {{tokens[5].begin, tokens[5].end, number(Location.x)}, {tokens[6].begin, tokens[6].end, number(Location.y)}, {tokens[7].begin, tokens[7].end, number(Location.z)}});
@@ -732,6 +783,66 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			return fail(state.error);
 		}
 	}
+	auto const push_edit = [&](layer_handle const Layer, source_span const &Span, std::string Text, basic_node const *Node) {
+		file_patch::edit edit;
+		edit.begin = Span.begin;
+		edit.end = Span.end;
+		edit.length = Text.size();
+		edit.text = std::move(Text);
+		edit.node = Node;
+		state.patches[Layer].edits.emplace_back(std::move(edit));
+	};
+	// traction and event launchers are rewritten when the editor moved them along with the track they belong to
+	std::vector<basic_node *> patchednodes;
+	auto const patch_node = [&](basic_node *Node, auto const &Patch) {
+		auto const lookup{m_sources.find(Node)};
+		if (lookup == m_sources.end() || false == Node->dirty())
+		{
+			return true;
+		}
+		auto const &source{lookup->second};
+		if (false == is_output(resolve(source.layer)) || false == writable(source.layer))
+		{
+			return true;
+		}
+		if (false == load(source.layer))
+		{
+			return false;
+		}
+		auto const &content{state.content[source.layer]};
+		if (source.span.end > static_cast<std::streamoff>(content.size()))
+		{
+			state.error = "definition of \"" + Node->name() + "\" is out of bounds of file \"" + layer(source.layer).name + "\"";
+			return false;
+		}
+		auto text{content.substr(static_cast<std::size_t>(source.span.begin), static_cast<std::size_t>(source.span.end - source.span.begin))};
+		std::string error;
+		if (false == Patch(text, source, error))
+		{
+			state.error = error + " of \"" + Node->name() + "\" in file \"" + layer(source.layer).name + "\"";
+			return false;
+		}
+		push_edit(source.layer, source.span, std::move(text), Node);
+		rewritten.emplace(Node);
+		patchednodes.push_back(Node);
+		return true;
+	};
+	for (auto *traction : simulation::Traction.sequence())
+	{
+		if (traction != nullptr &&
+		    false == patch_node(traction, [&](std::string &Text, node_source const &Source, std::string &Error) { return patch_traction(Text, *traction, Source.context.offset, Error); }))
+		{
+			return fail(state.error);
+		}
+	}
+	for (auto *launcher : simulation::Events.launchers())
+	{
+		if (launcher != nullptr &&
+		    false == patch_node(launcher, [&](std::string &Text, node_source const &Source, std::string &Error) { return patch_launcher(Text, Source.context.to_local(launcher->location()), Error); }))
+		{
+			return fail(state.error);
+		}
+	}
 	std::vector<TTrack *> savedpaths;
 	std::vector<TTrack const *> droppedpaths;
 	auto const path_text = [](TTrack &Path, glm::dvec3 const &Offset) {
@@ -778,21 +889,16 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		{
 			return fail(state.error);
 		}
-		file_patch::edit edit;
-		edit.begin = source.span.begin;
-		edit.end = source.span.end;
 		if (path->m_editorremoved)
 		{
+			push_edit(source.layer, source.span, {}, nullptr);
 			droppedpaths.push_back(path);
 		}
 		else
 		{
-			edit.text = path_text(*path, source.context.offset);
-			edit.length = edit.text.size();
-			edit.node = path;
+			push_edit(source.layer, source.span, path_text(*path, source.context.offset), path);
 			savedpaths.push_back(path);
 		}
-		state.patches[source.layer].edits.emplace_back(std::move(edit));
 		rewritten.emplace(path);
 	}
 	// roads. the lanes aren't saved, they're generated from the definition of the road
@@ -994,6 +1100,33 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		state.patches[erased.first].edits.emplace_back(std::move(edit));
 	}
 
+	// editor data in the comment lines: the old lines go, the new ones are added to the file like new definitions
+	std::map<layer_handle, std::vector<std::string>> markedtext;
+	for (auto const &marking : m_marking)
+	{
+		auto const markedlayer{marking.first.first};
+		auto const &mark{marking.first.second};
+		if (auto const lookup{m_marked.find(markedlayer)}; lookup != m_marked.end())
+		{
+			for (auto const &line : lookup->second)
+			{
+				if (line.mark == mark)
+				{
+					push_edit(markedlayer, line.span, {}, nullptr);
+				}
+			}
+		}
+		auto const target{resolve(markedlayer)};
+		if (marking.second.empty() || false == is_output(target))
+		{
+			continue;
+		}
+		for (auto const &text : marking.second)
+		{
+			markedtext[target].push_back(mark + ' ' + text);
+		}
+	}
+
 	// includes of templates
 	std::map<layer_handle, std::vector<instance_handle>> placed; // directives made in the editor, by target layer
 	for (std::size_t idx = 0; idx < m_instances.size(); ++idx)
@@ -1133,7 +1266,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			continue;
 		}
 		if (layer(candidate).created || state.patches.count(candidate) != 0 || appended.count(candidate) != 0 || created.count(candidate) != 0 || placed.count(candidate) != 0 ||
-		    (candidate == root && false == Rootstatements.empty()))
+		    markedtext.count(candidate) != 0 || (candidate == root && false == Rootstatements.empty()))
 		{
 			outputs.emplace_back(candidate);
 		}
@@ -1225,6 +1358,14 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 				auto const offset{static_cast<std::streamoff>(added.text.size())};
 				added.instances.push_back({included, {offset, offset + static_cast<std::streamoff>(directive.size())}});
 				added.text += directive + eol;
+			}
+		}
+		if (auto const lookup{markedtext.find(output)}; lookup != markedtext.end())
+		{
+			for (auto const &line : lookup->second)
+			{
+				ensure_newline(added.text, eol);
+				added.text += line + eol;
 			}
 		}
 		if (output == root)
@@ -1414,7 +1555,17 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 	for (auto const output : written)
 	{
 		stat(output);
+		scan(output);
 	}
+	for (auto const &marking : m_marking)
+	{
+		if (resolve(marking.first.first) != marking.first.first)
+		{
+			// the lines of the merged layer are now in the file of its target
+			m_marked.erase(marking.first.first);
+		}
+	}
+	m_marking.clear();
 	for (auto &included : m_instances)
 	{
 		// removed includes are gone from the files now
@@ -1424,6 +1575,10 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 	for (auto *path : savedpaths)
 	{
 		path->m_dirty = false;
+	}
+	for (auto *node : patchednodes)
+	{
+		node->m_dirty = false;
 	}
 	for (auto const *path : droppedpaths)
 	{

@@ -17,7 +17,10 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
 
+#include <array>
+#include <fstream>
 #include <functional>
+#include <iterator>
 
 namespace scene
 {
@@ -34,6 +37,17 @@ glm::dvec3 layer_context::to_local(glm::dvec3 Location) const
 	{
 		Location = glm::rotateY<double>(Location, -glm::radians(static_cast<double>(rotation.y)));
 	}
+	return Location;
+}
+
+glm::dvec3 layer_context::to_world(glm::dvec3 Location) const
+{
+	if (rotation != glm::vec3{0.f})
+	{
+		Location = glm::rotateY<double>(Location, glm::radians(static_cast<double>(rotation.y)));
+	}
+	Location *= glm::dvec3{scale};
+	Location += offset;
 	return Location;
 }
 
@@ -62,6 +76,7 @@ layer_handle node_layers::open(std::string const &Name)
 			m_layers.back().parent = handle();
 			m_layers.back().late = m_initialized;
 			stat(layerhandle);
+			scan(layerhandle);
 		}
 		else
 		{
@@ -119,6 +134,8 @@ void node_layers::clear()
 	m_instance = 0;
 	m_initialized = false;
 	m_terraindirective = false;
+	m_marked.clear();
+	m_marking.clear();
 }
 
 // indicates the scenario initialization (FirstInit) is being performed
@@ -767,7 +784,104 @@ bool node_layers::merge(layer_handle Source, layer_handle Target)
 // true if there are layer changes awaiting save. NOTE: doesn't account for modified nodes
 bool node_layers::pending() const
 {
-	return std::any_of(std::begin(m_layers), std::end(m_layers), [](basic_layer const &Layer) { return false == Layer.dead && (Layer.created || Layer.removed || Layer.merged != null_handle); });
+	return false == m_marking.empty() ||
+	       std::any_of(std::begin(m_layers), std::end(m_layers), [](basic_layer const &Layer) { return false == Layer.dead && (Layer.created || Layer.removed || Layer.merged != null_handle); });
+}
+
+namespace
+{
+// marks of the lines the editor keeps track of
+std::array<char const *, 2> const editormarks{"//$p", "//$b"};
+} // namespace
+
+void node_layers::scan(layer_handle const Layer)
+{
+	m_marked.erase(Layer);
+	std::ifstream file{path(Layer), std::ios_base::binary};
+	if (false == file.is_open())
+	{
+		return;
+	}
+	std::string content{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+	if (content.find("//$") == std::string::npos)
+	{
+		return;
+	}
+	std::size_t begin{0};
+	while (begin < content.size())
+	{
+		auto end{content.find('\n', begin)};
+		end = (end == std::string::npos ? content.size() : end + 1);
+		auto const first{content.find_first_not_of(" \t", begin)};
+		if (first < end)
+		{
+			for (auto const *mark : editormarks)
+			{
+				auto const length{std::char_traits<char>::length(mark)};
+				if (content.compare(first, length, mark) != 0 || (first + length < end && content[first + length] != ' ' && content[first + length] != '\t' && content[first + length] != '\r' && content[first + length] != '\n'))
+				{
+					continue;
+				}
+				auto text{content.substr(first + length, end - first - length)};
+				while (false == text.empty() && (text.back() == '\n' || text.back() == '\r'))
+				{
+					text.pop_back();
+				}
+				text.erase(0, text.find_first_not_of(" \t"));
+				m_marked[Layer].push_back({mark, {static_cast<std::streamoff>(begin), static_cast<std::streamoff>(end)}, std::move(text)});
+				break;
+			}
+		}
+		begin = end;
+	}
+}
+
+std::vector<std::string> node_layers::marked(layer_handle const Layer, std::string const &Mark) const
+{
+	std::vector<std::string> result;
+	if (auto const pending{m_marking.find({Layer, Mark})}; pending != m_marking.end())
+	{
+		return pending->second;
+	}
+	if (auto const lookup{m_marked.find(Layer)}; lookup != m_marked.end())
+	{
+		for (auto const &line : lookup->second)
+		{
+			if (line.mark == Mark)
+			{
+				result.push_back(line.text);
+			}
+		}
+	}
+	return result;
+}
+
+std::vector<layer_handle> node_layers::marked_layers(std::string const &Mark) const
+{
+	std::vector<layer_handle> result;
+	for (auto const &entry : m_marked)
+	{
+		if (listed(entry.first) && std::any_of(entry.second.begin(), entry.second.end(), [&](marked_line const &Line) { return Line.mark == Mark; }))
+		{
+			result.push_back(entry.first);
+		}
+	}
+	for (auto const &entry : m_marking)
+	{
+		if (entry.first.second == Mark && std::find(result.begin(), result.end(), entry.first.first) == result.end())
+		{
+			result.push_back(entry.first.first);
+		}
+	}
+	return result;
+}
+
+void node_layers::mark(layer_handle const Layer, std::string const &Mark, std::vector<std::string> Lines)
+{
+	if (valid(Layer))
+	{
+		m_marking[{Layer, Mark}] = std::move(Lines);
+	}
 }
 
 // indicates start of content of a template, included by directive at specified location of the layer file being loaded

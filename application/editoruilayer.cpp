@@ -86,6 +86,18 @@ void editor_ui::render_mode_options(nodebank_panel::edit_mode const Mode)
 			m_filloptions();
 		break;
 	case nodebank_panel::TRACK:
+		if (m_gaugewindow != nullptr)
+		{
+			auto const open{*m_gaugewindow};
+			if (open)
+				ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+			if (ImGui::Button(STR_C("Structure gauge"), ImVec2(-1.0f, 0.0f)))
+				*m_gaugewindow = false == *m_gaugewindow;
+			if (open)
+				ImGui::PopStyleColor();
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"));
+		}
 		if (m_trackoptions)
 			m_trackoptions();
 		break;

@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <filesystem>
 #include <limits>
+#include <map>
 #include <set>
 
 namespace scene
@@ -44,6 +45,8 @@ struct layer_context
 
 	// converts world space location to the one which produces it when loaded with this context in effect
 	glm::dvec3 to_local(glm::dvec3 Location) const;
+	// reverse of to_local()
+	glm::dvec3 to_world(glm::dvec3 Location) const;
 	bool matches(layer_context const &Other) const;
 };
 
@@ -261,6 +264,14 @@ class node_layers
 		return m_terraindirective;
 	}
 
+	// editor data kept in the scenery files as comment lines starting with a mark, e.g. "//$p ...", which the simulation skips
+	// text of the lines with specified mark in specified layer, with the mark taken off
+	std::vector<std::string> marked(layer_handle Layer, std::string const &Mark) const;
+	// layers whose files hold lines with specified mark
+	std::vector<layer_handle> marked_layers(std::string const &Mark) const;
+	// lines to take the place of the ones with specified mark in the layer file, on save. the mark is added to each
+	void mark(layer_handle Layer, std::string const &Mark, std::vector<std::string> Lines);
+
 	// layer management. changes are applied to the scenery files by save()
 	// creates empty layer, included from specified one. returns: handle to the new layer, or null_handle with the explanation in Reason
 	layer_handle create(std::string Name, layer_handle Parent, std::string &Reason);
@@ -280,6 +291,11 @@ class node_layers
 	bool tracked(instance_handle const Instance) const
 	{
 		return Instance != 0 && Instance <= m_instances.size();
+	}
+	// handles of the includes run from 1 up to this number
+	std::size_t instance_count() const
+	{
+		return m_instances.size();
 	}
 	// grants access to specified include. NOTE: the include has to be tracked
 	include_instance const &instance(instance_handle const Instance) const
@@ -319,9 +335,17 @@ class node_layers
 	struct file_patch;
 	struct composition;
 	struct save_state;
+	struct marked_line
+	{
+		std::string mark;
+		source_span span; // whole line, its end included
+		std::string text;
+	};
 	// methods
 	std::string path(layer_handle const Layer) const;
 	void stat(layer_handle const Layer);
+	// finds the marked lines in the layer file
+	void scan(layer_handle const Layer);
 	bool compose(save_state &State, layer_handle const Layer, composition &Output, int const Depth) const;
 	// members
 	std::vector<basic_layer> m_layers; // layer handle is index in the vector + 1
@@ -335,6 +359,8 @@ class node_layers
 	instance_handle m_instance{0}; // helper, include whose template is being loaded
 	bool m_initialized{false}; // helper, the scenario initialization was performed already
 	bool m_terraindirective{false};
+	std::map<layer_handle, std::vector<marked_line>> m_marked;
+	std::map<std::pair<layer_handle, std::string>, std::vector<std::string>> m_marking; // changes awaiting save
 };
 
 extern node_layers Layers;

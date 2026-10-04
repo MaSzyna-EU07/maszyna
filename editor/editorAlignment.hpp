@@ -45,9 +45,6 @@ struct vertex
 	double transition_in{0.0};
 	double transition_out{0.0};
 	double cant{0.0};
-	bool auto_elevation{true};
-	double elevation{0.0};
-	double vertical_radius{0.0};
 	bool reverse_turn{false};
 	bool compound{false};
 	double radius2{600.0};
@@ -65,6 +62,9 @@ struct design
 	double end_grade{0.0};
 	double start_radius{0.0};
 	double end_radius{0.0};
+	// length of the straight beyond the start and the end, which the curves can take over
+	double start_reserve{0.0};
+	double end_reserve{0.0};
 	std::vector<vertex> vertices;
 	transition_shape shape{transition_shape::cubic_parabola};
 	double speed{100.0};
@@ -80,7 +80,6 @@ struct recommendation
 	double cant{0.0};
 	double radius_min{0.0};
 	double transition{0.0};
-	double vertical_radius{0.0};
 };
 recommendation recommend(double const Speed, double const Radius, limits const &Limits);
 double transition_length(double const Speed, double const Radius, double const Cant, limits const &Limits);
@@ -152,6 +151,10 @@ struct result
 	std::vector<curve_report> curves;
 	std::vector<profile_point> profile;
 	double length{0.0};
+	glm::dvec3 start{0.0};
+	glm::dvec3 end{0.0};
+	double start_extension{0.0};
+	double end_extension{0.0};
 };
 
 result compute(design const &Design);

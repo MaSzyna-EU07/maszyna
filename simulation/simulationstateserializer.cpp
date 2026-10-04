@@ -587,6 +587,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         }
         scene::Groups.insert( scene::Groups.handle(), traction );
         simulation::Region->insert_and_register( traction );
+        scene::Layers.track( traction, { sourcebegin, Input.TokenEnd() } );
     }
     else if( nodedata.type == "tractionpowersource" ) {
 
@@ -733,6 +734,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
                 simulation::Region->insert( eventlauncher );
             }
         }
+        scene::Layers.track( eventlauncher, { sourcebegin, Input.TokenEnd() } );
     }
     else if( nodedata.type == "sound" ) {
 

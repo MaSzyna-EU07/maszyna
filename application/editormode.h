@@ -22,6 +22,9 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorTrack.hpp"
 #include "editor/editorAlignment.hpp"
 #include "editor/editorRoad.hpp"
+#include "editor/editorProfile.hpp"
+#include "editor/editorInfra.hpp"
+#include "editor/editorGauge.hpp"
 
 #include <array>
 #include <chrono>
@@ -33,12 +36,23 @@ http://mozilla.org/MPL/2.0/.
 class TAnimModel;
 class TTrack;
 
-class editor_mode : public application_mode
+class editor_mode : public application_mode, private editor_track::observer
 {
 
   public:
+	// model entering the structure gauge, at its deepest place
+	struct gauge_hit
+	{
+		std::string model;
+		glm::dvec3 point{0.0};
+		double depth{0.0}; // m
+		TTrack const *track{nullptr}; // nearest one, may be gone by now
+		int path{0};
+		glm::dvec2 direction{0.0, 1.0}; // of the track there, in the plan
+	};
 	// constructors
 	editor_mode();
+	~editor_mode() override;
 	// methods
 	// initializes internal data structures of the mode. returns: true on success, false otherwise
 	bool init() override;
@@ -108,7 +122,7 @@ class editor_mode : public application_mode
 		std::vector<TTrack *> created;
 		std::vector<TTrack *> removed;
 		editor_road::record roads; // what a change of the roads comes to
-
+		std::vector<infra::object_state> infra; // objects which followed the paths
 	};
 	void push_snapshot(scene::basic_node *node, EditorSnapshot::Action Action = EditorSnapshot::Action::Move, std::string const &Serialized = std::string());
 
@@ -293,7 +307,8 @@ class editor_mode : public application_mode
 	void select_track(scene::basic_node *Node);
 	void render_track_gizmo();
 	void commit_track_drag(bool const Force);
-	void push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created = {});
+	void push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created = {}, std::vector<TTrack *> Removed = {});
+	void trim_history();
 	void restore_track_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo);
 	editor_track::point_ref m_track_point;
 	std::vector<TTrack *> m_track_drag;
@@ -306,6 +321,57 @@ class editor_mode : public application_mode
 	std::chrono::steady_clock::time_point m_track_last_commit;
 	editor_track::state m_track_field_before;
 	std::array<std::array<char, 256>, 3> m_track_materials{};
+	std::array<TTrack const *, 3> m_track_material_edited{}; // path whose texture name is being typed
+	std::string m_track_mode_notice;
+	// structure gauge along the line of the selected path, shown in the 3d view
+	struct gauge_state
+	{
+		bool open{false}; // window
+		bool enabled{true}; // tunnel along the selected path
+		std::vector<gauge::profile> profiles;
+		int profile{0}; // railway
+		int road{-1};
+		TTrack const *track{nullptr}; // scanned
+		std::size_t history{0};
+		bool pending{false}; // rescan once the edit ends
+		struct
+		{
+			std::vector<glm::dvec3> surface; // triangles of the tunnel
+			std::vector<glm::dvec3> edges; // lines
+			std::vector<gauge_hit> hits;
+		} line; // along the selected path
+		struct
+		{
+			bool scanned{false};
+			std::size_t history{0};
+			std::string profile;
+			std::vector<gauge_hit> hits;
+		} map; // whole scenery
+		struct
+		{
+			std::vector<glm::dvec3> surface;
+			std::vector<glm::dvec3> edges;
+		} spot; // tunnel around the hit the camera went to
+		int current{-1}; // hit the camera went to
+		bool published{false}; // overlay up to date
+		std::shared_ptr<struct gauge_scan> scan; // of the whole scenery, done in slices over the frames
+	} m_gauge;
+	void gauge_load();
+	// the chosen railway and road outlines
+	gauge::choice gauge_choice() const;
+	std::vector<gauge_hit> const &gauge_hits() const;
+	void update_gauge();
+	void scan_gauge(TTrack &Track);
+	void scan_gauge_map();
+	void step_gauge_map();
+	void finish_gauge_map();
+	void gauge_publish();
+	void gauge_focus(int Index);
+	void gauge_spot(gauge_hit const &Hit);
+	void render_gauge_window();
+	void render_gauge_hits();
+	bool render_gauge_choice(char const *Label, int &Index, bool Road);
+	bool render_gauge_outline(int Index);
 	struct route_design
 	{
 		TTrack *from{nullptr};
@@ -319,7 +385,13 @@ class editor_mode : public application_mode
 		int grip{-1};
 	};
 	void render_route_ui();
+	void render_route_ends();
+	bool render_route_parameters();
+	bool render_route_vertices();
+	bool render_route_vertex(int const Index);
+	void render_route_result();
 	void route_reset();
+	void route_bind_ends();
 	bool route_from_curve(TTrack &Track);
 	void route_update() { m_route.result = alignment::compute(m_route.design); }
 	void route_apply();
@@ -472,17 +544,156 @@ class editor_mode : public application_mode
 	enum class track_tab { straights, route, path, turnout };
 	bool m_track_window_open{false};
 	void render_track_window();
+	void render_track_modes(TTrack &Track);
 	void render_turnout_ui();
 	void render_path_parameters(TTrack &Track);
 	void render_straight_ui();
 	track_tab m_track_tab{track_tab::straights};
-	int m_track_tab_request{-1};
 	void delete_selected_track();
 	void start_straight_gesture(int const Tool);
 	void finish_straight_gesture();
 	void toggle_straight_set(TTrack &Track);
+	struct key_hint
+	{
+		char const *key;
+		std::string action;
+	};
+	std::vector<key_hint> track_key_hints() const;
+	std::string track_readout() const;
 	void draw_track_hints();
 	bool m_route_tab{true};
+
+	// vertical profile (grade line) along a route
+	struct profile_state
+	{
+		bool open{false};
+		TTrack *from{nullptr};
+		TTrack *to{nullptr};
+		TTrack *picked_from{nullptr};
+		TTrack *picked_to{nullptr};
+		double run_length{3000.0};
+		editor_track::route route;
+		std::vector<editor_track::route_sample> samples;
+		std::vector<double> terrain; // NaN where there's no terrain
+		profile::line line;
+		profile::context context;
+		std::vector<profile::issue> issues;
+		double origin{0.0}; // chainage of the start of the route
+		double departure{0.0}; // largest difference between the grade line and the track
+		double view_from{0.0};
+		double view_to{100.0};
+		double view_centre{0.0};
+		float exaggeration{20.0f};
+		bool show_terrain{true};
+		bool show_track{true};
+		bool show_plan{true};
+		int selected{-1};
+		int dragging{-1};
+		int curve_grip{-1};
+		bool panning{false};
+		bool changed{false};
+		double hover{-1.0};
+		std::string status;
+		std::string error;
+	};
+	profile_state m_profile;
+	// grade lines designed in the editor, kept in the scenery files as "//$p" comment lines
+	struct stored_profile
+	{
+		scene::layer_handle layer{null_handle};
+		double length{0.0};
+		glm::dvec3 start{0.0}, end{0.0}, middle{0.0}; // of the route, world space
+		double origin{0.0};
+		profile::line line;
+	};
+	std::vector<stored_profile> m_profiles;
+	bool m_profiles_loaded{false};
+	void profile_library_load();
+	void profile_library_mark(std::vector<scene::layer_handle> Layers);
+	int profile_find(bool &Reversed) const;
+	bool profile_restore();
+	void profile_store();
+	void profile_forget();
+	void profile_open_stored(std::size_t const Index);
+	void profile_edited();
+	void render_profile_window();
+	void render_profile_source();
+	bool render_profile_parameters();
+	void render_profile_issues();
+	void profile_open(TTrack *From, TTrack *To);
+	void profile_open_run(TTrack &Track);
+	void profile_take(editor_track::route Route, TTrack *From, TTrack *To);
+	void profile_resample();
+	void profile_recognize();
+	void profile_check();
+	void profile_apply();
+	void profile_fit_view();
+	void profile_after_undo();
+	struct profile_view;
+	void render_profile_canvas();
+	void profile_fit_exaggeration(profile_view const &View);
+	void profile_navigate(profile_view const &View, bool const Hovered);
+	bool profile_canvas_edit(profile_view const &View, bool const Hovered);
+	void draw_profile_canvas(profile_view const &View, ImDrawList &Draw) const;
+	void profile_canvas_tooltip() const;
+	void render_profile_point();
+	void draw_profile_overlay() const;
+
+	// infrastructure along the track: objects bound to the paths follow their changes. bindings are kept in the
+	// scenery files as "//$b" comment lines
+	struct infra_candidate
+	{
+		infra::binding binding;
+		double offset{0.0}; // sideways from the axis
+		std::string reason;
+		bool chosen{false};
+		bool bound{false};
+	};
+	struct infra_window
+	{
+		bool open{false};
+		int scope{1}; // 0: the selected path, 1: the line through it, 2: the route of the vertical profile
+		float reach{1500.0f};
+		float corridor{8.0f};
+		bool follow{true};
+		bool show{true};
+		std::vector<infra::rule> rules{infra::default_rules()};
+		std::vector<TTrack *> tracks; // of the scope
+		std::vector<infra_candidate> candidates;
+		int hovered{-1};
+		std::string status;
+		std::string error;
+	};
+	infra_window m_infra;
+	std::vector<infra::binding> m_bindings;
+	std::vector<std::pair<scene::layer_handle, std::string>> m_bindings_unresolved; // lines kept as they are
+	bool m_bindings_loaded{false};
+	std::vector<infra::object_state> m_infra_buffer; // states of the objects before the change in progress
+	bool m_infra_suspended{false};
+	void infra_load();
+	void infra_store();
+	std::vector<TTrack *> infra_scope() const;
+	void infra_recognize();
+	void infra_bind_chosen();
+	void infra_unbind(std::vector<std::size_t> Indices);
+	infra::binding *infra_find(infra::binding const &Binding);
+	infra::object_state infra_state_of(infra::binding const &Binding) const;
+	void infra_restore_state(infra::object_state const &State);
+	void infra_buffer(infra::binding const &Binding, bool const Refresh);
+	// editor_track::observer
+	void track_captured(TTrack const &Track) override;
+	void tracks_committed(std::vector<TTrack *> const &Tracks) override;
+	void track_retired(TTrack &Track) override;
+	void track_split(TTrack &Original, TTrack &Created, segment_data const &First) override;
+	void infra_move(infra::binding &Binding);
+	void infra_attach(EditorSnapshot &Snapshot);
+	void render_infra_window();
+	void infra_rebase();
+	void render_infra_search();
+	void render_infra_candidates();
+	void render_infra_bound();
+	void draw_infra_overlay() const;
+
 	bool m_route_gizmo_using{false};
 	glm::mat4 m_route_gizmo{1.0f};
 	float m_track_snap_radius{1.0f};

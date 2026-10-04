@@ -9,11 +9,12 @@ http:
 
 #include "stdafx.h"
 #include "editor/editorAlignment.hpp"
+#include "editor/editorFormat.hpp"
+#include "editor/editorGeometry.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdarg>
 #include <cstdio>
 #include <functional>
 
@@ -26,41 +27,18 @@ namespace
 double const kGravity{9.81};
 double const kPi{3.14159265358979323846};
 
-double cross(glm::dvec2 const &A, glm::dvec2 const &B)
-{
-	return A.x * B.y - A.y * B.x;
-}
+using geometry::cross;
+using geometry::plan_of;
+using geometry::turned;
 
 glm::dvec2 perpendicular(glm::dvec2 const &Vector)
 {
 	return {-Vector.y, Vector.x};
 }
 
-glm::dvec2 rotate(glm::dvec2 const &Vector, double const Angle)
-{
-	auto const c{std::cos(Angle)};
-	auto const s{std::sin(Angle)};
-	return {Vector.x * c - Vector.y * s, Vector.x * s + Vector.y * c};
-}
-
-glm::dvec2 plan(glm::dvec3 const &Point)
-{
-	return {Point.x, Point.z};
-}
-
 double ceil_to(double const Value, double const Step)
 {
 	return std::ceil(Value / Step - 1e-9) * Step;
-}
-
-std::string format(char const *Format, ...)
-{
-	char buffer[512];
-	va_list arguments;
-	va_start(arguments, Format);
-	std::vsnprintf(buffer, sizeof(buffer), Format, arguments);
-	va_end(arguments);
-	return buffer;
 }
 
 struct local_point
@@ -157,8 +135,8 @@ void element_point(element const &Element, transition_shape const Shape, double 
 	case element_kind::arc:
 	{
 		auto const angle{Element.turn * Distance / Element.radius};
-		Position = Element.origin + rotate(Element.normal, angle);
-		Direction = rotate(Element.direction, angle);
+		Position = Element.origin + turned(Element.normal, angle);
+		Direction = turned(Element.direction, angle);
 		break;
 	}
 	case element_kind::transition_in:
@@ -267,7 +245,6 @@ recommendation recommend(double const Speed, double const Radius, limits const &
 	auto const factor{Limits.gauge / (kGravity * 12.96)};
 	auto const allowance{Limits.gauge * Limits.unbalanced / kGravity};
 	result.radius_min = factor * Speed * Speed / (Limits.cant_max + allowance);
-	result.vertical_radius = std::max(Limits.vertical_min, Limits.vertical_factor * Speed * Speed);
 	if (Radius <= 0.0)
 		return result;
 	result.cant_equilibrium = factor * Speed * Speed / Radius;
@@ -277,14 +254,21 @@ recommendation recommend(double const Speed, double const Radius, limits const &
 	return result;
 }
 
-result compute(design const &Design)
+namespace
+{
+
+result fit_between(design const &Design)
 {
 	result r;
 	r.shape = Design.shape;
 	r.gauge = Design.norms.gauge;
+	r.start = Design.start;
+	r.end = Design.end;
+	auto const startreserve{std::max(0.0, Design.start_reserve)};
+	auto const endreserve{std::max(0.0, Design.end_reserve)};
 
-	auto const start{plan(Design.start)};
-	auto const end{plan(Design.end)};
+	auto const start{plan_of(Design.start)};
+	auto const end{plan_of(Design.end)};
 	auto const startdirection{glm::normalize(Design.start_direction)};
 	auto const enddirection{glm::normalize(Design.end_direction)};
 	auto const count{Design.vertices.size()};
@@ -350,6 +334,16 @@ result compute(design const &Design)
 		straight.direction = Direction;
 		straight.length = Length;
 		push(straight);
+	};
+	auto const starts_early = [&](double const Straight) {
+		if (Straight < 0.0)
+			r.start_extension = -Straight;
+		if (Straight >= -1e-4 || -Straight <= startreserve + 1e-4)
+			return;
+		if (startreserve > 0.0)
+			r.errors.emplace_back(format("Vertex 1: the curve starts %.2f m before the adjoining straight", -Straight - startreserve));
+		else
+			r.errors.emplace_back(format("Vertex 1: the curve starts %.2f m before the fixed start", -Straight));
 	};
 
 	struct fitted
@@ -441,9 +435,9 @@ result compute(design const &Design)
 	std::vector<double> scales(count, 1.0);
 	for (std::size_t leg = 0; leg + 1 < polygon.size(); ++leg)
 	{
-		auto const available{glm::distance(polygon[leg], polygon[leg + 1])};
+		auto const available{glm::distance(polygon[leg], polygon[leg + 1]) + (leg == 0 ? startreserve : 0.0) + (leg == count ? endreserve : 0.0)};
 		auto const required{(leg > 0 ? fits[leg - 1].tangent_out : 0.0) + (leg < count ? fits[leg].tangent_in : 0.0)};
-		if (required <= available)
+		if (required <= available + 1e-6)
 			continue;
 		auto const scale{available / required * (1.0 - 1e-9)};
 		if (leg > 0)
@@ -534,13 +528,10 @@ result compute(design const &Design)
 			auto const along{cross(directionout, endoffset) / cross(directionout, directionin)};
 			auto const curvestart{position - directionin * along};
 			auto const straight{glm::dot(curvestart - cursor, directionin)};
-			if (straight < -1e-4)
-			{
-				if (k == 0)
-					r.errors.emplace_back(format("Vertex 1: the curve starts %.2f m before the fixed start", -straight));
-				else
-					r.errors.emplace_back(format("Curves of vertices %zu and %zu overlap by %.2f m", k, k + 1, -straight));
-			}
+			if (k == 0)
+				starts_early(straight);
+			else if (straight < -1e-4)
+				r.errors.emplace_back(format("Curves of vertices %zu and %zu overlap by %.2f m", k, k + 1, -straight));
 			push_straight(cursor, directionin, straight);
 			auto const startchainage{chainage};
 			glm::dvec2 origin{curvestart};
@@ -564,7 +555,7 @@ result compute(design const &Design)
 				push(piece);
 				auto const local{spiral_point(segment[0], segment[1], segment[2], segment[2])};
 				origin += heading * local.x + piece.normal * local.y;
-				heading = rotate(heading, side * local.angle);
+				heading = turned(heading, side * local.angle);
 			}
 			vertexchainage[k] = (startchainage + chainage) * 0.5;
 			cursor = origin;
@@ -615,13 +606,10 @@ result compute(design const &Design)
 		}
 
 		auto const straight{glm::dot(curvestart - cursor, directionin)};
-		if (straight < -1e-4)
-		{
-			if (k == 0)
-				r.errors.emplace_back(format("Vertex 1: the curve starts %.2f m before the fixed start", -straight));
-			else
-				r.errors.emplace_back(format("Curves of vertices %zu and %zu overlap by %.2f m", k, k + 1, -straight));
-		}
+		if (k == 0)
+			starts_early(straight);
+		else if (straight < -1e-4)
+			r.errors.emplace_back(format("Curves of vertices %zu and %zu overlap by %.2f m", k, k + 1, -straight));
 		push_straight(cursor, directionin, straight);
 
 		element curve;
@@ -644,7 +632,7 @@ result compute(design const &Design)
 		curve.length = radius * std::max(0.0, arcangle);
 		curve.origin = centre;
 		curve.normal = arcstart - centre;
-		curve.direction = rotate(directionin, side * endin.angle);
+		curve.direction = turned(directionin, side * endin.angle);
 		vertexchainage[k] = chainage + curve.length * 0.5;
 		if (curve.length > 1e-6)
 			push(curve);
@@ -698,8 +686,15 @@ result compute(design const &Design)
 	}
 	auto const lastdirection{glm::normalize(polygon.back() - polygon[polygon.size() - 2])};
 	auto const tail{glm::dot(end - cursor, lastdirection)};
-	if (tail < -1e-4)
-		r.errors.emplace_back(format("Vertex %zu: the curve ends %.2f m past the fixed end", count, -tail));
+	if (tail < 0.0)
+		r.end_extension = -tail;
+	if (tail < -1e-4 && -tail > endreserve + 1e-4)
+	{
+		if (endreserve > 0.0)
+			r.errors.emplace_back(format("Vertex %zu: the curve ends %.2f m past the adjoining straight", count, -tail - endreserve));
+		else
+			r.errors.emplace_back(format("Vertex %zu: the curve ends %.2f m past the fixed end", count, -tail));
+	}
 	push_straight(cursor, lastdirection, tail);
 	r.length = chainage;
 
@@ -716,12 +711,11 @@ result compute(design const &Design)
 
 	r.vertex_chainages = vertexchainage;
 	r.profile.push_back({0.0, Design.start.y, 0.0, 0.0});
+	auto const radius{std::max(Design.norms.vertical_min, Design.norms.vertical_factor * Design.speed * Design.speed)};
 	for (std::size_t k = 0; k < count; ++k)
 	{
-		auto const &vertex{Design.vertices[k]};
-		auto const elevation{vertex.auto_elevation ? Design.start.y + (Design.end.y - Design.start.y) * vertexchainage[k] / std::max(r.length, 1e-6) : vertex.elevation};
+		auto const elevation{Design.start.y + (Design.end.y - Design.start.y) * vertexchainage[k] / std::max(r.length, 1e-6)};
 		r.vertex_elevations.push_back(elevation);
-		auto const radius{vertex.vertical_radius > 0.0 ? vertex.vertical_radius : std::max(Design.norms.vertical_min, Design.norms.vertical_factor * Design.speed * Design.speed)};
 		if (vertexchainage[k] <= r.profile.back().chainage + 1e-3)
 			continue;
 		r.profile.push_back({vertexchainage[k], elevation, radius, 0.0});
@@ -734,20 +728,6 @@ result compute(design const &Design)
 		auto const gradeafter{(r.profile[i + 1].elevation - point.elevation) / (r.profile[i + 1].chainage - point.chainage)};
 		point.tangent = point.radius * std::abs(gradeafter - gradebefore) / 2.0;
 	}
-	for (std::size_t i = 0; i + 1 < r.profile.size(); ++i)
-	{
-		if (r.profile[i].tangent + r.profile[i + 1].tangent > r.profile[i + 1].chainage - r.profile[i].chainage + 1e-6)
-			r.warnings.emplace_back(format("Vertical curves overlap between chainage %.0f m and %.0f m", r.profile[i].chainage, r.profile[i + 1].chainage));
-	}
-	if (r.profile.size() >= 2)
-	{
-		auto const first{(r.profile[1].elevation - r.profile[0].elevation) / (r.profile[1].chainage - r.profile[0].chainage)};
-		auto const last{(r.profile.back().elevation - r.profile[r.profile.size() - 2].elevation) / (r.profile.back().chainage - r.profile[r.profile.size() - 2].chainage)};
-		if (std::abs(first - Design.start_grade) > 0.0005)
-			r.warnings.emplace_back(format("Grade break at the start: %.1f per mille against %.1f of the adjoining track", first * 1000.0, Design.start_grade * 1000.0));
-		if (std::abs(last - Design.end_grade) > 0.0005)
-			r.warnings.emplace_back(format("Grade break at the end: %.1f per mille against %.1f of the adjoining track", last * 1000.0, Design.end_grade * 1000.0));
-	}
 	if (Design.start_radius > 0.0 && Design.start_radius < 10000.0)
 		r.warnings.emplace_back(format("The adjoining track at the start is curved (R %.0f m), the curvature changes abruptly", Design.start_radius));
 	if (Design.end_radius > 0.0 && Design.end_radius < 10000.0)
@@ -757,10 +737,43 @@ result compute(design const &Design)
 	return r;
 }
 
+glm::dvec3 along_end(glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, double const Distance)
+{
+	auto const direction{glm::normalize(Direction)};
+	return {Point.x + direction.x * Distance, Point.y + Grade * Distance, Point.z + direction.y * Distance};
+}
+
+} // namespace
+
+result compute(design const &Design)
+{
+	auto first{fit_between(Design)};
+	auto const startextension{first.start_extension > 1e-4 ? first.start_extension : 0.0};
+	auto const endextension{first.end_extension > 1e-4 ? first.end_extension : 0.0};
+	if (false == first.errors.empty() || (startextension == 0.0 && endextension == 0.0))
+	{
+		first.start_extension = first.end_extension = 0.0;
+		return first;
+	}
+	auto extended{Design};
+	extended.start = along_end(Design.start, Design.start_direction, Design.start_grade, -startextension);
+	extended.end = along_end(Design.end, Design.end_direction, Design.end_grade, endextension);
+	extended.start_reserve = extended.end_reserve = 0.0;
+	if (extended.vertices.size() >= 2)
+	{
+		extended.vertices.front().offset += startextension;
+		extended.vertices.back().offset += endextension;
+	}
+	auto r{fit_between(extended)};
+	r.start_extension = startextension;
+	r.end_extension = endextension;
+	return r;
+}
+
 bool tangent_intersection(design const &Design, glm::dvec2 &Point)
 {
-	auto const start{plan(Design.start)};
-	auto const offset{plan(Design.end) - start};
+	auto const start{plan_of(Design.start)};
+	auto const offset{plan_of(Design.end) - start};
 	auto const startdirection{glm::normalize(Design.start_direction)};
 	auto const enddirection{glm::normalize(Design.end_direction)};
 	auto const determinant{cross(startdirection, enddirection)};
@@ -776,7 +789,7 @@ bool tangent_intersection(design const &Design, glm::dvec2 &Point)
 
 bool collinear(design const &Design)
 {
-	auto const offset{plan(Design.end) - plan(Design.start)};
+	auto const offset{plan_of(Design.end) - plan_of(Design.start)};
 	auto const startdirection{glm::normalize(Design.start_direction)};
 	auto const enddirection{glm::normalize(Design.end_direction)};
 	return std::abs(cross(startdirection, offset)) <= 0.01 && glm::dot(startdirection, enddirection) >= std::cos(1e-4) && glm::dot(startdirection, offset) > 0.0;

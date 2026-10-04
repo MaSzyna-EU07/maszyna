@@ -476,6 +476,7 @@ editor_mode::editor_mode() {
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
 	ui()->set_file_actions([this]() { save(); }, [this]() { export_scenery(); });
 	ui()->set_track_options([this]() { render_track_ui(); });
+	ui()->set_gauge_window(&m_gauge.open);
 	ui()->set_menu_options([this]() {
 		render_object_menu();
 		render_road_menu();
@@ -487,7 +488,13 @@ editor_mode::editor_mode() {
 	m_orthophoto.ground_source([](glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out) {
 		gather_ground_triangles(Min, Max, true, 50.0f, Out, true);
 	});
+	editor_track::observe(this);
  }
+
+editor_mode::~editor_mode()
+{
+	editor_track::observe(nullptr);
+}
 
 std::vector<double> editor_mode::ground_heights(std::vector<glm::dvec3> const &Points, bool const Fresh)
 {
@@ -1091,6 +1098,9 @@ bool editor_mode::update()
 
     simulation::State.update_clocks();
     simulation::Environment.update();
+    // bindings are matched with the objects by their locations, before anything gets moved
+    if (false == m_bindings_loaded && simulation::is_ready)
+        infra_load();
 
     auto const deltarealtime = Timer::GetDeltaRenderTime();
 
@@ -1243,7 +1253,13 @@ bool editor_mode::update()
         draw_build_overlay();
         draw_track_hints();
         render_track_window();
+        draw_profile_overlay();
+        render_profile_window();
+        draw_infra_overlay();
+        render_infra_window();
     }
+    update_gauge();
+    render_gauge_window();
 
     // roads: trajectories of the lanes, and the tools of the road window
     update_road_tool();
@@ -1865,6 +1881,9 @@ void editor_mode::save()
         }
     }
 
+    if (m_profile.changed)
+        profile_store();
+    infra_store();
     auto const result = scene::Layers.save(rootstatements);
     if (result.success && false == rootstatements.empty())
     {
