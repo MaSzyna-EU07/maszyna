@@ -30,6 +30,11 @@ void locale::init()
 
 	while (parse_translation(stream));
 
+	// texts of the scenery editor, kept apart from the translation of the simulator
+	std::fstream editor("lang/editor_" + Global.asLang + ".po", std::ios_base::in | std::ios_base::binary);
+	if (editor.is_open())
+		while (parse_translation(editor));
+
 	WriteLog("translation: " + std::to_string(lang_mapping.size()) + " strings loaded");
 }
 
