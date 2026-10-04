@@ -350,8 +350,8 @@ class editor_mode : public application_mode, private editor_track::observer
 		bool published{false}; // overlay up to date
 	} m_gauge;
 	void gauge_load();
-	// the chosen railway and road outlines, null when there's none of the kind
-	std::pair<gauge::profile const *, gauge::profile const *> gauge_profiles() const;
+	// the chosen railway and road outlines
+	gauge::choice gauge_choice() const;
 	std::vector<gauge_hit> const &gauge_hits() const;
 	void update_gauge();
 	void scan_gauge(TTrack &Track);

@@ -41,6 +41,15 @@ struct profile
 	std::vector<point> outline;
 };
 
+// the outlines checked along the paths: the railway one on the tracks, the road one on the roads
+struct choice
+{
+	profile const *railway{nullptr};
+	profile const *road{nullptr};
+	// by the category flags of the path, 1 a track and 2 a road; null when there's no outline for it
+	profile const *of(int Category) const;
+};
+
 // GPL-1 and GPL-2 over the limit installation gauge below 1170 mm, with and without the pantograph gauge, the limit
 // and nominal installation gauges G1, G2, GA, GB, GC of the PKP PLK technical standards, and the road gauges
 std::vector<profile> default_profiles();
@@ -70,14 +79,17 @@ struct place
 	double height{0.0};
 };
 // sections at the points of a route, from their chainage, curvature (1/m, positive turning left) and cant (m).
-// The widening begins and ends ahead of the changes of the curvature and cant, as the vehicles enter a curve
+// The widening begins and ends ahead of the changes of the curvature and cant, as the vehicles enter a curve;
+// the plane of the rail heads tilts with the cant, the outer rail raised
 std::vector<section> sections(kind Kind, std::vector<double> const &Chainage, std::vector<double> const &Curvature, std::vector<double> const &Cant);
 
-// point of the outline on the side (+1 left, -1 right) at the section, with the widening: the cant shifts the part
-// above the lower one, the lower part turns with the plane of the rail heads instead
-place outline_point(profile const &Profile, section const &Section, std::size_t Index, int Side);
-// distance of the point from the outline in any direction, metres, positive inside and negative outside.
-// Lateral positive to the left
-double intrusion(profile const &Profile, section const &Section, double Lateral, double Height);
+// the outline across the track at the section, from the bottom right up and down to the bottom left, closed across
+// the bottom. With the widening: the cant shifts the part above the lower one, the lower part turns with the plane
+// of the rail heads instead
+void ring(profile const &Profile, section const &Section, std::vector<place> &Points);
+// distance of the point from the ring in any direction, metres, positive inside and negative outside
+double intrusion(std::vector<place> const &Ring, place const &Point);
+// largest half-width of the outline, metres
+double widest(profile const &Profile);
 
 } // namespace gauge

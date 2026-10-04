@@ -26,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -49,22 +50,6 @@ struct gauge_line
 	editor_track::route route;
 	std::vector<editor_track::route_sample> samples;
 	std::vector<gauge::section> sections;
-};
-
-// the outline checked along the track: the railway one or the road one
-struct gauge_choice
-{
-	gauge::profile const *railway{nullptr};
-	gauge::profile const *road{nullptr};
-
-	gauge::profile const *of(TTrack const &Track) const
-	{
-		if ((Track.iCategoryFlag & 1) != 0)
-			return railway;
-		if ((Track.iCategoryFlag & 2) != 0)
-			return road;
-		return nullptr;
-	}
 };
 
 // half of the carriageway of a road at the sample, it narrows linearly to the width at the end
@@ -95,39 +80,34 @@ gauge_line make_line(editor_track::route &Route, gauge::profile const &Profile)
 		cant.push_back(sample.cant);
 	}
 	line.sections = gauge::sections(Profile.kind, chainage, curvature, cant);
-	if (false == road)
-	{
-		// the outer rail is raised: the side from the nearest curve along the line
-		std::vector<double> sides(curvature.size(), 0.0);
-		double side{0.0};
-		for (std::size_t i = 0; i < curvature.size(); ++i)
-			sides[i] = side = std::abs(curvature[i]) > 1e-6 ? (curvature[i] > 0.0 ? 1.0 : -1.0) : side;
-		side = 0.0;
-		for (std::size_t i = curvature.size(); i-- > 0;)
-		{
-			if (std::abs(curvature[i]) > 1e-6)
-				side = curvature[i] > 0.0 ? 1.0 : -1.0;
-			else if (sides[i] == 0.0)
-				sides[i] = side;
-		}
-		for (std::size_t i = 0; i < curvature.size(); ++i)
-			line.sections[i].tilt = -sides[i] * std::min(1.0, cant[i] / 1.5);
-	}
 	if (road)
 		for (std::size_t i = 0; i < line.samples.size(); ++i)
 			line.sections[i].base = carriageway(line.route.spans[line.samples[i].span], line.samples[i].chainage);
 	return line;
 }
 
+// the line along the route from the path with the outline of its kind, none without the outline or the length
+std::optional<gauge_line> track_line(gauge::choice const &Choice, TTrack const &Track, editor_track::route &Route)
+{
+	auto const *profile{Choice.of(Track.iCategoryFlag)};
+	if (profile == nullptr || profile->outline.size() < 2)
+		return std::nullopt;
+	auto line{make_line(Route, *profile)};
+	if (line.samples.size() < 2)
+		return std::nullopt;
+	return line;
+}
+
 // lines through all paths of the scenery, each path in one of them at least
-std::vector<gauge_line> scenery_lines(gauge_choice const &Choice)
+std::vector<gauge_line> scenery_lines(gauge::choice const &Choice)
 {
 	std::vector<gauge_line> lines;
 	std::unordered_set<TTrack const *> visited;
 	auto const seen{[&](editor_track::route_span const &Span) { return visited.count(Span.track) > 0; }};
+	auto const checked{[&](TTrack const *Track) { return Track != nullptr && editor_track::is_supported(*Track) && Choice.of(Track->iCategoryFlag) != nullptr; }};
 	for (auto *track : simulation::Paths.sequence())
 	{
-		if (track == nullptr || visited.count(track) > 0 || false == editor_track::is_supported(*track) || Choice.of(*track) == nullptr)
+		if (false == checked(track) || visited.count(track) > 0)
 			continue;
 		auto route{editor_track::run_route(*track, 1e7)};
 		// the line may run on over the paths already covered, one of them is enough for the widening ahead of a curve
@@ -138,15 +118,15 @@ std::vector<gauge_line> scenery_lines(gauge_choice const &Choice)
 			spans.pop_back();
 		for (auto const &span : spans)
 			visited.insert(span.track);
-		lines.push_back(make_line(route, *Choice.of(*track)));
+		lines.push_back(make_line(route, *Choice.of(track->iCategoryFlag)));
 	}
 	// diverging paths of the switches
 	for (auto *track : simulation::Paths.sequence())
-		if (track != nullptr && track->eType == tt_Switch && editor_track::is_supported(*track) && Choice.of(*track) != nullptr)
+		if (checked(track) && track->eType == tt_Switch)
 		{
 			editor_track::route route;
 			route.spans.push_back({track, 1, true});
-			lines.push_back(make_line(route, *Choice.of(*track)));
+			lines.push_back(make_line(route, *Choice.of(track->iCategoryFlag)));
 		}
 	return lines;
 }
@@ -160,7 +140,8 @@ public:
 		for (std::uint32_t line = 0; line < Lines.size(); ++line)
 			for (std::uint32_t i = 0; i < Lines[line].samples.size(); ++i)
 			{
-				m_margin = std::max(m_margin, reach(*Lines[line].profile) + Lines[line].sections[i].base);
+				// with the room for the widening in the sharpest curves on the largest cant
+				m_margin = std::max(m_margin, gauge::widest(*Lines[line].profile) + Lines[line].sections[i].base + 1.2);
 				auto const point{plan_of(Lines[line].samples[i].position)};
 				m_cells[key(point, cell)].push_back({line, i});
 				m_regions.insert(key(point, region));
@@ -225,8 +206,8 @@ public:
 			auto const along{glm::dot(offset, sample.direction)};
 			if ((found.index == 0 && along < -0.6) || (found.index + 1 == line.samples.size() && along > 0.6))
 				continue;
-			auto const height{Point.y - (sample.position.y + sample.grade * along)};
-			auto const depth{gauge::intrusion(*line.profile, line.sections[found.index], glm::dot(offset, normal(sample)), height)};
+			gauge::ring(*line.profile, line.sections[found.index], m_ring);
+			auto const depth{gauge::intrusion(m_ring, {glm::dot(offset, normal(sample)), Point.y - (sample.position.y + sample.grade * along)})};
 			if (depth > deepest.depth)
 				deepest = {depth, &line.route.spans[sample.span]};
 		}
@@ -261,17 +242,9 @@ private:
 		return m_lines[Entry.line].samples[Entry.index];
 	}
 
-	// half-width of the outline with the room for the widening in the sharpest curves on the largest cant
-	static double reach(gauge::profile const &Profile)
-	{
-		double result{0.0};
-		for (auto const &point : Profile.outline)
-			result = std::max(result, point.half_width);
-		return result + 1.2;
-	}
-
 	std::vector<gauge_line> const &m_lines;
 	double m_margin{0.0};
+	mutable std::vector<gauge::place> m_ring; // reused by the checks
 	std::unordered_map<std::uint64_t, std::vector<entry>> m_cells;
 	std::unordered_set<std::uint64_t> m_regions;
 };
@@ -357,20 +330,14 @@ void scan_models(corridor const &Space, std::vector<glm::dvec3> &Triangles, std:
 // translucent tunnel of the gauge along the line, with the rings every 10 m and the lines along its corners
 void build_tunnel(gauge_line const &Line, std::vector<glm::dvec3> &Surface, std::vector<glm::dvec3> &Edges)
 {
-	auto const &profile{*Line.profile};
-	auto const lift{[](editor_track::route_sample const &Sample, double const Lateral, double const Height) {
-		auto const normal{corridor::normal(Sample)};
-		return Sample.position + glm::dvec3(normal.x * Lateral, Height, normal.y * Lateral);
-	}};
-	// outline across the track, from the bottom right up and down to the bottom left
+	std::vector<gauge::place> places;
 	auto const ring{[&](std::size_t const Index) {
+		gauge::ring(*Line.profile, Line.sections[Index], places);
+		auto const &sample{Line.samples[Index]};
+		auto const normal{corridor::normal(sample)};
 		std::vector<glm::dvec3> points;
-		for (int side : {-1, 1})
-			for (std::size_t j = 0; j < profile.outline.size(); ++j)
-			{
-				auto const point{gauge::outline_point(profile, Line.sections[Index], side < 0 ? j : profile.outline.size() - 1 - j, side)};
-				points.push_back(lift(Line.samples[Index], point.lateral, point.height));
-			}
+		for (auto const &place : places)
+			points.push_back(sample.position + glm::dvec3(normal.x * place.lateral, place.height, normal.y * place.lateral));
 		return points;
 	}};
 	std::vector<glm::dvec3> previous;
@@ -394,6 +361,57 @@ void build_tunnel(gauge_line const &Line, std::vector<glm::dvec3> &Surface, std:
 	}
 }
 
+// table of the points of the outline with the inserting and removing of the points, whether it changed
+bool edit_points(std::vector<gauge::profile::point> &Points)
+{
+	bool edited{false};
+	bool inserted{false};
+	int remove{-1};
+	ImGui::Columns(3, "gaugeoutline", false);
+	ImGui::SetColumnWidth(0, 110.0f);
+	ImGui::SetColumnWidth(1, 110.0f);
+	ImGui::TextDisabled("Half-width");
+	ImGui::NextColumn();
+	ImGui::TextDisabled("Height");
+	ImGui::NextColumn();
+	ImGui::NextColumn();
+	for (int i = 0; i < static_cast<int>(Points.size()); ++i)
+	{
+		ImGui::PushID(i);
+		auto &point{Points[i]};
+		ImGui::SetNextItemWidth(-1.0f);
+		ImGui::InputDouble("##width", &point.half_width, 0.0, 0.0, "%.3f");
+		edited |= ImGui::IsItemDeactivatedAfterEdit();
+		ImGui::NextColumn();
+		ImGui::SetNextItemWidth(-1.0f);
+		ImGui::InputDouble("##height", &point.height, 0.0, 0.0, "%.3f");
+		edited |= ImGui::IsItemDeactivatedAfterEdit();
+		ImGui::NextColumn();
+		if (ImGui::SmallButton("+"))
+		{
+			auto const &next{Points[std::min<std::size_t>(i + 1, Points.size() - 1)]};
+			Points.insert(Points.begin() + i + 1, {0.5 * (point.half_width + next.half_width), 0.5 * (point.height + next.height)});
+			inserted = edited = true;
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("Insert a point after this one");
+		ImGui::SameLine();
+		if (Points.size() > 2 && ImGui::SmallButton("x"))
+			remove = i;
+		ImGui::NextColumn();
+		ImGui::PopID();
+		if (inserted)
+			break;
+	}
+	ImGui::Columns(1);
+	if (remove >= 0)
+	{
+		Points.erase(Points.begin() + remove);
+		edited = true;
+	}
+	return edited;
+}
+
 } // namespace
 
 void editor_mode::gauge_load()
@@ -414,7 +432,7 @@ void editor_mode::gauge_load()
 		}
 }
 
-std::pair<gauge::profile const *, gauge::profile const *> editor_mode::gauge_profiles() const
+gauge::choice editor_mode::gauge_choice() const
 {
 	auto const pick{[&](int const Index) { return Index >= 0 ? &m_gauge.profiles[Index] : nullptr; }};
 	return {pick(m_gauge.profile), pick(m_gauge.road)};
@@ -463,14 +481,11 @@ void editor_mode::scan_gauge(TTrack &Track)
 {
 	gauge_load();
 	m_gauge.line = {};
-	auto const [railway, road]{gauge_profiles()};
-	auto const *profile{gauge_choice{railway, road}.of(Track)};
-	if (profile == nullptr || profile->outline.size() < 2)
-		return;
 	auto route{editor_track::run_route(Track, gauge_reach)};
-	std::vector<gauge_line> const lines{make_line(route, *profile)};
-	if (lines.front().samples.size() < 2)
+	auto line{track_line(gauge_choice(), Track, route)};
+	if (false == line.has_value())
 		return;
+	std::vector<gauge_line> const lines{std::move(*line)};
 	corridor const space{lines};
 	build_tunnel(lines.front(), m_gauge.line.surface, m_gauge.line.edges);
 	scan_models(space, m_gauge.line.intruding, m_gauge.line.hits);
@@ -483,13 +498,14 @@ void editor_mode::scan_gauge_map()
 	gauge_load();
 	auto const started{std::chrono::steady_clock::now()};
 	m_gauge.map = {};
-	auto const [railway, road]{gauge_profiles()};
-	auto const lines{scenery_lines({railway, road})};
+	auto const choice{gauge_choice()};
+	auto const lines{scenery_lines(choice)};
 	corridor const space{lines};
 	scan_models(space, m_gauge.map.intruding, m_gauge.map.hits);
 	m_gauge.map.scanned = true;
 	m_gauge.map.history = m_history.size();
-	m_gauge.map.profile = (railway ? railway->name : std::string{"-"}) + ", " + (road ? road->name : std::string{"-"});
+	auto const name{[](gauge::profile const *Profile) { return Profile != nullptr ? Profile->name : std::string{"-"}; }};
+	m_gauge.map.profile = name(choice.railway) + ", " + name(choice.road);
 	m_gauge.current = -1;
 	m_gauge.published = false;
 	WriteLog("Structure gauge (" + m_gauge.map.profile + "): " + std::to_string(m_gauge.map.hits.size()) + " models enter it along " + std::to_string(lines.size()) + " lines, scanned in " +
@@ -562,13 +578,8 @@ void editor_mode::gauge_spot(gauge_hit const &Hit)
 		route = editor_track::run_route(*track, gauge_spot_reach);
 	else
 		route.spans.push_back({track, Hit.path, true});
-	auto const [railway, road]{gauge_profiles()};
-	auto const *profile{gauge_choice{railway, road}.of(*track)};
-	if (profile == nullptr)
-		return;
-	auto const line{make_line(route, *profile)};
-	if (line.samples.size() >= 2)
-		build_tunnel(line, m_gauge.spot.surface, m_gauge.spot.edges);
+	if (auto const line{track_line(gauge_choice(), *track, route)})
+		build_tunnel(*line, m_gauge.spot.surface, m_gauge.spot.edges);
 }
 
 void editor_mode::render_gauge_window()
@@ -674,51 +685,7 @@ bool editor_mode::render_gauge_outline(int const Index)
 		return false;
 	ImGui::TextDisabled(profile.kind == gauge::kind::road ? "Metres from the edge of the carriageway and above the road, bottom up."
 	                                                      : "PKP PLK standard, volume II; below 1170 mm the limit installation gauge.\nMetres from the track axis and above the rail top, bottom up.");
-	bool edited{false};
-	bool inserted{false};
-	int remove{-1};
-	ImGui::Columns(3, "gaugeoutline", false);
-	ImGui::SetColumnWidth(0, 110.0f);
-	ImGui::SetColumnWidth(1, 110.0f);
-	ImGui::TextDisabled("Half-width");
-	ImGui::NextColumn();
-	ImGui::TextDisabled("Height");
-	ImGui::NextColumn();
-	ImGui::NextColumn();
-	for (int i = 0; i < static_cast<int>(profile.outline.size()); ++i)
-	{
-		ImGui::PushID(i);
-		auto &point{profile.outline[i]};
-		ImGui::SetNextItemWidth(-1.0f);
-		ImGui::InputDouble("##width", &point.half_width, 0.0, 0.0, "%.3f");
-		edited |= ImGui::IsItemDeactivatedAfterEdit();
-		ImGui::NextColumn();
-		ImGui::SetNextItemWidth(-1.0f);
-		ImGui::InputDouble("##height", &point.height, 0.0, 0.0, "%.3f");
-		edited |= ImGui::IsItemDeactivatedAfterEdit();
-		ImGui::NextColumn();
-		if (ImGui::SmallButton("+"))
-		{
-			auto const &next{profile.outline[std::min<std::size_t>(i + 1, profile.outline.size() - 1)]};
-			profile.outline.insert(profile.outline.begin() + i + 1, {0.5 * (point.half_width + next.half_width), 0.5 * (point.height + next.height)});
-			inserted = edited = true;
-		}
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("Insert a point after this one");
-		ImGui::SameLine();
-		if (profile.outline.size() > 2 && ImGui::SmallButton("x"))
-			remove = i;
-		ImGui::NextColumn();
-		ImGui::PopID();
-		if (inserted)
-			break;
-	}
-	ImGui::Columns(1);
-	if (remove >= 0)
-	{
-		profile.outline.erase(profile.outline.begin() + remove);
-		edited = true;
-	}
+	bool edited{edit_points(profile.outline)};
 	if (ImGui::SmallButton("Restore the starting outlines"))
 	{
 		m_gauge.profiles = gauge::default_profiles();

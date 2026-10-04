@@ -125,7 +125,48 @@ profile installation(std::string const &Name, std::vector<std::pair<int, int>> c
 	return result;
 }
 
+// point of the outline on the side (+1 left, -1 right) at the section
+place outline_point(profile const &Profile, section const &Section, std::size_t const Index, int const Side)
+{
+	auto const &point{Profile.outline[Index]};
+	// the step at the top of the lower part belongs to it from below
+	bool const lower{point.height < lower_part - 1e-9 || (point.height < lower_part + 1e-9 && Index > 0 && Profile.outline[Index - 1].height < lower_part - 1e-9)};
+	auto const i{Side > 0 ? 1 : 0};
+	auto const widening{wheel_zone(point) ? 0.0 : lower ? Section.lower[i] : Section.upper[i] + Section.cant[i] * point.height / 1.5};
+	auto const width{Section.base + point.half_width + widening};
+	place const result{Side * width, point.height};
+	return lower && Section.tilt != 0.0 ? turn(Section, result, Section.tilt) : result;
+}
+
+// sign of the curvature at the points, from the nearest curve along the line where it's straight
+std::vector<double> curve_sides(std::vector<double> const &Curvature)
+{
+	auto const side{[](double const Curvature) { return std::abs(Curvature) > 1e-6 ? (Curvature > 0.0 ? 1.0 : -1.0) : 0.0; }};
+	std::vector<double> sides(Curvature.size(), 0.0);
+	double last{0.0};
+	for (std::size_t i = 0; i < Curvature.size(); ++i)
+		sides[i] = last = side(Curvature[i]) != 0.0 ? side(Curvature[i]) : last;
+	last = 0.0;
+	for (std::size_t i = Curvature.size(); i-- > 0;)
+	{
+		if (side(Curvature[i]) != 0.0)
+			last = side(Curvature[i]);
+		else if (sides[i] == 0.0)
+			sides[i] = last;
+	}
+	return sides;
+}
+
 } // namespace
+
+profile const *choice::of(int const Category) const
+{
+	if ((Category & 1) != 0)
+		return railway;
+	if ((Category & 2) != 0)
+		return road;
+	return nullptr;
+}
 
 std::vector<profile> default_profiles()
 {
@@ -231,46 +272,49 @@ std::vector<section> sections(kind const Kind, std::vector<double> const &Chaina
 			result[i].cant[side] = inner(fields[4]) - outer(fields[5]);
 		}
 	}
+	auto const sides{curve_sides(Curvature)};
+	for (std::size_t i = 0; i < count; ++i)
+		result[i].tilt = -sides[i] * std::min(1.0, Cant[i] / 1.5);
 	return result;
 }
 
-place outline_point(profile const &Profile, section const &Section, std::size_t const Index, int const Side)
-{
-	auto const &point{Profile.outline[Index]};
-	// the step at the top of the lower part belongs to it from below
-	bool const lower{point.height < lower_part - 1e-9 || (point.height < lower_part + 1e-9 && Index > 0 && Profile.outline[Index - 1].height < lower_part - 1e-9)};
-	auto const i{Side > 0 ? 1 : 0};
-	auto const widening{wheel_zone(point) ? 0.0 : lower ? Section.lower[i] : Section.upper[i] + Section.cant[i] * point.height / 1.5};
-	auto const width{Section.base + point.half_width + widening};
-	place const result{Side * width, point.height};
-	return lower && Section.tilt != 0.0 ? turn(Section, result, Section.tilt) : result;
-}
-
-double intrusion(profile const &Profile, section const &Section, double const Lateral, double const Height)
+void ring(profile const &Profile, section const &Section, std::vector<place> &Points)
 {
 	auto const count{Profile.outline.size()};
-	if (count < 2)
+	Points.clear();
+	for (std::size_t j = 0; j < count; ++j)
+		Points.push_back(outline_point(Profile, Section, j, -1));
+	for (std::size_t j = count; j-- > 0;)
+		Points.push_back(outline_point(Profile, Section, j, 1));
+}
+
+double intrusion(std::vector<place> const &Ring, place const &Point)
+{
+	if (Ring.size() < 3)
 		return 0.0;
-	// the outline from the bottom right up and down to the bottom left, closed across the bottom
-	auto const vertex{[&](std::size_t const Index) {
-		return Index < count ? outline_point(Profile, Section, Index, -1) : outline_point(Profile, Section, 2 * count - 1 - Index, 1);
-	}};
 	bool inside{false};
 	auto nearest{std::numeric_limits<double>::max()};
-	auto previous{vertex(2 * count - 1)};
-	for (std::size_t i = 0; i < 2 * count; ++i)
+	auto const *previous{&Ring.back()};
+	for (auto const &current : Ring)
 	{
-		auto const current{vertex(i)};
-		auto const lateral{current.lateral - previous.lateral};
-		auto const height{current.height - previous.height};
-		if ((current.height > Height) != (previous.height > Height) && Lateral < previous.lateral + lateral * (Height - previous.height) / height)
+		auto const lateral{current.lateral - previous->lateral};
+		auto const height{current.height - previous->height};
+		if ((current.height > Point.height) != (previous->height > Point.height) && Point.lateral < previous->lateral + lateral * (Point.height - previous->height) / height)
 			inside = false == inside;
 		auto const length{lateral * lateral + height * height};
-		auto const t{length > 0.0 ? std::clamp(((Lateral - previous.lateral) * lateral + (Height - previous.height) * height) / length, 0.0, 1.0) : 0.0};
-		nearest = std::min(nearest, std::hypot(Lateral - previous.lateral - lateral * t, Height - previous.height - height * t));
-		previous = current;
+		auto const t{length > 0.0 ? std::clamp(((Point.lateral - previous->lateral) * lateral + (Point.height - previous->height) * height) / length, 0.0, 1.0) : 0.0};
+		nearest = std::min(nearest, std::hypot(Point.lateral - previous->lateral - lateral * t, Point.height - previous->height - height * t));
+		previous = &current;
 	}
 	return inside ? nearest : -nearest;
+}
+
+double widest(profile const &Profile)
+{
+	double result{0.0};
+	for (auto const &point : Profile.outline)
+		result = std::max(result, point.half_width);
+	return result;
 }
 
 } // namespace gauge
