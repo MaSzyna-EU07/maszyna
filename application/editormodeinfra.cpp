@@ -359,7 +359,7 @@ bool nearest_beside(Areas_ const &Areas, glm::dvec3 const &Point, double const C
 	auto best{-1.0};
 	for (auto const &entry : Areas)
 	{
-		track_area const &area{entry};
+		track_area const &area = entry;
 		if (plan_distance(Point, area.centre) > area.radius + Corridor)
 			continue;
 		infra::station station;

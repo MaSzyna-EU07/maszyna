@@ -1201,22 +1201,22 @@ editor_track::straight_run editor_track::straight_beyond(chain const &Chain, boo
 			outward = false;
 		else
 			break;
-		auto const &far{path.points[outward ? segment_data::point::end : segment_data::point::start]};
+		auto const &opposite{path.points[outward ? segment_data::point::end : segment_data::point::start]};
 		if (run.tracks.empty())
 		{
-			auto const own{glm::normalize(plan_of(far - joint))};
+			auto const own{glm::normalize(plan_of(opposite - joint))};
 			if (std::abs(cross(direction, own)) > 0.01 || glm::dot(direction, own) <= 0.0)
 				break;
 			direction = own;
 		}
-		auto const offset{plan_of(far) - origin};
+		auto const offset{plan_of(opposite) - origin};
 		auto const along{glm::dot(offset, direction)};
 		if (along <= run.length + 1e-3 || std::abs(cross(direction, offset)) > Tolerance.offset)
 			break;
 		run.tracks.push_back(current);
 		run.outward.push_back(outward);
 		run.length = along;
-		joint = far;
+		joint = opposite;
 		current = outward ? current->trNext : current->trPrev;
 	}
 	return run;

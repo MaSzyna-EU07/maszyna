@@ -189,7 +189,7 @@ public:
 	}
 
 	// whether the sphere may reach the gauge, roughly
-	bool near(glm::dvec3 const &Center, double const Radius) const
+	bool nearby(glm::dvec3 const &Center, double const Radius) const
 	{
 		auto const center{plan_of(Center)};
 		auto const reach{Radius + m_margin + region};
@@ -328,7 +328,7 @@ void scan_model(corridor const &Space, TAnimModel &Instance, std::vector<editor_
 {
 	if (false == Instance.visible() || Instance.Model() == nullptr || Instance.Model()->GetSMRoot() == nullptr)
 		return;
-	if (false == Space.near(Instance.location(), Instance.radius()))
+	if (false == Space.nearby(Instance.location(), Instance.radius()))
 		return;
 	editor_mode::gauge_hit hit{Instance.name(), Instance.location()};
 	// the triangle enters the gauge when any point of a grid spread over it does
