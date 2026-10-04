@@ -401,7 +401,9 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
     }
 
     simulation::Paths.InitTracks();
-    // the junctions tie the lanes of the roads together, what's left loose after that gets closed by the roads
+    // the roads tie up their own lanes where they gain or lose some, the junctions tie the lanes of the roads together,
+    // what's left loose after that gets closed by the roads
+    simulation::Roads.InitLanes();
     simulation::Junctions.InitJunctions();
     simulation::Roads.InitRoads();
     // crossings and traffic points go by the lanes, which are complete at this point
@@ -536,11 +538,29 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
             ( Scratchpad.location.offset.empty() ?
                 glm::dvec3 { 0.0 } :
                 glm::dvec3 { Scratchpad.location.offset.top() } ) );
-        if( false == simulation::Junctions.insert( junction ) ) {
-            ErrorLog( "Bad scenario: duplicate junction name \"" + junction->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
+        road_node::state stretch;
+        if( junction->as_road( stretch ) ) {
+            // a junction of two roads is where a road changes its lanes, which used to take a junction and is done by a road now.
+            // it's loaded as the road it would be, and marked as changed so it's written as one when the scenery is saved
+            delete junction;
+            nodedata.type = "road";
+            auto *road { new road_node( nodedata ) };
+            road->define( stretch );
+            if( false == simulation::Roads.insert( road ) ) {
+                ErrorLog( "Bad scenario: duplicate road name \"" + road->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
+            }
+            scene::Groups.insert( scene::Groups.handle(), road );
+            road->create_lanes();
+            road->mark_dirty();
+            scene::Layers.track( road, { sourcebegin, Input.TokenEnd() } );
         }
-        scene::Groups.insert( scene::Groups.handle(), junction );
-        scene::Layers.track( junction, { sourcebegin, Input.TokenEnd() } );
+        else {
+            if( false == simulation::Junctions.insert( junction ) ) {
+                ErrorLog( "Bad scenario: duplicate junction name \"" + junction->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
+            }
+            scene::Groups.insert( scene::Groups.handle(), junction );
+            scene::Layers.track( junction, { sourcebegin, Input.TokenEnd() } );
+        }
     }
     else if( roadpoint_node::is_keyword( nodedata.type ) ) {
         // level crossing, or a point where road vehicles appear or are taken away

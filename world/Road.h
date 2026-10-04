@@ -58,7 +58,8 @@ class owned_shapes
 // properties, past the ones of the lanes and the look: median <gap|painted|island> <width at the start> <width at the end> <material>,
 // medianround <length of the rounded end of an island at the start> <at the end>,
 // kerbs <left|right|both> <width> <material>, bank <left|right|both> <width at the start> <drop at the start> <width at the end> <drop at the end>,
-// bankmaterial <material>, weight <value>, roundabout
+// bankmaterial <material>, weight <value>, roundabout,
+// lanesto <along the axis> <against the axis>: lanes the piece has at the end of its axis, where these aren't the ones it starts with
 class road_node : public scene::basic_node
 {
 
@@ -151,9 +152,23 @@ class road_node : public scene::basic_node
 		std::array<bank_data, 2> banks; // left, right
 		std::string bankmaterial{"none"}; // what a bank is covered with, other than one of a shoulder, which goes with the shoulder
 		bool roundabout{false}; // the piece is a part of a roundabout: traffic on it goes ahead of the traffic joining it
+		// lanes the piece is short of at an end of its axis: [end][0: the ones going along the axis, 1: the ones going against it].
+		// these are the outermost lanes of the direction, which the road gains or loses along the piece;
+		// forward and backward say how many lanes there are where the piece has the most of them
+		std::array<std::array<int, 2>, 2> missing{};
 
 		// brings the content to a usable form: values within their limits, an entry for each lane and for each pair of neighbours
 		void normalize();
+		// true if the piece has other lanes at its end than at its start
+		bool changing() const;
+		// sets the lanes the piece has at the start and at the end of its axis
+		void lanes_between(int const Startforward, int const Startbackward, int const Endforward, int const Endbackward);
+		// number of lanes at an end of the axis (0: the start, 1: the end): of the ones going along it, or of the ones going against it
+		int lanes_at(int const End, bool const Along) const;
+		// true if the piece has the lane at specified end of the axis
+		bool lane_at(std::size_t const Lane, int const End) const;
+		// the same road with the lanes it has at specified end of the axis all the way
+		state section(int const End) const;
 		// identifier of a lane: f1..fn go along the axis and b1..bn against it, both counted outwards from where the directions meet
 		std::string lane_id(std::size_t const Lane) const;
 		// number of a lane in the left to right order, -1 if there's no lane with such identifier
@@ -162,8 +177,17 @@ class road_node : public scene::basic_node
 		int default_change(std::size_t const Boundary) const;
 		// distance of the middle of a lane from the axis, positive to the left when facing along the axis
 		double lane_offset(std::size_t const Lane) const;
+		// the same at an end of the axis, where the road is centred on the axis with the lanes it has there.
+		// a lane the road is short of at that end is where the lane it comes out of, or goes into, is
+		double lane_offset(std::size_t const Lane, int const End) const;
+		// distance of the middle of a lane from the axis at specified part of the length of the axis, with the taper and what's between the directions counted in
+		double lane_position(std::size_t const Lane, double const Fraction) const;
 		// combined width of the lanes, before the taper
 		double width() const;
+		// the same for the lanes the piece has at an end of the axis
+		double width(int const End) const;
+		// combined width of the lanes at specified part of the length of the axis, with the taper counted in
+		double breadth(double const Fraction) const;
 		// what the widths of the lanes are multiplied by at specified value of the curve parameter
 		double scale(double const T) const;
 		// true if the two directions of the road are kept apart anywhere along it
@@ -172,10 +196,20 @@ class road_node : public scene::basic_node
 		double median_width(double const T) const;
 		// distance from the axis of the line the two directions meet at, on a road which doesn't keep them apart
 		double divide() const;
+		// the same for the lanes the piece has at an end of the axis
+		double divide(int const End) const;
+		// the same at specified part of the length of the axis, with the taper counted in
+		double middle(double const Fraction) const;
 		// width of the whole roadway at specified value of the curve parameter: the lanes and what's between the directions
 		double span(double const T) const;
 		// shape of the middle of a lane, laid out in the direction of travel
 		segment_data lane_path(std::size_t const Lane) const;
+		// shape of the way from the middle of a lane to the middle of another over a part of the axis, laid out in the direction of travel.
+		// From, To: values of the curve parameter of the axis, in the order of the axis
+		segment_data lane_path(std::size_t const Lane, std::size_t const Tolane, double const From, double const To) const;
+		// part of the axis, as values of its curve parameter, over which a piece which gains or loses lanes leads the lanes it has
+		// at one end to the lanes it has at the other. before it and past it there's a short path for each lane the piece has at that end
+		std::array<double, 2> change_range() const;
 		// length of the axis
 		double length() const;
 		// position on the axis and direction of the axis, for specified value of the curve parameter
@@ -196,16 +230,35 @@ class road_node : public scene::basic_node
 	void define(state const &State);
 	// creates paths of the lanes and hands them over to the simulation
 	void create_lanes();
+	// makes the paths which lead the lanes the piece has at one end to the lanes it has at the other, where these differ.
+	// to be called once the lanes are joined with the lanes of the neighbours
+	void create_links();
 	// links lanes of opposite directions at an end of the road which leads nowhere, so the vehicles can turn back
 	void close_ends();
 	// gives up the paths of the lanes, or the ones made to close the loose ends. the paths belong to the path table,
 	// the caller is expected to take them out of use
 	std::vector<TTrack *> release_lanes();
 	std::vector<TTrack *> release_turns();
-	// paths of the lanes, in the order of the lanes, and the ones made to close the loose ends
+	// paths of the lanes, and the ones made to close the loose ends. the former go in the order of the lanes;
+	// on a piece which gains or loses lanes these are the short paths left of each such lane at the ends of the piece
 	std::vector<TTrack *> const &tracks() const
 	{
 		return m_tracks;
+	}
+	// path of a lane at an end of the axis (0: the start, 1: the end); nullptr if the piece doesn't have the lane there
+	TTrack *lane_track(std::size_t const Lane, int const End) const
+	{
+		return Lane < m_lanetracks[End].size() ? m_lanetracks[End][Lane] : nullptr;
+	}
+	// paths leading from the lanes at one end to the lanes at the other, on a piece which gains or loses lanes
+	std::vector<TTrack *> const &links() const
+	{
+		return m_links;
+	}
+	// shapes of the ways these make, for display
+	std::vector<segment_data> const &ways() const
+	{
+		return m_ways;
 	}
 	std::vector<TTrack *> const &turns() const
 	{
@@ -243,9 +296,14 @@ class road_node : public scene::basic_node
 	void export_as_text_(std::ostream &Output) const override;
 	// creates a path for the vehicles and registers it with the simulation
 	TTrack *create_track(std::string const &Name, segment_data const &Path, float const Width, float const Velocity);
+	// the same for a path put together by the caller, the way the scenery defines one
+	TTrack *create_track(std::string const &Name, std::string const &Definition);
 	// members
 	state m_state;
 	std::vector<TTrack *> m_tracks;
+	std::array<std::vector<TTrack *>, 2> m_lanetracks; // path of each lane at the start and at the end of the axis
+	std::vector<TTrack *> m_links;
+	std::vector<segment_data> m_ways;
 	std::vector<TTrack *> m_turns;
 	bool m_merged{false};
 	owned_shapes m_shapes; // geometry put in the scene by show()
@@ -263,7 +321,8 @@ class road_node : public scene::basic_node
 // armmedian <arm> <width of what keeps the two directions of the road apart there>, kerbs <width> <material>,
 // cornerbank <arm> <width> <drop> <width> <drop> (at that road, then at the next one), bankmaterial <material>,
 // crosswalk <arm> <length>, median <gap|painted|island> <material>
-// a junction of two roads is drawn as a stretch of road, on which the lanes of one are led to the lanes of the other
+// a junction of two roads is drawn as a stretch of road, on which the lanes of one are led to the lanes of the other.
+// that's what a road which changed its lanes used to take; such a junction found in a scenery is loaded as a piece of road instead, see as_road()
 // the arms don't have to be level with each other: the surface is spanned between their ends and the centre.
 // the junction also tells the vehicles when to wait: the ones which have to give way wait for the ones with the right of way,
 // and where neither has it, for the ones coming from their right, or from the opposite side when turning left across their way
@@ -324,6 +383,9 @@ class junction_node : public scene::basic_node
 		TTrack *link{nullptr}; // path, or crossroads of paths, leading on from it
 		std::vector<way_data> ways;
 		std::vector<TTrack *> approach; // lanes the vehicles heading for the junction are looked for on, nearest first
+		// for each of these: the way a vehicle on it has to have picked to be heading for the junction; 0 if there's no choice there.
+		// it's set for a path on which a road forks into more lanes
+		std::vector<int> wishes;
 		glm::dvec3 line{0.0}; // where the lane ends
 		road_order *order{nullptr};
 		// what's going on at the moment
@@ -385,6 +447,9 @@ class junction_node : public scene::basic_node
 		return m_state;
 	}
 	void define(state const &State);
+	// a junction of two roads is a stretch where a road changes its lanes, which a road can do by itself.
+	// Road: receives the piece of road to take the place of the junction. returns: false if the junction isn't of that kind
+	bool as_road(road_node::state &Road) const;
 	// makes paths leading through the junction, between the lanes of the roads attached to it at the moment
 	void create_links();
 	// gives up the paths leading through the junction; the caller is expected to take them out of use
@@ -452,7 +517,10 @@ class road_table : public basic_table<road_node>
 {
 
   public:
-	// legacy style initialization, to be performed when the tracks are already joined
+	// legacy style initialization, to be performed when the tracks are already joined: ties up the lanes of the pieces
+	// which gain or lose them. the junctions go by these, so it comes ahead of their initialization
+	void InitLanes();
+	// the same, to be performed once the junctions are done: closes the ends of the roads which lead nowhere
 	void InitRoads();
 	// generates geometry of the roads and puts it in the scene
 	void create_geometry(scene::scratch_data &Scratchpad);

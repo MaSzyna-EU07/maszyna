@@ -545,6 +545,29 @@ void roadpoint_node::bind()
 					m_lanes.emplace_back(lane);
 				}
 			}
+			// and from the paths which lead the lanes of a piece which gains or loses them from one of its ends to the other
+			for (auto *link : road->links())
+			{
+				if (link == nullptr)
+				{
+					continue;
+				}
+				for (auto const &way : link->m_paths)
+				{
+					if (out_of_reach(way, m_state.position, m_state.radius))
+					{
+						continue;
+					}
+					path_curve const curve{way};
+					double distance{0.0};
+					auto const t{curve.nearest(m_state.position, distance)};
+					if (distance <= m_state.radius && std::abs(curve.point(t).y - m_state.position.y) <= 3.0)
+					{
+						m_lanes.emplace_back(link);
+						break;
+					}
+				}
+			}
 		}
 		break;
 	}
@@ -559,10 +582,16 @@ void roadpoint_node::bind_crossing()
 	auto const *crossed{road_under(m_state.position, where)};
 	if (crossed != nullptr)
 	{
-		auto const &lanes{crossed->tracks()};
-		for (std::size_t idx = 0; idx < lanes.size(); ++idx)
+		auto const &layout{crossed->definition()};
+		if (layout.changing())
 		{
-			auto *lane{lanes[idx]};
+			// NOTE: on such a piece a lane is a string of paths, and may fork; the vehicles are stopped ahead of all that
+			ErrorLog("Bad road point: crossing \"" + m_name + "\" lies on a piece of road which gains or loses lanes, the vehicles are stopped before that piece");
+		}
+		for (std::size_t idx = 0; idx < layout.lanes.size(); ++idx)
+		{
+			// the path the traffic of the lane gets on the piece by; on a piece which keeps its lanes it's the lane itself
+			auto *lane{crossed->lane_track(idx, idx >= static_cast<std::size_t>(layout.backward) ? 0 : 1)};
 			if (lane == nullptr || lane->m_paths.empty())
 			{
 				continue;

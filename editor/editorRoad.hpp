@@ -134,8 +134,8 @@ class editor_road
 	static std::vector<std::pair<junction_node *, std::size_t>> arms_at(glm::dvec3 const &Point);
 	// brings what's next to the ends of a piece in line with the piece, after its lanes or its width were changed:
 	// a junction gets its arm made for the lanes the piece has now, a neighbouring piece with the same lanes is made as wide
-	// as the piece where they meet, and one with other lanes gets a transition cut out of its end - a junction of two roads,
-	// which leads the lanes of one to the lanes of the other. what gets done is added to Record, what couldn't be done to Notes
+	// as the piece where they meet, and one with other lanes is led to the lanes of the piece: its end, or the whole of it if it's short,
+	// becomes a piece which gains or loses lanes along the way. what gets done is added to Record, what couldn't be done to Notes
 	static void settle(road_node &Road, record &Record, std::string &Notes);
 	// width shared by all lanes of the road at specified value of the curve parameter of its axis. returns: false if the lanes differ in width
 	static bool lane_width(road_node::state const &State, double const T, float &Width);

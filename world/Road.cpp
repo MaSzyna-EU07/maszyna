@@ -35,6 +35,8 @@ constexpr double dash_step{2.0}; // longest straight piece of a painted line
 // speed and reach of the paths made to turn the vehicles back at a loose end of the road
 constexpr float turn_velocity{10.f};
 constexpr double turn_reach{6.0};
+// length of the paths left of the lanes at the ends of a piece which gains or loses lanes
+constexpr double lane_lead{2.0};
 
 glm::dvec3 const up{0.0, 1.0, 0.0};
 
@@ -148,6 +150,48 @@ class road_axis
 	{
 		return frame(parameter(Station));
 	}
+	// control vector of specified end of a part of the curve, relative to that end
+	glm::dvec3 control(int const End, double const From, double const To) const
+	{
+		if (From <= 0.0 && To >= 1.0)
+		{
+			return control(End);
+		}
+		// a part of a cubic curve is a cubic curve, with the tangents scaled to the part of the parameter range it takes
+		return End == 0 ? derivative(From) * ((To - From) / 3.0) : derivative(To) * (-(To - From) / 3.0);
+	}
+	// value of the curve parameter at specified distance from the start of the axis
+	double parameter(double const Station) const
+	{
+		if (Station <= 0.0)
+		{
+			return 0.0;
+		}
+		if (Station >= length())
+		{
+			return 1.0;
+		}
+		// first of the sampled distances past the requested one; it's never the very first sample
+		auto const idx{std::distance(m_stations.begin(), std::upper_bound(m_stations.begin(), m_stations.end(), Station))};
+		auto const span{m_stations[idx] - m_stations[idx - 1]};
+		auto const fraction{span > 0.0 ? (Station - m_stations[idx - 1]) / span : 0.0};
+		return (static_cast<double>(idx - 1) + fraction) / samples;
+	}
+	// part of the length of the axis which lies before specified value of the curve parameter
+	double fraction(double const T) const
+	{
+		if (T <= 0.0 || length() <= 0.0)
+		{
+			return 0.0;
+		}
+		if (T >= 1.0)
+		{
+			return 1.0;
+		}
+		auto const position{T * samples};
+		auto const idx{std::min(samples - 1, static_cast<int>(position))};
+		return glm::mix(m_stations[idx], m_stations[idx + 1], position - idx) / length();
+	}
 	// length of pieces the road is cut into along the axis; follows the rules the tracks use
 	double step() const
 	{
@@ -167,28 +211,22 @@ class road_axis
 		auto const u{1.0 - T};
 		return 3.0 * u * u * (m_points[1] - m_points[0]) + 6.0 * u * T * (m_points[2] - m_points[1]) + 3.0 * T * T * (m_points[3] - m_points[2]);
 	}
-	double parameter(double const Station) const
-	{
-		if (Station <= 0.0)
-		{
-			return 0.0;
-		}
-		if (Station >= length())
-		{
-			return 1.0;
-		}
-		// first of the sampled distances past the requested one; it's never the very first sample
-		auto const idx{std::distance(m_stations.begin(), std::upper_bound(m_stations.begin(), m_stations.end(), Station))};
-		auto const span{m_stations[idx] - m_stations[idx - 1]};
-		auto const fraction{span > 0.0 ? (Station - m_stations[idx - 1]) / span : 0.0};
-		return (static_cast<double>(idx - 1) + fraction) / samples;
-	}
 
 	std::array<glm::dvec3, 4> m_points;
 	std::array<double, 2> m_rolls{};
 	double m_radius{0.0};
 	bool m_curved{false};
 	std::vector<double> m_stations;
+};
+
+// lines of a road a corner of a cross-section can be measured from. on a piece which gains or loses lanes the edges
+// and the line the directions meet at move across the axis along the way, each on its own
+enum profile_anchor : int
+{
+	anchor_axis = 0,
+	anchor_left = 1, // left edge of the lanes
+	anchor_right = 2, // right edge of the lanes
+	anchor_middle = 3 // the line the two directions meet at
 };
 
 // corner of the cross-section of something laid along the road
@@ -201,6 +239,8 @@ struct profile_point
 	double spread{0.0}; // how much of the gap between the two directions of the road it's moved by: 0.5 for their left edge, -0.5 for the right one
 	double grow{0.0}; // what the shift changes by along the axis, evenly
 	double sink{0.0}; // what the height changes by along the axis, evenly
+	int anchor{anchor_axis}; // line of the road the corner is measured from, one of profile_anchor
+	double tile{0.0}; // if set the image is laid across the road by where the corner is: its coordinate grows by one for each that many metres from the axis
 };
 
 // how far the taper of a road has got at specified part of its length. it starts and ends level, so the pieces of a road
@@ -231,6 +271,8 @@ void loft(std::vector<world_vertex> &Output, road_axis const &Axis, std::vector<
 		return glm::vec3{glm::length2(result) < 1e-12 ? up : glm::normalize(result)};
 	};
 	std::vector<glm::dvec3> previous(pointcount), current(pointcount);
+	std::vector<float> previoustexture(pointcount), currenttexture(pointcount);
+	auto const anchored{std::any_of(Profile.begin(), Profile.end(), [](profile_point const &Point) { return Point.anchor != anchor_axis; })};
 	axis_frame previousframe;
 	double previousstation{From};
 
@@ -241,10 +283,19 @@ void loft(std::vector<world_vertex> &Output, road_axis const &Axis, std::vector<
 		auto const fraction{Axis.length() > 0.0 ? station / Axis.length() : 0.0};
 		auto const scale{Taper[0] == Taper[1] ? static_cast<double>(Taper[0]) : glm::mix(static_cast<double>(Taper[0]), static_cast<double>(Taper[1]), taper_progress(fraction))};
 		auto const gap{false == divided ? 0.0 : glm::mix(static_cast<double>(median[0]), static_cast<double>(median[1]), taper_progress(fraction))};
+		// where the lines the corners are measured from are at this section
+		std::array<double, 4> lead{0.0, 0.0, 0.0, 0.0};
+		if (anchored)
+		{
+			auto const half{0.5 * Road.breadth(fraction)};
+			lead = {0.0, half, -half, Road.middle(fraction)};
+		}
 		for (std::size_t idx = 0; idx < pointcount; ++idx)
 		{
 			auto const &point{Profile[idx]};
-			current[idx] = frame.position + frame.left * (point.offset * scale + point.shift + point.spread * gap + point.grow * fraction) + up * (point.height + point.sink * fraction);
+			auto const across{lead[point.anchor] + (point.offset * scale + point.shift + point.spread * gap + point.grow * fraction)};
+			current[idx] = frame.position + frame.left * across + up * (point.height + point.sink * fraction);
+			currenttexture[idx] = (point.tile > 0.0 ? static_cast<float>(point.texture + across / point.tile) : point.texture);
 		}
 		if (section > 0)
 		{
@@ -254,10 +305,10 @@ void loft(std::vector<world_vertex> &Output, road_axis const &Axis, std::vector<
 			{
 				auto const normalstart{normal(previousframe.tangent, previous[idx] - previous[idx + 1])};
 				auto const normalend{normal(frame.tangent, current[idx] - current[idx + 1])};
-				world_vertex const leftstart{previous[idx], normalstart, {Profile[idx].texture, texturestart}};
-				world_vertex const rightstart{previous[idx + 1], normalstart, {Profile[idx + 1].texture, texturestart}};
-				world_vertex const leftend{current[idx], normalend, {Profile[idx].texture, textureend}};
-				world_vertex const rightend{current[idx + 1], normalend, {Profile[idx + 1].texture, textureend}};
+				world_vertex const leftstart{previous[idx], normalstart, {previoustexture[idx], texturestart}};
+				world_vertex const rightstart{previous[idx + 1], normalstart, {previoustexture[idx + 1], texturestart}};
+				world_vertex const leftend{current[idx], normalend, {currenttexture[idx], textureend}};
+				world_vertex const rightend{current[idx + 1], normalend, {currenttexture[idx + 1], textureend}};
 				Output.push_back(leftstart);
 				Output.push_back(rightstart);
 				Output.push_back(leftend);
@@ -268,9 +319,61 @@ void loft(std::vector<world_vertex> &Output, road_axis const &Axis, std::vector<
 			}
 		}
 		previous.swap(current);
+		previoustexture.swap(currenttexture);
 		previousframe = frame;
 		previousstation = station;
 	}
+}
+
+// shape of a line running beside a part of the axis of a road, from one distance from the axis to another, positive being to the left.
+// From, To: values of the curve parameter of the axis. the line is laid out the way the axis goes
+segment_data offset_path(segment_data const &Axis, road_axis const &Centre, double const From, double const To, double const Fromoffset, double const Tooffset)
+{
+	auto const begin{Centre.frame(From)};
+	auto const end{Centre.frame(To)};
+
+	segment_data path;
+	path.points[segment_data::point::start] = begin.position + begin.left * Fromoffset;
+	path.points[segment_data::point::end] = end.position + end.left * Tooffset;
+	if (Centre.curved() || Fromoffset != Tooffset)
+	{
+		// a line running beside a bend is shorter or longer than the bend itself, and so are its control vectors.
+		// the control vectors go along the axis at both ends, which is what makes the lane meet the next piece without a bend
+		path.points[segment_data::point::control1] = Centre.control(0, From, To) * std::max(0.05, 1.0 - Fromoffset * std::cos(begin.roll) * Centre.curvature(From));
+		path.points[segment_data::point::control2] = Centre.control(1, From, To) * std::max(0.05, 1.0 - Tooffset * std::cos(end.roll) * Centre.curvature(To));
+		// if the roll changes along the road its sides rise or fall relative to the axis
+		auto const climb{(Tooffset * std::sin(end.roll) - Fromoffset * std::sin(begin.roll)) / 3.0};
+		path.points[segment_data::point::control1].y += climb;
+		path.points[segment_data::point::control2].y -= climb;
+	}
+	path.rolls = {From <= 0.0 ? Axis.rolls[0] : glm::mix(Axis.rolls[0], Axis.rolls[1], static_cast<float>(From)),
+	              To >= 1.0 ? Axis.rolls[1] : glm::mix(Axis.rolls[0], Axis.rolls[1], static_cast<float>(To))};
+	if (Axis.radius != 0.f)
+	{
+		// the lanes on the inner side of the bend have it tighter
+		auto const turn{Centre.curvature(0.5 * (From + To)) >= 0.0 ? 1.0 : -1.0};
+		path.radius = static_cast<float>(std::max(1.0, std::abs(Axis.radius) - turn * 0.5 * (Fromoffset + Tooffset)));
+	}
+	return path;
+}
+
+// turns a line laid out along the axis of a road into the path of a lane. Against: the lane goes against the axis
+segment_data lane_shape(segment_data Path, bool const Against)
+{
+	if (Against)
+	{
+		std::swap(Path.points[segment_data::point::start], Path.points[segment_data::point::end]);
+		std::swap(Path.points[segment_data::point::control1], Path.points[segment_data::point::control2]);
+		Path.rolls = {-Path.rolls[1], -Path.rolls[0]};
+	}
+	if (Global.bRollFix)
+	{
+		// with this setting on a rolled path gets raised when it's set up, by an amount fit for a railway track.
+		// the surface of the road stays where it is, so the lane is lowered beforehand to make up for it
+		Path.points[segment_data::point::start].y -= std::abs(std::sin(glm::radians(static_cast<double>(Path.rolls[0])))) * 0.75;
+		Path.points[segment_data::point::end].y -= std::abs(std::sin(glm::radians(static_cast<double>(Path.rolls[1])))) * 0.75;
+	}
+	return Path;
 }
 
 // corner of a cross-section which changes along the road
@@ -381,9 +484,30 @@ void road_node::state::normalize()
 {
 	forward = std::clamp(forward, 0, 8);
 	backward = std::clamp(backward, 0, 8);
+	for (int direction = 0; direction < 2; ++direction)
+	{
+		auto &count{direction == 0 ? forward : backward};
+		for (auto &end : missing)
+		{
+			end[direction] = std::clamp(end[direction], 0, count);
+		}
+		// lanes the piece has at neither of its ends aren't there at all
+		auto const both{std::min(missing[0][direction], missing[1][direction])};
+		count -= both;
+		missing[0][direction] -= both;
+		missing[1][direction] -= both;
+	}
 	if (forward + backward == 0)
 	{
 		forward = 1;
+	}
+	for (auto &end : missing)
+	{
+		// there has to be a lane at each end
+		if (forward - end[0] + backward - end[1] < 1)
+		{
+			(forward > 0 ? end[0] : end[1]) = (forward > 0 ? forward : backward) - 1;
+		}
 	}
 	lanewidth = std::max(1.f, lanewidth);
 	weight = std::clamp(weight, 0.f, 10000.f);
@@ -493,6 +617,69 @@ int road_node::state::lane_index(std::string const &Id) const
 	return Id[0] == 'f' ? backward + number - 1 : backward - number;
 }
 
+// true if the piece has other lanes at its end than at its start
+bool road_node::state::changing() const
+{
+	return missing[0][0] != 0 || missing[0][1] != 0 || missing[1][0] != 0 || missing[1][1] != 0;
+}
+
+// sets the lanes the piece has at the start and at the end of its axis
+void road_node::state::lanes_between(int const Startforward, int const Startbackward, int const Endforward, int const Endbackward)
+{
+	auto const along{std::clamp(std::max(Startforward, Endforward), 0, 8)};
+	auto const against{std::clamp(std::max(Startbackward, Endbackward), 0, 8)};
+	if (along != forward || against != backward)
+	{
+		// a different set of lanes starts with the common width and speed limit, and the default rules for changing lanes
+		forward = along;
+		backward = against;
+		lanes.clear();
+		changes.clear();
+	}
+	missing[0] = {forward - std::max(0, Startforward), backward - std::max(0, Startbackward)};
+	missing[1] = {forward - std::max(0, Endforward), backward - std::max(0, Endbackward)};
+	normalize();
+}
+
+// number of lanes at an end of the axis: of the ones going along it, or of the ones going against it
+int road_node::state::lanes_at(int const End, bool const Along) const
+{
+	return Along ? forward - missing[End][0] : backward - missing[End][1];
+}
+
+// true if the piece has the lane at specified end of the axis
+bool road_node::state::lane_at(std::size_t const Lane, int const End) const
+{
+	// the lanes of each direction are counted outwards from where the directions meet, and it's the outermost ones a piece is short of
+	auto const against{static_cast<std::size_t>(backward)};
+	return Lane < against ? Lane >= static_cast<std::size_t>(missing[End][1]) : Lane - against < static_cast<std::size_t>(forward - missing[End][0]);
+}
+
+// the same road with the lanes it has at specified end of the axis all the way
+road_node::state road_node::state::section(int const End) const
+{
+	auto result{*this};
+	result.lanes.clear();
+	result.changes.clear();
+	for (std::size_t lane = 0; lane < lanes.size(); ++lane)
+	{
+		if (false == lane_at(lane, End))
+		{
+			continue;
+		}
+		// the lanes a piece has at an end lie side by side, so the one before this one is its neighbour there as well
+		if (false == result.lanes.empty() && lane - 1 < changes.size())
+		{
+			result.changes.emplace_back(changes[lane - 1]);
+		}
+		result.lanes.emplace_back(lanes[lane]);
+	}
+	result.forward = lanes_at(End, true);
+	result.backward = lanes_at(End, false);
+	result.missing = {};
+	return result;
+}
+
 // permission to change the lane a pair of neighbouring lanes gets if the scenery doesn't say otherwise
 int road_node::state::default_change(std::size_t const Boundary) const
 {
@@ -516,6 +703,41 @@ double road_node::state::lane_offset(std::size_t const Lane) const
 	return Lane < lanes.size() ? offset - 0.5 * lanes[Lane].width : offset;
 }
 
+// the same at an end of the axis, where the road is centred on the axis with the lanes it has there
+double road_node::state::lane_offset(std::size_t const Lane, int const End) const
+{
+	auto const against{static_cast<std::size_t>(backward)};
+	auto lane{Lane};
+	if (Lane < lanes.size() && false == lane_at(Lane, End))
+	{
+		// a lane the road is short of there comes out of the outermost lane its direction has at that end, or goes into it.
+		// with no such lane it starts, or ends, at the line the directions meet at
+		if (lanes_at(End, Lane >= against) < 1)
+		{
+			return divide(End);
+		}
+		lane = (Lane < against ? static_cast<std::size_t>(missing[End][1]) : against + static_cast<std::size_t>(lanes_at(End, true) - 1));
+	}
+	auto offset{0.5 * width(End)};
+	for (std::size_t idx = 0; idx < lane && idx < lanes.size(); ++idx)
+	{
+		if (lane_at(idx, End))
+		{
+			offset -= lanes[idx].width;
+		}
+	}
+	return lane < lanes.size() ? offset - 0.5 * lanes[lane].width : offset;
+}
+
+// distance of the middle of a lane from the axis at specified part of the length of the axis, with the taper and what's between the directions counted in
+double road_node::state::lane_position(std::size_t const Lane, double const Fraction) const
+{
+	auto const side{Lane < static_cast<std::size_t>(backward) ? 0.5 : -0.5};
+	auto const beginoffset{lane_offset(Lane, 0) * taper[0] + side * median_width(0.0)};
+	auto const endoffset{lane_offset(Lane, 1) * taper[1] + side * median_width(1.0)};
+	return glm::mix(beginoffset, endoffset, taper_progress(Fraction));
+}
+
 // combined width of the lanes, before the taper
 double road_node::state::width() const
 {
@@ -525,6 +747,26 @@ double road_node::state::width() const
 		total += lane.width;
 	}
 	return total;
+}
+
+// the same for the lanes the piece has at an end of the axis
+double road_node::state::width(int const End) const
+{
+	double total{0.0};
+	for (std::size_t lane = 0; lane < lanes.size(); ++lane)
+	{
+		if (lane_at(lane, End))
+		{
+			total += lanes[lane].width;
+		}
+	}
+	return total;
+}
+
+// combined width of the lanes at specified part of the length of the axis, with the taper counted in
+double road_node::state::breadth(double const Fraction) const
+{
+	return glm::mix(width(0) * taper[0], width(1) * taper[1], taper_progress(Fraction));
 }
 
 // what the widths of the lanes are multiplied by at specified value of the curve parameter
@@ -556,10 +798,30 @@ double road_node::state::divide() const
 	return offset;
 }
 
+// the same for the lanes the piece has at an end of the axis
+double road_node::state::divide(int const End) const
+{
+	auto offset{0.5 * width(End)};
+	for (std::size_t idx = 0; idx < static_cast<std::size_t>(backward) && idx < lanes.size(); ++idx)
+	{
+		if (lane_at(idx, End))
+		{
+			offset -= lanes[idx].width;
+		}
+	}
+	return offset;
+}
+
+// the same at specified part of the length of the axis, with the taper counted in
+double road_node::state::middle(double const Fraction) const
+{
+	return glm::mix(divide(0) * taper[0], divide(1) * taper[1], taper_progress(Fraction));
+}
+
 // width of the whole roadway at specified value of the curve parameter
 double road_node::state::span(double const T) const
 {
-	return width() * scale(T) + median_width(T);
+	return (changing() ? breadth(T) : width() * scale(T)) + median_width(T);
 }
 
 // shape of the middle of a lane, laid out in the direction of travel
@@ -567,49 +829,30 @@ segment_data road_node::state::lane_path(std::size_t const Lane) const
 {
 	road_axis const centre{axis};
 	// on a road which gets wider or narrower the lane moves away from the axis or towards it along the way,
-	// and so it does where the two directions are led apart
+	// and so it does where the two directions are led apart, or where the road gains or loses lanes
 	auto const side{Lane < static_cast<std::size_t>(backward) ? 0.5 : -0.5};
-	auto const beginoffset{lane_offset(Lane) * taper[0] + side * median_width(0.0)};
-	auto const endoffset{lane_offset(Lane) * taper[1] + side * median_width(1.0)};
-	auto const begin{centre.frame(0.0)};
-	auto const end{centre.frame(1.0)};
+	auto const beginoffset{lane_offset(Lane, 0) * taper[0] + side * median_width(0.0)};
+	auto const endoffset{lane_offset(Lane, 1) * taper[1] + side * median_width(1.0)};
+	return lane_shape(offset_path(axis, centre, 0.0, 1.0, beginoffset, endoffset), Lane < static_cast<std::size_t>(backward));
+}
 
-	segment_data path;
-	path.points[segment_data::point::start] = begin.position + begin.left * beginoffset;
-	path.points[segment_data::point::end] = end.position + end.left * endoffset;
-	if (centre.curved() || beginoffset != endoffset)
-	{
-		// a line running beside a bend is shorter or longer than the bend itself, and so are its control vectors.
-		// the control vectors go along the axis at both ends, which is what makes the lane meet the next piece without a bend
-		path.points[segment_data::point::control1] = centre.control(0) * std::max(0.05, 1.0 - beginoffset * std::cos(begin.roll) * centre.curvature(0.0));
-		path.points[segment_data::point::control2] = centre.control(1) * std::max(0.05, 1.0 - endoffset * std::cos(end.roll) * centre.curvature(1.0));
-		// if the roll changes along the road its sides rise or fall relative to the axis
-		auto const climb{(endoffset * std::sin(end.roll) - beginoffset * std::sin(begin.roll)) / 3.0};
-		path.points[segment_data::point::control1].y += climb;
-		path.points[segment_data::point::control2].y -= climb;
-	}
-	path.rolls = axis.rolls;
-	if (axis.radius != 0.f)
-	{
-		// the lanes on the inner side of the bend have it tighter
-		auto const turn{centre.curvature(0.5) >= 0.0 ? 1.0 : -1.0};
-		path.radius = static_cast<float>(std::max(1.0, std::abs(axis.radius) - turn * 0.5 * (beginoffset + endoffset)));
-	}
-	if (Lane < static_cast<std::size_t>(backward))
-	{
-		// the lane goes against the axis
-		std::swap(path.points[segment_data::point::start], path.points[segment_data::point::end]);
-		std::swap(path.points[segment_data::point::control1], path.points[segment_data::point::control2]);
-		path.rolls = {-axis.rolls[1], -axis.rolls[0]};
-	}
-	if (Global.bRollFix)
-	{
-		// with this setting on a rolled path gets raised when it's set up, by an amount fit for a railway track.
-		// the surface of the road stays where it is, so the lane is lowered beforehand to make up for it
-		path.points[segment_data::point::start].y -= std::abs(std::sin(glm::radians(static_cast<double>(path.rolls[0])))) * 0.75;
-		path.points[segment_data::point::end].y -= std::abs(std::sin(glm::radians(static_cast<double>(path.rolls[1])))) * 0.75;
-	}
-	return path;
+// shape of the way from the middle of a lane to the middle of another over a part of the axis, laid out in the direction of travel
+segment_data road_node::state::lane_path(std::size_t const Lane, std::size_t const Tolane, double const From, double const To) const
+{
+	road_axis const centre{axis};
+	auto const against{Lane < static_cast<std::size_t>(backward)};
+	// the traffic going against the axis gets to the part by its far end
+	auto const fromoffset{lane_position(against ? Tolane : Lane, centre.fraction(From))};
+	auto const tooffset{lane_position(against ? Lane : Tolane, centre.fraction(To))};
+	return lane_shape(offset_path(axis, centre, From, To, fromoffset, tooffset), against);
+}
+
+// part of the axis over which a piece which gains or loses lanes leads the lanes it has at one end to the lanes it has at the other
+std::array<double, 2> road_node::state::change_range() const
+{
+	road_axis const centre{axis};
+	auto const lead{std::min(lane_lead, 0.2 * centre.length())};
+	return {centre.parameter(lead), centre.parameter(centre.length() - lead)};
 }
 
 // length of the axis
@@ -654,6 +897,8 @@ void road_node::import(cParser &Input, glm::dvec3 const &Offset)
 	};
 	std::vector<lane_property> laneproperties;
 	std::vector<change_property> changeproperties;
+	// lanes at the end of the axis, if these are other than the ones at its start
+	std::array<int, 2> endlanes{-1, -1};
 
 	auto token{Input.getToken<std::string>()};
 	while (false == token.empty() && token != "endroad")
@@ -663,6 +908,12 @@ void road_node::import(cParser &Input, glm::dvec3 const &Offset)
 			// lanes <along the axis> <against the axis>
 			Input.getTokens(2);
 			Input >> m_state.forward >> m_state.backward;
+		}
+		else if (token == "lanesto")
+		{
+			// lanesto <along the axis> <against the axis>
+			Input.getTokens(2);
+			Input >> endlanes[0] >> endlanes[1];
 		}
 		else if (token == "width")
 		{
@@ -848,6 +1099,29 @@ void road_node::import(cParser &Input, glm::dvec3 const &Offset)
 		ErrorLog("Bad road: " + label + " has no lanes, a single one is used instead");
 	}
 	auto const environment{m_state.environment};
+	if (endlanes[0] >= 0 || endlanes[1] >= 0)
+	{
+		if (std::max(0, endlanes[0]) + std::max(0, endlanes[1]) <= 0)
+		{
+			ErrorLog("Bad road: " + label + " has no lanes at its end, a single one is used instead");
+		}
+		m_state.lanes_between(m_state.forward, m_state.backward, endlanes[0], endlanes[1]);
+		// the traffic going along the axis gets on the piece at its start, the one going against it at its end
+		int const gains[]{m_state.lanes_at(1, true) - m_state.lanes_at(0, true), m_state.lanes_at(0, false) - m_state.lanes_at(1, false)};
+		int const leaving[]{m_state.lanes_at(1, true), m_state.lanes_at(0, false)};
+		int const arriving[]{m_state.lanes_at(0, true), m_state.lanes_at(1, false)};
+		for (int direction = 0; direction < 2; ++direction)
+		{
+			if (arriving[direction] > 0 && gains[direction] > 2)
+			{
+				ErrorLog("Bad road: " + label + " gains more than two lanes at once, the ones past the second can't be got on");
+			}
+			if (arriving[direction] > 0 && leaving[direction] == 0)
+			{
+				ErrorLog("Bad road: " + label + " has lanes which lead nowhere, as their direction ends within it");
+			}
+		}
+	}
 	m_state.normalize();
 	if (environment != m_state.environment)
 	{
@@ -924,10 +1198,202 @@ void road_node::define(state const &State)
 // creates paths of the lanes and hands them over to the simulation
 void road_node::create_lanes()
 {
-	m_tracks.assign(m_state.lanes.size(), nullptr);
-	for (std::size_t lane = 0; lane < m_state.lanes.size(); ++lane)
+	auto const count{m_state.lanes.size()};
+	m_tracks.clear();
+	for (auto &tracks : m_lanetracks)
 	{
-		m_tracks[lane] = create_track(m_name.empty() ? std::string{} : m_name + ":" + m_state.lane_id(lane), m_state.lane_path(lane), m_state.lanes[lane].width, m_state.lanes[lane].velocity);
+		tracks.assign(count, nullptr);
+	}
+	auto const range{m_state.change_range()};
+	for (std::size_t lane = 0; lane < count; ++lane)
+	{
+		auto const along{lane >= static_cast<std::size_t>(m_state.backward)};
+		auto const name{m_name.empty() ? std::string{} : m_name + ":" + m_state.lane_id(lane)};
+		auto const &data{m_state.lanes[lane]};
+		if (m_state.missing[0][along ? 0 : 1] == 0 && m_state.missing[1][along ? 0 : 1] == 0)
+		{
+			// the direction keeps its lanes all the way, and so each of them is a single path
+			auto *track{create_track(name, m_state.lane_path(lane), data.width, data.velocity)};
+			m_lanetracks[0][lane] = track;
+			m_lanetracks[1][lane] = track;
+			m_tracks.emplace_back(track);
+			continue;
+		}
+		// the direction gains or loses lanes along the way. a lane gets a short path at each end the piece has it at, which is what
+		// the neighbours and the junctions join; what leads from the ones at one end to the ones at the other is made by create_links()
+		for (int end = 0; end < 2; ++end)
+		{
+			if (false == m_state.lane_at(lane, end))
+			{
+				continue;
+			}
+			// the traffic going along the axis gets on the piece at its start
+			auto const entry{(end == 0) == along};
+			auto *track{create_track(name.empty() || entry ? name : name + ":out", m_state.lane_path(lane, lane, end == 0 ? 0.0 : range[1], end == 0 ? range[0] : 1.0), data.width, data.velocity)};
+			m_lanetracks[end][lane] = track;
+			m_tracks.emplace_back(track);
+		}
+	}
+}
+
+// makes the paths which lead the lanes the piece has at one end to the lanes it has at the other, where these differ
+void road_node::create_links()
+{
+	if (false == m_links.empty() || false == m_state.changing() || m_lanetracks[0].size() != m_state.lanes.size())
+	{
+		return;
+	}
+	auto const range{m_state.change_range()};
+	std::ostringstream text;
+	text.precision(std::numeric_limits<double>::digits10);
+	auto const write_point = [&text](glm::dvec3 const &Point) { text << Point.x << ' ' << Point.y << ' ' << Point.z << ' '; };
+	for (int direction = 0; direction < 2; ++direction)
+	{
+		if (m_state.missing[0][direction] == 0 && m_state.missing[1][direction] == 0)
+		{
+			continue;
+		}
+		auto const along{direction == 0};
+		// ends of the axis the traffic of the direction gets on the piece and leaves it by
+		auto const entry{along ? 0 : 1};
+		auto const exit{1 - entry};
+		auto const arriving{m_state.lanes_at(entry, along)};
+		auto const leaving{m_state.lanes_at(exit, along)};
+		// place of a lane of the direction, counted from where the directions meet, in the left to right order
+		auto const index = [&](int const Number) { return static_cast<std::size_t>(along ? m_state.backward + Number - 1 : m_state.backward - Number); };
+		for (int number = 1; number <= arriving && leaving > 0; ++number)
+		{
+			auto const lane{index(number)};
+			auto *head{m_lanetracks[entry][lane]};
+			if (head == nullptr)
+			{
+				continue;
+			}
+			// a lane leads to itself; one the road loses leads to the outermost lane left, and the outermost lane of a road
+			// which gains lanes leads to these as well. a path has up to three ways out, so that's two lanes gained at most
+			std::vector<std::size_t> targets{index(std::min(number, leaving))};
+			for (int extra = arriving + 1; number == arriving && extra <= leaving && targets.size() < 3; ++extra)
+			{
+				targets.emplace_back(index(extra));
+			}
+			std::vector<TTrack *> tails;
+			std::vector<segment_data> ways;
+			for (auto const target : targets)
+			{
+				if (m_lanetracks[exit][target] != nullptr)
+				{
+					tails.emplace_back(m_lanetracks[exit][target]);
+					ways.emplace_back(m_state.lane_path(lane, target, range[0], range[1]));
+				}
+			}
+			if (tails.empty())
+			{
+				continue;
+			}
+			m_ways.insert(m_ways.end(), ways.begin(), ways.end());
+			auto const name{m_name.empty() ? std::string{} : m_name + ":" + m_state.lane_id(lane) + ":way"};
+			auto const &data{m_state.lanes[lane]};
+			if (tails.size() == 1)
+			{
+				auto *link{create_track(name, ways[0], data.width, data.velocity)};
+				// tied by hand: lanes the road loses end where the one they lead to carries on, which is more than joining path ends can express
+				head->ConnectNextPrev(link, 0);
+				link->trNext = tails[0];
+				link->iNextDirection = 0;
+				if (tails[0]->trPrev == nullptr)
+				{
+					tails[0]->trPrev = link;
+					tails[0]->iPrevDirection = 1;
+				}
+				m_links.emplace_back(link);
+				continue;
+			}
+			// a fork is a crossroads, which is what the drivers know how to pick a way through. the ways leave the lane
+			// the way it goes, and each joins its lane the way that one goes
+			// NOTE: a crossroads isn't set up the way a rolled path is, so its points are given as they are and it's level across
+			auto const raise = [](glm::dvec3 Point, float const Roll) {
+				if (Global.bRollFix)
+				{
+					Point.y += std::abs(std::sin(glm::radians(static_cast<double>(Roll)))) * 0.75;
+				}
+				return Point;
+			};
+			auto const start{raise(ways[0].points[segment_data::point::start], ways[0].rolls[0])};
+			auto const startcontrol{ways[0].points[segment_data::point::control1]};
+			std::vector<glm::dvec3> ends;
+			std::vector<glm::dvec3> endcontrols;
+			for (auto const &way : ways)
+			{
+				ends.emplace_back(raise(way.points[segment_data::point::end], way.rolls[1]));
+				endcontrols.emplace_back(way.points[segment_data::point::control2]);
+			}
+			text.str("");
+			text << "cross " << glm::distance(start, ends[0]) << ' ' << data.width << ' ' << m_state.friction << ' ' << m_state.sounddistance << ' ' << m_state.quality << " 0 " << m_state.environment
+			     << " unvis ";
+			// first path: from the lane to itself
+			write_point(start);
+			text << "0 ";
+			write_point(startcontrol);
+			write_point(endcontrols[0]);
+			write_point(ends[0]);
+			text << "0 0 ";
+			if (ways.size() == 2)
+			{
+				// second path of a crossroads of three roads starts where the first one does
+				write_point(start);
+				text << "0 ";
+				write_point(startcontrol);
+				write_point(endcontrols[1]);
+				write_point(ends[1]);
+				text << "0 0 ";
+			}
+			else
+			{
+				// second path of a crossroads of four roads runs between its third and fourth point
+				write_point(ends[1]);
+				text << "0 ";
+				write_point(endcontrols[1]);
+				write_point(endcontrols[2]);
+				write_point(ends[2]);
+				text << "0 0 ";
+			}
+			if (data.velocity > 0.f)
+			{
+				text << "velocity " << data.velocity << ' ';
+			}
+			text << "endtrack";
+			auto *link{create_track(name, text.str())};
+			if (link->SwitchExtension != nullptr)
+			{
+				auto &extension{*link->SwitchExtension};
+				// the points of the crossroads are stored as: first, second, fourth, third
+				extension.pPrevs[0] = head;
+				extension.iPrevDirection[0] = 1;
+				extension.pNexts[0] = tails[0];
+				extension.iNextDirection[0] = 0;
+				extension.pPrevs[1] = (tails.size() == 3 ? tails[2] : tails[1]);
+				extension.iPrevDirection[1] = 0;
+				extension.pNexts[1] = (tails.size() == 3 ? tails[1] : nullptr);
+				extension.iNextDirection[1] = 0;
+				link->Switch(0);
+				head->trNext = link;
+				head->iNextDirection = 0;
+				// the drivers take each of the lanes as readily as any other
+				link->m_routeweights = {100.f, 100.f, tails.size() == 3 ? 100.f : 0.f};
+				// the lanes get to know the path leading to them, for whatever goes backwards and for those who look who's coming
+				int const ends2[]{1, 2};
+				int const ends3[]{1, 3, 2};
+				for (std::size_t idx = 0; idx < tails.size(); ++idx)
+				{
+					if (tails[idx]->trPrev == nullptr)
+					{
+						tails[idx]->trPrev = link;
+						tails[idx]->iPrevDirection = (tails.size() == 3 ? ends3[idx] : ends2[idx]);
+					}
+				}
+			}
+			m_links.emplace_back(link);
+		}
 	}
 }
 
@@ -935,7 +1401,7 @@ void road_node::create_lanes()
 void road_node::close_ends()
 {
 	// NOTE: without the link a vehicle reaching the end would be sent back on the lane it came by, against its direction
-	if (m_tracks.size() != m_state.lanes.size())
+	if (m_lanetracks[0].size() != m_state.lanes.size())
 	{
 		return;
 	}
@@ -944,12 +1410,12 @@ void road_node::close_ends()
 	{
 		// the lanes going along the axis leave the road at its end, the ones going against it leave at its start
 		auto const outwards{end == 1 ? axis.frame(1.0).tangent : -axis.frame(0.0).tangent};
-		for (int pair = 1; pair <= std::min(m_state.forward, m_state.backward); ++pair)
+		for (int pair = 1; pair <= std::min(m_state.lanes_at(end, true), m_state.lanes_at(end, false)); ++pair)
 		{
 			auto const forward{static_cast<std::size_t>(m_state.backward + pair - 1)};
 			auto const backward{static_cast<std::size_t>(m_state.backward - pair)};
-			auto *exit{m_tracks[end == 1 ? forward : backward]};
-			auto *entry{m_tracks[end == 1 ? backward : forward]};
+			auto *exit{m_lanetracks[end][end == 1 ? forward : backward]};
+			auto *entry{m_lanetracks[end][end == 1 ? backward : forward]};
 			if (exit == nullptr || entry == nullptr || exit->trNext != nullptr || entry->trPrev != nullptr)
 			{
 				continue;
@@ -974,6 +1440,13 @@ std::vector<TTrack *> road_node::release_lanes()
 {
 	std::vector<TTrack *> released;
 	released.swap(m_tracks);
+	released.insert(released.end(), m_links.begin(), m_links.end());
+	m_links.clear();
+	m_ways.clear();
+	for (auto &tracks : m_lanetracks)
+	{
+		tracks.clear();
+	}
 	released.erase(std::remove(released.begin(), released.end(), nullptr), released.end());
 	return released;
 }
@@ -989,7 +1462,7 @@ std::vector<TTrack *> road_node::release_turns()
 // true if there's a vehicle on any path of the road
 bool road_node::occupied() const
 {
-	for (auto const *tracks : {&m_tracks, &m_turns})
+	for (auto const *tracks : {&m_tracks, &m_links, &m_turns})
 	{
 		for (auto const *track : *tracks)
 		{
@@ -1039,26 +1512,42 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 	auto const widest{static_cast<double>(std::max(road.median.width[0], road.median.width[1]))};
 	auto const height{static_cast<double>(road.kerbheight)};
 	auto const usable = [](std::string const &Material) { return false == Material.empty() && Material != "none"; };
+	// on a piece which gains or loses lanes the edges and the line the directions meet at move across the axis along the way,
+	// so what's laid along them is measured from them. elsewhere they keep their distance from the axis, and it's measured from the axis
+	auto const changing{road.changing()};
+	// distance of one of these lines from the axis, on a road as wide as its lanes say
+	auto const distance = [&](int const Line) { return Line == anchor_left ? halfwidth : Line == anchor_right ? -halfwidth : Line == anchor_middle ? divide : 0.0; };
+	// where the line the directions meet at is, for specified distance from the start of the axis
+	auto const meeting = [&](double const Station) {
+		return changing ? road.middle(Station / length) : divide * glm::mix(static_cast<double>(road.taper[0]), static_cast<double>(road.taper[1]), taper_progress(Station / length));
+	};
 
 	// surface. the image is centered on the axis, and repeated if the road is wider
 	if (road.surface != "none")
 	{
 		auto const tile{static_cast<double>(texture_ratio(road.surface)) * texturelength};
-		auto const corner = [&](double const Offset, double const Spread) { return profile_point{Offset, 0.0, static_cast<float>(0.5 + (Offset + Spread * widest) / tile), 0.0, Spread}; };
+		auto const corner = [&](int const Line, double const Spread) {
+			if (changing)
+			{
+				return profile_point{0.0, 0.0, 0.5f, 0.0, Spread, 0.0, 0.0, Line, tile};
+			}
+			auto const offset{distance(Line)};
+			return profile_point{offset, 0.0, static_cast<float>(0.5 + (offset + Spread * widest) / tile), 0.0, Spread};
+		};
 		auto &surface{vertices(road.surface, lighting_data{})};
 		if (false == divided)
 		{
-			loft(surface, axis, {corner(halfwidth, 0.0), corner(-halfwidth, 0.0)}, 0.0, length, step, texturelength, road);
+			loft(surface, axis, {corner(anchor_left, 0.0), corner(anchor_right, 0.0)}, 0.0, length, step, texturelength, road);
 		}
 		else
 		{
-			loft(surface, axis, {corner(halfwidth, 0.5), corner(divide, 0.5)}, 0.0, length, step, texturelength, road);
+			loft(surface, axis, {corner(anchor_left, 0.5), corner(anchor_middle, 0.5)}, 0.0, length, step, texturelength, road);
 			if (road.median.type != median_type::gap)
 			{
 				// the surface carries on between the roadways; an island stands on it, so there's something under its rounded ends
-				loft(surface, axis, {corner(divide, 0.5), corner(divide, -0.5)}, 0.0, length, step, texturelength, road);
+				loft(surface, axis, {corner(anchor_middle, 0.5), corner(anchor_middle, -0.5)}, 0.0, length, step, texturelength, road);
 			}
-			loft(surface, axis, {corner(divide, -0.5), corner(-halfwidth, -0.5)}, 0.0, length, step, texturelength, road);
+			loft(surface, axis, {corner(anchor_middle, -0.5), corner(anchor_right, -0.5)}, 0.0, length, step, texturelength, road);
 		}
 	}
 
@@ -1087,7 +1576,7 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 			stations.emplace_back(length - nose[1] * (1.0 - std::sin(quarter * idx / nosesteps)));
 		}
 		// middle of the island and half of its width, for specified distance from the start of the axis
-		auto const middle = [&](double const Station) { return divide * glm::mix(static_cast<double>(road.taper[0]), static_cast<double>(road.taper[1]), taper_progress(Station / length)); };
+		auto const &middle{meeting};
 		auto const half = [&](double const Station) {
 			auto result{0.5 * glm::mix(static_cast<double>(road.median.width[0]), static_cast<double>(road.median.width[1]), taper_progress(Station / length))};
 			if (Station < nose[0])
@@ -1169,7 +1658,8 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 		auto const emit = [&](std::string const &Material, std::vector<profile_point> Profile) {
 			for (auto &point : Profile)
 			{
-				point.offset = direction * halfwidth;
+				point.offset = (changing ? 0.0 : direction * halfwidth);
+				point.anchor = (changing ? (side == 0 ? anchor_left : anchor_right) : anchor_axis);
 				point.spread = (divided ? direction * 0.5 : 0.0);
 				point.shift *= direction;
 				point.grow *= direction;
@@ -1187,7 +1677,7 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 			auto const tile{static_cast<double>(texture_ratio(Material)) * texturelength};
 			for (int end = 0; end < 2; ++end)
 			{
-				auto const edge{direction * (halfwidth * road.taper[end] + (divided ? 0.5 * road.median.width[end] : 0.0))};
+				auto const edge{direction * (0.5 * road.width(end) * road.taper[end] + (divided ? 0.5 * road.median.width[end] : 0.0))};
 				cap(vertices(Material, lighting_data{}), axis.at(end == 0 ? 0.0 : length),
 				    {{edge + direction * From, 0.0, 0.f}, {edge + direction * From, height, 0.f}, {edge + direction * To, height, 0.f}, {edge + direction * To, 0.0, 0.f}}, end == 1, tile);
 			}
@@ -1258,30 +1748,79 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 		paint.ambient = paint.diffuse;
 		auto &lines{vertices("colored", paint)};
 
-		// Offset: where the line runs on a road as wide as its lanes say, Shift: how far from there it's kept whatever the width,
-		// Spread: which of the roadways it goes with, where the road has two
-		auto const solid = [&](double const Offset, double const Shift, double const Spread) {
-			std::vector<profile_point> const line{{Offset, line_lift, 0.f, Shift + 0.5 * line_width, Spread}, {Offset, line_lift, 1.f, Shift - 0.5 * line_width, Spread}};
-			loft(lines, axis, line, 0.0, length, std::min(step, dash_step), texturelength, road);
+		// Line, Offset: where the line runs on a road as wide as its lanes say, as a distance from one of the lines of the road,
+		// Shift: how far from there it's kept whatever the width, Spread: which of the roadways it goes with, where the road has two,
+		// From, To: part of the piece it's painted on
+		auto const solid = [&](int const Line, double const Offset, double const Shift, double const Spread, double const From, double const To) {
+			std::vector<profile_point> const line{{Offset, line_lift, 0.f, Shift + 0.5 * line_width, Spread, 0.0, 0.0, Line},
+			                                      {Offset, line_lift, 1.f, Shift - 0.5 * line_width, Spread, 0.0, 0.0, Line}};
+			loft(lines, axis, line, From, To, std::min(step, dash_step), texturelength, road);
 		};
 		// the dashes are fitted so the gaps at both ends of the road are a half of the regular one, which makes them match the next piece
-		auto const dashed = [&](double const Offset, double const Shift, double const Spread) {
+		auto const dashed = [&](int const Line, double const Offset, double const Shift, double const Spread, double const From, double const To) {
 			auto const count{std::max(1, static_cast<int>(std::lround(length / dash_period)))};
 			auto const period{length / count};
-			std::vector<profile_point> const line{{Offset, line_lift, 0.f, Shift + 0.5 * line_width, Spread}, {Offset, line_lift, 1.f, Shift - 0.5 * line_width, Spread}};
+			std::vector<profile_point> const line{{Offset, line_lift, 0.f, Shift + 0.5 * line_width, Spread, 0.0, 0.0, Line},
+			                                      {Offset, line_lift, 1.f, Shift - 0.5 * line_width, Spread, 0.0, 0.0, Line}};
 			for (int dash = 0; dash < count; ++dash)
 			{
 				auto const from{(dash + 1.0 / 3.0) * period};
+				if (from < From || from + period / 3.0 > To)
+				{
+					continue;
+				}
 				loft(lines, axis, line, from, from + period / 3.0, dash_step, texturelength, road);
 			}
+		};
+		// part of the piece the line between two lanes is painted on. a lane the road gains or loses along the piece
+		// gets its line where there's room for a half of it
+		auto const stretch = [&](std::size_t const Boundary) {
+			auto const against{static_cast<std::size_t>(road.backward)};
+			std::pair<double, double> result{0.0, length};
+			if (false == changing || Boundary + 1 == against)
+			{
+				return result;
+			}
+			// the one of the two which is further from where the directions meet
+			auto const outer{Boundary + 1 < against ? Boundary : Boundary + 1};
+			if (road.lane_at(outer, 0) && road.lane_at(outer, 1))
+			{
+				return result;
+			}
+			// what the direction needs to be as wide as for the line, on a road as wide as its lanes say
+			auto needed{0.5 * road.lanes[outer].width};
+			for (auto lane{outer < against ? outer + 1 : against}; lane < (outer < against ? against : outer); ++lane)
+			{
+				needed += road.lanes[lane].width;
+			}
+			int const samples{64};
+			auto const room = [&](int const Sample) {
+				auto const fraction{static_cast<double>(Sample) / samples};
+				auto const half{0.5 * road.breadth(fraction)};
+				auto const middle{road.middle(fraction)};
+				auto const scale{glm::mix(static_cast<double>(road.taper[0]), static_cast<double>(road.taper[1]), taper_progress(fraction))};
+				return (outer < against ? half - middle : half + middle) >= needed * scale;
+			};
+			auto first{0};
+			while (first <= samples && false == room(first))
+			{
+				++first;
+			}
+			auto last{samples};
+			while (last >= first && false == room(last))
+			{
+				--last;
+			}
+			result = {length * first / samples, length * last / samples};
+			return result;
 		};
 
 		// edges of the surface
 		auto const inset{edge_inset + 0.5 * line_width};
-		if (halfwidth * std::min(road.taper[0], road.taper[1]) - inset > 0.5)
+		if (0.5 * std::min(road.width(0) * road.taper[0], road.width(1) * road.taper[1]) - inset > 0.5)
 		{
-			solid(halfwidth, -inset, divided ? 0.5 : 0.0);
-			solid(-halfwidth, inset, divided ? -0.5 : 0.0);
+			solid(changing ? anchor_left : anchor_axis, changing ? 0.0 : halfwidth, -inset, divided ? 0.5 : 0.0, 0.0, length);
+			solid(changing ? anchor_right : anchor_axis, changing ? 0.0 : -halfwidth, inset, divided ? -0.5 : 0.0, 0.0, length);
 		}
 		// lines between the lanes. a lane can be left across a dashed line, or across a pair of lines if the dashed one is on its side
 		auto offset{halfwidth};
@@ -1290,11 +1829,19 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 			offset -= road.lanes[boundary].width;
 			auto const opposite{road.backward > 0 && boundary + 1 == static_cast<std::size_t>(road.backward)};
 			auto const pair{0.5 * (line_width + line_spacing)};
+			// the lanes keep their widths, and so the lines between them keep their distance from where the directions meet
+			auto const from{changing ? anchor_middle : anchor_axis};
+			auto const place{changing ? offset - divide : offset};
+			auto const range{stretch(boundary)};
+			if (changing && range.second - range.first < 1.0)
+			{
+				continue;
+			}
 			if (opposite && divided)
 			{
 				// each of the two roadways gets its edge line
-				solid(offset, inset, 0.5);
-				solid(offset, -inset, -0.5);
+				solid(from, place, inset, 0.5, range.first, range.second);
+				solid(from, place, -inset, -0.5, range.first, range.second);
 				continue;
 			}
 			auto const spread{false == divided ? 0.0 : boundary + 1 < static_cast<std::size_t>(road.backward) ? 0.5 : -0.5};
@@ -1302,19 +1849,19 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 			{
 			case change_both:
 			{
-				dashed(offset, 0.0, spread);
+				dashed(from, place, 0.0, spread, range.first, range.second);
 				break;
 			}
 			case change_toright:
 			{
-				dashed(offset, pair, spread);
-				solid(offset, -pair, spread);
+				dashed(from, place, pair, spread, range.first, range.second);
+				solid(from, place, -pair, spread, range.first, range.second);
 				break;
 			}
 			case change_toleft:
 			{
-				solid(offset, pair, spread);
-				dashed(offset, -pair, spread);
+				solid(from, place, pair, spread, range.first, range.second);
+				dashed(from, place, -pair, spread, range.first, range.second);
 				break;
 			}
 			default:
@@ -1322,12 +1869,12 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 				if (opposite)
 				{
 					// traffic going opposite ways is kept apart with a double line
-					solid(offset, pair, spread);
-					solid(offset, -pair, spread);
+					solid(from, place, pair, spread, range.first, range.second);
+					solid(from, place, -pair, spread, range.first, range.second);
 				}
 				else
 				{
-					solid(offset, 0.0, spread);
+					solid(from, place, 0.0, spread, range.first, range.second);
 				}
 				break;
 			}
@@ -1344,8 +1891,7 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 			auto const edge = [&](double const Station, double const Side) {
 				auto const station{std::clamp(Station, 0.0, length)};
 				auto const frame{axis.at(station)};
-				auto const scale{glm::mix(static_cast<double>(road.taper[0]), static_cast<double>(road.taper[1]), taper_progress(station / length))};
-				return frame.position + frame.left * (divide * scale + Side * std::max(0.0, 0.5 * gap_at(station) - 2.0 * inset)) + up * line_lift;
+				return frame.position + frame.left * (meeting(station) + Side * std::max(0.0, 0.5 * gap_at(station) - 2.0 * inset)) + up * line_lift;
 			};
 			// the stripes are spread evenly over the piece, and none of them reaches past its ends
 			auto const count{std::max(1, static_cast<int>(std::lround(length / period)))};
@@ -1527,6 +2073,27 @@ double lane_grade(TTrack const &Lane, bool const Atend)
 	auto const direction{control != glm::dvec3{0.0} ? (Atend ? -control : control) : path.points[segment_data::point::end] - path.points[segment_data::point::start]};
 	auto const run{glm::length(glm::dvec2{direction.x, direction.z})};
 	return run > 1e-6 ? direction.y / run : 0.0;
+}
+
+// what a driver calls the way of a fork which leads to specified lane: the number of the path of the crossroads it's on,
+// negative if it's taken against the path. 0 if the fork doesn't lead to the lane
+int fork_code(TTrack const &Fork, TTrack const *Lane)
+{
+	if (Fork.SwitchExtension == nullptr || Lane == nullptr)
+	{
+		return 0;
+	}
+	auto const &extension{*Fork.SwitchExtension};
+	if (extension.pNexts[0] == Lane)
+	{
+		return 1;
+	}
+	if (extension.pNexts[1] != nullptr)
+	{
+		// three ways out
+		return extension.pNexts[1] == Lane ? 5 : extension.pPrevs[1] == Lane ? -4 : 0;
+	}
+	return extension.pPrevs[1] == Lane ? -2 : 0;
 }
 
 } // namespace
@@ -1997,6 +2564,60 @@ void junction_node::define(state const &State)
 	m_area.radius = -1.f;
 }
 
+// a junction of two roads is a stretch where a road changes its lanes, which a road can do by itself
+bool junction_node::as_road(road_node::state &Road) const
+{
+	auto const &arms{m_state.arms};
+	if (arms.size() != 2)
+	{
+		return false;
+	}
+	auto const &from{arms[0]};
+	auto const &to{arms[1]};
+	auto const span{glm::distance(from.position, to.position)};
+	if (span < 0.1)
+	{
+		return false;
+	}
+	road_node::state road;
+	// the axis is the way from the first road to the second, which leaves and joins them the way they go
+	road.axis.points[segment_data::point::start] = from.position;
+	road.axis.points[segment_data::point::control1] = glm::dvec3{0.0} - flat(from.direction) * (0.39 * span);
+	road.axis.points[segment_data::point::control2] = glm::dvec3{0.0} - flat(to.direction) * (0.39 * span);
+	road.axis.points[segment_data::point::end] = to.position;
+	// at the first road the lanes leading into the junction go the way the axis does, at the second one it's the lanes leading out of it
+	road.lanewidth = from.width;
+	road.velocity = m_state.velocity;
+	road.lanes_between(from.incoming, from.outgoing, to.outgoing, to.incoming);
+	road.taper = {1.f, from.width > 0.f ? to.width / from.width : 1.f};
+	road.median.type = m_state.median;
+	road.median.material = m_state.medianmaterial;
+	road.median.width = {from.median, to.median};
+	road.surface = m_state.surface;
+	road.texturelength = m_state.texturelength;
+	road.markings = m_state.markings;
+	road.sides = {m_state.side, m_state.side};
+	road.kerbs = {m_state.kerbs, m_state.kerbs};
+	road.kerbwidth = m_state.kerbwidth;
+	road.kerbmaterial = m_state.kerbmaterial;
+	road.kerbheight = m_state.kerbheight;
+	road.slope = m_state.slope;
+	// the bank of the corner which starts at the first road runs along the right edge. the one which starts at the second road
+	// runs along the left edge, the other way
+	road.banks[1] = from.bank;
+	road.banks[0] = to.bank;
+	std::swap(road.banks[0].width[0], road.banks[0].width[1]);
+	std::swap(road.banks[0].drop[0], road.banks[0].drop[1]);
+	road.bankmaterial = m_state.bankmaterial;
+	road.friction = m_state.friction;
+	road.sounddistance = m_state.sounddistance;
+	road.quality = m_state.quality;
+	road.environment = m_state.environment;
+	road.normalize();
+	Road = road;
+	return true;
+}
+
 // makes paths leading through the junction, between the lanes of the roads attached to it at the moment
 void junction_node::create_links()
 {
@@ -2016,7 +2637,7 @@ void junction_node::create_links()
 		lanes[arm].outgoing.assign(static_cast<std::size_t>(arms[arm].outgoing), nullptr);
 		for (auto const *road : simulation::Roads.sequence())
 		{
-			if (road == nullptr || road->m_editorremoved || road->tracks().size() != road->definition().lanes.size())
+			if (road == nullptr || road->m_editorremoved)
 			{
 				continue;
 			}
@@ -2031,18 +2652,21 @@ void junction_node::create_links()
 				// the lanes heading for this end of the road lead into the junction, the others lead out of it
 				for (int lane = 1; lane <= arms[arm].incoming; ++lane)
 				{
+					// the road may have other lanes at its other end; it's the ones it has here which count
 					auto const index{layout.lane_index((atend ? "f" : "b") + std::to_string(lane))};
-					if (index >= 0 && road->tracks()[index] != nullptr && glm::distance(glm::dvec3{road->tracks()[index]->CurrentSegment()->FastGetPoint_1()}, m_state.lane_point(arm, true, lane)) < junction_fit)
+					auto *track{index >= 0 ? road->lane_track(static_cast<std::size_t>(index), atend ? 1 : 0) : nullptr};
+					if (track != nullptr && glm::distance(glm::dvec3{track->CurrentSegment()->FastGetPoint_1()}, m_state.lane_point(arm, true, lane)) < junction_fit)
 					{
-						lanes[arm].incoming[lane - 1] = road->tracks()[index];
+						lanes[arm].incoming[lane - 1] = track;
 					}
 				}
 				for (int lane = 1; lane <= arms[arm].outgoing; ++lane)
 				{
 					auto const index{layout.lane_index((atend ? "b" : "f") + std::to_string(lane))};
-					if (index >= 0 && road->tracks()[index] != nullptr && glm::distance(glm::dvec3{road->tracks()[index]->CurrentSegment()->FastGetPoint_0()}, m_state.lane_point(arm, false, lane)) < junction_fit)
+					auto *track{index >= 0 ? road->lane_track(static_cast<std::size_t>(index), atend ? 1 : 0) : nullptr};
+					if (track != nullptr && glm::distance(glm::dvec3{track->CurrentSegment()->FastGetPoint_0()}, m_state.lane_point(arm, false, lane)) < junction_fit)
 					{
-						lanes[arm].outgoing[lane - 1] = road->tracks()[index];
+						lanes[arm].outgoing[lane - 1] = track;
 					}
 				}
 			}
@@ -2339,15 +2963,39 @@ void junction_node::create_gates()
 		auto &gate{m_gates[index]};
 		// lanes the vehicles heading for the junction are on: the one leading in, and the same lane of the pieces before it
 		gate.approach.emplace_back(gate.entry);
+		gate.wishes.emplace_back(0);
 		auto reach{glm::distance(glm::dvec3{gate.entry->CurrentSegment()->FastGetPoint_0()}, glm::dvec3{gate.entry->CurrentSegment()->FastGetPoint_1()})};
 		for (auto *lane{gate.entry}; reach < gate_reach && gate.approach.size() < 16;)
 		{
 			auto *previous{lane->trPrev};
-			if (previous == nullptr || previous->trNext != lane || dynamic_cast<road_node const *>(previous->m_road) == nullptr || previous->m_paths.size() != 1)
+			// lanes a road loses join the one which is left: the vehicles on the paths leading them here are coming this way too
+			if (auto const *owner{dynamic_cast<road_node const *>(lane->m_road)}; owner != nullptr)
+			{
+				for (auto *link : owner->links())
+				{
+					if (link != previous && link->trNext == lane && link->m_paths.size() == 1)
+					{
+						gate.approach.emplace_back(link);
+						gate.wishes.emplace_back(0);
+					}
+				}
+			}
+			auto wish{0};
+			if (previous != nullptr && previous->m_paths.size() > 1 && dynamic_cast<road_node const *>(previous->m_road) != nullptr)
+			{
+				// a path on which a road forks into more lanes: of the vehicles on it the ones which picked the way leading here count
+				wish = fork_code(*previous, lane);
+				if (wish == 0)
+				{
+					break;
+				}
+			}
+			else if (previous == nullptr || previous->trNext != lane || dynamic_cast<road_node const *>(previous->m_road) == nullptr || previous->m_paths.size() != 1)
 			{
 				break;
 			}
 			gate.approach.emplace_back(previous);
+			gate.wishes.emplace_back(wish);
 			reach += glm::distance(glm::dvec3{previous->CurrentSegment()->FastGetPoint_0()}, glm::dvec3{previous->CurrentSegment()->FastGetPoint_1()});
 			lane = previous;
 		}
@@ -2457,13 +3105,24 @@ void junction_node::update(double const Deltatime)
 	{
 		TDynamicObject *first{nullptr};
 		auto nearest{std::numeric_limits<double>::max()};
-		for (auto const *lane : gate.approach)
+		for (std::size_t idx = 0; idx < gate.approach.size(); ++idx)
 		{
+			auto *lane{gate.approach[idx]};
+			auto const wish{idx < gate.wishes.size() ? gate.wishes[idx] : 0};
 			for (auto *vehicle : lane->Dynamics)
 			{
 				if (vehicle == nullptr)
 				{
 					continue;
+				}
+				if (wish != 0)
+				{
+					// on a fork: the ones which picked another lane aren't coming this way
+					auto const picked{vehicle->RouteWish(lane)};
+					if (picked != 0 && picked != wish)
+					{
+						continue;
+					}
 				}
 				auto const position{vehicle->GetPosition()};
 				auto const distance{glm::distance(glm::dvec2{position.x, position.z}, glm::dvec2{gate.line.x, gate.line.z})};
@@ -3375,7 +4034,13 @@ TTrack *road_node::create_track(std::string const &Name, segment_data const &Pat
 	}
 	text << "endtrack";
 
-	cParser parser(text.str(), cParser::buffer_TEXT);
+	return create_track(Name, text.str());
+}
+
+// creates a path for the vehicles from its definition and registers it with the simulation
+TTrack *road_node::create_track(std::string const &Name, std::string const &Definition)
+{
+	cParser parser(Definition, cParser::buffer_TEXT);
 	scene::node_data nodedata;
 	nodedata.range_max = -1.0;
 	nodedata.name = Name;
@@ -3435,7 +4100,12 @@ void road_node::export_as_text_(std::ostream &Output) const
 	       << road.axis.radius << ' ';
 	Output.precision(precision);
 	// lanes
-	Output << "lanes " << road.forward << ' ' << road.backward << ' ' << "width " << road.lanewidth << ' ';
+	Output << "lanes " << road.lanes_at(0, true) << ' ' << road.lanes_at(0, false) << ' ';
+	if (road.changing())
+	{
+		Output << "lanesto " << road.lanes_at(1, true) << ' ' << road.lanes_at(1, false) << ' ';
+	}
+	Output << "width " << road.lanewidth << ' ';
 	if (road.taper[0] != 1.f || road.taper[1] != 1.f)
 	{
 		Output << "taper " << road.taper[0] << ' ' << road.taper[1] << ' ';
@@ -3517,6 +4187,19 @@ void road_node::export_as_text_(std::ostream &Output) const
 }
 
 // legacy style initialization, to be performed when the tracks are already joined
+void road_table::InitLanes()
+{
+	// the pieces which gain or lose lanes lead the ones they have at one end to the ones they have at the other
+	for (auto *road : m_items)
+	{
+		if (road != nullptr)
+		{
+			road->create_links();
+		}
+	}
+}
+
+// legacy style initialization, to be performed when the junctions are done
 void road_table::InitRoads()
 {
 	for (auto *road : m_items)

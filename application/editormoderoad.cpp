@@ -313,6 +313,12 @@ void editor_mode::road_select(road_node *Road)
 		if (false == editor_road::can_edit(*Road, &reason))
 			tool.status += ". It can't be changed: " + reason;
 	}
+	else
+	{
+		// the layout stays for the build tool, which makes pieces with the same lanes all the way
+		tool.settings.missing = {};
+	}
+	tool.varied = tool.settings.changing();
 	copy_text(tool.surface, sizeof(tool.surface), tool.settings.surface);
 	for (int side = 0; side < 2; ++side)
 		copy_text(tool.sides[side], sizeof(tool.sides[side]), tool.settings.sides[side].material);
@@ -390,6 +396,11 @@ void editor_mode::roadpoint_aim(bool const Fresh)
 		if (road == nullptr)
 		{
 			tool.targetnote = "Point at the place a road crosses the rails";
+			return;
+		}
+		if (road->definition().changing())
+		{
+			tool.targetnote = "The road gains or loses lanes on this piece; a level crossing goes on a piece which keeps its lanes";
 			return;
 		}
 		glm::dvec3 middle{0.0};
@@ -1197,7 +1208,8 @@ void editor_mode::road_click()
 			{
 				// carried on from its start the road keeps the direction of its axis, so the lanes stay what they were
 				tool.reversed = (false == end.atend);
-				tool.settings = end.road->definition();
+				// with the lanes it has at that end
+				tool.settings = end.road->definition().section(end.atend ? 1 : 0);
 				// and it stays as wide as it is at that end, with its directions as far apart
 				auto const scale{tool.settings.taper[end.atend ? 1 : 0]};
 				tool.settings.taper = {scale, scale};
@@ -1216,6 +1228,7 @@ void editor_mode::road_click()
 					tool.settings = end.road->definition();
 					tool.settings.sides[end.half > 0 ? 0 : 1] = road_node::side_data{};
 					tool.settings.banks = {};
+					tool.settings.missing = {};
 				}
 				tool.settings.forward = end.forward;
 				tool.settings.backward = end.backward;
@@ -1320,6 +1333,7 @@ void editor_mode::road_click()
 	{
 		auto state{tool.settings};
 		state.axis = pieces[index];
+		state.missing = {};
 		auto const from{along(index)};
 		auto const to{along(index + 1)};
 		auto const &median{tool.settings.median};
@@ -1373,7 +1387,8 @@ void editor_mode::road_apply()
 	if (tool.selected == nullptr)
 		return;
 	tool.settings.normalize();
-	auto const pieces{tool.whole ? editor_road::chain(*tool.selected) : std::vector<road_node *>{tool.selected}};
+	// other lanes at the end are something the selected piece has for itself; the rest of the road keeps the lanes it has
+	auto const pieces{tool.whole && false == tool.settings.changing() ? editor_road::chain(*tool.selected) : std::vector<road_node *>{tool.selected}};
 	editor_road::record record;
 	std::vector<std::pair<road_node *, road_node::state>> changes;
 	// the banks are kept for each piece as they are, unless it's the banks which were just changed
@@ -1674,6 +1689,11 @@ bool editor_mode::road_split()
 		tool.status = "Can't split: " + reason;
 		return true;
 	}
+	if (road->definition().changing())
+	{
+		tool.status = "Can't split a piece which gains or loses lanes; give it the same lanes at both ends first";
+		return true;
+	}
 	editor_road::record record;
 	record.roads.emplace_back(road, road->definition());
 	auto *created{editor_road::split(*road, editor_road::nearest_parameter(road->definition(), tool.mouse))};
@@ -1735,7 +1755,7 @@ void editor_mode::road_point_width(float const Width)
 {
 	// the pieces on both sides of a point get to that width there, and from there go back to their own along their length
 	auto const changes{point_changes(m_roadtool.points, [Width](road_node::state &State, bool const Atend, std::size_t const) {
-		auto const width{State.width()};
+		auto const width{State.width(Atend ? 1 : 0)};
 		if (width > 0.0)
 			State.taper[Atend ? 1 : 0] = std::clamp(static_cast<float>(Width / width), 0.25f, 4.f);
 	})};
@@ -1931,19 +1951,52 @@ bool editor_mode::render_road_layout(road_node::state &State)
 	};
 	auto const material = [this](char const *Label, char *Buffer, std::size_t const Size, std::string &Value) { return render_road_material(Label, Buffer, Size, Value); };
 
-	// lanes
-	ImGui::SetNextItemWidth(120.0f);
-	if (ImGui::InputInt("Lanes along the axis", &State.forward))
-		changed = true;
-	ImGui::SetNextItemWidth(120.0f);
-	if (ImGui::InputInt("Lanes against the axis", &State.backward))
-		changed = true;
-	if (changed)
+	// lanes. a piece of a road which is there already can end with other lanes than it starts with
 	{
-		// a different set of lanes starts with the common width and speed limit, and the default rules for changing lanes
-		State.lanes.clear();
-		State.changes.clear();
-		State.normalize();
+		auto const selecting{tool.tool == 0 && tool.selected != nullptr};
+		int counts[2][2]{{State.lanes_at(0, true), State.lanes_at(0, false)}, {State.lanes_at(1, true), State.lanes_at(1, false)}};
+		bool relaned{false};
+		ImGui::SetNextItemWidth(120.0f);
+		if (ImGui::InputInt(selecting && tool.varied ? "Lanes along the axis, at the start" : "Lanes along the axis", &counts[0][0]))
+			relaned = true;
+		ImGui::SetNextItemWidth(120.0f);
+		if (ImGui::InputInt(selecting && tool.varied ? "Lanes against the axis, at the start" : "Lanes against the axis", &counts[0][1]))
+			relaned = true;
+		if (selecting)
+		{
+			// ticked it only shows the lanes of the end to be set; unticked it gives the end the lanes of the start
+			if (ImGui::Checkbox("Other lanes at the end of the piece", &tool.varied) && false == tool.varied && State.changing())
+				relaned = true;
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", "The road gains or loses lanes along this piece: it gets wider or narrower, a lane it gains branches off the outermost lane\n"
+				                        "of its direction (two at most), a lane it loses joins the outermost one left.\n"
+				                        "What's next to the piece is fitted to the lanes the piece has at that end.\n"
+				                        "The axis goes the way the lanes drawn in green do: the start of the piece is where these come from.\n"
+				                        "Split the piece (K) first to have the lanes change over a part of it.");
+			if (tool.varied)
+			{
+				ImGui::SetNextItemWidth(120.0f);
+				if (ImGui::InputInt("Lanes along the axis, at the end", &counts[1][0]))
+					relaned = true;
+				ImGui::SetNextItemWidth(120.0f);
+				if (ImGui::InputInt("Lanes against the axis, at the end", &counts[1][1]))
+					relaned = true;
+			}
+		}
+		// the traffic going along the axis gets on the piece at its start, the one going against it at its end
+		if (State.lanes_at(1, true) - State.lanes_at(0, true) > 2 || State.lanes_at(0, false) - State.lanes_at(1, false) > 2)
+			ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "A lane forks into three at most: lanes past the second one gained can't be got on");
+		if (relaned)
+		{
+			if (false == selecting || false == tool.varied)
+			{
+				counts[1][0] = counts[0][0];
+				counts[1][1] = counts[0][1];
+			}
+			// a different set of lanes starts with the common width and speed limit, and the default rules for changing lanes
+			State.lanes_between(counts[0][0], counts[0][1], counts[1][0], counts[1][1]);
+			changed = true;
+		}
 	}
 	if (number("Lane width [m]", State.lanewidth, 0.25f, "%.2f"))
 	{
@@ -2342,7 +2395,7 @@ void editor_mode::render_road_window()
 		if (false == ends.empty())
 		{
 			auto const &layout{ends.front().road->definition()};
-			auto width{static_cast<float>(layout.width() * layout.taper[ends.front().atend ? 1 : 0])};
+			auto width{static_cast<float>(layout.width(ends.front().atend ? 1 : 0) * layout.taper[ends.front().atend ? 1 : 0])};
 			if (number("Road width here [m]", width, 0.25f, "%.2f"))
 				road_point_width(std::clamp(width, 1.0f, 100.0f));
 			if (ImGui::IsItemHovered())
@@ -2410,12 +2463,20 @@ void editor_mode::render_road_window()
 	else if (tool.selected != nullptr)
 	{
 		auto const &road{*tool.selected};
-		ImGui::Text("%s, %.1f m, %d + %d lanes", road.name().c_str(), road.definition().length(), road.definition().forward, road.definition().backward);
+		auto const &layout{road.definition()};
+		if (layout.changing())
+			ImGui::Text("%s, %.1f m, %d + %d to %d + %d lanes", road.name().c_str(), layout.length(), layout.lanes_at(0, true), layout.lanes_at(0, false), layout.lanes_at(1, true),
+			            layout.lanes_at(1, false));
+		else
+			ImGui::Text("%s, %.1f m, %d + %d lanes", road.name().c_str(), layout.length(), layout.forward, layout.backward);
 		if (ImGui::Button("Delete (Del)"))
 			road_delete();
 		ImGui::SameLine();
 		ImGui::TextDisabled("K: split at the cursor");
-		ImGui::Checkbox("Changes go to the whole road", &tool.whole);
+		if (tool.settings.changing())
+			ImGui::TextDisabled("This piece has lanes of its own at its end, so it's changed alone");
+		else
+			ImGui::Checkbox("Changes go to the whole road", &tool.whole);
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", "A road is a string of pieces. With this on a change of the layout is made to all of them,\nexcept for the lane change rules, which are always set for the selected piece alone.\nWith this off the selected piece alone is changed, and the road next to it is fitted to it:\nmade wider or narrower towards it, or given a stretch where the lanes change if their number differs.\nSplit a piece (K) to get a piece of the length you need.");
 		ImGui::Separator();
@@ -2474,15 +2535,18 @@ void editor_mode::draw_road_overlay() const
 			if (false == projection.room(drawlist))
 				break;
 			auto const against{static_cast<std::size_t>(road->definition().backward)};
-			auto const &tracks{road->tracks()};
-			for (std::size_t lane = 0; lane < tracks.size(); ++lane)
+			// a lane of a piece which gains or loses lanes is a path at each end of the piece; the ways between these are drawn below
+			auto const lanecount{road->definition().lanes.size()};
+			for (std::size_t slot = 0; slot < 2 * lanecount; ++slot)
 			{
-				if (tracks[lane] == nullptr || tracks[lane]->m_paths.empty())
+				auto const lane{slot / 2};
+				auto const *track{road->lane_track(lane, static_cast<int>(slot % 2))};
+				if (track == nullptr || track->m_paths.empty() || (slot % 2 == 1 && track == road->lane_track(lane, 0)))
 					continue;
-				auto const &path{tracks[lane]->m_paths.front()};
+				auto const &path{track->m_paths.front()};
 				auto const color{lane >= against ? kForwardColor : kBackwardColor};
 				drawpath(path, color, 2.0f, is_curved(path) ? pieces(path, road->location()) : 1);
-				if (range > 300.0)
+				if (range > 300.0 || road->definition().changing())
 					continue;
 				auto const middle{path_point(path, 0.5)};
 				auto direction{path_point(path, 0.52) - middle};
@@ -2499,6 +2563,9 @@ void editor_mode::draw_road_overlay() const
 				if (turn != nullptr && false == turn->m_paths.empty() && range < 300.0)
 					drawpath(turn->m_paths.front(), kTurnColor, 1.5f, 8);
 			}
+			// ways from the lanes at one end to the lanes at the other
+			for (auto const &way : road->ways())
+				drawpath(way, kWayColor, 1.5f, pieces(way, road->location()));
 		}
 		// ways through the junctions
 		for (auto const *junction : simulation::Junctions.sequence())

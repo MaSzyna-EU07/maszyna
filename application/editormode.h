@@ -512,6 +512,7 @@ class editor_mode : public application_mode
 		std::vector<glm::dvec3> points; // selected points where the pieces meet or end
 		road_node::state settings; // layout shown in the window: of the selected piece, or of the pieces about to be built
 		bool whole{true}; // layout changes go to every piece of the road the selected one belongs to
+		bool varied{false}; // the selected piece is shown with lanes of its own for its end
 		bool chain{false}; // the point to build from is set
 		glm::dvec3 point{0.0}; // where the next piece starts
 		glm::dvec2 direction{0.0, 1.0}; // the way it has to leave that point
