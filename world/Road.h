@@ -56,6 +56,7 @@ class owned_shapes
 // scenery entry:
 // node <max> <min> <name> road <axis, laid out like a path of a track> [<property> <values>]... endroad
 // properties, past the ones of the lanes and the look: median <gap|painted|island> <width at the start> <width at the end> <material>,
+// medianround <length of the rounded end of an island at the start> <at the end>,
 // kerbs <left|right|both> <width> <material>, bank <left|right|both> <width at the start> <drop at the start> <width at the end> <drop at the end>,
 // bankmaterial <material>, weight <value>, roundabout
 class road_node : public scene::basic_node
@@ -106,6 +107,7 @@ class road_node : public scene::basic_node
 		median_type type{median_type::painted};
 		std::array<float, 2> width{0.f, 0.f}; // at the start and at the end of the axis
 		std::string material{"none"}; // what an island is covered with
+		std::array<float, 2> round{0.f, 0.f}; // length of the rounded end of an island, at the start and at the end of the axis. 0: the island is cut straight
 	};
 	// slope leading from the edge of the road down, or up, to the ground
 	struct bank_data
@@ -113,6 +115,11 @@ class road_node : public scene::basic_node
 		bool set{false}; // false: a shoulder gets the bank the road gives to all its shoulders, anything else gets none
 		std::array<float, 2> width{0.f, 0.f}; // at the start and at the end of the axis
 		std::array<float, 2> drop{0.f, 0.f}; // how far below the edge of the road it ends; negative if it rises
+
+		bool operator==(bank_data const &Other) const
+		{
+			return set == Other.set && width == Other.width && drop == Other.drop;
+		}
 	};
 	// everything the scenery says about the road. the lanes go left to right when facing along the axis:
 	// the ones going against it, outermost first, then the ones going along it
@@ -253,7 +260,10 @@ class road_node : public scene::basic_node
 // properties: surface <material>, texlength <m>, markings <white|orange|none>, side <none|shoulder|sidewalk> <width> <material>, kerb <height>,
 // slope <width> <drop>, stopline <number of an arm, counted from 1>, velocity <km/h>, friction <value>, environment <name>,
 // priority <arm> <none|main|yield|stop>, turns <arm> <lane leading in, counted from the middle of the road> <letters out of l, s, r>,
-// armmedian <arm> <width of what keeps the two directions of the road apart there>, kerbs <width> <material>
+// armmedian <arm> <width of what keeps the two directions of the road apart there>, kerbs <width> <material>,
+// cornerbank <arm> <width> <drop> <width> <drop> (at that road, then at the next one), bankmaterial <material>,
+// crosswalk <arm> <length>, median <gap|painted|island> <material>
+// a junction of two roads is drawn as a stretch of road, on which the lanes of one are led to the lanes of the other
 // the arms don't have to be level with each other: the surface is spanned between their ends and the centre.
 // the junction also tells the vehicles when to wait: the ones which have to give way wait for the ones with the right of way,
 // and where neither has it, for the ones coming from their right, or from the opposite side when turning left across their way
@@ -286,6 +296,10 @@ class junction_node : public scene::basic_node
 		float width{3.5f}; // width of a lane
 		bool stopline{false}; // a line is painted across the lanes leading into the junction
 		float median{0.f}; // how far apart the two directions of the road are there
+		float crosswalk{0.f}; // length of the pedestrian crossing painted across the road where it meets the junction; 0: none
+		// slope leading to the ground from the corner which starts at the left edge of this road, seen from the junction, and goes on
+		// to the next road. it starts at this road and ends at the next one
+		road_node::bank_data bank;
 		right_of_way priority{right_of_way::none};
 		// ways each lane leading into the junction can be left by, a sum of turn_flags; the lanes are counted from the middle of the road.
 		// a lane with no entry, or with 0, gets what the junction works out: the inner lane takes the left turns, the outer one the right turns
@@ -339,6 +353,10 @@ class junction_node : public scene::basic_node
 		std::string kerbmaterial{"none"};
 		float kerbheight{0.12f};
 		glm::vec2 slope{1.f, 0.4f}; // width and drop of the bank which closes a shoulder
+		std::string bankmaterial{"none"}; // what a bank of a corner is covered with, other than one of a shoulder
+		// a junction of two roads, where a road changes its lanes: what's between the two directions where they're apart
+		road_node::median_type median{road_node::median_type::painted};
+		std::string medianmaterial{"none"}; // what an island is covered with
 		float velocity{30.f}; // speed limit on the way through
 		float friction{0.85f};
 		float sounddistance{25.f};
@@ -413,6 +431,8 @@ class junction_node : public scene::basic_node
 	void export_as_text_(std::ostream &Output) const override;
 	// creates a path through the junction from provided definition and registers it with the simulation
 	TTrack *create_track(std::string const &Definition, std::size_t const Index);
+	// geometry of a junction of two roads
+	std::vector<scene::shape_node> create_transition_shapes() const;
 	// sets up what the traffic of each lane leading in is told, once the ways through are made
 	void create_gates();
 	// members

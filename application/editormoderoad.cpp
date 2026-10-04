@@ -336,6 +336,8 @@ void editor_mode::junction_select(junction_node *Junction)
 	copy_text(tool.surface, sizeof(tool.surface), Junction->definition().surface);
 	copy_text(tool.sides[0], sizeof(tool.sides[0]), Junction->definition().side.material);
 	copy_text(tool.kerbtext, sizeof(tool.kerbtext), Junction->definition().kerbmaterial);
+	copy_text(tool.banktext, sizeof(tool.banktext), Junction->definition().bankmaterial);
+	copy_text(tool.mediantext, sizeof(tool.mediantext), Junction->definition().medianmaterial);
 }
 
 void editor_mode::roadpoint_select(roadpoint_node *Point)
@@ -771,6 +773,59 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 		ImGui::Unindent();
 	}
 
+	// banks leading from the corners to the ground
+	if (ImGui::CollapsingHeader("Banks to the ground"))
+	{
+		if (render_road_material("Bank material", tool.banktext, sizeof(tool.banktext), state.bankmaterial))
+			changed = true;
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", "What the banks are covered with next to a sidewalk, a kerb or the bare edge.\nA bank of a shoulder is covered with the material of the shoulder.");
+		ImGui::SetNextItemWidth(120.0f);
+		if (ImGui::InputFloat("Run for a metre of drop [m]", &tool.bankgrade, 0.25f, 0.5f, "%.2f"))
+			tool.bankgrade = std::clamp(tool.bankgrade, 0.25f, 10.0f);
+		if (ImGui::Button("Lead the banks to the ground"))
+		{
+			if (changed)
+				junction_apply(Junction, state);
+			junction_bank_to_ground(Junction);
+			return;
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", "Looks for the ground past each corner, at both roads the corner runs between,\n"
+			                        "and sets the bank of the corner to reach it. Done for the roads too, the banks meet at the ends of the roads.");
+		auto banked{false};
+		for (auto const &arm : state.arms)
+			banked = banked || arm.bank.set;
+		if (banked)
+		{
+			ImGui::SameLine();
+			if (ImGui::Button("Remove them"))
+			{
+				for (auto &arm : state.arms)
+					arm.bank = road_node::bank_data{};
+				changed = true;
+			}
+		}
+	}
+	if (state.arms.size() == 2)
+	{
+		// where a road changes its lanes: what's between its two directions, if the roads keep them apart
+		ImGui::Separator();
+		char const *mediantypes[]{"nothing, the ground shows", "surface closed to the traffic", "island"};
+		int median{state.median == road_node::median_type::gap ? 0 : state.median == road_node::median_type::island ? 2 : 1};
+		ImGui::SetNextItemWidth(220.0f);
+		if (ImGui::Combo("Between the directions", &median, mediantypes, 3))
+		{
+			state.median = (median == 0 ? road_node::median_type::gap : median == 2 ? road_node::median_type::island : road_node::median_type::painted);
+			changed = true;
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", "Shows where a road which keeps its two directions apart meets this stretch:\n"
+			                        "what's between the directions is led on to the other road, where it closes or carries on.");
+		if (state.median == road_node::median_type::island && render_road_material("Island material", tool.mediantext, sizeof(tool.mediantext), state.medianmaterial))
+			changed = true;
+	}
+
 	// the roads
 	if (ImGui::CollapsingHeader("Roads of the junction", ImGuiTreeNodeFlags_DefaultOpen))
 	{
@@ -782,9 +837,30 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 			ImGui::PushID(static_cast<int>(arm));
 			auto &data{state.arms[arm]};
 			ImGui::Text("%d: %d in, %d out, %.2f m a lane", static_cast<int>(arm) + 1, data.incoming, data.outgoing, data.width);
-			ImGui::SameLine();
-			if (ImGui::Checkbox("Stop line", &data.stopline))
-				changed = true;
+			if (state.arms.size() > 2)
+			{
+				ImGui::SameLine();
+				if (ImGui::Checkbox("Stop line", &data.stopline))
+					changed = true;
+				// stripes for the pedestrians, across the whole road where it meets the junction
+				ImGui::SameLine();
+				bool zebra{data.crosswalk > 0.f};
+				if (ImGui::Checkbox("Pedestrian crossing", &zebra))
+				{
+					data.crosswalk = (zebra ? 4.f : 0.f);
+					changed = true;
+				}
+				if (zebra)
+				{
+					ImGui::SameLine();
+					ImGui::SetNextItemWidth(90.0f);
+					if (ImGui::InputFloat("m##crosswalk", &data.crosswalk, 0.5f, 1.0f, "%.1f", ImGuiInputTextFlags_EnterReturnsTrue))
+					{
+						data.crosswalk = std::clamp(data.crosswalk, 1.0f, 20.0f);
+						changed = true;
+					}
+				}
+			}
 			if (data.incoming > 0 && state.arms.size() > 2)
 			{
 				ImGui::Indent();
@@ -1231,10 +1307,31 @@ void editor_mode::road_click()
 		editor_road::carry_out(plan.end, record);
 	}
 	std::vector<road_node::state> states;
+	// what changes from the start of a piece to its end is spread over the whole stretch being built,
+	// so the pieces don't each go through all of it
+	std::vector<double> stations{0.0};
 	for (auto const &piece : pieces)
+		stations.emplace_back(stations.back() + editor_road::planar_length(piece));
+	auto const along = [&stations](std::size_t const Index) {
+		auto const fraction{stations.back() > 0.0 ? stations[Index] / stations.back() : 0.0};
+		return static_cast<float>(fraction * fraction * (3.0 - 2.0 * fraction));
+	};
+	for (std::size_t index = 0; index < pieces.size(); ++index)
 	{
 		auto state{tool.settings};
-		state.axis = piece;
+		state.axis = pieces[index];
+		auto const from{along(index)};
+		auto const to{along(index + 1)};
+		auto const &median{tool.settings.median};
+		state.median.width = {glm::mix(median.width[0], median.width[1], from), glm::mix(median.width[0], median.width[1], to)};
+		// an island is rounded where the stretch starts and ends
+		state.median.round = {index == 0 ? median.round[0] : 0.f, index + 1 == pieces.size() ? median.round[1] : 0.f};
+		for (std::size_t side = 0; side < state.banks.size(); ++side)
+		{
+			auto const &bank{tool.settings.banks[side]};
+			state.banks[side].width = {glm::mix(bank.width[0], bank.width[1], from), glm::mix(bank.width[0], bank.width[1], to)};
+			state.banks[side].drop = {glm::mix(bank.drop[0], bank.drop[1], from), glm::mix(bank.drop[0], bank.drop[1], to)};
+		}
 		states.emplace_back(state);
 	}
 	auto const created{editor_road::create(states)};
@@ -1279,6 +1376,8 @@ void editor_mode::road_apply()
 	auto const pieces{tool.whole ? editor_road::chain(*tool.selected) : std::vector<road_node *>{tool.selected}};
 	editor_road::record record;
 	std::vector<std::pair<road_node *, road_node::state>> changes;
+	// the banks are kept for each piece as they are, unless it's the banks which were just changed
+	auto const banked{tool.settings.banks != tool.selected->definition().banks};
 	for (auto *road : pieces)
 	{
 		std::string reason;
@@ -1295,9 +1394,12 @@ void editor_mode::road_apply()
 		state.taper = road->definition().taper;
 		if (road != tool.selected)
 		{
-			// and so are the banks, and how far apart the two directions are led
+			// and so is how far apart the two directions are led, and the rounded ends of what's between them
 			state.median.width = road->definition().median.width;
-			state.banks = road->definition().banks;
+			state.median.round = road->definition().median.round;
+			// banks led to the ground differ from piece to piece, so a change of something else leaves them alone
+			if (false == banked)
+				state.banks = road->definition().banks;
 		}
 		if (road != tool.selected && road->definition().changes.size() == state.changes.size())
 		{
@@ -1417,6 +1519,69 @@ void editor_mode::road_roundabout(glm::dvec3 const &Ground)
 	tool.status = "Roundabout made. Untick Roundabout and lead roads out of its side, or into it: the traffic joining it gives way to the traffic going around.";
 }
 
+// how far from specified point, and how far down, a slope of the grade set for the banks gets to the ground
+std::pair<float, float> editor_mode::bank_reach(glm::dvec3 const &Edge, glm::dvec3 const &Outwards)
+{
+	auto const grade{std::clamp(static_cast<double>(m_roadtool.bankgrade), 0.25, 10.0)};
+	auto const steps{static_cast<int>(kBankReach / kBankStep)};
+	// the ground further and further from the edge, without the roads themselves
+	std::vector<glm::dvec3> probes;
+	for (int step = 1; step <= steps; ++step)
+		probes.emplace_back(Edge + Outwards * (step * kBankStep));
+	auto const ground{ground_heights(probes, true)};
+	// the bank ends where a slope of the set grade, going down or up, gets to the ground
+	auto const rising{ground.front() > Edge.y};
+	auto width{kBankReach};
+	auto drop{Edge.y - ground.back()};
+	for (int step = 1; step <= steps; ++step)
+	{
+		auto const reach{step * kBankStep};
+		auto const height{ground[step - 1]};
+		if (rising ? height <= Edge.y + reach / grade : height >= Edge.y - reach / grade)
+		{
+			width = reach;
+			drop = Edge.y - height;
+			break;
+		}
+	}
+	return {static_cast<float>(width), static_cast<float>(drop)};
+}
+
+// leads the banks of the corners of a junction to the ground beside it
+void editor_mode::junction_bank_to_ground(junction_node &Junction)
+{
+	auto state{Junction.definition()};
+	auto const order{state.arm_order()};
+	auto const sided{state.side.type != road_node::side_type::none && state.side.width > 0.f};
+	// where the banks start: past the kerb and whatever lines the corners
+	auto const lining{(state.kerbs ? state.kerbwidth : 0.f) + (sided ? state.side.width : 0.f)};
+	auto const raised{sided && state.side.type == road_node::side_type::sidewalk ? state.kerbheight : 0.f};
+	for (std::size_t idx = 0; idx < order.size(); ++idx)
+	{
+		// a corner starts at the left edge of a road, seen from the junction, and ends at the right edge of the next one
+		auto &arm{state.arms[order[idx]]};
+		auto const &next{state.arms[order[(idx + 1) % order.size()]]};
+		glm::dvec3 const outwards[2]{glm::dvec3{arm.direction.y, 0.0, -arm.direction.x}, -glm::dvec3{next.direction.y, 0.0, -next.direction.x}};
+		glm::dvec3 const edges[2]{arm.position + outwards[0] * (0.5 * state.arm_width(order[idx]) + lining) + glm::dvec3{0.0, raised, 0.0},
+		                          next.position + outwards[1] * (0.5 * state.arm_width(order[(idx + 1) % order.size()]) + lining) + glm::dvec3{0.0, raised, 0.0}};
+		arm.bank.set = true;
+		for (int end = 0; end < 2; ++end)
+		{
+			auto const reach{bank_reach(edges[end], outwards[end])};
+			arm.bank.width[end] = reach.first;
+			arm.bank.drop[end] = reach.second;
+		}
+	}
+	junction_apply(Junction, state);
+	auto &tool{m_roadtool};
+	if (tool.status == "Changed")
+	{
+		tool.status = "Banks of the junction led to the ground.";
+		if ((false == sided || state.side.type != road_node::side_type::shoulder) && (state.bankmaterial.empty() || state.bankmaterial == "none"))
+			tool.status += " Pick a bank material to have them drawn.";
+	}
+}
+
 // leads the banks of the selected piece, or of the whole road, to the ground beside it
 void editor_mode::road_bank_to_ground()
 {
@@ -1433,8 +1598,6 @@ void editor_mode::road_bank_to_ground()
 			return;
 		}
 	}
-	auto const grade{std::clamp(static_cast<double>(tool.bankgrade), 0.25, 10.0)};
-	auto const steps{static_cast<int>(kBankReach / kBankStep)};
 	std::vector<std::pair<road_node *, road_node::state>> changes;
 	for (auto *road : pieces)
 	{
@@ -1455,29 +1618,10 @@ void editor_mode::road_bank_to_ground()
 				auto edge{state.point(t) + across * (0.5 * state.span(t) + (state.kerbs[side] ? state.kerbwidth : 0.f) + (sided ? data.width : 0.f))};
 				if (sided && data.type == road_node::side_type::sidewalk)
 					edge.y += state.kerbheight;
-				// the ground further and further from the road, without the roads themselves
-				std::vector<glm::dvec3> probes;
-				for (int step = 1; step <= steps; ++step)
-					probes.emplace_back(edge + across * (step * kBankStep));
-				auto const ground{ground_heights(probes, true)};
-				// the bank ends where a slope of the set grade, going down or up, gets to the ground
-				auto const rising{ground.front() > edge.y};
-				auto width{kBankReach};
-				auto drop{edge.y - ground.back()};
-				for (int step = 1; step <= steps; ++step)
-				{
-					auto const reach{step * kBankStep};
-					auto const height{ground[step - 1]};
-					if (rising ? height <= edge.y + reach / grade : height >= edge.y - reach / grade)
-					{
-						width = reach;
-						drop = edge.y - height;
-						break;
-					}
-				}
+				auto const reach{bank_reach(edge, across)};
 				state.banks[side].set = true;
-				state.banks[side].width[end] = static_cast<float>(width);
-				state.banks[side].drop[end] = static_cast<float>(drop);
+				state.banks[side].width[end] = reach.first;
+				state.banks[side].drop[end] = reach.second;
 			}
 		}
 		changes.emplace_back(road, state);
@@ -1914,7 +2058,8 @@ bool editor_mode::render_road_layout(road_node::state &State)
 	if (ImGui::CollapsingHeader("Banks to the ground"))
 	{
 		ImGui::TextDisabled("A slope from the edge of the road down, or up, to the ground.");
-		ImGui::TextDisabled("Set for each piece on its own, at its start and at its end.");
+		ImGui::TextDisabled("Set here it goes to every piece the changes go to; the button below");
+		ImGui::TextDisabled("works out each piece on its own.");
 		char const *banknames[]{"Bank on the left", "Bank on the right"};
 		for (int side = 0; side < 2; ++side)
 		{
@@ -1991,6 +2136,13 @@ bool editor_mode::render_road_layout(road_node::state &State)
 			if (material("Island material", tool.mediantext, sizeof(tool.mediantext), State.median.material))
 				changed = true;
 			ImGui::TextDisabled("The island is as high as the kerbs; with a kerb material set it gets kerbs of its own.");
+			if (number("Rounded at the start [m]", State.median.round[0], 0.5f, "%.2f"))
+				changed = true;
+			if (number("Rounded at the end [m]", State.median.round[1], 0.5f, "%.2f"))
+				changed = true;
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", "Length of the rounded end of the island at that end of the piece; half of the width of the island makes it a half circle.\n"
+				                        "0: the island is cut straight, with a face. Use it where the next piece has no island.");
 		}
 	}
 
@@ -2240,9 +2392,17 @@ void editor_mode::render_road_window()
 	else if (tool.junction != nullptr)
 	{
 		auto &junction{*tool.junction};
-		ImGui::Text("%s, %d roads, %d ways through", junction.name().c_str(), static_cast<int>(junction.definition().arms.size()), static_cast<int>(junction.movements().size()));
-		ImGui::TextDisabled("The ways through are made for the roads attached at the moment.");
-		ImGui::TextDisabled("Build tool, LMB on the junction: lead another road out of it");
+		if (junction.definition().arms.size() == 2)
+		{
+			ImGui::Text("%s, a stretch where the road changes its lanes", junction.name().c_str());
+			ImGui::TextDisabled("It's drawn as a part of the road, and leads the lanes of one side to the lanes of the other.");
+		}
+		else
+		{
+			ImGui::Text("%s, %d roads, %d ways through", junction.name().c_str(), static_cast<int>(junction.definition().arms.size()), static_cast<int>(junction.movements().size()));
+			ImGui::TextDisabled("The ways through are made for the roads attached at the moment.");
+			ImGui::TextDisabled("Build tool, LMB on the junction: lead another road out of it");
+		}
 		render_junction_layout(junction);
 		if (ImGui::Button("Delete (Del)"))
 			road_delete();

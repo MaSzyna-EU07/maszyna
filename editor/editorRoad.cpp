@@ -141,6 +141,8 @@ road_node::state part(road_node::state const &State, double const From, double c
 	result.taper = {static_cast<float>(State.scale(From)), static_cast<float>(State.scale(To))};
 	if (State.divided())
 		result.median.width = {static_cast<float>(State.median_width(From)), static_cast<float>(State.median_width(To))};
+	// an island is rounded at the ends of the piece, not where the piece is cut
+	result.median.round = {From <= 0.0 ? State.median.round[0] : 0.f, To >= 1.0 ? State.median.round[1] : 0.f};
 	for (std::size_t side = 0; side < result.banks.size(); ++side)
 	{
 		auto const &bank{State.banks[side]};
@@ -337,6 +339,9 @@ void dress(junction_node::state &Junction, road_node::state const &Road)
 	Junction.kerbs = (Road.kerbs[0] || Road.kerbs[1]);
 	Junction.kerbwidth = Road.kerbwidth;
 	Junction.kerbmaterial = Road.kerbmaterial;
+	Junction.bankmaterial = Road.bankmaterial;
+	Junction.median = Road.median.type;
+	Junction.medianmaterial = Road.median.material;
 	Junction.slope = Road.slope;
 	Junction.friction = Road.friction;
 	Junction.sounddistance = Road.sounddistance;
@@ -409,6 +414,7 @@ road_node::state flipped(road_node::state const &State)
 	std::swap(result.sides[0], result.sides[1]);
 	std::swap(result.taper[0], result.taper[1]);
 	std::swap(result.median.width[0], result.median.width[1]);
+	std::swap(result.median.round[0], result.median.round[1]);
 	std::swap(result.kerbs[0], result.kerbs[1]);
 	std::swap(result.banks[0], result.banks[1]);
 	for (auto &bank : result.banks)
@@ -1110,6 +1116,7 @@ bool editor_road::dissolve(glm::dvec3 const &Joint, record &Record, std::string 
 		}
 		merged.median.width[1] = (after.divided() ? after.median.width[1] : 0.f);
 	}
+	merged.median.round[1] = after.median.round[1];
 	for (std::size_t side = 0; side < merged.banks.size(); ++side)
 	{
 		if (merged.banks[side].set && after.banks[side].set)
@@ -1171,6 +1178,8 @@ road_node *editor_road::split(road_node &Road, double const T)
 		first.median.width[1] = gap;
 		second.median.width[0] = gap;
 	}
+	first.median.round[1] = 0.f;
+	second.median.round[0] = 0.f;
 	for (std::size_t side = 0; side < first.banks.size(); ++side)
 	{
 		auto const &bank{Road.definition().banks[side]};

@@ -562,6 +562,11 @@ class editor_mode : public application_mode
 	bool render_road_material(char const *Label, char *Buffer, std::size_t const Size, std::string &Value);
 	void render_junction_layout(junction_node &Junction);
 	void junction_apply(junction_node &Junction, junction_node::state const &State);
+	// leads the banks of the corners of a junction to the ground beside it
+	void junction_bank_to_ground(junction_node &Junction);
+	// how far from specified point, and how far down, a slope of the grade set for the banks gets to the ground.
+	// Outwards: the way the slope leads, seen from above
+	std::pair<float, float> bank_reach(glm::dvec3 const &Edge, glm::dvec3 const &Outwards);
 	void draw_road_overlay() const;
 	void update_road_tool();
 	void road_click();
