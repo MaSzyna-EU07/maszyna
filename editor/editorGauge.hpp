@@ -18,11 +18,21 @@ http://mozilla.org/MPL/2.0/.
 namespace gauge
 {
 
-// right half of the outline on a straight track, in metres: half-width from the axis and height above the rail top,
-// listed from the bottom up; the left half is the mirror
+// how the outline widens along the track
+enum class kind
+{
+	unified, // skrajnia budowli ujednolicona GPL: the curves of R >= 250 m are included above the lower part
+	installation, // graniczna or nominalna skrajnia zabudowy: widened by 3750/R in all curves
+	road // skrajnia drogi: measured from the edge of the carriageway, no widening
+};
+
+// right half of the outline on a straight track, in metres: half-width from the axis (for the roads from the edge
+// of the carriageway) and height above the rail top or the road surface, listed from the bottom up; the left half
+// is the mirror
 struct profile
 {
 	std::string name;
+	gauge::kind kind{kind::unified};
 	struct point
 	{
 		double half_width{0.0};
@@ -31,7 +41,8 @@ struct profile
 	std::vector<point> outline;
 };
 
-// GPL-1 and GPL-2 over the limit installation gauge below 1170 mm, with and without the pantograph gauge
+// GPL-1 and GPL-2 over the limit installation gauge below 1170 mm, with and without the pantograph gauge, the limit
+// and nominal installation gauges G1, G2, GA, GB, GC of the PKP PLK technical standards, and the road gauges
 std::vector<profile> default_profiles();
 // outlines kept in the file, the defaults when there's none
 std::vector<profile> load_profiles(std::string const &File);
@@ -46,13 +57,14 @@ double constexpr lower_part{1.17};
 // widening of the sides of the gauge at a place of the track, metres; index 0 is the right side, 1 the left one
 struct section
 {
+	double base{0.0}; // added to the half-width of the outline: half of the carriageway of a road
 	std::array<double, 2> upper{}; // from the radius, above the lower part
 	std::array<double, 2> lower{}; // from the radius, in the lower part
 	std::array<double, 2> cant{}; // cant in metres, positive on the inner side of the curve and negative on the outer one
 };
 // sections at the points of a route, from their chainage, curvature (1/m, positive turning left) and cant (m).
 // The widening begins and ends ahead of the changes of the curvature and cant, as the vehicles enter a curve
-std::vector<section> sections(std::vector<double> const &Chainage, std::vector<double> const &Curvature, std::vector<double> const &Cant);
+std::vector<section> sections(kind Kind, std::vector<double> const &Chainage, std::vector<double> const &Curvature, std::vector<double> const &Cant);
 
 // widening of the side (+1 left, -1 right) at the height
 double widening(section const &Section, double Height, int Side);

@@ -96,6 +96,18 @@ void editor_ui::render_mode_options(nodebank_panel::edit_mode const Mode)
 
 void editor_ui::render_header_sections()
 {
+	if (m_gaugewindow != nullptr)
+	{
+		auto const open{*m_gaugewindow};
+		if (open)
+			ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+		if (ImGui::Button(STR_C("Structure gauge"), ImVec2(-1.0f, 0.0f)))
+			*m_gaugewindow = false == *m_gaugewindow;
+		if (open)
+			ImGui::PopStyleColor();
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"));
+	}
 	if (ImGui::CollapsingHeader("Gizmo", ImGuiTreeNodeFlags_DefaultOpen))
 	{
 		if (m_gizmooptions)
@@ -142,12 +154,6 @@ void editor_ui::render_menu_contents()
 		ImGui::MenuItem(STR_C("Layers"), nullptr, &m_layerspanel.is_open);
 		ImGui::MenuItem(STR_C("Include database"), nullptr, &m_includespanel.is_open);
 		ImGui::EndMenu();
-	}
-	if (m_gaugewindow != nullptr)
-	{
-		ImGui::MenuItem(STR_C("Structure gauge"), nullptr, m_gaugewindow);
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("Checks which models enter the structure gauge of the tracks (skrajnia budowli)"));
 	}
 }
 

@@ -321,7 +321,8 @@ class editor_mode : public application_mode, private editor_track::observer
 		bool open{false}; // window
 		bool enabled{true}; // tunnel along the selected path
 		std::vector<gauge::profile> profiles;
-		int profile{0};
+		int profile{0}; // railway
+		int road{-1};
 		TTrack const *track{nullptr}; // scanned
 		std::size_t history{0};
 		bool pending{false}; // rescan once the edit ends
@@ -349,6 +350,8 @@ class editor_mode : public application_mode, private editor_track::observer
 		bool published{false}; // overlay up to date
 	} m_gauge;
 	void gauge_load();
+	// the chosen railway and road outlines, null when there's none of the kind
+	std::pair<gauge::profile const *, gauge::profile const *> gauge_profiles() const;
 	std::vector<gauge_hit> const &gauge_hits() const;
 	void update_gauge();
 	void scan_gauge(TTrack &Track);
@@ -358,7 +361,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	void gauge_spot(gauge_hit const &Hit);
 	void render_gauge_window();
 	void render_gauge_hits();
-	bool render_gauge_outline();
+	bool render_gauge_choice(char const *Label, int &Index, bool Road);
+	bool render_gauge_outline(int Index);
 	struct route_design
 	{
 		TTrack *from{nullptr};

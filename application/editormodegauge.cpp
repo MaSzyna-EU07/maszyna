@@ -45,37 +45,71 @@ double const gauge_spot_reach{60.0};
 // sampled line of the tracks with the widening of the gauge along it
 struct gauge_line
 {
+	gauge::profile const *profile{nullptr};
 	editor_track::route route;
 	std::vector<editor_track::route_sample> samples;
 	std::vector<gauge::section> sections;
 };
 
-gauge_line make_line(editor_track::route &Route)
+// the outline checked along the track: the railway one or the road one
+struct gauge_choice
+{
+	gauge::profile const *railway{nullptr};
+	gauge::profile const *road{nullptr};
+
+	gauge::profile const *of(TTrack const &Track) const
+	{
+		if ((Track.iCategoryFlag & 1) != 0)
+			return railway;
+		if ((Track.iCategoryFlag & 2) != 0)
+			return road;
+		return nullptr;
+	}
+};
+
+// half of the carriageway of a road at the sample, it narrows linearly to the width at the end
+double carriageway(editor_track::route_span const &Span, double const Chainage)
+{
+	auto const &track{*Span.track};
+	auto const end{track.fTrackWidth2 > 0.f ? track.fTrackWidth2 : track.fTrackWidth};
+	auto t{Span.to > Span.from ? std::clamp((Chainage - Span.from) / (Span.to - Span.from), 0.0, 1.0) : 0.0};
+	if (false == Span.forward)
+		t = 1.0 - t;
+	return 0.5 * std::abs(track.fTrackWidth + (end - track.fTrackWidth) * t);
+}
+
+gauge_line make_line(editor_track::route &Route, gauge::profile const &Profile)
 {
 	gauge_line line;
+	line.profile = &Profile;
 	line.samples = editor_track::sample_route(Route, 1.0);
 	line.route = Route;
+	bool const road{Profile.kind == gauge::kind::road};
 	std::vector<double> chainage, curvature, cant;
 	for (auto &sample : line.samples)
 	{
-		sample.position.y += gauge::rail_height;
+		if (false == road)
+			sample.position.y += gauge::rail_height;
 		chainage.push_back(sample.chainage);
 		curvature.push_back(sample.curvature);
 		cant.push_back(sample.cant);
 	}
-	line.sections = gauge::sections(chainage, curvature, cant);
+	line.sections = gauge::sections(Profile.kind, chainage, curvature, cant);
+	if (road)
+		for (std::size_t i = 0; i < line.samples.size(); ++i)
+			line.sections[i].base = carriageway(line.route.spans[line.samples[i].span], line.samples[i].chainage);
 	return line;
 }
 
 // lines through all paths of the scenery, each path in one of them at least
-std::vector<gauge_line> scenery_lines()
+std::vector<gauge_line> scenery_lines(gauge_choice const &Choice)
 {
 	std::vector<gauge_line> lines;
 	std::unordered_set<TTrack const *> visited;
 	auto const seen{[&](editor_track::route_span const &Span) { return visited.count(Span.track) > 0; }};
 	for (auto *track : simulation::Paths.sequence())
 	{
-		if (track == nullptr || visited.count(track) > 0 || false == editor_track::is_supported(*track))
+		if (track == nullptr || visited.count(track) > 0 || false == editor_track::is_supported(*track) || Choice.of(*track) == nullptr)
 			continue;
 		auto route{editor_track::run_route(*track, 1e7)};
 		// the line may run on over the paths already covered, one of them is enough for the widening ahead of a curve
@@ -86,15 +120,15 @@ std::vector<gauge_line> scenery_lines()
 			spans.pop_back();
 		for (auto const &span : spans)
 			visited.insert(span.track);
-		lines.push_back(make_line(route));
+		lines.push_back(make_line(route, *Choice.of(*track)));
 	}
 	// diverging paths of the switches
 	for (auto *track : simulation::Paths.sequence())
-		if (track != nullptr && track->eType == tt_Switch && editor_track::is_supported(*track))
+		if (track != nullptr && track->eType == tt_Switch && editor_track::is_supported(*track) && Choice.of(*track) != nullptr)
 		{
 			editor_track::route route;
 			route.spans.push_back({track, 1, true});
-			lines.push_back(make_line(route));
+			lines.push_back(make_line(route, *Choice.of(*track)));
 		}
 	return lines;
 }
@@ -103,11 +137,12 @@ std::vector<gauge_line> scenery_lines()
 class corridor
 {
 public:
-	corridor(std::vector<gauge_line> const &Lines, double const Margin) : m_lines{Lines}, m_margin{Margin}
+	explicit corridor(std::vector<gauge_line> const &Lines) : m_lines{Lines}
 	{
 		for (std::uint32_t line = 0; line < Lines.size(); ++line)
 			for (std::uint32_t i = 0; i < Lines[line].samples.size(); ++i)
 			{
+				m_margin = std::max(m_margin, reach(*Lines[line].profile) + Lines[line].sections[i].base);
 				auto const point{plan_of(Lines[line].samples[i].position)};
 				m_cells[key(point, cell)].push_back({line, i});
 				m_regions.insert(key(point, region));
@@ -139,7 +174,7 @@ public:
 		editor_track::route_span const *span{nullptr}; // of the line the point enters
 	};
 	// deepest intrusion of the point into the gauge of the lines nearby
-	hit intrusion(gauge::profile const &Profile, glm::dvec3 const &Point) const
+	hit intrusion(glm::dvec3 const &Point) const
 	{
 		auto const point{plan_of(Point)};
 		auto const center{index(point, cell)};
@@ -173,7 +208,7 @@ public:
 			if ((found.index == 0 && along < -0.6) || (found.index + 1 == line.samples.size() && along > 0.6))
 				continue;
 			auto const height{Point.y - (sample.position.y + sample.grade * along)};
-			auto const depth{gauge::intrusion(Profile, line.sections[found.index], glm::dot(offset, normal(sample)), height)};
+			auto const depth{gauge::intrusion(*line.profile, line.sections[found.index], glm::dot(offset, normal(sample)), height)};
 			if (depth > deepest.depth)
 				deepest = {depth, &line.route.spans[sample.span]};
 		}
@@ -208,8 +243,17 @@ private:
 		return m_lines[Entry.line].samples[Entry.index];
 	}
 
+	// half-width of the outline with the room for the widening in the sharpest curves on the largest cant
+	static double reach(gauge::profile const &Profile)
+	{
+		double result{0.0};
+		for (auto const &point : Profile.outline)
+			result = std::max(result, point.half_width);
+		return result + 1.2;
+	}
+
 	std::vector<gauge_line> const &m_lines;
-	double m_margin;
+	double m_margin{0.0};
 	std::unordered_map<std::uint64_t, std::vector<entry>> m_cells;
 	std::unordered_set<std::uint64_t> m_regions;
 };
@@ -253,7 +297,7 @@ template <typename Visitor> void visit_triangles(TSubModel *Submodel, glm::dmat4
 }
 
 // triangles of the models entering the gauge, and the deepest place of each model, the deepest models first
-void scan_models(corridor const &Space, gauge::profile const &Profile, std::vector<glm::dvec3> &Triangles, std::vector<editor_mode::gauge_hit> &Hits)
+void scan_models(corridor const &Space, std::vector<glm::dvec3> &Triangles, std::vector<editor_mode::gauge_hit> &Hits)
 {
 	for (auto *instance : simulation::Instances.sequence())
 	{
@@ -272,7 +316,7 @@ void scan_models(corridor const &Space, gauge::profile const &Profile, std::vect
 				for (int v = 0; u + v <= steps; ++v)
 				{
 					auto const point{A + (B - A) * (static_cast<double>(u) / steps) + (C - A) * (static_cast<double>(v) / steps)};
-					auto const found{Space.intrusion(Profile, point)};
+					auto const found{Space.intrusion(point)};
 					if (found.depth <= 0.0)
 						continue;
 					Triangles.insert(Triangles.end(), {A, B, C});
@@ -293,8 +337,9 @@ void scan_models(corridor const &Space, gauge::profile const &Profile, std::vect
 }
 
 // translucent tunnel of the gauge along the line, with the rings every 10 m and the lines along its corners
-void build_tunnel(gauge_line const &Line, gauge::profile const &Profile, std::vector<glm::dvec3> &Surface, std::vector<glm::dvec3> &Edges)
+void build_tunnel(gauge_line const &Line, std::vector<glm::dvec3> &Surface, std::vector<glm::dvec3> &Edges)
 {
+	auto const &profile{*Line.profile};
 	auto const lift{[](editor_track::route_sample const &Sample, double const Lateral, double const Height) {
 		auto const normal{corridor::normal(Sample)};
 		return Sample.position + glm::dvec3(normal.x * Lateral, Height, normal.y * Lateral);
@@ -303,10 +348,10 @@ void build_tunnel(gauge_line const &Line, gauge::profile const &Profile, std::ve
 	auto const ring{[&](std::size_t const Index) {
 		std::vector<glm::dvec3> points;
 		for (int side : {-1, 1})
-			for (std::size_t j = 0; j < Profile.outline.size(); ++j)
+			for (std::size_t j = 0; j < profile.outline.size(); ++j)
 			{
-				auto const &point{Profile.outline[side < 0 ? j : Profile.outline.size() - 1 - j]};
-				auto const width{point.half_width + gauge::widening(Line.sections[Index], point.height, side)};
+				auto const &point{profile.outline[side < 0 ? j : profile.outline.size() - 1 - j]};
+				auto const width{Line.sections[Index].base + point.half_width + gauge::widening(Line.sections[Index], point.height, side)};
 				points.push_back(lift(Line.samples[Index], side * width, point.height));
 			}
 		return points;
@@ -332,22 +377,30 @@ void build_tunnel(gauge_line const &Line, gauge::profile const &Profile, std::ve
 	}
 }
 
-double widest(gauge::profile const &Profile)
-{
-	double result{0.0};
-	for (auto const &point : Profile.outline)
-		result = std::max(result, point.half_width);
-	// with the room for the widening in the sharpest curves on the largest cant
-	return result + 1.2;
-}
-
 } // namespace
 
 void editor_mode::gauge_load()
 {
 	if (m_gauge.profiles.empty())
 		m_gauge.profiles = gauge::load_profiles(gauge_file);
-	m_gauge.profile = std::clamp(m_gauge.profile, 0, static_cast<int>(m_gauge.profiles.size()) - 1);
+	// the chosen railway and road outlines, the first ones of the kind when there's none
+	auto const fits{[&](int const Index, bool const Road) {
+		return Index >= 0 && Index < static_cast<int>(m_gauge.profiles.size()) && (m_gauge.profiles[Index].kind == gauge::kind::road) == Road;
+	}};
+	for (auto [index, road] : {std::pair<int *, bool>{&m_gauge.profile, false}, std::pair<int *, bool>{&m_gauge.road, true}})
+		if (false == fits(*index, road))
+		{
+			*index = -1;
+			for (int i = 0; i < static_cast<int>(m_gauge.profiles.size()) && *index < 0; ++i)
+				if (fits(i, road))
+					*index = i;
+		}
+}
+
+std::pair<gauge::profile const *, gauge::profile const *> editor_mode::gauge_profiles() const
+{
+	auto const pick{[&](int const Index) { return Index >= 0 ? &m_gauge.profiles[Index] : nullptr; }};
+	return {pick(m_gauge.profile), pick(m_gauge.road)};
 }
 
 std::vector<editor_mode::gauge_hit> const &editor_mode::gauge_hits() const
@@ -393,14 +446,17 @@ void editor_mode::scan_gauge(TTrack &Track)
 {
 	gauge_load();
 	m_gauge.line = {};
-	auto const &profile{m_gauge.profiles[m_gauge.profile]};
-	auto route{editor_track::run_route(Track, gauge_reach)};
-	std::vector<gauge_line> const lines{make_line(route)};
-	if (lines.front().samples.size() < 2 || profile.outline.size() < 2)
+	auto const [railway, road]{gauge_profiles()};
+	auto const *profile{gauge_choice{railway, road}.of(Track)};
+	if (profile == nullptr || profile->outline.size() < 2)
 		return;
-	corridor const space{lines, widest(profile)};
-	build_tunnel(lines.front(), profile, m_gauge.line.surface, m_gauge.line.edges);
-	scan_models(space, profile, m_gauge.line.intruding, m_gauge.line.hits);
+	auto route{editor_track::run_route(Track, gauge_reach)};
+	std::vector<gauge_line> const lines{make_line(route, *profile)};
+	if (lines.front().samples.size() < 2)
+		return;
+	corridor const space{lines};
+	build_tunnel(lines.front(), m_gauge.line.surface, m_gauge.line.edges);
+	scan_models(space, m_gauge.line.intruding, m_gauge.line.hits);
 	if (false == m_gauge.map.scanned)
 		m_gauge.current = -1;
 }
@@ -410,16 +466,16 @@ void editor_mode::scan_gauge_map()
 	gauge_load();
 	auto const started{std::chrono::steady_clock::now()};
 	m_gauge.map = {};
-	auto const &profile{m_gauge.profiles[m_gauge.profile]};
-	auto const lines{scenery_lines()};
-	corridor const space{lines, widest(profile)};
-	scan_models(space, profile, m_gauge.map.intruding, m_gauge.map.hits);
+	auto const [railway, road]{gauge_profiles()};
+	auto const lines{scenery_lines({railway, road})};
+	corridor const space{lines};
+	scan_models(space, m_gauge.map.intruding, m_gauge.map.hits);
 	m_gauge.map.scanned = true;
 	m_gauge.map.history = m_history.size();
-	m_gauge.map.profile = profile.name;
+	m_gauge.map.profile = (railway ? railway->name : std::string{"-"}) + ", " + (road ? road->name : std::string{"-"});
 	m_gauge.current = -1;
 	m_gauge.published = false;
-	WriteLog("Structure gauge (" + profile.name + "): " + std::to_string(m_gauge.map.hits.size()) + " models enter it along " + std::to_string(lines.size()) + " lines, scanned in " +
+	WriteLog("Structure gauge (" + m_gauge.map.profile + "): " + std::to_string(m_gauge.map.hits.size()) + " models enter it along " + std::to_string(lines.size()) + " lines, scanned in " +
 	         std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count()) + " ms");
 	if (false == m_gauge.map.hits.empty())
 		gauge_focus(0);
@@ -489,9 +545,13 @@ void editor_mode::gauge_spot(gauge_hit const &Hit)
 		route = editor_track::run_route(*track, gauge_spot_reach);
 	else
 		route.spans.push_back({track, Hit.path, true});
-	auto const line{make_line(route)};
+	auto const [railway, road]{gauge_profiles()};
+	auto const *profile{gauge_choice{railway, road}.of(*track)};
+	if (profile == nullptr)
+		return;
+	auto const line{make_line(route, *profile)};
 	if (line.samples.size() >= 2)
-		build_tunnel(line, m_gauge.profiles[m_gauge.profile], m_gauge.spot.surface, m_gauge.spot.edges);
+		build_tunnel(line, m_gauge.spot.surface, m_gauge.spot.edges);
 }
 
 void editor_mode::render_gauge_window()
@@ -509,14 +569,12 @@ void editor_mode::render_gauge_window()
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("Translucent tunnel of the gauge 500 m each way along the line of the selected path,\nwith the triangles of the models which enter it in red.\nWidened in the curves under 250 m and tilted on the cant, from 20 m (inner side)\nand 26 m (outer side) ahead of the curve, as in the PKP PLK standard, volume II.");
 	gauge_load();
-	auto const previous{m_gauge.profile};
-	for (int i = 0; i < static_cast<int>(m_gauge.profiles.size()); ++i)
-	{
-		if (i % 2 == 1)
-			ImGui::SameLine(160.0f);
-		ImGui::RadioButton(m_gauge.profiles[i].name.c_str(), &m_gauge.profile, i);
-	}
-	bool changed{previous != m_gauge.profile};
+	bool changed{render_gauge_choice("Railway", m_gauge.profile, false)};
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("GPL: unified structure gauge, widened only in the curves under 250 m.\nG1, G2, GA, GB, GC: limit (GSZ) and nominal (NSZ) installation gauges, widened by 3750/R in all curves.");
+	changed |= render_gauge_choice("Road", m_gauge.road, true);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("Clearance over the roads, from 0.5 m beyond the edges of the carriageway");
 
 	if (ImGui::Button("Find the violations on the whole map"))
 		scan_gauge_map();
@@ -535,7 +593,8 @@ void editor_mode::render_gauge_window()
 			ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "The scenery changed since the scan (%s)", m_gauge.map.profile.c_str());
 	}
 	render_gauge_hits();
-	changed |= render_gauge_outline();
+	changed |= render_gauge_outline(m_gauge.profile);
+	changed |= render_gauge_outline(m_gauge.road);
 	if (changed)
 		m_gauge.pending = true;
 	ImGui::End();
@@ -572,12 +631,32 @@ void editor_mode::render_gauge_hits()
 	ImGui::EndChild();
 }
 
-bool editor_mode::render_gauge_outline()
+bool editor_mode::render_gauge_choice(char const *Label, int &Index, bool const Road)
 {
-	if (false == ImGui::TreeNode("Outline (right half)"))
+	bool changed{false};
+	ImGui::SetNextItemWidth(-60.0f);
+	if (ImGui::BeginCombo(Label, Index >= 0 ? m_gauge.profiles[Index].name.c_str() : "none"))
+	{
+		for (int i = 0; i < static_cast<int>(m_gauge.profiles.size()); ++i)
+			if ((m_gauge.profiles[i].kind == gauge::kind::road) == Road && ImGui::Selectable(m_gauge.profiles[i].name.c_str(), i == Index))
+			{
+				changed = i != Index;
+				Index = i;
+			}
+		ImGui::EndCombo();
+	}
+	return changed;
+}
+
+bool editor_mode::render_gauge_outline(int const Index)
+{
+	if (Index < 0)
 		return false;
-	ImGui::TextDisabled("PKP PLK standard, volume II; below 1170 mm the limit installation gauge.\nMetres from the track axis and above the rail top, bottom up.");
-	auto &profile{m_gauge.profiles[m_gauge.profile]};
+	auto &profile{m_gauge.profiles[Index]};
+	if (false == ImGui::TreeNode(&profile, "Outline of %s (right half)", profile.name.c_str()))
+		return false;
+	ImGui::TextDisabled(profile.kind == gauge::kind::road ? "Metres from the edge of the carriageway and above the road, bottom up."
+	                                                      : "PKP PLK standard, volume II; below 1170 mm the limit installation gauge.\nMetres from the track axis and above the rail top, bottom up.");
 	bool edited{false};
 	bool inserted{false};
 	int remove{-1};
@@ -626,6 +705,7 @@ bool editor_mode::render_gauge_outline()
 	if (ImGui::SmallButton("Restore the starting outlines"))
 	{
 		m_gauge.profiles = gauge::default_profiles();
+		gauge_load();
 		edited = true;
 	}
 	if (edited)

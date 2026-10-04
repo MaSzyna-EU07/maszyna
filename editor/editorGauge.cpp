@@ -87,6 +87,18 @@ private:
 	std::vector<double> m_integral;
 };
 
+// names of the kinds in the file
+char const *const kind_names[]{"unified", "installation", "road"};
+
+// outline from the points listed top down, in millimetres, as in the tables of the standard, over the lower part
+profile installation(std::string const &Name, std::vector<std::pair<int, int>> const &Points)
+{
+	profile result{Name, kind::installation, {{1.211, 0.055}, {1.585, 0.380}, {1.675, 0.380}}};
+	for (auto point = Points.rbegin(); point != Points.rend(); ++point)
+		result.outline.push_back({point->second * 0.001, point->first * 0.001});
+	return result;
+}
+
 } // namespace
 
 std::vector<profile> default_profiles()
@@ -97,16 +109,31 @@ std::vector<profile> default_profiles()
 	std::vector<profile::point> const gpl2{{2.000, 3.625}, {1.920, 4.900}};
 	std::vector<profile::point> const pantograph{{1.450, 6.600}, {1.150, 6.900}, {0.0, 6.900}};
 	auto const make{[&](std::string const &Name, std::vector<std::vector<profile::point>> const &Parts) {
-		profile result{Name, lower};
+		profile result{Name, kind::unified, lower};
 		for (auto const &part : Parts)
 			result.outline.insert(result.outline.end(), part.begin(), part.end());
 		return result;
 	}};
-	return {make("GPL-1", {gpl1, {{1.260, 4.800}, {1.180, 4.850}, {0.0, 4.850}}}), make("GPL-1 + pantograf", {gpl1, pantograph}),
-	        make("GPL-2", {gpl2, {{0.0, 4.900}}}), make("GPL-2 + pantograf", {gpl2, {{1.450, 4.900}}, pantograph})};
+	// tables 3, 5, 7, 9 of the type cards and the drawing of GC, above 380 mm
+	return {make("GPL-1", {gpl1, {{1.260, 4.800}, {1.180, 4.850}, {0.0, 4.850}}}),
+	        make("GPL-1 + pantograf", {gpl1, pantograph}),
+	        make("GPL-2", {gpl2, {{0.0, 4.900}}}),
+	        make("GPL-2 + pantograf", {gpl2, {{1.450, 4.900}}, pantograph}),
+	        installation("G1 graniczna (GSZ)", {{4375, 0}, {4375, 666}, {4010, 1255}, {3700, 1550}, {3250, 1755}, {1170, 1695}, {1170, 1675}}),
+	        installation("G1 nominalna (NSZ)", {{4385, 0}, {4385, 785}, {4010, 1365}, {3700, 1655}, {3250, 1860}, {1170, 1860}, {1170, 1675}}),
+	        installation("G2 graniczna (GSZ)", {{4765, 0}, {4765, 940}, {3835, 1600}, {3530, 1765}, {1170, 1695}, {1170, 1675}}),
+	        installation("G2 nominalna (NSZ)", {{4770, 0}, {4770, 1060}, {3835, 1710}, {3530, 1870}, {1170, 1870}, {1170, 1675}}),
+	        installation("GA graniczna (GSZ)", {{4415, 0}, {4415, 687}, {4080, 1225}, {3808, 1490}, {3250, 1755}, {1170, 1700}, {1170, 1675}}),
+	        installation("GA nominalna (NSZ)", {{4425, 0}, {4425, 805}, {4080, 1340}, {3880, 1600}, {3250, 1860}, {1170, 1860}, {1170, 1675}}),
+	        installation("GB graniczna (GSZ)", {{4415, 0}, {4415, 687}, {4080, 1495}, {3250, 1755}, {1170, 1700}, {1170, 1675}}),
+	        installation("GB nominalna (NSZ)", {{4425, 0}, {4425, 805}, {4110, 1610}, {3250, 1860}, {1170, 1860}, {1170, 1675}}),
+	        installation("GC graniczna (GSZ)", {{4800, 0}, {4800, 1693}, {3550, 1765}, {1170, 1765}, {1170, 1675}}),
+	        installation("GC nominalna (NSZ)", {{4820, 0}, {4820, 1815}, {3550, 1870}, {1170, 1870}, {1170, 1675}}),
+	        {"Droga 4,70 m", kind::road, {{0.5, 0.0}, {0.5, 4.70}}},
+	        {"Droga 4,50 m", kind::road, {{0.5, 0.0}, {0.5, 4.50}}}};
 }
 
-// one outline per line: the name in quotes, then pairs of half-width and height
+// one outline per line: the name in quotes, the kind, then pairs of half-width and height
 std::vector<profile> load_profiles(std::string const &File)
 {
 	std::ifstream input{File};
@@ -116,8 +143,13 @@ std::vector<profile> load_profiles(std::string const &File)
 	{
 		std::istringstream stream{line};
 		profile profile;
-		if (false == static_cast<bool>(stream >> std::quoted(profile.name)))
+		std::string kind;
+		if (false == static_cast<bool>(stream >> std::quoted(profile.name) >> kind))
 			continue;
+		auto const known{std::find(std::begin(kind_names), std::end(kind_names), kind)};
+		if (known == std::end(kind_names))
+			continue;
+		profile.kind = static_cast<gauge::kind>(known - std::begin(kind_names));
 		profile::point point;
 		while (stream >> point.half_width >> point.height)
 			profile.outline.push_back(point);
@@ -132,18 +164,18 @@ void save_profiles(std::string const &File, std::vector<profile> const &Profiles
 	std::ofstream output{File};
 	for (auto const &profile : Profiles)
 	{
-		output << std::quoted(profile.name);
+		output << std::quoted(profile.name) << ' ' << kind_names[static_cast<int>(profile.kind)];
 		for (auto const &point : profile.outline)
 			output << ' ' << point.half_width << ' ' << point.height;
 		output << '\n';
 	}
 }
 
-std::vector<section> sections(std::vector<double> const &Chainage, std::vector<double> const &Curvature, std::vector<double> const &Cant)
+std::vector<section> sections(kind const Kind, std::vector<double> const &Chainage, std::vector<double> const &Curvature, std::vector<double> const &Cant)
 {
 	auto const count{Chainage.size()};
 	std::vector<section> result(count);
-	if (count == 0)
+	if (count == 0 || Kind == kind::road)
 		return result;
 	// per side, the parts when it's the inner side of the curve and when it's the outer one
 	for (int side = 0; side < 2; ++side)
@@ -155,7 +187,7 @@ std::vector<section> sections(std::vector<double> const &Chainage, std::vector<d
 				continue;
 			auto const radius{1.0 / std::abs(Curvature[i])};
 			bool const inner{(Curvature[i] > 0.0) == (side == 1)};
-			auto const upper{upper_widening(radius)};
+			auto const upper{Kind == kind::unified ? upper_widening(radius) : lower_widening(radius)};
 			auto const lower{lower_widening(radius)};
 			(inner ? upperinner : upperouter)[i] = inner ? upper.inner : upper.outer;
 			(inner ? lowerinner : lowerouter)[i] = inner ? lower.inner : lower.outer;
@@ -195,7 +227,7 @@ double half_width(profile const &Profile, section const &Section, double const H
 	}
 	if (width < 0.0)
 		return width;
-	return width + widening(Section, Height, Side);
+	return Section.base + width + widening(Section, Height, Side);
 }
 
 double intrusion(profile const &Profile, section const &Section, double const Lateral, double const Height)
