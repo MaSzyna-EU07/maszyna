@@ -347,6 +347,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		} spot; // tunnel around the hit the camera went to
 		int current{-1}; // hit the camera went to
 		bool published{false}; // overlay up to date
+		std::shared_ptr<struct gauge_scan> scan; // of the whole scenery, done in slices over the frames
 	} m_gauge;
 	void gauge_load();
 	// the chosen railway and road outlines
@@ -355,6 +356,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	void update_gauge();
 	void scan_gauge(TTrack &Track);
 	void scan_gauge_map();
+	void step_gauge_map();
+	void finish_gauge_map();
 	void gauge_publish();
 	void gauge_focus(int Index);
 	void gauge_spot(gauge_hit const &Hit);

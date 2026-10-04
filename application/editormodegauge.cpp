@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/editormode.h"
 #include "application/editoruilayer.h"
+#include "editor/editorFormat.hpp"
 #include "editor/editorGauge.hpp"
 #include "editor/editorGeometry.hpp"
 #include "model/AnimModel.h"
@@ -42,6 +43,8 @@ double const gauge_origin_range{2000.0};
 // length of the line shown each way from the selected path, and around a hit
 double const gauge_reach{500.0};
 double const gauge_spot_reach{60.0};
+// time spent on the scan of the whole map in a frame
+auto const gauge_slice{std::chrono::milliseconds(8)};
 // distance of the camera from the place of a hit, along the track
 double const gauge_view_distance{4.0};
 
@@ -171,7 +174,21 @@ public:
 		return {-Sample.direction.y, Sample.direction.x};
 	}
 
-	// whether the sphere may reach the gauge
+	// whether the sphere may reach the gauge of a line sampled in the cells around it
+	bool close(glm::dvec3 const &Center, double const Radius) const
+	{
+		auto const center{plan_of(Center)};
+		auto const reach{Radius + m_margin};
+		auto const from{index(center - reach, cell)};
+		auto const to{index(center + reach, cell)};
+		for (auto x = from.x; x <= to.x; ++x)
+			for (auto y = from.y; y <= to.y; ++y)
+				if (m_cells.count(key(x, y)) > 0)
+					return true;
+		return false;
+	}
+
+	// whether the sphere may reach the gauge, roughly
 	bool near(glm::dvec3 const &Center, double const Radius) const
 	{
 		auto const center{plan_of(Center)};
@@ -306,42 +323,55 @@ template <typename Visitor> void visit_triangles(TSubModel *Submodel, glm::dmat4
 	}
 }
 
-// the models entering the gauge with the deepest place of each, the deepest models first
+// the deepest place of the model in the gauge, added to the hits when it enters it
+void scan_model(corridor const &Space, TAnimModel &Instance, std::vector<editor_mode::gauge_hit> &Hits)
+{
+	if (false == Instance.visible() || Instance.Model() == nullptr || Instance.Model()->GetSMRoot() == nullptr)
+		return;
+	if (false == Space.near(Instance.location(), Instance.radius()))
+		return;
+	editor_mode::gauge_hit hit{Instance.name(), Instance.location()};
+	// the triangle enters the gauge when any point of a grid spread over it does
+	visit_triangles(Instance.Model()->GetSMRoot(), placement(Instance), [&](glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C) {
+		auto const middle{(A + B + C) / 3.0};
+		if (false == Space.close(middle, std::max({glm::distance(middle, A), glm::distance(middle, B), glm::distance(middle, C)})))
+			return;
+		auto const edge{std::max({glm::distance(A, B), glm::distance(B, C), glm::distance(C, A)})};
+		auto const steps{std::clamp(static_cast<int>(std::ceil(edge / 0.5)), 1, 24)};
+		for (int u = 0; u <= steps; ++u)
+			for (int v = 0; u + v <= steps; ++v)
+			{
+				auto const point{A + (B - A) * (static_cast<double>(u) / steps) + (C - A) * (static_cast<double>(v) / steps)};
+				auto const found{Space.intrusion(point)};
+				if (found.depth <= 0.0)
+					continue;
+				if (found.depth > hit.depth)
+				{
+					hit.depth = found.depth;
+					hit.point = point;
+					hit.track = found.span->track;
+					hit.path = found.span->path;
+					hit.direction = found.direction;
+				}
+				return;
+			}
+	});
+	if (hit.depth > 0.0)
+		Hits.push_back(std::move(hit));
+}
+
+void sort_hits(std::vector<editor_mode::gauge_hit> &Hits)
+{
+	std::sort(Hits.begin(), Hits.end(), [](auto const &Left, auto const &Right) { return Left.depth > Right.depth; });
+}
+
+// the models entering the gauge, the deepest first
 void scan_models(corridor const &Space, std::vector<editor_mode::gauge_hit> &Hits)
 {
 	for (auto *instance : simulation::Instances.sequence())
-	{
-		if (instance == nullptr || false == instance->visible() || instance->Model() == nullptr || instance->Model()->GetSMRoot() == nullptr)
-			continue;
-		if (false == Space.near(instance->location(), instance->radius()))
-			continue;
-		editor_mode::gauge_hit hit{instance->name(), instance->location()};
-		// the triangle enters the gauge when any point of a grid spread over it does
-		visit_triangles(instance->Model()->GetSMRoot(), placement(*instance), [&](glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C) {
-			auto const edge{std::max({glm::distance(A, B), glm::distance(B, C), glm::distance(C, A)})};
-			auto const steps{std::clamp(static_cast<int>(std::ceil(edge / 0.5)), 1, 24)};
-			for (int u = 0; u <= steps; ++u)
-				for (int v = 0; u + v <= steps; ++v)
-				{
-					auto const point{A + (B - A) * (static_cast<double>(u) / steps) + (C - A) * (static_cast<double>(v) / steps)};
-					auto const found{Space.intrusion(point)};
-					if (found.depth <= 0.0)
-						continue;
-					if (found.depth > hit.depth)
-					{
-						hit.depth = found.depth;
-						hit.point = point;
-						hit.track = found.span->track;
-						hit.path = found.span->path;
-						hit.direction = found.direction;
-					}
-					return;
-				}
-		});
-		if (hit.depth > 0.0)
-			Hits.push_back(std::move(hit));
-	}
-	std::sort(Hits.begin(), Hits.end(), [](auto const &Left, auto const &Right) { return Left.depth > Right.depth; });
+		if (instance != nullptr)
+			scan_model(Space, *instance, Hits);
+	sort_hits(Hits);
 }
 
 // translucent tunnel of the gauge along the line, with the rings every 10 m and the lines along its corners
@@ -431,6 +461,17 @@ bool edit_points(std::vector<gauge::profile::point> &Points)
 
 } // namespace
 
+struct gauge_scan
+{
+	std::optional<gauge::profile> railway;
+	std::optional<gauge::profile> road;
+	std::vector<gauge_line> lines;
+	std::optional<corridor> space; // of the lines
+	std::size_t next{0}; // instance to check
+	float progress{0.f};
+	std::chrono::steady_clock::time_point started;
+};
+
 void editor_mode::gauge_load()
 {
 	if (m_gauge.profiles.empty())
@@ -462,6 +503,8 @@ std::vector<editor_mode::gauge_hit> const &editor_mode::gauge_hits() const
 
 void editor_mode::update_gauge()
 {
+	if (m_gauge.scan)
+		step_gauge_map();
 	if (false == m_gauge.open)
 	{
 		if (false == EditorOverlay.batches.empty())
@@ -513,21 +556,51 @@ void editor_mode::scan_gauge(TTrack &Track)
 void editor_mode::scan_gauge_map()
 {
 	gauge_load();
-	auto const started{std::chrono::steady_clock::now()};
+	auto scan{std::make_shared<gauge_scan>()};
+	scan->started = std::chrono::steady_clock::now();
+	auto const chosen{gauge_choice()};
+	// copies, the outlines may be edited while it runs
+	scan->railway = chosen.railway != nullptr ? std::optional<gauge::profile>{*chosen.railway} : std::nullopt;
+	scan->road = chosen.road != nullptr ? std::optional<gauge::profile>{*chosen.road} : std::nullopt;
+	scan->lines = scenery_lines({scan->railway ? &*scan->railway : nullptr, scan->road ? &*scan->road : nullptr});
+	scan->space.emplace(scan->lines);
 	m_gauge.map = {};
-	auto const choice{gauge_choice()};
-	auto const lines{scenery_lines(choice)};
-	corridor const space{lines};
-	scan_models(space, m_gauge.map.hits);
 	m_gauge.map.scanned = true;
 	m_gauge.map.history = m_history.size();
 	auto const name{[](gauge::profile const *Profile) { return Profile != nullptr ? Profile->name : std::string{"-"}; }};
-	m_gauge.map.profile = name(choice.railway) + ", " + name(choice.road);
+	m_gauge.map.profile = name(chosen.railway) + ", " + name(chosen.road);
 	m_gauge.current = -1;
 	m_gauge.published = false;
-	WriteLog("Structure gauge (" + m_gauge.map.profile + "): " + std::to_string(m_gauge.map.hits.size()) + " models enter it along " + std::to_string(lines.size()) + " lines, scanned in " +
-	         std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count()) + " ms");
-	if (false == m_gauge.map.hits.empty())
+	m_gauge.scan = std::move(scan);
+}
+
+void editor_mode::step_gauge_map()
+{
+	auto &scan{*m_gauge.scan};
+	auto const &instances{simulation::Instances.sequence()};
+	auto const until{std::chrono::steady_clock::now() + gauge_slice};
+	while (scan.next < instances.size() && std::chrono::steady_clock::now() < until)
+	{
+		if (auto *instance{instances[scan.next++]})
+			scan_model(*scan.space, *instance, m_gauge.map.hits);
+	}
+	scan.progress = instances.empty() ? 1.f : static_cast<float>(scan.next) / instances.size();
+	if (scan.next >= instances.size())
+		finish_gauge_map();
+}
+
+void editor_mode::finish_gauge_map()
+{
+	auto const scan{std::move(m_gauge.scan)};
+	auto &hits{m_gauge.map.hits};
+	// the hit the camera went to stays chosen
+	auto const chosen{m_gauge.current >= 0 && m_gauge.current < static_cast<int>(hits.size()) ? std::optional<glm::dvec3>{hits[m_gauge.current].point} : std::nullopt};
+	sort_hits(hits);
+	if (chosen)
+		m_gauge.current = static_cast<int>(std::find_if(hits.begin(), hits.end(), [&](auto const &Hit) { return Hit.point == *chosen; }) - hits.begin());
+	WriteLog("Structure gauge (" + m_gauge.map.profile + "): " + std::to_string(hits.size()) + " models enter it along " + std::to_string(scan->lines.size()) + " lines, scanned in " +
+	         std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - scan->started).count()) + " ms");
+	if (false == chosen.has_value() && false == hits.empty())
 		gauge_focus(0);
 }
 
@@ -620,11 +693,21 @@ void editor_mode::render_gauge_window()
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("Clearance over the roads, from 0.5 m beyond the edges of the carriageway");
 
-	if (ImGui::Button("Find the violations on the whole map"))
+	if (m_gauge.scan)
+	{
+		auto const label{format("Scanning the map %.0f%%, %zu found", m_gauge.scan->progress * 100.f, m_gauge.map.hits.size())};
+		ImGui::ProgressBar(m_gauge.scan->progress, ImVec2(-70.0f, 0.0f), label.c_str());
+		ImGui::SameLine();
+		if (ImGui::SmallButton("Cancel"))
+			finish_gauge_map();
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("Stops the scan and keeps the models found so far");
+	}
+	else if (ImGui::Button("Find the violations on the whole map"))
 		scan_gauge_map();
-	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("Checks the models along all tracks of the scenery against the chosen gauge\nand lists them, the deepest first");
-	if (m_gauge.map.scanned)
+	else if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("Checks the models along all tracks of the scenery against the chosen gauge\nand lists them, the deepest first.\nRuns in the background, the list fills up as it goes");
+	if (m_gauge.map.scanned && false == static_cast<bool>(m_gauge.scan))
 	{
 		ImGui::SameLine();
 		if (ImGui::SmallButton("Clear"))
