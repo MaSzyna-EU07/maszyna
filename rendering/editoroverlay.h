@@ -23,7 +23,6 @@ struct editor_overlay
 	{
 		glm::vec4 color{1.0f};
 		unsigned int type{0}; // GL primitive
-		bool offset{false}; // pulled towards the camera, to show over the coplanar surfaces
 		std::vector<glm::vec3> points; // relative to the origin
 	};
 	glm::dvec3 origin{0.0};

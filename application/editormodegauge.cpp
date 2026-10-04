@@ -36,7 +36,6 @@ namespace
 {
 
 char const *const gauge_file{"editor_structure_gauges.txt"};
-std::size_t const gauge_triangle_limit{200000};
 // past this distance of the camera from the origin of the overlay it's rebuilt, to keep its float precision
 double const gauge_origin_range{2000.0};
 // length of the line shown each way from the selected path, and around a hit
@@ -290,13 +289,11 @@ template <typename Visitor> void visit_triangles(TSubModel *Submodel, glm::dmat4
 	}
 }
 
-// triangles of the models entering the gauge, and the deepest place of each model, the deepest models first
-void scan_models(corridor const &Space, std::vector<glm::dvec3> &Triangles, std::vector<editor_mode::gauge_hit> &Hits)
+// the models entering the gauge with the deepest place of each, the deepest models first
+void scan_models(corridor const &Space, std::vector<editor_mode::gauge_hit> &Hits)
 {
 	for (auto *instance : simulation::Instances.sequence())
 	{
-		if (Triangles.size() >= 3 * gauge_triangle_limit)
-			break;
 		if (instance == nullptr || false == instance->visible() || instance->Model() == nullptr || instance->Model()->GetSMRoot() == nullptr)
 			continue;
 		if (false == Space.near(instance->location(), instance->radius()))
@@ -313,7 +310,6 @@ void scan_models(corridor const &Space, std::vector<glm::dvec3> &Triangles, std:
 					auto const found{Space.intrusion(point)};
 					if (found.depth <= 0.0)
 						continue;
-					Triangles.insert(Triangles.end(), {A, B, C});
 					if (found.depth > hit.depth)
 					{
 						hit.depth = found.depth;
@@ -492,7 +488,7 @@ void editor_mode::scan_gauge(TTrack &Track)
 	std::vector<gauge_line> const lines{std::move(*line)};
 	corridor const space{lines};
 	build_tunnel(lines.front(), m_gauge.line.surface, m_gauge.line.edges);
-	scan_models(space, m_gauge.line.intruding, m_gauge.line.hits);
+	scan_models(space, m_gauge.line.hits);
 	if (false == m_gauge.map.scanned)
 		m_gauge.current = -1;
 }
@@ -505,7 +501,7 @@ void editor_mode::scan_gauge_map()
 	auto const choice{gauge_choice()};
 	auto const lines{scenery_lines(choice)};
 	corridor const space{lines};
-	scan_models(space, m_gauge.map.intruding, m_gauge.map.hits);
+	scan_models(space, m_gauge.map.hits);
 	m_gauge.map.scanned = true;
 	m_gauge.map.history = m_history.size();
 	auto const name{[](gauge::profile const *Profile) { return Profile != nullptr ? Profile->name : std::string{"-"}; }};
@@ -523,8 +519,8 @@ void editor_mode::gauge_publish()
 	m_gauge.published = true;
 	EditorOverlay.clear();
 	EditorOverlay.origin = Camera.Pos;
-	auto const batch{[](glm::vec4 const &Color, unsigned int const Type, bool const Offset, std::vector<glm::dvec3> const &Points) {
-		gfx::editor_overlay::batch result{Color, Type, Offset};
+	auto const batch{[](glm::vec4 const &Color, unsigned int const Type, std::vector<glm::dvec3> const &Points) {
+		gfx::editor_overlay::batch result{Color, Type};
 		result.points.reserve(Points.size());
 		for (auto const &point : Points)
 			result.points.emplace_back(point - EditorOverlay.origin);
@@ -538,13 +534,11 @@ void editor_mode::gauge_publish()
 		marker = {point - glm::dvec3(0.0, 3.0, 0.0), point + glm::dvec3(0.0, 3.0, 0.0), point - glm::dvec3(1.0, 0.0, 0.0), point + glm::dvec3(1.0, 0.0, 0.0),
 		          point - glm::dvec3(0.0, 0.0, 1.0), point + glm::dvec3(0.0, 0.0, 1.0)};
 	}
-	EditorOverlay.batches = {batch({0.2f, 0.9f, 0.3f, 0.12f}, GL_TRIANGLES, false, m_gauge.line.surface),
-	                         batch({0.2f, 1.0f, 0.3f, 0.5f}, GL_LINES, false, m_gauge.line.edges),
-	                         batch({1.0f, 0.1f, 0.05f, 0.6f}, GL_TRIANGLES, true, m_gauge.line.intruding),
-	                         batch({1.0f, 0.1f, 0.05f, 0.6f}, GL_TRIANGLES, true, m_gauge.map.intruding),
-	                         batch({1.0f, 0.9f, 0.1f, 1.0f}, GL_LINES, false, marker),
-	                         batch({0.2f, 0.9f, 0.3f, 0.12f}, GL_TRIANGLES, false, m_gauge.spot.surface),
-	                         batch({0.2f, 1.0f, 0.3f, 0.5f}, GL_LINES, false, m_gauge.spot.edges)};
+	EditorOverlay.batches = {batch({0.2f, 0.9f, 0.3f, 0.12f}, GL_TRIANGLES, m_gauge.line.surface),
+	                         batch({0.2f, 1.0f, 0.3f, 0.5f}, GL_LINES, m_gauge.line.edges),
+	                         batch({1.0f, 0.9f, 0.1f, 1.0f}, GL_LINES, marker),
+	                         batch({0.2f, 0.9f, 0.3f, 0.12f}, GL_TRIANGLES, m_gauge.spot.surface),
+	                         batch({0.2f, 1.0f, 0.3f, 0.5f}, GL_LINES, m_gauge.spot.edges)};
 }
 
 void editor_mode::gauge_focus(int const Index)
@@ -600,7 +594,7 @@ void editor_mode::render_gauge_window()
 	if (ImGui::Checkbox("Show along the selected path", &m_gauge.enabled))
 		m_gauge.pending = true;
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("Translucent tunnel of the gauge 500 m each way along the line of the selected path,\nwith the triangles of the models which enter it in red.\nWidened in the curves under 250 m and tilted on the cant, from 20 m (inner side)\nand 26 m (outer side) ahead of the curve, as in the PKP PLK standard, volume II.");
+		ImGui::SetTooltip("Translucent tunnel of the gauge 500 m each way along the line of the selected path.\nWidened in the curves under 250 m and tilted on the cant, from 20 m (inner side)\nand 26 m (outer side) ahead of the curve, as in the PKP PLK standard, volume II.");
 	gauge_load();
 	bool changed{render_gauge_choice("Railway", m_gauge.profile, false)};
 	if (ImGui::IsItemHovered())
@@ -612,7 +606,7 @@ void editor_mode::render_gauge_window()
 	if (ImGui::Button("Find the violations on the whole map"))
 		scan_gauge_map();
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("Checks the models along all tracks of the scenery against the chosen gauge,\nmarks them in red and lists them, the deepest first");
+		ImGui::SetTooltip("Checks the models along all tracks of the scenery against the chosen gauge\nand lists them, the deepest first");
 	if (m_gauge.map.scanned)
 	{
 		ImGui::SameLine();

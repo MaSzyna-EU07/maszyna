@@ -4531,14 +4531,8 @@ void opengl33_renderer::Render_editor_overlay()
 	{
 		if (batches[i].points.empty() || m_editor_overlay_geometry[i] == null_handle)
 			continue;
-		if (batches[i].offset)
-		{
-			::glEnable(GL_POLYGON_OFFSET_FILL);
-			::glPolygonOffset(-2.f, -2.f);
-		}
 		model_ubs.param[0] = batches[i].color;
 		draw(m_editor_overlay_geometry[i]);
-		::glDisable(GL_POLYGON_OFFSET_FILL);
 		++m_renderpass.draw_stats.drawcalls;
 	}
 	::glDepthMask(GL_TRUE);

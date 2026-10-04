@@ -331,7 +331,6 @@ class editor_mode : public application_mode, private editor_track::observer
 		{
 			std::vector<glm::dvec3> surface; // triangles of the tunnel
 			std::vector<glm::dvec3> edges; // lines
-			std::vector<glm::dvec3> intruding; // triangles of the models
 			std::vector<gauge_hit> hits;
 		} line; // along the selected path
 		struct
@@ -339,7 +338,6 @@ class editor_mode : public application_mode, private editor_track::observer
 			bool scanned{false};
 			std::size_t history{0};
 			std::string profile;
-			std::vector<glm::dvec3> intruding;
 			std::vector<gauge_hit> hits;
 		} map; // whole scenery
 		struct
