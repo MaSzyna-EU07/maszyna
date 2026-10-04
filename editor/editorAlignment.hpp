@@ -173,6 +173,9 @@ double elevation(result const &Result, double const Chainage);
 double grade(result const &Result, double const Chainage);
 
 std::size_t minimum_pieces(result const &Result, design const &Design);
-std::vector<segment_data> pieces(result const &Result, design const &Design, std::size_t const Count);
+// Breaks: ascending chainages at which pieces have to end. Counts: least number of the pieces between the consecutive breaks,
+// one more than the breaks; Intervals receives the number of the interval of each piece
+std::vector<segment_data> pieces(result const &Result, design const &Design, std::size_t const Count, std::vector<double> const &Breaks = {}, std::vector<std::size_t> const &Counts = {},
+                                 std::vector<std::size_t> *Intervals = nullptr);
 
 }

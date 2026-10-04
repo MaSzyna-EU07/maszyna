@@ -792,6 +792,8 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		edit.node = Node;
 		state.patches[Layer].edits.emplace_back(std::move(edit));
 	};
+	// changes which can't be written, as their definition stands for more than one node
+	std::vector<std::string> unwritten;
 	// traction and event launchers are rewritten when the editor moved them along with the track they belong to
 	std::vector<basic_node *> patchednodes;
 	auto const patch_node = [&](basic_node *Node, auto const &Patch) {
@@ -801,8 +803,13 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			return true;
 		}
 		auto const &source{lookup->second};
-		if (false == is_output(resolve(source.layer)) || false == writable(source.layer))
+		if (false == is_output(resolve(source.layer)))
 		{
+			return true;
+		}
+		if (false == writable(source.layer))
+		{
+			unwritten.push_back(Node->name());
 			return true;
 		}
 		if (false == load(source.layer))
@@ -876,13 +883,20 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			{
 				continue;
 			}
-			created[nodelayer].emplace_back(path, path_text(*path, layer(nodelayer).context_insert().offset));
+			// a file included more than once would get a copy of the new path at every inclusion
+			auto const target{writable(nodelayer) ? nodelayer : root};
+			created[target].emplace_back(path, path_text(*path, layer(target).context_insert().offset));
 			savedpaths.push_back(path);
 			continue;
 		}
 		auto const &source{lookup->second};
-		if ((false == path->m_editorremoved && false == path->dirty()) || false == writable(source.layer))
+		if (false == path->m_editorremoved && false == path->dirty())
 		{
+			continue;
+		}
+		if (false == writable(source.layer))
+		{
+			unwritten.push_back(path->name().empty() ? std::string{"(noname)"} : path->name());
 			continue;
 		}
 		if (false == load(source.layer))
@@ -1635,6 +1649,21 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		{
 			result.message += file + (&file != &result.files.back() ? ", " : "");
 		}
+	}
+	if (false == unwritten.empty())
+	{
+		std::string names;
+		for (std::size_t i = 0; i < std::min<std::size_t>(unwritten.size(), 5); ++i)
+		{
+			names += (i > 0 ? ", " : "") + unwritten[i];
+		}
+		if (unwritten.size() > 5)
+		{
+			names += ", ...";
+		}
+		auto const warning{std::to_string(unwritten.size()) + " changed nodes not saved, their files are included with parameters or more than once: " + names};
+		WriteLog("Scenery save: " + warning, logtype::generic);
+		result.message = result.files.empty() ? warning : result.message + ". " + warning;
 	}
 	return result;
 }

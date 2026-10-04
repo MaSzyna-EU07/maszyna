@@ -20,6 +20,7 @@ http:
 #include "utilities/Classes.h"
 
 class TTrack;
+class basic_event;
 
 class editor_track
 {
@@ -52,9 +53,28 @@ class editor_track
 		float texheight{0.6f};
 		float texwidth{0.9f};
 		float texslope{0.9f};
+		std::vector<std::string> isolated;
+		float overhead{-1.f};
+		bool sleepers{false};
+		float sleeper_frequency{0.6f};
+		std::string sleeper_model;
+		std::string sleeper_skin;
+		glm::vec3 sleeper_offset{0.f};
+		float sleeper_ballast{0.f};
+		std::array<std::vector<std::pair<std::string, basic_event *>>, 6> events;
 	};
 	static state capture(TTrack const &Track);
 	static void apply(TTrack &Track, state const &State);
+
+	// lists of the events of the path, in the order of event_keyword(): event0, event1, event2, eventall0, eventall1, eventall2
+	static std::vector<std::pair<std::string, basic_event *>> &events(TTrack &Track, int const Index);
+	static char const *event_keyword(int const Index);
+	// looks the events up by their names; the names of those which don't exist are given in Missing
+	static void bind_events(TTrack &Track, std::string &Missing);
+	// track circuits the path belongs to, made when they don't exist yet
+	static void isolated(TTrack &Track, std::vector<std::string> const &Names);
+	// -1: normal, 0: no current, above 0: speed limit with the pantographs lowered
+	static void overhead(TTrack &Track, float const Overhead);
 
 	static bool can_edit_geometry(TTrack const &Track, std::string &Reason);
 	static bool is_supported(TTrack const &Track);
@@ -71,6 +91,19 @@ class editor_track
 	static std::vector<TTrack *> neighbours(TTrack const &Track);
 	static std::vector<std::pair<TTrack *, point_ref>> connected_points(TTrack const &Track, glm::dvec3 const &Position);
 	static bool is_connected(TTrack const &Track, point_ref const &Point);
+	// end of a regular neighbouring path joined to an end of the track, as it was when taken
+	struct joint
+	{
+		point_ref own;
+		TTrack *other{nullptr};
+		point_ref theirs;
+		glm::dvec2 direction{0.0, 1.0}; // of the track at its end, into it
+		glm::dvec3 control{0.0}; // of the neighbour at its end, never zero
+	};
+	// joints the editor can change: switches and paths which can't be edited aren't taken
+	static std::vector<joint> joints(TTrack const &Track);
+	// moves the joined ends to where the ends of the track are now, turning them as the track turned there
+	static void follow(TTrack const &Track, std::vector<joint> const &Joints);
 
 	struct snap_target
 	{
@@ -81,6 +114,8 @@ class editor_track
 		double distance{0.0};
 	};
 	static snap_target find_snap_target(TTrack const &Track, glm::dvec3 const &Position, double const Radius, std::vector<TTrack const *> const &Exclude);
+	// nearest end of a path of the category which nothing else joins; Self may be null
+	static snap_target find_free_end(TTrack const *Self, int const Category, glm::dvec3 const &Position, double const Radius, std::vector<TTrack const *> const &Exclude);
 	static void snap_point(TTrack &Track, point_ref const &Point, snap_target const &Target, bool const Aligntangent);
 
 	struct chain
@@ -96,8 +131,21 @@ class editor_track
 		double length{0.0};
 		double velocity{-1.0};
 		double radius{0.0};
+		// switches the chain runs through along their main track, each before the regular path of the index given
+		struct passage
+		{
+			TTrack *track{nullptr};
+			bool forward{true};
+			std::size_t before{0};
+		};
+		std::vector<passage> switches;
 	};
-	static bool find_chain(TTrack *From, TTrack *To, chain &Chain, std::string &Error);
+	// with Switches the chain may run through the switches along their main tracks; its ends are regular paths
+	static bool find_chain(TTrack *From, TTrack *To, chain &Chain, std::string &Error, bool const Switches = false);
+	// the regular parts of a chain between its switches, empty ones skipped
+	static std::vector<chain> chain_parts(chain const &Chain);
+	// moves the track as a whole, From going to To, turned by Angle in the plan
+	static void place(TTrack &Track, glm::dvec3 const &From, glm::dvec3 const &To, double const Angle);
 
 	struct straight
 	{
@@ -140,6 +188,18 @@ class editor_track
 		double split{0.5};
 	};
 	static bool find_curve(TTrack &Track, straight_tolerance const &Tolerance, double const Gauge, curve &Curve);
+	// curve made of the given paths, each with the flag of being run from its start
+	static bool analyse_curve(std::vector<std::pair<TTrack *, bool>> const &Run, double const Gauge, curve &Curve);
+	// regular paths in line through the track, up to switches, free ends or about Limit metres each way
+	static bool find_run(TTrack &Track, double const Limit, chain &Chain, std::string &Error);
+	// the chain read as an alignment: a vertex at the intersection of the tangents of each curve
+	struct line_vertex
+	{
+		glm::dvec2 position{0.0};
+		curve shape;
+		bool kink{false}; // the straights meet with no curve between them
+	};
+	static std::vector<line_vertex> recognize_line(chain const &Chain, straight_tolerance const &Tolerance, double const Gauge);
 	// regular straight paths continuing a chain end in line, which the chain can take over
 	struct straight_run
 	{
@@ -184,15 +244,17 @@ class editor_track
 	static glm::dvec3 sampled_position(std::vector<route_sample> const &Samples, double const Chainage);
 	// grade of the path which adjoins the end of the route, positive rising along the route
 	static bool adjoining_grade(route const &Route, bool const Atend, double &Grade);
-	// path off the route whose end no longer meets the adjoining path in height
+	// path off the route whose end no longer met the adjoining path in height
 	struct height_gap
 	{
 		TTrack *track{nullptr};
 		TTrack *neighbour{nullptr};
 		double gap{0.0}; // neighbour - track
+		bool closed{false}; // the end of the neighbour was brought to the track
 	};
 	// sets elevations of the paths of the route; regular paths are split at the chainages in Breaks,
-	// switches are tilted as a whole in the plane of their grade, branches included
+	// switches are tilted as a whole in the plane of their grade, branches included, and the regular paths
+	// off the route get their ends joined to the switches brought to the height there
 	static std::vector<height_gap> apply_profile(route &Route, std::function<double(double)> const &Elevation, std::function<double(double)> const &Grade, std::vector<double> const &Breaks, std::vector<std::pair<TTrack *, state>> &States, std::vector<TTrack *> &Created);
 	// carries elevations of the chain over to the new pieces, in proportion of the length
 	static void keep_heights(chain const &Chain, std::vector<segment_data> &Pieces);
@@ -214,6 +276,16 @@ class editor_track
 	static std::vector<switch_template> find_switch_templates();
 	static TTrack *load_path(std::string const &Text, TTrack const &Template, std::string const &Name = {});
 	static TTrack *create_path(TTrack const &Style, segment_data const &Path);
+	// parameters of a path laid where there's no other path to copy them from
+	struct path_style
+	{
+		double velocity{100.0};
+		std::string rail{"rail_screw_used1"};
+		std::string ballast{"1435mm/tpbps-new2"};
+		std::string rail_profile;
+	};
+	// the path goes to the layer receiving the items created in the editor
+	static TTrack *create_path(path_style const &Style, segment_data const &Path);
 	static TTrack *split_path(TTrack &Track, double const T);
 	static double nearest_parameter(TTrack const &Track, glm::dvec3 const &Point);
 	// point of the first path at the parameter of nearest_parameter()
@@ -248,6 +320,8 @@ class editor_track
 
   private:
 	static observer *s_observer;
+	// sets the length, the ends and their directions of the chain of the tracks given
+	static bool complete_chain(chain &Chain, std::string &Error);
 	static void disconnect(TTrack &Track);
 	static void join(TTrack &Track);
 	static void connect(TTrack &Track, bool const Prevside, TTrack *Other, int const Endpointid);
@@ -256,5 +330,6 @@ class editor_track
 	static void store_switch_path(TTrack &Switch, int const Path);
 	static void rebuild_geometry(TTrack &Track);
 	static TTrack *clone(TTrack const &Template);
+	static TTrack *load_text(std::string const &Text, TTrack const *Template, std::string const &Name);
 	static void move_straight(straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End, std::function<bool(TTrack const *)> const &Member);
 };

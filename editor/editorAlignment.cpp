@@ -269,6 +269,11 @@ result fit_between(design const &Design)
 
 	auto const start{plan_of(Design.start)};
 	auto const end{plan_of(Design.end)};
+	if (glm::length(Design.start_direction) < 1e-9 || glm::length(Design.end_direction) < 1e-9)
+	{
+		r.errors.emplace_back("The direction of an end of the fragment is undefined, its end path has zero length");
+		return r;
+	}
 	auto const startdirection{glm::normalize(Design.start_direction)};
 	auto const enddirection{glm::normalize(Design.end_direction)};
 	auto const count{Design.vertices.size()};
@@ -872,7 +877,8 @@ std::size_t minimum_pieces(result const &Result, design const &Design)
 	return count;
 }
 
-std::vector<segment_data> pieces(result const &Result, design const &Design, std::size_t const Count)
+std::vector<segment_data> pieces(result const &Result, design const &Design, std::size_t const Count, std::vector<double> const &Breaks, std::vector<std::size_t> const &Counts,
+                                 std::vector<std::size_t> *Intervals)
 {
 	struct span
 	{
@@ -920,23 +926,56 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 		}
 		spans.erase(spans.begin() + i);
 	}
-	while (false == spans.empty() && spans.size() < Count)
-	{
-		auto longest = std::max_element(spans.begin(), spans.end(), [&](span const &A, span const &B) { return extent(A) < extent(B); });
-		span second{*longest};
-		if (longest->generic)
+	// splits the span at the chainage
+	auto const split = [&](std::vector<span>::iterator Span, double const Chainage) {
+		span second{*Span};
+		if (Span->generic)
 		{
-			auto const middle{(longest->start + longest->end) * 0.5};
-			second.start = middle;
-			longest->end = middle;
+			second.start = Chainage;
+			Span->end = Chainage;
 		}
 		else
 		{
-			auto const middle{(longest->from + longest->to) * 0.5};
-			second.from = middle;
-			longest->to = middle;
+			auto const local{Chainage - Result.elements[Span->element].chainage};
+			second.from = local;
+			Span->to = local;
 		}
-		spans.insert(std::next(longest), second);
+		spans.insert(std::next(Span), second);
+	};
+	double constexpr margin{0.01};
+	for (auto const chainage : Breaks)
+	{
+		auto inside{std::find_if(spans.begin(), spans.end(), [&](span const &Span) { return chainage_from(Span) < chainage - margin && chainage_to(Span) > chainage + margin; })};
+		if (inside != spans.end())
+			split(inside, chainage);
+	}
+	auto const interval = [&](span const &Span) {
+		return static_cast<std::size_t>(std::upper_bound(Breaks.begin(), Breaks.end(), (chainage_from(Span) + chainage_to(Span)) * 0.5) - Breaks.begin());
+	};
+	for (std::size_t k = 0; k < Counts.size(); ++k)
+	{
+		while (true)
+		{
+			auto const inside{static_cast<std::size_t>(std::count_if(spans.begin(), spans.end(), [&](span const &Span) { return interval(Span) == k; }))};
+			if (inside == 0 || inside >= Counts[k])
+				break;
+			auto longest{spans.end()};
+			for (auto candidate = spans.begin(); candidate != spans.end(); ++candidate)
+				if (interval(*candidate) == k && (longest == spans.end() || extent(*candidate) > extent(*longest)))
+					longest = candidate;
+			split(longest, (chainage_from(*longest) + chainage_to(*longest)) * 0.5);
+		}
+	}
+	while (false == spans.empty() && spans.size() < Count)
+	{
+		auto longest = std::max_element(spans.begin(), spans.end(), [&](span const &A, span const &B) { return extent(A) < extent(B); });
+		split(longest, (chainage_from(*longest) + chainage_to(*longest)) * 0.5);
+	}
+	if (Intervals != nullptr)
+	{
+		Intervals->clear();
+		for (auto const &piece : spans)
+			Intervals->push_back(interval(piece));
 	}
 
 	std::vector<segment_data> result;

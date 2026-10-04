@@ -15,6 +15,7 @@ http:
 #include "world/Track.h"
 #include "vehicle/DynObj.h"
 #include "scene/scene.h"
+#include "scene/scenelayers.h"
 #include "simulation/simulation.h"
 #include "rendering/renderer.h"
 #include "utilities/Globals.h"
@@ -145,7 +146,80 @@ editor_track::state editor_track::capture(TTrack const &Track)
 	result.texheight = texture_height(Track);
 	result.texwidth = Track.fTexWidth;
 	result.texslope = Track.fTexSlope;
+	for (auto const *isolated : Track.Isolated)
+		result.isolated.push_back(isolated->asName);
+	result.overhead = Track.fOverhead;
+	result.sleepers = Track.m_sleeper_enabled;
+	result.sleeper_frequency = Track.m_sleeper_frequency;
+	result.sleeper_model = Track.m_sleeper_model_name;
+	result.sleeper_skin = Track.m_sleeper_skin_name;
+	result.sleeper_offset = Track.m_sleeper_offset;
+	result.sleeper_ballast = Track.m_sleeper_ballast_z;
+	for (int i = 0; i < 6; ++i)
+		result.events[i] = events(const_cast<TTrack &>(Track), i);
 	return result;
+}
+
+std::vector<std::pair<std::string, basic_event *>> &editor_track::events(TTrack &Track, int const Index)
+{
+	switch (Index)
+	{
+	case 1: return Track.m_events1;
+	case 2: return Track.m_events2;
+	case 3: return Track.m_events0all;
+	case 4: return Track.m_events1all;
+	case 5: return Track.m_events2all;
+	default: return Track.m_events0;
+	}
+}
+
+char const *editor_track::event_keyword(int const Index)
+{
+	char const *const keywords[] = {"event0", "event1", "event2", "eventall0", "eventall1", "eventall2"};
+	return keywords[std::clamp(Index, 0, 5)];
+}
+
+void editor_track::bind_events(TTrack &Track, std::string &Missing)
+{
+	Missing.clear();
+	Track.m_events = false;
+	for (int i = 0; i < 6; ++i)
+		for (auto &event : events(Track, i))
+		{
+			// the ones bound by the name of the path have no name of their own
+			if (false == event.first.empty())
+				event.second = simulation::Events.FindEvent(event.first);
+			if (event.second != nullptr)
+				Track.m_events = true;
+			else
+				Missing += (Missing.empty() ? "" : ", ") + event.first;
+		}
+}
+
+void editor_track::isolated(TTrack &Track, std::vector<std::string> const &Names)
+{
+	Track.Isolated.clear();
+	for (auto const &name : Names)
+	{
+		if (name.empty())
+			continue;
+		bool known{false};
+		for (auto *existing{TIsolated::Root()}; existing != nullptr && false == known; existing = existing->Next())
+			known = (existing->asName == name);
+		auto *isolated{TIsolated::Find(name)};
+		if (false == known)
+			isolated->AssignEvents();
+		Track.Isolated.push_back(isolated);
+	}
+}
+
+void editor_track::overhead(TTrack &Track, float const Overhead)
+{
+	Track.fOverhead = Overhead;
+	if (Overhead > 0.f)
+		Track.iAction |= 0x40;
+	else
+		Track.iAction &= ~0x40;
 }
 
 void editor_track::apply(TTrack &Track, state const &State)
@@ -170,6 +244,19 @@ void editor_track::apply(TTrack &Track, state const &State)
 	texture_height(Track, State.texheight);
 	Track.fTexWidth = State.texwidth;
 	Track.fTexSlope = State.texslope;
+	isolated(Track, State.isolated);
+	overhead(Track, State.overhead);
+	Track.m_sleeper_enabled = State.sleepers;
+	Track.m_sleeper_frequency = State.sleeper_frequency;
+	Track.m_sleeper_model_name = State.sleeper_model;
+	Track.m_sleeper_skin_name = State.sleeper_skin;
+	Track.m_sleeper_offset = State.sleeper_offset;
+	Track.m_sleeper_ballast_z = State.sleeper_ballast;
+	for (int i = 0; i < 6; ++i)
+		events(Track, i) = State.events[i];
+	Track.m_events = std::any_of(State.events.begin(), State.events.end(), [](auto const &Events) {
+		return std::any_of(Events.begin(), Events.end(), [](auto const &Event) { return Event.second != nullptr; });
+	});
 }
 
 bool editor_track::is_supported(TTrack const &Track)
@@ -196,6 +283,12 @@ bool editor_track::can_edit_geometry(TTrack const &Track, std::string &Reason)
 	if (Global.NvRenderer)
 	{
 		Reason = "Path geometry can't be rebuilt with the experimental renderer";
+		return false;
+	}
+	std::string why;
+	if (false == scene::Layers.editable(&Track, &why))
+	{
+		Reason = "The path can't be changed: " + why;
 		return false;
 	}
 	Reason.clear();
@@ -387,6 +480,62 @@ std::vector<std::pair<TTrack *, editor_track::point_ref>> editor_track::connecte
 	return result;
 }
 
+namespace
+{
+
+// direction of the path at the end, into the path
+glm::dvec2 end_direction(segment_data const &Path, editor_track::point_kind const Kind)
+{
+	bool const start{Kind == editor_track::point_kind::start};
+	auto const &point{Path.points[start ? segment_data::point::start : segment_data::point::end]};
+	auto const &control{Path.points[start ? segment_data::point::control1 : segment_data::point::control2]};
+	auto const direction{plan_of(control != glm::dvec3{} ? control : Path.points[start ? segment_data::point::end : segment_data::point::start] - point)};
+	return glm::length(direction) > 1e-9 ? glm::normalize(direction) : glm::dvec2{0.0, 1.0};
+}
+
+} // namespace
+
+std::vector<editor_track::joint> editor_track::joints(TTrack const &Track)
+{
+	std::vector<joint> result;
+	for (int i = 0; i < static_cast<int>(Track.m_paths.size()); ++i)
+	{
+		for (auto const kind : {point_kind::start, point_kind::end})
+		{
+			point_ref const own{i, kind};
+			for (auto const &connection : connected_points(Track, point_position(Track, own)))
+			{
+				auto *other{connection.first};
+				std::string reason;
+				if (has_switch_paths(*other) || false == can_edit_geometry(*other, reason))
+					continue;
+				if (std::any_of(result.begin(), result.end(), [&](joint const &Joint) { return Joint.other == other && Joint.theirs == connection.second; }))
+					continue;
+				auto const &path{other->m_paths[connection.second.path]};
+				bool const start{connection.second.kind == point_kind::start};
+				auto control{path.points[start ? segment_data::point::control1 : segment_data::point::control2]};
+				if (control == glm::dvec3{})
+					control = (path.points[start ? segment_data::point::end : segment_data::point::start] - path.points[start ? segment_data::point::start : segment_data::point::end]) / 3.0;
+				result.push_back({own, other, connection.second, end_direction(Track.m_paths[i], kind), control});
+			}
+		}
+	}
+	return result;
+}
+
+void editor_track::follow(TTrack const &Track, std::vector<joint> const &Joints)
+{
+	for (auto const &joint : Joints)
+	{
+		if (joint.own.path >= static_cast<int>(Track.m_paths.size()) || joint.theirs.path >= static_cast<int>(joint.other->m_paths.size()))
+			continue;
+		move_point(*joint.other, joint.theirs, point_position(Track, joint.own));
+		auto const angle{signed_angle(joint.direction, end_direction(Track.m_paths[joint.own.path], joint.own.kind))};
+		auto const moved{turned(plan_of(joint.control), angle)};
+		joint.other->m_paths[joint.theirs.path].points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2] = {moved.x, joint.control.y, moved.y};
+	}
+}
+
 bool editor_track::is_connected(TTrack const &Track, point_ref const &Point)
 {
 	if (false == editor_track::is_end(Point.kind))
@@ -396,11 +545,15 @@ bool editor_track::is_connected(TTrack const &Track, point_ref const &Point)
 
 editor_track::snap_target editor_track::find_snap_target(TTrack const &Track, glm::dvec3 const &Position, double const Radius, std::vector<TTrack const *> const &Exclude)
 {
+	return find_free_end(&Track, Track.iCategoryFlag & 15, Position, Radius, Exclude);
+}
+
+editor_track::snap_target editor_track::find_free_end(TTrack const *Self, int const Category, glm::dvec3 const &Position, double const Radius, std::vector<TTrack const *> const &Exclude)
+{
 	snap_target result;
 	result.distance = std::numeric_limits<double>::max();
 
 	auto const excluded = [&](TTrack const *Other) { return std::find(Exclude.begin(), Exclude.end(), Other) != Exclude.end(); };
-	auto const category{Track.iCategoryFlag & 15};
 	auto const sections{simulation::Region->sections(Position, static_cast<float>(Radius))};
 	for (auto *section : sections)
 	{
@@ -408,7 +561,7 @@ editor_track::snap_target editor_track::find_snap_target(TTrack const &Track, gl
 		{
 			for (auto *other : cell.m_directories.paths)
 			{
-				if (other == &Track || excluded(other) || (other->iCategoryFlag & 15) != category || false == is_supported(*other))
+				if (other == Self || excluded(other) || (other->iCategoryFlag & 15) != Category || false == is_supported(*other))
 					continue;
 				for (int i = 0; i < static_cast<int>(other->m_paths.size()); ++i)
 				{
@@ -693,7 +846,7 @@ void editor_track::store_switch_path(TTrack &Switch, int const Path)
 	}
 }
 
-bool editor_track::find_chain(TTrack *From, TTrack *To, chain &Chain, std::string &Error)
+bool editor_track::find_chain(TTrack *From, TTrack *To, chain &Chain, std::string &Error, bool const Switches)
 {
 	Chain = {};
 	if (From == nullptr || To == nullptr)
@@ -717,10 +870,25 @@ bool editor_track::find_chain(TTrack *From, TTrack *To, chain &Chain, std::strin
 		{
 			Chain.tracks = {From};
 			Chain.forward = {throughend};
+			Chain.switches.clear();
 			TTrack *previous{From};
 			TTrack *current{throughend ? From->trNext : From->trPrev};
-			while (current != nullptr && current != From && Chain.tracks.size() < 10000 && regular(current))
+			while (current != nullptr && current != From && Chain.tracks.size() + Chain.switches.size() < 10000)
 			{
+				if (Switches && current->eType == tt_Switch && has_switch_paths(*current) && is_supported(*current))
+				{
+					// only along the main track, the way in decides the way out
+					auto const &extension{*current->SwitchExtension};
+					bool const atstart{extension.pPrevs[0] == previous};
+					if (atstart == (extension.pNexts[0] == previous))
+						break;
+					Chain.switches.push_back({current, atstart, Chain.tracks.size()});
+					previous = current;
+					current = atstart ? extension.pNexts[0] : extension.pPrevs[0];
+					continue;
+				}
+				if (false == regular(current))
+					break;
 				auto const entersatstart{current->trPrev == previous};
 				Chain.tracks.push_back(current);
 				Chain.forward.push_back(entersatstart);
@@ -738,12 +906,29 @@ bool editor_track::find_chain(TTrack *From, TTrack *To, chain &Chain, std::strin
 		if (false == found)
 		{
 			Chain = {};
-			Error = "The selected paths aren't connected by a chain of regular paths (switches end the chain)";
+			Error = Switches ? "The selected paths aren't connected along the main tracks of the switches" : "The selected paths aren't connected by a chain of regular paths (switches end the chain)";
 			return false;
 		}
 	}
+	for (auto const &passage : Chain.switches)
+	{
+		if ((passage.track->iCategoryFlag & 15) != (From->iCategoryFlag & 15))
+		{
+			Error = "The fragment mixes different kinds of paths";
+			Chain = {};
+			return false;
+		}
+		Chain.length += bezier{passage.track->m_paths.front()}.plan_length();
+	}
 
-	auto const category{From->iCategoryFlag & 15};
+	return complete_chain(Chain, Error);
+}
+
+bool editor_track::complete_chain(chain &Chain, std::string &Error)
+{
+	auto *from{Chain.tracks.front()};
+	auto *to{Chain.tracks.back()};
+	auto const category{from->iCategoryFlag & 15};
 	for (auto const *track : Chain.tracks)
 	{
 		if ((track->iCategoryFlag & 15) != category)
@@ -761,22 +946,43 @@ bool editor_track::find_chain(TTrack *From, TTrack *To, chain &Chain, std::strin
 			Chain.radius = radius;
 	}
 
-	auto const &first{From->m_paths.front()};
+	auto const &first{from->m_paths.front()};
 	auto const firstforward{Chain.forward.front()};
 	Chain.start = first.points[firstforward ? segment_data::point::start : segment_data::point::end];
 	Chain.start_direction = firstforward ? path_tangent(first, false) : -path_tangent(first, true);
-	adjoining_direction(firstforward ? From->trPrev : From->trNext, Chain.start, false, Chain.start_direction, Chain.start_radius);
+	adjoining_direction(firstforward ? from->trPrev : from->trNext, Chain.start, false, Chain.start_direction, Chain.start_radius);
 	Chain.start_direction = glm::normalize(Chain.start_direction);
 
-	auto const &last{To->m_paths.front()};
+	auto const &last{to->m_paths.front()};
 	auto const lastforward{Chain.forward.back()};
 	Chain.end = last.points[lastforward ? segment_data::point::end : segment_data::point::start];
 	Chain.end_direction = lastforward ? path_tangent(last, true) : -path_tangent(last, false);
-	adjoining_direction(lastforward ? To->trNext : To->trPrev, Chain.end, true, Chain.end_direction, Chain.end_radius);
+	adjoining_direction(lastforward ? to->trNext : to->trPrev, Chain.end, true, Chain.end_direction, Chain.end_radius);
 	Chain.end_direction = glm::normalize(Chain.end_direction);
 
 	Error.clear();
 	return true;
+}
+
+std::vector<editor_track::chain> editor_track::chain_parts(chain const &Chain)
+{
+	std::vector<chain> parts;
+	std::size_t first{0};
+	auto const add = [&](std::size_t const End) {
+		if (End <= first)
+			return;
+		chain part;
+		part.tracks.assign(Chain.tracks.begin() + first, Chain.tracks.begin() + End);
+		part.forward.assign(Chain.forward.begin() + first, Chain.forward.begin() + End);
+		std::string error;
+		if (complete_chain(part, error))
+			parts.push_back(std::move(part));
+		first = End;
+	};
+	for (auto const &passage : Chain.switches)
+		add(passage.before);
+	add(Chain.tracks.size());
+	return parts;
 }
 
 namespace
@@ -873,6 +1079,11 @@ void follow_joint(TTrack &Track, glm::dvec3 const &From, glm::dvec3 const &To, d
 }
 
 } // namespace
+
+void editor_track::place(TTrack &Track, glm::dvec3 const &From, glm::dvec3 const &To, double const Angle)
+{
+	rigid_move(Track, From, To, Angle);
+}
 
 bool editor_track::is_straight(TTrack const &Track, straight_tolerance const &Tolerance)
 {
@@ -1034,7 +1245,15 @@ bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance
 			current = entersatstart ? current->trNext : current->trPrev;
 		}
 	}
+	return analyse_curve({run.begin(), run.end()}, Gauge, Curve);
+}
 
+bool editor_track::analyse_curve(std::vector<std::pair<TTrack *, bool>> const &Run, double const Gauge, curve &Curve)
+{
+	Curve = {};
+	if (Run.empty())
+		return false;
+	auto const &run{Run};
 	std::vector<double> turns;
 	std::vector<double> lengths;
 	std::vector<bool> varying;
@@ -1163,6 +1382,102 @@ bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance
 	Curve.from = run.front().first;
 	Curve.to = run.back().first;
 	return true;
+}
+
+bool editor_track::find_run(TTrack &Track, double const Limit, chain &Chain, std::string &Error)
+{
+	auto const category{Track.iCategoryFlag & 15};
+	auto const regular = [&](TTrack const *Other) { return Other != nullptr && Other->eType == tt_Normal && is_supported(*Other) && false == Other->m_editorremoved && (Other->iCategoryFlag & 15) == category; };
+	if (false == regular(&Track))
+	{
+		Error = "A line is made of regular paths, a switch ends it";
+		return false;
+	}
+	straight_tolerance const tolerance;
+	TTrack *ends[2]{&Track, &Track};
+	std::vector<TTrack const *> visited{&Track};
+	for (int side = 0; side < 2; ++side)
+	{
+		TTrack *previous{&Track};
+		TTrack *current{side == 0 ? Track.trNext : Track.trPrev};
+		double length{0.0};
+		// past the limit the line goes on to the next straight, so it doesn't end inside a curve
+		while (regular(current) && std::find(visited.begin(), visited.end(), current) == visited.end() && (length < Limit || (length < 3.0 * Limit && false == is_straight(*ends[side], tolerance))))
+		{
+			visited.push_back(current);
+			ends[side] = current;
+			length += current->Length();
+			auto const entersatstart{current->trPrev == previous};
+			previous = current;
+			current = entersatstart ? current->trNext : current->trPrev;
+		}
+	}
+	return find_chain(ends[1], ends[0], Chain, Error);
+}
+
+std::vector<editor_track::line_vertex> editor_track::recognize_line(chain const &Chain, straight_tolerance const &Tolerance, double const Gauge)
+{
+	std::vector<line_vertex> result;
+	auto const count{Chain.tracks.size()};
+	auto const path = [&](std::size_t const Index) -> segment_data const & { return Chain.tracks[Index]->m_paths.front(); };
+	auto const tangent_in = [&](std::size_t const Index) { return glm::normalize(plan_of(Chain.forward[Index] ? path_tangent(path(Index), false) : -path_tangent(path(Index), true))); };
+	auto const tangent_out = [&](std::size_t const Index) { return glm::normalize(plan_of(Chain.forward[Index] ? path_tangent(path(Index), true) : -path_tangent(path(Index), false))); };
+	auto const point_in = [&](std::size_t const Index) { return plan_of(path(Index).points[Chain.forward[Index] ? segment_data::point::start : segment_data::point::end]); };
+	auto const point_out = [&](std::size_t const Index) { return plan_of(path(Index).points[Chain.forward[Index] ? segment_data::point::end : segment_data::point::start]); };
+
+	std::vector<bool> straight(count);
+	std::vector<double> turns(count);
+	for (std::size_t i = 0; i < count; ++i)
+	{
+		straight[i] = is_straight(*Chain.tracks[i], Tolerance);
+		turns[i] = signed_angle(tangent_in(i), tangent_out(i));
+	}
+	auto const add_curve = [&](std::size_t const First, std::size_t const Last) {
+		auto const a{point_in(First)};
+		auto const b{point_out(Last)};
+		auto const directionin{tangent_in(First)};
+		auto const directionout{tangent_out(Last)};
+		auto const determinant{cross(directionin, directionout)};
+		if (std::abs(determinant) < 1e-6)
+			return;
+		line_vertex vertex;
+		vertex.position = a + directionin * (cross(b - a, directionout) / determinant);
+		std::vector<std::pair<TTrack *, bool>> run;
+		for (auto i = First; i <= Last; ++i)
+			run.emplace_back(Chain.tracks[i], Chain.forward[i]);
+		analyse_curve(run, Gauge, vertex.shape);
+		result.push_back(vertex);
+	};
+	std::size_t i{0};
+	while (i < count)
+	{
+		if (straight[i])
+		{
+			if (i + 1 < count && straight[i + 1] && std::abs(signed_angle(tangent_out(i), tangent_in(i + 1))) > 1e-3)
+			{
+				line_vertex vertex;
+				vertex.position = point_out(i);
+				vertex.kink = true;
+				result.push_back(vertex);
+			}
+			++i;
+			continue;
+		}
+		auto const first{i};
+		int sign{0};
+		while (i < count && false == straight[i])
+		{
+			int const current{turns[i] > 1e-9 ? 1 : turns[i] < -1e-9 ? -1 : 0};
+			// a reverse curve: the next one starts here
+			if (current != 0 && sign != 0 && current != sign)
+				break;
+			if (current != 0)
+				sign = current;
+			++i;
+		}
+		add_curve(first, i - 1);
+	}
+	return result;
 }
 
 namespace
@@ -1649,25 +1964,39 @@ std::vector<editor_track::height_gap> editor_track::apply_profile(route &Route, 
 	sample_route(Route, 1.0);
 
 	std::vector<height_gap> gaps;
+	std::vector<TTrack *> raised;
 	for (auto const &joint : joints)
 	{
 		auto const &end{joint.track->m_paths[joint.path].points[joint.atend ? segment_data::point::end : segment_data::point::start]};
 		double nearest{std::numeric_limits<double>::max()};
 		double gap{0.0};
-		for (auto const &path : joint.neighbour->m_paths)
+		glm::dvec3 *closest{nullptr};
+		for (auto &path : joint.neighbour->m_paths)
 			for (auto const index : {segment_data::point::start, segment_data::point::end})
 			{
-				auto const &point{path.points[index]};
+				auto &point{path.points[index]};
 				auto const distance{std::hypot(point.x - end.x, point.z - end.z)};
 				if (distance < nearest)
 				{
 					nearest = distance;
 					gap = point.y - end.y;
+					closest = &point;
 				}
 			}
-		if (nearest <= kSamePoint && std::abs(gap) > 0.001)
-			gaps.push_back({joint.track, joint.neighbour, gap});
+		if (nearest > kSamePoint || std::abs(gap) <= 0.001)
+			continue;
+		// a regular path off the route takes the height of the switch at the joint, keeping its other end
+		std::string reason;
+		bool const closed{joint.neighbour->eType == tt_Normal && can_edit_geometry(*joint.neighbour, reason)};
+		if (closed)
+		{
+			remember(joint.neighbour);
+			closest->y = end.y;
+			add_unique(raised, joint.neighbour);
+		}
+		gaps.push_back({joint.track, joint.neighbour, gap, closed});
 	}
+	commit(raised);
 	return gaps;
 }
 
@@ -1844,7 +2173,7 @@ void write_header(std::ostream &Text, char const *Type, double const Length, dou
 {
 	char const *environments[] = {"flat", "mountains", "canyon", "tunnel", "bridge", "bank"};
 	auto const environment{Style.eEnvironment >= e_flat && Style.eEnvironment <= e_bank ? environments[Style.eEnvironment] : "flat"};
-	Text << Type << ' ' << Length << ' ' << Style.fTrackWidth << ' ' << Style.fFriction << ' ' << Sound << ' ' << Style.iQualityFlag << ' ' << 0 << ' ' << environment << ' ';
+	Text << Type << ' ' << Length << ' ' << Style.fTrackWidth << ' ' << Style.fFriction << ' ' << Sound << ' ' << Style.iQualityFlag << ' ' << (Style.iDamageFlag & 127) << ' ' << environment << ' ';
 	if (Style.m_visible)
 		Text << "vis " << editor_track::material_name(Style.m_material1) << ' ' << Style.fTexLength << ' ' << editor_track::material_name(Second) << ' ' << editor_track::texture_height(Style) << ' ' << Style.fTexWidth << ' ' << Style.fTexSlope << ' ';
 	else
@@ -1864,6 +2193,13 @@ void write_ending(std::ostream &Text, TTrack const &Style)
 {
 	if ((Style.iCategoryFlag & 15) == 1 && false == Style.m_profile1.first.empty())
 		Text << "railprofile " << Style.m_profile1.first << ' ';
+	// a piece of the track made from another one stays in its track circuit and under the same overhead line
+	for (auto const *isolated : Style.Isolated)
+		Text << "isolated " << isolated->asName << ' ';
+	if (Style.fOverhead != -1.0)
+		Text << "overhead " << Style.fOverhead << ' ';
+	if (Style.m_sleeper_enabled && false == Style.m_sleeper_model_name.empty())
+		Text << "sleepermodel " << Style.m_sleeper_frequency << ' ' << Style.m_sleeper_model_name << ' ' << (Style.m_sleeper_skin_name.empty() ? std::string{"none"} : Style.m_sleeper_skin_name) << ' ' << Style.m_sleeper_offset.x << ' ' << Style.m_sleeper_offset.y << ' ' << Style.m_sleeper_offset.z << ' ' << Style.m_sleeper_ballast_z << ' ';
 	Text << "endtrack\n";
 }
 
@@ -2203,7 +2539,9 @@ TTrack *editor_track::split_path(TTrack &Track, double const T)
 	auto const roll{static_cast<float>(path.rolls[0] + (path.rolls[1] - path.rolls[0]) * T)};
 	if (path.points[segment_data::point::control1] == glm::dvec3{} && path.points[segment_data::point::control2] == glm::dvec3{})
 	{
-		auto const middle{glm::mix(p0, p3, T)};
+		// the parameter is the one of the cubic with the controls at the ends, as everywhere else, not a share of the length
+		auto const u{1.0 - T};
+		auto const middle{p0 * (u * u * u + 3.0 * u * u * T) + p3 * (3.0 * u * T * T + T * T * T)};
 		first.points[segment_data::point::end] = middle;
 		second.points[segment_data::point::start] = middle;
 	}
@@ -2228,6 +2566,24 @@ TTrack *editor_track::split_path(TTrack &Track, double const T)
 	second.rolls[0] = roll;
 	auto *created{create_path(Track, second)};
 	Track.m_paths.front() = first;
+	// the events stay where the trains run into them: those of the runs towards the end at the start, in the original,
+	// those of the runs towards the start at the end, in the new piece; those of a stop in both. the ones bound
+	// by the name of the path stay with it
+	for (auto const index : {0, 3})
+		for (auto const &event : events(Track, index))
+			if (false == event.first.empty())
+				events(*created, index).push_back(event);
+	for (auto const index : {1, 4})
+	{
+		auto &own{events(Track, index)};
+		for (auto const &event : own)
+			if (false == event.first.empty())
+				events(*created, index).push_back(event);
+		own.erase(std::remove_if(own.begin(), own.end(), [](auto const &Event) { return false == Event.first.empty(); }), own.end());
+	}
+	std::string missing;
+	bind_events(Track, missing);
+	bind_events(*created, missing);
 	if (s_observer != nullptr)
 		s_observer->track_split(Track, *created, first);
 	commit({&Track, created});
@@ -2236,17 +2592,42 @@ TTrack *editor_track::split_path(TTrack &Track, double const T)
 
 TTrack *editor_track::load_path(std::string const &Text, TTrack const &Template, std::string const &Name)
 {
+	return load_text(Text, &Template, Name);
+}
+
+TTrack *editor_track::create_path(path_style const &Style, segment_data const &Path)
+{
+	std::ostringstream text;
+	text.precision(std::numeric_limits<double>::digits10);
+	auto const length{glm::distance(Path.points[segment_data::point::start], Path.points[segment_data::point::end])};
+	text << "normal " << length << " 1.435 0.15 25 20 0 flat vis " << Style.rail << " 6 " << Style.ballast << " 0.2 0.5 1.1 ";
+	write_points(text, Path);
+	if (Style.velocity > 0.0)
+		text << "velocity " << Style.velocity << ' ';
+	if (false == Style.rail_profile.empty())
+		text << "railprofile " << Style.rail_profile << ' ';
+	text << "endtrack\n";
+	auto *track{load_text(text.str(), nullptr, {})};
+	track->m_paths = {Path};
+	return track;
+}
+
+TTrack *editor_track::load_text(std::string const &Text, TTrack const *Template, std::string const &Name)
+{
 	cParser parser(Text, cParser::buffer_TEXT);
 	scene::node_data data;
 	data.type = "track";
-	auto const base{Template.name().empty() || Template.name() == "none" ? std::string{"editor_track"} : Template.name()};
+	auto const base{false == Name.empty() ? Name : Template == nullptr || Template->name().empty() || Template->name() == "none" ? std::string{"editor_track"} : Template->name()};
 	data.name = Name;
-	data.layer = Template.layer();
+	data.layer = Template != nullptr ? Template->layer() : scene::Layers.active();
 	for (int i = 1; data.name.empty() || simulation::Paths.find(data.name) != nullptr; ++i)
 		data.name = base + "_" + std::to_string(i);
 	auto *track = new TTrack(data);
-	track->m_rangesquaredmin = Template.m_rangesquaredmin;
-	track->m_rangesquaredmax = Template.m_rangesquaredmax;
+	if (Template != nullptr)
+	{
+		track->m_rangesquaredmin = Template->m_rangesquaredmin;
+		track->m_rangesquaredmax = Template->m_rangesquaredmax;
+	}
 	track->Load(&parser, glm::dvec3{});
 	for (auto *events : {&track->m_events0, &track->m_events1, &track->m_events2, &track->m_events0all, &track->m_events1all, &track->m_events2all})
 		events->clear();
