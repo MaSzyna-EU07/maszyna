@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <optional>
@@ -87,11 +88,27 @@ gauge_line make_line(editor_track::route &Route, gauge::profile const &Profile)
 	return line;
 }
 
-// the line along the route from the path with the outline of its kind, none without the outline or the length
-std::optional<gauge_line> track_line(gauge::choice const &Choice, TTrack const &Track, editor_track::route &Route)
+// outline checked along the path, none on the pavements, which are the roads with the pavement texture
+gauge::profile const *outline_of(gauge::choice const &Choice, TTrack const &Track)
 {
 	auto const *profile{Choice.of(Track.iCategoryFlag)};
 	if (profile == nullptr || profile->outline.size() < 2)
+		return nullptr;
+	if (profile == Choice.road)
+	{
+		auto name{editor_track::material_name(Track.m_material1)};
+		std::transform(name.begin(), name.end(), name.begin(), [](unsigned char const C) { return static_cast<char>(std::tolower(C)); });
+		if (name.find("chodnik") != std::string::npos)
+			return nullptr;
+	}
+	return profile;
+}
+
+// the line along the route from the path with the outline of its kind, none without the outline or the length
+std::optional<gauge_line> track_line(gauge::choice const &Choice, TTrack const &Track, editor_track::route &Route)
+{
+	auto const *profile{outline_of(Choice, Track)};
+	if (profile == nullptr)
 		return std::nullopt;
 	auto line{make_line(Route, *profile)};
 	if (line.samples.size() < 2)
@@ -105,7 +122,7 @@ std::vector<gauge_line> scenery_lines(gauge::choice const &Choice)
 	std::vector<gauge_line> lines;
 	std::unordered_set<TTrack const *> visited;
 	auto const seen{[&](editor_track::route_span const &Span) { return visited.count(Span.track) > 0; }};
-	auto const checked{[&](TTrack const *Track) { return Track != nullptr && editor_track::is_supported(*Track) && Choice.of(Track->iCategoryFlag) != nullptr; }};
+	auto const checked{[&](TTrack const *Track) { return Track != nullptr && editor_track::is_supported(*Track) && outline_of(Choice, *Track) != nullptr; }};
 	for (auto *track : simulation::Paths.sequence())
 	{
 		if (false == checked(track) || visited.count(track) > 0)
@@ -119,7 +136,7 @@ std::vector<gauge_line> scenery_lines(gauge::choice const &Choice)
 			spans.pop_back();
 		for (auto const &span : spans)
 			visited.insert(span.track);
-		lines.push_back(make_line(route, *Choice.of(track->iCategoryFlag)));
+		lines.push_back(make_line(route, *outline_of(Choice, *track)));
 	}
 	// diverging paths of the switches
 	for (auto *track : simulation::Paths.sequence())
@@ -127,7 +144,7 @@ std::vector<gauge_line> scenery_lines(gauge::choice const &Choice)
 		{
 			editor_track::route route;
 			route.spans.push_back({track, 1, true});
-			lines.push_back(make_line(route, *Choice.of(track->iCategoryFlag)));
+			lines.push_back(make_line(route, *outline_of(Choice, *track)));
 		}
 	return lines;
 }
