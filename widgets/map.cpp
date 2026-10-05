@@ -95,6 +95,7 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
 	m_colored_paths.occupied.clear();
 	m_colored_paths.future.clear();
     m_colored_paths.highlighted.clear();
+	m_colored_paths.roads.clear();
 	m_section_handles.clear();
 
 	for (int row = 0; row < scene::EU07_REGIONSIDESECTIONCOUNT; row++)
@@ -109,6 +110,7 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
 				{
 					m_section_handles.push_back(handle);
 					section->get_map_active_paths(m_colored_paths);
+					section->get_map_road_paths(m_colored_paths);
 				}
 			}
 		}
@@ -149,6 +151,12 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
     opengl33_renderer *gl33 = dynamic_cast<opengl33_renderer*>(GfxRenderer.get());
 
     gl33->Draw_Geometry(m_section_handles.begin(), m_section_handles.end());
+
+	if (m_widelines_supported)
+		glLineWidth(2.5f);
+	scene_ubs.cascade_end = glm::vec4(0.4f, 0.4f, 0.4f, 0.0f);
+	scene_ubo->update(scene_ubs);
+	gl33->Draw_Geometry(m_colored_paths.roads.begin(), m_colored_paths.roads.end());
 
     if (m_widelines_supported)
         glLineWidth(4.5f);
@@ -234,11 +242,11 @@ void ui::map_panel::render_contents()
 		float prev_zoom = zoom;
 
 		if (ImGui::Button("+"))
-			zoom *= 2.0f;
+			zoom *= 1.25f;
 		ImGui::SameLine();
 
 		if (ImGui::Button("-"))
-			zoom /= 2.0f;
+			zoom /= 1.25f;
 		ImGui::SameLine();
 
 		float x = zoom / prev_zoom;

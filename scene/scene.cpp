@@ -647,6 +647,12 @@ void basic_cell::get_map_active_paths(map_colored_paths &handles)
 		path->get_map_active_paths(handles);
 }
 
+void basic_cell::get_map_road_paths(map_colored_paths &handles)
+{
+	for (auto *path : m_paths)
+		path->get_map_road_paths(handles);
+}
+
 glm::vec3 basic_cell::find_nearest_track_point(const glm::dvec3 &pos)
 {
 	float min = std::numeric_limits<float>::max();
@@ -985,6 +991,12 @@ void basic_section::get_map_active_paths(map_colored_paths &handles)
 {
 	for (auto &cell : m_cells)
 		cell.get_map_active_paths(handles);
+}
+
+void basic_section::get_map_road_paths(map_colored_paths &handles)
+{
+	for (auto &cell : m_cells)
+		cell.get_map_road_paths(handles);
 }
 
 glm::vec3 basic_section::find_nearest_track_point(const glm::dvec3 &point)
