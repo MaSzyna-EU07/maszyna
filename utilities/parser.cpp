@@ -356,6 +356,7 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
 	if (isTerrain && true == Global.file_binary_terrain_state) {
 		WriteLog("SBT found, ignoring: " + includefile);
 		readParameters(srcParser); // preserve original side-effect: still consume parameters
+		++Global.file_binary_terrain_skipped;
 		if (sceneryLayers)
 		{
 			// the file is still a part of the scenery, even though its content comes from the binary terrain file

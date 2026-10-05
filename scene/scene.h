@@ -39,8 +39,12 @@ struct scratch_data {
 
     struct binary_data {
 
-        bool terrain{ false };
-		bool terrain_included{false};
+        bool terrain{ false }; // static geometry comes from binary terrain, its text definitions are skipped
+		bool terrain_included{false}; // binary terrain comes from the files named by terrain directives instead of the default one
+        bool terrain_default{ false }; // the scenario has usable binary terrain file of its own
+        std::vector<std::string> terrain_files; // files named by terrain directives; each one is loaded once
+        std::size_t geometry_imported{ 0 }; // pieces of static geometry read from the text definitions so far
+        std::size_t geometry_skipped{ 0 }; // pieces of static geometry left out so far, as provided by binary terrain
     } binary;
 
     struct location_data {
