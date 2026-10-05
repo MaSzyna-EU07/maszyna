@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationenvironment.h"
 #include "scene/scenenodegroups.h"
 #include "scene/scenelayers.h"
+#include "scene/sceneterrain.h"
 #include "rendering/particles.h"
 #include "world/Event.h"
 #include "world/MemCell.h"
@@ -173,16 +174,10 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 	scene::Groups.update_map();
 	Region->create_map_geometry();
 
-	if( true == Global.file_binary_terrain
-     && false == state->scratchpad.binary.terrain
-	 && state->scenariofile != "$.scn" ) {
-		// if we didn't find usable binary version of the scenario files, create them now for future use
-		// as long as the scenario file wasn't rainsted-created base file override
-		Region->serialize( state->scenariofile );
-	}
+	// NOTE: legacy binary terrain files (.sbt) are no longer generated, only loaded if the scenery comes with them.
+	// binary terrain is made out of terrain files named by terrain directives instead, see scene::terrain_file
 
-	// geometry of the roads is generated on each load instead of being kept in the binary terrain file,
-	// so it's inserted in the region only after that file had its chance to be written
+	// geometry of the roads is generated on each load
 	simulation::Roads.create_geometry( Scratchpad );
 	simulation::Junctions.create_geometry( Scratchpad );
 	simulation::Roadpoints.create_geometry();
@@ -410,6 +405,12 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
 		}
 			
     }
+    // binary versions of terrain files only announce what they hold at this point, the sections of the scene load it when they need it.
+    // scenery opened for editing gets it all at once, the editor works with complete geometry
+    for( auto const &terrainfile : Scratchpad.binary.terrain_binaryfiles ) {
+        scene::terrain_file::attach( terrainfile, *Region, false == Global.editor_session );
+    }
+    Scratchpad.binary.terrain_binaryfiles.clear();
 
     simulation::Paths.InitTracks();
     // the roads tie up their own lanes where they gain or lose some, the junctions tie the lanes of the roads together,
@@ -991,6 +992,11 @@ include_binary_terrain( std::string File, scene::scratch_data &Scratchpad ) {
     auto &binary { Scratchpad.binary };
 
     replace_slashes( File );
+    if( false == binary.terrain_textfiles.empty() ) {
+        // the scenery keeps its terrain in files of the current format, which don't mix with a file holding all of its geometry
+        WriteLog( "Included SBT file: " + File + " ignored, the scenery uses terrain files" );
+        return;
+    }
     if( std::find( binary.terrain_files.begin(), binary.terrain_files.end(), File ) != binary.terrain_files.end() ) {
         WriteLog( "Included SBT file: " + File + " is already in use, ignored" );
         return;
@@ -1049,6 +1055,85 @@ include_binary_terrain( std::string File, scene::scratch_data &Scratchpad ) {
     }
 }
 
+// processes terrain file named by a terrain directive: static geometry kept as text (.txtf), with binary version (.btf)
+// made out of it and loaded in its place. unlike the legacy binary terrain above, the binary file stands in
+// only for the text file of the same name, and has no bearing on how the rest of the scenery is loaded
+void
+include_terrain_file( std::string File, cParser &Input, scene::scratch_data &Scratchpad ) {
+
+    auto &binary { Scratchpad.binary };
+
+    replace_slashes( File );
+    erase_extension( File );
+    if( std::find( binary.terrain_textfiles.begin(), binary.terrain_textfiles.end(), File ) != binary.terrain_textfiles.end() ) {
+        WriteLog( "Terrain file: " + File + " is already in use, ignored" );
+        return;
+    }
+    binary.terrain_textfiles.emplace_back( File );
+
+    auto const textfile { Global.asCurrentSceneryPath + File + ".txtf" };
+    auto const binaryfile { Global.asCurrentSceneryPath + File + ".btf" };
+    auto const textpresent { FileExists( textfile ) };
+    // binary file holds the geometry where the text alone puts it, it can't stand in for a file placed with an offset or rotation
+    auto const relocated {
+        ( false == Scratchpad.location.offset.empty() && Scratchpad.location.offset.top() != glm::dvec3( 0.0 ) )
+     || ( Scratchpad.location.rotation != glm::vec3( 0.f ) ) };
+
+    auto state { scene::terrain_file::state::text };
+    if( true == relocated ) {
+        if( false == textpresent ) {
+            ErrorLog( "Bad scenario: terrain file \"" + File + "\" placed with an offset or rotation can be loaded only from the text, which is missing" );
+            return;
+        }
+    }
+    else if( ( false == textpresent )
+          || ( ( false == Global.editor_session ) && ( true == Global.file_binary_terrain ) ) ) {
+        // NOTE: scenery opened for editing works on its text files, the text is left as is also if binary terrain is turned off.
+        // a binary file which is all there is gets loaded regardless
+        state = scene::terrain_file::prepare( textfile, binaryfile );
+    }
+
+    switch( state ) {
+        case scene::terrain_file::state::binary: {
+            if( true == binary.terrain ) {
+                // legacy binary terrain file is in use, expected to hold all static geometry of the scenery, this terrain likely included
+                if( ( false == Scratchpad.initialized )
+                 && ( binary.geometry_skipped == 0 )
+                 && ( Global.file_binary_terrain_skipped == 0 ) ) {
+                    // nothing was left out on account of that file yet, so the scenery can still do without it
+                    binary.terrain = false;
+                    binary.terrain_included = false;
+                    binary.terrain_default = false;
+                    binary.terrain_files.clear();
+                    Global.file_binary_terrain_state = false;
+                    WriteLog( "Terrain file: " + File + " in use, SBT of the scenery is ignored" );
+                }
+                else {
+                    ErrorLog( "Bad scenario: terrain file \"" + File + "\" ignored, the scenery geometry already comes from an SBT file. Remove the SBT file to have the terrain file used" );
+                    return;
+                }
+            }
+            if( true == Scratchpad.initialized ) {
+                scene::terrain_file::attach( binaryfile, *simulation::Region, false == Global.editor_session );
+            }
+            else {
+                binary.terrain_binaryfiles.emplace_back( binaryfile );
+            }
+            break;
+        }
+        case scene::terrain_file::state::text: {
+            // read the way any other scenery file is
+            WriteLog( "Terrain file: " + File + " loaded as text" );
+            Input.injectString( "include \"" + textfile + "\" end" );
+            break;
+        }
+        default: {
+            ErrorLog( "Bad scenario: terrain file \"" + File + "\" not found" );
+            break;
+        }
+    }
+}
+
 } // namespace
 
 void 
@@ -1057,13 +1142,17 @@ state_serializer::deserialize_terrain(cParser &Input, scene::scratch_data &Scrat
 	std::string line;
 	Input.getTokens(1);
 	Input >> line;
-	if (Global.file_binary_terrain && line.ends_with(".sbt"))
+	// NOTE: the directive is read to its end first, as processing of a terrain file can leave content for the parser to go through next
+	skip_until(Input, "endterrain");
+
+	if (line.ends_with(".txtf") || line.ends_with(".btf"))
+	{
+		include_terrain_file(line, Input, Scratchpad);
+	}
+	else if (Global.file_binary_terrain && line.ends_with(".sbt"))
 	{  
 		include_binary_terrain(line, Scratchpad);
     }
-
-    skip_until(Input, "endterrain");
-
 }
 
 void
