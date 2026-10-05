@@ -309,7 +309,8 @@ shape_node::import( cParser &Input, scene::node_data const &Nodedata ) {
         }
         token = Input.getToken<std::string>();
 
-    } while( token != "endtri" );
+    } while( token != "endtri"
+          && false == token.empty() ); // data which ends without closing the node would otherwise keep the loop going forever
 
     return *this;
 }
