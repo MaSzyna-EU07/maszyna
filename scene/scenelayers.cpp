@@ -129,6 +129,8 @@ void node_layers::clear()
 	m_context = layer_context();
 	m_sources.clear();
 	m_erased.clear();
+	m_shapes.clear();
+	m_shapeserased = false;
 	m_templates.clear();
 	m_instances.clear();
 	m_instance = 0;
@@ -473,6 +475,38 @@ void node_layers::forget(basic_node const *Node)
 	}
 	m_erased.emplace_back(lookup->second.layer, lookup->second.span);
 	m_sources.erase(lookup);
+}
+
+void node_layers::shape(material_handle const Material, source_span const &Span)
+{
+	auto const current{handle()};
+	if (false == valid(current) || false == Span.valid() || m_instance != 0)
+	{
+		return;
+	}
+	m_shapes.push_back({current, Span, Material, false});
+}
+
+std::pair<std::size_t, std::size_t> node_layers::erase_shapes(std::set<material_handle> const &Materials)
+{
+	std::pair<std::size_t, std::size_t> result{0, 0};
+	for (auto &shape : m_shapes)
+	{
+		if (shape.erased || Materials.count(shape.material) == 0)
+		{
+			continue;
+		}
+		if (false == writable(shape.layer))
+		{
+			++result.second;
+			continue;
+		}
+		shape.erased = true;
+		m_erased.emplace_back(shape.layer, shape.span);
+		m_shapeserased = true;
+		++result.first;
+	}
+	return result;
 }
 
 bool node_layers::is_descendant(layer_handle Layer, layer_handle const Ancestor) const

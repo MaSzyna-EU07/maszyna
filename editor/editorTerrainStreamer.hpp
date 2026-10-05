@@ -77,6 +77,7 @@ class terrain_streamer
 	int cells() const { return m_cells; }
 	float cellsize() const { return m_cellsize; }
 	int radius() const { return m_radius; }
+	std::string const &texture() const { return m_texture; }
 
 	// writes every resident, edited chunk to disk (without unloading) - used on save
 	void flush();
@@ -108,6 +109,9 @@ class terrain_streamer
 
 	std::map<chunk_key, std::unique_ptr<editor_terrain>> m_chunks;
 	std::map<chunk_key, std::uint8_t> m_known; // cached per-chunk flag bits
+	// offsets of the chunks around the camera, the nearest first, for the radius in effect
+	std::vector<chunk_key> m_ring;
+	int m_ring_radius{-1};
 };
 
 // single, simulation-level streamer instance shared by the editor (authoring) and the scenery

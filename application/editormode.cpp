@@ -16,6 +16,8 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorModelSets.hpp"
 #include "editor/editorIncludeInfo.hpp"
 #include "editor/editorGroundMesh.hpp"
+#include "editor/editorFormat.hpp"
+#include "utilities/translation.h"
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
@@ -1308,7 +1310,9 @@ void editor_mode::render_settings()
             ImGui::Checkbox("Transform gizmo (ImGuizmo)", &m_gizmo_enabled);
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Terrain"))
+        bool const terrainwanted = m_terrain_tab_wanted;
+        m_terrain_tab_wanted = false;
+        if (ImGui::BeginTabItem("Terrain", nullptr, terrainwanted ? ImGuiTabItemFlags_SetSelected : 0))
         {
             render_terrain_ui();
             ImGui::EndTabItem();
@@ -1439,9 +1443,16 @@ void editor_mode::render_terrain_ui()
     if (!terrains.empty())
     {
         ImGui::Separator();
-        if (ImGui::Checkbox("Sculpt mode (LMB raise / Shift = lower)", &m_terrain_sculpt))
+        if (ImGui::Checkbox((std::string(m_terrain_brush_smooth ? STR_C("Sculpt mode (LMB smooth)") : STR_C("Sculpt mode (LMB raise / Shift = lower)")) + "###sculptmode").c_str(), &m_terrain_sculpt))
             if (m_terrain_sculpt)
                 m_chunk_edit = false; // mutually exclusive with chunk editing
+        int brush = m_terrain_brush_smooth ? 1 : 0;
+        ImGui::RadioButton(STR_C("Raise / lower"), &brush, 0);
+        ImGui::SameLine();
+        ImGui::RadioButton(STR_C("Smooth"), &brush, 1);
+        m_terrain_brush_smooth = (brush == 1);
+        if (m_terrain_brush_smooth && ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Evens out the ground under the brush: bumps and sharp edges go, the shape stays.\nThe strength sets how fast"));
         ImGui::SetNextItemWidth(120.0f);
         ImGui::InputFloat("Brush radius", &m_terrain_brush_radius);
         if (m_terrain_brush_radius < 0.5f)
@@ -1737,6 +1748,235 @@ void editor_mode::add_grid_chunk(int Cx, int Cz)
     m_grid_chunks[key] = std::move(terrain);
 }
 
+namespace
+{
+    std::uint64_t geometry_key(gfx::geometry_handle const &Geometry)
+    {
+        return (static_cast<std::uint64_t>(Geometry.bank) << 32) | Geometry.chunk;
+    }
+
+    // the shapes of the scenery which can be ground: the ones the editor makes itself (its terrain, roads, imagery) left out
+    template <typename Visitor> void visit_scenery_shapes(std::set<std::uint64_t> const &Own, Visitor const &Visit)
+    {
+        auto const scenery = [&](scene::shape_node const &Shape) {
+            auto const &data = Shape.data();
+            return Own.count(geometry_key(data.geometry)) == 0 && false == editor_orthophoto::owns(data.geometry) && false == owned_shapes::owns(data.geometry);
+        };
+        for (std::size_t i = 0; i < sq(scene::EU07_REGIONSIDESECTIONCOUNT); ++i)
+        {
+            auto *section = simulation::Region->get_section(i);
+            if (section == nullptr)
+                continue;
+            for (auto &shape : section->m_shapes)
+                if (scenery(shape))
+                    Visit(shape);
+            for (auto &cell : section->m_cells)
+                for (auto &shape : cell.m_shapesopaque)
+                    if (scenery(shape))
+                        Visit(shape);
+        }
+    }
+
+    // takes the shapes of specified materials out of the scene
+    std::size_t drop_scenery_shapes(std::set<std::uint64_t> const &Own, std::set<material_handle> const &Materials)
+    {
+        std::size_t dropped = 0;
+        auto const dropping = [&](scene::shape_node const &Shape) {
+            auto const &data = Shape.data();
+            bool const drop = Materials.count(data.material) != 0 && Own.count(geometry_key(data.geometry)) == 0 && false == editor_orthophoto::owns(data.geometry) &&
+                              false == owned_shapes::owns(data.geometry);
+            dropped += drop ? 1 : 0;
+            return drop;
+        };
+        for (std::size_t i = 0; i < sq(scene::EU07_REGIONSIDESECTIONCOUNT); ++i)
+        {
+            auto *section = simulation::Region->get_section(i);
+            if (section == nullptr)
+                continue;
+            section->m_shapes.erase(std::remove_if(section->m_shapes.begin(), section->m_shapes.end(), dropping), section->m_shapes.end());
+            for (auto &cell : section->m_cells)
+                cell.m_shapesopaque.erase(std::remove_if(cell.m_shapesopaque.begin(), cell.m_shapesopaque.end(), dropping), cell.m_shapesopaque.end());
+        }
+        return dropped;
+    }
+} // namespace
+
+std::map<material_handle, std::size_t> editor_mode::ground_materials()
+{
+    std::map<material_handle, std::size_t> result;
+    if (simulation::Region == nullptr)
+        return result;
+    std::set<std::uint64_t> own;
+    for (auto *terrain : active_terrains())
+        own.insert(geometry_key(terrain->geometry()));
+    glm::dvec2 const everywhere{std::numeric_limits<double>::max() * 0.5};
+    visit_scenery_shapes(own, [&](scene::shape_node const &Shape) {
+        std::vector<world_triangle> triangles;
+        gather_shape_triangles(Shape, -everywhere, everywhere, triangles, true);
+        if (false == triangles.empty())
+            result[Shape.data().material] += triangles.size();
+    });
+    return result;
+}
+
+std::string editor_mode::convert_ground(std::set<material_handle> const &Materials)
+{
+    if (simulation::Region == nullptr || Materials.empty())
+        return {};
+    bool const streaming = m_streamer.active();
+    double const size = streaming ? m_streamer.cells() * m_streamer.cellsize() : chunk_grid_size();
+    int const cells = streaming ? m_streamer.cells() : std::clamp(m_terrain_cells, 1, 256);
+    double const cellsize = size / cells;
+    if (size <= 0.0)
+        return {};
+
+    std::set<std::uint64_t> own;
+    for (auto *terrain : active_terrains())
+        own.insert(geometry_key(terrain->geometry()));
+    std::vector<world_triangle> triangles;
+    std::vector<material_handle> materials;
+    glm::dvec2 const everywhere{std::numeric_limits<double>::max() * 0.5};
+    visit_scenery_shapes(own, [&](scene::shape_node const &Shape) {
+        if (Materials.count(Shape.data().material) == 0)
+            return;
+        gather_shape_triangles(Shape, -everywhere, everywhere, triangles, true);
+        materials.resize(triangles.size(), Shape.data().material);
+    });
+    if (triangles.empty())
+        return STR_C("The chosen materials have no triangles");
+
+    // the triangles reaching each chunk
+    std::map<std::pair<int, int>, std::vector<std::uint32_t>> buckets;
+    for (std::uint32_t i = 0; i < triangles.size(); ++i)
+    {
+        auto const &t = triangles[i];
+        int const x0 = static_cast<int>(std::floor(std::min({t[0].x, t[1].x, t[2].x}) / size));
+        int const x1 = static_cast<int>(std::floor(std::max({t[0].x, t[1].x, t[2].x}) / size));
+        int const z0 = static_cast<int>(std::floor(std::min({t[0].z, t[1].z, t[2].z}) / size));
+        int const z1 = static_cast<int>(std::floor(std::max({t[0].z, t[1].z, t[2].z}) / size));
+        for (int x = x0; x <= x1; ++x)
+            for (int z = z0; z <= z1; ++z)
+                buckets[{x, z}].push_back(i);
+    }
+
+    // the terrain of the editor has a single texture, saved with it: the material which covers the most
+    std::map<material_handle, double> coverage;
+    for (std::size_t i = 0; i < triangles.size(); ++i)
+    {
+        auto const &t = triangles[i];
+        coverage[materials[i]] += 0.5 * std::abs((t[1].x - t[0].x) * (t[2].z - t[0].z) - (t[2].x - t[0].x) * (t[1].z - t[0].z));
+    }
+    auto const dominant = std::max_element(coverage.begin(), coverage.end(), [](auto const &A, auto const &B) { return A.second < B.second; })->first;
+    if (auto const *material = GfxRenderer->Material(dominant))
+    {
+        auto const name = material->GetName();
+        std::snprintf(m_terrain_texture, sizeof(m_terrain_texture), "%s", name.c_str());
+    }
+    std::string const texture(m_terrain_texture);
+    // a whole scenery of the full grid would be a lot to draw
+    m_terrain_auto_optimize = true;
+    if (streaming)
+    {
+        m_streamer.simplify(true, m_terrain_simplify_error);
+        m_streamer.configure(m_streamer.cells(), m_streamer.cellsize(), m_streamer.radius(), m_terrain_baseheight, texture);
+    }
+
+    // the old ground goes first, so what's made in its place isn't taken for it
+    auto const dropped = drop_scenery_shapes(own, Materials);
+    std::size_t made = 0, skipped = 0;
+    std::size_t const side = static_cast<std::size_t>(cells) + 1;
+    for (auto const &bucket : buckets)
+    {
+        auto const &key = bucket.first;
+        glm::dvec2 const low{key.first * size, key.second * size};
+        glm::dvec2 const middle{low + glm::dvec2{size * 0.5}};
+        if (streaming ? m_streamer.terrain_at(middle.x, middle.y) != nullptr : m_grid_chunks.count(key) > 0)
+        {
+            ++skipped;
+            continue;
+        }
+        std::vector<world_triangle> local;
+        for (auto const i : bucket.second)
+            local.push_back(triangles[i]);
+        triangle_grid const ground(std::move(local), low - glm::dvec2{1.0}, low + glm::dvec2{size + 1.0});
+        std::vector<double> heights(side * side, 0.0);
+        std::vector<char> found(side * side, 0);
+        std::vector<std::size_t> known;
+        for (std::size_t iz = 0; iz < side; ++iz)
+            for (std::size_t ix = 0; ix < side; ++ix)
+            {
+                auto const index = iz * side + ix;
+                if (ground.height_at(low.x + ix * cellsize, low.y + iz * cellsize, std::numeric_limits<double>::max(), heights[index]))
+                {
+                    found[index] = 1;
+                    known.push_back(index);
+                }
+            }
+        if (known.empty())
+            continue;
+        // at the edge of the ground the chunk is carried on level with the nearest point of it
+        if (known.size() < heights.size())
+            for (std::size_t index = 0; index < heights.size(); ++index)
+            {
+                if (found[index] != 0)
+                    continue;
+                double best = std::numeric_limits<double>::max();
+                for (auto const other : known)
+                {
+                    double const dx = static_cast<double>(index % side) - static_cast<double>(other % side);
+                    double const dz = static_cast<double>(index / side) - static_cast<double>(other / side);
+                    if (dx * dx + dz * dz < best)
+                    {
+                        best = dx * dx + dz * dz;
+                        heights[index] = heights[other];
+                    }
+                }
+            }
+        auto const sampler = [&](double X, double Z, double &OutY) {
+            auto const ix = static_cast<std::size_t>(std::clamp<long>(std::lround((X - low.x) / cellsize), 0, cells));
+            auto const iz = static_cast<std::size_t>(std::clamp<long>(std::lround((Z - low.y) / cellsize), 0, cells));
+            OutY = heights[iz * side + ix];
+            return true;
+        };
+        if (streaming)
+        {
+            m_streamer.add_chunk(key.first, key.second);
+            if (auto *terrain = m_streamer.terrain_at(middle.x, middle.y))
+            {
+                terrain->reshape([&](double X, double Z, float &Height) {
+                    double y;
+                    sampler(X, Z, y);
+                    Height = static_cast<float>(y);
+                    return true;
+                });
+                ++made;
+            }
+        }
+        else
+        {
+            auto chunk = std::make_unique<editor_terrain>();
+            if (chunk->create(glm::dvec3{middle.x, m_terrain_baseheight, middle.y}, cells, static_cast<float>(cellsize), texture, sampler))
+            {
+                // the full grid everywhere would be a lot to draw; the simplified one keeps it exact where it matters
+                chunk->optimize(m_terrain_simplify_error);
+                m_grid_chunks[key] = std::move(chunk);
+                ++made;
+            }
+        }
+    }
+    ground_tiles.clear();
+    forget_ground_shapes();
+
+    auto const erased = scene::Layers.erase_shapes(Materials);
+    auto summary = format(STR_C("Ground converted: %zu chunks of editor terrain made, %zu shapes taken out of the scene, %zu triangle nodes go from the scenery files on save"), made, dropped, erased.first);
+    if (skipped > 0)
+        summary += format(STR_C(", %zu chunks kept as there was editor terrain already"), skipped);
+    if (erased.second > 0)
+        summary += format(STR_C(", %zu nodes stay as their files can't be rewritten"), erased.second);
+    WriteLog("Editor: " + summary, logtype::generic);
+    return summary;
+}
+
 void editor_mode::remove_grid_chunk(int Cx, int Cz)
 {
     auto const it = m_grid_chunks.find({Cx, Cz});
@@ -1875,12 +2115,14 @@ void editor_mode::save()
     std::vector<std::string> rootstatements;
     if (m_streamer.active() || false == m_grid_chunks.empty())
     {
+        // the chunks go over to the streamer, what was kept to take back the shaping refers to the ones which are gone
+        m_profile.earthworks.undo.clear();
         commit_terrain();
         if (false == scene::Layers.terrain_directive())
         {
             rootstatements.emplace_back(
                 "editorterrain " + m_streamer.directory() + ' ' + std::to_string(m_streamer.cells()) + ' ' + to_string(m_streamer.cellsize(), 3) + ' '
-                + std::to_string(m_streamer.radius()) + " endeditorterrain");
+                + std::to_string(m_streamer.radius()) + (m_streamer.texture().empty() ? "" : ' ' + m_streamer.texture()) + " endeditorterrain");
         }
     }
 
@@ -2087,11 +2329,37 @@ void editor_mode::handle_terrain_sculpt(double Deltatime)
         return;
 
     double const rate = m_terrain_brush_strength * Deltatime; // metres applied this frame
-    double const signedrate = Global.shiftState ? -rate : rate;
-    // apply to every chunk the brush touches; each patch clips to its own bounds, so a stroke
-    // crossing a chunk boundary edits both and shared-edge vertices stay in sync
-    for (editor_terrain *terrain : active_terrains())
-        terrain->sculpt(world.x, world.z, m_terrain_brush_radius, signedrate);
+    if (m_terrain_brush_smooth)
+    {
+        // every patch the brush touches is smoothed from the same ground, so the edges they share stay together
+        auto const terrains = active_terrains();
+        double const reach = m_terrain_brush_radius + 2.0 * m_terrain_cellsize + 1.0;
+        std::vector<std::pair<editor_terrain *, std::vector<float>>> before;
+        for (editor_terrain *terrain : terrains)
+        {
+            auto const centre = terrain->centre();
+            double const half = terrain->extent() * 0.5;
+            if (std::abs(centre.x - world.x) <= half + reach && std::abs(centre.z - world.z) <= half + reach)
+                before.emplace_back(terrain, terrain->heights());
+        }
+        auto const ground = [&](double X, double Z, double Fallback) {
+            for (auto const &entry : before)
+                if (entry.first->contains(X, Z))
+                    return entry.first->height_in(entry.second, X, Z);
+            return Fallback;
+        };
+        double const amount = std::min(1.0, rate * 0.5);
+        for (auto const &entry : before)
+            entry.first->smooth(world.x, world.z, m_terrain_brush_radius, amount, ground);
+    }
+    else
+    {
+        double const signedrate = Global.shiftState ? -rate : rate;
+        // apply to every chunk the brush touches; each patch clips to its own bounds, so a stroke
+        // crossing a chunk boundary edits both and shared-edge vertices stay in sync
+        for (editor_terrain *terrain : active_terrains())
+            terrain->sculpt(world.x, world.z, m_terrain_brush_radius, signedrate);
+    }
     // what the road tools know about the ground is no longer true
     ground_tiles.clear();
     forget_ground_shapes();

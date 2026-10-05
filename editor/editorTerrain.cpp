@@ -154,28 +154,72 @@ bool editor_terrain::block_flat(int X0, int Z0, int X1, int Z1, float Error) con
 	return true;
 }
 
-// adaptive quadtree: collapse flat blocks into a single quad, otherwise split into four
-void editor_terrain::emit_block(int X0, int Z0, int X1, int Z1, float Error, std::vector<world_vertex> &Out) const
+// adaptive quadtree: flat blocks stay whole, the others are split into four
+void editor_terrain::collect_blocks(int X0, int Z0, int X1, int Z1, float Error, std::vector<std::array<int, 4>> &Out) const
 {
 	bool const splitx = (X1 - X0) > 1;
 	bool const splitz = (Z1 - Z0) > 1;
 
 	if ((!splitx && !splitz) || block_flat(X0, Z0, X1, Z1, Error))
 	{
-		emit_quad(X0, Z0, X1, Z1, Out);
+		Out.push_back({X0, Z0, X1, Z1});
 		return;
 	}
 
 	int const xm = splitx ? (X0 + X1) / 2 : X1;
 	int const zm = splitz ? (Z0 + Z1) / 2 : Z1;
 
-	emit_block(X0, Z0, xm, zm, Error, Out);
+	collect_blocks(X0, Z0, xm, zm, Error, Out);
 	if (splitx)
-		emit_block(xm, Z0, X1, zm, Error, Out);
+		collect_blocks(xm, Z0, X1, zm, Error, Out);
 	if (splitz)
-		emit_block(X0, zm, xm, Z1, Error, Out);
+		collect_blocks(X0, zm, xm, Z1, Error, Out);
 	if (splitx && splitz)
-		emit_block(xm, zm, X1, Z1, Error, Out);
+		collect_blocks(xm, zm, X1, Z1, Error, Out);
+}
+
+void editor_terrain::emit_block(std::array<int, 4> const &Block, std::vector<char> const &Marked, std::vector<world_vertex> &Out) const
+{
+	int const x0 = Block[0], z0 = Block[1], x1 = Block[2], z1 = Block[3];
+	// the edges walked the way the quads wind
+	std::vector<std::pair<int, int>> ring;
+	for (int z = z0; z < z1; ++z)
+		if (z == z0 || Marked[index(x0, z)] != 0)
+			ring.push_back({x0, z});
+	for (int x = x0; x < x1; ++x)
+		if (x == x0 || Marked[index(x, z1)] != 0)
+			ring.push_back({x, z1});
+	for (int z = z1; z > z0; --z)
+		if (z == z1 || Marked[index(x1, z)] != 0)
+			ring.push_back({x1, z});
+	for (int x = x1; x > x0; --x)
+		if (x == x1 || Marked[index(x, z0)] != 0)
+			ring.push_back({x, z0});
+	if (ring.size() <= 4)
+	{
+		emit_quad(x0, z0, x1, z1, Out);
+		return;
+	}
+
+	world_vertex centre;
+	if ((x1 - x0) % 2 == 0 && (z1 - z0) % 2 == 0)
+		centre = make_vertex((x0 + x1) / 2, (z0 + z1) / 2);
+	else
+	{
+		auto const a = make_vertex(x0, z0), b = make_vertex(x1, z0), c = make_vertex(x0, z1), d = make_vertex(x1, z1);
+		centre = a;
+		centre.position = (a.position + b.position + c.position + d.position) * 0.25;
+		centre.normal = glm::normalize(a.normal + b.normal + c.normal + d.normal);
+		centre.texture = (a.texture + b.texture + c.texture + d.texture) * 0.25f;
+	}
+	for (std::size_t i = 0; i < ring.size(); ++i)
+	{
+		auto const &from = ring[i];
+		auto const &to = ring[(i + 1) % ring.size()];
+		Out.push_back(centre);
+		Out.push_back(make_vertex(from.first, from.second));
+		Out.push_back(make_vertex(to.first, to.second));
+	}
 }
 
 void editor_terrain::build_vertices(std::vector<world_vertex> &Out, bool Simplify) const
@@ -185,7 +229,16 @@ void editor_terrain::build_vertices(std::vector<world_vertex> &Out, bool Simplif
 
 	if (Simplify)
 	{
-		emit_block(0, 0, m_cells, m_cells, m_simplify_error, Out);
+		std::vector<std::array<int, 4>> blocks;
+		collect_blocks(0, 0, m_cells, m_cells, m_simplify_error, blocks);
+		// the corners of the blocks, and the whole edge of the patch which the neighbouring patch meets in its own way
+		std::vector<char> marked(static_cast<std::size_t>(m_cells + 1) * (m_cells + 1), 0);
+		for (int i = 0; i <= m_cells; ++i)
+			marked[index(i, 0)] = marked[index(i, m_cells)] = marked[index(0, i)] = marked[index(m_cells, i)] = 1;
+		for (auto const &block : blocks)
+			marked[index(block[0], block[1])] = marked[index(block[2], block[1])] = marked[index(block[0], block[3])] = marked[index(block[2], block[3])] = 1;
+		for (auto const &block : blocks)
+			emit_block(block, marked, Out);
 		return;
 	}
 
@@ -278,6 +331,12 @@ bool editor_terrain::contains(double X, double Z) const
 
 double editor_terrain::height_at(double X, double Z) const
 {
+	return height_in(m_heights, X, Z);
+}
+
+double editor_terrain::height_in(std::vector<float> const &Heights, double X, double Z) const
+{
+	auto const &m_heights = Heights;
 	double const fx = (X - m_x0) / m_cellsize;
 	double const fz = (Z - m_z0) / m_cellsize;
 	int ix = static_cast<int>(std::floor(fx));
@@ -328,6 +387,62 @@ bool editor_terrain::sculpt(double X, double Z, double Radius, double Strength)
 		regenerate(false);
 	}
 	return changed;
+}
+
+bool editor_terrain::smooth(double X, double Z, double Radius, double Amount, std::function<double(double X, double Z, double Fallback)> const &Ground)
+{
+	if (!valid() || Radius <= 0.0 || Amount <= 0.0)
+		return false;
+	double const reach = Radius + m_cellsize;
+	if (X + reach < m_x0 || X - reach > m_x0 + m_cells * m_cellsize || Z + reach < m_z0 || Z - reach > m_z0 + m_cells * m_cellsize)
+		return false;
+
+	double const step = m_cellsize;
+	return reshape([&](double const Vx, double const Vz, float &Height) {
+		double const d = std::sqrt((Vx - X) * (Vx - X) + (Vz - Z) * (Vz - Z));
+		if (d > Radius)
+			return false;
+		double const own = Height;
+		// the neighbours a cell away, read from the ground as it was before the stroke, whichever patch holds them
+		double const average = (Ground(Vx - step, Vz, own) + Ground(Vx + step, Vz, own) + Ground(Vx, Vz - step, own) + Ground(Vx, Vz + step, own) + own * 4.0) / 8.0;
+		double const falloff = 0.5 * (std::cos(kPi * d / Radius) + 1.0);
+		double const smoothed = own + (average - own) * std::min(1.0, Amount * falloff);
+		if (std::abs(smoothed - own) < 1e-5)
+			return false;
+		Height = static_cast<float>(smoothed);
+		return true;
+	});
+}
+
+bool editor_terrain::reshape(std::function<bool(double X, double Z, float &Height)> const &Shaper)
+{
+	if (!valid())
+		return false;
+
+	bool changed = false;
+	for (int iz = 0; iz <= m_cells; ++iz)
+		for (int ix = 0; ix <= m_cells; ++ix)
+			changed |= Shaper(m_x0 + static_cast<double>(ix) * m_cellsize, m_z0 + static_cast<double>(iz) * m_cellsize, m_heights[index(ix, iz)]);
+
+	if (changed)
+	{
+		m_simplify = false;
+		m_dirty = true;
+		m_modified = true;
+		regenerate(false);
+	}
+	return changed;
+}
+
+void editor_terrain::restore(std::vector<float> const &Heights)
+{
+	if (!valid() || Heights.size() != m_heights.size())
+		return;
+	m_heights = Heights;
+	m_simplify = false;
+	m_dirty = true;
+	m_modified = true;
+	regenerate(false);
 }
 
 glm::dvec3 editor_terrain::centre() const

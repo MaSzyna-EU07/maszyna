@@ -111,6 +111,15 @@ struct recognition
 // grade line of existing track, from its elevations and grades sampled along the chainage
 line recognize(std::vector<double> const &Chainages, std::vector<double> const &Elevations, std::vector<double> const &Grades, recognition const &Options);
 
+struct ground_fit
+{
+	double tolerance{1.0}; // m, departure from the ground which doesn't yet need a change of grade
+	double smoothing{20.0}; // m, length over which the ground is averaged
+};
+// grade line which follows the ground within the limits of Settings, with the least earthworks.
+// Ground is NaN where there's none; the joined ends of the route keep the elevation of the adjoining track
+line fit_ground(std::vector<double> const &Chainages, std::vector<double> const &Ground, context const &Context, line const &Settings, ground_fit const &Options);
+
 // chainages where the paths have to end so that each of them carries a single grade or a single curve
 std::vector<double> breaks(line const &Line);
 

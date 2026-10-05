@@ -1891,3 +1891,135 @@ msgstr "Łuk %d esownicy"
 msgid "Details"
 msgstr "Szczegóły"
 
+
+msgid "There's no ground under the route"
+msgstr "Pod trasą nie ma terenu"
+
+msgid "Grade line fitted to the ground: %zu points, embankment up to %.2f m, cutting up to %.2f m"
+msgstr "Niweleta dopasowana do terenu: %zu punktów, nasyp do %.2f m, wykop do %.2f m"
+
+msgid "Fit to the ground"
+msgstr "Dopasuj do terenu"
+
+msgid "Places the breaks of the grade line along the ground under the route,\nwithin the limits and with the least earthworks; the ground itself stays as it is"
+msgstr "Rozmieszcza załamania niwelety wzdłuż terenu pod trasą,\nw granicach norm i z najmniejszymi robotami ziemnymi; sam teren się nie zmienia"
+
+msgid "m off the ground##fittolerance"
+msgstr "m od terenu##fittolerance"
+
+msgid "How far the grade line may depart from the ground before it breaks;\nmore gives fewer breaks and higher embankments and deeper cuttings"
+msgstr "Jak daleko niweleta może odejść od terenu, zanim się załamie;\nwięcej to mniej załamań, ale wyższe nasypy i głębsze wykopy"
+
+msgid "There's no editor terrain to shape"
+msgstr "Nie ma terenu edytora do przekształcenia"
+
+msgid "The editor terrain doesn't reach the route, or it's shaped already"
+msgstr "Teren edytora nie sięga trasy albo jest już przekształcony"
+
+msgid "Terrain shaped at %zu points: embankment up to %.2f m, cutting up to %.2f m"
+msgstr "Teren przekształcony w %zu punktach: nasyp do %.2f m, wykop do %.2f m"
+
+msgid "The terrain is back as it was before the shaping"
+msgstr "Teren przywrócony do stanu sprzed przekształcenia"
+
+msgid "The shaped terrain isn't loaded any more"
+msgstr "Przekształcony teren nie jest już wczytany"
+
+msgid "Shape the terrain to the grade line"
+msgstr "Przekształć teren pod niweletę"
+
+msgid "Only the editor terrain changes: a formation under the track and slopes to the ground; the triangles and models of the scenery stay as they are."
+msgstr "Zmienia się tylko teren edytora: korona podtorza pod torem i skarpy do terenu; trójkąty i modele scenerii zostają bez zmian."
+
+msgid "Formation below the rail top (m)"
+msgstr "Korona podtorza pod główką szyny (m)"
+
+msgid "Half width of the formation (m)"
+msgstr "Połowa szerokości korony (m)"
+
+msgid "From the axis of the route to the edge of the formation;\nfor two tracks add the distance between them"
+msgstr "Od osi trasy do krawędzi korony;\ndla dwóch torów dodaj rozstaw między nimi"
+
+msgid "Slopes 1 : n, n"
+msgstr "Skarpy 1 : n, n"
+
+msgid "Slopes reach at most (m)"
+msgstr "Skarpy sięgają najwyżej (m)"
+
+msgid "Correct the errors of the grade line first"
+msgstr "Najpierw popraw błędy niwelety"
+
+msgid "Shape the terrain"
+msgstr "Przekształć teren"
+
+msgid "Restore the terrain"
+msgstr "Przywróć teren"
+
+msgid "Puts back the terrain as it was before the last shaping"
+msgstr "Przywraca teren sprzed ostatniego przekształcenia"
+
+msgid "There's no editor terrain to shape: convert the scenery ground first"
+msgstr "Nie ma terenu edytora do przekształcenia: najpierw zamień grunt scenerii"
+
+msgid "The chosen materials have no triangles"
+msgstr "Wybrane materiały nie mają trójkątów"
+
+msgid "Ground converted: %zu chunks of editor terrain made, %zu shapes taken out of the scene, %zu triangle nodes go from the scenery files on save"
+msgstr "Grunt zamieniony: %zu chunków terenu edytora, %zu brył zdjętych ze sceny, %zu węzłów trójkątów zniknie z plików scenerii przy zapisie"
+
+msgid ", %zu chunks kept as there was editor terrain already"
+msgstr ", %zu chunków pominiętych, bo był tam już teren edytora"
+
+msgid ", %zu nodes stay as their files can't be rewritten"
+msgstr ", %zu węzłów zostaje, bo ich plików nie da się zapisać"
+
+msgid "Convert the scenery ground to editor terrain..."
+msgstr "Zamień grunt scenerii na teren edytora..."
+
+msgid "Replaces the triangles of the chosen materials with editor terrain of the same shape,\nwhich can be shaped and sculpted; the scenery files lose these triangles on save"
+msgstr "Zastępuje trójkąty wybranych materiałów terenem edytora o tym samym kształcie,\nktóry można przekształcać i rzeźbić; pliki scenerii tracą te trójkąty przy zapisie"
+
+msgid "Materials of the scenery triangles: tick the ones which are the ground"
+msgstr "Materiały trójkątów scenerii: zaznacz te, które są gruntem"
+
+msgid "The scenery has no triangles"
+msgstr "Sceneria nie ma trójkątów"
+
+msgid "%s  (%zu triangles)"
+msgstr "%s  (%zu trójkątów)"
+
+msgid "The terrain gets a single texture: that of the material which covers the most. Until saved, loading the scenery again takes it all back."
+msgstr "Teren dostaje jedną teksturę: materiału, który pokrywa najwięcej. Do zapisu ponowne wczytanie scenerii cofa wszystko."
+
+msgid "Tick at least one material"
+msgstr "Zaznacz co najmniej jeden materiał"
+
+msgid "Convert"
+msgstr "Zamień"
+
+msgid "Sculpt mode (LMB smooth)"
+msgstr "Rzeźbienie (LPM wygładza)"
+
+msgid "Sculpt mode (LMB raise / Shift = lower)"
+msgstr "Rzeźbienie (LPM podnosi / Shift obniża)"
+
+msgid "Raise / lower"
+msgstr "Podnoś / obniżaj"
+
+msgid "Smooth"
+msgstr "Wygładzaj"
+
+msgid "Evens out the ground under the brush: bumps and sharp edges go, the shape stays.\nThe strength sets how fast"
+msgstr "Wyrównuje teren pod pędzlem: znikają nierówności i ostre krawędzie, kształt zostaje.\nSiła ustala, jak szybko"
+
+msgid "Rounding of the edges (m)"
+msgstr "Zaokrąglenie krawędzi (m)"
+
+msgid "Length over which the slope bends into the formation and into the ground; 0: sharp edges"
+msgstr "Długość, na której skarpa przechodzi w koronę i w teren; 0: ostre krawędzie"
+
+msgid "Sculpting..."
+msgstr "Rzeźbienie..."
+
+msgid "Opens the terrain tab of the editor settings: raising, lowering and smoothing with a brush"
+msgstr "Otwiera zakładkę terenu w ustawieniach edytora: podnoszenie, obniżanie i wygładzanie pędzlem"

@@ -198,6 +198,19 @@ class editor_mode : public application_mode, private editor_track::observer
 	float chunk_grid_size() const { return m_terrain_cells * m_terrain_cellsize; }
 	void add_grid_chunk(int Cx, int Cz);
 	void remove_grid_chunk(int Cx, int Cz);
+	// the scenery ground: triangles of each material, the ones the editor makes itself left out
+	std::map<material_handle, std::size_t> ground_materials();
+	// replaces the triangles of specified materials with chunks of editor terrain of their shape; the scenery files lose them on save.
+	// returns: summary for the user
+	std::string convert_ground(std::set<material_handle> const &Materials);
+	struct ground_conversion
+	{
+		bool open{false};
+		std::map<material_handle, std::size_t> materials;
+		std::set<material_handle> chosen;
+		std::string status;
+	} m_ground_conversion;
+	void render_ground_conversion();
 	// handles a click in chunk-edit mode (add a neighbour, or Shift = delete the clicked chunk)
 	void handle_chunk_edit_click(bool DeleteMode);
 	// commits authored terrain to disk, enables streaming, and exports the scenery
@@ -234,6 +247,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	// grid-aligned manual chunks, keyed by (cx,cz) on the global chunk grid
 	std::map<std::pair<int, int>, std::unique_ptr<editor_terrain>> m_grid_chunks;
 	bool m_terrain_sculpt{false};     // when true, LMB sculpts terrain instead of picking
+	bool m_terrain_brush_smooth{false}; // the brush evens the ground out instead of raising or lowering it
+	bool m_terrain_tab_wanted{false}; // the settings window brings the terrain tab forward the next time it's drawn
 	bool m_chunk_edit{false};         // when true, LMB adds/removes whole chunks
 	int m_terrain_cells{32};          // grid resolution (quads per side)
 	int m_terrain_chunks{4};          // chunks per side for a chunked terrain
@@ -655,6 +670,18 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::vector<profile::issue> issues;
 		double origin{0.0}; // chainage of the start of the route
 		double departure{0.0}; // largest difference between the grade line and the track
+		profile::ground_fit fit;
+		// the editor terrain led to the grade line: formation under the track, slopes down or up to the ground
+		struct earthworks
+		{
+			double depth{0.7}; // m, formation below the top of the rail
+			double half_width{3.5}; // m, from the axis of the route to the edge of the formation
+			double slope{1.5}; // horizontal run of the slopes per metre of height
+			double reach{60.0}; // m, from the edge of the formation, where the slopes end even if they don't get to the ground
+			double rounding{1.5}; // m, over which the slopes bend into the formation and into the ground
+			// heights of the terrain before the last shaping
+			std::vector<std::pair<editor_terrain *, std::vector<float>>> undo;
+		} earthworks;
 		double view_from{0.0};
 		double view_to{100.0};
 		double view_centre{0.0};
@@ -708,6 +735,10 @@ class editor_mode : public application_mode, private editor_track::observer
 	void profile_take(editor_track::route Route, TTrack *From, TTrack *To);
 	void profile_resample();
 	void profile_recognize();
+	void profile_fit_ground();
+	void profile_shape_ground();
+	void profile_restore_ground();
+	void render_profile_earthworks();
 	void profile_check();
 	void profile_apply();
 	void profile_fit_view();

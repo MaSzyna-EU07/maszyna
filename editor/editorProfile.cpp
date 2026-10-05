@@ -385,6 +385,255 @@ line recognize(std::vector<double> const &Chainages, std::vector<double> const &
 	return result;
 }
 
+line fit_ground(std::vector<double> const &Chainages, std::vector<double> const &Ground, context const &Context, line const &Settings, ground_fit const &Options)
+{
+	line result;
+	result.speed = Settings.speed;
+	result.norms = Settings.norms;
+	result.join_start = Settings.join_start;
+	result.join_end = Settings.join_end;
+	auto const count{std::min(Chainages.size(), Ground.size())};
+	if (count < 2)
+		return result;
+
+	// gaps in the ground bridged straight, past the outermost samples it stays level
+	std::vector<double> ground(Ground.begin(), Ground.begin() + count);
+	std::vector<std::size_t> known;
+	for (std::size_t i = 0; i < count; ++i)
+		if (std::isfinite(ground[i]))
+			known.push_back(i);
+	if (known.empty())
+		return result;
+	for (std::size_t i = 0, k = 0; i < count; ++i)
+	{
+		if (std::isfinite(ground[i]))
+			continue;
+		while (k + 1 < known.size() && known[k + 1] < i)
+			++k;
+		if (i < known.front())
+			ground[i] = Ground[known.front()];
+		else if (k + 1 >= known.size())
+			ground[i] = Ground[known.back()];
+		else
+		{
+			auto const a{known[k]}, b{known[k + 1]};
+			ground[i] = Ground[a] + (Ground[b] - Ground[a]) * (Chainages[i] - Chainages[a]) / std::max(1e-9, Chainages[b] - Chainages[a]);
+		}
+	}
+	if (Options.smoothing > 1.0)
+	{
+		std::vector<double> sums(count + 1, 0.0);
+		for (std::size_t i = 0; i < count; ++i)
+			sums[i + 1] = sums[i] + ground[i];
+		std::vector<double> smooth(count);
+		std::size_t low{0}, high{0};
+		for (std::size_t i = 0; i < count; ++i)
+		{
+			while (Chainages[i] - Chainages[low] > Options.smoothing * 0.5)
+				++low;
+			while (high + 1 < count && Chainages[high + 1] - Chainages[i] <= Options.smoothing * 0.5)
+				++high;
+			high = std::max(high, i);
+			smooth[i] = (sums[high + 1] - sums[low]) / static_cast<double>(high - low + 1);
+		}
+		ground.swap(smooth);
+	}
+
+	bool const start_fixed{Settings.join_start && Context.start_joined};
+	bool const end_fixed{Settings.join_end && Context.end_joined};
+
+	// first guess of the points: the ground simplified to within the tolerance
+	std::vector<std::size_t> knots{0, count - 1};
+	{
+		std::vector<char> keep(count, 0);
+		keep.front() = keep.back() = 1;
+		std::vector<std::pair<std::size_t, std::size_t>> stack{{0, count - 1}};
+		while (false == stack.empty())
+		{
+			auto const [a, b]{stack.back()};
+			stack.pop_back();
+			if (b <= a + 1)
+				continue;
+			auto const run{std::max(1e-9, Chainages[b] - Chainages[a])};
+			double worst{0.0};
+			std::size_t index{a};
+			for (auto i = a + 1; i < b; ++i)
+			{
+				auto const chord{ground[a] + (ground[b] - ground[a]) * (Chainages[i] - Chainages[a]) / run};
+				auto const departure{std::abs(ground[i] - chord)};
+				if (departure > worst)
+				{
+					worst = departure;
+					index = i;
+				}
+			}
+			if (worst > Options.tolerance)
+			{
+				keep[index] = 1;
+				stack.push_back({a, index});
+				stack.push_back({index, b});
+			}
+		}
+		knots.clear();
+		for (std::size_t i = 0; i < count; ++i)
+			if (keep[i] != 0)
+				knots.push_back(i);
+	}
+
+	auto const segment_limit = [&](double const From, double const To) {
+		auto limit{result.norms.grade_max};
+		for (auto const &zone : Context.switches)
+			if (overlaps(From, To, zone))
+				limit = std::min(limit, result.norms.grade_switch_max);
+		return limit / 1000.0;
+	};
+	// elevations of the points with the least squares of the departures from the ground
+	auto const solve = [&](std::vector<std::size_t> const &Knots) {
+		auto const n{Knots.size()};
+		std::vector<double> lower(n, 0.0), diagonal(n, 1e-9), upper(n, 0.0), right(n, 0.0);
+		auto const add = [&](std::size_t const Interval, double const T, double const Value, double const Weight) {
+			diagonal[Interval] += Weight * (1.0 - T) * (1.0 - T);
+			diagonal[Interval + 1] += Weight * T * T;
+			upper[Interval] += Weight * (1.0 - T) * T;
+			lower[Interval + 1] += Weight * (1.0 - T) * T;
+			right[Interval] += Weight * (1.0 - T) * Value;
+			right[Interval + 1] += Weight * T * Value;
+		};
+		auto const interval_of = [&](double const Chainage) {
+			std::size_t k{0};
+			while (k + 2 < n && Chainage >= Chainages[Knots[k + 1]])
+				++k;
+			return k;
+		};
+		for (std::size_t k = 0; k + 1 < n; ++k)
+		{
+			auto const from{Chainages[Knots[k]]};
+			auto const run{std::max(1e-9, Chainages[Knots[k + 1]] - from)};
+			auto const last{k + 2 == n ? Knots[k + 1] : Knots[k + 1] - 1};
+			for (auto i = Knots[k]; i <= last; ++i)
+				add(k, (Chainages[i] - from) / run, ground[i], 1.0);
+		}
+		for (auto const &fixed : Context.fixed)
+		{
+			auto const k{interval_of(fixed.first)};
+			auto const from{Chainages[Knots[k]]};
+			auto const t{std::clamp((fixed.first - from) / std::max(1e-9, Chainages[Knots[k + 1]] - from), 0.0, 1.0)};
+			add(k, t, fixed.second, 1e6);
+		}
+		auto const pin = [&](std::size_t const Index, double const Value) {
+			lower[Index] = upper[Index] = 0.0;
+			diagonal[Index] = 1.0;
+			right[Index] = Value;
+		};
+		if (start_fixed)
+			pin(0, Context.start_elevation);
+		if (end_fixed)
+			pin(n - 1, Context.end_elevation);
+		for (std::size_t k = 1; k < n; ++k)
+		{
+			auto const factor{lower[k] / diagonal[k - 1]};
+			diagonal[k] -= factor * upper[k - 1];
+			right[k] -= factor * right[k - 1];
+		}
+		std::vector<double> z(n);
+		z[n - 1] = right[n - 1] / diagonal[n - 1];
+		for (auto k = n - 1; k-- > 0;)
+			z[k] = (right[k] - upper[k] * z[k + 1]) / diagonal[k];
+
+		// grades kept within the limits, the fixed ends don't move
+		for (int pass = 0; pass < 4; ++pass)
+		{
+			for (std::size_t k = 0; k + 1 < n; ++k)
+			{
+				if (k + 2 == n && end_fixed)
+					continue;
+				auto const run{Chainages[Knots[k + 1]] - Chainages[Knots[k]]};
+				auto const step{segment_limit(Chainages[Knots[k]], Chainages[Knots[k + 1]]) * run};
+				z[k + 1] = std::clamp(z[k + 1], z[k] - step, z[k] + step);
+			}
+			for (auto k = n - 1; k-- > 0;)
+			{
+				if (k == 0 && start_fixed)
+					continue;
+				auto const run{Chainages[Knots[k + 1]] - Chainages[Knots[k]]};
+				auto const step{segment_limit(Chainages[Knots[k]], Chainages[Knots[k + 1]]) * run};
+				z[k] = std::clamp(z[k], z[k + 1] - step, z[k + 1] + step);
+			}
+		}
+		return z;
+	};
+
+	auto const radius{std::ceil(required_radius(result) / 10.0) * 10.0};
+	auto const threshold{result.norms.curve_threshold / 1000.0};
+	std::vector<double> z;
+	for (int iteration = 0; iteration < 1000; ++iteration)
+	{
+		z = solve(knots);
+		auto const n{knots.size()};
+		if (n <= 2)
+			break;
+		auto const chainage = [&](std::size_t const K) { return Chainages[knots[K]]; };
+		auto const slope = [&](std::size_t const K) { return (z[K + 1] - z[K]) / std::max(1e-9, chainage(K + 1) - chainage(K)); };
+		std::vector<double> change(n, 0.0), tangent(n, 0.0);
+		for (std::size_t k = 1; k + 1 < n; ++k)
+		{
+			change[k] = std::abs(slope(k) - slope(k - 1));
+			tangent[k] = change[k] > threshold + 1e-9 ? radius * change[k] * 0.5 : 0.0;
+		}
+		// the curve of a joint starts at the end of the route and takes its whole length
+		if (start_fixed)
+		{
+			change[0] = std::abs(slope(0) - Context.start_grade);
+			tangent[0] = change[0] > threshold + 1e-9 ? radius * change[0] : 0.0;
+		}
+		if (end_fixed)
+		{
+			change[n - 1] = std::abs(slope(n - 2) - Context.end_grade);
+			tangent[n - 1] = change[n - 1] > threshold + 1e-9 ? radius * change[n - 1] : 0.0;
+		}
+
+		std::size_t removed{0};
+		for (std::size_t k = 1; k + 1 < n && removed == 0; ++k)
+			for (auto const &zone : Context.switches)
+				if (overlaps(chainage(k) - tangent[k] - 1.0, chainage(k) + tangent[k] + 1.0, zone))
+				{
+					removed = k;
+					break;
+				}
+		if (removed == 0)
+		{
+			double worst{0.0};
+			for (std::size_t k = 0; k + 1 < n; ++k)
+			{
+				bool const inner{(k > 0 || tangent[0] > 0.0) && (k + 2 < n || tangent[n - 1] > 0.0)};
+				auto const needed{tangent[k] + tangent[k + 1] + (inner ? result.norms.element_min : 0.0)};
+				auto const shortage{needed - (chainage(k + 1) - chainage(k))};
+				if (shortage <= 1e-6 || shortage <= worst)
+					continue;
+				worst = shortage;
+				if (k == 0)
+					removed = 1;
+				else if (k + 2 == n)
+					removed = n - 2;
+				else
+					removed = change[k] <= change[k + 1] ? k : k + 1;
+			}
+		}
+		if (removed == 0)
+			break;
+		knots.erase(knots.begin() + removed);
+	}
+
+	for (std::size_t k = 0; k < knots.size(); ++k)
+	{
+		pvi point;
+		point.chainage = Chainages[knots[k]];
+		point.elevation = z[k];
+		result.points.push_back(point);
+	}
+	return result;
+}
+
 std::vector<double> breaks(line const &Line)
 {
 	std::vector<double> result;

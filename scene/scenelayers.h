@@ -135,10 +135,20 @@ struct node_source
 	glm::vec3 scale{1.f};
 };
 
+// definition of a shape (triangles) in a scenery layer file
+struct shape_source
+{
+	layer_handle layer{null_handle};
+	source_span span;
+	material_handle material{null_handle};
+	bool erased{false}; // the definition goes from the file on save
+};
+
 struct save_result
 {
 	bool success{false};
 	std::vector<std::string> files; // names of saved files
+	std::vector<std::string> backups; // copies of the files made before they lost their ground
 	std::string message; // summary, or cause of the failure
 };
 
@@ -249,6 +259,15 @@ class node_layers
 	void track(basic_node const *Node, source_span const &Span, glm::vec3 const &Angles = glm::vec3{0.f}, glm::vec3 const &Scale = glm::vec3{1.f});
 	// indicates specified node was removed from the scene
 	void forget(basic_node const *Node);
+	// stores location of a shape defined directly in the layer file being loaded
+	void shape(material_handle const Material, source_span const &Span);
+	std::vector<shape_source> const &shapes() const
+	{
+		return m_shapes;
+	}
+	// drops the definitions of the shapes of specified materials from the writable layer files on save.
+	// returns: amount of the shapes to drop, and of the ones which stay as their files can't be rewritten
+	std::pair<std::size_t, std::size_t> erase_shapes(std::set<material_handle> const &Materials);
 	// indicates the scenario initialization (FirstInit) is being performed. Span: location of the directive.
 	// Infile: the directive comes straight from the layer file being loaded
 	void initialization(source_span const &Span, bool Infile);
@@ -354,6 +373,8 @@ class node_layers
 	layer_context m_context; // placement in effect at the current point of scenery load
 	std::unordered_map<basic_node const *, node_source> m_sources; // origins of nodes which can be rewritten on save
 	std::vector<std::pair<layer_handle, source_span>> m_erased; // definitions of nodes deleted since the load or the last save
+	std::vector<shape_source> m_shapes;
+	bool m_shapeserased{false}; // the binary terrain file holds shapes which the save drops
 	std::set<std::string> m_templates; // *.inc templates used by the scenery
 	std::vector<include_instance> m_instances; // includes of the templates; instance handle is index in the vector + 1
 	instance_handle m_instance{0}; // helper, include whose template is being loaded

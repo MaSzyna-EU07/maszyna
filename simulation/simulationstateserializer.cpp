@@ -678,16 +678,31 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
            && Input.Name().starts_with("scenery/zwr")
            && Input.Name().ends_with(".inc") ) };
 
+        material_handle material { null_handle };
         if( false == skip ) {
 
+            auto shape { scene::shape_node().import( Input, nodedata ) };
+            material = shape.data().material;
             simulation::Region->insert(
-                scene::shape_node().import(
-                    Input, nodedata ),
+                std::move( shape ),
                 Scratchpad,
                 true );
         }
         else {
+            if( nodedata.layer != null_handle && Input.InLayerFile() ) {
+                // the editor wants to know the material even of the shapes which come from the binary terrain
+                auto token { Input.getToken<std::string>() };
+                if( token == "material" ) {
+                    skip_until( Input, "endmaterial" );
+                    token = Input.getToken<std::string>();
+                }
+                replace_slashes( token );
+                material = GfxRenderer->Fetch_Material( token );
+            }
             skip_until( Input, "endtri" );
+        }
+        if( nodedata.layer != null_handle && Input.InLayerFile() ) {
+            scene::Layers.shape( material, { sourcebegin, Input.TokenEnd() } );
         }
     }
     else if( nodedata.type == "lines"
@@ -968,7 +983,7 @@ void
 state_serializer::deserialize_editorterrain(cParser &Input, scene::scratch_data &Scratchpad)
 {
 	// editor-authored streaming terrain. format:
-	//   editorterrain <folder> <cells> <cellsize> <radius> endeditorterrain
+	//   editorterrain <folder> <cells> <cellsize> <radius> [texture] endeditorterrain
 	// the global streamer loads its 16-bit chunk files around the camera in every mode
 	std::string folder;
 	int cells = 32;
@@ -976,13 +991,19 @@ state_serializer::deserialize_editorterrain(cParser &Input, scene::scratch_data 
 	int radius = 4;
 	Input.getTokens(4);
 	Input >> folder >> cells >> cellsize >> radius;
-	skip_until(Input, "endeditorterrain");
+	std::string texture { Input.getToken<std::string>() };
+	if( texture == "endeditorterrain" ) {
+		texture.clear();
+	}
+	else {
+		skip_until(Input, "endeditorterrain");
+	}
 	scene::Layers.terrain_directive(true);
 
 	if (!folder.empty() && cells > 0 && cellsize > 0.0f)
 	{
 		EditorTerrain.directory(folder);
-		EditorTerrain.configure(cells, cellsize, radius < 0 ? 0 : radius, 0.0f, std::string());
+		EditorTerrain.configure(cells, cellsize, radius < 0 ? 0 : radius, 0.0f, texture);
 		EditorTerrain.active(true);
 		WriteLog("Editor terrain stream enabled: " + folder + " (cells " + std::to_string(cells)
 		             + ", cellsize " + std::to_string(cellsize) + ", radius " + std::to_string(radius) + ")",
@@ -1418,7 +1439,9 @@ state_serializer::export_as_text(std::string const &Scenariofile) const {
 		        << EditorTerrain.directory() << ' '
 		        << EditorTerrain.cells() << ' '
 		        << EditorTerrain.cellsize() << ' '
-		        << EditorTerrain.radius() << " endeditorterrain\n";
+		        << EditorTerrain.radius()
+		        << ( EditorTerrain.texture().empty() ? "" : " " + EditorTerrain.texture() )
+		        << " endeditorterrain\n";
 	}
 
 	scmfile << "// modified objects\ninclude " << filename << "_export_dirty.scm\n";

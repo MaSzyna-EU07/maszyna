@@ -10,7 +10,10 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "editor/editorTerrainStreamer.hpp"
 
+#include "utilities/Globals.h"
+
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -133,13 +136,25 @@ void terrain_streamer::update(glm::dvec3 const &CameraPos)
 		return;
 
 	chunk_key const camera = key_at(CameraPos.x, CameraPos.z);
+	// the terrain reaches as far as the rest of the scenery is drawn
+	int const radius = std::max(m_radius, std::min(48, static_cast<int>(std::ceil(Global.BaseDrawRange / std::max(1.0f, chunk_world_size())))));
 
-	// load any missing chunk inside the radius (one build per frame keeps the hitch small)
-	bool built = false;
-	for (int dz = -m_radius; dz <= m_radius && !built; ++dz)
-		for (int dx = -m_radius; dx <= m_radius && !built; ++dx)
+	// missing chunks inside the radius, the nearest first, as many as fit in a few milliseconds of the frame
+	if (m_ring_radius != radius)
+	{
+		m_ring.clear();
+		for (int dz = -radius; dz <= radius; ++dz)
+			for (int dx = -radius; dx <= radius; ++dx)
+				m_ring.push_back({dx, dz});
+		std::sort(m_ring.begin(), m_ring.end(), [](chunk_key const &A, chunk_key const &B) { return A.first * A.first + A.second * A.second < B.first * B.first + B.second * B.second; });
+		m_ring_radius = radius;
+	}
+	auto const started = std::chrono::steady_clock::now();
+	for (auto const &offset : m_ring)
 		{
-			chunk_key const key{camera.first + dx, camera.second + dz};
+			if (std::chrono::steady_clock::now() - started > std::chrono::milliseconds(4))
+				break;
+			chunk_key const key{camera.first + offset.first, camera.second + offset.second};
 			if (m_chunks.count(key))
 				continue;
 
@@ -169,7 +184,6 @@ void terrain_streamer::update(glm::dvec3 const &CameraPos)
 				if (m_auto_optimize)
 					terrain->optimize(m_simplify_error);
 				m_chunks.emplace(key, std::move(terrain));
-				built = true; // amortise: at most one new chunk per frame
 			}
 		}
 
@@ -178,7 +192,7 @@ void terrain_streamer::update(glm::dvec3 const &CameraPos)
 	{
 		int const dx = it->first.first - camera.first;
 		int const dz = it->first.second - camera.second;
-		if (std::abs(dx) > m_radius || std::abs(dz) > m_radius)
+		if (std::abs(dx) > radius || std::abs(dz) > radius)
 		{
 			if (it->second)
 			{

@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <map>
 #include <optional>
 #include <sstream>
 
@@ -442,6 +443,262 @@ void editor_mode::profile_recognize()
 	state.status = format(STR_C("Grade line recognized from the track: %zu points, largest departure %.3f m"), state.line.points.size(), state.departure);
 }
 
+void editor_mode::profile_fit_ground()
+{
+	auto &state{m_profile};
+	std::vector<double> chainages;
+	for (auto const &sample : state.samples)
+		chainages.push_back(sample.chainage);
+	if (std::none_of(state.terrain.begin(), state.terrain.end(), [](double const Height) { return std::isfinite(Height); }))
+	{
+		state.error = STR_C("There's no ground under the route");
+		return;
+	}
+	auto settings{state.line};
+	settings.speed = route_speed(state.route);
+	auto line{profile::fit_ground(chainages, state.terrain, state.context, settings, state.fit)};
+	if (line.points.size() < 2)
+		return;
+	state.line = std::move(line);
+	state.selected = -1;
+	state.error.clear();
+	profile_check();
+	double fill{0.0}, cut{0.0};
+	for (std::size_t i = 0; i < state.samples.size(); ++i)
+	{
+		if (false == std::isfinite(state.terrain[i]))
+			continue;
+		auto const difference{profile::elevation(state.line, state.samples[i].chainage) - state.terrain[i]};
+		fill = std::max(fill, difference);
+		cut = std::max(cut, -difference);
+	}
+	state.status = format(STR_C("Grade line fitted to the ground: %zu points, embankment up to %.2f m, cutting up to %.2f m"), state.line.points.size(), fill, cut);
+}
+
+void editor_mode::profile_shape_ground()
+{
+	auto &state{m_profile};
+	auto &works{state.earthworks};
+	auto const &samples{state.samples};
+	if (samples.size() < 2 || state.line.points.size() < 2)
+		return;
+	auto const slope{std::max(0.1, works.slope)};
+	auto const reach{works.half_width + works.reach};
+	auto const terrains{active_terrains()};
+	if (terrains.empty())
+	{
+		state.error = STR_C("There's no editor terrain to shape: convert the scenery ground first");
+		return;
+	}
+
+	// the pieces of the axis of the route, found by the cell of a grid over the plan
+	double constexpr cell{16.0};
+	auto const key = [&](double const X, double const Z) { return std::make_pair(static_cast<int>(std::floor(X / cell)), static_cast<int>(std::floor(Z / cell))); };
+	std::map<std::pair<int, int>, std::vector<std::size_t>> grid;
+	glm::dvec2 low{std::numeric_limits<double>::max()}, high{-std::numeric_limits<double>::max()};
+	for (std::size_t i = 0; i + 1 < samples.size(); ++i)
+	{
+		auto const &a{samples[i].position};
+		auto const &b{samples[i + 1].position};
+		auto const from{key(std::min(a.x, b.x), std::min(a.z, b.z))};
+		auto const to{key(std::max(a.x, b.x), std::max(a.z, b.z))};
+		for (auto x = from.first; x <= to.first; ++x)
+			for (auto z = from.second; z <= to.second; ++z)
+				grid[{x, z}].push_back(i);
+		low = glm::min(low, glm::dvec2{std::min(a.x, b.x), std::min(a.z, b.z)});
+		high = glm::max(high, glm::dvec2{std::max(a.x, b.x), std::max(a.z, b.z)});
+	}
+
+	works.undo.clear();
+	std::size_t moved{0};
+	double fill{0.0}, cut{0.0};
+	for (auto *terrain : terrains)
+	{
+		auto const before{terrain->heights()};
+		auto const shaped{terrain->reshape([&](double const X, double const Z, float &Height) {
+			if (X < low.x - reach || X > high.x + reach || Z < low.y - reach || Z > high.y + reach)
+				return false;
+			double distance{reach};
+			double chainage{-1.0};
+			auto const from{key(X - reach, Z - reach)};
+			auto const to{key(X + reach, Z + reach)};
+			for (auto x = from.first; x <= to.first; ++x)
+				for (auto z = from.second; z <= to.second; ++z)
+				{
+					auto const found{grid.find({x, z})};
+					if (found == grid.end())
+						continue;
+					for (auto const i : found->second)
+					{
+						glm::dvec2 const a{samples[i].position.x, samples[i].position.z};
+						glm::dvec2 const b{samples[i + 1].position.x, samples[i + 1].position.z};
+						auto const run{b - a};
+						auto const length{glm::dot(run, run)};
+						auto const t{length > 1e-12 ? std::clamp(glm::dot(glm::dvec2{X, Z} - a, run) / length, 0.0, 1.0) : 0.0};
+						auto const offset{glm::length(glm::dvec2{X, Z} - (a + run * t))};
+						if (offset < distance)
+						{
+							distance = offset;
+							chainage = samples[i].chainage + (samples[i + 1].chainage - samples[i].chainage) * t;
+						}
+					}
+				}
+			if (chainage < 0.0)
+				return false;
+			auto const formation{profile::elevation(state.line, chainage) - works.depth};
+			auto const ground{static_cast<double>(Height)};
+			// the bends at the edge of the formation and at the foot of the slope are rounded off over the given length
+			auto const rounding{std::max(0.0, works.rounding)};
+			auto const soft_max = [](double const A, double const B, double const K) {
+				if (K <= 1e-6)
+					return std::max(A, B);
+				auto const h{std::max(K - std::abs(A - B), 0.0) / K};
+				return std::max(A, B) + h * h * K * 0.25;
+			};
+			auto const beyond{soft_max(0.0, distance - works.half_width, rounding)};
+			auto const bend{rounding / slope};
+			auto const target{ground > formation ? -soft_max(-ground, -(formation + beyond / slope), bend) : soft_max(ground, formation - beyond / slope, bend)};
+			if (std::abs(target - ground) < 0.005)
+				return false;
+			fill = std::max(fill, target - ground);
+			cut = std::max(cut, ground - target);
+			Height = static_cast<float>(target);
+			++moved;
+			return true;
+		})};
+		if (shaped)
+			works.undo.emplace_back(terrain, before);
+	}
+	if (moved == 0)
+	{
+		state.status = STR_C("The editor terrain doesn't reach the route, or it's shaped already");
+		return;
+	}
+	state.error.clear();
+	profile_resample();
+	state.status = format(STR_C("Terrain shaped at %zu points: embankment up to %.2f m, cutting up to %.2f m"), moved, fill, cut);
+	WriteLog("Editor: vertical profile - " + state.status, logtype::generic);
+}
+
+void editor_mode::profile_restore_ground()
+{
+	auto &state{m_profile};
+	auto const terrains{active_terrains()};
+	std::size_t restored{0};
+	for (auto const &entry : state.earthworks.undo)
+		if (std::find(terrains.begin(), terrains.end(), entry.first) != terrains.end())
+		{
+			entry.first->restore(entry.second);
+			++restored;
+		}
+	state.earthworks.undo.clear();
+	profile_resample();
+	state.status = restored > 0 ? STR_C("The terrain is back as it was before the shaping") : STR_C("The shaped terrain isn't loaded any more");
+}
+
+void editor_mode::render_ground_conversion()
+{
+	auto &conversion{m_ground_conversion};
+	if (false == conversion.open)
+	{
+		if (ImGui::Button(STR_C("Convert the scenery ground to editor terrain...")))
+		{
+			conversion.open = true;
+			conversion.materials = ground_materials();
+			conversion.chosen.clear();
+			// the material with the most triangles is the ground, most likely
+			auto const most{std::max_element(conversion.materials.begin(), conversion.materials.end(), [](auto const &A, auto const &B) { return A.second < B.second; })};
+			if (most != conversion.materials.end())
+				conversion.chosen.insert(most->first);
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Replaces the triangles of the chosen materials with editor terrain of the same shape,\nwhich can be shaped and sculpted; the scenery files lose these triangles on save"));
+		if (false == conversion.status.empty())
+			ImGui::TextWrapped("%s", conversion.status.c_str());
+		return;
+	}
+	ImGui::TextWrapped("%s", STR_C("Materials of the scenery triangles: tick the ones which are the ground"));
+	if (conversion.materials.empty())
+		ImGui::TextDisabled("%s", STR_C("The scenery has no triangles"));
+	for (auto const &entry : conversion.materials)
+	{
+		auto const *material{GfxRenderer->Material(entry.first)};
+		auto const name{material != nullptr ? material->GetName() : std::string{"?"}};
+		bool chosen{conversion.chosen.count(entry.first) != 0};
+		ImGui::PushID(static_cast<int>(entry.first));
+		if (ImGui::Checkbox(format(STR_C("%s  (%zu triangles)"), name.c_str(), entry.second).c_str(), &chosen))
+		{
+			if (chosen)
+				conversion.chosen.insert(entry.first);
+			else
+				conversion.chosen.erase(entry.first);
+		}
+		ImGui::PopID();
+	}
+	ImGui::TextWrapped("%s", STR_C("The terrain gets a single texture: that of the material which covers the most. Until saved, loading the scenery again takes it all back."));
+	if (conversion.chosen.empty())
+		ImGui::TextDisabled("%s", STR_C("Tick at least one material"));
+	else if (ImGui::Button(STR_C("Convert")))
+	{
+		conversion.status = convert_ground(conversion.chosen);
+		conversion.open = false;
+		profile_resample();
+	}
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Cancel")))
+		conversion.open = false;
+}
+
+void editor_mode::render_profile_earthworks()
+{
+	auto &state{m_profile};
+	auto &works{state.earthworks};
+	if (false == ImGui::TreeNode(STR_C("Shape the terrain to the grade line")))
+		return;
+	ImGui::TextWrapped("%s", STR_C("Only the editor terrain changes: a formation under the track and slopes to the ground; the triangles and models of the scenery stay as they are."));
+	render_ground_conversion();
+	auto const drag = [](char const *Label, double &Value, float const Speed, char const *Format) { return ImGui::DragScalar(STR_C(Label), ImGuiDataType_Double, &Value, Speed, nullptr, nullptr, Format); };
+	ImGui::PushItemWidth(90.0f);
+	drag("Formation below the rail top (m)", works.depth, 0.01f, "%.2f");
+	drag("Half width of the formation (m)", works.half_width, 0.05f, "%.2f");
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("From the axis of the route to the edge of the formation;\nfor two tracks add the distance between them"));
+	drag("Slopes 1 : n, n", works.slope, 0.05f, "%.2f");
+	drag("Slopes reach at most (m)", works.reach, 1.0f, "%.0f");
+	drag("Rounding of the edges (m)", works.rounding, 0.1f, "%.1f");
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Length over which the slope bends into the formation and into the ground; 0: sharp edges"));
+	ImGui::PopItemWidth();
+	works.rounding = std::clamp(works.rounding, 0.0, 20.0);
+	works.depth = std::clamp(works.depth, 0.0, 5.0);
+	works.half_width = std::clamp(works.half_width, 0.5, 30.0);
+	works.slope = std::clamp(works.slope, 0.1, 10.0);
+	works.reach = std::clamp(works.reach, 1.0, 200.0);
+	if (has_errors(state.issues))
+		ImGui::TextDisabled("%s", STR_C("Correct the errors of the grade line first"));
+	else if (ImGui::Button(STR_C("Shape the terrain")))
+		profile_shape_ground();
+	if (false == works.undo.empty())
+	{
+		ImGui::SameLine();
+		if (ImGui::Button(STR_C("Restore the terrain")))
+			profile_restore_ground();
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Puts back the terrain as it was before the last shaping"));
+	}
+	if (false == active_terrains().empty())
+	{
+		if (ImGui::Button(STR_C("Sculpting...")))
+		{
+			set_settings_open(true);
+			m_terrain_tab_wanted = true;
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Opens the terrain tab of the editor settings: raising, lowering and smoothing with a brush"));
+	}
+	ImGui::TreePop();
+}
+
 void editor_mode::profile_check()
 {
 	auto &state{m_profile};
@@ -748,6 +1005,20 @@ bool editor_mode::render_profile_parameters()
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Sets the points of the grade line from the existing track"));
 	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Fit to the ground")))
+	{
+		profile_fit_ground();
+		state.changed = true;
+	}
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Places the breaks of the grade line along the ground under the route,\nwithin the limits and with the least earthworks; the ground itself stays as it is"));
+	ImGui::PushItemWidth(70.0f);
+	ImGui::DragScalar(STR_C("m off the ground##fittolerance"), ImGuiDataType_Double, &state.fit.tolerance, 0.05f, nullptr, nullptr, "%.2f");
+	ImGui::PopItemWidth();
+	state.fit.tolerance = std::clamp(state.fit.tolerance, 0.05, 50.0);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("How far the grade line may depart from the ground before it breaks;\nmore gives fewer breaks and higher embankments and deeper cuttings"));
+	ImGui::SameLine();
 	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.55f, 0.25f, 1.0f));
 	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.68f, 0.3f, 1.0f));
 	if (ImGui::Button(STR_C("Apply to the scenery"), ImVec2(-1.0f, 0.0f)))
@@ -755,6 +1026,8 @@ bool editor_mode::render_profile_parameters()
 	ImGui::PopStyleColor(2);
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Sets the heights of the track along the route to the grade line, Ctrl+Z takes it back"));
+	ImGui::Separator();
+	render_profile_earthworks();
 	return changed;
 }
 

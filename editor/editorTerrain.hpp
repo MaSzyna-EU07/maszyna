@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <array>
 #include <vector>
 #include <string>
 #include <functional>
@@ -44,10 +45,20 @@ class editor_terrain
 	bool contains(double X, double Z) const;
 	// surface height at (X,Z) (bilinear over the covering quad); only valid when contains() is true
 	double height_at(double X, double Z) const;
+	// the same, from heights taken from heights() earlier
+	double height_in(std::vector<float> const &Heights, double X, double Z) const;
 
 	// raises/lowers vertices within Radius of (X,Z) by Strength (metres, signed), with a smooth
 	// falloff; regenerates the rendered geometry (full resolution). returns true if anything changed.
 	bool sculpt(double X, double Z, double Radius, double Strength);
+	// gives every grid vertex to Shaper, with its world position and height; Shaper returns true if it changed the height.
+	// regenerates the rendered geometry (full resolution). returns true if anything changed.
+	bool reshape(std::function<bool(double X, double Z, float &Height)> const &Shaper);
+	// pulls the vertices within Radius of (X,Z) towards the average of their neighbours, Amount (0..1) of the way at the centre,
+	// with a smooth falloff. Ground gives the height before the stroke at a world point, Fallback where there's no terrain
+	bool smooth(double X, double Z, double Radius, double Amount, std::function<double(double X, double Z, double Fallback)> const &Ground);
+	// puts back heights taken from heights() earlier
+	void restore(std::vector<float> const &Heights);
 
 	// rebuilds the rendered mesh, collapsing regions flatter than ErrorMetres into larger quads
 	// (adaptive quadtree). the editable heightmap is untouched, so sculpting/raycast stay exact.
@@ -63,6 +74,7 @@ class editor_terrain
 	glm::dvec3 centre() const;
 	float extent() const { return m_cells * m_cellsize; }
 	bool valid() const { return m_cells > 0; }
+	gfx::geometry_handle geometry() const { return m_geometry; }
 	bool optimized() const { return m_simplify; }
 	// set by sculpt() when the mesh changed and is currently full-resolution; cleared by optimize().
 	// used to auto-simplify only the chunks that were actually edited, once a stroke finishes.
@@ -88,7 +100,9 @@ class editor_terrain
 	void build_vertices(std::vector<world_vertex> &Out, bool Simplify) const;
 	// adaptive quadtree helpers (used when Simplify is on)
 	bool block_flat(int X0, int Z0, int X1, int Z1, float Error) const;
-	void emit_block(int X0, int Z0, int X1, int Z1, float Error, std::vector<world_vertex> &Out) const;
+	void collect_blocks(int X0, int Z0, int X1, int Z1, float Error, std::vector<std::array<int, 4>> &Out) const;
+	// a block as a fan through the marked grid vertices of its edges, so it meets its smaller neighbours without cracks
+	void emit_block(std::array<int, 4> const &Block, std::vector<char> const &Marked, std::vector<world_vertex> &Out) const;
 	void emit_quad(int X0, int Z0, int X1, int Z1, std::vector<world_vertex> &Out) const;
 	// rebuilds and re-uploads the rendered geometry (Replace when the count is unchanged, otherwise
 	// a fresh chunk whose handle is swapped into the shape)

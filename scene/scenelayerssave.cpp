@@ -1451,6 +1451,34 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		}
 		written.emplace_back(output);
 	}
+	// a file which loses its ground to the terrain of the editor keeps a copy of itself each time, whatever was saved before.
+	// without the copy nothing is replaced
+	{
+		auto const now{std::time(nullptr)};
+		char stamp[32];
+		std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", std::localtime(&now));
+		for (auto const output : written)
+		{
+			auto const filepath{path(output)};
+			bool const losesground{std::any_of(std::begin(m_shapes), std::end(m_shapes), [&](shape_source const &Shape) { return Shape.erased && Shape.layer == output; })};
+			if (false == losesground || false == std::filesystem::exists(filepath, error))
+			{
+				continue;
+			}
+			auto const backup{filepath + ".bak-" + stamp + "-przed-terenem-edytora"};
+			std::error_code copyerror;
+			if (false == std::filesystem::copy_file(filepath, backup, std::filesystem::copy_options::overwrite_existing, copyerror))
+			{
+				for (auto const leftover : written)
+				{
+					std::filesystem::remove(path(leftover) + ".tmp", error);
+				}
+				return fail("can't make a backup of file \"" + layer(output).name + "\": " + copyerror.message());
+			}
+			WriteLog("Scenery save: the triangles of the ground go from \"" + layer(output).name + "\", its previous content is kept in \"" + backup + "\"");
+			result.backups.emplace_back(backup);
+		}
+	}
 	std::vector<layer_handle> replaced;
 	for (auto const output : written)
 	{
@@ -1586,6 +1614,8 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		included.dead = included.dead || included.removed;
 	}
 	m_erased.clear();
+	// the shapes of the rewritten files are somewhere else in them now
+	m_shapes.erase(std::remove_if(std::begin(m_shapes), std::end(m_shapes), [&](shape_source const &Shape) { return std::find(std::begin(composed), std::end(composed), Shape.layer) != std::end(composed); }), std::end(m_shapes));
 	for (auto *path : savedpaths)
 	{
 		path->m_dirty = false;
@@ -1622,6 +1652,8 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 	{
 		m_sources.erase(point);
 	}
+	removedterrain |= m_shapeserased;
+	m_shapeserased = false;
 	if (removedterrain)
 	{
 		// binary terrain file still holds geometry of the dropped layer, have it rebuilt on the next load
@@ -1648,6 +1680,10 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		for (auto const &file : result.files)
 		{
 			result.message += file + (&file != &result.files.back() ? ", " : "");
+		}
+		for (auto const &backup : result.backups)
+		{
+			result.message += ". Backup before the ground was taken out: " + std::filesystem::path(backup).filename().string();
 		}
 	}
 	if (false == unwritten.empty())
