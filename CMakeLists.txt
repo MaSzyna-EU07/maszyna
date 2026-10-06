@@ -259,6 +259,7 @@ set(SOURCES
 "launcher/keymapper.cpp"
 "launcher/textures_scanner.cpp"
 "launcher/scenery_scanner.cpp"
+"launcher/scenery_wizard.cpp"
 
 "vr/vr_interface.cpp"
 )

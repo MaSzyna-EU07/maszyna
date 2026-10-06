@@ -1126,6 +1126,8 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 	}
 
 	// process command line arguments
+	bool sceneryfromcommandline{false};
+	bool editwithoutscenery{false};
 	for (int i = 1; i < Argc; ++i)
 	{
 
@@ -1136,6 +1138,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			if (i + 1 < Argc)
 			{
 				Global.SceneryFile = ToLower(Argv[++i]);
+				sceneryfromcommandline = true;
 			}
 		}
 		else if (token == "-v")
@@ -1148,12 +1151,15 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		else if (token == "-edit")
 		{
 			// edit session: the scenery is loaded without player vehicle, straight into the editor
-			if (i + 1 < Argc)
+			Global.editor_session = true;
+			Global.local_start_vehicle = "ghostview";
+			if (i + 1 < Argc && Argv[i + 1][0] != '-')
 			{
 				Global.SceneryFile = ToLower(Argv[++i]);
-				Global.local_start_vehicle = "ghostview";
-				Global.editor_session = true;
+				sceneryfromcommandline = true;
 			}
+			else
+				editwithoutscenery = true;
 		}
 		else if (token == "-seed")
 		{
@@ -1169,11 +1175,13 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		{
 			std::cout << "usage: " << std::string(Argv[0]) << " [-s sceneryfilepath]"
 			          << " [-v vehiclename]"
-			          << " [-edit sceneryfilepath]"
+			          << " [-edit [sceneryfilepath]]"
 			          << " [-seed number|word]" << std::endl;
 			return -1;
 		}
 	}
+	if (editwithoutscenery && false == sceneryfromcommandline)
+		Global.SceneryFile.clear();
 
 	return 0;
 }
