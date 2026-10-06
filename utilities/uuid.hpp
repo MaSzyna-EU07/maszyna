@@ -28,23 +28,17 @@ public:
     }
 
     std::string to_string() const {
-        std::ostringstream os;
-        os << std::hex << std::setfill('0');
-        auto put = [&](int i){
-            os << std::setw(2) << static_cast<int>(bytes[i]);
-        };
-        // format 8-4-4-4-12
-        for (int i = 0; i < 4; ++i) put(i);
-        for (int i = 4; i < 6; ++i) put(i);
-        os << '-';
-        for (int i = 6; i < 8; ++i) put(i);
-        os << '-';
-        for (int i = 8; i < 10; ++i) put(i);
-        os << '-';
-        for (int i = 10; i < 12; ++i) put(i);
-        os << '-';
-        for (int i = 12; i < 16; ++i) put(i);
-        return os.str();
+        // NOTE: done by hand as the text is made for each model instance of a scenery, and a string stream took a few microseconds each
+        static constexpr char digits[] = "0123456789abcdef";
+        std::string text;
+        text.reserve(36);
+        // format 12-4-4-4-8, the one node names in scenery files were written with
+        for (int i = 0; i < 16; ++i) {
+            if (i == 6 || i == 8 || i == 10 || i == 12) text += '-';
+            text += digits[bytes[i] >> 4];
+            text += digits[bytes[i] & 0x0F];
+        }
+        return text;
     }
 
     static UID from_string(const std::string& str) {
