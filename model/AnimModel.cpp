@@ -257,7 +257,20 @@ bool TAnimModel::Init(std::string const &asName, std::string const &asReplacable
         asText = asReplacableTexture.substr( 1, asReplacableTexture.length() - 1 ); // zapamiętanie tekstu
     }
     else if( asReplacableTexture != "none" ) {
-        m_materialdata.assign( asReplacableTexture );
+        // the same skin is typically shared by lots of instances, and locating its files takes a couple dozen disk lookups.
+        // NOTE: only located skins are kept, so a missing one is still searched for each time, the way it used to be
+        static std::unordered_map<std::string, material_data> skins;
+        auto const skinkey { Global.asCurrentTexturePath + '|' + asReplacableTexture };
+        auto const lookup { skins.find( skinkey ) };
+        if( lookup != skins.end() ) {
+            m_materialdata = lookup->second;
+        }
+        else {
+            m_materialdata.assign( asReplacableTexture );
+            if( m_materialdata.replacable_skins[ 1 ] != null_handle ) {
+                skins.emplace( skinkey, m_materialdata );
+            }
+        }
     }
 
 // TODO: redo the random timer initialization
@@ -304,26 +317,14 @@ bool TAnimModel::Load(cParser *parser, bool ter)
     }
     else
     { // wiązanie świateł, o ile model wczytany
-        LightsOn[0] = pModel->GetFromName("Light_On00");
-        LightsOn[1] = pModel->GetFromName("Light_On01");
-        LightsOn[2] = pModel->GetFromName("Light_On02");
-        LightsOn[3] = pModel->GetFromName("Light_On03");
-        LightsOn[4] = pModel->GetFromName("Light_On04");
-        LightsOn[5] = pModel->GetFromName("Light_On05");
-        LightsOn[6] = pModel->GetFromName("Light_On06");
-        LightsOn[7] = pModel->GetFromName("Light_On07");
-        LightsOff[0] = pModel->GetFromName("Light_Off00");
-        LightsOff[1] = pModel->GetFromName("Light_Off01");
-        LightsOff[2] = pModel->GetFromName("Light_Off02");
-        LightsOff[3] = pModel->GetFromName("Light_Off03");
-        LightsOff[4] = pModel->GetFromName("Light_Off04");
-        LightsOff[5] = pModel->GetFromName("Light_Off05");
-        LightsOff[6] = pModel->GetFromName("Light_Off06");
-        LightsOff[7] = pModel->GetFromName("Light_Off07");
-		sm_winter_variant = pModel->GetFromName("winter_variant");
-		sm_spring_variant = pModel->GetFromName("spring_variant");
-		sm_summer_variant = pModel->GetFromName("summer_variant");
-		sm_autumn_variant = pModel->GetFromName("autumn_variant");
+        // the submodels are located once for the model and shared by its instances
+        auto const &submodels { pModel->instance_parts() };
+        LightsOn = submodels.lights_on;
+        LightsOff = submodels.lights_off;
+        sm_winter_variant = submodels.variants[ 0 ];
+        sm_spring_variant = submodels.variants[ 1 ];
+        sm_summer_variant = submodels.variants[ 2 ];
+        sm_autumn_variant = submodels.variants[ 3 ];
     }
     for (int i = 0; i < iMaxNumLights; ++i)
         if (LightsOn[i] || LightsOff[i]) // Ra: zlikwidowałem wymóg istnienia obu

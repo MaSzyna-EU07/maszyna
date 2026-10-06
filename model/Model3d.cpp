@@ -1567,6 +1567,23 @@ TSubModel *TModel3d::GetFromName(std::string const &Name) const
 	}
 };
 
+// returns submodels which scenery instances of the model refer to by name, locating them on first use
+TModel3d::instance_submodels const &TModel3d::instance_parts()
+{
+	if (false == m_instancesubmodelslocated)
+	{
+		for (std::size_t idx = 0; idx < m_instancesubmodels.lights_on.size(); ++idx)
+		{
+			auto const index{(idx < 10 ? "0" : "") + std::to_string(idx)};
+			m_instancesubmodels.lights_on[idx] = GetFromName("Light_On" + index);
+			m_instancesubmodels.lights_off[idx] = GetFromName("Light_Off" + index);
+		}
+		m_instancesubmodels.variants = {GetFromName("winter_variant"), GetFromName("spring_variant"), GetFromName("summer_variant"), GetFromName("autumn_variant")};
+		m_instancesubmodelslocated = true;
+	}
+	return m_instancesubmodels;
+}
+
 // locates particle source submodels and stores them on internal list
 nameoffset_sequence const &TModel3d::find_smoke_sources()
 {
