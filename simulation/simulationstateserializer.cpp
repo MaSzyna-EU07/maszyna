@@ -1066,9 +1066,10 @@ include_binary_terrain( std::string File, scene::scratch_data &Scratchpad ) {
 
 // processes terrain file named by a terrain directive: static geometry kept as text (.txtf), with binary version (.btf)
 // made out of it and loaded in its place. unlike the legacy binary terrain above, the binary file stands in
-// only for the text file of the same name, and has no bearing on how the rest of the scenery is loaded
+// only for the text file of the same name, and has no bearing on how the rest of the scenery is loaded.
+// a file which is to be read as text is added to Includes, for the caller to pass to the parser
 void
-include_terrain_file( std::string File, cParser &Input, scene::scratch_data &Scratchpad ) {
+include_terrain_file( std::string File, std::string &Includes, scene::scratch_data &Scratchpad ) {
 
     auto &binary { Scratchpad.binary };
 
@@ -1133,7 +1134,7 @@ include_terrain_file( std::string File, cParser &Input, scene::scratch_data &Scr
         case scene::terrain_file::state::text: {
             // read the way any other scenery file is
             WriteLog( "Terrain file: " + File + " loaded as text" );
-            Input.injectString( "include \"" + textfile + "\" end" );
+            Includes += "include \"" + textfile + "\" end ";
             break;
         }
         default: {
@@ -1148,20 +1149,31 @@ include_terrain_file( std::string File, cParser &Input, scene::scratch_data &Scr
 void 
 state_serializer::deserialize_terrain(cParser &Input, scene::scratch_data &Scratchpad)
 {
-	std::string line;
-	Input.getTokens(1);
-	Input >> line;
+	// the directive names a terrain file, or a number of them
 	// NOTE: the directive is read to its end first, as processing of a terrain file can leave content for the parser to go through next
-	skip_until(Input, "endterrain");
-
-	if (line.ends_with(".txtf") || line.ends_with(".btf"))
+	std::vector<std::string> files;
+	std::string token;
+	while (false == (token = Input.getToken<std::string>()).empty() && token != "endterrain")
 	{
-		include_terrain_file(line, Input, Scratchpad);
+		files.emplace_back(token);
 	}
-	else if (Global.file_binary_terrain && line.ends_with(".sbt"))
-	{  
-		include_binary_terrain(line, Scratchpad);
-    }
+
+	std::string includes; // terrain files to be read as text, in the order the directive names them
+	for (auto const &file : files)
+	{
+		if (file.ends_with(".txtf") || file.ends_with(".btf"))
+		{
+			include_terrain_file(file, includes, Scratchpad);
+		}
+		else if (Global.file_binary_terrain && file.ends_with(".sbt"))
+		{
+			include_binary_terrain(file, Scratchpad);
+		}
+	}
+	if (false == includes.empty())
+	{
+		Input.injectString(includes);
+	}
 }
 
 void
