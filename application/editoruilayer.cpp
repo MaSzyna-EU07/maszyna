@@ -103,6 +103,11 @@ void editor_ui::render_header_sections()
 		m_itempropertiespanel.render_body();
 		ImGui::Unindent();
 	}
+	if (ImGui::CollapsingHeader("Array"))
+	{
+		if (m_arrayoptions)
+			m_arrayoptions();
+	}
 }
 
 void editor_ui::render_menu_contents()

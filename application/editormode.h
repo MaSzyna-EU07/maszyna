@@ -107,7 +107,19 @@ class editor_mode : public application_mode, private editor_track::observer
 	struct stored_profile;
 	struct EditorSnapshot
 	{
-		enum class Action { Move, Rotate, Scale, Add, Delete, TrackEdit, Other, RoadEdit };
+		enum class Action { Move, Rotate, Scale, Add, Delete, TrackEdit, Other, RoadEdit, Array };
+		// copy of a model an array made
+		struct array_copy
+		{
+			TAnimModel *model{nullptr}; // nullptr while the copy is out of the scene
+			UID uuid;
+			// what it takes to make the copy again, filled in when it's taken out of the scene
+			std::string serialized;
+			std::string name;
+			glm::dvec3 position{0.0};
+			glm::vec3 rotation{0.0f};
+			glm::vec3 scale{1.0f};
+		};
 
 		Action action{Action::Other};
 		std::string node_name;          // node identifier (basic_node::name())
@@ -127,6 +139,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::vector<infra::object_state> infra; // objects which followed the paths
 		bool profiles{false}; // the stored grade line designs changed too, these were the ones before
 		std::vector<stored_profile> profile_library;
+		std::vector<array_copy> copies; // models an array added to the one it was made of
 	};
 	void push_snapshot(scene::basic_node *node, EditorSnapshot::Action Action = EditorSnapshot::Action::Move, std::string const &Serialized = std::string());
 
@@ -306,6 +319,55 @@ class editor_mode : public application_mode, private editor_track::observer
 	float m_fill_scale_max{1.0f};
 	bool m_fill_models_as_ground{true}; // large model instances (terrain tiles) count as ground
 	std::string m_fill_status; // result of the last fill, shown in the panel
+
+	// array: copies of the selected model set out in a row, after the array modifier of Blender
+	struct array_settings
+	{
+		int fit{0}; // 0: fixed count, 1: as many as the length takes
+		int count{2}; // the model itself included
+		float length{10.0f}; // m
+		bool relative{true};
+		glm::vec3 relative_offset{1.0f, 0.0f, 0.0f}; // of the size of the model, along its axes
+		bool constant{false};
+		glm::vec3 constant_offset{1.0f, 0.0f, 0.0f}; // m, along the axes of the model
+		float turn{0.0f}; // degrees around the vertical axis, each copy against the one before it
+		bool ground{false}; // the copies are put as high over the ground as the model is
+		bool operator==(array_settings const &) const = default;
+	};
+	struct array_tool
+	{
+		static constexpr int limit = 1000; // models in an array, so a slip of the finger doesn't freeze the editor
+		static constexpr double minimal_step = 0.001; // m, copies any closer would sit in one another
+		array_settings settings;
+		// the array made last, which follows the settings until something else is selected or changed
+		TAnimModel *base{nullptr}; // model it was made of, nullptr if there's none
+		std::size_t step{0}; // size of the undo history with the array at its top
+		array_settings applied; // what the copies were set out with
+		glm::dvec3 location{0.0}; // of the model then
+		glm::vec3 angles{0.0f};
+		glm::vec3 scale{1.0f};
+		// size of the model asked about last
+		TModel3d const *sized{nullptr};
+		glm::vec3 size{0.0f};
+		std::string status; // outcome of the last operation, shown in the panel
+	};
+	array_tool m_array;
+	void render_array();
+	// size of the model of specified instance along its axes, the scale of the instance left out
+	glm::vec3 array_size(TAnimModel const &Base);
+	// offset of each copy from the one before it, along the axes of the model
+	glm::dvec3 array_offset(TAnimModel const &Base);
+	// number of the models in the array, the one it's made of included. Step: length of the offset
+	int array_count(double const Step) const;
+	// location and angles of each copy in turn
+	std::vector<std::pair<glm::dvec3, glm::vec3>> array_placements(TAnimModel &Base);
+	// true while the array made last follows the settings
+	bool array_live() const;
+	void make_array();
+	// brings the copies of the array made last to what the settings ask for
+	void shape_array();
+	void update_array();
+	void restore_array_snapshot(EditorSnapshot Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo);
 
 	// ImGuizmo-based transform gizmo for the selected node
 	enum class gizmo_operation { translate, rotate, scale };

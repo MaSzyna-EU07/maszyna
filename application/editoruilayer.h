@@ -66,6 +66,11 @@ class editor_ui : public ui_layer
 	{
 		m_gizmooptions = std::move(Renderer);
 	}
+	// draws the array settings in the toolset window (the array state lives in the editor mode)
+	void set_array_options(std::function<void()> Renderer)
+	{
+		m_arrayoptions = std::move(Renderer);
+	}
 	// actions of the file menu, performed by the editor mode
 	void set_file_actions(std::function<void()> Save, std::function<void()> Export);
 	// shows outcome of an operation in the layers window
@@ -90,6 +95,7 @@ class editor_ui : public ui_layer
 	std::function<void()> m_filloptions;
 	std::function<void()> m_menuoptions;
 	std::function<void()> m_gizmooptions;
+	std::function<void()> m_arrayoptions;
 	scene::basic_node *m_node{nullptr}; // currently bound scene node, if any
 	bool m_track{false};
 };

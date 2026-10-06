@@ -476,6 +476,7 @@ editor_mode::editor_mode() {
 	// the area fill settings live in the node bank window, in the tab of the fill mode
 	ui()->set_fill_options([this]() { render_area_fill(); });
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
+	ui()->set_array_options([this]() { render_array(); });
 	ui()->set_file_actions([this]() { save(); }, [this]() { export_scenery(); });
 	ui()->set_menu_options([this]() {
 		render_object_menu();
@@ -873,6 +874,11 @@ void editor_mode::nullify_history_pointers(scene::basic_node *node)
     {
         if (s.node_ptr == node)
             s.node_ptr = nullptr;
+        for (auto &copy : s.copies)
+        {
+            if (copy.model == node)
+                copy.model = nullptr;
+        }
     }
 
     for (auto &s : g_redo)
@@ -883,6 +889,10 @@ void editor_mode::nullify_history_pointers(scene::basic_node *node)
 
     // deleted nodes also drop out of the "undo last fill" set
     m_fill_last.erase(std::remove(m_fill_last.begin(), m_fill_last.end(), node), m_fill_last.end());
+
+    // an array no longer follows its settings once the model it was made of is gone
+    if (m_array.base == node)
+        m_array.base = nullptr;
 }
 
 void editor_mode::undo_last()
@@ -909,6 +919,12 @@ void editor_mode::undo_last()
     if (snap.action == EditorSnapshot::Action::RoadEdit)
     {
         restore_road_snapshot(snap, g_redo, true);
+        return;
+    }
+
+    if (snap.action == EditorSnapshot::Action::Array)
+    {
+        restore_array_snapshot(std::move(snap), g_redo, true);
         return;
     }
 
@@ -1013,6 +1029,12 @@ void editor_mode::redo_last()
     if (snap.action == EditorSnapshot::Action::RoadEdit)
     {
         restore_road_snapshot(snap, m_history, false);
+        return;
+    }
+
+    if (snap.action == EditorSnapshot::Action::Array)
+    {
+        restore_array_snapshot(std::move(snap), m_history, false);
         return;
     }
 
@@ -1271,6 +1293,9 @@ bool editor_mode::update()
     update_road_tool();
     draw_road_overlay();
     render_road_window();
+
+    // --- array: the one made last is kept in line with its settings ---
+    update_array();
 
     // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
     if (ui()->mode() == nodebank_panel::FILL)
@@ -2841,6 +2866,360 @@ void editor_mode::render_area_fill()
         ImGui::TextUnformatted(m_fill_status.c_str());
 }
 
+glm::vec3 editor_mode::array_size(TAnimModel const &Base)
+{
+    auto *model = Base.Model();
+    if (model == nullptr)
+        return glm::vec3{0.0f};
+    if (m_array.sized == model)
+        return m_array.size;
+    // the triangles the other tools take for the ground, left where the model has them
+    std::vector<world_triangle> triangles;
+    gather_submodel_triangles(model->Root, glm::dmat4{1.0}, triangles);
+    if (triangles.empty())
+        return glm::vec3{0.0f}; // not loaded yet, or nothing to it; it's asked about again the next time
+    glm::dvec3 low{std::numeric_limits<double>::max()};
+    glm::dvec3 high{-std::numeric_limits<double>::max()};
+    for (auto const &triangle : triangles)
+    {
+        for (auto const &vertex : triangle)
+        {
+            low = glm::min(low, vertex);
+            high = glm::max(high, vertex);
+        }
+    }
+    m_array.sized = model;
+    m_array.size = glm::vec3{high - low};
+    return m_array.size;
+}
+
+glm::dvec3 editor_mode::array_offset(TAnimModel const &Base)
+{
+    auto const &settings = m_array.settings;
+    glm::dvec3 offset{0.0};
+    if (settings.relative)
+        offset += glm::dvec3{settings.relative_offset * array_size(Base) * Base.Scale()};
+    if (settings.constant)
+        offset += glm::dvec3{settings.constant_offset};
+    return offset;
+}
+
+int editor_mode::array_count(double const Step) const
+{
+    auto const &settings = m_array.settings;
+    if (settings.fit == 0)
+        return std::clamp(settings.count, 1, array_tool::limit);
+    if (Step < array_tool::minimal_step)
+        return 1;
+    // the model, and a copy for each whole offset the length takes
+    return static_cast<int>(std::min<double>(array_tool::limit, std::floor(std::max(0.0f, settings.length) / Step + 1e-6) + 1.0));
+}
+
+std::vector<std::pair<glm::dvec3, glm::vec3>> editor_mode::array_placements(TAnimModel &Base)
+{
+    // a model this large counts as ground itself, and would be put on top of its own copies
+    float constexpr terrain_model_radius = 50.0f;
+
+    std::vector<std::pair<glm::dvec3, glm::vec3>> places;
+    auto const &settings = m_array.settings;
+    auto const offset = array_offset(Base);
+    auto const count = array_count(glm::length(offset));
+    if (count < 2 || glm::length(offset) < array_tool::minimal_step)
+        return places;
+
+    // the offset goes along the axes of the model, which is turned the way the renderer does it: around y, then x, then z
+    auto angles = Base.Angles();
+    glm::dmat4 turned{1.0};
+    turned = glm::rotate(turned, glm::radians(static_cast<double>(angles.y)), glm::dvec3{0.0, 1.0, 0.0});
+    turned = glm::rotate(turned, glm::radians(static_cast<double>(angles.x)), glm::dvec3{1.0, 0.0, 0.0});
+    turned = glm::rotate(turned, glm::radians(static_cast<double>(angles.z)), glm::dvec3{0.0, 0.0, 1.0});
+    auto step = glm::dvec3{turned * glm::dvec4{offset, 0.0}};
+    auto location = Base.location();
+    places.reserve(count - 1);
+    for (int idx = 1; idx < count; ++idx)
+    {
+        // each copy is turned against the one before it, and leads to the next one the way it faces
+        location += step;
+        if (false == simulation::Region->point_inside(location))
+            break; // the row ends at the edge of the region, nodes past it are left out of the scene
+        if (settings.turn != 0.0f)
+        {
+            step = glm::rotateY(step, glm::radians(static_cast<double>(settings.turn)));
+            angles.y = clamp_circular(angles.y + settings.turn, 360.0f);
+        }
+        places.emplace_back(location, angles);
+    }
+
+    if (settings.ground && Base.radius() < terrain_model_radius)
+    {
+        // the ground the road tools use. a copy with nothing under it stays at the height the offset gave it
+        std::vector<glm::dvec3> points;
+        points.reserve(places.size() + 1);
+        points.push_back(Base.location());
+        for (auto const &place : places)
+            points.push_back(place.first);
+        std::vector<char> found;
+        auto const heights = ground_heights(points, true, &found);
+        if (found[0])
+        {
+            auto const clearance = points[0].y - heights[0];
+            for (std::size_t idx = 0; idx < places.size(); ++idx)
+            {
+                if (found[idx + 1])
+                    places[idx].first.y = heights[idx + 1] + clearance;
+            }
+        }
+    }
+    return places;
+}
+
+bool editor_mode::array_live() const
+{
+    // the model the array was made of is still selected, and the array is the last thing done
+    return m_array.base != nullptr && m_array.base == m_node && false == m_history.empty() && m_history.size() == m_array.step &&
+           m_history.back().action == EditorSnapshot::Action::Array;
+}
+
+void editor_mode::make_array()
+{
+    auto *base = dynamic_cast<TAnimModel *>(m_node);
+    if (base == nullptr || false == scene::Layers.editable(base))
+        return;
+    auto const step = glm::length(array_offset(*base));
+    if (step < array_tool::minimal_step)
+    {
+        m_array.status = "The offsets come to nothing, the copies would sit in the model";
+        return;
+    }
+    if (array_count(step) < 2)
+    {
+        m_array.status = (m_array.settings.fit == 0 ? "An array of one is the model itself, nothing to make" : "The length takes no copy, nothing to make");
+        return;
+    }
+
+    // a single undo step for the whole array, whatever is done to it while it follows the settings
+    trim_history();
+    EditorSnapshot snap;
+    snap.action = EditorSnapshot::Action::Array;
+    snap.node_name = base->name();
+    snap.position = base->location();
+    snap.layer = base->layer();
+    m_history.push_back(std::move(snap));
+    g_redo.clear();
+    m_array.base = base;
+    m_array.step = m_history.size();
+    shape_array();
+}
+
+void editor_mode::shape_array()
+{
+    auto *base = m_array.base;
+    auto &copies = m_history.back().copies;
+    auto const places = array_placements(*base);
+
+    // the copies there's no place for anymore go
+    while (copies.size() > places.size())
+    {
+        auto *model = copies.back().model;
+        copies.pop_back();
+        if (model == nullptr)
+            continue;
+        nullify_history_pointers(model);
+        remove_from_hierarchy(model);
+        simulation::State.delete_model(model);
+    }
+
+    std::string definition;
+    for (std::size_t idx = 0; idx < places.size(); ++idx)
+    {
+        TAnimModel *model = nullptr;
+        if (idx < copies.size())
+        {
+            model = copies[idx].model;
+            m_editor.translate(model, places[idx].first, true); // true: the height is set as well
+        }
+        else
+        {
+            if (definition.empty())
+                base->export_as_text(definition);
+            // NOTE: no names for the copies, same as with the brush
+            model = simulation::State.create_model(definition, std::string{}, places[idx].first);
+            if (model == nullptr)
+                break;
+            // the copies go where the model is, rather than to the active layer
+            scene::Layers.move(model, base->layer());
+            EditorSnapshot::array_copy copy;
+            copy.model = model;
+            copy.uuid = model->uuid;
+            copies.push_back(std::move(copy));
+        }
+        model->Angles(places[idx].second);
+        model->Scale(base->Scale());
+    }
+
+    m_array.applied = m_array.settings;
+    m_array.location = base->location();
+    m_array.angles = base->Angles();
+    m_array.scale = base->Scale();
+    if (copies.size() < places.size())
+        m_array.status = "Only " + std::to_string(copies.size()) + " of " + std::to_string(places.size()) + " copies could be made";
+    else if (copies.empty())
+        m_array.status = "No copies with these settings";
+    else
+        m_array.status = "The model and " + std::to_string(copies.size()) + (copies.size() == 1 ? " copy" : " copies") + "; Ctrl+Z takes the array back";
+}
+
+void editor_mode::update_array()
+{
+    if (m_array.base == nullptr)
+        return;
+    if (false == array_live())
+    {
+        // once left, the copies are models like any other
+        m_array.base = nullptr;
+        return;
+    }
+    auto const *base = m_array.base;
+    if (m_array.settings == m_array.applied && base->location() == m_array.location && base->Angles() == m_array.angles && base->Scale() == m_array.scale)
+        return;
+    shape_array();
+}
+
+void editor_mode::restore_array_snapshot(EditorSnapshot Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo)
+{
+    // either way the array is done with following the settings
+    m_array.base = nullptr;
+    for (auto &copy : Snapshot.copies)
+    {
+        if (Undo)
+        {
+            // NOTE: a copy which was deleted and brought back is another model by now, found by its uuid
+            auto *model = dynamic_cast<TAnimModel *>(find_node_by_any(copy.model, copy.uuid.to_string(), std::string{}));
+            copy.model = nullptr;
+            copy.serialized.clear();
+            if (model == nullptr)
+                continue; // deleted since, and stays that way
+            // the copy is brought back the way it is now, with whatever was done to it since the array was made
+            model->export_as_text(copy.serialized);
+            copy.name = model->name();
+            copy.position = model->location();
+            copy.rotation = model->Angles();
+            copy.scale = model->Scale();
+            if (m_node == model)
+            {
+                m_node = nullptr;
+                m_dragging = false;
+                ui()->set_node(nullptr);
+            }
+            nullify_history_pointers(model);
+            remove_from_hierarchy(model);
+            simulation::State.delete_model(model);
+        }
+        else
+        {
+            if (copy.serialized.empty())
+                continue;
+            auto *model = simulation::State.create_model(copy.serialized, copy.name, copy.position);
+            if (model == nullptr)
+                continue;
+            scene::Layers.move(model, Snapshot.layer);
+            model->Angles(copy.rotation);
+            model->Scale(copy.scale);
+            model->uuid = copy.uuid;
+            add_to_hierarchy(model);
+            copy.model = model;
+        }
+    }
+    Opposite.push_back(std::move(Snapshot));
+}
+
+void editor_mode::render_array()
+{
+    auto &settings = m_array.settings;
+    auto *selected = dynamic_cast<TAnimModel *>(m_node);
+    if (selected != nullptr && false == scene::Layers.editable(selected))
+        selected = nullptr;
+
+    ImGui::PushID("array");
+    ImGui::TextDisabled("Copies of the selected model, set out in a row");
+    ImGui::RadioButton("Fixed count", &settings.fit, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Fit length", &settings.fit, 1);
+    ImGui::SetNextItemWidth(120.0f);
+    if (settings.fit == 0)
+    {
+        ImGui::InputInt("Count", &settings.count);
+        settings.count = std::clamp(settings.count, 1, array_tool::limit);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", "Number of the models in the array, the selected one included");
+    }
+    else
+    {
+        ImGui::InputFloat("Length (m)", &settings.length, 1.0f, 10.0f, "%.2f");
+        settings.length = std::max(0.0f, settings.length);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", "As many copies are made as fit in this length, measured along the row");
+    }
+
+    ImGui::Checkbox("Relative offset", &settings.relative);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", "Distance between the copies as a part of the size of the model, along its axes: x, y (up), z.\n"
+                                "1 along an axis puts the copies end to end");
+    if (settings.relative)
+    {
+        ImGui::SetNextItemWidth(200.0f);
+        ImGui::DragFloat3("x size", &settings.relative_offset.x, 0.01f, 0.0f, 0.0f, "%.3f");
+    }
+    ImGui::Checkbox("Constant offset", &settings.constant);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", "Distance between the copies in metres, along the axes of the model: x, y (up), z.\n"
+                                "With both offsets on the copies are set apart by their sum");
+    if (settings.constant)
+    {
+        ImGui::SetNextItemWidth(200.0f);
+        ImGui::DragFloat3("m", &settings.constant_offset.x, 0.05f, 0.0f, 0.0f, "%.3f");
+    }
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::DragFloat("Turn per copy (deg)", &settings.turn, 0.1f, -180.0f, 180.0f, "%.2f");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", "Each copy is turned by this much around the vertical axis against the one before it,\n"
+                                "and the row bends with them into an arc");
+    ImGui::Checkbox("Follow the ground", &settings.ground);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", "The copies are put as high over the ground as the model is, instead of level with it.\n"
+                                "Not for the models large enough to count as ground themselves");
+
+    if (selected != nullptr)
+    {
+        auto const size = array_size(*selected) * selected->Scale();
+        auto const step = glm::length(array_offset(*selected));
+        ImGui::TextDisabled("Model %.2f x %.2f x %.2f m, %d in the array, %.2f m apart", size.x, size.y, size.z, array_count(step), step);
+    }
+
+    if (array_live())
+    {
+        // NOTE: kept away from the place of the other button, a click too many on which would make the array twice
+        ImGui::TextDisabled("The array follows the settings");
+        ImGui::SameLine();
+        if (ImGui::Button("Done"))
+            m_array.base = nullptr;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", "The copies stay the way they are. Selecting or changing anything else does the same");
+    }
+    else if (selected != nullptr)
+    {
+        if (ImGui::Button("Make array"))
+            make_array();
+    }
+    else
+    {
+        ImGui::TextDisabled("Select a model to make an array of");
+    }
+    if (false == m_array.status.empty())
+        ImGui::TextUnformatted(m_array.status.c_str());
+    ImGui::PopID();
+}
+
 void editor_mode::render_gizmo_options()
 {
     if (ImGui::Button(Global.EditorOrtho ? "3D view (O)" : "Top view, orthographic (O)"))
@@ -3760,7 +4139,8 @@ void editor_mode::render_change_history(){
                         s.action == EditorSnapshot::Action::Rotate ? "ROT" :
                         s.action == EditorSnapshot::Action::Scale ? "SCA" :
                         s.action == EditorSnapshot::Action::TrackEdit ? "TRK" :
-                        s.action == EditorSnapshot::Action::RoadEdit ? "ROAD" : "OTH",
+                        s.action == EditorSnapshot::Action::RoadEdit ? "ROAD" :
+                        s.action == EditorSnapshot::Action::Array ? "ARR" : "OTH",
                         s.node_name.empty() ? "(noname)" : s.node_name.c_str(),
                         s.position.x, s.position.y, s.position.z);
 
