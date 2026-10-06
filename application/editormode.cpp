@@ -3202,6 +3202,12 @@ void editor_mode::enter()
 {
     m_statebackup = {Global.pCamera, FreeFlyModeFlag, Global.ControlPicking};
 
+    if (simulation::Region != nullptr)
+    {
+        // the editor works with geometry of the whole scenery, including the parts of binary terrain which weren't needed so far
+        simulation::Region->load_terrain();
+    }
+
     Camera = Global.pCamera;
 
     if (!FreeFlyModeFlag)

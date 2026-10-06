@@ -25,24 +25,14 @@ http://mozilla.org/MPL/2.0/.
 
 namespace
 {
-inline std::array<bool, 256> makeBreakTable(const char *brk)
-{
-	std::array<bool, 256> arr{};
-	for (unsigned char c : std::string_view(brk ? brk : ""))
-	{
-		arr[c] = true;
-	}
-	return arr;
-}
-
 inline char toLowerChar(char c)
 {
 	// Only fold ASCII letters. Bytes >= 0x80 belong to multibyte UTF-8
 	// sequences and must be passed through untouched, otherwise a non-"C"
 	// global locale could remap them and corrupt UTF-8 encoded text.
-	const unsigned char uc = static_cast<unsigned char>(c);
-	if (uc < 0x80)
-		return static_cast<char>(std::tolower(uc));
+	// The remaining ASCII characters have no lower case form, and don't need the call.
+	if (c >= 'A' && c <= 'Z')
+		return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 	return c;
 }
 
@@ -70,7 +60,28 @@ cParser::cParser(std::string const &Stream, buffertype const Type, std::string P
 	case buffer_FILE:
 	{
 		Path.append(Stream);
-		mStream = std::make_shared<std::ifstream>(Path, std::ios_base::binary);
+		// the file is read in one go, tokens are then extracted straight from the memory
+		std::ifstream file(Path, std::ios_base::binary);
+		if (file.fail())
+		{
+			mFailBit = true;
+		}
+		else
+		{
+			auto const size{file.rdbuf()->pubseekoff(0, std::ios_base::end)};
+			file.rdbuf()->pubseekoff(0, std::ios_base::beg);
+			if (size > 0 && static_cast<std::uintmax_t>(size) < mBuffer.max_size())
+			{
+				mBuffer.resize(static_cast<std::size_t>(size));
+				file.read(mBuffer.data(), static_cast<std::streamsize>(mBuffer.size()));
+				mBuffer.resize(static_cast<std::size_t>(std::max<std::streamsize>(0, file.gcount())));
+			}
+			else if (size != 0)
+			{
+				// not a file which can be read, e.g. a directory, which some systems allow to open
+				mFailBit = true;
+			}
+		}
 		// content of *.inc files is potentially grouped together
 		if (Stream.size() >= 4 && ToLower(Stream.substr(Stream.size() - 4)) == ".inc")
 		{
@@ -81,7 +92,7 @@ cParser::cParser(std::string const &Stream, buffertype const Type, std::string P
 	}
 	case buffer_TEXT:
 	{
-		mStream = std::make_shared<std::istringstream>(Stream);
+		mBuffer = Stream;
 		break;
 	}
 	default:
@@ -90,18 +101,14 @@ cParser::cParser(std::string const &Stream, buffertype const Type, std::string P
 	}
 	}
 	// calculate stream size
-	if (mStream)
+	if (true == mFailBit)
 	{
-		if (true == mStream->fail())
-		{
-			ErrorLog("Failed to open file \"" + Path + "\"");
-		}
-		else
-		{
-			mSize = mStream->rdbuf()->pubseekoff(0, std::ios_base::end);
-			mStream->rdbuf()->pubseekoff(0, std::ios_base::beg);
-			mLine = 1;
-		}
+		ErrorLog("Failed to open file \"" + Path + "\"");
+	}
+	else
+	{
+		mSize = static_cast<std::streamoff>(mBuffer.size());
+		mLine = 1;
 	}
 	// set parameter set if one was provided
 	if (false == Parameters.empty())
@@ -147,7 +154,7 @@ template <> cParser &cParser::operator>>(std::string &Right)
 		return *this;
 	}
 
-	Right = this->tokens.front();
+	Right = std::move(this->tokens.front());
 	this->tokens.pop_front();
 
 	return *this;
@@ -165,6 +172,25 @@ template <> cParser &cParser::operator>>(bool &Right)
 	this->tokens.pop_front();
 
 	return *this;
+}
+
+template <> std::string cParser::getToken<std::string>(bool const ToLower, const char *Break)
+{
+	// does what the generic version would, minus the trip of the token through the queue
+	if (true == m_autoclear)
+	{
+		tokens.clear();
+	}
+	std::string token;
+	if (false == tokens.empty())
+	{
+		*this >> token;
+	}
+	else
+	{
+		readToken(token, ToLower, Break);
+	}
+	return token;
 }
 
 template <> bool cParser::getToken<bool>(bool const ToLower, const char *Break)
@@ -234,31 +260,141 @@ bool cParser::getTokens(unsigned int Count, bool ToLower, const char *Break)
 		return true;
 }
 
-std::string cParser::readTokenFromStream(bool ToLower, const char *Break)
+// mimics std::istream::peek() != EOF of the stream the parser used to read from
+bool cParser::hasChar()
 {
-	std::string token;
-	token.reserve(64);
+	if (mEofBit || mFailBit)
+	{
+		// an attempt to read from a stream which isn't in good state marks it as failed
+		mFailBit = true;
+		return false;
+	}
+	if (static_cast<std::size_t>(mPosition) >= mBuffer.size())
+	{
+		mEofBit = true;
+		return false;
+	}
+	return true;
+}
 
-	const auto breakTable = makeBreakTable(Break);
+// mimics std::istream::get(char&). NOTE: doesn't advance the read position, the caller does
+bool cParser::getChar(char &Char)
+{
+	if (mEofBit || mFailBit)
+	{
+		mFailBit = true;
+		return false;
+	}
+	if (static_cast<std::size_t>(mPosition) >= mBuffer.size())
+	{
+		// failed extraction at the end of data sets both flags
+		mEofBit = true;
+		mFailBit = true;
+		return false;
+	}
+	Char = mBuffer[static_cast<std::size_t>(mPosition)];
+	return true;
+}
+
+// prepares character lookup for specified set of token separators
+void cParser::updateCharClasses(char const *Break)
+{
+	if (Break == nullptr)
+	{
+		Break = "";
+	}
+	if (mCharClassesValid && std::strcmp(mCharClassesBreak.c_str(), Break) == 0)
+	{
+		// the set of separators rarely changes from one token to another
+		return;
+	}
+	mCharClassesBreak = Break;
+	mCharClasses.fill(0);
+	for (unsigned char const c : mCharClassesBreak)
+	{
+		mCharClasses[c] |= char_break;
+	}
+	// characters which need more than being added to the token:
+	// line ends are counted,
+	mCharClasses[static_cast<unsigned char>('\n')] |= char_special;
+	// quotes glue the text they enclose into a single token,
+	mCharClasses[static_cast<unsigned char>('\"')] |= char_special;
+	// and a comment can start only once the last character of its opening mark arrives
+	for (auto const &comment : mComments)
+	{
+		for (auto character{0}; character < 256; ++character)
+		{
+			// NOTE: the mark is compared with the token, which can hold the character converted to lower case
+			if (comment.first.empty() || comment.first.back() == static_cast<char>(character) || comment.first.back() == toLowerChar(static_cast<char>(character)))
+			{
+				mCharClasses[character] |= char_special;
+			}
+		}
+	}
+	mCharClassesValid = true;
+}
+
+void cParser::readTokenFromStream(std::string &token, bool ToLower, const char *Break)
+{
+	token.clear();
+
+	updateCharClasses(Break);
 	char c = 0;
 	bool separated = false; // the token was ended by a separator, which isn't a part of it
 
 
-	while (token.empty() && mStream->peek() != EOF) {
-		while (mStream->peek() != EOF) { // idk why but with mStream->get(c) not all cars are loaded
-			c = static_cast<char>(mStream->get());
+	while (token.empty() && hasChar()) {
+		while (hasChar()) {
+			auto const *const data{mBuffer.data()};
+			auto const size{mBuffer.size()};
+			auto const begin{static_cast<std::size_t>(mPosition)};
+			if (mCharClasses[static_cast<unsigned char>(data[begin])] == 0)
+			{
+				// run of regular characters, which only need to be added to the token
+				auto end{begin + 1};
+				while (end < size && mCharClasses[static_cast<unsigned char>(data[end])] == 0)
+				{
+					++end;
+				}
+				if (token.empty())
+				{
+					mTokenBegin = mPosition;
+				}
+				auto const converted{token.size()};
+				token.append(data + begin, end - begin);
+				if (ToLower)
+				{
+					for (auto index{converted}; index < token.size(); ++index)
+					{
+						token[index] = toLowerChar(token[index]);
+					}
+				}
+				mPosition = static_cast<std::streamoff>(end);
+				continue;
+			}
+
+			c = data[begin];
 			++mPosition;
 			if (c == '\n') {
 				++mLine;
 			}
 
 			const unsigned char uc = static_cast<unsigned char>(c);
-			if (breakTable[uc]) {
+			if (mCharClasses[uc] & char_break) {
 				// separator ends token (or continues skipping if token empty)
 				if (!token.empty()) {
 					separated = true;
 					break;
 				}
+				// the rest of a run of separators is skipped right away
+				auto next{begin + 1};
+				while (next < size && (mCharClasses[static_cast<unsigned char>(data[next])] & char_break)) {
+					if (data[next] == '\n') {
+						++mLine;
+					}
+					++next;
+				}
+				mPosition = static_cast<std::streamoff>(next);
 				continue;
 			}
 
@@ -278,8 +414,6 @@ std::string cParser::readTokenFromStream(bool ToLower, const char *Break)
 	}
 	// NOTE: comment glued to the end of a token is counted as a part of it
 	mTokenEnd = separated ? mPosition - 1 : mPosition;
-
-	return token;
 }
 
 void cParser::stripFirstTokenBOM(std::string& token, bool ToLower, const char* Break) {
@@ -292,7 +426,7 @@ void cParser::stripFirstTokenBOM(std::string& token, bool ToLower, const char* B
 	}
 
 	// if first "token" was standalone BOM, read the next real token (avoid recursion)
-	while (token.empty() && mStream->peek() != EOF) {
+	while (token.empty() && hasChar()) {
 		readToken(token, ToLower, Break);
 		// readToken will not re-enter BOM stripping because mFirstToken is now false
 		break;
@@ -356,6 +490,7 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
 	if (isTerrain && true == Global.file_binary_terrain_state) {
 		WriteLog("SBT found, ignoring: " + includefile);
 		readParameters(srcParser); // preserve original side-effect: still consume parameters
+		++Global.file_binary_terrain_skipped;
 		if (sceneryLayers)
 		{
 			// the file is still a part of the scenery, even though its content comes from the binary terrain file
@@ -466,19 +601,30 @@ void cParser::readToken(std::string &out, bool ToLower, const char *Break)
 		if (out.empty())
 		{
 			mIncludeParser = nullptr;
-			out = readTokenFromStream(ToLower, Break);
+			readTokenFromStream(out, ToLower, Break);
 		}
 	}
 	else
 	{
-		out = readTokenFromStream(ToLower, Break);
+		readTokenFromStream(out, ToLower, Break);
 	}
 
-	stripFirstTokenBOM(out, ToLower, Break);
+	// NOTE: the checks repeat what the called methods test first, to skip the calls for vast majority of the tokens
+	if (mFirstToken)
+	{
+		stripFirstTokenBOM(out, ToLower, Break);
+	}
 
-	substituteParameters(out, ToLower);
+	if (false == parameters.empty())
+	{
+		substituteParameters(out, ToLower);
+	}
 
-	handleIncludeIfPresent(out, ToLower, Break);
+	if (out.size() >= 7 && out[0] == 'i')
+	{
+		// nothing else can be an include directive
+		handleIncludeIfPresent(out, ToLower, Break);
+	}
 }
 
 std::vector<std::string> cParser::readParameters(cParser &Input)
@@ -500,7 +646,7 @@ std::string cParser::readQuotes(char const Quote)
 	std::string token;
 	char c{0};
 	bool escaped = false;
-	while (mStream->get(c))
+	while (getChar(c))
 	{ // get all chars until the quote mark
 		++mPosition;
 		if (escaped)
@@ -528,25 +674,23 @@ std::string cParser::readQuotes(char const Quote)
 
 void cParser::skipComment(std::string const &Endmark)
 { // pobieranie znaków aż do znalezienia znacznika końca
-	std::string input;
 	char c{0};
-	auto const endmarksize = Endmark.size();
-	while (mStream->get(c))
+	if (false == getChar(c))
 	{
-		++mPosition;
-		if (c == '\n')
-		{
-			// update line counter
-			++mLine;
-		}
-		input += c;
-		if (input == Endmark) // szukanie znacznika końca
-			break;
-		if (input.size() >= endmarksize)
-		{
-			// keep the read text short, to avoid pointless string re-allocations on longer comments
-			input = input.substr(1);
-		}
+		return;
+	}
+	auto const begin{static_cast<std::size_t>(mPosition)};
+	// szukanie znacznika końca
+	// NOTE: with nothing to look for the comment runs until the end of data
+	auto const found{Endmark.empty() ? std::string::npos : mBuffer.find(Endmark, begin)};
+	auto const end{found != std::string::npos ? found + Endmark.size() : mBuffer.size()};
+	// update line counter
+	mLine += static_cast<std::size_t>(std::count(mBuffer.data() + begin, mBuffer.data() + end, '\n'));
+	mPosition = static_cast<std::streamoff>(end);
+	if (found == std::string::npos)
+	{
+		// the data ended before the comment did; record the attempt to read past the end
+		getChar(c);
 	}
 	return;
 }
@@ -599,7 +743,7 @@ void cParser::injectString(const std::string &str)
 
 int cParser::getProgress() const
 {
-	return static_cast<int>(mStream->rdbuf()->pubseekoff(0, std::ios_base::cur) * 100 / mSize);
+	return (mSize > 0 ? static_cast<int>(mPosition * 100 / mSize) : 100);
 }
 
 int cParser::getFullProgress() const
@@ -637,6 +781,8 @@ void cParser::addCommentStyle(std::string const &Commentstart, std::string const
 {
 
 	mComments.insert(commentmap::value_type(Commentstart, Commentend));
+	// the character lookup depends on the comment marks
+	mCharClassesValid = false;
 }
 
 // returns name of currently open file, or empty string for text type stream

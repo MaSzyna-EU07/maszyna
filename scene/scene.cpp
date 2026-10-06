@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
 #include "scene/sn_utils.h"
+#include "scene/sceneterrain.h"
 #include "rendering/renderer.h"
 #include "widgets/map_objects.h"
 
@@ -1007,6 +1008,12 @@ basic_section::center( glm::dvec3 Center ) {
 void
 basic_section::create_geometry() {
 
+    if( false == m_terrain.empty() ) {
+        // this is the first thing done with a section about to be drawn or modified, which makes it
+        // the moment for the geometry kept in binary terrain files to arrive
+        load_terrain();
+    }
+
     if( true == m_geometrycreated ) { return; }
     else {
         // mark it done for future checks
@@ -1023,6 +1030,18 @@ basic_section::create_geometry() {
     }
     for( auto &cell : m_cells ) {
         cell.create_geometry( m_geometrybank );
+    }
+}
+
+// loads geometry of the section kept in binary terrain files, if any is waiting
+void
+basic_section::load_terrain() {
+
+    // the list is emptied first, as loading can lead back here
+    auto const blocks { std::move( m_terrain ) };
+    m_terrain.clear();
+    for( auto const &block : blocks ) {
+        terrain_file::load( *this, block );
     }
 }
 
@@ -1775,6 +1794,16 @@ void basic_region::create_map_geometry()
             if (s)
                 s->create_map_geometry(m_map_geometrybank);
         }
+}
+
+// loads all geometry kept in binary terrain files which wasn't needed so far
+void basic_region::load_terrain()
+{
+    for( auto *section : m_sections ) {
+        if( section != nullptr ) {
+            section->load_terrain();
+        }
+    }
 }
 
 void basic_region::update_poi_geometry()

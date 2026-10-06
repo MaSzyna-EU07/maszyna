@@ -39,8 +39,14 @@ struct scratch_data {
 
     struct binary_data {
 
-        bool terrain{ false };
-		bool terrain_included{false};
+        bool terrain{ false }; // static geometry comes from binary terrain, its text definitions are skipped
+		bool terrain_included{false}; // binary terrain comes from the files named by terrain directives instead of the default one
+        bool terrain_default{ false }; // the scenario has usable binary terrain file of its own
+        std::vector<std::string> terrain_files; // files named by terrain directives; each one is loaded once
+        std::size_t geometry_imported{ 0 }; // pieces of static geometry read from the text definitions so far
+        std::size_t geometry_skipped{ 0 }; // pieces of static geometry left out so far, as provided by binary terrain
+        std::vector<std::string> terrain_textfiles; // terrain files (.txtf with binary .btf version) named by terrain directives so far
+        std::vector<std::string> terrain_binaryfiles; // binary versions of these, to be put to use once the scenery is initialized
     } binary;
 
     struct location_data {
@@ -72,6 +78,16 @@ struct scratch_data {
 
     bool initialized { false };
 	bool time_initialized { false };
+};
+
+struct terrain_source;
+
+// piece of a binary terrain file holding geometry of a single section, waiting to be loaded
+struct terrain_block {
+
+    std::shared_ptr<terrain_source> source; // the file and data shared by its pieces
+    std::uint64_t offset { 0 }; // location of the piece in the file
+    std::uint32_t size { 0 };
 };
 
 // basic element of rudimentary partitioning scheme for the section. fixed size, no further subdivision
@@ -342,6 +358,9 @@ public:
 	// generates renderable version of held non-instanced geometry
     void
         create_geometry();
+    // loads geometry of the section kept in binary terrain files, if any is waiting
+    void
+        load_terrain();
 	void
 	    create_map_geometry(const gfx::geometrybank_handle handle);
 	void
@@ -370,6 +389,7 @@ public:
     // content
     cell_array m_cells; // partitioning scheme
     shapenode_sequence m_shapes; // large pieces of opaque geometry and (legacy) terrain
+    std::vector<terrain_block> m_terrain; // geometry in binary terrain files, loaded when the section comes into use
     // TODO: implement dedicated, higher fidelity, fixed resolution terrain mesh item
 	// gfx renderer data
     gfx::geometrybank_handle m_geometrybank;
@@ -477,6 +497,9 @@ public:
 	    create_map_geometry();
 	void
 	    update_poi_geometry();
+    // loads all geometry kept in binary terrain files which wasn't needed so far
+    void
+        load_terrain();
     basic_section* get_section(size_t section)
 	    { return m_sections[section]; }
 	gfx::geometrybank_handle

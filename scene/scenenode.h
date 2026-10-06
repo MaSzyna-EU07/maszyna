@@ -79,6 +79,7 @@ class shape_node
 {
 
     friend class basic_region; // region might want to modify node content when it's being inserted
+    friend class terrain_file; // binary terrain files hold complete content of the nodes
 
 public:
 // types
