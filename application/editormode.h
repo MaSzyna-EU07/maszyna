@@ -26,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorProfile.hpp"
 #include "editor/editorInfra.hpp"
 #include "editor/editorGauge.hpp"
+#include "world/Sweep.h"
 
 #include <array>
 #include <chrono>
@@ -36,6 +37,12 @@ http://mozilla.org/MPL/2.0/.
 
 class TAnimModel;
 class TTrack;
+namespace ui
+{
+class vehicles_bank;
+struct vehicle_desc;
+struct skin_set;
+}
 
 class editor_mode : public application_mode, private editor_track::observer
 {
@@ -50,6 +57,19 @@ class editor_mode : public application_mode, private editor_track::observer
 		TTrack const *track{nullptr}; // nearest one, may be gone by now
 		int path{0};
 		glm::dvec2 direction{0.0, 1.0}; // of the track there, in the plan
+	};
+	// joint of the paths found wrong by the joints check
+	struct joint_issue
+	{
+		enum class kind { gap, step, kink, cant, grade, open };
+		kind type{kind::gap};
+		TTrack *track{nullptr};
+		editor_track::point_ref point;
+		TTrack *other{nullptr};
+		editor_track::point_ref theirs;
+		glm::dvec3 position{0.0};
+		double value{0.0}; // m, deg, mm, per mille
+		bool fixed{false};
 	};
 	// constructors
 	editor_mode();
@@ -120,6 +140,10 @@ class editor_mode : public application_mode, private editor_track::observer
 		UID uuid; // node UUID for reference, used as fallback lookup for deleted/recreated nodes
 		scene::layer_handle layer{null_handle}; // scenery layer of the node, so a recreated node returns to it
 		scene::instance_handle instance{0}; // include of a scenery template which was placed or removed, instead of a node
+		std::vector<scene::instance_handle> instances; // includes placed or removed together
+		std::vector<std::pair<scene::instance_handle, std::string>> directives; // includes changed together, with the directives to go back to
+		std::vector<std::pair<sweep_node *, sweep_node::state>> sweeps; // models along curves changed, with the definitions to go back to
+		std::vector<sweep_node *> sweeps_toggled; // models along curves made or removed: undo flips whether they're there
 		std::vector<std::pair<TTrack *, editor_track::state>> tracks;
 		std::vector<TTrack *> created;
 		std::vector<TTrack *> removed;
@@ -218,7 +242,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	// commits authored terrain to disk and enables streaming
 	void commit_terrain();
 	// writes the changes to the files of scenery opened for editing (Ctrl+S)
-	void save();
+	bool save();
 	// places include of specified scenery template at the cursor, in the active layer
 	void place_include(std::string const &File, int RotationMode, float FixedRotation);
 	// undo and redo of placing or removing an include: brings removed include back, or removes it
@@ -231,6 +255,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	void set_include_directive(scene::instance_handle Instance, std::string const &Directive);
 	// undo and redo of an include snapshot
 	void restore_include(EditorSnapshot &Snapshot);
+	// undo and redo of the includes placed, removed or changed together
+	void restore_includes(EditorSnapshot &Snapshot);
 	// gizmo for the selected include, limited to what the parameters of its template can express
 	void render_include_gizmo(glm::mat4 const &View, glm::mat4 const &Projection, glm::dvec3 const &Camerapos);
 	// exports the scenery in legacy (text) format, with layers hidden in the editor left out of the picture
@@ -269,6 +295,18 @@ class editor_mode : public application_mode, private editor_track::observer
 
 	// geoportal orthophoto layer drawn under the other viewport overlays
 	void render_orthophoto_ui();
+	void render_map_menu();
+	void render_orthophoto_window();
+	bool m_newscenery_asked{false};
+	void render_new_scenery_popup();
+	bool restart_for_new_scenery();
+	bool m_orthophoto_window{false};
+	// origin of the scenery in PUWG 1992 the scenery file gives in its //$g line, if it does
+	bool m_georeference_read{false};
+	bool m_georeference{false};
+	glm::dvec2 m_georeference_origin{0.0}; // northing, easting
+	std::string m_georeference_line;
+	void read_georeference();
 	void draw_orthophoto();
 	// picks up the stored settings and the origin of the current scenery
 	void load_orthophoto_settings();
@@ -321,7 +359,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	TTrack *selected_track() const;
 	void render_path_ui();
 	void draw_track_overlay() const;
-	bool pick_track_handle();
+	editor_track::point_ref track_handle_hit() const;
 	void select_track(scene::basic_node *Node);
 	void render_track_gizmo();
 	void commit_track_drag(bool const Force);
@@ -432,7 +470,6 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool route_relay_through_switches(editor_track::chain const &Chain, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created);
 	void route_recommend(alignment::vertex &Vertex) const;
 	void draw_route_overlay() const;
-	bool pick_route_vertex();
 	void render_route_gizmo();
 	glm::dvec3 route_vertex_position(int const Vertex) const;
 	bool route_active() const;
@@ -457,6 +494,8 @@ class editor_mode : public application_mode, private editor_track::observer
 		bool fitting{false};
 		editor_track::curve fit_before;
 		editor_track::curve fit_after;
+		bool fit_has_before{false};
+		bool fit_has_after{false};
 		std::vector<std::pair<TTrack *, editor_track::state>> drag_states;
 		glm::dvec3 preview_start{0.0};
 		glm::dvec3 preview_end{0.0};
@@ -487,7 +526,6 @@ class editor_mode : public application_mode, private editor_track::observer
 	void draw_straights_overlay() const;
 	editor_track::straight const &current_straight();
 	bool straights_active();
-	bool pick_straight_handle();
 	void render_straight_gizmo();
 	void straight_apply(editor_track::straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End);
 	void straights_apply(std::vector<editor_track::straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
@@ -498,7 +536,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	double straight_tool_radius(editor_track::straight const &Line) const;
 	void straight_reshape(editor_track::straight const &Line, double const From, double const To, std::function<glm::dvec3(glm::dvec3 const &)> const &Tail, double const Radius);
 	void straight_refresh();
-	bool start_curve_fit(editor_track::straight const &Line);
+	bool start_curve_fit(editor_track::straight const &Line, int const Handle);
 	void update_curve_fit(glm::dvec3 const &Start, glm::dvec3 const &End);
 	void add_detour_point();
 	void apply_detour();
@@ -531,9 +569,89 @@ class editor_mode : public application_mode, private editor_track::observer
 		glm::dvec3 mouse{0.0};
 		editor_track::straight line;
 		std::string status;
+		char name[64]{};
+		struct drive_family
+		{
+			std::string name;
+			std::array<std::string, 4> files;
+		};
+		std::vector<drive_family> drives;
+		bool drives_scanned{false};
+		int drive{-1};
+		int drive_side{0};
 	};
 	switch_tool m_switch;
+	void scan_switch_drives();
+	std::string switch_name_for_new() const;
+	bool place_switch_drive(TTrack &Switch);
+	bool render_switch_drive_choice();
 	int m_turnout_template{0};
+	struct turntable_template
+	{
+		std::string file;
+		std::string name;
+		double length{0.0};
+		int angles{0};
+		int positions{0};
+		int track{0};
+		int yaw{0};
+		std::vector<double> fixed;
+	};
+	struct turntable_fit
+	{
+		editor_track::snap_target end;
+		double heading{0.0};
+		double radius{0.0};
+		double length{0.0};
+		std::vector<segment_data> pieces;
+		std::string issue;
+		bool chosen{true};
+		TTrack *replaces{nullptr};
+	};
+	struct turntable_tool
+	{
+		std::vector<turntable_template> templates;
+		bool scanned{false};
+		int chosen{-1};
+		char name[64]{};
+		bool placing{false};
+		glm::dvec3 centre{0.0};
+		double yaw{0.0};
+		glm::vec2 pressed{0.f};
+		editor_track::snap_target snap;
+		TTrack *table{nullptr};
+		scene::instance_handle include{0};
+		int kind{-1};
+		double length{0.0};
+		double table_yaw{0.0};
+		std::vector<double> exits;
+		float reach{80.f};
+		float radius{150.f};
+		float stub{25.f};
+		float step{0.f};
+		std::vector<turntable_fit> fits;
+		int hovered{-1};
+		double heading{0.0};
+		double exit_length{0.0};
+		std::string status;
+		std::string error;
+	};
+	turntable_tool m_turntable;
+	void scan_turntables();
+	std::string turntable_name_for_new() const;
+	bool turntable_read(TTrack *Table);
+	glm::dvec3 turntable_centre() const;
+	std::vector<double> turntable_lines() const;
+	double turntable_snap(double const Heading) const;
+	void turntable_finish_placement();
+	void turntable_place(glm::dvec3 const &Centre, double const Yaw);
+	bool turntable_fit_end(editor_track::snap_target const &End, turntable_fit &Fit) const;
+	void turntable_find_fits();
+	void turntable_build(std::vector<turntable_fit const *> const &Fits);
+	bool turntable_exit_at(glm::dvec3 const &Ground, double &Heading, double &Length) const;
+	void turntable_store_exits();
+	void render_turntable_ui();
+	void draw_turntable_overlay() const;
 	struct extend_tool
 	{
 		bool active{false};
@@ -544,6 +662,9 @@ class editor_mode : public application_mode, private editor_track::observer
 		glm::dvec3 mouse{0.0};
 		int path{0};
 		bool atend{true};
+		editor_track::snap_target origin;
+		editor_track::snap_target snap;
+		glm::vec2 pressed{0.f};
 	};
 	extend_tool m_extend;
 	// lays new track through the clicked points, with no path needed to start from
@@ -570,18 +691,21 @@ class editor_mode : public application_mode, private editor_track::observer
 	void lay_click();
 	void lay_finish(editor_track::snap_target const &End);
 	void lay_cancel();
+	void lay_enter();
+	bool lay_heading(glm::dvec2 &Heading) const;
 	std::vector<segment_data> lay_pieces(std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, double &Length, std::string &Error) const;
 	void render_switch_ui();
 	bool start_switch_placement();
 	void finish_switch_placement();
 	std::vector<segment_data> switch_preview() const;
 	void insert_switch(editor_track::straight const &Line, double const Along, int const Direction, int const Side);
+	void switch_placed(std::vector<TTrack *> const &Created);
 	static std::vector<curve_sample> sample_chain(editor_track::chain const &Chain);
 	static curve_sample sample_at(std::vector<curve_sample> const &Frame, double const Station);
 	static double nearest_station(std::vector<curve_sample> const &Frame, glm::dvec3 const &Point);
 	static std::vector<segment_data> curved_switch_paths(editor_track::switch_template const &Shape, std::vector<curve_sample> const &Frame, double const Station, int const Direction, int const Side);
 	void insert_curved_switch(int const Direction, int const Side);
-	bool place_switch_on_straight(editor_track::straight const &Line, editor_track::switch_template const &Shape, TTrack const *Style, double const Along, int const Direction, int const Side, bool const Snap, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed);
+	bool place_switch_on_straight(editor_track::straight const &Line, editor_track::switch_template const &Shape, TTrack const *Style, double const Along, int const Direction, int const Side, bool const Snap, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, std::string const &Name = {});
 	struct crossover_plan
 	{
 		editor_track::straight target;
@@ -597,7 +721,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool insert_double_slip(editor_track::straight const &Line, glm::dvec3 const &Point, editor_track::switch_template const &Shape);
 	bool replace_double_slip(TTrack &Part, editor_track::switch_template const &Shape);
 	std::vector<TTrack *> build_double_slip(glm::dvec3 const &PointA, glm::dvec3 const &PointB, glm::dvec3 const &PointC, glm::dvec3 const &PointD, glm::dvec2 const &Crossing, double const Height, glm::dvec2 const &First, glm::dvec2 const &Second, double const Angle, double const Radius, TTrack &Style);
-	bool start_extend();
+	bool start_extend(editor_track::snap_target const &End);
 	void finish_extend();
 	std::vector<segment_data> extend_pieces() const;
 	// the free end of the path as the start of a new track; false if it isn't free or has no direction
@@ -614,7 +738,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void update_build_tools();
 	void draw_build_overlay() const;
 	// modes of the track editor, one at a time: path is the plain selection
-	enum class track_tab { straights, route, path, turnout, profile, speed, infra, lay };
+	enum class track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable };
 	struct track_mode
 	{
 		char const *label;
@@ -622,7 +746,10 @@ class editor_mode : public application_mode, private editor_track::observer
 		track_tab tab;
 		char const *tooltip;
 	};
-	static std::array<track_mode, 8> const &track_modes();
+	static std::array<track_mode, 11> const &track_modes();
+	// the objects along the track: a tab for each tool
+	int m_lineside_tab{0};
+	void render_lineside_ui();
 	void render_track_menu();
 	void arm_switch();
 	bool m_track_window_open{false};
@@ -630,11 +757,21 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_track_inspector();
 	void render_track_modes(TTrack *Track);
 	void show_track_tab(track_tab const Tab);
-	bool track_analysis_tab() const { return m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::infra; }
+	bool track_analysis_tab() const { return m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::infra; }
 	bool track_shortcut(int const Key);
 	bool track_busy() const; // something going on in the mode, which Esc drops before it leaves the mode
 	std::string track_mode_name() const;
 	void render_turnout_ui();
+	struct track_name_edit
+	{
+		TTrack const *track{nullptr};
+		std::string synced;
+		char text[128]{};
+		editor_track::name_uses uses;
+		std::string status;
+	};
+	track_name_edit m_track_name;
+	void render_track_name(TTrack &Track);
 	void render_path_parameters(TTrack &Track);
 	void render_straight_ui();
 	track_tab m_track_tab{track_tab::path};
@@ -651,6 +788,431 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_track_guide();
 	std::string track_readout() const;
 	void draw_track_hints();
+	// path under the cursor, outlined before a click so it's known which one the click takes
+	struct track_hover
+	{
+		TTrack *track{nullptr};
+		int path{0};
+		glm::dvec3 point{0.0};
+		double since{0.0};
+	};
+	track_hover m_hover;
+	track_hover track_under_cursor() const;
+	void update_track_hover();
+	void draw_track_hover() const;
+	struct track_intent
+	{
+		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end };
+		kind what{kind::none};
+		TTrack *track{nullptr};
+		int path{0};
+		editor_track::point_ref point;
+		int index{-1};
+		glm::dvec3 position{0.0};
+		editor_track::snap_target snap;
+		std::string action;
+	};
+	track_intent m_intent;
+	track_intent track_intent_at(int const Mods);
+	bool track_gesture_on() const;
+	void update_track_intent();
+	void track_press(track_intent const &Intent);
+	void turntable_press(track_intent const &Intent);
+	track_intent turntable_intent(glm::dvec3 const &Ground, bool const Shift);
+	void draw_track_intent() const;
+	editor_track::snap_target snap_free_end(glm::dvec3 const &Near, glm::vec2 const &Screen, TTrack const *Self, int const Category, std::vector<TTrack const *> const &Exclude) const;
+	void draw_free_ends(TTrack const *Self, int const Category, std::vector<TTrack const *> const &Exclude) const;
+	struct point_drag
+	{
+		bool active{false};
+		bool moved{false};
+		glm::vec2 from{0.f};
+		double height{0.0};
+	};
+	point_drag m_point_drag;
+	struct handle_drag
+	{
+		bool active{false};
+		bool moved{false};
+		glm::vec2 from{0.f};
+		double height{0.0};
+		glm::dvec3 offset{0.0};
+		glm::dvec3 position{0.0};
+	};
+	handle_drag m_handle_drag;
+	void handle_drag_start(glm::dvec3 const &Anchor);
+	bool handle_drag_step(glm::dvec3 &Position);
+	void point_drag_start(editor_track::point_ref const &Point);
+	void point_drag_update();
+	void point_drag_finish();
+	bool route_hit(int &Vertex, int &Grip) const;
+	int straight_handle_hit();
+	bool switch_reach(glm::dvec3 const &Ground, glm::dvec3 &Point);
+	glm::dvec3 cursor_ground() const;
+	glm::dvec3 cursor_level(double const Height) const;
+	bool sweep_grabs(glm::dvec3 const &Point);
+	// menu of the path a click of the right mouse button lands on
+	struct track_context
+	{
+		track_hover target;
+		std::chrono::steady_clock::time_point pressed;
+		glm::vec3 angle{0.f};
+		glm::vec2 mouse{0.f};
+		bool armed{false};
+		bool pending{false};
+	};
+	track_context m_track_context;
+	void track_context_press();
+	void track_context_release();
+	void render_track_context();
+	void split_track_at(TTrack &Track, glm::dvec3 const &Point);
+	void focus_track(TTrack &Track, int const Path, glm::dvec3 const &Point);
+	// paths found by their names
+	struct track_search
+	{
+		char text[64]{};
+		std::string searched;
+		std::vector<TTrack *> found;
+		std::size_t total{0};
+		bool focus{false};
+	};
+	track_search m_track_search;
+	void render_track_search();
+	// paths selected together: Shift+LMB adds or takes one out, Shift+drag adds those in the box
+	std::vector<TTrack *> m_track_set;
+	struct track_box
+	{
+		bool active{false};
+		glm::vec2 from{0.f};
+		glm::vec2 to{0.f};
+		TTrack *hovered{nullptr};
+	};
+	track_box m_track_box;
+	struct track_set_fields
+	{
+		double velocity{100.0};
+		char rail[128]{};
+		char trackbed[128]{};
+		char circuits[256]{};
+		int environment{0};
+	};
+	track_set_fields m_track_set_fields;
+	glm::mat4 m_track_set_gizmo{1.0f};
+	bool m_track_set_using{false};
+	glm::dvec3 m_track_set_pivot{0.0};
+	std::vector<std::pair<TTrack *, std::vector<editor_track::joint>>> m_track_set_joints;
+	bool in_track_set(TTrack const *Track) const;
+	void track_set_toggle(TTrack &Track);
+	void track_set_prune();
+	void start_track_box();
+	void finish_track_box();
+	void draw_track_set() const;
+	void render_track_set_ui();
+	void render_track_set_gizmo();
+	void track_set_delete();
+	struct track_spread
+	{
+		int stop{0};
+		bool same_rails{false};
+		bool same_bed{false};
+		bool same_speed{false};
+		float reach{0.f};
+		TTrack const *from{nullptr};
+		int signature{-1};
+		std::vector<TTrack *> preview;
+		double length{0.0};
+	};
+	mutable track_spread m_spread;
+	std::vector<TTrack *> track_spread_from(TTrack &Start) const;
+	std::vector<TTrack *> const &track_spread_preview(TTrack &Start) const;
+	void track_spread_apply(TTrack &Start);
+	void track_set_grow();
+	void render_track_spread_ui();
+	void draw_track_spread() const;
+	// changes each path of the set which can be changed; false from Change: the path stays as it was
+	void track_set_apply(std::function<bool(TTrack &)> const &Change, bool const Rebuild, char const *What);
+	// second track alongside the selected path or the line through it, at a spacing, curves included
+	struct parallel_tool
+	{
+		bool open{false};
+		bool expand{false};
+		double spacing{4.0};
+		int side{1}; // 1: to the right, -1: to the left, of the direction of the line
+		int scope{1}; // 0: the selected path, 1: the line through it, up to the switches
+		TTrack *built_for{nullptr};
+		double built_spacing{0.0};
+		int built_side{0};
+		int built_scope{-1};
+		std::size_t built_history{0};
+		std::vector<segment_data> pieces;
+		std::vector<TTrack *> styles;
+		double length{0.0};
+		std::string error;
+		std::string status;
+	};
+	parallel_tool m_parallel;
+	void parallel_update();
+	void render_parallel_ui();
+	void parallel_build();
+	void draw_parallel_preview() const;
+
+	// scenery templates standing by the track, placed and checked by the editor
+	struct template_item
+	{
+		std::string file;
+		glm::dvec3 location{0.0}; // world space
+		double yaw{0.0};
+		std::vector<std::string> rest; // parameters after the rotation
+		bool described{false};
+		std::string track;
+	};
+	struct standing_template
+	{
+		scene::instance_handle instance{0};
+		std::string file; // lower case, forward slashes
+		glm::dvec3 location{0.0};
+		double yaw{0.0};
+		std::vector<std::string> values;
+	};
+	// includes of the templates whose file names the test accepts, with the location in p2..p4 and the rotation in p5
+	std::vector<standing_template> standing_templates(std::function<bool(std::string const &)> const &Accept) const;
+	// places them in the active layer, as one step of the undo. returns: how many were placed
+	std::size_t place_templates(std::vector<template_item> const &Items, std::string &Error);
+	// moves them, as one step of the undo
+	std::size_t move_templates(std::vector<std::pair<standing_template, template_item>> const &Moves);
+	// takes them out, as one step of the undo
+	std::size_t remove_templates(std::vector<scene::instance_handle> const &Instances);
+
+	// hectometre posts along the line, at every 100 m of the kilometrage
+	struct hekto_post
+	{
+		int hectometres{0};
+		double chainage{0.0};
+		glm::dvec3 position{0.0};
+		double yaw{0.0};
+		int standing{-1}; // post already there with this number
+	};
+	struct hekto_found
+	{
+		standing_template post;
+		int hectometres{0};
+		double chainage{0.0}; // where it stands along the line
+		double expected{0.0}; // where its number belongs
+		double error{0.0}; // m along the line
+		double distance{0.0}; // m from where it belongs, in the plan
+		bool wrong{false};
+		bool duplicate{false}; // another post with the same number stands nearer to its place
+		bool outside{false}; // its number belongs past the ends of the line
+	};
+	struct hekto_tool
+	{
+		bool open{false};
+		bool expand{false};
+		TTrack *track{nullptr}; // the line runs through it
+		glm::dvec3 point{0.0}; // where the kilometrage is given
+		double km{0.0};
+		bool km_read{false}; // the kilometrage was read from the posts already standing
+		int growth{1}; // 1: grows along the line, -1: against
+		int side{1}; // 1: to the right of the growing kilometrage, -1: to the left, 0: alternately
+		double offset{3.0}; // m from the axis
+		int style{0}; // nowy, stary, zgnity, mixed
+		int turn{0}; // degrees added to the rotation
+		double reach{10000.0}; // m each way
+		double tolerance{5.0}; // m along the line, for the posts standing
+		bool dirty{true};
+		std::size_t history{0};
+		editor_track::route route;
+		std::vector<editor_track::route_sample> samples;
+		double origin{0.0}; // chainage of the point
+		std::vector<hekto_post> posts;
+		std::vector<hekto_found> found;
+		std::string status;
+		std::string error;
+	};
+	hekto_tool m_hekto;
+	void hekto_start(TTrack &Track, glm::dvec3 const &Point);
+	void hekto_update();
+	void hekto_read_kilometrage();
+	void hekto_place();
+	void hekto_fix();
+	void hekto_remove_duplicates();
+	void render_hekto_ui();
+	void draw_hekto_overlay() const;
+
+	// fouling point markers (W17) where the tracks meeting at a switch are the spacing apart
+	struct fouling_point
+	{
+		TTrack *track{nullptr}; // the switch
+		glm::dvec3 position{0.0};
+		double yaw{0.0};
+		int standing{-1}; // marker already there
+	};
+	struct fouling_found
+	{
+		standing_template marker;
+		int point{-1}; // the fouling point it belongs to
+		double error{0.0}; // m from where it belongs
+		double height_error{0.0}; // m over where it belongs
+		bool wrong{false};
+	};
+	struct fouling_tool
+	{
+		bool open{false};
+		bool expand{false};
+		int scope{0}; // 0: the selected switch, 1: around the camera, 2: the whole scenery
+		double reach{1500.0};
+		double spacing{3.5}; // m between the axes
+		double tolerance{2.0}; // m, a marker farther than this from its point is wrong
+		int height_mode{1}; // 0: on the ground, 1: at the height given over the rail heads
+		double height{0.0}; // m over the rail heads
+		double height_tolerance{0.03}; // m, a marker standing higher or lower than this is wrong
+		int model{0}; // w17, w17_new, w17_old, w17_dwuteo
+		int turn{0};
+		bool dirty{true};
+		std::size_t history{0};
+		TTrack *selected{nullptr};
+		std::vector<fouling_point> points;
+		std::vector<fouling_found> found;
+		std::string status;
+		std::string error;
+	};
+	fouling_tool m_fouling;
+	void fouling_update();
+	void fouling_place();
+	void fouling_fix();
+	void render_fouling_ui();
+	void draw_fouling_overlay() const;
+
+	// a vehicle put on the selected path, to be driven: it isn't written to the scenery files
+	struct vehicle_tool
+	{
+		bool open{false};
+		bool expand{false};
+		std::shared_ptr<ui::vehicles_bank> bank;
+		char search[64]{};
+		bool controllable_only{true};
+		std::shared_ptr<ui::vehicle_desc> vehicle;
+		std::shared_ptr<ui::skin_set> skin;
+		int driver{0}; // 0: a driver, to be driven; 1: nobody, parked
+		TTrack *track{nullptr};
+		glm::dvec3 point{0.0};
+		std::string placed;
+		std::string status;
+		bool leave{false}; // the editor gives way to the driving at the start of the next frame
+		struct consist_vehicle
+		{
+			std::shared_ptr<ui::vehicle_desc> vehicle;
+			std::shared_ptr<ui::skin_set> skin;
+			bool turned{false};
+		};
+		std::vector<consist_vehicle> consist;
+		int facing{1};
+	};
+	vehicle_tool m_vehicle;
+	void vehicle_start(TTrack &Track, glm::dvec3 const &Point);
+	bool vehicle_place();
+	void render_vehicle_ui();
+	void draw_vehicle_marker() const;
+
+	// a model laid along the track: bent to follow it, or repeated along it
+	struct sweep_tool
+	{
+		bool open{false};
+		bool expand{false};
+		char model[256]{};
+		char skin[128]{"none"};
+		char search[64]{};
+		std::vector<std::string> models;
+		bool scanned{false};
+		// parameters of a template laid along the track, with their names
+		std::string parameters_for;
+		std::vector<std::array<char, 128>> parameters;
+		std::vector<std::string> parameter_labels;
+		std::vector<bool> parameter_placement; // filled in with zeros: the template is placed in its own space
+		std::vector<std::vector<std::string>> parameter_choices; // variants of the textures a parameter is a part of the name of
+		int length_mode{0}; // 0: one copy as long as the original, 1: the length given, 2: the whole stretch of the line
+		double length{200.0};
+		sweep_node::state settings;
+		int axis{0}; // 0: the longer one of the model, 1: z, 2: x
+		double model_length{0.0};
+		std::string measured; // model the length is of
+		// the curve: the axis of the track
+		TTrack *curve_for{nullptr};
+		std::size_t curve_history{0};
+		struct piece
+		{
+			TTrack *track{nullptr};
+			int path{0};
+			bool forward{true};
+		};
+		std::vector<piece> curve_pieces;
+		std::vector<segment_data> curve;
+		double curve_length{0.0};
+		std::vector<glm::dvec3> outline; // of the curve, for the preview
+		std::vector<double> stations;
+		// marking the stretch in the view: press where it starts, the distance from the track sets the offset, drag to the end
+		bool marking{false};
+		bool dragging{false};
+		double anchor{0.0}; // station the drag started at
+		sweep_node *edited{nullptr};
+		std::string status;
+	};
+	sweep_tool m_sweep;
+	// paths the models along curves were laid on, so they follow the changes of the paths
+	struct sweep_link
+	{
+		sweep_node *sweep{nullptr};
+		std::size_t piece{0};
+		TTrack *track{nullptr};
+		int path{0};
+		bool reversed{false};
+	};
+	std::vector<sweep_link> m_sweep_links;
+	void sweep_curve();
+	void sweep_outline();
+	bool sweep_extend(bool const Atend, glm::dvec3 const &Cursor);
+	double sweep_station(glm::dvec3 const &Point, double &Lateral) const;
+	void sweep_scan_models();
+	void sweep_measure();
+	sweep_node::state sweep_definition() const;
+	void sweep_create();
+	void sweep_apply();
+	void sweep_delete(sweep_node &Sweep);
+	void sweep_edit(sweep_node &Sweep);
+	std::vector<sweep_node *> sweeps_near(TTrack const &Track) const;
+	bool sweep_press();
+	void sweep_drag();
+	void sweep_release();
+	// the same at a point of the world: Anywhere takes the press however far from the track it is
+	bool sweep_press_at(glm::dvec3 const &Point, bool const Anywhere);
+	void sweep_drag_at(glm::dvec3 const &Point);
+	void render_sweep_ui();
+	void draw_sweep_overlay() const;
+	void restore_sweeps(EditorSnapshot &Snapshot);
+	void sweeps_captured(TTrack const &Track);
+	void sweeps_committed(std::vector<TTrack *> const &Tracks);
+	void sweeps_split(TTrack &Original, TTrack &Created);
+
+	// script of editor actions given in the EU07_EDITOR_SELFTEST file, run a step at a time, for testing without a person
+	struct selftest
+	{
+		bool loaded{false};
+		std::vector<std::string> lines;
+		std::size_t next{0};
+		int wait{0};
+		bool quitting{false};
+	};
+	selftest m_selftest;
+	void selftest_step();
+	// a value typed during a gesture, taken instead of the one the cursor gives
+	std::string m_typed;
+	// what the typed value sets in the gesture under way, nullptr when the gesture takes none
+	char const *typed_meaning() const;
+	std::vector<double> typed_values() const;
+	bool typed_key(int const Key);
+	void typed_extend();
+	glm::dvec3 typed_lay(glm::dvec3 const &Mouse) const;
+	void typed_turn();
 	bool m_route_tab{true};
 
 	// vertical profile (grade line) along a route
@@ -674,6 +1236,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		// the editor terrain led to the grade line: formation under the track, slopes down or up to the ground
 		struct earthworks
 		{
+			bool from_ballast{true};
 			double depth{0.7}; // m, formation below the top of the rail
 			double half_width{3.5}; // m, from the axis of the route to the edge of the formation
 			double slope{1.5}; // horizontal run of the slopes per metre of height
@@ -681,6 +1244,9 @@ class editor_mode : public application_mode, private editor_track::observer
 			double rounding{1.5}; // m, over which the slopes bend into the formation and into the ground
 			// heights of the terrain before the last shaping
 			std::vector<std::pair<editor_terrain *, std::vector<float>>> undo;
+			bool generate{true};
+			std::vector<std::pair<int, int>> generated;
+			bool generated_streaming{false};
 		} earthworks;
 		double view_from{0.0};
 		double view_to{100.0};
@@ -736,7 +1302,9 @@ class editor_mode : public application_mode, private editor_track::observer
 	void profile_resample();
 	void profile_recognize();
 	void profile_fit_ground();
+	static std::pair<double, double> profile_ballast(TTrack const &Track);
 	void profile_shape_ground();
+	std::pair<int, int> profile_generate_ground(std::vector<std::pair<double, double>> const &Beds, double const Reach);
 	void profile_restore_ground();
 	void render_profile_earthworks();
 	void profile_check();
@@ -762,6 +1330,13 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::string reason;
 		bool chosen{false};
 		bool bound{false};
+		TTrack *reader{nullptr};
+		std::string event; // of that path
+		std::string cell;
+		bool loose{false};
+		TTrack *nearer{nullptr};
+		glm::dvec3 nearer_foot{0.0};
+		bool unread{false};
 	};
 	struct infra_window
 	{
@@ -774,6 +1349,11 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::vector<infra::rule> rules{infra::default_rules()};
 		std::vector<TTrack *> tracks; // of the scope
 		std::vector<infra_candidate> candidates;
+		int filter{0};
+		int read{0};
+		int overruled{0};
+		int unread{0};
+		int elsewhere{0};
 		int hovered{-1};
 		std::string status;
 		std::string error;
@@ -827,6 +1407,36 @@ class editor_mode : public application_mode, private editor_track::observer
 	void speed_apply(std::vector<int> const &Indices, bool const Branches);
 	std::vector<int> speed_listed() const;
 	void draw_speed_overlay() const;
+
+	// joints of the paths: ends which almost meet, steps, kinks, jumps of the cant and of the grade
+	struct joints_state
+	{
+		bool open{false};
+		int scope{0}; // 0: around the camera, 1: the whole scenery
+		double reach{2000.0};
+		double gap{1.0}; // m, free ends closer than this to another end
+		double step{0.005}; // m
+		double angle{0.2}; // deg
+		double cant{5.0}; // mm
+		double grade{10.0}; // per mille
+		bool free_ends{false};
+		std::vector<TTrack *> queue;
+		std::size_t next{0};
+		std::vector<joint_issue> issues;
+		int filter{-1};
+		int selected{-1};
+		std::size_t history{0};
+		std::string status;
+	};
+	joints_state m_joints;
+	void joints_start();
+	void joints_step();
+	void joints_check(TTrack &Track);
+	void joints_focus(int const Index);
+	bool joint_fix(joint_issue &Issue, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Changed);
+	void joints_fix(std::vector<int> const &Indices);
+	void render_joints_body();
+	void draw_joints_overlay() const;
 	void infra_rebase();
 	void render_infra_search();
 	void render_infra_candidates();

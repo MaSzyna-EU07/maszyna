@@ -76,6 +76,31 @@ class screen_projection
 		auto const &mouse{ImGui::GetIO().MousePos};
 		return (position.x - mouse.x) * (position.x - mouse.x) + (position.y - mouse.y) * (position.y - mouse.y);
 	}
+	// world space ray through the point of the screen
+	void ray(ImVec2 const &Screen, glm::dvec3 &Origin, glm::dvec3 &Direction) const
+	{
+		auto const inverse{glm::inverse(m_viewprojection)};
+		glm::vec2 const ndc{m_size.x > 0.0f ? Screen.x / m_size.x * 2.0f - 1.0f : 0.0f, m_size.y > 0.0f ? 1.0f - Screen.y / m_size.y * 2.0f : 0.0f};
+		auto nearpoint{inverse * glm::vec4(ndc, -1.0f, 1.0f)};
+		auto farpoint{inverse * glm::vec4(ndc, 1.0f, 1.0f)};
+		nearpoint /= nearpoint.w;
+		farpoint /= farpoint.w;
+		Origin = m_camera + glm::dvec3(glm::vec3(nearpoint));
+		Direction = glm::normalize(glm::dvec3(glm::vec3(farpoint - nearpoint)));
+	}
+	// where the ray through the point of the screen crosses the level of the height; false if it runs along it or away
+	bool on_level(ImVec2 const &Screen, double const Height, glm::dvec3 &Point) const
+	{
+		glm::dvec3 origin, direction;
+		ray(Screen, origin, direction);
+		if (std::abs(direction.y) < 1e-6)
+			return false;
+		auto const distance{(Height - origin.y) / direction.y};
+		if (distance < 0.0)
+			return false;
+		Point = origin + direction * distance;
+		return true;
+	}
 
   private:
 	static constexpr float kNear{0.1f};
@@ -87,6 +112,9 @@ class screen_projection
 // starts a gizmo frame over the whole display, the view and the projection are those of the current camera
 struct gizmo_frame
 {
+	static inline int drawn{-1};
+	// the cursor is over a gizmo shown in this frame, ImGuizmo alone tells it of the last one shown even when it's gone
+	static bool over() { return ImGui::GetFrameCount() - drawn <= 1 && ImGuizmo::IsOver(); }
 	glm::mat4 view;
 	glm::mat4 projection;
 	glm::dvec3 camera;
@@ -106,6 +134,7 @@ struct gizmo_frame
 	{
 		glm::vec3 snapvalue(Snap);
 		float const *snap = Global.ctrlState && Snap > 0.0f ? &snapvalue.x : nullptr;
+		drawn = ImGui::GetFrameCount();
 		return ImGuizmo::Manipulate(&view[0][0], &projection[0][0], Operation, ImGuizmo::WORLD, &Gizmo[0][0], Delta != nullptr ? &(*Delta)[0][0] : nullptr, snap);
 	}
 };

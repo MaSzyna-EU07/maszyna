@@ -246,6 +246,17 @@ bool parse(template_text const &Text, include_info &Info, std::string &Error)
 		Info.name = document["name"].as<std::string>("");
 		Info.category = document["category"].as<std::string>("");
 		Info.description = document["description"].as<std::string>("");
+		if (auto const drive{document["switch"]}; drive.IsDefined() && drive.IsMap())
+		{
+			Info.switch_hand = drive["hand"].as<std::string>("");
+			Info.switch_drive = drive["drive"].as<std::string>("");
+		}
+		if (auto const table{document["turntable"]}; table.IsDefined() && table.IsMap())
+		{
+			Info.turntable_length = table["length"].as<double>(0.0);
+			Info.turntable_angles = table["angles"].as<int>(0);
+			Info.turntable_positions = table["positions"].as<int>(0);
+		}
 		if (auto const parameters{document["params"]}; parameters.IsDefined() && parameters.IsSequence())
 		{
 			for (auto const &entry : parameters)
@@ -633,7 +644,7 @@ std::string compose_directive(std::string const &File, std::vector<std::string> 
 	return text + " end";
 }
 
-std::string directive(std::string const &File, include_info const &Info, int const Parameters, glm::dvec3 const &Location, std::optional<float> Yaw)
+std::string directive(std::string const &File, include_info const &Info, int const Parameters, glm::dvec3 const &Location, std::optional<float> Yaw, std::string const &Track)
 {
 	std::vector<std::string> values;
 	for (auto id = 1; id <= Parameters; ++id)
@@ -660,6 +671,10 @@ std::string directive(std::string const &File, include_info const &Info, int con
 		else if (role.starts_with("rot.") && value.empty())
 		{
 			value = "0";
+		}
+		else if (role == "track" && false == Track.empty())
+		{
+			value = Track;
 		}
 		else if (role == "name")
 		{

@@ -10,6 +10,12 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/editormode.h"
 #include "application/editoruilayer.h"
+#ifndef _WIN32
+#include <spawn.h>
+#include <unistd.h>
+extern char **environ;
+#endif
+#include "application/editorprojection.h"
 
 #include "application/application.h"
 #include "editor/editorSettings.hpp"
@@ -477,10 +483,12 @@ editor_mode::editor_mode() {
 	ui()->set_fill_options([this]() { render_area_fill(); });
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
 	ui()->set_file_actions([this]() { save(); }, [this]() { export_scenery(); });
+	ui()->set_new_scenery([this]() { m_newscenery_asked = true; });
 	ui()->set_menu_options([this]() {
 		render_object_menu();
 		render_track_menu();
 		render_road_menu();
+		render_map_menu();
 	});
 	m_roadtool.settings.normalize();
 	road_select(nullptr);
@@ -893,6 +901,20 @@ void editor_mode::undo_last()
     EditorSnapshot snap = m_history.back();
     m_history.pop_back();
 
+    if (false == snap.sweeps.empty() || false == snap.sweeps_toggled.empty())
+    {
+        restore_sweeps(snap);
+        g_redo.push_back(std::move(snap));
+        return;
+    }
+
+    if (false == snap.instances.empty() || false == snap.directives.empty())
+    {
+        restore_includes(snap);
+        g_redo.push_back(std::move(snap));
+        return;
+    }
+
     if (snap.instance != 0)
     {
         restore_include(snap);
@@ -997,6 +1019,20 @@ void editor_mode::redo_last()
     EditorSnapshot snap = g_redo.back();
     g_redo.pop_back();
 
+    if (false == snap.sweeps.empty() || false == snap.sweeps_toggled.empty())
+    {
+        restore_sweeps(snap);
+        m_history.push_back(std::move(snap));
+        return;
+    }
+
+    if (false == snap.instances.empty() || false == snap.directives.empty())
+    {
+        restore_includes(snap);
+        m_history.push_back(std::move(snap));
+        return;
+    }
+
     if (snap.instance != 0)
     {
         restore_include(snap);
@@ -1100,6 +1136,14 @@ void editor_mode::redo_last()
 
 bool editor_mode::update()
 {
+    selftest_step();
+    if (m_vehicle.leave)
+    {
+        m_vehicle.leave = false;
+        Application.pop_mode();
+        return true;
+    }
+
     Timer::UpdateTimers(true);
 
     simulation::State.update_clocks();
@@ -1256,13 +1300,36 @@ bool editor_mode::update()
         draw_straights_overlay();
     if (ui()->mode() == nodebank_panel::TRACK)
     {
+        if (m_track_box.active && false == ImGui::GetIO().MouseDown[0])
+            finish_track_box();
+        update_track_hover();
+        point_drag_update();
+        if (m_track_tab == track_tab::turntable)
+            draw_turntable_overlay();
+        if (m_track_tab == track_tab::lineside)
+        {
+            draw_parallel_preview();
+            draw_hekto_overlay();
+            draw_fouling_overlay();
+            draw_vehicle_marker();
+            sweep_drag();
+            draw_sweep_overlay();
+        }
+        render_track_context();
         update_build_tools();
+        update_track_intent();
+        draw_track_hover();
+        draw_track_set();
+        draw_track_spread();
         draw_build_overlay();
+        draw_track_intent();
         speed_step();
+        joints_step();
         draw_track_hints();
         draw_profile_overlay();
         draw_infra_overlay();
         draw_speed_overlay();
+        draw_joints_overlay();
     }
     update_gauge();
     render_gauge_window();
@@ -1275,6 +1342,9 @@ bool editor_mode::update()
     // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
     if (ui()->mode() == nodebank_panel::FILL)
         draw_area_fill_outline();
+
+    render_orthophoto_window();
+    render_new_scenery_popup();
 
     // --- ImGui: Editor Settings & History windows ---
     if(m_settings_open)
@@ -1316,11 +1386,6 @@ void editor_mode::render_settings()
         if (ImGui::BeginTabItem("Terrain", nullptr, terrainwanted ? ImGuiTabItemFlags_SetSelected : 0))
         {
             render_terrain_ui();
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Orthophoto"))
-        {
-            render_orthophoto_ui();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -1517,7 +1582,13 @@ void editor_mode::load_orthophoto_settings()
     config.in_scene = stored.in_scene;
     config.north = 0.0;
     config.east = 0.0;
-    EditorSettings.orthophoto_origin(scenery, config.north, config.east);
+    m_georeference_read = false;
+    read_georeference();
+    if (false == std::as_const(EditorSettings).orthophoto_origin(scenery, config.north, config.east) && m_georeference)
+    {
+        config.north = m_georeference_origin.x;
+        config.east = m_georeference_origin.y;
+    }
     m_orthophoto.settings(config);
     m_orthophoto_origin_edit = {config.north, config.east};
 }
@@ -1566,6 +1637,21 @@ void editor_mode::render_orthophoto_ui()
         config.north = m_orthophoto_origin_edit.x;
         config.east = m_orthophoto_origin_edit.y;
         changed = persist = true;
+    }
+    if (m_georeference)
+    {
+        ImGui::TextDisabled("%s", m_georeference_line.c_str());
+        ImGui::TextDisabled(STR_C("in the scenery file: Y (easting) %.0f m, X (northing) %.0f m"), m_georeference_origin.y, m_georeference_origin.x);
+        if (config.north != m_georeference_origin.x || config.east != m_georeference_origin.y)
+        {
+            ImGui::SameLine();
+            if (ImGui::SmallButton(STR_C("Use it")))
+            {
+                config.north = m_orthophoto_origin_edit.x = m_georeference_origin.x;
+                config.east = m_orthophoto_origin_edit.y = m_georeference_origin.y;
+                changed = persist = true;
+            }
+        }
     }
     if (config.north == 0.0 && config.east == 0.0)
         ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "Enter the origin of this scenery first");
@@ -2103,13 +2189,13 @@ void editor_mode::commit_terrain()
     m_streamer.flush(); // save resident edited chunks to disk
 }
 
-void editor_mode::save()
+bool editor_mode::save()
 {
     if (scene::Layers.empty())
     {
         // without the sources tracked during the load there's no telling where the changes belong
         ui()->set_status("The scenery wasn't opened for editing. Start the simulator with: -edit <scenery file>", true);
-        return;
+        return false;
     }
 
     // terrain made in the editor is kept in files of its own, the scenery only needs the directive which loads it
@@ -2137,6 +2223,7 @@ void editor_mode::save()
     }
     ui()->set_status(result.message, false == result.success);
     WriteLog("Editor: " + result.message, logtype::generic);
+    return result.success;
 }
 
 void editor_mode::toggle_include(scene::instance_handle const Instance)
@@ -2173,6 +2260,33 @@ void editor_mode::restore_include(EditorSnapshot &Snapshot)
     set_include_directive(Snapshot.instance, Snapshot.serialized);
     Snapshot.serialized = std::move(current);
     select_include(scene::Layers.removable(Snapshot.instance) ? Snapshot.instance : 0);
+}
+
+void editor_mode::restore_includes(EditorSnapshot &Snapshot)
+{
+    std::size_t gone{0};
+    for (auto const instance : Snapshot.instances)
+    {
+        if (false == scene::Layers.tracked(instance) || scene::Layers.instance(instance).dead)
+        {
+            ++gone;
+            continue;
+        }
+        scene::Layers.removed(instance, false == scene::Layers.instance(instance).removed);
+    }
+    for (auto &entry : Snapshot.directives)
+    {
+        auto current = scene::Layers.directive(entry.first);
+        if (current.empty() || scene::Layers.instance(entry.first).dead)
+        {
+            ++gone;
+            continue;
+        }
+        set_include_directive(entry.first, entry.second);
+        entry.second = std::move(current);
+    }
+    select_include(0);
+    ui()->set_status(gone > 0 ? std::to_string(gone) + " of the includes are gone from the saved scenery, they can't be taken back." : std::to_string(Snapshot.instances.size() + Snapshot.directives.size()) + " includes restored.", gone > 0);
 }
 
 void editor_mode::select_include(scene::instance_handle const Instance)
@@ -2541,6 +2655,146 @@ void editor_mode::drop_model_instances()
     ui()->set_status(status);
 }
 
+void editor_mode::read_georeference()
+{
+    if (m_georeference_read)
+        return;
+    m_georeference_read = true;
+    m_georeference = false;
+    m_georeference_line.clear();
+    // the name of the scenery is kept in lower case, the file may have capitals in its name
+    std::filesystem::path file{Global.asCurrentSceneryPath + Global.SceneryFile};
+    std::error_code error;
+    if (false == std::filesystem::exists(file, error))
+    {
+        for (auto const &entry : std::filesystem::directory_iterator(Global.asCurrentSceneryPath, error))
+        {
+            auto name{entry.path().filename().string()};
+            std::transform(name.begin(), name.end(), name.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
+            if (name == Global.SceneryFile)
+            {
+                file = entry.path();
+                break;
+            }
+        }
+    }
+    std::ifstream stream(file);
+    std::string line;
+    for (int count = 0; count < 200 && std::getline(stream, line); ++count)
+    {
+        auto const mark = line.find("//$g");
+        if (mark == std::string::npos)
+            continue;
+        // Rainsted writes the origin of the scenery as: //$g <system> <easting> <northing>, in kilometres
+        std::istringstream words(line.substr(mark + 4));
+        std::string system;
+        double east{0.0}, north{0.0};
+        if (false == static_cast<bool>(words >> system >> east >> north) || system.find("1992") == std::string::npos)
+            continue;
+        auto const scale = (east < 10000.0 && north < 10000.0) ? 1000.0 : 1.0;
+        m_georeference_origin = {north * scale, east * scale};
+        m_georeference_line = line.substr(mark);
+        if (false == m_georeference_line.empty() && m_georeference_line.back() == '\r')
+            m_georeference_line.pop_back();
+        m_georeference = true;
+        break;
+    }
+}
+
+void editor_mode::render_map_menu()
+{
+    if (false == ImGui::BeginMenu(STR_C("Map")))
+        return;
+    bool enabled = m_orthophoto.enabled();
+    if (ImGui::MenuItem(STR_C("Orthophoto"), nullptr, enabled))
+        m_orthophoto.enabled(false == enabled);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"));
+    ImGui::MenuItem(STR_C("Orthophoto settings..."), nullptr, &m_orthophoto_window);
+    ImGui::EndMenu();
+}
+
+void editor_mode::render_new_scenery_popup()
+{
+    if (m_newscenery_asked)
+    {
+        ImGui::OpenPopup(STR_C("New scenery##restart"));
+        m_newscenery_asked = false;
+    }
+    if (false == ImGui::BeginPopupModal(STR_C("New scenery##restart"), nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+    ImGui::TextUnformatted(STR_C("The editor starts again, with the wizard of a new scenery."));
+    auto const editsession{false == scene::Layers.empty()};
+    if (false == m_history.empty())
+        ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", STR_C("What isn't saved of this scenery is lost."));
+    if (editsession && ImGui::Button(STR_C("Save and start the wizard")))
+    {
+        if (save() && false == restart_for_new_scenery())
+            ui()->set_status(STR_C("The editor couldn't be started again"), true);
+        ImGui::CloseCurrentPopup();
+    }
+    if (editsession)
+        ImGui::SameLine();
+    if (ImGui::Button(STR_C("Start the wizard")))
+    {
+        if (false == restart_for_new_scenery())
+            ui()->set_status(STR_C("The editor couldn't be started again"), true);
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(STR_C("Cancel")))
+        ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+}
+
+bool editor_mode::restart_for_new_scenery()
+{
+#ifdef _WIN32
+    _putenv("EU07_EDITOR_SELFTEST=");
+    wchar_t path[MAX_PATH];
+    if (GetModuleFileNameW(nullptr, path, MAX_PATH) == 0)
+        return false;
+    std::wstring command{L"\"" + std::wstring{path} + L"\" -edit"};
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    if (false == CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup, &process))
+        return false;
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+#else
+    unsetenv("EU07_EDITOR_SELFTEST");
+    char path[4096];
+    auto const size{readlink("/proc/self/exe", path, sizeof(path) - 1)};
+    if (size <= 0)
+        return false;
+    path[size] = '\0';
+    char edit[]{"-edit"};
+    char *arguments[]{path, edit, nullptr};
+    posix_spawnattr_t attributes;
+    posix_spawnattr_init(&attributes);
+    posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETSID);
+    pid_t child;
+    auto const result{posix_spawn(&child, path, nullptr, &attributes, arguments, environ)};
+    posix_spawnattr_destroy(&attributes);
+    if (result != 0)
+        return false;
+#endif
+    WriteLog("Editor: started again for a new scenery");
+    Application.queue_quit(true);
+    return true;
+}
+
+void editor_mode::render_orthophoto_window()
+{
+    if (false == m_orthophoto_window)
+        return;
+    ImGui::SetNextWindowSize(ImVec2(430.0f, 0.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin(STR_C("Orthophoto##window"), &m_orthophoto_window, ImGuiWindowFlags_AlwaysAutoResize))
+        render_orthophoto_ui();
+    ImGui::End();
+}
+
 void editor_mode::render_object_menu()
 {
     if (ImGui::BeginMenu("Objects"))
@@ -2899,6 +3153,12 @@ void editor_mode::render_gizmo()
         return;
     }
 
+    if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::path && m_track_set.size() >= 2)
+    {
+        render_track_set_gizmo();
+        return;
+    }
+
     if (straights_active())
     {
         render_straight_gizmo();
@@ -2920,7 +3180,7 @@ void editor_mode::render_gizmo()
     if (selected_track())
     {
         // in the track modes the whole path is moved only while selecting, or the switch in its mode
-        if (ui()->mode() != nodebank_panel::TRACK || m_track_tab == track_tab::path || m_track_tab == track_tab::turnout)
+        if (ui()->mode() != nodebank_panel::TRACK || (m_track_tab == track_tab::path && false == m_point_drag.active) || (m_track_tab == track_tab::turnout && selected_track()->eType == tt_Switch))
             render_track_gizmo();
         else
             m_track_gizmo_using = false;
@@ -3153,7 +3413,16 @@ void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
 {
     if (false == Global.EditorOrtho || ImGui::GetIO().WantCaptureMouse)
         return;
-    Global.EditorOrthoExtent = std::clamp(Global.EditorOrthoExtent * static_cast<float>(std::pow(0.85, Yoffset)), 5.0f, 5000.0f);
+    auto const before{Global.EditorOrthoExtent};
+    auto const after{std::clamp(before * static_cast<float>(std::pow(0.85, Yoffset)), 5.0f, 5000.0f)};
+    screen_projection const projection;
+    glm::dvec3 origin, direction;
+    projection.ray(ImGui::GetIO().MousePos, origin, direction);
+    auto const scale{static_cast<double>(after) / static_cast<double>(before)};
+    Camera.Pos.x = origin.x + (Camera.Pos.x - origin.x) * scale;
+    Camera.Pos.z = origin.z + (Camera.Pos.z - origin.z) * scale;
+    Global.EditorOrthoExtent = after;
+    Global.pCamera = Camera;
 }
 
 void editor_mode::update_camera(double const Deltatime)
@@ -3286,6 +3555,9 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
     if (!anyModifier && m_userinterface->on_key(Key, Action))
         return;
 
+    if (ui()->mode() == nodebank_panel::TRACK && is_press(Action) && (Mods & (GLFW_MOD_CONTROL | GLFW_MOD_ALT)) == 0 && typed_key(Key))
+        return;
+
     // gizmo transform shortcuts (Q/W/E/R) — only when the camera isn't being flown (RMB up).
     // handled before the camera keyboard step because Q/W/E are also the fly-mode movement keys,
     // which would otherwise consume them.
@@ -3316,6 +3588,16 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         return;
     }
 
+    if (Global.ctrlState && false == Global.shiftState && Key == GLFW_KEY_F && ui()->mode() == nodebank_panel::TRACK)
+    {
+        if (is_press(Action))
+        {
+            show_track_tab(m_track_tab);
+            m_track_search.focus = true;
+        }
+        return;
+    }
+
     // then internal input handling
     if (m_input.keyboard.key(Key, Action))
         return;
@@ -3324,7 +3606,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         return;
 
     // shortcuts: undo/redo. not in the middle of a drag, it would go on from the state which was undone
-    if (Global.ctrlState && (Key == GLFW_KEY_Z || Key == GLFW_KEY_Y) && is_press(Action) && (m_track_gizmo_using || m_straights.dragging || m_extend.active || m_switch.placing))
+    if (Global.ctrlState && (Key == GLFW_KEY_Z || Key == GLFW_KEY_Y) && is_press(Action) && (m_track_gizmo_using || m_track_set_using || m_straights.dragging || m_extend.active || m_switch.placing || m_point_drag.active || m_handle_drag.active))
         return;
     if (Global.ctrlState && Key == GLFW_KEY_Z && is_press(Action))
     {
@@ -3401,6 +3683,10 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
                 ui()->set_node(nullptr);
                 simulation::State.delete_model(model);
             }
+            else if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::path && m_track_set.size() >= 2)
+            {
+                track_set_delete();
+            }
             else if (selected_track() != nullptr)
             {
                 delete_selected_track();
@@ -3423,8 +3709,16 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
                 cancel_track_tools();
                 m_straights.tool = 0;
             }
-            else
+            else if (m_track_tab == track_tab::path && false == m_track_set.empty())
+                m_track_set.clear();
+            else if (m_track_tab != track_tab::path)
                 show_track_tab(track_tab::path);
+            else if (selected_track() != nullptr)
+            {
+                m_node = nullptr;
+                m_track_point = {};
+                ui()->set_node(nullptr);
+            }
         }
         break;
 
@@ -3443,7 +3737,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
     case GLFW_KEY_ENTER:
     case GLFW_KEY_KP_ENTER:
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && m_lay.active)
-            lay_finish({});
+            lay_enter();
         break;
 
     case GLFW_KEY_K:
@@ -3452,16 +3746,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             break;
         }
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && selected_track() != nullptr)
-        {
-            auto *track{selected_track()};
-            auto const parameter{editor_track::nearest_parameter(*track, Global.pCamera.Pos + GfxRenderer->Mouse_Position())};
-            auto const before{editor_track::capture(*track)};
-            if (auto *created{editor_track::split_path(*track, parameter)})
-            {
-                push_track_snapshot({{track, before}}, {created});
-                straight_refresh();
-            }
-        }
+            split_track_at(*selected_track(), Global.pCamera.Pos + GfxRenderer->Mouse_Position());
         break;
 
     case GLFW_KEY_F:
@@ -3563,45 +3848,7 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
 
             if (mode == nodebank_panel::TRACK)
             {
-                if (m_lay.active)
-                {
-                    GfxRenderer->Pick_Node_Callback([this](scene::basic_node * /*node*/) {
-                        if (viewport_click())
-                            lay_click();
-                    });
-                    m_input.mouse.button(Button, Action);
-                    return;
-                }
-                if (start_extend() || start_switch_placement())
-                {
-                    m_input.mouse.button(Button, Action);
-                    return;
-                }
-                if ((Mods & GLFW_MOD_ALT) != 0 && m_track_tab == track_tab::straights)
-                {
-                    GfxRenderer->Pick_Node_Callback([this](scene::basic_node *node) {
-                        if (viewport_click() && dynamic_cast<TTrack *>(node) != nullptr)
-                            toggle_straight_set(*dynamic_cast<TTrack *>(node));
-                    });
-                    m_input.mouse.button(Button, Action);
-                    return;
-                }
-                if ((Mods & (GLFW_MOD_CONTROL | GLFW_MOD_SHIFT)) != 0 && m_track_tab == track_tab::straights && false == current_straight().tracks.empty())
-                {
-                    if ((Mods & GLFW_MOD_CONTROL) != 0)
-                        start_straight_gesture(1);
-                    else
-                        add_detour_point();
-                    m_input.mouse.button(Button, Action);
-                    return;
-                }
-                if (false == ImGuizmo::IsOver() && false == pick_route_vertex() && false == place_straight_tool() && false == pick_straight_handle() && false == pick_track_handle())
-                {
-                    GfxRenderer->Pick_Node_Callback([this](scene::basic_node *node) {
-                        if (viewport_click())
-                            select_track(node);
-                    });
-                }
+                track_press(track_intent_at(Mods));
                 m_input.mouse.button(Button, Action);
                 return;
             }
@@ -3700,12 +3947,18 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
             if (is_release(Action))
             {
                 mouseHold = false;
+                finish_track_box();
+                point_drag_finish();
+                m_handle_drag = {};
+                sweep_release();
                 if (m_straights.tool_mouse)
                     finish_straight_gesture();
                 if (m_extend.active)
                     finish_extend();
                 if (m_switch.placing)
                     finish_switch_placement();
+                if (m_turntable.placing)
+                    turntable_finish_placement();
             }
 
             m_dragging = false;
@@ -3713,6 +3966,13 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
     }
     else if (Button == GLFW_MOUSE_BUTTON_RIGHT)
     {
+        if (ui()->mode() == nodebank_panel::TRACK)
+        {
+            if (is_press(Action))
+                track_context_press();
+            else if (is_release(Action))
+                track_context_release();
+        }
         // game-engine style look: hide & grab the cursor while flying, restore it on release
         Application.set_cursor(is_press(Action) ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
     }

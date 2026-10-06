@@ -97,18 +97,34 @@ struct compound_curve
 	double shortened{1.0};
 };
 
-compound_curve build_compound(double const Deflection, double const Radius1, double const Radius2, double const Lengthin, double const Lengthmiddle, double const Lengthout, double const Split)
+compound_curve build_compound(double const Deflection, std::vector<compound_arc> const &Arcs, double const Lengthin, double const Lengthout)
 {
 	compound_curve result;
-	auto const k1{1.0 / Radius1};
-	auto const k2{1.0 / Radius2};
-	auto const transitions{(k1 * Lengthin + (k1 + k2) * Lengthmiddle + k2 * Lengthout) * 0.5};
+	if (Arcs.empty())
+		return result;
+	std::vector<double> curvatures;
+	for (auto const &arc : Arcs)
+		curvatures.push_back(1.0 / std::max(1.0, arc.radius));
+	auto transitions{curvatures.front() * Lengthin + curvatures.back() * Lengthout};
+	for (std::size_t i = 1; i < Arcs.size(); ++i)
+		transitions += (curvatures[i - 1] + curvatures[i]) * std::max(0.0, Arcs[i].transition);
+	transitions *= 0.5;
 	if (transitions > Deflection)
 		result.shortened = Deflection / transitions * (1.0 - 1e-9);
 	auto const f{result.shortened};
 	auto const arcs{std::max(0.0, Deflection - transitions * f)};
-	auto const split{std::clamp(Split, 0.0, 1.0)};
-	std::array<double, 3> const segments[] = {{0.0, k1, Lengthin * f}, {k1, k1, split * arcs / k1}, {k1, k2, Lengthmiddle * f}, {k2, k2, (1.0 - split) * arcs / k2}, {k2, 0.0, Lengthout * f}};
+	double total{0.0};
+	for (auto const &arc : Arcs)
+		total += std::max(0.0, arc.share);
+	std::vector<std::array<double, 3>> segments{{0.0, curvatures.front(), Lengthin * f}};
+	for (std::size_t i = 0; i < Arcs.size(); ++i)
+	{
+		if (i > 0)
+			segments.push_back({curvatures[i - 1], curvatures[i], std::max(0.0, Arcs[i].transition) * f});
+		auto const share{total > 0.0 ? std::max(0.0, Arcs[i].share) / total : 1.0 / static_cast<double>(Arcs.size())};
+		segments.push_back({curvatures[i], curvatures[i], share * arcs / curvatures[i]});
+	}
+	segments.push_back({curvatures.back(), 0.0, Lengthout * f});
 	double x{0.0}, y{0.0}, heading{0.0};
 	for (auto const &segment : segments)
 	{
@@ -209,8 +225,11 @@ std::size_t element_pieces(element const &Element, transition_shape const Shape,
 	case element_kind::spiral:
 	{
 		auto const turn{(Element.curvature_start + Element.curvature_end) * 0.5 * Element.length};
-		auto const count{static_cast<std::size_t>(std::max({1.0, std::ceil(turn / (Arcangle * kPi / 180.0) - 1e-9), std::ceil(Element.length / 20.0 - 1e-9)}))};
-		return Element.curvature_start != Element.curvature_end ? std::max<std::size_t>(count, std::max(1, Transitions)) : count;
+		auto const arcs{std::max(1.0, std::ceil(turn / (Arcangle * kPi / 180.0) - 1e-9))};
+		if (Element.curvature_start == Element.curvature_end)
+			return static_cast<std::size_t>(arcs);
+		auto const count{static_cast<std::size_t>(std::max(arcs, std::ceil(Element.length / 20.0 - 1e-9)))};
+		return std::max<std::size_t>(count, std::max(1, Transitions));
 	}
 	default:
 		return 1;
@@ -360,9 +379,16 @@ result fit_between(design const &Design)
 		double tangent_out{0.0};
 		double deflection{0.0};
 		bool compound{false};
-		double radius2{0.0};
-		double transition_middle{0.0};
+		std::vector<compound_arc> arcs;
 		std::function<void(double, double &, double &)> tangents;
+	};
+	auto const scaled = [](std::vector<compound_arc> Arcs, double const Scale) {
+		for (auto &arc : Arcs)
+		{
+			arc.radius *= Scale;
+			arc.transition *= Scale;
+		}
+		return Arcs;
 	};
 	std::vector<fitted> fits(count);
 	for (std::size_t k = 0; k < count; ++k)
@@ -386,16 +412,17 @@ result fit_between(design const &Design)
 			r.errors.emplace_back(format("Vertex %zu: a turn of about 180 or 360 degrees needs one more vertex", k + 1));
 			return r;
 		}
-		if (vertex.compound)
+		if (vertex.compound && false == vertex.arcs.empty())
 		{
 			fit.compound = true;
-			fit.radius2 = std::max(1.0, vertex.radius2);
-			fit.transition_middle = std::max(0.0, vertex.transition_middle);
+			fit.arcs = {{fit.radius, 0.0, vertex.share}};
+			for (auto const &arc : vertex.arcs)
+				fit.arcs.push_back({std::max(1.0, arc.radius), std::max(0.0, arc.transition), arc.share});
 			fit.deflection = deflection;
-			fit.tangents = [&, k, directionin, directionout, side](double const Radius, double &Tangentin, double &Tangentout) {
+			fit.tangents = [&, k, directionin, directionout, side, scaled](double const Radius, double &Tangentin, double &Tangentout) {
 				auto const &own{fits[k]};
 				auto const scale{Radius / own.radius};
-				auto const shape{build_compound(own.deflection, Radius, own.radius2 * scale, own.transition_in * scale, own.transition_middle * scale, own.transition_out * scale, Design.vertices[k].split)};
+				auto const shape{build_compound(own.deflection, scaled(own.arcs, scale), own.transition_in * scale, own.transition_out * scale)};
 				auto const normalin{perpendicular(directionin) * static_cast<double>(side)};
 				auto const end{directionin * shape.end.x + normalin * shape.end.y};
 				auto const along{cross(directionout, end) / cross(directionout, directionin)};
@@ -485,9 +512,8 @@ result fit_between(design const &Design)
 		else
 		{
 			fit.radius *= scales[k];
-			fit.radius2 *= scales[k];
+			fit.arcs = scaled(fit.arcs, scales[k]);
 			fit.transition_in *= scales[k];
-			fit.transition_middle *= scales[k];
 			fit.transition_out *= scales[k];
 		}
 		r.warnings.emplace_back(format("Vertex %zu: R reduced from %.1f to %.1f m, transitions to %.1f / %.1f m, to fit between the ends", k + 1, Design.vertices[k].radius, fit.radius, fit.transition_in, fit.transition_out));
@@ -525,7 +551,7 @@ result fit_between(design const &Design)
 		}
 		if (fit.compound)
 		{
-			auto const shape{build_compound(deflection, fit.radius, fit.radius2, fit.transition_in, fit.transition_middle, fit.transition_out, vertex.split)};
+			auto const shape{build_compound(deflection, fit.arcs, fit.transition_in, fit.transition_out)};
 			if (shape.shortened < 1.0)
 				r.warnings.emplace_back(format("Vertex %zu: transition curves shortened to fit the deflection angle", k + 1));
 			auto const normalin{perpendicular(directionin) * static_cast<double>(side)};
@@ -541,7 +567,10 @@ result fit_between(design const &Design)
 			auto const startchainage{chainage};
 			glm::dvec2 origin{curvestart};
 			glm::dvec2 heading{directionin};
-			auto const peak{std::max(1.0 / fit.radius, 1.0 / fit.radius2)};
+			auto sharpest{fit.radius};
+			for (auto const &arc : fit.arcs)
+				sharpest = std::min(sharpest, arc.radius);
+			auto const peak{1.0 / sharpest};
 			for (auto const &segment : shape.segments)
 			{
 				element piece;
@@ -568,14 +597,14 @@ result fit_between(design const &Design)
 			curve_report report;
 			report.vertex = static_cast<int>(k);
 			report.radius = fit.radius;
-			report.radius2 = fit.radius2;
+			for (auto const &arc : fit.arcs)
+				report.radii.push_back(arc.radius);
 			report.transition_in = fit.transition_in * shape.shortened;
 			report.transition_out = fit.transition_out * shape.shortened;
 			report.deflection = deflection;
 			report.arc_length = chainage - startchainage;
 			report.tangent_in = glm::distance(position, curvestart);
 			report.tangent_out = glm::distance(position, cursor);
-			auto const sharpest{std::min(fit.radius, fit.radius2)};
 			report.unbalanced = unbalanced_acceleration(Design.speed, sharpest, std::max(0.0, vertex.cant), Design.norms);
 			report.recommended = recommend(Design.speed, sharpest, Design.norms);
 			r.curves.push_back(report);

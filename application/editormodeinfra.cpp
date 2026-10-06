@@ -43,6 +43,7 @@ http://mozilla.org/MPL/2.0/.
 namespace
 {
 
+using geometry::bezier;
 using geometry::plan_distance;
 using geometry::plan_of;
 
@@ -419,6 +420,159 @@ class track_index
 	std::map<cell_key, std::vector<std::size_t>> m_cells;
 };
 
+struct cell_reader
+{
+	TTrack *track{nullptr};
+	std::string event;
+	std::string cell;
+	bool loose{false};
+};
+
+class event_links
+{
+  public:
+	event_links()
+	{
+		std::unordered_map<std::string, TTrack *> named;
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved && false == track->name().empty() && track->name() != "none")
+				named.emplace(track->name(), track);
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved)
+				continue;
+			for (auto const *sequence : {&track->m_events0, &track->m_events1, &track->m_events2, &track->m_events0all, &track->m_events1all, &track->m_events2all})
+				for (auto const &entry : *sequence)
+					read(track, entry.second != nullptr ? entry.second : simulation::Events.FindEvent(entry.first), entry.first.empty());
+		}
+		static std::set<std::string> const kinds{"event0", "event1", "event2", "eventall0", "eventall1", "eventall2"};
+		std::unordered_set<scene::basic_node const *> models(simulation::Instances.sequence().begin(), simulation::Instances.sequence().end());
+		std::unordered_set<scene::basic_node const *> cells(simulation::Memory.sequence().begin(), simulation::Memory.sequence().end());
+		for (auto *event : simulation::Events.sequence())
+		{
+			if (event == nullptr)
+				continue;
+			auto const &name{event->name()};
+			auto const colon{name.rfind(':')};
+			if (colon != std::string::npos && colon > 0 && kinds.count(name.substr(colon + 1)) > 0)
+			{
+				auto const track{named.find(name.substr(0, colon))};
+				if (track != named.end())
+					read(track->second, event, true);
+			}
+			auto const *multi{dynamic_cast<multi_event const *>(event)};
+			if (multi == nullptr)
+				continue;
+			std::vector<scene::basic_node const *> shown;
+			std::vector<TMemCell *> set;
+			for (auto *child : multi->children())
+			{
+				auto const setter{dynamic_cast<updatevalues_event const *>(child) != nullptr || dynamic_cast<copyvalues_event const *>(child) != nullptr};
+				for (auto *target : child->target_nodes())
+				{
+					if (models.count(target) > 0 && false == contains(shown, static_cast<scene::basic_node const *>(target)))
+						shown.push_back(target);
+					else if (setter && cells.count(target) > 0 && false == contains(set, static_cast<TMemCell *>(target)))
+						set.push_back(static_cast<TMemCell *>(target));
+				}
+			}
+			if (shown.size() > 4 || set.size() > 4)
+				continue;
+			for (auto const *model : shown)
+				for (auto *cell : set)
+					if (plan_distance(model->location(), cell->location()) <= kCellReach && false == contains(m_cells[model], cell))
+						m_cells[model].push_back(cell);
+		}
+		for (auto *cell : simulation::Memory.sequence())
+		{
+			if (cell == nullptr)
+				continue;
+			if (cell->m_instance != 0)
+				m_included[cell->m_instance].push_back(cell);
+			if (false == cell->name().empty() && cell->name() != "none")
+				m_named.emplace_back(cell->name(), cell);
+		}
+		std::sort(m_named.begin(), m_named.end(), [](auto const &A, auto const &B) { return A.first < B.first; });
+	}
+	std::vector<TMemCell *> cells_of(infra::binding const &Binding) const
+	{
+		std::vector<TMemCell *> result;
+		switch (Binding.type)
+		{
+		case infra::kind::memcell: result.push_back(static_cast<TMemCell *>(Binding.node)); break;
+		case infra::kind::include:
+		{
+			auto const found{m_included.find(Binding.include)};
+			if (found != m_included.end())
+				result = found->second;
+			break;
+		}
+		case infra::kind::model:
+		{
+			auto const found{m_cells.find(Binding.node)};
+			if (found != m_cells.end())
+				result = found->second;
+			auto const &name{Binding.node->name()};
+			if (result.empty() && name.size() >= 3 && name != "none")
+				for (auto entry{std::lower_bound(m_named.begin(), m_named.end(), name, [](auto const &Entry, std::string const &Name) { return Entry.first < Name; })};
+				     entry != m_named.end() && entry->first.compare(0, name.size(), name) == 0; ++entry)
+					if (plan_distance(entry->second->location(), Binding.node->location()) <= kCellReach)
+						result.push_back(entry->second);
+			break;
+		}
+		default: break;
+		}
+		return result;
+	}
+	std::vector<cell_reader> readers_of(std::vector<TMemCell *> const &Cells) const
+	{
+		std::vector<cell_reader> result;
+		for (auto const *cell : Cells)
+		{
+			auto const found{m_readers.find(cell)};
+			if (found == m_readers.end())
+				continue;
+			for (auto const &reader : found->second)
+				if (std::none_of(result.begin(), result.end(), [&](cell_reader const &Reader) { return Reader.track == reader.track; }))
+					result.push_back(reader);
+		}
+		return result;
+	}
+
+  private:
+	static constexpr double kCellReach{60.0};
+	void read(TTrack *Track, basic_event *Event, bool const Loose)
+	{
+		std::vector<basic_event *> pending{Event};
+		std::unordered_set<basic_event *> seen;
+		while (false == pending.empty())
+		{
+			auto *event{pending.back()};
+			pending.pop_back();
+			if (event == nullptr || false == seen.insert(event).second)
+				continue;
+			if (auto const *multi{dynamic_cast<multi_event const *>(event)})
+			{
+				auto const children{multi->children()};
+				pending.insert(pending.end(), children.begin(), children.end());
+				continue;
+			}
+			if (dynamic_cast<getvalues_event const *>(event) == nullptr)
+				continue;
+			auto const targets{event->target_nodes()};
+			if (targets.empty())
+				continue;
+			auto &list{m_readers[targets.front()]};
+			if (std::none_of(list.begin(), list.end(), [&](cell_reader const &Reader) { return Reader.track == Track; }))
+				list.push_back({Track, Event->name(), targets.front()->name(), Loose});
+		}
+	}
+	std::unordered_map<scene::basic_node const *, std::vector<cell_reader>> m_readers;
+	std::unordered_map<scene::basic_node const *, std::vector<TMemCell *>> m_cells;
+	std::unordered_map<scene::instance_handle, std::vector<TMemCell *>> m_included;
+	std::vector<std::pair<std::string, TMemCell *>> m_named;
+};
+
 // lookup of points by a grid of 1 m cells in the plan
 template <typename Type_>
 class point_grid
@@ -711,8 +865,10 @@ void editor_mode::infra_recognize()
 		state.error = (state.scope == 2 ? STR_C("Open the vertical profile of a route first") : state.scope == 3 ? STR_C("The scenery has no paths the editor can handle") : STR_C("Select a path first"));
 		return;
 	}
+	state.read = state.overruled = state.unread = state.elsewhere = 0;
 	track_index index;
 	std::unordered_set<std::string> names;
+	std::unordered_set<TTrack const *> const scope(state.tracks.begin(), state.tracks.end());
 	for (auto *track : state.tracks)
 	{
 		index.add(*track);
@@ -720,6 +876,18 @@ void editor_mode::infra_recognize()
 			names.insert(track->name());
 	}
 	Live.refresh();
+	event_links const links;
+	std::unordered_map<TTrack *, std::vector<track_area>> threads;
+	auto const thread_of = [&](TTrack *Reader) -> std::vector<track_area> const & {
+		auto found{threads.find(Reader)};
+		if (found != threads.end())
+			return found->second;
+		std::vector<track_area> areas;
+		for (auto const &span : editor_track::run_route(*Reader, 250.0).spans)
+			if (scope.count(span.track) > 0 && std::none_of(areas.begin(), areas.end(), [&](track_area const &Area) { return Area.track == span.track; }))
+				areas.push_back(area_of(*span.track));
+		return threads.emplace(Reader, std::move(areas)).first->second;
+	};
 
 	auto const corridor{static_cast<double>(state.corridor)};
 	auto const add = [&](infra::binding Binding, std::string const &Reason, double const Reach) {
@@ -727,12 +895,57 @@ void editor_mode::infra_recognize()
 		std::optional<double> yaw;
 		if (false == object_points(Binding, points, yaw))
 			return;
-		for (auto const &point : points)
+		infra_candidate candidate;
+		auto const cells{points.size() == 1 ? links.cells_of(Binding) : std::vector<TMemCell *>{}};
+		auto const readers{links.readers_of(cells)};
+		infra::station geometric;
+		auto const near{index.nearest(points.front(), Reach, geometric)};
+		if (false == readers.empty())
 		{
+			auto best{-1.0};
 			infra::station station;
-			if (false == index.nearest(point, Reach, station))
+			for (auto const &reader : readers)
+			{
+				infra::station at;
+				auto const &thread{thread_of(reader.track)};
+				if (false == nearest_beside(thread, points.front(), std::max(Reach, 25.0), at))
+					continue;
+				auto const distance{plan_distance(infra::frame_at(at).point, points.front())};
+				if (best < 0.0 || distance < best)
+				{
+					best = distance;
+					station = at;
+					candidate.reader = reader.track;
+					candidate.event = reader.event;
+					candidate.cell = reader.cell;
+					candidate.loose = reader.loose;
+				}
+			}
+			if (candidate.reader == nullptr)
+			{
+				state.elsewhere += near ? 1 : 0;
 				return;
-			Binding.anchors.push_back(infra::make_anchor(station, point));
+			}
+			auto const &thread{thread_of(candidate.reader)};
+			if (near && geometric.track != station.track && std::none_of(thread.begin(), thread.end(), [&](track_area const &Area) { return Area.track == geometric.track; }))
+			{
+				candidate.nearer = geometric.track;
+				candidate.nearer_foot = infra::frame_at(geometric).point;
+			}
+			Binding.anchors.push_back(infra::make_anchor(station, points.front()));
+			if (Binding.group == infra::category::other && Binding.type != infra::kind::memcell)
+				Binding.group = infra::category::signal;
+		}
+		else
+		{
+			for (auto const &point : points)
+			{
+				infra::station station;
+				if (false == index.nearest(point, Reach, station))
+					return;
+				Binding.anchors.push_back(infra::make_anchor(station, point));
+			}
+			candidate.unread = (false == cells.empty() && Binding.type != infra::kind::memcell && Binding.group == infra::category::signal);
 		}
 		if (std::abs(Binding.anchors.front().height) > 40.0)
 			return;
@@ -740,12 +953,14 @@ void editor_mode::infra_recognize()
 		if (Binding.turns)
 			Binding.yaw = turn_of(Binding, *yaw);
 		Binding.label = object_label(Binding);
-		infra_candidate candidate;
 		candidate.offset = Binding.anchors.front().offset;
 		candidate.reason = Reason;
 		candidate.bound = (infra_find(Binding) != nullptr);
 		candidate.chosen = (false == candidate.bound && Binding.group != infra::category::other);
 		candidate.binding = std::move(Binding);
+		state.read += candidate.reader != nullptr ? 1 : 0;
+		state.overruled += candidate.nearer != nullptr ? 1 : 0;
+		state.unread += candidate.unread ? 1 : 0;
 		state.candidates.push_back(std::move(candidate));
 	};
 	auto const rule_reason = [](infra::category const Group, char const *What) { return Group == infra::category::other ? std::string{"nearby, no rule matches the "} + What : std::string{"the "} + What + " matches a rule"; };
@@ -805,6 +1020,8 @@ void editor_mode::infra_recognize()
 	}
 	std::stable_sort(state.candidates.begin(), state.candidates.end(), [](infra_candidate const &A, infra_candidate const &B) { return A.binding.group < B.binding.group; });
 	state.status = format(STR_C("%d object(s) found along %d path(s)"), static_cast<int>(state.candidates.size()), static_cast<int>(state.tracks.size()));
+	if (state.elsewhere > 0)
+		state.status += format(STR_C("; %d left out: they stand by the scope, but the paths which read them are elsewhere"), state.elsewhere);
 }
 
 void editor_mode::infra_bind_chosen()
@@ -910,6 +1127,7 @@ void editor_mode::infra_buffer(infra::binding const &Binding, bool const Refresh
 
 void editor_mode::track_captured(TTrack const &Track)
 {
+	sweeps_captured(Track);
 	if (m_infra_suspended || false == m_infra.follow)
 		return;
 	infra_load();
@@ -947,6 +1165,7 @@ void editor_mode::track_captured(TTrack const &Track)
 
 void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 {
+	sweeps_committed(Tracks);
 	if (m_infra_suspended || false == m_infra.follow)
 		return;
 	infra_load();
@@ -1031,6 +1250,7 @@ void editor_mode::track_retired(TTrack &)
 
 void editor_mode::track_split(TTrack &Original, TTrack &Created, segment_data const &First)
 {
+	sweeps_split(Original, Created);
 	if (m_infra_suspended || Created.m_paths.empty())
 		return;
 	auto const length{infra::plan_length(First)};
@@ -1185,9 +1405,9 @@ void editor_mode::infra_rebase()
 void editor_mode::render_infra_search()
 {
 	auto &state{m_infra};
-	static char const *const scopes[] = {"Selected path", "Line through the selected path", "Route of the vertical profile", "Whole scenery"};
+	char const *const scopes[] = {STR_C("Selected path"), STR_C("Line through the selected path"), STR_C("Route of the vertical profile"), STR_C("Whole scenery")};
 	ImGui::SetNextItemWidth(260.f);
-	ImGui::Combo("Look along", &state.scope, scopes, IM_ARRAYSIZE(scopes));
+	ImGui::Combo(STR_C("Look along"), &state.scope, scopes, IM_ARRAYSIZE(scopes));
 	if (state.scope == 1)
 	{
 		ImGui::SetNextItemWidth(120.f);
@@ -1224,77 +1444,140 @@ void editor_mode::render_infra_candidates()
 {
 	auto &state{m_infra};
 	auto &candidates{state.candidates};
+	ImVec4 const readcolour{0.45f, 0.85f, 1.f, 1.f};
+	ImVec4 const warncolour{1.f, 0.75f, 0.3f, 1.f};
+	auto const shown = [&](infra_candidate const &Candidate) {
+		switch (state.filter)
+		{
+		case 1: return Candidate.reader != nullptr;
+		case 2: return Candidate.nearer != nullptr;
+		case 3: return Candidate.unread;
+		default: return true;
+		}
+	};
 	auto const choose = [&](std::optional<infra::category> const Group, bool const Chosen) {
 		for (auto &candidate : candidates)
-			if (false == Group.has_value() || candidate.binding.group == *Group)
+			if ((false == Group.has_value() || candidate.binding.group == *Group) && shown(candidate))
 				candidate.chosen = Chosen && false == candidate.bound;
 	};
 	state.hovered = -1;
-	if (false == candidates.empty())
-	{
-		int chosen{0};
-		for (auto const &candidate : candidates)
-			chosen += candidate.chosen ? 1 : 0;
-		ImGui::SameLine();
-		if (ImGui::Button(format(STR_C("Bind the chosen (%d)"), chosen).c_str()))
-			infra_bind_chosen();
-		ImGui::SameLine();
-		if (ImGui::SmallButton(STR_C("All")))
-			choose({}, true);
-		ImGui::SameLine();
-		if (ImGui::SmallButton(STR_C("None")))
-			choose({}, false);
+	if (candidates.empty())
+		return;
+	int chosen{0};
+	for (auto const &candidate : candidates)
+		chosen += candidate.chosen ? 1 : 0;
+	ImGui::SameLine();
+	if (ImGui::Button(format(STR_C("Bind the chosen (%d)"), chosen).c_str()))
+		infra_bind_chosen();
+	ImGui::SameLine();
+	if (ImGui::SmallButton(STR_C("All")))
+		choose({}, true);
+	ImGui::SameLine();
+	if (ImGui::SmallButton(STR_C("None")))
+		choose({}, false);
 
-		ImGui::BeginChild("##infracandidates", ImVec2(0.f, 260.f), true);
-		for (auto const group : infra::categories())
+	if (state.read > 0 || state.unread > 0)
+	{
+		ImGui::TextColored(readcolour, STR_C("%d read by the paths"), state.read);
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip(STR_C("The memory cell of the object is read by a getvalues event of a path, listed by the path, inside a multiple\n"
+			                  "event or written loose as <path>:event<n>. The object is bound to the thread of that path, not to the nearest one"));
+		if (state.overruled > 0)
 		{
-			auto const count{std::count_if(candidates.begin(), candidates.end(), [&](infra_candidate const &Candidate) { return Candidate.binding.group == group; })};
-			if (count == 0)
-				continue;
-			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(colour(group)));
-			auto const open{ImGui::TreeNodeEx(format("%s (%d)", infra::name(group), static_cast<int>(count)).c_str(), group == infra::category::other ? 0 : ImGuiTreeNodeFlags_DefaultOpen)};
-			ImGui::PopStyleColor();
 			ImGui::SameLine();
-			if (ImGui::SmallButton((std::string{STR_C("all##g")} + infra::name(group)).c_str()))
-				choose(group, true);
-			ImGui::SameLine();
-			if (ImGui::SmallButton((std::string{STR_C("none##g")} + infra::name(group)).c_str()))
-				choose(group, false);
-			if (false == open)
-				continue;
-			// the candidates are sorted by the category
-			auto const first{static_cast<int>(std::distance(candidates.begin(), std::find_if(candidates.begin(), candidates.end(), [&](infra_candidate const &Candidate) { return Candidate.binding.group == group; })))};
-			ImGuiListClipper clipper(static_cast<int>(count));
-			while (clipper.Step())
-			for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
-			{
-				auto const i{static_cast<std::size_t>(first + row)};
-				auto &candidate{candidates[i]};
-				ImGui::PushID(static_cast<int>(i));
-				if (candidate.bound)
-				{
-					ImGui::TextDisabled(STR_C("[bound]"));
-				}
-				else
-				{
-					ImGui::Checkbox("##chosen", &candidate.chosen);
-				}
-				ImGui::SameLine();
-				ImGui::Text("%s", candidate.binding.label.c_str());
-				if (ImGui::IsItemHovered())
-				{
-					state.hovered = static_cast<int>(i);
-					ImGui::SetTooltip(STR_C("%s, %s\n%.2f m %s of the axis, %.2f m above the rail top\n%s"), infra::name(candidate.binding.type), candidate.binding.anchors.front().at.track->name().c_str(),
-					                  std::abs(candidate.offset), candidate.offset >= 0.0 ? "right" : "left", candidate.binding.anchors.front().height, candidate.reason.c_str());
-				}
-				ImGui::SameLine();
-				ImGui::TextDisabled("%s %+.1f m", infra::name(candidate.binding.type), candidate.offset);
-				ImGui::PopID();
-			}
-			ImGui::TreePop();
+			ImGui::TextColored(warncolour, STR_C("%d of them nearer to another path"), state.overruled);
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip(STR_C("By the distance alone these would go to the wrong thread. Check them in 3D: the dashed line goes to the nearer path"));
 		}
-		ImGui::EndChild();
+		if (state.unread > 0)
+		{
+			ImGui::SameLine();
+			ImGui::TextColored(warncolour, STR_C("%d signal(s) not read by any path"), state.unread);
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip(STR_C("The signal has a memory cell, but no event of a path reads it: the vehicles won't see it.\nBound to the nearest path"));
+		}
+		static char const *const filters[] = {"All", "Read by a path", "Nearer to another path", "Not read"};
+		for (int i = 0; i < IM_ARRAYSIZE(filters); ++i)
+		{
+			if (i > 0)
+				ImGui::SameLine();
+			ImGui::RadioButton(STR_C(filters[i]), &state.filter, i);
+		}
 	}
+
+	ImGui::BeginChild("##infracandidates", ImVec2(0.f, 260.f), true);
+	std::vector<int> rows;
+	for (auto const group : infra::categories())
+	{
+		rows.clear();
+		for (int i = 0; i < static_cast<int>(candidates.size()); ++i)
+			if (candidates[i].binding.group == group && shown(candidates[i]))
+				rows.push_back(i);
+		if (rows.empty())
+			continue;
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(colour(group)));
+		auto const open{ImGui::TreeNodeEx(format("%s (%d)", infra::name(group), static_cast<int>(rows.size())).c_str(), group == infra::category::other ? 0 : ImGuiTreeNodeFlags_DefaultOpen)};
+		ImGui::PopStyleColor();
+		ImGui::SameLine();
+		if (ImGui::SmallButton((std::string{STR_C("all##g")} + infra::name(group)).c_str()))
+			choose(group, true);
+		ImGui::SameLine();
+		if (ImGui::SmallButton((std::string{STR_C("none##g")} + infra::name(group)).c_str()))
+			choose(group, false);
+		if (false == open)
+			continue;
+		ImGuiListClipper clipper(static_cast<int>(rows.size()));
+		while (clipper.Step())
+		for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
+		{
+			auto const i{rows[row]};
+			auto &candidate{candidates[i]};
+			auto const &anchor{candidate.binding.anchors.front()};
+			ImGui::PushID(i);
+			if (candidate.bound)
+				ImGui::TextDisabled(STR_C("[bound]"));
+			else
+				ImGui::Checkbox("##chosen", &candidate.chosen);
+			ImGui::SameLine();
+			if (ImGui::Selectable(candidate.binding.label.c_str(), false, ImGuiSelectableFlags_None, ImVec2(ImGui::CalcTextSize(candidate.binding.label.c_str()).x, 0.f)) && anchor.at.track != nullptr)
+				focus_track(*anchor.at.track, anchor.at.path, anchor.foot);
+			if (ImGui::IsItemHovered())
+			{
+				state.hovered = i;
+				std::string text{format(STR_C("%s, %s\n%.2f m %s of the axis, %.2f m above the rail top\n%s"), infra::name(candidate.binding.type), anchor.at.track->name().c_str(), std::abs(candidate.offset),
+				                        candidate.offset >= 0.0 ? "right" : "left", anchor.height, candidate.reason.c_str())};
+				if (candidate.reader != nullptr)
+					text += format(STR_C("\nRead by the path %s: event %s, getvalues of the memory cell %s"), candidate.reader->name().c_str(), candidate.event.c_str(), candidate.cell.c_str()) +
+					        (candidate.loose ? STR(" (written loose, the path takes it by the name)") : std::string{});
+				if (candidate.nearer != nullptr)
+					text += format(STR_C("\nThe path %s is nearer, but it doesn't read the object"), candidate.nearer->name().c_str());
+				if (candidate.unread)
+					text += STR("\nNo path reads the memory cell of the signal");
+				text += STR("\nClick to look at it");
+				ImGui::SetTooltip("%s", text.c_str());
+			}
+			ImGui::SameLine();
+			ImGui::TextDisabled("%s %+.1f m", infra::name(candidate.binding.type), candidate.offset);
+			if (candidate.reader != nullptr)
+			{
+				ImGui::SameLine();
+				ImGui::TextColored(readcolour, STR_C("read by %s"), candidate.reader->name().c_str());
+			}
+			if (candidate.nearer != nullptr)
+			{
+				ImGui::SameLine();
+				ImGui::TextColored(warncolour, STR_C("(nearer: %s)"), candidate.nearer->name().c_str());
+			}
+			if (candidate.unread)
+			{
+				ImGui::SameLine();
+				ImGui::TextColored(warncolour, "%s", STR_C("not read"));
+			}
+			ImGui::PopID();
+		}
+		ImGui::TreePop();
+	}
+	ImGui::EndChild();
 }
 
 void editor_mode::render_infra_bound()
@@ -1369,11 +1652,53 @@ void editor_mode::draw_infra_overlay() const
 	};
 	for (auto const &binding : m_bindings)
 		draw(binding, binding.lost ? overlay_color::invalid : IM_COL32(90, 230, 110, 220), 3.5f);
+	auto const object = [&](infra_candidate const &Candidate) {
+		std::vector<glm::dvec3> points;
+		std::optional<double> yaw;
+		return object_points(Candidate.binding, points, yaw) ? points.front() : Candidate.binding.anchors.front().foot;
+	};
+	auto const dashed = [&](glm::dvec3 const &From, glm::dvec3 const &To, ImU32 const Colour) {
+		auto const steps{std::clamp(static_cast<int>(glm::distance(From, To) / 0.5), 2, 40)};
+		for (int k = 0; k < steps; k += 2)
+			projection.line(drawlist, glm::mix(From, To, static_cast<double>(k) / steps), glm::mix(From, To, static_cast<double>(k + 1) / steps), Colour, 2.f);
+	};
 	for (int i = 0; i < static_cast<int>(state.candidates.size()); ++i)
 	{
 		auto const &candidate{state.candidates[i]};
+		if (candidate.nearer != nullptr && alive(candidate.binding) && glm::distance(candidate.nearer_foot, camera) <= 2000.0)
+		{
+			auto const point{object(candidate)};
+			ImVec2 screen;
+			if (projection.project(point, screen))
+				drawlist->AddCircle(screen, i == state.hovered ? 13.f : 8.f, IM_COL32(255, 190, 70, 230), 16, 2.f);
+			if (i == state.hovered)
+				dashed(point, candidate.nearer_foot, IM_COL32(255, 190, 70, 230));
+		}
 		if (candidate.bound)
 			continue;
 		draw(candidate.binding, colour(candidate.binding.group, candidate.chosen ? 255 : 110), i == state.hovered ? 9.f : (candidate.chosen ? 5.f : 3.f));
+	}
+	if (state.hovered >= 0 && state.hovered < static_cast<int>(state.candidates.size()))
+	{
+		auto const &candidate{state.candidates[state.hovered]};
+		auto const outline = [&](TTrack const *Track, ImU32 const Colour, float const Width) {
+			if (Track == nullptr || Track->m_editorremoved)
+				return;
+			for (auto const &path : Track->m_paths)
+			{
+				bezier const curve{path};
+				auto const count{std::clamp(static_cast<int>(curve.plan_length() / 3.0), 6, 64)};
+				auto previous{curve.point(0.0)};
+				for (int k = 1; k <= count; ++k)
+				{
+					auto const next{curve.point(static_cast<double>(k) / count)};
+					projection.line(drawlist, previous, next, Colour, Width);
+					previous = next;
+				}
+			}
+		};
+		outline(candidate.binding.anchors.front().at.track, IM_COL32(255, 255, 255, 200), 3.f);
+		if (candidate.reader != candidate.binding.anchors.front().at.track)
+			outline(candidate.reader, IM_COL32(110, 215, 255, 220), 3.f);
 	}
 }

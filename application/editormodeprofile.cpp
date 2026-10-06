@@ -26,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include <limits>
 #include <map>
 #include <optional>
+#include <set>
 #include <sstream>
 
 namespace
@@ -475,6 +476,122 @@ void editor_mode::profile_fit_ground()
 	state.status = format(STR_C("Grade line fitted to the ground: %zu points, embankment up to %.2f m, cutting up to %.2f m"), state.line.points.size(), fill, cut);
 }
 
+std::pair<double, double> editor_mode::profile_ballast(TTrack const &Track)
+{
+	auto const depth{std::max(0.0, static_cast<double>(Track.fTexHeight1 - Track.fTexHeightOffset))};
+	auto const foot{0.5 * std::abs(Track.fTrackWidth) + std::abs(Track.fTexWidth) + std::abs(Track.fTexSlope)};
+	return {depth, std::max(0.5, foot)};
+}
+
+std::pair<int, int> editor_mode::profile_generate_ground(std::vector<std::pair<double, double>> const &Beds, double const Reach)
+{
+	auto &state{m_profile};
+	auto &works{state.earthworks};
+	auto const &samples{state.samples};
+	bool const streaming{m_streamer.active()};
+	double const size{streaming ? m_streamer.cells() * m_streamer.cellsize() : chunk_grid_size()};
+	int const cells{streaming ? m_streamer.cells() : std::clamp(m_terrain_cells, 1, 256)};
+	if (size <= 0.0 || cells <= 0 || samples.empty())
+		return {0, 0};
+	double const cellsize{size / cells};
+	std::set<std::pair<int, int>> keys;
+	for (auto const &sample : samples)
+	{
+		auto const &p{sample.position};
+		for (auto x = static_cast<int>(std::floor((p.x - Reach) / size)); x <= static_cast<int>(std::floor((p.x + Reach) / size)); ++x)
+			for (auto z = static_cast<int>(std::floor((p.z - Reach) / size)); z <= static_cast<int>(std::floor((p.z + Reach) / size)); ++z)
+				keys.insert({x, z});
+	}
+	auto const terrains{active_terrains()};
+	std::string const texture{m_terrain_texture};
+	int made{0}, skipped{0};
+	std::size_t const side{static_cast<std::size_t>(cells) + 1};
+	for (auto const &key : keys)
+	{
+		glm::dvec2 const low{key.first * size, key.second * size};
+		glm::dvec2 const middle{low + glm::dvec2{size * 0.5}};
+		if (streaming ? m_streamer.terrain_at(middle.x, middle.y) != nullptr : m_grid_chunks.count(key) > 0)
+			continue;
+		std::vector<std::size_t> near;
+		for (std::size_t i = 0; i < samples.size(); ++i)
+			if (std::abs(samples[i].position.x - middle.x) <= size * 0.5 + Reach && std::abs(samples[i].position.z - middle.y) <= size * 0.5 + Reach)
+				near.push_back(i);
+		if (near.empty())
+			continue;
+		std::vector<glm::dvec3> points;
+		std::vector<std::size_t> nearest;
+		points.reserve(side * side);
+		nearest.reserve(side * side);
+		for (std::size_t iz = 0; iz < side; ++iz)
+			for (std::size_t ix = 0; ix < side; ++ix)
+			{
+				glm::dvec3 point{low.x + ix * cellsize, 0.0, low.y + iz * cellsize};
+				auto best{near.front()};
+				auto distance{std::numeric_limits<double>::max()};
+				for (auto const i : near)
+				{
+					auto const d{plan_distance(point, samples[i].position)};
+					if (d < distance)
+					{
+						distance = d;
+						best = i;
+					}
+				}
+				point.y = profile::elevation(state.line, samples[best].chainage);
+				points.push_back(point);
+				nearest.push_back(best);
+			}
+		std::vector<char> found;
+		auto heights{ground_heights(points, true, &found)};
+		std::size_t own{0};
+		for (std::size_t i = 0; i < points.size(); ++i)
+			if (found[i] != 0 && std::none_of(terrains.begin(), terrains.end(), [&](editor_terrain const *Terrain) { return Terrain->contains(points[i].x, points[i].z); }))
+				++own;
+		if (own * 20 > points.size())
+		{
+			++skipped;
+			continue;
+		}
+		for (std::size_t i = 0; i < points.size(); ++i)
+		{
+			if (found[i] != 0)
+				continue;
+			auto const sample{nearest[i]};
+			heights[i] = sample < state.terrain.size() && std::isfinite(state.terrain[sample]) ? state.terrain[sample] : profile::elevation(state.line, samples[sample].chainage) - Beds[sample].first;
+		}
+		auto const sampler = [&](double const X, double const Z, double &Height) {
+			auto const ix{static_cast<std::size_t>(std::clamp<long>(std::lround((X - low.x) / cellsize), 0, cells))};
+			auto const iz{static_cast<std::size_t>(std::clamp<long>(std::lround((Z - low.y) / cellsize), 0, cells))};
+			Height = heights[iz * side + ix];
+			return true;
+		};
+		if (streaming)
+		{
+			m_streamer.add_chunk(key.first, key.second);
+			auto *terrain{m_streamer.terrain_at(middle.x, middle.y)};
+			if (terrain == nullptr)
+				continue;
+			terrain->reshape([&](double const X, double const Z, float &Height) {
+				double height;
+				sampler(X, Z, height);
+				Height = static_cast<float>(height);
+				return true;
+			});
+		}
+		else
+		{
+			auto chunk{std::make_unique<editor_terrain>()};
+			if (false == chunk->create(glm::dvec3{middle.x, m_terrain_baseheight, middle.y}, cells, static_cast<float>(cellsize), texture, sampler))
+				continue;
+			m_grid_chunks[key] = std::move(chunk);
+		}
+		works.generated.push_back(key);
+		works.generated_streaming = streaming;
+		++made;
+	}
+	return {made, skipped};
+}
+
 void editor_mode::profile_shape_ground()
 {
 	auto &state{m_profile};
@@ -483,11 +600,23 @@ void editor_mode::profile_shape_ground()
 	if (samples.size() < 2 || state.line.points.size() < 2)
 		return;
 	auto const slope{std::max(0.1, works.slope)};
-	auto const reach{works.half_width + works.reach};
+	std::vector<std::pair<double, double>> beds(samples.size(), {works.depth, works.half_width});
+	if (works.from_ballast)
+		for (std::size_t i = 0; i < samples.size(); ++i)
+			if (samples[i].span < state.route.spans.size())
+				if (auto const *track{state.route.spans[samples[i].span].track}; track != nullptr)
+					beds[i] = profile_ballast(*track);
+	double widest{0.0};
+	for (auto const &bed : beds)
+		widest = std::max(widest, bed.second);
+	auto const reach{widest + works.reach};
+	works.undo.clear();
+	works.generated.clear();
+	auto const generated{works.generate ? profile_generate_ground(beds, reach) : std::pair<int, int>{0, 0}};
 	auto const terrains{active_terrains()};
 	if (terrains.empty())
 	{
-		state.error = STR_C("There's no editor terrain to shape: convert the scenery ground first");
+		state.error = generated.second > 0 ? STR_C("The scenery has its own ground under the route: convert it to editor terrain first") : STR_C("There's no editor terrain to shape: convert the scenery ground first");
 		return;
 	}
 
@@ -509,7 +638,6 @@ void editor_mode::profile_shape_ground()
 		high = glm::max(high, glm::dvec2{std::max(a.x, b.x), std::max(a.z, b.z)});
 	}
 
-	works.undo.clear();
 	std::size_t moved{0};
 	double fill{0.0}, cut{0.0};
 	for (auto *terrain : terrains)
@@ -520,6 +648,7 @@ void editor_mode::profile_shape_ground()
 				return false;
 			double distance{reach};
 			double chainage{-1.0};
+			std::size_t nearest{0};
 			auto const from{key(X - reach, Z - reach)};
 			auto const to{key(X + reach, Z + reach)};
 			for (auto x = from.first; x <= to.first; ++x)
@@ -540,12 +669,14 @@ void editor_mode::profile_shape_ground()
 						{
 							distance = offset;
 							chainage = samples[i].chainage + (samples[i + 1].chainage - samples[i].chainage) * t;
+							nearest = t < 0.5 ? i : i + 1;
 						}
 					}
 				}
 			if (chainage < 0.0)
 				return false;
-			auto const formation{profile::elevation(state.line, chainage) - works.depth};
+			auto const &bed{beds[nearest]};
+			auto const formation{profile::elevation(state.line, chainage) - bed.first};
 			auto const ground{static_cast<double>(Height)};
 			// the bends at the edge of the formation and at the foot of the slope are rounded off over the given length
 			auto const rounding{std::max(0.0, works.rounding)};
@@ -555,7 +686,7 @@ void editor_mode::profile_shape_ground()
 				auto const h{std::max(K - std::abs(A - B), 0.0) / K};
 				return std::max(A, B) + h * h * K * 0.25;
 			};
-			auto const beyond{soft_max(0.0, distance - works.half_width, rounding)};
+			auto const beyond{soft_max(0.0, distance - bed.second, rounding)};
 			auto const bend{rounding / slope};
 			auto const target{ground > formation ? -soft_max(-ground, -(formation + beyond / slope), bend) : soft_max(ground, formation - beyond / slope, bend)};
 			if (std::abs(target - ground) < 0.005)
@@ -569,14 +700,21 @@ void editor_mode::profile_shape_ground()
 		if (shaped)
 			works.undo.emplace_back(terrain, before);
 	}
+	auto const chunks = [&](std::string Text) {
+		if (generated.first > 0)
+			Text += format(STR_C("; %d chunk(s) of terrain made under the route"), generated.first);
+		if (generated.second > 0)
+			Text += format(STR_C("; %d chunk(s) left out: the scenery has its own ground there, convert it to shape it"), generated.second);
+		return Text;
+	};
 	if (moved == 0)
 	{
-		state.status = STR_C("The editor terrain doesn't reach the route, or it's shaped already");
+		state.status = chunks(STR_C("The editor terrain doesn't reach the route, or it's shaped already"));
 		return;
 	}
 	state.error.clear();
 	profile_resample();
-	state.status = format(STR_C("Terrain shaped at %zu points: embankment up to %.2f m, cutting up to %.2f m"), moved, fill, cut);
+	state.status = chunks(format(STR_C("Terrain shaped at %zu points: embankment up to %.2f m, cutting up to %.2f m"), moved, fill, cut));
 	WriteLog("Editor: vertical profile - " + state.status, logtype::generic);
 }
 
@@ -592,6 +730,15 @@ void editor_mode::profile_restore_ground()
 			++restored;
 		}
 	state.earthworks.undo.clear();
+	for (auto const &key : state.earthworks.generated)
+	{
+		if (state.earthworks.generated_streaming)
+			m_streamer.remove_chunk(key.first, key.second);
+		else
+			remove_grid_chunk(key.first, key.second);
+		++restored;
+	}
+	state.earthworks.generated.clear();
 	profile_resample();
 	state.status = restored > 0 ? STR_C("The terrain is back as it was before the shaping") : STR_C("The shaped terrain isn't loaded any more");
 }
@@ -659,10 +806,27 @@ void editor_mode::render_profile_earthworks()
 	render_ground_conversion();
 	auto const drag = [](char const *Label, double &Value, float const Speed, char const *Format) { return ImGui::DragScalar(STR_C(Label), ImGuiDataType_Double, &Value, Speed, nullptr, nullptr, Format); };
 	ImGui::PushItemWidth(90.0f);
-	drag("Formation below the rail top (m)", works.depth, 0.01f, "%.2f");
-	drag("Half width of the formation (m)", works.half_width, 0.05f, "%.2f");
+	ImGui::Checkbox(STR_C("Make terrain where the route has none"), &works.generate);
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("From the axis of the route to the edge of the formation;\nfor two tracks add the distance between them"));
+		ImGui::SetTooltip("%s", STR_C("Chunks of editor terrain are made along the route where there's none, from the ground around,\nthen shaped. Where the scenery has its own ground triangles the chunk is left out: convert them instead"));
+	ImGui::Checkbox(STR_C("Formation under the ballast of the track"), &works.from_ballast);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("The terrain goes as deep under the track as its ballast reaches and as wide as its foot,\nread from each path of the route; off: the values given below"));
+	if (works.from_ballast)
+	{
+		if (false == state.route.spans.empty() && state.route.spans.front().track != nullptr)
+		{
+			auto const bed{profile_ballast(*state.route.spans.front().track)};
+			ImGui::TextDisabled(STR_C("Ballast %.2f m deep, its foot %.2f m from the axis"), bed.first, bed.second);
+		}
+	}
+	else
+	{
+		drag("Formation below the track (m)", works.depth, 0.01f, "%.2f");
+		drag("Half width of the formation (m)", works.half_width, 0.05f, "%.2f");
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("From the axis of the route to the edge of the formation;\nfor two tracks add the distance between them"));
+	}
 	drag("Slopes 1 : n, n", works.slope, 0.05f, "%.2f");
 	drag("Slopes reach at most (m)", works.reach, 1.0f, "%.0f");
 	drag("Rounding of the edges (m)", works.rounding, 0.1f, "%.1f");
@@ -678,13 +842,13 @@ void editor_mode::render_profile_earthworks()
 		ImGui::TextDisabled("%s", STR_C("Correct the errors of the grade line first"));
 	else if (ImGui::Button(STR_C("Shape the terrain")))
 		profile_shape_ground();
-	if (false == works.undo.empty())
+	if (false == works.undo.empty() || false == works.generated.empty())
 	{
 		ImGui::SameLine();
 		if (ImGui::Button(STR_C("Restore the terrain")))
 			profile_restore_ground();
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("Puts back the terrain as it was before the last shaping"));
+			ImGui::SetTooltip("%s", STR_C("Puts back the terrain as it was before the last shaping, and takes away the terrain it made"));
 	}
 	if (false == active_terrains().empty())
 	{
