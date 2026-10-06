@@ -174,10 +174,19 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 	scene::Groups.update_map();
 	Region->create_map_geometry();
 
-	// NOTE: legacy binary terrain files (.sbt) are no longer generated, only loaded if the scenery comes with them.
-	// binary terrain is made out of terrain files named by terrain directives instead, see scene::terrain_file
+	if( true == Global.file_binary_terrain
+     && false == state->scratchpad.binary.terrain
+     && true == state->scratchpad.binary.terrain_textfiles.empty()
+	 && state->scenariofile != "$.scn" ) {
+		// if we didn't find usable binary version of the scenario files, create them now for future use
+		// as long as the scenario file wasn't rainsted-created base file override.
+		// NOTE: this is done only for the sceneries which don't refer to terrain files (.txtf, .btf). these get binary
+		// versions of their terrain files instead, and a file holding all geometry of the scenery would only get in their way
+		Region->serialize( state->scenariofile );
+	}
 
-	// geometry of the roads is generated on each load
+	// geometry of the roads is generated on each load instead of being kept in the binary terrain file,
+	// so it's inserted in the region only after that file had its chance to be written
 	simulation::Roads.create_geometry( Scratchpad );
 	simulation::Junctions.create_geometry( Scratchpad );
 	simulation::Roadpoints.create_geometry();
