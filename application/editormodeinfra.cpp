@@ -899,7 +899,7 @@ void editor_mode::infra_recognize()
 		auto const cells{points.size() == 1 ? links.cells_of(Binding) : std::vector<TMemCell *>{}};
 		auto const readers{links.readers_of(cells)};
 		infra::station geometric;
-		auto const near{index.nearest(points.front(), Reach, geometric)};
+		auto const nearby{index.nearest(points.front(), Reach, geometric)};
 		if (false == readers.empty())
 		{
 			auto best{-1.0};
@@ -923,11 +923,11 @@ void editor_mode::infra_recognize()
 			}
 			if (candidate.reader == nullptr)
 			{
-				state.elsewhere += near ? 1 : 0;
+				state.elsewhere += nearby ? 1 : 0;
 				return;
 			}
 			auto const &thread{thread_of(candidate.reader)};
-			if (near && geometric.track != station.track && std::none_of(thread.begin(), thread.end(), [&](track_area const &Area) { return Area.track == geometric.track; }))
+			if (nearby && geometric.track != station.track && std::none_of(thread.begin(), thread.end(), [&](track_area const &Area) { return Area.track == geometric.track; }))
 			{
 				candidate.nearer = geometric.track;
 				candidate.nearer_foot = infra::frame_at(geometric).point;

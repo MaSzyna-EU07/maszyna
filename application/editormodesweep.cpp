@@ -395,19 +395,19 @@ std::vector<sweep_node *> editor_mode::sweeps_near(TTrack const &Track) const
 		if (sweep == nullptr || sweep->m_editorremoved)
 			continue;
 		auto const &definition{sweep->definition()};
-		bool near{false};
+		bool close{false};
 		for (auto const &piece : definition.pieces)
 		{
 			bezier const curve{piece};
-			for (int k = 0; k <= 8 && false == near; ++k)
+			for (int k = 0; k <= 8 && false == close; ++k)
 			{
 				auto const point{curve.point(k / 8.0)};
-				near = std::any_of(points.begin(), points.end(), [&](glm::dvec3 const &Other) { return plan_distance(point, Other) < kSweepNear; });
+				close = std::any_of(points.begin(), points.end(), [&](glm::dvec3 const &Other) { return plan_distance(point, Other) < kSweepNear; });
 			}
-			if (near)
+			if (close)
 				break;
 		}
-		if (near)
+		if (close)
 			result.push_back(sweep);
 	}
 	return result;
@@ -628,11 +628,11 @@ void editor_mode::render_sweep_ui()
 	// models along curves by this line
 	if (track != nullptr)
 	{
-		auto const near{sweeps_near(*track)};
-		if (false == near.empty())
+		auto const alongside{sweeps_near(*track)};
+		if (false == alongside.empty())
 		{
 			ImGui::TextDisabled("%s", STR_C("By this track:"));
-			for (auto *sweep : near)
+			for (auto *sweep : alongside)
 			{
 				ImGui::PushID(sweep);
 				auto const &definition{sweep->definition()};

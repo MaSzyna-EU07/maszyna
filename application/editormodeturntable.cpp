@@ -461,13 +461,13 @@ bool editor_mode::turntable_fit_end(editor_track::snap_target const &End, turnta
 	if (false == best.has_value() && own != nullptr && own->eType == tt_Normal && own->m_paths.size() == 1 && own->Dynamics.empty())
 	{
 		auto const &path{own->m_paths.front()};
-		auto const far{End.point.kind == editor_track::point_kind::start ? path.points[segment_data::point::end] : path.points[segment_data::point::start]};
-		auto const straight{std::abs(geometry::cross(t, plan_of(far - End.position))) < 0.01 && glm::dot(t, plan_of(far - End.position)) > 1.0};
+		auto const opposite{End.point.kind == editor_track::point_kind::start ? path.points[segment_data::point::end] : path.points[segment_data::point::start]};
+		auto const straight{std::abs(geometry::cross(t, plan_of(opposite - End.position))) < 0.01 && glm::dot(t, plan_of(opposite - End.position)) > 1.0};
 		std::string reason;
 		if (straight && editor_track::can_edit_geometry(*own, reason))
 		{
 			auto const first{issue};
-			target = far;
+			target = opposite;
 			e = plan_of(target);
 			solve();
 			if (best.has_value())

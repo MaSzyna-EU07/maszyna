@@ -512,11 +512,11 @@ std::pair<int, int> editor_mode::profile_generate_ground(std::vector<std::pair<d
 		glm::dvec2 const middle{low + glm::dvec2{size * 0.5}};
 		if (streaming ? m_streamer.terrain_at(middle.x, middle.y) != nullptr : m_grid_chunks.count(key) > 0)
 			continue;
-		std::vector<std::size_t> near;
+		std::vector<std::size_t> around;
 		for (std::size_t i = 0; i < samples.size(); ++i)
 			if (std::abs(samples[i].position.x - middle.x) <= size * 0.5 + Reach && std::abs(samples[i].position.z - middle.y) <= size * 0.5 + Reach)
-				near.push_back(i);
-		if (near.empty())
+				around.push_back(i);
+		if (around.empty())
 			continue;
 		std::vector<glm::dvec3> points;
 		std::vector<std::size_t> nearest;
@@ -526,9 +526,9 @@ std::pair<int, int> editor_mode::profile_generate_ground(std::vector<std::pair<d
 			for (std::size_t ix = 0; ix < side; ++ix)
 			{
 				glm::dvec3 point{low.x + ix * cellsize, 0.0, low.y + iz * cellsize};
-				auto best{near.front()};
+				auto best{around.front()};
 				auto distance{std::numeric_limits<double>::max()};
-				for (auto const i : near)
+				for (auto const i : around)
 				{
 					auto const d{plan_distance(point, samples[i].position)};
 					if (d < distance)
