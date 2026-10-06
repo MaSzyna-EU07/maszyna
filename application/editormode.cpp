@@ -757,17 +757,14 @@ void editor_mode::handle_brush_mouse_hold(int Action, int Button)
             if (!src || src->starts_with(editor_includes::directive_mark)) // scenery templates are placed one at a time
                 return;
 
-            std::string name = "editor_";
-
-            TAnimModel *cloned = simulation::State.create_model(*src, name, placement_on_ground(newPos));
+            // NOTE: no name for what the brush puts in, as with thousands of nodes the names take their share of the time
+            // the scenery needs to load. a node which needs one, to be referred to by an event, gets it in the node properties
+            TAnimModel *cloned = simulation::State.create_model(*src, std::string{}, placement_on_ground(newPos));
             oldPos = newPos;
             m_brush_has_last = true;
             if (!cloned)
                 return;
 
-            std::string new_name = "editor_" + cloned->uuid.to_string();
-
-            cloned->m_name = new_name;
             apply_rotation_for_new_node(cloned, rotation_mode, fixed_rotation_value);
 
             std::string as_text;
@@ -924,6 +921,7 @@ void editor_mode::undo_last()
         redoSnap.serialized = snap.serialized;
         redoSnap.position = snap.position;
         redoSnap.node_ptr = nullptr;
+        redoSnap.uuid = snap.uuid;
         redoSnap.layer = snap.layer;
         g_redo.push_back(std::move(redoSnap));
 
@@ -936,6 +934,8 @@ void editor_mode::undo_last()
             m_node = created;
             m_node->uuid = snap.uuid; // restore original UUID for better tracking (not strictly necessary) 
             add_to_hierarchy(created);
+            // a node without a name can be found for the redo only this way
+            g_redo.back().node_ptr = created;
             ui()->set_node(m_node);
         }
         return;
@@ -1028,7 +1028,8 @@ void editor_mode::redo_last()
         hist.layer = snap.layer;
         m_history.push_back(std::move(hist));
 
-        scene::basic_node *target = simulation::Instances.find(snap.node_name);
+        // NOTE: located the way other steps do it, as the name alone doesn't lead to a node which has none
+        scene::basic_node *target = find_node_by_any(snap.node_ptr, snap.uuid.to_string(), snap.node_name);
         if (target)
         {
             if (auto *model = dynamic_cast<TAnimModel *>(target))
@@ -2722,10 +2723,10 @@ void editor_mode::run_area_fill()
             continue;
 
         auto const &src = package[package.size() > 1 ? std::min(package.size() - 1, static_cast<std::size_t>(LocalRandom(0.0, static_cast<double>(package.size())))) : 0];
-        TAnimModel *cloned = simulation::State.create_model(src, "editor_", location);
+        // NOTE: no names here either, same as with the brush
+        TAnimModel *cloned = simulation::State.create_model(src, std::string{}, location);
         if (!cloned)
             continue;
-        cloned->m_name = "editor_" + cloned->uuid.to_string();
         apply_rotation_for_new_node(cloned, rotation_mode, fixed_rotation_value);
         if (scalemin != 1.0f || scalemax != 1.0f)
             cloned->Scale(static_cast<float>(LocalRandom(scalemin, scalemax)));

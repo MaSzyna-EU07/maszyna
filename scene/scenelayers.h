@@ -259,6 +259,8 @@ class node_layers
 	void track(basic_node const *Node, source_span const &Span, glm::vec3 const &Angles = glm::vec3{0.f}, glm::vec3 const &Scale = glm::vec3{1.f});
 	// indicates specified node was removed from the scene
 	void forget(basic_node const *Node);
+	// indicates specified node was given another name in the editor, for its definition to get it on save
+	void renamed(basic_node const *Node);
 	// stores location of a shape defined directly in the layer file being loaded
 	void shape(material_handle const Material, source_span const &Span);
 	std::vector<shape_source> const &shapes() const
@@ -373,6 +375,7 @@ class node_layers
 	layer_context m_context; // placement in effect at the current point of scenery load
 	std::unordered_map<basic_node const *, node_source> m_sources; // origins of nodes which can be rewritten on save
 	std::vector<std::pair<layer_handle, source_span>> m_erased; // definitions of nodes deleted since the load or the last save
+	std::unordered_set<basic_node const *> m_renamed; // nodes given another name since the load or the last save
 	std::vector<shape_source> m_shapes;
 	bool m_shapeserased{false}; // the binary terrain file holds shapes which the save drops
 	std::set<std::string> m_templates; // *.inc templates used by the scenery

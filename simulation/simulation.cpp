@@ -557,6 +557,15 @@ void state_manager::delete_model(TAnimModel *model) {
 	Instances.purge(model);
 }
 
+bool state_manager::rename_model(TAnimModel *model, std::string const &name) {
+	if (model == nullptr || false == Instances.rename(model, name)) {
+		return false;
+	}
+	model->m_name = (name == "none" ? std::string{} : name);
+	scene::Layers.renamed(model);
+	return true;
+}
+
 void state_manager::delete_eventlauncher(TEventLauncher *launcher) {
 	launcher->dRadius = 0.0f; // disable it
 }

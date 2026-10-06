@@ -20,10 +20,29 @@ http://mozilla.org/MPL/2.0/.
 #include "world/MemCell.h"
 #include "application/editoruilayer.h"
 #include "rendering/renderer.h"
+#include "simulation/simulation.h"
 #include "editor/editorModelSets.hpp"
 
 namespace
 {
+// tells why provided text can't be the name of a node, empty text if it can. the scenery parser has to get it back as a single token
+std::string node_name_issue(std::string const &Name)
+{
+	if (Name.find_first_of(" \t\r\n;\"") != std::string::npos)
+	{
+		return "a name can't hold spaces, semicolons or quotes";
+	}
+	if (Name.find("//") != std::string::npos || Name.find("/*") != std::string::npos)
+	{
+		return "a name can't hold a comment mark";
+	}
+	if (Name == "include")
+	{
+		return "this word has a meaning of its own in scenery files";
+	}
+	return {};
+}
+
 // list entry; the selected one is drawn with the accent colour, like selections in the starter
 bool list_item(char const *Label, bool const Selected)
 {
@@ -322,10 +341,73 @@ void itemproperties_panel::render_body()
 	{
 		ImGui::TextColored(ImVec4(line.color.r, line.color.g, line.color.b, line.color.a), line.data.c_str());
 	}
+	// name of the node — TAnimModel only
+	render_name_editor();
 	// transform editor (position/rotation/scale) — TAnimModel only
 	render_transform_editor();
 	// group section
 	render_group();
+}
+
+// Name of a picked TAnimModel. The editor places decorations without names, as each name takes its share of the time
+// the scenery needs to load; this is where an instance gets one, for the events to refer to it.
+void itemproperties_panel::render_name_editor()
+{
+	if (m_node == nullptr) { return; }
+	if (typeid(*m_node) != typeid(TAnimModel)) { return; }
+	auto *picked = static_cast<TAnimModel *>(m_node);
+	// the name of an instance defined by a template, or by a file which can't be rewritten, wouldn't make it to the scenery files
+	if (false == scene::Layers.editable(picked)) { return; }
+
+	if (m_namednode != m_node || false == m_nameactive)
+	{
+		// the field shows the name of the node unless it's being typed in
+		if (m_namednode != m_node)
+		{
+			m_nameissue.clear();
+		}
+		m_namednode = m_node;
+		std::snprintf(m_namebuffer, sizeof(m_namebuffer), "%s", picked->name().c_str());
+	}
+	auto const entered{ImGui::InputTextWithHint("name", "(none)", m_namebuffer, IM_ARRAYSIZE(m_namebuffer), ImGuiInputTextFlags_EnterReturnsTrue)};
+	m_nameactive = ImGui::IsItemActive();
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("Name the events can refer to the node by.\nNodes without a name load quicker, leave it empty unless something needs it");
+	}
+	if (entered || ImGui::IsItemDeactivatedAfterEdit())
+	{
+		// names are lower case, like everything else the scenery parser hands over
+		std::string name{m_namebuffer};
+		for (auto &character : name)
+		{
+			if (character >= 'A' && character <= 'Z')
+			{
+				character = static_cast<char>(character - 'A' + 'a');
+			}
+		}
+		if (name == "none")
+		{
+			name.clear();
+		}
+		if (name != picked->name())
+		{
+			m_nameissue = node_name_issue(name);
+			if (m_nameissue.empty() && false == simulation::State.rename_model(picked, name))
+			{
+				m_nameissue = "another model instance goes by this name";
+			}
+		}
+		else
+		{
+			m_nameissue.clear();
+		}
+		m_nameactive = false;
+	}
+	if (false == m_nameissue.empty())
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "%s", m_nameissue.c_str());
+	}
 }
 
 // In-place editor for position (double precision), rotation (degrees, 0-360),

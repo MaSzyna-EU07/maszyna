@@ -69,11 +69,17 @@ class itemproperties_panel : public ui_panel
 	// renders DragFloat3/DragScalarN widgets for position, rotation and scale
 	// of the currently bound TAnimModel; no-op for other node subclasses.
 	void render_transform_editor();
+	// renders the field with the name of the currently bound TAnimModel, which gives the instance another name; no-op for other node subclasses
+	void render_name_editor();
 	// renders widgets for the parameters of the bound include
 	void render_include();
 
 	// members
 	scene::basic_node *m_node{nullptr}; // scene node bound to the panel
+	scene::basic_node *m_namednode{nullptr}; // scene node whose name is held by the edit buffer
+	char m_namebuffer[128]{}; // name of the node, as shown and typed in
+	bool m_nameactive{false}; // the name is being typed in
+	std::string m_nameissue; // why the name typed in wasn't taken
 	include_selection *m_include{nullptr}; // include of a scenery template bound to the panel
 	scene::group_handle m_grouphandle{null_handle}; // scene group bound to the panel
 	std::string m_groupprefix;

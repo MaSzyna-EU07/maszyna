@@ -54,6 +54,9 @@ public:
 	// delete TAnimModel instance
 	void
 	    delete_model(TAnimModel *model);
+	// gives TAnimModel instance another name; empty text leaves it without one. returns: false if another instance uses the name
+	bool
+	    rename_model(TAnimModel *model, std::string const &name);
 	// delete TEventLauncher instance
 	void
 	    delete_eventlauncher(TEventLauncher *launcher);

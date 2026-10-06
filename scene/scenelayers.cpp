@@ -129,6 +129,7 @@ void node_layers::clear()
 	m_context = layer_context();
 	m_sources.clear();
 	m_erased.clear();
+	m_renamed.clear();
 	m_shapes.clear();
 	m_shapeserased = false;
 	m_templates.clear();
@@ -475,6 +476,17 @@ void node_layers::forget(basic_node const *Node)
 	}
 	m_erased.emplace_back(lookup->second.layer, lookup->second.span);
 	m_sources.erase(lookup);
+	m_renamed.erase(Node);
+}
+
+// indicates specified node was given another name in the editor
+void node_layers::renamed(basic_node const *Node)
+{
+	// NOTE: a node which isn't defined by a scenery file yet is written whole on save, along with its name
+	if (m_sources.find(Node) != m_sources.end())
+	{
+		m_renamed.emplace(Node);
+	}
 }
 
 void node_layers::shape(material_handle const Material, source_span const &Span)

@@ -134,6 +134,7 @@ struct model_placement
 	std::optional<glm::vec3> angles; // complete rotation of the instance
 	glm::vec3 rotation{0.f}; // rotation the loader adds to the angle specified in the definition
 	std::optional<glm::vec3> scale; // scale factor to put in the definition
+	std::optional<std::string> name; // name of the node
 };
 
 bool about_equal(float const Left, float const Right)
@@ -166,6 +167,10 @@ bool patch_model(std::string &Text, model_placement const &Placement, std::strin
 	};
 	std::string additions; // blocks to insert ahead of the closing keyword
 
+	if (Placement.name)
+	{
+		replace(3, *Placement.name);
+	}
 	if (Placement.location)
 	{
 		replace(5, number(Placement.location->x));
@@ -693,7 +698,8 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			auto const moved{glm::distance(location, source.location) > 1e-4};
 			auto const rotated{false == glm::all(glm::epsilonEqual(angles, source.angles, 1e-3f))};
 			auto const scaled{false == glm::all(glm::epsilonEqual(scale, source.scale, 1e-4f))};
-			if (false == (moved || rotated || scaled))
+			auto const renamed{Model != nullptr && m_renamed.find(Node) != m_renamed.end()};
+			if (false == (moved || rotated || scaled || renamed))
 			{
 				return true;
 			}
@@ -724,6 +730,10 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 				if (scaled)
 				{
 					placement.scale = scale / source.context.scale;
+				}
+				if (renamed)
+				{
+					placement.name = (Node->name().empty() ? "none" : Node->name());
 				}
 				patched = patch_model(text, placement, error);
 			}
@@ -1614,6 +1624,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		included.dead = included.dead || included.removed;
 	}
 	m_erased.clear();
+	m_renamed.clear();
 	// the shapes of the rewritten files are somewhere else in them now
 	m_shapes.erase(std::remove_if(std::begin(m_shapes), std::end(m_shapes), [&](shape_source const &Shape) { return std::find(std::begin(composed), std::end(composed), Shape.layer) != std::end(composed); }), std::end(m_shapes));
 	for (auto *path : savedpaths)
