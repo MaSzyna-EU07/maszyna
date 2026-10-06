@@ -3719,7 +3719,9 @@ void TTrack::build_sleeper_transforms()
         auto const expected = static_cast<std::size_t>( std::max( 0.0, ( length - start ) / spacing ) ) + 1u;
         m_sleeper_local_transforms.reserve( m_sleeper_local_transforms.size() + expected );
 
-        for( double s = start; s < length; s += spacing ) {
+        for( std::size_t sleeperidx = 0;; ++sleeperidx ) {
+            auto const s = start + static_cast<double>( sleeperidx ) * spacing;
+            if( s >= length ) { break; }
             glm::dvec3 pos;
             glm::vec3 angles;
             segment->RaPositionGet( s, pos, angles );

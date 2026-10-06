@@ -550,12 +550,12 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
 void TSegment::render_lines(std::vector<gfx::basic_vertex> &out, float quality) const
 {
 	float step = 1.0f / iSegCount / quality;
-
-	float x;
+	int const stepcount = static_cast<int>(iSegCount * quality);
 
 	glm::vec3 previous = FastGetPoint(0.0);
 
-	for (x = step; x <= 1.0f; x += step) {
+	for (int i = 1; i <= stepcount; ++i) {
+		float const x = std::min(1.0f, i * step);
 		out.push_back(gfx::basic_vertex(previous, glm::vec3(0.0f), glm::vec2(0.0f)));
 
 		previous = glm::vec3(FastGetPoint(x));
@@ -571,13 +571,13 @@ void TSegment::render_lines(std::vector<gfx::basic_vertex> &out, float quality) 
 glm::vec3 TSegment::get_nearest_point(const glm::dvec3 &point, float quality) const
 {
 	float step = 1.0f / iSegCount / quality;
-
-	float x;
+	int const stepcount = static_cast<int>(iSegCount * quality);
 
 	glm::vec3 nearest;
 	float min = std::numeric_limits<float>::max();
 
-	for (x = step; x <= 1.0f; x += step) {
+	for (int i = 1; i <= stepcount; ++i) {
+		float const x = std::min(1.0f, i * step);
         glm::vec3 p1 = FastGetPoint(x);
         glm::vec3 p2 = FastGetPoint(glm::min(1.0f, x + step));
 

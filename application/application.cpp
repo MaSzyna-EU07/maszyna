@@ -1437,7 +1437,8 @@ int eu07_application::init_data()
 
 int eu07_application::init_modes()
 {
-	Global.local_random_engine.seed(static_cast<std::mt19937::result_type>(true_random_seed()));
+	// local cosmetics only (sound pitch, editor placement), never security related
+	Global.local_random_engine.seed(static_cast<std::mt19937::result_type>(true_random_seed())); // NOSONAR
 
 	if ((!Global.network_servers.empty() || Global.network_client) && Global.SceneryFile.empty())
 	{

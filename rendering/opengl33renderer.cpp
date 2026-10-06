@@ -193,7 +193,7 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 
 	// Generate hemisphere kernel (z > 0 = toward surface normal)
 	std::uniform_real_distribution<float> rnd(0.0f, 1.0f);
-	std::default_random_engine gen(42); // fixed seed for consistency
+	std::default_random_engine gen(42); // NOSONAR fixed seed on purpose, SSAO kernel has to be identical every run
 	for (int i = 0; i < 32; i++) {
 		glm::vec3 s(rnd(gen)*2.0f-1.0f, rnd(gen)*2.0f-1.0f, rnd(gen));
 		s = glm::normalize(s) * rnd(gen);
