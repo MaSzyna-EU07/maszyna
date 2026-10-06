@@ -149,6 +149,9 @@ public:
     // set lighting (used by generated geometry painted with plain colour)
     void
         lighting( lighting_data const &Lighting );
+    // sets whether the shape is drawn with the translucent geometry (used by generated geometry)
+    void
+        translucent( bool const Translucent );
     // data access
     shapenode_data const &
         data() const;
@@ -185,6 +188,11 @@ inline
 void
 shape_node::lighting( lighting_data const &Lighting ) {
     m_data.lighting = Lighting;
+}
+inline
+void
+shape_node::translucent( bool const Translucent ) {
+    m_data.translucent = Translucent;
 }
 // data access
 inline

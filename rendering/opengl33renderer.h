@@ -105,6 +105,8 @@ class opengl33_renderer : public gfx_renderer {
         Pick_Node() const override { return m_picksceneryitem; }
     glm::dvec3
         Mouse_Position() const override { return m_worldmousecoordinates; }
+    bool
+        Mouse_Hit() const override { return m_mousehit; }
     glm::mat4
         Camera_View_Matrix() const override { return glm::mat4( glm::mat3( m_colorpass.pass_camera.modelview() ) ); }
     glm::mat4
@@ -387,6 +389,7 @@ class opengl33_renderer : public gfx_renderer {
     std::vector<scene::basic_node *> m_picksceneryitems;
     scene::basic_node *m_picksceneryitem{nullptr};
     glm::vec3 m_worldmousecoordinates { 0.f };
+    bool m_mousehit { false };
 #ifdef EU07_USE_DEBUG_CAMERA
 	renderpass_config m_worldcamera; // debug item
 #endif

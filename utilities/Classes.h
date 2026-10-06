@@ -45,6 +45,8 @@ struct light_array;
 class particle_manager;
 class road_node; // kawałek drogi, z którego powstają pasy ruchu
 class road_table;
+class sweep_node; // model ułożony wzdłuż krzywej: wygięty albo powtarzany
+class sweep_table;
 class junction_node;
 class junction_table;
 class roadpoint_node; // przejazd kolejowy albo miejsce, w którym pojazdy drogowe się pojawiają lub znikają

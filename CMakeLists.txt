@@ -96,6 +96,7 @@ set(SOURCES
 "utilities/Timer.cpp"
 "world/Track.cpp"
 "world/Road.cpp"
+"world/Sweep.cpp"
 "world/RoadPoint.cpp"
 "world/Traction.cpp"
 "world/TractionPower.cpp"

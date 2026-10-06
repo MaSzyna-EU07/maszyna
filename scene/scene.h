@@ -69,7 +69,9 @@ struct scratch_data {
         std::vector<TDynamicObject *> vehicles;
         std::vector<int> couplings;
         TDynamicObject * driver { nullptr };
+        TTrack * path { nullptr }; // given directly, for a trainset placed in the editor on a path which may have no name
         bool is_open { false };
+        bool reversed { false };
         std::unordered_map<std::string, std::string> assignment;
     } trainset;
 

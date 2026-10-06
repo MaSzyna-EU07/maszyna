@@ -40,6 +40,9 @@ public:
  	// create model from node string
 	TAnimModel *
 	    create_model(const std::string &src, const std::string &name, const glm::dvec3 &position);
+	// places the vehicles, given as their node statements, as a trainset on the path. returns: the vehicles made
+	std::vector<TDynamicObject *>
+	    insert_trainset(std::string const &Name, TTrack *Path, double const Offset, std::string const &Vehicles, bool const Reversed = false);
 	// create eventlauncher from node string
 	TEventLauncher *
 	    create_eventlauncher(const std::string &src, const std::string &name, const glm::dvec3 &position);
@@ -86,6 +89,7 @@ extern event_manager Events;
 extern memory_table Memory;
 extern path_table Paths;
 extern road_table Roads;
+extern sweep_table Sweeps;
 extern junction_table Junctions;
 extern roadpoint_table Roadpoints;
 extern traction_table Traction;
