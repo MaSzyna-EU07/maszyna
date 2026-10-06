@@ -5154,6 +5154,7 @@ glm::dvec3 opengl33_renderer::Update_Mouse_Position()
 
 		if (pointdepth != std::numeric_limits<float>::max())
 		{
+			m_mousehit = (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control) ? pointdepth > 0.0f : pointdepth < 1.0f;
 			if (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control) {
 				if (pointdepth > 0.0f)
 					m_worldmousecoordinates = glm::unProjectZO(glm::vec3(bufferpos, pointdepth), glm::mat4(glm::mat3(m_colorpass.pass_camera.modelview())), m_colorpass.pass_camera.projection(),

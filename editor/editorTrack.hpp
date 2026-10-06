@@ -62,9 +62,21 @@ class editor_track
 		glm::vec3 sleeper_offset{0.f};
 		float sleeper_ballast{0.f};
 		std::array<std::vector<std::pair<std::string, basic_event *>>, 6> events;
+		std::string name;
 	};
 	static state capture(TTrack const &Track);
 	static void apply(TTrack &Track, state const &State);
+
+	static bool name_valid(TTrack const &Track, std::string &Name, std::string &Reason, TTrack **Owner = nullptr);
+	struct name_uses
+	{
+		int cells{0};
+		int includes{0};
+		std::vector<std::string> events;
+		std::vector<std::string> loose;
+	};
+	static name_uses uses_of_name(TTrack const &Track);
+	static void rename(TTrack &Track, std::string const &Name);
 
 	// lists of the events of the path, in the order of event_keyword(): event0, event1, event2, eventall0, eventall1, eventall2
 	static std::vector<std::pair<std::string, basic_event *>> &events(TTrack &Track, int const Index);
@@ -116,6 +128,8 @@ class editor_track
 	static snap_target find_snap_target(TTrack const &Track, glm::dvec3 const &Position, double const Radius, std::vector<TTrack const *> const &Exclude);
 	// nearest end of a path of the category which nothing else joins; Self may be null
 	static snap_target find_free_end(TTrack const *Self, int const Category, glm::dvec3 const &Position, double const Radius, std::vector<TTrack const *> const &Exclude);
+	// all of them within the radius, nearest first
+	static std::vector<snap_target> free_ends(TTrack const *Self, int const Category, glm::dvec3 const &Position, double const Radius, std::vector<TTrack const *> const &Exclude);
 	static void snap_point(TTrack &Track, point_ref const &Point, snap_target const &Target, bool const Aligntangent);
 
 	struct chain
@@ -183,9 +197,13 @@ class editor_track
 		double transition_out{0.0};
 		double cant{0.0};
 		bool compound{false};
-		double radius2{0.0};
-		double transition_middle{0.0};
-		double split{0.5};
+		struct arc_part
+		{
+			double radius{0.0};
+			double turn{0.0};
+			double transition{0.0};
+		};
+		std::vector<arc_part> arcs;
 	};
 	static bool find_curve(TTrack &Track, straight_tolerance const &Tolerance, double const Gauge, curve &Curve);
 	// curve made of the given paths, each with the flag of being run from its start
@@ -292,6 +310,7 @@ class editor_track
 	static glm::dvec3 point_at(TTrack const &Track, double const T);
 	static std::vector<segment_data> place_switch(switch_template const &Template, glm::dvec3 const &Origin, glm::dvec2 const &Direction, int const Side, double const Grade);
 	static TTrack *create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, TTrack const &Style, std::string const &Name = {});
+	static TTrack *create_turntable(segment_data const &Path, TTrack const *Style, std::string const &Name);
 	static void move_straights(std::vector<straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
 	static std::vector<TTrack *> relay(chain const &Chain, std::vector<segment_data> const &Pieces);
 	static void retire(TTrack &Track);

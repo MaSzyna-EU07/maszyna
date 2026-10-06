@@ -256,6 +256,17 @@ bool http_client::get(std::string const &, std::vector<std::uint8_t> &Out, std::
 
 #endif
 
+} // namespace
+
+bool editor_http_get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error)
+{
+	thread_local http_client client;
+	return client.get(Url, Out, Error, []() { return false; });
+}
+
+namespace
+{
+
 // ---------------------------------------------------------------------------------------------
 // geoportal requests and the disk cache
 

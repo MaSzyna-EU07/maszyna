@@ -37,6 +37,13 @@ struct limits
 	double tangent_min_time{0.0};
 };
 
+struct compound_arc
+{
+	double radius{600.0};
+	double transition{0.0};
+	double share{1.0};
+};
+
 struct vertex
 {
 	glm::dvec2 position{0.0};
@@ -47,9 +54,8 @@ struct vertex
 	double cant{0.0};
 	bool reverse_turn{false};
 	bool compound{false};
-	double radius2{600.0};
-	double transition_middle{0.0};
-	double split{0.5};
+	double share{1.0};
+	std::vector<compound_arc> arcs;
 };
 
 struct design
@@ -116,7 +122,7 @@ struct curve_report
 {
 	int vertex{-1};
 	double radius{0.0};
-	double radius2{0.0};
+	std::vector<double> radii;
 	double transition_in{0.0};
 	double transition_out{0.0};
 	double deflection{0.0};

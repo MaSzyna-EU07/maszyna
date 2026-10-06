@@ -17,6 +17,9 @@ http:
 #include "scene/scene.h"
 #include "scene/scenelayers.h"
 #include "simulation/simulation.h"
+#include "editor/editorIncludeInfo.hpp"
+#include "world/Event.h"
+#include "world/MemCell.h"
 #include "rendering/renderer.h"
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
@@ -157,6 +160,7 @@ editor_track::state editor_track::capture(TTrack const &Track)
 	result.sleeper_ballast = Track.m_sleeper_ballast_z;
 	for (int i = 0; i < 6; ++i)
 		result.events[i] = events(const_cast<TTrack &>(Track), i);
+	result.name = Track.name();
 	return result;
 }
 
@@ -257,6 +261,131 @@ void editor_track::apply(TTrack &Track, state const &State)
 	Track.m_events = std::any_of(State.events.begin(), State.events.end(), [](auto const &Events) {
 		return std::any_of(Events.begin(), Events.end(), [](auto const &Event) { return Event.second != nullptr; });
 	});
+	if (State.name != Track.name())
+		rename(Track, State.name);
+}
+
+namespace
+{
+
+std::string lower_name(std::string Name)
+{
+	for (auto &character : Name)
+		if (character >= 'A' && character <= 'Z')
+			character = static_cast<char>(character - 'A' + 'a');
+	return Name;
+}
+
+int track_parameter(scene::instance_handle const Instance, std::string &File, std::vector<std::string> &Values)
+{
+	if (false == scene::Layers.tracked(Instance))
+		return -1;
+	auto const &included{scene::Layers.instance(Instance)};
+	if (included.removed || included.dead || included.file == nullptr)
+		return -1;
+	static std::map<std::string, include_info> descriptions;
+	auto found{descriptions.find(*included.file)};
+	if (found == descriptions.end())
+	{
+		include_info info;
+		std::string error;
+		editor_includes::load(*included.file, info, error);
+		found = descriptions.emplace(*included.file, std::move(info)).first;
+	}
+	auto const index{editor_includes::parameter_with_role(found->second, "track") - 1};
+	if (index < 0 || false == editor_includes::parse_directive(scene::Layers.directive(Instance), File, Values) || index >= static_cast<int>(Values.size()))
+		return -1;
+	return index;
+}
+
+} // namespace
+
+bool editor_track::name_valid(TTrack const &Track, std::string &Name, std::string &Reason, TTrack **Owner)
+{
+	Name = lower_name(Name);
+	if (Name.empty() || Name == "none")
+	{
+		Reason = "The path needs a name";
+		return false;
+	}
+	if (Name.find_first_of(" \t\r\n\"';") != std::string::npos || Name.find("//") != std::string::npos)
+	{
+		Reason = "The name can't hold blanks, quotes, semicolons or //";
+		return false;
+	}
+	auto *owner{simulation::Paths.find(Name)};
+	if (owner != nullptr && owner != &Track && false == owner->m_editorremoved)
+	{
+		if (Owner != nullptr)
+			*Owner = owner;
+		Reason = "Another path has this name";
+		return false;
+	}
+	Reason.clear();
+	return true;
+}
+
+editor_track::name_uses editor_track::uses_of_name(TTrack const &Track)
+{
+	name_uses result;
+	auto const &name{Track.name()};
+	if (name.empty() || name == "none")
+		return result;
+	for (auto const *cell : simulation::Memory.sequence())
+		result.cells += (cell != nullptr && cell->Track == &Track) ? 1 : 0;
+	for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
+	{
+		std::string file;
+		std::vector<std::string> values;
+		auto const index{track_parameter(handle, file, values)};
+		result.includes += (index >= 0 && lower_name(values[index]) == name) ? 1 : 0;
+	}
+	static std::array<char const *, 6> const kinds{"event0", "event1", "event2", "eventall0", "eventall1", "eventall2"};
+	for (auto const *event : simulation::Events.sequence())
+	{
+		if (event == nullptr)
+			continue;
+		auto const &eventname{event->name()};
+		if (std::any_of(kinds.begin(), kinds.end(), [&](char const *Kind) { return eventname == name + ':' + Kind; }))
+		{
+			result.loose.push_back(eventname);
+			continue;
+		}
+		if (result.includes > 0 && eventname.compare(0, name.size(), name) == 0)
+			continue;
+		auto const targets{event->target_nodes()};
+		if (std::find(targets.begin(), targets.end(), &Track) != targets.end())
+			result.events.push_back(eventname);
+	}
+	return result;
+}
+
+void editor_track::rename(TTrack &Track, std::string const &Name)
+{
+	auto const old{Track.name()};
+	if (old == Name)
+		return;
+	simulation::Paths.rename(&Track, Name);
+	Track.m_name = Name;
+	Track.mark_dirty();
+	for (auto *cell : simulation::Memory.sequence())
+		if (cell != nullptr && cell->Track == &Track)
+		{
+			cell->asTrackName = Name;
+			cell->mark_dirty();
+		}
+	if (old.empty() || old == "none")
+		return;
+	for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
+	{
+		std::string file;
+		std::vector<std::string> values;
+		auto const index{track_parameter(handle, file, values)};
+		if (index < 0 || lower_name(values[index]) != old)
+			continue;
+		values[index] = Name;
+		scene::Layers.modify(handle, editor_includes::compose_directive(file, values));
+	}
 }
 
 bool editor_track::is_supported(TTrack const &Track)
@@ -550,9 +679,13 @@ editor_track::snap_target editor_track::find_snap_target(TTrack const &Track, gl
 
 editor_track::snap_target editor_track::find_free_end(TTrack const *Self, int const Category, glm::dvec3 const &Position, double const Radius, std::vector<TTrack const *> const &Exclude)
 {
-	snap_target result;
-	result.distance = std::numeric_limits<double>::max();
+	auto const found{free_ends(Self, Category, Position, Radius, Exclude)};
+	return found.empty() ? snap_target{} : found.front();
+}
 
+std::vector<editor_track::snap_target> editor_track::free_ends(TTrack const *Self, int const Category, glm::dvec3 const &Position, double const Radius, std::vector<TTrack const *> const &Exclude)
+{
+	std::vector<snap_target> result;
 	auto const excluded = [&](TTrack const *Other) { return std::find(Exclude.begin(), Exclude.end(), Other) != Exclude.end(); };
 	auto const sections{simulation::Region->sections(Position, static_cast<float>(Radius))};
 	for (auto *section : sections)
@@ -561,7 +694,7 @@ editor_track::snap_target editor_track::find_free_end(TTrack const *Self, int co
 		{
 			for (auto *other : cell.m_directories.paths)
 			{
-				if (other == Self || excluded(other) || (other->iCategoryFlag & 15) != Category || false == is_supported(*other))
+				if (other == Self || excluded(other) || other->m_editorremoved || (other->iCategoryFlag & 15) != Category || false == is_supported(*other))
 					continue;
 				for (int i = 0; i < static_cast<int>(other->m_paths.size()); ++i)
 				{
@@ -570,7 +703,9 @@ editor_track::snap_target editor_track::find_free_end(TTrack const *Self, int co
 					{
 						auto const &point{path.points[point_index(kind)]};
 						auto const distance{glm::distance(point, Position)};
-						if (distance > Radius || distance >= result.distance)
+						if (distance > Radius)
+							continue;
+						if (std::any_of(result.begin(), result.end(), [&](snap_target const &Found) { return Found.track == other && Found.point == point_ref{i, kind}; }))
 							continue;
 						auto const connections{connected_points(*other, point)};
 						if (std::any_of(connections.begin(), connections.end(), [&](auto const &Connection) { return false == excluded(Connection.first); }))
@@ -590,16 +725,19 @@ editor_track::snap_target editor_track::find_free_end(TTrack const *Self, int co
 						if (glm::length(direction) < 1e-6)
 							continue;
 
-						result.track = other;
-						result.point = point_ref{i, kind};
-						result.position = point;
-						result.direction = glm::normalize(direction);
-						result.distance = distance;
+						snap_target target;
+						target.track = other;
+						target.point = point_ref{i, kind};
+						target.position = point;
+						target.direction = glm::normalize(direction);
+						target.distance = distance;
+						result.push_back(target);
 					}
 				}
 			}
 		}
 	}
+	std::sort(result.begin(), result.end(), [](snap_target const &A, snap_target const &B) { return A.distance < B.distance; });
 	return result;
 }
 
@@ -1341,42 +1479,31 @@ bool editor_track::analyse_curve(std::vector<std::pair<TTrack *, bool>> const &R
 	if (Curve.transition_in + Curve.transition_out >= std::accumulate(lengths.begin(), lengths.end(), 0.0))
 		Curve.transition_in = Curve.transition_out = 0.0;
 	Curve.radius = smallest;
-	std::vector<std::pair<double, double>> arcs;
+	std::vector<curve::arc_part> arcs;
+	double between{0.0};
 	for (std::size_t i = 0; i < run.size(); ++i)
 	{
 		if (varying[i] || curvatures[i] <= 0.0)
+		{
+			if (false == arcs.empty())
+				between += lengths[i];
 			continue;
+		}
 		auto const radius{1.0 / curvatures[i]};
-		if (false == arcs.empty() && std::abs(arcs.back().first - radius) < 0.05 * radius)
-			arcs.back().second += lengths[i];
+		if (false == arcs.empty() && std::abs(arcs.back().radius - radius) < 0.05 * radius)
+			arcs.back().turn += (lengths[i] + between) / radius;
 		else
-			arcs.emplace_back(radius, lengths[i]);
+			arcs.push_back({radius, lengths[i] / radius, arcs.empty() ? 0.0 : between});
+		between = 0.0;
 	}
 	if (arcs.size() >= 2 && Curve.reversals == 0)
 	{
-		auto const &first{arcs.front()};
-		auto const &last{arcs.back()};
-		if (std::abs(first.first - last.first) > 0.1 * std::min(first.first, last.first))
+		auto const [low, high]{std::minmax_element(arcs.begin(), arcs.end(), [](curve::arc_part const &A, curve::arc_part const &B) { return A.radius < B.radius; })};
+		if (high->radius - low->radius > 0.1 * low->radius)
 		{
 			Curve.compound = true;
-			Curve.radius = first.first;
-			Curve.radius2 = last.first;
-			auto const turnfirst{first.second / first.first};
-			auto const turnlast{last.second / last.first};
-			Curve.split = turnfirst / std::max(1e-9, turnfirst + turnlast);
-			double middle{0.0};
-			bool inside{false};
-			for (std::size_t i = 0; i < run.size(); ++i)
-			{
-				if (false == varying[i])
-				{
-					inside = true;
-					continue;
-				}
-				if (inside && i + 1 < run.size() && std::any_of(varying.begin() + i + 1, varying.end(), [](bool const Varying) { return false == Varying; }))
-					middle += lengths[i];
-			}
-			Curve.transition_middle = middle;
+			Curve.radius = arcs.front().radius;
+			Curve.arcs = arcs;
 		}
 	}
 	Curve.from = run.front().first;
@@ -2131,14 +2258,6 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		{"Rz 1:26,5 R2500", 2500.0, 26.5, 0.0, 0.0},
 	};
 	std::vector<switch_template> result;
-	for (auto const &definition : {std::pair<double, char const *>{190.0, "1:9"}, {300.0, "1:9"}, {500.0, "1:12"}})
-	{
-		switch_template slip;
-		slip.double_slip = true;
-		slip.radius = definition.first;
-		slip.label = std::string{"Rkpd "} + definition.second + " R" + std::to_string(static_cast<int>(definition.first)) + " double slip (click at a crossing of two straights)";
-		result.push_back(slip);
-	}
 	for (auto const &definition : definitions)
 	{
 		auto const angle{std::atan(1.0 / definition.ratio)};
@@ -2161,6 +2280,14 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		diverging.radius = static_cast<float>(definition.radius);
 		entry.label = std::string{definition.name} + "  a " + std::to_string(a).substr(0, std::to_string(a).find('.') + 4) + " b " + std::to_string(b).substr(0, std::to_string(b).find('.') + 4) + (estimated ? " (b est.)" : "");
 		result.push_back(entry);
+	}
+	for (auto const &slipping : {std::pair<double, char const *>{190.0, "1:9"}, {300.0, "1:9"}, {500.0, "1:12"}})
+	{
+		switch_template slip;
+		slip.double_slip = true;
+		slip.radius = slipping.first;
+		slip.label = std::string{"Rkpd "} + slipping.second + " R" + std::to_string(static_cast<int>(slipping.first)) + " double slip (click at a crossing of two straights)";
+		result.push_back(slip);
 	}
 	return result;
 }
@@ -2209,6 +2336,22 @@ material_handle ballast_of(TTrack const &Style)
 }
 
 } // namespace
+
+TTrack *editor_track::create_turntable(segment_data const &Path, TTrack const *Style, std::string const &Name)
+{
+	std::ostringstream text;
+	text.precision(std::numeric_limits<double>::digits10);
+	auto const length{glm::distance(Path.points[segment_data::point::start], Path.points[segment_data::point::end])};
+	if (Style != nullptr && (Style->iCategoryFlag & 15) == 1 && Style->m_visible)
+		write_header(text, "turn", length, Style->fSoundDistance, *Style, null_handle);
+	else
+		text << "turn " << length << " 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 none 0.2 0.5 1.3 ";
+	write_points(text, Path);
+	text << "endtrack\n";
+	auto *track{load_text(text.str(), Style, Name)};
+	track->m_paths = {Path};
+	return track;
+}
 
 TTrack *editor_track::create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, TTrack const &Style, std::string const &Name)
 {

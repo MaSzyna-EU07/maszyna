@@ -29,7 +29,6 @@ namespace
 {
 
 double const kSpeedLineReach{5000.0}; // m each way, for the line through the selected path
-double const kSpeedViewDistance{25.0};
 double const kSpeedOverlayRange{3000.0};
 
 bool rail(TTrack const &Track)
@@ -148,21 +147,7 @@ void editor_mode::speed_focus(int const Index)
 		return;
 	m_node = verdict.track;
 	ui()->set_node(m_node);
-	auto const &path{verdict.track->m_paths[std::min<std::size_t>(verdict.path, verdict.track->m_paths.size() - 1)]};
-	geometry::bezier const curve{path};
-	glm::dvec3 look{curve.first(0.5)};
-	look.y = 0.0;
-	look = glm::length(look) > 1e-6 ? glm::normalize(look) : glm::dvec3(0.0, 0.0, 1.0);
-	if (glm::dot(Camera.Pos - verdict.position, look) > 0.0)
-		look = -look;
-	look = glm::normalize(look - glm::dvec3(0.0, 0.25, 0.0));
-	m_focus_start_pos = Camera.Pos;
-	m_focus_start_angle = Camera.Angle;
-	m_focus_target_pos = verdict.position - look * kSpeedViewDistance;
-	m_focus_target_angle = glm::vec3(static_cast<float>(std::asin(std::clamp(look.y, -1.0, 1.0))), static_cast<float>(std::atan2(-look.x, -look.z)), 0.0f);
-	m_focus_active = true;
-	m_focus_time = 0.0;
-	m_focus_duration = 0.6;
+	focus_track(*verdict.track, verdict.path, verdict.position);
 }
 
 void editor_mode::speed_apply(std::vector<int> const &Indices, bool const Branches)

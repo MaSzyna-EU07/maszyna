@@ -27,6 +27,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Classes.h"      // material_handle
 #include "rendering/geometrybank.h" // gfx::geometry_handle
 
+bool editor_http_get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error);
+
 namespace scene
 {
 class basic_region;

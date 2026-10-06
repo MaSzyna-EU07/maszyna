@@ -119,6 +119,10 @@ void ui::scenerylist_panel::draw_launch_box()
 
 	ImGui::TextWrapped(selected_trainset->description.c_str());
 
+	ImGui::Checkbox(STR_C("Trainset turned around"), &selected_trainset->reversed);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("The first vehicle stays where the trainset starts and leads the other way,\nthe rest of the trainset stands behind it"));
+
 	if (ImGui::Button(STR_C("Launch"), ImVec2(-1, 0))) {
 		if (!launch_simulation())
 			ImGui::OpenPopup("missing_driver");
@@ -163,7 +167,7 @@ void ui::scenerylist_panel::add_replace_entry(const trainset_desc &trainset)
 	set += trainset.name + " ";
 	set += trainset.track + " ";
 	set += std::to_string(trainset.offset) + " ";
-	set += std::to_string(trainset.velocity) + "\n";
+	set += std::to_string(trainset.velocity) + (trainset.reversed ? " reversed\n" : "\n");
 	for (const auto &veh : trainset.vehicles) {
 		if (!veh.skin) {
 			ErrorLog("trainset contains invalid vehicle " + veh.name);

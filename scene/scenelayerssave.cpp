@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenelayers.h"
 #include "world/Track.h"
 #include "world/Road.h"
+#include "world/Sweep.h"
 #include "world/RoadPoint.h"
 
 #include "simulation/simulation.h"
@@ -231,7 +232,7 @@ bool patch_model(std::string &Text, model_placement const &Placement, std::strin
 }
 
 // definition layout: node <max> <min> <name> memcell <x> <y> <z> <text> <value 1> <value 2> <track> endmemcell
-bool patch_memcell(std::string &Text, glm::dvec3 const &Location, std::string &Error)
+bool patch_memcell(std::string &Text, std::optional<glm::dvec3> const &Location, std::string const &Track, std::string &Error)
 {
 	auto const tokens{tokenize(Text)};
 	if (tokens.size() < 13 || tokens[0].text != "node" || tokens[4].text != "memcell" || tokens.back().text != "endmemcell")
@@ -239,7 +240,13 @@ bool patch_memcell(std::string &Text, glm::dvec3 const &Location, std::string &E
 		Error = "unexpected layout of memory cell definition";
 		return false;
 	}
-	apply(Text, {{tokens[5].begin, tokens[5].end, number(Location.x)}, {tokens[6].begin, tokens[6].end, number(Location.y)}, {tokens[7].begin, tokens[7].end, number(Location.z)}});
+	std::vector<text_change> changes;
+	if (Location)
+		changes.insert(changes.end(), {{tokens[5].begin, tokens[5].end, number(Location->x)}, {tokens[6].begin, tokens[6].end, number(Location->y)}, {tokens[7].begin, tokens[7].end, number(Location->z)}});
+	auto const &track{tokens[tokens.size() - 2]};
+	if (false == Track.empty() && track.text != Track)
+		changes.push_back({track.begin, track.end, Track});
+	apply(Text, changes);
 	return true;
 }
 
@@ -699,7 +706,9 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			auto const rotated{false == glm::all(glm::epsilonEqual(angles, source.angles, 1e-3f))};
 			auto const scaled{false == glm::all(glm::epsilonEqual(scale, source.scale, 1e-4f))};
 			auto const renamed{Model != nullptr && m_renamed.find(Node) != m_renamed.end()};
-			if (false == (moved || rotated || scaled || renamed))
+			auto const *cell{Model == nullptr ? static_cast<TMemCell const *>(Node) : nullptr};
+			auto const track{cell != nullptr && cell->Track != nullptr ? cell->Track->name() : std::string{}};
+			if (false == (moved || rotated || scaled || renamed || (false == track.empty() && Node->dirty())))
 			{
 				return true;
 			}
@@ -739,12 +748,16 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 			}
 			else
 			{
-				patched = patch_memcell(text, source.context.to_local(location), error);
+				patched = patch_memcell(text, moved ? std::optional<glm::dvec3>{source.context.to_local(location)} : std::nullopt, track, error);
 			}
 			if (false == patched)
 			{
 				state.error = error + " of \"" + Node->name() + "\" in file \"" + layer(source.layer).name + "\"";
 				return false;
+			}
+			if (text.size() == static_cast<std::size_t>(source.span.end - source.span.begin) && content.compare(static_cast<std::size_t>(source.span.begin), text.size(), text) == 0)
+			{
+				return true;
 			}
 			file_patch::edit edit;
 			edit.begin = source.span.begin;
@@ -987,6 +1000,72 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 		}
 		state.patches[source.layer].edits.emplace_back(std::move(edit));
 		rewritten.emplace(road);
+	}
+	// models laid along curves, likewise
+	std::vector<sweep_node *> savedsweeps;
+	std::vector<sweep_node const *> droppedsweeps;
+	auto const sweep_text = [](sweep_node &Sweep, glm::dvec3 const &Offset) {
+		auto const definition{Sweep.definition()};
+		auto local{definition};
+		for (auto &piece : local.pieces)
+		{
+			piece.points[segment_data::point::start] -= Offset;
+			piece.points[segment_data::point::end] -= Offset;
+		}
+		Sweep.define(local);
+		std::string text;
+		Sweep.export_as_text(text);
+		Sweep.define(definition);
+		text.erase(text.find_last_not_of(" \t\r\n") + 1);
+		return text;
+	};
+	for (auto *sweep : simulation::Sweeps.sequence())
+	{
+		if (sweep == nullptr || sweep->from_template())
+		{
+			continue;
+		}
+		auto const nodelayer{resolve(sweep->layer())};
+		if (false == is_output(nodelayer))
+		{
+			continue;
+		}
+		auto const lookup{m_sources.find(sweep)};
+		if (lookup == m_sources.end())
+		{
+			if (sweep->m_editorremoved || false == sweep->dirty())
+			{
+				continue;
+			}
+			created[nodelayer].emplace_back(sweep, sweep_text(*sweep, layer(nodelayer).context_insert().offset));
+			savedsweeps.push_back(sweep);
+			continue;
+		}
+		auto const &source{lookup->second};
+		if ((false == sweep->m_editorremoved && false == sweep->dirty()) || false == writable(source.layer))
+		{
+			continue;
+		}
+		if (false == load(source.layer))
+		{
+			return fail(state.error);
+		}
+		file_patch::edit edit;
+		edit.begin = source.span.begin;
+		edit.end = source.span.end;
+		if (sweep->m_editorremoved)
+		{
+			droppedsweeps.push_back(sweep);
+		}
+		else
+		{
+			edit.text = sweep_text(*sweep, source.context.offset);
+			edit.length = edit.text.size();
+			edit.node = sweep;
+			savedsweeps.push_back(sweep);
+		}
+		state.patches[source.layer].edits.emplace_back(std::move(edit));
+		rewritten.emplace(sweep);
 	}
 	// road junctions, likewise
 	std::vector<junction_node *> savedjunctions;
@@ -1646,6 +1725,14 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements)
 	for (auto const *road : droppedroads)
 	{
 		m_sources.erase(road);
+	}
+	for (auto *sweep : savedsweeps)
+	{
+		sweep->m_dirty = false;
+	}
+	for (auto const *sweep : droppedsweeps)
+	{
+		m_sources.erase(sweep);
 	}
 	for (auto *junction : savedjunctions)
 	{

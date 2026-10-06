@@ -255,6 +255,19 @@ bool driver_mode::update()
 
 		// variable step simulation time routines
 
+		if (false == Global.editor_enter_vehicle.empty())
+		{
+			auto const name{std::move(Global.editor_enter_vehicle)};
+			Global.editor_enter_vehicle.clear();
+			if (auto *dynamic{simulation::Vehicles.find(name)})
+			{
+				if (false == FreeFlyModeFlag)
+					InOutKey();
+				m_relay.post(user_command::entervehicle, 0.0, simulation::Train ? simulation::Train->id() : 0, GLFW_PRESS, 0, dynamic->GetPosition(), &dynamic->name());
+				change_train = dynamic->name();
+			}
+		}
+
 		if (!change_train.empty())
 		{
 			TTrain *train = simulation::Trains.find(change_train);

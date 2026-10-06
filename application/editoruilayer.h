@@ -73,6 +73,7 @@ class editor_ui : public ui_layer
 	}
 	// actions of the file menu, performed by the editor mode
 	void set_file_actions(std::function<void()> Save, std::function<void()> Export);
+	void set_new_scenery(std::function<void()> New) { m_newscenery = std::move(New); }
 	// shows outcome of an operation in the layers window
 	void set_status(std::string const &Status, bool const Error = false);
 
@@ -89,6 +90,7 @@ class editor_ui : public ui_layer
 	includes_panel m_includespanel{"Include database", false};
 	std::function<void()> m_save;
 	std::function<void()> m_export;
+	std::function<void()> m_newscenery;
 	brush_object_list m_brushobjects;
 	bool m_insertrandom{false}; // insert mode picks a random template from m_insertset
 	model_set_ref m_insertset;

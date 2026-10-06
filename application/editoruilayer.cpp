@@ -114,6 +114,10 @@ void editor_ui::render_menu_contents()
 {
 	if (ImGui::BeginMenu(STR_C("File")))
 	{
+		if (ImGui::MenuItem(STR_C("New scenery...")) && m_newscenery)
+			m_newscenery();
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("The editor starts again with the wizard of a new scenery: its name and its centre on the map"));
 		// changes go to the scenery files only if the scenery was loaded with its sources tracked
 		auto const editsession{false == scene::Layers.empty()};
 		if (ImGui::MenuItem(STR_C("Save"), "Ctrl+S", false, editsession) && m_save)

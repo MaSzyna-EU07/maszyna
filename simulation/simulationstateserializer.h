@@ -44,6 +44,8 @@ public:
         export_as_text( std::string const &Scenariofile ) const;
 	// create new model from node stirng
 	TAnimModel * create_model(std::string const &src, std::string const &name, const glm::dvec3 &position);
+	// places the vehicles, given as their node statements, as a trainset on the path, while the simulation runs. returns: the vehicles made
+	std::vector<TDynamicObject *> insert_trainset(std::string const &Name, TTrack *Path, double const Offset, std::string const &Vehicles, bool const Reversed = false);
 	// create new eventlauncher from node stirng
 	TEventLauncher * create_eventlauncher(std::string const &src, std::string const &name, const glm::dvec3 &position);
 	// creates model instances defined by an include directive placed or changed in the scenery editor, to show the outcome.
@@ -80,6 +82,7 @@ private:
     void deserialize_terrain( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_editorterrain( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_endtrainset( cParser &Input, scene::scratch_data &Scratchpad );
+    void deserialize_reversed( cParser &Input, scene::scratch_data &Scratchpad );
     TTrack * deserialize_path( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
     TTraction * deserialize_traction( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
     TTractionPowerSource * deserialize_tractionpowersource( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );

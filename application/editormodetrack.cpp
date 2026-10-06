@@ -14,6 +14,7 @@ http:
 #include "application/editorprojection.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorIncludeInfo.hpp"
 
 #include "utilities/Globals.h"
 #include "rendering/renderer.h"
@@ -29,6 +30,7 @@ http:
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <functional>
@@ -43,6 +45,7 @@ using geometry::plan_distance;
 using geometry::plan_of;
 using geometry::signed_angle;
 using geometry::turned;
+using geometry::arc_pieces;
 
 std::string describe(editor_track::straight const &Line)
 {
@@ -64,6 +67,8 @@ editor_track::point_kind const kPointKinds[] = {editor_track::point_kind::start,
 
 float const kHandleRadius{10.0f};
 double const kLaySnapRadius{5.0};
+float const kSnapPixels{16.0f};
+float const kDragPixels{5.0f};
 double const kSwitchReach{6.0}; // a press farther from the selected track selects another one instead of placing the switch
 double const kLineReach{2000.0}; // how far each way the Curve tab follows the line
 double const kJointRange{400.0}; // the ends of the paths are drawn for the tracks this close to the camera
@@ -77,36 +82,17 @@ void item_tooltip(char const *Text)
 }
 
 // circular curve from a point along a direction, cut into pieces of 90 degrees at most. Side: 1 to the left, -1 to the right
-std::vector<segment_data> arc_pieces(glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, double const Radius, double const Angle, int const Side)
+void compound_from(editor_track::curve const &Curve, alignment::vertex &Vertex)
 {
-	std::vector<segment_data> result;
-	double const side{static_cast<double>(Side)};
-	glm::dvec2 const centre{plan_of(Point) + glm::dvec2{-Direction.y, Direction.x} * (side * Radius)};
-	auto const count{std::max(1, static_cast<int>(std::ceil(Angle / glm::radians(90.0) - 1e-9)))};
-	auto const step{Angle / count};
-	auto const handle{4.0 / 3.0 * std::tan(step / 4.0) * Radius};
-	glm::dvec2 const radial{plan_of(Point) - centre};
-	for (int i = 0; i < count; ++i)
-	{
-		auto const a0{side * step * i};
-		auto const a1{side * step * (i + 1)};
-		auto const p0{centre + turned(radial, a0)};
-		auto const p3{centre + turned(radial, a1)};
-		auto const d0{turned(Direction, a0)};
-		auto const d3{turned(Direction, a1)};
-		auto const y0{Point.y + Grade * Radius * step * i};
-		auto const y3{Point.y + Grade * Radius * step * (i + 1)};
-		segment_data path;
-		path.points[segment_data::point::start] = {p0.x, y0, p0.y};
-		path.points[segment_data::point::end] = {p3.x, y3, p3.y};
-		path.points[segment_data::point::control1] = {d0.x * handle, Grade * handle, d0.y * handle};
-		path.points[segment_data::point::control2] = {-d3.x * handle, -Grade * handle, -d3.y * handle};
-		path.radius = static_cast<float>(Radius);
-		result.push_back(path);
-	}
-	return result;
+	if (false == Curve.compound || Curve.arcs.size() < 2)
+		return;
+	Vertex.compound = true;
+	Vertex.radius = std::round(Curve.arcs.front().radius);
+	Vertex.share = Curve.arcs.front().turn;
+	Vertex.arcs.clear();
+	for (std::size_t i = 1; i < Curve.arcs.size(); ++i)
+		Vertex.arcs.push_back({std::round(Curve.arcs[i].radius), std::round(Curve.arcs[i].transition), Curve.arcs[i].turn});
 }
-
 
 }
 
@@ -158,11 +144,11 @@ void editor_mode::select_track(scene::basic_node *Node)
 	}
 }
 
-bool editor_mode::pick_track_handle()
+editor_track::point_ref editor_mode::track_handle_hit() const
 {
 	auto *track = selected_track();
-	if (track == nullptr || false == editor_track::is_supported(*track) || m_route_tab)
-		return false;
+	if (track == nullptr || false == editor_track::is_supported(*track) || m_track_tab != track_tab::path)
+		return {};
 
 	screen_projection const projection;
 	float best = kHandleRadius * kHandleRadius;
@@ -180,10 +166,7 @@ bool editor_mode::pick_track_handle()
 			}
 		}
 	}
-	if (false == hit.valid())
-		return false;
-	m_track_point = hit;
-	return true;
+	return hit;
 }
 
 void editor_mode::draw_track_overlay() const
@@ -261,8 +244,6 @@ void editor_mode::render_track_gizmo()
 
 	gizmo_frame const frame;
 
-	ImGuizmo::OPERATION const operation = (false == pointmode && m_gizmo_op == gizmo_operation::rotate) ? ImGuizmo::ROTATE_Y : ImGuizmo::TRANSLATE;
-
 	if (false == m_track_gizmo_using)
 	{
 		auto const anchor = pointmode ? editor_track::point_position(*track, m_track_point) : editor_track::pivot(*track);
@@ -270,7 +251,7 @@ void editor_mode::render_track_gizmo()
 	}
 
 	glm::mat4 delta(1.0f);
-	frame.manipulate(operation, m_track_gizmo, operation == ImGuizmo::ROTATE_Y ? 5.0f : m_gizmo_snap, &delta);
+	frame.manipulate(ImGuizmo::TRANSLATE, m_track_gizmo, m_gizmo_snap, &delta);
 
 	if (ImGuizmo::IsUsing())
 	{
@@ -307,17 +288,7 @@ void editor_mode::render_track_gizmo()
 			push_track_snapshot(std::move(states));
 		}
 
-		if (operation == ImGuizmo::ROTATE_Y)
-		{
-			double const angle = std::atan2(delta[2][0], delta[0][0]);
-			if (std::abs(angle) > 1e-9)
-			{
-				editor_track::rotate_y(*track, m_track_pivot, angle);
-				editor_track::follow(*track, m_track_joints);
-				m_track_dirty = true;
-			}
-		}
-		else if (pointmode)
+		if (pointmode)
 		{
 			glm::dvec3 const position = frame.camera + glm::dvec3(m_track_gizmo[3]);
 			editor_track::move_point(*track, m_track_point, position);
@@ -327,7 +298,9 @@ void editor_mode::render_track_gizmo()
 			if (editor_track::is_end(m_track_point.kind) && m_track_drag_points.empty())
 			{
 				std::vector<TTrack const *> const exclude(m_track_drag.begin(), m_track_drag.end());
-				m_track_snap = editor_track::find_snap_target(*track, position, m_track_snap_radius, exclude);
+				screen_projection const projection;
+				ImVec2 screen;
+				m_track_snap = projection.project(position, screen) ? snap_free_end(position, {screen.x, screen.y}, track, track->iCategoryFlag & 15, exclude) : editor_track::snap_target{};
 			}
 		}
 		else
@@ -495,16 +468,19 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		profile_restore();
 }
 
-std::array<editor_mode::track_mode, 8> const &editor_mode::track_modes()
+std::array<editor_mode::track_mode, 11> const &editor_mode::track_modes()
 {
-	static std::array<track_mode, 8> const modes{{
+	static std::array<track_mode, 11> const modes{{
 	    {"Select", "Esc", track_tab::path, "LMB on a path selects it: its points, control vectors and parameters"},
 	    {"Lay track", "L", track_tab::lay, "Lays new track through the clicked points, on the ground or from a free end of a track"},
 	    {"Switch", "T", track_tab::turnout, "Puts switches into the selected straight or curve, edits the geometry of the selected switch"},
+	    {"Turntable", "U", track_tab::turntable, "Places a turntable, leads tracks out of it and fits the tracks around to it"},
 	    {"Straight", "G", track_tab::straights, "The whole straight through the selected path: drag its ends or the middle, break it, shift it"},
 	    {"Curve", "C", track_tab::route, "The line through the path, switch to switch: vertices with the radii, transitions and cant of the curves"},
+	    {"Objects", "B", track_tab::lineside, "Along the track: platforms and other models, hectometre posts, fouling point markers, a parallel track, a vehicle to drive"},
 	    {"Profile", "P", track_tab::profile, "Vertical profile (grade line) along the line"},
 	    {"Speed", "V", track_tab::speed, "Speed limits of the paths against the speed their geometry allows"},
+	    {"Joints", "J", track_tab::joints, "Ends of the paths which almost meet, steps, kinks, jumps of the cant and of the grade at the joints"},
 	    {"Infra", "I", track_tab::infra, "Infrastructure along the track, bound to follow its changes"},
 	}};
 	return modes;
@@ -512,28 +488,15 @@ std::array<editor_mode::track_mode, 8> const &editor_mode::track_modes()
 
 void editor_mode::render_track_menu()
 {
-	if (false == ImGui::BeginMenu(STR_C("Tracks")))
-		return;
-	if (ImGui::MenuItem(STR_C("Track editor"), nullptr, m_track_window_open))
+	if (ImGui::MenuItem(STR_C("Tracks"), nullptr, m_track_window_open))
 	{
 		if (m_track_window_open)
 			m_track_window_open = false;
 		else
 			show_track_tab(m_track_tab);
 	}
-	ImGui::Separator();
-	for (auto const &mode : track_modes())
-	{
-		if (ImGui::MenuItem(STR_C(mode.label), mode.key, m_track_window_open && m_track_tab == mode.tab))
-			show_track_tab(mode.tab);
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C(mode.tooltip));
-	}
-	ImGui::Separator();
-	ImGui::MenuItem(STR_C("Structure gauge"), nullptr, &m_gauge.open);
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"));
-	ImGui::EndMenu();
+		ImGui::SetTooltip("%s", STR_C("Track editor: the window with its modes opens or closes"));
 }
 
 void editor_mode::show_track_tab(track_tab const Tab)
@@ -576,6 +539,10 @@ void editor_mode::show_track_tab(track_tab const Tab)
 		if (track != nullptr && m_profile.route.spans.empty())
 			profile_open_run(*track);
 		break;
+	case track_tab::turntable:
+		scan_turntables();
+		turntable_read(track);
+		break;
 	default:
 		break;
 	}
@@ -593,6 +560,11 @@ void editor_mode::arm_switch()
 	}
 	tool.status.clear();
 	tool.armed = tool.templates.empty() ? -1 : std::clamp(tool.last, 0, static_cast<int>(tool.templates.size()) - 1);
+	if (tool.armed >= 0 && tool.templates[tool.armed].double_slip)
+	{
+		auto const ordinary{std::find_if(tool.templates.begin(), tool.templates.end(), [](editor_track::switch_template const &Template) { return false == Template.double_slip; })};
+		tool.armed = ordinary != tool.templates.end() ? static_cast<int>(ordinary - tool.templates.begin()) : -1;
+	}
 }
 
 bool editor_mode::track_shortcut(int const Key)
@@ -611,7 +583,7 @@ bool editor_mode::track_shortcut(int const Key)
 bool editor_mode::track_busy() const
 {
 	auto const &straights{m_straights};
-	return (m_lay.active && false == m_lay.points.empty()) || straights.dragging || m_extend.active || m_switch.placing || m_track_point.valid() || m_route.vertex >= 0 || m_route.grip >= 0 || false == straights.detour.empty() || straights.tool != 0 || straights.handle >= 0;
+	return (m_lay.active && false == m_lay.points.empty()) || m_turntable.placing || straights.dragging || m_extend.active || m_point_drag.active || m_handle_drag.active || m_switch.placing || m_track_point.valid() || m_route.vertex >= 0 || m_route.grip >= 0 || false == straights.detour.empty() || straights.tool != 0 || straights.handle >= 0;
 }
 
 std::string editor_mode::track_mode_name() const
@@ -620,10 +592,12 @@ std::string editor_mode::track_mode_name() const
 		return STR_C("Select: LMB on a path");
 	switch (m_track_tab)
 	{
-	case track_tab::lay: return STR_C("Laying track: LMB adds the points");
+	case track_tab::lay: return m_extend.active ? STR_C("Laying track: new path from the free end") : STR_C("Laying track: LMB adds the points");
 	case track_tab::turnout:
 		if (m_switch.placing)
 			return STR_C("Switch: drag to set its direction and side");
+		if (m_switch.armed < 0)
+			return selected_track() != nullptr && selected_track()->eType == tt_Switch ? STR_C("Switch: the selected one. Another: LMB on a track, then its type") : STR_C("Switch: choose its type from the list");
 		return STR_C("Switch: press and drag on the selected track");
 	case track_tab::straights:
 		if (false == m_straights.detour.empty())
@@ -636,8 +610,17 @@ std::string editor_mode::track_mode_name() const
 	case track_tab::route: return STR_C("Curve: drag the vertices and the radius grips");
 	case track_tab::profile: return STR_C("Vertical profile: edit the grade line in the profile window");
 	case track_tab::speed: return STR_C("Speed check: LMB on a row shows the path");
+	case track_tab::joints: return STR_C("Joints: LMB on a row shows the place");
+	case track_tab::lineside:
+		if (m_lineside_tab == 0)
+			return m_sweep.dragging ? STR_C("Model along the track: release where it ends") : STR_C("Model along the track: LMB by the track where it starts, drag to the end");
+		return STR_C("Objects along the track");
 	case track_tab::infra: return STR_C("Infrastructure along the track");
-	default: return m_extend.active ? STR_C("New path from the free end") : selected_track() != nullptr ? STR_C("Select: drag the points of the path") : STR_C("Select: LMB on a path");
+	case track_tab::turntable:
+		if (m_turntable.placing)
+			return STR_C("Turntable: drag to turn the bridge, release to place it");
+		return m_turntable.table != nullptr ? STR_C("Turntable: LMB around it leads a track out, on a free end fits that track") : STR_C("Turntable: LMB places a new one");
+	default: return m_point_drag.moved ? STR_C("Select: moving the point") : selected_track() != nullptr ? STR_C("Select: drag the points of the path") : STR_C("Select: LMB on a path");
 	}
 }
 
@@ -647,6 +630,9 @@ void editor_mode::render_track_inspector()
 	m_profile.open = m_track_window_open && m_track_tab == track_tab::profile;
 	m_speed.open = m_track_window_open && m_track_tab == track_tab::speed;
 	m_infra.open = m_track_window_open && m_track_tab == track_tab::infra;
+	m_joints.open = m_track_window_open && m_track_tab == track_tab::joints;
+	if (false == m_track_window_open || m_track_tab != track_tab::lineside)
+		m_sweep.open = m_hekto.open = m_fouling.open = m_parallel.open = m_vehicle.open = false;
 	ui()->set_track(m_track_window_open);
 	if (false == m_track_window_open)
 	{
@@ -691,8 +677,13 @@ void editor_mode::render_track_inspector()
 			break;
 		case track_tab::profile: render_profile_body(); break;
 		case track_tab::speed: render_speed_body(); break;
+		case track_tab::joints: render_joints_body(); break;
+		case track_tab::lineside: render_lineside_ui(); break;
 		case track_tab::infra: render_infra_body(); break;
+		case track_tab::turntable: render_turntable_ui(); break;
 		default:
+			render_track_set_ui();
+			render_track_spread_ui();
 			if (track != nullptr)
 				render_path_ui();
 			else
@@ -718,16 +709,28 @@ void editor_mode::render_track_modes(TTrack *Track)
 		for (int i = From; i < To; ++i)
 		{
 			auto const &mode{modes[i]};
-			ImGui::SameLine(i == From ? 72.0f : 0.0f);
 			auto const label{std::string{STR_C(mode.label)} + "###trackmode" + std::to_string(i)};
+			// the buttons which don't fit go on to the next line, under the first one
+			auto const width{ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::CalcTextSize(STR_C(mode.label)).x};
+			if (i == From)
+				ImGui::SameLine(72.0f);
+			else if (ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + width > ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x)
+				ImGui::SetCursorPosX(72.0f);
+			else
+				ImGui::SameLine();
 			if (ImGui::RadioButton(label.c_str(), m_track_tab == mode.tab))
 				show_track_tab(mode.tab);
 			if (ImGui::IsItemHovered())
 				ImGui::SetTooltip("%s  [%s]", STR_C(mode.tooltip), mode.key);
 		}
 	};
-	row("Edit", 0, 5);
-	row("Analysis", 5, static_cast<int>(modes.size()));
+	row("Edit", 0, 6);
+	row("Analysis", 6, static_cast<int>(modes.size()));
+	ImGui::SameLine();
+	ImGui::Checkbox(STR_C("Structure gauge"), &m_gauge.open);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"));
+	render_track_search();
 	ImGui::Spacing();
 	render_track_guide();
 	if (Track != nullptr && m_track_tab != track_tab::lay && false == track_analysis_tab())
@@ -781,6 +784,105 @@ void editor_mode::render_track_guide()
 	ImGui::Dummy(ImVec2(0.0f, 0.0f));
 }
 
+void editor_mode::render_track_name(TTrack &Track)
+{
+	auto &edit{m_track_name};
+	auto const current{Track.name() == "none" ? std::string{} : Track.name()};
+	auto const sync = [&]() {
+		edit.track = &Track;
+		edit.synced = current;
+		std::snprintf(edit.text, sizeof(edit.text), "%s", current.c_str());
+		edit.uses = editor_track::uses_of_name(Track);
+	};
+	if (edit.track != &Track)
+	{
+		sync();
+		edit.status.clear();
+	}
+	else if (edit.synced != current && edit.synced == edit.text)
+		sync();
+
+	std::string why;
+	if (false == scene::Layers.editable(&Track, &why))
+	{
+		ImGui::Text(STR_C("Name: %s"), current.empty() ? STR_C("(no name)") : current.c_str());
+		ImGui::SameLine();
+		ImGui::TextDisabled(STR_C("(can't be changed: %s)"), why.c_str());
+		return;
+	}
+	auto const apply = [&]() {
+		std::string name{edit.text};
+		std::string reason;
+		if (false == editor_track::name_valid(Track, name, reason))
+			return;
+		auto const before{editor_track::capture(Track)};
+		editor_track::rename(Track, name);
+		push_track_snapshot({{&Track, before}});
+		edit.status = format(STR_C("Renamed from %s"), current.empty() ? STR_C("(no name)") : current.c_str());
+		sync();
+	};
+	ImGui::SetNextItemWidth(220.f);
+	if (ImGui::InputTextWithHint(STR_C("Name##trackname"), STR_C("(no name)"), edit.text, sizeof(edit.text), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CharsNoBlank))
+		apply();
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Enter renames the path, Esc while typing takes the text back.\nThe events, memory cells and the map of the game find the path by its name"));
+	std::string typed{edit.text};
+	if (typed == edit.synced)
+	{
+		if (false == edit.status.empty())
+		{
+			ImGui::SameLine();
+			ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.f), "%s", edit.status.c_str());
+		}
+		return;
+	}
+	std::string reason;
+	TTrack *owner{nullptr};
+	auto const valid{editor_track::name_valid(Track, typed, reason, &owner)};
+	ImGui::SameLine();
+	if (valid)
+	{
+		auto const warned{false == edit.uses.events.empty() || false == edit.uses.loose.empty()};
+		if (ImGui::SmallButton(warned ? STR_C("Rename anyway") : STR_C("Rename")))
+			apply();
+	}
+	ImGui::SameLine();
+	if (ImGui::SmallButton(STR_C("Keep the old")))
+	{
+		std::snprintf(edit.text, sizeof(edit.text), "%s", edit.synced.c_str());
+		return;
+	}
+	if (false == valid)
+	{
+		ImGui::TextColored(ImVec4(1.f, 0.45f, 0.35f, 1.f), "%s", STR_C(reason.c_str()));
+		if (owner != nullptr)
+		{
+			ImGui::SameLine();
+			if (ImGui::SmallButton(STR_C("Look at it")))
+				focus_track(*owner, 0, owner->location());
+		}
+		return;
+	}
+	if (typed != edit.text)
+		ImGui::TextDisabled(STR_C("Saved as %s: the scenery keeps the names in lower case"), typed.c_str());
+	if (edit.uses.cells > 0 || edit.uses.includes > 0)
+		ImGui::TextDisabled(STR_C("The new name goes to %d memory cell(s) and %d include(s), the drives of a switch among them"), edit.uses.cells, edit.uses.includes);
+	auto const listed = [](std::vector<std::string> const &Names) {
+		std::string result;
+		for (std::size_t i = 0; i < Names.size() && i < 4; ++i)
+			result += (i > 0 ? ", " : "") + Names[i];
+		if (Names.size() > 4)
+			result += format(" (+%d)", static_cast<int>(Names.size() - 4));
+		return result;
+	};
+	if (false == edit.uses.events.empty())
+		ImGui::TextColored(ImVec4(1.f, 0.75f, 0.3f, 1.f), STR_C("These events aim at the path by the old name and the editor doesn't write them: %s"), listed(edit.uses.events).c_str());
+	if (false == edit.uses.loose.empty())
+		ImGui::TextColored(ImVec4(1.f, 0.75f, 0.3f, 1.f), STR_C("These events belong to the path by the old name: %s"), listed(edit.uses.loose).c_str());
+	if (false == edit.uses.events.empty() || false == edit.uses.loose.empty())
+		ImGui::TextDisabled("%s", STR_C("They work until the scenery is loaded again; then they need the new name in their files"));
+}
+
 void editor_mode::render_turnout_ui()
 {
 	auto *track{selected_track()};
@@ -805,6 +907,18 @@ void editor_mode::render_turnout_ui()
 	glm::dvec2 const tangent{glm::normalize(glm::dvec2{-control.x, -control.z})};
 	auto const angle{std::atan2(std::abs(tangent.x * axis.y - tangent.y * axis.x), glm::dot(tangent, axis))};
 	ImGui::Text(STR_C("Length %.3f m, diverging %s, end offset %.3f m"), length, offset > 0.0 ? STR_C("left") : STR_C("right"), std::abs(offset));
+	render_track_name(*track);
+	if ((simulation::Events.FindEvent(track->name() + "+") != nullptr && simulation::Events.FindEvent(track->name() + "-") != nullptr) || (m_track_name.track == track && m_track_name.uses.includes > 0))
+		ImGui::TextDisabled(STR_C("Drive: events %s+ and %s- switch it, also in the map"), track->name().c_str(), track->name().c_str());
+	else
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("No drive: the switch can't be switched during the game"));
+		render_switch_drive_choice();
+		if (m_switch.drive >= 0 && ImGui::Button(STR_C("Put the drive by the switch")))
+			place_switch_drive(*track);
+	}
+	if (false == m_switch.status.empty())
+		ImGui::TextWrapped("%s", m_switch.status.c_str());
 	if (angle > 1e-6)
 		ImGui::Text(STR_C("Angle 1:%.2f (%.4f deg), R in the entry %.0f m"), 1.0 / std::tan(angle), glm::degrees(angle), diverging.radius);
 
@@ -1249,6 +1363,7 @@ void editor_mode::render_path_ui()
 		ImGui::TextDisabled(STR_C("Editing of this path type isn't supported"));
 		return;
 	}
+	render_track_name(*track);
 	std::string reason;
 	bool const geometry = editor_track::can_edit_geometry(*track, reason);
 	if (false == geometry)
@@ -1271,8 +1386,6 @@ void editor_mode::render_path_ui()
 		}
 	};
 
-	if (geometry)
-		render_extend_ui();
 	if (ImGui::CollapsingHeader(STR_C("Geometry"), ImGuiTreeNodeFlags_DefaultOpen))
 	{
 		for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
@@ -1486,13 +1599,7 @@ alignment::vertex editor_mode::route_vertex_of(editor_track::curve const &Curve)
 	if (Curve.cant > 0.0)
 		vertex.cant = std::round(Curve.cant);
 	vertex.reverse_turn = std::abs(Curve.turn) > glm::pi<double>();
-	if (Curve.compound)
-	{
-		vertex.compound = true;
-		vertex.radius2 = std::round(Curve.radius2);
-		vertex.transition_middle = std::round(Curve.transition_middle);
-		vertex.split = Curve.split;
-	}
+	compound_from(Curve, vertex);
 	return vertex;
 }
 
@@ -1796,7 +1903,7 @@ glm::dvec3 editor_mode::route_vertex_position(int const Vertex) const
 	return {position.x, height, position.y};
 }
 
-bool editor_mode::pick_route_vertex()
+bool editor_mode::route_hit(int &Vertex, int &Grip) const
 {
 	if (false == route_active())
 		return false;
@@ -1821,11 +1928,9 @@ bool editor_mode::pick_route_vertex()
 			hit = -1;
 		}
 	}
-	if (hit < 0 && griphit < 0)
-		return false;
-	m_route.vertex = hit;
-	m_route.grip = griphit;
-	return true;
+	Vertex = hit;
+	Grip = griphit;
+	return hit >= 0 || griphit >= 0;
 }
 
 void editor_mode::draw_route_overlay() const
@@ -1888,7 +1993,13 @@ void editor_mode::draw_route_overlay() const
 			if (i == route.grip)
 				drawlist->AddCircle(screen, 11.0f, overlay_color::highlight, 16, 2.5f);
 			auto const *report{i < static_cast<int>(result.curves.size()) ? &result.curves[i] : nullptr};
-			auto const radius{report != nullptr && report->radius2 > 0.0 ? format("R %.0f / %.0f", report->radius, report->radius2) : format("R %.0f", report != nullptr ? report->radius : design.vertices[i].radius)};
+			auto radius{format("R %.0f", report != nullptr ? report->radius : design.vertices[i].radius)};
+			if (report != nullptr && report->radii.size() >= 2)
+			{
+				radius = "R";
+				for (std::size_t k = 0; k < report->radii.size(); ++k)
+					radius += format(k == 0 ? " %.0f" : " / %.0f", report->radii[k]);
+			}
 			drawlist->AddText(ImVec2(screen.x + 9.0f, screen.y + 4.0f), overlay_color::grip, radius.c_str());
 		}
 		drawlist->AddText(ImVec2(screen.x + 9.0f, screen.y - 18.0f), overlay_color::marked, format("W%d", i + 1).c_str());
@@ -1909,11 +2020,24 @@ void editor_mode::render_route_gizmo()
 	gizmo_frame const frame;
 
 	auto const position{grip ? alignment::evaluate(route.result, route.result.vertex_chainages[route.grip]).position : route_vertex_position(route.vertex)};
-	if (false == m_route_gizmo_using)
-		m_route_gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(position - frame.camera));
-	frame.manipulate(ImGuizmo::TRANSLATE, m_route_gizmo, m_gizmo_snap);
+	glm::dvec3 moved{position};
+	bool held{false};
+	if (m_handle_drag.active)
+	{
+		held = handle_drag_step(moved);
+		if (false == held && false == m_route_gizmo_using)
+			return;
+	}
+	else
+	{
+		if (false == m_route_gizmo_using)
+			m_route_gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(position - frame.camera));
+		frame.manipulate(ImGuizmo::TRANSLATE, m_route_gizmo, m_gizmo_snap);
+		held = ImGuizmo::IsUsing();
+		moved = frame.camera + glm::dvec3(m_route_gizmo[3]);
+	}
 
-	if (false == ImGuizmo::IsUsing())
+	if (false == held)
 	{
 		if (m_route_gizmo_using)
 		{
@@ -1923,7 +2047,6 @@ void editor_mode::render_route_gizmo()
 		return;
 	}
 	m_route_gizmo_using = true;
-	glm::dvec3 const moved{frame.camera + glm::dvec3(m_route_gizmo[3])};
 	if (grip)
 	{
 		auto &vertex{route.design.vertices[route.grip]};
@@ -2043,20 +2166,58 @@ bool editor_mode::render_route_vertex(int const Index)
 		ImGui::TextDisabled(STR_C("Curve %d of the S-curve"), Index + 1);
 	ImGui::PushItemWidth(110.0f);
 	changed |= ImGui::DragScalar(vertex.compound ? STR_C("Radius R1 (m)") : STR_C("Radius R (m)"), ImGuiDataType_Double, &vertex.radius, 5.0f, nullptr, nullptr, "%.0f");
-	changed |= ImGui::Checkbox(STR_C("Compound curve (two radii)"), &vertex.compound);
-	item_tooltip("Curve made of two arcs of different radii, joined with a transition");
+	if (ImGui::Checkbox(STR_C("Compound curve (several radii)"), &vertex.compound))
+	{
+		changed = true;
+		if (vertex.compound && vertex.arcs.empty())
+			vertex.arcs.push_back({std::max(10.0, std::round(vertex.radius * 0.6 / 10.0) * 10.0), 0.0, 1.0});
+	}
+	item_tooltip("Curve made of arcs of different radii, each one its own path, joined with transitions");
 	if (vertex.compound)
 	{
-		changed |= ImGui::InputDouble(STR_C("Radius R2 (m)"), &vertex.radius2, 0.0, 0.0, "%.1f");
-		changed |= ImGui::InputDouble(STR_C("Transition R1-R2 (m)"), &vertex.transition_middle, 0.0, 0.0, "%.1f");
-		float split{static_cast<float>(vertex.split)};
-		if (ImGui::SliderFloat(STR_C("Share of R1"), &split, 0.0f, 1.0f, "%.2f"))
+		auto total{std::max(0.0, vertex.share)};
+		for (auto const &arc : vertex.arcs)
+			total += std::max(0.0, arc.share);
+		auto const percent = [&](double const Share) { return total > 0.0 ? 100.0 * std::max(0.0, Share) / total : 0.0; };
+		changed |= ImGui::DragScalar(format(STR_C("Share of R%d"), 1).c_str(), ImGuiDataType_Double, &vertex.share, 0.01f, nullptr, nullptr, "%.2f");
+		ImGui::SameLine();
+		ImGui::TextDisabled("%.0f%%", percent(vertex.share));
+		int removed{-1};
+		for (int k = 0; k < static_cast<int>(vertex.arcs.size()); ++k)
 		{
-			vertex.split = split;
+			auto &arc{vertex.arcs[k]};
+			ImGui::PushID(k);
+			ImGui::Separator();
+			changed |= ImGui::DragScalar(format(STR_C("Radius R%d (m)"), k + 2).c_str(), ImGuiDataType_Double, &arc.radius, 5.0f, nullptr, nullptr, "%.0f");
+			ImGui::SameLine();
+			if (ImGui::SmallButton("x"))
+				removed = k;
+			item_tooltip("Takes this radius out of the curve");
+			changed |= ImGui::DragScalar(format(STR_C("Transition R%d-R%d (m)"), k + 1, k + 2).c_str(), ImGuiDataType_Double, &arc.transition, 1.0f, nullptr, nullptr, "%.0f");
+			changed |= ImGui::DragScalar(format(STR_C("Share of R%d"), k + 2).c_str(), ImGuiDataType_Double, &arc.share, 0.01f, nullptr, nullptr, "%.2f");
+			ImGui::SameLine();
+			ImGui::TextDisabled("%.0f%%", percent(arc.share));
+			arc.radius = std::max(1.0, arc.radius);
+			arc.transition = std::max(0.0, arc.transition);
+			arc.share = std::max(0.0, arc.share);
+			ImGui::PopID();
+		}
+		vertex.share = std::max(0.0, vertex.share);
+		if (removed >= 0)
+		{
+			vertex.arcs.erase(vertex.arcs.begin() + removed);
+			if (vertex.arcs.empty())
+				vertex.compound = false;
 			changed = true;
 		}
-		vertex.radius2 = std::max(1.0, vertex.radius2);
-		vertex.transition_middle = std::max(0.0, vertex.transition_middle);
+		if (ImGui::SmallButton(STR_C("Add a radius")))
+		{
+			auto const last{vertex.arcs.empty() ? vertex.radius : vertex.arcs.back().radius};
+			vertex.arcs.push_back({std::max(10.0, std::round(last * 0.8 / 10.0) * 10.0), 0.0, 1.0});
+			changed = true;
+		}
+		item_tooltip("Another arc after the last one, the angle of the curve is shared out by the shares");
+		ImGui::Separator();
 	}
 	changed |= ImGui::DragScalar(STR_C("Transition in (m)"), ImGuiDataType_Double, &vertex.transition_in, 1.0f, nullptr, nullptr, "%.0f");
 	changed |= ImGui::DragScalar(STR_C("Transition out (m)"), ImGuiDataType_Double, &vertex.transition_out, 1.0f, nullptr, nullptr, "%.0f");
@@ -2515,10 +2676,10 @@ bool editor_mode::straights_active()
 	return ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::straights && false == current_straight().tracks.empty();
 }
 
-bool editor_mode::pick_straight_handle()
+int editor_mode::straight_handle_hit()
 {
 	if (false == straights_active())
-		return false;
+		return -1;
 	auto const &line{current_straight()};
 	glm::dvec3 const handles[] = {line.start, line.end, (line.start + line.end) * 0.5};
 	screen_projection const projection;
@@ -2532,10 +2693,7 @@ bool editor_mode::pick_straight_handle()
 			hit = i;
 		}
 	}
-	if (hit < 0)
-		return false;
-	m_straights.handle = hit;
-	return true;
+	return hit;
 }
 
 void editor_mode::straight_refresh()
@@ -2587,8 +2745,9 @@ void editor_mode::render_straight_gizmo()
 	auto &state{m_straights};
 	if (state.tool_mouse)
 	{
-		glm::dvec3 const ground{Global.pCamera.Pos + GfxRenderer->Mouse_Position()};
+		glm::dvec3 const ground{cursor_ground()};
 		state.tool_handle = {ground.x, state.tool_handle.y, ground.z};
+		typed_turn();
 		return;
 	}
 	if (state.tool_placed && m_gizmo_enabled)
@@ -2607,11 +2766,24 @@ void editor_mode::render_straight_gizmo()
 
 	glm::dvec3 const anchors[] = {line.start, line.end, (line.start + line.end) * 0.5};
 	auto const anchor{anchors[state.handle]};
-	if (false == state.dragging)
-		state.gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(anchor - frame.camera));
-	frame.manipulate(ImGuizmo::TRANSLATE, state.gizmo, m_gizmo_snap);
+	glm::dvec3 handled{anchor};
+	bool held{false};
+	if (m_handle_drag.active)
+	{
+		held = handle_drag_step(handled);
+		if (false == held && false == state.dragging)
+			return;
+	}
+	else
+	{
+		if (false == state.dragging)
+			state.gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(anchor - frame.camera));
+		frame.manipulate(ImGuizmo::TRANSLATE, state.gizmo, m_gizmo_snap);
+		held = ImGuizmo::IsUsing();
+		handled = frame.camera + glm::dvec3(state.gizmo[3]);
+	}
 
-	if (ImGuizmo::IsUsing())
+	if (held)
 	{
 		if (false == state.dragging)
 		{
@@ -2626,7 +2798,7 @@ void editor_mode::render_straight_gizmo()
 			{
 				lines.push_back(line);
 			}
-			state.fitting = lines.size() == 1 && start_curve_fit(line);
+			state.fitting = lines.size() == 1 && start_curve_fit(line, state.handle);
 			auto const tracks{state.fitting ? std::vector<TTrack *>{} : editor_track::straight_affected(lines)};
 			if (false == tracks_editable(tracks, state.status))
 			{
@@ -2646,11 +2818,13 @@ void editor_mode::render_straight_gizmo()
 			}
 		}
 		auto const &grabbed{state.drag_line};
-		glm::dvec3 moved{frame.camera + glm::dvec3(state.gizmo[3])};
+		glm::dvec3 moved{handled};
 		std::function<glm::dvec3(glm::dvec3 const &)> transform;
 		if (state.handle == 2)
 		{
-			auto const offset{snap_straight_offset(grabbed, moved - (grabbed.start + grabbed.end) * 0.5)};
+			auto offset{snap_straight_offset(grabbed, moved - (grabbed.start + grabbed.end) * 0.5)};
+			if (auto const values{typed_values()}; false == values.empty())
+				offset = glm::dvec3{-grabbed.direction.y, 0.0, grabbed.direction.x} * values[0];
 			transform = [offset](glm::dvec3 const &Point) { return Point + offset; };
 		}
 		else
@@ -2658,6 +2832,15 @@ void editor_mode::render_straight_gizmo()
 			auto const pivot{state.handle == 0 ? grabbed.end : grabbed.start};
 			auto const original{state.handle == 0 ? grabbed.start : grabbed.end};
 			moved = snap_straight_direction(pivot, moved);
+			if (auto const values{typed_values()}; false == values.empty() && values[0] > 0.1)
+			{
+				glm::dvec2 heading{moved.x - pivot.x, moved.z - pivot.z};
+				if (glm::length(heading) < 1e-6)
+					heading = {original.x - pivot.x, original.z - pivot.z};
+				heading = glm::normalize(heading) * values[0];
+				moved.x = pivot.x + heading.x;
+				moved.z = pivot.z + heading.y;
+			}
 			glm::dvec2 const before{original.x - pivot.x, original.z - pivot.z};
 			glm::dvec2 const after{moved.x - pivot.x, moved.z - pivot.z};
 			auto const lengthbefore{glm::length(before)};
@@ -2732,6 +2915,13 @@ void editor_mode::cancel_track_tools()
 		straight_refresh();
 	}
 	m_extend.active = false;
+	m_turntable.placing = false;
+	m_handle_drag = {};
+	if (m_point_drag.active)
+	{
+		m_track_snap = {};
+		point_drag_finish();
+	}
 	if (m_switch.placing)
 	{
 		m_switch.placing = false;
@@ -2981,7 +3171,7 @@ bool editor_mode::place_straight_tool()
 	auto const &line{current_straight()};
 	if (line.tracks.empty())
 		return false;
-	glm::dvec3 const ground{Global.pCamera.Pos + GfxRenderer->Mouse_Position()};
+	glm::dvec3 const ground{cursor_ground()};
 	auto const along{std::clamp(line.along(ground), 0.0, line.length)};
 	glm::dvec3 const axis{line.direction.x, line.grade, line.direction.y};
 	state.tool_line = line;
@@ -3007,6 +3197,7 @@ void editor_mode::render_straight_tool_gizmo()
 		state.tool_dragging = true;
 		auto const moved{frame.camera + glm::dvec3(state.tool_gizmo[3])};
 		state.tool_handle = {moved.x, state.tool_handle.y, moved.z};
+		typed_turn();
 	}
 	else if (state.tool_dragging)
 	{
@@ -3135,9 +3326,13 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	if (m_lay.active)
 	{
 		if (m_lay.points.empty())
-			hints = {{"LMB", "start of the new track, on the ground or at a free end"}, {"Esc", "stop laying"}};
+			hints = {{"LMB", "start of the new track, on the ground or at a free end"}, {"Drag from a free end", "straight along it, to another free end: a curve joining them"}, {"Esc", "stop laying"}};
 		else
-			hints = {{"LMB", "next point, a curve goes at it"}, {"LMB on a free end", "join and lay"}, {"Enter", "lay"}, {"Backspace", "take back the point"}, {"Esc", "cancel"}};
+		{
+			hints = {{"LMB", "next point, a curve goes at it"}, {"LMB on a free end", "join and lay"}, {"Enter", "lay up to the cursor"}, {"Backspace", "take back the point"}, {"Esc", "cancel"}};
+			if (glm::dvec2 heading; lay_heading(heading))
+				hints.insert(hints.begin() + 1, {"Shift", "straight on in the direction of the track"});
+		}
 	}
 	else if (false == m_straights.detour.empty())
 	{
@@ -3148,7 +3343,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	else if (m_extend.active && m_extend_freehand)
 		hints = {{"Drag", "curve through the cursor, along the end: straight"}, {"Ctrl", "straight"}, {"Release", "build"}, {"Esc", "cancel"}};
 	else if (m_extend.active)
-		hints = {{"Drag", "straight along the end, to a free end: a curve joining it"}, {"Release", "build"}, {"Esc", "cancel"}};
+		hints = {{"Drag", "straight along the end, to a free end: a curve joining it"}, {"Shift", "straight, joins nothing"}, {"Release", "build"}, {"Esc", "cancel"}};
 	else if (m_switch.placing)
 		hints = {{"Drag along", "direction of the switch"}, {"Drag sideways", "side of the diverging track"}, {"Esc", "cancel"}};
 	else if (m_track_tab == track_tab::lay)
@@ -3163,6 +3358,8 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 			gizmo = true;
 		}
 	}
+	else if (m_track_tab == track_tab::turnout && m_switch.armed < 0)
+		hints = {{"List below", "choose the type of the switch to put in"}, {"LMB on a track", "choose the straight or the curve"}, {"Esc", "back to Select"}};
 	else if (m_track_tab == track_tab::turnout)
 		hints = {{"1. List below", "choose the type of the switch"}, {"2. Press+drag", "on the selected track where the switch starts: along sets the direction, sideways the side"}, {"LMB elsewhere", "choose another track"}};
 	else if (m_track_tab == track_tab::profile && m_profile.route.spans.empty())
@@ -3171,6 +3368,12 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{"Drag a point", "in the profile window: changes the grade"}, {"Double click", "on the line: adds a point"}, {"Apply", "writes the heights into the tracks"}};
 	else if (m_track_window_open && m_track_tab == track_tab::speed)
 		hints = {{"LMB on a row", "show the path"}};
+	else if (m_track_window_open && m_track_tab == track_tab::lineside && m_lineside_tab == 0)
+		hints = {{"LMB by the track", "where it starts, the side of the track it goes on"}, {"Drag", "to where it ends, a click: one as long as the original"}, {"Release", "lays it"}, {"LMB away from the track", "selects another track"}};
+	else if (m_track_window_open && m_track_tab == track_tab::lineside)
+		hints = {{"LMB on a track", "the line the objects go along"}};
+	else if (m_track_window_open && m_track_tab == track_tab::joints)
+		hints = {{"LMB on a row", "show the place"}, {"Fix", "joins the ends, aligns them"}};
 	else if (m_track_window_open && m_track_tab == track_tab::infra)
 		hints = {{"LMB", "select a path"}};
 	else if (m_track_tab == track_tab::straights && m_straights.tool == 1)
@@ -3189,17 +3392,21 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	else if (m_track_tab == track_tab::route)
 		hints = {{"Drag yellow", "moves a vertex, the curve follows"}, {"Drag green", "changes the radius"}, {"Apply", "writes the design into the tracks"}, {"Esc", "release the vertex"}};
 	else if (selected == nullptr)
-		hints = {{"LMB on a track", "selects it"}, {"L", "lay a new track"}};
+		hints = {{"LMB on a track", "selects it"}, {"Shift+LMB", "adds a track to the selection, drag: a box"}, {"RMB on a track", "what can be done with it"}, {"L", "lay a new track"}};
+	else if (m_point_drag.moved)
+		hints = {{"Drag", "moves the point, level"}, {"Over a free end", "the end joins it"}, {"Release", "done"}, {"Esc", "done"}};
 	else if (m_track_point.valid())
 	{
-		hints = {{"Gizmo", "moves the point"}, {"Esc", "releases the point"}};
+		hints = {{"Drag a point", "moves it, an end dropped on a free end joins it"}, {"Gizmo", "moves the point along the axes"}, {"Esc", "releases the point"}};
 		gizmo = true;
 	}
 	else
 	{
-		hints = {{"LMB on a handle", "picks a point: an end or a control vector"}, {"Gizmo", "moves the whole track, W turns it"}, {"Drag the red ring", "leads a new track out of a free end, or use Continue below"}, {"Del", "deletes the track"}};
+		hints = {{"Drag a point", "moves it, an end dropped on a free end joins it"}, {"Gizmo", "moves the whole track"}, {"Shift+LMB", "adds a track to the selection, drag: a box"}, {"L", "new track, also from a free end"}, {"Esc", "deselects"}, {"Del", "deletes the track"}};
 		gizmo = true;
 	}
+	if (auto const *meaning{typed_meaning()}; meaning != nullptr)
+		hints.insert(hints.begin() + std::min<std::size_t>(1, hints.size()), {"0-9", meaning});
 	if (All)
 	{
 		if (gizmo && m_gizmo_snap > 0.0f)
@@ -3207,7 +3414,8 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints.push_back({"K", "split the path under the cursor"});
 		hints.push_back({"O", "top view"});
 		hints.push_back({"Ctrl+Z", "undo"});
-		hints.push_back({"L T G C P V I", "modes: lay, switch, straight, curve, profile, speed, infra"});
+		hints.push_back({"Ctrl+Y", "redo"});
+		hints.push_back({"L T G C B P V J I", "modes: lay, switch, straight, curve, objects, profile, speed, joints, infra"});
 	}
 	for (auto &hint : hints)
 	{
@@ -3307,8 +3515,7 @@ std::string editor_mode::track_readout() const
 				text += "\njoins " + name(m_track_snap.track);
 			return text;
 		}
-		if (m_gizmo_op != gizmo_operation::rotate)
-			return format("moved %.3f m", glm::distance(editor_track::pivot(*track), m_track_pivot));
+		return format("moved %.3f m", glm::distance(editor_track::pivot(*track), m_track_pivot));
 	}
 	return {};
 }
@@ -3368,7 +3575,9 @@ void editor_mode::draw_track_hints()
 		}
 	}
 
-	auto const readout{track_readout()};
+	auto readout{track_readout()};
+	if (auto const *meaning{typed_meaning()}; meaning != nullptr && false == m_typed.empty())
+		readout += (readout.empty() ? "" : "\n") + std::string{"= "} + m_typed + "_   " + STR(meaning);
 	if (readout.empty() || ImGui::GetIO().WantCaptureMouse)
 		return;
 	auto *foreground{ImGui::GetForegroundDrawList()};
@@ -3383,20 +3592,37 @@ void editor_mode::draw_track_hints()
 
 void editor_mode::update_build_tools()
 {
-	glm::dvec3 const ground{Global.pCamera.Pos + GfxRenderer->Mouse_Position()};
+	glm::dvec3 const ground{cursor_ground()};
+	auto const &io{ImGui::GetIO()};
+	glm::vec2 const cursor{io.MousePos.x, io.MousePos.y};
 	m_straights.detour_mouse = ground;
 	if (m_extend.active)
-		m_extend.mouse = ground;
+	{
+		screen_projection const projection;
+		glm::dvec3 level;
+		m_extend.mouse = projection.on_level(io.MousePos, m_extend.point.y, level) && plan_distance(level, m_extend.point) < static_cast<double>(kMaxPlacementDistance) ? level : ground;
+		typed_extend();
+		m_extend.snap = m_typed.empty() && false == io.KeyShift && m_extend.track != nullptr ? snap_free_end(m_extend.mouse, cursor, m_extend.track, m_extend.track->iCategoryFlag & 15, {m_extend.track}) : editor_track::snap_target{};
+	}
 	if (m_switch.placing)
-		m_switch.mouse = ground;
+		m_switch.mouse = cursor_level(m_switch.point.y);
 	auto &lay{m_lay};
 	lay.preview.clear();
 	lay.preview_error.clear();
 	lay.preview_length = 0.0;
 	if (false == lay.active)
 		return;
-	lay.mouse = ground;
-	lay.mouse_snap = editor_track::find_free_end(nullptr, kRailCategory, ground, kLaySnapRadius, {});
+	auto mouse{ground};
+	glm::dvec2 heading;
+	bool const straight{io.KeyShift && lay_heading(heading)};
+	if (straight)
+	{
+		auto const &last{lay.points.back()};
+		auto const along{std::max(0.0, glm::dot(glm::dvec2{ground.x - last.x, ground.z - last.z}, heading))};
+		mouse = {last.x + heading.x * along, ground.y, last.z + heading.y * along};
+	}
+	lay.mouse = typed_lay(mouse);
+	lay.mouse_snap = straight ? editor_track::snap_target{} : m_typed.empty() ? snap_free_end(lay.mouse, cursor, nullptr, kRailCategory, {}) : editor_track::find_free_end(nullptr, kRailCategory, lay.mouse, kLaySnapRadius, {});
 	if (lay.points.empty())
 		return;
 	auto points{lay.points};
@@ -3406,8 +3632,8 @@ void editor_mode::update_build_tools()
 	else
 	{
 		end = {};
-		if (plan_distance(ground, points.back()) > 1.0)
-			points.push_back(ground);
+		if (plan_distance(lay.mouse, points.back()) > 1.0)
+			points.push_back(lay.mouse);
 	}
 	lay.preview = lay_pieces(points, end, lay.preview_length, lay.preview_error);
 }
@@ -3454,30 +3680,20 @@ bool editor_mode::chosen_free_end(extend_tool &Tool)
 	return false;
 }
 
-bool editor_mode::start_extend()
+bool editor_mode::start_extend(editor_track::snap_target const &End)
 {
-	auto *track{selected_track()};
-	if (m_track_tab != track_tab::path && m_track_tab != track_tab::straights && m_track_tab != track_tab::turnout)
-		return false;
+	auto *track{End.track};
 	if (track == nullptr || (track->eType != tt_Normal && track->eType != tt_Switch) || false == editor_track::is_supported(*track))
 		return false;
-	screen_projection const projection;
-	for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
-	{
-		for (auto const atend : {false, true})
-		{
-			editor_track::point_ref const point{i, atend ? editor_track::point_kind::end : editor_track::point_kind::start};
-			if (editor_track::is_connected(*track, point) || projection.mouse_distance2(editor_track::point_position(*track, point)) > kHandleRadius * kHandleRadius * 1.5f)
-				continue;
-			extend_tool tool;
-			if (false == free_end(*track, i, atend, tool))
-				return false;
-			m_extend = tool;
-			m_extend.active = true;
-			return true;
-		}
-	}
-	return false;
+	extend_tool tool;
+	if (false == free_end(*track, End.point.path, End.point.kind == editor_track::point_kind::end, tool))
+		return false;
+	auto const &io{ImGui::GetIO()};
+	m_extend = tool;
+	m_extend.origin = End;
+	m_extend.pressed = {io.MousePos.x, io.MousePos.y};
+	m_extend.active = true;
+	return true;
 }
 
 bool editor_mode::extend_snap(editor_track::snap_target &Target) const
@@ -3485,8 +3701,223 @@ bool editor_mode::extend_snap(editor_track::snap_target &Target) const
 	auto const &tool{m_extend};
 	if (false == tool.active || tool.track == nullptr)
 		return false;
-	Target = editor_track::find_snap_target(*tool.track, tool.mouse, 5.0, {tool.track});
+	Target = tool.snap;
 	return Target.track != nullptr && glm::distance(Target.position, tool.point) > 0.5;
+}
+
+glm::dvec3 editor_mode::cursor_ground() const
+{
+	glm::dvec3 const ground{Global.pCamera.Pos + GfxRenderer->Mouse_Position()};
+	if (GfxRenderer->Mouse_Hit())
+		return ground;
+	screen_projection const projection;
+	glm::dvec3 level;
+	if (projection.on_level(ImGui::GetIO().MousePos, 0.0, level))
+		return level;
+	return {ground.x, 0.0, ground.z};
+}
+
+glm::dvec3 editor_mode::cursor_level(double const Height) const
+{
+	glm::dvec3 const ground{cursor_ground()};
+	screen_projection const projection;
+	glm::dvec3 level;
+	if (false == projection.on_level(ImGui::GetIO().MousePos, Height, level) || glm::distance(level, glm::dvec3{Global.pCamera.Pos}) > static_cast<double>(kMaxPlacementDistance))
+		return ground;
+	return level;
+}
+
+editor_track::snap_target editor_mode::snap_free_end(glm::dvec3 const &Near, glm::vec2 const &Screen, TTrack const *Self, int const Category, std::vector<TTrack const *> const &Exclude) const
+{
+	screen_projection const projection;
+	auto const reach{Global.EditorOrtho ? std::max(kJointRange, static_cast<double>(Global.EditorOrthoExtent) * 2.0) : kJointRange};
+	editor_track::snap_target result;
+	auto best{kSnapPixels * kSnapPixels};
+	for (auto const &candidate : editor_track::free_ends(Self, Category, glm::dvec3{Global.pCamera.Pos}, reach, Exclude))
+	{
+		ImVec2 screen;
+		if (false == projection.project(candidate.position, screen))
+			continue;
+		auto const distance{(screen.x - Screen.x) * (screen.x - Screen.x) + (screen.y - Screen.y) * (screen.y - Screen.y)};
+		if (distance < best)
+		{
+			best = distance;
+			result = candidate;
+		}
+	}
+	if (result.track == nullptr && m_track_snap_radius > 0.0f)
+		result = editor_track::find_free_end(Self, Category, Near, m_track_snap_radius, Exclude);
+	return result;
+}
+
+void editor_mode::draw_free_ends(TTrack const *Self, int const Category, std::vector<TTrack const *> const &Exclude) const
+{
+	screen_projection const projection;
+	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto const &display{ImGui::GetIO().DisplaySize};
+	auto const reach{Global.EditorOrtho ? std::max(kJointRange, static_cast<double>(Global.EditorOrthoExtent) * 2.0) : kJointRange};
+	for (auto const &candidate : editor_track::free_ends(Self, Category, glm::dvec3{Global.pCamera.Pos}, reach, Exclude))
+	{
+		ImVec2 screen;
+		if (projection.project(candidate.position, screen) && screen.x >= 0.0f && screen.y >= 0.0f && screen.x <= display.x && screen.y <= display.y)
+			drawlist->AddCircle(screen, 7.0f, IM_COL32(255, 60, 255, 170), 12, 1.5f);
+	}
+}
+
+bool editor_mode::switch_reach(glm::dvec3 const &Ground, glm::dvec3 &Point)
+{
+	auto *selected{selected_track()};
+	if (m_track_tab != track_tab::turnout || m_switch.armed < 0 || selected == nullptr || selected->eType != tt_Normal || selected->m_paths.empty())
+		return false;
+	auto const &line{current_straight()};
+	if (false == line.tracks.empty())
+	{
+		auto const along{std::clamp(line.along(Ground), 0.0, line.length)};
+		Point = line.start + glm::dvec3{line.direction.x, line.grade, line.direction.y} * along;
+	}
+	else
+	{
+		Point = editor_track::point_at(*selected, editor_track::nearest_parameter(*selected, Ground));
+	}
+	return plan_distance(Point, Ground) <= kSwitchReach;
+}
+
+void editor_mode::handle_drag_start(glm::dvec3 const &Anchor)
+{
+	auto const &io{ImGui::GetIO()};
+	m_handle_drag = {};
+	m_handle_drag.active = true;
+	m_handle_drag.from = {io.MousePos.x, io.MousePos.y};
+	m_handle_drag.height = Anchor.y;
+	m_handle_drag.position = Anchor;
+	screen_projection const projection;
+	glm::dvec3 level;
+	if (projection.on_level(io.MousePos, Anchor.y, level))
+		m_handle_drag.offset = {Anchor.x - level.x, 0.0, Anchor.z - level.z};
+}
+
+bool editor_mode::handle_drag_step(glm::dvec3 &Position)
+{
+	auto &drag{m_handle_drag};
+	auto const &io{ImGui::GetIO()};
+	if (false == drag.active)
+		return false;
+	if (false == io.MouseDown[0])
+	{
+		drag = {};
+		return false;
+	}
+	glm::vec2 const mouse{io.MousePos.x, io.MousePos.y};
+	if (false == drag.moved && glm::length(mouse - drag.from) < kDragPixels)
+		return false;
+	drag.moved = true;
+	screen_projection const projection;
+	glm::dvec3 level;
+	if (projection.on_level(io.MousePos, drag.height, level) && glm::distance(level, glm::dvec3{Global.pCamera.Pos}) <= static_cast<double>(kMaxPlacementDistance))
+		drag.position = level + drag.offset;
+	Position = drag.position;
+	return true;
+}
+
+void editor_mode::point_drag_start(editor_track::point_ref const &Point)
+{
+	auto *track{selected_track()};
+	m_track_point = Point;
+	m_point_drag = {};
+	if (track == nullptr || false == Point.valid() || Point.path >= static_cast<int>(track->m_paths.size()))
+		return;
+	auto const &io{ImGui::GetIO()};
+	m_point_drag.active = true;
+	m_point_drag.from = {io.MousePos.x, io.MousePos.y};
+	m_point_drag.height = editor_track::point_position(*track, Point).y;
+}
+
+void editor_mode::point_drag_update()
+{
+	auto &drag{m_point_drag};
+	if (false == drag.active)
+		return;
+	auto const &io{ImGui::GetIO()};
+	if (false == io.MouseDown[0])
+	{
+		point_drag_finish();
+		return;
+	}
+	auto *track{selected_track()};
+	if (track == nullptr || false == m_track_point.valid() || m_track_point.path >= static_cast<int>(track->m_paths.size()))
+	{
+		drag = {};
+		return;
+	}
+	glm::vec2 const mouse{io.MousePos.x, io.MousePos.y};
+	if (false == drag.moved)
+	{
+		if (glm::length(mouse - drag.from) < kDragPixels)
+			return;
+		std::string reason;
+		if (false == editor_track::can_edit_geometry(*track, reason))
+		{
+			ui()->set_status(reason, true);
+			drag = {};
+			return;
+		}
+		drag.moved = true;
+		m_track_drag = {track};
+		m_track_drag_points.clear();
+		m_track_joints.clear();
+		m_track_snap = {};
+		if (editor_track::is_end(m_track_point.kind) && m_track_drag_connected)
+		{
+			for (auto const &connection : editor_track::connected_points(*track, editor_track::point_position(*track, m_track_point)))
+			{
+				std::string neighbourreason;
+				if (false == editor_track::can_edit_geometry(*connection.first, neighbourreason))
+					continue;
+				m_track_drag_points.emplace_back(connection);
+				if (std::find(m_track_drag.begin(), m_track_drag.end(), connection.first) == m_track_drag.end())
+					m_track_drag.emplace_back(connection.first);
+			}
+		}
+		std::vector<std::pair<TTrack *, editor_track::state>> states;
+		for (auto *dragged : m_track_drag)
+			states.emplace_back(dragged, editor_track::capture(*dragged));
+		push_track_snapshot(std::move(states));
+	}
+	screen_projection const projection;
+	glm::dvec3 position;
+	if (false == projection.on_level(io.MousePos, drag.height, position) || glm::distance(position, glm::dvec3{Global.pCamera.Pos}) > static_cast<double>(kMaxPlacementDistance))
+		return;
+	m_track_snap = {};
+	if (editor_track::is_end(m_track_point.kind) && m_track_drag_points.empty())
+	{
+		std::vector<TTrack const *> const exclude(m_track_drag.begin(), m_track_drag.end());
+		m_track_snap = snap_free_end(position, mouse, track, track->iCategoryFlag & 15, exclude);
+		if (m_track_snap.track != nullptr)
+			position = m_track_snap.position;
+	}
+	editor_track::move_point(*track, m_track_point, position);
+	for (auto const &connection : m_track_drag_points)
+		editor_track::move_point(*connection.first, connection.second, position);
+	m_track_dirty = true;
+	commit_track_drag(false);
+}
+
+void editor_mode::point_drag_finish()
+{
+	auto const drag{m_point_drag};
+	m_point_drag = {};
+	if (false == drag.active || false == drag.moved)
+		return;
+	if (auto *track{selected_track()}; track != nullptr && m_track_snap.track != nullptr && m_track_point.valid())
+	{
+		editor_track::snap_point(*track, m_track_point, m_track_snap, m_track_align_tangent);
+		m_track_dirty = true;
+	}
+	m_track_snap = {};
+	commit_track_drag(true);
+	m_track_drag.clear();
+	m_track_drag_points.clear();
+	m_track_joints.clear();
 }
 
 std::vector<segment_data> editor_mode::extend_pieces() const
@@ -3529,6 +3960,25 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 		auto const shape{alignment::compute(design)};
 		return shape.valid ? alignment::pieces(shape, design, 0) : result;
 	}
+	if (false == ImGui::GetIO().KeyShift && tool.track != nullptr && tool.track->eType == tt_Switch && tool.track->m_paths.size() > 1 && tool.path == 1 && tool.atend)
+	{
+		auto const &diverging{tool.track->m_paths[1]};
+		bezier const curve{diverging};
+		auto const begin{plan_of(curve.first(0.0))};
+		auto const finish{plan_of(curve.first(1.0))};
+		auto const turn{glm::length(begin) > 1e-9 && glm::length(finish) > 1e-9 ? geometry::signed_angle(begin, finish) : 0.0};
+		if (std::abs(turn) > 1e-4)
+		{
+			int const side{turn > 0.0 ? 1 : -1};
+			auto const radius{std::abs(diverging.radius) > 1.0f ? static_cast<double>(std::abs(diverging.radius)) : curve.plan_length() / std::abs(turn)};
+			auto const &direction{tool.direction};
+			auto const centre{plan_of(tool.point) + glm::dvec2{-direction.y, direction.x} * (side * radius)};
+			auto const angle{geometry::signed_angle(plan_of(tool.point) - centre, plan_of(tool.mouse) - centre) * side};
+			if (angle * radius < 0.5)
+				return result;
+			return arc_pieces(tool.point, direction, tool.grade, radius, std::min(angle, glm::pi<double>()), side);
+		}
+	}
 	glm::dvec2 const offset{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
 	auto const chord{glm::length(offset)};
 	if (chord < 0.5)
@@ -3537,7 +3987,7 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 	auto const along{glm::dot(offset, direction)};
 	auto const lateral{direction.x * offset.y - direction.y * offset.x};
 	auto const height = [&](double const Distance) { return tool.point.y + tool.grade * Distance; };
-	if (false == m_extend_freehand || ImGui::GetIO().KeyCtrl || std::abs(lateral) < 0.005 * chord + 0.05)
+	if (false == m_extend_freehand || ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeyShift || std::abs(lateral) < 0.005 * chord + 0.05)
 	{
 		if (along < 0.5)
 			return result;
@@ -3553,6 +4003,20 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 
 void editor_mode::finish_extend()
 {
+	auto const &io{ImGui::GetIO()};
+	if (glm::length(glm::vec2{io.MousePos.x, io.MousePos.y} - m_extend.pressed) < kDragPixels && m_typed.empty())
+	{
+		m_extend.active = false;
+		if (m_lay.active && m_lay.points.empty() && m_extend.origin.track != nullptr)
+		{
+			m_lay.status.clear();
+			m_lay.start = m_extend.origin;
+			m_lay.points.push_back(m_extend.origin.position);
+		}
+		else if (false == m_lay.active && m_extend.origin.track != nullptr && m_extend.origin.track == selected_track())
+			m_track_point = m_extend.origin.point;
+		return;
+	}
 	crossover_plan plan;
 	editor_track::snap_target target;
 	if (false == extend_snap(target) && plan_crossover(plan))
@@ -3645,7 +4109,7 @@ void editor_mode::render_extend_ui()
 	if (ImGui::Button(STR_C("Curve right##extend"), ImVec2(100.0f, 0.0f)))
 		extend_add(-1);
 	ImGui::Checkbox(STR_C("Freehand"), &m_extend_freehand);
-	item_tooltip("Dragging the red ring of a free end draws a curve through the cursor; off: it draws a straight along the end");
+	item_tooltip("Dragging from a free end draws a curve through the cursor; off: it draws a straight along the end");
 }
 
 std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, double &Length, std::string &Error) const
@@ -3723,7 +4187,7 @@ void editor_mode::lay_click()
 {
 	auto &tool{m_lay};
 	tool.status.clear();
-	auto const snap{editor_track::find_free_end(nullptr, kRailCategory, tool.mouse, kLaySnapRadius, {})};
+	auto const snap{tool.mouse_snap};
 	if (snap.track != nullptr && false == tool.points.empty() && glm::distance(snap.position, tool.points.front()) > 1.0)
 	{
 		// reaching a free end finishes the track there, in line with the path it joins
@@ -3741,6 +4205,7 @@ void editor_mode::lay_click()
 	if (plan_distance(point, tool.points.back()) < 1.0)
 		return;
 	tool.points.push_back(point);
+	m_typed.clear();
 }
 
 void editor_mode::lay_finish(editor_track::snap_target const &End)
@@ -3777,6 +4242,47 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	straight_refresh();
 }
 
+bool editor_mode::lay_heading(glm::dvec2 &Heading) const
+{
+	auto const &tool{m_lay};
+	glm::dvec2 direction{0.0};
+	if (tool.points.size() >= 2)
+		direction = plan_of(tool.points.back() - tool.points[tool.points.size() - 2]);
+	else if (tool.points.size() == 1 && tool.start.track != nullptr)
+		direction = -plan_of(tool.start.direction);
+	if (glm::length(direction) < 1e-6)
+		return false;
+	Heading = glm::normalize(direction);
+	return true;
+}
+
+void editor_mode::lay_enter()
+{
+	auto &tool{m_lay};
+	if (false == m_typed.empty())
+	{
+		lay_click();
+		return;
+	}
+	if (tool.points.empty())
+		return;
+	auto const end{tool.mouse_snap};
+	if (end.track != nullptr && glm::distance(end.position, tool.points.front()) > 1.0)
+	{
+		tool.points.push_back(end.position);
+		lay_finish(end);
+		return;
+	}
+	auto const point{placement_on_ground(tool.mouse)};
+	bool const appended{plan_distance(point, tool.points.back()) > 1.0};
+	if (appended)
+		tool.points.push_back(point);
+	auto const count{tool.points.size()};
+	lay_finish({});
+	if (appended && tool.points.size() == count)
+		tool.points.pop_back();
+}
+
 void editor_mode::lay_cancel()
 {
 	auto &tool{m_lay};
@@ -3788,6 +4294,12 @@ void editor_mode::lay_cancel()
 void editor_mode::render_lay_ui()
 {
 	auto &tool{m_lay};
+	if (auto *track{selected_track()}; track != nullptr)
+	{
+		std::string reason;
+		if (editor_track::can_edit_geometry(*track, reason))
+			render_extend_ui();
+	}
 	ImGui::PushItemWidth(120.0f);
 	ImGui::DragScalar(STR_C("Curve radius (m)"), ImGuiDataType_Double, &tool.radius, 5.0f, nullptr, nullptr, "%.0f");
 	item_tooltip("Drag to change, Ctrl+click to type the value");
@@ -3867,9 +4379,9 @@ bool editor_mode::start_switch_placement()
 		return false;
 	// with no plain track selected, or a press away from it, the click selects
 	auto *selected{selected_track()};
-	if (selected == nullptr || selected->eType != tt_Normal)
+	if (selected == nullptr || selected->eType != tt_Normal || selected->m_paths.empty())
 		return false;
-	glm::dvec3 const ground{Global.pCamera.Pos + GfxRenderer->Mouse_Position()};
+	glm::dvec3 const ground{cursor_level(selected->m_paths.front().points[segment_data::point::start].y)};
 	tool.curved = false;
 	tool.status.clear();
 	if (current_straight().tracks.empty())
@@ -3952,10 +4464,158 @@ void editor_mode::insert_switch(editor_track::straight const &Line, double const
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	std::vector<TTrack *> created;
 	std::vector<TTrack *> removed;
-	if (false == place_switch_on_straight(Line, m_switch.templates[m_switch.armed], nullptr, Along, Direction, Side, true, states, created, removed))
+	if (false == place_switch_on_straight(Line, m_switch.templates[m_switch.armed], nullptr, Along, Direction, Side, true, states, created, removed, switch_name_for_new()))
 		return;
+	auto const placed{created};
 	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 	straight_refresh();
+	switch_placed(placed);
+}
+
+void editor_mode::switch_placed(std::vector<TTrack *> const &Created)
+{
+	auto const found{std::find_if(Created.begin(), Created.end(), [](TTrack const *Track) { return Track != nullptr && Track->eType == tt_Switch; })};
+	if (found == Created.end())
+		return;
+	auto const slip{std::count_if(Created.begin(), Created.end(), [](TTrack const *Track) { return Track != nullptr && Track->eType == tt_Switch; }) > 1};
+	m_switch.armed = -1;
+	m_switch.placing = false;
+	m_track_point = {};
+	m_node = *found;
+	ui()->set_node(m_node);
+	if (slip)
+		return;
+	if (m_switch.drive >= 0)
+		place_switch_drive(**found);
+	std::string name{m_switch.name};
+	auto digits{name.size()};
+	while (digits > 0 && std::isdigit(static_cast<unsigned char>(name[digits - 1])))
+		--digits;
+	if (digits < name.size() && name.size() - digits < 9)
+		name = name.substr(0, digits) + std::to_string(std::stoi(name.substr(digits)) + 1);
+	else
+		name.clear();
+	std::snprintf(m_switch.name, sizeof(m_switch.name), "%s", name.c_str());
+}
+
+void editor_mode::scan_switch_drives()
+{
+	auto &tool{m_switch};
+	if (tool.drives_scanned)
+		return;
+	tool.drives_scanned = true;
+	tool.drives.clear();
+	if (false == EditorIncludes.scanned())
+		EditorIncludes.scan();
+	for (auto const &entry : EditorIncludes.entries())
+	{
+		if (entry.category != "switch drive")
+			continue;
+		include_info info;
+		std::string error;
+		if (false == editor_includes::load(entry.file, info, error) || editor_includes::parameter_with_role(info, "track") == 0)
+			continue;
+		auto const side = [](std::string const &Side) { return Side == "left" ? 0 : Side == "right" ? 1 : -1; };
+		auto const hand{side(info.switch_hand)};
+		auto const drive{side(info.switch_drive)};
+		if (hand < 0 || drive < 0)
+			continue;
+		auto const name{info.name.empty() ? entry.file : info.name};
+		auto family{std::find_if(tool.drives.begin(), tool.drives.end(), [&](switch_tool::drive_family const &Family) { return Family.name == name; })};
+		if (family == tool.drives.end())
+		{
+			tool.drives.push_back({name, {}});
+			family = std::prev(tool.drives.end());
+		}
+		family->files[hand * 2 + drive] = entry.file;
+	}
+	std::sort(tool.drives.begin(), tool.drives.end(), [](switch_tool::drive_family const &A, switch_tool::drive_family const &B) { return A.name < B.name; });
+	tool.drive = tool.drives.empty() ? -1 : 0;
+}
+
+std::string editor_mode::switch_name_for_new() const
+{
+	if (m_switch.name[0] != '\0')
+		return m_switch.name;
+	for (int i = 1;; ++i)
+	{
+		auto const name{"z" + std::to_string(i)};
+		if (simulation::Paths.find(name) == nullptr && simulation::Events.FindEvent(name + "+") == nullptr)
+			return name;
+	}
+}
+
+bool editor_mode::place_switch_drive(TTrack &Switch)
+{
+	auto &tool{m_switch};
+	if (tool.drive < 0 || tool.drive >= static_cast<int>(tool.drives.size()) || Switch.eType != tt_Switch || Switch.m_paths.size() < 2)
+		return false;
+	auto const &main{Switch.m_paths[0]};
+	auto const &diverging{Switch.m_paths[1]};
+	auto const start{main.points[segment_data::point::start]};
+	auto const &control{main.points[segment_data::point::control1]};
+	auto heading{plan_of(control != glm::dvec3{} ? control : main.points[segment_data::point::end] - start)};
+	if (glm::length(heading) < 1e-9)
+		return false;
+	heading = glm::normalize(heading);
+	glm::dvec2 const right{-heading.y, heading.x};
+	bool const rightswitch{glm::dot(plan_of(diverging.points[segment_data::point::end] - start), right) > 0.0};
+	bool const driveright{(tool.drive_side == 0) == rightswitch};
+	auto const &family{tool.drives[tool.drive]};
+	template_item item;
+	item.file = family.files[(rightswitch ? 2 : 0) + (driveright ? 1 : 0)];
+	if (item.file.empty())
+	{
+		tool.status = format(STR_C("The drive %s has no variant for a %s switch with the drive on the %s"), family.name.c_str(), rightswitch ? STR_C("right") : STR_C("left"), driveright ? STR_C("right") : STR_C("left"));
+		return false;
+	}
+	item.location = start;
+	auto yaw{glm::degrees(std::atan2(heading.x, heading.y))};
+	item.yaw = yaw < 0.0 ? yaw + 360.0 : yaw;
+	item.described = true;
+	item.track = Switch.name();
+	std::string error;
+	if (place_templates({item}, error) == 0)
+	{
+		tool.status = STR_C("The drive couldn't be placed: ") + error;
+		return false;
+	}
+	tool.status = format(STR_C("Switch %s with the drive %s: events %s+ and %s- switch it, also in the map"), Switch.name().c_str(), item.file.c_str(), Switch.name().c_str(), Switch.name().c_str());
+	return true;
+}
+
+bool editor_mode::render_switch_drive_choice()
+{
+	auto &tool{m_switch};
+	scan_switch_drives();
+	if (tool.drives.empty())
+	{
+		ImGui::TextDisabled("%s", STR_C("No switch drives: no template is described with category: switch drive"));
+		return false;
+	}
+	auto const label = [&](int const Index) { return Index < 0 ? std::string{STR_C("no drive")} : tool.drives[Index].name; };
+	ImGui::PushItemWidth(200.0f);
+	bool changed{false};
+	if (ImGui::BeginCombo(STR_C("Drive"), label(tool.drive).c_str()))
+	{
+		for (int i = -1; i < static_cast<int>(tool.drives.size()); ++i)
+			if (ImGui::Selectable(label(i).c_str(), tool.drive == i))
+			{
+				tool.drive = i;
+				changed = true;
+			}
+		ImGui::EndCombo();
+	}
+	ImGui::PopItemWidth();
+	item_tooltip("Templates described with category: switch drive, the side of the switch and of the drive, and a parameter with the role track for the name of the switch.\nIts events <name>+ and <name>- switch it with the keys by the switch and in the map during the game");
+	if (tool.drive >= 0)
+	{
+		ImGui::SameLine();
+		changed |= ImGui::RadioButton(STR_C("diverging side"), &tool.drive_side, 0);
+		ImGui::SameLine();
+		changed |= ImGui::RadioButton(STR_C("other side"), &tool.drive_side, 1);
+	}
+	return changed;
 }
 
 bool editor_mode::cut_straight(editor_track::straight const &Line, double const From, double const To, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, TTrack **Style)
@@ -4046,7 +4706,7 @@ bool editor_mode::cut_straight(editor_track::straight const &Line, double const 
 	return true;
 }
 
-bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, editor_track::switch_template const &Shape, TTrack const *Style, double const Along, int const Direction, int const Side, bool const Snap, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed)
+bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, editor_track::switch_template const &Shape, TTrack const *Style, double const Along, int const Direction, int const Side, bool const Snap, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, std::string const &Name)
 {
 	auto const &shape{Shape};
 	if (shape.length > Line.length - 0.02)
@@ -4090,7 +4750,7 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 	auto const point = [&](double const Distance) { return Line.start + glm::dvec3{Line.direction.x, Line.grade, Line.direction.y} * Distance; };
 	glm::dvec2 const direction{Line.direction * static_cast<double>(Direction)};
 	auto const paths{editor_track::place_switch(shape, point(origin), direction, Side, Line.grade * Direction)};
-	auto *track{editor_track::create_switch(shape, paths, Style != nullptr ? *Style : *first)};
+	auto *track{editor_track::create_switch(shape, paths, Style != nullptr ? *Style : *first, Name)};
 	if (track != nullptr)
 	{
 		editor_track::commit({track});
@@ -4134,6 +4794,8 @@ void editor_mode::draw_build_overlay() const
 	}
 	if (m_extend.active)
 	{
+		if (m_extend.track != nullptr)
+			draw_free_ends(m_extend.track, m_extend.track->iCategoryFlag & 15, {m_extend.track});
 		crossover_plan plan;
 		editor_track::snap_target target;
 		if (extend_snap(target))
@@ -4177,24 +4839,8 @@ void editor_mode::draw_build_overlay() const
 			drawlist->AddCircle(screen, 14.0f, IM_COL32(255, 60, 255, 255), 20, 3.0f);
 		if (lay.start.track != nullptr && projection.project(lay.start.position, screen))
 			drawlist->AddCircle(screen, 10.0f, IM_COL32(255, 60, 255, 255), 20, 2.0f);
-		if (lay.points.empty())
-		{
-			// free ends nearby, which the new track can start from
-			for (auto *section : simulation::Region->sections(lay.mouse, 300.f))
-				for (auto const &cell : section->m_cells)
-					for (auto *path : cell.m_directories.paths)
-					{
-						if ((path->iCategoryFlag & 15) != kRailCategory || false == editor_track::is_supported(*path))
-							continue;
-						for (int i = 0; i < static_cast<int>(path->m_paths.size()); ++i)
-							for (auto const kind : {editor_track::point_kind::start, editor_track::point_kind::end})
-							{
-								editor_track::point_ref const point{i, kind};
-								if (false == editor_track::is_connected(*path, point) && projection.project(editor_track::point_position(*path, point), screen))
-									drawlist->AddCircle(screen, 7.0f, IM_COL32(255, 60, 255, 160), 12, 1.5f);
-							}
-					}
-		}
+		if (false == m_extend.active)
+			draw_free_ends(nullptr, kRailCategory, {});
 	}
 	if (false == m_straights.detour.empty())
 	{
@@ -4208,37 +4854,45 @@ void editor_mode::draw_build_overlay() const
 				drawlist->AddCircleFilled(screen, 6.0f, overlay_color::invalid);
 		}
 	}
-	auto const *track{selected_track()};
-	if (track == nullptr || (track->eType != tt_Normal && track->eType != tt_Switch) || m_extend.active)
-		return;
-	for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
-	{
-		for (auto const atend : {false, true})
-		{
-			editor_track::point_ref const point{i, atend ? editor_track::point_kind::end : editor_track::point_kind::start};
-			if (editor_track::is_connected(*track, point))
-				continue;
-			ImVec2 screen;
-			if (projection.project(editor_track::point_position(*track, point), screen))
-				drawlist->AddCircle(screen, 10.0f, IM_COL32(240, 60, 60, 255), 16, 3.0f);
-		}
-	}
+	if ((m_point_drag.moved || (m_track_gizmo_using && m_track_point.valid())) && editor_track::is_end(m_track_point.kind) && m_track_drag_points.empty())
+		if (auto const *track{selected_track()}; track != nullptr)
+			draw_free_ends(track, track->iCategoryFlag & 15, std::vector<TTrack const *>(m_track_drag.begin(), m_track_drag.end()));
 }
 
 void editor_mode::render_switch_ui()
 {
 	auto &tool{m_switch};
+	auto const list = [&](bool const Slips) {
+		for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
+		{
+			auto const &entry{tool.templates[i]};
+			if (entry.double_slip != Slips)
+				continue;
+			auto label{entry.source != nullptr ? STR("Scenery: ") + entry.label + "  (" + std::to_string(entry.count) + "x)" : "PLK: " + entry.label};
+			label += "##switch" + std::to_string(i);
+			if (ImGui::Selectable(label.c_str(), tool.armed == i))
+				tool.armed = tool.last = i;
+		}
+	};
 	ImGui::TextDisabled("%s", STR_C("Switch template"));
 	ImGui::BeginChild("##switchtemplates", ImVec2(0.0f, 240.0f), true);
-	for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
-	{
-		auto const &entry{tool.templates[i]};
-		auto label{entry.source != nullptr ? STR("Scenery: ") + entry.label + "  (" + std::to_string(entry.count) + "x)" : "PLK: " + entry.label};
-		label += "##switch" + std::to_string(i);
-		if (ImGui::Selectable(label.c_str(), tool.armed == i))
-			tool.armed = tool.last = i;
-	}
+	list(false);
 	ImGui::EndChild();
+	if (std::any_of(tool.templates.begin(), tool.templates.end(), [](editor_track::switch_template const &Template) { return Template.double_slip; }))
+	{
+		if (tool.armed >= 0 && tool.armed < static_cast<int>(tool.templates.size()) && tool.templates[tool.armed].double_slip)
+			ImGui::SetNextItemOpen(true);
+		if (ImGui::CollapsingHeader(STR_C("Double slip switches")))
+		{
+			ImGui::TextDisabled("%s", STR_C("Only at a crossing of two straights"));
+			list(true);
+		}
+	}
+	ImGui::PushItemWidth(120.0f);
+	ImGui::InputTextWithHint(STR_C("Name##switchname"), switch_name_for_new().c_str(), tool.name, sizeof(tool.name));
+	ImGui::PopItemWidth();
+	item_tooltip("Name of the next switch, its drive events are named after it; empty: the next free z1, z2...; a number at the end goes up with each switch");
+	render_switch_drive_choice();
 	if (false == tool.status.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", tool.status.c_str());
 	if (ImGui::SmallButton(STR_C("Collect again from the scenery")))
@@ -4280,7 +4934,7 @@ void editor_mode::add_detour_point()
 			return;
 		state.detour_line = line;
 	}
-	state.detour.push_back(Global.pCamera.Pos + GfxRenderer->Mouse_Position());
+	state.detour.push_back(cursor_ground());
 	if (state.detour.size() >= 4)
 	{
 		apply_detour();
@@ -4398,20 +5052,31 @@ void editor_mode::apply_detour()
 	straight_refresh();
 }
 
-bool editor_mode::start_curve_fit(editor_track::straight const &Line)
+bool editor_mode::start_curve_fit(editor_track::straight const &Line, int const Handle)
 {
 	auto &state{m_straights};
 	auto *before{editor_track::outside_neighbour(Line, false)};
 	auto *after{editor_track::outside_neighbour(Line, true)};
-	if (before == nullptr || after == nullptr)
+	auto const curve_at = [&](TTrack *Neighbour, editor_track::curve &Curve) {
+		Curve = {};
+		return Neighbour != nullptr && Neighbour->eType == tt_Normal && editor_track::find_curve(*Neighbour, state.tolerance, m_route.design.norms.gauge, Curve) && Curve.reversals == 0 && std::abs(Curve.turn) > 1e-4;
+	};
+	state.fit_has_before = curve_at(before, state.fit_before);
+	state.fit_has_after = curve_at(after, state.fit_after);
+	if (false == state.fit_has_before && false == state.fit_has_after)
 		return false;
-	if (false == editor_track::find_curve(*before, state.tolerance, m_route.design.norms.gauge, state.fit_before) || false == editor_track::find_curve(*after, state.tolerance, m_route.design.norms.gauge, state.fit_after))
+	auto const side_follows = [&](bool const Curve, TTrack const *Neighbour, bool const Pivot) { return Curve || Neighbour == nullptr || Pivot; };
+	if (false == side_follows(state.fit_has_before, before, Handle == 1) || false == side_follows(state.fit_has_after, after, Handle == 0))
 		return false;
-	if (state.fit_before.reversals != 0 || state.fit_after.reversals != 0)
-		return false;
+	auto const own_end = [&](glm::dvec3 const &Point) -> TTrack * {
+		for (auto *track : Line.tracks)
+			if (editor_track::touches(*track, Point))
+				return track;
+		return Line.tracks.empty() ? nullptr : Line.tracks.front();
+	};
 	auto const other_end = [](editor_track::curve const &Curve, glm::dvec3 const &Joint) { return editor_track::touches(*Curve.from, Joint) ? Curve.to : Curve.from; };
-	m_route.from = other_end(state.fit_before, Line.start);
-	m_route.to = other_end(state.fit_after, Line.end);
+	m_route.from = state.fit_has_before ? other_end(state.fit_before, Line.start) : own_end(Line.start);
+	m_route.to = state.fit_has_after ? other_end(state.fit_after, Line.end) : own_end(Line.end);
 	route_reset();
 	if (m_route.chain.tracks.empty())
 		return false;
@@ -4440,26 +5105,34 @@ void editor_mode::update_curve_fit(glm::dvec3 const &Start, glm::dvec3 const &En
 			vertex.transition_out = std::round(Curve.transition_out);
 		if (Curve.cant > 0.0)
 			vertex.cant = std::round(Curve.cant);
-		if (Curve.compound)
-		{
-			vertex.compound = true;
-			vertex.radius2 = std::round(Curve.radius2);
-			vertex.transition_middle = std::round(Curve.transition_middle);
-			vertex.split = Curve.split;
-		}
+		compound_from(Curve, vertex);
 		vertex.offset = std::max(0.1, Offset);
 		return vertex;
 	};
-	auto before{make(state.fit_before, first)};
-	auto after{make(state.fit_after, last)};
-	design.vertices = {before, after};
+	design.vertices.clear();
+	if (state.fit_has_before)
+		design.vertices.push_back(make(state.fit_before, first));
+	else
+	{
+		design.start = Start;
+		design.start_direction = direction;
+		design.start_reserve = 0.0;
+	}
+	if (state.fit_has_after)
+		design.vertices.push_back(make(state.fit_after, last));
+	else
+	{
+		design.end = End;
+		design.end_direction = direction;
+		design.end_reserve = 0.0;
+	}
 	route_update();
 }
 
 bool editor_mode::plan_crossover(crossover_plan &Plan) const
 {
 	auto const &tool{m_extend};
-	if (false == tool.active || tool.track == nullptr || tool.track->eType != tt_Switch || tool.track->m_paths.size() < 2 || tool.path != 1 || false == tool.atend)
+	if (false == tool.active || tool.track == nullptr || tool.track->eType != tt_Switch || tool.track->m_paths.size() < 2 || tool.path != 1 || false == tool.atend || ImGui::GetIO().KeyShift)
 		return false;
 	auto const &own{*tool.track};
 	auto const &main{own.m_paths[0]};
@@ -4737,6 +5410,7 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 	created.insert(created.end(), parts.begin(), parts.end());
 	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 	straight_refresh();
+	switch_placed(parts);
 	return true;
 }
 
@@ -5051,7 +5725,7 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 		}
 	}
 	auto const paths{curved_switch_paths(shape, tool.frame, station, Direction, Side)};
-	auto *track{editor_track::create_switch(shape, paths, *tool.frame_tracks.front())};
+	auto *track{editor_track::create_switch(shape, paths, *tool.frame_tracks.front(), switch_name_for_new())};
 	if (track != nullptr)
 	{
 		editor_track::commit({track});
@@ -5060,6 +5734,8 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 	}
 	else
 		tool.status = STR_C("The switch couldn't be created from this template");
+	auto const placed{created};
 	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 	straight_refresh();
+	switch_placed(placed);
 }

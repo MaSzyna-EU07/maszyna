@@ -28,6 +28,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/lightarray.h"
 #include "world/TractionPower.h"
 #include "world/Road.h"
+#include "world/Sweep.h"
 #include "world/RoadPoint.h"
 #include "application/application.h"
 #include "rendering/renderer.h"
@@ -35,7 +36,18 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 #include "editor/editorTerrainStreamer.hpp"
 
+
 namespace simulation {
+
+namespace {
+
+double vehicle_length( std::string const &Folder, std::string const &Type ) {
+
+    TMoverParameters probe( 0.0, Type, Type, 0 );
+    return probe.LoadFIZ( paths::dynamic + Folder + "/" ) ? probe.Dim.L : 0.0;
+}
+
+} // namespace
 
 std::shared_ptr<deserializer_state>
 state_serializer::deserialize_begin( std::string const &Scenariofile ) {
@@ -123,7 +135,8 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 	            { "trainset",    &state_serializer::deserialize_trainset },
 	            { "terrain",     &state_serializer::deserialize_terrain },
 	            { "editorterrain", &state_serializer::deserialize_editorterrain },
-	            { "endtrainset", &state_serializer::deserialize_endtrainset } };
+	            { "endtrainset", &state_serializer::deserialize_endtrainset },
+	            { "reversed", &state_serializer::deserialize_reversed } };
 
 	for( auto &function : functionlist ) {
 		state->functionmap.emplace( function.first, std::bind( function.second, this, std::ref( state->input ), std::ref( state->scratchpad ) ) );
@@ -191,6 +204,7 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 	simulation::Roads.create_geometry( Scratchpad );
 	simulation::Junctions.create_geometry( Scratchpad );
 	simulation::Roadpoints.create_geometry();
+	simulation::Sweeps.create_geometry( Scratchpad );
 
 	return false;
 }
@@ -553,6 +567,20 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         // the lanes are regular paths, registered right away so they get joined with their neighbours along with the tracks
         road->create_lanes();
         scene::Layers.track( road, { sourcebegin, Input.TokenEnd() } );
+    }
+    else if( nodedata.type == "sweep" ) {
+
+        auto *sweep { new sweep_node( nodedata ) };
+        sweep->import(
+            Input,
+            ( Scratchpad.location.offset.empty() ?
+                glm::dvec3 { 0.0 } :
+                glm::dvec3 { Scratchpad.location.offset.top() } ) );
+        if( false == simulation::Sweeps.insert( sweep ) ) {
+            ErrorLog( "Bad scenario: duplicate sweep name \"" + sweep->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
+        }
+        scene::Groups.insert( scene::Groups.handle(), sweep );
+        scene::Layers.track( sweep, { sourcebegin, Input.TokenEnd() } );
     }
     else if( nodedata.type == "junction" ) {
 
@@ -1224,6 +1252,17 @@ include_terrain_file( std::string File, std::string &Includes, scene::scratch_da
 
 } // namespace
 
+void
+state_serializer::deserialize_reversed( cParser &Input, scene::scratch_data &Scratchpad ) {
+
+    if( false == Scratchpad.trainset.is_open
+     || false == Scratchpad.trainset.vehicles.empty() ) {
+        ErrorLog( "Bad trainset: \"reversed\" has to follow the trainset header, ahead of its vehicles, in file \"" + Input.Name() + "\" (line " + std::to_string( Input.Line() - 1 ) + ")" );
+        return;
+    }
+    Scratchpad.trainset.reversed = true;
+}
+
 void 
 state_serializer::deserialize_terrain(cParser &Input, scene::scratch_data &Scratchpad)
 {
@@ -1312,9 +1351,16 @@ state_serializer::deserialize_endtrainset( cParser &Input, scene::scratch_data &
         }
         if( vehicleindex > 0 ) {
             // from second vehicle on couple it with the previous one
-            Scratchpad.trainset.vehicles[ vehicleindex - 1 ]->AttachNext(
-                vehicle,
-                Scratchpad.trainset.couplings[ vehicleindex - 1 ] );
+            if( Scratchpad.trainset.reversed ) {
+                vehicle->AttachNext(
+                    Scratchpad.trainset.vehicles[ vehicleindex - 1 ],
+                    Scratchpad.trainset.couplings[ vehicleindex - 1 ] );
+            }
+            else {
+                Scratchpad.trainset.vehicles[ vehicleindex - 1 ]->AttachNext(
+                    vehicle,
+                    Scratchpad.trainset.couplings[ vehicleindex - 1 ] );
+            }
         }
         ++vehicleindex;
     }
@@ -1494,7 +1540,7 @@ state_serializer::deserialize_dynamic( cParser &Input, scene::scratch_data &Scra
         loadtype = "";
     }
 
-    auto *path = simulation::Paths.find( pathname );
+    auto *path = Scratchpad.trainset.path != nullptr ? Scratchpad.trainset.path : simulation::Paths.find( pathname );
     if( path == nullptr ) {
 
         ErrorLog( "Bad scenario: vehicle \"" + Nodedata.name + "\" placed on nonexistent path \"" + pathname + "\" in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
@@ -1502,7 +1548,9 @@ state_serializer::deserialize_dynamic( cParser &Input, scene::scratch_data &Scra
         return nullptr;
     }
 
-    if( true == Scratchpad.trainset.vehicles.empty() // jeśli pierwszy pojazd,
+    auto const reversedset { Scratchpad.trainset.is_open && Scratchpad.trainset.reversed };
+    if( false == reversedset
+     && true == Scratchpad.trainset.vehicles.empty() // jeśli pierwszy pojazd,
      && false == path->m_events0.empty() // tor ma Event0
      && std::abs(velocity) <= 1.f // a skład stoi
      && Scratchpad.trainset.offset >= 0.0 // ale może nie sięgać na owy tor
@@ -1512,23 +1560,34 @@ state_serializer::deserialize_dynamic( cParser &Input, scene::scratch_data &Scra
     }
 
     auto *vehicle = new TDynamicObject();
-    
+
+    auto const gap { offset == -1.0 ? 0.0 : offset };
+    auto const turned { ( offset == -1.0 ) != reversedset };
+    auto const expected { reversedset ? vehicle_length( datafolder, mmdfile ) : 0.0 };
     auto const length =
         vehicle->Init(
             Nodedata.name,
             datafolder, skinfile, mmdfile,
             path,
-            offset == -1.0 ? Scratchpad.trainset.offset : Scratchpad.trainset.offset - offset,
+            reversedset ? Scratchpad.trainset.offset + gap + expected : Scratchpad.trainset.offset - gap,
             drivertype,
             velocity,
             Scratchpad.trainset.name,
             loadcount, loadtype,
-            offset == -1.0,
+            turned,
             params );
 
+    if( length != 0.0 && reversedset ) {
+        if( std::abs( length - expected ) > 0.01 ) {
+            vehicle->place_on_track( path, Scratchpad.trainset.offset + gap + length, turned );
+        }
+        Scratchpad.trainset.offset += length;
+    }
     if( length != 0.0 ) { // zero oznacza błąd
         // przesunięcie dla kolejnego, minus bo idziemy w stronę punktu 1
-        Scratchpad.trainset.offset -= length;
+        if( false == reversedset ) {
+            Scratchpad.trainset.offset -= length;
+        }
         // automatically establish permanent connections for couplers which specify them in their definitions
         if( coupling != 0
          && vehicle->MoverParameters->Couplers[(offset == -1.0 ? end::front : end::rear)].AllowedFlag & coupling::permanent ) {
@@ -1774,6 +1833,11 @@ state_serializer::export_nodes_to_stream(std::ostream &scmfile, bool Dirty) cons
 			point->export_as_text( scmfile );
 		}
 	}
+	for( auto const *sweep : Sweeps.sequence() ) {
+		if( sweep != nullptr && false == sweep->m_editorremoved && sweep->dirty() == Dirty && sweep->group() == null_handle ) {
+			sweep->export_as_text( scmfile );
+		}
+	}
 	// traction
 	scmfile << "// traction\n";
 	for( auto const *traction : Traction.sequence() ) {
@@ -1824,6 +1888,25 @@ TAnimModel *state_serializer::create_model(const std::string &src, const std::st
 	scene::Layers.count(cloned->layer(), scene::layer_item::model);
 
 	return cloned;
+}
+
+std::vector<TDynamicObject *> state_serializer::insert_trainset(std::string const &Name, TTrack *Path, double const Offset, std::string const &Vehicles, bool const Reversed) {
+	scene::scratch_data scratch;
+	scratch.trainset.is_open = true;
+	scratch.trainset.name = Name;
+	scratch.trainset.track = Path != nullptr ? Path->name() : std::string{};
+	scratch.trainset.path = Path;
+	scratch.trainset.offset = static_cast<float>(Offset);
+	scratch.trainset.reversed = Reversed;
+	cParser parser(Vehicles, cParser::buffer_TEXT, Global.asCurrentSceneryPath, Global.bLoadTraction);
+	auto token { parser.getToken<std::string>() };
+	while (false == token.empty()) {
+		if (token == "node") { deserialize_node(parser, scratch); }
+		token = parser.getToken<std::string>();
+	}
+	auto const vehicles { scratch.trainset.vehicles };
+	if (false == vehicles.empty()) { deserialize_endtrainset(parser, scratch); }
+	return vehicles;
 }
 
 std::pair<int, int> state_serializer::preview_include(std::string const &Directive, scene::layer_context const &Context, scene::layer_handle Layer, scene::instance_handle Instance) {

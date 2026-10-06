@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/MemCell.h"
 #include "world/Track.h"
 #include "world/Road.h"
+#include "world/Sweep.h"
 #include "world/RoadPoint.h"
 #include "world/Traction.h"
 #include "world/TractionPower.h"
@@ -39,6 +40,7 @@ event_manager Events;
 memory_table Memory;
 path_table Paths;
 road_table Roads;
+sweep_table Sweeps;
 junction_table Junctions;
 roadpoint_table Roadpoints;
 traction_table Traction;
@@ -495,6 +497,10 @@ void state_manager::process_commands() {
 
 TAnimModel * state_manager::create_model(const std::string &src, const std::string &name, const glm::dvec3 &position) {
 	return m_serializer.create_model(src, name, position);
+}
+
+std::vector<TDynamicObject *> state_manager::insert_trainset(std::string const &Name, TTrack *Path, double const Offset, std::string const &Vehicles, bool const Reversed) {
+	return m_serializer.insert_trainset(Name, Path, Offset, Vehicles, Reversed);
 }
 
 TEventLauncher * state_manager::create_eventlauncher(const std::string &src, const std::string &name, const glm::dvec3 &position) {

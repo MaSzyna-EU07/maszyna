@@ -34,6 +34,11 @@ struct include_info
 	std::string name;
 	std::string category;
 	std::string description;
+	std::string switch_hand; // a switch drive: side of the diverging track, left or right, looking from the start of the switch
+	std::string switch_drive; // and the side the drive stands on
+	double turntable_length{0.0};
+	int turntable_angles{0};
+	int turntable_positions{0};
 	std::vector<include_parameter> parameters;
 
 	// description of specified parameter, created if there's none
@@ -66,7 +71,7 @@ bool complete(include_info const &Info, int Parameters, std::string *Issue = nul
 // builds include directive which places specified template. Location and Yaw are the placement to pass through
 // the parameters with matching roles, in the coordinates of the place the directive goes to; without Yaw the
 // rotation parameters receive their default values
-std::string directive(std::string const &File, include_info const &Info, int Parameters, glm::dvec3 const &Location, std::optional<float> Yaw);
+std::string directive(std::string const &File, include_info const &Info, int Parameters, glm::dvec3 const &Location, std::optional<float> Yaw, std::string const &Track = {});
 
 // splits include directive into the name of the included file and the values of the parameters, both as they're
 // written. returns: false if the text isn't a complete include directive

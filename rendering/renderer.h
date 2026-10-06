@@ -73,6 +73,7 @@ public:
     virtual auto Pick_Node() const -> scene::basic_node const * = 0;
 
     virtual auto Mouse_Position() const -> glm::dvec3 = 0;
+    virtual auto Mouse_Hit() const -> bool { return true; }
     // editor helpers: matrices/position of the most recent color pass camera.
     // the view matrix is camera-relative (rotation only, camera at origin), matching the
     // camera-relative rendering used by the engine; build object matrices relative to Camera_Position().

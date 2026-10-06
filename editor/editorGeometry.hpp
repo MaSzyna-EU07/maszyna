@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 #include <glm/glm.hpp>
 
 #include "world/Segment.h"
@@ -54,6 +55,36 @@ inline double signed_angle(glm::dvec2 const &From, glm::dvec2 const &To)
 inline double grade_of(glm::dvec3 const &Direction)
 {
 	return Direction.y / std::max(1e-9, std::hypot(Direction.x, Direction.z));
+}
+
+inline std::vector<segment_data> arc_pieces(glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, double const Radius, double const Angle, int const Side)
+{
+	std::vector<segment_data> result;
+	double const side{static_cast<double>(Side)};
+	glm::dvec2 const centre{plan_of(Point) + glm::dvec2{-Direction.y, Direction.x} * (side * Radius)};
+	auto const count{std::max(1, static_cast<int>(std::ceil(Angle / glm::radians(90.0) - 1e-9)))};
+	auto const step{Angle / count};
+	auto const handle{4.0 / 3.0 * std::tan(step / 4.0) * Radius};
+	glm::dvec2 const radial{plan_of(Point) - centre};
+	for (int i = 0; i < count; ++i)
+	{
+		auto const a0{side * step * i};
+		auto const a1{side * step * (i + 1)};
+		auto const p0{centre + turned(radial, a0)};
+		auto const p3{centre + turned(radial, a1)};
+		auto const d0{turned(Direction, a0)};
+		auto const d3{turned(Direction, a1)};
+		auto const y0{Point.y + Grade * Radius * step * i};
+		auto const y3{Point.y + Grade * Radius * step * (i + 1)};
+		segment_data path;
+		path.points[segment_data::point::start] = {p0.x, y0, p0.y};
+		path.points[segment_data::point::end] = {p3.x, y3, p3.y};
+		path.points[segment_data::point::control1] = {d0.x * handle, Grade * handle, d0.y * handle};
+		path.points[segment_data::point::control2] = {-d3.x * handle, -Grade * handle, -d3.y * handle};
+		path.radius = static_cast<float>(Radius);
+		result.push_back(path);
+	}
+	return result;
 }
 
 // path as a cubic Bezier curve; a path without control points is a straight with evenly spread parameter
