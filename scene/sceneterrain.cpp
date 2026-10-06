@@ -614,7 +614,7 @@ bool terrain_file::convert(std::string const &Textfile, std::string const &Binar
 	return result;
 }
 
-// makes sure binary version of specified text terrain file is in place and matches the text
+// makes sure binary version of specified text terrain file is in place and matches the text, as far as the settings ask for it
 terrain_file::state terrain_file::prepare(std::string const &Textfile, std::string const &Binaryfile)
 {
 	file_header header;
@@ -628,10 +628,20 @@ terrain_file::state terrain_file::prepare(std::string const &Textfile, std::stri
 		return (binarypresent ? state::binary : state::missing);
 	}
 
+	// how far the check goes is up to the settings (file.binary.terrain.checksum): none at all, length of the text, or its length and checksum
+	if (binarypresent && Global.file_binary_terrain_checksum <= 0)
+	{
+		return state::binary;
+	}
 	std::string text;
 	auto textloaded{false};
 	if (binarypresent && (header.sourcesize == textsize))
 	{
+		if (Global.file_binary_terrain_checksum == 1)
+		{
+			// NOTE: this takes a text changed without a change of its length for the one the binary file was made from
+			return state::binary;
+		}
 		// the length is the same; the checksum tells whether the content is, too
 		textloaded = read_file(Textfile, text);
 		if (textloaded && (text.size() == header.sourcesize) && (checksum(text.data(), text.size()) == header.sourcechecksum))

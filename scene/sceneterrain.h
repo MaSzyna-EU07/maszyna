@@ -39,7 +39,7 @@ class terrain_file
 	// converts specified text terrain file to binary format. returns: true on success, false otherwise.
 	// description of the result or of the failure is stored in Message, if provided
 	static bool convert(std::string const &Textfile, std::string const &Binaryfile, std::string *Message = nullptr);
-	// makes sure binary version of specified text terrain file is in place and matches the text
+	// makes sure binary version of specified text terrain file is in place and matches the text, as far as the settings ask for it
 	static state prepare(std::string const &Textfile, std::string const &Binaryfile);
 	// makes content of specified binary terrain file a part of provided region. the geometry is loaded right away,
 	// or left for the sections of the region to load when they're about to be used. returns: true on success, false otherwise

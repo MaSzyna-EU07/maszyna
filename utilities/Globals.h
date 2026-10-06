@@ -88,6 +88,7 @@ struct global_settings {
     int iConvertModels{ 0 }; // tworzenie plików binarnych
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan
     bool file_binary_terrain{ true }; // enable binary terrain (de)serialization
+    int file_binary_terrain_checksum{ 1 }; // check of a binary terrain file (.btf) against its text: 0 = none, 1 = length of the text, 2 = length and checksum
 	bool file_binary_terrain_state{true};
 	int file_binary_terrain_skipped{0}; // number of terrain includes left out by the parser during the current scenery load
     // logs

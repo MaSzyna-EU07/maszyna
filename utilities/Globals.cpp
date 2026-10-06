@@ -630,6 +630,15 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "file.binary.terrain.checksum")
+    {
+        // off, simple or full; anything else leaves the setting as it was
+        std::string mode;
+        ParseOne(Parser, mode, 1, true);
+        file_binary_terrain_checksum = (mode == "off" ? 0 : mode == "simple" ? 1 : mode == "full" ? 2 : file_binary_terrain_checksum);
+        return true;
+    }
+
     if (token == "inactivepause")
     {
         ParseOne(Parser, bInactivePause);
@@ -1582,6 +1591,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "latitude", fLatitudeDeg );
     export_as_text( Output, "convertmodels", iConvertModels );
     export_as_text( Output, "file.binary.terrain", file_binary_terrain );
+    export_as_text( Output, "file.binary.terrain.checksum", std::string( file_binary_terrain_checksum == 0 ? "off" : file_binary_terrain_checksum == 1 ? "simple" : "full" ) );
     export_as_text( Output, "inactivepause", bInactivePause );
     export_as_text( Output, "slowmotion", iSlowMotionMask );
     export_as_text( Output, "hideconsole", bHideConsole );
