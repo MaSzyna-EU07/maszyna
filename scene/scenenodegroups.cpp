@@ -239,12 +239,16 @@ void
 node_groups::insert( scene::group_handle const Group, scene::basic_node *Node ) {
 
     // TBD, TODO: automatically unregister the node from its current group?
+    auto const previousgroup { Node->group() };
     Node->group( Group );
 
     if( Group == null_handle ) { return; }
 
     auto &nodesequence { m_groupmap[ Group ].nodes };
-    if( std::find( std::begin( nodesequence ), std::end( nodesequence ), Node ) == std::end( nodesequence ) ) {
+    // a node which wasn't a member of the group can't be on its list, which saves the search through the list.
+    // it matters as a group can be large, the root group of a scenery holds nearly all its nodes
+    if( previousgroup != Group
+     || std::find( std::begin( nodesequence ), std::end( nodesequence ), Node ) == std::end( nodesequence ) ) {
         // don't add the same node twice
         nodesequence.emplace_back( Node );
     }
@@ -255,12 +259,15 @@ void
 node_groups::insert( scene::group_handle const Group, basic_event *Event ) {
 
     // TBD, TODO: automatically unregister the event from its current group?
+    auto const previousgroup { Event->group() };
     Event->group( Group );
 
     if( Group == null_handle ) { return; }
 
     auto &eventsequence { m_groupmap[ Group ].events };
-    if( std::find( std::begin( eventsequence ), std::end( eventsequence ), Event ) == std::end( eventsequence ) ) {
+    // same as with the nodes, the list is searched only for an event which already was a member of the group
+    if( previousgroup != Group
+     || std::find( std::begin( eventsequence ), std::end( eventsequence ), Event ) == std::end( eventsequence ) ) {
         // don't add the same node twice
         eventsequence.emplace_back( Event );
     }
