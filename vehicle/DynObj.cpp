@@ -1917,11 +1917,11 @@ void TDynamicObject::place_on_track(TTrack *Track, double fDist, bool Reversed)
 	switch (iNumAxles) {
 	    // Ra: pojazdy wstawiane są na tor początkowy, a potem przesuwane
 	case 2: // ustawianie osi na torze
-		Axle0.Init(Track, this, iDirection ? 1 : -1);
 		Axle0.Reset();
+		Axle0.Init(Track, this, iDirection ? 1 : -1);
 		Axle0.Move((iDirection ? fDist : -fDist) + fAxleDistHalf, false);
-		Axle1.Init(Track, this, iDirection ? 1 : -1);
 		Axle1.Reset();
+		Axle1.Init(Track, this, iDirection ? 1 : -1);
 		Axle1.Move((iDirection ? fDist : -fDist) - fAxleDistHalf, false); // false, żeby nie generować eventów
 		break;
 	}
