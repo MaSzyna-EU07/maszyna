@@ -198,6 +198,7 @@ set(SOURCES
 "scene/scenelayers.cpp"
 "scene/scenelayerssave.cpp"
 "scene/sceneterrain.cpp"
+"scene/scenemodelentries.cpp"
 "simulation/simulationenvironment.cpp"
 "simulation/simulationstateserializer.cpp"
 "rendering/precipitation.cpp"

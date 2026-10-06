@@ -118,6 +118,11 @@ public:
     static void AnimUpdate( double dt );
     bool Init(std::string const &asName, std::string const &asReplacableTexture);
     bool Load(cParser *parser, bool ter = false);
+    // sets up the instance from the values of a definition which was already taken apart, the way Load(cParser *) does it
+    // from the text. Name, Texture: as that method gets them ready, lower case model name and forward slashes in both.
+    // Twin: instance set up for the same model and texture, to take them after instead of locating them again; can be nullptr.
+    // Angles, Scale: content of the optional blocks of the definition, nullptr for a block which isn't there
+    void Load( std::string const &Name, std::string const &Texture, TAnimModel const *Twin, glm::vec3 const *Angles, glm::vec3 const *Scale, bool const Transition );
 	std::shared_ptr<TAnimContainer> AddContainer(std::string const &Name);
 	std::shared_ptr<TAnimContainer> GetContainer(std::string const &Name = "");
 	void LightSet( int const n, float const v );
@@ -226,6 +231,8 @@ public:
     bool m_instanceable { false };
     // helper: evaluates current state and updates m_instanceable accordingly.
     void update_instanceable_flag();
+    // helper: assigns the model and the replacable skin to the instance, and binds light and variant submodels of the model
+    void assign_model( std::string &name, std::string const &texture, bool const ter );
 
     // diagnostic counters (process-wide). Updated inside update_instanceable_flag()
     // so the renderer can surface load-time classification stats in the debug overlay.

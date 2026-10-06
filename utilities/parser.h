@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <sstream>
 #include <fstream>
 #include <vector>
@@ -107,6 +108,16 @@ class cParser //: public std::stringstream
 	std::streamoff TokenEnd() const;
 	// true if the most recently read token came straight from a scenery file which isn't an *.inc node template
 	bool InLayerFile() const;
+	// text which follows the most recently read token, for the readers which take entries of a known kind straight from
+	// the text instead of token by token. empty if the tokens can't be taken that way: some wait to be picked up, there
+	// are parameters of an include to put in them, or comment marks other than the standard ones are in use
+	std::string_view remainingText() const;
+	// moves past specified amount of the text returned by remainingText(): Lines is the number of line breaks in it,
+	// Tokenlength the length of the token it ends with
+	void skipText(std::size_t Count, std::size_t Lines, std::size_t Tokenlength);
+	// converts text holding a plain number without involving a stream. returns: true on success, false if the text needs regular treatment
+	template <typename Type_>
+	static bool parseNumber( std::string_view Token, Type_ &Output );
 	bool expandIncludes = true;
 	bool allowRandomIncludes = false;
     bool skipComments = true;
@@ -158,9 +169,6 @@ class cParser //: public std::stringstream
     bool hasChar();
     bool getChar( char &Char );
     void updateCharClasses( char const *Break );
-    // converts text holding a plain number without involving a stream. returns: true on success, false if the text needs regular treatment
-    template <typename Type_>
-    static bool parseNumber( std::string const &Token, Type_ &Output );
     // members:
     bool m_autoclear { true }; // unretrieved tokens are discarded when another read command is issued (legacy behaviour)
     bool LoadTraction { true }; // load traction?
@@ -202,7 +210,7 @@ cParser::getToken( bool const ToLower, const char *Break );
 
 template<typename Type_>
 bool
-cParser::parseNumber( std::string const &Token, Type_ &Output ) {
+cParser::parseNumber( std::string_view const Token, Type_ &Output ) {
 
     using type = std::remove_cv_t<Type_>;
     if constexpr(

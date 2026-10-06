@@ -832,3 +832,44 @@ bool cParser::InLayerFile() const
 {
 	return mIncludeParser ? mIncludeParser->InLayerFile() : (false == mFile.empty() && false == mIncFile);
 }
+
+std::string_view cParser::remainingText() const
+{
+	if (false == tokens.empty())
+	{
+		return {};
+	}
+	// each parser on the way gets to change the tokens of the file being read
+	auto const *source{this};
+	while (true)
+	{
+		if (false == source->parameters.empty() || false == source->skipComments || source->mComments.size() != 2)
+		{
+			return {};
+		}
+		if (source->mIncludeParser == nullptr)
+		{
+			break;
+		}
+		source = source->mIncludeParser.get();
+	}
+	// NOTE: the first token of a file is left to the regular code, which deals with the byte order mark
+	if (source->mFirstToken || source->mEofBit || source->mFailBit || static_cast<std::size_t>(source->mPosition) >= source->mBuffer.size())
+	{
+		return {};
+	}
+	return std::string_view{source->mBuffer}.substr(static_cast<std::size_t>(source->mPosition));
+}
+
+void cParser::skipText(std::size_t const Count, std::size_t const Lines, std::size_t const Tokenlength)
+{
+	if (mIncludeParser)
+	{
+		mIncludeParser->skipText(Count, Lines, Tokenlength);
+		return;
+	}
+	mPosition = static_cast<std::streamoff>(std::min(static_cast<std::size_t>(mPosition) + Count, mBuffer.size()));
+	mLine += Lines;
+	mTokenEnd = mPosition;
+	mTokenBegin = mPosition - static_cast<std::streamoff>(std::min(Tokenlength, static_cast<std::size_t>(mPosition)));
+}

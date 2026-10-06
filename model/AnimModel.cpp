@@ -291,12 +291,9 @@ TAnimModel::is_keyword( std::string const &Token ) const {
         || Token == "notransition";
 }
 
-bool TAnimModel::Load(cParser *parser, bool ter)
-{ // rozpoznanie wpisu modelu i ustawienie świateł
-	std::string name = parser->getToken<std::string>();
-	std::string texture = parser->getToken<std::string>(false);
-    replace_slashes( name );
-    replace_slashes( texture );
+// assigns the model and the replacable skin to the instance, and binds light and variant submodels of the model
+void TAnimModel::assign_model( std::string &name, std::string const &texture, bool const ter )
+{
     if (!Init( name, texture ))
     {
         if (name != "notload")
@@ -329,6 +326,15 @@ bool TAnimModel::Load(cParser *parser, bool ter)
     for (int i = 0; i < iMaxNumLights; ++i)
         if (LightsOn[i] || LightsOff[i]) // Ra: zlikwidowałem wymóg istnienia obu
             iNumLights = i + 1;
+}
+
+bool TAnimModel::Load(cParser *parser, bool ter)
+{ // rozpoznanie wpisu modelu i ustawienie świateł
+	std::string name = parser->getToken<std::string>();
+	std::string texture = parser->getToken<std::string>(false);
+    replace_slashes( name );
+    replace_slashes( texture );
+    assign_model( name, texture, ter );
 
     std::string token;
     do {
@@ -398,6 +404,46 @@ bool TAnimModel::Load(cParser *parser, bool ter)
 
     update_instanceable_flag();
     return true;
+}
+
+// sets up the instance from the values of a definition which was already taken apart, the way Load() does it from the text
+void TAnimModel::Load( std::string const &Name, std::string const &Texture, TAnimModel const *Twin, glm::vec3 const *Angles, glm::vec3 const *Scale, bool const Transition )
+{
+    if( Twin != nullptr
+     && Twin->pModel != nullptr
+     && ( Twin->m_materialdata.replacable_skins[ 1 ] != null_handle || Texture == "none" ) ) {
+        // the same model with the same skin was located for the twin already.
+        // NOTE: a model or a skin which couldn't be located is searched for and reported for each instance, like it always was
+        m_skintoken = Twin->m_skintoken;
+        m_materialdata = Twin->m_materialdata;
+        pModel = Twin->pModel;
+        LightsOn = Twin->LightsOn;
+        LightsOff = Twin->LightsOff;
+        sm_winter_variant = Twin->sm_winter_variant;
+        sm_spring_variant = Twin->sm_spring_variant;
+        sm_summer_variant = Twin->sm_summer_variant;
+        sm_autumn_variant = Twin->sm_autumn_variant;
+        iNumLights = Twin->iNumLights;
+    }
+    else {
+        auto name { Name };
+        assign_model( name, Texture, false );
+    }
+    // the optional blocks, each with the effect it has in Load()
+    if( Angles != nullptr ) {
+        vAngle = *Angles;
+    }
+    if( Scale != nullptr
+     && Scale->x > 0.0f && Scale->y > 0.0f && Scale->z > 0.0f ) {
+        m_scale.x *= Scale->x;
+        m_scale.y *= Scale->y;
+        m_scale.z *= Scale->z;
+    }
+    if( false == Transition ) {
+        m_transition = false;
+    }
+
+    update_instanceable_flag();
 }
 
 namespace {

@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenenodegroups.h"
 #include "scene/scenelayers.h"
 #include "scene/sceneterrain.h"
+#include "scene/scenemodelentries.h"
 #include "rendering/particles.h"
 #include "world/Event.h"
 #include "world/MemCell.h"
@@ -484,6 +485,8 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         // defined by a template, or by something else which isn't a scenery layer file
         nodedata.instance = ( scene::Layers.instance() != 0 ? scene::Layers.instance() : scene::untracked_instance );
     }
+    // a run of plain model instances is taken straight from the text, instead of token by token
+    if( true == deserialize_models( Input, Scratchpad, nodedata, inputline, sourcebegin ) ) { return; }
     // common data and node type indicator
     Input.getTokens( 4 );
     Input
@@ -667,25 +670,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
             // model import can potentially fail
             if( instance == nullptr ) { return; }
 
-            if( instance->Model() != nullptr ) {
-                for( auto const &smokesource : instance->Model()->smoke_sources() ) {
-                    Particles.insert(
-                        smokesource.first,
-                        instance,
-                        smokesource.second );
-                }
-            }
-
-            if( false == simulation::Instances.insert( instance ) ) {
-                ErrorLog( "Bad scenario: duplicate 3d model instance name \"" + instance->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
-            }
-            scene::Groups.insert( scene::Groups.handle(), instance );
-            simulation::Region->insert( instance );
-            scene::Layers.track( instance, { sourcebegin, Input.TokenEnd() }, instance->Angles(), instance->Scale() );
-            scene::basic_node *hierarchy_node = instance;
-            if (hierarchy_node)
-            {   scene::Hierarchy[hierarchy_node->uuid.to_string()] = hierarchy_node;
-            }
+            insert_model( instance, Input, inputline, { sourcebegin, Input.TokenEnd() } );
         }
     }
     else if( nodedata.type == "triangles"
@@ -823,6 +808,99 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
                     lookup->second );
         }
     }
+}
+
+// makes model instance defined by a scenery file a part of the simulation
+void
+state_serializer::insert_model( TAnimModel *Instance, cParser const &Input, std::size_t const Line, scene::source_span const &Span ) {
+
+    if( Instance->Model() != nullptr ) {
+        for( auto const &smokesource : Instance->Model()->smoke_sources() ) {
+            Particles.insert(
+                smokesource.first,
+                Instance,
+                smokesource.second );
+        }
+    }
+
+    if( false == simulation::Instances.insert( Instance ) ) {
+        ErrorLog( "Bad scenario: duplicate 3d model instance name \"" + Instance->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( Line ) + ")" );
+    }
+    scene::Groups.insert( scene::Groups.handle(), Instance );
+    simulation::Region->insert( Instance );
+    scene::Layers.track( Instance, Span, Instance->Angles(), Instance->Scale() );
+    // the lookup by uuid serves the scenery editor. it's filled only for a scenery opened for editing, as with a lot
+    // of instances it takes more time than everything else done for an instance put together
+    if( true == Global.editor_session ) {
+        scene::Hierarchy[ Instance->uuid.to_string() ] = Instance;
+    }
+}
+
+// loads a run of model instances straight from the text of the scenery file, starting with the instance whose node keyword
+// was just read. the text is taken apart by a reader made for these definitions, with a few threads sharing the work; the
+// instances are then created here one by one, in the order of the text. returns: true if any instances were loaded, false
+// if the definition at hand has to go through the parser
+bool
+state_serializer::deserialize_models( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data &Nodedata, std::size_t const Line, std::streamoff const Sourcebegin ) {
+
+    auto const text { Input.remainingText() };
+    if( true == text.empty() ) { return false; }
+
+    auto const run { scene::read_model_entries( text, true ) };
+    if( true == run.blocks.empty() ) { return false; }
+    // NOTE: the parser moves on but the text stays where it is, the definitions refer to it
+    Input.skipText( run.length, run.linebreaks, std::string_view { "endmodel" }.size() );
+    auto const textbegin { Input.TokenEnd() - static_cast<std::streamoff>( run.length ) };
+
+    Nodedata.type = "model";
+    auto loaded { 0 };
+    for( auto const &block : run.blocks ) {
+        // instances of the same model with the same skin are set up after the first one of them
+        std::vector<TAnimModel const *> twins( block.appearances.size(), nullptr );
+        for( auto const &entry : block.entries ) {
+
+            Nodedata.range_max = entry.range_max;
+            Nodedata.range_min = entry.range_min;
+            // the parser supplies the names in lower case, which goes only for the ascii letters
+            Nodedata.name.assign( entry.name );
+            for( auto &character : Nodedata.name ) {
+                if( character >= 'A' && character <= 'Z' ) {
+                    character = static_cast<char>( character - 'A' + 'a' );
+                }
+            }
+            if( Nodedata.name == "none" ) { Nodedata.name.clear(); }
+
+            // what follows is what deserialize_model() does
+            auto *instance = new TAnimModel( Nodedata );
+            instance->Angles( Scratchpad.location.rotation + glm::vec3 { 0.f, entry.angle, 0.f } );
+            if( false == Scratchpad.location.scale.empty() ) {
+                instance->Scale( Scratchpad.location.scale.top() );
+            }
+            auto const &appearance { block.appearances[ entry.appearance ] };
+            auto &twin { twins[ entry.appearance ] };
+            instance->Load(
+                appearance.model, appearance.texture, twin,
+                ( entry.has_angles ? &entry.angles : nullptr ),
+                ( entry.has_scale ? &entry.scale : nullptr ),
+                false == entry.notransition );
+            if( twin == nullptr ) { twin = instance; }
+            instance->location( transform( entry.location, Scratchpad ) );
+
+            // location of the first definition is known from its node keyword, which went through the parser
+            auto const first { loaded == 0 };
+            insert_model(
+                instance, Input,
+                ( first ? Line : Line + entry.line ),
+                { ( first ? Sourcebegin : textbegin + static_cast<std::streamoff>( entry.begin ) ), textbegin + static_cast<std::streamoff>( entry.end ) } );
+            ++loaded;
+        }
+    }
+    if( Nodedata.layer != null_handle ) {
+        // scenery opened for editing: keep count of what the scenery file contains
+        scene::Layers.count( Nodedata.layer, scene::layer_item::model, loaded );
+    }
+
+    return true;
 }
 
 namespace {

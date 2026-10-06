@@ -86,6 +86,10 @@ private:
     TMemCell * deserialize_memorycell( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
     TEventLauncher * deserialize_eventlauncher( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
 	TAnimModel * deserialize_model( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
+	// loads a run of model instances straight from the text. returns: true if any were loaded, false if the definition at hand is left to the parser
+	bool deserialize_models( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data &Nodedata, std::size_t Line, std::streamoff Sourcebegin );
+	// makes model instance defined by a scenery file a part of the simulation
+	void insert_model( TAnimModel *Instance, cParser const &Input, std::size_t Line, scene::source_span const &Span );
     TDynamicObject * deserialize_dynamic( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
     sound_source * deserialize_sound( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
     void init_time();
