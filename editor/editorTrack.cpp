@@ -1453,9 +1453,19 @@ bool editor_track::analyse_curve(std::vector<std::pair<TTrack *, bool>> const &R
 			Curve.cant = std::max(Curve.cant, Gauge * std::sin(std::abs(glm::radians(static_cast<double>(roll)))));
 	}
 	auto const peak{*std::max_element(curvatures.begin(), curvatures.end())};
-	for (std::size_t i = 0; i < run.size(); ++i)
-		if (curvatures[i] < 0.9 * peak)
-			varying[i] = true;
+	// old sceneries make a transition of short arcs of growing radius, a longer arc of a larger radius is a part of a compound curve
+	constexpr double kShortestCompoundArc{30.0};
+	for (std::size_t first = 0; first < run.size();)
+	{
+		auto last{first + 1};
+		while (last < run.size() && false == varying[first] && false == varying[last] && std::abs(curvatures[last] - curvatures[first]) <= 0.05 * curvatures[first])
+			++last;
+		auto const length{std::accumulate(lengths.begin() + first, lengths.begin() + last, 0.0)};
+		if (curvatures[first] < 0.9 * peak && (varying[first] || length < kShortestCompoundArc || curvatures[first] < 0.1 * peak))
+			for (auto i = first; i < last; ++i)
+				varying[i] = true;
+		first = last;
+	}
 	double smallest{0.0};
 	for (std::size_t i = 0; i < run.size(); ++i)
 		if (false == varying[i] && curvatures[i] > 0.0 && (smallest == 0.0 || 1.0 / curvatures[i] < smallest))
