@@ -1235,6 +1235,7 @@ include_terrain_file( std::string File, std::string &Includes, scene::scratch_da
             else {
                 binary.terrain_binaryfiles.emplace_back( binaryfile );
             }
+            Includes += scene::terrain_file::extra( binaryfile ) + ' ';
             break;
         }
         case scene::terrain_file::state::text: {

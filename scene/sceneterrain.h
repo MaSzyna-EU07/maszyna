@@ -46,6 +46,7 @@ class terrain_file
 	static bool attach(std::string const &Binaryfile, basic_region &Region, bool Deferred);
 	// loads specified piece of a binary terrain file into provided section
 	static void load(basic_section &Section, terrain_block const &Block);
+	static std::string extra(std::string const &Binaryfile);
 
   private:
 	// converts provided content of a text terrain file to binary format and stores it in specified file. returns: true on success, false otherwise

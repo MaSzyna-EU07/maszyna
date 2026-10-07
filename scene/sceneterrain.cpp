@@ -81,7 +81,7 @@ namespace
 {
 
 std::uint32_t const EU07_FILEHEADER{MAKE_ID4('E', 'U', '0', '7')};
-std::uint32_t const EU07_FILEVERSION_TERRAIN{MAKE_ID4('B', 'T', 'F', '1')};
+std::uint32_t const EU07_FILEVERSION_TERRAIN{MAKE_ID4('B', 'T', 'F', '2')};
 std::uint32_t const EU07_TERRAINBLOCK{MAKE_ID4('B', 'T', 'F', 'S')};
 std::size_t const EU07_TERRAINVERTEXSIZE{8 * sizeof(float)};
 
@@ -92,6 +92,8 @@ struct file_header
 	std::uint32_t materialcount{0};
 	std::uint32_t sectioncount{0};
 	std::uint64_t vertexcount{0};
+	std::uint64_t extraoffset{0};
+	std::uint32_t extrasize{0};
 };
 
 // adds value to the data in the byte order of the file
@@ -215,7 +217,7 @@ bool read_file(std::string const &Filename, std::string &Data)
 // loads the fixed part of binary terrain file header. returns: true if the file can be used, false otherwise
 bool read_header(std::istream &Input, file_header &Header)
 {
-	char bytes[48];
+	char bytes[60];
 	Input.read(bytes, sizeof(bytes));
 	if (Input.gcount() != static_cast<std::streamsize>(sizeof(bytes)))
 	{
@@ -238,6 +240,8 @@ bool read_header(std::istream &Input, file_header &Header)
 	Header.materialcount = data.get<std::uint32_t>();
 	Header.sectioncount = data.get<std::uint32_t>();
 	Header.vertexcount = data.get<std::uint64_t>();
+	Header.extraoffset = data.get<std::uint64_t>();
+	Header.extrasize = data.get<std::uint32_t>();
 	return data.good();
 }
 
@@ -395,6 +399,24 @@ bool terrain_file::write(std::string const &Text, std::string const &Binaryfile,
 	conversion_scope scope;
 	auto region{std::make_unique<basic_region>()};
 	scratch_data scratchpad{};
+	std::string extra;
+	{
+		std::size_t begin{0};
+		while (begin < Text.size())
+		{
+			auto end{Text.find('\n', begin)};
+			end = (end == std::string::npos ? Text.size() : end + 1);
+			auto const first{Text.find_first_not_of(" \t", begin)};
+			if (first < end && Text.compare(first, 3, "//$") == 0)
+			{
+				auto line{Text.substr(first, end - first)};
+				while (false == line.empty() && (line.back() == '\n' || line.back() == '\r'))
+					line.pop_back();
+				extra += line + "\n";
+			}
+			begin = end;
+		}
+	}
 
 	{
 		cParser input{Text, cParser::buffer_TEXT};
@@ -405,9 +427,26 @@ bool terrain_file::write(std::string const &Text, std::string const &Binaryfile,
 		{
 			if (token == "node")
 			{
+				auto const begin{static_cast<std::size_t>(input.TokenBegin())};
 				node_data nodedata;
 				input.getTokens(4);
 				input >> nodedata.range_max >> nodedata.range_min >> nodedata.name >> nodedata.type;
+				if (nodedata.type == "sweep")
+				{
+					auto rest{input.getToken<std::string>()};
+					while (false == rest.empty() && rest != "endsweep")
+						rest = input.getToken<std::string>();
+					auto const end{static_cast<std::size_t>(input.TokenEnd())};
+					auto const offset{scratchpad.location.offset.empty() ? glm::dvec3{0.0} : scratchpad.location.offset.top()};
+					auto const placed{offset != glm::dvec3{0.0}};
+					if (placed)
+						extra += "origin " + std::to_string(offset.x) + ' ' + std::to_string(offset.y) + ' ' + std::to_string(offset.z) + "\n";
+					extra += Text.substr(begin, end - begin) + "\n";
+					if (placed)
+						extra += "endorigin\n";
+					token = input.getToken<std::string>();
+					continue;
+				}
 				if (nodedata.type != "triangles" && nodedata.type != "triangle_strip" && nodedata.type != "triangle_fan")
 				{
 					Message = "node of type \"" + nodedata.type + "\" (line " + std::to_string(input.Line()) + ") can't be a part of binary terrain";
@@ -485,6 +524,9 @@ bool terrain_file::write(std::string const &Text, std::string const &Binaryfile,
 		put(data, static_cast<std::uint32_t>(sections.size()));
 		auto const vertexcountposition{data.size()};
 		put(data, vertexcount); // filled in when the count is known
+		auto const extraposition{data.size()};
+		put(data, std::uint64_t{0});
+		put(data, std::uint32_t{0});
 		for (auto const &material : scope.materials())
 		{
 			data.append(material.c_str(), material.size() + 1);
@@ -562,6 +604,12 @@ bool terrain_file::write(std::string const &Text, std::string const &Binaryfile,
 			put(directory, section->m_area.radius);
 			offset += data.size();
 		}
+		output.write(extra.data(), static_cast<std::streamsize>(extra.size()));
+		data.clear();
+		put(data, static_cast<std::uint64_t>(offset));
+		put(data, static_cast<std::uint32_t>(extra.size()));
+		output.seekp(static_cast<std::streamoff>(extraposition));
+		output.write(data.data(), static_cast<std::streamsize>(data.size()));
 		// fill in the parts left for later
 		output.seekp(static_cast<std::streamoff>(directoryposition));
 		output.write(directory.data(), static_cast<std::streamsize>(directory.size()));
@@ -670,6 +718,25 @@ terrain_file::state terrain_file::prepare(std::string const &Textfile, std::stri
 		std::filesystem::remove(Binaryfile, error);
 	}
 	return state::text;
+}
+
+std::string terrain_file::extra(std::string const &Binaryfile)
+{
+	std::ifstream input{Binaryfile, std::ios::binary};
+	file_header header;
+	if (input.fail() || false == read_header(input, header) || header.extrasize == 0)
+	{
+		return {};
+	}
+	std::string text(header.extrasize, '\0');
+	input.seekg(static_cast<std::streamoff>(header.extraoffset));
+	input.read(text.data(), static_cast<std::streamsize>(text.size()));
+	if (static_cast<std::size_t>(std::max<std::streamsize>(0, input.gcount())) != text.size())
+	{
+		ErrorLog("Bad file: \"" + Binaryfile + "\" is damaged, the editor data it holds can't be read");
+		return {};
+	}
+	return text;
 }
 
 // makes content of specified binary terrain file a part of provided region
