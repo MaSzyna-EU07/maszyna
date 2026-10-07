@@ -46,7 +46,7 @@ class TAnimVocaloidFrame
 
 class basic_event;
 
-class TAnimContainer : std::enable_shared_from_this<TAnimContainer>
+class TAnimContainer : public std::enable_shared_from_this<TAnimContainer>
 { // opakowanie submodelu, określające animację egzemplarza - obsługiwane jako lista
     friend TAnimModel;
 
