@@ -156,7 +156,9 @@ const double HeavyCargoTrainAcceleration = 0.10;
 const double PrepareTime = 2.0; //[s] przebłyski świadomości przy odpalaniu
 const double FSOverchargePipePress = 5.2;
 const double FSOverchargeTime = 2.0;
+const double FSOverchargeCRP = 0.05;
 const double FSMaxTime = 10.0;
+const double DepartBlockedFSDelay = 10.0;
 bool WriteLogFlag = false;
 double const deltalog = 0.05; // przyrost czasu
 
@@ -6016,6 +6018,17 @@ TController::determine_consist_state() {
      && fReady < 0.8 ) { // delikatniejszy warunek, obejmuje wszystkie wagony
         Ready = true; //żeby uznać za odhamowany
     }
+    auto const departblocked {
+        AIControllFlag
+     && mvOccupied->Vel < EU07_AI_NOMOVEMENT
+     && VelDesired > 0.0
+     && ( false == Ready || fReady > 0.4 ) };
+    if( false == departblocked ) {
+        DepartBlockedStart = -1.0;
+    }
+    else if( DepartBlockedStart < 0.0 ) {
+        DepartBlockedStart = ElapsedTime;
+    }
     // second pass, for diesel engines verify the (live) engines are fully started
     // TODO: cache presence of diesel engines in the consist, to skip this test if there isn't any
     p = pVehicles[ end::front ]; // pojazd na czole składu
@@ -8021,8 +8034,9 @@ void TController::control_main_pipe() {
      || mvOccupied->BrakeHandle == TBrakeHandle::MHZ_K8P
      || mvOccupied->BrakeHandle == TBrakeHandle::M394 ) {
 
-        if( (iDrivigFlags & moveOerlikons || true == IsCargoTrain) && BrakeCtrlPosition == gbh_RP && AbsAccS < 0.03 && AccDesired > -0.03 && VelDesired - mvOccupied->Vel > 2.0 && fReady > 0.35 &&
-		    mvOccupied->EqvtPipePress < 4.5 // don't charge with a risk of overcharging the main pipe
+        auto const departblocked { is_departure_blocked( DepartBlockedFSDelay ) };
+        if( (iDrivigFlags & moveOerlikons || true == IsCargoTrain || departblocked) && BrakeCtrlPosition == gbh_RP && AbsAccS < 0.03 && AccDesired > -0.03 && VelDesired - mvOccupied->Vel > 2.0 && fReady > 0.35 &&
+		    ( mvOccupied->EqvtPipePress < 4.5 || departblocked ) // don't charge with a risk of overcharging the main pipe
 		    && mvOccupied->Compressor >= 7.5 // don't charge without sufficient pressure in the tank
 		    && BrakeChargingCooldown >= 0.0 // don't charge while cooldown is active
 		    && (ActualProximityDist > 100.0 // don't charge if we're about to be braking soon
@@ -8066,12 +8080,28 @@ void TController::update_brake_charging() {
     }
 }
 
+bool TController::is_departure_blocked( double const Delay ) const {
+
+    return DepartBlockedStart >= 0.0
+        && ElapsedTime - DepartBlockedStart > Delay;
+}
+
+double TController::consist_max_crp() const {
+
+    auto result { 0.0 };
+    for( auto const *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
+        result = std::max( result, vehicle->MoverParameters->Hamulec->GetCRP() );
+    }
+    return result;
+}
+
 bool TController::is_brake_charging_done() const {
 
     if( BrakeChargingStart < 0.0 ) {
         return false;
     }
     return ElapsedTime - BrakeChargingStart > FSMaxTime
+        || consist_max_crp() > mvOccupied->HighPipePress + FSOverchargeCRP
         || std::ranges::any_of(
             BrakeChargingPipeOverchargeStart,
             [this]( auto const &Vehicle ) { return ElapsedTime - Vehicle.second > FSOverchargeTime; } );
