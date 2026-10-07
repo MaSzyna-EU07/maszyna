@@ -4068,7 +4068,7 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 		if (std::abs(turn) > 1e-4)
 		{
 			int const side{turn > 0.0 ? 1 : -1};
-			auto const radius{std::abs(diverging.radius) > 1.0f ? static_cast<double>(std::abs(diverging.radius)) : curve.plan_length() / std::abs(turn)};
+			auto const radius{curve.plan_length() / std::abs(turn)};
 			auto const &direction{tool.direction};
 			auto const centre{plan_of(tool.point) + glm::dvec2{-direction.y, direction.x} * (side * radius)};
 			auto const angle{geometry::signed_angle(plan_of(tool.point) - centre, plan_of(tool.mouse) - centre) * side};
@@ -5851,6 +5851,14 @@ std::vector<segment_data> editor_mode::curved_switch_paths(editor_track::switch_
 		auto const rollend{sample_at(Frame, Station + Direction * end.z).roll * Direction};
 		path.rolls = {static_cast<float>(rollstart), static_cast<float>(rollend)};
 		path.radius = local.radius;
+		{
+			bezier const curve{path};
+			auto const begin{plan_of(curve.first(0.0))};
+			auto const finish{plan_of(curve.first(1.0))};
+			auto const turn{glm::length(begin) > 1e-9 && glm::length(finish) > 1e-9 ? geometry::signed_angle(begin, finish) : 0.0};
+			if (local.radius != 0.f && std::abs(turn) > 1e-6)
+				path.radius = static_cast<float>(std::copysign(curve.plan_length() / std::abs(turn), static_cast<double>(local.radius)));
+		}
 		result.push_back(path);
 	}
 	if (false == result.empty())
