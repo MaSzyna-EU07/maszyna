@@ -71,7 +71,7 @@ bool complete(include_info const &Info, int Parameters, std::string *Issue = nul
 // builds include directive which places specified template. Location and Yaw are the placement to pass through
 // the parameters with matching roles, in the coordinates of the place the directive goes to; without Yaw the
 // rotation parameters receive their default values
-std::string directive(std::string const &File, include_info const &Info, int Parameters, glm::dvec3 const &Location, std::optional<float> Yaw, std::string const &Track = {});
+std::string directive(std::string const &File, include_info const &Info, int Parameters, glm::dvec3 const &Location, std::optional<float> Yaw, std::string const &Track = {}, glm::dvec2 const &Tilt = glm::dvec2{0.0});
 
 // splits include directive into the name of the included file and the values of the parameters, both as they're
 // written. returns: false if the text isn't a complete include directive

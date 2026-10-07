@@ -4747,6 +4747,14 @@ bool editor_mode::place_switch_drive(TTrack &Switch)
 	item.yaw = yaw < 0.0 ? yaw + 360.0 : yaw;
 	item.described = true;
 	item.track = Switch.name();
+	{
+		auto const along{control != glm::dvec3{} ? control : main.points[segment_data::point::end] - start};
+		auto const run{glm::length(plan_of(along))};
+		auto const roll{static_cast<double>(main.rolls[0])};
+		item.tilt = {run > 1e-9 ? -glm::degrees(std::atan(along.y / run)) : 0.0, roll};
+		if (Global.bRollFix)
+			item.location.y += 0.75 * std::abs(std::sin(glm::radians(roll)));
+	}
 	std::string error;
 	if (place_templates({item}, error) == 0)
 	{

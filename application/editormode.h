@@ -1042,6 +1042,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::vector<std::string> rest; // parameters after the rotation
 		bool described{false};
 		std::string track;
+		glm::dvec2 tilt{0.0}; // rot.x and rot.z of a described template, degrees
 	};
 	struct standing_template
 	{

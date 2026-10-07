@@ -350,6 +350,38 @@ void editor_mode::selftest_step()
 				WriteLog(format("SELFTEST frame %s %.2f: %.3f %.3f %.3f widening %.4f cant %.4f setback %.4f", name.c_str(), station, at.position.x, at.position.y, at.position.z, at.widening[side], at.cant[side], sweep->setback(at)));
 			}
 		}
+		else if (command == "switchdrive")
+		{
+			int index{-1}, side{0};
+			words >> index >> side;
+			scan_switch_drives();
+			m_switch.drive = index;
+			m_switch.drive_side = side;
+			WriteLog("SELFTEST switchdrive: " + (index >= 0 && index < static_cast<int>(m_switch.drives.size()) ? m_switch.drives[index].name : std::string{"none"}));
+		}
+		else if (command == "drivetilt")
+		{
+			std::string name;
+			words >> name;
+			auto *model{simulation::Instances.find(name)};
+			auto *track{simulation::Paths.find(name.substr(0, name.find('_')))};
+			if (model == nullptr || track == nullptr)
+			{
+				WriteLog("SELFTEST drivetilt: no " + name);
+				continue;
+			}
+			auto const &path{track->m_paths[0]};
+			auto const transform{glm::dmat3(model->rotation_scale())};
+			auto const across{transform * glm::dvec3{1.0, 0.0, 0.0}};
+			auto const forward{transform * glm::dvec3{0.0, 0.0, 1.0}};
+			auto const direction{glm::normalize(glm::dvec2{forward.x, forward.z})};
+			auto const lateral{across.x * -direction.y + across.z * direction.x};
+			auto const cone{-lateral * std::tan(glm::radians(static_cast<double>(path.rolls[0])))};
+			auto const control{path.points[segment_data::point::control1]};
+			auto const grade{control.y / std::hypot(control.x, control.z)};
+			WriteLog(format("SELFTEST drivetilt %s: angles %.3f %.3f %.3f, +x rises %.4f (cone %.4f), +z rises %.4f (grade %.4f), origin %.3f %.3f %.3f, points %.3f", name.c_str(), model->Angles().x, model->Angles().y, model->Angles().z, across.y, cone, forward.y, grade,
+			                model->location().x, model->location().y, model->location().z, path.points[segment_data::point::start].y));
+		}
 		else if (command == "fouling")
 		{
 			std::map<std::string, std::string> values;

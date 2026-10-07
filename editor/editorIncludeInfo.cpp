@@ -644,7 +644,7 @@ std::string compose_directive(std::string const &File, std::vector<std::string> 
 	return text + " end";
 }
 
-std::string directive(std::string const &File, include_info const &Info, int const Parameters, glm::dvec3 const &Location, std::optional<float> Yaw, std::string const &Track)
+std::string directive(std::string const &File, include_info const &Info, int const Parameters, glm::dvec3 const &Location, std::optional<float> Yaw, std::string const &Track, glm::dvec2 const &Tilt)
 {
 	std::vector<std::string> values;
 	for (auto id = 1; id <= Parameters; ++id)
@@ -667,6 +667,14 @@ std::string directive(std::string const &File, include_info const &Info, int con
 		else if (role == "rot.y" && Yaw)
 		{
 			value = number(*Yaw);
+		}
+		else if (role == "rot.x" && Tilt.x != 0.0)
+		{
+			value = number(Tilt.x);
+		}
+		else if (role == "rot.z" && Tilt.y != 0.0)
+		{
+			value = number(Tilt.y);
 		}
 		else if (role.starts_with("rot.") && value.empty())
 		{
