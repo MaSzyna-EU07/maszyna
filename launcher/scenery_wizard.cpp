@@ -345,7 +345,9 @@ void ui::scenerywizard_panel::render_form()
 	if (false == m_status.empty())
 		ImGui::TextWrapped("%s", m_status.c_str());
 	ImGui::Spacing();
-	ImGui::TextDisabled("%s", STR_C("Map: (c) OpenStreetMap contributors, served by geoportal.gov.pl"));
+	ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+	ImGui::TextWrapped("%s", STR_C("Map: (c) OpenStreetMap contributors, served by geoportal.gov.pl"));
+	ImGui::PopStyleColor();
 }
 
 bool ui::scenerywizard_panel::create_scenery()
