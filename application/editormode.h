@@ -926,6 +926,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool switch_reach(glm::dvec3 const &Ground, glm::dvec3 &Point);
 	glm::dvec3 cursor_ground() const;
 	glm::dvec3 cursor_level(double const Height) const;
+	std::optional<glm::dvec3> m_cursor_override;
 	bool sweep_grabs(glm::dvec3 const &Point);
 	// menu of the path a click of the right mouse button lands on
 	struct track_context

@@ -3815,6 +3815,8 @@ glm::dvec3 editor_mode::cursor_ground() const
 
 glm::dvec3 editor_mode::cursor_level(double const Height) const
 {
+	if (m_cursor_override.has_value())
+		return glm::dvec3{m_cursor_override->x, Height, m_cursor_override->z};
 	glm::dvec3 const ground{cursor_ground()};
 	screen_projection const projection;
 	glm::dvec3 level;
@@ -4565,11 +4567,17 @@ bool editor_mode::start_switch_placement()
 			tool.status = STR_C("The selected track is neither a recognized straight nor a curve");
 			return false;
 		}
-		if (false == editor_track::find_chain(curve.from, curve.to, chain, error))
+		if (false == editor_track::find_chain(curve.from, curve.to, chain, error, true))
 		{
 			tool.status = error.empty() ? std::string{STR_C("The curve can't be followed")} : error;
 			return false;
 		}
+		for (auto const &part : editor_track::chain_parts(chain))
+			if (std::find(part.tracks.begin(), part.tracks.end(), track) != part.tracks.end())
+			{
+				chain = part;
+				break;
+			}
 		tool.frame = sample_chain(chain);
 		tool.frame_tracks = chain.tracks;
 		if (tool.frame.size() < 2)
@@ -5825,6 +5833,20 @@ std::vector<segment_data> editor_mode::curved_switch_paths(editor_track::switch_
 		auto const p0{map(start, startdirection, localstart)};
 		auto const p3{map(end, enddirection, localend)};
 		auto path{hermite(p0, startdirection, p3, enddirection)};
+		{
+			auto const cone = [&](double const T) {
+				auto const point{bezier{path}.point(T)};
+				auto const sample{sample_at(Frame, nearest_station(Frame, point))};
+				auto const lateral{glm::dot(plan_of(point) - plan_of(sample.position), glm::dvec2{-sample.tangent.y, sample.tangent.x})};
+				return sample.position.y - lateral * std::tan(glm::radians(static_cast<double>(sample.roll)));
+			};
+			auto const h1{cone(1.0 / 3.0)};
+			auto const h2{cone(2.0 / 3.0)};
+			auto const y1{3.0 * h1 - 1.5 * h2 - 5.0 / 6.0 * p0.y + p3.y / 3.0};
+			auto const y2{3.0 * h2 - 1.5 * h1 + p0.y / 3.0 - 5.0 / 6.0 * p3.y};
+			path.points[segment_data::point::control1].y = y1 - p0.y;
+			path.points[segment_data::point::control2].y = y2 - p3.y;
+		}
 		auto const rollstart{sample_at(Frame, Station + Direction * start.z).roll * Direction};
 		auto const rollend{sample_at(Frame, Station + Direction * end.z).roll * Direction};
 		path.rolls = {static_cast<float>(rollstart), static_cast<float>(rollend)};

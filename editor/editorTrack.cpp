@@ -1368,12 +1368,32 @@ bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance
 		return false;
 
 	std::deque<std::pair<TTrack *, bool>> run{{&Track, true}};
+	auto const known = [&](TTrack const *Other) { return std::any_of(run.begin(), run.end(), [&](auto const &Member) { return Member.first == Other; }); };
 	for (auto const throughend : {true, false})
 	{
 		TTrack *previous{&Track};
 		TTrack *current{throughend ? Track.trNext : Track.trPrev};
-		while (curved(current) && std::none_of(run.begin(), run.end(), [&](auto const &Member) { return Member.first == current; }))
+		while (current != nullptr && false == known(current))
 		{
+			if (current->eType == tt_Switch && has_switch_paths(*current) && is_supported(*current) && false == current->m_editorremoved)
+			{
+				auto const &extension{*current->SwitchExtension};
+				bool const atstart{extension.pPrevs[0] == previous};
+				if (atstart == (extension.pNexts[0] == previous))
+					break;
+				auto *beyond{atstart ? extension.pNexts[0] : extension.pPrevs[0]};
+				if (false == curved(beyond) || known(beyond))
+					break;
+				if (throughend)
+					run.emplace_back(current, atstart);
+				else
+					run.emplace_front(current, false == atstart);
+				previous = current;
+				current = beyond;
+				continue;
+			}
+			if (false == curved(current))
+				break;
 			auto const entersatstart{current->trPrev == previous};
 			if (throughend)
 				run.emplace_back(current, entersatstart);
@@ -1433,7 +1453,7 @@ bool editor_track::analyse_curve(std::vector<std::pair<TTrack *, bool>> const &R
 	for (std::size_t i = 0; i < run.size(); ++i)
 	{
 		auto const &path{run[i].first->m_paths.front()};
-		auto const length{run[i].first->Length()};
+		auto const length{run[i].first->eType == tt_Switch ? bezier{path}.plan_length() : run[i].first->Length()};
 		auto const internal{signed_angle(incoming(i), outgoing(i))};
 		turns.push_back(internal + kinks[i] * 0.5 + kinks[i + 1] * 0.5);
 		lengths.push_back(length);

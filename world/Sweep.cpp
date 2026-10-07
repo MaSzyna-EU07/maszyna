@@ -657,10 +657,7 @@ void sweep_node::beside_switches(std::vector<sample> &Samples)
 					continue;
 				auto const needed{offset + total(*nearest)};
 				if (needed > total(here))
-				{
-					here.widening[side] = needed;
-					here.cant[side] = 0.0;
-				}
+					here.widening[side] = needed - std::max(0.0, here.cant[side]) * edgeheight / 1.5;
 			}
 		}
 	}

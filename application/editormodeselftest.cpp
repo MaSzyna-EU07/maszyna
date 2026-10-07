@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/editormode.h"
 #include "editor/editorSettings.hpp"
+#include "editor/editorGeometry.hpp"
 #include "application/application.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
@@ -272,6 +273,67 @@ void editor_mode::selftest_step()
 			for (auto const &[index, column] : columns)
 				text += format(" [%.1f %.2f..%.2f]", index * 0.1, column.first, column.second);
 			WriteLog(format("SELFTEST profile %s at %.0f m:", name.c_str(), station) + text);
+		}
+		else if (command == "curvedswitch")
+		{
+			std::string name, label;
+			glm::dvec3 at{0.0}, toward{0.0};
+			words >> name >> at.x >> at.z >> toward.x >> toward.z >> label;
+			m_node = simulation::Paths.find(name);
+			ui()->set_node(m_node);
+			show_track_tab(track_tab::turnout);
+			arm_switch();
+			auto &tool{m_switch};
+			for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
+				if (false == label.empty() && tool.templates[i].label.find(label) != std::string::npos)
+				{
+					tool.armed = i;
+					break;
+				}
+			m_cursor_override = at;
+			auto const started{start_switch_placement()};
+			m_cursor_override.reset();
+			if (false == started)
+			{
+				WriteLog("SELFTEST curvedswitch: not started, " + tool.status);
+				continue;
+			}
+			tool.mouse = glm::dvec3{toward.x, tool.point.y, toward.z};
+			finish_switch_placement();
+			WriteLog("SELFTEST curvedswitch " + (tool.armed >= 0 ? tool.templates[tool.armed].label : std::string{}) + ": " + tool.status);
+		}
+		else if (command == "conecheck")
+		{
+			std::string name;
+			words >> name;
+			auto *track{simulation::Paths.find(name)};
+			if (track == nullptr || track->m_paths.size() < 2)
+			{
+				WriteLog("SELFTEST conecheck: no switch " + name);
+				continue;
+			}
+			geometry::bezier const main{track->m_paths[0]};
+			geometry::bezier const other{track->m_paths[1]};
+			std::string text;
+			for (double t = 0.125; t < 1.01; t += 0.125)
+			{
+				auto const point{other.point(t)};
+				double best{std::numeric_limits<double>::max()}, along{0.0};
+				for (int k = 0; k <= 2000; ++k)
+					if (auto const distance{geometry::plan_distance(main.point(k / 2000.0), point)}; distance < best)
+					{
+						best = distance;
+						along = k / 2000.0;
+					}
+				auto const base{main.point(along)};
+				auto const direction{glm::normalize(geometry::plan_of(main.first(along)))};
+				auto const lateral{(point.x - base.x) * -direction.y + (point.z - base.z) * direction.x};
+				auto const &path{track->m_paths[0]};
+				auto const roll{glm::radians(path.rolls[0] + (path.rolls[1] - path.rolls[0]) * along)};
+				auto const cone{base.y - lateral * std::tan(roll)};
+				text += format(" [t %.3f off %.3f dy %.4f]", t, lateral, point.y - cone);
+			}
+			WriteLog("SELFTEST conecheck " + name + ":" + text);
 		}
 		else if (command == "fouling")
 		{
