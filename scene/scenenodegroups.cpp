@@ -107,6 +107,11 @@ node_groups::update_map()
 
 	for (auto const &pair : m_groupmap) {
 		auto const &group = pair.second;
+		// named models of the group, collected once the group turns out to hold a semaphore.
+		// nested groups are flattened, so a group can hold millions of nodes, most of them nameless scenery;
+		// going through all of them for each semaphore took minutes
+		std::vector<TAnimModel *> namedmodels;
+		bool namedmodelscollected = false;
 
 		for (basic_node *node : group.nodes) {
 			std::string postfix { "_sem_mem" };
@@ -128,10 +133,17 @@ node_groups::update_map()
 					}
 				}
 
-				for (basic_node *node : group.nodes)
-					if (auto *model = dynamic_cast<TAnimModel*>(node))
-						if (model->name().starts_with(sem_name))
-							sem_info->models.push_back(model);
+				if (false == namedmodelscollected) {
+					for (basic_node *groupnode : group.nodes)
+						if (false == groupnode->name().empty())
+							if (auto *model = dynamic_cast<TAnimModel*>(groupnode))
+								namedmodels.push_back(model);
+					namedmodelscollected = true;
+				}
+
+				for (auto *model : namedmodels)
+					if (model->name().starts_with(sem_name))
+						sem_info->models.push_back(model);
 			}
 
             if (Global.map_manualswitchcontrol) {
