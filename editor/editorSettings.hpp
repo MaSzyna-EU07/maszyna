@@ -39,10 +39,14 @@ public:
 	bool orthophoto_origin(std::string const &Scenery, double &North, double &East) const;
 	void orthophoto_origin(std::string const &Scenery, double North, double East);
 
+	double platform_edge() const { return m_platform_edge; }
+	void platform_edge(double Distance) { m_platform_edge = Distance; }
+
 private:
 	movement_scheme m_movement{movement_scheme::wsad};
 	orthophoto_settings m_orthophoto;
 	std::map<std::string, std::pair<double, double>> m_orthophoto_origins;
+	double m_platform_edge{1.725};
 };
 
 // global editor settings instance

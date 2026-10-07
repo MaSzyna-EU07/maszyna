@@ -161,7 +161,7 @@ class sweep_node : public scene::basic_node
 	};
 	static void sample_piece(segment_data const &Piece, std::vector<sample> &Samples, double &Station);
 	static void gauge_along(std::vector<sample> &Samples);
-	void beside_switches(std::vector<std::pair<double, double>> const &Spans);
+	void beside_switches(std::vector<sample> &Samples);
 	state m_state;
 	std::vector<sample> m_samples;
 	std::vector<double> m_distances;

@@ -92,6 +92,8 @@ bool editorSettings::load()
 			parse(value, m_orthophoto.lift);
 		else if (key == "ortho_in_scene")
 			m_orthophoto.in_scene = (value == "1");
+		else if (key == "platform_edge")
+			parse(value, m_platform_edge);
 		else if (key.rfind(origin_prefix, 0) == 0)
 		{
 			// northing;easting
@@ -130,6 +132,7 @@ bool editorSettings::save()
 	stream << "ortho_drape " << (m_orthophoto.drape ? 1 : 0) << "\n";
 	stream << "ortho_lift " << m_orthophoto.lift << "\n";
 	stream << "ortho_in_scene " << (m_orthophoto.in_scene ? 1 : 0) << "\n";
+	stream << "platform_edge " << m_platform_edge << "\n";
 	stream << std::fixed << std::setprecision(3);
 	for (auto const &origin : m_orthophoto_origins)
 		stream << origin.first << " " << origin.second.first << ";" << origin.second.second << "\n";

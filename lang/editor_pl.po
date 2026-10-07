@@ -2599,8 +2599,8 @@ msgstr "wierzch"
 msgid "Platform edge:"
 msgstr "Krawędź peronu:"
 
-msgid "The edge of the platform 1.725 m from the axis of the track, its top this high over the rail top"
-msgstr "Krawędź peronu 1,725 m od osi toru, wierzch tyle nad główką szyny"
+msgid "The edge of the platform %.3f m from the axis of the track, its top this high over the rail top"
+msgstr "Krawędź peronu %.3f m od osi toru, wierzch tyle nad główką szyny"
 
 msgid "Parameters of the template"
 msgstr "Parametry szablonu"
@@ -4389,5 +4389,17 @@ msgstr "LPM na torze: tam stanie pojazd"
 msgid "Platform"
 msgstr "Peron"
 
-msgid "Puts the edge facing the track 1.725 m from its axis, set back by the widening of the gauge in the curves.\nStands on the plane of the rail heads carried on to its edge: lower on the inner side of a canted curve,\nhigher on the outer one; on the inner side also set back by the cant times the height of the edge / 1.5"
-msgstr "Ustawia krawędź od strony toru 1,725 m od jego osi, odsuniętą o poszerzenie skrajni na łukach.\nStoi na płaszczyźnie główek szyn przedłużonej do krawędzi: niżej po wewnętrznej stronie łuku z przechyłką,\nwyżej po zewnętrznej; po wewnętrznej dodatkowo odsunięty o przechyłkę razy wysokość krawędzi / 1,5"
+msgid "Puts the edge facing the track at the distance chosen from its axis, set back by the widening of the gauge in the curves.\nStands on the plane of the rail heads carried on to its edge: lower on the inner side of a canted curve,\nhigher on the outer one; on the inner side also set back by the cant times the height of the edge / 1.5"
+msgstr "Ustawia krawędź od strony toru w wybranej odległości od jego osi, odsuniętą o poszerzenie skrajni na łukach.\nStoi na płaszczyźnie główek szyn przedłużonej do krawędzi: niżej po wewnętrznej stronie łuku z przechyłką,\nwyżej po zewnętrznej; po wewnętrznej dodatkowo odsunięty o przechyłkę razy wysokość krawędzi / 1,5"
+
+msgid "1.725 m: lines of out-of-gauge loads, older platforms"
+msgstr "1,725 m: linie przesyłek z przekroczoną skrajnią, starsze perony"
+
+msgid "1.675 m: nominal by the 0.55 and 0.76 m platforms"
+msgstr "1,675 m: nominalnie przy peronach 0,55 i 0,76 m"
+
+msgid "1.650 m: the least allowed in service"
+msgstr "1,650 m: najmniej dopuszczalne w eksploatacji"
+
+msgid "edge of the platform from the axis"
+msgstr "krawędź peronu od osi toru"

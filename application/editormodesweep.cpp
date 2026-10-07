@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorIncludeInfo.hpp"
+#include "editor/editorSettings.hpp"
 
 #include "rendering/renderer.h"
 #include "scene/scenelayers.h"
@@ -87,13 +88,30 @@ bool platform_model(std::string const &File)
 // the edge of the platform 1.725 m from the axis on the side it stands, set back further by the widening of the gauge
 void platform_edge(sweep_node::state &State, std::string const &Model, double const Base)
 {
-	State.lateral = std::copysign(1.725, State.lateral == 0.0 ? 1.0 : State.lateral);
+	State.lateral = std::copysign(EditorSettings.platform_edge(), State.lateral == 0.0 ? 1.0 : State.lateral);
 	State.side_anchor = 1;
 	State.height_anchor = 3;
 	if (auto const height{platform_height(Model)}; height > 0.0)
 		State.height = Base + height;
 	State.widen = true;
 	State.platform = true;
+}
+
+bool platform_distance()
+{
+	double const distances[]{1.725, 1.675, 1.650};
+	char const *labels[]{STR_C("1.725 m: lines of out-of-gauge loads, older platforms"), STR_C("1.675 m: nominal by the 0.55 and 0.76 m platforms"), STR_C("1.650 m: the least allowed in service")};
+	auto const current{EditorSettings.platform_edge()};
+	int chosen{0};
+	for (int i = 0; i < IM_ARRAYSIZE(distances); ++i)
+		if (std::abs(current - distances[i]) < std::abs(current - distances[chosen]))
+			chosen = i;
+	ImGui::SetNextItemWidth(300.0f);
+	if (false == ImGui::Combo(STR_C("edge of the platform from the axis"), &chosen, labels, IM_ARRAYSIZE(labels)))
+		return false;
+	EditorSettings.platform_edge(distances[chosen]);
+	EditorSettings.save();
+	return true;
 }
 
 segment_data reversed(segment_data const &Path)
@@ -864,7 +882,12 @@ void editor_mode::render_sweep_ui()
 			changed = true;
 		}
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("The edge of the platform 1.725 m from the axis of the track, its top this high over the rail top"));
+			ImGui::SetTooltip(STR_C("The edge of the platform %.3f m from the axis of the track, its top this high over the rail top"), EditorSettings.platform_edge());
+	}
+	if (platform_distance() && settings.platform)
+	{
+		settings.lateral = std::copysign(EditorSettings.platform_edge(), settings.lateral == 0.0 ? 1.0 : settings.lateral);
+		changed = true;
 	}
 	ImGui::TextDisabled(STR_C("%.2f m %s of the axis, %.2f m over the rail top"), std::abs(settings.lateral), settings.lateral >= 0.0 ? STR_C("right") : STR_C("left"), settings.height);
 	if (false == tool.curve.empty() && tool.model_length > 0.0 && ImGui::Button(STR_C("Lay it along the selected path")))
@@ -921,7 +944,7 @@ void editor_mode::render_sweep_ui()
 			changed = true;
 		}
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("Puts the edge facing the track 1.725 m from its axis, set back by the widening of the gauge in the curves.\n"
+			ImGui::SetTooltip("%s", STR_C("Puts the edge facing the track at the distance chosen from its axis, set back by the widening of the gauge in the curves.\n"
 			                              "Stands on the plane of the rail heads carried on to its edge: lower on the inner side of a canted curve,\n"
 			                              "higher on the outer one; on the inner side also set back by the cant times the height of the edge / 1.5"));
 		ImGui::TextDisabled("%s", STR_C("Length"));
@@ -1676,8 +1699,13 @@ void editor_mode::render_bend()
 			}
 			changed = true;
 		}
+		if (state.platform && platform_distance())
+		{
+			state.lateral = std::copysign(EditorSettings.platform_edge(), state.lateral);
+			changed = true;
+		}
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("Puts the edge facing the track 1.725 m from its axis, set back by the widening of the gauge in the curves.\n"
+			ImGui::SetTooltip("%s", STR_C("Puts the edge facing the track at the distance chosen from its axis, set back by the widening of the gauge in the curves.\n"
 			                              "Stands on the plane of the rail heads carried on to its edge: lower on the inner side of a canted curve,\n"
 			                              "higher on the outer one; on the inner side also set back by the cant times the height of the edge / 1.5"));
 		if (changed)
@@ -1717,9 +1745,11 @@ void editor_mode::render_bend()
 				ImGui::SetNextItemWidth(170.0f);
 				ImGui::Combo(STR_C("axis of the model along the track"), &tool.axis, axes, IM_ARRAYSIZE(axes));
 				ImGui::Checkbox(STR_C("Turned around"), &tool.turned);
+				if (platform_model(source.file))
+					platform_distance();
 				bool anchored{false};
 				anchors(anchored);
-				auto const signature{format("%p %d %d %d %d %d %d %.4f %.4f %.4f", key, tool.track, tool.axis, tool.turned ? 1 : 0, tool.along_anchor, tool.side_anchor, tool.height_anchor, tool.point.x, tool.point.y, tool.point.z)};
+				auto const signature{format("%p %d %d %d %d %d %d %.4f %.4f %.4f %.3f", key, tool.track, tool.axis, tool.turned ? 1 : 0, tool.along_anchor, tool.side_anchor, tool.height_anchor, tool.point.x, tool.point.y, tool.point.z, EditorSettings.platform_edge())};
 				if (signature != tool.signature)
 				{
 					tool.signature = signature;

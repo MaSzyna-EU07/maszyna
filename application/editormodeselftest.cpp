@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "editor/editorSettings.hpp"
 #include "application/application.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
@@ -161,6 +162,8 @@ void editor_mode::selftest_step()
 			tool.length_mode = length == "original" ? 0 : length == "all" ? 2 : 1;
 			if (tool.length_mode == 1)
 				tool.length = std::stod(length);
+			if (values.count("edge"))
+				EditorSettings.platform_edge(std::stod(values["edge"]));
 			tool.measured.clear();
 			tool.open = true;
 			sweep_curve();
@@ -193,7 +196,10 @@ void editor_mode::selftest_step()
 		{
 			// edge of the last laid model as it was made: its distance from the axis and the height of its top over the rail head
 			std::string name;
-			words >> name;
+			double step{20.0};
+			words >> name >> step;
+			if (name == "-")
+				name.clear();
 			auto *sweep{name.empty() ? m_sweep.edited : simulation::Sweeps.find(name)};
 			if (sweep == nullptr)
 			{
@@ -216,14 +222,14 @@ void editor_mode::selftest_step()
 					if (lateral * sign <= 0.0)
 						continue;
 					auto const axis{sweep->frame_at(station)};
-					auto &entry{bins[static_cast<int>(station / 20.0)]};
+					auto &entry{bins[static_cast<int>(std::floor(station / step))]};
 					entry.edge = std::min(entry.edge, std::abs(lateral));
 					entry.points.emplace_back(std::abs(lateral), vertex.position.y - axis.position.y);
 				}
 			WriteLog(format("SELFTEST probe %s: %zu stretches with the model, %.1f - %.1f m of %.1f m", sweep->name().c_str(), bins.size(), sweep->start(), sweep->end(), sweep->length()));
 			for (auto const &[index, entry] : bins)
 			{
-				auto const station{index * 20.0 + 10.0};
+				auto const station{(index + 0.5) * step};
 				if (station < sweep->start() || station > sweep->end())
 					continue;
 				double top{-1000.0};

@@ -129,11 +129,13 @@ std::vector<segment_data> paths_beyond(segment_data Last, std::vector<segment_da
 				for (auto const forward : {true, false})
 				{
 					auto const candidate{forward ? path : turned_piece(path)};
-					if (next.has_value() || glm::distance(candidate.points[segment_data::point::start], at) > 0.01 ||
-					    glm::dot(plan_heading(Last, 1.0), plan_heading(candidate, 0.0)) < 0.9)
+					if (glm::distance(candidate.points[segment_data::point::start], at) > 0.01 || glm::dot(plan_heading(Last, 1.0), plan_heading(candidate, 0.0)) < 0.9)
 						continue;
 					auto const known = [&](segment_data const &Piece) { return same_points(Piece, candidate) || same_points(turned_piece(Piece), candidate); };
 					if (std::any_of(Own.begin(), Own.end(), known) || std::any_of(result.begin(), result.end(), known))
+						continue;
+					auto const straight{glm::dot(plan_heading(candidate, 0.0), plan_heading(candidate, 1.0))};
+					if (next.has_value() && straight <= glm::dot(plan_heading(*next, 0.0), plan_heading(*next, 1.0)))
 						continue;
 					next = candidate;
 				}
@@ -557,96 +559,107 @@ void sweep_node::gauge_along(std::vector<sample> &Samples)
 	}
 }
 
-void sweep_node::beside_switches(std::vector<std::pair<double, double>> const &Spans)
+void sweep_node::beside_switches(std::vector<sample> &Samples)
 {
+	if (Samples.size() < 3)
+		return;
 	auto const side{m_state.lateral >= 0.0 ? 1 : 0};
 	auto const sign{m_state.lateral >= 0.0 ? 1.0 : -1.0};
 	auto const edgeheight{std::max(0.0, m_state.height - gauge::rail_height)};
 	auto const total = [&](sample const &Sample) { return Sample.widening[side] + std::max(0.0, Sample.cant[side]) * edgeheight / 1.5; };
-	auto const matches = [](segment_data const &A, segment_data const &B) {
-		for (int i = 0; i < 4; ++i)
-			if (glm::distance(A.points[i], B.points[i]) > 1e-3)
-				return false;
-		return true;
+	auto const plan = [](glm::dvec3 const &Vector) {
+		glm::dvec3 const flat{Vector.x, 0.0, Vector.z};
+		return glm::length(flat) > 1e-9 ? glm::normalize(flat) : glm::dvec3{0.0, 0.0, 1.0};
 	};
-	auto const turned = [](segment_data const &Path) {
-		segment_data result{Path};
-		result.points[segment_data::point::start] = Path.points[segment_data::point::end];
-		result.points[segment_data::point::end] = Path.points[segment_data::point::start];
-		result.points[segment_data::point::control1] = Path.points[segment_data::point::control2];
-		result.points[segment_data::point::control2] = Path.points[segment_data::point::control1];
-		result.rolls = {-Path.rolls[1], -Path.rolls[0]};
-		return result;
-	};
-	for (std::size_t piece = 0; piece < m_state.pieces.size() && piece < Spans.size(); ++piece)
+	glm::dvec3 low{std::numeric_limits<double>::max()}, high{-std::numeric_limits<double>::max()};
+	for (auto const &sample : Samples)
 	{
-		auto const &own{m_state.pieces[piece]};
-		for (auto *track : simulation::Paths.sequence())
-		{
-			if (track == nullptr || track->eType != tt_Switch || track->m_paths.size() < 2 ||
-			    plan_distance(track->m_paths.front().points[segment_data::point::start], own.points[segment_data::point::start]) > 300.0)
-				continue;
-			for (std::size_t path = 0; path < track->m_paths.size(); ++path)
+		low = glm::min(low, sample.position);
+		high = glm::max(high, sample.position);
+	}
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch || track->m_paths.size() < 2)
+			continue;
+		auto const points{track->m_paths.front().points[segment_data::point::start]};
+		if (points.x < low.x - 1.0 || points.x > high.x + 1.0 || points.z < low.z - 1.0 || points.z > high.z + 1.0)
+			continue;
+		std::size_t at{0};
+		auto best{std::numeric_limits<double>::max()};
+		for (std::size_t i = 0; i < Samples.size(); ++i)
+			if (auto const distance{plan_distance(Samples[i].position, points)}; distance < best)
 			{
-				auto const forward{matches(own, track->m_paths[path])};
-				if (false == forward && false == matches(own, turned(track->m_paths[path])))
+				best = distance;
+				at = i;
+			}
+		if (best > sample_spacing)
+			continue;
+		auto const &near{Samples[at]};
+		auto const along{plan(near.tangent)};
+		glm::dvec3 const toward{points.x - near.position.x, 0.0, points.z - near.position.z};
+		if (std::abs(glm::dot(toward, glm::dvec3{-along.z, 0.0, along.x})) > 0.05)
+			continue;
+		auto const s0{near.station + glm::dot(toward, along)};
+		for (auto const &path : track->m_paths)
+		{
+			auto const heading{glm::dot(plan_heading(path, 0.0), along)};
+			if (std::abs(heading) < 0.9)
+				continue;
+			auto const beyond{paths_beyond(path, {path})};
+			std::vector<sample> chain;
+			double station{0.0};
+			if (heading > 0.0)
+			{
+				for (auto const &sample : Samples)
+					if (sample.station >= s0 - outer_reach && sample.station < s0 - 1e-3)
+					{
+						station = sample.station;
+						chain.push_back(sample);
+					}
+				sample_piece(path, chain, station);
+				for (auto const &piece : beyond)
+					sample_piece(piece, chain, station);
+			}
+			else
+			{
+				for (auto piece = beyond.rbegin(); piece != beyond.rend(); ++piece)
+					sample_piece(turned_piece(*piece), chain, station);
+				sample_piece(turned_piece(path), chain, station);
+				auto const shift{station - s0};
+				for (auto const &sample : Samples)
+					if (sample.station > s0 + 1e-3 && sample.station <= s0 + outer_reach)
+					{
+						chain.push_back(sample);
+						chain.back().station += shift;
+					}
+			}
+			gauge_along(chain);
+			for (auto &here : Samples)
+			{
+				if (plan_distance(here.position, points) > outer_reach + 2.0 * lead_reach + 100.0)
 					continue;
-				for (std::size_t other = 0; other < track->m_paths.size(); ++other)
+				auto const forward{plan(here.tangent)};
+				sample const *nearest{nullptr};
+				auto closest{std::numeric_limits<double>::max()};
+				for (auto const &point : chain)
 				{
-					if (other == path)
-						continue;
-					std::vector<sample> chain;
-					double station{0.0};
-					if (forward)
+					auto const gap{std::abs(glm::dot(glm::dvec3{point.position.x - here.position.x, 0.0, point.position.z - here.position.z}, forward))};
+					if (gap < closest)
 					{
-						for (auto const &sample : m_samples)
-							if (sample.station >= Spans[piece].first - outer_reach && sample.station < Spans[piece].first)
-							{
-								station = sample.station;
-								chain.push_back(sample);
-							}
-						sample_piece(track->m_paths[other], chain, station);
+						closest = gap;
+						nearest = &point;
 					}
-					else
-					{
-						sample_piece(turned(track->m_paths[other]), chain, station);
-						auto const shift{station - Spans[piece].second};
-						for (auto const &sample : m_samples)
-							if (sample.station > Spans[piece].second && sample.station <= Spans[piece].second + outer_reach)
-							{
-								chain.push_back(sample);
-								chain.back().station += shift;
-							}
-					}
-					gauge_along(chain);
-					for (auto &here : m_samples)
-					{
-						if (here.station < Spans[piece].first - outer_reach || here.station > Spans[piece].second + outer_reach)
-							continue;
-						glm::dvec3 const left{-here.tangent.z, 0.0, here.tangent.x};
-						sample const *nearest{nullptr};
-						auto best{std::numeric_limits<double>::max()};
-						for (auto const &point : chain)
-						{
-							auto const along{std::abs(glm::dot(glm::dvec3{point.position.x - here.position.x, 0.0, point.position.z - here.position.z}, here.tangent))};
-							if (along < best)
-							{
-								best = along;
-								nearest = &point;
-							}
-						}
-						if (nearest == nullptr || best > sample_spacing)
-							continue;
-						auto const offset{sign * glm::dot(glm::dvec3{nearest->position.x - here.position.x, 0.0, nearest->position.z - here.position.z}, glm::length(left) > 1e-9 ? glm::normalize(left) : left)};
-						if (offset > 0.05)
-							continue;
-						auto const needed{offset + total(*nearest)};
-						if (needed > total(here))
-						{
-							here.widening[side] = needed;
-							here.cant[side] = 0.0;
-						}
-					}
+				}
+				if (nearest == nullptr || closest > sample_spacing)
+					continue;
+				auto const offset{sign * glm::dot(glm::dvec3{nearest->position.x - here.position.x, 0.0, nearest->position.z - here.position.z}, glm::dvec3{-forward.z, 0.0, forward.x})};
+				if (offset > 0.05)
+					continue;
+				auto const needed{offset + total(*nearest)};
+				if (needed > total(here))
+				{
+					here.widening[side] = needed;
+					here.cant[side] = 0.0;
 				}
 			}
 		}
@@ -759,7 +772,6 @@ void sweep_node::rebuild_samples()
 {
 	m_boundsvalid = false;
 	m_samples.clear();
-	std::vector<std::pair<double, double>> spans;
 	std::vector<segment_data> before, after;
 	if ((m_state.widen || m_state.platform) && false == m_state.pieces.empty())
 	{
@@ -772,24 +784,18 @@ void sweep_node::rebuild_samples()
 	auto const head{station};
 	auto const first{m_samples.empty() ? std::size_t{0} : m_samples.size() - 1};
 	for (auto const &piece : m_state.pieces)
-	{
-		auto const begin{station};
 		sample_piece(piece, m_samples, station);
-		spans.emplace_back(begin - head, station - head);
-	}
 	auto const last{m_samples.size()};
 	for (auto const &piece : after)
 		sample_piece(piece, m_samples, station);
 	gauge_along(m_samples);
+	if (m_state.widen || m_state.platform)
+		beside_switches(m_samples);
 	// the paths beyond the ends only lead the gauge in, the copies stay on the pieces
 	m_samples.erase(m_samples.begin() + last, m_samples.end());
 	m_samples.erase(m_samples.begin(), m_samples.begin() + first);
 	for (auto &sample : m_samples)
 		sample.station -= head;
-	if ((m_state.widen || m_state.platform) && m_samples.size() > 2)
-	{
-		beside_switches(spans);
-	}
 	m_distances.clear();
 	glm::dvec3 previous{0.0};
 	for (auto const &sample : m_samples)
