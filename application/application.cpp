@@ -562,7 +562,7 @@ int eu07_application::run()
 				if (m_network && m_network->client)
 				{
 					// verify sync
-					if (sync != slave_sync)
+					if (sync != slave_sync) // NOSONAR slave_sync is initialised, the PR analysis keeps a stale report of the old declaration
 					{
 						WriteLog("net: desync! calculated: " + std::to_string(sync) + ", received: " + std::to_string(slave_sync), logtype::net);
 

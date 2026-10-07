@@ -3661,6 +3661,58 @@ std::vector<TSegment *> sleeper_segments_for( TTrack const &Track )
     }
     return out;
 }
+
+// Local-space transform (relative to Origin) of the sleeper at distance S along the Segment,
+// or none at a degenerate spot (e.g. zero-length sub-segment) where no tangent can be taken.
+// Eps is the half-span of the central difference used to extract the tangent.
+std::optional<glm::mat4> sleeper_transform( TSegment const &Segment, double const S, double const Eps, glm::dvec3 const &Origin, glm::vec3 const &Offset )
+{
+    glm::dvec3 pos;
+    glm::vec3 angles;
+    Segment.RaPositionGet( S, pos, angles );
+
+    // tangent direction via central difference (clamped to the segment endpoints)
+    glm::dvec3 p_back;
+    glm::dvec3 p_fwd;
+    glm::vec3 dummy;
+    Segment.RaPositionGet( std::max( 0.0, S - Eps ), p_back, dummy );
+    Segment.RaPositionGet( std::min( Segment.GetLength(), S + Eps ), p_fwd, dummy );
+    auto tangent = glm::vec3( p_fwd - p_back );
+    if( glm::length2( tangent ) < 1e-8f ) {
+        // skip this position rather than emit a junk transform with NaN normals.
+        return std::nullopt;
+    }
+    tangent = glm::normalize( tangent );
+
+    // build an orthonormal basis around the tangent. world up is the reference; if the
+    // track is almost vertical we fall back to world X so cross() doesn't collapse.
+    glm::vec3 up_ref { 0.f, 1.f, 0.f };
+    if( std::abs( glm::dot( tangent, up_ref ) ) > 0.999f ) { up_ref = glm::vec3( 1.f, 0.f, 0.f ); }
+    glm::vec3 side = glm::normalize( glm::cross( up_ref, tangent ) );
+    glm::vec3 up   = glm::cross( tangent, side );
+
+    // apply track roll (banking) around the tangent / forward axis.
+    if( float const roll = angles.x; roll != 0.f ) {
+        auto const roll_mat = glm::rotate( glm::mat4( 1.f ), roll, tangent );
+        side = glm::vec3( roll_mat * glm::vec4( side, 0.f ) );
+        up   = glm::vec3( roll_mat * glm::vec4( up,   0.f ) );
+    }
+
+    // assemble local transform: columns are (right, up, forward, translation).
+    // a sleeper modelled with X = sideways, Y = up, Z = along-track now ends up
+    // correctly oriented along the path tangent regardless of curve direction.
+    auto const localpos = glm::vec3( pos - Origin );
+    glm::mat4 m { 1.f };
+    m[ 0 ] = glm::vec4( side,    0.f );
+    m[ 1 ] = glm::vec4( up,      0.f );
+    m[ 2 ] = glm::vec4( tangent, 0.f );
+    m[ 3 ] = glm::vec4( localpos, 1.f );
+
+    if( Offset != glm::vec3( 0.f ) ) {
+        m = glm::translate( m, Offset );
+    }
+    return m;
+}
 } // anonymous namespace
 
 // Resolves the sleeper model + (optional) replacable skin via the global model/material
@@ -3705,13 +3757,12 @@ void TTrack::build_sleeper_transforms()
     // at the segment endpoints. Sampling positions directly is robust for both straight
     // segments and bezier curves, and it costs us two extra evaluations per sleeper.
     double const eps = std::min( 0.1, spacing * 0.25 );
-    glm::vec3 const world_up { 0.f, 1.f, 0.f };
 
     // user offset is (left/right, forward/back, up/down) in the local frame established by
     // the basis below (x=right, y=up, z=forward). swap y<->z to match the documented axes.
     glm::vec3 const local_offset { m_sleeper_offset.x, m_sleeper_offset.z, m_sleeper_offset.y };
 
-    for( auto *segment : segments ) {
+    for( auto const *segment : segments ) {
         auto const length = segment->GetLength();
         if( length <= 0.0 ) { continue; }
         // start half a frequency in so the first sleeper doesn't sit on the joint.
@@ -3722,54 +3773,9 @@ void TTrack::build_sleeper_transforms()
         for( std::size_t sleeperidx = 0;; ++sleeperidx ) {
             auto const s = start + static_cast<double>( sleeperidx ) * spacing;
             if( s >= length ) { break; }
-            glm::dvec3 pos;
-            glm::vec3 angles;
-            segment->RaPositionGet( s, pos, angles );
-
-            // tangent direction via central difference (clamped to the segment endpoints)
-            auto const s_back = std::max( 0.0, s - eps );
-            auto const s_fwd  = std::min( length, s + eps );
-            glm::dvec3 p_back, p_fwd;
-            glm::vec3  dummy;
-            segment->RaPositionGet( s_back, p_back, dummy );
-            segment->RaPositionGet( s_fwd,  p_fwd,  dummy );
-            auto tangent = glm::vec3( p_fwd - p_back );
-            if( glm::length2( tangent ) < 1e-8f ) {
-                // degenerate sample (e.g. zero-length sub-segment); skip this position rather
-                // than emit a junk transform with NaN normals.
-                continue;
+            if( auto const transform = sleeper_transform( *segment, s, eps, m_origin, local_offset ) ) {
+                m_sleeper_local_transforms.emplace_back( *transform );
             }
-            tangent = glm::normalize( tangent );
-
-            // build an orthonormal basis around the tangent. world up is the reference; if the
-            // track is almost vertical we fall back to world X so cross() doesn't collapse.
-            glm::vec3 up_ref = world_up;
-            if( std::abs( glm::dot( tangent, up_ref ) ) > 0.999f ) { up_ref = glm::vec3( 1.f, 0.f, 0.f ); }
-            glm::vec3 right = glm::normalize( glm::cross( up_ref, tangent ) );
-            glm::vec3 up    = glm::cross( tangent, right );
-
-            // apply track roll (banking) around the tangent / forward axis.
-            float const roll = angles.x;
-            if( roll != 0.f ) {
-                auto const roll_mat = glm::rotate( glm::mat4( 1.f ), roll, tangent );
-                right = glm::vec3( roll_mat * glm::vec4( right, 0.f ) );
-                up    = glm::vec3( roll_mat * glm::vec4( up,    0.f ) );
-            }
-
-            // assemble local transform: columns are (right, up, forward, translation).
-            // a sleeper modelled with X = sideways, Y = up, Z = along-track now ends up
-            // correctly oriented along the path tangent regardless of curve direction.
-            auto const localpos = glm::vec3( pos - m_origin );
-            glm::mat4 m { 1.f };
-            m[ 0 ] = glm::vec4( right,   0.f );
-            m[ 1 ] = glm::vec4( up,      0.f );
-            m[ 2 ] = glm::vec4( tangent, 0.f );
-            m[ 3 ] = glm::vec4( localpos, 1.f );
-
-            if( local_offset != glm::vec3( 0.f ) ) {
-                m = glm::translate( m, local_offset );
-            }
-            m_sleeper_local_transforms.emplace_back( m );
         }
     }
 }
