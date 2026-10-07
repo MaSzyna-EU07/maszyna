@@ -239,6 +239,21 @@ public:
         }
     };
     using instance_bucket_map = std::unordered_map< instance_bucket_key, std::vector<TAnimModel *>, instance_bucket_key_hash >;
+    // what it takes to tell that an instance is out of sight, copied from the instance.
+    // a cell can hold thousands of instances, each of them large and placed wherever the memory was free, and a render
+    // pass rejects most of them. the renderer makes the copies and goes by them, to fetch only the instances it may draw
+    struct instance_bounds {
+        glm::vec3 center { 0.f }; // location of the instance, in the precision the frustum test takes it
+        float radius { 0.f };
+        float rangesquaredmax { 0.f }; // past it the instance isn't drawn: by its own range, or the lod stages of its model
+    };
+    struct instance_bucket {
+        std::vector<TAnimModel *> instances;
+        // caches owned by the renderer; emptied whenever the content of the bucket changes
+        mutable std::vector<instance_bounds> bounds; // copies for the instances, in the same order
+        mutable unsigned int boundsversion { 0 };
+    };
+    using instance_bucketdata_map = std::unordered_map< instance_bucket_key, instance_bucket, instance_bucket_key_hash >;
     using sound_sequence = std::vector<sound_source *>;
     using eventlauncher_sequence = std::vector<TEventLauncher *>;
     using memorycell_sequence = std::vector<TMemCell *>;
@@ -259,7 +274,7 @@ public:
     // batched instance buckets keyed by shared TModel3d*; populated alongside
     // m_instancesopaque for nodes whose TAnimModel::m_instanceable == true.
     // The renderer uses these to amortise per-model state setup across many instances.
-    instance_bucket_map m_instancebuckets_opaque;
+    instance_bucketdata_map m_instancebuckets_opaque;
     traction_sequence m_traction;
     sound_sequence m_sounds;
     eventlauncher_sequence m_eventlaunchers;

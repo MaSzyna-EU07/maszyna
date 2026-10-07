@@ -284,6 +284,11 @@ class opengl33_renderer : public gfx_renderer {
 	// instanced_drawcall in draw_stats and contributes Instances.size() to the
 	// instances counter. Instances are still individually frustum/distance culled.
 	void Render_Instanced( TModel3d *Model, std::vector<TAnimModel *> const &Instances );
+	// adds the bucketed instances of a scene cell to the frame-level buckets drawn by Render_Instanced(),
+	// less the ones the copies of their bounds show to be out of sight in the current render pass
+	void Queue_Instances( scene::basic_cell const *Cell );
+	// makes the copies of the bounds of the instances held by a bucket of a scene cell
+	void Update_Instance_Bounds( TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket );
 	bool Render(TDynamicObject *Dynamic);
     bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
 	bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance);
@@ -383,6 +388,9 @@ class opengl33_renderer : public gfx_renderer {
 	// of once per cell -- collapsing many tiny instanced draws into a few large
 	// batches. Reused every pass; the vectors are emptied (not freed) at the top of Render(scene::basic_region*).
 	scene::basic_cell::instance_bucket_map m_frame_instance_buckets;
+	// copies of instance bounds kept by the buckets of scene cells are good as long as they carry this number.
+	// it changes with each frame drawn with the scenery editor active, as the editor moves and resizes instances in place
+	unsigned int m_instanceboundsversion { 1 };
   renderpass_config m_colorpass; // parametrs of most recent color pass
 	std::array<renderpass_config, 3> m_shadowpass; // parametrs of most recent shadowmap pass for each of csm stages
 	std::vector<TSubModel const *> m_pickcontrolsitems;

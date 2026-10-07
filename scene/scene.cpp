@@ -379,7 +379,9 @@ basic_cell::insert( TAnimModel *Instance ) {
             if( mat != nullptr ) {
                 for( int i = 0; i < 5; ++i ) { key.skins[i] = mat->replacable_skins[i]; }
             }
-            m_instancebuckets_opaque[ key ].emplace_back( Instance );
+            auto &bucket { m_instancebuckets_opaque[ key ] };
+            bucket.instances.emplace_back( Instance );
+            bucket.bounds.clear();
         }
     }
    // re-calculate cell bounding area, in case model extends outside the cell's boundaries
@@ -478,10 +480,12 @@ basic_cell::erase( TAnimModel *Instance ) {
         // NOTE: searched by pointer rather than by key: the instance may have lost its instanceable
         // status or changed its skins since it was inserted, which would leave a dangling pointer behind
         for( auto bucket = m_instancebuckets_opaque.begin(); bucket != m_instancebuckets_opaque.end(); ) {
-            bucket->second.erase(
-                std::remove( std::begin( bucket->second ), std::end( bucket->second ), Instance ),
-                std::end( bucket->second ) );
-            if( bucket->second.empty() ) {
+            auto &instances { bucket->second.instances };
+            instances.erase(
+                std::remove( std::begin( instances ), std::end( instances ), Instance ),
+                std::end( instances ) );
+            bucket->second.bounds.clear();
+            if( instances.empty() ) {
                 bucket = m_instancebuckets_opaque.erase( bucket );
             }
             else {

@@ -577,6 +577,10 @@ bool opengl33_renderer::Render()
 	}
 	// generate new frame
     opengl_texture::reset_unit_cache();
+	if( EditorModeFlag ) {
+		// the editor moves and resizes model instances in place, which leaves the copies of their bounds out of date
+		++m_instanceboundsversion;
+	}
 
 	m_renderpass.draw_mode = rendermode::none; // force setup anew
 	m_renderpass.draw_stats = debug_stats();
@@ -2765,10 +2769,7 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 					/ ( static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.ZoomFactor ) )
 					/ static_cast<double>( Global.fDistanceFactor ) };
 				if( cellnearestdistancesquared <= sq( static_cast<double>( m_renderpass.draw_range ) + 250.0 ) ) {
-					for( auto const &bucket : cell->m_instancebuckets_opaque ) {
-						auto &dest = m_frame_instance_buckets[ bucket.first ];
-						dest.insert( dest.end(), bucket.second.begin(), bucket.second.end() );
-					}
+					Queue_Instances( cell );
 				}
 			}
 			// remaining (non-instanceable) opaque instance nodes go through the per-node path
@@ -2798,10 +2799,7 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
              && ( cellnearestdistance <= Global.reflectiontune.range_instances ) ) {
                 // opaque parts of instanced models -- accumulate into the
                 // frame-level map; flushed once per unique model after the loop.
-                for( auto const &bucket : cell->m_instancebuckets_opaque ) {
-                    auto &dest = m_frame_instance_buckets[ bucket.first ];
-                    dest.insert( dest.end(), bucket.second.begin(), bucket.second.end() );
-                }
+                Queue_Instances( cell );
                 for( auto *instance : cell->m_instancesopaque ) {
                     if( instance->m_instanceable ) { continue; }
                     Render( instance );
@@ -3054,6 +3052,88 @@ void opengl33_renderer::Render(TAnimModel *Instance)
 	}
 }
 
+// adds the bucketed instances of a scene cell to the frame-level buckets, for Render_Instanced() to draw.
+// Render_Instanced() culls each instance it's given. the tests it makes are repeated here on the copies of instance
+// bounds kept by the buckets, with some slack for the single precision of the copies, and the instances which fail are
+// left out: the instances themselves are fetched only when there's a chance for them to be drawn
+void opengl33_renderer::Queue_Instances( scene::basic_cell const *Cell )
+{
+	// the editor moves and resizes the instances in place, the copies can't be relied on while it's active
+	auto const usebounds { false == EditorModeFlag };
+	auto const reflections { m_renderpass.draw_mode == rendermode::reflections };
+	// same choices as in Render_Instanced(): shadows measure the distance from the real camera, reflections
+	// ignore zoom and distance factor, test the plain distance against their own range and add the fidelity offset
+	auto const &distancecamera { m_renderpass.draw_mode == rendermode::shadows ? m_renderpass.viewport_camera : m_renderpass.pass_camera };
+	glm::dvec3 const cameraposition { distancecamera.position() };
+	auto const distancescale { reflections ? 1.0 : 1.0 / ( static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.fDistanceFactor ) ) };
+	auto const distanceoffset { reflections ? sq( static_cast<double>( EU07_REFLECTIONFIDELITYOFFSET ) ) : 0.0 };
+	auto const slack { 1.001 };
+	auto const distancelimit { slack * ( reflections ? sq( static_cast<double>( Global.reflectiontune.range_instances ) ) : sq( static_cast<double>( m_renderpass.draw_range ) + 250.0 ) ) };
+	// up close the rounding of the copies is too large a part of the distance for the slack to cover it
+	auto const distancetested { sq( 64.0 ) };
+
+	for( auto const &bucket : Cell->m_instancebuckets_opaque ) {
+		auto const &instances { bucket.second.instances };
+		if( false == usebounds ) {
+			auto &dest { m_frame_instance_buckets[ bucket.first ] };
+			dest.insert( dest.end(), instances.begin(), instances.end() );
+			continue;
+		}
+		if( ( bucket.second.boundsversion != m_instanceboundsversion )
+		 || ( bucket.second.bounds.size() != instances.size() ) ) {
+			Update_Instance_Bounds( bucket.first.pModel, bucket.second );
+		}
+		auto const &bounds { bucket.second.bounds };
+		std::vector<TAnimModel *> *dest { nullptr }; // looked up when there's something to put in it
+		for( std::size_t idx = 0; idx < bounds.size(); ++idx ) {
+			auto const &instancebounds { bounds[ idx ] };
+			auto const center { glm::dvec3{ instancebounds.center } };
+			auto const distancesquared { glm::length2( center - cameraposition ) };
+			if( distancesquared > distancetested ) {
+				auto const scaleddistancesquared { distancesquared * distancescale };
+				if( scaleddistancesquared > distancelimit ) { continue; }
+				if( scaleddistancesquared + distanceoffset >= slack * instancebounds.rangesquaredmax ) { continue; }
+			}
+			if( false == m_renderpass.pass_camera.visible( scene::bounding_area{ center, instancebounds.radius } ) ) { continue; }
+			if( dest == nullptr ) {
+				dest = &m_frame_instance_buckets[ bucket.first ];
+			}
+			dest->emplace_back( instances[ idx ] );
+		}
+	}
+}
+
+// makes the copies of the bounds of the instances held by a bucket of a scene cell
+void opengl33_renderer::Update_Instance_Bounds( TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket )
+{
+	// a submodel is drawn only closer than its fSquareMaxDist, see Render( TSubModel * ). past the largest of these
+	// there's nothing of the model left to draw, which makes it another limit of the range of its instances
+	auto lodrangesquared { ( Model != nullptr && Model->Root != nullptr ) ? 0.f : std::numeric_limits<float>::max() };
+	m_instance_lodpending.clear();
+	m_instance_lodpending.push_back( Model != nullptr ? Model->Root : nullptr );
+	while( false == m_instance_lodpending.empty() ) {
+		auto const *submodel = m_instance_lodpending.back();
+		m_instance_lodpending.pop_back();
+		if( submodel == nullptr ) { continue; }
+		lodrangesquared = std::max( lodrangesquared, submodel->fSquareMaxDist );
+		m_instance_lodpending.push_back( submodel->Child );
+		m_instance_lodpending.push_back( submodel->Next );
+	}
+
+	Bucket.bounds.clear();
+	Bucket.bounds.reserve( Bucket.instances.size() );
+	for( auto const *instance : Bucket.instances ) {
+		scene::basic_cell::instance_bounds instancebounds;
+		if( instance != nullptr ) {
+			instancebounds.center = glm::vec3{ instance->m_area.center };
+			instancebounds.radius = instance->m_area.radius;
+			instancebounds.rangesquaredmax = std::min( lodrangesquared, static_cast<float>( std::min( instance->m_rangesquaredmax, static_cast<double>( std::numeric_limits<float>::max() ) ) ) );
+		}
+		Bucket.bounds.emplace_back( instancebounds );
+	}
+	Bucket.boundsversion = m_instanceboundsversion;
+}
+
 // True GPU-instanced render path for a group of TAnimModel instances sharing the same
 // TModel3d. The submodel tree is walked ONCE per batch; at every submodel that draws
 // geometry we issue a single glDrawElementsInstancedBaseVertex(N) covering all visible
@@ -3239,16 +3319,16 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 
 			::glPopMatrix();
 
-			// 2d. Restore instance_modelview[0] to identity so subsequent
-			// non-instanced draws continue to compute identity * modelview.
-			{
-				glm::mat4 const identity( 1.0f );
-				instance_ubo->update( reinterpret_cast<uint8_t const *>( &identity ), 0, sizeof( identity ) );
-			}
-
 			offset_idx += this_batch;
 			++m_renderpass.draw_stats.instanced_drawcalls;
 		}
+	}
+	// 3. Restore instance_modelview[0] to identity so subsequent
+	// non-instanced draws continue to compute identity * modelview.
+	// done once the last batch is out, as everything drawn up to that point is instanced
+	{
+		glm::mat4 const identity( 1.0f );
+		instance_ubo->update( reinterpret_cast<uint8_t const *>( &identity ), 0, sizeof( identity ) );
 	}
 
 	m_renderpass.draw_stats.instances += static_cast<int>( m_instance_survivors.size() );
