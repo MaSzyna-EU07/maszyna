@@ -635,11 +635,15 @@ void opengl33_renderer::SwapBuffers()
 
     m_debugtimestext.clear();
     m_debugtimestext =
-        "cpu frame total: " + to_string( Timer::subsystem.gfx_color.average() + Timer::subsystem.gfx_shadows.average() + Timer::subsystem.gfx_swap.average(), 2 ) + " ms\n"
+        "cpu frame total: " + to_string( Timer::subsystem.gfx_color.average() + Timer::subsystem.gfx_shadows.average() + ( Global.gfx_envmap_enabled ? Timer::subsystem.gfx_reflections.average() : 0.f ) + Timer::subsystem.gfx_swap.average(), 2 ) + " ms\n"
         + " color: " + to_string( Timer::subsystem.gfx_color.average(), 2 ) + " ms (" + std::to_string( m_cellqueue.size() ) + " sectors)\n";
     if( Global.gfx_shadowmap_enabled ) {
         m_debugtimestext +=
             " shadows: " + to_string( Timer::subsystem.gfx_shadows.average(), 2 ) + " ms\n";
+    }
+    if( Global.gfx_envmap_enabled ) {
+        m_debugtimestext +=
+            " reflections: " + to_string( Timer::subsystem.gfx_reflections.average(), 2 ) + " ms\n";
     }
     m_debugtimestext += " swap: " + to_string( Timer::subsystem.gfx_swap.average(), 2 ) + " ms\n";
     if( !Global.gfx_usegles ) {
@@ -825,8 +829,10 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		{
 			// potentially update environmental cube map
             m_renderpass.draw_stats = {};
+			Timer::subsystem.gfx_reflections.start();
             if (Render_reflections(vp))
 				m_renderpass = m_colorpass; // restore color pass settings
+			Timer::subsystem.gfx_reflections.stop();
 			setup_env_map(m_env_tex.get());
 		}
 
@@ -1385,23 +1391,36 @@ bool opengl33_renderer::Render_reflections(viewport_config &vp)
 {
     if( Global.reflectiontune.update_interval == 0 ) { return false; }
 
-    auto const timestamp{ Timer::GetRenderTime() };
-    if( ( timestamp - m_environmentupdatetime < Global.reflectiontune.update_interval )
-     && ( glm::length2( m_renderpass.pass_camera.position() - m_environmentupdatelocation ) < sq(1000.0)) ) // length2 is better than length for comparing because it does not require sqrt function
-	{
-        // run update every 5+ mins of simulation time, or at least 1km from the last location
-        return false;
+    if( m_environmentupdateface >= 6 ) {
+        // no update in progress, check whether it's time for another one
+        auto const timestamp{ Timer::GetRenderTime() };
+        if( ( timestamp - m_environmentupdatetime < Global.reflectiontune.update_interval )
+         && ( glm::length2( m_renderpass.pass_camera.position() - m_environmentupdatelocation ) < sq(1000.0)) ) // length2 is better than length for comparing because it does not require sqrt function
+        {
+            // run update every 5+ mins of simulation time, or at least 1km from the last location
+            return false;
+        }
+        m_environmentupdatetime = timestamp;
+        m_environmentupdatelocation = m_renderpass.pass_camera.position();
+        m_environmentupdateface = 0;
     }
-    m_environmentupdatetime = timestamp;
-	m_environmentupdatelocation = m_renderpass.pass_camera.position();
+	// an update draws the scene six times, which is too much for a single frame. its cost is spread
+	// by drawing one face of the map per frame, all of them as seen from the place the update began at.
+	// the first update is done in one go, as there's nothing to show in the meantime
+	auto const lastface{ m_environmentready ? m_environmentupdateface : 5 };
 	glViewport(0, 0, gl::ENVMAP_SIZE, gl::ENVMAP_SIZE);
-	for (m_environmentcubetextureface = 0; m_environmentcubetextureface < 6; ++m_environmentcubetextureface)
+	for (; m_environmentupdateface <= lastface; ++m_environmentupdateface)
 	{
+		m_environmentcubetextureface = m_environmentupdateface;
 		m_env_fb->attach(*m_env_tex, m_environmentcubetextureface, GL_COLOR_ATTACHMENT0);
 		if (m_env_fb->is_complete())
 			Render_pass(vp, rendermode::reflections);
 	}
-	m_env_tex->generate_mipmaps();
+	if (m_environmentupdateface >= 6)
+	{
+		m_env_tex->generate_mipmaps();
+		m_environmentready = true;
+	}
 	m_env_fb->detach(GL_COLOR_ATTACHMENT0);
 
 	return true;
@@ -1712,7 +1731,9 @@ void opengl33_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
 	case rendermode::reflections:
 	{
 		// modelview
-		camera.position() = (((true == DebugCameraFlag) && (false == Ignoredebug)) ? Global.pDebugCamera.Pos : Global.pCamera.Pos);
+		// the faces of the map are drawn over a few frames. each is drawn from the place the camera was at
+		// when the update began, so they fit together along the edges when the camera moves in the meantime
+		camera.position() = m_environmentupdatelocation;
 		glm::dvec3 const cubefacetargetvectors[6] = {{1.0, 0.0, 0.0}, {-1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, -1.0, 0.0}, {0.0, 0.0, 1.0}, {0.0, 0.0, -1.0}};
 		glm::dvec3 const cubefaceupvectors[6] = {{0.0, -1.0, 0.0}, {0.0, -1.0, 0.0}, {0.0, 0.0, 1.0}, {0.0, 0.0, -1.0}, {0.0, -1.0, 0.0}, {0.0, -1.0, 0.0}};
 		auto const cubefaceindex = m_environmentcubetextureface;
@@ -2768,7 +2789,13 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 		}
         case rendermode::reflections:
         {
-            if( Global.reflectiontune.fidelity >= 1 ) {
+            // a cell lying whole beyond the range the reflections draw model instances at is left out, as each
+            // of its instances would fail the range test done for it in Render_Instanced() and Render( TAnimModel * ).
+            // like the cull of the regular passes above, the test goes by the nearest point of the bounding sphere
+            // of the cell, which holds the locations of all its instances
+            auto const cellnearestdistance { std::max( 0.0, glm::length( cell->m_area.center - m_renderpass.pass_camera.position() ) - cell->m_area.radius ) };
+            if( ( Global.reflectiontune.fidelity >= 1 )
+             && ( cellnearestdistance <= Global.reflectiontune.range_instances ) ) {
                 // opaque parts of instanced models -- accumulate into the
                 // frame-level map; flushed once per unique model after the loop.
                 for( auto const &bucket : cell->m_instancebuckets_opaque ) {
@@ -4001,10 +4028,14 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 			if ((std::abs(track->fTexHeight1) < 0.35f) || (track->iCategoryFlag != 2))
 			{
 				// shadows are only calculated for high enough roads, typically meaning track platforms
+				--m_renderpass.draw_stats.paths;
+				--m_renderpass.draw_stats.drawcalls;
 				continue;
 			}
             if( Material( track->m_material1 ).shadow_rank > Global.gfx_shadow_rank_cutoff ) {
                 // skip if the shadow caster rank is too low for currently set threshold
+                --m_renderpass.draw_stats.paths;
+                --m_renderpass.draw_stats.drawcalls;
                 continue;
             }
 			Bind_Material_Shadow(track->m_material1);

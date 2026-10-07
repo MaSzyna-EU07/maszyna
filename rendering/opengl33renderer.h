@@ -346,6 +346,8 @@ class opengl33_renderer : public gfx_renderer {
 	glm::mat4 m_shadowtexturematrix; // conversion from camera-centric world space to light-centric clip space
 
 	int m_environmentcubetextureface{0}; // helper, currently processed cube map face
+	int m_environmentupdateface{6}; // cube map face the environment map update in progress draws next; 6: no update in progress
+	bool m_environmentready{false}; // the environment map was drawn whole at least once
 	double m_environmentupdatetime{0}; // time of the most recent environment map update
 	glm::dvec3 m_environmentupdatelocation; // coordinates of most recent environment map update
     opengl33_skydome m_skydomerenderer;
