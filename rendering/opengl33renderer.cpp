@@ -2854,7 +2854,13 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 
 void opengl33_renderer::Draw_Geometry(std::vector<gfx::geometrybank_handle>::iterator begin, std::vector<gfx::geometrybank_handle>::iterator end)
 {
-	m_geometry.draw(begin, end);
+	if (begin == end)
+	{
+		return;
+	}
+	// the handles are handed over as a whole, so chunks kept in the same bank can be drawn with fewer calls
+	auto const *first{&(*begin)};
+	m_geometry.draw_batch(first, first + std::distance(begin, end));
 }
 
 void opengl33_renderer::Draw_Geometry(const gfx::geometrybank_handle &handle)
@@ -4066,6 +4072,31 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 	}
 	}
 
+	// geometry of neighbouring tracks which share the material is gathered and drawn together.
+	// only neighbours are combined, the tracks are still drawn in their order in the cell
+	material_handle batchmaterial{null_handle};
+	auto const flush_batch = [&]()
+	{
+		if (false == m_pathbatch.empty())
+		{
+			draw(std::begin(m_pathbatch), std::end(m_pathbatch));
+			m_pathbatch.clear();
+		}
+		batchmaterial = null_handle;
+	};
+	// returns: true if the material starts a new batch, false if it continues the current one
+	auto const begin_batch = [&](material_handle const Material)
+	{
+		if (Material == batchmaterial)
+		{
+			return false;
+		}
+		flush_batch();
+		Bind_Material(Material);
+		batchmaterial = Material;
+		return true;
+	};
+
 	// TODO: render auto generated trackbeds together with regular trackbeds in pass 1, and all rails in pass 2
 	// first pass, material 1
 	for (auto first{First}; first != Last; ++first)
@@ -4092,15 +4123,21 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		{
 			if (track->eEnvironment != e_flat)
 			{
+				// track with light level of its own is drawn on its own
+				flush_batch();
 				setup_environment_light(track->eEnvironment);
-			}
-			Bind_Material(track->m_material1);
-			draw(std::begin(track->Geometry1), std::end(track->Geometry1));
-			if (track->eEnvironment != e_flat)
-			{
+				Bind_Material(track->m_material1);
+				draw(std::begin(track->Geometry1), std::end(track->Geometry1));
 				// restore default lighting
 				setup_environment_light();
+				break;
 			}
+			if (false == begin_batch(track->m_material1))
+			{
+				// the track is drawn with the call of its predecessor
+				--m_renderpass.draw_stats.drawcalls;
+			}
+			m_pathbatch.insert(std::end(m_pathbatch), std::begin(track->Geometry1), std::end(track->Geometry1));
 			break;
 		}
 		case rendermode::shadows:
@@ -4130,6 +4167,7 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		}
 		}
 	}
+	flush_batch();
 	// second pass, material 2
 	for (auto first{First}; first != Last; ++first)
 	{
@@ -4151,15 +4189,16 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		{
 			if (track->eEnvironment != e_flat)
 			{
+				flush_batch();
 				setup_environment_light(track->eEnvironment);
-			}
-			Bind_Material(track->m_material2);
-			draw(std::begin(track->Geometry2), std::end(track->Geometry2));
-			if (track->eEnvironment != e_flat)
-			{
+				Bind_Material(track->m_material2);
+				draw(std::begin(track->Geometry2), std::end(track->Geometry2));
 				// restore default lighting
 				setup_environment_light();
+				break;
 			}
+			begin_batch(track->m_material2);
+			m_pathbatch.insert(std::end(m_pathbatch), std::begin(track->Geometry2), std::end(track->Geometry2));
 			break;
 		}
 		case rendermode::shadows:
@@ -4185,6 +4224,7 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		}
 		}
 	}
+	flush_batch();
 
 	// third pass, material 3
 	for (auto first{First}; first != Last; ++first)
@@ -4212,15 +4252,16 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		{
 			if (track->eEnvironment != e_flat)
 			{
+				flush_batch();
 				setup_environment_light(track->eEnvironment);
-			}
-			Bind_Material(track->SwitchExtension->m_material3);
-			draw(track->SwitchExtension->Geometry3);
-			if (track->eEnvironment != e_flat)
-			{
+				Bind_Material(track->SwitchExtension->m_material3);
+				draw(track->SwitchExtension->Geometry3);
 				// restore default lighting
 				setup_environment_light();
+				break;
 			}
+			begin_batch(track->SwitchExtension->m_material3);
+			m_pathbatch.emplace_back(track->SwitchExtension->Geometry3);
 			break;
 		}
 		case rendermode::shadows:
@@ -4246,6 +4287,7 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		}
 		}
 	}
+	flush_batch();
 
 	// fourth pass: per-track sleeper models (sleepermodel optional directive).
 	// drawn after rails/trackbeds so depth pre-pass culling is favourable, and only in passes

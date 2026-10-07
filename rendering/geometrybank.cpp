@@ -332,6 +332,13 @@ geometry_bank::draw_instanced( gfx::geometry_handle const &Geometry, gfx::stream
     return draw_instanced_( Geometry, Units, InstanceCount, Streams );
 }
 
+// draws geometry stored in supplied sequence of chunks of the bank
+std::size_t
+geometry_bank::draw_batch( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, gfx::stream_units const &Units, unsigned int const Streams ) {
+    // template method implementation
+    return draw_batch_( First, Last, Units, Streams );
+}
+
 // frees subclass-specific resources associated with the bank, typically called when the bank wasn't in use for a period of time
 void
 geometry_bank::release() {
@@ -434,6 +441,32 @@ geometrybank_manager::draw_instanced( gfx::geometry_handle const &Geometry, std:
 
     bankrecord.second = m_garbagecollector.timestamp();
     m_primitivecount += bankrecord.first->draw_instanced( Geometry, m_units, InstanceCount, Streams );
+}
+
+// draws geometry stored in supplied sequence of chunks
+void
+geometrybank_manager::draw_batch( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, unsigned int const Streams ) {
+
+    while( First != Last ) {
+
+        if( *First == null_handle ) {
+            ++First;
+            continue;
+        }
+        // neighbouring chunks stored in the same bank go to the bank together
+        auto const *last { First + 1 };
+        while( ( last != Last )
+            && ( last->bank == First->bank ) ) {
+            ++last;
+        }
+
+        auto &bankrecord = bank( *First );
+
+        bankrecord.second = m_garbagecollector.timestamp();
+        m_primitivecount += bankrecord.first->draw_batch( First, last, m_units, Streams );
+
+        First = last;
+    }
 }
 
 // provides direct access to index data of specfied chunk

@@ -388,6 +388,8 @@ class opengl33_renderer : public gfx_renderer {
 	// of once per cell -- collapsing many tiny instanced draws into a few large
 	// batches. Reused every pass; the vectors are emptied (not freed) at the top of Render(scene::basic_region*).
 	scene::basic_cell::instance_bucket_map m_frame_instance_buckets;
+	// geometry of neighbouring tracks of a cell which share the material, gathered to be drawn together. reused by each Render(path_sequence)
+	std::vector<gfx::geometrybank_handle> m_pathbatch;
 	// copies of instance bounds kept by the buckets of scene cells are good as long as they carry this number.
 	// it changes with each frame drawn with the scenery editor active, as the editor moves and resizes instances in place
 	unsigned int m_instanceboundsversion { 1 };
