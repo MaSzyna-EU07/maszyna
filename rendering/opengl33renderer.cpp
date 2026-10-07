@@ -193,7 +193,7 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 
 	// Generate hemisphere kernel (z > 0 = toward surface normal)
 	std::uniform_real_distribution<float> rnd(0.0f, 1.0f);
-	std::default_random_engine gen(42); // fixed seed for consistency
+	std::default_random_engine gen(42); // NOSONAR fixed seed on purpose, SSAO kernel has to be identical every run
 	for (int i = 0; i < 32; i++) {
 		glm::vec3 s(rnd(gen)*2.0f-1.0f, rnd(gen)*2.0f-1.0f, rnd(gen));
 		s = glm::normalize(s) * rnd(gen);
@@ -1483,7 +1483,7 @@ glm::mat4 opengl33_renderer::perspective_projection_raw(float fovy, float aspect
 {
     if (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control)
     {
-        const float f = 1.0f / tan(fovy / 2.0f);
+        const float f = 1.0f / std::tan(fovy / 2.0f);
 
         // when clip_control available, use projection matrix with 1..0 Z range and infinite zfar
         return glm::mat4( //

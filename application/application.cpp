@@ -562,7 +562,7 @@ int eu07_application::run()
 				if (m_network && m_network->client)
 				{
 					// verify sync
-					if (sync != slave_sync)
+					if (sync != slave_sync) // NOSONAR slave_sync is initialised, the PR analysis keeps a stale report of the old declaration
 					{
 						WriteLog("net: desync! calculated: " + std::to_string(sync) + ", received: " + std::to_string(slave_sync), logtype::net);
 
@@ -1437,7 +1437,8 @@ int eu07_application::init_data()
 
 int eu07_application::init_modes()
 {
-	Global.local_random_engine.seed(static_cast<std::mt19937::result_type>(true_random_seed()));
+	// local cosmetics only (sound pitch, editor placement), never security related
+	Global.local_random_engine.seed(static_cast<std::mt19937::result_type>(true_random_seed())); // NOSONAR
 
 	if ((!Global.network_servers.empty() || Global.network_client) && Global.SceneryFile.empty())
 	{
