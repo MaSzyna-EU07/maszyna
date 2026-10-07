@@ -108,6 +108,7 @@ class TTrain {
         float pantograph_pressure;
         float hv_voltage;
         std::array<float, 3> hv_current;
+        float engine_voltage;
         float lv_voltage;
 		double distance;
 		std::uint8_t radio_channel;
@@ -173,6 +174,8 @@ class TTrain {
     bool LoadMMediaFile(std::string const &asFileName);
     std::shared_ptr<dictionary_source> GetTrainState( dictionary_source const &Extraparameters );
     state_t get_state() const;
+    // wskazanie woltomierza silnikowego; wspolne dla miernika w kabinie i protokolu sprzetowego
+    double get_engine_voltage() const;
 	inline float get_radiovolume() const { return m_radiovolume; }
     // basic_table interface
     inline
