@@ -611,7 +611,7 @@ void sweep_node::beside_switches(std::vector<sample> &Samples)
 			if (heading > 0.0)
 			{
 				for (auto const &sample : Samples)
-					if (sample.station >= s0 - outer_reach && sample.station < s0 - 1e-3)
+					if (sample.station >= s0 - outer_reach && sample.station <= s0 + 1e-3)
 					{
 						station = sample.station;
 						chain.push_back(sample);
@@ -650,7 +650,7 @@ void sweep_node::beside_switches(std::vector<sample> &Samples)
 						nearest = &point;
 					}
 				}
-				if (nearest == nullptr || closest > sample_spacing)
+				if (nearest == nullptr || closest > 1.5 * sample_spacing)
 					continue;
 				auto const offset{sign * glm::dot(glm::dvec3{nearest->position.x - here.position.x, 0.0, nearest->position.z - here.position.z}, glm::dvec3{-forward.z, 0.0, forward.x})};
 				if (offset > 0.05)

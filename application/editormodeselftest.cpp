@@ -335,6 +335,21 @@ void editor_mode::selftest_step()
 			}
 			WriteLog("SELFTEST conecheck " + name + ":" + text);
 		}
+		else if (command == "frames")
+		{
+			std::string name;
+			double from{0.0}, to{0.0}, step{0.1};
+			words >> name >> from >> to >> step;
+			auto *sweep{simulation::Sweeps.find(name)};
+			if (sweep == nullptr)
+				continue;
+			auto const side{sweep->definition().lateral >= 0.0 ? 1 : 0};
+			for (double station = from; station <= to + 1e-9; station += step)
+			{
+				auto const at{sweep->frame_at(station)};
+				WriteLog(format("SELFTEST frame %s %.2f: %.3f %.3f %.3f widening %.4f cant %.4f setback %.4f", name.c_str(), station, at.position.x, at.position.y, at.position.z, at.widening[side], at.cant[side], sweep->setback(at)));
+			}
+		}
 		else if (command == "fouling")
 		{
 			std::map<std::string, std::string> values;
