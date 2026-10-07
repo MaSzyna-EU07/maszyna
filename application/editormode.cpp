@@ -8,6 +8,10 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
+#include <filesystem>
+#include <iterator>
+#include <fstream>
+#include <regex>
 #include "application/editormode.h"
 #include "application/editoruilayer.h"
 #ifndef _WIN32
@@ -23,6 +27,7 @@ extern char **environ;
 #include "editor/editorIncludeInfo.hpp"
 #include "editor/editorGroundMesh.hpp"
 #include "editor/editorFormat.hpp"
+#include "editor/editorGeometry.hpp"
 #include "utilities/translation.h"
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
@@ -483,8 +488,10 @@ editor_mode::editor_mode() {
 	ui()->set_fill_options([this]() { render_area_fill(); });
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
 	ui()->set_array_options([this]() { render_array(); });
+	ui()->set_bend_options([this]() { render_bend(); });
 	ui()->set_file_actions([this]() { save(); }, [this]() { export_scenery(); });
 	ui()->set_new_scenery([this]() { m_newscenery_asked = true; });
+	ui()->set_open_scenery([this]() { m_openscenery_asked = true; });
 	ui()->set_menu_options([this]() {
 		render_object_menu();
 		render_track_menu();
@@ -911,6 +918,13 @@ void editor_mode::undo_last()
     EditorSnapshot snap = m_history.back();
     m_history.pop_back();
 
+    if (snap.action == EditorSnapshot::Action::Bend)
+    {
+        restore_bend(snap, true);
+        g_redo.push_back(std::move(snap));
+        return;
+    }
+
     if (false == snap.sweeps.empty() || false == snap.sweeps_toggled.empty())
     {
         restore_sweeps(snap);
@@ -921,8 +935,11 @@ void editor_mode::undo_last()
     if (false == snap.instances.empty() || false == snap.directives.empty())
     {
         restore_includes(snap);
-        g_redo.push_back(std::move(snap));
-        return;
+        if (snap.action != EditorSnapshot::Action::TrackEdit)
+        {
+            g_redo.push_back(std::move(snap));
+            return;
+        }
     }
 
     if (snap.instance != 0)
@@ -1035,6 +1052,13 @@ void editor_mode::redo_last()
     EditorSnapshot snap = g_redo.back();
     g_redo.pop_back();
 
+    if (snap.action == EditorSnapshot::Action::Bend)
+    {
+        restore_bend(snap, false);
+        m_history.push_back(std::move(snap));
+        return;
+    }
+
     if (false == snap.sweeps.empty() || false == snap.sweeps_toggled.empty())
     {
         restore_sweeps(snap);
@@ -1045,8 +1069,11 @@ void editor_mode::redo_last()
     if (false == snap.instances.empty() || false == snap.directives.empty())
     {
         restore_includes(snap);
-        m_history.push_back(std::move(snap));
-        return;
+        if (snap.action != EditorSnapshot::Action::TrackEdit)
+        {
+            m_history.push_back(std::move(snap));
+            return;
+        }
     }
 
     if (snap.instance != 0)
@@ -1334,8 +1361,6 @@ bool editor_mode::update()
             draw_hekto_overlay();
             draw_fouling_overlay();
             draw_vehicle_marker();
-            sweep_drag();
-            draw_sweep_overlay();
         }
         render_track_context();
         update_build_tools();
@@ -1352,6 +1377,13 @@ bool editor_mode::update()
         draw_infra_overlay();
         draw_speed_overlay();
         draw_joints_overlay();
+    }
+    else
+    {
+        draw_sweep_overlay();
+        m_sweep.open = false;
+        bend_drag_update();
+        draw_bend_overlay();
     }
     update_gauge();
     render_gauge_window();
@@ -1370,6 +1402,7 @@ bool editor_mode::update()
 
     render_orthophoto_window();
     render_new_scenery_popup();
+    render_open_scenery_popup();
 
     // --- ImGui: Editor Settings & History windows ---
     if(m_settings_open)
@@ -1384,15 +1417,15 @@ bool editor_mode::update()
 
 void editor_mode::render_settings()
 {
-    ImGui::Begin("Editor Settings", &m_settings_open, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Begin(STR_C("Editor Settings"), &m_settings_open, ImGuiWindowFlags_AlwaysAutoResize);
 
     if (ImGui::BeginTabBar("##editorsettings"))
     {
-        if (ImGui::BeginTabItem("General"))
+        if (ImGui::BeginTabItem(STR_C("General")))
         {
-            ImGui::TextUnformatted("Camera movement");
+            ImGui::TextUnformatted(STR_C("Camera movement"));
 
-            const char *schemes[] = {"WSAD (new)", "Arrows (legacy)"};
+            const char *schemes[] = {STR_C("WSAD (new)"), STR_C("Arrows (legacy)")};
             int current = EditorSettings.movement() == editorSettings::movement_scheme::legacy ? 1 : 0;
             if (ImGui::Combo("##movement_scheme", &current, schemes, IM_ARRAYSIZE(schemes)))
             {
@@ -1403,12 +1436,12 @@ void editor_mode::render_settings()
             }
 
             ImGui::Separator();
-            ImGui::Checkbox("Transform gizmo (ImGuizmo)", &m_gizmo_enabled);
+            ImGui::Checkbox(STR_C("Transform gizmo (ImGuizmo)"), &m_gizmo_enabled);
             ImGui::EndTabItem();
         }
         bool const terrainwanted = m_terrain_tab_wanted;
         m_terrain_tab_wanted = false;
-        if (ImGui::BeginTabItem("Terrain", nullptr, terrainwanted ? ImGuiTabItemFlags_SetSelected : 0))
+        if (ImGui::BeginTabItem(STR_C("Terrain"), nullptr, terrainwanted ? ImGuiTabItemFlags_SetSelected : 0))
         {
             render_terrain_ui();
             ImGui::EndTabItem();
@@ -1422,18 +1455,18 @@ void editor_mode::render_settings()
 void editor_mode::render_terrain_ui()
 {
     ImGui::SetNextItemWidth(120.0f);
-    ImGui::InputInt("Grid cells", &m_terrain_cells);
+    ImGui::InputInt(STR_C("Grid cells"), &m_terrain_cells);
     m_terrain_cells = std::clamp(m_terrain_cells, 1, 512);
     ImGui::SetNextItemWidth(120.0f);
-    ImGui::InputFloat("Cell size (m)", &m_terrain_cellsize);
+    ImGui::InputFloat(STR_C("Cell size (m)"), &m_terrain_cellsize);
     if (m_terrain_cellsize < 0.1f)
         m_terrain_cellsize = 0.1f;
     ImGui::SetNextItemWidth(120.0f);
-    ImGui::InputFloat("Base height (m)", &m_terrain_baseheight);
+    ImGui::InputFloat(STR_C("Base height (m)"), &m_terrain_baseheight);
     ImGui::SetNextItemWidth(200.0f);
-    ImGui::InputText("Texture (optional)", m_terrain_texture, IM_ARRAYSIZE(m_terrain_texture));
+    ImGui::InputText(STR_C("Texture (optional)"), m_terrain_texture, IM_ARRAYSIZE(m_terrain_texture));
 
-    if (ImGui::Button("Create flat terrain"))
+    if (ImGui::Button(STR_C("Create flat terrain")))
     {
         // centre the new patch horizontally on the camera, flat at the requested base height
         glm::dvec3 const center(Camera.Pos.x, static_cast<double>(m_terrain_baseheight), Camera.Pos.z);
@@ -1449,29 +1482,29 @@ void editor_mode::render_terrain_ui()
     }
 
     ImGui::SetNextItemWidth(120.0f);
-    ImGui::InputInt("Chunks / side", &m_terrain_chunks);
+    ImGui::InputInt(STR_C("Chunks / side"), &m_terrain_chunks);
     m_terrain_chunks = std::clamp(m_terrain_chunks, 1, 32);
     ImGui::SameLine();
-    if (ImGui::Button("Create chunked terrain"))
+    if (ImGui::Button(STR_C("Create chunked terrain")))
         create_chunked_terrain();
-    ImGui::TextDisabled("total %d x %d m, %d chunks",
+    ImGui::TextDisabled(STR_C("total %d x %d m, %d chunks"),
                         static_cast<int>(m_terrain_chunks * m_terrain_cells * m_terrain_cellsize),
                         static_cast<int>(m_terrain_chunks * m_terrain_cells * m_terrain_cellsize),
                         m_terrain_chunks * m_terrain_chunks);
 
-    if (ImGui::Checkbox("Chunk edit mode (LMB add neighbour / Shift = delete)", &m_chunk_edit))
+    if (ImGui::Checkbox(STR_C("Chunk edit mode (LMB add neighbour / Shift = delete)"), &m_chunk_edit))
         if (m_chunk_edit)
             m_terrain_sculpt = false; // mutually exclusive with sculpting
-    ImGui::Text("Grid chunks: %zu", m_grid_chunks.size());
+    ImGui::Text(STR_C("Grid chunks: %zu"), m_grid_chunks.size());
 
     ImGui::Separator();
-    ImGui::TextUnformatted("Streaming (open world, follows camera)");
+    ImGui::TextUnformatted(STR_C("Streaming (open world, follows camera)"));
     ImGui::SetNextItemWidth(120.0f);
-    ImGui::InputInt("Stream radius", &m_stream_radius);
+    ImGui::InputInt(STR_C("Stream radius"), &m_stream_radius);
     m_stream_radius = std::clamp(m_stream_radius, 0, 16);
-    ImGui::Checkbox("Persist edits to disk (16-bit)", &m_stream_persist);
+    ImGui::Checkbox(STR_C("Persist edits to disk (16-bit)"), &m_stream_persist);
     bool streaming = m_streamer.active();
-    if (ImGui::Checkbox("Stream terrain", &streaming))
+    if (ImGui::Checkbox(STR_C("Stream terrain"), &streaming))
     {
         if (streaming)
         {
@@ -1514,20 +1547,20 @@ void editor_mode::render_terrain_ui()
         m_streamer.radius(m_stream_radius);
         m_streamer.simplify(m_terrain_auto_optimize, m_terrain_simplify_error);
         m_streamer.persist(m_stream_persist);
-        ImGui::Text("Resident chunks: %zu  (dir: %s)", m_streamer.resident(), m_streamer.directory().c_str());
+        ImGui::Text(STR_C("Resident chunks: %zu  (dir: %s)"), m_streamer.resident(), m_streamer.directory().c_str());
     }
 
-    ImGui::Text("Patches: %zu", m_terrains.size());
+    ImGui::Text(STR_C("Patches: %zu"), m_terrains.size());
 
     // capture: sample the selected model's geometry into an editable patch and remove the original
     if (dynamic_cast<TAnimModel *>(m_node) != nullptr)
     {
-        if (ImGui::Button("Capture selected model as terrain"))
+        if (ImGui::Button(STR_C("Capture selected model as terrain")))
             capture_terrain();
     }
     else
     {
-        ImGui::TextDisabled("Capture: select a model instance first");
+        ImGui::TextDisabled(STR_C("Capture: select a model instance first"));
     }
 
     std::vector<editor_terrain *> const terrains = active_terrains();
@@ -1545,36 +1578,36 @@ void editor_mode::render_terrain_ui()
         if (m_terrain_brush_smooth && ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", STR_C("Evens out the ground under the brush: bumps and sharp edges go, the shape stays.\nThe strength sets how fast"));
         ImGui::SetNextItemWidth(120.0f);
-        ImGui::InputFloat("Brush radius", &m_terrain_brush_radius);
+        ImGui::InputFloat(STR_C("Brush radius"), &m_terrain_brush_radius);
         if (m_terrain_brush_radius < 0.5f)
             m_terrain_brush_radius = 0.5f;
         ImGui::SetNextItemWidth(120.0f);
-        ImGui::InputFloat("Brush strength", &m_terrain_brush_strength);
+        ImGui::InputFloat(STR_C("Brush strength"), &m_terrain_brush_strength);
 
         // one-shot nudge of the most recent manual patch at its centre, handy for a quick test
         if (!m_terrains.empty())
         {
             auto &terrain = m_terrains.back();
             glm::dvec3 const c = terrain->centre();
-            if (ImGui::Button("Raise centre"))
+            if (ImGui::Button(STR_C("Raise centre")))
                 terrain->sculpt(c.x, c.z, m_terrain_brush_radius, m_terrain_brush_strength);
             ImGui::SameLine();
-            if (ImGui::Button("Lower centre"))
+            if (ImGui::Button(STR_C("Lower centre")))
                 terrain->sculpt(c.x, c.z, m_terrain_brush_radius, -m_terrain_brush_strength);
         }
 
         ImGui::Separator();
-        ImGui::TextUnformatted("Optimize (mesh simplification, all patches)");
+        ImGui::TextUnformatted(STR_C("Optimize (mesh simplification, all patches)"));
         ImGui::SetNextItemWidth(120.0f);
-        ImGui::InputFloat("Flatness tol (m)", &m_terrain_simplify_error);
+        ImGui::InputFloat(STR_C("Flatness tol (m)"), &m_terrain_simplify_error);
         if (m_terrain_simplify_error < 0.01f)
             m_terrain_simplify_error = 0.01f;
-        ImGui::Checkbox("Auto-optimize after sculpt", &m_terrain_auto_optimize);
-        if (ImGui::Button("Optimize all"))
+        ImGui::Checkbox(STR_C("Auto-optimize after sculpt"), &m_terrain_auto_optimize);
+        if (ImGui::Button(STR_C("Optimize all")))
             for (editor_terrain *t : terrains)
                 t->optimize(m_terrain_simplify_error);
         ImGui::SameLine();
-        if (ImGui::Button("Full-res all"))
+        if (ImGui::Button(STR_C("Full-res all")))
             for (editor_terrain *t : terrains)
                 t->unoptimize();
 
@@ -1584,7 +1617,7 @@ void editor_mode::render_terrain_ui()
             tris += t->triangles();
             full += t->full_triangles();
         }
-        ImGui::Text("Triangles: %zu / %zu", tris, full);
+        ImGui::Text(STR_C("Triangles: %zu / %zu"), tris, full);
     }
 }
 
@@ -1644,18 +1677,18 @@ void editor_mode::render_orthophoto_ui()
     bool persist = false; // and store in the editor settings
 
     bool enabled = m_orthophoto.enabled();
-    if (ImGui::Checkbox("Show orthophoto (geoportal.gov.pl)", &enabled))
+    if (ImGui::Checkbox(STR_C("Show orthophoto (geoportal.gov.pl)"), &enabled))
         m_orthophoto.enabled(enabled);
 
     ImGui::Separator();
-    ImGui::TextUnformatted("Scenery origin (0,0,0) in PUWG 1992 / EPSG:2180");
+    ImGui::TextUnformatted(STR_C("Scenery origin (0,0,0) in PUWG 1992 / EPSG:2180"));
     // geodetic convention, as displayed by geoportal.gov.pl: X grows north, Y grows east.
     // applied once editing ends, so half-typed numbers don't trigger downloads
     ImGui::SetNextItemWidth(160.0f);
-    ImGui::InputDouble("X (northing, m)", &m_orthophoto_origin_edit.x, 0.0, 0.0, "%.2f");
+    ImGui::InputDouble(STR_C("X (northing, m)"), &m_orthophoto_origin_edit.x, 0.0, 0.0, "%.2f");
     bool const northedited = ImGui::IsItemDeactivatedAfterEdit();
     ImGui::SetNextItemWidth(160.0f);
-    ImGui::InputDouble("Y (easting, m)", &m_orthophoto_origin_edit.y, 0.0, 0.0, "%.2f");
+    ImGui::InputDouble(STR_C("Y (easting, m)"), &m_orthophoto_origin_edit.y, 0.0, 0.0, "%.2f");
     bool const eastedited = ImGui::IsItemDeactivatedAfterEdit();
     if (northedited || eastedited)
     {
@@ -1679,13 +1712,13 @@ void editor_mode::render_orthophoto_ui()
         }
     }
     if (config.north == 0.0 && config.east == 0.0)
-        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "Enter the origin of this scenery first");
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), STR_C("Enter the origin of this scenery first"));
     else
-        ImGui::TextDisabled("Camera at X %.1f  Y %.1f", config.north + Camera.Pos.z, config.east - Camera.Pos.x);
+        ImGui::TextDisabled(STR_C("Camera at X %.1f  Y %.1f"), config.north + Camera.Pos.z, config.east - Camera.Pos.x);
 
     ImGui::Separator();
     ImGui::SetNextItemWidth(160.0f);
-    changed |= ImGui::SliderInt("Distance (tiles)", &config.radius, 0, editor_orthophoto::max_radius);
+    changed |= ImGui::SliderInt(STR_C("Distance (tiles)"), &config.radius, 0, editor_orthophoto::max_radius);
     persist |= ImGui::IsItemDeactivatedAfterEdit();
     ImGui::SameLine();
     int const span = static_cast<int>((2 * config.radius + 1) * editor_orthophoto::tile_size);
@@ -1705,15 +1738,15 @@ void editor_mode::render_orthophoto_ui()
         ImGui::PopItemFlag();
     };
 
-    if (ImGui::Checkbox("Fit to terrain", &config.drape))
+    if (ImGui::Checkbox(STR_C("Fit to terrain"), &config.drape))
         changed = persist = true;
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Lays the imagery onto the ground geometry (terrain shapes, terrain tile models, editor terrain).\n"
-                          "Places without any ground use the height below.");
+        ImGui::SetTooltip(STR_C("Lays the imagery onto the ground geometry (terrain shapes, terrain tile models, editor terrain).\n"
+                          "Places without any ground use the height below."));
     if (config.drape)
     {
         ImGui::SameLine();
-        if (ImGui::Button("Refit"))
+        if (ImGui::Button(STR_C("Refit")))
         {
             // the ground was edited: what's kept of it has to go as well
             ground_tiles.clear();
@@ -1721,46 +1754,46 @@ void editor_mode::render_orthophoto_ui()
             m_orthophoto.refit();
         }
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Samples the ground again, after it was edited");
+            ImGui::SetTooltip(STR_C("Samples the ground again, after it was edited"));
     }
 
     begin_disabled(!config.drape);
     ImGui::SetNextItemWidth(160.0f);
-    changed |= ImGui::DragFloat("Lift above ground (m)", &config.lift, 0.01f, 0.0f, 50.0f, "%.2f");
+    changed |= ImGui::DragFloat(STR_C("Lift above ground (m)"), &config.lift, 0.01f, 0.0f, 50.0f, "%.2f");
     persist |= ImGui::IsItemDeactivatedAfterEdit();
     end_disabled(!config.drape);
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Raises the fitted imagery above the ground. Keep it below the objects you want to see:\n"
-                          "in the scene everything lower than this ends up under the imagery.");
+        ImGui::SetTooltip(STR_C("Raises the fitted imagery above the ground. Keep it below the objects you want to see:\n"
+                          "in the scene everything lower than this ends up under the imagery."));
 
     begin_disabled(config.drape);
     ImGui::SetNextItemWidth(160.0f);
-    changed |= ImGui::DragFloat("Height (m)", &config.height, 0.1f, -1000.0f, 3000.0f, "%.2f");
+    changed |= ImGui::DragFloat(STR_C("Height (m)"), &config.height, 0.1f, -1000.0f, 3000.0f, "%.2f");
     persist |= ImGui::IsItemDeactivatedAfterEdit();
     end_disabled(config.drape);
 
-    if (ImGui::Checkbox("Covered by objects and terrain", &config.in_scene))
+    if (ImGui::Checkbox(STR_C("Covered by objects and terrain"), &config.in_scene))
         changed = persist = true;
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Draws the imagery as part of the scene, so tracks, models and terrain in front of it hide it.\n"
+        ImGui::SetTooltip(STR_C("Draws the imagery as part of the scene, so tracks, models and terrain in front of it hide it.\n"
                           "It is lit like the scene. Fully opaque, mouse placement lands on it as on any surface;\n"
                           "translucent, it doesn't catch the mouse.\n"
-                          "Not available with the Better Renderer, which doesn't pick up geometry added in the editor.");
+                          "Not available with the Better Renderer, which doesn't pick up geometry added in the editor."));
 
     ImGui::SetNextItemWidth(160.0f);
-    changed |= ImGui::SliderFloat("Opacity", &config.opacity, 0.0f, 1.0f, "%.2f");
+    changed |= ImGui::SliderFloat(STR_C("Opacity"), &config.opacity, 0.0f, 1.0f, "%.2f");
     persist |= ImGui::IsItemDeactivatedAfterEdit();
     if (config.in_scene && ImGui::IsItemHovered())
-        ImGui::SetTooltip("In the scene the opacity is part of the textures: the tiles are read again from the cache\n"
-                          "shortly after the slider stops, which takes a moment.");
+        ImGui::SetTooltip(STR_C("In the scene the opacity is part of the textures: the tiles are read again from the cache\n"
+                          "shortly after the slider stops, which takes a moment."));
 
     // newest imagery, or the newest imagery taken up to the end of the selected year
     int const thisyear = static_cast<int>(std::chrono::year_month_day{std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now())}.year());
-    std::string const yearlabel = config.year ? std::to_string(config.year) : std::string("Newest");
+    std::string const yearlabel = config.year ? std::to_string(config.year) : std::string(STR_C("Newest"));
     ImGui::SetNextItemWidth(160.0f);
     if (ImGui::BeginCombo("Photo year", yearlabel.c_str()))
     {
-        if (ImGui::Selectable("Newest", config.year == 0))
+        if (ImGui::Selectable(STR_C("Newest"), config.year == 0))
         {
             config.year = 0;
             changed = persist = true;
@@ -1776,11 +1809,11 @@ void editor_mode::render_orthophoto_ui()
         ImGui::EndCombo();
     }
 
-    if (ImGui::Checkbox("4K tiles where available", &config.hires))
+    if (ImGui::Checkbox(STR_C("4K tiles where available"), &config.hires))
         changed = persist = true;
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("4096 px tiles (~6 cm/px) from the high-resolution orthophoto, for the tiles around the camera.\n"
-                          "Areas it doesn't cover use the standard imagery. Each 4K tile takes ~85 MB of video memory.");
+        ImGui::SetTooltip(STR_C("4096 px tiles (~6 cm/px) from the high-resolution orthophoto, for the tiles around the camera.\n"
+                          "Areas it doesn't cover use the standard imagery. Each 4K tile takes ~85 MB of video memory."));
 
     if (changed)
         m_orthophoto.settings(config);
@@ -1789,17 +1822,17 @@ void editor_mode::render_orthophoto_ui()
 
     ImGui::Separator();
     auto const stats = m_orthophoto.stats();
-    ImGui::Text("Tiles: %d shown, %d loading, %d failed", stats.resident, stats.loading, stats.failed);
+    ImGui::Text(STR_C("Tiles: %d shown, %d loading, %d failed"), stats.resident, stats.loading, stats.failed);
     if (stats.failed > 0)
     {
         ImGui::SameLine();
-        if (ImGui::Button("Retry"))
+        if (ImGui::Button(STR_C("Retry")))
             m_orthophoto.retry_failed();
     }
     if (!editor_orthophoto::can_download())
-        ImGui::TextDisabled("This build has no HTTP client, only cached tiles are shown");
-    ImGui::TextDisabled("Cache: %s", editor_orthophoto::cache_directory().c_str());
-    ImGui::TextDisabled("Imagery: GUGiK, geoportal.gov.pl");
+        ImGui::TextDisabled(STR_C("This build has no HTTP client, only cached tiles are shown"));
+    ImGui::TextDisabled(STR_C("Cache: %s"), editor_orthophoto::cache_directory().c_str());
+    ImGui::TextDisabled(STR_C("Imagery: GUGiK, geoportal.gov.pl"));
 }
 
 void editor_mode::draw_orthophoto()
@@ -2219,7 +2252,7 @@ bool editor_mode::save()
     if (scene::Layers.empty())
     {
         // without the sources tracked during the load there's no telling where the changes belong
-        ui()->set_status("The scenery wasn't opened for editing. Start the simulator with: -edit <scenery file>", true);
+        ui()->set_status(STR("The scenery wasn't opened for editing. Start the simulator with: -edit <scenery file>"), true);
         return false;
     }
 
@@ -2241,8 +2274,28 @@ bool editor_mode::save()
     if (m_profile.changed)
         profile_store();
     infra_store();
-    auto const result = scene::Layers.save(rootstatements);
-    if (result.success && false == rootstatements.empty())
+    if (false == m_saved_camera.has_value() || glm::distance(m_saved_camera->first, glm::dvec3{Camera.Pos}) > 0.5 || glm::distance(m_saved_camera->second, glm::vec3{Camera.Angle}) > 0.01f)
+    {
+        m_saved_camera = std::make_pair(glm::dvec3{Camera.Pos}, glm::vec3{Camera.Angle});
+        scene::Layers.mark(scene::layer_handle{1}, "//$c", {format("%.3f %.3f %.3f %.5f %.5f", Camera.Pos.x, Camera.Pos.y, Camera.Pos.z, Camera.Angle.x, Camera.Angle.y)});
+    }
+    auto const terrainadded{false == rootstatements.empty()};
+    auto const controls{turntable_controls(rootstatements)};
+    std::vector<std::string> trailing;
+    starter_trainset(trailing);
+    auto const result = scene::Layers.save(rootstatements, trailing);
+    if (result.success && controls)
+        m_turntable_included = true;
+    if (result.success && trailing.size() == 3)
+    {
+        std::istringstream header{trailing.front()};
+        std::string keyword, timetable, track;
+        double offset{0.0};
+        header >> keyword >> timetable >> track >> offset;
+        if (auto *path{simulation::Paths.find(track)}; path != nullptr && simulation::Vehicles.find("wmb10-6457") == nullptr)
+            simulation::State.insert_trainset("wmb10-6457", path, offset, trailing[1] + "\n");
+    }
+    if (result.success && terrainadded)
     {
         scene::Layers.terrain_directive(true);
     }
@@ -2628,7 +2681,7 @@ void editor_mode::drop_model_instances()
     auto *selected = dynamic_cast<TAnimModel *>(m_node);
     if (selected == nullptr || selected->Model() == nullptr)
     {
-        ui()->set_status("Select a model in the scene first", true);
+        ui()->set_status(STR("Select a model in the scene first"), true);
         return;
     }
     if (selected->radius() >= 50.0f)
@@ -2774,12 +2827,19 @@ void editor_mode::render_new_scenery_popup()
 
 bool editor_mode::restart_for_new_scenery()
 {
+    return restart_editor(std::string{});
+}
+
+bool editor_mode::restart_editor(std::string const &Scenery)
+{
 #ifdef _WIN32
     _putenv("EU07_EDITOR_SELFTEST=");
     wchar_t path[MAX_PATH];
     if (GetModuleFileNameW(nullptr, path, MAX_PATH) == 0)
         return false;
     std::wstring command{L"\"" + std::wstring{path} + L"\" -edit"};
+    if (false == Scenery.empty())
+        command += L" \"" + std::filesystem::path(Scenery).wstring() + L"\"";
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
     PROCESS_INFORMATION process{};
@@ -2795,7 +2855,8 @@ bool editor_mode::restart_for_new_scenery()
         return false;
     path[size] = '\0';
     char edit[]{"-edit"};
-    char *arguments[]{path, edit, nullptr};
+    std::string scenery{Scenery};
+    char *arguments[]{path, edit, scenery.empty() ? nullptr : scenery.data(), nullptr};
     posix_spawnattr_t attributes;
     posix_spawnattr_init(&attributes);
     posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETSID);
@@ -2805,9 +2866,76 @@ bool editor_mode::restart_for_new_scenery()
     if (result != 0)
         return false;
 #endif
-    WriteLog("Editor: started again for a new scenery");
+    WriteLog(Scenery.empty() ? std::string{"Editor: started again for a new scenery"} : "Editor: started again with scenery " + Scenery);
     Application.queue_quit(true);
     return true;
+}
+
+void editor_mode::render_open_scenery_popup()
+{
+    auto const lower = [](std::string Text) {
+        std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
+        return Text;
+    };
+    if (m_openscenery_asked)
+    {
+        m_openscenery_asked = false;
+        m_openscenery_list.clear();
+        m_openscenery_choice.clear();
+        std::error_code error;
+        for (auto const &entry : std::filesystem::directory_iterator(Global.asCurrentSceneryPath, error))
+        {
+            auto const name{entry.path().filename().string()};
+            if (entry.is_regular_file(error) && name.size() > 4 && lower(name.substr(name.size() - 4)) == ".scn" && name.front() != '$')
+                m_openscenery_list.emplace_back(name);
+        }
+        std::sort(m_openscenery_list.begin(), m_openscenery_list.end(), [&](std::string const &A, std::string const &B) { return lower(A) < lower(B); });
+        ImGui::OpenPopup(STR_C("Open scenery##restart"));
+    }
+    if (false == ImGui::BeginPopupModal(STR_C("Open scenery##restart"), nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+    ImGui::TextUnformatted(STR_C("The editor starts again with the scenery chosen below."));
+    ImGui::SetNextItemWidth(360.0f);
+    if (ImGui::IsWindowAppearing())
+        ImGui::SetKeyboardFocusHere();
+    ImGui::InputTextWithHint("##opensearch", STR_C("search"), m_openscenery_search, sizeof(m_openscenery_search));
+    std::string const text{lower(m_openscenery_search)};
+    ImGui::BeginChild("##openlist", ImVec2(360.0f, ImGui::GetTextLineHeightWithSpacing() * 14.0f), true);
+    for (auto const &name : m_openscenery_list)
+    {
+        if (false == text.empty() && lower(name).find(text) == std::string::npos)
+            continue;
+        if (ImGui::Selectable(name.c_str(), name == m_openscenery_choice, ImGuiSelectableFlags_AllowDoubleClick))
+        {
+            m_openscenery_choice = name;
+            if (ImGui::IsMouseDoubleClicked(0) && false == restart_editor(name))
+                ui()->set_status(STR_C("The editor couldn't be started again"), true);
+        }
+    }
+    ImGui::EndChild();
+    auto const editsession{false == scene::Layers.empty()};
+    if (false == m_history.empty())
+        ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", STR_C("What isn't saved of this scenery is lost."));
+    auto const chosen{false == m_openscenery_choice.empty()};
+    if (chosen && editsession && ImGui::Button(STR_C("Save and open")))
+    {
+        if (save() && false == restart_editor(m_openscenery_choice))
+            ui()->set_status(STR_C("The editor couldn't be started again"), true);
+        ImGui::CloseCurrentPopup();
+    }
+    if (chosen && editsession)
+        ImGui::SameLine();
+    if (chosen && ImGui::Button(STR_C("Open")))
+    {
+        if (false == restart_editor(m_openscenery_choice))
+            ui()->set_status(STR_C("The editor couldn't be started again"), true);
+        ImGui::CloseCurrentPopup();
+    }
+    if (chosen)
+        ImGui::SameLine();
+    if (ImGui::Button(STR_C("Cancel")))
+        ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
 }
 
 void editor_mode::render_orthophoto_window()
@@ -2822,14 +2950,14 @@ void editor_mode::render_orthophoto_window()
 
 void editor_mode::render_object_menu()
 {
-    if (ImGui::BeginMenu("Objects"))
+    if (ImGui::BeginMenu(STR_C("Objects")))
     {
         auto const *selected = dynamic_cast<TAnimModel const *>(m_node);
-        if (ImGui::MenuItem("Put all instances of the selected model on the ground", nullptr, false, selected != nullptr && selected->Model() != nullptr))
+        if (ImGui::MenuItem(STR_C("Put all instances of the selected model on the ground"), nullptr, false, selected != nullptr && selected->Model() != nullptr))
             drop_model_instances();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("%s", "Select a model in the scene. Every instance of the same model file is moved straight up or down\n"
-                                    "to the ground under it: terrain, large models and terrain made in the editor.");
+            ImGui::SetTooltip("%s", STR_C("Select a model in the scene. Every instance of the same model file is moved straight up or down\n"
+                                    "to the ground under it: terrain, large models and terrain made in the editor."));
         ImGui::EndMenu();
     }
 }
@@ -2865,7 +2993,7 @@ void editor_mode::undo_last_area_fill()
         remove_from_hierarchy(model);
         simulation::State.delete_model(model);
     }
-    m_fill_status = "Removed " + std::to_string(created.size()) + " objects of the last fill";
+    m_fill_status = format(STR_C("Removed %zu objects of the last fill"), created.size());
 }
 
 void editor_mode::run_area_fill()
@@ -2880,7 +3008,7 @@ void editor_mode::run_area_fill()
 
     if (m_fill_points.size() < 3)
     {
-        m_fill_status = "Outline needs at least 3 points";
+        m_fill_status = STR("Outline needs at least 3 points");
         return;
     }
 
@@ -2894,7 +3022,7 @@ void editor_mode::run_area_fill()
     package.erase(std::remove_if(package.begin(), package.end(), [](std::string const &Template) { return Template.empty(); }), package.end());
     if (package.empty())
     {
-        m_fill_status = "Selected model package is empty";
+        m_fill_status = STR("Selected model package is empty");
         return;
     }
 
@@ -2910,7 +3038,7 @@ void editor_mode::run_area_fill()
     auto const target = static_cast<std::size_t>(std::min<double>(std::round(area / 10000.0 * std::max(0.0f, m_fill_density)), max_objects));
     if (target == 0)
     {
-        m_fill_status = "Density too low for this area, nothing to place";
+        m_fill_status = STR("Density too low for this area, nothing to place");
         return;
     }
 
@@ -3015,7 +3143,7 @@ void editor_mode::run_area_fill()
     // a new fill replaces the "last fill" undo set; the previous objects stay in the scene
     m_fill_last = std::move(created);
 
-    m_fill_status = "Placed " + std::to_string(m_fill_last.size()) + " of " + std::to_string(target) + " objects";
+    m_fill_status = format(STR_C("Placed %zu of %zu objects"), m_fill_last.size(), static_cast<std::size_t>(target));
     if (points.size() < target)
         m_fill_status += " (limited by min. spacing)";
     if (unsupported > 0)
@@ -3073,46 +3201,46 @@ void editor_mode::draw_area_fill_outline() const
 
 void editor_mode::render_area_fill()
 {
-    ImGui::TextDisabled("LMB: add outline point   Backspace: remove last point");
+    ImGui::TextDisabled(STR_C("LMB: add outline point   Backspace: remove last point"));
     double const area = polygon_area_xz(m_fill_points);
-    ImGui::Text("Points: %zu   Area: %.0f m2 (%.2f ha)", m_fill_points.size(), area, area / 10000.0);
-    if (ImGui::Button("Remove last point") && !m_fill_points.empty())
+    ImGui::Text(STR_C("Points: %zu   Area: %.0f m2 (%.2f ha)"), m_fill_points.size(), area, area / 10000.0);
+    if (ImGui::Button(STR_C("Remove last point")) && !m_fill_points.empty())
         m_fill_points.pop_back();
     ImGui::SameLine();
-    if (ImGui::Button("Clear outline"))
+    if (ImGui::Button(STR_C("Clear outline")))
         m_fill_points.clear();
 
     ImGui::Separator();
 
     // model package: a hand-assembled list, a user-defined set or a node bank group
     auto &bank = ui()->nodebank();
-    bank.set_combo("Model set", m_fill_source, "Custom list");
+    bank.set_combo(STR_C("Model set"), m_fill_source, STR_C("Custom list"));
     if (m_fill_source.kind == model_set_ref::source::manual)
         bank.manual_list("fillset", m_fill_custom, m_fill_custom_idx);
     else
-        ImGui::TextDisabled("%zu templates in set", bank.set_entries(m_fill_source).size());
+        ImGui::TextDisabled(STR_C("%zu templates in set"), bank.set_entries(m_fill_source).size());
 
     ImGui::Separator();
 
     ImGui::SetNextItemWidth(120.0f);
-    ImGui::InputFloat("Density (objects/ha)", &m_fill_density, 10.0f, 100.0f, "%.1f");
+    ImGui::InputFloat(STR_C("Density (objects/ha)"), &m_fill_density, 10.0f, 100.0f, "%.1f");
     m_fill_density = std::max(0.0f, m_fill_density);
     ImGui::SetNextItemWidth(120.0f);
-    ImGui::InputFloat("Min. spacing (m)", &m_fill_min_spacing, 0.5f, 2.0f, "%.1f");
+    ImGui::InputFloat(STR_C("Min. spacing (m)"), &m_fill_min_spacing, 0.5f, 2.0f, "%.1f");
     m_fill_min_spacing = std::max(0.0f, m_fill_min_spacing);
     ImGui::SetNextItemWidth(200.0f);
     ImGui::DragFloatRange2("Scale", &m_fill_scale_min, &m_fill_scale_max, 0.01f, 0.1f, 5.0f, "min %.2f", "max %.2f");
-    ImGui::Checkbox("Random rotation", &m_fill_random_rotation);
+    ImGui::Checkbox(STR_C("Random rotation"), &m_fill_random_rotation);
     if (!m_fill_random_rotation)
         ui()->render_rotation_controls();
-    ImGui::Checkbox("Large models count as ground (terrain tiles)", &m_fill_models_as_ground);
+    ImGui::Checkbox(STR_C("Large models count as ground (terrain tiles)"), &m_fill_models_as_ground);
 
-    ImGui::Text("Estimated objects: %.0f", std::round(area / 10000.0 * m_fill_density));
+    ImGui::Text(STR_C("Estimated objects: %.0f"), std::round(area / 10000.0 * m_fill_density));
 
-    if (ImGui::Button("Fill area"))
+    if (ImGui::Button(STR_C("Fill area")))
         run_area_fill();
     ImGui::SameLine();
-    std::string const undolabel = "Undo last fill (" + std::to_string(m_fill_last.size()) + ")";
+    std::string const undolabel = format(STR_C("Undo last fill (%zu)"), m_fill_last.size());
     if (ImGui::Button(undolabel.c_str()) && !m_fill_last.empty())
         undo_last_area_fill();
 
@@ -3242,12 +3370,12 @@ void editor_mode::make_array()
     auto const step = glm::length(array_offset(*base));
     if (step < array_tool::minimal_step)
     {
-        m_array.status = "The offsets come to nothing, the copies would sit in the model";
+        m_array.status = STR("The offsets come to nothing, the copies would sit in the model");
         return;
     }
     if (array_count(step) < 2)
     {
-        m_array.status = (m_array.settings.fit == 0 ? "An array of one is the model itself, nothing to make" : "The length takes no copy, nothing to make");
+        m_array.status = (m_array.settings.fit == 0 ? STR("An array of one is the model itself, nothing to make") : STR("The length takes no copy, nothing to make"));
         return;
     }
 
@@ -3316,11 +3444,11 @@ void editor_mode::shape_array()
     m_array.angles = base->Angles();
     m_array.scale = base->Scale();
     if (copies.size() < places.size())
-        m_array.status = "Only " + std::to_string(copies.size()) + " of " + std::to_string(places.size()) + " copies could be made";
+        m_array.status = format(STR_C("Only %zu of %zu copies could be made"), copies.size(), places.size());
     else if (copies.empty())
-        m_array.status = "No copies with these settings";
+        m_array.status = STR("No copies with these settings");
     else
-        m_array.status = "The model and " + std::to_string(copies.size()) + (copies.size() == 1 ? " copy" : " copies") + "; Ctrl+Z takes the array back";
+        m_array.status = format(STR_C("The model and %zu copies; Ctrl+Z takes the array back"), copies.size());
 }
 
 void editor_mode::update_array()
@@ -3395,79 +3523,79 @@ void editor_mode::render_array()
         selected = nullptr;
 
     ImGui::PushID("array");
-    ImGui::TextDisabled("Copies of the selected model, set out in a row");
-    ImGui::RadioButton("Fixed count", &settings.fit, 0);
+    ImGui::TextDisabled(STR_C("Copies of the selected model, set out in a row"));
+    ImGui::RadioButton(STR_C("Fixed count"), &settings.fit, 0);
     ImGui::SameLine();
-    ImGui::RadioButton("Fit length", &settings.fit, 1);
+    ImGui::RadioButton(STR_C("Fit length"), &settings.fit, 1);
     ImGui::SetNextItemWidth(120.0f);
     if (settings.fit == 0)
     {
-        ImGui::InputInt("Count", &settings.count);
+        ImGui::InputInt(STR_C("Count"), &settings.count);
         settings.count = std::clamp(settings.count, 1, array_tool::limit);
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", "Number of the models in the array, the selected one included");
+            ImGui::SetTooltip("%s", STR_C("Number of the models in the array, the selected one included"));
     }
     else
     {
-        ImGui::InputFloat("Length (m)", &settings.length, 1.0f, 10.0f, "%.2f");
+        ImGui::InputFloat(STR_C("Length (m)"), &settings.length, 1.0f, 10.0f, "%.2f");
         settings.length = std::max(0.0f, settings.length);
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", "As many copies are made as fit in this length, measured along the row");
+            ImGui::SetTooltip("%s", STR_C("As many copies are made as fit in this length, measured along the row"));
     }
 
-    ImGui::Checkbox("Relative offset", &settings.relative);
+    ImGui::Checkbox(STR_C("Relative offset"), &settings.relative);
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", "Distance between the copies as a part of the size of the model, along its axes: x, y (up), z.\n"
-                                "1 along an axis puts the copies end to end");
+        ImGui::SetTooltip("%s", STR_C("Distance between the copies as a part of the size of the model, along its axes: x, y (up), z.\n"
+                                "1 along an axis puts the copies end to end"));
     if (settings.relative)
     {
         ImGui::SetNextItemWidth(200.0f);
-        ImGui::DragFloat3("x size", &settings.relative_offset.x, 0.01f, 0.0f, 0.0f, "%.3f");
+        ImGui::DragFloat3(STR_C("x size"), &settings.relative_offset.x, 0.01f, 0.0f, 0.0f, "%.3f");
     }
-    ImGui::Checkbox("Constant offset", &settings.constant);
+    ImGui::Checkbox(STR_C("Constant offset"), &settings.constant);
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", "Distance between the copies in metres, along the axes of the model: x, y (up), z.\n"
-                                "With both offsets on the copies are set apart by their sum");
+        ImGui::SetTooltip("%s", STR_C("Distance between the copies in metres, along the axes of the model: x, y (up), z.\n"
+                                "With both offsets on the copies are set apart by their sum"));
     if (settings.constant)
     {
         ImGui::SetNextItemWidth(200.0f);
         ImGui::DragFloat3("m", &settings.constant_offset.x, 0.05f, 0.0f, 0.0f, "%.3f");
     }
     ImGui::SetNextItemWidth(120.0f);
-    ImGui::DragFloat("Turn per copy (deg)", &settings.turn, 0.1f, -180.0f, 180.0f, "%.2f");
+    ImGui::DragFloat(STR_C("Turn per copy (deg)"), &settings.turn, 0.1f, -180.0f, 180.0f, "%.2f");
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", "Each copy is turned by this much around the vertical axis against the one before it,\n"
-                                "and the row bends with them into an arc");
-    ImGui::Checkbox("Follow the ground", &settings.ground);
+        ImGui::SetTooltip("%s", STR_C("Each copy is turned by this much around the vertical axis against the one before it,\n"
+                                "and the row bends with them into an arc"));
+    ImGui::Checkbox(STR_C("Follow the ground"), &settings.ground);
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", "The copies are put as high over the ground as the model is, instead of level with it.\n"
-                                "Not for the models large enough to count as ground themselves");
+        ImGui::SetTooltip("%s", STR_C("The copies are put as high over the ground as the model is, instead of level with it.\n"
+                                "Not for the models large enough to count as ground themselves"));
 
     if (selected != nullptr)
     {
         auto const size = array_size(*selected) * selected->Scale();
         auto const step = glm::length(array_offset(*selected));
-        ImGui::TextDisabled("Model %.2f x %.2f x %.2f m, %d in the array, %.2f m apart", size.x, size.y, size.z, array_count(step), step);
+        ImGui::TextDisabled(STR_C("Model %.2f x %.2f x %.2f m, %d in the array, %.2f m apart"), size.x, size.y, size.z, array_count(step), step);
     }
 
     if (array_live())
     {
         // NOTE: kept away from the place of the other button, a click too many on which would make the array twice
-        ImGui::TextDisabled("The array follows the settings");
+        ImGui::TextDisabled(STR_C("The array follows the settings"));
         ImGui::SameLine();
-        if (ImGui::Button("Done"))
+        if (ImGui::Button(STR_C("Done")))
             m_array.base = nullptr;
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", "The copies stay the way they are. Selecting or changing anything else does the same");
+            ImGui::SetTooltip("%s", STR_C("The copies stay the way they are. Selecting or changing anything else does the same"));
     }
     else if (selected != nullptr)
     {
-        if (ImGui::Button("Make array"))
+        if (ImGui::Button(STR_C("Make array")))
             make_array();
     }
     else
     {
-        ImGui::TextDisabled("Select a model to make an array of");
+        ImGui::TextDisabled(STR_C("Select a model to make an array of"));
     }
     if (false == m_array.status.empty())
         ImGui::TextUnformatted(m_array.status.c_str());
@@ -3482,32 +3610,32 @@ void editor_mode::render_gizmo_options()
     {
         ImGui::SameLine();
         ImGui::SetNextItemWidth(120.0f);
-        ImGui::SliderFloat("Extent (m), wheel", &Global.EditorOrthoExtent, 5.0f, 5000.0f, "%.0f", 3.0f);
+        ImGui::SliderFloat(STR_C("Extent (m), wheel"), &Global.EditorOrthoExtent, 5.0f, 5000.0f, "%.0f", 3.0f);
     }
-    ImGui::Checkbox("Enabled", &m_gizmo_enabled);
+    ImGui::Checkbox(STR_C("Enabled"), &m_gizmo_enabled);
     if (!m_gizmo_enabled)
         return;
     if (m_terrain_sculpt || m_chunk_edit)
     {
-        ImGui::TextDisabled("Suspended while editing terrain");
+        ImGui::TextDisabled(STR_C("Suspended while editing terrain"));
         return;
     }
 
     // lets the user pick the transform mode without keyboard shortcuts
     int op = static_cast<int>(m_gizmo_op);
-    ImGui::RadioButton("Translate (Q)", &op, static_cast<int>(gizmo_operation::translate));
+    ImGui::RadioButton(STR_C("Translate (Q)"), &op, static_cast<int>(gizmo_operation::translate));
     ImGui::SameLine();
-    ImGui::RadioButton("Rotate (W)", &op, static_cast<int>(gizmo_operation::rotate));
+    ImGui::RadioButton(STR_C("Rotate (W)"), &op, static_cast<int>(gizmo_operation::rotate));
     ImGui::SameLine();
-    ImGui::RadioButton("Scale (E)", &op, static_cast<int>(gizmo_operation::scale));
+    ImGui::RadioButton(STR_C("Scale (E)"), &op, static_cast<int>(gizmo_operation::scale));
     m_gizmo_op = static_cast<gizmo_operation>(op);
 
     if (m_gizmo_op != gizmo_operation::scale) // ImGuizmo always scales in local space
-        ImGui::Checkbox("Local space (R)", &m_gizmo_local);
+        ImGui::Checkbox(STR_C("Local space (R)"), &m_gizmo_local);
     if (m_gizmo_op == gizmo_operation::translate)
     {
         ImGui::SetNextItemWidth(120.0f);
-        ImGui::InputFloat("Snap (hold Ctrl)", &m_gizmo_snap);
+        ImGui::InputFloat(STR_C("Snap (hold Ctrl)"), &m_gizmo_snap);
         if (m_gizmo_snap < 0.0f)
             m_gizmo_snap = 0.0f;
     }
@@ -3516,11 +3644,11 @@ void editor_mode::render_gizmo_options()
         auto const located = editor_includes::parameter_with_role(m_include.info, "pos.x") != 0 || editor_includes::parameter_with_role(m_include.info, "pos.y") != 0 ||
                              editor_includes::parameter_with_role(m_include.info, "pos.z") != 0;
         ImGui::TextDisabled("%s", false == located             ? "Include selected, no position parameters described" :
-                                  false == m_include.placement ? "Include selected, no gizmo under rotate or scale" :
-                                                                 "Include selected, axes as its template allows");
+                                  false == m_include.placement ? STR_C("Include selected, no gizmo under rotate or scale") :
+                                                                 STR_C("Include selected, axes as its template allows"));
     }
     else if (!m_node)
-        ImGui::TextDisabled("No node selected");
+        ImGui::TextDisabled(STR_C("No node selected"));
 }
 
 void editor_mode::render_gizmo()
@@ -3874,6 +4002,48 @@ void editor_mode::enter()
         }
     }
 
+    if (Global.editor_session && false == m_opened_at_track)
+    {
+        m_opened_at_track = true;
+        auto const saved{scene::Layers.empty() ? std::vector<std::string>{} : scene::Layers.marked(scene::layer_handle{1}, "//$c")};
+        if (false == saved.empty())
+        {
+            std::istringstream values(saved.front());
+            glm::dvec3 position{0.0};
+            glm::vec3 angle{0.0f};
+            if (values >> position.x >> position.y >> position.z >> angle.x >> angle.y)
+            {
+                Camera.Pos = position;
+                Camera.Angle = angle;
+                Camera.m_owner = nullptr;
+                FreeFlyModeFlag = true;
+                Global.pCamera = Camera;
+                m_saved_camera = {position, angle};
+                WriteLog("Editor: camera where it was at the last save");
+            }
+        }
+        for (auto *track : simulation::Paths.sequence())
+        {
+            if (m_saved_camera.has_value() || track == nullptr || track->m_editorremoved || track->m_paths.empty())
+                continue;
+            auto const &path{track->m_paths.front()};
+            auto const start{path.points[segment_data::point::start]};
+            auto const end{path.points[segment_data::point::end]};
+            auto const centre{0.5 * (start + end)};
+            glm::dvec3 along{end.x - start.x, 0.0, end.z - start.z};
+            along = glm::length(along) > 1e-6 ? glm::normalize(along) : glm::dvec3{0.0, 0.0, 1.0};
+            glm::dvec3 const side{-along.z, 0.0, along.x};
+            Camera.Pos = centre - along * 30.0 + side * 15.0 + glm::dvec3{0.0, 20.0, 0.0};
+            auto const look{glm::normalize(centre - Camera.Pos)};
+            Camera.Angle = glm::vec3(static_cast<float>(std::asin(std::clamp(look.y, -1.0, 1.0))), static_cast<float>(std::atan2(-look.x, -look.z)), 0.0f);
+            Camera.m_owner = nullptr;
+            FreeFlyModeFlag = true;
+            Global.pCamera = Camera;
+            WriteLog("Editor: camera at the first track, " + track->name());
+            break;
+        }
+    }
+
     Global.ControlPicking = true;
     EditorModeFlag = true;
 
@@ -3930,6 +4100,17 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
 #endif
     bool anyModifier = Mods & (GLFW_MOD_SHIFT | GLFW_MOD_CONTROL | GLFW_MOD_ALT);
 
+    if (Action == GLFW_RELEASE && Key >= 0 && Key <= GLFW_KEY_LAST)
+    {
+        input::keys[Key] = GLFW_RELEASE;
+        if (Key == GLFW_KEY_LEFT_SHIFT || Key == GLFW_KEY_RIGHT_SHIFT)
+            input::key_shift = false;
+        if (Key == GLFW_KEY_LEFT_CONTROL || Key == GLFW_KEY_RIGHT_CONTROL)
+            input::key_ctrl = false;
+        if (Key == GLFW_KEY_LEFT_ALT || Key == GLFW_KEY_RIGHT_ALT)
+            input::key_alt = false;
+    }
+
     // first give UI a chance to handle the key
     if (!anyModifier && m_userinterface->on_key(Key, Action))
         return;
@@ -3953,6 +4134,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         case GLFW_KEY_W: m_gizmo_op = gizmo_operation::rotate; break;
         case GLFW_KEY_E: m_gizmo_op = gizmo_operation::scale; break;
         case GLFW_KEY_R: m_gizmo_local = !m_gizmo_local; break;
+        case GLFW_KEY_B: handled = ui()->mode() != nodebank_panel::TRACK && bend_shortcut(); break;
         default: handled = false; break;
         }
         if (handled)
@@ -4202,6 +4384,20 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
         return;
     }
 
+    if (Button == GLFW_MOUSE_BUTTON_LEFT && is_press(Action) && false == m_bend.picking && ui()->mode() != nodebank_panel::TRACK && (bend_drag_start(Mods) || bend_click()))
+    {
+        m_input.mouse.button(Button, Action);
+        return;
+    }
+
+    if (m_bend.picking && Button == GLFW_MOUSE_BUTTON_LEFT && ui()->mode() != nodebank_panel::TRACK)
+    {
+        if (is_press(Action))
+            bend_pick(Global.pCamera.Pos + GfxRenderer->Mouse_Position());
+        m_input.mouse.button(Button, Action);
+        return;
+    }
+
     if (Button == GLFW_MOUSE_BUTTON_LEFT)
     {
 		
@@ -4362,9 +4558,9 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
 void editor_mode::render_change_history(){
 
 
-    ImGui::Begin("Editor History", &m_change_history, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Begin(STR_C("Editor History"), &m_change_history, ImGuiWindowFlags_AlwaysAutoResize);
     int maxsize = m_max_history_size;
-    if (ImGui::InputInt("Max history size", &maxsize))
+    if (ImGui::InputInt(STR_C("Max history size"), &maxsize))
     {
         m_max_history_size = std::max(0, maxsize);
         if ((int)m_history.size() > m_max_history_size && m_max_history_size >= 0)
@@ -4379,14 +4575,14 @@ void editor_mode::render_change_history(){
     }  
 
     float dist = kMaxPlacementDistance;
-    if (ImGui::InputFloat("Max placement distance", &dist))
+    if (ImGui::InputFloat(STR_C("Max placement distance"), &dist))
     {
         kMaxPlacementDistance = std::max(0.0f, dist);
     }
 
     ImGui::Separator();
 
-    ImGui::Text("History (newest at end): %zu entries", m_history.size());
+    ImGui::Text(STR_C("History (newest at end): %zu entries"), m_history.size());
     ImGui::BeginChild("history_list", ImVec2(400, 200), true);
     for (int i = 0; i < (int)m_history.size(); ++i)
     {
@@ -4410,7 +4606,7 @@ void editor_mode::render_change_history(){
     ImGui::EndChild();
 
     ImGui::Separator();
-    if (ImGui::Button("Clear History"))
+    if (ImGui::Button(STR_C("Clear History")))
     {
         m_history.clear();
         g_redo.clear();
@@ -4419,7 +4615,7 @@ void editor_mode::render_change_history(){
     ImGui::SameLine();
    
     ImGui::SameLine();
-    if (ImGui::Button("Undo Selected"))
+    if (ImGui::Button(STR_C("Undo Selected")))
     {
         if (m_selected_history_idx >= 0 && m_selected_history_idx < (int)m_history.size())
         {
@@ -4466,4 +4662,35 @@ bool editor_mode::focus_active()
 void editor_mode::set_focus_active(bool isActive)
 {
     m_focus_active = isActive;
+}
+
+void editor_mode::starter_trainset(std::vector<std::string> &Trailing)
+{
+    static std::regex const trainset{R"((^|\n)[ \t]*trainset[ \t])", std::regex::icase};
+    for (std::size_t handle = 1; handle <= scene::Layers.size(); ++handle)
+    {
+        auto const &layer{scene::Layers.layer(static_cast<scene::layer_handle>(handle))};
+        if (layer.created)
+            continue;
+        std::ifstream input{Global.asCurrentSceneryPath + layer.name, std::ios_base::binary};
+        std::string const content{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+        if (std::regex_search(content, trainset))
+            return;
+    }
+    std::error_code error;
+    if (false == std::filesystem::exists("dynamic/pkp/wmb10_v1/wmb10.mmd", error))
+        return;
+    for (auto const *track : simulation::Paths.sequence())
+    {
+        if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || (track->iCategoryFlag & 1) == 0 || track->name().empty() || track->m_paths.empty())
+            continue;
+        auto const length{geometry::bezier{track->m_paths.front()}.plan_length()};
+        if (length < 15.0)
+            continue;
+        Trailing.push_back("trainset none " + track->name() + " " + to_string(std::min(length, 0.5 * length + 5.0), 2) + " 0");
+        Trailing.push_back("node -1 0 wmb10-6457 dynamic pkp/wmb10_v1 wmb10-6457 wmb10 0 headdriver 0 0 enddynamic");
+        Trailing.push_back("endtrainset");
+        WriteLog("Editor: the scenery has no trainset, a WMB10 is put on " + track->name() + " to drive");
+        return;
+    }
 }

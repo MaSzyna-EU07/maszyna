@@ -38,10 +38,13 @@ struct scratch_data;
 // facing the curve, the other side or its middle; up its origin, its bottom or its top),
 // axis <x|z> (axis of the model laid along the curve), flip (the model goes the other way), mirror (its sides swapped),
 // widen (the offset grows by the widening of the structure gauge in the curves, the way the platforms are set back),
+// platform (as widen, and the copies stand on the plane of the rail heads carried on to the edge: lowered on the inner
+// side of a canted curve, raised on the outer one),
 // noface (the model isn't turned to have its -x side, or -z for one laid along x, facing the curve),
 // parameters <count> <values>... (of a template: the model can be an *.inc file, its long models are bent, the others stand
 // upright at their places along the curve),
-// anchor sides: origin, near, far, centre; heights: origin, bottom, top, edge (the top of the side facing the curve),
+// scale <x> <y> <z> (of the model, along its own axes), point <x> <y> <z> (a point of the model, in its own space, taken by the anchor point),
+// anchor sides: origin, near, far, centre, point; heights: origin, bottom, top, edge (the top of the side facing the curve), point,
 // tilt (bent copies lean with the cant of the curve; otherwise they stay upright, as the platforms and the walls by a track do,
 // at the height the plane of the cant has at their sideways offset)
 class sweep_node : public scene::basic_node
@@ -64,9 +67,12 @@ class sweep_node : public scene::basic_node
 		bool tilt{false};
 		bool face{true}; // the model is turned so its -x side (-z for a model laid along x) faces the curve
 		bool widen{false}; // moved away from the curve by the widening of the structure gauge in the curves
+		bool platform{false}; // set back as widen does, and its height taken from the plane of the rail heads at its edge
 		std::vector<std::string> parameters; // of a template (*.inc) laid along the curve
-		int side_anchor{0}; // 0: origin, 1: the side facing the curve, 2: the far side, 3: the middle
-		int height_anchor{0}; // 0: origin, 1: bottom, 2: top, 3: top of the side facing the curve
+		int side_anchor{0}; // 0: origin, 1: the side facing the curve, 2: the far side, 3: the middle, 4: the point
+		int height_anchor{0}; // 0: origin, 1: bottom, 2: top, 3: top of the side facing the curve, 4: the point
+		glm::dvec3 point{0.0};
+		glm::dvec3 scale{1.0};
 		std::vector<segment_data> pieces;
 
 		bool operator==(state const &Other) const;
@@ -101,6 +107,15 @@ class sweep_node : public scene::basic_node
 	double end() const;
 	// length of a copy along the curve, as the model has it
 	double model_length() const;
+	bool bounds(glm::dvec3 &Low, glm::dvec3 &High, glm::dvec3 &Shift) const;
+	bool edge_far() const;
+	glm::dvec3 axes(glm::dvec3 const &Vector) const;
+	double distance_at(double const Station) const;
+	double station_at(double const Distance) const;
+	double setback(frame const &At) const;
+	// height the copies stand at over the points of the curve, less the height of the rail: the head of the rail on their side,
+	// for a platform the plane of the rail heads carried on to its edge, lower on the inner side of a canted curve
+	double rise(frame const &At) const;
 	std::vector<scene::shape_node> create_shapes() const;
 	// a model of what's laid along the curve, placed in its space
 	struct item
@@ -115,6 +130,8 @@ class sweep_node : public scene::basic_node
 	// puts the copies in the scene as shapes of their own, which can be taken back
 	void show();
 	void hide();
+	void refresh();
+	bool bridge();
 	void merged(bool const Merged)
 	{
 		m_merged = Merged;
@@ -142,8 +159,16 @@ class sweep_node : public scene::basic_node
 		std::array<double, 2> widening;
 		std::array<double, 2> cant;
 	};
+	static void sample_piece(segment_data const &Piece, std::vector<sample> &Samples, double &Station);
+	static void gauge_along(std::vector<sample> &Samples);
+	void beside_switches(std::vector<std::pair<double, double>> const &Spans);
 	state m_state;
 	std::vector<sample> m_samples;
+	std::vector<double> m_distances;
+	mutable bool m_boundsvalid{false};
+	mutable bool m_boundsfound{false};
+	mutable bool m_edgefar{false};
+	mutable glm::dvec3 m_low{0.0}, m_high{0.0}, m_shift{0.0};
 	bool m_merged{false};
 	owned_shapes m_shapes;
 };

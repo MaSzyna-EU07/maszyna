@@ -54,30 +54,30 @@ void editor_ui::render_mode_options(nodebank_panel::edit_mode const Mode)
 	switch (Mode)
 	{
 	case nodebank_panel::MODIFY:
-		ImGui::TextDisabled("LMB: select node   F: focus   End: drop to ground   Del: delete");
+		ImGui::TextDisabled(STR_C("LMB: select node   F: focus   End: drop to ground   Del: delete"));
 		break;
 	case nodebank_panel::COPY:
-		ImGui::TextDisabled("LMB: copy the clicked model to the node bank");
+		ImGui::TextDisabled(STR_C("LMB: copy the clicked model to the node bank"));
 		break;
 	case nodebank_panel::ADD:
 	{
-		ImGui::TextDisabled("LMB: insert a model at the cursor");
-		ImGui::Checkbox("Random model from set", &m_insertrandom);
+		ImGui::TextDisabled(STR_C("LMB: insert a model at the cursor"));
+		ImGui::Checkbox(STR_C("Random model from set"), &m_insertrandom);
 		if (m_insertrandom)
 		{
-			m_nodebankpanel.set_combo("Set##insert", m_insertset, nullptr);
+			m_nodebankpanel.set_combo(STR_C("Set##insert"), m_insertset, nullptr);
 			auto const count{m_nodebankpanel.set_entries(m_insertset).size()};
-			ImGui::TextDisabled("%zu templates in set%s", count, count == 0 ? ", the node bank selection is used" : "");
+			ImGui::TextDisabled(STR_C("%zu templates in set%s"), count, count == 0 ? ", the node bank selection is used" : "");
 		}
 		else
 		{
-			ImGui::TextDisabled("Inserts the template selected in the node bank");
+			ImGui::TextDisabled(STR_C("Inserts the template selected in the node bank"));
 		}
 		m_functionspanel.render_controls();
 		break;
 	}
 	case nodebank_panel::BRUSH:
-		ImGui::TextDisabled("Hold LMB: paint models along the cursor path");
+		ImGui::TextDisabled(STR_C("Hold LMB: paint models along the cursor path"));
 		m_brushobjects.render_options(m_nodebankpanel);
 		m_functionspanel.render_controls();
 		break;
@@ -92,21 +92,31 @@ void editor_ui::render_mode_options(nodebank_panel::edit_mode const Mode)
 
 void editor_ui::render_header_sections()
 {
-	if (ImGui::CollapsingHeader("Gizmo", ImGuiTreeNodeFlags_DefaultOpen))
+	if (ImGui::CollapsingHeader(STR_C("Gizmo"), ImGuiTreeNodeFlags_DefaultOpen))
 	{
 		if (m_gizmooptions)
 			m_gizmooptions();
 	}
-	if (ImGui::CollapsingHeader("Node properties", ImGuiTreeNodeFlags_DefaultOpen))
+	if (ImGui::CollapsingHeader(STR_C("Node properties"), ImGuiTreeNodeFlags_DefaultOpen))
 	{
 		ImGui::Indent();
 		m_itempropertiespanel.render_body();
 		ImGui::Unindent();
 	}
-	if (ImGui::CollapsingHeader("Array"))
+	if (ImGui::CollapsingHeader(STR_C("Array")))
 	{
 		if (m_arrayoptions)
 			m_arrayoptions();
+	}
+	if (m_bendexpand)
+	{
+		ImGui::SetNextItemOpen(true);
+		m_bendexpand = false;
+	}
+	if (ImGui::CollapsingHeader(STR_C("Bend along the track")))
+	{
+		if (m_bendoptions)
+			m_bendoptions();
 	}
 }
 
@@ -118,9 +128,13 @@ void editor_ui::render_menu_contents()
 			m_newscenery();
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", STR_C("The editor starts again with the wizard of a new scenery: its name and its centre on the map"));
+		if (ImGui::MenuItem(STR_C("Open scenery...")) && m_openscenery)
+			m_openscenery();
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("The editor starts again with another scenery of the scenery folder"));
 		// changes go to the scenery files only if the scenery was loaded with its sources tracked
 		auto const editsession{false == scene::Layers.empty()};
-		if (ImGui::MenuItem(STR_C("Save"), "Ctrl+S", false, editsession) && m_save)
+		if (ImGui::MenuItem(STR_C("Save"), STR_C("Ctrl+S"), false, editsession) && m_save)
 		{
 			m_save();
 		}
@@ -128,7 +142,7 @@ void editor_ui::render_menu_contents()
 		{
 			ImGui::SetTooltip("%s", STR_C("Start the simulator with -edit <scenery file> to save changes to the scenery files"));
 		}
-		if (ImGui::MenuItem(STR_C("Export scenery dump"), "Ctrl+Shift+F11") && m_export)
+		if (ImGui::MenuItem(STR_C("Export scenery dump"), STR_C("Ctrl+Shift+F11")) && m_export)
 		{
 			m_export();
 		}
@@ -174,6 +188,8 @@ void editor_ui::render_rotation_controls()
 void editor_ui::set_node(scene::basic_node *Node)
 {
 	m_node = Node;
+	m_itempropertiespanel.update(m_node);
+	m_functionspanel.update(m_node);
 }
 
 void editor_ui::set_include(include_selection *Include)

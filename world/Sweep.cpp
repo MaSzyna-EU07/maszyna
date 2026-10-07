@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/parser.h"
 #include "vehicle/DynObj.h"
+#include "world/Track.h"
 
 #include <glm/gtx/rotate_vector.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -28,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <optional>
 
 namespace
 {
@@ -36,6 +38,9 @@ double const sample_spacing{0.5}; // m along the curve between the samples
 std::size_t const vertex_limit{4000000}; // copies beyond this many vertices are left out
 double const slice_width{1.0}; // m of the model, the faces of a bent copy are cut into
 double const edge_band{0.3}; // m from the side facing the curve, where the top of the edge is looked for
+double const outer_reach{30.0};
+double const overhang_band{0.15};
+double const overhang_depth{0.05};
 
 struct cubic
 {
@@ -75,6 +80,75 @@ double plan_distance(glm::dvec3 const &A, glm::dvec3 const &B)
 	return glm::length(glm::dvec2{B.x - A.x, B.z - A.z});
 }
 
+// the gauge changes from 26 m ahead of a curve or of a cant ramp (PKP PLK ST-T2), so the tracks beyond the ends are looked at this far
+double const lead_reach{26.0};
+
+segment_data turned_piece(segment_data const &Path)
+{
+	segment_data result{Path};
+	result.points[segment_data::point::start] = Path.points[segment_data::point::end];
+	result.points[segment_data::point::end] = Path.points[segment_data::point::start];
+	result.points[segment_data::point::control1] = Path.points[segment_data::point::control2];
+	result.points[segment_data::point::control2] = Path.points[segment_data::point::control1];
+	result.rolls = {-Path.rolls[1], -Path.rolls[0]};
+	return result;
+}
+
+bool same_points(segment_data const &A, segment_data const &B)
+{
+	for (int i = 0; i < 4; ++i)
+		if (glm::distance(A.points[i], B.points[i]) > 1e-3)
+			return false;
+	return true;
+}
+
+glm::dvec3 plan_heading(segment_data const &Piece, double const T)
+{
+	auto const direction{cubic{Piece}.first(T)};
+	glm::dvec3 const plan{direction.x, 0.0, direction.z};
+	return glm::length(plan) > 1e-9 ? glm::normalize(plan) : glm::dvec3{0.0, 0.0, 1.0};
+}
+
+// paths going on from the end of the last of the pieces, each turned to lead away from it, up to the lead reach
+std::vector<segment_data> paths_beyond(segment_data Last, std::vector<segment_data> const &Own)
+{
+	std::vector<segment_data> result;
+	double length{0.0};
+	while (length < lead_reach && result.size() < 16)
+	{
+		auto const at{Last.points[segment_data::point::end]};
+		if (simulation::Region == nullptr || false == simulation::Region->point_inside(at))
+			break;
+		auto const &paths{simulation::Region->section(at).cell(at).m_directories.paths};
+		std::optional<segment_data> next;
+		for (auto *track : paths)
+		{
+			if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 1) == 0)
+				continue;
+			for (auto const &path : track->m_paths)
+				for (auto const forward : {true, false})
+				{
+					auto const candidate{forward ? path : turned_piece(path)};
+					if (next.has_value() || glm::distance(candidate.points[segment_data::point::start], at) > 0.01 ||
+					    glm::dot(plan_heading(Last, 1.0), plan_heading(candidate, 0.0)) < 0.9)
+						continue;
+					auto const known = [&](segment_data const &Piece) { return same_points(Piece, candidate) || same_points(turned_piece(Piece), candidate); };
+					if (std::any_of(Own.begin(), Own.end(), known) || std::any_of(result.begin(), result.end(), known))
+						continue;
+					next = candidate;
+				}
+		}
+		if (false == next.has_value())
+			break;
+		cubic const curve{*next};
+		for (int k = 1; k <= 8; ++k)
+			length += plan_distance(curve.point((k - 1) / 8.0), curve.point(k / 8.0));
+		result.push_back(*next);
+		Last = *next;
+	}
+	return result;
+}
+
 // triangles of the model which share the look, in the space of the model
 struct model_part
 {
@@ -84,10 +158,13 @@ struct model_part
 	std::vector<world_vertex> vertices;
 };
 
-void gather_parts(TSubModel *Submodel, glm::dmat4 const &Transform, material_data const &Skins, std::vector<model_part> &Parts)
+// without the parts lit at night (the glow, the pool of light on the ground), which the instances show only with the lights on
+void gather_parts(TSubModel *Submodel, glm::dmat4 const &Transform, material_data const &Skins, std::array<TSubModel *, 8> const &Lit, std::vector<model_part> &Parts)
 {
 	for (auto *submodel = Submodel; submodel != nullptr; submodel = submodel->Next)
 	{
+		if (std::find(Lit.begin(), Lit.end(), submodel) != Lit.end())
+			continue;
 		auto transform{Transform};
 		if ((submodel->iFlags & 0xC000) != 0 && submodel->GetMatrix() != nullptr)
 		{
@@ -107,7 +184,7 @@ void gather_parts(TSubModel *Submodel, glm::dmat4 const &Transform, material_dat
 			part.lighting.diffuse = submodel->f4Diffuse;
 			part.lighting.specular = submodel->f4Specular;
 			part.translucent = material != null_handle && GfxRenderer->Material(material)->get_or_guess_opacity() == 0.0f;
-			auto const normals{glm::dmat3(transform)};
+			auto const normals{glm::transpose(glm::inverse(glm::dmat3(transform)))};
 			auto const &vertices{GfxRenderer->Vertices(submodel->m_geometry.handle)};
 			auto const &indices{GfxRenderer->Indices(submodel->m_geometry.handle)};
 			auto const take = [&](gfx::basic_vertex const &Vertex) {
@@ -142,7 +219,7 @@ void gather_parts(TSubModel *Submodel, glm::dmat4 const &Transform, material_dat
 		}
 		if (submodel->Child != nullptr)
 		{
-			gather_parts(submodel->Child, transform, Skins, Parts);
+			gather_parts(submodel->Child, transform, Skins, Lit, Parts);
 		}
 	}
 }
@@ -207,6 +284,93 @@ std::vector<world_vertex> slices(std::vector<world_vertex> const &Vertices, std:
 	return result;
 }
 
+struct laid_model
+{
+	std::vector<model_part> parts;
+	glm::dvec3 origin{0.0};
+	glm::dvec3 low{std::numeric_limits<double>::max()};
+	glm::dvec3 high{-std::numeric_limits<double>::max()};
+	bool bent{false};
+};
+
+struct layout
+{
+	std::vector<laid_model> models;
+	glm::dvec3 low{std::numeric_limits<double>::max()};
+	glm::dvec3 high{-std::numeric_limits<double>::max()};
+	glm::dvec3 shift{0.0};
+	bool edge_far{false};
+};
+
+bool lay_out(sweep_node const &Sweep, layout &Layout)
+{
+	auto const &definition{Sweep.definition()};
+	auto const scaling{glm::scale(glm::dmat4(1.0), definition.scale)};
+	for (auto const &entry : Sweep.items())
+	{
+		laid_model model;
+		auto const transform{scaling * entry.transform};
+		gather_parts(entry.model->Root, transform, entry.skins, entry.model->instance_parts().lights_on, model.parts);
+		model.origin = glm::dvec3(transform[3]);
+		if (false == model.parts.empty())
+			Layout.models.push_back(std::move(model));
+	}
+	if (Layout.models.empty())
+		return false;
+	auto &low{Layout.low};
+	auto &high{Layout.high};
+	for (auto &model : Layout.models)
+	{
+		for (auto const &part : model.parts)
+			for (auto const &vertex : part.vertices)
+			{
+				auto const local{Sweep.axes(vertex.position)};
+				model.low = glm::min(model.low, local);
+				model.high = glm::max(model.high, local);
+			}
+		low = glm::min(low, model.low);
+		high = glm::max(high, model.high);
+	}
+	for (auto &model : Layout.models)
+		model.bent = definition.bend && (Layout.models.size() == 1 || model.high.x - model.low.x >= 0.5 * (high.x - low.x));
+	if (std::any_of(Layout.models.begin(), Layout.models.end(), [](laid_model const &Model) { return Model.bent; }))
+	{
+		low = glm::dvec3{std::numeric_limits<double>::max()};
+		high = glm::dvec3{-std::numeric_limits<double>::max()};
+		for (auto const &model : Layout.models)
+			if (model.bent)
+			{
+				low = glm::min(low, model.low);
+				high = glm::max(high, model.high);
+			}
+	}
+	auto const nearside{definition.lateral >= 0.0 ? low.y : high.y};
+	auto const farside{definition.lateral >= 0.0 ? high.y : low.y};
+	double edgetop{-std::numeric_limits<double>::max()};
+	double nearbottom{std::numeric_limits<double>::max()}, farbottom{std::numeric_limits<double>::max()};
+	for (auto const &model : Layout.models)
+		if (model.bent || false == definition.bend)
+			for (auto const &part : model.parts)
+				for (auto const &vertex : part.vertices)
+				{
+					auto const local{Sweep.axes(vertex.position)};
+					if (std::abs(local.y - nearside) <= edge_band)
+						edgetop = std::max(edgetop, local.z);
+					if (std::abs(local.y - nearside) <= overhang_band)
+						nearbottom = std::min(nearbottom, local.z);
+					if (std::abs(local.y - farside) <= overhang_band)
+						farbottom = std::min(farbottom, local.z);
+				}
+	if (edgetop == -std::numeric_limits<double>::max())
+		edgetop = high.z;
+	Layout.edge_far = farbottom > nearbottom + overhang_depth;
+	auto const point{Sweep.axes(definition.scale * definition.point)};
+	double const sides[]{0.0, -nearside, -farside, -0.5 * (low.y + high.y), -point.y};
+	double const heights[]{0.0, -low.z, -high.z, -edgetop, -point.z};
+	Layout.shift = glm::dvec3{0.0, sides[std::clamp(definition.side_anchor, 0, 4)], heights[std::clamp(definition.height_anchor, 0, 4)]};
+	return true;
+}
+
 } // namespace
 
 // height of the head of the rail on the side of the offset over the points of the track, less the height of the rail; 0 for no side
@@ -222,7 +386,7 @@ double sweep_node::rail_head(double const Roll, double const Lateral)
 bool sweep_node::state::operator==(state const &Other) const
 {
 	if (model != Other.model || skin != Other.skin || bend != Other.bend || step != Other.step || from != Other.from || to != Other.to || lateral != Other.lateral || height != Other.height || along_x != Other.along_x ||
-	    flip != Other.flip || mirror != Other.mirror || tilt != Other.tilt || face != Other.face || widen != Other.widen || parameters != Other.parameters || side_anchor != Other.side_anchor || height_anchor != Other.height_anchor || pieces.size() != Other.pieces.size())
+	    flip != Other.flip || mirror != Other.mirror || tilt != Other.tilt || face != Other.face || widen != Other.widen || platform != Other.platform || parameters != Other.parameters || side_anchor != Other.side_anchor || height_anchor != Other.height_anchor || point != Other.point || scale != Other.scale || pieces.size() != Other.pieces.size())
 	{
 		return false;
 	}
@@ -285,6 +449,10 @@ void sweep_node::import(cParser &Input, glm::dvec3 const &Offset)
 		{
 			m_state.widen = true;
 		}
+		else if (token == "platform")
+		{
+			m_state.platform = true;
+		}
 		else if (token == "noface")
 		{
 			m_state.face = false;
@@ -302,8 +470,18 @@ void sweep_node::import(cParser &Input, glm::dvec3 const &Offset)
 		{
 			auto const side{Input.getToken<std::string>()};
 			auto const height{Input.getToken<std::string>()};
-			m_state.side_anchor = side == "near" ? 1 : side == "far" ? 2 : side == "centre" ? 3 : 0;
-			m_state.height_anchor = height == "bottom" ? 1 : height == "top" ? 2 : height == "edge" ? 3 : 0;
+			m_state.side_anchor = side == "near" ? 1 : side == "far" ? 2 : side == "centre" ? 3 : side == "point" ? 4 : 0;
+			m_state.height_anchor = height == "bottom" ? 1 : height == "top" ? 2 : height == "edge" ? 3 : height == "point" ? 4 : 0;
+		}
+		else if (token == "point")
+		{
+			Input.getTokens(3);
+			Input >> m_state.point.x >> m_state.point.y >> m_state.point.z;
+		}
+		else if (token == "scale")
+		{
+			Input.getTokens(3);
+			Input >> m_state.scale.x >> m_state.scale.y >> m_state.scale.z;
 		}
 		else if (token == "piece")
 		{
@@ -335,49 +513,295 @@ void sweep_node::define(state const &State)
 	}
 }
 
-void sweep_node::rebuild_samples()
+void sweep_node::sample_piece(segment_data const &Piece, std::vector<sample> &Samples, double &Station)
 {
-	m_samples.clear();
-	double station{0.0};
-	for (auto const &piece : m_state.pieces)
+	cubic const curve{Piece};
+	auto const count{std::clamp(static_cast<int>(plan_distance(curve.p0, curve.p3) / sample_spacing), 4, 4000)};
+	for (int k = Samples.empty() ? 0 : 1; k <= count; ++k)
 	{
-		cubic const curve{piece};
-		auto const count{std::clamp(static_cast<int>(plan_distance(curve.p0, curve.p3) / sample_spacing), 4, 4000)};
-		for (int k = m_samples.empty() ? 0 : 1; k <= count; ++k)
+		auto const t{static_cast<double>(k) / count};
+		auto const position{curve.point(t)};
+		if (false == Samples.empty())
 		{
-			auto const t{static_cast<double>(k) / count};
-			auto const position{curve.point(t)};
-			if (false == m_samples.empty())
+			Station += plan_distance(Samples.back().position, position);
+		}
+		auto tangent{curve.first(t)};
+		tangent = glm::length(tangent) > 1e-9 ? glm::normalize(tangent) : glm::dvec3{0.0, 0.0, 1.0};
+		Samples.push_back({Station, position, tangent, Piece.rolls[0] + (Piece.rolls[1] - Piece.rolls[0]) * t, {}, {}});
+	}
+}
+
+// the structure gauge widens ahead of the curves and of the cant, the same way the gauge check of the editor has it
+void sweep_node::gauge_along(std::vector<sample> &Samples)
+{
+	if (Samples.size() < 3)
+		return;
+	std::vector<double> chainage, curvature, cant;
+	for (std::size_t i = 0; i < Samples.size(); ++i)
+	{
+		auto const &before{Samples[i == 0 ? 0 : i - 1]};
+		auto const &after{Samples[std::min(i + 1, Samples.size() - 1)]};
+		glm::dvec2 const a{before.tangent.x, before.tangent.z};
+		glm::dvec2 const b{after.tangent.x, after.tangent.z};
+		auto const span{after.station - before.station};
+		auto const turn{glm::length(a) > 1e-9 && glm::length(b) > 1e-9 ? std::atan2(a.x * b.y - a.y * b.x, glm::dot(a, b)) : 0.0};
+		chainage.push_back(Samples[i].station);
+		curvature.push_back(span > 1e-9 ? turn / span : 0.0);
+		cant.push_back(1.5 * std::abs(std::sin(glm::radians(Samples[i].roll))));
+	}
+	auto const sections{gauge::sections(gauge::kind::unified, chainage, curvature, cant)};
+	for (std::size_t i = 0; i < Samples.size() && i < sections.size(); ++i)
+	{
+		Samples[i].widening = sections[i].lower;
+		Samples[i].cant = sections[i].cant;
+	}
+}
+
+void sweep_node::beside_switches(std::vector<std::pair<double, double>> const &Spans)
+{
+	auto const side{m_state.lateral >= 0.0 ? 1 : 0};
+	auto const sign{m_state.lateral >= 0.0 ? 1.0 : -1.0};
+	auto const edgeheight{std::max(0.0, m_state.height - gauge::rail_height)};
+	auto const total = [&](sample const &Sample) { return Sample.widening[side] + std::max(0.0, Sample.cant[side]) * edgeheight / 1.5; };
+	auto const matches = [](segment_data const &A, segment_data const &B) {
+		for (int i = 0; i < 4; ++i)
+			if (glm::distance(A.points[i], B.points[i]) > 1e-3)
+				return false;
+		return true;
+	};
+	auto const turned = [](segment_data const &Path) {
+		segment_data result{Path};
+		result.points[segment_data::point::start] = Path.points[segment_data::point::end];
+		result.points[segment_data::point::end] = Path.points[segment_data::point::start];
+		result.points[segment_data::point::control1] = Path.points[segment_data::point::control2];
+		result.points[segment_data::point::control2] = Path.points[segment_data::point::control1];
+		result.rolls = {-Path.rolls[1], -Path.rolls[0]};
+		return result;
+	};
+	for (std::size_t piece = 0; piece < m_state.pieces.size() && piece < Spans.size(); ++piece)
+	{
+		auto const &own{m_state.pieces[piece]};
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->eType != tt_Switch || track->m_paths.size() < 2 ||
+			    plan_distance(track->m_paths.front().points[segment_data::point::start], own.points[segment_data::point::start]) > 300.0)
+				continue;
+			for (std::size_t path = 0; path < track->m_paths.size(); ++path)
 			{
-				station += plan_distance(m_samples.back().position, position);
+				auto const forward{matches(own, track->m_paths[path])};
+				if (false == forward && false == matches(own, turned(track->m_paths[path])))
+					continue;
+				for (std::size_t other = 0; other < track->m_paths.size(); ++other)
+				{
+					if (other == path)
+						continue;
+					std::vector<sample> chain;
+					double station{0.0};
+					if (forward)
+					{
+						for (auto const &sample : m_samples)
+							if (sample.station >= Spans[piece].first - outer_reach && sample.station < Spans[piece].first)
+							{
+								station = sample.station;
+								chain.push_back(sample);
+							}
+						sample_piece(track->m_paths[other], chain, station);
+					}
+					else
+					{
+						sample_piece(turned(track->m_paths[other]), chain, station);
+						auto const shift{station - Spans[piece].second};
+						for (auto const &sample : m_samples)
+							if (sample.station > Spans[piece].second && sample.station <= Spans[piece].second + outer_reach)
+							{
+								chain.push_back(sample);
+								chain.back().station += shift;
+							}
+					}
+					gauge_along(chain);
+					for (auto &here : m_samples)
+					{
+						if (here.station < Spans[piece].first - outer_reach || here.station > Spans[piece].second + outer_reach)
+							continue;
+						glm::dvec3 const left{-here.tangent.z, 0.0, here.tangent.x};
+						sample const *nearest{nullptr};
+						auto best{std::numeric_limits<double>::max()};
+						for (auto const &point : chain)
+						{
+							auto const along{std::abs(glm::dot(glm::dvec3{point.position.x - here.position.x, 0.0, point.position.z - here.position.z}, here.tangent))};
+							if (along < best)
+							{
+								best = along;
+								nearest = &point;
+							}
+						}
+						if (nearest == nullptr || best > sample_spacing)
+							continue;
+						auto const offset{sign * glm::dot(glm::dvec3{nearest->position.x - here.position.x, 0.0, nearest->position.z - here.position.z}, glm::length(left) > 1e-9 ? glm::normalize(left) : left)};
+						if (offset > 0.05)
+							continue;
+						auto const needed{offset + total(*nearest)};
+						if (needed > total(here))
+						{
+							here.widening[side] = needed;
+							here.cant[side] = 0.0;
+						}
+					}
+				}
 			}
-			auto tangent{curve.first(t)};
-			tangent = glm::length(tangent) > 1e-9 ? glm::normalize(tangent) : glm::dvec3{0.0, 0.0, 1.0};
-			m_samples.push_back({station, position, tangent, piece.rolls[0] + (piece.rolls[1] - piece.rolls[0]) * t, {}, {}});
 		}
 	}
-	if (m_samples.size() > 2)
+}
+
+bool sweep_node::bridge()
+{
+	auto const turned = [](segment_data const &Path) {
+		segment_data result{Path};
+		result.points[segment_data::point::start] = Path.points[segment_data::point::end];
+		result.points[segment_data::point::end] = Path.points[segment_data::point::start];
+		result.points[segment_data::point::control1] = Path.points[segment_data::point::control2];
+		result.points[segment_data::point::control2] = Path.points[segment_data::point::control1];
+		result.rolls = {-Path.rolls[1], -Path.rolls[0]};
+		return result;
+	};
+	auto const same = [](segment_data const &A, segment_data const &B) {
+		for (int i = 0; i < 4; ++i)
+			if (glm::distance(A.points[i], B.points[i]) > 1e-3)
+				return false;
+		return true;
+	};
+	auto const length = [](segment_data const &Piece) {
+		std::vector<sample> samples;
+		double station{0.0};
+		sample_piece(Piece, samples, station);
+		return station;
+	};
+	auto const heading = [](segment_data const &Piece, double const T) {
+		auto const direction{cubic{Piece}.first(T)};
+		glm::dvec3 const plan{direction.x, 0.0, direction.z};
+		return glm::length(plan) > 1e-9 ? glm::normalize(plan) : glm::dvec3{0.0, 0.0, 1.0};
+	};
+	auto state{m_state};
+	auto changed{false};
+	double station{0.0};
+	for (std::size_t i = 0; i + 1 < state.pieces.size(); ++i)
 	{
-		// the structure gauge widens ahead of the curves and of the cant, the same way the gauge check of the editor has it
-		std::vector<double> chainage, curvature, cant;
-		for (std::size_t i = 0; i < m_samples.size(); ++i)
+		station += length(state.pieces[i]);
+		auto const target{state.pieces[i + 1].points[segment_data::point::start]};
+		auto at{state.pieces[i].points[segment_data::point::end]};
+		if (glm::distance(at, target) < 0.01)
+			continue;
+		auto const chord{plan_distance(at, target)};
+		std::vector<segment_data> fill;
+		auto previous{state.pieces[i]};
+		auto reached{false};
+		for (int step = 0; step < 20 && false == reached; ++step)
 		{
-			auto const &before{m_samples[i == 0 ? 0 : i - 1]};
-			auto const &after{m_samples[std::min(i + 1, m_samples.size() - 1)]};
-			glm::dvec2 const a{before.tangent.x, before.tangent.z};
-			glm::dvec2 const b{after.tangent.x, after.tangent.z};
-			auto const span{after.station - before.station};
-			auto const turn{glm::length(a) > 1e-9 && glm::length(b) > 1e-9 ? std::atan2(a.x * b.y - a.y * b.x, glm::dot(a, b)) : 0.0};
-			chainage.push_back(m_samples[i].station);
-			curvature.push_back(span > 1e-9 ? turn / span : 0.0);
-			cant.push_back(1.5 * std::abs(std::sin(glm::radians(m_samples[i].roll))));
+			std::optional<segment_data> best;
+			auto bestdistance{std::numeric_limits<double>::max()};
+			for (auto *track : simulation::Paths.sequence())
+			{
+				if (track == nullptr || track->m_editorremoved)
+					continue;
+				for (auto const &path : track->m_paths)
+					for (auto const forward : {true, false})
+					{
+						auto const candidate{forward ? path : turned(path)};
+						if (glm::distance(candidate.points[segment_data::point::start], at) > 0.01 || same(candidate, previous) || same(turned(candidate), previous))
+							continue;
+						if (glm::dot(heading(previous, 1.0), heading(candidate, 0.0)) < 0.5)
+							continue;
+						auto const distance{glm::distance(candidate.points[segment_data::point::end], target)};
+						if (distance < bestdistance)
+						{
+							bestdistance = distance;
+							best = candidate;
+						}
+					}
+			}
+			if (false == best.has_value())
+				break;
+			fill.push_back(*best);
+			previous = *best;
+			at = best->points[segment_data::point::end];
+			reached = glm::distance(at, target) < 0.01;
 		}
-		auto const sections{gauge::sections(gauge::kind::unified, chainage, curvature, cant)};
-		for (std::size_t i = 0; i < m_samples.size() && i < sections.size(); ++i)
-		{
-			m_samples[i].widening = sections[i].lower;
-			m_samples[i].cant = sections[i].cant;
-		}
+		if (false == reached)
+			continue;
+		double added{0.0};
+		for (auto const &piece : fill)
+			added += length(piece);
+		auto const shift{added - chord};
+		if (state.from >= station)
+			state.from += shift;
+		if (state.to >= station)
+			state.to += shift;
+		state.pieces.insert(state.pieces.begin() + i + 1, fill.begin(), fill.end());
+		station += added;
+		i += fill.size();
+		changed = true;
+	}
+	if (changed)
+	{
+		WriteLog("Sweep \"" + m_name + "\": the gaps between its pieces filled with the paths which join them");
+		define(state);
+	}
+	return changed;
+}
+
+void sweep_node::refresh()
+{
+	auto const current{m_state};
+	define(current);
+}
+
+void sweep_node::rebuild_samples()
+{
+	m_boundsvalid = false;
+	m_samples.clear();
+	std::vector<std::pair<double, double>> spans;
+	std::vector<segment_data> before, after;
+	if ((m_state.widen || m_state.platform) && false == m_state.pieces.empty())
+	{
+		before = paths_beyond(turned_piece(m_state.pieces.front()), m_state.pieces);
+		after = paths_beyond(m_state.pieces.back(), m_state.pieces);
+	}
+	double station{0.0};
+	for (auto piece = before.rbegin(); piece != before.rend(); ++piece)
+		sample_piece(turned_piece(*piece), m_samples, station);
+	auto const head{station};
+	auto const first{m_samples.empty() ? std::size_t{0} : m_samples.size() - 1};
+	for (auto const &piece : m_state.pieces)
+	{
+		auto const begin{station};
+		sample_piece(piece, m_samples, station);
+		spans.emplace_back(begin - head, station - head);
+	}
+	auto const last{m_samples.size()};
+	for (auto const &piece : after)
+		sample_piece(piece, m_samples, station);
+	gauge_along(m_samples);
+	// the paths beyond the ends only lead the gauge in, the copies stay on the pieces
+	m_samples.erase(m_samples.begin() + last, m_samples.end());
+	m_samples.erase(m_samples.begin(), m_samples.begin() + first);
+	for (auto &sample : m_samples)
+		sample.station -= head;
+	if ((m_state.widen || m_state.platform) && m_samples.size() > 2)
+	{
+		beside_switches(spans);
+	}
+	m_distances.clear();
+	glm::dvec3 previous{0.0};
+	for (auto const &sample : m_samples)
+	{
+		frame at;
+		at.widening = sample.widening;
+		at.cant = sample.cant;
+		glm::dvec3 left{-sample.tangent.z, 0.0, sample.tangent.x};
+		left = glm::length(left) > 1e-9 ? glm::normalize(left) : glm::dvec3{-1.0, 0.0, 0.0};
+		auto const point{sample.position + left * (m_state.lateral + setback(at))};
+		m_distances.push_back(m_distances.empty() ? 0.0 : m_distances.back() + std::max(1e-6, plan_distance(previous, point)));
+		previous = point;
 	}
 	if (false == m_samples.empty())
 	{
@@ -393,12 +817,114 @@ double sweep_node::length() const
 
 double sweep_node::start() const
 {
-	return std::clamp(m_state.from, 0.0, length());
+	return m_state.from;
 }
 
 double sweep_node::end() const
 {
-	return m_state.to < 0.0 ? length() : std::clamp(m_state.to, start(), length());
+	return m_state.to < 0.0 ? length() : std::max(m_state.to, start());
+}
+
+double sweep_node::distance_at(double const Station) const
+{
+	if (m_samples.size() < 2)
+		return Station;
+	if (Station <= m_samples.front().station)
+		return m_distances.front() + Station - m_samples.front().station;
+	if (Station >= m_samples.back().station)
+		return m_distances.back() + Station - m_samples.back().station;
+	auto const after{static_cast<std::size_t>(std::upper_bound(m_samples.begin(), m_samples.end(), Station, [](double const Value, sample const &Sample) { return Value < Sample.station; }) - m_samples.begin())};
+	auto const before{after - 1};
+	auto const span{m_samples[after].station - m_samples[before].station};
+	auto const f{span > 1e-9 ? (Station - m_samples[before].station) / span : 0.0};
+	return m_distances[before] + (m_distances[after] - m_distances[before]) * f;
+}
+
+double sweep_node::station_at(double const Distance) const
+{
+	if (m_samples.size() < 2)
+		return Distance;
+	if (Distance <= m_distances.front())
+		return m_samples.front().station + Distance - m_distances.front();
+	if (Distance >= m_distances.back())
+		return m_samples.back().station + Distance - m_distances.back();
+	auto const after{static_cast<std::size_t>(std::upper_bound(m_distances.begin(), m_distances.end(), Distance) - m_distances.begin())};
+	auto const before{after - 1};
+	auto const span{m_distances[after] - m_distances[before]};
+	auto const f{span > 1e-12 ? (Distance - m_distances[before]) / span : 0.0};
+	return m_samples[before].station + (m_samples[after].station - m_samples[before].station) * f;
+}
+
+double sweep_node::setback(frame const &At) const
+{
+	if (false == m_state.widen && false == m_state.platform)
+		return 0.0;
+	auto const side{m_state.lateral >= 0.0 ? 1 : 0};
+	auto const edgeheight{std::max(0.0, m_state.height - gauge::rail_height)};
+	auto const widening{At.widening[side] + std::max(0.0, At.cant[side]) * edgeheight / 1.5};
+	return m_state.lateral >= 0.0 ? widening : -widening;
+}
+
+double sweep_node::rise(frame const &At) const
+{
+	if (m_state.tilt)
+		return rail_head(At.roll, 0.0);
+	if (false == m_state.platform)
+		return rail_head(At.roll, m_state.lateral);
+	// PKP PLK ST-T2 table 3: H = Hi + D/2 -+ D (XB + dbS) / 1500 over the lower rail, with the cant D of the gauge, which
+	// changes from 20 m (inner side) and 26 m (outer side) ahead of the cant ramp, as the platform has to. taken as the
+	// turn of the edge with the plane of the rail heads, as the table has it only to the first order, and on the outer
+	// side, where the edge stays at XB + dbS instead of XB + dbS - dbD, the plane is higher by dbD D / 1500 there
+	auto const side{m_state.lateral >= 0.0 ? 1 : 0};
+	auto const cant{At.cant[side]};
+	auto const lower{rail_head(At.roll, 0.0) - 0.75 * std::abs(std::sin(glm::radians(At.roll)))};
+	auto const edgeheight{std::max(0.0, m_state.height - gauge::rail_height)};
+	auto const slope{std::clamp(cant / 1.5, -0.5, 0.5)};
+	auto const level{std::sqrt(1.0 - slope * slope)};
+	auto const across{std::abs(m_state.lateral) + std::abs(setback(At))};
+	return lower + 0.5 * std::abs(cant) - (across - edgeheight * slope) * slope / level + edgeheight * (level - 1.0);
+}
+
+glm::dvec3 sweep_node::axes(glm::dvec3 const &Vector) const
+{
+	auto const &definition{m_state};
+	auto const needsflip{definition.along_x ? definition.lateral < 0.0 : definition.lateral > 0.0};
+	auto const flip{definition.flip != (definition.face && needsflip)};
+	glm::dvec3 result{definition.along_x ? Vector.x : Vector.z, definition.along_x ? Vector.z : -Vector.x, Vector.y};
+	if (flip)
+	{
+		result.x = -result.x;
+		result.y = -result.y;
+	}
+	if (definition.mirror)
+	{
+		result.y = -result.y;
+	}
+	return result;
+}
+
+bool sweep_node::bounds(glm::dvec3 &Low, glm::dvec3 &High, glm::dvec3 &Shift) const
+{
+	if (false == m_boundsvalid)
+	{
+		layout laid;
+		m_boundsfound = lay_out(*this, laid);
+		m_low = laid.low;
+		m_high = laid.high;
+		m_shift = laid.shift;
+		m_edgefar = laid.edge_far;
+		m_boundsvalid = true;
+	}
+	Low = m_low;
+	High = m_high;
+	Shift = m_shift;
+	return m_boundsfound;
+}
+
+bool sweep_node::edge_far() const
+{
+	glm::dvec3 low, high, shift;
+	return bounds(low, high, shift) && m_edgefar;
 }
 
 sweep_node::frame sweep_node::frame_at(double const Station) const
@@ -562,11 +1088,12 @@ double sweep_node::project(glm::dvec3 const &Point, double &Lateral) const
 double sweep_node::model_length() const
 {
 	auto const pieces{items()};
+	auto const scaling{glm::scale(glm::dmat4(1.0), m_state.scale)};
 	double low{std::numeric_limits<double>::max()}, high{-std::numeric_limits<double>::max()};
 	for (auto const &entry : pieces)
 	{
 		std::vector<model_part> parts;
-		gather_parts(entry.model->Root, entry.transform, entry.skins, parts);
+		gather_parts(entry.model->Root, scaling * entry.transform, entry.skins, entry.model->instance_parts().lights_on, parts);
 		for (auto const &part : parts)
 			for (auto const &vertex : part.vertices)
 			{
@@ -584,93 +1111,16 @@ std::vector<scene::shape_node> sweep_node::create_shapes() const
 	auto const &definition{m_state};
 	if (m_samples.size() < 2)
 		return shapes;
-	// the parts of each model of the template, and where the model stands in the template
-	struct piece
-	{
-		std::vector<model_part> parts;
-		glm::dvec3 origin{0.0};
-		glm::dvec3 low{std::numeric_limits<double>::max()};
-		glm::dvec3 high{-std::numeric_limits<double>::max()};
-		bool bent{false};
-	};
-	std::vector<piece> pieces;
-	for (auto const &entry : items())
-	{
-		piece model;
-		gather_parts(entry.model->Root, entry.transform, entry.skins, model.parts);
-		model.origin = glm::dvec3(entry.transform[3]);
-		if (false == model.parts.empty())
-			pieces.push_back(std::move(model));
-	}
-	if (pieces.empty())
+	layout laid;
+	if (false == lay_out(*this, laid))
 		return shapes;
-	// the side of the model facing the curve is the one its lateral axis points away from: -x, or -z for a model laid along x
-	auto const needsflip{definition.along_x ? definition.lateral < 0.0 : definition.lateral > 0.0};
-	auto const flip{definition.flip != (definition.face && needsflip)};
-	// the model's own axes: along the curve, sideways (+ to the right of it), and up
-	auto const axes = [&](glm::dvec3 const &Vector) {
-		glm::dvec3 result{definition.along_x ? Vector.x : Vector.z, definition.along_x ? Vector.z : -Vector.x, Vector.y};
-		if (flip)
-		{
-			result.x = -result.x;
-			result.y = -result.y;
-		}
-		if (definition.mirror)
-		{
-			result.y = -result.y;
-		}
-		return result;
-	};
-	glm::dvec3 low{std::numeric_limits<double>::max()}, high{-std::numeric_limits<double>::max()};
-	for (auto &model : pieces)
-	{
-		for (auto const &part : model.parts)
-			for (auto const &vertex : part.vertices)
-			{
-				auto const local{axes(vertex.position)};
-				model.low = glm::min(model.low, local);
-				model.high = glm::max(model.high, local);
-			}
-		low = glm::min(low, model.low);
-		high = glm::max(high, model.high);
-	}
-	// the long models of a template follow the curve, the others stand at their places along it
-	for (auto &model : pieces)
-		model.bent = definition.bend && (pieces.size() == 1 || model.high.x - model.low.x >= 0.5 * (high.x - low.x));
-	// what's bent sets the length of a copy, its sides and its top; the rest only goes along with it
-	if (std::any_of(pieces.begin(), pieces.end(), [](piece const &Model) { return Model.bent; }))
-	{
-		low = glm::dvec3{std::numeric_limits<double>::max()};
-		high = glm::dvec3{-std::numeric_limits<double>::max()};
-		for (auto const &model : pieces)
-			if (model.bent)
-			{
-				low = glm::min(low, model.low);
-				high = glm::max(high, model.high);
-			}
-	}
+	auto &pieces{laid.models};
+	auto const low{laid.low};
+	auto const high{laid.high};
+	auto const anchor_shift{laid.shift};
 	auto const own{high.x - low.x};
-	// the point of the model the offset puts at its place, sideways and up
-	auto const nearside{definition.lateral >= 0.0 ? low.y : high.y};
-	auto const farside{definition.lateral >= 0.0 ? high.y : low.y};
-	double edgetop{-std::numeric_limits<double>::max()};
-	for (auto const &model : pieces)
-		if (model.bent || false == definition.bend)
-			for (auto const &part : model.parts)
-				for (auto const &vertex : part.vertices)
-				{
-					auto const local{axes(vertex.position)};
-					if (std::abs(local.y - nearside) <= edge_band)
-						edgetop = std::max(edgetop, local.z);
-				}
-	if (edgetop == -std::numeric_limits<double>::max())
-		edgetop = high.z;
-	glm::dvec3 const anchor_shift{0.0,
-	                              definition.side_anchor == 1 ? -nearside : definition.side_anchor == 2 ? -farside : definition.side_anchor == 3 ? -0.5 * (low.y + high.y) : 0.0,
-	                              definition.height_anchor == 1 ? -low.z : definition.height_anchor == 2 ? -high.z : definition.height_anchor == 3 ? -edgetop : 0.0};
-	auto const from{start()};
-	auto const to{end()};
-	auto const stretch{to - from};
+	auto const first{distance_at(start())};
+	auto const stretch{distance_at(end()) - first};
 	if (own < 1e-3 || stretch < 1e-3)
 		return shapes;
 	if (definition.bend)
@@ -709,19 +1159,9 @@ std::vector<scene::shape_node> sweep_node::create_shapes() const
 		batches.push_back({Part.material, Part.lighting, Part.translucent, {}});
 		return batches.back().vertices;
 	};
-	// set back by the widening of the gauge: from the radius, and on the inner side of a canted curve by the lean of the cars
-	// at the height of the edge
-	auto const side{definition.lateral >= 0.0 ? 1 : 0};
-	auto const edgeheight{std::max(0.0, definition.height - gauge::rail_height)};
-	auto const setback = [&](frame const &At) {
-		if (false == definition.widen)
-			return 0.0;
-		auto const widening{At.widening[side] + std::max(0.0, At.cant[side]) * edgeheight / 1.5};
-		return definition.lateral >= 0.0 ? widening : -widening;
-	};
 	// heights are given from the head of the rail on the side of the copies. the cant turns the track about its inner rail when the
 	// simulation raises it for the cant, about the axis otherwise; a copy which leans with the cant goes up with the axis
-	auto const cone = [&](frame const &At) { return rail_head(At.roll, definition.tilt ? 0.0 : definition.lateral); };
+	auto const cone = [&](frame const &At) { return rise(At); };
 	auto const upright = [](frame At) {
 		glm::dvec3 forward{At.forward.x, 0.0, At.forward.z};
 		forward = glm::length(forward) > 1e-9 ? glm::normalize(forward) : glm::dvec3{0.0, 0.0, 1.0};
@@ -733,12 +1173,12 @@ std::vector<scene::shape_node> sweep_node::create_shapes() const
 	glm::dvec3 const offset{0.0, definition.height, 0.0};
 	for (std::size_t copy = 0; copy < count; ++copy)
 	{
-		auto const base{from + spacing * static_cast<double>(copy)};
+		auto const base{first + spacing * static_cast<double>(copy)};
 		for (auto const &model : pieces)
 		{
 			// a model which doesn't bend stands upright at its point: the place of its origin along the curve
 			auto const anchor{axes(model.origin) + anchor_shift};
-			auto const stand{upright(frame_at(definition.bend ? base + (anchor.x - low.x) * scale : base))};
+			auto const stand{upright(frame_at(station_at(definition.bend ? base + (anchor.x - low.x) * scale : base)))};
 			for (auto const &part : model.parts)
 			{
 				auto &vertices{target(part)};
@@ -750,7 +1190,7 @@ std::vector<scene::shape_node> sweep_node::create_shapes() const
 					world_vertex placed{vertex};
 					if (model.bent)
 					{
-						auto const at{frame_at(base + (local.x - low.x) * scale)};
+						auto const at{frame_at(station_at(base + (local.x - low.x) * scale))};
 						placed.position = at.position + at.left * (local.y + definition.lateral + setback(at)) + at.up * local.z + offset + glm::dvec3{0.0, cone(at), 0.0};
 						placed.normal = glm::vec3(glm::normalize(at.forward * direction.x + at.left * direction.y + at.up * direction.z));
 					}
@@ -822,7 +1262,7 @@ void sweep_node::export_as_text_(std::ostream &Output) const
 	{
 		Output << "step " << sweep.step << ' ';
 	}
-	if (sweep.from > 0.0 || sweep.to >= 0.0)
+	if (sweep.from != 0.0 || sweep.to >= 0.0)
 	{
 		Output << "range " << sweep.from << ' ' << sweep.to << ' ';
 	}
@@ -854,6 +1294,10 @@ void sweep_node::export_as_text_(std::ostream &Output) const
 	{
 		Output << "widen ";
 	}
+	if (sweep.platform)
+	{
+		Output << "platform ";
+	}
 	if (false == sweep.parameters.empty())
 	{
 		Output << "parameters " << sweep.parameters.size() << ' ';
@@ -862,9 +1306,17 @@ void sweep_node::export_as_text_(std::ostream &Output) const
 	}
 	if (sweep.side_anchor != 0 || sweep.height_anchor != 0)
 	{
-		char const *sides[] = {"origin", "near", "far", "centre"};
-		char const *heights[] = {"origin", "bottom", "top", "edge"};
-		Output << "anchor " << sides[std::clamp(sweep.side_anchor, 0, 3)] << ' ' << heights[std::clamp(sweep.height_anchor, 0, 3)] << ' ';
+		char const *sides[] = {"origin", "near", "far", "centre", "point"};
+		char const *heights[] = {"origin", "bottom", "top", "edge", "point"};
+		Output << "anchor " << sides[std::clamp(sweep.side_anchor, 0, 4)] << ' ' << heights[std::clamp(sweep.height_anchor, 0, 4)] << ' ';
+	}
+	if (sweep.side_anchor == 4 || sweep.height_anchor == 4)
+	{
+		Output << "point " << sweep.point.x << ' ' << sweep.point.y << ' ' << sweep.point.z << ' ';
+	}
+	if (sweep.scale != glm::dvec3{1.0})
+	{
+		Output << "scale " << sweep.scale.x << ' ' << sweep.scale.y << ' ' << sweep.scale.z << ' ';
 	}
 	auto const precision{Output.precision(std::numeric_limits<double>::digits10)};
 	for (auto const &piece : sweep.pieces)
@@ -891,6 +1343,15 @@ void sweep_table::create_geometry(scene::scratch_data &Scratchpad)
 		if (sweep == nullptr)
 		{
 			continue;
+		}
+		if (sweep->bridge())
+		{
+			if (Global.editor_session)
+				sweep->mark_dirty();
+		}
+		else if (sweep->definition().widen || sweep->definition().platform)
+		{
+			sweep->refresh();
 		}
 		if (Global.editor_session && false == Global.NvRenderer)
 		{

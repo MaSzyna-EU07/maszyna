@@ -81,6 +81,99 @@ void item_tooltip(char const *Text)
 		ImGui::SetTooltip("%s", STR_C(Text));
 }
 
+// the curve a track ends with at Joint, as it goes on beyond the joint, and a transition curve leading out of it to the straight
+struct easing
+{
+	double curvature{0.0}; // positive turning from x towards z
+	double length{0.0};
+	glm::dvec3 end{0.0};
+	glm::dvec2 direction{0.0};
+	std::vector<segment_data> pieces;
+};
+
+easing ease_out_of(TTrack const &Neighbour, glm::dvec3 const &Joint, double const Grade, double const Speed, alignment::limits const &Limits)
+{
+	easing result;
+	for (auto const &path : Neighbour.m_paths)
+		for (auto const atend : {false, true})
+		{
+			if (glm::distance(path.points[atend ? segment_data::point::end : segment_data::point::start], Joint) > 0.05)
+				continue;
+			if (path.points[segment_data::point::control1] == glm::dvec3{} && path.points[segment_data::point::control2] == glm::dvec3{})
+				return result;
+			bezier const curve{path};
+			auto const first{curve.first(atend ? 1.0 : 0.0)};
+			auto const second{curve.second(atend ? 1.0 : 0.0)};
+			auto const speed{std::hypot(first.x, first.z)};
+			if (speed < 1e-9)
+				return result;
+			auto curvature{(first.x * second.z - first.z * second.x) / (speed * speed * speed)};
+			glm::dvec2 direction{first.x / speed, first.z / speed};
+			double roll{path.rolls[1]};
+			if (false == atend)
+			{
+				curvature = -curvature;
+				direction = -direction;
+				roll = -path.rolls[0];
+			}
+			result.curvature = curvature;
+			if (std::abs(curvature) < 1e-4)
+				return result;
+			result.length = std::max(20.0, alignment::recommend(Speed, 1.0 / std::abs(curvature), Limits).transition);
+			auto const count{static_cast<int>(std::ceil(result.length / 10.0))};
+			auto const piece{result.length / count};
+			glm::dvec3 point{Joint};
+			for (int i = 0; i < count; ++i)
+			{
+				segment_data part;
+				part.points[segment_data::point::start] = point;
+				auto const from{direction};
+				int const steps{static_cast<int>(std::ceil(piece / 0.05))};
+				auto const step{piece / steps};
+				for (int j = 0; j < steps; ++j)
+				{
+					auto const along{i * piece + (j + 0.5) * step};
+					auto const angle{curvature * (1.0 - along / result.length) * step};
+					auto const half{turned(direction, angle * 0.5)};
+					point += glm::dvec3{half.x * step, Grade * step, half.y * step};
+					direction = turned(direction, angle);
+				}
+				part.points[segment_data::point::end] = point;
+				part.points[segment_data::point::control1] = glm::dvec3{from.x, Grade, from.y} * (piece / 3.0);
+				part.points[segment_data::point::control2] = -glm::dvec3{direction.x, Grade, direction.y} * (piece / 3.0);
+				part.rolls = {static_cast<float>(roll * (1.0 - i * piece / result.length)), static_cast<float>(roll * (1.0 - (i + 1) * piece / result.length))};
+				result.pieces.push_back(part);
+			}
+			result.end = point;
+			result.direction = direction;
+			return result;
+		}
+	return result;
+}
+
+segment_data turned_around(segment_data const &Path)
+{
+	segment_data result{Path};
+	result.points[segment_data::point::start] = Path.points[segment_data::point::end];
+	result.points[segment_data::point::end] = Path.points[segment_data::point::start];
+	result.points[segment_data::point::control1] = Path.points[segment_data::point::control2];
+	result.points[segment_data::point::control2] = Path.points[segment_data::point::control1];
+	result.rolls = {-Path.rolls[1], -Path.rolls[0]};
+	return result;
+}
+
+// curvature of the shape at Chainage, positive turning from x towards z
+double curvature_at(alignment::result const &Shape, double const Chainage)
+{
+	auto const a{std::clamp(Chainage - 0.5, 0.0, Shape.length)};
+	auto const b{std::clamp(Chainage + 0.5, 0.0, Shape.length)};
+	if (b - a < 1e-3)
+		return 0.0;
+	auto const from{plan_of(alignment::evaluate(Shape, a).direction)};
+	auto const to{plan_of(alignment::evaluate(Shape, b).direction)};
+	return signed_angle(glm::normalize(from), glm::normalize(to)) / (b - a);
+}
+
 // circular curve from a point along a direction, cut into pieces of 90 degrees at most. Side: 1 to the left, -1 to the right
 void compound_from(editor_track::curve const &Curve, alignment::vertex &Vertex)
 {
@@ -477,7 +570,7 @@ std::array<editor_mode::track_mode, 11> const &editor_mode::track_modes()
 	    {"Turntable", "U", track_tab::turntable, "Places a turntable, leads tracks out of it and fits the tracks around to it"},
 	    {"Straight", "G", track_tab::straights, "The whole straight through the selected path: drag its ends or the middle, break it, shift it"},
 	    {"Curve", "C", track_tab::route, "The line through the path, switch to switch: vertices with the radii, transitions and cant of the curves"},
-	    {"Objects", "B", track_tab::lineside, "Along the track: platforms and other models, hectometre posts, fouling point markers, a parallel track, a vehicle to drive"},
+	    {"Objects", "B", track_tab::lineside, "Along the track: hectometre posts, fouling point markers, a parallel track, a vehicle to drive"},
 	    {"Profile", "P", track_tab::profile, "Vertical profile (grade line) along the line"},
 	    {"Speed", "V", track_tab::speed, "Speed limits of the paths against the speed their geometry allows"},
 	    {"Joints", "J", track_tab::joints, "Ends of the paths which almost meet, steps, kinks, jumps of the cant and of the grade at the joints"},
@@ -612,8 +705,6 @@ std::string editor_mode::track_mode_name() const
 	case track_tab::speed: return STR_C("Speed check: LMB on a row shows the path");
 	case track_tab::joints: return STR_C("Joints: LMB on a row shows the place");
 	case track_tab::lineside:
-		if (m_lineside_tab == 0)
-			return m_sweep.dragging ? STR_C("Model along the track: release where it ends") : STR_C("Model along the track: LMB by the track where it starts, drag to the end");
 		return STR_C("Objects along the track");
 	case track_tab::infra: return STR_C("Infrastructure along the track");
 	case track_tab::turntable:
@@ -3310,6 +3401,13 @@ void editor_mode::delete_selected_track()
 		ui()->set_status(STR_C("The switch is replaced by its main track, Shift+Del removes all of it"), false);
 	}
 	push_track_snapshot({}, created, {track});
+	// the model and the events of a turntable can't stay without its track
+	if (track->eType == tt_Table)
+		for (auto const instance : turntable_includes(*track))
+		{
+			scene::Layers.removed(instance, true);
+			m_history.back().instances.push_back(instance);
+		}
 	if (std::find(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), track) != m_route.chain.tracks.end())
 		m_route = {};
 	m_node = nullptr;
@@ -3368,8 +3466,6 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{"Drag a point", "in the profile window: changes the grade"}, {"Double click", "on the line: adds a point"}, {"Apply", "writes the heights into the tracks"}};
 	else if (m_track_window_open && m_track_tab == track_tab::speed)
 		hints = {{"LMB on a row", "show the path"}};
-	else if (m_track_window_open && m_track_tab == track_tab::lineside && m_lineside_tab == 0)
-		hints = {{"LMB by the track", "where it starts, the side of the track it goes on"}, {"Drag", "to where it ends, a click: one as long as the original"}, {"Release", "lays it"}, {"LMB away from the track", "selects another track"}};
 	else if (m_track_window_open && m_track_tab == track_tab::lineside)
 		hints = {{"LMB on a track", "the line the objects go along"}};
 	else if (m_track_window_open && m_track_tab == track_tab::joints)
@@ -4118,12 +4214,6 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 	Length = 0.0;
 	if (Points.size() < 2)
 		return {};
-	alignment::design design;
-	design.norms = m_route.design.norms;
-	design.shape = m_route.design.shape;
-	design.speed = tool.style.velocity > 0.0 ? tool.style.velocity : 100.0;
-	design.start = Points.front();
-	design.end = Points.back();
 	auto const startdirection{tool.start.track != nullptr ? -plan_of(tool.start.direction) : plan_of(Points[1] - Points[0])};
 	auto const enddirection{End.track != nullptr ? plan_of(End.direction) : plan_of(Points.back() - Points[Points.size() - 2])};
 	if (glm::length(startdirection) < 1e-3 || glm::length(enddirection) < 1e-3)
@@ -4131,8 +4221,75 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 		Error = STR_C("Two points lie on one another");
 		return {};
 	}
-	design.start_direction = glm::normalize(startdirection);
-	design.end_direction = glm::normalize(enddirection);
+	alignment::design design;
+	auto const shape{lay_shape(Points, glm::normalize(startdirection), glm::normalize(enddirection), design)};
+	if (false == shape.valid)
+	{
+		Error = shape.errors.empty() ? std::string{STR_C("The track can't be laid through these points")} : shape.errors.front();
+		return {};
+	}
+	Error = shape.warnings.empty() ? std::string{} : shape.warnings.front();
+	auto const count = [&](alignment::result const &Shape, alignment::design const &Design) {
+		return std::max(alignment::minimum_pieces(Shape, Design), static_cast<std::size_t>(std::ceil(Shape.length / std::max(5.0, tool.piece_length))));
+	};
+	// the curvature of the track laid has to go on from the one of the track it joins, a jump gets a transition curve between them
+	auto const grade{(Points.back().y - Points.front().y) / std::max(1.0, plan_distance(Points.front(), Points.back()))};
+	auto const eased = [&](editor_track::snap_target const &Joint, double const Chainage, double const Sign) {
+		if (Joint.track == nullptr || Joint.track->eType != tt_Normal)
+			return easing{};
+		auto result{ease_out_of(*Joint.track, Joint.position, grade * Sign, design.speed, design.norms)};
+		auto const own{Sign * curvature_at(shape, Chainage)};
+		if (std::abs(own - result.curvature) <= 0.05 * std::abs(result.curvature))
+			result.pieces.clear();
+		return result;
+	};
+	auto const in{eased(tool.start, 0.0, 1.0)};
+	auto const out{eased(End, shape.length, -1.0)};
+	if (false == in.pieces.empty() || false == out.pieces.empty())
+	{
+		auto points{Points};
+		auto starting{design.start_direction};
+		auto ending{design.end_direction};
+		if (false == in.pieces.empty())
+		{
+			points.front() = in.end;
+			starting = in.direction;
+		}
+		if (false == out.pieces.empty())
+		{
+			points.back() = out.end;
+			ending = -out.direction;
+		}
+		alignment::design easeddesign;
+		auto const easedshape{lay_shape(points, starting, ending, easeddesign)};
+		if (easedshape.valid)
+		{
+			auto result{in.pieces};
+			auto const middle{alignment::pieces(easedshape, easeddesign, count(easedshape, easeddesign))};
+			result.insert(result.end(), middle.begin(), middle.end());
+			for (auto piece{out.pieces.rbegin()}; piece != out.pieces.rend(); ++piece)
+				result.push_back(turned_around(*piece));
+			Length = easedshape.length + (in.pieces.empty() ? 0.0 : in.length) + (out.pieces.empty() ? 0.0 : out.length);
+			Error = easedshape.warnings.empty() ? std::string{} : easedshape.warnings.front();
+			return result;
+		}
+		Error = STR("The curvature changes abruptly where the track joins, there's no room for a transition curve") + (easedshape.errors.empty() ? std::string{} : ": " + easedshape.errors.front());
+	}
+	Length = shape.length;
+	return alignment::pieces(shape, design, count(shape, design));
+}
+
+alignment::result editor_mode::lay_shape(std::vector<glm::dvec3> const &Points, glm::dvec2 const &Startdirection, glm::dvec2 const &Enddirection, alignment::design &design) const
+{
+	auto const &tool{m_lay};
+	design = {};
+	design.norms = m_route.design.norms;
+	design.shape = m_route.design.shape;
+	design.speed = tool.style.velocity > 0.0 ? tool.style.velocity : 100.0;
+	design.start = Points.front();
+	design.end = Points.back();
+	design.start_direction = Startdirection;
+	design.end_direction = Enddirection;
 
 	alignment::vertex corner;
 	corner.radius = std::max(1.0, tool.radius);
@@ -4171,16 +4328,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 			design.vertices.back().offset = std::max(1.0, glm::dot(plan_of(Points.back() - Points[Points.size() - 2]), design.end_direction));
 		}
 	}
-	auto const shape{alignment::compute(design)};
-	if (false == shape.valid)
-	{
-		Error = shape.errors.empty() ? std::string{STR_C("The track can't be laid through these points")} : shape.errors.front();
-		return {};
-	}
-	Error = shape.warnings.empty() ? std::string{} : shape.warnings.front();
-	Length = shape.length;
-	auto const count{std::max(alignment::minimum_pieces(shape, design), static_cast<std::size_t>(std::ceil(shape.length / std::max(5.0, tool.piece_length))))};
-	return alignment::pieces(shape, design, count);
+	return alignment::compute(design);
 }
 
 void editor_mode::lay_click()
@@ -4232,6 +4380,23 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	tool.status = format(STR_C("Laid %zu paths, %.1f m"), created.size(), length);
 	if (false == error.empty())
 		tool.status += "\n" + error;
+	{
+		std::vector<std::pair<TTrack *, bool>> run;
+		if (tool.start.track != nullptr && tool.start.track->eType == tt_Normal)
+			run.emplace_back(tool.start.track, tool.start.point.kind == editor_track::point_kind::end);
+		for (auto *track : created)
+			run.emplace_back(track, true);
+		if (End.track != nullptr && End.track->eType == tt_Normal)
+			run.emplace_back(End.track, End.point.kind == editor_track::point_kind::start);
+		editor_track::curve curve;
+		if (run.size() > created.size() && editor_track::analyse_curve(run, m_route.design.norms.gauge, curve) && curve.compound)
+			for (std::size_t i = 1; i < curve.arcs.size(); ++i)
+				if (curve.arcs[i].transition < 1.0)
+				{
+					tool.status += "\n" + format(STR_C("Compound curve: R %.0f m meets R %.0f m with no transition curve between them"), curve.arcs[i - 1].radius, curve.arcs[i].radius);
+					break;
+				}
+	}
 	if (scene::Layers.active() == null_handle && style == nullptr)
 		tool.status += "\nThe scenery isn't opened for editing, the new track won't be saved";
 	WriteLog("Editor: " + tool.status, logtype::generic);

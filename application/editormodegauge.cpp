@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "simulation/simulation.h"
 #include "utilities/Logs.h"
+#include "world/Sweep.h"
 #include "world/Track.h"
 #include "imgui/imgui.h"
 #include "utilities/translation.h"
@@ -324,6 +325,33 @@ template <typename Visitor> void visit_triangles(TSubModel *Submodel, glm::dmat4
 	}
 }
 
+// the triangle enters the gauge when any point of a grid spread over it does; the deepest such point goes to the hit
+void scan_triangle(corridor const &Space, glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C, editor_mode::gauge_hit &Hit)
+{
+	auto const middle{(A + B + C) / 3.0};
+	if (false == Space.close(middle, std::max({glm::distance(middle, A), glm::distance(middle, B), glm::distance(middle, C)})))
+		return;
+	auto const edge{std::max({glm::distance(A, B), glm::distance(B, C), glm::distance(C, A)})};
+	auto const steps{std::clamp(static_cast<int>(std::ceil(edge / 0.5)), 1, 24)};
+	for (int u = 0; u <= steps; ++u)
+		for (int v = 0; u + v <= steps; ++v)
+		{
+			auto const point{A + (B - A) * (static_cast<double>(u) / steps) + (C - A) * (static_cast<double>(v) / steps)};
+			auto const found{Space.intrusion(point)};
+			if (found.depth <= 0.0)
+				continue;
+			if (found.depth > Hit.depth)
+			{
+				Hit.depth = found.depth;
+				Hit.point = point;
+				Hit.track = found.span->track;
+				Hit.path = found.span->path;
+				Hit.direction = found.direction;
+			}
+			return;
+		}
+}
+
 // the deepest place of the model in the gauge, added to the hits when it enters it
 void scan_model(corridor const &Space, TAnimModel &Instance, std::vector<editor_mode::gauge_hit> &Hits)
 {
@@ -332,31 +360,23 @@ void scan_model(corridor const &Space, TAnimModel &Instance, std::vector<editor_
 	if (false == Space.nearby(Instance.location(), Instance.radius()))
 		return;
 	editor_mode::gauge_hit hit{Instance.name(), Instance.location()};
-	// the triangle enters the gauge when any point of a grid spread over it does
-	visit_triangles(Instance.Model()->GetSMRoot(), placement(Instance), [&](glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C) {
-		auto const middle{(A + B + C) / 3.0};
-		if (false == Space.close(middle, std::max({glm::distance(middle, A), glm::distance(middle, B), glm::distance(middle, C)})))
-			return;
-		auto const edge{std::max({glm::distance(A, B), glm::distance(B, C), glm::distance(C, A)})};
-		auto const steps{std::clamp(static_cast<int>(std::ceil(edge / 0.5)), 1, 24)};
-		for (int u = 0; u <= steps; ++u)
-			for (int v = 0; u + v <= steps; ++v)
-			{
-				auto const point{A + (B - A) * (static_cast<double>(u) / steps) + (C - A) * (static_cast<double>(v) / steps)};
-				auto const found{Space.intrusion(point)};
-				if (found.depth <= 0.0)
-					continue;
-				if (found.depth > hit.depth)
-				{
-					hit.depth = found.depth;
-					hit.point = point;
-					hit.track = found.span->track;
-					hit.path = found.span->path;
-					hit.direction = found.direction;
-				}
-				return;
-			}
-	});
+	visit_triangles(Instance.Model()->GetSMRoot(), placement(Instance), [&](glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C) { scan_triangle(Space, A, B, C, hit); });
+	if (hit.depth > 0.0)
+		Hits.push_back(std::move(hit));
+}
+
+// the same for the copies of a model laid along a curve
+void scan_sweep(corridor const &Space, sweep_node &Sweep, std::vector<editor_mode::gauge_hit> &Hits)
+{
+	if (Sweep.m_editorremoved || false == Space.nearby(Sweep.location(), Sweep.radius()))
+		return;
+	editor_mode::gauge_hit hit{Sweep.name(), Sweep.location()};
+	for (auto const &shape : Sweep.create_shapes())
+	{
+		auto const &vertices{shape.data().vertices};
+		for (std::size_t i = 0; i + 2 < vertices.size(); i += 3)
+			scan_triangle(Space, vertices[i].position, vertices[i + 1].position, vertices[i + 2].position, hit);
+	}
 	if (hit.depth > 0.0)
 		Hits.push_back(std::move(hit));
 }
@@ -372,6 +392,9 @@ void scan_models(corridor const &Space, std::vector<editor_mode::gauge_hit> &Hit
 	for (auto *instance : simulation::Instances.sequence())
 		if (instance != nullptr)
 			scan_model(Space, *instance, Hits);
+	for (auto *sweep : simulation::Sweeps.sequence())
+		if (sweep != nullptr)
+			scan_sweep(Space, *sweep, Hits);
 	sort_hits(Hits);
 }
 
@@ -579,14 +602,22 @@ void editor_mode::step_gauge_map()
 {
 	auto &scan{*m_gauge.scan};
 	auto const &instances{simulation::Instances.sequence()};
+	auto const &sweeps{simulation::Sweeps.sequence()};
+	auto const total{instances.size() + sweeps.size()};
 	auto const until{std::chrono::steady_clock::now() + gauge_slice};
-	while (scan.next < instances.size() && std::chrono::steady_clock::now() < until)
+	while (scan.next < total && std::chrono::steady_clock::now() < until)
 	{
-		if (auto *instance{instances[scan.next++]})
-			scan_model(*scan.space, *instance, m_gauge.map.hits);
+		auto const next{scan.next++};
+		if (next < instances.size())
+		{
+			if (auto *instance{instances[next]})
+				scan_model(*scan.space, *instance, m_gauge.map.hits);
+		}
+		else if (auto *sweep{sweeps[next - instances.size()]})
+			scan_sweep(*scan.space, *sweep, m_gauge.map.hits);
 	}
-	scan.progress = instances.empty() ? 1.f : static_cast<float>(scan.next) / instances.size();
-	if (scan.next >= instances.size())
+	scan.progress = total == 0 ? 1.f : static_cast<float>(scan.next) / total;
+	if (scan.next >= total)
 		finish_gauge_map();
 }
 

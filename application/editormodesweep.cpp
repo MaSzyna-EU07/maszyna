@@ -21,12 +21,17 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "world/Sweep.h"
+#include "model/AnimModel.h"
 #include "world/Track.h"
 
 #include "imgui/imgui.h"
 #include "utilities/translation.h"
+#include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <array>
+#include <cstdint>
 #include <optional>
+#include <regex>
 #include <cctype>
 #include <cmath>
 #include <filesystem>
@@ -47,6 +52,49 @@ double const kSweepNear{4.0}; // m, a model along a curve this close to the sele
 double const kSweepGrab{25.0}; // m from the track, a press this close marks the stretch of the model
 std::size_t const kSweepModelList{400};
 double const kRailTop{0.18}; // m from the points of a track to the top of its rails
+
+glm::dvec3 flat(glm::dvec3 Vector)
+{
+	Vector.y = 0.0;
+	return glm::length(Vector) > 1e-9 ? glm::normalize(Vector) : glm::dvec3{0.0, 0.0, 1.0};
+}
+
+// the edges of the platforms in peronowe/ are named by the count of the edges and the height: 1k96w200m, 2k30w..., 1kraw200m55cm,
+// old_1k76w..., old2_peron1k30w..., old_peron1k_prosty_h70...; the rest there are the benches, the lamps and such. their side facing the track is the edge
+double platform_height(std::string File)
+{
+	std::transform(File.begin(), File.end(), File.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
+	std::replace(File.begin(), File.end(), '\\', '/');
+	auto const slash{File.rfind('/')};
+	if (slash == std::string::npos || File.substr(0, slash).find("peron") == std::string::npos)
+		return 0.0;
+	static std::regex const pattern{R"(^(?:old2?_)?(?:(?:peron)?\dk(\d\d)|\dkraw\d+m(\d\d)cm|peron.*_h(\d\d))(?:[^\d]|$))"};
+	std::smatch match;
+	auto const name{File.substr(slash + 1)};
+	if (false == std::regex_search(name, match, pattern))
+		return 0.0;
+	for (std::size_t i = 1; i < match.size(); ++i)
+		if (match[i].matched)
+			return std::stoi(match[i].str()) / 100.0;
+	return 0.0;
+}
+
+bool platform_model(std::string const &File)
+{
+	return platform_height(File) > 0.0;
+}
+
+// the edge of the platform 1.725 m from the axis on the side it stands, set back further by the widening of the gauge
+void platform_edge(sweep_node::state &State, std::string const &Model, double const Base)
+{
+	State.lateral = std::copysign(1.725, State.lateral == 0.0 ? 1.0 : State.lateral);
+	State.side_anchor = 1;
+	State.height_anchor = 3;
+	if (auto const height{platform_height(Model)}; height > 0.0)
+		State.height = Base + height;
+	State.widen = true;
+	State.platform = true;
+}
 
 segment_data reversed(segment_data const &Path)
 {
@@ -225,6 +273,13 @@ void editor_mode::sweep_measure()
 	if (model == tool.measured)
 		return;
 	tool.measured = model;
+	if (tool.edited == nullptr || tool.edited->definition().model != model)
+	{
+		if (platform_model(model))
+			platform_edge(tool.settings, model, 0.0);
+		else
+			tool.settings.platform = tool.settings.widen = false;
+	}
 	tool.model_length = 0.0;
 	if (model.empty())
 		return;
@@ -266,6 +321,13 @@ void editor_mode::sweep_create()
 	sweep_curve();
 	if (tool.curve.empty() || tool.model[0] == '\0')
 		return;
+	for (auto wanted{sweep_definition().to}; wanted > tool.curve_length && tool.outline.size() > 1;)
+	{
+		auto const end{tool.outline.back()};
+		auto const ahead{end + flat(end - tool.outline[tool.outline.size() - 2]) * (wanted - tool.curve_length)};
+		if (false == sweep_extend(true, ahead))
+			break;
+	}
 	static int counter{0};
 	scene::node_data data;
 	data.type = "sweep";
@@ -293,6 +355,7 @@ void editor_mode::sweep_create()
 	m_history.push_back(std::move(snap));
 	g_redo.clear();
 	tool.edited = sweep;
+	m_bend.edited = sweep;
 	tool.status = format(STR_C("%s laid along %.1f m, Ctrl+Z takes it back"), tool.model, sweep->end() - sweep->start());
 	if (scene::Layers.active() == null_handle)
 		tool.status += "\n" + std::string{STR_C("The scenery isn't opened for editing, it won't be saved")};
@@ -589,6 +652,27 @@ void editor_mode::sweeps_committed(std::vector<TTrack *> const &Tracks)
 		entry.first->define(entry.second);
 		entry.first->mark_dirty();
 	}
+	for (auto &entry : states)
+	{
+		auto *sweep{entry.first};
+		if (false == sweep->bridge())
+			continue;
+		sweep->mark_dirty();
+		m_sweep_links.erase(std::remove_if(m_sweep_links.begin(), m_sweep_links.end(), [&](sweep_link const &Link) { return Link.sweep == sweep; }), m_sweep_links.end());
+		auto const &pieces{sweep->definition().pieces};
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved)
+				continue;
+			for (std::size_t i = 0; i < pieces.size(); ++i)
+				for (int path = 0; path < static_cast<int>(track->m_paths.size()); ++path)
+				{
+					auto const along{same_piece(pieces[i], track->m_paths[path])};
+					if (along || same_piece(pieces[i], reversed(track->m_paths[path])))
+						m_sweep_links.push_back({sweep, i, track, path, false == along});
+				}
+		}
+	}
 }
 
 void editor_mode::sweeps_split(TTrack &Original, TTrack &Created)
@@ -620,34 +704,10 @@ void editor_mode::sweeps_split(TTrack &Original, TTrack &Created)
 void editor_mode::render_sweep_ui()
 {
 	auto &tool{m_sweep};
-	auto *track{selected_track()};
 	sweep_curve();
 	sweep_scan_models();
 	ImGui::TextDisabled("%s", STR_C("A model bent to follow the track, or repeated along it: platforms, walls, fences, barriers, lamps"));
 
-	// models along curves by this line
-	if (track != nullptr)
-	{
-		auto const alongside{sweeps_near(*track)};
-		if (false == alongside.empty())
-		{
-			ImGui::TextDisabled("%s", STR_C("By this track:"));
-			for (auto *sweep : alongside)
-			{
-				ImGui::PushID(sweep);
-				auto const &definition{sweep->definition()};
-				if (ImGui::Selectable(format("%s  %s, %.0f m", sweep->name().c_str(), definition.model.c_str(), sweep->end() - sweep->start()).c_str(), tool.edited == sweep, 0, ImVec2(ImGui::GetContentRegionAvail().x - 60.0f, 0.0f)))
-					sweep_edit(*sweep);
-				ImGui::SameLine();
-				if (ImGui::SmallButton(STR_C("Delete")))
-					sweep_delete(*sweep);
-				ImGui::PopID();
-			}
-			if (tool.edited != nullptr && ImGui::SmallButton(STR_C("New one")))
-				tool.edited = nullptr;
-			ImGui::Separator();
-		}
-	}
 	bool changed{false};
 	auto const edited = [&](bool const Changed) { changed |= Changed; };
 
@@ -726,7 +786,8 @@ void editor_mode::render_sweep_ui()
 		{
 			auto const &parameter{info.parameter(id)};
 			auto const placement{parameter.role.rfind("pos.", 0) == 0 || parameter.role.rfind("rot.", 0) == 0};
-			auto const value{placement ? std::string{"0"} : parameter.value.empty() ? std::string{"none"} : parameter.value};
+			auto const &choices{tool.parameter_choices[id - 1]};
+			auto const value{placement ? std::string{"0"} : false == parameter.value.empty() ? parameter.value : choices.empty() ? std::string{"none"} : choices.front()};
 			std::snprintf(tool.parameters[id - 1].data(), tool.parameters[id - 1].size(), "%s", value.c_str());
 			tool.parameter_labels[id - 1] = parameter.label.empty() ? "p" + std::to_string(id) + (parameter.role != "free" ? " (" + parameter.role + ")" : std::string{}) : parameter.label;
 			tool.parameter_placement[id - 1] = placement;
@@ -797,45 +858,17 @@ void editor_mode::render_sweep_ui()
 		ImGui::SameLine();
 		if (ImGui::SmallButton(format("%.2f m##platform", height).c_str()))
 		{
-			settings.lateral = std::copysign(1.725, settings.lateral == 0.0 ? 1.0 : settings.lateral);
-			settings.side_anchor = 1;
+			platform_edge(settings, tool.model, 0.0);
 			settings.height = height;
-			settings.height_anchor = 3;
 			settings.face = true;
-			settings.widen = true;
 			changed = true;
 		}
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", STR_C("The edge of the platform 1.725 m from the axis of the track, its top this high over the rail top"));
 	}
 	ImGui::TextDisabled(STR_C("%.2f m %s of the axis, %.2f m over the rail top"), std::abs(settings.lateral), settings.lateral >= 0.0 ? STR_C("right") : STR_C("left"), settings.height);
-	ImGui::TextWrapped("%s", STR_C("Press beside the track where the model begins and drag along to where it ends; the side of the press is the side of the model. "
-	                               "Past the end of the path it goes on along the joined ones. A click lays one copy."));
-
-	if (tool.edited != nullptr && changed)
-		sweep_apply();
-	if (tool.edited == nullptr && false == tool.curve.empty() && tool.model_length > 0.0 && ImGui::Button(STR_C("Lay it along the selected path")))
-	{
-		tool.length_mode = 2;
-		settings.from = 0.0;
-		settings.to = -1.0;
+	if (false == tool.curve.empty() && tool.model_length > 0.0 && ImGui::Button(STR_C("Lay it along the selected path")))
 		sweep_create();
-	}
-	if (tool.edited != nullptr && false == tool.curve.empty() && ImGui::Button(STR_C("Lay it again along the selected line")))
-	{
-		auto state{sweep_definition()};
-		EditorSnapshot snap;
-		snap.action = EditorSnapshot::Action::Other;
-		snap.node_name = tool.edited->name();
-		snap.sweeps.emplace_back(tool.edited, tool.edited->definition());
-		trim_history();
-		m_history.push_back(std::move(snap));
-		g_redo.clear();
-		tool.edited->define(state);
-		tool.edited->mark_dirty();
-		if (track != nullptr)
-			sweeps_captured(*track);
-	}
 
 	changed = false;
 	if (ImGui::CollapsingHeader(STR_C("More settings")))
@@ -881,6 +914,16 @@ void editor_mode::render_sweep_ui()
 			ImGui::SetTooltip("%s", STR_C("The offset grows by the widening of the gauge below the platforms: 3.75/R in the curves of R >= 250 m,\n"
 			                              "more in the sharper ones, and on the inner side of a canted curve by the cant times the height of the edge / 1.5;\n"
 			                              "it begins 20 m (inner side) and 26 m (outer side) ahead of the curve, as in the gauge check"));
+		if (ImGui::Checkbox(STR_C("Platform"), &settings.platform))
+		{
+			if (settings.platform)
+				platform_edge(settings, tool.model, 0.0);
+			changed = true;
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Puts the edge facing the track 1.725 m from its axis, set back by the widening of the gauge in the curves.\n"
+			                              "Stands on the plane of the rail heads carried on to its edge: lower on the inner side of a canted curve,\n"
+			                              "higher on the outer one; on the inner side also set back by the cant times the height of the edge / 1.5"));
 		ImGui::TextDisabled("%s", STR_C("Length"));
 		ImGui::SameLine();
 		edited(ImGui::RadioButton(STR_C("as the original"), &tool.length_mode, 0));
@@ -909,8 +952,6 @@ void editor_mode::render_sweep_ui()
 			else
 				ImGui::TextDisabled(STR_C("%.1f m: %d copies every %.2f m"), stretch, copies, own);
 		}
-		if (tool.edited != nullptr && changed)
-			sweep_apply();
 	}
 	if (false == tool.status.empty())
 		ImGui::TextWrapped("%s", tool.status.c_str());
@@ -952,4 +993,1046 @@ void editor_mode::draw_sweep_overlay() const
 	ImVec2 screen;
 	if (started && projection.project(previous, screen))
 		drawlist->AddCircle(screen, 6.0f, IM_COL32(255, 160, 40, 230), 12, 2.0f);
+}
+
+namespace
+{
+
+double const kBendReach{60.0};
+double const kBendMargin{1.0};
+
+glm::dmat3 axes_matrix(sweep_node const &Sweep)
+{
+	return glm::dmat3(Sweep.axes({1.0, 0.0, 0.0}), Sweep.axes({0.0, 1.0, 0.0}), Sweep.axes({0.0, 0.0, 1.0}));
+}
+
+double along_anchor(sweep_node const &Sweep, int const Anchor, glm::dvec3 const &Low, glm::dvec3 const &High, glm::dvec3 const &Point)
+{
+	auto const &state{Sweep.definition()};
+	switch (Anchor)
+	{
+	case 0: return Low.x;
+	case 2: return 0.5 * (Low.x + High.x);
+	case 3: return High.x;
+	case 4: return Sweep.axes(state.scale * Point).x;
+	default: return 0.0;
+	}
+}
+
+int copies_of(sweep_node const &Sweep, double const Own)
+{
+	auto const &state{Sweep.definition()};
+	auto const stretch{Sweep.distance_at(Sweep.end()) - Sweep.distance_at(Sweep.start())};
+	auto const length{state.step > 0.01 ? state.step : Own};
+	if (length < 1e-3)
+		return 1;
+	return state.bend ? std::max(1, static_cast<int>(std::round(stretch / length))) : static_cast<int>(std::floor(stretch / length + 1e-6)) + 1;
+}
+
+} // namespace
+
+bool editor_mode::bend_source_of_selection(bend_source &Source) const
+{
+	Source = bend_source{};
+	if (auto *model = dynamic_cast<TAnimModel *>(m_node))
+	{
+		if (model->from_template() || false == scene::Layers.editable(model))
+			return false;
+		std::string text;
+		model->export_as_text(text);
+		std::istringstream words(text);
+		std::string token;
+		double number;
+		while (words >> token && token != "model")
+			;
+		words >> number >> number >> number >> number >> Source.file;
+		words >> std::ws;
+		if (words.peek() == '"')
+		{
+			words.get();
+			std::getline(words, Source.skin, '"');
+		}
+		else
+			words >> Source.skin;
+		if (Source.file.empty() || Source.file == "none")
+			return false;
+		auto const angles{glm::dvec3(model->Angles())};
+		Source.transform = glm::translate(glm::dmat4(1.0), model->location());
+		Source.transform = glm::rotate(Source.transform, glm::radians(angles.y), glm::dvec3{0.0, 1.0, 0.0});
+		Source.transform = glm::rotate(Source.transform, glm::radians(angles.x), glm::dvec3{1.0, 0.0, 0.0});
+		Source.transform = glm::rotate(Source.transform, glm::radians(angles.z), glm::dvec3{0.0, 0.0, 1.0});
+		Source.scale = glm::dvec3(model->Scale());
+		Source.layer = model->layer();
+		Source.model = model;
+		return true;
+	}
+	if (m_instance == 0 || false == m_include.placement || false == m_include.issue.empty() || false == scene::Layers.removable(m_instance))
+		return false;
+	auto info{m_include.info};
+	editor_includes::suggest(m_include.target, info);
+	glm::dvec3 position{0.0}, rotation{0.0};
+	Source.parameters = m_include.values;
+	for (std::size_t i = 0; i < Source.parameters.size(); ++i)
+	{
+		auto const &role{info.parameter(static_cast<int>(i) + 1).role};
+		if (role.rfind("pos.", 0) != 0 && role.rfind("rot.", 0) != 0)
+			continue;
+		auto const value{std::atof(Source.parameters[i].c_str())};
+		auto const axis{role.back() == 'x' ? 0 : role.back() == 'y' ? 1 : 2};
+		(role[0] == 'p' ? position : rotation)[axis] = value;
+		Source.parameters[i] = "0";
+	}
+	auto const &included{scene::Layers.instance(m_instance)};
+	Source.file = m_include.target;
+	Source.transform = glm::translate(glm::dmat4(1.0), included.context.offset + position);
+	Source.transform = glm::rotate(Source.transform, glm::radians(rotation.y), glm::dvec3{0.0, 1.0, 0.0});
+	Source.transform = glm::rotate(Source.transform, glm::radians(rotation.x), glm::dvec3{1.0, 0.0, 0.0});
+	Source.transform = glm::rotate(Source.transform, glm::radians(rotation.z), glm::dvec3{0.0, 0.0, 1.0});
+	Source.layer = included.layer;
+	Source.instance = m_instance;
+	return true;
+}
+
+void editor_mode::bend_find_tracks(glm::dvec3 const &Point, void const *Key)
+{
+	auto &tool{m_bend};
+	if (Key == tool.tracks_for && glm::distance(Point, tool.tracks_at) < 1.0)
+		return;
+	tool.tracks_for = Key;
+	tool.tracks_at = Point;
+	tool.tracks.clear();
+	tool.track = 0;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || track->eType == tt_Table || track->m_paths.empty())
+			continue;
+		auto best{std::numeric_limits<double>::max()};
+		for (auto const &path : track->m_paths)
+		{
+			if (plan_distance(path.points[segment_data::point::start], Point) > 2000.0 + kBendReach)
+				continue;
+			bezier const curve{path};
+			auto const count{std::clamp(static_cast<int>(curve.plan_length() / 2.0), 8, 400)};
+			for (int k = 0; k <= count; ++k)
+				best = std::min(best, plan_distance(curve.point(static_cast<double>(k) / count), Point));
+		}
+		if (best <= kBendReach)
+			tool.tracks.emplace_back(track, best);
+	}
+	std::sort(tool.tracks.begin(), tool.tracks.end(), [](auto const &A, auto const &B) { return A.second < B.second; });
+	if (tool.tracks.size() > 12)
+		tool.tracks.resize(12);
+}
+
+bool editor_mode::bend_definition(bend_source const &Source, TTrack &Track, sweep_node::state &State, std::vector<TTrack *> &Tracks)
+{
+	auto &tool{m_bend};
+	State = sweep_node::state{};
+	State.model = Source.file;
+	State.skin = Source.skin.empty() ? "none" : Source.skin;
+	State.parameters = Source.parameters;
+	State.scale = Source.scale;
+	State.face = false;
+	State.platform = State.widen = platform_model(Source.file);
+	State.side_anchor = tool.side_anchor;
+	State.height_anchor = tool.height_anchor;
+	State.point = tool.point;
+	auto const origin{glm::dvec3(Source.transform[3])};
+	int path{0};
+	{
+		auto best{std::numeric_limits<double>::max()};
+		for (int i = 0; i < static_cast<int>(Track.m_paths.size()); ++i)
+		{
+			bezier const curve{Track.m_paths[i]};
+			for (int k = 0; k <= 64; ++k)
+				if (auto const distance{plan_distance(curve.point(k / 64.0), origin)}; distance < best)
+				{
+					best = distance;
+					path = i;
+				}
+		}
+	}
+	std::vector<sweep_tool::piece> records{{&Track, path, true}};
+	State.pieces = {Track.m_paths[path]};
+	scene::node_data data;
+	sweep_node probe{data};
+	auto const define = [&]() { probe.define(State); };
+	define();
+	double lateral;
+	auto const forward{flat(probe.frame_at(probe.project(origin, lateral)).forward)};
+	glm::dmat3 const rotation{Source.transform};
+	auto const ex{flat(rotation * glm::dvec3{1.0, 0.0, 0.0})};
+	auto const ez{flat(rotation * glm::dvec3{0.0, 0.0, 1.0})};
+	State.along_x = tool.axis == 2 || (tool.axis == 0 && std::abs(glm::dot(ex, forward)) > std::abs(glm::dot(ez, forward)));
+	auto const direction{State.along_x ? ex : ez};
+	State.flip = (glm::dot(direction, forward) < 0.0) != tool.turned;
+	State.lateral = lateral != 0.0 ? lateral : 1e-3;
+	define();
+	glm::dvec3 low, high, shift;
+	if (false == probe.bounds(low, high, shift))
+	{
+		tool.status = STR("The model has no triangles to bend, or it can't be loaded");
+		return false;
+	}
+	if (State.platform && probe.edge_far())
+	{
+		State.flip = false == State.flip;
+		define();
+		probe.bounds(low, high, shift);
+	}
+	auto const inverse{glm::inverse(axes_matrix(probe))};
+	auto const world = [&](glm::dvec3 const &Local) { return glm::dvec3(Source.transform * glm::dvec4(inverse * Local, 1.0)); };
+	auto const ends{std::array<glm::dvec3, 2>{world({low.x, 0.0, 0.0}), world({high.x, 0.0, 0.0})}};
+	auto const beyond = [&](glm::dvec3 const &Point, bool const Atend) {
+		auto const at{probe.frame_at(Atend ? probe.length() : 0.0)};
+		auto const along{glm::dot(glm::dvec3{Point.x - at.position.x, 0.0, Point.z - at.position.z}, flat(at.forward))};
+		return Atend ? along > -kBendMargin : along < kBendMargin;
+	};
+	auto const extend = [&](bool const Atend, glm::dvec3 const &Target) {
+		auto const &edge{Atend ? records.back() : records.front()};
+		auto const &edgepiece{Atend ? State.pieces.back() : State.pieces.front()};
+		auto const point{Atend ? edgepiece.points[segment_data::point::end] : edgepiece.points[segment_data::point::start]};
+		std::optional<sweep_tool::piece> best;
+		segment_data bestpiece;
+		auto bestdistance{std::numeric_limits<double>::max()};
+		for (auto const &[other, end] : editor_track::connected_points(*edge.track, point))
+		{
+			if (other == nullptr || other->m_editorremoved || other->eType == tt_Table || false == editor_track::is_supported(*other) || end.path >= static_cast<int>(other->m_paths.size()))
+				continue;
+			if (std::any_of(records.begin(), records.end(), [&](sweep_tool::piece const &Piece) { return Piece.track == other && Piece.path == end.path; }))
+				continue;
+			auto const startshere{end.kind == editor_track::point_kind::start};
+			auto const forward{Atend ? startshere : false == startshere};
+			auto const piece{forward ? other->m_paths[end.path] : reversed(other->m_paths[end.path])};
+			bezier const curve{piece};
+			auto distance{std::numeric_limits<double>::max()};
+			for (int k = 0; k <= 32; ++k)
+				distance = std::min(distance, plan_distance(curve.point(k / 32.0), Target));
+			if (distance < bestdistance)
+			{
+				bestdistance = distance;
+				best = sweep_tool::piece{other, end.path, forward};
+				bestpiece = piece;
+			}
+		}
+		if (false == best.has_value())
+			return false;
+		if (Atend)
+		{
+			records.push_back(*best);
+			State.pieces.push_back(bestpiece);
+		}
+		else
+		{
+			records.insert(records.begin(), *best);
+			State.pieces.insert(State.pieces.begin(), bestpiece);
+		}
+		define();
+		return true;
+	};
+	for (int i = 0; i < 40 && probe.length() < kSweepRouteReach; ++i)
+	{
+		auto grown{false};
+		for (auto const &point : ends)
+		{
+			if (beyond(point, false) && extend(false, point))
+				grown = true;
+			else if (beyond(point, true) && extend(true, point))
+				grown = true;
+		}
+		if (false == grown)
+			break;
+	}
+	glm::dvec3 anchor{0.0};
+	double station{0.0};
+	auto const place = [&]() {
+		for (int pass = 0; pass < 3; ++pass)
+		{
+			define();
+			probe.bounds(low, high, shift);
+			auto const a{along_anchor(probe, tool.along_anchor, low, high, State.point)};
+			anchor = world({a, -shift.y, -shift.z});
+			double side;
+			station = probe.project(anchor, side);
+			for (int k = 0; k < 2; ++k)
+			{
+				auto const at{probe.frame_at(station)};
+				station += glm::dot(glm::dvec3{anchor.x - at.position.x, 0.0, anchor.z - at.position.z}, flat(at.forward));
+			}
+			auto const at{probe.frame_at(station)};
+			side = glm::dot(glm::dvec3{anchor.x - at.position.x, 0.0, anchor.z - at.position.z}, flat(at.left));
+			auto const flipped{(side >= 0.0) != (State.lateral >= 0.0)};
+			State.lateral = side != 0.0 ? side : 1e-3;
+			State.height = anchor.y - at.position.y - probe.rise(at);
+			if (false == flipped)
+				break;
+		}
+		define();
+		probe.bounds(low, high, shift);
+		auto const a{along_anchor(probe, tool.along_anchor, low, high, State.point)};
+		auto const first{probe.distance_at(station) - (a - low.x)};
+		State.from = probe.station_at(first);
+		State.to = probe.station_at(first + high.x - low.x);
+	};
+	place();
+	// the straight model leaves the track where it curves on, short of the length it takes bent along it
+	for (int i = 0; i < 40 && probe.length() < kSweepRouteReach; ++i)
+	{
+		auto const ahead = [&](bool const Atend) {
+			auto const at{probe.frame_at(Atend ? probe.length() : 0.0)};
+			auto const reach{Atend ? State.to - probe.length() : State.from};
+			return at.position + flat(at.forward) * reach;
+		};
+		if ((State.to > probe.length() + 0.01 && extend(true, ahead(true))) || (State.from < -0.01 && extend(false, ahead(false))))
+			place();
+		else
+			break;
+	}
+	if (State.platform)
+	{
+		platform_edge(State, Source.file, kRailTop);
+		define();
+		anchor = bend_marker(probe);
+	}
+	if (State.to <= 0.0)
+	{
+		tool.status = STR("The model lies before the start of the track");
+		return false;
+	}
+	tool.marker = anchor;
+	tool.marker_valid = true;
+	Tracks.clear();
+	for (auto const &record : records)
+		Tracks.push_back(record.track);
+	auto const residual{glm::degrees(std::acos(std::clamp(std::abs(glm::dot(direction, forward)), 0.0, 1.0)))};
+	tool.status = residual > 1.0 ? format(STR_C("The model stands %.1f deg off the track, bent it'll follow the track"), residual) : std::string{};
+	return true;
+}
+
+void editor_mode::bend_selection()
+{
+	auto &tool{m_bend};
+	bend_source source;
+	if (false == bend_source_of_selection(source) || tool.tracks.empty())
+		return;
+	auto *track{tool.tracks[std::clamp(tool.track, 0, static_cast<int>(tool.tracks.size()) - 1)].first};
+	sweep_node::state state;
+	std::vector<TTrack *> tracks;
+	if (false == bend_definition(source, *track, state, tracks))
+		return;
+	static int counter{0};
+	scene::node_data data;
+	data.type = "sweep";
+	data.range_max = -1.0;
+	data.layer = scene::Layers.accepts(source.layer) ? source.layer : scene::Layers.active();
+	do
+	{
+		data.name = "sweep_" + std::to_string(++counter);
+	} while (simulation::Sweeps.find(data.name) != nullptr);
+	auto *sweep{new sweep_node(data)};
+	sweep->define(state);
+	sweep->mark_dirty();
+	simulation::Sweeps.insert(sweep);
+	scene::Layers.count(sweep->layer(), scene::layer_item::model);
+	sweep->show();
+	for (auto *path : tracks)
+		if (path != nullptr && false == path->m_editorremoved)
+			sweeps_captured(*path);
+	EditorSnapshot snap;
+	snap.action = EditorSnapshot::Action::Bend;
+	snap.sweeps_toggled.push_back(sweep);
+	snap.layer = source.layer;
+	if (source.model != nullptr)
+	{
+		auto *model{source.model};
+		model->export_as_text(snap.serialized);
+		snap.node_name = model->name();
+		snap.position = model->location();
+		snap.rotation = model->Angles();
+		snap.scale = model->Scale();
+		snap.uuid = model->uuid;
+		nullify_history_pointers(model);
+		remove_from_hierarchy(model);
+		m_node = nullptr;
+		m_dragging = false;
+		ui()->set_node(nullptr);
+		simulation::State.delete_model(model);
+	}
+	else
+	{
+		snap.instance = source.instance;
+		snap.node_name = source.file;
+		scene::Layers.removed(source.instance, true);
+		select_include(0);
+	}
+	trim_history();
+	m_history.push_back(std::move(snap));
+	g_redo.clear();
+	tool.edited = sweep;
+	tool.signature.clear();
+	tool.status = format(STR_C("%s bent along %.1f m of the track, Ctrl+Z takes it back"), source.file.c_str(), sweep->distance_at(sweep->end()) - sweep->distance_at(sweep->start()));
+	WriteLog("Editor: " + tool.status, logtype::generic);
+}
+
+void editor_mode::restore_bend(EditorSnapshot &Snapshot, bool const Undo)
+{
+	if (Snapshot.sweeps_toggled.empty())
+		return;
+	auto *sweep{Snapshot.sweeps_toggled.front()};
+	sweep->m_editorremoved = Undo;
+	if (Undo)
+		sweep->hide();
+	else
+		sweep->show();
+	sweep->mark_dirty();
+	if (Snapshot.instance != 0)
+	{
+		if (scene::Layers.tracked(Snapshot.instance) && false == scene::Layers.instance(Snapshot.instance).dead)
+			scene::Layers.removed(Snapshot.instance, false == Undo);
+		select_include(0);
+	}
+	else if (Undo)
+	{
+		auto *created{simulation::State.create_model(Snapshot.serialized, Snapshot.node_name, Snapshot.position)};
+		if (created != nullptr)
+		{
+			scene::Layers.move(created, Snapshot.layer);
+			created->location(Snapshot.position);
+			created->Angles(Snapshot.rotation);
+			created->Scale(Snapshot.scale);
+			created->uuid = Snapshot.uuid;
+			add_to_hierarchy(created);
+			Snapshot.node_ptr = created;
+			m_node = created;
+			ui()->set_node(m_node);
+		}
+	}
+	else if (auto *model{dynamic_cast<TAnimModel *>(find_node_by_any(Snapshot.node_ptr, Snapshot.uuid.to_string(), Snapshot.node_name))})
+	{
+		nullify_history_pointers(model);
+		remove_from_hierarchy(model);
+		simulation::State.delete_model(model);
+		Snapshot.node_ptr = nullptr;
+		m_node = nullptr;
+		ui()->set_node(nullptr);
+	}
+	m_bend.edited = Undo ? nullptr : sweep;
+	m_bend.signature.clear();
+}
+
+void editor_mode::bend_edit(sweep_node::state const &State)
+{
+	auto *sweep{m_bend.edited};
+	if (sweep == nullptr || sweep->m_editorremoved || State == sweep->definition())
+		return;
+	EditorSnapshot snap;
+	snap.action = EditorSnapshot::Action::Other;
+	snap.node_name = sweep->name();
+	snap.sweeps.emplace_back(sweep, sweep->definition());
+	trim_history();
+	m_history.push_back(std::move(snap));
+	g_redo.clear();
+	sweep->define(State);
+	sweep->mark_dirty();
+}
+
+double editor_mode::bend_fixed(sweep_node const &Sweep, glm::dvec3 const &Point) const
+{
+	auto const from{Sweep.distance_at(Sweep.start())};
+	auto const stretch{Sweep.distance_at(Sweep.end()) - from};
+	glm::dvec3 low, high, shift;
+	if (false == Sweep.bounds(low, high, shift))
+		return from;
+	switch (m_bend.along_anchor)
+	{
+	case 0: return from;
+	case 2: return from + 0.5 * stretch;
+	case 3: return from + stretch;
+	default: break;
+	}
+	auto const own{high.x - low.x};
+	auto const scale{Sweep.definition().bend && own > 1e-3 ? stretch / copies_of(Sweep, own) / own : 1.0};
+	return from + (along_anchor(Sweep, m_bend.along_anchor, low, high, Point) - low.x) * scale;
+}
+
+void editor_mode::bend_stretch(sweep_node const &Sweep, double const Fixed, double const Length, glm::dvec3 const &Point, sweep_node::state &State) const
+{
+	glm::dvec3 low, high, shift;
+	auto first{Fixed};
+	switch (m_bend.along_anchor)
+	{
+	case 0: break;
+	case 2: first = Fixed - 0.5 * Length; break;
+	case 3: first = Fixed - Length; break;
+	default:
+		if (Sweep.bounds(low, high, shift))
+		{
+			auto const own{high.x - low.x};
+			auto const step{State.step > 0.01 ? State.step : own};
+			auto const copies{State.bend && step > 1e-3 ? std::max(1, static_cast<int>(std::round(Length / step))) : 1};
+			auto const scale{State.bend && own > 1e-3 ? Length / copies / own : 1.0};
+			first = Fixed - (along_anchor(Sweep, m_bend.along_anchor, low, high, Point) - low.x) * scale;
+		}
+		break;
+	}
+	State.from = Sweep.station_at(first);
+	State.to = Sweep.station_at(first + Length);
+}
+
+void editor_mode::bend_reanchor(sweep_node::state &State, int const Side, int const Height, glm::dvec3 const &Point) const
+{
+	scene::node_data data;
+	sweep_node probe{data};
+	probe.define(State);
+	glm::dvec3 low, high, before;
+	if (false == probe.bounds(low, high, before))
+		return;
+	auto const stretch{probe.distance_at(probe.end()) - probe.distance_at(probe.start())};
+	auto const fixed{probe.station_at(bend_fixed(probe, Point))};
+	auto next{State};
+	next.side_anchor = Side;
+	next.height_anchor = Height;
+	next.point = Point;
+	probe.define(next);
+	glm::dvec3 after;
+	if (false == probe.bounds(low, high, after))
+		return;
+	next.lateral = State.lateral + before.y - after.y;
+	next.height = State.height + before.z - after.z;
+	probe.define(next);
+	auto const whole{State.to < 0.0 && State.from == 0.0};
+	bend_stretch(probe, probe.distance_at(fixed), stretch, Point, next);
+	if (whole)
+	{
+		next.from = 0.0;
+		next.to = -1.0;
+	}
+	State = next;
+}
+
+glm::dvec3 editor_mode::bend_marker(sweep_node const &Sweep) const
+{
+	glm::dvec3 low, high, shift;
+	if (false == Sweep.bounds(low, high, shift))
+		return glm::dvec3{0.0};
+	auto const &state{Sweep.definition()};
+	auto const from{Sweep.distance_at(Sweep.start())};
+	auto const stretch{Sweep.distance_at(Sweep.end()) - from};
+	auto const own{high.x - low.x};
+	auto const copies{copies_of(Sweep, own)};
+	auto const scale{state.bend && own > 1e-3 ? stretch / copies / own : 1.0};
+	auto const at{Sweep.frame_at(Sweep.station_at(bend_fixed(Sweep, state.point)))};
+	return at.position + at.left * (state.lateral + Sweep.setback(at)) + glm::dvec3{0.0, state.height + Sweep.rise(at), 0.0};
+}
+
+void editor_mode::bend_pick(glm::dvec3 const &Point)
+{
+	auto &tool{m_bend};
+	tool.picking = false;
+	if (auto *sweep{tool.edited}; sweep != nullptr && false == sweep->m_editorremoved)
+	{
+		glm::dvec3 low, high, shift;
+		if (false == sweep->bounds(low, high, shift))
+			return;
+		auto const &state{sweep->definition()};
+		double lateral;
+		auto const station{sweep->project(Point, lateral)};
+		auto const at{sweep->frame_at(station)};
+		auto const from{sweep->distance_at(sweep->start())};
+		auto const stretch{sweep->distance_at(sweep->end()) - from};
+		auto const own{high.x - low.x};
+		auto const copies{copies_of(*sweep, own)};
+		auto const copy{stretch / copies};
+		auto const scale{state.bend && own > 1e-3 ? copy / own : 1.0};
+		auto const along{std::fmod(std::max(0.0, sweep->distance_at(station) - from), copy)};
+		glm::dvec3 const local{low.x + along / scale, lateral - state.lateral - sweep->setback(at) - shift.y,
+		                       Point.y - at.position.y - state.height - sweep->rise(at) - shift.z};
+		auto const raw{glm::inverse(axes_matrix(*sweep)) * local / state.scale};
+		tool.point = raw;
+		tool.along_anchor = tool.side_anchor = tool.height_anchor = 4;
+		auto next{state};
+		bend_reanchor(next, 4, 4, raw);
+		bend_edit(next);
+	}
+	else
+	{
+		bend_source source;
+		if (false == bend_source_of_selection(source))
+			return;
+		auto const local{glm::dvec3(glm::inverse(source.transform) * glm::dvec4(Point, 1.0))};
+		tool.point = local / source.scale;
+		tool.along_anchor = tool.side_anchor = tool.height_anchor = 4;
+		tool.signature.clear();
+	}
+	tool.status = format(STR_C("Reference point %.2f %.2f %.2f in the model"), tool.point.x, tool.point.y, tool.point.z);
+}
+
+void editor_mode::render_bend()
+{
+	auto &tool{m_bend};
+	if (tool.edited != nullptr && tool.edited->m_editorremoved)
+		tool.edited = nullptr;
+	ImGui::PushID("bend");
+	char const *alongs[] = {STR_C("start"), STR_C("model origin"), STR_C("middle"), STR_C("end"), STR_C("picked point")};
+	char const *sides[] = {STR_C("model origin"), STR_C("side facing the track"), STR_C("far side"), STR_C("middle"), STR_C("picked point")};
+	char const *heights[] = {STR_C("model origin"), STR_C("bottom"), STR_C("top"), STR_C("top of the edge by the track"), STR_C("picked point")};
+	auto anchors = [&](bool &Changed) {
+		ImGui::SetNextItemWidth(170.0f);
+		Changed |= ImGui::Combo(STR_C("along the track"), &tool.along_anchor, alongs, IM_ARRAYSIZE(alongs));
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Reference point: the model bends about it, the line through it keeps its length, the offsets are its place"));
+		ImGui::SetNextItemWidth(170.0f);
+		Changed |= ImGui::Combo(STR_C("across"), &tool.side_anchor, sides, IM_ARRAYSIZE(sides));
+		ImGui::SetNextItemWidth(170.0f);
+		Changed |= ImGui::Combo(STR_C("up"), &tool.height_anchor, heights, IM_ARRAYSIZE(heights));
+		if (tool.along_anchor == 4 || tool.side_anchor == 4 || tool.height_anchor == 4)
+		{
+			ImGui::SetNextItemWidth(220.0f);
+			glm::vec3 point{tool.point};
+			if (ImGui::DragFloat3(STR_C("point (x, y, z of the model)"), &point.x, 0.01f, 0.0f, 0.0f, "%.3f"))
+			{
+				tool.point = glm::dvec3(point);
+				Changed = true;
+			}
+		}
+		if (ImGui::Button(tool.picking ? STR_C("Click the point on the model...") : STR_C("Pick the point on the model")))
+			tool.picking = false == tool.picking;
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("The next click in the view sets the reference point where it lands on the model"));
+	};
+
+	if (auto *sweep{tool.edited})
+	{
+		auto state{sweep->definition()};
+		glm::dvec3 low, high, shift;
+		auto const measured{sweep->bounds(low, high, shift)};
+		auto const own{measured ? high.x - low.x : 0.0};
+		auto const from{sweep->distance_at(sweep->start())};
+		auto const stretch{sweep->distance_at(sweep->end()) - from};
+		ImGui::Text("%s  %s", sweep->name().c_str(), state.model.c_str());
+		if (own > 0.0)
+			ImGui::TextDisabled(STR_C("%.2f m along the reference line, %d copies (the model is %.2f m)"), stretch, copies_of(*sweep, own), own);
+		bool changed{false};
+		tool.side_anchor = state.side_anchor;
+		tool.height_anchor = state.height_anchor;
+		tool.point = state.point;
+		auto const side{tool.side_anchor}, height{tool.height_anchor};
+		auto const point{tool.point};
+		bool anchored{false};
+		anchors(anchored);
+		if (anchored && (side != tool.side_anchor || height != tool.height_anchor || point != tool.point))
+		{
+			bend_reanchor(state, tool.side_anchor, tool.height_anchor, tool.point);
+			changed = true;
+		}
+		ImGui::PushItemWidth(110.0f);
+		changed |= ImGui::InputDouble(STR_C("from the track axis (m, + right)"), &state.lateral, 0.05, 0.5, "%.3f");
+		double overhead{state.height - kRailTop};
+		if (ImGui::InputDouble(STR_C("over the rail head (m)"), &overhead, 0.01, 0.1, "%.3f"))
+		{
+			state.height = overhead + kRailTop;
+			changed = true;
+		}
+		double length{stretch};
+		if (ImGui::InputDouble(STR_C("length (m)"), &length, 0.5, 5.0, "%.2f") && length > 0.1)
+		{
+			bend_stretch(*sweep, bend_fixed(*sweep, state.point), length, state.point, state);
+			changed = true;
+		}
+		ImGui::PopItemWidth();
+		if (own > 0.0 && ImGui::SmallButton(STR_C("As long as the model")))
+		{
+			bend_stretch(*sweep, bend_fixed(*sweep, state.point), own, state.point, state);
+			changed = true;
+		}
+		ImGui::SameLine();
+		if (ImGui::SmallButton(STR_C("Along the whole track")))
+		{
+			state.from = 0.0;
+			state.to = -1.0;
+			changed = true;
+		}
+		int mode{state.bend ? 0 : 1};
+		changed |= ImGui::RadioButton(STR_C("Bent"), &mode, 0);
+		ImGui::SameLine();
+		changed |= ImGui::RadioButton(STR_C("Repeated"), &mode, 1);
+		state.bend = mode == 0;
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(80.0f);
+		changed |= ImGui::InputDouble(STR_C("copy every (m, 0: its length)"), &state.step, 0.0, 0.0, "%.2f");
+		state.step = std::max(0.0, state.step);
+		changed |= ImGui::Checkbox(STR_C("Turned around"), &state.flip);
+		ImGui::SameLine();
+		changed |= ImGui::Checkbox(STR_C("Mirrored"), &state.mirror);
+		ImGui::SameLine();
+		changed |= ImGui::Checkbox(STR_C("Leans with the cant"), &state.tilt);
+		changed |= ImGui::Checkbox(STR_C("Set back by the widening of the structure gauge in the curves"), &state.widen);
+		if (ImGui::Checkbox(STR_C("Platform"), &state.platform))
+		{
+			if (state.platform)
+			{
+				bend_reanchor(state, 1, 3, state.point);
+				platform_edge(state, state.model, kRailTop);
+			}
+			changed = true;
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Puts the edge facing the track 1.725 m from its axis, set back by the widening of the gauge in the curves.\n"
+			                              "Stands on the plane of the rail heads carried on to its edge: lower on the inner side of a canted curve,\n"
+			                              "higher on the outer one; on the inner side also set back by the cant times the height of the edge / 1.5"));
+		if (changed)
+			bend_edit(state);
+		if (ImGui::Button(STR_C("Done")))
+			tool.edited = nullptr;
+		ImGui::SameLine();
+		if (ImGui::Button(STR_C("Delete")))
+		{
+			sweep_delete(*sweep);
+			tool.edited = nullptr;
+		}
+	}
+	else
+	{
+		bend_source source;
+		if (bend_source_of_selection(source))
+		{
+			void const *key{source.model != nullptr ? static_cast<void const *>(source.model) : reinterpret_cast<void const *>(static_cast<std::uintptr_t>(source.instance))};
+			bend_find_tracks(glm::dvec3(source.transform[3]), key);
+			ImGui::Text("%s", source.file.c_str());
+			if (tool.tracks.empty())
+				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), STR_C("No track within %.0f m of the model"), kBendReach);
+			else
+			{
+				tool.track = std::clamp(tool.track, 0, static_cast<int>(tool.tracks.size()) - 1);
+				auto const label = [](std::pair<TTrack *, double> const &Entry) { return format("%s  (%.1f m)", Entry.first->name().empty() ? "(unnamed)" : Entry.first->name().c_str(), Entry.second); };
+				ImGui::SetNextItemWidth(220.0f);
+				if (ImGui::BeginCombo(STR_C("track"), label(tool.tracks[tool.track]).c_str()))
+				{
+					for (int i = 0; i < static_cast<int>(tool.tracks.size()); ++i)
+						if (ImGui::Selectable(label(tool.tracks[i]).c_str(), i == tool.track))
+							tool.track = i;
+					ImGui::EndCombo();
+				}
+				char const *axes[] = {STR_C("the one nearest the track"), "z", "x"};
+				ImGui::SetNextItemWidth(170.0f);
+				ImGui::Combo(STR_C("axis of the model along the track"), &tool.axis, axes, IM_ARRAYSIZE(axes));
+				ImGui::Checkbox(STR_C("Turned around"), &tool.turned);
+				bool anchored{false};
+				anchors(anchored);
+				auto const signature{format("%p %d %d %d %d %d %d %.4f %.4f %.4f", key, tool.track, tool.axis, tool.turned ? 1 : 0, tool.along_anchor, tool.side_anchor, tool.height_anchor, tool.point.x, tool.point.y, tool.point.z)};
+				if (signature != tool.signature)
+				{
+					tool.signature = signature;
+					tool.marker_valid = false;
+					sweep_node::state state;
+					std::vector<TTrack *> tracks;
+					bend_definition(source, *tool.tracks[tool.track].first, state, tracks);
+				}
+				if (ImGui::Button(STR_C("Bend it along the track  (B)")))
+					bend_selection();
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s", STR_C("The model stays where it stands and bends with the track; Ctrl+Z gives it back"));
+			}
+		}
+		else
+		{
+			tool.marker_valid = false;
+			tool.picking = false;
+			ImGui::TextDisabled("%s", STR_C("Select a model by a track, or click a bent one"));
+		}
+		auto *track{selected_track()};
+		auto const nearby{track != nullptr ? sweeps_near(*track) : std::vector<sweep_node *>{}};
+		std::vector<std::pair<sweep_node *, double>> listed;
+		if (track != nullptr)
+			for (auto *sweep : nearby)
+				listed.emplace_back(sweep, 0.0);
+		else
+			for (auto *sweep : simulation::Sweeps.sequence())
+				if (sweep != nullptr && false == sweep->m_editorremoved)
+				{
+					auto const distance{glm::distance(sweep->location(), glm::dvec3{Global.pCamera.Pos})};
+					if (distance < 0.5 * (sweep->end() - sweep->start()) + 300.0)
+						listed.emplace_back(sweep, distance);
+				}
+		if (false == listed.empty())
+		{
+			ImGui::Separator();
+			ImGui::TextDisabled("%s", track != nullptr ? STR_C("Bent models by this track:") : STR_C("Bent models nearby:"));
+			for (auto const &entry : listed)
+			{
+				auto *sweep{entry.first};
+				ImGui::PushID(sweep);
+				if (ImGui::Selectable(format("%s  %s, %.0f m", sweep->name().c_str(), sweep->definition().model.c_str(), sweep->end() - sweep->start()).c_str(), false))
+				{
+					tool.edited = sweep;
+					tool.picking = false;
+				}
+				ImGui::PopID();
+			}
+		}
+		if (track != nullptr && ImGui::TreeNodeEx(STR_C("New model along the selected track")))
+		{
+			m_sweep.open = true;
+			render_sweep_ui();
+			ImGui::TreePop();
+		}
+		else
+			m_sweep.open = false;
+	}
+	if (false == tool.status.empty())
+		ImGui::TextWrapped("%s", tool.status.c_str());
+	ImGui::PopID();
+}
+
+void editor_mode::draw_bend_overlay() const
+{
+	auto const &tool{m_bend};
+	if (false == tool.label.empty())
+	{
+		auto const &io{ImGui::GetIO()};
+		auto *foreground{ImGui::GetForegroundDrawList()};
+		auto const labelsize{ImGui::CalcTextSize(tool.label.c_str())};
+		auto const detailsize{tool.details.empty() ? ImVec2(0.0f, 0.0f) : ImGui::CalcTextSize(tool.details.c_str())};
+		ImVec2 const size{std::max(labelsize.x, detailsize.x), labelsize.y + (tool.details.empty() ? 0.0f : detailsize.y + 4.0f)};
+		ImVec2 position{io.MousePos.x + 18.0f, io.MousePos.y + 18.0f};
+		position.x = std::min(position.x, io.DisplaySize.x - size.x - 10.0f);
+		position.y = std::min(position.y, io.DisplaySize.y - size.y - 10.0f);
+		foreground->AddRectFilled(ImVec2(position.x - 6.0f, position.y - 4.0f), ImVec2(position.x + size.x + 6.0f, position.y + size.y + 4.0f), IM_COL32(0, 0, 0, 170), 4.0f);
+		foreground->AddText(position, IM_COL32(40, 220, 255, 255), tool.label.c_str());
+		if (false == tool.details.empty())
+			foreground->AddText(ImVec2(position.x, position.y + labelsize.y + 4.0f), IM_COL32(255, 255, 255, 235), tool.details.c_str());
+	}
+	if (auto const *model{dynamic_cast<TAnimModel const *>(m_node)}; model != nullptr && tool.edited == nullptr && false == tool.tracks.empty() && tool.tracks_for == static_cast<void const *>(model))
+	{
+		screen_projection const projection;
+		ImVec2 at;
+		if (projection.project(model->location(), at))
+		{
+			auto const text{format(STR_C("B: bend along %s"), tool.tracks.front().first->name().c_str())};
+			auto *foreground{ImGui::GetForegroundDrawList()};
+			auto const size{ImGui::CalcTextSize(text.c_str())};
+			foreground->AddRectFilled(ImVec2(at.x + 10.0f, at.y - size.y - 14.0f), ImVec2(at.x + size.x + 22.0f, at.y - 6.0f), IM_COL32(0, 0, 0, 150), 4.0f);
+			foreground->AddText(ImVec2(at.x + 16.0f, at.y - size.y - 10.0f), IM_COL32(40, 220, 255, 255), text.c_str());
+		}
+	}
+	glm::dvec3 marker;
+	if (tool.edited != nullptr && false == tool.edited->m_editorremoved)
+		marker = bend_marker(*tool.edited);
+	else if (tool.marker_valid)
+		marker = tool.marker;
+	else
+		return;
+	screen_projection const projection;
+	ImVec2 screen;
+	if (false == projection.project(marker, screen))
+		return;
+	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	if (tool.over_marker || tool.dragging != 0)
+		drawlist->AddCircleFilled(screen, 9.0f, IM_COL32(40, 220, 255, 120), 16);
+	drawlist->AddCircle(screen, 9.0f, IM_COL32(40, 220, 255, 255), 16, 2.5f);
+	drawlist->AddLine(ImVec2(screen.x - 14.0f, screen.y), ImVec2(screen.x + 14.0f, screen.y), IM_COL32(40, 220, 255, 255), 2.0f);
+	drawlist->AddLine(ImVec2(screen.x, screen.y - 14.0f), ImVec2(screen.x, screen.y + 14.0f), IM_COL32(40, 220, 255, 255), 2.0f);
+}
+
+bool editor_mode::bend_drag_start(int const Mods)
+{
+	auto &tool{m_bend};
+	auto *sweep{tool.edited};
+	if (sweep == nullptr || sweep->m_editorremoved || ImGui::GetIO().WantCaptureMouse)
+		return false;
+	auto const marker{bend_marker(*sweep)};
+	screen_projection const projection;
+	ImVec2 screen;
+	if (false == projection.project(marker, screen))
+		return false;
+	auto const &mouse{ImGui::GetIO().MousePos};
+	if ((mouse.x - screen.x) * (mouse.x - screen.x) + (mouse.y - screen.y) * (mouse.y - screen.y) > 14.0f * 14.0f)
+		return false;
+	tool.dragging = (Mods & GLFW_MOD_SHIFT) != 0 ? 2 : (Mods & GLFW_MOD_CONTROL) != 0 ? 3 : 1;
+	tool.drag_state = sweep->definition();
+	tool.drag_anchor = marker;
+	double lateral;
+	tool.drag_station = sweep->project(marker, lateral);
+	tool.drag_label.clear();
+	return true;
+}
+
+void editor_mode::bend_drag_update()
+{
+	auto &tool{m_bend};
+	tool.label.clear();
+	tool.details.clear();
+	tool.hover = nullptr;
+	tool.over_marker = false;
+	auto const &io{ImGui::GetIO()};
+	if (auto *model{dynamic_cast<TAnimModel *>(m_node)}; model != nullptr && tool.edited == nullptr && false == model->from_template() && scene::Layers.editable(model))
+		bend_find_tracks(model->location(), model);
+	if (tool.dragging == 0 && false == io.WantCaptureMouse)
+	{
+		if (tool.picking)
+			tool.label = STR("Click: the reference point, where it lands on the model");
+		else
+		{
+			if (auto *sweep{tool.edited}; sweep != nullptr && false == sweep->m_editorremoved)
+			{
+				screen_projection const projection;
+				ImVec2 screen;
+				if (projection.project(bend_marker(*sweep), screen))
+					tool.over_marker = (io.MousePos.x - screen.x) * (io.MousePos.x - screen.x) + (io.MousePos.y - screen.y) * (io.MousePos.y - screen.y) < 14.0f * 14.0f;
+			}
+			if (tool.over_marker)
+			{
+				tool.label = STR("Drag: offset from the track");
+				tool.details = STR("Shift: height   Ctrl: along the track");
+			}
+			else if (ui()->mode() == nodebank_panel::MODIFY && m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) != GLFW_PRESS)
+			{
+				tool.hover = sweep_under(Global.pCamera.Pos + GfxRenderer->Mouse_Position());
+				if (tool.hover != nullptr && tool.hover != tool.edited)
+				{
+					tool.label = STR("Click: edit the bent model");
+					tool.details = format("%s  %s, %.1f m", tool.hover->name().c_str(), tool.hover->definition().model.c_str(), tool.hover->distance_at(tool.hover->end()) - tool.hover->distance_at(tool.hover->start()));
+				}
+			}
+		}
+	}
+	if (tool.dragging == 0)
+		return;
+	if (false == tool.drag_label.empty())
+		tool.label = tool.drag_label;
+	auto *sweep{tool.edited};
+	if (sweep == nullptr || sweep->m_editorremoved)
+	{
+		tool.dragging = 0;
+		return;
+	}
+	if (false == ImGui::GetIO().MouseDown[0])
+	{
+		tool.dragging = 0;
+		tool.drag_label.clear();
+		if (sweep->definition() == tool.drag_state)
+			return;
+		EditorSnapshot snap;
+		snap.action = EditorSnapshot::Action::Other;
+		snap.node_name = sweep->name();
+		snap.sweeps.emplace_back(sweep, tool.drag_state);
+		trim_history();
+		m_history.push_back(std::move(snap));
+		g_redo.clear();
+		sweep->mark_dirty();
+		return;
+	}
+	screen_projection const projection;
+	auto const &mouse{ImGui::GetIO().MousePos};
+	auto const step{0.01};
+	auto const snap = [&](double const Value) { return std::round(Value / step) * step; };
+	auto state{tool.drag_state};
+	if (tool.dragging == 2)
+	{
+		glm::dvec3 origin, direction;
+		projection.ray(mouse, origin, direction);
+		glm::dvec3 normal{Global.pCamera.Pos.x - tool.drag_anchor.x, 0.0, Global.pCamera.Pos.z - tool.drag_anchor.z};
+		if (glm::length(normal) < 1e-6)
+			return;
+		normal = glm::normalize(normal);
+		auto const facing{glm::dot(direction, normal)};
+		if (std::abs(facing) < 1e-6)
+			return;
+		auto const hit{origin + direction * (glm::dot(tool.drag_anchor - origin, normal) / facing)};
+		state.height = kRailTop + snap(tool.drag_state.height - kRailTop + hit.y - tool.drag_anchor.y);
+		tool.drag_label = format(STR_C("%.2f m over the rail head"), state.height - kRailTop);
+	}
+	else
+	{
+		glm::dvec3 point;
+		if (false == projection.on_level(mouse, tool.drag_anchor.y, point))
+			return;
+		double lateral;
+		auto const station{sweep->project(point, lateral)};
+		if (tool.dragging == 1)
+		{
+			auto const at{sweep->frame_at(station)};
+			state.lateral = snap(lateral - sweep->setback(at));
+			if (std::abs(state.lateral) < step)
+				state.lateral = std::copysign(step, tool.drag_state.lateral);
+			tool.drag_label = format(STR_C("%.2f m from the track axis"), std::abs(state.lateral));
+		}
+		else
+		{
+			auto const shift{snap(station - tool.drag_station)};
+			state.from = tool.drag_state.from + shift;
+			if (tool.drag_state.to >= 0.0)
+				state.to = tool.drag_state.to + shift;
+			tool.drag_label = format(STR_C("%+.2f m along the track"), shift);
+		}
+	}
+	if (false == (state == sweep->definition()))
+		sweep->define(state);
+}
+
+sweep_node *editor_mode::sweep_under(glm::dvec3 const &Point) const
+{
+	sweep_node *best{nullptr};
+	auto bestdistance{std::numeric_limits<double>::max()};
+	for (auto *sweep : simulation::Sweeps.sequence())
+	{
+		if (sweep == nullptr || sweep->m_editorremoved)
+			continue;
+		auto const &state{sweep->definition()};
+		if (plan_distance(Point, sweep->location()) > 0.5 * sweep->length() + std::abs(state.lateral) + 30.0)
+			continue;
+		double lateral;
+		auto const station{sweep->project(Point, lateral)};
+		if (station < sweep->start() - 0.5 || station > sweep->end() + 0.5)
+			continue;
+		glm::dvec3 low, high, shift;
+		if (false == sweep->bounds(low, high, shift))
+			continue;
+		auto const at{sweep->frame_at(station)};
+		auto const across{lateral - state.lateral - sweep->setback(at) - shift.y};
+		auto const up{Point.y - at.position.y - state.height - sweep->rise(at) - shift.z};
+		if (across < low.y - 0.3 || across > high.y + 0.3 || up < low.z - 0.3 || up > high.z + 0.3)
+			continue;
+		auto const distance{std::abs(across - 0.5 * (low.y + high.y))};
+		if (distance < bestdistance)
+		{
+			bestdistance = distance;
+			best = sweep;
+		}
+	}
+	return best;
+}
+
+bool editor_mode::bend_click()
+{
+	auto &tool{m_bend};
+	if (tool.hover == nullptr || tool.hover == tool.edited || tool.over_marker)
+		return false;
+	tool.edited = tool.hover;
+	tool.picking = false;
+	tool.signature.clear();
+	m_node = nullptr;
+	m_dragging = false;
+	select_include(0);
+	ui()->set_node(nullptr);
+	ui()->expand_bend();
+	return true;
+}
+
+bool editor_mode::bend_shortcut()
+{
+	auto &tool{m_bend};
+	bend_source source;
+	if (false == bend_source_of_selection(source))
+		return false;
+	void const *key{source.model != nullptr ? static_cast<void const *>(source.model) : reinterpret_cast<void const *>(static_cast<std::uintptr_t>(source.instance))};
+	bend_find_tracks(glm::dvec3(source.transform[3]), key);
+	if (tool.tracks.empty())
+	{
+		ui()->set_status(format(STR_C("No track within %.0f m of the model"), kBendReach), true);
+		return true;
+	}
+	bend_selection();
+	ui()->expand_bend();
+	return true;
 }

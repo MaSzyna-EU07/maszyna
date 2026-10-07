@@ -71,9 +71,18 @@ class editor_ui : public ui_layer
 	{
 		m_arrayoptions = std::move(Renderer);
 	}
+	void set_bend_options(std::function<void()> Renderer)
+	{
+		m_bendoptions = std::move(Renderer);
+	}
+	void expand_bend()
+	{
+		m_bendexpand = true;
+	}
 	// actions of the file menu, performed by the editor mode
 	void set_file_actions(std::function<void()> Save, std::function<void()> Export);
 	void set_new_scenery(std::function<void()> New) { m_newscenery = std::move(New); }
+	void set_open_scenery(std::function<void()> Open) { m_openscenery = std::move(Open); }
 	// shows outcome of an operation in the layers window
 	void set_status(std::string const &Status, bool const Error = false);
 
@@ -91,6 +100,7 @@ class editor_ui : public ui_layer
 	std::function<void()> m_save;
 	std::function<void()> m_export;
 	std::function<void()> m_newscenery;
+	std::function<void()> m_openscenery;
 	brush_object_list m_brushobjects;
 	bool m_insertrandom{false}; // insert mode picks a random template from m_insertset
 	model_set_ref m_insertset;
@@ -98,6 +108,8 @@ class editor_ui : public ui_layer
 	std::function<void()> m_menuoptions;
 	std::function<void()> m_gizmooptions;
 	std::function<void()> m_arrayoptions;
+	std::function<void()> m_bendoptions;
+	bool m_bendexpand{false};
 	scene::basic_node *m_node{nullptr}; // currently bound scene node, if any
 	bool m_track{false};
 };

@@ -183,10 +183,15 @@ void editor_mode::render_vehicle_ui()
 {
 	auto &tool{m_vehicle};
 	auto *selected{selected_track()};
-	if (selected != nullptr && selected != tool.track)
-		vehicle_start(*selected, bezier{selected->m_paths.front()}.point(0.5));
+	if (selected != nullptr && selected == tool.track && m_hover.track == selected && ImGui::IsMouseClicked(0) && false == ImGui::GetIO().WantCaptureMouse)
+		vehicle_start(*selected, m_hover.point);
+	else if (selected != nullptr && selected != tool.track)
+		vehicle_start(*selected, m_hover.track == selected ? m_hover.point : bezier{selected->m_paths.front()}.point(0.5));
 	if (tool.track == nullptr)
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", STR_C("LMB on a track: where the vehicle stands"));
 		return;
+	}
 	if (tool.bank == nullptr)
 	{
 		tool.bank = std::make_shared<ui::vehicles_bank>();

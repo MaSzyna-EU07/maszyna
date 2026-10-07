@@ -1320,6 +1320,12 @@ msgstr "Kliknij co najmniej dwa punkty"
 msgid "Laid %zu paths, %.1f m"
 msgstr "Ułożono %zu odcinków, %.1f m"
 
+msgid "The curvature changes abruptly where the track joins, there's no room for a transition curve"
+msgstr "Na styku z torem krzywizna zmienia się skokowo, nie ma miejsca na krzywą przejściową"
+
+msgid "Compound curve: R %.0f m meets R %.0f m with no transition curve between them"
+msgstr "Łuk koszowy: R %.0f m styka się z R %.0f m bez krzywej przejściowej między nimi"
+
 msgid "More settings"
 msgstr "Więcej ustawień"
 
@@ -2662,8 +2668,8 @@ msgstr "Parzyste hektometry po prawej, nieparzyste po lewej"
 msgid "Objects"
 msgstr "Obiekty"
 
-msgid "Along the track: platforms and other models, hectometre posts, fouling point markers, a parallel track, a vehicle to drive"
-msgstr "Przy torze: perony i inne modele, słupki hektometrowe, wskaźniki ukresu, tor równoległy, pojazd do jazdy"
+msgid "Along the track: hectometre posts, fouling point markers, a parallel track, a vehicle to drive"
+msgstr "Przy torze: słupki hektometrowe, wskaźniki ukresu, tor równoległy, pojazd do jazdy"
 
 msgid "Model along the track: release where it ends"
 msgstr "Model wzdłuż toru: puść tam, gdzie się kończy"
@@ -3458,3 +3464,930 @@ msgstr "Otwórz kreator"
 
 msgid "The editor couldn't be started again"
 msgstr "Nie udało się ponownie uruchomić edytora"
+
+# scenery editor: models bent along the track, opening another scenery
+
+msgid "Bend along the track"
+msgstr "Gięcie wzdłuż toru"
+
+msgid "Bend it along the track"
+msgstr "Wygnij wzdłuż toru"
+
+msgid "Select a model or an include standing by a track"
+msgstr "Zaznacz model albo include stojący przy torze"
+
+msgid "No track within %.0f m of the model"
+msgstr "Brak toru w promieniu %.0f m od modelu"
+
+msgid "axis of the model along the track"
+msgstr "oś modelu wzdłuż toru"
+
+msgid "the one nearest the track"
+msgstr "najbliższa kierunkowi toru"
+
+msgid "Reference point: the model bends about it, the line through it keeps its length, the offsets are its place"
+msgstr "Punkt odniesienia: wokół niego model się wygina, linia przez niego zachowuje długość, odsunięcia podają jego położenie"
+
+msgid "along the track"
+msgstr "wzdłuż toru"
+
+msgid "across"
+msgstr "w poprzek"
+
+msgid "start"
+msgstr "początek"
+
+msgid "end"
+msgstr "koniec"
+
+msgid "picked point"
+msgstr "wskazany punkt"
+
+msgid "point (x, y, z of the model)"
+msgstr "punkt (x, y, z modelu)"
+
+msgid "Pick the point on the model"
+msgstr "Wskaż punkt na modelu"
+
+msgid "Click the point on the model..."
+msgstr "Kliknij punkt na modelu..."
+
+msgid "The next click in the view sets the reference point where it lands on the model"
+msgstr "Następne kliknięcie w widoku ustawia punkt odniesienia tam, gdzie trafi w model"
+
+msgid "Reference point %.2f %.2f %.2f in the model"
+msgstr "Punkt odniesienia %.2f %.2f %.2f w modelu"
+
+msgid "The model stays where it stands and bends with the track; Ctrl+Z gives it back"
+msgstr "Model zostaje tam, gdzie stoi, i wygina się z torem; Ctrl+Z go przywraca"
+
+msgid "The model stands %.1f deg off the track, bent it'll follow the track"
+msgstr "Model stoi %.1f° w stosunku do toru, po wygięciu pójdzie wzdłuż toru"
+
+msgid "The model has no triangles to bend, or it can't be loaded"
+msgstr "Model nie ma trójkątów do wygięcia albo nie da się go wczytać"
+
+msgid "The model lies before the start of the track"
+msgstr "Model leży przed początkiem toru"
+
+msgid "%s bent along %.1f m of the track, Ctrl+Z takes it back"
+msgstr "%s wygięty na %.1f m toru, Ctrl+Z cofa"
+
+msgid "%.2f m along the reference line, %d copies (the model is %.2f m)"
+msgstr "%.2f m wzdłuż linii odniesienia, kopii: %d (model ma %.2f m)"
+
+msgid "from the track axis (m, + right)"
+msgstr "od osi toru (m, + w prawo)"
+
+msgid "over the rail head (m)"
+msgstr "nad główką szyny (m)"
+
+msgid "length (m)"
+msgstr "długość (m)"
+
+msgid "As long as the model"
+msgstr "Długość modelu"
+
+msgid "Along the whole track"
+msgstr "Na całym torze"
+
+msgid "Bent"
+msgstr "Wygięty"
+
+msgid "copy every (m, 0: its length)"
+msgstr "kopia co (m, 0: jej długość)"
+
+msgid "Done"
+msgstr "Gotowe"
+
+msgid "Bent models by this track:"
+msgstr "Wygięte modele przy tym torze:"
+
+msgid "Bent models nearby:"
+msgstr "Wygięte modele w pobliżu:"
+
+msgid "New model along the selected track"
+msgstr "Nowy model wzdłuż zaznaczonego toru"
+
+msgid "Open scenery..."
+msgstr "Otwórz scenerię..."
+
+msgid "The editor starts again with another scenery of the scenery folder"
+msgstr "Edytor uruchamia się ponownie z inną scenerią z folderu scenery"
+
+msgid "Open scenery##restart"
+msgstr "Otwórz scenerię##restart"
+
+msgid "The editor starts again with the scenery chosen below."
+msgstr "Edytor uruchomi się ponownie ze scenerią wybraną poniżej."
+
+msgid "search"
+msgstr "szukaj"
+
+msgid "Save and open"
+msgstr "Zapisz i otwórz"
+
+msgid "In the view: drag the blue cross sideways to set the offset, with Shift up and down, with Ctrl along the track"
+msgstr "W widoku: przeciągnij niebieski celownik w bok, żeby ustawić odsunięcie, z Shift w górę i w dół, z Ctrl wzdłuż toru"
+
+msgid "Drag: offset from the track; Shift: height; Ctrl: along the track"
+msgstr "Przeciągnij: odsunięcie od toru; Shift: wysokość; Ctrl: wzdłuż toru"
+
+msgid "%.2f m over the rail head"
+msgstr "%.2f m nad główką szyny"
+
+msgid "%.2f m from the track axis"
+msgstr "%.2f m od osi toru"
+
+msgid "%+.2f m along the track"
+msgstr "%+.2f m wzdłuż toru"
+
+# scenery editor: general mode, toolset, layers, settings
+
+msgid "LMB: select node   F: focus   End: drop to ground   Del: delete"
+msgstr "LPM: zaznacz węzeł   F: pokaż   End: opuść na ziemię   Del: usuń"
+
+msgid "LMB: copy the clicked model to the node bank"
+msgstr "LPM: skopiuj kliknięty model do banku węzłów"
+
+msgid "LMB: insert a model at the cursor"
+msgstr "LPM: wstaw model w miejscu kursora"
+
+msgid "Random model from set"
+msgstr "Losowy model z zestawu"
+
+msgid "%zu templates in set%s"
+msgstr "%zu szablonów w zestawie%s"
+
+msgid "Inserts the template selected in the node bank"
+msgstr "Wstawia szablon zaznaczony w banku węzłów"
+
+msgid "Hold LMB: paint models along the cursor path"
+msgstr "Przytrzymaj LPM: maluj modele wzdłuż drogi kursora"
+
+msgid "Node properties"
+msgstr "Właściwości węzła"
+
+msgid "Array"
+msgstr "Tablica"
+
+msgid "Ctrl+S"
+msgstr "Ctrl+S"
+
+msgid "Ctrl+Shift+F11"
+msgstr "Ctrl+Shift+F11"
+
+msgid "name"
+msgstr "nazwa"
+
+msgid "(none)"
+msgstr "(brak)"
+
+msgid "Name the events can refer to the node by.\nNodes without a name load quicker, leave it empty unless something needs it"
+msgstr "Nazwa, po której zdarzenia mogą odwołać się do węzła.\nWęzły bez nazwy wczytują się szybciej, zostaw puste, jeśli nic jej nie potrzebuje"
+
+msgid "Transform"
+msgstr "Przekształcenie"
+
+msgid "rotation (deg)"
+msgstr "obrót (°)"
+
+msgid "scale (x,y,z)"
+msgstr "skala (x,y,z)"
+
+msgid "reset rotation"
+msgstr "zeruj obrót"
+
+msgid "reset scale"
+msgstr "zeruj skalę"
+
+msgid "Parent Group"
+msgstr "Grupa nadrzędna"
+
+msgid "Spacing"
+msgstr "Odstęp"
+
+msgid "Paints the template selected in the node bank"
+msgstr "Maluje szablonem zaznaczonym w banku węzłów"
+
+msgid "Reload node bank"
+msgstr "Wczytaj bank węzłów ponownie"
+
+msgid "Search"
+msgstr "Szukaj"
+
+msgid "Search node bank"
+msgstr "Szukaj w banku węzłów"
+
+msgid "Scenery templates (.inc)"
+msgstr "Szablony scenerii (.inc)"
+
+msgid "User sets"
+msgstr "Zestawy użytkownika"
+
+msgid "  (none yet, see Model sets...)"
+msgstr "  (jeszcze żadnych, zobacz Zestawy modeli...)"
+
+msgid "Node bank groups"
+msgstr "Grupy banku węzłów"
+
+msgid "(empty)"
+msgstr "(pusto)"
+
+msgid "Add selected"
+msgstr "Dodaj zaznaczony"
+
+msgid "Adds the template selected in the node bank list"
+msgstr "Dodaje szablon zaznaczony na liście banku węzłów"
+
+msgid "Remove"
+msgstr "Usuń"
+
+msgid "Save as set"
+msgstr "Zapisz jako zestaw"
+
+msgid "Model sets"
+msgstr "Zestawy modeli"
+
+msgid "No sets yet"
+msgstr "Brak zestawów"
+
+msgid "New"
+msgstr "Nowy"
+
+msgid "Duplicate"
+msgstr "Powiel"
+
+msgid "Delete set \"%s\"?"
+msgstr "Usunąć zestaw \"%s\"?"
+
+msgid "Delete##confirm"
+msgstr "Usuń##confirm"
+
+msgid "Create a set with \"New\", or use \"Save as set\" on a brush or area fill list."
+msgstr "Utwórz zestaw przyciskiem \"Nowy\" albo użyj \"Zapisz jako zestaw\" na liście pędzla lub wypełniania obszaru."
+
+msgid "Sets can be chosen in Insert (random model), Brush and Area fill."
+msgstr "Zestawy można wybrać we Wstawianiu (losowy model), Pędzlu i Wypełnianiu obszaru."
+
+msgid "(empty) select a template in the node bank and press \"Add selected\""
+msgstr "(pusto) zaznacz szablon w banku węzłów i naciśnij \"Dodaj zaznaczony\""
+
+msgid "Remove all templates from this set?"
+msgstr "Usunąć wszystkie szablony z tego zestawu?"
+
+msgid "Clear##confirm"
+msgstr "Wyczyść##confirm"
+
+msgid "Add group"
+msgstr "Dodaj grupę"
+
+msgid "Rotation"
+msgstr "Obrót"
+
+msgid "Get rotation from last object"
+msgstr "Obrót z ostatniego obiektu"
+
+msgid "Rotation value"
+msgstr "Wartość obrotu"
+
+msgid "%.1f deg"
+msgstr "%.1f°"
+
+msgid "include: %s"
+msgstr "include: %s"
+
+msgid "The template takes no parameters."
+msgstr "Szablon nie ma parametrów."
+
+msgid "Models of the template follow the changes at once, the rest of it once the scenery is saved and loaded again."
+msgstr "Modele szablonu od razu idą za zmianami, reszta po zapisaniu i ponownym wczytaniu scenerii."
+
+msgid "Scenery layers are available in an edit session.\nStart the simulator with: -edit <scenery file>"
+msgstr "Warstwy scenerii są dostępne w sesji edycji.\nUruchom symulator z: -edit <plik scenerii>"
+
+msgid "New..."
+msgstr "Nowa..."
+
+msgid "New layer"
+msgstr "Nowa warstwa"
+
+msgid "Restore"
+msgstr "Przywróć"
+
+msgid "Remove layer"
+msgstr "Usuń warstwę"
+
+msgid "Merge layer"
+msgstr "Scal warstwę"
+
+msgid "Save"
+msgstr "Zapisz"
+
+msgid "Writes changed nodes and layers to the scenery files (Ctrl+S)"
+msgstr "Zapisuje zmienione węzły i warstwy do plików scenerii (Ctrl+S)"
+
+msgid "visible, locked, active, layer file"
+msgstr "widoczna, zablokowana, aktywna, plik warstwy"
+
+msgid "Active layer: nodes created in the editor are placed in it"
+msgstr "Aktywna warstwa: tu trafiają węzły tworzone w edytorze"
+
+msgid "File of the new layer, in the scenery directory:"
+msgstr "Plik nowej warstwy, w katalogu scenerii:"
+
+msgid "name.scm"
+msgstr "nazwa.scm"
+
+msgid "Create"
+msgstr "Utwórz"
+
+msgid "Remove layer \"%s\" from the scenery?"
+msgstr "Usunąć warstwę \"%s\" ze scenerii?"
+
+msgid "%d layer(s) it includes are removed with it."
+msgstr "Razem z nią zostaną usunięte warstwy, które dołącza: %d."
+
+msgid "The layer holds:"
+msgstr "Warstwa zawiera:"
+
+msgid "Make sure the rest of the scenery doesn't refer to its tracks, events or memory cells."
+msgstr "Upewnij się, że reszta scenerii nie odwołuje się do jej torów, zdarzeń ani komórek pamięci."
+
+msgid "Move content of layer \"%s\" to:"
+msgstr "Przenieś zawartość warstwy \"%s\" do:"
+
+msgid "no layer can take it"
+msgstr "żadna warstwa nie może jej przyjąć"
+
+msgid "The text of the file is moved on save, the emptied file stays on the disk.\nMerged into the layer which includes it, the content stays where the include was.\nMerged into any other layer it's placed at its end, which changes the load order."
+msgstr "Tekst pliku zostanie przeniesiony przy zapisie, opróżniony plik zostaje na dysku.\nScalona z warstwą, która ją dołącza, zawartość zostaje tam, gdzie był include.\nScalona z inną warstwą trafia na jej koniec, co zmienia kolejność wczytywania."
+
+msgid "Search templates"
+msgstr "Szukaj szablonów"
+
+msgid "Described"
+msgstr "Opisane"
+
+msgid "Used by the scenery"
+msgstr "Użyte w scenerii"
+
+msgid "Rescan"
+msgstr "Przeszukaj ponownie"
+
+msgid "Looks through the scenery directory again, for the templates added or changed outside of the editor"
+msgstr "Przegląda katalog scenerii jeszcze raz, w poszukiwaniu szablonów dodanych lub zmienionych poza edytorem"
+
+msgid "%d template(s) in the scenery directory, %d described, %d ready for the node bank"
+msgstr "Szablonów w katalogu scenerii: %d, opisanych: %d, gotowych do banku węzłów: %d"
+
+msgid "Not in the node bank: %s"
+msgstr "Nie ma w banku węzłów: %s"
+
+msgid "param"
+msgstr "param."
+
+msgid "role"
+msgstr "rola"
+
+msgid "label"
+msgstr "etykieta"
+
+msgid "default"
+msgstr "domyślna"
+
+msgid "Complete: once saved, the template is offered by the node bank (Insert tab, Scenery templates)."
+msgstr "Kompletny: po zapisaniu szablon pojawi się w banku węzłów (zakładka Wstaw, Szablony scenerii)."
+
+msgid "Not for the node bank yet: %s."
+msgstr "Jeszcze nie do banku węzłów: %s."
+
+msgid "A template placed from the node bank gets the cursor location in the pos.* parameters, the rotation set in the\nInsert tab in rot.y, and a unique name (the default value followed by a random suffix) in the name parameter.\nThe other parameters receive their default values."
+msgstr "Szablon wstawiony z banku węzłów dostaje położenie kursora w parametrach pos.*, obrót ustawiony w zakładce\nWstaw w rot.y, a w parametrze name niepowtarzalną nazwę (wartość domyślna z losowym przyrostkiem).\nPozostałe parametry dostają wartości domyślne."
+
+msgid "Suggest roles"
+msgstr "Podpowiedz role"
+
+msgid "Sets roles of the parameters still marked as free, where the way the template uses them tells what they are"
+msgstr "Ustawia role parametrów nadal oznaczonych jako wolne, gdy sposób ich użycia w szablonie mówi, czym są"
+
+msgid "Add parameter"
+msgstr "Dodaj parametr"
+
+msgid "Save to file"
+msgstr "Zapisz do pliku"
+
+msgid "Reload"
+msgstr "Wczytaj ponownie"
+
+msgid "The .inc templates of the scenery directory. Describe a template and its parameters to add it to the node bank; the description is stored in the template file, as //$e comment lines."
+msgstr "Szablony .inc z katalogu scenerii. Opisz szablon i jego parametry, żeby dodać go do banku węzłów; opis jest zapisywany w pliku szablonu jako linie komentarza //$e."
+
+msgid "The node bank offers the templates in a scenery opened for editing (-edit)."
+msgstr "Bank węzłów oferuje szablony w scenerii otwartej do edycji (-edit)."
+
+msgid "Editor Settings"
+msgstr "Ustawienia edytora"
+
+msgid "General"
+msgstr "Ogólne"
+
+msgid "Camera movement"
+msgstr "Ruch kamery"
+
+msgid "Transform gizmo (ImGuizmo)"
+msgstr "Gizmo przekształceń (ImGuizmo)"
+
+msgid "Grid cells"
+msgstr "Komórki siatki"
+
+msgid "Cell size (m)"
+msgstr "Rozmiar komórki (m)"
+
+msgid "Base height (m)"
+msgstr "Wysokość bazowa (m)"
+
+msgid "Texture (optional)"
+msgstr "Tekstura (opcjonalnie)"
+
+msgid "Create flat terrain"
+msgstr "Utwórz płaski teren"
+
+msgid "Chunks / side"
+msgstr "Fragmenty / bok"
+
+msgid "Create chunked terrain"
+msgstr "Utwórz teren z fragmentów"
+
+msgid "total %d x %d m, %d chunks"
+msgstr "razem %d x %d m, fragmentów: %d"
+
+msgid "Chunk edit mode (LMB add neighbour / Shift = delete)"
+msgstr "Tryb edycji fragmentów (LPM dodaje sąsiedni / Shift = usuń)"
+
+msgid "Grid chunks: %zu"
+msgstr "Fragmenty siatki: %zu"
+
+msgid "Streaming (open world, follows camera)"
+msgstr "Strumieniowanie (otwarty świat, za kamerą)"
+
+msgid "Stream radius"
+msgstr "Promień strumieniowania"
+
+msgid "Persist edits to disk (16-bit)"
+msgstr "Zapisuj zmiany na dysku (16-bit)"
+
+msgid "Stream terrain"
+msgstr "Strumieniuj teren"
+
+msgid "Resident chunks: %zu  (dir: %s)"
+msgstr "Wczytane fragmenty: %zu  (katalog: %s)"
+
+msgid "Patches: %zu"
+msgstr "Łaty: %zu"
+
+msgid "Capture selected model as terrain"
+msgstr "Zamień zaznaczony model na teren"
+
+msgid "Capture: select a model instance first"
+msgstr "Zamiana: najpierw zaznacz instancję modelu"
+
+msgid "Brush radius"
+msgstr "Promień pędzla"
+
+msgid "Brush strength"
+msgstr "Siła pędzla"
+
+msgid "Raise centre"
+msgstr "Podnieś środek"
+
+msgid "Lower centre"
+msgstr "Obniż środek"
+
+msgid "Optimize (mesh simplification, all patches)"
+msgstr "Optymalizacja (upraszczanie siatki, wszystkie łaty)"
+
+msgid "Flatness tol (m)"
+msgstr "Tolerancja płaskości (m)"
+
+msgid "Auto-optimize after sculpt"
+msgstr "Optymalizuj po rzeźbieniu"
+
+msgid "Optimize all"
+msgstr "Optymalizuj wszystko"
+
+msgid "Full-res all"
+msgstr "Pełna rozdzielczość wszędzie"
+
+msgid "Triangles: %zu / %zu"
+msgstr "Trójkąty: %zu / %zu"
+
+msgid "Show orthophoto (geoportal.gov.pl)"
+msgstr "Pokaż ortofotomapę (geoportal.gov.pl)"
+
+msgid "Scenery origin (0,0,0) in PUWG 1992 / EPSG:2180"
+msgstr "Środek scenerii (0,0,0) w PUWG 1992 / EPSG:2180"
+
+msgid "X (northing, m)"
+msgstr "X (northing, m)"
+
+msgid "Y (easting, m)"
+msgstr "Y (easting, m)"
+
+msgid "Enter the origin of this scenery first"
+msgstr "Najpierw podaj środek tej scenerii"
+
+msgid "Camera at X %.1f  Y %.1f"
+msgstr "Kamera w X %.1f  Y %.1f"
+
+msgid "Distance (tiles)"
+msgstr "Zasięg (kafle)"
+
+msgid "Fit to terrain"
+msgstr "Dopasuj do terenu"
+
+msgid "Lays the imagery onto the ground geometry (terrain shapes, terrain tile models, editor terrain).\nPlaces without any ground use the height below."
+msgstr "Kładzie zdjęcia na geometrii gruntu (kształty terenu, modele kafli terenu, teren edytora).\nMiejsca bez gruntu dostają wysokość podaną niżej."
+
+msgid "Refit"
+msgstr "Dopasuj ponownie"
+
+msgid "Samples the ground again, after it was edited"
+msgstr "Ponownie próbkuje grunt, po jego edycji"
+
+msgid "Lift above ground (m)"
+msgstr "Uniesienie nad grunt (m)"
+
+msgid "Raises the fitted imagery above the ground. Keep it below the objects you want to see:\nin the scene everything lower than this ends up under the imagery."
+msgstr "Unosi dopasowane zdjęcia nad grunt. Trzymaj je poniżej obiektów, które chcesz widzieć:\nw scenie wszystko, co jest niżej, znajdzie się pod zdjęciami."
+
+msgid "Height (m)"
+msgstr "Wysokość (m)"
+
+msgid "Covered by objects and terrain"
+msgstr "Zasłaniane przez obiekty i teren"
+
+msgid "Draws the imagery as part of the scene, so tracks, models and terrain in front of it hide it.\nIt is lit like the scene. Fully opaque, mouse placement lands on it as on any surface;\ntranslucent, it doesn't catch the mouse.\nNot available with the Better Renderer, which doesn't pick up geometry added in the editor."
+msgstr "Rysuje zdjęcia jako część sceny, więc tory, modele i teren przed nimi je zasłaniają.\nJest oświetlone jak scena. W pełni kryjące łapie mysz przy wstawianiu jak każda powierzchnia;\nprzezroczyste nie łapie myszy.\nNiedostępne z Better Renderer, który nie widzi geometrii dodanej w edytorze."
+
+msgid "Opacity"
+msgstr "Krycie"
+
+msgid "In the scene the opacity is part of the textures: the tiles are read again from the cache\nshortly after the slider stops, which takes a moment."
+msgstr "W scenie krycie jest częścią tekstur: kafle są ponownie wczytywane z pamięci podręcznej\nchwilę po puszczeniu suwaka, co trwa moment."
+
+msgid "Newest"
+msgstr "Najnowsze"
+
+msgid "4K tiles where available"
+msgstr "Kafle 4K, gdzie są dostępne"
+
+msgid "4096 px tiles (~6 cm/px) from the high-resolution orthophoto, for the tiles around the camera.\nAreas it doesn't cover use the standard imagery. Each 4K tile takes ~85 MB of video memory."
+msgstr "Kafle 4096 px (~6 cm/px) z ortofotomapy wysokiej rozdzielczości, dla kafli wokół kamery.\nTam, gdzie jej nie ma, zwykłe zdjęcia. Każdy kafel 4K zajmuje ~85 MB pamięci karty."
+
+msgid "Tiles: %d shown, %d loading, %d failed"
+msgstr "Kafle: wyświetlane %d, wczytywane %d, nieudane %d"
+
+msgid "Retry"
+msgstr "Ponów"
+
+msgid "This build has no HTTP client, only cached tiles are shown"
+msgstr "Ten build nie ma klienta HTTP, widać tylko kafle z pamięci podręcznej"
+
+msgid "Cache: %s"
+msgstr "Pamięć podręczna: %s"
+
+msgid "Imagery: GUGiK, geoportal.gov.pl"
+msgstr "Zdjęcia: GUGiK, geoportal.gov.pl"
+
+msgid "Put all instances of the selected model on the ground"
+msgstr "Postaw wszystkie instancje zaznaczonego modelu na ziemi"
+
+msgid "Select a model in the scene. Every instance of the same model file is moved straight up or down\nto the ground under it: terrain, large models and terrain made in the editor."
+msgstr "Zaznacz model w scenie. Każda instancja tego samego pliku modelu zostanie przesunięta pionowo\nna grunt pod nią: teren, duże modele i teren zrobiony w edytorze."
+
+msgid "LMB: add outline point   Backspace: remove last point"
+msgstr "LPM: dodaj punkt obrysu   Backspace: usuń ostatni punkt"
+
+msgid "Points: %zu   Area: %.0f m2 (%.2f ha)"
+msgstr "Punkty: %zu   Powierzchnia: %.0f m2 (%.2f ha)"
+
+msgid "Remove last point"
+msgstr "Usuń ostatni punkt"
+
+msgid "Clear outline"
+msgstr "Wyczyść obrys"
+
+msgid "%zu templates in set"
+msgstr "%zu szablonów w zestawie"
+
+msgid "Density (objects/ha)"
+msgstr "Gęstość (obiektów/ha)"
+
+msgid "Min. spacing (m)"
+msgstr "Min. odstęp (m)"
+
+msgid "Random rotation"
+msgstr "Losowy obrót"
+
+msgid "Large models count as ground (terrain tiles)"
+msgstr "Duże modele liczą się jako grunt (kafle terenu)"
+
+msgid "Estimated objects: %.0f"
+msgstr "Szacowana liczba obiektów: %.0f"
+
+msgid "Fill area"
+msgstr "Wypełnij obszar"
+
+msgid "Copies of the selected model, set out in a row"
+msgstr "Kopie zaznaczonego modelu, ustawione w rzędzie"
+
+msgid "Fixed count"
+msgstr "Stała liczba"
+
+msgid "Fit length"
+msgstr "Dopasuj do długości"
+
+msgid "Count"
+msgstr "Liczba"
+
+msgid "Number of the models in the array, the selected one included"
+msgstr "Liczba modeli w tablicy, łącznie z zaznaczonym"
+
+msgid "As many copies are made as fit in this length, measured along the row"
+msgstr "Powstaje tyle kopii, ile mieści się w tej długości, mierzonej wzdłuż rzędu"
+
+msgid "Relative offset"
+msgstr "Odsunięcie względne"
+
+msgid "Distance between the copies as a part of the size of the model, along its axes: x, y (up), z.\n1 along an axis puts the copies end to end"
+msgstr "Odległość między kopiami jako część rozmiaru modelu, wzdłuż jego osi: x, y (w górę), z.\n1 wzdłuż osi ustawia kopie jedna za drugą"
+
+msgid "x size"
+msgstr "x rozmiaru"
+
+msgid "Constant offset"
+msgstr "Odsunięcie stałe"
+
+msgid "Distance between the copies in metres, along the axes of the model: x, y (up), z.\nWith both offsets on the copies are set apart by their sum"
+msgstr "Odległość między kopiami w metrach, wzdłuż osi modelu: x, y (w górę), z.\nPrzy obu odsunięciach kopie dzieli ich suma"
+
+msgid "Turn per copy (deg)"
+msgstr "Obrót na kopię (°)"
+
+msgid "Each copy is turned by this much around the vertical axis against the one before it,\nand the row bends with them into an arc"
+msgstr "Każda kopia jest obrócona o tyle wokół osi pionowej względem poprzedniej,\na rząd wygina się razem z nimi w łuk"
+
+msgid "Follow the ground"
+msgstr "Za gruntem"
+
+msgid "The copies are put as high over the ground as the model is, instead of level with it.\nNot for the models large enough to count as ground themselves"
+msgstr "Kopie stoją tak wysoko nad gruntem jak model, zamiast na jego poziomie.\nNie dla modeli tak dużych, że same liczą się jako grunt"
+
+msgid "Model %.2f x %.2f x %.2f m, %d in the array, %.2f m apart"
+msgstr "Model %.2f x %.2f x %.2f m, w tablicy %d, co %.2f m"
+
+msgid "The array follows the settings"
+msgstr "Tablica idzie za ustawieniami"
+
+msgid "The copies stay the way they are. Selecting or changing anything else does the same"
+msgstr "Kopie zostają tak, jak są. To samo daje zaznaczenie lub zmiana czegokolwiek innego"
+
+msgid "Make array"
+msgstr "Utwórz tablicę"
+
+msgid "Select a model to make an array of"
+msgstr "Zaznacz model, z którego ma powstać tablica"
+
+msgid "Extent (m), wheel"
+msgstr "Zasięg (m), kółko"
+
+msgid "Enabled"
+msgstr "Włączone"
+
+msgid "Suspended while editing terrain"
+msgstr "Wstrzymane podczas edycji terenu"
+
+msgid "Translate (Q)"
+msgstr "Przesuń (Q)"
+
+msgid "Rotate (W)"
+msgstr "Obróć (W)"
+
+msgid "Scale (E)"
+msgstr "Skaluj (E)"
+
+msgid "Local space (R)"
+msgstr "Układ lokalny (R)"
+
+msgid "Snap (hold Ctrl)"
+msgstr "Krok (przytrzymaj Ctrl)"
+
+msgid "No node selected"
+msgstr "Nic nie zaznaczono"
+
+msgid "Editor History"
+msgstr "Historia edytora"
+
+msgid "Max history size"
+msgstr "Maks. rozmiar historii"
+
+msgid "Max placement distance"
+msgstr "Maks. odległość wstawiania"
+
+msgid "History (newest at end): %zu entries"
+msgstr "Historia (najnowsze na końcu): %zu wpisów"
+
+msgid "Clear History"
+msgstr "Wyczyść historię"
+
+msgid "Undo Selected"
+msgstr "Cofnij zaznaczone"
+
+# scenery editor: modes, layers and messages
+
+msgid "Set##insert"
+msgstr "Zestaw##insert"
+
+msgid "File"
+msgstr "Plik"
+
+msgid "Start the simulator with -edit <scenery file> to save changes to the scenery files"
+msgstr "Uruchom symulator z -edit <plik scenerii>, żeby zapisywać zmiany do plików scenerii"
+
+msgid "Export scenery dump"
+msgstr "Eksportuj zrzut scenerii"
+
+msgid "Writes the whole scene to _export files next to the scenario, the scenery files are left as they are"
+msgstr "Zapisuje całą scenę do plików _export obok scenariusza, pliki scenerii zostają bez zmian"
+
+msgid "Mode windows"
+msgstr "Okna trybów"
+
+msgid "Toolset"
+msgstr "Przybornik"
+
+msgid "Layers"
+msgstr "Warstwy"
+
+msgid "Include database"
+msgstr "Baza include'ów"
+
+msgid "Preset"
+msgstr "Gotowy zestaw"
+
+msgid "Manual list"
+msgstr "Lista ręczna"
+
+msgid "Insert"
+msgstr "Wstaw"
+
+msgid "Brush"
+msgstr "Pędzel"
+
+msgid "Area fill"
+msgstr "Wypełnianie obszaru"
+
+msgid "Copy to bank"
+msgstr "Kopiuj do banku"
+
+msgid "Random"
+msgstr "Losowy"
+
+msgid "Fixed"
+msgstr "Stały"
+
+msgid "Default (from template)"
+msgstr "Domyślny (z szablonu)"
+
+msgid "Select a layer first"
+msgstr "Najpierw zaznacz warstwę"
+
+msgid "Layer \"%s\" restored"
+msgstr "Warstwa \"%s\" przywrócona"
+
+msgid "Remove..."
+msgstr "Usuń..."
+
+msgid "Merge into..."
+msgstr "Scal z..."
+
+msgid "The scenario file can't be merged into another layer"
+msgstr "Pliku scenariusza nie da się scalić z inną warstwą"
+
+msgid "Layer \"%s\" can't take new nodes"
+msgstr "Warstwa \"%s\" nie może przyjąć nowych węzłów"
+
+msgid "New layer, its file is created on save"
+msgstr "Nowa warstwa, jej plik powstanie przy zapisie"
+
+msgid "Dropped from the scenery on save"
+msgstr "Wypada ze scenerii przy zapisie"
+
+msgid "Scenery file"
+msgstr "Plik scenerii"
+
+msgid "Layer \"%s\" created and made active. Its file is written on save."
+msgstr "Warstwa \"%s\" utworzona i ustawiona jako aktywna. Jej plik zostanie zapisany przy zapisie."
+
+msgid "Layer \"%s\" removed. It can be restored until the scenery is saved."
+msgstr "Warstwa \"%s\" usunięta. Można ją przywrócić, dopóki sceneria nie zostanie zapisana."
+
+msgid "Merge"
+msgstr "Scal"
+
+msgid "Pick the target layer"
+msgstr "Wybierz warstwę docelową"
+
+msgid "Layer \"%s\" merged into \"%s\". The files are changed on save."
+msgstr "Warstwa \"%s\" scalona z \"%s\". Pliki zmienią się przy zapisie."
+
+msgid "WSAD (new)"
+msgstr "WSAD (nowy)"
+
+msgid "Arrows (legacy)"
+msgstr "Strzałki (stary)"
+
+msgid "The scenery wasn't opened for editing. Start the simulator with: -edit <scenery file>"
+msgstr "Sceneria nie jest otwarta do edycji. Uruchom symulator z: -edit <plik scenerii>"
+
+msgid "Select a model in the scene first"
+msgstr "Najpierw zaznacz model w scenie"
+
+msgid "Removed %zu objects of the last fill"
+msgstr "Usunięto obiekty ostatniego wypełnienia: %zu"
+
+msgid "Outline needs at least 3 points"
+msgstr "Obrys potrzebuje co najmniej 3 punktów"
+
+msgid "Selected model package is empty"
+msgstr "Wybrany zestaw modeli jest pusty"
+
+msgid "Density too low for this area, nothing to place"
+msgstr "Za mała gęstość na ten obszar, nie ma czego wstawić"
+
+msgid "Placed %zu of %zu objects"
+msgstr "Wstawiono %zu z %zu obiektów"
+
+msgid "Model set"
+msgstr "Zestaw modeli"
+
+msgid "Custom list"
+msgstr "Własna lista"
+
+msgid "Undo last fill (%zu)"
+msgstr "Cofnij ostatnie wypełnienie (%zu)"
+
+msgid "The offsets come to nothing, the copies would sit in the model"
+msgstr "Odsunięcia dają zero, kopie siedziałyby w modelu"
+
+msgid "An array of one is the model itself, nothing to make"
+msgstr "Tablica z jednego to sam model, nie ma czego tworzyć"
+
+msgid "The length takes no copy, nothing to make"
+msgstr "Ta długość nie mieści żadnej kopii, nie ma czego tworzyć"
+
+msgid "Only %zu of %zu copies could be made"
+msgstr "Udało się zrobić tylko %zu z %zu kopii"
+
+msgid "No copies with these settings"
+msgstr "Przy tych ustawieniach nie ma kopii"
+
+msgid "The model and %zu copies; Ctrl+Z takes the array back"
+msgstr "Model i kopie: %zu; Ctrl+Z cofa tablicę"
+
+msgid "Include selected, no gizmo under rotate or scale"
+msgstr "Zaznaczony include, bez gizma przy obrocie lub skali"
+
+msgid "Include selected, axes as its template allows"
+msgstr "Zaznaczony include, osie na tyle, na ile pozwala szablon"
+
+msgid "B: bend along %s"
+msgstr "B: wygnij wzdłuż %s"
+
+msgid "Click: the reference point, where it lands on the model"
+msgstr "Klik: punkt odniesienia tam, gdzie trafi w model"
+
+msgid "Drag: offset from the track"
+msgstr "Przeciągnij: odsunięcie od toru"
+
+msgid "Shift: height   Ctrl: along the track"
+msgstr "Shift: wysokość   Ctrl: wzdłuż toru"
+
+msgid "Click: edit the bent model"
+msgstr "Klik: edytuj wygięty model"
+
+msgid "Bend it along the track  (B)"
+msgstr "Wygnij wzdłuż toru  (B)"
+
+msgid "Select a model by a track, or click a bent one"
+msgstr "Zaznacz model przy torze albo kliknij wygięty"
+
+msgid "LMB on a track: where the vehicle stands"
+msgstr "LPM na torze: tam stanie pojazd"
+
+msgid "Platform"
+msgstr "Peron"
+
+msgid "Puts the edge facing the track 1.725 m from its axis, set back by the widening of the gauge in the curves.\nStands on the plane of the rail heads carried on to its edge: lower on the inner side of a canted curve,\nhigher on the outer one; on the inner side also set back by the cant times the height of the edge / 1.5"
+msgstr "Ustawia krawędź od strony toru 1,725 m od jego osi, odsuniętą o poszerzenie skrajni na łukach.\nStoi na płaszczyźnie główek szyn przedłużonej do krawędzi: niżej po wewnętrznej stronie łuku z przechyłką,\nwyżej po zewnętrznej; po wewnętrznej dodatkowo odsunięty o przechyłkę razy wysokość krawędzi / 1,5"

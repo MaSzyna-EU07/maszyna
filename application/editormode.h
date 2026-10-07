@@ -32,6 +32,7 @@ http://mozilla.org/MPL/2.0/.
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -127,7 +128,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	struct stored_profile;
 	struct EditorSnapshot
 	{
-		enum class Action { Move, Rotate, Scale, Add, Delete, TrackEdit, Other, RoadEdit, Array };
+		enum class Action { Move, Rotate, Scale, Add, Delete, TrackEdit, Other, RoadEdit, Array, Bend };
 		// copy of a model an array made
 		struct array_copy
 		{
@@ -313,6 +314,17 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool m_newscenery_asked{false};
 	void render_new_scenery_popup();
 	bool restart_for_new_scenery();
+	bool restart_editor(std::string const &Scenery);
+	bool m_openscenery_asked{false};
+	bool m_opened_at_track{false};
+	bool m_turntable_included{false};
+	bool turntable_controls(std::vector<std::string> &Rootstatements);
+	void starter_trainset(std::vector<std::string> &Trailing);
+	std::optional<std::pair<glm::dvec3, glm::vec3>> m_saved_camera;
+	char m_openscenery_search[64]{};
+	std::vector<std::string> m_openscenery_list;
+	std::string m_openscenery_choice;
+	void render_open_scenery_popup();
 	bool m_orthophoto_window{false};
 	// origin of the scenery in PUWG 1992 the scenery file gives in its //$g line, if it does
 	bool m_georeference_read{false};
@@ -702,6 +714,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void scan_turntables();
 	std::string turntable_name_for_new() const;
 	bool turntable_read(TTrack *Table);
+	std::vector<scene::instance_handle> turntable_includes(TTrack const &Table);
 	glm::dvec3 turntable_centre() const;
 	std::vector<double> turntable_lines() const;
 	double turntable_snap(double const Heading) const;
@@ -756,6 +769,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void lay_enter();
 	bool lay_heading(glm::dvec2 &Heading) const;
 	std::vector<segment_data> lay_pieces(std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, double &Length, std::string &Error) const;
+	alignment::result lay_shape(std::vector<glm::dvec3> const &Points, glm::dvec2 const &Startdirection, glm::dvec2 const &Enddirection, alignment::design &Design) const;
 	void render_switch_ui();
 	bool start_switch_placement();
 	void finish_switch_placement();
@@ -1192,7 +1206,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::vector<std::string> parameter_labels;
 		std::vector<bool> parameter_placement; // filled in with zeros: the template is placed in its own space
 		std::vector<std::vector<std::string>> parameter_choices; // variants of the textures a parameter is a part of the name of
-		int length_mode{0}; // 0: one copy as long as the original, 1: the length given, 2: the whole stretch of the line
+		int length_mode{2}; // 0: one copy as long as the original, 1: the length given, 2: the whole stretch of the line
 		double length{200.0};
 		sweep_node::state settings;
 		int axis{0}; // 0: the longer one of the model, 1: z, 2: x
@@ -1254,6 +1268,65 @@ class editor_mode : public application_mode, private editor_track::observer
 	void sweeps_captured(TTrack const &Track);
 	void sweeps_committed(std::vector<TTrack *> const &Tracks);
 	void sweeps_split(TTrack &Original, TTrack &Created);
+
+	struct bend_source
+	{
+		TAnimModel *model{nullptr};
+		scene::instance_handle instance{0};
+		std::string file;
+		std::string skin{"none"};
+		std::vector<std::string> parameters;
+		glm::dmat4 transform{1.0};
+		glm::dvec3 scale{1.0};
+		scene::layer_handle layer{null_handle};
+	};
+	struct bend_tool
+	{
+		int axis{0};
+		bool turned{false};
+		int along_anchor{1};
+		int side_anchor{0};
+		int height_anchor{0};
+		glm::dvec3 point{0.0};
+		bool picking{false};
+		void const *tracks_for{nullptr};
+		glm::dvec3 tracks_at{0.0};
+		std::vector<std::pair<TTrack *, double>> tracks;
+		int track{0};
+		sweep_node *edited{nullptr};
+		std::string signature;
+		bool marker_valid{false};
+		glm::dvec3 marker{0.0};
+		std::string status;
+		int dragging{0};
+		sweep_node::state drag_state;
+		glm::dvec3 drag_anchor{0.0};
+		double drag_station{0.0};
+		std::string drag_label;
+		sweep_node *hover{nullptr};
+		bool over_marker{false};
+		std::string label;
+		std::string details;
+	};
+	bend_tool m_bend;
+	bool bend_drag_start(int const Mods);
+	void bend_drag_update();
+	sweep_node *sweep_under(glm::dvec3 const &Point) const;
+	bool bend_click();
+	bool bend_shortcut();
+	bool bend_source_of_selection(bend_source &Source) const;
+	void bend_find_tracks(glm::dvec3 const &Point, void const *Key);
+	bool bend_definition(bend_source const &Source, TTrack &Track, sweep_node::state &State, std::vector<TTrack *> &Tracks);
+	void bend_selection();
+	void bend_edit(sweep_node::state const &State);
+	void bend_reanchor(sweep_node::state &State, int const Side, int const Height, glm::dvec3 const &Point) const;
+	double bend_fixed(sweep_node const &Sweep, glm::dvec3 const &Point) const;
+	void bend_stretch(sweep_node const &Sweep, double const Fixed, double const Length, glm::dvec3 const &Point, sweep_node::state &State) const;
+	void bend_pick(glm::dvec3 const &Point);
+	glm::dvec3 bend_marker(sweep_node const &Sweep) const;
+	void restore_bend(EditorSnapshot &Snapshot, bool const Undo);
+	void render_bend();
+	void draw_bend_overlay() const;
 
 	// script of editor actions given in the EU07_EDITOR_SELFTEST file, run a step at a time, for testing without a person
 	struct selftest

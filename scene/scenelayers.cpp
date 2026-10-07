@@ -837,7 +837,7 @@ bool node_layers::pending() const
 namespace
 {
 // marks of the lines the editor keeps track of
-std::array<char const *, 2> const editormarks{"//$p", "//$b"};
+std::array<char const *, 3> const editormarks{"//$p", "//$b", "//$c"};
 } // namespace
 
 void node_layers::scan(layer_handle const Layer)
@@ -1104,3 +1104,28 @@ void node_layers::rebuilt(instance_handle const Instance)
 } // namespace scene
 
 //---------------------------------------------------------------------------
+
+std::string scene::node_layers::check_sources() const
+{
+	std::map<scene::layer_handle, std::string> files;
+	std::size_t good{0}, bad{0};
+	std::string report;
+	for (auto const &[node, source] : m_sources)
+	{
+		auto &text{files[source.layer]};
+		if (text.empty())
+		{
+			std::ifstream file(path(source.layer), std::ios::binary);
+			text.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+		}
+		auto const ok{source.span.valid() && static_cast<std::size_t>(source.span.end) <= text.size()};
+		std::string piece{ok ? text.substr(source.span.begin, source.span.end - source.span.begin) : std::string{}};
+		auto const model{dynamic_cast<TAnimModel const *>(node) != nullptr};
+		auto const fine{ok && piece.rfind("node", 0) == 0 && (false == model || (piece.size() >= 8 && piece.compare(piece.size() - 8, 8, "endmodel") == 0))};
+		if (fine)
+			++good;
+		else if (++bad <= 5)
+			report += " [" + node->name() + " " + std::to_string(source.span.begin) + "-" + std::to_string(source.span.end) + ": " + piece.substr(0, 60) + " ... " + (piece.size() > 30 ? piece.substr(piece.size() - 30) : std::string{}) + "]";
+	}
+	return std::to_string(good) + " good, " + std::to_string(bad) + " bad" + report;
+}

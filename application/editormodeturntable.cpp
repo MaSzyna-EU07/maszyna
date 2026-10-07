@@ -27,7 +27,9 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <regex>
 #include <sstream>
@@ -536,6 +538,26 @@ void editor_mode::turntable_find_fits()
 	tool.status = tool.fits.empty() ? format(STR_C("No free ends within %.0f m of the rim"), tool.reach) : std::string{};
 }
 
+std::vector<scene::instance_handle> editor_mode::turntable_includes(TTrack const &Table)
+{
+	scan_turntables();
+	std::vector<scene::instance_handle> result;
+	for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
+	{
+		if (false == scene::Layers.tracked(handle))
+			continue;
+		auto const &included{scene::Layers.instance(handle)};
+		if (included.removed || included.dead || included.file == nullptr)
+			continue;
+		auto const kind{std::find_if(m_turntable.templates.begin(), m_turntable.templates.end(), [&](turntable_template const &Template) { return normalized(Template.file) == normalized(*included.file); })};
+		std::string target;
+		std::vector<std::string> values;
+		if (kind != m_turntable.templates.end() && editor_includes::parse_directive(scene::Layers.directive(handle), target, values) && kind->track <= static_cast<int>(values.size()) && ToLower(values[kind->track - 1]) == Table.name())
+			result.push_back(handle);
+	}
+	return result;
+}
+
 void editor_mode::turntable_build(std::vector<turntable_fit const *> const &Fits)
 {
 	auto &tool{m_turntable};
@@ -1022,4 +1044,123 @@ void editor_mode::draw_turntable_overlay() const
 		if (dragged)
 			label(projection, cursor, format("%.1f deg", yaw));
 	}
+}
+
+bool editor_mode::turntable_controls(std::vector<std::string> &Rootstatements)
+{
+	if (scene::Layers.empty())
+		return false;
+	std::string root{scene::Layers.layer(scene::layer_handle{1}).name};
+	if (auto const slash{root.find_last_of("/\\")}; slash != std::string::npos)
+		root.erase(0, slash + 1);
+	if (auto const dot{root.rfind('.')}; dot != std::string::npos)
+		root.erase(dot);
+	if (root.empty())
+		return false;
+	auto const file{root + "_obrotnice.scm"};
+	std::ostringstream text;
+	auto tables{0};
+	for (auto const *table : simulation::Paths.sequence())
+	{
+		if (table == nullptr || table->eType != tt_Table || table->m_editorremoved || table->m_paths.empty() || table->name().empty())
+			continue;
+		auto const &name{table->name()};
+		std::vector<int> slots;
+		std::string events;
+		scan_turntables();
+		for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count() && slots.empty(); ++handle)
+		{
+			if (false == scene::Layers.tracked(handle))
+				continue;
+			auto const &included{scene::Layers.instance(handle)};
+			if (included.removed || included.dead || included.file == nullptr)
+				continue;
+			auto const kind{std::find_if(m_turntable.templates.begin(), m_turntable.templates.end(), [&](turntable_template const &Template) { return normalized(Template.file) == normalized(*included.file); })};
+			if (kind == m_turntable.templates.end() || kind->angles == 0)
+				continue;
+			std::string target;
+			std::vector<std::string> values;
+			if (false == editor_includes::parse_directive(scene::Layers.directive(handle), target, values) || kind->track > static_cast<int>(values.size()) || ToLower(values[kind->track - 1]) != name)
+				continue;
+			{
+				std::ifstream input{Global.asCurrentSceneryPath + kind->file, std::ios_base::binary};
+				events.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+				events = ToLower(events);
+				std::replace_if(events.begin(), events.end(), [](char const Character) { return Character == '\t' || Character == '\r' || Character == '\n'; }, ' ');
+				auto const parameter{"(p" + std::to_string(kind->track) + ")"};
+				for (auto at{events.find(parameter)}; at != std::string::npos; at = events.find(parameter, at + name.size()))
+					events.replace(at, parameter.size(), name);
+			}
+			std::vector<double> seen;
+			for (int i = 0; i < kind->positions && kind->angles - 1 + i < static_cast<int>(values.size()); ++i)
+				if (double angle; numeric(values[kind->angles - 1 + i], angle) && std::none_of(seen.begin(), seen.end(), [&](double const Other) { return std::abs(circular(Other - angle)) < 0.01; }))
+				{
+					seen.push_back(angle);
+					slots.push_back(i + 1);
+				}
+		}
+		if (slots.empty())
+			for (int position = 1; position <= 64; ++position)
+				slots.push_back(position);
+		std::vector<int> positions;
+		for (auto const position : slots)
+		{
+			// the events of a turntable placed in this session get loaded only with the scenery loaded again
+			auto const event{name + "_tor" + std::to_string(position)};
+			if (events.find(" " + event + " ") != std::string::npos || simulation::Events.FindEvent(event) != nullptr)
+				positions.push_back(position);
+		}
+		if (positions.size() < 2)
+			continue;
+		++tables;
+		auto const count{positions.size()};
+		auto const centre{centre_of(*table)};
+		auto const at{format("%.3f %.3f %.3f", centre.x, centre.y, centre.z)};
+		text << "node -1 0 " << name << "_keylock memcell " << at << " none 0 0 none endmemcell\r\n";
+		text << "event " << name << "_lock updatevalues 0 " << name << "_keylock * 1 * endevent\r\n";
+		text << "event " << name << "_unlock updatevalues 1.5 " << name << "_keylock * 0 * endevent\r\n";
+		for (auto const forward : {true, false})
+		{
+			auto const step{std::string{forward ? "_next" : "_prev"}};
+			text << "event " << name << step << " multiple 0 " << name << "_keylock " << name << "_lock " << name << "_unlock " << name << step << '0';
+			for (auto const position : positions)
+				text << ' ' << name << step << position;
+			text << " condition memcompare * 0 * endevent\r\n";
+			// the turntable starts with no position set, the first step takes it to the first one
+			text << "event " << name << step << "0 multiple 0 " << name << ' ' << name << "_tor" << positions.front() << " condition memcompare * 0 * endevent\r\n";
+			for (std::size_t i = 0; i < count; ++i)
+			{
+				auto const target{positions[forward ? (i + 1) % count : (i + count - 1) % count]};
+				text << "event " << name << step << positions[i] << " multiple 0 " << name << ' ' << name << "_tor" << target << " condition memcompare * " << positions[i] << " * endevent\r\n";
+			}
+		}
+		text << "node -1 0 " << name << "_key eventlauncher " << at << " 150 t 0 " << name << "_next " << name << "_prev end\r\n";
+	}
+	auto const path{Global.asCurrentSceneryPath + file};
+	std::error_code error;
+	auto const exists{std::filesystem::exists(path, error)};
+	if (tables == 0 && false == exists)
+		return false;
+	auto const content{"// made by the scenery editor on each save: T turns each turntable to its next position, Shift+T to the previous one\r\n" + text.str()};
+	std::string current;
+	{
+		std::ifstream input{path, std::ios_base::binary};
+		current.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+	}
+	if (current != content)
+	{
+		std::ofstream output{path, std::ios_base::binary | std::ios_base::trunc};
+		output << content;
+	}
+	auto included{m_turntable_included};
+	for (std::size_t handle = 1; handle <= scene::Layers.size() && false == included; ++handle)
+	{
+		auto name{scene::Layers.layer(static_cast<scene::layer_handle>(handle)).name};
+		std::replace(name.begin(), name.end(), '\\', '/');
+		included = ToLower(name) == ToLower(file) || ToLower(name).ends_with("/" + ToLower(file));
+	}
+	if (included)
+		return false;
+	Rootstatements.push_back("include " + file + " end");
+	return true;
 }

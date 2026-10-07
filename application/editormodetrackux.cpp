@@ -232,8 +232,6 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 	}
 	if (m_track_tab == track_tab::turntable)
 		return turntable_intent(ground, shift);
-	if (m_track_tab == track_tab::lineside && sweep_grabs(ground))
-		return make(kind::sweep, "Press: where the model starts, drag to its end");
 	if (m_track_tab == track_tab::path)
 	{
 		if (shift && control && m_hover.track != nullptr && rail(*m_hover.track))
@@ -597,11 +595,6 @@ void editor_mode::render_track_context()
 	{
 		show_track_tab(track_tab::lineside);
 		m_parallel.expand = true;
-	}
-	if (ImGui::MenuItem(STR_C("Model along the track")))
-	{
-		show_track_tab(track_tab::lineside);
-		m_sweep.expand = true;
 	}
 	if (ImGui::MenuItem(STR_C("Place a vehicle here")))
 	{
@@ -1332,8 +1325,7 @@ void editor_mode::render_lineside_ui()
 		bool *expand;
 		std::function<void()> render;
 	};
-	std::array<tab, 5> const tabs{{
-	    {"Platforms and models", &m_sweep.open, &m_sweep.expand, [this]() { render_sweep_ui(); }},
+	std::array<tab, 4> const tabs{{
 	    {"Hectometre posts", &m_hekto.open, &m_hekto.expand, [this]() { render_hekto_ui(); }},
 	    {"Fouling points", &m_fouling.open, &m_fouling.expand, [this]() { render_fouling_ui(); }},
 	    {"Parallel track", &m_parallel.open, &m_parallel.expand, [this]() { render_parallel_ui(); }},
