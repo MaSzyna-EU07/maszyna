@@ -4074,7 +4074,10 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 			auto const angle{geometry::signed_angle(plan_of(tool.point) - centre, plan_of(tool.mouse) - centre) * side};
 			if (angle * radius < 0.5)
 				return result;
-			return arc_pieces(tool.point, direction, tool.grade, radius, std::min(angle, glm::pi<double>()), side);
+			auto pieces{arc_pieces(tool.point, direction, tool.grade, radius, std::min(angle, glm::pi<double>()), side)};
+			for (auto &piece : pieces)
+				piece.rolls = {diverging.rolls[1], diverging.rolls[1]};
+			return pieces;
 		}
 	}
 	glm::dvec2 const offset{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
