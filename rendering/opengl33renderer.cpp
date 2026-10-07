@@ -1483,7 +1483,7 @@ glm::mat4 opengl33_renderer::perspective_projection_raw(float fovy, float aspect
 {
     if (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control)
     {
-        const float f = 1.0f / tan(fovy / 2.0f);
+        const float f = 1.0f / std::tan(fovy / 2.0f);
 
         // when clip_control available, use projection matrix with 1..0 Z range and infinite zfar
         return glm::mat4( //
