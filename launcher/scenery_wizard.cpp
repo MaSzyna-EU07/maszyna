@@ -370,7 +370,8 @@ bool ui::scenerywizard_panel::create_scenery()
 	if (m_title[0] != '\0')
 		output << "// " << m_title << "\r\n";
 	output << "// created in the editor " << date << "\r\n\r\n";
-	output << "atmo 0.423 0.702 1.0 1700 2000 0.70 0.80 0.9 endatmo\r\n\r\n";
+	output << "atmo 0.423 0.702 1.0 25000 25000 0.70 0.80 0.9 0 endatmo\r\n";
+	output << "time 12:00 5:00 20:00 endtime\r\n\r\n";
 	output << "FirstInit\r\n";
 	output.close();
 	WriteLog("Scenery wizard: created " + file + " at " + reference);

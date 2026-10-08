@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editorprojection.h"
 
 #include "simulation/simulation.h"
+#include "simulation/simulationtime.h"
 #include "scene/scenelayers.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
@@ -381,6 +382,11 @@ void editor_mode::selftest_step()
 			auto const grade{control.y / std::hypot(control.x, control.z)};
 			WriteLog(format("SELFTEST drivetilt %s: angles %.3f %.3f %.3f, +x rises %.4f (cone %.4f), +z rises %.4f (grade %.4f), origin %.3f %.3f %.3f, points %.3f", name.c_str(), model->Angles().x, model->Angles().y, model->Angles().z, across.y, cone, forward.y, grade,
 			                model->location().x, model->location().y, model->location().z, path.points[segment_data::point::start].y));
+		}
+		else if (command == "weather")
+		{
+			auto const &time{simulation::Time.data()};
+			WriteLog(format("SELFTEST weather: %02d:%02d, fog end %.0f m, overcast %.2f", time.wHour, time.wMinute, Global.fFogEnd, Global.Overcast));
 		}
 		else if (command == "fouling")
 		{
