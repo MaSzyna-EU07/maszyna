@@ -132,7 +132,6 @@ class nodebank_panel : public ui_panel
 		TRACK
 	};
 	edit_mode mode = MODIFY;
-	int requested_mode{-1}; // tab brought forward on the next frame
 
 	nodebank_panel(std::string const &Name, bool const Isopen);
 	void nodebank_reload();
@@ -157,10 +156,6 @@ class nodebank_panel : public ui_panel
 	// shows the set manager window, optionally with specified user set selected
 	void open_sets_window(int const Setid = 0);
 
-	// draws settings of the active edit mode inside its tab
-	std::function<void(edit_mode)> mode_options;
-	// draws sections attached above the mode tabs (gizmo, node properties)
-	std::function<void()> header_sections;
 
   private:
 	// methods:

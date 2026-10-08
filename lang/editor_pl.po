@@ -2027,8 +2027,8 @@ msgstr "Długość, na której skarpa przechodzi w koronę i w teren; 0: ostre k
 msgid "Sculpting..."
 msgstr "Rzeźbienie..."
 
-msgid "Opens the terrain tab of the editor settings: raising, lowering and smoothing with a brush"
-msgstr "Otwiera zakładkę terenu w ustawieniach edytora: podnoszenie, obniżanie i wygładzanie pędzlem"
+msgid "Opens the terrain tools: raising, lowering and smoothing with a brush"
+msgstr "Otwiera narzędzia terenu: podnoszenie, obniżanie i wygładzanie pędzlem"
 
 # scenery editor: track editor, selection, joints, parallel track, hectometre posts, fouling points
 
@@ -2457,9 +2457,6 @@ msgstr "Ortofotomapa"
 
 msgid "Orthophoto settings..."
 msgstr "Ustawienia ortofotomapy..."
-
-msgid "Orthophoto##window"
-msgstr "Ortofotomapa##window"
 
 msgid "Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"
 msgstr "Zdjęcia lotnicze z geoportal.gov.pl pod scenerią, ułożone według punktu odniesienia scenerii"
@@ -4599,3 +4596,48 @@ msgstr "Przywróć układ okien"
 
 msgid "Selected:"
 msgstr "Zaznaczono:"
+
+msgid "Tool options"
+msgstr "Opcje narzędzia"
+
+msgid "Inspector"
+msgstr "Inspektor"
+
+msgid "Scene"
+msgstr "Scena"
+
+msgid "Node bank"
+msgstr "Bank obiektów"
+
+msgid "Refresh"
+msgstr "Odśwież"
+
+msgid "Filter: name or uuid"
+msgstr "Filtr: nazwa lub uuid"
+
+msgid "%zu models"
+msgstr "modeli: %zu"
+
+msgid "(no layer)"
+msgstr "(bez warstwy)"
+
+msgid "Group"
+msgstr "Grupa"
+
+msgid "Double click: fly to it"
+msgstr "Dwuklik: kamera leci do niego"
+
+msgid "By the track"
+msgstr "Przy torze"
+
+msgid "Checks"
+msgstr "Kontrola"
+
+msgid "Infrastructure"
+msgstr "Infrastruktura"
+
+msgid "Speed check"
+msgstr "Kontrola prędkości"
+
+msgid "What the check finds is listed in its window"
+msgstr "Wyniki kontroli są w jej oknie"

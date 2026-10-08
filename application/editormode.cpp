@@ -488,6 +488,24 @@ editor_mode::editor_mode() {
 	ui()->set_fill_options([this]() { render_area_fill(); });
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
 	ui()->set_toolbar_options([this]() { render_toolbar(); });
+	ui()->set_track_options([this]() { render_track_tool_options(); }, [this]() { render_track_selection(); });
+	ui()->set_workspace_options(editor_ui::workspace::roads, [this]() { render_road_tool_options(); }, [this]() { render_road_selection(); });
+	ui()->set_workspace_options(editor_ui::workspace::terrain, [this]() { render_terrain_tool_options(); });
+	// a node picked in the scene window is selected as if clicked in the view; a double click flies the camera to it
+	ui()->set_scene_select([this](scene::basic_node *Node, bool const Focus) {
+		if (Focus)
+			start_focus(Node);
+		std::string reason;
+		if (Node->from_template() || false == scene::Layers.editable(Node, &reason))
+		{
+			ui()->set_status("\"" + (Node->name().empty() ? std::string{"(unnamed node)"} : Node->name()) + "\" can't be edited: " + reason, true);
+			return;
+		}
+		m_track_window_open = false;
+		ui()->set_mode(nodebank_panel::MODIFY);
+		m_node = Node;
+		ui()->set_node(m_node);
+	});
 	ui()->set_array_options([this]() { render_array(); });
 	ui()->set_bend_options([this]() { render_bend(); });
 	ui()->set_file_actions([this]() { save(); }, [this]() { export_scenery(); });
@@ -1398,7 +1416,8 @@ bool editor_mode::update()
     // roads: trajectories of the lanes, and the tools of the road window
     update_road_tool();
     draw_road_overlay();
-    render_road_window();
+    // the roads and the terrain are fields of work, their tools are drawn in the tool options window in place of the edit mode ones
+    ui()->set_workspace(m_terrain_open ? editor_ui::workspace::terrain : m_roadtool.window ? editor_ui::workspace::roads : editor_ui::workspace::none);
 
     // --- array: the one made last is kept in line with its settings ---
     update_array();
@@ -1407,7 +1426,6 @@ bool editor_mode::update()
     if (ui()->mode() == nodebank_panel::FILL)
         draw_area_fill_outline();
 
-    render_orthophoto_window();
     render_new_scenery_popup();
     render_open_scenery_popup();
 
@@ -1444,13 +1462,6 @@ void editor_mode::render_settings()
 
             ImGui::Separator();
             ImGui::Checkbox(STR_C("Transform gizmo (ImGuizmo)"), &m_gizmo_enabled);
-            ImGui::EndTabItem();
-        }
-        bool const terrainwanted = m_terrain_tab_wanted;
-        m_terrain_tab_wanted = false;
-        if (ImGui::BeginTabItem(STR_C("Terrain"), nullptr, terrainwanted ? ImGuiTabItemFlags_SetSelected : 0))
-        {
-            render_terrain_ui();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -2810,7 +2821,14 @@ void editor_mode::render_map_menu()
         m_orthophoto.enabled(false == enabled);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"));
-    ImGui::MenuItem(STR_C("Orthophoto settings..."), nullptr, &m_orthophoto_window);
+    // the settings are a part of the terrain tools
+    if (ImGui::MenuItem(STR_C("Orthophoto settings..."), nullptr, m_terrain_open))
+    {
+        m_track_window_open = false;
+        m_roadtool.window = false;
+        terrain_workspace(true);
+        m_orthophoto_expand = true;
+    }
     ImGui::EndMenu();
 }
 
@@ -2960,14 +2978,27 @@ void editor_mode::render_open_scenery_popup()
     ImGui::EndPopup();
 }
 
-void editor_mode::render_orthophoto_window()
+void editor_mode::terrain_workspace(bool const Open)
 {
-    if (false == m_orthophoto_window)
-        return;
-    ImGui::SetNextWindowSize(ImVec2(430.0f, 0.0f), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin((std::string(STR_C("Orthophoto##window")) + "###orthophoto").c_str(), &m_orthophoto_window))
+    m_terrain_open = Open;
+    if (false == Open)
+        m_terrain_sculpt = m_chunk_edit = false;
+}
+
+void editor_mode::render_terrain_tool_options()
+{
+    render_terrain_ui();
+    bool const expand{m_orthophoto_expand};
+    m_orthophoto_expand = false;
+    if (expand)
+        ImGui::SetNextItemOpen(true);
+    if (ImGui::CollapsingHeader(STR_C("Orthophoto")))
+    {
+        // opened from the map menu: brought into sight, the terrain tools above them take the most of the window
+        if (expand)
+            ImGui::SetScrollHereY(0.0f);
         render_orthophoto_ui();
-    ImGui::End();
+    }
 }
 
 void editor_mode::render_object_menu()
@@ -3629,27 +3660,71 @@ void editor_mode::render_toolbar()
 	// edit modes of the node bank, each of them takes the mouse over from the track window
 	std::pair<char const *, nodebank_panel::edit_mode> const modes[] = {
 	    {STR_C("Select"), nodebank_panel::MODIFY}, {STR_C("Insert"), nodebank_panel::ADD}, {STR_C("Brush"), nodebank_panel::BRUSH}, {STR_C("Area fill"), nodebank_panel::FILL}, {STR_C("Copy to bank"), nodebank_panel::COPY}};
+	// the fields of work: an edit mode, or the tracks, signals, vehicle, roads or terrain, one at a time
+	bool const workspace{m_roadtool.window || m_terrain_open};
 	for (auto const &mode : modes)
 	{
-		if (ImGui::MenuItem(mode.first, nullptr, ui()->mode() == mode.second))
+		if (ImGui::MenuItem(mode.first, nullptr, false == workspace && ui()->mode() == mode.second))
 		{
 			m_track_window_open = false;
+			m_roadtool.window = false;
+			terrain_workspace(false);
 			ui()->set_mode(mode.second);
 		}
 	}
 	ImGui::Separator();
-	if (ImGui::MenuItem(STR_C("Tracks"), nullptr, m_track_window_open))
+	bool const tracks{m_track_window_open && false == m_terrain_open};
+	bool const vehicle{tracks && m_track_tab == track_tab::lineside && m_vehicle.open};
+	if (ImGui::MenuItem(STR_C("Tracks"), nullptr, tracks && m_track_tab != track_tab::signals && false == vehicle))
 	{
-		if (m_track_window_open)
+		if (tracks && m_track_tab != track_tab::signals && false == vehicle)
 			m_track_window_open = false;
 		else
-			show_track_tab(m_track_tab);
+		{
+			terrain_workspace(false);
+			show_track_tab(m_track_tab == track_tab::signals || vehicle ? track_tab::path : m_track_tab);
+		}
 	}
-	if (ImGui::MenuItem("Roads", nullptr, m_roadtool.window))
+	// the signals are a tool of the track mode, but a field of work of their own
+	if (ImGui::MenuItem(STR_C("Signals"), nullptr, tracks && m_track_tab == track_tab::signals))
 	{
-		m_roadtool.window = !m_roadtool.window;
-		if (m_roadtool.window)
+		if (tracks && m_track_tab == track_tab::signals)
 			m_track_window_open = false;
+		else
+		{
+			terrain_workspace(false);
+			show_track_tab(track_tab::signals);
+		}
+	}
+	// so is the vehicle to drive, put on a track by the objects along the track
+	if (ImGui::MenuItem(STR_C("Vehicle"), nullptr, vehicle))
+	{
+		if (vehicle)
+			m_track_window_open = false;
+		else
+		{
+			terrain_workspace(false);
+			show_track_tab(track_tab::lineside);
+			m_vehicle.expand = true;
+		}
+	}
+	if (ImGui::MenuItem("Roads", nullptr, m_roadtool.window && false == m_terrain_open))
+	{
+		m_roadtool.window = !(m_roadtool.window && false == m_terrain_open);
+		if (m_roadtool.window)
+		{
+			m_track_window_open = false;
+			terrain_workspace(false);
+		}
+	}
+	if (ImGui::MenuItem(STR_C("Terrain"), nullptr, m_terrain_open))
+	{
+		terrain_workspace(false == m_terrain_open);
+		if (m_terrain_open)
+		{
+			m_track_window_open = false;
+			m_roadtool.window = false;
+		}
 	}
 	ImGui::Separator();
 	if (m_gizmo_enabled)

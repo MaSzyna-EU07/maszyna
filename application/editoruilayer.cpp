@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 #include "scene/scenenode.h"
 #include "scene/scenelayers.h"
+#include "scene/scene.h"
 #include "rendering/renderer.h"
 #include "utilities/translation.h"
 #include "imgui/imgui_internal.h"
@@ -31,8 +32,6 @@ editor_ui::editor_ui()
 	add_external_panel(&m_layerspanel);
 	add_external_panel(&m_includespanel);
 
-	m_nodebankpanel.mode_options = [this](nodebank_panel::edit_mode const Mode) { render_mode_options(Mode); };
-	m_nodebankpanel.header_sections = [this]() { render_header_sections(); };
 	// the menu is a part of the layout of the editor, not a pop-up as in the driver mode
 	m_menu_always = true;
 }
@@ -67,22 +66,26 @@ void editor_ui::build_default_layout(unsigned int const Dockspace)
 	ImGui::DockBuilderAddNode(Dockspace, ImGuiDockNodeFlags_DockSpace | ImGuiDockNodeFlags_PassthruCentralNode);
 	ImGui::DockBuilderSetNodePos(Dockspace, viewport->WorkPos);
 	ImGui::DockBuilderSetNodeSize(Dockspace, viewport->WorkSize);
-	// widths in pixels the current windows need, as parts of the room there is
+	// widths in pixels the windows need, as parts of the room there is
 	auto const width{std::max(viewport->WorkSize.x, 1.0f)};
 	auto const height{std::max(viewport->WorkSize.y, 1.0f)};
-	auto const left_width{std::min(440.0f * Global.ui_scale, width * 0.3f)};
+	auto const left_width{std::min(400.0f * Global.ui_scale, width * 0.3f)};
 	auto const right_width{std::min(460.0f * Global.ui_scale, width * 0.3f)};
-	auto const bottom_height{std::min(300.0f * Global.ui_scale, height * 0.35f)};
+	auto const bottom_height{std::min(280.0f * Global.ui_scale, height * 0.35f)};
 	ImGuiID center{Dockspace};
-	auto const left{ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, left_width / width, nullptr, &center)};
-	auto const right{ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, right_width / (width - left_width), nullptr, &center)};
+	auto const right{ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, right_width / width, nullptr, &center)};
+	auto const left{ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, left_width / (width - right_width), nullptr, &center)};
 	auto const bottom{ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, bottom_height / height, nullptr, &center)};
+	// left: settings of the tool in use above, the scenery below
+	ImGuiID lefttop{left};
+	auto const leftbottom{ImGui::DockBuilderSplitNode(lefttop, ImGuiDir_Down, 0.5f, nullptr, &lefttop)};
 	// windows are found by the stable part of their names, after ###
-	for (auto const *window : {"###Toolset", "###Layers", "###scenehierarchy"})
-		ImGui::DockBuilderDockWindow(window, left);
-	for (auto const *window : {"###trackinspector", "###roadeditor", "###editorsettings", "###Include database", "###orthophoto", "###structuregauge"})
+	ImGui::DockBuilderDockWindow("###tooloptions", lefttop);
+	for (auto const *window : {"###scenetree", "###Layers", "###scenehierarchy"})
+		ImGui::DockBuilderDockWindow(window, leftbottom);
+	for (auto const *window : {"###inspector", "###editorsettings", "###Include database"})
 		ImGui::DockBuilderDockWindow(window, right);
-	for (auto const *window : {"###profilestrip", "###editorhistory", "###modelsets"})
+	for (auto const *window : {"###Node bank", "###profilestrip", "###trackanalysis", "###structuregauge", "###editorhistory", "###modelsets"})
 		ImGui::DockBuilderDockWindow(window, bottom);
 	ImGui::DockBuilderFinish(Dockspace);
 }
@@ -102,6 +105,9 @@ void editor_ui::render_()
 		}
 	}
 	ImGui::End();
+	render_tool_options();
+	render_inspector();
+	render_scene();
 	// status bar: the outcome of the last operation, and the selected node
 	if (ImGui::BeginViewportSideBar("##editorstatusbar", viewport, ImGuiDir_Down, ImGui::GetFrameHeight(), flags))
 	{
@@ -186,34 +192,245 @@ void editor_ui::render_mode_options(nodebank_panel::edit_mode const Mode)
 	}
 }
 
-void editor_ui::render_header_sections()
+void editor_ui::render_tool_options()
 {
-	if (ImGui::CollapsingHeader(STR_C("Gizmo"), ImGuiTreeNodeFlags_DefaultOpen))
+	if (false == m_tooloptionsopen)
+		return;
+	ImGui::SetNextWindowSize(ImVec2S(400, 300), ImGuiCond_FirstUseEver);
+	auto const current{mode()};
+	auto const active{m_workspace == workspace::terrain || (m_workspace == workspace::roads && current != nodebank_panel::TRACK) ? m_workspace : workspace::none};
+	// a change of the mode brings the window forward, in case it shares its dock with another one
+	auto const shown{active != workspace::none ? 100 + static_cast<int>(active) : static_cast<int>(current)};
+	if (shown != m_toolmode)
 	{
-		if (m_gizmooptions)
-			m_gizmooptions();
+		m_toolmode = shown;
+		ImGui::SetNextWindowFocus();
 	}
-	if (ImGui::CollapsingHeader(STR_C("Node properties"), ImGuiTreeNodeFlags_DefaultOpen))
+	if (ImGui::Begin((std::string(STR_C("Tool options")) + "###tooloptions").c_str(), &m_tooloptionsopen, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse))
 	{
-		ImGui::Indent();
-		m_itempropertiespanel.render_body();
-		ImGui::Unindent();
+		char const *name{STR_C("Select")};
+		switch (current)
+		{
+		case nodebank_panel::ADD:
+			name = STR_C("Insert");
+			break;
+		case nodebank_panel::BRUSH:
+			name = STR_C("Brush");
+			break;
+		case nodebank_panel::FILL:
+			name = STR_C("Area fill");
+			break;
+		case nodebank_panel::COPY:
+			name = STR_C("Copy to bank");
+			break;
+		case nodebank_panel::TRACK:
+			name = STR_C("Tracks");
+			break;
+		default:
+			break;
+		}
+		if (active == workspace::roads)
+			name = "Roads";
+		else if (active == workspace::terrain)
+			name = STR_C("Terrain");
+		ImGui::SeparatorText(name);
+		if (active != workspace::none)
+		{
+			auto const &tools{m_workspacetools[static_cast<std::size_t>(active)]};
+			if (tools)
+				tools();
+		}
+		else if (current == nodebank_panel::TRACK)
+		{
+			if (m_tracktools)
+				m_tracktools();
+		}
+		else
+			render_mode_options(current);
+		if (ImGui::CollapsingHeader(STR_C("Gizmo"), ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			if (m_gizmooptions)
+				m_gizmooptions();
+		}
 	}
-	if (ImGui::CollapsingHeader(STR_C("Array")))
+	ImGui::End();
+}
+
+void editor_ui::render_inspector()
+{
+	if (false == m_inspectoropen)
+		return;
+	ImGui::SetNextWindowSize(ImVec2S(420, 480), ImGuiCond_FirstUseEver);
+	if (ImGui::Begin((std::string(STR_C("Inspector")) + "###inspector").c_str(), &m_inspectoropen, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse))
 	{
-		if (m_arrayoptions)
-			m_arrayoptions();
+		if (mode() == nodebank_panel::TRACK)
+		{
+			// in the track mode the selection is a path
+			if (m_trackselection)
+				m_trackselection();
+			ImGui::End();
+			return;
+		}
+		if (auto const &selection{m_workspaceselection[static_cast<std::size_t>(m_workspace)]})
+		{
+			selection();
+			ImGui::End();
+			return;
+		}
+		if (ImGui::CollapsingHeader(STR_C("Node properties"), ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			ImGui::Indent();
+			m_itempropertiespanel.render_body();
+			ImGui::Unindent();
+		}
+		if (ImGui::CollapsingHeader(STR_C("Array")))
+		{
+			if (m_arrayoptions)
+				m_arrayoptions();
+		}
+		if (m_bendexpand)
+		{
+			ImGui::SetNextItemOpen(true);
+			m_bendexpand = false;
+		}
+		if (ImGui::CollapsingHeader(STR_C("Bend along the track")))
+		{
+			if (m_bendoptions)
+				m_bendoptions();
+		}
 	}
-	if (m_bendexpand)
+	ImGui::End();
+}
+
+void editor_ui::scene_rebuild()
+{
+	m_sceneentries.clear();
+	m_sceneentries.reserve(scene::Hierarchy.size());
+	for (auto const &entry : scene::Hierarchy)
 	{
-		ImGui::SetNextItemOpen(true);
-		m_bendexpand = false;
+		if (entry.second == nullptr)
+			continue;
+		m_sceneentries.push_back({entry.first, entry.second->layer(), entry.second->group(), entry.second->name()});
 	}
-	if (ImGui::CollapsingHeader(STR_C("Bend along the track")))
+	std::sort(m_sceneentries.begin(), m_sceneentries.end(), [](scene_entry const &Left, scene_entry const &Right) {
+		if (Left.layer != Right.layer)
+			return Left.layer < Right.layer;
+		if (Left.group != Right.group)
+			return Left.group < Right.group;
+		return Left.name < Right.name;
+	});
+	m_scenesize = scene::Hierarchy.size();
+	m_scenefilterused = "\x01"; // matches are found again
+}
+
+void editor_ui::scene_row(std::size_t const Entry)
+{
+	auto const &entry{m_sceneentries[Entry]};
+	// the node is looked up again, it may have been removed since the list was made
+	auto const lookup{scene::Hierarchy.find(entry.uuid)};
+	auto *node{lookup != scene::Hierarchy.end() ? lookup->second : nullptr};
+	if (node == nullptr)
 	{
-		if (m_bendoptions)
-			m_bendoptions();
+		ImGui::TextDisabled("%s", entry.name.c_str());
+		return;
 	}
+	auto const label{(node->name().empty() ? std::string{"(none)"} : node->name()) + "##" + entry.uuid};
+	if (ImGui::Selectable(label.c_str(), node == m_node, ImGuiSelectableFlags_AllowDoubleClick) && m_sceneselect)
+		m_sceneselect(node, ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left));
+	if (ImGui::IsItemHovered())
+	{
+		auto const location{node->location()};
+		ImGui::SetTooltip("%s\n%.1f, %.1f, %.1f\n%s", entry.uuid.c_str(), location.x, location.y, location.z, STR_C("Double click: fly to it"));
+	}
+}
+
+void editor_ui::render_scene()
+{
+	if (false == m_sceneopen)
+		return;
+	ImGui::SetNextWindowSize(ImVec2S(400, 420), ImGuiCond_FirstUseEver);
+	if (ImGui::Begin((std::string(STR_C("Scene")) + "###scenetree").c_str(), &m_sceneopen, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse))
+	{
+		if (m_scenesize != scene::Hierarchy.size())
+			scene_rebuild();
+		if (ImGui::Button(STR_C("Refresh")))
+			scene_rebuild();
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(-FLT_MIN);
+		ImGui::InputTextWithHint("##scenefilter", STR_C("Filter: name or uuid"), m_scenefilter, IM_ARRAYSIZE(m_scenefilter));
+		ImGui::TextDisabled(STR_C("%zu models"), m_sceneentries.size());
+		if (ImGui::BeginChild("##scenelist", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders))
+		{
+			std::string const filter{m_scenefilter};
+			if (false == filter.empty())
+			{
+				// a flat list of what matches the filter
+				if (filter != m_scenefilterused)
+				{
+					m_scenematches.clear();
+					for (std::size_t idx = 0; idx < m_sceneentries.size(); ++idx)
+						if (contains(m_sceneentries[idx].name, filter) || contains(m_sceneentries[idx].uuid, filter))
+							m_scenematches.push_back(idx);
+					m_scenefilterused = filter;
+				}
+				ImGuiListClipper clipper;
+				clipper.Begin(static_cast<int>(m_scenematches.size()));
+				while (clipper.Step())
+					for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
+						scene_row(m_scenematches[row]);
+			}
+			else
+			{
+				// layers, in them the groups (made by the includes), in these the models
+				std::size_t layerstart{0};
+				while (layerstart < m_sceneentries.size())
+				{
+					auto const layer{m_sceneentries[layerstart].layer};
+					auto layerend{layerstart};
+					while (layerend < m_sceneentries.size() && m_sceneentries[layerend].layer == layer)
+						++layerend;
+					auto const layername{scene::Layers.valid(layer) ? scene::Layers.layer(layer).name : std::string{STR_C("(no layer)")}};
+					auto const layerlabel{layername + " (" + std::to_string(layerend - layerstart) + ")##layer" + std::to_string(layer)};
+					if (ImGui::TreeNodeEx(layerlabel.c_str(), m_sceneentries.size() == layerend - layerstart ? ImGuiTreeNodeFlags_DefaultOpen : 0))
+					{
+						auto groupstart{layerstart};
+						while (groupstart < layerend)
+						{
+							auto const group{m_sceneentries[groupstart].group};
+							auto groupend{groupstart};
+							while (groupend < layerend && m_sceneentries[groupend].group == group)
+								++groupend;
+							auto const rows = [&](std::size_t const From, std::size_t const To) {
+								ImGuiListClipper clipper;
+								clipper.Begin(static_cast<int>(To - From));
+								while (clipper.Step())
+									for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
+										scene_row(From + row);
+							};
+							if (group == null_handle)
+							{
+								rows(groupstart, groupend);
+							}
+							else
+							{
+								auto const grouplabel{std::string{STR_C("Group")} + " " + std::to_string(group) + " (" + std::to_string(groupend - groupstart) + ")##group" + std::to_string(group)};
+								if (ImGui::TreeNode(grouplabel.c_str()))
+								{
+									rows(groupstart, groupend);
+									ImGui::TreePop();
+								}
+							}
+							groupstart = groupend;
+						}
+						ImGui::TreePop();
+					}
+					layerstart = layerend;
+				}
+			}
+		}
+		ImGui::EndChild();
+	}
+	ImGui::End();
 }
 
 void editor_ui::render_menu_contents()
@@ -256,7 +473,10 @@ void editor_ui::render_menu_contents()
 		if (ImGui::MenuItem(STR_C("Reset window layout")))
 			m_layoutreset = true;
 		ImGui::Separator();
-		ImGui::MenuItem(STR_C("Toolset"), nullptr, &m_nodebankpanel.is_open);
+		ImGui::MenuItem(STR_C("Tool options"), nullptr, &m_tooloptionsopen);
+		ImGui::MenuItem(STR_C("Inspector"), nullptr, &m_inspectoropen);
+		ImGui::MenuItem(STR_C("Scene"), nullptr, &m_sceneopen);
+		ImGui::MenuItem(STR_C("Node bank"), nullptr, &m_nodebankpanel.is_open);
 		ImGui::MenuItem(STR_C("Layers"), nullptr, &m_layerspanel.is_open);
 		ImGui::MenuItem(STR_C("Include database"), nullptr, &m_includespanel.is_open);
 		ImGui::EndMenu();
@@ -330,7 +550,6 @@ nodebank_panel::edit_mode editor_ui::mode()
 }
 void editor_ui::set_mode(nodebank_panel::edit_mode const Mode)
 {
-	m_nodebankpanel.requested_mode = Mode;
 	m_nodebankpanel.mode = Mode;
 	m_nodebankpanel.is_open = true;
 }

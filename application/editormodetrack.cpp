@@ -745,102 +745,117 @@ void editor_mode::render_track_inspector()
 		return;
 	}
 
-	auto *track{selected_track()};
 	m_route_tab = m_track_tab != track_tab::path;
 
-	ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 460.0f, ImGui::GetFrameHeight() + 8.0f), ImGuiCond_FirstUseEver);
-	ImGui::SetNextWindowSize(ImVec2(440.0f, std::min(720.0f, io.DisplaySize.y - 80.0f)), ImGuiCond_FirstUseEver);
-	std::string title{STR_C("Tracks")};
-	if (track != nullptr && m_track_tab != track_tab::lay && false == track_analysis_tab())
-		title += ": " + (track->name().empty() ? std::string{"(noname)"} : track->name());
-	title += "###trackinspector";
-	if (ImGui::Begin(title.c_str(), &m_track_window_open, ImGuiWindowFlags_NoCollapse))
+	// the tools of the mode are drawn in the tool options window and the selected path in the inspector, see
+	// render_track_tool_options() and render_track_selection(); the checks list what they find in a window of their own
+	if (m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::infra)
 	{
-		render_track_modes(track);
-		ImGui::BeginChild("##trackmode");
-		switch (m_track_tab)
+		auto const *title{m_track_tab == track_tab::speed ? STR_C("Speed check") : m_track_tab == track_tab::joints ? STR_C("Joints") : STR_C("Infrastructure")};
+		ImGui::SetNextWindowSize(ImVec2(600.0f, std::min(320.0f, io.DisplaySize.y - 80.0f)), ImGuiCond_FirstUseEver);
+		if (ImGui::Begin((std::string{title} + "###trackanalysis").c_str(), nullptr, ImGuiWindowFlags_NoCollapse))
 		{
-		case track_tab::lay:
-			render_lay_ui();
-			break;
-		case track_tab::turnout:
-			if (track != nullptr && track->eType == tt_Switch)
-				render_turnout_ui();
-			else
-				render_switch_ui();
-			break;
-		case track_tab::straights:
-			render_straight_ui();
-			if (ImGui::CollapsingHeader(STR_C("Straights in the scenery")))
-				render_straights_ui();
-			break;
-		case track_tab::route:
-			render_route_ui();
-			break;
-		case track_tab::profile: render_profile_body(); break;
-		case track_tab::speed: render_speed_body(); break;
-		case track_tab::joints: render_joints_body(); break;
-		case track_tab::lineside: render_lineside_ui(); break;
-		case track_tab::signals: render_signal_ui(); break;
-		case track_tab::infra: render_infra_body(); break;
-		case track_tab::turntable: render_turntable_ui(); break;
-		default:
-			render_track_set_ui();
-			render_track_spread_ui();
-			if (track != nullptr)
-				render_path_ui();
-			else
-				ImGui::TextDisabled("%s", STR_C("LMB on a path in the view selects it"));
-			break;
+			switch (m_track_tab)
+			{
+			case track_tab::speed: render_speed_body(); break;
+			case track_tab::joints: render_joints_body(); break;
+			default: render_infra_body(); break;
+			}
 		}
-		ImGui::EndChild();
+		ImGui::End();
 	}
-	ImGui::End();
-	if (false == m_track_window_open)
-		ui()->set_track(false);
 
 	if (m_track_tab == track_tab::profile && m_track_window_open && false == m_profile.route.spans.empty())
 		render_profile_strip();
 }
 
-void editor_mode::render_track_modes(TTrack *Track)
+void editor_mode::render_track_tool_options()
 {
-	auto const &modes{track_modes()};
-	auto const row = [&](char const *Label, int const From, int const To) {
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextDisabled("%s", STR_C(Label));
-		for (int i = From; i < To; ++i)
-		{
-			auto const &mode{modes[i]};
-			auto const label{std::string{STR_C(mode.label)} + "###trackmode" + std::to_string(i)};
-			// the buttons which don't fit go on to the next line, under the first one
-			auto const width{ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::CalcTextSize(STR_C(mode.label)).x};
-			if (i == From)
-				ImGui::SameLine(72.0f);
-			else if (ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + width > ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x)
-				ImGui::SetCursorPosX(72.0f);
-			else
-				ImGui::SameLine();
-			if (ImGui::RadioButton(label.c_str(), m_track_tab == mode.tab))
-				show_track_tab(mode.tab);
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s  [%s]", STR_C(mode.tooltip), mode.key);
-		}
-	};
-	row("Edit", 0, 7);
-	row("Analysis", 7, static_cast<int>(modes.size()));
-	ImGui::SameLine();
-	ImGui::Checkbox(STR_C("Structure gauge"), &m_gauge.open);
-	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"));
+	auto *track{selected_track()};
+	render_track_modes();
 	render_track_search();
 	ImGui::Spacing();
 	render_track_guide();
-	if (Track != nullptr && m_track_tab != track_tab::lay && false == track_analysis_tab())
+	switch (m_track_tab)
 	{
-		char const *type = Track->eType == tt_Normal ? "normal" : Track->eType == tt_Switch ? "switch" : Track->eType == tt_Cross ? "cross" : Track->eType == tt_Table ? "turntable" : Track->eType == tt_Tributary ? "tributary" : "unknown";
-		ImGui::TextDisabled("%s, %.2f m", STR_C(type), Track->Length());
+	case track_tab::lay:
+		render_lay_ui();
+		break;
+	case track_tab::turnout:
+		if (track != nullptr && track->eType == tt_Switch)
+			render_turnout_ui();
+		else
+			render_switch_ui();
+		break;
+	case track_tab::straights:
+		render_straight_ui();
+		if (ImGui::CollapsingHeader(STR_C("Straights in the scenery")))
+			render_straights_ui();
+		break;
+	case track_tab::route:
+		render_route_ui();
+		break;
+	case track_tab::profile: render_profile_body(); break;
+	case track_tab::speed:
+	case track_tab::joints:
+	case track_tab::infra:
+		ImGui::TextDisabled("%s", STR_C("What the check finds is listed in its window"));
+		break;
+	case track_tab::lineside: render_lineside_ui(); break;
+	case track_tab::signals: render_signal_ui(); break;
+	case track_tab::turntable: render_turntable_ui(); break;
+	default:
+		render_track_set_ui();
+		render_track_spread_ui();
+		break;
 	}
+}
+
+void editor_mode::render_track_selection()
+{
+	auto *track{selected_track()};
+	if (track == nullptr)
+	{
+		ImGui::TextDisabled("%s", STR_C("LMB on a path in the view selects it"));
+		return;
+	}
+	char const *type = track->eType == tt_Normal ? "normal" : track->eType == tt_Switch ? "switch" : track->eType == tt_Cross ? "cross" : track->eType == tt_Table ? "turntable" : track->eType == tt_Tributary ? "tributary" : "unknown";
+	ImGui::TextUnformatted((track->name().empty() ? std::string{"(noname)"} : track->name()).c_str());
+	ImGui::TextDisabled("%s, %.2f m", STR_C(type), track->Length());
+	// the parameters of the path belong to the select tool, the other tools show the path they work with
+	if (m_track_tab == track_tab::path)
+		render_path_ui();
+}
+
+void editor_mode::render_track_modes()
+{
+	auto const &modes{track_modes()};
+	// the tools in groups: building the track, what goes by it, the checks
+	auto const group = [&](char const *Label, std::initializer_list<track_tab> const Tabs) {
+		ImGui::SeparatorText(STR_C(Label));
+		if (false == ImGui::BeginTable(Label, 3, ImGuiTableFlags_SizingStretchSame))
+			return;
+		for (auto const tab : Tabs)
+		{
+			auto const found{std::find_if(modes.begin(), modes.end(), [&](track_mode const &Mode) { return Mode.tab == tab; })};
+			if (found == modes.end())
+				continue;
+			ImGui::TableNextColumn();
+			auto const index{static_cast<int>(found - modes.begin())};
+			auto const label{std::string{STR_C(found->label)} + "###trackmode" + std::to_string(index)};
+			if (ImGui::Selectable(label.c_str(), m_track_tab == tab))
+				show_track_tab(tab);
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s  [%s]", STR_C(found->tooltip), found->key);
+		}
+		ImGui::EndTable();
+	};
+	group("Build", {track_tab::path, track_tab::lay, track_tab::turnout, track_tab::straights, track_tab::route, track_tab::turntable});
+	group("By the track", {track_tab::signals, track_tab::lineside});
+	group("Checks", {track_tab::profile, track_tab::speed, track_tab::joints, track_tab::infra});
+	ImGui::Checkbox(STR_C("Structure gauge"), &m_gauge.open);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"));
 }
 
 void editor_mode::render_track_guide()

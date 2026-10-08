@@ -97,13 +97,47 @@ class editor_ui : public ui_layer
 	{
 		return m_viewmax;
 	}
+	// tools of the track mode in the tool options window, the selected path in the inspector
+	void set_track_options(std::function<void()> Tools, std::function<void()> Selection)
+	{
+		m_tracktools = std::move(Tools);
+		m_trackselection = std::move(Selection);
+	}
+	// fields of work of the editor mode besides the edit modes, chosen in its toolbar: their tools are drawn in the tool options window,
+	// what they have selected in the inspector. the terrain is shown over the track mode, the roads give way to it
+	enum class workspace
+	{
+		none,
+		roads,
+		terrain,
+		count_
+	};
+	void set_workspace(workspace const Workspace)
+	{
+		m_workspace = Workspace;
+	}
+	void set_workspace_options(workspace const Workspace, std::function<void()> Tools, std::function<void()> Selection = {})
+	{
+		m_workspacetools[static_cast<std::size_t>(Workspace)] = std::move(Tools);
+		m_workspaceselection[static_cast<std::size_t>(Workspace)] = std::move(Selection);
+	}
+	// selection of a node in the scene window; Focus is set when the camera is to fly to it
+	void set_scene_select(std::function<void(scene::basic_node *, bool)> Select)
+	{
+		m_sceneselect = std::move(Select);
+	}
 	// shows outcome of an operation in the layers window
 	void set_status(std::string const &Status, bool const Error = false);
 
   private:
 	// methods
 	void render_mode_options(nodebank_panel::edit_mode const Mode);
-	void render_header_sections();
+	// windows of the editor drawn by the user interface itself
+	void render_tool_options();
+	void render_inspector();
+	void render_scene();
+	void scene_rebuild();
+	void scene_row(std::size_t const Entry);
 	void render_menu_contents() override;
 	void render_dockspace() override;
 	void render_() override;
@@ -112,7 +146,7 @@ class editor_ui : public ui_layer
 	// members
 	itemproperties_panel m_itempropertiespanel{"Node Properties", true}; // not a window of its own, drawn in the toolset window
 	functions_panel m_functionspanel{"Functions", true}; // not a window of its own, its settings are drawn in the toolset tabs
-	nodebank_panel m_nodebankpanel{"Toolset", true}; // main editor window: gizmo, node properties, edit modes and the node bank
+	nodebank_panel m_nodebankpanel{"Node bank", true}; // templates to insert, paint or fill with
 	layers_panel m_layerspanel{"Layers", true};
 	includes_panel m_includespanel{"Include database", false};
 	std::function<void()> m_save;
@@ -126,6 +160,29 @@ class editor_ui : public ui_layer
 	std::function<void()> m_menuoptions;
 	std::function<void()> m_toolbaroptions;
 	bool m_layoutreset{false}; // the default layout is to be built again on the next frame
+	bool m_tooloptionsopen{true};
+	bool m_inspectoropen{true};
+	bool m_sceneopen{true};
+	std::function<void(scene::basic_node *, bool)> m_sceneselect;
+	std::function<void()> m_tracktools;
+	std::function<void()> m_trackselection;
+	int m_toolmode{-1}; // edit mode or field of work the tool options were drawn for the last time
+	workspace m_workspace{workspace::none};
+	std::array<std::function<void()>, static_cast<std::size_t>(workspace::count_)> m_workspacetools;
+	std::array<std::function<void()>, static_cast<std::size_t>(workspace::count_)> m_workspaceselection;
+	// scene window: the models of the scenery by layer and group, rebuilt when their number changes
+	struct scene_entry
+	{
+		std::string uuid; // key in scene::Hierarchy, the node is looked up by it when drawn
+		scene::layer_handle layer;
+		scene::group_handle group;
+		std::string name;
+	};
+	std::vector<scene_entry> m_sceneentries;
+	std::size_t m_scenesize{static_cast<std::size_t>(-1)};
+	char m_scenefilter[64]{};
+	std::string m_scenefilterused;
+	std::vector<std::size_t> m_scenematches;
 	static glm::vec2 m_viewmin;
 	static glm::vec2 m_viewmax;
 	std::function<void()> m_gizmooptions;

@@ -598,8 +598,7 @@ void nodebank_panel::render()
 	}
 	else
 	{
-		// mode settings are drawn above the list, so start with a window tall enough for both
-		ImGui::SetNextWindowSize(ImVec2S(440, 640), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2S(440, 400), ImGuiCond_FirstUseEver);
 	}
 	if (size_min.x > 0)
 	{
@@ -619,32 +618,8 @@ void nodebank_panel::render()
 			m_setsopen = !m_setsopen;
 		}
 
-		if (header_sections)
-		{
-			header_sections();
-		}
-
-		// edit modes as tabs, each with its own settings
-		std::pair<char const *, edit_mode> const modes[] = {{STR_C("Select"), MODIFY}, {STR_C("Insert"), ADD}, {STR_C("Brush"), BRUSH}, {STR_C("Area fill"), FILL}, {STR_C("Copy to bank"), COPY}};
-		if (ImGui::BeginTabBar("##editmodes", ImGuiTabBarFlags_FittingPolicyResizeDown))
-		{
-			for (auto const &tab : modes)
-			{
-				if (false == ImGui::BeginTabItem(tab.first, nullptr, requested_mode == tab.second ? ImGuiTabItemFlags_SetSelected : 0))
-				{
-					continue;
-				}
-				mode = tab.second;
-				if (mode_options)
-				{
-					mode_options(mode);
-				}
-				ImGui::EndTabItem();
-			}
-			ImGui::EndTabBar();
-			requested_mode = -1;
-		}
-
+		// the edit modes are chosen in the toolbar and set up in the tool options window, the gizmo and the node
+		// properties are in the inspector: what's left here is the node bank itself
 		ImGui::Separator();
 		ImGui::PushItemWidth(-1);
 		ImGui::InputTextWithHint(STR_C("Search"), STR_C("Search node bank"), m_nodesearch, IM_ARRAYSIZE(m_nodesearch));

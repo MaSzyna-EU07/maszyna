@@ -852,13 +852,11 @@ void editor_mode::render_profile_earthworks()
 	}
 	if (false == active_terrains().empty())
 	{
+		// the terrain tools take the tool options window over, the profile stays open under them
 		if (ImGui::Button(STR_C("Sculpting...")))
-		{
-			set_settings_open(true);
-			m_terrain_tab_wanted = true;
-		}
+			terrain_workspace(true);
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("Opens the terrain tab of the editor settings: raising, lowering and smoothing with a brush"));
+			ImGui::SetTooltip("%s", STR_C("Opens the terrain tools: raising, lowering and smoothing with a brush"));
 	}
 	ImGui::TreePop();
 }

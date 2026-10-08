@@ -221,7 +221,10 @@ void editor_mode::render_road_menu()
 	if (ImGui::BeginMenu("Roads"))
 	{
 		if (ImGui::MenuItem("Road editor", nullptr, &m_roadtool.window) && m_roadtool.window)
+		{
 			m_track_window_open = false;
+			terrain_workspace(false);
+		}
 		ImGui::MenuItem("Show lanes", nullptr, &m_roadtool.lanes);
 		ImGui::EndMenu();
 	}
@@ -2258,17 +2261,10 @@ bool editor_mode::render_road_layout(road_node::state &State)
 	return changed;
 }
 
-void editor_mode::render_road_window()
+// the road tools and what the next pieces get, in the tool options window; the selection is drawn in the inspector by render_road_selection()
+void editor_mode::render_road_tool_options()
 {
 	auto &tool{m_roadtool};
-	if (false == tool.window)
-		return;
-	ImGui::SetNextWindowSize(ImVec2(440.0f, 620.0f), ImGuiCond_FirstUseEver);
-	if (false == ImGui::Begin("Roads###roadeditor", &tool.window))
-	{
-		ImGui::End();
-		return;
-	}
 	std::string reason;
 	if (false == editor_road::available(&reason))
 		ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", reason.c_str());
@@ -2296,11 +2292,6 @@ void editor_mode::render_road_window()
 	ImGui::SameLine();
 	ImGui::Checkbox("Show lanes", &tool.lanes);
 
-	// typed values are taken when confirmed, so nothing is made anew with each digit
-	auto const number = [](char const *Label, float &Value, float const Step, char const *Format) {
-		ImGui::SetNextItemWidth(120.0f);
-		return ImGui::InputFloat(Label, &Value, Step, Step * 4.0f, Format, ImGuiInputTextFlags_EnterReturnsTrue);
-	};
 	if (tool.tool == 1)
 	{
 		if (ImGui::Checkbox("Roundabout", &tool.ring))
@@ -2378,6 +2369,26 @@ void editor_mode::render_road_window()
 		placing.kind = point_kind(tool.placekind);
 		render_roadpoint_layout(placing, nullptr);
 	}
+	else
+		ImGui::TextDisabled("The selected road is set up in the inspector");
+	if (false == tool.status.empty())
+	{
+		ImGui::Separator();
+		ImGui::TextWrapped("%s", tool.status.c_str());
+	}
+}
+
+// what the select tool of the roads picked, in the inspector
+void editor_mode::render_road_selection()
+{
+	auto &tool{m_roadtool};
+	// typed values are taken when confirmed, so nothing is made anew with each digit
+	auto const number = [](char const *Label, float &Value, float const Step, char const *Format) {
+		ImGui::SetNextItemWidth(120.0f);
+		return ImGui::InputFloat(Label, &Value, Step, Step * 4.0f, Format, ImGuiInputTextFlags_EnterReturnsTrue);
+	};
+	if (tool.tool != 0)
+		ImGui::TextDisabled("The select tool shows the road picked in the view here");
 	else if (tool.marker != nullptr)
 	{
 		auto &point{*tool.marker};
@@ -2490,12 +2501,6 @@ void editor_mode::render_road_window()
 		ImGui::TextDisabled("LMB: select a road piece, a junction, a point where pieces meet,");
 		ImGui::TextDisabled("a level crossing or a traffic point");
 	}
-	if (false == tool.status.empty())
-	{
-		ImGui::Separator();
-		ImGui::TextWrapped("%s", tool.status.c_str());
-	}
-	ImGui::End();
 }
 
 void editor_mode::draw_road_overlay() const

@@ -231,6 +231,10 @@ class editor_mode : public application_mode, private editor_track::observer
 
 	// editable terrain patches created in the editor
 	void render_terrain_ui();
+	// the terrain as a field of work of its own: the terrain tools and the orthophoto in the tool options window
+	void render_terrain_tool_options();
+	// opens or leaves the terrain; leaving it puts the sculpting and the chunk editing away, so the mouse doesn't stay with them
+	void terrain_workspace(bool const Open);
 	// creates a large terrain as a grid of adjacent chunks (each its own editable patch)
 	void create_chunked_terrain();
 	// manual grid-aligned chunks: add/remove single chunks for fine control
@@ -289,7 +293,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	std::map<std::pair<int, int>, std::unique_ptr<editor_terrain>> m_grid_chunks;
 	bool m_terrain_sculpt{false};     // when true, LMB sculpts terrain instead of picking
 	bool m_terrain_brush_smooth{false}; // the brush evens the ground out instead of raising or lowering it
-	bool m_terrain_tab_wanted{false}; // the settings window brings the terrain tab forward the next time it's drawn
+	bool m_terrain_open{false};       // the terrain is the field of work, chosen in the toolbar
 	bool m_chunk_edit{false};         // when true, LMB adds/removes whole chunks
 	int m_terrain_cells{32};          // grid resolution (quads per side)
 	int m_terrain_chunks{4};          // chunks per side for a chunked terrain
@@ -311,7 +315,6 @@ class editor_mode : public application_mode, private editor_track::observer
 	// geoportal orthophoto layer drawn under the other viewport overlays
 	void render_orthophoto_ui();
 	void render_map_menu();
-	void render_orthophoto_window();
 	bool m_newscenery_asked{false};
 	void render_new_scenery_popup();
 	bool restart_for_new_scenery();
@@ -326,7 +329,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	std::vector<std::string> m_openscenery_list;
 	std::string m_openscenery_choice;
 	void render_open_scenery_popup();
-	bool m_orthophoto_window{false};
+	bool m_orthophoto_expand{false}; // the orthophoto settings of the terrain tools are opened the next time they're drawn
 	// origin of the scenery in PUWG 1992 the scenery file gives in its //$g line, if it does
 	bool m_georeference_read{false};
 	bool m_georeference{false};
@@ -834,7 +837,10 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool m_track_window_open{false};
 	// the inspector is pinned to the right edge of the screen, the profile strip to the bottom one, both resized from the inner edge
 	void render_track_inspector();
-	void render_track_modes(TTrack *Track);
+	// the track tools in the tool options window, and the selected path in the inspector
+	void render_track_tool_options();
+	void render_track_selection();
+	void render_track_modes();
 	void show_track_tab(track_tab const Tab);
 	bool track_analysis_tab() const { return m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::infra; }
 	bool track_shortcut(int const Key);
@@ -1746,7 +1752,8 @@ class editor_mode : public application_mode, private editor_track::observer
 		char islandtext[128]{"none"};
 	};
 	void render_road_menu();
-	void render_road_window();
+	void render_road_tool_options();
+	void render_road_selection();
 	bool render_road_layout(road_node::state &State);
 	bool render_road_material(char const *Label, char *Buffer, std::size_t const Size, std::string &Value);
 	void render_junction_layout(junction_node &Junction);
