@@ -47,6 +47,21 @@ using geometry::signed_angle;
 using geometry::turned;
 using geometry::arc_pieces;
 
+double piece_plan_radius(segment_data const &Path)
+{
+	if (std::abs(Path.radius) > 0.5f)
+		return std::abs(Path.radius);
+	bezier const curve{Path};
+	auto const begin{plan_of(curve.first(0.0))};
+	auto const finish{plan_of(curve.first(1.0))};
+	if (glm::length(begin) < 1e-9 || glm::length(finish) < 1e-9)
+		return 0.0;
+	auto const turn{std::abs(signed_angle(begin, finish))};
+	if (turn < 1e-4)
+		return 0.0;
+	return curve.plan_length() / turn;
+}
+
 std::string describe(editor_track::straight const &Line)
 {
 	return format("L %.2f m  az %.4f deg  i %.2f per mille  %zu paths", Line.length, Line.azimuth, Line.grade * 1000.0, Line.tracks.size());
@@ -3436,7 +3451,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 			hints = {{"LMB", "start of the new track, on the ground or at a free end"}, {"Drag from a free end", "straight along it, to another free end: a curve joining them"}, {"Esc", "stop laying"}};
 		else
 		{
-			hints = {{"LMB", "next point, a curve goes at it"}, {"LMB on a free end", "join and lay"}, {"Enter", "lay up to the cursor"}, {"Backspace", "take back the point"}, {"Esc", "cancel"}};
+			hints = {{"LMB", m_lay.points.size() == 1 ? "end of the straight, or a vertex of a curve" : "next vertex of the curve"}, {"LMB on a free end", "join and lay"}, {"Enter", "lay up to the cursor"}, {"Backspace", "take back the point"}, {"Esc", "cancel"}};
 			if (glm::dvec2 heading; lay_heading(heading))
 				hints.insert(hints.begin() + 1, {"Shift", "straight on in the direction of the track"});
 		}
@@ -3572,7 +3587,22 @@ std::string editor_mode::track_readout() const
 		if (lay.points.empty())
 			text = lay.mouse_snap.track != nullptr ? "starts at the end of " + name(lay.mouse_snap.track) : "start";
 		else if (false == lay.preview.empty())
-			text = format("L %.1f m   R %.0f m   %zu paths", lay.preview_length, lay.radius, lay.preview.size());
+		{
+			double radius{0.0};
+			bool straight{false};
+			for (auto const &piece : lay.preview)
+			{
+				auto const r{piece_plan_radius(piece)};
+				if (r < 0.5)
+					straight = true;
+				else if (radius == 0.0 || r < radius)
+					radius = r;
+			}
+			if (radius > 0.0)
+				text = straight ? format("L %.1f m   %s + R %.0f m", lay.preview_length, STR_C("straight"), radius) : format("L %.1f m   R %.0f m", lay.preview_length, radius);
+			else
+				text = format("L %.1f m   %s", lay.preview_length, STR_C("straight"));
+		}
 		if (false == lay.points.empty() && lay.mouse_snap.track != nullptr)
 			text += "\njoins " + name(lay.mouse_snap.track);
 		if (false == lay.preview_error.empty())
@@ -5025,8 +5055,51 @@ void editor_mode::draw_build_overlay() const
 	if (m_lay.active)
 	{
 		auto const &lay{m_lay};
+		auto const piece_colour = [&](segment_data const &Path) {
+			if (false == lay.preview_error.empty())
+				return overlay_color::invalid;
+			return piece_plan_radius(Path) < 0.5 ? IM_COL32(255, 255, 255, 230) : overlay_color::marked;
+		};
 		for (auto const &piece : lay.preview)
-			drawpath(piece, lay.preview_error.empty() ? overlay_color::marked : overlay_color::grip);
+			drawpath(piece, piece_colour(piece));
+		for (std::size_t i = 0, n = lay.preview.size(); i < n;)
+		{
+			auto const radius{piece_plan_radius(lay.preview[i])};
+			bool const curved{radius >= 0.5};
+			std::size_t j{i + 1};
+			double length{bezier{lay.preview[i]}.plan_length()};
+			double sharpest{radius};
+			for (; j < n; ++j)
+			{
+				auto const next{piece_plan_radius(lay.preview[j])};
+				if ((next >= 0.5) != curved)
+					break;
+				length += bezier{lay.preview[j]}.plan_length();
+				if (curved && next < sharpest)
+					sharpest = next;
+			}
+			double along{0.0};
+			glm::dvec3 middle{bezier{lay.preview[i]}.point(0.5)};
+			for (std::size_t k = i; k < j; ++k)
+			{
+				auto const piece{bezier{lay.preview[k]}.plan_length()};
+				if (along + piece >= length * 0.5)
+				{
+					middle = bezier{lay.preview[k]}.point(piece > 1e-6 ? std::clamp((length * 0.5 - along) / piece, 0.0, 1.0) : 0.5);
+					break;
+				}
+				along += piece;
+			}
+			ImVec2 screen;
+			if (projection.project(middle, screen))
+			{
+				auto const label{curved ? format("R %.0f", sharpest) : std::string{STR_C("straight")}};
+				auto const size{ImGui::CalcTextSize(label.c_str())};
+				drawlist->AddRectFilled(ImVec2(screen.x + 6.0f, screen.y - 8.0f), ImVec2(screen.x + 14.0f + size.x, screen.y + 8.0f), IM_COL32(0, 0, 0, 180), 3.0f);
+				drawlist->AddText(ImVec2(screen.x + 10.0f, screen.y - 8.0f), curved ? overlay_color::marked : overlay_color::highlight, label.c_str());
+			}
+			i = j;
+		}
 		for (std::size_t i = 0; i + 1 < lay.points.size(); ++i)
 			projection.line(drawlist, lay.points[i], lay.points[i + 1], IM_COL32(255, 255, 255, 90), 1.0f);
 		for (auto const &point : lay.points)

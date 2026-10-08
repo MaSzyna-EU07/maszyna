@@ -29,6 +29,12 @@ msgstr "Pokaż inspektor"
 msgid "The curve can't be read from this path, edit it as a single path"
 msgstr "Z tego odcinka nie da się odczytać łuku, edytuj go jako pojedynczy odcinek"
 
+msgid "end of the straight, or a vertex of a curve"
+msgstr "koniec prostej albo wierzchołek łuku"
+
+msgid "next vertex of the curve"
+msgstr "kolejny wierzchołek łuku"
+
 msgid "Laying track: LMB adds the points"
 msgstr "Układanie toru: LPM dodaje punkty"
 
