@@ -1433,7 +1433,7 @@ void editor_mode::render_profile_toolbar()
 	toggle(kPlan, STR_C("Plan curvature"), state.show_plan);
 	legend(kSwitchLabel, "Switches");
 	ImGui::SetNextItemWidth(130.0f);
-	ImGui::SliderFloat("##exaggeration", &state.exaggeration, 1.0f, 500.0f, STR_C("heights x%.0f"), 2.0f);
+	ImGui::SliderFloat("##exaggeration", &state.exaggeration, 1.0f, 500.0f, STR_C("heights x%.0f"), ImGuiSliderFlags_Logarithmic);
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Exaggeration of the heights against the lengths, also Ctrl+wheel over the plot"));
 	ImGui::SameLine();
@@ -1677,7 +1677,7 @@ bool editor_mode::profile_canvas_edit(profile_view const &View, bool const Hover
 	}
 	else
 		state.curve_grip = -1;
-	if ((Hovered || ImGui::IsWindowFocused()) && state.selected > 0 && state.selected + 1 < static_cast<int>(points.size()) && false == points[state.selected].joint && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete)))
+	if ((Hovered || ImGui::IsWindowFocused()) && state.selected > 0 && state.selected + 1 < static_cast<int>(points.size()) && false == points[state.selected].joint && ImGui::IsKeyPressed(ImGuiKey_Delete))
 	{
 		points.erase(points.begin() + state.selected);
 		state.selected = -1;

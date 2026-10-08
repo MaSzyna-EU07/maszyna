@@ -1919,7 +1919,8 @@ bool editor_mode::render_road_material(char const *Label, char *Buffer, std::siz
 			if (filter.empty() || name.find(filter) != std::string::npos)
 				listed.emplace_back(&name);
 		ImGui::BeginChild("list", ImVec2(340.0f, 280.0f), true);
-		ImGuiListClipper clipper(static_cast<int>(listed.size()));
+		ImGuiListClipper clipper;
+		clipper.Begin(static_cast<int>(listed.size()));
 		while (clipper.Step())
 		{
 			for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)

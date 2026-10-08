@@ -290,7 +290,8 @@ void editor_mode::render_speed_body()
 	ImGui::BeginChild("speedresults", ImVec2(0.0f, -details), true);
 	ImGui::Columns(6, STR_C("speedrows"), false);
 	ImGui::SetColumnWidth(0, namewidth);
-	ImGuiListClipper clipper(static_cast<int>(listed.size()));
+	ImGuiListClipper clipper;
+	clipper.Begin(static_cast<int>(listed.size()));
 	while (clipper.Step())
 		for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
 		{

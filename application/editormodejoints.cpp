@@ -467,7 +467,8 @@ void editor_mode::render_joints_body()
 	ImGui::SetColumnWidth(0, 90.0f);
 	ImGui::SetColumnWidth(1, 80.0f);
 	ImGui::SetColumnWidth(2, namewidth);
-	ImGuiListClipper clipper(static_cast<int>(listed.size()));
+	ImGuiListClipper clipper;
+	clipper.Begin(static_cast<int>(listed.size()));
 	while (clipper.Step())
 		for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
 		{

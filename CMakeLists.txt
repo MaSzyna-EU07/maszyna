@@ -257,6 +257,7 @@ set(SOURCES
 "imgui/imgui_demo.cpp"
 "imgui/imgui_draw.cpp"
 "imgui/imgui_widgets.cpp"
+"imgui/imgui_tables.cpp"
 "imgui/imgui_impl_glfw.cpp"
 "imgui/ImGuizmo.cpp"
 
@@ -485,7 +486,7 @@ if(NOT ${CMAKE_VERSION} VERSION_LESS "3.16.0")
 	if (USE_PCH)
 		target_precompile_headers(${PROJECT_NAME} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/stdafx.h>")
 		set_source_files_properties("/glad/src/glad.c" "ref/dds-ktx/src/dds-ktx.c" "stb/stb_image.c"
-			"imgui/imgui.cpp" "imgui/imgui_demo.cpp" "imgui/imgui_draw.cpp" "imgui/imgui_widgets.cpp" "imgui/imgui_impl_glfw.cpp" "imgui/ImGuizmo.cpp"
+			"imgui/imgui.cpp" "imgui/imgui_demo.cpp" "imgui/imgui_draw.cpp" "imgui/imgui_widgets.cpp" "imgui/imgui_tables.cpp" "imgui/imgui_impl_glfw.cpp" "imgui/ImGuizmo.cpp"
 			PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
 	endif()
 endif()

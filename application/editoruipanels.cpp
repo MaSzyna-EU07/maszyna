@@ -650,7 +650,7 @@ void nodebank_panel::render()
 		ImGui::InputTextWithHint(STR_C("Search"), STR_C("Search node bank"), m_nodesearch, IM_ARRAYSIZE(m_nodesearch));
 		// the list takes the rest of the window, but keeps a usable height when the sections above are expanded (the window scrolls then)
 		auto const listheight{std::max(ImGui::GetContentRegionAvail().y, ImGui::GetTextLineHeightWithSpacing() * 10.0f)};
-		if (ImGui::ListBoxHeader("##nodebank", ImVec2(-1, listheight)))
+		if (ImGui::BeginListBox("##nodebank", ImVec2(-1, listheight)))
 		{
 			auto idx{0};
 			auto isvisible{false};
@@ -710,7 +710,7 @@ void nodebank_panel::render()
 					ImGui::TextDisabled(EditorIncludes.ready().empty() ? " (none yet, describe the templates in the Include database window)" : " (no match)");
 				}
 			}
-			ImGui::ListBoxFooter();
+			ImGui::EndListBox();
 		}
 		ImGui::PopItemWidth();
 	}
@@ -772,7 +772,7 @@ bool nodebank_panel::set_combo(char const *Label, model_set_ref &Ref, char const
 void nodebank_panel::manual_list(char const *Id, std::vector<std::string> &List, int &Selected)
 {
 	ImGui::PushID(Id);
-	if (ImGui::ListBoxHeader("##list", ImVec2(-1, ImGui::GetTextLineHeightWithSpacing() * 6.5f)))
+	if (ImGui::BeginListBox("##list", ImVec2(-1, ImGui::GetTextLineHeightWithSpacing() * 6.5f)))
 	{
 		for (int idx = 0; idx < static_cast<int>(List.size()); ++idx)
 		{
@@ -784,7 +784,7 @@ void nodebank_panel::manual_list(char const *Id, std::vector<std::string> &List,
 		{
 			ImGui::TextDisabled(STR_C("(empty)"));
 		}
-		ImGui::ListBoxFooter();
+		ImGui::EndListBox();
 	}
 	if (ImGui::Button(STR_C("Add selected")))
 	{
@@ -1787,7 +1787,8 @@ void includes_panel::render_list()
 	                    static_cast<int>(EditorIncludes.ready().size()));
 
 	ImGui::BeginChild("##templates", ImVec2(0.0f, ImGui::GetTextLineHeightWithSpacing() * 9.0f), true);
-	ImGuiListClipper clipper(static_cast<int>(m_listed.size()));
+	ImGuiListClipper clipper;
+	clipper.Begin(static_cast<int>(m_listed.size()));
 	while (clipper.Step())
 	{
 		for (auto row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)

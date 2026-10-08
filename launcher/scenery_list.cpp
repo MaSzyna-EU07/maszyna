@@ -105,10 +105,10 @@ void ui::scenerylist_panel::draw_scenery_image()
 		tex.create();
 
 		if (tex.get_is_ready()) {
-			float avail_width = ImGui::GetContentRegionAvailWidth();
+			float avail_width = ImGui::GetContentRegionAvail().x;
 			float height = avail_width / tex.get_width() * tex.get_height();
 
-			ImGui::Image(reinterpret_cast<void *>(tex.get_id()), ImVec2(avail_width, height), ImVec2(0, 1), ImVec2(1, 0));
+			ImGui::Image((ImTextureID)(intptr_t)(tex.get_id()), ImVec2(avail_width, height), ImVec2(0, 1), ImVec2(1, 0));
 		}
 	}
 }
@@ -194,7 +194,8 @@ void ui::scenerylist_panel::add_replace_entry(const trainset_desc &trainset)
 
 void ui::scenerylist_panel::draw_trainset_box()
 {
-	ImGuiListClipper clipper(selected_scenery->trainsets.size());
+	ImGuiListClipper clipper;
+	clipper.Begin(selected_scenery->trainsets.size());
 	while (clipper.Step()) for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
 		draw_trainset(selected_scenery->trainsets[i]);
 }

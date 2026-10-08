@@ -118,6 +118,10 @@ public:
     static bool char_callback(unsigned int c);
     static bool scroll_callback(double xoffset, double yoffset);
     static bool mouse_button_callback(int button, int action, int mods);
+	// state updates only, nothing to consume
+	static void cursor_pos_callback(double x, double y);
+	static void cursor_enter_callback(int entered);
+	static void focus_callback(int focused);
 
 	static ImFont *font_default;
 	static ImFont *font_mono;

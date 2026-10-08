@@ -778,7 +778,8 @@ void editor_mode::render_gauge_hits()
 	ImGui::SameLine();
 	ImGui::Text("%d / %zu", m_gauge.current + 1, hits.size());
 	ImGui::BeginChild("gaugehits", ImVec2(0.0f, std::min(160.0f, ImGui::GetTextLineHeightWithSpacing() * hits.size() + 8.0f)), true);
-	ImGuiListClipper clipper(static_cast<int>(hits.size()));
+	ImGuiListClipper clipper;
+	clipper.Begin(static_cast<int>(hits.size()));
 	while (clipper.Step())
 		for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
 		{

@@ -1399,7 +1399,7 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 		float const segmentsize = 1.0f / static_cast<float>(segments);
 		auto const height_at = [&](float U, float V) { return draped ? sample_heights(t.heights, U, V) + lift : flat; };
 
-		drawlist->PushTextureID(reinterpret_cast<ImTextureID>(textureid));
+		drawlist->PushTextureID((ImTextureID)(intptr_t)(textureid));
 		for (int j = 0; j < segments; ++j)
 			for (int i = 0; i < segments; ++i)
 			{

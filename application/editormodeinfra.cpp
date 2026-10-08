@@ -1526,7 +1526,8 @@ void editor_mode::render_infra_candidates()
 			choose(group, false);
 		if (false == open)
 			continue;
-		ImGuiListClipper clipper(static_cast<int>(rows.size()));
+		ImGuiListClipper clipper;
+		clipper.Begin(static_cast<int>(rows.size()));
 		while (clipper.Step())
 		for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
 		{
@@ -1602,7 +1603,8 @@ void editor_mode::render_infra_bound()
 		}
 		std::optional<std::size_t> unbind;
 		ImGui::BeginChild("##infrabound", ImVec2(0.f, 160.f), true);
-		ImGuiListClipper clipper(static_cast<int>(along.size()));
+		ImGuiListClipper clipper;
+		clipper.Begin(static_cast<int>(along.size()));
 		while (clipper.Step())
 		for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
 		{

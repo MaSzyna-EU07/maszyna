@@ -722,8 +722,8 @@ void opengl33_renderer::draw_debug_ui()
 		ImGui::SliderFloat("in_cutoff", &conf.in_cutoff, 0.9f, 1.1f);
 		ImGui::SliderFloat("out_cutoff", &conf.out_cutoff, 0.9f, 1.1f);
 
-		ImGui::SliderFloat("falloff_linear", &conf.falloff_linear, 0.0f, 1.0f, "%.3f", 2.0f);
-		ImGui::SliderFloat("falloff_quadratic", &conf.falloff_quadratic, 0.0f, 1.0f, "%.3f", 2.0f);
+		ImGui::SliderFloat("falloff_linear", &conf.falloff_linear, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+		ImGui::SliderFloat("falloff_quadratic", &conf.falloff_quadratic, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
 
 		ImGui::SliderFloat("ambient", &conf.ambient, 0.0f, 3.0f);
 		ImGui::SliderFloat("intensity", &conf.intensity, 0.0f, 10.0f);

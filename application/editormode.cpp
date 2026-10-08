@@ -3631,7 +3631,7 @@ void editor_mode::render_gizmo_options()
     {
         ImGui::SameLine();
         ImGui::SetNextItemWidth(120.0f);
-        ImGui::SliderFloat(STR_C("Extent (m), wheel"), &Global.EditorOrthoExtent, 5.0f, 5000.0f, "%.0f", 3.0f);
+        ImGui::SliderFloat(STR_C("Extent (m), wheel"), &Global.EditorOrthoExtent, 5.0f, 5000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
     }
     ImGui::Checkbox(STR_C("Enabled"), &m_gizmo_enabled);
     if (!m_gizmo_enabled)

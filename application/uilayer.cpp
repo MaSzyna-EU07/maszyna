@@ -130,6 +130,28 @@ bool ui_layer::mouse_button_callback(int button, int action, int mods)
 	return m_imguiio->WantCaptureMouse;
 }
 
+// the glfw backend of imgui works with events since 1.87: position, hover and focus of the window are passed to it as they come
+void ui_layer::cursor_pos_callback(double x, double y)
+{
+	if (ImGui::GetCurrentContext() == nullptr)
+		return;
+	ImGui_ImplGlfw_CursorPosCallback(m_window, x, y);
+}
+
+void ui_layer::cursor_enter_callback(int entered)
+{
+	if (ImGui::GetCurrentContext() == nullptr)
+		return;
+	ImGui_ImplGlfw_CursorEnterCallback(m_window, entered);
+}
+
+void ui_layer::focus_callback(int focused)
+{
+	if (ImGui::GetCurrentContext() == nullptr)
+		return;
+	ImGui_ImplGlfw_WindowFocusCallback(m_window, focused);
+}
+
 void ui_layer::imgui_style()
 {
 	// palette shared with the MaSzyna starter: flat dark panels, thin borders, green accents
@@ -186,6 +208,9 @@ void ui_layer::imgui_style()
 	colors[ImGuiCol_TabActive] = rgb(accent); // also the line under the tab bar
 	colors[ImGuiCol_TabUnfocused] = rgb(header);
 	colors[ImGuiCol_TabUnfocusedActive] = rgb(accentdim);
+	// imgui 1.90+ marks the selected tab with a line over it as well, in the same colours
+	colors[ImGuiCol_TabSelectedOverline] = rgb(accent);
+	colors[ImGuiCol_TabDimmedSelectedOverline] = rgb(accentdim);
 	colors[ImGuiCol_PlotLines] = ImVec4(0.61f, 0.61f, 0.61f, 1.00f);
 	colors[ImGuiCol_PlotLinesHovered] = ImVec4(1.00f, 0.43f, 0.35f, 1.00f);
 	colors[ImGuiCol_PlotHistogram] = ImVec4(0.90f, 0.70f, 0.00f, 1.00f);
@@ -645,5 +670,5 @@ void ui_layer::render_background()
 	ImVec2 end_position(start_position.x + image_size.x, start_position.y + image_size.y);
 
 	// obrazek jest odwrócony w pionie – odwracamy UV
-	ImGui::GetBackgroundDrawList()->AddImage(reinterpret_cast<ImTextureID>(tex.get_id()), start_position, end_position, ImVec2(0, 1), ImVec2(1, 0));
+	ImGui::GetBackgroundDrawList()->AddImage((ImTextureID)(intptr_t)(tex.get_id()), start_position, end_position, ImVec2(0, 1), ImVec2(1, 0));
 }
