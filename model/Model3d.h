@@ -156,7 +156,10 @@ public: // chwilowo
     std::uintptr_t iAnimOwner{ 0 }; // roboczy numer egzemplarza, który ustawił animację
     TAnimType b_aAnim{ TAnimType::at_None }; // kody animacji oddzielnie, bo zerowane
 	std::shared_ptr<float4x4> mAnimMatrix; // macierz do animacji kwaternionowych
-    TSubModel **smLetter{ nullptr }; // wskaźnik na tablicę submdeli do generoania tekstu (docelowo zapisać do E3D)
+    // text display (TP_TEXT) data, filled on first use
+    std::unordered_map<char32_t, TSubModel *> m_letters; // sub-models of the available characters, by unicode code point
+    bool m_lettersready { false }; // whether the character lookup was built yet
+    std::unordered_map<std::string, std::vector<TSubModel *>> m_textlayouts; // sub-models of consecutive characters, for each text shown
     TSubModel *Parent{ nullptr }; // nadrzędny, np. do wymnażania macierzy
     int iVisible { 1 }; // roboczy stan widoczności
     float fVisible { 1.f }; // visibility level
@@ -202,6 +205,8 @@ public:
 	void SetTranslate(float3 vNewTransVector);
 	void SetRotateIK1(float3 vNewAngles);
 	TSubModel * GetFromName( std::string const &search, bool i = true );
+    // text display (TP_TEXT): returns sub-models of the characters to draw for provided text, in drawing order
+    std::vector<TSubModel *> const & text_letters( std::string const &Text );
 	inline float4x4 * GetMatrix() { return fMatrix; };
     inline float4x4 const * GetMatrix() const { return fMatrix; };
     // returns offset vector from root

@@ -48,7 +48,7 @@ class cParser //: public std::stringstream
 	Output_
 		getToken( bool const ToLower = true, char const *Break = "\n\r\t ;" ) {
             getTokens( 1, ToLower, Break );
-		    Output_ output;
+		    Output_ output{};
             *this >> output;
 		    return output; };
     inline

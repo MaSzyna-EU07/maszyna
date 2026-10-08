@@ -285,7 +285,7 @@ void ui::scenerylist_panel::draw_trainset(trainset_desc &trainset)
 	for (auto &dyn_desc : trainset.vehicles) {
 		deferred_image *mini = nullptr;
 
-		if (dyn_desc.skin && dyn_desc.skin->mini.get() != (GLuint)-1)
+		if (dyn_desc.skin && dyn_desc.skin->mini.get() != deferred_image::invalid_id)
 			mini = &dyn_desc.skin->mini;
 		else
 			mini = &placeholder_mini;

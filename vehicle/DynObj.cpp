@@ -1408,7 +1408,7 @@ TDynamicObject * TDynamicObject::ABuScanNearestObject(glm::vec3 pos, TTrack *Tra
     TDynamicObject *FoundedObj;
     FoundedObj =
 	    ABuFindNearestObject(pos, Track, this, CouplNr); // zwraca numer sprzęgu znalezionego pojazdu
-    if (FoundedObj == nullptr)
+    if (FoundedObj == nullptr && Track != nullptr)
     {
         double ActDist; // Przeskanowana odleglosc.
         double CurrDist = 0; // Aktualna dlugosc toru.
@@ -1448,7 +1448,7 @@ TDynamicObject * TDynamicObject::ABuScanNearestObject(glm::vec3 pos, TTrack *Tra
                     ActDist = ScanDist;
             }
             else // Jesli nie ma, to wychodzimy.
-                ActDist = ScanDist;
+                break;
         }
     } // Koniec szukania najblizszego toru z jakims obiektem.
     return FoundedObj;

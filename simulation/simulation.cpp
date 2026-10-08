@@ -148,6 +148,11 @@ state_manager::update_scripting_interface() {
     auto *time{ Memory.find( "__simulation.time" ) };
     auto *date{ Memory.find( "__simulation.date" ) };
 
+    if( weather == nullptr || time == nullptr || date == nullptr ) {
+        // scripting interface cells weren't created, nothing to synchronize
+        return;
+    }
+
     if( simulation::is_ready ) {
         // potentially adjust weather
         if( weather->Value1() != m_scriptinginterface.weather->Value1() ) {
@@ -407,7 +412,6 @@ void state_manager::process_commands() {
 					pantograph.fLenL1 * std::sin( pantograph.fAngleL )
 						+ pantograph.fLenU1 * std::sin( pantograph.fAngleU )
 						+ pantograph.fHeight; 
-					vehicle->MoverParameters->EnginePowerSource.CollectorParameters.CollectorsNo;
 				}
 
 				vehicle = vehicle->Prev();

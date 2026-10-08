@@ -1,10 +1,15 @@
 #pragma once
 
+#include <limits>
+
 #include "model/Texture.h"
 #include "rendering/renderer.h"
 
 class deferred_image {
 public:
+	// value returned by get() when the image isn't (yet) available
+	static constexpr GLuint invalid_id { std::numeric_limits<GLuint>::max() };
+
 	deferred_image() = default;
 	deferred_image(const std::string &p) : path(p) { }
 	deferred_image(const deferred_image&) = delete;
@@ -15,7 +20,8 @@ public:
 		return image != null_handle || !path.empty();
 	}
 
-	GLuint get() const
+	// loads the texture on first use
+	GLuint get()
 	{
 		if (!path.empty()) {
             image = GfxRenderer->Fetch_Texture(path, true);
@@ -30,7 +36,7 @@ public:
 				return tex.get_id();
 		}
 
-		return -1;
+		return invalid_id;
 	}
 
 	glm::ivec2 size() const
@@ -43,6 +49,6 @@ public:
 	}
 
 private:
-	mutable std::string path;
-	mutable texture_handle image = 0;
+	std::string path;
+	texture_handle image = 0;
 };

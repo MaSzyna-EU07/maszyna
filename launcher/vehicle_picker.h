@@ -14,7 +14,7 @@ class vehiclepicker_panel : public ui_panel
 	void render_contents() override;
 
 private:
-	bool selectable_image(const char *desc, bool selected, const deferred_image *image, const skin_set *pickable = nullptr);
+	bool selectable_image(const char *desc, bool selected, deferred_image *image, const skin_set *pickable = nullptr);
 
 	vehicle_type selected_type = vehicle_type::none;
 	std::shared_ptr<const vehicle_desc> selected_vehicle;

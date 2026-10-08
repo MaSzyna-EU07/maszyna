@@ -29,6 +29,23 @@ http://mozilla.org/MPL/2.0/.
 int constexpr EU07_PICKBUFFERSIZE{ 1024 }; // size of (square) textures bound with the pick framebuffer
 int constexpr EU07_REFLECTIONFIDELITYOFFSET { 250 }; // artificial increase of range for reflection pass detail reduction
 
+namespace {
+
+// returns material assigned to the submodel, resolving replacable skins. null_handle if no skin set is bound
+material_handle
+submodel_material( TSubModel const *Submodel ) {
+
+    if( Submodel->m_material >= 0 ) {
+        return Submodel->m_material;
+    }
+    return (
+        TSubModel::ReplacableSkinId != nullptr ?
+            TSubModel::ReplacableSkinId[ -Submodel->m_material ] :
+            null_handle );
+}
+
+} // namespace
+
 void GLAPIENTRY
 ErrorCallback( GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam ) {
 /*
@@ -1975,7 +1992,7 @@ bool opengl33_renderer::Render(world_environment *Environment)
 
     auto const fogfactor{std::clamp(Global.fFogEnd / 2000.f, 0.f, 1.f)}; // stronger fog reduces opacity of the celestial bodies
 	float const duskfactor = 1.0f - std::clamp(std::abs(Environment->m_sun.getAngle()), 0.0f, 12.0f) / 12.0f;
-	glm::vec3 suncolor = glm::mix(glm::vec3(255.0f / 255.0f, 242.0f / 255.0f, 231.0f / 255.0f), glm::vec3(235.0f / 255.0f, 140.0f / 255.0f, 36.0f / 255.0f), duskfactor);
+	glm::vec3 suncolor = glm::mix(glm::vec3(1.0f, 242.0f / 255.0f, 231.0f / 255.0f), glm::vec3(235.0f / 255.0f, 140.0f / 255.0f, 36.0f / 255.0f), duskfactor);
 
 	// sun
 	{
@@ -2381,8 +2398,7 @@ opengl_material &opengl33_renderer::Material(material_handle const Material)
 
 opengl_material const & opengl33_renderer::Material( TSubModel const * Submodel ) const {
 
-    auto const material { Submodel->m_material >= 0 ? Submodel->m_material : Submodel->ReplacableSkinId[ -Submodel->m_material ] };
-    return m_materials.material( material );
+    return m_materials.material( submodel_material( Submodel ) );
 }
 
 texture_handle opengl33_renderer::Fetch_Texture(std::string const &Filename, bool const Loadnow, GLint format_hint)
@@ -4008,7 +4024,7 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 					// textures...
 					if (Submodel->m_material < 0)
 					{ // zmienialne skóry
-						Bind_Material(Submodel->ReplacableSkinId[-Submodel->m_material], Submodel);
+						Bind_Material(submodel_material(Submodel), Submodel);
 					}
 					else
 					{
@@ -4045,7 +4061,7 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 
                     if (Submodel->m_material < 0)
 					{ // zmienialne skóry
-						Bind_Material_Shadow(Submodel->ReplacableSkinId[-Submodel->m_material]);
+						Bind_Material_Shadow(submodel_material(Submodel));
 					}
 					else
 					{
@@ -4964,6 +4980,21 @@ bool opengl33_renderer::Render_Alpha(TModel3d *Model, material_data const *Mater
 	return result;
 }
 
+// characters of a text display, laid out in a row. the text can be encoded in utf-8 or in windows-1250
+void opengl33_renderer::Render_Alpha_text(TSubModel *Submodel)
+{
+	if (TSubModel::pasText == nullptr)
+	{
+		return;
+	}
+	for (auto *p : Submodel->text_letters(*TSubModel::pasText))
+	{ // translucent only, for the time being
+		Render_Alpha(p);
+		if (p->fMatrix)
+			::glMultMatrixf(p->fMatrix->readArray()); // move on to the place of the next character
+	}
+}
+
 void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 {
 	// renderowanie przezroczystych przez DL
@@ -5004,7 +5035,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 					// textures...
 					if (Submodel->m_material < 0)
 					{ // zmienialne skóry
-						Bind_Material(Submodel->ReplacableSkinId[-Submodel->m_material], Submodel);
+						Bind_Material(submodel_material(Submodel), Submodel);
 					}
 					else
 					{
@@ -5036,7 +5067,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 
 					if (Submodel->m_material < 0)
 					{ // zmienialne skóry
-						Bind_Material_Shadow(Submodel->ReplacableSkinId[-Submodel->m_material]);
+						Bind_Material_Shadow(submodel_material(Submodel));
 					}
 					else
 					{
@@ -5192,29 +5223,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 		{
 			if (Submodel->eType == TP_TEXT)
 			{ // tekst renderujemy w specjalny sposób, zamiast submodeli z łańcucha Child
-				int i, j = (int)Submodel->pasText->size();
-				TSubModel *p;
-				if (!Submodel->smLetter)
-				{ // jeśli nie ma tablicy, to ją stworzyć; miejsce nieodpowiednie, ale tymczasowo może być
-					Submodel->smLetter = new TSubModel *[256]; // tablica wskaźników submodeli dla wyświetlania tekstu
-					memset(Submodel->smLetter, 0, 256 * sizeof(TSubModel *)); // wypełnianie zerami
-					p = Submodel->Child;
-					while (p)
-					{
-						Submodel->smLetter[p->pName[0]] = p;
-						p = p->Next; // kolejny znak
-					}
-				}
-				for (i = 1; i <= j; ++i)
-				{
-					p = Submodel->smLetter[(*(Submodel->pasText))[i]]; // znak do wyświetlenia
-					if (p)
-					{ // na razie tylko jako przezroczyste
-						Render_Alpha(p);
-						if (p->fMatrix)
-							::glMultMatrixf(p->fMatrix->readArray()); // przesuwanie widoku
-					}
-				}
+				Render_Alpha_text(Submodel);
 			}
 			else if (Submodel->iAlpha & Submodel->iFlags & 0x002F0000)
 				Render_Alpha(Submodel->Child);

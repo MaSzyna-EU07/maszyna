@@ -322,6 +322,7 @@ class opengl33_renderer : public gfx_renderer {
 	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
 	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance);
 	void Render_Alpha(TSubModel *Submodel);
+	void Render_Alpha_text(TSubModel *Submodel); // characters of a text display
 	void Update_Lights(light_array &Lights);
 	glm::vec3 pick_color(std::size_t const Index);
 	std::size_t pick_index(glm::ivec3 const &Color);

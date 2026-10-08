@@ -498,7 +498,7 @@ int eu07_application::run()
 			{
 				command_queue::commands_map commands_to_exec;
 				command_queue::commands_map local_commands = simulation::Commands.pop_intercept_queue();
-				double slave_sync;
+				double slave_sync{0.0};
 
 				// if we're the server
 				if (m_network && m_network->servers)

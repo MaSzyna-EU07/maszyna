@@ -33,14 +33,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
           submodules: recursive
 
       - name: Setup Python 3.14
         id: python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.14"
           architecture: "x64"
@@ -115,7 +115,7 @@ jobs:
             -Force
 
       - name: Upload Windows build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: maszyna-windows-x64-${{ env.CONFIG_WIN }}
           path: |
@@ -124,7 +124,7 @@ jobs:
           retention-days: 14
 
       - name: Upload Windows debug symbols
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: maszyna-windows-x64-symbols-${{ env.CONFIG_WIN }}
           path: |
@@ -144,14 +144,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
           submodules: recursive
 
       - name: Setup Python 3.14
         id: python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.14"
 
@@ -256,7 +256,7 @@ jobs:
           cp -R lang/. build/bin/lang/
 
       - name: Upload Linux build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: maszyna-linux-x64-${{ env.CONFIG_LINUX }}
           path: |
