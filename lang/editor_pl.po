@@ -107,8 +107,8 @@ msgstr "Wzorzec rozjazdu"
 msgid "Press on the selected straight or curve where the switch starts and drag: along sets its direction, sideways its side"
 msgstr "Wciśnij na wybranej prostej lub łuku w miejscu początku rozjazdu i przeciągnij: wzdłuż ustala kierunek, w bok stronę"
 
-msgid "Collect again from the scenery"
-msgstr "Zbierz ponownie ze scenerii"
+msgid "Collect from the scenery"
+msgstr "Zbierz ze scenerii"
 
 msgid "Select a path in the view, then build the route along the line, or set its start and end paths (switches are passed through)"
 msgstr "Wybierz odcinek w widoku, potem zbuduj trasę wzdłuż linii albo wskaż jej odcinek początkowy i końcowy (rozjazdy są przechodzone)"
@@ -305,8 +305,8 @@ msgstr "Długości i przechyłka zalecane dla prędkości i promienia; wyłączo
 msgid "Takes the textures and the other parameters from the selected track.\nA track started or finished at a free end always takes them from the track it joins"
 msgstr "Bierze tekstury i pozostałe parametry z wybranego toru.\nTor zaczęty lub zakończony na wolnym końcu zawsze bierze je z toru, do którego dochodzi"
 
-msgid "Looks for the switches of the scenery again, to use their shapes as the templates"
-msgstr "Ponownie szuka rozjazdów w scenerii, aby użyć ich kształtów jako wzorców"
+msgid "Looks for the switches of the scenery, to use their shapes as the templates"
+msgstr "Szuka rozjazdów w scenerii, aby użyć ich kształtów jako wzorców"
 
 msgid "start of the new track, on the ground or at a free end"
 msgstr "początek nowego toru, na terenie lub na wolnym końcu"

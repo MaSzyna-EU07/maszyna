@@ -652,8 +652,6 @@ void editor_mode::arm_switch()
 	if (false == tool.collected)
 	{
 		tool.templates = editor_track::standard_switch_templates();
-		auto const found{editor_track::find_switch_templates()};
-		tool.templates.insert(tool.templates.end(), found.begin(), found.end());
 		tool.collected = true;
 	}
 	tool.status.clear();
@@ -1029,8 +1027,6 @@ void editor_mode::render_turnout_ui()
 	if (false == tool.collected)
 	{
 		tool.templates = editor_track::standard_switch_templates();
-		auto const found{editor_track::find_switch_templates()};
-		tool.templates.insert(tool.templates.end(), found.begin(), found.end());
 		tool.collected = true;
 	}
 	if (tool.templates.empty())
@@ -1102,7 +1098,6 @@ void editor_mode::render_turnout_ui()
 	ImGui::SameLine();
 	if (ImGui::Button(STR_C("Flip the side")))
 	{
-		auto const current{editor_track::find_switch_templates()};
 		editor_track::switch_template own;
 		own.source = track;
 		for (int i = 0; i < 2; ++i)
@@ -5101,12 +5096,15 @@ void editor_mode::render_switch_ui()
 	render_switch_drive_choice();
 	if (false == tool.status.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", tool.status.c_str());
-	if (ImGui::SmallButton(STR_C("Collect again from the scenery")))
+	if (ImGui::SmallButton(STR_C("Collect from the scenery")))
 	{
-		tool.collected = false;
+		tool.templates = editor_track::standard_switch_templates();
+		auto const found{editor_track::find_switch_templates()};
+		tool.templates.insert(tool.templates.end(), found.begin(), found.end());
+		tool.collected = true;
 		arm_switch();
 	}
-	item_tooltip("Looks for the switches of the scenery again, to use their shapes as the templates");
+	item_tooltip("Looks for the switches of the scenery, to use their shapes as the templates");
 }
 
 std::vector<glm::dvec3> editor_mode::detour_outline() const
