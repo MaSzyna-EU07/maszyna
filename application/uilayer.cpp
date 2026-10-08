@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "imgui/imgui_impl_glfw.h"
 
 GLFWwindow *ui_layer::m_window{nullptr};
+GLFWwindow *ui_layer::m_keywindow{nullptr};
 ImGuiIO *ui_layer::m_imguiio{nullptr};
 GLint ui_layer::m_textureunit{GL_TEXTURE0};
 bool ui_layer::m_cursorvisible;
@@ -108,7 +109,7 @@ ui_layer::~ui_layer() {}
 
 bool ui_layer::key_callback(int key, int scancode, int action, int mods)
 {
-	ImGui_ImplGlfw_KeyCallback(m_window, key, scancode, action, mods);
+	ImGui_ImplGlfw_KeyCallback(m_keywindow != nullptr ? m_keywindow : m_window, key, scancode, action, mods);
 	return m_imguiio->WantCaptureKeyboard;
 }
 
@@ -151,6 +152,27 @@ void ui_layer::focus_callback(int focused)
 		return;
 	ImGui_ImplGlfw_WindowFocusCallback(m_window, focused);
 }
+
+void ui_layer::viewport_key_callback(GLFWwindow *Window, int key, int scancode, int action, int mods)
+{
+	// imgui gets the key with the window it came from (the state of modifiers is read from it), the simulator gets it unless imgui takes it
+	m_keywindow = Window;
+	Application.on_key(key, scancode, action, mods);
+	m_keywindow = nullptr;
+}
+
+namespace
+{
+// window creation of the glfw backend, wrapped to give the new windows the key callback of the simulator
+void (*imgui_create_window)(ImGuiViewport *Viewport){nullptr};
+
+void create_viewport_window(ImGuiViewport *Viewport)
+{
+	imgui_create_window(Viewport);
+	if (Viewport->PlatformHandle != nullptr)
+		glfwSetKeyCallback(static_cast<GLFWwindow *>(Viewport->PlatformHandle), ui_layer::viewport_key_callback);
+}
+} // namespace
 
 void ui_layer::imgui_style()
 {
@@ -341,6 +363,20 @@ bool ui_layer::init(GLFWwindow *Window)
 		  return false;
 	  }
 
+	// panels can be docked together, and dragged out of the simulator window into windows of their own (e.g. on another monitor)
+	// when both backends can do it. glfw can't place windows under wayland. both flags have to be set before the first frame
+	m_imguiio->ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+	auto const viewportsupport{(m_imguiio->BackendFlags & ImGuiBackendFlags_PlatformHasViewports) && (m_imguiio->BackendFlags & ImGuiBackendFlags_RendererHasViewports) &&
+	                           glfwGetPlatform() != GLFW_PLATFORM_WAYLAND};
+	if (Global.ui_viewports && viewportsupport)
+	{
+		m_imguiio->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+		auto &platformio{ImGui::GetPlatformIO()};
+		imgui_create_window = platformio.Platform_CreateWindow;
+		platformio.Platform_CreateWindow = create_viewport_window;
+	}
+	WriteLog(std::string("ui: panels in separate windows ") + ((m_imguiio->ConfigFlags & ImGuiConfigFlags_ViewportsEnable) ? "enabled" : (viewportsupport ? "disabled in settings" : "not supported here")));
+
     return true;
 }
 
@@ -440,6 +476,15 @@ void ui_layer::render_internal()
 {
 	ImGui::Render();
 	GfxRenderer->GetImguiRenderer()->Render();
+
+	if (m_imguiio->ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+	{
+		// panels outside of the main window are drawn in their own windows, whose gl contexts are shared with the main one
+		auto *context{glfwGetCurrentContext()};
+		ImGui::UpdatePlatformWindows();
+		ImGui::RenderPlatformWindowsDefault();
+		glfwMakeContextCurrent(context);
+	}
 }
 
 void ui_layer::begin_ui_frame()
@@ -670,5 +715,5 @@ void ui_layer::render_background()
 	ImVec2 end_position(start_position.x + image_size.x, start_position.y + image_size.y);
 
 	// obrazek jest odwrócony w pionie – odwracamy UV
-	ImGui::GetBackgroundDrawList()->AddImage((ImTextureID)(intptr_t)(tex.get_id()), start_position, end_position, ImVec2(0, 1), ImVec2(1, 0));
+	ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())->AddImage((ImTextureID)(intptr_t)(tex.get_id()), start_position, end_position, ImVec2(0, 1), ImVec2(1, 0));
 }

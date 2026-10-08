@@ -181,6 +181,7 @@ struct ImGui_ImplGlfw_Data
     bool                    MouseIgnoreButtonUpWaitForFocusLoss;
     bool                    MouseIgnoreButtonUp;
     ImVec2                  LastValidMousePos;
+    ImVec2                  MainWindowOrigin;       // MaSzyna: desktop position of the main window, see ImGui_ImplGlfw_UpdateMainWindowOrigin()
     GLFWwindow*             KeyOwnerWindows[GLFW_KEY_LAST];
     bool                    InstalledCallbacks;
     bool                    CallbacksChainForAllWindows;
@@ -219,6 +220,7 @@ static ImGui_ImplGlfw_Data* ImGui_ImplGlfw_GetBackendData()
 // Forward Declarations
 static void ImGui_ImplGlfw_UpdateMonitors();
 static void ImGui_ImplGlfw_InitMultiViewportSupport();
+static void ImGui_ImplGlfw_UpdateMainWindowOrigin();
 static void ImGui_ImplGlfw_ShutdownMultiViewportSupport();
 
 // Functions
@@ -483,8 +485,8 @@ void ImGui_ImplGlfw_CursorPosCallback(GLFWwindow* window, double x, double y)
     {
         int window_x, window_y;
         glfwGetWindowPos(window, &window_x, &window_y);
-        x += window_x;
-        y += window_y;
+        x += window_x - bd->MainWindowOrigin.x;
+        y += window_y - bd->MainWindowOrigin.y;
     }
     io.AddMousePosEvent((float)x, (float)y);
     bd->LastValidMousePos = ImVec2((float)x, (float)y);
@@ -802,8 +804,8 @@ static void ImGui_ImplGlfw_UpdateMouseData()
                     // Multi-viewport mode: mouse position in OS absolute coordinates (io.MousePos is (0,0) when the mouse is on the upper-left of the primary monitor)
                     int window_x, window_y;
                     glfwGetWindowPos(window, &window_x, &window_y);
-                    mouse_x += window_x;
-                    mouse_y += window_y;
+                    mouse_x += window_x - bd->MainWindowOrigin.x;
+                    mouse_y += window_y - bd->MainWindowOrigin.y;
                 }
                 bd->LastValidMousePos = ImVec2((float)mouse_x, (float)mouse_y);
                 io.AddMousePosEvent((float)mouse_x, (float)mouse_y);
@@ -919,6 +921,7 @@ static void ImGui_ImplGlfw_UpdateGamepads()
 
 static void ImGui_ImplGlfw_UpdateMonitors()
 {
+    ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData();
     ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
 
     int monitors_count = 0;
@@ -954,6 +957,9 @@ static void ImGui_ImplGlfw_UpdateMonitors()
             continue; // Some accessibility applications are declaring virtual monitors with a DPI of 0, see #7902.
         monitor.DpiScale = x_scale;
 #endif
+        // MaSzyna: monitors in imgui space as well
+        monitor.MainPos = ImVec2(monitor.MainPos.x - bd->MainWindowOrigin.x, monitor.MainPos.y - bd->MainWindowOrigin.y);
+        monitor.WorkPos = ImVec2(monitor.WorkPos.x - bd->MainWindowOrigin.x, monitor.WorkPos.y - bd->MainWindowOrigin.y);
         monitor.PlatformHandle = (void*)glfw_monitors[n]; // [...] GLFW doc states: "guaranteed to be valid only until the monitor configuration changes"
         platform_io.Monitors.push_back(monitor);
     }
@@ -973,6 +979,7 @@ void ImGui_ImplGlfw_NewFrame()
     io.DisplaySize = ImVec2((float)w, (float)h);
     if (w > 0 && h > 0)
         io.DisplayFramebufferScale = ImVec2((float)display_w / (float)w, (float)display_h / (float)h);
+    ImGui_ImplGlfw_UpdateMainWindowOrigin();
     ImGui_ImplGlfw_UpdateMonitors();
 
     // Setup time step
@@ -1148,7 +1155,7 @@ static void ImGui_ImplGlfw_CreateWindow(ImGuiViewport* viewport)
 #elif defined(__APPLE__)
     viewport->PlatformHandleRaw = (void*)glfwGetCocoaWindow(vd->Window);
 #endif
-    glfwSetWindowPos(vd->Window, (int)viewport->Pos.x, (int)viewport->Pos.y);
+    glfwSetWindowPos(vd->Window, (int)(viewport->Pos.x + bd->MainWindowOrigin.x), (int)(viewport->Pos.y + bd->MainWindowOrigin.y));
 
     // Install GLFW callbacks for secondary viewports
     glfwSetWindowFocusCallback(vd->Window, ImGui_ImplGlfw_WindowFocusCallback);
@@ -1234,17 +1241,40 @@ static void ImGui_ImplGlfw_ShowWindow(ImGuiViewport* viewport)
 
 static ImVec2 ImGui_ImplGlfw_GetWindowPos(ImGuiViewport* viewport)
 {
+    ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData();
     ImGui_ImplGlfw_ViewportData* vd = (ImGui_ImplGlfw_ViewportData*)viewport->PlatformUserData;
     int x = 0, y = 0;
     glfwGetWindowPos(vd->Window, &x, &y);
-    return ImVec2((float)x, (float)y);
+    return ImVec2((float)x - bd->MainWindowOrigin.x, (float)y - bd->MainWindowOrigin.y);
 }
 
 static void ImGui_ImplGlfw_SetWindowPos(ImGuiViewport* viewport, ImVec2 pos)
 {
+    ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData();
     ImGui_ImplGlfw_ViewportData* vd = (ImGui_ImplGlfw_ViewportData*)viewport->PlatformUserData;
     vd->IgnoreWindowPosEventFrame = ImGui::GetFrameCount();
-    glfwSetWindowPos(vd->Window, (int)pos.x, (int)pos.y);
+    glfwSetWindowPos(vd->Window, (int)(pos.x + bd->MainWindowOrigin.x), (int)(pos.y + bd->MainWindowOrigin.y));
+}
+
+// MaSzyna: with multi-viewports imgui positions are given relative to the main window of the simulator instead of the desktop,
+// so the main viewport stays at (0,0) as it was without them: the simulator draws its overlays and reads the mouse in the
+// coordinates of its window. When the main window moves, the windows of the other viewports are read again in the new space.
+static void ImGui_ImplGlfw_UpdateMainWindowOrigin()
+{
+    ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData();
+    ImVec2 origin(0.0f, 0.0f);
+    if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+    {
+        int x = 0, y = 0;
+        glfwGetWindowPos(bd->Window, &x, &y);
+        origin = ImVec2((float)x, (float)y);
+    }
+    if (origin.x == bd->MainWindowOrigin.x && origin.y == bd->MainWindowOrigin.y)
+        return;
+    bd->MainWindowOrigin = origin;
+    ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
+    for (int i = 1; i < platform_io.Viewports.Size; i++)
+        platform_io.Viewports[i]->PlatformRequestMove = true;
 }
 
 static ImVec2 ImGui_ImplGlfw_GetWindowSize(ImGuiViewport* viewport)

@@ -986,7 +986,7 @@ void editor_mode::draw_sweep_overlay() const
 	if (false == tool.open || tool.outline.size() < 2)
 		return;
 	screen_projection const projection;
-	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	auto const &settings{tool.settings};
 	auto const from{std::max(0.0, settings.from)};
 	auto const to{settings.to < 0.0 ? tool.curve_length : std::min(settings.to, tool.curve_length)};
@@ -1820,7 +1820,7 @@ void editor_mode::draw_bend_overlay() const
 	if (false == tool.label.empty())
 	{
 		auto const &io{ImGui::GetIO()};
-		auto *foreground{ImGui::GetForegroundDrawList()};
+		auto *foreground{ImGui::GetForegroundDrawList(ImGui::GetMainViewport())};
 		auto const labelsize{ImGui::CalcTextSize(tool.label.c_str())};
 		auto const detailsize{tool.details.empty() ? ImVec2(0.0f, 0.0f) : ImGui::CalcTextSize(tool.details.c_str())};
 		ImVec2 const size{std::max(labelsize.x, detailsize.x), labelsize.y + (tool.details.empty() ? 0.0f : detailsize.y + 4.0f)};
@@ -1839,7 +1839,7 @@ void editor_mode::draw_bend_overlay() const
 		if (projection.project(model->location(), at))
 		{
 			auto const text{format(STR_C("B: bend along %s"), tool.tracks.front().first->name().c_str())};
-			auto *foreground{ImGui::GetForegroundDrawList()};
+			auto *foreground{ImGui::GetForegroundDrawList(ImGui::GetMainViewport())};
 			auto const size{ImGui::CalcTextSize(text.c_str())};
 			foreground->AddRectFilled(ImVec2(at.x + 10.0f, at.y - size.y - 14.0f), ImVec2(at.x + size.x + 22.0f, at.y - 6.0f), IM_COL32(0, 0, 0, 150), 4.0f);
 			foreground->AddText(ImVec2(at.x + 16.0f, at.y - size.y - 10.0f), IM_COL32(40, 220, 255, 255), text.c_str());
@@ -1856,7 +1856,7 @@ void editor_mode::draw_bend_overlay() const
 	ImVec2 screen;
 	if (false == projection.project(marker, screen))
 		return;
-	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	if (tool.over_marker || tool.dragging != 0)
 		drawlist->AddCircleFilled(screen, 9.0f, IM_COL32(40, 220, 255, 120), 16);
 	drawlist->AddCircle(screen, 9.0f, IM_COL32(40, 220, 255, 255), 16, 2.5f);

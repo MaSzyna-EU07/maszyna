@@ -504,7 +504,7 @@ void editor_mode::draw_joints_overlay() const
 	if (false == state.open || state.issues.empty())
 		return;
 	screen_projection const projection;
-	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	glm::dvec3 const camera{Global.pCamera.Pos};
 	for (int i = 0; i < static_cast<int>(state.issues.size()); ++i)
 	{

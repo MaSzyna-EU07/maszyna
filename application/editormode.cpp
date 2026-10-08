@@ -3190,7 +3190,7 @@ void editor_mode::draw_area_fill_outline() const
     };
     float constexpr nearw = 0.1f;
 
-    ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+    ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
     ImU32 const edgecolor = IM_COL32(255, 200, 40, 230);
     ImU32 const closingcolor = IM_COL32(255, 200, 40, 110);
 

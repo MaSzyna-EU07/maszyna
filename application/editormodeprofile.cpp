@@ -1885,7 +1885,7 @@ void editor_mode::draw_profile_overlay() const
 	if (false == state.open || state.samples.size() < 2)
 		return;
 	screen_projection const projection;
-	ImDrawList *drawlist{ImGui::GetBackgroundDrawList()};
+	ImDrawList *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	auto const &samples{state.samples};
 	glm::dvec3 previous{samples.front().position};
 	glm::dvec3 designedprevious{previous.x, profile::elevation(state.line, 0.0), previous.z};

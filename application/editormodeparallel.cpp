@@ -215,7 +215,7 @@ void editor_mode::draw_parallel_preview() const
 	if (false == tool.open || tool.pieces.empty() || selected_track() != tool.built_for)
 		return;
 	screen_projection const projection;
-	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	for (auto const &piece : tool.pieces)
 	{
 		bezier const curve{piece};

@@ -2505,7 +2505,7 @@ void editor_mode::draw_road_overlay() const
 		return;
 
 	screen_projection projection;
-	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
 	glm::dvec3 const camera{Global.pCamera.Pos};
 	// pieces of a line needed to draw a path: one for a straight, more the longer a bend is and the nearer it is
 	auto const pieces = [&camera](segment_data const &Path, glm::dvec3 const &Location) {

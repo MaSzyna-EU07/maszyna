@@ -1633,7 +1633,7 @@ void editor_mode::draw_infra_overlay() const
 		return;
 	Live.refresh();
 	screen_projection const projection;
-	ImDrawList *drawlist{ImGui::GetBackgroundDrawList()};
+	ImDrawList *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	auto const camera{GfxRenderer->Camera_Position()};
 	auto const draw = [&](infra::binding const &Binding, ImU32 const Colour, float const Size) {
 		if (Binding.anchors.empty() || glm::distance(Binding.anchors.front().foot, camera) > 2000.0)

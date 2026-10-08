@@ -173,7 +173,7 @@ void editor_mode::draw_track_hover() const
 	screen_projection const projection;
 	if (track != selected_track())
 	{
-		auto *drawlist{ImGui::GetBackgroundDrawList()};
+		auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 		for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
 		{
 			bezier const curve{track->m_paths[i]};
@@ -489,7 +489,7 @@ void editor_mode::draw_track_intent() const
 	if (intent.what == kind::none || intent.what == kind::gizmo || io.WantCaptureMouse)
 		return;
 	screen_projection const projection;
-	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	ImVec2 at;
 	if (projection.project(intent.position, at))
 	{
@@ -528,7 +528,7 @@ void editor_mode::draw_track_intent() const
 		auto const velocity{editor_track::velocity(*track)};
 		details += velocity > 0.0 ? format("   V %.0f km/h", velocity) : std::string{};
 	}
-	auto *foreground{ImGui::GetForegroundDrawList()};
+	auto *foreground{ImGui::GetForegroundDrawList(ImGui::GetMainViewport())};
 	auto const actionsize{ImGui::CalcTextSize(intent.action.c_str())};
 	auto const detailsize{details.empty() ? ImVec2(0.0f, 0.0f) : ImGui::CalcTextSize(details.c_str())};
 	ImVec2 const size{std::max(actionsize.x, detailsize.x), actionsize.y + (details.empty() ? 0.0f : detailsize.y + 4.0f)};
@@ -1074,7 +1074,7 @@ void editor_mode::draw_track_spread() const
 	if (m_intent.what != track_intent::kind::spread || m_spread.from == nullptr)
 		return;
 	screen_projection const projection;
-	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	auto const removing{in_track_set(m_spread.from)};
 	auto const colour{removing ? IM_COL32(255, 90, 70, 220) : IM_COL32(90, 220, 255, 220)};
 	for (auto const *track : m_spread.preview)
@@ -1099,7 +1099,7 @@ void editor_mode::draw_track_spread() const
 void editor_mode::draw_track_set() const
 {
 	screen_projection const projection;
-	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	if (m_track_box.active)
 	{
 		auto const &io{ImGui::GetIO()};

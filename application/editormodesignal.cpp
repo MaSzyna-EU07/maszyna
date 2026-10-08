@@ -947,7 +947,7 @@ void editor_mode::draw_signal_overlay() const
 {
 	auto const &tool{m_signal};
 	screen_projection const projection;
-	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	glm::dvec3 const camera{Global.pCamera.Pos};
 	auto const arrow = [&](glm::dvec3 const &From, glm::dvec2 const &Direction, ImU32 const Colour) {
 		glm::dvec3 const tip{From.x + Direction.x * 6.0, From.y, From.z + Direction.y * 6.0};

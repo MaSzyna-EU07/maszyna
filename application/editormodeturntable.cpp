@@ -180,7 +180,7 @@ void label(screen_projection const &Projection, glm::dvec3 const &Point, std::st
 	ImVec2 at;
 	if (false == Projection.project(Point, at))
 		return;
-	auto *drawlist{ImGui::GetForegroundDrawList()};
+	auto *drawlist{ImGui::GetForegroundDrawList(ImGui::GetMainViewport())};
 	auto const size{ImGui::CalcTextSize(Text.c_str())};
 	drawlist->AddRectFilled(ImVec2(at.x + 8.f, at.y - 4.f), ImVec2(at.x + 16.f + size.x, at.y + size.y + 4.f), IM_COL32(0, 0, 0, 170), 4.f);
 	drawlist->AddText(ImVec2(at.x + 12.f, at.y), IM_COL32(255, 255, 255, 235), Text.c_str());
@@ -946,7 +946,7 @@ void editor_mode::draw_turntable_overlay() const
 	using kind = track_intent::kind;
 	auto const &tool{m_turntable};
 	screen_projection const projection;
-	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	auto const camera{glm::dvec3{Global.pCamera.Pos}};
 	for (auto *track : simulation::Paths.sequence())
 	{

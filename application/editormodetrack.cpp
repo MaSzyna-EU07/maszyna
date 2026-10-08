@@ -269,7 +269,7 @@ void editor_mode::draw_track_overlay() const
 		return;
 
 	screen_projection const projection;
-	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
 	bool const trackmode = ui()->mode() == nodebank_panel::TRACK;
 
 	ImU32 const coursecolor = IM_COL32(40, 220, 255, 220);
@@ -2042,7 +2042,7 @@ void editor_mode::draw_route_overlay() const
 	auto const &design{route.design};
 	auto const &result{route.result};
 	screen_projection const projection;
-	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
 	auto const &start{result.valid ? result.start : design.start};
 	auto const &end{result.valid ? result.end : design.end};
 
@@ -2415,7 +2415,7 @@ editor_track::straight const &editor_mode::current_straight()
 void editor_mode::draw_straights_overlay() const
 {
 	screen_projection const projection;
-	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
 	glm::dvec3 const camera{Global.pCamera.Pos};
 	auto const nearby = [&](editor_track::straight const &Line) {
 		auto const offset{camera - Line.start};
@@ -3641,7 +3641,7 @@ std::string editor_mode::track_readout() const
 void editor_mode::draw_track_hints()
 {
 	ImGuiIO const &io = ImGui::GetIO();
-	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	float const margin{12.0f};
 	float const gap{14.0f};
 	float const pad{4.0f};
@@ -3698,7 +3698,7 @@ void editor_mode::draw_track_hints()
 		readout += (readout.empty() ? "" : "\n") + std::string{"= "} + m_typed + "_   " + STR(meaning);
 	if (readout.empty() || ImGui::GetIO().WantCaptureMouse)
 		return;
-	auto *foreground{ImGui::GetForegroundDrawList()};
+	auto *foreground{ImGui::GetForegroundDrawList(ImGui::GetMainViewport())};
 	auto const size{ImGui::CalcTextSize(readout.c_str())};
 	ImVec2 at{io.MousePos.x + 20.0f, io.MousePos.y + 20.0f};
 	at.x = std::min(at.x, io.DisplaySize.x - size.x - 10.0f);
@@ -3873,7 +3873,7 @@ editor_track::snap_target editor_mode::snap_free_end(glm::dvec3 const &Near, glm
 void editor_mode::draw_free_ends(TTrack const *Self, int const Category, std::vector<TTrack const *> const &Exclude) const
 {
 	screen_projection const projection;
-	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	auto const &display{ImGui::GetIO().DisplaySize};
 	auto const reach{Global.EditorOrtho ? std::max(kJointRange, static_cast<double>(Global.EditorOrthoExtent) * 2.0) : kJointRange};
 	for (auto const &candidate : editor_track::free_ends(Self, Category, glm::dvec3{Global.pCamera.Pos}, reach, Exclude))
@@ -4971,7 +4971,7 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 void editor_mode::draw_build_overlay() const
 {
 	screen_projection const projection;
-	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
 	auto const drawpath = [&](segment_data const &Path, ImU32 const Color) {
 		auto previous{bezier{Path}.point(0.0)};
 		for (int i = 1; i <= 24; ++i)

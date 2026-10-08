@@ -122,6 +122,8 @@ public:
 	static void cursor_pos_callback(double x, double y);
 	static void cursor_enter_callback(int entered);
 	static void focus_callback(int focused);
+	// key presses in windows of the ui outside of the main window, passed on to the simulator like those of the main window
+	static void viewport_key_callback(GLFWwindow *Window, int key, int scancode, int action, int mods);
 
 	static ImFont *font_default;
 	static ImFont *font_mono;
@@ -130,6 +132,7 @@ public:
 protected:
 // members
     static GLFWwindow *m_window;
+	static GLFWwindow *m_keywindow; // window of the key event being handled
     static ImGuiIO *m_imguiio;
     static bool m_cursorvisible;
 
