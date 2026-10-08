@@ -417,6 +417,9 @@ bool fetch(http_client &Client, std::string const &Url, fs::path const &Path, st
 bool decode(std::vector<std::uint8_t> const &Data, image &Out, std::string &Error)
 {
 	int width{0}, height{0}, components{0};
+	// WMS GetMap is north-up. the texture loader sets a process-wide stb flip for OpenGL;
+	// pin this thread to no flip immediately before load so the first row stays north
+	stbi_set_flip_vertically_on_load_thread(0);
 	stbi_uc *pixels = stbi_load_from_memory(Data.data(), static_cast<int>(Data.size()), &width, &height, &components, 4);
 	if (pixels == nullptr)
 	{
@@ -736,6 +739,21 @@ void editor_orthophoto::cancel_pending()
 	// jobs already picked up by a worker still deliver their result, which is accepted if the tile is still wanted
 	for (auto &entry : m_tiles)
 		entry.second.requested = 0;
+}
+
+void editor_orthophoto::clear_cache()
+{
+	cancel_pending();
+	for (auto &entry : m_tiles)
+		release_tile(entry.second);
+	m_tiles.clear();
+	++m_generation;
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_done.clear();
+	}
+	std::error_code ec;
+	fs::remove_all(cache_root(), ec);
 }
 
 void editor_orthophoto::retry_failed()

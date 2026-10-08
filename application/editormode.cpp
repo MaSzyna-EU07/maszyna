@@ -1838,6 +1838,10 @@ void editor_mode::render_orthophoto_ui()
     if (!editor_orthophoto::can_download())
         ImGui::TextDisabled(STR_C("This build has no HTTP client, only cached tiles are shown"));
     ImGui::TextDisabled(STR_C("Cache: %s"), editor_orthophoto::cache_directory().c_str());
+    if (ImGui::Button(STR_C("Clear cache")))
+        m_orthophoto.clear_cache();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip(STR_C("Deletes downloaded tiles from disk. They are fetched again around the camera."));
     ImGui::TextDisabled(STR_C("Imagery: GUGiK, geoportal.gov.pl"));
 }
 

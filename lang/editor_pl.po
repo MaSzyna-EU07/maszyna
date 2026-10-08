@@ -4057,6 +4057,12 @@ msgstr "Ten build nie ma klienta HTTP, widać tylko kafle z pamięci podręcznej
 msgid "Cache: %s"
 msgstr "Pamięć podręczna: %s"
 
+msgid "Clear cache"
+msgstr "Wyczyść cache"
+
+msgid "Deletes downloaded tiles from disk. They are fetched again around the camera."
+msgstr "Usuwa pobrane kafle z dysku. Zostaną ponownie pobrane wokół kamery."
+
 msgid "Imagery: GUGiK, geoportal.gov.pl"
 msgstr "Zdjęcia: GUGiK, geoportal.gov.pl"
 
