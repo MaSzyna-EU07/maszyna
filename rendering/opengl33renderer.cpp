@@ -3351,6 +3351,119 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 //   - Global.SleeperDistance == 0 (sleeper rendering globally disabled)
 //   - the track has no sleepermodel
 //   - the track is farther than Global.SleeperDistance meters from the camera
+// releases gl textures used only by vehicles farther than gfx.textures.releasedistance times the draw range
+void opengl33_renderer::Update_Texture_Release()
+{
+	if (m_colorpass.draw_range <= 0.f)
+	{
+		return;
+	}
+	auto const range{static_cast<double>(Global.gfx_texture_releasedistance) * m_colorpass.draw_range};
+	auto const camera{m_colorpass.pass_camera.position()};
+
+	m_textures.begin_release_scan();
+	for (auto *vehicle : simulation::Vehicles.sequence())
+	{
+		if (vehicle == nullptr)
+		{
+			continue;
+		}
+		bool const isnear{glm::length(vehicle->vPosition - camera) - vehicle->radius() <= range};
+		auto const mark_model = [&](TModel3d *Model) {
+			if (Model == nullptr)
+			{
+				return;
+			}
+			for (auto const texture : Model_Textures(Model))
+			{
+				m_textures.mark_as_needed(texture, isnear);
+			}
+		};
+		mark_model(vehicle->mdModel);
+		mark_model(vehicle->mdLowPolyInt);
+		mark_model(vehicle->mdLoad);
+		for (auto *attachment : vehicle->mdAttachments)
+		{
+			mark_model(attachment);
+		}
+		for (auto const skin : vehicle->m_materialdata.replacable_skins)
+		{
+			if (skin <= 0)
+			{
+				continue;
+			}
+			auto const &material{m_materials.material(skin)};
+			for (auto const texture : material.textures)
+			{
+				m_textures.mark_as_needed(texture, isnear);
+			}
+			for (auto const &variant : material.texture_variants)
+			{
+				for (auto const texture : variant)
+				{
+					m_textures.mark_as_needed(texture, isnear);
+				}
+			}
+		}
+	}
+	m_textures.release_unneeded();
+}
+
+// textures used by materials of the sub-models of specified model, replaceable skins excluded
+std::vector<texture_handle> const &opengl33_renderer::Model_Textures(TModel3d *Model)
+{
+	auto const lookup{m_modeltextures.find(Model)};
+	if (lookup != m_modeltextures.end())
+	{
+		return lookup->second;
+	}
+	auto &textures{m_modeltextures[Model]};
+	std::vector<TSubModel *> submodels;
+	if (Model->GetSMRoot() != nullptr)
+	{
+		submodels.emplace_back(Model->GetSMRoot());
+	}
+	while (false == submodels.empty())
+	{
+		auto *submodel{submodels.back()};
+		submodels.pop_back();
+		if (submodel->NextGet() != nullptr)
+		{
+			submodels.emplace_back(submodel->NextGet());
+		}
+		if (submodel->ChildGet() != nullptr)
+		{
+			submodels.emplace_back(submodel->ChildGet());
+		}
+		// negative material is one of replaceable skins of the vehicle, these are handled with the vehicle
+		if (submodel->GetMaterial() <= 0)
+		{
+			continue;
+		}
+		auto const &material{m_materials.material(submodel->GetMaterial())};
+		for (auto const texture : material.textures)
+		{
+			if (texture > 0)
+			{
+				textures.emplace_back(texture);
+			}
+		}
+		for (auto const &variant : material.texture_variants)
+		{
+			for (auto const texture : variant)
+			{
+				if (texture > 0)
+				{
+					textures.emplace_back(texture);
+				}
+			}
+		}
+	}
+	std::sort(std::begin(textures), std::end(textures));
+	textures.erase(std::unique(std::begin(textures), std::end(textures)), std::end(textures));
+	return textures;
+}
+
 void opengl33_renderer::Render_Sleepers( TTrack *Track )
 {
 	if( Track == nullptr ) { return; }
@@ -5377,6 +5490,11 @@ void opengl33_renderer::Update(double const Deltatime)
 		// garbage collection
 		m_geometry.update();
 		m_textures.update();
+	}
+
+	if ((Global.gfx_texture_releasedistance > 0.f) && (true == simulation::is_ready))
+	{
+		Update_Texture_Release();
 	}
 
 	if ((true == Global.ControlPicking) && (false == FreeFlyModeFlag))

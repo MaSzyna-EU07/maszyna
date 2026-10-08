@@ -67,6 +67,10 @@ public:
     std::chrono::steady_clock::time_point
         timestamp() const {
             return m_resourcetimestamp; }
+    // updates the time given to resources marked as used, without a sweep
+    void
+        refresh() {
+            m_resourcetimestamp = std::chrono::steady_clock::now(); }
 
 private:
 // members:

@@ -182,6 +182,8 @@ struct global_settings {
     float SmokeFidelity{ 1.f }; // determines amount of generated smoke particles
     bool ResourceSweep{ true }; // gfx resource garbage collection
     bool ResourceMove{ false }; // gfx resources are moved between cpu and gpu side instead of sending a copy
+    bool gfx_texture_streaming{ false }; // data of dds textures is read by worker threads, the rest of the loading doesn't wait for it
+    float gfx_texture_releasedistance{ 0.f }; // gl textures of vehicles farther than this many draw ranges are released. 0 = off
     bool compress_tex{ true }; // all textures are compressed on gpu side
     std::string asSky{ "1" };
     float fFpsAverage{ 0.f }; // oczekiwana wartosć FPS
@@ -197,6 +199,7 @@ struct global_settings {
     float EnvironmentAmbientVolume{ 1.0f };
     int audio_max_sources = 30;
     std::string AudioRenderer;
+    bool AudioAsyncLoad{ false }; // sound files are decoded by worker threads
     // input
     float fMouseXScale{ 1.5f };
     float fMouseYScale{ 0.2f };

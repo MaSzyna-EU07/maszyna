@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
 #include "utilities/translation.h"
+#include "audio/audiorenderer.h"
 
 scenarioloader_mode::scenarioloader_mode() {
     m_userinterface = std::make_shared<scenarioloader_ui>();
@@ -58,6 +59,8 @@ bool scenarioloader_mode::update() {
 	// the loading state holds the scenario file open, which on some systems keeps the file from being replaced
 	// when the scenery is saved in the editor. it'd also get in the way of another load
 	state.reset();
+	// sound files decoded in the background are all ready before the simulation starts
+	audio::renderer.complete_buffers();
 
 	WriteLog( "Scenario loading time: " + std::to_string( std::chrono::duration_cast<std::chrono::seconds>( std::chrono::system_clock::now() - timestart ).count() ) + " seconds" );
 	// TODO: implement and use next mode cue

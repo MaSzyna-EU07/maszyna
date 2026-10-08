@@ -109,6 +109,8 @@ public:
 
     audio::buffer_handle fetch_buffer( std::string const &Filename );
     audio::openal_buffer const &buffer( audio::buffer_handle const Buffer ) const;
+    // makes buffers of all sound files still decoded in the background (sound.asyncload), waiting for them
+    void complete_buffers();
 
     bool init();
 

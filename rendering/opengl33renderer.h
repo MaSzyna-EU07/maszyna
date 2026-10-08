@@ -304,6 +304,10 @@ class opengl33_renderer : public gfx_renderer {
     bool Render_interior( bool const Alpha = false );
     bool Render_lowpoly( TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha = false );
     bool Render_coupler_adapter( TDynamicObject *Dynamic, float const Squaredistance, int const End, bool const Alpha = false );
+	// releases gl textures used only by vehicles farther than gfx.textures.releasedistance times the draw range
+	void Update_Texture_Release();
+	// textures used by materials of the sub-models of specified model, replaceable skins excluded
+	std::vector<texture_handle> const &Model_Textures( TModel3d *Model );
 	void Render(TMemCell *Memcell);
 	void Render_particles();
 	void Render_precipitation();
@@ -388,6 +392,8 @@ class opengl33_renderer : public gfx_renderer {
 	// of once per cell -- collapsing many tiny instanced draws into a few large
 	// batches. Reused every pass; the vectors are emptied (not freed) at the top of Render(scene::basic_region*).
 	scene::basic_cell::instance_bucket_map m_frame_instance_buckets;
+	// textures used by vehicle models, for the release of far textures
+	std::unordered_map<TModel3d const *, std::vector<texture_handle>> m_modeltextures;
 	// geometry of neighbouring tracks of a cell which share the material, gathered to be drawn together. reused by each Render(path_sequence)
 	std::vector<gfx::geometrybank_handle> m_pathbatch;
 	// copies of instance bounds kept by the buckets of scene cells are good as long as they carry this number.

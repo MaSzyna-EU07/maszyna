@@ -16,6 +16,8 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/ubo.h"
 #include "interfaces/ITexture.h"
 
+struct texture_request; // texture data read by a worker thread, with gfx.textures.streaming
+
 struct opengl_texture : public ITexture {
     static DDSURFACEDESC2 deserialize_ddsd(std::istream&);
     static DDCOLORKEY deserialize_ddck(std::istream&);
@@ -111,7 +113,12 @@ public:
     void flip_vertical();
     void gles_match_internalformat(GLuint format);
 
+    // takes over the data read by a worker thread, waiting for it if needed
+    void complete_data();
+
 // members
+    std::shared_ptr<texture_request> request; // data being read by a worker thread
+    bool reload_on_use = false; // the data was dropped along with the gl texture of a far texture, it's read again when the texture is needed
     bool is_static = false; // is excluded from garbage collection
     bool is_rendertarget = false; // is used as postfx rendertarget, without loaded data
     int samples = 1;
@@ -159,6 +166,16 @@ public:
     // performs a resource sweep
     void
         update();
+    // release of gl textures used only far away (gfx.textures.releasedistance). a scan is made of
+    // begin_release_scan(), mark_as_needed() for textures of each vehicle and release_unneeded()
+    void
+        begin_release_scan();
+    // marks texture of a vehicle as needed if the vehicle is near, otherwise only as one used by vehicles
+    void
+        mark_as_needed( texture_handle const Texture, bool const Near );
+    // releases gl textures of vehicles not needed nor drawn for a while
+    void
+        release_unneeded();
     // debug performance string
     std::string
         info() const;
@@ -191,6 +208,8 @@ private:
     texture_handle const npos { 0 }; // should be -1, but the rest of the code uses -1 for something else
     texturetimepointpair_sequence m_textures;
     index_map m_texturemappings;
+    std::vector<resource_timestamp> m_neededtimes; // last time a vehicle near enough needed the texture, blank for textures not used by vehicles
+    resource_timestamp m_releasescantime; // time of the current release scan
     garbage_collector<texturetimepointpair_sequence> m_garbagecollector { m_textures, 600, 60, "texture" };
 };
 

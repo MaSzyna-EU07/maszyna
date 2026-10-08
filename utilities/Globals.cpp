@@ -187,6 +187,12 @@ bool global_settings::ConfigParseAudio(cParser& Parser, const std::string& token
         return true;
     }
 
+    if (token == "sound.asyncload")
+    {
+        ParseOne(Parser, AudioAsyncLoad);
+        return true;
+    }
+
     if (token == "sound.volume.vehicle")
     {
         ParseOneClamped(Parser, VehicleVolume, 0.f, 1.f);
@@ -1347,6 +1353,18 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser.getTokens();
         Parser >> ResourceMove;
     }
+    else if (Token == "gfx.textures.streaming")
+    {
+        Parser.getTokens();
+        Parser >> gfx_texture_streaming;
+    }
+    else if (Token == "gfx.textures.releasedistance")
+    {
+        // multiplier of the draw range, 0 turns the release off. textures within the draw range are never released
+        Parser.getTokens();
+        Parser >> gfx_texture_releasedistance;
+        gfx_texture_releasedistance = (gfx_texture_releasedistance > 0.f ? std::max(gfx_texture_releasedistance, 1.f) : 0.f);
+    }
     else if (Token == "gfx.reflections.framerate")
     {
         auto const updatespersecond{std::abs(Parser.getToken<double>())};
@@ -1530,6 +1548,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "sound.volume.vehicle", VehicleVolume );
     export_as_text( Output, "sound.volume.positional", EnvironmentPositionalVolume );
     export_as_text( Output, "sound.volume.ambient", EnvironmentAmbientVolume );
+    export_as_text( Output, "sound.asyncload", AudioAsyncLoad );
     export_as_text( Output, "physicslog", WriteLogFlag );
     export_as_text( Output, "fullphysics", FullPhysics );
     export_as_text( Output, "debuglog", iWriteLogEnabled );
@@ -1584,6 +1603,8 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "createswitchtrackbeds", CreateSwitchTrackbeds );
     export_as_text( Output, "gfx.resource.sweep", ResourceSweep );
     export_as_text( Output, "gfx.resource.move", ResourceMove );
+    export_as_text( Output, "gfx.textures.streaming", gfx_texture_streaming );
+    export_as_text( Output, "gfx.textures.releasedistance", gfx_texture_releasedistance );
     export_as_text( Output, "gfx.reflections.framerate", 1.0 / reflectiontune.update_interval );
     export_as_text( Output, "gfx.reflections.fidelity", reflectiontune.fidelity );
     export_as_text( Output, "timespeed", fTimeSpeed );
