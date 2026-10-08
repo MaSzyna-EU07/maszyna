@@ -772,7 +772,7 @@ void editor_mode::render_track_inspector()
 void editor_mode::render_track_tool_options()
 {
 	auto *track{selected_track()};
-	render_track_modes();
+	// the tools themselves are in the toolbar
 	render_track_search();
 	ImGui::Spacing();
 	render_track_guide();
@@ -827,33 +827,41 @@ void editor_mode::render_track_selection()
 		render_path_ui();
 }
 
-void editor_mode::render_track_modes()
+void editor_mode::render_track_toolbar()
 {
 	auto const &modes{track_modes()};
-	// the tools in groups: building the track, what goes by it, the checks
-	auto const group = [&](char const *Label, std::initializer_list<track_tab> const Tabs) {
-		ImGui::SeparatorText(STR_C(Label));
-		if (false == ImGui::BeginTable(Label, 3, ImGuiTableFlags_SizingStretchSame))
+	auto const vehicle{m_track_tab == track_tab::lineside && m_vehicle.open};
+	// a tool chosen again gives way to the select one
+	auto const tool = [&](track_tab const Tab) {
+		auto const found{std::find_if(modes.begin(), modes.end(), [&](track_mode const &Mode) { return Mode.tab == Tab; })};
+		if (found == modes.end())
 			return;
-		for (auto const tab : Tabs)
-		{
-			auto const found{std::find_if(modes.begin(), modes.end(), [&](track_mode const &Mode) { return Mode.tab == tab; })};
-			if (found == modes.end())
-				continue;
-			ImGui::TableNextColumn();
-			auto const index{static_cast<int>(found - modes.begin())};
-			auto const label{std::string{STR_C(found->label)} + "###trackmode" + std::to_string(index)};
-			if (ImGui::Selectable(label.c_str(), m_track_tab == tab))
-				show_track_tab(tab);
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s  [%s]", STR_C(found->tooltip), found->key);
-		}
-		ImGui::EndTable();
+		auto const chosen{m_track_tab == Tab && false == (Tab == track_tab::lineside && vehicle)};
+		auto const label{std::string{STR_C(found->label)} + "###tracktool" + std::to_string(static_cast<int>(found - modes.begin()))};
+		if (ImGui::MenuItem(label.c_str(), nullptr, chosen))
+			show_track_tab(chosen ? track_tab::path : Tab);
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s  [%s]", STR_C(found->tooltip), found->key);
 	};
-	group("Build", {track_tab::path, track_tab::lay, track_tab::turnout, track_tab::straights, track_tab::route, track_tab::turntable});
-	group("By the track", {track_tab::signals, track_tab::lineside});
-	group("Checks", {track_tab::profile, track_tab::speed, track_tab::joints, track_tab::infra});
-	ImGui::Checkbox(STR_C("Structure gauge"), &m_gauge.open);
+	// building the track, what goes by it, the checks
+	for (auto const tab : {track_tab::path, track_tab::lay, track_tab::turnout, track_tab::straights, track_tab::route, track_tab::turntable})
+		tool(tab);
+	ImGui::Separator();
+	tool(track_tab::signals);
+	tool(track_tab::lineside);
+	// the vehicle to drive is one of the objects along the track
+	if (ImGui::MenuItem(STR_C("Vehicle"), nullptr, vehicle))
+	{
+		show_track_tab(vehicle ? track_tab::path : track_tab::lineside);
+		m_vehicle.expand = false == vehicle;
+	}
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("A vehicle to drive, put on the selected track; it isn't written to the scenery files"));
+	ImGui::Separator();
+	for (auto const tab : {track_tab::profile, track_tab::speed, track_tab::joints, track_tab::infra})
+		tool(tab);
+	if (ImGui::MenuItem(STR_C("Structure gauge"), nullptr, m_gauge.open))
+		m_gauge.open = !m_gauge.open;
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"));
 }

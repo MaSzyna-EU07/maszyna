@@ -35,6 +35,8 @@ std::string preview_path(std::string Model, std::string const &Skin);
 // path of the image of a node bank entry ("node ... model <x> <y> <z> <angle> <model> <skin> ..."), without the extension;
 // empty if the entry isn't a model
 std::string entry_preview_path(std::string const &Entry);
+// model and skin of a node bank entry, as above. returns: false if the entry isn't a model
+bool entry_model(std::string const &Entry, std::string &Model, std::string &Skin);
 // name given to another entry with the same model and skin (other lights or angles): ~2, ~3... added in the order of the
 // node bank, after the names already Taken
 std::string variant(std::string const &Path, std::set<std::string> const &Taken);
@@ -44,7 +46,8 @@ std::string variant(std::string const &Path, std::set<std::string> const &Taken)
 class image_cache
 {
   public:
-	image_cache();
+	// Size: pixels of the longer side of the images, 0 for the size of the cards of the node bank; Limit: images kept at most
+	explicit image_cache(int const Size = 0, std::size_t const Limit = 512);
 	~image_cache();
 	image_cache(image_cache const &) = delete;
 	image_cache &operator=(image_cache const &) = delete;
@@ -81,6 +84,7 @@ class image_cache
 	std::unordered_map<std::string, entry> m_entries;
 	std::uint64_t m_frame{0};
 	int m_size{128}; // pixels of the longer side of the images
+	std::size_t m_limit{512};
 	// shared with the thread
 	std::mutex m_lock;
 	std::condition_variable m_wake;

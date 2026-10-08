@@ -233,6 +233,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_terrain_ui();
 	// the terrain as a field of work of its own: the terrain tools and the orthophoto in the tool options window
 	void render_terrain_tool_options();
+	// tools of the terrain in the toolbar: picking, sculpting, smoothing, chunks, orthophoto
+	void render_terrain_toolbar();
 	// opens or leaves the terrain; leaving it puts the sculpting and the chunk editing away, so the mouse doesn't stay with them
 	void terrain_workspace(bool const Open);
 	// creates a large terrain as a grid of adjacent chunks (each its own editable patch)
@@ -432,6 +434,17 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_toolbar();
 	// an edit mode of the node bank as the field of work, from the toolbar or its key (1-5)
 	void choose_edit_mode(nodebank_panel::edit_mode const Mode);
+	// fields of work of the editor, in the row above the toolbar: the models around, the tracks, the roads, the terrain
+	enum class work_area
+	{
+		surroundings,
+		tracks,
+		roads,
+		terrain
+	};
+	work_area current_work_area() const;
+	void choose_work_area(work_area const Area);
+	void render_workspaces();
 	bool m_gizmo_enabled{true};                                  // master switch for the in-viewport gizmo
 	bool m_gizmo_using{false};                                   // tracks an ongoing drag, so a single undo snapshot is taken per drag
 	bool m_gizmo_local{false};                                   // manipulate in the object's local space instead of world space
@@ -842,7 +855,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	// the track tools in the tool options window, and the selected path in the inspector
 	void render_track_tool_options();
 	void render_track_selection();
-	void render_track_modes();
+	// tools of the track mode in the toolbar, in groups: building, by the track, checks
+	void render_track_toolbar();
 	void show_track_tab(track_tab const Tab);
 	bool track_analysis_tab() const { return m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::infra; }
 	bool track_shortcut(int const Key);
@@ -1755,6 +1769,9 @@ class editor_mode : public application_mode, private editor_track::observer
 	};
 	void render_road_menu();
 	void render_road_tool_options();
+	// tools of the roads in the toolbar, and the change of the tool
+	void render_road_toolbar();
+	void road_choose_tool(int const Tool);
 	void render_road_selection();
 	bool render_road_layout(road_node::state &State);
 	bool render_road_material(char const *Label, char *Buffer, std::size_t const Size, std::string &Value);

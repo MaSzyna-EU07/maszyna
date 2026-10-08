@@ -488,6 +488,7 @@ editor_mode::editor_mode() {
 	ui()->set_fill_options([this]() { render_area_fill(); });
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
 	ui()->set_toolbar_options([this]() { render_toolbar(); });
+	ui()->set_workspace_bar([this]() { render_workspaces(); });
 	ui()->set_track_options([this]() { render_track_tool_options(); }, [this]() { render_track_selection(); });
 	ui()->set_workspace_options(editor_ui::workspace::roads, [this]() { render_road_tool_options(); }, [this]() { render_road_selection(); });
 	ui()->set_workspace_options(editor_ui::workspace::terrain, [this]() { render_terrain_tool_options(); });
@@ -3674,77 +3675,157 @@ void editor_mode::choose_edit_mode(nodebank_panel::edit_mode const Mode)
 	ui()->set_mode(Mode);
 }
 
+editor_mode::work_area editor_mode::current_work_area() const
+{
+	// the terrain is shown over the tracks, see the tool options window
+	if (m_terrain_open)
+		return work_area::terrain;
+	if (m_track_window_open)
+		return work_area::tracks;
+	if (m_roadtool.window)
+		return work_area::roads;
+	return work_area::surroundings;
+}
+
+void editor_mode::choose_work_area(work_area const Area)
+{
+	switch (Area)
+	{
+	case work_area::surroundings:
+		// the edit mode used last
+		choose_edit_mode(ui()->nodebank().mode);
+		break;
+	case work_area::tracks:
+		terrain_workspace(false);
+		show_track_tab(m_track_tab);
+		break;
+	case work_area::roads:
+		m_track_window_open = false;
+		terrain_workspace(false);
+		m_roadtool.window = true;
+		break;
+	case work_area::terrain:
+		m_track_window_open = false;
+		m_roadtool.window = false;
+		terrain_workspace(true);
+		break;
+	}
+}
+
+void editor_mode::render_workspaces()
+{
+	struct area
+	{
+		char const *label;
+		work_area which;
+		char const *tooltip;
+	};
+	area const areas[] = {
+	    {STR_C("Surroundings"), work_area::surroundings, STR_C("Models around the line: select, insert, brush, area fill, copy to the node bank")},
+	    {STR_C("Tracks"), work_area::tracks, STR_C("Tracks and switches, signals, objects along the track, checks of the line")},
+	    {STR_C("Roads"), work_area::roads, STR_C("Roads and junctions, level crossings, the points where the traffic comes and goes")},
+	    {STR_C("Terrain"), work_area::terrain, STR_C("Terrain patches and chunks, sculpting, streaming, orthophoto")},
+	};
+	auto const current{current_work_area()};
+	auto const &style{ImGui::GetStyle()};
+	auto *list{ImGui::GetWindowDrawList()};
+	// bigger and bold, with the font made for it if there's one, or drawn twice a pixel apart
+	auto *font{ui_layer::font_bold != nullptr ? ui_layer::font_bold : ImGui::GetFont()};
+	auto const fontsize{ui_layer::font_bold != nullptr ? ui_layer::font_bold->FontSize : ImGui::GetFontSize() * 1.25f};
+	auto const height{ImGui::GetWindowHeight()};
+	auto const padding{style.FramePadding.x * 3.0f};
+	ImGui::SetCursorPos(ImVec2(style.ItemSpacing.x, 0.0f));
+	for (auto const &entry : areas)
+	{
+		auto const text{font->CalcTextSizeA(fontsize, FLT_MAX, 0.0f, entry.label)};
+		ImVec2 const size{text.x + padding * 2.0f, height};
+		auto const position{ImGui::GetCursorScreenPos()};
+		ImGui::PushID(static_cast<int>(entry.which));
+		if (ImGui::InvisibleButton("##area", size))
+			choose_work_area(entry.which);
+		ImGui::PopID();
+		auto const hovered{ImGui::IsItemHovered()};
+		auto const chosen{entry.which == current};
+		ImVec2 const end{position.x + size.x, position.y + size.y};
+		if (chosen || hovered)
+			list->AddRectFilled(position, end, ImGui::GetColorU32(chosen ? ImGuiCol_Header : ImGuiCol_HeaderHovered));
+		if (chosen)
+			list->AddRectFilled(ImVec2(position.x, end.y - 3.0f), end, ImGui::GetColorU32(ImGuiCol_CheckMark));
+		ImVec2 const textposition{position.x + padding, position.y + (height - text.y) * 0.5f};
+		auto const color{ImGui::GetColorU32(chosen ? ImGuiCol_Text : ImGuiCol_TextDisabled)};
+		list->AddText(font, fontsize, textposition, color, entry.label);
+		if (ui_layer::font_bold == nullptr)
+			list->AddText(font, fontsize, ImVec2(textposition.x + 1.0f, textposition.y), color, entry.label);
+		if (hovered)
+			ImGui::SetTooltip("%s", entry.tooltip);
+		ImGui::SameLine(0.0f, style.ItemSpacing.x);
+	}
+}
+
+void editor_mode::render_terrain_toolbar()
+{
+	// what the left button does on the terrain: picks the models as it does elsewhere, raises and lowers, evens out, adds chunks
+	struct tool
+	{
+		char const *label;
+		bool chosen;
+		bool sculpt;
+		bool smooth;
+		bool chunks;
+		char const *tooltip;
+	};
+	tool const tools[] = {
+	    {STR_C("Select"), false == m_terrain_sculpt && false == m_chunk_edit, false, m_terrain_brush_smooth, false, STR_C("LMB picks the models, as in the surroundings")},
+	    {STR_C("Sculpt"), m_terrain_sculpt && false == m_terrain_brush_smooth, true, false, false, STR_C("LMB raises the terrain under the brush, Shift+LMB lowers it")},
+	    {STR_C("Smooth"), m_terrain_sculpt && m_terrain_brush_smooth, true, true, false, STR_C("LMB evens the terrain out under the brush")},
+	    {STR_C("Chunks"), m_chunk_edit, false, m_terrain_brush_smooth, true, STR_C("LMB adds a chunk next to the clicked one, Shift+LMB deletes it")},
+	};
+	for (auto const &entry : tools)
+	{
+		if (ImGui::MenuItem(entry.label, nullptr, entry.chosen))
+		{
+			m_terrain_sculpt = entry.sculpt;
+			m_terrain_brush_smooth = entry.smooth;
+			m_chunk_edit = entry.chunks;
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", entry.tooltip);
+	}
+	ImGui::Separator();
+	auto const orthophoto{m_orthophoto.enabled()};
+	if (ImGui::MenuItem(STR_C("Orthophoto"), nullptr, orthophoto))
+		m_orthophoto.enabled(false == orthophoto);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"));
+}
+
 void editor_mode::render_toolbar()
 {
-	// edit modes of the node bank, each of them takes the mouse over from the track window
-	std::pair<char const *, nodebank_panel::edit_mode> const modes[] = {
-	    {STR_C("Select"), nodebank_panel::MODIFY}, {STR_C("Insert"), nodebank_panel::ADD}, {STR_C("Brush"), nodebank_panel::BRUSH}, {STR_C("Area fill"), nodebank_panel::FILL}, {STR_C("Copy to bank"), nodebank_panel::COPY}};
-	// the fields of work: an edit mode, or the tracks, signals, vehicle, roads or terrain, one at a time
-	bool const workspace{m_roadtool.window || m_terrain_open};
-	for (std::size_t index = 0; index < std::size(modes); ++index)
+	auto const area{current_work_area()};
+	switch (area)
 	{
-		auto const &mode{modes[index]};
-		if (ImGui::MenuItem(mode.first, nullptr, false == workspace && ui()->mode() == mode.second))
-			choose_edit_mode(mode.second);
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s (%d)", mode.first, static_cast<int>(index + 1));
+	case work_area::surroundings:
+	{
+		// edit modes of the node bank
+		std::pair<char const *, nodebank_panel::edit_mode> const modes[] = {
+		    {STR_C("Select"), nodebank_panel::MODIFY}, {STR_C("Insert"), nodebank_panel::ADD}, {STR_C("Brush"), nodebank_panel::BRUSH}, {STR_C("Area fill"), nodebank_panel::FILL}, {STR_C("Copy to bank"), nodebank_panel::COPY}};
+		for (std::size_t index = 0; index < std::size(modes); ++index)
+		{
+			auto const &mode{modes[index]};
+			if (ImGui::MenuItem(mode.first, nullptr, ui()->mode() == mode.second))
+				choose_edit_mode(mode.second);
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s (%d)", mode.first, static_cast<int>(index + 1));
+		}
+		break;
+	}
+	case work_area::tracks: render_track_toolbar(); break;
+	case work_area::roads: render_road_toolbar(); break;
+	case work_area::terrain: render_terrain_toolbar(); break;
 	}
 	ImGui::Separator();
-	bool const tracks{m_track_window_open && false == m_terrain_open};
-	bool const vehicle{tracks && m_track_tab == track_tab::lineside && m_vehicle.open};
-	if (ImGui::MenuItem(STR_C("Tracks"), nullptr, tracks && m_track_tab != track_tab::signals && false == vehicle))
-	{
-		if (tracks && m_track_tab != track_tab::signals && false == vehicle)
-			m_track_window_open = false;
-		else
-		{
-			terrain_workspace(false);
-			show_track_tab(m_track_tab == track_tab::signals || vehicle ? track_tab::path : m_track_tab);
-		}
-	}
-	// the signals are a tool of the track mode, but a field of work of their own
-	if (ImGui::MenuItem(STR_C("Signals"), nullptr, tracks && m_track_tab == track_tab::signals))
-	{
-		if (tracks && m_track_tab == track_tab::signals)
-			m_track_window_open = false;
-		else
-		{
-			terrain_workspace(false);
-			show_track_tab(track_tab::signals);
-		}
-	}
-	// so is the vehicle to drive, put on a track by the objects along the track
-	if (ImGui::MenuItem(STR_C("Vehicle"), nullptr, vehicle))
-	{
-		if (vehicle)
-			m_track_window_open = false;
-		else
-		{
-			terrain_workspace(false);
-			show_track_tab(track_tab::lineside);
-			m_vehicle.expand = true;
-		}
-	}
-	if (ImGui::MenuItem("Roads", nullptr, m_roadtool.window && false == m_terrain_open))
-	{
-		m_roadtool.window = !(m_roadtool.window && false == m_terrain_open);
-		if (m_roadtool.window)
-		{
-			m_track_window_open = false;
-			terrain_workspace(false);
-		}
-	}
-	if (ImGui::MenuItem(STR_C("Terrain"), nullptr, m_terrain_open))
-	{
-		terrain_workspace(false == m_terrain_open);
-		if (m_terrain_open)
-		{
-			m_track_window_open = false;
-			m_roadtool.window = false;
-		}
-	}
-	ImGui::Separator();
-	if (m_gizmo_enabled)
+	// the gizmo moves the models and the tracks; on the terrain the mouse is the brush's
+	if (m_gizmo_enabled && area != work_area::terrain)
 	{
 		std::pair<char const *, gizmo_operation> const operations[] = {
 		    {STR_C("Translate (Q)"), gizmo_operation::translate}, {STR_C("Rotate (W)"), gizmo_operation::rotate}, {STR_C("Scale (E)"), gizmo_operation::scale}};

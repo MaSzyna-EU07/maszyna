@@ -4683,3 +4683,42 @@ msgstr "Zielone, jak reszta symulatora"
 
 msgid "Amber, of the editor"
 msgstr "Bursztynowe, edytora"
+
+msgid "Surroundings"
+msgstr "Otoczenie"
+
+msgid "Roads"
+msgstr "Drogi"
+
+msgid "Sculpt"
+msgstr "Rzeźbienie"
+
+msgid "Chunks"
+msgstr "Kafle"
+
+msgid "Models around the line: select, insert, brush, area fill, copy to the node bank"
+msgstr "Modele wokół linii: zaznaczanie, wstawianie, pędzel, wypełnianie obszaru, kopiowanie do banku"
+
+msgid "Tracks and switches, signals, objects along the track, checks of the line"
+msgstr "Tory i rozjazdy, sygnalizatory, obiekty wzdłuż toru, kontrole linii"
+
+msgid "Roads and junctions, level crossings, the points where the traffic comes and goes"
+msgstr "Drogi i skrzyżowania, przejazdy, punkty pojawiania się i znikania ruchu"
+
+msgid "Terrain patches and chunks, sculpting, streaming, orthophoto"
+msgstr "Płaty i kafle terenu, rzeźbienie, strumieniowanie, ortofotomapa"
+
+msgid "LMB picks the models, as in the surroundings"
+msgstr "LPM zaznacza modele, jak w otoczeniu"
+
+msgid "LMB raises the terrain under the brush, Shift+LMB lowers it"
+msgstr "LPM podnosi teren pod pędzlem, Shift+LPM go obniża"
+
+msgid "LMB evens the terrain out under the brush"
+msgstr "LPM wyrównuje teren pod pędzlem"
+
+msgid "LMB adds a chunk next to the clicked one, Shift+LMB deletes it"
+msgstr "LPM dodaje kafel obok klikniętego, Shift+LPM go usuwa"
+
+msgid "A vehicle to drive, put on the selected track; it isn't written to the scenery files"
+msgstr "Pojazd do jazdy, stawiany na zaznaczonym torze; nie trafia do plików scenerii"

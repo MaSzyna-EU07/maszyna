@@ -69,6 +69,11 @@ class editor_ui : public ui_layer
 	{
 		m_toolbaroptions = std::move(Renderer);
 	}
+	// draws the fields of work of the editor mode in a row above the toolbar
+	void set_workspace_bar(std::function<void()> Renderer)
+	{
+		m_workspacebar = std::move(Renderer);
+	}
 	// draws the gizmo settings in the toolset window (the gizmo state lives in the editor mode)
 	void set_gizmo_options(std::function<void()> Renderer)
 	{
@@ -182,6 +187,7 @@ class editor_ui : public ui_layer
 	std::function<void()> m_filloptions;
 	std::function<void()> m_menuoptions;
 	std::function<void()> m_toolbaroptions;
+	std::function<void()> m_workspacebar;
 	bool m_layoutreset{false}; // the default layout is to be built again on the next frame
 	bool m_tooloptionsopen{true};
 	bool m_inspectoropen{true};

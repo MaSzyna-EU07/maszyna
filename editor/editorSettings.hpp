@@ -50,7 +50,7 @@ public:
 	int nodebank_card() const { return m_nodebank_card; }
 	void nodebank_card(int Size) { m_nodebank_card = Size; }
 
-	// colours of the editor: 1 amber, its own; 0 green, as the rest of the simulator
+	// colours of the editor: 0 green, as the rest of the simulator; 1 amber
 	int palette() const { return m_palette; }
 	void palette(int Palette) { m_palette = Palette; }
 
@@ -62,7 +62,7 @@ private:
 	double m_signal_offset{2.25};
 	bool m_nodebank_previews{true};
 	int m_nodebank_card{96};
-	int m_palette{1};
+	int m_palette{0};
 };
 
 // global editor settings instance

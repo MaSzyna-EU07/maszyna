@@ -130,6 +130,8 @@ public:
 	static ImFont *font_default;
 	static ImFont *font_mono;
 	static ImFont *font_loading;
+	// bigger and bold, for headings like the fields of work of the editor; nullptr if the font isn't there
+	static ImFont *font_bold;
 
 protected:
 // members

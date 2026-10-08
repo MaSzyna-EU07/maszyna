@@ -2261,6 +2261,57 @@ bool editor_mode::render_road_layout(road_node::state &State)
 	return changed;
 }
 
+void editor_mode::road_choose_tool(int const Tool)
+{
+	auto &tool{m_roadtool};
+	if (Tool == tool.tool)
+		return;
+	tool.tool = Tool;
+	road_cancel();
+	if (tool.tool != 0)
+	{
+		tool.junction = nullptr;
+		tool.points.clear();
+		tool.marker = nullptr;
+		// the fields for the names of materials show the layout for the roads to be built again
+		road_select(nullptr);
+	}
+}
+
+void editor_mode::render_road_toolbar()
+{
+	auto &tool{m_roadtool};
+	struct entry
+	{
+		char const *label;
+		char const *tooltip;
+	};
+	entry const tools[] = {{"Select", "LMB: a road piece, a junction, a point where pieces meet, a level crossing or a traffic point"},
+	                       {"Build", "LMB: start a road, then each next point; on a loose end, the side of a road or a junction it's joined to them"},
+	                       {"Place", "Level crossings, and the points where vehicles appear on the roads or are taken off them"}};
+	for (int index = 0; index < static_cast<int>(std::size(tools)); ++index)
+	{
+		if (ImGui::MenuItem(tools[index].label, nullptr, tool.tool == index))
+			road_choose_tool(index);
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", tools[index].tooltip);
+	}
+	if (tool.tool == 2)
+	{
+		// what the place tool puts
+		ImGui::Separator();
+		char const *const kinds[] = {"Level crossing", "Spawn point", "Removal point", "Pedestrian crossing"};
+		for (int index = 0; index < static_cast<int>(std::size(kinds)); ++index)
+		{
+			if (ImGui::MenuItem(kinds[index], nullptr, tool.placekind == index))
+				tool.placekind = index;
+		}
+	}
+	ImGui::Separator();
+	if (ImGui::MenuItem("Show lanes", nullptr, tool.lanes))
+		tool.lanes = !tool.lanes;
+}
+
 // the road tools and what the next pieces get, in the tool options window; the selection is drawn in the inspector by render_road_selection()
 void editor_mode::render_road_tool_options()
 {
@@ -2269,28 +2320,7 @@ void editor_mode::render_road_tool_options()
 	if (false == editor_road::available(&reason))
 		ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", reason.c_str());
 
-	auto const previoustool{tool.tool};
-	ImGui::RadioButton("Select", &tool.tool, 0);
-	ImGui::SameLine();
-	ImGui::RadioButton("Build", &tool.tool, 1);
-	ImGui::SameLine();
-	ImGui::RadioButton("Place", &tool.tool, 2);
-	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", "Level crossings, and the points where vehicles appear on the roads or are taken off them");
-	if (tool.tool != previoustool)
-	{
-		road_cancel();
-		if (tool.tool != 0)
-		{
-			tool.junction = nullptr;
-			tool.points.clear();
-			tool.marker = nullptr;
-			// the fields for the names of materials show the layout for the roads to be built again
-			road_select(nullptr);
-		}
-	}
-	ImGui::SameLine();
-	ImGui::Checkbox("Show lanes", &tool.lanes);
+	// the tools and what the place tool puts are chosen in the toolbar
 
 	if (tool.tool == 1)
 	{
@@ -2338,12 +2368,6 @@ void editor_mode::render_road_tool_options()
 	}
 	else if (tool.tool == 2)
 	{
-		ImGui::RadioButton("Level crossing", &tool.placekind, 0);
-		ImGui::SameLine();
-		ImGui::RadioButton("Spawn point", &tool.placekind, 1);
-		ImGui::SameLine();
-		ImGui::RadioButton("Removal point", &tool.placekind, 2);
-		ImGui::RadioButton("Pedestrian crossing", &tool.placekind, 3);
 		tool.placekind = std::clamp(tool.placekind, 0, 3);
 		switch (tool.placekind)
 		{

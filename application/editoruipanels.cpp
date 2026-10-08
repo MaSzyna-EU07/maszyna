@@ -568,6 +568,10 @@ void nodebank_panel::nodebank_reload()
 	{
 		m_previews->clear();
 	}
+	if (m_largepreviews)
+	{
+		m_largepreviews->clear();
+	}
 	std::ifstream file;
 	file.open("nodebank.txt", std::ios_base::in | std::ios_base::binary);
 	std::string line;
@@ -617,6 +621,52 @@ void nodebank_panel::index_previews()
 		taken.insert(name);
 		m_previewpaths[entry.second.get()] = name + ".png";
 	}
+}
+
+void nodebank_panel::preview_popup(std::pair<std::string, std::shared_ptr<std::string>> const &Entry)
+{
+	if (false == ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay))
+	{
+		return;
+	}
+	// the generator makes the images 1024 pixels big; they're shown half as big, as much as the window has room for
+	auto const size{std::clamp(static_cast<int>(512.0f * Global.ui_scale), 256, 1024)};
+	if (m_largepreviews == nullptr)
+	{
+		m_largepreviews = std::make_unique<editor_previews::image_cache>(size, 16);
+	}
+	auto const *label{Entry.first.c_str()};
+	while (*label == ' ')
+	{
+		++label;
+	}
+	ImGui::BeginTooltip();
+	ImGui::TextUnformatted(label);
+	std::string model, skin;
+	if (editor_previews::entry_model(*Entry.second, model, skin))
+	{
+		ImGui::TextDisabled("%s%s%s", model.c_str(), (skin.empty() || skin == "none") ? "" : "  ", (skin.empty() || skin == "none") ? "" : skin.c_str());
+	}
+	auto const lookup{m_previewpaths.find(Entry.second.get())};
+	if (lookup != m_previewpaths.end())
+	{
+		auto const side{std::min(static_cast<float>(size), ImGui::GetMainViewport()->WorkSize.y * 0.6f)};
+		auto texture{m_largepreviews->image(lookup->second)};
+		if (texture == 0 && m_previews)
+		{
+			// the small image, until the big one is read
+			texture = m_previews->image(lookup->second);
+		}
+		if (texture != 0)
+		{
+			ImGui::Image(static_cast<ImTextureID>(texture), ImVec2(side, side));
+		}
+		else
+		{
+			ImGui::TextDisabled("%s", m_largepreviews->missing(lookup->second) ? STR_C("no preview") : "...");
+		}
+	}
+	ImGui::EndTooltip();
 }
 
 void nodebank_panel::render_cards(std::vector<std::pair<std::string, std::shared_ptr<std::string>> const *> const &Entries)
@@ -690,7 +740,7 @@ void nodebank_panel::render_cards(std::vector<std::pair<std::string, std::shared
 				ImGui::RenderTextEllipsis(list, labelmin, labelmax, labelmax.x, labelmax.x, label, nullptr, nullptr);
 				if (hovered)
 				{
-					ImGui::SetTooltip("%s", label);
+					preview_popup(entry);
 				}
 				ImGui::PopID();
 			}
@@ -724,6 +774,10 @@ void nodebank_panel::render()
 
 	if (true == ImGui::Begin(panelname.c_str(), nullptr, flags))
 	{
+		if (m_largepreviews)
+		{
+			m_largepreviews->update();
+		}
 		if (ImGui::Button(STR_C("Reload node bank")))
 		{
 			nodebank_reload();
@@ -833,6 +887,7 @@ void nodebank_panel::render()
 					auto const label{" " + entry.first + "##" + std::to_string(idx)};
 					if (list_item(label.c_str(), entry.second == m_selectedtemplate))
 						m_selectedtemplate = entry.second;
+					preview_popup(entry);
 					++idx;
 				}
 			}

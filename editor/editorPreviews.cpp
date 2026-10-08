@@ -77,10 +77,20 @@ std::string preview_path(std::string Model, std::string const &Skin)
 
 std::string entry_preview_path(std::string const &Entry)
 {
+	std::string model, skin;
+	if (false == entry_model(Entry, model, skin))
+	{
+		return {};
+	}
+	return preview_path(model, skin);
+}
+
+bool entry_model(std::string const &Entry, std::string &Model, std::string &Skin)
+{
 	auto const nodestart{Entry.find("node")};
 	if (nodestart == std::string::npos)
 	{
-		return {};
+		return false;
 	}
 	auto const entry{Entry.substr(nodestart)};
 	// node <range max> <range min> <name> <type>
@@ -93,18 +103,14 @@ std::string entry_preview_path(std::string const &Entry)
 	}
 	if (type != "model")
 	{
-		return {};
+		return false;
 	}
 	// the model and skin are the first two tokens after the location and rotation, read as the generator reads them
 	cParser names(entry, cParser::buffer_TEXT);
 	names.getTokens(9, false);
-	auto const model{names.getToken<std::string>()};
-	auto const skin{names.getToken<std::string>(false)};
-	if (model.empty())
-	{
-		return {};
-	}
-	return preview_path(model, skin);
+	Model = names.getToken<std::string>();
+	Skin = names.getToken<std::string>(false);
+	return false == Model.empty();
 }
 
 std::string variant(std::string const &Path, std::set<std::string> const &Taken)
@@ -124,17 +130,15 @@ std::string variant(std::string const &Path, std::set<std::string> const &Taken)
 namespace
 {
 
-// images kept at most; at 128 pixels that's 32 MB
-std::size_t const image_limit{512};
 // uploaded in a frame at most
 int const uploads_per_frame{8};
 
 } // namespace
 
-image_cache::image_cache()
+image_cache::image_cache(int const Size, std::size_t const Limit) : m_limit{std::max<std::size_t>(Limit, 2)}
 {
-	// at a bigger ui the images are drawn bigger too
-	m_size = std::clamp(static_cast<int>(128.0f * std::max(1.0f, Global.ui_scale)), 128, 256);
+	// at a bigger ui the cards are drawn bigger too; 512 of them at 128 pixels take 32 MB
+	m_size = (Size > 0 ? Size : std::clamp(static_cast<int>(128.0f * std::max(1.0f, Global.ui_scale)), 128, 256));
 	m_thread = std::thread(&image_cache::work, this);
 }
 
@@ -182,7 +186,7 @@ void image_cache::update()
 	{
 		std::lock_guard<std::mutex> lock(m_lock);
 		// the queue keeps only what was asked for lately; the rest is asked for again when it's scrolled back into sight
-		while (m_queue.size() > image_limit / 2)
+		while (m_queue.size() > m_limit / 2)
 		{
 			auto const lookup{m_entries.find(m_queue.back())};
 			if (lookup != m_entries.end())
@@ -224,7 +228,7 @@ void image_cache::update()
 	{
 		textures += (entry.second.texture != 0 ? 1 : 0);
 	}
-	if (textures <= image_limit)
+	if (textures <= m_limit)
 	{
 		return;
 	}
@@ -239,7 +243,7 @@ void image_cache::update()
 	}
 	std::sort(loaded.begin(), loaded.end());
 	std::vector<std::string> dropped;
-	for (std::size_t index = 0; index < textures - image_limit; ++index)
+	for (std::size_t index = 0; index < textures - m_limit; ++index)
 	{
 		dropped.push_back(*loaded[index].second);
 	}

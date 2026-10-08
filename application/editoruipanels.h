@@ -166,6 +166,8 @@ class nodebank_panel : public ui_panel
 	void index_previews();
 	// entries of a group as cards with their previews, in rows as many as fit the width
 	void render_cards(std::vector<std::pair<std::string, std::shared_ptr<std::string>> const *> const &Entries);
+	// the entry pointed at for a moment: a popup with its preview, big, and the model and skin it shows
+	void preview_popup(std::pair<std::string, std::shared_ptr<std::string>> const &Entry);
 	// true if the node bank selection is a definition of a node, which the hand-made lists and the model sets can take
 	bool node_selected() const;
 	// members:
@@ -175,6 +177,7 @@ class nodebank_panel : public ui_panel
 	// previews of the models: image of each node definition, by its address, and the images read so far
 	std::unordered_map<std::string const *, std::string> m_previewpaths;
 	std::unique_ptr<editor_previews::image_cache> m_previews;
+	std::unique_ptr<editor_previews::image_cache> m_largepreviews; // a few, for the popup
 	bool m_previewfolder{false}; // the generator was run, there's the folder of the images
 	// set manager window
 	bool m_setsopen{false};

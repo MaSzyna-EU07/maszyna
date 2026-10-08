@@ -32,6 +32,7 @@ int ui_layer::m_palette{0};
 ImFont *ui_layer::font_default{nullptr};
 ImFont *ui_layer::font_mono{nullptr};
 ImFont *ui_layer::font_loading{nullptr};
+ImFont *ui_layer::font_bold{nullptr};
 
 ui_panel::ui_panel(std::string Identifier, bool const Isopen) : is_open(Isopen), m_name(std::move(Identifier)) {}
 
@@ -338,6 +339,14 @@ bool ui_layer::init(GLFWwindow *Window)
 				const ImWchar* chinese_ranges = m_imguiio->Fonts->GetGlyphRangesChineseFull();
 				m_imguiio->Fonts->AddFontFromFileTTF("fonts/NotoSansSC-Regular.ttf", Global.ui_fontsize, &chinese_mono_config, chinese_ranges);
 			}
+		}
+	}
+	for (auto const *bold : {"fonts/dejavusans-bold.ttf", "fonts/DejaVuSans-Bold.ttf"})
+	{
+		if (font_bold == nullptr && FileExists(bold))
+		{
+			ImFontConfig bold_config;
+			font_bold = m_imguiio->Fonts->AddFontFromFileTTF(bold, Global.ui_fontsize * 1.25f, &bold_config, &ranges[0]);
 		}
 	}
 	if (FileExists("fonts/bahnschrift.ttf")) {

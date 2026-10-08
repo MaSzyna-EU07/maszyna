@@ -586,7 +586,19 @@ void editor_ui::render_()
 {
 	auto *viewport{ImGui::GetMainViewport()};
 	auto const flags{ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar};
-	// toolbar under the menu: the tools of the editor mode
+	// the fields of work of the editor under the menu, in a row twice as high; the tools of the one chosen in the toolbar under it
+	if (m_workspacebar)
+	{
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
+		if (ImGui::BeginViewportSideBar("##editorworkspaces", viewport, ImGuiDir_Up, ImGui::GetFrameHeight() * 2.0f, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollWithMouse))
+		{
+			m_workspacebar();
+		}
+		ImGui::End();
+		ImGui::PopStyleVar(2);
+	}
+	// toolbar under them: the tools of the field of work
 	if (ImGui::BeginViewportSideBar("##editortoolbar", viewport, ImGuiDir_Up, ImGui::GetFrameHeight(), flags))
 	{
 		if (ImGui::BeginMenuBar())
