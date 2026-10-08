@@ -1355,6 +1355,12 @@ bool editor_mode::update()
         point_drag_update();
         if (m_track_tab == track_tab::turntable)
             draw_turntable_overlay();
+        if (m_track_tab == track_tab::signals)
+        {
+            signal_refresh();
+            signal_move_update();
+            draw_signal_overlay();
+        }
         if (m_track_tab == track_tab::lineside)
         {
             draw_parallel_preview();
@@ -2423,6 +2429,17 @@ void editor_mode::apply_include()
     auto const directive = editor_includes::compose_directive(m_include.target, m_include.values);
     if (directive == before)
         return;
+    std::string read_before, read_after;
+    if (false == m_include.info.signal_read.empty())
+    {
+        std::string file;
+        std::vector<std::string> previous;
+        if (editor_includes::parse_directive(before, file, previous))
+        {
+            read_before = editor_includes::substitute(m_include.info.signal_read, previous);
+            read_after = editor_includes::substitute(m_include.info.signal_read, m_include.values);
+        }
+    }
     if (false == m_include_gesture)
     {
         // a single undo step for the whole drag
@@ -2430,10 +2447,14 @@ void editor_mode::apply_include()
         snap.instance = m_instance;
         snap.node_name = *scene::Layers.instance(m_instance).file;
         snap.serialized = std::move(before);
+        if (read_before != read_after)
+            signal_renamed(read_before, read_after, snap);
         m_history.push_back(std::move(snap));
         g_redo.clear();
         m_include_gesture = true;
     }
+    else if (read_before != read_after && false == m_history.empty())
+        signal_renamed(read_before, read_after, m_history.back());
     set_include_directive(m_instance, directive);
 }
 
@@ -4209,6 +4230,10 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         {
             break;
         }
+        if (is_press(Action) && m_instance != 0 && signal_delete(m_instance))
+        {
+            break;
+        }
         if (is_press(Action) && m_instance != 0)
         {
             // include of a scenery template. what it shows goes out of sight, the directive is erased on save
@@ -4534,6 +4559,8 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                     finish_switch_placement();
                 if (m_turntable.placing)
                     turntable_finish_placement();
+                if (m_signal.placing || m_signal.moving)
+                    signal_release();
             }
 
             m_dragging = false;

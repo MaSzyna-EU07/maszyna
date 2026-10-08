@@ -4403,3 +4403,193 @@ msgstr "1,650 m: najmniej dopuszczalne w eksploatacji"
 
 msgid "edge of the platform from the axis"
 msgstr "krawędź peronu od osi toru"
+
+# scenery editor: signals
+msgid "Signals"
+msgstr "Sygnalizatory"
+
+msgid "Signals by the track, from the templates of the scenery, with the event the train reads them by"
+msgstr "Sygnalizatory przy torze, z szablonów scenerii, z eventem, którym pociąg je odczytuje"
+
+msgid "Signal: drag along the track, release to put it there"
+msgstr "Sygnalizator: przeciągnij wzdłuż toru, puść, żeby go tam postawić"
+
+msgid "Signal: drag along the track sets the direction of the trains, release to place it"
+msgstr "Sygnalizator: przeciąganie wzdłuż toru ustawia kierunek pociągów, puść, żeby go postawić"
+
+msgid "Signal: LMB by the track places it on that side"
+msgstr "Sygnalizator: LPM przy torze stawia go po tej stronie"
+
+msgid "Signal: choose its type below"
+msgstr "Sygnalizator: wybierz jego typ poniżej"
+
+msgid "moves the signal along the track"
+msgstr "przesuwa sygnalizator wzdłuż toru"
+
+msgid "the trains it faces run that way"
+msgstr "pociągi, do których jest zwrócony, jadą w tę stronę"
+
+msgid "LMB by a track"
+msgstr "LPM przy torze"
+
+msgid "places the signal on that side, facing the trains which have it on their right"
+msgstr "stawia sygnalizator po tej stronie, zwrócony do pociągów, które mają go po prawej"
+
+msgid "Press+drag along"
+msgstr "Wciśnij i przeciągnij wzdłuż"
+
+msgid "the trains it faces run the way of the drag"
+msgstr "pociągi, do których jest zwrócony, jadą w stronę przeciągnięcia"
+
+msgid "LMB on a signal"
+msgstr "LPM na sygnalizatorze"
+
+msgid "Drag a signal"
+msgstr "Przeciągnij sygnalizator"
+
+msgid "moves it along the track"
+msgstr "przesuwa go wzdłuż toru"
+
+msgid "removes the selected signal with its event"
+msgstr "usuwa zaznaczony sygnalizator razem z jego eventem"
+
+msgid "Click: select the signal %s, drag: move it along the track"
+msgstr "Klik: zaznacz sygnalizator %s, przeciągnij: przesuń go wzdłuż toru"
+
+msgid "Choose the type of the signal in the Tracks window first"
+msgstr "Najpierw wybierz typ sygnalizatora w oknie Tory"
+
+msgid "Semaphore"
+msgstr "Semafor"
+
+msgid "Automatic block"
+msgstr "SBL"
+
+msgid "Warning signal"
+msgstr "Tarcza ostrzegawcza"
+
+msgid "Shunting signal"
+msgstr "Tarcza manewrowa"
+
+msgid "Stop signal"
+msgstr "Zaporowy"
+
+msgid "Substitute signal"
+msgstr "Sygnał zastępczy"
+
+msgid "Repeater"
+msgstr "Powtarzacz"
+
+msgid " on the right of the trains"
+msgstr " po prawej pociągów"
+
+msgid " on the left of the trains"
+msgstr " po lewej pociągów"
+
+msgid "Click: %s %s (%s)%s, the train doesn't read it"
+msgstr "Klik: %s %s (%s)%s, pociąg go nie odczytuje"
+
+msgid "Drag along: the trains it faces run the way of the drag"
+msgstr "Przeciągnij wzdłuż: pociągi, do których jest zwrócony, jadą w stronę przeciągnięcia"
+
+msgid "Click: %s %s (%s)%s, read by %s %s of %s"
+msgstr "Klik: %s %s (%s)%s, pociąg odczytuje go przez %s %s toru %s"
+
+msgid "Signal %s moved"
+msgstr "Sygnalizator %s przesunięty"
+
+msgid "Signal %s moved, read by %s %s of %s"
+msgstr "Sygnalizator %s przesunięty, pociąg odczytuje go przez %s %s toru %s"
+
+msgid "Give the signal a name without spaces first"
+msgstr "Najpierw nadaj sygnalizatorowi nazwę bez spacji"
+
+msgid "The signal couldn't be placed: "
+msgstr "Nie udało się postawić sygnalizatora: "
+
+msgid "Signal %s placed (%s), the train doesn't read it"
+msgstr "Sygnalizator %s postawiony (%s), pociąg go nie odczytuje"
+
+msgid "Signal %s placed (%s), but vehicles stand on the path: add %s to its %s by hand"
+msgstr "Sygnalizator %s postawiony (%s), ale na torze stoją pojazdy: dopisz %s do jego %s ręcznie"
+
+msgid "Signal %s placed (%s), but the path can't take its event: %s"
+msgstr "Sygnalizator %s postawiony (%s), ale tor nie przyjmie jego eventu: %s"
+
+msgid "Signal %s placed (%s), read by %s %s of %s. Its logic works after the scenery is saved and opened again"
+msgstr "Sygnalizator %s postawiony (%s), pociąg odczytuje go przez %s %s toru %s. Jego logika zadziała po zapisaniu i ponownym otwarciu scenerii"
+
+msgid "Signal %s removed with its event %s, Ctrl+Z brings both back"
+msgstr "Sygnalizator %s usunięty razem z eventem %s, Ctrl+Z przywraca oba"
+
+msgid "filter: name, w24, sbl..."
+msgstr "filtr: nazwa, w24, sbl..."
+
+msgid "No template of this kind matches the filter"
+msgstr "Żaden szablon tego rodzaju nie pasuje do filtra"
+
+msgid "%zu variants, e.g. %s"
+msgstr "wariantów: %zu, np. %s"
+
+msgid "The train doesn't read it"
+msgstr "Pociąg go nie odczytuje"
+
+msgid "The train reads it by an event of the path"
+msgstr "Pociąg odczytuje go przez event toru"
+
+msgid "Variant of the chosen type. A head leaning to one side is swapped for its counterpart leaning towards the track on the other side"
+msgstr "Wariant wybranego typu. Głowica odchylona w jedną stronę zostaje zamieniona na odpowiednik odchylony w stronę toru, gdy sygnalizator stanie po drugiej stronie"
+
+msgid "The train doesn't read it: it repeats what the signal ahead of it shows"
+msgstr "Pociąg go nie odczytuje: powtarza to, co pokazuje sygnalizator przed nim"
+
+msgid "The train reads it by %s on the path it stands by"
+msgstr "Pociąg odczytuje go przez %s na torze, przy którym stoi"
+
+msgid "Selected: %s (%s)"
+msgstr "Zaznaczony: %s (%s)"
+
+msgid "Read by %s %s of %s"
+msgstr "Odczytywany przez %s %s toru %s"
+
+msgid "No path has %s among its events: the train doesn't see it"
+msgstr "Żaden tor nie ma %s wśród swoich eventów: pociąg go nie widzi"
+
+msgid "Name, plate and the linked signal: in the node properties. Del removes it with its event"
+msgstr "Nazwa, tablica i powiązany sygnalizator: we właściwościach węzła. Del usuwa go razem z eventem"
+
+msgid "No signal templates: no template of the scenery directory is described with category: signal. tools/editor/signal_headers.py writes the descriptions into the signal templates."
+msgstr "Brak szablonów sygnalizatorów: żaden szablon katalogu scenerii nie ma opisu z category: signal. tools/editor/signal_headers.py dopisuje opisy do szablonów sygnalizatorów."
+
+msgid "Name of the next signal; it counts up after each one placed. Its events and memory cell are named after it"
+msgstr "Nazwa następnego sygnalizatora; po każdym postawionym rośnie o jeden. Od niej biorą nazwy jego eventy i komórka pamięci"
+
+msgid "auto: %s"
+msgstr "auto: %s"
+
+msgid "Plate"
+msgstr "Tablica"
+
+msgid "Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: the one named like the signal, if there is one"
+msgstr "Tekstura tablicy z textures/tabl, np. a-12 albo tob. Puste: ta nazwana tak jak sygnalizator, jeśli istnieje"
+
+msgid "no such texture"
+msgstr "nie ma takiej tekstury"
+
+msgid "Linked signal"
+msgstr "Powiązany sygnalizator"
+
+msgid "(p7) of the template: the warning signal a semaphore drives, the previous block signal, \"none\" for no link"
+msgstr "(p7) szablonu: tarcza ostrzegawcza, którą steruje semafor, poprzedni semafor SBL, \"none\": bez powiązania"
+
+msgid "Distance of the mast from the axis of the track. 2.25 m is what the signals of the sceneries stand at"
+msgstr "Odległość masztu od osi toru. Na 2,25 m stoją sygnalizatory w sceneriach"
+
+msgid "Over the rails (m)"
+msgstr "Nad szynami (m)"
+
+msgid "A head for a gantry hangs over the axis of the track this high over the rail heads"
+msgstr "Głowica na bramkę wisi nad osią toru tak wysoko nad główkami szyn"
+
+msgid " not read"
+msgstr " nieodczytywany"

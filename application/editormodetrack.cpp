@@ -561,15 +561,16 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		profile_restore();
 }
 
-std::array<editor_mode::track_mode, 11> const &editor_mode::track_modes()
+std::array<editor_mode::track_mode, 12> const &editor_mode::track_modes()
 {
-	static std::array<track_mode, 11> const modes{{
+	static std::array<track_mode, 12> const modes{{
 	    {"Select", "Esc", track_tab::path, "LMB on a path selects it: its points, control vectors and parameters"},
 	    {"Lay track", "L", track_tab::lay, "Lays new track through the clicked points, on the ground or from a free end of a track"},
 	    {"Switch", "T", track_tab::turnout, "Puts switches into the selected straight or curve, edits the geometry of the selected switch"},
 	    {"Turntable", "U", track_tab::turntable, "Places a turntable, leads tracks out of it and fits the tracks around to it"},
 	    {"Straight", "G", track_tab::straights, "The whole straight through the selected path: drag its ends or the middle, break it, shift it"},
 	    {"Curve", "C", track_tab::route, "The line through the path, switch to switch: vertices with the radii, transitions and cant of the curves"},
+	    {"Signals", "H", track_tab::signals, "Signals by the track, from the templates of the scenery, with the event the train reads them by"},
 	    {"Objects", "B", track_tab::lineside, "Along the track: hectometre posts, fouling point markers, a parallel track, a vehicle to drive"},
 	    {"Profile", "P", track_tab::profile, "Vertical profile (grade line) along the line"},
 	    {"Speed", "V", track_tab::speed, "Speed limits of the paths against the speed their geometry allows"},
@@ -636,6 +637,10 @@ void editor_mode::show_track_tab(track_tab const Tab)
 		scan_turntables();
 		turntable_read(track);
 		break;
+	case track_tab::signals:
+		signal_scan();
+		signal_refresh(true);
+		break;
 	default:
 		break;
 	}
@@ -676,7 +681,7 @@ bool editor_mode::track_shortcut(int const Key)
 bool editor_mode::track_busy() const
 {
 	auto const &straights{m_straights};
-	return (m_lay.active && false == m_lay.points.empty()) || m_turntable.placing || straights.dragging || m_extend.active || m_point_drag.active || m_handle_drag.active || m_switch.placing || m_track_point.valid() || m_route.vertex >= 0 || m_route.grip >= 0 || false == straights.detour.empty() || straights.tool != 0 || straights.handle >= 0;
+	return (m_lay.active && false == m_lay.points.empty()) || m_turntable.placing || m_signal.placing || m_signal.moving || straights.dragging || m_extend.active || m_point_drag.active || m_handle_drag.active || m_switch.placing || m_track_point.valid() || m_route.vertex >= 0 || m_route.grip >= 0 || false == straights.detour.empty() || straights.tool != 0 || straights.handle >= 0;
 }
 
 std::string editor_mode::track_mode_name() const
@@ -707,6 +712,12 @@ std::string editor_mode::track_mode_name() const
 	case track_tab::lineside:
 		return STR_C("Objects along the track");
 	case track_tab::infra: return STR_C("Infrastructure along the track");
+	case track_tab::signals:
+		if (m_signal.moving)
+			return STR_C("Signal: drag along the track, release to put it there");
+		if (m_signal.placing)
+			return STR_C("Signal: drag along the track sets the direction of the trains, release to place it");
+		return signal_armed() != nullptr ? STR_C("Signal: LMB by the track places it on that side") : STR_C("Signal: choose its type below");
 	case track_tab::turntable:
 		if (m_turntable.placing)
 			return STR_C("Turntable: drag to turn the bridge, release to place it");
@@ -770,6 +781,7 @@ void editor_mode::render_track_inspector()
 		case track_tab::speed: render_speed_body(); break;
 		case track_tab::joints: render_joints_body(); break;
 		case track_tab::lineside: render_lineside_ui(); break;
+		case track_tab::signals: render_signal_ui(); break;
 		case track_tab::infra: render_infra_body(); break;
 		case track_tab::turntable: render_turntable_ui(); break;
 		default:
@@ -815,8 +827,8 @@ void editor_mode::render_track_modes(TTrack *Track)
 				ImGui::SetTooltip("%s  [%s]", STR_C(mode.tooltip), mode.key);
 		}
 	};
-	row("Edit", 0, 6);
-	row("Analysis", 6, static_cast<int>(modes.size()));
+	row("Edit", 0, 7);
+	row("Analysis", 7, static_cast<int>(modes.size()));
 	ImGui::SameLine();
 	ImGui::Checkbox(STR_C("Structure gauge"), &m_gauge.open);
 	if (ImGui::IsItemHovered())
@@ -3007,6 +3019,8 @@ void editor_mode::cancel_track_tools()
 	}
 	m_extend.active = false;
 	m_turntable.placing = false;
+	m_signal.placing = false;
+	m_signal.moving = false;
 	m_handle_drag = {};
 	if (m_point_drag.active)
 	{
@@ -3468,6 +3482,14 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{"LMB on a row", "show the path"}};
 	else if (m_track_window_open && m_track_tab == track_tab::lineside)
 		hints = {{"LMB on a track", "the line the objects go along"}};
+	else if (m_track_window_open && m_track_tab == track_tab::signals && (m_signal.placing || m_signal.moving))
+		hints = {{"Drag along", m_signal.moving ? "moves the signal along the track" : "the trains it faces run that way"}, {"Release", "done"}, {"Esc", "cancel"}};
+	else if (m_track_window_open && m_track_tab == track_tab::signals)
+	{
+		hints = {{"LMB by a track", "places the signal on that side, facing the trains which have it on their right"}, {"Press+drag along", "the trains it faces run the way of the drag"}, {"LMB on a signal", "selects it"}, {"Drag a signal", "moves it along the track"}};
+		if (m_signal.selected != 0)
+			hints.push_back({"Del", "removes the selected signal with its event"});
+	}
 	else if (m_track_window_open && m_track_tab == track_tab::joints)
 		hints = {{"LMB on a row", "show the place"}, {"Fix", "joins the ends, aligns them"}};
 	else if (m_track_window_open && m_track_tab == track_tab::infra)

@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -39,6 +40,11 @@ struct include_info
 	double turntable_length{0.0};
 	int turntable_angles{0};
 	int turntable_positions{0};
+	std::string signal_kind;
+	std::string signal_mount;
+	std::string signal_lamps;
+	std::string signal_lean;
+	std::string signal_read;
 	std::vector<include_parameter> parameters;
 
 	// description of specified parameter, created if there's none
@@ -71,7 +77,8 @@ bool complete(include_info const &Info, int Parameters, std::string *Issue = nul
 // builds include directive which places specified template. Location and Yaw are the placement to pass through
 // the parameters with matching roles, in the coordinates of the place the directive goes to; without Yaw the
 // rotation parameters receive their default values
-std::string directive(std::string const &File, include_info const &Info, int Parameters, glm::dvec3 const &Location, std::optional<float> Yaw, std::string const &Track = {}, glm::dvec2 const &Tilt = glm::dvec2{0.0});
+std::string directive(std::string const &File, include_info const &Info, int Parameters, glm::dvec3 const &Location, std::optional<float> Yaw, std::string const &Track = {}, glm::dvec2 const &Tilt = glm::dvec2{0.0}, std::map<std::string, std::string> const &Values = {});
+std::string substitute(std::string const &Text, std::vector<std::string> const &Values);
 
 // splits include directive into the name of the included file and the values of the parameters, both as they're
 // written. returns: false if the text isn't a complete include directive

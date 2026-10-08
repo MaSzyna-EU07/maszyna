@@ -41,12 +41,15 @@ public:
 
 	double platform_edge() const { return m_platform_edge; }
 	void platform_edge(double Distance) { m_platform_edge = Distance; }
+	double signal_offset() const { return m_signal_offset; }
+	void signal_offset(double Distance) { m_signal_offset = Distance; }
 
 private:
 	movement_scheme m_movement{movement_scheme::wsad};
 	orthophoto_settings m_orthophoto;
 	std::map<std::string, std::pair<double, double>> m_orthophoto_origins;
 	double m_platform_edge{1.725};
+	double m_signal_offset{2.25};
 };
 
 // global editor settings instance

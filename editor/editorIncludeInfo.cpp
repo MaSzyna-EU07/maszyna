@@ -251,6 +251,14 @@ bool parse(template_text const &Text, include_info &Info, std::string &Error)
 			Info.switch_hand = drive["hand"].as<std::string>("");
 			Info.switch_drive = drive["drive"].as<std::string>("");
 		}
+		if (auto const signal{document["signal"]}; signal.IsDefined() && signal.IsMap())
+		{
+			Info.signal_kind = signal["kind"].as<std::string>("");
+			Info.signal_mount = signal["mount"].as<std::string>("");
+			Info.signal_lamps = signal["lamps"].as<std::string>("");
+			Info.signal_lean = signal["lean"].as<std::string>("");
+			Info.signal_read = signal["read"].as<std::string>("");
+		}
 		if (auto const table{document["turntable"]}; table.IsDefined() && table.IsMap())
 		{
 			Info.turntable_length = table["length"].as<double>(0.0);
@@ -644,7 +652,27 @@ std::string compose_directive(std::string const &File, std::vector<std::string> 
 	return text + " end";
 }
 
-std::string directive(std::string const &File, include_info const &Info, int const Parameters, glm::dvec3 const &Location, std::optional<float> Yaw, std::string const &Track, glm::dvec2 const &Tilt)
+std::string substitute(std::string const &Text, std::vector<std::string> const &Values)
+{
+	std::string result;
+	std::size_t length{0};
+	for (std::size_t idx = 0; idx < Text.size();)
+	{
+		auto const id{placeholder(Text, idx, length)};
+		if (id > 0 && id <= static_cast<int>(Values.size()))
+		{
+			result += Values[id - 1];
+			idx += length;
+		}
+		else
+		{
+			result += Text[idx++];
+		}
+	}
+	return result;
+}
+
+std::string directive(std::string const &File, include_info const &Info, int const Parameters, glm::dvec3 const &Location, std::optional<float> Yaw, std::string const &Track, glm::dvec2 const &Tilt, std::map<std::string, std::string> const &Values)
 {
 	std::vector<std::string> values;
 	for (auto id = 1; id <= Parameters; ++id)
@@ -652,7 +680,15 @@ std::string directive(std::string const &File, include_info const &Info, int con
 		auto const lookup{std::find_if(std::begin(Info.parameters), std::end(Info.parameters), [=](include_parameter const &Parameter) { return Parameter.id == id; })};
 		auto const role{lookup != std::end(Info.parameters) ? lookup->role : std::string{"free"}};
 		auto value{lookup != std::end(Info.parameters) ? lookup->value : std::string{}};
-		if (role == "pos.x")
+		if (auto const given{Values.find("#" + std::to_string(id))}; given != Values.end())
+		{
+			value = given->second;
+		}
+		else if (auto const given{Values.find(role)}; given != Values.end())
+		{
+			value = given->second;
+		}
+		else if (role == "pos.x")
 		{
 			value = number(Location.x);
 		}

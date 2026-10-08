@@ -288,7 +288,7 @@ std::size_t editor_mode::place_templates(std::vector<template_item> const &Items
 			include_info info;
 			if (false == editor_includes::load(item.file, info, Error))
 				continue;
-			directive = editor_includes::directive(item.file, info, editor_includes::parameter_count(item.file), local, static_cast<float>(item.yaw), item.track, item.tilt);
+			directive = editor_includes::directive(item.file, info, editor_includes::parameter_count(item.file), local, static_cast<float>(item.yaw), item.track, item.tilt, item.values);
 		}
 		else
 		{

@@ -195,6 +195,7 @@ set(SOURCES
 "application/editormodeparallel.cpp"
 "application/editormodelineside.cpp"
 "application/editormodevehicle.cpp"
+"application/editormodesignal.cpp"
 "application/editormodesweep.cpp"
 "application/editormodeturntable.cpp"
 "application/editormodeselftest.cpp"

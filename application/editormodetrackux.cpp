@@ -193,7 +193,7 @@ void editor_mode::draw_track_hover() const
 bool editor_mode::track_gesture_on() const
 {
 	return mouseHold || m_track_set_using || m_track_box.active || m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS || m_track_gizmo_using || m_route_gizmo_using || m_extend.active || m_switch.placing || m_straights.dragging || m_straights.tool_mouse ||
-	       m_point_drag.active || m_handle_drag.active || m_sweep.dragging || m_turntable.placing || ImGuizmo::IsUsing();
+	       m_point_drag.active || m_handle_drag.active || m_sweep.dragging || m_turntable.placing || m_signal.placing || m_signal.moving || ImGuizmo::IsUsing();
 }
 
 editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
@@ -232,6 +232,40 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 	}
 	if (m_track_tab == track_tab::turntable)
 		return turntable_intent(ground, shift);
+	if (m_track_tab == track_tab::signals)
+	{
+		if (auto const hit{signal_hit()}; hit >= 0)
+		{
+			auto const &standing{m_signal.standing[hit]};
+			intent.index = hit;
+			intent.position = standing.include.location;
+			intent.action = format(STR_C("Click: select the signal %s, drag: move it along the track"), standing.name.c_str());
+			intent.what = kind::signal_move;
+			return intent;
+		}
+		auto const *armed{signal_armed()};
+		if (m_hover.track != nullptr && armed != nullptr)
+		{
+			signal_spot spot;
+			if (signal_spot_at(*m_hover.track, m_hover.path, m_hover.point, cursor_level(m_hover.point.y), 0, 0, *armed, spot))
+			{
+				intent.track = m_hover.track;
+				intent.path = m_hover.path;
+				intent.position = spot.position;
+				intent.action = signal_intent_label(*armed, spot);
+				intent.what = kind::signal_place;
+				return intent;
+			}
+		}
+		if (m_hover.track != nullptr)
+		{
+			intent.track = m_hover.track;
+			intent.path = m_hover.path;
+			intent.position = m_hover.point;
+			return make(kind::select, "Choose the type of the signal in the Tracks window first");
+		}
+		return intent;
+	}
 	if (m_track_tab == track_tab::path)
 	{
 		if (shift && control && m_hover.track != nullptr && rail(*m_hover.track))
@@ -419,6 +453,8 @@ void editor_mode::track_press(track_intent const &Intent)
 	case kind::turntable_place:
 	case kind::turntable_exit:
 	case kind::turntable_fit: turntable_press(Intent); return;
+	case kind::signal_place:
+	case kind::signal_move: signal_press(Intent); return;
 	case kind::select:
 	case kind::none:
 	{

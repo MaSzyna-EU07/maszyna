@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Sweep.h"
 
 #include <array>
+#include <map>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -814,7 +815,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void update_build_tools();
 	void draw_build_overlay() const;
 	// modes of the track editor, one at a time: path is the plain selection
-	enum class track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable };
+	enum class track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, signals };
 	struct track_mode
 	{
 		char const *label;
@@ -822,7 +823,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		track_tab tab;
 		char const *tooltip;
 	};
-	static std::array<track_mode, 11> const &track_modes();
+	static std::array<track_mode, 12> const &track_modes();
 	// the objects along the track: a tab for each tool
 	int m_lineside_tab{0};
 	void render_lineside_ui();
@@ -878,7 +879,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void draw_track_hover() const;
 	struct track_intent
 	{
-		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end };
+		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move };
 		kind what{kind::none};
 		TTrack *track{nullptr};
 		int path{0};
@@ -1043,6 +1044,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		bool described{false};
 		std::string track;
 		glm::dvec2 tilt{0.0}; // rot.x and rot.z of a described template, degrees
+		std::map<std::string, std::string> values;
 	};
 	struct standing_template
 	{
@@ -1191,6 +1193,93 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool vehicle_place();
 	void render_vehicle_ui();
 	void draw_vehicle_marker() const;
+
+	struct signal_template
+	{
+		std::string file;
+		std::string name;
+		std::string description;
+		std::string kind;
+		std::string mount;
+		std::string lamps;
+		std::string lean;
+		std::string read;
+		int parameters{0};
+		bool plate{false};
+		bool linked{false};
+	};
+	struct signal_spot
+	{
+		TTrack *track{nullptr};
+		int path{0};
+		glm::dvec3 axis{0.0};
+		glm::dvec2 travel{0.0, 1.0};
+		int side{1};
+		int list{2};
+		double offset{0.0};
+		glm::dvec3 position{0.0};
+		double yaw{0.0};
+	};
+	struct signal_standing
+	{
+		standing_template include;
+		int kind{-1};
+		std::string name;
+		std::string read;
+		TTrack *track{nullptr};
+		int list{0};
+		signal_spot spot;
+		bool on_track{false};
+	};
+	struct signal_tool
+	{
+		std::vector<signal_template> templates;
+		int revision{-1};
+		int kind{0};
+		std::array<int, 7> chosen{-1, -1, -1, -1, -1, -1, -1};
+		char filter[64]{};
+		char name[64]{"A"};
+		char plate[64]{};
+		char linked[64]{"none"};
+		float height{0.0f};
+		bool placing{false};
+		signal_spot press;
+		glm::vec2 pressed{0.f};
+		int facing{0};
+		std::vector<signal_standing> standing;
+		std::size_t standing_history{static_cast<std::size_t>(-1)};
+		std::size_t standing_redo{static_cast<std::size_t>(-1)};
+		double standing_time{-1.0};
+		int hover{-1};
+		scene::instance_handle selected{0};
+		bool moving{false};
+		signal_spot moved;
+		bool moved_valid{false};
+		std::string status;
+	};
+	signal_tool m_signal;
+	void signal_scan();
+	signal_template const *signal_armed() const;
+	signal_template const *signal_template_of(std::string const &File) const;
+	bool signal_spot_at(TTrack &Track, int const Path, glm::dvec3 const &Point, glm::dvec3 const &Cursor, int const Facing, int const Side, signal_template const &Template, signal_spot &Spot) const;
+	void signal_refresh(bool const Force = false);
+	int signal_hit() const;
+	void signal_press(track_intent const &Intent);
+	void signal_release();
+	bool signal_place(signal_spot const &Spot, signal_template const &Template);
+	void signal_move_update();
+	void signal_move_finish();
+	bool signal_delete(scene::instance_handle const Instance);
+	void signal_detach_events(std::string const &Read, std::vector<std::pair<TTrack *, editor_track::state>> &States);
+	void signal_renamed(std::string const &Before, std::string const &After, EditorSnapshot &Snapshot);
+	void signal_select(scene::instance_handle const Instance);
+	std::string signal_next_name(std::string const &Name) const;
+	void render_signal_ui();
+	void render_signal_palette();
+	void render_signal_selected();
+	void draw_signal_overlay() const;
+	std::string signal_intent_label(signal_template const &Template, signal_spot const &Spot) const;
+	std::string signal_variant(signal_template const &Template, signal_spot const &Spot) const;
 
 	// a model laid along the track: bent to follow it, or repeated along it
 	struct sweep_tool
