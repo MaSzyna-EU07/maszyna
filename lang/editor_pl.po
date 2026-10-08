@@ -3638,6 +3638,9 @@ msgstr "od osi toru (m, + w prawo)"
 msgid "over the rail head (m)"
 msgstr "nad główką szyny (m)"
 
+msgid "along the track (m)"
+msgstr "wzdłuż toru (m)"
+
 msgid "length (m)"
 msgstr "długość (m)"
 
@@ -3685,6 +3688,18 @@ msgstr "Zapisz i otwórz"
 
 msgid "In the view: drag the blue cross sideways to set the offset, with Shift up and down, with Ctrl along the track"
 msgstr "W widoku: przeciągnij niebieski celownik w bok, żeby ustawić odsunięcie, z Shift w górę i w dół, z Ctrl wzdłuż toru"
+
+msgid "In the view: drag the blue cross along the track and aside; Shift: height; Ctrl: only along"
+msgstr "W widoku: przeciągnij niebieski celownik wzdłuż toru i w bok; Shift: wysokość; Ctrl: tylko wzdłuż"
+
+msgid "Drag: along the track and aside"
+msgstr "Przeciągnij: wzdłuż toru i w bok"
+
+msgid "Shift: height   Ctrl: only along the track"
+msgstr "Shift: wysokość   Ctrl: tylko wzdłuż toru"
+
+msgid "%.2f m from the track, %+.2f m along"
+msgstr "%.2f m od toru, %+.2f m wzdłuż"
 
 msgid "Drag: offset from the track; Shift: height; Ctrl: along the track"
 msgstr "Przeciągnij: odsunięcie od toru; Shift: wysokość; Ctrl: wzdłuż toru"

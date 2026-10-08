@@ -1656,6 +1656,12 @@ void editor_mode::render_bend()
 			state.height = overhead + kRailTop;
 			changed = true;
 		}
+		double along{sweep->distance_at(bend_fixed(*sweep, state.point))};
+		if (ImGui::InputDouble(STR_C("along the track (m)"), &along, 0.1, 1.0, "%.2f"))
+		{
+			bend_stretch(*sweep, along, stretch, state.point, state);
+			changed = true;
+		}
 		double length{stretch};
 		if (ImGui::InputDouble(STR_C("length (m)"), &length, 0.5, 5.0, "%.2f") && length > 0.1)
 		{
@@ -1708,6 +1714,7 @@ void editor_mode::render_bend()
 			ImGui::SetTooltip("%s", STR_C("Puts the edge facing the track at the distance chosen from its axis, set back by the widening of the gauge in the curves.\n"
 			                              "Stands on the plane of the rail heads carried on to its edge: lower on the inner side of a canted curve,\n"
 			                              "higher on the outer one; on the inner side also set back by the cant times the height of the edge / 1.5"));
+		ImGui::TextDisabled("%s", STR_C("In the view: drag the blue cross along the track and aside; Shift: height; Ctrl: only along"));
 		if (changed)
 			bend_edit(state);
 		if (ImGui::Button(STR_C("Done")))
@@ -1876,7 +1883,7 @@ bool editor_mode::bend_drag_start(int const Mods)
 	if (false == projection.project(marker, screen))
 		return false;
 	auto const &mouse{ImGui::GetIO().MousePos};
-	if ((mouse.x - screen.x) * (mouse.x - screen.x) + (mouse.y - screen.y) * (mouse.y - screen.y) > 14.0f * 14.0f)
+	if ((mouse.x - screen.x) * (mouse.x - screen.x) + (mouse.y - screen.y) * (mouse.y - screen.y) > 18.0f * 18.0f)
 		return false;
 	tool.dragging = (Mods & GLFW_MOD_SHIFT) != 0 ? 2 : (Mods & GLFW_MOD_CONTROL) != 0 ? 3 : 1;
 	tool.drag_state = sweep->definition();
@@ -1912,8 +1919,8 @@ void editor_mode::bend_drag_update()
 			}
 			if (tool.over_marker)
 			{
-				tool.label = STR("Drag: offset from the track");
-				tool.details = STR("Shift: height   Ctrl: along the track");
+				tool.label = STR("Drag: along the track and aside");
+				tool.details = STR("Shift: height   Ctrl: only along the track");
 			}
 			else if (ui()->mode() == nodebank_panel::MODIFY && m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) != GLFW_PRESS)
 			{
@@ -1957,6 +1964,26 @@ void editor_mode::bend_drag_update()
 	auto const step{0.01};
 	auto const snap = [&](double const Value) { return std::round(Value / step) * step; };
 	auto state{tool.drag_state};
+	auto const slide = [&](double const Shift) {
+		auto const span{(tool.drag_state.to < 0.0 ? sweep->length() : tool.drag_state.to) - tool.drag_state.from};
+		auto from{tool.drag_state.from + Shift};
+		auto to{from + span};
+		if (span > 0.1 && span <= sweep->length() + 1e-6)
+		{
+			if (from < 0.0)
+			{
+				to -= from;
+				from = 0.0;
+			}
+			if (to > sweep->length())
+			{
+				from = std::max(0.0, sweep->length() - span);
+				to = from + span;
+			}
+		}
+		state.from = from;
+		state.to = to;
+	};
 	if (tool.dragging == 2)
 	{
 		glm::dvec3 origin, direction;
@@ -1979,22 +2006,18 @@ void editor_mode::bend_drag_update()
 			return;
 		double lateral;
 		auto const station{sweep->project(point, lateral)};
+		auto const shift{snap(station - tool.drag_station)};
+		slide(shift);
 		if (tool.dragging == 1)
 		{
 			auto const at{sweep->frame_at(station)};
 			state.lateral = snap(lateral - sweep->setback(at));
 			if (std::abs(state.lateral) < step)
 				state.lateral = std::copysign(step, tool.drag_state.lateral);
-			tool.drag_label = format(STR_C("%.2f m from the track axis"), std::abs(state.lateral));
+			tool.drag_label = format(STR_C("%.2f m from the track, %+.2f m along"), std::abs(state.lateral), shift);
 		}
 		else
-		{
-			auto const shift{snap(station - tool.drag_station)};
-			state.from = tool.drag_state.from + shift;
-			if (tool.drag_state.to >= 0.0)
-				state.to = tool.drag_state.to + shift;
 			tool.drag_label = format(STR_C("%+.2f m along the track"), shift);
-		}
 	}
 	if (false == (state == sweep->definition()))
 		sweep->define(state);
