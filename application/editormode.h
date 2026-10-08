@@ -617,6 +617,16 @@ class editor_mode : public application_mode, private editor_track::observer
 	void apply_detour();
 	std::vector<glm::dvec3> detour_outline() const;
 	void find_neighbour_straights();
+	// listed spacing of a neighbouring straight the line can snap to, if it is close enough
+	struct parallel_offer
+	{
+		bool near{false};
+		bool snaps{false};
+		double spacing{0.0};
+		double distance{0.0};
+		editor_track::straight const *neighbour{nullptr};
+	};
+	parallel_offer straight_parallel_offer(editor_track::straight const &Line, glm::dvec3 const &Offset) const;
 	glm::dvec3 snap_straight_offset(editor_track::straight const &Line, glm::dvec3 const &Offset) const;
 	glm::dvec3 snap_straight_direction(glm::dvec3 const &Pivot, glm::dvec3 const &Moved) const;
 	straights_state m_straights;

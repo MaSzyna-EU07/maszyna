@@ -2527,9 +2527,23 @@ void editor_mode::draw_straights_overlay() const
 				drawlist->AddCircle(screen, 12.0f, overlay_color::highlight, 16, 2.5f);
 		}
 	}
-	auto const &line{m_straights.current};
-	if (line.tracks.empty() || m_straights.dragging)
+	auto line{m_straights.dragging ? m_straights.drag_line : m_straights.current};
+	if (line.tracks.empty())
 		return;
+	glm::dvec3 const offset{m_straights.dragging ? m_straights.preview_start - m_straights.drag_line.start : glm::dvec3{}};
+	if (m_straights.dragging)
+	{
+		line.start = m_straights.preview_start;
+		line.end = m_straights.preview_end;
+		auto const planar{plan_of(line.end - line.start)};
+		auto const length{glm::length(planar)};
+		if (length > 1e-6)
+		{
+			line.direction = planar / length;
+			line.length = length;
+		}
+	}
+	auto const offer{straight_parallel_offer(m_straights.dragging ? m_straights.drag_line : m_straights.current, offset)};
 	glm::dvec2 const normal{-line.direction.y, line.direction.x};
 	for (auto const &other : m_straights.neighbours)
 	{
@@ -2544,16 +2558,19 @@ void editor_mode::draw_straights_overlay() const
 		auto const lateral{across(other.start) + (across(other.end) - across(other.start)) * fraction};
 		glm::dvec3 const foot{line.start.x + line.direction.x * middle, line.start.y + line.grade * middle, line.start.z + line.direction.y * middle};
 		glm::dvec3 const target{foot.x + normal.x * lateral, foot.y, foot.z + normal.y * lateral};
-		projection.line(drawlist, foot, target, IM_COL32(255, 230, 120, 230), 1.5f);
+		bool const highlighted{offer.near && offer.neighbour == &other};
+		auto const tick{highlighted ? (offer.snaps ? IM_COL32(80, 230, 255, 255) : IM_COL32(255, 210, 60, 255)) : IM_COL32(255, 230, 120, 230)};
+		projection.line(drawlist, foot, target, tick, highlighted ? 2.5f : 1.5f);
 		ImVec2 screen;
 		if (projection.project((foot + target) * 0.5, screen))
 		{
 			auto const angle{glm::degrees(std::abs(std::asin(std::clamp(line.direction.x * other.direction.y - line.direction.y * other.direction.x, -1.0, 1.0))))};
-			auto const text{angle > 0.001 ? format("%.3f m  %.3f deg", std::abs(lateral), angle) : format("%.3f m", std::abs(lateral))};
+			auto const text{highlighted ? (offer.snaps ? format(STR_C("parallel  %.2f m"), offer.spacing) : format("%.3f m  → %.2f m", std::abs(lateral), offer.spacing)) :
+			                             (angle > 0.001 ? format("%.3f m  %.3f deg", std::abs(lateral), angle) : format("%.3f m", std::abs(lateral)))};
 			auto const *label{text.c_str()};
 			auto const size{ImGui::CalcTextSize(label)};
 			drawlist->AddRectFilled(ImVec2(screen.x - 3.0f, screen.y - 2.0f), ImVec2(screen.x + size.x + 3.0f, screen.y + size.y + 2.0f), IM_COL32(0, 0, 0, 170), 3.0f);
-			drawlist->AddText(screen, IM_COL32(255, 230, 120, 255), label);
+			drawlist->AddText(screen, highlighted ? tick : IM_COL32(255, 230, 120, 255), label);
 		}
 	}
 }
@@ -2594,27 +2611,45 @@ void editor_mode::find_neighbour_straights()
 	}
 }
 
-glm::dvec3 editor_mode::snap_straight_offset(editor_track::straight const &Line, glm::dvec3 const &Offset) const
+editor_mode::parallel_offer editor_mode::straight_parallel_offer(editor_track::straight const &Line, glm::dvec3 const &Offset) const
 {
+	parallel_offer offer;
 	glm::dvec2 const normal{-Line.direction.y, Line.direction.x};
 	auto const middle{(Line.start + Line.end) * 0.5 + Offset};
-	double best{0.2};
-	double correction{0.0};
+	double best{2.0};
 	for (auto const &other : m_straights.neighbours)
 	{
-		if (std::abs(Line.direction.x * other.direction.y - Line.direction.y * other.direction.x) > std::sin(glm::radians(0.5)))
+		auto const sine{std::abs(Line.direction.x * other.direction.y - Line.direction.y * other.direction.x)};
+		if (sine > std::sin(glm::radians(10.0)))
 			continue;
 		auto const distance{glm::dot(plan_of(other.start - middle), normal)};
 		for (auto const spacing : m_straights.spacings)
 		{
-			auto const error{std::abs(distance) - spacing};
-			if (std::abs(error) < best)
+			auto const error{std::abs(std::abs(distance) - spacing)};
+			if (error < best)
 			{
-				best = std::abs(error);
-				correction = distance > 0.0 ? error : -error;
+				best = error;
+				offer.near = true;
+				offer.snaps = error < 0.2 && sine <= std::sin(glm::radians(0.5));
+				offer.spacing = spacing;
+				offer.distance = std::abs(distance);
+				offer.neighbour = &other;
 			}
 		}
 	}
+	return offer;
+}
+
+glm::dvec3 editor_mode::snap_straight_offset(editor_track::straight const &Line, glm::dvec3 const &Offset) const
+{
+	auto const offer{straight_parallel_offer(Line, Offset)};
+	if (false == offer.snaps || offer.neighbour == nullptr)
+		return Offset;
+	glm::dvec2 const normal{-Line.direction.y, Line.direction.x};
+	auto const middle{(Line.start + Line.end) * 0.5 + Offset};
+	auto const distance{glm::dot(plan_of(offer.neighbour->start - middle), normal)};
+	auto const error{std::abs(distance) - offer.spacing};
+	auto const correction{distance > 0.0 ? error : -error};
 	return Offset + glm::dvec3{normal.x, 0.0, normal.y} * correction;
 }
 
@@ -3508,6 +3543,14 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{"LMB on the straight", "where it breaks, then drag the handle to turn the rest"}, {"Esc", "cancel"}};
 	else if (m_track_tab == track_tab::straights && m_straights.tool == 2)
 		hints = {{"LMB on the straight", "where the shift starts, then drag the handle: sideways the shift, along its length"}, {"Esc", "cancel"}};
+	else if (m_track_tab == track_tab::straights && m_straights.dragging && m_straights.handle == 2)
+	{
+		auto const offer{straight_parallel_offer(m_straights.drag_line, m_straights.preview_start - m_straights.drag_line.start)};
+		if (offer.near)
+			hints = {{offer.snaps ? "Release" : "Near another straight", format(offer.snaps ? STR_C("snaps parallel at %.2f m") : STR_C("keep shifting: snaps parallel at %.2f m"), offer.spacing)}, {"Esc", "cancel"}};
+		else
+			hints = {{"Drag the diamond", "shifts the straight sideways"}, {"Esc", "cancel"}};
+	}
 	else if (m_track_tab == track_tab::straights && m_straights.current.tracks.empty())
 		hints = {{"LMB on a straight track", "selects the whole straight"}};
 	else if (m_track_tab == track_tab::straights)
@@ -3640,7 +3683,12 @@ std::string editor_mode::track_readout() const
 		if (state.handle == 2)
 		{
 			glm::dvec2 const normal{-grabbed.direction.y, grabbed.direction.x};
-			return format("shift %+.3f m", glm::dot(plan_of(state.preview_start - grabbed.start), normal));
+			auto const offset{state.preview_start - grabbed.start};
+			auto text{format("shift %+.3f m", glm::dot(plan_of(offset), normal))};
+			auto const offer{straight_parallel_offer(grabbed, offset)};
+			if (offer.near)
+				text += "\n" + format(offer.snaps ? STR_C("snaps parallel at %.2f m") : STR_C("close: parallel snap at %.2f m"), offer.spacing);
+			return text;
 		}
 		return format("L %.3f m (%+.3f)   azimuth %.4f deg", plan_distance(state.preview_start, state.preview_end), plan_distance(state.preview_start, state.preview_end) - grabbed.length,
 		              azimuth(state.preview_start, state.preview_end));

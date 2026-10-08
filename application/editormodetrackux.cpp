@@ -325,6 +325,16 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			glm::dvec3 const handles[] = {line.start, line.end, (line.start + line.end) * 0.5};
 			intent.index = hit;
 			intent.position = handles[hit];
+			if (hit == 2)
+			{
+				auto const offer{straight_parallel_offer(line, {})};
+				if (offer.near)
+				{
+					intent.action = format(offer.snaps ? STR_C("Drag: shift the straight sideways — snaps parallel at %.2f m") : STR_C("Drag: shift the straight sideways — close: parallel snap at %.2f m"), offer.spacing);
+					intent.what = kind::straight_handle;
+					return intent;
+				}
+			}
 			return make(kind::straight_handle, hit == 2 ? "Drag: shift the straight sideways" : "Drag: move this end, the curves at it follow");
 		}
 	}

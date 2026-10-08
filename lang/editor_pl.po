@@ -1542,6 +1542,27 @@ msgstr "Ciągnij romb"
 msgid "shifts the straight sideways"
 msgstr "przesuwa prostą w bok"
 
+msgid "Near another straight"
+msgstr "Przy innej prostej"
+
+msgid "keep shifting: snaps parallel at %.2f m"
+msgstr "ciągnij dalej: przyleganie równoległe na %.2f m"
+
+msgid "snaps parallel at %.2f m"
+msgstr "przyleganie równoległe na %.2f m"
+
+msgid "close: parallel snap at %.2f m"
+msgstr "blisko: przyleganie równoległe na %.2f m"
+
+msgid "parallel  %.2f m"
+msgstr "równolegle  %.2f m"
+
+msgid "Drag: shift the straight sideways — close: parallel snap at %.2f m"
+msgstr "Ciągnij: przesuń prostą w bok — blisko: przyleganie równoległe na %.2f m"
+
+msgid "Drag: shift the straight sideways — snaps parallel at %.2f m"
+msgstr "Ciągnij: przesuń prostą w bok — przyleganie równoległe na %.2f m"
+
 msgid "Ctrl+drag"
 msgstr "Ctrl+ciągnij"
 
