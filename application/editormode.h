@@ -209,6 +209,10 @@ class editor_mode : public application_mode, private editor_track::observer
 	static bool m_settings_open;
 
 	double m_ortho_pitch{0.0};
+	bool m_ortho_pan{false};
+	glm::dvec2 m_ortho_pan_cursor{0.0};
+	void ortho_pan_to(double const Horizontal, double const Vertical);
+	void ortho_pan_stop();
 	// camera fly-mode (right mouse button held); used to flush motion when it's released
 	command_relay m_camera_relay;
 	bool m_camera_flying{false};

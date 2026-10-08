@@ -3584,6 +3584,8 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 			hints.push_back({"Ctrl", format("gizmo snaps by %.2f m", m_gizmo_snap)});
 		hints.push_back({"K", "split the path under the cursor"});
 		hints.push_back({"O", "top view"});
+		if (Global.EditorOrtho)
+			hints.push_back({"Hold the wheel", "pans the view"});
 		hints.push_back({"Ctrl+Z", "undo"});
 		hints.push_back({"Ctrl+Y", "redo"});
 		hints.push_back({"L T G C B P V J I", "modes: lay, switch, straight, curve, objects, profile, speed, joints, infra"});

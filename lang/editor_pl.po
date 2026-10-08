@@ -4243,6 +4243,21 @@ msgstr "Zaznacz model, z którego ma powstać tablica"
 msgid "Extent (m), wheel"
 msgstr "Zasięg (m), kółko"
 
+msgid "Extent (m), wheel / MMB pan"
+msgstr "Zasięg (m), kółko / przesuwanie kółkiem"
+
+msgid "Wheel zooms. Hold the wheel and drag to pan."
+msgstr "Kółko przybliża. Wciśnij kółko i przeciągnij, żeby przesunąć widok."
+
+msgid "Top-down orthographic view"
+msgstr "Widok z góry, rzut prostokątny"
+
+msgid "Hold the wheel"
+msgstr "Przytrzymaj kółko"
+
+msgid "pans the view"
+msgstr "przesuwa widok"
+
 msgid "Enabled"
 msgstr "Włączone"
 

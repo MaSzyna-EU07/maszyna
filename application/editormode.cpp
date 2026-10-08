@@ -30,6 +30,7 @@ extern char **environ;
 #include "editor/editorGeometry.hpp"
 #include "utilities/translation.h"
 #include "utilities/Globals.h"
+#include "utilities/glmHelpers.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
 #include "simulation/simulationenvironment.h"
@@ -1212,6 +1213,8 @@ bool editor_mode::update()
         m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE);
         Application.set_cursor(GLFW_CURSOR_NORMAL);
     }
+    if (m_ortho_pan && !ImGui::GetIO().MouseDown[2])
+        ortho_pan_stop();
 
     // same for the left button (brush / sculpt / click placement). the UI filter in the application
     // uses io.WantCaptureMouse from the previous frame, so a press on a panel the cursor has just
@@ -3631,11 +3634,15 @@ void editor_mode::render_gizmo_options()
 {
     if (ImGui::Button(Global.EditorOrtho ? "3D view (O)" : "Top view, orthographic (O)"))
         toggle_ortho();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", Global.EditorOrtho ? STR_C("Wheel zooms. Hold the wheel and drag to pan.") : STR_C("Top-down orthographic view"));
     if (Global.EditorOrtho)
     {
         ImGui::SameLine();
         ImGui::SetNextItemWidth(120.0f);
-        ImGui::SliderFloat(STR_C("Extent (m), wheel"), &Global.EditorOrthoExtent, 5.0f, 5000.0f, "%.0f", 3.0f);
+        ImGui::SliderFloat(STR_C("Extent (m), wheel / MMB pan"), &Global.EditorOrthoExtent, 5.0f, 5000.0f, "%.0f", 3.0f);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Wheel zooms. Hold the wheel and drag to pan."));
     }
     ImGui::Checkbox(STR_C("Enabled"), &m_gizmo_enabled);
     if (!m_gizmo_enabled)
@@ -3938,7 +3945,30 @@ void editor_mode::toggle_ortho()
     else
     {
         Camera.Angle.x = m_ortho_pitch;
+        ortho_pan_stop();
     }
+}
+
+void editor_mode::ortho_pan_to(double const Horizontal, double const Vertical)
+{
+    auto const &io{ImGui::GetIO()};
+    if (io.DisplaySize.y <= 0.0f)
+        return;
+    auto const dx{Horizontal - m_ortho_pan_cursor.x};
+    auto const dy{Vertical - m_ortho_pan_cursor.y};
+    m_ortho_pan_cursor = {Horizontal, Vertical};
+    auto const scale{2.0 * static_cast<double>(Global.EditorOrthoExtent) / static_cast<double>(io.DisplaySize.y)};
+    auto const world{RotateY(glm::dvec3{dx * scale, 0.0, dy * scale}, static_cast<double>(Camera.Angle.y))};
+    Camera.Pos.x -= world.x;
+    Camera.Pos.z -= world.z;
+    Camera.Velocity = {};
+    m_focus_active = false;
+    Global.pCamera = Camera;
+}
+
+void editor_mode::ortho_pan_stop()
+{
+    m_ortho_pan = false;
 }
 
 void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
@@ -4367,6 +4397,8 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
 
 void editor_mode::on_cursor_pos(double const Horizontal, double const Vertical)
 {
+    if (m_ortho_pan)
+        ortho_pan_to(Horizontal, Vertical);
     // object transforms are handled by the gizmo now; here we only forward the cursor to the
     // mouse input, which rotates the camera while the right mouse button is held (panning mode)
     m_input.mouse.position(Horizontal, Vertical);
@@ -4581,6 +4613,18 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
         }
         // game-engine style look: hide & grab the cursor while flying, restore it on release
         Application.set_cursor(is_press(Action) ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    }
+    else if (Button == GLFW_MOUSE_BUTTON_MIDDLE && Global.EditorOrtho)
+    {
+        if (is_press(Action))
+        {
+            m_ortho_pan = true;
+            m_ortho_pan_cursor = m_input.mouse.position();
+            m_focus_active = false;
+            Camera.Velocity = {};
+        }
+        else if (is_release(Action))
+            ortho_pan_stop();
     }
 
     m_input.mouse.button(Button, Action);
