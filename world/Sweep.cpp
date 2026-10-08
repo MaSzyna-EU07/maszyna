@@ -594,12 +594,12 @@ void sweep_node::beside_switches(std::vector<sample> &Samples)
 			}
 		if (best > sample_spacing)
 			continue;
-		auto const &near{Samples[at]};
-		auto const along{plan(near.tangent)};
-		glm::dvec3 const toward{points.x - near.position.x, 0.0, points.z - near.position.z};
+		auto const &closest_sample{Samples[at]};
+		auto const along{plan(closest_sample.tangent)};
+		glm::dvec3 const toward{points.x - closest_sample.position.x, 0.0, points.z - closest_sample.position.z};
 		if (std::abs(glm::dot(toward, glm::dvec3{-along.z, 0.0, along.x})) > 0.05)
 			continue;
-		auto const s0{near.station + glm::dot(toward, along)};
+		auto const s0{closest_sample.station + glm::dot(toward, along)};
 		for (auto const &path : track->m_paths)
 		{
 			auto const heading{glm::dot(plan_heading(path, 0.0), along)};
