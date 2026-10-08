@@ -121,6 +121,13 @@ class imgui_renderer
 	virtual void Shutdown() = 0;
 	virtual void BeginFrame() = 0;
 	virtual void Render() = 0;
+	// images of the user interface itself (e.g. the previews of the node bank), apart from the textures of the scene: rgba, rows
+	// from the top, in srgb. returns: id for ImGui::Image, 0 if the renderer can't make them
+	virtual std::uint64_t Create_Image(std::uint8_t const *Rgba, int const Width, int const Height)
+	{
+		return 0;
+	}
+	virtual void Release_Image(std::uint64_t const Image) {}
 };
 
 extern std::unique_ptr<gfx_renderer> GfxRenderer;

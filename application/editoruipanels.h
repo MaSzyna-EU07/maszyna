@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/uilayer.h"
 #include "utilities/Classes.h"
 #include "editor/editorIncludeInfo.hpp"
+#include "editor/editorPreviews.hpp"
 
 #include <functional>
 /*
@@ -161,12 +162,20 @@ class nodebank_panel : public ui_panel
 	// methods:
 	std::string generate_node_label(std::string Input) const;
 	void render_sets_window();
+	// finds the preview images of the entries, in the order of the file, as the generator names them
+	void index_previews();
+	// entries of a group as cards with their previews, in rows as many as fit the width
+	void render_cards(std::vector<std::pair<std::string, std::shared_ptr<std::string>> const *> const &Entries);
 	// true if the node bank selection is a definition of a node, which the hand-made lists and the model sets can take
 	bool node_selected() const;
 	// members:
 	std::vector<std::pair<std::string, std::shared_ptr<std::string>>> m_nodebank;
 	char m_nodesearch[128];
 	std::shared_ptr<std::string> m_selectedtemplate;
+	// previews of the models: image of each node definition, by its address, and the images read so far
+	std::unordered_map<std::string const *, std::string> m_previewpaths;
+	std::unique_ptr<editor_previews::image_cache> m_previews;
+	bool m_previewfolder{false}; // the generator was run, there's the folder of the images
 	// set manager window
 	bool m_setsopen{false};
 	int m_setsselected{0}; // id of the user set being edited

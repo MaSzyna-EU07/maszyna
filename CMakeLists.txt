@@ -184,6 +184,7 @@ set(SOURCES
 "editor/editorInfra.cpp"
 "editor/editorTerrainStreamer.cpp"
 "editor/editorOrthophoto.cpp"
+"editor/editorPreviews.cpp"
 "application/editormode.cpp"
 "application/editormodetrack.cpp"
 "application/editormodetrackux.cpp"

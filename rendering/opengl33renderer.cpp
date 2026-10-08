@@ -6282,3 +6282,33 @@ void opengl33_renderer::opengl33_imgui_renderer::Render()
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
+std::uint64_t opengl33_renderer::opengl33_imgui_renderer::Create_Image(std::uint8_t const *Rgba, int const Width, int const Height)
+{
+	// the ui colours are made linear in its shaders, the image is too, by sampling it as srgb. the bindings the renderer
+	// keeps track of are put back as they were
+	GLint texture{0}, unpack{0}, alignment{4};
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture);
+	glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &unpack);
+	glGetIntegerv(GL_UNPACK_ALIGNMENT, &alignment);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	GLuint image{0};
+	glGenTextures(1, &image);
+	glBindTexture(GL_TEXTURE_2D, image);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, Width, Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, Rgba);
+	glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texture));
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, static_cast<GLuint>(unpack));
+	glPixelStorei(GL_UNPACK_ALIGNMENT, alignment);
+	return image;
+}
+
+void opengl33_renderer::opengl33_imgui_renderer::Release_Image(std::uint64_t const Image)
+{
+	auto const image{static_cast<GLuint>(Image)};
+	glDeleteTextures(1, &image);
+}
+

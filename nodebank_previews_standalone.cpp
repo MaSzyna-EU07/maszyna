@@ -7,6 +7,7 @@
 #include "utilities/Logs.h"
 #include "utilities/parser.h"
 #include "utilities/utilities.h"
+#include "editor/editorPreviews.hpp"
 #include <png.h>
 #include <cstring>
 
@@ -16,8 +17,6 @@
 
 namespace
 {
-
-std::string const preview_folder{"textures/previews/nodebank/"};
 
 struct preview_settings
 {
@@ -183,59 +182,6 @@ GLFWwindow *create_context(bool const Software)
 	return window;
 }
 
-// characters which can be safely used in a file name
-std::string file_name_part(std::string Text)
-{
-	for (auto &character : Text)
-	{
-		auto const c{static_cast<unsigned char>(character)};
-		if ((false == std::isalnum(c)) && (c != '_') && (c != '-') && (c != '.') && (c != '+') && (c != '(') && (c != ')'))
-		{
-			character = '_';
-		}
-	}
-	if ((Text.empty()) || (Text == ".") || (Text == ".."))
-	{
-		Text = "_";
-	}
-	return Text;
-}
-
-// path of the image of the node with specified model and skin: the path of the model in the preview folder, the skin added to the name
-std::string preview_path(std::string Model, std::string const &Skin)
-{
-	replace_slashes(Model);
-	erase_extension(Model);
-	std::string path;
-	std::size_t start{0};
-	while (start <= Model.size())
-	{
-		auto end{Model.find('/', start)};
-		if (end == std::string::npos)
-		{
-			end = Model.size();
-		}
-		if (end > start)
-		{
-			if (false == path.empty())
-			{
-				path += '/';
-			}
-			path += file_name_part(Model.substr(start, end - start));
-		}
-		start = end + 1;
-	}
-	if ((false == Skin.empty()) && (Skin != "none"))
-	{
-		auto skin{Skin};
-		replace_slashes(skin);
-		erase_extension(skin);
-		std::replace(skin.begin(), skin.end(), '/', '_');
-		path += '@' + file_name_part(skin);
-	}
-	return preview_folder + path;
-}
-
 bool save_png(std::string const &Path, std::vector<std::uint8_t> const &Image, int const Size)
 {
 	std::error_code error;
@@ -295,17 +241,9 @@ bool generate_preview(std::string const &Definition, preview_settings const &Set
 	names.getTokens(9, false);
 	auto const model{names.getToken<std::string>()};
 	auto const skin{names.getToken<std::string>(false)};
-	auto path{preview_path(model, skin)};
-	if (Saved.contains(path))
-	{
-		// another entry with the same model and skin, but other lights or angles
-		auto variant{2};
-		while (Saved.contains(path + "~" + std::to_string(variant)))
-		{
-			++variant;
-		}
-		path += "~" + std::to_string(variant);
-	}
+	// another entry with the same model and skin, but other lights or angles, gets a number; the node bank of the editor
+	// counts the entries the same way to find the image
+	auto path{editor_previews::variant(editor_previews::preview_path(model, skin), Saved)};
 	path += ".png";
 
 	std::vector<std::uint8_t> image;
@@ -446,7 +384,7 @@ int generate_nodebank_previews(int Argc, char *Argv[])
 		}
 		report("[" + std::to_string(idx + 1) + "/" + std::to_string(entries.size()) + "] " + entries[idx] + (success ? " -> " : ": ") + outcome, (false == success));
 	}
-	report(std::to_string(saved.size()) + " previews saved in " + preview_folder + (failures > 0 ? ", " + std::to_string(failures) + " entries failed" : ""));
+	report(std::to_string(saved.size()) + " previews saved in " + editor_previews::folder + (failures > 0 ? ", " + std::to_string(failures) + " entries failed" : ""));
 
 	return finish(failures > 0 ? 1 : 0);
 }

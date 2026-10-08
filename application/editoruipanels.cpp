@@ -23,6 +23,11 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "editor/editorModelSets.hpp"
 #include "editor/editorFormat.hpp"
+#include "editor/editorSettings.hpp"
+#include "imgui/imgui_internal.h"
+
+#include <filesystem>
+#include <set>
 
 namespace
 {
@@ -544,6 +549,7 @@ nodebank_panel::nodebank_panel(std::string const &Name, bool const Isopen) : ui_
 
 		m_nodebank.push_back({label, std::make_shared<std::string>(nodedata)});
 	}
+	index_previews();
 	// sort alphabetically content of each group
 	auto groupbegin{m_nodebank.begin()};
 	auto groupend{groupbegin};
@@ -557,6 +563,11 @@ nodebank_panel::nodebank_panel(std::string const &Name, bool const Isopen) : ui_
 void nodebank_panel::nodebank_reload()
 {
 	m_nodebank.clear();
+	// images made since are read anew
+	if (m_previews)
+	{
+		m_previews->clear();
+	}
 	std::ifstream file;
 	file.open("nodebank.txt", std::ios_base::in | std::ios_base::binary);
 	std::string line;
@@ -572,6 +583,7 @@ void nodebank_panel::nodebank_reload()
 
 		m_nodebank.push_back({label, std::make_shared<std::string>(nodedata)});
 	}
+	index_previews();
 	// sort alphabetically content of each group
 	auto groupbegin{m_nodebank.begin()};
 	auto groupend{groupbegin};
@@ -581,6 +593,110 @@ void nodebank_panel::nodebank_reload()
 		groupend = std::find_if(groupbegin, m_nodebank.end(), [](auto const &Entry) { return Entry.second->empty(); });
 		std::sort(groupbegin, groupend, [](auto const &Left, auto const &Right) { return Left.first < Right.first; });
 	}
+}
+
+void nodebank_panel::index_previews()
+{
+	m_previewpaths.clear();
+	std::error_code error;
+	m_previewfolder = std::filesystem::is_directory(editor_previews::folder, error);
+	// entries with the same model and skin are numbered in the order of the file, the way the generator numbers them
+	std::set<std::string> taken;
+	for (auto const &entry : m_nodebank)
+	{
+		if (entry.second->empty())
+		{
+			continue;
+		}
+		auto const path{editor_previews::entry_preview_path(*entry.second)};
+		if (path.empty())
+		{
+			continue;
+		}
+		auto const name{editor_previews::variant(path, taken)};
+		taken.insert(name);
+		m_previewpaths[entry.second.get()] = name + ".png";
+	}
+}
+
+void nodebank_panel::render_cards(std::vector<std::pair<std::string, std::shared_ptr<std::string>> const *> const &Entries)
+{
+	auto const &style{ImGui::GetStyle()};
+	auto const card{std::max(16.0f, EditorSettings.nodebank_card() * Global.ui_scale)};
+	auto const labelheight{ImGui::GetTextLineHeight()};
+	ImVec2 const cell{card, card + labelheight + style.FramePadding.y * 2.0f};
+	auto const columns{std::max(1, static_cast<int>((ImGui::GetContentRegionAvail().x + style.ItemSpacing.x) / (cell.x + style.ItemSpacing.x)))};
+	auto const rows{(static_cast<int>(Entries.size()) + columns - 1) / columns};
+	ImGuiListClipper clipper;
+	clipper.Begin(rows, cell.y + style.ItemSpacing.y);
+	while (clipper.Step())
+	{
+		for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
+		{
+			for (int column = 0; column < columns; ++column)
+			{
+				auto const index{static_cast<std::size_t>(row * columns + column)};
+				if (index >= Entries.size())
+				{
+					break;
+				}
+				auto const &entry{*Entries[index]};
+				if (column > 0)
+				{
+					ImGui::SameLine();
+				}
+				ImGui::PushID(entry.second.get());
+				auto const position{ImGui::GetCursorScreenPos()};
+				if (ImGui::InvisibleButton("##card", cell))
+				{
+					m_selectedtemplate = entry.second;
+				}
+				auto const hovered{ImGui::IsItemHovered()};
+				auto const selected{entry.second == m_selectedtemplate};
+				auto *list{ImGui::GetWindowDrawList()};
+				ImVec2 const end{position.x + cell.x, position.y + cell.y};
+				list->AddRectFilled(position, end, ImGui::GetColorU32(selected ? ImGuiCol_Header : hovered ? ImGuiCol_HeaderHovered : ImGuiCol_FrameBg), style.FrameRounding);
+				// the image fills the square of the card; without one, what's missing is said in its place
+				ImVec2 const imagemin{position.x + 2.0f, position.y + 2.0f};
+				ImVec2 const imagemax{position.x + card - 2.0f, position.y + card - 2.0f};
+				auto const lookup{m_previewpaths.find(entry.second.get())};
+				std::uint64_t texture{0};
+				char const *placeholder{STR_C("not a model")};
+				if (lookup != m_previewpaths.end())
+				{
+					texture = m_previews->image(lookup->second);
+					placeholder = (m_previews->missing(lookup->second) ? STR_C("no preview") : "...");
+				}
+				if (texture != 0)
+				{
+					list->AddImage(static_cast<ImTextureID>(texture), imagemin, imagemax);
+				}
+				else
+				{
+					list->AddRect(imagemin, imagemax, ImGui::GetColorU32(ImGuiCol_Border), style.FrameRounding);
+					auto const size{ImGui::CalcTextSize(placeholder)};
+					list->PushClipRect(imagemin, imagemax, true);
+					list->AddText(ImVec2(imagemin.x + std::max(0.0f, (imagemax.x - imagemin.x - size.x) * 0.5f), imagemin.y + (imagemax.y - imagemin.y - size.y) * 0.5f), ImGui::GetColorU32(ImGuiCol_TextDisabled), placeholder);
+					list->PopClipRect();
+				}
+				// the label under the image, cut short with an ellipsis; the whole of it in the tooltip
+				auto const *label{entry.first.c_str()};
+				while (*label == ' ')
+				{
+					++label;
+				}
+				ImVec2 const labelmin{position.x + style.FramePadding.x, position.y + card + style.FramePadding.y};
+				ImVec2 const labelmax{end.x - style.FramePadding.x, end.y};
+				ImGui::RenderTextEllipsis(list, labelmin, labelmax, labelmax.x, labelmax.x, label, nullptr, nullptr);
+				if (hovered)
+				{
+					ImGui::SetTooltip("%s", label);
+				}
+				ImGui::PopID();
+			}
+		}
+	}
+	clipper.End();
 }
 
 void nodebank_panel::render()
@@ -617,6 +733,28 @@ void nodebank_panel::render()
 		{
 			m_setsopen = !m_setsopen;
 		}
+		// cards with the previews of the models, or the list
+		ImGui::SameLine();
+		auto previews{EditorSettings.nodebank_previews()};
+		if (ImGui::Checkbox(STR_C("Previews"), &previews))
+		{
+			EditorSettings.nodebank_previews(previews);
+			EditorSettings.save();
+		}
+		if (previews)
+		{
+			ImGui::SameLine();
+			auto card{EditorSettings.nodebank_card()};
+			ImGui::SetNextItemWidth(std::min(ImGui::GetContentRegionAvail().x, 120.0f * Global.ui_scale));
+			if (ImGui::SliderInt("##cardsize", &card, 48, 256, STR_C("%d px")))
+			{
+				EditorSettings.nodebank_card(card);
+			}
+			if (ImGui::IsItemDeactivatedAfterEdit())
+			{
+				EditorSettings.save();
+			}
+		}
 
 		// the edit modes are chosen in the toolbar and set up in the tool options window, the gizmo and the node
 		// properties are in the inspector: what's left here is the node bank itself
@@ -625,7 +763,52 @@ void nodebank_panel::render()
 		ImGui::InputTextWithHint(STR_C("Search"), STR_C("Search node bank"), m_nodesearch, IM_ARRAYSIZE(m_nodesearch));
 		// the list takes the rest of the window, but keeps a usable height when the sections above are expanded (the window scrolls then)
 		auto const listheight{std::max(ImGui::GetContentRegionAvail().y, ImGui::GetTextLineHeightWithSpacing() * 10.0f)};
-		if (ImGui::BeginListBox("##nodebank", ImVec2(-1, listheight)))
+		if (previews)
+		{
+			if (m_previews == nullptr)
+			{
+				m_previews = std::make_unique<editor_previews::image_cache>();
+			}
+			m_previews->update();
+			if (false == m_previewfolder)
+			{
+				ImGui::TextDisabled("%s", STR_C("No previews yet: they're made by eu07 -generate-nodebank-previews"));
+			}
+		}
+		if (previews && ImGui::BeginChild("##nodebankcards", ImVec2(-1, listheight), ImGuiChildFlags_Borders))
+		{
+			// the groups as in the list, the entries of an open one as cards
+			auto isvisible{false};
+			auto const searchfilter{std::string(m_nodesearch)};
+			std::vector<std::pair<std::string, std::shared_ptr<std::string>> const *> cards;
+			for (auto const &entry : m_nodebank)
+			{
+				if (entry.second->empty())
+				{
+					if (false == cards.empty())
+					{
+						render_cards(cards);
+						cards.clear();
+					}
+					isvisible = ImGui::CollapsingHeader(entry.first.c_str());
+				}
+				else if (isvisible && (searchfilter.empty() || contains(entry.first, searchfilter)))
+				{
+					cards.push_back(&entry);
+				}
+			}
+			if (false == cards.empty())
+			{
+				render_cards(cards);
+			}
+			ImGui::Separator();
+			ImGui::TextDisabled("%s", STR_C("Scenery templates (.inc) are listed with the previews off"));
+		}
+		if (previews)
+		{
+			ImGui::EndChild();
+		}
+		else if (ImGui::BeginListBox("##nodebank", ImVec2(-1, listheight)))
 		{
 			auto idx{0};
 			auto isvisible{false};

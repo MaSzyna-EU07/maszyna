@@ -4656,3 +4656,21 @@ msgstr "Odepnij wszystkie doki"
 
 msgid "Pin the docks back"
 msgstr "Przypnij doki z powrotem"
+
+msgid "Previews"
+msgstr "Podglądy"
+
+msgid "%d px"
+msgstr "%d px"
+
+msgid "No previews yet: they're made by eu07 -generate-nodebank-previews"
+msgstr "Brak podglądów: tworzy je eu07 -generate-nodebank-previews"
+
+msgid "Scenery templates (.inc) are listed with the previews off"
+msgstr "Szablony scenerii (.inc) są na liście przy wyłączonych podglądach"
+
+msgid "not a model"
+msgstr "to nie model"
+
+msgid "no preview"
+msgstr "brak podglądu"
