@@ -4283,6 +4283,14 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             return;
     }
 
+    // all docks unpinned and hidden at the edges, for the most of the view, or pinned back
+    if (Global.ctrlState && false == Global.shiftState && Key == GLFW_KEY_SPACE)
+    {
+        if (is_press(Action))
+            ui()->toggle_docks();
+        return;
+    }
+
     // save; checked ahead of the camera keys, which have S bound to moving back
     if (Global.ctrlState && false == Global.shiftState && Key == GLFW_KEY_S)
     {

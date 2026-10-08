@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "application/application.h"
 #include "application/editormode.h"
+#include "application/editoruilayer.h"
 
 #include "imgui/imgui_impl_glfw.h"
 
@@ -269,6 +270,8 @@ bool ui_layer::init(GLFWwindow *Window)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     m_imguiio = &ImGui::GetIO();
+	// imgui.ini is read with the first frame, which may be of another mode than the editor
+	editor_ui::register_settings();
 
 	m_imguiio->ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
     // m_imguiio->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;

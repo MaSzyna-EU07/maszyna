@@ -4641,3 +4641,18 @@ msgstr "Kontrola prędkości"
 
 msgid "What the check finds is listed in its window"
 msgstr "Wyniki kontroli są w jej oknie"
+
+msgid "Unpin: the dock hides at the edge of the window, its tabs show it over the view (Ctrl+Space: all docks)"
+msgstr "Odepnij: dok chowa się przy krawędzi okna, jego zakładki wysuwają go nad widok (Ctrl+Spacja: wszystkie doki)"
+
+msgid "Pin: the dock goes back to its place"
+msgstr "Przypnij: dok wraca na swoje miejsce"
+
+msgid "Unpin (hide at the edge)"
+msgstr "Odepnij (schowaj przy krawędzi)"
+
+msgid "Unpin all docks"
+msgstr "Odepnij wszystkie doki"
+
+msgid "Pin the docks back"
+msgstr "Przypnij doki z powrotem"

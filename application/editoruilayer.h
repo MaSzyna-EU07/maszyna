@@ -19,6 +19,9 @@ class basic_node;
 
 }
 
+struct ImGuiDockNode;
+struct ImGuiTabBar;
+
 class editor_ui : public ui_layer
 {
 
@@ -126,6 +129,14 @@ class editor_ui : public ui_layer
 	{
 		m_sceneselect = std::move(Select);
 	}
+	// pins of the docks: an unpinned dock hides its windows in a strip at the edge of the main window, and they come out over the 3d view
+	// when their tab in the strip is pointed at or clicked. the shortcut unpins all docks, or pins them back
+	void toggle_docks()
+	{
+		m_dockstoggle = true;
+	}
+	// the unpinned docks are kept in imgui.ini along with the layout; the handler has to be there before the file is read
+	static void register_settings();
 	// shows outcome of an operation in the layers window
 	void set_status(std::string const &Status, bool const Error = false);
 
@@ -143,6 +154,16 @@ class editor_ui : public ui_layer
 	void render_() override;
 	// docks the windows of the editor in their default places
 	void build_default_layout(unsigned int const Dockspace);
+	// unpinned docks: at the start of the frame the windows are hidden, docked back or placed over the view, at its end the strips and pins are drawn
+	void autohide_begin();
+	void autohide_place();
+	void autohide_strips();
+	void autohide_pins();
+	void autohide_show(unsigned int const Window, bool const Focus);
+	void autohide_pin(std::size_t const Group);
+	static void autohide_node(ImGuiDockNode *Node);
+	static std::size_t autohide_group_of(unsigned int const Window);
+	static void autohide_menu(ImGuiContext *Context, ImGuiDockNode *Node, ImGuiTabBar *TabBar);
 	// members
 	itemproperties_panel m_itempropertiespanel{"Node Properties", true}; // not a window of its own, drawn in the toolset window
 	functions_panel m_functionspanel{"Functions", true}; // not a window of its own, its settings are drawn in the toolset tabs
@@ -191,4 +212,25 @@ class editor_ui : public ui_layer
 	bool m_bendexpand{false};
 	scene::basic_node *m_node{nullptr}; // currently bound scene node, if any
 	bool m_track{false};
+	// windows of an unpinned dock, and the edge they're hidden at
+	struct autohide_group
+	{
+		int edge{0}; // ImGuiDir
+		float size{300.0f}; // width of the side docks, height of the top and bottom ones, in pixels
+		bool first{false}; // the node was above or left of the other one in its split, and took this share of it
+		float share{0.5f};
+		int depth{0}; // of the column of docks the node was in, in the tree of the dockspace; outer docks are put back first
+		std::vector<unsigned int> windows;
+	};
+	static std::vector<autohide_group> m_autohide;
+	static unsigned int m_dockspace;
+	unsigned int m_autohideshown{0}; // window of an unpinned dock shown over the view
+	bool m_autohideappear{false}; // the shown window is to be brought forward
+	bool m_autohidefocus{false}; // and given the focus, it was clicked in the strip
+	unsigned int m_autohidehovered{0}; // tab in the strips under the cursor, and since when
+	double m_autohidehovertime{0.0};
+	double m_autohideleft{-1.0}; // when the cursor left the shown window, -1 while it's over it
+	bool m_autohidestrip{false}; // the cursor was over a tab of the strips in the last frame
+	std::vector<std::size_t> m_autohidepin; // groups to be docked back at the start of the next frame
+	bool m_dockstoggle{false};
 };
