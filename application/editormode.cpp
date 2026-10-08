@@ -1408,6 +1408,7 @@ bool editor_mode::update()
     // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
     if (ui()->mode() == nodebank_panel::FILL)
         draw_area_fill_outline();
+    draw_ortho_compass();
 
     render_orthophoto_window();
     render_new_scenery_popup();
@@ -1860,6 +1861,51 @@ void editor_mode::draw_orthophoto()
     ImGuiIO const &io = ImGui::GetIO();
     float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
     m_orthophoto.draw(editor_mode::projection_matrix(aspect) * view, Camera.Pos, io.DisplaySize.x, io.DisplaySize.y);
+}
+
+void editor_mode::draw_ortho_compass() const
+{
+    if (false == Global.EditorOrtho)
+        return;
+    screen_projection const projection;
+    ImVec2 north_from, north_to, east_from, east_to;
+    glm::dvec3 const eye{Camera.Pos};
+    if (false == projection.project(eye + glm::dvec3{0.0, 0.0, -80.0}, north_from) || false == projection.project(eye + glm::dvec3{0.0, 0.0, 80.0}, north_to) ||
+        false == projection.project(eye + glm::dvec3{80.0, 0.0, 0.0}, east_from) || false == projection.project(eye + glm::dvec3{-80.0, 0.0, 0.0}, east_to))
+        return;
+    auto const dir = [](ImVec2 const From, ImVec2 const To) {
+        ImVec2 const d{To.x - From.x, To.y - From.y};
+        auto const length{std::sqrt(d.x * d.x + d.y * d.y)};
+        return length > 1e-3f ? ImVec2{d.x / length, d.y / length} : ImVec2{0.0f, -1.0f};
+    };
+    auto const north{dir(north_from, north_to)};
+    auto const east{dir(east_from, east_to)};
+    ImVec2 const south{-north.x, -north.y};
+    ImVec2 const west{-east.x, -east.y};
+
+    ImGuiIO const &io = ImGui::GetIO();
+    float const radius{36.0f};
+    float const margin{16.0f};
+    ImVec2 const center{io.DisplaySize.x - margin - radius, margin + radius};
+    auto *drawlist{ImGui::GetForegroundDrawList()};
+    drawlist->AddCircleFilled(center, radius + 14.0f, IM_COL32(0, 0, 0, 180), 48);
+    drawlist->AddCircle(center, radius - 6.0f, IM_COL32(255, 255, 255, 50), 48, 1.2f);
+    drawlist->AddCircleFilled(center, 3.0f, IM_COL32(255, 255, 255, 200), 12);
+
+    auto const at = [&](ImVec2 const Unit, float const Length) { return ImVec2{center.x + Unit.x * Length, center.y + Unit.y * Length}; };
+    ImVec2 const side{-north.y * 5.0f, north.x * 5.0f};
+    drawlist->AddTriangleFilled(at(north, radius - 14.0f), ImVec2{center.x + side.x, center.y + side.y}, ImVec2{center.x - side.x, center.y - side.y}, IM_COL32(230, 70, 55, 255));
+    drawlist->AddTriangleFilled(at(south, radius - 18.0f), ImVec2{center.x + side.x, center.y + side.y}, ImVec2{center.x - side.x, center.y - side.y}, IM_COL32(210, 210, 210, 210));
+
+    auto const letter = [&](char const *Text, ImVec2 const Unit, ImU32 const Color) {
+        auto const size{ImGui::CalcTextSize(Text)};
+        auto const p{at(Unit, radius + 2.0f)};
+        drawlist->AddText(ImVec2(p.x - size.x * 0.5f, p.y - size.y * 0.5f), Color, Text);
+    };
+    letter("N", north, IM_COL32(255, 90, 70, 255));
+    letter("E", east, IM_COL32(230, 230, 230, 230));
+    letter("S", south, IM_COL32(190, 190, 190, 180));
+    letter("W", west, IM_COL32(230, 230, 230, 230));
 }
 
 editor_terrain *editor_mode::terrain_at(double X, double Z)

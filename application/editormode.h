@@ -338,6 +338,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	std::string m_georeference_line;
 	void read_georeference();
 	void draw_orthophoto();
+	void draw_ortho_compass() const;
 	// picks up the stored settings and the origin of the current scenery
 	void load_orthophoto_settings();
 	void save_orthophoto_settings();
