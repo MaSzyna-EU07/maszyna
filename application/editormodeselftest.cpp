@@ -53,6 +53,11 @@ http://mozilla.org/MPL/2.0/.
 //                                        middle, point), height (origin, bottom, top, edge, point), point=<x>,<y>,<z>,
 //                                        pick=<x>,<y>,<z> (a point of the scene picked as the reference point), go (0, 1)
 //   selectinclude <x> <z>                the include placed nearest the point
+//   addmodel <x> <z>                     the model instance nearest the point added to the selection, or taken out (Shift+LMB)
+//   selection                            logs the selected models, with the models of their groups
+//   moveselection <x> <y> <z>            the selection moved by the offset, as the gizmo moves it
+//   turnselection <degrees>              the selection turned around the model with the gizmo
+//   copy, paste <x> <y> <z>, group, ungroup, drop, delete   as the keys of the selection do them
 //   bendset <key>=<value>...             the bent model being edited: length, lateral, height, along, side, height
 //   bendprobe                            logs the bent model being edited
 //   undo, redo
@@ -626,6 +631,67 @@ void editor_mode::selftest_step()
 			ui()->set_node(m_node);
 			WriteLog("SELFTEST selectmodel: " + (nearest != nullptr ? format("%s at %.2f %.2f %.2f", nearest->name().c_str(), nearest->location().x, nearest->location().y, nearest->location().z) : std::string{"none"}));
 		}
+		else if (command == "addmodel")
+		{
+			glm::dvec3 point{0.0};
+			words >> point.x >> point.z;
+			TAnimModel *nearest{nullptr};
+			auto best{50.0};
+			for (auto *model : simulation::Instances.sequence())
+			{
+				if (model == nullptr)
+					continue;
+				auto const distance{glm::length(glm::dvec2{model->location().x - point.x, model->location().z - point.z})};
+				if (distance < best)
+				{
+					best = distance;
+					nearest = model;
+				}
+			}
+			select_node(nearest, true);
+			WriteLog("SELFTEST addmodel: " + (nearest != nullptr ? format("%s at %.2f %.2f %.2f", nearest->name().c_str(), nearest->location().x, nearest->location().y, nearest->location().z) : std::string{"none"}));
+		}
+		else if (command == "selection")
+		{
+			std::string text;
+			for (auto *node : selection_with_groups())
+				text += format(" [%s %.2f %.2f %.2f group %d]", node->name().c_str(), node->location().x, node->location().y, node->location().z, static_cast<int>(node->group()));
+			WriteLog("SELFTEST selection:" + text);
+		}
+		else if (command == "moveselection" && m_node != nullptr)
+		{
+			glm::dvec3 offset{0.0};
+			words >> offset.x >> offset.y >> offset.z;
+			selection_snapshots(EditorSnapshot::Action::Move);
+			auto const before{m_node->location()};
+			m_editor.translate(m_node, before + offset, true);
+			selection_follow(m_node->location() - before, glm::vec3(0.0f), m_node->location());
+		}
+		else if (command == "turnselection" && m_node != nullptr)
+		{
+			float degrees{0.0f};
+			words >> degrees;
+			selection_snapshots(EditorSnapshot::Action::Rotate);
+			glm::vec3 const turned{0.0f, degrees, 0.0f};
+			m_editor.rotate(m_node, turned, 0.0f);
+			selection_follow(glm::dvec3(0.0), turned, m_node->location());
+		}
+		else if (command == "copy")
+			copy_selection();
+		else if (command == "paste")
+		{
+			glm::dvec3 point{0.0};
+			words >> point.x >> point.y >> point.z;
+			paste_clipboard(point);
+		}
+		else if (command == "group")
+			group_selection();
+		else if (command == "ungroup")
+			ungroup_selection();
+		else if (command == "drop")
+			drop_selection_to_ground();
+		else if (command == "delete")
+			delete_selected();
 		else if (command == "selectinclude")
 		{
 			glm::dvec3 point{0.0};

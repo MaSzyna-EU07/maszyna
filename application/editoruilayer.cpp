@@ -972,6 +972,8 @@ void editor_ui::render_menu_contents()
 		}
 		ImGui::EndMenu();
 	}
+	if (m_editmenu)
+		m_editmenu();
 
 	ui_layer::render_menu_contents();
 

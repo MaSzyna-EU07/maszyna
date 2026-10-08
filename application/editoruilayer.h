@@ -69,6 +69,11 @@ class editor_ui : public ui_layer
 	{
 		m_toolbaroptions = std::move(Renderer);
 	}
+	// draws the edit menu of the editor mode, next to the file menu
+	void set_edit_menu(std::function<void()> Renderer)
+	{
+		m_editmenu = std::move(Renderer);
+	}
 	// draws the fields of work of the editor mode in a row above the toolbar
 	void set_workspace_bar(std::function<void()> Renderer)
 	{
@@ -188,6 +193,7 @@ class editor_ui : public ui_layer
 	std::function<void()> m_menuoptions;
 	std::function<void()> m_toolbaroptions;
 	std::function<void()> m_workspacebar;
+	std::function<void()> m_editmenu;
 	bool m_layoutreset{false}; // the default layout is to be built again on the next frame
 	bool m_tooloptionsopen{true};
 	bool m_inspectoropen{true};

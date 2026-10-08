@@ -96,6 +96,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	}
 	void on_event_poll() override;
 	bool is_command_processor() const override;
+	// takes the last change back; changes made together (e.g. to the models of a selection) are taken back together
 	void undo_last();
 	static bool focus_active();
 	static void  set_focus_active(bool isActive);
@@ -166,6 +167,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		bool profiles{false}; // the stored grade line designs changed too, these were the ones before
 		std::vector<stored_profile> profile_library;
 		std::vector<array_copy> copies; // models an array added to the one it was made of
+		bool joined{false}; // undone and redone together with the change before it
 	};
 	void push_snapshot(scene::basic_node *node, EditorSnapshot::Action Action = EditorSnapshot::Action::Move, std::string const &Serialized = std::string());
 
@@ -176,6 +178,9 @@ class editor_mode : public application_mode, private editor_track::observer
 
 	editor_ui *ui() const;
 	void redo_last();
+	// a single step of the history, see undo_last()
+	void undo_one();
+	void redo_one();
 	void handle_brush_mouse_hold(int Action, int Button);
 	void apply_rotation_for_new_node(scene::basic_node *node, int rotation_mode, float fixed_rotation_value);
 	// members
@@ -222,12 +227,54 @@ class editor_mode : public application_mode, private editor_track::observer
 	// puts every instance of the model the selected node shows on the ground under it
 	void drop_model_instances();
 	void render_object_menu();
+	// undo, redo and what can be done with the selection, with their keys
+	void render_edit_menu();
+	// the list of the keyboard shortcuts, opened from the help menu or by F1
+	void render_help_menu();
+	void render_shortcuts_window();
+	bool m_shortcuts_open{false};
+	// deletes what's selected: a road piece or point, a signal, an include of a scenery template, a model, tracks (Del)
+	void delete_selected();
+	void delete_model(TAnimModel *Model, bool const Joined);
+
+	// more models selected at once, in the surroundings: m_node is the one the gizmo is on, the others are in m_selection.
+	// Shift+LMB adds a model or takes it out; a model of a group stands for the whole group
+	std::vector<scene::basic_node *> m_selection;
+	std::vector<scene::basic_node *> selected_nodes() const; // m_node first
+	std::vector<scene::basic_node *> selection_with_groups() const; // and the other models of their groups
+	void select_node(scene::basic_node *Node, bool const Additive);
+	void draw_selection_overlay();
+	// the other models of the selection follow m_node moved or turned by the gizmo
+	void selection_snapshots(EditorSnapshot::Action const Action);
+	void selection_follow(glm::dvec3 const &Moved, glm::vec3 const &Turned, glm::dvec3 const &Pivot);
+	// clipboard (Ctrl+C, Ctrl+V): definitions of the models, placed around the cursor as they were around the selected one
+	struct clipboard_entry
+	{
+		std::string definition;
+		glm::dvec3 offset{0.0};
+		glm::vec3 angles{0.0f};
+		glm::vec3 scale{1.0f};
+		int group{-1}; // models copied with their group are grouped again, each group anew
+	};
+	std::vector<clipboard_entry> m_clipboard;
+	void copy_selection();
+	void paste_clipboard(glm::dvec3 const &Location);
+	glm::dvec3 cursor_ground(); // the point of the ground under the cursor
+	// groups (Ctrl+G, Ctrl+Shift+G), written to the scenery as group ... endgroup
+	void group_selection();
+	void ungroup_selection();
+	void drop_selection_to_ground();
+	// menu at the cursor, Ctrl+RMB
+	bool m_contextopen{false};
+	glm::dvec3 m_contextpoint{0.0};
+	void render_context_menu();
 
 	// focus camera smoothly on specified node
 	void start_focus(scene::basic_node *node, double duration = 0.6);
 
-	// drops the node straight down onto the nearest surface below (terrain or another object)
-	void snap_to_ground(scene::basic_node *node);
+	// drops the node straight down onto the nearest surface below (terrain or another object). its group goes along with it,
+	// unless Alone: then the node goes by itself. Joined: undone together with the change before
+	void snap_to_ground(scene::basic_node *node, bool const Alone = false, bool const Joined = false);
 
 	// editable terrain patches created in the editor
 	void render_terrain_ui();

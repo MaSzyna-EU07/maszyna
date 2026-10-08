@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "simulation/simulation.h"
 #include "model/AnimModel.h"
+#include "scene/scenenodegroups.h"
 #include "world/MemCell.h"
 #include "world/Traction.h"
 #include "world/EvLaunch.h"
@@ -688,6 +689,11 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 		{
 			return true;
 		}
+		if (Model != nullptr && Groups.relocating(Node))
+		{
+			// written anew along with its group, below
+			return true;
+		}
 		auto const location{Node->location()};
 		auto const angles{Model != nullptr ? Model->Angles() : glm::vec3{0.f}};
 		auto const scale{Model != nullptr ? Model->Scale() : glm::vec3{1.f}};
@@ -805,6 +811,87 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 		{
 			return fail(state.error);
 		}
+	}
+	// models grouped or ungrouped in the editor: their definitions are taken out of where they are and written anew, a group
+	// as one block between group and endgroup in the layer of its first model, a model of a dissolved group on its own
+	std::set<basic_node const *> relocated;
+	auto const relocate = [&](TAnimModel const *Model, layer_handle const Target, std::vector<std::pair<basic_node const *, std::string>> &Output) {
+		if (auto const lookup{m_sources.find(Model)}; lookup != m_sources.end())
+		{
+			auto const &source{lookup->second};
+			if (false == writable(source.layer))
+			{
+				// one definition stands for more than one node, it stays where it is
+				return true;
+			}
+			if (false == load(source.layer))
+			{
+				return false;
+			}
+			file_patch::edit edit;
+			edit.begin = source.span.begin;
+			edit.end = source.span.end;
+			state.patches[source.layer].edits.emplace_back(std::move(edit));
+			rewritten.emplace(Model);
+		}
+		std::string text;
+		Model->export_as_text(text);
+		text.erase(text.find_last_not_of(" \t\r\n") + 1);
+		auto const &context{layer(Target).context_insert()};
+		if (false == context.matches(layer_context()))
+		{
+			model_placement placement;
+			placement.rotation = context.rotation;
+			placement.location = context.to_local(Model->location());
+			placement.angles = Model->Angles();
+			placement.scale = Model->Scale() / context.scale;
+			std::string error;
+			if (false == patch_model(text, placement, error))
+			{
+				state.error = error + " of \"" + Model->name() + "\"";
+				return false;
+			}
+		}
+		Output.emplace_back(Model, std::move(text));
+		relocated.emplace(Model);
+		return true;
+	};
+	for (auto *node : Groups.loose())
+	{
+		auto const *model{dynamic_cast<TAnimModel const *>(node)};
+		if (model == nullptr || model->from_template() || false == is_output(resolve(node->layer())))
+		{
+			continue;
+		}
+		if (false == relocate(model, resolve(node->layer()), created[resolve(node->layer())]))
+		{
+			return fail(state.error);
+		}
+	}
+	for (auto const group : Groups.rewritten())
+	{
+		auto const &nodes{Groups.group(group).nodes};
+		if (nodes.empty() || false == is_output(resolve(nodes.front()->layer())))
+		{
+			continue;
+		}
+		auto const target{resolve(nodes.front()->layer())};
+		auto &output{created[target]};
+		// NOTE: lines with no node are written as they are, without a place in the bookkeeping
+		output.emplace_back(nullptr, "group");
+		for (auto const *node : nodes)
+		{
+			auto const *model{dynamic_cast<TAnimModel const *>(node)};
+			if (model == nullptr || model->from_template())
+			{
+				continue;
+			}
+			if (false == relocate(model, target, output))
+			{
+				return fail(state.error);
+			}
+		}
+		output.emplace_back(nullptr, "endgroup");
 	}
 	auto const push_edit = [&](layer_handle const Layer, source_span const &Span, std::string Text, basic_node const *Node) {
 		file_patch::edit edit;
@@ -1448,7 +1535,10 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 			{
 				ensure_newline(added.text, eol);
 				auto const offset{static_cast<std::streamoff>(added.text.size())};
-				added.nodes.push_back({definition.first, {offset, offset + static_cast<std::streamoff>(definition.second.size())}, true});
+				if (definition.first != nullptr)
+				{
+					added.nodes.push_back({definition.first, {offset, offset + static_cast<std::streamoff>(definition.second.size())}, true});
+				}
 				added.text += definition.second + eol;
 			}
 		}
@@ -1620,6 +1710,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 	}
 
 	// the scenery files now match the scene, update the bookkeeping to reflect it
+	Groups.saved();
 	auto removedterrain{false};
 	for (auto const output : outputs)
 	{
@@ -1629,7 +1720,8 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 			auto const isnew{source.layer == null_handle};
 			source.layer = output;
 			source.span = place.span;
-			if (isnew)
+			// a definition written anew elsewhere is in the placement of the place it went to, as a new one is
+			if (isnew || relocated.count(place.node) != 0)
 			{
 				source.context = layer(output).context_insert();
 			}

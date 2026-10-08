@@ -471,7 +471,8 @@ void state_serializer::init_time() {
 void
 state_serializer::deserialize_group( cParser &Input, scene::scratch_data &Scratchpad ) {
 
-    scene::Groups.create();
+    // a group of the scenery stands by itself, rather than being a part of the file it's in (e.g. made in the editor)
+    scene::Groups.create( true );
 }
 
 void
