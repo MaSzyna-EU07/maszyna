@@ -28,6 +28,7 @@ GLFWwindow *ui_layer::m_keywindow{nullptr};
 ImGuiIO *ui_layer::m_imguiio{nullptr};
 GLint ui_layer::m_textureunit{GL_TEXTURE0};
 bool ui_layer::m_cursorvisible;
+int ui_layer::m_palette{0};
 ImFont *ui_layer::font_default{nullptr};
 ImFont *ui_layer::font_mono{nullptr};
 ImFont *ui_layer::font_loading{nullptr};
@@ -175,25 +176,28 @@ void create_viewport_window(ImGuiViewport *Viewport)
 }
 } // namespace
 
-void ui_layer::imgui_style()
+void ui_layer::imgui_colors(int const Palette)
 {
-	// palette shared with the MaSzyna starter: flat dark panels, thin borders, green accents
+	m_palette = Palette;
 	auto const rgb = [](int const Color, float const Alpha = 1.0f) {
 		return ImVec4(((Color >> 16) & 0xff) / 255.0f, ((Color >> 8) & 0xff) / 255.0f, (Color & 0xff) / 255.0f, Alpha);
 	};
-	int constexpr panel{0x1e2327}; // window background
-	int constexpr base{0x15171b}; // darker background, between panels
-	int constexpr header{0x2a3036}; // section headers, hovered items
-	int constexpr border{0x3a424a};
-	int constexpr field{0x121517}; // input fields, combos
-	int constexpr accent{0x177f00}; // selection, active elements
-	int constexpr accentbright{0x41c400}; // marks: checkmarks, active tab underline
-	int constexpr accentdim{0x164b0e};
+	auto const editor{Palette == 1};
+	// palette shared with the MaSzyna starter: flat dark panels, thin borders, green accents; the one of the editor
+	// has amber accents on cooler grey panels
+	int const panel{editor ? 0x1f2226 : 0x1e2327}; // window background
+	int const base{editor ? 0x1b1d21 : 0x15171b}; // darker background, between panels
+	int const header{editor ? 0x2c3036 : 0x2a3036}; // section headers, hovered items
+	int const border{editor ? 0x3a3f47 : 0x3a424a};
+	int const field{editor ? 0x15171a : 0x121517}; // input fields, combos
+	int const accent{editor ? 0xb07a1c : 0x177f00}; // selection, active elements
+	int const accentbright{editor ? 0xe5a73a : 0x41c400}; // marks: checkmarks, active tab underline
+	int const accentdim{editor ? 0x5a4319 : 0x164b0e};
 
 	ImVec4 *colors = ImGui::GetStyle().Colors;
 
-	colors[ImGuiCol_Text] = rgb(0xffffff);
-	colors[ImGuiCol_TextDisabled] = rgb(0xa0a0a2);
+	colors[ImGuiCol_Text] = rgb(editor ? 0xe6e8eb : 0xffffff);
+	colors[ImGuiCol_TextDisabled] = rgb(editor ? 0x8a929c : 0xa0a0a2);
 	colors[ImGuiCol_WindowBg] = rgb(panel, Global.UIBgOpacity); // ui.bg.opacity from config file
 	colors[ImGuiCol_ChildBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
 	colors[ImGuiCol_PopupBg] = rgb(base, 0.98f);
@@ -244,6 +248,14 @@ void ui_layer::imgui_style()
 	colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
 	colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.20f);
 	colors[ImGuiCol_ModalWindowDimBg] = rgb(base, 0.60f);
+	// where a dragged window would be docked, and an empty dock node
+	colors[ImGuiCol_DockingPreview] = rgb(accentbright, 0.70f);
+	colors[ImGuiCol_DockingEmptyBg] = rgb(base);
+}
+
+void ui_layer::imgui_style()
+{
+	imgui_colors(0);
 
 	// flat, square elements with thin borders
 	auto &style = ImGui::GetStyle();
@@ -499,6 +511,9 @@ void ui_layer::render_internal()
 
 void ui_layer::begin_ui_frame()
 {
+	// the colours follow the ui of the mode drawn
+	if (palette() != m_palette)
+		imgui_colors(palette());
 	begin_ui_frame_internal();
 	render_dockspace();
 	m_dockspaceframe = ImGui::GetFrameCount();
@@ -688,6 +703,7 @@ void ui_layer::render_menu_contents()
 				editor_mode::set_settings_open(settings_open);
 			}
 		}
+		render_windows_menu();
 		ImGui::EndMenu();
 	}
 }

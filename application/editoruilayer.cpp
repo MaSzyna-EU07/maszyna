@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "utilities/translation.h"
 #include "imgui/imgui_internal.h"
+#include "editor/editorSettings.hpp"
 
 #include <cstdio>
 #include <limits>
@@ -962,26 +963,34 @@ void editor_ui::render_menu_contents()
 
 	ui_layer::render_menu_contents();
 
-	if (ImGui::BeginMenu(STR_C("Mode windows")))
-	{
-		if (ImGui::MenuItem(STR_C("Reset window layout")))
-			m_layoutreset = true;
-		std::vector<ImGuiDockNode *> pinned;
-		autohide_leaves(ImGui::DockBuilderGetNode(m_dockspace), pinned);
-		if (ImGui::MenuItem(pinned.empty() ? STR_C("Pin the docks back") : STR_C("Unpin all docks"), "Ctrl+Space", false, false == pinned.empty() || false == m_autohide.empty()))
-			toggle_docks();
-		ImGui::Separator();
-		ImGui::MenuItem(STR_C("Tool options"), nullptr, &m_tooloptionsopen);
-		ImGui::MenuItem(STR_C("Inspector"), nullptr, &m_inspectoropen);
-		ImGui::MenuItem(STR_C("Scene"), nullptr, &m_sceneopen);
-		ImGui::MenuItem(STR_C("Node bank"), nullptr, &m_nodebankpanel.is_open);
-		ImGui::MenuItem(STR_C("Layers"), nullptr, &m_layerspanel.is_open);
-		ImGui::MenuItem(STR_C("Include database"), nullptr, &m_includespanel.is_open);
-		ImGui::EndMenu();
-	}
-
 	if (m_menuoptions)
 		m_menuoptions();
+}
+
+// the windows of the editor and their layout, in the windows menu after the common ones (log, hierarchy, history, settings)
+void editor_ui::render_windows_menu()
+{
+	ImGui::Separator();
+	ImGui::MenuItem(STR_C("Tool options"), nullptr, &m_tooloptionsopen);
+	ImGui::MenuItem(STR_C("Inspector"), nullptr, &m_inspectoropen);
+	ImGui::MenuItem(STR_C("Scene"), nullptr, &m_sceneopen);
+	ImGui::MenuItem(STR_C("Node bank"), nullptr, &m_nodebankpanel.is_open);
+	if (ImGui::MenuItem(STR_C("Model sets")))
+		m_nodebankpanel.open_sets_window();
+	ImGui::MenuItem(STR_C("Layers"), nullptr, &m_layerspanel.is_open);
+	ImGui::MenuItem(STR_C("Include database"), nullptr, &m_includespanel.is_open);
+	ImGui::Separator();
+	if (ImGui::MenuItem(STR_C("Reset window layout")))
+		m_layoutreset = true;
+	std::vector<ImGuiDockNode *> pinned;
+	autohide_leaves(ImGui::DockBuilderGetNode(m_dockspace), pinned);
+	if (ImGui::MenuItem(pinned.empty() ? STR_C("Pin the docks back") : STR_C("Unpin all docks"), "Ctrl+Space", false, false == pinned.empty() || false == m_autohide.empty()))
+		toggle_docks();
+}
+
+int editor_ui::palette() const
+{
+	return EditorSettings.palette();
 }
 
 void editor_ui::set_file_actions(std::function<void()> Save, std::function<void()> Export)

@@ -4674,3 +4674,12 @@ msgstr "to nie model"
 
 msgid "no preview"
 msgstr "brak podglądu"
+
+msgid "Colours of the editor"
+msgstr "Kolory edytora"
+
+msgid "Green, as the rest of the simulator"
+msgstr "Zielone, jak reszta symulatora"
+
+msgid "Amber, of the editor"
+msgstr "Bursztynowe, edytora"

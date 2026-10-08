@@ -100,6 +100,8 @@ bool editorSettings::load()
 			m_nodebank_previews = (value == "1");
 		else if (key == "nodebank_card")
 			parse(value, m_nodebank_card);
+		else if (key == "palette")
+			parse(value, m_palette);
 		else if (key.rfind(origin_prefix, 0) == 0)
 		{
 			// northing;easting
@@ -142,6 +144,7 @@ bool editorSettings::save()
 	stream << "signal_offset " << m_signal_offset << "\n";
 	stream << "nodebank_previews " << (m_nodebank_previews ? 1 : 0) << "\n";
 	stream << "nodebank_card " << m_nodebank_card << "\n";
+	stream << "palette " << m_palette << "\n";
 	stream << std::fixed << std::setprecision(3);
 	for (auto const &origin : m_orthophoto_origins)
 		stream << origin.first << " " << origin.second.first << ";" << origin.second.second << "\n";

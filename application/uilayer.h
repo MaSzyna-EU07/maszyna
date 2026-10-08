@@ -78,6 +78,8 @@ public:
 	// methods
     static bool init( GLFWwindow *Window );
 	static void imgui_style();
+	// colours of the user interface: 0 the green ones shared with the starter, 1 the amber ones of the editor
+	static void imgui_colors(int const Palette);
 
     // assign texturing hardware unit
     static void set_unit( GLint const Textureunit ) { m_textureunit = GL_TEXTURE0 + Textureunit; }
@@ -137,6 +139,14 @@ protected:
     static bool m_cursorvisible;
 
    virtual void render_menu_contents();
+	// items of the windows menu which belong to the ui of a mode, after the common ones
+	virtual void render_windows_menu() {}
+	// colours this ui is drawn in, see imgui_colors()
+	virtual int palette() const
+	{
+		return 0;
+	}
+	static int m_palette; // colours set at the moment
    ui_log_panel m_logpanel { "Log", true };
 	bool m_suppress_menu = false; // if `true`, the menu at the top of the window will not be present
 	bool m_menu_always = false; // if `true`, the menu is shown all the time, not only when the mouse is at the top of the window

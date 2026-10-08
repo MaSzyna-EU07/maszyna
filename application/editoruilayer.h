@@ -150,6 +150,8 @@ class editor_ui : public ui_layer
 	void scene_rebuild();
 	void scene_row(std::size_t const Entry);
 	void render_menu_contents() override;
+	void render_windows_menu() override;
+	int palette() const override;
 	void render_dockspace() override;
 	void render_() override;
 	// docks the windows of the editor in their default places

@@ -430,6 +430,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_gizmo_options();
 	// edit modes, editor windows and gizmo settings in the toolbar under the menu
 	void render_toolbar();
+	// an edit mode of the node bank as the field of work, from the toolbar or its key (1-5)
+	void choose_edit_mode(nodebank_panel::edit_mode const Mode);
 	bool m_gizmo_enabled{true};                                  // master switch for the in-viewport gizmo
 	bool m_gizmo_using{false};                                   // tracks an ongoing drag, so a single undo snapshot is taken per drag
 	bool m_gizmo_local{false};                                   // manipulate in the object's local space instead of world space

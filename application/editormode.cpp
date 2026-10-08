@@ -1462,6 +1462,16 @@ void editor_mode::render_settings()
 
             ImGui::Separator();
             ImGui::Checkbox(STR_C("Transform gizmo (ImGuizmo)"), &m_gizmo_enabled);
+
+            ImGui::Separator();
+            ImGui::TextUnformatted(STR_C("Colours of the editor"));
+            const char *palettes[] = {STR_C("Green, as the rest of the simulator"), STR_C("Amber, of the editor")};
+            int palette = std::clamp(EditorSettings.palette(), 0, 1);
+            if (ImGui::Combo("##palette", &palette, palettes, IM_ARRAYSIZE(palettes)))
+            {
+                EditorSettings.palette(palette);
+                EditorSettings.save();
+            }
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -3655,6 +3665,15 @@ void editor_mode::render_array()
     ImGui::PopID();
 }
 
+void editor_mode::choose_edit_mode(nodebank_panel::edit_mode const Mode)
+{
+	// an edit mode is the field of work instead of the tracks, roads or terrain
+	m_track_window_open = false;
+	m_roadtool.window = false;
+	terrain_workspace(false);
+	ui()->set_mode(Mode);
+}
+
 void editor_mode::render_toolbar()
 {
 	// edit modes of the node bank, each of them takes the mouse over from the track window
@@ -3662,15 +3681,13 @@ void editor_mode::render_toolbar()
 	    {STR_C("Select"), nodebank_panel::MODIFY}, {STR_C("Insert"), nodebank_panel::ADD}, {STR_C("Brush"), nodebank_panel::BRUSH}, {STR_C("Area fill"), nodebank_panel::FILL}, {STR_C("Copy to bank"), nodebank_panel::COPY}};
 	// the fields of work: an edit mode, or the tracks, signals, vehicle, roads or terrain, one at a time
 	bool const workspace{m_roadtool.window || m_terrain_open};
-	for (auto const &mode : modes)
+	for (std::size_t index = 0; index < std::size(modes); ++index)
 	{
+		auto const &mode{modes[index]};
 		if (ImGui::MenuItem(mode.first, nullptr, false == workspace && ui()->mode() == mode.second))
-		{
-			m_track_window_open = false;
-			m_roadtool.window = false;
-			terrain_workspace(false);
-			ui()->set_mode(mode.second);
-		}
+			choose_edit_mode(mode.second);
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s (%d)", mode.first, static_cast<int>(index + 1));
 	}
 	ImGui::Separator();
 	bool const tracks{m_track_window_open && false == m_terrain_open};
@@ -4277,6 +4294,12 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         case GLFW_KEY_E: m_gizmo_op = gizmo_operation::scale; break;
         case GLFW_KEY_R: m_gizmo_local = !m_gizmo_local; break;
         case GLFW_KEY_B: handled = ui()->mode() != nodebank_panel::TRACK && bend_shortcut(); break;
+        // the edit modes in the order of the toolbar; in the track mode the digits typed as a value were taken already
+        case GLFW_KEY_1: choose_edit_mode(nodebank_panel::MODIFY); break;
+        case GLFW_KEY_2: choose_edit_mode(nodebank_panel::ADD); break;
+        case GLFW_KEY_3: choose_edit_mode(nodebank_panel::BRUSH); break;
+        case GLFW_KEY_4: choose_edit_mode(nodebank_panel::FILL); break;
+        case GLFW_KEY_5: choose_edit_mode(nodebank_panel::COPY); break;
         default: handled = false; break;
         }
         if (handled)
