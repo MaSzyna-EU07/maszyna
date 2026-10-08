@@ -629,6 +629,8 @@ class editor_mode : public application_mode, private editor_track::observer
 		bool snaps{false};
 		double spacing{0.0};
 		double distance{0.0};
+		double angle{0.0}; // deg between the two straights
+		double correction{0.0}; // m along the line normal to reach the spacing
 		editor_track::straight const *neighbour{nullptr};
 	};
 	parallel_offer straight_parallel_offer(editor_track::straight const &Line, glm::dvec3 const &Offset) const;

@@ -1557,8 +1557,29 @@ msgstr "blisko: przyleganie równoległe na %.2f m"
 msgid "parallel  %.2f m"
 msgstr "równolegle  %.2f m"
 
+msgid "parallel at %.2f m"
+msgstr "równolegle na %.2f m"
+
+msgid "snap at %.2f m  (%.1f°)"
+msgstr "przyleganie na %.2f m  (%.1f°)"
+
+msgid "snaps parallel at 4.00 / 4.50 / 4.75 m"
+msgstr "łapie równolegle na 4.00 / 4.50 / 4.75 m"
+
+msgid "shifts sideways; close: snaps parallel at 4.00 / 4.50 / 4.75 m"
+msgstr "przesuwa w bok; blisko: łapie równolegle na 4.00 / 4.50 / 4.75 m"
+
+msgid "Nearby straight: the diamond snaps parallel at 4.00 / 4.50 / 4.75 m"
+msgstr "Sąsiednia prosta: romb łapie równolegle na 4.00 / 4.50 / 4.75 m"
+
+msgid "close: %.2f m  %.1f°"
+msgstr "blisko: %.2f m  %.1f°"
+
 msgid "Drag: shift the straight sideways — close: parallel snap at %.2f m"
 msgstr "Ciągnij: przesuń prostą w bok — blisko: przyleganie równoległe na %.2f m"
+
+msgid "Drag: shift the straight sideways — close: %.2f m  %.1f°"
+msgstr "Ciągnij: przesuń prostą w bok — blisko: %.2f m  %.1f°"
 
 msgid "Drag: shift the straight sideways — snaps parallel at %.2f m"
 msgstr "Ciągnij: przesuń prostą w bok — przyleganie równoległe na %.2f m"
