@@ -3982,7 +3982,7 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 {
 	glDebug("Render TSubModel");
 
-	if ((Submodel->iVisible) && (TSubModel::fSquareDist >= Submodel->fSquareMinDist) && (TSubModel::fSquareDist < Submodel->fSquareMaxDist))
+	if ((Submodel->iVisible) && (TSubModel::fSquareDist >= Submodel->fSquareMinDist) && (TSubModel::fSquareDist < Submodel->fSquareMaxDist) && (false == m_previewing || Submodel->fVisible > 0.f))
 	{
 		glm::mat4 future_stack = model_ubs.future;
 
@@ -4998,7 +4998,7 @@ void opengl33_renderer::Render_Alpha_text(TSubModel *Submodel)
 void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 {
 	// renderowanie przezroczystych przez DL
-	if ((Submodel->iVisible) && (TSubModel::fSquareDist >= Submodel->fSquareMinDist) && (TSubModel::fSquareDist < Submodel->fSquareMaxDist))
+	if ((Submodel->iVisible) && (TSubModel::fSquareDist >= Submodel->fSquareMinDist) && (TSubModel::fSquareDist < Submodel->fSquareMaxDist) && (false == m_previewing || Submodel->fVisible > 0.f))
 	{
 		glm::mat4 future_stack = model_ubs.future;
 
@@ -5547,6 +5547,414 @@ std::string const &opengl33_renderer::info_stats() const
 void opengl33_renderer::MakeScreenshot()
 {
 	screenshot_manager::make_screenshot();
+}
+
+// model previews
+
+namespace
+{
+// direction from the previewed model to the camera. models are made facing -z (the front view of 3ds max),
+// so the camera looks at their front, right side and top
+glm::dvec3 const preview_viewdirection{-0.6123724, 0.5, -0.6123724};
+// vertical field of view of the preview camera, in degrees
+float const preview_fieldofview{30.f};
+// brightness of the hdr background, past the white point of the tonemapping, so translucent parts blend with white
+float const preview_background{16.f};
+} // namespace
+
+void opengl33_renderer::Preview_Bounds(TSubModel const *Submodel, glm::dmat4 const &Transform, glm::dvec3 &Min, glm::dvec3 &Max) const
+{
+	// same walk as the one of Render(TSubModel *) bar the range checks, which leave out parts only for the bounds to be smaller
+	for (auto const *submodel{Submodel}; submodel != nullptr; submodel = submodel->Next)
+	{
+		if ((submodel->iVisible == 0) || (submodel->fVisible <= 0.f))
+		{
+			continue;
+		}
+		auto transform{Transform};
+		if ((submodel->iFlags & 0xC000) && (submodel->fMatrix != nullptr))
+		{
+			transform *= glm::dmat4{glm::make_mat4(submodel->fMatrix->readArray())};
+		}
+		if ((submodel->eType < TP_ROTATOR) && (submodel->m_geometry.handle != null_handle))
+		{
+			for (auto const &vertex : m_geometry.vertices(submodel->m_geometry.handle))
+			{
+				auto const point{glm::dvec3{transform * glm::dvec4{glm::dvec3{vertex.position}, 1.0}}};
+				Min = glm::min(Min, point);
+				Max = glm::max(Max, point);
+			}
+		}
+		Preview_Bounds(submodel->Child, transform, Min, Max);
+	}
+}
+
+bool opengl33_renderer::Preview_Targets(int const Size)
+{
+	if (m_preview.size == Size)
+	{
+		return true;
+	}
+	m_preview = preview_targets();
+
+	m_preview.hdr_tex = std::make_unique<opengl_texture>();
+	m_preview.hdr_tex->alloc_rendertarget(GL_RGBA16F, GL_RGBA, Size, Size, 1, 1, GL_CLAMP_TO_EDGE);
+	m_preview.hdr_rbds = std::make_unique<gl::renderbuffer>();
+	m_preview.hdr_rbds->alloc(GL_DEPTH32F_STENCIL8, Size, Size);
+	m_preview.hdr_fb = std::make_unique<gl::framebuffer>();
+	m_preview.hdr_fb->attach(*m_preview.hdr_tex, GL_COLOR_ATTACHMENT0);
+	m_preview.hdr_fb->attach(*m_preview.hdr_rbds, GL_DEPTH_STENCIL_ATTACHMENT);
+	m_preview.hdr_fb->setup_drawing(1);
+	if (false == m_preview.hdr_fb->is_complete())
+	{
+		ErrorLog("preview framebuffer setup failed");
+		m_preview = preview_targets();
+		return false;
+	}
+	// the tonemapping writes srgb values, either by itself or through the srgb target
+	m_preview.ldr_tex = std::make_unique<opengl_texture>();
+	m_preview.ldr_tex->alloc_rendertarget((Global.gfx_shadergamma ? GL_RGBA8 : GL_SRGB8_ALPHA8), GL_RGBA, Size, Size, 1, 1, GL_CLAMP_TO_EDGE);
+	m_preview.ldr_fb = std::make_unique<gl::framebuffer>();
+	m_preview.ldr_fb->attach(*m_preview.ldr_tex, GL_COLOR_ATTACHMENT0);
+	m_preview.ldr_fb->setup_drawing(1);
+	if (false == m_preview.ldr_fb->is_complete())
+	{
+		ErrorLog("preview framebuffer setup failed");
+		m_preview = preview_targets();
+		return false;
+	}
+	gl::framebuffer::unbind();
+
+	m_preview.size = Size;
+	return true;
+}
+
+void opengl33_renderer::Preview_Model(TAnimModel *Instance, float const Squaredistance, bool const Alpha)
+{
+	// the placement of Render(TAnimModel *), without its range and visibility tests
+	::glPushMatrix();
+	auto const position{Instance->location() - m_renderpass.pass_camera.position()};
+	::glTranslated(position.x, position.y, position.z);
+	auto const &angle{Instance->vAngle};
+	if (angle.y != 0.0)
+		::glRotated(angle.y, 0.f, 1.f, 0.f);
+	if (angle.x != 0.0)
+		::glRotated(angle.x, 1.f, 0.f, 0.f);
+	if (angle.z != 0.0)
+		::glRotated(angle.z, 0.f, 0.f, 1.f);
+	auto const &scale{Instance->Scale()};
+	::glScalef(scale.x, scale.y, scale.z);
+	if (Alpha)
+		Render_Alpha(Instance->pModel, Instance->Material(), Squaredistance);
+	else
+		Render(Instance->pModel, Instance->Material(), Squaredistance);
+	::glPopMatrix();
+}
+
+void opengl33_renderer::Preview_Color(TAnimModel *Instance, float const Squaredistance, int const Size, glm::dvec3 const &Eye, glm::mat4 const &View, glm::mat4 const &Projection, bool const Shadows)
+{
+	m_renderpass.draw_mode = rendermode::color;
+	m_renderpass.pass_camera.position() = Eye;
+	m_renderpass.pass_camera.modelview() = View;
+	m_renderpass.pass_camera.projection() = Projection;
+	m_renderpass.viewport_camera.position() = Eye;
+	setup_matrices();
+
+	scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
+	scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{View}});
+	scene_ubs.time = 0.f;
+	for (auto idx = 0; idx < m_shadowpass.size(); ++idx)
+	{
+		// everything is in the first cascade
+		scene_ubs.cascade_end[idx] = std::numeric_limits<float>::max();
+	}
+	scene_ubo->update(scene_ubs);
+	scene_ubo->bind_uniform();
+	// the sun is the only light, and there's no fog
+	auto const &modelview{OpenGLMatrices.data(GL_MODELVIEW)};
+	light_ubs.ambient = m_sunlight.ambient;
+	light_ubs.fog_color = glm::vec3{1.f};
+	light_ubs.lights_count = 1;
+	light_ubs.lights[0].type = gl::light_element_ubs::DIR;
+	light_ubs.lights[0].dir = modelview * glm::vec4(m_sunlight.direction, 0.0f);
+	light_ubs.lights[0].color = m_sunlight.diffuse;
+	light_ubs.lights[0].ambient = 0.0f;
+	light_ubs.lights[0].intensity = 1.0f;
+	light_ubo->update(light_ubs);
+	model_ubs.fog_density = 0.f;
+	model_ubs.future = glm::mat4();
+	model_ubs.emission = 0.f;
+	if (Shadows)
+	{
+		setup_shadow_bind_map();
+		setup_shadow_color(colors::shadow);
+	}
+	else
+	{
+		setup_shadow_unbind_map();
+		setup_shadow_color(colors::white);
+	}
+	setup_env_map(nullptr);
+
+	m_preview.hdr_fb->bind();
+	glViewport(0, 0, Size, Size);
+	glClearColor(preview_background, preview_background, preview_background, 1.f);
+	glClearStencil(0);
+	glStencilMask(0xFF);
+	m_preview.hdr_fb->clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+	if (!Global.gfx_usegles)
+		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+	glEnable(GL_DEPTH_TEST);
+	// every fragment which made it past the alpha test marks the pixel as covered, translucent ones included
+	glEnable(GL_STENCIL_TEST);
+	glStencilFunc(GL_ALWAYS, 1, 0xFF);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+
+	setup_drawing(false);
+	Preview_Model(Instance, Squaredistance, false);
+	setup_drawing(true);
+	Preview_Model(Instance, Squaredistance, true);
+	setup_drawing(false);
+
+	glDisable(GL_STENCIL_TEST);
+	setup_shadow_unbind_map();
+}
+
+bool opengl33_renderer::Render_Preview(TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image)
+{
+	if ((Instance == nullptr) || (Instance->pModel == nullptr) || (Size <= 0) || (Margin < 0) || (Margin * 2 >= Size))
+	{
+		return false;
+	}
+	// the image is drawn at double size and scaled down, for antialiased edges which blend with the white background
+	GLint maxtexturesize{0}, maxrenderbuffersize{0};
+	GLint maxviewport[2]{0, 0};
+	glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxtexturesize);
+	glGetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &maxrenderbuffersize);
+	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, maxviewport);
+	auto const maxsize{std::min({maxtexturesize, maxrenderbuffersize, maxviewport[0], maxviewport[1]})};
+	if (Size > maxsize)
+	{
+		ErrorLog("preview size " + std::to_string(Size) + " exceeds the limit of the graphics driver, " + std::to_string(maxsize));
+		return false;
+	}
+	auto const supersampling{(Size * 2 <= maxsize ? 2 : 1)};
+	auto const targetsize{Size * supersampling};
+	if (false == Preview_Targets(targetsize))
+	{
+		return false;
+	}
+
+	glfwMakeContextCurrent(m_window);
+	opengl_texture::reset_unit_cache();
+	gfx::opengl33_vaogeometrybank::reset();
+	m_previewing = true;
+	// lights and visibility of the submodels, for this instance
+	Instance->RaAnimate(m_framestamp);
+	Instance->RaPrepare();
+
+	// bounding sphere of the model, which the camera is placed to fit in its view
+	glm::dvec3 boundsmin{std::numeric_limits<double>::max()};
+	glm::dvec3 boundsmax{std::numeric_limits<double>::lowest()};
+	Preview_Bounds(Instance->pModel->Root, glm::translate(glm::dmat4{1.0}, Instance->location()) * glm::dmat4{Instance->rotation_scale()}, boundsmin, boundsmax);
+	if (boundsmin.x > boundsmax.x)
+	{
+		m_previewing = false;
+		return false;
+	}
+	auto const centre{(boundsmin + boundsmax) * 0.5};
+	auto const radius{std::max(0.01, glm::length(boundsmax - boundsmin) * 0.5)};
+	auto const fieldofview{glm::radians(preview_fieldofview)};
+	auto const distance{radius / std::sin(fieldofview * 0.5)};
+	auto const eye{centre + glm::normalize(preview_viewdirection) * distance};
+	glm::mat4 const view{glm::lookAt(eye, centre, glm::dvec3{0.0, 1.0, 0.0})};
+	// the sphere is given some slack for parts which aren't where their vertices are, like billboards turning to the camera
+	auto const znear{static_cast<float>(std::max(distance - radius * 1.5, distance * 0.05))};
+	auto const zfar{static_cast<float>(distance + radius * 1.5)};
+	auto const projection{perspective_projection_raw(fieldofview, 1.f, znear, zfar)};
+	// level of detail as seen from the camera, like in Render(TAnimModel *)
+	auto const squaredistance{static_cast<float>(glm::length2(Instance->location() - eye) / Global.fDistanceFactor)};
+
+	// key light from above the left shoulder of the viewer, so the visible sides of the model differ in tone
+	auto const forward{glm::normalize(centre - eye)};
+	auto const right{glm::normalize(glm::cross(forward, glm::dvec3{0.0, 1.0, 0.0}))};
+	auto const tosun{glm::normalize(-forward * 0.4 + glm::dvec3{0.0, 1.0, 0.0} - right * 0.9)};
+	m_sunlight.direction = glm::vec3{-tosun};
+	m_sunlight.diffuse = glm::vec4{1.0f, 0.9686275f, 0.9411765f, 1.f};
+	m_sunlight.ambient = glm::vec4{0.65f, 0.66f, 0.68f, 1.f};
+	m_sunlight.factor = 1.f;
+
+	auto const shadows{Shadows && Global.gfx_shadowmap_enabled && (m_shadow_fb != nullptr)};
+	if (shadows)
+	{
+		// one map covering the whole model, seen from the sun
+		m_renderpass.draw_mode = rendermode::shadows;
+		m_renderpass.pass_camera.position() = centre;
+		m_renderpass.pass_camera.modelview() = glm::mat4{glm::lookAt(centre, centre + glm::dvec3{m_sunlight.direction}, glm::dvec3{0.0, 1.0, 0.0})};
+		auto const extent{static_cast<float>(radius * 1.5)};
+		m_renderpass.pass_camera.projection() = ortho_projection(-extent, extent, -extent, extent, -extent, extent);
+		m_renderpass.viewport_camera.position() = eye;
+		setup_matrices();
+		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
+		scene_ubo->update(scene_ubs);
+
+		glViewport(0, 0, m_shadowbuffersize, m_shadowbuffersize);
+		m_shadow_fb->attach(*m_shadow_tex, GL_DEPTH_ATTACHMENT, 0);
+		m_shadow_fb->clear(GL_DEPTH_BUFFER_BIT);
+		glEnable(GL_DEPTH_TEST);
+		setup_drawing(false);
+		Preview_Model(Instance, squaredistance, false);
+		m_shadow_fb->unbind();
+		for (auto &pass : m_shadowpass)
+		{
+			pass = m_renderpass;
+		}
+	}
+
+	// the view is cropped to the part of the image the model covers: a look from a bit further first, to find it,
+	// then a closer one at the full size, as thin parts can show up only there, to refine the crop to a pixel.
+	// the crop maps the area to the image less the margins
+	std::vector<std::uint8_t> coverage;
+	auto const fitsize{targetsize};
+	auto const area{1.0 - 2.0 * Margin / Size}; // half of the extent of the area for the model, in normalized device coordinates
+	glm::dvec2 cropcentre{0.0};
+	auto cropscale{0.75};
+	auto tight{false}; // whether the crop was fitted to the model
+	auto const cropped = [&]() {
+		return glm::mat4{glm::scale(glm::dmat4{1.0}, glm::dvec3{cropscale, cropscale, 1.0}) * glm::translate(glm::dmat4{1.0}, glm::dvec3{-cropcentre, 0.0})} * projection;
+	};
+	for (auto attempt = 0; attempt < 6; ++attempt)
+	{
+		auto const passsize{(tight ? fitsize : std::min(fitsize, 512))};
+		Preview_Color(Instance, squaredistance, passsize, eye, view, cropped(), shadows);
+		coverage.resize(static_cast<std::size_t>(passsize) * passsize);
+		m_preview.hdr_fb->bind();
+		glReadPixels(0, 0, passsize, passsize, GL_STENCIL_INDEX, GL_UNSIGNED_BYTE, coverage.data());
+
+		glm::ivec2 pixelmin{passsize, passsize}, pixelmax{-1, -1};
+		for (auto y = 0; y < passsize; ++y)
+		{
+			auto const *row{coverage.data() + static_cast<std::size_t>(y) * passsize};
+			for (auto x = 0; x < passsize; ++x)
+			{
+				if (row[x] != 0)
+				{
+					pixelmin = glm::min(pixelmin, glm::ivec2{x, y});
+					pixelmax = glm::max(pixelmax, glm::ivec2{x, y});
+				}
+			}
+		}
+		if (pixelmax.x < 0)
+		{
+			if (attempt == 0)
+			{
+				// nothing to see
+				m_previewing = false;
+				m_renderpass.draw_mode = rendermode::none;
+				gl::framebuffer::unbind();
+				return false;
+			}
+			// the crop missed the model, start over with the plain view
+			cropcentre = glm::dvec2{0.0};
+			cropscale = 0.5;
+			tight = false;
+			continue;
+		}
+		// covered area in normalized device coordinates of the uncropped view
+		auto const tondc = [&](glm::ivec2 const &Pixel) { return (glm::dvec2{-1.0} + 2.0 * glm::dvec2{Pixel} / static_cast<double>(passsize)) / cropscale + cropcentre; };
+		auto const ndcmin{tondc(pixelmin)};
+		auto const ndcmax{tondc(pixelmax + 1)};
+		cropcentre = (ndcmin + ndcmax) * 0.5;
+		// a model fitted to the area keeps clear of the image edges, unless the margin is too thin to tell
+		auto const clipped{(pixelmin.x == 0) || (pixelmin.y == 0) || (pixelmax.x == passsize - 1) || (pixelmax.y == passsize - 1)};
+		if (clipped && ((false == tight) || (Margin * passsize / Size >= 2)))
+		{
+			// part of the model is out of the view, look again from further away
+			cropscale *= 0.5;
+			tight = false;
+			continue;
+		}
+		cropscale = 2.0 * area / std::max(ndcmax.x - ndcmin.x, ndcmax.y - ndcmin.y);
+		if (tight)
+		{
+			// measured through a fitted crop, which makes it accurate to a pixel of the fitting pass
+			break;
+		}
+		tight = true;
+	}
+
+	// the image itself
+	Preview_Color(Instance, squaredistance, targetsize, eye, view, cropped(), shadows);
+	glViewport(0, 0, targetsize, targetsize);
+	if (!Global.gfx_usegles && !Global.gfx_shadergamma)
+		glEnable(GL_FRAMEBUFFER_SRGB);
+	m_pfx_tonemapping->apply(*m_preview.hdr_tex, m_preview.ldr_fb.get());
+	if (!Global.gfx_usegles && !Global.gfx_shadergamma)
+		glDisable(GL_FRAMEBUFFER_SRGB);
+	opengl_texture::reset_unit_cache();
+	// the post processing binds its own vertex array, which the geometry banks don't know about
+	gfx::opengl33_vaogeometrybank::reset();
+
+	auto const targetpixels{static_cast<std::size_t>(targetsize) * targetsize};
+	std::vector<std::uint8_t> colors(targetpixels * 4);
+	m_preview.ldr_fb->bind();
+	glReadPixels(0, 0, targetsize, targetsize, GL_RGBA, GL_UNSIGNED_BYTE, colors.data());
+	coverage.resize(targetpixels);
+	m_preview.hdr_fb->bind();
+	glReadPixels(0, 0, targetsize, targetsize, GL_STENCIL_INDEX, GL_UNSIGNED_BYTE, coverage.data());
+	gl::framebuffer::unbind();
+	glDepthMask(GL_TRUE);
+
+	m_previewing = false;
+	m_renderpass.draw_mode = rendermode::none;
+
+	// uncovered pixels are white, the samples are averaged in linear space and the rows flipped to go from the top
+	static auto const tolinear{[]() {
+		std::array<float, 256> table;
+		for (auto idx = 0; idx < 256; ++idx)
+		{
+			auto const value{idx / 255.f};
+			table[idx] = (value <= 0.04045f ? value / 12.92f : std::pow((value + 0.055f) / 1.055f, 2.4f));
+		}
+		return table;
+	}()};
+	auto const tosrgb = [](float const Value) {
+		auto const value{std::clamp(Value, 0.f, 1.f)};
+		auto const encoded{(value <= 0.0031308f ? value * 12.92f : 1.055f * std::pow(value, 1.f / 2.4f) - 0.055f)};
+		return static_cast<std::uint8_t>(std::lround(encoded * 255.f));
+	};
+	auto const samplecount{static_cast<float>(supersampling * supersampling)};
+	Image.resize(static_cast<std::size_t>(Size) * Size * 3);
+	for (auto y = 0; y < Size; ++y)
+	{
+		auto *output{Image.data() + static_cast<std::size_t>(y) * Size * 3};
+		auto const sourcey{(Size - 1 - y) * supersampling};
+		for (auto x = 0; x < Size; ++x)
+		{
+			glm::vec3 color{0.f};
+			for (auto sy = 0; sy < supersampling; ++sy)
+			{
+				for (auto sx = 0; sx < supersampling; ++sx)
+				{
+					auto const sample{static_cast<std::size_t>(sourcey + sy) * targetsize + x * supersampling + sx};
+					if (coverage[sample] != 0)
+					{
+						auto const *rgba{colors.data() + sample * 4};
+						color += glm::vec3{tolinear[rgba[0]], tolinear[rgba[1]], tolinear[rgba[2]]};
+					}
+					else
+					{
+						color += glm::vec3{1.f};
+					}
+				}
+			}
+			color /= samplecount;
+			output[x * 3 + 0] = tosrgb(color.r);
+			output[x * 3 + 1] = tosrgb(color.g);
+			output[x * 3 + 2] = tosrgb(color.b);
+		}
+	}
+	return true;
 }
 
 void opengl33_renderer::Update_Lights(light_array &Lights)

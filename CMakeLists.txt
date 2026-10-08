@@ -112,6 +112,7 @@ set(SOURCES
 "EU07.cpp"
 "export_e3d_standalone.cpp"
 "export_btf_standalone.cpp"
+"nodebank_previews_standalone.cpp"
 "world/Event.cpp"
 "world/EvLaunch.cpp"
 "utilities/Float3d.cpp"

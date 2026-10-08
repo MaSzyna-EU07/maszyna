@@ -93,6 +93,10 @@ public:
     // imgui renderer
 	  virtual class imgui_renderer *GetImguiRenderer() = 0;
 	  virtual void MakeScreenshot() = 0;
+    // draws the model of a scenery instance on its own into a square image of Size pixels on white background, the model
+    // seen in perspective from the front, side and above and filling the image less Margin pixels at each edge.
+    // Image receives rgb rows, top row first. returns false if the backend can't make previews or there's nothing to draw
+    virtual auto Render_Preview( TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image ) -> bool { return false; }
 };
 
 class gfx_renderer_factory
