@@ -460,6 +460,13 @@ void ui_layer::update()
 
 void ui_layer::render()
 {
+	// the frame may have been started by the ui of another mode, when the mode changes; the windows docked in the dockspace
+	// of this one would come undocked if they were drawn in a frame without it
+	if (m_dockspaceframe != ImGui::GetFrameCount())
+	{
+		render_dockspace();
+		m_dockspaceframe = ImGui::GetFrameCount();
+	}
 	render_background();
 	render_panels();
 	render_tooltip();
@@ -490,6 +497,8 @@ void ui_layer::render_internal()
 void ui_layer::begin_ui_frame()
 {
 	begin_ui_frame_internal();
+	render_dockspace();
+	m_dockspaceframe = ImGui::GetFrameCount();
 }
 
 void ui_layer::begin_ui_frame_internal()
@@ -520,8 +529,9 @@ void ui_layer::render_hierarchy(){
 	if(!m_editor_hierarchy)
 		return;
 
-	ImGui::SetNextWindowSize(ImVec2(0, 0));
-	ImGui::Begin(STR_C("Scene Hierarchy"), &m_editor_hierarchy, ImGuiWindowFlags_AlwaysAutoResize);
+	// fitted to the contents when it first appears; no auto resize, which a docked window can't do
+	ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);
+	ImGui::Begin((std::string(STR_C("Scene Hierarchy")) + "###scenehierarchy").c_str(), &m_editor_hierarchy);
 	ImGui::Text("Registered nodes: %zu", scene::Hierarchy.size());
     ImGui::BeginChild("hierarchy_list", ImVec2(500, 300), true);
 
@@ -683,7 +693,7 @@ void ui_layer::render_menu()
 {
 	glm::dvec2 mousepos = Global.cursor_pos;
 
-	if (!((Global.ControlPicking && mousepos.y < 50.0f) || m_imguiio->WantCaptureMouse) || m_suppress_menu)
+	if (m_suppress_menu || (false == m_menu_always && !((Global.ControlPicking && mousepos.y < 50.0f) || m_imguiio->WantCaptureMouse)))
 		return;
 
 	if (ImGui::BeginMainMenuBar())

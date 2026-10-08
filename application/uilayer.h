@@ -139,6 +139,8 @@ protected:
    virtual void render_menu_contents();
    ui_log_panel m_logpanel { "Log", true };
 	bool m_suppress_menu = false; // if `true`, the menu at the top of the window will not be present
+	bool m_menu_always = false; // if `true`, the menu is shown all the time, not only when the mouse is at the top of the window
+	int m_dockspaceframe{-1}; // frame the dockspace was last submitted in
 	// progress bar config
 	float m_progress { 0.0f }; // percentage of filled progres bar, to indicate lengthy operations.
 	float m_subtaskprogress{ 0.0f }; // percentage of filled progres bar, to indicate lengthy operations.
@@ -148,6 +150,8 @@ protected:
 // methods
 	// render() subclass details
    virtual void render_() {}
+	// submitted right after the start of the frame, before any window that may be docked in it
+	virtual void render_dockspace() {}
     // draws background quad with specified earlier texture
     void render_background();
     void render_tooltip();

@@ -61,6 +61,11 @@ class editor_ui : public ui_layer
 	{
 		m_menuoptions = std::move(Renderer);
 	}
+	// draws the tools of the editor mode in the toolbar under the menu
+	void set_toolbar_options(std::function<void()> Renderer)
+	{
+		m_toolbaroptions = std::move(Renderer);
+	}
 	// draws the gizmo settings in the toolset window (the gizmo state lives in the editor mode)
 	void set_gizmo_options(std::function<void()> Renderer)
 	{
@@ -83,6 +88,15 @@ class editor_ui : public ui_layer
 	void set_file_actions(std::function<void()> Save, std::function<void()> Export);
 	void set_new_scenery(std::function<void()> New) { m_newscenery = std::move(New); }
 	void set_open_scenery(std::function<void()> Open) { m_openscenery = std::move(Open); }
+	// part of the main window between the docked windows, where the 3d view is seen; for the overlays placed in it
+	static glm::vec2 view_min()
+	{
+		return m_viewmin;
+	}
+	static glm::vec2 view_max()
+	{
+		return m_viewmax;
+	}
 	// shows outcome of an operation in the layers window
 	void set_status(std::string const &Status, bool const Error = false);
 
@@ -91,6 +105,10 @@ class editor_ui : public ui_layer
 	void render_mode_options(nodebank_panel::edit_mode const Mode);
 	void render_header_sections();
 	void render_menu_contents() override;
+	void render_dockspace() override;
+	void render_() override;
+	// docks the windows of the editor in their default places
+	void build_default_layout(unsigned int const Dockspace);
 	// members
 	itemproperties_panel m_itempropertiespanel{"Node Properties", true}; // not a window of its own, drawn in the toolset window
 	functions_panel m_functionspanel{"Functions", true}; // not a window of its own, its settings are drawn in the toolset tabs
@@ -106,6 +124,10 @@ class editor_ui : public ui_layer
 	model_set_ref m_insertset;
 	std::function<void()> m_filloptions;
 	std::function<void()> m_menuoptions;
+	std::function<void()> m_toolbaroptions;
+	bool m_layoutreset{false}; // the default layout is to be built again on the next frame
+	static glm::vec2 m_viewmin;
+	static glm::vec2 m_viewmax;
 	std::function<void()> m_gizmooptions;
 	std::function<void()> m_arrayoptions;
 	std::function<void()> m_bendoptions;

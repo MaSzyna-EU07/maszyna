@@ -2834,8 +2834,7 @@ void editor_mode::draw_road_overlay() const
 		                                      "LMB: select a piece, a junction, a point (white dot) or a marker";
 	}
 	// shown above the place the track tools put their hints at
-	ImGuiIO const &io = ImGui::GetIO();
-	ImVec2 const position{12.0f, io.DisplaySize.y - 56.0f};
+	ImVec2 const position{editor_ui::view_min().x + 12.0f, editor_ui::view_max().y - 56.0f};
 	auto const size{ImGui::CalcTextSize(hint.c_str())};
 	drawlist->AddRectFilled(ImVec2(position.x - 6.0f, position.y - 4.0f), ImVec2(position.x + size.x + 6.0f, position.y + size.y + 4.0f), IM_COL32(0, 0, 0, 150), 4.0f);
 	drawlist->AddText(position, IM_COL32(255, 255, 255, 230), hint.c_str());

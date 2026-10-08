@@ -425,6 +425,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_gizmo();
 	// gizmo settings, drawn in the toolset window
 	void render_gizmo_options();
+	// edit modes, editor windows and gizmo settings in the toolbar under the menu
+	void render_toolbar();
 	bool m_gizmo_enabled{true};                                  // master switch for the in-viewport gizmo
 	bool m_gizmo_using{false};                                   // tracks an ongoing drag, so a single undo snapshot is taken per drag
 	bool m_gizmo_local{false};                                   // manipulate in the object's local space instead of world space

@@ -16,6 +16,10 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenelayers.h"
 #include "rendering/renderer.h"
 #include "utilities/translation.h"
+#include "imgui/imgui_internal.h"
+
+glm::vec2 editor_ui::m_viewmin{0.0f};
+glm::vec2 editor_ui::m_viewmax{0.0f};
 
 editor_ui::editor_ui()
 {
@@ -29,6 +33,98 @@ editor_ui::editor_ui()
 
 	m_nodebankpanel.mode_options = [this](nodebank_panel::edit_mode const Mode) { render_mode_options(Mode); };
 	m_nodebankpanel.header_sections = [this]() { render_header_sections(); };
+	// the menu is a part of the layout of the editor, not a pop-up as in the driver mode
+	m_menu_always = true;
+}
+
+void editor_ui::render_dockspace()
+{
+	// windows of the editor are docked around the 3d view, which is left free in the middle
+	auto *viewport{ImGui::GetMainViewport()};
+	auto const dockspace{ImGui::GetID("###editordockspace")};
+	if (m_layoutreset || ImGui::DockBuilderGetNode(dockspace) == nullptr)
+	{
+		m_layoutreset = false;
+		build_default_layout(dockspace);
+	}
+	ImGui::DockSpaceOverViewport(dockspace, viewport, ImGuiDockNodeFlags_PassthruCentralNode);
+	if (auto const *central{ImGui::DockBuilderGetCentralNode(dockspace)}; central != nullptr)
+	{
+		m_viewmin = {central->Pos.x, central->Pos.y};
+		m_viewmax = {central->Pos.x + central->Size.x, central->Pos.y + central->Size.y};
+	}
+	else
+	{
+		m_viewmin = {viewport->WorkPos.x, viewport->WorkPos.y};
+		m_viewmax = {viewport->WorkPos.x + viewport->WorkSize.x, viewport->WorkPos.y + viewport->WorkSize.y};
+	}
+}
+
+void editor_ui::build_default_layout(unsigned int const Dockspace)
+{
+	auto *viewport{ImGui::GetMainViewport()};
+	ImGui::DockBuilderRemoveNode(Dockspace);
+	ImGui::DockBuilderAddNode(Dockspace, ImGuiDockNodeFlags_DockSpace | ImGuiDockNodeFlags_PassthruCentralNode);
+	ImGui::DockBuilderSetNodePos(Dockspace, viewport->WorkPos);
+	ImGui::DockBuilderSetNodeSize(Dockspace, viewport->WorkSize);
+	// widths in pixels the current windows need, as parts of the room there is
+	auto const width{std::max(viewport->WorkSize.x, 1.0f)};
+	auto const height{std::max(viewport->WorkSize.y, 1.0f)};
+	auto const left_width{std::min(440.0f * Global.ui_scale, width * 0.3f)};
+	auto const right_width{std::min(460.0f * Global.ui_scale, width * 0.3f)};
+	auto const bottom_height{std::min(300.0f * Global.ui_scale, height * 0.35f)};
+	ImGuiID center{Dockspace};
+	auto const left{ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, left_width / width, nullptr, &center)};
+	auto const right{ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, right_width / (width - left_width), nullptr, &center)};
+	auto const bottom{ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, bottom_height / height, nullptr, &center)};
+	// windows are found by the stable part of their names, after ###
+	for (auto const *window : {"###Toolset", "###Layers", "###scenehierarchy"})
+		ImGui::DockBuilderDockWindow(window, left);
+	for (auto const *window : {"###trackinspector", "###roadeditor", "###editorsettings", "###Include database", "###orthophoto", "###structuregauge"})
+		ImGui::DockBuilderDockWindow(window, right);
+	for (auto const *window : {"###profilestrip", "###editorhistory", "###modelsets"})
+		ImGui::DockBuilderDockWindow(window, bottom);
+	ImGui::DockBuilderFinish(Dockspace);
+}
+
+void editor_ui::render_()
+{
+	auto *viewport{ImGui::GetMainViewport()};
+	auto const flags{ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar};
+	// toolbar under the menu: the tools of the editor mode
+	if (ImGui::BeginViewportSideBar("##editortoolbar", viewport, ImGuiDir_Up, ImGui::GetFrameHeight(), flags))
+	{
+		if (ImGui::BeginMenuBar())
+		{
+			if (m_toolbaroptions)
+				m_toolbaroptions();
+			ImGui::EndMenuBar();
+		}
+	}
+	ImGui::End();
+	// status bar: the outcome of the last operation, and the selected node
+	if (ImGui::BeginViewportSideBar("##editorstatusbar", viewport, ImGuiDir_Down, ImGui::GetFrameHeight(), flags))
+	{
+		if (ImGui::BeginMenuBar())
+		{
+			if (false == m_layerspanel.status.empty())
+			{
+				if (m_layerspanel.status_error)
+					ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", m_layerspanel.status.c_str());
+				else
+					ImGui::TextUnformatted(m_layerspanel.status.c_str());
+			}
+			if (m_node != nullptr)
+			{
+				auto const name{m_node->name().empty() ? std::string{"(none)"} : m_node->name()};
+				auto const label{std::string{STR_C("Selected:")} + " " + name};
+				ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowWidth() - ImGui::CalcTextSize(label.c_str()).x - ImGui::GetStyle().ItemSpacing.x * 2.0f));
+				ImGui::TextUnformatted(label.c_str());
+			}
+			ImGui::EndMenuBar();
+		}
+	}
+	ImGui::End();
 }
 
 // updates state of UI elements
@@ -157,6 +253,9 @@ void editor_ui::render_menu_contents()
 
 	if (ImGui::BeginMenu(STR_C("Mode windows")))
 	{
+		if (ImGui::MenuItem(STR_C("Reset window layout")))
+			m_layoutreset = true;
+		ImGui::Separator();
 		ImGui::MenuItem(STR_C("Toolset"), nullptr, &m_nodebankpanel.is_open);
 		ImGui::MenuItem(STR_C("Layers"), nullptr, &m_layerspanel.is_open);
 		ImGui::MenuItem(STR_C("Include database"), nullptr, &m_includespanel.is_open);

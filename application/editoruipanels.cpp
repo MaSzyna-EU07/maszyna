@@ -892,7 +892,7 @@ void nodebank_panel::open_sets_window(int const Setid)
 void nodebank_panel::render_sets_window()
 {
 	ImGui::SetNextWindowSize(ImVec2S(600, 380), ImGuiCond_FirstUseEver);
-	if (false == ImGui::Begin(STR_C("Model sets"), &m_setsopen, ImGuiWindowFlags_NoCollapse))
+	if (false == ImGui::Begin((std::string(STR_C("Model sets")) + "###modelsets").c_str(), &m_setsopen, ImGuiWindowFlags_NoCollapse))
 	{
 		ImGui::End();
 		return;

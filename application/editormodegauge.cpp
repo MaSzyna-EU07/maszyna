@@ -708,7 +708,7 @@ void editor_mode::render_gauge_window()
 	if (false == m_gauge.open)
 		return;
 	ImGui::SetNextWindowSize(ImVec2(380.0f, 420.0f), ImGuiCond_FirstUseEver);
-	if (false == ImGui::Begin(STR_C("Structure gauge"), &m_gauge.open))
+	if (false == ImGui::Begin((std::string(STR_C("Structure gauge")) + "###structuregauge").c_str(), &m_gauge.open))
 	{
 		ImGui::End();
 		return;

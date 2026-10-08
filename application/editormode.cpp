@@ -487,6 +487,7 @@ editor_mode::editor_mode() {
 	// the area fill settings live in the node bank window, in the tab of the fill mode
 	ui()->set_fill_options([this]() { render_area_fill(); });
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
+	ui()->set_toolbar_options([this]() { render_toolbar(); });
 	ui()->set_array_options([this]() { render_array(); });
 	ui()->set_bend_options([this]() { render_bend(); });
 	ui()->set_file_actions([this]() { save(); }, [this]() { export_scenery(); });
@@ -1423,7 +1424,7 @@ bool editor_mode::update()
 
 void editor_mode::render_settings()
 {
-    ImGui::Begin(STR_C("Editor Settings"), &m_settings_open, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Begin((std::string(STR_C("Editor Settings")) + "###editorsettings").c_str(), &m_settings_open);
 
     if (ImGui::BeginTabBar("##editorsettings"))
     {
@@ -2964,7 +2965,7 @@ void editor_mode::render_orthophoto_window()
     if (false == m_orthophoto_window)
         return;
     ImGui::SetNextWindowSize(ImVec2(430.0f, 0.0f), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin(STR_C("Orthophoto##window"), &m_orthophoto_window, ImGuiWindowFlags_AlwaysAutoResize))
+    if (ImGui::Begin((std::string(STR_C("Orthophoto##window")) + "###orthophoto").c_str(), &m_orthophoto_window))
         render_orthophoto_ui();
     ImGui::End();
 }
@@ -3621,6 +3622,51 @@ void editor_mode::render_array()
     if (false == m_array.status.empty())
         ImGui::TextUnformatted(m_array.status.c_str());
     ImGui::PopID();
+}
+
+void editor_mode::render_toolbar()
+{
+	// edit modes of the node bank, each of them takes the mouse over from the track window
+	std::pair<char const *, nodebank_panel::edit_mode> const modes[] = {
+	    {STR_C("Select"), nodebank_panel::MODIFY}, {STR_C("Insert"), nodebank_panel::ADD}, {STR_C("Brush"), nodebank_panel::BRUSH}, {STR_C("Area fill"), nodebank_panel::FILL}, {STR_C("Copy to bank"), nodebank_panel::COPY}};
+	for (auto const &mode : modes)
+	{
+		if (ImGui::MenuItem(mode.first, nullptr, ui()->mode() == mode.second))
+		{
+			m_track_window_open = false;
+			ui()->set_mode(mode.second);
+		}
+	}
+	ImGui::Separator();
+	if (ImGui::MenuItem(STR_C("Tracks"), nullptr, m_track_window_open))
+	{
+		if (m_track_window_open)
+			m_track_window_open = false;
+		else
+			show_track_tab(m_track_tab);
+	}
+	if (ImGui::MenuItem("Roads", nullptr, m_roadtool.window))
+	{
+		m_roadtool.window = !m_roadtool.window;
+		if (m_roadtool.window)
+			m_track_window_open = false;
+	}
+	ImGui::Separator();
+	if (m_gizmo_enabled)
+	{
+		std::pair<char const *, gizmo_operation> const operations[] = {
+		    {STR_C("Translate (Q)"), gizmo_operation::translate}, {STR_C("Rotate (W)"), gizmo_operation::rotate}, {STR_C("Scale (E)"), gizmo_operation::scale}};
+		for (auto const &operation : operations)
+		{
+			if (ImGui::MenuItem(operation.first, nullptr, m_gizmo_op == operation.second))
+				m_gizmo_op = operation.second;
+		}
+		if (m_gizmo_op != gizmo_operation::scale && ImGui::MenuItem(STR_C("Local space (R)"), nullptr, m_gizmo_local))
+			m_gizmo_local = !m_gizmo_local;
+		ImGui::Separator();
+	}
+	if (ImGui::MenuItem(STR_C("Top view, orthographic (O)"), nullptr, Global.EditorOrtho))
+		toggle_ortho();
 }
 
 void editor_mode::render_gizmo_options()
@@ -4585,7 +4631,7 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
 void editor_mode::render_change_history(){
 
 
-    ImGui::Begin(STR_C("Editor History"), &m_change_history, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Begin((std::string(STR_C("Editor History")) + "###editorhistory").c_str(), &m_change_history);
     int maxsize = m_max_history_size;
     if (ImGui::InputInt(STR_C("Max history size"), &maxsize))
     {

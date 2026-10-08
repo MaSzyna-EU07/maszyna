@@ -4593,3 +4593,9 @@ msgstr "Głowica na bramkę wisi nad osią toru tak wysoko nad główkami szyn"
 
 msgid " not read"
 msgstr " nieodczytywany"
+
+msgid "Reset window layout"
+msgstr "Przywróć układ okien"
+
+msgid "Selected:"
+msgstr "Zaznaczono:"

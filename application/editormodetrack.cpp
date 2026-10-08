@@ -3657,8 +3657,10 @@ void editor_mode::draw_track_hints()
 	auto hints{track_key_hints(false)};
 	if (hints.size() > 4)
 		hints.resize(4);
-	auto const bottom{io.DisplaySize.y};
-	auto const available{io.DisplaySize.x * 0.6f - 2.0f * margin};
+	// in the part of the window the 3d view is seen in, between the docked windows
+	auto const left{editor_ui::view_min().x + margin};
+	auto const bottom{editor_ui::view_max().y};
+	auto const available{(editor_ui::view_max().x - editor_ui::view_min().x) * 0.6f - 2.0f * margin};
 	auto const mode{track_mode_name()};
 	std::vector<std::vector<key_hint const *>> lines(1);
 	float used{ImGui::CalcTextSize(mode.c_str()).x + 2.0f * pad + gap};
@@ -3679,13 +3681,13 @@ void editor_mode::draw_track_hints()
 		float width{i == 0 ? ImGui::CalcTextSize(mode.c_str()).x + 2.0f * pad : 0.0f};
 		for (auto const *hint : lines[i])
 			width += (width > 0.0f ? gap : 0.0f) + width_of(*hint);
-		drawlist->AddRectFilled(ImVec2(margin - 6.0f, y - pad - 2.0f), ImVec2(margin + width + 6.0f, y + lineheight - pad - 2.0f), IM_COL32(0, 0, 0, 160), 4.0f);
-		auto x{margin};
+		drawlist->AddRectFilled(ImVec2(left - 6.0f, y - pad - 2.0f), ImVec2(left + width + 6.0f, y + lineheight - pad - 2.0f), IM_COL32(0, 0, 0, 160), 4.0f);
+		auto x{left};
 		if (i == 0)
 			x += chip(ImVec2(x, y), mode.c_str(), IM_COL32(60, 140, 230, 235), IM_COL32(255, 255, 255, 255));
 		for (auto const *hint : lines[i])
 		{
-			if (x > margin)
+			if (x > left)
 				x += gap;
 			x += chip(ImVec2(x, y), hint->key, IM_COL32(255, 210, 60, 220), IM_COL32(20, 20, 20, 255)) + 5.0f;
 			drawlist->AddText(ImVec2(x, y), IM_COL32(255, 255, 255, 230), hint->action.c_str());
