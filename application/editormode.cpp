@@ -1361,9 +1361,9 @@ bool editor_mode::update()
             signal_move_update();
             draw_signal_overlay();
         }
+        draw_parallel_preview();
         if (m_track_tab == track_tab::lineside)
         {
-            draw_parallel_preview();
             draw_hekto_overlay();
             draw_fouling_overlay();
             draw_vehicle_marker();

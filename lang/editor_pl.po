@@ -2230,6 +2230,54 @@ msgstr "Nic nie dało się naprawić: to rozjazdy albo odcinki w plikach, który
 msgid "Parallel track"
 msgstr "Tor równoległy"
 
+msgid "Parallel"
+msgstr "Równoległy"
+
+msgid "First select a straight path (LMB). Then a second track is laid beside it.\nAlong the line the curves are included: R minus or plus the spacing, same transitions and cant."
+msgstr "Najpierw zaznacz odcinek prosty (LPM). Potem drugi tor kładzie się obok.\nWzdłuż linii łuki wchodzą: R minus albo plus rozstaw, te same krzywe przejściowe i przechyłka."
+
+msgid "First select a straight path in the view."
+msgstr "Najpierw zaznacz odcinek prosty w widoku."
+
+msgid "The selected path isn't a straight. Select a straight first."
+msgstr "Zaznaczony odcinek nie jest prostą. Najpierw zaznacz prostą."
+
+msgid "First select a straight. Creates a new track beside it; the selected path stays."
+msgstr "Najpierw zaznacz prostą. Tworzy nowy tor obok; zaznaczony odcinek zostaje."
+
+msgid "Two paths selected: set the spacing of the other in Select. The first must be a straight."
+msgstr "Dwa odcinki zaznaczone: rozstaw drugiego ustawiasz w Wyborze. Pierwszy musi być prostą."
+
+msgid "First selected must be a straight. It stays; the other is moved to this spacing."
+msgstr "Pierwszy zaznaczony musi być prostą. On zostaje; drugi jest przestawiany na ten rozstaw."
+
+msgid "Lay %zu paths, %.1f m"
+msgstr "Ułóż %zu odcinków, %.1f m"
+
+msgid "first select a straight, then a second track beside it in the panel"
+msgstr "najpierw zaznacz prostą, potem drugi tor obok niej w panelu"
+
+msgid "Make parallel"
+msgstr "Ustaw równolegle"
+
+msgid "%s stays. %s is moved to this spacing, taking its curves."
+msgstr "%s zostaje. %s jest przestawiany na ten rozstaw, z jego łukami."
+
+msgid "Now %.2f m on the right"
+msgstr "Teraz %.2f m po prawej"
+
+msgid "Now %.2f m on the left"
+msgstr "Teraz %.2f m po lewej"
+
+msgid "Set %s to %.2f m"
+msgstr "Ustaw %s na %.2f m"
+
+msgid "%s set parallel to %s, %.2f m away; Ctrl+Z takes it back"
+msgstr "%s ustawiony równolegle do %s, rozstaw %.2f m; Ctrl+Z cofa"
+
+msgid "Two selected paths: set the scope to this path, so the other takes its shape at the spacing"
+msgstr "Dwa zaznaczone odcinki: zakres na ten odcinek, wtedy drugi bierze jego kształt w rozstawie"
+
 msgid "Parallel track of %zu paths, %.1f m, %.2f m away; Ctrl+Z takes it back"
 msgstr "Tor równoległy z %zu odcinków, %.1f m, w rozstawie %.2f m; Ctrl+Z cofa"
 
@@ -2674,8 +2722,8 @@ msgstr "Parzyste hektometry po prawej, nieparzyste po lewej"
 msgid "Objects"
 msgstr "Obiekty"
 
-msgid "Along the track: hectometre posts, fouling point markers, a parallel track, a vehicle to drive"
-msgstr "Przy torze: słupki hektometrowe, wskaźniki ukresu, tor równoległy, pojazd do jazdy"
+msgid "Along the track: hectometre posts, fouling point markers, a vehicle to drive"
+msgstr "Przy torze: słupki hektometrowe, wskaźniki ukresu, pojazd do jazdy"
 
 msgid "Model along the track: release where it ends"
 msgstr "Model wzdłuż toru: puść tam, gdzie się kończy"

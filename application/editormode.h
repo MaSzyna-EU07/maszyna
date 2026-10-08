@@ -1022,6 +1022,9 @@ class editor_mode : public application_mode, private editor_track::observer
 		int built_side{0};
 		int built_scope{-1};
 		std::size_t built_history{0};
+		TTrack *pair_src{nullptr};
+		TTrack *pair_dst{nullptr};
+		double measured{0.0};
 		std::vector<segment_data> pieces;
 		std::vector<TTrack *> styles;
 		double length{0.0};
@@ -1029,9 +1032,15 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::string status;
 	};
 	parallel_tool m_parallel;
+	TTrack *parallel_source() const;
+	TTrack *parallel_target() const;
 	void parallel_update();
+	void render_parallel_controls(bool const Scope = true);
 	void render_parallel_ui();
+	void render_parallel_set_ui();
 	void parallel_build();
+	void parallel_apply();
+	bool parallel_preview_visible() const;
 	void draw_parallel_preview() const;
 
 	// scenery templates standing by the track, placed and checked by the editor

@@ -586,7 +586,7 @@ std::array<editor_mode::track_mode, 12> const &editor_mode::track_modes()
 	    {"Straight", "G", track_tab::straights, "The whole straight through the selected path: drag its ends or the middle, break it, shift it"},
 	    {"Curve", "C", track_tab::route, "The line through the path, switch to switch: vertices with the radii, transitions and cant of the curves"},
 	    {"Signals", "H", track_tab::signals, "Signals by the track, from the templates of the scenery, with the event the train reads them by"},
-	    {"Objects", "B", track_tab::lineside, "Along the track: hectometre posts, fouling point markers, a parallel track, a vehicle to drive"},
+	    {"Objects", "B", track_tab::lineside, "Along the track: hectometre posts, fouling point markers, a vehicle to drive"},
 	    {"Profile", "P", track_tab::profile, "Vertical profile (grade line) along the line"},
 	    {"Speed", "V", track_tab::speed, "Speed limits of the paths against the speed their geometry allows"},
 	    {"Joints", "J", track_tab::joints, "Ends of the paths which almost meet, steps, kinks, jumps of the cant and of the grade at the joints"},
@@ -3448,7 +3448,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	if (m_lay.active)
 	{
 		if (m_lay.points.empty())
-			hints = {{"LMB", "start of the new track, on the ground or at a free end"}, {"Drag from a free end", "straight along it, to another free end: a curve joining them"}, {"Esc", "stop laying"}};
+			hints = {{"LMB", "start of the new track, on the ground or at a free end"}, {"Drag from a free end", "straight along it, to another free end: a curve joining them"}, {"Parallel", "first select a straight, then a second track beside it in the panel"}, {"Esc", "stop laying"}};
 		else
 		{
 			hints = {{"LMB", m_lay.points.size() == 1 ? "end of the straight, or a vertex of a curve" : "next vertex of the curve"}, {"LMB on a free end", "join and lay"}, {"Enter", "lay up to the cursor"}, {"Backspace", "take back the point"}, {"Esc", "cancel"}};
@@ -4517,6 +4517,9 @@ void editor_mode::render_lay_ui()
 		if (editor_track::can_edit_geometry(*track, reason))
 			render_extend_ui();
 	}
+	if (ImGui::CollapsingHeader(STR_C("Parallel track"), ImGuiTreeNodeFlags_DefaultOpen))
+		render_parallel_ui();
+	ImGui::Separator();
 	ImGui::PushItemWidth(120.0f);
 	ImGui::DragScalar(STR_C("Curve radius (m)"), ImGuiDataType_Double, &tool.radius, 5.0f, nullptr, nullptr, "%.0f");
 	item_tooltip("Drag to change, Ctrl+click to type the value");
