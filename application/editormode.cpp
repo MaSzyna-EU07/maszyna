@@ -41,6 +41,7 @@ extern char **environ;
 #include "rendering/renderer.h"
 #include "model/AnimModel.h"
 #include "model/Model3d.h"
+#include "world/Track.h"
 #include "utilities/Float3d.h"
 #include "scene/scene.h"
 #include "scene/scenelayers.h"
@@ -1192,6 +1193,7 @@ void editor_mode::redo_one()
 
 bool editor_mode::update()
 {
+    Global.editor_tracks = (current_work_area() == work_area::tracks);
     selftest_step();
     if (m_vehicle.leave)
     {
@@ -4544,6 +4546,7 @@ void editor_mode::enter()
 
 void editor_mode::exit()
 {
+    Global.editor_tracks = false;
     EditorModeFlag = false;
     Global.ControlPicking = m_statebackup.picking;
     FreeFlyModeFlag = m_statebackup.freefly;
@@ -5012,8 +5015,8 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                         }
                     }
 
-                    // ignore picks that are beyond allowed placement distance
-                    if (node) {
+                    // models stay within placement distance; tracks in the track workspace have no range cap
+                    if (node && false == (Global.editor_tracks && dynamic_cast<TTrack *>(node) != nullptr)) {
                         double const dist = glm::distance(node->location(), glm::dvec3{Global.pCamera.Pos});
                         if (dist > static_cast<double>(kMaxPlacementDistance))
                         {

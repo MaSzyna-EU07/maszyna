@@ -222,10 +222,6 @@ void editor_mode::select_track(scene::basic_node *Node)
 		m_track_point = {};
 		return;
 	}
-	glm::dvec3 const camera{Global.pCamera.Pos};
-	if (glm::distance(glm::dvec3(track->get_nearest_point(camera)), camera) > static_cast<double>(kMaxPlacementDistance))
-		return;
-
 	if (track != m_node)
 	{
 		m_track_point = {};
@@ -3795,14 +3791,21 @@ void editor_mode::update_build_tools()
 	lay.preview_length = 0.0;
 	if (false == lay.active)
 		return;
-	auto mouse{ground};
+	// geometric ray, same as extend: Mouse_Position() is a delayed depth pick and lags the cursor
+	screen_projection const lay_projection;
+	double const height{false == lay.points.empty() ? lay.points.back().y : lay.start.track != nullptr ? lay.start.position.y : 0.0};
+	glm::dvec3 mouse{ground};
+	if (m_cursor_override.has_value())
+		mouse = glm::dvec3{m_cursor_override->x, height, m_cursor_override->z};
+	else if (false == lay_projection.on_level(io.MousePos, height, mouse))
+		mouse = ground;
 	glm::dvec2 heading;
 	bool const straight{io.KeyShift && lay_heading(heading)};
 	if (straight)
 	{
 		auto const &last{lay.points.back()};
-		auto const along{std::max(0.0, glm::dot(glm::dvec2{ground.x - last.x, ground.z - last.z}, heading))};
-		mouse = {last.x + heading.x * along, ground.y, last.z + heading.y * along};
+		auto const along{std::max(0.0, glm::dot(glm::dvec2{mouse.x - last.x, mouse.z - last.z}, heading))};
+		mouse = {last.x + heading.x * along, mouse.y, last.z + heading.y * along};
 	}
 	lay.mouse = typed_lay(mouse);
 	lay.mouse_snap = straight ? editor_track::snap_target{} : m_typed.empty() ? snap_free_end(lay.mouse, cursor, nullptr, kRailCategory, {}) : editor_track::find_free_end(nullptr, kRailCategory, lay.mouse, kLaySnapRadius, {});
@@ -3907,7 +3910,7 @@ glm::dvec3 editor_mode::cursor_level(double const Height) const
 	glm::dvec3 const ground{cursor_ground()};
 	screen_projection const projection;
 	glm::dvec3 level;
-	if (false == projection.on_level(ImGui::GetIO().MousePos, Height, level) || glm::distance(level, glm::dvec3{Global.pCamera.Pos}) > static_cast<double>(kMaxPlacementDistance))
+	if (false == projection.on_level(ImGui::GetIO().MousePos, Height, level) || (false == Global.editor_tracks && glm::distance(level, glm::dvec3{Global.pCamera.Pos}) > static_cast<double>(kMaxPlacementDistance)))
 		return ground;
 	return level;
 }
@@ -5049,14 +5052,10 @@ void editor_mode::draw_build_overlay() const
 			previous = next;
 		}
 	};
-	glm::dvec3 const camera{Global.pCamera.Pos};
 	auto const &display{ImGui::GetIO().DisplaySize};
 	for (auto const *track : simulation::Paths.sequence())
 	{
 		if (track == nullptr || track->m_editorremoved || track->m_paths.empty())
-			continue;
-		auto const &first{track->m_paths.front().points};
-		if (glm::distance(first[segment_data::point::start], camera) > kJointRange && glm::distance(first[segment_data::point::end], camera) > kJointRange)
 			continue;
 		for (auto const &path : track->m_paths)
 			for (auto const point : {segment_data::point::start, segment_data::point::end})
