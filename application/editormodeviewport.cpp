@@ -204,17 +204,15 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 	case work_area::terrain:
 	{
 		// what the left button does on the terrain
-		auto const choose = [this](bool const Sculpt, bool const Smooth, bool const Chunks) {
-			return [this, Sculpt, Smooth, Chunks]() {
-				m_terrain_sculpt = Sculpt;
-				m_terrain_brush_smooth = Smooth;
-				m_chunk_edit = Chunks;
-			};
-		};
-		Buttons.push_back({icon::select, STR_C("Select"), nullptr, STR_C("LMB picks the models, as in the surroundings"), false == m_terrain_sculpt && false == m_chunk_edit, choose(false, m_terrain_brush_smooth, false)});
-		Buttons.push_back({icon::sculpt, STR_C("Sculpt"), nullptr, STR_C("LMB raises the terrain under the brush, Shift+LMB lowers it"), m_terrain_sculpt && false == m_terrain_brush_smooth, choose(true, false, false)});
-		Buttons.push_back({icon::smooth, STR_C("Smooth"), nullptr, STR_C("LMB evens the terrain out under the brush"), m_terrain_sculpt && m_terrain_brush_smooth, choose(true, true, false)});
-		Buttons.push_back({icon::chunks, STR_C("Chunks"), nullptr, STR_C("LMB adds a chunk next to the clicked one, Shift+LMB deletes it"), m_chunk_edit, choose(false, m_terrain_brush_smooth, true)});
+		auto const choose = [this](terrain_tool const Tool) { return [this, Tool]() { m_terrain_tool = Tool; }; };
+		auto const chosen = [this](terrain_tool const Tool) { return m_terrain_tool == Tool; };
+		Buttons.push_back({icon::select, STR_C("Select"), nullptr, STR_C("LMB picks the models, as in the surroundings"), chosen(terrain_tool::none), choose(terrain_tool::none)});
+		Buttons.push_back({icon::sculpt, STR_C("Sculpt"), nullptr, STR_C("LMB raises the terrain under the brush, Shift+LMB lowers it"), chosen(terrain_tool::sculpt), choose(terrain_tool::sculpt)});
+		Buttons.push_back({icon::smooth, STR_C("Smooth"), nullptr, STR_C("LMB evens the terrain out under the brush"), chosen(terrain_tool::smooth), choose(terrain_tool::smooth)});
+		Buttons.push_back({icon::brush, STR_C("Paint"), nullptr, STR_C("LMB paints the material chosen in the palette, Shift+LMB the first material of the palette"), chosen(terrain_tool::paint), choose(terrain_tool::paint)});
+		Buttons.push_back({icon::chunks, STR_C("Chunks"), nullptr, STR_C("LMB adds a chunk next to the clicked one, Shift+LMB removes it"), chosen(terrain_tool::chunks), choose(terrain_tool::chunks)});
+		Buttons.push_back({icon::count, STR_C("Point spacing"), nullptr, STR_C("LMB gives the clicked chunk the point spacing chosen in the tool options"), chosen(terrain_tool::spacing), choose(terrain_tool::spacing)});
+		Buttons.push_back({icon::area_fill, STR_C("Water"), nullptr, STR_C("LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"), chosen(terrain_tool::water), choose(terrain_tool::water)});
 		auto const orthophoto{m_orthophoto.enabled()};
 		Buttons.push_back({icon::orthophoto, STR_C("Orthophoto"), nullptr, STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"), orthophoto,
 		                   [this, orthophoto]() { m_orthophoto.enabled(false == orthophoto); }, true});

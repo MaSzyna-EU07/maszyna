@@ -440,6 +440,8 @@ namespace
                 }
             }
         }
+        // the heightmap terrain answers for itself, with its full grid whatever is drawn of it
+        EditorTerrain.gather_triangles(Min, Max, Out);
         trim_ground_meshes();
         // going through the scenery is the one thing here which can take long enough to be felt; when it does it's worth knowing
         auto const elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
@@ -1310,39 +1312,11 @@ bool editor_mode::update()
     // note: the streamer is advanced centrally in the application main loop (so it runs in every
     // mode), using the published Global.pCamera; nothing to do here
 
-    // continuous terrain sculpting while the left mouse button is held in sculpt mode
-    if (m_terrain_sculpt && mouseHold)
-        handle_terrain_sculpt(deltarealtime);
-
-    // debounced auto mesh simplification: once sculpting has settled for a short while, simplify
-    // any chunk that was edited. holding the brush keeps the timer reset so we don't churn mid-stroke.
-    if (m_terrain_auto_optimize)
-    {
-        auto const terrains = active_terrains();
-        bool any_dirty = false;
-        for (editor_terrain *terrain : terrains)
-            if (terrain->dirty())
-            {
-                any_dirty = true;
-                break;
-            }
-
-        if (!any_dirty || (m_terrain_sculpt && mouseHold))
-        {
-            m_terrain_idle = 0.0; // actively editing (or nothing pending): hold off
-        }
-        else
-        {
-            m_terrain_idle += deltarealtime;
-            if (m_terrain_idle >= 0.5) // settle time
-            {
-                for (editor_terrain *terrain : terrains)
-                    if (terrain->dirty())
-                        terrain->optimize(m_terrain_simplify_error);
-                m_terrain_idle = 0.0;
-            }
-        }
-    }
+    // the brush of the terrain works while the left mouse button is held
+    if (terrain_brush() && mouseHold)
+        handle_terrain_brush(deltarealtime);
+    if (m_terrain_open)
+        draw_terrain_overlay();
 
     // --- geoportal orthophoto: streamed around the camera, drawn beneath the other overlays ---
     m_orthophoto.update(Camera.Pos);
@@ -1480,172 +1454,364 @@ void editor_mode::render_settings()
     ImGui::End();
 }
 
+namespace
+{
+    // point spacings offered for the chunks, as the user reads them
+    char const *spacing_label(float const Spacing)
+    {
+        return Spacing < 0.75f ? "0.5 m" : Spacing < 1.5f ? "1 m" : Spacing < 3.f ? "2 m" : "5 m";
+    }
+
+    bool spacing_combo(char const *Label, float &Spacing)
+    {
+        bool changed = false;
+        ImGui::SetNextItemWidth(120.0f);
+        if (ImGui::BeginCombo(Label, spacing_label(Spacing)))
+        {
+            for (auto const spacing : heightmap::spacings)
+                if (ImGui::Selectable(spacing_label(spacing), spacing == Spacing))
+                {
+                    Spacing = spacing;
+                    changed = true;
+                }
+            ImGui::EndCombo();
+        }
+        return changed;
+    }
+
+    // grid points without a height take the height of the nearest point which has one (by steps along the grid)
+    void fill_from_nearest(std::vector<double> &Heights, std::vector<char> &Found, std::size_t const Side)
+    {
+        std::deque<std::size_t> queue;
+        for (std::size_t index = 0; index < Found.size(); ++index)
+            if (Found[index] != 0)
+                queue.push_back(index);
+        while (false == queue.empty())
+        {
+            auto const index = queue.front();
+            queue.pop_front();
+            auto const ix = index % Side, iz = index / Side;
+            auto const visit = [&](std::size_t const Next) {
+                if (Found[Next] != 0)
+                    return;
+                Found[Next] = 1;
+                Heights[Next] = Heights[index];
+                queue.push_back(Next);
+            };
+            if (ix > 0)
+                visit(index - 1);
+            if (ix + 1 < Side)
+                visit(index + 1);
+            if (iz > 0)
+                visit(index - Side);
+            if (iz + 1 < Side)
+                visit(index + Side);
+        }
+    }
+} // namespace
+
 void editor_mode::render_terrain_ui()
 {
-    ImGui::SetNextItemWidth(120.0f);
-    ImGui::InputInt(STR_C("Grid cells"), &m_terrain_cells);
-    m_terrain_cells = std::clamp(m_terrain_cells, 1, 512);
-    ImGui::SetNextItemWidth(120.0f);
-    ImGui::InputFloat(STR_C("Cell size (m)"), &m_terrain_cellsize);
-    if (m_terrain_cellsize < 0.1f)
-        m_terrain_cellsize = 0.1f;
-    ImGui::SetNextItemWidth(120.0f);
-    ImGui::InputFloat(STR_C("Base height (m)"), &m_terrain_baseheight);
-    ImGui::SetNextItemWidth(200.0f);
-    ImGui::InputText(STR_C("Texture (optional)"), m_terrain_texture, IM_ARRAYSIZE(m_terrain_texture));
-
-    if (ImGui::Button(STR_C("Create flat terrain")))
+    if (false == m_streamer.active())
     {
-        // centre the new patch horizontally on the camera, flat at the requested base height
-        glm::dvec3 const center(Camera.Pos.x, static_cast<double>(m_terrain_baseheight), Camera.Pos.z);
-        auto terrain = std::make_unique<editor_terrain>();
-        if (terrain->create(center, m_terrain_cells, m_terrain_cellsize, std::string(m_terrain_texture)))
-        {
-            if (m_terrain_auto_optimize)
-                terrain->optimize(m_terrain_simplify_error);
-            m_terrains.push_back(std::move(terrain));
-        }
-        else
-            WriteLog("Editor: failed to create terrain", logtype::generic);
+        ImGui::TextWrapped("%s", STR_C("The scenery has no heightmap terrain yet. It's kept in the folder terrain/<name of the scenery>/ of the simulator, "
+                                       "and written there when the scenery is saved."));
+        if (ImGui::Button(STR_C("Make heightmap terrain for this scenery")))
+            ensure_terrain();
+        return;
     }
+    ImGui::TextDisabled(STR_C("Folder: %s"), m_streamer.directory().c_str());
+    ImGui::TextDisabled(STR_C("Chunks in memory: %zu%s"), m_streamer.resident(), m_streamer.modified() ? STR_C(", changes not saved yet") : "");
 
-    ImGui::SetNextItemWidth(120.0f);
-    ImGui::InputInt(STR_C("Chunks / side"), &m_terrain_chunks);
-    m_terrain_chunks = std::clamp(m_terrain_chunks, 1, 32);
+    // what the left mouse button does
+    auto tool = static_cast<int>(m_terrain_tool);
+    auto const radio = [&](char const *Label, terrain_tool const Tool, char const *Tooltip) {
+        ImGui::RadioButton(Label, &tool, static_cast<int>(Tool));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", Tooltip);
+    };
+    radio(STR_C("Select"), terrain_tool::none, STR_C("LMB picks the models, as in the surroundings"));
     ImGui::SameLine();
-    if (ImGui::Button(STR_C("Create chunked terrain")))
-        create_chunked_terrain();
-    ImGui::TextDisabled(STR_C("total %d x %d m, %d chunks"),
-                        static_cast<int>(m_terrain_chunks * m_terrain_cells * m_terrain_cellsize),
-                        static_cast<int>(m_terrain_chunks * m_terrain_cells * m_terrain_cellsize),
-                        m_terrain_chunks * m_terrain_chunks);
+    radio(STR_C("Chunks"), terrain_tool::chunks, STR_C("LMB adds a chunk shaped as the ground under it, next to the clicked one; Shift+LMB removes the clicked chunk"));
+    ImGui::SameLine();
+    radio(STR_C("Spacing"), terrain_tool::spacing, STR_C("LMB gives the clicked chunk the point spacing chosen below, the ground resampled"));
+    radio(STR_C("Sculpt"), terrain_tool::sculpt, STR_C("LMB raises the terrain under the brush, Shift+LMB lowers it"));
+    ImGui::SameLine();
+    radio(STR_C("Smooth"), terrain_tool::smooth, STR_C("LMB evens the terrain out under the brush"));
+    ImGui::SameLine();
+    radio(STR_C("Paint"), terrain_tool::paint, STR_C("LMB paints the material chosen in the palette, Shift+LMB the first material of the palette"));
+    ImGui::SameLine();
+    radio(STR_C("Water"), terrain_tool::water, STR_C("LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"));
+    m_terrain_tool = static_cast<terrain_tool>(tool);
 
-    if (ImGui::Checkbox(STR_C("Chunk edit mode (LMB add neighbour / Shift = delete)"), &m_chunk_edit))
-        if (m_chunk_edit)
-            m_terrain_sculpt = false; // mutually exclusive with sculpting
-    ImGui::Text(STR_C("Grid chunks: %zu"), m_grid_chunks.size());
-
-    ImGui::Separator();
-    ImGui::TextUnformatted(STR_C("Streaming (open world, follows camera)"));
-    ImGui::SetNextItemWidth(120.0f);
-    ImGui::InputInt(STR_C("Stream radius"), &m_stream_radius);
-    m_stream_radius = std::clamp(m_stream_radius, 0, 16);
-    ImGui::Checkbox(STR_C("Persist edits to disk (16-bit)"), &m_stream_persist);
-    bool streaming = m_streamer.active();
-    if (ImGui::Checkbox(STR_C("Stream terrain"), &streaming))
+    if (ImGui::CollapsingHeader(STR_C("Chunks"), ImGuiTreeNodeFlags_DefaultOpen))
     {
-        if (streaming)
-        {
-            // per-scenery chunk folder so chunks from different sceneries don't collide
-            std::string scenery = Global.SceneryFile;
-            auto const slash = scenery.find_last_of("/\\");
-            if (slash != std::string::npos)
-                scenery = scenery.substr(slash + 1);
-            auto const dot = scenery.find_last_of('.');
-            if (dot != std::string::npos)
-                scenery = scenery.substr(0, dot);
-            if (scenery.empty())
-                scenery = "default";
-            m_streamer.directory("editor_terrain/" + scenery);
-
-            m_streamer.configure(m_terrain_cells, m_terrain_cellsize, m_stream_radius,
-                                 m_terrain_baseheight, std::string(m_terrain_texture));
-            m_streamer.simplify(m_terrain_auto_optimize, m_terrain_simplify_error);
-            m_streamer.persist(m_stream_persist);
-
-            // hand the authored grid chunks over to streaming: persist them to disk, then drop the
-            // in-memory meshes so the streamer owns residency (it loads them back within the radius)
-            for (auto &entry : m_grid_chunks)
-                if (entry.second)
-                    m_streamer.save_chunk(entry.first.first, entry.first.second, *entry.second);
-            for (auto &entry : m_grid_chunks)
-                if (entry.second)
-                    entry.second->destroy();
-            m_grid_chunks.clear();
-        }
-        else
-        {
-            m_streamer.clear(); // saves modified chunks before dropping them
-        }
-        m_streamer.active(streaming);
-    }
-    if (m_streamer.active())
-    {
-        // radius / simplify / persist are safe to tweak live; chunk size/base are fixed at toggle
-        m_streamer.radius(m_stream_radius);
-        m_streamer.simplify(m_terrain_auto_optimize, m_terrain_simplify_error);
-        m_streamer.persist(m_stream_persist);
-        ImGui::Text(STR_C("Resident chunks: %zu  (dir: %s)"), m_streamer.resident(), m_streamer.directory().c_str());
-    }
-
-    ImGui::Text(STR_C("Patches: %zu"), m_terrains.size());
-
-    // capture: sample the selected model's geometry into an editable patch and remove the original
-    if (dynamic_cast<TAnimModel *>(m_node) != nullptr)
-    {
-        if (ImGui::Button(STR_C("Capture selected model as terrain")))
-            capture_terrain();
-    }
-    else
-    {
-        ImGui::TextDisabled(STR_C("Capture: select a model instance first"));
-    }
-
-    std::vector<editor_terrain *> const terrains = active_terrains();
-    if (!terrains.empty())
-    {
-        ImGui::Separator();
-        if (ImGui::Checkbox((std::string(m_terrain_brush_smooth ? STR_C("Sculpt mode (LMB smooth)") : STR_C("Sculpt mode (LMB raise / Shift = lower)")) + "###sculptmode").c_str(), &m_terrain_sculpt))
-            if (m_terrain_sculpt)
-                m_chunk_edit = false; // mutually exclusive with chunk editing
-        int brush = m_terrain_brush_smooth ? 1 : 0;
-        ImGui::RadioButton(STR_C("Raise / lower"), &brush, 0);
+        if (spacing_combo(STR_C("Point spacing"), m_terrain_spacing))
+            m_streamer.default_spacing(m_terrain_spacing);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Spacing of the grid points of the chunks made, and the one the spacing tool gives the clicked chunk.\n"
+                                    "A chunk is 250 x 250 m; finer grids take more memory and time to draw."));
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::InputFloat(STR_C("Base height (m)"), &m_terrain_baseheight, 0.0f, 0.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Height of the chunks made where there's no ground under them"));
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::InputInt(STR_C("Chunks along a side"), &m_terrain_add_count);
+        m_terrain_add_count = std::clamp(m_terrain_add_count, 1, 8);
         ImGui::SameLine();
-        ImGui::RadioButton(STR_C("Smooth"), &brush, 1);
-        m_terrain_brush_smooth = (brush == 1);
-        if (m_terrain_brush_smooth && ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", STR_C("Evens out the ground under the brush: bumps and sharp edges go, the shape stays.\nThe strength sets how fast"));
-        ImGui::SetNextItemWidth(120.0f);
-        ImGui::InputFloat(STR_C("Brush radius"), &m_terrain_brush_radius);
-        if (m_terrain_brush_radius < 0.5f)
-            m_terrain_brush_radius = 0.5f;
-        ImGui::SetNextItemWidth(120.0f);
-        ImGui::InputFloat(STR_C("Brush strength"), &m_terrain_brush_strength);
-
-        // one-shot nudge of the most recent manual patch at its centre, handy for a quick test
-        if (!m_terrains.empty())
+        if (ImGui::Button(STR_C("Add around the camera")))
+            add_chunks_around(m_terrain_add_count);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Makes the chunks missing around the camera, shaped as the ground under them"));
+        render_ground_conversion();
+        if (dynamic_cast<TAnimModel *>(m_node) != nullptr)
         {
-            auto &terrain = m_terrains.back();
-            glm::dvec3 const c = terrain->centre();
-            if (ImGui::Button(STR_C("Raise centre")))
-                terrain->sculpt(c.x, c.z, m_terrain_brush_radius, m_terrain_brush_strength);
+            if (ImGui::Button(STR_C("Capture the selected model as terrain")))
+                capture_terrain();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", STR_C("The chunks under the model take its shape, and the model is removed"));
+        }
+    }
+
+    if (terrain_brush() && ImGui::CollapsingHeader(STR_C("Brush"), ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::DragFloat(STR_C("Radius (m)"), &m_terrain_brush_radius, 0.25f, 0.5f, 500.0f, "%.1f");
+        m_terrain_brush_radius = std::max(0.5f, m_terrain_brush_radius);
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::DragFloat(STR_C("Strength"), &m_terrain_brush_strength, 0.05f, 0.05f, 50.0f, "%.2f");
+        m_terrain_brush_strength = std::max(0.05f, m_terrain_brush_strength);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Sculpting: metres per second at the middle of the brush; smoothing and painting: how fast they work"));
+    }
+
+    if (ImGui::CollapsingHeader(STR_C("Materials"), m_terrain_tool == terrain_tool::paint ? ImGuiTreeNodeFlags_DefaultOpen : 0))
+    {
+        auto const &layers{m_streamer.manifest().layers};
+        m_terrain_layer = std::clamp(m_terrain_layer, 0, static_cast<int>(layers.size()) - 1);
+        for (std::size_t i = 0; i < layers.size(); ++i)
+        {
+            auto const label{layers[i].size > 0.f ? format("%zu: %s (%.1f m)", i, layers[i].material.c_str(), layers[i].size) : format("%zu: %s", i, layers[i].material.c_str())};
+            if (ImGui::Selectable(label.c_str(), static_cast<int>(i) == m_terrain_layer))
+                m_terrain_layer = static_cast<int>(i);
+        }
+        if (false == layers.empty())
+        {
+            auto size{layers[m_terrain_layer].size};
+            ImGui::SetNextItemWidth(120.0f);
+            ImGui::DragFloat(STR_C("Repeats every (m)"), &size, 0.1f, 0.0f, 200.0f, "%.1f");
+            if (ImGui::IsItemDeactivatedAfterEdit())
+                m_streamer.layer_size(static_cast<std::uint16_t>(m_terrain_layer), size);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", STR_C("Metres the textures of the chosen material repeat at; 0: as the material gives it, or 8 m"));
+        }
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputText(STR_C("Material"), m_terrain_material, IM_ARRAYSIZE(m_terrain_material));
+        ImGui::SameLine();
+        if (ImGui::Button(STR_C("Add to the palette")) && m_terrain_material[0] != '\0')
+            m_terrain_layer = m_streamer.layer(m_terrain_material, m_terrain_material_size);
+        ImGui::TextDisabled("%s", STR_C("New chunks are covered with the first material. A chunk holds up to 8 of them."));
+    }
+
+    if (ImGui::CollapsingHeader(STR_C("Water"), m_terrain_tool == terrain_tool::water ? ImGuiTreeNodeFlags_DefaultOpen : 0))
+    {
+        if (m_terrain_tool == terrain_tool::water)
+        {
+            ImGui::Text(STR_C("Outline: %zu points"), m_water_points.size());
+            ImGui::SetNextItemWidth(120.0f);
+            if (ImGui::DragFloat(STR_C("Level (m)"), &m_water_level, 0.01f, -1000.0f, 5000.0f, "%.2f"))
+                m_water_level_edited = true;
+            ImGui::SetNextItemWidth(160.0f);
+            ImGui::InputText(STR_C("Material##water"), m_water_material, IM_ARRAYSIZE(m_water_material));
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(STR_C("Empty: %s, the water material of the terrain"), m_streamer.manifest().water_material.c_str());
+            ImGui::BeginDisabled(m_water_points.size() < 3);
+            if (ImGui::Button(STR_C("Make the water")))
+            {
+                auto water{m_streamer.water()};
+                heightmap::water_body body;
+                body.name = format("water %zu", water.size() + 1);
+                body.level = m_water_level;
+                body.material = m_water_material;
+                for (auto const &point : m_water_points)
+                    body.outline.emplace_back(point.x, point.z);
+                water.push_back(std::move(body));
+                m_streamer.water(std::move(water));
+                m_water_selected = static_cast<int>(m_streamer.water().size()) - 1;
+                m_water_points.clear();
+                m_water_level_edited = false;
+            }
+            ImGui::EndDisabled();
             ImGui::SameLine();
-            if (ImGui::Button(STR_C("Lower centre")))
-                terrain->sculpt(c.x, c.z, m_terrain_brush_radius, -m_terrain_brush_strength);
+            if (ImGui::Button(STR_C("Clear the outline")))
+            {
+                m_water_points.clear();
+                m_water_level_edited = false;
+            }
         }
-
-        ImGui::Separator();
-        ImGui::TextUnformatted(STR_C("Optimize (mesh simplification, all patches)"));
-        ImGui::SetNextItemWidth(120.0f);
-        ImGui::InputFloat(STR_C("Flatness tol (m)"), &m_terrain_simplify_error);
-        if (m_terrain_simplify_error < 0.01f)
-            m_terrain_simplify_error = 0.01f;
-        ImGui::Checkbox(STR_C("Auto-optimize after sculpt"), &m_terrain_auto_optimize);
-        if (ImGui::Button(STR_C("Optimize all")))
-            for (editor_terrain *t : terrains)
-                t->optimize(m_terrain_simplify_error);
-        ImGui::SameLine();
-        if (ImGui::Button(STR_C("Full-res all")))
-            for (editor_terrain *t : terrains)
-                t->unoptimize();
-
-        std::size_t tris = 0, full = 0;
-        for (editor_terrain *t : terrains)
+        auto const &water{m_streamer.water()};
+        std::optional<std::size_t> removed;
+        for (std::size_t i = 0; i < water.size(); ++i)
         {
-            tris += t->triangles();
-            full += t->full_triangles();
+            ImGui::PushID(static_cast<int>(i));
+            if (ImGui::Selectable(format("%s, %.2f m, %zu points", water[i].name.c_str(), water[i].level, water[i].outline.size()).c_str(), static_cast<int>(i) == m_water_selected))
+                m_water_selected = static_cast<int>(i);
+            ImGui::PopID();
         }
-        ImGui::Text(STR_C("Triangles: %zu / %zu"), tris, full);
+        if (m_water_selected >= 0 && m_water_selected < static_cast<int>(water.size()))
+        {
+            // the level is changed in the water once the dragging ends
+            if (false == m_water_level_dragged)
+                m_water_selected_level = static_cast<float>(water[m_water_selected].level);
+            ImGui::SetNextItemWidth(120.0f);
+            ImGui::DragFloat(STR_C("Level of the chosen (m)"), &m_water_selected_level, 0.01f, -1000.0f, 5000.0f, "%.2f");
+            m_water_level_dragged = ImGui::IsItemActive();
+            if (ImGui::IsItemDeactivatedAfterEdit())
+            {
+                auto changed{water};
+                changed[m_water_selected].level = m_water_selected_level;
+                m_streamer.water(std::move(changed));
+            }
+            if (ImGui::Button(STR_C("Remove the chosen water")))
+                removed = static_cast<std::size_t>(m_water_selected);
+        }
+        if (removed)
+        {
+            auto changed{water};
+            changed.erase(changed.begin() + *removed);
+            m_streamer.water(std::move(changed));
+            m_water_selected = -1;
+        }
+    }
+
+    if (ImGui::CollapsingHeader(STR_C("Modifiers")))
+    {
+        auto const &modifiers{m_streamer.modifiers()};
+        if (modifiers.empty())
+            ImGui::TextWrapped("%s", STR_C("None. The vertical profile of the tracks makes them: the terrain follows the formation and the slopes of the route."));
+        std::optional<std::string> removed;
+        for (auto const &modifier : modifiers)
+        {
+            ImGui::PushID(modifier.name.c_str());
+            ImGui::TextUnformatted(format("%s, %zu points", modifier.name.c_str(), modifier.points.size()).c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton(STR_C("Remove")))
+                removed = modifier.name;
+            ImGui::PopID();
+        }
+        if (removed)
+        {
+            m_streamer.remove_modifier(*removed);
+            ground_tiles.clear();
+            forget_ground_shapes();
+        }
+    }
+
+    if (ImGui::CollapsingHeader(STR_C("Drawing and files")))
+    {
+        auto detail{m_streamer.detail()};
+        ImGui::SetNextItemWidth(160.0f);
+        if (ImGui::SliderFloat(STR_C("Detail"), &detail, 30.0f, 400.0f, "%.0f"))
+            m_streamer.detail(detail);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("How far the full grid of the chunks reaches: metres of distance per metre of the drawn grid. Further away the grid is coarser"));
+        bool compress{m_streamer.manifest().compress};
+        if (ImGui::Checkbox(STR_C("Compress the files (zstd)"), &compress))
+            m_streamer.compress(compress);
+        ImGui::TextDisabled("%s", STR_C("The terrain is written with the scenery (Ctrl+S)."));
+    }
+    if (false == m_terrain_status.empty())
+        ImGui::TextWrapped("%s", m_terrain_status.c_str());
+}
+
+void editor_mode::draw_terrain_overlay()
+{
+    if (false == m_streamer.active())
+        return;
+    screen_projection const projection;
+    auto *drawlist = ImGui::GetBackgroundDrawList();
+    glm::dvec3 const offset = GfxRenderer->Mouse_Position();
+    bool const hovering = glm::length(offset) > 1e-3 && false == ImGui::GetIO().WantCaptureMouse;
+    glm::dvec3 const cursor = Camera.Pos + offset;
+    auto const ground = [&](double const X, double const Z, double const Fallback) {
+        double height;
+        return m_streamer.height_at(X, Z, height) ? height : Fallback;
+    };
+    auto const polyline = [&](std::vector<glm::dvec3> const &Points, ImU32 const Color, bool const Closed, float const Thickness) {
+        auto const count = Points.size();
+        for (std::size_t i = 0; i + (Closed ? 0 : 1) < count; ++i)
+        {
+            ImVec2 from, to;
+            if (projection.project(Points[i], from) && projection.project(Points[(i + 1) % count], to))
+                drawlist->AddLine(from, to, Color, Thickness);
+        }
+    };
+
+    if (terrain_brush() && hovering)
+    {
+        std::vector<glm::dvec3> circle;
+        for (int i = 0; i < 64; ++i)
+        {
+            auto const angle = i * 6.283185307179586 / 64.0;
+            auto const x = cursor.x + std::cos(angle) * m_terrain_brush_radius;
+            auto const z = cursor.z + std::sin(angle) * m_terrain_brush_radius;
+            circle.emplace_back(x, ground(x, z, cursor.y) + 0.1, z);
+        }
+        auto const color = m_terrain_tool == terrain_tool::paint ? IM_COL32(120, 230, 120, 220) : m_terrain_tool == terrain_tool::smooth ? IM_COL32(120, 200, 255, 220) : IM_COL32(255, 180, 80, 220);
+        polyline(circle, color, true, 2.0f);
+    }
+    if ((m_terrain_tool == terrain_tool::chunks || m_terrain_tool == terrain_tool::spacing) && hovering)
+    {
+        auto const key = heightmap::chunk_at(cursor.x, cursor.z);
+        auto const exists = m_streamer.exists(key);
+        auto const low = heightmap::chunk_corner(key);
+        std::vector<glm::dvec3> square;
+        auto const edge = [&](glm::dvec2 const &From, glm::dvec2 const &To) {
+            for (int i = 0; i < 25; ++i)
+            {
+                auto const point = From + (To - From) * (i / 25.0);
+                square.emplace_back(point.x, ground(point.x, point.y, cursor.y) + 0.2, point.y);
+            }
+        };
+        auto const size = heightmap::chunk_size;
+        edge(low, low + glm::dvec2{size, 0.0});
+        edge(low + glm::dvec2{size, 0.0}, low + glm::dvec2{size});
+        edge(low + glm::dvec2{size}, low + glm::dvec2{0.0, size});
+        edge(low + glm::dvec2{0.0, size}, low);
+        polyline(square, exists ? IM_COL32(255, 255, 255, 200) : IM_COL32(255, 230, 90, 200), true, 2.0f);
+        ImVec2 label;
+        if (exists && projection.project(cursor, label))
+        {
+            auto const *chunk = m_streamer.terrain_at(cursor.x, cursor.z);
+            if (chunk != nullptr)
+            {
+                auto const text = (m_terrain_tool == terrain_tool::spacing ? format("%s -> %s", spacing_label(static_cast<float>(chunk->data().spacing())), spacing_label(m_terrain_spacing))
+                                                                            : std::string(spacing_label(static_cast<float>(chunk->data().spacing()))));
+                drawlist->AddText(ImVec2(label.x + 14.0f, label.y - 14.0f), IM_COL32(255, 255, 255, 230), text.c_str());
+            }
+        }
+    }
+    // the bodies of water, and the one being outlined
+    auto const &water = m_streamer.water();
+    for (std::size_t i = 0; i < water.size(); ++i)
+    {
+        std::vector<glm::dvec3> outline;
+        for (auto const &point : water[i].outline)
+            outline.emplace_back(point.x, water[i].level, point.y);
+        polyline(outline, static_cast<int>(i) == m_water_selected ? IM_COL32(120, 200, 255, 255) : IM_COL32(60, 120, 220, 160), true, static_cast<int>(i) == m_water_selected ? 2.5f : 1.5f);
+    }
+    if (m_terrain_tool == terrain_tool::water && false == m_water_points.empty())
+    {
+        std::vector<glm::dvec3> outline;
+        for (auto const &point : m_water_points)
+            outline.emplace_back(point.x, m_water_level, point.z);
+        polyline(outline, IM_COL32(120, 220, 255, 255), m_water_points.size() >= 3, 2.0f);
+        for (auto const &point : outline)
+        {
+            ImVec2 dot;
+            if (projection.project(point, dot))
+                drawlist->AddCircleFilled(dot, 4.0f, IM_COL32(120, 220, 255, 255));
+        }
     }
 }
 
@@ -1769,7 +1935,7 @@ void editor_mode::render_orthophoto_ui()
     if (ImGui::Checkbox(STR_C("Fit to terrain"), &config.drape))
         changed = persist = true;
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip(STR_C("Lays the imagery onto the ground geometry (terrain shapes, terrain tile models, editor terrain).\n"
+        ImGui::SetTooltip(STR_C("Lays the imagery onto the ground geometry (terrain shapes, terrain tile models, heightmap terrain).\n"
                           "Places without any ground use the height below."));
     if (config.drape)
     {
@@ -1926,48 +2092,164 @@ void editor_mode::draw_ortho_compass() const
     letter("W", west, IM_COL32(230, 230, 230, 230));
 }
 
+void editor_mode::forget_ground()
+{
+    ground_tiles.clear();
+    forget_ground_shapes();
+}
+
 editor_terrain *editor_mode::terrain_at(double X, double Z)
 {
-    for (auto &terrain : m_terrains)
-        if (terrain && terrain->contains(X, Z))
-            return terrain.get();
-    double const size = chunk_grid_size();
-    auto const it = m_grid_chunks.find({static_cast<int>(std::floor(X / size)), static_cast<int>(std::floor(Z / size))});
-    if (it != m_grid_chunks.end() && it->second && it->second->contains(X, Z))
-        return it->second.get();
     return m_streamer.terrain_at(X, Z);
 }
 
 std::vector<editor_terrain *> editor_mode::active_terrains()
 {
     std::vector<editor_terrain *> out;
-    out.reserve(m_terrains.size() + m_grid_chunks.size() + m_streamer.resident());
-    for (auto &terrain : m_terrains)
-        if (terrain)
-            out.push_back(terrain.get());
-    for (auto &entry : m_grid_chunks)
-        if (entry.second)
-            out.push_back(entry.second.get());
+    out.reserve(m_streamer.resident());
     m_streamer.collect(out);
     return out;
 }
 
-void editor_mode::add_grid_chunk(int Cx, int Cz)
+bool editor_mode::ensure_terrain()
 {
-    std::pair<int, int> const key{Cx, Cz};
-    if (m_grid_chunks.count(key))
-        return; // already occupied
+    if (m_streamer.active())
+        return true;
+    auto const name = scenery_stem();
+    if (name.empty())
+        return false;
+    m_streamer.open(name);
+    m_terrain_spacing = m_streamer.manifest().spacing;
+    return m_streamer.active();
+}
 
-    double const size = chunk_grid_size();
-    int const cells = std::clamp(m_terrain_cells, 1, 256);
-    glm::dvec3 const center((Cx + 0.5) * size, static_cast<double>(m_terrain_baseheight), (Cz + 0.5) * size);
+bool editor_mode::add_chunk_from_ground(heightmap::chunk_key const &Key, float const Spacing, std::uint16_t const Layer)
+{
+    if (m_streamer.exists(Key))
+        return false;
+    auto const low = heightmap::chunk_corner(Key);
+    auto const high = low + glm::dvec2{heightmap::chunk_size};
+    // the ground under the chunk, the edges of the neighbouring chunks included, so the new one meets them
+    std::vector<world_triangle> triangles;
+    gather_ground_triangles(low - glm::dvec2{1.0}, high + glm::dvec2{1.0}, true, 50.0f, triangles, true);
+    triangle_grid const ground(std::move(triangles), low - glm::dvec2{1.0}, high + glm::dvec2{1.0});
+    auto const cells = heightmap::cells_for(Spacing);
+    auto const side = static_cast<std::size_t>(cells) + 1;
+    auto const step = heightmap::chunk_size / cells;
+    std::vector<double> heights(side * side, 0.0);
+    std::vector<char> found(side * side, 0);
+    bool any = false;
+    for (std::size_t iz = 0; iz < side; ++iz)
+        for (std::size_t ix = 0; ix < side; ++ix)
+        {
+            auto const index = iz * side + ix;
+            if (ground.height_at(low.x + ix * step, low.y + iz * step, std::numeric_limits<double>::max(), heights[index]))
+                found[index] = 1, any = true;
+        }
+    // past the edge of the ground the chunk is carried on level with the nearest point of it
+    if (any)
+        fill_from_nearest(heights, found, side);
+    else
+        std::fill(heights.begin(), heights.end(), m_terrain_baseheight);
+    auto const added = m_streamer.add_chunk(Key.first, Key.second, Spacing, [&](double const X, double const Z) {
+        auto const ix = static_cast<std::size_t>(std::clamp<long>(std::lround((X - low.x) / step), 0, cells));
+        auto const iz = static_cast<std::size_t>(std::clamp<long>(std::lround((Z - low.y) / step), 0, cells));
+        return static_cast<float>(heights[iz * side + ix]);
+    }, Layer);
+    if (added)
+    {
+        ground_tiles.clear();
+        forget_ground_shapes();
+    }
+    return added;
+}
 
-    auto terrain = std::make_unique<editor_terrain>();
-    if (!terrain->create(center, cells, m_terrain_cellsize, std::string(m_terrain_texture)))
+void editor_mode::add_chunks_around(int const Count)
+{
+    if (false == ensure_terrain())
         return;
-    if (m_terrain_auto_optimize)
-        terrain->optimize(m_terrain_simplify_error);
-    m_grid_chunks[key] = std::move(terrain);
+    auto const centre = heightmap::chunk_at(Camera.Pos.x, Camera.Pos.z);
+    auto const first = -(Count - 1) / 2;
+    int made = 0;
+    for (int dz = 0; dz < Count; ++dz)
+        for (int dx = 0; dx < Count; ++dx)
+            if (add_chunk_from_ground({centre.first + first + dx, centre.second + first + dz}, m_terrain_spacing))
+                ++made;
+    m_terrain_status = format(STR_C("%d chunks made"), made);
+}
+
+void editor_mode::handle_terrain_click(bool const Shift)
+{
+    glm::dvec3 const offset = GfxRenderer->Mouse_Position();
+    if (glm::length(offset) < 1e-3)
+        return; // nothing under the cursor (yet)
+    glm::dvec3 const world = Camera.Pos + offset;
+    switch (m_terrain_tool)
+    {
+    case terrain_tool::chunks:
+    {
+        if (false == ensure_terrain())
+            return;
+        auto const key = heightmap::chunk_at(world.x, world.z);
+        if (Shift)
+        {
+            if (m_streamer.exists(key))
+            {
+                m_streamer.remove_chunk(key.first, key.second);
+                ground_tiles.clear();
+                forget_ground_shapes();
+                m_terrain_status = format(STR_C("Chunk %d,%d removed"), key.first, key.second);
+            }
+            return;
+        }
+        // a click on a chunk adds the neighbour by the nearest edge, a click outside fills the clicked place
+        auto target = key;
+        if (m_streamer.exists(key))
+        {
+            auto const low = heightmap::chunk_corner(key);
+            double const west = world.x - low.x, east = heightmap::chunk_size - west, south = world.z - low.y, north = heightmap::chunk_size - south;
+            double const nearest = std::min({west, east, south, north});
+            if (nearest == west)
+                --target.first;
+            else if (nearest == east)
+                ++target.first;
+            else if (nearest == south)
+                --target.second;
+            else
+                ++target.second;
+        }
+        m_terrain_status = add_chunk_from_ground(target, m_terrain_spacing) ? format(STR_C("Chunk %d,%d made"), target.first, target.second) : std::string(STR_C("There's a chunk there already"));
+        break;
+    }
+    case terrain_tool::spacing:
+    {
+        auto const key = heightmap::chunk_at(world.x, world.z);
+        if (false == m_streamer.exists(key))
+            return;
+        m_streamer.spacing(key.first, key.second, m_terrain_spacing);
+        ground_tiles.clear();
+        forget_ground_shapes();
+        m_terrain_status = format(STR_C("Chunk %d,%d has points every %s now"), key.first, key.second, spacing_label(m_terrain_spacing));
+        break;
+    }
+    case terrain_tool::water:
+    {
+        if (Shift)
+        {
+            if (false == m_water_points.empty())
+                m_water_points.pop_back();
+            return;
+        }
+        auto const point = placement_on_ground(world);
+        // the water reaches the lowest point of its shore, unless given by hand
+        if (false == m_water_level_edited)
+            m_water_level = m_water_points.empty() ? static_cast<float>(point.y) : std::min(m_water_level, static_cast<float>(point.y));
+        m_water_points.push_back(point);
+        break;
+    }
+    default:
+        break;
+    }
 }
 
 namespace
@@ -2045,16 +2327,14 @@ std::string editor_mode::convert_ground(std::set<material_handle> const &Materia
 {
     if (simulation::Region == nullptr || Materials.empty())
         return {};
-    bool const streaming = m_streamer.active();
-    double const size = streaming ? m_streamer.cells() * m_streamer.cellsize() : chunk_grid_size();
-    int const cells = streaming ? m_streamer.cells() : std::clamp(m_terrain_cells, 1, 256);
+    if (false == ensure_terrain())
+        return STR_C("The heightmap terrain can't be opened");
+    double const size = heightmap::chunk_size;
+    int const cells = heightmap::cells_for(m_terrain_spacing);
     double const cellsize = size / cells;
-    if (size <= 0.0)
-        return {};
 
-    std::set<std::uint64_t> own;
-    for (auto *terrain : active_terrains())
-        own.insert(geometry_key(terrain->geometry()));
+    // the shapes of the heightmap terrain hold no triangles of their own, nothing to leave out
+    std::set<std::uint64_t> const own;
     std::vector<world_triangle> triangles;
     std::vector<material_handle> materials;
     glm::dvec2 const everywhere{std::numeric_limits<double>::max() * 0.5};
@@ -2081,7 +2361,7 @@ std::string editor_mode::convert_ground(std::set<material_handle> const &Materia
                 buckets[{x, z}].push_back(i);
     }
 
-    // the terrain of the editor has a single texture, saved with it: the material which covers the most
+    // the chunks are covered with the material which covers the most; it goes to the palette of the terrain
     std::map<material_handle, double> coverage;
     for (std::size_t i = 0; i < triangles.size(); ++i)
     {
@@ -2089,19 +2369,9 @@ std::string editor_mode::convert_ground(std::set<material_handle> const &Materia
         coverage[materials[i]] += 0.5 * std::abs((t[1].x - t[0].x) * (t[2].z - t[0].z) - (t[2].x - t[0].x) * (t[1].z - t[0].z));
     }
     auto const dominant = std::max_element(coverage.begin(), coverage.end(), [](auto const &A, auto const &B) { return A.second < B.second; })->first;
+    std::uint16_t layer = 0;
     if (auto const *material = GfxRenderer->Material(dominant))
-    {
-        auto const name = material->GetName();
-        std::snprintf(m_terrain_texture, sizeof(m_terrain_texture), "%s", name.c_str());
-    }
-    std::string const texture(m_terrain_texture);
-    // a whole scenery of the full grid would be a lot to draw
-    m_terrain_auto_optimize = true;
-    if (streaming)
-    {
-        m_streamer.simplify(true, m_terrain_simplify_error);
-        m_streamer.configure(m_streamer.cells(), m_streamer.cellsize(), m_streamer.radius(), m_terrain_baseheight, texture);
-    }
+        layer = m_streamer.layer(material->GetName());
 
     // the old ground goes first, so what's made in its place isn't taken for it
     auto const dropped = drop_scenery_shapes(own, Materials);
@@ -2110,218 +2380,48 @@ std::string editor_mode::convert_ground(std::set<material_handle> const &Materia
     for (auto const &bucket : buckets)
     {
         auto const &key = bucket.first;
-        glm::dvec2 const low{key.first * size, key.second * size};
-        glm::dvec2 const middle{low + glm::dvec2{size * 0.5}};
-        if (streaming ? m_streamer.terrain_at(middle.x, middle.y) != nullptr : m_grid_chunks.count(key) > 0)
+        if (m_streamer.exists(key))
         {
             ++skipped;
             continue;
         }
+        glm::dvec2 const low{key.first * size, key.second * size};
         std::vector<world_triangle> local;
         for (auto const i : bucket.second)
             local.push_back(triangles[i]);
         triangle_grid const ground(std::move(local), low - glm::dvec2{1.0}, low + glm::dvec2{size + 1.0});
         std::vector<double> heights(side * side, 0.0);
         std::vector<char> found(side * side, 0);
-        std::vector<std::size_t> known;
+        bool any = false;
         for (std::size_t iz = 0; iz < side; ++iz)
             for (std::size_t ix = 0; ix < side; ++ix)
             {
                 auto const index = iz * side + ix;
                 if (ground.height_at(low.x + ix * cellsize, low.y + iz * cellsize, std::numeric_limits<double>::max(), heights[index]))
-                {
-                    found[index] = 1;
-                    known.push_back(index);
-                }
+                    found[index] = 1, any = true;
             }
-        if (known.empty())
+        if (false == any)
             continue;
-        // at the edge of the ground the chunk is carried on level with the nearest point of it
-        if (known.size() < heights.size())
-            for (std::size_t index = 0; index < heights.size(); ++index)
-            {
-                if (found[index] != 0)
-                    continue;
-                double best = std::numeric_limits<double>::max();
-                for (auto const other : known)
-                {
-                    double const dx = static_cast<double>(index % side) - static_cast<double>(other % side);
-                    double const dz = static_cast<double>(index / side) - static_cast<double>(other / side);
-                    if (dx * dx + dz * dz < best)
-                    {
-                        best = dx * dx + dz * dz;
-                        heights[index] = heights[other];
-                    }
-                }
-            }
-        auto const sampler = [&](double X, double Z, double &OutY) {
+        fill_from_nearest(heights, found, side);
+        auto const sampler = [&](double X, double Z) {
             auto const ix = static_cast<std::size_t>(std::clamp<long>(std::lround((X - low.x) / cellsize), 0, cells));
             auto const iz = static_cast<std::size_t>(std::clamp<long>(std::lround((Z - low.y) / cellsize), 0, cells));
-            OutY = heights[iz * side + ix];
-            return true;
+            return static_cast<float>(heights[iz * side + ix]);
         };
-        if (streaming)
-        {
-            m_streamer.add_chunk(key.first, key.second);
-            if (auto *terrain = m_streamer.terrain_at(middle.x, middle.y))
-            {
-                terrain->reshape([&](double X, double Z, float &Height) {
-                    double y;
-                    sampler(X, Z, y);
-                    Height = static_cast<float>(y);
-                    return true;
-                });
-                ++made;
-            }
-        }
-        else
-        {
-            auto chunk = std::make_unique<editor_terrain>();
-            if (chunk->create(glm::dvec3{middle.x, m_terrain_baseheight, middle.y}, cells, static_cast<float>(cellsize), texture, sampler))
-            {
-                // the full grid everywhere would be a lot to draw; the simplified one keeps it exact where it matters
-                chunk->optimize(m_terrain_simplify_error);
-                m_grid_chunks[key] = std::move(chunk);
-                ++made;
-            }
-        }
+        if (m_streamer.add_chunk(key.first, key.second, m_terrain_spacing, sampler, layer))
+            ++made;
     }
     ground_tiles.clear();
     forget_ground_shapes();
 
     auto const erased = scene::Layers.erase_shapes(Materials);
-    auto summary = format(STR_C("Ground converted: %zu chunks of editor terrain made, %zu shapes taken out of the scene, %zu triangle nodes go from the scenery files on save"), made, dropped, erased.first);
+    auto summary = format(STR_C("Ground converted: %zu chunks of heightmap terrain made, %zu shapes taken out of the scene, %zu triangle nodes go from the scenery files on save"), made, dropped, erased.first);
     if (skipped > 0)
-        summary += format(STR_C(", %zu chunks kept as there was editor terrain already"), skipped);
+        summary += format(STR_C(", %zu chunks kept as there was terrain already"), skipped);
     if (erased.second > 0)
         summary += format(STR_C(", %zu nodes stay as their files can't be rewritten"), erased.second);
     WriteLog("Editor: " + summary, logtype::generic);
     return summary;
-}
-
-void editor_mode::remove_grid_chunk(int Cx, int Cz)
-{
-    auto const it = m_grid_chunks.find({Cx, Cz});
-    if (it == m_grid_chunks.end())
-        return;
-    if (it->second)
-        it->second->destroy();
-    m_grid_chunks.erase(it);
-}
-
-void editor_mode::handle_chunk_edit_click(bool DeleteMode)
-{
-    // world point under the cursor; must land on existing geometry to give a valid depth
-    glm::dvec3 const world = Camera.Pos + GfxRenderer->Mouse_Position();
-    double const size = chunk_grid_size();
-    int const cx = static_cast<int>(std::floor(world.x / size));
-    int const cz = static_cast<int>(std::floor(world.z / size));
-    bool const streaming = m_streamer.active();
-
-    if (DeleteMode)
-    {
-        if (streaming)
-            m_streamer.remove_chunk(cx, cz);
-        else
-            remove_grid_chunk(cx, cz);
-        return;
-    }
-
-    // if the clicked cell holds a chunk, target the neighbour nearest the clicked edge (the empty
-    // side); otherwise fill the clicked cell
-    bool const occupied = streaming
-                              ? m_streamer.terrain_at(world.x, world.z) != nullptr
-                              : m_grid_chunks.count({cx, cz}) > 0;
-    int tcx = cx, tcz = cz;
-    if (occupied)
-    {
-        double const lx = world.x - cx * size, lz = world.z - cz * size;
-        double const dw = lx, de = size - lx, dn = lz, ds = size - lz;
-        double const nearest = std::min({dw, de, dn, ds});
-        if (nearest == dw)
-            tcx = cx - 1;
-        else if (nearest == de)
-            tcx = cx + 1;
-        else if (nearest == dn)
-            tcz = cz - 1;
-        else
-            tcz = cz + 1;
-    }
-
-    if (streaming)
-        m_streamer.add_chunk(tcx, tcz);
-    else
-        add_grid_chunk(tcx, tcz);
-}
-
-void editor_mode::create_chunked_terrain()
-{
-    int const chunks = std::clamp(m_terrain_chunks, 1, 32);
-    double const size = chunk_grid_size();
-
-    // snap the field to the global chunk grid (so it aligns with manual/streamed chunks), centred
-    // on the camera's chunk
-    int const ccx = static_cast<int>(std::floor(Camera.Pos.x / size));
-    int const ccz = static_cast<int>(std::floor(Camera.Pos.z / size));
-    int const half = chunks / 2;
-
-    int created = 0;
-    for (int dz = 0; dz < chunks; ++dz)
-        for (int dx = 0; dx < chunks; ++dx)
-        {
-            int const cx = ccx - half + dx, cz = ccz - half + dz;
-            if (!m_grid_chunks.count({cx, cz}))
-            {
-                add_grid_chunk(cx, cz);
-                ++created;
-            }
-        }
-
-    WriteLog("Editor: created chunked terrain with " + std::to_string(created) + " chunks", logtype::generic);
-}
-
-void editor_mode::save_scene_with_terrain()
-{
-    commit_terrain();
-
-    // export scenery; the exported .scm now carries an `editorterrain` directive (streamer is active)
-    export_scenery();
-    WriteLog("Editor: saved scene + terrain", logtype::generic);
-}
-
-void editor_mode::commit_terrain()
-{
-    // commit authored terrain so the scenery streams it on load. if not already streaming, hand the
-    // manual grid chunks over to the streamer (same as toggling Stream terrain on)
-    if (!m_streamer.active())
-    {
-        std::string scenery = Global.SceneryFile;
-        auto const slash = scenery.find_last_of("/\\");
-        if (slash != std::string::npos)
-            scenery = scenery.substr(slash + 1);
-        auto const dot = scenery.find_last_of('.');
-        if (dot != std::string::npos)
-            scenery = scenery.substr(0, dot);
-        if (scenery.empty())
-            scenery = "default";
-
-        m_streamer.directory("editor_terrain/" + scenery);
-        m_streamer.configure(m_terrain_cells, m_terrain_cellsize, m_stream_radius, m_terrain_baseheight,
-                             std::string(m_terrain_texture));
-        m_streamer.simplify(m_terrain_auto_optimize, m_terrain_simplify_error);
-        m_streamer.persist(true);
-
-        for (auto &entry : m_grid_chunks)
-            if (entry.second)
-                m_streamer.save_chunk(entry.first.first, entry.first.second, *entry.second);
-        for (auto &entry : m_grid_chunks)
-            if (entry.second)
-                entry.second->destroy();
-        m_grid_chunks.clear();
-        m_streamer.active(true);
-    }
-
-    m_streamer.flush(); // save resident edited chunks to disk
 }
 
 bool editor_mode::save()
@@ -2333,19 +2433,18 @@ bool editor_mode::save()
         return false;
     }
 
-    // terrain made in the editor is kept in files of its own, the scenery only needs the directive which loads it
+    // the heightmap terrain is kept in files of its own, the scenery only needs the directive which loads it
     std::vector<std::string> rootstatements;
-    if (m_streamer.active() || false == m_grid_chunks.empty())
+    if (m_streamer.active())
     {
-        // the chunks go over to the streamer, what was kept to take back the shaping refers to the ones which are gone
-        m_profile.earthworks.undo.clear();
-        commit_terrain();
-        if (false == scene::Layers.terrain_directive())
+        std::string error;
+        if (false == m_streamer.save(&error))
         {
-            rootstatements.emplace_back(
-                "editorterrain " + m_streamer.directory() + ' ' + std::to_string(m_streamer.cells()) + ' ' + to_string(m_streamer.cellsize(), 3) + ' '
-                + std::to_string(m_streamer.radius()) + (m_streamer.texture().empty() ? "" : ' ' + m_streamer.texture()) + " endeditorterrain");
+            ui()->set_status(format(STR_C("The terrain couldn't be saved: %s"), error.c_str()), true);
+            return false;
         }
+        if (false == scene::Layers.terrain_directive())
+            rootstatements.emplace_back("heightmap_terrain " + m_streamer.name() + " endheightmap_terrain");
     }
 
     if (m_profile.changed)
@@ -2605,49 +2704,39 @@ void editor_mode::export_scenery()
         scene::Layers.visible(layer, false);
 }
 
-void editor_mode::handle_terrain_sculpt(double Deltatime)
+void editor_mode::handle_terrain_brush(double Deltatime)
 {
     // world point under the cursor (Mouse_Position is camera-relative, like the brush placement uses)
-    glm::dvec3 const world = Camera.Pos + GfxRenderer->Mouse_Position();
-    // only sculpt when the cursor is actually over terrain (avoids editing on a stale depth read)
+    glm::dvec3 const offset = GfxRenderer->Mouse_Position();
+    if (glm::length(offset) < 1e-3)
+        return;
+    glm::dvec3 const world = Camera.Pos + offset;
+    // only when the cursor is over the terrain (avoids editing on a stale depth read)
     if (terrain_at(world.x, world.z) == nullptr)
         return;
 
-    double const rate = m_terrain_brush_strength * Deltatime; // metres applied this frame
-    if (m_terrain_brush_smooth)
+    double const rate = m_terrain_brush_strength * Deltatime;
+    bool shaped = false;
+    switch (m_terrain_tool)
     {
-        // every patch the brush touches is smoothed from the same ground, so the edges they share stay together
-        auto const terrains = active_terrains();
-        double const reach = m_terrain_brush_radius + 2.0 * m_terrain_cellsize + 1.0;
-        std::vector<std::pair<editor_terrain *, std::vector<float>>> before;
-        for (editor_terrain *terrain : terrains)
-        {
-            auto const centre = terrain->centre();
-            double const half = terrain->extent() * 0.5;
-            if (std::abs(centre.x - world.x) <= half + reach && std::abs(centre.z - world.z) <= half + reach)
-                before.emplace_back(terrain, terrain->heights());
-        }
-        auto const ground = [&](double X, double Z, double Fallback) {
-            for (auto const &entry : before)
-                if (entry.first->contains(X, Z))
-                    return entry.first->height_in(entry.second, X, Z);
-            return Fallback;
-        };
-        double const amount = std::min(1.0, rate * 0.5);
-        for (auto const &entry : before)
-            entry.first->smooth(world.x, world.z, m_terrain_brush_radius, amount, ground);
+    case terrain_tool::sculpt:
+        shaped = m_streamer.sculpt(world.x, world.z, m_terrain_brush_radius, Global.shiftState ? -rate : rate);
+        break;
+    case terrain_tool::smooth:
+        shaped = m_streamer.smooth(world.x, world.z, m_terrain_brush_radius, std::min(1.0, rate * 0.5));
+        break;
+    case terrain_tool::paint:
+        m_streamer.paint(world.x, world.z, m_terrain_brush_radius, std::min(1.0, rate * 0.25), Global.shiftState ? std::uint16_t{0} : static_cast<std::uint16_t>(m_terrain_layer));
+        break;
+    default:
+        break;
     }
-    else
+    if (shaped)
     {
-        double const signedrate = Global.shiftState ? -rate : rate;
-        // apply to every chunk the brush touches; each patch clips to its own bounds, so a stroke
-        // crossing a chunk boundary edits both and shared-edge vertices stay in sync
-        for (editor_terrain *terrain : active_terrains())
-            terrain->sculpt(world.x, world.z, m_terrain_brush_radius, signedrate);
+        // what the road tools know about the ground is no longer true
+        ground_tiles.clear();
+        forget_ground_shapes();
     }
-    // what the road tools know about the ground is no longer true
-    ground_tiles.clear();
-    forget_ground_shapes();
 }
 
 void editor_mode::capture_terrain()
@@ -2658,6 +2747,8 @@ void editor_mode::capture_terrain()
         WriteLog("Editor: select a model instance to capture as terrain", logtype::generic);
         return;
     }
+    if (false == ensure_terrain())
+        return;
 
     std::vector<world_triangle> tris;
     gather_submodel_triangles(model->pModel->Root, instance_matrix(*model), tris);
@@ -2668,51 +2759,31 @@ void editor_mode::capture_terrain()
     }
 
     // horizontal bounds of the captured geometry
-    glm::dvec3 lo(std::numeric_limits<double>::max());
-    glm::dvec3 hi(-std::numeric_limits<double>::max());
+    glm::dvec2 lo(std::numeric_limits<double>::max());
+    glm::dvec2 hi(-std::numeric_limits<double>::max());
     for (auto const &t : tris)
         for (auto const &p : t)
         {
-            lo.x = std::min(lo.x, p.x); lo.y = std::min(lo.y, p.y); lo.z = std::min(lo.z, p.z);
-            hi.x = std::max(hi.x, p.x); hi.y = std::max(hi.y, p.y); hi.z = std::max(hi.z, p.z);
+            lo = glm::min(lo, glm::dvec2(p.x, p.z));
+            hi = glm::max(hi, glm::dvec2(p.x, p.z));
         }
+    triangle_grid const surface(std::move(tris), lo - glm::dvec2(1.0), hi + glm::dvec2(1.0));
 
-    glm::dvec3 const center((lo.x + hi.x) * 0.5, lo.y, (lo.z + hi.z) * 0.5);
-    double const extent = std::max(hi.x - lo.x, hi.z - lo.z);
-    int const cells = std::max(1, m_terrain_cells);
-    float const cellsize = static_cast<float>(std::max(0.1, extent / cells));
-
-    // sampler: highest captured triangle at (x,z)
-    auto const sampler = [&tris](double X, double Z, double &OutY) -> bool {
-        double best = -std::numeric_limits<double>::max();
-        bool found = false;
-        for (auto const &t : tris)
-        {
-            double const minx = std::min({t[0].x, t[1].x, t[2].x});
-            double const maxx = std::max({t[0].x, t[1].x, t[2].x});
-            double const minz = std::min({t[0].z, t[1].z, t[2].z});
-            double const maxz = std::max({t[0].z, t[1].z, t[2].z});
-            if (X < minx || X > maxx || Z < minz || Z > maxz)
-                continue;
-            double y;
-            if (triangle_height_at(t[0], t[1], t[2], X, Z, y) && (!found || y > best))
-            {
-                best = y;
-                found = true;
-            }
-        }
-        if (found)
-            OutY = best;
-        return found;
-    };
-
-    auto terrain = std::make_unique<editor_terrain>();
-    if (!terrain->create(center, cells, cellsize, std::string(m_terrain_texture), sampler))
-    {
-        WriteLog("Editor: terrain capture failed", logtype::generic);
-        return;
-    }
-    m_terrains.push_back(std::move(terrain));
+    // the chunks under the model are made where missing, then take its shape wherever it has any
+    auto const first = heightmap::chunk_at(lo.x, lo.y);
+    auto const last = heightmap::chunk_at(hi.x, hi.y);
+    for (int cz = first.second; cz <= last.second; ++cz)
+        for (int cx = first.first; cx <= last.first; ++cx)
+            add_chunk_from_ground({cx, cz}, m_terrain_spacing);
+    m_streamer.reshape(lo, hi, [&](double X, double Z, float &Height) {
+        double y;
+        if (false == surface.height_at(X, Z, std::numeric_limits<double>::max(), y))
+            return false;
+        Height = static_cast<float>(y);
+        return true;
+    });
+    ground_tiles.clear();
+    forget_ground_shapes();
 
     // remove the original instance (recorded as a deletion so it can be undone)
     std::string as_text;
@@ -3131,7 +3202,9 @@ void editor_mode::terrain_workspace(bool const Open)
 {
     m_terrain_open = Open;
     if (false == Open)
-        m_terrain_sculpt = m_chunk_edit = false;
+        m_terrain_tool = terrain_tool::none;
+    else if (m_streamer.active())
+        m_terrain_spacing = m_streamer.manifest().spacing;
 }
 
 void editor_mode::render_terrain_tool_options()
@@ -3855,7 +3928,7 @@ void editor_mode::render_workspaces()
 	    {STR_C("Surroundings"), work_area::surroundings, editor_icons::icon::work_surroundings, STR_C("Models around the line: select, insert, brush, area fill, copy to the node bank")},
 	    {STR_C("Tracks"), work_area::tracks, editor_icons::icon::work_tracks, STR_C("Tracks and switches, signals, objects along the track, checks of the line")},
 	    {STR_C("Roads"), work_area::roads, editor_icons::icon::work_roads, STR_C("Roads and junctions, level crossings, the points where the traffic comes and goes")},
-	    {STR_C("Terrain"), work_area::terrain, editor_icons::icon::work_terrain, STR_C("Terrain patches and chunks, sculpting, streaming, orthophoto")},
+	    {STR_C("Terrain"), work_area::terrain, editor_icons::icon::work_terrain, STR_C("Heightmap terrain: chunks, sculpting, painting, water, orthophoto")},
 	};
 	char const *const keys[] = {"F2", "F3", "F4", "F5"};
 	auto const current{current_work_area()};
@@ -4079,7 +4152,7 @@ void editor_mode::render_gizmo_options()
     ImGui::Checkbox(STR_C("Enabled"), &m_gizmo_enabled);
     if (!m_gizmo_enabled)
         return;
-    if (m_terrain_sculpt || m_chunk_edit)
+    if (terrain_brush() || terrain_clicking())
     {
         ImGui::TextDisabled(STR_C("Suspended while editing terrain"));
         return;
@@ -4118,7 +4191,7 @@ void editor_mode::render_gizmo_options()
 void editor_mode::render_gizmo()
 {
     // the transform gizmo is suppressed while editing terrain, so the brush/chunk tool owns the mouse
-    if (!m_gizmo_enabled || m_terrain_sculpt || m_chunk_edit)
+    if (!m_gizmo_enabled || terrain_brush() || terrain_clicking())
     {
         m_gizmo_using = false;
         return;
@@ -4905,17 +4978,17 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
         return;
     }
 
-    // in chunk-edit mode the left button adds a neighbouring chunk (Shift = delete the clicked one)
-    if (m_chunk_edit && Button == GLFW_MOUSE_BUTTON_LEFT)
+    // the chunk, spacing and water tools of the terrain work on a click (Shift: the other way round)
+    if (terrain_clicking() && Button == GLFW_MOUSE_BUTTON_LEFT)
     {
         if (is_press(Action))
-            handle_chunk_edit_click(Global.shiftState);
+            handle_terrain_click(Global.shiftState);
         m_input.mouse.button(Button, Action);
         return;
     }
 
-    // in terrain sculpt mode the left button paints the terrain instead of picking nodes
-    if (m_terrain_sculpt && Button == GLFW_MOUSE_BUTTON_LEFT)
+    // with a brush of the terrain the left button works the brush instead of picking nodes
+    if (terrain_brush() && Button == GLFW_MOUSE_BUTTON_LEFT)
     {
         mouseHold = is_press(Action);
         m_input.mouse.button(Button, Action);

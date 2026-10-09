@@ -213,6 +213,7 @@ set(SOURCES
 "scene/scenelayers.cpp"
 "scene/scenelayerssave.cpp"
 "scene/sceneterrain.cpp"
+"scene/heightmapterrain.cpp"
 "scene/scenemodelentries.cpp"
 "simulation/simulationenvironment.cpp"
 "simulation/simulationstateserializer.cpp"
@@ -243,6 +244,7 @@ set(SOURCES
 
 "${DEPS_DIR}/glad/src/glad.c"
 "${DEPS_DIR}/dds-ktx/src/dds-ktx.c"
+"${DEPS_DIR}/zstd/zstd.c"
 
 "gl/shader.cpp"
 "gl/vao.cpp"
@@ -333,6 +335,7 @@ if (WITH_OPENGL_MODERN)
             "rendering/opengl33skydome.cpp"
             "rendering/opengl33precipitation.cpp"
             "rendering/opengl33particles.cpp"
+            "rendering/opengl33terrain.cpp"
             "rendering/opengl33renderer.cpp")
 		set(DEFINITIONS ${DEFINITIONS} "WITH_OPENGL_MODERN")
 endif()
@@ -460,6 +463,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 	"gl"
 	"${DEPS_DIR}/glad/include"
 	"${DEPS_DIR}/dds-ktx/include"
+	"${DEPS_DIR}/zstd"
 	"${CMAKE_BINARY_DIR}/geninc"
 	"${GLOBAL_INCLUDE_DIR}")
 
@@ -497,7 +501,7 @@ if(NOT ${CMAKE_VERSION} VERSION_LESS "3.16.0")
 
 	if (USE_PCH)
 		target_precompile_headers(${PROJECT_NAME} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/stdafx.h>")
-		set_source_files_properties("/glad/src/glad.c" "ref/dds-ktx/src/dds-ktx.c" "stb/stb_image.c"
+		set_source_files_properties("/glad/src/glad.c" "ref/dds-ktx/src/dds-ktx.c" "ref/zstd/zstd.c" "stb/stb_image.c"
 			"imgui/imgui.cpp" "imgui/imgui_demo.cpp" "imgui/imgui_draw.cpp" "imgui/imgui_widgets.cpp" "imgui/imgui_tables.cpp" "imgui/imgui_impl_glfw.cpp" "imgui/ImGuizmo.cpp"
 			PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
 	endif()
@@ -693,4 +697,4 @@ if(ENABLE_AVX2)
     else()
         target_compile_options(${PROJECT_NAME} PRIVATE -mavx2)
     endif()
-endif()
+endif()

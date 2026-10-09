@@ -282,21 +282,40 @@ class editor_mode : public application_mode, private editor_track::observer
 	// unless Alone: then the node goes by itself. Joined: undone together with the change before
 	void snap_to_ground(scene::basic_node *node, bool const Alone = false, bool const Joined = false);
 
-	// editable terrain patches created in the editor
+	// the heightmap terrain of the scenery (terrain/<name>/): chunks, sculpting, painting, water
 	void render_terrain_ui();
 	// the terrain as a field of work of its own: the terrain tools and the orthophoto in the tool options window
 	void render_terrain_tool_options();
-	// opens or leaves the terrain; leaving it puts the sculpting and the chunk editing away, so the mouse doesn't stay with them
+	// opens or leaves the terrain; leaving it puts the terrain tools away, so the mouse doesn't stay with them
 	void terrain_workspace(bool const Open);
-	// creates a large terrain as a grid of adjacent chunks (each its own editable patch)
-	void create_chunked_terrain();
-	// manual grid-aligned chunks: add/remove single chunks for fine control
-	float chunk_grid_size() const { return m_terrain_cells * m_terrain_cellsize; }
-	void add_grid_chunk(int Cx, int Cz);
-	void remove_grid_chunk(int Cx, int Cz);
+	// opens the heightmap terrain of the scenery for editing, named after the scenery, if the scenery has none yet. returns: true if it's open
+	bool ensure_terrain();
+	// adds chunks around the camera, Count along a side, at the height of the ground under each grid point where there's any
+	void add_chunks_around(int const Count);
+	// adds a chunk of the terrain shaped as the ground under it; where there's no ground, carried on level with the nearest point
+	// of it, or at the base height. returns: false if there's a chunk already
+	bool add_chunk_from_ground(heightmap::chunk_key const &Key, float const Spacing, std::uint16_t const Layer = 0);
+	// the tool of the terrain the left mouse button works
+	enum class terrain_tool
+	{
+		none, // picks the models, as in the surroundings
+		chunks, // adds a chunk, Shift: removes it
+		sculpt, // raises the ground, Shift: lowers it
+		smooth,
+		paint, // paints the chosen material, Shift: the first material of the palette
+		spacing, // gives the clicked chunk the chosen point spacing
+		water // outlines a body of water
+	};
+	terrain_tool m_terrain_tool{terrain_tool::none};
+	bool terrain_brush() const { return m_terrain_tool == terrain_tool::sculpt || m_terrain_tool == terrain_tool::smooth || m_terrain_tool == terrain_tool::paint; }
+	bool terrain_clicking() const { return m_terrain_tool == terrain_tool::chunks || m_terrain_tool == terrain_tool::spacing || m_terrain_tool == terrain_tool::water; }
+	// the brush, the hovered chunk and the outlines of water drawn over the viewport
+	void draw_terrain_overlay();
+	// forgets what's known about the ground, after the terrain changed
+	void forget_ground();
 	// the scenery ground: triangles of each material, the ones the editor makes itself left out
 	std::map<material_handle, std::size_t> ground_materials();
-	// replaces the triangles of specified materials with chunks of editor terrain of their shape; the scenery files lose them on save.
+	// replaces the triangles of specified materials with chunks of heightmap terrain of their shape; the scenery files lose them on save.
 	// returns: summary for the user
 	std::string convert_ground(std::set<material_handle> const &Materials);
 	struct ground_conversion
@@ -307,12 +326,8 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::string status;
 	} m_ground_conversion;
 	void render_ground_conversion();
-	// handles a click in chunk-edit mode (add a neighbour, or Shift = delete the clicked chunk)
-	void handle_chunk_edit_click(bool DeleteMode);
-	// commits authored terrain to disk, enables streaming, and exports the scenery
-	void save_scene_with_terrain();
-	// commits authored terrain to disk and enables streaming
-	void commit_terrain();
+	// handles a click of the chunk, spacing and water tools (Shift: the other way round)
+	void handle_terrain_click(bool const Shift);
 	// writes the changes to the files of scenery opened for editing (Ctrl+S)
 	bool save();
 	// places include of specified scenery template at the cursor, in the active layer
@@ -333,37 +348,34 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_include_gizmo(glm::mat4 const &View, glm::mat4 const &Projection, glm::dvec3 const &Camerapos);
 	// exports the scenery in legacy (text) format, with layers hidden in the editor left out of the picture
 	void export_scenery();
-	// raises/lowers terrain under the cursor while the left mouse button is held in sculpt mode
-	void handle_terrain_sculpt(double Deltatime);
-	// returns the terrain patch (if any) whose footprint covers the given world point
+	// works the brush of the terrain under the cursor while the left mouse button is held
+	void handle_terrain_brush(double Deltatime);
+	// the chunk of the terrain (if any) covering the given world point
 	editor_terrain *terrain_at(double X, double Z);
-	// gathers every active terrain patch: manually-created ones plus streamed chunks
+	// the chunks of the terrain held in memory
 	std::vector<editor_terrain *> active_terrains();
-	// samples the selected model instance's geometry into a new editable terrain patch, then removes it
+	// samples the selected model instance's geometry into the chunks of the terrain it covers, then removes it
 	void capture_terrain();
-	std::vector<std::unique_ptr<editor_terrain>> m_terrains;
-	// grid-aligned manual chunks, keyed by (cx,cz) on the global chunk grid
-	std::map<std::pair<int, int>, std::unique_ptr<editor_terrain>> m_grid_chunks;
-	bool m_terrain_sculpt{false};     // when true, LMB sculpts terrain instead of picking
-	bool m_terrain_brush_smooth{false}; // the brush evens the ground out instead of raising or lowering it
 	bool m_terrain_open{false};       // the terrain is the field of work, chosen in the toolbar
-	bool m_chunk_edit{false};         // when true, LMB adds/removes whole chunks
-	int m_terrain_cells{32};          // grid resolution (quads per side)
-	int m_terrain_chunks{4};          // chunks per side for a chunked terrain
-	float m_terrain_cellsize{2.0f};   // metres per quad
-	float m_terrain_baseheight{0.0f}; // flat starting height
+	float m_terrain_spacing{2.0f};    // point spacing of the chunks made and of the spacing tool
+	float m_terrain_baseheight{0.0f}; // height of chunks made where there's no ground
+	int m_terrain_add_count{4};       // chunks along a side added around the camera
 	float m_terrain_brush_radius{12.0f};
-	float m_terrain_brush_strength{4.0f}; // metres per second while held (one-shot for the buttons)
-	float m_terrain_simplify_error{0.5f}; // flatness tolerance (m) for mesh simplification
-	bool m_terrain_auto_optimize{false};  // auto-simplify edited chunks after sculpting settles
-	double m_terrain_idle{0.0};           // seconds since the last sculpt edit (debounce timer)
-	char m_terrain_texture[128]{""};  // optional ground texture name
+	float m_terrain_brush_strength{4.0f}; // metres per second while held; for the paint, how fast it covers
+	int m_terrain_layer{0};               // entry of the palette painted
+	char m_terrain_material[128]{"grass"}; // material added to the palette
+	float m_terrain_material_size{0.0f};   // metres its textures repeat at, 0: given by the material
+	std::vector<glm::dvec3> m_water_points; // outline of a body of water being drawn
+	float m_water_level{0.0f};
+	bool m_water_level_edited{false}; // the level was given by hand, the points clicked don't change it
+	char m_water_material[128]{""};
+	int m_water_selected{-1};
+	float m_water_selected_level{0.0f}; // level of the chosen water, while it's edited
+	bool m_water_level_dragged{false};
+	std::string m_terrain_status;
 
-	// streaming terrain that follows the camera (open-world); the editor shares the single
-	// simulation-level instance so authored terrain also renders in the driver / other modes
+	// the heightmap terrain, shared with the scenery loader so it shows in every mode
 	terrain_streamer &m_streamer{EditorTerrain};
-	int m_stream_radius{2};
-	bool m_stream_persist{true}; // save edited chunks to disk and load them back
 
 	// geoportal orthophoto layer drawn under the other viewport overlays
 	void render_orthophoto_ui();
@@ -1573,7 +1585,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		double origin{0.0}; // chainage of the start of the route
 		double departure{0.0}; // largest difference between the grade line and the track
 		profile::ground_fit fit;
-		// the editor terrain led to the grade line: formation under the track, slopes down or up to the ground
+		// the heightmap terrain led to the grade line by a modifier: formation under the track, slopes down or up to the ground
 		struct earthworks
 		{
 			bool from_ballast{true};
@@ -1582,11 +1594,11 @@ class editor_mode : public application_mode, private editor_track::observer
 			double slope{1.5}; // horizontal run of the slopes per metre of height
 			double reach{60.0}; // m, from the edge of the formation, where the slopes end even if they don't get to the ground
 			double rounding{1.5}; // m, over which the slopes bend into the formation and into the ground
-			// heights of the terrain before the last shaping
-			std::vector<std::pair<editor_terrain *, std::vector<float>>> undo;
 			bool generate{true};
+			// chunks of terrain made under the route by the last shaping
 			std::vector<std::pair<int, int>> generated;
-			bool generated_streaming{false};
+			// the modifier of the terrain made by the last shaping
+			std::string modifier;
 		} earthworks;
 		double view_from{0.0};
 		double view_to{100.0};

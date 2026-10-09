@@ -616,6 +616,8 @@ bool opengl33_renderer::Render()
 	}
 	// generate new frame
     opengl_texture::reset_unit_cache();
+	// textures of new heightmap terrain layers go to the arrays the terrain shader reads them from
+	m_terrainmaterials.update();
 	if( EditorModeFlag ) {
 		// the editor moves and resizes model instances in place, which leaves the copies of their bounds out of date
 		++m_instanceboundsversion;
@@ -2415,6 +2417,20 @@ void opengl33_renderer::Bind_Material_Shadow(material_handle const Material)
 IMaterial const *opengl33_renderer::Material(material_handle const Material) const
 {
 	return &m_materials.material(Material);
+}
+
+material_handle opengl33_renderer::Terrain_Material(material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement)
+{
+	auto const material{m_terrainmaterials.make(Reuse, Layers, Samples, Weights, Placement)};
+	if (material != null_handle)
+		return material;
+	// the terrain shader can't be used, the chunk makes do with a plain material
+	return gfx_renderer::Terrain_Material(Reuse, Layers, Samples, Weights, Placement);
+}
+
+void opengl33_renderer::Terrain_Release(material_handle const Material)
+{
+	m_terrainmaterials.release(Material);
 }
 
 opengl_material &opengl33_renderer::Material(material_handle const Material)

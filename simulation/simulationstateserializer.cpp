@@ -134,6 +134,7 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 	            { "time",        &state_serializer::deserialize_time },
 	            { "trainset",    &state_serializer::deserialize_trainset },
 	            { "terrain",     &state_serializer::deserialize_terrain },
+	            { "heightmap_terrain", &state_serializer::deserialize_heightmapterrain },
 	            { "editorterrain", &state_serializer::deserialize_editorterrain },
 	            { "endtrainset", &state_serializer::deserialize_endtrainset },
 	            { "reversed", &state_serializer::deserialize_reversed } };
@@ -1296,35 +1297,41 @@ state_serializer::deserialize_terrain(cParser &Input, scene::scratch_data &Scrat
 }
 
 void
-state_serializer::deserialize_editorterrain(cParser &Input, scene::scratch_data &Scratchpad)
+state_serializer::deserialize_heightmapterrain(cParser &Input, scene::scratch_data &Scratchpad)
 {
-	// editor-authored streaming terrain. format:
-	//   editorterrain <folder> <cells> <cellsize> <radius> [texture] endeditorterrain
-	// the global streamer loads its 16-bit chunk files around the camera in every mode
-	std::string folder;
-	int cells = 32;
-	float cellsize = 2.0f;
-	int radius = 4;
-	Input.getTokens(4);
-	Input >> folder >> cells >> cellsize >> radius;
-	std::string texture { Input.getToken<std::string>() };
-	if( texture == "endeditorterrain" ) {
-		texture.clear();
+	// heightmap terrain, kept in terrain/<name>/ of the simulator. format:
+	//   heightmap_terrain [name] endheightmap_terrain
+	// without the name the terrain is named after the scenery file. the chunks are loaded around the camera in every mode
+	std::string name;
+	while( true ) {
+		auto const token { Input.getToken<std::string>( false ) };
+		if( token.empty() || token == "endheightmap_terrain" ) {
+			break;
+		}
+		if( name.empty() ) {
+			name = token;
+		}
 	}
-	else {
-		skip_until(Input, "endeditorterrain");
+	if( name.empty() ) {
+		name = Global.SceneryFile;
+		auto const slash { name.find_last_of( "/\\" ) };
+		if( slash != std::string::npos ) {
+			name.erase( 0, slash + 1 );
+		}
+		erase_extension( name );
 	}
 	scene::Layers.terrain_directive(true);
-
-	if (!folder.empty() && cells > 0 && cellsize > 0.0f)
-	{
-		EditorTerrain.directory(folder);
-		EditorTerrain.configure(cells, cellsize, radius < 0 ? 0 : radius, 0.0f, texture);
-		EditorTerrain.active(true);
-		WriteLog("Editor terrain stream enabled: " + folder + " (cells " + std::to_string(cells)
-		             + ", cellsize " + std::to_string(cellsize) + ", radius " + std::to_string(radius) + ")",
-		         logtype::generic);
+	if( false == name.empty() ) {
+		EditorTerrain.open( name );
 	}
+}
+
+void
+state_serializer::deserialize_editorterrain(cParser &Input, scene::scratch_data &Scratchpad)
+{
+	// the chunk files of the first editor terrain were replaced with the heightmap terrain before they were used in sceneries
+	skip_until(Input, "endeditorterrain");
+	WriteLog("Bad scenario: obsolete \"editorterrain\" directive ignored, the editor terrain is \"heightmap_terrain\" now", logtype::generic);
 }
 
 void
@@ -1711,14 +1718,9 @@ state_serializer::export_as_text(std::string const &Scenariofile) const {
 	scmfile << "// sounds\n";
 	Region->export_as_text( scmfile );
 
-	// editor-authored streaming terrain: emit a directive pointing at its 16-bit chunk folder so the
-	// scenery streams it on load (in every mode)
+	// heightmap terrain: the directive which opens its folder, so the scenery streams it on load (in every mode)
 	if( EditorTerrain.active() ) {
-		scmfile << "// editor terrain\neditorterrain "
-		        << EditorTerrain.directory() << ' '
-		        << EditorTerrain.cells() << ' '
-		        << EditorTerrain.cellsize() << ' '
-		        << EditorTerrain.radius() << " endeditorterrain\n";
+		scmfile << "// heightmap terrain\nheightmap_terrain " << EditorTerrain.name() << " endheightmap_terrain\n";
 	}
 
 	scmfile << "// modified objects\ninclude " << filename << "_export_dirty.scm\n";
@@ -1768,16 +1770,9 @@ state_serializer::export_as_text(std::string const &Scenariofile) const {
 	scmfile << "// sounds\n";
 	Region->export_as_text( scmfile );
 
-	// editor-authored streaming terrain: emit a directive pointing at its 16-bit chunk folder so the
-	// scenery streams it on load (in every mode)
+	// heightmap terrain: the directive which opens its folder, so the scenery streams it on load (in every mode)
 	if( EditorTerrain.active() ) {
-		scmfile << "// editor terrain\neditorterrain "
-		        << EditorTerrain.directory() << ' '
-		        << EditorTerrain.cells() << ' '
-		        << EditorTerrain.cellsize() << ' '
-		        << EditorTerrain.radius()
-		        << ( EditorTerrain.texture().empty() ? "" : " " + EditorTerrain.texture() )
-		        << " endeditorterrain\n";
+		scmfile << "// heightmap terrain\nheightmap_terrain " << EditorTerrain.name() << " endheightmap_terrain\n";
 	}
 
 	scmfile << "// modified objects\ninclude " << filename << "_export_dirty.scm\n";
@@ -1921,7 +1916,7 @@ std::pair<int, int> state_serializer::preview_include(std::string const &Directi
 	static std::unordered_map<std::string, std::string> const statementends {
 	    { "event", "endevent" }, { "trainset", "endtrainset" }, { "isolated", "endisolated" }, { "area", "endarea" }, { "assignment", "endassignment" },
 	    { "atmo", "endatmo" }, { "camera", "endcamera" }, { "config", "endconfig" }, { "description", "enddescription" }, { "light", "endlight" },
-	    { "sky", "endsky" }, { "test", "endtest" }, { "time", "endtime" }, { "terrain", "endterrain" }, { "editorterrain", "endeditorterrain" } };
+	    { "sky", "endsky" }, { "test", "endtest" }, { "time", "endtime" }, { "terrain", "endterrain" }, { "heightmap_terrain", "endheightmap_terrain" }, { "editorterrain", "endeditorterrain" } };
 
 	cParser parser(Directive, cParser::buffer_TEXT, Global.asCurrentSceneryPath, Global.bLoadTraction);
 	// the template is processed with the placement its directive is going to be loaded with

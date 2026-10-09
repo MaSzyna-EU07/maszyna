@@ -21,6 +21,16 @@ namespace gl
 class program;
 }
 
+namespace gfx
+{
+// material painted over the heightmap terrain, and the size (metres) its textures are repeated at; 0: the size given by the material, or 8 m
+struct terrain_layer
+{
+	material_handle material{null_handle};
+	float size{0.f};
+};
+} // namespace gfx
+
 class gfx_renderer {
 
 public:
@@ -58,6 +68,14 @@ public:
     virtual auto Fetch_Material( std::string const &Filename, bool const Loadnow = true ) -> material_handle = 0;
     virtual void Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) = 0;
     virtual auto Material( material_handle const Material ) const -> IMaterial const * = 0;
+    // heightmap terrain: material of a chunk blending the materials of up to 8 layers by their weights.
+    // Weights: (Samples + 1)^2 values per layer, planar, rows of growing z, the weights of a sample adding up to 255; null with a single layer.
+    // Placement: corner of the chunk (x, z) in the texture coordinates of its mesh, and the size of the chunk.
+    // Reuse: a material made by this call before, to be filled anew, or null_handle.
+    // returns: the material. backends which can't blend give back the material of the layer covering the most
+    virtual auto Terrain_Material( material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement ) -> material_handle;
+    // gives back a material made by Terrain_Material, once its chunk is gone
+    virtual void Terrain_Release( material_handle const Material ) {}
     // shader methods
     virtual auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gl::program> = 0;
     // texture methods

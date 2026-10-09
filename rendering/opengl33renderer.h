@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/glsl_common.h"
 #include "gl/pbo.h"
 #include "gl/query.h"
+#include "rendering/opengl33terrain.h"
 
 // bare-bones render controller, in lack of anything better yet
 class opengl33_renderer : public gfx_renderer {
@@ -81,6 +82,10 @@ class opengl33_renderer : public gfx_renderer {
         Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) override;
     IMaterial const *
         Material( material_handle const Material ) const override;
+    material_handle
+        Terrain_Material( material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement ) override;
+    void
+        Terrain_Release( material_handle const Material ) override;
     // shader methods
     auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gl::program> override;
     // texture methods
@@ -350,6 +355,7 @@ class opengl33_renderer : public gfx_renderer {
 	gfx::geometrybank_manager m_geometry;
 	material_manager m_materials;
 	texture_manager m_textures;
+	opengl33_terrain_materials m_terrainmaterials{m_materials, m_textures};
 	opengl33_light m_sunlight;
 	opengllight_array m_lights;
 	/*
