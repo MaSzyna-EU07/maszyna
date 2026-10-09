@@ -32,6 +32,7 @@ extern char **environ;
 #include "editor/editorIcons.hpp"
 #include "utilities/translation.h"
 #include "utilities/Globals.h"
+#include "utilities/glmHelpers.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
 #include "simulation/simulationenvironment.h"
@@ -1218,6 +1219,8 @@ bool editor_mode::update()
         m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE);
         Application.set_cursor(GLFW_CURSOR_NORMAL);
     }
+    if (m_ortho_pan && !ImGui::GetIO().MouseDown[2])
+        ortho_pan_stop();
 
     // same for the left button (brush / sculpt / click placement). the UI filter in the application
     // uses io.WantCaptureMouse from the previous frame, so a press on a panel the cursor has just
@@ -1369,9 +1372,9 @@ bool editor_mode::update()
             signal_move_update();
             draw_signal_overlay();
         }
+        draw_parallel_preview();
         if (m_track_tab == track_tab::lineside)
         {
-            draw_parallel_preview();
             draw_hekto_overlay();
             draw_fouling_overlay();
             draw_vehicle_marker();
@@ -1414,6 +1417,7 @@ bool editor_mode::update()
     // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
     if (ui()->mode() == nodebank_panel::FILL)
         draw_area_fill_outline();
+    draw_ortho_compass();
 
     render_new_scenery_popup();
     render_open_scenery_popup();
@@ -1854,6 +1858,10 @@ void editor_mode::render_orthophoto_ui()
     if (!editor_orthophoto::can_download())
         ImGui::TextDisabled(STR_C("This build has no HTTP client, only cached tiles are shown"));
     ImGui::TextDisabled(STR_C("Cache: %s"), editor_orthophoto::cache_directory().c_str());
+    if (ImGui::Button(STR_C("Clear cache")))
+        m_orthophoto.clear_cache();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip(STR_C("Deletes downloaded tiles from disk. They are fetched again around the camera."));
     ImGui::TextDisabled(STR_C("Imagery: GUGiK, geoportal.gov.pl"));
 }
 
@@ -1869,6 +1877,51 @@ void editor_mode::draw_orthophoto()
     ImGuiIO const &io = ImGui::GetIO();
     float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
     m_orthophoto.draw(editor_mode::projection_matrix(aspect) * view, Camera.Pos, io.DisplaySize.x, io.DisplaySize.y);
+}
+
+void editor_mode::draw_ortho_compass() const
+{
+    if (false == Global.EditorOrtho)
+        return;
+    screen_projection const projection;
+    ImVec2 north_from, north_to, east_from, east_to;
+    glm::dvec3 const eye{Camera.Pos};
+    if (false == projection.project(eye + glm::dvec3{0.0, 0.0, -80.0}, north_from) || false == projection.project(eye + glm::dvec3{0.0, 0.0, 80.0}, north_to) ||
+        false == projection.project(eye + glm::dvec3{80.0, 0.0, 0.0}, east_from) || false == projection.project(eye + glm::dvec3{-80.0, 0.0, 0.0}, east_to))
+        return;
+    auto const dir = [](ImVec2 const From, ImVec2 const To) {
+        ImVec2 const d{To.x - From.x, To.y - From.y};
+        auto const length{std::sqrt(d.x * d.x + d.y * d.y)};
+        return length > 1e-3f ? ImVec2{d.x / length, d.y / length} : ImVec2{0.0f, -1.0f};
+    };
+    auto const north{dir(north_from, north_to)};
+    auto const east{dir(east_from, east_to)};
+    ImVec2 const south{-north.x, -north.y};
+    ImVec2 const west{-east.x, -east.y};
+
+    ImGuiIO const &io = ImGui::GetIO();
+    float const radius{36.0f};
+    float const margin{16.0f};
+    ImVec2 const center{io.DisplaySize.x - margin - radius, margin + radius};
+    auto *drawlist{ImGui::GetForegroundDrawList()};
+    drawlist->AddCircleFilled(center, radius + 14.0f, IM_COL32(0, 0, 0, 180), 48);
+    drawlist->AddCircle(center, radius - 6.0f, IM_COL32(255, 255, 255, 50), 48, 1.2f);
+    drawlist->AddCircleFilled(center, 3.0f, IM_COL32(255, 255, 255, 200), 12);
+
+    auto const at = [&](ImVec2 const Unit, float const Length) { return ImVec2{center.x + Unit.x * Length, center.y + Unit.y * Length}; };
+    ImVec2 const side{-north.y * 5.0f, north.x * 5.0f};
+    drawlist->AddTriangleFilled(at(north, radius - 14.0f), ImVec2{center.x + side.x, center.y + side.y}, ImVec2{center.x - side.x, center.y - side.y}, IM_COL32(230, 70, 55, 255));
+    drawlist->AddTriangleFilled(at(south, radius - 18.0f), ImVec2{center.x + side.x, center.y + side.y}, ImVec2{center.x - side.x, center.y - side.y}, IM_COL32(210, 210, 210, 210));
+
+    auto const letter = [&](char const *Text, ImVec2 const Unit, ImU32 const Color) {
+        auto const size{ImGui::CalcTextSize(Text)};
+        auto const p{at(Unit, radius + 2.0f)};
+        drawlist->AddText(ImVec2(p.x - size.x * 0.5f, p.y - size.y * 0.5f), Color, Text);
+    };
+    letter("N", north, IM_COL32(255, 90, 70, 255));
+    letter("E", east, IM_COL32(230, 230, 230, 230));
+    letter("S", south, IM_COL32(190, 190, 190, 180));
+    letter("W", west, IM_COL32(230, 230, 230, 230));
 }
 
 editor_terrain *editor_mode::terrain_at(double X, double Z)
@@ -4010,11 +4063,15 @@ void editor_mode::render_gizmo_options()
 {
     if (ImGui::Button(Global.EditorOrtho ? "3D view (O)" : "Top view, orthographic (O)"))
         toggle_ortho();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", Global.EditorOrtho ? STR_C("Wheel zooms. Hold the wheel and drag to pan.") : STR_C("Top-down orthographic view"));
     if (Global.EditorOrtho)
     {
         ImGui::SameLine();
         ImGui::SetNextItemWidth(120.0f);
-        ImGui::SliderFloat(STR_C("Extent (m), wheel"), &Global.EditorOrthoExtent, 5.0f, 5000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat(STR_C("Extent (m), wheel / MMB pan"), &Global.EditorOrthoExtent, 5.0f, 5000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Wheel zooms. Hold the wheel and drag to pan."));
     }
     ImGui::Checkbox(STR_C("Enabled"), &m_gizmo_enabled);
     if (!m_gizmo_enabled)
@@ -4322,7 +4379,30 @@ void editor_mode::toggle_ortho()
     else
     {
         Camera.Angle.x = m_ortho_pitch;
+        ortho_pan_stop();
     }
+}
+
+void editor_mode::ortho_pan_to(double const Horizontal, double const Vertical)
+{
+    auto const &io{ImGui::GetIO()};
+    if (io.DisplaySize.y <= 0.0f)
+        return;
+    auto const dx{Horizontal - m_ortho_pan_cursor.x};
+    auto const dy{Vertical - m_ortho_pan_cursor.y};
+    m_ortho_pan_cursor = {Horizontal, Vertical};
+    auto const scale{2.0 * static_cast<double>(Global.EditorOrthoExtent) / static_cast<double>(io.DisplaySize.y)};
+    auto const world{RotateY(glm::dvec3{dx * scale, 0.0, dy * scale}, static_cast<double>(Camera.Angle.y))};
+    Camera.Pos.x -= world.x;
+    Camera.Pos.z -= world.z;
+    Camera.Velocity = {};
+    m_focus_active = false;
+    Global.pCamera = Camera;
+}
+
+void editor_mode::ortho_pan_stop()
+{
+    m_ortho_pan = false;
 }
 
 void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
@@ -4805,6 +4885,8 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
 
 void editor_mode::on_cursor_pos(double const Horizontal, double const Vertical)
 {
+    if (m_ortho_pan)
+        ortho_pan_to(Horizontal, Vertical);
     // object transforms are handled by the gizmo now; here we only forward the cursor to the
     // mouse input, which rotates the camera while the right mouse button is held (panning mode)
     m_input.mouse.position(Horizontal, Vertical);
@@ -5044,6 +5126,18 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
         }
         // game-engine style look: hide & grab the cursor while flying, restore it on release
         Application.set_cursor(is_press(Action) ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    }
+    else if (Button == GLFW_MOUSE_BUTTON_MIDDLE && Global.EditorOrtho)
+    {
+        if (is_press(Action))
+        {
+            m_ortho_pan = true;
+            m_ortho_pan_cursor = m_input.mouse.position();
+            m_focus_active = false;
+            Camera.Velocity = {};
+        }
+        else if (is_release(Action))
+            ortho_pan_stop();
     }
 
     m_input.mouse.button(Button, Action);

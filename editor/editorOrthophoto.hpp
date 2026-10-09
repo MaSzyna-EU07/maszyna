@@ -107,6 +107,8 @@ class editor_orthophoto
 	void draw(glm::mat4 const &ViewProjection, glm::dvec3 const &CameraPos, float ScreenWidth, float ScreenHeight) const;
 	// forgets pending (not yet started) downloads, e.g. when the editor is left
 	void cancel_pending();
+	// drops resident tiles and deletes the on-disk cache; enabled tiles are fetched again
+	void clear_cache();
 	// clears failure state so failed tiles are attempted again
 	void retry_failed();
 

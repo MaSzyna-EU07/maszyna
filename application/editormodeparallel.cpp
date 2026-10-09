@@ -34,6 +34,11 @@ using geometry::plan_of;
 double const kParallelReach{5000.0}; // m each way along the line
 double const kSpacings[] = {3.5, 4.0, 4.5, 4.75, 5.0, 6.0};
 
+std::string name_of(TTrack const &Track)
+{
+	return Track.name().empty() ? std::string{"(noname)"} : Track.name();
+}
+
 segment_data reversed(segment_data const &Path)
 {
 	segment_data result{Path};
@@ -78,12 +83,61 @@ glm::dvec2 direction(segment_data const &Path, bool const Atend)
 	return glm::length(along) > 1e-9 ? glm::normalize(along) : glm::dvec2{0.0, 1.0};
 }
 
+glm::dvec3 midpoint(TTrack const &Track)
+{
+	if (Track.m_paths.empty())
+		return Track.location();
+	bezier const curve{Track.m_paths.front()};
+	return curve.point(0.5);
+}
+
+// signed offset of Dst from Src, along Src's left normal; positive is the Left radio
+double lateral_of(TTrack const &Src, TTrack const &Dst)
+{
+	if (Src.m_paths.empty())
+		return 0.0;
+	auto const heading{direction(Src.m_paths.front(), false)};
+	glm::dvec2 const left{-heading.y, heading.x};
+	return glm::dot(plan_of(midpoint(Dst)) - plan_of(Src.m_paths.front().points[segment_data::point::start]), left);
+}
+
 } // namespace
+
+TTrack *editor_mode::parallel_source() const
+{
+	if (m_track_set.size() >= 2)
+		return m_track_set.front();
+	return selected_track();
+}
+
+TTrack *editor_mode::parallel_target() const
+{
+	if (m_track_set.size() != 2)
+		return nullptr;
+	return m_track_set.back() != m_track_set.front() ? m_track_set.back() : nullptr;
+}
 
 void editor_mode::parallel_update()
 {
 	auto &tool{m_parallel};
-	auto *track{selected_track()};
+	auto *track{parallel_source()};
+	auto *target{parallel_target()};
+	if (track != tool.pair_src || target != tool.pair_dst)
+	{
+		tool.pair_src = track;
+		tool.pair_dst = target;
+		if (track != nullptr && target != nullptr)
+		{
+			auto const lateral{lateral_of(*track, *target)};
+			tool.side = lateral >= 0.0 ? 1 : -1;
+			tool.measured = std::abs(lateral);
+		}
+		else
+			tool.measured = 0.0;
+	}
+	else if (track != nullptr && target != nullptr)
+		tool.measured = std::abs(lateral_of(*track, *target));
+
 	if (track == tool.built_for && tool.spacing == tool.built_spacing && tool.side == tool.built_side && tool.scope == tool.built_scope && m_history.size() == tool.built_history)
 		return;
 	tool.built_for = track;
@@ -176,13 +230,59 @@ void editor_mode::parallel_build()
 	tool.built_for = nullptr;
 }
 
-void editor_mode::render_parallel_ui()
+void editor_mode::parallel_apply()
 {
 	auto &tool{m_parallel};
-	ImGui::TextDisabled("%s", STR_C("Second track alongside, curves included: radius R minus or plus the spacing,\nthe same transitions and cant, heights on the plane of the cant"));
-	ImGui::RadioButton(STR_C("This path"), &tool.scope, 0);
-	ImGui::SameLine();
-	ImGui::RadioButton(STR_C("The line, up to the switches"), &tool.scope, 1);
+	auto *target{parallel_target()};
+	parallel_update();
+	if (target == nullptr || tool.pieces.empty())
+		return;
+	if (tool.pieces.size() != 1)
+	{
+		tool.error = STR_C("Two selected paths: set the scope to this path, so the other takes its shape at the spacing");
+		return;
+	}
+	std::string reason;
+	if (false == editor_track::can_edit_geometry(*target, reason))
+	{
+		tool.error = reason;
+		return;
+	}
+	auto const joints{editor_track::joints(*target)};
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	auto const remember = [&](TTrack *Track) {
+		if (Track == nullptr)
+			return;
+		if (std::any_of(states.begin(), states.end(), [&](auto const &Entry) { return Entry.first == Track; }))
+			return;
+		states.emplace_back(Track, editor_track::capture(*Track));
+	};
+	remember(target);
+	for (auto const &joint : joints)
+		remember(joint.other);
+	target->m_paths.front() = tool.pieces.front();
+	editor_track::follow(*target, joints);
+	std::vector<TTrack *> committed{target};
+	for (auto const &joint : joints)
+		if (joint.other != nullptr)
+			committed.push_back(joint.other);
+	editor_track::commit(committed);
+	push_track_snapshot(std::move(states));
+	tool.status = format(STR_C("%s set parallel to %s, %.2f m away; Ctrl+Z takes it back"), name_of(*target).c_str(), name_of(*parallel_source()).c_str(), tool.spacing);
+	WriteLog("Editor: " + tool.status, logtype::generic);
+	tool.built_for = nullptr;
+	straight_refresh();
+}
+
+void editor_mode::render_parallel_controls(bool const Scope)
+{
+	auto &tool{m_parallel};
+	if (Scope)
+	{
+		ImGui::RadioButton(STR_C("This path"), &tool.scope, 0);
+		ImGui::SameLine();
+		ImGui::RadioButton(STR_C("The line, up to the switches"), &tool.scope, 1);
+	}
 	ImGui::RadioButton(STR_C("Left"), &tool.side, -1);
 	ImGui::SameLine();
 	ImGui::RadioButton(STR_C("Right"), &tool.side, 1);
@@ -197,23 +297,73 @@ void editor_mode::render_parallel_ui()
 		if (ImGui::SmallButton(format("%.2f", spacing).c_str()))
 			tool.spacing = spacing;
 	}
+}
+
+void editor_mode::render_parallel_ui()
+{
+	auto &tool{m_parallel};
+	ImGui::TextDisabled("%s", STR_C("First select a straight path (LMB). Then a second track is laid beside it.\nAlong the line the curves are included: R minus or plus the spacing, same transitions and cant."));
+	if (parallel_target() != nullptr)
+		ImGui::TextDisabled("%s", STR_C("Two paths selected: set the spacing of the other in Select. The first must be a straight."));
+	else if (auto *source{parallel_source()}; source == nullptr)
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", STR_C("First select a straight path in the view."));
+	else if (source->eType != tt_Normal || false == editor_track::is_straight(*source, m_straights.tolerance))
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", STR_C("The selected path isn't a straight. Select a straight first."));
+	render_parallel_controls();
 	parallel_update();
 	if (false == tool.error.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", tool.error.c_str());
 	else if (false == tool.pieces.empty())
 	{
-		if (ImGui::Button(format(STR_C("Build %zu paths, %.1f m"), tool.pieces.size(), tool.length).c_str()))
+		if (ImGui::Button(format(STR_C("Lay %zu paths, %.1f m"), tool.pieces.size(), tool.length).c_str()))
 			parallel_build();
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("First select a straight. Creates a new track beside it; the selected path stays."));
 	}
 	if (false == tool.status.empty())
 		ImGui::TextWrapped("%s", tool.status.c_str());
 }
 
+void editor_mode::render_parallel_set_ui()
+{
+	auto &tool{m_parallel};
+	auto *source{parallel_source()};
+	auto *target{parallel_target()};
+	if (source == nullptr || target == nullptr)
+		return;
+	if (false == ImGui::CollapsingHeader(STR_C("Make parallel"), ImGuiTreeNodeFlags_DefaultOpen))
+		return;
+	ImGui::TextWrapped("%s", STR_C("First selected must be a straight. It stays; the other is moved to this spacing."));
+	ImGui::TextWrapped("%s", format(STR_C("%s stays. %s is moved to this spacing, taking its curves."), name_of(*source).c_str(), name_of(*target).c_str()).c_str());
+	if (tool.measured > 0.05)
+		ImGui::TextDisabled("%s", format(lateral_of(*source, *target) >= 0.0 ? STR_C("Now %.2f m on the right") : STR_C("Now %.2f m on the left"), tool.measured).c_str());
+	tool.scope = 0;
+	render_parallel_controls(false);
+	parallel_update();
+	if (false == tool.error.empty())
+		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", tool.error.c_str());
+	else if (false == tool.pieces.empty() && ImGui::Button(format(STR_C("Set %s to %.2f m"), name_of(*target).c_str(), tool.spacing).c_str()))
+		parallel_apply();
+	if (false == tool.status.empty())
+		ImGui::TextWrapped("%s", tool.status.c_str());
+}
+
+bool editor_mode::parallel_preview_visible() const
+{
+	if (m_parallel.pieces.empty() || parallel_source() != m_parallel.built_for)
+		return false;
+	if (m_track_tab == track_tab::lay)
+		return m_lay.points.empty();
+	if (m_track_tab == track_tab::path)
+		return true;
+	return m_track_tab == track_tab::lineside && m_parallel.open;
+}
+
 void editor_mode::draw_parallel_preview() const
 {
-	auto const &tool{m_parallel};
-	if (false == tool.open || tool.pieces.empty() || selected_track() != tool.built_for)
+	if (false == parallel_preview_visible())
 		return;
+	auto const &tool{m_parallel};
 	screen_projection const projection;
 	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	for (auto const &piece : tool.pieces)
@@ -230,5 +380,11 @@ void editor_mode::draw_parallel_preview() const
 	}
 	ImVec2 screen;
 	if (projection.project(tool.pieces.front().points[segment_data::point::start], screen))
+	{
 		drawlist->AddCircleFilled(screen, 5.0f, IM_COL32(90, 255, 120, 230));
+		auto const label{format("%.2f m", tool.spacing)};
+		auto const size{ImGui::CalcTextSize(label.c_str())};
+		drawlist->AddRectFilled(ImVec2(screen.x + 8.0f, screen.y - 8.0f), ImVec2(screen.x + 16.0f + size.x, screen.y + 8.0f), IM_COL32(0, 0, 0, 180), 3.0f);
+		drawlist->AddText(ImVec2(screen.x + 12.0f, screen.y - 8.0f), IM_COL32(90, 255, 120, 255), label.c_str());
+	}
 }

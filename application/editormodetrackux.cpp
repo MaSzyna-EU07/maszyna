@@ -325,6 +325,16 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			glm::dvec3 const handles[] = {line.start, line.end, (line.start + line.end) * 0.5};
 			intent.index = hit;
 			intent.position = handles[hit];
+			if (hit == 2)
+			{
+				auto const offer{straight_parallel_offer(line, {})};
+				if (offer.near)
+				{
+					intent.action = format(offer.snaps ? STR_C("Drag: shift the straight sideways — snaps parallel at %.2f m") : STR_C("Drag: shift the straight sideways — close: %.2f m  %.1f°"), offer.spacing, offer.angle);
+					intent.what = kind::straight_handle;
+					return intent;
+				}
+			}
 			return make(kind::straight_handle, hit == 2 ? "Drag: shift the straight sideways" : "Drag: move this end, the curves at it follow");
 		}
 	}
@@ -627,11 +637,8 @@ void editor_mode::render_track_context()
 		show_track_tab(track_tab::straights);
 	if (ImGui::MenuItem(STR_C("Curve"), "C", false, normal))
 		show_track_tab(track_tab::route);
-	if (ImGui::MenuItem(STR_C("Parallel track"), nullptr, false, normal))
-	{
-		show_track_tab(track_tab::lineside);
-		m_parallel.expand = true;
-	}
+	if (ImGui::MenuItem(STR_C("Parallel track"), "L", false, normal))
+		show_track_tab(track_tab::lay);
 	if (ImGui::MenuItem(STR_C("Place a vehicle here")))
 	{
 		show_track_tab(track_tab::lineside);
@@ -1209,6 +1216,7 @@ void editor_mode::render_track_set_ui()
 		return;
 	}
 	ImGui::TextDisabled("%s", STR_C("The gizmo moves them together; Shift+LMB adds or takes out a path"));
+	render_parallel_set_ui();
 	if (ImGui::SmallButton(STR_C("Grow by the neighbours")))
 		track_set_grow();
 	if (ImGui::IsItemHovered())

@@ -29,6 +29,12 @@ msgstr "Pokaż inspektor"
 msgid "The curve can't be read from this path, edit it as a single path"
 msgstr "Z tego odcinka nie da się odczytać łuku, edytuj go jako pojedynczy odcinek"
 
+msgid "end of the straight, or a vertex of a curve"
+msgstr "koniec prostej albo wierzchołek łuku"
+
+msgid "next vertex of the curve"
+msgstr "kolejny wierzchołek łuku"
+
 msgid "Laying track: LMB adds the points"
 msgstr "Układanie toru: LPM dodaje punkty"
 
@@ -107,8 +113,8 @@ msgstr "Wzorzec rozjazdu"
 msgid "Press on the selected straight or curve where the switch starts and drag: along sets its direction, sideways its side"
 msgstr "Wciśnij na wybranej prostej lub łuku w miejscu początku rozjazdu i przeciągnij: wzdłuż ustala kierunek, w bok stronę"
 
-msgid "Collect again from the scenery"
-msgstr "Zbierz ponownie ze scenerii"
+msgid "Collect from the scenery"
+msgstr "Zbierz ze scenerii"
 
 msgid "Select a path in the view, then build the route along the line, or set its start and end paths (switches are passed through)"
 msgstr "Wybierz odcinek w widoku, potem zbuduj trasę wzdłuż linii albo wskaż jej odcinek początkowy i końcowy (rozjazdy są przechodzone)"
@@ -305,8 +311,8 @@ msgstr "Długości i przechyłka zalecane dla prędkości i promienia; wyłączo
 msgid "Takes the textures and the other parameters from the selected track.\nA track started or finished at a free end always takes them from the track it joins"
 msgstr "Bierze tekstury i pozostałe parametry z wybranego toru.\nTor zaczęty lub zakończony na wolnym końcu zawsze bierze je z toru, do którego dochodzi"
 
-msgid "Looks for the switches of the scenery again, to use their shapes as the templates"
-msgstr "Ponownie szuka rozjazdów w scenerii, aby użyć ich kształtów jako wzorców"
+msgid "Looks for the switches of the scenery, to use their shapes as the templates"
+msgstr "Szuka rozjazdów w scenerii, aby użyć ich kształtów jako wzorców"
 
 msgid "start of the new track, on the ground or at a free end"
 msgstr "początek nowego toru, na terenie lub na wolnym końcu"
@@ -1536,6 +1542,48 @@ msgstr "Ciągnij romb"
 msgid "shifts the straight sideways"
 msgstr "przesuwa prostą w bok"
 
+msgid "Near another straight"
+msgstr "Przy innej prostej"
+
+msgid "keep shifting: snaps parallel at %.2f m"
+msgstr "ciągnij dalej: przyleganie równoległe na %.2f m"
+
+msgid "snaps parallel at %.2f m"
+msgstr "przyleganie równoległe na %.2f m"
+
+msgid "close: parallel snap at %.2f m"
+msgstr "blisko: przyleganie równoległe na %.2f m"
+
+msgid "parallel  %.2f m"
+msgstr "równolegle  %.2f m"
+
+msgid "parallel at %.2f m"
+msgstr "równolegle na %.2f m"
+
+msgid "snap at %.2f m  (%.1f°)"
+msgstr "przyleganie na %.2f m  (%.1f°)"
+
+msgid "snaps parallel at 4.00 / 4.50 / 4.75 m"
+msgstr "łapie równolegle na 4.00 / 4.50 / 4.75 m"
+
+msgid "shifts sideways; close: snaps parallel at 4.00 / 4.50 / 4.75 m"
+msgstr "przesuwa w bok; blisko: łapie równolegle na 4.00 / 4.50 / 4.75 m"
+
+msgid "Nearby straight: the diamond snaps parallel at 4.00 / 4.50 / 4.75 m"
+msgstr "Sąsiednia prosta: romb łapie równolegle na 4.00 / 4.50 / 4.75 m"
+
+msgid "close: %.2f m  %.1f°"
+msgstr "blisko: %.2f m  %.1f°"
+
+msgid "Drag: shift the straight sideways — close: parallel snap at %.2f m"
+msgstr "Ciągnij: przesuń prostą w bok — blisko: przyleganie równoległe na %.2f m"
+
+msgid "Drag: shift the straight sideways — close: %.2f m  %.1f°"
+msgstr "Ciągnij: przesuń prostą w bok — blisko: %.2f m  %.1f°"
+
+msgid "Drag: shift the straight sideways — snaps parallel at %.2f m"
+msgstr "Ciągnij: przesuń prostą w bok — przyleganie równoległe na %.2f m"
+
 msgid "Ctrl+drag"
 msgstr "Ctrl+ciągnij"
 
@@ -2224,6 +2272,54 @@ msgstr "Nic nie dało się naprawić: to rozjazdy albo odcinki w plikach, który
 msgid "Parallel track"
 msgstr "Tor równoległy"
 
+msgid "Parallel"
+msgstr "Równoległy"
+
+msgid "First select a straight path (LMB). Then a second track is laid beside it.\nAlong the line the curves are included: R minus or plus the spacing, same transitions and cant."
+msgstr "Najpierw zaznacz odcinek prosty (LPM). Potem drugi tor kładzie się obok.\nWzdłuż linii łuki wchodzą: R minus albo plus rozstaw, te same krzywe przejściowe i przechyłka."
+
+msgid "First select a straight path in the view."
+msgstr "Najpierw zaznacz odcinek prosty w widoku."
+
+msgid "The selected path isn't a straight. Select a straight first."
+msgstr "Zaznaczony odcinek nie jest prostą. Najpierw zaznacz prostą."
+
+msgid "First select a straight. Creates a new track beside it; the selected path stays."
+msgstr "Najpierw zaznacz prostą. Tworzy nowy tor obok; zaznaczony odcinek zostaje."
+
+msgid "Two paths selected: set the spacing of the other in Select. The first must be a straight."
+msgstr "Dwa odcinki zaznaczone: rozstaw drugiego ustawiasz w Wyborze. Pierwszy musi być prostą."
+
+msgid "First selected must be a straight. It stays; the other is moved to this spacing."
+msgstr "Pierwszy zaznaczony musi być prostą. On zostaje; drugi jest przestawiany na ten rozstaw."
+
+msgid "Lay %zu paths, %.1f m"
+msgstr "Ułóż %zu odcinków, %.1f m"
+
+msgid "first select a straight, then a second track beside it in the panel"
+msgstr "najpierw zaznacz prostą, potem drugi tor obok niej w panelu"
+
+msgid "Make parallel"
+msgstr "Ustaw równolegle"
+
+msgid "%s stays. %s is moved to this spacing, taking its curves."
+msgstr "%s zostaje. %s jest przestawiany na ten rozstaw, z jego łukami."
+
+msgid "Now %.2f m on the right"
+msgstr "Teraz %.2f m po prawej"
+
+msgid "Now %.2f m on the left"
+msgstr "Teraz %.2f m po lewej"
+
+msgid "Set %s to %.2f m"
+msgstr "Ustaw %s na %.2f m"
+
+msgid "%s set parallel to %s, %.2f m away; Ctrl+Z takes it back"
+msgstr "%s ustawiony równolegle do %s, rozstaw %.2f m; Ctrl+Z cofa"
+
+msgid "Two selected paths: set the scope to this path, so the other takes its shape at the spacing"
+msgstr "Dwa zaznaczone odcinki: zakres na ten odcinek, wtedy drugi bierze jego kształt w rozstawie"
+
 msgid "Parallel track of %zu paths, %.1f m, %.2f m away; Ctrl+Z takes it back"
 msgstr "Tor równoległy z %zu odcinków, %.1f m, w rozstawie %.2f m; Ctrl+Z cofa"
 
@@ -2665,8 +2761,8 @@ msgstr "Parzyste hektometry po prawej, nieparzyste po lewej"
 msgid "Objects"
 msgstr "Obiekty"
 
-msgid "Along the track: hectometre posts, fouling point markers, a parallel track, a vehicle to drive"
-msgstr "Przy torze: słupki hektometrowe, wskaźniki ukresu, tor równoległy, pojazd do jazdy"
+msgid "Along the track: hectometre posts, fouling point markers, a vehicle to drive"
+msgstr "Przy torze: słupki hektometrowe, wskaźniki ukresu, pojazd do jazdy"
 
 msgid "Model along the track: release where it ends"
 msgstr "Model wzdłuż toru: puść tam, gdzie się kończy"
@@ -3539,6 +3635,9 @@ msgstr "od osi toru (m, + w prawo)"
 msgid "over the rail head (m)"
 msgstr "nad główką szyny (m)"
 
+msgid "along the track (m)"
+msgstr "wzdłuż toru (m)"
+
 msgid "length (m)"
 msgstr "długość (m)"
 
@@ -3586,6 +3685,18 @@ msgstr "Zapisz i otwórz"
 
 msgid "In the view: drag the blue cross sideways to set the offset, with Shift up and down, with Ctrl along the track"
 msgstr "W widoku: przeciągnij niebieski celownik w bok, żeby ustawić odsunięcie, z Shift w górę i w dół, z Ctrl wzdłuż toru"
+
+msgid "In the view: drag the blue cross along the track and aside; Shift: height; Ctrl: only along"
+msgstr "W widoku: przeciągnij niebieski celownik wzdłuż toru i w bok; Shift: wysokość; Ctrl: tylko wzdłuż"
+
+msgid "Drag: along the track and aside"
+msgstr "Przeciągnij: wzdłuż toru i w bok"
+
+msgid "Shift: height   Ctrl: only along the track"
+msgstr "Shift: wysokość   Ctrl: tylko wzdłuż toru"
+
+msgid "%.2f m from the track, %+.2f m along"
+msgstr "%.2f m od toru, %+.2f m wzdłuż"
 
 msgid "Drag: offset from the track; Shift: height; Ctrl: along the track"
 msgstr "Przeciągnij: odsunięcie od toru; Shift: wysokość; Ctrl: wzdłuż toru"
@@ -4054,6 +4165,12 @@ msgstr "Ten build nie ma klienta HTTP, widać tylko kafle z pamięci podręcznej
 msgid "Cache: %s"
 msgstr "Pamięć podręczna: %s"
 
+msgid "Clear cache"
+msgstr "Wyczyść cache"
+
+msgid "Deletes downloaded tiles from disk. They are fetched again around the camera."
+msgstr "Usuwa pobrane kafle z dysku. Zostaną ponownie pobrane wokół kamery."
+
 msgid "Imagery: GUGiK, geoportal.gov.pl"
 msgstr "Zdjęcia: GUGiK, geoportal.gov.pl"
 
@@ -4158,6 +4275,21 @@ msgstr "Zaznacz model, z którego ma powstać tablica"
 
 msgid "Extent (m), wheel"
 msgstr "Zasięg (m), kółko"
+
+msgid "Extent (m), wheel / MMB pan"
+msgstr "Zasięg (m), kółko / przesuwanie kółkiem"
+
+msgid "Wheel zooms. Hold the wheel and drag to pan."
+msgstr "Kółko przybliża. Wciśnij kółko i przeciągnij, żeby przesunąć widok."
+
+msgid "Top-down orthographic view"
+msgstr "Widok z góry, rzut prostokątny"
+
+msgid "Hold the wheel"
+msgstr "Przytrzymaj kółko"
+
+msgid "pans the view"
+msgstr "przesuwa widok"
 
 msgid "Enabled"
 msgstr "Włączone"

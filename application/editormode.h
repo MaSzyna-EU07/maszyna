@@ -216,6 +216,10 @@ class editor_mode : public application_mode, private editor_track::observer
 	static bool m_settings_open;
 
 	double m_ortho_pitch{0.0};
+	bool m_ortho_pan{false};
+	glm::dvec2 m_ortho_pan_cursor{0.0};
+	void ortho_pan_to(double const Horizontal, double const Vertical);
+	void ortho_pan_stop();
 	// camera fly-mode (right mouse button held); used to flush motion when it's released
 	command_relay m_camera_relay;
 	bool m_camera_flying{false};
@@ -406,6 +410,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	std::string m_georeference_line;
 	void read_georeference();
 	void draw_orthophoto();
+	void draw_ortho_compass() const;
 	// picks up the stored settings and the origin of the current scenery
 	void load_orthophoto_settings();
 	void save_orthophoto_settings();
@@ -704,6 +709,18 @@ class editor_mode : public application_mode, private editor_track::observer
 	void apply_detour();
 	std::vector<glm::dvec3> detour_outline() const;
 	void find_neighbour_straights();
+	// listed spacing of a neighbouring straight the line can snap to, if it is close enough
+	struct parallel_offer
+	{
+		bool near{false};
+		bool snaps{false};
+		double spacing{0.0};
+		double distance{0.0};
+		double angle{0.0}; // deg between the two straights
+		double correction{0.0}; // m along the line normal to reach the spacing
+		editor_track::straight const *neighbour{nullptr};
+	};
+	parallel_offer straight_parallel_offer(editor_track::straight const &Line, glm::dvec3 const &Offset) const;
 	glm::dvec3 snap_straight_offset(editor_track::straight const &Line, glm::dvec3 const &Offset) const;
 	glm::dvec3 snap_straight_direction(glm::dvec3 const &Pivot, glm::dvec3 const &Moved) const;
 	straights_state m_straights;
@@ -1110,6 +1127,9 @@ class editor_mode : public application_mode, private editor_track::observer
 		int built_side{0};
 		int built_scope{-1};
 		std::size_t built_history{0};
+		TTrack *pair_src{nullptr};
+		TTrack *pair_dst{nullptr};
+		double measured{0.0};
 		std::vector<segment_data> pieces;
 		std::vector<TTrack *> styles;
 		double length{0.0};
@@ -1117,9 +1137,15 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::string status;
 	};
 	parallel_tool m_parallel;
+	TTrack *parallel_source() const;
+	TTrack *parallel_target() const;
 	void parallel_update();
+	void render_parallel_controls(bool const Scope = true);
 	void render_parallel_ui();
+	void render_parallel_set_ui();
 	void parallel_build();
+	void parallel_apply();
+	bool parallel_preview_visible() const;
 	void draw_parallel_preview() const;
 
 	// scenery templates standing by the track, placed and checked by the editor
