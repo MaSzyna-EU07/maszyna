@@ -3860,7 +3860,7 @@ msgid "Not for the node bank yet: %s."
 msgstr "Jeszcze nie do banku węzłów: %s."
 
 msgid "A template placed from the node bank gets the cursor location in the pos.* parameters, the rotation set in the\nInsert tab in rot.y, and a unique name (the default value followed by a random suffix) in the name parameter.\nThe other parameters receive their default values."
-msgstr "Szablon wstawiony z banku węzłów dostaje położenie kursora w parametrach pos.*, obrót ustawiony w zakładce\nWstaw w rot.y, a w parametrze name niepowtarzalną nazwę (wartość domyślna z losowym przyrostkiem).\nPozostałe parametry dostają wartości domyślne."
+msgstr "Szablon wstawiony z banku obiektów dostaje położenie kursora w parametrach pos.*, obrót ustawiony w zakładce\nWstaw w rot.y, a w parametrze name niepowtarzalną nazwę (wartość domyślna z losowym przyrostkiem).\nPozostałe parametry dostają wartości domyślne."
 
 msgid "Suggest roles"
 msgstr "Podpowiedz role"
@@ -5053,3 +5053,11 @@ msgstr "LPM: początek drogi, potem każdy kolejny punkt; na wolnym końcu, boku
 
 msgid "Level crossings, and the points where vehicles appear on the roads or are taken off them"
 msgstr "Przejazdy kolejowe oraz punkty, w których pojazdy pojawiają się na drogach albo są z nich zdejmowane"
+
+# scenery editor: node bank in two panes, models dragged to the sets
+
+msgid "Drop it on a model set, or on the list of the brush or the area fill"
+msgstr "Upuść go na zestaw modeli albo na listę pędzla lub wypełniania obszaru"
+
+msgid "or drag models here from the node bank"
+msgstr "albo przeciągnij tu modele z banku obiektów"

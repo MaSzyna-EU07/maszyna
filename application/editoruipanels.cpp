@@ -59,6 +59,71 @@ bool list_item(char const *Label, bool const Selected)
 		ImGui::PopStyleColor();
 	return clicked;
 }
+
+// name of the payload of a node definition dragged out of the node bank
+char const *const template_payload{"EU07_NODEBANK_ENTRY"};
+
+// a node definition of the node bank dropped on the item drawn last. returns: true if one was, with its text
+bool dropped_template(std::string &Template)
+{
+	auto dropped{false};
+	if (ImGui::BeginDragDropTarget())
+	{
+		if (auto const *payload{ImGui::AcceptDragDropPayload(template_payload)}; payload != nullptr && payload->DataSize > 0)
+		{
+			Template.assign(static_cast<char const *>(payload->Data), static_cast<std::size_t>(payload->DataSize));
+			dropped = true;
+		}
+		ImGui::EndDragDropTarget();
+	}
+	return dropped;
+}
+
+// a card: the image fills its square, or what's missing is said in its place, and the label is under it, cut short with an
+// ellipsis. returns: true if it was clicked; the card is the item drawn last
+bool card(ImVec2 const &Cell, float const Side, std::uint64_t const Texture, char const *Placeholder, char const *Label, bool const Selected)
+{
+	auto const &style{ImGui::GetStyle()};
+	auto const position{ImGui::GetCursorScreenPos()};
+	auto const clicked{ImGui::InvisibleButton("##card", Cell)};
+	auto const hovered{ImGui::IsItemHovered()};
+	auto *list{ImGui::GetWindowDrawList()};
+	ImVec2 const end{position.x + Cell.x, position.y + Cell.y};
+	list->AddRectFilled(position, end, ImGui::GetColorU32(Selected ? ImGuiCol_Header : hovered ? ImGuiCol_HeaderHovered : ImGuiCol_FrameBg), style.FrameRounding);
+	ImVec2 const imagemin{position.x + 2.0f, position.y + 2.0f};
+	ImVec2 const imagemax{position.x + Side - 2.0f, position.y + Side - 2.0f};
+	if (Texture != 0)
+	{
+		list->AddImage(static_cast<ImTextureID>(Texture), imagemin, imagemax);
+	}
+	else
+	{
+		list->AddRect(imagemin, imagemax, ImGui::GetColorU32(ImGuiCol_Border), style.FrameRounding);
+		auto const size{ImGui::CalcTextSize(Placeholder)};
+		list->PushClipRect(imagemin, imagemax, true);
+		list->AddText(ImVec2(imagemin.x + std::max(0.0f, (imagemax.x - imagemin.x - size.x) * 0.5f), imagemin.y + (imagemax.y - imagemin.y - size.y) * 0.5f), ImGui::GetColorU32(ImGuiCol_TextDisabled), Placeholder);
+		list->PopClipRect();
+	}
+	while (*Label == ' ')
+	{
+		++Label;
+	}
+	ImVec2 const labelmin{position.x + style.FramePadding.x, position.y + Side + style.FramePadding.y};
+	ImVec2 const labelmax{end.x - style.FramePadding.x, end.y};
+	ImGui::RenderTextEllipsis(list, labelmin, labelmax, labelmax.x, labelmax.x, Label, nullptr, nullptr);
+	return clicked;
+}
+
+// cells of the cards of the side, and how many of them fit the width in a row
+ImVec2 card_cell(float const Side)
+{
+	return ImVec2(Side, Side + ImGui::GetTextLineHeight() + ImGui::GetStyle().FramePadding.y * 2.0f);
+}
+int card_columns(ImVec2 const &Cell)
+{
+	auto const &style{ImGui::GetStyle()};
+	return std::max(1, static_cast<int>((ImGui::GetContentRegionAvail().x + style.ItemSpacing.x) / (Cell.x + style.ItemSpacing.x)));
+}
 } // namespace
 
 void itemproperties_panel::update(scene::basic_node *Node)
@@ -602,6 +667,7 @@ void nodebank_panel::nodebank_reload()
 void nodebank_panel::index_previews()
 {
 	m_previewpaths.clear();
+	m_templatepreviews.clear();
 	std::error_code error;
 	m_previewfolder = std::filesystem::is_directory(editor_previews::folder, error);
 	// entries with the same model and skin are numbered in the order of the file, the way the generator numbers them
@@ -620,12 +686,14 @@ void nodebank_panel::index_previews()
 		auto const name{editor_previews::variant(path, taken)};
 		taken.insert(name);
 		m_previewpaths[entry.second.get()] = name + ".png";
+		m_templatepreviews.try_emplace(*entry.second, name + ".png");
 	}
 }
 
 void nodebank_panel::preview_popup(std::pair<std::string, std::shared_ptr<std::string>> const &Entry)
 {
-	if (false == ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay))
+	// not while something's dragged, the tooltip of the drag is there then
+	if (false == ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay) || ImGui::GetDragDropPayload() != nullptr)
 	{
 		return;
 	}
@@ -669,13 +737,62 @@ void nodebank_panel::preview_popup(std::pair<std::string, std::shared_ptr<std::s
 	ImGui::EndTooltip();
 }
 
+std::uint64_t nodebank_panel::preview_texture(std::string const &Path, char const *&Placeholder)
+{
+	if (Path.empty() || m_previews == nullptr)
+	{
+		Placeholder = STR_C("not a model");
+		return 0;
+	}
+	auto const texture{m_previews->image(Path)};
+	Placeholder = (m_previews->missing(Path) ? STR_C("no preview") : "...");
+	return texture;
+}
+
+std::string const &nodebank_panel::template_preview(std::string const &Template) const
+{
+	static std::string const none;
+	auto const lookup{m_templatepreviews.find(Template)};
+	return lookup != m_templatepreviews.end() ? lookup->second : none;
+}
+
+void nodebank_panel::drag_entry(std::pair<std::string, std::shared_ptr<std::string>> const &Entry)
+{
+	// the scenery templates are placed with include directives, the lists of the models have no use for them
+	if (Entry.second->empty() || Entry.second->starts_with(editor_includes::directive_mark))
+	{
+		return;
+	}
+	if (false == ImGui::BeginDragDropSource())
+	{
+		return;
+	}
+	ImGui::SetDragDropPayload(template_payload, Entry.second->data(), Entry.second->size());
+	auto const lookup{m_previewpaths.find(Entry.second.get())};
+	if (lookup != m_previewpaths.end() && m_previews != nullptr)
+	{
+		if (auto const texture{m_previews->image(lookup->second)}; texture != 0)
+		{
+			auto const side{64.0f * std::max(1.0f, Global.ui_scale)};
+			ImGui::Image(static_cast<ImTextureID>(texture), ImVec2(side, side));
+		}
+	}
+	auto const *label{Entry.first.c_str()};
+	while (*label == ' ')
+	{
+		++label;
+	}
+	ImGui::TextUnformatted(label);
+	ImGui::TextDisabled("%s", STR_C("Drop it on a model set, or on the list of the brush or the area fill"));
+	ImGui::EndDragDropSource();
+}
+
 void nodebank_panel::render_cards(std::vector<std::pair<std::string, std::shared_ptr<std::string>> const *> const &Entries)
 {
 	auto const &style{ImGui::GetStyle()};
-	auto const card{std::max(16.0f, EditorSettings.nodebank_card() * Global.ui_scale)};
-	auto const labelheight{ImGui::GetTextLineHeight()};
-	ImVec2 const cell{card, card + labelheight + style.FramePadding.y * 2.0f};
-	auto const columns{std::max(1, static_cast<int>((ImGui::GetContentRegionAvail().x + style.ItemSpacing.x) / (cell.x + style.ItemSpacing.x)))};
+	auto const side{std::max(16.0f, EditorSettings.nodebank_card() * Global.ui_scale)};
+	auto const cell{card_cell(side)};
+	auto const columns{card_columns(cell)};
 	auto const rows{(static_cast<int>(Entries.size()) + columns - 1) / columns};
 	ImGuiListClipper clipper;
 	clipper.Begin(rows, cell.y + style.ItemSpacing.y);
@@ -696,49 +813,15 @@ void nodebank_panel::render_cards(std::vector<std::pair<std::string, std::shared
 					ImGui::SameLine();
 				}
 				ImGui::PushID(entry.second.get());
-				auto const position{ImGui::GetCursorScreenPos()};
-				if (ImGui::InvisibleButton("##card", cell))
+				auto const lookup{m_previewpaths.find(entry.second.get())};
+				char const *placeholder{nullptr};
+				auto const texture{preview_texture(lookup != m_previewpaths.end() ? lookup->second : std::string{}, placeholder)};
+				if (card(cell, side, texture, placeholder, entry.first.c_str(), entry.second == m_selectedtemplate))
 				{
 					m_selectedtemplate = entry.second;
 				}
-				auto const hovered{ImGui::IsItemHovered()};
-				auto const selected{entry.second == m_selectedtemplate};
-				auto *list{ImGui::GetWindowDrawList()};
-				ImVec2 const end{position.x + cell.x, position.y + cell.y};
-				list->AddRectFilled(position, end, ImGui::GetColorU32(selected ? ImGuiCol_Header : hovered ? ImGuiCol_HeaderHovered : ImGuiCol_FrameBg), style.FrameRounding);
-				// the image fills the square of the card; without one, what's missing is said in its place
-				ImVec2 const imagemin{position.x + 2.0f, position.y + 2.0f};
-				ImVec2 const imagemax{position.x + card - 2.0f, position.y + card - 2.0f};
-				auto const lookup{m_previewpaths.find(entry.second.get())};
-				std::uint64_t texture{0};
-				char const *placeholder{STR_C("not a model")};
-				if (lookup != m_previewpaths.end())
-				{
-					texture = m_previews->image(lookup->second);
-					placeholder = (m_previews->missing(lookup->second) ? STR_C("no preview") : "...");
-				}
-				if (texture != 0)
-				{
-					list->AddImage(static_cast<ImTextureID>(texture), imagemin, imagemax);
-				}
-				else
-				{
-					list->AddRect(imagemin, imagemax, ImGui::GetColorU32(ImGuiCol_Border), style.FrameRounding);
-					auto const size{ImGui::CalcTextSize(placeholder)};
-					list->PushClipRect(imagemin, imagemax, true);
-					list->AddText(ImVec2(imagemin.x + std::max(0.0f, (imagemax.x - imagemin.x - size.x) * 0.5f), imagemin.y + (imagemax.y - imagemin.y - size.y) * 0.5f), ImGui::GetColorU32(ImGuiCol_TextDisabled), placeholder);
-					list->PopClipRect();
-				}
-				// the label under the image, cut short with an ellipsis; the whole of it in the tooltip
-				auto const *label{entry.first.c_str()};
-				while (*label == ' ')
-				{
-					++label;
-				}
-				ImVec2 const labelmin{position.x + style.FramePadding.x, position.y + card + style.FramePadding.y};
-				ImVec2 const labelmax{end.x - style.FramePadding.x, end.y};
-				ImGui::RenderTextEllipsis(list, labelmin, labelmax, labelmax.x, labelmax.x, label, nullptr, nullptr);
-				if (hovered)
+				drag_entry(entry);
+				if (ImGui::IsItemHovered())
 				{
 					preview_popup(entry);
 				}
@@ -747,6 +830,87 @@ void nodebank_panel::render_cards(std::vector<std::pair<std::string, std::shared
 		}
 	}
 	clipper.End();
+}
+
+void nodebank_panel::render_list(std::vector<std::pair<std::string, std::shared_ptr<std::string>> const *> const &Entries)
+{
+	for (auto const *entry : Entries)
+	{
+		ImGui::PushID(entry->second.get());
+		auto const label{" " + entry->first};
+		if (list_item(label.c_str(), entry->second == m_selectedtemplate))
+		{
+			m_selectedtemplate = entry->second;
+		}
+		drag_entry(*entry);
+		preview_popup(*entry);
+		ImGui::PopID();
+	}
+}
+
+void nodebank_panel::render_templates_list(std::string const &Filter)
+{
+	if (false == EditorIncludes.scanned())
+	{
+		EditorIncludes.scan();
+	}
+	auto const &templates{EditorIncludes.entries()};
+	std::string const *category{nullptr};
+	auto listed{0};
+	for (auto const entryidx : EditorIncludes.ready())
+	{
+		auto const &entry{templates[entryidx]};
+		if (false == Filter.empty() && false == contains(entry.name, Filter) && false == contains(entry.file, Filter) && false == contains(entry.category, Filter))
+		{
+			continue;
+		}
+		if (false == entry.category.empty() && (category == nullptr || *category != entry.category))
+		{
+			ImGui::TextDisabled(" %s", entry.category.c_str());
+		}
+		category = &entry.category;
+		auto const label{(entry.category.empty() ? " " : "   ") + entry.name + "  (" + Bezogonkow(entry.file) + ")##inc" + std::to_string(entryidx)};
+		if (list_item(label.c_str(), entry.statement == m_selectedtemplate))
+			m_selectedtemplate = entry.statement;
+		++listed;
+	}
+	if (listed == 0)
+	{
+		ImGui::TextDisabled(EditorIncludes.ready().empty() ? " (none yet, describe the templates in the Include database window)" : " (no match)");
+	}
+}
+
+void nodebank_panel::render_set_cards(int const Setid)
+{
+	auto const *set{EditorModelSets.find(Setid)};
+	if (set == nullptr)
+	{
+		return;
+	}
+	// a bit smaller than in the node bank, the window of the sets is the smaller one
+	auto const side{std::max(48.0f, EditorSettings.nodebank_card() * Global.ui_scale * 0.75f)};
+	auto const cell{card_cell(side)};
+	auto const columns{card_columns(cell)};
+	for (int index = 0; index < static_cast<int>(set->templates.size()); ++index)
+	{
+		if (index % columns != 0)
+		{
+			ImGui::SameLine();
+		}
+		ImGui::PushID(index);
+		char const *placeholder{nullptr};
+		auto const texture{preview_texture(template_preview(set->templates[index]), placeholder)};
+		auto const &label{index < static_cast<int>(set->labels.size()) ? set->labels[index] : set->templates[index]};
+		if (card(cell, side, texture, placeholder, label.c_str(), index == m_setsentry))
+		{
+			m_setsentry = index;
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("%s", label.c_str());
+		}
+		ImGui::PopID();
+	}
 }
 
 void nodebank_panel::render()
@@ -829,101 +993,132 @@ void nodebank_panel::render()
 				ImGui::TextDisabled("%s", STR_C("No previews yet: they're made by eu07 -generate-nodebank-previews"));
 			}
 		}
-		if (previews && ImGui::BeginChild("##nodebankcards", ImVec2(-1, listheight), ImGuiChildFlags_Borders))
+		// two panes: the groups of the node bank on the left, like folders, and the entries of the chosen one on the right.
+		// a search goes through all of them
+		struct category
 		{
-			// the groups as in the list, the entries of an open one as cards
-			auto isvisible{false};
-			auto const searchfilter{std::string(m_nodesearch)};
-			std::vector<std::pair<std::string, std::shared_ptr<std::string>> const *> cards;
-			for (auto const &entry : m_nodebank)
+			std::string const *name;
+			std::vector<std::pair<std::string, std::shared_ptr<std::string>> const *> entries;
+			int matches{0};
+		};
+		static std::string const ungrouped{"(ungrouped)"};
+		auto const searchfilter{std::string(m_nodesearch)};
+		std::vector<category> categories;
+		for (auto const &entry : m_nodebank)
+		{
+			if (entry.second->empty())
 			{
-				if (entry.second->empty())
-				{
-					if (false == cards.empty())
-					{
-						render_cards(cards);
-						cards.clear();
-					}
-					isvisible = ImGui::CollapsingHeader(entry.first.c_str());
-				}
-				else if (isvisible && (searchfilter.empty() || contains(entry.first, searchfilter)))
-				{
-					cards.push_back(&entry);
-				}
+				categories.push_back({&entry.first, {}});
+				continue;
 			}
-			if (false == cards.empty())
+			if (categories.empty())
 			{
-				render_cards(cards);
+				// templates listed before the first header, as group_names() has them
+				categories.push_back({&ungrouped, {}});
 			}
-			ImGui::Separator();
-			ImGui::TextDisabled("%s", STR_C("Scenery templates (.inc) are listed with the previews off"));
+			auto &group{categories.back()};
+			group.entries.push_back(&entry);
+			if (false == searchfilter.empty() && contains(entry.first, searchfilter))
+			{
+				++group.matches;
+			}
 		}
-		if (previews)
+		auto const templates{Global.editor_session};
+		if (m_category >= static_cast<int>(categories.size()) || (m_category == scenery_templates && false == templates) || m_category < scenery_templates)
 		{
+			m_category = 0;
+		}
+		// the panes of the height of the table, inside the padding of its cells
+		auto const paneheight{listheight - 2.0f * ImGui::GetStyle().CellPadding.y - 1.0f};
+		if (ImGui::BeginTable("##nodebankpanes", 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV, ImVec2(-1, listheight)))
+		{
+			ImGui::TableSetupColumn("##groups", ImGuiTableColumnFlags_WidthFixed, 170.0f * Global.ui_scale);
+			ImGui::TableSetupColumn("##entries", ImGuiTableColumnFlags_WidthStretch);
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			if (ImGui::BeginChild("##groups", ImVec2(0, paneheight)))
+			{
+				auto const searching{false == searchfilter.empty()};
+				for (int index = 0; index < static_cast<int>(categories.size()); ++index)
+				{
+					auto const &group{categories[index]};
+					auto const count{searching ? group.matches : static_cast<int>(group.entries.size())};
+					auto const label{*group.name + " (" + std::to_string(count) + ")##group" + std::to_string(index)};
+					if (searching && count == 0)
+					{
+						ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+					}
+					// a group chosen while searching is shown whole, the search is done
+					if (list_item(label.c_str(), false == searching && index == m_category))
+					{
+						m_category = index;
+						m_nodesearch[0] = '\0';
+					}
+					if (searching && count == 0)
+					{
+						ImGui::PopStyleColor();
+					}
+				}
+				if (templates)
+				{
+					ImGui::Separator();
+					if (list_item(STR_C("Scenery templates (.inc)"), m_category == scenery_templates))
+					{
+						m_category = scenery_templates;
+					}
+				}
+			}
 			ImGui::EndChild();
-		}
-		else if (ImGui::BeginListBox("##nodebank", ImVec2(-1, listheight)))
-		{
-			auto idx{0};
-			auto isvisible{false};
-			auto const searchfilter{std::string(m_nodesearch)};
-			for (auto const &entry : m_nodebank)
+			ImGui::TableSetColumnIndex(1);
+			if (ImGui::BeginChild("##entries", ImVec2(0, paneheight)))
 			{
-				if (entry.second->empty())
+				if (m_category == scenery_templates)
 				{
-					// special case, header indicator
-					isvisible = ImGui::CollapsingHeader(entry.first.c_str());
+					render_templates_list(searchfilter);
 				}
-				else
+				else if (false == searchfilter.empty())
 				{
-					if (false == isvisible)
+					// what was found, under the names of the groups
+					std::vector<std::pair<std::string, std::shared_ptr<std::string>> const *> found;
+					for (auto const &group : categories)
 					{
-						continue;
+						if (group.matches == 0)
+						{
+							continue;
+						}
+						found.clear();
+						for (auto const *entry : group.entries)
+						{
+							if (contains(entry->first, searchfilter))
+							{
+								found.push_back(entry);
+							}
+						}
+						ImGui::SeparatorText(group.name->c_str());
+						if (previews)
+						{
+							render_cards(found);
+						}
+						else
+						{
+							render_list(found);
+						}
 					}
-					if (false == searchfilter.empty() && false == contains(entry.first, searchfilter))
+				}
+				else if (false == categories.empty())
+				{
+					if (previews)
 					{
-						continue;
+						render_cards(categories[m_category].entries);
 					}
-					auto const label{" " + entry.first + "##" + std::to_string(idx)};
-					if (list_item(label.c_str(), entry.second == m_selectedtemplate))
-						m_selectedtemplate = entry.second;
-					preview_popup(entry);
-					++idx;
+					else
+					{
+						render_list(categories[m_category].entries);
+					}
 				}
 			}
-			// scenery templates. placing one adds an include directive to a scenery file, so they take scenery opened for editing
-			if (Global.editor_session && ImGui::CollapsingHeader(STR_C("Scenery templates (.inc)")))
-			{
-				if (false == EditorIncludes.scanned())
-				{
-					EditorIncludes.scan();
-				}
-				auto const &templates{EditorIncludes.entries()};
-				std::string const *category{nullptr};
-				auto listed{0};
-				for (auto const entryidx : EditorIncludes.ready())
-				{
-					auto const &entry{templates[entryidx]};
-					if (false == searchfilter.empty() && false == contains(entry.name, searchfilter) && false == contains(entry.file, searchfilter) && false == contains(entry.category, searchfilter))
-					{
-						continue;
-					}
-					if (false == entry.category.empty() && (category == nullptr || *category != entry.category))
-					{
-						ImGui::TextDisabled(" %s", entry.category.c_str());
-					}
-					category = &entry.category;
-					auto const label{(entry.category.empty() ? " " : "   ") + entry.name + "  (" + Bezogonkow(entry.file) + ")##inc" + std::to_string(entryidx)};
-					if (list_item(label.c_str(), entry.statement == m_selectedtemplate))
-						m_selectedtemplate = entry.statement;
-					++listed;
-				}
-				if (listed == 0)
-				{
-					ImGui::TextDisabled(EditorIncludes.ready().empty() ? " (none yet, describe the templates in the Include database window)" : " (no match)");
-				}
-			}
-			ImGui::EndListBox();
+			ImGui::EndChild();
+			ImGui::EndTable();
 		}
 		ImGui::PopItemWidth();
 	}
@@ -998,6 +1193,11 @@ void nodebank_panel::manual_list(char const *Id, std::vector<std::string> &List,
 			ImGui::TextDisabled(STR_C("(empty)"));
 		}
 		ImGui::EndListBox();
+	}
+	// a model dragged from the node bank onto the list goes to its end
+	if (std::string dropped; dropped_template(dropped))
+	{
+		List.push_back(dropped);
 	}
 	if (ImGui::Button(STR_C("Add selected")))
 	{
@@ -1121,12 +1321,20 @@ void nodebank_panel::render_sets_window()
 	// left side: the sets
 	auto const buttonsheight{ImGui::GetFrameHeightWithSpacing()};
 	ImGui::BeginGroup();
-	ImGui::BeginChild("##setlist", ImVec2(190 * Global.ui_scale, -buttonsheight), true);
+	// the list of the sets takes up to a part of a narrow window, the templates of the set need the room
+	ImGui::BeginChild("##setlist", ImVec2(std::min(190.0f * Global.ui_scale, ImGui::GetContentRegionAvail().x * 0.4f), -buttonsheight), true);
 	for (auto const &set : sets)
 	{
 		auto const label{set.name + " (" + std::to_string(set.templates.size()) + ")##set" + std::to_string(set.id)};
 		if (list_item(label.c_str(), set.id == m_setsselected))
 		{
+			m_setsselected = set.id;
+			m_setsentry = -1;
+		}
+		// a model dragged from the node bank onto a set goes to its end
+		if (std::string dropped; dropped_template(dropped))
+		{
+			EditorModelSets.add(set.id, {dropped});
 			m_setsselected = set.id;
 			m_setsentry = -1;
 		}
@@ -1201,17 +1409,30 @@ void nodebank_panel::render_sets_window()
 		}
 
 		ImGui::BeginChild("##setentries", ImVec2(0, -buttonsheight * 2), true);
-		for (int idx = 0; idx < static_cast<int>(edited->labels.size()); ++idx)
+		// with the previews of the models, as in the node bank
+		if (EditorSettings.nodebank_previews() && m_previews != nullptr)
 		{
-			auto const label{edited->labels[idx] + "##entry" + std::to_string(idx)};
-			if (list_item(label.c_str(), idx == m_setsentry))
-				m_setsentry = idx;
+			render_set_cards(edited->id);
+		}
+		else
+		{
+			for (int idx = 0; idx < static_cast<int>(edited->labels.size()); ++idx)
+			{
+				auto const label{edited->labels[idx] + "##entry" + std::to_string(idx)};
+				if (list_item(label.c_str(), idx == m_setsentry))
+					m_setsentry = idx;
+			}
 		}
 		if (edited->templates.empty())
 		{
 			ImGui::TextDisabled(STR_C("(empty) select a template in the node bank and press \"Add selected\""));
+			ImGui::TextDisabled("%s", STR_C("or drag models here from the node bank"));
 		}
 		ImGui::EndChild();
+		if (std::string dropped; dropped_template(dropped))
+		{
+			EditorModelSets.add(edited->id, {dropped});
+		}
 
 		auto const setid{edited->id};
 		if (ImGui::Button(STR_C("Add selected")))

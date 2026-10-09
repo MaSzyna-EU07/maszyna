@@ -98,8 +98,12 @@ void editor_ui::build_default_layout(unsigned int const Dockspace)
 		ImGui::DockBuilderDockWindow(window, leftbottom);
 	for (auto const *window : {"###inspector", "###editorsettings", "###Include database", "###orthophoto", "###environment"})
 		ImGui::DockBuilderDockWindow(window, right);
-	for (auto const *window : {"###Node bank", "###profilestrip", "###trackanalysis", "###structuregauge", "###editorhistory", "###modelsets"})
-		ImGui::DockBuilderDockWindow(window, bottom);
+	// bottom: the node bank, and the model sets by its side, the models are dragged from the one to the other
+	ImGuiID bottomleft{bottom};
+	auto const bottomright{ImGui::DockBuilderSplitNode(bottomleft, ImGuiDir_Right, 0.45f, nullptr, &bottomleft)};
+	for (auto const *window : {"###Node bank", "###profilestrip", "###trackanalysis", "###structuregauge", "###editorhistory"})
+		ImGui::DockBuilderDockWindow(window, bottomleft);
+	ImGui::DockBuilderDockWindow("###modelsets", bottomright);
 	ImGui::DockBuilderFinish(Dockspace);
 }
 
